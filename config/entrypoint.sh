@@ -20,9 +20,10 @@ if [ -S /var/run/docker.sock ]; then
 fi
 
 # ── Switch to claude user and launch ─────────────────────────────────
+# gosu does exec directly without creating a new session, preserving
+# TTY/stdin so Claude Code's interactive UI works correctly.
 if [ "${TEAMMATE_MODE}" = "tmux" ] && [ -z "$TMUX" ]; then
-    # Start tmux session, then run claude inside it
-    exec su claude -c "tmux new-session -s claude 'claude --dangerously-skip-permissions $*'"
+    exec gosu claude tmux new-session -s claude "claude --dangerously-skip-permissions $*"
 else
-    exec su claude -c "claude --dangerously-skip-permissions $*"
+    exec gosu claude claude --dangerously-skip-permissions "$@"
 fi

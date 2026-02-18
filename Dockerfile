@@ -29,6 +29,14 @@ RUN install -m 0755 -d /etc/apt/keyrings \
     && apt-get install -y docker-ce-cli docker-compose-plugin \
     && rm -rf /var/lib/apt/lists/*
 
+# ── gosu (drop-in su replacement for Docker entrypoints) ─────────────
+# gosu does a direct exec without creating a new session/pty, so TTY
+# passthrough works correctly — unlike su/sudo which break stdin forwarding.
+RUN arch="$(dpkg --print-architecture)" \
+    && curl -fsSL "https://github.com/tianon/gosu/releases/download/1.17/gosu-${arch}" -o /usr/local/bin/gosu \
+    && chmod +x /usr/local/bin/gosu \
+    && gosu nobody true
+
 # ── Claude Code ──────────────────────────────────────────────────────
 RUN npm install -g @anthropic-ai/claude-code@latest
 
