@@ -183,13 +183,16 @@ volumes:
 
 | Method | Mechanism | Use Case |
 |--------|-----------|----------|
-| OAuth (default) | Mount `~/.claude.json` read-only | Pro/Team/Enterprise subscriptions |
+| OAuth (default) | Extract token from macOS Keychain, inject via `CLAUDE_CODE_OAUTH_TOKEN` env var | Pro/Team/Enterprise subscriptions |
 | API Key | `ANTHROPIC_API_KEY` env var | Direct API access, CI/CD |
 
 **Implementation**:
 - CLI checks `project.yml` for `auth.method` (default: `oauth`)
-- OAuth: mounts `~/.claude.json` as read-only volume
+- OAuth: CLI extracts the access token from macOS Keychain (`Claude Code-credentials`) at launch and passes it to the container via `CLAUDE_CODE_OAUTH_TOKEN`. The `~/.claude.json` file is also mounted for account metadata.
 - API Key: passes env var to container via `--env` or `.env` file
+
+**Why not just mount `~/.claude.json`?**
+Claude Code stores OAuth tokens in the macOS Keychain, not in `~/.claude.json` (which only contains account metadata). The container has no access to the host Keychain, so the CLI must extract and inject the token at runtime.
 
 ---
 

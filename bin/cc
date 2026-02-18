@@ -41,6 +41,17 @@ Run 'cc <command> --help' for command-specific help.
 EOF
 }
 
+# Extract OAuth token from macOS Keychain
+# Returns the access token or empty string if not found
+get_oauth_token() {
+    if [[ "$(uname)" != "Darwin" ]]; then
+        return
+    fi
+    local creds
+    creds=$(security find-generic-password -s "Claude Code-credentials" -a "$(whoami)" -w 2>/dev/null) || return
+    echo "$creds" | python3 -c "import sys,json; print(json.load(sys.stdin)['claudeAiOauth']['accessToken'])" 2>/dev/null || true
+}
+
 # Expand ~ in paths
 expand_path() {
     local path="$1"
@@ -403,8 +414,20 @@ YAML
         return 0
     fi
 
+    # Resolve auth token for the session
+    local run_env=()
+    if [[ "$auth_method" == "oauth" ]]; then
+        local token
+        token=$(get_oauth_token)
+        if [[ -n "$token" ]]; then
+            run_env+=(-e "CLAUDE_CODE_OAUTH_TOKEN=$token")
+        else
+            warn "Could not extract OAuth token from Keychain. Claude may prompt for login."
+        fi
+    fi
+
     info "Starting session for project '${project_name}'..."
-    docker compose -f "$compose_file" run --rm --service-ports claude
+    docker compose -f "$compose_file" run --rm --service-ports "${run_env[@]}" claude
 
     ok "Session ended. Changes are in your repos."
 }
@@ -528,8 +551,18 @@ networks:
 YAML
     } > "$compose_file"
 
+    # Resolve auth token for the session
+    local run_env=()
+    local token
+    token=$(get_oauth_token)
+    if [[ -n "$token" ]]; then
+        run_env+=(-e "CLAUDE_CODE_OAUTH_TOKEN=$token")
+    else
+        warn "Could not extract OAuth token from Keychain. Claude may prompt for login."
+    fi
+
     info "Starting temporary session '${session_name}'..."
-    docker compose -f "$compose_file" run --rm --service-ports claude
+    docker compose -f "$compose_file" run --rm --service-ports "${run_env[@]}" claude
 
     ok "Session ended. Temp files at: $tmp_dir"
 }
