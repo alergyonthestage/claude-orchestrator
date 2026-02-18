@@ -175,7 +175,7 @@ services:
     # ── Volumes ──────────────────────────────────────────────────────
     volumes:
       # --- Auth ---
-      - ${HOME}/.claude.json:/home/claude/.claude.json:ro
+      - ${HOME}/.claude.json:/home/claude/.claude.json
       
       # --- Global config → user-level (~/.claude/) ---
       - ../../global/.claude/settings.json:/home/claude/.claude/settings.json:ro
@@ -232,7 +232,7 @@ networks:
 ```
 HOST                                    CONTAINER                  PURPOSE
 ─────────────────────────────────────────────────────────────────────────────
-~/.claude.json                       → /home/claude/.claude.json   Auth (ro)
+~/.claude.json                       → /home/claude/.claude.json   Auth (rw)
 global/.claude/settings.json         → ~/.claude/settings.json     Global settings (ro)
 global/.claude/CLAUDE.md             → ~/.claude/CLAUDE.md         Global instructions (ro)
 global/.claude/rules/                → ~/.claude/rules/            Global rules (ro)
@@ -248,8 +248,8 @@ projects/<n>/memory/                 → ~/.claude/projects/         Auto memory
 ```
 
 **Read-only vs Read-write**:
-- `ro`: Config that should not be modified by the agent (auth, global settings, git config)
-- `rw` (default): Repos (Claude writes code), project .claude/ (Claude may update), memory (Claude writes)
+- `ro`: Config that should not be modified by the agent (global settings, git config)
+- `rw` (default): Repos (Claude writes code), project .claude/ (Claude may update), memory (Claude writes), `~/.claude.json` (Claude Code updates session metadata on every startup — must be writable)
 
 ---
 

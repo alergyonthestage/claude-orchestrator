@@ -332,7 +332,7 @@ YAML
 
         # Auth volume
         if [[ "$auth_method" == "oauth" ]]; then
-            echo "      - \${HOME}/.claude.json:/home/claude/.claude.json:ro"
+            echo "      - \${HOME}/.claude.json:/home/claude/.claude.json"
         fi
 
         # Global config (read-only)
@@ -504,7 +504,7 @@ services:
       - TEAMMATE_MODE=${teammate_mode}
       - CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
     volumes:
-      - \${HOME}/.claude.json:/home/claude/.claude.json:ro
+      - \${HOME}/.claude.json:/home/claude/.claude.json
       # Global config
       - ${GLOBAL_DIR}/.claude/settings.json:/home/claude/.claude/settings.json:ro
       - ${GLOBAL_DIR}/.claude/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
