@@ -1,0 +1,711 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ── Constants ────────────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECTS_DIR="$REPO_ROOT/projects"
+GLOBAL_DIR="$REPO_ROOT/global"
+TEMPLATE_DIR="$PROJECTS_DIR/_template"
+IMAGE_NAME="claude-orchestrator:latest"
+
+# ── Colors ───────────────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+
+# ── Helpers ──────────────────────────────────────────────────────────
+info()  { echo -e "${BLUE}ℹ${NC} $*"; }
+ok()    { echo -e "${GREEN}✓${NC} $*"; }
+warn()  { echo -e "${YELLOW}⚠${NC} $*"; }
+error() { echo -e "${RED}✗${NC} $*" >&2; }
+die()   { error "$@"; exit 1; }
+
+usage() {
+    cat <<'EOF'
+Usage: cc <command> [options]
+
+Commands:
+  build                Build/rebuild the Docker image
+  start <project>      Start a session for a configured project
+  new                  Start a temporary session with specific repos
+  project create <n>   Create a new project from template
+  project list         List available projects
+  stop [project]       Stop running session(s)
+  help                 Show this help message
+
+Run 'cc <command> --help' for command-specific help.
+EOF
+}
+
+# Expand ~ in paths
+expand_path() {
+    local path="$1"
+    if [[ "$path" == ~* ]]; then
+        path="${HOME}${path#\~}"
+    fi
+    echo "$path"
+}
+
+# Read a value from project.yml using a simple parser (no yq dependency)
+# Usage: yml_get <file> <key>
+# Supports simple top-level and nested keys like "auth.method"
+yml_get() {
+    local file="$1"
+    local key="$2"
+
+    if [[ "$key" == *.* ]]; then
+        local parent="${key%%.*}"
+        local child="${key#*.}"
+        # Find lines under parent, get child value
+        awk -v parent="$parent" -v child="$child" '
+            $0 ~ "^"parent":" { in_block=1; next }
+            in_block && /^[^ ]/ { in_block=0 }
+            in_block && $0 ~ "^  "child":" {
+                sub(/^  [^:]+: */, "")
+                gsub(/["\047]/, "")
+                sub(/ *#.*$/, "")
+                gsub(/^ +| +$/, "")
+                print
+                exit
+            }
+        ' "$file"
+    else
+        awk -v key="$key" '
+            $0 ~ "^"key":" {
+                sub(/^[^:]+: */, "")
+                gsub(/["\047]/, "")
+                sub(/ *#.*$/, "")
+                gsub(/^ +| +$/, "")
+                print
+                exit
+            }
+        ' "$file"
+    fi
+}
+
+# Parse repos from project.yml
+# Outputs lines of "host_path:mount_name"
+yml_get_repos() {
+    local file="$1"
+    awk '
+        /^repos:/ { in_repos=1; next }
+        in_repos && /^[^ #]/ { exit }
+        in_repos && /^  - path:/ {
+            sub(/^  - path: */, "")
+            gsub(/["\047]/, "")
+            path=$0
+        }
+        in_repos && /^    name:/ {
+            sub(/^    name: */, "")
+            gsub(/["\047]/, "")
+            if (path != "" && $0 != "") print path":"$0
+            path=""
+        }
+    ' "$file"
+}
+
+# Parse ports from project.yml
+yml_get_ports() {
+    local file="$1"
+    awk '
+        /^  ports:/ || /^docker:/ { next }
+        /^    - "?[0-9]/ {
+            sub(/^    - */, "")
+            gsub(/["\047]/, "")
+            print
+        }
+    ' "$file" | head -20
+}
+
+# Parse env vars from project.yml
+yml_get_env() {
+    local file="$1"
+    awk '
+        /^  env:/ { in_env=1; next }
+        in_env && /^  [^ ]/ { exit }
+        in_env && /^[^ ]/ { exit }
+        in_env && /^    [A-Z]/ {
+            sub(/^    /, "")
+            gsub(/["\047]/, "")
+            print
+        }
+    ' "$file"
+}
+
+# Parse extra_mounts from project.yml
+yml_get_extra_mounts() {
+    local file="$1"
+    awk '
+        /^extra_mounts:/ { in_mounts=1; next }
+        in_mounts && /^[^ #]/ { exit }
+        in_mounts && /^  - source:/ {
+            sub(/^  - source: */, "")
+            gsub(/["\047]/, "")
+            source=$0
+        }
+        in_mounts && /^    target:/ {
+            sub(/^    target: */, "")
+            gsub(/["\047]/, "")
+            target=$0
+        }
+        in_mounts && /^    readonly:/ {
+            sub(/^    readonly: */, "")
+            gsub(/["\047]/, "")
+            ro=$0
+        }
+        in_mounts && /^  - source:/ || (in_mounts && /^[^ #]/ && !/^    /) {
+            if (source != "" && target != "") {
+                suffix=""
+                if (ro == "true") suffix=":ro"
+                print source":"target suffix
+            }
+            if (/^[^ #]/) exit
+        }
+        END {
+            if (source != "" && target != "") {
+                suffix=""
+                if (ro == "true") suffix=":ro"
+                print source":"target suffix
+            }
+        }
+    ' "$file"
+}
+
+# Check Docker is running
+check_docker() {
+    if ! docker info >/dev/null 2>&1; then
+        die "Docker daemon is not running. Start Docker Desktop."
+    fi
+}
+
+# Check image exists
+check_image() {
+    if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
+        die "Docker image '$IMAGE_NAME' not found. Run 'cc build' first."
+    fi
+}
+
+# ── Commands ─────────────────────────────────────────────────────────
+
+cmd_build() {
+    local no_cache=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --no-cache) no_cache="--no-cache"; shift ;;
+            --help) echo "Usage: cc build [--no-cache]"; return 0 ;;
+            *) die "Unknown option: $1" ;;
+        esac
+    done
+
+    check_docker
+    info "Building Docker image '$IMAGE_NAME'..."
+    docker build $no_cache -t "$IMAGE_NAME" "$REPO_ROOT"
+    ok "Image built successfully."
+}
+
+cmd_start() {
+    local project=""
+    local teammate_mode=""
+    local use_api_key=false
+    local dry_run=false
+    local extra_ports=()
+    local extra_envs=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --teammate-mode) teammate_mode="$2"; shift 2 ;;
+            --api-key) use_api_key=true; shift ;;
+            --dry-run) dry_run=true; shift ;;
+            --port) extra_ports+=("$2"); shift 2 ;;
+            --env) extra_envs+=("$2"); shift 2 ;;
+            --help)
+                cat <<'EOF'
+Usage: cc start <project> [OPTIONS]
+
+Options:
+  --teammate-mode <m>  Override display mode: tmux | auto
+  --api-key            Use ANTHROPIC_API_KEY instead of OAuth
+  --dry-run            Show the generated docker-compose without running
+  --port <p>           Add extra port mapping (repeatable)
+  --env <K=V>          Add extra environment variable (repeatable)
+EOF
+                return 0
+                ;;
+            -*)  die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$project" ]]; then
+                    project="$1"; shift
+                else
+                    die "Unexpected argument: $1"
+                fi
+                ;;
+        esac
+    done
+
+    [[ -z "$project" ]] && die "Usage: cc start <project>. Run 'cc project list' to see available projects."
+
+    local project_dir="$PROJECTS_DIR/$project"
+    local project_yml="$project_dir/project.yml"
+
+    [[ ! -d "$project_dir" ]] && die "Project '$project' not found. Run 'cc project list' to see available projects."
+    [[ ! -f "$project_yml" ]] && die "No project.yml found in projects/$project/"
+
+    if ! $dry_run; then
+        check_docker
+        check_image
+    fi
+
+    # Parse project config
+    local project_name
+    project_name=$(yml_get "$project_yml" "name")
+    [[ -z "$project_name" ]] && project_name="$project"
+
+    local auth_method
+    auth_method=$(yml_get "$project_yml" "auth.method")
+    [[ -z "$auth_method" ]] && auth_method="oauth"
+    $use_api_key && auth_method="api_key"
+
+    local network
+    network=$(yml_get "$project_yml" "docker.network")
+    [[ -z "$network" ]] && network="cc-${project_name}"
+
+    [[ -z "$teammate_mode" ]] && teammate_mode="tmux"
+
+    # Ensure memory directory exists
+    mkdir -p "$project_dir/memory"
+
+    # ── Generate docker-compose.yml ──────────────────────────────────
+    local compose_file="$project_dir/docker-compose.yml"
+
+    {
+        cat <<YAML
+# AUTO-GENERATED by cc CLI from project.yml
+# Manual edits will be overwritten on next \`cc start\`
+# To customize, edit project.yml instead
+
+services:
+  claude:
+    image: $IMAGE_NAME
+    container_name: cc-${project_name}
+    stdin_open: true
+    tty: true
+    environment:
+      - PROJECT_NAME=${project_name}
+      - TEAMMATE_MODE=${teammate_mode}
+      - CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+YAML
+
+        # Extra env from project.yml
+        while IFS= read -r env_line; do
+            [[ -z "$env_line" ]] && continue
+            local env_key="${env_line%%:*}"
+            local env_val="${env_line#*: }"
+            echo "      - ${env_key}=${env_val}"
+        done <<< "$(yml_get_env "$project_yml")"
+
+        # Extra env from CLI
+        for env in "${extra_envs[@]}"; do
+            echo "      - ${env}"
+        done
+
+        # API key auth
+        if [[ "$auth_method" == "api_key" ]]; then
+            echo "      - ANTHROPIC_API_KEY=\${ANTHROPIC_API_KEY}"
+        fi
+
+        echo "    volumes:"
+
+        # Auth volume
+        if [[ "$auth_method" == "oauth" ]]; then
+            echo "      - \${HOME}/.claude.json:/home/claude/.claude.json:ro"
+        fi
+
+        # Global config (read-only)
+        cat <<YAML
+      # Global config
+      - ${GLOBAL_DIR}/.claude/settings.json:/home/claude/.claude/settings.json:ro
+      - ${GLOBAL_DIR}/.claude/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
+      - ${GLOBAL_DIR}/.claude/rules:/home/claude/.claude/rules:ro
+      - ${GLOBAL_DIR}/.claude/agents:/home/claude/.claude/agents:ro
+      - ${GLOBAL_DIR}/.claude/skills:/home/claude/.claude/skills:ro
+      # Project config
+      - ./.claude:/workspace/.claude
+      # Auto memory
+      - ./memory:/home/claude/.claude/projects/workspace/memory
+YAML
+
+        # Repository mounts
+        echo "      # Repositories"
+        while IFS=: read -r repo_path repo_name; do
+            [[ -z "$repo_path" ]] && continue
+            repo_path=$(expand_path "$repo_path")
+            if [[ ! -d "$repo_path" ]]; then
+                warn "Repository path '$repo_path' does not exist — skipping"
+                continue
+            fi
+            echo "      - ${repo_path}:/workspace/${repo_name}"
+        done <<< "$(yml_get_repos "$project_yml")"
+
+        # Extra mounts
+        local extra_mounts
+        extra_mounts=$(yml_get_extra_mounts "$project_yml")
+        if [[ -n "$extra_mounts" ]]; then
+            echo "      # Extra mounts"
+            while IFS= read -r mount_line; do
+                [[ -z "$mount_line" ]] && continue
+                local source="${mount_line%%:*}"
+                local rest="${mount_line#*:}"
+                source=$(expand_path "$source")
+                echo "      - ${source}:${rest}"
+            done <<< "$extra_mounts"
+        fi
+
+        # Git config and SSH
+        cat <<YAML
+      # Git
+      - \${HOME}/.gitconfig:/home/claude/.gitconfig:ro
+      - \${HOME}/.ssh:/home/claude/.ssh:ro
+      # Docker socket
+      - /var/run/docker.sock:/var/run/docker.sock
+YAML
+
+        # Ports
+        echo "    ports:"
+        while IFS= read -r port; do
+            [[ -z "$port" ]] && continue
+            echo "      - \"${port}\""
+        done <<< "$(yml_get_ports "$project_yml")"
+        for port in "${extra_ports[@]}"; do
+            echo "      - \"${port}\""
+        done
+
+        # Network
+        cat <<YAML
+    networks:
+      - ${network}
+    working_dir: /workspace
+
+networks:
+  ${network}:
+    name: ${network}
+    driver: bridge
+YAML
+    } > "$compose_file"
+
+    if $dry_run; then
+        info "Generated docker-compose.yml:"
+        echo "---"
+        cat "$compose_file"
+        return 0
+    fi
+
+    info "Starting session for project '${project_name}'..."
+    docker compose -f "$compose_file" run --rm --service-ports claude
+
+    ok "Session ended. Changes are in your repos."
+}
+
+cmd_new() {
+    local repos=()
+    local session_name=""
+    local teammate_mode="tmux"
+    local extra_ports=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --repo) repos+=("$2"); shift 2 ;;
+            --name) session_name="$2"; shift 2 ;;
+            --teammate-mode) teammate_mode="$2"; shift 2 ;;
+            --port) extra_ports+=("$2"); shift 2 ;;
+            --help)
+                cat <<'EOF'
+Usage: cc new [OPTIONS]
+
+Options:
+  --repo <path>        Repository to mount (repeatable, at least one required)
+  --name <name>        Temporary session name (default: "tmp-<timestamp>")
+  --teammate-mode <m>  Override display mode: tmux | auto
+  --port <p>           Port mapping (repeatable)
+EOF
+                return 0
+                ;;
+            *) die "Unknown option: $1" ;;
+        esac
+    done
+
+    [[ ${#repos[@]} -eq 0 ]] && die "At least one --repo is required."
+
+    check_docker
+    check_image
+
+    [[ -z "$session_name" ]] && session_name="tmp-$(date +%s)"
+
+    local tmp_dir="/tmp/cc-${session_name}"
+    mkdir -p "$tmp_dir/memory" "$tmp_dir/.claude"
+
+    # Create minimal project CLAUDE.md
+    cat > "$tmp_dir/.claude/CLAUDE.md" <<EOF
+# Temporary Session: ${session_name}
+
+## Repositories
+EOF
+
+    # Validate repos and build mount list
+    local repo_mounts=()
+    for repo in "${repos[@]}"; do
+        repo=$(expand_path "$repo")
+        [[ ! -d "$repo" ]] && die "Repository path '$repo' does not exist."
+        local repo_name
+        repo_name=$(basename "$repo")
+        repo_mounts+=("$repo:/workspace/$repo_name")
+        echo "- /workspace/${repo_name}/" >> "$tmp_dir/.claude/CLAUDE.md"
+    done
+
+    # Generate docker-compose.yml
+    local compose_file="$tmp_dir/docker-compose.yml"
+    {
+        cat <<YAML
+# AUTO-GENERATED by cc CLI for temporary session
+services:
+  claude:
+    image: $IMAGE_NAME
+    container_name: cc-${session_name}
+    stdin_open: true
+    tty: true
+    environment:
+      - PROJECT_NAME=${session_name}
+      - TEAMMATE_MODE=${teammate_mode}
+      - CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+    volumes:
+      - \${HOME}/.claude.json:/home/claude/.claude.json:ro
+      # Global config
+      - ${GLOBAL_DIR}/.claude/settings.json:/home/claude/.claude/settings.json:ro
+      - ${GLOBAL_DIR}/.claude/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
+      - ${GLOBAL_DIR}/.claude/rules:/home/claude/.claude/rules:ro
+      - ${GLOBAL_DIR}/.claude/agents:/home/claude/.claude/agents:ro
+      - ${GLOBAL_DIR}/.claude/skills:/home/claude/.claude/skills:ro
+      # Session config
+      - ${tmp_dir}/.claude:/workspace/.claude
+      # Auto memory
+      - ${tmp_dir}/memory:/home/claude/.claude/projects/workspace/memory
+      # Repositories
+YAML
+
+        for mount in "${repo_mounts[@]}"; do
+            echo "      - ${mount}"
+        done
+
+        cat <<YAML
+      # Git
+      - \${HOME}/.gitconfig:/home/claude/.gitconfig:ro
+      - \${HOME}/.ssh:/home/claude/.ssh:ro
+      # Docker socket
+      - /var/run/docker.sock:/var/run/docker.sock
+YAML
+
+        echo "    ports:"
+        if [[ ${#extra_ports[@]} -gt 0 ]]; then
+            for port in "${extra_ports[@]}"; do
+                echo "      - \"${port}\""
+            done
+        else
+            # Default ports
+            echo '      - "3000:3000"'
+            echo '      - "8080:8080"'
+        fi
+
+        cat <<YAML
+    working_dir: /workspace
+
+networks:
+  default:
+    name: cc-${session_name}
+    driver: bridge
+YAML
+    } > "$compose_file"
+
+    info "Starting temporary session '${session_name}'..."
+    docker compose -f "$compose_file" run --rm --service-ports claude
+
+    ok "Session ended. Temp files at: $tmp_dir"
+}
+
+cmd_project_create() {
+    local name=""
+    local repos=()
+    local description=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --repo) repos+=("$2"); shift 2 ;;
+            --description) description="$2"; shift 2 ;;
+            --help)
+                cat <<'EOF'
+Usage: cc project create <name> [OPTIONS]
+
+Options:
+  --repo <path>        Add a repo to the project (repeatable)
+  --description <d>    Project description
+EOF
+                return 0
+                ;;
+            -*)  die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$name" ]]; then
+                    name="$1"; shift
+                else
+                    die "Unexpected argument: $1"
+                fi
+                ;;
+        esac
+    done
+
+    [[ -z "$name" ]] && die "Usage: cc project create <name>"
+
+    # Validate name
+    if [[ ! "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+        die "Project name must be lowercase letters, numbers, and hyphens only."
+    fi
+
+    local project_dir="$PROJECTS_DIR/$name"
+    [[ -d "$project_dir" ]] && die "Project '$name' already exists at projects/$name/"
+
+    # Copy template
+    cp -r "$TEMPLATE_DIR" "$project_dir"
+
+    # Replace placeholders
+    [[ -z "$description" ]] && description="TODO: Add project description"
+
+    # Update project.yml
+    local project_yml="$project_dir/project.yml"
+    sed -i '' "s/{{PROJECT_NAME}}/$name/g" "$project_yml" 2>/dev/null || \
+        sed -i "s/{{PROJECT_NAME}}/$name/g" "$project_yml"
+    sed -i '' "s/{{DESCRIPTION}}/$description/g" "$project_yml" 2>/dev/null || \
+        sed -i "s/{{DESCRIPTION}}/$description/g" "$project_yml"
+
+    # Update CLAUDE.md
+    local claude_md="$project_dir/.claude/CLAUDE.md"
+    sed -i '' "s/{{PROJECT_NAME}}/$name/g" "$claude_md" 2>/dev/null || \
+        sed -i "s/{{PROJECT_NAME}}/$name/g" "$claude_md"
+    sed -i '' "s/{{DESCRIPTION}}/$description/g" "$claude_md" 2>/dev/null || \
+        sed -i "s/{{DESCRIPTION}}/$description/g" "$claude_md"
+
+    # Add repos to project.yml if provided
+    if [[ ${#repos[@]} -gt 0 ]]; then
+        # Build repos block in a temp file
+        local repos_tmp="${project_yml}.repos"
+        echo "repos:" > "$repos_tmp"
+        for repo in "${repos[@]}"; do
+            repo=$(expand_path "$repo")
+            local repo_name
+            repo_name=$(basename "$repo")
+            echo "  - path: $repo" >> "$repos_tmp"
+            echo "    name: $repo_name" >> "$repos_tmp"
+        done
+        # Replace the empty repos line with actual repos
+        sed -i '' '/^repos: \[\]/r '"$repos_tmp" "$project_yml" 2>/dev/null || \
+            sed -i '/^repos: \[\]/r '"$repos_tmp" "$project_yml"
+        sed -i '' '/^repos: \[\]/d' "$project_yml" 2>/dev/null || \
+            sed -i '/^repos: \[\]/d' "$project_yml"
+        rm -f "$repos_tmp"
+    fi
+
+    # Ensure memory dir exists
+    mkdir -p "$project_dir/memory"
+
+    ok "Project created at projects/$name/"
+    info "Edit project.yml to configure repos and settings"
+    info "Run: cc start $name"
+}
+
+cmd_project_list() {
+    echo -e "${BOLD}NAME              REPOS    STATUS${NC}"
+
+    for dir in "$PROJECTS_DIR"/*/; do
+        [[ ! -d "$dir" ]] && continue
+        local name
+        name=$(basename "$dir")
+        [[ "$name" == "_template" ]] && continue
+
+        local project_yml="$dir/project.yml"
+        local repo_count="-"
+        if [[ -f "$project_yml" ]]; then
+            repo_count=$(yml_get_repos "$project_yml" | grep -c . 2>/dev/null || echo "0")
+        fi
+
+        local status="stopped"
+        local project_name
+        project_name=$(yml_get "$project_yml" "name" 2>/dev/null)
+        [[ -z "$project_name" ]] && project_name="$name"
+        if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^cc-${project_name}$"; then
+            status="${GREEN}running${NC}"
+        fi
+
+        printf "%-18s %-8s %b\n" "$name" "$repo_count" "$status"
+    done
+}
+
+cmd_stop() {
+    local project="${1:-}"
+
+    check_docker
+
+    if [[ -n "$project" ]]; then
+        local project_dir="$PROJECTS_DIR/$project"
+        local project_yml="$project_dir/project.yml"
+        local container_name="cc-${project}"
+
+        if [[ -f "$project_yml" ]]; then
+            local yml_name
+            yml_name=$(yml_get "$project_yml" "name")
+            [[ -n "$yml_name" ]] && container_name="cc-${yml_name}"
+        fi
+
+        if docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
+            docker stop "$container_name"
+            ok "Stopped session '$project'"
+        else
+            warn "No running session for '$project'"
+        fi
+    else
+        local containers
+        containers=$(docker ps --filter "name=cc-" --format '{{.Names}}' 2>/dev/null)
+        if [[ -z "$containers" ]]; then
+            info "No running sessions."
+            return 0
+        fi
+        echo "$containers" | while read -r name; do
+            docker stop "$name"
+            ok "Stopped $name"
+        done
+    fi
+}
+
+# ── Main ─────────────────────────────────────────────────────────────
+
+cmd="${1:-}"
+[[ -z "$cmd" ]] && { usage; exit 0; }
+shift
+
+case "$cmd" in
+    build)   cmd_build "$@" ;;
+    start)   cmd_start "$@" ;;
+    new)     cmd_new "$@" ;;
+    project)
+        subcmd="${1:-}"
+        [[ -z "$subcmd" ]] && die "Usage: cc project <create|list>"
+        shift
+        case "$subcmd" in
+            create) cmd_project_create "$@" ;;
+            list)   cmd_project_list "$@" ;;
+            *)      die "Unknown project command: $subcmd" ;;
+        esac
+        ;;
+    stop)    cmd_stop "$@" ;;
+    help)    usage ;;
+    *)       die "Unknown command: $cmd. Run 'cc help' for usage." ;;
+esac

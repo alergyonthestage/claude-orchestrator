@@ -1,0 +1,25 @@
+name: {{PROJECT_NAME}}
+description: "{{DESCRIPTION}}"
+
+# ── Repositories ─────────────────────────────────────────────────────
+repos: []
+  # - path: ~/projects/my-repo        # Absolute path on host
+  #   name: my-repo                    # Mount name in /workspace/
+
+# ── Extra mounts (optional) ─────────────────────────────────────────
+# extra_mounts:
+#   - source: ~/documents/api-specs
+#     target: /workspace/docs/api-specs
+#     readonly: true
+
+# ── Docker options ───────────────────────────────────────────────────
+docker:
+  ports:
+    - "3000:3000"
+    - "8080:8080"
+  env: {}
+  # network: cc-{{PROJECT_NAME}}
+
+# ── Authentication ───────────────────────────────────────────────────
+auth:
+  method: oauth         # "oauth" (default) | "api_key"

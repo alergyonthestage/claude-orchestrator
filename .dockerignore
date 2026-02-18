@@ -1,0 +1,7 @@
+docs/
+.git/
+projects/*/memory/
+*.md
+!config/*.md
+.gitignore
+.dockerignore
