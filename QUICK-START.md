@@ -1,15 +1,22 @@
 # Quick Start
 
-**claude-orchestrator** gestisce sessioni Claude Code isolate in container Docker, con repo montati, contesto precaricato e agent teams pronti all'uso — tutto con un singolo comando.
-
 ## Setup
 
 ```bash
-# 1. Aggiungi il CLI al PATH
-echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.zshrc
-source ~/.zshrc
+# 1. Clona il repo
+git clone <repo-url> ~/claude-orchestrator
+cd ~/claude-orchestrator
 
-# 2. Builda l'immagine Docker
+# 2. Aggiungi il CLI al PATH
+# bash:
+echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.bashrc
+source ~/.bashrc
+
+# zsh:
+# echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.zshrc
+# source ~/.zshrc
+
+# 3. Builda l'immagine Docker
 cc build
 ```
 
@@ -25,9 +32,13 @@ vim projects/my-app/.claude/CLAUDE.md   # istruzioni per Claude
 
 # Avvia una sessione
 cc start my-app
+```
 
-# Oppure: sessione temporanea senza progetto
+Per sessioni temporanee senza creare un progetto:
+
+```bash
 cc new --repo ~/projects/experiment
+cc new --repo ~/projects/api --repo ~/projects/frontend --port 3000:3000
 ```
 
 ## Comandi
@@ -35,37 +46,43 @@ cc new --repo ~/projects/experiment
 | Comando | Descrizione |
 |---------|-------------|
 | `cc build` | Builda l'immagine Docker |
+| `cc build --no-cache` | Rebuild completo (aggiorna Claude Code) |
 | `cc start <progetto>` | Avvia sessione per un progetto configurato |
+| `cc start <progetto> --dry-run` | Mostra il docker-compose generato senza avviare |
 | `cc new --repo <path>` | Sessione temporanea con repo specifici |
 | `cc project create <nome>` | Crea nuovo progetto da template |
 | `cc project list` | Lista progetti disponibili |
 | `cc stop [progetto]` | Ferma sessione/i in corso |
 
-## Come funziona
+## Configurazione progetto
 
+Ogni progetto vive in `projects/<nome>/` e contiene:
+
+- **`project.yml`** — repo da montare, porte, variabili d'ambiente, metodo di autenticazione
+- **`.claude/CLAUDE.md`** — istruzioni specifiche per Claude in questo progetto
+- **`.claude/settings.json`** — override delle impostazioni globali (opzionale)
+- **`.claude/agents/`** — subagenti specifici del progetto (opzionale)
+
+Per il formato completo di `project.yml` vedi [docs/CLI.md](docs/CLI.md#4-project-configuration-format-projectyml).
+
+## Opzioni aggiuntive
+
+```bash
+# Override modalità display agent teams
+cc start my-app --teammate-mode auto    # iTerm2 nativo (richiede setup)
+cc start my-app --teammate-mode tmux    # default, funziona ovunque
+
+# Usa API key invece di OAuth
+cc start my-app --api-key
+
+# Porte e variabili extra
+cc start my-app --port 9090:9090 --env DEBUG=true
 ```
-Host                              Container Docker
-──────────────────────────────────────────────────────
-global/.claude/        ──mount──► ~/.claude/           (config globale)
-projects/my-app/.claude/ ──mount──► /workspace/.claude/  (contesto progetto)
-~/projects/my-app/     ──mount──► /workspace/my-app/    (repo, read-write)
-Docker socket          ──mount──► Docker socket          (docker-from-docker)
-
-                                  $ claude --dangerously-skip-permissions
-```
-
-## Requisiti
-
-- macOS o Linux
-- Docker Desktop (macOS) o Docker Engine (Linux)
-- Bash 4+
-- Account Claude Code (Pro/Team/Enterprise o API key)
 
 ## Documentazione
 
-Per approfondimenti vedi la cartella [docs/](docs/):
+Per approfondimenti vedi [docs/](docs/):
 
-- [SPEC.md](docs/SPEC.md) — Requisiti
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) — Architettura e decisioni di design
 - [CLI.md](docs/CLI.md) — Dettaglio comandi e formato `project.yml`
 - [DOCKER.md](docs/DOCKER.md) — Immagine Docker, compose, networking

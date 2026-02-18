@@ -19,8 +19,11 @@ The CLI is a single bash script at `bin/cc` that orchestrates Docker sessions. I
 git clone <repo-url> ~/claude-orchestrator
 cd ~/claude-orchestrator
 
-# Add to PATH (add to ~/.zshrc or ~/.bashrc)
-export PATH="$PATH:$HOME/claude-orchestrator/bin"
+# Add to PATH
+# bash:
+echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.bashrc && source ~/.bashrc
+# zsh:
+# echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.zshrc && source ~/.zshrc
 
 # Build the Docker image
 cc build
