@@ -1,6 +1,6 @@
-# User projects (keep only the template)
-projects/*/
-!projects/_template/
+# User configuration (created by cco init, customized by user)
+global/
+projects/
 
 # Secrets
 .env

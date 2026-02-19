@@ -4,9 +4,10 @@ set -euo pipefail
 # ── Constants ────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+DEFAULTS_DIR="$REPO_ROOT/defaults"
 PROJECTS_DIR="${CCO_PROJECTS_DIR:-$REPO_ROOT/projects}"
 GLOBAL_DIR="${CCO_GLOBAL_DIR:-$REPO_ROOT/global}"
-TEMPLATE_DIR="$REPO_ROOT/projects/_template"
+TEMPLATE_DIR="$DEFAULTS_DIR/_template"
 IMAGE_NAME="claude-orchestrator:latest"
 
 # ── Colors ───────────────────────────────────────────────────────────
@@ -29,6 +30,7 @@ usage() {
 Usage: cco <command> [options]
 
 Commands:
+  init                 Initialize user config from defaults
   build                Build/rebuild the Docker image
   start <project>      Start a session for a configured project
   new                  Start a temporary session with specific repos
@@ -200,7 +202,74 @@ check_image() {
     fi
 }
 
+# Check global config exists (created by cco init)
+check_global() {
+    if [[ ! -d "$GLOBAL_DIR/.claude" ]]; then
+        die "Global config not found. Run 'cco init' first."
+    fi
+}
+
 # ── Commands ─────────────────────────────────────────────────────────
+
+cmd_init() {
+    local force=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --force) force=true; shift ;;
+            --help)
+                cat <<'EOF'
+Usage: cco init [--force]
+
+Initialize user configuration by copying defaults.
+
+Options:
+  --force    Overwrite existing global/ config with defaults
+EOF
+                return 0
+                ;;
+            *) die "Unknown option: $1" ;;
+        esac
+    done
+
+    # Copy global config
+    if [[ -d "$GLOBAL_DIR/.claude" ]] && ! $force; then
+        warn "global/ already exists, skipping (use --force to overwrite)"
+    else
+        info "Copying default global config to global/..."
+        rm -rf "$GLOBAL_DIR"
+        mkdir -p "$GLOBAL_DIR"
+        cp -r "$DEFAULTS_DIR/global/.claude" "$GLOBAL_DIR/.claude"
+        ok "Global config initialized at global/"
+    fi
+
+    # Ensure projects directory exists
+    mkdir -p "$PROJECTS_DIR"
+    ok "Projects directory ready at projects/"
+
+    # PATH hint
+    if ! command -v cco &>/dev/null; then
+        echo ""
+        info "Add cco to your PATH:"
+        echo "  # bash:"
+        echo "  echo 'export PATH=\"\$PATH:$REPO_ROOT/bin\"' >> ~/.bashrc && source ~/.bashrc"
+        echo "  # zsh:"
+        echo "  echo 'export PATH=\"\$PATH:$REPO_ROOT/bin\"' >> ~/.zshrc && source ~/.zshrc"
+    fi
+
+    # Try building Docker image
+    echo ""
+    if docker info >/dev/null 2>&1; then
+        info "Building Docker image..."
+        cmd_build
+    else
+        warn "Docker not running. Run 'cco build' when Docker is available."
+    fi
+
+    echo ""
+    ok "Initialization complete. Create your first project with:"
+    echo "  cco project create <name> --repo <path>"
+}
 
 cmd_build() {
     local no_cache=""
@@ -219,6 +288,8 @@ cmd_build() {
 }
 
 cmd_start() {
+    check_global
+
     local project=""
     local teammate_mode=""
     local use_api_key=false
@@ -433,6 +504,8 @@ YAML
 }
 
 cmd_new() {
+    check_global
+
     local repos=()
     local session_name=""
     local teammate_mode="tmux"
@@ -568,6 +641,8 @@ YAML
 }
 
 cmd_project_create() {
+    check_global
+
     local name=""
     local repos=()
     local description=""
@@ -777,6 +852,7 @@ cmd="${1:-}"
 shift
 
 case "$cmd" in
+    init)    cmd_init "$@" ;;
     build)   cmd_build "$@" ;;
     start)   cmd_start "$@" ;;
     new)     cmd_new "$@" ;;

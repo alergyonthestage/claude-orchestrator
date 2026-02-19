@@ -19,19 +19,53 @@ The CLI is a single bash script at `bin/cco` that orchestrates Docker sessions. 
 git clone <repo-url> ~/claude-orchestrator
 cd ~/claude-orchestrator
 
-# Add to PATH
+# Initialize user config and build Docker image
+cco init
+
+# Add to PATH (if not done automatically)
 # bash:
 echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.bashrc && source ~/.bashrc
 # zsh:
 # echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.zshrc && source ~/.zshrc
-
-# Build the Docker image
-cco build
 ```
 
 ---
 
 ## 3. Commands
+
+### 3.0 `cco init`
+
+Initialize user configuration by copying defaults. Required before first use.
+
+```
+Usage: cco init [--force]
+
+Options:
+  --force    Overwrite existing global/ config with defaults
+
+Examples:
+  cco init            # First-time setup
+  cco init --force    # Reset global config to defaults
+```
+
+**Flow**:
+
+```
+1. COPY defaults/global/ → global/
+   - If global/ exists: skip (warn user, suggest --force)
+   - If --force: overwrite
+
+2. CREATE projects/ directory (if needed)
+
+3. PATH HINT
+   - If cco is not in PATH, show the export command
+
+4. BUILD Docker image
+   - If Docker is running, run `cco build`
+   - Otherwise, warn to run it later
+```
+
+---
 
 ### 3.1 `cco build`
 
@@ -181,7 +215,7 @@ Examples:
    - projects/<name>/ does not already exist
 
 2. COPY template
-   - Copy projects/_template/ → projects/<name>/
+   - Copy defaults/_template/ → projects/<name>/
 
 3. CONFIGURE
    - If --repo flags provided: write repos to project.yml

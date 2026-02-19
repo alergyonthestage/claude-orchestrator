@@ -14,10 +14,13 @@
 │                                                                      │
 │   claude-orchestrator/           ~/projects/                         │
 │   ├── bin/cco (CLI)              ├── backend-api/                    │
-│   ├── global/.claude/            │   └── .claude/  (repo context)    │
-│   ├── projects/                  ├── frontend-app/                   │
-│   │   └── my-saas/               │   └── .claude/                    │
-│   │       ├── project.yml        └── shared-libs/                    │
+│   ├── defaults/                  │   └── .claude/  (repo context)    │
+│   │   ├── global/.claude/        ├── frontend-app/                   │
+│   │   └── _template/             │   └── .claude/                    │
+│   ├── global/.claude/ (user)     └── shared-libs/                    │
+│   ├── projects/ (user)                                               │
+│   │   └── my-saas/                                                   │
+│   │       ├── project.yml                                            │
 │   │       └── .claude/                                               │
 │   └── Dockerfile                                                     │
 │                                                                      │
@@ -27,7 +30,7 @@
 │   ┌────────────────────────────────────────────────────────────┐     │
 │   │               Claude Code Container                         │     │
 │   │                                                             │     │
-│   │   ~/.claude/           ← global/.claude (mount)             │     │
+│   │   ~/.claude/           ← global/.claude/ (user config)      │     │
 │   │   /workspace/          ← WORKDIR                            │     │
 │   │   ├── .claude/         ← project/.claude (mount)            │     │
 │   │   ├── backend-api/     ← ~/projects/backend-api (mount)     │     │
@@ -405,6 +408,30 @@ Claude Code startup in /workspace:
 | OAuth token in container | Read-only mount; container is ephemeral |
 | Claude modifies repos | Feature branches; git provides full history and rollback |
 | Sibling containers access | Shared Docker network is scoped per project |
+
+---
+
+### ADR-8: Tool vs User Config Separation
+
+**Context**: `global/` and `projects/_template/` were tracked in git. When users customized their global settings or CLAUDE.md, they had a dirty git state and couldn't do `git pull` to update the tool without merge conflicts.
+
+**Decision**: Separate tool code (tracked) from user data (gitignored):
+- `defaults/global/` and `defaults/_template/` — tracked in git, shipped with the tool
+- `global/` and `projects/` — gitignored, created by `cco init`, owned by the user
+
+**Mechanism**: `cco init` copies defaults to user locations on first setup. `--force` resets to defaults.
+
+**Rationale**:
+- `git pull` always works cleanly — no conflicts with user customizations
+- Multi-PC support: clone the tool repo on any machine, run `cco init`, done
+- Clear ownership boundary: tool updates don't touch user config
+- Users can version their `global/` and `projects/` separately (e.g., in a dotfiles repo)
+
+**Consequences**:
+- First-time setup requires `cco init` before `cco start`
+- `cmd_start`, `cmd_new`, and `cmd_project_create` check for `global/` and fail with a helpful message if missing
+- Template for `cco project create` comes from `defaults/_template/`, not `projects/_template/`
+- Updating defaults after a tool update requires manual diffing or `cco init --force`
 
 ---
 

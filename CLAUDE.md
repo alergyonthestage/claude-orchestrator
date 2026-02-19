@@ -8,9 +8,12 @@ claude-orchestrator manages isolated Claude Code sessions in Docker containers f
 
 **Current status**: v1 implemented. Dockerfile, CLI, global config, project template, and all docs are in place.
 
+**Config separation**: Tool defaults live in `defaults/` (tracked). User config lives in `global/` and `projects/` (gitignored, created by `cco init`).
+
 ## Build & Run Commands
 
 ```bash
+cco init                     # First-time setup: copy defaults, build image
 cco build                    # Build Docker image
 cco build --no-cache         # Rebuild (updates Claude Code)
 cco start <project>          # Start session for a project
@@ -57,8 +60,8 @@ The host's Docker socket is mounted into the container. Claude can run `docker c
 Per `docs/DIRECTORY-STRUCTURE.md`:
 
 1. **Docker**: `Dockerfile`, `config/entrypoint.sh`, `config/tmux.conf`, `.dockerignore`
-2. **Global Config**: everything under `global/.claude/`
-3. **Project Template**: everything under `projects/_template/`
+2. **Global Config**: defaults in `defaults/global/.claude/`, user copy in `global/.claude/`
+3. **Project Template**: `defaults/_template/`
 4. **CLI**: `bin/cco`
 5. **Root Files**: `.gitignore`
 
@@ -76,7 +79,8 @@ Per `docs/DIRECTORY-STRUCTURE.md`:
 ## Conventions
 
 - `project.yml` is the source of truth for each project; `docker-compose.yml` is generated from it and should not be committed.
-- Generated files to gitignore: `projects/*/docker-compose.yml`, `projects/*/memory/`, `.env`.
+- `global/` and `projects/` are gitignored (user data). `defaults/` is tracked (tool code).
+- Generated files: `projects/*/docker-compose.yml`, `projects/*/memory/`, `.env`.
 - Container user is `claude` (non-root), with docker group for socket access.
 - Entrypoint must handle Docker socket GID mismatch between host and container.
 - macOS Docker Desktop: never use `network_mode: host` (refers to Linux VM, not macOS). Always use port mappings.

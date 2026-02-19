@@ -178,11 +178,12 @@ services:
       - ${HOME}/.claude.json:/home/claude/.claude.json
       
       # --- Global config → user-level (~/.claude/) ---
-      - ../../global/.claude/settings.json:/home/claude/.claude/settings.json:ro
-      - ../../global/.claude/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
-      - ../../global/.claude/rules:/home/claude/.claude/rules:ro
-      - ../../global/.claude/agents:/home/claude/.claude/agents:ro
-      - ../../global/.claude/skills:/home/claude/.claude/skills:ro
+      # Paths are absolute, resolved by cco CLI from GLOBAL_DIR
+      - ${GLOBAL_DIR}/.claude/settings.json:/home/claude/.claude/settings.json:ro
+      - ${GLOBAL_DIR}/.claude/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
+      - ${GLOBAL_DIR}/.claude/rules:/home/claude/.claude/rules:ro
+      - ${GLOBAL_DIR}/.claude/agents:/home/claude/.claude/agents:ro
+      - ${GLOBAL_DIR}/.claude/skills:/home/claude/.claude/skills:ro
       
       # --- Project config → project-level (/workspace/.claude/) ---
       - ./.claude:/workspace/.claude
@@ -233,11 +234,11 @@ networks:
 HOST                                    CONTAINER                  PURPOSE
 ─────────────────────────────────────────────────────────────────────────────
 ~/.claude.json                       → /home/claude/.claude.json   Auth (rw)
-global/.claude/settings.json         → ~/.claude/settings.json     Global settings (ro)
-global/.claude/CLAUDE.md             → ~/.claude/CLAUDE.md         Global instructions (ro)
-global/.claude/rules/                → ~/.claude/rules/            Global rules (ro)
-global/.claude/agents/               → ~/.claude/agents/           Global subagents (ro)
-global/.claude/skills/               → ~/.claude/skills/           Global skills (ro)
+$GLOBAL_DIR/.claude/settings.json    → ~/.claude/settings.json     Global settings (ro)
+$GLOBAL_DIR/.claude/CLAUDE.md        → ~/.claude/CLAUDE.md         Global instructions (ro)
+$GLOBAL_DIR/.claude/rules/           → ~/.claude/rules/            Global rules (ro)
+$GLOBAL_DIR/.claude/agents/          → ~/.claude/agents/           Global subagents (ro)
+$GLOBAL_DIR/.claude/skills/          → ~/.claude/skills/           Global skills (ro)
 projects/<n>/.claude/                → /workspace/.claude/         Project context (rw)
 projects/<n>/memory/                 → ~/.claude/projects/         Auto memory (rw)
                                        workspace/memory/

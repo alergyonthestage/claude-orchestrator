@@ -11,16 +11,19 @@ See [QUICK-START.md](QUICK-START.md) for setup and usage instructions.
 ## How It Works
 
 ```
-Host                              Docker Container
-─────────────────────────────────────────────────────
-global/.claude/        ──mount──► ~/.claude/         (global settings, agents, rules)
-projects/my-app/.claude/ ──mount──► /workspace/.claude/ (project context)
-~/projects/backend/    ──mount──► /workspace/backend/  (your repo, read-write)
-~/projects/frontend/   ──mount──► /workspace/frontend/ (your repo, read-write)
-Docker socket          ──mount──► Docker socket        (run containers from inside)
+Host                                Docker Container
+───────────────────────────────────────────────────────
+defaults/              (tool code, tracked in git)
+global/.claude/        ──mount──► ~/.claude/           (user config, gitignored)
+projects/my-app/.claude/ ──mount──► /workspace/.claude/ (project context, gitignored)
+~/projects/backend/    ──mount──► /workspace/backend/   (your repo, read-write)
+~/projects/frontend/   ──mount──► /workspace/frontend/  (your repo, read-write)
+Docker socket          ──mount──► Docker socket         (run containers from inside)
 
                                   $ claude --dangerously-skip-permissions
                                   (interactive session with full context)
+
+Setup: git clone → cco init → cco project create → cco start
 ```
 
 ## Key Design Decisions

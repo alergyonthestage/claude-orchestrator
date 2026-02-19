@@ -181,7 +181,72 @@ Questo permette di clonare il repo `claude-orchestrator` su più macchine manten
 
 ---
 
-## 6. Checklist post-creazione
+## 6. Versionamento configurazione utente
+
+Poiché `global/` e `projects/` sono gitignored nel repo dell'orchestrator, puoi versionarli separatamente.
+
+### Pattern "config repo"
+
+Se lavori su più macchine, tieni la tua configurazione utente in un repo separato:
+
+```bash
+# Sulla macchina principale, inizializza un repo per la config
+cd ~/claude-orchestrator
+git init global/
+cd global/
+git add -A && git commit -m "Initial global config"
+git remote add origin <your-config-repo-url>
+git push -u origin main
+```
+
+Su un'altra macchina:
+
+```bash
+# Clona l'orchestrator
+git clone <orchestrator-url> ~/claude-orchestrator
+cd ~/claude-orchestrator
+cco init  # crea global/ dai defaults
+
+# Oppure: sostituisci global/ con il tuo repo config
+rm -rf global/
+git clone <your-config-repo-url> global/
+```
+
+### Gestire aggiornamenti dei defaults
+
+Quando il tool viene aggiornato (`git pull`), i defaults in `defaults/` potrebbero cambiare. Per vedere le differenze rispetto alla tua configurazione attuale:
+
+```bash
+# Confronta la tua config con i nuovi defaults
+diff -r defaults/global/.claude/ global/.claude/
+
+# Per resettare ai nuovi defaults (sovrascrive le personalizzazioni):
+cco init --force
+```
+
+### Esempio pratico
+
+```bash
+# Setup iniziale
+git clone <orchestrator-url> ~/claude-orchestrator
+cd ~/claude-orchestrator
+cco init                                    # Copia defaults → global/, builda immagine
+
+# Personalizza
+vim global/.claude/CLAUDE.md                # Le tue istruzioni globali
+vim global/.claude/rules/my-rules.md        # Le tue regole custom
+
+# Crea progetti
+cco project create my-app --repo ~/code/my-app
+vim projects/my-app/.claude/CLAUDE.md       # Istruzioni per questo progetto
+
+# Aggiorna il tool (senza conflitti!)
+git pull                                    # Aggiorna solo defaults/, bin/, docs/
+```
+
+---
+
+## 7. Checklist post-creazione
 
 Dopo `cco project create`:
 

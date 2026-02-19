@@ -16,8 +16,8 @@ source ~/.bashrc
 # echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.zshrc
 # source ~/.zshrc
 
-# 3. Builda l'immagine Docker
-cco build
+# 3. Inizializza config utente e builda l'immagine Docker
+cco init
 ```
 
 ## Uso
@@ -48,6 +48,7 @@ cco new --repo ~/projects/api --repo ~/projects/frontend --port 3000:3000
 
 | Comando | Descrizione |
 |---------|-------------|
+| `cco init` | Inizializza config utente dai defaults |
 | `cco build` | Builda l'immagine Docker |
 | `cco build --no-cache` | Rebuild completo (aggiorna Claude Code) |
 | `cco start <progetto>` | Avvia sessione per un progetto configurato |
