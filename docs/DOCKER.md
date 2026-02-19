@@ -150,7 +150,7 @@ Each project gets a `docker-compose.yml` generated from `project.yml`. Here is t
 
 ```yaml
 # projects/<project-name>/docker-compose.yml
-# AUTO-GENERATED from project.yml — edits will be overwritten on next `cc start`
+# AUTO-GENERATED from project.yml — edits will be overwritten on next `cco start`
 
 services:
   claude:
@@ -340,7 +340,7 @@ Projects specify needed ports in `project.yml` under `docker.ports`.
 docker build -t claude-orchestrator:latest .
 
 # Or via CLI
-cc build
+cco build
 ```
 
 ### 4.2 Build Caching
@@ -355,7 +355,7 @@ The Dockerfile is ordered for optimal layer caching:
 
 To update Claude Code in the image:
 ```bash
-cc build --no-cache
+cco build --no-cache
 # or just rebuild the npm layer:
 docker build --no-cache --target=claude-code -t claude-orchestrator:latest .
 ```
@@ -368,7 +368,7 @@ docker build --no-cache --target=claude-code -t claude-orchestrator:latest .
 
 ```bash
 # Via CLI
-cc start my-project
+cco start my-project
 
 # Equivalent docker command
 docker compose -f projects/my-project/docker-compose.yml \
@@ -397,7 +397,7 @@ The `--service-ports` flag ensures port mappings are active.
 
 ```bash
 # Stop all running sessions
-cc stop
+cco stop
 
 # Remove project network
 docker network rm cc-my-project

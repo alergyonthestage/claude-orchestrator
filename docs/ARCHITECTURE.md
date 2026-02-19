@@ -13,7 +13,7 @@
 │                        HOST (macOS + Docker Desktop)                  │
 │                                                                      │
 │   claude-orchestrator/           ~/projects/                         │
-│   ├── bin/cc (CLI)               ├── backend-api/                    │
+│   ├── bin/cco (CLI)              ├── backend-api/                    │
 │   ├── global/.claude/            │   └── .claude/  (repo context)    │
 │   ├── projects/                  ├── frontend-app/                   │
 │   │   └── my-saas/               │   └── .claude/                    │
@@ -247,8 +247,8 @@ The path `workspace` comes from Claude Code deriving the project identifier from
 
 **CLI override**:
 ```bash
-cc start my-project --teammate-mode tmux
-cc start my-project --teammate-mode auto  # iTerm2 if available
+cco start my-project --teammate-mode tmux
+cco start my-project --teammate-mode auto  # iTerm2 if available
 ```
 
 ---
@@ -265,7 +265,7 @@ See [DOCKER.md](./DOCKER.md) for full specification.
 - Non-root user: `claude` (with docker group for socket access)
 - Entrypoint: wrapper script that starts tmux (if configured) then launches Claude
 
-### 3.2 CLI (`bin/cc`)
+### 3.2 CLI (`bin/cco`)
 
 See [CLI.md](./CLI.md) for full specification.
 
@@ -300,7 +300,7 @@ See [SUBAGENTS.md](./SUBAGENTS.md) for full specification.
 ### 4.1 Session Startup Flow
 
 ```
-User runs: cc start my-saas
+User runs: cco start my-saas
          │
          ▼
 ┌─────────────────────────┐

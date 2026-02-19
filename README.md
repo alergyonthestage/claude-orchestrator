@@ -51,4 +51,5 @@ Docker socket          ──mount──► Docker socket        (run containers
 | [docs/CLI.md](docs/CLI.md) | CLI commands specification |
 | [docs/SUBAGENTS.md](docs/SUBAGENTS.md) | Custom subagents and creation guide |
 | [docs/DISPLAY-MODES.md](docs/DISPLAY-MODES.md) | Agent teams display: tmux vs iTerm2 |
+| [docs/PROJECT-SETUP.md](docs/PROJECT-SETUP.md) | Project setup guide, repos vs extra_mounts |
 | [docs/DIRECTORY-STRUCTURE.md](docs/DIRECTORY-STRUCTURE.md) | File inventory and implementation order |

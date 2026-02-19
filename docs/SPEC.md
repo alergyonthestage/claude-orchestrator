@@ -11,7 +11,7 @@
 
 ### 1.1 Goals
 
-- **One command to start**: `cc start <project>` launches an isolated, fully configured Claude Code session
+- **One command to start**: `cco start <project>` launches an isolated, fully configured Claude Code session
 - **Multi-repo projects**: Each project template can mount multiple repositories with their own context
 - **Centralized context management**: Global, project, and repo-level CLAUDE.md and settings managed in one place
 - **Agent teams ready**: Every session supports agent teams with configurable display (tmux or iTerm2)
@@ -49,7 +49,7 @@
 | FR-2.2 | Each project specifies which repositories to mount and where | Must |
 | FR-2.3 | A `_template/` directory provides scaffolding for new projects | Must |
 | FR-2.4 | Projects can define extra volume mounts (docs, specs, etc.) | Should |
-| FR-2.5 | Temporary sessions (`cc new`) work without a project template | Must |
+| FR-2.5 | Temporary sessions (`cco new`) work without a project template | Must |
 | FR-2.6 | `docker-compose.yml` is auto-generated from `project.yml` by the CLI | Must |
 
 ### FR-3: Context Management
@@ -86,13 +86,13 @@
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| FR-6.1 | `cc start <project>` — start a session for a configured project | Must |
-| FR-6.2 | `cc new [--repo <path>]...` — start a temporary session with specified repos | Must |
-| FR-6.3 | `cc project create <name>` — create a new project from template | Must |
-| FR-6.4 | `cc project list` — list available projects | Must |
-| FR-6.5 | `cc build` — build/rebuild the Docker image | Must |
-| FR-6.6 | `cc stop [project]` — stop running session(s) | Should |
-| FR-6.7 | CLI is a single bash script at `bin/cc` | Must |
+| FR-6.1 | `cco start <project>` — start a session for a configured project | Must |
+| FR-6.2 | `cco new [--repo <path>]...` — start a temporary session with specified repos | Must |
+| FR-6.3 | `cco project create <name>` — create a new project from template | Must |
+| FR-6.4 | `cco project list` — list available projects | Must |
+| FR-6.5 | `cco build` — build/rebuild the Docker image | Must |
+| FR-6.6 | `cco stop [project]` — stop running session(s) | Should |
+| FR-6.7 | CLI is a single bash script at `bin/cco` | Must |
 
 ### FR-7: Custom Subagents
 
@@ -121,7 +121,7 @@
 
 | ID | Requirement |
 |----|-------------|
-| NFR-1.1 | Session startup (from `cc start` to Claude UI) under 15 seconds (warm image) |
+| NFR-1.1 | Session startup (from `cco start` to Claude UI) under 15 seconds (warm image) |
 | NFR-1.2 | Docker image build under 5 minutes |
 
 ### NFR-2: Portability
@@ -157,13 +157,13 @@
 ## 5. User Stories
 
 ### US-1: Start a project session
-> As a developer, I want to run `cc start my-saas` and immediately get an interactive Claude Code session with all my repos mounted and context loaded, so I can start working without manual setup.
+> As a developer, I want to run `cco start my-saas` and immediately get an interactive Claude Code session with all my repos mounted and context loaded, so I can start working without manual setup.
 
 ### US-2: Create a temporary session
-> As a developer, I want to run `cc new --repo ~/projects/experiment` to quickly spin up a Claude session with a single repo, without creating a project template first.
+> As a developer, I want to run `cco new --repo ~/projects/experiment` to quickly spin up a Claude session with a single repo, without creating a project template first.
 
 ### US-3: Add a new project
-> As a developer, I want to run `cc project create my-new-project` and get a pre-configured project directory I can customize with my repos and context.
+> As a developer, I want to run `cco project create my-new-project` and get a pre-configured project directory I can customize with my repos and context.
 
 ### US-4: Run dev servers from Claude
 > As a developer, I want Claude to be able to run `npm run dev` inside the container and have me access the running app at localhost:3000 on my Mac.

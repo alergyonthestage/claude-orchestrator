@@ -40,7 +40,7 @@ When using agent teams, Claude Code can display teammates in three modes:
 
 Or per-session:
 ```bash
-cc start my-project --teammate-mode tmux
+cco start my-project --teammate-mode tmux
 ```
 
 ### 2.3 Usage
@@ -124,7 +124,7 @@ Set `teammateMode` to `"auto"` — this makes Claude Code detect iTerm2 automati
 
 Or per-session:
 ```bash
-cc start my-project --teammate-mode auto
+cco start my-project --teammate-mode auto
 ```
 
 ### 3.3 Usage
@@ -211,7 +211,7 @@ You can switch modes at any time:
 
 1. **Per-session** — use the CLI flag:
    ```bash
-   cc start my-project --teammate-mode auto
+   cco start my-project --teammate-mode auto
    ```
 
 2. **Per-project** — add to project settings:

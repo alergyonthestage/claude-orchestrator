@@ -19,6 +19,11 @@ if [ -S /var/run/docker.sock ]; then
     fi
 fi
 
+# ── Debug: log env vars to check auth token presence ────────────────
+echo "[entrypoint] TEAMMATE_MODE=${TEAMMATE_MODE:-unset}" >&2
+echo "[entrypoint] CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:+SET (${#CLAUDE_CODE_OAUTH_TOKEN} chars)}" >&2
+echo "[entrypoint] ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:+SET}" >&2
+
 # ── Switch to claude user and launch ─────────────────────────────────
 # gosu does exec directly without creating a new session, preserving
 # TTY/stdin so Claude Code's interactive UI works correctly.

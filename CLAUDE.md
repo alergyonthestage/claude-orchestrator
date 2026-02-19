@@ -4,23 +4,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-claude-orchestrator manages isolated Claude Code sessions in Docker containers for multi-project, multi-repo development. It provides a CLI (`bin/cc`) to launch preconfigured sessions with repos mounted, context loaded, and agent teams ready.
+claude-orchestrator manages isolated Claude Code sessions in Docker containers for multi-project, multi-repo development. It provides a CLI (`bin/cco`) to launch preconfigured sessions with repos mounted, context loaded, and agent teams ready.
 
-**Current status**: Design/spec phase — docs are complete, implementation has not started. See `docs/DIRECTORY-STRUCTURE.md` for the implementation order and file inventory.
+**Current status**: v1 implemented. Dockerfile, CLI, global config, project template, and all docs are in place.
 
 ## Build & Run Commands
 
 ```bash
-cc build                    # Build Docker image
-cc build --no-cache         # Rebuild (updates Claude Code)
-cc start <project>          # Start session for a project
-cc new --repo <path>        # Start temporary session with repos
-cc project create <name>    # Scaffold new project from template
-cc project list             # List projects
-cc stop [project]           # Stop session(s)
+cco build                    # Build Docker image
+cco build --no-cache         # Rebuild (updates Claude Code)
+cco start <project>          # Start session for a project
+cco new --repo <path>        # Start temporary session with repos
+cco project create <name>    # Scaffold new project from template
+cco project list             # List projects
+cco stop [project]           # Stop session(s)
 ```
 
-The CLI is a single bash script at `bin/cc` with no dependencies beyond bash, docker, and standard Unix tools (jq, sed, awk).
+The CLI is a single bash script at `bin/cco` with no dependencies beyond bash, docker, and standard Unix tools (jq, sed, awk).
 
 ## Architecture
 
@@ -42,7 +42,7 @@ The host's Docker socket is mounted into the container. Claude can run `docker c
 
 ### Session Startup Flow
 
-`cc start` → read `project.yml` → validate repo paths → generate `docker-compose.yml` → `docker compose run --rm --service-ports claude` → entrypoint handles socket perms + tmux → `claude --dangerously-skip-permissions`
+`cco start` → read `project.yml` → validate repo paths → generate `docker-compose.yml` → `docker compose run --rm --service-ports claude` → entrypoint handles socket perms + tmux → `claude --dangerously-skip-permissions`
 
 ### Key Design Decisions
 
@@ -59,7 +59,7 @@ Per `docs/DIRECTORY-STRUCTURE.md`:
 1. **Docker**: `Dockerfile`, `config/entrypoint.sh`, `config/tmux.conf`, `.dockerignore`
 2. **Global Config**: everything under `global/.claude/`
 3. **Project Template**: everything under `projects/_template/`
-4. **CLI**: `bin/cc`
+4. **CLI**: `bin/cco`
 5. **Root Files**: `.gitignore`
 
 ## Key Files
@@ -71,6 +71,7 @@ Per `docs/DIRECTORY-STRUCTURE.md`:
 - `docs/CLI.md` — CLI commands and `project.yml` format
 - `docs/SUBAGENTS.md` — analyst (haiku) and reviewer (sonnet) agent specs
 - `docs/DISPLAY-MODES.md` — tmux vs iTerm2 setup
+- `docs/PROJECT-SETUP.md` — project setup guide, repos vs extra_mounts, writing CLAUDE.md
 
 ## Conventions
 

@@ -17,42 +17,45 @@ source ~/.bashrc
 # source ~/.zshrc
 
 # 3. Builda l'immagine Docker
-cc build
+cco build
 ```
 
 ## Uso
 
 ```bash
 # Crea un progetto
-cc project create my-app --repo ~/projects/my-app
+cco project create my-app --repo ~/projects/my-app
 
 # Configura il progetto
 vim projects/my-app/project.yml         # repo, porte, auth
 vim projects/my-app/.claude/CLAUDE.md   # istruzioni per Claude
 
 # Avvia una sessione
-cc start my-app
+cco start my-app
+
+# Tip: alla prima sessione, usa /init per generare automaticamente
+# un CLAUDE.md dettagliato basato sul codebase
 ```
 
 Per sessioni temporanee senza creare un progetto:
 
 ```bash
-cc new --repo ~/projects/experiment
-cc new --repo ~/projects/api --repo ~/projects/frontend --port 3000:3000
+cco new --repo ~/projects/experiment
+cco new --repo ~/projects/api --repo ~/projects/frontend --port 3000:3000
 ```
 
 ## Comandi
 
 | Comando | Descrizione |
 |---------|-------------|
-| `cc build` | Builda l'immagine Docker |
-| `cc build --no-cache` | Rebuild completo (aggiorna Claude Code) |
-| `cc start <progetto>` | Avvia sessione per un progetto configurato |
-| `cc start <progetto> --dry-run` | Mostra il docker-compose generato senza avviare |
-| `cc new --repo <path>` | Sessione temporanea con repo specifici |
-| `cc project create <nome>` | Crea nuovo progetto da template |
-| `cc project list` | Lista progetti disponibili |
-| `cc stop [progetto]` | Ferma sessione/i in corso |
+| `cco build` | Builda l'immagine Docker |
+| `cco build --no-cache` | Rebuild completo (aggiorna Claude Code) |
+| `cco start <progetto>` | Avvia sessione per un progetto configurato |
+| `cco start <progetto> --dry-run` | Mostra il docker-compose generato senza avviare |
+| `cco new --repo <path>` | Sessione temporanea con repo specifici |
+| `cco project create <nome>` | Crea nuovo progetto da template |
+| `cco project list` | Lista progetti disponibili |
+| `cco stop [progetto]` | Ferma sessione/i in corso |
 
 ## Configurazione progetto
 
@@ -69,20 +72,21 @@ Per il formato completo di `project.yml` vedi [docs/CLI.md](docs/CLI.md#4-projec
 
 ```bash
 # Override modalità display agent teams
-cc start my-app --teammate-mode auto    # iTerm2 nativo (richiede setup)
-cc start my-app --teammate-mode tmux    # default, funziona ovunque
+cco start my-app --teammate-mode auto    # iTerm2 nativo (richiede setup)
+cco start my-app --teammate-mode tmux    # default, funziona ovunque
 
 # Usa API key invece di OAuth
-cc start my-app --api-key
+cco start my-app --api-key
 
 # Porte e variabili extra
-cc start my-app --port 9090:9090 --env DEBUG=true
+cco start my-app --port 9090:9090 --env DEBUG=true
 ```
 
 ## Documentazione
 
 Per approfondimenti vedi [docs/](docs/):
 
+- [PROJECT-SETUP.md](docs/PROJECT-SETUP.md) — Guida completa setup progetto, repos vs extra_mounts, scrivere CLAUDE.md
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) — Architettura e decisioni di design
 - [CLI.md](docs/CLI.md) — Dettaglio comandi e formato `project.yml`
 - [DOCKER.md](docs/DOCKER.md) — Immagine Docker, compose, networking
