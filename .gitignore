@@ -1,6 +1,6 @@
 # User configuration (created by cco init, customized by user)
-global/
-projects/
+/global/
+/projects/
 
 # Secrets
 .env

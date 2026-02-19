@@ -17,6 +17,14 @@ RUN apt-get update && apt-get install -y \
     vim \
     && rm -rf /var/lib/apt/lists/*
 
+# ── Locale (UTF-8 support) ──────────────────────────────────────────
+RUN apt-get update && apt-get install -y locales \
+    && sed -i 's/^# *\(en_US.UTF-8\)/\1/' /etc/locale.gen \
+    && locale-gen \
+    && rm -rf /var/lib/apt/lists/*
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
+
 # ── Docker CLI (for Docker-from-Docker) ──────────────────────────────
 # Install Docker CLI only (no daemon). Used to control host Docker via socket.
 RUN install -m 0755 -d /etc/apt/keyrings \
@@ -39,6 +47,7 @@ RUN arch="$(dpkg --print-architecture)" \
 
 # ── Claude Code ──────────────────────────────────────────────────────
 RUN npm install -g @anthropic-ai/claude-code@latest
+ENV CLAUDE_CODE_DISABLE_AUTOUPDATE=1
 
 # ── User setup ───────────────────────────────────────────────────────
 # Create claude user. Docker socket GID is set at runtime via entrypoint.

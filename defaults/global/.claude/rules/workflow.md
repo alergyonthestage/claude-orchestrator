@@ -12,7 +12,7 @@
 - Propose clear interfaces and data models
 - Consider error handling and edge cases
 - Evaluate alternatives and document trade-offs
-- Produce diagrams where helpful (ASCII, mermaid)
+- Produce diagrams where helpful (see diagrams rule)
 - DO NOT write implementation code during design
 
 ## Implementation Phase
