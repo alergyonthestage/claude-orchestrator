@@ -8,7 +8,7 @@
 
 ## 1. Overview
 
-The CLI is a single bash script at `bin/cco` that orchestrates Docker sessions. It has no dependencies beyond `bash`, `docker`, and standard Unix tools (`sed`, `awk`, `jq`, `envsubst`).
+The CLI is a single bash script at `bin/cco` that orchestrates Docker sessions. It has no dependencies beyond `bash`, `docker`, and standard Unix tools (`sed`, `awk`, `jq`).
 
 ---
 
@@ -72,20 +72,19 @@ Examples:
 Build or rebuild the Docker image.
 
 ```
-Usage: cco build [--no-cache]
+Usage: cco build [--no-cache] [--mcp-packages "pkg1 pkg2"]
 
 Options:
-  --no-cache    Force rebuild without Docker cache (updates Claude Code)
+  --no-cache               Force rebuild without Docker cache (updates Claude Code)
+  --mcp-packages "pkgs"    Pre-install MCP server npm packages in the image
 
 Examples:
   cco build
   cco build --no-cache
+  cco build --mcp-packages "@modelcontextprotocol/server-github"
 ```
 
-**Implementation**:
-```bash
-docker build ${NO_CACHE:+--no-cache} -t claude-orchestrator:latest .
-```
+MCP packages can also be listed in `global/mcp-packages.txt` (one per line) for automatic loading on every build.
 
 ---
 
@@ -126,6 +125,8 @@ Examples:
    - Read project.yml repos → generate volume mounts
    - Read project.yml ports → generate port mappings
    - Read project.yml auth → set auth volumes/env vars
+   - If mcp.json exists → mount as /workspace/.mcp.json (Claude Code expands ${VAR} natively)
+   - Mount global MCP config for entrypoint merge
    - Apply CLI overrides (--port, --env, --teammate-mode)
    - Write to projects/<project>/docker-compose.yml
 
@@ -133,6 +134,7 @@ Examples:
    - projects/<project>/memory/  (for auto memory)
 
 4. LAUNCH
+   - Load global/secrets.env as runtime env vars
    - docker compose -f projects/<project>/docker-compose.yml \
        run --rm --service-ports claude
    
@@ -423,7 +425,48 @@ networks:
 
 ---
 
-## 7. Shell Completion (Future)
+## 7. MCP Server Configuration
+
+### 7.1 Project MCP (`mcp.json`)
+
+Each project can include a `mcp.json` file using Claude Code's native `.mcp.json` format:
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+The `${VAR}` placeholders are expanded **natively by Claude Code** inside the container. The env vars must be available in the container environment via `global/secrets.env`, `project.yml` `docker.env`, or `--env` CLI flags.
+
+**Important**: If a `${VAR}` reference in `mcp.json` cannot be resolved (env var not set), Claude Code will fail to parse the entire file and show "No MCP servers configured".
+
+### 7.2 Global MCP (`global/.claude/mcp.json`)
+
+MCP servers defined here are available in all projects. The entrypoint merges them into `~/.claude.json` at container startup.
+
+### 7.3 Secrets (`global/secrets.env`)
+
+```bash
+# global/secrets.env — gitignored
+GITHUB_TOKEN=ghp_...
+LINEAR_API_KEY=lin_api_...
+```
+
+Loaded by `cco start` and `cco new` as runtime `-e` flags. Never written to `docker-compose.yml`.
+
+---
+
+## 8. Shell Completion (Future)
 
 Bash/Zsh completion for:
 - `cco start <TAB>` → list project names

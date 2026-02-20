@@ -49,6 +49,13 @@ RUN arch="$(dpkg --print-architecture)" \
 RUN npm install -g @anthropic-ai/claude-code@latest
 ENV CLAUDE_CODE_DISABLE_AUTOUPDATE=1
 
+# ── MCP Server packages (optional pre-installation) ──────────────────
+# Pre-install stdio MCP servers for faster startup.
+# Override at build time: cco build --mcp-packages "pkg1 pkg2"
+# Leave empty to rely on npx on-demand installation.
+ARG MCP_PACKAGES=""
+RUN if [ -n "$MCP_PACKAGES" ]; then npm install -g $MCP_PACKAGES; fi
+
 # ── User setup ───────────────────────────────────────────────────────
 # Create claude user. Docker socket GID is set at runtime via entrypoint.
 RUN useradd -m -s /bin/bash claude \

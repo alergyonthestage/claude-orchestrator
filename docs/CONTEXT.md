@@ -404,31 +404,123 @@ Claude Code discovers skills from:
 2. `/workspace/.claude/skills/` — Project-level
 3. `/workspace/<repo>/.claude/skills/` — Repo-level (on-demand)
 
-### 7.2 Planned Skills
+### 7.2 Default Skills
 
-No default skills in v1. Skills can be added as patterns emerge from usage. Candidates:
-- `/analyze` — Enter analysis mode with structured output
-- `/design` — Enter design mode with templates
-- `/review` — Code review checklist
-- `/commit` — Conventional commit with context
+Global skills are shipped in `defaults/global/.claude/skills/` and copied to `global/.claude/skills/` by `cco init`. They are mounted read-only at `~/.claude/skills/` inside the container, available in all projects.
+
+| Skill | Command | Purpose |
+|-------|---------|---------|
+| `analyze.md` | `/analyze` | Structured codebase analysis with findings template |
+| `design.md` | `/design` | Design mode with implementation planning template |
+| `review.md` | `/review` | Code review with security/performance/correctness checklist |
+| `commit.md` | `/commit` | Conventional commit with context-aware message |
+
+### 7.3 Project-Specific Skills
+
+Projects can add custom skills in `projects/<name>/.claude/skills/`. These are mounted read-write at `/workspace/.claude/skills/` and take precedence over global skills with the same name.
+
+### 7.4 Adding New Skills
+
+Skills are markdown files with YAML frontmatter:
+```markdown
+---
+name: my-skill
+description: Brief description shown in /help
+---
+
+Prompt content here. This is what Claude receives when the user invokes /my-skill.
+```
 
 ---
 
 ## 8. MCP Servers
 
-### 8.1 Configuration Locations
+### 8.1 Overview
 
-- User-level: `~/.claude.json` (already mounted for auth)
-- Project-level: `/workspace/.mcp.json`
+MCP (Model Context Protocol) servers extend Claude Code with external tool access (GitHub, databases, etc.). The orchestrator supports MCP at two levels:
 
-### 8.2 Strategy
+- **Global MCP** — Available in all projects, configured in `global/.claude/mcp.json`
+- **Project MCP** — Specific to a project, configured in `projects/<name>/mcp.json`
 
-No default MCP servers in v1. Projects can add their own by creating `.mcp.json` in their `.claude/` directory or at `/workspace/` level.
+### 8.2 Configuration
 
-Common MCP servers to document:
-- GitHub (for PR management)
-- PostgreSQL (for database queries)
-- Filesystem (for additional directory access)
+#### Project-Level MCP
+
+Each project can have a `mcp.json` file (Claude Code's native `.mcp.json` format):
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+The `${VAR}` syntax is expanded **natively by Claude Code** inside the container. The env vars must be available in the container environment, provided through:
+1. `global/secrets.env` — Global secrets, loaded as `-e` flags at runtime (gitignored)
+2. `project.yml` `docker.env` — Project-specific env vars in the compose `environment:` section
+3. `cco start --env KEY=VAL` — Ad-hoc per-session env vars
+
+The CLI mounts `mcp.json` directly at `/workspace/.mcp.json` (read-only). No intermediate substitution step is needed.
+
+#### Global-Level MCP
+
+`global/.claude/mcp.json` defines MCP servers available in all projects. The entrypoint merges these into `~/.claude.json` at container startup using `jq`. Defaults ship in `defaults/global/.claude/mcp.json` (empty).
+
+### 8.3 Authentication / Secrets
+
+Secrets are managed through a layered system (all gitignored):
+
+| Layer | File | Scope |
+|-------|------|-------|
+| Global secrets | `global/secrets.env` | All projects |
+| Project env | `project.yml` `docker.env` | One project |
+| CLI flag | `cco start --env KEY=VAL` | One session |
+
+`global/secrets.env` format:
+```bash
+# Global secrets — DO NOT COMMIT
+GITHUB_TOKEN=ghp_...
+LINEAR_API_KEY=lin_api_...
+```
+
+Secrets are injected at runtime via `docker compose run -e` flags — they never appear in `docker-compose.yml` or other generated files.
+
+### 8.4 Pre-Installing MCP Server Packages
+
+Stdio MCP servers require npm packages. By default, `npx -y` downloads them on first use (slow). For faster startup, pre-install in the Docker image:
+
+```bash
+# Option A: Via global/mcp-packages.txt (one package per line)
+echo "@modelcontextprotocol/server-github" > global/mcp-packages.txt
+cco build
+
+# Option B: Via CLI flag
+cco build --mcp-packages "@modelcontextprotocol/server-github @modelcontextprotocol/server-postgres"
+```
+
+The Dockerfile uses `ARG MCP_PACKAGES` to conditionally run `npm install -g`.
+
+### 8.5 MCP Transport Types
+
+| Type | Where it runs | Requirements |
+|------|--------------|-------------|
+| `stdio` | Child process in container | npm package must be installed (or npx-able) |
+| `sse` / `http` | Remote server | Network access (already available via bridge NAT) |
+
+### 8.6 Security Notes
+
+- Tokens are passed as container env vars via `-e` flags (from `secrets.env`) and scoped to MCP processes via the `env` field in `.mcp.json`
+- `global/secrets.env` and `projects/*/project.yml` are gitignored
+- `mcp.json` files may be committed (they contain `${VAR}` references, not actual tokens)
+- Network-level isolation between Claude and MCP processes is not implemented (they share the same container); for sensitive environments, use remote MCP servers behind an auth proxy
 
 ---
 
@@ -443,6 +535,8 @@ When creating a new project, these files should be configured:
 | `.claude/settings.json` | ❌ | Override global settings |
 | `.claude/rules/*.md` | ❌ | Project-specific rules |
 | `.claude/agents/*.md` | ❌ | Project-specific subagents |
+| `.claude/skills/*.md` | ❌ | Project-specific skills |
+| `mcp.json` | ❌ | MCP server configuration |
 | `.claude/skills/` | ❌ | Project-specific skills |
 | `memory/` | auto | Created automatically on first run |
 | `docker-compose.yml` | auto | Generated by CLI from project.yml |

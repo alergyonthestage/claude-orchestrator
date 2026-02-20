@@ -5,6 +5,8 @@
 # Secrets
 .env
 .env.*
+global/secrets.env
+secrets.env
 
 # macOS
 .DS_Store

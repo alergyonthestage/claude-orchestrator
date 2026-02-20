@@ -23,3 +23,21 @@ docker:
 # ── Authentication ───────────────────────────────────────────────────
 auth:
   method: oauth         # "oauth" (default) | "api_key"
+
+# ── MCP Servers (optional) ──────────────────────────────────────────
+# Create mcp.json in this directory using Claude Code's native .mcp.json format.
+# ${VAR} syntax is expanded natively by Claude Code inside the container.
+# Env vars must be set in global/secrets.env, docker.env above, or --env flag.
+# IMPORTANT: Unresolvable ${VAR} will cause Claude Code to ignore the entire file.
+# Example mcp.json:
+#   {
+#     "mcpServers": {
+#       "github": {
+#         "type": "stdio",
+#         "command": "npx",
+#         "args": ["-y", "@modelcontextprotocol/server-github"],
+#         "env": { "GITHUB_TOKEN": "${GITHUB_TOKEN}" }
+#       }
+#     }
+#   }
+# See: https://modelcontextprotocol.io/docs
