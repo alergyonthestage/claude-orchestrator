@@ -47,6 +47,30 @@
     "defaultMode": "bypassPermissions"
   },
 
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/bin/cco-hooks/session-context.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+
+  "attribution": {
+    "commit": "Co-Authored-By: Claude <noreply@anthropic.com>",
+    "pr": "Generated with Claude Code"
+  },
+
+  "statusLine": {
+    "type": "command",
+    "command": "/usr/local/bin/cco-hooks/statusline.sh"
+  },
+
   "alwaysThinkingEnabled": true,
   "teammateMode": "tmux",
   "cleanupPeriodDays": 30,

@@ -65,8 +65,10 @@ RUN useradd -m -s /bin/bash claude \
 # ── Config files ─────────────────────────────────────────────────────
 COPY config/tmux.conf /home/claude/.tmux.conf
 COPY config/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY config/hooks/ /usr/local/bin/cco-hooks/
 RUN chown claude:claude /home/claude/.tmux.conf \
-    && chmod +x /usr/local/bin/entrypoint.sh
+    && chmod +x /usr/local/bin/entrypoint.sh \
+    && chmod +x /usr/local/bin/cco-hooks/*.sh
 
 WORKDIR /workspace
 
