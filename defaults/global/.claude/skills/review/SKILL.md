@@ -1,6 +1,8 @@
 ---
 name: review
-description: Perform a structured code review with checklist
+description: Perform a structured code review with checklist. Use when reviewing staged changes, a PR, or specific files for quality, security, and correctness.
+allowed-tools: Read, Grep, Glob, Bash
+argument-hint: "[files, PR number, or 'staged changes']"
 ---
 
 # Code Review Mode

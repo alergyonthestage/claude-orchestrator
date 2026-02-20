@@ -404,32 +404,47 @@ Claude Code discovers skills from:
 2. `/workspace/.claude/skills/` — Project-level
 3. `/workspace/<repo>/.claude/skills/` — Repo-level (on-demand)
 
-### 7.2 Default Skills
+### 7.2 Skill Format
 
-Global skills are shipped in `defaults/global/.claude/skills/` and copied to `global/.claude/skills/` by `cco init`. They are mounted read-only at `~/.claude/skills/` inside the container, available in all projects.
+Each skill is a **directory** containing a `SKILL.md` file (required). The directory name becomes the skill name if `name` is not set in frontmatter. Supporting files (templates, scripts, examples) can be placed alongside `SKILL.md`.
 
-| Skill | Command | Purpose |
-|-------|---------|---------|
-| `analyze.md` | `/analyze` | Structured codebase analysis with findings template |
-| `design.md` | `/design` | Design mode with implementation planning template |
-| `review.md` | `/review` | Code review with security/performance/correctness checklist |
-| `commit.md` | `/commit` | Conventional commit with context-aware message |
+```
+skills/
+  analyze/
+    SKILL.md        # Required — main instructions + frontmatter
+  deploy/
+    SKILL.md
+    scripts/
+      deploy.sh     # Supporting file referenced from SKILL.md
+```
 
-### 7.3 Project-Specific Skills
-
-Projects can add custom skills in `projects/<name>/.claude/skills/`. These are mounted read-write at `/workspace/.claude/skills/` and take precedence over global skills with the same name.
-
-### 7.4 Adding New Skills
-
-Skills are markdown files with YAML frontmatter:
+`SKILL.md` uses YAML frontmatter:
 ```markdown
 ---
 name: my-skill
-description: Brief description shown in /help
+description: What this skill does and when to use it
+disable-model-invocation: true   # Optional: only user can invoke via /my-skill
+allowed-tools: Read, Grep        # Optional: restrict tools during skill execution
+context: fork                    # Optional: run in isolated subagent
 ---
 
-Prompt content here. This is what Claude receives when the user invokes /my-skill.
+Skill instructions here. Use $ARGUMENTS for user input.
 ```
+
+### 7.3 Default Skills
+
+Global skills are shipped in `defaults/global/.claude/skills/` and copied to `global/.claude/skills/` by `cco init`. They are mounted read-only at `~/.claude/skills/` inside the container, available in all projects.
+
+| Skill | Command | Context | Purpose |
+|-------|---------|---------|---------|
+| `analyze/SKILL.md` | `/analyze` | `fork` (Explore) | Structured codebase analysis, runs in isolated read-only context |
+| `design/SKILL.md` | `/design` | `fork` (Plan) | Design mode with implementation planning template |
+| `review/SKILL.md` | `/review` | inline | Code review with security/performance/correctness checklist |
+| `commit/SKILL.md` | `/commit` | inline | Conventional commit (manual-only, `disable-model-invocation`) |
+
+### 7.4 Project-Specific Skills
+
+Projects can add custom skills in `projects/<name>/.claude/skills/`. These are mounted read-write at `/workspace/.claude/skills/` and take precedence over global skills with the same name.
 
 ---
 
@@ -535,7 +550,7 @@ When creating a new project, these files should be configured:
 | `.claude/settings.json` | ❌ | Override global settings |
 | `.claude/rules/*.md` | ❌ | Project-specific rules |
 | `.claude/agents/*.md` | ❌ | Project-specific subagents |
-| `.claude/skills/*.md` | ❌ | Project-specific skills |
+| `.claude/skills/*/SKILL.md` | ❌ | Project-specific skills |
 | `mcp.json` | ❌ | MCP server configuration |
 | `.claude/skills/` | ❌ | Project-specific skills |
 | `memory/` | auto | Created automatically on first run |

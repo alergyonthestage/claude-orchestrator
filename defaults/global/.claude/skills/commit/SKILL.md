@@ -1,6 +1,8 @@
 ---
 name: commit
 description: Create a conventional commit with context-aware message
+disable-model-invocation: true
+argument-hint: "[optional: files to stage]"
 ---
 
 # Commit Mode

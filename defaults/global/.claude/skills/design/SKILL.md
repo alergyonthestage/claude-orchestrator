@@ -1,6 +1,9 @@
 ---
 name: design
-description: Enter design mode to plan implementation with structured templates
+description: Enter design mode to plan implementation with structured templates. Use when planning a new feature, refactoring, or architectural change.
+context: fork
+agent: Plan
+argument-hint: "[feature or change to design]"
 ---
 
 # Design Mode

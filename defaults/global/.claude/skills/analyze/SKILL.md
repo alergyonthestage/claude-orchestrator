@@ -1,6 +1,10 @@
 ---
 name: analyze
-description: Enter structured analysis mode for codebase exploration and requirements understanding
+description: Enter structured analysis mode for codebase exploration and requirements understanding. Use when exploring a new codebase, investigating a module, or understanding how a feature works.
+allowed-tools: Read, Grep, Glob, Bash
+context: fork
+agent: Explore
+argument-hint: "[topic or module to analyze]"
 ---
 
 # Analysis Mode
