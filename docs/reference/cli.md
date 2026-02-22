@@ -1,8 +1,8 @@
 # CLI Specification
 
 > Version: 1.0.0
-> Status: Draft — Pending Review
-> Related: [SPEC.md](./SPEC.md) | [DOCKER.md](./DOCKER.md)
+> Status: v1.0 — Current
+> Related: [spec.md](../maintainer/spec.md) | [docker.md](../maintainer/docker.md)
 
 ---
 
@@ -38,15 +38,29 @@ echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.bashrc && source 
 Initialize user configuration by copying defaults. Required before first use.
 
 ```
-Usage: cco init [--force]
+Usage: cco init [--force] [--lang <language>]
 
 Options:
-  --force    Overwrite existing global/ config with defaults
+  --force            Overwrite existing global/ config with defaults
+  --lang <language>  Set communication language for Claude (default: English)
 
 Examples:
-  cco init            # First-time setup
-  cco init --force    # Reset global config to defaults
+  cco init                    # First-time setup (English)
+  cco init --lang Italian     # First-time setup with Italian communication
+  cco init --force            # Reset global config to defaults
 ```
+
+**`--lang` and language templates**
+
+The file `defaults/global/.claude/rules/language.md` contains three placeholders that `cco init` substitutes:
+
+| Placeholder | Controls | Example value |
+|-------------|----------|---------------|
+| `{{COMM_LANG}}` | Claude's response/communication language | `Italian` |
+| `{{DOCS_LANG}}` | Language for docs (README, guides) | `English` |
+| `{{CODE_LANG}}` | Language for code comments/docstrings | `English` |
+
+When `--lang` is provided, `{{COMM_LANG}}` is set to that language. `{{DOCS_LANG}}` and `{{CODE_LANG}}` always default to `English` (code is universal). To customize further, edit `global/.claude/rules/language.md` directly after `cco init`.
 
 **Flow**:
 
@@ -55,12 +69,17 @@ Examples:
    - If global/ exists: skip (warn user, suggest --force)
    - If --force: overwrite
 
-2. CREATE projects/ directory (if needed)
+2. SUBSTITUTE language placeholders in global/.claude/rules/language.md
+   - Replace {{COMM_LANG}} with --lang value (default: English)
+   - Replace {{DOCS_LANG}} with English
+   - Replace {{CODE_LANG}} with English
 
-3. PATH HINT
+3. CREATE projects/ directory (if needed)
+
+4. PATH HINT
    - If cco is not in PATH, show the export command
 
-4. BUILD Docker image
+5. BUILD Docker image
    - If Docker is running, run `cco build`
    - Otherwise, warn to run it later
 ```
@@ -131,7 +150,7 @@ Examples:
    - Write to projects/<project>/docker-compose.yml
 
 3. CREATE directories (if needed)
-   - projects/<project>/memory/  (for auto memory)
+   - projects/<project>/claude-state/memory/  (for auto memory + session transcripts; migrates legacy memory/ if present)
 
 4. LAUNCH
    - Load global/secrets.env as runtime env vars
@@ -184,7 +203,7 @@ Examples:
 
 4. CLEANUP
    - Container removed
-   - Temp dir preserved (memory may be useful)
+   - Temp dir preserved (claude-state/ may be useful)
    - Print path to temp dir for reference
 ```
 
@@ -225,7 +244,7 @@ Examples:
    - Replace {{PROJECT_NAME}} and {{DESCRIPTION}} placeholders
 
 4. CREATE directories
-   - projects/<name>/memory/
+   - projects/<name>/claude-state/memory/
 
 5. PRINT
    - "Project created at projects/<name>/"
@@ -426,8 +445,8 @@ services:
       - ../../global/.claude/skills:/home/claude/.claude/skills:ro
       # Project config
       - ./.claude:/workspace/.claude
-      # Auto memory
-      - ./memory:/home/claude/.claude/projects/workspace/memory
+      # Claude state: auto memory + session transcripts (enables /resume across rebuilds)
+      - ./claude-state:/home/claude/.claude/projects/-workspace
       # Repositories
       - ~/projects/backend-api:/workspace/backend-api
       - ~/projects/frontend-app:/workspace/frontend-app
