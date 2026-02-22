@@ -46,16 +46,20 @@ Setup: git clone → cco init → cco project create → cco start
 
 ## Documentation
 
+See [docs/](docs/) for the full documentation index, organized by scope:
+
+- **[guides/](docs/guides/)** — User how-to guides (project setup, display modes, subagents)
+- **[reference/](docs/reference/)** — Technical reference (CLI, context hierarchy)
+- **[maintainer/](docs/maintainer/)** — Architecture, Docker, spec, roadmap
+
+Quick links:
+
 | Document | Contents |
 |----------|----------|
 | [QUICK-START.md](QUICK-START.md) | Setup and usage guide |
-| [docs/SPEC.md](docs/SPEC.md) | Requirements specification |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Architecture decisions and system design |
-| [docs/DOCKER.md](docs/DOCKER.md) | Docker image, compose, networking |
-| [docs/CONTEXT.md](docs/CONTEXT.md) | Context hierarchy and settings management |
-| [docs/CLI.md](docs/CLI.md) | CLI commands specification |
-| [docs/SUBAGENTS.md](docs/SUBAGENTS.md) | Custom subagents and creation guide |
-| [docs/DISPLAY-MODES.md](docs/DISPLAY-MODES.md) | Agent teams display: tmux vs iTerm2 |
-| [docs/PROJECT-SETUP.md](docs/PROJECT-SETUP.md) | Project setup guide, repos vs extra_mounts vs packs |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | Planned features and future enhancements |
-| [docs/DIRECTORY-STRUCTURE.md](docs/DIRECTORY-STRUCTURE.md) | File inventory and implementation order |
+| [docs/guides/project-setup.md](docs/guides/project-setup.md) | Project setup, repos vs extra_mounts vs packs |
+| [docs/reference/cli.md](docs/reference/cli.md) | CLI commands and project.yml format |
+| [docs/reference/context.md](docs/reference/context.md) | Context hierarchy and settings |
+| [docs/guides/subagents.md](docs/guides/subagents.md) | Custom subagents |
+| [docs/maintainer/architecture.md](docs/maintainer/architecture.md) | Architecture decisions |
+| [docs/maintainer/roadmap.md](docs/maintainer/roadmap.md) | Planned features |

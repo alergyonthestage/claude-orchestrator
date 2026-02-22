@@ -67,7 +67,7 @@ Ogni progetto vive in `projects/<nome>/` e contiene:
 - **`.claude/settings.json`** — override delle impostazioni globali (opzionale)
 - **`.claude/agents/`** — subagenti specifici del progetto (opzionale)
 
-Per il formato completo di `project.yml` vedi [docs/CLI.md](docs/CLI.md#4-project-configuration-format-projectyml).
+Per il formato completo di `project.yml` vedi [docs/reference/cli.md](docs/reference/cli.md#4-project-configuration-format-projectyml).
 
 ## Knowledge Packs
 
@@ -99,7 +99,7 @@ cco start my-app
 
 `cco start` monta la directory sorgente read-only nel container e genera `packs.md` con le `@import` directives per ogni file della lista. I file restano nel tuo repo di knowledge — zero duplicazione.
 
-Per il dettaglio vedi [docs/CLI.md §4.2](docs/CLI.md) e [docs/PROJECT-SETUP.md](docs/PROJECT-SETUP.md).
+Per il dettaglio vedi [docs/reference/cli.md §4.2](docs/reference/cli.md) e [docs/guides/project-setup.md](docs/guides/project-setup.md).
 
 ## Opzioni aggiuntive
 
@@ -117,13 +117,18 @@ cco start my-app --port 9090:9090 --env DEBUG=true
 
 ## Documentazione
 
-Per approfondimenti vedi [docs/](docs/):
+Per approfondimenti vedi [docs/](docs/) (organizzata in `guides/`, `reference/`, `maintainer/`):
 
-- [PROJECT-SETUP.md](docs/PROJECT-SETUP.md) — Guida completa setup progetto, repos vs extra_mounts vs packs, scrivere CLAUDE.md
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) — Architettura e decisioni di design
-- [CLI.md](docs/CLI.md) — Dettaglio comandi e formato `project.yml` (incl. §4.2 Knowledge Packs)
-- [DOCKER.md](docs/DOCKER.md) — Immagine Docker, compose, networking
-- [CONTEXT.md](docs/CONTEXT.md) — Gerarchia contesto e settings (incl. §3.4 Knowledge Packs)
-- [SUBAGENTS.md](docs/SUBAGENTS.md) — Subagenti e guida alla creazione
-- [DISPLAY-MODES.md](docs/DISPLAY-MODES.md) — Modalità display: tmux vs iTerm2
-- [ROADMAP.md](docs/ROADMAP.md) — Feature pianificate e miglioramenti futuri
+**Guide utente**
+- [project-setup.md](docs/guides/project-setup.md) — Setup progetto, repos vs extra_mounts vs packs, scrivere CLAUDE.md
+- [subagents.md](docs/guides/subagents.md) — Subagenti custom
+- [display-modes.md](docs/guides/display-modes.md) — Modalità display: tmux vs iTerm2
+
+**Reference**
+- [cli.md](docs/reference/cli.md) — Comandi e formato `project.yml` (incl. §4.2 Knowledge Packs)
+- [context.md](docs/reference/context.md) — Gerarchia contesto e settings (incl. §3.4 Knowledge Packs)
+
+**Maintainer**
+- [architecture.md](docs/maintainer/architecture.md) — Architettura e decisioni di design
+- [docker.md](docs/maintainer/docker.md) — Immagine Docker, compose, networking
+- [roadmap.md](docs/maintainer/roadmap.md) — Feature pianificate
