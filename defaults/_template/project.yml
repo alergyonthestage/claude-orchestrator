@@ -12,6 +12,14 @@ repos: []
 #     target: /workspace/docs/api-specs
 #     readonly: true
 
+# ── Knowledge Packs (optional) ───────────────────────────────────────
+# Reference named packs defined in global/packs/<name>/pack.yml.
+# Each pack mounts a knowledge directory (read-only) and generates
+# .claude/packs.md with @import directives on every `cco start`.
+# Add `@.claude/packs.md` once to your project's CLAUDE.md to activate.
+# packs:
+#   - my-client-knowledge
+
 # ── Docker options ───────────────────────────────────────────────────
 docker:
   ports:

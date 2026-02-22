@@ -307,6 +307,10 @@ extra_mounts:
     target: /workspace/docs/api-specs
     readonly: true
 
+# ── Knowledge Packs (optional) ───────────────────────────────────────
+packs:
+  - my-client-knowledge   # References global/packs/my-client-knowledge/pack.yml
+
 # ── Docker options ───────────────────────────────────────────────────
 docker:
   # Port mappings (host:container)
@@ -343,10 +347,50 @@ auth:
 | `extra_mounts[].source` | ✅ | string | — | Host path |
 | `extra_mounts[].target` | ✅ | string | — | Container path |
 | `extra_mounts[].readonly` | ❌ | bool | `false` | Mount as read-only |
+| `packs` | ❌ | list | `[]` | Knowledge packs to activate (see section 4.2) |
 | `docker.ports` | ❌ | list | see defaults | Port mappings |
 | `docker.env` | ❌ | map | `{}` | Environment variables |
 | `docker.network` | ❌ | string | `cc-<name>` | Docker network name |
 | `auth.method` | ❌ | string | `oauth` | Authentication method |
+
+### 4.2 Knowledge Packs
+
+Knowledge packs bundle reusable documentation (conventions, business overviews, guidelines) that can be shared across multiple projects without copying files.
+
+**Pack definition** — `global/packs/<name>/pack.yml`:
+```yaml
+name: my-client
+source: ~/documents/my-client-knowledge   # host directory to mount (read-only)
+target: /workspace/.packs/my-client       # container path
+
+# Files to @import into context
+files:
+  - backend-coding-conventions.md
+  - business-overview.md
+  - testing-guidelines.md
+```
+
+**How it works** — on every `cco start`:
+1. The `source` directory is mounted at `target` inside the container (read-only)
+2. `.claude/packs.md` is generated (or regenerated) with `@import` directives for each file:
+   ```
+   @/workspace/.packs/my-client/backend-coding-conventions.md
+   @/workspace/.packs/my-client/business-overview.md
+   ```
+3. Add the following line **once** to your project's `CLAUDE.md` to activate:
+   ```
+   @.claude/packs.md
+   ```
+
+**Pack directory** — `global/packs/` (gitignored, created by `cco init`):
+```
+global/
+  packs/
+    my-client/
+      pack.yml
+    another-client/
+      pack.yml
+```
 
 ---
 
