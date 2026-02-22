@@ -33,16 +33,19 @@ Se passi `--repo`, il CLI auto-rileva informazioni base dai repository (package.
 
 ## 2. Configurare project.yml
 
-### Repos vs Extra Mounts
+### Repos vs Extra Mounts vs Packs
 
-| Campo | Scopo | Montato in | Uso tipico |
-|-------|-------|------------|------------|
-| `repos` | Repository di lavoro attivi | `/workspace/<name>/` | Codice che Claude modifica |
-| `extra_mounts` | Materiale di riferimento | Path custom | Docs, API specs, dataset (spesso `readonly: true`) |
+| Campo | Scopo | Montato in | Caricato in contesto | Uso tipico |
+|-------|-------|------------|----------------------|------------|
+| `repos` | Repository di lavoro attivi | `/workspace/<name>/` | On-demand (quando Claude legge file) | Codice che Claude modifica |
+| `extra_mounts` | Materiale di riferimento puntuale | Path custom | No (Claude lo legge su richiesta) | Librerie condivise, API specs, dataset |
+| `packs` | Knowledge trasversale riusabile | `/workspace/.packs/<name>/` | Sì (via `@.claude/packs.md`) | Convenzioni, business overview, guidelines |
 
 **repos** — I repository su cui Claude lavora attivamente. Vengono montati come subdirectory di `/workspace/` e Claude vi ha accesso in lettura/scrittura. I file `.claude/CLAUDE.md` dentro i repo vengono caricati automaticamente quando Claude legge file in quella directory.
 
-**extra_mounts** — Materiale aggiuntivo che serve come riferimento. Montato in un path arbitrario nel container, tipicamente in read-only. Utile per documentazione API, specifiche, dataset di test.
+**extra_mounts** — Materiale aggiuntivo che serve come riferimento. Montato in un path arbitrario nel container, tipicamente in read-only. Utile per librerie condivise (es. framework interni), API specs, o qualsiasi file di riferimento che Claude potrebbe voler leggere ma non modificare.
+
+**packs** — Gruppi di documenti di knowledge (convenzioni, business overview, linee guida) definiti una volta in `global/packs/` e riusabili in più progetti senza copiare nulla. La source directory del pack viene montata read-only e i file vengono iniettati automaticamente nel contesto di Claude via `@import`. Ideali per documentazione trasversale che si applica a tutti i progetti di un cliente o dominio.
 
 ```yaml
 repos:
@@ -52,10 +55,36 @@ repos:
     name: frontend-app
 
 extra_mounts:
-  - source: ~/documents/api-specs
-    target: /workspace/docs/api-specs
+  - source: ~/projects/shared-framework
+    target: /workspace/shared-framework
     readonly: true
+
+packs:
+  - my-client-knowledge   # → global/packs/my-client-knowledge/pack.yml
 ```
+
+### Configurare un pack
+
+Crea `global/packs/<nome>/pack.yml`:
+
+```yaml
+name: my-client-knowledge
+source: ~/documents/my-client    # directory con i file di knowledge
+target: /workspace/.packs/my-client
+
+files:
+  - backend-coding-conventions.md
+  - business-overview.md
+  - testing-guidelines.md
+```
+
+Poi aggiungi **una volta** al `projects/<n>/.claude/CLAUDE.md` del progetto:
+
+```markdown
+@.claude/packs.md
+```
+
+Ogni `cco start` rigenera automaticamente `.claude/packs.md` con le `@import` directives per i file del pack. I file originali restano nel tuo repo di knowledge — zero duplicazione.
 
 ### Porte e variabili d'ambiente
 
@@ -150,12 +179,20 @@ networks:
 Claude Code carica le istruzioni in ordine di precedenza:
 
 ```
-1. ~/.claude/CLAUDE.md                      ← Globale (sempre caricato)
-2. /workspace/.claude/CLAUDE.md             ← Progetto (sempre caricato)
-3. /workspace/<repo>/.claude/CLAUDE.md      ← Repository (on-demand)
+1. ~/.claude/CLAUDE.md                          ← Globale (sempre caricato)
+   └── ~/.claude/rules/*.md
+
+2. /workspace/.claude/CLAUDE.md                 ← Progetto (sempre caricato)
+   ├── /workspace/.claude/rules/*.md
+   └── @.claude/packs.md                        ← Knowledge packs (se configurati)
+         └── @/workspace/.packs/<name>/*.md
+
+3. /workspace/<repo>/.claude/CLAUDE.md          ← Repository (on-demand)
 ```
 
 I settings di progetto (livello 2) sovrascrivono quelli globali (livello 1). Le istruzioni di repository (livello 3) si aggiungono quando Claude legge file in quella directory.
+
+I **knowledge packs** si innestano nel livello progetto tramite `@.claude/packs.md` (auto-generato da `cco start`): Claude riceve in contesto i file della knowledge senza che tu debba copiarli nel progetto.
 
 Per approfondimenti sulla gerarchia vedi [CONTEXT.md](./CONTEXT.md).
 
@@ -253,5 +290,7 @@ Dopo `cco project create`:
 - [ ] Verifica `project.yml`: repos, porte, variabili d'ambiente
 - [ ] Personalizza `.claude/CLAUDE.md` (o usa `/init` alla prima sessione)
 - [ ] Aggiungi settings custom in `.claude/settings.json` se necessario
+- [ ] Configura `packs:` in `project.yml` se hai knowledge trasversale da condividere
+- [ ] Se usi packs: aggiungi `@.claude/packs.md` al `CLAUDE.md` del progetto (una volta sola)
 - [ ] Primo avvio: `cco start <nome>` — verifica che tutto funzioni
 - [ ] Opzionale: aggiungi subagenti custom in `.claude/agents/`

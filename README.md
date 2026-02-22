@@ -14,11 +14,12 @@ See [QUICK-START.md](QUICK-START.md) for setup and usage instructions.
 Host                                Docker Container
 ───────────────────────────────────────────────────────
 defaults/              (tool code, tracked in git)
-global/.claude/        ──mount──► ~/.claude/           (user config, gitignored)
-projects/my-app/.claude/ ──mount──► /workspace/.claude/ (project context, gitignored)
-~/projects/backend/    ──mount──► /workspace/backend/   (your repo, read-write)
-~/projects/frontend/   ──mount──► /workspace/frontend/  (your repo, read-write)
-Docker socket          ──mount──► Docker socket         (run containers from inside)
+global/.claude/        ──mount──► ~/.claude/              (user config, gitignored)
+global/packs/<name>/   ──mount──► /workspace/.packs/<n>/  (knowledge packs, gitignored)
+projects/my-app/.claude/ ──mount──► /workspace/.claude/   (project context, gitignored)
+~/projects/backend/    ──mount──► /workspace/backend/     (your repo, read-write)
+~/projects/frontend/   ──mount──► /workspace/frontend/    (your repo, read-write)
+Docker socket          ──mount──► Docker socket            (run containers from inside)
 
                                   $ claude --dangerously-skip-permissions
                                   (interactive session with full context)
@@ -31,6 +32,7 @@ Setup: git clone → cco init → cco project create → cco start
 - **Docker isolation**: No native sandboxing — Docker IS the sandbox. `--dangerously-skip-permissions` is safe inside the container.
 - **Docker-from-Docker**: Docker socket mounted so Claude can run `docker compose` for infrastructure. Creates sibling containers on the host daemon, not nested.
 - **Three-tier context**: global → project → repo, mapped to Claude Code's user → project → nested hierarchy. No hacks or symlinks needed.
+- **Knowledge packs**: reusable document bundles (conventions, business overviews, guidelines) defined once in `global/packs/` and activated per-project. Source of truth stays in your knowledge repo; no file copying.
 - **Agent teams**: tmux by default (works everywhere), iTerm2 optional (native panes on macOS).
 - **Workflow**: Analysis → Design → Implementation → Documentation, all manual transitions.
 - **Auto memory isolation**: each project gets its own memory directory, so insights don't leak across projects.
@@ -54,5 +56,6 @@ Setup: git clone → cco init → cco project create → cco start
 | [docs/CLI.md](docs/CLI.md) | CLI commands specification |
 | [docs/SUBAGENTS.md](docs/SUBAGENTS.md) | Custom subagents and creation guide |
 | [docs/DISPLAY-MODES.md](docs/DISPLAY-MODES.md) | Agent teams display: tmux vs iTerm2 |
-| [docs/PROJECT-SETUP.md](docs/PROJECT-SETUP.md) | Project setup guide, repos vs extra_mounts |
+| [docs/PROJECT-SETUP.md](docs/PROJECT-SETUP.md) | Project setup guide, repos vs extra_mounts vs packs |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Planned features and future enhancements |
 | [docs/DIRECTORY-STRUCTURE.md](docs/DIRECTORY-STRUCTURE.md) | File inventory and implementation order |
