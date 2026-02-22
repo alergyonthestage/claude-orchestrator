@@ -150,39 +150,43 @@ yml_get_env() {
 }
 
 # Parse extra_mounts from project.yml
+# Output format: source:target[:ro] (one per line)
 yml_get_extra_mounts() {
     local file="$1"
     awk '
         /^extra_mounts:/ { in_mounts=1; next }
-        in_mounts && /^[^ #]/ { exit }
+        in_mounts && /^[^ #]/ {
+            if (source != "" && target != "") {
+                suffix = (ro == "true") ? ":ro" : ""
+                print source ":" target suffix
+            }
+            done = 1; exit
+        }
         in_mounts && /^  - source:/ {
+            if (source != "" && target != "") {
+                suffix = (ro == "true") ? ":ro" : ""
+                print source ":" target suffix
+            }
             sub(/^  - source: */, "")
             gsub(/["\047]/, "")
-            source=$0
+            source = $0
+            target = ""
+            ro = ""
         }
         in_mounts && /^    target:/ {
             sub(/^    target: */, "")
             gsub(/["\047]/, "")
-            target=$0
+            target = $0
         }
         in_mounts && /^    readonly:/ {
             sub(/^    readonly: */, "")
             gsub(/["\047]/, "")
-            ro=$0
-        }
-        in_mounts && /^  - source:/ || (in_mounts && /^[^ #]/ && !/^    /) {
-            if (source != "" && target != "") {
-                suffix=""
-                if (ro == "true") suffix=":ro"
-                print source":"target suffix
-            }
-            if (/^[^ #]/) exit
+            ro = $0
         }
         END {
-            if (source != "" && target != "") {
-                suffix=""
-                if (ro == "true") suffix=":ro"
-                print source":"target suffix
+            if (!done && in_mounts && source != "" && target != "") {
+                suffix = (ro == "true") ? ":ro" : ""
+                print source ":" target suffix
             }
         }
     ' "$file"
