@@ -191,7 +191,7 @@ yml_get_extra_mounts() {
 # Load global secrets from global/secrets.env into an array of -e flags
 # Usage: load_global_secrets array_name
 load_global_secrets() {
-    local -n _arr=$1
+    local _target=$1
     local secrets_file="$GLOBAL_DIR/secrets.env"
     [[ ! -f "$secrets_file" ]] && return 0
     while IFS= read -r line; do
@@ -201,7 +201,7 @@ load_global_secrets() {
         line="${line%%#*}"
         # Trim trailing whitespace
         line="${line%"${line##*[![:space:]]}"}"
-        [[ -n "$line" ]] && _arr+=(-e "$line")
+        [[ -n "$line" ]] && eval "${_target}+=(-e $(printf '%q' "$line"))"
     done < "$secrets_file"
 }
 
@@ -365,7 +365,7 @@ EOF
         info "Pre-installing MCP packages: $mcp_packages"
     fi
 
-    docker build $no_cache "${build_args[@]}" -t "$IMAGE_NAME" "$REPO_ROOT"
+    docker build $no_cache "${build_args[@]+"${build_args[@]}"}" -t "$IMAGE_NAME" "$REPO_ROOT"
     ok "Image built successfully."
 }
 
@@ -472,7 +472,7 @@ YAML
         done <<< "$(yml_get_env "$project_yml")"
 
         # Extra env from CLI
-        for env in "${extra_envs[@]}"; do
+        for env in "${extra_envs[@]+"${extra_envs[@]}"}"; do
             echo "      - ${env}"
         done
 
@@ -554,7 +554,7 @@ YAML
             [[ -z "$port" ]] && continue
             echo "      - \"${port}\""
         done <<< "$(yml_get_ports "$project_yml")"
-        for port in "${extra_ports[@]}"; do
+        for port in "${extra_ports[@]+"${extra_ports[@]}"}"; do
             echo "      - \"${port}\""
         done
 
@@ -599,7 +599,7 @@ YAML
     load_global_secrets run_env
 
     info "Starting session for project '${project_name}'..."
-    docker compose -f "$compose_file" run --rm --service-ports "${run_env[@]}" claude
+    docker compose -f "$compose_file" run --rm --service-ports "${run_env[@]+"${run_env[@]}"}" claude
 
     ok "Session ended. Changes are in your repos."
 }
@@ -746,7 +746,7 @@ YAML
     load_global_secrets run_env
 
     info "Starting temporary session '${session_name}'..."
-    docker compose -f "$compose_file" run --rm --service-ports "${run_env[@]}" claude
+    docker compose -f "$compose_file" run --rm --service-ports "${run_env[@]+"${run_env[@]}"}" claude
 
     ok "Session ended. Temp files at: $tmp_dir"
 }
