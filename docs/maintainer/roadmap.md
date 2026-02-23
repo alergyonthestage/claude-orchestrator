@@ -4,30 +4,27 @@
 
 ---
 
+## Completed
+
+### Automated Testing ✓
+
+Pure bash test suite (`bin/test`) covering 126 test cases across 9 test files. Tests run without a Docker container using `--dry-run` and file-system assertions. Zero external dependencies.
+
+**Coverage**: `cco init`, `cco project create`, `cco start --dry-run` (docker-compose generation), knowledge pack generation, workspace.yml generation, YAML parser edge cases, `cco stop`, `cco project list`.
+
+### Knowledge Packs — Full Schema (knowledge + skills + agents + rules) ✓
+
+Packs now support the full expanded schema: `knowledge:` section for document mounts, plus `skills:`, `agents:`, and `rules:` for project-level tooling. Skills/agents/rules are copied at `cco start` time (not mounted, to avoid Docker volume collisions with multi-pack setups).
+
+Knowledge files are injected automatically via `session-context.sh` hook (no `@.claude/packs.md` in CLAUDE.md required).
+
+### /init Skill ✓
+
+Custom project initialization skill at `global/.claude/skills/init/SKILL.md`. Shadows the built-in `/init` command. Reads `workspace.yml`, explores repositories, generates a structured CLAUDE.md, and writes descriptions back to `workspace.yml`.
+
+---
+
 ## Near-term
-
-### Automated Testing
-
-Add an automated test suite to verify core mechanisms without requiring a full interactive session. This is critical for maintainability as the tool grows.
-
-**Scope**:
-- `cco init` copies all expected files from defaults/ to global/
-- `cco project create` generates the correct directory structure and substitutes placeholders
-- `cco start --dry-run` generates syntactically valid docker-compose.yml for a variety of project.yml inputs (single repo, multi-repo, extra_mounts, packs, custom ports/env)
-- Knowledge pack generation: `.claude/packs.md` is correctly generated with `@import` directives matching pack.yml definitions
-- YAML parser correctness: edge cases in the pure-bash awk parser (nested fields, empty lists, special characters)
-- Auth token extraction: mock the Keychain call and verify the OAuth flow
-
-**Approach**: pure bash test runner (no external framework). Each test case is a function that sets up a temp directory, runs a `cco` command, and asserts on the output files or stdout. A `bin/test` script runs all tests and reports pass/fail.
-
-**Complexity**: Medium. No container launch required — only `--dry-run` and file-system assertions. Parallelizable across test cases.
-
-### Knowledge Packs — Agents & Skills support
-
-Currently packs support only knowledge document imports via `@path`. Future extension:
-- `agents/*.md` in a pack definition → added as project-level subagents
-- `skills/*.md` in a pack definition → added as project-level skills
-- Pack `settings.json` partial → merged into project settings
 
 ### Pack inheritance / composition
 

@@ -71,33 +71,32 @@ For the full `project.yml` format see [docs/reference/cli.md](docs/reference/cli
 
 ## Knowledge Packs
 
-Packs let you share cross-project documentation (conventions, business overviews, guidelines) without copying files.
+Packs let you share cross-project documentation (conventions, business overviews, guidelines) and optional skills/agents/rules without copying files.
 
 ```bash
 # 1. Define a pack in global/packs/<name>/pack.yml
 cat > global/packs/my-client/pack.yml << 'EOF'
 name: my-client
-source: ~/documents/my-client-knowledge   # directory with your docs
-target: /workspace/.packs/my-client
 
-files:
-  - backend-conventions.md
-  - business-overview.md
-  - testing-guidelines.md
+knowledge:
+  source: ~/documents/my-client-knowledge   # directory with your docs
+  files:
+    - path: backend-conventions.md
+      description: "Read when writing backend code or APIs"
+    - path: business-overview.md
+      description: "Read for business context and domain terminology"
+    - testing-guidelines.md
 EOF
 
 # 2. Activate the pack in project.yml
 # packs:
 #   - my-client
 
-# 3. Add once to the project's CLAUDE.md
-echo "@.claude/packs.md" >> projects/my-app/.claude/CLAUDE.md
-
-# 4. On the next cco start, .claude/packs.md is auto-regenerated
+# 3. Start — packs are injected automatically, no CLAUDE.md edit needed
 cco start my-app
 ```
 
-`cco start` mounts the source directory read-only in the container and generates `packs.md` with `@import` directives for each listed file. Files stay in your knowledge repo — zero duplication.
+`cco start` mounts the source directory read-only, generates `packs.md` with an instructional list of files, and the `session-context.sh` hook injects it into `additionalContext` at session start. Files stay in your knowledge repo — zero duplication.
 
 For details see [docs/reference/cli.md §4.2](docs/reference/cli.md) and [docs/guides/project-setup.md](docs/guides/project-setup.md).
 

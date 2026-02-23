@@ -374,32 +374,49 @@ auth:
 
 ### 4.2 Knowledge Packs
 
-Knowledge packs bundle reusable documentation (conventions, business overviews, guidelines) that can be shared across multiple projects without copying files.
+Knowledge packs bundle reusable documentation, skills, agents, and rules that can be shared across multiple projects without copying files.
 
 **Pack definition** — `global/packs/<name>/pack.yml`:
 ```yaml
 name: my-client
-source: ~/documents/my-client-knowledge   # host directory to mount (read-only)
-target: /workspace/.packs/my-client       # container path
 
-# Files to @import into context
-files:
-  - backend-coding-conventions.md
-  - business-overview.md
-  - testing-guidelines.md
+# Knowledge files — mounted from source, injected into context automatically
+knowledge:
+  source: ~/documents/my-client-knowledge  # host dir to mount (read-only)
+  files:
+    - path: backend-coding-conventions.md
+      description: "Read when writing backend code, APIs, or DB logic"
+    - path: business-overview.md
+      description: "Read for business context and product understanding"
+    - testing-guidelines.md              # short form: no description
+
+# Skills — copied to /workspace/.claude/skills/ on cco start
+skills:
+  - deploy
+
+# Agents — copied to /workspace/.claude/agents/ on cco start
+agents:
+  - devops-specialist.md
+
+# Rules — copied to /workspace/.claude/rules/ on cco start
+rules:
+  - api-conventions.md
 ```
 
+All sections are optional. A knowledge-only pack needs only the `knowledge:` section.
+
 **How it works** — on every `cco start`:
-1. The `source` directory is mounted at `target` inside the container (read-only)
-2. `.claude/packs.md` is generated (or regenerated) with `@import` directives for each file:
+1. The `knowledge.source` directory is mounted at `/workspace/.packs/<name>/` (read-only)
+2. `.claude/packs.md` is generated with an instructional list of files and their descriptions:
    ```
-   @/workspace/.packs/my-client/backend-coding-conventions.md
-   @/workspace/.packs/my-client/business-overview.md
+   The following knowledge files are available.
+   Read them proactively when relevant to the current task:
+
+   - /workspace/.packs/my-client/backend-coding-conventions.md — Read when writing backend code
+   - /workspace/.packs/my-client/business-overview.md — Read for business context
    ```
-3. Add the following line **once** to your project's `CLAUDE.md` to activate:
-   ```
-   @.claude/packs.md
-   ```
+3. `session-context.sh` (SessionStart hook) injects `packs.md` into `additionalContext` automatically — **no CLAUDE.md edit needed**
+4. Skills, agents, and rules are copied from `global/packs/<name>/` into `projects/<n>/.claude/`
 
 **Pack directory** — `global/packs/` (gitignored, created by `cco init`):
 ```
@@ -407,8 +424,15 @@ global/
   packs/
     my-client/
       pack.yml
-    another-client/
-      pack.yml
+      knowledge/        # optional: omit knowledge.source to use this dir
+        overview.md
+      skills/
+        deploy/
+          SKILL.md
+      agents/
+        specialist.md
+      rules/
+        conventions.md
 ```
 
 ---
