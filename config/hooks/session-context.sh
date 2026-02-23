@@ -78,6 +78,12 @@ if [ -f /workspace/.claude/packs.md ]; then
 ${packs_section}"
 fi
 
+# Persist key session variables for all subsequent Bash tool calls
+if [ -n "$CLAUDE_ENV_FILE" ]; then
+    echo "export PROJECT_NAME=${PROJECT}" >> "$CLAUDE_ENV_FILE"
+    echo "export TEAMMATE_MODE=${TMODE}" >> "$CLAUDE_ENV_FILE"
+fi
+
 # Output JSON using jq for proper escaping
 jq -n --arg ctx "$ctx" '{
     hookSpecificOutput: {
