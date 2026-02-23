@@ -1,7 +1,7 @@
 # Requirements Specification
 
 > Version: 1.0.0
-> Status: Draft — Pending Review
+> Status: v1.0 — Current
 
 ---
 

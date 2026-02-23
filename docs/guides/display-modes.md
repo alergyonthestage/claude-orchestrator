@@ -1,8 +1,8 @@
 # Display Modes: Agent Teams Visualization
 
 > Version: 1.0.0
-> Status: Draft — Pending Review
-> Related: [ARCHITECTURE.md](./ARCHITECTURE.md) | [SUBAGENTS.md](./SUBAGENTS.md)
+> Status: v1.0 — Current
+> Related: [architecture.md](../maintainer/architecture.md) | [subagents.md](./subagents.md)
 
 ---
 

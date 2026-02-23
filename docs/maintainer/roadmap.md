@@ -6,6 +6,22 @@
 
 ## Near-term
 
+### Automated Testing
+
+Add an automated test suite to verify core mechanisms without requiring a full interactive session. This is critical for maintainability as the tool grows.
+
+**Scope**:
+- `cco init` copies all expected files from defaults/ to global/
+- `cco project create` generates the correct directory structure and substitutes placeholders
+- `cco start --dry-run` generates syntactically valid docker-compose.yml for a variety of project.yml inputs (single repo, multi-repo, extra_mounts, packs, custom ports/env)
+- Knowledge pack generation: `.claude/packs.md` is correctly generated with `@import` directives matching pack.yml definitions
+- YAML parser correctness: edge cases in the pure-bash awk parser (nested fields, empty lists, special characters)
+- Auth token extraction: mock the Keychain call and verify the OAuth flow
+
+**Approach**: pure bash test runner (no external framework). Each test case is a function that sets up a temp directory, runs a `cco` command, and asserts on the output files or stdout. A `bin/test` script runs all tests and reports pass/fail.
+
+**Complexity**: Medium. No container launch required — only `--dry-run` and file-system assertions. Parallelizable across test cases.
+
 ### Knowledge Packs — Agents & Skills support
 
 Currently packs support only knowledge document imports via `@path`. Future extension:

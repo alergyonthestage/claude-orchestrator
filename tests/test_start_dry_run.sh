@@ -159,14 +159,15 @@ test_dry_run_ssh_mounted_readonly() {
 # ── Volume mounts: auto memory (Design Invariant 3) ──────────────────
 
 test_dry_run_auto_memory_exact_path() {
-    # Design Invariant 3: auto memory MUST be at this exact path
+    # Design Invariant 3: claude-state MUST be mounted at this exact container path
+    # /workspace → -workspace (root slash replaced by dash per Claude Code convention)
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
     assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" \
-        "/home/claude/.claude/projects/workspace/memory"
+        "claude-state:/home/claude/.claude/projects/-workspace"
 }
 
 # ── Volume mounts: project config (Design Invariant 2 - read-write) ──
@@ -486,7 +487,7 @@ test_dry_run_volume_order_global_before_project() {
 }
 
 test_dry_run_volume_order_memory_before_git() {
-    # Design Invariant 6: auto memory before git mounts
+    # Design Invariant 6: claude-state mount before git mounts
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -494,7 +495,7 @@ test_dry_run_volume_order_memory_before_git() {
     run_cco start "test-proj" --dry-run
     local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
     local memory_line git_line
-    memory_line=$(grep -n "projects/workspace/memory" "$compose" | head -1 | cut -d: -f1)
+    memory_line=$(grep -n "claude-state.*-workspace" "$compose" | head -1 | cut -d: -f1)
     git_line=$(grep -n ".gitconfig:ro" "$compose" | head -1 | cut -d: -f1)
     if [[ -z "$memory_line" || -z "$git_line" ]]; then
         echo "ASSERTION FAILED: could not find memory or git line"

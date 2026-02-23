@@ -37,12 +37,12 @@ test_project_create_makes_settings_json() {
 }
 
 test_project_create_makes_memory_dir() {
-    # Auto memory isolation: every project must have a memory/ directory
+    # Auto memory isolation: every project must have a claude-state/memory/ directory
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco project create "my-project"
-    assert_dir_exists "$CCO_PROJECTS_DIR/my-project/memory"
+    assert_dir_exists "$CCO_PROJECTS_DIR/my-project/claude-state/memory"
 }
 
 test_project_create_substitutes_project_name_in_yml() {

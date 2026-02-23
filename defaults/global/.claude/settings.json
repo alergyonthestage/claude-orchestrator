@@ -43,8 +43,7 @@
     "deny": [
       "Read(~/.claude.json)",
       "Read(~/.ssh/*)"
-    ],
-    "defaultMode": "bypassPermissions"
+    ]
   },
 
   "hooks": {
@@ -71,7 +70,6 @@
     "command": "/usr/local/bin/cco-hooks/statusline.sh"
   },
 
-  "alwaysThinkingEnabled": true,
   "teammateMode": "tmux",
   "cleanupPeriodDays": 30,
 

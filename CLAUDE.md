@@ -59,7 +59,7 @@ The host's Docker socket is mounted into the container. Claude can run `docker c
 
 Per `docs/maintainer/directory-structure.md`:
 
-1. **Docker**: `Dockerfile`, `config/entrypoint.sh`, `config/tmux.conf`, `.dockerignore`
+1. **Docker**: `Dockerfile`, `config/entrypoint.sh`, `config/tmux.conf`, `config/hooks/`, `.dockerignore`
 2. **Global Config**: defaults in `defaults/global/.claude/`, user copy in `global/.claude/`
 3. **Project Template**: `defaults/_template/`
 4. **CLI**: `bin/cco`
@@ -67,6 +67,16 @@ Per `docs/maintainer/directory-structure.md`:
 
 ## Key Files
 
+**Implementation:**
+- `bin/cco` — CLI script (single bash file, all commands)
+- `Dockerfile` — Docker image (node:22-bookworm, Claude Code, gosu, tmux, docker CLI)
+- `config/entrypoint.sh` — Container entrypoint: socket GID fix, MCP merge, gosu, tmux/claude launch
+- `config/tmux.conf` — tmux config for agent teams (colors, navigation, history)
+- `config/hooks/session-context.sh` — SessionStart hook: injects repo list and MCP info into context
+- `config/hooks/statusline.sh` — StatusLine hook: displays `[project] model | ctx XX% | $cost`
+- `defaults/global/.claude/settings.json` — Global settings: permissions, hooks, teammate mode, attribution
+
+**Documentation:**
 - `docs/maintainer/spec.md` — requirements specification
 - `docs/maintainer/architecture.md` — ADRs and system design
 - `docs/maintainer/docker.md` — Dockerfile, compose template, networking

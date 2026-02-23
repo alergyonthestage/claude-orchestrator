@@ -71,8 +71,9 @@ test_invariant_2_project_config_at_workspace_claude_readwrite() {
 }
 
 # ── Invariant 3: Auto Memory Path ────────────────────────────────────
-# Path is DERIVED from WORKDIR basename (/workspace → workspace)
-# Must be exactly: ~/.claude/projects/workspace/memory/
+# Claude state (memory + transcripts) is mounted as claude-state/ on the host.
+# Container path is /home/claude/.claude/projects/-workspace
+# (-workspace = WORKDIR /workspace with root slash replaced by dash)
 
 test_invariant_3_auto_memory_exact_container_path() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
@@ -81,11 +82,11 @@ test_invariant_3_auto_memory_exact_container_path() {
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
     local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
-    assert_file_contains "$compose" "/home/claude/.claude/projects/workspace/memory"
+    assert_file_contains "$compose" "/home/claude/.claude/projects/-workspace"
 }
 
 test_invariant_3_memory_is_project_specific_host_path() {
-    # Each project's memory directory is isolated via mount
+    # Each project's state directory is isolated via mount
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -98,11 +99,11 @@ test_invariant_3_memory_is_project_specific_host_path() {
     local compose_a="$CCO_PROJECTS_DIR/proj-a/docker-compose.yml"
     local compose_b="$CCO_PROJECTS_DIR/proj-b/docker-compose.yml"
 
-    # Each project's compose should reference its own memory directory
-    assert_file_contains "$compose_a" "proj-a/memory"
-    assert_file_contains "$compose_b" "proj-b/memory"
-    assert_file_not_contains "$compose_a" "proj-b/memory"
-    assert_file_not_contains "$compose_b" "proj-a/memory"
+    # Each project's compose should reference its own claude-state directory
+    assert_file_contains "$compose_a" "proj-a/claude-state"
+    assert_file_contains "$compose_b" "proj-b/claude-state"
+    assert_file_not_contains "$compose_a" "proj-b/claude-state"
+    assert_file_not_contains "$compose_b" "proj-a/claude-state"
 }
 
 # ── Invariant 4: Container/Network Naming ────────────────────────────

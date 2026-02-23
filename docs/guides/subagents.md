@@ -1,8 +1,8 @@
 # Subagents Specification
 
 > Version: 1.0.0
-> Status: Draft — Pending Review
-> Related: [ARCHITECTURE.md](./ARCHITECTURE.md) | [CONTEXT.md](./CONTEXT.md)
+> Status: v1.0 — Current
+> Related: [architecture.md](../maintainer/architecture.md) | [context.md](../reference/context.md)
 
 ---
 
