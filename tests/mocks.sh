@@ -42,3 +42,36 @@ setup_mocks() {
     mkdir -p "$mock_bin"
     export PATH="$mock_bin:$PATH"
 }
+
+# Install a mock docker that simulates a running daemon.
+# Accepts 0 or more container names that 'docker ps' will return.
+# Writes all docker invocations to $DOCKER_CALL_LOG if that env var is set.
+# Usage: _mock_docker_with_containers "$mock_bin" ["cc-proj-a" ...]
+_mock_docker_with_containers() {
+    local dir="$1"
+    shift
+    local ps_lines=""
+    for name in "$@"; do
+        ps_lines+="        printf '%s\\n' '${name}'"$'\n'
+    done
+    mkdir -p "$dir"
+    cat > "$dir/docker" <<MOCK
+#!/usr/bin/env bash
+[[ -n "\${DOCKER_CALL_LOG:-}" ]] && echo "\$*" >> "\${DOCKER_CALL_LOG}"
+case "\$1" in
+    info)  exit 0 ;;
+    ps)
+${ps_lines}        ;;
+    stop)  ;;
+    image) exit 0 ;;
+    *)     exit 0 ;;
+esac
+MOCK
+    chmod +x "$dir/docker"
+}
+
+# Install a mock docker with no running containers (daemon is running, ps is empty).
+# Usage: _mock_docker_no_containers "$mock_bin"
+_mock_docker_no_containers() {
+    _mock_docker_with_containers "$1"
+}
