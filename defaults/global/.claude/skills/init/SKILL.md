@@ -23,12 +23,13 @@ Parse `$ARGUMENTS` (default: `all`):
 ## Step 1: Read workspace.yml
 
 Read `/workspace/.claude/workspace.yml` to understand the project structure:
-repos (names, paths), packs (referenced pack names).
+repos (names and container paths at `/workspace/<name>`), packs (referenced pack names),
+and extra_mounts (shared libraries mounted at their `target` paths).
 
 If `workspace.yml` is missing or empty, check `/workspace/.claude/project.yml`
 for the project name and repos list as fallback.
 
-## Step 2: Explore repositories (scope: repos or all)
+## Step 2: Explore repositories and shared libraries (scope: repos or all)
 
 For each repo listed in `workspace.yml`:
 
@@ -43,6 +44,10 @@ Synthesize a 2-3 sentence description covering:
 - What the service/app does
 - Tech stack (language, framework, key dependencies)
 - Key commands (dev, test, build, lint)
+
+For each path in `extra_mounts` (if any): list the top-level directory and
+read any README or package manifest to identify purpose and key exports.
+Add them to the "Shared Libraries" section of CLAUDE.md.
 
 ## Step 3: Describe knowledge pack files (scope: packs or all)
 
@@ -92,6 +97,12 @@ Write `/workspace/.claude/CLAUDE.md` with the following structure:
 - Docker network: cc-<project-name>
 - <Any sibling services, databases, caches visible in docker-compose files>
 
+## Shared Libraries
+<Only include if workspace.yml has extra_mounts entries>
+| Path | Purpose |
+|------|---------|
+| <target> | <one-line description> |
+
 ## Knowledge Packs
 <For each knowledge file: name → what it contains → when to read it>
 ```
@@ -110,6 +121,9 @@ and will be preserved the next time `cco start` regenerates the file.
 
 Use precise awk/sed edits to update only the `description:` fields — do not
 reformat or restructure the file.
+
+`extra_mounts` entries in workspace.yml do not have description fields — they
+are target paths only. No changes needed to that section.
 
 Do **not** modify `/workspace/.claude/project.yml` — it is the host-managed
 config file and is not the right place for auto-generated descriptions.

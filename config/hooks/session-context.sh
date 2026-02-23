@@ -28,6 +28,24 @@ if [ -f /home/claude/.claude.json ]; then
     fi
 fi
 
+# Discover available skills (global + project scope)
+skills=""
+for d in /home/claude/.claude/skills/*/; do
+    [ -d "$d" ] && skills="${skills} /$(basename "$d")"
+done
+for d in /workspace/.claude/skills/*/; do
+    [ -d "$d" ] && skills="${skills} /$(basename "$d")"
+done
+
+# Discover available agents (global + project scope)
+agents=""
+for f in /home/claude/.claude/agents/*.md; do
+    [ -f "$f" ] && agents="${agents} $(basename "$f" .md)"
+done
+for f in /workspace/.claude/agents/*.md; do
+    [ -f "$f" ] && agents="${agents} $(basename "$f" .md)"
+done
+
 # Build context string
 ctx="<SessionContext>
 Project: ${PROJECT}
@@ -37,6 +55,16 @@ Repositories (${repo_count}):${repos}"
 if [ "$mcp_count" -gt 0 ]; then
     ctx="${ctx}
 MCP servers (${mcp_count}): ${mcp_names}"
+fi
+
+if [ -n "$skills" ]; then
+    ctx="${ctx}
+Available skills:${skills}"
+fi
+
+if [ -n "$agents" ]; then
+    ctx="${ctx}
+Available agents:${agents}"
 fi
 
 ctx="${ctx}
