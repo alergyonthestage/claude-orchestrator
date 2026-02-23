@@ -42,6 +42,14 @@ fi
 ctx="${ctx}
 </SessionContext>"
 
+# Inject knowledge packs (immutable, automatic — independent of CLAUDE.md)
+if [ -f /workspace/.claude/packs.md ]; then
+    packs_section=$(grep -v '^<!--' /workspace/.claude/packs.md)
+    [ -n "$packs_section" ] && ctx="${ctx}
+
+${packs_section}"
+fi
+
 # Output JSON using jq for proper escaping
 jq -n --arg ctx "$ctx" '{
     hookSpecificOutput: {
