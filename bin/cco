@@ -314,7 +314,8 @@ _generate_workspace_yml() {
             while IFS=: read -r repo_path repo_name; do
                 [[ -z "$repo_path" ]] && continue
                 repo_path=$(expand_path "$repo_path")
-                # Preserve existing description if present in previous workspace.yml
+                # Preserve existing description from workspace.yml; fall back to
+                # project.yml description as seed on first run (if manually set).
                 local desc=""
                 if [[ -f "$ws_yml" ]]; then
                     desc=$(awk -v name="$repo_name" '
@@ -327,6 +328,21 @@ _generate_workspace_yml() {
                         }
                         found && /^  - / { found=0 }
                     ' "$ws_yml")
+                fi
+                # Seed from project.yml if workspace.yml had no description
+                if [[ -z "$desc" && -f "$project_yml" ]]; then
+                    desc=$(awk -v name="$repo_name" '
+                        /^repos:/ { in_repos=1; next }
+                        in_repos && /^[^ #]/ { exit }
+                        in_repos && /^  - / { in_repo=0 }
+                        in_repos && /^    name:/ {
+                            sub(/^    name: */, ""); gsub(/["\047]/, "")
+                            if ($0 == name) in_repo=1
+                        }
+                        in_repos && in_repo && /^    description:/ {
+                            sub(/^    description: */, ""); gsub(/["\047]/, ""); print; exit
+                        }
+                    ' "$project_yml")
                 fi
                 echo "  - name: ${repo_name}"
                 echo "    path: ${repo_path}"

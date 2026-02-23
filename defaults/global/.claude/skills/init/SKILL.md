@@ -10,8 +10,8 @@ argument-hint: "[repos | packs | all (default: all)]"
 # Init: Project Context Initialization
 
 Initialize or refresh the project's CLAUDE.md with accurate, up-to-date context.
-Also updates `/workspace/.claude/project.yml` and `/workspace/.claude/workspace.yml`
-with repository and knowledge file descriptions.
+Also updates `/workspace/.claude/workspace.yml` with repository and knowledge file
+descriptions. Descriptions persist on the host via the rw `.claude/` mount.
 
 ## Scope
 
@@ -99,25 +99,20 @@ Write `/workspace/.claude/CLAUDE.md` with the following structure:
 Preserve any existing sections not listed above (e.g., custom workflow notes,
 secrets management instructions, team conventions added manually).
 
-## Step 6: Update project.yml and workspace.yml
+## Step 6: Update workspace.yml
 
-After writing CLAUDE.md:
+After writing CLAUDE.md, update `/workspace/.claude/workspace.yml` with the
+descriptions you wrote for each repo and knowledge file.
 
-1. For each repo with a non-empty description, update the corresponding entry
-   in `/workspace/.claude/project.yml`:
-   ```yaml
-   repos:
-     - path: ~/path/to/repo
-       name: repo-name
-       description: "The description you wrote"
-   ```
-   If the `description:` field is missing from a repo entry, add it.
-
-2. Update `/workspace/.claude/workspace.yml` with the same descriptions
-   (matching the `description:` field under each repo entry).
+`workspace.yml` is the authoritative store for descriptions. It persists on
+the host via the rw `.claude/` mount — descriptions survive container restarts
+and will be preserved the next time `cco start` regenerates the file.
 
 Use precise awk/sed edits to update only the `description:` fields — do not
-reformat or restructure the rest of the YAML files.
+reformat or restructure the file.
+
+Do **not** modify `/workspace/.claude/project.yml` — it is the host-managed
+config file and is not the right place for auto-generated descriptions.
 
 ## Notes
 
