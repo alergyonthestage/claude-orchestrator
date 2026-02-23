@@ -4,7 +4,7 @@
 # Verifies that .claude/packs.md is correctly generated with instructional file list.
 # Design Invariant 7: format must be - /workspace/.packs/<name>/<file>
 
-# Helper: create a standard single-pack project for testing
+# Helper: create a standard single-pack project for testing (new schema)
 _create_pack_project() {
     local tmpdir="$1"
     local pack_name="${2:-my-pack}"
@@ -12,11 +12,11 @@ _create_pack_project() {
     mkdir -p "$pack_src"
     create_pack "$tmpdir" "$pack_name" "$(cat <<YAML
 name: $pack_name
-source: $pack_src
-target: /workspace/.packs/$pack_name
-files:
-  - overview.md
-  - conventions.md
+knowledge:
+  source: $pack_src
+  files:
+    - overview.md
+    - conventions.md
 YAML
 )"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
@@ -69,7 +69,7 @@ test_packs_md_file_list_format() {
 }
 
 test_packs_md_one_line_per_file() {
-    # Each file in pack.yml gets its own @import line
+    # Each file in pack.yml knowledge.files gets its own list entry
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -77,12 +77,12 @@ test_packs_md_one_line_per_file() {
     mkdir -p "$pack_src"
     create_pack "$tmpdir" "multi-file-pack" "$(cat <<YAML
 name: multi-file-pack
-source: $pack_src
-target: /workspace/.packs/multi-file-pack
-files:
-  - doc-a.md
-  - doc-b.md
-  - doc-c.md
+knowledge:
+  source: $pack_src
+  files:
+    - doc-a.md
+    - doc-b.md
+    - doc-c.md
 YAML
 )"
     create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
@@ -114,18 +114,18 @@ test_packs_md_multiple_packs_all_files_present() {
     mkdir -p "$src_a" "$src_b"
     create_pack "$tmpdir" "pack-a" "$(cat <<YAML
 name: pack-a
-source: $src_a
-target: /workspace/.packs/pack-a
-files:
-  - a-overview.md
+knowledge:
+  source: $src_a
+  files:
+    - a-overview.md
 YAML
 )"
     create_pack "$tmpdir" "pack-b" "$(cat <<YAML
 name: pack-b
-source: $src_b
-target: /workspace/.packs/pack-b
-files:
-  - b-guide.md
+knowledge:
+  source: $src_b
+  files:
+    - b-guide.md
 YAML
 )"
     create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
@@ -200,11 +200,11 @@ test_packs_md_description_included_when_present() {
     mkdir -p "$pack_src"
     create_pack "$tmpdir" "desc-pack" "$(cat <<YAML
 name: desc-pack
-source: $pack_src
-target: /workspace/.packs/desc-pack
-files:
-  - path: guide.md
-    description: "Read when working on guides"
+knowledge:
+  source: $pack_src
+  files:
+    - path: guide.md
+      description: "Read when working on guides"
 YAML
 )"
     create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
@@ -233,10 +233,10 @@ test_packs_md_no_description_shows_path_only() {
     mkdir -p "$pack_src"
     create_pack "$tmpdir" "nodesc-pack" "$(cat <<YAML
 name: nodesc-pack
-source: $pack_src
-target: /workspace/.packs/nodesc-pack
-files:
-  - notes.md
+knowledge:
+  source: $pack_src
+  files:
+    - notes.md
 YAML
 )"
     create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
@@ -259,4 +259,173 @@ YAML
         echo "ASSERTION FAILED: packs.md should not contain description suffix when no description is set"
         return 1
     fi
+}
+
+# ── workspace.yml generation ──────────────────────────────────────────
+
+test_workspace_yml_is_generated() {
+    # cco start must create .claude/workspace.yml
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --dry-run
+    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.claude/workspace.yml"
+}
+
+test_workspace_yml_contains_project_name() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "my-project" "$(minimal_project_yml my-project)"
+    run_cco start "my-project" --dry-run
+    assert_file_contains "$CCO_PROJECTS_DIR/my-project/.claude/workspace.yml" "project: my-project"
+}
+
+test_workspace_yml_contains_repo_names() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local repo_a="$tmpdir/repo-a"
+    local repo_b="$tmpdir/repo-b"
+    mkdir -p "$repo_a" "$repo_b"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+repos:
+  - path: $repo_a
+    name: repo-a
+  - path: $repo_b
+    name: repo-b
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    local ws="$CCO_PROJECTS_DIR/test-proj/.claude/workspace.yml"
+    assert_file_contains "$ws" "name: repo-a"
+    assert_file_contains "$ws" "name: repo-b"
+}
+
+test_workspace_yml_contains_pack_names() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local pack_src="$tmpdir/pack-src"
+    mkdir -p "$pack_src"
+    create_pack "$tmpdir" "my-pack" "$(cat <<YAML
+name: my-pack
+knowledge:
+  source: $pack_src
+  files:
+    - guide.md
+YAML
+)"
+    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+repos: []
+packs:
+  - my-pack
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/.claude/workspace.yml" "- my-pack"
+}
+
+# ── project.yml mount ─────────────────────────────────────────────────
+
+test_project_yml_mounted_in_compose() {
+    # project.yml must be mounted at /workspace/.claude/project.yml (rw)
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --dry-run
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" \
+        "./project.yml:/workspace/.claude/project.yml"
+}
+
+# ── pack skills / agents / rules copy ────────────────────────────────
+
+test_pack_skills_copied_to_project_claude() {
+    # Skills defined in pack are copied to projects/<n>/.claude/skills/
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    # Create pack with a skill
+    local pack_dir="$tmpdir/global/packs/skill-pack"
+    mkdir -p "$pack_dir/skills/deploy"
+    echo "Deploy skill" > "$pack_dir/skills/deploy/SKILL.md"
+    printf 'name: skill-pack\nskills:\n  - deploy\n' > "$pack_dir/pack.yml"
+    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+repos: []
+packs:
+  - skill-pack
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.claude/skills/deploy/SKILL.md"
+}
+
+test_pack_agents_copied_to_project_claude() {
+    # Agents defined in pack are copied to projects/<n>/.claude/agents/
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local pack_dir="$tmpdir/global/packs/agent-pack"
+    mkdir -p "$pack_dir/agents"
+    echo "Agent spec" > "$pack_dir/agents/devops.md"
+    printf 'name: agent-pack\nagents:\n  - devops.md\n' > "$pack_dir/pack.yml"
+    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+repos: []
+packs:
+  - agent-pack
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.claude/agents/devops.md"
+}
+
+test_pack_rules_copied_to_project_claude() {
+    # Rules defined in pack are copied to projects/<n>/.claude/rules/
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local pack_dir="$tmpdir/global/packs/rules-pack"
+    mkdir -p "$pack_dir/rules"
+    echo "API rules" > "$pack_dir/rules/api-conventions.md"
+    printf 'name: rules-pack\nrules:\n  - api-conventions.md\n' > "$pack_dir/pack.yml"
+    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+repos: []
+packs:
+  - rules-pack
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.claude/rules/api-conventions.md"
 }

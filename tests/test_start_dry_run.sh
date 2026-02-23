@@ -393,10 +393,10 @@ test_dry_run_pack_mounted_readonly() {
     mkdir -p "$pack_src"
     create_pack "$tmpdir" "my-pack" "$(cat <<YAML
 name: my-pack
-source: $pack_src
-target: /workspace/.packs/my-pack
-files:
-  - doc.md
+knowledge:
+  source: $pack_src
+  files:
+    - doc.md
 YAML
 )"
     create_project "$tmpdir" "test-proj" "$(cat <<'YAML'

@@ -14,11 +14,28 @@ repos: []
 
 # ── Knowledge Packs (optional) ───────────────────────────────────────
 # Reference named packs defined in global/packs/<name>/pack.yml.
-# Each pack mounts a knowledge directory (read-only) and generates
-# .claude/packs.md with @import directives on every `cco start`.
-# Add `@.claude/packs.md` once to your project's CLAUDE.md to activate.
+# Each pack can provide: knowledge files, skills, agents, and rules.
+# On every `cco start`, knowledge files are listed in .claude/packs.md
+# and injected into the session context automatically (no CLAUDE.md edit needed).
+# Skills, agents, and rules are copied to .claude/ for project-scoped access.
+#
+# Pack schema (global/packs/<name>/pack.yml):
+#   name: my-pack
+#   knowledge:
+#     source: ~/path/to/docs   # optional; omit to use pack's own knowledge/ dir
+#     files:
+#       - path: guide.md
+#         description: "Read when working on X"
+#       - simple.md
+#   skills:
+#     - deploy
+#   agents:
+#     - specialist.md
+#   rules:
+#     - conventions.md
+#
 # packs:
-#   - my-client-knowledge
+#   - my-pack
 
 # ── Docker options ───────────────────────────────────────────────────
 docker:

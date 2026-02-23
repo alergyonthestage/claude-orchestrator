@@ -381,10 +381,10 @@ test_yaml_parser_pack_referenced_is_mounted() {
     mkdir -p "$pack_src"
     create_pack "$tmpdir" "my-pack" "$(cat <<YAML
 name: my-pack
-source: $pack_src
-target: /workspace/.packs/my-pack
-files:
-  - doc.md
+knowledge:
+  source: $pack_src
+  files:
+    - doc.md
 YAML
 )"
     create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
@@ -405,13 +405,12 @@ YAML
 }
 
 test_yaml_parser_no_packs_section_no_pack_mounts() {
-    # yml_get_packs: no packs → no pack mounts in compose
+    # yml_get_packs: no packs → no /.packs/ mounts in compose
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
     local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
-    assert_file_contains "$compose" "# Knowledge packs"
     assert_file_not_contains "$compose" "/.packs/"
 }
