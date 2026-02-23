@@ -1,8 +1,8 @@
 # Docker Specification
 
 > Version: 1.0.0
-> Status: Draft — Pending Review
-> Related: [ARCHITECTURE.md](./ARCHITECTURE.md) | [SPEC.md](./SPEC.md)
+> Status: v1.0 — Current
+> Related: [architecture.md](./architecture.md) | [spec.md](./spec.md)
 
 ---
 
@@ -188,8 +188,8 @@ services:
       # --- Project config → project-level (/workspace/.claude/) ---
       - ./.claude:/workspace/.claude
       
-      # --- Auto memory (isolated per project) ---
-      - ./memory:/home/claude/.claude/projects/workspace/memory
+      # --- Claude state: auto memory + session transcripts ---
+      - ./claude-state:/home/claude/.claude/projects/-workspace
       
       # --- Repositories ---
       # (generated from project.yml repos list)
@@ -240,8 +240,8 @@ $GLOBAL_DIR/.claude/rules/           → ~/.claude/rules/            Global rule
 $GLOBAL_DIR/.claude/agents/          → ~/.claude/agents/           Global subagents (ro)
 $GLOBAL_DIR/.claude/skills/          → ~/.claude/skills/           Global skills (ro)
 projects/<n>/.claude/                → /workspace/.claude/         Project context (rw)
-projects/<n>/memory/                 → ~/.claude/projects/         Auto memory (rw)
-                                       workspace/memory/
+projects/<n>/claude-state/           → ~/.claude/projects/         Memory + session transcripts (rw)
+                                       -workspace/
 ~/projects/repo-x/                   → /workspace/repo-x/          Repository (rw)
 ~/.gitconfig                         → ~/.gitconfig                 Git config (ro)
 ~/.ssh/                              → ~/.ssh/                      SSH keys (ro)

@@ -241,6 +241,17 @@ load_global_secrets() {
     done < "$secrets_file"
 }
 
+# Migrate legacy memory/ dir into claude-state/memory/ (one-time, non-destructive)
+migrate_memory_to_claude_state() {
+    local project_dir="$1"
+    if [[ -d "$project_dir/memory" && ! -d "$project_dir/claude-state" ]]; then
+        info "Migrating $project_dir/memory → claude-state/memory (one-time)"
+        mkdir -p "$project_dir/claude-state"
+        mv "$project_dir/memory" "$project_dir/claude-state/memory"
+    fi
+    mkdir -p "$project_dir/claude-state/memory"
+}
+
 # Check Docker is running
 check_docker() {
     if ! docker info >/dev/null 2>&1; then
@@ -481,8 +492,8 @@ EOF
     local pack_names
     pack_names=$(yml_get_packs "$project_yml")
 
-    # Ensure memory directory exists
-    mkdir -p "$project_dir/memory"
+    # Ensure claude-state directory exists (migrates legacy memory/ if needed)
+    migrate_memory_to_claude_state "$project_dir"
 
     # ── Generate docker-compose.yml ──────────────────────────────────
     local compose_file="$project_dir/docker-compose.yml"
@@ -539,8 +550,8 @@ YAML
       - ${GLOBAL_DIR}/.claude/skills:/home/claude/.claude/skills:ro
       # Project config
       - ./.claude:/workspace/.claude
-      # Auto memory
-      - ./memory:/home/claude/.claude/projects/workspace/memory
+      # Claude state: auto memory + session transcripts (enables /resume across rebuilds)
+      - ./claude-state:/home/claude/.claude/projects/-workspace
 YAML
 
         # Global MCP config (merged into ~/.claude.json by entrypoint)
@@ -733,7 +744,7 @@ EOF
     [[ -z "$session_name" ]] && session_name="tmp-$(date +%s)"
 
     local tmp_dir="/tmp/cc-${session_name}"
-    mkdir -p "$tmp_dir/memory" "$tmp_dir/.claude"
+    mkdir -p "$tmp_dir/claude-state/memory" "$tmp_dir/.claude"
 
     # Create minimal project CLAUDE.md
     cat > "$tmp_dir/.claude/CLAUDE.md" <<EOF
@@ -778,8 +789,8 @@ services:
       - ${GLOBAL_DIR}/.claude/skills:/home/claude/.claude/skills:ro
       # Session config
       - ${tmp_dir}/.claude:/workspace/.claude
-      # Auto memory
-      - ${tmp_dir}/memory:/home/claude/.claude/projects/workspace/memory
+      # Claude state: auto memory + session transcripts (enables /resume across rebuilds)
+      - ${tmp_dir}/claude-state:/home/claude/.claude/projects/-workspace
 YAML
 
         # Global MCP config
@@ -972,8 +983,8 @@ print(', '.join(['$'+k for k in ['dev','build','test','start','lint'] if k in s]
         fi
     fi
 
-    # Ensure memory dir exists
-    mkdir -p "$project_dir/memory"
+    # Ensure claude-state dir exists
+    mkdir -p "$project_dir/claude-state/memory"
 
     ok "Project created at projects/$name/"
     info "Edit project.yml to configure repos and settings"

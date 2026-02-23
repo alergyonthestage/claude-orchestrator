@@ -1,8 +1,8 @@
 # Architecture & Design
 
 > Version: 1.0.0
-> Status: Draft — Pending Review
-> Related: [SPEC.md](./SPEC.md) | [DOCKER.md](./DOCKER.md) | [CONTEXT.md](./CONTEXT.md)
+> Status: v1.0 — Current
+> Related: [spec.md](./spec.md) | [docker.md](./docker.md) | [context.md](../reference/context.md)
 
 ---
 
@@ -199,28 +199,29 @@ Claude Code stores OAuth tokens in the macOS Keychain, not in `~/.claude.json` (
 
 ---
 
-### ADR-6: Auto Memory Isolation
+### ADR-6: Claude State Isolation and Persistence
 
-**Context**: Claude auto memory is stored at `~/.claude/projects/<project>/memory/`. Since we mount `global/.claude/` to `~/.claude/`, all projects would share the same memory location.
+**Context**: Claude Code stores auto memory and session transcripts at `~/.claude/projects/<project>/`. Since we mount `global/.claude/` to `~/.claude/`, all projects would share the same state location. Additionally, the ephemeral container (`--rm`) loses all in-container data on exit, including session transcripts needed for `/resume`.
 
-**Decision**: Each project gets a dedicated `memory/` directory, mounted to the correct auto memory path.
+**Decision**: Each project gets a dedicated `claude-state/` directory, mounted to the full project state path. Memory lives inside it as `claude-state/memory/`.
 
 ```yaml
 volumes:
-  - ./memory/:/home/claude/.claude/projects/workspace/memory/
+  - ./claude-state:/home/claude/.claude/projects/-workspace
 ```
 
-The path `workspace` comes from Claude Code deriving the project identifier from the git root. Since WORKDIR is `/workspace` (not a git repo itself), Claude Code uses the directory name.
+The identifier `-workspace` comes from Claude Code encoding the absolute working directory path by replacing each `/` with `-`. Since WORKDIR is `/workspace`, the encoded identifier is `-workspace`.
 
 **Rationale**:
 - Auto memory is useful and should not be disabled
 - Project-specific insights should not leak across projects
-- Each project's memory persists in the orchestrator repo
+- Session transcripts (needed for `/resume`) must survive container restarts and image rebuilds
+- A single broad mount covers both memory and transcript storage
 
 **Consequences**:
-- Each project directory includes a `memory/` folder
+- Each project directory includes a `claude-state/` folder with `memory/` inside
 - The mount target path depends on how Claude Code derives the project identifier
-- May need testing to confirm the exact path Claude Code uses
+- Existing projects with a `memory/` dir are auto-migrated to `claude-state/memory/` on next `cco start`
 
 ---
 
@@ -260,7 +261,7 @@ cco start my-project --teammate-mode auto  # iTerm2 if available
 
 ### 3.1 Docker Image
 
-See [DOCKER.md](./DOCKER.md) for full specification.
+See [DOCKER.md](./docker.md) for full specification.
 
 **Key aspects**:
 - Base: `node:22-bookworm`
@@ -270,7 +271,7 @@ See [DOCKER.md](./DOCKER.md) for full specification.
 
 ### 3.2 CLI (`bin/cco`)
 
-See [CLI.md](./CLI.md) for full specification.
+See [CLI.md](../reference/cli.md) for full specification.
 
 **Key aspects**:
 - Single bash script, no external dependencies
@@ -279,7 +280,7 @@ See [CLI.md](./CLI.md) for full specification.
 
 ### 3.3 Context & Settings
 
-See [CONTEXT.md](./CONTEXT.md) for full specification.
+See [CONTEXT.md](../reference/context.md) for full specification.
 
 **Key aspects**:
 - Three-tier hierarchy matching Claude Code native scopes
@@ -288,7 +289,7 @@ See [CONTEXT.md](./CONTEXT.md) for full specification.
 
 ### 3.4 Subagents
 
-See [SUBAGENTS.md](./SUBAGENTS.md) for full specification.
+See [SUBAGENTS.md](../guides/subagents.md) for full specification.
 
 **Key aspects**:
 - Two default subagents: analyst (haiku, read-only) and reviewer (sonnet, read-only)
@@ -442,5 +443,5 @@ Claude Code startup in /workspace:
 | Docker Desktop Mac networking | No true `host` networking; port mapping required | Explicit port ranges in project config |
 | Auto memory path derivation | Depends on Claude Code internal logic | May need testing; mount path may need adjustment |
 | tmux inside Docker | No native clipboard integration with macOS | Use iTerm2 mode or manual copy |
-| Container ephemeral by default | Session transcripts lost on container removal | Auto memory + git commits persist important state |
+| Container ephemeral by default | Session transcripts lost on container removal | `claude-state/` mount persists transcripts; `/resume` works across rebuilds |
 | Single Docker daemon | All projects share the daemon | Use distinct network names per project |

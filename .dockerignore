@@ -1,6 +1,6 @@
 docs/
 .git/
-projects/*/memory/
+projects/*/claude-state/
 *.md
 !config/*.md
 .gitignore
