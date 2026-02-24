@@ -695,6 +695,11 @@ EOF
     project_name=$(yml_get "$project_yml" "name")
     [[ -z "$project_name" ]] && project_name="$project"
 
+    # Check for existing running session
+    if ! $dry_run && docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^cc-${project_name}$"; then
+        die "Project '${project_name}' already has a running session (container cc-${project_name}). Run 'cco stop ${project}' first."
+    fi
+
     local auth_method
     auth_method=$(yml_get "$project_yml" "auth.method")
     [[ -z "$auth_method" ]] && auth_method="oauth"
@@ -976,6 +981,11 @@ EOF
     check_image
 
     [[ -z "$session_name" ]] && session_name="tmp-$(date +%s)"
+
+    # Check for existing running session
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^cc-${session_name}$"; then
+        die "Session '${session_name}' already running (container cc-${session_name}). Run 'cco stop' first."
+    fi
 
     local tmp_dir="/tmp/cc-${session_name}"
     mkdir -p "$tmp_dir/claude-state/memory" "$tmp_dir/.claude"
