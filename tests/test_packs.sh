@@ -429,3 +429,202 @@ YAML
     run_cco start "test-proj" --dry-run
     assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.claude/rules/api-conventions.md"
 }
+
+# ── pack manifest (stale file cleanup) ──────────────────────────────
+
+test_pack_manifest_created_after_copy() {
+    # .pack-manifest is created listing all copied resources
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local pack_dir="$tmpdir/global/packs/mf-pack"
+    mkdir -p "$pack_dir/agents" "$pack_dir/rules"
+    echo "Agent" > "$pack_dir/agents/bot.md"
+    echo "Rule" > "$pack_dir/rules/style.md"
+    printf 'name: mf-pack\nagents:\n  - bot.md\nrules:\n  - style.md\n' > "$pack_dir/pack.yml"
+    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+repos: []
+packs:
+  - mf-pack
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    local manifest="$CCO_PROJECTS_DIR/test-proj/.claude/.pack-manifest"
+    assert_file_exists "$manifest"
+    assert_file_contains "$manifest" "agents/bot.md"
+    assert_file_contains "$manifest" "rules/style.md"
+}
+
+test_pack_manifest_stale_files_cleaned() {
+    # When a pack removes a resource, the stale file is cleaned on next start
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local pack_dir="$tmpdir/global/packs/evolve-pack"
+    mkdir -p "$pack_dir/agents"
+    echo "Agent v1" > "$pack_dir/agents/old-agent.md"
+    echo "Agent v1" > "$pack_dir/agents/keep-agent.md"
+    printf 'name: evolve-pack\nagents:\n  - old-agent.md\n  - keep-agent.md\n' > "$pack_dir/pack.yml"
+    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+repos: []
+packs:
+  - evolve-pack
+YAML
+)"
+    # First start: both agents copied
+    run_cco start "test-proj" --dry-run
+    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.claude/agents/old-agent.md"
+    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.claude/agents/keep-agent.md"
+    # Remove old-agent from pack definition
+    printf 'name: evolve-pack\nagents:\n  - keep-agent.md\n' > "$pack_dir/pack.yml"
+    # Second start: old-agent should be cleaned
+    run_cco start "test-proj" --dry-run
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/agents/old-agent.md"
+    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.claude/agents/keep-agent.md"
+}
+
+test_pack_manifest_no_packs_cleans_all() {
+    # Removing all packs from project.yml cleans previously copied resources
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local pack_dir="$tmpdir/global/packs/temp-pack"
+    mkdir -p "$pack_dir/rules"
+    echo "Rule" > "$pack_dir/rules/temp-rule.md"
+    printf 'name: temp-pack\nrules:\n  - temp-rule.md\n' > "$pack_dir/pack.yml"
+    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+repos: []
+packs:
+  - temp-pack
+YAML
+)"
+    # First start: rule copied
+    run_cco start "test-proj" --dry-run
+    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.claude/rules/temp-rule.md"
+    # Remove packs entirely
+    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+repos: []
+YAML
+)"
+    # Second start: stale rule should be cleaned
+    run_cco start "test-proj" --dry-run
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/rules/temp-rule.md"
+}
+
+# ── pack name conflict warnings ──────────────────────────────────────
+
+test_pack_conflict_warns_duplicate_agent() {
+    # Two packs defining the same agent filename should emit a warning
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local pack_a="$tmpdir/global/packs/pack-a"
+    local pack_b="$tmpdir/global/packs/pack-b"
+    mkdir -p "$pack_a/agents" "$pack_b/agents"
+    echo "Agent from A" > "$pack_a/agents/reviewer.md"
+    echo "Agent from B" > "$pack_b/agents/reviewer.md"
+    printf 'name: pack-a\nagents:\n  - reviewer.md\n' > "$pack_a/pack.yml"
+    printf 'name: pack-b\nagents:\n  - reviewer.md\n' > "$pack_b/pack.yml"
+    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+repos: []
+packs:
+  - pack-a
+  - pack-b
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    assert_output_contains "Agent 'reviewer.md' defined in both pack 'pack-a' and 'pack-b'"
+}
+
+test_pack_conflict_warns_duplicate_rule() {
+    # Two packs defining the same rule filename should emit a warning
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local pack_a="$tmpdir/global/packs/pack-a"
+    local pack_b="$tmpdir/global/packs/pack-b"
+    mkdir -p "$pack_a/rules" "$pack_b/rules"
+    echo "Rule from A" > "$pack_a/rules/style.md"
+    echo "Rule from B" > "$pack_b/rules/style.md"
+    printf 'name: pack-a\nrules:\n  - style.md\n' > "$pack_a/pack.yml"
+    printf 'name: pack-b\nrules:\n  - style.md\n' > "$pack_b/pack.yml"
+    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+repos: []
+packs:
+  - pack-a
+  - pack-b
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    assert_output_contains "Rule 'style.md' defined in both pack 'pack-a' and 'pack-b'"
+}
+
+test_pack_no_conflict_unique_names() {
+    # Packs with unique resource names should produce no warnings
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local pack_a="$tmpdir/global/packs/pack-a"
+    local pack_b="$tmpdir/global/packs/pack-b"
+    mkdir -p "$pack_a/agents" "$pack_b/agents"
+    echo "Agent A" > "$pack_a/agents/analyst.md"
+    echo "Agent B" > "$pack_b/agents/reviewer.md"
+    printf 'name: pack-a\nagents:\n  - analyst.md\n' > "$pack_a/pack.yml"
+    printf 'name: pack-b\nagents:\n  - reviewer.md\n' > "$pack_b/pack.yml"
+    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+repos: []
+packs:
+  - pack-a
+  - pack-b
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    # Should NOT contain any conflict warning
+    if echo "$CCO_OUTPUT" | grep -q "defined in both pack"; then
+        echo "ASSERTION FAILED: Expected no conflict warning but found one"
+        echo "$CCO_OUTPUT" | grep "defined in both pack" | sed 's/^/    /'
+        return 1
+    fi
+}
