@@ -7,6 +7,8 @@
 .env.*
 global/secrets.env
 secrets.env
+# Allow template secrets.env (tracked tool code)
+!defaults/_template/secrets.env
 
 # macOS
 .DS_Store

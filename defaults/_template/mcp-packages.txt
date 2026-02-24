@@ -1,0 +1,5 @@
+# Per-project MCP server npm packages — installed at every `cco start`.
+# One package per line. Lines starting with # are ignored.
+#
+# @modelcontextprotocol/server-github
+# @modelcontextprotocol/server-postgres

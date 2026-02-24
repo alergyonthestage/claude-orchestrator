@@ -159,3 +159,29 @@ test_project_create_fails_if_already_exists() {
         return 1
     fi
 }
+
+# ── Template files from Sprint 1+2 ──────────────────────────────────
+
+test_project_create_includes_secrets_env() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco project create "my-project"
+    assert_file_exists "$CCO_PROJECTS_DIR/my-project/secrets.env"
+}
+
+test_project_create_includes_setup_sh() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco project create "my-project"
+    assert_file_exists "$CCO_PROJECTS_DIR/my-project/setup.sh"
+}
+
+test_project_create_includes_mcp_packages_txt() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco project create "my-project"
+    assert_file_exists "$CCO_PROJECTS_DIR/my-project/mcp-packages.txt"
+}

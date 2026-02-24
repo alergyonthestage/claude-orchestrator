@@ -502,11 +502,11 @@ _copy_pack_resources() {
     fi
 }
 
-# Load global secrets from global/secrets.env into an array of -e flags
-# Usage: load_global_secrets array_name
-load_global_secrets() {
+# Load secrets from a specific file into an array of -e flags
+# Usage: load_secrets_file array_name file_path
+load_secrets_file() {
     local _target=$1
-    local secrets_file="$GLOBAL_DIR/secrets.env"
+    local secrets_file="$2"
     [[ ! -f "$secrets_file" ]] && return 0
     local line_num=0
     while IFS= read -r line; do
@@ -520,11 +520,17 @@ load_global_secrets() {
         [[ -z "$line" ]] && continue
         # Validate KEY=VALUE format
         if [[ "$line" != *=* ]]; then
-            warn "secrets.env:${line_num}: skipping malformed line (expected KEY=VALUE)"
+            warn "$(basename "$secrets_file"):${line_num}: skipping malformed line (expected KEY=VALUE)"
             continue
         fi
         eval "${_target}+=(-e $(printf '%q' "$line"))"
     done < "$secrets_file"
+}
+
+# Load global secrets from global/secrets.env into an array of -e flags
+# Usage: load_global_secrets array_name
+load_global_secrets() {
+    load_secrets_file "$1" "$GLOBAL_DIR/secrets.env"
 }
 
 # Migrate legacy memory/ dir into claude-state/memory/ (one-time, non-destructive)
@@ -631,6 +637,12 @@ EOF
         ok "Global config initialized at global/ (languages: $comm_lang / $docs_lang / $code_lang)"
     fi
 
+    # Copy global setup script if not present
+    if [[ ! -f "$GLOBAL_DIR/setup.sh" && -f "$DEFAULTS_DIR/global/setup.sh" ]]; then
+        cp "$DEFAULTS_DIR/global/setup.sh" "$GLOBAL_DIR/setup.sh"
+        ok "Copied global/setup.sh template"
+    fi
+
     # Ensure projects and packs directories exist
     mkdir -p "$PROJECTS_DIR"
     mkdir -p "$GLOBAL_DIR/packs"
@@ -707,6 +719,16 @@ EOF
         info "Pre-installing MCP packages: $mcp_packages"
     fi
 
+    # Include global setup script if present
+    if [[ -f "$GLOBAL_DIR/setup.sh" ]]; then
+        local setup_content
+        setup_content=$(cat "$GLOBAL_DIR/setup.sh")
+        if [[ -n "$setup_content" ]]; then
+            build_args+=(--build-arg "SETUP_SCRIPT_CONTENT=$setup_content")
+            info "Including global/setup.sh in build"
+        fi
+    fi
+
     docker build $no_cache "${build_args[@]+"${build_args[@]}"}" -t "$IMAGE_NAME" "$REPO_ROOT"
     ok "Image built successfully."
 }
@@ -780,6 +802,15 @@ EOF
     [[ -z "$auth_method" ]] && auth_method="oauth"
     $use_api_key && auth_method="api_key"
 
+    local docker_image
+    docker_image=$(yml_get "$project_yml" "docker.image")
+    [[ -z "$docker_image" ]] && docker_image="$IMAGE_NAME"
+
+    local mount_socket
+    mount_socket=$(yml_get "$project_yml" "docker.mount_socket")
+    # Default: true (backward compatible)
+    [[ -z "$mount_socket" ]] && mount_socket="true"
+
     local network
     network=$(yml_get "$project_yml" "docker.network")
     [[ -z "$network" ]] && network="cc-${project_name}"
@@ -804,7 +835,7 @@ EOF
 
 services:
   claude:
-    image: $IMAGE_NAME
+    image: ${docker_image}
     container_name: cc-${project_name}
     stdin_open: true
     tty: true
@@ -865,6 +896,18 @@ YAML
             echo "      - ./mcp.json:/workspace/.mcp.json:ro"
         fi
 
+        # Project setup script (runtime, executed by entrypoint)
+        if [[ -f "$project_dir/setup.sh" ]]; then
+            echo "      # Project setup script"
+            echo "      - ./setup.sh:/workspace/.claude/setup.sh:ro"
+        fi
+
+        # Project MCP packages (runtime, installed by entrypoint)
+        if [[ -f "$project_dir/mcp-packages.txt" ]]; then
+            echo "      # Project MCP packages"
+            echo "      - ./mcp-packages.txt:/workspace/.claude/mcp-packages.txt:ro"
+        fi
+
         # Repository mounts
         echo "      # Repositories"
         while IFS=: read -r repo_path repo_name; do
@@ -911,14 +954,15 @@ YAML
             done <<< "$pack_names"
         fi
 
-        # Git config and SSH
-        cat <<YAML
-      # Git
-      - \${HOME}/.gitconfig:/home/claude/.gitconfig:ro
-      - \${HOME}/.ssh:/home/claude/.ssh:ro
-      # Docker socket
-      - /var/run/docker.sock:/var/run/docker.sock
-YAML
+        # Git identity (commit author — read-only, no SSH keys)
+        echo "      # Git identity"
+        echo "      - \${HOME}/.gitconfig:/home/claude/.gitconfig:ro"
+
+        # Docker socket (opt-out via docker.mount_socket: false)
+        if [[ "$mount_socket" != "false" ]]; then
+            echo "      # Docker socket"
+            echo "      - /var/run/docker.sock:/var/run/docker.sock"
+        fi
 
         # Ports
         echo "    ports:"
@@ -1020,6 +1064,8 @@ YAML
 
     # Load global secrets as runtime env vars (for MCP servers that read env directly)
     load_global_secrets run_env
+    # Load project-specific secrets (override global values — Docker uses last -e for duplicates)
+    load_secrets_file run_env "$project_dir/secrets.env"
 
     info "Starting session for project '${project_name}'..."
     docker compose -f "$compose_file" run --rm --service-ports "${run_env[@]+"${run_env[@]}"}" claude
@@ -1131,13 +1177,13 @@ YAML
             echo "      - ${mount}"
         done
 
-        cat <<YAML
-      # Git
-      - \${HOME}/.gitconfig:/home/claude/.gitconfig:ro
-      - \${HOME}/.ssh:/home/claude/.ssh:ro
-      # Docker socket
-      - /var/run/docker.sock:/var/run/docker.sock
-YAML
+        # Git identity (commit author — read-only, no SSH keys)
+        echo "      # Git identity"
+        echo "      - \${HOME}/.gitconfig:/home/claude/.gitconfig:ro"
+
+        # Docker socket
+        echo "      # Docker socket"
+        echo "      - /var/run/docker.sock:/var/run/docker.sock"
 
         echo "    ports:"
         if [[ ${#extra_ports[@]} -gt 0 ]]; then
