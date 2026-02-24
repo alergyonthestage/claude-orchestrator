@@ -9,7 +9,7 @@
 
 ### Automated Testing ✓
 
-Pure bash test suite (`bin/test`) covering 126 test cases across 9 test files. Tests run without a Docker container using `--dry-run` and file-system assertions. Zero external dependencies.
+Pure bash test suite (`bin/test`) covering 132 test cases across 10 test files. Tests run without a Docker container using `--dry-run` and file-system assertions. Zero external dependencies.
 
 **Coverage**: `cco init`, `cco project create`, `cco start --dry-run` (docker-compose generation), knowledge pack generation, workspace.yml generation, YAML parser edge cases, `cco stop`, `cco project list`.
 

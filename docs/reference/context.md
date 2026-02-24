@@ -147,21 +147,57 @@ See [CLI.md §4.2](./cli.md) for pack definition format. See [context-loading.md
     "deny": [
       "Read(~/.claude.json)",
       "Read(~/.ssh/*)"
-    ],
-    "defaultMode": "bypassPermissions"
+    ]
   },
 
-  "alwaysThinkingEnabled": true,
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "/usr/local/bin/cco-hooks/session-context.sh", "timeout": 10 }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "/usr/local/bin/cco-hooks/subagent-context.sh", "timeout": 5 }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          { "type": "command", "command": "/usr/local/bin/cco-hooks/precompact.sh", "timeout": 5 }
+        ]
+      }
+    ]
+  },
+
+  "attribution": {
+    "commit": "Co-Authored-By: Claude <noreply@anthropic.com>",
+    "pr": "Generated with Claude Code"
+  },
+
+  "statusLine": {
+    "type": "command",
+    "command": "/usr/local/bin/cco-hooks/statusline.sh"
+  },
+
   "teammateMode": "tmux",
-  "cleanupPeriodDays": 30
+  "cleanupPeriodDays": 30,
+  "enableAllProjectMcpServers": true,
+  "alwaysThinkingEnabled": true
 }
 ```
 
 **Notes**:
-- `defaultMode: "bypassPermissions"` is redundant with `--dangerously-skip-permissions` but documents intent
 - The `allow` list is comprehensive to avoid any prompt even if bypass mode is not active
 - `deny` protects auth token and SSH keys from accidental reads
 - `teammateMode` defaults to `"tmux"` — user can override to `"auto"` for iTerm2
+- `enableAllProjectMcpServers` trusts all project MCP servers (safe in containerized environment)
+- `alwaysThinkingEnabled` enables extended thinking for better reasoning on complex tasks
+- SessionStart hook uses a catch-all (no matcher) to fire on all session events (startup, clear, etc.)
 
 ### 4.2 Global CLAUDE.md (`global/.claude/CLAUDE.md`)
 
@@ -248,7 +284,7 @@ Modular rule files in `global/.claude/rules/`:
 - Propose clear interfaces and data models
 - Consider error handling and edge cases
 - Evaluate alternatives and document trade-offs
-- Produce diagrams where helpful (ASCII, mermaid)
+- Produce diagrams where helpful (see diagrams rule)
 - DO NOT write implementation code during design
 
 ## Implementation Phase
@@ -594,16 +630,31 @@ The orchestrator ships with a built-in `SessionStart` hook that automatically in
 
 #### SessionStart — Project Context Injection
 
-Script: `/usr/local/bin/cco-hooks/session-context.sh` (baked into Docker image)
+Script: `/usr/local/bin/cco-hooks/session-context.sh`
+
+Uses a catch-all matcher (no `"matcher"` field) — fires on all SessionStart events (startup, clear, etc.).
 
 At session startup, this hook automatically detects and injects:
 - **Project name** — from `PROJECT_NAME` env var
 - **Teammate mode** — from `TEAMMATE_MODE` env var
 - **Mounted repositories** — scans `/workspace/*/` for `.git` directories
 - **MCP servers** — reads server count and names from `~/.claude.json`
+- **Global/project skills and agents** — discovers available skills and agents
 - **Knowledge packs** — appends `/workspace/.claude/packs.md` content (if present), listing available knowledge files with descriptions
 
 Claude receives this context as `additionalContext`, so it knows what's available without needing to explore. Knowledge packs are injected automatically — no `@import` in CLAUDE.md required.
+
+#### SubagentStart — Condensed Context for Subagents
+
+Script: `/usr/local/bin/cco-hooks/subagent-context.sh`
+
+Injects a condensed version of the project context into subagents (teammates, forked skills). Reduces token budget by only providing essential information (project name, repos, active packs).
+
+#### PreCompact — Compaction Guidance
+
+Script: `/usr/local/bin/cco-hooks/precompact.sh`
+
+Fires before Claude Code compacts the conversation context. Provides hints on what to preserve during compaction (project context, key decisions, active task state).
 
 ### 10.3 Adding Project-Specific Hooks
 
@@ -632,6 +683,13 @@ Available hook events: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostTo
 ### 10.4 Hook Scripts Location
 
 Hook scripts baked into the image live at `/usr/local/bin/cco-hooks/`. Source files are in `config/hooks/` in the orchestrator repo. They are copied into the Docker image at build time.
+
+| Script | Hook Event | Purpose |
+|--------|-----------|---------|
+| `session-context.sh` | SessionStart | Inject project context (repos, MCP, packs) |
+| `subagent-context.sh` | SubagentStart | Condensed context for subagents |
+| `precompact.sh` | PreCompact | Guide context compaction |
+| `statusline.sh` | StatusLine | Display `[project] model \| ctx XX% \| $cost` |
 
 ---
 

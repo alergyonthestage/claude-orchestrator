@@ -15,23 +15,19 @@ FROM node:22-bookworm
 
 # ── System dependencies ──────────────────────────────────────────────
 RUN apt-get update && apt-get install -y \
-    git \
-    tmux \
-    jq \
-    ripgrep \
-    fzf \
-    curl \
-    wget \
-    python3 \
-    python3-pip \
-    openssh-client \
-    socat \
-    less \
-    vim \
+    git tmux jq ripgrep fzf curl wget \
+    python3 python3-pip openssh-client socat less vim \
     && rm -rf /var/lib/apt/lists/*
 
+# ── Locale (UTF-8 support) ──────────────────────────────────────────
+RUN apt-get update && apt-get install -y locales \
+    && sed -i 's/^# *\(en_US.UTF-8\)/\1/' /etc/locale.gen \
+    && locale-gen \
+    && rm -rf /var/lib/apt/lists/*
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
+
 # ── Docker CLI (for Docker-from-Docker) ──────────────────────────────
-# Install Docker CLI only (no daemon). Used to control host Docker via socket.
 RUN install -m 0755 -d /etc/apt/keyrings \
     && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
     && chmod a+r /etc/apt/keyrings/docker.asc \
@@ -42,12 +38,26 @@ RUN install -m 0755 -d /etc/apt/keyrings \
     && apt-get install -y docker-ce-cli docker-compose-plugin \
     && rm -rf /var/lib/apt/lists/*
 
+# ── gosu (drop-in su replacement for Docker entrypoints) ─────────────
+# gosu does a direct exec without creating a new session/pty, so TTY
+# passthrough works correctly — unlike su/sudo which break stdin forwarding.
+RUN arch="$(dpkg --print-architecture)" \
+    && curl -fsSL "https://github.com/tianon/gosu/releases/download/1.17/gosu-${arch}" \
+       -o /usr/local/bin/gosu \
+    && chmod +x /usr/local/bin/gosu \
+    && gosu nobody true
+
 # ── Claude Code ──────────────────────────────────────────────────────
-RUN npm install -g @anthropic-ai/claude-code@latest
+# Pin version for reproducible builds: cco build --claude-version 1.0.x
+ARG CLAUDE_CODE_VERSION=latest
+RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
+ENV CLAUDE_CODE_DISABLE_AUTOUPDATE=1
+
+# ── MCP Server packages (optional pre-installation) ──────────────────
+ARG MCP_PACKAGES=""
+RUN if [ -n "$MCP_PACKAGES" ]; then npm install -g $MCP_PACKAGES; fi
 
 # ── User setup ───────────────────────────────────────────────────────
-# Create claude user. Add to group with GID matching host's docker socket.
-# The actual GID is set at runtime via entrypoint (see entrypoint.sh).
 RUN useradd -m -s /bin/bash claude \
     && mkdir -p /home/claude/.claude /workspace \
     && chown -R claude:claude /home/claude /workspace
@@ -55,8 +65,10 @@ RUN useradd -m -s /bin/bash claude \
 # ── Config files ─────────────────────────────────────────────────────
 COPY config/tmux.conf /home/claude/.tmux.conf
 COPY config/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY config/hooks/ /usr/local/bin/cco-hooks/
 RUN chown claude:claude /home/claude/.tmux.conf \
-    && chmod +x /usr/local/bin/entrypoint.sh
+    && chmod +x /usr/local/bin/entrypoint.sh \
+    && chmod +x /usr/local/bin/cco-hooks/*.sh
 
 WORKDIR /workspace
 
@@ -65,12 +77,11 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 ### 1.2 Entrypoint Script
 
-The entrypoint handles Docker socket permissions and launches Claude Code with optional tmux wrapping.
+The entrypoint handles Docker socket permissions, MCP server injection, and launches Claude Code via `gosu` with optional tmux wrapping.
 
 ```bash
 #!/bin/bash
 # config/entrypoint.sh
-
 set -e
 
 # ── Docker socket permissions ────────────────────────────────────────
@@ -78,7 +89,6 @@ set -e
 if [ -S /var/run/docker.sock ]; then
     SOCKET_GID=$(stat -c '%g' /var/run/docker.sock)
     if [ "$SOCKET_GID" != "0" ]; then
-        # Create or modify docker group to match host GID
         if getent group docker > /dev/null 2>&1; then
             groupmod -g "$SOCKET_GID" docker
         else
@@ -86,20 +96,42 @@ if [ -S /var/run/docker.sock ]; then
         fi
         usermod -aG docker claude
     else
-        # Socket owned by root — add claude to root group (common on macOS)
         usermod -aG root claude
     fi
 fi
 
+# ── Copy .claude.json seed to writable location ─────────────────────
+# Host's .claude.json is mounted read-only as .claude.json.seed.
+# Copy once at startup so the container has its own writable copy.
+if [ -f "$CLAUDE_JSON_SEED" ]; then
+    cp "$CLAUDE_JSON_SEED" "$CLAUDE_JSON"
+    chown claude:claude "$CLAUDE_JSON"
+fi
+
+# ── MCP server injection into ~/.claude.json ─────────────────────────
+# Merge global MCP (mcp-global.json) and project MCP (/workspace/.mcp.json)
+# into ~/.claude.json using jq. This ensures MCP servers are available
+# via the user-scope mechanism (most reliable).
+
 # ── Switch to claude user and launch ─────────────────────────────────
-# Use exec + gosu/su to maintain PID 1 and signal handling
+# gosu does exec directly without creating a new session, preserving
+# TTY/stdin so Claude Code's interactive UI works correctly.
 if [ "${TEAMMATE_MODE}" = "tmux" ] && [ -z "$TMUX" ]; then
-    # Start tmux session, then run claude inside it
-    exec su claude -c "tmux new-session -s claude 'claude --dangerously-skip-permissions $*'"
+    set +e
+    gosu claude tmux new-session -s claude "claude --dangerously-skip-permissions $*"
+    exit_code=$?
+    set -e
+    [ $exit_code -ne 0 ] && echo "[entrypoint] claude exited with code ${exit_code}" >&2
+    exit $exit_code
 else
-    exec su claude -c "claude --dangerously-skip-permissions $*"
+    exec gosu claude claude --dangerously-skip-permissions "$@"
 fi
 ```
+
+**Key implementation choices**:
+- **gosu** instead of `su` — `su` creates a new session/PTY that breaks stdin forwarding. `gosu` does a direct `exec`, preserving TTY passthrough.
+- **MCP injection** — global and project MCP servers are merged into `~/.claude.json` via `jq -s`. This is the most reliable mechanism (vs `.mcp.json` which may need approval).
+- **Error handling** — tmux path captures exit code explicitly (tmux doesn't propagate it via `exec`).
 
 ### 1.3 tmux Configuration
 
@@ -358,9 +390,14 @@ The Dockerfile is ordered for optimal layer caching:
 To update Claude Code in the image:
 ```bash
 cco build --no-cache
-# or just rebuild the npm layer:
-docker build --no-cache --target=claude-code -t claude-orchestrator:latest .
 ```
+
+To pin a specific version for reproducible builds:
+```bash
+cco build --claude-version 1.0.5
+```
+
+The Dockerfile uses `ARG CLAUDE_CODE_VERSION=latest` — when no version is specified, the latest is installed. `CLAUDE_CODE_DISABLE_AUTOUPDATE=1` prevents Claude Code from self-updating inside the container.
 
 ---
 
@@ -392,7 +429,7 @@ The `--service-ports` flag ensures port mappings are active.
 - User exits Claude Code (Ctrl+C, `/exit`, or closing terminal)
 - Container is removed (`--rm`)
 - All file changes persist via volume mounts
-- Auto memory persists in `projects/<n>/memory/`
+- Auto memory persists in `projects/<n>/claude-state/memory/`
 - Git commits persist in the repos
 
 ### 5.4 Cleanup

@@ -91,15 +91,17 @@ When `--lang` is provided, `{{COMM_LANG}}` is set to that language. `{{DOCS_LANG
 Build or rebuild the Docker image.
 
 ```
-Usage: cco build [--no-cache] [--mcp-packages "pkg1 pkg2"]
+Usage: cco build [--no-cache] [--mcp-packages "pkg1 pkg2"] [--claude-version "x.y.z"]
 
 Options:
   --no-cache               Force rebuild without Docker cache (updates Claude Code)
   --mcp-packages "pkgs"    Pre-install MCP server npm packages in the image
+  --claude-version "x.y.z" Pin Claude Code to a specific version (default: latest)
 
 Examples:
   cco build
   cco build --no-cache
+  cco build --claude-version 1.0.5
   cco build --mcp-packages "@modelcontextprotocol/server-github"
 ```
 
@@ -137,6 +139,7 @@ Examples:
 1. VALIDATE
    - Check projects/<project>/project.yml exists
    - Parse project.yml
+   - Check no existing running session for this project (die if container cc-<name> is running)
    - Verify each repo path exists on host
    - Check Docker image exists (suggest `cco build` if not)
 
@@ -149,15 +152,23 @@ Examples:
    - Apply CLI overrides (--port, --env, --teammate-mode)
    - Write to projects/<project>/docker-compose.yml
 
-3. CREATE directories (if needed)
+3. GENERATE pack resources
+   - Clean stale files from previous .pack-manifest
+   - Detect name conflicts across packs (warn if same agent/rule/skill in multiple packs)
+   - Copy skills, agents, rules from each pack into projects/<n>/.claude/
+   - Write new .pack-manifest tracking all copied files
+   - Generate .claude/packs.md (instructional list of knowledge files)
+   - Generate .claude/workspace.yml (structured project summary for /init)
+
+4. CREATE directories (if needed)
    - projects/<project>/claude-state/memory/  (for auto memory + session transcripts; migrates legacy memory/ if present)
 
-4. LAUNCH
-   - Load global/secrets.env as runtime env vars
+5. LAUNCH
+   - Load global/secrets.env as runtime env vars (validates KEY=VALUE format, skips malformed lines with warning)
    - docker compose -f projects/<project>/docker-compose.yml \
        run --rm --service-ports claude
-   
-5. CLEANUP (after exit)
+
+6. CLEANUP (after exit)
    - Container auto-removed (--rm)
    - Print summary: "Session ended. Changes are in your repos."
 ```
@@ -189,6 +200,7 @@ Examples:
 1. VALIDATE
    - At least one --repo is provided
    - Each repo path exists
+   - Check no existing running session with this name
 
 2. GENERATE temporary docker-compose
    - Create temp dir: /tmp/cc-<name>/
@@ -406,17 +418,22 @@ rules:
 All sections are optional. A knowledge-only pack needs only the `knowledge:` section.
 
 **How it works** — on every `cco start`:
-1. The `knowledge.source` directory is mounted at `/workspace/.packs/<name>/` (read-only)
-2. `.claude/packs.md` is generated with an instructional list of files and their descriptions:
+1. Stale files from the previous `.pack-manifest` are cleaned
+2. Name conflicts across packs are detected (warning emitted if same filename in agents/rules/skills)
+3. The `knowledge.source` directory is mounted at `/workspace/.packs/<name>/` (read-only)
+4. `.claude/packs.md` is generated with an instructional list of files and their descriptions:
    ```
-   The following knowledge files are available.
-   Read them proactively when relevant to the current task:
+   The following knowledge files provide project-specific conventions and context.
+   Read the relevant files BEFORE starting any implementation, review, or design task.
 
    - /workspace/.packs/my-client/backend-coding-conventions.md — Read when writing backend code
    - /workspace/.packs/my-client/business-overview.md — Read for business context
    ```
-3. `session-context.sh` (SessionStart hook) injects `packs.md` into `additionalContext` automatically — **no CLAUDE.md edit needed**
-4. Skills, agents, and rules are copied from `global/packs/<name>/` into `projects/<n>/.claude/`
+5. `session-context.sh` (SessionStart hook) injects `packs.md` into `additionalContext` automatically — **no CLAUDE.md edit needed**
+6. Skills, agents, and rules are copied from `global/packs/<name>/` into `projects/<n>/.claude/`
+7. A `.pack-manifest` file is written tracking all copied files (used for cleanup on next start)
+
+**Name conflicts**: If two packs define the same agent, rule, or skill name, the last pack listed in `project.yml` wins. A warning is emitted. See [ADR-9](../maintainer/architecture.md) for the design rationale.
 
 **Pack directory** — `global/packs/` (gitignored, created by `cco init`):
 ```
@@ -504,11 +521,13 @@ networks:
 | Scenario | Behavior |
 |----------|----------|
 | Project not found | `Error: Project 'foo' not found. Run 'cco project list' to see available projects.` |
+| Session already running | `Error: Project 'foo' already has a running session (container cc-foo). Run 'cco stop foo' first.` |
 | Repo path doesn't exist | `Error: Repository path ~/projects/foo does not exist.` |
 | Docker image not built | `Error: Docker image 'claude-orchestrator:latest' not found. Run 'cco build' first.` |
 | Docker not running | `Error: Docker daemon is not running. Start Docker Desktop.` |
 | Port conflict | `Error: Port 3000 is already in use. Stop the conflicting service or use --port to remap.` |
 | Project already exists | `Error: Project 'foo' already exists at projects/foo/` |
+| Malformed secrets.env | `Warning: secrets.env:3: skipping malformed line (expected KEY=VALUE)` |
 
 ---
 
