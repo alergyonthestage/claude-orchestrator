@@ -82,11 +82,12 @@ assert_dir_exists() {
 }
 
 # Assert file contains a literal string (not a regex)
+# Uses -e to safely handle patterns starting with '-'
 assert_file_contains() {
     local file="$1"
     local pattern="$2"
     local msg="${3:-Expected '$file' to contain: $pattern}"
-    if ! grep -qF "$pattern" "$file" 2>/dev/null; then
+    if ! grep -qFe "$pattern" "$file" 2>/dev/null; then
         echo "ASSERTION FAILED: $msg"
         echo "  Pattern not found: $(printf '%q' "$pattern")"
         echo "  File contents ($(wc -l < "$file") lines):"
@@ -100,10 +101,10 @@ assert_file_not_contains() {
     local file="$1"
     local pattern="$2"
     local msg="${3:-Expected '$file' NOT to contain: $pattern}"
-    if grep -qF "$pattern" "$file" 2>/dev/null; then
+    if grep -qFe "$pattern" "$file" 2>/dev/null; then
         echo "ASSERTION FAILED: $msg"
         echo "  Found unwanted pattern: $(printf '%q' "$pattern")"
-        grep -nF "$pattern" "$file" | sed 's/^/    /'
+        grep -nFe "$pattern" "$file" | sed 's/^/    /'
         return 1
     fi
 }
@@ -131,10 +132,11 @@ assert_empty() {
 }
 
 # Assert $CCO_OUTPUT (set by run_cco) contains a literal string
+# Uses -e to safely handle patterns starting with '-'
 assert_output_contains() {
     local pattern="$1"
     local msg="${2:-Expected output to contain: $pattern}"
-    if ! echo "${CCO_OUTPUT:-}" | grep -qF "$pattern"; then
+    if ! echo "${CCO_OUTPUT:-}" | grep -qFe "$pattern"; then
         echo "ASSERTION FAILED: $msg"
         echo "  Pattern not found: $(printf '%q' "$pattern")"
         echo "  Actual output:"
@@ -148,7 +150,7 @@ assert_no_placeholder() {
     local file="$1"
     local placeholder="$2"
     local msg="${3:-Expected placeholder to be replaced in $file: $placeholder}"
-    if grep -qF "$placeholder" "$file" 2>/dev/null; then
+    if grep -qFe "$placeholder" "$file" 2>/dev/null; then
         echo "ASSERTION FAILED: $msg"
         echo "  Unreplaced placeholder still present: $placeholder"
         return 1

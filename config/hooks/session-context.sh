@@ -28,6 +28,24 @@ if [ -f /home/claude/.claude.json ]; then
     fi
 fi
 
+# Discover available skills (global + project scope)
+skills=""
+for d in /home/claude/.claude/skills/*/; do
+    [ -d "$d" ] && skills="${skills} /$(basename "$d")"
+done
+for d in /workspace/.claude/skills/*/; do
+    [ -d "$d" ] && skills="${skills} /$(basename "$d")"
+done
+
+# Discover available agents (global + project scope)
+agents=""
+for f in /home/claude/.claude/agents/*.md; do
+    [ -f "$f" ] && agents="${agents} $(basename "$f" .md)"
+done
+for f in /workspace/.claude/agents/*.md; do
+    [ -f "$f" ] && agents="${agents} $(basename "$f" .md)"
+done
+
 # Build context string
 ctx="<SessionContext>
 Project: ${PROJECT}
@@ -39,8 +57,32 @@ if [ "$mcp_count" -gt 0 ]; then
 MCP servers (${mcp_count}): ${mcp_names}"
 fi
 
+if [ -n "$skills" ]; then
+    ctx="${ctx}
+Available skills:${skills}"
+fi
+
+if [ -n "$agents" ]; then
+    ctx="${ctx}
+Available agents:${agents}"
+fi
+
 ctx="${ctx}
 </SessionContext>"
+
+# Inject knowledge packs (immutable, automatic — independent of CLAUDE.md)
+if [ -f /workspace/.claude/packs.md ]; then
+    packs_section=$(grep -v '^<!--' /workspace/.claude/packs.md)
+    [ -n "$packs_section" ] && ctx="${ctx}
+
+${packs_section}"
+fi
+
+# Persist key session variables for all subsequent Bash tool calls
+if [ -n "$CLAUDE_ENV_FILE" ]; then
+    echo "export PROJECT_NAME=${PROJECT}" >> "$CLAUDE_ENV_FILE"
+    echo "export TEAMMATE_MODE=${TMODE}" >> "$CLAUDE_ENV_FILE"
+fi
 
 # Output JSON using jq for proper escaping
 jq -n --arg ctx "$ctx" '{

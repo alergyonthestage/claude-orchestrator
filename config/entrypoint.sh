@@ -66,7 +66,12 @@ echo "[entrypoint] ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:+SET}" >&2
 # gosu does exec directly without creating a new session, preserving
 # TTY/stdin so Claude Code's interactive UI works correctly.
 if [ "${TEAMMATE_MODE}" = "tmux" ] && [ -z "$TMUX" ]; then
-    exec gosu claude tmux new-session -s claude "claude --dangerously-skip-permissions $*"
+    set +e
+    gosu claude tmux new-session -s claude "claude --dangerously-skip-permissions $*"
+    exit_code=$?
+    set -e
+    [ $exit_code -ne 0 ] && echo "[entrypoint] claude exited with code ${exit_code}" >&2
+    exit $exit_code
 else
     exec gosu claude claude --dangerously-skip-permissions "$@"
 fi
