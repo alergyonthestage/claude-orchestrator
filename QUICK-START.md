@@ -51,6 +51,7 @@ cco new --repo ~/projects/api --repo ~/projects/frontend --port 3000:3000
 | `cco init` | Initialize user config from defaults |
 | `cco build` | Build the Docker image |
 | `cco build --no-cache` | Full rebuild (updates Claude Code) |
+| `cco build --claude-version x.y.z` | Pin Claude Code to a specific version |
 | `cco start <project>` | Start session for a configured project |
 | `cco start <project> --dry-run` | Show the generated docker-compose without running |
 | `cco new --repo <path>` | Temporary session with specific repos |

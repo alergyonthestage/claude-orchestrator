@@ -16,6 +16,7 @@ claude-orchestrator manages isolated Claude Code sessions in Docker containers f
 cco init                     # First-time setup: copy defaults, build image
 cco build                    # Build Docker image
 cco build --no-cache         # Rebuild (updates Claude Code)
+cco build --claude-version x.y.z  # Pin Claude Code version
 cco start <project>          # Start session for a project
 cco new --repo <path>        # Start temporary session with repos
 cco project create <name>    # Scaffold new project from template
