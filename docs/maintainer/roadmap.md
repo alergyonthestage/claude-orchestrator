@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-02-24 (post architecture review).
+> Last updated: 2026-02-24 (post worktree analysis).
 
 ---
 
@@ -40,6 +40,21 @@ Pack resources are now tracked in a `.pack-manifest` file. On each `cco start`, 
 ---
 
 ## Near-term
+
+### Git Worktree Isolation
+
+Opt-in git isolation for container sessions. When enabled, repos are mounted at `/git-repos/` and the entrypoint creates worktrees at `/workspace/` on a dedicated branch (`cco/<project>`). Claude works in the worktrees transparently.
+
+**Activation**: `cco start <project> --worktree` or `worktree: true` in `project.yml`.
+
+**Key design points**:
+- Worktrees created inside the container (consistent paths, no `.git` file rewriting)
+- Commits persist in host repo via bind-mounted object store
+- Post-session cleanup integrated in `cmd_start()` (no `cco stop` needed)
+- Multiple merge/PR cycles during a single session via standard `gh pr create`
+- Session resume: branch `cco/<project>` persists, next `--worktree` start reuses it
+
+**Docs**: [analysis](../analysis/worktree-isolation.md) | [design](./worktree-design.md) | [ADR-10](./architecture.md)
 
 ### Pack inheritance / composition
 

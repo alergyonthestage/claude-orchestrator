@@ -29,4 +29,14 @@ Architecture, implementation details, and roadmap for contributors.
 | [maintainer/docker.md](maintainer/docker.md) | Dockerfile, compose template, networking |
 | [maintainer/spec.md](maintainer/spec.md) | Requirements specification |
 | [maintainer/directory-structure.md](maintainer/directory-structure.md) | File inventory and implementation order |
+| [maintainer/worktree-design.md](maintainer/worktree-design.md) | Design: git worktree isolation for sessions |
 | [maintainer/roadmap.md](maintainer/roadmap.md) | Planned features and future enhancements |
+
+## Analysis
+
+Analysis documents and reviews.
+
+| Document | Contents |
+|----------|----------|
+| [analysis/worktree-isolation.md](analysis/worktree-isolation.md) | Analysis: git worktree isolation options and recommendation |
+| [analysis/reviews/24-02-2026-architecture-review.md](analysis/reviews/24-02-2026-architecture-review.md) | Architecture review notes (2026-02-24) |
