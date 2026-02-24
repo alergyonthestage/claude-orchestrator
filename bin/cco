@@ -384,12 +384,69 @@ _generate_workspace_yml() {
     } > "$ws_yml"
 }
 
+# Remove stale files from a previous pack manifest that are no longer needed.
+# Reads .pack-manifest, deletes listed files, removes empty parent dirs.
+_clean_pack_manifest() {
+    local project_dir="$1"
+    local manifest="$project_dir/.claude/.pack-manifest"
+    [[ ! -f "$manifest" ]] && return 0
+    while IFS= read -r rel_path; do
+        [[ -z "$rel_path" ]] && continue
+        local full_path="$project_dir/.claude/${rel_path}"
+        if [[ -f "$full_path" ]]; then
+            rm -f "$full_path"
+        elif [[ -d "$full_path" ]]; then
+            rm -rf "$full_path"
+        fi
+    done < "$manifest"
+    rm -f "$manifest"
+}
+
+# Detect name conflicts across packs (same filename in agents/rules, same dir in skills).
+# Emits warnings for each conflict found.
+_detect_pack_conflicts() {
+    local pack_names="$1"
+    local -A seen_agents seen_rules seen_skills
+    while IFS= read -r pack_name; do
+        [[ -z "$pack_name" ]] && continue
+        local pack_yml="$GLOBAL_DIR/packs/${pack_name}/pack.yml"
+        [[ ! -f "$pack_yml" ]] && continue
+        local agents rules skills
+        agents=$(yml_get_pack_agents "$pack_yml")
+        rules=$(yml_get_pack_rules "$pack_yml")
+        skills=$(yml_get_pack_skills "$pack_yml")
+        while IFS= read -r f; do
+            [[ -z "$f" ]] && continue
+            if [[ -n "${seen_agents[$f]:-}" ]]; then
+                warn "Agent '$f' defined in both pack '${seen_agents[$f]}' and '$pack_name' — '$pack_name' will overwrite"
+            fi
+            seen_agents[$f]="$pack_name"
+        done <<< "$agents"
+        while IFS= read -r f; do
+            [[ -z "$f" ]] && continue
+            if [[ -n "${seen_rules[$f]:-}" ]]; then
+                warn "Rule '$f' defined in both pack '${seen_rules[$f]}' and '$pack_name' — '$pack_name' will overwrite"
+            fi
+            seen_rules[$f]="$pack_name"
+        done <<< "$rules"
+        while IFS= read -r f; do
+            [[ -z "$f" ]] && continue
+            if [[ -n "${seen_skills[$f]:-}" ]]; then
+                warn "Skill '$f' defined in both pack '${seen_skills[$f]}' and '$pack_name' — '$pack_name' will overwrite"
+            fi
+            seen_skills[$f]="$pack_name"
+        done <<< "$skills"
+    done <<< "$pack_names"
+}
+
 # Copy skills, agents, and rules from a pack into the project's .claude/ directory.
+# Appends copied paths to the manifest file (4th argument).
 # Called by cmd_start for each pack after compose generation.
 _copy_pack_resources() {
     local pack_name="$1"
     local pack_yml="$2"
     local project_dir="$3"
+    local manifest="$4"
     local pack_dir
     pack_dir="$(dirname "$pack_yml")"
 
@@ -403,6 +460,7 @@ _copy_pack_resources() {
             if [[ -d "$skill_src" ]]; then
                 mkdir -p "$project_dir/.claude/skills"
                 cp -r "$skill_src" "$project_dir/.claude/skills/"
+                echo "skills/${skill_name}" >> "$manifest"
             else
                 warn "Pack '$pack_name' skill '$skill_name' not found at $skill_src — skipping"
             fi
@@ -419,6 +477,7 @@ _copy_pack_resources() {
             local src="$pack_dir/agents/${agent_file}"
             if [[ -f "$src" ]]; then
                 cp "$src" "$project_dir/.claude/agents/"
+                echo "agents/${agent_file}" >> "$manifest"
             else
                 warn "Pack '$pack_name' agent '$agent_file' not found at $src — skipping"
             fi
@@ -435,6 +494,7 @@ _copy_pack_resources() {
             local src="$pack_dir/rules/${rule_file}"
             if [[ -f "$src" ]]; then
                 cp "$src" "$project_dir/.claude/rules/"
+                echo "rules/${rule_file}" >> "$manifest"
             else
                 warn "Pack '$pack_name' rule '$rule_file' not found at $src — skipping"
             fi
@@ -917,13 +977,20 @@ YAML
     _generate_workspace_yml "$project_dir" "$project_name" "$project_yml" "$pack_names"
 
     # Copy pack skills, agents, and rules into project's .claude/ directory
+    # Clean stale files from previous manifest, detect conflicts, then copy fresh
+    _clean_pack_manifest "$project_dir"
     if [[ -n "$pack_names" ]]; then
+        _detect_pack_conflicts "$pack_names"
+        local manifest_file="$project_dir/.claude/.pack-manifest"
+        : > "$manifest_file"
         while IFS= read -r pack_name; do
             [[ -z "$pack_name" ]] && continue
             local pack_yml="$GLOBAL_DIR/packs/${pack_name}/pack.yml"
             [[ ! -f "$pack_yml" ]] && continue
-            _copy_pack_resources "$pack_name" "$pack_yml" "$project_dir"
+            _copy_pack_resources "$pack_name" "$pack_yml" "$project_dir" "$manifest_file"
         done <<< "$pack_names"
+        # Remove manifest if empty (no resources were actually copied)
+        [[ ! -s "$manifest_file" ]] && rm -f "$manifest_file"
     fi
 
     if $dry_run; then

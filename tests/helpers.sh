@@ -71,6 +71,16 @@ assert_file_exists() {
     fi
 }
 
+assert_file_not_exists() {
+    local file="$1"
+    local msg="${2:-Expected file NOT to exist: $file}"
+    if [[ -f "$file" ]]; then
+        echo "ASSERTION FAILED: $msg"
+        echo "  File exists: $file"
+        return 1
+    fi
+}
+
 assert_dir_exists() {
     local dir="$1"
     local msg="${2:-Expected directory to exist: $dir}"
