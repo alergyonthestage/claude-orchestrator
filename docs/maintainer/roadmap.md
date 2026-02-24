@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-02-24 (post worktree analysis).
+> Last updated: 2026-02-24 (prioritized implementation order).
 
 ---
 
@@ -39,11 +39,86 @@ Pack resources are now tracked in a `.pack-manifest` file. On each `cco start`, 
 
 ---
 
-## Near-term
+## Implementation Order
 
-### Git Worktree Isolation
+Features are prioritized by impact for third-party users adopting claude-orchestrator. Each sprint can be implemented independently, but dependency arrows indicate prerequisites.
+
+```
+Sprint 1 (prerequisiti)          Sprint 2 (qualità)           Sprint 3 (differenziante)
+┌─────────────────────┐         ┌──────────────────────┐     ┌──────────────────────┐
+│ #1 Auth & Secrets   │────────▶│ #4 Env Extensibility │     │ #6 Git Worktree      │
+│ #2 Env Ext. (base)  │         │    (completamento)   │     │    Isolation          │
+└─────────────────────┘         │ #3 Fix tmux c/p      │     │ #7 Session Resume    │
+                                │ #5 Docker socket tog.│     └──────────────────────┘
+                                └──────────────────────┘              ▲
+                                                                      │ requires auth (#1)
+
+Sprint 4 (ecosistema)           Sprint 5 (polish)
+┌──────────────────────┐        ┌──────────────────────┐
+│ #8 cco pack create   │        │ #10 cco project edit │
+│ #9 Pack inheritance  │        │ #11 cco update       │
+└──────────────────────┘        │ #12 Browser MCP      │
+                                └──────────────────────┘
+```
+
+---
+
+### Sprint 1 — Prerequisiti
+
+Senza queste feature, il tool è incompleto per utenti terzi.
+
+#### #1 Authentication & Secrets
+
+Unified auth for container sessions: `GITHUB_TOKEN` (fine-grained PAT) as primary mechanism, `gh` CLI in Dockerfile, per-project `secrets.env` with override semantics.
+
+**Why first**: Without working auth, users cannot `git push` or `gh pr create` from the container. This is the first thing a new user tries after setup — and today it fails silently.
+
+**Key changes**:
+- Install `gh` CLI in Dockerfile
+- Entrypoint: `gh auth login --with-token` + `gh auth setup-git`
+- Remove SSH key mount from default compose (opt-in via `docker.mount_ssh_keys`)
+- Per-project `secrets.env` overrides `global/secrets.env`
+
+**Docs**: [analysis](../analysis/authentication-and-secrets.md) | [design](./auth-design.md) | [ADR-11](./architecture.md)
+
+#### #2 Environment Extensibility (base)
+
+Minimum viable extensibility: `docker.image` in project.yml (custom image per project) and per-project `secrets.env`. These are low-effort changes that unblock project-specific configuration.
+
+**Docs**: [analysis](../analysis/environment-extensibility.md) | [design](./environment-design.md) | [ADR-12](./architecture.md)
+
+---
+
+### Sprint 2 — Qualità di vita quotidiana
+
+#### #3 Fix tmux copy-paste
+
+Risolvere problemi di selezione e copia/incolla in tmux per token di autenticazione e prompt/risposte. La selezione non funziona correttamente con la configurazione attuale.
+
+**Why now**: Every user encounters this daily. Small fix, large UX impact.
+
+#### #4 Environment Extensibility (completamento)
+
+Complete the extensibility story:
+- `global/setup.sh` — system packages at build time
+- `projects/<name>/setup.sh` — per-project runtime setup
+- `projects/<name>/mcp-packages.txt` — per-project npm MCP packages
+
+**Docs**: [design](./environment-design.md)
+
+#### #5 Docker socket toggle per progetto
+
+Opzione in `project.yml` per abilitare/disabilitare il mount del Docker socket (`docker.mount_socket: false`). Mitigazione del rischio root-access-via-socket per progetti che non necessitano di sibling containers.
+
+---
+
+### Sprint 3 — Feature differenziante
+
+#### #6 Git Worktree Isolation
 
 Opt-in git isolation for container sessions. When enabled, repos are mounted at `/git-repos/` and the entrypoint creates worktrees at `/workspace/` on a dedicated branch (`cco/<project>`). Claude works in the worktrees transparently.
+
+**Why after Sprint 1**: Requires working auth (#1) for the PR/merge workflow. Without push/PR capability, worktree isolation has limited value.
 
 **Activation**: `cco start <project> --worktree` or `worktree: true` in `project.yml`.
 
@@ -56,30 +131,19 @@ Opt-in git isolation for container sessions. When enabled, repos are mounted at 
 
 **Docs**: [analysis](../analysis/worktree-isolation.md) | [design](./worktree-design.md) | [ADR-10](./architecture.md)
 
-### Authentication & Secrets
+#### #7 Session resume
 
-Unified auth for container sessions: `GITHUB_TOKEN` (fine-grained PAT) as primary mechanism, `gh` CLI in Dockerfile, per-project `secrets.env` with override semantics.
+`cco resume <project>` — reattach to a running tmux session inside a running container. Complements worktree isolation: resume work on the same branch.
 
-**Key changes**:
-- Install `gh` CLI in Dockerfile
-- Entrypoint: `gh auth login --with-token` + `gh auth setup-git`
-- Remove SSH key mount from default compose (opt-in via `docker.mount_ssh_keys`)
-- Per-project `secrets.env` overrides `global/secrets.env`
+---
 
-**Docs**: [analysis](../analysis/authentication-and-secrets.md) | [design](./auth-design.md) | [ADR-11](./architecture.md)
+### Sprint 4 — Ecosistema Pack
 
-### Environment Extensibility
+#### #8 `cco pack create <name>` command
 
-Four extension mechanisms for customizing the container without editing the orchestrator:
+Scaffold a new pack definition interactively, similar to `cco project create`. Lowers the barrier for creating packs.
 
-- `global/setup.sh` — system packages at build time
-- `projects/<name>/setup.sh` — per-project runtime setup
-- `projects/<name>/mcp-packages.txt` — per-project npm MCP packages
-- `docker.image` in project.yml — custom Docker image per project
-
-**Docs**: [analysis](../analysis/environment-extensibility.md) | [design](./environment-design.md) | [ADR-12](./architecture.md)
-
-### Pack inheritance / composition
+#### #9 Pack inheritance / composition
 
 Allow packs to extend other packs:
 ```yaml
@@ -88,33 +152,19 @@ files:
   - additional-doc.md
 ```
 
-### `cco pack create <name>` command
-
-Scaffold a new pack definition interactively, similar to `cco project create`.
-
 ---
 
-## Medium-term
+### Sprint 5 — Automazione e polish
 
-### `cco update` — merge intelligente config
+#### #10 `cco project edit <name>` command
+
+Open project.yml in `$EDITOR` and regenerate docker-compose.yml after save.
+
+#### #11 `cco update` — merge intelligente config
 
 Metodo per aggiornare `projects/` e `global/` quando l'orchestratore aggiunge skill, template o modifica strutture, senza perdere customizzazioni utente (merge intelligente defaults → user config).
 
-**Source**: TODO.
-
-### Docker socket toggle per progetto
-
-Opzione in `project.yml` per abilitare/disabilitare il mount del Docker socket. Mitigazione del rischio root-access-via-socket per progetti che non necessitano di sibling containers.
-
-**Source**: TODO.
-
-### Fix tmux copy-paste
-
-Risolvere problemi di selezione e copia/incolla in tmux per token di autenticazione e prompt/risposte. La selezione non funziona correttamente con la configurazione attuale.
-
-**Source**: TODO.
-
-### Browser Automation MCP in Docker
+#### #12 Browser Automation MCP in Docker
 
 Enable Claude to navigate and analyze web pages from within a container session using a headless browser MCP server.
 
@@ -122,19 +172,8 @@ Enable Claude to navigate and analyze web pages from within a container session 
 - Install Chromium in the `Dockerfile` (`apt-get install -y chromium`)
 - Add a Playwright or Puppeteer MCP server to `global/mcp.json`
 - Browser runs headless inside the container — no display or VNC required
-- Claude can navigate URLs, take screenshots, extract page content
 
-**Why useful**: analyze live UIs, verify deployed endpoints, scrape structured data from web pages — all without leaving the coding session.
-
-**Complexity**: Medium. Requires Dockerfile change (image size increase ~400 MB) and MCP server package. Make opt-in via `cco build --with-browser` flag and a separate image tag.
-
-### `cco project edit <name>` command
-
-Open project.yml in `$EDITOR` and regenerate docker-compose.yml after save.
-
-### Session resume
-
-`cco resume <project>` — reattach to a running tmux session inside a running container.
+**Note**: With environment extensibility (#4), users can already install Chromium via `global/setup.sh`. This item becomes providing an out-of-the-box solution with `cco build --with-browser`.
 
 ---
 
