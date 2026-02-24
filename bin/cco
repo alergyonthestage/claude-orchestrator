@@ -604,19 +604,22 @@ EOF
 cmd_build() {
     local no_cache=""
     local mcp_packages=""
+    local cc_version=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --no-cache) no_cache="--no-cache"; shift ;;
             --mcp-packages) mcp_packages="$2"; shift 2 ;;
+            --claude-version) cc_version="$2"; shift 2 ;;
             --help)
                 cat <<'EOF'
-Usage: cco build [--no-cache] [--mcp-packages "pkg1 pkg2"]
+Usage: cco build [--no-cache] [--mcp-packages "pkg1 pkg2"] [--claude-version "x.y.z"]
 
 Options:
   --no-cache               Rebuild without Docker cache
   --mcp-packages "pkgs"    Pre-install MCP server npm packages in the image
                            Also reads from global/mcp-packages.txt if it exists
+  --claude-version "x.y.z" Pin Claude Code to a specific version (default: latest)
 EOF
                 return 0
                 ;;
@@ -635,6 +638,10 @@ EOF
     info "Building Docker image '$IMAGE_NAME'..."
 
     local build_args=()
+    if [[ -n "$cc_version" ]]; then
+        build_args+=(--build-arg "CLAUDE_CODE_VERSION=$cc_version")
+        info "Pinning Claude Code version: $cc_version"
+    fi
     if [[ -n "$mcp_packages" ]]; then
         build_args+=(--build-arg "MCP_PACKAGES=$mcp_packages")
         info "Pre-installing MCP packages: $mcp_packages"
