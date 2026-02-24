@@ -146,7 +146,7 @@ test_invariant_4_two_projects_have_distinct_names() {
 }
 
 # ── Invariant 5: Read-Only Mounts ─────────────────────────────────────
-# Global config, git, packs must always be :ro
+# Global config, gitconfig, packs must always be :ro
 
 test_invariant_5_all_global_config_mounts_are_readonly() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT

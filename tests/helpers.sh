@@ -184,7 +184,7 @@ assert_valid_compose() {
     local file="$1"
     assert_file_exists "$file" "docker-compose.yml was not generated at $file"
     assert_file_contains "$file" "services:"
-    assert_file_contains "$file" "image: claude-orchestrator:latest"
+    assert_file_contains "$file" "image: "
     assert_file_contains "$file" "stdin_open: true"
     assert_file_contains "$file" "tty: true"
     assert_file_contains "$file" "working_dir: /workspace"

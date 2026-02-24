@@ -65,6 +65,16 @@ if [ -f "$MCP_PROJECT" ]; then
     fi
 fi
 
+# ── GitHub / Git authentication ───────────────────────────────────
+# Authenticate gh CLI and configure git credential helper if GITHUB_TOKEN is set.
+# This enables: git push (HTTPS), gh pr create, and MCP GitHub server.
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+    echo "$GITHUB_TOKEN" | gosu claude gh auth login --with-token 2>&1 >&2 \
+        && echo "[entrypoint] GitHub: authenticated gh CLI via GITHUB_TOKEN" >&2
+    gosu claude gh auth setup-git 2>&1 >&2 \
+        && echo "[entrypoint] GitHub: configured git credential helper" >&2
+fi
+
 # ── Debug: log env vars to check auth token presence ────────────────
 echo "[entrypoint] TEAMMATE_MODE=${TEAMMATE_MODE:-unset}" >&2
 echo "[entrypoint] CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:+SET (${#CLAUDE_CODE_OAUTH_TOKEN} chars)}" >&2

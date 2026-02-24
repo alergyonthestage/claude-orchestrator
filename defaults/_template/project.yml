@@ -39,6 +39,7 @@ repos: []
 
 # ── Docker options ───────────────────────────────────────────────────
 docker:
+  # image: claude-orchestrator:latest  # Custom Docker image for this project
   ports:
     - "3000:3000"
     - "8080:8080"

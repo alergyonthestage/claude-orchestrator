@@ -147,13 +147,14 @@ test_dry_run_gitconfig_mounted_readonly() {
     assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" ".gitconfig:/home/claude/.gitconfig:ro"
 }
 
-test_dry_run_ssh_mounted_readonly() {
+test_dry_run_ssh_not_mounted() {
+    # SSH keys are NOT mounted (auth is HTTPS via gh credential helper)
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
-    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" ".ssh:/home/claude/.ssh:ro"
+    assert_file_not_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" ".ssh"
 }
 
 # ── Volume mounts: auto memory (Design Invariant 3) ──────────────────
@@ -530,4 +531,36 @@ test_dry_run_volume_order_git_before_docker_socket() {
         echo "  socket at line: $socket_line"
         return 1
     fi
+}
+
+# ── Custom Docker image ──────────────────────────────────────────────
+
+test_dry_run_custom_image() {
+    # docker.image in project.yml overrides the default image
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+name: test-proj
+auth:
+  method: oauth
+docker:
+  image: my-custom-image:v2
+  ports: []
+  env: {}
+repos: []
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" "image: my-custom-image:v2"
+}
+
+test_dry_run_default_image_when_no_docker_image() {
+    # Without docker.image, default image is used
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --dry-run
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" "image: claude-orchestrator:latest"
 }
