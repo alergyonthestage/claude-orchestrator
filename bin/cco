@@ -448,14 +448,22 @@ load_global_secrets() {
     local _target=$1
     local secrets_file="$GLOBAL_DIR/secrets.env"
     [[ ! -f "$secrets_file" ]] && return 0
+    local line_num=0
     while IFS= read -r line; do
+        (( line_num++ ))
         # Skip empty lines and comments
         [[ -z "$line" || "$line" == \#* ]] && continue
         # Strip inline comments
         line="${line%%#*}"
         # Trim trailing whitespace
         line="${line%"${line##*[![:space:]]}"}"
-        [[ -n "$line" ]] && eval "${_target}+=(-e $(printf '%q' "$line"))"
+        [[ -z "$line" ]] && continue
+        # Validate KEY=VALUE format
+        if [[ "$line" != *=* ]]; then
+            warn "secrets.env:${line_num}: skipping malformed line (expected KEY=VALUE)"
+            continue
+        fi
+        eval "${_target}+=(-e $(printf '%q' "$line"))"
     done < "$secrets_file"
 }
 
