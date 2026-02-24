@@ -46,7 +46,9 @@ RUN arch="$(dpkg --print-architecture)" \
     && gosu nobody true
 
 # ── Claude Code ──────────────────────────────────────────────────────
-RUN npm install -g @anthropic-ai/claude-code@latest
+# Pin version for reproducible builds: cco build --build-arg CLAUDE_CODE_VERSION=1.0.x
+ARG CLAUDE_CODE_VERSION=latest
+RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 ENV CLAUDE_CODE_DISABLE_AUTOUPDATE=1
 
 # ── MCP Server packages (optional pre-installation) ──────────────────

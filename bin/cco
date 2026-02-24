@@ -448,14 +448,22 @@ load_global_secrets() {
     local _target=$1
     local secrets_file="$GLOBAL_DIR/secrets.env"
     [[ ! -f "$secrets_file" ]] && return 0
+    local line_num=0
     while IFS= read -r line; do
+        (( line_num++ ))
         # Skip empty lines and comments
         [[ -z "$line" || "$line" == \#* ]] && continue
         # Strip inline comments
         line="${line%%#*}"
         # Trim trailing whitespace
         line="${line%"${line##*[![:space:]]}"}"
-        [[ -n "$line" ]] && eval "${_target}+=(-e $(printf '%q' "$line"))"
+        [[ -z "$line" ]] && continue
+        # Validate KEY=VALUE format
+        if [[ "$line" != *=* ]]; then
+            warn "secrets.env:${line_num}: skipping malformed line (expected KEY=VALUE)"
+            continue
+        fi
+        eval "${_target}+=(-e $(printf '%q' "$line"))"
     done < "$secrets_file"
 }
 
@@ -596,19 +604,22 @@ EOF
 cmd_build() {
     local no_cache=""
     local mcp_packages=""
+    local cc_version=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --no-cache) no_cache="--no-cache"; shift ;;
             --mcp-packages) mcp_packages="$2"; shift 2 ;;
+            --claude-version) cc_version="$2"; shift 2 ;;
             --help)
                 cat <<'EOF'
-Usage: cco build [--no-cache] [--mcp-packages "pkg1 pkg2"]
+Usage: cco build [--no-cache] [--mcp-packages "pkg1 pkg2"] [--claude-version "x.y.z"]
 
 Options:
   --no-cache               Rebuild without Docker cache
   --mcp-packages "pkgs"    Pre-install MCP server npm packages in the image
                            Also reads from global/mcp-packages.txt if it exists
+  --claude-version "x.y.z" Pin Claude Code to a specific version (default: latest)
 EOF
                 return 0
                 ;;
@@ -627,6 +638,10 @@ EOF
     info "Building Docker image '$IMAGE_NAME'..."
 
     local build_args=()
+    if [[ -n "$cc_version" ]]; then
+        build_args+=(--build-arg "CLAUDE_CODE_VERSION=$cc_version")
+        info "Pinning Claude Code version: $cc_version"
+    fi
     if [[ -n "$mcp_packages" ]]; then
         build_args+=(--build-arg "MCP_PACKAGES=$mcp_packages")
         info "Pre-installing MCP packages: $mcp_packages"
@@ -694,6 +709,11 @@ EOF
     local project_name
     project_name=$(yml_get "$project_yml" "name")
     [[ -z "$project_name" ]] && project_name="$project"
+
+    # Check for existing running session
+    if ! $dry_run && docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^cc-${project_name}$"; then
+        die "Project '${project_name}' already has a running session (container cc-${project_name}). Run 'cco stop ${project}' first."
+    fi
 
     local auth_method
     auth_method=$(yml_get "$project_yml" "auth.method")
@@ -976,6 +996,11 @@ EOF
     check_image
 
     [[ -z "$session_name" ]] && session_name="tmp-$(date +%s)"
+
+    # Check for existing running session
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^cc-${session_name}$"; then
+        die "Session '${session_name}' already running (container cc-${session_name}). Run 'cco stop' first."
+    fi
 
     local tmp_dir="/tmp/cc-${session_name}"
     mkdir -p "$tmp_dir/claude-state/memory" "$tmp_dir/.claude"

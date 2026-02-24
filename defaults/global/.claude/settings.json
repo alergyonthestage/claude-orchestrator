@@ -49,17 +49,6 @@
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "startup",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/usr/local/bin/cco-hooks/session-context.sh",
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "clear",
         "hooks": [
           {
             "type": "command",
@@ -106,5 +95,6 @@
   "teammateMode": "tmux",
   "cleanupPeriodDays": 30,
 
-  "enableAllProjectMcpServers": true
+  "enableAllProjectMcpServers": true,
+  "alwaysThinkingEnabled": true
 }
