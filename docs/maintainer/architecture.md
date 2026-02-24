@@ -434,6 +434,25 @@ Claude Code startup in /workspace:
 - Template for `cco project create` comes from `defaults/_template/`, not `projects/_template/`
 - Updating defaults after a tool update requires manual diffing or `cco init --force`
 
+### ADR-9: Knowledge Packs — Copy vs Mount for Resources
+
+**Context**: Knowledge Packs bundle documentation (knowledge), plus optional skills, agents, and rules for project-level tooling. The knowledge files are large documents meant to be read by Claude at runtime. Skills, agents, and rules are configuration files that Claude Code expects at specific paths inside `.claude/`.
+
+**Decision**: Use two different strategies for the two resource types:
+- **Knowledge files** → mounted read-only as Docker volumes at `/workspace/.packs/<name>/`
+- **Skills, agents, rules** → copied into `projects/<name>/.claude/` at `cco start` time
+
+**Rationale**:
+- Docker volume mounts cannot merge multiple sources into one target directory. If two packs both define agents, they can't both mount to `.claude/agents/` — the second mount would shadow the first. Copying avoids this limitation entirely.
+- Knowledge files are read-only reference material — mounting `:ro` is natural and prevents accidental writes.
+- Skills/agents/rules need to live under `.claude/` where Claude Code discovers them. Copying into the project directory integrates seamlessly with the three-tier context hierarchy (ADR-3).
+- A `.pack-manifest` file tracks which files were copied. On each `cco start`, stale files from the previous manifest are cleaned before fresh copies — preventing ghost resources when packs evolve.
+
+**Consequences**:
+- Copied files become stale if the pack changes between sessions. This is acceptable: `cco start` always refreshes copies. The manifest-based cleanup ensures removed resources don't persist.
+- Name conflicts between packs (e.g., two packs defining `agents/reviewer.md`) result in last-wins overwrite. A warning is emitted to the user. Pack order in `project.yml` determines precedence.
+- Pack content is injected into the session via `session-context.sh` hook, not via `@import` in CLAUDE.md. This keeps project CLAUDE.md clean and makes pack presence transparent to the user.
+
 ---
 
 ## 6. Limitations and Trade-offs
