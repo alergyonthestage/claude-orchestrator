@@ -342,14 +342,14 @@ YAML
 # ── project.yml mount ─────────────────────────────────────────────────
 
 test_project_yml_mounted_in_compose() {
-    # project.yml must be mounted at /workspace/.claude/project.yml (rw)
+    # project.yml must be mounted at /workspace/project.yml (ro)
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
     assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" \
-        "./project.yml:/workspace/.claude/project.yml"
+        "./project.yml:/workspace/project.yml:ro"
 }
 
 # ── pack skills / agents / rules copy ────────────────────────────────

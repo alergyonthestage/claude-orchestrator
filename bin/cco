@@ -406,7 +406,9 @@ _clean_pack_manifest() {
 # Emits warnings for each conflict found.
 _detect_pack_conflicts() {
     local pack_names="$1"
-    local -A seen_agents seen_rules seen_skills
+    local seen_agents_keys=() seen_agents_vals=()
+    local seen_rules_keys=()  seen_rules_vals=()
+    local seen_skills_keys=() seen_skills_vals=()
     while IFS= read -r pack_name; do
         [[ -z "$pack_name" ]] && continue
         local pack_yml="$GLOBAL_DIR/packs/${pack_name}/pack.yml"
@@ -415,26 +417,33 @@ _detect_pack_conflicts() {
         agents=$(yml_get_pack_agents "$pack_yml")
         rules=$(yml_get_pack_rules "$pack_yml")
         skills=$(yml_get_pack_skills "$pack_yml")
+        local i owner
         while IFS= read -r f; do
             [[ -z "$f" ]] && continue
-            if [[ -n "${seen_agents[$f]:-}" ]]; then
-                warn "Agent '$f' defined in both pack '${seen_agents[$f]}' and '$pack_name' — '$pack_name' will overwrite"
-            fi
-            seen_agents[$f]="$pack_name"
+            owner=""
+            for ((i=0; i<${#seen_agents_keys[@]}; i++)); do
+                [[ "${seen_agents_keys[$i]}" == "$f" ]] && { owner="${seen_agents_vals[$i]}"; break; }
+            done
+            [[ -n "$owner" ]] && warn "Agent '$f' defined in both pack '$owner' and '$pack_name' — '$pack_name' will overwrite"
+            seen_agents_keys+=("$f"); seen_agents_vals+=("$pack_name")
         done <<< "$agents"
         while IFS= read -r f; do
             [[ -z "$f" ]] && continue
-            if [[ -n "${seen_rules[$f]:-}" ]]; then
-                warn "Rule '$f' defined in both pack '${seen_rules[$f]}' and '$pack_name' — '$pack_name' will overwrite"
-            fi
-            seen_rules[$f]="$pack_name"
+            owner=""
+            for ((i=0; i<${#seen_rules_keys[@]}; i++)); do
+                [[ "${seen_rules_keys[$i]}" == "$f" ]] && { owner="${seen_rules_vals[$i]}"; break; }
+            done
+            [[ -n "$owner" ]] && warn "Rule '$f' defined in both pack '$owner' and '$pack_name' — '$pack_name' will overwrite"
+            seen_rules_keys+=("$f"); seen_rules_vals+=("$pack_name")
         done <<< "$rules"
         while IFS= read -r f; do
             [[ -z "$f" ]] && continue
-            if [[ -n "${seen_skills[$f]:-}" ]]; then
-                warn "Skill '$f' defined in both pack '${seen_skills[$f]}' and '$pack_name' — '$pack_name' will overwrite"
-            fi
-            seen_skills[$f]="$pack_name"
+            owner=""
+            for ((i=0; i<${#seen_skills_keys[@]}; i++)); do
+                [[ "${seen_skills_keys[$i]}" == "$f" ]] && { owner="${seen_skills_vals[$i]}"; break; }
+            done
+            [[ -n "$owner" ]] && warn "Skill '$f' defined in both pack '$owner' and '$pack_name' — '$pack_name' will overwrite"
+            seen_skills_keys+=("$f"); seen_skills_vals+=("$pack_name")
         done <<< "$skills"
     done <<< "$pack_names"
 }

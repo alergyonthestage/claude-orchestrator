@@ -609,7 +609,7 @@ test_dry_run_setup_sh_mounted_when_exists() {
     echo '#!/bin/bash' > "$CCO_PROJECTS_DIR/test-proj/setup.sh"
     run_cco start "test-proj" --dry-run
     assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" \
-        "./setup.sh:/workspace/.claude/setup.sh:ro"
+        "./setup.sh:/workspace/setup.sh:ro"
 }
 
 test_dry_run_setup_sh_not_mounted_when_missing() {
@@ -633,7 +633,7 @@ test_dry_run_mcp_packages_mounted_when_exists() {
     echo '# packages' > "$CCO_PROJECTS_DIR/test-proj/mcp-packages.txt"
     run_cco start "test-proj" --dry-run
     assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" \
-        "./mcp-packages.txt:/workspace/.claude/mcp-packages.txt:ro"
+        "./mcp-packages.txt:/workspace/mcp-packages.txt:ro"
 }
 
 test_dry_run_mcp_packages_not_mounted_when_missing() {

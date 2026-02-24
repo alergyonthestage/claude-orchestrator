@@ -24,7 +24,7 @@ cco project list             # List projects
 cco stop [project]           # Stop session(s)
 ```
 
-The CLI is a single bash script at `bin/cco` with no dependencies beyond bash, docker, and standard Unix tools (jq, sed, awk).
+The CLI is a single bash script at `bin/cco` with no dependencies beyond bash (3.2+), docker, and standard Unix tools (jq, sed, awk). Compatible with macOS default `/bin/bash` — no Homebrew bash required.
 
 ## Architecture
 

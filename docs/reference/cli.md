@@ -8,7 +8,9 @@
 
 ## 1. Overview
 
-The CLI is a single bash script at `bin/cco` that orchestrates Docker sessions. It has no dependencies beyond `bash`, `docker`, and standard Unix tools (`sed`, `awk`, `jq`).
+The CLI is a single bash script at `bin/cco` that orchestrates Docker sessions. It has no dependencies beyond `bash` (3.2+), `docker`, and standard Unix tools (`sed`, `awk`, `jq`).
+
+> **Note for macOS users**: macOS ships with bash 3.2 (`/bin/bash`). This is the minimum supported version — no Homebrew bash required.
 
 ---
 

@@ -26,7 +26,7 @@ Read `/workspace/.claude/workspace.yml` to understand the project structure:
 repos (names and container paths at `/workspace/<name>`), packs (referenced pack names),
 and extra_mounts (shared libraries mounted at their `target` paths).
 
-If `workspace.yml` is missing or empty, check `/workspace/.claude/project.yml`
+If `workspace.yml` is missing or empty, check `/workspace/project.yml`
 for the project name and repos list as fallback.
 
 ## Step 2: Explore repositories and shared libraries (scope: repos or all)
@@ -125,7 +125,7 @@ reformat or restructure the file.
 `extra_mounts` entries in workspace.yml do not have description fields — they
 are target paths only. No changes needed to that section.
 
-Do **not** modify `/workspace/.claude/project.yml` — it is the host-managed
+Do **not** modify `/workspace/project.yml` — it is the host-managed
 config file and is not the right place for auto-generated descriptions.
 
 ## Notes

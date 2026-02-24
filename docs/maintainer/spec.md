@@ -136,7 +136,7 @@
 
 | ID | Requirement |
 |----|-------------|
-| NFR-3.1 | CLI is a single bash script with no external dependencies beyond docker/docker-compose |
+| NFR-3.1 | CLI is a single bash script with no external dependencies beyond docker/docker-compose. Requires bash 3.2+ (compatible with macOS default `/bin/bash`) |
 | NFR-3.2 | All configuration is in YAML, JSON, or Markdown — no custom formats |
 | NFR-3.3 | Adding a new project requires only creating a directory with project.yml |
 
