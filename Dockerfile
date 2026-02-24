@@ -68,6 +68,15 @@ ENV CLAUDE_CODE_DISABLE_AUTOUPDATE=1
 ARG MCP_PACKAGES=""
 RUN if [ -n "$MCP_PACKAGES" ]; then npm install -g $MCP_PACKAGES; fi
 
+# ── User setup script (global, build time) ─────────────────────────
+# Custom system-level setup. Pass content via: cco build (auto-reads global/setup.sh)
+ARG SETUP_SCRIPT_CONTENT=""
+RUN if [ -n "$SETUP_SCRIPT_CONTENT" ]; then \
+        printf '%s' "$SETUP_SCRIPT_CONTENT" > /tmp/setup.sh \
+        && bash /tmp/setup.sh \
+        && rm -f /tmp/setup.sh; \
+    fi
+
 # ── User setup ───────────────────────────────────────────────────────
 # Create claude user. Docker socket GID is set at runtime via entrypoint.
 RUN useradd -m -s /bin/bash claude \

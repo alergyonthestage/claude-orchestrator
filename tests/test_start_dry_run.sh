@@ -564,3 +564,84 @@ test_dry_run_default_image_when_no_docker_image() {
     run_cco start "test-proj" --dry-run
     assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" "image: claude-orchestrator:latest"
 }
+
+# ── Docker socket toggle ─────────────────────────────────────────────
+
+test_dry_run_docker_socket_mounted_by_default() {
+    # Docker socket is mounted when mount_socket is not specified
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --dry-run
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" \
+        "/var/run/docker.sock:/var/run/docker.sock"
+}
+
+test_dry_run_docker_socket_not_mounted_when_disabled() {
+    # docker.mount_socket: false disables Docker socket mount
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+name: test-proj
+auth:
+  method: oauth
+docker:
+  mount_socket: false
+  ports: []
+  env: {}
+repos: []
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    assert_file_not_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" "docker.sock"
+}
+
+# ── Project setup.sh mount ───────────────────────────────────────────
+
+test_dry_run_setup_sh_mounted_when_exists() {
+    # setup.sh in project dir → mounted read-only in compose
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    echo '#!/bin/bash' > "$CCO_PROJECTS_DIR/test-proj/setup.sh"
+    run_cco start "test-proj" --dry-run
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" \
+        "./setup.sh:/workspace/.claude/setup.sh:ro"
+}
+
+test_dry_run_setup_sh_not_mounted_when_missing() {
+    # No setup.sh → no mount in compose
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --dry-run
+    assert_file_not_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" "setup.sh"
+}
+
+# ── Project mcp-packages.txt mount ──────────────────────────────────
+
+test_dry_run_mcp_packages_mounted_when_exists() {
+    # mcp-packages.txt in project dir → mounted read-only in compose
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    echo '# packages' > "$CCO_PROJECTS_DIR/test-proj/mcp-packages.txt"
+    run_cco start "test-proj" --dry-run
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" \
+        "./mcp-packages.txt:/workspace/.claude/mcp-packages.txt:ro"
+}
+
+test_dry_run_mcp_packages_not_mounted_when_missing() {
+    # No mcp-packages.txt → no mount in compose
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --dry-run
+    assert_file_not_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" "mcp-packages.txt"
+}

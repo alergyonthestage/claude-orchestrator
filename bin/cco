@@ -637,6 +637,12 @@ EOF
         ok "Global config initialized at global/ (languages: $comm_lang / $docs_lang / $code_lang)"
     fi
 
+    # Copy global setup script if not present
+    if [[ ! -f "$GLOBAL_DIR/setup.sh" && -f "$DEFAULTS_DIR/global/setup.sh" ]]; then
+        cp "$DEFAULTS_DIR/global/setup.sh" "$GLOBAL_DIR/setup.sh"
+        ok "Copied global/setup.sh template"
+    fi
+
     # Ensure projects and packs directories exist
     mkdir -p "$PROJECTS_DIR"
     mkdir -p "$GLOBAL_DIR/packs"
@@ -711,6 +717,16 @@ EOF
     if [[ -n "$mcp_packages" ]]; then
         build_args+=(--build-arg "MCP_PACKAGES=$mcp_packages")
         info "Pre-installing MCP packages: $mcp_packages"
+    fi
+
+    # Include global setup script if present
+    if [[ -f "$GLOBAL_DIR/setup.sh" ]]; then
+        local setup_content
+        setup_content=$(cat "$GLOBAL_DIR/setup.sh")
+        if [[ -n "$setup_content" ]]; then
+            build_args+=(--build-arg "SETUP_SCRIPT_CONTENT=$setup_content")
+            info "Including global/setup.sh in build"
+        fi
     fi
 
     docker build $no_cache "${build_args[@]+"${build_args[@]}"}" -t "$IMAGE_NAME" "$REPO_ROOT"
@@ -789,6 +805,11 @@ EOF
     local docker_image
     docker_image=$(yml_get "$project_yml" "docker.image")
     [[ -z "$docker_image" ]] && docker_image="$IMAGE_NAME"
+
+    local mount_socket
+    mount_socket=$(yml_get "$project_yml" "docker.mount_socket")
+    # Default: true (backward compatible)
+    [[ -z "$mount_socket" ]] && mount_socket="true"
 
     local network
     network=$(yml_get "$project_yml" "docker.network")
@@ -875,6 +896,18 @@ YAML
             echo "      - ./mcp.json:/workspace/.mcp.json:ro"
         fi
 
+        # Project setup script (runtime, executed by entrypoint)
+        if [[ -f "$project_dir/setup.sh" ]]; then
+            echo "      # Project setup script"
+            echo "      - ./setup.sh:/workspace/.claude/setup.sh:ro"
+        fi
+
+        # Project MCP packages (runtime, installed by entrypoint)
+        if [[ -f "$project_dir/mcp-packages.txt" ]]; then
+            echo "      # Project MCP packages"
+            echo "      - ./mcp-packages.txt:/workspace/.claude/mcp-packages.txt:ro"
+        fi
+
         # Repository mounts
         echo "      # Repositories"
         while IFS=: read -r repo_path repo_name; do
@@ -925,9 +958,11 @@ YAML
         echo "      # Git identity"
         echo "      - \${HOME}/.gitconfig:/home/claude/.gitconfig:ro"
 
-        # Docker socket
-        echo "      # Docker socket"
-        echo "      - /var/run/docker.sock:/var/run/docker.sock"
+        # Docker socket (opt-out via docker.mount_socket: false)
+        if [[ "$mount_socket" != "false" ]]; then
+            echo "      # Docker socket"
+            echo "      - /var/run/docker.sock:/var/run/docker.sock"
+        fi
 
         # Ports
         echo "    ports:"
