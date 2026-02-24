@@ -20,6 +20,7 @@ appears in the container, when it activates, and what loads it.
 │                                                                 │
 │ CONTAINER STARTUP (entrypoint.sh)                               │
 │    ├── fix docker socket GID                                    │
+│    ├── copy .claude.json.seed → ~/.claude.json (writable)        │
 │    ├── merge mcp-global.json + .mcp.json → ~/.claude.json       │
 │    └── exec gosu claude: tmux → claude --dangerously-skip…      │
 │                                                                 │
@@ -74,7 +75,7 @@ appears in the container, when it activates, and what loads it.
 | Repo CLAUDE.md | `/workspace/<repo>/.claude/CLAUDE.md` | Repo itself | On-demand (nested project) | Claude Code |
 | SessionStart hook | `/usr/local/bin/cco-hooks/session-context.sh` | `config/hooks/session-context.sh` (baked at build) | Immediately after launch | Claude Code hooks |
 | MCP servers | `~/.claude.json` (merged) | `global/.claude/mcp.json` + `projects/<n>/mcp.json` | MCP init (Claude launch) | `entrypoint.sh` (jq merge) |
-| Auth state | `~/.claude.json` | `~/.claude.json` on host | Claude launch | Docker volume mount |
+| Auth state | `~/.claude.json` | `~/.claude.json` on host (mounted as `.seed:ro`, copied at startup) | Claude launch | `entrypoint.sh` (copy seed) |
 | Auto memory | `~/.claude/projects/-workspace/memory/` | `projects/<n>/claude-state/memory/` | Claude launch (prime 200 lines) | Claude Code |
 | Session transcripts | `~/.claude/projects/-workspace/` | `projects/<n>/claude-state/` | `/resume` command | Claude Code |
 | Git config | `~/.gitconfig` | `~/.gitconfig` on host | Git operations | Docker volume mount (`:ro`) |

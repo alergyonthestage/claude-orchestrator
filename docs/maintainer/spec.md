@@ -68,7 +68,7 @@
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| FR-4.1 | Default auth: mount `~/.claude.json` from host (OAuth session) | Must |
+| FR-4.1 | Default auth: mount `~/.claude.json` as read-only seed, copy at startup (OAuth session) | Must |
 | FR-4.2 | Alternative auth: `ANTHROPIC_API_KEY` environment variable | Must |
 | FR-4.3 | Auth method is configurable per project in `project.yml` | Should |
 

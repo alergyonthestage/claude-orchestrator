@@ -459,8 +459,8 @@ services:
       - NODE_ENV=development
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/myapp
     volumes:
-      # Auth
-      - ~/.claude.json:/home/claude/.claude.json:ro
+      # Auth (read-only seed; entrypoint copies to writable location)
+      - ~/.claude.json:/home/claude/.claude.json.seed:ro
       # Global config
       - ../../global/.claude/settings.json:/home/claude/.claude/settings.json:ro
       - ../../global/.claude/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
@@ -539,7 +539,7 @@ The `${VAR}` placeholders are expanded **natively by Claude Code** inside the co
 
 ### 7.2 Global MCP (`global/.claude/mcp.json`)
 
-MCP servers defined here are available in all projects. The entrypoint merges them into `~/.claude.json` at container startup.
+MCP servers defined here are available in all projects. The entrypoint copies the host's `~/.claude.json` from the read-only seed mount, then merges MCP servers into the writable copy at container startup.
 
 ### 7.3 Secrets (`global/secrets.env`)
 

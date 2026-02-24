@@ -191,11 +191,11 @@ volumes:
 
 **Implementation**:
 - CLI checks `project.yml` for `auth.method` (default: `oauth`)
-- OAuth: CLI extracts the access token from macOS Keychain (`Claude Code-credentials`) at launch and passes it to the container via `CLAUDE_CODE_OAUTH_TOKEN`. The `~/.claude.json` file is also mounted for account metadata.
+- OAuth: CLI extracts the access token from macOS Keychain (`Claude Code-credentials`) at launch and passes it to the container via `CLAUDE_CODE_OAUTH_TOKEN`. The `~/.claude.json` file is mounted read-only as a seed (`.claude.json.seed`); the entrypoint copies it to a writable location for account metadata.
 - API Key: passes env var to container via `--env` or `.env` file
 
-**Why not just mount `~/.claude.json`?**
-Claude Code stores OAuth tokens in the macOS Keychain, not in `~/.claude.json` (which only contains account metadata). The container has no access to the host Keychain, so the CLI must extract and inject the token at runtime.
+**Why not just mount `~/.claude.json` read-write?**
+Claude Code stores OAuth tokens in the macOS Keychain, not in `~/.claude.json` (which only contains account metadata). The container has no access to the host Keychain, so the CLI must extract and inject the token at runtime. Additionally, mounting the file read-write causes race conditions: both host and container Claude Code instances write to the file concurrently, leading to JSON corruption ("control characters are not allowed" errors). The seed-and-copy approach isolates each environment's writes.
 
 ---
 

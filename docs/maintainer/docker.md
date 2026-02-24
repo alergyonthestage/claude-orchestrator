@@ -174,8 +174,8 @@ services:
     
     # ── Volumes ──────────────────────────────────────────────────────
     volumes:
-      # --- Auth ---
-      - ${HOME}/.claude.json:/home/claude/.claude.json
+      # --- Auth (read-only seed; entrypoint copies to writable location) ---
+      - ${HOME}/.claude.json:/home/claude/.claude.json.seed:ro
       
       # --- Global config → user-level (~/.claude/) ---
       # Paths are absolute, resolved by cco CLI from GLOBAL_DIR
@@ -233,7 +233,7 @@ networks:
 ```
 HOST                                    CONTAINER                  PURPOSE
 ─────────────────────────────────────────────────────────────────────────────
-~/.claude.json                       → /home/claude/.claude.json   Auth (rw)
+~/.claude.json                       → /home/claude/.claude.json.seed  Auth seed (ro)
 $GLOBAL_DIR/.claude/settings.json    → ~/.claude/settings.json     Global settings (ro)
 $GLOBAL_DIR/.claude/CLAUDE.md        → ~/.claude/CLAUDE.md         Global instructions (ro)
 $GLOBAL_DIR/.claude/rules/           → ~/.claude/rules/            Global rules (ro)
@@ -250,7 +250,8 @@ projects/<n>/claude-state/           → ~/.claude/projects/         Memory + se
 
 **Read-only vs Read-write**:
 - `ro`: Config that should not be modified by the agent (global settings, git config)
-- `rw` (default): Repos (Claude writes code), project .claude/ (Claude may update), memory (Claude writes), `~/.claude.json` (Claude Code updates session metadata on every startup — must be writable)
+- `rw` (default): Repos (Claude writes code), project .claude/ (Claude may update), memory (Claude writes)
+- **`~/.claude.json` special handling**: Mounted read-only as `.claude.json.seed`; the entrypoint copies it to a writable `/home/claude/.claude.json` at startup. This prevents race conditions when host and container Claude Code instances write concurrently.
 
 ---
 

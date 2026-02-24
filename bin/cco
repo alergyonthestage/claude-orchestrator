@@ -19,9 +19,9 @@ BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 # ── Helpers ──────────────────────────────────────────────────────────
-info()  { echo -e "${BLUE}ℹ${NC} $*"; }
-ok()    { echo -e "${GREEN}✓${NC} $*"; }
-warn()  { echo -e "${YELLOW}⚠${NC} $*"; }
+info()  { echo -e "${BLUE}ℹ${NC} $*" >&2; }
+ok()    { echo -e "${GREEN}✓${NC} $*" >&2; }
+warn()  { echo -e "${YELLOW}⚠${NC} $*" >&2; }
 error() { echo -e "${RED}✗${NC} $*" >&2; }
 die()   { error "$@"; exit 1; }
 
@@ -754,9 +754,9 @@ YAML
 
         echo "    volumes:"
 
-        # ~/.claude.json — always mounted (needed for MCP servers, session metadata)
-        # For OAuth: also carries auth state. For API key: entrypoint creates if missing.
-        echo "      - \${HOME}/.claude.json:/home/claude/.claude.json"
+        # ~/.claude.json — mounted read-only as seed; entrypoint copies to writable location.
+        # Prevents race conditions when host Claude Code also writes to this file.
+        echo "      - \${HOME}/.claude.json:/home/claude/.claude.json.seed:ro"
 
         # Global config (read-only)
         cat <<YAML
@@ -1014,7 +1014,7 @@ services:
       - TEAMMATE_MODE=${teammate_mode}
       - CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
     volumes:
-      - \${HOME}/.claude.json:/home/claude/.claude.json
+      - \${HOME}/.claude.json:/home/claude/.claude.json.seed:ro
       # Global config
       - ${GLOBAL_DIR}/.claude/settings.json:/home/claude/.claude/settings.json:ro
       - ${GLOBAL_DIR}/.claude/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro

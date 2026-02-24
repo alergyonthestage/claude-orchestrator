@@ -511,7 +511,7 @@ The CLI mounts `mcp.json` directly at `/workspace/.mcp.json` (read-only). No int
 
 #### Global-Level MCP
 
-`global/.claude/mcp.json` defines MCP servers available in all projects. The entrypoint merges these into `~/.claude.json` at container startup using `jq`. Defaults ship in `defaults/global/.claude/mcp.json` (empty).
+`global/.claude/mcp.json` defines MCP servers available in all projects. The entrypoint copies the host's `~/.claude.json` from the read-only seed mount, then merges MCP servers into the writable copy at container startup using `jq`. Defaults ship in `defaults/global/.claude/mcp.json` (empty).
 
 ### 8.3 Authentication / Secrets
 

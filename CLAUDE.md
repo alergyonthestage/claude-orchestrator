@@ -53,7 +53,7 @@ The host's Docker socket is mounted into the container. Claude can run `docker c
 - **Flat workspace layout**: WORKDIR is `/workspace`, each repo is a direct subdirectory. No `--add-dir` needed.
 - **Auto memory isolation**: each project's `memory/` dir is mounted to `~/.claude/projects/workspace/memory/` so projects don't share memory.
 - **Agent teams**: tmux by default (works everywhere), iTerm2 optional via `--teammate-mode auto`.
-- **Auth**: OAuth (mount `~/.claude.json`) by default, API key via env var as alternative.
+- **Auth**: OAuth (`~/.claude.json` mounted read-only as seed, copied at startup) by default, API key via env var as alternative.
 
 ## Implementation Order
 

@@ -19,20 +19,28 @@ if [ -S /var/run/docker.sock ]; then
     fi
 fi
 
+# ── Copy .claude.json seed to writable location ─────────────────────
+# The host's .claude.json is mounted read-only as .claude.json.seed to
+# prevent race conditions when host Claude Code writes concurrently.
+# We copy it once at startup so the container has its own writable copy.
+CLAUDE_JSON="/home/claude/.claude.json"
+CLAUDE_JSON_SEED="/home/claude/.claude.json.seed"
+MCP_GLOBAL="/home/claude/.claude/mcp-global.json"
+MCP_PROJECT="/workspace/.mcp.json"
+
+if [ -f "$CLAUDE_JSON_SEED" ]; then
+    cp "$CLAUDE_JSON_SEED" "$CLAUDE_JSON"
+    chown claude:claude "$CLAUDE_JSON"
+elif [ ! -f "$CLAUDE_JSON" ]; then
+    echo '{}' > "$CLAUDE_JSON"
+    chown claude:claude "$CLAUDE_JSON"
+fi
+
 # ── MCP server injection into ~/.claude.json ─────────────────────────
 # Claude Code reads user-scope MCP from ~/.claude.json mcpServers key.
 # This is the most reliable mechanism (vs .mcp.json which needs approval).
 # We merge both global MCP (mounted as mcp-global.json) and project MCP
 # (mounted as /workspace/.mcp.json) into ~/.claude.json.
-CLAUDE_JSON="/home/claude/.claude.json"
-MCP_GLOBAL="/home/claude/.claude/mcp-global.json"
-MCP_PROJECT="/workspace/.mcp.json"
-
-# Ensure ~/.claude.json exists (may not be mounted in API key auth mode)
-if [ ! -f "$CLAUDE_JSON" ]; then
-    echo '{}' > "$CLAUDE_JSON"
-    chown claude:claude "$CLAUDE_JSON"
-fi
 
 # Merge global MCP servers (from global/.claude/mcp.json)
 if [ -f "$MCP_GLOBAL" ]; then
