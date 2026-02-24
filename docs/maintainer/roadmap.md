@@ -56,6 +56,29 @@ Opt-in git isolation for container sessions. When enabled, repos are mounted at 
 
 **Docs**: [analysis](../analysis/worktree-isolation.md) | [design](./worktree-design.md) | [ADR-10](./architecture.md)
 
+### Authentication & Secrets
+
+Unified auth for container sessions: `GITHUB_TOKEN` (fine-grained PAT) as primary mechanism, `gh` CLI in Dockerfile, per-project `secrets.env` with override semantics.
+
+**Key changes**:
+- Install `gh` CLI in Dockerfile
+- Entrypoint: `gh auth login --with-token` + `gh auth setup-git`
+- Remove SSH key mount from default compose (opt-in via `docker.mount_ssh_keys`)
+- Per-project `secrets.env` overrides `global/secrets.env`
+
+**Docs**: [analysis](../analysis/authentication-and-secrets.md) | [design](./auth-design.md) | [ADR-11](./architecture.md)
+
+### Environment Extensibility
+
+Four extension mechanisms for customizing the container without editing the orchestrator:
+
+- `global/setup.sh` — system packages at build time
+- `projects/<name>/setup.sh` — per-project runtime setup
+- `projects/<name>/mcp-packages.txt` — per-project npm MCP packages
+- `docker.image` in project.yml — custom Docker image per project
+
+**Docs**: [analysis](../analysis/environment-extensibility.md) | [design](./environment-design.md) | [ADR-12](./architecture.md)
+
 ### Pack inheritance / composition
 
 Allow packs to extend other packs:

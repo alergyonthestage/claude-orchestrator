@@ -2,7 +2,7 @@
 
 > Date: 2026-02-24
 > Status: Approved — proceed to implementation
-> Related: [worktree-design.md](../maintainer/worktree-design.md) | [architecture.md](../maintainer/architecture.md) (ADR-10)
+> Related: [worktree-design.md](../maintainer/worktree-design.md) | [architecture.md](../maintainer/architecture.md) (ADR-10) | [authentication](./authentication-and-secrets.md)
 
 ---
 

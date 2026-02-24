@@ -479,6 +479,55 @@ Claude Code startup in /workspace:
 
 ---
 
+### ADR-11: External Service Authentication via Tokens
+
+**Context**: Container sessions need to push to GitHub, create PRs, and interact with external services via MCP servers. SSH keys mounted from the host fail due to UID mismatch and `:ro` permissions. `gh` CLI is not installed. There's no standardized way to provide service tokens.
+
+**Decision**: Use fine-grained GitHub PAT (`GITHUB_TOKEN`) as the primary auth mechanism. Install `gh` CLI in the Dockerfile. Configure git credential helper via `gh auth setup-git` in the entrypoint. Remove SSH key mount from the default compose template (opt-in via `docker.mount_ssh_keys`). Support per-project `secrets.env` that overrides global values.
+
+**Rationale**:
+- One token handles git push (HTTPS), `gh` CLI, and MCP GitHub — no separate auth per tool
+- Fine-grained PATs can be scoped to specific repos and permissions (principle of least privilege)
+- SSH keys grant access to ALL repos — over-permissive for agent use
+- Per-project secrets enable different token scopes per project
+- `secrets.env` values are passed as runtime `-e` flags — never written to `docker-compose.yml`
+
+**Consequences**:
+- Users must create a GitHub PAT and save it in `secrets.env`
+- SSH-only remotes (non-GitHub) require explicit opt-in
+- `gh` CLI adds ~50 MB to the Docker image
+- Existing SSH key mount is removed from default — breaking change for users relying on it (but it was broken anyway)
+
+**Design doc**: [auth-design.md](./auth-design.md) | **Analysis**: [authentication-and-secrets.md](../analysis/authentication-and-secrets.md)
+
+---
+
+### ADR-12: Environment Extensibility
+
+**Context**: The Docker image is built once and shared across all projects. Some projects need additional system packages, npm packages, or runtime configuration. The only extension mechanism is `--mcp-packages` for global npm packages. Users have no way to customize the environment per project without editing the Dockerfile.
+
+**Decision**: Provide four complementary extension mechanisms:
+1. `global/setup.sh` — executed during `cco build` for system-level packages (all projects)
+2. `projects/<name>/setup.sh` — executed at container start for per-project runtime setup
+3. `projects/<name>/mcp-packages.txt` — per-project npm MCP packages (runtime install)
+4. `docker.image` in project.yml — use a completely custom Docker image per project
+
+**Rationale**:
+- Build-time setup (1) handles heavy dependencies without per-session startup cost
+- Runtime setup (2, 3) enables per-project customization without image rebuild
+- Custom image (4) gives full control for projects with complex needs
+- All four are opt-in with no impact on default behavior
+
+**Consequences**:
+- `global/setup.sh` requires `cco build` after changes
+- Runtime setup scripts (2, 3) increase container startup time proportionally to install size
+- Custom images must be maintained by the user, but can extend the base image
+- Template files are created by `cco init` and `cco project create`
+
+**Design doc**: [environment-design.md](./environment-design.md) | **Analysis**: [environment-extensibility.md](../analysis/environment-extensibility.md)
+
+---
+
 ## 6. Limitations and Trade-offs
 
 | Limitation | Impact | Workaround |

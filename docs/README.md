@@ -30,6 +30,8 @@ Architecture, implementation details, and roadmap for contributors.
 | [maintainer/spec.md](maintainer/spec.md) | Requirements specification |
 | [maintainer/directory-structure.md](maintainer/directory-structure.md) | File inventory and implementation order |
 | [maintainer/worktree-design.md](maintainer/worktree-design.md) | Design: git worktree isolation for sessions |
+| [maintainer/auth-design.md](maintainer/auth-design.md) | Design: authentication & secrets management |
+| [maintainer/environment-design.md](maintainer/environment-design.md) | Design: environment extensibility (setup scripts, custom images) |
 | [maintainer/roadmap.md](maintainer/roadmap.md) | Planned features and future enhancements |
 
 ## Analysis
@@ -39,4 +41,6 @@ Analysis documents and reviews.
 | Document | Contents |
 |----------|----------|
 | [analysis/worktree-isolation.md](analysis/worktree-isolation.md) | Analysis: git worktree isolation options and recommendation |
+| [analysis/authentication-and-secrets.md](analysis/authentication-and-secrets.md) | Analysis: auth methods, secrets management, token strategy |
+| [analysis/environment-extensibility.md](analysis/environment-extensibility.md) | Analysis: custom installations, setup scripts, per-project customization |
 | [analysis/reviews/24-02-2026-architecture-review.md](analysis/reviews/24-02-2026-architecture-review.md) | Architecture review notes (2026-02-24) |

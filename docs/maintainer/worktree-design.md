@@ -2,7 +2,7 @@
 
 > Version: 0.1.0
 > Status: Design — pending implementation
-> Related: [analysis](../analysis/worktree-isolation.md) | [architecture.md](./architecture.md) (ADR-10) | [cli.md](../reference/cli.md)
+> Related: [analysis](../analysis/worktree-isolation.md) | [architecture.md](./architecture.md) (ADR-10) | [auth-design.md](./auth-design.md) | [cli.md](../reference/cli.md)
 
 ---
 
