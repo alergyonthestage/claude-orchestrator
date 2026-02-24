@@ -23,69 +23,23 @@ Knowledge files are injected automatically via `session-context.sh` hook (no `@.
 
 Custom project initialization skill at `global/.claude/skills/init/SKILL.md`. Shadows the built-in `/init` command. Reads `workspace.yml`, explores repositories, generates a structured CLAUDE.md, and writes descriptions back to `workspace.yml`.
 
----
+### Review Fixes Sprint 1 ✓
 
-## Current Sprint — CLI Robustness & Review Fixes
+CLI robustness and settings alignment from the 24-02-2026 architecture review:
+- Fixed test `test_packs_md_has_auto_generated_header` (assertion mismatch with generated output)
+- Added `alwaysThinkingEnabled: true` to global settings (aligning doc and implementation)
+- Simplified SessionStart hook to single catch-all matcher (was duplicated for startup + clear)
+- Added session lock check — `cco start` now detects already-running containers and exits with a clear message
+- Added `secrets.env` format validation — malformed lines are skipped with a warning
+- Added `--claude-version` flag and `ARG CLAUDE_CODE_VERSION` for reproducible Docker builds
 
-Bug fix e miglioramenti di robustezza emersi dall'architecture review del 24-02-2026.
+### Pack Manifest & Conflict Detection ✓
 
-### Fix test packs.md header mismatch (bug)
-
-Test `test_packs_md_has_auto_generated_header` fallisce: asserisce `"Read them proactively"` ma il codice genera `"Read the relevant files BEFORE starting..."`. Aggiornare il test.
-
-**Source**: architecture review §7, test run confermato.
-
-### Aggiungere `alwaysThinkingEnabled: true` a settings.json
-
-La doc (`context.md` §4.1) lo elenca come raccomandato, ma `defaults/global/.claude/settings.json` non lo include. Discrepanza doc/implementazione.
-
-**Source**: architecture review §2 gap 1.
-
-### Semplificare SessionStart hook matcher
-
-Le due entry `"startup"` e `"clear"` puntano allo stesso script. Unificare in un singolo catch-all senza matcher, come raccomandato dalla doc ufficiale Claude Code.
-
-**Source**: architecture review §2 gap 2.
-
-### Lock per sessioni concorrenti
-
-`cco start project-a` quando `project-a` è già running produce un errore Docker generico. Aggiungere un check esplicito con `docker ps` e un messaggio chiaro.
-
-**Source**: architecture review §3 problema 5.
-
-### Validazione formato `secrets.env`
-
-`load_global_secrets()` non valida il formato `KEY=VALUE`. Righe malformate vengono passate come `-e garbage` a Docker, causando errori confusi. Aggiungere validazione con skip + warning.
-
-**Source**: architecture review §3 problema 4.
-
-### Pinning versione Claude Code nel Dockerfile
-
-`@latest` nel Dockerfile rende le build non riproducibili. Aggiungere `ARG CLAUDE_CODE_VERSION=latest` per permettere il pinning opzionale via `cco build --build-arg CLAUDE_CODE_VERSION=1.0.x`.
-
-**Source**: architecture review §4 miglioramento 1.
+Pack resources are now tracked in a `.pack-manifest` file. On each `cco start`, stale files from the previous session are cleaned before fresh copies. Name conflicts between packs (same agent/rule/skill name) emit a warning. ADR-9 documents the copy-vs-mount design trade-off.
 
 ---
 
 ## Near-term
-
-### Pack cleanup — manifest file copiati
-
-Skills, agents e rules copiati dai pack in `projects/<n>/.claude/` non vengono rimossi se il pack cambia. Aggiungere un manifest (`.pack-manifest`) e pulire i file stale prima di ogni copia.
-
-**Source**: architecture review §7 miglioramento 1.
-
-### Warning conflitti nome tra pack
-
-Se `pack-a` e `pack-b` definiscono entrambi `agents/reviewer.md`, il secondo sovrascrive il primo silenziosamente. Emettere un warning in `cco start`.
-
-**Source**: architecture review §7 miglioramento 2.
-
-### ADR-9 — Knowledge Packs
-
-Documentare le trade-off del design dei pack in un ADR dedicato in `architecture.md`: scelta di copiare vs montare, staleness dei file copiati, injection via hook, composizione.
-
-**Source**: architecture review §1 miglioramento.
 
 ### Pack inheritance / composition
 
