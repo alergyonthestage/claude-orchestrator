@@ -106,5 +106,6 @@
   "teammateMode": "tmux",
   "cleanupPeriodDays": 30,
 
-  "enableAllProjectMcpServers": true
+  "enableAllProjectMcpServers": true,
+  "alwaysThinkingEnabled": true
 }
