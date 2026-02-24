@@ -879,7 +879,7 @@ YAML
       - ${GLOBAL_DIR}/.claude/skills:/home/claude/.claude/skills:ro
       # Project config
       - ./.claude:/workspace/.claude
-      - ./project.yml:/workspace/.claude/project.yml
+      - ./project.yml:/workspace/project.yml:ro
       # Claude state: auto memory + session transcripts (enables /resume across rebuilds)
       - ./claude-state:/home/claude/.claude/projects/-workspace
 YAML
@@ -899,13 +899,13 @@ YAML
         # Project setup script (runtime, executed by entrypoint)
         if [[ -f "$project_dir/setup.sh" ]]; then
             echo "      # Project setup script"
-            echo "      - ./setup.sh:/workspace/.claude/setup.sh:ro"
+            echo "      - ./setup.sh:/workspace/setup.sh:ro"
         fi
 
         # Project MCP packages (runtime, installed by entrypoint)
         if [[ -f "$project_dir/mcp-packages.txt" ]]; then
             echo "      # Project MCP packages"
-            echo "      - ./mcp-packages.txt:/workspace/.claude/mcp-packages.txt:ro"
+            echo "      - ./mcp-packages.txt:/workspace/mcp-packages.txt:ro"
         fi
 
         # Repository mounts

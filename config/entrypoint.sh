@@ -76,7 +76,7 @@ if [ -n "${GITHUB_TOKEN:-}" ]; then
 fi
 
 # ── Project setup script (runtime) ───────────────────────────────
-PROJECT_SETUP="/workspace/.claude/setup.sh"
+PROJECT_SETUP="/workspace/setup.sh"
 if [ -f "$PROJECT_SETUP" ]; then
     echo "[entrypoint] Running project setup script..." >&2
     bash "$PROJECT_SETUP" 2>&1 >&2
@@ -84,7 +84,7 @@ if [ -f "$PROJECT_SETUP" ]; then
 fi
 
 # ── Per-project MCP packages (runtime) ───────────────────────────
-PROJECT_MCP_PACKAGES="/workspace/.claude/mcp-packages.txt"
+PROJECT_MCP_PACKAGES="/workspace/mcp-packages.txt"
 if [ -f "$PROJECT_MCP_PACKAGES" ]; then
     pkg_count=$(grep -cv '^\s*$\|^\s*#' "$PROJECT_MCP_PACKAGES" 2>/dev/null || echo "0")
     if [ "$pkg_count" -gt 0 ]; then
