@@ -965,14 +965,21 @@ YAML
         fi
 
         # Ports
-        echo "    ports:"
+        local all_ports=()
         while IFS= read -r port; do
             [[ -z "$port" ]] && continue
-            echo "      - \"${port}\""
+            all_ports+=("$port")
         done <<< "$(yml_get_ports "$project_yml")"
         for port in "${extra_ports[@]+"${extra_ports[@]}"}"; do
-            echo "      - \"${port}\""
+            all_ports+=("$port")
         done
+        
+        if [[ ${#all_ports[@]} -gt 0 ]]; then
+            echo "    ports:"
+            for port in "${all_ports[@]}"; do
+                echo "      - \"${port}\""
+            done
+        fi
 
         # Network
         cat <<YAML
