@@ -179,6 +179,7 @@ fi
 | **Normal restart** | `.credentials.json` has valid tokens → Claude uses them, auto-refreshes → tokens updated in file |
 | **Token refresh** | Claude auto-refreshes inside container → writes updated tokens to `.credentials.json` → persists |
 | **Host re-login** | User logs in on host (new Keychain tokens) → `cco start` detects higher `expiresAt` → re-seeds `.credentials.json` |
+| **Host logout+login** | Host `~/.claude.json` may reset `hasCompletedOnboarding: false` → `cco start` forces it to `true` → no onboarding screen |
 | **API key mode** | No Keychain seeding → `ANTHROPIC_API_KEY` passed as env var → `.credentials.json` unused |
 
 ### Preferences sync (`claude.json`)
@@ -191,9 +192,15 @@ global_startups=$(jq -r '.numStartups // 0' "$global_claude_json")
 if [[ "$host_startups" -gt "$global_startups" ]]; then
     cp "$HOME/.claude.json" "$global_claude_json"
 fi
+
+# Force hasCompletedOnboarding — container must never show onboarding
+if [[ "$(jq -r '.hasCompletedOnboarding // false' "$global_claude_json")" != "true" ]]; then
+    jq '.hasCompletedOnboarding = true' "$global_claude_json" > "$global_claude_json.tmp" \
+        && mv "$global_claude_json.tmp" "$global_claude_json"
+fi
 ```
 
-This ensures `hasCompletedOnboarding`, theme preferences, and other settings stay current without re-triggering onboarding inside the container.
+This ensures theme preferences and other settings stay current. The `hasCompletedOnboarding` override is critical: after a host logout+login cycle, `~/.claude.json` on the host may have `hasCompletedOnboarding: false`, which would trigger the "theme: dark" onboarding screen inside the container — blocking the session even when valid credentials exist.
 
 ---
 
@@ -221,12 +228,11 @@ This ensures `hasCompletedOnboarding`, theme preferences, and other settings sta
 
 ### "theme: dark" onboarding screen appears
 
-The `claude.json` has `hasCompletedOnboarding: false`. Fix:
+This happens when `claude.json` has `hasCompletedOnboarding: false`. Common after a host logout+login cycle. Since v1.1, `cco start` automatically forces `hasCompletedOnboarding: true` before starting the container. If it still occurs, manually fix:
 ```bash
 jq '.hasCompletedOnboarding = true' global/claude-state/claude.json > /tmp/fix.json \
   && mv /tmp/fix.json global/claude-state/claude.json
 ```
-Or delete the file to re-sync from host: `rm global/claude-state/claude.json`
 
 ### Token expired (after ~90 days)
 

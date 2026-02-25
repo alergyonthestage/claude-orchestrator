@@ -888,6 +888,14 @@ EOF
     elif [[ ! -f "$global_claude_json" ]]; then
         echo '{}' > "$global_claude_json"
     fi
+    # Container must never show onboarding — force hasCompletedOnboarding after any sync/creation.
+    # Host may have false after logout+login; container needs true to skip the "theme: dark" screen.
+    local current_onboarding
+    current_onboarding=$(jq -r '.hasCompletedOnboarding // false' "$global_claude_json" 2>/dev/null || echo "false")
+    if [[ "$current_onboarding" != "true" ]]; then
+        jq '.hasCompletedOnboarding = true' "$global_claude_json" > "$global_claude_json.tmp" \
+            && mv "$global_claude_json.tmp" "$global_claude_json"
+    fi
 
     # ~/.claude/.credentials.json — OAuth tokens (access + refresh)
     # On macOS, Claude stores tokens in Keychain. On Linux (container), it reads from
