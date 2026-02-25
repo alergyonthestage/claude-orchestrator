@@ -2,7 +2,7 @@
 # tests/test_packs.sh — knowledge pack generation tests
 #
 # Verifies that .claude/packs.md is correctly generated with instructional file list.
-# Design Invariant 7: format must be - /workspace/.packs/<name>/<file>
+# Design Invariant 7: format must be - /workspace/.claude/packs/<name>/<file>
 
 # Helper: create a standard single-pack project for testing (new schema)
 _create_pack_project() {
@@ -56,7 +56,7 @@ test_packs_md_has_auto_generated_header() {
 }
 
 test_packs_md_file_list_format() {
-    # Design Invariant 7: each file must use "- /workspace/.packs/<name>/<file>" format
+    # Design Invariant 7: each file must use "- /workspace/.claude/packs/<name>/<file>" format
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -64,8 +64,8 @@ test_packs_md_file_list_format() {
     pack_src=$(_create_pack_project "$tmpdir" "my-pack")
     run_cco start "test-proj" --dry-run
     local packs_md="$CCO_PROJECTS_DIR/test-proj/.claude/packs.md"
-    assert_file_contains "$packs_md" "- /workspace/.packs/my-pack/overview.md"
-    assert_file_contains "$packs_md" "- /workspace/.packs/my-pack/conventions.md"
+    assert_file_contains "$packs_md" "- /workspace/.claude/packs/my-pack/overview.md"
+    assert_file_contains "$packs_md" "- /workspace/.claude/packs/my-pack/conventions.md"
 }
 
 test_packs_md_one_line_per_file() {
@@ -99,9 +99,9 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     local packs_md="$CCO_PROJECTS_DIR/test-proj/.claude/packs.md"
-    assert_file_contains "$packs_md" "- /workspace/.packs/multi-file-pack/doc-a.md"
-    assert_file_contains "$packs_md" "- /workspace/.packs/multi-file-pack/doc-b.md"
-    assert_file_contains "$packs_md" "- /workspace/.packs/multi-file-pack/doc-c.md"
+    assert_file_contains "$packs_md" "- /workspace/.claude/packs/multi-file-pack/doc-a.md"
+    assert_file_contains "$packs_md" "- /workspace/.claude/packs/multi-file-pack/doc-b.md"
+    assert_file_contains "$packs_md" "- /workspace/.claude/packs/multi-file-pack/doc-c.md"
 }
 
 test_packs_md_multiple_packs_all_files_present() {
@@ -143,8 +143,8 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     local packs_md="$CCO_PROJECTS_DIR/test-proj/.claude/packs.md"
-    assert_file_contains "$packs_md" "- /workspace/.packs/pack-a/a-overview.md"
-    assert_file_contains "$packs_md" "- /workspace/.packs/pack-b/b-guide.md"
+    assert_file_contains "$packs_md" "- /workspace/.claude/packs/pack-a/a-overview.md"
+    assert_file_contains "$packs_md" "- /workspace/.claude/packs/pack-b/b-guide.md"
 }
 
 test_packs_md_removed_when_no_packs() {
@@ -155,7 +155,7 @@ test_packs_md_removed_when_no_packs() {
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
 
     # Pre-create a stale packs.md (left from a previous run)
-    printf '<!-- stale -->\n@/workspace/.packs/old/file.md\n' \
+    printf '<!-- stale -->\n@/workspace/.claude/packs/old/file.md\n' \
         > "$CCO_PROJECTS_DIR/test-proj/.claude/packs.md"
 
     run_cco start "test-proj" --dry-run
@@ -221,7 +221,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     local packs_md="$CCO_PROJECTS_DIR/test-proj/.claude/packs.md"
-    assert_file_contains "$packs_md" "- /workspace/.packs/desc-pack/guide.md — Read when working on guides"
+    assert_file_contains "$packs_md" "- /workspace/.claude/packs/desc-pack/guide.md — Read when working on guides"
 }
 
 test_packs_md_no_description_shows_path_only() {
@@ -253,7 +253,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     local packs_md="$CCO_PROJECTS_DIR/test-proj/.claude/packs.md"
-    assert_file_contains "$packs_md" "- /workspace/.packs/nodesc-pack/notes.md"
+    assert_file_contains "$packs_md" "- /workspace/.claude/packs/nodesc-pack/notes.md"
     # The file entry line must NOT have a description suffix " — ..."
     if grep -Fe "notes.md" "$packs_md" | grep -qFe " — "; then
         echo "ASSERTION FAILED: packs.md should not contain description suffix when no description is set"

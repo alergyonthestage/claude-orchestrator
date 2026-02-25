@@ -383,15 +383,16 @@ YAML
     assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" "ANTHROPIC_API_KEY"
 }
 
-# ── Knowledge packs (Design Invariant 5 - packs :ro) ─────────────────
+# ── Knowledge packs (copied, not mounted) ────────────────────────────
 
-test_dry_run_pack_mounted_readonly() {
-    # Design Invariant 5: knowledge packs always :ro
+test_dry_run_pack_knowledge_copied() {
+    # Knowledge files are copied to .claude/packs/, not mounted as volumes
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     local pack_src="$tmpdir/pack-src"
     mkdir -p "$pack_src"
+    echo "test knowledge" > "$pack_src/doc.md"
     create_pack "$tmpdir" "my-pack" "$(cat <<YAML
 name: my-pack
 knowledge:
@@ -413,8 +414,9 @@ packs:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" \
-        "${pack_src}:/workspace/.packs/my-pack:ro"
+    local copied="$CCO_PROJECTS_DIR/test-proj/.claude/packs/my-pack/doc.md"
+    [[ -f "$copied" ]] || fail "Knowledge file not copied to $copied"
+    assert_file_contains "$copied" "test knowledge"
 }
 
 # ── MCP server config ─────────────────────────────────────────────────

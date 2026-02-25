@@ -50,7 +50,8 @@ done
 ctx="<SessionContext>
 Project: ${PROJECT}
 Teammate mode: ${TMODE}
-Repositories (${repo_count}):${repos}"
+Repositories (${repo_count}):${repos}
+Workspace persistence: Repository directories are persisted on the host. Files at /workspace/ root are temporary (container-only, lost on exit). Persistent work should go in repos and be versioned with git."
 
 if [ "$mcp_count" -gt 0 ]; then
     ctx="${ctx}

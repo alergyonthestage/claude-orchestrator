@@ -509,6 +509,36 @@ _copy_pack_resources() {
             fi
         done <<< "$rules"
     fi
+
+    # Knowledge: copy only the files listed in knowledge.files:
+    local pack_files
+    pack_files=$(yml_get_pack_knowledge_files "$pack_yml")
+    if [[ -n "$pack_files" ]]; then
+        local pack_source
+        pack_source=$(yml_get_pack_knowledge_source "$pack_yml")
+        [[ -z "$pack_source" ]] && pack_source="$pack_dir/knowledge"
+        pack_source=$(expand_path "$pack_source")
+        if [[ -d "$pack_source" ]]; then
+            mkdir -p "$project_dir/.claude/packs/${pack_name}"
+            local copied_any=0
+            while IFS=$'\t' read -r fname _fdesc; do
+                [[ -z "$fname" ]] && continue
+                local src="$pack_source/$fname"
+                local dst="$project_dir/.claude/packs/${pack_name}/$fname"
+                if [[ -f "$src" ]]; then
+                    mkdir -p "$(dirname "$dst")"
+                    cp "$src" "$dst"
+                    copied_any=1
+                else
+                    warn "Pack '$pack_name': knowledge file '$fname' not found in $pack_source"
+                fi
+            done <<< "$pack_files"
+            # Track directory in manifest (like skills) for clean removal
+            [[ $copied_any -eq 1 ]] && echo "packs/${pack_name}" >> "$manifest"
+        else
+            warn "Pack '$pack_name': knowledge source '$pack_source' not found"
+        fi
+    fi
 }
 
 # Load secrets from a specific file into an array of -e flags
@@ -943,25 +973,8 @@ YAML
             done <<< "$extra_mounts"
         fi
 
-        # Knowledge packs (source dirs mounted read-only at /workspace/.packs/<name>)
-        if [[ -n "$pack_names" ]]; then
-            echo "      # Knowledge packs"
-            while IFS= read -r pack_name; do
-                [[ -z "$pack_name" ]] && continue
-                local pack_yml="$GLOBAL_DIR/packs/${pack_name}/pack.yml"
-                if [[ ! -f "$pack_yml" ]]; then
-                    warn "Pack '$pack_name' not found at global/packs/${pack_name}/pack.yml — skipping"
-                    continue
-                fi
-                # Source: from knowledge.source: or inline global/packs/<name>/knowledge/
-                local pack_source
-                pack_source=$(yml_get_pack_knowledge_source "$pack_yml")
-                [[ -z "$pack_source" ]] && pack_source="$GLOBAL_DIR/packs/${pack_name}/knowledge"
-                pack_source=$(expand_path "$pack_source")
-                [[ -d "$pack_source" ]] || continue  # no knowledge dir — skills/agents/rules only
-                echo "      - ${pack_source}:/workspace/.packs/${pack_name}:ro"
-            done <<< "$pack_names"
-        fi
+        # Knowledge packs: files are copied by _copy_pack_resources (not mounted).
+        # No volume mounts needed — knowledge files live in .claude/packs/<name>/.
 
         # Git identity (commit author — read-only, no SSH keys)
         echo "      # Git identity"
@@ -1022,8 +1035,8 @@ YAML
                 [[ -z "$pack_files" ]] && continue
                 while IFS=$'\t' read -r fname fdesc; do
                     [[ -z "$fname" ]] && continue
-                    [[ -n "$fdesc" ]] && echo "- /workspace/.packs/${pack_name}/${fname} — ${fdesc}" \
-                                      || echo "- /workspace/.packs/${pack_name}/${fname}"
+                    [[ -n "$fdesc" ]] && echo "- /workspace/.claude/packs/${pack_name}/${fname} — ${fdesc}" \
+                                      || echo "- /workspace/.claude/packs/${pack_name}/${fname}"
                     (( packs_md_lines++ )) || true
                 done <<< "$pack_files"
             done <<< "$pack_names"

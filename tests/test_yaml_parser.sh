@@ -372,13 +372,14 @@ YAML
 
 # ── yml_get_packs: packs list parsing ────────────────────────────────
 
-test_yaml_parser_pack_referenced_is_mounted() {
-    # yml_get_packs: pack name → pack source dir mounted :ro
+test_yaml_parser_pack_knowledge_copied_not_mounted() {
+    # yml_get_packs: knowledge files are copied to .claude/packs/, not mounted as volumes
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     local pack_src="$tmpdir/pack-source"
     mkdir -p "$pack_src"
+    echo "knowledge content" > "$pack_src/doc.md"
     create_pack "$tmpdir" "my-pack" "$(cat <<YAML
 name: my-pack
 knowledge:
@@ -400,8 +401,12 @@ packs:
 YAML
 )"
     run_cco start "test-proj" --dry-run
+    # Knowledge files should be copied, not mounted
+    local copied="$CCO_PROJECTS_DIR/test-proj/.claude/packs/my-pack/doc.md"
+    [[ -f "$copied" ]] || fail "Knowledge file not copied to $copied"
+    # Compose should NOT contain pack volume mounts
     local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
-    assert_file_contains "$compose" "${pack_src}:/workspace/.packs/my-pack:ro"
+    assert_file_not_contains "$compose" "/.packs/"
 }
 
 test_yaml_parser_no_packs_section_no_pack_mounts() {
