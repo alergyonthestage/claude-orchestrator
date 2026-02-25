@@ -1093,16 +1093,14 @@ YAML
         echo '{}' > "$HOME/.claude.json"
     fi
 
-    # Resolve auth token and secrets for the session
+    # Resolve auth and secrets for the session
+    # OAuth: no env var — claude-state/claude.json (mounted as ~/.claude.json) is the
+    # single source of truth, with access + refresh token. Claude auto-refreshes on expiry.
+    # Seeding from host ~/.claude.json is handled by the entrypoint (compares expiresAt).
     local run_env=()
-    if [[ "$auth_method" == "oauth" ]]; then
-        local token
-        token=$(get_oauth_token)
-        if [[ -n "$token" ]]; then
-            run_env+=(-e "CLAUDE_CODE_OAUTH_TOKEN=$token")
-        else
-            warn "Could not extract OAuth token from Keychain. Claude may prompt for login."
-        fi
+    if [[ "$auth_method" == "api_key" ]]; then
+        [[ -z "${ANTHROPIC_API_KEY:-}" ]] && die "ANTHROPIC_API_KEY is not set. Export it before running cco start --api-key."
+        run_env+=(-e "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}")
     fi
 
     # Load global secrets as runtime env vars (for MCP servers that read env directly)

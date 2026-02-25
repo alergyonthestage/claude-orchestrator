@@ -29,12 +29,15 @@ MCP_GLOBAL="/home/claude/.claude/mcp-global.json"
 MCP_PROJECT="/workspace/.mcp.json"
 
 # ~/.claude.json is mounted writable from claude-state/claude.json (persisted across sessions).
-# Seed from host only if the persisted file has no auth yet (first run or reset).
+# Reseed from host only when the host has a fresher token (e.g. after a re-login on the host).
+# Comparing expiresAt covers: first run (file=0 < seed), normal run (file > seed after refresh),
+# and post-host-login (seed > file after host re-auth).
 if [ -f "$CLAUDE_JSON_SEED" ]; then
-    has_auth=$(jq -r '.claudeAiOauth.accessToken // empty' "$CLAUDE_JSON" 2>/dev/null)
-    if [ -z "$has_auth" ]; then
+    seed_expires=$(jq -r '.claudeAiOauth.expiresAt // 0' "$CLAUDE_JSON_SEED" 2>/dev/null || echo 0)
+    file_expires=$(jq -r '.claudeAiOauth.expiresAt // 0' "$CLAUDE_JSON"      2>/dev/null || echo 0)
+    if [ "$seed_expires" -gt "$file_expires" ]; then
         cp "$CLAUDE_JSON_SEED" "$CLAUDE_JSON"
-        echo "[entrypoint] Seeded ~/.claude.json from host (no auth found in persisted state)" >&2
+        echo "[entrypoint] Seeded ~/.claude.json from host (host auth is newer)" >&2
     fi
 elif [ ! -f "$CLAUDE_JSON" ]; then
     echo '{}' > "$CLAUDE_JSON"
