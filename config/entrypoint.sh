@@ -86,7 +86,8 @@ fi
 # ── Per-project MCP packages (runtime) ───────────────────────────
 PROJECT_MCP_PACKAGES="/workspace/mcp-packages.txt"
 if [ -f "$PROJECT_MCP_PACKAGES" ]; then
-    pkg_count=$(grep -cv '^\s*$\|^\s*#' "$PROJECT_MCP_PACKAGES" 2>/dev/null || echo "0")
+    pkg_count=$(grep -cv '^\s*$\|^\s*#' "$PROJECT_MCP_PACKAGES" 2>/dev/null || true)
+    pkg_count=${pkg_count:-0}
     if [ "$pkg_count" -gt 0 ]; then
         echo "[entrypoint] Installing $pkg_count project MCP package(s)..." >&2
         grep -v '^\s*$\|^\s*#' "$PROJECT_MCP_PACKAGES" | \

@@ -549,7 +549,7 @@ load_secrets_file() {
     [[ ! -f "$secrets_file" ]] && return 0
     local line_num=0
     while IFS= read -r line; do
-        (( line_num++ ))
+        line_num=$(( line_num + 1 ))
         # Skip empty lines and comments
         [[ -z "$line" || "$line" == \#* ]] && continue
         # Strip inline comments
