@@ -581,6 +581,14 @@ migrate_memory_to_claude_state() {
         mv "$project_dir/memory" "$project_dir/claude-state/memory"
     fi
     mkdir -p "$project_dir/claude-state/memory"
+    # Initialize persistent claude.json for auth across sessions (must exist before Docker bind mount)
+    if [[ ! -f "$project_dir/claude-state/claude.json" ]]; then
+        if [[ -f "$HOME/.claude.json" ]]; then
+            cp "$HOME/.claude.json" "$project_dir/claude-state/claude.json"
+        else
+            echo '{}' > "$project_dir/claude-state/claude.json"
+        fi
+    fi
 }
 
 # Check Docker is running
@@ -860,6 +868,11 @@ EOF
     local pack_names
     pack_names=$(yml_get_packs "$project_yml")
 
+    # Validate: at least one repo required for persistent work
+    local repos_check
+    repos_check=$(yml_get_repos "$project_yml")
+    [[ -z "$repos_check" ]] && die "No repositories defined in project.yml. Add at least one repo under 'repos:' before starting."
+
     # Ensure claude-state directory exists (migrates legacy memory/ if needed)
     migrate_memory_to_claude_state "$project_dir"
 
@@ -904,8 +917,9 @@ YAML
 
         echo "    volumes:"
 
-        # ~/.claude.json — mounted read-only as seed; entrypoint copies to writable location.
-        # Prevents race conditions when host Claude Code also writes to this file.
+        # ~/.claude.json — persisted in claude-state/ so auth survives container restarts.
+        # Seed (host ~/.claude.json) used by entrypoint only if no auth present yet.
+        echo "      - ./claude-state/claude.json:/home/claude/.claude.json"
         echo "      - \${HOME}/.claude.json:/home/claude/.claude.json.seed:ro"
 
         # Global config (read-only)

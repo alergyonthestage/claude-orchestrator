@@ -28,13 +28,18 @@ CLAUDE_JSON_SEED="/home/claude/.claude.json.seed"
 MCP_GLOBAL="/home/claude/.claude/mcp-global.json"
 MCP_PROJECT="/workspace/.mcp.json"
 
+# ~/.claude.json is mounted writable from claude-state/claude.json (persisted across sessions).
+# Seed from host only if the persisted file has no auth yet (first run or reset).
 if [ -f "$CLAUDE_JSON_SEED" ]; then
-    cp "$CLAUDE_JSON_SEED" "$CLAUDE_JSON"
-    chown claude:claude "$CLAUDE_JSON"
+    has_auth=$(jq -r '.claudeAiOauth.accessToken // empty' "$CLAUDE_JSON" 2>/dev/null)
+    if [ -z "$has_auth" ]; then
+        cp "$CLAUDE_JSON_SEED" "$CLAUDE_JSON"
+        echo "[entrypoint] Seeded ~/.claude.json from host (no auth found in persisted state)" >&2
+    fi
 elif [ ! -f "$CLAUDE_JSON" ]; then
     echo '{}' > "$CLAUDE_JSON"
-    chown claude:claude "$CLAUDE_JSON"
 fi
+chown claude:claude "$CLAUDE_JSON"
 
 # ── MCP server injection into ~/.claude.json ─────────────────────────
 # Claude Code reads user-scope MCP from ~/.claude.json mcpServers key.
