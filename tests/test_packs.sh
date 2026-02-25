@@ -26,7 +26,9 @@ auth:
 docker:
   ports: []
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 packs:
   - $pack_name
 YAML
@@ -85,14 +87,16 @@ knowledge:
     - doc-c.md
 YAML
 )"
-    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
   method: oauth
 docker:
   ports: []
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 packs:
   - multi-file-pack
 YAML
@@ -128,14 +132,16 @@ knowledge:
     - b-guide.md
 YAML
 )"
-    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
   method: oauth
 docker:
   ports: []
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 packs:
   - pack-a
   - pack-b
@@ -173,14 +179,16 @@ test_packs_md_missing_pack_silently_skipped() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
   method: oauth
 docker:
   ports: []
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 packs:
   - nonexistent-pack
 YAML
@@ -207,14 +215,16 @@ knowledge:
       description: "Read when working on guides"
 YAML
 )"
-    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
   method: oauth
 docker:
   ports: []
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 packs:
   - desc-pack
 YAML
@@ -239,14 +249,16 @@ knowledge:
     - notes.md
 YAML
 )"
-    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
   method: oauth
 docker:
   ports: []
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 packs:
   - nodesc-pack
 YAML
@@ -323,14 +335,16 @@ knowledge:
     - guide.md
 YAML
 )"
-    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
   method: oauth
 docker:
   ports: []
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 packs:
   - my-pack
 YAML
@@ -364,14 +378,16 @@ test_pack_skills_copied_to_project_claude() {
     mkdir -p "$pack_dir/skills/deploy"
     echo "Deploy skill" > "$pack_dir/skills/deploy/SKILL.md"
     printf 'name: skill-pack\nskills:\n  - deploy\n' > "$pack_dir/pack.yml"
-    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
   method: oauth
 docker:
   ports: []
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 packs:
   - skill-pack
 YAML
@@ -389,14 +405,16 @@ test_pack_agents_copied_to_project_claude() {
     mkdir -p "$pack_dir/agents"
     echo "Agent spec" > "$pack_dir/agents/devops.md"
     printf 'name: agent-pack\nagents:\n  - devops.md\n' > "$pack_dir/pack.yml"
-    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
   method: oauth
 docker:
   ports: []
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 packs:
   - agent-pack
 YAML
@@ -414,14 +432,16 @@ test_pack_rules_copied_to_project_claude() {
     mkdir -p "$pack_dir/rules"
     echo "API rules" > "$pack_dir/rules/api-conventions.md"
     printf 'name: rules-pack\nrules:\n  - api-conventions.md\n' > "$pack_dir/pack.yml"
-    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
   method: oauth
 docker:
   ports: []
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 packs:
   - rules-pack
 YAML
@@ -442,14 +462,16 @@ test_pack_manifest_created_after_copy() {
     echo "Agent" > "$pack_dir/agents/bot.md"
     echo "Rule" > "$pack_dir/rules/style.md"
     printf 'name: mf-pack\nagents:\n  - bot.md\nrules:\n  - style.md\n' > "$pack_dir/pack.yml"
-    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
   method: oauth
 docker:
   ports: []
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 packs:
   - mf-pack
 YAML
@@ -471,14 +493,16 @@ test_pack_manifest_stale_files_cleaned() {
     echo "Agent v1" > "$pack_dir/agents/old-agent.md"
     echo "Agent v1" > "$pack_dir/agents/keep-agent.md"
     printf 'name: evolve-pack\nagents:\n  - old-agent.md\n  - keep-agent.md\n' > "$pack_dir/pack.yml"
-    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
   method: oauth
 docker:
   ports: []
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 packs:
   - evolve-pack
 YAML
@@ -504,14 +528,16 @@ test_pack_manifest_no_packs_cleans_all() {
     mkdir -p "$pack_dir/rules"
     echo "Rule" > "$pack_dir/rules/temp-rule.md"
     printf 'name: temp-pack\nrules:\n  - temp-rule.md\n' > "$pack_dir/pack.yml"
-    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
   method: oauth
 docker:
   ports: []
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 packs:
   - temp-pack
 YAML
@@ -520,14 +546,16 @@ YAML
     run_cco start "test-proj" --dry-run
     assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.claude/rules/temp-rule.md"
     # Remove packs entirely
-    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
   method: oauth
 docker:
   ports: []
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 YAML
 )"
     # Second start: stale rule should be cleaned
@@ -549,14 +577,16 @@ test_pack_conflict_warns_duplicate_agent() {
     echo "Agent from B" > "$pack_b/agents/reviewer.md"
     printf 'name: pack-a\nagents:\n  - reviewer.md\n' > "$pack_a/pack.yml"
     printf 'name: pack-b\nagents:\n  - reviewer.md\n' > "$pack_b/pack.yml"
-    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
   method: oauth
 docker:
   ports: []
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 packs:
   - pack-a
   - pack-b
@@ -578,14 +608,16 @@ test_pack_conflict_warns_duplicate_rule() {
     echo "Rule from B" > "$pack_b/rules/style.md"
     printf 'name: pack-a\nrules:\n  - style.md\n' > "$pack_a/pack.yml"
     printf 'name: pack-b\nrules:\n  - style.md\n' > "$pack_b/pack.yml"
-    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
   method: oauth
 docker:
   ports: []
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 packs:
   - pack-a
   - pack-b
@@ -607,14 +639,16 @@ test_pack_no_conflict_unique_names() {
     echo "Agent B" > "$pack_b/agents/reviewer.md"
     printf 'name: pack-a\nagents:\n  - analyst.md\n' > "$pack_a/pack.yml"
     printf 'name: pack-b\nagents:\n  - reviewer.md\n' > "$pack_b/pack.yml"
-    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
   method: oauth
 docker:
   ports: []
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 packs:
   - pack-a
   - pack-b

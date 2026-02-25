@@ -65,14 +65,16 @@ test_auth_api_key_method_adds_env_var_to_compose() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
   method: api_key
 docker:
   ports: []
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run

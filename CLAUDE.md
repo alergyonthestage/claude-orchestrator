@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 claude-orchestrator manages isolated Claude Code sessions in Docker containers for multi-project, multi-repo development. It provides a CLI (`bin/cco`) to launch preconfigured sessions with repos mounted, context loaded, and agent teams ready.
 
-**Current status**: v1 implemented. Dockerfile, CLI, global config, project template, and all docs are in place.
+**Current status**: v1 implemented, plus Auth & Secrets, Environment Extensibility, and Docker Socket Toggle. Dockerfile, CLI, global config, project template, and all docs are in place.
 
 **Config separation**: `defaults/system/` contains system-managed files (skills, agents, rules, settings.json) that are always synced to `global/.claude/`. `defaults/global/` contains user defaults (CLAUDE.md, mcp.json, language.md) copied once on `cco init`. User config lives in `global/` and `projects/` (gitignored).
 
@@ -52,9 +52,9 @@ The host's Docker socket is mounted into the container. Claude can run `docker c
 
 - **Docker IS the sandbox**: no native Claude Code sandboxing. `--dangerously-skip-permissions` is safe inside the container.
 - **Flat workspace layout**: WORKDIR is `/workspace`, each repo is a direct subdirectory. No `--add-dir` needed.
-- **Auto memory isolation**: each project's `memory/` dir is mounted to `~/.claude/projects/workspace/memory/` so projects don't share memory.
+- **Auto memory isolation**: each project's `claude-state/` dir is mounted to `~/.claude/projects/-workspace` so projects don't share memory or session transcripts.
 - **Agent teams**: tmux by default (works everywhere), iTerm2 optional via `--teammate-mode auto`.
-- **Auth**: OAuth (`~/.claude.json` mounted read-only as seed, copied at startup) by default, API key via env var as alternative.
+- **Auth**: OAuth (credentials seeded from macOS Keychain to `~/.claude/.credentials.json`) by default, API key via env var as alternative. GitHub auth via `GITHUB_TOKEN` + `gh` CLI.
 
 ## Implementation Order
 

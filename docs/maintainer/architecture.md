@@ -44,7 +44,7 @@
 │   │   Can run:                                                  │     │
 │   │   - npm run dev (ports exposed to host)                     │     │
 │   │   - docker compose up (creates sibling containers)          │     │
-│   │   - git commit/push (via mounted SSH keys)                  │     │
+│   │   - git commit/push (via gh credential helper)               │     │
 │   └──────────────┬─────────────────────────────────────────────┘     │
 │                  │ docker compose up                                  │
 │                  ▼                                                    │
@@ -182,20 +182,23 @@ volumes:
 
 ### ADR-5: Authentication Strategy
 
-**Decision**: Support two auth methods, configurable per project.
+**Decision**: Support multiple auth mechanisms, layered per project.
 
 | Method | Mechanism | Use Case |
 |--------|-----------|----------|
-| OAuth (default) | Extract token from macOS Keychain, inject via `CLAUDE_CODE_OAUTH_TOKEN` env var | Pro/Team/Enterprise subscriptions |
+| OAuth (default) | Credentials seeded from macOS Keychain to `global/claude-state/.credentials.json` | Pro/Team/Enterprise subscriptions |
 | API Key | `ANTHROPIC_API_KEY` env var | Direct API access, CI/CD |
+| GitHub auth | `GITHUB_TOKEN` env var → `gh auth login --with-token` + `gh auth setup-git` | git push (HTTPS), `gh pr create`, MCP GitHub server |
+| Per-project secrets | `secrets.env` at global and project level, loaded as runtime `-e` flags | Service tokens (never written to docker-compose.yml) |
 
 **Implementation**:
-- CLI checks `project.yml` for `auth.method` (default: `oauth`)
-- OAuth: CLI extracts the access token from macOS Keychain (`Claude Code-credentials`) at launch and passes it to the container via `CLAUDE_CODE_OAUTH_TOKEN`. The `~/.claude.json` file is mounted read-only as a seed (`.claude.json.seed`); the entrypoint copies it to a writable location for account metadata.
-- API Key: passes env var to container via `--env` or `.env` file
+- **OAuth**: On macOS, the CLI extracts credentials from macOS Keychain (`Claude Code-credentials`) and seeds them to `global/claude-state/.credentials.json`. Inside the container, Claude Code reads from `~/.claude/.credentials.json` (the Linux plaintext location). The `~/.claude.json` file (mounted from `global/claude-state/claude.json`) stores preferences and MCP servers — NOT auth tokens.
+- **API Key**: `ANTHROPIC_API_KEY` env var passed to container via `--env` or `.env` file.
+- **GitHub**: `GITHUB_TOKEN` env var triggers `gh auth login --with-token` + `gh auth setup-git` in the entrypoint. This enables git push (HTTPS), `gh pr create`, and MCP GitHub server — all with a single token.
+- **Secrets**: `secrets.env` at both global and project level, loaded as runtime `-e` flags (never written to `docker-compose.yml`).
 
 **Why not just mount `~/.claude.json` read-write?**
-Claude Code stores OAuth tokens in the macOS Keychain, not in `~/.claude.json` (which only contains account metadata). The container has no access to the host Keychain, so the CLI must extract and inject the token at runtime. Additionally, mounting the file read-write causes race conditions: both host and container Claude Code instances write to the file concurrently, leading to JSON corruption ("control characters are not allowed" errors). The seed-and-copy approach isolates each environment's writes.
+The current model uses a shared writable `global/claude-state/claude.json` that is synced from host when host has more recent data (by comparing `numStartups`). This avoids race conditions from concurrent writes by host and container Claude Code instances (which previously caused JSON corruption — "control characters are not allowed" errors). The `claude.json` file stores only preferences and MCP server config; OAuth credentials are handled separately via `.credentials.json`.
 
 ---
 
@@ -405,7 +408,7 @@ Claude Code startup in /workspace:
 |------|------------|
 | Docker socket = root on host Docker | Single-developer workstation; developer reviews all changes |
 | `--dangerously-skip-permissions` | Container isolation limits blast radius |
-| SSH keys mounted in container | Read-only mount; keys never leave host filesystem |
+| GitHub auth via `GITHUB_TOKEN` | Fine-grained PAT scoped per project; SSH keys not mounted by default |
 | OAuth token in container | Read-only mount; container is ephemeral |
 | Claude modifies repos | Feature branches; git provides full history and rollback |
 | Sibling containers access | Shared Docker network is scoped per project |
@@ -487,6 +490,8 @@ Claude Code startup in /workspace:
 
 ### ADR-11: External Service Authentication via Tokens
 
+**Status: Implemented**
+
 **Context**: Container sessions need to push to GitHub, create PRs, and interact with external services via MCP servers. SSH keys mounted from the host fail due to UID mismatch and `:ro` permissions. `gh` CLI is not installed. There's no standardized way to provide service tokens.
 
 **Decision**: Use fine-grained GitHub PAT (`GITHUB_TOKEN`) as the primary auth mechanism. Install `gh` CLI in the Dockerfile. Configure git credential helper via `gh auth setup-git` in the entrypoint. Remove SSH key mount from the default compose template (opt-in via `docker.mount_ssh_keys`). Support per-project `secrets.env` that overrides global values.
@@ -509,6 +514,8 @@ Claude Code startup in /workspace:
 ---
 
 ### ADR-12: Environment Extensibility
+
+**Status: Implemented**
 
 **Context**: The Docker image is built once and shared across all projects. Some projects need additional system packages, npm packages, or runtime configuration. The only extension mechanism is `--mcp-packages` for global npm packages. Users have no way to customize the environment per project without editing the Dockerfile.
 

@@ -26,14 +26,16 @@ test_yaml_parser_nested_auth_method_oauth() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
   method: oauth
 docker:
   ports: []
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run
@@ -46,14 +48,16 @@ test_yaml_parser_nested_auth_method_api_key() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
   method: api_key
 docker:
   ports: []
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run
@@ -66,12 +70,14 @@ test_yaml_parser_missing_auth_defaults_to_oauth() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 docker:
   ports: []
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run
@@ -182,7 +188,7 @@ test_yaml_parser_single_port_in_compose() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
   method: oauth
@@ -190,7 +196,9 @@ docker:
   ports:
     - "5000:5000"
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run
@@ -203,7 +211,7 @@ test_yaml_parser_multiple_ports_all_in_compose() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
   method: oauth
@@ -213,7 +221,9 @@ docker:
     - "8080:8080"
     - "5432:5432"
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run
@@ -230,7 +240,7 @@ test_yaml_parser_single_env_var_in_compose() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
   method: oauth
@@ -238,7 +248,9 @@ docker:
   ports: []
   env:
     NODE_ENV: production
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run
@@ -251,7 +263,7 @@ test_yaml_parser_multiple_env_vars_in_compose() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
   method: oauth
@@ -261,7 +273,9 @@ docker:
     NODE_ENV: production
     LOG_LEVEL: debug
     APP_PORT: "8080"
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run
@@ -300,7 +314,9 @@ auth:
 docker:
   ports: []
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 extra_mounts:
   - source: $docs_dir
     target: /workspace/docs
@@ -326,7 +342,9 @@ auth:
 docker:
   ports: []
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 extra_mounts:
   - source: $rw_dir
     target: /workspace/rw
@@ -354,7 +372,9 @@ auth:
 docker:
   ports: []
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 extra_mounts:
   - source: $dir_a
     target: /workspace/a
@@ -388,14 +408,16 @@ knowledge:
     - doc.md
 YAML
 )"
-    create_project "$tmpdir" "test-proj" "$(cat <<'YAML'
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
   method: oauth
 docker:
   ports: []
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 packs:
   - my-pack
 YAML

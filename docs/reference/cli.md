@@ -389,6 +389,8 @@ auth:
 | `docker.ports` | ❌ | list | see defaults | Port mappings |
 | `docker.env` | ❌ | map | `{}` | Environment variables |
 | `docker.network` | ❌ | string | `cc-<name>` | Docker network name |
+| `docker.image` | ❌ | string | `claude-orchestrator:latest` | Custom Docker image for this project |
+| `docker.mount_socket` | ❌ | bool | `true` | Mount Docker socket (set false to disable Docker-from-Docker) |
 | `auth.method` | ❌ | string | `oauth` | Authentication method |
 
 ### 4.2 Knowledge Packs
@@ -483,8 +485,10 @@ services:
       - NODE_ENV=development
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/myapp
     volumes:
-      # Auth (read-only seed; entrypoint copies to writable location)
-      - ~/.claude.json:/home/claude/.claude.json.seed:ro
+      # Auth: preferences + MCP servers (writable, synced from host)
+      - ../../global/claude-state/claude.json:/home/claude/.claude.json
+      # Auth: OAuth credentials (seeded from macOS Keychain, auto-refreshed by Claude)
+      - ../../global/claude-state/.credentials.json:/home/claude/.claude/.credentials.json
       # Global config
       - ../../global/.claude/settings.json:/home/claude/.claude/settings.json:ro
       - ../../global/.claude/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
@@ -493,17 +497,25 @@ services:
       - ../../global/.claude/skills:/home/claude/.claude/skills:ro
       # Project config
       - ./.claude:/workspace/.claude
+      - ./project.yml:/workspace/project.yml:ro
       # Claude state: auto memory + session transcripts (enables /resume across rebuilds)
       - ./claude-state:/home/claude/.claude/projects/-workspace
+      # Global MCP servers (optional, merged into ~/.claude.json by entrypoint)
+      # - ../../global/.claude/mcp.json:/home/claude/.claude/mcp-global.json:ro
+      # Project MCP servers (optional, Claude Code expands ${VAR} natively)
+      # - ./mcp.json:/workspace/.mcp.json:ro
+      # Project setup script (optional, executed by entrypoint at runtime)
+      # - ./setup.sh:/workspace/setup.sh:ro
+      # Project MCP packages (optional, installed by entrypoint at runtime)
+      # - ./mcp-packages.txt:/workspace/mcp-packages.txt:ro
       # Repositories
       - ~/projects/backend-api:/workspace/backend-api
       - ~/projects/frontend-app:/workspace/frontend-app
       - ~/projects/shared-libs:/workspace/shared-libs
       # Extra mounts
       - ~/documents/api-specs:/workspace/docs/api-specs:ro
-      # Git
+      # Git identity
       - ~/.gitconfig:/home/claude/.gitconfig:ro
-      - ~/.ssh:/home/claude/.ssh:ro
       # Docker socket
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
@@ -520,6 +532,8 @@ networks:
     name: cc-my-saas
     driver: bridge
 ```
+
+> **Note**: Conditional mounts (Global MCP, Project MCP, setup.sh, mcp-packages.txt) are only included when the corresponding file exists. They are shown commented out above for reference.
 
 ---
 
@@ -565,7 +579,7 @@ The `${VAR}` placeholders are expanded **natively by Claude Code** inside the co
 
 ### 7.2 Global MCP (`global/.claude/mcp.json`)
 
-MCP servers defined here are available in all projects. The entrypoint copies the host's `~/.claude.json` from the read-only seed mount, then merges MCP servers into the writable copy at container startup.
+MCP servers defined here are available in all projects. The entrypoint merges global and project MCP servers into `~/.claude.json` at container startup using `jq`. This ensures MCP servers are available via the user-scope mechanism (most reliable).
 
 ### 7.3 Secrets (`global/secrets.env`)
 

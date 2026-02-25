@@ -11,8 +11,8 @@ setup_cco_env() {
     local tmpdir="$1"
     export CCO_PROJECTS_DIR="$tmpdir/projects"
     export CCO_GLOBAL_DIR="$tmpdir/global"
-    mkdir -p "$CCO_PROJECTS_DIR"
-    mkdir -p "$CCO_GLOBAL_DIR"
+    export CCO_DUMMY_REPO="$tmpdir/dummy-repo"
+    mkdir -p "$CCO_PROJECTS_DIR" "$CCO_GLOBAL_DIR" "$CCO_DUMMY_REPO"
 }
 
 # Copy defaults/global/.claude + overlay system files into tmpdir/global/.claude
@@ -237,6 +237,8 @@ auth:
 docker:
   ports: []
   env: {}
-repos: []
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
 YAML
 }

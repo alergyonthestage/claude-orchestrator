@@ -2,7 +2,5 @@
 
 > Items tracked in [roadmap.md](docs/maintainer/roadmap.md).
 
-All previous items have been moved to the roadmap under **Medium-term**:
-- `cco update` — merge intelligente config
-- Docker socket toggle per progetto
-- Fix tmux copy-paste
+All v1 features, Auth & Secrets, Environment Extensibility e Docker Socket Toggle sono implementati.
+Remaining items tracked in roadmap (Sprint 2-5).

@@ -38,6 +38,16 @@ RUN install -m 0755 -d /etc/apt/keyrings \
     && apt-get install -y docker-ce-cli docker-compose-plugin \
     && rm -rf /var/lib/apt/lists/*
 
+# ── GitHub CLI ─────────────────────────────────────────────────────
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) \
+       signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] \
+       https://cli.github.com/packages stable main" \
+       > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update && apt-get install -y gh \
+    && rm -rf /var/lib/apt/lists/*
+
 # ── gosu (drop-in su replacement for Docker entrypoints) ─────────────
 # gosu does a direct exec without creating a new session/pty, so TTY
 # passthrough works correctly — unlike su/sudo which break stdin forwarding.
@@ -56,6 +66,15 @@ ENV CLAUDE_CODE_DISABLE_AUTOUPDATE=1
 # ── MCP Server packages (optional pre-installation) ──────────────────
 ARG MCP_PACKAGES=""
 RUN if [ -n "$MCP_PACKAGES" ]; then npm install -g $MCP_PACKAGES; fi
+
+# ── User setup script (global, build time) ─────────────────────────
+# Custom system-level setup. Pass content via: cco build (auto-reads global/setup.sh)
+ARG SETUP_SCRIPT_CONTENT=""
+RUN if [ -n "$SETUP_SCRIPT_CONTENT" ]; then \
+        printf '%s' "$SETUP_SCRIPT_CONTENT" > /tmp/setup.sh \
+        && bash /tmp/setup.sh \
+        && rm -f /tmp/setup.sh; \
+    fi
 
 # ── User setup ───────────────────────────────────────────────────────
 RUN useradd -m -s /bin/bash claude \
@@ -77,11 +96,10 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 ### 1.2 Entrypoint Script
 
-The entrypoint handles Docker socket permissions, MCP server injection, and launches Claude Code via `gosu` with optional tmux wrapping.
+The entrypoint handles Docker socket permissions, GitHub/git authentication, MCP server injection, project setup scripts, per-project MCP packages, and launches Claude Code via `gosu` with optional tmux wrapping.
 
 ```bash
 #!/bin/bash
-# config/entrypoint.sh
 set -e
 
 # ── Docker socket permissions ────────────────────────────────────────
@@ -89,6 +107,7 @@ set -e
 if [ -S /var/run/docker.sock ]; then
     SOCKET_GID=$(stat -c '%g' /var/run/docker.sock)
     if [ "$SOCKET_GID" != "0" ]; then
+        # Create or modify docker group to match host GID
         if getent group docker > /dev/null 2>&1; then
             groupmod -g "$SOCKET_GID" docker
         else
@@ -96,22 +115,89 @@ if [ -S /var/run/docker.sock ]; then
         fi
         usermod -aG docker claude
     else
+        # Socket owned by root — add claude to root group (common on macOS)
         usermod -aG root claude
     fi
 fi
 
-# ── Copy .claude.json seed to writable location ─────────────────────
-# Host's .claude.json is mounted read-only as .claude.json.seed.
-# Copy once at startup so the container has its own writable copy.
-if [ -f "$CLAUDE_JSON_SEED" ]; then
-    cp "$CLAUDE_JSON_SEED" "$CLAUDE_JSON"
-    chown claude:claude "$CLAUDE_JSON"
+# ── Ensure ~/.claude.json exists and is writable ─────────────────────
+# Mounted from global/claude-state/claude.json (shared across all projects).
+# Initialized on host by cmd_start before container starts.
+# On macOS, OAuth tokens are stored in Keychain — not in ~/.claude.json —
+# so seeding from host is not applicable. Login once from inside the container;
+# Claude writes tokens here and they persist across all sessions.
+CLAUDE_JSON="/home/claude/.claude.json"
+MCP_GLOBAL="/home/claude/.claude/mcp-global.json"
+MCP_PROJECT="/workspace/.mcp.json"
+
+if [ ! -f "$CLAUDE_JSON" ]; then
+    echo '{}' > "$CLAUDE_JSON"
 fi
+chown claude:claude "$CLAUDE_JSON"
 
 # ── MCP server injection into ~/.claude.json ─────────────────────────
-# Merge global MCP (mcp-global.json) and project MCP (/workspace/.mcp.json)
-# into ~/.claude.json using jq. This ensures MCP servers are available
-# via the user-scope mechanism (most reliable).
+# Claude Code reads user-scope MCP from ~/.claude.json mcpServers key.
+# This is the most reliable mechanism (vs .mcp.json which needs approval).
+# We merge both global MCP (mounted as mcp-global.json) and project MCP
+# (mounted as /workspace/.mcp.json) into ~/.claude.json.
+
+# Merge global MCP servers (from global/.claude/mcp.json)
+if [ -f "$MCP_GLOBAL" ]; then
+    server_count=$(jq '.mcpServers | length' "$MCP_GLOBAL" 2>/dev/null || echo "0")
+    if [ "$server_count" -gt 0 ]; then
+        merged=$(jq -s '.[0] * {mcpServers: ((.[0].mcpServers // {}) + (.[1].mcpServers // {}))}' \
+            "$CLAUDE_JSON" "$MCP_GLOBAL" 2>/dev/null) && echo "$merged" > "$CLAUDE_JSON"
+        echo "[entrypoint] Merged $server_count global MCP server(s) into ~/.claude.json" >&2
+    fi
+fi
+
+# Merge project MCP servers (from projects/<name>/mcp.json mounted at /workspace/.mcp.json)
+# This provides a reliable fallback: servers are in both .mcp.json (project scope)
+# AND ~/.claude.json (user scope), so at least one mechanism will work.
+if [ -f "$MCP_PROJECT" ]; then
+    # .mcp.json uses {mcpServers: {...}} format
+    server_count=$(jq '.mcpServers | length' "$MCP_PROJECT" 2>/dev/null || echo "0")
+    if [ "$server_count" -gt 0 ]; then
+        merged=$(jq -s '.[0] * {mcpServers: ((.[0].mcpServers // {}) + (.[1].mcpServers // {}))}' \
+            "$CLAUDE_JSON" "$MCP_PROJECT" 2>/dev/null) && echo "$merged" > "$CLAUDE_JSON"
+        echo "[entrypoint] Merged $server_count project MCP server(s) into ~/.claude.json" >&2
+    fi
+fi
+
+# ── GitHub / Git authentication ───────────────────────────────────
+# Authenticate gh CLI and configure git credential helper if GITHUB_TOKEN is set.
+# This enables: git push (HTTPS), gh pr create, and MCP GitHub server.
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+    echo "$GITHUB_TOKEN" | gosu claude gh auth login --with-token 2>&1 >&2 \
+        && echo "[entrypoint] GitHub: authenticated gh CLI via GITHUB_TOKEN" >&2
+    gosu claude gh auth setup-git 2>&1 >&2 \
+        && echo "[entrypoint] GitHub: configured git credential helper" >&2
+fi
+
+# ── Project setup script (runtime) ───────────────────────────────
+PROJECT_SETUP="/workspace/setup.sh"
+if [ -f "$PROJECT_SETUP" ]; then
+    echo "[entrypoint] Running project setup script..." >&2
+    bash "$PROJECT_SETUP" 2>&1 >&2
+    echo "[entrypoint] Project setup complete" >&2
+fi
+
+# ── Per-project MCP packages (runtime) ───────────────────────────
+PROJECT_MCP_PACKAGES="/workspace/mcp-packages.txt"
+if [ -f "$PROJECT_MCP_PACKAGES" ]; then
+    pkg_count=$(grep -cv '^\s*$\|^\s*#' "$PROJECT_MCP_PACKAGES" 2>/dev/null || true)
+    pkg_count=${pkg_count:-0}
+    if [ "$pkg_count" -gt 0 ]; then
+        echo "[entrypoint] Installing $pkg_count project MCP package(s)..." >&2
+        grep -v '^\s*$\|^\s*#' "$PROJECT_MCP_PACKAGES" | \
+            xargs gosu claude npm install -g 2>&1 >&2
+        echo "[entrypoint] Project MCP packages installed" >&2
+    fi
+fi
+
+# ── Debug: log env vars and auth state ────────────────────────────────
+echo "[entrypoint] TEAMMATE_MODE=${TEAMMATE_MODE:-unset}" >&2
+echo "[entrypoint] ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:+SET}" >&2
 
 # ── Switch to claude user and launch ─────────────────────────────────
 # gosu does exec directly without creating a new session, preserving
@@ -131,6 +217,8 @@ fi
 **Key implementation choices**:
 - **gosu** instead of `su` — `su` creates a new session/PTY that breaks stdin forwarding. `gosu` does a direct `exec`, preserving TTY passthrough.
 - **MCP injection** — global and project MCP servers are merged into `~/.claude.json` via `jq -s`. This is the most reliable mechanism (vs `.mcp.json` which may need approval).
+- **GitHub auth** — `GITHUB_TOKEN` env var drives `gh auth login --with-token` + `gh auth setup-git`, enabling HTTPS push and `gh` CLI commands.
+- **Project setup** — optional `setup.sh` and `mcp-packages.txt` run at container startup for per-project customization.
 - **Error handling** — tmux path captures exit code explicitly (tmux doesn't propagate it via `exec`).
 
 ### 1.3 tmux Configuration
@@ -206,8 +294,9 @@ services:
     
     # ── Volumes ──────────────────────────────────────────────────────
     volumes:
-      # --- Auth (read-only seed; entrypoint copies to writable location) ---
-      - ${HOME}/.claude.json:/home/claude/.claude.json.seed:ro
+      # --- Auth & credentials ---
+      - ${GLOBAL_DIR}/claude-state/claude.json:/home/claude/.claude.json
+      - ${GLOBAL_DIR}/claude-state/.credentials.json:/home/claude/.claude/.credentials.json
       
       # --- Global config → user-level (~/.claude/) ---
       # Paths are absolute, resolved by cco CLI from GLOBAL_DIR
@@ -216,9 +305,11 @@ services:
       - ${GLOBAL_DIR}/.claude/rules:/home/claude/.claude/rules:ro
       - ${GLOBAL_DIR}/.claude/agents:/home/claude/.claude/agents:ro
       - ${GLOBAL_DIR}/.claude/skills:/home/claude/.claude/skills:ro
-      
-      # --- Project config → project-level (/workspace/.claude/) ---
+      - ${GLOBAL_DIR}/.claude/mcp.json:/home/claude/.claude/mcp-global.json:ro
+
+      # --- Project config ---
       - ./.claude:/workspace/.claude
+      - ./project.yml:/workspace/project.yml:ro
       
       # --- Claude state: auto memory + session transcripts ---
       - ./claude-state:/home/claude/.claude/projects/-workspace
@@ -230,9 +321,13 @@ services:
       
       # --- Git config ---
       - ${HOME}/.gitconfig:/home/claude/.gitconfig:ro
-      - ${HOME}/.ssh:/home/claude/.ssh:ro
-      
-      # --- Docker socket (Docker-from-Docker) ---
+
+      # --- Conditional mounts (added by cco start when files exist) ---
+      # - ./setup.sh:/workspace/setup.sh:ro
+      # - ./mcp-packages.txt:/workspace/mcp-packages.txt:ro
+
+      # --- (conditional) Docker socket (Docker-from-Docker) ---
+      # Omitted when docker.mount_socket: false in project.yml
       - /var/run/docker.sock:/var/run/docker.sock
     
     # ── Ports ────────────────────────────────────────────────────────
@@ -263,27 +358,30 @@ networks:
 ### 2.2 Volume Mount Strategy
 
 ```
-HOST                                    CONTAINER                  PURPOSE
-─────────────────────────────────────────────────────────────────────────────
-~/.claude.json                       → /home/claude/.claude.json.seed  Auth seed (ro)
-$GLOBAL_DIR/.claude/settings.json    → ~/.claude/settings.json     Global settings (ro)
-$GLOBAL_DIR/.claude/CLAUDE.md        → ~/.claude/CLAUDE.md         Global instructions (ro)
-$GLOBAL_DIR/.claude/rules/           → ~/.claude/rules/            Global rules (ro)
-$GLOBAL_DIR/.claude/agents/          → ~/.claude/agents/           Global subagents (ro)
-$GLOBAL_DIR/.claude/skills/          → ~/.claude/skills/           Global skills (ro)
-projects/<n>/.claude/                → /workspace/.claude/         Project context (rw)
-projects/<n>/claude-state/           → ~/.claude/projects/         Memory + session transcripts (rw)
-                                       -workspace/
-~/projects/repo-x/                   → /workspace/repo-x/          Repository (rw)
-~/.gitconfig                         → ~/.gitconfig                 Git config (ro)
-~/.ssh/                              → ~/.ssh/                      SSH keys (ro)
-/var/run/docker.sock                 → /var/run/docker.sock         Docker socket
+HOST                                    CONTAINER                       PURPOSE
+──────────────────────────────────────────────────────────────────────────────────
+global/claude-state/claude.json      → ~/.claude.json                   Auth state (rw)
+global/claude-state/.credentials.json→ ~/.claude/.credentials.json      OAuth credentials (rw)
+$GLOBAL_DIR/.claude/settings.json    → ~/.claude/settings.json          Global settings (ro)
+$GLOBAL_DIR/.claude/CLAUDE.md        → ~/.claude/CLAUDE.md              Global instructions (ro)
+$GLOBAL_DIR/.claude/rules/           → ~/.claude/rules/                 Global rules (ro)
+$GLOBAL_DIR/.claude/agents/          → ~/.claude/agents/                Global subagents (ro)
+$GLOBAL_DIR/.claude/skills/          → ~/.claude/skills/                Global skills (ro)
+$GLOBAL_DIR/.claude/mcp.json         → ~/.claude/mcp-global.json        Global MCP config (ro)
+projects/<n>/.claude/                → /workspace/.claude/              Project context (rw)
+projects/<n>/project.yml             → /workspace/project.yml           Project config (ro)
+projects/<n>/claude-state/           → ~/.claude/projects/-workspace/   Memory + transcripts (rw)
+~/projects/repo-x/                   → /workspace/repo-x/               Repository (rw)
+~/.gitconfig                         → ~/.gitconfig                      Git config (ro)
+projects/<n>/setup.sh                → /workspace/setup.sh              Project setup (conditional, ro)
+projects/<n>/mcp-packages.txt        → /workspace/mcp-packages.txt      MCP packages (conditional, ro)
+/var/run/docker.sock                 → /var/run/docker.sock              Docker socket (conditional)
 ```
 
 **Read-only vs Read-write**:
 - `ro`: Config that should not be modified by the agent (global settings, git config)
 - `rw` (default): Repos (Claude writes code), project .claude/ (Claude may update), memory (Claude writes)
-- **`~/.claude.json` special handling**: Mounted read-only as `.claude.json.seed`; the entrypoint copies it to a writable `/home/claude/.claude.json` at startup. This prevents race conditions when host and container Claude Code instances write concurrently.
+- **`~/.claude.json`**: Mounted read-write from `global/claude-state/claude.json`. Shared across all projects. On macOS, OAuth tokens live in Keychain — this file holds other Claude state.
 
 ---
 
