@@ -1,5 +1,5 @@
 ---
-name: init
+name: init-workspace
 description: >
   Initialize or refresh this project's CLAUDE.md with accurate context about
   the repositories, architecture, and knowledge packs.
@@ -7,7 +7,7 @@ description: >
 argument-hint: "[repos | packs | all (default: all)]"
 ---
 
-# Init: Project Context Initialization
+# Init Workspace: Project Context Initialization
 
 Initialize or refresh the project's CLAUDE.md with accurate, up-to-date context.
 Also updates `/workspace/.claude/workspace.yml` with repository and knowledge file
@@ -133,4 +133,4 @@ config file and is not the right place for auto-generated descriptions.
 - Do not modify any files outside `/workspace/.claude/` and the repos themselves
 - If a repo path does not exist on disk, note it but continue with others
 - Keep CLAUDE.md under ~200 lines — use concise, factual language
-- This skill shadows the built-in `/init` command intentionally
+- Use `/init-workspace` to distinguish from the built-in `/init` command

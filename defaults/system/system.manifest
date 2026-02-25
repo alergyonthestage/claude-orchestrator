@@ -1,0 +1,14 @@
+# System-managed files — always synced from defaults/system/ to global/
+# Each line is a path relative to defaults/system/ (and global/)
+# Paths NOT in this manifest are user-owned and never overwritten.
+.claude/settings.json
+.claude/skills/analyze/SKILL.md
+.claude/skills/commit/SKILL.md
+.claude/skills/design/SKILL.md
+.claude/skills/init-workspace/SKILL.md
+.claude/skills/review/SKILL.md
+.claude/agents/analyst.md
+.claude/agents/reviewer.md
+.claude/rules/git-practices.md
+.claude/rules/diagrams.md
+.claude/rules/workflow.md

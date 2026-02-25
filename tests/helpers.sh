@@ -15,12 +15,26 @@ setup_cco_env() {
     mkdir -p "$CCO_GLOBAL_DIR"
 }
 
-# Copy defaults/global/.claude into tmpdir/global/.claude (simulates cco init)
+# Copy defaults/global/.claude + overlay system files into tmpdir/global/.claude
+# (simulates cco init + _sync_system_files)
 # Usage: setup_global_from_defaults "$tmpdir"
 setup_global_from_defaults() {
     local tmpdir="$1"
     mkdir -p "$tmpdir/global"
     cp -r "$REPO_ROOT/defaults/global/.claude" "$tmpdir/global/.claude"
+    # Overlay system files (same as _sync_system_files in bin/cco)
+    local manifest="$REPO_ROOT/defaults/system/system.manifest"
+    if [[ -f "$manifest" ]]; then
+        while IFS= read -r rel_path; do
+            [[ -z "$rel_path" || "$rel_path" == \#* ]] && continue
+            local src="$REPO_ROOT/defaults/system/$rel_path"
+            [[ ! -f "$src" ]] && continue
+            local dst="$tmpdir/global/$rel_path"
+            mkdir -p "$(dirname "$dst")"
+            cp "$src" "$dst"
+        done < "$manifest"
+        cp "$manifest" "$tmpdir/global/.claude/.system-manifest"
+    fi
     mkdir -p "$tmpdir/global/packs"
 }
 

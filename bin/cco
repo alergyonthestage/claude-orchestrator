@@ -7,6 +7,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DEFAULTS_DIR="$REPO_ROOT/defaults"
 PROJECTS_DIR="${CCO_PROJECTS_DIR:-$REPO_ROOT/projects}"
 GLOBAL_DIR="${CCO_GLOBAL_DIR:-$REPO_ROOT/global}"
+SYSTEM_DIR="$DEFAULTS_DIR/system"
 TEMPLATE_DIR="$DEFAULTS_DIR/_template"
 IMAGE_NAME="claude-orchestrator:latest"
 
@@ -604,6 +605,70 @@ check_global() {
     fi
 }
 
+# Sync system-managed files from defaults/system/ into global/.claude/.
+# Overlay semantics: overwrites system files, preserves user-added files.
+# Idempotent, fast (file-by-file cp with cmp), called on init/start/new.
+_sync_system_files() {
+    local manifest="$SYSTEM_DIR/system.manifest"
+    local global_dir="$GLOBAL_DIR"
+    local installed_manifest="$global_dir/.claude/.system-manifest"
+
+    [[ ! -f "$manifest" ]] && return 0
+    [[ ! -d "$global_dir/.claude" ]] && return 0
+
+    # Bootstrap migration: first run after upgrade from pre-system layout.
+    # Remove known legacy paths that were renamed/moved.
+    if [[ ! -f "$installed_manifest" ]]; then
+        if [[ -d "$global_dir/.claude/skills/init" ]]; then
+            rm -rf "$global_dir/.claude/skills/init"
+            info "Migrated: removed old skills/init/ (renamed to init-workspace/)"
+        fi
+    fi
+
+    local updated=0
+
+    # Phase 1: Copy all files listed in the current manifest
+    while IFS= read -r rel_path; do
+        [[ -z "$rel_path" || "$rel_path" == \#* ]] && continue
+        local src="$SYSTEM_DIR/$rel_path"
+        local dst="$global_dir/$rel_path"
+        [[ ! -f "$src" ]] && continue
+
+        local dst_dir
+        dst_dir="$(dirname "$dst")"
+        [[ ! -d "$dst_dir" ]] && mkdir -p "$dst_dir"
+
+        if [[ ! -f "$dst" ]] || ! cmp -s "$src" "$dst"; then
+            cp "$src" "$dst"
+            updated=$(( updated + 1 ))
+        fi
+    done < "$manifest"
+
+    # Phase 2: Cleanup — remove paths in old manifest but not in new one
+    if [[ -f "$installed_manifest" ]]; then
+        while IFS= read -r old_path; do
+            [[ -z "$old_path" || "$old_path" == \#* ]] && continue
+            if ! grep -qxF "$old_path" "$manifest"; then
+                local target="$global_dir/$old_path"
+                if [[ -f "$target" ]]; then
+                    rm -f "$target"
+                    local parent
+                    parent="$(dirname "$target")"
+                    rmdir "$parent" 2>/dev/null || true
+                    info "Removed deprecated system file: $old_path"
+                fi
+            fi
+        done < "$installed_manifest"
+    fi
+
+    # Phase 3: Save current manifest as installed
+    cp "$manifest" "$installed_manifest"
+
+    if [[ $updated -gt 0 ]]; then
+        ok "Synced $updated system file(s) to global/"
+    fi
+}
+
 # ── Commands ─────────────────────────────────────────────────────────
 
 cmd_init() {
@@ -675,6 +740,9 @@ EOF
 
         ok "Global config initialized at global/ (languages: $comm_lang / $docs_lang / $code_lang)"
     fi
+
+    # Always sync system-managed files (skills, agents, rules, settings.json)
+    _sync_system_files
 
     # Copy global setup script if not present
     if [[ ! -f "$GLOBAL_DIR/setup.sh" && -f "$DEFAULTS_DIR/global/setup.sh" ]]; then
@@ -774,6 +842,7 @@ EOF
 
 cmd_start() {
     check_global
+    _sync_system_files
 
     local project=""
     local teammate_mode=""
@@ -1166,6 +1235,7 @@ YAML
 
 cmd_new() {
     check_global
+    _sync_system_files
 
     local repos=()
     local session_name=""

@@ -8,7 +8,7 @@ claude-orchestrator manages isolated Claude Code sessions in Docker containers f
 
 **Current status**: v1 implemented. Dockerfile, CLI, global config, project template, and all docs are in place.
 
-**Config separation**: Tool defaults live in `defaults/` (tracked). User config lives in `global/` and `projects/` (gitignored, created by `cco init`).
+**Config separation**: `defaults/system/` contains system-managed files (skills, agents, rules, settings.json) that are always synced to `global/.claude/`. `defaults/global/` contains user defaults (CLAUDE.md, mcp.json, language.md) copied once on `cco init`. User config lives in `global/` and `projects/` (gitignored).
 
 ## Build & Run Commands
 
@@ -61,7 +61,7 @@ The host's Docker socket is mounted into the container. Claude can run `docker c
 Per `docs/maintainer/directory-structure.md`:
 
 1. **Docker**: `Dockerfile`, `config/entrypoint.sh`, `config/tmux.conf`, `config/hooks/`, `.dockerignore`
-2. **Global Config**: defaults in `defaults/global/.claude/`, user copy in `global/.claude/`
+2. **Global Config**: system files in `defaults/system/.claude/`, user defaults in `defaults/global/.claude/`, merged in `global/.claude/`
 3. **Project Template**: `defaults/_template/`
 4. **CLI**: `bin/cco`
 5. **Root Files**: `.gitignore`
@@ -75,7 +75,9 @@ Per `docs/maintainer/directory-structure.md`:
 - `config/tmux.conf` — tmux config for agent teams (colors, navigation, history)
 - `config/hooks/session-context.sh` — SessionStart hook: injects repo list and MCP info into context
 - `config/hooks/statusline.sh` — StatusLine hook: displays `[project] model | ctx XX% | $cost`
-- `defaults/global/.claude/settings.json` — Global settings: permissions, hooks, teammate mode, attribution
+- `defaults/system/` — System-managed files: skills, agents, rules, settings.json (always synced to global/)
+- `defaults/system/system.manifest` — Lists all system-managed file paths
+- `defaults/global/.claude/` — User defaults: CLAUDE.md, mcp.json, language.md (copied once on init)
 
 **Documentation:**
 - `docs/maintainer/spec.md` — requirements specification
@@ -90,7 +92,7 @@ Per `docs/maintainer/directory-structure.md`:
 ## Conventions
 
 - `project.yml` is the source of truth for each project; `docker-compose.yml` is generated from it and should not be committed.
-- `global/` and `projects/` are gitignored (user data). `defaults/` is tracked (tool code).
+- `global/` and `projects/` are gitignored (user data). `defaults/` is tracked (tool code). System files in `defaults/system/` are always synced to `global/.claude/` on init/start/new.
 - Generated files: `projects/*/docker-compose.yml`, `projects/*/memory/`, `.env`.
 - Container user is `claude` (non-root), with docker group for socket access.
 - Entrypoint must handle Docker socket GID mismatch between host and container.
