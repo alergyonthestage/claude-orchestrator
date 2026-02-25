@@ -19,27 +19,17 @@ if [ -S /var/run/docker.sock ]; then
     fi
 fi
 
-# ── Copy .claude.json seed to writable location ─────────────────────
-# The host's .claude.json is mounted read-only as .claude.json.seed to
-# prevent race conditions when host Claude Code writes concurrently.
-# We copy it once at startup so the container has its own writable copy.
+# ── Ensure ~/.claude.json exists and is writable ─────────────────────
+# Mounted from global/claude-state/claude.json (shared across all projects).
+# Initialized on host by cmd_start before container starts.
+# On macOS, OAuth tokens are stored in Keychain — not in ~/.claude.json —
+# so seeding from host is not applicable. Login once from inside the container;
+# Claude writes tokens here and they persist across all sessions.
 CLAUDE_JSON="/home/claude/.claude.json"
-CLAUDE_JSON_SEED="/home/claude/.claude.json.seed"
 MCP_GLOBAL="/home/claude/.claude/mcp-global.json"
 MCP_PROJECT="/workspace/.mcp.json"
 
-# ~/.claude.json is mounted writable from claude-state/claude.json (persisted across sessions).
-# Reseed from host only when the host has a fresher token (e.g. after a re-login on the host).
-# Comparing expiresAt covers: first run (file=0 < seed), normal run (file > seed after refresh),
-# and post-host-login (seed > file after host re-auth).
-if [ -f "$CLAUDE_JSON_SEED" ]; then
-    seed_expires=$(jq -r '.claudeAiOauth.expiresAt // 0' "$CLAUDE_JSON_SEED" 2>/dev/null || echo 0)
-    file_expires=$(jq -r '.claudeAiOauth.expiresAt // 0' "$CLAUDE_JSON"      2>/dev/null || echo 0)
-    if [ "$seed_expires" -gt "$file_expires" ]; then
-        cp "$CLAUDE_JSON_SEED" "$CLAUDE_JSON"
-        echo "[entrypoint] Seeded ~/.claude.json from host (host auth is newer)" >&2
-    fi
-elif [ ! -f "$CLAUDE_JSON" ]; then
+if [ ! -f "$CLAUDE_JSON" ]; then
     echo '{}' > "$CLAUDE_JSON"
 fi
 chown claude:claude "$CLAUDE_JSON"
@@ -104,9 +94,8 @@ if [ -f "$PROJECT_MCP_PACKAGES" ]; then
     fi
 fi
 
-# ── Debug: log env vars to check auth token presence ────────────────
+# ── Debug: log env vars and auth state ────────────────────────────────
 echo "[entrypoint] TEAMMATE_MODE=${TEAMMATE_MODE:-unset}" >&2
-echo "[entrypoint] CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:+SET (${#CLAUDE_CODE_OAUTH_TOKEN} chars)}" >&2
 echo "[entrypoint] ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:+SET}" >&2
 
 # ── Switch to claude user and launch ─────────────────────────────────
