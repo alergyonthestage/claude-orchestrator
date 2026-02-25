@@ -19,9 +19,9 @@ Packs now support the full expanded schema: `knowledge:` section for document mo
 
 Knowledge files are injected automatically via `session-context.sh` hook (no `@.claude/packs.md` in CLAUDE.md required).
 
-### /init Skill ✓
+### /init-workspace Skill ✓
 
-Custom project initialization skill at `global/.claude/skills/init/SKILL.md`. Shadows the built-in `/init` command. Reads `workspace.yml`, explores repositories, generates a structured CLAUDE.md, and writes descriptions back to `workspace.yml`.
+Custom project initialization skill at `defaults/system/.claude/skills/init-workspace/SKILL.md` (synced to `global/.claude/skills/` by system sync). Uses a distinct name to avoid clashing with the built-in `/init` command. Reads `workspace.yml`, explores repositories, generates a structured CLAUDE.md, and writes descriptions back to `workspace.yml`.
 
 ### Review Fixes Sprint 1 ✓
 

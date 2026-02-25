@@ -416,23 +416,29 @@ Claude Code startup in /workspace:
 
 **Context**: `global/` and `projects/_template/` were tracked in git. When users customized their global settings or CLAUDE.md, they had a dirty git state and couldn't do `git pull` to update the tool without merge conflicts.
 
-**Decision**: Separate tool code (tracked) from user data (gitignored):
-- `defaults/global/` and `defaults/_template/` — tracked in git, shipped with the tool
-- `global/` and `projects/` — gitignored, created by `cco init`, owned by the user
+**Decision**: Separate tool code (tracked) from user data (gitignored), with two tiers of defaults:
+- `defaults/system/` — system-managed files (skills, agents, rules, settings.json), always synced to `global/.claude/`
+- `defaults/global/` and `defaults/_template/` — user defaults, copied once by `cco init`
+- `global/` and `projects/` — gitignored, owned by the user
 
-**Mechanism**: `cco init` copies defaults to user locations on first setup. `--force` resets to defaults.
+**Mechanism**:
+- `cco init` copies user defaults to `global/` on first setup; `--force` resets user defaults
+- `_sync_system_files()` overlays system files on every `cco init`, `cco start`, and `cco new`, using `system.manifest` to track managed paths
+- System files are always kept current; user files are preserved across tool updates
 
 **Rationale**:
 - `git pull` always works cleanly — no conflicts with user customizations
 - Multi-PC support: clone the tool repo on any machine, run `cco init`, done
-- Clear ownership boundary: tool updates don't touch user config
+- New skills, agents, rules, and settings propagate to existing installs automatically via system sync
+- Clear ownership boundary: system files are the tool's, user defaults are the user's
 - Users can version their `global/` and `projects/` separately (e.g., in a dotfiles repo)
 
 **Consequences**:
 - First-time setup requires `cco init` before `cco start`
 - `cmd_start`, `cmd_new`, and `cmd_project_create` check for `global/` and fail with a helpful message if missing
 - Template for `cco project create` comes from `defaults/_template/`, not `projects/_template/`
-- Updating defaults after a tool update requires manual diffing or `cco init --force`
+- System files (in `system.manifest`) are overwritten on every start — user customizations go in project-level overrides
+- User defaults (CLAUDE.md, mcp.json, language.md) require `cco init --force` to reset
 
 ### ADR-9: Knowledge Packs — Copy vs Mount for Resources
 

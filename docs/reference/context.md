@@ -492,7 +492,7 @@ Skill instructions here. Use $ARGUMENTS for user input.
 
 ### 7.3 Default Skills
 
-Global skills are shipped in `defaults/global/.claude/skills/` and copied to `global/.claude/skills/` by `cco init`. They are mounted read-only at `~/.claude/skills/` inside the container, available in all projects.
+Global skills are system-managed files in `defaults/system/.claude/skills/`, automatically synced to `global/.claude/skills/` on every `cco init`, `cco start`, and `cco new`. They are mounted read-only at `~/.claude/skills/` inside the container, available in all projects.
 
 | Skill | Command | Context | Purpose |
 |-------|---------|---------|---------|
@@ -500,7 +500,7 @@ Global skills are shipped in `defaults/global/.claude/skills/` and copied to `gl
 | `design/SKILL.md` | `/design` | `fork` (Plan) | Design mode with implementation planning template |
 | `review/SKILL.md` | `/review` | inline | Code review with security/performance/correctness checklist |
 | `commit/SKILL.md` | `/commit` | inline | Conventional commit (manual-only, `disable-model-invocation`) |
-| `init/SKILL.md` | `/init` | inline | Initialize or refresh project CLAUDE.md from workspace.yml; shadows the built-in `/init` |
+| `init-workspace/SKILL.md` | `/init-workspace` | inline | Initialize or refresh project CLAUDE.md from workspace.yml |
 
 ### 7.4 Project-Specific Skills
 
@@ -547,7 +547,7 @@ The CLI mounts `mcp.json` directly at `/workspace/.mcp.json` (read-only). No int
 
 #### Global-Level MCP
 
-`global/.claude/mcp.json` defines MCP servers available in all projects. The entrypoint copies the host's `~/.claude.json` from the read-only seed mount, then merges MCP servers into the writable copy at container startup using `jq`. Defaults ship in `defaults/global/.claude/mcp.json` (empty).
+`global/.claude/mcp.json` defines MCP servers available in all projects. The entrypoint copies the host's `~/.claude.json` from the read-only seed mount, then merges MCP servers into the writable copy at container startup using `jq`. Defaults ship in `defaults/global/.claude/mcp.json` (empty, user-owned after init).
 
 ### 8.3 Authentication / Secrets
 

@@ -46,13 +46,11 @@ claude-orchestrator/
 │   └── cco                                 # Main CLI script (bash)
 │
 ├── defaults/                               # ── TOOL DEFAULTS (tracked) ────
-│   ├── global/                             # Default global config
+│   ├── system/                             # System-managed files (always synced)
+│   │   ├── system.manifest                 # Lists all system-managed paths
 │   │   └── .claude/
 │   │       ├── settings.json               # Global settings (permissions, hooks, teams)
-│   │       ├── CLAUDE.md                   # Global workflow instructions
-│   │       ├── mcp.json                    # Empty MCP server list (user populates)
 │   │       ├── rules/
-│   │       │   ├── language.md             # Language preferences (with {{LANG}} vars)
 │   │       │   ├── workflow.md             # Development workflow phases
 │   │       │   ├── git-practices.md        # Git conventions
 │   │       │   └── diagrams.md             # Mermaid diagram conventions
@@ -63,8 +61,16 @@ claude-orchestrator/
 │   │           ├── analyze/SKILL.md        # /analyze skill
 │   │           ├── commit/SKILL.md         # /commit skill
 │   │           ├── design/SKILL.md         # /design skill
-│   │           ├── init/SKILL.md           # /init skill (shadows built-in)
+│   │           ├── init-workspace/SKILL.md # /init-workspace skill
 │   │           └── review/SKILL.md         # /review skill
+│   ├── global/                             # User defaults (copied once by cco init)
+│   │   └── .claude/
+│   │       ├── CLAUDE.md                   # Global workflow instructions
+│   │       ├── mcp.json                    # Empty MCP server list (user populates)
+│   │       ├── rules/
+│   │       │   └── language.md             # Language preferences (with {{LANG}} vars)
+│   │       ├── agents/.gitkeep             # Placeholder for user agents
+│   │       └── skills/.gitkeep             # Placeholder for user skills
 │   └── _template/                          # Default project template
 │       ├── project.yml                     # Project metadata & config (with comments)
 │       ├── .claude/
@@ -79,7 +85,7 @@ claude-orchestrator/
 │           └── memory/.gitkeep             # Auto memory subdir placeholder
 │
 ├── global/                                 # ── USER CONFIG (gitignored) ───
-│   └── .claude/                            # Created by `cco init` from defaults/global/
+│   └── .claude/                            # User defaults from defaults/global/ + system files from defaults/system/
 │       ├── settings.json                   # Customized by user
 │       ├── CLAUDE.md                       # Customized by user
 │       ├── mcp.json                        # Global MCP servers
@@ -147,16 +153,14 @@ claude-orchestrator/
 |------|---------|-------|
 | `cco` | CLI script | Single bash file, no external deps. See [cli.md](../reference/cli.md) |
 
-### defaults/global/.claude/
+### defaults/system/
 
-Default global config copied to `global/` by `cco init`. User customizes the copy.
+System-managed files, always synced from `defaults/system/` to `global/.claude/` on every `cco init`, `cco start`, and `cco new`. User modifications to these files will be overwritten. `system.manifest` lists every managed path.
 
 | File | Purpose | Notes |
 |------|---------|-------|
+| `system.manifest` | Lists all system-managed paths | Used by `_sync_system_files()` for overlay and cleanup |
 | `settings.json` | User-level settings | Agent teams, permissions, hooks, bypass mode. See [context.md](../reference/context.md) §4.1 |
-| `CLAUDE.md` | User-level instructions | Workflow, git practices, communication, Docker environment |
-| `mcp.json` | Global MCP server list | Empty by default; user populates. See [context.md](../reference/context.md) §8 |
-| `rules/language.md` | Language preferences | Has `{{COMM_LANG}}`, `{{DOCS_LANG}}`, `{{CODE_LANG}}` placeholders, substituted by `cco init --lang` |
 | `rules/workflow.md` | Workflow phase rules | Analysis, Design, Implementation, Documentation phases |
 | `rules/git-practices.md` | Git conventions | Branch naming, conventional commits |
 | `rules/diagrams.md` | Diagram conventions | Always use Mermaid, never ASCII art |
@@ -166,7 +170,17 @@ Default global config copied to `global/` by `cco init`. User customizes the cop
 | `skills/commit/SKILL.md` | `/commit` skill | Conventional commit creation with confirmation |
 | `skills/design/SKILL.md` | `/design` skill | Implementation planning mode |
 | `skills/review/SKILL.md` | `/review` skill | Structured code review with checklist |
-| `skills/init/SKILL.md` | `/init` skill | Initialize/refresh project CLAUDE.md; shadows built-in `/init` |
+| `skills/init-workspace/SKILL.md` | `/init-workspace` skill | Initialize/refresh project CLAUDE.md from workspace repos |
+
+### defaults/global/.claude/
+
+User defaults, copied to `global/.claude/` once by `cco init`. User owns these files after the initial copy. Not overwritten unless `cco init --force` is used.
+
+| File | Purpose | Notes |
+|------|---------|-------|
+| `CLAUDE.md` | User-level instructions | Workflow, git practices, communication, Docker environment |
+| `mcp.json` | Global MCP server list | Empty by default; user populates. See [context.md](../reference/context.md) §8 |
+| `rules/language.md` | Language preferences | Has `{{COMM_LANG}}`, `{{DOCS_LANG}}`, `{{CODE_LANG}}` placeholders, substituted by `cco init --lang` |
 
 ### defaults/_template/
 
@@ -194,7 +208,8 @@ These files are generated by the CLI or Claude Code and must not be committed:
 | `projects/<n>/docker-compose.yml` | `cco start` | Docker Compose config for the project session |
 | `projects/<n>/.claude/packs.md` | `cco start` | Instructional file list for activated knowledge packs; injected via hook |
 | `projects/<n>/.claude/.pack-manifest` | `cco start` | Tracks files copied from packs (skills, agents, rules); used for stale cleanup on next start |
-| `projects/<n>/.claude/workspace.yml` | `cco start` | Structured project summary (repos, packs); read by `/init` skill |
+| `projects/<n>/.claude/workspace.yml` | `cco start` | Structured project summary (repos, packs); read by `/init-workspace` skill |
+| `global/.claude/.system-manifest` | `_sync_system_files()` | Tracks installed system file paths for cleanup on updates |
 | `projects/<n>/claude-state/memory/*.md` | Claude Code | Auto memory files (project insights, patterns) |
 | `projects/<n>/claude-state/*.json` | Claude Code | Session transcripts (enables `/resume` across rebuilds) |
 | `.env` | User / secrets.env | Runtime secrets (not committed) |
@@ -208,7 +223,7 @@ Recommended order for building the repo from scratch:
 | Phase | Files | Depends On |
 |-------|-------|------------|
 | 1. Docker | `Dockerfile`, `config/entrypoint.sh`, `config/tmux.conf`, `config/hooks/*`, `.dockerignore` | Nothing |
-| 2. Global Config | `defaults/global/.claude/*` (all files) | Nothing |
+| 2. Global Config | `defaults/system/.claude/*`, `defaults/global/.claude/*` | Nothing |
 | 3. Project Template | `defaults/_template/*` (all files) | Nothing |
 | 4. CLI | `bin/cco` | Phases 1–3 (needs files to reference) |
 | 5. Root Files | `README.md`, `QUICK-START.md`, `CLAUDE.md`, `.gitignore` | Phases 1–4 |
@@ -221,7 +236,7 @@ Recommended order for building the repo from scratch:
 After implementation (or after significant changes), verify:
 
 - [ ] `cco build` creates the Docker image successfully
-- [ ] `cco init` copies defaults/ to global/ and creates projects/
+- [ ] `cco init` copies user defaults to global/, syncs system files, and creates projects/
 - [ ] `cco project create test-project --repo <any-repo>` creates correct project structure
 - [ ] `cco start test-project` launches interactive Claude Code session
 - [ ] Claude sees global CLAUDE.md (ask: "What are your global instructions?")

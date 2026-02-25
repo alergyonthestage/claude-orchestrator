@@ -67,7 +67,7 @@ When `--lang` is provided, `{{COMM_LANG}}` is set to that language. `{{DOCS_LANG
 **Flow**:
 
 ```
-1. COPY defaults/global/ → global/
+1. COPY user defaults: defaults/global/.claude/ → global/.claude/
    - If global/ exists: skip (warn user, suggest --force)
    - If --force: overwrite
 
@@ -76,12 +76,17 @@ When `--lang` is provided, `{{COMM_LANG}}` is set to that language. `{{DOCS_LANG
    - Replace {{DOCS_LANG}} with English
    - Replace {{CODE_LANG}} with English
 
-3. CREATE projects/ directory (if needed)
+3. SYNC system files: defaults/system/.claude/ → global/.claude/ (always, even without --force)
+   - Overwrites skills, agents, rules, settings.json from system.manifest
+   - Preserves user-added files not in the manifest
+   - Removes deprecated paths from previous manifest
 
-4. PATH HINT
+4. CREATE projects/ directory (if needed)
+
+5. PATH HINT
    - If cco is not in PATH, show the export command
 
-5. BUILD Docker image
+6. BUILD Docker image
    - If Docker is running, run `cco build`
    - Otherwise, warn to run it later
 ```
