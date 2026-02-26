@@ -53,20 +53,62 @@ cco start my-project --teammate-mode tmux
 | Exit copy/scroll mode | `q` |
 | Zoom a pane (fullscreen toggle) | `Ctrl+B` then `z` |
 
-### 2.4 Pros and Cons
+### 2.4 Copy & Paste in tmux Mode
+
+tmux intercepts mouse events, which changes how copy-paste works. There are two methods:
+
+#### Method A: tmux copy-mode (recommended)
+
+1. **Click and drag** to select text in a pane — tmux enters copy-mode automatically
+2. **Release the mouse** — text is copied to clipboard via OSC 52 (auto-copy on release)
+3. **Paste** with `Cmd+V` (macOS) or `Ctrl+Shift+V` (Linux)
+
+You can also use keyboard-based selection:
+- `Ctrl+B` then `[` to enter copy-mode
+- `v` to start visual selection, `C-v` for rectangle selection
+- `y` to yank (copy) and exit copy-mode
+
+#### Method B: Native terminal selection (bypass tmux)
+
+Hold a modifier key while dragging to bypass tmux and use native terminal selection:
+
+| Terminal | Bypass Key | Platform |
+|----------|-----------|----------|
+| iTerm2 | `Option` (⌥) | macOS |
+| Terminal.app | `fn` | macOS |
+| Alacritty, WezTerm, Kitty, Ghostty | `Shift` | Linux/macOS |
+| Windows Terminal | `Shift` | Windows |
+| GNOME Terminal, XFCE Terminal | `Shift` | Linux |
+
+**Limitation**: native selection crosses tmux pane boundaries (selects the raw character grid including borders).
+
+#### OSC 52 host terminal setup
+
+Copy from tmux uses OSC 52 escape sequences to reach the host clipboard. Most modern terminals support this out of the box, with two exceptions:
+
+| Terminal | OSC 52 Support | Action Needed |
+|----------|---------------|---------------|
+| iTerm2 | Yes (opt-in) | Enable in **Settings → General → Selection → "Applications in terminal may access clipboard"** |
+| Terminal.app | No | Use native selection (fn + drag) instead |
+| GNOME Terminal / VTE | No | Use native selection (Shift + drag) instead |
+| Alacritty, WezTerm, Kitty, Ghostty, Windows Terminal | Yes | Works out of the box |
+
+### 2.5 Pros and Cons
 
 **Pros**:
 - Works in any terminal (iTerm2, Terminal.app, VS Code, etc.)
 - No host configuration needed
 - Reliable — tmux is mature and well-tested
 - Persists pane layout even if terminal reconnects
+- Clipboard integration via OSC 52 for most terminals
 
 **Cons**:
-- No native clipboard integration with macOS (copy requires tmux copy mode)
+- Terminal.app and GNOME Terminal lack OSC 52 (must use native selection)
+- iTerm2 requires one-time opt-in for clipboard access
 - Visual appearance depends on terminal's tmux rendering
 - Nested tmux sessions (if you already use tmux) need prefix remapping
 
-### 2.5 Nested tmux Note
+### 2.6 Nested tmux Note
 
 If you already run tmux on the host, the container's tmux creates a nested session. To avoid prefix key conflicts:
 
@@ -200,7 +242,7 @@ All teammates run within the same terminal. You navigate between them using keyb
 | Using VS Code terminal | `tmux` or `in-process` |
 | Already using tmux on host | `auto` (iTerm2) or `in-process` |
 | First time / unsure | `tmux` (works everywhere, no setup) |
-| Need clipboard integration | `auto` (iTerm2) |
+| Need clipboard integration | `auto` (iTerm2) or `tmux` (with OSC 52-compatible terminal) |
 | Want maximum reliability | `tmux` |
 
 ---

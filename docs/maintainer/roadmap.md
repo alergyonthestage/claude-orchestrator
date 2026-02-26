@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-02-25 (prioritized implementation order).
+> Last updated: 2026-02-26 (prioritized implementation order).
 
 ---
 
@@ -54,37 +54,39 @@ Full extensibility story implemented:
 
 `docker.mount_socket: false` in project.yml disables Docker socket mount for projects that don't need sibling containers.
 
+### Fix tmux copy-paste (Sprint 2) ✓
+
+Improved tmux configuration for clipboard and selection:
+- `default-terminal` upgraded from `screen-256color` to `tmux-256color` (full terminfo)
+- Explicit `terminal-features` clipboard capability for non-xterm terminals
+- `allow-passthrough on` for DCS sequences (iTerm2 inline images, etc.)
+- `MouseDragEnd1Pane` auto-copy on mouse release (no need to press `y`)
+- `C-v` rectangle selection toggle in copy-mode
+- Fixed bypass key documentation (Terminal.app uses `fn`, not `Shift`)
+- Added Copy & Paste section to display-modes guide with OSC 52 compatibility matrix
+
+**Analysis**: [terminal-clipboard-and-mouse.md](../analysis/terminal-clipboard-and-mouse.md)
+
 ---
 
 ## Implementation Order
 
-Features are prioritized by impact for third-party users adopting claude-orchestrator. Each sprint can be implemented independently, but dependency arrows indicate prerequisites.
+Features are prioritized by impact for third-party users adopting claude-orchestrator. Each sprint can be implemented independently.
 
 ```
-Sprint 2 (qualità)               Sprint 3 (differenziante)
-┌──────────────────────┐         ┌──────────────────────┐
-│ #1 Fix tmux c/p      │         │ #2 Git Worktree      │
-└──────────────────────┘         │    Isolation          │
-                                 │ #3 Session Resume    │
-                                 └──────────────────────┘
-
-Sprint 4 (ecosistema)           Sprint 5 (polish)
+Sprint 3 (differenziante)       Sprint 4 (ecosistema)
 ┌──────────────────────┐        ┌──────────────────────┐
-│ #4 cco pack create   │        │ #6 cco project edit  │
-│ #5 Pack inheritance  │        │ #7 cco update        │
-└──────────────────────┘        │ #8 Browser MCP       │
+│ #2 Git Worktree      │        │ #4 cco pack create   │
+│    Isolation          │        │ #5 Pack inheritance  │
+│ #3 Session Resume    │        └──────────────────────┘
+└──────────────────────┘
+                                Sprint 5 (polish)
+                                ┌──────────────────────┐
+                                │ #6 cco project edit  │
+                                │ #7 cco update        │
+                                │ #8 Browser MCP       │
                                 └──────────────────────┘
 ```
-
----
-
-### Sprint 2 — Qualità di vita quotidiana
-
-#### #1 Fix tmux copy-paste
-
-Risolvere problemi di selezione e copia/incolla in tmux per token di autenticazione e prompt/risposte. La selezione non funziona correttamente con la configurazione attuale.
-
-**Why now**: Every user encounters this daily. Small fix, large UX impact.
 
 ---
 

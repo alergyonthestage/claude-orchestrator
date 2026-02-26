@@ -227,11 +227,23 @@ fi
 # config/tmux.conf
 
 # ── Terminal ─────────────────────────────────────────────────────────
-set -g default-terminal "screen-256color"
+set -g default-terminal "tmux-256color"
 set -ga terminal-overrides ",xterm-256color:Tc"
+
+# ── Clipboard ────────────────────────────────────────────────────────
+set -g set-clipboard on         # OSC 52: apps and tmux copy-mode → host clipboard
+set -g allow-passthrough on     # DCS passthrough for iTerm2 inline images, etc.
+set -as terminal-features ",xterm-256color:clipboard"
 
 # ── Mouse ────────────────────────────────────────────────────────────
 set -g mouse on
+
+# ── Copy mode ────────────────────────────────────────────────────────
+setw -g mode-keys vi
+bind-key -T copy-mode-vi v send-keys -X begin-selection
+bind-key -T copy-mode-vi C-v send-keys -X rectangle-toggle
+bind-key -T copy-mode-vi y send-keys -X copy-selection-and-cancel
+bind-key -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel
 
 # ── Status bar ───────────────────────────────────────────────────────
 set -g status-style "bg=#1a1b26,fg=#a9b1d6"
@@ -259,6 +271,14 @@ set -g focus-events on
 set -g base-index 1
 setw -g pane-base-index 1
 ```
+
+Key settings for clipboard:
+- `set-clipboard on` — enables OSC 52 passthrough from applications and tmux copy-mode to the host terminal's clipboard
+- `allow-passthrough on` — enables DCS passthrough for iTerm2 inline images and similar sequences
+- `terminal-features clipboard` — explicit clipboard capability (works even when outer TERM is not `xterm*`)
+- `MouseDragEnd1Pane copy-pipe-and-cancel` — auto-copies selection on mouse release (no manual `y` press needed)
+
+See [display-modes guide](../guides/display-modes.md) §2.4 for copy-paste usage and host terminal compatibility.
 
 ---
 
