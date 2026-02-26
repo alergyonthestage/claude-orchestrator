@@ -55,106 +55,120 @@ cco start my-project --teammate-mode tmux
 
 ### 2.4 Copy & Paste in tmux Mode
 
-tmux intercepts tutti gli eventi mouse. Questo significa che copia/incolla funziona in modo diverso rispetto al terminale nativo. Di seguito i tre metodi supportati, dalla configurazione iniziale ai workflow quotidiani.
+tmux intercepts all mouse events. This means copy-paste works differently from native terminal behavior. Below are the three supported methods, from initial setup to daily workflows.
 
-#### Setup iniziale (una tantum)
+> **Note**: Copy-paste is especially relevant during first-time authentication inside the container. If Claude Code prompts you to open a URL for OAuth login, you'll need to copy that URL from the tmux session. See [Authentication — In-container login](#in-container-login-without-credential-seeding) below for details.
 
-Prima di utilizzare il copia/incolla, è necessario configurare il terminale host per ricevere i dati dalla clipboard del container. La configurazione dipende dal terminale utilizzato.
+#### One-time setup
+
+Before using copy-paste, you need to configure the host terminal to receive clipboard data from the container. The setup depends on which terminal you use.
 
 ##### iTerm2 (macOS)
 
-iTerm2 supporta OSC 52 (il protocollo usato per trasferire la clipboard dal container al terminale), ma è **disabilitato di default**. Per abilitarlo:
+iTerm2 supports OSC 52 (the protocol used to transfer clipboard data from container to terminal), but it is **disabled by default**. To enable it:
 
-1. Apri **iTerm2 → Settings** (`Cmd+,`)
-2. Vai su **General → Selection**
-3. Spunta **"Applications in terminal may access clipboard"**
+1. Open **iTerm2 → Settings** (`Cmd+,`)
+2. Go to **General → Selection**
+3. Check **"Applications in terminal may access clipboard"**
 
-Senza questa opzione, la selezione nel container funziona visivamente ma il testo non viene copiato nella clipboard di macOS. Non è necessario riavviare iTerm2 — la modifica è immediata.
+Without this option, text selection in the container works visually but the text is not copied to the macOS clipboard. No iTerm2 restart needed — the change takes effect immediately.
 
 ##### Terminal.app (macOS)
 
-Terminal.app **non supporta OSC 52**. La copia automatica al rilascio del mouse non funziona. L'unico metodo disponibile è il bypass nativo (Method C sotto): tieni premuto `fn` mentre trascini per selezionare con la selezione nativa del terminale.
+Terminal.app **does not support OSC 52**. Auto-copy on mouse release does not work. The only available method is native bypass (Method C below): hold `fn` while dragging to use the terminal's native selection.
 
 ##### Alacritty, WezTerm, Kitty, Ghostty, Windows Terminal
 
-OSC 52 funziona out of the box. Nessuna configurazione necessaria.
+OSC 52 works out of the box. No configuration needed.
 
-##### GNOME Terminal, XFCE Terminal e altri terminali VTE
+##### GNOME Terminal, XFCE Terminal, and other VTE-based terminals
 
-Questi terminali **non supportano OSC 52** (rifiutato dai maintainer di VTE per ragioni di sicurezza). Usa il bypass nativo (Method C): tieni premuto `Shift` mentre trascini.
+These terminals **do not support OSC 52** (rejected by VTE maintainers for security reasons). Use native bypass (Method C): hold `Shift` while dragging.
 
-##### Tabella riepilogativa
+##### Compatibility summary
 
-| Terminal | OSC 52 | Configurazione necessaria |
-|----------|--------|--------------------------|
-| iTerm2 | Sì (opt-in) | Settings → General → Selection → "Applications in terminal may access clipboard" |
-| Terminal.app | **No** | Usare bypass nativo (`fn` + drag) |
-| GNOME Terminal / VTE | **No** | Usare bypass nativo (`Shift` + drag) |
-| Alacritty | Sì | Nessuna |
-| WezTerm | Sì | Nessuna |
-| Kitty | Sì | Nessuna |
-| Ghostty | Sì | Nessuna |
-| Windows Terminal | Sì | Nessuna |
+| Terminal | OSC 52 | Setup required |
+|----------|--------|----------------|
+| iTerm2 | Yes (opt-in) | Settings → General → Selection → "Applications in terminal may access clipboard" |
+| Terminal.app | **No** | Use native bypass (`fn` + drag) |
+| GNOME Terminal / VTE | **No** | Use native bypass (`Shift` + drag) |
+| Alacritty | Yes | None |
+| WezTerm | Yes | None |
+| Kitty | Yes | None |
+| Ghostty | Yes | None |
+| Windows Terminal | Yes | None |
 
-#### Method A: Selezione con mouse e auto-copy (consigliato)
+#### Method A: Mouse selection with auto-copy (recommended)
 
-Questo è il metodo più rapido per il workflow quotidiano. Il testo viene copiato automaticamente nel momento in cui si rilascia il mouse.
+This is the fastest method for daily use. Text is copied automatically the moment you release the mouse.
 
-1. **Clicca e trascina** per selezionare il testo — tmux entra in copy-mode e mostra la selezione evidenziata
-2. **Rilascia il mouse** — il testo viene copiato automaticamente nella clipboard di macOS/sistema via OSC 52
-3. **Incolla** con `Cmd+V` (macOS) o `Ctrl+Shift+V` (Linux) in qualsiasi applicazione
+1. **Click and drag** to select text — tmux enters copy-mode and highlights the selection
+2. **Release the mouse** — text is automatically copied to the system clipboard via OSC 52
+3. **Paste** with `Cmd+V` (macOS) or `Ctrl+Shift+V` (Linux) in any application
 
-Non è necessario fare click destro, premere `y`, o usare `Cmd+C`. Il rilascio del mouse è sufficiente.
+No right-click, no `y` key, no `Cmd+C` needed. Releasing the mouse is sufficient.
 
-#### Method B: Copy-mode manuale (per selezione precisa)
+#### Method B: Manual copy-mode (for precise selection)
 
-Per selezioni più precise o navigazione nel buffer di scrollback:
+For precise selections or scrollback navigation:
 
-1. `Ctrl+B` poi `[` — entra in copy-mode
-2. Naviga con le frecce o con `h` `j` `k` `l` (vi-style)
-3. `v` per iniziare la selezione visuale, oppure `Ctrl+V` per selezione rettangolare (colonna)
-4. Muovi il cursore per estendere la selezione
-5. `y` per copiare nella clipboard e uscire dal copy-mode
-6. `Cmd+V` (macOS) o `Ctrl+Shift+V` (Linux) per incollare
+1. `Ctrl+B` then `[` — enter copy-mode
+2. Navigate with arrow keys or `h` `j` `k` `l` (vi-style)
+3. `v` to start visual selection, or `Ctrl+V` for rectangle (column) selection
+4. Move the cursor to extend the selection
+5. `y` to copy to clipboard and exit copy-mode
+6. `Cmd+V` (macOS) or `Ctrl+Shift+V` (Linux) to paste
 
-Questo metodo è utile quando serve selezionare testo non visibile a schermo (scrollback) o selezionare con precisione colonne di testo.
+This method is useful for selecting text outside the visible area (scrollback) or for precise column selection.
 
-#### Method C: Bypass tmux — selezione nativa del terminale
+#### Method C: Bypass tmux — native terminal selection
 
-Tenendo premuto un tasto modificatore, il terminale ignora tmux e gestisce la selezione nativamente. Questo è l'**unico metodo** per terminali senza supporto OSC 52 (Terminal.app, GNOME Terminal).
+Hold a modifier key while dragging to bypass tmux and use native terminal selection. This is the **only method** for terminals without OSC 52 support (Terminal.app, GNOME Terminal).
 
-| Terminal | Tasto modificatore | Platform |
-|----------|-------------------|----------|
+| Terminal | Modifier key | Platform |
+|----------|-------------|----------|
 | iTerm2 | `Option` (⌥) | macOS |
 | Terminal.app | `fn` | macOS |
 | Alacritty, WezTerm, Kitty, Ghostty | `Shift` | Linux/macOS |
 | Windows Terminal | `Shift` | Windows |
 | GNOME Terminal, XFCE Terminal | `Shift` | Linux |
 
-Workflow: **tieni premuto il modificatore**, trascina per selezionare, rilascia. Il testo è nella clipboard nativa del sistema. Incolla con `Cmd+V` o `Ctrl+Shift+V`.
+Workflow: **hold the modifier**, drag to select, release. The text is in the native system clipboard. Paste with `Cmd+V` or `Ctrl+Shift+V`.
 
-**Limitazione**: la selezione nativa attraversa i bordi dei pane tmux — seleziona la griglia di caratteri raw, inclusi i bordi e la status bar. Per questo motivo, Method A è preferibile quando disponibile.
+**Limitation**: native selection crosses tmux pane boundaries — it selects the raw character grid including borders and status bar. For this reason, Method A is preferred when available.
 
-#### Incollare nel container
+#### Pasting into the container
 
-L'incolla funziona sempre allo stesso modo, indipendentemente dal metodo di copia usato:
+Paste works the same way regardless of which copy method was used:
 
-| Azione | Come |
-|--------|------|
-| Incollare dalla clipboard di sistema | `Cmd+V` (macOS) / `Ctrl+Shift+V` (Linux) |
-| Incollare dal buffer interno di tmux | `Ctrl+B` poi `]` |
+| Action | How |
+|--------|-----|
+| Paste from system clipboard | `Cmd+V` (macOS) / `Ctrl+Shift+V` (Linux) |
+| Paste from tmux internal buffer | `Ctrl+B` then `]` |
 
-Nota: il buffer di tmux e la clipboard di sistema sono indipendenti. `Cmd+V` incolla dalla clipboard di sistema (la più comune). `Ctrl+B` + `]` incolla dal buffer interno di tmux (utile solo se hai copiato con i comandi tmux senza OSC 52).
+The tmux buffer and system clipboard are independent. `Cmd+V` pastes from the system clipboard (most common). `Ctrl+B` + `]` pastes from the tmux internal buffer (only useful if you copied via tmux commands without OSC 52).
+
+#### In-container login without credential seeding
+
+When OAuth credentials are not seeded from the host (e.g., first-time setup, or on Linux where Keychain seeding is not available), Claude Code prompts for authentication directly inside the container. The prompt displays a URL that you need to open in a browser.
+
+To copy the authentication URL from the tmux session:
+
+1. **Click and drag** over the URL to select it
+2. **Release the mouse** — the URL is copied to your clipboard
+3. Open a browser and **paste** (`Cmd+V`) to complete the OAuth flow
+
+If auto-copy does not work (e.g., OSC 52 not configured yet), use native bypass: hold `Option` (iTerm2), `fn` (Terminal.app), or `Shift` (Linux) while dragging to select the URL, then `Cmd+C` / `Ctrl+C` to copy.
 
 #### Troubleshooting
 
-| Problema | Causa | Soluzione |
-|----------|-------|-----------|
-| Seleziono ma Cmd+V non incolla nulla | OSC 52 non abilitato nel terminale | Abilitare "Applications in terminal may access clipboard" in iTerm2, oppure usare bypass nativo |
-| Click destro non copia | tmux intercetta il click destro come evento mouse | Non usare click destro. Rilasciare il mouse dopo la selezione è sufficiente |
-| Cmd+C non copia | Cmd+C invia SIGINT (interrupt), non "copia" | Usare il rilascio del mouse (Method A) o il bypass nativo (Method C) |
-| La selezione include bordi dei pane | Si sta usando il bypass nativo (Method C) | Usare Method A (selezione tmux) che è limitata al singolo pane |
-| Il testo copiato contiene caratteri extra | Il terminale non gestisce correttamente il bracketed paste | Verificare che `TERM` sia impostato correttamente (`tmux-256color` nel container) |
+| Problem | Cause | Solution |
+|---------|-------|----------|
+| Selection works but Cmd+V pastes nothing | OSC 52 not enabled in terminal | Enable "Applications in terminal may access clipboard" in iTerm2, or use native bypass |
+| Right-click does not copy | tmux intercepts right-click as a mouse event | Don't right-click. Releasing the mouse after selection is sufficient |
+| Cmd+C does not copy | Cmd+C sends SIGINT (interrupt), not "copy" | Use mouse release (Method A) or native bypass (Method C) |
+| Selection includes pane borders | Using native bypass (Method C) | Use Method A (tmux selection) which is limited to a single pane |
+| Copied text contains extra characters | Terminal does not handle bracketed paste correctly | Verify `TERM` is set correctly (`tmux-256color` inside the container) |
 
 ### 2.5 Pros and Cons
 

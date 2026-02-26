@@ -114,6 +114,10 @@ auth:
   # method: api_key     # Alternative: use ANTHROPIC_API_KEY env var
 ```
 
+With `oauth` (default), credentials are seeded from the macOS Keychain into the container automatically. If seeding is not available (first-time setup, Linux host, or expired credentials), Claude Code prompts for authentication directly inside the container by displaying a URL to open in a browser.
+
+**Important**: Copying the authentication URL from a tmux session requires specific copy-paste steps. See [Copy & Paste in tmux Mode](./display-modes.md#24-copy--paste-in-tmux-mode) for how to copy text from the container, including the [in-container login](#in-container-login-without-credential-seeding) section for this specific scenario.
+
 ---
 
 ## 3. Writing a Good CLAUDE.md
