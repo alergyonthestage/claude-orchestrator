@@ -63,7 +63,9 @@ Improved tmux configuration for clipboard and selection:
 - `MouseDragEnd1Pane` auto-copy on mouse release (no need to press `y`)
 - `C-v` rectangle selection toggle in copy-mode
 - Fixed bypass key documentation (Terminal.app uses `fn`, not `Shift`)
-- Added Copy & Paste section to display-modes guide with OSC 52 compatibility matrix
+- Full copy-paste user guide in display-modes.md (setup per terminal, 3 methods, troubleshooting)
+- In-container OAuth login section with copy-paste instructions
+- Cross-reference from project-setup.md Authentication section
 
 **Analysis**: [terminal-clipboard-and-mouse.md](../analysis/terminal-clipboard-and-mouse.md)
 

@@ -1,7 +1,7 @@
 # Implementation Plan: Sprint 2 & Sprint 3
 
 > Data: 2026-02-26
-> Status: Proposal — pending approval
+> Status: Sprint 2 completed — Sprint 3 pending
 > Related: [roadmap.md](../maintainer/roadmap.md) | [progress review](./reviews/26-02-2026-progress-review.md)
 
 ---
@@ -22,9 +22,9 @@ Sprint 2 è **indipendente** (nessuna dipendenza tecnica con Sprint 3). Sprint 3
 
 ---
 
-## Feature #1: Fix tmux copy-paste
+## Feature #1: Fix tmux copy-paste ✅
 
-**Sprint**: 2 (qualità di vita)
+**Sprint**: 2 (qualità di vita) — **Completed 2026-02-26**
 **Effort**: Basso (1 sessione)
 **Rischio**: Nullo — config-only, no code logic changes
 **Analysis doc**: [`terminal-clipboard-and-mouse.md`](./terminal-clipboard-and-mouse.md)
