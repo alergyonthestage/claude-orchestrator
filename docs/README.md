@@ -26,6 +26,7 @@ Architecture, implementation details, and roadmap for contributors.
 | Document | Contents |
 |----------|----------|
 | [maintainer/architecture.md](maintainer/architecture.md) | Architecture decisions and system design (ADRs) |
+| [maintainer/scope-design.md](maintainer/scope-design.md) | Design: four-tier context hierarchy, override semantics, packs and scope |
 | [maintainer/docker.md](maintainer/docker.md) | Dockerfile, compose template, networking |
 | [maintainer/spec.md](maintainer/spec.md) | Requirements specification |
 | [maintainer/directory-structure.md](maintainer/directory-structure.md) | File inventory and implementation order |
@@ -40,6 +41,7 @@ Analysis documents and reviews.
 
 | Document | Contents |
 |----------|----------|
+| [analysis/scope-hierarchy.md](analysis/scope-hierarchy.md) | Analysis: scope hierarchy, managed level, configuration classification |
 | [analysis/worktree-isolation.md](analysis/worktree-isolation.md) | Analysis: git worktree isolation options and recommendation |
 | [analysis/authentication-and-secrets.md](analysis/authentication-and-secrets.md) | Analysis: auth methods, secrets management, token strategy |
 | [analysis/environment-extensibility.md](analysis/environment-extensibility.md) | Analysis: custom installations, setup scripts, per-project customization |

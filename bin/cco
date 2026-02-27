@@ -7,7 +7,6 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DEFAULTS_DIR="$REPO_ROOT/defaults"
 PROJECTS_DIR="${CCO_PROJECTS_DIR:-$REPO_ROOT/projects}"
 GLOBAL_DIR="${CCO_GLOBAL_DIR:-$REPO_ROOT/global}"
-SYSTEM_DIR="$DEFAULTS_DIR/system"
 TEMPLATE_DIR="$DEFAULTS_DIR/_template"
 IMAGE_NAME="claude-orchestrator:latest"
 
@@ -460,6 +459,13 @@ _copy_pack_resources() {
     local pack_dir
     pack_dir="$(dirname "$pack_yml")"
 
+    # Validate pack.yml structure: top-level keys must start at column 0
+    if ! grep -qE '^(name|knowledge|skills|agents|rules):' "$pack_yml"; then
+        warn "Pack '$pack_name': pack.yml has no valid top-level keys (name/knowledge/skills/agents/rules)."
+        warn "  Check for extra indentation — all keys must start at column 0."
+        return 0
+    fi
+
     # Skills: each named subdirectory under pack/skills/ is a skill
     local skills
     skills=$(yml_get_pack_skills "$pack_yml")
@@ -605,68 +611,37 @@ check_global() {
     fi
 }
 
-# Sync system-managed files from defaults/system/ into global/.claude/.
-# Overlay semantics: overwrites system files, preserves user-added files.
-# Idempotent, fast (file-by-file cp with cmp), called on init/start/new.
-_sync_system_files() {
-    local manifest="$SYSTEM_DIR/system.manifest"
+# One-time migration from system-sync to managed-scope architecture.
+# Removes legacy .system-manifest and migrates settings.json if it
+# contains hooks (old unified format) to user-only format.
+_migrate_to_managed() {
     local global_dir="$GLOBAL_DIR"
-    local installed_manifest="$global_dir/.claude/.system-manifest"
+    local marker="$global_dir/.claude/.managed-migration-done"
 
-    [[ ! -f "$manifest" ]] && return 0
+    [[ -f "$marker" ]] && return 0
     [[ ! -d "$global_dir/.claude" ]] && return 0
 
-    # Bootstrap migration: first run after upgrade from pre-system layout.
-    # Remove known legacy paths that were renamed/moved.
-    if [[ ! -f "$installed_manifest" ]]; then
-        if [[ -d "$global_dir/.claude/skills/init" ]]; then
-            rm -rf "$global_dir/.claude/skills/init"
-            info "Migrated: removed old skills/init/ (renamed to init-workspace/)"
+    # Remove .system-manifest (no longer needed)
+    rm -f "$global_dir/.claude/.system-manifest"
+
+    # Legacy migration: remove old skills/init/ (renamed to init-workspace/)
+    if [[ -d "$global_dir/.claude/skills/init" ]]; then
+        rm -rf "$global_dir/.claude/skills/init"
+        info "Migrated: removed old skills/init/ (renamed to init-workspace/)"
+    fi
+
+    # If settings.json contains hooks (old unified format),
+    # replace with user-only settings
+    if [[ -f "$global_dir/.claude/settings.json" ]]; then
+        if grep -q '"hooks"' "$global_dir/.claude/settings.json" 2>/dev/null; then
+            cp "$global_dir/.claude/settings.json" "$global_dir/.claude/settings.json.pre-managed"
+            cp "$DEFAULTS_DIR/global/.claude/settings.json" "$global_dir/.claude/settings.json"
+            info "Migrated: settings.json split (old version backed up as settings.json.pre-managed)"
         fi
     fi
 
-    local updated=0
-
-    # Phase 1: Copy all files listed in the current manifest
-    while IFS= read -r rel_path; do
-        [[ -z "$rel_path" || "$rel_path" == \#* ]] && continue
-        local src="$SYSTEM_DIR/$rel_path"
-        local dst="$global_dir/$rel_path"
-        [[ ! -f "$src" ]] && continue
-
-        local dst_dir
-        dst_dir="$(dirname "$dst")"
-        [[ ! -d "$dst_dir" ]] && mkdir -p "$dst_dir"
-
-        if [[ ! -f "$dst" ]] || ! cmp -s "$src" "$dst"; then
-            cp "$src" "$dst"
-            updated=$(( updated + 1 ))
-        fi
-    done < "$manifest"
-
-    # Phase 2: Cleanup — remove paths in old manifest but not in new one
-    if [[ -f "$installed_manifest" ]]; then
-        while IFS= read -r old_path; do
-            [[ -z "$old_path" || "$old_path" == \#* ]] && continue
-            if ! grep -qxF "$old_path" "$manifest"; then
-                local target="$global_dir/$old_path"
-                if [[ -f "$target" ]]; then
-                    rm -f "$target"
-                    local parent
-                    parent="$(dirname "$target")"
-                    rmdir "$parent" 2>/dev/null || true
-                    info "Removed deprecated system file: $old_path"
-                fi
-            fi
-        done < "$installed_manifest"
-    fi
-
-    # Phase 3: Save current manifest as installed
-    cp "$manifest" "$installed_manifest"
-
-    if [[ $updated -gt 0 ]]; then
-        ok "Synced $updated system file(s) to global/"
-    fi
+    touch "$marker"
+    ok "Managed scope migration complete"
 }
 
 # ── Commands ─────────────────────────────────────────────────────────
@@ -741,8 +716,8 @@ EOF
         ok "Global config initialized at global/ (languages: $comm_lang / $docs_lang / $code_lang)"
     fi
 
-    # Always sync system-managed files (skills, agents, rules, settings.json)
-    _sync_system_files
+    # Migrate existing installs from system-sync to managed-scope architecture
+    _migrate_to_managed
 
     # Copy global setup script if not present
     if [[ ! -f "$GLOBAL_DIR/setup.sh" && -f "$DEFAULTS_DIR/global/setup.sh" ]]; then
@@ -842,7 +817,6 @@ EOF
 
 cmd_start() {
     check_global
-    _sync_system_files
 
     local project=""
     local teammate_mode=""
@@ -1164,6 +1138,10 @@ YAML
                 [[ -z "$pack_name" ]] && continue
                 local pack_yml="$GLOBAL_DIR/packs/${pack_name}/pack.yml"
                 [[ ! -f "$pack_yml" ]] && continue
+                if ! grep -qE '^(name|knowledge|skills|agents|rules):' "$pack_yml"; then
+                    warn "Pack '$pack_name': pack.yml has no valid top-level keys — check for extra indentation."
+                    continue
+                fi
                 local pack_files
                 pack_files=$(yml_get_pack_knowledge_files "$pack_yml")
                 [[ -z "$pack_files" ]] && continue
@@ -1235,7 +1213,6 @@ YAML
 
 cmd_new() {
     check_global
-    _sync_system_files
 
     local repos=()
     local session_name=""

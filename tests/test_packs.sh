@@ -662,3 +662,110 @@ YAML
         return 1
     fi
 }
+
+# ── pack.yml indentation validation ─────────────────────────────────
+
+test_pack_yml_bad_indentation_warns() {
+    # pack.yml with extra leading indentation must emit a warning, not silently fail
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local pack_dir="$tmpdir/global/packs/bad-indent"
+    mkdir -p "$pack_dir/rules"
+    echo "Some rule" > "$pack_dir/rules/style.md"
+    # Deliberately indented pack.yml — all keys shifted by 2 spaces
+    cat > "$pack_dir/pack.yml" <<'YAML'
+  name: bad-indent
+  rules:
+    - style.md
+YAML
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+packs:
+  - bad-indent
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    assert_output_contains "no valid top-level keys"
+}
+
+test_pack_yml_bad_indentation_skips_resources() {
+    # pack.yml with bad indentation must NOT copy any resources
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local pack_dir="$tmpdir/global/packs/bad-indent"
+    mkdir -p "$pack_dir/rules"
+    echo "Some rule" > "$pack_dir/rules/style.md"
+    cat > "$pack_dir/pack.yml" <<'YAML'
+  name: bad-indent
+  rules:
+    - style.md
+YAML
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+packs:
+  - bad-indent
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    # Rule must NOT be copied since pack.yml is invalid
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/rules/style.md"
+}
+
+test_pack_yml_bad_indentation_skips_knowledge() {
+    # pack.yml with bad indentation must skip knowledge too, with warning
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local pack_src="$tmpdir/pack-src"
+    mkdir -p "$pack_src"
+    echo "docs" > "$pack_src/guide.md"
+    local pack_dir="$tmpdir/global/packs/bad-k"
+    mkdir -p "$pack_dir"
+    cat > "$pack_dir/pack.yml" <<YAML
+  name: bad-k
+  knowledge:
+    source: $pack_src
+    files:
+      - guide.md
+YAML
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+packs:
+  - bad-k
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    assert_output_contains "no valid top-level keys"
+    # packs.md should NOT list any knowledge files from bad pack
+    local packs_md="$CCO_PROJECTS_DIR/test-proj/.claude/packs.md"
+    if grep -qFe "guide.md" "$packs_md" 2>/dev/null; then
+        echo "ASSERTION FAILED: packs.md should not contain entries from bad-indentation pack"
+        return 1
+    fi
+}

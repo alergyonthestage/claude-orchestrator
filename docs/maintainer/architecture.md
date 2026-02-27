@@ -110,25 +110,28 @@
 
 ---
 
-### ADR-3: Three-Tier Context Hierarchy
+### ADR-3: Four-Tier Context Hierarchy (Updated — Managed Scope)
 
-**Context**: Claude Code has a fixed precedence for settings and memory. We need to map our config to it.
+**Context**: Claude Code has a fixed precedence for settings and memory. We need to map our config to it. Claude Code's Managed level (`/etc/claude-code/`) provides non-overridable configuration.
 
-**Decision**: Map orchestrator config to Claude Code's native hierarchy:
+**Decision**: Map orchestrator config to Claude Code's full native hierarchy:
 
-| Orchestrator Layer | Container Path | Claude Code Scope | Loaded |
-|---|---|---|---|
-| `global/.claude/` | `~/.claude/` | User-level | Always at launch |
-| `projects/<n>/.claude/` | `/workspace/.claude/` | Project-level | Always at launch |
-| (repo's own `.claude/`) | `/workspace/<repo>/.claude/` | Nested | On-demand |
+| Orchestrator Layer | Container Path | Claude Code Scope | Loaded | Overridable? |
+|---|---|---|---|---|
+| `defaults/managed/` | `/etc/claude-code/` | Managed | Always at launch | No |
+| `global/.claude/` | `~/.claude/` | User-level | Always at launch | Yes |
+| `projects/<n>/.claude/` | `/workspace/.claude/` | Project-level | Always at launch | Yes |
+| (repo's own `.claude/`) | `/workspace/<repo>/.claude/` | Nested | On-demand | Yes |
 
 **Rationale**:
-- Exact match with Claude Code's resolution order: user → project → nested
-- Settings precedence works correctly: project overrides global
+- Exact match with Claude Code's resolution order: managed → user → project → nested
+- Managed level guarantees framework hooks and settings are always active
+- Settings precedence works correctly: managed > user; project overrides user
 - No hacks, symlinks, or custom scripts needed
 
 **Consequences**:
-- Global settings must use lower-precedence keys that projects can override
+- Framework infrastructure (hooks, env, deny rules) is in managed — always active, non-overridable
+- User preferences (agents, skills, rules, settings) are in user level — fully customizable
 - Repo-level `.claude/` files stay in the actual repos (not duplicated in orchestrator)
 - The `global/.claude/` directory must NOT contain project-specific data
 
@@ -364,11 +367,14 @@ User runs: cco start my-saas
 ```
 Claude Code startup in /workspace:
          │
-         ├── Load ~/.claude/settings.json                    (global settings)
-         ├── Load ~/.claude/CLAUDE.md                        (global instructions)
-         ├── Load ~/.claude/rules/*.md                       (global rules)
+         ├── Load /etc/claude-code/managed-settings.json     (managed — non-overridable)
+         ├── Load /etc/claude-code/CLAUDE.md                 (managed instructions)
          │
-         ├── Load /workspace/.claude/settings.json           (project settings — overrides global)
+         ├── Load ~/.claude/settings.json                    (user settings — merged with managed)
+         ├── Load ~/.claude/CLAUDE.md                        (user instructions)
+         ├── Load ~/.claude/rules/*.md                       (user rules)
+         │
+         ├── Load /workspace/.claude/settings.json           (project settings — overrides user)
          ├── Load /workspace/.claude/CLAUDE.md               (project instructions)
          │   OR /workspace/CLAUDE.md
          ├── Load /workspace/.claude/rules/*.md              (project rules)
@@ -415,33 +421,35 @@ Claude Code startup in /workspace:
 
 ---
 
-### ADR-8: Tool vs User Config Separation
+### ADR-8: Tool vs User Config Separation (Updated — Managed Scope)
 
-**Context**: `global/` and `projects/_template/` were tracked in git. When users customized their global settings or CLAUDE.md, they had a dirty git state and couldn't do `git pull` to update the tool without merge conflicts.
+**Context**: `global/` and `projects/_template/` were tracked in git. When users customized their global settings or CLAUDE.md, they had a dirty git state and couldn't do `git pull` to update the tool without merge conflicts. The original `_sync_system_files()` mechanism always overwrote agents, skills, rules, and settings.json — preventing user customization.
 
-**Decision**: Separate tool code (tracked) from user data (gitignored), with two tiers of defaults:
-- `defaults/system/` — system-managed files (skills, agents, rules, settings.json), always synced to `global/.claude/`
-- `defaults/global/` and `defaults/_template/` — user defaults, copied once by `cco init`
+**Decision**: Three-tier defaults leveraging Claude Code's native Managed level:
+- `defaults/managed/` — framework infrastructure (hooks, env, deny rules, framework CLAUDE.md), baked into Docker image at `/etc/claude-code/` (Managed level — non-overridable)
+- `defaults/global/` — user defaults (agents, skills, rules, settings.json, CLAUDE.md, mcp.json), copied once by `cco init` (User level — fully customizable)
+- `defaults/_template/` — project template, scaffolded by `cco project create`
 - `global/` and `projects/` — gitignored, owned by the user
 
 **Mechanism**:
 - `cco init` copies user defaults to `global/` on first setup; `--force` resets user defaults
-- `_sync_system_files()` overlays system files on every `cco init`, `cco start`, and `cco new`, using `system.manifest` to track managed paths
-- System files are always kept current; user files are preserved across tool updates
+- Managed files are baked into the Docker image via `COPY defaults/managed/ /etc/claude-code/` in the Dockerfile — updated only via `cco build`
+- `_migrate_to_managed()` handles one-time migration from the old `_sync_system_files()` layout: removes `.system-manifest`, splits old unified settings.json into managed + user
+- No more `_sync_system_files()` — agents, skills, rules, and settings are user-owned after initial copy
 
 **Rationale**:
 - `git pull` always works cleanly — no conflicts with user customizations
+- Framework infrastructure (hooks, env vars) is guaranteed to be active via Claude Code's Managed level
+- Users can freely customize agents, skills, rules, and settings without losing changes on restart
+- Clear ownership: managed = framework (non-overridable), user = preferences (customizable)
 - Multi-PC support: clone the tool repo on any machine, run `cco init`, done
-- New skills, agents, rules, and settings propagate to existing installs automatically via system sync
-- Clear ownership boundary: system files are the tool's, user defaults are the user's
-- Users can version their `global/` and `projects/` separately (e.g., in a dotfiles repo)
 
 **Consequences**:
 - First-time setup requires `cco init` before `cco start`
-- `cmd_start`, `cmd_new`, and `cmd_project_create` check for `global/` and fail with a helpful message if missing
-- Template for `cco project create` comes from `defaults/_template/`, not `projects/_template/`
-- System files (in `system.manifest`) are overwritten on every start — user customizations go in project-level overrides
-- User defaults (CLAUDE.md, mcp.json, language.md) require `cco init --force` to reset
+- Managed settings updates require `cco build` (baked in image)
+- User defaults (agents, skills, rules, settings, CLAUDE.md) are user-owned and never overwritten
+- `cco init --force` resets user defaults to defaults/global/ templates
+- Migration from old layout is automatic on first `cco init` after update
 
 ### ADR-9: Knowledge Packs — Copy vs Mount for Resources
 

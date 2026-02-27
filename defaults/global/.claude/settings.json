@@ -1,10 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
 
-  "env": {
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
-  },
-
   "permissions": {
     "allow": [
       "Bash(git *)",
@@ -39,57 +35,12 @@
       "WebFetch",
       "WebSearch",
       "Task"
-    ],
-    "deny": [
-      "Read(~/.claude.json)",
-      "Read(~/.ssh/*)"
-    ]
-  },
-
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/usr/local/bin/cco-hooks/session-context.sh",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "SubagentStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/usr/local/bin/cco-hooks/subagent-context.sh",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/usr/local/bin/cco-hooks/precompact.sh",
-            "timeout": 5
-          }
-        ]
-      }
     ]
   },
 
   "attribution": {
     "commit": "Co-Authored-By: Claude <noreply@anthropic.com>",
     "pr": "Generated with Claude Code"
-  },
-
-  "statusLine": {
-    "type": "command",
-    "command": "/usr/local/bin/cco-hooks/statusline.sh"
   },
 
   "teammateMode": "tmux",

@@ -91,6 +91,10 @@ RUN chown claude:claude /home/claude/.tmux.conf \
     && chmod +x /usr/local/bin/entrypoint.sh \
     && chmod +x /usr/local/bin/cco-hooks/*.sh
 
+# ── Managed settings (framework infrastructure — non-overridable) ────
+COPY --chown=root:root defaults/managed/ /etc/claude-code/
+RUN chmod -R 644 /etc/claude-code/ && chmod 755 /etc/claude-code/
+
 WORKDIR /workspace
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

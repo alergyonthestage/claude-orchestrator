@@ -20,19 +20,19 @@ repos: []
 # Skills, agents, and rules are copied to .claude/ for project-scoped access.
 #
 # Pack schema (global/packs/<name>/pack.yml):
-#   name: my-pack
-#   knowledge:
-#     source: ~/path/to/docs   # optional; omit to use pack's own knowledge/ dir
-#     files:
-#       - path: guide.md
-#         description: "Read when working on X"
-#       - simple.md
-#   skills:
-#     - deploy
-#   agents:
-#     - specialist.md
-#   rules:
-#     - conventions.md
+# name: my-pack
+# knowledge:
+#   source: ~/path/to/docs   # optional; omit to use pack's own knowledge/ dir
+#   files:
+#     - path: guide.md
+#       description: "Read when working on X"
+#     - simple.md
+# skills:
+#   - deploy
+# agents:
+#   - specialist.md
+# rules:
+#   - conventions.md
 #
 # packs:
 #   - my-pack

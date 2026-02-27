@@ -8,7 +8,7 @@
 
 ## 1. Overview
 
-Claude Code loads configuration from multiple locations with a fixed precedence. The orchestrator maps its three-tier config (global → project → repo) onto Claude Code's native hierarchy so that everything "just works" without hacks.
+Claude Code loads configuration from multiple locations with a fixed precedence. The orchestrator maps its four-tier config (managed → global → project → repo) onto Claude Code's native hierarchy so that everything "just works" without hacks. See [scope-design.md](../maintainer/scope-design.md) for the complete design document.
 
 ---
 
@@ -17,14 +17,14 @@ Claude Code loads configuration from multiple locations with a fixed precedence.
 Claude Code resolves settings from highest to lowest precedence:
 
 ```
-1. Managed settings       ← NOT USED (enterprise only)
+1. Managed settings       ← /etc/claude-code/managed-settings.json  ← OUR MANAGED (hooks, env, deny)
 2. Command-line args      ← --dangerously-skip-permissions
 3. Local project settings ← /workspace/.claude/settings.local.json (optional)
 4. Shared project         ← /workspace/.claude/settings.json       ← OUR PROJECT
-5. User settings          ← ~/.claude/settings.json                ← OUR GLOBAL
+5. User settings          ← ~/.claude/settings.json                ← OUR USER (preferences)
 ```
 
-**Implication**: Project settings override global settings. This is correct behavior — a project can tighten or loosen rules defined globally.
+**Implication**: Managed settings have the highest priority — hooks and env vars are always active. Project settings override user settings. This is correct behavior — a project can tighten or loosen rules defined globally.
 
 ---
 
@@ -34,12 +34,13 @@ Claude Code resolves settings from highest to lowest precedence:
 
 These files are loaded into Claude's context when the session starts:
 
-| File | Container Path | Source |
-|------|---------------|--------|
-| User CLAUDE.md | `~/.claude/CLAUDE.md` | `global/.claude/CLAUDE.md` |
-| User rules | `~/.claude/rules/*.md` | `global/.claude/rules/*.md` |
-| Project CLAUDE.md | `/workspace/.claude/CLAUDE.md` | `projects/<n>/.claude/CLAUDE.md` |
-| Project rules | `/workspace/.claude/rules/*.md` | `projects/<n>/.claude/rules/*.md` |
+| File | Container Path | Source | Tier |
+|------|---------------|--------|------|
+| Managed CLAUDE.md | `/etc/claude-code/CLAUDE.md` | `defaults/managed/CLAUDE.md` (in image) | Managed |
+| User CLAUDE.md | `~/.claude/CLAUDE.md` | `global/.claude/CLAUDE.md` | User |
+| User rules | `~/.claude/rules/*.md` | `global/.claude/rules/*.md` | User |
+| Project CLAUDE.md | `/workspace/.claude/CLAUDE.md` | `projects/<n>/.claude/CLAUDE.md` | Project |
+| Project rules | `/workspace/.claude/rules/*.md` | `projects/<n>/.claude/rules/*.md` | Project |
 
 ### 3.2 Loaded On-Demand
 
@@ -99,91 +100,53 @@ See [CLI.md §4.2](./cli.md) for pack definition format. See [context-loading.md
 
 ## 4. File Specifications
 
-### 4.1 Global Settings (`global/.claude/settings.json`)
+### 4.1 Managed Settings (`/etc/claude-code/managed-settings.json`)
+
+Framework infrastructure — baked into the Docker image, non-overridable.
 
 ```json
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-
-  "env": {
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" },
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "/usr/local/bin/cco-hooks/session-context.sh", "timeout": 10 }] }],
+    "SubagentStart": [{ "hooks": [{ "type": "command", "command": "/usr/local/bin/cco-hooks/subagent-context.sh", "timeout": 5 }] }],
+    "PreCompact": [{ "hooks": [{ "type": "command", "command": "/usr/local/bin/cco-hooks/precompact.sh", "timeout": 5 }] }]
   },
+  "statusLine": { "type": "command", "command": "/usr/local/bin/cco-hooks/statusline.sh" },
+  "permissions": { "deny": ["Read(~/.claude.json)", "Read(~/.ssh/*)"] }
+}
+```
 
+**Notes**:
+- Hooks always execute — managed hooks cannot be disabled by user or project settings
+- `deny` protects auth token and SSH keys from accidental reads
+- SessionStart hook uses a catch-all (no matcher) to fire on all session events (startup, clear, etc.)
+- Updated only via `cco build` (baked in Docker image)
+
+### 4.1b User Settings (`global/.claude/settings.json`)
+
+User preferences — copied once by `cco init`, fully customizable.
+
+```json
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "allow": [
-      "Bash(git *)",
-      "Bash(npm *)",
-      "Bash(npx *)",
-      "Bash(node *)",
-      "Bash(python3 *)",
-      "Bash(pip *)",
-      "Bash(docker *)",
-      "Bash(docker compose *)",
-      "Bash(tmux *)",
-      "Bash(cat *)",
-      "Bash(ls *)",
-      "Bash(find *)",
-      "Bash(grep *)",
-      "Bash(rg *)",
-      "Bash(head *)",
-      "Bash(tail *)",
-      "Bash(wc *)",
-      "Bash(sort *)",
-      "Bash(mkdir *)",
-      "Bash(cp *)",
-      "Bash(mv *)",
-      "Bash(rm *)",
-      "Bash(chmod *)",
-      "Bash(curl *)",
-      "Bash(wget *)",
-      "Bash(jq *)",
-      "Read",
-      "Edit",
-      "Write",
-      "WebFetch",
-      "WebSearch",
-      "Task"
-    ],
-    "deny": [
-      "Read(~/.claude.json)",
-      "Read(~/.ssh/*)"
+      "Bash(git *)", "Bash(npm *)", "Bash(npx *)", "Bash(node *)",
+      "Bash(python3 *)", "Bash(pip *)", "Bash(docker *)", "Bash(docker compose *)",
+      "Bash(tmux *)", "Bash(cat *)", "Bash(ls *)", "Bash(find *)",
+      "Bash(grep *)", "Bash(rg *)", "Bash(head *)", "Bash(tail *)",
+      "Bash(wc *)", "Bash(sort *)", "Bash(mkdir *)", "Bash(cp *)",
+      "Bash(mv *)", "Bash(rm *)", "Bash(chmod *)", "Bash(curl *)",
+      "Bash(wget *)", "Bash(jq *)",
+      "Read", "Edit", "Write", "WebFetch", "WebSearch", "Task"
     ]
   },
-
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          { "type": "command", "command": "/usr/local/bin/cco-hooks/session-context.sh", "timeout": 10 }
-        ]
-      }
-    ],
-    "SubagentStart": [
-      {
-        "hooks": [
-          { "type": "command", "command": "/usr/local/bin/cco-hooks/subagent-context.sh", "timeout": 5 }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "hooks": [
-          { "type": "command", "command": "/usr/local/bin/cco-hooks/precompact.sh", "timeout": 5 }
-        ]
-      }
-    ]
-  },
-
   "attribution": {
     "commit": "Co-Authored-By: Claude <noreply@anthropic.com>",
     "pr": "Generated with Claude Code"
   },
-
-  "statusLine": {
-    "type": "command",
-    "command": "/usr/local/bin/cco-hooks/statusline.sh"
-  },
-
   "teammateMode": "tmux",
   "cleanupPeriodDays": 30,
   "enableAllProjectMcpServers": true,
@@ -193,11 +156,10 @@ See [CLI.md §4.2](./cli.md) for pack definition format. See [context-loading.md
 
 **Notes**:
 - The `allow` list is comprehensive to avoid any prompt even if bypass mode is not active
-- `deny` protects auth token and SSH keys from accidental reads
 - `teammateMode` defaults to `"tmux"` — user can override to `"auto"` for iTerm2
 - `enableAllProjectMcpServers` trusts all project MCP servers (safe in containerized environment)
 - `alwaysThinkingEnabled` enables extended thinking for better reasoning on complex tasks
-- SessionStart hook uses a catch-all (no matcher) to fire on all session events (startup, clear, etc.)
+- User can freely modify this file — changes persist across sessions
 
 ### 4.2 Global CLAUDE.md (`global/.claude/CLAUDE.md`)
 
@@ -442,11 +404,12 @@ Since only one project's container runs at a time (or they use different contain
 
 ### 6.1 Resolution
 
-Claude Code loads subagents from:
-1. `~/.claude/agents/` — User-level (our `global/.claude/agents/`)
-2. `/workspace/.claude/agents/` — Project-level (our `projects/<n>/.claude/agents/`)
+Claude Code loads subagents from (highest to lowest priority):
+1. `/etc/claude-code/.claude/agents/` — Managed-level (not used — agents belong in User tier)
+2. `/workspace/.claude/agents/` — Project-level (our `projects/<n>/.claude/agents/` + pack agents)
+3. `~/.claude/agents/` — User-level (our `global/.claude/agents/`)
 
-Project agents take precedence over global agents with the same name.
+Project agents take precedence over user agents with the same name. See [scope-design.md §3.4](../maintainer/scope-design.md) for details.
 
 ### 6.2 Default Agents
 
@@ -492,7 +455,7 @@ Skill instructions here. Use $ARGUMENTS for user input.
 
 ### 7.3 Default Skills
 
-Global skills are system-managed files in `defaults/system/.claude/skills/`, automatically synced to `global/.claude/skills/` on every `cco init`, `cco start`, and `cco new`. They are mounted read-only at `~/.claude/skills/` inside the container, available in all projects.
+Global skills live in `defaults/global/.claude/skills/`, copied once to `global/.claude/skills/` by `cco init`. They are user-owned — freely customizable and never overwritten. They are mounted read-only at `~/.claude/skills/` inside the container, available in all projects.
 
 | Skill | Command | Context | Purpose |
 |-------|---------|---------|---------|
@@ -504,7 +467,7 @@ Global skills are system-managed files in `defaults/system/.claude/skills/`, aut
 
 ### 7.4 Project-Specific Skills
 
-Projects can add custom skills in `projects/<name>/.claude/skills/`. These are mounted read-write at `/workspace/.claude/skills/` and take precedence over global skills with the same name.
+Projects can add custom skills in `projects/<name>/.claude/skills/`. These are mounted read-write at `/workspace/.claude/skills/`. **Note**: For skills, User > Project — user-level skills take precedence over project-level skills with the same name. Packs can add new skills but cannot override existing global ones. See [scope-design.md §3.5](../maintainer/scope-design.md) for details.
 
 ---
 
@@ -622,9 +585,9 @@ When creating a new project, these files should be configured:
 
 ### 10.1 Overview
 
-Claude Code hooks are shell commands that execute automatically at specific lifecycle points (session start, before/after tool use, session end, etc.). Hooks are configured in `settings.json` and can be defined at global or project level.
+Claude Code hooks are shell commands that execute automatically at specific lifecycle points (session start, before/after tool use, session end, etc.). Hooks are configured in `settings.json` and can be defined at managed, user, or project level. All matching hooks from all levels execute (additive merge).
 
-The orchestrator ships with a built-in `SessionStart` hook that automatically injects project context into every session.
+The orchestrator's built-in hooks are defined in `managed-settings.json` (Managed tier) — they are guaranteed to always execute and cannot be disabled by user or project settings.
 
 ### 10.2 Built-in Hooks
 
@@ -658,7 +621,7 @@ Fires before Claude Code compacts the conversation context. Provides hints on wh
 
 ### 10.3 Adding Project-Specific Hooks
 
-Projects can add their own hooks in `projects/<name>/.claude/settings.json`. Claude Code merges project-level hooks with global hooks. Example:
+Projects can add their own hooks in `projects/<name>/.claude/settings.json`. Claude Code merges project-level hooks with managed and user hooks (all execute). Example:
 
 ```json
 {
