@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# lib/cmd-stop.sh — Stop running sessions command
+#
+# Provides: cmd_stop()
+# Dependencies: colors.sh, utils.sh, yaml.sh
+# Globals: PROJECTS_DIR
+
+cmd_stop() {
+    local project="${1:-}"
+
+    check_docker
+
+    if [[ -n "$project" ]]; then
+        local project_dir="$PROJECTS_DIR/$project"
+        local project_yml="$project_dir/project.yml"
+        local container_name="cc-${project}"
+
+        if [[ -f "$project_yml" ]]; then
+            local yml_name
+            yml_name=$(yml_get "$project_yml" "name")
+            [[ -n "$yml_name" ]] && container_name="cc-${yml_name}"
+        fi
+
+        if docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
+            docker stop "$container_name"
+            ok "Stopped session '$project'"
+        else
+            warn "No running session for '$project'"
+        fi
+    else
+        local containers
+        containers=$(docker ps --filter "name=cc-" --format '{{.Names}}' 2>/dev/null)
+        if [[ -z "$containers" ]]; then
+            info "No running sessions."
+            return 0
+        fi
+        echo "$containers" | while read -r name; do
+            docker stop "$name"
+            ok "Stopped $name"
+        done
+    fi
+}
