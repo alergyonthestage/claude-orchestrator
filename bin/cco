@@ -13,6 +13,7 @@ LIB_DIR="$REPO_ROOT/lib"
 
 # ── Load modules ─────────────────────────────────────────────────────
 source "$LIB_DIR/colors.sh"
+source "$LIB_DIR/utils.sh"
 
 usage() {
     cat <<'EOF'
@@ -48,15 +49,6 @@ get_oauth_token() {
     local creds
     creds=$(security find-generic-password -s "Claude Code-credentials" -a "$(whoami)" -w 2>/dev/null) || return
     echo "$creds" | python3 -c "import sys,json; print(json.load(sys.stdin)['claudeAiOauth']['accessToken'])" 2>/dev/null || true
-}
-
-# Expand ~ in paths
-expand_path() {
-    local path="$1"
-    if [[ "$path" == ~* ]]; then
-        path="${HOME}${path#\~}"
-    fi
-    echo "$path"
 }
 
 # Read a value from project.yml using a simple parser (no yq dependency)
@@ -584,27 +576,6 @@ migrate_memory_to_claude_state() {
         mv "$project_dir/memory" "$project_dir/claude-state/memory"
     fi
     mkdir -p "$project_dir/claude-state/memory"
-}
-
-# Check Docker is running
-check_docker() {
-    if ! docker info >/dev/null 2>&1; then
-        die "Docker daemon is not running. Start Docker Desktop."
-    fi
-}
-
-# Check image exists
-check_image() {
-    if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
-        die "Docker image '$IMAGE_NAME' not found. Run 'cco build' first."
-    fi
-}
-
-# Check global config exists (created by cco init)
-check_global() {
-    if [[ ! -d "$GLOBAL_DIR/.claude" ]]; then
-        die "Global config not found. Run 'cco init' first."
-    fi
 }
 
 # One-time migration from system-sync to managed-scope architecture.
