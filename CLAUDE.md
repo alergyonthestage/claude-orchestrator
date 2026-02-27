@@ -50,6 +50,7 @@ The host's Docker socket is mounted into the container. Claude can run `docker c
 
 ### Key Design Decisions
 
+- **Leverage native Claude Code behavior**: The fundamental rule of claude-orchestrator is to leverage Claude Code's native features as much as possible, avoiding custom reimplementations. The orchestrator maps its configuration tiers directly onto Claude Code's native settings resolution (managed → user → project → nested). Reference: `.claude/docs/claude-code/llms.txt` contains the full Claude Code documentation index.
 - **Docker IS the sandbox**: no native Claude Code sandboxing. `--dangerously-skip-permissions` is safe inside the container.
 - **Flat workspace layout**: WORKDIR is `/workspace`, each repo is a direct subdirectory. No `--add-dir` needed.
 - **Auto memory isolation**: each project's `claude-state/` dir is mounted to `~/.claude/projects/-workspace` so projects don't share memory or session transcripts.
