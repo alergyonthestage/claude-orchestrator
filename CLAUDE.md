@@ -6,9 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 claude-orchestrator manages isolated Claude Code sessions in Docker containers for multi-project, multi-repo development. It provides a CLI (`bin/cco`) to launch preconfigured sessions with repos mounted, context loaded, and agent teams ready.
 
-**Current status**: v1 implemented, plus Auth & Secrets, Environment Extensibility, and Docker Socket Toggle. Dockerfile, CLI, global config, project template, and all docs are in place.
+**Current status**: v1 implemented, plus Auth & Secrets, Environment Extensibility, Docker Socket Toggle, and Scope Hierarchy Refactor. Dockerfile, CLI, global config, project template, and all docs are in place.
 
-**Config separation**: `defaults/system/` contains system-managed files (skills, agents, rules, settings.json) that are always synced to `global/.claude/`. `defaults/global/` contains user defaults (CLAUDE.md, mcp.json, language.md) copied once on `cco init`. User config lives in `global/` and `projects/` (gitignored).
+**Config separation**: Three-tier managed scope hierarchy leveraging Claude Code's native resolution:
+- `defaults/managed/` → baked into Docker image at `/etc/claude-code/` (Managed level — hooks, env, deny rules, framework instructions). Non-overridable.
+- `defaults/global/.claude/` → copied once to `global/.claude/` on `cco init` (User level — agents, skills, rules, settings, preferences). User-owned, never overwritten.
+- `defaults/_template/` → scaffolded per project (Project level). Per-project overrides.
 
 ## Build & Run Commands
 
@@ -28,17 +31,18 @@ The CLI is a single bash script at `bin/cco` with no dependencies beyond bash (3
 
 ## Architecture
 
-### Three-Tier Context Hierarchy
+### Four-Tier Context Hierarchy
 
 The orchestrator maps onto Claude Code's native settings resolution:
 
-| Orchestrator Layer | Container Mount | Claude Code Scope |
-|---|---|---|
-| `global/.claude/` | `~/.claude/` | User-level (always loaded) |
-| `projects/<name>/.claude/` | `/workspace/.claude/` | Project-level (always loaded) |
-| Repo's own `.claude/` | `/workspace/<repo>/.claude/` | Nested (on-demand) |
+| Orchestrator Layer | Container Path | Claude Code Scope | Overridable? |
+|---|---|---|---|
+| `defaults/managed/` | `/etc/claude-code/` | Managed (highest priority) | No — baked in image |
+| `global/.claude/` | `~/.claude/` | User-level (always loaded) | Yes — user-owned |
+| `projects/<name>/.claude/` | `/workspace/.claude/` | Project-level (always loaded) | Yes — per-project |
+| Repo's own `.claude/` | `/workspace/<repo>/.claude/` | Nested (on-demand) | Yes — from repo |
 
-Project settings override global settings per Claude Code's precedence.
+Managed settings (hooks, env vars, deny rules) have the highest priority and cannot be overridden. User and project settings are fully customizable.
 
 ### Docker-from-Docker
 
@@ -62,7 +66,7 @@ The host's Docker socket is mounted into the container. Claude can run `docker c
 Per `docs/maintainer/directory-structure.md`:
 
 1. **Docker**: `Dockerfile`, `config/entrypoint.sh`, `config/tmux.conf`, `config/hooks/`, `.dockerignore`
-2. **Global Config**: system files in `defaults/system/.claude/`, user defaults in `defaults/global/.claude/`, merged in `global/.claude/`
+2. **Global Config**: managed files in `defaults/managed/` (baked in image), user defaults in `defaults/global/.claude/` (copied once on init)
 3. **Project Template**: `defaults/_template/`
 4. **CLI**: `bin/cco`
 5. **Root Files**: `.gitignore`
@@ -76,9 +80,8 @@ Per `docs/maintainer/directory-structure.md`:
 - `config/tmux.conf` — tmux config for agent teams (colors, navigation, history)
 - `config/hooks/session-context.sh` — SessionStart hook: injects repo list and MCP info into context
 - `config/hooks/statusline.sh` — StatusLine hook: displays `[project] model | ctx XX% | $cost`
-- `defaults/system/` — System-managed files: skills, agents, rules, settings.json (always synced to global/)
-- `defaults/system/system.manifest` — Lists all system-managed file paths
-- `defaults/global/.claude/` — User defaults: CLAUDE.md, mcp.json, language.md (copied once on init)
+- `defaults/managed/` — Framework infrastructure: managed-settings.json (hooks, env, deny), CLAUDE.md (framework instructions). Baked into Docker image at `/etc/claude-code/`.
+- `defaults/global/.claude/` — User defaults: CLAUDE.md, settings.json, mcp.json, agents, skills, rules (copied once on init, user-owned)
 
 **Documentation:**
 - `docs/maintainer/spec.md` — requirements specification
@@ -93,7 +96,7 @@ Per `docs/maintainer/directory-structure.md`:
 ## Conventions
 
 - `project.yml` is the source of truth for each project; `docker-compose.yml` is generated from it and should not be committed.
-- `global/` and `projects/` are gitignored (user data). `defaults/` is tracked (tool code). System files in `defaults/system/` are always synced to `global/.claude/` on init/start/new.
+- `global/` and `projects/` are gitignored (user data). `defaults/` is tracked (tool code). Managed files are baked in the Docker image; global defaults are copied once on `cco init` and never overwritten.
 - Generated files: `projects/*/docker-compose.yml`, `projects/*/memory/`, `.env`.
 - Container user is `claude` (non-root), with docker group for socket access.
 - Entrypoint must handle Docker socket GID mismatch between host and container.

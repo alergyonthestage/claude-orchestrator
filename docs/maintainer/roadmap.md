@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-02-26 (prioritized implementation order).
+> Last updated: 2026-02-27 (prioritized implementation order).
 
 ---
 
@@ -54,6 +54,21 @@ Full extensibility story implemented:
 
 `docker.mount_socket: false` in project.yml disables Docker socket mount for projects that don't need sibling containers.
 
+### Scope Hierarchy Refactor (Sprint 3) ✓
+
+Riorganizzazione della gerarchia di configurazione per sfruttare il livello **Managed** nativo di Claude Code (`/etc/claude-code/`). File infrastrutturali (hooks, env, deny rules) protetti nel livello Managed; agents, skills, rules e preferenze spostati nel livello User dove sono personalizzabili e mai sovrascritti.
+
+**Cosa è cambiato**:
+- `defaults/system/` eliminato → sostituito da `defaults/managed/` (baked nell'immagine Docker)
+- `managed-settings.json` contiene solo hooks, env vars, statusLine, deny rules (non sovrascrivibile)
+- Agents, skills, rules, settings.json spostati in `defaults/global/.claude/` (user-owned)
+- `_sync_system_files()` eliminata → sostituita da `_migrate_to_managed()` (migrazione one-time)
+- `system.manifest` eliminato (managed files baked nell'immagine Docker via `COPY`)
+- Dockerfile aggiornato: `COPY defaults/managed/ /etc/claude-code/`
+- Test suite aggiornata: `test_system_sync.sh` → `test_managed_scope.sh` (15 test)
+
+**Docs**: [analysis](../analysis/scope-hierarchy.md) | [ADR-3](./architecture.md) | [ADR-8](./architecture.md)
+
 ### Fix tmux copy-paste (Sprint 2) ✓
 
 Improved tmux configuration for clipboard and selection:
@@ -76,25 +91,56 @@ Improved tmux configuration for clipboard and selection:
 Features are prioritized by impact for third-party users adopting claude-orchestrator. Each sprint can be implemented independently.
 
 ```
-Sprint 3 (differenziante)       Sprint 4 (ecosistema)
-┌──────────────────────┐        ┌──────────────────────┐
-│ #2 Git Worktree      │        │ #4 cco pack create   │
-│    Isolation          │        │ #5 Pack inheritance  │
-│ #3 Session Resume    │        └──────────────────────┘
+Sprint 4 (frontend)
+┌──────────────────────┐
+│ #4 Browser MCP       │
+│    Integration       │
 └──────────────────────┘
-                                Sprint 5 (polish)
-                                ┌──────────────────────┐
-                                │ #6 cco project edit  │
-                                │ #7 cco update        │
-                                │ #8 Browser MCP       │
-                                └──────────────────────┘
+
+Sprint 5 (differenziante)      Sprint 6 (ecosistema)
+┌──────────────────────┐       ┌──────────────────────┐
+│ #5 Git Worktree      │       │ #7 cco pack create   │
+│    Isolation          │       │ #8 Pack inheritance  │
+│ #6 Session Resume    │       └──────────────────────┘
+└──────────────────────┘
+                               Sprint 7 (polish)
+                               ┌──────────────────────┐
+                               │ #9  cco project edit │
+                               │ #10 cco update       │
+                               └──────────────────────┘
 ```
 
 ---
 
-### Sprint 3 — Feature differenziante
+### Sprint 4 — Browser Automation
 
-#### #2 Git Worktree Isolation
+Necessario per testing e debugging frontend. Richiede scope hierarchy stabile (Sprint 3) per il corretto posizionamento della configurazione MCP.
+
+#### #4 Browser MCP Integration
+
+Enable Claude to control a browser via Chrome DevTools MCP, with the browser visible to the user on the host OS.
+
+**Approach** (see [analysis](../analysis/chrome-mcp.md)):
+- Native "Claude in Chrome" doesn't work from Docker (IPC-local, no network transport)
+- Use **chrome-devtools-mcp** (Google, CDP-based, 29 tools) connecting to Chrome on the host via `host.docker.internal:9222`
+- Two modes: `host` (Chrome on host, native UI, user sees actions) and `container` (sibling Chrome container + noVNC)
+- Configured via `browser:` section in `project.yml`
+- `cco chrome` helper command for host-side Chrome launch
+- Telemetry disabled by default (`--no-usage-statistics --no-performance-crux`)
+
+**Key design points**:
+- Pre-install `chrome-devtools-mcp` in Dockerfile for instant startup
+- MCP config injected in `.mcp.json` at `cco start` when `browser.enabled: true`
+- `extra_hosts: host.docker.internal:host-gateway` in docker-compose for Linux compatibility
+- Container mode uses `selenium/standalone-chrome` with noVNC on port 7900
+
+**Docs**: [analysis](../analysis/chrome-mcp.md)
+
+---
+
+### Sprint 5 — Feature differenziante
+
+#### #5 Git Worktree Isolation
 
 Opt-in git isolation for container sessions. When enabled, repos are mounted at `/git-repos/` and the entrypoint creates worktrees at `/workspace/` on a dedicated branch (`cco/<project>`). Claude works in the worktrees transparently.
 
@@ -111,19 +157,19 @@ Opt-in git isolation for container sessions. When enabled, repos are mounted at 
 
 **Docs**: [analysis](../analysis/worktree-isolation.md) | [design](./worktree-design.md) | [ADR-10](./architecture.md)
 
-#### #3 Session resume
+#### #6 Session resume
 
 `cco resume <project>` — reattach to a running tmux session inside a running container. Complements worktree isolation: resume work on the same branch.
 
 ---
 
-### Sprint 4 — Ecosistema Pack
+### Sprint 6 — Ecosistema Pack
 
-#### #4 `cco pack create <name>` command
+#### #7 `cco pack create <name>` command
 
 Scaffold a new pack definition interactively, similar to `cco project create`. Lowers the barrier for creating packs.
 
-#### #5 Pack inheritance / composition
+#### #8 Pack inheritance / composition
 
 Allow packs to extend other packs:
 ```yaml
@@ -134,26 +180,15 @@ files:
 
 ---
 
-### Sprint 5 — Automazione e polish
+### Sprint 7 — Automazione e polish
 
-#### #6 `cco project edit <name>` command
+#### #9 `cco project edit <name>` command
 
 Open project.yml in `$EDITOR` and regenerate docker-compose.yml after save.
 
-#### #7 `cco update` — merge intelligente config
+#### #10 `cco update` — merge intelligente config
 
 Metodo per aggiornare `projects/` e `global/` quando l'orchestratore aggiunge skill, template o modifica strutture, senza perdere customizzazioni utente (merge intelligente defaults → user config).
-
-#### #8 Browser Automation MCP in Docker
-
-Enable Claude to navigate and analyze web pages from within a container session using a headless browser MCP server.
-
-**Approach**:
-- Install Chromium in the `Dockerfile` (`apt-get install -y chromium`)
-- Add a Playwright or Puppeteer MCP server to `global/mcp.json`
-- Browser runs headless inside the container — no display or VNC required
-
-**Note**: With environment extensibility (now implemented), users can already install Chromium via `global/setup.sh`. This item becomes providing an out-of-the-box solution with `cco build --with-browser`.
 
 ---
 
