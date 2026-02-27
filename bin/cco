@@ -9,21 +9,10 @@ PROJECTS_DIR="${CCO_PROJECTS_DIR:-$REPO_ROOT/projects}"
 GLOBAL_DIR="${CCO_GLOBAL_DIR:-$REPO_ROOT/global}"
 TEMPLATE_DIR="$DEFAULTS_DIR/_template"
 IMAGE_NAME="claude-orchestrator:latest"
+LIB_DIR="$REPO_ROOT/lib"
 
-# ── Colors ───────────────────────────────────────────────────────────
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-BLUE='\033[0;34m'
-BOLD='\033[1m'
-NC='\033[0m' # No Color
-
-# ── Helpers ──────────────────────────────────────────────────────────
-info()  { echo -e "${BLUE}ℹ${NC} $*" >&2; }
-ok()    { echo -e "${GREEN}✓${NC} $*" >&2; }
-warn()  { echo -e "${YELLOW}⚠${NC} $*" >&2; }
-error() { echo -e "${RED}✗${NC} $*" >&2; }
-die()   { error "$@"; exit 1; }
+# ── Load modules ─────────────────────────────────────────────────────
+source "$LIB_DIR/colors.sh"
 
 usage() {
     cat <<'EOF'
