@@ -459,6 +459,13 @@ _copy_pack_resources() {
     local pack_dir
     pack_dir="$(dirname "$pack_yml")"
 
+    # Validate pack.yml structure: top-level keys must start at column 0
+    if ! grep -qE '^(name|knowledge|skills|agents|rules):' "$pack_yml"; then
+        warn "Pack '$pack_name': pack.yml has no valid top-level keys (name/knowledge/skills/agents/rules)."
+        warn "  Check for extra indentation — all keys must start at column 0."
+        return 0
+    fi
+
     # Skills: each named subdirectory under pack/skills/ is a skill
     local skills
     skills=$(yml_get_pack_skills "$pack_yml")
@@ -1131,6 +1138,10 @@ YAML
                 [[ -z "$pack_name" ]] && continue
                 local pack_yml="$GLOBAL_DIR/packs/${pack_name}/pack.yml"
                 [[ ! -f "$pack_yml" ]] && continue
+                if ! grep -qE '^(name|knowledge|skills|agents|rules):' "$pack_yml"; then
+                    warn "Pack '$pack_name': pack.yml has no valid top-level keys — check for extra indentation."
+                    continue
+                fi
                 local pack_files
                 pack_files=$(yml_get_pack_knowledge_files "$pack_yml")
                 [[ -z "$pack_files" ]] && continue
