@@ -16,6 +16,7 @@ source "$LIB_DIR/colors.sh"
 source "$LIB_DIR/utils.sh"
 source "$LIB_DIR/auth.sh"
 source "$LIB_DIR/yaml.sh"
+source "$LIB_DIR/secrets.sh"
 
 usage() {
     cat <<'EOF'
@@ -297,81 +298,6 @@ _copy_pack_resources() {
             warn "Pack '$pack_name': knowledge source '$pack_source' not found"
         fi
     fi
-}
-
-# Load secrets from a specific file into an array of -e flags
-# Usage: load_secrets_file array_name file_path
-load_secrets_file() {
-    local _target=$1
-    local secrets_file="$2"
-    [[ ! -f "$secrets_file" ]] && return 0
-    local line_num=0
-    while IFS= read -r line; do
-        line_num=$(( line_num + 1 ))
-        # Skip empty lines and comments
-        [[ -z "$line" || "$line" == \#* ]] && continue
-        # Strip inline comments
-        line="${line%%#*}"
-        # Trim trailing whitespace
-        line="${line%"${line##*[![:space:]]}"}"
-        [[ -z "$line" ]] && continue
-        # Validate KEY=VALUE format
-        if [[ "$line" != *=* ]]; then
-            warn "$(basename "$secrets_file"):${line_num}: skipping malformed line (expected KEY=VALUE)"
-            continue
-        fi
-        eval "${_target}+=(-e $(printf '%q' "$line"))"
-    done < "$secrets_file"
-}
-
-# Load global secrets from global/secrets.env into an array of -e flags
-# Usage: load_global_secrets array_name
-load_global_secrets() {
-    load_secrets_file "$1" "$GLOBAL_DIR/secrets.env"
-}
-
-# Migrate legacy memory/ dir into claude-state/memory/ (one-time, non-destructive)
-migrate_memory_to_claude_state() {
-    local project_dir="$1"
-    if [[ -d "$project_dir/memory" && ! -d "$project_dir/claude-state" ]]; then
-        info "Migrating $project_dir/memory → claude-state/memory (one-time)"
-        mkdir -p "$project_dir/claude-state"
-        mv "$project_dir/memory" "$project_dir/claude-state/memory"
-    fi
-    mkdir -p "$project_dir/claude-state/memory"
-}
-
-# One-time migration from system-sync to managed-scope architecture.
-# Removes legacy .system-manifest and migrates settings.json if it
-# contains hooks (old unified format) to user-only format.
-_migrate_to_managed() {
-    local global_dir="$GLOBAL_DIR"
-    local marker="$global_dir/.claude/.managed-migration-done"
-
-    [[ -f "$marker" ]] && return 0
-    [[ ! -d "$global_dir/.claude" ]] && return 0
-
-    # Remove .system-manifest (no longer needed)
-    rm -f "$global_dir/.claude/.system-manifest"
-
-    # Legacy migration: remove old skills/init/ (renamed to init-workspace/)
-    if [[ -d "$global_dir/.claude/skills/init" ]]; then
-        rm -rf "$global_dir/.claude/skills/init"
-        info "Migrated: removed old skills/init/ (renamed to init-workspace/)"
-    fi
-
-    # If settings.json contains hooks (old unified format),
-    # replace with user-only settings
-    if [[ -f "$global_dir/.claude/settings.json" ]]; then
-        if grep -q '"hooks"' "$global_dir/.claude/settings.json" 2>/dev/null; then
-            cp "$global_dir/.claude/settings.json" "$global_dir/.claude/settings.json.pre-managed"
-            cp "$DEFAULTS_DIR/global/.claude/settings.json" "$global_dir/.claude/settings.json"
-            info "Migrated: settings.json split (old version backed up as settings.json.pre-managed)"
-        fi
-    fi
-
-    touch "$marker"
-    ok "Managed scope migration complete"
 }
 
 # ── Commands ─────────────────────────────────────────────────────────
