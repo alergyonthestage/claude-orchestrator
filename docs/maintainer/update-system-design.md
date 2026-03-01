@@ -55,7 +55,7 @@ Aggiornare progetti e scope global **senza cancellare e rifare**, preservando:
 | `.claude/rules/language.md` | **Utente** | Mai | Non toccare |
 | `setup.sh` | **Utente** | Cauto | Copiare solo se mancante |
 | `mcp-packages.txt` | **Utente** | Cauto | Copiare solo se mancante |
-| `secrets.env` | **Utente** | Mai | Non toccare |
+| `secrets.env` | **Utente** | Cauto | Copiare solo se mancante |
 
 ## Architettura: Ibrido checksum + migrazioni
 

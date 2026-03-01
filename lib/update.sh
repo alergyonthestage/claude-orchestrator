@@ -10,8 +10,11 @@
 
 # Files that are always user-owned (never updated by cco update)
 GLOBAL_USER_FILES=("mcp.json" "setup.sh")
+PROJECT_USER_FILES=("CLAUDE.md" "rules/language.md")
 # Files that need special regeneration logic
 GLOBAL_SPECIAL_FILES=("rules/language.md")
+# Project root files: copied from template if missing, never overwritten
+PROJECT_ROOT_COPY_IF_MISSING=("setup.sh" "secrets.env" "mcp-packages.txt")
 
 # ── Hashing ──────────────────────────────────────────────────────────
 
@@ -215,13 +218,17 @@ _collect_file_changes() {
             [[ -z "$fpath" ]] && continue
             # Make relative to defaults_dir
             local rel="${fpath#$defaults_dir/}"
-            # Skip user-owned and special files for global scope
+            # Skip user-owned and special files
             if [[ "$scope" == "global" ]]; then
                 if _in_array "$rel" "${GLOBAL_USER_FILES[@]}"; then
                     continue
                 fi
                 # Special files (language.md) are regenerated separately
                 if _in_array "$rel" "${GLOBAL_SPECIAL_FILES[@]}"; then
+                    continue
+                fi
+            elif [[ "$scope" == "project" ]]; then
+                if _in_array "$rel" "${PROJECT_USER_FILES[@]}"; then
                     continue
                 fi
             fi
@@ -393,11 +400,25 @@ _apply_file_changes() {
         esac
     done <<< "$changes"
 
-    if [[ "$dry_run" == "true" ]]; then
-        [[ $new_count -gt 0 ]] && info "$new_count new file(s) to add"
-        [[ $updated -gt 0 ]] && info "$updated file(s) to update"
-        [[ $conflicts -gt 0 ]] && info "$conflicts conflict(s) to resolve"
-        [[ $skipped -gt 0 ]] && info "$skipped file(s) with user modifications (preserved)"
+    # Show summary
+    local total_changes=$(( new_count + updated + conflicts ))
+    if [[ $total_changes -gt 0 || $skipped -gt 0 ]]; then
+        if [[ "$dry_run" == "true" ]]; then
+            [[ $new_count -gt 0 ]] && info "$new_count new file(s) to add"
+            [[ $updated -gt 0 ]] && info "$updated file(s) to update"
+            [[ $conflicts -gt 0 ]] && info "$conflicts conflict(s) to resolve"
+            [[ $skipped -gt 0 ]] && info "$skipped file(s) with user modifications (preserved)"
+        else
+            local parts=()
+            [[ $new_count -gt 0 ]] && parts+=("$new_count added")
+            [[ $updated -gt 0 ]] && parts+=("$updated updated")
+            [[ $conflicts -gt 0 ]] && parts+=("$conflicts conflict(s)")
+            [[ $skipped -gt 0 ]] && parts+=("$skipped preserved")
+            local summary
+            printf -v summary '%s, ' "${parts[@]}"
+            summary="${summary%, }"
+            info "Files: $summary"
+        fi
     fi
 }
 
@@ -418,7 +439,11 @@ _resolve_conflict_interactive() {
     echo ""
 
     local choice
-    read -rp "  Choice [K/u/b/s]: " choice
+    if (exec < /dev/tty) 2>/dev/null; then
+        read -rp "  Choice [K/u/b/s]: " choice < /dev/tty
+    else
+        choice=""
+    fi
     choice="${choice:-K}"
     choice="$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')"
 
@@ -612,7 +637,17 @@ _update_project() {
     local pending_migrations=$(( latest_schema - current_schema ))
     [[ $pending_migrations -lt 0 ]] && pending_migrations=0
 
-    if [[ $actionable -eq 0 && $pending_migrations -eq 0 ]]; then
+    # Check for missing project root files (setup.sh, secrets.env, mcp-packages.txt)
+    local template_root="$DEFAULTS_DIR/_template"
+    local root_missing=()
+    local rf
+    for rf in "${PROJECT_ROOT_COPY_IF_MISSING[@]}"; do
+        if [[ -f "$template_root/$rf" && ! -f "$project_dir/$rf" ]]; then
+            root_missing+=("$rf")
+        fi
+    done
+
+    if [[ $actionable -eq 0 && $pending_migrations -eq 0 && ${#root_missing[@]} -eq 0 ]]; then
         ok "Project config is up to date."
         return 0
     fi
@@ -623,6 +658,18 @@ _update_project() {
 
     # Phase 2: APPLY — execute changes
     _apply_file_changes "$changes" "$defaults_dir" "$installed_dir" "$mode" "$dry_run"
+
+    # Copy missing root files from template
+    if [[ ${#root_missing[@]} -gt 0 ]]; then
+        for rf in "${root_missing[@]}"; do
+            if [[ "$dry_run" == "true" ]]; then
+                info "  + $rf (missing, will copy from template)"
+            else
+                cp "$template_root/$rf" "$project_dir/$rf"
+                ok "  + $rf (copied from template)"
+            fi
+        done
+    fi
 
     # Run migrations
     if [[ $pending_migrations -gt 0 ]]; then
