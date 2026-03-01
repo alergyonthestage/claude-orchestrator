@@ -420,8 +420,9 @@ _resolve_conflict_interactive() {
     local choice
     read -rp "  Choice [K/u/b/s]: " choice
     choice="${choice:-K}"
+    choice="$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')"
 
-    case "${choice,,}" in
+    case "$choice" in
         k)
             info "  Kept user version of $rel_path"
             local h; h=$(_file_hash "$installed_dir/$rel_path")
