@@ -2,7 +2,8 @@
 # lib/secrets.sh — Secrets loading and migration helpers
 #
 # Provides: load_secrets_file(), load_global_secrets(),
-#           migrate_memory_to_claude_state(), _migrate_to_managed()
+#           migrate_memory_to_claude_state() [deprecated — use migrations/project/001],
+#           _migrate_to_managed() [deprecated — use migrations/global/001]
 # Dependencies: colors.sh, utils.sh
 # Globals: GLOBAL_DIR, DEFAULTS_DIR
 
@@ -37,7 +38,8 @@ load_global_secrets() {
     load_secrets_file "$1" "$GLOBAL_DIR/secrets.env"
 }
 
-# Migrate legacy memory/ dir into claude-state/memory/ (one-time, non-destructive)
+# DEPRECATED: Use migrations/project/001_memory_to_claude_state.sh instead.
+# Kept for backward compatibility with cmd-start.sh (users who haven't run cco update).
 migrate_memory_to_claude_state() {
     local project_dir="$1"
     if [[ -d "$project_dir/memory" && ! -d "$project_dir/claude-state" ]]; then
@@ -48,9 +50,9 @@ migrate_memory_to_claude_state() {
     mkdir -p "$project_dir/claude-state/memory"
 }
 
-# One-time migration from system-sync to managed-scope architecture.
-# Removes legacy .system-manifest and migrates settings.json if it
-# contains hooks (old unified format) to user-only format.
+# DEPRECATED: Use migrations/global/001_managed_scope.sh instead.
+# Kept for backward compatibility with existing installs that call cmd-init
+# before running cco update for the first time.
 _migrate_to_managed() {
     local global_dir="$GLOBAL_DIR"
     local marker="$global_dir/.claude/.managed-migration-done"

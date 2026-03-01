@@ -19,6 +19,7 @@ source "$LIB_DIR/yaml.sh"
 source "$LIB_DIR/secrets.sh"
 source "$LIB_DIR/workspace.sh"
 source "$LIB_DIR/packs.sh"
+source "$LIB_DIR/update.sh"
 source "$LIB_DIR/cmd-build.sh"
 source "$LIB_DIR/cmd-init.sh"
 source "$LIB_DIR/cmd-start.sh"
@@ -26,6 +27,7 @@ source "$LIB_DIR/cmd-new.sh"
 source "$LIB_DIR/cmd-stop.sh"
 source "$LIB_DIR/cmd-project.sh"
 source "$LIB_DIR/cmd-pack.sh"
+source "$LIB_DIR/cmd-update.sh"
 
 usage() {
     cat <<'EOF'
@@ -45,6 +47,7 @@ Commands:
   pack show <n>          Show pack details
   pack remove <n>        Remove a pack
   pack validate [n]      Validate pack structure (all if no name)
+  update                 Update global/project config from defaults
   stop [project]         Stop running session(s)
   help                   Show this help message
 
@@ -88,6 +91,7 @@ case "$cmd" in
             *)        die "Unknown pack command: $subcmd" ;;
         esac
         ;;
+    update)  cmd_update "$@" ;;
     stop)    cmd_stop "$@" ;;
     help)    usage ;;
     *)       die "Unknown command: $cmd. Run 'cco help' for usage." ;;

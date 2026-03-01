@@ -98,6 +98,19 @@ EOF
     repos_check=$(yml_get_repos "$project_yml")
     [[ -z "$repos_check" ]] && die "No repositories defined in project.yml. Add at least one repo under 'repos:' before starting."
 
+    # Check for available updates
+    local _global_meta="$GLOBAL_DIR/.claude/.cco-meta"
+    if [[ -f "$_global_meta" ]]; then
+        local _current_schema _latest_schema
+        _current_schema=$(_read_cco_meta "$_global_meta")
+        _latest_schema=$(_latest_schema_version "global")
+        if [[ "$_current_schema" -lt "$_latest_schema" ]]; then
+            info "Updates available. Run 'cco update' to apply."
+        fi
+    elif [[ -d "$GLOBAL_DIR/.claude" ]]; then
+        info "Run 'cco update' to initialize the update system."
+    fi
+
     # Ensure claude-state directory exists (migrates legacy memory/ if needed)
     migrate_memory_to_claude_state "$project_dir"
 

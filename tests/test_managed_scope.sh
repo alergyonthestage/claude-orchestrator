@@ -172,7 +172,7 @@ test_init_with_force_recopies_globals() {
 
 test_migration_to_managed() {
     # Existing installs with old .system-manifest and hooks in settings.json
-    # should be migrated cleanly
+    # should be migrated cleanly by the migration system
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
 
@@ -185,10 +185,10 @@ test_migration_to_managed() {
     printf 'placeholder' > "$tmpdir/global/.claude/rules/language.md"
     mkdir -p "$tmpdir/global/packs"
 
-    # Run init — should trigger migration
+    # Run init — should trigger migration via migration runner
     run_cco init --lang "English"
 
-    # .system-manifest should be gone
+    # .system-manifest should be gone (removed by migration 001)
     assert_file_not_exists "$CCO_GLOBAL_DIR/.claude/.system-manifest" \
         ".system-manifest should have been removed by migration"
 
@@ -200,8 +200,9 @@ test_migration_to_managed() {
     assert_file_exists "$CCO_GLOBAL_DIR/.claude/settings.json.pre-managed"
     assert_file_contains "$CCO_GLOBAL_DIR/.claude/settings.json.pre-managed" '"hooks"'
 
-    # Migration marker should be set
-    assert_file_exists "$CCO_GLOBAL_DIR/.claude/.managed-migration-done"
+    # Old migration marker should be removed (replaced by .cco-meta schema_version)
+    assert_file_not_exists "$CCO_GLOBAL_DIR/.claude/.managed-migration-done" \
+        ".managed-migration-done should be removed by new migration system"
 }
 
 test_migration_removes_old_init_skill() {

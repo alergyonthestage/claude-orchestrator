@@ -212,6 +212,39 @@ except Exception as e:
     fi
 }
 
+# ── Update System Helpers ──────────────────────────────────────────────
+
+# Create a .cco-meta file with the given content
+# Usage: create_cco_meta "$meta_file" "$content"
+create_cco_meta() {
+    local meta_file="$1"
+    local content="$2"
+    mkdir -p "$(dirname "$meta_file")"
+    printf '%s\n' "$content" > "$meta_file"
+}
+
+# Modify a managed file to simulate a user edit
+# Usage: modify_managed_file "$file_path"
+modify_managed_file() {
+    local file="$1"
+    printf '\n# User customization\n' >> "$file"
+}
+
+# Assert $CCO_OUTPUT does NOT contain a literal string
+assert_output_not_contains() {
+    local pattern="$1"
+    local msg="${2:-Expected output NOT to contain: $pattern}"
+    if echo "${CCO_OUTPUT:-}" | grep -qFe "$pattern"; then
+        echo "ASSERTION FAILED: $msg"
+        echo "  Found unwanted pattern: $(printf '%q' "$pattern")"
+        echo "  Actual output:"
+        echo "${CCO_OUTPUT:-}" | sed 's/^/    /'
+        return 1
+    fi
+}
+
+# ── Project Helpers ──────────────────────────────────────────────────
+
 # Minimal project.yml for tests that only need dry-run + compose assertions
 # Usage: minimal_project_yml "<name>"  (no repos, oauth auth, empty ports/env)
 minimal_project_yml() {
