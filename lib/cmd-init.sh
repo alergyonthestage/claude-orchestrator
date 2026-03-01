@@ -2,7 +2,7 @@
 # lib/cmd-init.sh — Initialize user configuration command
 #
 # Provides: cmd_init()
-# Dependencies: colors.sh, utils.sh, secrets.sh, cmd-build.sh
+# Dependencies: colors.sh, utils.sh, update.sh, cmd-build.sh
 # Globals: GLOBAL_DIR, DEFAULTS_DIR, PROJECTS_DIR, REPO_ROOT
 
 cmd_init() {
@@ -57,6 +57,11 @@ EOF
     # Copy global config
     if [[ -d "$GLOBAL_DIR/.claude" ]] && ! $force; then
         warn "global/ already exists, skipping (use --force to overwrite)"
+
+        # Run pending migrations on existing install (if no .cco-meta yet)
+        if [[ ! -f "$GLOBAL_DIR/.claude/.cco-meta" ]]; then
+            _run_migrations "global" "$GLOBAL_DIR/.claude" 0 ""
+        fi
     else
         info "Copying default global config to global/..."
         rm -rf "$GLOBAL_DIR"
@@ -73,10 +78,32 @@ EOF
             sed -i "s/{{CODE_LANG}}/$code_lang/g" "$lang_file"
 
         ok "Global config initialized at global/ (languages: $comm_lang / $docs_lang / $code_lang)"
-    fi
 
-    # Migrate existing installs from system-sync to managed-scope architecture
-    _migrate_to_managed
+        # Generate .cco-meta with hashes of all installed files and latest schema
+        local latest_schema
+        latest_schema=$(_latest_schema_version "global")
+        local now
+        now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+        # Build manifest entries for all managed files
+        local meta_file="$GLOBAL_DIR/.claude/.cco-meta"
+        (
+            cd "$GLOBAL_DIR/.claude" || exit 1
+            find . -type f ! -name '.cco-meta' | sed 's|^\./||' | sort | while IFS= read -r rel; do
+                # Skip user-owned files
+                local skip=false
+                for uf in "${GLOBAL_USER_FILES[@]}"; do
+                    [[ "$rel" == "$uf" ]] && skip=true && break
+                done
+                $skip && continue
+                printf '%s\t%s\n' "$rel" "$(_file_hash "$GLOBAL_DIR/.claude/$rel")"
+            done
+        ) | _generate_cco_meta "$meta_file" "$latest_schema" "$now" \
+            "$comm_lang" "$docs_lang" "$code_lang"
+
+        # Run all migrations (marks schema as current — fresh install, nothing to migrate)
+        _run_migrations "global" "$GLOBAL_DIR/.claude" 0 "$meta_file"
+    fi
 
     # Copy global setup script if not present
     if [[ ! -f "$GLOBAL_DIR/setup.sh" && -f "$DEFAULTS_DIR/global/setup.sh" ]]; then
