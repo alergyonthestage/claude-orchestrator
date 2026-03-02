@@ -2,7 +2,7 @@
 
 > Version: 1.0.0
 > Status: v1.0 — Current
-> Related: [architecture.md](./architecture.md) | [spec.md](./spec.md)
+> Related: [architecture.md](../architecture.md) | [spec.md](../spec.md)
 
 ---
 
@@ -278,7 +278,7 @@ Key settings for clipboard:
 - `terminal-features clipboard` — explicit clipboard capability (works even when outer TERM is not `xterm*`)
 - `MouseDragEnd1Pane copy-pipe-and-cancel` — auto-copies selection on mouse release (no manual `y` press needed)
 
-See [display-modes guide](../guides/display-modes.md) §2.4 for copy-paste usage and host terminal compatibility.
+See [display-modes guide](../../guides/display-modes.md) §2.4 for copy-paste usage and host terminal compatibility.
 
 ---
 
@@ -301,7 +301,7 @@ services:
     container_name: cc-${PROJECT_NAME}
     stdin_open: true                           # -i (interactive)
     tty: true                                  # -t (terminal)
-    
+
     # ── Environment ──────────────────────────────────────────────────
     environment:
       - PROJECT_NAME=${PROJECT_NAME}
@@ -311,13 +311,13 @@ services:
       # Disable auto memory directory issues (we mount it explicitly)
       # Auth via API key (if not using OAuth)
       # - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-    
+
     # ── Volumes ──────────────────────────────────────────────────────
     volumes:
       # --- Auth & credentials ---
       - ${GLOBAL_DIR}/claude-state/claude.json:/home/claude/.claude.json
       - ${GLOBAL_DIR}/claude-state/.credentials.json:/home/claude/.claude/.credentials.json
-      
+
       # --- Global config → user-level (~/.claude/) ---
       # Paths are absolute, resolved by cco CLI from GLOBAL_DIR
       - ${GLOBAL_DIR}/.claude/settings.json:/home/claude/.claude/settings.json:ro
@@ -330,15 +330,15 @@ services:
       # --- Project config ---
       - ./.claude:/workspace/.claude
       - ./project.yml:/workspace/project.yml:ro
-      
+
       # --- Claude state: auto memory + session transcripts ---
       - ./claude-state:/home/claude/.claude/projects/-workspace
-      
+
       # --- Repositories ---
       # (generated from project.yml repos list)
       # - /Users/user/projects/backend-api:/workspace/backend-api
       # - /Users/user/projects/frontend-app:/workspace/frontend-app
-      
+
       # --- Git config ---
       - ${HOME}/.gitconfig:/home/claude/.gitconfig:ro
 
@@ -349,7 +349,7 @@ services:
       # --- (conditional) Docker socket (Docker-from-Docker) ---
       # Omitted when docker.mount_socket: false in project.yml
       - /var/run/docker.sock:/var/run/docker.sock
-    
+
     # ── Ports ────────────────────────────────────────────────────────
     # Common dev server ports. Customize in project.yml.
     ports:
@@ -359,11 +359,11 @@ services:
       - "5173:5173"     # Vite
       - "8000:8000"     # Python/Django
       - "8080:8080"     # Generic
-    
+
     # ── Network ──────────────────────────────────────────────────────
     networks:
       - cc-${PROJECT_NAME}
-    
+
     working_dir: /workspace
 
 # ── Networks ─────────────────────────────────────────────────────────
@@ -562,3 +562,250 @@ docker network rm cc-my-project
 # Remove sibling containers (if Claude left them running)
 docker compose -f /path/to/infra/docker-compose.yml down
 ```
+
+---
+
+## 6. Directory Structure & File Inventory
+
+### 6.1 Complete File Tree
+
+```
+claude-orchestrator/
+│
+├── docs/                                   # ── Documentation ──────────────
+│   ├── README.md                           # Documentation index
+│   ├── guides/
+│   │   ├── project-setup.md               # Project setup guide
+│   │   ├── subagents.md                   # Custom subagents guide
+│   │   └── display-modes.md              # tmux vs iTerm2 setup
+│   ├── reference/
+│   │   ├── cli.md                         # CLI commands & project.yml format
+│   │   └── context.md                     # Context hierarchy & settings
+│   └── maintainer/
+│       ├── spec.md                        # Requirements specification
+│       ├── architecture.md               # Architecture & design decisions
+│       ├── docker.md                      # Docker image, compose, networking
+│       ├── roadmap.md                     # Planned features
+│       └── directory-structure.md        # This file
+│
+├── Dockerfile                              # Docker image definition
+├── .dockerignore                           # Exclude docs, .git from build context
+├── .gitignore                              # Ignore user config, secrets
+├── README.md                               # Project overview
+├── QUICK-START.md                          # Setup and usage guide
+├── CLAUDE.md                               # Claude Code guidance for this repo
+│
+├── config/                                 # ── Docker Config ──────────────
+│   ├── entrypoint.sh                       # Container entrypoint script
+│   ├── tmux.conf                           # tmux config for agent teams
+│   └── hooks/
+│       ├── session-context.sh             # SessionStart hook: injects repo/MCP context
+│       ├── subagent-context.sh            # SubagentStart hook: condensed context for subagents
+│       ├── precompact.sh                  # PreCompact hook: guides context compaction
+│       └── statusline.sh                  # StatusLine hook: shows model/context/cost
+│
+├── bin/                                    # ── CLI ────────────────────────
+│   └── cco                                 # Main CLI script (bash)
+│
+├── defaults/                               # ── TOOL DEFAULTS (tracked) ────
+│   ├── managed/                            # Framework infrastructure (baked in Docker image → /etc/claude-code/)
+│   │   ├── managed-settings.json           # Hooks, env vars, deny rules, statusLine (non-overridable)
+│   │   ├── CLAUDE.md                       # Framework instructions (Docker env, workspace, agent teams)
+│   │   └── .claude/skills/
+│   │       └── init-workspace/SKILL.md     # /init-workspace skill (managed, non-overridable)
+│   ├── global/                             # User defaults (copied once by cco init → ~/.claude/)
+│   │   └── .claude/
+│   │       ├── CLAUDE.md                   # Global workflow instructions
+│   │       ├── settings.json               # User preferences (allow rules, attribution, teammateMode)
+│   │       ├── mcp.json                    # Empty MCP server list (user populates)
+│   │       ├── rules/
+│   │       │   ├── workflow.md             # Development workflow phases
+│   │       │   ├── git-practices.md        # Git conventions
+│   │       │   ├── diagrams.md             # Mermaid diagram conventions
+│   │       │   └── language.md             # Language preferences (with {{LANG}} vars)
+│   │       ├── agents/
+│   │       │   ├── analyst.md              # Analysis specialist (haiku, read-only)
+│   │       │   └── reviewer.md             # Code review specialist (sonnet, read-only)
+│   │       └── skills/
+│   │           ├── analyze/SKILL.md        # /analyze skill
+│   │           ├── commit/SKILL.md         # /commit skill
+│   │           ├── design/SKILL.md         # /design skill
+│   │           └── review/SKILL.md         # /review skill
+│   └── _template/                          # Default project template
+│       ├── project.yml                     # Project metadata & config (with comments)
+│       ├── .claude/
+│       │   ├── CLAUDE.md                   # Project instructions template ({{PLACEHOLDERS}})
+│       │   ├── settings.json               # Project settings template (empty, overrides go here)
+│       │   ├── rules/
+│       │   │   └── language.md             # Language override (commented out by default)
+│       │   ├── agents/.gitkeep             # Project-specific agents
+│       │   └── skills/.gitkeep             # Project-specific skills
+│       └── claude-state/                   # Claude state dir placeholder
+│           ├── .gitkeep
+│           └── memory/.gitkeep             # Auto memory subdir placeholder
+│
+├── global/                                 # ── USER CONFIG (gitignored) ───
+│   └── .claude/                            # User defaults from defaults/global/ (copied once on cco init)
+│       ├── settings.json                   # Customized by user
+│       ├── CLAUDE.md                       # Customized by user
+│       ├── mcp.json                        # Global MCP servers
+│       ├── rules/                          # User rule files
+│       ├── agents/                         # User global agents
+│       └── skills/                         # User global skills
+│
+│   (optional, in global/)
+│   ├── packs/                              # Knowledge packs
+│   │   └── <pack-name>/
+│   │       ├── pack.yml                    # Pack manifest (knowledge, skills, agents, rules)
+│   │       ├── knowledge/                  # Optional: pack's own knowledge files (no source:)
+│   │       ├── skills/                     # Optional: skills copied to projects on cco start
+│   │       ├── agents/                     # Optional: agents copied to projects on cco start
+│   │       └── rules/                      # Optional: rules copied to projects on cco start
+│   ├── secrets.env                         # Sensitive env vars (loaded at runtime)
+│   └── mcp-packages.txt                    # MCP npm packages to pre-install in image
+│
+└── projects/                               # ── USER PROJECTS (gitignored) ─
+    └── <project-name>/                     # Created by `cco project create`
+        ├── project.yml                     # Source of truth for the project
+        ├── .claude/
+        │   ├── CLAUDE.md                   # Project-specific instructions
+        │   ├── settings.json               # Project-specific settings overrides
+        │   ├── packs.md                    # Auto-generated instructional file list (by cco start)
+        │   ├── workspace.yml               # Auto-generated project structure summary (by cco start)
+        │   ├── rules/                      # Project-specific rules
+        │   ├── agents/                     # Project-specific agents
+        │   └── skills/                     # Project-specific skills
+        ├── claude-state/                   # Claude state: memory + session transcripts (mounted to ~/.claude/projects/-workspace/)
+        │   └── memory/                     # Auto memory subdir
+        ├── mcp.json                        # Optional project-level MCP servers
+        └── docker-compose.yml              # Auto-generated by `cco start` (not committed)
+```
+
+### 6.2 File Descriptions
+
+#### Root Files
+
+| File | Purpose | Notes |
+|------|---------|-------|
+| `Dockerfile` | Docker image definition | See §1.1 |
+| `.dockerignore` | Exclude files from Docker build context | Excludes: `docs/`, `.git/`, `projects/*/claude-state/` |
+| `.gitignore` | Git ignore patterns | Ignores: `global/`, `projects/` (user data), `.env` |
+| `README.md` | Project overview and documentation index | What it is, how it works, requirements |
+| `QUICK-START.md` | Setup and usage guide | Clone, init, create project, start session |
+| `CLAUDE.md` | Guidance for Claude Code when working on this repo | Commands, architecture, conventions |
+
+#### config/
+
+| File | Purpose | Notes |
+|------|---------|-------|
+| `entrypoint.sh` | Container entrypoint | Docker socket perms, MCP injection, gosu, tmux launch. See §1.2 |
+| `tmux.conf` | tmux configuration | Colors, navigation, history, mouse. See §1.3 |
+| `hooks/session-context.sh` | SessionStart hook | Discovers repos, counts MCP servers, injects context JSON |
+| `hooks/subagent-context.sh` | SubagentStart hook | Condensed project context for subagents |
+| `hooks/precompact.sh` | PreCompact hook | Guides context compaction (what to preserve) |
+| `hooks/statusline.sh` | StatusLine hook | Reads session JSON, displays `[project] model \| ctx XX% \| $cost` |
+
+#### bin/
+
+| File | Purpose | Notes |
+|------|---------|-------|
+| `cco` | CLI script | Single bash file, no external deps. See [cli.md](../../reference/cli.md) |
+
+#### defaults/managed/
+
+Framework infrastructure files, baked into the Docker image at `/etc/claude-code/`. Non-overridable by users — this is Claude Code's Managed level. Updated only via `cco build`.
+
+| File | Purpose | Notes |
+|------|---------|-------|
+| `managed-settings.json` | Framework settings | Hooks (SessionStart, SubagentStart, PreCompact), env vars, statusLine, deny rules |
+| `CLAUDE.md` | Framework instructions | Docker environment, workspace layout, agent team behavior |
+| `.claude/skills/init-workspace/SKILL.md` | `/init-workspace` skill | Initialize/refresh project CLAUDE.md. Managed: non-overridable, updated via `cco build` |
+
+#### defaults/global/.claude/
+
+User defaults, copied to `global/.claude/` once by `cco init`. User owns these files after the initial copy. Not overwritten unless `cco init --force` is used. This includes agents, skills, rules, and settings that users can freely customize.
+
+| File | Purpose | Notes |
+|------|---------|-------|
+| `CLAUDE.md` | User-level instructions | Workflow, git practices, communication style |
+| `settings.json` | User preferences | Allow rules, attribution, teammateMode, cleanup, MCP settings |
+| `mcp.json` | Global MCP server list | Empty by default; user populates. See [context.md](../../reference/context.md) §8 |
+| `rules/workflow.md` | Workflow phase rules | Analysis, Design, Implementation, Documentation phases |
+| `rules/git-practices.md` | Git conventions | Branch naming, conventional commits |
+| `rules/diagrams.md` | Diagram conventions | Always use Mermaid, never ASCII art |
+| `rules/language.md` | Language preferences | Has `{{COMM_LANG}}`, `{{DOCS_LANG}}`, `{{CODE_LANG}}` placeholders, substituted by `cco init --lang` |
+| `agents/analyst.md` | Analyst subagent | Haiku, read-only tools, user memory. See [subagents.md](../../guides/subagents.md) §2.1 |
+| `agents/reviewer.md` | Reviewer subagent | Sonnet, read-only tools, user memory. See [subagents.md](../../guides/subagents.md) §2.2 |
+| `skills/analyze/SKILL.md` | `/analyze` skill | Structured codebase exploration mode |
+| `skills/commit/SKILL.md` | `/commit` skill | Conventional commit creation with confirmation |
+| `skills/design/SKILL.md` | `/design` skill | Implementation planning mode |
+| `skills/review/SKILL.md` | `/review` skill | Structured code review with checklist |
+
+#### defaults/_template/
+
+Default project template, used by `cco project create` to scaffold new projects.
+
+| File | Purpose | Notes |
+|------|---------|-------|
+| `project.yml` | Project config template | Repos, ports, auth, packs. See [cli.md](../../reference/cli.md) §4 |
+| `.claude/CLAUDE.md` | Project instructions template | `{{PROJECT_NAME}}` and `{{DESCRIPTION}}` placeholders |
+| `.claude/settings.json` | Project settings template | Empty; project-specific overrides go here |
+| `.claude/rules/language.md` | Language override template | Commented out by default; uncomment to override global |
+| `.claude/agents/.gitkeep` | Placeholder | Project-specific agents |
+| `.claude/skills/.gitkeep` | Placeholder | Project-specific skills |
+| `claude-state/.gitkeep` | Claude state dir | Mounted to `~/.claude/projects/workspace/`; persists memory and session transcripts |
+| `claude-state/memory/.gitkeep` | Auto memory subdir | Created empty; Claude populates with project insights |
+
+### 6.3 Generated Files (Not in Git)
+
+These files are generated by the CLI or Claude Code and must not be committed:
+
+| File | Generated By | Purpose |
+|------|-------------|---------|
+| `projects/<n>/docker-compose.yml` | `cco start` | Docker Compose config for the project session |
+| `projects/<n>/.claude/packs.md` | `cco start` | Instructional file list for activated knowledge packs; injected via hook |
+| `projects/<n>/.claude/.pack-manifest` | `cco start` | Tracks files copied from packs (skills, agents, rules); used for stale cleanup on next start |
+| `projects/<n>/.claude/workspace.yml` | `cco start` | Structured project summary (repos, packs); read by `/init-workspace` skill |
+| `global/.claude/.managed-migration-done` | `_migrate_to_managed()` | Marker indicating managed scope migration has been completed |
+| `projects/<n>/claude-state/memory/*.md` | Claude Code | Auto memory files (project insights, patterns) |
+| `projects/<n>/claude-state/*.json` | Claude Code | Session transcripts (enables `/resume` across rebuilds) |
+| `.env` | User / secrets.env | Runtime secrets (not committed) |
+
+### 6.4 Implementation Order
+
+Recommended order for building the repo from scratch:
+
+| Phase | Files | Depends On |
+|-------|-------|------------|
+| 1. Docker | `Dockerfile`, `config/entrypoint.sh`, `config/tmux.conf`, `config/hooks/*`, `.dockerignore` | Nothing |
+| 2. Global Config | `defaults/managed/*`, `defaults/global/.claude/*` | Nothing |
+| 3. Project Template | `defaults/_template/*` (all files) | Nothing |
+| 4. CLI | `bin/cco` | Phases 1–3 (needs files to reference) |
+| 5. Root Files | `README.md`, `QUICK-START.md`, `CLAUDE.md`, `.gitignore` | Phases 1–4 |
+| 6. Testing | Manual: create project, start session, verify | Phases 1–5 |
+
+### 6.5 Validation Checklist
+
+After implementation (or after significant changes), verify:
+
+- [ ] `cco build` creates the Docker image successfully
+- [ ] `cco init` copies user defaults (agents, skills, rules, settings) to global/ and creates projects/
+- [ ] `cco project create test-project --repo <any-repo>` creates correct project structure
+- [ ] `cco start test-project` launches interactive Claude Code session
+- [ ] Claude sees global CLAUDE.md (ask: "What are your global instructions?")
+- [ ] Claude sees project CLAUDE.md (ask: "What project are you working on?")
+- [ ] Claude sees repo `.claude/` when reading repo files (if repo has one)
+- [ ] Git operations work inside container (`git commit`, `git push`)
+- [ ] Docker commands work inside container (`docker ps`, `docker compose up`)
+- [ ] Port mapping works (run `npx serve` on port 3000, access from host browser)
+- [ ] Agent teams create panes (visible in tmux or iTerm2)
+- [ ] Auto memory persists across sessions (check `projects/<n>/claude-state/memory/`)
+- [ ] `/resume` works after `cco build --no-cache` (session transcripts in `projects/<n>/claude-state/`)
+- [ ] Knowledge packs: `packs.md` is generated with correct instructional list on `cco start`
+- [ ] Knowledge packs: `additionalContext` contains pack file list (check Claude's initial context)
+- [ ] `workspace.yml` is generated at `projects/<n>/.claude/workspace.yml` on `cco start`
+- [ ] SessionStart hook fires and injects context (visible in Claude's initial context)
+- [ ] StatusLine shows project/model/context info
+- [ ] `cco new --repo <path>` works for temporary sessions
+- [ ] `cco stop` stops running sessions cleanly
+- [ ] `cco project list` lists available projects with status

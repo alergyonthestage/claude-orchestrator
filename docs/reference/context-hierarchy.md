@@ -1,8 +1,11 @@
 # Context & Settings Hierarchy
 
-> Version: 1.0.0
-> Status: v1.0 — Current
+> Version: 1.1.0
+> Status: v1.1 — Merged from context.md + context-loading.md
 > Related: [architecture.md](../maintainer/architecture.md) | [spec.md](../maintainer/spec.md)
+
+Complete reference for the context hierarchy, settings resolution, configuration
+files, and the full loading lifecycle — from `cco start` through session runtime.
 
 ---
 
@@ -94,7 +97,7 @@ Pack skills/agents/rules: available from project startup
 
 Packs are activated by listing them in `project.yml`. No CLAUDE.md edit is required — the `session-context.sh` hook injects the knowledge file list into `additionalContext` automatically.
 
-See [CLI.md §4.2](./cli.md) for pack definition format. See [context-loading.md](./context-loading.md) for the full loading lifecycle.
+See [CLI.md §4.2](./cli.md) for pack definition format. See [Loading Lifecycle](#12-loading-lifecycle) below for the full loading sequence.
 
 ---
 
@@ -695,3 +698,174 @@ A custom status line shows project info in Claude Code's status bar:
 ```
 
 Script: `/usr/local/bin/cco-hooks/statusline.sh` (baked into Docker image). Reads project name from env var and session data from stdin JSON.
+
+---
+
+## 12. Loading Lifecycle
+
+End-to-end sequence of every context component, from `cco start` on the host
+through on-demand loading during the session.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ HOST                                                            │
+│  cco start <project>                                            │
+│    ├── reads project.yml                                        │
+│    ├── generates docker-compose.yml                             │
+│    ├── generates .claude/workspace.yml           ← new          │
+│    ├── generates .claude/packs.md               ← new format   │
+│    ├── copies pack skills/agents/rules                          │
+│    └── docker compose run --rm claude                           │
+│                                                                 │
+│ CONTAINER STARTUP (entrypoint.sh)                               │
+│    ├── fix docker socket GID                                    │
+│    ├── copy .claude.json.seed → ~/.claude.json (writable)        │
+│    ├── merge mcp-global.json + .mcp.json → ~/.claude.json       │
+│    └── exec gosu claude: tmux → claude --dangerously-skip…      │
+│                                                                 │
+│ CLAUDE CODE LAUNCH                                              │
+│    ├── reads ~/.claude/settings.json    (user scope)            │
+│    ├── reads ~/.claude/CLAUDE.md        (user scope)            │
+│    ├── reads ~/.claude/rules/*.md       (user scope)            │
+│    ├── reads ~/.claude/agents/*.md      (user scope)            │
+│    ├── reads /workspace/.claude/settings.json  (project scope)  │
+│    ├── reads /workspace/.claude/CLAUDE.md      (project scope)  │
+│    ├── reads /workspace/.claude/rules/*.md     (project scope)  │
+│    └── reads /workspace/.claude/agents/*.md    (project scope)  │
+│                                                                 │
+│ SESSION START HOOK (session-context.sh)                         │
+│    ├── injects repo list → additionalContext                    │
+│    ├── injects MCP server list → additionalContext              │
+│    └── injects packs.md content → additionalContext             │
+│                                                                 │
+│ ON-DEMAND (during session)                                      │
+│    ├── /workspace/<repo>/.claude/CLAUDE.md  (repo nested)       │
+│    ├── /workspace/.packs/<name>/<file>      (pack knowledge)    │
+│    └── ~/.claude/projects/-workspace/memory/ (auto memory)      │
+│                                                                 │
+│ USER INVOCATION                                                 │
+│    └── skills: ~/.claude/skills/ and /workspace/.claude/skills/ │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 13. Component Reference
+
+Complete map of every context component: where it lives on the host, where it
+appears in the container, when it activates, and what loads it.
+
+| Component | Container path | Host origin | When active | Loader |
+|-----------|---------------|-------------|-------------|--------|
+| Global settings | `~/.claude/settings.json` | `global/.claude/settings.json` | Claude launch | Claude Code (user scope) |
+| Global CLAUDE.md | `~/.claude/CLAUDE.md` | `global/.claude/CLAUDE.md` | Claude launch | Claude Code |
+| Global rules | `~/.claude/rules/*.md` | `global/.claude/rules/` | Claude launch | Claude Code |
+| Global agents | `~/.claude/agents/*.md` | `global/.claude/agents/` | Claude launch | Claude Code |
+| Global skills | `~/.claude/skills/*/` | `global/.claude/skills/` | User invocation `/skill` | Claude Code |
+| Project settings | `/workspace/.claude/settings.json` | `projects/<n>/.claude/settings.json` | Claude launch | Claude Code (project scope) |
+| Project CLAUDE.md | `/workspace/.claude/CLAUDE.md` | `projects/<n>/.claude/CLAUDE.md` | Claude launch | Claude Code |
+| Project rules | `/workspace/.claude/rules/*.md` | `projects/<n>/.claude/rules/` | Claude launch | Claude Code |
+| Project agents | `/workspace/.claude/agents/*.md` | `projects/<n>/.claude/agents/` | Claude launch | Claude Code |
+| Project skills | `/workspace/.claude/skills/*/` | `projects/<n>/.claude/skills/` | User invocation `/skill` | Claude Code |
+| packs.md | `/workspace/.claude/packs.md` | Generated by `cco start` | Hook injection (automatic) | `session-context.sh` |
+| Pack knowledge | `/workspace/.packs/<name>/<file>` | `knowledge.source:` in pack.yml (`:ro` mount) | On-demand (Claude reads when relevant) | Claude Code |
+| Pack skills | `/workspace/.claude/skills/<s>/` | `global/packs/<name>/skills/` (copied at start) | User invocation `/skill` | Claude Code |
+| Pack agents | `/workspace/.claude/agents/*.md` | `global/packs/<name>/agents/` (copied at start) | Claude launch | Claude Code |
+| Pack rules | `/workspace/.claude/rules/*.md` | `global/packs/<name>/rules/` (copied at start) | Claude launch | Claude Code |
+| workspace.yml | `/workspace/.claude/workspace.yml` | Generated by `cco start` | On-demand (read by `/init-workspace`) | Claude Code (via skill) |
+| project.yml | `/workspace/.claude/project.yml` | `projects/<n>/project.yml` (`:rw` mount) | On-demand (written by `/init-workspace`) | Claude Code (via skill) |
+| Repo CLAUDE.md | `/workspace/<repo>/.claude/CLAUDE.md` | Repo itself | On-demand (nested project) | Claude Code |
+| SessionStart hook | `/usr/local/bin/cco-hooks/session-context.sh` | `config/hooks/session-context.sh` (baked at build) | Immediately after launch | Claude Code hooks |
+| MCP servers | `~/.claude.json` (merged) | `global/.claude/mcp.json` + `projects/<n>/mcp.json` | MCP init (Claude launch) | `entrypoint.sh` (jq merge) |
+| Auth state | `~/.claude.json` | `~/.claude.json` on host (mounted as `.seed:ro`, copied at startup) | Claude launch | `entrypoint.sh` (copy seed) |
+| Auto memory | `~/.claude/projects/-workspace/memory/` | `projects/<n>/claude-state/memory/` | Claude launch (prime 200 lines) | Claude Code |
+| Session transcripts | `~/.claude/projects/-workspace/` | `projects/<n>/claude-state/` | `/resume` command | Claude Code |
+| Git config | `~/.gitconfig` | `~/.gitconfig` on host | Git operations | Docker volume mount (`:ro`) |
+| SSH keys | `~/.ssh/` | `~/.ssh/` on host | Git/SSH operations | Docker volume mount (`:ro`) |
+
+---
+
+## 14. Detailed Notes
+
+### Global vs Project scope
+
+Claude Code has two configuration scopes:
+- **User scope** (`~/.claude/`): always loaded, affects all sessions
+- **Project scope** (`/workspace/.claude/`): loaded for the current workspace, overrides user scope
+
+The orchestrator maps these to:
+- `global/.claude/` → user scope (same for every project)
+- `projects/<n>/.claude/` → project scope (per-project)
+
+### packs.md injection
+
+`packs.md` is generated at `cco start` time and injected into `additionalContext`
+by `session-context.sh` at session startup. This is automatic and immutable —
+it does not depend on any `@import` in CLAUDE.md.
+
+Format (instructional, not `@import`):
+```
+The following knowledge files are available.
+Read them proactively when relevant to the current task:
+
+- /workspace/.packs/<name>/file.md — <description>
+```
+
+### Knowledge pack files
+
+Pack knowledge files are mounted `:ro` from the host (external workspace or
+pack's own `knowledge/` directory). They are available at
+`/workspace/.packs/<pack-name>/`. Claude reads them on-demand when relevant —
+the descriptions in `packs.md` guide this decision.
+
+### Pack skills / agents / rules
+
+Unlike knowledge (mounted), skills/agents/rules from packs are **copied** into
+`projects/<n>/.claude/` at `cco start` time. This avoids Docker volume
+collision (multiple packs cannot mount to the same directory). Copied files
+are regenerated on every `cco start`.
+
+### workspace.yml
+
+Generated idempotently at `cco start`. Provides a machine-readable summary of
+the project structure for the `/init-workspace` skill. Descriptions written by `/init-workspace`
+are preserved across regenerations (awk lookup on existing file).
+
+### project.yml mount
+
+`project.yml` is mounted read-write at `/workspace/.claude/project.yml` so
+the `/init-workspace` skill can write repo descriptions directly into it — persisting
+them on the host without requiring `cco stop`.
+
+### Auto memory
+
+Each project gets isolated auto memory: `projects/<n>/claude-state/memory/`
+is mounted at `~/.claude/projects/-workspace/memory/`. Claude Code loads the
+first 200 lines of `MEMORY.md` into every session's system prompt.
+
+The path `-workspace` (with a leading dash) matches Claude Code's internal
+key for `/workspace` directory sessions.
+
+### SessionStart hook
+
+`session-context.sh` runs once when Claude Code starts a session. It injects:
+1. Project name and teammate mode
+2. List of git repositories discovered under `/workspace/`
+3. MCP server names from `~/.claude.json`
+4. Contents of `/workspace/.claude/packs.md` (if present, excluding HTML comments)
+
+The hook output (`hookSpecificOutput.additionalContext`) appears in Claude's
+context but is not part of the conversation history.
+
+---
+
+## 15. Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| Pack files not in context | `packs.md` missing or empty | Check `cco start` output for "Generated .claude/packs.md"; verify pack.yml has `knowledge.files:` |
+| `/init-workspace` skill not found | Docker image outdated | Run `cco build` to rebuild the image; the skill is baked in at `/etc/claude-code/.claude/skills/init-workspace/SKILL.md` |
+| Repo not visible at `/workspace/<name>/` | Path doesn't exist on host | Check `repos.path:` in project.yml; ensure directory exists |
+| MCP server not loaded | mcp.json missing or bad JSON | Check `global/.claude/mcp.json`; run `cco start` and look for merge errors |
+| Auto memory not persisting | `claude-state/` not created | Run `cco start`; check for `migrate_memory_to_claude_state` in logs |
+| Context too large | Too many repos or large knowledge files | Reduce pack files; use `/compress` periodically |
