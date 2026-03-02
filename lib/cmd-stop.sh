@@ -27,6 +27,9 @@ cmd_stop() {
         else
             warn "No running session for '$project'"
         fi
+
+        # Clean up browser runtime state
+        [[ -f "$project_dir/.browser-port" ]] && rm -f "$project_dir/.browser-port"
     else
         local containers
         containers=$(docker ps --filter "name=cc-" --format '{{.Names}}' 2>/dev/null)

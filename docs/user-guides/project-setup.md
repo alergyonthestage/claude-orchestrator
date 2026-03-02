@@ -118,6 +118,32 @@ With `oauth` (default), credentials are seeded from the macOS Keychain into the 
 
 **Important**: Copying the authentication URL from a tmux session requires specific copy-paste steps. See [Copy & Paste in tmux Mode](./agent-teams.md#24-copy--paste-in-tmux-mode) for how to copy text from the container, including the [in-container login](#in-container-login-without-credential-seeding) section for this specific scenario.
 
+### Browser Automation (optional)
+
+Enable Claude to control a browser via Chrome DevTools Protocol (CDP). The browser runs on your host OS and is visible in real time while Claude operates it.
+
+```yaml
+browser:
+  enabled: true           # Activate chrome-devtools-mcp
+  mode: host              # Chrome runs on your host (default and only mode)
+  cdp_port: 9222          # Chrome remote debugging port (default: 9222)
+  mcp_args: []            # Extra flags for chrome-devtools-mcp
+```
+
+**Setup**:
+1. Add `browser.enabled: true` to `project.yml`, or use `cco start <project> --chrome` for a one-session override
+2. Launch Chrome with remote debugging: `cco chrome start`
+3. Start your session: `cco start <project>`
+
+Claude can now use browser tools (navigate, click, fill forms, read pages, take screenshots) via the `chrome-devtools-mcp` server.
+
+**Port conflicts**: If multiple projects have browser enabled simultaneously, ports are auto-assigned (9222 → 9223 → 9224...) with a warning. Use `cco chrome start --project <name>` to launch Chrome on the correct port.
+
+**Security notes**:
+- Chrome uses an isolated profile (`~/.chrome-debug`), separate from your main profile
+- Avoid navigating to sensitive sites (banking, admin) in the debug Chrome session
+- The CDP port binds to `127.0.0.1` only (not exposed to the network)
+
 ---
 
 ## 3. Writing a Good CLAUDE.md

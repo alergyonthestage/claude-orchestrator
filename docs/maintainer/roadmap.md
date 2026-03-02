@@ -129,27 +129,26 @@ Sprint 5 (differenziante)      Sprint 6 (ecosistema)
 
 ---
 
-### Sprint 4 — Browser Automation
+### Sprint 4 — Browser Automation ✅
 
 Required for frontend testing and debugging. Requires stable scope hierarchy (Sprint 3) for proper MCP configuration placement.
 
-#### #4 Browser MCP Integration
+#### #4 Browser MCP Integration — Implemented
 
 Enable Claude to control a browser via Chrome DevTools MCP, with the browser visible to the user on the host OS.
 
-**Approach** (see [analysis](./browser-mcp/analysis.md)):
-- Native "Claude in Chrome" doesn't work from Docker (IPC-local, no network transport)
-- Use **chrome-devtools-mcp** (Google, CDP-based, 29 tools) connecting to Chrome on the host via `host.docker.internal:9222`
-- Two modes: `host` (Chrome on host, native UI, user sees actions) and `container` (sibling Chrome container + noVNC)
-- Configured via `browser:` section in `project.yml`
-- `cco chrome` helper command for host-side Chrome launch
-- Telemetry disabled by default (`--no-usage-statistics --no-performance-crux`)
+**What was implemented**:
+- `browser.enabled` / `browser.mode: host` in `project.yml` + `--chrome` flag override
+- `chrome-devtools-mcp` pre-installed in Docker image
+- Auto-generated `browser-mcp.json` with privacy flags (`--no-usage-statistics`, `--no-performance-crux`)
+- Third MCP merge source in `entrypoint.sh`
+- CDP port conflict resolution with auto-assignment and `.browser-port` runtime file
+- `cco chrome [start|stop|status]` host-side helper with `--project` port resolution
+- `extra_hosts: host.docker.internal:host-gateway` for Linux compatibility
+- Support for custom `mcp_args` via `yml_get_list`
+- 18 new tests (12 dry-run + 6 chrome command)
 
-**Key design points**:
-- Pre-install `chrome-devtools-mcp` in Dockerfile for instant startup
-- MCP config injected in `.mcp.json` at `cco start` when `browser.enabled: true`
-- `extra_hosts: host.docker.internal:host-gateway` in docker-compose for Linux compatibility
-- Container mode uses `selenium/standalone-chrome` with noVNC on port 7900
+**Deferred to future sprint**: container mode (`mode: container` — sibling Chrome + noVNC)
 
 **Docs**: [analysis](./browser-mcp/analysis.md) | [design](./browser-mcp/design.md)
 

@@ -25,6 +25,7 @@ source "$LIB_DIR/cmd-init.sh"
 source "$LIB_DIR/cmd-start.sh"
 source "$LIB_DIR/cmd-new.sh"
 source "$LIB_DIR/cmd-stop.sh"
+source "$LIB_DIR/cmd-chrome.sh"
 source "$LIB_DIR/cmd-project.sh"
 source "$LIB_DIR/cmd-pack.sh"
 source "$LIB_DIR/cmd-update.sh"
@@ -47,6 +48,9 @@ Commands:
   pack show <n>          Show pack details
   pack remove <n>        Remove a pack
   pack validate [n]      Validate pack structure (all if no name)
+  chrome [start|stop|status]  Manage Chrome debug session on host
+    [--project <name>]        Auto-detect port from project runtime state
+    [--port <n>]              Explicit CDP port (default: 9222)
   update                 Update global/project config from defaults
   stop [project]         Stop running session(s)
   help                   Show this help message
@@ -91,6 +95,7 @@ case "$cmd" in
             *)        die "Unknown pack command: $subcmd" ;;
         esac
         ;;
+    chrome)  cmd_chrome "$@" ;;
     update)  cmd_update "$@" ;;
     stop)    cmd_stop "$@" ;;
     help)    usage ;;

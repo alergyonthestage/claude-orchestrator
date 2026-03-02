@@ -61,6 +61,10 @@ ARG CLAUDE_CODE_VERSION=latest
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 ENV CLAUDE_CODE_DISABLE_AUTOUPDATE=1
 
+# ── Framework MCP servers (pre-installed for instant startup) ─────────
+# chrome-devtools-mcp: browser automation via CDP (used by browser.enabled feature)
+RUN npm install -g chrome-devtools-mcp@latest
+
 # ── MCP Server packages (optional pre-installation) ──────────────────
 # Pre-install stdio MCP servers for faster startup.
 # Override at build time: cco build --mcp-packages "pkg1 pkg2"

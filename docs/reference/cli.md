@@ -129,12 +129,14 @@ Arguments:
 Options:
   --teammate-mode <m>  Override display mode: tmux | auto
   --api-key            Use ANTHROPIC_API_KEY instead of OAuth
+  --chrome             Enable browser automation for this session
   --dry-run            Show the generated docker-compose without running
   --port <p>           Add extra port mapping (repeatable)
   --env <K=V>          Add extra environment variable (repeatable)
 
 Examples:
   cco start my-saas
+  cco start my-saas --chrome
   cco start my-saas --teammate-mode auto
   cco start my-saas --port 9090:9090
   cco start my-saas --dry-run
@@ -320,7 +322,44 @@ docker ps --filter "name=cc-" -q | xargs docker stop
 
 ---
 
-### 3.7 `cco pack create <name>`
+### 3.7 `cco chrome [start|stop|status]`
+
+Manage a Chrome debug session on the host for browser automation. Chrome runs on the host OS with remote debugging enabled, and the container connects to it via `chrome-devtools-mcp`.
+
+```
+Usage: cco chrome [start|stop|status] [OPTIONS]
+
+Subcommands:
+  start    Launch Chrome with remote debugging (default)
+  stop     Kill the debug Chrome process
+  status   Check if CDP endpoint is reachable
+
+Options:
+  --project <name>   Auto-detect port from project runtime state
+  --port <n>         Explicit CDP port (default: 9222)
+
+Examples:
+  cco chrome                          # Launch Chrome on default port 9222
+  cco chrome start --project my-saas  # Launch on the port assigned to my-saas
+  cco chrome status                   # Check if Chrome is reachable
+  cco chrome stop                     # Kill the debug Chrome process
+```
+
+**Port resolution priority**:
+1. `--port <n>` — explicit flag
+2. `--project <name>` → reads `projects/<name>/.browser-port` (effective runtime port)
+3. `--project <name>` → falls back to `projects/<name>/project.yml` `browser.cdp_port`
+4. Default: `9222`
+
+**Notes**:
+- This command runs on the host, not inside the container
+- Chrome is launched with `--user-data-dir=$HOME/.chrome-debug` (isolated profile)
+- `--remote-allow-origins=*` is set to allow container connections
+- If the container is not running, a warning is shown but the port is still used
+
+---
+
+### 3.8 `cco pack create <name>`
 
 Create a new knowledge pack scaffold.
 
@@ -361,7 +400,7 @@ Examples:
 
 ---
 
-### 3.8 `cco pack list`
+### 3.9 `cco pack list`
 
 List all knowledge packs with resource counts.
 
@@ -381,7 +420,7 @@ Output:
 
 ---
 
-### 3.9 `cco pack show <name>`
+### 3.10 `cco pack show <name>`
 
 Show detailed information for a knowledge pack.
 
@@ -413,7 +452,7 @@ Examples:
 
 ---
 
-### 3.10 `cco pack remove <name> [--force]`
+### 3.11 `cco pack remove <name> [--force]`
 
 Remove a knowledge pack.
 
@@ -451,7 +490,7 @@ Examples:
 
 ---
 
-### 3.11 `cco pack validate [name]`
+### 3.12 `cco pack validate [name]`
 
 Validate pack structure and configuration.
 
@@ -486,7 +525,7 @@ Examples:
 
 ---
 
-### 3.12 `cco project show <name>`
+### 3.13 `cco project show <name>`
 
 Show detailed information for a configured project.
 
@@ -516,7 +555,7 @@ Examples:
 
 ---
 
-### 3.13 `cco project validate <name>`
+### 3.14 `cco project validate <name>`
 
 Validate project structure and configuration.
 
@@ -550,7 +589,7 @@ Examples:
 
 ---
 
-### 3.14 `cco update [OPTIONS]`
+### 3.15 `cco update [OPTIONS]`
 
 Update global and/or project configuration from defaults.
 

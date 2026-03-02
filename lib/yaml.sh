@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # lib/yaml.sh — Simple YAML parsers for project.yml and pack.yml
 #
-# Provides: yml_get(), yml_get_repos(), yml_get_ports(), yml_get_env(),
-#           yml_get_extra_mounts(), yml_get_packs(), yml_get_pack_knowledge_source(),
-#           yml_get_pack_knowledge_files(), yml_get_pack_skills(),
-#           yml_get_pack_agents(), yml_get_pack_rules()
+# Provides: yml_get(), yml_get_list(), yml_get_repos(), yml_get_ports(),
+#           yml_get_env(), yml_get_extra_mounts(), yml_get_packs(),
+#           yml_get_pack_knowledge_source(), yml_get_pack_knowledge_files(),
+#           yml_get_pack_skills(), yml_get_pack_agents(), yml_get_pack_rules()
 # Dependencies: none
 # Globals: none
 
@@ -40,6 +40,44 @@ yml_get() {
                 gsub(/^ +| +$/, "")
                 print
                 exit
+            }
+        ' "$file"
+    fi
+}
+
+# Read a simple list under a nested key (e.g., "browser.mcp_args")
+# Outputs one item per line (stripped of quotes)
+# Usage: yml_get_list <file> <key>
+yml_get_list() {
+    local file="$1"
+    local key="$2"
+
+    if [[ "$key" != *.* ]]; then
+        # Top-level list
+        awk -v key="$key" '
+            $0 ~ "^"key":" { in_list=1; next }
+            in_list && /^[^ #]/ { exit }
+            in_list && /^  - / {
+                sub(/^  - */, "")
+                gsub(/["\047]/, "")
+                gsub(/^ +| +$/, "")
+                if ($0 != "") print
+            }
+        ' "$file"
+    else
+        local parent="${key%%.*}"
+        local child="${key#*.}"
+        awk -v parent="$parent" -v child="$child" '
+            $0 ~ "^"parent":" { in_block=1; next }
+            in_block && /^[^ ]/ { exit }
+            in_block && $0 ~ "^  "child":" { in_list=1; next }
+            in_list && /^  [^ ]/ && !/^    / { exit }
+            in_list && /^[^ ]/ { exit }
+            in_list && /^    - / {
+                sub(/^    - */, "")
+                gsub(/["\047]/, "")
+                gsub(/^ +| +$/, "")
+                if ($0 != "") print
             }
         ' "$file"
     fi

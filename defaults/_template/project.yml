@@ -37,6 +37,20 @@ repos: []
 # packs:
 #   - my-pack
 
+# ── Browser Automation (optional) ───────────────────────────────────
+# Enable Claude to control a browser via chrome-devtools-mcp (CDP).
+# The browser runs on your host OS and is visible while Claude operates it.
+#
+# Prerequisites:
+#   1. Run: cco chrome start   (launches Chrome with remote debugging)
+#   2. Set: browser.enabled: true in this file (or use --chrome flag)
+#
+# browser:
+#   enabled: false          # true to activate chrome-devtools-mcp
+#   mode: host              # "host" = Chrome on host (default and only mode)
+#   cdp_port: 9222          # Chrome remote debugging port (default: 9222)
+#   mcp_args: []            # extra flags for chrome-devtools-mcp
+
 # ── Docker options ───────────────────────────────────────────────────
 docker:
   # image: claude-orchestrator:latest  # Custom Docker image for this project

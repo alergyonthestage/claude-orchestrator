@@ -663,3 +663,277 @@ test_dry_run_mcp_packages_not_mounted_when_missing() {
     run_cco start "test-proj" --dry-run
     assert_file_not_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" "mcp-packages.txt"
 }
+
+# ── Browser MCP integration ────────────────────────────────────────
+
+test_browser_disabled_by_default() {
+    # No browser section → no extra_hosts, no browser-mcp.json mount
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --dry-run
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    assert_file_not_contains "$compose" "extra_hosts"
+    assert_file_not_contains "$compose" "browser-mcp.json"
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/browser-mcp.json"
+}
+
+test_browser_host_mode_extra_hosts() {
+    # browser.enabled: true → extra_hosts with host.docker.internal
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+browser:
+  enabled: true
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" "host.docker.internal:host-gateway"
+}
+
+test_browser_mcp_json_generated() {
+    # browser.enabled: true → browser-mcp.json created with correct content
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+browser:
+  enabled: true
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    local mcp_file="$CCO_PROJECTS_DIR/test-proj/browser-mcp.json"
+    assert_file_exists "$mcp_file"
+    assert_file_contains "$mcp_file" "chrome-devtools-mcp"
+    assert_file_contains "$mcp_file" "host.docker.internal:9222"
+}
+
+test_browser_mcp_mounted_in_compose() {
+    # browser.enabled: true → browser-mcp.json mounted read-only in compose
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+browser:
+  enabled: true
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" \
+        "./browser-mcp.json:/workspace/browser-mcp.json:ro"
+}
+
+test_browser_custom_cdp_port() {
+    # browser.cdp_port: 9223 → browserUrl uses port 9223
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+browser:
+  enabled: true
+  cdp_port: 9223
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/browser-mcp.json" "host.docker.internal:9223"
+}
+
+test_browser_chrome_flag_override() {
+    # --chrome flag activates browser even without browser.enabled in project.yml
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --chrome --dry-run
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    assert_file_contains "$compose" "host.docker.internal:host-gateway"
+    assert_file_contains "$compose" "browser-mcp.json:/workspace/browser-mcp.json:ro"
+    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/browser-mcp.json"
+}
+
+test_browser_disabled_no_mcp_file() {
+    # browser.enabled: false → no browser-mcp.json created
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+browser:
+  enabled: false
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/browser-mcp.json"
+}
+
+test_browser_mcp_privacy_flags() {
+    # Generated config always contains privacy flags
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+browser:
+  enabled: true
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    local mcp_file="$CCO_PROJECTS_DIR/test-proj/browser-mcp.json"
+    assert_file_contains "$mcp_file" "--no-usage-statistics"
+    assert_file_contains "$mcp_file" "--no-performance-crux"
+}
+
+test_browser_mcp_args_appended() {
+    # mcp_args: ["--slim"] → appended after privacy flags
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+browser:
+  enabled: true
+  mcp_args:
+    - "--slim"
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    local mcp_file="$CCO_PROJECTS_DIR/test-proj/browser-mcp.json"
+    assert_file_contains "$mcp_file" "--slim"
+}
+
+test_browser_user_mcp_json_untouched() {
+    # User's mcp.json is not modified when browser is enabled
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+browser:
+  enabled: true
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    echo '{"mcpServers":{"github":{}}}' > "$CCO_PROJECTS_DIR/test-proj/mcp.json"
+    run_cco start "test-proj" --dry-run
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/mcp.json" '"github"'
+    assert_file_not_contains "$CCO_PROJECTS_DIR/test-proj/mcp.json" "chrome-devtools"
+}
+
+test_browser_port_written_to_file() {
+    # .browser-port is created with the effective port
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+browser:
+  enabled: true
+  cdp_port: 9225
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    local port_file="$CCO_PROJECTS_DIR/test-proj/.browser-port"
+    assert_file_exists "$port_file"
+    assert_equals "9225" "$(cat "$port_file")"
+}
+
+test_browser_dry_run_shows_browser_info() {
+    # Dry-run output includes browser mode and port info
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+browser:
+  enabled: true
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    assert_output_contains "Browser: host mode"
+    assert_output_contains "browser-mcp.json"
+}
