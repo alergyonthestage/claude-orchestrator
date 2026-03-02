@@ -1,13 +1,29 @@
-# Quick Start
+# Installazione e Quick Start
+
+> Da zero a sessione funzionante in 5 minuti.
+
+---
+
+## Prerequisiti
+
+| Requisito | Note |
+|-----------|------|
+| **macOS o Linux** | Windows non supportato (WSL2 non testato) |
+| **Docker Desktop** (macOS) o **Docker Engine** (Linux) | Deve essere in esecuzione |
+| **Bash 4+** | macOS include bash 3.2 (`/bin/bash`) — sufficiente per il CLI |
+| **jq** | `brew install jq` (macOS) / `apt install jq` (Linux) |
+| **Account Claude Code** | Pro, Team, Enterprise, oppure API key |
+
+---
 
 ## Setup
 
 ```bash
-# 1. Clone the repo
+# 1. Clona il repo
 git clone <repo-url> ~/claude-orchestrator
 cd ~/claude-orchestrator
 
-# 2. Add the CLI to PATH
+# 2. Aggiungi il CLI al PATH
 # bash:
 echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.bashrc
 source ~/.bashrc
@@ -16,71 +32,84 @@ source ~/.bashrc
 # echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.zshrc
 # source ~/.zshrc
 
-# 3. Initialize user config and build the Docker image
+# 3. Inizializza configurazione utente e build dell'immagine Docker
 cco init
 ```
 
-## Usage
+`cco init` esegue tre operazioni:
+1. Copia i default utente in `global/.claude/` (agent, skill, regole, settings)
+2. Crea la directory `projects/`
+3. Avvia `cco build` per costruire l'immagine Docker
+
+---
+
+## Uso rapido
 
 ```bash
-# Create a project
+# Crea un progetto
 cco project create my-app --repo ~/projects/my-app
 
-# Configure the project
+# Configura il progetto
 vim projects/my-app/project.yml         # repos, ports, auth
-vim projects/my-app/.claude/CLAUDE.md   # instructions for Claude
+vim projects/my-app/.claude/CLAUDE.md   # istruzioni per Claude
 
-# Start a session
+# Avvia una sessione
 cco start my-app
 
-# Tip: on the first session, use /init to auto-generate
-# a detailed CLAUDE.md based on the codebase
+# Tip: alla prima sessione, usa /init-workspace per generare
+# automaticamente un CLAUDE.md dettagliato basato sul codebase
 ```
 
-For temporary sessions without creating a project:
+Per sessioni temporanee senza creare un progetto:
 
 ```bash
 cco new --repo ~/projects/experiment
 cco new --repo ~/projects/api --repo ~/projects/frontend --port 3000:3000
 ```
 
-## Commands
+---
 
-| Command | Description |
+## Comandi principali
+
+| Comando | Descrizione |
 |---------|-------------|
-| `cco init` | Initialize user config from defaults |
-| `cco build` | Build the Docker image |
-| `cco build --no-cache` | Full rebuild (updates Claude Code) |
-| `cco build --claude-version x.y.z` | Pin Claude Code to a specific version |
-| `cco start <project>` | Start session for a configured project |
-| `cco start <project> --dry-run` | Show the generated docker-compose without running |
-| `cco new --repo <path>` | Temporary session with specific repos |
-| `cco project create <name>` | Create a new project from template |
-| `cco project list` | List available projects |
-| `cco stop [project]` | Stop running session(s) |
+| `cco init` | Inizializza configurazione utente e build immagine |
+| `cco build` | Build dell'immagine Docker |
+| `cco build --no-cache` | Rebuild completo (aggiorna Claude Code) |
+| `cco build --claude-version x.y.z` | Fissa Claude Code a una versione specifica |
+| `cco start <project>` | Avvia sessione per un progetto configurato |
+| `cco start <project> --dry-run` | Mostra il docker-compose generato senza eseguire |
+| `cco new --repo <path>` | Sessione temporanea con repository specifiche |
+| `cco project create <name>` | Crea un nuovo progetto da template |
+| `cco project list` | Lista progetti disponibili |
+| `cco stop [project]` | Ferma sessione/i in esecuzione |
 
-## Project Configuration
+---
 
-Each project lives in `projects/<name>/` and contains:
+## Configurazione progetto
 
-- **`project.yml`** — repos to mount, ports, environment variables, authentication method
-- **`.claude/CLAUDE.md`** — project-specific instructions for Claude
-- **`.claude/settings.json`** — global settings overrides (optional)
-- **`.claude/agents/`** — project-specific subagents (optional)
+Ogni progetto vive in `projects/<name>/` e contiene:
 
-For the full `project.yml` format see [docs/reference/cli.md](docs/reference/cli.md#4-project-configuration-format-projectyml).
+- **`project.yml`** — repository da montare, porte, variabili d'ambiente, metodo di autenticazione
+- **`.claude/CLAUDE.md`** — istruzioni specifiche per Claude
+- **`.claude/settings.json`** — override delle impostazioni globali (opzionale)
+- **`.claude/agents/`** — subagent specifici del progetto (opzionale)
 
-## Knowledge Packs
+Per il formato completo di `project.yml` vedi [cli.md](../reference/cli.md).
 
-Packs let you share cross-project documentation (conventions, business overviews, guidelines) and optional skills/agents/rules without copying files.
+---
+
+## Knowledge pack
+
+I pack permettono di condividere documentazione cross-progetto (convenzioni, overview di business, linee guida) e opzionalmente skill/agent/rule senza copiare file.
 
 ```bash
-# 1. Define a pack in global/packs/<name>/pack.yml
+# 1. Definisci un pack in global/packs/<name>/pack.yml
 cat > global/packs/my-client/pack.yml << 'EOF'
 name: my-client
 
 knowledge:
-  source: ~/documents/my-client-knowledge   # directory with your docs
+  source: ~/documents/my-client-knowledge   # directory con i documenti
   files:
     - path: backend-conventions.md
       description: "Read when writing backend code or APIs"
@@ -89,46 +118,77 @@ knowledge:
     - testing-guidelines.md
 EOF
 
-# 2. Activate the pack in project.yml
+# 2. Attiva il pack in project.yml
 # packs:
 #   - my-client
 
-# 3. Start — packs are injected automatically, no CLAUDE.md edit needed
+# 3. Avvia — i pack vengono iniettati automaticamente
 cco start my-app
 ```
 
-`cco start` mounts the source directory read-only, generates `packs.md` with an instructional list of files, and the `session-context.sh` hook injects it into `additionalContext` at session start. Files stay in your knowledge repo — zero duplication.
+`cco start` monta la directory sorgente in sola lettura, genera `packs.md` con la lista dei file, e l'hook `session-context.sh` la inietta in `additionalContext` all'avvio. I file originali restano nella tua directory — zero duplicazione.
 
-For details see [docs/reference/cli.md §4.2](docs/reference/cli.md) and [docs/guides/project-setup.md](docs/guides/project-setup.md).
+---
 
-## Additional Options
+## Opzioni aggiuntive
 
 ```bash
-# Override agent teams display mode
-cco start my-app --teammate-mode auto    # iTerm2 native (requires setup)
-cco start my-app --teammate-mode tmux    # default, works everywhere
+# Override modalita agent team
+cco start my-app --teammate-mode auto    # iTerm2 nativo (richiede setup)
+cco start my-app --teammate-mode tmux    # default, funziona ovunque
 
-# Use API key instead of OAuth
+# Usa API key invece di OAuth
 cco start my-app --api-key
 
-# Extra ports and environment variables
+# Porte e variabili d'ambiente aggiuntive
 cco start my-app --port 9090:9090 --env DEBUG=true
 ```
 
-## Documentation
+---
 
-For more details see [docs/](docs/) (organized in `guides/`, `reference/`, `maintainer/`):
+## Troubleshooting primo avvio
 
-**User Guides**
-- [project-setup.md](docs/guides/project-setup.md) — Project setup, repos vs extra_mounts vs packs, writing CLAUDE.md
-- [subagents.md](docs/guides/subagents.md) — Custom subagents
-- [display-modes.md](docs/guides/display-modes.md) — Display modes: tmux vs iTerm2
+### Docker non in esecuzione
 
-**Reference**
-- [cli.md](docs/reference/cli.md) — Commands and `project.yml` format (incl. §4.2 Knowledge Packs)
-- [context.md](docs/reference/context.md) — Context hierarchy and settings
+```
+Error: Docker daemon is not running. Start Docker Desktop.
+```
 
-**Maintainer**
-- [architecture.md](docs/maintainer/architecture.md) — Architecture and design decisions
-- [docker.md](docs/maintainer/docker.md) — Docker image, compose, networking
-- [roadmap.md](docs/maintainer/roadmap.md) — Planned features
+Avvia Docker Desktop (macOS) o il servizio Docker (`sudo systemctl start docker` su Linux), poi riprova.
+
+### Build dell'immagine fallisce
+
+```bash
+# Riprova con una build pulita
+cco build --no-cache
+```
+
+Se il problema persiste, verifica la connessione internet (l'immagine scarica `node:22-bookworm` e i pacchetti npm) e che Docker abbia sufficiente spazio disco.
+
+### Conflitto di porte
+
+```
+Error: Port 3000 is already in use.
+```
+
+Un altro servizio sta usando la porta. Fermalo, oppure usa una porta diversa:
+
+```bash
+cco start my-app --port 3001:3000
+```
+
+### Immagine Docker non trovata
+
+```
+Error: Docker image 'claude-orchestrator:latest' not found. Run 'cco build' first.
+```
+
+Esegui `cco build` per costruire l'immagine. Se hai gia eseguito `cco init`, la build dovrebbe essere stata avviata automaticamente.
+
+---
+
+## Prossimi passi
+
+- [Il tuo primo progetto](first-project.md) — tutorial guidato passo-passo
+- [Concetti chiave](concepts.md) — gerarchia di contesto, knowledge pack, agent team
+- [Overview](overview.md) — cos'e e come funziona claude-orchestrator
