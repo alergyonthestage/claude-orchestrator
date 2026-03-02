@@ -48,7 +48,9 @@ claude-orchestrator/
 ├── defaults/                               # ── TOOL DEFAULTS (tracked) ────
 │   ├── managed/                            # Framework infrastructure (baked in Docker image → /etc/claude-code/)
 │   │   ├── managed-settings.json           # Hooks, env vars, deny rules, statusLine (non-overridable)
-│   │   └── CLAUDE.md                       # Framework instructions (Docker env, workspace, agent teams)
+│   │   ├── CLAUDE.md                       # Framework instructions (Docker env, workspace, agent teams)
+│   │   └── .claude/skills/
+│   │       └── init-workspace/SKILL.md     # /init-workspace skill (managed, non-overridable)
 │   ├── global/                             # User defaults (copied once by cco init → ~/.claude/)
 │   │   └── .claude/
 │   │       ├── CLAUDE.md                   # Global workflow instructions
@@ -66,7 +68,6 @@ claude-orchestrator/
 │   │           ├── analyze/SKILL.md        # /analyze skill
 │   │           ├── commit/SKILL.md         # /commit skill
 │   │           ├── design/SKILL.md         # /design skill
-│   │           ├── init-workspace/SKILL.md # /init-workspace skill
 │   │           └── review/SKILL.md         # /review skill
 │   └── _template/                          # Default project template
 │       ├── project.yml                     # Project metadata & config (with comments)
@@ -158,6 +159,7 @@ Framework infrastructure files, baked into the Docker image at `/etc/claude-code
 |------|---------|-------|
 | `managed-settings.json` | Framework settings | Hooks (SessionStart, SubagentStart, PreCompact), env vars, statusLine, deny rules |
 | `CLAUDE.md` | Framework instructions | Docker environment, workspace layout, agent team behavior |
+| `.claude/skills/init-workspace/SKILL.md` | `/init-workspace` skill | Initialize/refresh project CLAUDE.md. Managed: non-overridable, updated via `cco build` |
 
 ### defaults/global/.claude/
 
@@ -178,7 +180,6 @@ User defaults, copied to `global/.claude/` once by `cco init`. User owns these f
 | `skills/commit/SKILL.md` | `/commit` skill | Conventional commit creation with confirmation |
 | `skills/design/SKILL.md` | `/design` skill | Implementation planning mode |
 | `skills/review/SKILL.md` | `/review` skill | Structured code review with checklist |
-| `skills/init-workspace/SKILL.md` | `/init-workspace` skill | Initialize/refresh project CLAUDE.md from workspace repos |
 
 ### defaults/_template/
 

@@ -421,10 +421,13 @@ See [SUBAGENTS.md](../guides/subagents.md) for full specifications.
 
 ### 7.1 Resolution
 
-Claude Code discovers skills from:
-1. `~/.claude/skills/` — User-level (our `global/.claude/skills/`)
-2. `/workspace/.claude/skills/` — Project-level
-3. `/workspace/<repo>/.claude/skills/` — Repo-level (on-demand)
+Claude Code discovers skills from (highest priority first):
+1. `/etc/claude-code/.claude/skills/` — Managed/Enterprise (our `defaults/managed/.claude/skills/`, baked in image)
+2. `~/.claude/skills/` — User-level (our `global/.claude/skills/`)
+3. `/workspace/.claude/skills/` — Project-level
+4. `/workspace/<repo>/.claude/skills/` — Repo-level (on-demand)
+
+When skills share the same name across levels, higher-priority locations win.
 
 ### 7.2 Skill Format
 
@@ -453,9 +456,17 @@ context: fork                    # Optional: run in isolated subagent
 Skill instructions here. Use $ARGUMENTS for user input.
 ```
 
-### 7.3 Default Skills
+### 7.3 Managed Skills
 
-Global skills live in `defaults/global/.claude/skills/`, copied once to `global/.claude/skills/` by `cco init`. They are user-owned — freely customizable and never overwritten. They are mounted read-only at `~/.claude/skills/` inside the container, available in all projects.
+Managed skills live in `defaults/managed/.claude/skills/`, baked into the Docker image at `/etc/claude-code/.claude/skills/`. They are non-overridable (enterprise-level priority) and updated only via `cco build`.
+
+| Skill | Command | Context | Purpose |
+|-------|---------|---------|---------|
+| `init-workspace/SKILL.md` | `/init-workspace` | inline | Initialize or refresh project CLAUDE.md from workspace.yml |
+
+### 7.4 User Skills
+
+User skills live in `defaults/global/.claude/skills/`, copied once to `global/.claude/skills/` by `cco init`. They are user-owned — freely customizable and never overwritten. They are mounted read-only at `~/.claude/skills/` inside the container, available in all projects.
 
 | Skill | Command | Context | Purpose |
 |-------|---------|---------|---------|
@@ -463,9 +474,8 @@ Global skills live in `defaults/global/.claude/skills/`, copied once to `global/
 | `design/SKILL.md` | `/design` | `fork` (Plan) | Design mode with implementation planning template |
 | `review/SKILL.md` | `/review` | inline | Code review with security/performance/correctness checklist |
 | `commit/SKILL.md` | `/commit` | inline | Conventional commit (manual-only, `disable-model-invocation`) |
-| `init-workspace/SKILL.md` | `/init-workspace` | inline | Initialize or refresh project CLAUDE.md from workspace.yml |
 
-### 7.4 Project-Specific Skills
+### 7.5 Project-Specific Skills
 
 Projects can add custom skills in `projects/<name>/.claude/skills/`. These are mounted read-write at `/workspace/.claude/skills/`. **Note**: For skills, User > Project — user-level skills take precedence over project-level skills with the same name. Packs can add new skills but cannot override existing global ones. See [scope-design.md §3.5](../maintainer/scope-design.md) for details.
 

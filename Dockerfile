@@ -93,7 +93,10 @@ RUN chown claude:claude /home/claude/.tmux.conf \
 
 # ── Managed settings (framework infrastructure — non-overridable) ────
 COPY --chown=root:root defaults/managed/ /etc/claude-code/
-RUN chmod -R 644 /etc/claude-code/ && chmod 755 /etc/claude-code/
+# Directories need 755 (execute bit for traversal); files need 644 (read-only).
+# Simple chmod -R 644 would break nested dirs like .claude/skills/init-workspace/.
+RUN find /etc/claude-code/ -type d -exec chmod 755 {} + \
+    && find /etc/claude-code/ -type f -exec chmod 644 {} +
 
 WORKDIR /workspace
 

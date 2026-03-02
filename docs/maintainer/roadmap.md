@@ -21,7 +21,7 @@ Knowledge files are injected automatically via `session-context.sh` hook (no `@.
 
 ### /init-workspace Skill ✓
 
-Custom project initialization skill at `defaults/system/.claude/skills/init-workspace/SKILL.md` (synced to `global/.claude/skills/` by system sync). Uses a distinct name to avoid clashing with the built-in `/init` command. Reads `workspace.yml`, explores repositories, generates a structured CLAUDE.md, and writes descriptions back to `workspace.yml`.
+Managed project initialization skill at `defaults/managed/.claude/skills/init-workspace/SKILL.md` (baked into the Docker image at `/etc/claude-code/.claude/skills/init-workspace/`). Uses a distinct name to avoid clashing with the built-in `/init` command. Reads `workspace.yml`, explores repositories, generates a structured CLAUDE.md, and writes descriptions back to `workspace.yml`. Non-overridable — updated only via `cco build`.
 
 ### Review Fixes Sprint 1 ✓
 

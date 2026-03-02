@@ -186,7 +186,6 @@ manifest:
   skills/analyze/SKILL.md: <sha256>
   skills/commit/SKILL.md: <sha256>
   skills/design/SKILL.md: <sha256>
-  skills/init-workspace/SKILL.md: <sha256>
   skills/review/SKILL.md: <sha256>
 ```
 
