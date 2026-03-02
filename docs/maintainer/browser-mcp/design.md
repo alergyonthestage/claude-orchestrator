@@ -18,6 +18,7 @@
 8. [Backward Compatibility](#8-backward-compatibility)
 9. [Test Plan](#9-test-plan)
 10. [Security Notes](#10-security-notes)
+11. [Implementation Plan](#11-implementation-plan)
 
 > **Revision note (2026-03-02)**: Added port conflict resolution (D8, D9): auto-assign
 > with warning, `.browser-port` runtime file, `cco chrome --project` flag.
@@ -44,7 +45,7 @@ runs on the host OS and is visible to the user in real time.
 - Playwright MCP as alternative
 
 **References:**
-- [analysis.md](../future/browser-mcp/analysis.md) — options evaluation, requirements, open questions resolved
+- [analysis.md](./analysis.md) — options evaluation, requirements, open questions resolved
 - [roadmap.md](../roadmap.md) — Sprint 4 position
 
 ---
@@ -242,10 +243,19 @@ Add `chrome-devtools-mcp` to the global npm install block alongside Claude Code:
 
 ```dockerfile
 # MCP servers — pre-installed for instant startup
-RUN npm install -g chrome-devtools-mcp
+# chrome-devtools-mcp is a framework dependency (not a user package),
+# hardcoded like Claude Code itself. It is always available in the image
+# regardless of per-project configuration. Projects without browser.enabled
+# simply never mount the browser-mcp.json that references it.
+RUN npm install -g chrome-devtools-mcp@latest
 ```
 
 Placement: after the Claude Code install, before `COPY` of config files.
+
+> **Note**: This is intentionally hardcoded rather than using `MCP_PACKAGES`.
+> `chrome-devtools-mcp` is a framework-level dependency — the orchestrator
+> manages its lifecycle. User MCP packages (`mcp-packages.txt`) serve a
+> different purpose: per-project, user-chosen servers.
 
 ### 5.2 `lib/cmd-start.sh`
 
@@ -257,14 +267,17 @@ local browser_enabled browser_mode browser_cdp_port browser_effective_port
 browser_enabled=$(yml_get "$project_yml" "browser.enabled")
 [[ "$browser_enabled" != "true" ]] && browser_enabled="false"
 
-# --chrome flag overrides project.yml
-[[ "${opt_chrome:-false}" == "true" ]] && browser_enabled="true"
-
 browser_mode=$(yml_get "$project_yml" "browser.mode")
 [[ -z "$browser_mode" ]] && browser_mode="host"
 
+# --chrome flag overrides project.yml (forces enabled + host mode)
+[[ "${opt_chrome:-false}" == "true" ]] && browser_enabled="true" && browser_mode="host"
+
 browser_cdp_port=$(yml_get "$project_yml" "browser.cdp_port")
 [[ -z "$browser_cdp_port" ]] && browser_cdp_port="9222"
+
+local browser_mcp_args=""
+browser_mcp_args=$(yml_get_list "$project_yml" "browser.mcp_args")
 
 # Resolve effective port (auto-assign if preferred port is taken)
 if [[ "$browser_enabled" == "true" && "$browser_mode" == "host" ]]; then
@@ -275,31 +288,34 @@ fi
 #### Port conflict resolution functions
 
 ```bash
-# Returns a space-separated list of CDP ports claimed by running cco sessions
-# (excludes the current project to allow restart without self-conflict)
+# Returns CDP ports claimed by running cco sessions (one per line).
+# Iterates project directories (not container names) to avoid mismatch
+# when project.yml `name:` differs from the directory name.
 _collect_claimed_browser_ports() {
     local current_project="$1"
     local claimed=()
-    local containers
-    containers=$(docker ps --filter "name=cc-" --format "{{.Names}}" 2>/dev/null) || true
-    while IFS= read -r container; do
-        [[ -z "$container" ]] && continue
-        local proj="${container#cc-}"
+    for proj_dir in "$PROJECTS_DIR"/*/; do
+        [[ ! -d "$proj_dir" ]] && continue
+        local proj; proj=$(basename "$proj_dir")
         [[ "$proj" == "$current_project" ]] && continue
-        local yml="$PROJECTS_DIR/$proj/project.yml"
+        local yml="$proj_dir/project.yml"
         [[ ! -f "$yml" ]] && continue
-        local enabled port
-        enabled=$(yml_get "$yml" "browser.enabled")
+        local enabled; enabled=$(yml_get "$yml" "browser.enabled")
         [[ "$enabled" != "true" ]] && continue
-        # Prefer the runtime .browser-port (actual effective port)
-        if [[ -f "$PROJECTS_DIR/$proj/.browser-port" ]]; then
-            port=$(cat "$PROJECTS_DIR/$proj/.browser-port")
+        # Verify container is actually running (use yml name, fallback to dir name)
+        local yml_name; yml_name=$(yml_get "$yml" "name")
+        [[ -z "$yml_name" ]] && yml_name="$proj"
+        local container="cc-${yml_name}"
+        docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${container}$" || continue
+        # Read effective port (runtime file > project.yml > default)
+        if [[ -f "$proj_dir/.browser-port" ]]; then
+            claimed+=("$(cat "$proj_dir/.browser-port")")
         else
-            port=$(yml_get "$yml" "browser.cdp_port")
+            local port; port=$(yml_get "$yml" "browser.cdp_port")
             [[ -z "$port" ]] && port="9222"
+            claimed+=("$port")
         fi
-        claimed+=("$port")
-    done <<< "$containers"
+    done
     printf '%s\n' "${claimed[@]}"
 }
 
@@ -307,8 +323,10 @@ _collect_claimed_browser_ports() {
 _resolve_browser_port() {
     local preferred="$1"
     local current_project="$2"
-    local -a claimed
-    mapfile -t claimed < <(_collect_claimed_browser_ports "$current_project")
+    local claimed=()
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && claimed+=("$line")
+    done < <(_collect_claimed_browser_ports "$current_project")
 
     local port="$preferred"
     while true; do
@@ -340,12 +358,17 @@ In the `while` loop where CLI arguments are parsed, add:
 
 #### Generate `browser-mcp.json` and `.browser-port`
 
+> **Execution order**: `_generate_browser_mcp` is called BEFORE the compose
+> generation block. The compose volume mount uses a simple
+> `[[ "$browser_enabled" == "true" ]]` check — it does not test for the
+> file's existence because the file is always generated first when enabled.
+
 Called before `docker compose run`, after port resolution:
 
 ```bash
 if [[ "$browser_enabled" == "true" ]]; then
     _generate_browser_mcp "$project_dir/browser-mcp.json" \
-        "$browser_mode" "$browser_effective_port"
+        "$browser_mode" "$browser_effective_port" "$browser_mcp_args"
     # Write effective port for cco chrome --project and cco stop
     echo "$browser_effective_port" > "$project_dir/.browser-port"
 fi
@@ -353,7 +376,7 @@ fi
 
 ```bash
 _generate_browser_mcp() {
-    local out_file="$1" mode="$2" cdp_port="$3"
+    local out_file="$1" mode="$2" cdp_port="$3" mcp_args="$4"
 
     local browser_url
     if [[ "$mode" == "host" ]]; then
@@ -363,6 +386,15 @@ _generate_browser_mcp() {
         browser_url="http://browser:${cdp_port}"
     fi
 
+    # Build extra args JSON lines from mcp_args (newline-separated list)
+    local extra_args=""
+    if [[ -n "$mcp_args" ]]; then
+        while IFS= read -r arg; do
+            [[ -n "$arg" ]] && extra_args+=",
+        \"${arg}\""
+        done <<< "$mcp_args"
+    fi
+
     printf '{
   "mcpServers": {
     "chrome-devtools": {
@@ -370,23 +402,33 @@ _generate_browser_mcp() {
       "args": [
         "--browserUrl=%s",
         "--no-usage-statistics",
-        "--no-performance-crux"
+        "--no-performance-crux"%s
       ]
     }
   }
-}\n' "$browser_url" > "$out_file"
+}\n' "$browser_url" "$extra_args" > "$out_file"
 }
 ```
 
 #### `docker-compose.yml` generation — `extra_hosts`
 
-In the `services.claude:` block, after the `networks:` entry:
+Injection point: between the `ports:` block (lines ~307-322 of `cmd-start.sh`)
+and the final `cat <<YAML` (line ~325) that emits `networks:` + `working_dir:`.
+`extra_hosts` is a service-level key and must appear before `networks:`.
 
 ```bash
+# extra_hosts (browser host mode)
 if [[ "$browser_enabled" == "true" && "$browser_mode" == "host" ]]; then
-    printf '    extra_hosts:\n'
-    printf '      - "host.docker.internal:host-gateway"\n'
+    echo "    extra_hosts:"
+    echo '      - "host.docker.internal:host-gateway"'
 fi
+
+# Network (MUST be the last service-level section, followed by top-level networks)
+cat <<YAML
+    networks:
+      - ${network}
+    working_dir: /workspace
+...
 ```
 
 #### `docker-compose.yml` generation — browser-mcp.json mount
@@ -471,16 +513,11 @@ This ensures the port is released for other sessions. If `cco stop` is not calle
 stale file from a dead session does not block port assignment — the port from a
 non-running container is not in the `docker ps` output and is therefore ignored.
 
-### 5.6 `.gitignore` additions
+### 5.6 `.gitignore` — no action needed
 
-In `defaults/_template/.gitignore` (or equivalent), add:
-
-```
-browser-mcp.json
-.browser-port
-```
-
-Both files are auto-generated runtime artifacts alongside `docker-compose.yml`.
+The `projects/` directory is already fully gitignored by the root `.gitignore`.
+Both `browser-mcp.json` and `.browser-port` live inside `projects/<name>/`,
+so no additional `.gitignore` entries are required.
 
 ---
 
@@ -498,7 +535,6 @@ Both files are auto-generated runtime artifacts alongside `docker-compose.yml`.
         "--no-usage-statistics",
         "--no-performance-crux"
       ]
-    }
     }
   }
 }
@@ -589,6 +625,14 @@ _chrome_resolve_port() {
     fi
 
     if [[ -n "$opt_project" ]]; then
+        # Warn if container is not running (stale runtime file)
+        local yml_name container_name
+        yml_name=$(yml_get "$PROJECTS_DIR/$opt_project/project.yml" "name" 2>/dev/null)
+        [[ -z "$yml_name" ]] && yml_name="$opt_project"
+        container_name="cc-${yml_name}"
+        if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${container_name}$"; then
+            warn "Container ${container_name} is not running. Port may be stale."
+        fi
         local runtime_file="$PROJECTS_DIR/$opt_project/.browser-port"
         if [[ -f "$runtime_file" ]]; then
             cat "$runtime_file"; return
@@ -667,12 +711,16 @@ _chrome_stop() {
         info "No Chrome debug session found on port ${port}"
         return 0
     fi
-    local pid
-    pid=$(lsof -ti "tcp:${port}" 2>/dev/null | head -1)
+    local pid=""
+    if command -v lsof &>/dev/null; then
+        pid=$(lsof -ti "tcp:${port}" 2>/dev/null | head -1)
+    elif command -v fuser &>/dev/null; then
+        pid=$(fuser "${port}/tcp" 2>/dev/null | awk '{print $1}')
+    fi
     if [[ -n "$pid" ]]; then
         kill "$pid" 2>/dev/null && ok "Chrome debug session stopped (pid ${pid})"
     else
-        warn "Could not find process on port ${port}"
+        warn "Could not find process on port ${port}. Kill Chrome manually."
     fi
 }
 
@@ -698,6 +746,9 @@ _chrome_is_running() {
 ```
 
 ### Routing in `bin/cco`
+
+> **Important**: `lib/cmd-chrome.sh` MUST be created in the same commit that adds
+> the `source` line in `bin/cco`, otherwise the CLI will fail on load.
 
 In the main dispatch block:
 
@@ -793,3 +844,199 @@ Reproduced from the analysis for implementer reference:
 - **Port 9222 is local-only by default**: Chrome binds to `127.0.0.1:9222`, not `0.0.0.0`. Do not expose this port via Docker port mappings.
 - **Telemetry disabled by default**: `--no-usage-statistics --no-performance-crux` in all generated configs.
 - **Separate profile**: Claude (via MCP) can read/write cookies, localStorage, and intercept network requests of the debug profile. Users should avoid navigating to sensitive sites (banking, internal admin) in the debug Chrome session.
+
+---
+
+## 11. Implementation Plan
+
+Ordered file-by-file plan with dependencies and verification steps.
+
+### Step 0 — Docs (design finalization)
+
+Already done as part of this design revision:
+
+| # | File | Change |
+|---|------|--------|
+| A | `docs/maintainer/browser-mcp/design.md` | Fixes C1-C5, W1-W7, added this section |
+| B | `docs/maintainer/browser-mcp/analysis.md` | Moved from `future/browser-mcp/` |
+| C | `docs/maintainer/future/browser-mcp/` | Removed (empty after move) |
+| — | `docs/README.md`, `docs/maintainer/README.md`, `docs/maintainer/roadmap.md` | Updated links to analysis.md |
+
+### Step 1 — Dockerfile
+
+Add `chrome-devtools-mcp@latest` to the image.
+
+```dockerfile
+RUN npm install -g chrome-devtools-mcp@latest
+```
+
+**Placement**: after the Claude Code npm install, before `COPY` of config files.
+
+**Verify**:
+```bash
+docker build -t cco-test . && docker run --rm cco-test chrome-devtools-mcp --version
+```
+
+### Step 2 — lib/yaml.sh
+
+Add `yml_get_list` function for reading simple YAML arrays (used for `browser.mcp_args`).
+
+**Depends on**: nothing.
+
+**Verify**:
+```bash
+bin/test tests/test_yaml.sh   # if yaml tests exist
+```
+
+### Step 3 — lib/cmd-chrome.sh (new file)
+
+Create the host-side Chrome management command.
+
+Functions:
+- `cmd_chrome` — dispatcher (`start`/`stop`/`status`)
+- `_chrome_start` — launch Chrome with remote debugging
+- `_chrome_stop` — kill Chrome debug process (`lsof` with `fuser` fallback)
+- `_chrome_status` — check CDP endpoint reachability
+- `_chrome_resolve_port` — port resolution: `--port` > `.browser-port` > `project.yml` > `9222`
+- `_chrome_is_running` — curl-based CDP health check
+
+**Depends on**: Step 2 (uses `yml_get` from yaml.sh).
+
+> **Important**: this file MUST be committed together with the `source` line in
+> `bin/cco` (Step 7) — otherwise the CLI breaks on load.
+
+**Verify**:
+```bash
+bin/test tests/test_chrome.sh
+```
+
+### Step 4 — lib/cmd-start.sh
+
+The largest change. Add in order:
+
+1. **Flag parsing**: `--chrome) opt_chrome="true" ;;`
+2. **Browser config parsing**: read `browser.enabled`, `browser.mode`, `browser.cdp_port`, `browser.mcp_args` from `project.yml`; apply `--chrome` override after parsing
+3. **Port resolution functions**: `_collect_claimed_browser_ports` (iterates `$PROJECTS_DIR`, validates running containers) and `_resolve_browser_port` (while-read loop, no `mapfile`)
+4. **`_generate_browser_mcp`**: generates `browser-mcp.json` with privacy flags and optional `mcp_args`
+5. **Compose injection**: `browser-mcp.json` volume mount + `extra_hosts` (between `ports:` and `networks:`)
+6. **Dry-run output**: summary line with effective port
+
+**Depends on**: Step 2 (yml_get_list), Step 3 (shared patterns).
+
+**Verify**:
+```bash
+bin/test tests/test_start_dry_run.sh
+```
+
+### Step 5 — lib/cmd-stop.sh
+
+Add `.browser-port` cleanup after `docker compose down`:
+
+```bash
+local browser_port_file="$project_dir/.browser-port"
+[[ -f "$browser_port_file" ]] && rm -f "$browser_port_file"
+```
+
+**Depends on**: nothing (standalone change).
+
+**Verify**:
+```bash
+bin/test tests/test_start_dry_run.sh   # port file lifecycle tests
+```
+
+### Step 6 — config/entrypoint.sh
+
+Add third MCP merge step for `/workspace/browser-mcp.json`, after the existing
+project MCP merge. Identical pattern to the global and project merge steps.
+
+**Depends on**: nothing (standalone change, guarded by `[ -f "$MCP_BROWSER" ]`).
+
+**Verify**: manual test — start a session with `browser.enabled: true` and
+verify `~/.claude.json` inside the container contains `chrome-devtools` MCP server.
+
+### Step 7 — bin/cco
+
+1. `source "$LIB_DIR/cmd-chrome.sh"` in the source block
+2. `chrome) cmd_chrome "$@" ;;` in the dispatch case
+3. Help text for `cco chrome` command
+
+**Depends on**: Step 3 (cmd-chrome.sh must exist).
+
+**Verify**:
+```bash
+bin/cco chrome --help
+bin/cco help | grep chrome
+```
+
+### Step 8 — defaults/_template/project.yml
+
+Add commented `browser:` section after the `docker:` block, with all fields
+documented and defaulted.
+
+**Depends on**: nothing.
+
+**Verify**: `cco project create test-browser` and check the generated `project.yml`.
+
+### Step 9 — Tests
+
+Two files:
+
+| File | Content |
+|------|---------|
+| `tests/test_start_dry_run.sh` | Add browser test cases (10 compose tests + 5 port conflict tests) |
+| `tests/test_chrome.sh` | **New file** — 6 port resolution tests |
+
+**Depends on**: Steps 3, 4, 5 (functions under test must exist).
+
+**Verify**:
+```bash
+bin/test tests/test_start_dry_run.sh
+bin/test tests/test_chrome.sh
+bin/test   # full suite — no regressions
+```
+
+### Step 10 — User-facing docs
+
+| File | Change |
+|------|--------|
+| `docs/reference/cli.md` | Add `cco chrome` command reference |
+| `docs/user-guides/project-setup.md` | Add `browser:` section in project.yml guide |
+| `docs/maintainer/roadmap.md` | Update Sprint 4 status to "in progress" / "done" |
+
+**Depends on**: Steps 1-9 (document what was implemented).
+
+### Summary: dependency graph
+
+```mermaid
+graph LR
+    S0[Step 0: Docs]
+    S1[Step 1: Dockerfile]
+    S2[Step 2: yaml.sh]
+    S2 --> S3[Step 3: cmd-chrome.sh]
+    S2 --> S4[Step 4: cmd-start.sh]
+    S3 --> S7[Step 7: bin/cco]
+    S4 --> S7
+    S5[Step 5: cmd-stop.sh] --> S9[Step 9: Tests]
+    S6[Step 6: entrypoint.sh] --> S9
+    S7 --> S9
+    S8[Step 8: template] --> S9
+    S9 --> S10[Step 10: User docs]
+```
+
+> **Note**: Steps 0, 1, 5, 6, and 8 have no code dependencies on other steps
+> and can be implemented in parallel. Step 2 (yaml.sh) blocks Steps 3 and 4.
+> Steps 3 and 4 both block Step 7. All implementation steps (1-8) must be
+> complete before Step 9 (tests) and Step 10 (docs).
+
+### Final checklist
+
+- [ ] `bin/test` — full suite passes (zero regressions)
+- [ ] `bin/test tests/test_start_dry_run.sh` — all browser tests pass
+- [ ] `bin/test tests/test_chrome.sh` — all chrome command tests pass
+- [ ] `cco build` — image builds with `chrome-devtools-mcp` pre-installed
+- [ ] `cco start <project> --chrome --dry-run` — correct compose output
+- [ ] Manual: `cco start <project>` with `browser.enabled: true` → container starts, `~/.claude.json` has chrome-devtools MCP
+- [ ] Manual: `cco chrome start --project <name>` → Chrome launches on correct port
+- [ ] Manual: `cco chrome status --project <name>` → reports running
+- [ ] Manual: `cco stop <project>` → `.browser-port` cleaned up
+- [ ] No stale links to `future/browser-mcp/` in docs (excluding this design doc's Step 0 historical record)

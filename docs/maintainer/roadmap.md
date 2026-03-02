@@ -137,7 +137,7 @@ Required for frontend testing and debugging. Requires stable scope hierarchy (Sp
 
 Enable Claude to control a browser via Chrome DevTools MCP, with the browser visible to the user on the host OS.
 
-**Approach** (see [analysis](./future/browser-mcp/analysis.md)):
+**Approach** (see [analysis](./browser-mcp/analysis.md)):
 - Native "Claude in Chrome" doesn't work from Docker (IPC-local, no network transport)
 - Use **chrome-devtools-mcp** (Google, CDP-based, 29 tools) connecting to Chrome on the host via `host.docker.internal:9222`
 - Two modes: `host` (Chrome on host, native UI, user sees actions) and `container` (sibling Chrome container + noVNC)
@@ -151,7 +151,7 @@ Enable Claude to control a browser via Chrome DevTools MCP, with the browser vis
 - `extra_hosts: host.docker.internal:host-gateway` in docker-compose for Linux compatibility
 - Container mode uses `selenium/standalone-chrome` with noVNC on port 7900
 
-**Docs**: [analysis](./future/browser-mcp/analysis.md) | [design](./browser-mcp/design.md)
+**Docs**: [analysis](./browser-mcp/analysis.md) | [design](./browser-mcp/design.md)
 
 ---
 

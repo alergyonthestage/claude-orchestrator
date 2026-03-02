@@ -20,7 +20,7 @@ Each area of the project has one or both types of document:
 | Agent Teams | — | [agent-teams/analysis.md](agent-teams/analysis.md) |
 | Knowledge Packs | [packs/design.md](packs/design.md) | — |
 | Git Worktree Isolation | [future/worktree/design.md](future/worktree/design.md) | [future/worktree/analysis.md](future/worktree/analysis.md) |
-| Browser MCP | [browser-mcp/design.md](browser-mcp/design.md) | [future/browser-mcp/analysis.md](future/browser-mcp/analysis.md) |
+| Browser MCP | [browser-mcp/design.md](browser-mcp/design.md) | [browser-mcp/analysis.md](browser-mcp/analysis.md) |
 | Update System | [update-system/design.md](update-system/design.md) | — |
 
 ---
