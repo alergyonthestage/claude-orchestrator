@@ -72,6 +72,13 @@ if [ -f "$MCP_BROWSER" ]; then
             "$CLAUDE_JSON" "$MCP_BROWSER" 2>/dev/null) && echo "$merged" > "$CLAUDE_JSON"
         echo "[entrypoint] Merged $server_count browser MCP server(s) into ~/.claude.json" >&2
     fi
+
+    # CDP proxy: Chrome 145+ rejects non-localhost Host headers on CDP endpoints.
+    # socat forwards raw TCP so the Host header stays "localhost:<port>".
+    cdp_port="${CDP_PORT:-9222}"
+    socat TCP-LISTEN:"${cdp_port}",fork,bind=127.0.0.1,reuseaddr \
+          TCP:host.docker.internal:"${cdp_port}" &
+    echo "[entrypoint] CDP proxy: localhost:${cdp_port} → host.docker.internal:${cdp_port}" >&2
 fi
 
 # ── GitHub / Git authentication ───────────────────────────────────

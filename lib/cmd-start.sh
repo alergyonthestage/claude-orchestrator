@@ -246,6 +246,11 @@ YAML
             echo "      - ${env}"
         done
 
+        # CDP proxy port for entrypoint socat (Chrome 145+ Host header fix)
+        if [[ "$browser_enabled" == "true" && "$browser_mode" == "host" ]]; then
+            echo "      - CDP_PORT=${browser_effective_port}"
+        fi
+
         # API key auth
         if [[ "$auth_method" == "api_key" ]]; then
             echo "      - ANTHROPIC_API_KEY=\${ANTHROPIC_API_KEY}"
@@ -434,7 +439,7 @@ YAML
 
     if $dry_run; then
         if [[ "$browser_enabled" == "true" ]]; then
-            info "Browser: ${browser_mode} mode (host.docker.internal:${browser_effective_port})"
+            info "Browser: ${browser_mode} mode (CDP proxy localhost:${browser_effective_port} → host:${browser_effective_port})"
         fi
         info "Generated docker-compose.yml:"
         echo "---"
@@ -543,7 +548,7 @@ _generate_browser_mcp() {
 
     local browser_url
     if [[ "$mode" == "host" ]]; then
-        browser_url="http://host.docker.internal:${cdp_port}"
+        browser_url="http://localhost:${cdp_port}"
     else
         # container mode: deferred
         browser_url="http://browser:${cdp_port}"

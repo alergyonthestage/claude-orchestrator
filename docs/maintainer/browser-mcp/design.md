@@ -22,6 +22,7 @@
 
 > **Revision note (2026-03-02)**: Added port conflict resolution (D8, D9): auto-assign
 > with warning, `.browser-port` runtime file, `cco chrome --project` flag.
+> Added D10: Chrome 145+ Host header fix via socat CDP proxy.
 
 ---
 
@@ -137,6 +138,42 @@ This file is:
   requiring the user to track port numbers manually
 - Written even when no conflict occurs (always reflects the effective port)
 
+### D10: Chrome 145+ Host header fix — socat CDP proxy
+
+Chrome 145+ validates the HTTP `Host` header on CDP discovery endpoints
+(`/json/version`, `/json/list`), rejecting connections where `Host` is not
+`localhost` or `127.0.0.1`. The `--remote-allow-origins=*` flag only covers
+WebSocket origins, **not** HTTP Host header validation.
+
+When `chrome-devtools-mcp` inside the container connects to
+`http://host.docker.internal:9222`, Chrome sees `Host: host.docker.internal`
+and rejects the request with a 403.
+
+**Solution**: a `socat` TCP proxy (already installed in the container image)
+listens on `localhost:<port>` inside the container. The MCP config uses
+`--browserUrl=http://localhost:<port>`, so the HTTP client sends
+`Host: localhost:<port>` which Chrome accepts. `socat` forwards raw TCP bytes
+without modifying headers.
+
+```
+chrome-devtools-mcp → localhost:9222 (socat) → host.docker.internal:9222 (Chrome)
+                       Host: localhost:9222 ✓
+```
+
+**Implementation**:
+- `_generate_browser_mcp()` in `cmd-start.sh` now generates `browserUrl` with
+  `localhost` instead of `host.docker.internal`
+- `cmd-start.sh` passes `CDP_PORT` as an environment variable to the container
+  (only in browser host mode)
+- `entrypoint.sh` starts `socat TCP-LISTEN:<port>,fork,bind=127.0.0.1,reuseaddr
+  TCP:host.docker.internal:<port> &` when `browser-mcp.json` is present
+- No new files or dependencies — `socat` is already in the base image
+
+**Trade-offs**:
+- Adds one background process per container (negligible overhead)
+- Transparent to `chrome-devtools-mcp` — no changes needed in the MCP server
+- Works with any Chrome version (the proxy is harmless on older Chrome)
+
 ---
 
 ## 3. Configuration Schema
@@ -209,7 +246,8 @@ sequenceDiagram
     Host->>Host: Chrome launched on port N
 
     Claude->>MCP: first browser tool call
-    MCP->>Host: CDP WebSocket → host.docker.internal:N
+    MCP->>MCP: HTTP/WS → localhost:N (socat proxy)
+    MCP->>Host: socat forwards TCP → host.docker.internal:N (Chrome)
     Host-->>MCP: Chrome response
     MCP-->>Claude: tool result
     Note over User,Host: User sees browser actions in real time
@@ -380,7 +418,9 @@ _generate_browser_mcp() {
 
     local browser_url
     if [[ "$mode" == "host" ]]; then
-        browser_url="http://host.docker.internal:${cdp_port}"
+        # Use localhost — socat proxy in entrypoint.sh forwards to host.docker.internal.
+        # Chrome 145+ rejects non-localhost Host headers on CDP HTTP endpoints (D10).
+        browser_url="http://localhost:${cdp_port}"
     else
         # container mode: deferred
         browser_url="http://browser:${cdp_port}"
@@ -447,13 +487,13 @@ fi
 When `--dry-run` is active, emit a summary line including the effective port:
 
 ```
-ℹ Browser: host mode (host.docker.internal:9222)
+ℹ Browser: host mode (CDP proxy localhost:9222 → host:9222)
 ```
 
 If the port was auto-assigned:
 ```
 ⚠ Browser: CDP port 9222 is claimed by another session. Using 9223 instead.
-ℹ Browser: host mode (host.docker.internal:9223)
+ℹ Browser: host mode (CDP proxy localhost:9223 → host:9223)
 ```
 
 ### 5.3 `config/entrypoint.sh`
@@ -476,6 +516,21 @@ fi
 
 This is identical in structure to the global and project MCP merge steps.
 The guard `if [ -f "$MCP_BROWSER" ]` makes it a no-op for projects without browser enabled.
+
+Inside the same `if [ -f "$MCP_BROWSER" ]` block, after MCP merge, the entrypoint
+starts a socat TCP proxy for the Chrome 145+ Host header fix (see D10):
+
+```bash
+    # CDP proxy: Chrome 145+ rejects non-localhost Host headers on CDP endpoints.
+    # socat forwards raw TCP so the Host header stays "localhost:<port>".
+    cdp_port="${CDP_PORT:-9222}"
+    socat TCP-LISTEN:"${cdp_port}",fork,bind=127.0.0.1,reuseaddr \
+          TCP:host.docker.internal:"${cdp_port}" &
+    echo "[entrypoint] CDP proxy: localhost:${cdp_port} → host.docker.internal:${cdp_port}" >&2
+```
+
+The `CDP_PORT` env var is set by `cmd-start.sh` in the compose file when browser
+host mode is active. It defaults to `9222` if not set.
 
 ### 5.4 `defaults/_template/project.yml`
 
@@ -531,7 +586,7 @@ so no additional `.gitignore` entries are required.
     "chrome-devtools": {
       "command": "chrome-devtools-mcp",
       "args": [
-        "--browserUrl=http://host.docker.internal:9222",
+        "--browserUrl=http://localhost:9222",
         "--no-usage-statistics",
         "--no-performance-crux"
       ]
@@ -540,7 +595,7 @@ so no additional `.gitignore` entries are required.
 }
 ```
 
-Custom `cdp_port` (e.g., `9223`) results in `--browserUrl=http://host.docker.internal:9223`.
+Custom `cdp_port` (e.g., `9223`) results in `--browserUrl=http://localhost:9223`.
 Additional `mcp_args` are appended after `--no-performance-crux`.
 
 ### `docker-compose.yml` diff (host mode)

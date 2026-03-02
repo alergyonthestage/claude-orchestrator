@@ -725,7 +725,7 @@ YAML
     local mcp_file="$CCO_PROJECTS_DIR/test-proj/browser-mcp.json"
     assert_file_exists "$mcp_file"
     assert_file_contains "$mcp_file" "chrome-devtools-mcp"
-    assert_file_contains "$mcp_file" "host.docker.internal:9222"
+    assert_file_contains "$mcp_file" "localhost:9222"
 }
 
 test_browser_mcp_mounted_in_compose() {
@@ -773,7 +773,7 @@ repos:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/browser-mcp.json" "host.docker.internal:9223"
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/browser-mcp.json" "localhost:9223"
 }
 
 test_browser_chrome_flag_override() {
@@ -934,6 +934,40 @@ repos:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    assert_output_contains "Browser: host mode"
+    assert_output_contains "Browser: host mode (CDP proxy"
     assert_output_contains "browser-mcp.json"
+}
+
+test_browser_cdp_port_env_in_compose() {
+    # CDP_PORT env var present in compose when browser host mode enabled
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+browser:
+  enabled: true
+  cdp_port: 9225
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" "CDP_PORT=9225"
+}
+
+test_browser_cdp_port_env_absent_when_disabled() {
+    # CDP_PORT env var NOT in compose when browser is disabled
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --dry-run
+    assert_file_not_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" "CDP_PORT"
 }
