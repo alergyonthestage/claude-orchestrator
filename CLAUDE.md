@@ -101,3 +101,23 @@ Per `docs/maintainer/docker/design.md` (sezione directory structure):
 - Container user is `claude` (non-root), with docker group for socket access.
 - Entrypoint must handle Docker socket GID mismatch between host and container.
 - macOS Docker Desktop: never use `network_mode: host` (refers to Linux VM, not macOS). Always use port mappings.
+- bash 3.2 compatibility: always guard empty arrays with `[[ ${#arr[@]} -gt 0 ]]` or `${arr[@]+"${arr[@]}"}` when `set -u` is active.
+
+## Migrations
+
+When a feature changes the structure of user-facing config files (`project.yml`, `global/.claude/*`), **a migration is required** so that `cco update` propagates the change to existing installations. The update system (`lib/update.sh`) only tracks files inside `.claude/` directories; root-level files like `project.yml` are not covered by the manifest.
+
+**Rules:**
+- New sections/fields in `project.yml` → create `migrations/project/NNN_description.sh`
+- New sections/fields in global config → create `migrations/global/NNN_description.sh`
+- Template changes (`defaults/_template/`, `defaults/global/`) only affect new projects/inits; existing ones need a migration
+- Every migration must be **idempotent** (safe to run multiple times) and return 0 on success
+- Migration files define `MIGRATION_ID=N` and `MIGRATION_DESC="..."`, plus a `migrate()` function receiving the target directory
+- IDs must be sequential (check `migrations/{scope}/` for the current max)
+- `cco update` runs pending migrations automatically when `schema_version < latest`
+
+**Checklist for config changes:**
+1. Update `defaults/_template/` (or `defaults/global/`) with the new structure
+2. Create migration script in `migrations/{scope}/`
+3. Test: `cco update --project <name>` applies the migration
+4. Verify idempotency: running update again produces no changes
