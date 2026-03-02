@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-02 (prioritized implementation order, Sprint 5 tutorial added).
+> Last updated: 2026-03-02 (Sprint 4 complete, Sprint 9 config vault added).
 
 ---
 
@@ -127,9 +127,10 @@ Sprint 6 (differenziante)      Sprint 7 (ecosistema)
 │    Isolation          │       │ #9 Pack inheritance  │
 │ #7 Session Resume    │       └──────────────────────┘
 └──────────────────────┘
-                               Sprint 8 (polish)
-                               ┌──────────────────────┐
-                               │ #10 cco project edit │
+Sprint 8 (polish)              Sprint 9 (distribuzione)
+┌──────────────────────┐       ┌──────────────────────┐
+│ #10 cco project edit │       │ #11 Config Vault     │
+└──────────────────────┘       │ #12 Sharing/Import   │
                                └──────────────────────┘
 ```
 
@@ -245,6 +246,82 @@ files:
 #### #10 `cco project edit <name>` command
 
 Open project.yml in `$EDITOR` and regenerate docker-compose.yml after save.
+
+---
+
+### Sprint 9 — Config Vault & Sharing
+
+Personal versioning and team sharing of packs, project configs, and global settings — powered by a dedicated git repo managed by the CLI.
+
+#### #11 Config Vault — Git-backed versioning for global/ and projects/
+
+A dedicated git repository (separate from claude-orchestrator itself) that versions the user's configuration: `global/` settings, project configs, and packs. The CLI manages this repo transparently.
+
+**Motivation**: today `global/` and `projects/` are gitignored. Users have no way to version, backup, diff, or roll back their configuration. If something breaks or a machine is lost, all config is gone.
+
+**Key design points**:
+- `cco vault init` — initialize a git repo backing `global/` and `projects/` (or a subset)
+- `cco vault sync` — commit current state with auto-generated message (or custom)
+- `cco vault diff` — show what changed since last sync
+- `cco vault log` — show config change history
+- `cco vault restore <ref>` — restore config from a previous commit
+- `cco vault remote add <url>` — link to a remote repo for push/pull backup
+- The vault repo is distinct from claude-orchestrator (framework is generic, vault is personal)
+- Sensitive files (`secrets.env`, `.credentials.json`) excluded by default with `.gitignore`
+- Works with any git remote (GitHub, GitLab, private server)
+
+**Scope**:
+- `lib/cmd-vault.sh` — vault management commands
+- Vault `.gitignore` template (exclude secrets, runtime files, `docker-compose.yml`)
+- Auto-commit hooks (optional: auto-sync on `cco stop`)
+- Test coverage for vault operations
+
+#### #12 Sharing & Import — Multi-resource bundles
+
+Share packs, project templates, and config bundles between users via git repos or archives.
+
+**Motivation**: packs are currently local to a single user. There is no way to share a well-tuned pack, a project template, or a set of rules with a colleague.
+
+**Key design points**:
+- **Multi-resource repos**: a single git repo can contain multiple packs, project templates, and rules (avoids repo proliferation)
+- `cco share install <git-url> [--resource <name>]` — install one or all resources from a shared repo
+- `cco share export <type> <name>` — export a pack, project template, or rule set as a shareable archive or git-ready directory
+- `cco share list` — list installed shared resources and their source repos
+- `cco share update [<source>]` — pull latest from shared repos
+
+**Shared repo structure** (convention):
+```
+my-team-config/
+  packs/
+    react-guidelines/
+      pack.yml
+      knowledge/...
+    api-conventions/
+      pack.yml
+      ...
+  templates/
+    fullstack-project/
+      project.yml      # Uses {{variables}} for user-specific paths
+      .claude/
+        CLAUDE.md
+    microservice/
+      project.yml
+      ...
+  rules/
+    code-style.md
+    security.md
+  share.yml             # Manifest: lists available resources with descriptions
+```
+
+- **Project templates**: `project.yml` with placeholder variables (`{{REPO_PATH}}`, `{{PROJECT_NAME}}`) resolved at install time
+- **Conflict handling**: warn if a resource already exists locally, offer merge/overwrite/skip
+- **Versioning**: shared repos are git repos — users can pin to a tag/branch
+
+**Open questions** (to discuss):
+- Should `cco vault` and `cco share` be separate commands, or a unified `cco config` namespace?
+- Should shared repos be registered globally (available to all projects) or per-project?
+- How to handle pack updates from shared repos when the user has local modifications?
+- Should we support a public registry/index of shared repos (future, not Sprint 9)?
 
 ---
 
