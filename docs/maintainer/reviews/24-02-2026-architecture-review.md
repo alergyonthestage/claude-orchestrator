@@ -1,70 +1,70 @@
 # Technical Review: claude-orchestrator
 
-**Scope**: Architettura, design, implementazione, integrazione Claude Code
-**Versione analizzata**: v1 (branch `main` + `feat/packs/overhaul`)
+**Scope**: Architecture, design, implementation, Claude Code integration
+**Version analyzed**: v1 (branch `main` + `feat/packs/overhaul`)
 **Reference**: Claude Code official docs via `llms.txt` + `Agentic_Design_Patterns.pdf` + `agent-context-guide.md`
 
 ---
 
-## Verdetto Sintetico
+## Executive Summary
 
-Il repository è un lavoro di ingegneria **eccellente per un v1**. L'architettura è ben pensata, le scelte tecniche sono solide e la documentazione è superiore alla media. L'integrazione con Claude Code dimostra una comprensione profonda dei meccanismi interni del tool. Ci sono però aree di miglioramento concrete, in particolare nella robustezza del CLI, nella sicurezza del Docker socket, e in alcune opportunità mancate nell'uso delle feature più recenti di Claude Code.
-
----
-
-## 1. Architettura — Valutazione: ★★★★★
-
-### Cosa funziona molto bene
-
-**Three-Tier Context Hierarchy (ADR-3)**: Questa è la decisione architetturale più intelligente del progetto. Il mapping `global/.claude/ → ~/.claude/` e `projects/<n>/.claude/ → /workspace/.claude/` sfrutta esattamente il sistema di precedenza nativo di Claude Code (user → project → nested) senza hack, symlink, o workaround. La documentazione ufficiale conferma che questo è il pattern corretto: la precedenza è `managed > CLI > local > project > user`, e l'orchestratore mappa correttamente ai livelli user e project.
-
-**Docker-from-Docker (ADR-4)**: La scelta di montare il Docker socket anziché usare Docker-in-Docker è corretta. DfD è più performante, non richiede `--privileged`, e usa un singolo daemon (cache condivisa). Il rischio di root-equivalent access è documentato onestamente e accettabile per una workstation single-developer.
-
-**Config Separation (ADR-8)**: La separazione `defaults/` (tracked) vs `global/` + `projects/` (gitignored) risolve elegantemente il problema del `git pull` con merge conflict sulle config utente. Il pattern `cco init` → copia da defaults è pulito e idiomatico.
-
-**Flat Workspace Layout (ADR-2)**: L'approccio `/workspace/<repo>/` come WORKDIR elimina la necessità di `--add-dir` o `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD`. Claude Code scopre i CLAUDE.md nelle subdirectory ricorsivamente — questo è confermato dalla documentazione ufficiale.
-
-### Miglioramento possibile
-
-**Manca un ADR per il "Knowledge Packs" pattern**. I packs sono una feature sofisticata (mount :ro, generazione packs.md, copia skills/agents/rules, injection via hook) ma non hanno un proprio ADR in `architecture.md`. Meritano un ADR-9 dedicato, perché il design ha trade-off specifici: la scelta di _copiare_ skills/agents/rules (vs montarli) è motivata dalla limitazione dei Docker volume mounts (non puoi montare più sorgenti nello stesso target), ma ha la conseguenza che i file copiati diventano stale se il pack cambia senza un `cco start`.
+The repository is **excellent engineering work for a v1**. The architecture is well-thought-out, the technical choices are solid, and the documentation is above average. The integration with Claude Code demonstrates a deep understanding of the tool's internal mechanisms. However, there are concrete areas for improvement, particularly in CLI robustness, Docker socket security, and some missed opportunities in using the latest Claude Code features.
 
 ---
 
-## 2. Integrazione Claude Code — Valutazione: ★★★★☆
+## 1. Architecture — Rating: ★★★★★
 
-### Uso corretto delle API/Feature
+### What works very well
 
-**Hooks**: L'uso dei lifecycle hooks è eccellente e allineato alla documentazione ufficiale:
-- `SessionStart` per iniettare contesto (progetto, repos, MCP, packs) → corretto, la doc conferma che `additionalContext` è il meccanismo giusto
-- `SubagentStart` per contesto condensato ai subagent → corretto, riduce il token budget dei subagent
-- `PreCompact` per guidare la compattazione → ottima idea, non comune negli orchestratori simili
-- `StatusLine` per feedback visivo → implementazione corretta
+**Three-Tier Context Hierarchy (ADR-3)**: This is the smartest architectural decision in the project. The mapping `global/.claude/ → ~/.claude/` and `projects/<n>/.claude/ → /workspace/.claude/` leverages exactly Claude Code's native precedence system (user → project → nested) without hacks, symlinks, or workarounds. Official documentation confirms this is the correct pattern: precedence is `managed > CLI > local > project > user`, and the orchestrator maps correctly to user and project levels.
 
-Il formato di output JSON con `hookSpecificOutput.additionalContext` è quello richiesto dalla specifica ufficiale.
+**Docker-from-Docker (ADR-4)**: The choice to mount the Docker socket instead of using Docker-in-Docker is correct. DfD is more performant, does not require `--privileged`, and uses a single daemon (shared cache). The risk of root-equivalent access is documented honestly and acceptable for a single-developer workstation.
 
-**settings.json**: La configurazione è corretta e completa. In particolare:
-- La `deny` list per `~/.claude.json` e `~/.ssh/*` protegge le credenziali — buona pratica di sicurezza
-- L'`allow` list è esaustiva per evitare prompt anche se il bypass mode non è attivo
-- `enableAllProjectMcpServers: true` è la scelta giusta per ambienti containerizzati dove la fiducia è implicita
+**Config Separation (ADR-8)**: The separation of `defaults/` (tracked) vs `global/` + `projects/` (gitignored) elegantly solves the `git pull` merge conflict problem on user config. The pattern `cco init` → copy from defaults is clean and idiomatic.
 
-**Subagents**: L'uso di `analyst` (haiku, read-only) e `reviewer` (sonnet, read-only) è ben progettato. Il frontmatter YAML è corretto (`tools`, `disallowedTools`, `model`, `memory`). La scelta dei modelli è economicamente sensata: haiku per l'analisi esplorativa (tante chiamate, basso costo), sonnet per la review (meno chiamate, serve più intelligenza).
+**Flat Workspace Layout (ADR-2)**: The `/workspace/<repo>/` approach as WORKDIR eliminates the need for `--add-dir` or `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD`. Claude Code discovers CLAUDE.md files in subdirectories recursively — this is confirmed by official documentation.
 
-**Skills**: Il sistema di skills è ben implementato. Il `/init` skill che shadowa il built-in è particolarmente intelligente — genera CLAUDE.md automaticamente partendo da workspace.yml. Le skill `/analyze` e `/design` con `context: fork` sono corrette per l'isolamento del contesto.
+### Possible improvement
 
-### Gap e miglioramenti
+**Missing ADR for the "Knowledge Packs" pattern**. Packs are a sophisticated feature (mount :ro, packs.md generation, copy skills/agents/rules, injection via hook) but lack their own ADR in `architecture.md`. They deserve a dedicated ADR-9 because the design has specific trade-offs: the choice to _copy_ skills/agents/rules (vs mounting them) is motivated by Docker volume mount limitations (you cannot mount multiple sources to the same target), but has the consequence that copied files become stale if the pack changes without a `cco start`.
 
-**1. `alwaysThinkingEnabled` mancante nella settings.json effettiva**
+---
 
-Il file `docs/reference/context-hierarchy.md` § 4.1 mostra `"alwaysThinkingEnabled": true` come parte della configurazione consigliata, ma il file `defaults/global/.claude/settings.json` effettivo NON lo include. La doc ufficiale conferma che questa opzione esiste ed è valida. Extended thinking migliora significativamente la qualità del ragionamento su task complessi — dovrebbe essere abilitato di default in un tool orientato a dev professionisti.
+## 2. Claude Code Integration — Rating: ★★★★☆
+
+### Correct API/Feature Usage
+
+**Hooks**: The use of lifecycle hooks is excellent and aligned with official documentation:
+- `SessionStart` to inject context (project, repos, MCP, packs) → correct, the doc confirms that `additionalContext` is the right mechanism
+- `SubagentStart` for condensed context to subagents → correct, reduces subagent token budget
+- `PreCompact` to guide compaction → excellent idea, uncommon in similar orchestrators
+- `StatusLine` for visual feedback → correct implementation
+
+The JSON output format with `hookSpecificOutput.additionalContext` is what the official spec requires.
+
+**settings.json**: The configuration is correct and complete. Specifically:
+- The `deny` list for `~/.claude.json` and `~/.ssh/*` protects credentials — good security practice
+- The `allow` list is comprehensive to avoid prompts even without bypass mode active
+- `enableAllProjectMcpServers: true` is the right choice for containerized environments where trust is implicit
+
+**Subagents**: The use of `analyst` (haiku, read-only) and `reviewer` (sonnet, read-only) is well-designed. The YAML frontmatter is correct (`tools`, `disallowedTools`, `model`, `memory`). Model choice is economically sensible: haiku for exploratory analysis (many calls, low cost), sonnet for review (fewer calls, more intelligence needed).
+
+**Skills**: The skill system is well implemented. The `/init` skill that shadows the built-in is particularly clever — it auto-generates CLAUDE.md from workspace.yml. The `/analyze` and `/design` skills with `context: fork` are correct for context isolation.
+
+### Gaps and improvements
+
+**1. `alwaysThinkingEnabled` missing from actual settings.json**
+
+The file `docs/reference/context-hierarchy.md` § 4.1 shows `"alwaysThinkingEnabled": true` as part of the recommended configuration, but the actual `defaults/global/.claude/settings.json` file does NOT include it. Official documentation confirms this option exists and is valid. Extended thinking significantly improves reasoning quality on complex tasks — it should be enabled by default in a tool oriented toward professional developers.
 
 ```json
-// Aggiungere a defaults/global/.claude/settings.json
+// Add to defaults/global/.claude/settings.json
 "alwaysThinkingEnabled": true
 ```
 
-**2. SessionStart hook matcher troppo restrittivo**
+**2. SessionStart hook matcher too restrictive**
 
-L'attuale configurazione usa due matcher separati (`"startup"` e `"clear"`):
+The current configuration uses two separate matchers (`"startup"` and `"clear"`):
 
 ```json
 "SessionStart": [
@@ -73,7 +73,7 @@ L'attuale configurazione usa due matcher separati (`"startup"` e `"clear"`):
 ]
 ```
 
-La documentazione ufficiale dice che senza matcher, gli hook vengono eseguiti per tutti gli eventi di quel tipo. Semplificare a:
+Official documentation says that without a matcher, hooks are executed for all events of that type. Simplify to:
 
 ```json
 "SessionStart": [
@@ -81,53 +81,53 @@ La documentazione ufficiale dice che senza matcher, gli hook vengono eseguiti pe
 ]
 ```
 
-Questo copre anche altri trigger di SessionStart che potrebbero essere aggiunti in futuro.
+This also covers any other SessionStart triggers that might be added in the future.
 
-**3. Mancano hooks `PreToolUse` per safety guardrails**
+**3. Missing `PreToolUse` hooks for safety guardrails**
 
-Dato che `--dangerously-skip-permissions` è attivo, sarebbe utile avere un `PreToolUse` hook che blocchi operazioni specifiche pericolose anche dentro il container (e.g., `rm -rf /`, `git push --force` su main). La community Claude Code usa questo pattern estensivamente.
+Since `--dangerously-skip-permissions` is active, it would be useful to have a `PreToolUse` hook that blocks specific dangerous operations even inside the container (e.g., `rm -rf /`, `git push --force` on main). The Claude Code community uses this pattern extensively.
 
-**4. Skill `/commit` ha `disable-model-invocation: true` ma nessun `allowed-tools`**
+**4. `/commit` skill has `disable-model-invocation: true` but no `allowed-tools`**
 
-La skill `/commit` impedisce all'LLM di invocarla autonomamente (corretto, i commit devono essere intenzionali), ma non specifica `allowed-tools`. Dovrebbe avere `allowed-tools: Read, Bash` per coerenza con il pattern read-then-act.
+The `/commit` skill prevents the LLM from invoking it autonomously (correct, commits should be intentional), but does not specify `allowed-tools`. It should have `allowed-tools: Read, Bash` for consistency with the read-then-act pattern.
 
-**5. Manca uso del `CLAUDE_ENV_FILE` in tutti gli hook**
+**5. Missing use of `CLAUDE_ENV_FILE` in all hooks**
 
-Solo `session-context.sh` scrive in `$CLAUDE_ENV_FILE`. Il `subagent-context.sh` e `precompact.sh` non lo usano. Questo non è un bug (non ne hanno bisogno), ma è una buona pratica documentarlo.
+Only `session-context.sh` writes to `$CLAUDE_ENV_FILE`. The `subagent-context.sh` and `precompact.sh` do not use it. This is not a bug (they don't need to), but it is good practice to document it.
 
-**6. Nessun hook `Stop`/`SessionEnd`**
+**6. No `Stop`/`SessionEnd` hook**
 
-Non c'è un hook per cleanup alla fine della sessione. Potrebbe essere utile per: auto-commit di stash, salvataggio di note della sessione, o cleanup di container sibling creati durante la sessione.
+There is no hook for cleanup at the end of the session. It could be useful for: auto-commit of stash, saving session notes, or cleanup of sibling containers created during the session.
 
 ---
 
-## 3. Implementazione CLI (`bin/cco`) — Valutazione: ★★★★☆
+## 3. CLI Implementation (`bin/cco`) — Rating: ★★★★☆
 
-### Punti di forza
+### Strengths
 
-**YAML parser custom senza dipendenze esterne**: Il parser AWK per `project.yml` è una scelta audace ma corretta per un tool che promette "no dependencies beyond bash, docker, and standard Unix tools". Le funzioni `yml_get`, `yml_get_repos`, `yml_get_ports`, `yml_get_env`, `yml_get_extra_mounts`, `yml_get_packs` coprono tutti i casi d'uso. L'implementazione è robusta per i casi previsti.
+**Custom YAML parser without external dependencies**: The AWK parser for `project.yml` is a bold but correct choice for a tool that promises "no dependencies beyond bash, docker, and standard Unix tools". The functions `yml_get`, `yml_get_repos`, `yml_get_ports`, `yml_get_env`, `yml_get_extra_mounts`, `yml_get_packs` cover all use cases. The implementation is robust for intended cases.
 
-**Dry-run mode**: `cco start --dry-run` che genera il compose senza eseguirlo è eccellente per debugging e CI.
+**Dry-run mode**: `cco start --dry-run` that generates the compose without executing it is excellent for debugging and CI.
 
-**Placeholder substitution**: `cco project create` gestisce correttamente `{{PROJECT_NAME}}` e `{{DESCRIPTION}}` sia in `project.yml` che in `CLAUDE.md`.
+**Placeholder substitution**: `cco project create` correctly handles `{{PROJECT_NAME}}` and `{{DESCRIPTION}}` in both `project.yml` and `CLAUDE.md`.
 
-**Memory migration**: `migrate_memory_to_claude_state()` è una funzione di migration ben pensata per la backward compatibility.
+**Memory migration**: `migrate_memory_to_claude_state()` is a well-thought-out migration function for backward compatibility.
 
-**Color output e UX**: Le funzioni `info()`, `ok()`, `warn()`, `error()`, `die()` con emoji e colori rendono l'output leggibile.
+**Color output and UX**: The `info()`, `ok()`, `warn()`, `error()`, `die()` functions with emoji and colors make output readable.
 
-### Problemi e miglioramenti
+### Problems and improvements
 
-**1. YAML parser fragile con edge cases**
+**1. YAML parser fragile with edge cases**
 
-Il parser AWK non gestisce:
-- Valori multilinea (YAML `|` o `>`)
-- Commenti inline che contengono `:` (e.g., `name: my-app  # note: important`)
-- Stringhe quotate che contengono `#` (e.g., `"color: #FF0000"`)
-- Array inline (e.g., `ports: [3000, 8080]`)
+The AWK parser does not handle:
+- Multiline values (YAML `|` or `>`)
+- Inline comments containing `:` (e.g., `name: my-app  # note: important`)
+- Quoted strings containing `#` (e.g., `"color: #FF0000"`)
+- Inline arrays (e.g., `ports: [3000, 8080]`)
 
-Per un v1 è accettabile, ma `project.yml` è il file che l'utente modifica di più — un parser fragile porta a bug silenziosi. Considerare una validazione esplicita o un fallback a Python `yaml.safe_load` quando disponibile (è già nel Dockerfile via `python3`).
+For v1 this is acceptable, but `project.yml` is the file users modify most — a fragile parser leads to silent bugs. Consider explicit validation or a fallback to Python `yaml.safe_load` when available (already in Dockerfile via `python3`).
 
-**2. OAuth token extraction dipende da `python3` e `security` (macOS-only)**
+**2. OAuth token extraction depends on `python3` and `security` (macOS-only)**
 
 ```bash
 get_oauth_token() {
@@ -138,19 +138,19 @@ get_oauth_token() {
 }
 ```
 
-Problemi:
-- Su Linux, il fallback silenzioso (`return`) non comunica all'utente che deve usare `--api-key`
-- La struttura JSON del Keychain potrebbe cambiare con aggiornamenti di Claude Code senza warning
-- L'access token ha una scadenza (tipicamente 1h per OAuth). Per sessioni lunghe, Claude Code gestisce il refresh internamente via `~/.claude.json`, ma il token iniettato via env var potrebbe scadere. Verificare se `CLAUDE_CODE_OAUTH_TOKEN` ha un meccanismo di refresh.
+Issues:
+- On Linux, the silent fallback (`return`) does not tell the user they need to use `--api-key`
+- The Keychain JSON structure could change with Claude Code updates without warning
+- The access token has an expiration (typically 1h for OAuth). For long sessions, Claude Code handles refresh internally via `~/.claude.json`, but the token injected via env var could expire. Verify if `CLAUDE_CODE_OAUTH_TOKEN` has a refresh mechanism.
 
-**3. `sed -i ''` pattern non portabile**
+**3. `sed -i ''` pattern not portable**
 
 ```bash
 sed -i '' "s/{{PROJECT_NAME}}/$name/g" "$project_yml" 2>/dev/null || \
     sed -i "s/{{PROJECT_NAME}}/$name/g" "$project_yml"
 ```
 
-Questo pattern try-macOS-then-GNU funziona ma è inelegante. Meglio una funzione helper:
+This try-macOS-then-GNU pattern works but is inelegant. Better to use a helper function:
 
 ```bash
 sed_inplace() {
@@ -159,27 +159,27 @@ sed_inplace() {
 }
 ```
 
-**4. Secrets loading non valida il formato**
+**4. Secrets loading does not validate format**
 
-`load_global_secrets()` legge `secrets.env` linea per linea ma non valida che ogni riga abbia il formato `KEY=VALUE`. Una riga malformata verrebbe passata come `-e garbage` a Docker, causando errori confusi.
+`load_global_secrets()` reads `secrets.env` line by line but does not validate that each line has the `KEY=VALUE` format. A malformed line would be passed as `-e garbage` to Docker, causing confusing errors.
 
-**5. Nessun lock per sessioni concorrenti**
+**5. No lock for concurrent sessions**
 
-Non c'è nessun meccanismo di lock per impedire `cco start project-a` quando `project-a` è già running. Il `container_name` di Docker impedirebbe la creazione di un secondo container, ma l'errore Docker non è user-friendly. Un check esplicito con messaggio chiaro sarebbe meglio.
+There is no lock mechanism to prevent `cco start project-a` when `project-a` is already running. Docker's `container_name` would prevent creating a second container, but the Docker error is not user-friendly. An explicit check with a clear message would be better.
 
 **6. `docker compose run` vs `docker compose up`**
 
-L'uso di `docker compose run --rm --service-ports` è corretto per una sessione interattiva one-shot. Tuttavia, `--service-ports` espone tutte le porte definite nel compose — non c'è modo di limitare le porte per sessione (solo di aggiungerne con `--port`).
+The use of `docker compose run --rm --service-ports` is correct for a one-shot interactive session. However, `--service-ports` exposes all ports defined in the compose — there is no way to limit ports per session (only to add them with `--port`).
 
 ---
 
-## 4. Docker & Entrypoint — Valutazione: ★★★★☆
+## 4. Docker & Entrypoint — Rating: ★★★★☆
 
-### Punti di forza
+### Strengths
 
-**Dockerfile ben strutturato**: Layer caching ottimale (system deps → locale → Docker CLI → gosu → Claude Code → user setup → config files). Le dipendenze sono minimali ma complete.
+**Well-structured Dockerfile**: Optimal layer caching (system deps → locale → Docker CLI → gosu → Claude Code → user setup → config files). Dependencies are minimal but complete.
 
-**Docker socket GID handling**: L'entrypoint risolve correttamente il mismatch GID tra host e container:
+**Docker socket GID handling**: The entrypoint correctly resolves the GID mismatch between host and container:
 
 ```bash
 SOCKET_GID=$(stat -c '%g' /var/run/docker.sock)
@@ -187,179 +187,179 @@ groupmod -g "$SOCKET_GID" docker
 usermod -aG docker claude
 ```
 
-Questo è il pattern standard e corretto.
+This is the standard and correct pattern.
 
-**gosu per TTY passthrough**: La scelta di `gosu` invece di `su`/`sudo` è corretta — `su` crea una nuova sessione PTY che rompe il forwarding stdin, mentre `gosu` fa un `exec` diretto.
+**gosu for TTY passthrough**: The choice of `gosu` instead of `su`/`sudo` is correct — `su` creates a new PTY session that breaks stdin forwarding, while `gosu` does a direct `exec`.
 
-**MCP merge via jq**: L'entrypoint unisce global e project MCP config in `~/.claude.json` con `jq -s`. Questo è più robusto di qualsiasi approccio basato su file multipli.
+**MCP merge via jq**: The entrypoint merges global and project MCP config into `~/.claude.json` with `jq -s`. This is more robust than any multi-file approach.
 
-### Miglioramenti
+### Improvements
 
-**1. `CLAUDE_CODE_DISABLE_AUTOUPDATE=1` è corretto ma manca il pinning della versione**
+**1. `CLAUDE_CODE_DISABLE_AUTOUPDATE=1` is correct but version pinning is missing**
 
 ```dockerfile
 RUN npm install -g @anthropic-ai/claude-code@latest
 ENV CLAUDE_CODE_DISABLE_AUTOUPDATE=1
 ```
 
-`@latest` nel Dockerfile significa che versioni diverse dell'immagine avranno versioni diverse di Claude Code. Per riproducibilità, pinnare la versione:
+`@latest` in the Dockerfile means different image versions will have different Claude Code versions. For reproducibility, pin the version:
 
 ```dockerfile
 ARG CLAUDE_CODE_VERSION=latest
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 ```
 
-Così `cco build --build-arg CLAUDE_CODE_VERSION=1.0.x` permette il pinning.
+This allows `cco build --build-arg CLAUDE_CODE_VERSION=1.0.x` for pinning.
 
-**2. Entrypoint logga info sensibili a stderr**
+**2. Entrypoint logs sensitive info to stderr**
 
 ```bash
 echo "[entrypoint] CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:+SET (${#CLAUDE_CODE_OAUTH_TOKEN} chars)}" >&2
 ```
 
-Il numero di caratteri del token è un information leak minore. In un contesto security-aware, anche confermare la lunghezza di un token è evitabile. Meglio loggare solo `SET` o `UNSET`.
+The token character count is minor information leak. In a security-aware context, even confirming token length is avoidable. Better to only log `SET` or `UNSET`.
 
-**3. tmux session non ha un graceful shutdown**
+**3. tmux session has no graceful shutdown**
 
 ```bash
 gosu claude tmux new-session -s claude "claude --dangerously-skip-permissions $*"
 ```
 
-Se Claude esce con errore, tmux chiude la sessione e l'exit code potrebbe non propagarsi correttamente. Il `set +e` + cattura manuale di `$?` funziona, ma un `trap` sarebbe più robusto.
+If Claude exits with error, tmux closes the session and the exit code may not propagate correctly. The `set +e` + manual `$?` capture works, but a `trap` would be more robust.
 
-**4. Manca `HEALTHCHECK` nel Dockerfile**
+**4. Missing `HEALTHCHECK` in Dockerfile**
 
-Per scenari dove il container viene monitorato (Docker Desktop dashboard, Portainer), un `HEALTHCHECK` che verifica che il processo Claude sia attivo sarebbe utile. Non è critico per l'uso corrente ma migliora l'operabilità.
-
----
-
-## 5. Test Suite — Valutazione: ★★★★★
-
-La test suite è **il punto più forte** dell'implementazione. I test in `tests/` sono:
-
-- **Design-driven**: `test_invariants.sh` codifica esplicitamente le invarianti architetturali, non solo il comportamento del codice. Questo è un pattern raro e prezioso — se un invariante fail, sai esattamente quale decisione di design è stata violata.
-
-- **Comprehensive per il dry-run path**: compose generation, placeholder substitution, secrets isolation, naming conventions, readonly mounts — tutto testato.
-
-- **Helper well-designed**: `setup_cco_env`, `setup_global_from_defaults`, `create_project`, `minimal_project_yml` creano un ambiente isolato in `$tmpdir` per ogni test, con cleanup automatico via `trap`.
-
-- **Packs coverage**: `test_packs.sh` copre generazione, formato, multi-pack, missing pack, description, workspace.yml — ogni edge case previsto.
-
-### Miglioramento suggerito
-
-**Test per il parser YAML**: Manca un test suite dedicata per `yml_get`, `yml_get_repos`, ecc. con input edge-case (valori quotati, commenti inline, chiavi mancanti). Dato che il parser è custom AWK, è il punto più fragile del sistema — merita coverage dedicata.
+For scenarios where the container is monitored (Docker Desktop dashboard, Portainer), a `HEALTHCHECK` that verifies the Claude process is active would be useful. Not critical for current use but improves operability.
 
 ---
 
-## 6. Documentazione — Valutazione: ★★★★★
+## 5. Test Suite — Rating: ★★★★★
 
-La documentazione è **eccezionale**. Specificamente:
+The test suite is **the strongest point** of the implementation. The tests in `tests/` are:
 
-- **`architecture.md` con ADRs numerati**: Ogni decisione architetturale ha Context, Decision, Rationale, Consequences. Questo è lo standard gold per la documentazione di architettura.
-- **`context-loading.md`**: La mappa completa del lifecycle di loading è preziosa per il debugging e l'onboarding.
-- **`spec.md`**: Functional requirements con ID, priorità, e user stories. Raro vederlo in un tool personale.
-- **Separazione guides/reference/maintainer**: La struttura Diátaxis (tutorial, howto, reference, explanation) è ben applicata.
+- **Design-driven**: `test_invariants.sh` explicitly encodes architectural invariants, not just code behavior. This is a rare and valuable pattern — if an invariant fails, you know exactly which design decision was violated.
 
-### Unico punto debole
+- **Comprehensive for dry-run path**: compose generation, placeholder substitution, secrets isolation, naming conventions, readonly mounts — all tested.
 
-La documentazione in `docs/reference/context-hierarchy.md` § 4.1 include `"defaultMode": "bypassPermissions"` e `"alwaysThinkingEnabled": true` nella specifica, ma il file `defaults/global/.claude/settings.json` effettivo non li ha. Questa discrepanza tra docs e implementazione va risolta — o aggiungendo i campi al settings.json o aggiornando la doc.
+- **Well-designed helpers**: `setup_cco_env`, `setup_global_from_defaults`, `create_project`, `minimal_project_yml` create an isolated environment in `$tmpdir` for each test, with automatic cleanup via `trap`.
 
----
+- **Packs coverage**: `test_packs.sh` covers generation, format, multi-pack, missing pack, description, workspace.yml — every anticipated edge case.
 
-## 7. Knowledge Packs — Valutazione: ★★★★☆
+### Suggested improvement
 
-Il sistema di Knowledge Packs è la feature più sofisticata e originale del progetto.
-
-### Design intelligente
-
-- **Separation of concerns**: Knowledge (montato :ro) vs Skills/Agents/Rules (copiati) è una scelta pragmatica che evita collision di mount Docker
-- **packs.md generation + hook injection**: Il fatto che i pack vengano iniettati automaticamente via `session-context.sh` senza richiedere `@import` in CLAUDE.md è elegante
-- **Descrizioni preservate**: `workspace.yml` preserva le descrizioni tra sessioni via AWK lookup — idempotenza ben implementata
-
-### Miglioramenti
-
-**1. I file copiati da pack non vengono puliti**
-
-Se un pack rimuove un agent o una rule, il file copiato in `projects/<n>/.claude/agents/` persiste. Non c'è un meccanismo di "clean before copy". Soluzione: aggiungere un manifest di file copiati e pulire quelli non più referenziati.
-
-**2. Conflitti di nome tra pack non gestiti**
-
-Se `pack-a` e `pack-b` definiscono entrambi `agents/reviewer.md`, il secondo sovrascrive il primo silenziosamente. Potrebbe servire un warning.
-
-**3. packs.md header ha testo leggermente diverso dal test**
-
-Il test `test_packs_md_has_auto_generated_header` cerca `"Read them proactively"`, ma il codice in `cmd_start` genera `"Read the relevant files BEFORE starting"`. I test passano evidentemente — verificare che il testo generato sia allineato con il test assertion.
+**Tests for YAML parser**: A dedicated test suite is missing for `yml_get`, `yml_get_repos`, etc. with edge-case input (quoted values, inline comments, missing keys). Since the parser is custom AWK, it is the most fragile point in the system — it deserves dedicated coverage.
 
 ---
 
-## 8. Sicurezza — Valutazione: ★★★☆☆
+## 6. Documentation — Rating: ★★★★★
 
-### Buone pratiche
+The documentation is **exceptional**. Specifically:
 
-- Docker socket mount documentato come rischio accettato
-- SSH keys montate `:ro`
-- `deny` su `~/.claude.json` e `~/.ssh/*`
-- Secrets iniettati via `-e` env vars, mai scritti nel compose file
-- Invariant test che verifica che i secrets non finiscano nel compose
+- **`architecture.md` with numbered ADRs**: Each architectural decision has Context, Decision, Rationale, Consequences. This is the gold standard for architecture documentation.
+- **`context-loading.md`**: The complete lifecycle loading map is invaluable for debugging and onboarding.
+- **`spec.md`**: Functional requirements with ID, priority, and user stories. Rare to see in a personal tool.
+- **Separation guides/reference/maintainer**: The Diataxis structure (tutorial, howto, reference, explanation) is well applied.
 
-### Rischi da mitigare
+### Single weak point
 
-**1. Docker socket = root on host** — Documentato, ma nessuna mitigazione tecnica. Opzioni:
-- Docker Context (rootless mode) per container con meno privilegi
-- `--userns-remap` per namespace isolation
-- Per un tool personale va bene così, ma per un'adozione team serve un ADR dedicato
-
-**2. `--dangerously-skip-permissions` senza guardrails di fallback** — Dentro il container è sicuro, ma se un utente monta accidentalmente `/` come volume, Claude ha accesso completo. Un `PreToolUse` hook che blocchi operazioni su path fuori `/workspace` sarebbe una mitigazione ragionevole.
-
-**3. OAuth token nel container environment** — `env` di Docker è visibile a chiunque abbia accesso al daemon (`docker inspect`). Per workstation single-user è ok, ma per ambienti condivisi è un rischio.
+The documentation in `docs/reference/context-hierarchy.md` § 4.1 includes `"defaultMode": "bypassPermissions"` and `"alwaysThinkingEnabled": true` in the spec, but the actual `defaults/global/.claude/settings.json` file does not have them. This doc-to-implementation discrepancy should be resolved — either by adding the fields to settings.json or updating the docs.
 
 ---
 
-## 9. Allineamento con Best Practices del PDF "Agentic Design Patterns"
+## 7. Knowledge Packs — Rating: ★★★★☆
 
-Il progetto implementa molti pattern consigliati nel documento di riferimento del project knowledge:
+The Knowledge Packs system is the most sophisticated and original feature of the project.
 
-| Pattern dal PDF | Implementazione nel repo | Stato |
+### Intelligent design
+
+- **Separation of concerns**: Knowledge (mounted :ro) vs Skills/Agents/Rules (copied) is a pragmatic choice that avoids Docker mount collisions
+- **packs.md generation + hook injection**: The fact that packs are automatically injected via `session-context.sh` without requiring `@import` in CLAUDE.md is elegant
+- **Descriptions preserved**: `workspace.yml` preserves descriptions between sessions via AWK lookup — idempotence well implemented
+
+### Improvements
+
+**1. Copied pack files are not cleaned**
+
+If a pack removes an agent or rule, the copied file in `projects/<n>/.claude/agents/` persists. There is no "clean before copy" mechanism. Solution: add a manifest of copied files and clean those no longer referenced.
+
+**2. Pack name conflicts not handled**
+
+If `pack-a` and `pack-b` both define `agents/reviewer.md`, the second silently overwrites the first. A warning might be useful.
+
+**3. packs.md header has slightly different text from test**
+
+The test `test_packs_md_has_auto_generated_header` looks for `"Read them proactively"`, but the code in `cmd_start` generates `"Read the relevant files BEFORE starting"`. Tests pass apparently — verify that generated text is aligned with test assertion.
+
+---
+
+## 8. Security — Rating: ★★★☆☆
+
+### Good practices
+
+- Docker socket mount documented as accepted risk
+- SSH keys mounted `:ro`
+- `deny` on `~/.claude.json` and `~/.ssh/*`
+- Secrets injected via `-e` env vars, never written to compose file
+- Invariant test verifying secrets don't end up in compose
+
+### Risks to mitigate
+
+**1. Docker socket = root on host** — Documented, but no technical mitigation. Options:
+- Docker Context (rootless mode) for less-privileged containers
+- `--userns-remap` for namespace isolation
+- For a personal tool this is fine, but for team adoption a dedicated ADR is needed
+
+**2. `--dangerously-skip-permissions` without fallback guardrails** — Inside the container it's safe, but if a user accidentally mounts `/` as a volume, Claude has full access. A `PreToolUse` hook that blocks operations on paths outside `/workspace` would be a reasonable mitigation.
+
+**3. OAuth token in container environment** — Docker `env` is visible to anyone with daemon access (`docker inspect`). For single-user workstation it's ok, but for shared environments it's a risk.
+
+---
+
+## 9. Alignment with Best Practices from "Agentic Design Patterns" PDF
+
+The project implements many patterns recommended in the project knowledge reference document:
+
+| Pattern from PDF | Implementation in repo | Status |
 |---|---|---|
-| "Implement a Local Context Orchestrator" | `bin/cco` + `project.yml` | ✅ Perfetto |
-| "Version-Controlled Prompt Library" | `defaults/global/.claude/agents/` + `/rules/` + `/skills/` | ✅ Perfetto |
-| "Integrate Agent Workflows with Git Hooks" | `SessionStart` + `PreCompact` hooks | ✅ Implementato |
-| "Maintain Architectural Ownership" | Workflow manuale con phase gates | ✅ Perfetto |
-| "Master the Art of the Brief" | CLAUDE.md strutturato + packs.md | ✅ Perfetto |
-| "Specialist Agents" (Reviewer, Analyst) | `agents/analyst.md` + `agents/reviewer.md` | ✅ Perfetto |
-| "Context Staging Area" | workspace.yml + packs.md + session-context.sh | ✅ Evoluzione elegante |
+| "Implement a Local Context Orchestrator" | `bin/cco` + `project.yml` | ✅ Perfect |
+| "Version-Controlled Prompt Library" | `defaults/global/.claude/agents/` + `/rules/` + `/skills/` | ✅ Perfect |
+| "Integrate Agent Workflows with Git Hooks" | `SessionStart` + `PreCompact` hooks | ✅ Implemented |
+| "Maintain Architectural Ownership" | Manual workflow with phase gates | ✅ Perfect |
+| "Master the Art of the Brief" | Structured CLAUDE.md + packs.md | ✅ Perfect |
+| "Specialist Agents" (Reviewer, Analyst) | `agents/analyst.md` + `agents/reviewer.md` | ✅ Perfect |
+| "Context Staging Area" | workspace.yml + packs.md + session-context.sh | ✅ Elegant evolution |
 
-Il progetto è una realizzazione concreta e ben eseguita dei pattern teorici descritti nel PDF. L'unica differenza significativa è che il PDF suggerisce **pre-commit hooks Git** per la review automatica, mentre l'orchestratore usa **Claude Code lifecycle hooks** — che è una scelta migliore perché avviene dentro la sessione Claude con pieno contesto.
+The project is a concrete and well-executed realization of the theoretical patterns described in the PDF. The only significant difference is that the PDF suggests **pre-commit Git hooks** for automatic review, while the orchestrator uses **Claude Code lifecycle hooks** — which is a better choice because it happens inside the Claude session with full context.
 
 ---
 
-## 10. Raccomandazioni Prioritizzate
+## 10. Prioritized Recommendations
 
-### P0 — Critiche (fare subito)
+### P0 — Critical (do immediately)
 
-1. **Aggiungere `alwaysThinkingEnabled: true`** a `defaults/global/.claude/settings.json` — discrepanza doc/implementazione
-2. **Aggiungere lock per sessioni concorrenti** — errore Docker non è user-friendly
-3. **Validazione secrets.env** — righe malformate causano errori confusi
+1. **Add `alwaysThinkingEnabled: true`** to `defaults/global/.claude/settings.json` — doc/implementation discrepancy
+2. **Add lock for concurrent sessions** — Docker error is not user-friendly
+3. **Validate secrets.env** — malformed lines cause confusing errors
 
-### P1 — Importanti (prossima iterazione)
+### P1 — Important (next iteration)
 
-4. **Aggiungere `PreToolUse` safety hook** — guardrail per `git push --force`, `rm -rf /`, accesso a path fuori `/workspace`
-5. **Aggiungere cleanup per file copiati da pack** — manifest di file copiati + cleanup
-6. **Pinning versione Claude Code nel Dockerfile** — riproducibilità build
-7. **Semplificare SessionStart hook matcher** — rimuovere matcher specifici, usare catch-all
+4. **Add `PreToolUse` safety hook** — guardrail for `git push --force`, `rm -rf /`, access to paths outside `/workspace`
+5. **Add cleanup for pack-copied files** — manifest of copied files + cleanup
+6. **Pin Claude Code version in Dockerfile** — build reproducibility
+7. **Simplify SessionStart hook matcher** — remove specific matchers, use catch-all
 
 ### P2 — Nice to have (roadmap)
 
-8. **Hook `SessionEnd`** per auto-cleanup sibling containers
-9. **Test suite per il YAML parser** con edge cases
-10. **ADR-9 per Knowledge Packs** — documentare le trade-off del design
-11. **Warning per conflitti di nome tra pack** (agents/rules con stesso filename)
-12. **Fallback a `python3 -c 'import yaml'` per parsing YAML** robusto
+8. **`SessionEnd` hook** for auto-cleanup of sibling containers
+9. **Test suite for YAML parser** with edge cases
+10. **ADR-9 for Knowledge Packs** — document design trade-offs
+11. **Warning for pack name conflicts** (agents/rules with same filename)
+12. **Fallback to `python3 -c 'import yaml'` for** robust YAML parsing
 
 ---
 
-## Conclusione
+## Conclusion
 
-Questo è un progetto **maturo, ben architettato, e sorprendentemente completo per un v1**. L'autore dimostra una comprensione profonda sia di Docker che delle API interne di Claude Code. La documentazione è superiore a molti progetti open source affermati. I design pattern adottati (three-tier context, hook-driven injection, knowledge packs) sono originali e ben eseguiti.
+This is **mature, well-architected, and surprisingly complete work for a v1**. The author demonstrates deep understanding of both Docker and Claude Code's internal APIs. The documentation is superior to many established open source projects. The design patterns adopted (three-tier context, hook-driven injection, knowledge packs) are original and well-executed.
 
-Il progetto risolve un problema reale — la gestione di sessioni Claude Code multi-repo con contesto strutturato — in modo elegante e con le giuste trade-off per un tool personale di sviluppo professionale.
+The project solves a real problem — managing multi-repo Claude Code sessions with structured context — elegantly and with the right trade-offs for a professional development personal tool.

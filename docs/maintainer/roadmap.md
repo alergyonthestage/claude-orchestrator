@@ -56,16 +56,16 @@ Full extensibility story implemented:
 
 ### Scope Hierarchy Refactor (Sprint 3) ✓
 
-Riorganizzazione della gerarchia di configurazione per sfruttare il livello **Managed** nativo di Claude Code (`/etc/claude-code/`). File infrastrutturali (hooks, env, deny rules) protetti nel livello Managed; agents, skills, rules e preferenze spostati nel livello User dove sono personalizzabili e mai sovrascritti.
+Reorganization of the configuration hierarchy to leverage Claude Code's native **Managed** level (`/etc/claude-code/`). Infrastructure files (hooks, env, deny rules) are protected in the Managed level; agents, skills, rules, and preferences moved to the User level where they are customizable and never overwritten.
 
-**Cosa è cambiato**:
-- `defaults/system/` eliminato → sostituito da `defaults/managed/` (baked nell'immagine Docker)
-- `managed-settings.json` contiene solo hooks, env vars, statusLine, deny rules (non sovrascrivibile)
-- Agents, skills, rules, settings.json spostati in `defaults/global/.claude/` (user-owned)
-- `_sync_system_files()` eliminata → sostituita da `_migrate_to_managed()` (migrazione one-time)
-- `system.manifest` eliminato (managed files baked nell'immagine Docker via `COPY`)
-- Dockerfile aggiornato: `COPY defaults/managed/ /etc/claude-code/`
-- Test suite aggiornata: `test_system_sync.sh` → `test_managed_scope.sh` (15 test)
+**What changed**:
+- `defaults/system/` removed → replaced by `defaults/managed/` (baked into the Docker image)
+- `managed-settings.json` contains only hooks, env vars, statusLine, deny rules (non-overridable)
+- Agents, skills, rules, settings.json moved to `defaults/global/.claude/` (user-owned)
+- `_sync_system_files()` removed → replaced by `_migrate_to_managed()` (one-time migration)
+- `system.manifest` removed (managed files baked into the Docker image via `COPY`)
+- Dockerfile updated: `COPY defaults/managed/ /etc/claude-code/`
+- Test suite updated: `test_system_sync.sh` → `test_managed_scope.sh` (15 tests)
 
 **Docs**: [analysis](./scope-hierarchy/analysis.md) | [ADR-3](./architecture.md) | [ADR-8](./architecture.md)
 
@@ -114,7 +114,7 @@ Sprint 5 (differenziante)      Sprint 6 (ecosistema)
 
 ### Sprint 4 — Browser Automation
 
-Necessario per testing e debugging frontend. Richiede scope hierarchy stabile (Sprint 3) per il corretto posizionamento della configurazione MCP.
+Required for frontend testing and debugging. Requires stable scope hierarchy (Sprint 3) for proper MCP configuration placement.
 
 #### #4 Browser MCP Integration
 
@@ -138,7 +138,7 @@ Enable Claude to control a browser via Chrome DevTools MCP, with the browser vis
 
 ---
 
-### Sprint 5 — Feature differenziante
+### Sprint 5 — Differentiating feature
 
 #### #5 Git Worktree Isolation
 
@@ -163,7 +163,7 @@ Opt-in git isolation for container sessions. When enabled, repos are mounted at 
 
 ---
 
-### Sprint 6 — Ecosistema Pack
+### Sprint 6 — Pack ecosystem
 
 #### #7 `cco pack create <name>` command
 
@@ -180,15 +180,15 @@ files:
 
 ---
 
-### Sprint 7 — Automazione e polish
+### Sprint 7 — Automation and polish
 
 #### #9 `cco project edit <name>` command
 
 Open project.yml in `$EDITOR` and regenerate docker-compose.yml after save.
 
-#### #10 `cco update` — merge intelligente config
+#### #10 `cco update` — intelligent config merge
 
-Metodo per aggiornare `projects/` e `global/` quando l'orchestratore aggiunge skill, template o modifica strutture, senza perdere customizzazioni utente (merge intelligente defaults → user config).
+Method to update `projects/` and `global/` when the orchestrator adds skills, templates, or modifies structures, without losing user customizations (intelligent merge defaults → user config).
 
 ---
 
@@ -212,6 +212,6 @@ Optional lightweight web dashboard for listing projects, starting/stopping sessi
 
 ### PreToolUse safety hook
 
-Proposta dalla review (§2 gap 3): hook per bloccare `rm -rf /`, `git push --force`, accesso fuori `/workspace`.
+Proposal from review (§2 gap 3): hook to block `rm -rf /`, `git push --force`, access outside `/workspace`.
 
-**Decisione**: Non implementare. Docker è il sandbox (ADR-1). Il container opera con mount point limitati. Eventuali comandi specifici da bloccare possono essere aggiunti puntualmente in futuro se emerge un bisogno concreto.
+**Decision**: Do not implement. Docker is the sandbox (ADR-1). The container operates with limited mount points. Specific commands to block can be added case-by-case in the future if a concrete need emerges.

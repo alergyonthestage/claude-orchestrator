@@ -1,35 +1,35 @@
-# Personalizzazione dell'ambiente
+# Customizing the Environment
 
-> Guida ai meccanismi di estensione per personalizzare l'ambiente di sviluppo nel container.
-
----
-
-## Panoramica
-
-claude-orchestrator offre quattro meccanismi complementari per personalizzare l'ambiente del container senza modificare il framework stesso:
-
-| Meccanismo | Scope | Quando | Cosa |
-|-----------|-------|--------|------|
-| `global/setup.sh` | Tutti i progetti | `cco build` (build time) | Pacchetti di sistema, dipendenze pesanti |
-| `projects/<name>/setup.sh` | Singolo progetto | `cco start` (runtime) | Setup leggero, dipendenze per progetto |
-| `projects/<name>/mcp-packages.txt` | Singolo progetto | `cco start` (runtime) | Pacchetti npm per server MCP |
-| `docker.image` in project.yml | Singolo progetto | `cco start` | Immagine Docker completamente custom |
+> Guide to extension mechanisms for customizing the development environment in the container.
 
 ---
 
-## Script di setup globale
+## Overview
+
+claude-orchestrator offers four complementary mechanisms to customize the container environment without modifying the framework itself:
+
+| Mechanism | Scope | When | What |
+|-----------|-------|------|------|
+| `global/setup.sh` | All projects | `cco build` (build time) | System packages, heavy dependencies |
+| `projects/<name>/setup.sh` | Single project | `cco start` (runtime) | Light setup, per-project dependencies |
+| `projects/<name>/mcp-packages.txt` | Single project | `cco start` (runtime) | npm packages for MCP servers |
+| `docker.image` in project.yml | Single project | `cco start` | Fully custom Docker image |
+
+---
+
+## Global Setup Script
 
 **File**: `global/setup.sh`
 
-Lo script di setup globale viene eseguito durante `cco build` come step nel Dockerfile. Gira come root e puo installare pacchetti di sistema, configurare repository apt, aggiungere tool globali.
+The global setup script is executed during `cco build` as a step in the Dockerfile. It runs as root and can install system packages, configure apt repositories, and add global tools.
 
-### Quando usarlo
+### When to Use It
 
-- Installazione di pacchetti apt necessari in tutti i progetti
-- Tool di sistema (Terraform, kubectl, Chromium, ecc.)
-- Dipendenze pesanti che richiedono tempo di download
+- Installation of apt packages needed in all projects
+- System tools (Terraform, kubectl, Chromium, etc.)
+- Heavy dependencies that require significant download time
 
-### Esempio
+### Example
 
 ```bash
 #!/bin/bash
@@ -43,28 +43,28 @@ curl -fsSL https://releases.hashicorp.com/terraform/1.7.0/terraform_1.7.0_linux_
     -o /tmp/terraform.zip && unzip /tmp/terraform.zip -d /usr/local/bin/ && rm /tmp/terraform.zip
 ```
 
-### Note
+### Notes
 
-- Lo script e incluso nel Docker image: le modifiche richiedono un `cco build` per avere effetto
-- Gira come root — accesso completo al sistema
-- Il file viene creato vuoto (con commenti) da `cco init`
-- Le dipendenze installate qui sono disponibili in tutti i progetti
+- The script is included in the Docker image: changes require a `cco build` to take effect
+- Runs as root — full system access
+- The file is created empty (with comments) by `cco init`
+- Dependencies installed here are available in all projects
 
 ---
 
-## Script di setup per progetto
+## Per-Project Setup Script
 
 **File**: `projects/<name>/setup.sh`
 
-Viene eseguito dall'entrypoint ad ogni avvio del container (`cco start`), prima del lancio di Claude. Gira come root.
+Executed by the entrypoint at every container startup (`cco start`), before launching Claude. Runs as root.
 
-### Quando usarlo
+### When to Use It
 
-- Dipendenze leggere specifiche di un progetto
-- Setup che non giustifica un rebuild dell'immagine
-- Installazione di pacchetti Python, Ruby gem o altri tool non-apt
+- Light dependencies specific to a project
+- Setup that doesn't justify a full image rebuild
+- Installation of Python packages, Ruby gems, or other non-apt tools
 
-### Esempio
+### Example
 
 ```bash
 #!/bin/bash
@@ -77,27 +77,27 @@ pip3 install --quiet pandas numpy scikit-learn 2>/dev/null
 ln -sf /workspace/shared-libs/bin/lint /usr/local/bin/project-lint
 ```
 
-### Note
+### Notes
 
-- Viene eseguito **ad ogni `cco start`** — deve essere idempotente
-- Gira come root — puo installare pacchetti, ma aumenta il tempo di avvio
-- Per dipendenze pesanti, preferisci `global/setup.sh` o un'immagine custom
-- Se il file non esiste, viene semplicemente ignorato
+- Executed **at every `cco start`** — must be idempotent
+- Runs as root — can install packages, but increases startup time
+- For heavy dependencies, prefer `global/setup.sh` or a custom image
+- If the file doesn't exist, it is simply ignored
 
 ---
 
-## Pacchetti MCP per progetto
+## Per-Project MCP Packages
 
 **File**: `projects/<name>/mcp-packages.txt`
 
-Pacchetti npm installati globalmente all'avvio del container. Utile per server MCP specifici di un progetto.
+npm packages installed globally at container startup. Useful for MCP servers specific to a project.
 
-### Quando usarlo
+### When to Use It
 
-- Server MCP necessari solo per un progetto specifico
-- Quando non vuoi includere il pacchetto nell'immagine base
+- MCP servers needed only for a specific project
+- When you don't want to include the package in the base image
 
-### Esempio
+### Example
 
 ```
 # projects/devops-toolkit/mcp-packages.txt
@@ -105,34 +105,34 @@ Pacchetti npm installati globalmente all'avvio del container. Utile per server M
 @modelcontextprotocol/server-postgres
 ```
 
-### Note
+### Notes
 
-- Un pacchetto per riga; righe vuote e commenti (`#`) ignorati
-- Installati ad ogni `cco start` (rallenta l'avvio se molti pacchetti)
-- Per pacchetti usati in tutti i progetti, preferisci `global/mcp-packages.txt` (installati al build time con `cco build`)
+- One package per line; empty lines and comments (`#`) are ignored
+- Installed at every `cco start` (slows startup if many packages)
+- For packages used in all projects, prefer `global/mcp-packages.txt` (installed at build time with `cco build`)
 
-### Confronto con mcp-packages.txt globale
+### Comparison with Global mcp-packages.txt
 
-| File | Installato quando | Disponibile in |
-|------|-------------------|----------------|
-| `global/mcp-packages.txt` | `cco build` (build time) | Tutti i progetti |
-| `projects/<name>/mcp-packages.txt` | `cco start` (runtime) | Solo quel progetto |
+| File | Installed When | Available In |
+|------|---|---|
+| `global/mcp-packages.txt` | `cco build` (build time) | All projects |
+| `projects/<name>/mcp-packages.txt` | `cco start` (runtime) | That project only |
 
 ---
 
-## Immagine Docker custom
+## Custom Docker Image
 
-**Campo**: `docker.image` in `project.yml`
+**Field**: `docker.image` in `project.yml`
 
-Permette a un progetto di usare un'immagine Docker completamente personalizzata al posto di `claude-orchestrator:latest`.
+Allows a project to use a completely customized Docker image instead of `claude-orchestrator:latest`.
 
-### Quando usarla
+### When to Use It
 
-- Dipendenze molto pesanti che rallenterebbero troppo `setup.sh`
-- Toolchain completamente diversa (es. progetto con stack Go + Kubernetes)
-- Massimo controllo sull'ambiente, zero penalita all'avvio
+- Very heavy dependencies that would slow down `setup.sh` too much
+- Completely different toolchain (e.g., project with Go stack + Kubernetes)
+- Maximum environment control, zero startup penalty
 
-### Configurazione
+### Configuration
 
 ```yaml
 # projects/devops-toolkit/project.yml
@@ -142,9 +142,9 @@ docker:
   image: claude-orchestrator-devops:latest
 ```
 
-### Creare l'immagine custom
+### Building the Custom Image
 
-Parti dall'immagine base di claude-orchestrator per mantenere compatibilita con entrypoint, hook e configurazione:
+Start from the claude-orchestrator base image to maintain compatibility with entrypoint, hooks, and configuration:
 
 ```dockerfile
 # projects/devops-toolkit/Dockerfile
@@ -166,46 +166,46 @@ docker build -t claude-orchestrator-devops:latest \
   -f projects/devops-toolkit/Dockerfile .
 ```
 
-### Note
+### Notes
 
-- Usa sempre `FROM claude-orchestrator:latest` come base per mantenere la compatibilita
-- Dopo un `cco build` dell'immagine base, ricostruisci anche le immagini custom
-- L'immagine custom riceve gli stessi mount e variabili d'ambiente dell'immagine base
-
----
-
-## Matrice decisionale
-
-Quale meccanismo usare in base alla necessita:
-
-| Necessita | Meccanismo consigliato | Motivazione |
-|-----------|----------------------|-------------|
-| Pacchetto apt per tutti i progetti | `global/setup.sh` | Un solo rebuild, avvio rapido |
-| Pacchetto apt per un progetto (leggero) | `projects/<name>/setup.sh` | Nessun rebuild necessario |
-| Pacchetto apt per un progetto (pesante) | Immagine custom | Zero penalita all'avvio |
-| Server MCP npm per tutti i progetti | `global/mcp-packages.txt` | Pre-installato al build |
-| Server MCP npm per un progetto | `projects/<name>/mcp-packages.txt` | Runtime, nessun rebuild |
-| Dipendenze pip/gem per un progetto | `projects/<name>/setup.sh` | Installazione runtime |
-| Toolchain completamente diversa | `docker.image` in project.yml | Controllo totale |
-
-### Regola generale
-
-- **Build time** (setup globale, immagine custom): per dipendenze pesanti o usate spesso — un costo iniziale, avvio immediato
-- **Runtime** (setup per progetto, mcp-packages per progetto): per dipendenze leggere o sperimentali — nessun rebuild, ma avvio piu lento
+- Always use `FROM claude-orchestrator:latest` as the base to maintain compatibility
+- After a `cco build` of the base image, rebuild your custom images as well
+- The custom image receives the same mounts and environment variables as the base image
 
 ---
 
-## Layout dei file
+## Decision Matrix
+
+Which mechanism to use based on your needs:
+
+| Need | Recommended Mechanism | Rationale |
+|---|---|---|
+| apt package for all projects | `global/setup.sh` | Single rebuild, fast startup |
+| apt package for one project (light) | `projects/<name>/setup.sh` | No rebuild needed |
+| apt package for one project (heavy) | Custom image | Zero startup penalty |
+| npm MCP server for all projects | `global/mcp-packages.txt` | Pre-installed at build |
+| npm MCP server for one project | `projects/<name>/mcp-packages.txt` | Runtime, no rebuild |
+| pip/gem dependencies for one project | `projects/<name>/setup.sh` | Runtime installation |
+| Completely different toolchain | `docker.image` in project.yml | Full control |
+
+### General Rule
+
+- **Build time** (global setup, custom image): for heavy or frequently-used dependencies — upfront cost, immediate startup
+- **Runtime** (per-project setup, per-project mcp-packages): for light or experimental dependencies — no rebuild, but slower startup
+
+---
+
+## File Layout
 
 ```
 global/
-  setup.sh                 # Script globale (build time)
-  mcp-packages.txt         # Pacchetti MCP globali (build time)
+  setup.sh                 # Global script (build time)
+  mcp-packages.txt         # Global MCP packages (build time)
 
 projects/<name>/
-  setup.sh                 # Script per progetto (runtime)
-  mcp-packages.txt         # Pacchetti MCP per progetto (runtime)
-  project.yml              # docker.image per immagine custom
+  setup.sh                 # Per-project script (runtime)
+  mcp-packages.txt         # Per-project MCP packages (runtime)
+  project.yml              # docker.image for custom image
 ```
 
-Tutti questi file sono opzionali. Se non presenti, vengono semplicemente ignorati.
+All these files are optional. If not present, they are simply ignored.

@@ -1,105 +1,105 @@
-# Concetti chiave
+# Key concepts
 
-> I concetti fondamentali di claude-orchestrator, spiegati in breve.
+> The fundamental concepts of claude-orchestrator, explained briefly.
 
 ---
 
-## Gerarchia di contesto
+## Context hierarchy
 
-claude-orchestrator organizza la configurazione su quattro livelli, dal piu prioritario al meno:
+claude-orchestrator organizes configuration across four levels, from highest to lowest priority:
 
-| Livello | Path nel container | Cosa contiene | Modificabile? |
+| Level | Path in container | Contains | Modifiable? |
 |---------|-------------------|---------------|---------------|
-| **Managed** | `/etc/claude-code/` | Hook, variabili d'ambiente, deny rules | No (baked nell'immagine) |
-| **User** | `~/.claude/` | Preferenze, agent, skill, regole | Si |
-| **Project** | `/workspace/.claude/` | Istruzioni e config specifiche del progetto | Si |
-| **Repo** | `/workspace/<repo>/.claude/` | Contesto della singola repository | Si (vive nella repo) |
+| **Managed** | `/etc/claude-code/` | Hooks, environment variables, deny rules | No (baked in image) |
+| **User** | `~/.claude/` | Preferences, agents, skills, rules | Yes |
+| **Project** | `/workspace/.claude/` | Project-specific instructions and config | Yes |
+| **Repo** | `/workspace/<repo>/.claude/` | Context for single repository | Yes (lives in repo) |
 
-I livelli superiori hanno la precedenza. Questo significa che gli hook managed sono sempre attivi e non possono essere disabilitati, mentre le impostazioni progetto sovrascrivono quelle globali. Ogni livello carica automaticamente i file `CLAUDE.md`, `settings.json`, `rules/*.md` e `agents/*.md` presenti nella sua directory.
+Higher levels take precedence. This means managed hooks are always active and cannot be disabled, while project settings override global settings. Each level automatically loads `CLAUDE.md`, `settings.json`, `rules/*.md`, and `agents/*.md` files present in its directory.
 
-Per la reference completa vedi [context-hierarchy.md](../reference/context-hierarchy.md).
+For the complete reference, see [context-hierarchy.md](../reference/context-hierarchy.md).
 
 ---
 
-## Knowledge pack
+## Knowledge packs
 
-I knowledge pack sono raccolte riutilizzabili di documentazione (convenzioni, overview di business, linee guida) che possono essere attivate su piu progetti senza copiare file.
+Knowledge packs are reusable collections of documentation (conventions, business overview, guidelines) that can be activated across multiple projects without copying files.
 
-Un pack viene definito in `global/packs/<name>/pack.yml` con un riferimento a una directory di documenti sull'host. All'avvio della sessione, `cco start` monta la directory read-only e genera una lista dei file disponibili. Claude li legge on-demand quando sono rilevanti per il task corrente. I pack possono anche contribuire skill, agent e rule a livello progetto.
+A pack is defined in `global/packs/<name>/pack.yml` with a reference to a documentation directory on the host. At session startup, `cco start` mounts the directory read-only and generates a list of available files. Claude reads them on-demand when relevant to the current task. Packs can also contribute skills, agents, and rules at the project level.
 
-Attivazione in `project.yml`:
+Activation in `project.yml`:
 
 ```yaml
 packs:
   - my-client-knowledge
 ```
 
-Per approfondire: [project-setup.md](../user-guides/project-setup.md) (sezione Configure a Pack).
+Learn more: [project-setup.md](../user-guides/project-setup.md) (Configure a Pack section).
 
 ---
 
-## Agent team
+## Agent teams
 
-Claude Code supporta agent team — piu istanze Claude che lavorano in parallelo su task diversi, coordinate da un lead.
+Claude Code supports agent teams — multiple Claude instances working in parallel on different tasks, coordinated by a lead.
 
-claude-orchestrator supporta due modalita di visualizzazione:
+claude-orchestrator supports two display modes:
 
-- **tmux** (default) — ogni teammate appare come un pannello tmux all'interno del container. Funziona con qualsiasi terminale, nessuna configurazione host necessaria.
-- **iTerm2** (`--teammate-mode auto`) — usa pannelli nativi iTerm2 su macOS. UX migliore ma richiede configurazione aggiuntiva (Python API abilitata, `it2` CLI sull'host).
+- **tmux** (default) — each teammate appears as a tmux pane inside the container. Works with any terminal, no host configuration needed.
+- **iTerm2** (`--teammate-mode auto`) — uses native iTerm2 panes on macOS. Better UX but requires additional setup (Python API enabled, `it2` CLI on host).
 
-La modalita si configura in `global/.claude/settings.json` (`"teammateMode": "tmux"`) oppure via flag CLI (`--teammate-mode`).
+The mode is configured in `global/.claude/settings.json` (`"teammateMode": "tmux"`) or via CLI flag (`--teammate-mode`).
 
-Per approfondire: [agent-teams.md](../user-guides/agent-teams.md).
+Learn more: [agent-teams.md](../user-guides/agent-teams.md).
 
 ---
 
-## Isolamento Docker
+## Docker isolation
 
-Il container Docker e il meccanismo di isolamento di claude-orchestrator. Claude Code viene lanciato con `--dangerously-skip-permissions`, che normalmente disabilita tutte le conferme di sicurezza. All'interno del container questo e sicuro perche:
+The Docker container is claude-orchestrator's isolation mechanism. Claude Code is launched with `--dangerously-skip-permissions`, which normally disables all security prompts. Inside the container this is safe because:
 
-- Il filesystem e isolato — Claude puo modificare solo le repository montate e i file del container
-- La rete e controllata — solo le porte esplicitamente mappate sono raggiungibili dall'host
-- I feature branch git forniscono un ulteriore livello di protezione — ogni modifica e reversibile
-- Il container e effimero (`--rm`) — tutto cio che non e montato viene perso al termine
+- Filesystem is isolated — Claude can only modify mounted repositories and container files
+- Network is controlled — only explicitly mapped ports are reachable from the host
+- Git feature branches provide an additional protection layer — every change is reversible
+- Container is ephemeral (`--rm`) — everything not mounted is lost on exit
 
-L'unico punto di accesso privilegiato e il Docker socket montato dall'host, che permette a Claude di creare container fratelli (es. postgres, redis) sul daemon Docker dell'host.
+The only privileged access point is the Docker socket mounted from the host, which allows Claude to create sibling containers (e.g., postgres, redis) on the host Docker daemon.
 
-Per approfondire: [architecture.md](../maintainer/architecture.md) (ADR-1: Docker as the Only Sandbox).
+Learn more: [architecture.md](../maintainer/architecture.md) (ADR-1: Docker as the Only Sandbox).
 
 ---
 
 ## Auto memory
 
-Ogni progetto ha la propria directory di memoria isolata (`projects/<name>/claude-state/memory/`). Claude Code salva automaticamente note e insight durante le sessioni, e li ricarica nelle sessioni successive.
+Each project has its own isolated memory directory (`projects/<name>/claude-state/memory/`). Claude Code automatically saves notes and insights during sessions and reloads them in subsequent sessions.
 
-L'isolamento garantisce che le informazioni di un progetto non "trapelino" in un altro. La directory `claude-state/` contiene anche i session transcript, necessari per il comando `/resume` che permette di riprendere una sessione precedente anche dopo un rebuild dell'immagine Docker.
+The isolation ensures that information from one project doesn't "leak" into another. The `claude-state/` directory also contains session transcripts, necessary for the `/resume` command that allows you to resume a previous session even after a Docker image rebuild.
 
-Per approfondire: [context-hierarchy.md](../reference/context-hierarchy.md) (sezione Auto Memory).
+Learn more: [context-hierarchy.md](../reference/context-hierarchy.md) (Auto Memory section).
 
 ---
 
-## Skill e agent
+## Skills and agents
 
-Le **skill** sono comandi invocabili dall'utente (es. `/analyze`, `/commit`, `/review`) che eseguono task specifici con istruzioni predefinite. Ogni skill e una directory con un file `SKILL.md` che ne definisce comportamento e tool disponibili.
+**Skills** are user-invocable commands (e.g., `/analyze`, `/commit`, `/review`) that perform specific tasks with predefined instructions. Each skill is a directory with a `SKILL.md` file that defines its behavior and available tools.
 
-Gli **agent** sono profili specializzati (es. analyst, reviewer) che Claude puo istanziare come subagent con modelli e permessi specifici. Vengono definiti come file `.md` nella directory `agents/`.
+**Agents** are specialized profiles (e.g., analyst, reviewer) that Claude can instantiate as subagents with specific models and permissions. They are defined as `.md` files in the `agents/` directory.
 
-Entrambi esistono a tre livelli:
+Both exist at three levels:
 
-| Livello | Skill | Agent |
+| Level | Skills | Agents |
 |---------|-------|-------|
-| Managed | `/etc/claude-code/.claude/skills/` (es. `/init-workspace`) | Non usato |
-| User | `~/.claude/skills/` (es. `/analyze`, `/design`, `/review`, `/commit`) | `~/.claude/agents/` |
+| Managed | `/etc/claude-code/.claude/skills/` (e.g., `/init-workspace`) | Not used |
+| User | `~/.claude/skills/` (e.g., `/analyze`, `/design`, `/review`, `/commit`) | `~/.claude/agents/` |
 | Project | `/workspace/.claude/skills/` | `/workspace/.claude/agents/` |
 
-I knowledge pack possono aggiungere skill e agent a livello progetto.
+Knowledge packs can add skills and agents at the project level.
 
-Per approfondire: [context-hierarchy.md](../reference/context-hierarchy.md) (sezioni Skills e Subagents).
+Learn more: [context-hierarchy.md](../reference/context-hierarchy.md) (Skills and Subagents sections).
 
 ---
 
-## Prossimi passi
+## Next steps
 
-- [Il tuo primo progetto](first-project.md) — tutorial guidato passo-passo
-- [Project setup](../user-guides/project-setup.md) — guida avanzata alla configurazione
-- [CLI reference](../reference/cli.md) — tutti i comandi disponibili
+- [Your first project](first-project.md) — step-by-step tutorial
+- [Project setup](../user-guides/project-setup.md) — advanced configuration guide
+- [CLI reference](../reference/cli.md) — all available commands

@@ -1,15 +1,15 @@
-# Guida per Contributor
+# Contributor Guide
 
-Questa sezione contiene la documentazione tecnica interna di claude-orchestrator, destinata a chi sviluppa o mantiene il progetto. Qui trovi design doc, analisi tecniche, review architetturali e specifiche di implementazione.
+This section contains the internal technical documentation of claude-orchestrator, intended for those developing or maintaining the project. Here you find design docs, technical analyses, architectural reviews, and implementation specifications.
 
 ---
 
-## Mappa delle Aree Funzionali
+## Functional Areas Map
 
-Ogni area del progetto ha uno o entrambi i tipi di documento:
+Each area of the project has one or both types of document:
 
-- **Design doc** — descrive come un componente è (o sarà) costruito: architettura, decisioni, flussi, interfacce
-- **Analysis doc** — investigazione tecnica: opzioni valutate, vincoli, raccomandazioni
+- **Design doc** — describes how a component is (or will be) built: architecture, decisions, flows, interfaces
+- **Analysis doc** — technical investigation: options evaluated, constraints, recommendations
 
 | Area | Design | Analysis |
 |------|--------|----------|
@@ -25,28 +25,28 @@ Ogni area del progetto ha uno o entrambi i tipi di documento:
 
 ---
 
-## Documenti Fondamentali
+## Core Documents
 
-Questi tre documenti costituiscono il nucleo della documentazione di progetto:
+These three documents form the core of project documentation:
 
-- [architecture.md](architecture.md) — ADR (Architecture Decision Records), diagrammi di sistema, flussi dati e considerazioni di sicurezza
-- [spec.md](spec.md) — specifica dei requisiti funzionali e non funzionali
-- [roadmap.md](roadmap.md) — piano di sviluppo, priorità e stato di avanzamento delle feature
-
----
-
-## Review
-
-La directory [reviews/](reviews/) contiene le review architetturali e di avanzamento condotte durante lo sviluppo. Ogni review documenta lo stato del progetto a una certa data, le decisioni prese e i prossimi passi concordati.
+- [architecture.md](architecture.md) — ADR (Architecture Decision Records), system diagrams, data flows, and security considerations
+- [spec.md](spec.md) — functional and non-functional requirements specification
+- [roadmap.md](roadmap.md) — development plan, priorities, and feature progress
 
 ---
 
-## Organizzazione della Documentazione
+## Reviews
 
-La documentazione maintainer segue due convenzioni:
+The [reviews/](reviews/) directory contains architectural and progress reviews conducted during development. Each review documents the project state at a certain date, decisions made, and agreed next steps.
 
-1. **Design doc** (`<area>/design.md`) — descrivono come qualcosa è costruito o sarà costruito. Contengono: overview, architettura, flussi, decisioni implementative, interfacce, edge case. Sono il riferimento primario per chi implementa.
+---
 
-2. **Analysis doc** (`<area>/analysis.md`) — documentano indagini tecniche. Contengono: problema analizzato, opzioni considerate con pro/contro, vincoli identificati, raccomandazione finale. Sono il riferimento per capire *perché* una certa direzione è stata scelta.
+## Documentation Organization
 
-Le aree in `future/` riguardano feature non ancora implementate. I design doc in questa directory sono proposte approvate ma non ancora realizzate.
+Maintainer documentation follows two conventions:
+
+1. **Design doc** (`<area>/design.md`) — describe how something is built or will be built. They contain: overview, architecture, flows, implementation decisions, interfaces, edge cases. They are the primary reference for implementers.
+
+2. **Analysis doc** (`<area>/analysis.md`) — document technical investigations. They contain: problem analyzed, options considered with pros/cons, identified constraints, final recommendation. They are the reference for understanding *why* a certain direction was chosen.
+
+Areas in `future/` concern features not yet implemented. Design docs in this directory are approved proposals not yet realized.

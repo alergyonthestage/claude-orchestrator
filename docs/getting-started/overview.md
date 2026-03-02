@@ -1,44 +1,44 @@
-# Cos'e claude-orchestrator
+# What is claude-orchestrator
 
-> Sessioni Claude Code isolate in Docker, pronte all'uso con un singolo comando.
-
----
-
-## Cos'e
-
-claude-orchestrator e un tool che gestisce sessioni Claude Code all'interno di container Docker. Ogni sessione viene configurata automaticamente con:
-
-- Le repository del progetto montate in lettura-scrittura
-- Il contesto completo (istruzioni, regole, agent, skill)
-- Agent team pronti per il lavoro collaborativo
-- Memoria isolata per progetto
-
-Un singolo comando (`cco start my-app`) lancia tutto.
+> Isolated Claude Code sessions in Docker, ready to use with a single command.
 
 ---
 
-## Perche usarlo
+## What is it
 
-| Problema | Soluzione |
+claude-orchestrator is a tool that manages Claude Code sessions inside Docker containers. Each session is automatically configured with:
+
+- Project repositories mounted read-write
+- Complete context (instructions, rules, agents, skills)
+- Agent teams ready for collaborative work
+- Isolated memory per project
+
+A single command (`cco start my-app`) launches everything.
+
+---
+
+## Why use it
+
+| Problem | Solution |
 |----------|-----------|
-| Gestire piu progetti con configurazioni diverse | Ogni progetto ha il proprio `project.yml` con repo, porte, variabili d'ambiente |
-| Contesto perso tra le sessioni | Gerarchia a quattro livelli: managed, globale, progetto, repository |
-| Agent team complessi da configurare | Configurazione automatica con tmux (o iTerm2) |
-| Workflow non strutturato | Fasi predefinite (Analysis, Design, Implementation, Documentation) con transizioni manuali |
-| Memoria condivisa tra progetti | Ogni progetto ha la propria directory `claude-state/` isolata |
-| Rischio di danni al filesystem host | Docker fornisce isolamento completo: `--dangerously-skip-permissions` e sicuro nel container |
+| Managing multiple projects with different configurations | Each project has its own `project.yml` with repos, ports, environment variables |
+| Context lost between sessions | Four-level hierarchy: managed, global, project, repository |
+| Complex agent teams to configure | Automatic configuration with tmux (or iTerm2) |
+| Unstructured workflow | Predefined phases (Analysis, Design, Implementation, Documentation) with manual transitions |
+| Shared memory between projects | Each project has its own isolated `claude-state/` directory |
+| Risk of damage to host filesystem | Docker provides complete isolation: `--dangerously-skip-permissions` is safe in the container |
 
 ---
 
-## Come funziona
+## How it works
 
-Il flusso di avvio e semplice:
+The startup flow is straightforward:
 
-1. **`cco start my-app`** — il CLI legge `project.yml`
-2. **Genera `docker-compose.yml`** — volume mount per repo, porte, variabili d'ambiente
-3. **Lancia il container Docker** — immagine con Claude Code, tmux, Docker CLI, git
-4. **Entrypoint** — sistema i permessi, configura MCP, avvia tmux
-5. **Claude Code** — si avvia con tutto il contesto gia caricato
+1. **`cco start my-app`** — the CLI reads `project.yml`
+2. **Generates `docker-compose.yml`** — volume mounts for repos, ports, environment variables
+3. **Launches the Docker container** — image with Claude Code, tmux, Docker CLI, git
+4. **Entrypoint** — fixes permissions, configures MCP, starts tmux
+5. **Claude Code** — starts with all context already loaded
 
 ```mermaid
 graph LR
@@ -49,29 +49,29 @@ graph LR
         REPOS["~/projects/repos/"]
     end
 
-    subgraph Container Docker
+    subgraph Docker Container
         EP["entrypoint.sh"]
         TMUX["tmux"]
         CLAUDE["Claude Code"]
     end
 
-    CLI -->|"legge config"| PROJ
-    CLI -->|"genera docker-compose.yml"| Container Docker
+    CLI -->|"reads config"| PROJ
+    CLI -->|"generates docker-compose.yml"| Docker Container
     GLOBAL -->|"mount ~/.claude/"| EP
     PROJ -->|"mount /workspace/.claude/"| EP
-    REPOS -->|"mount /workspace/repos/"| Container Docker
+    REPOS -->|"mount /workspace/repos/"| Docker Container
     EP --> TMUX --> CLAUDE
 ```
 
-All'interno del container, Claude Code ha accesso a:
+Inside the container, Claude Code has access to:
 
-- **Tutte le repository** del progetto in `/workspace/`
-- **Docker socket** dell'host per lanciare container fratelli (postgres, redis, ecc.)
-- **Porte esposte** verso `localhost` sulla macchina host
-- **Git e GitHub CLI** per commit, push e pull request
+- **All project repositories** in `/workspace/`
+- **Host Docker socket** to launch sibling containers (postgres, redis, etc.)
+- **Exposed ports** to `localhost` on the host machine
+- **Git and GitHub CLI** for commits, pushes and pull requests
 
 ---
 
-## Prossimo passo
+## Next step
 
-Vai alla [guida di installazione](installation.md) per configurare claude-orchestrator sulla tua macchina.
+Go to the [installation guide](installation.md) to set up claude-orchestrator on your machine.

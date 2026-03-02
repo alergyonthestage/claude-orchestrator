@@ -1,333 +1,333 @@
-# Troubleshooting e FAQ
+# Troubleshooting and FAQ
 
-> Soluzioni ai problemi comuni, organizzate per categoria.
+> Solutions to common problems, organized by category.
 
 ---
 
 ## Docker
 
-### Docker daemon non in esecuzione
+### Docker daemon is not running
 
 ```
 Error: Docker daemon is not running. Start Docker Desktop.
 ```
 
-**Soluzione**: Avvia Docker Desktop (macOS/Windows) oppure il servizio Docker (`sudo systemctl start docker` su Linux). Verifica con:
+**Solution**: Start Docker Desktop (macOS/Windows) or the Docker service (`sudo systemctl start docker` on Linux). Verify with:
 
 ```bash
 docker info
 ```
 
-### Build dell'immagine fallisce
+### Image build fails
 
-**Sintomi**: `cco build` termina con errore.
+**Symptoms**: `cco build` terminates with an error.
 
-**Soluzioni**:
-- Verifica la connessione internet (il build scarica pacchetti npm e apt)
-- Prova un rebuild completo senza cache:
+**Solutions**:
+- Check your internet connection (the build downloads npm and apt packages)
+- Try a full rebuild without cache:
   ```bash
   cco build --no-cache
   ```
-- Se l'errore riguarda un pacchetto npm specifico, potrebbe essere un problema temporaneo del registry. Riprova dopo qualche minuto
+- If the error is about a specific npm package, it could be a temporary registry issue. Try again after a few minutes.
 
-### Conflitto di porte
+### Port conflict
 
 ```
 Error: Port 3000 is already in use. Stop the conflicting service or use --port to remap.
 ```
 
-**Soluzioni**:
-- Identifica il processo che occupa la porta:
+**Solutions**:
+- Identify the process using the port:
   ```bash
   lsof -i :3000
   ```
-- Ferma il servizio in conflitto, oppure rimappa la porta:
+- Stop the conflicting service, or remap the port:
   ```bash
   cco start my-project --port 3001:3000
   ```
-- In alternativa, modifica `docker.ports` in `project.yml`
+- Alternatively, modify `docker.ports` in `project.yml`
 
-### Permessi Docker socket
+### Docker socket permissions
 
-**Sintomi**: comandi `docker` nel container falliscono con "permission denied".
+**Symptoms**: `docker` commands in the container fail with "permission denied".
 
-**Soluzione**: l'entrypoint gestisce automaticamente il GID del socket Docker. Se il problema persiste:
-- Verifica che il socket sia montato: controlla `docker.mount_socket` in `project.yml` (default: `true`)
-- Su Linux, verifica che il tuo utente appartenga al gruppo `docker`:
+**Solution**: the entrypoint automatically handles the Docker socket GID. If the problem persists:
+- Verify that the socket is mounted: check `docker.mount_socket` in `project.yml` (default: `true`)
+- On Linux, verify that your user belongs to the `docker` group:
   ```bash
   groups | grep docker
   ```
 
-### Immagine Docker non trovata
+### Docker image not found
 
 ```
 Error: Docker image 'claude-orchestrator:latest' not found. Run 'cco build' first.
 ```
 
-**Soluzione**: esegui `cco build` per costruire l'immagine. Se usi un'immagine custom (`docker.image` in `project.yml`), verifica che sia stata costruita.
+**Solution**: run `cco build` to build the image. If you're using a custom image (`docker.image` in `project.yml`), verify that it has been built.
 
 ---
 
-## Autenticazione
+## Authentication
 
 ### "Not logged in"
 
-**Causa**: le credenziali OAuth non sono disponibili nel container.
+**Cause**: OAuth credentials are not available in the container.
 
-**Soluzioni**:
-1. Verifica di aver fatto login sull'host: esegui `claude` fuori dal container
-2. Forza il re-seeding delle credenziali:
+**Solutions**:
+1. Verify that you've logged in on the host: run `claude` outside the container
+2. Force credential re-seeding:
    ```bash
    rm global/claude-state/.credentials.json
    cco start my-project
    ```
-3. Verifica il Keychain macOS:
+3. Check the macOS Keychain:
    ```bash
    security find-generic-password -s "Claude Code-credentials" -a "$(whoami)" -w | head -c 50
    ```
 
-### Token scaduto
+### Expired token
 
-**Sintomi**: errori di autenticazione dopo un periodo di inattivita (~90 giorni).
+**Symptoms**: authentication errors after a period of inactivity (~90 days).
 
-**Soluzione**:
-1. Login sull'host: esegui `claude` e autentica via browser
-2. `cco start my-project` — il CLI rileva le nuove credenziali automaticamente
+**Solution**:
+1. Log in on the host: run `claude` and authenticate via browser
+2. `cco start my-project` — the CLI automatically detects the new credentials
 
-### Schermata di onboarding
+### Onboarding screen
 
-**Sintomi**: appare la schermata "theme: dark" invece della sessione.
+**Symptoms**: the "theme: dark" screen appears instead of the session.
 
-**Causa**: `hasCompletedOnboarding` e impostato a `false` in `claude.json`, tipicamente dopo un logout+login sull'host.
+**Cause**: `hasCompletedOnboarding` is set to `false` in `claude.json`, typically after logout+login on the host.
 
-**Soluzione**: il CLI corregge automaticamente questo valore. Se il problema persiste:
+**Solution**: the CLI automatically fixes this value. If the problem persists:
 ```bash
 jq '.hasCompletedOnboarding = true' global/claude-state/claude.json > /tmp/fix.json \
   && mv /tmp/fix.json global/claude-state/claude.json
 ```
 
-### API key non riconosciuta
+### API key not recognized
 
-**Soluzioni**:
-- Verifica `auth.method: api_key` in `project.yml`
-- Verifica che `ANTHROPIC_API_KEY` sia in `global/secrets.env` o passato con `--env`
-- Controlla il formato della chiave (deve iniziare con `sk-ant-api`)
+**Solutions**:
+- Check `auth.method: api_key` in `project.yml`
+- Verify that `ANTHROPIC_API_KEY` is in `global/secrets.env` or passed with `--env`
+- Check the key format (must start with `sk-ant-api`)
 
-### GitHub token non funziona
+### GitHub token doesn't work
 
-**Sintomi**: `git push` fallisce, `gh` non e autenticato.
+**Symptoms**: `git push` fails, `gh` is not authenticated.
 
-**Soluzioni**:
-- Verifica che `GITHUB_TOKEN` sia in `global/secrets.env` o `projects/<name>/secrets.env`
-- Verifica i permessi del PAT: Contents (read/write) e Pull requests (read/write)
-- Controlla i log dell'entrypoint per messaggi come:
+**Solutions**:
+- Verify that `GITHUB_TOKEN` is in `global/secrets.env` or `projects/<name>/secrets.env`
+- Check PAT permissions: Contents (read/write) and Pull requests (read/write)
+- Check the entrypoint logs for messages like:
   ```
   [entrypoint] GitHub: authenticated gh CLI via GITHUB_TOKEN
   ```
 
 ---
 
-## tmux e copy-paste
+## tmux and copy-paste
 
-### La clipboard non funziona
+### Clipboard doesn't work
 
-**Sintomi**: la selezione del testo funziona visivamente ma `Cmd+V` non incolla nulla.
+**Symptoms**: text selection works visually but `Cmd+V` doesn't paste anything.
 
-**Causa**: il protocollo OSC 52 non e abilitato nel terminale.
+**Cause**: the OSC 52 protocol is not enabled in your terminal.
 
-**Soluzioni per terminale**:
+**Solutions per terminal**:
 
-| Terminale | Soluzione |
+| Terminal | Solution |
 |-----------|----------|
-| iTerm2 | Settings > General > Selection > abilita "Applications in terminal may access clipboard" |
-| Terminal.app | OSC 52 non supportato: usa `fn` + drag per la selezione nativa |
-| GNOME Terminal | OSC 52 non supportato: usa `Shift` + drag per la selezione nativa |
-| Alacritty, WezTerm, Kitty, Ghostty | Funziona out of the box |
+| iTerm2 | Settings > General > Selection > enable "Applications in terminal may access clipboard" |
+| Terminal.app | OSC 52 not supported: use `fn` + drag for native selection |
+| GNOME Terminal | OSC 52 not supported: use `Shift` + drag for native selection |
+| Alacritty, WezTerm, Kitty, Ghostty | Works out of the box |
 
-### Metodi alternativi di copia
+### Alternative copy methods
 
-Se la copia automatica non funziona, usa la selezione nativa bypassando tmux:
+If automatic copy doesn't work, use native selection to bypass tmux:
 
-| Terminale | Tasto modificatore |
+| Terminal | Modifier key |
 |-----------|-------------------|
-| iTerm2 | `Option` (tenere premuto durante il drag) |
+| iTerm2 | `Option` (hold during drag) |
 | Terminal.app | `fn` |
 | Alacritty, WezTerm, Kitty | `Shift` |
 | GNOME Terminal, XFCE | `Shift` |
 
-**Limitazione**: la selezione nativa attraversa i bordi dei pane tmux, includendo bordi e barra di stato.
+**Limitation**: native selection crosses tmux pane borders, including borders and status line.
 
-### Cmd+C non copia
+### Cmd+C doesn't copy
 
-`Cmd+C` invia SIGINT (interrupt), non copia. Per copiare:
-- **Metodo consigliato**: seleziona col mouse e rilascia — la copia e automatica (se OSC 52 e abilitato)
-- **Manuale**: `Ctrl+B` poi `[` per entrare in copy-mode, seleziona con `v`, copia con `y`
-- **Bypass nativo**: tieni premuto il tasto modificatore del tuo terminale durante il drag
+`Cmd+C` sends SIGINT (interrupt), not copy. To copy:
+- **Recommended method**: select with mouse and release — copy is automatic (if OSC 52 is enabled)
+- **Manual**: `Ctrl+B` then `[` to enter copy-mode, select with `v`, copy with `y`
+- **Native bypass**: hold your terminal's modifier key during drag
 
-### Sessione tmux nidificata
+### Nested tmux session
 
-Se usi gia tmux sull'host, il container crea una sessione nidificata. Il prefisso del container e `Ctrl+B` (default). Per raggiungere il tmux interno, premi `Ctrl+B` due volte, oppure rimappa il prefisso di uno dei due.
+If you already use tmux on the host, the container creates a nested session. The container's prefix is `Ctrl+B` (default). To reach the inner tmux, press `Ctrl+B` twice, or remap the prefix of one of the two.
 
-**Alternativa**: usa la modalita iTerm2 (`--teammate-mode auto`) per evitare il nesting.
+**Alternative**: use iTerm2 mode (`--teammate-mode auto`) to avoid nesting.
 
 ---
 
 ## Knowledge Packs
 
-### File di knowledge non nel contesto
+### Knowledge files not in context
 
-**Sintomi**: Claude non sembra conoscere il contenuto dei file di knowledge.
+**Symptoms**: Claude doesn't seem to know the contents of knowledge files.
 
-**Soluzioni**:
-1. Verifica che il pack sia elencato in `packs:` nel `project.yml`
-2. Controlla l'output di `cco start` per il messaggio "Generated .claude/packs.md"
-3. Verifica che `pack.yml` abbia la sezione `knowledge.files:` compilata
-4. Controlla il contenuto di `projects/<name>/.claude/packs.md` — deve elencare i file
+**Solutions**:
+1. Verify that the pack is listed in `packs:` in `project.yml`
+2. Check the output of `cco start` for the message "Generated .claude/packs.md"
+3. Verify that `pack.yml` has the `knowledge.files:` section populated
+4. Check the contents of `projects/<name>/.claude/packs.md` — it must list the files
 
-### Conflitti tra pack
+### Pack conflicts
 
-**Sintomi**: warning durante `cco start` su nomi duplicati.
+**Symptoms**: warning during `cco start` about duplicate names.
 
-**Causa**: due pack definiscono lo stesso agent, rule o skill.
+**Cause**: two packs define the same agent, rule, or skill.
 
-**Soluzione**: l'ultimo pack nella lista `packs:` di `project.yml` vince. Rinomina il file in conflitto in uno dei pack, oppure riordina la lista per dare precedenza al pack corretto.
+**Solution**: the last pack in `project.yml`'s `packs:` list wins. Rename the conflicting file in one of the packs, or reorder the list to give precedence to the correct pack.
 
-### Errori di validazione
+### Validation errors
 
 ```bash
-# Verifica la struttura del pack
+# Check pack structure
 cco pack validate my-pack
 ```
 
-Problemi comuni:
-- `pack.yml` mancante o con sintassi errata
-- File dichiarati in `knowledge.files` che non esistono nella directory source
-- Nomi di skill/agent/rule che non corrispondono ai file nella directory
+Common problems:
+- `pack.yml` missing or with syntax error
+- Files declared in `knowledge.files` that don't exist in the source directory
+- Skill/agent/rule names that don't match files in the directory
 
 ---
 
 ## MCP
 
-### Server MCP non caricati
+### MCP servers not loaded
 
-**Sintomi**: i tool MCP non sono disponibili nella sessione.
+**Symptoms**: MCP tools are not available in the session.
 
-**Soluzioni**:
-1. Verifica che `mcp.json` sia valido JSON:
+**Solutions**:
+1. Verify that `mcp.json` is valid JSON:
    ```bash
    jq . projects/my-project/mcp.json
    ```
-2. Verifica che le variabili d'ambiente referenziate (`${VAR}`) siano disponibili nel container tramite `secrets.env` o `--env`
-3. Se una variabile `${VAR}` non e risolta, Claude Code ignora l'intero file `mcp.json`
-4. Per server globali, verifica `global/.claude/mcp.json`
-5. Controlla i log dell'entrypoint per errori di merge
+2. Verify that referenced environment variables (`${VAR}`) are available in the container via `secrets.env` or `--env`
+3. If a `${VAR}` variable is not resolved, Claude Code ignores the entire `mcp.json` file
+4. For global servers, check `global/.claude/mcp.json`
+5. Check the entrypoint logs for merge errors
 
-### Variabili d'ambiente non risolte
+### Unresolved environment variables
 
-**Causa**: `${GITHUB_TOKEN}` in `mcp.json` non viene espanso perche la variabile non e nell'ambiente del container.
+**Cause**: `${GITHUB_TOKEN}` in `mcp.json` is not expanded because the variable is not in the container's environment.
 
-**Soluzione**: aggiungi la variabile a `global/secrets.env`:
+**Solution**: add the variable to `global/secrets.env`:
 ```bash
 echo "GITHUB_TOKEN=ghp_..." >> global/secrets.env
 ```
 
-Oppure passala con `--env`:
+Or pass it with `--env`:
 ```bash
 cco start my-project --env GITHUB_TOKEN=ghp_...
 ```
 
-### Pacchetti MCP lenti al primo avvio
+### MCP packages slow on first startup
 
-**Causa**: `npx -y` scarica il pacchetto ad ogni avvio se non pre-installato.
+**Cause**: `npx -y` downloads the package on each startup if not pre-installed.
 
-**Soluzione**: pre-installa i pacchetti nell'immagine Docker:
+**Solution**: pre-install packages in the Docker image:
 ```bash
-# Via mcp-packages.txt (persistente)
+# Via mcp-packages.txt (persistent)
 echo "@modelcontextprotocol/server-github" >> global/mcp-packages.txt
 cco build
 
-# Via flag CLI (una tantum)
+# Via CLI flag (one-time)
 cco build --mcp-packages "@modelcontextprotocol/server-github"
 ```
 
-Per pacchetti specifici di un progetto, usa `projects/<name>/mcp-packages.txt`.
+For project-specific packages, use `projects/<name>/mcp-packages.txt`.
 
 ---
 
-## Generale
+## General
 
-### Sessione gia in esecuzione
+### Session already running
 
 ```
 Error: Project 'my-project' already has a running session (container cc-my-project). Run 'cco stop my-project' first.
 ```
 
-**Soluzione**:
+**Solution**:
 ```bash
-# Ferma la sessione esistente
+# Stop the existing session
 cco stop my-project
 
-# Oppure ferma tutte le sessioni
+# Or stop all sessions
 cco stop
 ```
 
-### Repository non visibile nel container
+### Repository not visible in container
 
-**Sintomi**: la directory `/workspace/<repo>/` non esiste nel container.
+**Symptoms**: the `/workspace/<repo>/` directory doesn't exist in the container.
 
-**Soluzioni**:
-1. Verifica che il percorso in `project.yml` esista sull'host:
+**Solutions**:
+1. Verify that the path in `project.yml` exists on the host:
    ```bash
    ls -la ~/projects/my-repo
    ```
-2. Verifica la configurazione in `project.yml`:
+2. Check the configuration in `project.yml`:
    ```yaml
    repos:
-     - path: ~/projects/my-repo    # deve esistere sull'host
-       name: my-repo               # nome in /workspace/
+     - path: ~/projects/my-repo    # must exist on host
+       name: my-repo               # name in /workspace/
    ```
-3. Usa `cco start my-project --dry-run` per vedere i volumi generati nel `docker-compose.yml`
+3. Use `cco start my-project --dry-run` to see the generated volumes in `docker-compose.yml`
 
-### Progetto non trovato
+### Project not found
 
 ```
 Error: Project 'foo' not found. Run 'cco project list' to see available projects.
 ```
 
-**Soluzioni**:
-- Verifica il nome con `cco project list`
-- Verifica che `projects/<name>/project.yml` esista
-- Se il progetto non esiste ancora, crealo:
+**Solutions**:
+- Check the name with `cco project list`
+- Verify that `projects/<name>/project.yml` exists
+- If the project doesn't exist yet, create it:
   ```bash
   cco project create my-project --repo ~/projects/my-repo
   ```
 
-### Contesto troppo grande
+### Context too large
 
-**Sintomi**: Claude segnala che il contesto e vicino al limite, o le risposte diventano imprecise.
+**Symptoms**: Claude reports that context is near the limit, or responses become imprecise.
 
-**Soluzioni**:
-- Riduci il numero di file nei knowledge pack (usa descrizioni precise per limitare i file letti)
-- Usa `/compact` periodicamente durante sessioni lunghe
-- Verifica che i file di knowledge non siano eccessivamente grandi (preferisci file sotto le 500 righe)
-- Controlla la barra di stato per la percentuale di contesto utilizzata
+**Solutions**:
+- Reduce the number of files in knowledge packs (use precise descriptions to limit file reading)
+- Use `/compact` periodically during long sessions
+- Verify that knowledge files are not excessively large (prefer files under 500 lines)
+- Check the status bar for the percentage of context used
 
-### secrets.env con formato errato
+### secrets.env with incorrect format
 
 ```
 Warning: secrets.env:3: skipping malformed line (expected KEY=VALUE)
 ```
 
-**Causa**: una riga non rispetta il formato `KEY=VALUE`.
+**Cause**: a line doesn't respect the `KEY=VALUE` format.
 
-**Soluzione**: verifica il file. Le chiavi devono iniziare con una lettera o underscore, seguite da `=` senza spazi attorno:
+**Solution**: check the file. Keys must start with a letter or underscore, followed by `=` with no spaces around it:
 ```bash
-# Corretto
+# Correct
 GITHUB_TOKEN=ghp_...
 MY_VAR=hello world
 
-# Errato
-3BAD_KEY=value       # non inizia con lettera/underscore
-export KEY=value     # 'export' non supportato
-KEY = value          # spazi attorno a =
+# Wrong
+3BAD_KEY=value       # doesn't start with letter/underscore
+export KEY=value     # 'export' not supported
+KEY = value          # spaces around =
 ```

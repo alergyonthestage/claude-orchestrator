@@ -1,106 +1,106 @@
-# Autenticazione
+# Authentication
 
-> Guida alla configurazione dell'autenticazione per le sessioni Claude Code containerizzate.
-
----
-
-## Panoramica
-
-Le sessioni claude-orchestrator richiedono due tipi di autenticazione:
-
-1. **Claude OAuth** — autenticazione verso l'API di Claude (obbligatoria)
-2. **GitHub Token** — per `git push`, `gh` CLI e MCP GitHub (opzionale ma consigliato)
-
-Entrambe sono gestite automaticamente dal framework. Nella maggior parte dei casi, basta configurare i token una volta e le sessioni successive funzionano senza intervento.
+> Guide to configuring authentication for containerized Claude Code sessions.
 
 ---
 
-## Claude OAuth (metodo predefinito)
+## Overview
 
-### Come funziona
+claude-orchestrator sessions require two types of authentication:
 
-Claude Code utilizza OAuth per autenticarsi con l'API di Claude. Su macOS, le credenziali sono salvate nel Keychain di sistema. Il flusso e il seguente:
+1. **Claude OAuth** — authentication with the Claude API (required)
+2. **GitHub Token** — for `git push`, `gh` CLI, and GitHub MCP (optional but recommended)
 
-1. **Al primo `cco start`**: il CLI legge le credenziali dal Keychain macOS e le copia in `global/claude-state/.credentials.json`
-2. **Nelle sessioni successive**: il container usa le credenziali salvate. Se l'access token e scaduto, Claude lo rinnova automaticamente con il refresh token
-3. **Se fai login sull'host** (es. dopo scadenza ~90 giorni): `cco start` rileva le nuove credenziali nel Keychain e aggiorna automaticamente il file
+Both are managed automatically by the framework. In most cases, you just need to configure the tokens once and subsequent sessions work without intervention.
 
-Le credenziali vengono salvate in due file (entrambi gitignored):
+---
 
-| File | Contenuto |
+## Claude OAuth (default method)
+
+### How it works
+
+Claude Code uses OAuth to authenticate with the Claude API. On macOS, credentials are saved in the system Keychain. The flow is as follows:
+
+1. **At the first `cco start`**: the CLI reads credentials from the macOS Keychain and copies them to `global/claude-state/.credentials.json`
+2. **In subsequent sessions**: the container uses the saved credentials. If the access token has expired, Claude automatically renews it with the refresh token
+3. **If you log in on the host** (e.g., after ~90 days of expiry): `cco start` detects the new credentials in the Keychain and automatically updates the file
+
+Credentials are saved in two files (both gitignored):
+
+| File | Contents |
 |------|-----------|
-| `global/claude-state/claude.json` | Preferenze, stato onboarding, MCP |
-| `global/claude-state/.credentials.json` | Token OAuth (access + refresh) |
+| `global/claude-state/claude.json` | Preferences, onboarding state, MCP |
+| `global/claude-state/.credentials.json` | OAuth tokens (access + refresh) |
 
-Entrambi i file sono montati read-write nel container, cosi le credenziali rinnovate vengono salvate automaticamente.
+Both files are mounted read-write in the container, so renewed credentials are automatically saved.
 
-### Prerequisito
+### Prerequisite
 
-Devi aver effettuato almeno un login con Claude Code sull'host:
+You must have logged in with Claude Code on the host at least once:
 
 ```bash
-# Sull'host (fuori dal container)
+# On the host (outside the container)
 claude
-# Segui il flusso OAuth nel browser
+# Follow the OAuth flow in the browser
 ```
 
-Dopo il primo login, `cco start` gestisce tutto automaticamente.
+After the first login, `cco start` handles everything automatically.
 
 ---
 
-## API Key (alternativa)
+## API Key (alternative)
 
-Se preferisci usare una API key invece di OAuth (es. per ambienti CI, o se non hai accesso al Keychain), puoi configurarla cosi:
+If you prefer to use an API key instead of OAuth (e.g., for CI environments, or if you don't have access to Keychain), you can configure it like this:
 
-### Tramite secrets.env
+### Via secrets.env
 
 ```bash
 # global/secrets.env
 ANTHROPIC_API_KEY=sk-ant-api03-...
 ```
 
-### Tramite flag --env
+### Via --env flag
 
 ```bash
 cco start my-project --env ANTHROPIC_API_KEY=sk-ant-api03-...
 ```
 
-### Tramite project.yml
+### Via project.yml
 
 ```yaml
 auth:
   method: api_key
 ```
 
-Quando `auth.method` e `api_key`, il CLI non tenta il seeding OAuth dal Keychain. La chiave deve essere disponibile come variabile d'ambiente (via `secrets.env` o `--env`).
+When `auth.method` is `api_key`, the CLI does not attempt OAuth seeding from Keychain. The key must be available as an environment variable (via `secrets.env` or `--env`).
 
 ---
 
 ## GitHub Token
 
-Il `GITHUB_TOKEN` abilita tre funzionalita nel container:
+The `GITHUB_TOKEN` enables three functionalities in the container:
 
-- **`git push`** — via HTTPS tramite il credential helper di `gh`
-- **`gh` CLI** — creazione PR, gestione issue, ecc.
-- **MCP GitHub** — il server MCP per GitHub legge il token dall'ambiente
+- **`git push`** — via HTTPS through the `gh` credential helper
+- **`gh` CLI** — PR creation, issue management, etc.
+- **GitHub MCP** — the GitHub MCP server reads the token from the environment
 
-### Configurazione
+### Configuration
 
-**1. Crea un fine-grained PAT su GitHub:**
+**1. Create a fine-grained PAT on GitHub:**
 
-Vai su GitHub > Settings > Developer Settings > Fine-grained personal access tokens.
+Go to GitHub > Settings > Developer Settings > Fine-grained personal access tokens.
 
-Permessi consigliati:
-- Repository access: seleziona i repo specifici
+Recommended permissions:
+- Repository access: select specific repos
 - Permissions: Contents (read/write), Pull requests (read/write)
 
-**2. Salva il token in secrets.env:**
+**2. Save the token in secrets.env:**
 
 ```bash
 echo "GITHUB_TOKEN=github_pat_..." >> ~/claude-orchestrator/global/secrets.env
 ```
 
-**3. Avvia la sessione:**
+**3. Start the session:**
 
 ```bash
 cco start my-project
@@ -108,132 +108,132 @@ cco start my-project
 # [entrypoint] GitHub: configured git credential helper
 ```
 
-L'entrypoint del container configura automaticamente `gh auth login` e `gh auth setup-git` quando trova il `GITHUB_TOKEN` nell'ambiente.
+The container entrypoint automatically configures `gh auth login` and `gh auth setup-git` when it finds `GITHUB_TOKEN` in the environment.
 
-### Token per progetto
+### Per-project token
 
-Se vuoi usare token diversi per progetti diversi (es. PAT con scope diversi), crea un `secrets.env` per progetto:
+If you want to use different tokens for different projects (e.g., PATs with different scopes), create a `secrets.env` per project:
 
 ```bash
 # projects/my-project/secrets.env
 GITHUB_TOKEN=github_pat_project_specific...
 ```
 
-I secret per-progetto sovrascrivono quelli globali per le chiavi con lo stesso nome.
+Per-project secrets override global ones for keys with the same name.
 
 ---
 
-## Gestione dei secret
+## Secret management
 
-I secret sono gestiti tramite file `.env` a due livelli, entrambi gitignored:
+Secrets are managed via `.env` files at two levels, both gitignored:
 
-### Livello globale
+### Global level
 
 ```bash
-# global/secrets.env — disponibile in tutti i progetti
+# global/secrets.env — available in all projects
 GITHUB_TOKEN=ghp_...
 LINEAR_API_KEY=lin_api_...
 SLACK_BOT_TOKEN=xoxb_...
 ```
 
-### Livello progetto
+### Project level
 
 ```bash
-# projects/my-project/secrets.env — solo per questo progetto
-GITHUB_TOKEN=github_pat_project_specific...   # sovrascrive il globale
-STRIPE_KEY=sk_test_...                        # solo per questo progetto
+# projects/my-project/secrets.env — only for this project
+GITHUB_TOKEN=github_pat_project_specific...   # overrides the global one
+STRIPE_KEY=sk_test_...                        # only for this project
 ```
 
-### Flag --env
+### --env flag
 
-Per variabili temporanee o di sessione:
+For temporary or session variables:
 
 ```bash
 cco start my-project --env DEBUG=true --env API_URL=http://localhost:8080
 ```
 
-### Come vengono iniettati
+### How they are injected
 
-I secret sono passati come flag `-e` a `docker compose run` al momento dell'avvio. Non vengono mai scritti in `docker-compose.yml` o altri file generati.
+Secrets are passed as `-e` flags to `docker compose run` at startup time. They are never written to `docker-compose.yml` or other generated files.
 
-Ordine di precedenza (l'ultimo vince):
+Precedence order (last one wins):
 1. `global/secrets.env`
 2. `projects/<name>/secrets.env`
-3. `--env` da CLI
+3. `--env` from CLI
 
-### Formato
+### Format
 
 ```bash
-# Formato: KEY=VALUE (uno per riga)
-# Le righe vuote e i commenti (#) sono ignorati
+# Format: KEY=VALUE (one per line)
+# Empty lines and comments (#) are ignored
 GITHUB_TOKEN=ghp_...
-# Questa e una variabile con spazi nel valore
+# This is a variable with spaces in the value
 MY_VAR=hello world
 ```
 
-Righe malformate vengono ignorate con un warning:
+Malformed lines are ignored with a warning:
 ```
 Warning: secrets.env:3: skipping malformed line (expected KEY=VALUE)
 ```
 
 ---
 
-## Prima autenticazione (senza Keychain)
+## First authentication (without Keychain)
 
-Se non hai credenziali nel Keychain macOS (es. prima installazione, oppure su Linux), Claude Code richiede l'autenticazione direttamente nel container:
+If you don't have credentials in the macOS Keychain (e.g., first installation, or on Linux), Claude Code requests authentication directly in the container:
 
-1. Avvia la sessione: `cco start my-project`
-2. Claude Code mostra un URL per il login OAuth
-3. Copia l'URL dal terminale (vedi la sezione copy-paste nella [guida Agent Teams](agent-teams.md))
-4. Apri l'URL nel browser e completa l'autenticazione
-5. Le credenziali vengono salvate in `global/claude-state/.credentials.json`
-6. Le sessioni successive usano le credenziali salvate automaticamente
+1. Start the session: `cco start my-project`
+2. Claude Code displays a URL for OAuth login
+3. Copy the URL from the terminal (see the copy-paste section in the [Agent Teams guide](agent-teams.md))
+4. Open the URL in your browser and complete authentication
+5. Credentials are saved in `global/claude-state/.credentials.json`
+6. Subsequent sessions use the saved credentials automatically
 
 ---
 
 ## Troubleshooting
 
-### "Not logged in" dopo `cco start`
+### "Not logged in" after `cco start`
 
-1. **Verifica il Keychain** (macOS):
+1. **Check the Keychain** (macOS):
    ```bash
    security find-generic-password -s "Claude Code-credentials" -a "$(whoami)" -w \
      | python3 -c "import sys,json; print('OK' if json.load(sys.stdin).get('claudeAiOauth',{}).get('accessToken') else 'NO TOKEN')"
    ```
 
-2. **Verifica il file credentials**:
+2. **Check the credentials file**:
    ```bash
    jq '.claudeAiOauth | keys' global/claude-state/.credentials.json
    ```
 
-3. **Verifica i permessi**:
+3. **Check permissions**:
    ```bash
    ls -la global/claude-state/.credentials.json
-   # Deve essere 600 (-rw-------)
+   # Must be 600 (-rw-------)
    ```
 
-4. **Forza il re-seeding**:
+4. **Force re-seeding**:
    ```bash
    rm global/claude-state/.credentials.json
    cco start my-project
    ```
 
-### Schermata di onboarding ("theme: dark")
+### Onboarding screen ("theme: dark")
 
-Succede quando `claude.json` ha `hasCompletedOnboarding: false`, tipicamente dopo un logout+login sull'host. Il CLI forza automaticamente questo valore a `true` prima di avviare il container. Se il problema persiste:
+This happens when `claude.json` has `hasCompletedOnboarding: false`, typically after logout+login on the host. The CLI automatically forces this value to `true` before starting the container. If the problem persists:
 
 ```bash
 jq '.hasCompletedOnboarding = true' global/claude-state/claude.json > /tmp/fix.json \
   && mv /tmp/fix.json global/claude-state/claude.json
 ```
 
-### Token scaduto (dopo ~90 giorni)
+### Expired token (after ~90 days)
 
-1. Fai login sull'host: esegui `claude` e autentica via browser
-2. Avvia la sessione: `cco start my-project` — il CLI rileva le nuove credenziali nel Keychain e aggiorna automaticamente
+1. Log in on the host: run `claude` and authenticate via browser
+2. Start the session: `cco start my-project` — the CLI detects the new credentials in the Keychain and updates automatically
 
-### API key non funziona
+### API key doesn't work
 
-- Verifica che `auth.method: api_key` sia impostato in `project.yml`
-- Verifica che `ANTHROPIC_API_KEY` sia presente in `secrets.env` o passato con `--env`
-- Controlla che la chiave inizi con `sk-ant-api`
+- Verify that `auth.method: api_key` is set in `project.yml`
+- Verify that `ANTHROPIC_API_KEY` is present in `secrets.env` or passed with `--env`
+- Check that the key starts with `sk-ant-api`

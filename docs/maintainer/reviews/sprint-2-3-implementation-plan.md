@@ -1,47 +1,47 @@
 # Implementation Plan: Sprint 2 & Sprint 3
 
-> Data: 2026-02-26
+> Date: 2026-02-26
 > Status: Sprint 2 completed — Sprint 3 pending
 > Related: [roadmap.md](../maintainer/roadmap.md) | [progress review](./reviews/26-02-2026-progress-review.md)
 
 ---
 
-## Panoramica
+## Overview
 
-Tre feature da implementare, ordinate per priorità e dipendenze:
+Three features to implement, ordered by priority and dependencies:
 
 ```mermaid
 flowchart LR
     A["#1 tmux copy-paste<br/>(Sprint 2)"]
     B["#2 Worktree Isolation<br/>(Sprint 3)"]
     C["#3 Session Resume<br/>(Sprint 3)"]
-    B -.->|"complementa"| C
+    B -.->|"complements"| C
 ```
 
-Sprint 2 è **indipendente** (nessuna dipendenza tecnica con Sprint 3). Sprint 3 ha due feature: worktree prima, resume dopo. Resume complementa worktree ma non ha dipendenze hard — può essere implementato anche senza worktree.
+Sprint 2 is **independent** (no technical dependencies with Sprint 3). Sprint 3 has two features: worktree first, resume after. Resume complements worktree but has no hard dependencies — can be implemented without worktree.
 
 ---
 
 ## Feature #1: Fix tmux copy-paste ✅
 
-**Sprint**: 2 (qualità di vita) — **Completed 2026-02-26**
-**Effort**: Basso (1 sessione)
-**Rischio**: Nullo — config-only, no code logic changes
+**Sprint**: 2 (quality of life) — **Completed 2026-02-26**
+**Effort**: Low (1 session)
+**Risk**: None — config-only, no code logic changes
 **Analysis doc**: [`terminal-clipboard-and-mouse.md`](./terminal-clipboard-and-mouse.md)
 
-### Problema
+### Problem
 
-La configurazione tmux attuale ha 6 gap che rendono copy-paste non intuitivo:
-1. `default-terminal` usa `screen-256color` (obsoleto, manca italics e key codes)
-2. Nessuna capability esplicita per clipboard (affidamento a heuristic `xterm*`)
-3. Nessun `allow-passthrough` (blocca DCS per iTerm2 inline images)
-4. Nessun `MouseDragEnd1Pane` binding (utente deve premere `y` dopo selezione — UX non ovvia)
-5. Nessun `C-v` per rectangle toggle
-6. Documentazione bypass key solo per iTerm2 e Terminal.app
+The current tmux configuration has 6 gaps that make copy-paste non-intuitive:
+1. `default-terminal` uses `screen-256color` (obsolete, lacks italics and key codes)
+2. No explicit clipboard capability (relies on `xterm*` heuristic)
+3. No `allow-passthrough` (blocks DCS for iTerm2 inline images)
+4. No `MouseDragEnd1Pane` binding (user must press `y` after selection — non-obvious UX)
+5. No `C-v` for rectangle toggle
+6. Bypass key documentation only for iTerm2 and Terminal.app
 
-### Implementazione
+### Implementation
 
-#### 1. Aggiornare `config/tmux.conf`
+#### 1. Update `config/tmux.conf`
 
 ```tmux
 # ── Terminal ─────────────────────────────────────────────────────────
@@ -70,83 +70,83 @@ bind-key -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel
 #   Linux/Windows:     hold Shift
 ```
 
-#### 2. Aggiornare documentazione
+#### 2. Update documentation
 
-- `docs/user-guides/agent-teams.md` — Aggiungere sezione "Copy & Paste" con:
-  - Tabella dei tasti bypass per terminale
-  - Setup iTerm2 (abilitare OSC 52 in preferences)
-  - Limitazioni note (Terminal.app, VTE terminals)
+- `docs/user-guides/agent-teams.md` — Add "Copy & Paste" section with:
+  - Table of bypass keys per terminal
+  - iTerm2 setup (enable OSC 52 in preferences)
+  - Known limitations (Terminal.app, VTE terminals)
 
-#### 3. Test
+#### 3. Testing
 
-Nessun test automatizzato necessario (configurazione visuale). Verificare manualmente:
-- [ ] Mouse drag → auto-copy (senza premere `y`)
-- [ ] `y` in copy-mode → copia a clipboard
+No automated tests needed (visual configuration). Verify manually:
+- [ ] Mouse drag → auto-copy (without pressing `y`)
+- [ ] `y` in copy-mode → copy to clipboard
 - [ ] `C-v` → rectangle selection
-- [ ] Paste con Cmd+V funziona
-- [ ] Pane switching con mouse funziona ancora
+- [ ] Paste with Cmd+V works
+- [ ] Pane switching with mouse still works
 
-#### 4. Open Questions dall'analisi (§9)
+#### 4. Open Questions from analysis (§9)
 
-| Domanda | Proposta |
+| Question | Proposal |
 |---------|----------|
-| `allow-passthrough on`? | Sì — container con `--dangerously-skip-permissions`, il rischio è accettabile |
-| `MouseDragEnd1Pane` con comando pipe? | No — solo copy-pipe-and-cancel senza comando. OSC 52 è sufficiente |
-| Documentare iTerm2 preference? | Sì — nella guida display-modes, non nell'entrypoint |
-| `terminal-overrides` per Alacritty/Kitty/Ghostty? | No per ora — copre la maggioranza con `xterm-256color`. Utenti avanzati possono customizzare |
-| `mouse on` come default? | Sì — i benefici (pane switching, scrollback) superano il costo (bypass key) |
+| `allow-passthrough on`? | Yes — container with `--dangerously-skip-permissions`, risk is acceptable |
+| `MouseDragEnd1Pane` with pipe command? | No — only copy-pipe-and-cancel without command. OSC 52 is sufficient |
+| Document iTerm2 preference? | Yes — in display-modes guide, not entrypoint |
+| `terminal-overrides` for Alacritty/Kitty/Ghostty? | Not yet — covers majority with `xterm-256color`. Advanced users can customize |
+| `mouse on` as default? | Yes — benefits (pane switching, scrollback) outweigh cost (bypass key) |
 
 ---
 
 ## Feature #2: Git Worktree Isolation
 
-**Sprint**: 3 (feature differenziante)
-**Effort**: Medio-alto (2-3 sessioni)
-**Rischio**: Basso — opt-in, default invariato
+**Sprint**: 3 (differentiating feature)
+**Effort**: Medium-high (2-3 sessions)
+**Risk**: Low — opt-in, default unchanged
 **Analysis doc**: [`worktree-isolation.md`](../future/worktree/analysis.md)
 **Design doc**: [`worktree-design.md`](../future/worktree/design.md)
 
-### Prerequisiti
+### Prerequisites
 
-- Auth implementata (GITHUB_TOKEN + gh CLI) ✅
-- tmux copy-paste fix (Sprint 2) — non strettamente necessario ma migliora l'esperienza
+- Auth implemented (GITHUB_TOKEN + gh CLI) ✅
+- tmux copy-paste fix (Sprint 2) — not strictly necessary but improves experience
 
-### Implementazione (dal design doc §8)
+### Implementation (from design doc §8)
 
-I task sono in ordine di implementazione. Ogni step è committable indipendentemente.
+Tasks are in implementation order. Each step is independently committable.
 
-#### Step 1: CLI — Parsing configurazione
-
-**File**: `bin/cco`
-
-- Parsare `worktree` e `worktree_branch` da `project.yml` (via `yml_get`)
-- Parsare flag `--worktree` in `cmd_start()`
-- Calcolare `worktree_branch`: se `auto` o assente → `cco/<project-name>`
-- Logica: flag `--worktree` override `project.yml`; entrambi default a `false`
-
-#### Step 2: CLI — Compose generation condizionale
+#### Step 1: CLI — Parsing configuration
 
 **File**: `bin/cco`
 
-Quando worktree mode è attivo, cambiare i volumi generati **per i repo git**:
+- Parse `worktree` and `worktree_branch` from `project.yml` (via `yml_get`)
+- Parse `--worktree` flag in `cmd_start()`
+- Calculate `worktree_branch`: if `auto` or missing → `cco/<project-name>`
+- Logic: `--worktree` flag overrides `project.yml`; both default to `false`
+
+#### Step 2: CLI — Conditional compose generation
+
+**File**: `bin/cco`
+
+When worktree mode is active, change the generated volumes **for git repos**:
 
 ```yaml
-# Senza worktree (invariato):
+# Without worktree (unchanged):
 volumes:
   - ~/projects/my-repo:/workspace/my-repo
 
-# Con worktree (repo git):
+# With worktree (git repo):
 volumes:
   - ~/projects/my-repo:/git-repos/my-repo
 
-# Con worktree (directory non-git in repos:) — fallback a mount diretto:
+# With worktree (non-git directory in repos:) — fallback to direct mount:
 volumes:
   - ~/projects/shared-assets:/workspace/shared-assets
 ```
 
-La detection avviene al momento della compose generation: per ogni entry in `repos:`, verificare se `<path>/.git` esiste sull'host. Se sì → `/git-repos/`. Se no → `/workspace/` (fallback, stesso comportamento senza worktree).
+Detection occurs at compose generation time: for each entry in `repos:`, check if `<path>/.git` exists on the host. If yes → `/git-repos/`. If no → `/workspace/` (fallback, same behavior without worktree).
 
-Aggiungere environment vars:
+Add environment vars:
 ```yaml
 environment:
   - WORKTREE_ENABLED=true
@@ -157,7 +157,7 @@ environment:
 
 **File**: `config/entrypoint.sh`
 
-Dopo il Docker socket handling, prima del lancio Claude:
+After Docker socket handling, before launching Claude:
 
 ```bash
 if [ "${WORKTREE_ENABLED:-}" = "true" ]; then
@@ -184,21 +184,21 @@ if [ "${WORKTREE_ENABLED:-}" = "true" ]; then
 fi
 ```
 
-Questo blocco va **prima** del `exec gosu claude ...` finale, ma **dopo** il Docker socket GID fix (che richiede root). Tutti i comandi git usano `gosu claude` per evitare che i file worktree vengano creati come root.
+This block goes **before** the final `exec gosu claude ...`, but **after** the Docker socket GID fix (which requires root). All git commands use `gosu claude` to prevent worktree files from being created as root.
 
 #### Step 4: Hook fix — `.git` file detection
 
 **File**: `config/hooks/session-context.sh`
 
-Cambiare `[ -d "${dir}.git" ]` a `[ -e "${dir}.git" ]` per supportare worktree (dove `.git` è un file, non una directory).
+Change `[ -d "${dir}.git" ]` to `[ -e "${dir}.git" ]` to support worktree (where `.git` is a file, not a directory).
 
-Backward-compatible: `[ -e ]` è true sia per file che directory.
+Backward-compatible: `[ -e ]` is true for both files and directories.
 
 #### Step 5: CLI — Post-session cleanup
 
 **File**: `bin/cco`
 
-Dopo che `docker compose run` ritorna in `cmd_start()`:
+After `docker compose run` returns in `cmd_start()`:
 
 ```bash
 if [[ "$worktree_enabled" == true ]]; then
@@ -225,7 +225,7 @@ fi
 
 **File**: `defaults/_template/project.yml`
 
-Aggiungere campi commentati:
+Add commented fields:
 
 ```yaml
 # ── Git Worktree Isolation (optional) ──────────────────────────────
@@ -235,58 +235,58 @@ Aggiungere campi commentati:
 
 #### Step 7: Test (dry-run)
 
-**File**: `tests/test_worktree.sh` (nuovo)
+**File**: `tests/test_worktree.sh` (new)
 
-Test per compose generation con worktree:
-- [ ] `worktree: true` → repos montati su `/git-repos/` (non `/workspace/`)
-- [ ] `worktree: false` (default) → repos montati su `/workspace/` (invariato)
-- [ ] `WORKTREE_ENABLED=true` presente nelle env vars del compose
-- [ ] `WORKTREE_BRANCH=cco/<name>` presente nelle env vars
+Tests for compose generation with worktree:
+- [ ] `worktree: true` → repos mounted to `/git-repos/` (not `/workspace/`)
+- [ ] `worktree: false` (default) → repos mounted to `/workspace/` (unchanged)
+- [ ] `WORKTREE_ENABLED=true` present in compose env vars
+- [ ] `WORKTREE_BRANCH=cco/<name>` present in env vars
 - [ ] `worktree_branch: custom-name` → `WORKTREE_BRANCH=custom-name`
-- [ ] `--worktree` flag override di `worktree: false` nel project.yml
-- [ ] Non-git directories in `repos:` montate su `/workspace/` (fallback, non `/git-repos/`)
+- [ ] `--worktree` flag overrides `worktree: false` in project.yml
+- [ ] Non-git directories in `repos:` mounted to `/workspace/` (fallback, not `/git-repos/`)
 
-Test per post-session cleanup (mock git):
-- [ ] `git worktree prune` chiamato per ogni repo
+Tests for post-session cleanup (mock git):
+- [ ] `git worktree prune` called for each repo
 - [ ] Branch merged → deleted
-- [ ] Branch con unmerged commits → kept con warning
+- [ ] Branch with unmerged commits → kept with warning
 
-#### Step 8: Documentazione
+#### Step 8: Documentation
 
-| Documento | Aggiornamento |
-|-----------|---------------|
-| `docs/reference/cli.md` | Flag `--worktree`, campi `worktree`/`worktree_branch` in project.yml |
-| `docs/user-guides/project-setup.md` | Sezione "Git Worktree Isolation" con esempi |
-| `docs/maintainer/docker/design.md` | Variante compose template per worktree |
+| Document | Update |
+|-----------|---------|
+| `docs/reference/cli.md` | `--worktree` flag, `worktree`/`worktree_branch` fields in project.yml |
+| `docs/user-guides/project-setup.md` | Section "Git Worktree Isolation" with examples |
+| `docs/maintainer/docker/design.md` | Compose template variant for worktree |
 | `docs/maintainer/future/worktree/design.md` | Status → "Implemented" |
-| `docs/maintainer/roadmap.md` | Spostare #2 nella sezione "Completed" |
+| `docs/maintainer/roadmap.md` | Move #2 to "Completed" section |
 
-#### Edge cases (dal design doc §6)
+#### Edge cases (from design doc §6)
 
-| Caso | Gestione |
+| Case | Handling |
 |------|----------|
-| Branch esiste, worktree no | Resume: `git worktree add` senza `-b` |
-| Branch esiste E ha worktree attivo | `git worktree prune` prima di add |
-| Repo con uncommitted changes | Worktree indipendente, non impattato |
-| Due progetti sullo stesso repo | Branch naming `cco/<project>` evita collisioni |
-| Directory non-git in repos | Skip worktree, mount diretto su `/workspace/` |
-| Subagent worktree inside container worktree | Funziona nativamente, nessun handling speciale |
+| Branch exists, worktree does not | Resume: `git worktree add` without `-b` |
+| Branch exists AND has active worktree | `git worktree prune` before add |
+| Repo with uncommitted changes | Worktree independent, not impacted |
+| Two projects on same repo | Branch naming `cco/<project>` avoids collisions |
+| Non-git directory in repos | Skip worktree, direct mount to `/workspace/` |
+| Subagent worktree inside container worktree | Works natively, no special handling |
 
 ---
 
 ## Feature #3: Session Resume
 
-**Sprint**: 3 (dopo worktree)
-**Effort**: Basso (1 sessione)
-**Rischio**: Nullo — nuovo comando, nessun impatto su esistente
+**Sprint**: 3 (after worktree)
+**Effort**: Low (1 session)
+**Risk**: None — new command, no impact on existing
 
-### Problema
+### Problem
 
-Non esiste un modo per rientrare in una sessione tmux running dopo un disconnect. L'utente deve fare `docker exec` manualmente.
+There is no way to re-enter a running tmux session after disconnect. User must manually run `docker exec`.
 
-### Implementazione
+### Implementation
 
-#### 1. Nuovo comando `cmd_resume()`
+#### 1. New command `cmd_resume()`
 
 **File**: `bin/cco`
 
@@ -320,11 +320,11 @@ cmd_resume() {
 }
 ```
 
-Nota: il project name viene letto da `project.yml` (come fa `cmd_stop()`) per coerenza con il naming del container. Il check `tmux has-session` gestisce sessioni avviate senza tmux.
+Note: the project name is read from `project.yml` (as `cmd_stop()` does) for consistency with container naming. The `tmux has-session` check handles sessions started without tmux.
 
-#### 2. Registrare il comando nel dispatch
+#### 2. Register command in dispatch
 
-**File**: `bin/cco` (nel `case` statement principale)
+**File**: `bin/cco` (in main `case` statement)
 
 ```bash
 resume)   shift; cmd_resume "$@" ;;
@@ -332,70 +332,70 @@ resume)   shift; cmd_resume "$@" ;;
 
 #### 3. Help text
 
-Aggiornare `cmd_usage()` con:
+Update `cmd_usage()` with:
 ```
   resume <project>        Reattach to a running session
 ```
 
-#### 4. Test
+#### 4. Testing
 
-**File**: `tests/test_resume.sh` (nuovo) o estendere `test_stop.sh`
+**File**: `tests/test_resume.sh` (new) or extend `test_stop.sh`
 
-- [ ] `cco resume` senza argomento → errore con usage
-- [ ] `cco resume nonexistent` → errore "Project not found"
-- [ ] `cco resume` con container non running → errore "No running session"
-- [ ] Project name letto da `project.yml` (non dal nome directory)
-- [ ] tmux session presente → `tmux attach-session`
-- [ ] tmux session assente (non-tmux mode) → fallback `bash`
+- [ ] `cco resume` without argument → error with usage
+- [ ] `cco resume nonexistent` → error "Project not found"
+- [ ] `cco resume` with container not running → error "No running session"
+- [ ] Project name read from `project.yml` (not directory name)
+- [ ] tmux session present → `tmux attach-session`
+- [ ] tmux session absent (non-tmux mode) → fallback `bash`
 
-#### 5. Documentazione
+#### 5. Documentation
 
-| Documento | Aggiornamento |
-|-----------|---------------|
-| `docs/reference/cli.md` | Nuovo comando `cco resume` |
-| `docs/maintainer/roadmap.md` | Spostare #3 nella sezione "Completed" |
-| CLAUDE.md (root) | Aggiungere `cco resume` alla tabella comandi |
+| Document | Update |
+|-----------|---------|
+| `docs/reference/cli.md` | New `cco resume` command |
+| `docs/maintainer/roadmap.md` | Move #3 to "Completed" section |
+| CLAUDE.md (root) | Add `cco resume` to commands table |
 
 ---
 
-## Ordine di implementazione consigliato
+## Recommended implementation order
 
 ```
-Sessione 1 (Sprint 2):
+Session 1 (Sprint 2):
   ├── #1 tmux copy-paste config
-  ├── #1 documentazione display-modes
-  └── commit + test manuale
+  ├── #1 display-modes documentation
+  └── commit + manual testing
 
-Sessione 2 (Sprint 3 — parte 1):
+Session 2 (Sprint 3 — part 1):
   ├── #2 Step 1: CLI parsing worktree config
-  ├── #2 Step 2: Compose generation condizionale
+  ├── #2 Step 2: Conditional compose generation
   ├── #2 Step 4: Hook fix .git detection
   ├── #2 Step 6: Template update
-  ├── #2 Step 7: Test dry-run
-  └── commit (worktree CLI pronto, testabile con --dry-run)
+  ├── #2 Step 7: Dry-run tests
+  └── commit (worktree CLI ready, testable with --dry-run)
 
-Sessione 3 (Sprint 3 — parte 2):
+Session 3 (Sprint 3 — part 2):
   ├── #2 Step 3: Entrypoint worktree creation
   ├── #2 Step 5: Post-session cleanup
-  ├── #2 Step 8: Documentazione
-  ├── #3 Session resume (completo)
-  ├── Test integrazione (cco build + cco start --worktree)
-  └── commit finale
+  ├── #2 Step 8: Documentation
+  ├── #3 Session resume (complete)
+  ├── Integration testing (cco build + cco start --worktree)
+  └── final commit
 
-Post-implementazione:
-  ├── Aggiornare status design doc (auth, environment → Implemented)
-  ├── Aggiornare roadmap
-  └── Considerare tag v1.0
+Post-implementation:
+  ├── Update design doc status (auth, environment → Implemented)
+  ├── Update roadmap
+  └── Consider tag v1.0
 ```
 
 ---
 
-## Rischi e mitigazioni
+## Risks and mitigations
 
-| Rischio | Probabilità | Impatto | Mitigazione |
+| Risk | Probability | Impact | Mitigation |
 |---------|-------------|---------|-------------|
-| `tmux-256color` terminfo non disponibile | Bassa (Bookworm lo ha) | Basso | Fallback: `screen-256color` |
-| `git worktree add` fallisce in entrypoint | Media | Alto | `git worktree prune` preventivo; error handling con messaggio chiaro |
-| Post-session cleanup non raggiunto (kill -9 del container) | Bassa | Basso | Worktree prune nel prossimo `cco start --worktree` |
-| `[ -e .git ]` non funziona su tutti gli shell | Nulla (POSIX) | — | POSIX standard, supportato ovunque |
-| Docker exec su container stopped | — | — | Check `docker ps` prima di exec in `cmd_resume()` |
+| `tmux-256color` terminfo unavailable | Low (Bookworm has it) | Low | Fallback: `screen-256color` |
+| `git worktree add` fails in entrypoint | Medium | High | Preventive `git worktree prune`; error handling with clear message |
+| Post-session cleanup not reached (container kill -9) | Low | Low | Worktree prune on next `cco start --worktree` |
+| `[ -e .git ]` doesn't work on all shells | None (POSIX) | — | POSIX standard, supported everywhere |
+| Docker exec on stopped container | — | — | Check `docker ps` before exec in `cmd_resume()` |

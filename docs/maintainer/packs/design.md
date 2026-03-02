@@ -1,68 +1,68 @@
 # Design: Knowledge Packs System
 
-> Stato: Implementato (v1)
-> ADR di riferimento: [ADR-9](../architecture.md) (Copy vs Mount)
-> Specifiche CLI: [cli.md](../../reference/cli.md) §3.7–3.11
-> Formato project.yml: [project-yaml.md](../../reference/project-yaml.md) §Knowledge Packs
+> Status: Implemented (v1)
+> Reference ADR: [ADR-9](../architecture.md) (Copy vs Mount)
+> CLI Specifications: [cli.md](../../reference/cli.md) §3.7–3.11
+> project.yml format: [project-yaml.md](../../reference/project-yaml.md) §Knowledge Packs
 
 ---
 
 ## 1. Overview
 
-I Knowledge Packs risolvono il problema della documentazione e del tooling riutilizzabile tra progetti. Senza packs, ogni progetto deve duplicare manualmente file di knowledge, skill, agent e rule nella propria directory `.claude/`. Quando la documentazione evolve, le copie diventano stale e inconsistenti.
+Knowledge Packs solve the problem of reusable documentation and tooling across projects. Without packs, each project must manually duplicate knowledge files, skills, agents, and rules in its own `.claude/` directory. As documentation evolves, copies become stale and inconsistent.
 
-Un pack è un bundle autonomo che raggruppa:
-- **Knowledge** — documentazione di riferimento (convenzioni di codice, overview di business, linee guida)
-- **Skills** — skill Claude Code riutilizzabili (deploy, review, etc.)
-- **Agents** — definizioni di subagent specializzati
-- **Rules** — regole addizionali per il contesto di sessione
+A pack is a self-contained bundle that groups:
+- **Knowledge** — reference documentation (code conventions, business overview, guidelines)
+- **Skills** — reusable Claude Code skills (deploy, review, etc.)
+- **Agents** — definitions of specialized subagents
+- **Rules** — additional rules for session context
 
-Un pack viene definito una volta in `global/packs/<name>/` e attivato in qualsiasi progetto aggiungendone il nome alla lista `packs:` in `project.yml`. Tutte le sezioni sono opzionali: un pack può contenere solo knowledge, solo skill, o qualsiasi combinazione.
+A pack is defined once in `global/packs/<name>/` and activated in any project by adding its name to the `packs:` list in `project.yml`. All sections are optional: a pack can contain only knowledge, only skills, or any combination.
 
 ---
 
-## 2. Formato Pack — `pack.yml`
+## 2. Pack Format — `pack.yml`
 
-Ogni pack è definito da un file `pack.yml` nella propria directory sotto `global/packs/`:
+Each pack is defined by a `pack.yml` file in its own directory under `global/packs/`:
 
 ```yaml
 # global/packs/my-client/pack.yml
 
 name: my-client
 
-# Knowledge files — montati read-only, iniettati nel contesto automaticamente
+# Knowledge files — mounted read-only, injected into context automatically
 knowledge:
-  source: ~/documents/my-client-knowledge  # directory host da montare (read-only)
+  source: ~/documents/my-client-knowledge  # host directory to mount (read-only)
   files:
     - path: backend-coding-conventions.md
       description: "Read when writing backend code, APIs, or DB logic"
     - path: business-overview.md
       description: "Read for business context and product understanding"
-    - testing-guidelines.md              # short form: senza description
+    - testing-guidelines.md              # short form: without description
 
-# Skills — copiate in /workspace/.claude/skills/ al cco start
+# Skills — copied to /workspace/.claude/skills/ at cco start
 skills:
   - deploy
 
-# Agents — copiati in /workspace/.claude/agents/ al cco start
+# Agents — copied to /workspace/.claude/agents/ at cco start
 agents:
   - devops-specialist.md
 
-# Rules — copiate in /workspace/.claude/rules/ al cco start
+# Rules — copied to /workspace/.claude/rules/ at cco start
 rules:
   - api-conventions.md
 ```
 
-**Chiavi top-level ammesse**: `name`, `knowledge`, `skills`, `agents`, `rules`.
+**Allowed top-level keys**: `name`, `knowledge`, `skills`, `agents`, `rules`.
 
-Il campo `name` deve corrispondere al nome della directory del pack. `cco pack validate` emette un warning in caso di mismatch.
+The `name` field must match the pack's directory name. `cco pack validate` emits a warning if they mismatch.
 
-### Struttura directory del pack
+### Pack directory structure
 
 ```
 global/packs/<name>/
-├── pack.yml              # Manifest del pack
-├── knowledge/            # Fallback se knowledge.source non è specificato
+├── pack.yml              # Pack manifest
+├── knowledge/            # Fallback if knowledge.source is not specified
 │   ├── overview.md
 │   └── conventions.md
 ├── skills/
@@ -74,59 +74,59 @@ global/packs/<name>/
     └── conventions.md
 ```
 
-Se `knowledge.source` è omesso, i file di knowledge vengono cercati nella sottodirectory `knowledge/` del pack stesso.
+If `knowledge.source` is omitted, knowledge files are searched in the `knowledge/` subdirectory of the pack itself.
 
 ---
 
-## 3. Tipi di Risorse
+## 3. Resource Types
 
 ### 3.1 Knowledge
 
-File di documentazione di riferimento. Sono materiale read-only che Claude legge durante la sessione per ottenere contesto su convenzioni, architettura, business logic, etc.
+Reference documentation files. They are read-only material that Claude reads during the session to get context on conventions, architecture, business logic, etc.
 
-- **Montati** come volumi Docker read-only in `/workspace/.packs/<name>/`
-- **Non copiati** nella directory `.claude/` del progetto
-- **Iniettati** nel contesto tramite `packs.md` e il hook `session-context.sh`
+- **Mounted** as Docker read-only volumes at `/workspace/.packs/<name>/`
+- **Not copied** to the project's `.claude/` directory
+- **Injected** into context via `packs.md` and the `session-context.sh` hook
 
-Ogni file può avere una `description` opzionale che guida Claude su quando leggerlo. I file senza description appaiono comunque nella lista ma senza indicazione d'uso.
+Each file can have an optional `description` that guides Claude on when to read it. Files without a description still appear in the list but without usage indication.
 
 ### 3.2 Skills
 
-Directory di skill Claude Code, ciascuna contenente un `SKILL.md`. Vengono copiate in `/workspace/.claude/skills/` per essere disponibili nella sessione.
+Claude Code skill directories, each containing a `SKILL.md`. They are copied to `/workspace/.claude/skills/` to be available in the session.
 
 ### 3.3 Agents
 
-File `.md` di definizione subagent. Vengono copiati in `/workspace/.claude/agents/` per essere disponibili come subagent nella sessione.
+Subagent definition `.md` files. They are copied to `/workspace/.claude/agents/` to be available as subagents in the session.
 
 ### 3.4 Rules
 
-File `.md` di regole addizionali. Vengono copiati in `/workspace/.claude/rules/` e caricati automaticamente da Claude Code come project-level rules.
+Additional rules `.md` files. They are copied to `/workspace/.claude/rules/` and automatically loaded by Claude Code as project-level rules.
 
 ---
 
-## 4. Strategia Copy vs Mount (ADR-9)
+## 4. Copy vs Mount Strategy (ADR-9)
 
-La decisione architetturale chiave dei packs riguarda come le risorse vengono rese disponibili nel container. Esistono due strategie distinte, motivate da vincoli tecnici di Docker:
+The key architectural decision for packs concerns how resources are made available in the container. There are two distinct strategies, motivated by Docker technical constraints:
 
 ### Knowledge → Mount read-only
 
-I file di knowledge sono montati come volumi Docker `:ro` in `/workspace/.packs/<name>/`.
+Knowledge files are mounted as Docker read-only volumes `:ro` at `/workspace/.packs/<name>/`.
 
-**Motivazione**: i file di knowledge sono materiale di riferimento che Claude legge on-demand. Il mount read-only è naturale e impedisce scritture accidentali. Non serve che risiedano sotto `.claude/` perché non sono risorse Claude Code native.
+**Rationale**: knowledge files are reference material that Claude reads on-demand. Read-only mount is natural and prevents accidental writes. They don't need to reside under `.claude/` because they are not native Claude Code resources.
 
-### Skills, Agents, Rules → Copy nel progetto
+### Skills, Agents, Rules → Copy to project
 
-Skills, agents e rules vengono copiati fisicamente in `projects/<name>/.claude/` al momento di `cco start`.
+Skills, agents, and rules are physically copied to `projects/<name>/.claude/` at `cco start` time.
 
-**Motivazione**: Docker non può fare merge di mount multipli sullo stesso target. Se due pack definiscono entrambi degli agent, non possono essere montati entrambi su `.claude/agents/` — il secondo mount oscurerebbe il primo. Copiando i file, questa limitazione viene eliminata. Inoltre, skills/agents/rules devono trovarsi sotto `.claude/` dove Claude Code li scopre nativamente, integrandosi con la gerarchia di contesto a quattro livelli (ADR-3).
+**Rationale**: Docker cannot merge multiple mounts on the same target. If two packs both define agents, they cannot both be mounted on `.claude/agents/` — the second mount would shadow the first. By copying files, this limitation is eliminated. Additionally, skills/agents/rules must be located under `.claude/` where Claude Code discovers them natively, integrating with the four-tier context hierarchy (ADR-3).
 
 ---
 
-## 5. Pack Manifest e Cleanup
+## 5. Pack Manifest and Cleanup
 
 ### `.pack-manifest`
 
-Il file `.pack-manifest` si trova in `projects/<name>/` e traccia tutti i file copiati dai pack nella sessione precedente. Il formato è una lista di path relativi rispetto alla directory del progetto:
+The `.pack-manifest` file is located in `projects/<name>/` and tracks all files copied from packs in the previous session. The format is a list of paths relative to the project directory:
 
 ```
 .claude/agents/devops-specialist.md
@@ -134,31 +134,31 @@ Il file `.pack-manifest` si trova in `projects/<name>/` e traccia tutti i file c
 .claude/skills/deploy/SKILL.md
 ```
 
-### Ciclo di vita
+### Lifecycle
 
-1. **Pulizia stale** — all'avvio di `cco start`, ogni file elencato nel `.pack-manifest` esistente viene rimosso. Questo garantisce che risorse eliminate da un pack tra una sessione e l'altra non persistano come "ghost resources".
-2. **Copia fresh** — le risorse di tutti i pack attivi vengono copiate nella directory `.claude/` del progetto.
-3. **Scrittura manifest** — il nuovo `.pack-manifest` viene scritto con l'elenco aggiornato dei file copiati.
+1. **Stale cleanup** — at `cco start` startup, each file listed in the existing `.pack-manifest` is removed. This ensures that resources deleted from a pack between sessions don't persist as "ghost resources".
+2. **Fresh copy** — resources from all active packs are copied to the project's `.claude/` directory.
+3. **Manifest write** — the new `.pack-manifest` is written with the updated list of copied files.
 
-### Rilevamento conflitti
+### Conflict detection
 
-Se due pack definiscono una risorsa con lo stesso nome (es. entrambi hanno `agents/reviewer.md`), si applica la regola **last-wins**: il pack elencato per ultimo in `project.yml` sovrascrive il file. Un warning viene emesso all'utente:
+If two packs define a resource with the same name (e.g., both have `agents/reviewer.md`), the **last-wins** rule applies: the pack listed last in `project.yml` overwrites the file. A warning is emitted to the user:
 
 ```
 Warning: Pack 'pack-b' overwrites agents/reviewer.md (previously from 'pack-a')
 ```
 
-L'ordine dei pack in `project.yml` determina la precedenza.
+The order of packs in `project.yml` determines precedence.
 
 ---
 
-## 6. Meccanismo di Iniezione nel Contesto
+## 6. Context Injection Mechanism
 
-I file di knowledge non vengono caricati automaticamente da Claude Code (non sono sotto `.claude/`). L'iniezione avviene tramite una catena di tre componenti:
+Knowledge files are not automatically loaded by Claude Code (they are not under `.claude/`). Injection occurs via a chain of three components:
 
-### 6.1 Generazione di `packs.md`
+### 6.1 Generation of `packs.md`
 
-Al `cco start`, il CLI genera il file `.claude/packs.md` nel progetto con un elenco istruzionale dei file di knowledge disponibili:
+At `cco start`, the CLI generates the `.claude/packs.md` file in the project with an instructional list of available knowledge files:
 
 ```markdown
 The following knowledge files provide project-specific conventions and context.
@@ -169,15 +169,15 @@ Read the relevant files BEFORE starting any implementation, review, or design ta
 - /workspace/.packs/my-client/testing-guidelines.md
 ```
 
-I file senza description appaiono senza il suffisso `—`.
+Files without a description appear without the `—` suffix.
 
 ### 6.2 Hook `session-context.sh`
 
-Il hook `session-context.sh` (tipo `SessionStart`, definito in `defaults/managed/managed-settings.json`) viene eseguito all'avvio della sessione Claude Code. Se il file `.claude/packs.md` esiste, il suo contenuto viene iniettato nella risposta del hook come `additionalContext`.
+The `session-context.sh` hook (type `SessionStart`, defined in `defaults/managed/managed-settings.json`) is executed at Claude Code session startup. If the `.claude/packs.md` file exists, its content is injected into the hook response as `additionalContext`.
 
-Questo significa che l'elenco dei knowledge file appare automaticamente nel contesto iniziale di Claude, senza bisogno di modificare il `CLAUDE.md` del progetto.
+This means the list of knowledge files appears automatically in Claude's initial context, without needing to modify the project's `CLAUDE.md`.
 
-### 6.3 Flusso completo
+### 6.3 Complete flow
 
 ```mermaid
 sequenceDiagram
@@ -186,78 +186,78 @@ sequenceDiagram
     participant Hook as session-context.sh
     participant Claude as Claude Code
 
-    CLI->>CLI: Legge project.yml → lista packs
-    CLI->>CLI: Pulisce .pack-manifest stale
-    CLI->>CLI: Copia skills/agents/rules → .claude/
-    CLI->>CLI: Genera .claude/packs.md
-    CLI->>CLI: Scrive nuovo .pack-manifest
+    CLI->>CLI: Read project.yml → packs list
+    CLI->>CLI: Clean stale .pack-manifest
+    CLI->>CLI: Copy skills/agents/rules → .claude/
+    CLI->>CLI: Generate .claude/packs.md
+    CLI->>CLI: Write new .pack-manifest
     CLI->>Docker: docker compose run (mount knowledge :ro)
-    Docker->>Claude: Avvia sessione
+    Docker->>Claude: Start session
     Claude->>Hook: SessionStart trigger
-    Hook->>Hook: Legge .claude/packs.md
-    Hook-->>Claude: additionalContext con lista knowledge
-    Claude->>Claude: Knowledge disponibile nel contesto
+    Hook->>Hook: Read .claude/packs.md
+    Hook-->>Claude: additionalContext with knowledge list
+    Claude->>Claude: Knowledge available in context
 ```
 
 ---
 
-## 7. Interazione con la Scope Hierarchy
+## 7. Interaction with Scope Hierarchy
 
-Le risorse dei pack si inseriscono nel livello **project** della gerarchia di contesto:
+Pack resources are inserted at the **project** level of the context hierarchy:
 
-| Risorsa | Destinazione | Livello Claude Code |
+| Resource | Destination | Claude Code Level |
 |---------|-------------|---------------------|
-| Knowledge files | `/workspace/.packs/<name>/` | Nessuno (iniettato via hook) |
+| Knowledge files | `/workspace/.packs/<name>/` | None (injected via hook) |
 | Skills | `/workspace/.claude/skills/` | Project |
 | Agents | `/workspace/.claude/agents/` | Project |
 | Rules | `/workspace/.claude/rules/` | Project |
 
-**Ordine di override**: le risorse copiate dai pack convivono con quelle definite direttamente nel progetto. Se un progetto ha già un `agents/reviewer.md` e un pack ne fornisce uno omonimo, il pack sovrascrive il file del progetto (la copia avviene dopo, e il manifest traccia solo i file del pack). Per evitare sovrascritture indesiderate, usare nomi distinti o verificare con `cco pack validate`.
+**Override order**: resources copied from packs coexist with those defined directly in the project. If a project already has an `agents/reviewer.md` and a pack provides an identically named one, the pack overwrites the project's file (copying happens later, and the manifest tracks only pack files). To avoid unwanted overwrites, use distinct names or verify with `cco pack validate`.
 
-Le risorse a livello **user** (`~/.claude/agents/`, etc.) non vengono toccate dai pack. Un agent definito in un pack a livello project può coesistere con un agent omonimo a livello user — Claude Code li vede entrambi, con il project che ha precedenza sul user.
+Resources at the **user** level (`~/.claude/agents/`, etc.) are not touched by packs. An agent defined in a pack at project level can coexist with an identically named agent at user level — Claude Code sees both, with project taking precedence over user.
 
 ---
 
-## 8. Ciclo di Vita Completo — `cco start`
+## 8. Complete Lifecycle — `cco start`
 
-Ecco cosa accade, passo per passo, quando `cco start` processa i pack:
+Here's what happens, step by step, when `cco start` processes packs:
 
-1. **Lettura configurazione** — `project.yml` viene parsato; la lista `packs:` contiene i nomi dei pack attivi.
+1. **Configuration reading** — `project.yml` is parsed; the `packs:` list contains the names of active packs.
 
-2. **Pulizia stale** — se esiste un `.pack-manifest` precedente, ogni file elencato viene rimosso dal filesystem del progetto. Questo elimina risorse di pack rimossi o rinominati.
+2. **Stale cleanup** — if a previous `.pack-manifest` exists, each file listed is removed from the project filesystem. This removes resources from deleted or renamed packs.
 
-3. **Rilevamento conflitti** — il CLI scansiona tutti i pack attivi. Se due pack dichiarano una risorsa con lo stesso filename (es. `agents/reviewer.md`), viene emesso un warning. L'ultimo pack nella lista `packs:` di `project.yml` ha la precedenza.
+3. **Conflict detection** — the CLI scans all active packs. If two packs declare a resource with the same filename (e.g., `agents/reviewer.md`), a warning is emitted. The last pack in the `packs:` list in `project.yml` takes precedence.
 
-4. **Mount knowledge** — per ogni pack con `knowledge.source`, la directory viene aggiunta al `docker-compose.yml` generato come volume read-only:
+4. **Knowledge mount** — for each pack with `knowledge.source`, the directory is added to the generated `docker-compose.yml` as a read-only volume:
    ```yaml
    - ~/documents/my-client-knowledge:/workspace/.packs/my-client:ro
    ```
 
-5. **Copia risorse** — skills, agents e rules di ogni pack vengono copiate nelle rispettive sottodirectory di `projects/<name>/.claude/`:
+5. **Resource copy** — skills, agents, and rules from each pack are copied to their respective subdirectories of `projects/<name>/.claude/`:
    - `global/packs/<name>/skills/<skill>/` → `projects/<name>/.claude/skills/<skill>/`
    - `global/packs/<name>/agents/<agent>.md` → `projects/<name>/.claude/agents/<agent>.md`
    - `global/packs/<name>/rules/<rule>.md` → `projects/<name>/.claude/rules/<rule>.md`
 
-6. **Scrittura manifest** — il nuovo `.pack-manifest` viene scritto con tutti i path copiati.
+6. **Manifest write** — the new `.pack-manifest` is written with all copied paths.
 
-7. **Generazione `packs.md`** — viene generato `.claude/packs.md` con l'elenco istruzionale dei file di knowledge e relative description.
+7. **Generation of `packs.md`** — `.claude/packs.md` is generated with the instructional list of knowledge files and their descriptions.
 
-8. **Generazione `workspace.yml`** — viene generato `.claude/workspace.yml` con un sommario strutturato del progetto (usato dal comando `/init`).
+8. **Generation of `workspace.yml`** — `.claude/workspace.yml` is generated with a structured summary of the project (used by the `/init` command).
 
-9. **Lancio container** — `docker compose run` avvia il container. I volumi knowledge sono montati, le risorse copiate sono in `.claude/`. Al `SessionStart`, il hook inietta `packs.md` nel contesto.
+9. **Container launch** — `docker compose run` starts the container. Knowledge volumes are mounted, copied resources are in `.claude/`. At `SessionStart`, the hook injects `packs.md` into context.
 
 ---
 
-## 9. Comandi CLI
+## 9. CLI Commands
 
-Il CLI fornisce cinque comandi per la gestione dei pack:
+The CLI provides five commands for pack management:
 
-| Comando | Descrizione |
+| Command | Description |
 |---------|-------------|
-| `cco pack create <name>` | Crea lo scaffold di un nuovo pack (directory + `pack.yml` template) |
-| `cco pack list` | Elenca tutti i pack con conteggio risorse per tipo |
-| `cco pack show <name>` | Mostra dettagli del pack: risorse, description, progetti che lo usano |
-| `cco pack validate [name]` | Valida struttura e riferimenti (tutti i pack se name omesso) |
-| `cco pack remove <name>` | Rimuove un pack (con check d'uso e conferma) |
+| `cco pack create <name>` | Creates scaffold for a new pack (directory + `pack.yml` template) |
+| `cco pack list` | Lists all packs with resource count by type |
+| `cco pack show <name>` | Shows pack details: resources, descriptions, projects using it |
+| `cco pack validate [name]` | Validates structure and references (all packs if name omitted) |
+| `cco pack remove <name>` | Removes a pack (with usage check and confirmation) |
 
-Per i dettagli di ogni comando, vedi [cli.md](../../reference/cli.md) §3.7–3.11.
+For details of each command, see [cli.md](../../reference/cli.md) §3.7–3.11.

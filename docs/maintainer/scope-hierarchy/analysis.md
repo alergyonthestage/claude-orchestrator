@@ -1,204 +1,204 @@
-# Analisi: Gerarchia degli Scope e Configurazione
+# Analysis: Scope Hierarchy and Configuration
 
-> **Stato**: Analisi — fase di esplorazione e documentazione dei requisiti
-> **Data**: 2026-02-27
-> **Scope**: Architettura — riorganizzazione tier system/global/project
+> **Status**: Analysis — exploration and requirements documentation phase
+> **Date**: 2026-02-27
+> **Scope**: Architecture — reorganization of system/global/project tiers
 
 ---
 
-## Indice
+## Table of Contents
 
-1. [Contesto e Motivazione](#1-contesto-e-motivazione)
-2. [Comportamento Nativo di Claude Code](#2-comportamento-nativo-di-claude-code)
-3. [Mapping Attuale di claude-orchestrator](#3-mapping-attuale-di-claude-orchestrator)
-4. [Problemi Identificati](#4-problemi-identificati)
-5. [Requisiti](#5-requisiti)
-6. [Soluzioni Proposte](#6-soluzioni-proposte)
-7. [Raccomandazione](#7-raccomandazione)
-8. [Dettaglio: Classificazione File](#8-dettaglio-classificazione-file)
+1. [Context and Motivation](#1-context-and-motivation)
+2. [Native Claude Code Behavior](#2-native-claude-code-behavior)
+3. [Current claude-orchestrator Mapping](#3-current-claude-orchestrator-mapping)
+4. [Identified Problems](#4-identified-problems)
+5. [Requirements](#5-requirements)
+6. [Proposed Solutions](#6-proposed-solutions)
+7. [Recommendation](#7-recommendation)
+8. [Detail: File Classification](#8-detail-file-classification)
 9. [Open Questions](#9-open-questions)
 
 ---
 
-## 1. Contesto e Motivazione
+## 1. Context and Motivation
 
-claude-orchestrator implementa una gerarchia a tre tier (global → project → repo) che
-si mappa sulla risoluzione nativa di Claude Code. Attualmente esiste una separazione
-tra `defaults/system/` (sempre sincronizzati) e `defaults/global/` (copiati una volta),
-ma la categorizzazione dei file è incompleta:
+claude-orchestrator implements a three-tier hierarchy (global → project → repo) that
+maps onto Claude Code's native resolution. Currently there is a separation
+between `defaults/system/` (always synced) and `defaults/global/` (copied once),
+but file categorization is incomplete:
 
-- **Regole di workflow** (workflow.md, diagrams.md, git-practices.md) sono in "system"
-  ma rappresentano preferenze utente personalizzabili.
-- **Agents e skills** sono in "system" ma sono esempi di workflow estendibili.
-- **settings.json** contiene sia infrastruttura critica (hooks, env vars) sia preferenze
+- **Workflow rules** (workflow.md, diagrams.md, git-practices.md) are in "system"
+  but represent customizable user preferences.
+- **Agents and skills** are in "system" but are examples of extensible workflows.
+- **settings.json** contains both critical infrastructure (hooks, env vars) and preferences
   (attribution, cleanupPeriodDays).
-- Non esiste un meccanismo per impedire che l'utente sovrascriva file che il framework
-  richiede per funzionare.
+- There is no mechanism to prevent the user from overwriting files the framework
+  requires to function.
 
 ---
 
-## 2. Comportamento Nativo di Claude Code
+## 2. Native Claude Code Behavior
 
-### 2.1 Gerarchia Completa degli Scope
+### 2.1 Complete Scope Hierarchy
 
-Claude Code implementa **5 livelli** di configurazione, dal più alto al più basso:
+Claude Code implements **5 levels** of configuration, from highest to lowest:
 
-| # | Livello | Posizione (Linux) | Chi lo gestisce |
+| # | Level | Location (Linux) | Managed by |
 |---|---------|-------------------|-----------------|
 | 1 | **Managed** | `/etc/claude-code/` | Admin/Framework |
-| 2 | **CLI args** | Argomenti riga di comando | Sessione |
-| 3 | **Local** | `.claude/settings.local.json` | Utente (gitignored) |
-| 4 | **Project** | `.claude/settings.json` | Team (committato) |
-| 5 | **User** | `~/.claude/settings.json` | Utente |
+| 2 | **CLI args** | Command-line arguments | Session |
+| 3 | **Local** | `.claude/settings.local.json` | User (gitignored) |
+| 4 | **Project** | `.claude/settings.json` | Team (committed) |
+| 5 | **User** | `~/.claude/settings.json` | User |
 
-> **Nota**: Il livello Managed è la risposta nativa di Claude Code a "come avere
-> configurazione non sovrascrivibile". È progettato per enterprise/organization
-> ma funziona su qualsiasi installazione — incluso il nostro container Docker.
+> **Note**: The Managed level is Claude Code's native answer to "how to have
+> non-overridable configuration". It is designed for enterprise/organization
+> but works on any installation — including our Docker container.
 
-### 2.2 Sotto-livelli del Livello Managed
+### 2.2 Managed Level Sub-levels
 
-Quando sono presenti più sorgenti managed, solo UNA viene usata:
+When multiple managed sources are present, only ONE is used:
 
-1. **Server-managed** — via Claude.ai Admin Console (feature a pagamento Teams/Enterprise)
+1. **Server-managed** — via Claude.ai Admin Console (paid Teams/Enterprise feature)
 2. **MDM/OS policies** — macOS managed preferences, Windows Group Policy
 3. **File-based** — `/etc/claude-code/managed-settings.json` (Linux)
-4. **HKCU registry** — solo Windows
+4. **HKCU registry** — Windows only
 
-Nel nostro container Docker, usiamo il livello 3 (file-based). Se l'utente
-ha un account Teams/Enterprise con server-managed settings, quelli avranno
-precedenza — comportamento coerente con l'intento enterprise.
+In our Docker container, we use level 3 (file-based). If the user
+has a Teams/Enterprise account with server-managed settings, those will
+take precedence — behavior consistent with enterprise intent.
 
-### 2.3 Layout del Livello Managed su Linux
+### 2.3 Managed Level Layout on Linux
 
-**Confermato dal codice sorgente di Claude Code** (analisi di `cli.js`):
+**Confirmed by Claude Code source code** (analysis of `cli.js`):
 
 ```
 /etc/claude-code/
-├── managed-settings.json        # Settings (precedenza massima)
+├── managed-settings.json        # Settings (highest priority)
 ├── managed-mcp.json             # Server MCP managed
-├── CLAUDE.md                    # Istruzioni framework (sempre caricate)
+├── CLAUDE.md                    # Framework instructions (always loaded)
 └── .claude/
-    ├── rules/                   # Regole managed (*.md)
-    ├── skills/                  # Skill managed (*/SKILL.md)
-    ├── agents/                  # Agent managed (*.md)
-    ├── commands/                # Comandi managed
-    └── output-styles/           # Stili di output managed
+    ├── rules/                   # Managed rules (*.md)
+    ├── skills/                  # Managed skills (*/SKILL.md)
+    ├── agents/                  # Managed agents (*.md)
+    ├── commands/                # Managed commands
+    └── output-styles/           # Managed output styles
 ```
 
-**Attenzione ai nomi file**: Il settings managed si chiama `managed-settings.json`
-(NON `settings.json`). Il MCP managed si chiama `managed-mcp.json`.
+**Important file names**: The managed settings file is called `managed-settings.json`
+(NOT `settings.json`). The managed MCP file is called `managed-mcp.json`.
 
-### 2.4 Comportamento di Risoluzione per Tipo di Risorsa
+### 2.4 Resolution Behavior by Resource Type
 
-| Risorsa | Tipo di merge | Comportamento in conflitto |
+| Resource | Merge Type | Conflict Behavior |
 |---------|---------------|---------------------------|
-| `settings.json` | **Merge con precedenza** | Chiavi più specifiche sovrascrivono; chiavi non in conflitto coesistono |
-| `CLAUDE.md` | **Additivo** | Tutti i livelli caricati nel contesto; il più specifico prevale in conflitto |
-| `rules/*.md` | **Additivo** | Tutti caricati; project rules hanno priorità su user rules |
-| `agents/*.md` | **Override per nome** | CLI > Managed > Project > User > Plugin |
-| `skills/` | **Override per nome** | Managed > User > Project > Plugin (namespacati) |
-| `hooks` | **Merge (tutti eseguiti)** | Tutti gli hook matching vengono eseguiti in parallelo |
-| MCP servers | **Override per nome** | Local > Project > User |
-| `permissions` | **Merge con precedenza** | deny > ask > allow; prima regola corrispondente vince |
+| `settings.json` | **Merge with priority** | More specific keys override; non-conflicting keys coexist |
+| `CLAUDE.md` | **Additive** | All levels loaded in context; most specific prevails in conflict |
+| `rules/*.md` | **Additive** | All loaded; project rules have priority over user rules |
+| `agents/*.md` | **Override by name** | CLI > Managed > Project > User > Plugin |
+| `skills/` | **Override by name** | Managed > User > Project > Plugin (namespaced) |
+| `hooks` | **Merge (all executed)** | All matching hooks are executed in parallel |
+| MCP servers | **Override by name** | Local > Project > User |
+| `permissions` | **Merge with priority** | deny > ask > allow; first matching rule wins |
 
-#### Dettaglio: Come CLAUDE.md vengono scoperti
+#### Detail: How CLAUDE.md Files are Discovered
 
-Claude risale ricorsivamente dal cwd fino alla root, caricando ogni `CLAUDE.md`
-e `CLAUDE.local.md` che trova. I file nelle sottodirectory vengono scoperti
-on-demand quando Claude accede a file in quelle directory.
+Claude recursively traverses from the current working directory to the root, loading every `CLAUDE.md`
+and `CLAUDE.local.md` it finds. Files in subdirectories are discovered
+on-demand when Claude accesses files in those directories.
 
-L'ordine di caricamento per priorità crescente:
+The loading order by increasing priority:
 ```
-/etc/claude-code/CLAUDE.md          (Managed — sempre caricato)
-~/.claude/CLAUDE.md                 (User — sempre caricato)
-~/.claude/rules/*.md                (User rules — sempre caricati)
-/workspace/.claude/CLAUDE.md        (Project — sempre caricato)
-/workspace/.claude/rules/*.md       (Project rules — sempre caricati)
-/workspace/CLAUDE.local.md          (Local — sempre caricato, gitignored)
-/workspace/<repo>/.claude/CLAUDE.md (Repo — on-demand, più specifico)
+/etc/claude-code/CLAUDE.md          (Managed — always loaded)
+~/.claude/CLAUDE.md                 (User — always loaded)
+~/.claude/rules/*.md                (User rules — always loaded)
+/workspace/.claude/CLAUDE.md        (Project — always loaded)
+/workspace/.claude/rules/*.md       (Project rules — always loaded)
+/workspace/CLAUDE.local.md          (Local — always loaded, gitignored)
+/workspace/<repo>/.claude/CLAUDE.md (Repo — on-demand, most specific)
 ```
 
-Tutti coesistono nel contesto. In caso di istruzioni contrastanti, **il più specifico
-prevale** — ma le istruzioni non contrastanti da tutti i livelli rimangono attive.
+All coexist in the context. In case of conflicting instructions, **the most specific
+prevails** — but non-conflicting instructions from all levels remain active.
 
-#### Dettaglio: Come agents vengono risolti
+#### Detail: How Agents are Resolved
 
-Override per nome con questa precedenza:
+Override by name with this priority:
 ```
-CLI --agents flag                           (1 — massima)
+CLI --agents flag                           (1 — highest)
 /etc/claude-code/.claude/agents/ (Managed)  (2)
 .claude/agents/          (Project level)    (3)
 ~/.claude/agents/        (User level)       (4)
-Plugin agents/                              (5 — minima)
+Plugin agents/                              (5 — lowest)
 ```
 
-Il livello managed supporta agents. Dall'analisi del codice sorgente,
-`/etc/claude-code/.claude/agents/` è una posizione valida. La directory
-viene letta da Claude Code con la stessa logica delle altre posizioni agent.
+The managed level supports agents. From source code analysis,
+`/etc/claude-code/.claude/agents/` is a valid location. The directory
+is read by Claude Code with the same logic as other agent locations.
 
-**Nota**: Per agents, **Project > User** — un agent a livello project sovrascrive
-quello con lo stesso nome a livello user.
+**Note**: For agents, **Project > User** — an agent at project level overrides
+the one with the same name at user level.
 
-#### Dettaglio: Come skills vengono risolte
+#### Detail: How Skills are Resolved
 
-Override per nome con questa precedenza:
+Override by name with this priority:
 ```
-Managed/Enterprise       (1 — massima)
+Managed/Enterprise       (1 — highest)
 User (~/.claude/skills/) (2)
 Project (.claude/skills/)(3)
-Plugin (namespaced)      (4 — minima)
+Plugin (namespaced)      (4 — lowest)
 ```
 
-Le skill dei plugin usano namespace `plugin-name:skill-name` per evitare conflitti.
+Plugin skills use namespace `plugin-name:skill-name` to avoid conflicts.
 
-> **Attenzione: Asimmetria skills vs agents**
+> **Attention: Skills vs Agents Asymmetry**
 >
-> Per le skills, **User > Project** — una skill a livello user (`~/.claude/skills/`)
-> ha priorità su quella con lo stesso nome a livello project (`.claude/skills/`).
-> Questo è l'**opposto** degli agents, dove Project > User.
+> For skills, **User > Project** — a skill at user level (`~/.claude/skills/`)
+> has priority over the one with the same name at project level (`.claude/skills/`).
+> This is the **opposite** of agents, where Project > User.
 >
-> Implicazioni per claude-orchestrator:
-> - **Agents**: Un pack a livello project PUÒ sovrascrivere un agent globale ✓
-> - **Skills**: Un pack a livello project NON PUÒ sovrascrivere una skill globale ✗
->   (la skill user/global ha priorità)
+> Implications for claude-orchestrator:
+> - **Agents**: A pack at project level CAN override a global agent ✓
+> - **Skills**: A pack at project level CANNOT override a global skill ✗
+>   (the user/global skill has priority)
 >
-> Questo è il comportamento nativo documentato da Claude Code. Va tenuto in
-> considerazione nella scelta di dove posizionare agents e skills di default.
+> This is the native behavior documented by Claude Code. It should be
+> considered when deciding where to position default agents and skills.
 
-### 2.5 Impostazioni Managed-Only
+### 2.5 Managed-Only Settings
 
-Queste chiavi funzionano **esclusivamente** in `managed-settings.json`:
+These keys work **exclusively** in `managed-settings.json`:
 
-| Chiave | Effetto |
+| Key | Effect |
 |--------|--------|
-| `disableBypassPermissionsMode` | Impedisce `--dangerously-skip-permissions` |
-| `allowManagedPermissionRulesOnly` | Solo regole permessi managed si applicano |
-| `allowManagedHooksOnly` | Blocca hook user/project/plugin; solo managed e SDK |
-| `allowManagedMcpServersOnly` | Solo MCP servers dalla allowlist managed |
-| `allowedMcpServers` | Allowlist MCP servers configurabili dall'utente |
-| `deniedMcpServers` | Blocklist MCP servers |
-| `strictKnownMarketplaces` | Allowlist marketplace plugin |
-| `blockedMarketplaces` | Blocklist marketplace plugin |
-| `sandbox.network.allowManagedDomainsOnly` | Solo domini di rete managed |
-| `forceLoginMethod` | Forza metodo di login |
-| `allow_remote_sessions` | Controlla sessioni remote |
+| `disableBypassPermissionsMode` | Prevents `--dangerously-skip-permissions` |
+| `allowManagedPermissionRulesOnly` | Only managed permission rules apply |
+| `allowManagedHooksOnly` | Blocks user/project/plugin hooks; only managed and SDK |
+| `allowManagedMcpServersOnly` | Only MCP servers from managed allowlist |
+| `allowedMcpServers` | Allowlist for user-configurable MCP servers |
+| `deniedMcpServers` | MCP servers blocklist |
+| `strictKnownMarketplaces` | Plugin marketplace allowlist |
+| `blockedMarketplaces` | Plugin marketplace blocklist |
+| `sandbox.network.allowManagedDomainsOnly` | Only managed network domains |
+| `forceLoginMethod` | Force login method |
+| `allow_remote_sessions` | Control remote sessions |
 
 ---
 
-## 3. Mapping Attuale di claude-orchestrator
+## 3. Current claude-orchestrator Mapping
 
-### 3.1 Architettura Corrente
+### 3.1 Current Architecture
 
 ```mermaid
 graph TB
-    subgraph "defaults/system/ (11 file)"
+    subgraph "defaults/system/ (11 files)"
         SS[settings.json<br/>hooks, permissions, env]
         SA[agents/analyst.md<br/>agents/reviewer.md]
         SK[skills/analyze, commit,<br/>design, review, init-workspace]
         SR[rules/workflow.md<br/>rules/diagrams.md<br/>rules/git-practices.md]
     end
 
-    subgraph "defaults/global/ (6 file)"
+    subgraph "defaults/global/ (6 files)"
         GC[CLAUDE.md<br/>Workflow instructions]
         GM[mcp.json<br/>Empty]
         GL[rules/language.md<br/>Template]
@@ -206,250 +206,250 @@ graph TB
         GS[setup.sh<br/>User setup script]
     end
 
-    subgraph "defaults/_template/ (12+ file)"
+    subgraph "defaults/_template/ (12+ files)"
         TC[CLAUDE.md, settings.json<br/>rules/language.md]
         TT[project.yml, setup.sh<br/>secrets.env, mcp-packages.txt]
         TD[claude-state/memory/<br/>agents/ skills/ rules/]
     end
 
-    SS -->|"_sync_system_files()<br/>SEMPRE sincronizzato"| G["global/.claude/"]
+    SS -->|"_sync_system_files()<br/>ALWAYS synced"| G["global/.claude/"]
     SA --> G
     SK --> G
     SR --> G
-    GC -->|"cco init<br/>copiato UNA VOLTA"| G
+    GC -->|"cco init<br/>copied ONCE"| G
     GM --> G
     GL --> G
 
     TC -->|"cco project create<br/>scaffolding"| P["projects/<name>/.claude/"]
 ```
 
-### 3.2 Meccanismo di Sync
+### 3.2 Sync Mechanism
 
-La funzione `_sync_system_files()` in `bin/cco` (linee 611–670):
+The `_sync_system_files()` function in `bin/cco` (lines 611–670):
 
-1. Legge `defaults/system/system.manifest` (lista di 11 path)
-2. Per ogni file: confronta con `cmp -s`, copia se diverso o mancante
-3. Rimuove file presenti nel vecchio manifest ma non nel nuovo (cleanup)
-4. Salva il manifest corrente come `.system-manifest` per il prossimo ciclo
+1. Reads `defaults/system/system.manifest` (list of 11 paths)
+2. For each file: compares with `cmp -s`, copies if different or missing
+3. Removes files present in the old manifest but not in the new one (cleanup)
+4. Saves the current manifest as `.system-manifest` for the next cycle
 
-Viene chiamata da: `cmd_init()`, `cmd_start()`, `cmd_new()`.
-Include anche una fase di bootstrap migration per gestire la transizione
-da layout pre-system (righe 619-626 di `bin/cco`).
+Called by: `cmd_init()`, `cmd_start()`, `cmd_new()`.
+Also includes a bootstrap migration phase to handle the transition
+from pre-system layout (lines 619-626 of `bin/cco`).
 
-**Effetto**: Ogni `cco start` riscrive i file di sistema. Un utente che modifica
-`global/.claude/rules/workflow.md` perde le modifiche al prossimo avvio.
+**Effect**: Every `cco start` rewrites system files. A user who modifies
+`global/.claude/rules/workflow.md` loses the changes on the next startup.
 
-### 3.3 Dove Vanno i File nel Container
+### 3.3 Where Files Go in Container
 
 ```
 Container mount:
 ~/.claude/           ← global/.claude/ (User scope Claude Code)
 /workspace/.claude/  ← projects/<name>/.claude/ (Project scope Claude Code)
-/workspace/<repo>/   ← repo montato (Repo scope Claude Code, on-demand)
+/workspace/<repo>/   ← mounted repo (Repo scope Claude Code, on-demand)
 ```
 
-**Mancante**: Non c'è nulla montato in `/etc/claude-code/` (Managed scope).
+**Missing**: Nothing is mounted in `/etc/claude-code/` (Managed scope).
 
 ---
 
-## 4. Problemi Identificati
+## 4. Identified Problems
 
-### P1: Classificazione Semantica Errata
+### P1: Incorrect Semantic Classification
 
-File che rappresentano **preferenze utente** sono classificati come "system" e quindi
-vengono riscritti a ogni `cco start`:
+Files that represent **user preferences** are classified as "system" and therefore
+rewritten on every `cco start`:
 
-| File | Classificazione attuale | Natura reale |
+| File | Current Classification | Real Nature |
 |------|------------------------|--------------|
-| `rules/workflow.md` | System (sempre sync) | Preferenza processo (team-specific) |
-| `rules/diagrams.md` | System (sempre sync) | Preferenza stile (personale) |
-| `rules/git-practices.md` | System (sempre sync) | Preferenza VCS (team-specific) |
-| `agents/analyst.md` | System (sempre sync) | Esempio agent (estendibile) |
-| `agents/reviewer.md` | System (sempre sync) | Esempio agent (estendibile) |
-| `skills/*` (5 skill) | System (sempre sync) | Esempio workflow (personalizzabile) |
+| `rules/workflow.md` | System (always synced) | Process preference (team-specific) |
+| `rules/diagrams.md` | System (always synced) | Style preference (personal) |
+| `rules/git-practices.md` | System (always synced) | VCS preference (team-specific) |
+| `agents/analyst.md` | System (always synced) | Example agent (extensible) |
+| `agents/reviewer.md` | System (always synced) | Example agent (extensible) |
+| `skills/*` (5 skills) | System (always synced) | Example workflow (customizable) |
 
-### P2: Assenza del Livello Managed
+### P2: Absence of Managed Level
 
-L'architettura attuale usa solo User (`~/.claude/`) e Project (`/workspace/.claude/`).
-Non esiste un livello con priorità superiore che non possa essere sovrascritto.
-Conseguenze:
+The current architecture uses only User (`~/.claude/`) and Project (`/workspace/.claude/`).
+There is no level with higher priority that cannot be overridden.
+Consequences:
 
-- Se un pack o un progetto definiscono un `agents/analyst.md`, sovrascrivono
-  quello di sistema (project > user per agents).
-- Se l'utente cancella rules di sistema da `global/.claude/rules/`, vengono
-  ripristinate al prossimo `cco start` — ma intanto la sessione corrente è senza.
-- Non c'è modo di avere hook o settings **garantiti come attivi**.
+- If a pack or project defines `agents/analyst.md`, it overrides
+  the system one (project > user for agents).
+- If the user deletes system rules from `global/.claude/rules/`, they are
+  restored at the next `cco start` — but the current session is without them in the meantime.
+- There is no way to have hooks or settings **guaranteed to be active**.
 
-### P3: Asimmetria negli Override
+### P3: Asymmetry in Overrides
 
-In `~/.claude/` convivono file framework (sync-always) e file utente (user-owned)
-senza distinzione visiva. L'utente non sa quali file può modificare e quali
-verranno riscritti al prossimo `cco start`. In più:
+In `~/.claude/`, framework files (sync-always) and user files (user-owned)
+coexist without visual distinction. Users don't know which files they can modify and which
+will be rewritten at the next `cco start`. Also:
 
-- I **pack** possono sovrascrivere agents di sistema a livello project ✓
-  (project > user per agents)
-- I **pack** NON possono sovrascrivere skills di sistema a livello project ✗
-  (user > project per skills — comportamento nativo asimmetrico)
-- L'utente può modificare file in `global/.claude/`, ma quelli nel manifest
-  vengono riscritti al prossimo avvio
+- **Packs** can override system agents at project level ✓
+  (project > user for agents)
+- **Packs** CANNOT override system skills at project level ✗
+  (user > project for skills — native asymmetric behavior)
+- Users can modify files in `global/.claude/`, but those in the manifest
+  are rewritten at the next startup
 
-### P4: settings.json Mescola Infrastruttura e Preferenze
+### P4: settings.json Mixes Infrastructure and Preferences
 
-Il settings.json corrente in `defaults/system/` contiene:
+The current settings.json in `defaults/system/` contains:
 
-**Infrastruttura framework** (DEVE essere sempre presente):
-- `env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` — richiesto per agent teams
+**Framework infrastructure** (MUST always be present):
+- `env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` — required for agent teams
 - `hooks.SessionStart`, `hooks.SubagentStart`, `hooks.PreCompact` — context injection
-- `statusLine` — feedback visivo sessione
-- `permissions.deny` — protezione file sensibili
+- `statusLine` — session visual feedback
+- `permissions.deny` — protection for sensitive files
 
-**Preferenze utente** (personalizzabili):
-- `permissions.allow` — lista comandi permessi
-- `attribution` — formato co-author nei commit
+**User preferences** (customizable):
+- `permissions.allow` — list of allowed commands
+- `attribution` — co-author format in commits
 - `teammateMode` — tmux vs iTerm2
-- `cleanupPeriodDays` — retention sessioni
+- `cleanupPeriodDays` — session retention
 - `enableAllProjectMcpServers` — auto-enable MCP
 - `alwaysThinkingEnabled` — thinking mode
 
-Avendo tutto in un unico file sync-always, le preferenze vengono sovrascritte.
+Having everything in a single sync-always file means preferences get overwritten.
 
-### P5: Interazione Hook ↔ Scope Non Documentata
+### P5: Undocumented Hook ↔ Scope Interaction
 
-Gli hook di context injection (`session-context.sh`, `subagent-context.sh`)
-iniettano informazione nel conversation context via `additionalContext`.
-Questo è un canale parallelo alla gerarchia degli scope:
+The context injection hooks (`session-context.sh`, `subagent-context.sh`)
+inject information into the conversation context via `additionalContext`.
+This is a parallel channel to the scope hierarchy:
 
-- Non crea rules, agents o skills — inietta contesto read-only
-- Ha priorità alta nel conversation context (caricato all'inizio della sessione)
-- Ma non può imporre behavior binding come una regola in `CLAUDE.md`
-- L'hook `session-context.sh` inietta anche il contenuto di
-  `/workspace/.claude/packs.md` come knowledge pack (righe 74-80)
+- Does not create rules, agents, or skills — injects read-only context
+- Has high priority in conversation context (loaded at session start)
+- But cannot enforce behavior binding like a rule in `CLAUDE.md`
+- The `session-context.sh` hook also injects the content of
+  `/workspace/.claude/packs.md` as a knowledge pack (lines 74-80)
 
 ---
 
-## 5. Requisiti
+## 5. Requirements
 
-### R1: Sfruttare il Comportamento Nativo
+### R1: Leverage Native Behavior
 
-> La regola fondamentale di claude-orchestrator è sfruttare il più possibile
-> le feature native di Claude Code.
+> The fundamental rule of claude-orchestrator is to leverage Claude Code's
+> native features as much as possible.
 
-Ogni tier dell'orchestratore deve mappare a un livello nativo di Claude Code:
+Each orchestrator tier must map to a native Claude Code level:
 
-| Orchestrator Tier | Claude Code Level | Meccanismo |
+| Orchestrator Tier | Claude Code Level | Mechanism |
 |-------------------|-------------------|------------|
-| **System** | **Managed** (`/etc/claude-code/`) | Non sovrascrivibile, infrastruttura framework |
-| **Global** | **User** (`~/.claude/`) | Default preconfigurati, customizzabili dall'utente |
-| **Project** | **Project** (`/workspace/.claude/`) | Per-progetto, include pack resources |
-| **Repo** | **Nested** (`/workspace/<repo>/.claude/`) | Dal repo montato, on-demand |
+| **System** | **Managed** (`/etc/claude-code/`) | Non-overridable, framework infrastructure |
+| **Global** | **User** (`~/.claude/`) | Preconfigured defaults, customizable by user |
+| **Project** | **Project** (`/workspace/.claude/`) | Per-project, includes pack resources |
+| **Repo** | **Nested** (`/workspace/<repo>/.claude/`) | From mounted repo, on-demand |
 
-### R2: System Non Sovrascrivibile
+### R2: System Not Overridable
 
-I file in scope System devono avere priorità su tutto. L'utente non può
-sovrascriverli in nessun modo. Contengono:
+Files in System scope must have priority over everything. Users cannot
+override them in any way. They contain:
 
-- Settings e hooks che fanno funzionare il framework
-- Istruzioni core su come claude-orchestrator opera
-- Regole di behavior universali e trasversali a tutti i progetti
+- Settings and hooks that make the framework work
+- Core instructions on how claude-orchestrator operates
+- Universal behavior rules and cross-project conventions
 
-### R3: Global come Template Preconfigurati
+### R3: Global as Preconfigured Templates
 
-I file in scope Global sono esempi funzionanti. L'utente può:
+Files in Global scope are working examples. Users can:
 
-- Modificarli liberamente (non vengono mai riscritti dopo l'init)
-- Estenderli con file aggiuntivi
-- Usarli come base per personalizzazioni
+- Modify them freely (never rewritten after init)
+- Extend them with additional files
+- Use them as a basis for customizations
 
-### R4: Project Override di Global
+### R4: Project Override of Global
 
-A livello project, il comportamento nativo di override è:
+At project level, the native override behavior is:
 
-- `agents/` → override per nome, **Project > User** (project sovrascrive global) ✓
-- `skills/` → override per nome, **User > Project** (global ha priorità su project) ⚠️
-- `rules/` → additive (tutti caricati, project rules hanno priorità in conflitto) ✓
-- `settings.json` → merge (project estende global, project vince in conflitto) ✓
+- `agents/` → override by name, **Project > User** (project overrides global) ✓
+- `skills/` → override by name, **User > Project** (global has priority over project) ⚠️
+- `rules/` → additive (all loaded, project rules have priority in conflict) ✓
+- `settings.json` → merge (project extends global, project wins in conflict) ✓
 
-> **Nota**: L'asimmetria skills vs agents è nativa di Claude Code. Le skill
-> globali dell'utente hanno priorità su quelle project-level. Questo significa
-> che i pack non possono sovrascrivere skill globali, solo aggiungerne di nuove.
+> **Note**: The skills vs agents asymmetry is native to Claude Code. User
+> global skills have priority over project-level ones. This means
+> packs cannot override global skills, only add new ones.
 
-### R5: System Non Sovrascrivibile da Project/Global
+### R5: System Not Overridable from Project/Global
 
-Il livello managed ha nativamente questa proprietà. In più, le chiavi
-`allowManagedHooksOnly` e `allowManagedPermissionRulesOnly` possono
-**bloccare** modifiche da livelli inferiori.
+The managed level has this property natively. Additionally, the
+`allowManagedHooksOnly` and `allowManagedPermissionRulesOnly` keys can
+**block** modifications from lower levels.
 
 ---
 
-## 6. Soluzioni Proposte
+## 6. Proposed Solutions
 
-### Soluzione A: Usare `/etc/claude-code/` (Managed Nativo)
+### Solution A: Use `/etc/claude-code/` (Native Managed)
 
-Spostare i file di infrastruttura framework nel livello managed nativo di
-Claude Code, servito da `/etc/claude-code/` nel container.
+Move framework infrastructure files to Claude Code's native managed level,
+served from `/etc/claude-code/` in the container.
 
-#### Implementazione
+#### Implementation
 
-**Nel Dockerfile** — creare la struttura managed:
+**In Dockerfile** — create the managed structure:
 ```dockerfile
-# Framework managed settings (non sovrascrivibili)
+# Framework managed settings (non-overridable)
 RUN mkdir -p /etc/claude-code/.claude/rules \
              /etc/claude-code/.claude/agents \
              /etc/claude-code/.claude/skills
 ```
 
-**Nuovo layout `defaults/`**:
+**New `defaults/` layout**:
 ```
 defaults/
 ├── managed/                          # → /etc/claude-code/ (MANAGED level)
-│   ├── managed-settings.json         # Hooks, env vars, flags framework-critical
-│   ├── CLAUDE.md                     # Istruzioni core framework
+│   ├── managed-settings.json         # Hooks, env vars, framework-critical flags
+│   ├── CLAUDE.md                     # Core framework instructions
 │   └── .claude/
-│       ├── rules/                    # Regole framework (se necessarie)
-│       ├── agents/                   # (vuoto — agents vanno in global)
-│       └── skills/                   # (vuoto — skills vanno in global)
+│       ├── rules/                    # Framework rules (if needed)
+│       ├── agents/                   # (empty — agents go in global)
+│       └── skills/                   # (empty — skills go in global)
 │
-├── global/                           # → ~/.claude/ (USER level, copiati UNA volta)
+├── global/                           # → ~/.claude/ (USER level, copied ONCE)
 │   └── .claude/
-│       ├── CLAUDE.md                 # Workflow instructions (personalizzabili)
-│       ├── mcp.json                  # MCP servers utente (vuoto)
-│       ├── settings.json             # Preferenze utente (attribution, teammateMode...)
+│       ├── CLAUDE.md                 # Workflow instructions (customizable)
+│       ├── mcp.json                  # User MCP servers (empty)
+│       ├── settings.json             # User preferences (attribution, teammateMode...)
 │       ├── rules/
-│       │   ├── workflow.md           # Fasi del workflow (personalizzabile)
-│       │   ├── diagrams.md           # Convenzioni diagrammi (personalizzabile)
-│       │   ├── git-practices.md      # Convenzioni git (personalizzabile)
-│       │   └── language.md           # Preferenze lingua (template)
+│       │   ├── workflow.md           # Workflow phases (customizable)
+│       │   ├── diagrams.md           # Diagram conventions (customizable)
+│       │   ├── git-practices.md      # Git conventions (customizable)
+│       │   └── language.md           # Language preferences (template)
 │       ├── agents/
-│       │   ├── analyst.md            # Agent analista (esempio, estendibile)
-│       │   └── reviewer.md           # Agent reviewer (esempio, estendibile)
+│       │   ├── analyst.md            # Analyst agent (example, extensible)
+│       │   └── reviewer.md           # Reviewer agent (example, extensible)
 │       └── skills/
-│           ├── analyze/SKILL.md      # Skill analisi (esempio)
-│           ├── commit/SKILL.md       # Skill commit (esempio)
-│           ├── design/SKILL.md       # Skill design (esempio)
-│           ├── review/SKILL.md       # Skill review (esempio)
+│           ├── analyze/SKILL.md      # Analysis skill (example)
+│           ├── commit/SKILL.md       # Commit skill (example)
+│           ├── design/SKILL.md       # Design skill (example)
+│           ├── review/SKILL.md       # Review skill (example)
 │           └── init-workspace/SKILL.md
 │
 └── _template/                        # → projects/<name>/.claude/ (scaffolding)
     └── .claude/
-        ├── CLAUDE.md                 # Template progetto
-        ├── settings.json             # Override vuoto
-        └── rules/language.md         # Override lingua template
+        ├── CLAUDE.md                 # Project template
+        ├── settings.json             # Empty override
+        └── rules/language.md         # Language template override
 ```
 
-**Nel Dockerfile** — copiare managed files:
+**In Dockerfile** — copy managed files:
 ```dockerfile
 COPY defaults/managed/ /etc/claude-code/
 RUN chmod -R 755 /etc/claude-code/
 ```
 
-**Entrypoint** — nessuna modifica necessaria per managed files. Claude Code
-li legge automaticamente da `/etc/claude-code/` senza alcun intervento.
+**Entrypoint** — no modifications needed for managed files. Claude Code
+reads them automatically from `/etc/claude-code/` without any intervention.
 
-**`_sync_system_files()`** — eliminata o ridotta. Il managed level è nel
-Dockerfile (immutabile per la sessione). I global defaults sono copiati
-solo da `cmd_init()`.
+**`_sync_system_files()`** — removed or reduced. The managed level is in the
+Dockerfile (immutable for the session). Global defaults are copied
+only by `cmd_init()`.
 
-#### Contenuto di `managed-settings.json`
+#### Content of `managed-settings.json`
 
 ```json
 {
@@ -493,10 +493,10 @@ solo da `cmd_init()`.
 }
 ```
 
-#### Contenuto di `/etc/claude-code/CLAUDE.md` (Managed)
+#### Content of `/etc/claude-code/CLAUDE.md` (Managed)
 
-Istruzioni core del framework — come claude-orchestrator opera. Universali,
-trasversali a tutti i progetti, non sovrascrivibili:
+Core framework instructions — how claude-orchestrator operates. Universal,
+cross-cutting for all projects, non-overridable:
 
 ```markdown
 # claude-orchestrator Framework
@@ -521,134 +521,134 @@ trasversali a tutti i progetti, non sovrascrivibili:
 - The lead synthesizes teammate outputs into coherent results
 ```
 
-#### Pro
-- Sfrutta il **meccanismo nativo** di Claude Code (Managed level)
-- Non sovrascrivibile da user/project/pack — **garanzia nativa**
-- Elimina la necessità di `_sync_system_files()` per infrastruttura
-- Immutabile per la durata della sessione (baked nel Docker image)
-- Compatibile con server-managed settings enterprise (precedenza corretta)
-- Hooks sono garantiti come attivi (managed hooks non disabilitabili dall'utente)
-- Separazione pulita: managed = framework, user = preferenze, project = per-progetto
+#### Pros
+- Leverages **Claude Code's native mechanism** (Managed level)
+- Non-overridable by user/project/pack — **native guarantee**
+- Eliminates the need for `_sync_system_files()` for infrastructure
+- Immutable for the session duration (baked into Docker image)
+- Compatible with enterprise server-managed settings (correct priority)
+- Hooks are guaranteed to be active (managed hooks cannot be disabled by user)
+- Clean separation: managed = framework, user = preferences, project = per-project
 
-#### Contro
-- Richiede `cco build` per aggiornare i file managed (non aggiornabili a runtime)
-- Più rigido: se un utente ha un caso d'uso edge che richiede override di un hook,
-  non può farlo (by design, ma potrebbe essere limitante)
-- La chiave `allowManagedHooksOnly` impedirebbe all'utente di aggiungere i propri
-  hook — bisogna NON attivarla per mantenere flessibilità
-- Richiede verifica che Claude Code 2.1.56 legga effettivamente tutti i tipi di
-  risorse da `/etc/claude-code/.claude/` (confermato dal codice sorgente, ma serve
-  test pratico end-to-end)
+#### Cons
+- Requires `cco build` to update managed files (not updatable at runtime)
+- More rigid: if a user has an edge case requiring hook override,
+  they cannot do it (by design, but could be limiting)
+- The `allowManagedHooksOnly` key would prevent users from adding their own
+  hooks — must NOT activate it to maintain flexibility
+- Requires verification that Claude Code 2.1.56 actually reads all resource types
+  from `/etc/claude-code/.claude/` (confirmed from source code, but needs
+  end-to-end practical test)
 
-### Soluzione B: System come Global Protetto (senza Managed)
+### Solution B: System as Protected Global (without Managed)
 
-Mantenere tutti i file in `~/.claude/` (User level) ma separare concettualmente
-"framework-owned" e "user-owned" tramite il meccanismo di sync esistente.
+Keep all files in `~/.claude/` (User level) but conceptually separate
+"framework-owned" and "user-owned" via the existing sync mechanism.
 
-#### Implementazione
+#### Implementation
 
-- `_sync_system_files()` sincronizza solo `settings.json` (infrastruttura minima)
-- Tutto il resto (agents, skills, rules) è copiato una volta come default
-- Le istruzioni framework vanno nel `CLAUDE.md` globale (additivo con project)
+- `_sync_system_files()` syncs only `settings.json` (minimal infrastructure)
+- Everything else (agents, skills, rules) is copied once as default
+- Framework instructions go in global `CLAUDE.md` (additive with project)
 
-#### Pro
-- Nessuna dipendenza su feature managed (più semplice)
-- Funziona su qualsiasi versione di Claude Code
-- Un unico tier da gestire
+#### Pros
+- No dependency on managed features (simpler)
+- Works with any Claude Code version
+- Single tier to manage
 
-#### Contro
-- **Non c'è garanzia** che i file framework siano sempre presenti
-- L'utente può sovrascrivere settings.json a livello project (merge nativo)
-- Gli hook possono essere disabilitati da un settings.json project-level
-- Se un pack sovrascrive `agents/analyst.md` a livello project, il framework
-  perde il controllo sull'agent base
+#### Cons
+- **No guarantee** that framework files are always present
+- User can override settings.json at project level (native merge)
+- Hooks can be disabled by project-level settings.json
+- If a pack overrides `agents/analyst.md` at project level, framework
+  loses control over the base agent
 
-### Soluzione C: Ibrida — Managed per Settings, Global per il Resto
+### Solution C: Hybrid — Managed for Settings, Global for Rest
 
-Usare `/etc/claude-code/` solo per `managed-settings.json` e `CLAUDE.md`
-(le risorse la cui protezione è più critica), e mantenere agents/skills/rules
-in `~/.claude/` come default preconfigurati.
+Use `/etc/claude-code/` only for `managed-settings.json` and `CLAUDE.md`
+(resources whose protection is most critical), and keep agents/skills/rules
+in `~/.claude/` as preconfigured defaults.
 
-#### Implementazione
+#### Implementation
 
 ```
 /etc/claude-code/
-├── managed-settings.json    # Hooks, env, deny rules — non sovrascrivibile
-├── CLAUDE.md                # Istruzioni framework — non sovrascrivibile
-└── (nient'altro)
+├── managed-settings.json    # Hooks, env, deny rules — non-overridable
+├── CLAUDE.md                # Framework instructions — non-overridable
+└── (nothing else)
 
 ~/.claude/
-├── settings.json            # Preferenze utente (allow rules, attribution, etc.)
-├── CLAUDE.md                # Workflow instructions (personalizzabili)
-├── rules/                   # Regole personalizzabili
-├── agents/                  # Agent personalizzabili
-└── skills/                  # Skill personalizzabili
+├── settings.json            # User preferences (allow rules, attribution, etc.)
+├── CLAUDE.md                # Workflow instructions (customizable)
+├── rules/                   # Customizable rules
+├── agents/                  # Customizable agents
+└── skills/                  # Customizable skills
 ```
 
-#### Pro
-- La parte più critica (hooks, settings framework) è protetta
-- Le istruzioni core del framework sono nel CLAUDE.md managed
-- Agents, skills e rules rimangono flessibili
-- Meno dipendenza sulla feature managed per risorse meno critiche
+#### Pros
+- The most critical part (hooks, framework settings) is protected
+- Core framework instructions are in managed CLAUDE.md
+- Agents, skills, and rules remain flexible
+- Less dependency on managed features for less critical resources
 
-#### Contro
-- Complessità: due location diverse per file "di sistema"
-- Non protegge agents/skills dal override a livello project (un pack che definisce
-  `agents/analyst.md` sovrascrive quello globale)
-- L'utente non sa intuitivamente cosa è managed e cosa è user
+#### Cons
+- Complexity: two different locations for "system" files
+- Does not protect agents/skills from project-level override (a pack that defines
+  `agents/analyst.md` overrides the global one)
+- Users do not intuitively know what is managed and what is user-owned
 
 ---
 
-## 7. Raccomandazione
+## 7. Recommendation
 
-### Soluzione Raccomandata: A (Managed Nativo Completo)
+### Recommended Solution: A (Complete Native Managed)
 
-La Soluzione A è la più coerente con il principio fondamentale del progetto:
-**sfruttare il più possibile le feature native di Claude Code**.
+Solution A is most consistent with the project's fundamental principle:
+**leverage Claude Code's native features as much as possible**.
 
-Il livello Managed esiste esattamente per il nostro caso d'uso: configurazione
-che il "provider dell'ambiente" (l'orchestratore) vuole garantire come attiva.
+The Managed level exists exactly for our use case: configuration
+that the "environment provider" (the orchestrator) wants to guarantee as active.
 
-#### Dettaglio della Separazione Proposta
+#### Details of Proposed Separation
 
-**Managed (`/etc/claude-code/`)** — Framework, non sovrascrivibile:
+**Managed (`/etc/claude-code/`)** — Framework, non-overridable:
 
-| Risorsa | Contenuto | Motivazione |
+| Resource | Content | Motivation |
 |---------|-----------|-------------|
-| `managed-settings.json` | Hooks paths, env vars framework, deny rules, statusLine | Gli hook DEVONO funzionare sempre |
-| `CLAUDE.md` | Docker env, workspace layout, agent team behavior | Claude deve sapere come opera il framework |
+| `managed-settings.json` | Hooks paths, framework env vars, deny rules, statusLine | Hooks MUST always work |
+| `CLAUDE.md` | Docker env, workspace layout, agent team behavior | Claude must know how framework operates |
 
-> **Nota**: NON mettere agents/skills/rules in managed. Sono estensioni
-> di workflow, non infrastruttura. L'utente deve poterli personalizzare.
+> **Note**: Do NOT put agents/skills/rules in managed. They are workflow
+> extensions, not infrastructure. Users must be able to customize them.
 
-**Global (`~/.claude/`)** — Default preconfigurati, personalizzabili:
+**Global (`~/.claude/`)** — Preconfigured defaults, customizable:
 
-| Risorsa | Contenuto | Motivazione |
+| Resource | Content | Motivation |
 |---------|-----------|-------------|
-| `settings.json` | Permission allow, attribution, teammateMode, cleanup | Preferenze utente |
-| `CLAUDE.md` | Development workflow, communication style | Template personalizzabile |
-| `rules/workflow.md` | Fasi strutturate del workflow | Team-specific |
-| `rules/diagrams.md` | Convenzioni Mermaid | Preferenza personale |
+| `settings.json` | Permission allow, attribution, teammateMode, cleanup | User preferences |
+| `CLAUDE.md` | Development workflow, communication style | Customizable template |
+| `rules/workflow.md` | Structured workflow phases | Team-specific |
+| `rules/diagrams.md` | Mermaid conventions | Personal preference |
 | `rules/git-practices.md` | Branch strategy, conventional commits | Team-specific |
-| `rules/language.md` | Preferenze linguistiche | Personale |
-| `agents/analyst.md` | Agent analista (haiku, read-only) | Esempio estendibile |
-| `agents/reviewer.md` | Agent reviewer (sonnet, read-only) | Esempio estendibile |
-| `skills/analyze/` | Skill di analisi strutturata | Esempio workflow |
-| `skills/commit/` | Skill di commit convenzionale | Esempio workflow |
-| `skills/design/` | Skill di design strutturato | Esempio workflow |
-| `skills/review/` | Skill di review | Esempio workflow |
-| `skills/init-workspace/` | Skill di inizializzazione | Esempio workflow |
+| `rules/language.md` | Language preferences | Personal |
+| `agents/analyst.md` | Analyst agent (haiku, read-only) | Extensible example |
+| `agents/reviewer.md` | Reviewer agent (sonnet, read-only) | Extensible example |
+| `skills/analyze/` | Structured analysis skill | Workflow example |
+| `skills/commit/` | Conventional commit skill | Workflow example |
+| `skills/design/` | Structured design skill | Workflow example |
+| `skills/review/` | Review skill | Workflow example |
+| `skills/init-workspace/` | Initialization skill | Workflow example |
 
-**Project (`/workspace/.claude/`)** — Per-progetto:
+**Project (`/workspace/.claude/`)** — Per-project:
 
-| Risorsa | Contenuto | Motivazione |
+| Resource | Content | Motivation |
 |---------|-----------|-------------|
-| `CLAUDE.md` | Contesto progetto, repos, architettura | Specifico per progetto |
-| `settings.json` | Override per progetto (merge con global) | Estensione per progetto |
-| `rules/language.md` | Override lingua per progetto | Il progetto potrebbe avere lingua diversa |
-| Pack resources | Skills, agents, rules da packs | Conoscenza specializzata |
+| `CLAUDE.md` | Project context, repos, architecture | Project-specific |
+| `settings.json` | Per-project override (merge with global) | Per-project extension |
+| `rules/language.md` | Per-project language override | Project may have different language |
+| Pack resources | Skills, agents, rules from packs | Specialized knowledge |
 
-#### Gerarchia Risultante
+#### Resulting Hierarchy
 
 ```mermaid
 graph TB
@@ -680,9 +680,9 @@ graph TB
         RR["rules/<br/><i>repo conventions</i>"]
     end
 
-    MS ---|"non sovrascrivibile"| US
-    US ---|"override per nome<br/>merge settings"| PS
-    PS ---|"on-demand<br/>più specifico"| RC
+    MS ---|"non-overridable"| US
+    US ---|"override by name<br/>merge settings"| PS
+    PS ---|"on-demand<br/>most specific"| RC
 
     style MS fill:#ff6b6b,color:#fff
     style MC fill:#ff6b6b,color:#fff
@@ -698,71 +698,71 @@ graph TB
     style RR fill:#96ceb4,color:#fff
 ```
 
-#### Interazione con Hook di Context Injection
+#### Interaction with Context Injection Hooks
 
-Gli hook di context injection (`session-context.sh`, etc.) sono **complementari**
-alla gerarchia degli scope. Operano su un piano diverso:
+Context injection hooks (`session-context.sh`, etc.) are **complementary**
+to the scope hierarchy. They operate on a different plane:
 
-| Meccanismo | Scopo | Priorità | Sovrascrivibile? |
+| Mechanism | Purpose | Priority | Overridable? |
 |-----------|-------|----------|-----------------|
-| `managed-settings.json` hooks | Definiscono **quando** eseguire script | Managed (massima) | No — i path degli hook sono in managed |
-| `session-context.sh` output | Inietta contesto runtime (repos, skills, MCP) | Conversation context | No — sempre eseguito perché l'hook è managed |
-| `CLAUDE.md` managed | Behavior binding permanente | Managed (massima) | No |
-| `CLAUDE.md` user/project | Behavior binding personalizzabile | User/Project | Sì, per-progetto |
-| `rules/*.md` | Regole modulari | Additivo | Sì — project rules prevalgono su user |
+| `managed-settings.json` hooks | Define **when** to execute scripts | Managed (highest) | No — hook paths are in managed |
+| `session-context.sh` output | Injects runtime context (repos, skills, MCP) | Conversation context | No — always executed because hook is managed |
+| `CLAUDE.md` managed | Permanent behavior binding | Managed (highest) | No |
+| `CLAUDE.md` user/project | Customizable behavior binding | User/Project | Yes, per-project |
+| `rules/*.md` | Modular rules | Additive | Yes — project rules prevail over user |
 
-**Punto chiave**: Con gli hook in `managed-settings.json`, sono **garantiti**
-come attivi indipendentemente da cosa l'utente mette in `settings.json` a livello
-user o project. Il merge nativo di hooks è additivo: gli hook managed si
-sommano a quelli user/project, non vengono sovrascritti.
+**Key point**: With hooks in `managed-settings.json`, they are **guaranteed**
+to be active regardless of what users put in `settings.json` at the
+user or project level. The native hook merge is additive: managed hooks
+combine with user/project hooks, they are not overridden.
 
-#### Impatto su Pack e Overrides
+#### Impact on Packs and Overrides
 
-Con la soluzione managed:
+With the managed solution:
 
-| Scenario | Comportamento | Corretto? |
+| Scenario | Behavior | Correct? |
 |----------|--------------|-----------|
-| Pack definisce `agents/analyst.md` in project | Override dell'analyst globale per quel progetto | ✓ Nativo |
-| Utente modifica `~/.claude/rules/workflow.md` | Personalizzazione persistente | ✓ Non più riscritto |
-| Project definisce `rules/custom.md` | Additive — caricato con priorità su global | ✓ Nativo |
-| Utente tenta di modificare hooks in settings.json | Hook user si sommano a quelli managed | ✓ Non può rimuovere managed hooks |
-| `cco build` con nuova versione del framework | Aggiorna managed files nel Docker image | ✓ Aggiornamento pulito |
+| Pack defines `agents/analyst.md` in project | Override global analyst for that project | ✓ Native |
+| User modifies `~/.claude/rules/workflow.md` | Persistent customization | ✓ No longer rewritten |
+| Project defines `rules/custom.md` | Additive — loaded with priority over global | ✓ Native |
+| User tries to modify hooks in settings.json | User hooks combine with managed ones | ✓ Cannot remove managed hooks |
+| `cco build` with new framework version | Updates managed files in Docker image | ✓ Clean update |
 
 ---
 
-## 8. Dettaglio: Classificazione File
+## 8. Detail: File Classification
 
-### 8.1 Inventario Completo con Classificazione Proposta
+### 8.1 Complete Inventory with Proposed Classification
 
-#### Da `defaults/system/` (attuale) → Nuova destinazione
+#### From `defaults/system/` (current) → New destination
 
-| File attuale | Classificazione | Nuova destinazione | Motivazione |
+| Current File | Classification | New Destination | Motivation |
 |-------------|----------------|---------------------|-------------|
-| `settings.json` (hooks, env, deny) | Infrastruttura | `defaults/managed/managed-settings.json` | Hook e env DEVONO funzionare sempre |
-| `settings.json` (allow, attribution) | Preferenza | `defaults/global/.claude/settings.json` | Personalizzabile |
-| `agents/analyst.md` | Esempio workflow | `defaults/global/.claude/agents/analyst.md` | Estendibile/sostituibile |
-| `agents/reviewer.md` | Esempio workflow | `defaults/global/.claude/agents/reviewer.md` | Estendibile/sostituibile |
-| `skills/analyze/SKILL.md` | Esempio workflow | `defaults/global/.claude/skills/analyze/SKILL.md` | Personalizzabile |
-| `skills/commit/SKILL.md` | Esempio workflow | `defaults/global/.claude/skills/commit/SKILL.md` | Personalizzabile |
-| `skills/design/SKILL.md` | Esempio workflow | `defaults/global/.claude/skills/design/SKILL.md` | Personalizzabile |
-| `skills/review/SKILL.md` | Esempio workflow | `defaults/global/.claude/skills/review/SKILL.md` | Personalizzabile |
-| `skills/init-workspace/SKILL.md` | Esempio workflow | `defaults/global/.claude/skills/init-workspace/SKILL.md` | Personalizzabile |
-| `rules/workflow.md` | Preferenza processo | `defaults/global/.claude/rules/workflow.md` | Team-specific |
-| `rules/diagrams.md` | Preferenza stile | `defaults/global/.claude/rules/diagrams.md` | Personale |
-| `rules/git-practices.md` | Preferenza VCS | `defaults/global/.claude/rules/git-practices.md` | Team-specific |
+| `settings.json` (hooks, env, deny) | Infrastructure | `defaults/managed/managed-settings.json` | Hooks and env MUST always work |
+| `settings.json` (allow, attribution) | Preference | `defaults/global/.claude/settings.json` | Customizable |
+| `agents/analyst.md` | Workflow example | `defaults/global/.claude/agents/analyst.md` | Extensible/replaceable |
+| `agents/reviewer.md` | Workflow example | `defaults/global/.claude/agents/reviewer.md` | Extensible/replaceable |
+| `skills/analyze/SKILL.md` | Workflow example | `defaults/global/.claude/skills/analyze/SKILL.md` | Customizable |
+| `skills/commit/SKILL.md` | Workflow example | `defaults/global/.claude/skills/commit/SKILL.md` | Customizable |
+| `skills/design/SKILL.md` | Workflow example | `defaults/global/.claude/skills/design/SKILL.md` | Customizable |
+| `skills/review/SKILL.md` | Workflow example | `defaults/global/.claude/skills/review/SKILL.md` | Customizable |
+| `skills/init-workspace/SKILL.md` | Workflow example | `defaults/global/.claude/skills/init-workspace/SKILL.md` | Customizable |
+| `rules/workflow.md` | Process preference | `defaults/global/.claude/rules/workflow.md` | Team-specific |
+| `rules/diagrams.md` | Style preference | `defaults/global/.claude/rules/diagrams.md` | Personal |
+| `rules/git-practices.md` | VCS preference | `defaults/global/.claude/rules/git-practices.md` | Team-specific |
 
-#### Nuovi file da creare
+#### New files to create
 
-| File | Destinazione | Contenuto |
+| File | Destination | Content |
 |------|-------------|-----------|
 | `CLAUDE.md` (framework) | `defaults/managed/CLAUDE.md` | Docker env, workspace layout, agent teams |
 | `managed-settings.json` | `defaults/managed/managed-settings.json` | Hooks, env, deny rules, statusLine |
 
-### 8.2 Split di settings.json
+### 8.2 settings.json Split
 
-Il settings.json attuale deve essere **diviso in due file**:
+The current settings.json must be **split into two files**:
 
-**`defaults/managed/managed-settings.json`** (non sovrascrivibile):
+**`defaults/managed/managed-settings.json`** (non-overridable):
 ```json
 {
   "env": {
@@ -778,7 +778,7 @@ Il settings.json attuale deve essere **diviso in due file**:
 }
 ```
 
-**`defaults/global/.claude/settings.json`** (personalizzabile):
+**`defaults/global/.claude/settings.json`** (customizable):
 ```json
 {
   "permissions": {
@@ -809,73 +809,73 @@ Il settings.json attuale deve essere **diviso in due file**:
 
 ## 9. Open Questions
 
-### Q1: Test End-to-End del Managed Level
+### Q1: End-to-End Test of Managed Level
 
-Il codice sorgente di Claude Code conferma che `/etc/claude-code/.claude/agents/`,
-`skills/`, e `rules/` vengono letti. Tuttavia, serve un **test pratico**:
-- Creare agent/skill/rule in `/etc/claude-code/.claude/`
-- Verificare che Claude li carichi
-- Verificare che non siano sovrascrivibili da user/project con lo stesso nome
+Claude Code source code confirms that `/etc/claude-code/.claude/agents/`,
+`skills/`, and `rules/` are read. However, a **practical test** is needed:
+- Create agent/skill/rule in `/etc/claude-code/.claude/`
+- Verify that Claude loads them
+- Verify that they cannot be overridden from user/project with the same name
 
 ### Q2: `allowManagedHooksOnly`
 
-Dobbiamo attivare `allowManagedHooksOnly: true`?
-- **Sì** → l'utente non può aggiungere i propri hook a nessun livello
-- **No** → l'utente può aggiungere hook custom, i managed hooks sono sempre attivi comunque
+Should we activate `allowManagedHooksOnly: true`?
+- **Yes** → user cannot add custom hooks at any level
+- **No** → user can add custom hooks, managed hooks are guaranteed anyway via native additive merge
 
-**Raccomandazione**: Non attivarlo. L'utente potrebbe voler aggiungere hook custom
-(formatter, linter, notification). I managed hooks sono comunque garantiti dal
-merge additivo nativo.
+**Recommendation**: Do not activate it. Users might want to add custom hooks
+(formatter, linter, notification). Managed hooks are guaranteed anyway by
+the native additive merge.
 
-### Q3: Aggiornamento Managed Files
+### Q3: Updating Managed Files
 
-I managed files sono nel Docker image. Per aggiornarli serve `cco build`.
-Serve un meccanismo di notifica che l'immagine è obsoleta?
+Managed files are in the Docker image. To update them requires `cco build`.
+Should we implement a notification mechanism that the image is outdated?
 
-### Q4: Migrazione da Configurazione Attuale
+### Q4: Migration from Current Configuration
 
-Utenti esistenti hanno `global/.claude/` con i file di sistema sincronizzati.
-La migrazione deve:
-1. Spostare i file infrastruttura in managed (nel Dockerfile)
-2. NON cancellare i file esistenti in `global/.claude/` (diventano user-owned)
-3. Rimuovere dal `system.manifest` i file spostati
-4. Aggiornare `_sync_system_files()` per non più sincronizzare i file migrati
-   (o eliminare completamente la funzione)
+Existing users have `global/.claude/` with synced system files.
+Migration must:
+1. Move infrastructure files to managed (in Dockerfile)
+2. Do NOT delete existing files in `global/.claude/` (they become user-owned)
+3. Remove moved files from `system.manifest`
+4. Update `_sync_system_files()` to stop syncing migrated files
+   (or remove the function entirely)
 
-**Attenzione ai duplicati**: I file attualmente sincronizzati (es.
-`global/.claude/rules/workflow.md`) resteranno in `global/.claude/` come
-file user-owned, ma i nuovi default da `defaults/global/` includeranno
-versioni identiche. `cmd_init()` dovrà gestire il caso "file già presente":
-non sovrascrivere, oppure offrire un merge guidato (`cco merge-defaults`).
+**Watch out for duplicates**: Files currently synced (e.g.,
+`global/.claude/rules/workflow.md`) will remain in `global/.claude/` as
+user-owned files, but new defaults from `defaults/global/` will include
+identical versions. `cmd_init()` must handle the "file already exists" case:
+do not overwrite, or offer a guided merge (`cco merge-defaults`).
 
-### Q5: `system.manifest` — Mantenere o Eliminare?
+### Q5: `system.manifest` — Keep or Remove?
 
-Con la soluzione managed:
-- I file framework sono nel Dockerfile (immutabili)
-- I file global sono copiati una volta da `cmd_init()`
-- `_sync_system_files()` non è più necessaria
+With the managed solution:
+- Framework files are in Dockerfile (immutable)
+- Global files are copied once by `cmd_init()`
+- `_sync_system_files()` is no longer needed
 
-Si potrebbe eliminare `system.manifest` e `_sync_system_files()` completamente,
-sostituendoli con:
-- `COPY` nel Dockerfile per managed files
-- `cmd_init()` per global defaults (già funzionante)
+Could eliminate `system.manifest` and `_sync_system_files()` entirely,
+replacing them with:
+- `COPY` in Dockerfile for managed files
+- `cmd_init()` for global defaults (already working)
 
-### Q6: Contenuto del CLAUDE.md Managed — Quanto Includere?
+### Q6: Content of Managed CLAUDE.md — How Much to Include?
 
-Il CLAUDE.md managed deve contenere solo istruzioni **universali e trasversali**.
-Candidati:
-- Docker environment e workspace layout ✓ (sempre vero nel container)
-- Agent team coordination ✓ (funzionalità core)
-- Regole di sicurezza del container ✓ (protezione framework)
+The managed CLAUDE.md should contain only **universal and cross-cutting** instructions.
+Candidates:
+- Docker environment and workspace layout ✓ (always true in container)
+- Agent team coordination ✓ (core functionality)
+- Container security rules ✓ (framework protection)
 
-NON candidati (troppo specifici o personalizzabili):
-- Development workflow phases ✗ (preferenza processo)
-- Communication style ✗ (preferenza personale)
+NOT candidates (too specific or customizable):
+- Development workflow phases ✗ (process preference)
+- Communication style ✗ (personal preference)
 - Git practices ✗ (team-specific)
 
 ---
 
-## Appendice: Riferimenti
+## Appendix: References
 
 - [Claude Code Settings](https://code.claude.com/docs/en/settings.md)
 - [Server-Managed Settings](https://code.claude.com/docs/en/server-managed-settings.md)
@@ -886,4 +886,4 @@ NON candidati (troppo specifici o personalizzabili):
 - [Permissions](https://code.claude.com/docs/en/permissions.md)
 - [Plugins](https://code.claude.com/docs/en/plugins.md)
 - [Plugins Reference](https://code.claude.com/docs/en/plugins-reference.md)
-- Codice sorgente Claude Code: `/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js`
+- Claude Code source code: `/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js`

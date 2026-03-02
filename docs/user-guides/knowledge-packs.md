@@ -1,93 +1,93 @@
 # Knowledge Packs
 
-> Guida pratica alla creazione, configurazione e gestione dei knowledge pack.
+> Practical guide to creating, configuring, and managing knowledge packs.
 
 ---
 
-## Cosa sono i Knowledge Pack
+## What are Knowledge Packs
 
-I knowledge pack sono pacchetti riutilizzabili che raggruppano documentazione, convenzioni, skill, agent e rule. Possono essere condivisi tra piu progetti senza duplicare file. Un pack puo contenere, ad esempio, le convenzioni di codifica di un cliente, le linee guida di un team, o la documentazione di un dominio specifico.
+Knowledge packs are reusable packages that group documentation, conventions, skills, agents, and rules. They can be shared across multiple projects without duplicating files. A pack can contain, for example, a client's coding conventions, team guidelines, or documentation for a specific domain.
 
-I pack vivono in `global/packs/` e vengono attivati per progetto tramite `project.yml`.
+Packs live in `global/packs/` and are activated per project via `project.yml`.
 
 ---
 
-## Creare un pack
+## Create a pack
 
-### Comando rapido
+### Quick command
 
 ```bash
 cco pack create my-client-knowledge
 ```
 
-Questo crea la struttura di directory completa in `global/packs/my-client-knowledge/` con un `pack.yml` di template.
+This creates the complete directory structure in `global/packs/my-client-knowledge/` with a template `pack.yml`.
 
-### Struttura directory
+### Directory structure
 
 ```
 global/packs/my-client-knowledge/
-  pack.yml              # Definizione del pack (obbligatorio)
-  knowledge/            # File di documentazione (opzionale)
+  pack.yml              # Pack definition (required)
+  knowledge/            # Documentation files (optional)
     overview.md
     coding-conventions.md
-  skills/               # Skill directories (opzionale)
+  skills/               # Skill directories (optional)
     deploy/
       SKILL.md
-  agents/               # Agent definitions (opzionale)
+  agents/               # Agent definitions (optional)
     specialist.md
-  rules/                # Rule files (opzionale)
+  rules/                # Rule files (optional)
     api-conventions.md
 ```
 
-### Formato pack.yml
+### pack.yml format
 
-Il file `pack.yml` dichiara il contenuto del pack. Tutte le sezioni sono opzionali: un pack puo contenere solo knowledge, solo skill, o qualsiasi combinazione.
+The `pack.yml` file declares the contents of the pack. All sections are optional: a pack can contain only knowledge, only skills, or any combination.
 
 ```yaml
 name: my-client-knowledge
 
 # ── Knowledge files ─────────────────────────────────────────────────
 knowledge:
-  source: ~/documents/my-client-docs   # directory sull'host (montata read-only)
+  source: ~/documents/my-client-docs   # directory on host (mounted read-only)
   files:
     - path: backend-coding-conventions.md
       description: "Read when writing backend code, APIs, or DB logic"
     - path: business-overview.md
       description: "Read for business context and product understanding"
-    - testing-guidelines.md              # forma breve: senza descrizione
+    - testing-guidelines.md              # short form: without description
 
-# ── Skills (nomi directory sotto skills/) ───────────────────────────
+# ── Skills (directory names under skills/) ───────────────────────────
 skills:
   - deploy
 
-# ── Agents (nomi file sotto agents/) ───────────────────────────────
+# ── Agents (file names under agents/) ───────────────────────────────
 agents:
   - specialist.md
 
-# ── Rules (nomi file sotto rules/) ─────────────────────────────────
+# ── Rules (file names under rules/) ─────────────────────────────────
 rules:
   - api-conventions.md
 ```
 
 ---
 
-## La sezione knowledge
+## The knowledge section
 
-La sezione `knowledge` e il cuore del pack: permette di iniettare documentazione nel contesto di Claude senza modificare alcun `CLAUDE.md`.
+The `knowledge` section is the heart of the pack: it allows you to inject documentation into Claude's context without modifying any `CLAUDE.md`.
 
 ### source
 
-Il campo `source` indica una directory sull'host che contiene i file di documentazione. Viene montata read-only nel container a `/workspace/.packs/<nome-pack>/`.
+The `source` field specifies a directory on the host that contains documentation files. It is mounted read-only in the container at `/workspace/.packs/<pack-name>/`.
 
 ```yaml
 knowledge:
   source: ~/documents/my-client-docs
 ```
 
-Se `source` e omesso, il pack usa la propria directory `knowledge/` interna:
+If `source` is omitted, the pack uses its own internal `knowledge/` directory:
 
 ```yaml
-# Senza source: i file vanno in global/packs/<name>/knowledge/
+# Without source: files go in global/packs/<name>/knowledge/
 knowledge:
   files:
     - path: overview.md
@@ -96,60 +96,60 @@ knowledge:
 
 ### files
 
-La lista `files` dichiara quali file rendere visibili a Claude e con quali istruzioni.
+The `files` list declares which files to make visible to Claude and with what instructions.
 
-Ogni file puo avere due formati:
+Each file can have two formats:
 
 ```yaml
 files:
-  # Formato esteso: con descrizione (consigliato)
+  # Extended format: with description (recommended)
   - path: backend-conventions.md
     description: "Read when writing backend code or API endpoints"
 
-  # Formato breve: solo il nome del file
+  # Short format: just the file name
   - testing-guidelines.md
 ```
 
-La descrizione e importante: viene inclusa nel contesto di Claude per aiutarlo a decidere **quando** leggere quel file. Una buona descrizione indica il contesto d'uso ("Read when...", "Reference for...", "Check before...").
+The description is important: it is included in Claude's context to help him decide **when** to read that file. A good description indicates the use context ("Read when...", "Reference for...", "Check before...").
 
 ---
 
-## Risorse opzionali
+## Optional resources
 
-Oltre alla knowledge, un pack puo includere skill, agent e rule che vengono copiati nella configurazione del progetto.
+In addition to knowledge, a pack can include skills, agents, and rules that are copied to the project configuration.
 
 ### Skills
 
-Le skill sono directory contenenti un file `SKILL.md`. Vengono copiate in `/workspace/.claude/skills/` e sono disponibili come comandi slash (es. `/deploy`).
+Skills are directories containing a `SKILL.md` file. They are copied to `/workspace/.claude/skills/` and are available as slash commands (e.g., `/deploy`).
 
 ```yaml
 skills:
-  - deploy          # Riferimento a global/packs/<name>/skills/deploy/SKILL.md
+  - deploy          # Reference to global/packs/<name>/skills/deploy/SKILL.md
 ```
 
 ### Agents
 
-Gli agent sono file Markdown che definiscono subagent specializzati. Vengono copiati in `/workspace/.claude/agents/`.
+Agents are Markdown files that define specialized subagents. They are copied to `/workspace/.claude/agents/`.
 
 ```yaml
 agents:
-  - devops-specialist.md   # Riferimento a global/packs/<name>/agents/devops-specialist.md
+  - devops-specialist.md   # Reference to global/packs/<name>/agents/devops-specialist.md
 ```
 
 ### Rules
 
-Le rule sono file Markdown con istruzioni aggiuntive. Vengono copiate in `/workspace/.claude/rules/`.
+Rules are Markdown files with additional instructions. They are copied to `/workspace/.claude/rules/`.
 
 ```yaml
 rules:
-  - api-conventions.md     # Riferimento a global/packs/<name>/rules/api-conventions.md
+  - api-conventions.md     # Reference to global/packs/<name>/rules/api-conventions.md
 ```
 
 ---
 
-## Attivare un pack in un progetto
+## Activate a pack in a project
 
-Per attivare un pack, aggiungi il suo nome alla lista `packs:` nel file `project.yml` del progetto:
+To activate a pack, add its name to the `packs:` list in the project's `project.yml` file:
 
 ```yaml
 # projects/my-saas/project.yml
@@ -164,17 +164,17 @@ packs:
   - team-conventions
 ```
 
-I pack vengono processati ad ogni `cco start`: le risorse sono copiate e la knowledge e montata automaticamente.
+Packs are processed at each `cco start`: resources are copied and knowledge is mounted automatically.
 
-### Precedenza in caso di conflitti
+### Precedence in case of conflicts
 
-Se due pack definiscono lo stesso agent, rule o skill, l'ultimo pack nella lista `packs:` vince. Un warning viene emesso a terminale per segnalare il conflitto.
+If two packs define the same agent, rule, or skill, the last pack in the `packs:` list wins. A warning is printed to the terminal to signal the conflict.
 
 ---
 
-## Gestione dei pack
+## Pack management
 
-### Elencare i pack disponibili
+### List available packs
 
 ```bash
 cco pack list
@@ -187,58 +187,58 @@ my-client             3         1       1       1
 team-conventions      2         0       0       2
 ```
 
-### Vedere i dettagli di un pack
+### View pack details
 
 ```bash
 cco pack show my-client-knowledge
 ```
 
-Mostra il contenuto completo del pack: file di knowledge con descrizioni, skill, agent, rule e i progetti che lo utilizzano.
+Shows the complete contents of the pack: knowledge files with descriptions, skills, agents, rules, and projects that use it.
 
-### Validare un pack
+### Validate a pack
 
 ```bash
-# Validare un pack specifico
+# Validate a specific pack
 cco pack validate my-client-knowledge
 
-# Validare tutti i pack
+# Validate all packs
 cco pack validate
 ```
 
-Verifica la struttura del pack: presenza di `pack.yml`, esistenza dei file dichiarati, formato corretto.
+Verifies the pack structure: presence of `pack.yml`, existence of declared files, correct format.
 
-### Rimuovere un pack
+### Remove a pack
 
 ```bash
-# Con conferma (se usato da progetti attivi)
+# With confirmation (if used by active projects)
 cco pack remove my-client-knowledge
 
-# Forzare la rimozione
+# Force removal
 cco pack remove my-client-knowledge --force
 ```
 
-Se il pack e utilizzato da uno o piu progetti, viene richiesta conferma prima della rimozione.
+If the pack is used by one or more projects, confirmation is requested before removal.
 
 ---
 
-## Come funziona l'iniezione
+## How injection works
 
-L'iniezione dei knowledge pack e completamente automatica e non richiede alcuna modifica ai file `CLAUDE.md`.
+Knowledge pack injection is completely automatic and requires no changes to `CLAUDE.md` files.
 
-Il processo avviene in due fasi:
+The process happens in two phases:
 
-**1. Al momento di `cco start`:**
-- La directory `knowledge.source` viene montata in read-only a `/workspace/.packs/<nome>/`
-- Viene generato il file `.claude/packs.md` con la lista dei file e le relative descrizioni
-- Skill, agent e rule vengono copiati nella directory `.claude/` del progetto
-- Un file `.pack-manifest` traccia i file copiati per la pulizia al prossimo avvio
+**1. At `cco start` time:**
+- The `knowledge.source` directory is mounted read-only to `/workspace/.packs/<name>/`
+- The `.claude/packs.md` file is generated with the list of files and their descriptions
+- Skills, agents, and rules are copied to the project's `.claude/` directory
+- A `.pack-manifest` file tracks copied files for cleanup on the next startup
 
-**2. All'avvio della sessione Claude:**
-- L'hook `session-context.sh` (SessionStart) inietta il contenuto di `packs.md` in `additionalContext`
-- Claude riceve automaticamente la lista dei file di knowledge disponibili con le descrizioni
-- I file vengono letti on-demand da Claude quando rilevanti per il task corrente
+**2. When the Claude session starts:**
+- The `session-context.sh` hook (SessionStart) injects the contents of `packs.md` into `additionalContext`
+- Claude automatically receives the list of available knowledge files with descriptions
+- Files are read on-demand by Claude when relevant to the current task
 
-Esempio di `packs.md` generato:
+Example of generated `packs.md`:
 
 ```
 The following knowledge files provide project-specific conventions and context.
@@ -251,29 +251,29 @@ Read the relevant files BEFORE starting any implementation, review, or design ta
 
 ---
 
-## Best practice
+## Best practices
 
 ### Naming
 
-- Usa nomi lowercase con trattini: `my-client-docs`, `team-backend-conventions`
-- Scegli nomi descrittivi che indichino il dominio: `frontend-design-system`, `devops-runbooks`
+- Use lowercase names with hyphens: `my-client-docs`, `team-backend-conventions`
+- Choose descriptive names that indicate the domain: `frontend-design-system`, `devops-runbooks`
 
-### Descrizioni dei file
+### File descriptions
 
-- Scrivi descrizioni orientate all'azione: "Read when writing...", "Check before deploying...", "Reference for..."
-- Evita descrizioni generiche come "Documentation" o "Guidelines"
-- La descrizione aiuta Claude a decidere quando leggere il file, quindi sii specifico
+- Write action-oriented descriptions: "Read when writing...", "Check before deploying...", "Reference for..."
+- Avoid generic descriptions like "Documentation" or "Guidelines"
+- The description helps Claude decide when to read the file, so be specific
 
-### Organizzazione dei file di knowledge
+### Knowledge file organization
 
-- Mantieni i file focalizzati su un singolo argomento
-- Preferisci piu file piccoli a un unico file grande (riduce il consumo di contesto)
-- Se un file supera le 500 righe, considera di suddividerlo
-- Usa nomi di file descrittivi: `backend-coding-conventions.md` invece di `conventions.md`
+- Keep files focused on a single topic
+- Prefer multiple small files to one large file (reduces context consumption)
+- If a file exceeds 500 lines, consider splitting it
+- Use descriptive file names: `backend-coding-conventions.md` instead of `conventions.md`
 
-### Separazione delle responsabilita
+### Separation of concerns
 
-- Usa la sezione `knowledge` per documentazione e contesto (read-only, non processata)
-- Usa `skills` per azioni invocabili dall'utente (es. deploy, review)
-- Usa `rules` per istruzioni comportamentali sempre attive
-- Usa `agents` per subagent specializzati con ruoli definiti
+- Use the `knowledge` section for documentation and context (read-only, not processed)
+- Use `skills` for user-invocable actions (e.g., deploy, review)
+- Use `rules` for always-active behavioral instructions
+- Use `agents` for specialized subagents with defined roles
