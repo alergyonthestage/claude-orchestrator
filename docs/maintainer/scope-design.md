@@ -16,6 +16,7 @@ graph TB
         direction TB
         MS["managed-settings.json<br/><i>hooks, env, deny rules, statusLine</i>"]
         MC["CLAUDE.md<br/><i>Docker env, workspace layout, agent teams</i>"]
+        MK["skills/<br/><i>init-workspace</i>"]
     end
 
     subgraph "USER ~/.claude/"
@@ -24,7 +25,7 @@ graph TB
         UC["CLAUDE.md<br/><i>development workflow, communication style</i>"]
         UR["rules/<br/><i>workflow, diagrams, git-practices, language</i>"]
         UA["agents/<br/><i>analyst, reviewer</i>"]
-        UK["skills/<br/><i>analyze, commit, design, review, init-workspace</i>"]
+        UK["skills/<br/><i>analyze, commit, design, review</i>"]
     end
 
     subgraph "PROJECT /workspace/.claude/"
@@ -72,8 +73,9 @@ graph TB
 |------|---------|-------------|
 | `managed-settings.json` | Hooks (SessionStart, SubagentStart, PreCompact), env vars (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`), statusLine, deny rules | Hooks MUST always execute; env vars are required for agent teams to function |
 | `CLAUDE.md` | Docker environment description, workspace layout, agent team behavior | Claude must always know it's in a container and how the workspace is structured |
+| `.claude/skills/init-workspace/SKILL.md` | `/init-workspace` skill — initializes project CLAUDE.md from workspace repos | Framework-critical: must always be available and consistent across all sessions |
 
-**What does NOT go here**: Agents, skills, rules, user preferences. These are customizable and belong in the User tier.
+**What does NOT go here**: Agents, user-customizable skills, rules, user preferences. These are customizable and belong in the User tier. Only framework-critical skills (like `init-workspace`) belong at the Managed level.
 
 **Key property**: Even if a user or project defines conflicting settings at lower tiers, managed settings always win. Hooks are additive — managed hooks run alongside any user/project hooks.
 
@@ -89,7 +91,7 @@ graph TB
 | `CLAUDE.md` | Development workflow, communication style | Customizable workflow instructions |
 | `rules/` | workflow.md, diagrams.md, git-practices.md, language.md | Modular rule files (team conventions) |
 | `agents/` | analyst.md, reviewer.md | Default subagents (customizable) |
-| `skills/` | analyze, commit, design, review, init-workspace | Default skills (customizable) |
+| `skills/` | analyze, commit, design, review | Default skills (customizable) |
 | `mcp.json` | Global MCP servers | Empty by default |
 
 **Key property**: These files are NEVER overwritten after initial copy. `cco start` does not touch them. Users can freely modify, add, or remove files.
@@ -273,7 +275,9 @@ cco start <project>
 defaults/
 ├── managed/                     → /etc/claude-code/ (Managed)
 │   ├── managed-settings.json    Hooks, env, deny, statusLine
-│   └── CLAUDE.md                Framework instructions
+│   ├── CLAUDE.md                Framework instructions
+│   └── .claude/skills/          Managed skills (non-overridable)
+│       └── init-workspace/      /init-workspace skill
 ├── global/                      → ~/.claude/ (User, copied once)
 │   └── .claude/
 │       ├── CLAUDE.md            Workflow instructions
@@ -281,7 +285,7 @@ defaults/
 │       ├── mcp.json             MCP servers (empty)
 │       ├── rules/               workflow, diagrams, git-practices, language
 │       ├── agents/              analyst, reviewer
-│       └── skills/              analyze, commit, design, review, init-workspace
+│       └── skills/              analyze, commit, design, review
 └── _template/                   → projects/<name>/ (scaffolding)
     └── .claude/
         ├── CLAUDE.md            Project template

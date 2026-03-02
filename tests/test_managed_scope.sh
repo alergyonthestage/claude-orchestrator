@@ -13,6 +13,8 @@ test_managed_files_exist_in_defaults() {
         "managed-settings.json missing from defaults/managed/"
     assert_file_exists "$REPO_ROOT/defaults/managed/CLAUDE.md" \
         "CLAUDE.md missing from defaults/managed/"
+    assert_file_exists "$REPO_ROOT/defaults/managed/.claude/skills/init-workspace/SKILL.md" \
+        "init-workspace skill missing from defaults/managed/.claude/skills/"
 }
 
 test_managed_settings_has_hooks() {
@@ -72,12 +74,13 @@ test_init_copies_global_defaults() {
     assert_file_exists "$CCO_GLOBAL_DIR/.claude/agents/analyst.md"
     assert_file_exists "$CCO_GLOBAL_DIR/.claude/agents/reviewer.md"
 
-    # Skills
+    # Skills (init-workspace is now managed, not in user global)
     assert_file_exists "$CCO_GLOBAL_DIR/.claude/skills/analyze/SKILL.md"
     assert_file_exists "$CCO_GLOBAL_DIR/.claude/skills/commit/SKILL.md"
     assert_file_exists "$CCO_GLOBAL_DIR/.claude/skills/design/SKILL.md"
     assert_file_exists "$CCO_GLOBAL_DIR/.claude/skills/review/SKILL.md"
-    assert_file_exists "$CCO_GLOBAL_DIR/.claude/skills/init-workspace/SKILL.md"
+    assert_file_not_exists "$CCO_GLOBAL_DIR/.claude/skills/init-workspace/SKILL.md" \
+        "init-workspace should NOT be in user global (it is managed)"
 
     # Rules
     assert_file_exists "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
@@ -223,6 +226,33 @@ test_migration_removes_old_init_skill() {
     # Old init/ should be gone
     assert_file_not_exists "$CCO_GLOBAL_DIR/.claude/skills/init/SKILL.md" \
         "Old skills/init/ should have been removed by migration"
+}
+
+test_migration_moves_init_workspace_to_managed() {
+    # Existing installs with init-workspace in user global should have it
+    # removed by migration 002 (now managed at /etc/claude-code/.claude/skills/)
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+
+    # Simulate old layout with init-workspace in user skills
+    mkdir -p "$tmpdir/global/.claude/skills/init-workspace"
+    printf '---\nname: init-workspace\n---\nOld user copy' > "$tmpdir/global/.claude/skills/init-workspace/SKILL.md"
+    mkdir -p "$tmpdir/global/.claude/rules"
+    printf 'placeholder' > "$tmpdir/global/.claude/rules/language.md"
+    mkdir -p "$tmpdir/global/packs"
+
+    # Run init (triggers migrations)
+    run_cco init --lang "English"
+
+    # init-workspace should be gone from user global
+    assert_file_not_exists "$CCO_GLOBAL_DIR/.claude/skills/init-workspace/SKILL.md" \
+        "init-workspace should have been removed by migration 002 (now managed)"
+}
+
+test_init_workspace_not_in_global_defaults() {
+    # init-workspace must NOT be in defaults/global/ (it lives in defaults/managed/)
+    assert_file_not_exists "$REPO_ROOT/defaults/global/.claude/skills/init-workspace/SKILL.md" \
+        "init-workspace should not be in defaults/global/ (must be in defaults/managed/)"
 }
 
 test_no_sync_function_in_cco() {

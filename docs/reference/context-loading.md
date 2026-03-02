@@ -162,7 +162,7 @@ context but is not part of the conversation history.
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
 | Pack files not in context | `packs.md` missing or empty | Check `cco start` output for "Generated .claude/packs.md"; verify pack.yml has `knowledge.files:` |
-| `/init-workspace` skill not found | System files not synced | Run `cco start` (auto-syncs system files); check `global/.claude/skills/init-workspace/SKILL.md` exists |
+| `/init-workspace` skill not found | Docker image outdated | Run `cco build` to rebuild the image; the skill is baked in at `/etc/claude-code/.claude/skills/init-workspace/SKILL.md` |
 | Repo not visible at `/workspace/<name>/` | Path doesn't exist on host | Check `repos.path:` in project.yml; ensure directory exists |
 | MCP server not loaded | mcp.json missing or bad JSON | Check `global/.claude/mcp.json`; run `cco start` and look for merge errors |
 | Auto memory not persisting | `claude-state/` not created | Run `cco start`; check for `migrate_memory_to_claude_state` in logs |

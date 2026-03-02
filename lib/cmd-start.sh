@@ -111,6 +111,13 @@ EOF
         info "Run 'cco update' to initialize the update system."
     fi
 
+    # Warn about managed skills that shadow user-level copies
+    if [[ -d "$GLOBAL_DIR/.claude/skills/init-workspace" ]]; then
+        warn "init-workspace skill found in user global (global/.claude/skills/init-workspace)."
+        warn "This skill is now managed (enterprise-level) and the managed version takes precedence."
+        warn "You can safely remove the user copy: rm -rf global/.claude/skills/init-workspace"
+    fi
+
     # Ensure claude-state directory exists (migrates legacy memory/ if needed)
     migrate_memory_to_claude_state "$project_dir"
 

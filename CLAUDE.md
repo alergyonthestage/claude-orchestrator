@@ -80,7 +80,7 @@ Per `docs/maintainer/directory-structure.md`:
 - `config/tmux.conf` — tmux config for agent teams (colors, navigation, history)
 - `config/hooks/session-context.sh` — SessionStart hook: injects repo list and MCP info into context
 - `config/hooks/statusline.sh` — StatusLine hook: displays `[project] model | ctx XX% | $cost`
-- `defaults/managed/` — Framework infrastructure: managed-settings.json (hooks, env, deny), CLAUDE.md (framework instructions). Baked into Docker image at `/etc/claude-code/`.
+- `defaults/managed/` — Framework infrastructure: managed-settings.json (hooks, env, deny), CLAUDE.md (framework instructions), `.claude/skills/init-workspace/` (managed skill). Baked into Docker image at `/etc/claude-code/`.
 - `defaults/global/.claude/` — User defaults: CLAUDE.md, settings.json, mcp.json, agents, skills, rules (copied once on init, user-owned)
 
 **Documentation:**
