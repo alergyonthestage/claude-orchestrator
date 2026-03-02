@@ -247,6 +247,20 @@ files:
 
 Open project.yml in `$EDITOR` and regenerate docker-compose.yml after save.
 
+#### #10b Status bar improvements
+
+Improve the StatusLine hook (`config/hooks/statusline.sh`) for better usability.
+
+**Issues**:
+1. **Cost display not useful for Max subscribers**: the `$cost` field shows cumulative USD spend, which is meaningless for users on Claude Max (flat-rate subscription). They would rather see remaining session/conversation budget as a percentage.
+2. **Context % stale after /compact**: the `ctx` percentage does not update immediately after `/compact` or other context-reducing events — it takes an additional prompt before the value refreshes. This is likely a Claude Code limitation in how frequently it calls the StatusLine hook, but we should investigate workarounds.
+
+**Proposed changes**:
+- Detect subscription type from session data and show remaining session % instead of cost for Max users (requires investigation of available fields in StatusLine JSON input)
+- Investigate whether `Notification` or `Stop` hook events can trigger a StatusLine refresh to fix stale context %
+- If Claude Code does not expose subscription/session data, document the limitation and request the feature upstream
+- Add configurable status bar format (e.g., `statusline.format` in global settings) so users can customize what is shown
+
 ---
 
 ### Sprint 9 — Config Vault & Sharing
