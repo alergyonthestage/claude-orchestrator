@@ -504,7 +504,8 @@ _collect_claimed_browser_ports() {
             claimed+=("$port")
         fi
     done
-    printf '%s\n' "${claimed[@]}"
+    # Guard: bash 3.2 + set -u treats empty arrays as unbound
+    [[ ${#claimed[@]} -gt 0 ]] && printf '%s\n' "${claimed[@]}"
 }
 
 # Finds the lowest free port starting from preferred, skipping claimed ports
@@ -519,7 +520,8 @@ _resolve_browser_port() {
     local port="$preferred"
     while true; do
         local taken=false
-        for c in "${claimed[@]}"; do
+        # Guard: bash 3.2 + set -u treats empty arrays as unbound
+        for c in ${claimed[@]+"${claimed[@]}"}; do
             [[ "$c" == "$port" ]] && taken=true && break
         done
         if [[ "$taken" == "false" ]]; then
