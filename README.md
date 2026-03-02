@@ -22,15 +22,15 @@ graph LR
         REPOS["Your repos"]
     end
 
-    subgraph Docker Container
+    subgraph DC["Docker Container"]
         CC["Claude Code<br/>with full context"]
         TMUX["tmux<br/>(agent team)"]
         DOCK["Docker CLI<br/>(infrastructure)"]
     end
 
-    CLI -->|generate & start| Docker Container
+    CLI -->|generate & start| DC
     CFG -->|mount| CC
-    REPOS -->|mount read-write| Docker Container
+    REPOS -->|mount read-write| DC
     CC --- TMUX
     CC --- DOCK
 ```

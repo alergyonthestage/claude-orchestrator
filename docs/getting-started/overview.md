@@ -49,17 +49,17 @@ graph LR
         REPOS["~/projects/repos/"]
     end
 
-    subgraph Docker Container
+    subgraph DC["Docker Container"]
         EP["entrypoint.sh"]
         TMUX["tmux"]
         CLAUDE["Claude Code"]
     end
 
     CLI -->|"reads config"| PROJ
-    CLI -->|"generates docker-compose.yml"| Docker Container
+    CLI -->|"generates docker-compose.yml"| DC
     GLOBAL -->|"mount ~/.claude/"| EP
     PROJ -->|"mount /workspace/.claude/"| EP
-    REPOS -->|"mount /workspace/repos/"| Docker Container
+    REPOS -->|"mount /workspace/repos/"| DC
     EP --> TMUX --> CLAUDE
 ```
 
