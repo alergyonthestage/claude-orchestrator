@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-02-27 (prioritized implementation order).
+> Last updated: 2026-03-02 (prioritized implementation order).
 
 ---
 
@@ -53,6 +53,24 @@ Full extensibility story implemented:
 ### Docker Socket Toggle ✓
 
 `docker.mount_socket: false` in project.yml disables Docker socket mount for projects that don't need sibling containers.
+
+### Update System ✓
+
+Intelligent config merge system to update `projects/` and `global/` without losing user customizations.
+
+**What's included**:
+- `cco update` command: `--project`, `--all`, `--dry-run`, `--force`, `--keep`, `--backup` flags
+- Hybrid checksum + migrations engine (`lib/update.sh`, `lib/cmd-update.sh`)
+- `.cco-meta` file: schema versioning, file manifest with hashes, saved language choices
+- Migration runner: `migrations/global/` and `migrations/project/` (NNN_name.sh convention)
+- Backward compatibility for installations without `.cco-meta`
+- `cco init` updated: generates `.cco-meta` with correct hashes on first setup
+- `cco start` updated: shows hint if schema_version < latest
+- Test suite: `tests/test_update.sh` (14 scenarios)
+
+**Docs**: [update-system/design.md](./update-system/design.md)
+
+---
 
 ### Scope Hierarchy Refactor (Sprint 3) ✓
 
@@ -106,7 +124,6 @@ Sprint 5 (differenziante)      Sprint 6 (ecosistema)
                                Sprint 7 (polish)
                                ┌──────────────────────┐
                                │ #9  cco project edit │
-                               │ #10 cco update       │
                                └──────────────────────┘
 ```
 
@@ -134,7 +151,7 @@ Enable Claude to control a browser via Chrome DevTools MCP, with the browser vis
 - `extra_hosts: host.docker.internal:host-gateway` in docker-compose for Linux compatibility
 - Container mode uses `selenium/standalone-chrome` with noVNC on port 7900
 
-**Docs**: [analysis](./future/browser-mcp/analysis.md)
+**Docs**: [analysis](./future/browser-mcp/analysis.md) | [design](./browser-mcp/design.md)
 
 ---
 
@@ -185,10 +202,6 @@ files:
 #### #9 `cco project edit <name>` command
 
 Open project.yml in `$EDITOR` and regenerate docker-compose.yml after save.
-
-#### #10 `cco update` — intelligent config merge
-
-Method to update `projects/` and `global/` when the orchestrator adds skills, templates, or modifies structures, without losing user customizations (intelligent merge defaults → user config).
 
 ---
 

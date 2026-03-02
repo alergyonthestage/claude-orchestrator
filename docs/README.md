@@ -69,6 +69,6 @@ Design docs and analysis by area:
 | Docker | [design](maintainer/docker/design.md) |
 | Agent teams | [analysis](maintainer/agent-teams/analysis.md) |
 | Worktree | [analysis](maintainer/future/worktree/analysis.md), [design](maintainer/future/worktree/design.md) |
-| Browser MCP | [analysis](maintainer/future/browser-mcp/analysis.md) |
-| Update system | [design](maintainer/future/update-system/design.md) |
+| Browser MCP | [analysis](maintainer/future/browser-mcp/analysis.md), [design](maintainer/browser-mcp/design.md) |
+| Update system | [design](maintainer/update-system/design.md) |
 | Reviews | [24-02-2026](maintainer/reviews/24-02-2026-architecture-review.md), [26-02-2026](maintainer/reviews/26-02-2026-progress-review.md), [sprint plan](maintainer/reviews/sprint-2-3-implementation-plan.md) |
