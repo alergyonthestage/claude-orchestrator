@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-02 (prioritized implementation order).
+> Last updated: 2026-03-02 (prioritized implementation order, Sprint 5 tutorial added).
 
 ---
 
@@ -115,15 +115,21 @@ Sprint 4 (frontend)
 │    Integration       │
 └──────────────────────┘
 
-Sprint 5 (differenziante)      Sprint 6 (ecosistema)
-┌──────────────────────┐       ┌──────────────────────┐
-│ #5 Git Worktree      │       │ #7 cco pack create   │
-│    Isolation          │       │ #8 Pack inheritance  │
-│ #6 Session Resume    │       └──────────────────────┘
+Sprint 5 (onboarding)
+┌──────────────────────┐
+│ #5 Interactive       │
+│    Tutorial Project  │
 └──────────────────────┘
-                               Sprint 7 (polish)
+
+Sprint 6 (differenziante)      Sprint 7 (ecosistema)
+┌──────────────────────┐       ┌──────────────────────┐
+│ #6 Git Worktree      │       │ #8 cco pack create   │
+│    Isolation          │       │ #9 Pack inheritance  │
+│ #7 Session Resume    │       └──────────────────────┘
+└──────────────────────┘
+                               Sprint 8 (polish)
                                ┌──────────────────────┐
-                               │ #9  cco project edit │
+                               │ #10 cco project edit │
                                └──────────────────────┘
 ```
 
@@ -154,9 +160,47 @@ Enable Claude to control a browser via Chrome DevTools MCP, with the browser vis
 
 ---
 
-### Sprint 5 — Differentiating feature
+### Sprint 5 — Interactive Tutorial Project
 
-#### #5 Git Worktree Isolation
+Required before open-source publication. Provides a guided, hands-on onboarding experience that teaches new users how to use claude-orchestrator effectively.
+
+#### #5 Interactive Tutorial Project — AI-Guided Onboarding
+
+A self-contained example project that users launch with `cco start tutorial` (or similar). Once inside the session, an AI agent guides the user through claude-orchestrator's features interactively — explaining concepts, demonstrating workflows, and answering questions in real time.
+
+**Goals**:
+- Lower the barrier to entry for new users adopting claude-orchestrator
+- Showcase key features (project setup, knowledge packs, agent teams, browser MCP, etc.) through hands-on exercises
+- Serve as living documentation — the tutorial itself uses the features it teaches
+- Clarify common doubts about architecture, configuration, and advanced techniques
+- Prepare the repository for open-source publication with a polished first-run experience
+
+**Key design points**:
+- Ships as a built-in example project (e.g. `examples/tutorial/`) with a pre-configured `project.yml`
+- A dedicated knowledge pack provides the tutorial curriculum and structured lesson content
+- An agent (skill or custom agent) orchestrates the interactive session: presents lessons, checks understanding, adapts to user pace
+- Progressive curriculum: basics (project structure, repos, CLAUDE.md) → intermediate (packs, secrets, MCP) → advanced (agent teams, worktrees, custom images)
+- Each lesson includes a practical exercise the user performs inside the tutorial session
+- The agent can answer free-form questions about claude-orchestrator at any point (FAQ mode)
+- `cco tutorial` shortcut command (alias for `cco start tutorial`) for discoverability
+
+**Scope**:
+- Tutorial project scaffold (`examples/tutorial/` or `defaults/tutorial/`)
+- Knowledge pack with curriculum content (lessons, exercises, reference material)
+- Tutorial agent/skill with interactive guidance logic
+- CLI integration (`cco tutorial` command or documented `cco start` usage)
+- Minimal test coverage for tutorial project generation
+
+**Open questions**:
+- Should the tutorial be a standalone `cco tutorial` command or a regular project the user creates via `cco project create --template tutorial`?
+- How many lessons / what depth for v1? Suggest starting with 5-7 core lessons covering the essentials
+- Should the tutorial track user progress across sessions (resume where you left off)?
+
+---
+
+### Sprint 6 — Differentiating feature
+
+#### #6 Git Worktree Isolation
 
 Opt-in git isolation for container sessions. When enabled, repos are mounted at `/git-repos/` and the entrypoint creates worktrees at `/workspace/` on a dedicated branch (`cco/<project>`). Claude works in the worktrees transparently.
 
@@ -173,19 +217,19 @@ Opt-in git isolation for container sessions. When enabled, repos are mounted at 
 
 **Docs**: [analysis](./future/worktree/analysis.md) | [design](./future/worktree/design.md) | [ADR-10](./architecture.md)
 
-#### #6 Session resume
+#### #7 Session resume
 
 `cco resume <project>` — reattach to a running tmux session inside a running container. Complements worktree isolation: resume work on the same branch.
 
 ---
 
-### Sprint 6 — Pack ecosystem
+### Sprint 7 — Pack ecosystem
 
-#### #7 `cco pack create <name>` command
+#### #8 `cco pack create <name>` command
 
 Scaffold a new pack definition interactively, similar to `cco project create`. Lowers the barrier for creating packs.
 
-#### #8 Pack inheritance / composition
+#### #9 Pack inheritance / composition
 
 Allow packs to extend other packs:
 ```yaml
@@ -196,9 +240,9 @@ files:
 
 ---
 
-### Sprint 7 — Automation and polish
+### Sprint 8 — Automation and polish
 
-#### #9 `cco project edit <name>` command
+#### #10 `cco project edit <name>` command
 
 Open project.yml in `$EDITOR` and regenerate docker-compose.yml after save.
 
