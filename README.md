@@ -1,65 +1,87 @@
 # claude-orchestrator
 
-> Orchestrate Claude Code sessions in Docker for multi-project, multi-repo development.
+> Orchestrate Claude Code sessions in Docker.
 
-## What Is This?
+Isolated Claude Code sessions, preconfigured and ready to use — one command to get started.
 
-A repository that manages isolated Claude Code sessions in Docker containers. Each session comes pre-configured with your project context, agent teams, and development workflow — one command to start.
+## Why claude-orchestrator?
 
-See [QUICK-START.md](QUICK-START.md) for setup and usage instructions.
+- **Complete isolation** — Each project runs in a dedicated Docker container. No conflicts, no context leaks between projects. `--dangerously-skip-permissions` is safe because Docker is the sandbox.
+- **Automatic context** — Repos mounted, knowledge packs activated, CLAUDE.md generated. Claude starts already knowing everything about your project, without manual setup.
+- **Integrated agent teams** — tmux sessions with lead + teammates, ready to collaborate. One agent coordinates, others execute.
+- **Reusable knowledge packs** — Conventions, guidelines, domain documentation: defined once, activated per project. The source of truth stays in your repo.
+- **Isolated memory** — Each project has its own memory directory. Insights and history don't mix between different sessions.
 
-## How It Works
+## How it works
+
+```mermaid
+graph LR
+    subgraph Host
+        CLI["cco CLI"]
+        CFG["Configuration<br/>(global + project)"]
+        REPOS["Your repos"]
+    end
+
+    subgraph DC["Docker Container"]
+        CC["Claude Code<br/>with full context"]
+        TMUX["tmux<br/>(agent team)"]
+        DOCK["Docker CLI<br/>(infrastructure)"]
+    end
+
+    CLI -->|generate & start| DC
+    CFG -->|mount| CC
+    REPOS -->|mount read-write| DC
+    CC --- TMUX
+    CC --- DOCK
+```
 
 ```
-Host                                Docker Container
-───────────────────────────────────────────────────────
-defaults/              (tool code, tracked in git)
-global/.claude/        ──mount──► ~/.claude/              (user config, gitignored)
-global/packs/<name>/   ──mount──► /workspace/.packs/<n>/  (knowledge packs, gitignored)
-projects/my-app/.claude/ ──mount──► /workspace/.claude/   (project context, gitignored)
-~/projects/backend/    ──mount──► /workspace/backend/     (your repo, read-write)
-~/projects/frontend/   ──mount──► /workspace/frontend/    (your repo, read-write)
-Docker socket          ──mount──► Docker socket            (run containers from inside)
-
-                                  $ claude --dangerously-skip-permissions
-                                  (interactive session with full context)
-
 Setup: git clone → cco init → cco project create → cco start
 ```
 
-## Key Design Decisions
+## Quick Start
 
-- **Docker isolation**: No native sandboxing — Docker IS the sandbox. `--dangerously-skip-permissions` is safe inside the container.
-- **Docker-from-Docker**: Docker socket mounted so Claude can run `docker compose` for infrastructure. Creates sibling containers on the host daemon, not nested.
-- **Three-tier context**: global → project → repo, mapped to Claude Code's user → project → nested hierarchy. No hacks or symlinks needed.
-- **Knowledge packs**: reusable document bundles (conventions, business overviews, guidelines) defined once in `global/packs/` and activated per-project. Source of truth stays in your knowledge repo; no file copying.
-- **Agent teams**: tmux by default (works everywhere), iTerm2 optional (native panes on macOS).
-- **Workflow**: Analysis → Design → Implementation → Documentation, all manual transitions.
-- **Auto memory isolation**: each project gets its own memory directory, so insights don't leak across projects.
+```bash
+# 1. Clone the repository
+git clone https://github.com/user/claude-orchestrator.git
+cd claude-orchestrator
 
-## Requirements
+# 2. Initialize (copy defaults, build Docker image)
+bin/cco init
 
-- macOS or Linux
-- Docker Desktop (macOS) or Docker Engine (Linux)
-- Bash 4+
-- Claude Code account (Pro/Team/Enterprise or API key)
+# 3. Create a project
+bin/cco project create my-app
+
+# 4. Start the session
+bin/cco start my-app
+```
+
+## Key features
+
+| Feature | Description |
+|---|---|
+| **Monolithic CLI** | A single Bash script (`bin/cco`) — no dependencies beyond Bash 4+, Docker, and standard Unix tools |
+| **Four-tier hierarchy** | Managed → Global → Project → Repo, mapped natively onto Claude Code's settings resolution |
+| **Docker-from-Docker** | The Docker socket is mounted into the container. Claude can run `docker compose` to create sibling containers (databases, services) |
+| **Knowledge packs** | Reusable documents (conventions, overviews, guidelines) defined in `global/packs/` and activated per project in `project.yml` |
+| **Agent teams** | tmux sessions with lead + teammates. Optional iTerm2 support on macOS |
+| **Flexible authentication** | OAuth (credentials from macOS Keychain), API key via env var, GitHub token for `gh` CLI |
+| **Extensible environment** | Setup scripts, extra packages, and custom images configurable per project |
 
 ## Documentation
 
-See [docs/](docs/) for the full documentation index, organized by scope:
+| Path | Content |
+|---|---|
+| **New users** | [getting-started/](docs/getting-started/) — Overview, installation, first project, concepts |
+| **User guides** | [user-guides/](docs/user-guides/) — Project setup, knowledge packs, authentication, agent teams, troubleshooting |
+| **Technical reference** | [reference/](docs/reference/) — CLI, project.yml, context hierarchy |
+| **Contributing** | [maintainer/](docs/maintainer/) — Architecture, spec, roadmap, design docs |
 
-- **[guides/](docs/guides/)** — User how-to guides (project setup, display modes, subagents)
-- **[reference/](docs/reference/)** — Technical reference (CLI, context hierarchy)
-- **[maintainer/](docs/maintainer/)** — Architecture, Docker, spec, roadmap
+Full index: [docs/README.md](docs/README.md)
 
-Quick links:
+## Requirements
 
-| Document | Contents |
-|----------|----------|
-| [QUICK-START.md](QUICK-START.md) | Setup and usage guide |
-| [docs/guides/project-setup.md](docs/guides/project-setup.md) | Project setup, repos vs extra_mounts vs packs |
-| [docs/reference/cli.md](docs/reference/cli.md) | CLI commands and project.yml format |
-| [docs/reference/context.md](docs/reference/context.md) | Context hierarchy and settings |
-| [docs/guides/subagents.md](docs/guides/subagents.md) | Custom subagents |
-| [docs/maintainer/architecture.md](docs/maintainer/architecture.md) | Architecture decisions |
-| [docs/maintainer/roadmap.md](docs/maintainer/roadmap.md) | Planned features |
+- **OS**: macOS or Linux
+- **Docker**: Docker Desktop (macOS) or Docker Engine (Linux)
+- **Bash**: 4+ (macOS: the CLI is compatible with `/bin/bash` 3.2)
+- **Claude Code**: Pro, Team, Enterprise account, or API key

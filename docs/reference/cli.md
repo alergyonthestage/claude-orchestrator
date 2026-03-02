@@ -2,7 +2,7 @@
 
 > Version: 1.0.0
 > Status: v1.0 — Current
-> Related: [spec.md](../maintainer/spec.md) | [docker.md](../maintainer/docker.md)
+> Related: [spec.md](../maintainer/spec.md) | [docker.md](../maintainer/docker/design.md)
 
 ---
 
@@ -320,146 +320,285 @@ docker ps --filter "name=cc-" -q | xargs docker stop
 
 ---
 
+### 3.7 `cco pack create <name>`
+
+Create a new knowledge pack scaffold.
+
+```
+Usage: cco pack create <name>
+
+Arguments:
+  name                 Pack name (lowercase letters, numbers, and hyphens only)
+
+Examples:
+  cco pack create react-guidelines
+  cco pack create devops-tools
+```
+
+**Flow**:
+
+```
+1. VALIDATE
+   - Global config exists (check_global)
+   - Name matches pattern: ^[a-z0-9][a-z0-9-]*$
+   - global/packs/<name>/ does not already exist
+
+2. CREATE directory structure
+   - global/packs/<name>/
+   - global/packs/<name>/knowledge/
+   - global/packs/<name>/skills/
+   - global/packs/<name>/agents/
+   - global/packs/<name>/rules/
+
+3. GENERATE pack.yml
+   - Scaffold with name field and commented-out sections
+     for knowledge, skills, agents, rules
+
+4. PRINT
+   - "Pack created at global/packs/<name>/"
+   - Hint: subdirectory purposes and how to declare resources
+```
+
+---
+
+### 3.8 `cco pack list`
+
+List all knowledge packs with resource counts.
+
+```
+Usage: cco pack list
+
+Output:
+  NAME              KNOWLEDGE  SKILLS  AGENTS  RULES
+  devops-tools      3          1       0       2
+  react-guidelines  5          2       1       3
+```
+
+**Implementation**:
+- Iterates directories under `global/packs/`
+- Parses each `pack.yml` for knowledge files, skills, agents, and rules counts
+- Displays a formatted table with resource counts (shows `0` when a category is empty)
+
+---
+
+### 3.9 `cco pack show <name>`
+
+Show detailed information for a knowledge pack.
+
+```
+Usage: cco pack show <name>
+
+Arguments:
+  name                 Pack name to inspect
+
+Examples:
+  cco pack show react-guidelines
+```
+
+**Flow**:
+
+```
+1. VALIDATE
+   - global/packs/<name>/ exists
+   - pack.yml exists (warns if missing)
+
+2. DISPLAY
+   - Pack name (from pack.yml 'name' field)
+   - Knowledge: source directory (if set) and file list with descriptions
+   - Skills: list of skill names
+   - Agents: list of agent files
+   - Rules: list of rule files
+   - Used by projects: scans all projects for packs referencing this name
+```
+
+---
+
+### 3.10 `cco pack remove <name> [--force]`
+
+Remove a knowledge pack.
+
+```
+Usage: cco pack remove <name> [--force]
+
+Arguments:
+  name                 Pack name to remove
+
+Options:
+  --force              Skip confirmation prompt
+
+Examples:
+  cco pack remove old-pack
+  cco pack remove old-pack --force
+```
+
+**Flow**:
+
+```
+1. VALIDATE
+   - global/packs/<name>/ exists
+
+2. CHECK usage
+   - Scan all projects for references to this pack
+   - If used by projects:
+     - Display warning: "Pack '<name>' is used by: <project-list>"
+     - Without --force: prompt for confirmation (y/N)
+     - Non-interactive terminal without --force: error and abort
+
+3. REMOVE
+   - rm -rf global/packs/<name>/
+   - "Pack '<name>' removed"
+```
+
+---
+
+### 3.11 `cco pack validate [name]`
+
+Validate pack structure and configuration.
+
+```
+Usage: cco pack validate [name]
+
+Arguments:
+  name                 Pack name to validate (optional; validates all packs if omitted)
+
+Examples:
+  cco pack validate react-guidelines
+  cco pack validate                      # Validate all packs
+```
+
+**Flow**:
+
+```
+1. VALIDATE (per pack)
+   - pack.yml exists
+   - pack.yml has valid top-level keys (name, knowledge, skills, agents, rules)
+   - 'name' field is present and matches directory name (warns on mismatch)
+   - Knowledge source directory exists (if specified)
+   - Skill directories exist under skills/ for each declared skill
+   - Agent files exist under agents/ for each declared agent
+   - Rule files exist under rules/ for each declared rule
+
+2. RESULT
+   - Errors for missing/invalid resources
+   - Warnings for non-critical issues (e.g., name mismatch)
+   - Returns exit code 1 if any pack has errors
+```
+
+---
+
+### 3.12 `cco project show <name>`
+
+Show detailed information for a configured project.
+
+```
+Usage: cco project show <name>
+
+Arguments:
+  name                 Project name to inspect
+
+Examples:
+  cco project show my-saas
+```
+
+**Flow**:
+
+```
+1. VALIDATE
+   - projects/<name>/project.yml exists
+
+2. DISPLAY
+   - Name and description (from project.yml)
+   - Repos: list with path existence check ([missing] marker for absent paths)
+   - Packs: list with existence check ([not found] marker for absent packs)
+   - Docker config: auth method, ports, network name
+   - Status: checks Docker for running container (cc-<name>)
+```
+
+---
+
+### 3.13 `cco project validate <name>`
+
+Validate project structure and configuration.
+
+```
+Usage: cco project validate <name>
+
+Arguments:
+  name                 Project name to validate
+
+Examples:
+  cco project validate my-saas
+```
+
+**Flow**:
+
+```
+1. VALIDATE
+   - project.yml exists (fatal if missing)
+   - 'name' field is present in project.yml
+   - .claude/ directory exists (warns if missing)
+   - Each configured repo path exists on the filesystem
+   - Each referenced pack exists in global/packs/
+
+2. RESULT
+   - Errors for missing project.yml, missing name field, missing repo paths,
+     missing packs
+   - Warnings for missing .claude/ directory, no repos configured
+   - Returns exit code 1 if any errors found
+   - "Project '<name>' is valid" on success
+```
+
+---
+
+### 3.14 `cco update [OPTIONS]`
+
+Update global and/or project configuration from defaults.
+
+```
+Usage: cco update [OPTIONS]
+
+Options:
+  --project <name>     Update a specific project (instead of global)
+  --all                Update global config + all projects
+  --dry-run            Show what would change without modifying anything
+  --force              Overwrite even user-modified files
+  --keep               Always keep user version on conflicts
+  --backup             Create .bak backup + overwrite on conflicts
+
+Examples:
+  cco update                    # Update global defaults (interactive)
+  cco update --dry-run          # Preview changes
+  cco update --project myapp    # Update specific project
+  cco update --all              # Update global + all projects
+  cco update --force            # Overwrite all conflicts
+```
+
+**Flow**:
+
+```
+1. DETERMINE scope
+   - --all: update global config, then iterate all projects
+   - --project <name>: update only the specified project
+   - Default (no flags): update global config only
+
+2. UPDATE
+   - Detect changes between defaults and current config
+   - Preserve user modifications based on conflict mode:
+     - Interactive (default): prompt user for each conflict
+     - --force: overwrite all conflicts with defaults
+     - --keep: always keep existing user version
+     - --backup: create .bak backup, then overwrite
+
+3. RESULT
+   - --dry-run: "Dry run complete. No changes made."
+   - Otherwise: "Update complete."
+```
+
+---
+
 ## 4. Project Configuration Format (project.yml)
 
-```yaml
-# projects/<name>/project.yml
-
-name: my-saas-platform
-description: "Main SaaS platform with API, frontend, and shared libraries"
-
-# ── Repositories ─────────────────────────────────────────────────────
-repos:
-  - path: ~/projects/backend-api        # Absolute path on host
-    name: backend-api                    # Mount name in /workspace/
-    
-  - path: ~/projects/frontend-app
-    name: frontend-app
-    
-  - path: ~/projects/shared-libs
-    name: shared-libs
-
-# ── Extra mounts (optional) ─────────────────────────────────────────
-extra_mounts:
-  - source: ~/documents/api-specs
-    target: /workspace/docs/api-specs
-    readonly: true
-
-# ── Knowledge Packs (optional) ───────────────────────────────────────
-packs:
-  - my-client-knowledge   # References global/packs/my-client-knowledge/pack.yml
-
-# ── Docker options ───────────────────────────────────────────────────
-docker:
-  # Port mappings (host:container)
-  ports:
-    - "3000:3000"       # Frontend dev
-    - "4000:4000"       # Backend API
-    - "5432:5432"       # PostgreSQL
-    - "6379:6379"       # Redis
-
-  # Extra environment variables
-  env:
-    NODE_ENV: development
-    DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/myapp"
-
-  # Network name for sibling containers
-  network: cc-my-saas
-
-# ── Authentication ───────────────────────────────────────────────────
-auth:
-  method: oauth         # "oauth" (default) | "api_key"
-  # If api_key: reads from ANTHROPIC_API_KEY env var
-```
-
-### 4.1 Field Reference
-
-| Field | Required | Type | Default | Description |
-|-------|----------|------|---------|-------------|
-| `name` | ✅ | string | — | Project identifier |
-| `description` | ❌ | string | `""` | Human-readable description |
-| `repos` | ✅ | list | — | Repositories to mount |
-| `repos[].path` | ✅ | string | — | Absolute path on host (~ expanded) |
-| `repos[].name` | ✅ | string | — | Directory name in /workspace/ |
-| `extra_mounts` | ❌ | list | `[]` | Additional volume mounts |
-| `extra_mounts[].source` | ✅ | string | — | Host path |
-| `extra_mounts[].target` | ✅ | string | — | Container path |
-| `extra_mounts[].readonly` | ❌ | bool | `false` | Mount as read-only |
-| `packs` | ❌ | list | `[]` | Knowledge packs to activate (see section 4.2) |
-| `docker.ports` | ❌ | list | see defaults | Port mappings |
-| `docker.env` | ❌ | map | `{}` | Environment variables |
-| `docker.network` | ❌ | string | `cc-<name>` | Docker network name |
-| `docker.image` | ❌ | string | `claude-orchestrator:latest` | Custom Docker image for this project |
-| `docker.mount_socket` | ❌ | bool | `true` | Mount Docker socket (set false to disable Docker-from-Docker) |
-| `auth.method` | ❌ | string | `oauth` | Authentication method |
-
-### 4.2 Knowledge Packs
-
-Knowledge packs bundle reusable documentation, skills, agents, and rules that can be shared across multiple projects without copying files.
-
-**Pack definition** — `global/packs/<name>/pack.yml`:
-```yaml
-name: my-client
-
-# Knowledge files — mounted from source, injected into context automatically
-knowledge:
-  source: ~/documents/my-client-knowledge  # host dir to mount (read-only)
-  files:
-    - path: backend-coding-conventions.md
-      description: "Read when writing backend code, APIs, or DB logic"
-    - path: business-overview.md
-      description: "Read for business context and product understanding"
-    - testing-guidelines.md              # short form: no description
-
-# Skills — copied to /workspace/.claude/skills/ on cco start
-skills:
-  - deploy
-
-# Agents — copied to /workspace/.claude/agents/ on cco start
-agents:
-  - devops-specialist.md
-
-# Rules — copied to /workspace/.claude/rules/ on cco start
-rules:
-  - api-conventions.md
-```
-
-All sections are optional. A knowledge-only pack needs only the `knowledge:` section.
-
-**How it works** — on every `cco start`:
-1. Stale files from the previous `.pack-manifest` are cleaned
-2. Name conflicts across packs are detected (warning emitted if same filename in agents/rules/skills)
-3. The `knowledge.source` directory is mounted at `/workspace/.packs/<name>/` (read-only)
-4. `.claude/packs.md` is generated with an instructional list of files and their descriptions:
-   ```
-   The following knowledge files provide project-specific conventions and context.
-   Read the relevant files BEFORE starting any implementation, review, or design task.
-
-   - /workspace/.packs/my-client/backend-coding-conventions.md — Read when writing backend code
-   - /workspace/.packs/my-client/business-overview.md — Read for business context
-   ```
-5. `session-context.sh` (SessionStart hook) injects `packs.md` into `additionalContext` automatically — **no CLAUDE.md edit needed**
-6. Skills, agents, and rules are copied from `global/packs/<name>/` into `projects/<n>/.claude/`
-7. A `.pack-manifest` file is written tracking all copied files (used for cleanup on next start)
-
-**Name conflicts**: If two packs define the same agent, rule, or skill name, the last pack listed in `project.yml` wins. A warning is emitted. See [ADR-9](../maintainer/architecture.md) for the design rationale.
-
-**Pack directory** — `global/packs/` (gitignored, created by `cco init`):
-```
-global/
-  packs/
-    my-client/
-      pack.yml
-      knowledge/        # optional: omit knowledge.source to use this dir
-        overview.md
-      skills/
-        deploy/
-          SKILL.md
-      agents/
-        specialist.md
-      rules/
-        conventions.md
-```
+See [project-yaml.md](project-yaml.md) for the complete project.yml field reference and knowledge pack format.
 
 ---
 
