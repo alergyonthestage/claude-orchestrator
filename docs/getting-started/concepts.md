@@ -68,6 +68,23 @@ Learn more: [architecture.md](../maintainer/architecture.md) (ADR-1: Docker as t
 
 ---
 
+## Browser automation
+
+Claude can control a real Chrome browser running on your host. The browser is visible on your screen while Claude navigates pages, clicks buttons, fills forms, takes screenshots, and reads content.
+
+This is enabled per-project via `project.yml`:
+
+```yaml
+browser:
+  enabled: true
+```
+
+Then launch Chrome with `cco chrome start` and start your session. Claude gains access to browser tools (navigate, click, fill, screenshot, and more) via the Chrome DevTools Protocol.
+
+Learn more: [browser-automation.md](../user-guides/browser-automation.md).
+
+---
+
 ## Auto memory
 
 Each project has its own isolated memory directory (`projects/<name>/claude-state/memory/`). Claude Code automatically saves notes and insights during sessions and reloads them in subsequent sessions.

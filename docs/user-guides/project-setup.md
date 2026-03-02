@@ -137,12 +137,7 @@ browser:
 
 Claude can now use browser tools (navigate, click, fill forms, read pages, take screenshots) via the `chrome-devtools-mcp` server.
 
-**Port conflicts**: If multiple projects have browser enabled simultaneously, ports are auto-assigned (9222 → 9223 → 9224...) with a warning. Use `cco chrome start --project <name>` to launch Chrome on the correct port.
-
-**Security notes**:
-- Chrome uses an isolated profile (`~/.chrome-debug`), separate from your main profile
-- Avoid navigating to sensitive sites (banking, admin) in the debug Chrome session
-- The CDP port binds to `127.0.0.1` only (not exposed to the network)
+For the complete guide — including multi-project setup, security, troubleshooting, and all available browser tools — see [browser-automation.md](./browser-automation.md).
 
 ---
 

@@ -33,6 +33,7 @@ Operational guides for everyday use.
 | [knowledge-packs.md](user-guides/knowledge-packs.md) | Create and activate reusable knowledge packs |
 | [agent-teams.md](user-guides/agent-teams.md) | Configure agent teams with tmux and iTerm2 |
 | [authentication.md](user-guides/authentication.md) | OAuth, API key, GitHub token, secrets management |
+| [browser-automation.md](user-guides/browser-automation.md) | Browser automation: setup, usage, troubleshooting |
 | [troubleshooting.md](user-guides/troubleshooting.md) | Common issues and solutions |
 | [advanced/subagents.md](user-guides/advanced/subagents.md) | Custom subagents (analyst, reviewer) |
 | [advanced/custom-environment.md](user-guides/advanced/custom-environment.md) | Setup scripts, extra packages, custom images |

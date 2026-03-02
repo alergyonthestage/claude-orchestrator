@@ -254,6 +254,51 @@ For project-specific packages, use `projects/<name>/mcp-packages.txt`.
 
 ---
 
+## Browser Automation
+
+### Chrome tools not available in session
+
+**Symptoms**: Claude does not have browser tools (navigate, click, screenshot, etc.).
+
+**Solutions**:
+1. Verify `browser.enabled: true` in `project.yml`, or that you passed `--chrome` to `cco start`
+2. Restart the session — MCP servers are loaded at startup only, not mid-session
+3. Check entrypoint logs for MCP merge errors
+
+### Chrome not reachable from container
+
+**Symptoms**: browser tools fail with connection errors.
+
+**Solutions**:
+1. Check that Chrome is running: `cco chrome status`
+2. If not running, start it: `cco chrome start`
+3. Verify the port matches:
+   ```bash
+   cat projects/my-project/.browser-port
+   cco chrome start --project my-project
+   ```
+4. On Linux, verify that `host.docker.internal` resolves inside the container
+
+### Port conflict between projects
+
+**Symptoms**: warning about port auto-assignment during `cco start`.
+
+**Solution**: this is expected behavior. The CLI auto-assigns the next free port. Use `--project` with `cco chrome` commands:
+```bash
+cco chrome start --project my-project
+```
+
+### Chrome window doesn't open
+
+**Solutions**:
+- **macOS**: verify Chrome is installed at `/Applications/Google Chrome.app`
+- **Linux**: verify `google-chrome`, `chromium`, or `chromium-browser` is in PATH
+- Check if already running: `cco chrome status`
+
+For the full browser automation guide, see [browser-automation.md](./browser-automation.md).
+
+---
+
 ## General
 
 ### Session already running

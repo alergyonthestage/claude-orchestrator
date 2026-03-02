@@ -52,6 +52,13 @@ docker:
 auth:
   method: oauth         # "oauth" (default) | "api_key"
   # If api_key: reads from ANTHROPIC_API_KEY env var
+
+# ── Browser Automation (optional) ──────────────────────────────────
+browser:
+  enabled: true           # Activate chrome-devtools-mcp (default: false)
+  mode: host              # "host" (default, only supported mode)
+  cdp_port: 9222          # Chrome remote debugging port (default: 9222)
+  mcp_args: []            # Extra flags for chrome-devtools-mcp
 ```
 
 ---
@@ -76,6 +83,10 @@ auth:
 | `docker.image` | ❌ | string | `claude-orchestrator:latest` | Custom Docker image for this project |
 | `docker.mount_socket` | ❌ | bool | `true` | Mount Docker socket (set false to disable Docker-from-Docker) |
 | `auth.method` | ❌ | string | `oauth` | Authentication method |
+| `browser.enabled` | ❌ | bool | `false` | Activate browser automation ([guide](../user-guides/browser-automation.md)) |
+| `browser.mode` | ❌ | string | `host` | Where Chrome runs (`host` only in v1) |
+| `browser.cdp_port` | ❌ | int | `9222` | Chrome remote debugging port |
+| `browser.mcp_args` | ❌ | list | `[]` | Extra CLI flags for chrome-devtools-mcp |
 
 ---
 
