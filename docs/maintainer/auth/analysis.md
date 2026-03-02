@@ -2,7 +2,7 @@
 
 > Date: 2026-02-24
 > Status: Approved — proceed to implementation
-> Related: [auth-design.md](../maintainer/auth-design.md) | [architecture.md](../maintainer/architecture.md) (ADR-11) | [worktree-isolation.md](./worktree-isolation.md)
+> Related: [auth-design.md](./design.md) | [architecture.md](../architecture.md) (ADR-11) | [worktree-isolation.md](../future/worktree/analysis.md)
 
 ---
 

@@ -55,7 +55,7 @@ Il formato di output JSON con `hookSpecificOutput.additionalContext` è quello r
 
 **1. `alwaysThinkingEnabled` mancante nella settings.json effettiva**
 
-Il file `docs/reference/context.md` § 4.1 mostra `"alwaysThinkingEnabled": true` come parte della configurazione consigliata, ma il file `defaults/global/.claude/settings.json` effettivo NON lo include. La doc ufficiale conferma che questa opzione esiste ed è valida. Extended thinking migliora significativamente la qualità del ragionamento su task complessi — dovrebbe essere abilitato di default in un tool orientato a dev professionisti.
+Il file `docs/reference/context-hierarchy.md` § 4.1 mostra `"alwaysThinkingEnabled": true` come parte della configurazione consigliata, ma il file `defaults/global/.claude/settings.json` effettivo NON lo include. La doc ufficiale conferma che questa opzione esiste ed è valida. Extended thinking migliora significativamente la qualità del ragionamento su task complessi — dovrebbe essere abilitato di default in un tool orientato a dev professionisti.
 
 ```json
 // Aggiungere a defaults/global/.claude/settings.json
@@ -262,7 +262,7 @@ La documentazione è **eccezionale**. Specificamente:
 
 ### Unico punto debole
 
-La documentazione in `docs/reference/context.md` § 4.1 include `"defaultMode": "bypassPermissions"` e `"alwaysThinkingEnabled": true` nella specifica, ma il file `defaults/global/.claude/settings.json` effettivo non li ha. Questa discrepanza tra docs e implementazione va risolta — o aggiungendo i campi al settings.json o aggiornando la doc.
+La documentazione in `docs/reference/context-hierarchy.md` § 4.1 include `"defaultMode": "bypassPermissions"` e `"alwaysThinkingEnabled": true` nella specifica, ma il file `defaults/global/.claude/settings.json` effettivo non li ha. Questa discrepanza tra docs e implementazione va risolta — o aggiungendo i campi al settings.json o aggiornando la doc.
 
 ---
 

@@ -660,9 +660,9 @@ cco chrome stop    # Chiude la sessione Chrome debug
 
 #### Step 5: Documentazione utente
 
-- `docs/guides/browser-automation.md` — guida setup e uso
+- `docs/user-guides/browser-automation.md` — guida setup e uso
 - Sezione in `docs/reference/cli.md` per `cco chrome`
-- Esempio in `docs/guides/project-setup.md` per `browser:` in project.yml
+- Esempio in `docs/user-guides/project-setup.md` per `browser:` in project.yml
 
 ---
 

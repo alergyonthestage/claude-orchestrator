@@ -91,21 +91,21 @@ Impatto: aggiornamenti futuri di skills/agents non richiedono intervento utente.
 
 | Documento | Stato | Note |
 |---|---|---|
-| `docs/reference/context.md` | ✅ Aggiornato | Settings e context hierarchy accurati |
+| `docs/reference/context-hierarchy.md` | ✅ Aggiornato | Settings e context hierarchy accurati |
 | `docs/reference/cli.md` | ✅ Aggiornato | Tutti i 7 comandi documentati |
-| `docs/reference/context-loading.md` | ✅ Aggiornato | Lifecycle diagram e component table corretti |
+| `docs/reference/context-hierarchy.md` (merged) | ✅ Aggiornato | Lifecycle diagram e component table corretti |
 | `docs/maintainer/architecture.md` | ✅ Aggiornato | 10 ADR (1-10), tutti accurati |
 | `docs/maintainer/spec.md` | ✅ Aggiornato | FR-1 → FR-8 implementati |
-| `docs/maintainer/docker.md` | ✅ Aggiornato | Dockerfile e entrypoint accurati |
-| `docs/maintainer/directory-structure.md` | ✅ Aggiornato | Struttura completa e corretta |
+| `docs/maintainer/docker/design.md` | ✅ Aggiornato | Dockerfile e entrypoint accurati |
+| `docs/maintainer/docker/design.md` (merged) | ✅ Aggiornato | Struttura completa e corretta |
 | `docs/maintainer/roadmap.md` | ✅ Aggiornato | Completed section verificata |
-| `docs/guides/project-setup.md` | ✅ Aggiornato | |
-| `docs/guides/display-modes.md` | ✅ Aggiornato | |
-| `docs/guides/subagents.md` | ✅ Aggiornato | |
-| `docs/analysis/worktree-isolation.md` | ✅ Approvato | Ready for implementation |
-| `docs/maintainer/worktree-design.md` | ✅ Design completo | Pending implementation |
-| `docs/maintainer/auth-design.md` | ✅ Design | Implementazione completata |
-| `docs/maintainer/environment-design.md` | ✅ Design | Implementazione completata |
+| `docs/user-guides/project-setup.md` | ✅ Aggiornato | |
+| `docs/user-guides/agent-teams.md` | ✅ Aggiornato | |
+| `docs/user-guides/advanced/subagents.md` | ✅ Aggiornato | |
+| `docs/maintainer/future/worktree/analysis.md` | ✅ Approvato | Ready for implementation |
+| `docs/maintainer/future/worktree/design.md` | ✅ Design completo | Pending implementation |
+| `docs/maintainer/auth/design.md` | ✅ Design | Implementazione completata |
+| `docs/maintainer/environment/design.md` | ✅ Design | Implementazione completata |
 
 **Nessuna documentazione stale rilevata.** I design doc per auth e environment hanno status "pending" ma l'implementazione è completa — lo status andrebbe aggiornato per riflettere il completamento.
 
@@ -147,7 +147,7 @@ Copertura eccellente per: CLI commands, compose generation, YAML parsing, packs,
 ### Sprint 2: Qualità di vita quotidiana
 
 **#1 Fix tmux copy-paste** — Ready to implement.
-- Analisi approfondita in `docs/analysis/terminal-clipboard-and-mouse.md` (531 linee, copre 9 terminali, 3 metodi di copia)
+- Analisi approfondita in `docs/maintainer/agent-teams/analysis.md` (531 linee, copre 9 terminali, 3 metodi di copia)
 - Configurazione attuale in `config/tmux.conf` ha 6 gap identificati (§7 dell'analisi)
 - Impatto alto: ogni utente lo incontra quotidianamente
 - Effort basso: modifiche a `config/tmux.conf` + documentazione
@@ -155,8 +155,8 @@ Copertura eccellente per: CLI commands, compose generation, YAML parsing, packs,
 ### Sprint 3: Feature differenziante
 
 **#2 Git Worktree Isolation** — Ready to implement.
-- Analysis: approvata (`docs/analysis/worktree-isolation.md`)
-- Design: completato (`docs/maintainer/worktree-design.md`)
+- Analysis: approvata (`docs/maintainer/future/worktree/analysis.md`)
+- Design: completato (`docs/maintainer/future/worktree/design.md`)
 - ADR-10: documentato in `architecture.md`
 - Implementation checklist: 11 item dettagliati nel design doc §8
 - Prerequisiti: nessuno (auth già implementata)

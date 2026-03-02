@@ -2,7 +2,7 @@
 
 > Version: 1.0.0
 > Status: v1.0 — Current
-> Related: [spec.md](./spec.md) | [docker.md](./docker.md) | [context.md](../reference/context.md)
+> Related: [spec.md](./spec.md) | [docker.md](./docker/design.md) | [context.md](../reference/context-hierarchy.md)
 
 ---
 
@@ -267,7 +267,7 @@ cco start my-project --teammate-mode auto  # iTerm2 if available
 
 ### 3.1 Docker Image
 
-See [DOCKER.md](./docker.md) for full specification.
+See [DOCKER.md](./docker/design.md) for full specification.
 
 **Key aspects**:
 - Base: `node:22-bookworm`
@@ -286,7 +286,7 @@ See [CLI.md](../reference/cli.md) for full specification.
 
 ### 3.3 Context & Settings
 
-See [CONTEXT.md](../reference/context.md) for full specification.
+See [CONTEXT.md](../reference/context-hierarchy.md) for full specification.
 
 **Key aspects**:
 - Three-tier hierarchy matching Claude Code native scopes
@@ -295,7 +295,7 @@ See [CONTEXT.md](../reference/context.md) for full specification.
 
 ### 3.4 Subagents
 
-See [SUBAGENTS.md](../guides/subagents.md) for full specification.
+See [SUBAGENTS.md](../user-guides/advanced/subagents.md) for full specification.
 
 **Key aspects**:
 - Two default subagents: analyst (haiku, read-only) and reviewer (sonnet, read-only)
@@ -492,7 +492,7 @@ Claude Code startup in /workspace:
 - Docker-compose generation has two volume modes: direct mount (default) or `/git-repos/` mount (worktree)
 - Multiple projects cannot use `--worktree` on the same repo simultaneously with the same branch
 
-**Design doc**: [worktree-design.md](./worktree-design.md) | **Analysis**: [worktree-isolation.md](../analysis/worktree-isolation.md)
+**Design doc**: [worktree-design.md](./future/worktree/design.md) | **Analysis**: [worktree-isolation.md](./future/worktree/analysis.md)
 
 ---
 
@@ -517,7 +517,7 @@ Claude Code startup in /workspace:
 - `gh` CLI adds ~50 MB to the Docker image
 - Existing SSH key mount is removed from default — breaking change for users relying on it (but it was broken anyway)
 
-**Design doc**: [auth-design.md](./auth-design.md) | **Analysis**: [authentication-and-secrets.md](../analysis/authentication-and-secrets.md)
+**Design doc**: [auth-design.md](./auth/design.md) | **Analysis**: [authentication-and-secrets.md](./auth/analysis.md)
 
 ---
 
@@ -545,7 +545,7 @@ Claude Code startup in /workspace:
 - Custom images must be maintained by the user, but can extend the base image
 - Template files are created by `cco init` and `cco project create`
 
-**Design doc**: [environment-design.md](./environment-design.md) | **Analysis**: [environment-extensibility.md](../analysis/environment-extensibility.md)
+**Design doc**: [environment-design.md](./environment/design.md) | **Analysis**: [environment-extensibility.md](./environment/analysis.md)
 
 ---
 

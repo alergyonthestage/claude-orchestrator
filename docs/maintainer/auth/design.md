@@ -480,4 +480,4 @@ jq '.hasCompletedOnboarding = true' global/claude-state/claude.json > /tmp/fix.j
 - [ ] `defaults/_template/project.yml`: Add `docker.mount_ssh_keys` (commented)
 - [ ] `bin/test`: Tests for per-project secrets loading
 - [ ] `bin/test`: Tests for SSH mount opt-in in dry-run compose
-- [ ] Documentation: Update [cli.md](../../reference/cli.md), [project-setup.md](../../guides/project-setup.md)
+- [ ] Documentation: Update [cli.md](../../reference/cli.md), [project-setup.md](../../user-guides/project-setup.md)

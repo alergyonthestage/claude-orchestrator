@@ -49,7 +49,7 @@ claude-orchestrator supporta due modalita di visualizzazione:
 
 La modalita si configura in `global/.claude/settings.json` (`"teammateMode": "tmux"`) oppure via flag CLI (`--teammate-mode`).
 
-Per approfondire: [display-modes.md](../user-guides/display-modes.md).
+Per approfondire: [agent-teams.md](../user-guides/agent-teams.md).
 
 ---
 

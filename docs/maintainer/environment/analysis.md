@@ -2,7 +2,7 @@
 
 > Date: 2026-02-24
 > Status: Approved — proceed to implementation
-> Related: [environment-design.md](../maintainer/environment-design.md) | [architecture.md](../maintainer/architecture.md) (ADR-12) | [authentication-and-secrets.md](./authentication-and-secrets.md)
+> Related: [environment-design.md](./design.md) | [architecture.md](../architecture.md) (ADR-12) | [authentication-and-secrets.md](../auth/analysis.md)
 
 ---
 

@@ -72,7 +72,7 @@ bind-key -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel
 
 #### 2. Aggiornare documentazione
 
-- `docs/guides/display-modes.md` — Aggiungere sezione "Copy & Paste" con:
+- `docs/user-guides/agent-teams.md` — Aggiungere sezione "Copy & Paste" con:
   - Tabella dei tasti bypass per terminale
   - Setup iTerm2 (abilitare OSC 52 in preferences)
   - Limitazioni note (Terminal.app, VTE terminals)
@@ -103,8 +103,8 @@ Nessun test automatizzato necessario (configurazione visuale). Verificare manual
 **Sprint**: 3 (feature differenziante)
 **Effort**: Medio-alto (2-3 sessioni)
 **Rischio**: Basso — opt-in, default invariato
-**Analysis doc**: [`worktree-isolation.md`](./worktree-isolation.md)
-**Design doc**: [`worktree-design.md`](../maintainer/worktree-design.md)
+**Analysis doc**: [`worktree-isolation.md`](../future/worktree/analysis.md)
+**Design doc**: [`worktree-design.md`](../future/worktree/design.md)
 
 ### Prerequisiti
 
@@ -256,9 +256,9 @@ Test per post-session cleanup (mock git):
 | Documento | Aggiornamento |
 |-----------|---------------|
 | `docs/reference/cli.md` | Flag `--worktree`, campi `worktree`/`worktree_branch` in project.yml |
-| `docs/guides/project-setup.md` | Sezione "Git Worktree Isolation" con esempi |
-| `docs/maintainer/docker.md` | Variante compose template per worktree |
-| `docs/maintainer/worktree-design.md` | Status → "Implemented" |
+| `docs/user-guides/project-setup.md` | Sezione "Git Worktree Isolation" con esempi |
+| `docs/maintainer/docker/design.md` | Variante compose template per worktree |
+| `docs/maintainer/future/worktree/design.md` | Status → "Implemented" |
 | `docs/maintainer/roadmap.md` | Spostare #2 nella sezione "Completed" |
 
 #### Edge cases (dal design doc §6)

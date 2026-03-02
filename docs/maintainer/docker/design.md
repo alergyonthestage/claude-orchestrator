@@ -278,7 +278,7 @@ Key settings for clipboard:
 - `terminal-features clipboard` — explicit clipboard capability (works even when outer TERM is not `xterm*`)
 - `MouseDragEnd1Pane copy-pipe-and-cancel` — auto-copies selection on mouse release (no manual `y` press needed)
 
-See [display-modes guide](../../guides/display-modes.md) §2.4 for copy-paste usage and host terminal compatibility.
+See [agent-teams guide](../../user-guides/agent-teams.md) §2.4 for copy-paste usage and host terminal compatibility.
 
 ---
 
@@ -574,25 +574,30 @@ claude-orchestrator/
 │
 ├── docs/                                   # ── Documentation ──────────────
 │   ├── README.md                           # Documentation index
-│   ├── guides/
+│   ├── getting-started/
+│   │   ├── overview.md                    # What it is, how it works
+│   │   ├── installation.md                # Setup and usage guide
+│   │   ├── first-project.md               # Step-by-step first project
+│   │   └── concepts.md                    # Key concepts
+│   ├── user-guides/
 │   │   ├── project-setup.md               # Project setup guide
-│   │   ├── subagents.md                   # Custom subagents guide
-│   │   └── display-modes.md              # tmux vs iTerm2 setup
+│   │   ├── agent-teams.md                 # tmux vs iTerm2 setup
+│   │   └── advanced/
+│   │       └── subagents.md               # Custom subagents guide
 │   ├── reference/
 │   │   ├── cli.md                         # CLI commands & project.yml format
-│   │   └── context.md                     # Context hierarchy & settings
+│   │   └── context-hierarchy.md           # Context hierarchy & settings
 │   └── maintainer/
 │       ├── spec.md                        # Requirements specification
 │       ├── architecture.md               # Architecture & design decisions
-│       ├── docker.md                      # Docker image, compose, networking
-│       ├── roadmap.md                     # Planned features
-│       └── directory-structure.md        # This file
+│       ├── docker/design.md              # This file (incl. directory structure)
+│       └── roadmap.md                     # Planned features
 │
 ├── Dockerfile                              # Docker image definition
 ├── .dockerignore                           # Exclude docs, .git from build context
 ├── .gitignore                              # Ignore user config, secrets
 ├── README.md                               # Project overview
-├── QUICK-START.md                          # Setup and usage guide
+├── docs/getting-started/installation.md    # Setup and usage guide
 ├── CLAUDE.md                               # Claude Code guidance for this repo
 │
 ├── config/                                 # ── Docker Config ──────────────
@@ -691,7 +696,7 @@ claude-orchestrator/
 | `.dockerignore` | Exclude files from Docker build context | Excludes: `docs/`, `.git/`, `projects/*/claude-state/` |
 | `.gitignore` | Git ignore patterns | Ignores: `global/`, `projects/` (user data), `.env` |
 | `README.md` | Project overview and documentation index | What it is, how it works, requirements |
-| `QUICK-START.md` | Setup and usage guide | Clone, init, create project, start session |
+| `docs/getting-started/installation.md` | Setup and usage guide | Clone, init, create project, start session |
 | `CLAUDE.md` | Guidance for Claude Code when working on this repo | Commands, architecture, conventions |
 
 #### config/
@@ -729,13 +734,13 @@ User defaults, copied to `global/.claude/` once by `cco init`. User owns these f
 |------|---------|-------|
 | `CLAUDE.md` | User-level instructions | Workflow, git practices, communication style |
 | `settings.json` | User preferences | Allow rules, attribution, teammateMode, cleanup, MCP settings |
-| `mcp.json` | Global MCP server list | Empty by default; user populates. See [context.md](../../reference/context.md) §8 |
+| `mcp.json` | Global MCP server list | Empty by default; user populates. See [context-hierarchy.md](../../reference/context-hierarchy.md) §8 |
 | `rules/workflow.md` | Workflow phase rules | Analysis, Design, Implementation, Documentation phases |
 | `rules/git-practices.md` | Git conventions | Branch naming, conventional commits |
 | `rules/diagrams.md` | Diagram conventions | Always use Mermaid, never ASCII art |
 | `rules/language.md` | Language preferences | Has `{{COMM_LANG}}`, `{{DOCS_LANG}}`, `{{CODE_LANG}}` placeholders, substituted by `cco init --lang` |
-| `agents/analyst.md` | Analyst subagent | Haiku, read-only tools, user memory. See [subagents.md](../../guides/subagents.md) §2.1 |
-| `agents/reviewer.md` | Reviewer subagent | Sonnet, read-only tools, user memory. See [subagents.md](../../guides/subagents.md) §2.2 |
+| `agents/analyst.md` | Analyst subagent | Haiku, read-only tools, user memory. See [subagents.md](../../user-guides/advanced/subagents.md) §2.1 |
+| `agents/reviewer.md` | Reviewer subagent | Sonnet, read-only tools, user memory. See [subagents.md](../../user-guides/advanced/subagents.md) §2.2 |
 | `skills/analyze/SKILL.md` | `/analyze` skill | Structured codebase exploration mode |
 | `skills/commit/SKILL.md` | `/commit` skill | Conventional commit creation with confirmation |
 | `skills/design/SKILL.md` | `/design` skill | Implementation planning mode |
@@ -781,7 +786,7 @@ Recommended order for building the repo from scratch:
 | 2. Global Config | `defaults/managed/*`, `defaults/global/.claude/*` | Nothing |
 | 3. Project Template | `defaults/_template/*` (all files) | Nothing |
 | 4. CLI | `bin/cco` | Phases 1–3 (needs files to reference) |
-| 5. Root Files | `README.md`, `QUICK-START.md`, `CLAUDE.md`, `.gitignore` | Phases 1–4 |
+| 5. Root Files | `README.md`, `CLAUDE.md`, `.gitignore` | Phases 1–4 |
 | 6. Testing | Manual: create project, start session, verify | Phases 1–5 |
 
 ### 6.5 Validation Checklist

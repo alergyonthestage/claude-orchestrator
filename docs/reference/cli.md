@@ -2,7 +2,7 @@
 
 > Version: 1.0.0
 > Status: v1.0 — Current
-> Related: [spec.md](../maintainer/spec.md) | [docker.md](../maintainer/docker.md)
+> Related: [spec.md](../maintainer/spec.md) | [docker.md](../maintainer/docker/design.md)
 
 ---
 

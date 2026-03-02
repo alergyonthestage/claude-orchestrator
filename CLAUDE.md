@@ -63,7 +63,7 @@ The host's Docker socket is mounted into the container. Claude can run `docker c
 
 ## Implementation Order
 
-Per `docs/maintainer/directory-structure.md`:
+Per `docs/maintainer/docker/design.md` (sezione directory structure):
 
 1. **Docker**: `Dockerfile`, `config/entrypoint.sh`, `config/tmux.conf`, `config/hooks/`, `.dockerignore`
 2. **Global Config**: managed files in `defaults/managed/` (baked in image), user defaults in `defaults/global/.claude/` (copied once on init)
@@ -86,12 +86,12 @@ Per `docs/maintainer/directory-structure.md`:
 **Documentation:**
 - `docs/maintainer/spec.md` — requirements specification
 - `docs/maintainer/architecture.md` — ADRs and system design
-- `docs/maintainer/docker.md` — Dockerfile, compose template, networking
-- `docs/reference/context.md` — context hierarchy, settings, auto memory, subagents
+- `docs/maintainer/docker/design.md` — Dockerfile, compose template, networking
+- `docs/reference/context-hierarchy.md` — context hierarchy, settings, auto memory, subagents
 - `docs/reference/cli.md` — CLI commands and `project.yml` format
-- `docs/guides/subagents.md` — analyst (haiku) and reviewer (sonnet) agent specs
-- `docs/guides/display-modes.md` — tmux vs iTerm2 setup
-- `docs/guides/project-setup.md` — project setup guide, repos vs extra_mounts, writing CLAUDE.md
+- `docs/user-guides/advanced/subagents.md` — analyst (haiku) and reviewer (sonnet) agent specs
+- `docs/user-guides/agent-teams.md` — tmux vs iTerm2 setup
+- `docs/user-guides/project-setup.md` — project setup guide, repos vs extra_mounts, writing CLAUDE.md
 
 ## Conventions
 

@@ -2,7 +2,7 @@
 
 > Version: 1.0.0
 > Status: Current (Sprint 3)
-> Related: [architecture.md](./architecture.md) (ADR-3, ADR-8) | [context.md](../reference/context.md) | [analysis](../analysis/scope-hierarchy.md)
+> Related: [architecture.md](../architecture.md) (ADR-3, ADR-8) | [context.md](../../reference/context-hierarchy.md) | [analysis](./analysis.md)
 
 ---
 
@@ -349,8 +349,8 @@ This is Claude Code's native behavior, not our design choice. The practical impa
 
 ## 8. References
 
-- [ADR-3: Four-Tier Context Hierarchy](./architecture.md) — Architecture decision record
-- [ADR-8: Tool vs User Config Separation](./architecture.md) — Managed scope update
-- [ADR-9: Knowledge Packs — Copy vs Mount](./architecture.md) — Why pack resources are copied
-- [Analysis: Scope Hierarchy](../analysis/scope-hierarchy.md) — Detailed investigation and comparison of approaches
-- [Context & Settings Reference](../reference/context.md) — Runtime context loading, hooks, MCP
+- [ADR-3: Four-Tier Context Hierarchy](../architecture.md) — Architecture decision record
+- [ADR-8: Tool vs User Config Separation](../architecture.md) — Managed scope update
+- [ADR-9: Knowledge Packs — Copy vs Mount](../architecture.md) — Why pack resources are copied
+- [Analysis: Scope Hierarchy](./analysis.md) — Detailed investigation and comparison of approaches
+- [Context & Settings Reference](../../reference/context-hierarchy.md) — Runtime context loading, hooks, MCP

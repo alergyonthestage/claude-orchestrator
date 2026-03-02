@@ -67,7 +67,7 @@ Riorganizzazione della gerarchia di configurazione per sfruttare il livello **Ma
 - Dockerfile aggiornato: `COPY defaults/managed/ /etc/claude-code/`
 - Test suite aggiornata: `test_system_sync.sh` → `test_managed_scope.sh` (15 test)
 
-**Docs**: [analysis](../analysis/scope-hierarchy.md) | [ADR-3](./architecture.md) | [ADR-8](./architecture.md)
+**Docs**: [analysis](./scope-hierarchy/analysis.md) | [ADR-3](./architecture.md) | [ADR-8](./architecture.md)
 
 ### Fix tmux copy-paste (Sprint 2) ✓
 
@@ -78,11 +78,11 @@ Improved tmux configuration for clipboard and selection:
 - `MouseDragEnd1Pane` auto-copy on mouse release (no need to press `y`)
 - `C-v` rectangle selection toggle in copy-mode
 - Fixed bypass key documentation (Terminal.app uses `fn`, not `Shift`)
-- Full copy-paste user guide in display-modes.md (setup per terminal, 3 methods, troubleshooting)
+- Full copy-paste user guide in agent-teams.md (setup per terminal, 3 methods, troubleshooting)
 - In-container OAuth login section with copy-paste instructions
 - Cross-reference from project-setup.md Authentication section
 
-**Analysis**: [terminal-clipboard-and-mouse.md](../analysis/terminal-clipboard-and-mouse.md)
+**Analysis**: [terminal-clipboard-and-mouse.md](./agent-teams/analysis.md)
 
 ---
 
@@ -120,7 +120,7 @@ Necessario per testing e debugging frontend. Richiede scope hierarchy stabile (S
 
 Enable Claude to control a browser via Chrome DevTools MCP, with the browser visible to the user on the host OS.
 
-**Approach** (see [analysis](../analysis/chrome-mcp.md)):
+**Approach** (see [analysis](./future/browser-mcp/analysis.md)):
 - Native "Claude in Chrome" doesn't work from Docker (IPC-local, no network transport)
 - Use **chrome-devtools-mcp** (Google, CDP-based, 29 tools) connecting to Chrome on the host via `host.docker.internal:9222`
 - Two modes: `host` (Chrome on host, native UI, user sees actions) and `container` (sibling Chrome container + noVNC)
@@ -134,7 +134,7 @@ Enable Claude to control a browser via Chrome DevTools MCP, with the browser vis
 - `extra_hosts: host.docker.internal:host-gateway` in docker-compose for Linux compatibility
 - Container mode uses `selenium/standalone-chrome` with noVNC on port 7900
 
-**Docs**: [analysis](../analysis/chrome-mcp.md)
+**Docs**: [analysis](./future/browser-mcp/analysis.md)
 
 ---
 
@@ -155,7 +155,7 @@ Opt-in git isolation for container sessions. When enabled, repos are mounted at 
 - Multiple merge/PR cycles during a single session via standard `gh pr create`
 - Session resume: branch `cco/<project>` persists, next `--worktree` start reuses it
 
-**Docs**: [analysis](../analysis/worktree-isolation.md) | [design](./worktree-design.md) | [ADR-10](./architecture.md)
+**Docs**: [analysis](./future/worktree/analysis.md) | [design](./future/worktree/design.md) | [ADR-10](./architecture.md)
 
 #### #6 Session resume
 
