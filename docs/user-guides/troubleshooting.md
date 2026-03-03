@@ -106,6 +106,25 @@ jq '.hasCompletedOnboarding = true' global/claude-state/claude.json > /tmp/fix.j
   && mv /tmp/fix.json global/claude-state/claude.json
 ```
 
+### API Error: 403 Cloudflare Challenge (subagent)
+
+**Symptoms**: A subagent (analyst, reviewer, Plan, Explore) fails with
+`API Error: 403` followed by an HTML page containing "Just a moment..." and
+"Enable JavaScript and cookies to continue". The main session continues to work.
+
+**Cause**: Cloudflare in front of `api.anthropic.com` issues transient "managed
+challenges". More common with:
+- Multiple sessions (containers) active simultaneously on the same account
+- Docker Desktop (shared NAT IP, low reputation)
+
+**Solution**:
+1. Type "retry" or "continue" — the subagent will be re-launched successfully
+2. You do NOT need to run `/login` (the token is valid)
+3. If the problem is frequent, try reducing the number of simultaneous sessions
+
+**Note**: this is Cloudflare behavior, not an orchestrator bug. Claude Code should
+implement automatic retry for subagent API calls (upstream issue).
+
 ### API key not recognized
 
 **Solutions**:
