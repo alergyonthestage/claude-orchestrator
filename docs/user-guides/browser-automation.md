@@ -153,7 +153,7 @@ If you run multiple projects with browser automation simultaneously, each needs 
 1. At `cco start`, the CLI scans running containers for claimed browser ports
 2. If your configured `cdp_port` is already taken, it auto-assigns the next free port (9222 → 9223 → 9224...)
 3. A warning is displayed with the effective port
-4. The effective port is saved to `projects/<name>/.browser-port`
+4. The effective port is saved to `projects/<name>/.managed/.browser-port`
 
 ### Launching Chrome for a Specific Project
 
@@ -183,9 +183,9 @@ cco chrome start --port 9223
 
 When `browser.enabled: true` is set:
 
-1. **`cco start`** generates `browser-mcp.json` in the project directory with the chrome-devtools-mcp configuration
-2. The file is mounted into the container as `/workspace/browser-mcp.json`
-3. **`entrypoint.sh`** merges the browser MCP config into Claude Code's settings (third MCP merge, after global and project MCP)
+1. **`cco start`** generates `.managed/browser.json` in the project directory with the chrome-devtools-mcp configuration
+2. The `.managed/` directory is mounted into the container as `/workspace/.managed/` (read-only)
+3. **`entrypoint.sh`** merges all `*.json` files in `.managed/` into Claude Code's settings (after global and project MCP)
 4. A **socat proxy** starts inside the container, forwarding `localhost:<port>` to `host.docker.internal:<port>` — this solves Chrome 145+'s Host header validation
 5. Claude Code loads the MCP server and browser tools become available
 
@@ -193,8 +193,8 @@ When `browser.enabled: true` is set:
 
 | File | Location | Purpose |
 |------|----------|---------|
-| `browser-mcp.json` | `projects/<name>/browser-mcp.json` | MCP server config (auto-generated, gitignored) |
-| `.browser-port` | `projects/<name>/.browser-port` | Effective runtime port (auto-generated, gitignored) |
+| `browser.json` | `projects/<name>/.managed/browser.json` | MCP server config (auto-generated, gitignored) |
+| `.browser-port` | `projects/<name>/.managed/.browser-port` | Effective runtime port (auto-generated, gitignored) |
 
 ### Privacy
 
@@ -256,7 +256,7 @@ Options:
 
 **Port resolution priority**:
 1. `--port <n>` — explicit flag
-2. `--project <name>` → `projects/<name>/.browser-port` (effective runtime port)
+2. `--project <name>` → `projects/<name>/.managed/.browser-port` (effective runtime port)
 3. `--project <name>` → `project.yml` `browser.cdp_port`
 4. Default: `9222`
 
@@ -285,7 +285,7 @@ Full CLI reference: [cli.md](../reference/cli.md#37-cco-chrome-startstopstatus)
 3. Verify the port matches:
    ```bash
    # Check which port the container expects
-   cat projects/my-project/.browser-port
+   cat projects/my-project/.managed/.browser-port
 
    # Start Chrome on that port
    cco chrome start --project my-project

@@ -44,7 +44,7 @@ Port resolution priority:
 EOF
 }
 
-# Resolve port: --port flag > .browser-port file > project.yml > default 9222
+# Resolve port: --port flag > .managed/.browser-port file > project.yml > default 9222
 _chrome_resolve_port() {
     local opt_port="" opt_project=""
     while [[ $# -gt 0 ]]; do

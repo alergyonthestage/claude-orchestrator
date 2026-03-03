@@ -274,7 +274,7 @@ For project-specific packages, use `projects/<name>/mcp-packages.txt`.
 2. If not running, start it: `cco chrome start`
 3. Verify the port matches:
    ```bash
-   cat projects/my-project/.browser-port
+   cat projects/my-project/.managed/.browser-port
    cco chrome start --project my-project
    ```
 4. On Linux, verify that `host.docker.internal` resolves inside the container

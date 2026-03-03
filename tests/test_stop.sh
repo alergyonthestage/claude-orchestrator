@@ -68,6 +68,32 @@ test_stop_all_stops_each_cc_container() {
     assert_file_contains "$DOCKER_CALL_LOG" "stop cc-proj-b"
 }
 
+test_stop_all_removes_managed_files_for_all_projects() {
+    # cco stop (no args) cleans .managed/ files for all projects
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local mock_bin="$tmpdir/bin"
+    _mock_docker_with_containers "$mock_bin" "cc-proj-a" "cc-proj-b"
+    setup_mocks "$mock_bin"
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "proj-a" "$(minimal_project_yml proj-a)"
+    create_project "$tmpdir" "proj-b" "$(minimal_project_yml proj-b)"
+
+    # Plant stale managed files in both projects
+    mkdir -p "$CCO_PROJECTS_DIR/proj-a/.managed" "$CCO_PROJECTS_DIR/proj-b/.managed"
+    echo '{}' > "$CCO_PROJECTS_DIR/proj-a/.managed/browser.json"
+    echo "9222" > "$CCO_PROJECTS_DIR/proj-a/.managed/.browser-port"
+    echo '{}' > "$CCO_PROJECTS_DIR/proj-b/.managed/browser.json"
+    echo "9223" > "$CCO_PROJECTS_DIR/proj-b/.managed/.browser-port"
+
+    run_cco stop
+
+    assert_file_not_exists "$CCO_PROJECTS_DIR/proj-a/.managed/browser.json"
+    assert_file_not_exists "$CCO_PROJECTS_DIR/proj-a/.managed/.browser-port"
+    assert_file_not_exists "$CCO_PROJECTS_DIR/proj-b/.managed/browser.json"
+    assert_file_not_exists "$CCO_PROJECTS_DIR/proj-b/.managed/.browser-port"
+}
+
 test_stop_all_no_containers_reports_none() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     local mock_bin="$tmpdir/bin"

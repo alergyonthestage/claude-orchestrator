@@ -106,23 +106,17 @@ Improved tmux configuration for clipboard and selection:
 
 ## Known Bugs
 
-### #B1 Browser MCP loaded when `browser.enabled: false`
+### #B1 Browser MCP loaded when `browser.enabled: false` ✓ FIXED
 
-**Severity**: Medium — causes unintended MCP server availability and wasted resources.
+**Fixed in**: `refactor/managed-integrations/convention`
 
-**Symptoms**: `chrome-devtools` MCP server appears in sessions where `browser.enabled: false` in `project.yml`. The process `chrome-devtools-mcp` runs even though the project did not request it.
+**Root causes fixed**:
 
-**Root cause**: Two compounding issues:
+1. **Stale files on host**: `cmd-start.sh` now explicitly `rm -f .managed/browser.json .managed/.browser-port` when `browser_enabled != "true"`. Files moved to `.managed/` (gitignored).
 
-1. **Stale `browser-mcp.json` on host** (`cmd-start.sh`): When `browser.enabled: true`, `cco start` generates `projects/<name>/browser-mcp.json`. When the setting is later changed to `false`, the file is **never cleaned up**. It remains in the project directory. Currently the compose file doesn't mount it when disabled, but the stale file is confusing and a latent risk.
+2. **Additive-only MCP merge**: `entrypoint.sh` now resets `mcpServers = {}` before each session, then re-merges from source files. The entrypoint uses a generic loop over `/workspace/.managed/*.json` — only present when browser is enabled, so disabling browser removes it cleanly.
 
-2. **Additive-only MCP merge in `claude.json`** (`entrypoint.sh`): `global/claude-state/claude.json` is shared across ALL projects (mounted as `~/.claude.json`). When project A (browser enabled) starts, the entrypoint merges `chrome-devtools` into this file. When project B (browser disabled) starts later, the entrypoint correctly skips the merge — but the entry from project A **persists** in the shared file. Claude Code reads `~/.claude.json` and starts the MCP server regardless.
-
-**Fix approach**:
-- **In `cmd-start.sh`**: When `browser_enabled != "true"`, explicitly `rm -f "$project_dir/browser-mcp.json" "$project_dir/.browser-port"` to clean up stale files.
-- **In `entrypoint.sh`**: Before merging MCP servers, **strip framework-managed keys** (currently just `chrome-devtools`) from `~/.claude.json`. Then re-add only what the current session needs via the existing merge logic. This ensures a clean slate per session while preserving user-added MCP servers.
-- **Add `.gitignore` entry**: `browser-mcp.json` and `.browser-port` should be in the root `.gitignore` pattern for `projects/`.
-- **Tests**: Add test case for the toggle scenario (enable → disable → verify clean state).
+3. **`.managed/` gitignored**: migration 003 adds `.managed/` to each project's `.gitignore`.
 
 ---
 
@@ -408,7 +402,7 @@ rag:
 **Alternative for power users**: Qdrant MCP with FastEmbed for local embedding — more capable but requires Qdrant instance (can run as sibling container via docker compose).
 
 **Key design points**:
-- Auto-generate RAG MCP config at `cco start` (same pattern as `browser-mcp.json` → `rag-mcp.json`)
+- Auto-generate RAG MCP config at `cco start` (same pattern as `.managed/browser.json` → `.managed/rag.json`)
 - Index on first session start; incremental updates on subsequent starts
 - Provider-agnostic: `rag.provider` selects which MCP server to configure; custom providers supported
 - Respect `.gitignore` and `rag.exclude` patterns

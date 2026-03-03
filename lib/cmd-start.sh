@@ -546,7 +546,7 @@ _resolve_browser_port() {
     done
 }
 
-# Generates browser-mcp.json with chrome-devtools-mcp configuration
+# Generates .managed/browser.json with chrome-devtools-mcp configuration
 _generate_browser_mcp() {
     local out_file="$1" mode="$2" cdp_port="$3" mcp_args="${4:-}"
 

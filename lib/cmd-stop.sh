@@ -41,5 +41,9 @@ cmd_stop() {
             docker stop "$name"
             ok "Stopped $name"
         done
+        # Clean managed runtime state for all projects (all sessions stopped)
+        for proj_dir in "$PROJECTS_DIR"/*/; do
+            rm -f "$proj_dir/.managed/browser.json" "$proj_dir/.managed/.browser-port"
+        done
     fi
 }

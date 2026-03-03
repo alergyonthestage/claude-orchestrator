@@ -347,7 +347,7 @@ Examples:
 
 **Port resolution priority**:
 1. `--port <n>` — explicit flag
-2. `--project <name>` → reads `projects/<name>/.browser-port` (effective runtime port)
+2. `--project <name>` → reads `projects/<name>/.managed/.browser-port` (effective runtime port)
 3. `--project <name>` → falls back to `projects/<name>/project.yml` `browser.cdp_port`
 4. Default: `9222`
 
