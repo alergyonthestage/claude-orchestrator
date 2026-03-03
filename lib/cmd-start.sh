@@ -207,9 +207,14 @@ EOF
 
     # ── Generate browser-mcp.json (if browser enabled) ─────────────────
     if [[ "$browser_enabled" == "true" ]]; then
-        _generate_browser_mcp "$project_dir/browser-mcp.json" \
-            "$browser_mode" "$browser_effective_port" "$browser_mcp_args"
-        echo "$browser_effective_port" > "$project_dir/.browser-port"
+        if ! $dry_run; then
+            _generate_browser_mcp "$project_dir/browser-mcp.json" \
+                "$browser_mode" "$browser_effective_port" "$browser_mcp_args"
+            echo "$browser_effective_port" > "$project_dir/.browser-port"
+        fi
+    else
+        # Clean up stale files from a previous session when browser was enabled
+        rm -f "$project_dir/browser-mcp.json" "$project_dir/.browser-port"
     fi
 
     # ── Generate docker-compose.yml ──────────────────────────────────
