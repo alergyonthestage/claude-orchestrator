@@ -1084,3 +1084,155 @@ YAML
     assert_file_not_contains "$compose" "docker.sock"
     assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.managed/browser.json"
 }
+
+# ── GitHub MCP managed integration ───────────────────────────────────
+
+test_github_enabled_generates_managed_json() {
+    # github.enabled: true → .managed/github.json generated
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+github:
+  enabled: true
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.managed/github.json"
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/.managed/github.json" "modelcontextprotocol/server-github"
+}
+
+test_github_enabled_uses_default_token_env() {
+    # github.enabled: true without token_env → uses GITHUB_TOKEN
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+github:
+  enabled: true
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/.managed/github.json" 'GITHUB_TOKEN'
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/.managed/github.json" '${GITHUB_TOKEN}'
+}
+
+test_github_enabled_custom_token_env() {
+    # github.token_env: GH_TOKEN → uses ${GH_TOKEN} in the generated config
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+github:
+  enabled: true
+  token_env: GH_TOKEN
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/.managed/github.json" '${GH_TOKEN}'
+}
+
+test_github_disabled_no_managed_json() {
+    # github.enabled: false → no .managed/github.json
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --dry-run
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.managed/github.json"
+}
+
+test_github_disabled_cleans_stale_managed_json() {
+    # github.enabled: false after previously enabled → removes stale .managed/github.json
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    mkdir -p "$CCO_PROJECTS_DIR/test-proj/.managed"
+    echo '{"mcpServers":{}}' > "$CCO_PROJECTS_DIR/test-proj/.managed/github.json"
+    run_cco start "test-proj" --dry-run
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.managed/github.json"
+}
+
+test_github_flag_enables_github_for_session() {
+    # --github enables GitHub MCP even when github.enabled: false in project.yml
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --github --dry-run
+    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.managed/github.json"
+}
+
+test_no_github_flag_disables_github_for_session() {
+    # --no-github disables GitHub MCP even when github.enabled: true in project.yml
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+github:
+  enabled: true
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --no-github --dry-run
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.managed/github.json"
+}
+
+test_github_enabled_mounts_managed_dir_in_compose() {
+    # github.enabled: true → .managed/ dir is mounted in compose
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+github:
+  enabled: true
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" ".managed"
+}

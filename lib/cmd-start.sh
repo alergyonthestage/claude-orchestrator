@@ -13,6 +13,7 @@ cmd_start() {
     local use_api_key=false
     local dry_run=false
     local opt_chrome=""      # "on" | "off" | "" (unset = read from project.yml)
+    local opt_github=""      # "on" | "off" | "" (unset = read from project.yml)
     local opt_docker=""      # "off" | "" (unset = read from project.yml)
     local extra_ports=()
     local extra_envs=()
@@ -22,9 +23,11 @@ cmd_start() {
             --teammate-mode) teammate_mode="$2"; shift 2 ;;
             --api-key) use_api_key=true; shift ;;
             --dry-run) dry_run=true; shift ;;
-            --chrome)    opt_chrome="on";  shift ;;
-            --no-chrome) opt_chrome="off"; shift ;;
-            --no-docker) opt_docker="off"; shift ;;
+            --chrome)     opt_chrome="on";  shift ;;
+            --no-chrome)  opt_chrome="off"; shift ;;
+            --github)     opt_github="on";  shift ;;
+            --no-github)  opt_github="off"; shift ;;
+            --no-docker)  opt_docker="off"; shift ;;
             --port) extra_ports+=("$2"); shift 2 ;;
             --env) extra_envs+=("$2"); shift 2 ;;
             --help)
@@ -36,13 +39,15 @@ Options:
   --api-key            Use ANTHROPIC_API_KEY instead of OAuth
   --chrome             Enable browser automation for this session only
   --no-chrome          Disable browser automation for this session only
+  --github             Enable GitHub MCP for this session only
+  --no-github          Disable GitHub MCP for this session only
   --no-docker          Disable Docker socket mount for this session only
   --dry-run            Show the generated docker-compose without running
   --port <p>           Add extra port mapping (repeatable)
   --env <K=V>          Add extra environment variable (repeatable)
 
-Session flags (--chrome, --no-chrome, --no-docker) override project.yml for
-one session only. To change the default, edit project.yml instead.
+Session flags (--chrome, --no-chrome, --github, --no-github, --no-docker) override
+project.yml for one session only. To change the default, edit project.yml instead.
 EOF
                 return 0
                 ;;
@@ -124,6 +129,18 @@ EOF
     if [[ "$browser_enabled" == "true" && "$browser_mode" == "host" ]]; then
         browser_effective_port=$(_resolve_browser_port "$browser_cdp_port" "$project_name")
     fi
+
+    # ── GitHub config ─────────────────────────────────────────────────────
+    local github_enabled github_token_env
+    github_enabled=$(yml_get "$project_yml" "github.enabled")
+    [[ "$github_enabled" != "true" ]] && github_enabled="false"
+
+    github_token_env=$(yml_get "$project_yml" "github.token_env")
+    [[ -z "$github_token_env" ]] && github_token_env="GITHUB_TOKEN"
+
+    # Session-level override: --github / --no-github take priority over project.yml
+    [[ "$opt_github" == "on"  ]] && github_enabled="true"
+    [[ "$opt_github" == "off" ]] && github_enabled="false"
 
     # Parse packs early (needed both for compose and packs.md generation)
     local pack_names
@@ -216,7 +233,7 @@ EOF
         chmod 600 "$global_creds"
     fi
 
-    # ── Generate .managed/ integrations (browser if enabled) ────────────
+    # ── Generate .managed/ integrations ──────────────────────────────────
     if [[ "$browser_enabled" == "true" ]]; then
         mkdir -p "$project_dir/.managed"
         _generate_browser_mcp "$project_dir/.managed/browser.json" \
@@ -225,6 +242,13 @@ EOF
     else
         # Clean up stale managed files from a previous session
         rm -f "$project_dir/.managed/browser.json" "$project_dir/.managed/.browser-port"
+    fi
+
+    if [[ "$github_enabled" == "true" ]]; then
+        mkdir -p "$project_dir/.managed"
+        _generate_github_mcp "$project_dir/.managed/github.json" "$github_token_env"
+    else
+        rm -f "$project_dir/.managed/github.json"
     fi
 
     # ── Generate docker-compose.yml ──────────────────────────────────
@@ -465,6 +489,12 @@ YAML
             echo "---"
             cat "$project_dir/.managed/browser.json"
         fi
+        if [[ "$github_enabled" == "true" && -f "$project_dir/.managed/github.json" ]]; then
+            echo ""
+            info "Generated .managed/github.json:"
+            echo "---"
+            cat "$project_dir/.managed/github.json"
+        fi
         [[ -f "$packs_md" ]] && { echo ""; info "Generated .claude/packs.md:"; echo "---"; cat "$packs_md"; }
         return 0
     fi
@@ -590,4 +620,24 @@ _generate_browser_mcp() {
     }
   }
 }\n' "$browser_url" "$extra_args" > "$out_file"
+}
+
+# Generates .managed/github.json with github MCP server configuration
+# $1 = output file path
+# $2 = token_env: name of the env var holding the GitHub token (e.g. GITHUB_TOKEN)
+_generate_github_mcp() {
+    local out_file="$1" token_env="$2"
+
+    printf '{
+  "mcpServers": {
+    "github": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_TOKEN": "${%s}"
+      }
+    }
+  }
+}\n' "$token_env" > "$out_file"
 }

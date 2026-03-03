@@ -127,3 +127,42 @@ test_browser_stop_removes_managed_files() {
     assert_file_not_exists "$CCO_PROJECTS_DIR/my-proj/.managed/browser.json"
     assert_file_not_exists "$CCO_PROJECTS_DIR/my-proj/.managed/.browser-port"
 }
+
+test_github_stop_removes_managed_json() {
+    # cco stop <project> removes .managed/github.json
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local mock_bin="$tmpdir/bin"
+    _mock_docker_with_containers "$mock_bin" "cc-my-proj"
+    setup_mocks "$mock_bin"
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "my-proj" "$(minimal_project_yml my-proj)"
+
+    mkdir -p "$CCO_PROJECTS_DIR/my-proj/.managed"
+    echo '{"mcpServers":{}}' > "$CCO_PROJECTS_DIR/my-proj/.managed/github.json"
+
+    run_cco stop "my-proj"
+
+    assert_file_not_exists "$CCO_PROJECTS_DIR/my-proj/.managed/github.json"
+}
+
+test_stop_all_removes_github_managed_files() {
+    # cco stop (no args) removes .managed/github.json for all projects
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local mock_bin="$tmpdir/bin"
+    _mock_docker_with_containers "$mock_bin" "cc-proj-a" "cc-proj-b"
+    setup_mocks "$mock_bin"
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "proj-a" "$(minimal_project_yml proj-a)"
+    create_project "$tmpdir" "proj-b" "$(minimal_project_yml proj-b)"
+
+    mkdir -p "$CCO_PROJECTS_DIR/proj-a/.managed" "$CCO_PROJECTS_DIR/proj-b/.managed"
+    echo '{"mcpServers":{}}' > "$CCO_PROJECTS_DIR/proj-a/.managed/github.json"
+    echo '{"mcpServers":{}}' > "$CCO_PROJECTS_DIR/proj-b/.managed/github.json"
+
+    run_cco stop
+
+    assert_file_not_exists "$CCO_PROJECTS_DIR/proj-a/.managed/github.json"
+    assert_file_not_exists "$CCO_PROJECTS_DIR/proj-b/.managed/github.json"
+}
