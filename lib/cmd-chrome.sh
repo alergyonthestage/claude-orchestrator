@@ -38,7 +38,7 @@ Options:
 
 Port resolution priority:
   1. --port flag (explicit)
-  2. --project → .browser-port file (effective runtime port)
+  2. --project → .managed/.browser-port file (effective runtime port)
   3. --project → project.yml browser.cdp_port
   4. Default: 9222
 EOF
@@ -73,7 +73,7 @@ _chrome_resolve_port() {
                 warn "Container ${container_name} is not running. Port may be stale."
             fi
         fi
-        local runtime_file="$PROJECTS_DIR/$opt_project/.browser-port"
+        local runtime_file="$PROJECTS_DIR/$opt_project/.managed/.browser-port"
         if [[ -f "$runtime_file" ]]; then
             cat "$runtime_file"; return
         fi

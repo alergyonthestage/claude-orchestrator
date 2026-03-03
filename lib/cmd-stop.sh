@@ -28,8 +28,8 @@ cmd_stop() {
             warn "No running session for '$project'"
         fi
 
-        # Clean up browser runtime state
-        rm -f "$project_dir/.browser-port" "$project_dir/browser-mcp.json"
+        # Clean up managed integration runtime state
+        rm -f "$project_dir/.managed/browser.json" "$project_dir/.managed/.browser-port"
     else
         local containers
         containers=$(docker ps --filter "name=cc-" --format '{{.Names}}' 2>/dev/null)
