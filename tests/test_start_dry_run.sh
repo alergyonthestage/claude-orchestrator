@@ -667,7 +667,7 @@ test_dry_run_mcp_packages_not_mounted_when_missing() {
 # ── Browser MCP integration ────────────────────────────────────────
 
 test_browser_disabled_by_default() {
-    # No browser section → no extra_hosts, no browser-mcp.json mount
+    # No browser section → no extra_hosts, no .managed/ mount
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -675,8 +675,8 @@ test_browser_disabled_by_default() {
     run_cco start "test-proj" --dry-run
     local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
     assert_file_not_contains "$compose" "extra_hosts"
-    assert_file_not_contains "$compose" "browser-mcp.json"
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/browser-mcp.json"
+    assert_file_not_contains "$compose" ".managed"
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.managed/browser.json"
 }
 
 test_browser_host_mode_extra_hosts() {
@@ -703,7 +703,7 @@ YAML
 }
 
 test_browser_mcp_json_generated() {
-    # browser.enabled: true → browser-mcp.json created with correct content
+    # browser.enabled: true → .managed/browser.json created with correct content
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -722,14 +722,14 @@ repos:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    local mcp_file="$CCO_PROJECTS_DIR/test-proj/browser-mcp.json"
+    local mcp_file="$CCO_PROJECTS_DIR/test-proj/.managed/browser.json"
     assert_file_exists "$mcp_file"
     assert_file_contains "$mcp_file" "chrome-devtools-mcp"
     assert_file_contains "$mcp_file" "localhost:9222"
 }
 
 test_browser_mcp_mounted_in_compose() {
-    # browser.enabled: true → browser-mcp.json mounted read-only in compose
+    # browser.enabled: true → .managed/ dir mounted read-only in compose
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -749,7 +749,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" \
-        "./browser-mcp.json:/workspace/browser-mcp.json:ro"
+        "./.managed:/workspace/.managed:ro"
 }
 
 test_browser_custom_cdp_port() {
@@ -773,7 +773,7 @@ repos:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/browser-mcp.json" "localhost:9223"
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/.managed/browser.json" "localhost:9223"
 }
 
 test_browser_chrome_flag_override() {
@@ -785,12 +785,12 @@ test_browser_chrome_flag_override() {
     run_cco start "test-proj" --chrome --dry-run
     local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
     assert_file_contains "$compose" "host.docker.internal:host-gateway"
-    assert_file_contains "$compose" "browser-mcp.json:/workspace/browser-mcp.json:ro"
-    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/browser-mcp.json"
+    assert_file_contains "$compose" "./.managed:/workspace/.managed:ro"
+    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.managed/browser.json"
 }
 
 test_browser_disabled_no_mcp_file() {
-    # browser.enabled: false → no browser-mcp.json created
+    # browser.enabled: false → no .managed/browser.json created
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -809,7 +809,7 @@ repos:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/browser-mcp.json"
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.managed/browser.json"
 }
 
 test_browser_mcp_privacy_flags() {
@@ -832,7 +832,7 @@ repos:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    local mcp_file="$CCO_PROJECTS_DIR/test-proj/browser-mcp.json"
+    local mcp_file="$CCO_PROJECTS_DIR/test-proj/.managed/browser.json"
     assert_file_contains "$mcp_file" "--no-usage-statistics"
     assert_file_contains "$mcp_file" "--no-performance-crux"
 }
@@ -859,12 +859,12 @@ repos:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    local mcp_file="$CCO_PROJECTS_DIR/test-proj/browser-mcp.json"
+    local mcp_file="$CCO_PROJECTS_DIR/test-proj/.managed/browser.json"
     assert_file_contains "$mcp_file" "--slim"
 }
 
 test_browser_user_mcp_json_untouched() {
-    # User's mcp.json is not modified when browser is enabled
+    # User's mcp.json is not modified when browser is enabled (browser config goes to .managed/)
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -889,7 +889,7 @@ YAML
 }
 
 test_browser_port_written_to_file() {
-    # .browser-port is created with the effective port
+    # .managed/.browser-port is created with the effective port
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -909,7 +909,7 @@ repos:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    local port_file="$CCO_PROJECTS_DIR/test-proj/.browser-port"
+    local port_file="$CCO_PROJECTS_DIR/test-proj/.managed/.browser-port"
     assert_file_exists "$port_file"
     assert_equals "9225" "$(cat "$port_file")"
 }
@@ -935,7 +935,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     assert_output_contains "Browser: host mode (CDP proxy"
-    assert_output_contains "browser-mcp.json"
+    assert_output_contains ".managed/browser.json"
 }
 
 test_browser_cdp_port_env_in_compose() {
@@ -970,4 +970,299 @@ test_browser_cdp_port_env_absent_when_disabled() {
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
     assert_file_not_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" "CDP_PORT"
+}
+
+# ── Session-level flag overrides ─────────────────────────────────────
+
+test_no_chrome_disables_browser_for_session() {
+    # --no-chrome disables browser even when browser.enabled: true in project.yml
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+browser:
+  enabled: true
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --no-chrome --dry-run
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    assert_file_not_contains "$compose" "extra_hosts"
+    assert_file_not_contains "$compose" ".managed"
+    assert_file_not_contains "$compose" "CDP_PORT"
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.managed/browser.json"
+}
+
+test_chrome_flag_not_needed_when_enabled_in_yml() {
+    # browser.enabled: true in project.yml → browser active WITHOUT --chrome flag
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+browser:
+  enabled: true
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run   # NO --chrome flag
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    assert_file_contains "$compose" "host.docker.internal:host-gateway"
+    assert_file_contains "$compose" "./.managed:/workspace/.managed:ro"
+    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.managed/browser.json"
+}
+
+test_no_docker_disables_socket_for_session() {
+    # --no-docker disables Docker socket even when docker.mount_socket: true (default)
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --no-docker --dry-run
+    assert_file_not_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" "docker.sock"
+}
+
+test_no_docker_overrides_explicit_true_in_yml() {
+    # --no-docker disables Docker socket even when docker.mount_socket: true in yml
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  mount_socket: true
+  ports: []
+  env: {}
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --no-docker --dry-run
+    assert_file_not_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" "docker.sock"
+}
+
+test_no_chrome_and_no_docker_combined() {
+    # --no-chrome --no-docker: both disabled for session
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+browser:
+  enabled: true
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --no-chrome --no-docker --dry-run
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    assert_file_not_contains "$compose" "extra_hosts"
+    assert_file_not_contains "$compose" "docker.sock"
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.managed/browser.json"
+}
+
+# ── GitHub MCP managed integration ───────────────────────────────────
+
+test_github_enabled_generates_managed_json() {
+    # github.enabled: true → .managed/github.json generated
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+github:
+  enabled: true
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.managed/github.json"
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/.managed/github.json" "modelcontextprotocol/server-github"
+}
+
+test_github_enabled_uses_default_token_env() {
+    # github.enabled: true without token_env → uses GITHUB_TOKEN
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+github:
+  enabled: true
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/.managed/github.json" 'GITHUB_TOKEN'
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/.managed/github.json" '${GITHUB_TOKEN}'
+}
+
+test_github_enabled_custom_token_env() {
+    # github.token_env: GH_TOKEN → uses ${GH_TOKEN} in the generated config
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+github:
+  enabled: true
+  token_env: GH_TOKEN
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/.managed/github.json" '${GH_TOKEN}'
+}
+
+test_github_disabled_no_managed_json() {
+    # github.enabled: false → no .managed/github.json
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --dry-run
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.managed/github.json"
+}
+
+test_github_disabled_cleans_stale_managed_json() {
+    # github.enabled: false after previously enabled → removes stale .managed/github.json
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    mkdir -p "$CCO_PROJECTS_DIR/test-proj/.managed"
+    echo '{"mcpServers":{}}' > "$CCO_PROJECTS_DIR/test-proj/.managed/github.json"
+    run_cco start "test-proj" --dry-run
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.managed/github.json"
+}
+
+test_github_flag_enables_github_for_session() {
+    # --github enables GitHub MCP even when github.enabled: false in project.yml
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --github --dry-run
+    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.managed/github.json"
+}
+
+test_no_github_flag_disables_github_for_session() {
+    # --no-github disables GitHub MCP even when github.enabled: true in project.yml
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+github:
+  enabled: true
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --no-github --dry-run
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.managed/github.json"
+}
+
+test_github_enabled_mounts_managed_dir_in_compose() {
+    # github.enabled: true → .managed/ dir is mounted in compose
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+github:
+  enabled: true
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" "./.managed:/workspace/.managed:ro"
+}
+
+test_browser_and_github_both_enabled_single_managed_mount() {
+    # When both browser and github are enabled, .managed/ appears exactly once in compose
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+browser:
+  enabled: true
+github:
+  enabled: true
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    local mount_count
+    mount_count=$(grep -c ".managed:/workspace/.managed:ro" "$compose" || true)
+    assert_equals "1" "$mount_count" ".managed mount must appear exactly once"
+    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.managed/browser.json"
+    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.managed/github.json"
 }

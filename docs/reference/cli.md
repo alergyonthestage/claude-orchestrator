@@ -129,14 +129,21 @@ Arguments:
 Options:
   --teammate-mode <m>  Override display mode: tmux | auto
   --api-key            Use ANTHROPIC_API_KEY instead of OAuth
-  --chrome             Enable browser automation for this session
+  --chrome             Enable browser automation for this session only
+  --no-chrome          Disable browser automation for this session only
+  --no-docker          Disable Docker socket mount for this session only
   --dry-run            Show the generated docker-compose without running
   --port <p>           Add extra port mapping (repeatable)
   --env <K=V>          Add extra environment variable (repeatable)
 
+Session flags override project.yml for one session only.
+To change the default, edit project.yml instead.
+
 Examples:
   cco start my-saas
-  cco start my-saas --chrome
+  cco start my-saas --chrome        # enable browser for this session
+  cco start my-saas --no-chrome     # disable browser for this session
+  cco start my-saas --no-docker     # disable Docker socket for this session
   cco start my-saas --teammate-mode auto
   cco start my-saas --port 9090:9090
   cco start my-saas --dry-run
@@ -347,7 +354,7 @@ Examples:
 
 **Port resolution priority**:
 1. `--port <n>` — explicit flag
-2. `--project <name>` → reads `projects/<name>/.browser-port` (effective runtime port)
+2. `--project <name>` → reads `projects/<name>/.managed/.browser-port` (effective runtime port)
 3. `--project <name>` → falls back to `projects/<name>/project.yml` `browser.cdp_port`
 4. Default: `9222`
 
