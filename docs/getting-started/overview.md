@@ -14,7 +14,7 @@ claude-orchestrator eliminates that friction. Each project is a self-contained e
 |---|---|
 | Every session, you re-explain the project to Claude | Per-project `CLAUDE.md` + knowledge packs: context is ready at startup |
 | Different rules and docs per project/client | Each project is isolated: its own repos, instructions, memory |
-| Your team configures Claude differently — no shared baseline | Commit `project.yml`: everyone gets the same environment |
+| Your team configures Claude differently — no shared baseline | Commit the project directory: everyone gets the same repos, instructions, rules, and agents |
 | Client docs and architecture specs scattered across sessions | Knowledge packs: define once, activate per project |
 | Claude modifying files across the wrong project | Docker isolation: Claude can only touch what's mounted |
 | `--dangerously-skip-permissions` feels risky on your machine | Safe in the container — Docker is the sandbox |

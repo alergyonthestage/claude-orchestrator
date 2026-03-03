@@ -49,22 +49,30 @@ For the complete reference, see [context-hierarchy.md](../reference/context-hier
 
 claude-orchestrator makes Claude Code environments reproducible and shareable across a team.
 
-A project is defined by two files:
+A project is a directory (`projects/<name>/`) containing:
 - `project.yml` — repos, ports, environment, packs to activate
 - `.claude/CLAUDE.md` — instructions, conventions, workflow
+- `.claude/rules/`, `.claude/agents/`, `.claude/skills/` — project-level tooling
+- `setup.sh`, `mcp-packages.txt` — runtime setup
 
-Commit these to a shared repository and every teammate runs `cco start <project>` to get the exact same environment: same repos mounted, same context loaded, same knowledge packs active.
+Commit this directory to a shared repository and every teammate runs `cco start <project>` to get the same environment: same repos mounted, same instructions, same rules and agents.
 
-**What's shared:**
+**What's shared (committable today):**
 - Project repositories and mount paths
 - `CLAUDE.md` (instructions, rules, workflow)
-- Knowledge packs (client docs, conventions, architecture)
+- Agents, skills, and rules at the project level
 - Port mappings and environment variables
 
-**What stays local:**
-- Claude authentication (OAuth or API key, per user)
-- Session memory (each user's `claude-state/` is their own)
-- User-level preferences (`~/.claude/settings.json`)
+**What stays local (never commit):**
+- `secrets.env` — credentials and tokens, per user
+- `claude-state/` — session memory and transcripts, per user
+
+**What requires separate sharing (coming soon):**
+- Knowledge packs — they live in `global/packs/` (user-level), outside the project directory. A dedicated `cco share` command for distributing packs and project templates across teams is planned.
+
+**What stays local (user preferences):**
+- Claude authentication (OAuth or API key)
+- `~/.claude/settings.json` — user-level preferences
 
 This makes claude-orchestrator useful not just as a personal productivity tool, but as a team-wide standard for how Claude interacts with your codebase.
 
