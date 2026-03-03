@@ -1,32 +1,45 @@
 # What is claude-orchestrator
 
-> Isolated Claude Code sessions in Docker, ready to use with a single command.
+> The shared Claude Code environment for your team and projects.
 
 ---
 
-## What is it
+## What it solves
 
-claude-orchestrator is a tool that manages Claude Code sessions inside Docker containers. Each session is automatically configured with:
+Working with Claude Code on real projects has a recurring friction: every new session, you re-explain the project. Every new teammate, they configure Claude differently. Every client switch, you manually reload context.
 
-- Project repositories mounted read-write
-- Complete context (instructions, rules, agents, skills)
-- Agent teams ready for collaborative work
-- Isolated memory per project
-
-A single command (`cco start my-app`) launches everything.
-
----
-
-## Why use it
+claude-orchestrator eliminates that friction. Each project is a self-contained environment — repos mounted, instructions loaded, documentation available — ready at startup, shareable across your team.
 
 | Problem | Solution |
-|----------|-----------|
-| Managing multiple projects with different configurations | Each project has its own `project.yml` with repos, ports, environment variables |
-| Context lost between sessions | Four-level hierarchy: managed, global, project, repository |
-| Complex agent teams to configure | Automatic configuration with tmux (or iTerm2) |
-| Unstructured workflow | Predefined phases (Analysis, Design, Implementation, Documentation) with manual transitions |
-| Shared memory between projects | Each project has its own isolated `claude-state/` directory |
-| Risk of damage to host filesystem | Docker provides complete isolation: `--dangerously-skip-permissions` is safe in the container |
+|---|---|
+| Every session, you re-explain the project to Claude | Per-project `CLAUDE.md` + knowledge packs: context is ready at startup |
+| Different rules and docs per project/client | Each project is isolated: its own repos, instructions, memory |
+| Your team configures Claude differently — no shared baseline | Commit `project.yml`: everyone gets the same environment |
+| Client docs and architecture specs scattered across sessions | Knowledge packs: define once, activate per project |
+| Claude modifying files across the wrong project | Docker isolation: Claude can only touch what's mounted |
+| `--dangerously-skip-permissions` feels risky on your machine | Safe in the container — Docker is the sandbox |
+
+---
+
+## Who is it for
+
+- **Developers** working on multiple projects or clients simultaneously
+- **Teams** who want a consistent, shared Claude Code environment
+- **Agencies** managing per-client context and documentation
+- **Anyone** who has ever re-explained their codebase to Claude at the start of a session
+
+---
+
+## What it is
+
+claude-orchestrator manages Claude Code sessions inside Docker containers. Each session is configured with:
+
+- Project repositories mounted read-write
+- Complete context (instructions, rules, agents, skills, knowledge packs)
+- Isolated memory per project
+- Optional agent teams for collaborative work
+
+A single command (`cco start my-app`) launches everything.
 
 ---
 

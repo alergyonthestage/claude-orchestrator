@@ -1,16 +1,24 @@
 # claude-orchestrator
 
-> Orchestrate Claude Code sessions in Docker.
+> The shared Claude Code environment for your team and projects.
 
-Isolated Claude Code sessions, preconfigured and ready to use — one command to get started.
+Per-project context and team sharing for Claude Code — powered by Docker. Every project has its own repos, instructions, and documentation ready at startup. Commit `project.yml` and your whole team gets the exact same environment.
 
 ## Why claude-orchestrator?
 
-- **Complete isolation** — Each project runs in a dedicated Docker container. No conflicts, no context leaks between projects. `--dangerously-skip-permissions` is safe because Docker is the sandbox.
-- **Automatic context** — Repos mounted, knowledge packs activated, CLAUDE.md generated. Claude starts already knowing everything about your project, without manual setup.
-- **Integrated agent teams** — tmux sessions with lead + teammates, ready to collaborate. One agent coordinates, others execute.
-- **Reusable knowledge packs** — Conventions, guidelines, domain documentation: defined once, activated per project. The source of truth stays in your repo.
-- **Isolated memory** — Each project has its own memory directory. Insights and history don't mix between different sessions.
+- **Per-project context** — Every project has its own repos, rules, documentation and workflow. Claude starts each session already knowing everything — no re-explaining.
+- **Shareable environments** — Commit `project.yml`. Everyone on your team gets the exact same Claude setup: same repos, same conventions, same knowledge. One source of truth.
+- **Reusable knowledge packs** — Client docs, architecture overviews, coding conventions: define once, activate across projects. No duplication, no drift.
+- **Isolated memory** — Each project has its own memory. Insights from one client don't leak into another. Sessions are fully independent.
+- **Safe by default** — Docker isolates Claude from the rest of your system. `--dangerously-skip-permissions` is safe inside the container.
+
+## Use cases
+
+**Multi-project developer** — You work on 5+ projects with different stacks and conventions. Each has its own `project.yml`: repos mounted, rules loaded, ports mapped. `cco start client-a` vs `cco start client-b` — completely separate contexts, zero overlap.
+
+**Team of developers** — Commit `project.yml` to your shared repo. Every teammate runs `cco start` and gets the same environment: same repos, same `CLAUDE.md`, same knowledge packs. No "works on my machine" for AI context.
+
+**Agency / consultant work** — Each client is a project. Client documentation lives in a knowledge pack. Claude knows the client's codebase, conventions, and architecture from session one. Switch clients by switching projects.
 
 ## How it works
 
@@ -46,7 +54,7 @@ Setup: git clone → cco init → cco project create → cco start
 git clone https://github.com/user/claude-orchestrator.git
 cd claude-orchestrator
 
-# 2. Initialize (copy defaults, build Docker image)
+# 2. Initialize (copy defaults, build Docker image — ~10 minutes)
 bin/cco init
 
 # 3. Create a project
@@ -60,10 +68,11 @@ bin/cco start my-app
 
 | Feature | Description |
 |---|---|
-| **Monolithic CLI** | A single Bash script (`bin/cco`) — no dependencies beyond Bash 4+, Docker, and standard Unix tools |
-| **Four-tier hierarchy** | Managed → Global → Project → Repo, mapped natively onto Claude Code's settings resolution |
-| **Docker-from-Docker** | The Docker socket is mounted into the container. Claude can run `docker compose` to create sibling containers (databases, services) |
 | **Knowledge packs** | Reusable documents (conventions, overviews, guidelines) defined in `global/packs/` and activated per project in `project.yml` |
+| **Four-tier hierarchy** | Managed → Global → Project → Repo, mapped natively onto Claude Code's settings resolution |
+| **Shareable project config** | `project.yml` defines repos, ports, packs, and environment — commit it to share the exact setup with your team |
+| **Monolithic CLI** | A single Bash script (`bin/cco`) — no dependencies beyond Bash 4+, Docker, and standard Unix tools |
+| **Docker-from-Docker** | The Docker socket is mounted into the container. Claude can run `docker compose` to create sibling containers (databases, services) |
 | **Agent teams** | tmux sessions with lead + teammates. Optional iTerm2 support on macOS |
 | **Flexible authentication** | OAuth (credentials from macOS Keychain), API key via env var, GitHub token for `gh` CLI |
 | **Extensible environment** | Setup scripts, extra packages, and custom images configurable per project |

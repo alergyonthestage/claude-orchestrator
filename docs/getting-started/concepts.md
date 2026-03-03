@@ -4,6 +4,30 @@
 
 ---
 
+## Knowledge packs
+
+Knowledge packs are reusable collections of documentation — client overviews, architecture specs, coding conventions, runbooks — that can be activated across multiple projects without copying files.
+
+A pack is defined in `global/packs/<name>/pack.yml` with a reference to a documentation directory on the host. At session startup, `cco start` mounts the directory read-only and generates a list of available files. Claude reads them on-demand when relevant to the current task. Packs can also contribute skills, agents, and rules at the project level.
+
+Activation in `project.yml`:
+
+```yaml
+packs:
+  - my-client-knowledge
+```
+
+Knowledge packs are most valuable when:
+- You work with the same client or codebase across multiple projects
+- Your team shares architecture docs or conventions
+- You want to activate documentation selectively per project without duplicating files
+
+A typical pack might include: API overview, data model, coding conventions, deployment runbook — all mounted read-only, available to Claude on demand.
+
+Learn more: [project-setup.md](../user-guides/project-setup.md) (Configure a Pack section).
+
+---
+
 ## Context hierarchy
 
 claude-orchestrator organizes configuration across four levels, from highest to lowest priority:
@@ -21,20 +45,38 @@ For the complete reference, see [context-hierarchy.md](../reference/context-hier
 
 ---
 
-## Knowledge packs
+## Team sharing
 
-Knowledge packs are reusable collections of documentation (conventions, business overview, guidelines) that can be activated across multiple projects without copying files.
+claude-orchestrator makes Claude Code environments reproducible and shareable across a team.
 
-A pack is defined in `global/packs/<name>/pack.yml` with a reference to a documentation directory on the host. At session startup, `cco start` mounts the directory read-only and generates a list of available files. Claude reads them on-demand when relevant to the current task. Packs can also contribute skills, agents, and rules at the project level.
+A project is defined by two files:
+- `project.yml` — repos, ports, environment, packs to activate
+- `.claude/CLAUDE.md` — instructions, conventions, workflow
 
-Activation in `project.yml`:
+Commit these to a shared repository and every teammate runs `cco start <project>` to get the exact same environment: same repos mounted, same context loaded, same knowledge packs active.
 
-```yaml
-packs:
-  - my-client-knowledge
-```
+**What's shared:**
+- Project repositories and mount paths
+- `CLAUDE.md` (instructions, rules, workflow)
+- Knowledge packs (client docs, conventions, architecture)
+- Port mappings and environment variables
 
-Learn more: [project-setup.md](../user-guides/project-setup.md) (Configure a Pack section).
+**What stays local:**
+- Claude authentication (OAuth or API key, per user)
+- Session memory (each user's `claude-state/` is their own)
+- User-level preferences (`~/.claude/settings.json`)
+
+This makes claude-orchestrator useful not just as a personal productivity tool, but as a team-wide standard for how Claude interacts with your codebase.
+
+---
+
+## Auto memory
+
+Each project has its own isolated memory directory (`projects/<name>/claude-state/memory/`). Claude Code automatically saves notes and insights during sessions and reloads them in subsequent sessions.
+
+The isolation ensures that information from one project doesn't "leak" into another. The `claude-state/` directory also contains session transcripts, necessary for the `/resume` command that allows you to resume a previous session even after a Docker image rebuild.
+
+Learn more: [context-hierarchy.md](../reference/context-hierarchy.md) (Auto Memory section).
 
 ---
 
@@ -82,16 +124,6 @@ browser:
 Then launch Chrome with `cco chrome start` and start your session. Claude gains access to browser tools (navigate, click, fill, screenshot, and more) via the Chrome DevTools Protocol.
 
 Learn more: [browser-automation.md](../user-guides/browser-automation.md).
-
----
-
-## Auto memory
-
-Each project has its own isolated memory directory (`projects/<name>/claude-state/memory/`). Claude Code automatically saves notes and insights during sessions and reloads them in subsequent sessions.
-
-The isolation ensures that information from one project doesn't "leak" into another. The `claude-state/` directory also contains session transcripts, necessary for the `/resume` command that allows you to resume a previous session even after a Docker image rebuild.
-
-Learn more: [context-hierarchy.md](../reference/context-hierarchy.md) (Auto Memory section).
 
 ---
 
