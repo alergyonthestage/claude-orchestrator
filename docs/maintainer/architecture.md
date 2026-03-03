@@ -549,7 +549,41 @@ Claude Code startup in /workspace:
 
 ---
 
-## 6. Limitations and Trade-offs
+## 6. ADR: Managed Integrations — `.managed/` Convention
+
+**Date**: 2026-03-03
+**Status**: Accepted
+
+**Context**: claude-orchestrator provides integrations that the framework controls
+(Browser MCP, future: GitHub MCP, RAG). These integrations generate config files at
+runtime and were previously mixed into the project root alongside user files
+(`browser-mcp.json`, `.browser-port`). This created ambiguity about what is
+user-owned vs framework-managed.
+
+**Decision**: Framework-generated integration files are written to
+`projects/<name>/.managed/` and mounted read-only at `/workspace/.managed/` in the
+container. User files (`mcp.json`, `.claude/`, `project.yml`) remain at the project
+root. The entrypoint merges all `*.json` files in `/workspace/.managed/` into
+`~/.claude.json` via a generic loop — adding a new integration requires no entrypoint
+change.
+
+**Rationale**:
+- Clear visual separation: everything in `.managed/` is framework-owned
+- Users cannot accidentally edit managed config (`.managed/` is gitignored, mounted `:ro`)
+- New integrations follow a documented 8-step protocol without modifying existing code
+- The generic entrypoint loop means zero entrypoint changes per new integration
+
+**Consequences**:
+- `.managed/` is always gitignored (migration 003 adds it automatically)
+- `cco stop <project>` cleans up files in `.managed/` (not the directory itself)
+- `cco chrome` reads the effective port from `.managed/.browser-port`
+- Conflict warning in entrypoint if a managed server key overrides a user-configured one
+
+**See also**: [managed-integrations.md](./managed-integrations.md)
+
+---
+
+## 7. Limitations and Trade-offs
 
 | Limitation | Impact | Workaround |
 |------------|--------|------------|
