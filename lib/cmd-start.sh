@@ -627,6 +627,7 @@ _generate_browser_mcp() {
 # $2 = token_env: name of the env var holding the GitHub token (e.g. GITHUB_TOKEN)
 _generate_github_mcp() {
     local out_file="$1" token_env="$2"
+    [[ -z "$token_env" ]] && token_env="GITHUB_TOKEN"
 
     printf '{
   "mcpServers": {

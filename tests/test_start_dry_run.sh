@@ -1234,5 +1234,35 @@ repos:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" ".managed"
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" "./.managed:/workspace/.managed:ro"
+}
+
+test_browser_and_github_both_enabled_single_managed_mount() {
+    # When both browser and github are enabled, .managed/ appears exactly once in compose
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+browser:
+  enabled: true
+github:
+  enabled: true
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    local mount_count
+    mount_count=$(grep -c ".managed:/workspace/.managed:ro" "$compose" || true)
+    assert_equals "1" "$mount_count" ".managed mount must appear exactly once"
+    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.managed/browser.json"
+    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.managed/github.json"
 }
