@@ -54,7 +54,7 @@ Setup: git clone → cco init → cco project create → cco start
 git clone https://github.com/user/claude-orchestrator.git
 cd claude-orchestrator
 
-# 2. Initialize (copy defaults, build Docker image — ~10 min first run, ~30 sec with cache)
+# 2. Initialize (copy defaults, build Docker image)
 bin/cco init
 
 # 3. Create a project
