@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-02 (Sprint 4 complete, Sprint 9 config vault added).
+> Last updated: 2026-03-03 (bugfix #B1, RAG sprint added, declined claude-mem/claude-context).
 
 ---
 
@@ -104,11 +104,39 @@ Improved tmux configuration for clipboard and selection:
 
 ---
 
+## Known Bugs
+
+### #B1 Browser MCP loaded when `browser.enabled: false`
+
+**Severity**: Medium — causes unintended MCP server availability and wasted resources.
+
+**Symptoms**: `chrome-devtools` MCP server appears in sessions where `browser.enabled: false` in `project.yml`. The process `chrome-devtools-mcp` runs even though the project did not request it.
+
+**Root cause**: Two compounding issues:
+
+1. **Stale `browser-mcp.json` on host** (`cmd-start.sh`): When `browser.enabled: true`, `cco start` generates `projects/<name>/browser-mcp.json`. When the setting is later changed to `false`, the file is **never cleaned up**. It remains in the project directory. Currently the compose file doesn't mount it when disabled, but the stale file is confusing and a latent risk.
+
+2. **Additive-only MCP merge in `claude.json`** (`entrypoint.sh`): `global/claude-state/claude.json` is shared across ALL projects (mounted as `~/.claude.json`). When project A (browser enabled) starts, the entrypoint merges `chrome-devtools` into this file. When project B (browser disabled) starts later, the entrypoint correctly skips the merge — but the entry from project A **persists** in the shared file. Claude Code reads `~/.claude.json` and starts the MCP server regardless.
+
+**Fix approach**:
+- **In `cmd-start.sh`**: When `browser_enabled != "true"`, explicitly `rm -f "$project_dir/browser-mcp.json" "$project_dir/.browser-port"` to clean up stale files.
+- **In `entrypoint.sh`**: Before merging MCP servers, **strip framework-managed keys** (currently just `chrome-devtools`) from `~/.claude.json`. Then re-add only what the current session needs via the existing merge logic. This ensures a clean slate per session while preserving user-added MCP servers.
+- **Add `.gitignore` entry**: `browser-mcp.json` and `.browser-port` should be in the root `.gitignore` pattern for `projects/`.
+- **Tests**: Add test case for the toggle scenario (enable → disable → verify clean state).
+
+---
+
 ## Implementation Order
 
 Features are prioritized by impact for third-party users adopting claude-orchestrator. Each sprint can be implemented independently.
 
 ```
+Bugfix (pre-sprint)
+┌──────────────────────┐
+│ #B1 Browser MCP      │
+│     leak fix         │
+└──────────────────────┘
+
 Sprint 4 (frontend)
 ┌──────────────────────┐
 │ #4 Browser MCP       │
@@ -132,6 +160,11 @@ Sprint 8 (polish)              Sprint 9 (distribuzione)
 │ #10 cco project edit │       │ #11 Config Vault     │
 └──────────────────────┘       │ #12 Sharing/Import   │
                                └──────────────────────┘
+Sprint 10 (intelligence)
+┌──────────────────────┐
+│ #13 Project RAG      │
+│     (default MCP)    │
+└──────────────────────┘
 ```
 
 ---
@@ -339,6 +372,65 @@ my-team-config/
 
 ---
 
+### Sprint 10 — Project RAG
+
+Integrated semantic search over project knowledge, providing Claude with relevant context from large codebases and documentation without consuming the full context window.
+
+#### #13 Default RAG MCP Integration
+
+Provide a built-in, opt-in RAG system that indexes project files and serves relevant context to Claude via MCP. Users can already add any RAG MCP server manually (via `mcp-packages.txt` or `mcp.json`), but a default integration adds significant value:
+- Lowers the barrier (no research/configuration needed)
+- Tested, integrated out-of-the-box experience
+- Differentiator for claude-orchestrator adoption
+- User can override with their own preferred MCP server
+
+**Activation** (same pattern as browser):
+```yaml
+# project.yml
+rag:
+  enabled: false          # true to activate project RAG
+  provider: local-rag     # default provider (can be overridden)
+  paths: []               # directories to index (default: all repos)
+  exclude: []             # glob patterns to exclude from indexing
+```
+
+**Provider options evaluated**:
+
+| Provider | Storage | Local | API cost | Code-specific | Complexity |
+|---|---|---|---|---|---|
+| **mcp-local-rag** (LanceDB) | File-based | 100% | None | No | Low |
+| **Qdrant MCP** (official) | Qdrant | Yes | None (FastEmbed) | No | Medium |
+| **RagCode MCP** (Qdrant+Ollama) | Qdrant+Ollama | 100% | None | Yes (AST) | High (~8GB) |
+| claude-context (Zilliz) | Zilliz Cloud | No | OpenAI | Yes | Medium |
+
+**Recommended default provider**: `mcp-local-rag` — zero external dependencies, file-based LanceDB (no server process), ~90MB embedding model download, single `npx` command. Good balance of simplicity and capability.
+
+**Alternative for power users**: Qdrant MCP with FastEmbed for local embedding — more capable but requires Qdrant instance (can run as sibling container via docker compose).
+
+**Key design points**:
+- Auto-generate RAG MCP config at `cco start` (same pattern as `browser-mcp.json` → `rag-mcp.json`)
+- Index on first session start; incremental updates on subsequent starts
+- Provider-agnostic: `rag.provider` selects which MCP server to configure; custom providers supported
+- Respect `.gitignore` and `rag.exclude` patterns
+- Indexing runs in background (non-blocking session start)
+- Storage in `projects/<name>/rag-data/` (gitignored, persistent across sessions)
+
+**Scope**:
+- `project.yml` schema extension (`rag:` section)
+- RAG MCP generation in `cmd-start.sh` (parallel to browser MCP)
+- Entrypoint merge support (third merge source after global + browser)
+- Migration for existing projects
+- Documentation and user guide
+- Test coverage for RAG enable/disable/provider switching
+
+**Open questions**:
+- Should indexing happen at `cco start` time (host-side) or inside the container (entrypoint)?
+- Should we support a `cco rag reindex` command for manual re-indexing?
+- For Qdrant provider: auto-start Qdrant as sibling container, or require user to manage it?
+- Should the index be shared across projects that mount the same repos?
+
+---
+
 ## Long-term / Exploratory
 
 ### Remote sessions
@@ -362,3 +454,30 @@ Optional lightweight web dashboard for listing projects, starting/stopping sessi
 Proposal from review (§2 gap 3): hook to block `rm -rf /`, `git push --force`, access outside `/workspace`.
 
 **Decision**: Do not implement. Docker is the sandbox (ADR-1). The container operates with limited mount points. Specific commands to block can be added case-by-case in the future if a concrete need emerges.
+
+### claude-mem integration
+
+**Evaluated**: 2026-03-03. [github.com/thedotmack/claude-mem](https://github.com/thedotmack/claude-mem) — automatic persistent memory for Claude Code via SQLite + ChromaDB, with AI-powered compression and progressive disclosure.
+
+**Decision**: Do not integrate. Reasons:
+- **Heavy dependencies**: Requires Bun, Python (for ChromaDB), SQLite, Node.js — too many runtimes inside an already complex container
+- **Overhead per tool call**: Every tool use triggers a hook (timeout up to 120s). With agent teams in tmux, the slowdown multiplies
+- **Hidden API costs**: AI compression consumes Anthropic tokens every session, even when the user doesn't search memory
+- **Architecture mismatch**: Uses Claude Code's plugin system, not the lifecycle hooks standard. Integration with cco's entrypoint would be fragile
+- **License**: AGPL-3.0 (restrictive for commercial use); `ragtime/` directory uses PolyForm Noncommercial
+- **Overlap**: claude-orchestrator already provides per-project auto memory isolation (`claude-state/memory/`) and `MEMORY.md` auto-loaded by Claude Code. The native system covers most use cases adequately
+- **Value/complexity ratio**: High complexity for incremental benefit over the native memory system
+
+Users who want claude-mem can install it independently as a Claude Code plugin — it doesn't require framework integration.
+
+### claude-context (Zilliz) as default RAG
+
+**Evaluated**: 2026-03-03. [github.com/zilliztech/claude-context](https://github.com/zilliztech/claude-context) — semantic code search via Zilliz Cloud (managed Milvus) with hybrid BM25 + dense vector retrieval.
+
+**Decision**: Do not use as default RAG provider. Reasons:
+- **Cloud dependency**: Requires Zilliz Cloud — cannot function offline or without external service
+- **Requires OpenAI API key**: Additional cost for embeddings (unless using alternative providers)
+- **Privacy concern**: Source code is sent to third-party cloud services (Zilliz + OpenAI) — unacceptable for many commercial/proprietary projects
+- **Vendor lock-in**: Strongly tied to Zilliz/Milvus ecosystem
+
+However, claude-context could be supported as an **optional provider** in the RAG system (Sprint 10, `rag.provider: claude-context`) for users who accept cloud-based indexing. The default provider should be fully local.
