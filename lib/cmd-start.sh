@@ -12,7 +12,8 @@ cmd_start() {
     local teammate_mode=""
     local use_api_key=false
     local dry_run=false
-    local opt_chrome=false
+    local opt_chrome=""      # "on" | "off" | "" (unset = read from project.yml)
+    local opt_docker=""      # "off" | "" (unset = read from project.yml)
     local extra_ports=()
     local extra_envs=()
 
@@ -21,7 +22,9 @@ cmd_start() {
             --teammate-mode) teammate_mode="$2"; shift 2 ;;
             --api-key) use_api_key=true; shift ;;
             --dry-run) dry_run=true; shift ;;
-            --chrome) opt_chrome=true; shift ;;
+            --chrome)    opt_chrome="on";  shift ;;
+            --no-chrome) opt_chrome="off"; shift ;;
+            --no-docker) opt_docker="off"; shift ;;
             --port) extra_ports+=("$2"); shift 2 ;;
             --env) extra_envs+=("$2"); shift 2 ;;
             --help)
@@ -31,10 +34,15 @@ Usage: cco start <project> [OPTIONS]
 Options:
   --teammate-mode <m>  Override display mode: tmux | auto
   --api-key            Use ANTHROPIC_API_KEY instead of OAuth
-  --chrome             Enable browser automation for this session
+  --chrome             Enable browser automation for this session only
+  --no-chrome          Disable browser automation for this session only
+  --no-docker          Disable Docker socket mount for this session only
   --dry-run            Show the generated docker-compose without running
   --port <p>           Add extra port mapping (repeatable)
   --env <K=V>          Add extra environment variable (repeatable)
+
+Session flags (--chrome, --no-chrome, --no-docker) override project.yml for
+one session only. To change the default, edit project.yml instead.
 EOF
                 return 0
                 ;;
@@ -85,6 +93,8 @@ EOF
     mount_socket=$(yml_get "$project_yml" "docker.mount_socket")
     # Default: true (backward compatible)
     [[ -z "$mount_socket" ]] && mount_socket="true"
+    # --no-docker: disable Docker socket for this session only
+    [[ "$opt_docker" == "off" ]] && mount_socket="false"
 
     local network
     network=$(yml_get "$project_yml" "docker.network")
@@ -100,8 +110,9 @@ EOF
     browser_mode=$(yml_get "$project_yml" "browser.mode")
     [[ -z "$browser_mode" ]] && browser_mode="host"
 
-    # --chrome flag overrides project.yml (forces enabled + host mode)
-    $opt_chrome && browser_enabled="true" && browser_mode="host"
+    # Session-level override: --chrome / --no-chrome take priority over project.yml
+    [[ "$opt_chrome" == "on"  ]] && browser_enabled="true" && browser_mode="host"
+    [[ "$opt_chrome" == "off" ]] && browser_enabled="false"
 
     browser_cdp_port=$(yml_get "$project_yml" "browser.cdp_port")
     [[ -z "$browser_cdp_port" ]] && browser_cdp_port="9222"

@@ -971,3 +971,116 @@ test_browser_cdp_port_env_absent_when_disabled() {
     run_cco start "test-proj" --dry-run
     assert_file_not_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" "CDP_PORT"
 }
+
+# ── Session-level flag overrides ─────────────────────────────────────
+
+test_no_chrome_disables_browser_for_session() {
+    # --no-chrome disables browser even when browser.enabled: true in project.yml
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+browser:
+  enabled: true
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --no-chrome --dry-run
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    assert_file_not_contains "$compose" "extra_hosts"
+    assert_file_not_contains "$compose" ".managed"
+    assert_file_not_contains "$compose" "CDP_PORT"
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.managed/browser.json"
+}
+
+test_chrome_flag_not_needed_when_enabled_in_yml() {
+    # browser.enabled: true in project.yml → browser active WITHOUT --chrome flag
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+browser:
+  enabled: true
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run   # NO --chrome flag
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    assert_file_contains "$compose" "host.docker.internal:host-gateway"
+    assert_file_contains "$compose" "./.managed:/workspace/.managed:ro"
+    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.managed/browser.json"
+}
+
+test_no_docker_disables_socket_for_session() {
+    # --no-docker disables Docker socket even when docker.mount_socket: true (default)
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --no-docker --dry-run
+    assert_file_not_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" "docker.sock"
+}
+
+test_no_docker_overrides_explicit_true_in_yml() {
+    # --no-docker disables Docker socket even when docker.mount_socket: true in yml
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  mount_socket: true
+  ports: []
+  env: {}
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --no-docker --dry-run
+    assert_file_not_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" "docker.sock"
+}
+
+test_no_chrome_and_no_docker_combined() {
+    # --no-chrome --no-docker: both disabled for session
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+browser:
+  enabled: true
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --no-chrome --no-docker --dry-run
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    assert_file_not_contains "$compose" "extra_hosts"
+    assert_file_not_contains "$compose" "docker.sock"
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.managed/browser.json"
+}
