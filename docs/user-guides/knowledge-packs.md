@@ -48,7 +48,7 @@ name: my-client-knowledge
 
 # ── Knowledge files ─────────────────────────────────────────────────
 knowledge:
-  source: ~/documents/my-client-docs   # directory on host (mounted read-only)
+  source: ~/documents/my-client-docs   # directory on host (files copied at startup)
   files:
     - path: backend-coding-conventions.md
       description: "Read when writing backend code, APIs, or DB logic"
@@ -77,7 +77,7 @@ The `knowledge` section is the heart of the pack: it allows you to inject docume
 
 ### source
 
-The `source` field specifies a directory on the host that contains documentation files. It is mounted read-only in the container at `/workspace/.packs/<pack-name>/`.
+The `source` field specifies a directory on the host that contains documentation files. At `cco start`, the listed files are copied into the container at `/workspace/.claude/packs/<pack-name>/`.
 
 ```yaml
 knowledge:
@@ -164,7 +164,7 @@ packs:
   - team-conventions
 ```
 
-Packs are processed at each `cco start`: resources are copied and knowledge is mounted automatically.
+Packs are processed at each `cco start`: all resources (knowledge files, skills, agents, rules) are copied automatically.
 
 ### Precedence in case of conflicts
 
@@ -228,7 +228,7 @@ Knowledge pack injection is completely automatic and requires no changes to `CLA
 The process happens in two phases:
 
 **1. At `cco start` time:**
-- The `knowledge.source` directory is mounted read-only to `/workspace/.packs/<name>/`
+- Knowledge files listed in `knowledge.files` are copied from `knowledge.source` to `/workspace/.claude/packs/<name>/`
 - The `.claude/packs.md` file is generated with the list of files and their descriptions
 - Skills, agents, and rules are copied to the project's `.claude/` directory
 - A `.pack-manifest` file tracks copied files for cleanup on the next startup

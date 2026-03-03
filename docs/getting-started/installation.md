@@ -1,6 +1,6 @@
 # Installation and Quick Start
 
-> From zero to working session in 5 minutes.
+> From zero to working session in ~15 minutes (Docker image build takes ~10 minutes on first run).
 
 ---
 

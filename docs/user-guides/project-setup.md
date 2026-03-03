@@ -194,13 +194,13 @@ PostgreSQL reachable as `postgres:5432` on the Docker network.
 - Test: `npm run test`
 
 ## Infrastructure
-Docker network: `cc-my-saas`
+Docker network: `cc-<project-name>` (matches the `name:` field in your `project.yml`)
 For infrastructure docker-compose files, use:
 \`\`\`yaml
 networks:
   default:
     external: true
-    name: cc-my-saas
+    name: cc-my-saas   # replace with your actual project name
 \`\`\`
 ```
 

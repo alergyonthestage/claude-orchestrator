@@ -14,7 +14,6 @@ When using agent teams, Claude Code can display teammates in three modes:
 |------|-------------------|--------------|----------|
 | **tmux** | Inside the container's tmux session | tmux (pre-installed in image) | Reliability, any terminal |
 | **iTerm2 (auto)** | Native iTerm2 panes on macOS | it2 CLI + Python API enabled | Polished UX, native feel |
-| **in-process** | All in one terminal (Shift+Up/Down to navigate) | Nothing | Simplicity, fallback |
 
 ---
 
@@ -274,50 +273,18 @@ With iTerm2 mode active:
 |---------|----------|
 | Panes don't appear | Verify `it2` is installed: `which it2` |
 | "Python API not enabled" | iTerm2 → Settings → General → Magic → Enable Python API |
-| Mode falls back to in-process | Check that iTerm2 is the active terminal (not VS Code terminal, Terminal.app, etc.) |
+| Mode falls back to tmux | Check that iTerm2 is the active terminal (not VS Code terminal, Terminal.app, etc.) |
 | Panes appear but are empty | Restart Claude Code; the teammate may have crashed |
 
 ---
 
-## 4. Option C: In-Process Mode (Fallback)
-
-### 4.1 How It Works
-
-All teammates run within the same terminal. You navigate between them using keyboard shortcuts.
-
-### 4.2 Setup
-
-```json
-{
-  "teammateMode": "in-process"
-}
-```
-
-### 4.3 Usage
-
-| Action | Key |
-|--------|-----|
-| Cycle through teammates | `Shift+Up` / `Shift+Down` |
-| Enter a teammate's session | `Enter` (when selected) |
-| Interrupt teammate | `Escape` |
-| Toggle task list | `Ctrl+T` |
-| Message a teammate | Select with Shift+Up/Down, then type |
-
-### 4.4 When to Use
-
-- When tmux and iTerm2 modes don't work
-- When you prefer a simple single-terminal experience
-- When running in terminals that don't support tmux well
-
----
-
-## 5. Recommendation Matrix
+## 4. Recommendation Matrix
 
 | Scenario | Recommended Mode |
 |----------|-----------------|
 | Daily development in iTerm2 | `auto` (iTerm2 native) if setup done, else `tmux` |
-| Using VS Code terminal | `tmux` or `in-process` |
-| Already using tmux on host | `auto` (iTerm2) or `in-process` |
+| Using VS Code terminal | `tmux` |
+| Already using tmux on host | `auto` (iTerm2) or `tmux` |
 | First time / unsure | `tmux` (works everywhere, no setup) |
 | Need clipboard integration | `auto` (iTerm2) or `tmux` (with OSC 52-compatible terminal) |
 | Want maximum reliability | `tmux` |
