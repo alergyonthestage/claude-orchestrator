@@ -29,7 +29,7 @@ cmd_stop() {
         fi
 
         # Clean up browser runtime state
-        [[ -f "$project_dir/.browser-port" ]] && rm -f "$project_dir/.browser-port"
+        rm -f "$project_dir/.browser-port" "$project_dir/browser-mcp.json"
     else
         local containers
         containers=$(docker ps --filter "name=cc-" --format '{{.Names}}' 2>/dev/null)

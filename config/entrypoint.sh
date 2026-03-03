@@ -37,8 +37,14 @@ chown claude:claude "$CLAUDE_JSON"
 # ── MCP server injection into ~/.claude.json ─────────────────────────
 # Claude Code reads user-scope MCP from ~/.claude.json mcpServers key.
 # This is the most reliable mechanism (vs .mcp.json which needs approval).
-# We merge both global MCP (mounted as mcp-global.json) and project MCP
-# (mounted as /workspace/.mcp.json) into ~/.claude.json.
+#
+# mcpServers is rebuilt from scratch every session so that:
+# - disabling a server in config actually removes it (no stale entries)
+# - claude-state/claude.json stays free of configuration data
+#
+# Reset mcpServers to an empty object before merging from source files.
+merged=$(jq '.mcpServers = {}' "$CLAUDE_JSON" 2>/dev/null) \
+    && echo "$merged" > "$CLAUDE_JSON"
 
 # Merge global MCP servers (from global/.claude/mcp.json)
 if [ -f "$MCP_GLOBAL" ]; then
