@@ -78,3 +78,26 @@ test_stop_all_no_containers_reports_none() {
     run_cco stop
     assert_output_contains "No running sessions"
 }
+
+# ── Managed state cleanup ─────────────────────────────────────────────
+
+test_browser_stop_removes_managed_files() {
+    # cco stop <project> removes .managed/browser.json and .managed/.browser-port
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local mock_bin="$tmpdir/bin"
+    _mock_docker_with_containers "$mock_bin" "cc-my-proj"
+    setup_mocks "$mock_bin"
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "my-proj" "$(minimal_project_yml my-proj)"
+
+    # Create stale managed files as if a browser session ended without cleanup
+    mkdir -p "$CCO_PROJECTS_DIR/my-proj/.managed"
+    echo '{"mcpServers":{}}' > "$CCO_PROJECTS_DIR/my-proj/.managed/browser.json"
+    echo "9222" > "$CCO_PROJECTS_DIR/my-proj/.managed/.browser-port"
+
+    run_cco stop "my-proj"
+
+    assert_file_not_exists "$CCO_PROJECTS_DIR/my-proj/.managed/browser.json"
+    assert_file_not_exists "$CCO_PROJECTS_DIR/my-proj/.managed/.browser-port"
+}

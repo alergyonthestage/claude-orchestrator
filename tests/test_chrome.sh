@@ -26,14 +26,15 @@ test_chrome_resolve_port_explicit() {
 }
 
 test_chrome_resolve_port_from_project() {
-    # --project foo reads projects/foo/.browser-port if present
+    # --project foo reads projects/foo/.managed/.browser-port if present
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "foo" "$(minimal_project_yml foo)"
 
-    # Create runtime .browser-port file
-    echo "9224" > "$CCO_PROJECTS_DIR/foo/.browser-port"
+    # Create runtime .managed/.browser-port file
+    mkdir -p "$CCO_PROJECTS_DIR/foo/.managed"
+    echo "9224" > "$CCO_PROJECTS_DIR/foo/.managed/.browser-port"
 
     # Mock docker so it doesn't fail on ps
     local mock_bin="$tmpdir/bin"
@@ -114,7 +115,8 @@ test_chrome_resolve_port_explicit_overrides_project() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "foo" "$(minimal_project_yml foo)"
-    echo "9224" > "$CCO_PROJECTS_DIR/foo/.browser-port"
+    mkdir -p "$CCO_PROJECTS_DIR/foo/.managed"
+    echo "9224" > "$CCO_PROJECTS_DIR/foo/.managed/.browser-port"
 
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"

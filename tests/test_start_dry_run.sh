@@ -667,7 +667,7 @@ test_dry_run_mcp_packages_not_mounted_when_missing() {
 # ── Browser MCP integration ────────────────────────────────────────
 
 test_browser_disabled_by_default() {
-    # No browser section → no extra_hosts, no browser-mcp.json mount
+    # No browser section → no extra_hosts, no .managed/ mount
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -675,8 +675,8 @@ test_browser_disabled_by_default() {
     run_cco start "test-proj" --dry-run
     local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
     assert_file_not_contains "$compose" "extra_hosts"
-    assert_file_not_contains "$compose" "browser-mcp.json"
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/browser-mcp.json"
+    assert_file_not_contains "$compose" ".managed"
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.managed/browser.json"
 }
 
 test_browser_host_mode_extra_hosts() {
@@ -703,7 +703,7 @@ YAML
 }
 
 test_browser_mcp_json_generated() {
-    # browser.enabled: true → browser-mcp.json created with correct content
+    # browser.enabled: true → .managed/browser.json created with correct content
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -722,14 +722,14 @@ repos:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    local mcp_file="$CCO_PROJECTS_DIR/test-proj/browser-mcp.json"
+    local mcp_file="$CCO_PROJECTS_DIR/test-proj/.managed/browser.json"
     assert_file_exists "$mcp_file"
     assert_file_contains "$mcp_file" "chrome-devtools-mcp"
     assert_file_contains "$mcp_file" "localhost:9222"
 }
 
 test_browser_mcp_mounted_in_compose() {
-    # browser.enabled: true → browser-mcp.json mounted read-only in compose
+    # browser.enabled: true → .managed/ dir mounted read-only in compose
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -749,7 +749,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" \
-        "./browser-mcp.json:/workspace/browser-mcp.json:ro"
+        "./.managed:/workspace/.managed:ro"
 }
 
 test_browser_custom_cdp_port() {
@@ -773,7 +773,7 @@ repos:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/browser-mcp.json" "localhost:9223"
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/.managed/browser.json" "localhost:9223"
 }
 
 test_browser_chrome_flag_override() {
@@ -785,12 +785,12 @@ test_browser_chrome_flag_override() {
     run_cco start "test-proj" --chrome --dry-run
     local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
     assert_file_contains "$compose" "host.docker.internal:host-gateway"
-    assert_file_contains "$compose" "browser-mcp.json:/workspace/browser-mcp.json:ro"
-    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/browser-mcp.json"
+    assert_file_contains "$compose" "./.managed:/workspace/.managed:ro"
+    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.managed/browser.json"
 }
 
 test_browser_disabled_no_mcp_file() {
-    # browser.enabled: false → no browser-mcp.json created
+    # browser.enabled: false → no .managed/browser.json created
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -809,7 +809,7 @@ repos:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/browser-mcp.json"
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.managed/browser.json"
 }
 
 test_browser_mcp_privacy_flags() {
@@ -832,7 +832,7 @@ repos:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    local mcp_file="$CCO_PROJECTS_DIR/test-proj/browser-mcp.json"
+    local mcp_file="$CCO_PROJECTS_DIR/test-proj/.managed/browser.json"
     assert_file_contains "$mcp_file" "--no-usage-statistics"
     assert_file_contains "$mcp_file" "--no-performance-crux"
 }
@@ -859,12 +859,12 @@ repos:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    local mcp_file="$CCO_PROJECTS_DIR/test-proj/browser-mcp.json"
+    local mcp_file="$CCO_PROJECTS_DIR/test-proj/.managed/browser.json"
     assert_file_contains "$mcp_file" "--slim"
 }
 
 test_browser_user_mcp_json_untouched() {
-    # User's mcp.json is not modified when browser is enabled
+    # User's mcp.json is not modified when browser is enabled (browser config goes to .managed/)
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -889,7 +889,7 @@ YAML
 }
 
 test_browser_port_written_to_file() {
-    # .browser-port is created with the effective port
+    # .managed/.browser-port is created with the effective port
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -909,7 +909,7 @@ repos:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    local port_file="$CCO_PROJECTS_DIR/test-proj/.browser-port"
+    local port_file="$CCO_PROJECTS_DIR/test-proj/.managed/.browser-port"
     assert_file_exists "$port_file"
     assert_equals "9225" "$(cat "$port_file")"
 }
@@ -935,7 +935,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     assert_output_contains "Browser: host mode (CDP proxy"
-    assert_output_contains "browser-mcp.json"
+    assert_output_contains ".managed/browser.json"
 }
 
 test_browser_cdp_port_env_in_compose() {
