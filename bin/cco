@@ -47,6 +47,7 @@ source "$LIB_DIR/cmd-project.sh"
 source "$LIB_DIR/cmd-pack.sh"
 source "$LIB_DIR/cmd-update.sh"
 source "$LIB_DIR/share.sh"
+source "$LIB_DIR/cmd-vault.sh"
 
 # ── Deprecation warnings ──────────────────────────────────────────────
 # Only warn when legacy vars are set WITHOUT CCO_USER_CONFIG_DIR
@@ -85,6 +86,11 @@ Commands:
   share refresh          Regenerate share.yml from packs/ and templates/
   share validate         Cross-check share.yml vs disk
   share show             Display share.yml contents
+  vault init             Initialize git-backed config versioning
+  vault sync             Commit config with pre-commit summary
+  vault diff             Show uncommitted changes by category
+  vault log              Show commit history
+  vault status           Show vault state
   update                 Update global/project config from defaults
   stop [project]         Stop running session(s)
   help                   Show this help message
@@ -131,6 +137,7 @@ case "$cmd" in
         ;;
     chrome)  cmd_chrome "$@" ;;
     share)   cmd_share "$@" ;;
+    vault)   cmd_vault "$@" ;;
     update)  cmd_update "$@" ;;
     stop)    cmd_stop "$@" ;;
     help)    usage ;;
