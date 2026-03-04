@@ -6,12 +6,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 claude-orchestrator manages isolated Claude Code sessions in Docker containers for multi-project, multi-repo development. It provides a CLI (`bin/cco`) to launch preconfigured sessions with repos mounted, context loaded, and agent teams ready.
 
-**Current status**: v1 implemented, plus Auth & Secrets, Environment Extensibility, Docker Socket Toggle, and Scope Hierarchy Refactor. Dockerfile, CLI, global config, project template, and all docs are in place.
+**Current status**: v1 implemented, plus Auth & Secrets, Environment Extensibility, Docker Socket Toggle, Scope Hierarchy Refactor, and Config Repo sharing. Dockerfile, CLI, global config, project template, and all docs are in place.
 
 **Config separation**: Three-tier managed scope hierarchy leveraging Claude Code's native resolution:
 - `defaults/managed/` → baked into Docker image at `/etc/claude-code/` (Managed level — hooks, env, deny rules, framework instructions). Non-overridable.
-- `defaults/global/.claude/` → copied once to `global/.claude/` on `cco init` (User level — agents, skills, rules, settings, preferences). User-owned, never overwritten.
+- `defaults/global/.claude/` → copied once to `user-config/global/.claude/` on `cco init` (User level — agents, skills, rules, settings, preferences). User-owned, never overwritten.
 - `defaults/_template/` → scaffolded per project (Project level). Per-project overrides.
+
+**User config directory**: `user-config/` is the unified root for all user data:
+- `user-config/global/` — global Claude config (.claude/)
+- `user-config/projects/` — per-project configurations
+- `user-config/packs/` — knowledge packs
+- `user-config/templates/` — project templates
+- `user-config/share.yml` — manifest for sharing via Config Repos
 
 ## Build & Run Commands
 
@@ -23,7 +30,18 @@ cco build --claude-version x.y.z  # Pin Claude Code version
 cco start <project>          # Start session for a project
 cco new --repo <path>        # Start temporary session with repos
 cco project create <name>    # Scaffold new project from template
+cco project install <url>    # Install project template from Config Repo
 cco project list             # List projects
+cco pack install <url>       # Install packs from a remote Config Repo
+cco pack update <name>       # Update a pack from its remote source
+cco pack export <name>       # Export a pack as .tar.gz archive
+cco share refresh            # Regenerate share.yml from packs/ and templates/
+cco share validate           # Cross-check share.yml vs disk
+cco vault init               # Initialize git-backed config versioning
+cco vault sync [msg]         # Commit config changes with secret detection
+cco vault diff               # Show uncommitted changes by category
+cco vault log                # Show commit history
+cco vault status             # Show vault state
 cco stop [project]           # Stop session(s)
 ```
  
@@ -74,7 +92,12 @@ Per `docs/maintainer/docker/design.md` (sezione directory structure):
 ## Key Files
 
 **Implementation:**
-- `bin/cco` — CLI entrypoint (103-line dispatcher that sources `lib/*.sh` modules)
+- `bin/cco` — CLI entrypoint (dispatcher that sources `lib/*.sh` modules)
+- `lib/cmd-pack.sh` — Pack management: create, install, update, export, list, show, remove, validate
+- `lib/cmd-project.sh` — Project management: create, install, list, show, validate
+- `lib/cmd-vault.sh` — Config versioning: init, sync, diff, log, status (git-backed)
+- `lib/share.sh` — share.yml lifecycle: init, refresh, validate, show
+- `lib/remote.sh` — Remote clone helper: sparse-checkout, shallow fallback, token auth
 - `Dockerfile` — Docker image (node:22-bookworm, Claude Code, gosu, tmux, docker CLI)
 - `config/entrypoint.sh` — Container entrypoint: socket GID fix, MCP merge, gosu, tmux/claude launch
 - `config/tmux.conf` — tmux config for agent teams (colors, navigation, history)
@@ -96,7 +119,7 @@ Per `docs/maintainer/docker/design.md` (sezione directory structure):
 ## Conventions
 
 - `project.yml` is the source of truth for each project; `docker-compose.yml` is generated from it and should not be committed.
-- `global/` and `projects/` are gitignored (user data). `defaults/` is tracked (tool code). Managed files are baked in the Docker image; global defaults are copied once on `cco init` and never overwritten.
+- `user-config/` is gitignored (user data). `defaults/` is tracked (tool code). Managed files are baked in the Docker image; global defaults are copied once on `cco init` and never overwritten.
 - Generated files: `projects/*/docker-compose.yml`, `projects/*/memory/`, `.env`.
 - Container user is `claude` (non-root), with docker group for socket access.
 - Entrypoint must handle Docker socket GID mismatch between host and container.
