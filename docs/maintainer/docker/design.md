@@ -714,7 +714,7 @@ claude-orchestrator/
 
 | File | Purpose | Notes |
 |------|---------|-------|
-| `cco` | CLI script | Single bash file, no external deps. See [cli.md](../../reference/cli.md) |
+| `cco` | CLI entrypoint | Dispatcher (~100 lines) that sources `lib/*.sh` modules. See [cli.md](../../reference/cli.md) |
 
 #### defaults/managed/
 

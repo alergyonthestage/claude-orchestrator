@@ -74,7 +74,7 @@ Per `docs/maintainer/docker/design.md` (sezione directory structure):
 ## Key Files
 
 **Implementation:**
-- `bin/cco` — CLI script (single bash file, all commands)
+- `bin/cco` — CLI entrypoint (103-line dispatcher that sources `lib/*.sh` modules)
 - `Dockerfile` — Docker image (node:22-bookworm, Claude Code, gosu, tmux, docker CLI)
 - `config/entrypoint.sh` — Container entrypoint: socket GID fix, MCP merge, gosu, tmux/claude launch
 - `config/tmux.conf` — tmux config for agent teams (colors, navigation, history)
