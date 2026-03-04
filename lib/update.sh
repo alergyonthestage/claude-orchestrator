@@ -578,6 +578,16 @@ _update_global() {
             info "$pending_migrations migration(s) pending"
         else
             _run_migrations "global" "$installed_dir" "$current_schema" "$meta_file"
+
+            # Refresh paths if migration moved the directory (e.g. 003_user-config-dir)
+            if [[ ! -d "$installed_dir" && -d "$USER_CONFIG_DIR/global/.claude" ]]; then
+                GLOBAL_DIR="$USER_CONFIG_DIR/global"
+                PROJECTS_DIR="$USER_CONFIG_DIR/projects"
+                PACKS_DIR="$USER_CONFIG_DIR/packs"
+                TEMPLATES_DIR="$USER_CONFIG_DIR/templates"
+                installed_dir="$GLOBAL_DIR/.claude"
+                meta_file="$installed_dir/.cco-meta"
+            fi
         fi
     fi
 
