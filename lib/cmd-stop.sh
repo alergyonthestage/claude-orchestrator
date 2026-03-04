@@ -6,6 +6,18 @@
 # Globals: PROJECTS_DIR
 
 cmd_stop() {
+    if [[ "${1:-}" == "--help" ]]; then
+        cat <<'EOF'
+Usage: cco stop [<project>]
+
+Stop running session(s) and clean up runtime state.
+
+Without arguments, stops all running cco sessions.
+With a project name, stops only that project's session.
+EOF
+        return 0
+    fi
+
     local project="${1:-}"
 
     check_docker

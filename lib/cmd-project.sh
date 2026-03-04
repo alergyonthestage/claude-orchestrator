@@ -149,6 +149,15 @@ print(', '.join(['$'+k for k in ['dev','build','test','start','lint'] if k in s]
 }
 
 cmd_project_list() {
+    if [[ "${1:-}" == "--help" ]]; then
+        cat <<'EOF'
+Usage: cco project list
+
+List all configured projects with repo count and running status.
+EOF
+        return 0
+    fi
+
     echo -e "${BOLD}NAME              REPOS    STATUS${NC}"
 
     for dir in "$PROJECTS_DIR"/*/; do

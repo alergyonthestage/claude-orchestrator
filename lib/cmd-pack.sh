@@ -86,6 +86,15 @@ YAML
 }
 
 cmd_pack_list() {
+    if [[ "${1:-}" == "--help" ]]; then
+        cat <<'EOF'
+Usage: cco pack list
+
+List all installed packs with resource counts (knowledge, skills, agents, rules).
+EOF
+        return 0
+    fi
+
     check_global
 
     echo -e "${BOLD}NAME              KNOWLEDGE  SKILLS  AGENTS  RULES${NC}"

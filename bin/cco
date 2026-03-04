@@ -67,40 +67,26 @@ usage() {
     cat <<'EOF'
 Usage: cco <command> [options]
 
-Commands:
+Getting Started:
   init                   Initialize user config from defaults
   build                  Build/rebuild the Docker image
+  update                 Update config from defaults (with migrations)
+
+Sessions:
   start <project>        Start a session for a configured project
   new                    Start a temporary session with specific repos
-  project create <n>     Create a new project from template
-  project install <url>  Install project from a remote Config Repo
-  project list           List available projects
-  project show <n>       Show project details
-  project validate <n>   Validate project structure
-  pack create <n>        Create a new pack
-  pack install <url>     Install packs from a remote Config Repo
-  pack update <n>        Update a pack from its remote source
-  pack export <n>        Export a pack as .tar.gz archive
-  pack list              List available packs
-  pack show <n>          Show pack details
-  pack remove <n>        Remove a pack
-  pack validate [n]      Validate pack structure (all if no name)
-  chrome [start|stop|status]  Manage Chrome debug session on host
-    [--project <name>]        Auto-detect port from project runtime state
-    [--port <n>]              Explicit CDP port (default: 9222)
-  share refresh          Regenerate share.yml from packs/ and templates/
-  share validate         Cross-check share.yml vs disk
-  share show             Display share.yml contents
-  vault init             Initialize git-backed config versioning
-  vault sync             Commit config with pre-commit summary
-  vault diff             Show uncommitted changes by category
-  vault log              Show commit history
-  vault status           Show vault state
-  update                 Update global/project config from defaults
   stop [project]         Stop running session(s)
-  help                   Show this help message
 
-Run 'cco <command> --help' for command-specific help.
+Projects & Packs:
+  project <cmd>          Manage projects (create, install, list, show, validate)
+  pack <cmd>             Manage knowledge packs (create, install, update, ...)
+  chrome <cmd>           Manage Chrome debug session on host
+
+Sharing & Versioning:
+  share <cmd>            Manage share.yml for Config Repos
+  vault <cmd>            Git-backed config versioning
+
+Run 'cco <command> --help' for detailed help on any command.
 EOF
 }
 
@@ -117,7 +103,21 @@ case "$cmd" in
     new)     cmd_new "$@" ;;
     project)
         subcmd="${1:-}"
-        [[ -z "$subcmd" ]] && die "Usage: cco project <create|list|show|validate>"
+        if [[ -z "$subcmd" || "$subcmd" == "--help" ]]; then
+            cat <<'EOF'
+Usage: cco project <command> [options]
+
+Commands:
+  create <name>          Create a new project from template
+  install <url>          Install project template from a remote Config Repo
+  list                   List available projects with status
+  show <name>            Show project details (repos, packs, config)
+  validate [name]        Validate project structure and configuration
+
+Run 'cco project <command> --help' for command-specific options.
+EOF
+            exit 0
+        fi
         shift
         case "$subcmd" in
             create)   cmd_project_create "$@" ;;
@@ -125,12 +125,29 @@ case "$cmd" in
             list)     cmd_project_list "$@" ;;
             show)     cmd_project_show "$@" ;;
             validate) cmd_project_validate "$@" ;;
-            *)        die "Unknown project command: $subcmd" ;;
+            *)        die "Unknown project command: $subcmd. Run 'cco project --help'." ;;
         esac
         ;;
     pack)
         subcmd="${1:-}"
-        [[ -z "$subcmd" ]] && die "Usage: cco pack <create|install|update|export|list|show|remove|validate>"
+        if [[ -z "$subcmd" || "$subcmd" == "--help" ]]; then
+            cat <<'EOF'
+Usage: cco pack <command> [options]
+
+Commands:
+  create <name>          Create a new knowledge pack
+  install <url>          Install packs from a remote Config Repo
+  update <name>          Update a pack from its remote source
+  export <name>          Export a pack as .tar.gz archive
+  list                   List available packs with resource counts
+  show <name>            Show pack details (knowledge, agents, rules)
+  remove <name>          Remove a pack
+  validate [name]        Validate pack structure (all if no name)
+
+Run 'cco pack <command> --help' for command-specific options.
+EOF
+            exit 0
+        fi
         shift
         case "$subcmd" in
             create)   cmd_pack_create "$@" ;;
@@ -141,7 +158,7 @@ case "$cmd" in
             show)     cmd_pack_show "$@" ;;
             remove)   cmd_pack_remove "$@" ;;
             validate) cmd_pack_validate "$@" ;;
-            *)        die "Unknown pack command: $subcmd" ;;
+            *)        die "Unknown pack command: $subcmd. Run 'cco pack --help'." ;;
         esac
         ;;
     chrome)  cmd_chrome "$@" ;;

@@ -363,7 +363,21 @@ _share_lookup_meta() {
 
 cmd_share() {
     local subcmd="${1:-}"
-    [[ -z "$subcmd" ]] && die "Usage: cco share <refresh|validate|show>"
+    if [[ -z "$subcmd" || "$subcmd" == "--help" ]]; then
+        cat <<'EOF'
+Usage: cco share <command>
+
+Manage share.yml, the manifest that describes what your Config Repo exports.
+
+Commands:
+  refresh    Regenerate share.yml from packs/ and templates/ on disk
+  validate   Cross-check share.yml entries vs actual files on disk
+  show       Display share.yml contents in a formatted view
+
+Run 'cco share <command> --help' for command-specific options.
+EOF
+        return 0
+    fi
     shift
 
     case "$subcmd" in
@@ -418,17 +432,6 @@ EOF
                 esac
             done
             share_show "$USER_CONFIG_DIR"
-            ;;
-        --help)
-            cat <<'EOF'
-Usage: cco share <command>
-
-Commands:
-  refresh    Regenerate share.yml from packs/ and templates/
-  validate   Cross-check share.yml vs disk
-  show       Display share.yml contents
-
-EOF
             ;;
         *)
             die "Unknown share command: $subcmd. Run 'cco share --help' for usage."

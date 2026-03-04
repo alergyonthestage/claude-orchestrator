@@ -517,7 +517,30 @@ _check_vault() {
 
 cmd_vault() {
     local subcmd="${1:-}"
-    [[ -z "$subcmd" ]] && die "Usage: cco vault <init|sync|diff|log|restore|remote|push|pull|status>"
+    if [[ -z "$subcmd" || "$subcmd" == "--help" ]]; then
+        cat <<'EOF'
+Usage: cco vault <command>
+
+Git-backed versioning and backup for your configuration.
+
+Commands:
+  init                    Initialize vault (git repo in user-config/)
+  sync [msg] [--yes]      Commit current state with secret detection
+  diff                    Show uncommitted changes by category
+  log [--limit N]         Show commit history
+  restore <ref>           Restore config to a previous state
+  status                  Show vault state and sync info
+
+Remote backup:
+  remote add <n> <url>    Add a git remote
+  remote remove <n>       Remove a git remote
+  push [<remote>]         Push to remote (default: origin)
+  pull [<remote>]         Pull from remote (default: origin)
+
+Run 'cco vault <command> --help' for command-specific options.
+EOF
+        return 0
+    fi
     shift
 
     case "$subcmd" in
@@ -530,25 +553,8 @@ cmd_vault() {
         push)    cmd_vault_push "$@" ;;
         pull)    cmd_vault_pull "$@" ;;
         status)  cmd_vault_status "$@" ;;
-        --help)
-            cat <<'EOF'
-Usage: cco vault <command>
-
-Commands:
-  init                    Initialize git-backed vault for config versioning
-  sync [msg] [--yes]      Commit current state with pre-commit summary
-  diff                    Show uncommitted changes by category
-  log [--limit N]         Show commit history
-  restore <ref>           Restore config to a previous state
-  remote add <n> <url>    Add a git remote
-  push [<remote>]         Push to remote
-  pull [<remote>]         Pull from remote
-  status                  Show vault state and sync info
-
-EOF
-            ;;
         *)
-            die "Unknown vault command: $subcmd. Run 'cco vault --help' for usage."
+            die "Unknown vault command: $subcmd. Run 'cco vault --help'."
             ;;
     esac
 }
