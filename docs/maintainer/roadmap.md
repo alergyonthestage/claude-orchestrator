@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-04 (sharing moved to Sprint 6; Docker socket per-container filtering deferred to long-term; native installer migration tracked as #B2).
+> Last updated: 2026-03-04 (sharing moved to Sprint 6; Config Repo design unifies Sprint 6 + Sprint 10; user-config/ restructure designed; Docker socket per-container filtering deferred to long-term; native installer migration tracked as #B2).
 
 ---
 
@@ -252,55 +252,35 @@ A self-contained example project that users launch with `cco start tutorial` (or
 
 ---
 
-### Sprint 6 — Sharing & Import
+### Sprint 6 — Config Repo: Sharing & Import
 
-Moved up from Sprint 9 as a differentiating feature for adoption. Decoupled from Config Vault (#11) — sharing via git repos does not require local versioning.
+Unified with Sprint 10 under a single "Config Repo" model. Analysis and design complete.
 
-#### #12 Sharing & Import — Multi-resource bundles
+**Docs**: [analysis](./config-repo/analysis.md) | [design](./config-repo/design.md)
 
-Share packs, project templates, and config bundles between users via git repos or archives.
+#### #12 Sharing & Import — Config Repo model
 
-**Motivation**: packs are currently local to a single user. There is no way to share a well-tuned pack, a project template, or a set of rules with a colleague. The tutorial project (Sprint 5) also benefits: once shipping is in place, the tutorial can serve as a model for shareable example projects.
+Share packs and project templates between users via git repos. Granular install (single pack from a multi-pack repo) via git sparse-checkout, without per-resource repo proliferation.
 
-**Key design points**:
-- **Multi-resource repos**: a single git repo can contain multiple packs, project templates, and rules (avoids repo proliferation)
-- `cco share install <git-url> [--resource <name>]` — install one or all resources from a shared repo
-- `cco share export <type> <name>` — export a pack, project template, or rule set as a shareable archive or git-ready directory
-- `cco share list` — list installed shared resources and their source repos
-- `cco share update [<source>]` — pull latest from shared repos
+**Design decisions**:
+- **Unified concept**: a Config Repo is a git repo with a standard structure — serves as vault, shared bundle, or both
+- **`user-config/` restructure**: replaces separate `global/` + `projects/` dirs; packs elevated to top-level (no longer nested inside `global/`)
+- **`CCO_USER_CONFIG_DIR`**: new primary env var; `CCO_GLOBAL_DIR`, `CCO_PROJECTS_DIR`, `CCO_PACKS_DIR` derived from it
+- **Access control**: delegated entirely to git hosting (no per-resource visibility — resources with different access levels require separate repos)
+- **Granular install without proliferation**: `cco pack install <url> --pick <name>` uses git sparse-checkout; one repo can contain many packs
+- **Pack source tracking**: `.cco-source` metadata file records origin URL, path, ref for `cco pack update`
 
-**Shared repo structure** (convention):
-```
-my-team-config/
-  packs/
-    react-guidelines/
-      pack.yml
-      knowledge/...
-    api-conventions/
-      pack.yml
-      ...
-  templates/
-    fullstack-project/
-      project.yml      # Uses {{variables}} for user-specific paths
-      .claude/
-        CLAUDE.md
-    microservice/
-      project.yml
-      ...
-  rules/
-    code-style.md
-    security.md
-  share.yml             # Manifest: lists available resources with descriptions
-```
+**Commands**:
+- `cco pack install <git-url> [--pick <name>] [--token <t>]` — install pack(s) from any git repo
+- `cco pack update <name>` — pull latest from recorded source
+- `cco pack export <name>` — archive for manual distribution
+- `cco project install <git-url> [--pick <name>]` — install project template
 
-- **Project templates**: `project.yml` with placeholder variables (`{{REPO_PATH}}`, `{{PROJECT_NAME}}`) resolved at install time
-- **Conflict handling**: warn if a resource already exists locally, offer merge/overwrite/skip
-- **Versioning**: shared repos are git repos — users can pin to a tag/branch
-
-**Open questions**:
-- Should shared repos be registered globally (available to all projects) or per-project?
-- How to handle pack updates from shared repos when the user has local modifications?
-- Should we support a public registry/index of shared repos (future, not Sprint 6)?
+**Scope**:
+- `lib/cmd-pack.sh` extended: `install`, `update`, `export` subcommands
+- `lib/cmd-vault.sh` (new): vault management (see Sprint 10)
+- `bin/cco`: add `CCO_USER_CONFIG_DIR` + derived vars
+- Migration `004_user-config-dir.sh`: moves `global/` + `projects/` under `user-config/`
 
 ---
 
@@ -368,32 +348,29 @@ Improve the StatusLine hook (`config/hooks/statusline.sh`) for better usability.
 
 ### Sprint 10 — Config Vault
 
-Personal versioning of packs, project configs, and global settings — powered by a dedicated git repo managed by the CLI. Sharing (#12) was moved earlier to Sprint 6; this sprint covers the local versioning/backup side independently.
+Unified with Sprint 6 under the Config Repo model. The vault is the personal-use face of the same architecture.
 
-#### #11 Config Vault — Git-backed versioning for global/ and projects/
+**Docs**: [analysis](./config-repo/analysis.md) | [design](./config-repo/design.md)
 
-A dedicated git repository (separate from claude-orchestrator itself) that versions the user's configuration: `global/` settings, project configs, and packs. The CLI manages this repo transparently.
+#### #11 Config Vault — Git-backed versioning for user-config/
 
-**Motivation**: today `global/` and `projects/` are gitignored. Users have no way to version, backup, diff, or roll back their configuration. If something breaks or a machine is lost, all config is gone.
+The `user-config/` directory (introduced in Sprint 6) can be initialized as a git repo to become the personal vault. The CLI wraps git operations with CCO-specific defaults (`.gitignore` template, secret detection, categorized output).
 
-**Key design points**:
-- `cco vault init` — initialize a git repo backing `global/` and `projects/` (or a subset)
-- `cco vault sync` — commit current state with auto-generated message (or custom)
-- `cco vault diff` — show what changed since last sync
-- `cco vault log` — show config change history
-- `cco vault restore <ref>` — restore config from a previous commit
-- `cco vault remote add <url>` — link to a remote repo for push/pull backup
-- The vault repo is distinct from claude-orchestrator (framework is generic, vault is personal)
-- Sensitive files (`secrets.env`, `.credentials.json`) excluded by default with `.gitignore`
-- Works with any git remote (GitHub, GitLab, private server)
+**Commands**:
+- `cco vault init [<path>]` — git init + CCO `.gitignore`; optional external path (e.g. `~/.cco`)
+- `cco vault sync [<message>]` — commit current state
+- `cco vault diff` — uncommitted changes by category
+- `cco vault log [--limit N]` — commit history
+- `cco vault restore <ref>` — restore from commit/tag (with confirmation)
+- `cco vault status` — initialization state, remote sync status
+- `cco vault remote add <name> <url>` / `push` / `pull` — remote backup
 
 **Scope**:
-- `lib/cmd-vault.sh` — vault management commands
-- Vault `.gitignore` template (exclude secrets, runtime files, `docker-compose.yml`)
-- Auto-commit hooks (optional: auto-sync on `cco stop`)
-- Test coverage for vault operations
+- `lib/cmd-vault.sh` (new) — all vault subcommands
+- Vault `.gitignore` template baked into CCO
+- Test coverage for vault init, sync, restore, conflict with secrets
 
-**Open question**: should `cco vault` and `cco share` eventually unify under a `cco config` namespace? Defer decision to implementation time, when Sprint 6 sharing is already shipped and usage patterns are known.
+**Resolved open question**: `cco vault` and `cco pack install` are complementary, not competing. No namespace unification needed — vault is for personal versioning, install/update is for consuming remote sources. Both use the same Config Repo structure.
 
 ---
 
