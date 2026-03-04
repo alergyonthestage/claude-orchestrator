@@ -2,7 +2,7 @@
 # lib/cmd-init.sh — Initialize user configuration command
 #
 # Provides: cmd_init()
-# Dependencies: colors.sh, utils.sh, update.sh, cmd-build.sh
+# Dependencies: colors.sh, utils.sh, update.sh, cmd-build.sh, share.sh
 # Globals: USER_CONFIG_DIR, GLOBAL_DIR, DEFAULTS_DIR, PROJECTS_DIR, PACKS_DIR, TEMPLATES_DIR, REPO_ROOT
 
 cmd_init() {
@@ -119,6 +119,10 @@ EOF
     ok "Projects directory ready"
     ok "Packs directory ready"
     ok "Templates directory ready"
+
+    # Generate share.yml if not present
+    share_init "$USER_CONFIG_DIR"
+    ok "share.yml ready"
 
     # PATH hint
     if ! command -v cco &>/dev/null; then

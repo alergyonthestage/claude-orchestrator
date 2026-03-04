@@ -3,8 +3,8 @@
 #
 # Provides: cmd_pack_create(), cmd_pack_list(), cmd_pack_show(),
 #           cmd_pack_remove(), cmd_pack_validate()
-# Dependencies: colors.sh, utils.sh, yaml.sh, packs.sh
-# Globals: PACKS_DIR, PROJECTS_DIR
+# Dependencies: colors.sh, utils.sh, yaml.sh, packs.sh, share.sh
+# Globals: PACKS_DIR, PROJECTS_DIR, USER_CONFIG_DIR
 
 # ── Pack commands ─────────────────────────────────────────────────────
 
@@ -71,6 +71,9 @@ name: $name
 # rules:
 #   - conventions.md
 YAML
+
+    # Update share.yml
+    share_refresh "$USER_CONFIG_DIR"
 
     ok "Pack created at packs/$name/"
     info "Add resources to the subdirectories:"
@@ -306,6 +309,10 @@ EOF
     fi
 
     rm -rf "$pack_dir"
+
+    # Update share.yml
+    share_refresh "$USER_CONFIG_DIR"
+
     ok "Pack '$name' removed"
 }
 
