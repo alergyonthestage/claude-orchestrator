@@ -47,6 +47,7 @@ source "$LIB_DIR/cmd-project.sh"
 source "$LIB_DIR/cmd-pack.sh"
 source "$LIB_DIR/cmd-update.sh"
 source "$LIB_DIR/share.sh"
+source "$LIB_DIR/remote.sh"
 source "$LIB_DIR/cmd-vault.sh"
 
 # ── Deprecation warnings ──────────────────────────────────────────────
@@ -76,6 +77,9 @@ Commands:
   project show <n>       Show project details
   project validate <n>   Validate project structure
   pack create <n>        Create a new pack
+  pack install <url>     Install packs from a remote Config Repo
+  pack update <n>        Update a pack from its remote source
+  pack export <n>        Export a pack as .tar.gz archive
   pack list              List available packs
   pack show <n>          Show pack details
   pack remove <n>        Remove a pack
@@ -124,10 +128,13 @@ case "$cmd" in
         ;;
     pack)
         subcmd="${1:-}"
-        [[ -z "$subcmd" ]] && die "Usage: cco pack <create|list|show|remove|validate>"
+        [[ -z "$subcmd" ]] && die "Usage: cco pack <create|install|update|export|list|show|remove|validate>"
         shift
         case "$subcmd" in
             create)   cmd_pack_create "$@" ;;
+            install)  cmd_pack_install "$@" ;;
+            update)   cmd_pack_update "$@" ;;
+            export)   cmd_pack_export "$@" ;;
             list)     cmd_pack_list "$@" ;;
             show)     cmd_pack_show "$@" ;;
             remove)   cmd_pack_remove "$@" ;;

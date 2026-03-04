@@ -2,8 +2,9 @@
 # lib/cmd-pack.sh — Pack management commands
 #
 # Provides: cmd_pack_create(), cmd_pack_list(), cmd_pack_show(),
-#           cmd_pack_remove(), cmd_pack_validate()
-# Dependencies: colors.sh, utils.sh, yaml.sh, packs.sh, share.sh
+#           cmd_pack_remove(), cmd_pack_validate(),
+#           cmd_pack_install(), cmd_pack_update(), cmd_pack_export()
+# Dependencies: colors.sh, utils.sh, yaml.sh, packs.sh, share.sh, remote.sh
 # Globals: PACKS_DIR, PROJECTS_DIR, USER_CONFIG_DIR
 
 # ── Pack commands ─────────────────────────────────────────────────────
@@ -359,4 +360,325 @@ EOF
             return 1
         fi
     fi
+}
+
+# ── Install / Update / Export ──────────────────────────────────────────
+
+cmd_pack_install() {
+    local url="" pick="" token="" force=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --pick)
+                [[ -z "${2:-}" ]] && die "--pick requires a pack name"
+                pick="$2"; shift 2
+                ;;
+            --token)
+                [[ -z "${2:-}" ]] && die "--token requires a value"
+                token="$2"; shift 2
+                ;;
+            --force) force=true; shift ;;
+            --help)
+                cat <<'EOF'
+Usage: cco pack install <git-url> [options]
+
+Install packs from a remote Config Repo.
+
+Options:
+  --pick <name>     Install a specific pack by name
+  --token <token>   Auth token for HTTPS repos
+  --force           Overwrite existing packs without asking
+
+URL can include @ref suffix: <url>@<branch-or-tag>
+EOF
+                return 0
+                ;;
+            -*)  die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$url" ]]; then
+                    url="$1"; shift
+                else
+                    die "Unexpected argument: $1"
+                fi
+                ;;
+        esac
+    done
+
+    [[ -z "$url" ]] && die "Usage: cco pack install <git-url> [--pick <name>]"
+    check_global
+
+    # Parse @ref suffix
+    local ref=""
+    if [[ "$url" == *@* ]]; then
+        # Only treat as ref if it doesn't look like user@host (SSH)
+        local after_at="${url##*@}"
+        if [[ "$after_at" != *:* && "$after_at" != *.* ]]; then
+            ref="$after_at"
+            url="${url%@*}"
+        fi
+    fi
+
+    info "Cloning $url${ref:+ (ref: $ref)}..."
+    local tmpdir
+    tmpdir=$(_clone_config_repo "$url" "$ref" "$token")
+    trap "_cleanup_clone '$tmpdir'" EXIT
+
+    # Detect repo type
+    local single_pack=false
+    if [[ -f "$tmpdir/share.yml" ]]; then
+        : # Standard Config Repo
+    elif [[ -f "$tmpdir/pack.yml" ]]; then
+        single_pack=true
+    else
+        _cleanup_clone "$tmpdir"
+        die "Not a valid CCO Config Repo: no share.yml or pack.yml found"
+    fi
+
+    if $single_pack; then
+        # Single-pack repo: install the root as a pack
+        local name
+        name=$(yml_get "$tmpdir/pack.yml" "name")
+        [[ -z "$name" ]] && die "pack.yml has no 'name' field"
+        _install_pack_from_dir "$tmpdir" "$name" "$url" "$ref" "" "$force"
+    else
+        # Multi-pack repo: read available packs from share.yml
+        local available
+        available=$(_share_get_names "$tmpdir/share.yml" "packs")
+
+        if [[ -z "$available" ]]; then
+            _cleanup_clone "$tmpdir"
+            die "No packs listed in share.yml"
+        fi
+
+        if [[ -n "$pick" ]]; then
+            # Install specific pack
+            if ! echo "$available" | grep -qxF "$pick"; then
+                _cleanup_clone "$tmpdir"
+                die "Pack '$pick' not found in share.yml. Available: $(echo "$available" | tr '\n' ' ')"
+            fi
+            _install_pack_from_dir "$tmpdir/packs/$pick" "$pick" "$url" "$ref" "packs/$pick" "$force"
+        else
+            # Install all packs
+            local count=0
+            while IFS= read -r name; do
+                [[ -z "$name" ]] && continue
+                if [[ -d "$tmpdir/packs/$name" ]]; then
+                    _install_pack_from_dir "$tmpdir/packs/$name" "$name" "$url" "$ref" "packs/$name" "$force"
+                    count=$((count + 1))
+                else
+                    warn "Pack '$name' listed in share.yml but not found on disk — skipping"
+                fi
+            done <<< "$available"
+            ok "Installed $count pack(s) from $url"
+        fi
+    fi
+
+    # Update share.yml
+    share_refresh "$USER_CONFIG_DIR"
+
+    _cleanup_clone "$tmpdir"
+    trap - EXIT
+}
+
+cmd_pack_update() {
+    local name="" force=false update_all=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --all)   update_all=true; shift ;;
+            --force) force=true; shift ;;
+            --help)
+                cat <<'EOF'
+Usage: cco pack update <name> [--force]
+       cco pack update --all [--force]
+
+Update a pack from its recorded remote source.
+
+Options:
+  --all     Update all packs with a remote source
+  --force   Overwrite local modifications
+EOF
+                return 0
+                ;;
+            -*)  die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$name" ]]; then
+                    name="$1"; shift
+                else
+                    die "Unexpected argument: $1"
+                fi
+                ;;
+        esac
+    done
+
+    check_global
+
+    if $update_all; then
+        local updated=0
+        for dir in "$PACKS_DIR"/*/; do
+            [[ ! -d "$dir" ]] && continue
+            local pack_name
+            pack_name=$(basename "$dir")
+            local source_file="$dir/.cco-source"
+            [[ ! -f "$source_file" ]] && continue
+            local source_url
+            source_url=$(yml_get "$source_file" "source")
+            [[ "$source_url" == "local" || -z "$source_url" ]] && continue
+            info "Updating $pack_name..."
+            _update_single_pack "$pack_name" "$force"
+            updated=$((updated + 1))
+        done
+        if [[ $updated -eq 0 ]]; then
+            info "No packs with remote sources found"
+        else
+            ok "Updated $updated pack(s)"
+        fi
+        return 0
+    fi
+
+    [[ -z "$name" ]] && die "Usage: cco pack update <name> [--force]"
+    [[ ! -d "$PACKS_DIR/$name" ]] && die "Pack '$name' not found"
+
+    _update_single_pack "$name" "$force"
+}
+
+cmd_pack_export() {
+    local name=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --help)
+                cat <<'EOF'
+Usage: cco pack export <name>
+
+Export a pack as a .tar.gz archive.
+EOF
+                return 0
+                ;;
+            -*)  die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$name" ]]; then
+                    name="$1"; shift
+                else
+                    die "Unexpected argument: $1"
+                fi
+                ;;
+        esac
+    done
+
+    [[ -z "$name" ]] && die "Usage: cco pack export <name>"
+    [[ ! -d "$PACKS_DIR/$name" ]] && die "Pack '$name' not found"
+
+    local archive="${name}.tar.gz"
+    tar czf "$archive" -C "$PACKS_DIR" --exclude='.cco-source' \
+        --exclude='.cco-install-tmp' "$name"
+    ok "Exported pack to $archive"
+}
+
+# ── Internal helpers for install/update ────────────────────────────────
+
+# Install a pack from a local directory (clone temp or single-pack root).
+# Usage: _install_pack_from_dir <source_dir> <name> <url> <ref> <path> <force>
+_install_pack_from_dir() {
+    local source_dir="$1"
+    local name="$2"
+    local url="$3"
+    local ref="$4"
+    local path="$5"
+    local force="$6"
+
+    local target_dir="$PACKS_DIR/$name"
+
+    # Conflict check
+    if [[ -d "$target_dir" ]]; then
+        if [[ "$force" == true ]]; then
+            rm -rf "$target_dir"
+        else
+            local existing_source=""
+            if [[ -f "$target_dir/.cco-source" ]]; then
+                existing_source=$(yml_get "$target_dir/.cco-source" "source")
+            fi
+
+            if [[ "$existing_source" == "$url" ]]; then
+                info "Pack '$name' already installed from same source — updating"
+                rm -rf "$target_dir"
+            elif [[ "$existing_source" == "local" ]]; then
+                die "Pack '$name' was created locally. Use --force to overwrite."
+            else
+                die "Pack '$name' already exists (source: ${existing_source:-unknown}). Use --force to overwrite."
+            fi
+        fi
+    fi
+
+    # Copy pack contents
+    cp -r "$source_dir" "$target_dir"
+
+    # Remove .git if present (from single-pack repos)
+    rm -rf "$target_dir/.git"
+
+    # Write .cco-source metadata
+    local now
+    now=$(date +%Y-%m-%d)
+    cat > "$target_dir/.cco-source" <<YAML
+source: $url
+path: ${path:-}
+ref: ${ref:-}
+installed: $now
+updated: $now
+YAML
+
+    ok "Installed pack '$name'"
+}
+
+# Update a single pack from its recorded source.
+# Usage: _update_single_pack <name> <force>
+_update_single_pack() {
+    local name="$1"
+    local force="${2:-false}"
+    local source_file="$PACKS_DIR/$name/.cco-source"
+
+    if [[ ! -f "$source_file" ]]; then
+        die "Pack '$name' has no .cco-source — cannot determine remote source"
+    fi
+
+    local source_url source_ref source_path
+    source_url=$(yml_get "$source_file" "source")
+    source_ref=$(yml_get "$source_file" "ref")
+    source_path=$(yml_get "$source_file" "path")
+
+    if [[ "$source_url" == "local" || -z "$source_url" ]]; then
+        die "Pack '$name' was created locally — no remote source to update from"
+    fi
+
+    info "Fetching $source_url${source_ref:+ (ref: $source_ref)}..."
+    local tmpdir
+    tmpdir=$(_clone_config_repo "$source_url" "$source_ref" "")
+
+    # Determine source directory within clone
+    local remote_dir="$tmpdir"
+    if [[ -n "$source_path" ]]; then
+        remote_dir="$tmpdir/$source_path"
+    fi
+
+    if [[ ! -d "$remote_dir" ]]; then
+        _cleanup_clone "$tmpdir"
+        die "Remote path '$source_path' not found in cloned repo"
+    fi
+
+    # Install (force=true since we're explicitly updating)
+    _install_pack_from_dir "$remote_dir" "$name" "$source_url" "$source_ref" "$source_path" true
+
+    # Update the 'updated' date in .cco-source
+    local now
+    now=$(date +%Y-%m-%d)
+    if [[ -f "$PACKS_DIR/$name/.cco-source" ]]; then
+        sed -i "s/^updated: .*/updated: $now/" "$PACKS_DIR/$name/.cco-source" 2>/dev/null || \
+            sed -i '' "s/^updated: .*/updated: $now/" "$PACKS_DIR/$name/.cco-source"
+    fi
+
+    # Update share.yml
+    share_refresh "$USER_CONFIG_DIR"
+
+    _cleanup_clone "$tmpdir"
+    ok "Updated pack '$name'"
 }
