@@ -73,6 +73,7 @@ Commands:
   start <project>        Start a session for a configured project
   new                    Start a temporary session with specific repos
   project create <n>     Create a new project from template
+  project install <url>  Install project from a remote Config Repo
   project list           List available projects
   project show <n>       Show project details
   project validate <n>   Validate project structure
@@ -120,6 +121,7 @@ case "$cmd" in
         shift
         case "$subcmd" in
             create)   cmd_project_create "$@" ;;
+            install)  cmd_project_install "$@" ;;
             list)     cmd_project_list "$@" ;;
             show)     cmd_project_show "$@" ;;
             validate) cmd_project_validate "$@" ;;
