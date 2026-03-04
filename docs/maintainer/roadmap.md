@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-03 (bugfix #B1, RAG sprint added, declined claude-mem/claude-context).
+> Last updated: 2026-03-04 (sharing moved to Sprint 6; Docker socket per-container filtering deferred to long-term; native installer migration tracked as #B2).
 
 ---
 
@@ -53,6 +53,15 @@ Full extensibility story implemented:
 ### Docker Socket Toggle ✓
 
 `docker.mount_socket: false` in project.yml disables Docker socket mount for projects that don't need sibling containers.
+
+### Pack CLI (create, list, show, remove, validate) ✓
+
+Full pack management CLI in `lib/cmd-pack.sh`:
+- `cco pack create <name>` — scaffolds directory structure (`knowledge/`, `skills/`, `agents/`, `rules/`) and a commented `pack.yml` template. Validates name (lowercase, hyphens) and checks for duplicates.
+- `cco pack list` — tabular view of all packs with resource counts per category
+- `cco pack show <name>` — detailed view: knowledge files with descriptions, skills, agents, rules, projects using the pack
+- `cco pack remove <name> [--force]` — removes pack with in-use guard (warns if referenced by projects, prompts confirmation)
+- `cco pack validate [name]` — validates pack structure for one pack or all packs
 
 ### Update System ✓
 
@@ -106,6 +115,16 @@ Improved tmux configuration for clipboard and selection:
 
 ## Known Bugs
 
+### #B2 Claude Code native installer — migration deferred
+
+The `Dockerfile` uses `npm install -g @anthropic-ai/claude-code` which is deprecated upstream in favor of a native installer. The native installer was not adopted because it exhibited bot-detection blocks when downloading from container/CI environments.
+
+**Status**: No action needed now. npm install still works and no removal timeline is known. Revisit when Anthropic announces a deprecation date or ships a CI-friendly native installer.
+
+**Tracked**: add to a future maintenance sprint once the upstream situation is clearer.
+
+---
+
 ### #B1 Browser MCP loaded when `browser.enabled: false` ✓ FIXED
 
 **Fixed in**: `refactor/managed-integrations/convention`
@@ -143,18 +162,25 @@ Sprint 5 (onboarding)
 │    Tutorial Project  │
 └──────────────────────┘
 
-Sprint 6 (differenziante)      Sprint 7 (ecosistema)
-┌──────────────────────┐       ┌──────────────────────┐
-│ #6 Git Worktree      │       │ #8 cco pack create   │
-│    Isolation          │       │ #9 Pack inheritance  │
-│ #7 Session Resume    │       └──────────────────────┘
+Sprint 6 (condivisione — differenziante)
+┌──────────────────────┐
+│ #12 Sharing/Import   │
+│     (decoupled da    │
+│      Config Vault)   │
 └──────────────────────┘
-Sprint 8 (polish)              Sprint 9 (distribuzione)
+
+Sprint 7 (isolamento)          Sprint 8 (ecosistema)
+┌──────────────────────┐       ┌──────────────────────┐
+│ #6 Git Worktree      │       │ #9 Pack inheritance  │
+│    Isolation          │       └──────────────────────┘
+│ #7 Session Resume    │
+└──────────────────────┘
+Sprint 9 (polish)              Sprint 10 (versioning)
 ┌──────────────────────┐       ┌──────────────────────┐
 │ #10 cco project edit │       │ #11 Config Vault     │
-└──────────────────────┘       │ #12 Sharing/Import   │
-                               └──────────────────────┘
-Sprint 10 (intelligence)
+└──────────────────────┘       └──────────────────────┘
+
+Sprint 11 (intelligence)
 ┌──────────────────────┐
 │ #13 Project RAG      │
 │     (default MCP)    │
@@ -226,102 +252,15 @@ A self-contained example project that users launch with `cco start tutorial` (or
 
 ---
 
-### Sprint 6 — Differentiating feature
+### Sprint 6 — Sharing & Import
 
-#### #6 Git Worktree Isolation
-
-Opt-in git isolation for container sessions. When enabled, repos are mounted at `/git-repos/` and the entrypoint creates worktrees at `/workspace/` on a dedicated branch (`cco/<project>`). Claude works in the worktrees transparently.
-
-**Why here**: Auth is now implemented, enabling the full PR/merge workflow that makes worktree isolation valuable.
-
-**Activation**: `cco start <project> --worktree` or `worktree: true` in `project.yml`.
-
-**Key design points**:
-- Worktrees created inside the container (consistent paths, no `.git` file rewriting)
-- Commits persist in host repo via bind-mounted object store
-- Post-session cleanup integrated in `cmd_start()` (no `cco stop` needed)
-- Multiple merge/PR cycles during a single session via standard `gh pr create`
-- Session resume: branch `cco/<project>` persists, next `--worktree` start reuses it
-
-**Docs**: [analysis](./future/worktree/analysis.md) | [design](./future/worktree/design.md) | [ADR-10](./architecture.md)
-
-#### #7 Session resume
-
-`cco resume <project>` — reattach to a running tmux session inside a running container. Complements worktree isolation: resume work on the same branch.
-
----
-
-### Sprint 7 — Pack ecosystem
-
-#### #8 `cco pack create <name>` command
-
-Scaffold a new pack definition interactively, similar to `cco project create`. Lowers the barrier for creating packs.
-
-#### #9 Pack inheritance / composition
-
-Allow packs to extend other packs:
-```yaml
-extends: base-client
-files:
-  - additional-doc.md
-```
-
----
-
-### Sprint 8 — Automation and polish
-
-#### #10 `cco project edit <name>` command
-
-Open project.yml in `$EDITOR` and regenerate docker-compose.yml after save.
-
-#### #10b Status bar improvements
-
-Improve the StatusLine hook (`config/hooks/statusline.sh`) for better usability.
-
-**Issues**:
-1. **Cost display not useful for Max subscribers**: the `$cost` field shows cumulative USD spend, which is meaningless for users on Claude Max (flat-rate subscription). They would rather see remaining session/conversation budget as a percentage.
-2. **Context % stale after /compact**: the `ctx` percentage does not update immediately after `/compact` or other context-reducing events — it takes an additional prompt before the value refreshes. This is likely a Claude Code limitation in how frequently it calls the StatusLine hook, but we should investigate workarounds.
-
-**Proposed changes**:
-- Detect subscription type from session data and show remaining session % instead of cost for Max users (requires investigation of available fields in StatusLine JSON input)
-- Investigate whether `Notification` or `Stop` hook events can trigger a StatusLine refresh to fix stale context %
-- If Claude Code does not expose subscription/session data, document the limitation and request the feature upstream
-- Add configurable status bar format (e.g., `statusline.format` in global settings) so users can customize what is shown
-
----
-
-### Sprint 9 — Config Vault & Sharing
-
-Personal versioning and team sharing of packs, project configs, and global settings — powered by a dedicated git repo managed by the CLI.
-
-#### #11 Config Vault — Git-backed versioning for global/ and projects/
-
-A dedicated git repository (separate from claude-orchestrator itself) that versions the user's configuration: `global/` settings, project configs, and packs. The CLI manages this repo transparently.
-
-**Motivation**: today `global/` and `projects/` are gitignored. Users have no way to version, backup, diff, or roll back their configuration. If something breaks or a machine is lost, all config is gone.
-
-**Key design points**:
-- `cco vault init` — initialize a git repo backing `global/` and `projects/` (or a subset)
-- `cco vault sync` — commit current state with auto-generated message (or custom)
-- `cco vault diff` — show what changed since last sync
-- `cco vault log` — show config change history
-- `cco vault restore <ref>` — restore config from a previous commit
-- `cco vault remote add <url>` — link to a remote repo for push/pull backup
-- The vault repo is distinct from claude-orchestrator (framework is generic, vault is personal)
-- Sensitive files (`secrets.env`, `.credentials.json`) excluded by default with `.gitignore`
-- Works with any git remote (GitHub, GitLab, private server)
-
-**Scope**:
-- `lib/cmd-vault.sh` — vault management commands
-- Vault `.gitignore` template (exclude secrets, runtime files, `docker-compose.yml`)
-- Auto-commit hooks (optional: auto-sync on `cco stop`)
-- Test coverage for vault operations
+Moved up from Sprint 9 as a differentiating feature for adoption. Decoupled from Config Vault (#11) — sharing via git repos does not require local versioning.
 
 #### #12 Sharing & Import — Multi-resource bundles
 
 Share packs, project templates, and config bundles between users via git repos or archives.
 
-**Motivation**: packs are currently local to a single user. There is no way to share a well-tuned pack, a project template, or a set of rules with a colleague.
+**Motivation**: packs are currently local to a single user. There is no way to share a well-tuned pack, a project template, or a set of rules with a colleague. The tutorial project (Sprint 5) also benefits: once shipping is in place, the tutorial can serve as a model for shareable example projects.
 
 **Key design points**:
 - **Multi-resource repos**: a single git repo can contain multiple packs, project templates, and rules (avoids repo proliferation)
@@ -358,15 +297,107 @@ my-team-config/
 - **Conflict handling**: warn if a resource already exists locally, offer merge/overwrite/skip
 - **Versioning**: shared repos are git repos — users can pin to a tag/branch
 
-**Open questions** (to discuss):
-- Should `cco vault` and `cco share` be separate commands, or a unified `cco config` namespace?
+**Open questions**:
 - Should shared repos be registered globally (available to all projects) or per-project?
 - How to handle pack updates from shared repos when the user has local modifications?
-- Should we support a public registry/index of shared repos (future, not Sprint 9)?
+- Should we support a public registry/index of shared repos (future, not Sprint 6)?
 
 ---
 
-### Sprint 10 — Project RAG
+### Sprint 7 — Differentiating feature
+
+#### #6 Git Worktree Isolation
+
+Opt-in git isolation for container sessions. When enabled, repos are mounted at `/git-repos/` and the entrypoint creates worktrees at `/workspace/` on a dedicated branch (`cco/<project>`). Claude works in the worktrees transparently.
+
+**Why here**: Auth is now implemented, enabling the full PR/merge workflow that makes worktree isolation valuable.
+
+**Activation**: `cco start <project> --worktree` or `worktree: true` in `project.yml`.
+
+**Key design points**:
+- Worktrees created inside the container (consistent paths, no `.git` file rewriting)
+- Commits persist in host repo via bind-mounted object store
+- Post-session cleanup integrated in `cmd_start()` (no `cco stop` needed)
+- Multiple merge/PR cycles during a single session via standard `gh pr create`
+- Session resume: branch `cco/<project>` persists, next `--worktree` start reuses it
+
+**Docs**: [analysis](./future/worktree/analysis.md) | [design](./future/worktree/design.md) | [ADR-10](./architecture.md)
+
+#### #7 Session resume
+
+`cco resume <project>` — reattach to a running tmux session inside a running container. Complements worktree isolation: resume work on the same branch.
+
+---
+
+### Sprint 8 — Pack ecosystem
+
+> Note: `cco pack create` (and the full pack CLI) was implemented earlier and is now in the Completed section.
+
+#### #9 Pack inheritance / composition
+
+Allow packs to extend other packs:
+```yaml
+extends: base-client
+files:
+  - additional-doc.md
+```
+
+---
+
+### Sprint 9 — Automation and polish
+
+#### #10 `cco project edit <name>` command
+
+Open project.yml in `$EDITOR` and regenerate docker-compose.yml after save.
+
+#### #10b Status bar improvements
+
+Improve the StatusLine hook (`config/hooks/statusline.sh`) for better usability.
+
+**Issues**:
+1. **Cost display not useful for Max subscribers**: the `$cost` field shows cumulative USD spend, which is meaningless for users on Claude Max (flat-rate subscription). They would rather see remaining session/conversation budget as a percentage.
+2. **Context % stale after /compact**: the `ctx` percentage does not update immediately after `/compact` or other context-reducing events — it takes an additional prompt before the value refreshes. This is likely a Claude Code limitation in how frequently it calls the StatusLine hook, but we should investigate workarounds.
+
+**Proposed changes**:
+- Detect subscription type from session data and show remaining session % instead of cost for Max users (requires investigation of available fields in StatusLine JSON input)
+- Investigate whether `Notification` or `Stop` hook events can trigger a StatusLine refresh to fix stale context %
+- If Claude Code does not expose subscription/session data, document the limitation and request the feature upstream
+- Add configurable status bar format (e.g., `statusline.format` in global settings) so users can customize what is shown
+
+---
+
+### Sprint 10 — Config Vault
+
+Personal versioning of packs, project configs, and global settings — powered by a dedicated git repo managed by the CLI. Sharing (#12) was moved earlier to Sprint 6; this sprint covers the local versioning/backup side independently.
+
+#### #11 Config Vault — Git-backed versioning for global/ and projects/
+
+A dedicated git repository (separate from claude-orchestrator itself) that versions the user's configuration: `global/` settings, project configs, and packs. The CLI manages this repo transparently.
+
+**Motivation**: today `global/` and `projects/` are gitignored. Users have no way to version, backup, diff, or roll back their configuration. If something breaks or a machine is lost, all config is gone.
+
+**Key design points**:
+- `cco vault init` — initialize a git repo backing `global/` and `projects/` (or a subset)
+- `cco vault sync` — commit current state with auto-generated message (or custom)
+- `cco vault diff` — show what changed since last sync
+- `cco vault log` — show config change history
+- `cco vault restore <ref>` — restore config from a previous commit
+- `cco vault remote add <url>` — link to a remote repo for push/pull backup
+- The vault repo is distinct from claude-orchestrator (framework is generic, vault is personal)
+- Sensitive files (`secrets.env`, `.credentials.json`) excluded by default with `.gitignore`
+- Works with any git remote (GitHub, GitLab, private server)
+
+**Scope**:
+- `lib/cmd-vault.sh` — vault management commands
+- Vault `.gitignore` template (exclude secrets, runtime files, `docker-compose.yml`)
+- Auto-commit hooks (optional: auto-sync on `cco stop`)
+- Test coverage for vault operations
+
+**Open question**: should `cco vault` and `cco share` eventually unify under a `cco config` namespace? Defer decision to implementation time, when Sprint 6 sharing is already shipped and usage patterns are known.
+
+---
+
+### Sprint 11 — Project RAG
 
 Integrated semantic search over project knowledge, providing Claude with relevant context from large codebases and documentation without consuming the full context window.
 
@@ -426,6 +457,22 @@ rag:
 ---
 
 ## Long-term / Exploratory
+
+### Docker socket per-container filtering
+
+**Context**: Claude currently has unrestricted access to the host Docker socket (root-level access to all containers). `docker.mount_socket: false` already allows disabling it entirely per project, but there is no middle ground.
+
+**Goal**: allow Claude full exec/API access to containers belonging to the current project (network `cc-<project>`, or labeled with the project name), while blocking access to unrelated containers on the host daemon.
+
+**Why deferred**: the Tecnativa docker-socket-proxy (the standard approach) filters by API endpoint type, not by specific container. Per-container filtering requires either a custom HTTP proxy that inspects request payloads (container name/labels) or a Docker Authorization Plugin (requires modifying the host daemon). Both are non-trivial to implement and maintain reliably.
+
+**When to revisit**: when claude-orchestrator targets multi-tenant or shared-host deployments, or when a user reports a concrete security incident involving cross-container access.
+
+**Possible approach**:
+- A lightweight custom proxy (Go or Python) that intercepts Docker API calls and allows operations only on containers whose names match `cc-<project>-*` or whose labels include `cco.project=<name>`
+- Configurable in `project.yml` via `docker.socket_policy: full | filtered | none`
+
+---
 
 ### Remote sessions
 
