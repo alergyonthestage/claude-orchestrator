@@ -262,6 +262,8 @@ Unified with Sprint 10 under a single "Config Repo" model. Analysis and design c
 
 Share packs and project templates between users via git repos. Granular install (single pack from a multi-pack repo) via git sparse-checkout, without per-resource repo proliferation.
 
+**Post-implementation**: rename `cco share` → `cco manifest` and `share.yml` → `manifest.yml`. The name "share" implies an action (sharing resources), but the command only manages the manifest file (refresh, validate, show). "manifest" reflects the actual purpose. Includes: rename command in `bin/cco`, rename `lib/share.sh` → `lib/manifest.sh`, rename file on disk, update all references in docs and tests.
+
 **Design decisions**:
 - **Unified concept**: a Config Repo is a git repo with a standard structure — serves as vault, shared bundle, or both
 - **`user-config/` restructure**: replaces separate `global/` + `projects/` dirs; packs elevated to top-level (no longer nested inside `global/`)
