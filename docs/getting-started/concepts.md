@@ -8,7 +8,7 @@
 
 Knowledge packs are reusable collections of documentation — client overviews, architecture specs, coding conventions, runbooks — that can be activated across multiple projects without copying files.
 
-A pack is defined in `global/packs/<name>/pack.yml` with a reference to a documentation directory on the host. At session startup, `cco start` mounts the directory read-only and generates a list of available files. Claude reads them on-demand when relevant to the current task. Packs can also contribute skills, agents, and rules at the project level.
+A pack is defined in `user-config/packs/<name>/pack.yml` with a reference to a documentation directory on the host. At session startup, `cco start` mounts the directory read-only and generates a list of available files. Claude reads them on-demand when relevant to the current task. Packs can also contribute skills, agents, and rules at the project level.
 
 Activation in `project.yml`:
 
@@ -67,14 +67,20 @@ Commit this directory to a shared repository and every teammate runs `cco start 
 - `secrets.env` — credentials and tokens, per user
 - `claude-state/` — session memory and transcripts, per user
 
-**What requires separate sharing (coming soon):**
-- Knowledge packs — they live in `global/packs/` (user-level), outside the project directory. A dedicated `cco share` command for distributing packs and project templates across teams is planned.
+**Sharing packs and project templates (Config Repos):**
+- Knowledge packs and project templates can be shared via git using Config Repos
+- `cco pack install <url>` imports packs from any Config Repo
+- `cco project install <url>` imports project templates
+- `cco share refresh` generates a `share.yml` manifest to export your own packs and templates
+- Push your `user-config/` to a remote with `cco vault push` to share your full configuration
 
 **What stays local (user preferences):**
 - Claude authentication (OAuth or API key)
 - `~/.claude/settings.json` — user-level preferences
 
 This makes claude-orchestrator useful not just as a personal productivity tool, but as a team-wide standard for how Claude interacts with your codebase.
+
+Learn more: [Config Repo guide](../user-guides/config-repo.md).
 
 ---
 
@@ -97,7 +103,7 @@ claude-orchestrator supports two display modes:
 - **tmux** (default) — each teammate appears as a tmux pane inside the container. Works with any terminal, no host configuration needed.
 - **iTerm2** (`--teammate-mode auto`) — uses native iTerm2 panes on macOS. Better UX but requires additional setup (Python API enabled, `it2` CLI on host).
 
-The mode is configured in `global/.claude/settings.json` (`"teammateMode": "tmux"`) or via CLI flag (`--teammate-mode`).
+The mode is configured in `user-config/global/.claude/settings.json` (`"teammateMode": "tmux"`) or via CLI flag (`--teammate-mode`).
 
 Learn more: [agent-teams.md](../user-guides/agent-teams.md).
 

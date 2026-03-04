@@ -187,8 +187,23 @@ Run `cco build` to build the image. If you already ran `cco init`, the build sho
 
 ---
 
+## Optional: version your configuration
+
+After setup, you can enable git-backed versioning for your configuration with automatic secret detection:
+
+```bash
+cco vault init          # Initialize git repo in user-config/
+cco vault sync          # Commit current state
+cco vault remote add origin <url>   # Add a remote for backup
+cco vault push          # Push to remote
+```
+
+This lets you sync your configuration across machines and share packs with your team. See [Config Repo guide](../user-guides/config-repo.md) for the full workflow.
+
+---
+
 ## Next steps
 
 - [Your first project](first-project.md) — step-by-step tutorial
 - [Key concepts](concepts.md) — context hierarchy, knowledge packs, agent teams
-- [Overview](overview.md) — what is and how claude-orchestrator works
+- [Config Repo & sharing](../user-guides/config-repo.md) — share packs and project templates

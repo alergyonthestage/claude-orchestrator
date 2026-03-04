@@ -34,6 +34,7 @@ Operational guides for everyday use.
 | [agent-teams.md](user-guides/agent-teams.md) | Configure agent teams with tmux and iTerm2 |
 | [authentication.md](user-guides/authentication.md) | OAuth, API key, GitHub token, secrets management |
 | [browser-automation.md](user-guides/browser-automation.md) | Browser automation: setup, usage, troubleshooting |
+| [config-repo.md](user-guides/config-repo.md) | Share packs and project templates via Config Repos, vault versioning |
 | [troubleshooting.md](user-guides/troubleshooting.md) | Common issues and solutions |
 | [advanced/subagents.md](user-guides/advanced/subagents.md) | Custom subagents (analyst, reviewer) |
 | [advanced/custom-environment.md](user-guides/advanced/custom-environment.md) | Setup scripts, extra packages, custom images |
@@ -71,5 +72,6 @@ Design docs and analysis by area:
 | Agent teams | [analysis](maintainer/agent-teams/analysis.md) |
 | Worktree | [analysis](maintainer/future/worktree/analysis.md), [design](maintainer/future/worktree/design.md) |
 | Browser MCP | [analysis](maintainer/browser-mcp/analysis.md), [design](maintainer/browser-mcp/design.md) |
+| Config Repo | [design](maintainer/config-repo/design.md) |
 | Update system | [design](maintainer/update-system/design.md) |
 | Reviews | [24-02-2026](maintainer/reviews/24-02-2026-architecture-review.md), [26-02-2026](maintainer/reviews/26-02-2026-progress-review.md), [sprint plan](maintainer/reviews/sprint-2-3-implementation-plan.md) |

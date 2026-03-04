@@ -303,6 +303,8 @@ rm -rf user-config/
 git clone <your-config-repo-url> user-config/
 ```
 
+For the full sharing workflow (installing packs from remote, sharing project templates, multi-machine sync), see the [Config Repo guide](config-repo.md).
+
 ### Managing Defaults Updates
 
 When the tool is updated (`git pull`), system files (skills, agents, rules, settings.json) are automatically synced on the next `cco start` or `cco init`. User defaults (CLAUDE.md, mcp.json, language.md) are not overwritten.
