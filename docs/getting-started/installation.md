@@ -37,8 +37,8 @@ cco init
 ```
 
 `cco init` performs three operations:
-1. Copies user defaults to `global/.claude/` (agents, skills, rules, settings)
-2. Creates the `projects/` directory
+1. Copies user defaults to `user-config/global/.claude/` (agents, skills, rules, settings)
+2. Creates the `user-config/projects/` directory
 3. Runs `cco build` to build the Docker image
 
 ---
@@ -50,8 +50,8 @@ cco init
 cco project create my-app --repo ~/projects/my-app
 
 # Configure the project
-vim projects/my-app/project.yml         # repos, ports, auth
-vim projects/my-app/.claude/CLAUDE.md   # instructions for Claude
+vim user-config/projects/my-app/project.yml         # repos, ports, auth
+vim user-config/projects/my-app/.claude/CLAUDE.md   # instructions for Claude
 
 # Start a session
 cco start my-app
@@ -88,7 +88,7 @@ cco new --repo ~/projects/api --repo ~/projects/frontend --port 3000:3000
 
 ## Project configuration
 
-Each project lives in `projects/<name>/` and contains:
+Each project lives in `user-config/projects/<name>/` and contains:
 
 - **`project.yml`** — repositories to mount, ports, environment variables, authentication method
 - **`.claude/CLAUDE.md`** — Claude-specific instructions
@@ -104,8 +104,8 @@ For the complete `project.yml` format, see [cli.md](../reference/cli.md).
 Packs allow you to share cross-project documentation (conventions, business overview, guidelines) and optionally skills/agents/rules without copying files.
 
 ```bash
-# 1. Define a pack in global/packs/<name>/pack.yml
-cat > global/packs/my-client/pack.yml << 'EOF'
+# 1. Define a pack in user-config/packs/<name>/pack.yml
+cat > user-config/packs/my-client/pack.yml << 'EOF'
 name: my-client
 
 knowledge:

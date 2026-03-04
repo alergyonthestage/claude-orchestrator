@@ -43,7 +43,7 @@ Initialize user configuration by copying defaults. Required before first use.
 Usage: cco init [--force] [--lang <language>]
 
 Options:
-  --force            Overwrite existing global/ config with defaults
+  --force            Overwrite existing user-config/global/ config with defaults
   --lang <language>  Set communication language for Claude (default: English)
 
 Examples:
@@ -62,26 +62,26 @@ The file `defaults/global/.claude/rules/language.md` contains three placeholders
 | `{{DOCS_LANG}}` | Language for docs (README, guides) | `English` |
 | `{{CODE_LANG}}` | Language for code comments/docstrings | `English` |
 
-When `--lang` is provided, `{{COMM_LANG}}` is set to that language. `{{DOCS_LANG}}` and `{{CODE_LANG}}` always default to `English` (code is universal). To customize further, edit `global/.claude/rules/language.md` directly after `cco init`.
+When `--lang` is provided, `{{COMM_LANG}}` is set to that language. `{{DOCS_LANG}}` and `{{CODE_LANG}}` always default to `English` (code is universal). To customize further, edit `user-config/global/.claude/rules/language.md` directly after `cco init`.
 
 **Flow**:
 
 ```
-1. COPY user defaults: defaults/global/.claude/ → global/.claude/
-   - If global/ exists: skip (warn user, suggest --force)
+1. COPY user defaults: defaults/global/.claude/ → user-config/global/.claude/
+   - If user-config/global/ exists: skip (warn user, suggest --force)
    - If --force: overwrite
 
-2. SUBSTITUTE language placeholders in global/.claude/rules/language.md
+2. SUBSTITUTE language placeholders in user-config/global/.claude/rules/language.md
    - Replace {{COMM_LANG}} with --lang value (default: English)
    - Replace {{DOCS_LANG}} with English
    - Replace {{CODE_LANG}} with English
 
-3. SYNC system files: defaults/system/.claude/ → global/.claude/ (always, even without --force)
+3. SYNC system files: defaults/system/.claude/ → user-config/global/.claude/ (always, even without --force)
    - Overwrites skills, agents, rules, settings.json from system.manifest
    - Preserves user-added files not in the manifest
    - Removes deprecated paths from previous manifest
 
-4. CREATE projects/ directory (if needed)
+4. CREATE user-config/projects/ directory (if needed)
 
 5. PATH HINT
    - If cco is not in PATH, show the export command
@@ -112,7 +112,7 @@ Examples:
   cco build --mcp-packages "@modelcontextprotocol/server-github"
 ```
 
-MCP packages can also be listed in `global/mcp-packages.txt` (one per line) for automatic loading on every build.
+MCP packages can also be listed in `user-config/global/mcp-packages.txt` (one per line) for automatic loading on every build.
 
 ---
 
@@ -124,7 +124,7 @@ Start an interactive Claude Code session for a configured project.
 Usage: cco start <project> [OPTIONS]
 
 Arguments:
-  project              Name of the project (directory under projects/)
+  project              Name of the project (directory under user-config/projects/)
 
 Options:
   --teammate-mode <m>  Override display mode: tmux | auto
@@ -153,7 +153,7 @@ Examples:
 
 ```
 1. VALIDATE
-   - Check projects/<project>/project.yml exists
+   - Check user-config/projects/<project>/project.yml exists
    - Parse project.yml
    - Check no existing running session for this project (die if container cc-<name> is running)
    - Verify each repo path exists on host
@@ -166,22 +166,22 @@ Examples:
    - If mcp.json exists → mount as /workspace/.mcp.json (Claude Code expands ${VAR} natively)
    - Mount global MCP config for entrypoint merge
    - Apply CLI overrides (--port, --env, --teammate-mode)
-   - Write to projects/<project>/docker-compose.yml
+   - Write to user-config/projects/<project>/docker-compose.yml
 
 3. GENERATE pack resources
    - Clean stale files from previous .pack-manifest
    - Detect name conflicts across packs (warn if same agent/rule/skill in multiple packs)
-   - Copy skills, agents, rules from each pack into projects/<n>/.claude/
+   - Copy skills, agents, rules from each pack into user-config/projects/<n>/.claude/
    - Write new .pack-manifest tracking all copied files
    - Generate .claude/packs.md (instructional list of knowledge files)
    - Generate .claude/workspace.yml (structured project summary for /init)
 
 4. CREATE directories (if needed)
-   - projects/<project>/claude-state/memory/  (for auto memory + session transcripts; migrates legacy memory/ if present)
+   - user-config/projects/<project>/claude-state/memory/  (for auto memory + session transcripts; migrates legacy memory/ if present)
 
 5. LAUNCH
-   - Load global/secrets.env as runtime env vars (validates KEY=VALUE format, skips malformed lines with warning)
-   - docker compose -f projects/<project>/docker-compose.yml \
+   - Load user-config/global/secrets.env as runtime env vars (validates KEY=VALUE format, skips malformed lines with warning)
+   - docker compose -f user-config/projects/<project>/docker-compose.yml \
        run --rm --service-ports claude
 
 6. CLEANUP (after exit)
@@ -221,7 +221,7 @@ Examples:
 2. GENERATE temporary docker-compose
    - Create temp dir: /tmp/cc-<name>/
    - Generate docker-compose.yml with:
-     - Global config mounted (same as projects)
+     - Global config mounted (same as user-config/projects)
      - No project .claude/ (empty /workspace/.claude/)
      - Specified repos mounted as subdirectories
      - Auto memory in temp dir
@@ -261,10 +261,10 @@ Examples:
 ```
 1. VALIDATE
    - Name is valid (lowercase, hyphens, no spaces)
-   - projects/<name>/ does not already exist
+   - user-config/projects/<name>/ does not already exist
 
 2. COPY template
-   - Copy defaults/_template/ → projects/<name>/
+   - Copy defaults/_template/ → user-config/projects/<name>/
 
 3. CONFIGURE
    - If --repo flags provided: write repos to project.yml
@@ -272,10 +272,10 @@ Examples:
    - Replace {{PROJECT_NAME}} and {{DESCRIPTION}} placeholders
 
 4. CREATE directories
-   - projects/<name>/claude-state/memory/
+   - user-config/projects/<name>/claude-state/memory/
 
 5. PRINT
-   - "Project created at projects/<name>/"
+   - "Project created at user-config/projects/<name>/"
    - "Edit project.yml to configure repos and settings"
    - "Run: cco start <name>"
 ```
@@ -297,7 +297,7 @@ Output:
 ```
 
 **Implementation**:
-- List directories under `projects/` (exclude `_template`)
+- List directories under `user-config/projects/` (exclude `_template`)
 - Parse each `project.yml` for repo count
 - Check Docker for running containers (`cc-<name>`)
 
@@ -354,8 +354,8 @@ Examples:
 
 **Port resolution priority**:
 1. `--port <n>` — explicit flag
-2. `--project <name>` → reads `projects/<name>/.managed/.browser-port` (effective runtime port)
-3. `--project <name>` → falls back to `projects/<name>/project.yml` `browser.cdp_port`
+2. `--project <name>` → reads `user-config/projects/<name>/.managed/.browser-port` (effective runtime port)
+3. `--project <name>` → falls back to `user-config/projects/<name>/project.yml` `browser.cdp_port`
 4. Default: `9222`
 
 **Notes**:
@@ -387,21 +387,21 @@ Examples:
 1. VALIDATE
    - Global config exists (check_global)
    - Name matches pattern: ^[a-z0-9][a-z0-9-]*$
-   - global/packs/<name>/ does not already exist
+   - user-config/packs/<name>/ does not already exist
 
 2. CREATE directory structure
-   - global/packs/<name>/
-   - global/packs/<name>/knowledge/
-   - global/packs/<name>/skills/
-   - global/packs/<name>/agents/
-   - global/packs/<name>/rules/
+   - user-config/packs/<name>/
+   - user-config/packs/<name>/knowledge/
+   - user-config/packs/<name>/skills/
+   - user-config/packs/<name>/agents/
+   - user-config/packs/<name>/rules/
 
 3. GENERATE pack.yml
    - Scaffold with name field and commented-out sections
      for knowledge, skills, agents, rules
 
 4. PRINT
-   - "Pack created at global/packs/<name>/"
+   - "Pack created at user-config/packs/<name>/"
    - Hint: subdirectory purposes and how to declare resources
 ```
 
@@ -421,7 +421,7 @@ Output:
 ```
 
 **Implementation**:
-- Iterates directories under `global/packs/`
+- Iterates directories under `user-config/packs/`
 - Parses each `pack.yml` for knowledge files, skills, agents, and rules counts
 - Displays a formatted table with resource counts (shows `0` when a category is empty)
 
@@ -445,7 +445,7 @@ Examples:
 
 ```
 1. VALIDATE
-   - global/packs/<name>/ exists
+   - user-config/packs/<name>/ exists
    - pack.yml exists (warns if missing)
 
 2. DISPLAY
@@ -481,7 +481,7 @@ Examples:
 
 ```
 1. VALIDATE
-   - global/packs/<name>/ exists
+   - user-config/packs/<name>/ exists
 
 2. CHECK usage
    - Scan all projects for references to this pack
@@ -491,7 +491,7 @@ Examples:
      - Non-interactive terminal without --force: error and abort
 
 3. REMOVE
-   - rm -rf global/packs/<name>/
+   - rm -rf user-config/packs/<name>/
    - "Pack '<name>' removed"
 ```
 
@@ -550,7 +550,7 @@ Examples:
 
 ```
 1. VALIDATE
-   - projects/<name>/project.yml exists
+   - user-config/projects/<name>/project.yml exists
 
 2. DISPLAY
    - Name and description (from project.yml)
@@ -584,7 +584,7 @@ Examples:
    - 'name' field is present in project.yml
    - .claude/ directory exists (warns if missing)
    - Each configured repo path exists on the filesystem
-   - Each referenced pack exists in global/packs/
+   - Each referenced pack exists in user-config/packs/
 
 2. RESULT
    - Errors for missing project.yml, missing name field, missing repo paths,
@@ -642,6 +642,240 @@ Examples:
 
 ---
 
+### 3.16 `cco pack install <url>`
+
+Install packs from a remote Config Repo.
+
+```
+Usage: cco pack install <url> [OPTIONS]
+
+Arguments:
+  url                  URL of the Config Repo (git repository)
+
+Options:
+  --pick <name>        Install only a specific pack from the repo
+  --token <t>          Authentication token for private repos
+  --force              Overwrite existing pack with the same name
+
+Examples:
+  cco pack install https://github.com/team/config-repo
+  cco pack install https://github.com/team/config-repo --pick react-guidelines
+  cco pack install https://github.com/team/config-repo --token ghp_... --force
+```
+
+---
+
+### 3.17 `cco pack update`
+
+Update pack(s) from their remote source.
+
+```
+Usage: cco pack update <name> [--force]
+       cco pack update --all
+
+Arguments:
+  name                 Pack name to update
+
+Options:
+  --all                Update all packs that have a remote source
+  --force              Overwrite local modifications
+
+Examples:
+  cco pack update react-guidelines
+  cco pack update react-guidelines --force
+  cco pack update --all
+```
+
+---
+
+### 3.18 `cco pack export <name>`
+
+Export a pack as a `.tar.gz` archive.
+
+```
+Usage: cco pack export <name>
+
+Arguments:
+  name                 Pack name to export
+
+Examples:
+  cco pack export react-guidelines
+```
+
+---
+
+### 3.19 `cco project install <url>`
+
+Install a project template from a Config Repo.
+
+```
+Usage: cco project install <url> [OPTIONS]
+
+Arguments:
+  url                  URL of the Config Repo (git repository)
+
+Options:
+  --pick <n>           Install only a specific project template from the repo
+  --as <n>             Use a custom name for the installed project
+  --var K=V            Set a template variable (repeatable)
+  --token <t>          Authentication token for private repos
+  --force              Overwrite existing project with the same name
+
+Examples:
+  cco project install https://github.com/team/config-repo
+  cco project install https://github.com/team/config-repo --pick saas-template --as my-saas
+  cco project install https://github.com/team/config-repo --var DB_HOST=localhost --var DB_PORT=5432
+  cco project install https://github.com/team/config-repo --token ghp_... --force
+```
+
+---
+
+### 3.20 `cco vault`
+
+Git-backed configuration versioning for `user-config/`.
+
+#### `cco vault init [<path>]`
+
+Initialize git-backed config versioning.
+
+```
+Usage: cco vault init [<path>]
+
+Arguments:
+  path                 Path to initialize (default: user-config/)
+
+Examples:
+  cco vault init
+  cco vault init ~/my-config
+```
+
+#### `cco vault sync [msg]`
+
+Commit config state with pre-commit summary.
+
+```
+Usage: cco vault sync [msg] [OPTIONS]
+
+Arguments:
+  msg                  Optional commit message (auto-generated if omitted)
+
+Options:
+  --yes                Skip confirmation prompt
+  --dry-run            Show what would be committed without committing
+
+Examples:
+  cco vault sync
+  cco vault sync "Added react-guidelines pack"
+  cco vault sync --dry-run
+  cco vault sync --yes
+```
+
+#### `cco vault diff`
+
+Show uncommitted changes by category.
+
+```
+Usage: cco vault diff
+```
+
+#### `cco vault log`
+
+Show commit history.
+
+```
+Usage: cco vault log [OPTIONS]
+
+Options:
+  --limit N            Show only the last N commits (default: 10)
+
+Examples:
+  cco vault log
+  cco vault log --limit 5
+```
+
+#### `cco vault restore <ref>`
+
+Restore config to a previous state.
+
+```
+Usage: cco vault restore <ref>
+
+Arguments:
+  ref                  Git ref to restore (commit hash, tag, etc.)
+
+Examples:
+  cco vault restore abc1234
+  cco vault restore HEAD~3
+```
+
+#### `cco vault remote add <name> <url>`
+
+Add a remote to the vault.
+
+```
+Usage: cco vault remote add <name> <url>
+
+Examples:
+  cco vault remote add origin https://github.com/user/my-config.git
+```
+
+#### `cco vault push [<remote>]` / `cco vault pull [<remote>]`
+
+Push or pull vault to/from a remote.
+
+```
+Usage: cco vault push [<remote>]
+       cco vault pull [<remote>]
+
+Arguments:
+  remote               Remote name (default: origin)
+
+Examples:
+  cco vault push
+  cco vault pull
+  cco vault push backup
+```
+
+#### `cco vault status`
+
+Show vault state.
+
+```
+Usage: cco vault status
+```
+
+---
+
+### 3.21 `cco share`
+
+Manage the `share.yml` manifest for sharing packs and templates via Config Repos.
+
+#### `cco share refresh`
+
+Regenerate `share.yml` from `user-config/packs/` and `user-config/templates/`.
+
+```
+Usage: cco share refresh
+```
+
+#### `cco share validate`
+
+Cross-check `share.yml` against the actual files on disk.
+
+```
+Usage: cco share validate
+```
+
+#### `cco share show`
+
+Display `share.yml` contents.
+
+```
+Usage: cco share show
+```
+
+---
+
 ## 4. Project Configuration Format (project.yml)
 
 See [project-yaml.md](project-yaml.md) for the complete project.yml field reference and knowledge pack format.
@@ -671,22 +905,22 @@ services:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/myapp
     volumes:
       # Auth: preferences + MCP servers (writable, synced from host)
-      - ../../global/claude-state/claude.json:/home/claude/.claude.json
+      - ../../user-config/global/claude-state/claude.json:/home/claude/.claude.json
       # Auth: OAuth credentials (seeded from macOS Keychain, auto-refreshed by Claude)
-      - ../../global/claude-state/.credentials.json:/home/claude/.claude/.credentials.json
+      - ../../user-config/global/claude-state/.credentials.json:/home/claude/.claude/.credentials.json
       # Global config
-      - ../../global/.claude/settings.json:/home/claude/.claude/settings.json:ro
-      - ../../global/.claude/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
-      - ../../global/.claude/rules:/home/claude/.claude/rules:ro
-      - ../../global/.claude/agents:/home/claude/.claude/agents:ro
-      - ../../global/.claude/skills:/home/claude/.claude/skills:ro
+      - ../../user-config/global/.claude/settings.json:/home/claude/.claude/settings.json:ro
+      - ../../user-config/global/.claude/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
+      - ../../user-config/global/.claude/rules:/home/claude/.claude/rules:ro
+      - ../../user-config/global/.claude/agents:/home/claude/.claude/agents:ro
+      - ../../user-config/global/.claude/skills:/home/claude/.claude/skills:ro
       # Project config
       - ./.claude:/workspace/.claude
       - ./project.yml:/workspace/project.yml:ro
       # Claude state: auto memory + session transcripts (enables /resume across rebuilds)
       - ./claude-state:/home/claude/.claude/projects/-workspace
       # Global MCP servers (optional, merged into ~/.claude.json by entrypoint)
-      # - ../../global/.claude/mcp.json:/home/claude/.claude/mcp-global.json:ro
+      # - ../../user-config/global/.claude/mcp.json:/home/claude/.claude/mcp-global.json:ro
       # Project MCP servers (optional, Claude Code expands ${VAR} natively)
       # - ./mcp.json:/workspace/.mcp.json:ro
       # Project setup script (optional, executed by entrypoint at runtime)
@@ -732,7 +966,7 @@ networks:
 | Docker image not built | `Error: Docker image 'claude-orchestrator:latest' not found. Run 'cco build' first.` |
 | Docker not running | `Error: Docker daemon is not running. Start Docker Desktop.` |
 | Port conflict | `Error: Port 3000 is already in use. Stop the conflicting service or use --port to remap.` |
-| Project already exists | `Error: Project 'foo' already exists at projects/foo/` |
+| Project already exists | `Error: Project 'foo' already exists at user-config/projects/foo/` |
 | Malformed secrets.env | `Warning: secrets.env:3: skipping malformed line (expected KEY=VALUE)` |
 
 ---
@@ -758,18 +992,18 @@ Each project can include a `mcp.json` file using Claude Code's native `.mcp.json
 }
 ```
 
-The `${VAR}` placeholders are expanded **natively by Claude Code** inside the container. The env vars must be available in the container environment via `global/secrets.env`, `project.yml` `docker.env`, or `--env` CLI flags.
+The `${VAR}` placeholders are expanded **natively by Claude Code** inside the container. The env vars must be available in the container environment via `user-config/global/secrets.env`, `project.yml` `docker.env`, or `--env` CLI flags.
 
 **Important**: If a `${VAR}` reference in `mcp.json` cannot be resolved (env var not set), Claude Code will fail to parse the entire file and show "No MCP servers configured".
 
-### 7.2 Global MCP (`global/.claude/mcp.json`)
+### 7.2 Global MCP (`user-config/global/.claude/mcp.json`)
 
 MCP servers defined here are available in all projects. The entrypoint merges global and project MCP servers into `~/.claude.json` at container startup using `jq`. This ensures MCP servers are available via the user-scope mechanism (most reliable).
 
-### 7.3 Secrets (`global/secrets.env`)
+### 7.3 Secrets (`user-config/global/secrets.env`)
 
 ```bash
-# global/secrets.env — gitignored
+# user-config/global/secrets.env — gitignored
 GITHUB_TOKEN=ghp_...
 LINEAR_API_KEY=lin_api_...
 ```

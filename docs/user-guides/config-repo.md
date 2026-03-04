@@ -1,0 +1,519 @@
+# Config Repo Guide
+
+> Related: [cli.md](../reference/cli.md) | [project-setup.md](./project-setup.md) | [knowledge-packs.md](./knowledge-packs.md) | [Config Repo Design](../maintainer/config-repo/design.md)
+
+---
+
+## 1. Overview
+
+A **Config Repo** is a git repository that follows the CCO directory convention. It serves two purposes:
+
+- **Vault**: a private, versioned backup of all your user configuration (packs, projects, global settings, templates)
+- **Shared bundle**: a repository that others can install packs and project templates from
+
+Use a Config Repo when you want to:
+
+- **Back up** your configuration and restore it on another machine
+- **Share** knowledge packs with your team (conventions, guidelines, deployment patterns)
+- **Distribute** project templates so teammates can bootstrap projects with a single command
+- **Sync** your personal setup across multiple workstations
+
+CCO does not implement access control. Visibility is a git hosting concern — use private repos for personal vaults and team configs, public repos for open-source packs.
+
+### Config Repo Structure
+
+```
+my-config-repo/
+├── share.yml              # Manifest: declares available packs and templates
+├── .gitignore             # CCO-generated, excludes secrets + runtime files
+├── packs/                 # Reusable knowledge packs
+│   ├── react-guidelines/
+│   │   ├── pack.yml
+│   │   ├── knowledge/
+│   │   ├── skills/
+│   │   ├── agents/
+│   │   └── rules/
+│   └── deploy-patterns/
+│       └── ...
+├── templates/             # Shareable project templates
+│   └── microservice/
+│       ├── project.yml
+│       └── .claude/
+├── global/                # Personal settings (vault only, not shared)
+│   └── .claude/
+└── projects/              # Personal projects (vault only, not shared)
+    └── my-app/
+```
+
+When someone runs `cco pack install` against your repo, only `packs/` and `templates/` are available. The `global/` and `projects/` directories are personal and stay in your vault.
+
+---
+
+## 2. Setting Up Your Config Repo
+
+### Initialize the vault
+
+```bash
+cco vault init
+```
+
+This creates a git repository in your `user-config/` directory (or `CCO_USER_CONFIG_DIR` if set), writes a `.gitignore` that excludes secrets and runtime files, generates an initial `share.yml`, and creates the first commit.
+
+If you want to use a custom path:
+
+```bash
+cco vault init ~/my-cco-vault
+```
+
+### Add a remote
+
+```bash
+cco vault remote add origin git@github.com:youruser/cco-vault.git
+```
+
+### Push your configuration
+
+```bash
+cco vault push
+```
+
+This pushes the current branch to the remote. On the first push, it sets the upstream tracking branch automatically.
+
+### Day-to-day workflow
+
+After making changes to your packs, projects, or global settings:
+
+```bash
+# See what changed
+cco vault diff
+
+# Commit with a summary
+cco vault sync "added react-guidelines pack"
+
+# Push to remote
+cco vault push
+```
+
+`cco vault sync` shows a categorized summary of changes before committing:
+
+```
+Changes to commit:
+  packs:     2 file(s)
+  projects:  1 file(s)
+  global:    1 file(s)
+  total:     4 file(s)
+
+Proceed? [Y/n]
+```
+
+It also detects secret files (`.env`, `.key`, `.pem`, `.credentials.json`) and aborts if any are staged, preventing accidental exposure.
+
+---
+
+## 3. Sharing Packs
+
+### share.yml
+
+Every Config Repo contains a `share.yml` at the root. This manifest declares which packs and templates are available for installation. CCO generates and maintains it automatically — you never need to write it by hand.
+
+```yaml
+# share.yml
+name: "acme-team-config"
+description: "Engineering configuration for ACME Corp"
+
+packs:
+  - name: acme-conventions
+    description: "Code style, commit conventions, and review standards"
+    tags: [conventions, style]
+  - name: acme-deploy
+    description: "Deployment scripts and infrastructure patterns"
+    tags: [deploy, infra]
+
+templates:
+  - name: acme-service
+    description: "Microservice template with standard ACME setup"
+    tags: [microservice, fastapi]
+```
+
+### Keeping share.yml in sync
+
+CCO updates `share.yml` automatically when you create or remove packs. To manually regenerate it from disk:
+
+```bash
+cco share refresh
+```
+
+This scans the `packs/` and `templates/` directories and rebuilds `share.yml`, preserving any custom name, description, and tags you have edited.
+
+### Validating share.yml
+
+```bash
+cco share validate
+```
+
+Cross-checks `share.yml` against what exists on disk. Warns about:
+
+- **Stale entries**: a pack listed in `share.yml` that no longer exists in `packs/`
+- **Missing entries**: a pack directory that exists on disk but is not listed in `share.yml`
+
+If issues are found, run `cco share refresh` to fix them.
+
+### Viewing share.yml contents
+
+```bash
+cco share show
+```
+
+Displays a formatted view of your Config Repo's name, description, available packs, and templates.
+
+---
+
+## 4. Installing Packs from a Remote
+
+### Install all packs from a Config Repo
+
+```bash
+cco pack install https://github.com/acme/cco-config
+```
+
+This clones the repo, reads `share.yml`, and installs every pack listed under `packs:` into your local `user-config/packs/` directory.
+
+### Install a specific pack
+
+```bash
+cco pack install https://github.com/acme/cco-config --pick acme-conventions
+```
+
+Only installs the `acme-conventions` pack. If the name does not match any entry in `share.yml`, CCO prints the available pack names and exits.
+
+### Overwrite existing packs
+
+```bash
+cco pack install https://github.com/acme/cco-config --force
+```
+
+By default, if a pack with the same name already exists locally:
+
+- If it was installed from the **same source** — CCO updates it automatically
+- If it was installed from a **different source** or created locally — CCO aborts and asks you to use `--force`
+
+With `--force`, existing packs are overwritten without prompting.
+
+### Private repositories
+
+For private repos accessible over HTTPS, pass a token:
+
+```bash
+cco pack install https://github.com/acme/cco-config --token ghp_xxxxxxxxxxxx
+```
+
+For SSH-based repos, authentication uses your existing SSH key:
+
+```bash
+cco pack install git@github.com:acme/cco-config
+```
+
+If `GITHUB_TOKEN` is set in your environment, HTTPS authentication uses it automatically.
+
+### Pin to a branch or tag
+
+Append `@ref` to the URL to install from a specific branch, tag, or commit:
+
+```bash
+# Install from the v2.0 tag
+cco pack install https://github.com/acme/cco-config@v2.0
+
+# Install from a feature branch
+cco pack install https://github.com/acme/cco-config@next
+```
+
+### Single-pack repositories
+
+If a repository contains a single `pack.yml` at the root (no `share.yml`), CCO recognizes it as a single-pack repo and installs it directly:
+
+```bash
+cco pack install https://github.com/alice/react-best-practices
+```
+
+No `share.yml` is required in this case.
+
+---
+
+## 5. Updating Packs
+
+Every pack installed from a remote carries a `.cco-source` metadata file that records where it came from:
+
+```yaml
+source: https://github.com/acme/cco-config
+path: packs/acme-conventions
+ref: main
+installed: 2026-03-01
+updated: 2026-03-01
+```
+
+### Update a single pack
+
+```bash
+cco pack update acme-conventions
+```
+
+Re-fetches the pack from its recorded source and replaces the local copy. If the pack has been modified locally, use `--force` to overwrite:
+
+```bash
+cco pack update acme-conventions --force
+```
+
+### Update all remote packs
+
+```bash
+cco pack update --all
+```
+
+Updates every pack that has a remote source (skips locally created packs). Combine with `--force` to overwrite local modifications:
+
+```bash
+cco pack update --all --force
+```
+
+Packs created locally with `cco pack create` have `source: local` in their `.cco-source` and are never touched by `--all`.
+
+---
+
+## 6. Exporting Packs
+
+To share a pack as a standalone archive (without requiring git):
+
+```bash
+cco pack export acme-conventions
+```
+
+This creates `acme-conventions.tar.gz` in the current directory. The archive excludes the `.cco-source` metadata file, so the recipient gets a clean copy.
+
+The recipient can extract it into their packs directory:
+
+```bash
+tar xzf acme-conventions.tar.gz -C user-config/packs/
+```
+
+---
+
+## 7. Installing Project Templates
+
+Project templates are stored under `templates/` in a Config Repo. They contain a `project.yml` and `.claude/` directory that may include `{{PLACEHOLDER}}` variables resolved at install time.
+
+### Install a template
+
+```bash
+cco project install https://github.com/acme/cco-config --pick acme-service
+```
+
+If the repo contains a single template, `--pick` is optional — CCO auto-selects it.
+
+If there are multiple templates and you omit `--pick`, CCO lists the available templates and asks you to choose:
+
+```bash
+cco project install https://github.com/acme/cco-config
+# Available templates:
+#   - acme-service
+#   - acme-frontend
+# Multiple templates found. Use --pick <name> to select one.
+```
+
+### Rename the project on install
+
+```bash
+cco project install https://github.com/acme/cco-config --pick acme-service --as my-api
+```
+
+By default, the project is created with the template's name. Use `--as` to give it a different name.
+
+### Pre-set template variables
+
+Templates may contain `{{VARIABLE}}` placeholders in `project.yml` and `.claude/CLAUDE.md`. CCO resolves them at install time.
+
+Predefined variables:
+
+| Variable | Source | Default |
+|---|---|---|
+| `{{PROJECT_NAME}}` | `--as` flag or template name | Template name |
+| `{{DESCRIPTION}}` | Interactive prompt | `TODO: Add project description` |
+
+Any other `{{VARIABLE}}` triggers an interactive prompt. You can pre-set values with `--var`:
+
+```bash
+cco project install https://github.com/acme/cco-config \
+  --pick acme-service \
+  --as my-api \
+  --var DESCRIPTION="My REST API" \
+  --var DB_NAME=myapp_db
+```
+
+Multiple `--var` flags can be used. Variables not covered by `--var` are prompted interactively.
+
+### Authentication and ref pinning
+
+The same options available for `cco pack install` work here:
+
+```bash
+# Private repo with token
+cco project install https://github.com/acme/cco-config --pick acme-service --token ghp_xxx
+
+# Specific branch
+cco project install https://github.com/acme/cco-config@v2.0 --pick acme-service
+
+# Overwrite existing project
+cco project install https://github.com/acme/cco-config --pick acme-service --force
+```
+
+---
+
+## 8. Vault Commands Reference
+
+| Command | Description |
+|---------|-------------|
+| `cco vault init [<path>]` | Initialize git-backed vault for config versioning |
+| `cco vault sync [<message>]` | Commit current state with pre-commit summary |
+| `cco vault sync --dry-run` | Show summary without committing |
+| `cco vault sync --yes` | Skip confirmation prompt |
+| `cco vault diff` | Show uncommitted changes grouped by category |
+| `cco vault log [--limit N]` | Show commit history (default: last 20) |
+| `cco vault restore <ref>` | Restore config to a previous state (does not move HEAD) |
+| `cco vault remote add <name> <url>` | Add a git remote |
+| `cco vault remote remove <name>` | Remove a git remote |
+| `cco vault push [<remote>]` | Push to remote (default: origin) |
+| `cco vault pull [<remote>]` | Pull from remote (default: origin) |
+| `cco vault status` | Show vault state, remotes, and uncommitted changes |
+
+---
+
+## 9. Multi-Machine Workflow
+
+### Machine A — Set up and push
+
+```bash
+# 1. Initialize (if not already done)
+cco init
+
+# 2. Create some packs
+cco pack create react-guidelines
+# ... add knowledge files, skills, rules ...
+
+cco pack create deploy-patterns
+# ... add deployment knowledge ...
+
+# 3. Initialize the vault
+cco vault init
+
+# 4. Add your remote
+cco vault remote add origin git@github.com:youruser/cco-vault.git
+
+# 5. Sync and push
+cco vault sync "initial config setup"
+cco vault push
+```
+
+### Machine B — Clone and use
+
+```bash
+# 1. Install the orchestrator
+git clone <orchestrator-url> ~/claude-orchestrator
+cd ~/claude-orchestrator
+cco init
+
+# 2. Pull your configuration from the vault
+cco vault init
+cco vault remote add origin git@github.com:youruser/cco-vault.git
+cco vault pull
+
+# 3. Your packs, projects, templates, and global settings are now available
+cco pack list
+cco project list
+```
+
+### Keeping machines in sync
+
+On either machine, after making changes:
+
+```bash
+cco vault sync "updated react-guidelines"
+cco vault push
+```
+
+On the other machine:
+
+```bash
+cco vault pull
+```
+
+### Team sharing (separate repos)
+
+For team use, keep your personal vault private and maintain a separate shared repo:
+
+```bash
+# Personal vault (private)
+github.com/alice/cco-vault
+
+# Team config (private, org members)
+github.com/acme/cco-config
+```
+
+Teammates install packs from the team repo:
+
+```bash
+cco pack install git@github.com:acme/cco-config
+```
+
+Each person's vault tracks where each pack was installed from via the `.cco-source` metadata.
+
+---
+
+## 10. share.yml Format
+
+The `share.yml` manifest is auto-generated and maintained by CCO. You can edit the `name`, `description`, and per-entry `description`/`tags` fields — they are preserved across `cco share refresh` runs.
+
+```yaml
+# Auto-generated by cco — edit name, description, and tags as needed
+name: "my-config-repo"
+description: "Personal knowledge packs and project templates"
+
+packs:
+  - name: react-guidelines
+    description: "React patterns, hooks conventions, testing approach"
+    tags: [react, frontend, testing]
+  - name: deploy-patterns
+    description: "AWS deployment automation and IaC patterns"
+    tags: [deploy, aws, terraform]
+
+templates:
+  - name: fullstack-app
+    description: "Full-stack template with Next.js + FastAPI"
+    tags: [nextjs, fastapi, postgres]
+
+# Empty sections use []:
+# packs: []
+# templates: []
+```
+
+### Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | No | Human-readable name for the Config Repo |
+| `description` | No | Brief description of the repo's purpose |
+| `packs` | Yes | List of available packs (or `[]` if none) |
+| `packs[].name` | Yes | Pack directory name (must match `packs/<name>/`) |
+| `packs[].description` | No | What the pack provides |
+| `packs[].tags` | No | Categorization tags |
+| `templates` | Yes | List of available templates (or `[]` if none) |
+| `templates[].name` | Yes | Template directory name (must match `templates/<name>/`) |
+| `templates[].description` | No | What the template provides |
+| `templates[].tags` | No | Categorization tags |
+
+### Auto-management
+
+| Action | Effect on share.yml |
+|--------|---------------------|
+| `cco pack create <name>` | Adds entry under `packs:` |
+| `cco pack remove <name>` | Removes entry from `packs:` |
+| `cco share refresh` | Regenerates from disk, preserving custom metadata |
+| `cco share validate` | Cross-checks manifest vs. disk contents |
