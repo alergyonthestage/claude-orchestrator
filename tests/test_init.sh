@@ -132,3 +132,12 @@ test_init_creates_user_config_structure() {
     assert_dir_exists "$CCO_USER_CONFIG_DIR/packs"
     assert_dir_exists "$CCO_USER_CONFIG_DIR/templates"
 }
+
+test_init_creates_share_yml() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+    assert_file_exists "$CCO_USER_CONFIG_DIR/share.yml"
+    assert_file_contains "$CCO_USER_CONFIG_DIR/share.yml" "packs:"
+    assert_file_contains "$CCO_USER_CONFIG_DIR/share.yml" "templates:"
+}

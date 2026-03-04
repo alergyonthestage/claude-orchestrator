@@ -62,5 +62,6 @@ _clone_config_repo() {
 # Usage: _cleanup_clone "$tmpdir"
 _cleanup_clone() {
     local tmpdir="$1"
-    [[ -d "$tmpdir" && "$tmpdir" == /tmp/cco-* ]] && rm -rf "$tmpdir"
+    # Match cco-XXXXXX suffix regardless of TMPDIR prefix
+    [[ -d "$tmpdir" && "$(basename "$tmpdir")" == cco-* ]] && rm -rf "$tmpdir"
 }

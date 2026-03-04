@@ -40,7 +40,7 @@ _VAULT_SECRET_PATTERNS=(
 # ── Vault subcommands ─────────────────────────────────────────────────
 
 cmd_vault_init() {
-    local target="${1:-$USER_CONFIG_DIR}"
+    local target=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -57,6 +57,8 @@ EOF
             *)  target="$1"; shift ;;
         esac
     done
+
+    target="${target:-$USER_CONFIG_DIR}"
 
     if [[ ! -d "$target" ]]; then
         mkdir -p "$target"
@@ -363,6 +365,16 @@ cmd_vault_remote() {
     [[ -z "$subcmd" ]] && die "Usage: cco vault remote add <name> <url>"
     shift
 
+    # Handle --help before vault check
+    if [[ "$subcmd" == "--help" ]]; then
+        cat <<'EOF'
+Usage: cco vault remote <add|remove> <name> [<url>]
+
+Manage vault git remotes.
+EOF
+        return 0
+    fi
+
     _check_vault
 
     case "$subcmd" in
@@ -377,13 +389,6 @@ cmd_vault_remote() {
             [[ -z "$name" ]] && die "Usage: cco vault remote remove <name>"
             git -C "$USER_CONFIG_DIR" remote remove "$name"
             ok "Removed remote '$name'"
-            ;;
-        --help)
-            cat <<'EOF'
-Usage: cco vault remote <add|remove> <name> [<url>]
-
-Manage vault git remotes.
-EOF
             ;;
         *)
             # Pass through to git remote

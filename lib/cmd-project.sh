@@ -521,18 +521,19 @@ _resolve_template_vars() {
     local project_dir="$1"
     local project_name="$2"
     shift 2
-    local -a preset_vars=("$@")
 
-    # Build lookup of preset vars
-    local -A presets=()
-    for v in "${preset_vars[@]+"${preset_vars[@]}"}"; do
-        local key="${v%%=*}"
-        local val="${v#*=}"
-        presets["$key"]="$val"
+    # Build lookup of preset vars as newline-separated "KEY=VALUE" entries
+    # (bash 3.2 compatible — no associative arrays)
+    local preset_list=""
+    while [[ $# -gt 0 ]]; do
+        preset_list+="$1"$'\n'
+        shift
     done
 
-    # Always preset PROJECT_NAME
-    presets["PROJECT_NAME"]="${presets["PROJECT_NAME"]:-$project_name}"
+    # Always preset PROJECT_NAME (unless already in list)
+    if ! echo "$preset_list" | grep -q "^PROJECT_NAME="; then
+        preset_list+="PROJECT_NAME=$project_name"$'\n'
+    fi
 
     # Find all template files to process
     local -a template_files=()
@@ -556,8 +557,12 @@ _resolve_template_vars() {
     for var in $all_vars; do
         name="${var//[\{\}]/}"
 
-        if [[ -n "${presets[$name]+x}" ]]; then
-            value="${presets[$name]}"
+        # Lookup in preset list
+        local preset_match
+        preset_match=$(echo "$preset_list" | grep "^${name}=" | head -1 || true)
+
+        if [[ -n "$preset_match" ]]; then
+            value="${preset_match#*=}"
         elif [[ -t 0 ]]; then
             # Interactive prompt
             local default=""
@@ -572,7 +577,7 @@ _resolve_template_vars() {
             fi
             [[ -z "$value" ]] && die "Value required for $name"
         else
-            # Non-interactive: use sensible defaults or leave empty
+            # Non-interactive: use sensible defaults
             case "$name" in
                 DESCRIPTION) value="TODO: Add project description" ;;
                 *)           value="$name" ;;

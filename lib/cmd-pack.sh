@@ -672,8 +672,8 @@ _update_single_pack() {
     local now
     now=$(date +%Y-%m-%d)
     if [[ -f "$PACKS_DIR/$name/.cco-source" ]]; then
-        sed -i "s/^updated: .*/updated: $now/" "$PACKS_DIR/$name/.cco-source" 2>/dev/null || \
-            sed -i '' "s/^updated: .*/updated: $now/" "$PACKS_DIR/$name/.cco-source"
+        sed -i '' "s/^updated: .*/updated: $now/" "$PACKS_DIR/$name/.cco-source" 2>/dev/null || \
+            sed -i "s/^updated: .*/updated: $now/" "$PACKS_DIR/$name/.cco-source"
     fi
 
     # Update share.yml

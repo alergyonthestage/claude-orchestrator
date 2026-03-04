@@ -275,6 +275,147 @@ test_vault_log_fails_without_init() {
     fi
 }
 
+# ── vault restore ─────────────────────────────────────────────────────
+
+test_vault_restore_invalid_ref_fails() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault "$tmpdir"
+    if run_cco vault restore "nonexistent-ref" 2>/dev/null; then
+        echo "ASSERTION FAILED: should fail for invalid ref"
+        return 1
+    fi
+}
+
+test_vault_restore_no_ref_fails() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault "$tmpdir"
+    if run_cco vault restore 2>/dev/null; then
+        echo "ASSERTION FAILED: should fail without ref"
+        return 1
+    fi
+}
+
+test_vault_restore_no_diff_reports_nothing() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault "$tmpdir"
+    # Restore to HEAD (no changes)
+    run_cco vault restore HEAD
+    assert_output_contains "nothing to restore"
+}
+
+test_vault_restore_non_interactive_fails() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault "$tmpdir"
+
+    # Create a second commit
+    printf '# Change\n' > "$CCO_GLOBAL_DIR/.claude/rules/test.md"
+    run_cco vault sync "add test" --yes
+
+    # Pipe stdin (non-tty) — should refuse
+    if echo "" | run_cco vault restore HEAD~1 2>/dev/null; then
+        echo "ASSERTION FAILED: should fail in non-interactive mode"
+        return 1
+    fi
+}
+
+# ── vault remote ──────────────────────────────────────────────────────
+
+test_vault_remote_add() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault "$tmpdir"
+    run_cco vault remote add origin "https://github.com/test/repo.git"
+    assert_output_contains "Added remote"
+
+    # Verify remote was added
+    local remotes
+    remotes=$(git -C "$CCO_USER_CONFIG_DIR" remote -v)
+    if ! echo "$remotes" | grep -q "origin"; then
+        echo "ASSERTION FAILED: remote 'origin' not found"
+        return 1
+    fi
+}
+
+test_vault_remote_remove() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault "$tmpdir"
+    run_cco vault remote add test-remote "https://example.com/repo.git"
+    run_cco vault remote remove test-remote
+    assert_output_contains "Removed remote"
+}
+
+test_vault_remote_no_args_fails() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault "$tmpdir"
+    if run_cco vault remote 2>/dev/null; then
+        echo "ASSERTION FAILED: should fail without subcommand"
+        return 1
+    fi
+}
+
+test_vault_remote_add_missing_url_fails() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault "$tmpdir"
+    if run_cco vault remote add "myremote" 2>/dev/null; then
+        echo "ASSERTION FAILED: should fail without URL"
+        return 1
+    fi
+}
+
+# ── vault push/pull ───────────────────────────────────────────────────
+
+test_vault_push_no_remote_fails() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault "$tmpdir"
+    # No remote configured — push should fail
+    if run_cco vault push 2>/dev/null; then
+        echo "ASSERTION FAILED: push should fail without remote"
+        return 1
+    fi
+}
+
+test_vault_pull_no_remote_fails() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault "$tmpdir"
+    # No remote configured — pull should fail
+    if run_cco vault pull 2>/dev/null; then
+        echo "ASSERTION FAILED: pull should fail without remote"
+        return 1
+    fi
+}
+
+test_vault_push_to_bare_remote() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault "$tmpdir"
+
+    # Create a bare repo as remote
+    local bare="$tmpdir/remote.git"
+    git init --bare -q "$bare"
+    run_cco vault remote add origin "$bare"
+
+    # Push
+    run_cco vault push
+    assert_output_contains "Pushed to"
+
+    # Verify commit exists in bare repo
+    local count
+    count=$(git -C "$bare" rev-list --count HEAD 2>/dev/null)
+    assert_equals "1" "$count" "Expected 1 commit in bare remote"
+}
+
+# ── vault status extended ─────────────────────────────────────────────
+
+test_vault_status_shows_remote() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault "$tmpdir"
+
+    local bare="$tmpdir/remote.git"
+    git init --bare -q "$bare"
+    run_cco vault remote add origin "$bare"
+
+    run_cco vault status
+    assert_output_contains "origin"
+}
+
 # ── vault help ────────────────────────────────────────────────────────
 
 test_vault_help() {
@@ -286,4 +427,32 @@ test_vault_help() {
     assert_output_contains "sync"
     assert_output_contains "diff"
     assert_output_contains "status"
+}
+
+test_vault_restore_help() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco vault restore --help
+    assert_output_contains "restore"
+}
+
+test_vault_remote_help() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco vault remote --help
+    assert_output_contains "remote"
+}
+
+test_vault_push_help() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco vault push --help
+    assert_output_contains "push"
+}
+
+test_vault_pull_help() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco vault pull --help
+    assert_output_contains "pull"
 }

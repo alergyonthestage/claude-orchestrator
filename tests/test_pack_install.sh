@@ -315,6 +315,125 @@ test_pack_export_nonexistent_fails() {
     fi
 }
 
+# ── same-source auto-update ────────────────────────────────────────────
+
+test_pack_install_same_source_auto_updates() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local remote
+    remote=$(_create_mock_config_repo "$tmpdir" "auto-pack")
+    run_cco pack install "$remote" --pick "auto-pack"
+    assert_file_exists "$CCO_PACKS_DIR/auto-pack/agents/bot.md"
+
+    # Modify the remote
+    printf 'V2 content\n' > "$tmpdir/mock-work/packs/auto-pack/agents/bot.md"
+    git -C "$tmpdir/mock-work" add -A
+    git -C "$tmpdir/mock-work" commit -q -m "v2"
+    git -C "$tmpdir/mock-work" push -q origin main 2>/dev/null || \
+        git -C "$tmpdir/mock-work" push -q origin master 2>/dev/null
+
+    # Re-install same source — should auto-update without --force
+    run_cco pack install "$remote" --pick "auto-pack"
+    assert_output_contains "updating"
+    assert_file_contains "$CCO_PACKS_DIR/auto-pack/agents/bot.md" "V2"
+}
+
+# ── update --all ─────────────────────────────────────────────────────
+
+test_pack_update_all_skips_local() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+
+    # Create a local pack (no .cco-source)
+    run_cco pack create "local-only"
+
+    # Create a remote pack
+    local remote
+    remote=$(_create_mock_config_repo "$tmpdir" "remote-pack")
+    run_cco pack install "$remote" --pick "remote-pack"
+
+    # Update all — should update remote-pack, skip local-only
+    run_cco pack update --all
+    assert_output_contains "Updated 1 pack"
+}
+
+test_pack_update_all_no_remote_packs() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+
+    # Only local packs
+    run_cco pack create "local-a"
+    run_cco pack create "local-b"
+
+    run_cco pack update --all
+    assert_output_contains "No packs with remote sources"
+}
+
+# ── cleanup with custom TMPDIR ────────────────────────────────────────
+
+test_pack_install_cleanup_custom_tmpdir() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+
+    # Set a custom TMPDIR
+    local custom_tmp="$tmpdir/custom-tmp"
+    mkdir -p "$custom_tmp"
+    local remote
+    remote=$(_create_mock_config_repo "$tmpdir" "cleanup-test")
+
+    TMPDIR="$custom_tmp" run_cco pack install "$remote" --pick "cleanup-test"
+    assert_dir_exists "$CCO_PACKS_DIR/cleanup-test"
+
+    # Temp clones should be cleaned up
+    local remaining
+    remaining=$(find "$custom_tmp" -maxdepth 1 -name 'cco-*' -type d 2>/dev/null | wc -l)
+    assert_equals "0" "$remaining" "Temp clone dirs should be cleaned up"
+}
+
+# ── cco-source local pack marker ──────────────────────────────────────
+
+test_pack_create_no_cco_source() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco pack create "manual-pack"
+    # Local packs should NOT have .cco-source
+    assert_file_not_exists "$CCO_PACKS_DIR/manual-pack/.cco-source"
+}
+
+# ── install missing url ──────────────────────────────────────────────
+
+test_pack_install_no_url_fails() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    if run_cco pack install 2>/dev/null; then
+        echo "ASSERTION FAILED: should fail without URL"
+        return 1
+    fi
+}
+
+test_pack_export_content_matches() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco pack create "export-test"
+    printf 'custom rule\n' > "$CCO_PACKS_DIR/export-test/rules/my-rule.md"
+
+    cd "$tmpdir"
+    run_cco pack export "export-test"
+    assert_file_exists "$tmpdir/export-test.tar.gz"
+
+    # Verify archive contents
+    if ! tar tzf "$tmpdir/export-test.tar.gz" | grep -q "my-rule.md"; then
+        echo "ASSERTION FAILED: archive should contain my-rule.md"
+        return 1
+    fi
+}
+
 # ── help tests ────────────────────────────────────────────────────────
 
 test_pack_install_help() {
