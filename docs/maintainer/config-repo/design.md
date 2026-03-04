@@ -1,6 +1,6 @@
 # Design: Config Repo — Versioning & Sharing
 
-> **Status**: Design — approved
+> **Status**: Design — approved (updated with review decisions 2026-03-04)
 > **Date**: 2026-03-04
 > **Scope**: Sprint 6 (Sharing & Import) + Sprint 10 (Config Vault)
 > **Analysis**: [analysis.md](./analysis.md)
@@ -16,12 +16,13 @@
 4. [Vault Commands — cco vault](#4-vault-commands--cco-vault)
 5. [Install Commands — cco pack install / cco project install](#5-install-commands--cco-pack-install--cco-project-install)
 6. [Pack Source Metadata](#6-pack-source-metadata)
-7. [Vault .gitignore Template](#7-vault-gitignore-template)
-8. [Access Control Patterns](#8-access-control-patterns)
-9. [share.yml — Optional Sharing Manifest](#9-shareyml--optional-sharing-manifest)
-10. [Code Changes Required](#10-code-changes-required)
-11. [Migration from Current Structure](#11-migration-from-current-structure)
-12. [Future Evolution](#12-future-evolution)
+7. [Template Variable Resolution](#7-template-variable-resolution)
+8. [Vault .gitignore Template](#8-vault-gitignore-template)
+9. [Access Control Patterns](#9-access-control-patterns)
+10. [share.yml — Required Sharing Manifest](#10-shareyml--required-sharing-manifest)
+11. [Code Changes Required](#11-code-changes-required)
+12. [Migration from Current Structure](#12-migration-from-current-structure)
+13. [Future Evolution](#13-future-evolution)
 
 ---
 
@@ -96,20 +97,26 @@ Any directory that follows this convention is a valid Config Repo (installable b
 │       ├── project.yml
 │       └── .claude/
 │
-└── share.yml                     # Optional: resource index for discoverability
+└── share.yml                     # Required: declares available resources (auto-managed by CCO)
 ```
 
 ### Repo type detection
 
-CCO auto-detects the repo type at install time:
+CCO validates and auto-detects the repo type at install time:
 
 | Condition | Interpretation |
 |---|---|
-| Root has `pack.yml` | Single-pack repo — install the pack directly |
-| Root has `packs/` directory | Multi-pack repo — list available packs; use `--pick` for one |
-| Root has `templates/` directory | Repo contains project templates |
-| Root has `share.yml` | Use manifest as authoritative resource index |
-| Root has `global/` or `projects/` | Full vault — install commands apply only to `packs/` and `templates/` |
+| Root has `share.yml` | Standard Config Repo — `share.yml` is the authoritative resource index |
+| Root has `pack.yml` (no `share.yml`) | Single-pack repo — install directly (minimal `share.yml` generated in memory) |
+| Neither `share.yml` nor `pack.yml` | **Error**: not a valid CCO Config Repo |
+
+When `share.yml` is present, CCO reads it to determine available resources:
+
+| share.yml content | Interpretation |
+|---|---|
+| Has `packs:` entries | Multi-pack repo — list available packs; use `--pick` for one |
+| Has `templates:` entries | Repo contains project templates |
+| Has `global/` or `projects/` | Full vault — install commands apply only to `packs/` and `templates/` |
 
 ---
 
@@ -165,6 +172,16 @@ CCO_TEMPLATES_DIR="${CCO_TEMPLATES_DIR:-$CCO_USER_CONFIG_DIR/templates}"
 
 If `CCO_GLOBAL_DIR` or `CCO_PROJECTS_DIR` are set explicitly, they override the derived values. This preserves backward compatibility for users who already use these env vars.
 
+**Deprecation**: `CCO_GLOBAL_DIR` and `CCO_PROJECTS_DIR` are deprecated. When set, CCO prints a boot-time warning:
+
+```
+⚠ CCO_GLOBAL_DIR is deprecated. Use CCO_USER_CONFIG_DIR instead.
+  Current: CCO_GLOBAL_DIR=/path/to/global
+  Suggested: export CCO_USER_CONFIG_DIR=/path/to (parent of global/)
+```
+
+The legacy vars will continue to work for at least two major versions, then be removed.
+
 ### Choosing a location
 
 | Mode | When to use | Setup |
@@ -184,16 +201,31 @@ cco vault init [<path>]
 Initializes the Config Repo:
 - Creates `user-config/` (or the specified path) if it does not exist
 - Runs `git init` inside the directory
-- Writes the CCO `.gitignore` template (see §7)
+- Writes the CCO `.gitignore` template (see §8)
 - If path differs from `CCO_USER_CONFIG_DIR`, writes the path to `~/.cco-vault-path` and prints an export instruction
 
 ```bash
-cco vault sync [<message>]
+cco vault sync [<message>] [--yes] [--dry-run]
 ```
-Commits the current state:
-- `git add -A` (respecting `.gitignore`)
-- `git commit -m "vault: <message>"` (default message: `"snapshot $(date +%Y-%m-%d)"`)
-- Prints a summary of changed files
+Commits the current state with a mandatory pre-commit summary:
+
+1. Scans changes (`git status`) and groups by category
+2. Displays summary:
+   ```
+   Changes to commit:
+     packs:     2 modified, 1 new
+     projects:  1 modified
+     global:    settings.json modified
+     templates: (no changes)
+
+   ⚠ Files excluded by .gitignore: 2 (secrets.env, api.key)
+   ```
+3. Prompts for confirmation: `Proceed? [Y/n]`
+4. On confirm: `git add -A` → `git commit -m "vault: <message>"` (default: `"snapshot $(date +%Y-%m-%d)"`)
+
+Flags:
+- `--yes` — skip confirmation prompt (for automation, e.g. auto-sync on `cco stop`)
+- `--dry-run` — show summary only, do not commit
 
 ```bash
 cco vault diff
@@ -248,17 +280,34 @@ cco pack install <git-url> --token <token>    # explicit auth token (HTTPS)
 
 ```
 1. Resolve URL → detect auth method (SSH key / GITHUB_TOKEN / --token)
-2. git clone --no-checkout --filter=blob:none <url> /tmp/cco-XXXX
-3. Auto-detect repo type (single-pack / multi-pack / vault)
-4. If multi-pack and no --pick:
-     List available packs from packs/ directory
+2. Clone repo to temp dir (see clone strategy below)
+3. Validate: repo must contain share.yml (see §10)
+4. Auto-detect repo type (single-pack / multi-pack / vault)
+5. If multi-pack and no --pick:
+     List available packs from share.yml
      Prompt user to select one or all
-5. git sparse-checkout set <target-path>
-6. git checkout
-7. Copy pack to $CCO_PACKS_DIR/<name>/
-8. Write .cco-source metadata (see §6)
+6. Copy pack to $CCO_PACKS_DIR/<name>/
+7. Write .cco-source metadata (see §6)
+8. Cleanup temp dir
 9. Print confirmation with resource summary
 ```
+
+**Clone strategy — sparse-checkout with fallback:**
+
+CCO prefers sparse-checkout for efficiency but falls back to full clone on older git:
+
+```bash
+# Primary: sparse-checkout (git 2.25+)
+git clone --no-checkout --filter=blob:none <url> /tmp/cco-XXXX
+git -C /tmp/cco-XXXX sparse-checkout set <target-path>
+git -C /tmp/cco-XXXX checkout
+
+# Fallback: full shallow clone + selective copy (git < 2.25)
+git clone --depth 1 <url> /tmp/cco-XXXX
+cp -r /tmp/cco-XXXX/<target-path> $CCO_PACKS_DIR/<name>/
+```
+
+Detection: `git sparse-checkout set` in a test invocation; if exit code ≠ 0, use fallback. The fallback downloads the entire repo but config repos are small (typically < 1MB), so the overhead is negligible.
 
 **Conflict handling:**
 - If a pack with the same name exists locally:
@@ -314,7 +363,52 @@ The `.cco-source` file is:
 
 ---
 
-## 7. Vault .gitignore Template
+## 7. Template Variable Resolution
+
+Project templates (`templates/<name>/project.yml`) may contain `{{PLACEHOLDER}}` variables that are resolved at install time.
+
+### Predefined variables
+
+| Variable | Source | Example value |
+|---|---|---|
+| `{{PROJECT_NAME}}` | `--as <name>` flag, or prompt | `my-app` |
+| `{{REPO_PATH}}` | Prompt (no default) | `~/projects/my-app` |
+
+### Custom variables
+
+Any `{{VARIABLE}}` not in the predefined set triggers an interactive prompt:
+
+```
+Template 'acme-service' requires the following values:
+  PROJECT_NAME [my-app]: _
+  REPO_PATH: ~/projects/my-app
+  DB_NAME: _
+```
+
+### Implementation
+
+Simple `sed`-based substitution — no template engine:
+
+```bash
+# 1. Scan template for variables
+vars=$(grep -oP '\{\{\w+\}\}' "$template_file" | sort -u)
+
+# 2. Prompt for each variable (skip predefined if already set)
+for var in $vars; do
+    name="${var//[\{\}]/}"
+    read -p "  $name: " value
+    substitutions+=("-e" "s|{{$name}}|$value|g")
+done
+
+# 3. Apply substitutions
+sed "${substitutions[@]}" "$template_file" > "$target_file"
+```
+
+**Design choice**: `sed` is sufficient for the current use case (simple key-value substitution in YAML). If future templates need conditionals or loops, we can evaluate a lightweight template engine then. For Sprint 6, YAGNI applies.
+
+---
+
+## 8. Vault .gitignore Template
 
 Written by `cco vault init` to `<user-config>/.gitignore`:
 
@@ -344,7 +438,7 @@ The template is conservative. Users may remove entries that do not apply to thei
 
 ---
 
-## 8. Access Control Patterns
+## 9. Access Control Patterns
 
 ### Pattern 1: Personal vault only
 
@@ -391,9 +485,11 @@ Alice installs from all three. Each has its own auth level. CCO treats them the 
 
 ---
 
-## 9. share.yml — Optional Sharing Manifest
+## 10. share.yml — Required Sharing Manifest
 
-An optional file at the Config Repo root that improves discoverability. Not required for install to work.
+Every Config Repo **must** contain a `share.yml` at the root. CCO refuses to install from repos without one. This ensures every repo is self-documenting and machine-readable.
+
+### Format
 
 ```yaml
 # share.yml
@@ -415,19 +511,39 @@ templates:
   - name: acme-service
     description: "Microservice template with standard ACME setup"
     tags: [microservice, fastapi, postgres]
-
-rules:
-  - name: security.md
-    description: "Security review checklist"
 ```
 
-`cco share list` reads `share.yml` from all registered remote sources. Future: a public registry would index `share.yml` files from user-submitted repos.
+### Auto-management by CCO
+
+CCO generates and maintains `share.yml` automatically. Users never need to write it by hand:
+
+| Command | Effect on share.yml |
+|---|---|
+| `cco pack create <name>` | Adds entry under `packs:` |
+| `cco pack remove <name>` | Removes entry from `packs:` |
+| `cco project create --template <name>` | Adds entry under `templates:` (if inside a Config Repo) |
+| `cco share refresh` | Regenerates `share.yml` by scanning `packs/` and `templates/` directories |
+
+### Validation
+
+`cco pack install <url>` validates after clone:
+1. Check `share.yml` exists → if missing, abort with: `Error: no share.yml found. This is not a valid CCO Config Repo.`
+2. If `--pick <name>` is used, verify the named resource exists in `share.yml`
+3. Cross-check: warn if `share.yml` lists resources that don't exist on disk (stale manifest)
+
+### Single-pack repos (exception)
+
+A repo with `pack.yml` at root (single-pack repo, not inside `packs/`) is also valid. In this case, CCO generates a minimal `share.yml` in memory for validation purposes — the user is not required to maintain one for this simple case.
+
+### Future: registry
+
+A public registry would index `share.yml` files from user-submitted repos. `cco share list` reads `share.yml` from all registered remote sources.
 
 ---
 
-## 10. Code Changes Required
+## 11. Code Changes Required
 
-### 10.1 New environment variables (bin/cco)
+### 11.1 New environment variables (bin/cco)
 
 ```bash
 # Add after existing GLOBAL_DIR / PROJECTS_DIR:
@@ -440,30 +556,40 @@ PACKS_DIR="${CCO_PACKS_DIR:-$USER_CONFIG_DIR/packs}"
 TEMPLATES_DIR="${CCO_TEMPLATES_DIR:-$USER_CONFIG_DIR/templates}"
 ```
 
-### 10.2 lib/packs.sh
+### 11.2 lib/packs.sh
 
 Change all references from `$GLOBAL_DIR/packs` to `$PACKS_DIR`.
 
-### 10.3 cmd-pack.sh
+### 11.3 cmd-pack.sh
 
 - `cco pack install` — new command (lib/cmd-pack.sh, new `cmd_pack_install` function)
 - `cco pack update` — new command
 - `cco pack export` — new command (archive for manual sharing)
 - Existing commands: no changes to logic, only path references
 
-### 10.4 New lib/cmd-vault.sh
+### 11.4 New lib/cmd-vault.sh
 
 Implements all `cco vault` subcommands. Thin wrappers around git with CCO-specific defaults (`.gitignore` template, secret detection, categorized output).
 
-### 10.5 New lib/cmd-project-install.sh (or extend cmd-project.sh)
+### 11.5 lib/share.sh (new)
 
-`cco project install` — mirrors `cco pack install` for project templates.
+Manages `share.yml` lifecycle:
+- `share_add_entry(type, name, description)` — adds pack or template entry
+- `share_remove_entry(type, name)` — removes entry
+- `share_refresh(config_dir)` — scans `packs/` and `templates/`, regenerates `share.yml`
+- `share_validate(config_dir)` — cross-checks `share.yml` vs. disk (warns on stale entries)
 
-### 10.6 cco init
+Called by `cmd_pack_create`, `cmd_pack_remove`, and the new `cco share refresh` command.
 
-Update `cco init` to create `user-config/` instead of separate `global/` + `projects/`. Existing installations handled by migration (see §11).
+### 11.6 lib/cmd-project-install.sh (or extend cmd-project.sh)
 
-### 10.7 .gitignore in tool repo
+`cco project install` — mirrors `cco pack install` for project templates. Template variables resolved via `sed` (see §7).
+
+### 11.7 cco init
+
+Update `cco init` to create `user-config/` instead of separate `global/` + `projects/`. Existing installations handled by migration (see §12).
+
+### 11.8 .gitignore in tool repo
 
 Change:
 ```
@@ -477,7 +603,7 @@ user-config/
 
 ---
 
-## 11. Migration from Current Structure
+## 12. Migration from Current Structure
 
 ### For existing users (cco update migration)
 
@@ -496,7 +622,21 @@ Actions:
 
 **Idempotent**: checks if `user-config/` already exists before moving.
 
-**CCO_GLOBAL_DIR / CCO_PROJECTS_DIR backward compatibility**: if a user has these set in their shell profile pointing to the old paths, they continue to work (the derived vars are only used when the explicit vars are not set). CCO prints a hint suggesting they switch to `CCO_USER_CONFIG_DIR`.
+**CCO_GLOBAL_DIR / CCO_PROJECTS_DIR backward compatibility**: if a user has these set in their shell profile pointing to the old paths, they continue to work (the derived vars are only used when the explicit vars are not set). CCO prints a deprecation warning at boot (see §3) suggesting they switch to `CCO_USER_CONFIG_DIR`.
+
+**Migration is automatic**: `cco update` runs all pending migrations. Users do not need to take any manual action. The migration prints a clear summary:
+
+```
+Migrating to user-config/ directory structure...
+  ✓ Created user-config/
+  ✓ Moved global/ → user-config/global/
+  ✓ Elevated global/packs/ → user-config/packs/
+  ✓ Moved projects/ → user-config/projects/
+  ✓ Created user-config/templates/
+  ✓ Updated .gitignore
+
+Run 'cco vault init' to enable versioning for your configuration.
+```
 
 ### For new users (cco init)
 
@@ -504,15 +644,13 @@ Actions:
 
 ---
 
-## 12. Future Evolution
+## 13. Future Evolution
 
 ### Short-term (next sprints)
 
 | Feature | Sprint | Notes |
 |---|---|---|
 | `cco pack publish <name> --to <remote>` | S8 | `git subtree push` wrapper — publishes one pack to a separate remote without maintaining a separate repo manually |
-| `share.yml` generation | S8 | `cco share init` scaffolds a `share.yml` from existing packs |
-| Template variable resolution | S6 | `{{PLACEHOLDER}}` substitution in `project.yml` at install time |
 
 ### Medium-term
 
