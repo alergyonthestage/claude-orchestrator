@@ -180,13 +180,13 @@ test_migration_to_managed() {
     setup_cco_env "$tmpdir"
 
     # Simulate pre-managed layout: global/ with system-manifest and old settings
-    mkdir -p "$tmpdir/global/.claude/rules"
-    mkdir -p "$tmpdir/global/.claude/agents"
-    mkdir -p "$tmpdir/global/.claude/skills/analyze"
-    printf '.claude/settings.json\n.claude/agents/analyst.md\n' > "$tmpdir/global/.claude/.system-manifest"
-    printf '{"hooks": {"SessionStart": []}, "attribution": {}}' > "$tmpdir/global/.claude/settings.json"
-    printf 'placeholder' > "$tmpdir/global/.claude/rules/language.md"
-    mkdir -p "$tmpdir/global/packs"
+    mkdir -p "$tmpdir/user-config/global/.claude/rules"
+    mkdir -p "$tmpdir/user-config/global/.claude/agents"
+    mkdir -p "$tmpdir/user-config/global/.claude/skills/analyze"
+    printf '.claude/settings.json\n.claude/agents/analyst.md\n' > "$tmpdir/user-config/global/.claude/.system-manifest"
+    printf '{"hooks": {"SessionStart": []}, "attribution": {}}' > "$tmpdir/user-config/global/.claude/settings.json"
+    printf 'placeholder' > "$tmpdir/user-config/global/.claude/rules/language.md"
+    mkdir -p "$tmpdir/user-config/packs"
 
     # Run init — should trigger migration via migration runner
     run_cco init --lang "English"
@@ -214,11 +214,11 @@ test_migration_removes_old_init_skill() {
     setup_cco_env "$tmpdir"
 
     # Simulate old layout with skills/init/
-    mkdir -p "$tmpdir/global/.claude/skills/init"
-    printf 'old init skill' > "$tmpdir/global/.claude/skills/init/SKILL.md"
-    mkdir -p "$tmpdir/global/.claude/rules"
-    printf 'placeholder' > "$tmpdir/global/.claude/rules/language.md"
-    mkdir -p "$tmpdir/global/packs"
+    mkdir -p "$tmpdir/user-config/global/.claude/skills/init"
+    printf 'old init skill' > "$tmpdir/user-config/global/.claude/skills/init/SKILL.md"
+    mkdir -p "$tmpdir/user-config/global/.claude/rules"
+    printf 'placeholder' > "$tmpdir/user-config/global/.claude/rules/language.md"
+    mkdir -p "$tmpdir/user-config/packs"
 
     # Run init
     run_cco init --lang "English"
@@ -235,11 +235,11 @@ test_migration_moves_init_workspace_to_managed() {
     setup_cco_env "$tmpdir"
 
     # Simulate old layout with init-workspace in user skills
-    mkdir -p "$tmpdir/global/.claude/skills/init-workspace"
-    printf '---\nname: init-workspace\n---\nOld user copy' > "$tmpdir/global/.claude/skills/init-workspace/SKILL.md"
-    mkdir -p "$tmpdir/global/.claude/rules"
-    printf 'placeholder' > "$tmpdir/global/.claude/rules/language.md"
-    mkdir -p "$tmpdir/global/packs"
+    mkdir -p "$tmpdir/user-config/global/.claude/skills/init-workspace"
+    printf '---\nname: init-workspace\n---\nOld user copy' > "$tmpdir/user-config/global/.claude/skills/init-workspace/SKILL.md"
+    mkdir -p "$tmpdir/user-config/global/.claude/rules"
+    printf 'placeholder' > "$tmpdir/user-config/global/.claude/rules/language.md"
+    mkdir -p "$tmpdir/user-config/packs"
 
     # Run init (triggers migrations)
     run_cco init --lang "English"

@@ -374,7 +374,7 @@ test_pack_skills_copied_to_project_claude() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     # Create pack with a skill
-    local pack_dir="$tmpdir/global/packs/skill-pack"
+    local pack_dir="$tmpdir/user-config/packs/skill-pack"
     mkdir -p "$pack_dir/skills/deploy"
     echo "Deploy skill" > "$pack_dir/skills/deploy/SKILL.md"
     printf 'name: skill-pack\nskills:\n  - deploy\n' > "$pack_dir/pack.yml"
@@ -401,7 +401,7 @@ test_pack_agents_copied_to_project_claude() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_dir="$tmpdir/global/packs/agent-pack"
+    local pack_dir="$tmpdir/user-config/packs/agent-pack"
     mkdir -p "$pack_dir/agents"
     echo "Agent spec" > "$pack_dir/agents/devops.md"
     printf 'name: agent-pack\nagents:\n  - devops.md\n' > "$pack_dir/pack.yml"
@@ -428,7 +428,7 @@ test_pack_rules_copied_to_project_claude() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_dir="$tmpdir/global/packs/rules-pack"
+    local pack_dir="$tmpdir/user-config/packs/rules-pack"
     mkdir -p "$pack_dir/rules"
     echo "API rules" > "$pack_dir/rules/api-conventions.md"
     printf 'name: rules-pack\nrules:\n  - api-conventions.md\n' > "$pack_dir/pack.yml"
@@ -457,7 +457,7 @@ test_pack_manifest_created_after_copy() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_dir="$tmpdir/global/packs/mf-pack"
+    local pack_dir="$tmpdir/user-config/packs/mf-pack"
     mkdir -p "$pack_dir/agents" "$pack_dir/rules"
     echo "Agent" > "$pack_dir/agents/bot.md"
     echo "Rule" > "$pack_dir/rules/style.md"
@@ -488,7 +488,7 @@ test_pack_manifest_stale_files_cleaned() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_dir="$tmpdir/global/packs/evolve-pack"
+    local pack_dir="$tmpdir/user-config/packs/evolve-pack"
     mkdir -p "$pack_dir/agents"
     echo "Agent v1" > "$pack_dir/agents/old-agent.md"
     echo "Agent v1" > "$pack_dir/agents/keep-agent.md"
@@ -524,7 +524,7 @@ test_pack_manifest_no_packs_cleans_all() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_dir="$tmpdir/global/packs/temp-pack"
+    local pack_dir="$tmpdir/user-config/packs/temp-pack"
     mkdir -p "$pack_dir/rules"
     echo "Rule" > "$pack_dir/rules/temp-rule.md"
     printf 'name: temp-pack\nrules:\n  - temp-rule.md\n' > "$pack_dir/pack.yml"
@@ -570,8 +570,8 @@ test_pack_conflict_warns_duplicate_agent() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_a="$tmpdir/global/packs/pack-a"
-    local pack_b="$tmpdir/global/packs/pack-b"
+    local pack_a="$tmpdir/user-config/packs/pack-a"
+    local pack_b="$tmpdir/user-config/packs/pack-b"
     mkdir -p "$pack_a/agents" "$pack_b/agents"
     echo "Agent from A" > "$pack_a/agents/reviewer.md"
     echo "Agent from B" > "$pack_b/agents/reviewer.md"
@@ -601,8 +601,8 @@ test_pack_conflict_warns_duplicate_rule() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_a="$tmpdir/global/packs/pack-a"
-    local pack_b="$tmpdir/global/packs/pack-b"
+    local pack_a="$tmpdir/user-config/packs/pack-a"
+    local pack_b="$tmpdir/user-config/packs/pack-b"
     mkdir -p "$pack_a/rules" "$pack_b/rules"
     echo "Rule from A" > "$pack_a/rules/style.md"
     echo "Rule from B" > "$pack_b/rules/style.md"
@@ -632,8 +632,8 @@ test_pack_no_conflict_unique_names() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_a="$tmpdir/global/packs/pack-a"
-    local pack_b="$tmpdir/global/packs/pack-b"
+    local pack_a="$tmpdir/user-config/packs/pack-a"
+    local pack_b="$tmpdir/user-config/packs/pack-b"
     mkdir -p "$pack_a/agents" "$pack_b/agents"
     echo "Agent A" > "$pack_a/agents/analyst.md"
     echo "Agent B" > "$pack_b/agents/reviewer.md"
@@ -670,7 +670,7 @@ test_pack_yml_bad_indentation_warns() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_dir="$tmpdir/global/packs/bad-indent"
+    local pack_dir="$tmpdir/user-config/packs/bad-indent"
     mkdir -p "$pack_dir/rules"
     echo "Some rule" > "$pack_dir/rules/style.md"
     # Deliberately indented pack.yml — all keys shifted by 2 spaces
@@ -702,7 +702,7 @@ test_pack_yml_bad_indentation_skips_resources() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_dir="$tmpdir/global/packs/bad-indent"
+    local pack_dir="$tmpdir/user-config/packs/bad-indent"
     mkdir -p "$pack_dir/rules"
     echo "Some rule" > "$pack_dir/rules/style.md"
     cat > "$pack_dir/pack.yml" <<'YAML'
@@ -737,7 +737,7 @@ test_pack_yml_bad_indentation_skips_knowledge() {
     local pack_src="$tmpdir/pack-src"
     mkdir -p "$pack_src"
     echo "docs" > "$pack_src/guide.md"
-    local pack_dir="$tmpdir/global/packs/bad-k"
+    local pack_dir="$tmpdir/user-config/packs/bad-k"
     mkdir -p "$pack_dir"
     cat > "$pack_dir/pack.yml" <<YAML
   name: bad-k

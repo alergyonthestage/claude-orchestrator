@@ -277,3 +277,23 @@ Read the relevant files BEFORE starting any implementation, review, or design ta
 - Use `skills` for user-invocable actions (e.g., deploy, review)
 - Use `rules` for always-active behavioral instructions
 - Use `agents` for specialized subagents with defined roles
+
+---
+
+## Sharing packs
+
+Packs can be shared across machines and teams via Config Repos.
+
+```bash
+# Install a pack from a remote Config Repo
+cco pack install <git-url>
+
+# Update a pack from its remote source
+cco pack update <name>
+
+# Export your packs for sharing
+cco share refresh        # Generate share.yml manifest
+cco vault push           # Push to remote
+```
+
+For the complete sharing workflow (multi-machine sync, team distribution, project templates), see the [Config Repo guide](config-repo.md).

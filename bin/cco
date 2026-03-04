@@ -5,11 +5,28 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DEFAULTS_DIR="$REPO_ROOT/defaults"
-PROJECTS_DIR="${CCO_PROJECTS_DIR:-$REPO_ROOT/projects}"
-GLOBAL_DIR="${CCO_GLOBAL_DIR:-$REPO_ROOT/global}"
 TEMPLATE_DIR="$DEFAULTS_DIR/_template"
 IMAGE_NAME="claude-orchestrator:latest"
 LIB_DIR="$REPO_ROOT/lib"
+
+# ── User config directory resolution ─────────────────────────────────
+# Primary: CCO_USER_CONFIG_DIR controls the unified user data root.
+# Auto-detect: if user-config/ doesn't exist but old global/ does,
+# fall back to legacy paths so cco update can run the migration.
+USER_CONFIG_DIR="${CCO_USER_CONFIG_DIR:-$REPO_ROOT/user-config}"
+
+if [[ -z "${CCO_USER_CONFIG_DIR:-}" && ! -d "$USER_CONFIG_DIR/global" && -d "$REPO_ROOT/global/.claude" ]]; then
+    # Legacy layout — migration not yet run
+    GLOBAL_DIR="${CCO_GLOBAL_DIR:-$REPO_ROOT/global}"
+    PROJECTS_DIR="${CCO_PROJECTS_DIR:-$REPO_ROOT/projects}"
+    PACKS_DIR="${CCO_PACKS_DIR:-$REPO_ROOT/global/packs}"
+    TEMPLATES_DIR="${CCO_TEMPLATES_DIR:-$USER_CONFIG_DIR/templates}"
+else
+    GLOBAL_DIR="${CCO_GLOBAL_DIR:-$USER_CONFIG_DIR/global}"
+    PROJECTS_DIR="${CCO_PROJECTS_DIR:-$USER_CONFIG_DIR/projects}"
+    PACKS_DIR="${CCO_PACKS_DIR:-$USER_CONFIG_DIR/packs}"
+    TEMPLATES_DIR="${CCO_TEMPLATES_DIR:-$USER_CONFIG_DIR/templates}"
+fi
 
 # ── Load modules ─────────────────────────────────────────────────────
 source "$LIB_DIR/colors.sh"
@@ -29,33 +46,47 @@ source "$LIB_DIR/cmd-chrome.sh"
 source "$LIB_DIR/cmd-project.sh"
 source "$LIB_DIR/cmd-pack.sh"
 source "$LIB_DIR/cmd-update.sh"
+source "$LIB_DIR/share.sh"
+source "$LIB_DIR/remote.sh"
+source "$LIB_DIR/cmd-vault.sh"
+
+# ── Deprecation warnings ──────────────────────────────────────────────
+# Only warn when legacy vars are set WITHOUT CCO_USER_CONFIG_DIR
+if [[ -z "${CCO_USER_CONFIG_DIR:-}" ]]; then
+    if [[ -n "${CCO_GLOBAL_DIR:-}" ]]; then
+        echo "⚠ CCO_GLOBAL_DIR is deprecated. Use CCO_USER_CONFIG_DIR instead." >&2
+        echo "  Current: CCO_GLOBAL_DIR=$CCO_GLOBAL_DIR" >&2
+        echo "  Suggested: export CCO_USER_CONFIG_DIR=$(dirname "$CCO_GLOBAL_DIR")" >&2
+    fi
+    if [[ -n "${CCO_PROJECTS_DIR:-}" ]]; then
+        echo "⚠ CCO_PROJECTS_DIR is deprecated. Use CCO_USER_CONFIG_DIR instead." >&2
+    fi
+fi
 
 usage() {
     cat <<'EOF'
 Usage: cco <command> [options]
 
-Commands:
+Getting Started:
   init                   Initialize user config from defaults
   build                  Build/rebuild the Docker image
+  update                 Update config from defaults (with migrations)
+
+Sessions:
   start <project>        Start a session for a configured project
   new                    Start a temporary session with specific repos
-  project create <n>     Create a new project from template
-  project list           List available projects
-  project show <n>       Show project details
-  project validate <n>   Validate project structure
-  pack create <n>        Create a new pack
-  pack list              List available packs
-  pack show <n>          Show pack details
-  pack remove <n>        Remove a pack
-  pack validate [n]      Validate pack structure (all if no name)
-  chrome [start|stop|status]  Manage Chrome debug session on host
-    [--project <name>]        Auto-detect port from project runtime state
-    [--port <n>]              Explicit CDP port (default: 9222)
-  update                 Update global/project config from defaults
   stop [project]         Stop running session(s)
-  help                   Show this help message
 
-Run 'cco <command> --help' for command-specific help.
+Projects & Packs:
+  project <cmd>          Manage projects (create, install, list, show, validate)
+  pack <cmd>             Manage knowledge packs (create, install, update, ...)
+  chrome <cmd>           Manage Chrome debug session on host
+
+Sharing & Versioning:
+  share <cmd>            Manage share.yml for Config Repos
+  vault <cmd>            Git-backed config versioning
+
+Run 'cco <command> --help' for detailed help on any command.
 EOF
 }
 
@@ -72,30 +103,67 @@ case "$cmd" in
     new)     cmd_new "$@" ;;
     project)
         subcmd="${1:-}"
-        [[ -z "$subcmd" ]] && die "Usage: cco project <create|list|show|validate>"
+        if [[ -z "$subcmd" || "$subcmd" == "--help" ]]; then
+            cat <<'EOF'
+Usage: cco project <command> [options]
+
+Commands:
+  create <name>          Create a new project from template
+  install <url>          Install project template from a remote Config Repo
+  list                   List available projects with status
+  show <name>            Show project details (repos, packs, config)
+  validate [name]        Validate project structure and configuration
+
+Run 'cco project <command> --help' for command-specific options.
+EOF
+            exit 0
+        fi
         shift
         case "$subcmd" in
             create)   cmd_project_create "$@" ;;
+            install)  cmd_project_install "$@" ;;
             list)     cmd_project_list "$@" ;;
             show)     cmd_project_show "$@" ;;
             validate) cmd_project_validate "$@" ;;
-            *)        die "Unknown project command: $subcmd" ;;
+            *)        die "Unknown project command: $subcmd. Run 'cco project --help'." ;;
         esac
         ;;
     pack)
         subcmd="${1:-}"
-        [[ -z "$subcmd" ]] && die "Usage: cco pack <create|list|show|remove|validate>"
+        if [[ -z "$subcmd" || "$subcmd" == "--help" ]]; then
+            cat <<'EOF'
+Usage: cco pack <command> [options]
+
+Commands:
+  create <name>          Create a new knowledge pack
+  install <url>          Install packs from a remote Config Repo
+  update <name>          Update a pack from its remote source
+  export <name>          Export a pack as .tar.gz archive
+  list                   List available packs with resource counts
+  show <name>            Show pack details (knowledge, agents, rules)
+  remove <name>          Remove a pack
+  validate [name]        Validate pack structure (all if no name)
+
+Run 'cco pack <command> --help' for command-specific options.
+EOF
+            exit 0
+        fi
         shift
         case "$subcmd" in
             create)   cmd_pack_create "$@" ;;
+            install)  cmd_pack_install "$@" ;;
+            update)   cmd_pack_update "$@" ;;
+            export)   cmd_pack_export "$@" ;;
             list)     cmd_pack_list "$@" ;;
             show)     cmd_pack_show "$@" ;;
             remove)   cmd_pack_remove "$@" ;;
             validate) cmd_pack_validate "$@" ;;
-            *)        die "Unknown pack command: $subcmd" ;;
+            *)        die "Unknown pack command: $subcmd. Run 'cco pack --help'." ;;
         esac
         ;;
     chrome)  cmd_chrome "$@" ;;
+    share)   cmd_share "$@" ;;
+    vault)   cmd_vault "$@" ;;
     update)  cmd_update "$@" ;;
     stop)    cmd_stop "$@" ;;
     help)    usage ;;

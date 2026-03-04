@@ -194,8 +194,8 @@ languages:
 manifest:"
 
     run_cco update
-    # Schema version should be updated to latest (currently 2: migration 001 + 002)
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco-meta" "schema_version: 2"
+    # Schema version should be updated to latest (currently 3: migration 001 + 002 + 003)
+    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco-meta" "schema_version: 3"
 }
 
 test_update_migration_failure_stops() {
@@ -284,4 +284,138 @@ test_update_help() {
     assert_output_contains "--dry-run"
     assert_output_contains "--force"
     assert_output_contains "--project"
+}
+
+# ── Migration 003: user-config-dir restructure ──────────────────────
+
+# Helper: source colors for direct migration tests
+_source_migration_deps() {
+    source "$REPO_ROOT/lib/colors.sh"
+}
+
+test_migration_003_moves_directories() {
+    # Migration 003 should move global/, projects/, packs/ into user-config/
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_migration_deps
+
+    # Create old layout
+    mkdir -p "$tmpdir/global/.claude/rules"
+    echo "# Test CLAUDE.md" > "$tmpdir/global/.claude/CLAUDE.md"
+    echo "# Test rule" > "$tmpdir/global/.claude/rules/workflow.md"
+    mkdir -p "$tmpdir/global/packs/test-pack"
+    echo "name: test" > "$tmpdir/global/packs/test-pack/pack.yml"
+    mkdir -p "$tmpdir/projects/my-proj/.claude"
+    echo "name: my-proj" > "$tmpdir/projects/my-proj/project.yml"
+
+    # Run migration with REPO_ROOT pointing to tmpdir
+    local saved_repo_root="$REPO_ROOT"
+    REPO_ROOT="$tmpdir"
+    unset CCO_USER_CONFIG_DIR
+    source "$saved_repo_root/migrations/global/003_user-config-dir.sh"
+    migrate "$tmpdir/global/.claude"
+    REPO_ROOT="$saved_repo_root"
+
+    # Verify new structure
+    assert_dir_exists "$tmpdir/user-config/global/.claude"
+    assert_file_exists "$tmpdir/user-config/global/.claude/CLAUDE.md"
+    assert_file_exists "$tmpdir/user-config/global/.claude/rules/workflow.md"
+    assert_dir_exists "$tmpdir/user-config/packs/test-pack"
+    assert_file_exists "$tmpdir/user-config/packs/test-pack/pack.yml"
+    assert_dir_exists "$tmpdir/user-config/projects/my-proj"
+    assert_file_exists "$tmpdir/user-config/projects/my-proj/project.yml"
+    assert_dir_exists "$tmpdir/user-config/templates"
+
+    # Verify old structure is gone
+    assert_dir_not_exists "$tmpdir/global"
+    assert_dir_not_exists "$tmpdir/projects"
+}
+
+test_migration_003_idempotent() {
+    # Running migration 003 twice should be safe (second run is a no-op)
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_migration_deps
+
+    # Create old layout
+    mkdir -p "$tmpdir/global/.claude/rules"
+    echo "# CLAUDE.md" > "$tmpdir/global/.claude/CLAUDE.md"
+    mkdir -p "$tmpdir/projects/proj1"
+
+    # Run migration twice
+    local saved_repo_root="$REPO_ROOT"
+    REPO_ROOT="$tmpdir"
+    unset CCO_USER_CONFIG_DIR
+    source "$saved_repo_root/migrations/global/003_user-config-dir.sh"
+    migrate "$tmpdir/global/.claude"
+
+    # Second run — user-config/global/.claude already exists → skip
+    migrate "$tmpdir/user-config/global/.claude"
+    REPO_ROOT="$saved_repo_root"
+
+    # Should still be valid
+    assert_dir_exists "$tmpdir/user-config/global/.claude"
+    assert_file_exists "$tmpdir/user-config/global/.claude/CLAUDE.md"
+}
+
+test_migration_003_fresh_install_noop() {
+    # Fresh installs (no old global/) should skip migration
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_migration_deps
+
+    # No old global/ exists — just user-config/
+    mkdir -p "$tmpdir/user-config/global/.claude"
+
+    local saved_repo_root="$REPO_ROOT"
+    REPO_ROOT="$tmpdir"
+    unset CCO_USER_CONFIG_DIR
+    source "$saved_repo_root/migrations/global/003_user-config-dir.sh"
+    migrate "$tmpdir/user-config/global/.claude"
+    REPO_ROOT="$saved_repo_root"
+
+    # Nothing should have changed
+    assert_dir_exists "$tmpdir/user-config/global/.claude"
+}
+
+test_migration_003_elevates_packs() {
+    # Packs should be elevated from global/packs/ to user-config/packs/ (sibling, not nested)
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_migration_deps
+
+    mkdir -p "$tmpdir/global/.claude"
+    mkdir -p "$tmpdir/global/packs/pack-a"
+    echo "name: a" > "$tmpdir/global/packs/pack-a/pack.yml"
+    mkdir -p "$tmpdir/global/packs/pack-b"
+    echo "name: b" > "$tmpdir/global/packs/pack-b/pack.yml"
+
+    local saved_repo_root="$REPO_ROOT"
+    REPO_ROOT="$tmpdir"
+    unset CCO_USER_CONFIG_DIR
+    source "$saved_repo_root/migrations/global/003_user-config-dir.sh"
+    migrate "$tmpdir/global/.claude"
+    REPO_ROOT="$saved_repo_root"
+
+    # Packs should be at user-config/packs/, not user-config/global/packs/
+    assert_dir_exists "$tmpdir/user-config/packs/pack-a"
+    assert_dir_exists "$tmpdir/user-config/packs/pack-b"
+    assert_dir_not_exists "$tmpdir/user-config/global/packs"
+}
+
+test_migration_003_no_projects_dir() {
+    # If only global/ exists (no projects/), migration should still work
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_migration_deps
+
+    mkdir -p "$tmpdir/global/.claude"
+    echo "# CLAUDE.md" > "$tmpdir/global/.claude/CLAUDE.md"
+    # No projects/ directory
+
+    local saved_repo_root="$REPO_ROOT"
+    REPO_ROOT="$tmpdir"
+    unset CCO_USER_CONFIG_DIR
+    source "$saved_repo_root/migrations/global/003_user-config-dir.sh"
+    migrate "$tmpdir/global/.claude"
+    REPO_ROOT="$saved_repo_root"
+
+    assert_dir_exists "$tmpdir/user-config/global/.claude"
+    assert_dir_exists "$tmpdir/user-config/projects"
+    assert_dir_exists "$tmpdir/user-config/templates"
 }

@@ -2,9 +2,9 @@
 # lib/cmd-project.sh — Project management commands
 #
 # Provides: cmd_project_create(), cmd_project_list(), cmd_project_show(),
-#           cmd_project_validate()
-# Dependencies: colors.sh, utils.sh, yaml.sh
-# Globals: PROJECTS_DIR, GLOBAL_DIR, TEMPLATE_DIR
+#           cmd_project_validate(), cmd_project_install()
+# Dependencies: colors.sh, utils.sh, yaml.sh, remote.sh, share.sh
+# Globals: PROJECTS_DIR, GLOBAL_DIR, TEMPLATE_DIR, USER_CONFIG_DIR
 
 cmd_project_create() {
     check_global
@@ -149,6 +149,15 @@ print(', '.join(['$'+k for k in ['dev','build','test','start','lint'] if k in s]
 }
 
 cmd_project_list() {
+    if [[ "${1:-}" == "--help" ]]; then
+        cat <<'EOF'
+Usage: cco project list
+
+List all configured projects with repo count and running status.
+EOF
+        return 0
+    fi
+
     echo -e "${BOLD}NAME              REPOS    STATUS${NC}"
 
     for dir in "$PROJECTS_DIR"/*/; do
@@ -242,7 +251,7 @@ EOF
     if [[ -n "$packs" ]]; then
         while IFS= read -r pack; do
             [[ -z "$pack" ]] && continue
-            if [[ -d "$GLOBAL_DIR/packs/$pack" ]]; then
+            if [[ -d "$PACKS_DIR/$pack" ]]; then
                 echo "  $pack"
             else
                 echo -e "  $pack ${YELLOW}[not found]${NC}"
@@ -352,8 +361,8 @@ EOF
     if [[ -n "$packs" ]]; then
         while IFS= read -r pack; do
             [[ -z "$pack" ]] && continue
-            if [[ ! -d "$GLOBAL_DIR/packs/$pack" ]]; then
-                error "Project '$name': pack '$pack' not found in global/packs/"
+            if [[ ! -d "$PACKS_DIR/$pack" ]]; then
+                error "Project '$name': pack '$pack' not found in packs/"
                 ((errors++))
             fi
         done <<< "$packs"
@@ -363,4 +372,233 @@ EOF
         return 1
     fi
     ok "Project '$name' is valid"
+}
+
+# ── Project Install ──────────────────────────────────────────────────
+
+cmd_project_install() {
+    local url="" pick="" as_name="" token="" force=false
+    local -a vars=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --pick)
+                [[ -z "${2:-}" ]] && die "--pick requires a template name"
+                pick="$2"; shift 2
+                ;;
+            --as)
+                [[ -z "${2:-}" ]] && die "--as requires a project name"
+                as_name="$2"; shift 2
+                ;;
+            --token)
+                [[ -z "${2:-}" ]] && die "--token requires a value"
+                token="$2"; shift 2
+                ;;
+            --var)
+                [[ -z "${2:-}" ]] && die "--var requires KEY=VALUE"
+                vars+=("$2"); shift 2
+                ;;
+            --force) force=true; shift ;;
+            --help)
+                cat <<'EOF'
+Usage: cco project install <git-url> [options]
+
+Install a project template from a remote Config Repo.
+
+Options:
+  --pick <name>       Install a specific template by name
+  --as <name>         Override the project name (default: template name)
+  --var KEY=VALUE     Pre-set a template variable (repeatable)
+  --token <token>     Auth token for HTTPS repos
+  --force             Overwrite existing project without asking
+
+URL can include @ref suffix: <url>@<branch-or-tag>
+EOF
+                return 0
+                ;;
+            -*)  die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$url" ]]; then
+                    url="$1"; shift
+                else
+                    die "Unexpected argument: $1"
+                fi
+                ;;
+        esac
+    done
+
+    [[ -z "$url" ]] && die "Usage: cco project install <git-url> [--pick <name>]"
+    check_global
+
+    # Parse @ref suffix
+    local ref=""
+    if [[ "$url" == *@* ]]; then
+        local after_at="${url##*@}"
+        if [[ "$after_at" != *:* && "$after_at" != *.* ]]; then
+            ref="$after_at"
+            url="${url%@*}"
+        fi
+    fi
+
+    info "Cloning $url${ref:+ (ref: $ref)}..."
+    local tmpdir
+    tmpdir=$(_clone_config_repo "$url" "$ref" "$token")
+    trap "_cleanup_clone '$tmpdir'" EXIT
+
+    # Detect repo type
+    if [[ ! -f "$tmpdir/share.yml" ]]; then
+        _cleanup_clone "$tmpdir"
+        die "Not a valid CCO Config Repo: no share.yml found"
+    fi
+
+    # Read available templates from share.yml
+    local available
+    available=$(_share_get_names "$tmpdir/share.yml" "templates")
+
+    if [[ -z "$available" ]]; then
+        _cleanup_clone "$tmpdir"
+        die "No templates listed in share.yml"
+    fi
+
+    if [[ -n "$pick" ]]; then
+        if ! echo "$available" | grep -qxF "$pick"; then
+            _cleanup_clone "$tmpdir"
+            die "Template '$pick' not found in share.yml. Available: $(echo "$available" | tr '\n' ' ')"
+        fi
+    else
+        # If only one template, auto-select
+        local count
+        count=$(echo "$available" | grep -c . || true)
+        if [[ $count -eq 1 ]]; then
+            pick=$(echo "$available" | head -1)
+        else
+            info "Available templates:"
+            echo "$available" | sed 's/^/  - /'
+            die "Multiple templates found. Use --pick <name> to select one."
+        fi
+    fi
+
+    local template_dir="$tmpdir/templates/$pick"
+    if [[ ! -d "$template_dir" ]]; then
+        _cleanup_clone "$tmpdir"
+        die "Template directory 'templates/$pick' not found in repo"
+    fi
+
+    # Determine project name
+    local project_name="${as_name:-$pick}"
+
+    # Validate project name
+    if [[ ! "$project_name" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+        _cleanup_clone "$tmpdir"
+        die "Project name must be lowercase letters, numbers, and hyphens only."
+    fi
+
+    local target_dir="$PROJECTS_DIR/$project_name"
+
+    # Conflict check
+    if [[ -d "$target_dir" ]]; then
+        if [[ "$force" == true ]]; then
+            rm -rf "$target_dir"
+        else
+            _cleanup_clone "$tmpdir"
+            die "Project '$project_name' already exists. Use --force to overwrite."
+        fi
+    fi
+
+    # Copy template
+    cp -r "$template_dir" "$target_dir"
+
+    # Resolve template variables in key files
+    _resolve_template_vars "$target_dir" "$project_name" "${vars[@]+"${vars[@]}"}"
+
+    # Ensure claude-state dir exists
+    mkdir -p "$target_dir/claude-state/memory"
+
+    _cleanup_clone "$tmpdir"
+    trap - EXIT
+
+    ok "Project '$project_name' installed from $url"
+    info "Edit projects/$project_name/project.yml to configure repos"
+    info "Run: cco start $project_name"
+}
+
+# Resolve {{VARIABLE}} patterns in project template files.
+# Scans project.yml and .claude/CLAUDE.md for placeholders.
+# Pre-set values via vars array; prompts interactively for remaining.
+# Usage: _resolve_template_vars <project_dir> <project_name> [vars...]
+_resolve_template_vars() {
+    local project_dir="$1"
+    local project_name="$2"
+    shift 2
+
+    # Build lookup of preset vars as newline-separated "KEY=VALUE" entries
+    # (bash 3.2 compatible — no associative arrays)
+    local preset_list=""
+    while [[ $# -gt 0 ]]; do
+        preset_list+="$1"$'\n'
+        shift
+    done
+
+    # Always preset PROJECT_NAME (unless already in list)
+    if ! echo "$preset_list" | grep -q "^PROJECT_NAME="; then
+        preset_list+="PROJECT_NAME=$project_name"$'\n'
+    fi
+
+    # Find all template files to process
+    local -a template_files=()
+    [[ -f "$project_dir/project.yml" ]] && template_files+=("$project_dir/project.yml")
+    [[ -f "$project_dir/.claude/CLAUDE.md" ]] && template_files+=("$project_dir/.claude/CLAUDE.md")
+
+    # Collect all variables from all files
+    local all_vars=""
+    for file in "${template_files[@]+"${template_files[@]}"}"; do
+        local file_vars
+        file_vars=$(grep -oE '\{\{[A-Z_]+\}\}' "$file" 2>/dev/null | sort -u || true)
+        all_vars+="$file_vars"$'\n'
+    done
+    all_vars=$(echo "$all_vars" | sort -u | grep -v '^$' || true)
+
+    [[ -z "$all_vars" ]] && return 0
+
+    # Build sed substitution args
+    local -a sed_args=()
+    local var name value
+    for var in $all_vars; do
+        name="${var//[\{\}]/}"
+
+        # Lookup in preset list
+        local preset_match
+        preset_match=$(echo "$preset_list" | grep "^${name}=" | head -1 || true)
+
+        if [[ -n "$preset_match" ]]; then
+            value="${preset_match#*=}"
+        elif [[ -t 0 ]]; then
+            # Interactive prompt
+            local default=""
+            case "$name" in
+                DESCRIPTION) default="TODO: Add project description" ;;
+            esac
+            if [[ -n "$default" ]]; then
+                read -rp "  $name [$default]: " value < /dev/tty
+                value="${value:-$default}"
+            else
+                read -rp "  $name: " value < /dev/tty
+            fi
+            [[ -z "$value" ]] && die "Value required for $name"
+        else
+            # Non-interactive: use sensible defaults
+            case "$name" in
+                DESCRIPTION) value="TODO: Add project description" ;;
+                *)           value="$name" ;;
+            esac
+        fi
+
+        sed_args+=("-e" "s|{{$name}}|$value|g")
+    done
+
+    # Apply substitutions to all template files
+    for file in "${template_files[@]+"${template_files[@]}"}"; do
+        sed -i '' "${sed_args[@]}" "$file" 2>/dev/null || \
+            sed -i "${sed_args[@]}" "$file"
+    done
 }

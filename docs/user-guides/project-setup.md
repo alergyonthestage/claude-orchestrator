@@ -13,10 +13,10 @@ cco project create my-app \
   --description "My SaaS application"
 ```
 
-This generates the structure in `projects/my-app/`:
+This generates the structure in `user-config/projects/my-app/`:
 
 ```
-projects/my-app/
+user-config/projects/my-app/
 ├── project.yml              # Main configuration
 ├── .claude/
 │   ├── CLAUDE.md            # Instructions for Claude (project-level)
@@ -46,7 +46,7 @@ If you pass `--repo`, the CLI auto-detects basic information from the repositori
 
 **extra_mounts** — Additional material for reference. Mounted at an arbitrary path in the container, typically read-only. Useful for shared libraries (e.g. internal frameworks), API specs, or any reference files Claude might need to read but not modify.
 
-**packs** — Groups of knowledge documents (conventions, business overviews, guidelines) defined once in `global/packs/` and reusable across projects without copying anything. The pack's source directory is mounted read-only; files are automatically injected into Claude's context via the SessionStart hook (no CLAUDE.md edit required). Packs can also contribute project-level skills, agents, and rules. Ideal for cross-cutting documentation and tooling that applies to all projects for a given client or domain.
+**packs** — Groups of knowledge documents (conventions, business overviews, guidelines) defined once in `user-config/packs/` and reusable across projects without copying anything. The pack's source directory is mounted read-only; files are automatically injected into Claude's context via the SessionStart hook (no CLAUDE.md edit required). Packs can also contribute project-level skills, agents, and rules. Ideal for cross-cutting documentation and tooling that applies to all projects for a given client or domain.
 
 ```yaml
 repos:
@@ -61,12 +61,12 @@ extra_mounts:
     readonly: true
 
 packs:
-  - my-client-knowledge   # → global/packs/my-client-knowledge/pack.yml
+  - my-client-knowledge   # → user-config/packs/my-client-knowledge/pack.yml
 ```
 
 ### Configure a Pack
 
-Create `global/packs/<name>/pack.yml`:
+Create `user-config/packs/<name>/pack.yml`:
 
 ```yaml
 name: my-client-knowledge
@@ -143,7 +143,7 @@ For the complete guide — including multi-project setup, security, troubleshoot
 
 ## 3. Writing a Good CLAUDE.md
 
-The file `projects/<name>/.claude/CLAUDE.md` is the central place to give Claude context about the project. A good CLAUDE.md is the difference between productive sessions and sessions where Claude constantly asks for clarification.
+The file `user-config/projects/<name>/.claude/CLAUDE.md` is the central place to give Claude context about the project. A good CLAUDE.md is the difference between productive sessions and sessions where Claude constantly asks for clarification.
 
 ### Recommended Approach: Use /init-workspace
 
@@ -255,18 +255,37 @@ This lets you clone the `claude-orchestrator` repo on multiple machines while ke
 
 ## 6. Versioning User Configuration
 
-Since `global/` and `projects/` are gitignored in the orchestrator repo, you can version them separately.
+Since `user-config/` is gitignored in the orchestrator repo, you can version it separately using the built-in `cco vault` commands.
 
-### "Config repo" Pattern
+### Using `cco vault`
 
-If you work across multiple machines, keep your user configuration in a separate repo:
+The vault provides git-backed versioning for your `user-config/` directory with built-in secret detection to prevent accidental commits of tokens or credentials.
 
 ```bash
-# On the main machine, initialize a repo for the config
-cd ~/claude-orchestrator
-git init global/
-cd global/
-git add -A && git commit -m "Initial global config"
+# Initialize versioning for user-config/
+cco vault init
+
+# Check current state
+cco vault status
+
+# See uncommitted changes grouped by category
+cco vault diff
+
+# Commit changes (with automatic secret detection)
+cco vault sync "Added new pack for client project"
+
+# View history
+cco vault log
+```
+
+### Sharing Across Machines
+
+If you work across multiple machines, push the vault to a remote:
+
+```bash
+# On the main machine
+cco vault init
+cd user-config/
 git remote add origin <your-config-repo-url>
 git push -u origin main
 ```
@@ -277,12 +296,14 @@ On another machine:
 # Clone the orchestrator
 git clone <orchestrator-url> ~/claude-orchestrator
 cd ~/claude-orchestrator
-cco init  # creates global/ from defaults
+cco init  # creates user-config/ from defaults
 
-# Or: replace global/ with your config repo
-rm -rf global/
-git clone <your-config-repo-url> global/
+# Or: replace user-config/ with your config repo
+rm -rf user-config/
+git clone <your-config-repo-url> user-config/
 ```
+
+For the full sharing workflow (installing packs from remote, sharing project templates, multi-machine sync), see the [Config Repo guide](config-repo.md).
 
 ### Managing Defaults Updates
 
@@ -292,7 +313,7 @@ When the tool is updated (`git pull`), system files (skills, agents, rules, sett
 # System files sync automatically — no action needed for skills/agents/rules/settings
 
 # To compare user defaults with new versions:
-diff defaults/global/.claude/CLAUDE.md global/.claude/CLAUDE.md
+diff defaults/global/.claude/CLAUDE.md user-config/global/.claude/CLAUDE.md
 
 # To reset user defaults (overwrites CLAUDE.md, mcp.json, language.md):
 cco init --force
@@ -307,12 +328,16 @@ cd ~/claude-orchestrator
 cco init                                    # Copies user defaults + syncs system files, builds image
 
 # Customize
-vim global/.claude/CLAUDE.md                # Your global instructions
-vim global/.claude/rules/my-rules.md        # Your custom rules
+vim user-config/global/.claude/CLAUDE.md                # Your global instructions
+vim user-config/global/.claude/rules/my-rules.md        # Your custom rules
 
 # Create projects
 cco project create my-app --repo ~/code/my-app
-vim projects/my-app/.claude/CLAUDE.md       # Instructions for this project
+vim user-config/projects/my-app/.claude/CLAUDE.md       # Instructions for this project
+
+# Version your config
+cco vault init
+cco vault sync "Initial config"
 
 # Update the tool (no conflicts!)
 git pull                                    # Updates only defaults/, bin/, docs/

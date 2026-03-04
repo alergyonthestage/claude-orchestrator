@@ -4,7 +4,7 @@
 # Provides: _clean_pack_manifest(), _detect_pack_conflicts(),
 #           _copy_pack_resources(), _validate_single_pack()
 # Dependencies: colors.sh, utils.sh, yaml.sh
-# Globals: GLOBAL_DIR
+# Globals: PACKS_DIR
 
 # Remove stale files from a previous pack manifest that are no longer needed.
 # Reads .pack-manifest, deletes listed files, removes empty parent dirs.
@@ -33,7 +33,7 @@ _detect_pack_conflicts() {
     local seen_skills_keys=() seen_skills_vals=()
     while IFS= read -r pack_name; do
         [[ -z "$pack_name" ]] && continue
-        local pack_yml="$GLOBAL_DIR/packs/${pack_name}/pack.yml"
+        local pack_yml="$PACKS_DIR/${pack_name}/pack.yml"
         [[ ! -f "$pack_yml" ]] && continue
         local agents rules skills
         agents=$(yml_get_pack_agents "$pack_yml")
@@ -174,7 +174,7 @@ _copy_pack_resources() {
 # Returns 0 if valid, 1 if errors found.
 _validate_single_pack() {
     local name="$1"
-    local pack_dir="$GLOBAL_DIR/packs/$name"
+    local pack_dir="$PACKS_DIR/$name"
     local pack_yml="$pack_dir/pack.yml"
     local errors=0
 
