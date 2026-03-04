@@ -21,6 +21,7 @@ projects/*/.pack-manifest
 projects/*/.cco-meta
 
 # Session state — transient, large, personal
+global/claude-state/
 projects/*/claude-state/
 projects/*/rag-data/
 
