@@ -434,7 +434,7 @@ YAML
             echo ""
             while IFS= read -r pack_name; do
                 [[ -z "$pack_name" ]] && continue
-                local pack_yml="$GLOBAL_DIR/packs/${pack_name}/pack.yml"
+                local pack_yml="$PACKS_DIR/${pack_name}/pack.yml"
                 [[ ! -f "$pack_yml" ]] && continue
                 if ! grep -qE '^(name|knowledge|skills|agents|rules):' "$pack_yml"; then
                     warn "Pack '$pack_name': pack.yml has no valid top-level keys — check for extra indentation."
@@ -468,7 +468,7 @@ YAML
         : > "$manifest_file"
         while IFS= read -r pack_name; do
             [[ -z "$pack_name" ]] && continue
-            local pack_yml="$GLOBAL_DIR/packs/${pack_name}/pack.yml"
+            local pack_yml="$PACKS_DIR/${pack_name}/pack.yml"
             [[ ! -f "$pack_yml" ]] && continue
             _copy_pack_resources "$pack_name" "$pack_yml" "$project_dir" "$manifest_file"
         done <<< "$pack_names"

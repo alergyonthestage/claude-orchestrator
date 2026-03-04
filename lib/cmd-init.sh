@@ -3,7 +3,7 @@
 #
 # Provides: cmd_init()
 # Dependencies: colors.sh, utils.sh, update.sh, cmd-build.sh
-# Globals: GLOBAL_DIR, DEFAULTS_DIR, PROJECTS_DIR, REPO_ROOT
+# Globals: USER_CONFIG_DIR, GLOBAL_DIR, DEFAULTS_DIR, PROJECTS_DIR, PACKS_DIR, TEMPLATES_DIR, REPO_ROOT
 
 cmd_init() {
     local force=false
@@ -56,15 +56,16 @@ EOF
 
     # Copy global config
     if [[ -d "$GLOBAL_DIR/.claude" ]] && ! $force; then
-        warn "global/ already exists, skipping (use --force to overwrite)"
+        warn "Config already initialized, skipping (use --force to overwrite)"
 
         # Run pending migrations on existing install (if no .cco-meta yet)
         if [[ ! -f "$GLOBAL_DIR/.claude/.cco-meta" ]]; then
             _run_migrations "global" "$GLOBAL_DIR/.claude" 0 ""
         fi
     else
-        info "Copying default global config to global/..."
+        info "Copying default global config..."
         rm -rf "$GLOBAL_DIR"
+        mkdir -p "$USER_CONFIG_DIR"
         mkdir -p "$GLOBAL_DIR"
         cp -r "$DEFAULTS_DIR/global/.claude" "$GLOBAL_DIR/.claude"
 
@@ -77,7 +78,7 @@ EOF
         sed -i '' "s/{{CODE_LANG}}/$code_lang/g" "$lang_file" 2>/dev/null || \
             sed -i "s/{{CODE_LANG}}/$code_lang/g" "$lang_file"
 
-        ok "Global config initialized at global/ (languages: $comm_lang / $docs_lang / $code_lang)"
+        ok "Global config initialized (languages: $comm_lang / $docs_lang / $code_lang)"
 
         # Generate .cco-meta with hashes of all installed files and latest schema
         local latest_schema
@@ -111,11 +112,13 @@ EOF
         ok "Copied global/setup.sh template"
     fi
 
-    # Ensure projects and packs directories exist
+    # Ensure projects, packs, and templates directories exist
     mkdir -p "$PROJECTS_DIR"
-    mkdir -p "$GLOBAL_DIR/packs"
-    ok "Projects directory ready at projects/"
-    ok "Packs directory ready at global/packs/ (define reusable knowledge groups here)"
+    mkdir -p "$PACKS_DIR"
+    mkdir -p "$TEMPLATES_DIR"
+    ok "Projects directory ready"
+    ok "Packs directory ready"
+    ok "Templates directory ready"
 
     # PATH hint
     if ! command -v cco &>/dev/null; then

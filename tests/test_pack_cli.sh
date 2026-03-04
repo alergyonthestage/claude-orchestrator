@@ -10,7 +10,7 @@ test_pack_create_makes_directory() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco pack create "my-pack"
-    assert_dir_exists "$CCO_GLOBAL_DIR/packs/my-pack"
+    assert_dir_exists "$CCO_PACKS_DIR/my-pack"
 }
 
 test_pack_create_makes_pack_yml() {
@@ -18,8 +18,8 @@ test_pack_create_makes_pack_yml() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco pack create "my-pack"
-    assert_file_exists "$CCO_GLOBAL_DIR/packs/my-pack/pack.yml"
-    assert_file_contains "$CCO_GLOBAL_DIR/packs/my-pack/pack.yml" "name: my-pack"
+    assert_file_exists "$CCO_PACKS_DIR/my-pack/pack.yml"
+    assert_file_contains "$CCO_PACKS_DIR/my-pack/pack.yml" "name: my-pack"
 }
 
 test_pack_create_makes_subdirectories() {
@@ -27,10 +27,10 @@ test_pack_create_makes_subdirectories() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco pack create "my-pack"
-    assert_dir_exists "$CCO_GLOBAL_DIR/packs/my-pack/knowledge"
-    assert_dir_exists "$CCO_GLOBAL_DIR/packs/my-pack/skills"
-    assert_dir_exists "$CCO_GLOBAL_DIR/packs/my-pack/agents"
-    assert_dir_exists "$CCO_GLOBAL_DIR/packs/my-pack/rules"
+    assert_dir_exists "$CCO_PACKS_DIR/my-pack/knowledge"
+    assert_dir_exists "$CCO_PACKS_DIR/my-pack/skills"
+    assert_dir_exists "$CCO_PACKS_DIR/my-pack/agents"
+    assert_dir_exists "$CCO_PACKS_DIR/my-pack/rules"
 }
 
 test_pack_create_rejects_uppercase() {
@@ -88,7 +88,7 @@ test_pack_list_shows_resource_counts() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     # Create a pack with resources
-    local pack_dir="$CCO_GLOBAL_DIR/packs/counted-pack"
+    local pack_dir="$CCO_PACKS_DIR/counted-pack"
     mkdir -p "$pack_dir/agents" "$pack_dir/rules"
     echo "Agent" > "$pack_dir/agents/bot.md"
     echo "Rule" > "$pack_dir/rules/style.md"
@@ -102,8 +102,8 @@ test_pack_list_header_only_when_empty() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     # Remove default packs dir content
-    rm -rf "$CCO_GLOBAL_DIR/packs"
-    mkdir -p "$CCO_GLOBAL_DIR/packs"
+    rm -rf "$CCO_PACKS_DIR"
+    mkdir -p "$CCO_PACKS_DIR"
     run_cco pack list
     assert_output_contains "NAME"
     # Output should only be the header line
@@ -160,7 +160,7 @@ test_pack_show_lists_agents_and_rules() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_dir="$CCO_GLOBAL_DIR/packs/ar-pack"
+    local pack_dir="$CCO_PACKS_DIR/ar-pack"
     mkdir -p "$pack_dir/agents" "$pack_dir/rules"
     echo "Agent" > "$pack_dir/agents/bot.md"
     echo "Rule" > "$pack_dir/rules/style.md"
@@ -218,9 +218,9 @@ test_pack_remove_deletes_directory() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco pack create "doomed-pack"
-    assert_dir_exists "$CCO_GLOBAL_DIR/packs/doomed-pack"
+    assert_dir_exists "$CCO_PACKS_DIR/doomed-pack"
     run_cco pack remove "doomed-pack"
-    if [[ -d "$CCO_GLOBAL_DIR/packs/doomed-pack" ]]; then
+    if [[ -d "$CCO_PACKS_DIR/doomed-pack" ]]; then
         echo "ASSERTION FAILED: pack directory should have been removed"
         return 1
     fi
@@ -254,7 +254,7 @@ YAML
 )"
     # Without tty (stdin from /dev/null), should fail
     run_cco pack remove "used-pack" </dev/null || true
-    assert_dir_exists "$CCO_GLOBAL_DIR/packs/used-pack"
+    assert_dir_exists "$CCO_PACKS_DIR/used-pack"
 }
 
 test_pack_remove_force_removes_despite_usage() {
@@ -273,7 +273,7 @@ repos: []
 YAML
 )"
     run_cco pack remove "forced-pack" --force
-    if [[ -d "$CCO_GLOBAL_DIR/packs/forced-pack" ]]; then
+    if [[ -d "$CCO_PACKS_DIR/forced-pack" ]]; then
         echo "ASSERTION FAILED: pack should have been removed with --force"
         return 1
     fi
@@ -285,7 +285,7 @@ test_pack_validate_ok_for_valid_pack() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_dir="$CCO_GLOBAL_DIR/packs/valid-pack"
+    local pack_dir="$CCO_PACKS_DIR/valid-pack"
     mkdir -p "$pack_dir/agents"
     echo "Agent" > "$pack_dir/agents/bot.md"
     printf 'name: valid-pack\nagents:\n  - bot.md\n' > "$pack_dir/pack.yml"
@@ -297,7 +297,7 @@ test_pack_validate_error_without_pack_yml() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    mkdir -p "$CCO_GLOBAL_DIR/packs/no-yml"
+    mkdir -p "$CCO_PACKS_DIR/no-yml"
     if run_cco pack validate "no-yml" 2>/dev/null; then
         echo "ASSERTION FAILED: should fail without pack.yml"
         return 1
@@ -308,7 +308,7 @@ test_pack_validate_error_for_bad_indentation() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_dir="$CCO_GLOBAL_DIR/packs/bad-indent"
+    local pack_dir="$CCO_PACKS_DIR/bad-indent"
     mkdir -p "$pack_dir"
     cat > "$pack_dir/pack.yml" <<'YAML'
   name: bad-indent
@@ -325,7 +325,7 @@ test_pack_validate_error_for_missing_referenced_file() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_dir="$CCO_GLOBAL_DIR/packs/missing-ref"
+    local pack_dir="$CCO_PACKS_DIR/missing-ref"
     mkdir -p "$pack_dir/agents"
     printf 'name: missing-ref\nagents:\n  - nonexistent.md\n' > "$pack_dir/pack.yml"
     if run_cco pack validate "missing-ref" 2>/dev/null; then
@@ -339,8 +339,8 @@ test_pack_validate_all_without_argument() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     # Create two valid packs
-    local pack_a="$CCO_GLOBAL_DIR/packs/pack-a"
-    local pack_b="$CCO_GLOBAL_DIR/packs/pack-b"
+    local pack_a="$CCO_PACKS_DIR/pack-a"
+    local pack_b="$CCO_PACKS_DIR/pack-b"
     mkdir -p "$pack_a" "$pack_b"
     printf 'name: pack-a\n' > "$pack_a/pack.yml"
     printf 'name: pack-b\n' > "$pack_b/pack.yml"
@@ -353,7 +353,7 @@ test_pack_validate_warns_name_mismatch() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_dir="$CCO_GLOBAL_DIR/packs/actual-name"
+    local pack_dir="$CCO_PACKS_DIR/actual-name"
     mkdir -p "$pack_dir"
     printf 'name: wrong-name\n' > "$pack_dir/pack.yml"
     run_cco pack validate "actual-name"

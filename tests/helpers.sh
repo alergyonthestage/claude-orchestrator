@@ -9,20 +9,24 @@
 # Usage: setup_cco_env "$tmpdir"
 setup_cco_env() {
     local tmpdir="$1"
-    export CCO_PROJECTS_DIR="$tmpdir/projects"
-    export CCO_GLOBAL_DIR="$tmpdir/global"
+    export CCO_USER_CONFIG_DIR="$tmpdir/user-config"
+    export CCO_GLOBAL_DIR="$tmpdir/user-config/global"
+    export CCO_PROJECTS_DIR="$tmpdir/user-config/projects"
+    export CCO_PACKS_DIR="$tmpdir/user-config/packs"
+    export CCO_TEMPLATES_DIR="$tmpdir/user-config/templates"
     export CCO_DUMMY_REPO="$tmpdir/dummy-repo"
-    mkdir -p "$CCO_PROJECTS_DIR" "$CCO_GLOBAL_DIR" "$CCO_DUMMY_REPO"
+    mkdir -p "$CCO_USER_CONFIG_DIR" "$CCO_GLOBAL_DIR" "$CCO_PROJECTS_DIR" \
+             "$CCO_PACKS_DIR" "$CCO_TEMPLATES_DIR" "$CCO_DUMMY_REPO"
 }
 
-# Copy defaults/global/.claude into tmpdir/global/.claude
+# Copy defaults/global/.claude into tmpdir/user-config/global/.claude
 # (simulates cco init — all agents, skills, rules, settings are in global defaults)
 # Usage: setup_global_from_defaults "$tmpdir"
 setup_global_from_defaults() {
     local tmpdir="$1"
-    mkdir -p "$tmpdir/global"
-    cp -r "$REPO_ROOT/defaults/global/.claude" "$tmpdir/global/.claude"
-    mkdir -p "$tmpdir/global/packs"
+    mkdir -p "$tmpdir/user-config/global"
+    cp -r "$REPO_ROOT/defaults/global/.claude" "$tmpdir/user-config/global/.claude"
+    mkdir -p "$tmpdir/user-config/packs"
 }
 
 # Create a minimal project directory with the given project.yml content.
@@ -32,19 +36,19 @@ create_project() {
     local tmpdir="$1"
     local name="$2"
     local yml_content="$3"
-    local project_dir="$tmpdir/projects/$name"
+    local project_dir="$tmpdir/user-config/projects/$name"
     mkdir -p "$project_dir/.claude"
     mkdir -p "$project_dir/memory"
     printf '%s\n' "$yml_content" > "$project_dir/project.yml"
 }
 
-# Create a pack definition in global/packs/<name>/pack.yml
+# Create a pack definition in packs/<name>/pack.yml
 # Usage: create_pack "$tmpdir" "pack-name" "$yml_content"
 create_pack() {
     local tmpdir="$1"
     local name="$2"
     local yml_content="$3"
-    local pack_dir="$tmpdir/global/packs/$name"
+    local pack_dir="$tmpdir/user-config/packs/$name"
     mkdir -p "$pack_dir"
     printf '%s\n' "$yml_content" > "$pack_dir/pack.yml"
 }
@@ -54,8 +58,11 @@ create_pack() {
 # Usage: run_cco [args...]
 run_cco() {
     CCO_OUTPUT=$(
-        CCO_PROJECTS_DIR="$CCO_PROJECTS_DIR" \
+        CCO_USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR" \
         CCO_GLOBAL_DIR="$CCO_GLOBAL_DIR" \
+        CCO_PROJECTS_DIR="$CCO_PROJECTS_DIR" \
+        CCO_PACKS_DIR="$CCO_PACKS_DIR" \
+        CCO_TEMPLATES_DIR="$CCO_TEMPLATES_DIR" \
         bash "$REPO_ROOT/bin/cco" "$@" 2>&1
     ) || return $?
 }
@@ -88,6 +95,16 @@ assert_dir_exists() {
     if [[ ! -d "$dir" ]]; then
         echo "ASSERTION FAILED: $msg"
         echo "  Directory not found: $dir"
+        return 1
+    fi
+}
+
+assert_dir_not_exists() {
+    local dir="$1"
+    local msg="${2:-Expected directory NOT to exist: $dir}"
+    if [[ -d "$dir" ]]; then
+        echo "ASSERTION FAILED: $msg"
+        echo "  Directory exists: $dir"
         return 1
     fi
 }

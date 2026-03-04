@@ -4,7 +4,7 @@
 # Provides: cmd_pack_create(), cmd_pack_list(), cmd_pack_show(),
 #           cmd_pack_remove(), cmd_pack_validate()
 # Dependencies: colors.sh, utils.sh, yaml.sh, packs.sh
-# Globals: GLOBAL_DIR, PROJECTS_DIR
+# Globals: PACKS_DIR, PROJECTS_DIR
 
 # ── Pack commands ─────────────────────────────────────────────────────
 
@@ -41,8 +41,8 @@ EOF
         die "Pack name must be lowercase letters, numbers, and hyphens only."
     fi
 
-    local pack_dir="$GLOBAL_DIR/packs/$name"
-    [[ -d "$pack_dir" ]] && die "Pack '$name' already exists at global/packs/$name/"
+    local pack_dir="$PACKS_DIR/$name"
+    [[ -d "$pack_dir" ]] && die "Pack '$name' already exists at packs/$name/"
 
     # Create directory structure
     mkdir -p "$pack_dir"/{knowledge,skills,agents,rules}
@@ -72,13 +72,13 @@ name: $name
 #   - conventions.md
 YAML
 
-    ok "Pack created at global/packs/$name/"
+    ok "Pack created at packs/$name/"
     info "Add resources to the subdirectories:"
     info "  knowledge/ — documentation files"
     info "  skills/    — skill directories (each with SKILL.md)"
     info "  agents/    — agent definition files (.md)"
     info "  rules/     — rule files (.md)"
-    info "Edit global/packs/$name/pack.yml to declare resources"
+    info "Edit packs/$name/pack.yml to declare resources"
 }
 
 cmd_pack_list() {
@@ -86,7 +86,7 @@ cmd_pack_list() {
 
     echo -e "${BOLD}NAME              KNOWLEDGE  SKILLS  AGENTS  RULES${NC}"
 
-    for dir in "$GLOBAL_DIR/packs"/*/; do
+    for dir in "$PACKS_DIR"/*/; do
         [[ ! -d "$dir" ]] && continue
         local name
         name=$(basename "$dir")
@@ -130,9 +130,9 @@ EOF
 
     [[ -z "$name" ]] && die "Usage: cco pack show <name>"
 
-    local pack_dir="$GLOBAL_DIR/packs/$name"
+    local pack_dir="$PACKS_DIR/$name"
     local pack_yml="$pack_dir/pack.yml"
-    [[ ! -d "$pack_dir" ]] && die "Pack '$name' not found at global/packs/$name/"
+    [[ ! -d "$pack_dir" ]] && die "Pack '$name' not found at packs/$name/"
 
     # Name
     local yml_name=""
@@ -266,8 +266,8 @@ EOF
 
     [[ -z "$name" ]] && die "Usage: cco pack remove <name>"
 
-    local pack_dir="$GLOBAL_DIR/packs/$name"
-    [[ ! -d "$pack_dir" ]] && die "Pack '$name' not found at global/packs/$name/"
+    local pack_dir="$PACKS_DIR/$name"
+    [[ ! -d "$pack_dir" ]] && die "Pack '$name' not found at packs/$name/"
 
     # Check if used by any projects
     local used_by=()
@@ -336,11 +336,11 @@ EOF
     done
 
     if [[ -n "$name" ]]; then
-        [[ ! -d "$GLOBAL_DIR/packs/$name" ]] && die "Pack '$name' not found"
+        [[ ! -d "$PACKS_DIR/$name" ]] && die "Pack '$name' not found"
         _validate_single_pack "$name"
     else
         local has_errors=false
-        for dir in "$GLOBAL_DIR/packs"/*/; do
+        for dir in "$PACKS_DIR"/*/; do
             [[ ! -d "$dir" ]] && continue
             local pack_name
             pack_name=$(basename "$dir")

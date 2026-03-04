@@ -1,10 +1,14 @@
-# User configuration (created by cco init, customized by user)
+# User configuration — unified structure (created by cco init)
+/user-config/
+
+# Legacy layout (pre-migration) — keep during transition
 /global/
 /projects/
 
 # Secrets
 .env
 .env.*
+user-config/global/secrets.env
 global/secrets.env
 secrets.env
 # Allow template secrets.env (tracked tool code)

@@ -5,11 +5,28 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DEFAULTS_DIR="$REPO_ROOT/defaults"
-PROJECTS_DIR="${CCO_PROJECTS_DIR:-$REPO_ROOT/projects}"
-GLOBAL_DIR="${CCO_GLOBAL_DIR:-$REPO_ROOT/global}"
 TEMPLATE_DIR="$DEFAULTS_DIR/_template"
 IMAGE_NAME="claude-orchestrator:latest"
 LIB_DIR="$REPO_ROOT/lib"
+
+# ── User config directory resolution ─────────────────────────────────
+# Primary: CCO_USER_CONFIG_DIR controls the unified user data root.
+# Auto-detect: if user-config/ doesn't exist but old global/ does,
+# fall back to legacy paths so cco update can run the migration.
+USER_CONFIG_DIR="${CCO_USER_CONFIG_DIR:-$REPO_ROOT/user-config}"
+
+if [[ -z "${CCO_USER_CONFIG_DIR:-}" && ! -d "$USER_CONFIG_DIR/global" && -d "$REPO_ROOT/global/.claude" ]]; then
+    # Legacy layout — migration not yet run
+    GLOBAL_DIR="${CCO_GLOBAL_DIR:-$REPO_ROOT/global}"
+    PROJECTS_DIR="${CCO_PROJECTS_DIR:-$REPO_ROOT/projects}"
+    PACKS_DIR="${CCO_PACKS_DIR:-$REPO_ROOT/global/packs}"
+    TEMPLATES_DIR="${CCO_TEMPLATES_DIR:-$USER_CONFIG_DIR/templates}"
+else
+    GLOBAL_DIR="${CCO_GLOBAL_DIR:-$USER_CONFIG_DIR/global}"
+    PROJECTS_DIR="${CCO_PROJECTS_DIR:-$USER_CONFIG_DIR/projects}"
+    PACKS_DIR="${CCO_PACKS_DIR:-$USER_CONFIG_DIR/packs}"
+    TEMPLATES_DIR="${CCO_TEMPLATES_DIR:-$USER_CONFIG_DIR/templates}"
+fi
 
 # ── Load modules ─────────────────────────────────────────────────────
 source "$LIB_DIR/colors.sh"
@@ -29,6 +46,19 @@ source "$LIB_DIR/cmd-chrome.sh"
 source "$LIB_DIR/cmd-project.sh"
 source "$LIB_DIR/cmd-pack.sh"
 source "$LIB_DIR/cmd-update.sh"
+
+# ── Deprecation warnings ──────────────────────────────────────────────
+# Only warn when legacy vars are set WITHOUT CCO_USER_CONFIG_DIR
+if [[ -z "${CCO_USER_CONFIG_DIR:-}" ]]; then
+    if [[ -n "${CCO_GLOBAL_DIR:-}" ]]; then
+        echo "⚠ CCO_GLOBAL_DIR is deprecated. Use CCO_USER_CONFIG_DIR instead." >&2
+        echo "  Current: CCO_GLOBAL_DIR=$CCO_GLOBAL_DIR" >&2
+        echo "  Suggested: export CCO_USER_CONFIG_DIR=$(dirname "$CCO_GLOBAL_DIR")" >&2
+    fi
+    if [[ -n "${CCO_PROJECTS_DIR:-}" ]]; then
+        echo "⚠ CCO_PROJECTS_DIR is deprecated. Use CCO_USER_CONFIG_DIR instead." >&2
+    fi
+fi
 
 usage() {
     cat <<'EOF'

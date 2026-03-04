@@ -242,7 +242,7 @@ EOF
     if [[ -n "$packs" ]]; then
         while IFS= read -r pack; do
             [[ -z "$pack" ]] && continue
-            if [[ -d "$GLOBAL_DIR/packs/$pack" ]]; then
+            if [[ -d "$PACKS_DIR/$pack" ]]; then
                 echo "  $pack"
             else
                 echo -e "  $pack ${YELLOW}[not found]${NC}"
@@ -352,8 +352,8 @@ EOF
     if [[ -n "$packs" ]]; then
         while IFS= read -r pack; do
             [[ -z "$pack" ]] && continue
-            if [[ ! -d "$GLOBAL_DIR/packs/$pack" ]]; then
-                error "Project '$name': pack '$pack' not found in global/packs/"
+            if [[ ! -d "$PACKS_DIR/$pack" ]]; then
+                error "Project '$name': pack '$pack' not found in packs/"
                 ((errors++))
             fi
         done <<< "$packs"

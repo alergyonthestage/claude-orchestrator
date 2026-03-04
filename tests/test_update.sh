@@ -194,8 +194,8 @@ languages:
 manifest:"
 
     run_cco update
-    # Schema version should be updated to latest (currently 2: migration 001 + 002)
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco-meta" "schema_version: 2"
+    # Schema version should be updated to latest (currently 3: migration 001 + 002 + 003)
+    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco-meta" "schema_version: 3"
 }
 
 test_update_migration_failure_stops() {
