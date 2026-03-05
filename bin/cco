@@ -163,7 +163,7 @@ EOF
         ;;
     chrome)  cmd_chrome "$@" ;;
     manifest) cmd_manifest "$@" ;;
-    share)    cmd_manifest "$@" ;;  # backward compat alias
+    share)    die "'cco share' has been renamed to 'cco manifest'. Run 'cco update' to migrate." ;;
     vault)   cmd_vault "$@" ;;
     update)  cmd_update "$@" ;;
     stop)    cmd_stop "$@" ;;

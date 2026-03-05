@@ -14,12 +14,6 @@ manifest_init() {
     local config_dir="$1"
     local manifest_file="$config_dir/manifest.yml"
 
-    # Backward compat: adopt existing share.yml if manifest.yml doesn't exist
-    if [[ ! -f "$manifest_file" && -f "$config_dir/share.yml" ]]; then
-        mv "$config_dir/share.yml" "$manifest_file"
-        return 0
-    fi
-
     if [[ -f "$manifest_file" ]]; then
         return 0
     fi
@@ -43,11 +37,6 @@ manifest_refresh() {
     local manifest_file="$config_dir/manifest.yml"
     local packs_dir="$config_dir/packs"
     local templates_dir="$config_dir/templates"
-
-    # Backward compat: adopt existing share.yml
-    if [[ ! -f "$manifest_file" && -f "$config_dir/share.yml" ]]; then
-        mv "$config_dir/share.yml" "$manifest_file"
-    fi
 
     # Read existing name/description if manifest.yml already exists
     local repo_name="" repo_desc=""
@@ -162,11 +151,6 @@ manifest_validate() {
     local manifest_file="$config_dir/manifest.yml"
     local has_issues=false
 
-    # Backward compat: adopt existing share.yml
-    if [[ ! -f "$manifest_file" && -f "$config_dir/share.yml" ]]; then
-        mv "$config_dir/share.yml" "$manifest_file"
-    fi
-
     if [[ ! -f "$manifest_file" ]]; then
         warn "manifest.yml not found at $manifest_file"
         return 1
@@ -234,11 +218,6 @@ manifest_validate() {
 manifest_show() {
     local config_dir="$1"
     local manifest_file="$config_dir/manifest.yml"
-
-    # Backward compat: adopt existing share.yml
-    if [[ ! -f "$manifest_file" && -f "$config_dir/share.yml" ]]; then
-        mv "$config_dir/share.yml" "$manifest_file"
-    fi
 
     if [[ ! -f "$manifest_file" ]]; then
         die "manifest.yml not found. Run 'cco init' or 'cco manifest refresh' first."

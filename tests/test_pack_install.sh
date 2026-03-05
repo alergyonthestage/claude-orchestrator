@@ -5,7 +5,7 @@
 
 # ── Helper: create a mock Config Repo ─────────────────────────────────
 
-# Create a bare git repo with packs and share.yml.
+# Create a bare git repo with packs and manifest.yml.
 # Usage: _create_mock_config_repo <tmpdir> <packs...>
 # Outputs: path to the bare repo (use as URL for cco pack install)
 _create_mock_config_repo() {
@@ -18,7 +18,7 @@ _create_mock_config_repo() {
     mkdir -p "$work_dir/packs"
 
     # Create packs
-    local share_packs=""
+    local manifest_packs=""
     for name in "${pack_names[@]}"; do
         mkdir -p "$work_dir/packs/$name"/{knowledge,agents,rules}
         cat > "$work_dir/packs/$name/pack.yml" <<YAML
@@ -31,18 +31,18 @@ rules:
 YAML
         printf 'Mock agent for %s\n' "$name" > "$work_dir/packs/$name/agents/bot.md"
         printf 'Mock rules for %s\n' "$name" > "$work_dir/packs/$name/rules/style.md"
-        share_packs+="  - name: $name
+        manifest_packs+="  - name: $name
     description: \"Mock pack $name\"
 "
     done
 
-    # Create share.yml
-    cat > "$work_dir/share.yml" <<YAML
+    # Create manifest.yml
+    cat > "$work_dir/manifest.yml" <<YAML
 name: "mock-config"
 description: "Mock config repo for testing"
 
 packs:
-${share_packs}
+${manifest_packs}
 templates: []
 YAML
 

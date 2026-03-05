@@ -445,12 +445,10 @@ EOF
     tmpdir=$(_clone_config_repo "$url" "$ref" "$token")
     trap "_cleanup_clone '$tmpdir'" EXIT
 
-    # Detect repo type (accept both manifest.yml and share.yml for compat)
+    # Detect repo type
     local manifest_file=""
     if [[ -f "$tmpdir/manifest.yml" ]]; then
         manifest_file="$tmpdir/manifest.yml"
-    elif [[ -f "$tmpdir/share.yml" ]]; then
-        manifest_file="$tmpdir/share.yml"
     else
         _cleanup_clone "$tmpdir"
         die "Not a valid CCO Config Repo: no manifest.yml found"

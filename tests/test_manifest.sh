@@ -44,22 +44,16 @@ test_manifest_init_idempotent() {
     assert_file_contains "$CCO_USER_CONFIG_DIR/manifest.yml" "USER_CANARY"
 }
 
-test_manifest_init_adopts_existing_share_yml() {
+test_cco_share_command_errors() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco init --lang "English"
-
-    # Simulate a pre-rename installation: rename manifest.yml back to share.yml
-    mv "$CCO_USER_CONFIG_DIR/manifest.yml" "$CCO_USER_CONFIG_DIR/share.yml"
-    printf '\n# LEGACY_MARKER\n' >> "$CCO_USER_CONFIG_DIR/share.yml"
-
-    # Re-init should adopt share.yml as manifest.yml
-    run_cco init --lang "English"
-    assert_file_exists "$CCO_USER_CONFIG_DIR/manifest.yml"
-    assert_file_contains "$CCO_USER_CONFIG_DIR/manifest.yml" "LEGACY_MARKER"
-    # share.yml should be gone (renamed, not copied)
-    assert_file_not_exists "$CCO_USER_CONFIG_DIR/share.yml"
+    # cco share should error with migration hint
+    if run_cco share refresh 2>/dev/null; then
+        echo "ASSERTION FAILED: 'cco share' should error, not succeed"
+        return 1
+    fi
 }
 
 # ── manifest_refresh ─────────────────────────────────────────────────
@@ -237,13 +231,36 @@ test_manifest_refresh_command_works() {
     assert_output_contains "refreshed"
 }
 
-# ── backward compat: cco share alias ─────────────────────────────────
+# ── migration: share.yml → manifest.yml ──────────────────────────────
 
-test_share_alias_refresh_works() {
+test_migration_renames_share_to_manifest() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco init --lang "English"
-    run_cco share refresh
-    assert_output_contains "refreshed"
+
+    # Simulate legacy state: rename manifest.yml back to share.yml
+    mv "$CCO_USER_CONFIG_DIR/manifest.yml" "$CCO_USER_CONFIG_DIR/share.yml"
+    printf '\n# LEGACY_CONTENT\n' >> "$CCO_USER_CONFIG_DIR/share.yml"
+
+    # Source and run migration directly
+    source "$REPO_ROOT/migrations/global/004_rename_share_to_manifest.sh"
+    migrate "$CCO_USER_CONFIG_DIR/global/.claude"
+
+    assert_file_exists "$CCO_USER_CONFIG_DIR/manifest.yml"
+    assert_file_contains "$CCO_USER_CONFIG_DIR/manifest.yml" "LEGACY_CONTENT"
+    assert_file_not_exists "$CCO_USER_CONFIG_DIR/share.yml"
+}
+
+test_migration_idempotent_when_already_migrated() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco init --lang "English"
+
+    # Already has manifest.yml, no share.yml — migration should be a no-op
+    source "$REPO_ROOT/migrations/global/004_rename_share_to_manifest.sh"
+    migrate "$CCO_USER_CONFIG_DIR/global/.claude"
+
+    assert_file_exists "$CCO_USER_CONFIG_DIR/manifest.yml"
 }
