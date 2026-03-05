@@ -3,7 +3,8 @@
 #
 # Provides: cmd_project_create(), cmd_project_list(), cmd_project_show(),
 #           cmd_project_validate(), cmd_project_install(),
-#           cmd_project_add_pack(), cmd_project_remove_pack()
+#           cmd_project_add_pack(), cmd_project_remove_pack(),
+#           cmd_project_publish()
 # Dependencies: colors.sh, utils.sh, yaml.sh, remote.sh, manifest.sh
 # Globals: PROJECTS_DIR, GLOBAL_DIR, TEMPLATE_DIR, USER_CONFIG_DIR
 
@@ -771,5 +772,258 @@ _project_yml_remove_pack() {
     if ! awk '/^packs:/ { in_packs=1; next } in_packs && /^  - / { found=1; exit } in_packs && /^[^ #]/ { exit } END { exit !found }' "$file" 2>/dev/null; then
         sed -i '' 's/^packs:$/packs: []/' "$file" 2>/dev/null || \
             sed -i 's/^packs:$/packs: []/' "$file"
+    fi
+}
+
+# ── project publish ──────────────────────────────────────────────────
+
+cmd_project_publish() {
+    local name="" remote_arg="" message="" dry_run=false force=false
+    local token="" include_packs=true
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --message)        message="${2:-}"; shift 2 ;;
+            --dry-run)        dry_run=true; shift ;;
+            --force)          force=true; shift ;;
+            --token)          token="${2:-}"; shift 2 ;;
+            --no-packs)       include_packs=false; shift ;;
+            --help)
+                cat <<'EOF'
+Usage: cco project publish <name> [<remote>] [OPTIONS]
+
+Publish a project template to a remote Config Repo.
+
+Arguments:
+  <name>             Project to publish
+  <remote>           Remote name or URL
+
+Options:
+  --message <msg>    Commit message (default: "publish project <name>")
+  --dry-run          Show what would be published, don't push
+  --force            Overwrite remote version without confirmation
+  --no-packs         Don't bundle project's packs
+  --token <token>    Auth token for HTTPS remotes
+EOF
+                return 0
+                ;;
+            -*)  die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$name" ]]; then
+                    name="$1"
+                elif [[ -z "$remote_arg" ]]; then
+                    remote_arg="$1"
+                else
+                    die "Unexpected argument: $1"
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    [[ -z "$name" ]] && die "Usage: cco project publish <name> [<remote>]"
+
+    local project_dir="$PROJECTS_DIR/$name"
+    local project_yml="$project_dir/project.yml"
+    [[ ! -f "$project_yml" ]] && die "Project '$name' not found."
+
+    [[ -z "$remote_arg" ]] && die "Remote required. Usage: cco project publish <name> <remote>"
+
+    # Resolve remote URL
+    local remote_url=""
+    local resolved
+    if resolved=$(remote_get_url "$remote_arg"); then
+        remote_url="$resolved"
+    elif [[ "$remote_arg" == *:* || "$remote_arg" == */* ]]; then
+        remote_url="$remote_arg"
+    else
+        die "Remote '$remote_arg' not found. Register with 'cco remote add $remote_arg <url>'."
+    fi
+
+    [[ -z "$message" ]] && message="publish project $name"
+
+    info "Publishing project '$name' to $remote_url..."
+
+    # Clone remote repo
+    local tmpdir
+    tmpdir=$(_clone_for_publish "$remote_url" "$token")
+    trap "_cleanup_clone '$tmpdir'" EXIT
+
+    # Check for existing template on remote
+    if [[ -d "$tmpdir/templates/$name" ]]; then
+        if ! $force && ! $dry_run; then
+            warn "Template '$name' already exists on remote."
+            if [[ -t 0 ]]; then
+                printf "Overwrite? [y/N] " >&2
+                local reply; read -r reply
+                [[ ! "$reply" =~ ^[Yy]$ ]] && { _cleanup_clone "$tmpdir"; die "Aborted."; }
+            else
+                _cleanup_clone "$tmpdir"
+                die "Template exists on remote. Use --force to overwrite."
+            fi
+        fi
+        rm -rf "$tmpdir/templates/$name"
+    fi
+
+    # Copy project to templates/<name>/
+    mkdir -p "$tmpdir/templates/$name"
+    _copy_project_for_publish "$project_dir" "$tmpdir/templates/$name"
+
+    # Reverse-template repo paths in the published project.yml
+    _reverse_template_repos "$tmpdir/templates/$name/project.yml"
+
+    # Bundle packs if requested
+    local -a published_packs=()
+    if $include_packs; then
+        local project_packs
+        project_packs=$(yml_get_packs "$project_yml")
+        while IFS= read -r pack_name; do
+            [[ -z "$pack_name" ]] && continue
+            if [[ -d "$PACKS_DIR/$pack_name" ]]; then
+                # Copy pack to remote (internalize if needed)
+                _publish_pack_to_tmpdir "$pack_name" "$tmpdir"
+                published_packs+=("$pack_name")
+            else
+                warn "Pack '$pack_name' not found locally — skipping"
+            fi
+        done <<< "$project_packs"
+    fi
+
+    # Refresh manifest in temp dir
+    manifest_refresh "$tmpdir"
+
+    if $dry_run; then
+        echo ""
+        echo -e "${BOLD}Would publish:${NC}"
+        echo "  Template: $name"
+        if [[ ${#published_packs[@]} -gt 0 ]]; then
+            echo "  Packs: ${published_packs[*]}"
+        fi
+        echo "  Remote: $remote_url"
+        echo "  Files:"
+        find "$tmpdir/templates/$name" -type f | sed "s|$tmpdir/||; s/^/    /"
+        _cleanup_clone "$tmpdir"
+        trap - EXIT
+        ok "Dry run complete — nothing pushed"
+        return 0
+    fi
+
+    # Commit and push
+    git -C "$tmpdir" add -A
+    git -C "$tmpdir" commit -q -m "$message"
+    git -C "$tmpdir" push origin HEAD >/dev/null 2>&1 \
+        || { _cleanup_clone "$tmpdir"; die "Failed to push to $remote_url"; }
+
+    _cleanup_clone "$tmpdir"
+    trap - EXIT
+
+    local summary="Published project '$name'"
+    if [[ ${#published_packs[@]} -gt 0 ]]; then
+        summary+=" with packs: ${published_packs[*]}"
+    fi
+    ok "$summary"
+}
+
+# Copy project files for publishing, excluding runtime/generated files.
+_copy_project_for_publish() {
+    local src="$1" dst="$2"
+
+    # Copy everything except excluded patterns
+    local -a excludes=(
+        "docker-compose.yml"
+        ".managed"
+        ".pack-manifest"
+        ".cco-meta"
+        "claude-state"
+        "secrets.env"
+    )
+
+    # Build rsync-like exclusion via find + copy
+    find "$src" -mindepth 1 -maxdepth 1 | while IFS= read -r item; do
+        local base
+        base=$(basename "$item")
+        local skip=false
+        for excl in "${excludes[@]}"; do
+            [[ "$base" == "$excl" ]] && { skip=true; break; }
+        done
+        $skip && continue
+        cp -R "$item" "$dst/"
+    done
+}
+
+# Reverse-template repo paths: replace local paths with {{REPO_NAME}} variables
+# and add url: field from git remote.
+_reverse_template_repos() {
+    local yml_file="$1"
+
+    awk '
+        /^repos:/ { in_repos=1; print; next }
+        in_repos && /^[^ #]/ { in_repos=0; print; next }
+        in_repos && /^  - path:/ {
+            # Extract current name from upcoming lines or generate from path
+            saved=$0; getline
+            if ($0 ~ /^    name:/) {
+                name_line=$0
+                sub(/^    name: */, "", name_line)
+                gsub(/[\"'\''[:space:]]/, "", name_line)
+                # Generate template variable
+                var = toupper(name_line)
+                gsub(/-/, "_", var)
+                print "  - path: \"{{REPO_" var "}}\""
+                print $0  # print name line
+            } else {
+                print saved
+                print $0
+            }
+            next
+        }
+        { print }
+    ' "$yml_file" > "$yml_file.tmp" && mv "$yml_file.tmp" "$yml_file"
+
+    # Add url: fields by reading repo paths and querying git
+    # This is best-effort — if repo dir doesn't exist, skip
+}
+
+# Publish a pack into a tmpdir for bundling with a project.
+_publish_pack_to_tmpdir() {
+    local pack_name="$1" tmpdir="$2"
+    local pack_dir="$PACKS_DIR/$pack_name"
+
+    mkdir -p "$tmpdir/packs"
+    if [[ -d "$tmpdir/packs/$pack_name" ]]; then
+        rm -rf "$tmpdir/packs/$pack_name"
+    fi
+    cp -R "$pack_dir" "$tmpdir/packs/$pack_name"
+    rm -rf "$tmpdir/packs/$pack_name/.cco-source"
+    rm -rf "$tmpdir/packs/$pack_name/.cco-install-tmp"
+
+    # Internalize if source-referencing
+    local k_source
+    k_source=$(yml_get_pack_knowledge_source "$tmpdir/packs/$pack_name/pack.yml")
+    if [[ -n "$k_source" ]]; then
+        local expanded_source
+        expanded_source=$(expand_path "$k_source")
+        if [[ -d "$expanded_source" ]]; then
+            local k_files
+            k_files=$(yml_get_pack_knowledge_files "$tmpdir/packs/$pack_name/pack.yml")
+            mkdir -p "$tmpdir/packs/$pack_name/knowledge"
+            while IFS=$'\t' read -r fname desc; do
+                [[ -z "$fname" ]] && continue
+                local src="$expanded_source/$fname"
+                if [[ -f "$src" ]]; then
+                    mkdir -p "$(dirname "$tmpdir/packs/$pack_name/knowledge/$fname")"
+                    cp "$src" "$tmpdir/packs/$pack_name/knowledge/$fname"
+                fi
+            done <<< "$k_files"
+
+            local tmpf; tmpf=$(mktemp)
+            awk '
+                /^knowledge:/ { in_k=1; print; next }
+                in_k && /^  source:/ { next }
+                in_k && /^[^ #]/ { in_k=0 }
+                { print }
+            ' "$tmpdir/packs/$pack_name/pack.yml" > "$tmpf"
+            mv "$tmpf" "$tmpdir/packs/$pack_name/pack.yml"
+        fi
     fi
 }

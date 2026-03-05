@@ -112,6 +112,7 @@ Usage: cco project <command> [options]
 Commands:
   create <name>          Create a new project from template
   install <url>          Install project template from a remote Config Repo
+  publish <name> <remote> Publish project as template to a Config Repo
   add-pack <proj> <pack> Add a knowledge pack to a project
   remove-pack <p> <pack> Remove a knowledge pack from a project
   list                   List available projects with status
@@ -126,6 +127,7 @@ EOF
         case "$subcmd" in
             create)      cmd_project_create "$@" ;;
             install)     cmd_project_install "$@" ;;
+            publish)     cmd_project_publish "$@" ;;
             add-pack)    cmd_project_add_pack "$@" ;;
             remove-pack) cmd_project_remove_pack "$@" ;;
             list)        cmd_project_list "$@" ;;
@@ -144,6 +146,7 @@ Commands:
   create <name>          Create a new knowledge pack
   install <url>          Install packs from a remote Config Repo
   update <name>          Update a pack from its remote source
+  publish <name> [remote] Publish a pack to a remote Config Repo
   export <name>          Export a pack as .tar.gz archive
   internalize <name>     Convert source-referencing pack to self-contained
   list                   List available packs with resource counts
@@ -160,6 +163,7 @@ EOF
             create)   cmd_pack_create "$@" ;;
             install)  cmd_pack_install "$@" ;;
             update)   cmd_pack_update "$@" ;;
+            publish)      cmd_pack_publish "$@" ;;
             export)       cmd_pack_export "$@" ;;
             internalize)  cmd_pack_internalize "$@" ;;
             list)         cmd_pack_list "$@" ;;
