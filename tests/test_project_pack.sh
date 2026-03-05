@@ -150,6 +150,55 @@ test_project_remove_pack_nonexistent_project_fails() {
     fi
 }
 
+# ── edge cases ──────────────────────────────────────────────────────
+
+test_project_add_pack_to_commented_section() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local project_dir="$CCO_PROJECTS_DIR/my-proj"
+    mkdir -p "$project_dir/.claude"
+    cat > "$project_dir/project.yml" <<'YAML'
+name: my-proj
+repos: []
+# packs:
+#   - old-pack
+YAML
+    _setup_pack "new-pack"
+    run_cco project add-pack my-proj new-pack
+    assert_file_contains "$CCO_PROJECTS_DIR/my-proj/project.yml" "packs:"
+    assert_file_contains "$CCO_PROJECTS_DIR/my-proj/project.yml" "  - new-pack"
+}
+
+test_project_add_pack_no_section_appends() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local project_dir="$CCO_PROJECTS_DIR/my-proj"
+    mkdir -p "$project_dir/.claude"
+    cat > "$project_dir/project.yml" <<'YAML'
+name: my-proj
+repos: []
+YAML
+    _setup_pack "added"
+    run_cco project add-pack my-proj added
+    assert_file_contains "$CCO_PROJECTS_DIR/my-proj/project.yml" "packs:"
+    assert_file_contains "$CCO_PROJECTS_DIR/my-proj/project.yml" "  - added"
+}
+
+test_project_add_then_remove_roundtrip() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    _setup_project_with_packs "$tmpdir" "my-proj"
+    _setup_pack "roundtrip"
+    run_cco project add-pack my-proj roundtrip
+    assert_file_contains "$CCO_PROJECTS_DIR/my-proj/project.yml" "  - roundtrip"
+    run_cco project remove-pack my-proj roundtrip
+    assert_file_not_contains "$CCO_PROJECTS_DIR/my-proj/project.yml" "  - roundtrip"
+    assert_file_contains "$CCO_PROJECTS_DIR/my-proj/project.yml" "packs: []"
+}
+
 # ── help ────────────────────────────────────────────────────────────
 
 test_project_add_pack_help() {

@@ -136,6 +136,41 @@ YAML
     assert_output_contains "1 file(s)"
 }
 
+test_pack_internalize_subdirectory_files() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+
+    local source_dir="$tmpdir/docs"
+    mkdir -p "$source_dir/guides"
+    echo "# Nested" > "$source_dir/guides/setup.md"
+
+    mkdir -p "$CCO_PACKS_DIR/nested-pack"
+    cat > "$CCO_PACKS_DIR/nested-pack/pack.yml" <<YAML
+name: nested-pack
+knowledge:
+  source: $source_dir
+  files:
+    - path: guides/setup.md
+      description: "Setup guide"
+YAML
+
+    run_cco pack internalize nested-pack
+    assert_file_exists "$CCO_PACKS_DIR/nested-pack/knowledge/guides/setup.md"
+    assert_output_contains "1 file(s)"
+}
+
+test_pack_internalize_idempotent() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    _setup_source_pack "$tmpdir" "my-pack" "$tmpdir/docs"
+    run_cco pack internalize my-pack
+    # Second run should be no-op (source: removed)
+    run_cco pack internalize my-pack
+    assert_output_contains "already self-contained"
+}
+
 test_pack_internalize_help() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"

@@ -722,8 +722,10 @@ _project_yml_add_pack() {
 
     if grep -q '^packs: *\[\]' "$file" 2>/dev/null; then
         # Replace empty array with list
-        sed -i '' "s/^packs: *\[\]/packs:\n  - $pack/" "$file" 2>/dev/null || \
-            sed -i "s/^packs: *\[\]/packs:\n  - $pack/" "$file"
+        awk -v pack="$pack" '
+            /^packs: *\[\]/ { print "packs:"; print "  - " pack; next }
+            { print }
+        ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
     elif grep -q '^packs:' "$file" 2>/dev/null; then
         # Append after last pack entry (or after packs: line if section is empty)
         awk -v pack="$pack" '
@@ -739,8 +741,10 @@ _project_yml_add_pack() {
         ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
     elif grep -q '^# packs:' "$file" 2>/dev/null; then
         # Commented-out packs section — replace with active one
-        sed -i '' "s/^# packs:.*/packs:\n  - $pack/" "$file" 2>/dev/null || \
-            sed -i "s/^# packs:.*/packs:\n  - $pack/" "$file"
+        awk -v pack="$pack" '
+            /^# packs:/ { print "packs:"; print "  - " pack; next }
+            { print }
+        ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
     else
         # No packs section — append one
         printf '\npacks:\n  - %s\n' "$pack" >> "$file"

@@ -161,6 +161,52 @@ test_vault_remote_delegates_to_cco_remote() {
     assert_file_contains "$CCO_USER_CONFIG_DIR/.cco-remotes" "team="
 }
 
+# ── edge cases ─────────────────────────────────────────────────────
+
+test_remote_add_name_with_numbers() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco remote add team42 git@github.com:team/config.git
+    assert_file_contains "$CCO_USER_CONFIG_DIR/.cco-remotes" "team42="
+}
+
+test_remote_add_name_with_leading_hyphen_fails() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    if run_cco remote add "-bad" git@github.com:a/b.git 2>/dev/null; then
+        echo "ASSERTION FAILED: should reject name starting with hyphen"
+        return 1
+    fi
+}
+
+test_remote_prefix_names_independent() {
+    # "acme" and "acme-team" should not collide
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco remote add acme git@github.com:acme/config.git
+    run_cco remote add acme-team git@github.com:acme-team/config.git
+    run_cco remote remove acme
+    assert_file_not_contains "$CCO_USER_CONFIG_DIR/.cco-remotes" "acme=git@github.com:acme/config.git"
+    assert_file_contains "$CCO_USER_CONFIG_DIR/.cco-remotes" "acme-team="
+}
+
+test_remote_add_without_vault_no_git_sync() {
+    # Without vault init, adding a remote should NOT try git operations
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco remote add acme git@github.com:acme/config.git
+    assert_file_contains "$CCO_USER_CONFIG_DIR/.cco-remotes" "acme="
+    # No .git dir should exist
+    [[ ! -d "$CCO_USER_CONFIG_DIR/.git" ]] || {
+        echo "ASSERTION FAILED: vault should not have been initialized"
+        return 1
+    }
+}
+
 # ── help ───────────────────────────────────────────────────────────
 
 test_remote_help() {
