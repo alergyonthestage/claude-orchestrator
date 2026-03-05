@@ -688,7 +688,7 @@ claude-orchestrator/
     │       └── rules/                      # Optional: rules copied to projects on cco start
     │
     ├── templates/                          # Project templates
-    └── share.yml                           # Manifest for sharing via Config Repos
+    └── manifest.yml                        # Manifest for sharing via Config Repos
 ```
 
 ### 6.2 File Descriptions

@@ -5,7 +5,7 @@
 
 # ── Helper: create a mock Config Repo ─────────────────────────────────
 
-# Create a bare git repo with packs and share.yml.
+# Create a bare git repo with packs and manifest.yml.
 # Usage: _create_mock_config_repo <tmpdir> <packs...>
 # Outputs: path to the bare repo (use as URL for cco pack install)
 _create_mock_config_repo() {
@@ -18,7 +18,7 @@ _create_mock_config_repo() {
     mkdir -p "$work_dir/packs"
 
     # Create packs
-    local share_packs=""
+    local manifest_packs=""
     for name in "${pack_names[@]}"; do
         mkdir -p "$work_dir/packs/$name"/{knowledge,agents,rules}
         cat > "$work_dir/packs/$name/pack.yml" <<YAML
@@ -31,18 +31,18 @@ rules:
 YAML
         printf 'Mock agent for %s\n' "$name" > "$work_dir/packs/$name/agents/bot.md"
         printf 'Mock rules for %s\n' "$name" > "$work_dir/packs/$name/rules/style.md"
-        share_packs+="  - name: $name
+        manifest_packs+="  - name: $name
     description: \"Mock pack $name\"
 "
     done
 
-    # Create share.yml
-    cat > "$work_dir/share.yml" <<YAML
+    # Create manifest.yml
+    cat > "$work_dir/manifest.yml" <<YAML
 name: "mock-config"
 description: "Mock config repo for testing"
 
 packs:
-${share_packs}
+${manifest_packs}
 templates: []
 YAML
 
@@ -152,7 +152,7 @@ test_pack_install_rejects_invalid_repo() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
 
-    # Create empty bare repo (no share.yml, no pack.yml)
+    # Create empty bare repo (no manifest.yml, no pack.yml)
     local bare_dir="$tmpdir/empty.git"
     local work_dir="$tmpdir/empty-work"
     mkdir -p "$work_dir"
@@ -166,7 +166,7 @@ test_pack_install_rejects_invalid_repo() {
         git -C "$work_dir" push -q origin master 2>/dev/null
 
     if run_cco pack install "$bare_dir" 2>/dev/null; then
-        echo "ASSERTION FAILED: should reject repo without share.yml or pack.yml"
+        echo "ASSERTION FAILED: should reject repo without manifest.yml or pack.yml"
         return 1
     fi
 }
@@ -206,18 +206,18 @@ test_pack_install_force_overwrites() {
     assert_file_exists "$CCO_PACKS_DIR/overwrite-pack/agents/bot.md"
 }
 
-test_pack_install_updates_share_yml() {
+test_pack_install_updates_manifest_yml() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
 
-    # Create share.yml via init
+    # Create manifest.yml via init
     run_cco init --lang "English"
 
     local remote
     remote=$(_create_mock_config_repo "$tmpdir" "shared-pack")
     run_cco pack install "$remote" --pick "shared-pack"
-    assert_file_contains "$CCO_USER_CONFIG_DIR/share.yml" "shared-pack"
+    assert_file_contains "$CCO_USER_CONFIG_DIR/manifest.yml" "shared-pack"
 }
 
 # ── update tests ──────────────────────────────────────────────────────

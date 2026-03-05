@@ -5,7 +5,7 @@
 
 # ── Helper: create a mock Config Repo with templates ─────────────────
 
-# Create a bare git repo with templates and share.yml.
+# Create a bare git repo with templates and manifest.yml.
 # Usage: _create_mock_template_repo <tmpdir> <template_names...>
 # Outputs: path to the bare repo
 _create_mock_template_repo() {
@@ -18,7 +18,7 @@ _create_mock_template_repo() {
     mkdir -p "$work_dir/templates"
 
     # Create templates
-    local share_templates=""
+    local manifest_templates=""
     for name in "${template_names[@]}"; do
         mkdir -p "$work_dir/templates/$name"/{.claude/rules,claude-state/memory}
 
@@ -38,20 +38,20 @@ YAML
 ## Overview
 {{DESCRIPTION}}
 YAML
-        share_templates+="  - name: $name
+        manifest_templates+="  - name: $name
     description: \"Template $name\"
 "
     done
 
-    # Create share.yml
-    cat > "$work_dir/share.yml" <<YAML
+    # Create manifest.yml
+    cat > "$work_dir/manifest.yml" <<YAML
 name: "mock-config"
 description: "Mock config repo for testing"
 
 packs: []
 
 templates:
-${share_templates}
+${manifest_templates}
 YAML
 
     # Create bare repo
@@ -218,11 +218,11 @@ test_project_install_rejects_no_templates() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
 
-    # Create repo with no templates in share.yml
+    # Create repo with no templates in manifest.yml
     local work_dir="$tmpdir/no-tmpl-work"
     local bare_dir="$tmpdir/no-tmpl.git"
     mkdir -p "$work_dir"
-    cat > "$work_dir/share.yml" <<YAML
+    cat > "$work_dir/manifest.yml" <<YAML
 name: "empty"
 packs: []
 templates: []

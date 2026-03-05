@@ -19,7 +19,7 @@
 7. [Template Variable Resolution](#7-template-variable-resolution)
 8. [Vault .gitignore Template](#8-vault-gitignore-template)
 9. [Access Control Patterns](#9-access-control-patterns)
-10. [share.yml — Required Sharing Manifest](#10-shareyml--required-sharing-manifest)
+10. [manifest.yml — Required Sharing Manifest](#10-manifestyml--required-sharing-manifest)
 11. [Code Changes Required](#11-code-changes-required)
 12. [Migration from Current Structure](#12-migration-from-current-structure)
 13. [Future Evolution](#13-future-evolution)
@@ -97,7 +97,7 @@ Any directory that follows this convention is a valid Config Repo (installable b
 │       ├── project.yml
 │       └── .claude/
 │
-└── share.yml                     # Required: declares available resources (auto-managed by CCO)
+└── manifest.yml                  # Required: declares available resources (auto-managed by CCO)
 ```
 
 ### Repo type detection
@@ -106,13 +106,13 @@ CCO validates and auto-detects the repo type at install time:
 
 | Condition | Interpretation |
 |---|---|
-| Root has `share.yml` | Standard Config Repo — `share.yml` is the authoritative resource index |
-| Root has `pack.yml` (no `share.yml`) | Single-pack repo — install directly (minimal `share.yml` generated in memory) |
-| Neither `share.yml` nor `pack.yml` | **Error**: not a valid CCO Config Repo |
+| Root has `manifest.yml` | Standard Config Repo — `manifest.yml` is the authoritative resource index |
+| Root has `pack.yml` (no `manifest.yml`) | Single-pack repo — install directly (minimal `manifest.yml` generated in memory) |
+| Neither `manifest.yml` nor `pack.yml` | **Error**: not a valid CCO Config Repo |
 
-When `share.yml` is present, CCO reads it to determine available resources:
+When `manifest.yml` is present, CCO reads it to determine available resources:
 
-| share.yml content | Interpretation |
+| manifest.yml content | Interpretation |
 |---|---|
 | Has `packs:` entries | Multi-pack repo — list available packs; use `--pick` for one |
 | Has `templates:` entries | Repo contains project templates |
@@ -281,10 +281,10 @@ cco pack install <git-url> --token <token>    # explicit auth token (HTTPS)
 ```
 1. Resolve URL → detect auth method (SSH key / GITHUB_TOKEN / --token)
 2. Clone repo to temp dir (see clone strategy below)
-3. Validate: repo must contain share.yml (see §10)
+3. Validate: repo must contain manifest.yml (see §10)
 4. Auto-detect repo type (single-pack / multi-pack / vault)
 5. If multi-pack and no --pick:
-     List available packs from share.yml
+     List available packs from manifest.yml
      Prompt user to select one or all
 6. Copy pack to $CCO_PACKS_DIR/<name>/
 7. Write .cco-source metadata (see §6)
@@ -485,14 +485,14 @@ Alice installs from all three. Each has its own auth level. CCO treats them the 
 
 ---
 
-## 10. share.yml — Required Sharing Manifest
+## 10. manifest.yml — Required Sharing Manifest
 
-Every Config Repo **must** contain a `share.yml` at the root. CCO refuses to install from repos without one. This ensures every repo is self-documenting and machine-readable.
+Every Config Repo **must** contain a `manifest.yml` at the root. CCO refuses to install from repos without one. This ensures every repo is self-documenting and machine-readable.
 
 ### Format
 
 ```yaml
-# share.yml
+# manifest.yml
 
 name: "acme-team-config"
 description: "Engineering configuration bundle for ACME Corp"
@@ -515,29 +515,29 @@ templates:
 
 ### Auto-management by CCO
 
-CCO generates and maintains `share.yml` automatically. Users never need to write it by hand:
+CCO generates and maintains `manifest.yml` automatically. Users never need to write it by hand:
 
-| Command | Effect on share.yml |
+| Command | Effect on manifest.yml |
 |---|---|
 | `cco pack create <name>` | Adds entry under `packs:` |
 | `cco pack remove <name>` | Removes entry from `packs:` |
 | `cco project create --template <name>` | Adds entry under `templates:` (if inside a Config Repo) |
-| `cco share refresh` | Regenerates `share.yml` by scanning `packs/` and `templates/` directories |
+| `cco manifest refresh` | Regenerates `manifest.yml` by scanning `packs/` and `templates/` directories |
 
 ### Validation
 
 `cco pack install <url>` validates after clone:
-1. Check `share.yml` exists → if missing, abort with: `Error: no share.yml found. This is not a valid CCO Config Repo.`
-2. If `--pick <name>` is used, verify the named resource exists in `share.yml`
-3. Cross-check: warn if `share.yml` lists resources that don't exist on disk (stale manifest)
+1. Check `manifest.yml` exists → if missing, abort with: `Error: no manifest.yml found. This is not a valid CCO Config Repo.`
+2. If `--pick <name>` is used, verify the named resource exists in `manifest.yml`
+3. Cross-check: warn if `manifest.yml` lists resources that don't exist on disk (stale manifest)
 
 ### Single-pack repos (exception)
 
-A repo with `pack.yml` at root (single-pack repo, not inside `packs/`) is also valid. In this case, CCO generates a minimal `share.yml` in memory for validation purposes — the user is not required to maintain one for this simple case.
+A repo with `pack.yml` at root (single-pack repo, not inside `packs/`) is also valid. In this case, CCO generates a minimal `manifest.yml` in memory for validation purposes — the user is not required to maintain one for this simple case.
 
 ### Future: registry
 
-A public registry would index `share.yml` files from user-submitted repos. `cco share list` reads `share.yml` from all registered remote sources.
+A public registry would index `manifest.yml` files from user-submitted repos. `cco manifest list` reads `manifest.yml` from all registered remote sources.
 
 ---
 
@@ -571,15 +571,15 @@ Change all references from `$GLOBAL_DIR/packs` to `$PACKS_DIR`.
 
 Implements all `cco vault` subcommands. Thin wrappers around git with CCO-specific defaults (`.gitignore` template, secret detection, categorized output).
 
-### 11.5 lib/share.sh (new)
+### 11.5 lib/manifest.sh (new)
 
-Manages `share.yml` lifecycle:
-- `share_add_entry(type, name, description)` — adds pack or template entry
-- `share_remove_entry(type, name)` — removes entry
-- `share_refresh(config_dir)` — scans `packs/` and `templates/`, regenerates `share.yml`
-- `share_validate(config_dir)` — cross-checks `share.yml` vs. disk (warns on stale entries)
+Manages `manifest.yml` lifecycle:
+- `manifest_add_entry(type, name, description)` — adds pack or template entry
+- `manifest_remove_entry(type, name)` — removes entry
+- `manifest_refresh(config_dir)` — scans `packs/` and `templates/`, regenerates `manifest.yml`
+- `manifest_validate(config_dir)` — cross-checks `manifest.yml` vs. disk (warns on stale entries)
 
-Called by `cmd_pack_create`, `cmd_pack_remove`, and the new `cco share refresh` command.
+Called by `cmd_pack_create`, `cmd_pack_remove`, and the new `cco manifest refresh` command.
 
 ### 11.6 lib/cmd-project-install.sh (or extend cmd-project.sh)
 
@@ -656,7 +656,7 @@ Run 'cco vault init' to enable versioning for your configuration.
 
 | Feature | Notes |
 |---|---|
-| Registry index | A publicly crawled index of `share.yml` files — browse and search available packs without knowing specific URLs. No server required from CCO side; the index is a static file hosted on GitHub Pages or similar. |
+| Registry index | A publicly crawled index of `manifest.yml` files — browse and search available packs without knowing specific URLs. No server required from CCO side; the index is a static file hosted on GitHub Pages or similar. |
 | `cco pack install acme/conventions` | Short-form install via registry (resolves to full git URL) |
 | Lockfile for reproducible project setups | `project.yml` records installed pack version (git ref); `cco project sync` ensures exact versions are installed |
 

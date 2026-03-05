@@ -3,7 +3,7 @@
 #
 # Provides: cmd_project_create(), cmd_project_list(), cmd_project_show(),
 #           cmd_project_validate(), cmd_project_install()
-# Dependencies: colors.sh, utils.sh, yaml.sh, remote.sh, share.sh
+# Dependencies: colors.sh, utils.sh, yaml.sh, remote.sh, manifest.sh
 # Globals: PROJECTS_DIR, GLOBAL_DIR, TEMPLATE_DIR, USER_CONFIG_DIR
 
 cmd_project_create() {
@@ -446,24 +446,27 @@ EOF
     trap "_cleanup_clone '$tmpdir'" EXIT
 
     # Detect repo type
-    if [[ ! -f "$tmpdir/share.yml" ]]; then
+    local manifest_file=""
+    if [[ -f "$tmpdir/manifest.yml" ]]; then
+        manifest_file="$tmpdir/manifest.yml"
+    else
         _cleanup_clone "$tmpdir"
-        die "Not a valid CCO Config Repo: no share.yml found"
+        die "Not a valid CCO Config Repo: no manifest.yml found"
     fi
 
-    # Read available templates from share.yml
+    # Read available templates from manifest
     local available
-    available=$(_share_get_names "$tmpdir/share.yml" "templates")
+    available=$(_manifest_get_names "$manifest_file" "templates")
 
     if [[ -z "$available" ]]; then
         _cleanup_clone "$tmpdir"
-        die "No templates listed in share.yml"
+        die "No templates listed in manifest"
     fi
 
     if [[ -n "$pick" ]]; then
         if ! echo "$available" | grep -qxF "$pick"; then
             _cleanup_clone "$tmpdir"
-            die "Template '$pick' not found in share.yml. Available: $(echo "$available" | tr '\n' ' ')"
+            die "Template '$pick' not found in manifest. Available: $(echo "$available" | tr '\n' ' ')"
         fi
     else
         # If only one template, auto-select

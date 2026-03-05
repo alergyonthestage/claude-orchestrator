@@ -4,7 +4,7 @@
 # Provides: cmd_pack_create(), cmd_pack_list(), cmd_pack_show(),
 #           cmd_pack_remove(), cmd_pack_validate(),
 #           cmd_pack_install(), cmd_pack_update(), cmd_pack_export()
-# Dependencies: colors.sh, utils.sh, yaml.sh, packs.sh, share.sh, remote.sh
+# Dependencies: colors.sh, utils.sh, yaml.sh, packs.sh, manifest.sh, remote.sh
 # Globals: PACKS_DIR, PROJECTS_DIR, USER_CONFIG_DIR
 
 # ── Pack commands ─────────────────────────────────────────────────────
@@ -73,8 +73,8 @@ name: $name
 #   - conventions.md
 YAML
 
-    # Update share.yml
-    share_refresh "$USER_CONFIG_DIR"
+    # Update manifest.yml
+    manifest_refresh "$USER_CONFIG_DIR"
 
     ok "Pack created at packs/$name/"
     info "Add resources to the subdirectories:"
@@ -320,8 +320,8 @@ EOF
 
     rm -rf "$pack_dir"
 
-    # Update share.yml
-    share_refresh "$USER_CONFIG_DIR"
+    # Update manifest.yml
+    manifest_refresh "$USER_CONFIG_DIR"
 
     ok "Pack '$name' removed"
 }
@@ -434,13 +434,14 @@ EOF
 
     # Detect repo type
     local single_pack=false
-    if [[ -f "$tmpdir/share.yml" ]]; then
-        : # Standard Config Repo
+    local manifest_file=""
+    if [[ -f "$tmpdir/manifest.yml" ]]; then
+        manifest_file="$tmpdir/manifest.yml"
     elif [[ -f "$tmpdir/pack.yml" ]]; then
         single_pack=true
     else
         _cleanup_clone "$tmpdir"
-        die "Not a valid CCO Config Repo: no share.yml or pack.yml found"
+        die "Not a valid CCO Config Repo: no manifest.yml or pack.yml found"
     fi
 
     if $single_pack; then
@@ -450,20 +451,20 @@ EOF
         [[ -z "$name" ]] && die "pack.yml has no 'name' field"
         _install_pack_from_dir "$tmpdir" "$name" "$url" "$ref" "" "$force"
     else
-        # Multi-pack repo: read available packs from share.yml
+        # Multi-pack repo: read available packs from manifest
         local available
-        available=$(_share_get_names "$tmpdir/share.yml" "packs")
+        available=$(_manifest_get_names "$manifest_file" "packs")
 
         if [[ -z "$available" ]]; then
             _cleanup_clone "$tmpdir"
-            die "No packs listed in share.yml"
+            die "No packs listed in manifest"
         fi
 
         if [[ -n "$pick" ]]; then
             # Install specific pack
             if ! echo "$available" | grep -qxF "$pick"; then
                 _cleanup_clone "$tmpdir"
-                die "Pack '$pick' not found in share.yml. Available: $(echo "$available" | tr '\n' ' ')"
+                die "Pack '$pick' not found in manifest. Available: $(echo "$available" | tr '\n' ' ')"
             fi
             _install_pack_from_dir "$tmpdir/packs/$pick" "$pick" "$url" "$ref" "packs/$pick" "$force"
         else
@@ -475,15 +476,15 @@ EOF
                     _install_pack_from_dir "$tmpdir/packs/$name" "$name" "$url" "$ref" "packs/$name" "$force"
                     count=$((count + 1))
                 else
-                    warn "Pack '$name' listed in share.yml but not found on disk — skipping"
+                    warn "Pack '$name' listed in manifest but not found on disk — skipping"
                 fi
             done <<< "$available"
             ok "Installed $count pack(s) from $url"
         fi
     fi
 
-    # Update share.yml
-    share_refresh "$USER_CONFIG_DIR"
+    # Update manifest.yml
+    manifest_refresh "$USER_CONFIG_DIR"
 
     _cleanup_clone "$tmpdir"
     trap - EXIT
@@ -685,8 +686,8 @@ _update_single_pack() {
             sed -i "s/^updated: .*/updated: $now/" "$PACKS_DIR/$name/.cco-source"
     fi
 
-    # Update share.yml
-    share_refresh "$USER_CONFIG_DIR"
+    # Update manifest.yml
+    manifest_refresh "$USER_CONFIG_DIR"
 
     _cleanup_clone "$tmpdir"
     ok "Updated pack '$name'"

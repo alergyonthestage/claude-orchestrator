@@ -18,7 +18,7 @@ claude-orchestrator manages isolated Claude Code sessions in Docker containers f
 - `user-config/projects/` — per-project configurations
 - `user-config/packs/` — knowledge packs
 - `user-config/templates/` — project templates
-- `user-config/share.yml` — manifest for sharing via Config Repos
+- `user-config/manifest.yml` — manifest for sharing via Config Repos
 
 ## Build & Run Commands
 
@@ -35,8 +35,8 @@ cco project list             # List projects
 cco pack install <url>       # Install packs from a remote Config Repo
 cco pack update <name>       # Update a pack from its remote source
 cco pack export <name>       # Export a pack as .tar.gz archive
-cco share refresh            # Regenerate share.yml from packs/ and templates/
-cco share validate           # Cross-check share.yml vs disk
+cco manifest refresh         # Regenerate manifest.yml from packs/ and templates/
+cco manifest validate        # Cross-check manifest.yml vs disk
 cco vault init               # Initialize git-backed config versioning
 cco vault sync [msg]         # Commit config changes with secret detection
 cco vault diff               # Show uncommitted changes by category
@@ -96,7 +96,7 @@ Per `docs/maintainer/docker/design.md` (sezione directory structure):
 - `lib/cmd-pack.sh` — Pack management: create, install, update, export, list, show, remove, validate
 - `lib/cmd-project.sh` — Project management: create, install, list, show, validate
 - `lib/cmd-vault.sh` — Config versioning: init, sync, diff, log, status (git-backed)
-- `lib/share.sh` — share.yml lifecycle: init, refresh, validate, show
+- `lib/manifest.sh` — manifest.yml lifecycle: init, refresh, validate, show
 - `lib/remote.sh` — Remote clone helper: sparse-checkout, shallow fallback, token auth
 - `Dockerfile` — Docker image (node:22-bookworm, Claude Code, gosu, tmux, docker CLI)
 - `config/entrypoint.sh` — Container entrypoint: socket GID fix, MCP merge, gosu, tmux/claude launch

@@ -2,7 +2,7 @@
 # lib/cmd-vault.sh — Vault commands for config versioning
 #
 # Provides: cmd_vault()
-# Dependencies: colors.sh, utils.sh, share.sh
+# Dependencies: colors.sh, utils.sh, manifest.sh
 # Globals: USER_CONFIG_DIR
 
 # ── Vault .gitignore template ─────────────────────────────────────────
@@ -78,8 +78,8 @@ EOF
     printf '%s' "$_VAULT_GITIGNORE" > "$target/.gitignore"
     ok "Created .gitignore with secret exclusions"
 
-    # Generate share.yml if missing
-    share_init "$target"
+    # Generate manifest.yml if missing
+    manifest_init "$target"
 
     # Initial commit
     git -C "$target" add -A
