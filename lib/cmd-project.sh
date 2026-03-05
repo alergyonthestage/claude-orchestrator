@@ -516,14 +516,36 @@ EOF
     # Resolve template variables in key files
     _resolve_template_vars "$target_dir" "$project_name" "${vars[@]+"${vars[@]}"}"
 
+    # Auto-install packs from the same Config Repo
+    local -a installed_packs=()
+    local project_packs
+    project_packs=$(yml_get_packs "$target_dir/project.yml" 2>/dev/null)
+    while IFS= read -r pack_name; do
+        [[ -z "$pack_name" ]] && continue
+        if [[ -d "$PACKS_DIR/$pack_name" ]]; then
+            info "Pack '$pack_name' already installed — skipping"
+        elif [[ -d "$tmpdir/packs/$pack_name" ]]; then
+            info "Auto-installing pack '$pack_name' from Config Repo..."
+            _install_pack_from_dir "$tmpdir/packs/$pack_name" "$pack_name" "$url" "$ref" "packs/$pack_name" false
+            installed_packs+=("$pack_name")
+        else
+            warn "Pack '$pack_name' required but not found. Install manually."
+        fi
+    done <<< "$project_packs"
+
     # Ensure claude-state dir exists
     mkdir -p "$target_dir/claude-state/memory"
 
     _cleanup_clone "$tmpdir"
     trap - EXIT
 
+    # Update manifest
+    manifest_refresh "$USER_CONFIG_DIR"
+
     ok "Project '$project_name' installed from $url"
-    info "Edit projects/$project_name/project.yml to configure repos"
+    if [[ ${#installed_packs[@]} -gt 0 ]]; then
+        ok "Auto-installed packs: ${installed_packs[*]}"
+    fi
     info "Run: cco start $project_name"
 }
 
