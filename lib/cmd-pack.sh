@@ -3,7 +3,8 @@
 #
 # Provides: cmd_pack_create(), cmd_pack_list(), cmd_pack_show(),
 #           cmd_pack_remove(), cmd_pack_validate(),
-#           cmd_pack_install(), cmd_pack_update(), cmd_pack_export()
+#           cmd_pack_install(), cmd_pack_update(), cmd_pack_export(),
+#           cmd_pack_internalize()
 # Dependencies: colors.sh, utils.sh, yaml.sh, packs.sh, manifest.sh, remote.sh
 # Globals: PACKS_DIR, PROJECTS_DIR, USER_CONFIG_DIR
 
@@ -691,4 +692,91 @@ _update_single_pack() {
 
     _cleanup_clone "$tmpdir"
     ok "Updated pack '$name'"
+}
+
+# ── Pack internalize ─────────────────────────────────────────────────
+
+cmd_pack_internalize() {
+    local name=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --help)
+                cat <<'EOF'
+Usage: cco pack internalize <name>
+
+Convert a source-referencing pack to self-contained by copying knowledge
+files from the external source directory into the pack's own knowledge/
+directory, then removing the source: field from pack.yml.
+EOF
+                return 0
+                ;;
+            -*)  die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$name" ]]; then
+                    name="$1"; shift
+                else
+                    die "Unexpected argument: $1"
+                fi
+                ;;
+        esac
+    done
+
+    [[ -z "$name" ]] && die "Usage: cco pack internalize <name>"
+
+    local pack_dir="$PACKS_DIR/$name"
+    local pack_yml="$pack_dir/pack.yml"
+    [[ ! -f "$pack_yml" ]] && die "Pack '$name' not found."
+
+    # Check for knowledge.source
+    local k_source
+    k_source=$(yml_get_pack_knowledge_source "$pack_yml")
+    if [[ -z "$k_source" ]]; then
+        ok "Pack '$name' is already self-contained (no source: field)"
+        return 0
+    fi
+
+    # Expand and validate source path
+    local expanded_source
+    expanded_source=$(expand_path "$k_source")
+    if [[ ! -d "$expanded_source" ]]; then
+        die "Knowledge source not found: $k_source (expanded: $expanded_source)"
+    fi
+
+    # Get file list
+    local k_files
+    k_files=$(yml_get_pack_knowledge_files "$pack_yml")
+    if [[ -z "$k_files" ]]; then
+        warn "No knowledge files listed in pack.yml"
+        return 0
+    fi
+
+    # Copy files
+    mkdir -p "$pack_dir/knowledge"
+    local count=0
+    while IFS=$'\t' read -r fname desc; do
+        [[ -z "$fname" ]] && continue
+        local src="$expanded_source/$fname"
+        local dst="$pack_dir/knowledge/$fname"
+        if [[ -f "$src" ]]; then
+            mkdir -p "$(dirname "$dst")"
+            cp "$src" "$dst"
+            count=$((count + 1))
+        else
+            warn "File not found: $src (skipping)"
+        fi
+    done <<< "$k_files"
+
+    # Remove source: line from pack.yml
+    local tmpfile
+    tmpfile=$(mktemp)
+    awk '
+        /^knowledge:/ { in_k=1; print; next }
+        in_k && /^  source:/ { next }
+        in_k && /^[^ #]/ { in_k=0 }
+        { print }
+    ' "$pack_yml" > "$tmpfile"
+    mv "$tmpfile" "$pack_yml"
+
+    ok "Internalized pack '$name': $count file(s) copied to knowledge/"
 }
