@@ -152,7 +152,7 @@ test_pack_install_rejects_invalid_repo() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
 
-    # Create empty bare repo (no share.yml, no pack.yml)
+    # Create empty bare repo (no manifest.yml, no pack.yml)
     local bare_dir="$tmpdir/empty.git"
     local work_dir="$tmpdir/empty-work"
     mkdir -p "$work_dir"
@@ -166,7 +166,7 @@ test_pack_install_rejects_invalid_repo() {
         git -C "$work_dir" push -q origin master 2>/dev/null
 
     if run_cco pack install "$bare_dir" 2>/dev/null; then
-        echo "ASSERTION FAILED: should reject repo without share.yml or pack.yml"
+        echo "ASSERTION FAILED: should reject repo without manifest.yml or pack.yml"
         return 1
     fi
 }
@@ -206,18 +206,18 @@ test_pack_install_force_overwrites() {
     assert_file_exists "$CCO_PACKS_DIR/overwrite-pack/agents/bot.md"
 }
 
-test_pack_install_updates_share_yml() {
+test_pack_install_updates_manifest_yml() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
 
-    # Create share.yml via init
+    # Create manifest.yml via init
     run_cco init --lang "English"
 
     local remote
     remote=$(_create_mock_config_repo "$tmpdir" "shared-pack")
     run_cco pack install "$remote" --pick "shared-pack"
-    assert_file_contains "$CCO_USER_CONFIG_DIR/share.yml" "shared-pack"
+    assert_file_contains "$CCO_USER_CONFIG_DIR/manifest.yml" "shared-pack"
 }
 
 # ── update tests ──────────────────────────────────────────────────────

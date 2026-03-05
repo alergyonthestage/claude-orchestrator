@@ -8,7 +8,7 @@ Per-project context and team sharing for Claude Code — powered by Docker. Ever
 
 - **Per-project context** — Every project has its own repos, rules, documentation and workflow. Claude starts each session already knowing everything — no re-explaining.
 - **Shareable environments** — Commit the project directory (`project.yml`, `CLAUDE.md`, rules, agents). Everyone on your team gets the same repos, instructions, and conventions.
-- **Reusable knowledge packs** — Client docs, architecture overviews, coding conventions: define once, activate across projects. Install packs from remote Config Repos with `cco pack install`, share your own with `cco share`.
+- **Reusable knowledge packs** — Client docs, architecture overviews, coding conventions: define once, activate across projects. Install packs from remote Config Repos with `cco pack install`, share your own with `cco manifest`.
 - **Config versioning & backup** — `cco vault` versions your entire configuration with git, with built-in secret detection. Push to a remote to sync across machines or share with your team.
 - **Isolated memory** — Each project has its own memory. Insights from one client don't leak into another. Sessions are fully independent.
 - **Safe by default** — Docker isolates Claude from the rest of your system. `--dangerously-skip-permissions` is safe inside the container.
@@ -71,7 +71,7 @@ bin/cco start my-app
 |---|---|
 | **Knowledge packs** | Reusable documents (conventions, overviews, guidelines) defined in `packs/` and activated per project in `project.yml` |
 | **Four-tier hierarchy** | Managed → Global → Project → Repo, mapped natively onto Claude Code's settings resolution |
-| **Config Repo sharing** | Share packs and project templates via git. `cco pack install <url>` / `cco project install <url>` to import, `cco share` to export |
+| **Config Repo sharing** | Share packs and project templates via git. `cco pack install <url>` / `cco project install <url>` to import, `cco manifest` to export |
 | **Vault versioning** | `cco vault` versions your `user-config/` with git and automatic secret detection. Push to a remote for backup and multi-machine sync |
 | **Shareable project config** | `project.yml` defines repos, ports, packs, and environment — commit it to share the exact setup with your team |
 | **Monolithic CLI** | A single Bash script (`bin/cco`) — no dependencies beyond Bash 3.2+, Docker, and standard Unix tools |

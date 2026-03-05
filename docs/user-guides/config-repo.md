@@ -24,7 +24,7 @@ CCO does not implement access control. Visibility is a git hosting concern — u
 
 ```
 my-config-repo/
-├── share.yml              # Manifest: declares available packs and templates
+├── manifest.yml           # Manifest: declares available packs and templates
 ├── .gitignore             # CCO-generated, excludes secrets + runtime files
 ├── packs/                 # Reusable knowledge packs
 │   ├── react-guidelines/
@@ -57,7 +57,7 @@ When someone runs `cco pack install` against your repo, only `packs/` and `templ
 cco vault init
 ```
 
-This creates a git repository in your `user-config/` directory (or `CCO_USER_CONFIG_DIR` if set), writes a `.gitignore` that excludes secrets and runtime files, generates an initial `share.yml`, and creates the first commit.
+This creates a git repository in your `user-config/` directory (or `CCO_USER_CONFIG_DIR` if set), writes a `.gitignore` that excludes secrets and runtime files, generates an initial `manifest.yml`, and creates the first commit.
 
 If you want to use a custom path:
 
@@ -112,12 +112,12 @@ It also detects secret files (`.env`, `.key`, `.pem`, `.credentials.json`) and a
 
 ## 3. Sharing Packs
 
-### share.yml
+### manifest.yml
 
-Every Config Repo contains a `share.yml` at the root. This manifest declares which packs and templates are available for installation. CCO generates and maintains it automatically — you never need to write it by hand.
+Every Config Repo contains a `manifest.yml` at the root. This manifest declares which packs and templates are available for installation. CCO generates and maintains it automatically — you never need to write it by hand.
 
 ```yaml
-# share.yml
+# manifest.yml
 name: "acme-team-config"
 description: "Engineering configuration for ACME Corp"
 
@@ -135,33 +135,33 @@ templates:
     tags: [microservice, fastapi]
 ```
 
-### Keeping share.yml in sync
+### Keeping manifest.yml in sync
 
-CCO updates `share.yml` automatically when you create or remove packs. To manually regenerate it from disk:
+CCO updates `manifest.yml` automatically when you create or remove packs. To manually regenerate it from disk:
 
 ```bash
-cco share refresh
+cco manifest refresh
 ```
 
-This scans the `packs/` and `templates/` directories and rebuilds `share.yml`, preserving any custom name, description, and tags you have edited.
+This scans the `packs/` and `templates/` directories and rebuilds `manifest.yml`, preserving any custom name, description, and tags you have edited.
 
-### Validating share.yml
+### Validating manifest.yml
 
 ```bash
-cco share validate
+cco manifest validate
 ```
 
-Cross-checks `share.yml` against what exists on disk. Warns about:
+Cross-checks `manifest.yml` against what exists on disk. Warns about:
 
-- **Stale entries**: a pack listed in `share.yml` that no longer exists in `packs/`
-- **Missing entries**: a pack directory that exists on disk but is not listed in `share.yml`
+- **Stale entries**: a pack listed in `manifest.yml` that no longer exists in `packs/`
+- **Missing entries**: a pack directory that exists on disk but is not listed in `manifest.yml`
 
-If issues are found, run `cco share refresh` to fix them.
+If issues are found, run `cco manifest refresh` to fix them.
 
-### Viewing share.yml contents
+### Viewing manifest.yml contents
 
 ```bash
-cco share show
+cco manifest show
 ```
 
 Displays a formatted view of your Config Repo's name, description, available packs, and templates.
@@ -176,7 +176,7 @@ Displays a formatted view of your Config Repo's name, description, available pac
 cco pack install https://github.com/acme/cco-config
 ```
 
-This clones the repo, reads `share.yml`, and installs every pack listed under `packs:` into your local `user-config/packs/` directory.
+This clones the repo, reads `manifest.yml`, and installs every pack listed under `packs:` into your local `user-config/packs/` directory.
 
 ### Install a specific pack
 
@@ -184,7 +184,7 @@ This clones the repo, reads `share.yml`, and installs every pack listed under `p
 cco pack install https://github.com/acme/cco-config --pick acme-conventions
 ```
 
-Only installs the `acme-conventions` pack. If the name does not match any entry in `share.yml`, CCO prints the available pack names and exits.
+Only installs the `acme-conventions` pack. If the name does not match any entry in `manifest.yml`, CCO prints the available pack names and exits.
 
 ### Overwrite existing packs
 
@@ -229,13 +229,13 @@ cco pack install https://github.com/acme/cco-config@next
 
 ### Single-pack repositories
 
-If a repository contains a single `pack.yml` at the root (no `share.yml`), CCO recognizes it as a single-pack repo and installs it directly:
+If a repository contains a single `pack.yml` at the root (no `manifest.yml`), CCO recognizes it as a single-pack repo and installs it directly:
 
 ```bash
 cco pack install https://github.com/alice/react-best-practices
 ```
 
-No `share.yml` is required in this case.
+No `manifest.yml` is required in this case.
 
 ---
 
@@ -467,9 +467,9 @@ Each person's vault tracks where each pack was installed from via the `.cco-sour
 
 ---
 
-## 10. share.yml Format
+## 10. manifest.yml Format
 
-The `share.yml` manifest is auto-generated and maintained by CCO. You can edit the `name`, `description`, and per-entry `description`/`tags` fields — they are preserved across `cco share refresh` runs.
+The `manifest.yml` manifest is auto-generated and maintained by CCO. You can edit the `name`, `description`, and per-entry `description`/`tags` fields — they are preserved across `cco manifest refresh` runs.
 
 ```yaml
 # Auto-generated by cco — edit name, description, and tags as needed
@@ -511,9 +511,9 @@ templates:
 
 ### Auto-management
 
-| Action | Effect on share.yml |
+| Action | Effect on manifest.yml |
 |--------|---------------------|
 | `cco pack create <name>` | Adds entry under `packs:` |
 | `cco pack remove <name>` | Removes entry from `packs:` |
-| `cco share refresh` | Regenerates from disk, preserving custom metadata |
-| `cco share validate` | Cross-checks manifest vs. disk contents |
+| `cco manifest refresh` | Regenerates from disk, preserving custom metadata |
+| `cco manifest validate` | Cross-checks manifest vs. disk contents |

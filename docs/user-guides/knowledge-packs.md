@@ -292,7 +292,7 @@ cco pack install <git-url>
 cco pack update <name>
 
 # Export your packs for sharing
-cco share refresh        # Generate share.yml manifest
+cco manifest refresh     # Generate manifest.yml manifest
 cco vault push           # Push to remote
 ```
 

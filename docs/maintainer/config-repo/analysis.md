@@ -61,7 +61,7 @@ Key constraint: sharing must be **granular** (share one pack, not everything) wi
 
 ### Option A — Two separate systems (original plan)
 - **Vault** (S10): a git repo wrapping `global/` + `projects/`
-- **Share** (S6): `cco share install <git-url>` with a `share.yml` manifest in each shared repo
+- **Share** (S6): `cco pack install <git-url>` with a `manifest.yml` manifest in each shared repo
 
 **Rejected because**: vault and share repos have identical structure — two separate concepts for the same thing. If the user wants to share something from their vault, they need to configure two systems.
 

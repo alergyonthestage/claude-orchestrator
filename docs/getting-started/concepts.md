@@ -71,7 +71,7 @@ Commit this directory to a shared repository and every teammate runs `cco start 
 - Knowledge packs and project templates can be shared via git using Config Repos
 - `cco pack install <url>` imports packs from any Config Repo
 - `cco project install <url>` imports project templates
-- `cco share refresh` generates a `share.yml` manifest to export your own packs and templates
+- `cco manifest refresh` generates a `manifest.yml` manifest to export your own packs and templates
 - Push your `user-config/` to a remote with `cco vault push` to share your full configuration
 
 **What stays local (user preferences):**

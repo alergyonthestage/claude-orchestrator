@@ -106,7 +106,7 @@ Unified design implementing both sharing/import and personal vault under the Con
 - `cco pack update <name> [--all] [--force]` — update from recorded `.cco-source`
 - `cco pack export <name>` — `.tar.gz` archive for offline distribution
 - `cco project install <url> [--pick] [--as] [--var K=V]` — install project templates with variable resolution
-- `cco share refresh/validate/show` — manifest lifecycle (to be renamed to `cco manifest`, see Sprint 6b)
+- `cco manifest refresh/validate/show` — manifest lifecycle
 - `cco vault init/sync/diff/log/status/restore` — git-backed config versioning
 - `cco vault remote add/remove/push/pull` — remote backup
 - `lib/remote.sh` — sparse-checkout clone helper with auth support
@@ -272,7 +272,7 @@ Enhancements to the Config Repo sharing system (Sprint 6+10, now completed). Add
 
 #### Rename `share` → `manifest`
 
-`cco share` only manages the manifest file — rename to `cco manifest` (and `share.yml` → `manifest.yml`) to eliminate confusion. Includes migration, backward compat for remote repos with old `share.yml`.
+`cco share` was renamed to `cco manifest` (and `share.yml` → `manifest.yml`) to eliminate confusion. Includes migration, backward compat for remote repos with old `share.yml`.
 
 #### `cco remote` — Top-level remote management
 

@@ -846,32 +846,32 @@ Usage: cco vault status
 
 ---
 
-### 3.21 `cco share`
+### 3.21 `cco manifest`
 
-Manage the `share.yml` manifest for sharing packs and templates via Config Repos.
+Manage the `manifest.yml` manifest for sharing packs and templates via Config Repos.
 
-#### `cco share refresh`
+#### `cco manifest refresh`
 
-Regenerate `share.yml` from `user-config/packs/` and `user-config/templates/`.
-
-```
-Usage: cco share refresh
-```
-
-#### `cco share validate`
-
-Cross-check `share.yml` against the actual files on disk.
+Regenerate `manifest.yml` from `user-config/packs/` and `user-config/templates/`.
 
 ```
-Usage: cco share validate
+Usage: cco manifest refresh
 ```
 
-#### `cco share show`
+#### `cco manifest validate`
 
-Display `share.yml` contents.
+Cross-check `manifest.yml` against the actual files on disk.
 
 ```
-Usage: cco share show
+Usage: cco manifest validate
+```
+
+#### `cco manifest show`
+
+Display `manifest.yml` contents.
+
+```
+Usage: cco manifest show
 ```
 
 ---

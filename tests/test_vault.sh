@@ -53,16 +53,16 @@ test_vault_init_idempotent() {
     assert_output_contains "already initialized"
 }
 
-test_vault_init_includes_share_yml() {
+test_vault_init_includes_manifest_yml() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
     run_cco vault init
-    # share.yml should be in the initial commit
+    # manifest.yml should be in the initial commit
     local files
     files=$(git -C "$CCO_USER_CONFIG_DIR" show --name-only --format="" HEAD)
-    if ! echo "$files" | grep -qF "share.yml"; then
-        echo "ASSERTION FAILED: share.yml should be in initial commit"
+    if ! echo "$files" | grep -qF "manifest.yml"; then
+        echo "ASSERTION FAILED: manifest.yml should be in initial commit"
         echo "  Files: $files"
         return 1
     fi
