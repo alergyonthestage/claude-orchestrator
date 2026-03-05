@@ -780,3 +780,225 @@ EOF
 
     ok "Internalized pack '$name': $count file(s) copied to knowledge/"
 }
+
+# ── Pack publish ─────────────────────────────────────────────────────
+
+cmd_pack_publish() {
+    local name="" remote_arg="" message="" dry_run=false force=false token=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --message)  message="${2:-}"; shift 2 ;;
+            --dry-run)  dry_run=true; shift ;;
+            --force)    force=true; shift ;;
+            --token)    token="${2:-}"; shift 2 ;;
+            --help)
+                cat <<'EOF'
+Usage: cco pack publish <name> [<remote>] [OPTIONS]
+
+Publish a pack to a remote Config Repo.
+
+Arguments:
+  <name>             Pack to publish
+  <remote>           Remote name or URL (default: from .cco-source publish_target)
+
+Options:
+  --message <msg>    Commit message (default: "publish pack <name>")
+  --dry-run          Show what would be published, don't push
+  --force            Overwrite remote version without confirmation
+  --token <token>    Auth token for HTTPS remotes
+EOF
+                return 0
+                ;;
+            -*)  die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$name" ]]; then
+                    name="$1"
+                elif [[ -z "$remote_arg" ]]; then
+                    remote_arg="$1"
+                else
+                    die "Unexpected argument: $1"
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    [[ -z "$name" ]] && die "Usage: cco pack publish <name> [<remote>]"
+
+    local pack_dir="$PACKS_DIR/$name"
+    [[ ! -f "$pack_dir/pack.yml" ]] && die "Pack '$name' not found."
+
+    # Resolve remote URL
+    local remote_url="" remote_name=""
+    _resolve_publish_remote "$remote_arg" "$pack_dir" remote_url remote_name
+
+    [[ -z "$message" ]] && message="publish pack $name"
+
+    info "Publishing pack '$name' to $remote_url..."
+
+    # Clone remote repo (push-ready)
+    local tmpdir
+    tmpdir=$(_clone_for_publish "$remote_url" "$token")
+    trap "_cleanup_clone '$tmpdir'" EXIT
+
+    # Check for existing pack on remote
+    if [[ -d "$tmpdir/packs/$name" ]]; then
+        if $dry_run; then
+            info "Pack '$name' already exists on remote — would overwrite"
+        elif ! $force; then
+            local diff_summary
+            diff_summary=$(diff -rq "$pack_dir" "$tmpdir/packs/$name" 2>/dev/null \
+                | grep -v '.cco-source' | grep -v '.cco-install-tmp' | head -10)
+            if [[ -n "$diff_summary" ]]; then
+                warn "Pack '$name' already exists on remote. Differences:"
+                echo "$diff_summary" | sed 's/^/  /'
+                if [[ -t 0 ]]; then
+                    printf "\nOverwrite? [y/N] " >&2
+                    local reply; read -r reply
+                    [[ ! "$reply" =~ ^[Yy]$ ]] && { _cleanup_clone "$tmpdir"; die "Aborted."; }
+                else
+                    _cleanup_clone "$tmpdir"
+                    die "Pack exists on remote. Use --force to overwrite."
+                fi
+            fi
+        fi
+        rm -rf "$tmpdir/packs/$name"
+    fi
+
+    # Copy pack to temp dir
+    mkdir -p "$tmpdir/packs"
+    cp -R "$pack_dir" "$tmpdir/packs/$name"
+
+    # Remove local-only files
+    rm -rf "$tmpdir/packs/$name/.cco-source"
+    rm -rf "$tmpdir/packs/$name/.cco-install-tmp"
+
+    # Internalize if pack has knowledge.source
+    local k_source
+    k_source=$(yml_get_pack_knowledge_source "$tmpdir/packs/$name/pack.yml")
+    if [[ -n "$k_source" ]]; then
+        info "Internalizing knowledge from $k_source..."
+        local expanded_source
+        expanded_source=$(expand_path "$k_source")
+        if [[ -d "$expanded_source" ]]; then
+            local k_files
+            k_files=$(yml_get_pack_knowledge_files "$tmpdir/packs/$name/pack.yml")
+            mkdir -p "$tmpdir/packs/$name/knowledge"
+            while IFS=$'\t' read -r fname desc; do
+                [[ -z "$fname" ]] && continue
+                local src="$expanded_source/$fname"
+                if [[ -f "$src" ]]; then
+                    mkdir -p "$(dirname "$tmpdir/packs/$name/knowledge/$fname")"
+                    cp "$src" "$tmpdir/packs/$name/knowledge/$fname"
+                else
+                    warn "Knowledge file not found: $src"
+                fi
+            done <<< "$k_files"
+
+            # Remove source: from published pack.yml
+            local tmpf; tmpf=$(mktemp)
+            awk '
+                /^knowledge:/ { in_k=1; print; next }
+                in_k && /^  source:/ { next }
+                in_k && /^[^ #]/ { in_k=0 }
+                { print }
+            ' "$tmpdir/packs/$name/pack.yml" > "$tmpf"
+            mv "$tmpf" "$tmpdir/packs/$name/pack.yml"
+        else
+            warn "Knowledge source not found: $k_source — publishing without internalization"
+        fi
+    fi
+
+    # Refresh manifest in temp dir
+    manifest_refresh "$tmpdir"
+
+    if $dry_run; then
+        echo ""
+        echo -e "${BOLD}Would publish:${NC}"
+        echo "  Pack: $name"
+        echo "  Remote: $remote_url"
+        echo "  Files:"
+        find "$tmpdir/packs/$name" -type f | sed "s|$tmpdir/||; s/^/    /"
+        _cleanup_clone "$tmpdir"
+        trap - EXIT
+        ok "Dry run complete — nothing pushed"
+        return 0
+    fi
+
+    # Commit and push
+    git -C "$tmpdir" add -A
+    git -C "$tmpdir" commit -q -m "$message"
+    git -C "$tmpdir" push origin HEAD >/dev/null 2>&1 \
+        || { _cleanup_clone "$tmpdir"; die "Failed to push to $remote_url"; }
+
+    # Update local .cco-source with publish_target
+    if [[ -n "$remote_name" ]]; then
+        _update_publish_target "$pack_dir" "$remote_name"
+    fi
+
+    _cleanup_clone "$tmpdir"
+    trap - EXIT
+    ok "Published pack '$name' to $remote_url"
+}
+
+# Resolve remote for publish: name → URL, with fallback to .cco-source
+_resolve_publish_remote() {
+    local remote_arg="$1" pack_dir="$2"
+    local -n _url_out=$3 _name_out=$4
+
+    if [[ -n "$remote_arg" ]]; then
+        # Try as registered remote name first
+        local resolved
+        if resolved=$(remote_get_url "$remote_arg"); then
+            _url_out="$resolved"
+            _name_out="$remote_arg"
+            return 0
+        fi
+        # Treat as direct URL if contains : or /
+        if [[ "$remote_arg" == *:* || "$remote_arg" == */* ]]; then
+            _url_out="$remote_arg"
+            _name_out=""
+            return 0
+        fi
+        die "Remote '$remote_arg' not found. Register with 'cco remote add $remote_arg <url>'."
+    fi
+
+    # Try .cco-source publish_target
+    if [[ -f "$pack_dir/.cco-source" ]]; then
+        local target
+        target=$(grep '^publish_target:' "$pack_dir/.cco-source" 2>/dev/null \
+            | sed 's/^publish_target: *//' | tr -d '"'"'")
+        if [[ -n "$target" ]]; then
+            local resolved
+            if resolved=$(remote_get_url "$target"); then
+                _url_out="$resolved"
+                _name_out="$target"
+                return 0
+            fi
+            die "publish_target '$target' in .cco-source is not a registered remote."
+        fi
+    fi
+
+    die "No remote specified and no publish_target in .cco-source. Usage: cco pack publish <name> <remote>"
+}
+
+# Update .cco-source with publish_target
+_update_publish_target() {
+    local pack_dir="$1" target="$2"
+    local source_file="$pack_dir/.cco-source"
+
+    if [[ -f "$source_file" ]]; then
+        if grep -q '^publish_target:' "$source_file" 2>/dev/null; then
+            sed -i '' "s/^publish_target:.*/publish_target: $target/" "$source_file" 2>/dev/null || \
+                sed -i "s/^publish_target:.*/publish_target: $target/" "$source_file"
+        else
+            echo "publish_target: $target" >> "$source_file"
+        fi
+    else
+        cat > "$source_file" <<YAML
+source: local
+publish_target: $target
+YAML
+    fi
+}
