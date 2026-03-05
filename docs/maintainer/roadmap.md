@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-04 (sharing moved to Sprint 6; Config Repo design unifies Sprint 6 + Sprint 10; user-config/ restructure designed; Docker socket per-container filtering deferred to long-term; native installer migration tracked as #B2).
+> Last updated: 2026-03-05 (Sprint 6+10 Config Repo completed; Sprint 6b Sharing Enhancements designed — rename share→manifest, publish, remote, add-pack, enhanced install).
 
 ---
 
@@ -96,6 +96,28 @@ Reorganization of the configuration hierarchy to leverage Claude Code's native *
 
 **Docs**: [analysis](./scope-hierarchy/analysis.md) | [ADR-3](./architecture.md) | [ADR-8](./architecture.md)
 
+### Config Repo: Sharing & Import + Vault (Sprint 6 + Sprint 10) ✓
+
+Unified design implementing both sharing/import and personal vault under the Config Repo model.
+
+**What was implemented**:
+- `user-config/` unified directory restructure (migration 003)
+- `cco pack install <url> [--pick] [--token] [--force]` — install packs from remote Config Repos (sparse-checkout with shallow fallback)
+- `cco pack update <name> [--all] [--force]` — update from recorded `.cco-source`
+- `cco pack export <name>` — `.tar.gz` archive for offline distribution
+- `cco project install <url> [--pick] [--as] [--var K=V]` — install project templates with variable resolution
+- `cco share refresh/validate/show` — manifest lifecycle (to be renamed to `cco manifest`, see Sprint 6b)
+- `cco vault init/sync/diff/log/status/restore` — git-backed config versioning
+- `cco vault remote add/remove/push/pull` — remote backup
+- `lib/remote.sh` — sparse-checkout clone helper with auth support
+- Secret detection in vault sync (scans for `.env`, `.key`, `.pem`, `.credentials.json`)
+- Vault `.gitignore` template (excludes secrets, runtime files, session state)
+- Test coverage: 102 tests (pack install 26, project install 17, share 19, vault 40)
+
+**Docs**: [analysis](./config-repo/analysis.md) | [design](./config-repo/design.md)
+
+---
+
 ### Fix tmux copy-paste (Sprint 2) ✓
 
 Improved tmux configuration for clipboard and selection:
@@ -144,17 +166,7 @@ The `Dockerfile` uses `npm install -g @anthropic-ai/claude-code` which is deprec
 Features are prioritized by impact for third-party users adopting claude-orchestrator. Each sprint can be implemented independently.
 
 ```
-Bugfix (pre-sprint)
-┌──────────────────────┐
-│ #B1 Browser MCP      │
-│     leak fix         │
-└──────────────────────┘
-
-Sprint 4 (frontend)
-┌──────────────────────┐
-│ #4 Browser MCP       │
-│    Integration       │
-└──────────────────────┘
+COMPLETED: Bugfix #B1, Sprint 4, Sprint 6+10 (Config Repo)
 
 Sprint 5 (onboarding)
 ┌──────────────────────┐
@@ -162,11 +174,15 @@ Sprint 5 (onboarding)
 │    Tutorial Project  │
 └──────────────────────┘
 
-Sprint 6 (condivisione — differenziante)
+Sprint 6b (sharing enhancements)
 ┌──────────────────────┐
-│ #12 Sharing/Import   │
-│     (decoupled da    │
-│      Config Vault)   │
+│ Rename share→manifest│
+│ cco remote           │
+│ pack/project publish │
+│ project add-pack     │
+│ pack internalize     │
+│ Enhanced install     │
+│ (auto-clone + packs) │
 └──────────────────────┘
 
 Sprint 7 (isolamento)          Sprint 8 (ecosistema)
@@ -175,16 +191,12 @@ Sprint 7 (isolamento)          Sprint 8 (ecosistema)
 │    Isolation          │       └──────────────────────┘
 │ #7 Session Resume    │
 └──────────────────────┘
-Sprint 9 (polish)              Sprint 10 (versioning)
-┌──────────────────────┐       ┌──────────────────────┐
-│ #10 cco project edit │       │ #11 Config Vault     │
-└──────────────────────┘       └──────────────────────┘
 
-Sprint 11 (intelligence)
-┌──────────────────────┐
-│ #13 Project RAG      │
-│     (default MCP)    │
-└──────────────────────┘
+Sprint 9 (polish)              Sprint 11 (intelligence)
+┌──────────────────────┐       ┌──────────────────────┐
+│ #10 cco project edit │       │ #13 Project RAG      │
+│ #10b StatusLine      │       │     (default MCP)    │
+└──────────────────────┘       └──────────────────────┘
 ```
 
 ---
@@ -252,37 +264,52 @@ A self-contained example project that users launch with `cco start tutorial` (or
 
 ---
 
-### Sprint 6 — Config Repo: Sharing & Import
+### Sprint 6b — Sharing Enhancements
 
-Unified with Sprint 10 under a single "Config Repo" model. Analysis and design complete.
+Enhancements to the Config Repo sharing system (Sprint 6+10, now completed). Addresses naming issues, portability gaps, and missing publish workflow discovered during real-world usage.
 
-**Docs**: [analysis](./config-repo/analysis.md) | [design](./config-repo/design.md)
+**Docs**: [analysis](./config-repo/sharing-analysis.md) | [design](./config-repo/sharing-design.md)
 
-#### #12 Sharing & Import — Config Repo model
+#### Rename `share` → `manifest`
 
-Share packs and project templates between users via git repos. Granular install (single pack from a multi-pack repo) via git sparse-checkout, without per-resource repo proliferation.
+`cco share` only manages the manifest file — rename to `cco manifest` (and `share.yml` → `manifest.yml`) to eliminate confusion. Includes migration, backward compat for remote repos with old `share.yml`.
 
-**Post-implementation**: rename `cco share` → `cco manifest` and `share.yml` → `manifest.yml`. The name "share" implies an action (sharing resources), but the command only manages the manifest file (refresh, validate, show). "manifest" reflects the actual purpose. Includes: rename command in `bin/cco`, rename `lib/share.sh` → `lib/manifest.sh`, rename file on disk, update all references in docs and tests.
+#### `cco remote` — Top-level remote management
 
-**Design decisions**:
-- **Unified concept**: a Config Repo is a git repo with a standard structure — serves as vault, shared bundle, or both
-- **`user-config/` restructure**: replaces separate `global/` + `projects/` dirs; packs elevated to top-level (no longer nested inside `global/`)
-- **`CCO_USER_CONFIG_DIR`**: new primary env var; `CCO_GLOBAL_DIR`, `CCO_PROJECTS_DIR`, `CCO_PACKS_DIR` derived from it
-- **Access control**: delegated entirely to git hosting (no per-resource visibility — resources with different access levels require separate repos)
-- **Granular install without proliferation**: `cco pack install <url> --pick <name>` uses git sparse-checkout; one repo can contain many packs
-- **Pack source tracking**: `.cco-source` metadata file records origin URL, path, ref for `cco pack update`
+Promote remotes from vault-only to top-level. Remotes serve both vault (push/pull) and publish (pack/project publish). Stored in `.cco-remotes` file.
 
-**Commands**:
-- `cco pack install <git-url> [--pick <name>] [--token <t>]` — install pack(s) from any git repo
-- `cco pack update <name>` — pull latest from recorded source
-- `cco pack export <name>` — archive for manual distribution
-- `cco project install <git-url> [--pick <name>]` — install project template
+Commands: `cco remote add <name> <url>`, `cco remote remove <name>`, `cco remote list`.
 
-**Scope**:
-- `lib/cmd-pack.sh` extended: `install`, `update`, `export` subcommands
-- `lib/cmd-vault.sh` (new): vault management (see Sprint 10)
-- `bin/cco`: add `CCO_USER_CONFIG_DIR` + derived vars
-- Migration `004_user-config-dir.sh`: moves `global/` + `projects/` under `user-config/`
+#### `cco pack publish` / `cco project publish`
+
+Push packs and project templates to named remote Config Repos. Per-pack target memory via `.cco-source` `publish_target:` field. Source-referencing packs are auto-internalized in the published copy.
+
+Project publish includes reverse-templating of repo paths (`path:` → `{{VARIABLE}}`) and URL inference from git remotes. Declared packs are bundled with the project by default.
+
+#### `cco project add-pack` / `remove-pack`
+
+Add or remove a pack from a project's `packs:` list in `project.yml`. Local operation, no remote interaction.
+
+#### `cco pack internalize`
+
+Convert a source-referencing pack (with `knowledge.source:` pointing to external path) to self-contained by copying files into the pack's `knowledge/` directory.
+
+#### Enhanced `cco project install`
+
+When installing a project template:
+- Repo entries with `url:` metadata: prompt for local path with auto-clone offer
+- Pack dependencies: auto-install missing packs from the same Config Repo
+- Non-interactive mode via `--var REPO_X=/path` flags
+
+**Implementation phases** (see [design](./config-repo/sharing-design.md#9-implementation-plan)):
+1. Rename share → manifest
+2. `cco remote`
+3. `project add-pack / remove-pack`
+4. `pack internalize`
+5. `pack publish` + `project publish`
+6. Enhanced `project install`
+
+Phases 1-4 are independent. Phase 5 depends on 1, 2, 4. Phase 6 depends on 5.
 
 ---
 
@@ -347,32 +374,6 @@ Improve the StatusLine hook (`config/hooks/statusline.sh`) for better usability.
 - Add configurable status bar format (e.g., `statusline.format` in global settings) so users can customize what is shown
 
 ---
-
-### Sprint 10 — Config Vault
-
-Unified with Sprint 6 under the Config Repo model. The vault is the personal-use face of the same architecture.
-
-**Docs**: [analysis](./config-repo/analysis.md) | [design](./config-repo/design.md)
-
-#### #11 Config Vault — Git-backed versioning for user-config/
-
-The `user-config/` directory (introduced in Sprint 6) can be initialized as a git repo to become the personal vault. The CLI wraps git operations with CCO-specific defaults (`.gitignore` template, secret detection, categorized output).
-
-**Commands**:
-- `cco vault init [<path>]` — git init + CCO `.gitignore`; optional external path (e.g. `~/.cco`)
-- `cco vault sync [<message>]` — commit current state
-- `cco vault diff` — uncommitted changes by category
-- `cco vault log [--limit N]` — commit history
-- `cco vault restore <ref>` — restore from commit/tag (with confirmation)
-- `cco vault status` — initialization state, remote sync status
-- `cco vault remote add <name> <url>` / `push` / `pull` — remote backup
-
-**Scope**:
-- `lib/cmd-vault.sh` (new) — all vault subcommands
-- Vault `.gitignore` template baked into CCO
-- Test coverage for vault init, sync, restore, conflict with secrets
-
-**Resolved open question**: `cco vault` and `cco pack install` are complementary, not competing. No namespace unification needed — vault is for personal versioning, install/update is for consuming remote sources. Both use the same Config Repo structure.
 
 ---
 
@@ -500,4 +501,4 @@ Users who want claude-mem can install it independently as a Claude Code plugin �
 - **Privacy concern**: Source code is sent to third-party cloud services (Zilliz + OpenAI) — unacceptable for many commercial/proprietary projects
 - **Vendor lock-in**: Strongly tied to Zilliz/Milvus ecosystem
 
-However, claude-context could be supported as an **optional provider** in the RAG system (Sprint 10, `rag.provider: claude-context`) for users who accept cloud-based indexing. The default provider should be fully local.
+However, claude-context could be supported as an **optional provider** in the RAG system (Sprint 11, `rag.provider: claude-context`) for users who accept cloud-based indexing. The default provider should be fully local.
