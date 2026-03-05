@@ -112,6 +112,8 @@ Usage: cco project <command> [options]
 Commands:
   create <name>          Create a new project from template
   install <url>          Install project template from a remote Config Repo
+  add-pack <proj> <pack> Add a knowledge pack to a project
+  remove-pack <p> <pack> Remove a knowledge pack from a project
   list                   List available projects with status
   show <name>            Show project details (repos, packs, config)
   validate [name]        Validate project structure and configuration
@@ -122,11 +124,13 @@ EOF
         fi
         shift
         case "$subcmd" in
-            create)   cmd_project_create "$@" ;;
-            install)  cmd_project_install "$@" ;;
-            list)     cmd_project_list "$@" ;;
-            show)     cmd_project_show "$@" ;;
-            validate) cmd_project_validate "$@" ;;
+            create)      cmd_project_create "$@" ;;
+            install)     cmd_project_install "$@" ;;
+            add-pack)    cmd_project_add_pack "$@" ;;
+            remove-pack) cmd_project_remove_pack "$@" ;;
+            list)        cmd_project_list "$@" ;;
+            show)        cmd_project_show "$@" ;;
+            validate)    cmd_project_validate "$@" ;;
             *)        die "Unknown project command: $subcmd. Run 'cco project --help'." ;;
         esac
         ;;
