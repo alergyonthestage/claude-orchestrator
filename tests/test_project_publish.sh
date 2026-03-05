@@ -211,6 +211,54 @@ test_project_publish_reverse_templates_repos() {
     }
 }
 
+test_project_publish_adds_url_from_git_remote() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    _create_test_pack "test-pack"
+
+    # Create a real git repo so the URL can be inferred
+    local repo_dir="$tmpdir/projects/my-repo"
+    mkdir -p "$repo_dir"
+    git -C "$repo_dir" init -q
+    git -C "$repo_dir" remote add origin "git@github.com:test/my-repo.git"
+
+    # Create project pointing to that repo
+    local project_dir="$CCO_PROJECTS_DIR/url-proj"
+    mkdir -p "$project_dir/.claude/rules" "$project_dir/claude-state/memory"
+    cat > "$project_dir/project.yml" <<YAML
+name: url-proj
+description: "Test"
+repos:
+  - path: $repo_dir
+    name: my-repo
+docker:
+  ports: []
+  env: {}
+auth:
+  method: oauth
+packs:
+  - test-pack
+YAML
+    cat > "$project_dir/.claude/CLAUDE.md" <<'MD'
+# Project
+MD
+
+    local bare_dir
+    bare_dir=$(_create_empty_bare_remote "$tmpdir")
+    run_cco remote add target "$bare_dir"
+    run_cco project publish url-proj target --force
+
+    local verify_dir="$tmpdir/verify"
+    git clone -q "$bare_dir" "$verify_dir"
+    local published_yml="$verify_dir/templates/url-proj/project.yml"
+    grep -q 'url: git@github.com:test/my-repo.git' "$published_yml" || {
+        echo "ASSERTION FAILED: url: field not added from git remote"
+        cat "$published_yml"
+        return 1
+    }
+}
+
 test_project_publish_updates_manifest() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"

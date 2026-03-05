@@ -723,10 +723,12 @@ EOF
     done
 
     [[ -z "$name" ]] && die "Usage: cco pack internalize <name>"
+    check_global
 
     local pack_dir="$PACKS_DIR/$name"
     local pack_yml="$pack_dir/pack.yml"
-    [[ ! -f "$pack_yml" ]] && die "Pack '$name' not found."
+    [[ ! -d "$pack_dir" ]] && die "Pack '$name' not found in packs/."
+    [[ ! -f "$pack_yml" ]] && die "Pack '$name': pack.yml not found."
 
     # Check for knowledge.source
     local k_source
@@ -747,7 +749,16 @@ EOF
     local k_files
     k_files=$(yml_get_pack_knowledge_files "$pack_yml")
     if [[ -z "$k_files" ]]; then
-        warn "No knowledge files listed in pack.yml"
+        # Still remove source: field even if no files to copy (pack becomes self-contained)
+        local tmpfile; tmpfile=$(mktemp)
+        awk '
+            /^knowledge:/ { in_k=1; print; next }
+            in_k && /^  source:/ { next }
+            in_k && /^[^ #]/ { in_k=0 }
+            { print }
+        ' "$pack_yml" > "$tmpfile"
+        mv "$tmpfile" "$pack_yml"
+        ok "Internalized pack '$name': 0 file(s) copied (source: field removed)"
         return 0
     fi
 
@@ -788,10 +799,14 @@ cmd_pack_publish() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --message)  message="${2:-}"; shift 2 ;;
+            --message)
+                [[ -z "${2:-}" ]] && die "--message requires a value"
+                message="$2"; shift 2 ;;
             --dry-run)  dry_run=true; shift ;;
             --force)    force=true; shift ;;
-            --token)    token="${2:-}"; shift 2 ;;
+            --token)
+                [[ -z "${2:-}" ]] && die "--token requires a value"
+                token="$2"; shift 2 ;;
             --help)
                 cat <<'EOF'
 Usage: cco pack publish <name> [<remote>] [OPTIONS]
@@ -945,20 +960,20 @@ EOF
 # Resolve remote for publish: name → URL, with fallback to .cco-source
 _resolve_publish_remote() {
     local remote_arg="$1" pack_dir="$2"
-    local -n _url_out=$3 _name_out=$4
+    # Output: sets _pub_remote_url and _pub_remote_name in caller scope
 
     if [[ -n "$remote_arg" ]]; then
         # Try as registered remote name first
         local resolved
         if resolved=$(remote_get_url "$remote_arg"); then
-            _url_out="$resolved"
-            _name_out="$remote_arg"
+            eval "$3=\$resolved"
+            eval "$4=\$remote_arg"
             return 0
         fi
         # Treat as direct URL if contains : or /
         if [[ "$remote_arg" == *:* || "$remote_arg" == */* ]]; then
-            _url_out="$remote_arg"
-            _name_out=""
+            eval "$3=\$remote_arg"
+            eval "$4="
             return 0
         fi
         die "Remote '$remote_arg' not found. Register with 'cco remote add $remote_arg <url>'."
@@ -972,8 +987,8 @@ _resolve_publish_remote() {
         if [[ -n "$target" ]]; then
             local resolved
             if resolved=$(remote_get_url "$target"); then
-                _url_out="$resolved"
-                _name_out="$target"
+                eval "$3=\$resolved"
+                eval "$4=\$target"
                 return 0
             fi
             die "publish_target '$target' in .cco-source is not a registered remote."

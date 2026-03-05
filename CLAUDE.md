@@ -37,6 +37,14 @@ cco pack update <name>       # Update a pack from its remote source
 cco pack export <name>       # Export a pack as .tar.gz archive
 cco manifest refresh         # Regenerate manifest.yml from packs/ and templates/
 cco manifest validate        # Cross-check manifest.yml vs disk
+cco remote add <n> <url>     # Register a Config Repo remote
+cco remote remove <name>     # Unregister a remote
+cco remote list              # Show all registered remotes
+cco pack publish <n> [remote] # Publish pack to a Config Repo
+cco pack internalize <name>  # Convert source-referencing pack to self-contained
+cco project publish <n> <r>  # Publish project template to Config Repo
+cco project add-pack <p> <k> # Add a pack to a project
+cco project remove-pack <p> <k> # Remove a pack from a project
 cco vault init               # Initialize git-backed config versioning
 cco vault sync [msg]         # Commit config changes with secret detection
 cco vault diff               # Show uncommitted changes by category
@@ -97,6 +105,7 @@ Per `docs/maintainer/docker/design.md` (sezione directory structure):
 - `lib/cmd-project.sh` — Project management: create, install, list, show, validate
 - `lib/cmd-vault.sh` — Config versioning: init, sync, diff, log, status (git-backed)
 - `lib/manifest.sh` — manifest.yml lifecycle: init, refresh, validate, show
+- `lib/cmd-remote.sh` — Remote management: add, remove, list Config Repo remotes (.cco-remotes)
 - `lib/remote.sh` — Remote clone helper: sparse-checkout, shallow fallback, token auth
 - `Dockerfile` — Docker image (node:22-bookworm, Claude Code, gosu, tmux, docker CLI)
 - `config/entrypoint.sh` — Container entrypoint: socket GID fix, MCP merge, gosu, tmux/claude launch

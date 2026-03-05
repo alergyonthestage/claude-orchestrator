@@ -231,6 +231,49 @@ test_manifest_refresh_command_works() {
     assert_output_contains "refreshed"
 }
 
+# ── manifest refresh: template packs and repos ───────────────────────
+
+test_manifest_refresh_includes_template_packs() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco init --lang "English"
+
+    # Create a template with packs and repos
+    mkdir -p "$CCO_USER_CONFIG_DIR/templates/my-tmpl"
+    cat > "$CCO_USER_CONFIG_DIR/templates/my-tmpl/project.yml" <<'YAML'
+name: my-tmpl
+repos:
+  - path: "{{REPO_API}}"
+    name: backend-api
+    url: git@github.com:acme/api.git
+packs:
+  - alpha
+  - beta
+YAML
+
+    run_cco manifest refresh
+    assert_file_contains "$CCO_USER_CONFIG_DIR/manifest.yml" "packs: [alpha, beta]"
+    assert_file_contains "$CCO_USER_CONFIG_DIR/manifest.yml" "backend-api"
+}
+
+test_manifest_refresh_template_without_packs_or_repos() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco init --lang "English"
+
+    mkdir -p "$CCO_USER_CONFIG_DIR/templates/simple"
+    cat > "$CCO_USER_CONFIG_DIR/templates/simple/project.yml" <<'YAML'
+name: simple
+repos: []
+packs: []
+YAML
+
+    run_cco manifest refresh
+    assert_file_contains "$CCO_USER_CONFIG_DIR/manifest.yml" "simple"
+}
+
 # ── migration: share.yml → manifest.yml ──────────────────────────────
 
 test_migration_renames_share_to_manifest() {

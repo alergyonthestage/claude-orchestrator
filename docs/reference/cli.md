@@ -728,6 +728,10 @@ Examples:
   cco project install https://github.com/team/config-repo --token ghp_... --force
 ```
 
+**Auto-install packs**: if the template declares packs in its `packs:` list,
+they are automatically installed from the same Config Repo if available.
+Already-installed packs are skipped. Missing packs produce a warning.
+
 ---
 
 ### 3.20 `cco vault`
@@ -786,7 +790,7 @@ Show commit history.
 Usage: cco vault log [OPTIONS]
 
 Options:
-  --limit N            Show only the last N commits (default: 10)
+  --limit N            Show only the last N commits (default: 20)
 
 Examples:
   cco vault log
@@ -842,6 +846,138 @@ Show vault state.
 
 ```
 Usage: cco vault status
+```
+
+---
+
+### 3.19b `cco project publish`
+
+Publish a project as a shareable template to a remote Config Repo.
+
+```
+Usage: cco project publish <name> [<remote>] [OPTIONS]
+
+Arguments:
+  name                 Project to publish
+  remote               Remote name or direct URL
+
+Options:
+  --message <msg>      Commit message (default: "publish project <name>")
+  --dry-run            Show what would be published, don't push
+  --force              Overwrite remote version without confirmation
+  --no-packs           Don't bundle the project's packs
+  --token <token>      Auth token for HTTPS remotes
+
+Examples:
+  cco project publish my-project alberghi
+  cco project publish my-project alberghi --no-packs
+  cco project publish my-project --dry-run
+```
+
+Repo paths are automatically reverse-templated (`~/projects/api` becomes
+`{{REPO_API}}`). Runtime files (`docker-compose.yml`, `.managed/`,
+`claude-state/`, `secrets.env`, `.pack-manifest`, `.cco-meta`) are excluded.
+
+By default, packs listed in `project.yml` are bundled into the remote repo.
+Use `--no-packs` to skip this.
+
+---
+
+### 3.19c `cco project add-pack` / `cco project remove-pack`
+
+Add or remove a knowledge pack from a project's `packs:` list.
+
+```
+Usage: cco project add-pack <project> <pack>
+       cco project remove-pack <project> <pack>
+
+Examples:
+  cco project add-pack my-saas react-guidelines
+  cco project remove-pack my-saas react-guidelines
+```
+
+---
+
+### 3.19d `cco pack publish`
+
+Publish a pack to a remote Config Repo.
+
+```
+Usage: cco pack publish <name> [<remote>] [OPTIONS]
+
+Arguments:
+  name                 Pack to publish
+  remote               Remote name or direct URL (default: from .cco-source publish_target)
+
+Options:
+  --message <msg>      Commit message (default: "publish pack <name>")
+  --dry-run            Show what would be published, don't push
+  --force              Overwrite remote version without confirmation
+  --token <token>      Auth token for HTTPS remotes
+
+Examples:
+  cco pack publish react-guidelines alberghi
+  cco pack publish react-guidelines                  # uses remembered target
+  cco pack publish react-guidelines --dry-run
+```
+
+The remote argument is resolved in order: registered remote name, direct URL,
+or `publish_target` from `.cco-source`. Source-referencing packs are
+automatically internalized during publish (local pack unchanged).
+
+---
+
+### 3.19e `cco pack internalize`
+
+Convert a source-referencing pack to self-contained.
+
+```
+Usage: cco pack internalize <name>
+
+Examples:
+  cco pack internalize my-docs-pack
+```
+
+Copies knowledge files from the external `source:` directory into the pack's
+own `knowledge/` directory and removes the `source:` field from `pack.yml`.
+This is a one-way operation — the original source path is not preserved.
+
+---
+
+### 3.20 `cco remote`
+
+Manage named Config Repo remotes for publishing and installing.
+
+#### `cco remote add <name> <url>`
+
+Register a named remote. Names must be lowercase alphanumeric with hyphens.
+If vault is initialized, the remote is also synced to the vault's git config.
+
+```
+Usage: cco remote add <name> <url>
+
+Examples:
+  cco remote add alberghi git@github.com:alberghi-it/cco-config.git
+  cco remote add personal https://github.com/user/cco-vault.git
+```
+
+#### `cco remote remove <name>`
+
+Unregister a remote.
+
+```
+Usage: cco remote remove <name>
+
+Examples:
+  cco remote remove alberghi
+```
+
+#### `cco remote list`
+
+Show all registered remotes.
+
+```
+Usage: cco remote list
 ```
 
 ---

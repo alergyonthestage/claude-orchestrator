@@ -516,6 +516,9 @@ EOF
     # Resolve template variables in key files
     _resolve_template_vars "$target_dir" "$project_name" "${vars[@]+"${vars[@]}"}"
 
+    # Resolve repo entries: validate paths, offer to clone from url if available
+    _resolve_repo_entries "$target_dir/project.yml" "${vars[@]+"${vars[@]}"}"
+
     # Auto-install packs from the same Config Repo
     local -a installed_packs=()
     local project_packs
@@ -613,10 +616,13 @@ _resolve_template_vars() {
             fi
             [[ -z "$value" ]] && die "Value required for $name"
         else
-            # Non-interactive: use sensible defaults
+            # Non-interactive: use sensible defaults or fail for required vars
             case "$name" in
                 DESCRIPTION) value="TODO: Add project description" ;;
-                *)           value="$name" ;;
+                REPO_*)
+                    die "Required variable '$name' not set. Use --var $name=<path> in non-interactive mode."
+                    ;;
+                *)  value="$name" ;;
             esac
         fi
 
@@ -628,6 +634,72 @@ _resolve_template_vars() {
         sed -i '' "${sed_args[@]}" "$file" 2>/dev/null || \
             sed -i "${sed_args[@]}" "$file"
     done
+}
+
+# Resolve repo entries in an installed project: validate paths exist,
+# offer to clone from url: field if available and path is missing.
+# Usage: _resolve_repo_entries <project_yml> [vars...]
+_resolve_repo_entries() {
+    local project_yml="$1"
+    shift
+
+    local repos
+    repos=$(yml_get_repos "$project_yml" 2>/dev/null)
+    [[ -z "$repos" ]] && return 0
+
+    local -a cloned_repos=()
+    while IFS=: read -r repo_path repo_name; do
+        [[ -z "$repo_path" ]] && continue
+        local expanded
+        expanded=$(expand_path "$repo_path")
+
+        if [[ -d "$expanded" ]]; then
+            continue  # path exists, nothing to do
+        fi
+
+        # Check if there's a url: field for this repo
+        local repo_url
+        repo_url=$(awk -v name="$repo_name" '
+            /^repos:/ { in_repos=1; next }
+            in_repos && /^[^ #]/ { exit }
+            in_repos && /^    name:/ {
+                n=$0; sub(/^    name: */, "", n); gsub(/[\"'\''[:space:]]/, "", n)
+                current_name=n
+            }
+            in_repos && /^    url:/ && current_name == name {
+                u=$0; sub(/^    url: */, "", u); gsub(/[\"'\''[:space:]]/, "", u)
+                print u; exit
+            }
+        ' "$project_yml")
+
+        if [[ -n "$repo_url" ]] && [[ -t 0 ]]; then
+            echo ""
+            echo -e "  ${BOLD}$repo_name${NC} ($repo_url)"
+            echo -e "  Path ${YELLOW}$repo_path${NC} does not exist."
+            printf "  Clone from %s? [Y/n] " "$repo_url" >&2
+            local reply
+            read -r reply < /dev/tty
+            if [[ -z "$reply" || "$reply" =~ ^[Yy]$ ]]; then
+                local parent; parent=$(dirname "$expanded")
+                mkdir -p "$parent"
+                info "Cloning into $expanded..."
+                if git clone "$repo_url" "$expanded" >/dev/null 2>&1; then
+                    cloned_repos+=("$repo_name")
+                    ok "Cloned $repo_name"
+                else
+                    warn "Failed to clone $repo_url"
+                fi
+            fi
+        elif [[ -n "$repo_url" ]]; then
+            warn "Repo path $repo_path does not exist. Clone manually: git clone $repo_url $expanded"
+        else
+            warn "Repo path $repo_path does not exist."
+        fi
+    done <<< "$repos"
+
+    if [[ ${#cloned_repos[@]} -gt 0 ]]; then
+        ok "Repos cloned: ${cloned_repos[*]}"
+    fi
 }
 
 # ── add-pack / remove-pack ───────────────────────────────────────────
@@ -728,6 +800,7 @@ _project_has_pack() {
     local file="$1" pack="$2"
     # Match "  - pack-name" under the packs: section
     awk -v pack="$pack" '
+        BEGIN { found=0 }
         /^packs:/ { in_packs=1; next }
         in_packs && /^[^ #]/ { exit }
         in_packs && /^  - / {
@@ -805,10 +878,14 @@ cmd_project_publish() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --message)        message="${2:-}"; shift 2 ;;
+            --message)
+                [[ -z "${2:-}" ]] && die "--message requires a value"
+                message="$2"; shift 2 ;;
             --dry-run)        dry_run=true; shift ;;
             --force)          force=true; shift ;;
-            --token)          token="${2:-}"; shift 2 ;;
+            --token)
+                [[ -z "${2:-}" ]] && die "--token requires a value"
+                token="$2"; shift 2 ;;
             --no-packs)       include_packs=false; shift ;;
             --help)
                 cat <<'EOF'
@@ -978,21 +1055,56 @@ _copy_project_for_publish() {
 _reverse_template_repos() {
     local yml_file="$1"
 
-    awk '
+    # Capture original repo info BEFORE transforming paths
+    # Format: "path:name" per line
+    local orig_repos
+    orig_repos=$(yml_get_repos "$yml_file" 2>/dev/null)
+
+    # Build url map: name → git remote URL (best-effort)
+    local url_map=""
+    if [[ -n "$orig_repos" ]]; then
+        while IFS=: read -r repo_path repo_name; do
+            [[ -z "$repo_name" ]] && continue
+            local expanded
+            expanded=$(expand_path "$repo_path" 2>/dev/null) || continue
+            if [[ -d "$expanded/.git" ]]; then
+                local remote_url
+                remote_url=$(git -C "$expanded" remote get-url origin 2>/dev/null) || true
+                if [[ -n "$remote_url" ]]; then
+                    url_map+="${repo_name}=${remote_url}"$'\n'
+                fi
+            fi
+        done <<< "$orig_repos"
+    fi
+
+    # Replace paths with template variables and add url: fields
+    awk -v url_map="$url_map" '
+        BEGIN {
+            n = split(url_map, entries, "\n")
+            for (i = 1; i <= n; i++) {
+                if (entries[i] == "") continue
+                eq = index(entries[i], "=")
+                if (eq > 0) {
+                    k = substr(entries[i], 1, eq - 1)
+                    urls[k] = substr(entries[i], eq + 1)
+                }
+            }
+        }
         /^repos:/ { in_repos=1; print; next }
         in_repos && /^[^ #]/ { in_repos=0; print; next }
         in_repos && /^  - path:/ {
-            # Extract current name from upcoming lines or generate from path
             saved=$0; getline
             if ($0 ~ /^    name:/) {
                 name_line=$0
                 sub(/^    name: */, "", name_line)
                 gsub(/[\"'\''[:space:]]/, "", name_line)
-                # Generate template variable
                 var = toupper(name_line)
                 gsub(/-/, "_", var)
                 print "  - path: \"{{REPO_" var "}}\""
-                print $0  # print name line
+                print $0
+                if (name_line in urls) {
+                    print "    url: " urls[name_line]
+                }
             } else {
                 print saved
                 print $0
@@ -1001,9 +1113,6 @@ _reverse_template_repos() {
         }
         { print }
     ' "$yml_file" > "$yml_file.tmp" && mv "$yml_file.tmp" "$yml_file"
-
-    # Add url: fields by reading repo paths and querying git
-    # This is best-effort — if repo dir doesn't exist, skip
 }
 
 # Publish a pack into a tmpdir for bundling with a project.

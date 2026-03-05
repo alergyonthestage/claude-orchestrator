@@ -96,7 +96,15 @@ manifest_refresh() {
             local tags
             tags=$(_manifest_lookup_meta "$existing_tmpl_meta" "$name" "tags")
 
-            tmpl_entries+=("$name|$desc|$tags")
+            # Read packs and repos from template's project.yml
+            local tmpl_packs="" tmpl_repos=""
+            local tmpl_yml="$dir/project.yml"
+            if [[ -f "$tmpl_yml" ]]; then
+                tmpl_packs=$(yml_get_packs "$tmpl_yml" 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+                tmpl_repos=$(_manifest_read_template_repos "$tmpl_yml")
+            fi
+
+            tmpl_entries+=("$name|$desc|$tags|$tmpl_packs|$tmpl_repos")
         done
     fi
 
@@ -130,13 +138,26 @@ manifest_refresh() {
         else
             echo "templates:"
             for entry in "${tmpl_entries[@]}"; do
-                IFS='|' read -r name desc tags <<< "$entry"
+                IFS='|' read -r name desc tags tmpl_packs tmpl_repos <<< "$entry"
                 echo "  - name: $name"
                 if [[ -n "$desc" ]]; then
                     echo "    description: \"$desc\""
                 fi
                 if [[ -n "$tags" ]]; then
                     echo "    tags: [$tags]"
+                fi
+                if [[ -n "$tmpl_packs" ]]; then
+                    echo "    packs: [$(echo "$tmpl_packs" | sed 's/,/, /g')]"
+                fi
+                if [[ -n "$tmpl_repos" ]]; then
+                    echo "    repos:"
+                    echo "$tmpl_repos" | while IFS='=' read -r rname rurl; do
+                        [[ -z "$rname" ]] && continue
+                        echo "      - name: $rname"
+                        if [[ -n "$rurl" ]]; then
+                            echo "        url: $rurl"
+                        fi
+                    done
                 fi
             done
         fi
@@ -337,6 +358,29 @@ _manifest_read_template_meta() {
             tags=$0
         }
         END { if (name != "") print name "\t" desc "\t" tags }
+    ' "$file"
+}
+
+# Read repo entries (name=url) from a template's project.yml.
+# Output: "name=url" per line (url may be empty).
+_manifest_read_template_repos() {
+    local file="$1"
+    awk '
+        /^repos:/ { if ($0 ~ /\[\]/) exit; in_repos=1; next }
+        in_repos && /^[^ #]/ { exit }
+        in_repos && /^    name:/ {
+            sub(/^    name: */, ""); gsub(/["\047[:space:]]/, "")
+            rname=$0
+        }
+        in_repos && /^    url:/ {
+            sub(/^    url: */, ""); gsub(/["\047[:space:]]/, "")
+            rurl=$0
+        }
+        in_repos && /^  - / {
+            if (rname != "") print rname "=" rurl
+            rname=""; rurl=""
+        }
+        END { if (rname != "") print rname "=" rurl }
     ' "$file"
 }
 

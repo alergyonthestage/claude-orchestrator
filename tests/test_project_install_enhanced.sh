@@ -204,6 +204,156 @@ test_install_no_packs_still_works() {
     }
 }
 
+test_install_warns_missing_repo_path() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+
+    # Create config repo with template that has a repo with url
+    local work_dir="$tmpdir/mock-work"
+    local bare_dir="$tmpdir/mock-remote.git"
+    mkdir -p "$work_dir/templates/repo-template/.claude"
+
+    cat > "$work_dir/templates/repo-template/project.yml" <<'YAML'
+name: {{PROJECT_NAME}}
+description: "test"
+repos:
+  - path: /nonexistent/path/my-repo
+    name: my-repo
+    url: git@github.com:test/my-repo.git
+docker:
+  ports: []
+  env: {}
+auth:
+  method: oauth
+packs: []
+YAML
+    cat > "$work_dir/templates/repo-template/.claude/CLAUDE.md" <<'MD'
+# {{PROJECT_NAME}}
+MD
+    cat > "$work_dir/manifest.yml" <<'YAML'
+name: "test"
+description: ""
+packs: []
+templates:
+  - name: repo-template
+YAML
+
+    git init --bare -q "$bare_dir"
+    git -C "$work_dir" init -q
+    git -C "$work_dir" add -A
+    git -C "$work_dir" commit -q -m "init"
+    git -C "$work_dir" remote add origin "$bare_dir"
+    git -C "$work_dir" push -q origin main 2>/dev/null || \
+        git -C "$work_dir" push -q origin master 2>/dev/null
+
+    # Non-interactive: should warn about missing path
+    run_cco project install "$bare_dir"
+    assert_output_contains "does not exist"
+}
+
+test_install_noninteractive_fails_for_missing_repo_var() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+
+    # Create config repo with template using REPO_* variable
+    local work_dir="$tmpdir/mock-work"
+    local bare_dir="$tmpdir/mock-remote.git"
+    mkdir -p "$work_dir/templates/repo-tmpl/.claude"
+
+    cat > "$work_dir/templates/repo-tmpl/project.yml" <<'YAML'
+name: {{PROJECT_NAME}}
+description: "test"
+repos:
+  - path: "{{REPO_MY_API}}"
+    name: my-api
+docker:
+  ports: []
+  env: {}
+auth:
+  method: oauth
+packs: []
+YAML
+    cat > "$work_dir/templates/repo-tmpl/.claude/CLAUDE.md" <<'MD'
+# {{PROJECT_NAME}}
+MD
+    cat > "$work_dir/manifest.yml" <<'YAML'
+name: "test"
+description: ""
+packs: []
+templates:
+  - name: repo-tmpl
+YAML
+
+    git init --bare -q "$bare_dir"
+    git -C "$work_dir" init -q
+    git -C "$work_dir" add -A
+    git -C "$work_dir" commit -q -m "init"
+    git -C "$work_dir" remote add origin "$bare_dir"
+    git -C "$work_dir" push -q origin main 2>/dev/null || \
+        git -C "$work_dir" push -q origin master 2>/dev/null
+
+    # Non-interactive: should fail for missing REPO_* variable
+    if run_cco project install "$bare_dir" 2>/dev/null; then
+        echo "ASSERTION FAILED: should fail for missing REPO_* var in non-interactive mode"
+        return 1
+    fi
+    assert_output_contains "REPO_MY_API"
+    assert_output_contains "--var"
+}
+
+test_install_noninteractive_succeeds_with_repo_var() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+
+    # Create config repo with template using REPO_* variable
+    local work_dir="$tmpdir/mock-work"
+    local bare_dir="$tmpdir/mock-remote.git"
+    mkdir -p "$work_dir/templates/repo-tmpl/.claude"
+
+    cat > "$work_dir/templates/repo-tmpl/project.yml" <<'YAML'
+name: {{PROJECT_NAME}}
+description: "test"
+repos:
+  - path: "{{REPO_MY_API}}"
+    name: my-api
+docker:
+  ports: []
+  env: {}
+auth:
+  method: oauth
+packs: []
+YAML
+    cat > "$work_dir/templates/repo-tmpl/.claude/CLAUDE.md" <<'MD'
+# {{PROJECT_NAME}}
+MD
+    cat > "$work_dir/manifest.yml" <<'YAML'
+name: "test"
+description: ""
+packs: []
+templates:
+  - name: repo-tmpl
+YAML
+
+    git init --bare -q "$bare_dir"
+    git -C "$work_dir" init -q
+    git -C "$work_dir" add -A
+    git -C "$work_dir" commit -q -m "init"
+    git -C "$work_dir" remote add origin "$bare_dir"
+    git -C "$work_dir" push -q origin main 2>/dev/null || \
+        git -C "$work_dir" push -q origin master 2>/dev/null
+
+    # Should succeed with --var providing the path
+    run_cco project install "$bare_dir" --var "REPO_MY_API=/tmp/my-api" --var "DESCRIPTION=test"
+    assert_output_contains "installed"
+    grep -q '/tmp/my-api' "$CCO_PROJECTS_DIR/repo-tmpl/project.yml" || {
+        echo "ASSERTION FAILED: REPO_MY_API not resolved in project.yml"
+        return 1
+    }
+}
+
 test_install_with_packs_updates_manifest() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"

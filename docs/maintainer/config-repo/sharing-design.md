@@ -66,10 +66,8 @@ All other `lib/*.sh` files that call `share_refresh()` must be updated to
 
 ### Backward compatibility
 
-`cco pack install` (consumer-side) should accept **both** `share.yml` and
-`manifest.yml` in remote repos, for compatibility with repos not yet updated.
-Priority: `manifest.yml` > `share.yml`. Log a deprecation notice if only
-`share.yml` is found.
+No backward compatibility for `share.yml` in remote repos. Only `manifest.yml`
+is supported. Repos using the old `share.yml` must rename to `manifest.yml`.
 
 ---
 
@@ -247,7 +245,7 @@ Options:
   --dry-run          Show what would be published
   --force            Overwrite without confirmation
   --token <token>    Auth token for HTTPS remotes
-  --include-packs    Also publish project's packs (default: true)
+  --no-packs         Don't bundle project's packs (default: packs are included)
 ```
 
 ### Reverse-templating
@@ -565,8 +563,7 @@ But auto-refresh on `pack create/remove` can be made optional or silent.
 5. Rename `tests/test_share.sh` → `tests/test_manifest.sh`
 6. Update test internals
 7. Create migration `005_rename_share_to_manifest.sh`
-8. Update `cco pack install` to accept both `manifest.yml` and `share.yml`
-   (backward compat for remote repos)
+8. No backward compat for `share.yml` — only `manifest.yml` supported
 9. Update all docs references
 10. Run full test suite
 

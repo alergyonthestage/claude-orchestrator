@@ -81,6 +81,25 @@ _cmd_remote_remove() {
         die "Remote '$name' not found."
     fi
 
+    # Warn about packs with publish_target pointing to this remote
+    if [[ -d "${PACKS_DIR:-}" ]]; then
+        local -a affected=()
+        for pack_dir in "$PACKS_DIR"/*/; do
+            [[ ! -d "$pack_dir" ]] && continue
+            local source_file="$pack_dir/.cco-source"
+            [[ ! -f "$source_file" ]] && continue
+            local target
+            target=$(grep '^publish_target:' "$source_file" 2>/dev/null \
+                | sed 's/^publish_target: *//' | tr -d '"'"'")
+            if [[ "$target" == "$name" ]]; then
+                affected+=("$(basename "$pack_dir")")
+            fi
+        done
+        if [[ ${#affected[@]} -gt 0 ]]; then
+            warn "Packs with publish_target '$name': ${affected[*]}"
+        fi
+    fi
+
     # Remove from .cco-remotes
     local tmpfile
     tmpfile=$(mktemp)

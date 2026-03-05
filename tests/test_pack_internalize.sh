@@ -171,6 +171,30 @@ test_pack_internalize_idempotent() {
     assert_output_contains "already self-contained"
 }
 
+test_pack_internalize_empty_files_removes_source() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+
+    # Create pack with source: but empty files list
+    mkdir -p "$CCO_PACKS_DIR/empty-pack/knowledge"
+    cat > "$CCO_PACKS_DIR/empty-pack/pack.yml" <<YAML
+name: empty-pack
+knowledge:
+  source: $tmpdir/docs
+YAML
+    mkdir -p "$tmpdir/docs"
+
+    run_cco pack internalize empty-pack
+    assert_output_contains "0 file(s)"
+
+    # source: field should be removed
+    if grep -q '  source:' "$CCO_PACKS_DIR/empty-pack/pack.yml"; then
+        echo "ASSERTION FAILED: source: field should be removed even with empty files"
+        return 1
+    fi
+}
+
 test_pack_internalize_help() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"

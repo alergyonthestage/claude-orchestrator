@@ -238,3 +238,22 @@ test_remote_list_help() {
     run_cco remote list --help
     assert_output_contains "registered"
 }
+
+test_remote_remove_warns_publish_target() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+
+    # Create a pack with publish_target pointing to the remote
+    mkdir -p "$CCO_PACKS_DIR/my-pack"
+    echo "name: my-pack" > "$CCO_PACKS_DIR/my-pack/pack.yml"
+    cat > "$CCO_PACKS_DIR/my-pack/.cco-source" <<'YAML'
+source: local
+publish_target: acme
+YAML
+
+    run_cco remote add acme "git@github.com:acme/config.git"
+    run_cco remote remove acme
+    assert_output_contains "publish_target"
+    assert_output_contains "my-pack"
+}
