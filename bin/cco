@@ -47,6 +47,7 @@ source "$LIB_DIR/cmd-project.sh"
 source "$LIB_DIR/cmd-pack.sh"
 source "$LIB_DIR/cmd-update.sh"
 source "$LIB_DIR/manifest.sh"
+source "$LIB_DIR/cmd-remote.sh"
 source "$LIB_DIR/remote.sh"
 source "$LIB_DIR/cmd-vault.sh"
 
@@ -83,6 +84,7 @@ Projects & Packs:
   chrome <cmd>           Manage Chrome debug session on host
 
 Sharing & Versioning:
+  remote <cmd>           Manage Config Repo remotes
   manifest <cmd>         Manage manifest.yml for Config Repos
   vault <cmd>            Git-backed config versioning
 
@@ -110,6 +112,8 @@ Usage: cco project <command> [options]
 Commands:
   create <name>          Create a new project from template
   install <url>          Install project template from a remote Config Repo
+  add-pack <proj> <pack> Add a knowledge pack to a project
+  remove-pack <p> <pack> Remove a knowledge pack from a project
   list                   List available projects with status
   show <name>            Show project details (repos, packs, config)
   validate [name]        Validate project structure and configuration
@@ -120,11 +124,13 @@ EOF
         fi
         shift
         case "$subcmd" in
-            create)   cmd_project_create "$@" ;;
-            install)  cmd_project_install "$@" ;;
-            list)     cmd_project_list "$@" ;;
-            show)     cmd_project_show "$@" ;;
-            validate) cmd_project_validate "$@" ;;
+            create)      cmd_project_create "$@" ;;
+            install)     cmd_project_install "$@" ;;
+            add-pack)    cmd_project_add_pack "$@" ;;
+            remove-pack) cmd_project_remove_pack "$@" ;;
+            list)        cmd_project_list "$@" ;;
+            show)        cmd_project_show "$@" ;;
+            validate)    cmd_project_validate "$@" ;;
             *)        die "Unknown project command: $subcmd. Run 'cco project --help'." ;;
         esac
         ;;
@@ -139,6 +145,7 @@ Commands:
   install <url>          Install packs from a remote Config Repo
   update <name>          Update a pack from its remote source
   export <name>          Export a pack as .tar.gz archive
+  internalize <name>     Convert source-referencing pack to self-contained
   list                   List available packs with resource counts
   show <name>            Show pack details (knowledge, agents, rules)
   remove <name>          Remove a pack
@@ -153,8 +160,9 @@ EOF
             create)   cmd_pack_create "$@" ;;
             install)  cmd_pack_install "$@" ;;
             update)   cmd_pack_update "$@" ;;
-            export)   cmd_pack_export "$@" ;;
-            list)     cmd_pack_list "$@" ;;
+            export)       cmd_pack_export "$@" ;;
+            internalize)  cmd_pack_internalize "$@" ;;
+            list)         cmd_pack_list "$@" ;;
             show)     cmd_pack_show "$@" ;;
             remove)   cmd_pack_remove "$@" ;;
             validate) cmd_pack_validate "$@" ;;
@@ -162,6 +170,7 @@ EOF
         esac
         ;;
     chrome)  cmd_chrome "$@" ;;
+    remote)  cmd_remote "$@" ;;
     manifest) cmd_manifest "$@" ;;
     share)    die "'cco share' has been renamed to 'cco manifest'. Run 'cco update' to migrate." ;;
     vault)   cmd_vault "$@" ;;

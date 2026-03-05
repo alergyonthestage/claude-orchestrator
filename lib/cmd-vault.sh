@@ -27,6 +27,9 @@ projects/*/rag-data/
 
 # Pack install temporary files
 packs/*/.cco-install-tmp/
+
+# Machine-specific remote config
+.cco-remotes
 '
 
 # ── Secret patterns for pre-commit scan ───────────────────────────────
@@ -372,27 +375,19 @@ cmd_vault_remote() {
 Usage: cco vault remote <add|remove> <name> [<url>]
 
 Manage vault git remotes.
+Note: 'cco remote' is the preferred way to manage remotes.
 EOF
         return 0
     fi
 
     _check_vault
 
+    # Delegate to cco remote for add/remove (keeps .cco-remotes in sync)
     case "$subcmd" in
-        add)
-            local name="${1:-}" url="${2:-}"
-            [[ -z "$name" || -z "$url" ]] && die "Usage: cco vault remote add <name> <url>"
-            git -C "$USER_CONFIG_DIR" remote add "$name" "$url"
-            ok "Added remote '$name' → $url"
-            ;;
-        remove)
-            local name="${1:-}"
-            [[ -z "$name" ]] && die "Usage: cco vault remote remove <name>"
-            git -C "$USER_CONFIG_DIR" remote remove "$name"
-            ok "Removed remote '$name'"
-            ;;
+        add)    _cmd_remote_add "$@" ;;
+        remove) _cmd_remote_remove "$@" ;;
         *)
-            # Pass through to git remote
+            # Pass through to git remote for other subcommands
             git -C "$USER_CONFIG_DIR" remote "$subcmd" "$@"
             ;;
     esac
