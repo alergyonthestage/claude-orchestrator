@@ -47,6 +47,7 @@ source "$LIB_DIR/cmd-project.sh"
 source "$LIB_DIR/cmd-pack.sh"
 source "$LIB_DIR/cmd-update.sh"
 source "$LIB_DIR/manifest.sh"
+source "$LIB_DIR/cmd-remote.sh"
 source "$LIB_DIR/remote.sh"
 source "$LIB_DIR/cmd-vault.sh"
 
@@ -83,6 +84,7 @@ Projects & Packs:
   chrome <cmd>           Manage Chrome debug session on host
 
 Sharing & Versioning:
+  remote <cmd>           Manage Config Repo remotes
   manifest <cmd>         Manage manifest.yml for Config Repos
   vault <cmd>            Git-backed config versioning
 
@@ -162,6 +164,7 @@ EOF
         esac
         ;;
     chrome)  cmd_chrome "$@" ;;
+    remote)  cmd_remote "$@" ;;
     manifest) cmd_manifest "$@" ;;
     share)    die "'cco share' has been renamed to 'cco manifest'. Run 'cco update' to migrate." ;;
     vault)   cmd_vault "$@" ;;
