@@ -19,29 +19,25 @@ Per-project `secrets.env` for token scoping.
 
 ## 2. Token Flow
 
-```
-global/secrets.env                    projects/<name>/secrets.env
-├── GITHUB_TOKEN=github_pat_aaa      ├── GITHUB_TOKEN=github_pat_bbb  (override)
-├── LINEAR_API_KEY=lin_xxx            └── STRIPE_KEY=sk_test_xxx       (project-only)
-└── SLACK_BOT_TOKEN=xoxb_xxx
-        │                                      │
-        └──────────────┬───────────────────────┘
-                       │
-                cco start <project>
-                load_global_secrets()
-                load_project_secrets()     ← NEW
-                       │
-                docker compose run -e GITHUB_TOKEN=... -e LINEAR_API_KEY=... claude
-                       │
-                entrypoint.sh
-                ├── gh auth login --with-token  (if GITHUB_TOKEN set)
-                ├── gh auth setup-git           (configures git credential helper)
-                ├── ssh-keyscan github.com      (known_hosts, no private keys)
-                └── claude --dangerously-skip-permissions
-                    │
-                    ├── git push          → uses gh credential helper (HTTPS)
-                    ├── gh pr create      → uses gh auth token
-                    └── MCP GitHub        → reads GITHUB_TOKEN from env
+```mermaid
+graph TD
+    GLOBAL["global/secrets.env<br/>GITHUB_TOKEN=github_pat_aaa<br/>LINEAR_API_KEY=lin_xxx<br/>SLACK_BOT_TOKEN=xoxb_xxx"]
+    PROJECT["projects/&lt;name&gt;/secrets.env<br/>GITHUB_TOKEN=github_pat_bbb (override)<br/>STRIPE_KEY=sk_test_xxx (project-only)"]
+
+    GLOBAL --> START["cco start &lt;project&gt;<br/>load_global_secrets()<br/>load_project_secrets()"]
+    PROJECT --> START
+
+    START --> DOCKER["docker compose run<br/>-e GITHUB_TOKEN=... -e LINEAR_API_KEY=... claude"]
+
+    DOCKER --> ENTRY["entrypoint.sh"]
+    ENTRY --> GH1["gh auth login --with-token"]
+    ENTRY --> GH2["gh auth setup-git"]
+    ENTRY --> SSH["ssh-keyscan github.com"]
+    ENTRY --> CLAUDE["claude --dangerously-skip-permissions"]
+
+    CLAUDE --> PUSH["git push → gh credential helper (HTTPS)"]
+    CLAUDE --> PR["gh pr create → gh auth token"]
+    CLAUDE --> MCP["MCP GitHub → reads GITHUB_TOKEN from env"]
 ```
 
 ### What Changes vs Current
@@ -286,42 +282,24 @@ These approaches were tested and **do not** work for authenticating Claude Code 
 
 #### Architecture
 
-```
-┌─── macOS Host ──────────────────────┐
-│                                     │
-│  macOS Keychain                     │
-│  └── "Claude Code-credentials"      │
-│      └── { claudeAiOauth: { ... } } │
-│                                     │
-│  cco start                          │
-│  ├── Reads Keychain                 │
-│  ├── Compares expiresAt             │
-│  └── Seeds .credentials.json       │
-│      if keychain is newer           │
-│                                     │
-│  global/claude-state/               │
-│  ├── claude.json          (prefs)   │──── mounted as ~/.claude.json (rw)
-│  └── .credentials.json   (auth)    │──── mounted as ~/.claude/.credentials.json (rw)
-│                                     │
-└─────────────────────────────────────┘
-                    │
-                    ▼
-┌─── Docker Container (Linux) ────────┐
-│                                     │
-│  /home/claude/                      │
-│  ├── .claude.json          (rw)     │  ← preferences, MCP, onboarding
-│  └── .claude/                       │
-│      ├── .credentials.json (rw)     │  ← OAuth tokens (access + refresh)
-│      ├── settings.json     (ro)     │  ← permissions, hooks
-│      └── ...                        │
-│                                     │
-│  Claude Code reads .credentials.json│
-│  ├── accessToken valid? Use it      │
-│  ├── Expired? Use refreshToken      │
-│  └── Updated tokens written back    │
-│      to .credentials.json (persists)│
-│                                     │
-└─────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph MAC ["macOS Host"]
+        KC["macOS Keychain<br/>'Claude Code-credentials'<br/>{ claudeAiOauth: { ... } }"]
+        CCO["cco start<br/>1. Reads Keychain<br/>2. Compares expiresAt<br/>3. Seeds .credentials.json if newer"]
+        STATE["global/claude-state/<br/>claude.json (prefs)<br/>.credentials.json (auth)"]
+
+        KC --> CCO --> STATE
+    end
+
+    subgraph CONTAINER ["Docker Container (Linux)"]
+        FILES["/home/claude/<br/>├── .claude.json (rw) — prefs, MCP<br/>└── .claude/<br/>    ├── .credentials.json (rw) — OAuth tokens<br/>    └── settings.json (ro) — permissions, hooks"]
+        FLOW["Claude Code reads .credentials.json<br/>accessToken valid? → use it<br/>Expired? → use refreshToken<br/>Updated tokens written back (persists)"]
+
+        FILES --> FLOW
+    end
+
+    STATE -->|"mount rw"| FILES
 ```
 
 #### File locations

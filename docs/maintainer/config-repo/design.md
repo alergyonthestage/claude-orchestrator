@@ -34,24 +34,15 @@ A **Config Repo** is a git repository that follows the standard CCO directory co
 
 The vault is the superset. Sharing is done by pointing to a repo (private or public) that follows the same convention.
 
-```
-                     ┌─────────────────────────────────┐
-                     │       user-config/               │
-                     │       (Config Repo — vault)      │
-                     │                                  │
-                     │  packs/      global/  projects/  │
-                     │  templates/                      │
-                     └──────────────┬──────────────────┘
-                                    │ git push
-               ┌────────────────────┴──────────────────────┐
-               │                                           │
-    ┌──────────┴──────────┐               ┌────────────────┴──────────┐
-    │  github.com/user/   │               │  github.com/company/      │
-    │  vault-private      │               │  team-config              │
-    │  (private remote)   │               │  (private, team access)   │
-    └─────────────────────┘               └───────────────────────────┘
-               │                                           │
-    Personal backup / restore            cco pack install <team-url>
+```mermaid
+graph TD
+    VAULT["user-config/<br/>(Config Repo — vault)<br/>packs/ global/ projects/ templates/"]
+
+    VAULT -->|"git push"| PRIVATE["github.com/user/vault-private<br/>(private remote)"]
+    VAULT -->|"git push"| TEAM["github.com/company/team-config<br/>(private, team access)"]
+
+    PRIVATE -->|"Personal backup / restore"| PRIVATE
+    TEAM -->|"cco pack install &lt;team-url&gt;"| TEAM
 ```
 
 **Rule**: CCO does not implement access control. Visibility is a git hosting concern.

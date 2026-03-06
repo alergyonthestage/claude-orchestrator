@@ -706,46 +706,54 @@ Script: `/usr/local/bin/cco-hooks/statusline.sh` (baked into Docker image). Read
 End-to-end sequence of every context component, from `cco start` on the host
 through on-demand loading during the session.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ HOST                                                            │
-│  cco start <project>                                            │
-│    ├── reads project.yml                                        │
-│    ├── generates docker-compose.yml                             │
-│    ├── generates .claude/workspace.yml           ← new          │
-│    ├── generates .claude/packs.md               ← new format   │
-│    ├── copies pack skills/agents/rules                          │
-│    └── docker compose run --rm claude                           │
-│                                                                 │
-│ CONTAINER STARTUP (entrypoint.sh)                               │
-│    ├── fix docker socket GID                                    │
-│    ├── copy .claude.json.seed → ~/.claude.json (writable)        │
-│    ├── merge mcp-global.json + .mcp.json → ~/.claude.json       │
-│    └── exec gosu claude: tmux → claude --dangerously-skip…      │
-│                                                                 │
-│ CLAUDE CODE LAUNCH                                              │
-│    ├── reads ~/.claude/settings.json    (user scope)            │
-│    ├── reads ~/.claude/CLAUDE.md        (user scope)            │
-│    ├── reads ~/.claude/rules/*.md       (user scope)            │
-│    ├── reads ~/.claude/agents/*.md      (user scope)            │
-│    ├── reads /workspace/.claude/settings.json  (project scope)  │
-│    ├── reads /workspace/.claude/CLAUDE.md      (project scope)  │
-│    ├── reads /workspace/.claude/rules/*.md     (project scope)  │
-│    └── reads /workspace/.claude/agents/*.md    (project scope)  │
-│                                                                 │
-│ SESSION START HOOK (session-context.sh)                         │
-│    ├── injects repo list → additionalContext                    │
-│    ├── injects MCP server list → additionalContext              │
-│    └── injects packs.md content → additionalContext             │
-│                                                                 │
-│ ON-DEMAND (during session)                                      │
-│    ├── /workspace/<repo>/.claude/CLAUDE.md  (repo nested)       │
-│    ├── /workspace/.packs/<name>/<file>      (pack knowledge)    │
-│    └── ~/.claude/projects/-workspace/memory/ (auto memory)      │
-│                                                                 │
-│ USER INVOCATION                                                 │
-│    └── skills: ~/.claude/skills/ and /workspace/.claude/skills/ │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph HOST ["HOST — cco start &lt;project&gt;"]
+        H1[reads project.yml]
+        H2[generates docker-compose.yml]
+        H3[generates .claude/workspace.yml]
+        H4[generates .claude/packs.md]
+        H5[copies pack skills/agents/rules]
+        H6[docker compose run --rm claude]
+        H1 --> H2 --> H3 --> H4 --> H5 --> H6
+    end
+
+    subgraph ENTRY ["CONTAINER STARTUP — entrypoint.sh"]
+        E1[fix docker socket GID]
+        E2[copy .claude.json.seed → ~/.claude.json]
+        E3[merge mcp-global.json + .mcp.json → ~/.claude.json]
+        E4[exec gosu claude: tmux → claude]
+        E1 --> E2 --> E3 --> E4
+    end
+
+    subgraph LAUNCH ["CLAUDE CODE LAUNCH"]
+        L1["~/.claude/settings.json (user)"]
+        L2["~/.claude/CLAUDE.md (user)"]
+        L3["~/.claude/rules/*.md (user)"]
+        L4["~/.claude/agents/*.md (user)"]
+        L5["/workspace/.claude/settings.json (project)"]
+        L6["/workspace/.claude/CLAUDE.md (project)"]
+        L7["/workspace/.claude/rules/*.md (project)"]
+        L8["/workspace/.claude/agents/*.md (project)"]
+    end
+
+    subgraph HOOK ["SESSION START HOOK — session-context.sh"]
+        K1[injects repo list → additionalContext]
+        K2[injects MCP server list → additionalContext]
+        K3[injects packs.md content → additionalContext]
+    end
+
+    subgraph DEMAND ["ON-DEMAND — during session"]
+        D1["/workspace/&lt;repo&gt;/.claude/CLAUDE.md (repo nested)"]
+        D2["/workspace/.packs/&lt;name&gt;/&lt;file&gt; (pack knowledge)"]
+        D3["~/.claude/projects/-workspace/memory/ (auto memory)"]
+    end
+
+    subgraph USER ["USER INVOCATION"]
+        U1["skills: ~/.claude/skills/ and /workspace/.claude/skills/"]
+    end
+
+    HOST --> ENTRY --> LAUNCH --> HOOK --> DEMAND --> USER
 ```
 
 ---

@@ -179,27 +179,20 @@ The `Dockerfile` uses `npm install -g @anthropic-ai/claude-code` which is deprec
 
 Features are prioritized by impact for third-party users adopting claude-orchestrator. Each sprint can be implemented independently.
 
-```
-COMPLETED: Bugfix #B1, Sprint 4, Sprint 6+10 (Config Repo), Sprint 6b (Sharing Enhancements)
+```mermaid
+graph LR
+    DONE["✅ Completed<br/>Bugfix #B1, Sprint 4,<br/>Sprint 6+10, Sprint 6b"]
 
-Sprint 5 (onboarding)
-┌──────────────────────┐
-│ #5 Interactive       │
-│    Tutorial Project  │
-└──────────────────────┘
+    S5["Sprint 5 (onboarding)<br/>#5 Interactive Tutorial"]
+    S7["Sprint 7 (isolamento)<br/>#6 Git Worktree<br/>#7 Session Resume"]
+    S8["Sprint 8 (ecosistema)<br/>#9 Pack inheritance"]
+    S9["Sprint 9 (polish)<br/>#10 cco project edit<br/>#10b StatusLine"]
+    S11["Sprint 11 (intelligence)<br/>#13 Project RAG"]
 
-Sprint 7 (isolamento)          Sprint 8 (ecosistema)
-┌──────────────────────┐       ┌──────────────────────┐
-│ #6 Git Worktree      │       │ #9 Pack inheritance  │
-│    Isolation          │       └──────────────────────┘
-│ #7 Session Resume    │
-└──────────────────────┘
-
-Sprint 9 (polish)              Sprint 11 (intelligence)
-┌──────────────────────┐       ┌──────────────────────┐
-│ #10 cco project edit │       │ #13 Project RAG      │
-│ #10b StatusLine      │       │     (default MCP)    │
-└──────────────────────┘       └──────────────────────┘
+    DONE --> S5 --> S7
+    S7 --> S8
+    S7 --> S9
+    S9 --> S11
 ```
 
 ---

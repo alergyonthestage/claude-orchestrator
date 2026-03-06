@@ -6,16 +6,16 @@
 
 ## What it solves
 
-Working with Claude Code on real projects has a recurring friction: every new session, you re-explain the project. Every new teammate, they configure Claude differently. Every client switch, you manually reload context.
+Claude Code already supports `CLAUDE.md`, settings, agents, skills, and rules — but these are scoped to individual repositories. When you work across multiple repos, clients, or teams, you end up managing context manually: copying instructions between repos, re-explaining multi-repo architectures, and keeping teammates' environments in sync.
 
-claude-orchestrator eliminates that friction. Each project is a self-contained environment — repos mounted, instructions loaded, documentation available — ready at startup, shareable across your team.
+claude-orchestrator builds on top of Claude Code's native features — it doesn't replace them. It adds a **project layer** that groups multiple repositories into a single workspace, with shared instructions, knowledge packs, agents, and rules that apply across all repos in the project. Everything is versioned and shareable.
 
 | Problem | Solution |
 |---|---|
-| Every session, you re-explain the project to Claude | Per-project `CLAUDE.md` + knowledge packs: context is ready at startup |
-| Different rules and docs per project/client | Each project is isolated: its own repos, instructions, memory |
+| Multi-repo projects require context that spans repositories (frontend + backend + infra) | A **project** groups multiple repos under a single workspace with a cross-repo `CLAUDE.md` |
+| Rules, agents, and conventions must be duplicated in each repo's `.claude/` | **Knowledge packs** bundle shared docs, agents, rules, and skills — activated per project, zero duplication |
 | Your team configures Claude differently — no shared baseline | Commit the project directory: everyone gets the same repos, instructions, rules, and agents |
-| Client docs and architecture specs scattered across sessions | Knowledge packs: define once, activate per project |
+| Switching between clients means manually reloading context | Each project is isolated: its own repos, instructions, and memory. `cco start client-a` vs `cco start client-b` |
 | Claude modifying files across the wrong project | Docker isolation: Claude can only touch what's mounted |
 | `--dangerously-skip-permissions` feels risky on your machine | Safe in the container — Docker is the sandbox |
 

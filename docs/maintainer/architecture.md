@@ -8,57 +8,43 @@
 
 ## 1. System Overview
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                        HOST (macOS + Docker Desktop)                  │
-│                                                                      │
-│   claude-orchestrator/           ~/projects/                         │
-│   ├── bin/cco (CLI)              ├── backend-api/                    │
-│   ├── defaults/                  │   └── .claude/  (repo context)    │
-│   │   ├── global/.claude/        ├── frontend-app/                   │
-│   │   └── _template/             │   └── .claude/                    │
-│   ├── user-config/                └── shared-libs/                    │
-│   │   ├── global/.claude/ (user)                                     │
-│   │   └── projects/                                                  │
-│   │       └── my-saas/                                               │
-│   │           ├── project.yml                                        │
-│   │           └── .claude/                                           │
-│   └── Dockerfile                                                     │
-│                                                                      │
-│   Docker Socket (/var/run/docker.sock)                               │
-│         │                                                            │
-│         ▼                                                            │
-│   ┌────────────────────────────────────────────────────────────┐     │
-│   │               Claude Code Container                         │     │
-│   │                                                             │     │
-│   │   ~/.claude/           ← user-config/global/.claude/ (user)  │     │
-│   │   /workspace/          ← WORKDIR                            │     │
-│   │   ├── .claude/         ← project/.claude (mount)            │     │
-│   │   ├── backend-api/     ← ~/projects/backend-api (mount)     │     │
-│   │   ├── frontend-app/    ← ~/projects/frontend-app (mount)    │     │
-│   │   └── shared-libs/     ← ~/projects/shared-libs (mount)     │     │
-│   │                                                             │     │
-│   │   /var/run/docker.sock ← host socket (mount)                │     │
-│   │                                                             │     │
-│   │   $ claude --dangerously-skip-permissions                   │     │
-│   │                                                             │     │
-│   │   Can run:                                                  │     │
-│   │   - npm run dev (ports exposed to host)                     │     │
-│   │   - docker compose up (creates sibling containers)          │     │
-│   │   - git commit/push (via gh credential helper)               │     │
-│   └──────────────┬─────────────────────────────────────────────┘     │
-│                  │ docker compose up                                  │
-│                  ▼                                                    │
-│   ┌──────────────────────────────────────────┐                       │
-│   │        Sibling Containers                 │                       │
-│   │  (created by Claude via Docker socket)    │                       │
-│   │                                           │                       │
-│   │  ┌─────────┐ ┌───────┐ ┌───────────┐    │                       │
-│   │  │ postgres │ │ redis │ │ nginx/app │    │                       │
-│   │  │ :5432   │ │ :6379 │ │ :80/:443  │    │                       │
-│   │  └─────────┘ └───────┘ └───────────┘    │                       │
-│   └──────────────────────────────────────────┘                       │
-└──────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph HOST ["HOST (macOS + Docker Desktop)"]
+        subgraph CCO ["claude-orchestrator/"]
+            CLI["bin/cco (CLI)"]
+            DEFAULTS["defaults/<br/>├── global/.claude/<br/>└── _template/"]
+            USERCONF["user-config/<br/>├── global/.claude/ (user)<br/>└── projects/my-saas/<br/>    ├── project.yml<br/>    └── .claude/"]
+            DOCKERFILE[Dockerfile]
+        end
+
+        subgraph REPOS ["~/projects/"]
+            BACKEND["backend-api/<br/>└── .claude/"]
+            FRONTEND["frontend-app/<br/>└── .claude/"]
+            SHARED["shared-libs/"]
+        end
+
+        SOCKET["/var/run/docker.sock"]
+
+        subgraph CONTAINER ["Claude Code Container"]
+            DOTCLAUDE["~/.claude/ ← user-config/global/.claude/"]
+            WORKSPACE["/workspace/ (WORKDIR)<br/>├── .claude/ ← project mount<br/>├── backend-api/ ← repo mount<br/>├── frontend-app/ ← repo mount<br/>└── shared-libs/ ← repo mount"]
+            DOCKSOCK["/var/run/docker.sock ← host socket"]
+            CLAUDE["$ claude --dangerously-skip-permissions<br/>Can run: npm run dev, docker compose up, git commit/push"]
+        end
+
+        subgraph SIBLINGS ["Sibling Containers (via Docker socket)"]
+            PG["postgres :5432"]
+            REDIS["redis :6379"]
+            NGINX["nginx/app :80/:443"]
+        end
+    end
+
+    SOCKET --> DOCKSOCK
+    USERCONF -->|mount| DOTCLAUDE
+    USERCONF -->|mount| WORKSPACE
+    REPOS -->|mount| WORKSPACE
+    CLAUDE -->|"docker compose up"| SIBLINGS
 ```
 
 ---
@@ -310,101 +296,69 @@ See [SUBAGENTS.md](../user-guides/advanced/subagents.md) for full specification.
 
 ### 4.1 Session Startup Flow
 
-```
-User runs: cco start my-saas
-         │
-         ▼
-┌─────────────────────────┐
-│  1. Read project.yml     │
-│     - repos list         │
-│     - auth method        │
-│     - docker options     │
-└────────┬────────────────┘
-         │
-         ▼
-┌─────────────────────────┐
-│  2. Validate repos       │
-│     - Check paths exist  │
-│     - Check git status   │
-└────────┬────────────────┘
-         │
-         ▼
-┌─────────────────────────┐
-│  3. Generate compose     │
-│     - Volume mounts      │
-│     - Port mappings      │
-│     - Environment vars   │
-│     - Network config     │
-└────────┬────────────────┘
-         │
-         ▼
-┌─────────────────────────┐
-│  4. docker compose run   │
-│     --rm --service-ports │
-│     claude               │
-└────────┬────────────────┘
-         │
-         ▼
-┌─────────────────────────┐
-│  5. Entrypoint script    │
-│     - Start tmux (opt.)  │
-│     - Launch claude      │
-│       --dangerously-     │
-│       skip-permissions   │
-└────────┬────────────────┘
-         │
-         ▼
-┌─────────────────────────┐
-│  6. Claude Code UI       │
-│     - Loads ~/.claude/   │
-│     - Loads /workspace/  │
-│       .claude/           │
-│     - User works         │
-└─────────────────────────┘
+```mermaid
+graph TD
+    START["cco start my-saas"] --> S1
+
+    S1["1. Read project.yml<br/>repos list, auth method, docker options"]
+    S1 --> S2["2. Validate repos<br/>check paths exist, check git status"]
+    S2 --> S3["3. Generate compose<br/>volume mounts, port mappings,<br/>environment vars, network config"]
+    S3 --> S4["4. docker compose run<br/>--rm --service-ports claude"]
+    S4 --> S5["5. Entrypoint script<br/>start tmux (opt.), launch claude<br/>--dangerously-skip-permissions"]
+    S5 --> S6["6. Claude Code UI<br/>loads ~/.claude/ + /workspace/.claude/<br/>user works"]
 ```
 
 ### 4.2 Context Resolution at Launch
 
-```
-Claude Code startup in /workspace:
-         │
-         ├── Load /etc/claude-code/managed-settings.json     (managed — non-overridable)
-         ├── Load /etc/claude-code/CLAUDE.md                 (managed instructions)
-         │
-         ├── Load ~/.claude/settings.json                    (user settings — merged with managed)
-         ├── Load ~/.claude/CLAUDE.md                        (user instructions)
-         ├── Load ~/.claude/rules/*.md                       (user rules)
-         │
-         ├── Load /workspace/.claude/settings.json           (project settings — overrides user)
-         ├── Load /workspace/.claude/CLAUDE.md               (project instructions)
-         │   OR /workspace/CLAUDE.md
-         ├── Load /workspace/.claude/rules/*.md              (project rules)
-         │
-         │   [ON-DEMAND when Claude reads files in subdirs]
-         ├── Load /workspace/repo-x/.claude/CLAUDE.md        (repo instructions)
-         ├── Load /workspace/repo-x/.claude/rules/*.md       (repo rules)
-         └── Load /workspace/repo-x/subdir/CLAUDE.md         (subdir instructions)
+```mermaid
+graph TD
+    START["Claude Code startup in /workspace"] --> M1
+
+    subgraph MANAGED ["Managed (non-overridable)"]
+        M1["/etc/claude-code/managed-settings.json"]
+        M2["/etc/claude-code/CLAUDE.md"]
+    end
+
+    subgraph USER ["User (merged with managed)"]
+        U1["~/.claude/settings.json"]
+        U2["~/.claude/CLAUDE.md"]
+        U3["~/.claude/rules/*.md"]
+    end
+
+    subgraph PROJECT ["Project (overrides user)"]
+        P1["/workspace/.claude/settings.json"]
+        P2["/workspace/.claude/CLAUDE.md"]
+        P3["/workspace/.claude/rules/*.md"]
+    end
+
+    subgraph ONDEMAND ["On-demand (when Claude reads subdirs)"]
+        R1["/workspace/repo-x/.claude/CLAUDE.md"]
+        R2["/workspace/repo-x/.claude/rules/*.md"]
+        R3["/workspace/repo-x/subdir/CLAUDE.md"]
+    end
+
+    M1 --> M2 --> U1 --> U2 --> U3 --> P1 --> P2 --> P3 --> R1 --> R2 --> R3
 ```
 
 ### 4.3 Network Flow: Dev Server
 
-```
-1. Claude runs: npm run dev (in container, port 3000)
-2. Server binds to 0.0.0.0:3000 inside container
-3. docker-compose port mapping: "3000:3000"
-4. Docker Desktop routes localhost:3000 on macOS → container:3000
-5. Developer opens browser → localhost:3000 ✓
+```mermaid
+graph LR
+    A["1. Claude runs npm run dev<br/>(container, port 3000)"] --> B["2. Server binds to<br/>0.0.0.0:3000"]
+    B --> C["3. docker-compose<br/>port mapping 3000:3000"]
+    C --> D["4. Docker Desktop routes<br/>localhost:3000 → container:3000"]
+    D --> E["5. Developer opens browser<br/>→ localhost:3000 ✓"]
 ```
 
 ### 4.4 Network Flow: Docker-from-Docker
 
-```
-1. Claude runs: docker compose -f infra/docker-compose.yml up
-2. Docker CLI in container → host Docker daemon (via socket)
-3. Host daemon creates postgres, redis, nginx containers
-4. Shared network "project-net" connects all containers
-5. Claude container reaches postgres via: postgres:5432 (docker DNS)
-6. macOS reaches postgres via: localhost:5432 (port mapping)
+```mermaid
+graph LR
+    A["1. Claude runs<br/>docker compose up"] --> B["2. Docker CLI →<br/>host daemon (socket)"]
+    B --> C["3. Host creates postgres,<br/>redis, nginx containers"]
+    C --> D["4. Shared network<br/>connects all containers"]
+    D --> E["5. Claude → postgres:5432<br/>(Docker DNS)"]
+    D --> F["6. macOS → localhost:5432<br/>(port mapping)"]
 ```
 
 ---

@@ -24,13 +24,18 @@ git clone <repo-url> ~/claude-orchestrator
 cd ~/claude-orchestrator
 
 # 2. Add the CLI to PATH
-# bash:
-echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.bashrc
-source ~/.bashrc
+# zsh (macOS default):
+echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.zshrc
+source ~/.zshrc
 
-# zsh:
-# echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.zshrc
-# source ~/.zshrc
+# bash:
+# echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.bashrc
+# source ~/.bashrc
+#
+# macOS note: Terminal.app loads ~/.bash_profile, not ~/.bashrc.
+# If using bash on macOS, either add the export to ~/.bash_profile,
+# or add this line to ~/.bash_profile to load .bashrc:
+#   [[ -f ~/.bashrc ]] && source ~/.bashrc
 
 # 3. Initialize user configuration and build Docker image
 cco init

@@ -420,22 +420,21 @@ Docker Desktop for Mac runs Docker inside a Linux VM. This has implications:
 
 ### 3.2 Networking Strategy
 
-```
-┌─────────────────────────────────────────────────┐
-│  macOS Host                                      │
-│  localhost:3000 ─────────► Claude container:3000 │
-│  localhost:5432 ─────────► Postgres container    │
-│                                                  │
-│  ┌────────────────────────────────────────────┐  │
-│  │  Docker Network: cc-my-saas               │  │
-│  │                                            │  │
-│  │  ┌────────────┐    ┌────────────────────┐ │  │
-│  │  │  claude     │◄──►│  postgres:5432     │ │  │
-│  │  │  :3000     │    │  redis:6379        │ │  │
-│  │  │  :8080     │    │  nginx:80          │ │  │
-│  │  └────────────┘    └────────────────────┘ │  │
-│  └────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph HOST ["macOS Host"]
+        L3000["localhost:3000"]
+        L5432["localhost:5432"]
+
+        subgraph NET ["Docker Network: cc-my-saas"]
+            CLAUDE["claude<br/>:3000 :8080"]
+            SERVICES["postgres:5432<br/>redis:6379<br/>nginx:80"]
+            CLAUDE <-->|"Docker DNS"| SERVICES
+        end
+    end
+
+    L3000 -->|"port mapping"| CLAUDE
+    L5432 -->|"port mapping"| SERVICES
 ```
 
 **Key rules**:
