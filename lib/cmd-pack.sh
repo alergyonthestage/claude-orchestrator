@@ -390,9 +390,12 @@ cmd_pack_install() {
             --force) force=true; shift ;;
             --help)
                 cat <<'EOF'
-Usage: cco pack install <git-url> [options]
+Usage: cco pack install <source> [options]
 
 Install packs from a remote Config Repo.
+
+Arguments:
+  <source>          Git URL or registered remote name
 
 Options:
   --pick <name>     Install a specific pack by name
@@ -400,6 +403,10 @@ Options:
   --force           Overwrite existing packs without asking
 
 URL can include @ref suffix: <url>@<branch-or-tag>
+
+Examples:
+  cco pack install albit --pick alberghi-it
+  cco pack install https://github.com/team/config.git
 EOF
                 return 0
                 ;;
@@ -414,8 +421,18 @@ EOF
         esac
     done
 
-    [[ -z "$url" ]] && die "Usage: cco pack install <git-url> [--pick <name>]"
+    [[ -z "$url" ]] && die "Usage: cco pack install <source> [--pick <name>]\n\n<source> can be a git URL or a registered remote name."
     check_global
+
+    # Resolve remote name → URL + token
+    local resolved_url
+    resolved_url=$(remote_get_url "$url" 2>/dev/null) || true
+    if [[ -n "$resolved_url" ]]; then
+        if [[ -z "$token" ]]; then
+            token=$(remote_get_token "$url" 2>/dev/null) || true
+        fi
+        url="$resolved_url"
+    fi
 
     # Parse @ref suffix
     local ref=""
