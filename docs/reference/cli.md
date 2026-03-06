@@ -850,7 +850,7 @@ Usage: cco vault status
 
 ---
 
-### 3.19b `cco project publish`
+### 3.21 `cco project publish`
 
 Publish a project as a shareable template to a remote Config Repo.
 
@@ -883,7 +883,7 @@ Use `--no-packs` to skip this.
 
 ---
 
-### 3.19c `cco project add-pack` / `cco project remove-pack`
+### 3.22 `cco project add-pack` / `cco project remove-pack`
 
 Add or remove a knowledge pack from a project's `packs:` list.
 
@@ -898,7 +898,7 @@ Examples:
 
 ---
 
-### 3.19d `cco pack publish`
+### 3.23 `cco pack publish`
 
 Publish a pack to a remote Config Repo.
 
@@ -927,7 +927,7 @@ automatically internalized during publish (local pack unchanged).
 
 ---
 
-### 3.19e `cco pack internalize`
+### 3.24 `cco pack internalize`
 
 Convert a source-referencing pack to self-contained.
 
@@ -944,7 +944,7 @@ This is a one-way operation — the original source path is not preserved.
 
 ---
 
-### 3.20 `cco remote`
+### 3.25 `cco remote`
 
 Manage named Config Repo remotes for publishing and installing.
 
@@ -1006,7 +1006,7 @@ Examples:
 
 ---
 
-### 3.21 `cco manifest`
+### 3.26 `cco manifest`
 
 Manage the `manifest.yml` manifest for sharing packs and templates via Config Repos.
 
