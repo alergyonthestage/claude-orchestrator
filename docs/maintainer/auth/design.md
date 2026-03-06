@@ -373,7 +373,7 @@ This ensures theme preferences and other settings stay current. The `hasComplete
 #    - Permissions: Contents (read/write), Pull requests (read/write)
 
 # 2. Save token:
-echo "GITHUB_TOKEN=github_pat_..." >> ~/claude-orchestrator/global/secrets.env
+echo "GITHUB_TOKEN=github_pat_..." >> ~/claude-orchestrator/user-config/global/secrets.env
 
 # 3. Rebuild image (to get gh CLI, if not already built with it):
 cco build
@@ -389,7 +389,7 @@ cco start my-project
 ```bash
 # Create a different PAT scoped to this project's repos
 echo "GITHUB_TOKEN=github_pat_project_specific..." > \
-    ~/claude-orchestrator/projects/my-project/secrets.env
+    ~/claude-orchestrator/user-config/projects/my-project/secrets.env
 ```
 
 ---

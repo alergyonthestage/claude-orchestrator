@@ -15,7 +15,7 @@ Container sessions need to interact with external services — primarily GitHub 
 - **MCP GitHub**: works only if `GITHUB_TOKEN` is manually set in `secrets.env`, but there's no documented setup flow
 - **No per-project secrets**: all projects share `global/secrets.env` — different token scopes per project are not possible
 
-This is a blocker for the worktree workflow (see [worktree analysis](./worktree-isolation.md)), which relies on Claude creating PRs and pushing during sessions.
+This is a blocker for the worktree workflow (see [worktree analysis](../future/worktree/analysis.md)), which relies on Claude creating PRs and pushing during sessions.
 
 ---
 

@@ -2,7 +2,7 @@
 
 > Date: 2026-02-26
 > Status: Sprint 2 completed — Sprint 3 pending
-> Related: [roadmap.md](../maintainer/roadmap.md) | [progress review](./reviews/26-02-2026-progress-review.md)
+> Related: [roadmap.md](../maintainer/roadmap.md) | [progress review](./26-02-2026-progress-review.md)
 
 ---
 
@@ -27,7 +27,7 @@ Sprint 2 is **independent** (no technical dependencies with Sprint 3). Sprint 3 
 **Sprint**: 2 (quality of life) — **Completed 2026-02-26**
 **Effort**: Low (1 session)
 **Risk**: None — config-only, no code logic changes
-**Analysis doc**: [`terminal-clipboard-and-mouse.md`](./terminal-clipboard-and-mouse.md)
+**Analysis doc**: [`terminal-clipboard-and-mouse.md`](../agent-teams/analysis.md)
 
 ### Problem
 
