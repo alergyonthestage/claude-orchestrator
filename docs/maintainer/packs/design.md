@@ -17,16 +17,16 @@ A pack is a self-contained bundle that groups:
 - **Agents** — definitions of specialized subagents
 - **Rules** — additional rules for session context
 
-A pack is defined once in `global/packs/<name>/` and activated in any project by adding its name to the `packs:` list in `project.yml`. All sections are optional: a pack can contain only knowledge, only skills, or any combination.
+A pack is defined once in `user-config/packs/<name>/` and activated in any project by adding its name to the `packs:` list in `project.yml`. All sections are optional: a pack can contain only knowledge, only skills, or any combination.
 
 ---
 
 ## 2. Pack Format — `pack.yml`
 
-Each pack is defined by a `pack.yml` file in its own directory under `global/packs/`:
+Each pack is defined by a `pack.yml` file in its own directory under `user-config/packs/`:
 
 ```yaml
-# global/packs/my-client/pack.yml
+# user-config/packs/my-client/pack.yml
 
 name: my-client
 
@@ -60,7 +60,7 @@ The `name` field must match the pack's directory name. `cco pack validate` emits
 ### Pack directory structure
 
 ```
-global/packs/<name>/
+user-config/packs/<name>/
 ├── pack.yml              # Pack manifest
 ├── knowledge/            # Fallback if knowledge.source is not specified
 │   ├── overview.md
@@ -234,9 +234,9 @@ Here's what happens, step by step, when `cco start` processes packs:
    ```
 
 5. **Resource copy** — skills, agents, and rules from each pack are copied to their respective subdirectories of `projects/<name>/.claude/`:
-   - `global/packs/<name>/skills/<skill>/` → `projects/<name>/.claude/skills/<skill>/`
-   - `global/packs/<name>/agents/<agent>.md` → `projects/<name>/.claude/agents/<agent>.md`
-   - `global/packs/<name>/rules/<rule>.md` → `projects/<name>/.claude/rules/<rule>.md`
+   - `user-config/packs/<name>/skills/<skill>/` → `projects/<name>/.claude/skills/<skill>/`
+   - `user-config/packs/<name>/agents/<agent>.md` → `projects/<name>/.claude/agents/<agent>.md`
+   - `user-config/packs/<name>/rules/<rule>.md` → `projects/<name>/.claude/rules/<rule>.md`
 
 6. **Manifest write** — the new `.pack-manifest` is written with all copied paths.
 

@@ -59,7 +59,7 @@ Main sections:
 - **`docker.env`** — environment variables available in the container
 - **`packs`** — knowledge packs to activate (optional)
 
-For the complete reference, see [cli.md](../reference/cli.md).
+For the complete reference, see [project-yaml.md](../reference/project-yaml.md).
 
 ---
 
@@ -129,9 +129,8 @@ Claude can create agent teams to work in parallel. In tmux mode (default), each 
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl-b` + arrow keys | Navigate between panes |
+| `Alt` + arrow keys | Navigate between panes |
 | `Ctrl-b` + `z` | Zoom/unzoom current pane |
-| `Ctrl-b` + `[` | Scroll mode (then `q` to exit) |
 
 ### Docker-from-Docker
 
@@ -145,12 +144,16 @@ Claude will run `docker compose up` creating sibling containers on the host, rea
 
 ### Copy text from tmux
 
-To copy text (e.g., authentication URL):
+tmux intercepts mouse events, so copy-paste works differently. The easiest method depends on your terminal:
 
-1. `Ctrl-b` + `[` — enter copy mode
-2. Navigate and select with arrow keys
-3. `Enter` — copy to tmux clipboard
-4. `Ctrl-b` + `]` — paste
+| Terminal | How to copy |
+|----------|-------------|
+| **iTerm2** | Click and drag to select → release to auto-copy → `Cmd+V` to paste. Requires one-time setup: Settings → General → Selection → "Applications in terminal may access clipboard" |
+| **Terminal.app** | Hold `fn` while dragging to select → right-click while holding `fn` → Copy |
+| **Alacritty, WezTerm, Kitty, Ghostty** | Click and drag to select → release to auto-copy → `Cmd+V` / `Ctrl+Shift+V` to paste |
+| **GNOME Terminal** | Hold `Shift` while dragging → `Ctrl+Shift+C` to copy |
+
+For precise selections (scrollback, column mode) or troubleshooting, see the [full copy-paste guide](../user-guides/agent-teams.md#24-copy--paste-in-tmux-mode).
 
 ---
 

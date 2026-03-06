@@ -5,7 +5,7 @@
 ---
 
 ```yaml
-# projects/<name>/project.yml
+# user-config/projects/<name>/project.yml
 
 name: my-saas-platform
 description: "Main SaaS platform with API, frontend, and shared libraries"
@@ -29,7 +29,7 @@ extra_mounts:
 
 # ── Knowledge Packs (optional) ───────────────────────────────────────
 packs:
-  - my-client-knowledge   # References global/packs/my-client-knowledge/pack.yml
+  - my-client-knowledge   # References user-config/packs/my-client-knowledge/pack.yml
 
 # ── Docker options ───────────────────────────────────────────────────
 docker:
@@ -94,7 +94,7 @@ browser:
 
 Knowledge packs bundle reusable documentation, skills, agents, and rules that can be shared across multiple projects without copying files.
 
-**Pack definition** — `global/packs/<name>/pack.yml`:
+**Pack definition** — `user-config/packs/<name>/pack.yml`:
 ```yaml
 name: my-client
 
@@ -136,14 +136,14 @@ All sections are optional. A knowledge-only pack needs only the `knowledge:` sec
    - /workspace/.packs/my-client/business-overview.md — Read for business context
    ```
 5. `session-context.sh` (SessionStart hook) injects `packs.md` into `additionalContext` automatically — **no CLAUDE.md edit needed**
-6. Skills, agents, and rules are copied from `global/packs/<name>/` into `projects/<n>/.claude/`
+6. Skills, agents, and rules are copied from `user-config/packs/<name>/` into `user-config/projects/<n>/.claude/`
 7. A `.pack-manifest` file is written tracking all copied files (used for cleanup on next start)
 
 **Name conflicts**: If two packs define the same agent, rule, or skill name, the last pack listed in `project.yml` wins. A warning is emitted. See [ADR-9](../maintainer/architecture.md) for the design rationale.
 
-**Pack directory** — `global/packs/` (gitignored, created by `cco init`):
+**Pack directory** — `user-config/packs/` (gitignored from orchestrator repo, created by `cco init`):
 ```
-global/
+user-config/
   packs/
     my-client/
       pack.yml

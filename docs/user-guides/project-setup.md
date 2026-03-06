@@ -253,99 +253,29 @@ This lets you clone the `claude-orchestrator` repo on multiple machines while ke
 
 ---
 
-## 6. Versioning User Configuration
+## 6. Versioning and Sharing Configuration
 
-Since `user-config/` is gitignored in the orchestrator repo, you can version it separately using the built-in `cco vault` commands.
-
-### Using `cco vault`
-
-The vault provides git-backed versioning for your `user-config/` directory with built-in secret detection to prevent accidental commits of tokens or credentials.
+Since `user-config/` is gitignored in the orchestrator repo, you can version it separately with the built-in vault, and share packs and templates with your team via Config Repos.
 
 ```bash
-# Initialize versioning for user-config/
-cco vault init
-
-# Check current state
-cco vault status
-
-# See uncommitted changes grouped by category
-cco vault diff
-
-# Commit changes (with automatic secret detection)
-cco vault sync "Added new pack for client project"
-
-# View history
-cco vault log
-```
-
-### Sharing Across Machines
-
-If you work across multiple machines, push the vault to a remote:
-
-```bash
-# On the main machine
-cco vault init
-cd user-config/
-git remote add origin <your-config-repo-url>
-git push -u origin main
-```
-
-On another machine:
-
-```bash
-# Clone the orchestrator
-git clone <orchestrator-url> ~/claude-orchestrator
-cd ~/claude-orchestrator
-cco init  # creates user-config/ from defaults
-
-# Or: replace user-config/ with your config repo
-rm -rf user-config/
-git clone <your-config-repo-url> user-config/
-```
-
-For the full sharing workflow (installing packs from remote, sharing project templates, multi-machine sync), see the [Config Repo guide](config-repo.md).
-
-### Managing Defaults Updates
-
-When the tool is updated (`git pull`), system files (skills, agents, rules, settings.json) are automatically synced on the next `cco start` or `cco init`. User defaults (CLAUDE.md, mcp.json, language.md) are not overwritten.
-
-```bash
-# System files sync automatically — no action needed for skills/agents/rules/settings
-
-# To compare user defaults with new versions:
-diff defaults/global/.claude/CLAUDE.md user-config/global/.claude/CLAUDE.md
-
-# To reset user defaults (overwrites CLAUDE.md, mcp.json, language.md):
-cco init --force
-```
-
-### Practical Example
-
-```bash
-# Initial setup
-git clone <orchestrator-url> ~/claude-orchestrator
-cd ~/claude-orchestrator
-cco init                                    # Copies user defaults + syncs system files, builds image
-
-# Customize
-vim user-config/global/.claude/CLAUDE.md                # Your global instructions
-vim user-config/global/.claude/rules/my-rules.md        # Your custom rules
-
-# Create projects
-cco project create my-app --repo ~/code/my-app
-vim user-config/projects/my-app/.claude/CLAUDE.md       # Instructions for this project
-
-# Version your config
+# Version your config with automatic secret detection
 cco vault init
 cco vault sync "Initial config"
+cco vault push                    # Push to a remote for backup
 
-# Update the tool (no conflicts!)
-git pull                                    # Updates only defaults/, bin/, docs/
+# Install packs from a team Config Repo
+cco pack install git@github.com:my-org/cco-config
 ```
+
+When the orchestrator is updated (`git pull`), system files (skills, agents, rules, settings.json) are automatically synced on the next `cco start` or `cco init`. User defaults (CLAUDE.md, mcp.json, language.md) are not overwritten. To reset user defaults: `cco init --force`.
+
+For the full workflow (vault commands, multi-machine sync, team sharing, publishing), see the [Sharing & Backup guide](sharing.md).
 
 ---
 
 ## 7. Post-Creation Checklist
+
+> See also: [Knowledge Packs guide](knowledge-packs.md) for creating and managing packs, [Authentication guide](authentication.md) for OAuth and API key setup.
 
 After `cco project create`:
 

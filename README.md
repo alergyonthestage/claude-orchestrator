@@ -6,9 +6,9 @@ Per-project context and team sharing for Claude Code — powered by Docker. Ever
 
 ## Why claude-orchestrator?
 
-- **Per-project context** — Every project has its own repos, rules, documentation and workflow. Claude starts each session already knowing everything — no re-explaining.
+- **Multi-repo workspaces** — Group multiple repos (frontend, backend, infra, docs) into a single project. Claude gets a cross-repo `CLAUDE.md` that understands how everything fits together — built on Claude Code's native features, not replacing them.
 - **Shareable environments** — Commit the project directory (`project.yml`, `CLAUDE.md`, rules, agents). Everyone on your team gets the same repos, instructions, and conventions.
-- **Reusable knowledge packs** — Client docs, architecture overviews, coding conventions: define once, activate across projects. Install packs from remote Config Repos with `cco pack install`, share your own with `cco manifest`.
+- **Reusable knowledge packs** — Client docs, architecture overviews, coding conventions, agents, skills, rules: define once, activate across projects. Install packs from remote Config Repos with `cco pack install`, share your own with `cco manifest`.
 - **Config versioning & backup** — `cco vault` versions your entire configuration with git, with built-in secret detection. Push to a remote to sync across machines or share with your team.
 - **Isolated memory** — Each project has its own memory. Insights from one client don't leak into another. Sessions are fully independent.
 - **Safe by default** — Docker isolates Claude from the rest of your system. `--dangerously-skip-permissions` is safe inside the container.
@@ -84,9 +84,9 @@ bin/cco start my-app
 
 | Path | Content |
 |---|---|
-| **New users** | [getting-started/](docs/getting-started/) — Overview, installation, first project, concepts |
-| **User guides** | [user-guides/](docs/user-guides/) — Project setup, knowledge packs, authentication, agent teams, troubleshooting |
-| **Technical reference** | [reference/](docs/reference/) — CLI, project.yml, context hierarchy |
+| **New users** | [getting-started/](docs/getting-started/) — Overview, installation, first project, key concepts |
+| **User guides** | [user-guides/](docs/user-guides/) — Project setup, packs, auth, agent teams, browser, sharing |
+| **Technical reference** | [reference/](docs/reference/) — CLI commands, project.yml format, context hierarchy |
 | **Contributing** | [maintainer/](docs/maintainer/) — Architecture, spec, roadmap, design docs |
 
 Full index: [docs/README.md](docs/README.md)

@@ -8,7 +8,7 @@
 
 Knowledge packs are reusable packages that group documentation, conventions, skills, agents, and rules. They can be shared across multiple projects without duplicating files. A pack can contain, for example, a client's coding conventions, team guidelines, or documentation for a specific domain.
 
-Packs live in `global/packs/` and are activated per project via `project.yml`.
+Packs live in `user-config/packs/` and are activated per project via `project.yml`.
 
 ---
 
@@ -20,12 +20,12 @@ Packs live in `global/packs/` and are activated per project via `project.yml`.
 cco pack create my-client-knowledge
 ```
 
-This creates the complete directory structure in `global/packs/my-client-knowledge/` with a template `pack.yml`.
+This creates the complete directory structure in `user-config/packs/my-client-knowledge/` with a template `pack.yml`.
 
 ### Directory structure
 
 ```
-global/packs/my-client-knowledge/
+user-config/packs/my-client-knowledge/
   pack.yml              # Pack definition (required)
   knowledge/            # Documentation files (optional)
     overview.md
@@ -87,7 +87,7 @@ knowledge:
 If `source` is omitted, the pack uses its own internal `knowledge/` directory:
 
 ```yaml
-# Without source: files go in global/packs/<name>/knowledge/
+# Without source: files go in user-config/packs/<name>/knowledge/
 knowledge:
   files:
     - path: overview.md
@@ -124,7 +124,7 @@ Skills are directories containing a `SKILL.md` file. They are copied to `/worksp
 
 ```yaml
 skills:
-  - deploy          # Reference to global/packs/<name>/skills/deploy/SKILL.md
+  - deploy          # Reference to user-config/packs/<name>/skills/deploy/SKILL.md
 ```
 
 ### Agents
@@ -133,7 +133,7 @@ Agents are Markdown files that define specialized subagents. They are copied to 
 
 ```yaml
 agents:
-  - devops-specialist.md   # Reference to global/packs/<name>/agents/devops-specialist.md
+  - devops-specialist.md   # Reference to user-config/packs/<name>/agents/devops-specialist.md
 ```
 
 ### Rules
@@ -142,7 +142,7 @@ Rules are Markdown files with additional instructions. They are copied to `/work
 
 ```yaml
 rules:
-  - api-conventions.md     # Reference to global/packs/<name>/rules/api-conventions.md
+  - api-conventions.md     # Reference to user-config/packs/<name>/rules/api-conventions.md
 ```
 
 ---
@@ -296,4 +296,4 @@ cco manifest refresh     # Generate manifest.yml manifest
 cco vault push           # Push to remote
 ```
 
-For the complete sharing workflow (multi-machine sync, team distribution, project templates), see the [Config Repo guide](config-repo.md).
+For the complete sharing workflow (multi-machine sync, team distribution, project templates), see the [Sharing & Backup guide](sharing.md).

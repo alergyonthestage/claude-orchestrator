@@ -116,6 +116,20 @@ Unified design implementing both sharing/import and personal vault under the Con
 
 **Docs**: [analysis](./config-repo/analysis.md) | [design](./config-repo/design.md)
 
+### Sharing Enhancements (Sprint 6b) ✓
+
+Enhancements to the Config Repo sharing system. Addresses naming issues, portability gaps, and missing publish workflow.
+
+**What was implemented**:
+- Rename `cco share` → `cco manifest` (and `share.yml` → `manifest.yml`)
+- `cco remote add/remove/list` — top-level remote management with per-remote token storage
+- `cco pack publish` / `cco project publish` — push to named remote Config Repos
+- `cco project add-pack` / `cco project remove-pack` — manage project pack lists
+- `cco pack internalize` — convert source-referencing packs to self-contained
+- Enhanced `cco project install` — auto-install pack dependencies, template variable resolution
+
+**Docs**: [analysis](./config-repo/sharing-analysis.md) | [design](./config-repo/sharing-design.md)
+
 ---
 
 ### Fix tmux copy-paste (Sprint 2) ✓
@@ -165,38 +179,20 @@ The `Dockerfile` uses `npm install -g @anthropic-ai/claude-code` which is deprec
 
 Features are prioritized by impact for third-party users adopting claude-orchestrator. Each sprint can be implemented independently.
 
-```
-COMPLETED: Bugfix #B1, Sprint 4, Sprint 6+10 (Config Repo)
+```mermaid
+graph LR
+    DONE["✅ Completed<br/>Bugfix #B1, Sprint 4,<br/>Sprint 6+10, Sprint 6b"]
 
-Sprint 5 (onboarding)
-┌──────────────────────┐
-│ #5 Interactive       │
-│    Tutorial Project  │
-└──────────────────────┘
+    S5["Sprint 5 (onboarding)<br/>#5 Interactive Tutorial"]
+    S7["Sprint 7 (isolamento)<br/>#6 Git Worktree<br/>#7 Session Resume"]
+    S8["Sprint 8 (ecosistema)<br/>#9 Pack inheritance"]
+    S9["Sprint 9 (polish)<br/>#10 cco project edit<br/>#10b StatusLine"]
+    S11["Sprint 11 (intelligence)<br/>#13 Project RAG"]
 
-Sprint 6b (sharing enhancements)
-┌──────────────────────┐
-│ Rename share→manifest│
-│ cco remote           │
-│ pack/project publish │
-│ project add-pack     │
-│ pack internalize     │
-│ Enhanced install     │
-│ (auto-clone + packs) │
-└──────────────────────┘
-
-Sprint 7 (isolamento)          Sprint 8 (ecosistema)
-┌──────────────────────┐       ┌──────────────────────┐
-│ #6 Git Worktree      │       │ #9 Pack inheritance  │
-│    Isolation          │       └──────────────────────┘
-│ #7 Session Resume    │
-└──────────────────────┘
-
-Sprint 9 (polish)              Sprint 11 (intelligence)
-┌──────────────────────┐       ┌──────────────────────┐
-│ #10 cco project edit │       │ #13 Project RAG      │
-│ #10b StatusLine      │       │     (default MCP)    │
-└──────────────────────┘       └──────────────────────┘
+    DONE --> S5 --> S7
+    S7 --> S8
+    S7 --> S9
+    S9 --> S11
 ```
 
 ---
@@ -261,55 +257,6 @@ A self-contained example project that users launch with `cco start tutorial` (or
 - Should the tutorial be a standalone `cco tutorial` command or a regular project the user creates via `cco project create --template tutorial`?
 - How many lessons / what depth for v1? Suggest starting with 5-7 core lessons covering the essentials
 - Should the tutorial track user progress across sessions (resume where you left off)?
-
----
-
-### Sprint 6b — Sharing Enhancements
-
-Enhancements to the Config Repo sharing system (Sprint 6+10, now completed). Addresses naming issues, portability gaps, and missing publish workflow discovered during real-world usage.
-
-**Docs**: [analysis](./config-repo/sharing-analysis.md) | [design](./config-repo/sharing-design.md)
-
-#### Rename `share` → `manifest`
-
-`cco share` was renamed to `cco manifest` (and `share.yml` → `manifest.yml`) to eliminate confusion. Includes migration, backward compat for remote repos with old `share.yml`.
-
-#### `cco remote` — Top-level remote management
-
-Promote remotes from vault-only to top-level. Remotes serve both vault (push/pull) and publish (pack/project publish). Stored in `.cco-remotes` file.
-
-Commands: `cco remote add <name> <url>`, `cco remote remove <name>`, `cco remote list`.
-
-#### `cco pack publish` / `cco project publish`
-
-Push packs and project templates to named remote Config Repos. Per-pack target memory via `.cco-source` `publish_target:` field. Source-referencing packs are auto-internalized in the published copy.
-
-Project publish includes reverse-templating of repo paths (`path:` → `{{VARIABLE}}`) and URL inference from git remotes. Declared packs are bundled with the project by default.
-
-#### `cco project add-pack` / `remove-pack`
-
-Add or remove a pack from a project's `packs:` list in `project.yml`. Local operation, no remote interaction.
-
-#### `cco pack internalize`
-
-Convert a source-referencing pack (with `knowledge.source:` pointing to external path) to self-contained by copying files into the pack's `knowledge/` directory.
-
-#### Enhanced `cco project install`
-
-When installing a project template:
-- Repo entries with `url:` metadata: prompt for local path with auto-clone offer
-- Pack dependencies: auto-install missing packs from the same Config Repo
-- Non-interactive mode via `--var REPO_X=/path` flags
-
-**Implementation phases** (see [design](./config-repo/sharing-design.md#9-implementation-plan)):
-1. Rename share → manifest
-2. `cco remote`
-3. `project add-pack / remove-pack`
-4. `pack internalize`
-5. `pack publish` + `project publish`
-6. Enhanced `project install`
-
-Phases 1-4 are independent. Phase 5 depends on 1, 2, 4. Phase 6 depends on 5.
 
 ---
 

@@ -78,7 +78,7 @@ Error: Docker image 'claude-orchestrator:latest' not found. Run 'cco build' firs
 1. Verify that you've logged in on the host: run `claude` outside the container
 2. Force credential re-seeding:
    ```bash
-   rm global/claude-state/.credentials.json
+   rm user-config/global/claude-state/.credentials.json
    cco start my-project
    ```
 3. Check the macOS Keychain:
@@ -102,8 +102,8 @@ Error: Docker image 'claude-orchestrator:latest' not found. Run 'cco build' firs
 
 **Solution**: the CLI automatically fixes this value. If the problem persists:
 ```bash
-jq '.hasCompletedOnboarding = true' global/claude-state/claude.json > /tmp/fix.json \
-  && mv /tmp/fix.json global/claude-state/claude.json
+jq '.hasCompletedOnboarding = true' user-config/global/claude-state/claude.json > /tmp/fix.json \
+  && mv /tmp/fix.json user-config/global/claude-state/claude.json
 ```
 
 ### API Error: 403 Cloudflare Challenge (subagent)
@@ -129,7 +129,7 @@ implement automatic retry for subagent API calls (upstream issue).
 
 **Solutions**:
 - Check `auth.method: api_key` in `project.yml`
-- Verify that `ANTHROPIC_API_KEY` is in `global/secrets.env` or passed with `--env`
+- Verify that `ANTHROPIC_API_KEY` is in `user-config/global/secrets.env` or passed with `--env`
 - Check the key format (must start with `sk-ant-api`)
 
 ### GitHub token doesn't work
@@ -137,7 +137,7 @@ implement automatic retry for subagent API calls (upstream issue).
 **Symptoms**: `git push` fails, `gh` is not authenticated.
 
 **Solutions**:
-- Verify that `GITHUB_TOKEN` is in `global/secrets.env` or `projects/<name>/secrets.env`
+- Verify that `GITHUB_TOKEN` is in `user-config/global/secrets.env` or `projects/<name>/secrets.env`
 - Check PAT permissions: Contents (read/write) and Pull requests (read/write)
 - Check the entrypoint logs for messages like:
   ```
@@ -245,9 +245,9 @@ Common problems:
 
 **Cause**: `${GITHUB_TOKEN}` in `mcp.json` is not expanded because the variable is not in the container's environment.
 
-**Solution**: add the variable to `global/secrets.env`:
+**Solution**: add the variable to `user-config/global/secrets.env`:
 ```bash
-echo "GITHUB_TOKEN=ghp_..." >> global/secrets.env
+echo "GITHUB_TOKEN=ghp_..." >> user-config/global/secrets.env
 ```
 
 Or pass it with `--env`:
