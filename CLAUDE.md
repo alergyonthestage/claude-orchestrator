@@ -38,8 +38,11 @@ cco pack export <name>       # Export a pack as .tar.gz archive
 cco manifest refresh         # Regenerate manifest.yml from packs/ and templates/
 cco manifest validate        # Cross-check manifest.yml vs disk
 cco remote add <n> <url>     # Register a Config Repo remote
+cco remote add <n> <url> --token <t>  # Register with auth token
 cco remote remove <name>     # Unregister a remote
 cco remote list              # Show all registered remotes
+cco remote set-token <n> <t> # Save auth token for a remote
+cco remote remove-token <n>  # Remove saved token
 cco pack publish <n> [remote] # Publish pack to a Config Repo
 cco pack internalize <name>  # Convert source-referencing pack to self-contained
 cco project publish <n> <r>  # Publish project template to Config Repo

@@ -948,36 +948,60 @@ This is a one-way operation — the original source path is not preserved.
 
 Manage named Config Repo remotes for publishing and installing.
 
-#### `cco remote add <name> <url>`
+#### `cco remote add <name> <url> [--token <token>]`
 
 Register a named remote. Names must be lowercase alphanumeric with hyphens.
 If vault is initialized, the remote is also synced to the vault's git config.
+Use `--token` to save an auth token for HTTPS repos.
 
 ```
-Usage: cco remote add <name> <url>
+Usage: cco remote add <name> <url> [--token <token>]
 
 Examples:
-  cco remote add alberghi git@github.com:alberghi-it/cco-config.git
-  cco remote add personal https://github.com/user/cco-vault.git
+  cco remote add team git@github.com:my-org/cco-config.git
+  cco remote add team https://github.com/my-org/cco-config.git --token ghp_xxx
 ```
 
 #### `cco remote remove <name>`
 
-Unregister a remote.
+Unregister a remote and its saved token (if any).
 
 ```
 Usage: cco remote remove <name>
 
 Examples:
-  cco remote remove alberghi
+  cco remote remove team
 ```
 
 #### `cco remote list`
 
-Show all registered remotes.
+Show all registered remotes. Remotes with a saved token show `[token]`.
 
 ```
 Usage: cco remote list
+```
+
+#### `cco remote set-token <name> <token>`
+
+Save or update an auth token for a registered remote. The token is stored
+in `.cco-remotes` (gitignored) and used automatically for HTTPS operations.
+
+```
+Usage: cco remote set-token <name> <token>
+
+Examples:
+  cco remote set-token team ghp_xxx
+```
+
+#### `cco remote remove-token <name>`
+
+Remove the saved auth token for a remote.
+
+```
+Usage: cco remote remove-token <name>
+
+Examples:
+  cco remote remove-token team
 ```
 
 ---

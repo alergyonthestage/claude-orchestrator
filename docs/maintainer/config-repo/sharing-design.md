@@ -698,11 +698,16 @@ source: local
 
 ```
 # CCO Config Repo remotes
-# Format: name=url
-alberghi=git@github.com:alberghi-it/cco-config.git
-acme=git@github.com:acme-corp/cco-config.git
+# Format: name=url  |  name.token=token
+team=git@github.com:my-org/cco-config.git
+acme=https://github.com/acme-corp/cco-config.git
+acme.token=ghp_xxxxxxxxxxxx
 personal=git@github.com:jdoe/cco-vault.git
 ```
+
+Token lines (`name.token=value`) are optional. When present, the token is
+used automatically for HTTPS operations involving that remote. Managed via
+`cco remote add --token`, `cco remote set-token`, and `cco remote remove-token`.
 
 ## Appendix D: Example end-to-end workflow
 

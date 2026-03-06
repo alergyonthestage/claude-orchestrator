@@ -201,19 +201,26 @@ With `--force`, existing packs are overwritten without prompting.
 
 ### Private repositories
 
-For private repos accessible over HTTPS, pass a token:
-
-```bash
-cco pack install https://github.com/acme/cco-config --token ghp_xxxxxxxxxxxx
-```
-
 For SSH-based repos, authentication uses your existing SSH key:
 
 ```bash
-cco pack install git@github.com:acme/cco-config
+cco pack install git@github.com:my-org/cco-config
 ```
 
-If `GITHUB_TOKEN` is set in your environment, HTTPS authentication uses it automatically.
+For HTTPS repos, save a token with the remote for automatic authentication:
+
+```bash
+cco remote add team https://github.com/my-org/cco-config.git --token ghp_xxx
+cco pack install https://github.com/my-org/cco-config.git   # token auto-resolved
+```
+
+Or pass a token directly:
+
+```bash
+cco pack install https://github.com/my-org/cco-config --token ghp_xxx
+```
+
+See [Authentication — Config Repo Authentication](./authentication.md#config-repo-authentication) for full details on token management, access control patterns, and multi-organization setups.
 
 ### Pin to a branch or tag
 

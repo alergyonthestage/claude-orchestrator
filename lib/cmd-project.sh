@@ -442,6 +442,11 @@ EOF
         fi
     fi
 
+    # Auto-resolve token from registered remote if not explicitly provided
+    if [[ -z "$token" ]]; then
+        token=$(remote_resolve_token_for_url "$url" 2>/dev/null) || true
+    fi
+
     info "Cloning $url${ref:+ (ref: $ref)}..."
     local tmpdir
     tmpdir=$(_clone_config_repo "$url" "$ref" "$token")
@@ -929,14 +934,24 @@ EOF
     [[ -z "$remote_arg" ]] && die "Remote required. Usage: cco project publish <name> <remote>"
 
     # Resolve remote URL
-    local remote_url=""
+    local remote_url="" remote_is_named=false
     local resolved
     if resolved=$(remote_get_url "$remote_arg"); then
         remote_url="$resolved"
+        remote_is_named=true
     elif [[ "$remote_arg" == *:* || "$remote_arg" == */* ]]; then
         remote_url="$remote_arg"
     else
         die "Remote '$remote_arg' not found. Register with 'cco remote add $remote_arg <url>'."
+    fi
+
+    # Auto-resolve token from remote if not explicitly provided
+    if [[ -z "$token" ]]; then
+        if $remote_is_named; then
+            token=$(remote_get_token "$remote_arg" 2>/dev/null) || true
+        else
+            token=$(remote_resolve_token_for_url "$remote_url" 2>/dev/null) || true
+        fi
     fi
 
     [[ -z "$message" ]] && message="publish project $name"

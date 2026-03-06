@@ -428,6 +428,11 @@ EOF
         fi
     fi
 
+    # Auto-resolve token from registered remote if not explicitly provided
+    if [[ -z "$token" ]]; then
+        token=$(remote_resolve_token_for_url "$url" 2>/dev/null) || true
+    fi
+
     info "Cloning $url${ref:+ (ref: $ref)}..."
     local tmpdir
     tmpdir=$(_clone_config_repo "$url" "$ref" "$token")
@@ -661,9 +666,13 @@ _update_single_pack() {
         die "Pack '$name' was created locally — no remote source to update from"
     fi
 
+    # Auto-resolve token from registered remote
+    local token=""
+    token=$(remote_resolve_token_for_url "$source_url" 2>/dev/null) || true
+
     info "Fetching $source_url${source_ref:+ (ref: $source_ref)}..."
     local tmpdir
-    tmpdir=$(_clone_config_repo "$source_url" "$source_ref" "")
+    tmpdir=$(_clone_config_repo "$source_url" "$source_ref" "$token")
 
     # Determine source directory within clone
     local remote_dir="$tmpdir"
@@ -849,6 +858,15 @@ EOF
     _resolve_publish_remote "$remote_arg" "$pack_dir" remote_url remote_name
 
     [[ -z "$message" ]] && message="publish pack $name"
+
+    # Auto-resolve token from remote if not explicitly provided
+    if [[ -z "$token" ]]; then
+        if [[ -n "$remote_name" ]]; then
+            token=$(remote_get_token "$remote_name" 2>/dev/null) || true
+        else
+            token=$(remote_resolve_token_for_url "$remote_url" 2>/dev/null) || true
+        fi
+    fi
 
     info "Publishing pack '$name' to $remote_url..."
 

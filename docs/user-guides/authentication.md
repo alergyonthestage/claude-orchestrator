@@ -178,6 +178,136 @@ Warning: secrets.env:3: skipping malformed line (expected KEY=VALUE)
 
 ---
 
+## Config Repo Authentication
+
+When using `cco pack install`, `cco pack publish`, or `cco project install` with
+remote Config Repos, authentication depends on the URL scheme and repository
+visibility.
+
+### SSH (recommended for private repos)
+
+SSH-based URLs authenticate via your local SSH key. No additional configuration
+is needed:
+
+```bash
+cco remote add team git@github.com:my-org/cco-config.git
+cco pack install git@github.com:my-org/cco-config.git
+cco pack publish my-pack team
+```
+
+This is the simplest approach if you have SSH keys configured for GitHub.
+
+### HTTPS with per-remote tokens
+
+For HTTPS-based repos (required when SSH is not available, e.g., CI or
+restricted networks), you can save a token per remote:
+
+```bash
+# Register remote with token
+cco remote add team https://github.com/my-org/cco-config.git --token ghp_xxx
+
+# Or set token separately
+cco remote add team https://github.com/my-org/cco-config.git
+cco remote set-token team ghp_xxx
+```
+
+Once saved, the token is used automatically for all operations involving that
+remote — no need to pass `--token` each time:
+
+```bash
+cco pack publish my-pack team          # token resolved automatically
+cco pack install https://github.com/my-org/cco-config.git  # matched by URL
+```
+
+Token management commands:
+
+| Command | Description |
+|---|---|
+| `cco remote add <n> <url> --token <t>` | Register remote with token |
+| `cco remote set-token <name> <token>` | Save or update token |
+| `cco remote remove-token <name>` | Remove saved token |
+| `cco remote list` | Show remotes with `[token]` indicator |
+
+Tokens are stored in `$USER_CONFIG_DIR/.cco-remotes`, which is gitignored
+(machine-specific, never committed to vault).
+
+### HTTPS with --token flag
+
+You can always override or provide a one-time token via `--token`:
+
+```bash
+cco pack install https://github.com/other-org/config.git --token ghp_yyy
+```
+
+The `--token` flag takes precedence over any saved token.
+
+### HTTPS with GITHUB_TOKEN
+
+If `GITHUB_TOKEN` is set in your environment and the URL contains `github.com`,
+it is used as a fallback when no other token is available:
+
+```bash
+export GITHUB_TOKEN=ghp_zzz
+cco pack install https://github.com/my-org/cco-config.git
+```
+
+### Token resolution order
+
+When performing HTTPS operations, CCO resolves the token in this order:
+
+1. `--token` flag (explicit, per-command)
+2. Saved token for the remote name (`cco remote set-token`)
+3. Saved token matched by URL (`remote_resolve_token_for_url`)
+4. `GITHUB_TOKEN` environment variable (for `github.com` URLs)
+
+### Repository visibility scenarios
+
+| Repo type | Install | Publish | Token needed? |
+|---|---|---|---|
+| **Public** | Anyone | Write access holders | Install: no. Publish: yes |
+| **Private** | Repo members | Write access holders | Always |
+| **Internal** (org) | Org members | Write access holders | Always |
+
+### Access control patterns
+
+**Read-only for team (only you publish):**
+
+On GitHub, add team members with **Read** access. They can install packs but
+cannot push. Create a fine-grained PAT with `contents:read` scope for them.
+
+You (the maintainer) use a PAT with `contents:write` scope, or SSH with push
+access.
+
+**Read-write for team (everyone can publish):**
+
+Add team members with **Write** access (or create a GitHub Team with write
+permissions). Everyone uses a PAT with `contents:write` scope.
+
+### Multiple organizations
+
+When working with Config Repos from different GitHub organizations or accounts,
+each remote can have its own token:
+
+```bash
+cco remote add team-a https://github.com/org-a/cco-config.git --token ghp_aaa
+cco remote add team-b https://github.com/org-b/cco-config.git --token ghp_bbb
+```
+
+Each token can have different scopes and permissions. Operations automatically
+use the correct token based on the remote.
+
+### Creating a GitHub fine-grained PAT for Config Repos
+
+1. Go to GitHub > Settings > Developer Settings > Fine-grained personal access tokens
+2. Select the target organization
+3. Repository access: select the `cco-config` repository
+4. Permissions:
+   - **For install only**: Contents → Read
+   - **For publish**: Contents → Read and write
+5. Generate and save with `cco remote set-token`
+
+---
+
 ## First authentication (without Keychain)
 
 If you don't have credentials in the macOS Keychain (e.g., first installation, or on Linux), Claude Code requests authentication directly in the container:
