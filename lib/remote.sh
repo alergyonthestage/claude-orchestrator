@@ -17,6 +17,33 @@ _supports_sparse_checkout() {
     return $rc
 }
 
+# Build git auth URL and options for HTTPS token authentication.
+# Injects the token into the URL (x-access-token:TOKEN@host) and disables
+# the system credential helper to prevent macOS Keychain prompts.
+# Sets: _GIT_AUTH_URL (URL with token) and _GIT_AUTH_OPTS (array of git -c flags).
+# Usage: _build_git_auth <url> [<token>]
+#        Then use: git "${_GIT_AUTH_OPTS[@]+"${_GIT_AUTH_OPTS[@]}"}" clone "$_GIT_AUTH_URL" ...
+_build_git_auth() {
+    local url="$1"
+    local token="${2:-}"
+
+    _GIT_AUTH_URL="$url"
+    _GIT_AUTH_OPTS=()
+
+    # Resolve effective token: explicit > GITHUB_TOKEN fallback
+    local effective_token="$token"
+    if [[ -z "$effective_token" && -n "${GITHUB_TOKEN:-}" && "$url" == *github.com* ]]; then
+        effective_token="$GITHUB_TOKEN"
+    fi
+
+    if [[ -n "$effective_token" && "$url" == https://* ]]; then
+        # Inject token into URL: https://host/... → https://x-access-token:TOKEN@host/...
+        _GIT_AUTH_URL="${url/https:\/\//https://x-access-token:${effective_token}@}"
+        # Disable credential helper to prevent macOS Keychain / IDE prompts
+        _GIT_AUTH_OPTS=(-c "credential.helper=")
+    fi
+}
+
 # Clone a config repo to a temporary directory.
 # Usage: _clone_config_repo <url> [<ref>] [<token>]
 # Outputs: path to the cloned directory
@@ -33,25 +60,19 @@ _clone_config_repo() {
         url="${url%@*}"
     fi
 
-    # Auth: set token for HTTPS if provided
-    local -a git_opts=()
-    if [[ -n "$token" ]]; then
-        git_opts+=(-c "http.extraHeader=Authorization: Bearer $token")
-    elif [[ -n "${GITHUB_TOKEN:-}" && "$url" == *github.com* ]]; then
-        git_opts+=(-c "http.extraHeader=Authorization: Bearer $GITHUB_TOKEN")
-    fi
+    _build_git_auth "$url" "$token"
 
     # Primary: sparse-checkout (git 2.25+)
     if _supports_sparse_checkout; then
-        git "${git_opts[@]+"${git_opts[@]}"}" clone --no-checkout --filter=blob:none \
-            ${ref:+--branch "$ref"} "$url" "$tmpdir" >/dev/null 2>&1 \
+        git "${_GIT_AUTH_OPTS[@]+"${_GIT_AUTH_OPTS[@]}"}" clone --no-checkout --filter=blob:none \
+            ${ref:+--branch "$ref"} "$_GIT_AUTH_URL" "$tmpdir" >/dev/null 2>&1 \
             || { rm -rf "$tmpdir"; die "Failed to clone $url"; }
         git -C "$tmpdir" checkout >/dev/null 2>&1 \
             || { rm -rf "$tmpdir"; die "Failed to checkout $url"; }
     else
         # Fallback: shallow clone
-        git "${git_opts[@]+"${git_opts[@]}"}" clone --depth 1 \
-            ${ref:+--branch "$ref"} "$url" "$tmpdir" >/dev/null 2>&1 \
+        git "${_GIT_AUTH_OPTS[@]+"${_GIT_AUTH_OPTS[@]}"}" clone --depth 1 \
+            ${ref:+--branch "$ref"} "$_GIT_AUTH_URL" "$tmpdir" >/dev/null 2>&1 \
             || { rm -rf "$tmpdir"; die "Failed to clone $url"; }
     fi
 
@@ -68,15 +89,10 @@ _clone_for_publish() {
     local tmpdir
     tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/cco-pub-XXXXXX")
 
-    local -a git_opts=()
-    if [[ -n "$token" ]]; then
-        git_opts+=(-c "http.extraHeader=Authorization: Bearer $token")
-    elif [[ -n "${GITHUB_TOKEN:-}" && "$url" == *github.com* ]]; then
-        git_opts+=(-c "http.extraHeader=Authorization: Bearer $GITHUB_TOKEN")
-    fi
+    _build_git_auth "$url" "$token"
 
     # Try full clone
-    if git "${git_opts[@]+"${git_opts[@]}"}" clone "$url" "$tmpdir" >/dev/null 2>&1; then
+    if git "${_GIT_AUTH_OPTS[@]+"${_GIT_AUTH_OPTS[@]}"}" clone "$_GIT_AUTH_URL" "$tmpdir" >/dev/null 2>&1; then
         echo "$tmpdir"
         return 0
     fi
@@ -85,10 +101,10 @@ _clone_for_publish() {
     rm -rf "$tmpdir"
     tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/cco-pub-XXXXXX")
     git -C "$tmpdir" init -q
-    git -C "$tmpdir" remote add origin "$url"
+    git -C "$tmpdir" remote add origin "$_GIT_AUTH_URL"
 
     # Test if remote is accessible
-    if git "${git_opts[@]+"${git_opts[@]}"}" -C "$tmpdir" ls-remote origin >/dev/null 2>&1; then
+    if git "${_GIT_AUTH_OPTS[@]+"${_GIT_AUTH_OPTS[@]}"}" -C "$tmpdir" ls-remote origin >/dev/null 2>&1; then
         # Remote exists but is empty — initialize
         manifest_init "$tmpdir"
         git -C "$tmpdir" add -A
