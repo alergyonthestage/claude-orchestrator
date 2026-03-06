@@ -430,6 +430,44 @@ test_remote_token_prefix_independence() {
     }
 }
 
+test_remote_resolve_token_url_normalization() {
+    # Trailing .git and / should not prevent token resolution
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco remote add acme https://github.com/acme/config.git --token ghp_norm
+    local token
+    # Query without .git suffix
+    token=$(
+        export USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR"
+        source "$REPO_ROOT/lib/colors.sh"
+        source "$REPO_ROOT/lib/cmd-remote.sh"
+        remote_resolve_token_for_url "https://github.com/acme/config"
+    )
+    [[ "$token" == "ghp_norm" ]] || {
+        echo "ASSERTION FAILED: expected 'ghp_norm' for URL without .git, got '$token'"
+        return 1
+    }
+}
+
+test_remote_backward_compat_no_token_lines() {
+    # Old-format .cco-remotes (no .token= lines) should work correctly
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    # Write old-style .cco-remotes directly
+    cat > "$CCO_USER_CONFIG_DIR/.cco-remotes" <<'REMOTES'
+# CCO Config Repo remotes
+# Format: name=url
+acme=git@github.com:acme/config.git
+team=https://github.com/team/config.git
+REMOTES
+    run_cco remote list
+    assert_output_contains "acme"
+    assert_output_contains "team"
+    assert_output_not_contains "[token]"
+}
+
 # ── help for new commands ─────────────────────────────────────────
 
 test_remote_set_token_help() {

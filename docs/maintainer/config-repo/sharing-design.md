@@ -103,36 +103,65 @@ of vault — a user can register remotes without vault init.
 ### Commands
 
 ```
-cco remote add <name> <url>
+cco remote add <name> <url> [--token <token>]
 cco remote remove <name>
 cco remote list
+cco remote set-token <name> <token>
+cco remote remove-token <name>
 ```
 
-**`cco remote add <name> <url>`**
+**`cco remote add <name> <url> [--token <token>]`**
 
 ```bash
 # Validates name (lowercase, alphanumeric, hyphens)
 # Validates URL (basic check: contains : or /)
 # Appends to .cco-remotes
+# If --token: saves name.token=<token>, chmod 600
 # If vault initialized: git -C "$USER_CONFIG_DIR" remote add <name> <url>
 ```
 
 **`cco remote remove <name>`**
 
 ```bash
-# Removes from .cco-remotes
+# Removes url and token lines from .cco-remotes
 # If vault initialized: git -C "$USER_CONFIG_DIR" remote remove <name>
 # Warns if any packs have publish_target == <name>
+```
+
+**`cco remote set-token <name> <token>`**
+
+```bash
+# Verifies remote exists
+# Replaces existing token or appends new one
+# chmod 600 on .cco-remotes
+```
+
+**`cco remote remove-token <name>`**
+
+```bash
+# Removes name.token= line from .cco-remotes
+# Remote URL entry is preserved
 ```
 
 **`cco remote list`**
 
 ```
 Remotes:
-  alberghi    git@github.com:alberghi-it/cco-config.git
-  acme        git@github.com:acme-corp/cco-config.git
-  personal    git@github.com:jdoe/cco-vault.git
+  team            git@github.com:my-org/cco-config.git
+  acme            https://github.com/acme-corp/cco-config.git  [token]
+  personal        git@github.com:jdoe/cco-vault.git
 ```
+
+### Token resolution
+
+When performing HTTPS operations, the token is resolved in order:
+
+1. `--token` flag (explicit, per-command)
+2. Saved token for the remote name (`remote_get_token`)
+3. Saved token matched by URL (`remote_resolve_token_for_url`)
+4. `GITHUB_TOKEN` environment variable (for `github.com` URLs)
+
+URL matching normalizes trailing `.git` and `/` before comparison.
 
 ### Vault integration
 
@@ -142,7 +171,7 @@ file is the source of truth; vault remotes are kept in sync.
 
 ### Implementation
 
-New file: `lib/cmd-remote.sh` (~80 lines).
+File: `lib/cmd-remote.sh`.
 
 Dispatch in `bin/cco`:
 ```bash

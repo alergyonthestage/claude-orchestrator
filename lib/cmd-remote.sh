@@ -38,9 +38,12 @@ remote_resolve_token_for_url() {
     local url="$1"
     local rf; rf=$(_remotes_file)
     [[ ! -f "$rf" ]] && return 1
+    # Normalize: strip trailing .git and /
+    local norm_url="${url%.git}"; norm_url="${norm_url%/}"
     while IFS='=' read -r rname rurl; do
         [[ -z "$rname" || "$rname" == \#* || "$rname" == *.* ]] && continue
-        if [[ "$rurl" == "$url" ]]; then
+        local norm_rurl="${rurl%.git}"; norm_rurl="${norm_rurl%/}"
+        if [[ "$norm_rurl" == "$norm_url" ]]; then
             remote_get_token "$rname" && return 0
         fi
     done < "$rf"
@@ -110,6 +113,7 @@ _cmd_remote_add() {
     # Store token if provided
     if [[ -n "$token" ]]; then
         echo "${name}.token=${token}" >> "$rf"
+        chmod 600 "$rf" 2>/dev/null || true
     fi
 
     # Sync with vault git if initialized
@@ -189,6 +193,7 @@ _cmd_remote_set_token() {
     fi
 
     echo "${name}.token=${token}" >> "$rf"
+    chmod 600 "$rf" 2>/dev/null || true
     ok "Token saved for remote '$name'"
 }
 
