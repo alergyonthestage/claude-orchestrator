@@ -84,9 +84,9 @@ bin/cco start my-app
 
 | Path | Content |
 |---|---|
-| **New users** | [getting-started/](docs/getting-started/) — Overview, installation, first project, concepts |
-| **User guides** | [user-guides/](docs/user-guides/) — Project setup, knowledge packs, authentication, agent teams, troubleshooting |
-| **Technical reference** | [reference/](docs/reference/) — CLI, project.yml, context hierarchy |
+| **New users** | [getting-started/](docs/getting-started/) — Overview, installation, first project, key concepts |
+| **User guides** | [user-guides/](docs/user-guides/) — Project setup, packs, auth, agent teams, browser, sharing |
+| **Technical reference** | [reference/](docs/reference/) — CLI commands, project.yml format, context hierarchy |
 | **Contributing** | [maintainer/](docs/maintainer/) — Architecture, spec, roadmap, design docs |
 
 Full index: [docs/README.md](docs/README.md)
