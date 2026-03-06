@@ -14,7 +14,7 @@ assumed to be as safe as the machine itself — the same baseline as `.env` file
 `~/.ssh/id_rsa`, `~/.aws/credentials`, and every other developer credential store.
 
 **Date:** 2026-03-06
-**Status:** Initial analysis complete. No fixes implemented yet.
+**Status:** Phase 1 and Phase 2 fixes implemented. Phase 3 deferred.
 
 ---
 
@@ -366,22 +366,22 @@ meaningful security improvement for the target threat model.
 
 Ordered by a combination of effort required and risk addressed.
 
-### Immediate — trivial fixes (minutes each)
+### Immediate — trivial fixes (DONE)
 
-| # | Finding | What to do | Effort |
+| # | Finding | What was done | Status |
 |---|---|---|---|
-| 1 | **[MEDIUM-3]** Vault secret scan gaps | Add `'*.env'` and `'.cco-remotes'` to `_VAULT_SECRET_PATTERNS` | 1 line |
-| 2 | **[MEDIUM-2]** Silent chmod failure | Remove `|| true`, let it warn or fail | 2 lines |
+| 1 | **[MEDIUM-3]** Vault secret scan gaps | Added `'*.env'` and `'.cco-remotes'` to `_VAULT_SECRET_PATTERNS` | DONE |
+| 2 | **[MEDIUM-2]** Silent chmod failure | Replaced `\|\| true` with `warn` on failure | DONE |
 
-### Short-term — low effort, meaningful hardening (hours)
+### Short-term — low effort, meaningful hardening (DONE)
 
-| # | Finding | What to do | Effort |
+| # | Finding | What was done | Status |
 |---|---|---|---|
-| 3 | **[MEDIUM-1]** Tmpfile cleanup | Add `trap` for OAuth tmpfile, or refactor to avoid tmpfile | Low |
-| 4 | **[HIGH-3]** setup.sh secrets | Add pre-build scan warning if setup.sh contains likely secrets | Low |
-| 5 | **[HIGH-4]** setup.sh runs as root | Run with `gosu claude` instead of as root | Low |
-| 6 | **[HIGH-2]** Docker socket docs | Add prominent security note in user-facing docs and README | Low |
-| 7 | **[MEDIUM-4]** tmux `$*` quoting | Use `printf '%q'` to build safe argument string | Low |
+| 3 | **[MEDIUM-1]** Tmpfile cleanup | Eliminated tmpfile — pipe keychain JSON through jq in-memory | DONE |
+| 4 | **[HIGH-3]** setup.sh secrets | Added pre-build grep for KEY=/TOKEN=/PASSWORD=/SECRET= patterns | DONE |
+| 5 | **[HIGH-4]** setup.sh runs as root | Changed to `gosu claude bash "$PROJECT_SETUP"` | DONE |
+| 6 | **[HIGH-2]** Docker socket docs | Added Security section to README with disable instructions | DONE |
+| 7 | **[MEDIUM-4]** tmux `$*` quoting | Used `printf '%q'` to build shell-safe argument string | DONE |
 
 ### Medium-term — higher effort, lower incremental value
 
