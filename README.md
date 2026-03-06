@@ -88,12 +88,24 @@ bin/cco start my-app
 | **User guides** | [user-guides/](docs/user-guides/) — Project setup, packs, auth, agent teams, browser, sharing |
 | **Technical reference** | [reference/](docs/reference/) — CLI commands, project.yml format, context hierarchy |
 | **Contributing** | [maintainer/](docs/maintainer/) — Architecture, spec, roadmap, design docs |
+| **Security** | [maintainer/security.md](docs/maintainer/security.md) — Threat model, findings, fix priority |
 
 Full index: [docs/README.md](docs/README.md)
 
 ## Requirements
 
-- **OS**: macOS or Linux
+- **OS**: macOS 12+ or Linux — see [compatibility notes](#os-compatibility) below
 - **Docker**: Docker Desktop (macOS) or Docker Engine (Linux)
-- **Bash**: 4+ (macOS: the CLI is compatible with `/bin/bash` 3.2)
+- **Bash**: 3.2+ (the CLI is compatible with macOS default `/bin/bash`)
 - **Claude Code**: Pro, Team, Enterprise account, or API key
+
+## OS compatibility
+
+| OS | Status | Notes |
+|---|---|---|
+| **macOS 12+** | Fully supported | Keychain integration for OAuth, iTerm2 agent teams |
+| **Linux** | Fully supported | All features except macOS-specific Keychain and iTerm2 |
+| **Windows (WSL2)** | Works, not officially tested | Run as Linux inside WSL2; Docker Desktop with WSL2 backend required |
+| **Windows (native)** | Not supported | Would require a PowerShell rewrite; not planned |
+
+> **Windows users:** Install WSL2 + Docker Desktop with the WSL2 backend, then use cco from inside the WSL2 terminal. No changes to the tool are needed.
