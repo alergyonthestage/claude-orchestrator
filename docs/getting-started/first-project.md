@@ -59,7 +59,7 @@ Main sections:
 - **`docker.env`** — environment variables available in the container
 - **`packs`** — knowledge packs to activate (optional)
 
-For the complete reference, see [cli.md](../reference/cli.md).
+For the complete reference, see [project-yaml.md](../reference/project-yaml.md).
 
 ---
 
