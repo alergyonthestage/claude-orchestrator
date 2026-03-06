@@ -1,5 +1,7 @@
-# Config Repo Guide
+# Sharing & Backup
 
+> Back up your configuration, sync across machines, and share packs with your team.
+>
 > Related: [cli.md](../reference/cli.md) | [project-setup.md](./project-setup.md) | [knowledge-packs.md](./knowledge-packs.md) | [Config Repo Design](../maintainer/config-repo/design.md)
 
 ---
