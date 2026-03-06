@@ -36,9 +36,11 @@ packs/*/.cco-install-tmp/
 
 _VAULT_SECRET_PATTERNS=(
     'secrets.env'
+    '*.env'
     '*.key'
     '*.pem'
     '.credentials.json'
+    '.cco-remotes'
 )
 
 # ── Vault subcommands ─────────────────────────────────────────────────

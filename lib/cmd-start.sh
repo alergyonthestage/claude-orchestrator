@@ -212,18 +212,13 @@ EOF
         local keychain_json
         keychain_json=$(security find-generic-password -s "Claude Code-credentials" -a "$(whoami)" -w 2>/dev/null) || true
         if [[ -n "$keychain_json" ]]; then
-            local tmp_keychain keychain_expires file_expires
-            tmp_keychain=$(mktemp) || true
-            if [[ -n "$tmp_keychain" ]]; then
-                echo "$keychain_json" > "$tmp_keychain"
-                keychain_expires=$(jq -r '.claudeAiOauth.expiresAt // 0' "$tmp_keychain" 2>/dev/null || echo 0)
-                file_expires=$(jq -r '.claudeAiOauth.expiresAt // 0' "$global_creds" 2>/dev/null || echo 0)
-                if [[ "$keychain_expires" -gt "$file_expires" ]]; then
-                    cp "$tmp_keychain" "$global_creds"
-                    chmod 600 "$global_creds"
-                    info "Seeded credentials from macOS Keychain (keychain token is newer)"
-                fi
-                rm -f "$tmp_keychain"
+            local keychain_expires file_expires
+            keychain_expires=$(echo "$keychain_json" | jq -r '.claudeAiOauth.expiresAt // 0' 2>/dev/null || echo 0)
+            file_expires=$(jq -r '.claudeAiOauth.expiresAt // 0' "$global_creds" 2>/dev/null || echo 0)
+            if [[ "$keychain_expires" -gt "$file_expires" ]]; then
+                echo "$keychain_json" > "$global_creds"
+                chmod 600 "$global_creds"
+                info "Seeded credentials from macOS Keychain (keychain token is newer)"
             fi
         fi
     fi

@@ -109,3 +109,18 @@ Full index: [docs/README.md](docs/README.md)
 | **Windows (native)** | Not supported | Would require a PowerShell rewrite; not planned |
 
 > **Windows users:** Install WSL2 + Docker Desktop with the WSL2 backend, then use cco from inside the WSL2 terminal. No changes to the tool are needed.
+
+## Security
+
+The Docker socket is mounted into the container by default so Claude can manage infrastructure (databases, services) via `docker compose`. This grants full Docker API access — equivalent to root on the host. If your workflow doesn't need Docker-from-Docker, disable it in `project.yml`:
+
+```yaml
+docker:
+  mount_socket: false
+```
+
+Or per-session: `cco start my-project --no-docker`
+
+Secrets (API keys, tokens) should go in `secrets.env` files (gitignored, `chmod 600`), never in `setup.sh` (which is baked into the Docker image and visible via `docker history`).
+
+For the full threat model and security analysis, see [docs/maintainer/security.md](docs/maintainer/security.md).

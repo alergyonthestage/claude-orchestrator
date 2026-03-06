@@ -113,7 +113,9 @@ _cmd_remote_add() {
     # Store token if provided
     if [[ -n "$token" ]]; then
         echo "${name}.token=${token}" >> "$rf"
-        chmod 600 "$rf" 2>/dev/null || true
+        if ! chmod 600 "$rf" 2>/dev/null; then
+            warn "Could not set permissions on $(basename "$rf") — file may be world-readable"
+        fi
     fi
 
     # Sync with vault git if initialized
@@ -193,7 +195,9 @@ _cmd_remote_set_token() {
     fi
 
     echo "${name}.token=${token}" >> "$rf"
-    chmod 600 "$rf" 2>/dev/null || true
+    if ! chmod 600 "$rf" 2>/dev/null; then
+        warn "Could not set permissions on $(basename "$rf") — file may be world-readable"
+    fi
     ok "Token saved for remote '$name'"
 }
 

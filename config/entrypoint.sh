@@ -114,7 +114,7 @@ fi
 PROJECT_SETUP="/workspace/setup.sh"
 if [ -f "$PROJECT_SETUP" ]; then
     echo "[entrypoint] Running project setup script..." >&2
-    bash "$PROJECT_SETUP" 2>&1 >&2
+    gosu claude bash "$PROJECT_SETUP" 2>&1 >&2
     echo "[entrypoint] Project setup complete" >&2
 fi
 
@@ -140,7 +140,8 @@ echo "[entrypoint] ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:+SET}" >&2
 # TTY/stdin so Claude Code's interactive UI works correctly.
 if [ "${TEAMMATE_MODE}" = "tmux" ] && [ -z "$TMUX" ]; then
     set +e
-    gosu claude tmux new-session -s claude "claude --dangerously-skip-permissions $*"
+    tmux_args=$(printf '%q ' "$@")
+    gosu claude tmux new-session -s claude "claude --dangerously-skip-permissions ${tmux_args% }"
     exit_code=$?
     set -e
     [ $exit_code -ne 0 ] && echo "[entrypoint] claude exited with code ${exit_code}" >&2

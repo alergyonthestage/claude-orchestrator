@@ -56,6 +56,11 @@ EOF
         local setup_content
         setup_content=$(cat "$GLOBAL_DIR/setup.sh")
         if [[ -n "$setup_content" ]]; then
+            # Warn if setup.sh appears to contain secrets (build args are visible in docker history)
+            if grep -qEi '(API_KEY|TOKEN|PASSWORD|SECRET)=' "$GLOBAL_DIR/setup.sh" 2>/dev/null; then
+                warn "global/setup.sh may contain secrets (KEY=, TOKEN=, PASSWORD=, SECRET=)."
+                warn "Build args are visible in 'docker history'. Move secrets to secrets.env instead."
+            fi
             build_args+=(--build-arg "SETUP_SCRIPT_CONTENT=$setup_content")
             info "Including global/setup.sh in build"
         fi
