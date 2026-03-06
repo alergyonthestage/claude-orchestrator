@@ -10,7 +10,7 @@ claude-orchestrator offers four complementary mechanisms to customize the contai
 
 | Mechanism | Scope | When | What |
 |-----------|-------|------|------|
-| `global/setup.sh` | All projects | `cco build` (build time) | System packages, heavy dependencies |
+| `user-config/global/setup.sh` | All projects | `cco build` (build time) | System packages, heavy dependencies |
 | `projects/<name>/setup.sh` | Single project | `cco start` (runtime) | Light setup, per-project dependencies |
 | `projects/<name>/mcp-packages.txt` | Single project | `cco start` (runtime) | npm packages for MCP servers |
 | `docker.image` in project.yml | Single project | `cco start` | Fully custom Docker image |
@@ -19,7 +19,7 @@ claude-orchestrator offers four complementary mechanisms to customize the contai
 
 ## Global Setup Script
 
-**File**: `global/setup.sh`
+**File**: `user-config/global/setup.sh`
 
 The global setup script is executed during `cco build` as a step in the Dockerfile. It runs as root and can install system packages, configure apt repositories, and add global tools.
 
@@ -33,7 +33,7 @@ The global setup script is executed during `cco build` as a step in the Dockerfi
 
 ```bash
 #!/bin/bash
-# global/setup.sh
+# user-config/global/setup.sh
 
 # Install Chromium for Playwright MCP
 apt-get update && apt-get install -y chromium && rm -rf /var/lib/apt/lists/*
@@ -81,7 +81,7 @@ ln -sf /workspace/shared-libs/bin/lint /usr/local/bin/project-lint
 
 - Executed **at every `cco start`** — must be idempotent
 - Runs as root — can install packages, but increases startup time
-- For heavy dependencies, prefer `global/setup.sh` or a custom image
+- For heavy dependencies, prefer `user-config/global/setup.sh` or a custom image
 - If the file doesn't exist, it is simply ignored
 
 ---
@@ -180,7 +180,7 @@ Which mechanism to use based on your needs:
 
 | Need | Recommended Mechanism | Rationale |
 |---|---|---|
-| apt package for all projects | `global/setup.sh` | Single rebuild, fast startup |
+| apt package for all projects | `user-config/global/setup.sh` | Single rebuild, fast startup |
 | apt package for one project (light) | `projects/<name>/setup.sh` | No rebuild needed |
 | apt package for one project (heavy) | Custom image | Zero startup penalty |
 | npm MCP server for all projects | `global/mcp-packages.txt` | Pre-installed at build |
@@ -198,7 +198,7 @@ Which mechanism to use based on your needs:
 ## File Layout
 
 ```
-global/
+user-config/global/
   setup.sh                 # Global script (build time)
   mcp-packages.txt         # Global MCP packages (build time)
 

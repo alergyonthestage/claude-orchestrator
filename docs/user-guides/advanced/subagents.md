@@ -8,7 +8,7 @@
 
 ## 1. Overview
 
-The orchestrator provides two default subagents (analyst and reviewer) as system-managed files (source: `defaults/system/.claude/agents/`, synced to `global/.claude/agents/` on every `cco init` or `cco start`). Projects can add their own subagents in `projects/<n>/.claude/agents/`.
+The orchestrator provides two default subagents (analyst and reviewer) as user-level defaults (source: `defaults/global/.claude/agents/`, copied to `user-config/global/.claude/agents/` on `cco init`). Projects can add their own subagents in `user-config/projects/<n>/.claude/agents/`.
 
 Subagents run in their own context window with custom prompts, tool restrictions, and optionally different models. Claude delegates to them automatically based on the task, or you can invoke them explicitly.
 

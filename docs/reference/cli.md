@@ -76,10 +76,10 @@ When `--lang` is provided, `{{COMM_LANG}}` is set to that language. `{{DOCS_LANG
    - Replace {{DOCS_LANG}} with English
    - Replace {{CODE_LANG}} with English
 
-3. SYNC system files: defaults/system/.claude/ → user-config/global/.claude/ (always, even without --force)
-   - Overwrites skills, agents, rules, settings.json from system.manifest
-   - Preserves user-added files not in the manifest
-   - Removes deprecated paths from previous manifest
+3. SYNC system files: defaults/global/.claude/ → user-config/global/.claude/ (always, even without --force)
+   - Overwrites skills, agents, rules, settings.json from defaults
+   - Preserves user-added files not in the defaults
+   - Removes deprecated paths from previous versions
 
 4. CREATE user-config/projects/ directory (if needed)
 

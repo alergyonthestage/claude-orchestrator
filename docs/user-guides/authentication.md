@@ -21,7 +21,7 @@ Both are managed automatically by the framework. In most cases, you just need to
 
 Claude Code uses OAuth to authenticate with the Claude API. On macOS, credentials are saved in the system Keychain. The flow is as follows:
 
-1. **At the first `cco start`**: the CLI reads credentials from the macOS Keychain and copies them to `global/claude-state/.credentials.json`
+1. **At the first `cco start`**: the CLI reads credentials from the macOS Keychain and copies them to `user-config/global/claude-state/.credentials.json`
 2. **In subsequent sessions**: the container uses the saved credentials. If the access token has expired, Claude automatically renews it with the refresh token
 3. **If you log in on the host** (e.g., after ~90 days of expiry): `cco start` detects the new credentials in the Keychain and automatically updates the file
 
@@ -29,8 +29,8 @@ Credentials are saved in two files (both gitignored):
 
 | File | Contents |
 |------|-----------|
-| `global/claude-state/claude.json` | Preferences, onboarding state, MCP |
-| `global/claude-state/.credentials.json` | OAuth tokens (access + refresh) |
+| `user-config/global/claude-state/claude.json` | Preferences, onboarding state, MCP |
+| `user-config/global/claude-state/.credentials.json` | OAuth tokens (access + refresh) |
 
 Both files are mounted read-write in the container, so renewed credentials are automatically saved.
 
@@ -55,7 +55,7 @@ If you prefer to use an API key instead of OAuth (e.g., for CI environments, or 
 ### Via secrets.env
 
 ```bash
-# global/secrets.env
+# user-config/global/secrets.env
 ANTHROPIC_API_KEY=sk-ant-api03-...
 ```
 
@@ -97,7 +97,7 @@ Recommended permissions:
 **2. Save the token in secrets.env:**
 
 ```bash
-echo "GITHUB_TOKEN=github_pat_..." >> ~/claude-orchestrator/global/secrets.env
+echo "GITHUB_TOKEN=github_pat_..." >> ~/claude-orchestrator/user-config/global/secrets.env
 ```
 
 **3. Start the session:**
@@ -130,7 +130,7 @@ Secrets are managed via `.env` files at two levels, both gitignored:
 ### Global level
 
 ```bash
-# global/secrets.env — available in all projects
+# user-config/global/secrets.env — available in all projects
 GITHUB_TOKEN=ghp_...
 LINEAR_API_KEY=lin_api_...
 SLACK_BOT_TOKEN=xoxb_...
@@ -157,7 +157,7 @@ cco start my-project --env DEBUG=true --env API_URL=http://localhost:8080
 Secrets are passed as `-e` flags to `docker compose run` at startup time. They are never written to `docker-compose.yml` or other generated files.
 
 Precedence order (last one wins):
-1. `global/secrets.env`
+1. `user-config/global/secrets.env`
 2. `projects/<name>/secrets.env`
 3. `--env` from CLI
 
@@ -316,7 +316,7 @@ If you don't have credentials in the macOS Keychain (e.g., first installation, o
 2. Claude Code displays a URL for OAuth login
 3. Copy the URL from the terminal (see the copy-paste section in the [Agent Teams guide](agent-teams.md))
 4. Open the URL in your browser and complete authentication
-5. Credentials are saved in `global/claude-state/.credentials.json`
+5. Credentials are saved in `user-config/global/claude-state/.credentials.json`
 6. Subsequent sessions use the saved credentials automatically
 
 ---
@@ -333,18 +333,18 @@ If you don't have credentials in the macOS Keychain (e.g., first installation, o
 
 2. **Check the credentials file**:
    ```bash
-   jq '.claudeAiOauth | keys' global/claude-state/.credentials.json
+   jq '.claudeAiOauth | keys' user-config/global/claude-state/.credentials.json
    ```
 
 3. **Check permissions**:
    ```bash
-   ls -la global/claude-state/.credentials.json
+   ls -la user-config/global/claude-state/.credentials.json
    # Must be 600 (-rw-------)
    ```
 
 4. **Force re-seeding**:
    ```bash
-   rm global/claude-state/.credentials.json
+   rm user-config/global/claude-state/.credentials.json
    cco start my-project
    ```
 
@@ -353,8 +353,8 @@ If you don't have credentials in the macOS Keychain (e.g., first installation, o
 This happens when `claude.json` has `hasCompletedOnboarding: false`, typically after logout+login on the host. The CLI automatically forces this value to `true` before starting the container. If the problem persists:
 
 ```bash
-jq '.hasCompletedOnboarding = true' global/claude-state/claude.json > /tmp/fix.json \
-  && mv /tmp/fix.json global/claude-state/claude.json
+jq '.hasCompletedOnboarding = true' user-config/global/claude-state/claude.json > /tmp/fix.json \
+  && mv /tmp/fix.json user-config/global/claude-state/claude.json
 ```
 
 ### Expired token (after ~90 days)
