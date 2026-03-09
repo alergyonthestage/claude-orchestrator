@@ -75,7 +75,7 @@ browser:
 | `extra_mounts` | ❌ | list | `[]` | Additional volume mounts |
 | `extra_mounts[].source` | ✅ | string | — | Host path |
 | `extra_mounts[].target` | ✅ | string | — | Container path |
-| `extra_mounts[].readonly` | ❌ | bool | `false` | Mount as read-only |
+| `extra_mounts[].readonly` | ❌ | bool | `true` | Mount as read-only (secure default; set `false` explicitly for writable mounts) |
 | `packs` | ❌ | list | `[]` | Knowledge packs to activate (see Knowledge Packs section below) |
 | `docker.ports` | ❌ | list | see defaults | Port mappings |
 | `docker.env` | ❌ | map | `{}` | Environment variables |
@@ -87,6 +87,48 @@ browser:
 | `browser.mode` | ❌ | string | `host` | Where Chrome runs (`host` only in v1) |
 | `browser.cdp_port` | ❌ | int | `9222` | Chrome remote debugging port |
 | `browser.mcp_args` | ❌ | list | `[]` | Extra CLI flags for chrome-devtools-mcp |
+
+---
+
+## Validation Rules
+
+> **Policy**: Secure-by-default. See [ADR-13](../maintainer/architecture.md) and [NFR-4/NFR-5](../maintainer/spec.md).
+
+### Booleans
+
+All boolean fields (`browser.enabled`, `github.enabled`, `docker.mount_socket`, `extra_mounts[].readonly`) are parsed through a shared normalizer that:
+- Trims leading/trailing whitespace
+- Accepts (case-insensitive): `true`, `yes`, `on`, `1` → **true**
+- Accepts (case-insensitive): `false`, `no`, `off`, `0` → **false**
+- Rejects other values with a warning and falls back to the secure default
+
+### Secure Defaults
+
+When a security-relevant field is **omitted**, the default is always the most restrictive:
+
+| Field | Default When Omitted | Rationale |
+|-------|---------------------|-----------|
+| `extra_mounts[].readonly` | `true` (read-only) | Extra mounts are reference material; writes require explicit opt-in |
+| `browser.enabled` | `false` | Browser automation is an additional attack surface |
+| `github.enabled` | `false` | GitHub access requires explicit opt-in |
+| `docker.mount_socket` | `true` | Documented trade-off (see ADR-4); can be disabled per-project |
+
+### Field Validation
+
+| Field | Format | Validated |
+|-------|--------|-----------|
+| `name` | `^[a-zA-Z0-9][a-zA-Z0-9_-]*$`, max 63 chars | At parse time |
+| `repos[].path` | Valid path, `~` expanded, must exist on host | At start time |
+| `repos[].name` | Required when `path` is present (no silent drops) | At parse time |
+| `docker.ports[]` | `^[0-9]+:[0-9]+(/tcp\|/udp)?$` | At parse time |
+| `docker.env` | `KEY: value` format, KEY matches `^[A-Za-z_][A-Za-z0-9_]*$` | At parse time |
+| `browser.cdp_port` | Numeric, range 1–65535 | At parse time |
+| `browser.mcp_args` | Values JSON-escaped before injection | At compose generation |
+| `auth.method` | Enum: `oauth` \| `api_key` | At parse time |
+
+### Whitespace
+
+All parsed values have leading and trailing whitespace trimmed. Indentation errors (wrong number of spaces) cause the field to be skipped — the parser emits a warning.
 
 ---
 

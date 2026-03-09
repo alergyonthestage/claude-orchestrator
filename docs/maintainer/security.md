@@ -362,6 +362,47 @@ meaningful security improvement for the target threat model.
 
 ---
 
+### [HIGH-5] Config parsing silently permissive — security-relevant fields accept invalid values
+
+**File:** `lib/yaml.sh` (lines 137-176), `lib/cmd-start.sh` (lines 98-138)
+
+**Date added:** 2026-03-09
+
+The YAML parser and its consumers accept any value for security-relevant fields
+without validation. Malformed values (trailing spaces, YAML boolean variants,
+missing fields) silently produce permissive behavior instead of failing safely.
+
+**Affected fields and their failure modes:**
+
+| Field | Invalid Input | Silent Result |
+|-------|--------------|---------------|
+| `extra_mounts[].readonly` | `"true   "` (trailing spaces) | Mounted read-write |
+| `extra_mounts[].readonly` | `yes`, `True`, `YES` | Mounted read-write |
+| `extra_mounts[].readonly` | field omitted | Mounted read-write (default was `false`) |
+| `browser.enabled` | `yes`, `True`, `1` | Browser disabled (safe by accident) |
+| `docker.mount_socket` | `yes`, `True`, `1` | Socket mounted (permissive by accident) |
+| `browser.mcp_args` | value containing `"` | JSON injection in MCP config |
+| `repos[]` | `path:` without `name:` | Repository silently dropped |
+| `docker.ports[]` | `"3000"` (no colon) | Docker fails at runtime |
+
+**Real-world impact:** A user configured `readonly: true` with trailing whitespace
+in `project.yml`. The parser compared `"true   " == "true"` → false, and the
+mount was silently created as read-write. Claude could write to a directory the
+user intended to be read-only.
+
+**Root cause:** The parser prioritizes "never crash" over "never silently weaken
+security". No validation layer exists between parsing and docker-compose generation.
+
+**Mitigation:** Implemented via ADR-13 (Secure-by-Default Config Parsing):
+- All boolean fields parsed through `_parse_bool()` with trim + normalize + enum
+- `extra_mounts[].readonly` default changed to `true` (read-only)
+- Validation pass in `cmd_start()` before compose generation
+- Invalid values produce warnings and fall back to restrictive defaults
+
+**Status:** Fix in progress (ADR-13 implementation)
+
+---
+
 ## Recommended fix priority
 
 Ordered by a combination of effort required and risk addressed.
@@ -383,12 +424,18 @@ Ordered by a combination of effort required and risk addressed.
 | 6 | **[HIGH-2]** Docker socket docs | Added Security section to README with disable instructions | DONE |
 | 7 | **[MEDIUM-4]** tmux `$*` quoting | Used `printf '%q'` to build shell-safe argument string | DONE |
 
+### Short-term — config parsing hardening (IN PROGRESS)
+
+| # | Finding | What to do | Status |
+|---|---|---|---|
+| 8 | **[HIGH-5]** Config parsing permissive | Implement ADR-13: `_parse_bool()`, validation pass, secure defaults | IN PROGRESS |
+
 ### Medium-term — higher effort, lower incremental value
 
 | # | Finding | What to do | Effort |
 |---|---|---|---|
-| 8 | **[LOW-1]** Secrets in process args | Use `--env-file` with a tmpfile instead of `-e` flags | Medium |
-| 9 | **[HIGH-1]** Token in clone URL | Replace with `GIT_ASKPASS` credential helper | High |
+| 9 | **[LOW-1]** Secrets in process args | Use `--env-file` with a tmpfile instead of `-e` flags | Medium |
+| 10 | **[HIGH-1]** Token in clone URL | Replace with `GIT_ASKPASS` credential helper | High |
 
 ### Accepted risks — no fix needed
 

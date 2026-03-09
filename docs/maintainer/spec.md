@@ -140,6 +140,26 @@
 | NFR-3.2 | All configuration is in YAML, JSON, or Markdown — no custom formats |
 | NFR-3.3 | Adding a new project requires only creating a directory with project.yml |
 
+### NFR-4: Input Validation
+
+| ID | Requirement |
+|----|-------------|
+| NFR-4.1 | All `project.yml` fields MUST be validated before generating `docker-compose.yml` |
+| NFR-4.2 | Invalid values MUST produce user-visible warnings, not silent acceptance |
+| NFR-4.3 | Boolean fields MUST accept YAML standard variants (`true/false`, `yes/no`, `on/off`, `1/0`) case-insensitively |
+| NFR-4.4 | All parsed values MUST have leading and trailing whitespace trimmed |
+| NFR-4.5 | Incomplete compound entries (repos without name, mounts without target) MUST produce an error, not silent data loss |
+| NFR-4.6 | Values injected into generated files (JSON, YAML, shell) MUST be properly escaped |
+
+### NFR-5: Secure Defaults
+
+| ID | Requirement |
+|----|-------------|
+| NFR-5.1 | When a security-relevant field is omitted, the default MUST be the most restrictive value |
+| NFR-5.2 | When a value cannot be parsed or is malformed, the fallback MUST be the most restrictive/safe option |
+| NFR-5.3 | Omission of a config field MUST NOT silently grant additional permissions or access |
+| NFR-5.4 | `extra_mounts[].readonly` defaults to `true` (read-only) when the field is omitted |
+
 ---
 
 ## 4. Constraints

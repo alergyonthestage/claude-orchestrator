@@ -441,3 +441,246 @@ test_yaml_parser_no_packs_section_no_pack_mounts() {
     local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
     assert_file_not_contains "$compose" "/.packs/"
 }
+
+# ── _parse_bool: boolean normalization (ADR-13) ─────────────────────
+# These unit tests source yaml.sh directly for direct function access.
+
+test_parse_bool_true_variants() {
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/yaml.sh"
+    # _parse_bool accepts YAML boolean variants for true
+    assert_equals "true" "$(_parse_bool "true" "false")"
+    assert_equals "true" "$(_parse_bool "True" "false")"
+    assert_equals "true" "$(_parse_bool "TRUE" "false")"
+    assert_equals "true" "$(_parse_bool "yes" "false")"
+    assert_equals "true" "$(_parse_bool "Yes" "false")"
+    assert_equals "true" "$(_parse_bool "YES" "false")"
+    assert_equals "true" "$(_parse_bool "on" "false")"
+    assert_equals "true" "$(_parse_bool "ON" "false")"
+    assert_equals "true" "$(_parse_bool "1" "false")"
+}
+
+test_parse_bool_false_variants() {
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/yaml.sh"
+    # _parse_bool accepts YAML boolean variants for false
+    assert_equals "false" "$(_parse_bool "false" "true")"
+    assert_equals "false" "$(_parse_bool "False" "true")"
+    assert_equals "false" "$(_parse_bool "FALSE" "true")"
+    assert_equals "false" "$(_parse_bool "no" "true")"
+    assert_equals "false" "$(_parse_bool "No" "true")"
+    assert_equals "false" "$(_parse_bool "NO" "true")"
+    assert_equals "false" "$(_parse_bool "off" "true")"
+    assert_equals "false" "$(_parse_bool "OFF" "true")"
+    assert_equals "false" "$(_parse_bool "0" "true")"
+}
+
+test_parse_bool_trims_whitespace() {
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/yaml.sh"
+    # _parse_bool handles trailing/leading whitespace (the original bug)
+    assert_equals "true" "$(_parse_bool "true   " "false")"
+    assert_equals "true" "$(_parse_bool "  true" "false")"
+    assert_equals "true" "$(_parse_bool "  true   " "false")"
+    assert_equals "false" "$(_parse_bool "  false  " "true")"
+}
+
+test_parse_bool_empty_uses_safe_default() {
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/yaml.sh"
+    # _parse_bool returns safe_default when value is empty
+    assert_equals "true" "$(_parse_bool "" "true")"
+    assert_equals "false" "$(_parse_bool "" "false")"
+    # Whitespace-only treated as empty
+    assert_equals "true" "$(_parse_bool "   " "true")"
+}
+
+test_parse_bool_invalid_uses_safe_default() {
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/yaml.sh"
+    # _parse_bool warns and returns safe_default for invalid values
+    local result
+    result=$(_parse_bool "invalid" "true" 2>/dev/null)
+    assert_equals "true" "$result"
+    result=$(_parse_bool "maybe" "false" 2>/dev/null)
+    assert_equals "false" "$result"
+}
+
+# ── extra_mounts: secure-by-default readonly (ADR-13) ────────────────
+
+test_yaml_parser_extra_mount_readonly_omitted_defaults_to_ro() {
+    # ADR-13: readonly field omitted → mount as read-only (secure default)
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local docs_dir="$tmpdir/docs"
+    mkdir -p "$docs_dir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+docker:
+  ports: []
+  env: {}
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+extra_mounts:
+  - source: $docs_dir
+    target: /workspace/docs
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    assert_file_contains "$compose" "${docs_dir}:/workspace/docs:ro"
+}
+
+test_yaml_parser_extra_mount_readonly_with_trailing_spaces() {
+    # ADR-13: "true   " (trailing spaces) → still :ro
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local docs_dir="$tmpdir/docs"
+    mkdir -p "$docs_dir"
+    # Use printf to preserve trailing spaces exactly
+    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj
+docker:
+  ports: []
+  env: {}
+repos:
+  - path: %s
+    name: dummy-repo
+extra_mounts:
+  - source: %s
+    target: /workspace/docs
+    readonly: true
+' "$CCO_DUMMY_REPO" "$docs_dir")"
+    run_cco start "test-proj" --dry-run
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    assert_file_contains "$compose" "${docs_dir}:/workspace/docs:ro"
+}
+
+test_yaml_parser_extra_mount_readonly_yes_variant() {
+    # ADR-13: "yes" → treated as true → :ro
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local docs_dir="$tmpdir/docs"
+    mkdir -p "$docs_dir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+docker:
+  ports: []
+  env: {}
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+extra_mounts:
+  - source: $docs_dir
+    target: /workspace/docs
+    readonly: yes
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    assert_file_contains "$compose" "${docs_dir}:/workspace/docs:ro"
+}
+
+test_yaml_parser_extra_mount_readonly_false_explicit_rw() {
+    # ADR-13: explicit "false" → no :ro suffix (read-write)
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local rw_dir="$tmpdir/rw-mount"
+    mkdir -p "$rw_dir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+docker:
+  ports: []
+  env: {}
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+extra_mounts:
+  - source: $rw_dir
+    target: /workspace/rw
+    readonly: false
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    assert_file_contains "$compose" "${rw_dir}:/workspace/rw"
+    assert_file_not_contains "$compose" "${rw_dir}:/workspace/rw:ro"
+}
+
+# ── Project name validation (ADR-13) ────────────────────────────────
+
+test_yaml_parser_invalid_project_name_rejected() {
+    # ADR-13: project name with spaces → error
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: "my invalid project"
+docker:
+  ports: []
+  env: {}
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    if run_cco start "test-proj" --dry-run 2>/dev/null; then
+        fail "Expected error for invalid project name with spaces"
+    fi
+    assert_output_contains "Invalid project name"
+}
+
+# ── Browser CDP port validation (ADR-13) ─────────────────────────────
+
+test_yaml_parser_invalid_cdp_port_rejected() {
+    # ADR-13: non-numeric cdp_port → error
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+docker:
+  ports: []
+  env: {}
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+browser:
+  enabled: true
+  cdp_port: abc
+YAML
+)"
+    if run_cco start "test-proj" --dry-run 2>/dev/null; then
+        fail "Expected error for non-numeric cdp_port"
+    fi
+    assert_output_contains "Invalid browser.cdp_port"
+}
+
+# ── Auth method validation (ADR-13) ──────────────────────────────────
+
+test_yaml_parser_invalid_auth_method_defaults_to_oauth() {
+    # ADR-13: invalid auth.method → warns, defaults to oauth
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: invalid_method
+docker:
+  ports: []
+  env: {}
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    # Invalid method → defaults to oauth → no API key in compose
+    assert_file_not_contains "$compose" "ANTHROPIC_API_KEY"
+}

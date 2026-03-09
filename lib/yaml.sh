@@ -1,12 +1,45 @@
 #!/usr/bin/env bash
 # lib/yaml.sh — Simple YAML parsers for project.yml and pack.yml
 #
-# Provides: yml_get(), yml_get_list(), yml_get_repos(), yml_get_ports(),
-#           yml_get_env(), yml_get_extra_mounts(), yml_get_packs(),
-#           yml_get_pack_knowledge_source(), yml_get_pack_knowledge_files(),
-#           yml_get_pack_skills(), yml_get_pack_agents(), yml_get_pack_rules()
-# Dependencies: none
+# Provides: _parse_bool(), yml_get(), yml_get_list(), yml_get_repos(),
+#           yml_get_ports(), yml_get_env(), yml_get_extra_mounts(),
+#           yml_get_packs(), yml_get_pack_knowledge_source(),
+#           yml_get_pack_knowledge_files(), yml_get_pack_skills(),
+#           yml_get_pack_agents(), yml_get_pack_rules()
+# Dependencies: colors.sh (warn)
 # Globals: none
+
+# Parse a YAML boolean value into canonical "true" or "false".
+# Trims whitespace, normalizes case, accepts YAML standard variants.
+# Returns the safe_default when the value is empty or unrecognized.
+# Usage: _parse_bool <value> <safe_default>
+# Example: _parse_bool "  Yes " "true"  → prints "true"
+_parse_bool() {
+    local raw="$1"
+    local safe_default="${2:-true}"
+
+    # Trim leading/trailing whitespace
+    local val
+    val=$(printf '%s' "$raw" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+    # Empty → use safe default
+    if [[ -z "$val" ]]; then
+        echo "$safe_default"
+        return
+    fi
+
+    # Normalize to lowercase (bash 3.2 compatible — no ${val,,})
+    val=$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]')
+
+    case "$val" in
+        true|yes|on|1)  echo "true" ;;
+        false|no|off|0) echo "false" ;;
+        *)
+            warn "Invalid boolean value '${raw}' — defaulting to '${safe_default}'"
+            echo "$safe_default"
+            ;;
+    esac
+}
 
 # Read a value from project.yml using a simple parser (no yq dependency)
 # Usage: yml_get <file> <key>
@@ -134,24 +167,27 @@ yml_get_env() {
 
 # Parse extra_mounts from project.yml
 # Output format: source:target[:ro] (one per line)
+# The raw readonly value is output as a 4th colon-separated field for the caller
+# to normalize via _parse_bool. Format: source:target:ro_raw
 yml_get_extra_mounts() {
     local file="$1"
-    awk '
-        /^extra_mounts:/ { in_mounts=1; next }
-        in_mounts && /^[^ #]/ {
+
+    # AWK extracts raw values; bash normalizes booleans via _parse_bool
+    local raw_mounts
+    raw_mounts=$(awk '
+        function emit() {
             if (source != "" && target != "") {
-                suffix = (ro == "true") ? ":ro" : ""
-                print source ":" target suffix
+                # Output raw: source:target:ro_raw (ro_raw may be empty)
+                print source ":" target ":" ro
             }
-            done = 1; exit
         }
+        /^extra_mounts:/ { in_mounts=1; next }
+        in_mounts && /^[^ #]/ { emit(); done=1; exit }
         in_mounts && /^  - source:/ {
-            if (source != "" && target != "") {
-                suffix = (ro == "true") ? ":ro" : ""
-                print source ":" target suffix
-            }
+            emit()
             sub(/^  - source: */, "")
             gsub(/["\047]/, "")
+            gsub(/^ +| +$/, "")
             source = $0
             target = ""
             ro = ""
@@ -159,20 +195,37 @@ yml_get_extra_mounts() {
         in_mounts && /^    target:/ {
             sub(/^    target: */, "")
             gsub(/["\047]/, "")
+            gsub(/^ +| +$/, "")
             target = $0
         }
         in_mounts && /^    readonly:/ {
             sub(/^    readonly: */, "")
             gsub(/["\047]/, "")
+            gsub(/^ +| +$/, "")
             ro = $0
         }
-        END {
-            if (!done && in_mounts && source != "" && target != "") {
-                suffix = (ro == "true") ? ":ro" : ""
-                print source ":" target suffix
-            }
-        }
-    ' "$file"
+        END { if (!done && in_mounts) emit() }
+    ' "$file")
+
+    # Normalize boolean values and produce final output
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        local mount_source mount_target ro_raw
+        # Split on colons: source:target:ro_raw
+        # source may contain colons (unlikely but safe), so we split from the right
+        ro_raw="${line##*:}"
+        local without_ro="${line%:*}"
+        mount_target="${without_ro##*:}"
+        mount_source="${without_ro%:*}"
+
+        # Secure default: readonly=true when field is omitted (empty ro_raw)
+        local ro_val
+        ro_val=$(_parse_bool "$ro_raw" "true")
+
+        local suffix=""
+        [[ "$ro_val" == "true" ]] && suffix=":ro"
+        echo "${mount_source}:${mount_target}${suffix}"
+    done <<< "$raw_mounts"
 }
 
 # Parse packs list from project.yml

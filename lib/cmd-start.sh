@@ -80,6 +80,14 @@ EOF
     project_name=$(yml_get "$project_yml" "name")
     [[ -z "$project_name" ]] && project_name="$project"
 
+    # Validate project name (ADR-13: secure-by-default config parsing)
+    if [[ ! "$project_name" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]]; then
+        die "Invalid project name '${project_name}': must match [a-zA-Z0-9][a-zA-Z0-9_-]* (no spaces or special characters)"
+    fi
+    if [[ ${#project_name} -gt 63 ]]; then
+        die "Project name '${project_name}' is too long (${#project_name} chars, max 63)"
+    fi
+
     # Check for existing running session
     if ! $dry_run && docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^cc-${project_name}$"; then
         die "Project '${project_name}' already has a running session (container cc-${project_name}). Run 'cco stop ${project}' first."
@@ -89,15 +97,18 @@ EOF
     auth_method=$(yml_get "$project_yml" "auth.method")
     [[ -z "$auth_method" ]] && auth_method="oauth"
     $use_api_key && auth_method="api_key"
+    # Validate auth method
+    if [[ "$auth_method" != "oauth" && "$auth_method" != "api_key" ]]; then
+        warn "Invalid auth.method '${auth_method}' — defaulting to 'oauth'. Valid values: oauth, api_key"
+        auth_method="oauth"
+    fi
 
     local docker_image
     docker_image=$(yml_get "$project_yml" "docker.image")
     [[ -z "$docker_image" ]] && docker_image="$IMAGE_NAME"
 
     local mount_socket
-    mount_socket=$(yml_get "$project_yml" "docker.mount_socket")
-    # Default: true (backward compatible)
-    [[ -z "$mount_socket" ]] && mount_socket="true"
+    mount_socket=$(_parse_bool "$(yml_get "$project_yml" "docker.mount_socket")" "true")
     # --no-docker: disable Docker socket for this session only
     [[ "$opt_docker" == "off" ]] && mount_socket="false"
 
@@ -109,8 +120,7 @@ EOF
 
     # ── Browser config ───────────────────────────────────────────────────
     local browser_enabled browser_mode browser_cdp_port browser_effective_port browser_mcp_args
-    browser_enabled=$(yml_get "$project_yml" "browser.enabled")
-    [[ "$browser_enabled" != "true" ]] && browser_enabled="false"
+    browser_enabled=$(_parse_bool "$(yml_get "$project_yml" "browser.enabled")" "false")
 
     browser_mode=$(yml_get "$project_yml" "browser.mode")
     [[ -z "$browser_mode" ]] && browser_mode="host"
@@ -121,6 +131,10 @@ EOF
 
     browser_cdp_port=$(yml_get "$project_yml" "browser.cdp_port")
     [[ -z "$browser_cdp_port" ]] && browser_cdp_port="9222"
+    # Validate: must be numeric and in valid port range
+    if [[ ! "$browser_cdp_port" =~ ^[0-9]+$ ]] || [[ "$browser_cdp_port" -lt 1 ]] || [[ "$browser_cdp_port" -gt 65535 ]]; then
+        die "Invalid browser.cdp_port '${browser_cdp_port}': must be a number between 1 and 65535"
+    fi
 
     browser_mcp_args=$(yml_get_list "$project_yml" "browser.mcp_args")
 
@@ -132,8 +146,7 @@ EOF
 
     # ── GitHub config ─────────────────────────────────────────────────────
     local github_enabled github_token_env
-    github_enabled=$(yml_get "$project_yml" "github.enabled")
-    [[ "$github_enabled" != "true" ]] && github_enabled="false"
+    github_enabled=$(_parse_bool "$(yml_get "$project_yml" "github.enabled")" "false")
 
     github_token_env=$(yml_get "$project_yml" "github.token_env")
     [[ -z "$github_token_env" ]] && github_token_env="GITHUB_TOKEN"
@@ -598,8 +611,13 @@ _generate_browser_mcp() {
     local extra_args=""
     if [[ -n "$mcp_args" ]]; then
         while IFS= read -r arg; do
-            [[ -n "$arg" ]] && extra_args+=",
+            if [[ -n "$arg" ]]; then
+                # Escape backslashes first, then double quotes for valid JSON
+                arg="${arg//\\/\\\\}"
+                arg="${arg//\"/\\\"}"
+                extra_args+=",
         \"${arg}\""
+            fi
         done <<< "$mcp_args"
     fi
 
