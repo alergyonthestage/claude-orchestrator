@@ -107,7 +107,7 @@ Full secure-by-default config parsing and validation. Completed in commit `17407
 - Validation pass in `cmd_start()`: project name (regex + max 63 chars), `browser.cdp_port` (numeric 1-65535), `auth.method` (enum)
 - JSON escaping for `browser.mcp_args` to prevent injection
 - Security docs: ADR-13 (architecture.md), NFR-4/5 (spec.md), HIGH-5 (security.md), validation rules (project-yaml.md)
-- Test coverage: 37 yaml_parser tests (all passing, 475 total)
+- Test coverage: 44 yaml_parser tests (all passing, 482 total)
 
 **Breaking change note**: Projects with `extra_mounts:` entries that omit `readonly:` now mount read-only by default. Users who need write access must add `readonly: false` explicitly. No migration script needed — the default is managed by the CLI, not stored in user config files.
 
@@ -175,6 +175,31 @@ The `Dockerfile` uses `npm install -g @anthropic-ai/claude-code` which is deprec
 **Status**: No action needed now. npm install still works and no removal timeline is known. Revisit when Anthropic announces a deprecation date or ships a CI-friendly native installer.
 
 **Tracked**: add to a future maintenance sprint once the upstream situation is clearer.
+
+---
+
+### #B3 Global `setup.sh` (build-time) not effective at runtime
+
+**Reported**: 2026-03-09. A user added tmux configuration to `user-config/global/setup.sh` and ran `cco build`, but the configuration was not present in the container session. The same configuration works when placed in a project-level `setup.sh` (which runs at start time via entrypoint).
+
+**Suspected causes** (requires investigation):
+1. **tmux overwrites config at start**: the container's entrypoint or tmux launch may overwrite `~/.tmux.conf` after the build-time setup.sh has run. The orchestrator's own `config/tmux.conf` is mounted and may take precedence.
+2. **Build layer caching**: Docker may cache the layer before `SETUP_SCRIPT_CONTENT` changes, not re-running the script. Needs `--no-cache` or correct cache invalidation.
+3. **File ownership**: build-time script runs as root; entrypoint creates the `claude` user's home — files may be overwritten or permissions may differ.
+
+**Proposed fix — Dual-phase setup**:
+Split global setup into two scripts:
+- `user-config/global/setup-build.sh` — heavy installs (system packages, compilers). Runs at Docker build time (current behavior of `setup.sh`).
+- `user-config/global/setup.sh` — lightweight runtime config (dotfiles, shell aliases, `.tmux.conf`). Runs at container start time via entrypoint, before project setup.
+
+This mirrors the project-level pattern (start-time only) while preserving build-time for heavy operations. Requires:
+- Entrypoint change: add global `setup.sh` execution before project setup
+- Dockerfile change: rename build-time script to `setup-build.sh`
+- Migration: rename existing `setup.sh` → `setup-build.sh` for users who have it
+- Documentation: update `custom-environment.md` with dual-phase explanation
+- Tests: E2E test for both phases (dry-run can verify mount/copy)
+
+**Status**: To be investigated and fixed in a future sprint. Not blocking — project-level `setup.sh` provides a working workaround.
 
 ---
 
@@ -401,7 +426,7 @@ files:
 
 ### Sprint 9 — E2E Testing
 
-Attualmente la test suite è composta da 475 test in modalità dry-run (no Docker). I bug di runtime (entrypoint, socket GID, MCP merge, gosu, tmux) non sono coperti. Per il mantenimento a lungo termine — specialmente post-open-source con contribuzioni esterne — una suite E2E è necessaria.
+Attualmente la test suite è composta da 482 test in modalità dry-run (no Docker). I bug di runtime (entrypoint, socket GID, MCP merge, gosu, tmux) non sono coperti. Per il mantenimento a lungo termine — specialmente post-open-source con contribuzioni esterne — una suite E2E è necessaria.
 
 #### #E2E Integration Test Suite
 

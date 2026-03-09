@@ -93,6 +93,7 @@ yml_get_list() {
             in_list && /^  - / {
                 sub(/^  - */, "")
                 gsub(/["\047]/, "")
+                sub(/ *#.*$/, "")
                 gsub(/^ +| +$/, "")
                 if ($0 != "") print
             }
@@ -109,6 +110,7 @@ yml_get_list() {
             in_list && /^    - / {
                 sub(/^    - */, "")
                 gsub(/["\047]/, "")
+                sub(/ *#.*$/, "")
                 gsub(/^ +| +$/, "")
                 if ($0 != "") print
             }
@@ -126,11 +128,15 @@ yml_get_repos() {
         in_repos && /^  - path:/ {
             sub(/^  - path: */, "")
             gsub(/["\047]/, "")
+            sub(/ *#.*$/, "")
+            gsub(/^ +| +$/, "")
             path=$0
         }
         in_repos && /^    name:/ {
             sub(/^    name: */, "")
             gsub(/["\047]/, "")
+            sub(/ *#.*$/, "")
+            gsub(/^ +| +$/, "")
             if (path != "" && $0 != "") print path":"$0
             path=""
         }
@@ -145,6 +151,8 @@ yml_get_ports() {
         /^    - "?[0-9]/ {
             sub(/^    - */, "")
             gsub(/["\047]/, "")
+            sub(/ *#.*$/, "")
+            gsub(/^ +| +$/, "")
             print
         }
     ' "$file" | head -20
@@ -160,6 +168,8 @@ yml_get_env() {
         in_env && /^    [A-Z]/ {
             sub(/^    /, "")
             gsub(/["\047]/, "")
+            sub(/ *#.*$/, "")
+            gsub(/^ +| +$/, "")
             print
         }
     ' "$file"
@@ -187,6 +197,7 @@ yml_get_extra_mounts() {
             emit()
             sub(/^  - source: */, "")
             gsub(/["\047]/, "")
+            sub(/ *#.*$/, "")
             gsub(/^ +| +$/, "")
             source = $0
             target = ""
@@ -195,12 +206,14 @@ yml_get_extra_mounts() {
         in_mounts && /^    target:/ {
             sub(/^    target: */, "")
             gsub(/["\047]/, "")
+            sub(/ *#.*$/, "")
             gsub(/^ +| +$/, "")
             target = $0
         }
         in_mounts && /^    readonly:/ {
             sub(/^    readonly: */, "")
             gsub(/["\047]/, "")
+            sub(/ *#.*$/, "")
             gsub(/^ +| +$/, "")
             ro = $0
         }
@@ -238,6 +251,7 @@ yml_get_packs() {
         in_packs && /^  - / {
             sub(/^  - */, "")
             gsub(/["\047]/, "")
+            sub(/ *#.*$/, "")
             gsub(/^ +| +$/, "")
             if ($0 != "") print
         }
@@ -250,7 +264,7 @@ yml_get_pack_knowledge_source() {
     awk '
         /^knowledge:/ { in_k=1; next }
         in_k && /^[^ #]/ { exit }
-        in_k && /^  source:/ { sub(/^  source: */, ""); gsub(/["\047]/, ""); print; exit }
+        in_k && /^  source:/ { sub(/^  source: */, ""); gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, ""); print; exit }
     ' "$file"
 }
 
@@ -269,17 +283,17 @@ yml_get_pack_knowledge_files() {
         in_f && /^    - / {
             if (/^    - path:/) {
                 if (path != "") print path "\t" desc
-                sub(/^    - path: */, ""); gsub(/["\047]/, "")
+                sub(/^    - path: */, ""); gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, "")
                 path=$0; desc=""
             } else {
                 if (path != "") print path "\t" desc
                 path=""; desc=""
-                sub(/^    - */, ""); gsub(/["\047]/, ""); gsub(/^ +| +$/, "")
+                sub(/^    - */, ""); gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, "")
                 if ($0 != "") print $0 "\t"
             }
         }
         in_f && /^      description:/ {
-            sub(/^      description: */, ""); gsub(/["\047]/, ""); desc=$0
+            sub(/^      description: */, ""); gsub(/["\047]/, ""); sub(/ *#.*$/, ""); desc=$0
         }
         END { if (path != "") print path "\t" desc }
     ' "$file"
@@ -293,7 +307,7 @@ yml_get_pack_skills() {
         /^skills:/ { in_s=1; next }
         in_s && /^[^ #]/ { exit }
         in_s && /^  - / {
-            sub(/^  - */, ""); gsub(/["\047]/, ""); gsub(/^ +| +$/, "")
+            sub(/^  - */, ""); gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, "")
             if ($0 != "") print
         }
     ' "$file"
@@ -307,7 +321,7 @@ yml_get_pack_agents() {
         /^agents:/ { in_a=1; next }
         in_a && /^[^ #]/ { exit }
         in_a && /^  - / {
-            sub(/^  - */, ""); gsub(/["\047]/, ""); gsub(/^ +| +$/, "")
+            sub(/^  - */, ""); gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, "")
             if ($0 != "") print
         }
     ' "$file"
@@ -321,7 +335,7 @@ yml_get_pack_rules() {
         /^rules:/ { in_r=1; next }
         in_r && /^[^ #]/ { exit }
         in_r && /^  - / {
-            sub(/^  - */, ""); gsub(/["\047]/, ""); gsub(/^ +| +$/, "")
+            sub(/^  - */, ""); gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, "")
             if ($0 != "") print
         }
     ' "$file"

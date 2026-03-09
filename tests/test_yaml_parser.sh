@@ -684,3 +684,157 @@ YAML
     # Invalid method → defaults to oauth → no API key in compose
     assert_file_not_contains "$compose" "ANTHROPIC_API_KEY"
 }
+
+# ── Inline comment stripping ─────────────────────────────────────────
+# These tests verify that YAML inline comments (# ...) are stripped
+# from all parsed values across all yml_get_* functions.
+
+test_yaml_parser_repo_path_with_inline_comment() {
+    # yml_get_repos: inline comment on path line is stripped
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local fake_repo="$tmpdir/my-repo"
+    mkdir -p "$fake_repo"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+docker:
+  ports: []
+  env: {}
+repos:
+  - path: $fake_repo # This is a comment
+    name: my-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    assert_file_contains "$compose" "${fake_repo}:/workspace/my-repo"
+    assert_file_not_contains "$compose" "# This is a comment"
+}
+
+test_yaml_parser_repo_name_with_inline_comment() {
+    # yml_get_repos: inline comment on name line is stripped
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local fake_repo="$tmpdir/my-repo"
+    mkdir -p "$fake_repo"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+docker:
+  ports: []
+  env: {}
+repos:
+  - path: $fake_repo
+    name: my-repo # main repository
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    assert_file_contains "$compose" "${fake_repo}:/workspace/my-repo"
+    assert_file_not_contains "$compose" "# main repository"
+}
+
+test_yaml_parser_port_with_inline_comment() {
+    # yml_get_ports: inline comment on port line is stripped
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+docker:
+  ports:
+    - "3000:3000" # web server
+  env: {}
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    assert_file_contains "$compose" '"3000:3000"'
+    assert_file_not_contains "$compose" "# web server"
+}
+
+test_yaml_parser_env_var_with_inline_comment() {
+    # yml_get_env: inline comment on env var line is stripped
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+docker:
+  ports: []
+  env:
+    NODE_ENV: production # deploy target
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    assert_file_contains "$compose" "NODE_ENV=production"
+    assert_file_not_contains "$compose" "# deploy target"
+}
+
+test_yaml_parser_extra_mount_with_inline_comments() {
+    # yml_get_extra_mounts: inline comments on source/target/readonly stripped
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local docs_dir="$tmpdir/docs"
+    mkdir -p "$docs_dir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+docker:
+  ports: []
+  env: {}
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+extra_mounts:
+  - source: $docs_dir # shared docs
+    target: /workspace/docs # mount point
+    readonly: true # keep safe
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    assert_file_contains "$compose" "${docs_dir}:/workspace/docs:ro"
+    assert_file_not_contains "$compose" "# shared docs"
+}
+
+test_yaml_parser_pack_name_with_inline_comment() {
+    # yml_get_packs: inline comment on pack name is stripped
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/yaml.sh"
+    local tmpfile; tmpfile=$(mktemp); trap "rm -f '$tmpfile'" EXIT
+    cat > "$tmpfile" <<'YAML'
+packs:
+  - my-pack # core knowledge pack
+  - other-pack
+YAML
+    local result
+    result=$(yml_get_packs "$tmpfile")
+    assert_equals "my-pack
+other-pack" "$result"
+}
+
+test_yaml_parser_list_with_inline_comment() {
+    # yml_get_list: inline comments on list items are stripped
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/yaml.sh"
+    local tmpfile; tmpfile=$(mktemp); trap "rm -f '$tmpfile'" EXIT
+    cat > "$tmpfile" <<'YAML'
+browser:
+  mcp_args:
+    - --headless # run without display
+    - --no-sandbox
+YAML
+    local result
+    result=$(yml_get_list "$tmpfile" "browser.mcp_args")
+    assert_equals "--headless
+--no-sandbox" "$result"
+}
