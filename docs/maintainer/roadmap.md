@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-05 (Sprint 6+10 Config Repo completed; Sprint 6b Sharing Enhancements designed — rename share→manifest, publish, remote, add-pack, enhanced install).
+> Last updated: 2026-03-09 (ADR-13 security hardening complete; roadmap re-prioritized: Docker socket restriction + internet controls elevated; Linux OAuth added pre-open-source; E2E testing added).
 
 ---
 
@@ -96,6 +96,23 @@ Reorganization of the configuration hierarchy to leverage Claude Code's native *
 
 **Docs**: [analysis](./scope-hierarchy/analysis.md) | [ADR-3](./architecture.md) | [ADR-8](./architecture.md)
 
+### Security Hardening — Phase 1, 2, 3 (ADR-13) ✓
+
+Full secure-by-default config parsing and validation. Completed in commit `17407a2`.
+
+**What was implemented**:
+- `_parse_bool()` helper: whitespace trimming + case-insensitive + YAML variants (`yes/no/on/off/1/0`) + safe fallback with warning
+- All boolean fields use `_parse_bool()`: `docker.mount_socket`, `browser.enabled`, `github.enabled`
+- `extra_mounts[].readonly` default changed `false` → `true` (secure-by-default, breaking change)
+- Validation pass in `cmd_start()`: project name (regex + max 63 chars), `browser.cdp_port` (numeric 1-65535), `auth.method` (enum)
+- JSON escaping for `browser.mcp_args` to prevent injection
+- Security docs: ADR-13 (architecture.md), NFR-4/5 (spec.md), HIGH-5 (security.md), validation rules (project-yaml.md)
+- Test coverage: 37 yaml_parser tests (all passing, 475 total)
+
+**Breaking change note**: Projects with `extra_mounts:` entries that omit `readonly:` now mount read-only by default. Users who need write access must add `readonly: false` explicitly. No migration script needed — the default is managed by the CLI, not stored in user config files.
+
+---
+
 ### Config Repo: Sharing & Import + Vault (Sprint 6 + Sprint 10) ✓
 
 Unified design implementing both sharing/import and personal vault under the Config Repo model.
@@ -181,18 +198,25 @@ Features are prioritized by impact for third-party users adopting claude-orchest
 
 ```mermaid
 graph LR
-    DONE["✅ Completed<br/>Bugfix #B1, Sprint 4,<br/>Sprint 6+10, Sprint 6b"]
+    DONE["✅ Completed<br/>Bugfix #B1, Sprint 4,<br/>Sprint 6+10, Sprint 6b,<br/>ADR-13 Security Hardening"]
 
     S5["Sprint 5 (onboarding)<br/>#5 Interactive Tutorial"]
-    S7["Sprint 7 (isolamento)<br/>#6 Git Worktree<br/>#7 Session Resume"]
-    S8["Sprint 8 (ecosistema)<br/>#9 Pack inheritance"]
-    S9["Sprint 9 (polish)<br/>#10 cco project edit<br/>#10b StatusLine"]
-    S11["Sprint 11 (intelligence)<br/>#13 Project RAG"]
+    S6S["Sprint 6-Security<br/>#Docker Restriction<br/>#Internet Controls"]
+    S7L["Sprint 7-Linux<br/>#Linux OAuth<br/>(pre-open-source)"]
+    S8["Sprint 8 (isolamento)<br/>#6 Git Worktree<br/>#7 Session Resume"]
+    S9["Sprint 9 (testing)<br/>#E2E Test Suite"]
+    S10["Sprint 10 (ecosistema)<br/>#9 Pack inheritance"]
+    S11["Sprint 11 (polish)<br/>#10 cco project edit<br/>#10b StatusLine"]
+    S12["Sprint 12 (intelligence)<br/>#13 Project RAG"]
 
-    DONE --> S5 --> S7
-    S7 --> S8
-    S7 --> S9
-    S9 --> S11
+    DONE --> S5
+    S5 --> S6S
+    S6S --> S7L
+    S7L --> S8
+    S8 --> S9
+    S8 --> S10
+    S10 --> S11
+    S11 --> S12
 ```
 
 ---
@@ -260,7 +284,82 @@ A self-contained example project that users launch with `cco start tutorial` (or
 
 ---
 
-### Sprint 7 — Differentiating feature
+---
+
+### Sprint 6-Security — Sandbox & Network Hardening
+
+Elevato a priorità alta. Due problemi di sicurezza residui che richiedono analisi e design approfondito prima dell'open source release: controllo granulare del Docker socket e gestione dell'accesso a internet.
+
+#### #A Docker Socket Restriction (nuovo ADR)
+
+**Contesto**: Claude ha accesso non filtrato al Docker socket dell'host — accesso root-equivalent su tutti i container del sistema. L'attuale `docker.mount_socket: false` è un toggle blunt (tutto o niente). Non esiste middle ground.
+
+**Obiettivo**: consentire a Claude l'accesso ai container del progetto corrente (`cc-<project>-*` o label `cco.project=<name>`), bloccando operazioni su container non correlati.
+
+**Approcci da valutare** (richiede ADR dedicato):
+- **Tecnativa docker-socket-proxy**: filtra per API endpoint type (non per container specifico). Blocca `POST /containers/create` ma permette `GET /containers/json`. Soluzione consolidata, ma non offre isolamento per-container.
+- **Custom HTTP proxy**: intercetta le chiamate Docker API e filtra per container name/label nel payload. Richiede parsing del body — più potente ma custom.
+- **Docker Authorization Plugin**: richiede modifica del daemon host (`--authorization-plugin`). Non fattibile per uso personale.
+- **Configurazione in project.yml**: `docker.socket_policy: full | filtered | none` con allowlist container patterns.
+
+**Scope analisi**:
+- Mappare le API Docker effettivamente usate da Claude (compose up/down, exec, logs, build)
+- Valutare impatto su workflow Docker-from-Docker (sibling containers `cc-<project>-*`)
+- Decidere se il proxy gira come sidecar nel container o come processo separato sull'host
+- Progettare la configurazione `project.yml` per la policy
+
+#### #B Internet Access Controls
+
+**Contesto**: Claude ha accesso completo a internet all'interno del container. Utile per la maggior parte dei workflow (npm install, git clone, API calls), ma introduce rischi in sessioni autonome o con poco human-in-the-loop: prompt injection via contenuti web, exfiltration di secrets, download di dipendenze non verificate.
+
+**Obiettivo**: ridurre la superficie di attacco per sessioni autonome, senza bloccare i workflow normali.
+
+**Approcci da valutare** (richiede ADR dedicato):
+- **Network policy per project**: `network.internet: full | restricted | none` in project.yml
+  - `full` (default): accesso completo (comportamento attuale)
+  - `restricted`: allowlist di domini (npm registry, github, pypi, etc.) via egress proxy
+  - `none`: solo rete interna `cc-<project>` (per sessioni puramente locali)
+- **Egress proxy (Squid/mitmproxy)**: sidecar container che implementa l'allowlist
+- **Claude Code deny rules**: usare `denyTools` per bloccare tool specifici (WebFetch, WebSearch) a livello managed — più semplice ma meno granulare
+- **Autonomy level come trigger**: `network.internet: restricted` automatico quando `autonomy: high` in project.yml
+
+**Scope analisi**:
+- Identificare i domini legittimi necessari (npm, github, pypi, anthropic API, etc.)
+- Valutare l'impatto sulle features esistenti (pack install, browser MCP, setup.sh)
+- Decidere la granularità: per-project vs per-session vs globale
+- Prompt injection via browser MCP: già mitigato parzialmente dai deny rules? Valutare.
+
+---
+
+### Sprint 7-Linux — Linux OAuth Support
+
+**Priorità**: alta, richiesta pre-open-source. Attualmente l'autenticazione OAuth funziona solo su macOS via Keychain. Su Linux l'unica opzione è API key via env var.
+
+#### #L Linux OAuth Alternative
+
+**Contesto**: il flusso OAuth attuale legge le credenziali da macOS Keychain (`security find-generic-password`) e le copia in `~/.claude/.credentials.json`. Su Linux non esiste Keychain.
+
+**Obiettivi**:
+- Supportare il flusso OAuth su Linux senza dipendenze esterne (no gnome-keyring, no KDE Wallet)
+- Mantenere backward compatibility su macOS
+- Sicurezza: credenziali mai in plain text su disco senza protezione adeguata
+
+**Approcci da valutare**:
+- **`credentials.json` pre-generato**: l'utente ottiene il token OAuth da un browser su macOS o via `claude auth` standalone, poi lo copia manualmente. `cco init` su Linux skippa il seeding e avverte l'utente.
+- **`secret-tool` (Linux keyring)**: alternativa a `security` su sistemi con `libsecret` (GNOME). Non universale (non disponibile su tutti i distro/headless).
+- **`pass` (password-store)**: gestore password basato su GPG, disponibile su qualsiasi Linux. Richiede setup GPG.
+- **Encrypted file**: credenziali cifrate con una passphrase (derivata da machine ID o inserita dall'utente). Simile al macOS Keychain ma implementato localmente.
+- **`CLAUDE_API_KEY` come default su Linux**: se no Keychain detected, default `auth.method: api_key` con prompt guidato.
+
+**Scope**:
+- Rilevamento automatico del sistema (macOS vs Linux)
+- Implementazione del metodo Linux scelto in `lib/cmd-auth.sh` (o equivalente)
+- Documentazione: authentication.md aggiornato con sezione Linux
+- Test: coverage per entrambi i path (macOS Keychain + Linux alternative)
+
+---
+
+### Sprint 8 — Isolation features
 
 #### #6 Git Worktree Isolation
 
@@ -300,7 +399,34 @@ files:
 
 ---
 
-### Sprint 9 — Automation and polish
+### Sprint 9 — E2E Testing
+
+Attualmente la test suite è composta da 475 test in modalità dry-run (no Docker). I bug di runtime (entrypoint, socket GID, MCP merge, gosu, tmux) non sono coperti. Per il mantenimento a lungo termine — specialmente post-open-source con contribuzioni esterne — una suite E2E è necessaria.
+
+#### #E2E Integration Test Suite
+
+**Obiettivo**: testare il comportamento reale del container, non solo la generazione dei file di configurazione.
+
+**Scope**:
+- `cco start <project>` lancia effettivamente un container Docker e verifica che Claude si avvii
+- Entrypoint: socket GID resolution, MCP merge (`~/.claude/mcp.json` risultante), gosu, tmux session
+- Auth flow: credenziali copiate correttamente nel container
+- Browser MCP: server avviato, porta CDP corretta
+- Setup.sh: script eseguito come `claude` (non root)
+- `cco stop`: container terminato correttamente
+
+**Architettura proposta**:
+- Test runner separato (`bin/test-e2e`) che richiede Docker disponibile
+- Ogni test lancia un container con `--dry-run-entrypoint` o override dell'entrypoint per verificare senza lanciare Claude interattivamente
+- Fixture di progetti di test in `tests/fixtures/`
+- CI: opzionale (può richiedere Docker in CI), documentato come "local-only" se necessario
+- Non sostituisce la suite bash dry-run — la complementa
+
+**Priorità**: media — importante per mantenimento a lungo termine, non urgente pre-release.
+
+---
+
+### Sprint 10 — Automation and polish
 
 #### #10 `cco project edit <name>` command
 
@@ -324,7 +450,7 @@ Improve the StatusLine hook (`config/hooks/statusline.sh`) for better usability.
 
 ---
 
-### Sprint 11 — Project RAG
+### Sprint 12 — Project RAG
 
 Integrated semantic search over project knowledge, providing Claude with relevant context from large codebases and documentation without consuming the full context window.
 
@@ -385,19 +511,9 @@ rag:
 
 ## Long-term / Exploratory
 
-### Docker socket per-container filtering
+### Remote sessions
 
-**Context**: Claude currently has unrestricted access to the host Docker socket (root-level access to all containers). `docker.mount_socket: false` already allows disabling it entirely per project, but there is no middle ground.
-
-**Goal**: allow Claude full exec/API access to containers belonging to the current project (network `cc-<project>`, or labeled with the project name), while blocking access to unrelated containers on the host daemon.
-
-**Why deferred**: the Tecnativa docker-socket-proxy (the standard approach) filters by API endpoint type, not by specific container. Per-container filtering requires either a custom HTTP proxy that inspects request payloads (container name/labels) or a Docker Authorization Plugin (requires modifying the host daemon). Both are non-trivial to implement and maintain reliably.
-
-**When to revisit**: when claude-orchestrator targets multi-tenant or shared-host deployments, or when a user reports a concrete security incident involving cross-container access.
-
-**Possible approach**:
-- A lightweight custom proxy (Go or Python) that intercepts Docker API calls and allows operations only on containers whose names match `cc-<project>-*` or whose labels include `cco.project=<name>`
-- Configurable in `project.yml` via `docker.socket_policy: full | filtered | none`
+Mount repos from remote hosts via SSHFS or similar, enabling orchestrator sessions on remote development machines.
 
 ---
 
