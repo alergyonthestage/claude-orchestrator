@@ -204,7 +204,7 @@ on training data for cco-specific details.
 | CLI reference | `reference/cli.md` | All cco commands and flags |
 | Context hierarchy | `reference/context-hierarchy.md` | Settings precedence, loading |
 | project.yml reference | `reference/project-yaml.md` | Field reference, validation |
-| Structured development | `guides/structured-agentic-development.md` | When advising on workflow, pack design, project structure, or best practices |
+| Structured development | `user-guides/structured-agentic-development.md` | When advising on workflow, pack design, project structure, or best practices |
 
 ### User Configuration
 
@@ -664,7 +664,7 @@ No overrides needed. The tutorial project uses the same model, permissions, and 
 
 | Step | Files | Description |
 |------|-------|-------------|
-| 0a | `docs/guides/structured-agentic-development.md` | Transform general-purpose guide into cco-specific version |
+| 0a | `docs/user-guides/structured-agentic-development.md` | Transform general-purpose guide into cco-specific version |
 | 0b | `.claude/docs/resources/structured-agentic-development-guide.md` | Remove original (replaced by docs/guides/ version) |
 
 ### Phase 1: Project Template

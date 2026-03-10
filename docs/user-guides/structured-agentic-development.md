@@ -221,8 +221,9 @@ work correctly.
   Each pack's knowledge is merged into the project context.
 - **Packs are shareable.** The Config Repo system (`cco pack publish`, `cco pack install`)
   allows sharing packs across machines, teams, and organizations.
-- **Knowledge is loaded on demand.** Pack documents are available for the agent to read
-  when relevant, not injected into the initial context. This keeps the active context lean.
+- **Knowledge is catalogued at start, loaded on demand.** At session start, `cco start`
+  generates a `packs.md` index listing available pack documents with descriptions. The
+  agent reads individual pack files when relevant, keeping the active context lean.
 
 ### 2.5 Separation of Knowledge and Instructions
 
@@ -309,8 +310,8 @@ context, and coordinate through artifacts.
 - **Lead-and-teammates model.** The lead agent coordinates, delegates, and synthesizes.
   Teammates (`analyst`, `reviewer`) focus on specialized tasks. The human remains the
   final decision-maker.
-- **tmux-based teams.** `cco start` with `teammate_mode: tmux` launches agents in
-  tmux panes. The lead can spawn teammates for parallel work.
+- **tmux-based teams.** `cco start --teammate-mode tmux` launches agents in
+  tmux panes (tmux is the default mode). The lead can spawn teammates for parallel work.
 - **Communication through artifacts.** Agents coordinate through the shared task list,
   versioned documents, and code — not through direct message passing. All coordination
   is visible and auditable.
@@ -408,7 +409,7 @@ cco addresses this through:
 | 2 | Atomic, conventional commits | `git-practices.md` rule loaded in every session |
 | 3 | Branch-review-merge | Branch naming convention + `/review` skill |
 | 4 | ADRs for decisions | `/design` skill produces ADR-structured documents |
-| 5 | Two-layer review | `reviewer` agent (mechanical) + human gates (intent) |
+| 5 | Two-layer review | `analyst` + `reviewer` agents (mechanical) + human gates (intent) |
 | 6 | Minimum necessary context | Four-tier hierarchy, on-demand knowledge loading |
 | 7 | Stratified context | Managed → Global → Project → Nested tiers |
 | 8 | Living documentation | CLAUDE.md updated per phase, docs in repos |
