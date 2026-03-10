@@ -13,7 +13,7 @@ never skip ahead or auto-advance without explicit user approval.
 5. **Implementation & Testing** → Write code, tests, verify
 6. **Review & Approval** → Present implementation, wait for user feedback
 7. **Documentation** → Update docs, README, API docs, changelog
-8. **Closure** → Final review, merge readiness check
+8. **Closure** → Verify completeness, commit artifacts, update project context
 
 ### Scope Levels
 The workflow applies recursively at multiple levels:

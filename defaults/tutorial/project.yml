@@ -1,0 +1,32 @@
+name: tutorial
+description: "Interactive tutorial and onboarding assistant for claude-orchestrator"
+
+# No repositories — tutorial is about cco itself, not code projects
+repos: []
+
+# ── Documentation & User Config ──────────────────────────────────────
+# The tutorial agent reads cco documentation and your configuration
+# to provide accurate, up-to-date guidance.
+extra_mounts:
+  # claude-orchestrator documentation (always up to date with your installation)
+  - source: {{CCO_REPO_ROOT}}/docs
+    target: /workspace/cco-docs
+    readonly: true
+  # Your user configuration (projects, packs, global settings)
+  # Default: read-only (agent can analyze but not modify)
+  # Change to readonly: false to let the agent create packs/projects for you
+  - source: {{CCO_USER_CONFIG_DIR}}
+    target: /workspace/user-config
+    readonly: true
+
+# ── Docker options ───────────────────────────────────────────────────
+docker:
+  # Docker socket disabled by default for safety.
+  # Enable (mount_socket: true) if you want the agent to demonstrate
+  # Docker features like sibling containers or docker compose.
+  mount_socket: false
+  ports: []
+  env: {}
+
+auth:
+  method: oauth

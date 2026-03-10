@@ -88,3 +88,5 @@ Inside the container, Claude Code has access to:
 ## Next step
 
 Go to the [installation guide](installation.md) to set up claude-orchestrator on your machine.
+
+After setup, run `cco start tutorial` — the built-in interactive tutorial helps you learn cco, set up projects and knowledge packs, and customize your workflow and defaults to match your preferences.

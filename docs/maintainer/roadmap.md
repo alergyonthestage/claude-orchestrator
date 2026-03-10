@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-09 (ADR-13 security hardening complete; roadmap re-prioritized: Docker socket restriction + internet controls elevated; Linux OAuth added pre-open-source; E2E testing added).
+> Last updated: 2026-03-10 (Sprint 5 review fixes; defaults restructuring and template system planned).
 
 ---
 
@@ -107,9 +107,27 @@ Full secure-by-default config parsing and validation. Completed in commit `17407
 - Validation pass in `cmd_start()`: project name (regex + max 63 chars), `browser.cdp_port` (numeric 1-65535), `auth.method` (enum)
 - JSON escaping for `browser.mcp_args` to prevent injection
 - Security docs: ADR-13 (architecture.md), NFR-4/5 (spec.md), HIGH-5 (security.md), validation rules (project-yaml.md)
-- Test coverage: 44 yaml_parser tests (all passing, 482 total)
+- Test coverage: 44 yaml_parser tests (all passing, 508 total)
 
 **Breaking change note**: Projects with `extra_mounts:` entries that omit `readonly:` now mount read-only by default. Users who need write access must add `readonly: false` explicitly. No migration script needed — the default is managed by the CLI, not stored in user config files.
+
+---
+
+### Interactive Tutorial Project (Sprint 5) ✓
+
+Built-in interactive tutorial created by `cco init`. Users launch it with `cco start tutorial` for AI-guided onboarding, project setup assistance, and best practices guidance.
+
+**What was implemented**:
+- Tutorial project template (`defaults/tutorial/`): project.yml with path placeholders, CLAUDE.md with 12-module curriculum, documentation map, and session flow
+- 3 skills: `/tutorial` (guided onboarding), `/setup-project` (project creation wizard), `/setup-pack` (pack creation wizard)
+- `tutorial-behavior.md` rule: teacher-not-executor constraints, cco-is-host-only awareness
+- CLI integration: `cco init` creates tutorial with `{{CCO_REPO_ROOT}}` and `{{CCO_USER_CONFIG_DIR}}` substitution
+- Structured agentic development guide (`docs/user-guides/structured-agentic-development.md`): cco-specific version mapping 18 principles to framework features
+- Default rules aligned with guide: workflow.md Closure phase, scope discipline, test suite verification, doc accuracy check; /design skill ADR suggestion
+- Tutorial discovery in docs: overview.md, installation.md, first-project.md, README.md
+- Test coverage: 17 tutorial tests (dry-run compose, --force idempotency, setup.sh)
+
+**Docs**: [analysis](./tutorial-project/analysis.md) | [design](./tutorial-project/design.md)
 
 ---
 
@@ -178,28 +196,17 @@ The `Dockerfile` uses `npm install -g @anthropic-ai/claude-code` which is deprec
 
 ---
 
-### #B3 Global `setup.sh` (build-time) not effective at runtime
+### #B3 Global `setup.sh` (build-time) not effective at runtime ✓ FIXED
 
-**Reported**: 2026-03-09. A user added tmux configuration to `user-config/global/setup.sh` and ran `cco build`, but the configuration was not present in the container session. The same configuration works when placed in a project-level `setup.sh` (which runs at start time via entrypoint).
+**Fixed in**: `fix/setup/dual-phase-global`
 
-**Suspected causes** (requires investigation):
-1. **tmux overwrites config at start**: the container's entrypoint or tmux launch may overwrite `~/.tmux.conf` after the build-time setup.sh has run. The orchestrator's own `config/tmux.conf` is mounted and may take precedence.
-2. **Build layer caching**: Docker may cache the layer before `SETUP_SCRIPT_CONTENT` changes, not re-running the script. Needs `--no-cache` or correct cache invalidation.
-3. **File ownership**: build-time script runs as root; entrypoint creates the `claude` user's home — files may be overwritten or permissions may differ.
+**Root cause**: `global/setup.sh` ran only at build time (Dockerfile). User-level config (dotfiles, tmux keybindings) written during build was overwritten by Docker volume mounts at runtime. The `claude` user didn't exist yet at build time either.
 
-**Proposed fix — Dual-phase setup**:
-Split global setup into two scripts:
-- `user-config/global/setup-build.sh` — heavy installs (system packages, compilers). Runs at Docker build time (current behavior of `setup.sh`).
-- `user-config/global/setup.sh` — lightweight runtime config (dotfiles, shell aliases, `.tmux.conf`). Runs at container start time via entrypoint, before project setup.
+**Fix — Dual-phase setup**: Split global setup into two scripts:
+- `user-config/global/setup-build.sh` — heavy installs (apt packages, compilers). Runs at Docker build time as root.
+- `user-config/global/setup.sh` — lightweight runtime config (dotfiles, aliases, tmux). Runs at every `cco start` as user `claude`, before project setup.
 
-This mirrors the project-level pattern (start-time only) while preserving build-time for heavy operations. Requires:
-- Entrypoint change: add global `setup.sh` execution before project setup
-- Dockerfile change: rename build-time script to `setup-build.sh`
-- Migration: rename existing `setup.sh` → `setup-build.sh` for users who have it
-- Documentation: update `custom-environment.md` with dual-phase explanation
-- Tests: E2E test for both phases (dry-run can verify mount/copy)
-
-**Status**: To be investigated and fixed in a future sprint. Not blocking — project-level `setup.sh` provides a working workaround.
+Migration `005_split_global_setup.sh` renames existing `setup.sh` → `setup-build.sh` for users with build-time content.
 
 ---
 
@@ -223,9 +230,9 @@ Features are prioritized by impact for third-party users adopting claude-orchest
 
 ```mermaid
 graph LR
-    DONE["✅ Completed<br/>Bugfix #B1, Sprint 4,<br/>Sprint 6+10, Sprint 6b,<br/>ADR-13 Security Hardening"]
+    DONE["✅ Completed<br/>Sprint 4, Sprint 5,<br/>Sprint 6+10, Sprint 6b,<br/>ADR-13, Bugfix #B1"]
 
-    S5["Sprint 5 (onboarding)<br/>#5 Interactive Tutorial"]
+    S5b["Sprint 5b<br/>#Defaults restructure<br/>#Template system"]
     S6S["Sprint 6-Security<br/>#Docker Restriction<br/>#Internet Controls"]
     S7L["Sprint 7-Linux<br/>#Linux OAuth<br/>(pre-open-source)"]
     S8["Sprint 8 (isolamento)<br/>#6 Git Worktree<br/>#7 Session Resume"]
@@ -234,8 +241,8 @@ graph LR
     S11["Sprint 11 (polish)<br/>#10 cco project edit<br/>#10b StatusLine"]
     S12["Sprint 12 (intelligence)<br/>#13 Project RAG"]
 
-    DONE --> S5
-    S5 --> S6S
+    DONE --> S5b
+    S5b --> S6S
     S6S --> S7L
     S7L --> S8
     S8 --> S9
@@ -271,43 +278,47 @@ Enable Claude to control a browser via Chrome DevTools MCP, with the browser vis
 
 ---
 
-### Sprint 5 — Interactive Tutorial Project
-
-Required before open-source publication. Provides a guided, hands-on onboarding experience that teaches new users how to use claude-orchestrator effectively.
-
-#### #5 Interactive Tutorial Project — AI-Guided Onboarding
-
-A self-contained example project that users launch with `cco start tutorial` (or similar). Once inside the session, an AI agent guides the user through claude-orchestrator's features interactively — explaining concepts, demonstrating workflows, and answering questions in real time.
-
-**Goals**:
-- Lower the barrier to entry for new users adopting claude-orchestrator
-- Showcase key features (project setup, knowledge packs, agent teams, browser MCP, etc.) through hands-on exercises
-- Serve as living documentation — the tutorial itself uses the features it teaches
-- Clarify common doubts about architecture, configuration, and advanced techniques
-- Prepare the repository for open-source publication with a polished first-run experience
-
-**Key design points**:
-- Ships as a built-in example project (e.g. `examples/tutorial/`) with a pre-configured `project.yml`
-- A dedicated knowledge pack provides the tutorial curriculum and structured lesson content
-- An agent (skill or custom agent) orchestrates the interactive session: presents lessons, checks understanding, adapts to user pace
-- Progressive curriculum: basics (project structure, repos, CLAUDE.md) → intermediate (packs, secrets, MCP) → advanced (agent teams, worktrees, custom images)
-- Each lesson includes a practical exercise the user performs inside the tutorial session
-- The agent can answer free-form questions about claude-orchestrator at any point (FAQ mode)
-- `cco tutorial` shortcut command (alias for `cco start tutorial`) for discoverability
-
-**Scope**:
-- Tutorial project scaffold (`examples/tutorial/` or `defaults/tutorial/`)
-- Knowledge pack with curriculum content (lessons, exercises, reference material)
-- Tutorial agent/skill with interactive guidance logic
-- CLI integration (`cco tutorial` command or documented `cco start` usage)
-- Minimal test coverage for tutorial project generation
-
-**Open questions**:
-- Should the tutorial be a standalone `cco tutorial` command or a regular project the user creates via `cco project create --template tutorial`?
-- How many lessons / what depth for v1? Suggest starting with 5-7 core lessons covering the essentials
-- Should the tutorial track user progress across sessions (resume where you left off)?
-
 ---
+
+### Sprint 5b — Defaults Restructuring & Template System
+
+Refactoring leggero del layout `defaults/` e introduzione del meccanismo `--template` per installare progetti built-in opzionali.
+
+#### #A `defaults/` Directory Restructuring
+
+**Contesto**: `defaults/` ha una struttura piatta con directory di tipo diverso allo stesso livello (`managed/`, `global/`, `_template/`, `tutorial/`). Con l'aggiunta di template opzionali la struttura diventa poco chiara.
+
+**Obiettivo**: riorganizzare `defaults/` con sottodirectory per tipo, in modo che rispecchi la struttura di `user-config/`:
+
+```
+defaults/
+├── managed/          → /etc/claude-code/ (Docker image, invariato)
+├── global/           → user-config/global/ (cco init, invariato)
+├── projects/         → user-config/projects/
+│   ├── _template/    (scaffold per cco project create)
+│   └── tutorial/     (progetto tutorial built-in)
+└── packs/            (vuoto per ora, estendibile in futuro)
+```
+
+**File impattati**: `Dockerfile`, `bin/cco` (DEFAULTS_DIR, TEMPLATE_DIR), `lib/cmd-init.sh`, `lib/cmd-project.sh`, test, documentazione.
+
+#### #B `cco project create --template <name>`
+
+**Contesto**: l'unico modo per installare il tutorial è `cco init`. Un utente che ha già inizializzato e vuole il tutorial (o lo ha rimosso e vuole ricrearlo) non ha un comando diretto.
+
+**Obiettivo**: `--template` copia da `defaults/projects/<name>/` invece di `defaults/projects/_template/`, con sostituzione placeholder.
+
+```bash
+cco project create --template tutorial    # installa tutorial da defaults
+cco project create --template <name>      # estendibile a futuri template
+cco project create my-app --repo ~/code   # comportamento attuale (da _template)
+```
+
+**Logica**: se `--template` è presente e il template esiste in `defaults/projects/`, copia e sostituisci placeholder. Se non esiste, errore con elenco template disponibili.
+
+#### #C `cco tutorial` Alias
+
+Alias triviale in `bin/cco`: `cco tutorial` → `cco start tutorial`. Migliora discoverability per nuovi utenti.
 
 ---
 

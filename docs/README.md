@@ -4,7 +4,7 @@
 
 | Profile | Start here |
 |---|---|
-| **New user** | [Getting Started](getting-started/) — overview → install → first project → concepts |
+| **New user** | [Getting Started](getting-started/) — overview → install → first project → concepts. Then run `cco start tutorial` for interactive guidance |
 | **Configure a project** | [Project Setup](user-guides/project-setup.md) — repos, ports, packs, CLAUDE.md |
 | **Share packs with my team** | [Sharing & Backup](user-guides/sharing.md) — vault, Config Repos, multi-machine sync |
 | **Something isn't working** | [Troubleshooting](user-guides/troubleshooting.md) — Docker, auth, tmux, MCP, packs |
@@ -37,6 +37,12 @@ Operational guides for everyday use. Each guide covers one topic in depth.
 | [browser-automation.md](user-guides/browser-automation.md) | Browser automation via Chrome DevTools Protocol |
 | [sharing.md](user-guides/sharing.md) | Vault backup, multi-machine sync, share packs and templates via Config Repos |
 | [troubleshooting.md](user-guides/troubleshooting.md) | Common issues and solutions by category |
+
+### Concepts & Best Practices
+
+| Document | Content |
+|---|---|
+| [structured-agentic-development.md](user-guides/structured-agentic-development.md) | Why cco exists: structured development principles and how cco implements them |
 
 ### Advanced
 

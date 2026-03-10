@@ -106,7 +106,11 @@ EOF
         _run_migrations "global" "$GLOBAL_DIR/.claude" 0 "$meta_file"
     fi
 
-    # Copy global setup script if not present
+    # Copy global setup scripts if not present
+    if [[ ! -f "$GLOBAL_DIR/setup-build.sh" && -f "$DEFAULTS_DIR/global/setup-build.sh" ]]; then
+        cp "$DEFAULTS_DIR/global/setup-build.sh" "$GLOBAL_DIR/setup-build.sh"
+        ok "Copied global/setup-build.sh template"
+    fi
     if [[ ! -f "$GLOBAL_DIR/setup.sh" && -f "$DEFAULTS_DIR/global/setup.sh" ]]; then
         cp "$DEFAULTS_DIR/global/setup.sh" "$GLOBAL_DIR/setup.sh"
         ok "Copied global/setup.sh template"
@@ -119,6 +123,22 @@ EOF
     ok "Projects directory ready"
     ok "Packs directory ready"
     ok "Templates directory ready"
+
+    # Create tutorial project (unless it already exists)
+    local tutorial_dir="$PROJECTS_DIR/tutorial"
+    if [[ ! -d "$tutorial_dir" ]]; then
+        info "Creating tutorial project..."
+        cp -r "$DEFAULTS_DIR/tutorial" "$tutorial_dir"
+
+        # Substitute path placeholders in project.yml
+        local tutorial_yml="$tutorial_dir/project.yml"
+        sed -i '' "s|{{CCO_REPO_ROOT}}|$REPO_ROOT|g" "$tutorial_yml" 2>/dev/null || \
+            sed -i "s|{{CCO_REPO_ROOT}}|$REPO_ROOT|g" "$tutorial_yml"
+        sed -i '' "s|{{CCO_USER_CONFIG_DIR}}|$USER_CONFIG_DIR|g" "$tutorial_yml" 2>/dev/null || \
+            sed -i "s|{{CCO_USER_CONFIG_DIR}}|$USER_CONFIG_DIR|g" "$tutorial_yml"
+
+        ok "Tutorial project ready — run 'cco start tutorial' to begin"
+    fi
 
     # Generate manifest.yml if not present
     manifest_init "$USER_CONFIG_DIR"
@@ -144,6 +164,7 @@ EOF
     fi
 
     echo ""
-    ok "Initialization complete. Create your first project with:"
-    echo "  cco project create <name> --repo <path>"
+    ok "Initialization complete!"
+    echo "  Start the tutorial:    cco start tutorial"
+    echo "  Create a project:      cco project create <name> --repo <path>"
 }
