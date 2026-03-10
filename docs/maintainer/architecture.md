@@ -482,21 +482,24 @@ graph LR
 
 **Context**: The Docker image is built once and shared across all projects. Some projects need additional system packages, npm packages, or runtime configuration. The only extension mechanism is `--mcp-packages` for global npm packages. Users have no way to customize the environment per project without editing the Dockerfile.
 
-**Decision**: Provide four complementary extension mechanisms:
-1. `user-config/global/setup.sh` — executed during `cco build` for system-level packages (all projects)
-2. `user-config/projects/<name>/setup.sh` — executed at container start for per-project runtime setup
-3. `user-config/projects/<name>/mcp-packages.txt` — per-project npm MCP packages (runtime install)
-4. `docker.image` in project.yml — use a completely custom Docker image per project
+**Decision**: Provide five complementary extension mechanisms:
+1. `user-config/global/setup-build.sh` — executed during `cco build` for system-level packages (all projects, root)
+2. `user-config/global/setup.sh` — executed at container start for global runtime config (all projects, user `claude`)
+3. `user-config/projects/<name>/setup.sh` — executed at container start for per-project runtime setup
+4. `user-config/projects/<name>/mcp-packages.txt` — per-project npm MCP packages (runtime install)
+5. `docker.image` in project.yml — use a completely custom Docker image per project
 
 **Rationale**:
 - Build-time setup (1) handles heavy dependencies without per-session startup cost
-- Runtime setup (2, 3) enables per-project customization without image rebuild
-- Custom image (4) gives full control for projects with complex needs
+- Global runtime setup (2) handles dotfiles, aliases, tmux config for all projects
+- Per-project runtime setup (3, 4) enables per-project customization without image rebuild
+- Custom image (5) gives full control for projects with complex needs
 - All four are opt-in with no impact on default behavior
 
 **Consequences**:
-- `user-config/global/setup.sh` requires `cco build` after changes
-- Runtime setup scripts (2, 3) increase container startup time proportionally to install size
+- `user-config/global/setup-build.sh` requires `cco build` after changes
+- `user-config/global/setup.sh` runs at every `cco start` as user `claude` (not root)
+- Runtime setup scripts (2, 3, 4) increase container startup time proportionally to install size
 - Custom images must be maintained by the user, but can extend the base image
 - Template files are created by `cco init` and `cco project create`
 

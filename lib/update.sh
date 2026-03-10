@@ -9,12 +9,15 @@
 # Globals: GLOBAL_DIR, DEFAULTS_DIR, REPO_ROOT
 
 # Files that are always user-owned (never updated by cco update)
-GLOBAL_USER_FILES=("mcp.json" "setup.sh")
+GLOBAL_USER_FILES=("mcp.json" "setup.sh" "setup-build.sh")
 PROJECT_USER_FILES=("CLAUDE.md" "rules/language.md")
 # Files that need special regeneration logic
 GLOBAL_SPECIAL_FILES=("rules/language.md")
 # Global root files: copied from defaults if missing, never overwritten
-GLOBAL_ROOT_COPY_IF_MISSING=("setup.sh")
+# Global root files: copied from defaults if missing, never overwritten.
+# Checked AFTER migrations run, so migration 005 can create setup-build.sh
+# with migrated content before the copy-if-missing fallback kicks in.
+GLOBAL_ROOT_COPY_IF_MISSING=("setup.sh" "setup-build.sh")
 # Project root files: copied from template if missing, never overwritten
 PROJECT_ROOT_COPY_IF_MISSING=("setup.sh" "secrets.env" "mcp-packages.txt")
 
@@ -584,19 +587,8 @@ _update_global() {
     # Phase 2: APPLY — execute changes
     _apply_file_changes "$changes" "$defaults_dir" "$installed_dir" "$mode" "$dry_run"
 
-    # Copy missing root files from defaults
-    if [[ ${#root_missing[@]} -gt 0 ]]; then
-        for rf in "${root_missing[@]}"; do
-            if [[ "$dry_run" == "true" ]]; then
-                info "  + $rf (missing, will copy from defaults)"
-            else
-                cp "$global_defaults_root/$rf" "$GLOBAL_DIR/$rf"
-                ok "  + $rf (copied from defaults)"
-            fi
-        done
-    fi
-
-    # Run migrations
+    # Run migrations (before copy-if-missing, so migrations can create files
+    # like setup-build.sh with migrated content before the template fallback)
     if [[ $pending_migrations -gt 0 ]]; then
         if [[ "$dry_run" == "true" ]]; then
             info "$pending_migrations migration(s) pending"
@@ -613,6 +605,25 @@ _update_global() {
                 meta_file="$installed_dir/.cco-meta"
             fi
         fi
+    fi
+
+    # Copy missing root files from defaults (after migrations, which may create some)
+    # Re-check what's actually missing now (migrations may have created files)
+    root_missing=()
+    for rf in "${GLOBAL_ROOT_COPY_IF_MISSING[@]}"; do
+        if [[ -f "$global_defaults_root/$rf" && ! -f "$GLOBAL_DIR/$rf" ]]; then
+            root_missing+=("$rf")
+        fi
+    done
+    if [[ ${#root_missing[@]} -gt 0 ]]; then
+        for rf in "${root_missing[@]}"; do
+            if [[ "$dry_run" == "true" ]]; then
+                info "  + $rf (missing, will copy from defaults)"
+            else
+                cp "$global_defaults_root/$rf" "$GLOBAL_DIR/$rf"
+                ok "  + $rf (copied from defaults)"
+            fi
+        done
     fi
 
     # Update .cco-meta

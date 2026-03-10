@@ -73,12 +73,14 @@ ARG MCP_PACKAGES=""
 RUN if [ -n "$MCP_PACKAGES" ]; then npm install -g $MCP_PACKAGES; fi
 
 # ── User setup script (global, build time) ─────────────────────────
-# Custom system-level setup. Pass content via: cco build (auto-reads global/setup.sh)
-ARG SETUP_SCRIPT_CONTENT=""
-RUN if [ -n "$SETUP_SCRIPT_CONTENT" ]; then \
-        printf '%s' "$SETUP_SCRIPT_CONTENT" > /tmp/setup.sh \
-        && bash /tmp/setup.sh \
-        && rm -f /tmp/setup.sh; \
+# Heavy system-level setup (apt packages, compilers). Runs once during `cco build` as root.
+# Lightweight runtime config (dotfiles, aliases) belongs in global/setup.sh (runs at `cco start` as claude).
+# Pass content via: cco build (auto-reads global/setup-build.sh)
+ARG SETUP_BUILD_SCRIPT_CONTENT=""
+RUN if [ -n "$SETUP_BUILD_SCRIPT_CONTENT" ]; then \
+        printf '%s' "$SETUP_BUILD_SCRIPT_CONTENT" > /tmp/setup-build.sh \
+        && bash /tmp/setup-build.sh \
+        && rm -f /tmp/setup-build.sh; \
     fi
 
 # ── User setup ───────────────────────────────────────────────────────

@@ -6,22 +6,23 @@
 
 ## Overview
 
-claude-orchestrator offers four complementary mechanisms to customize the container environment without modifying the framework itself:
+claude-orchestrator offers five complementary mechanisms to customize the container environment without modifying the framework itself:
 
 | Mechanism | Scope | When | What |
 |-----------|-------|------|------|
-| `user-config/global/setup.sh` | All projects | `cco build` (build time) | System packages, heavy dependencies |
+| `global/setup-build.sh` | All projects | `cco build` (build time) | System packages, heavy dependencies |
+| `global/setup.sh` | All projects | `cco start` (runtime) | Dotfiles, aliases, tmux config, light tools |
 | `projects/<name>/setup.sh` | Single project | `cco start` (runtime) | Light setup, per-project dependencies |
 | `projects/<name>/mcp-packages.txt` | Single project | `cco start` (runtime) | npm packages for MCP servers |
 | `docker.image` in project.yml | Single project | `cco start` | Fully custom Docker image |
 
 ---
 
-## Global Setup Script
+## Global Build-Time Setup
 
-**File**: `user-config/global/setup.sh`
+**File**: `user-config/global/setup-build.sh`
 
-The global setup script is executed during `cco build` as a step in the Dockerfile. It runs as root and can install system packages, configure apt repositories, and add global tools.
+Executed once during `cco build` as a step in the Dockerfile. Runs as **root**. Changes are baked into the Docker image and available in all projects with zero startup cost.
 
 ### When to Use It
 
@@ -29,11 +30,24 @@ The global setup script is executed during `cco build` as a step in the Dockerfi
 - System tools (Terraform, kubectl, Chromium, etc.)
 - Heavy dependencies that require significant download time
 
+### Valid Operations
+
+- `apt-get update && apt-get install -y <packages>`
+- Downloading and installing binary tools
+- Adding apt repositories
+- Compiling from source
+
+### Invalid Operations (use `setup.sh` instead)
+
+- Modifying `~/.tmux.conf`, `~/.bashrc`, `~/.vimrc` (overwritten by mounts at runtime)
+- Setting shell aliases or functions
+- Any user-level configuration
+
 ### Example
 
 ```bash
 #!/bin/bash
-# user-config/global/setup.sh
+# user-config/global/setup-build.sh
 
 # Install Chromium for Playwright MCP
 apt-get update && apt-get install -y chromium && rm -rf /var/lib/apt/lists/*
@@ -45,10 +59,63 @@ curl -fsSL https://releases.hashicorp.com/terraform/1.7.0/terraform_1.7.0_linux_
 
 ### Notes
 
-- The script is included in the Docker image: changes require a `cco build` to take effect
+- Changes require `cco build` to take effect
 - Runs as root — full system access
-- The file is created empty (with comments) by `cco init`
-- Dependencies installed here are available in all projects
+- The `claude` user does not exist yet at this stage (created later in Dockerfile)
+- Files written to `/home/claude/` during build may be overwritten by volume mounts at runtime
+
+---
+
+## Global Runtime Setup
+
+**File**: `user-config/global/setup.sh`
+
+Executed at every `cco start`, **before** the project setup script. Runs as user `claude` inside the container.
+
+### When to Use It
+
+- Dotfiles and user configuration (`~/.tmux.conf`, `~/.bashrc`, `~/.vimrc`)
+- Shell aliases and functions
+- tmux keybindings
+- Lightweight pip/npm packages needed in all projects
+- git config overrides
+
+### Valid Operations
+
+- Writing/appending to dotfiles in `~/.` or `/home/claude/`
+- `tmux` commands (e.g., `tmux bind-key ...`)
+- `pip3 install --user <lightweight-package>`
+- `npm install -g <small-package>`
+- `git config --global <key> <value>`
+
+### Invalid Operations (use `setup-build.sh` instead)
+
+- `apt-get install` (requires root — this script runs as `claude`)
+- Heavy downloads or compilations
+- System-level configuration
+
+### Example
+
+```bash
+#!/bin/bash
+# user-config/global/setup.sh
+
+# Add tmux keybinding for all projects
+tmux bind-key C-a send-prefix 2>/dev/null || true
+
+# Shell aliases (append only if not already present)
+grep -q 'alias ll=' ~/.bashrc 2>/dev/null || echo 'alias ll="ls -la"' >> ~/.bashrc
+
+# Git config
+git config --global rerere.enabled true
+```
+
+### Notes
+
+- Executed **at every `cco start`** — must be idempotent
+- Runs as user `claude` (not root) — cannot install system packages
+- Executes before the project `setup.sh`, so project config can override global
+- If the file doesn't exist, it is simply ignored
 
 ---
 
@@ -56,7 +123,7 @@ curl -fsSL https://releases.hashicorp.com/terraform/1.7.0/terraform_1.7.0_linux_
 
 **File**: `projects/<name>/setup.sh`
 
-Executed by the entrypoint at every container startup (`cco start`), before launching Claude. Runs as root.
+Executed by the entrypoint at every container startup (`cco start`), after the global runtime setup. Runs as user `claude`.
 
 ### When to Use It
 
@@ -80,8 +147,8 @@ ln -sf /workspace/shared-libs/bin/lint /usr/local/bin/project-lint
 ### Notes
 
 - Executed **at every `cco start`** — must be idempotent
-- Runs as root — can install packages, but increases startup time
-- For heavy dependencies, prefer `user-config/global/setup.sh` or a custom image
+- Runs as user `claude` — can install user-level packages, but not system packages
+- For heavy dependencies, prefer `global/setup-build.sh` or a custom image
 - If the file doesn't exist, it is simply ignored
 
 ---
@@ -174,13 +241,31 @@ docker build -t claude-orchestrator-devops:latest \
 
 ---
 
+## Execution Order
+
+Setup mechanisms execute in this order at `cco start`:
+
+1. Docker socket GID fix (entrypoint)
+2. MCP server injection (entrypoint)
+3. GitHub authentication (entrypoint)
+4. **Global runtime setup** (`global/setup.sh`) — as user `claude`
+5. **Project setup** (`projects/<name>/setup.sh`) — as user `claude`
+6. **Project MCP packages** (`projects/<name>/mcp-packages.txt`)
+7. Launch Claude
+
+This means project setup can override global setup when needed.
+
+---
+
 ## Decision Matrix
 
 Which mechanism to use based on your needs:
 
 | Need | Recommended Mechanism | Rationale |
 |---|---|---|
-| apt package for all projects | `user-config/global/setup.sh` | Single rebuild, fast startup |
+| apt package for all projects | `global/setup-build.sh` | Single rebuild, fast startup |
+| tmux config / dotfiles for all projects | `global/setup.sh` | Applies at every start, no rebuild |
+| Shell aliases for all projects | `global/setup.sh` | Runtime, user-level |
 | apt package for one project (light) | `projects/<name>/setup.sh` | No rebuild needed |
 | apt package for one project (heavy) | Custom image | Zero startup penalty |
 | npm MCP server for all projects | `global/mcp-packages.txt` | Pre-installed at build |
@@ -190,8 +275,8 @@ Which mechanism to use based on your needs:
 
 ### General Rule
 
-- **Build time** (global setup, custom image): for heavy or frequently-used dependencies — upfront cost, immediate startup
-- **Runtime** (per-project setup, per-project mcp-packages): for light or experimental dependencies — no rebuild, but slower startup
+- **Build time** (`setup-build.sh`, custom image, `global/mcp-packages.txt`): for heavy or system-level dependencies — upfront cost, instant startup
+- **Runtime** (`setup.sh`, per-project setup, per-project mcp-packages): for lightweight or user-level config — no rebuild, but runs each session
 
 ---
 
@@ -199,13 +284,14 @@ Which mechanism to use based on your needs:
 
 ```
 user-config/global/
-  setup.sh                 # Global script (build time)
-  mcp-packages.txt         # Global MCP packages (build time)
+  setup-build.sh             # Global script (build time, root)
+  setup.sh                   # Global script (runtime, user claude)
+  mcp-packages.txt           # Global MCP packages (build time)
 
 projects/<name>/
-  setup.sh                 # Per-project script (runtime)
-  mcp-packages.txt         # Per-project MCP packages (runtime)
-  project.yml              # docker.image for custom image
+  setup.sh                   # Per-project script (runtime, user claude)
+  mcp-packages.txt           # Per-project MCP packages (runtime)
+  project.yml                # docker.image for custom image
 ```
 
 All these files are optional. If not present, they are simply ignored.

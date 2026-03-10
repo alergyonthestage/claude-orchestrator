@@ -110,6 +110,16 @@ if [ -n "${GITHUB_TOKEN:-}" ]; then
         && echo "[entrypoint] GitHub: configured git credential helper" >&2
 fi
 
+# ── Global runtime setup script ──────────────────────────────────
+# Lightweight config (dotfiles, aliases, tmux keybindings) applied to all projects.
+# Heavy installs (apt packages) belong in setup-build.sh (runs at cco build).
+GLOBAL_SETUP="/home/claude/global-setup.sh"
+if [ -f "$GLOBAL_SETUP" ]; then
+    echo "[entrypoint] Running global runtime setup..." >&2
+    gosu claude bash "$GLOBAL_SETUP" 2>&1 >&2
+    echo "[entrypoint] Global runtime setup complete" >&2
+fi
+
 # ── Project setup script (runtime) ───────────────────────────────
 PROJECT_SETUP="/workspace/setup.sh"
 if [ -f "$PROJECT_SETUP" ]; then

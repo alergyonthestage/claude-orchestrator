@@ -106,7 +106,11 @@ EOF
         _run_migrations "global" "$GLOBAL_DIR/.claude" 0 "$meta_file"
     fi
 
-    # Copy global setup script if not present
+    # Copy global setup scripts if not present
+    if [[ ! -f "$GLOBAL_DIR/setup-build.sh" && -f "$DEFAULTS_DIR/global/setup-build.sh" ]]; then
+        cp "$DEFAULTS_DIR/global/setup-build.sh" "$GLOBAL_DIR/setup-build.sh"
+        ok "Copied global/setup-build.sh template"
+    fi
     if [[ ! -f "$GLOBAL_DIR/setup.sh" && -f "$DEFAULTS_DIR/global/setup.sh" ]]; then
         cp "$DEFAULTS_DIR/global/setup.sh" "$GLOBAL_DIR/setup.sh"
         ok "Copied global/setup.sh template"

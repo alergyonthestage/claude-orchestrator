@@ -194,8 +194,8 @@ languages:
 manifest:"
 
     run_cco update
-    # Schema version should be updated to latest (currently 4: migration 001 + 002 + 003 + 004)
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco-meta" "schema_version: 4"
+    # Schema version should be updated to latest (currently 5: migration 001-005)
+    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco-meta" "schema_version: 5"
 }
 
 test_update_migration_failure_stops() {
@@ -420,6 +420,122 @@ test_migration_003_no_projects_dir() {
     assert_dir_exists "$tmpdir/user-config/templates"
 }
 
+# ── Migration 005: split global setup ─────────────────────────────────
+
+test_migration_005_renames_setup_with_build_content() {
+    # setup.sh with apt-get → renamed to setup-build.sh, new setup.sh created
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+
+    # Simulate pre-migration state: only setup.sh with build content
+    printf '#!/bin/bash\napt-get update && apt-get install -y vim\n' > "$CCO_GLOBAL_DIR/setup.sh"
+
+    # Set schema_version to 4 (before migration 005)
+    create_cco_meta "$CCO_GLOBAL_DIR/.claude/.cco-meta" "schema_version: 4
+created_at: 2026-01-01T00:00:00Z
+updated_at: 2026-01-01T00:00:00Z
+
+languages:
+  communication: English
+  documentation: English
+  code_comments: English
+
+manifest:"
+
+    run_cco update
+    # setup-build.sh should contain the old content
+    assert_file_contains "$CCO_GLOBAL_DIR/setup-build.sh" "apt-get install"
+    # setup.sh should be the new runtime template (old content replaced)
+    assert_file_contains "$CCO_GLOBAL_DIR/setup.sh" "runtime"
+    assert_file_not_contains "$CCO_GLOBAL_DIR/setup.sh" "apt-get install"
+    # Backup should exist
+    [[ -f "$CCO_GLOBAL_DIR/setup.sh.bak" ]] || fail "setup.sh.bak backup not created"
+}
+
+test_migration_005_empty_setup_creates_templates() {
+    # setup.sh with only comments → both templates created fresh
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+
+    # Simulate pre-migration: setup.sh with only comments
+    printf '#!/bin/bash\n# Global setup\n' > "$CCO_GLOBAL_DIR/setup.sh"
+
+    create_cco_meta "$CCO_GLOBAL_DIR/.claude/.cco-meta" "schema_version: 4
+created_at: 2026-01-01T00:00:00Z
+updated_at: 2026-01-01T00:00:00Z
+
+languages:
+  communication: English
+  documentation: English
+  code_comments: English
+
+manifest:"
+
+    run_cco update
+    [[ -f "$CCO_GLOBAL_DIR/setup-build.sh" ]] || fail "setup-build.sh not created"
+    [[ -f "$CCO_GLOBAL_DIR/setup.sh" ]] || fail "setup.sh not created"
+    assert_file_contains "$CCO_GLOBAL_DIR/setup-build.sh" "build-time"
+    assert_file_contains "$CCO_GLOBAL_DIR/setup.sh" "runtime"
+}
+
+test_migration_005_both_files_exist_warns() {
+    # setup-build.sh already exists + setup.sh has build commands → migration warns
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+
+    # Both files exist: setup-build.sh (user-created) and setup.sh (with build commands)
+    printf '#!/bin/bash\napt-get install -y vim\n' > "$CCO_GLOBAL_DIR/setup-build.sh"
+    printf '#!/bin/bash\napt-get install -y curl\n' > "$CCO_GLOBAL_DIR/setup.sh"
+
+    create_cco_meta "$CCO_GLOBAL_DIR/.claude/.cco-meta" "schema_version: 4
+created_at: 2026-01-01T00:00:00Z
+updated_at: 2026-01-01T00:00:00Z
+
+languages:
+  communication: English
+  documentation: English
+  code_comments: English
+
+manifest:"
+
+    run_cco update
+    # Migration should warn about build-time commands in setup.sh
+    assert_output_contains "WARNING"
+    # setup-build.sh should be preserved (not overwritten)
+    assert_file_contains "$CCO_GLOBAL_DIR/setup-build.sh" "vim"
+}
+
+test_migration_005_idempotent() {
+    # Running migration twice produces same result
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+
+    printf '#!/bin/bash\napt-get install -y vim\n' > "$CCO_GLOBAL_DIR/setup.sh"
+
+    create_cco_meta "$CCO_GLOBAL_DIR/.claude/.cco-meta" "schema_version: 4
+created_at: 2026-01-01T00:00:00Z
+updated_at: 2026-01-01T00:00:00Z
+
+languages:
+  communication: English
+  documentation: English
+  code_comments: English
+
+manifest:"
+
+    run_cco update
+    local build_hash; build_hash=$(sha256sum "$CCO_GLOBAL_DIR/setup-build.sh" | cut -d' ' -f1)
+
+    # Run update again (schema is now 5, no migrations should run)
+    run_cco update
+    local build_hash2; build_hash2=$(sha256sum "$CCO_GLOBAL_DIR/setup-build.sh" | cut -d' ' -f1)
+    [[ "$build_hash" == "$build_hash2" ]] || fail "setup-build.sh changed on second update"
+}
+
 # ── Root file copy-if-missing ────────────────────────────────────────
 
 test_update_global_missing_setup_sh_restored() {
@@ -468,6 +584,38 @@ test_update_global_missing_setup_sh_dry_run() {
     assert_output_contains "missing"
     # File should NOT be created in dry-run
     [[ ! -f "$CCO_GLOBAL_DIR/setup.sh" ]] || fail "setup.sh should not be created in dry-run"
+}
+
+test_update_global_missing_setup_build_sh_restored() {
+    # cco update restores missing global setup-build.sh from defaults
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    # Verify setup-build.sh was created by init
+    [[ -f "$CCO_GLOBAL_DIR/setup-build.sh" ]] || fail "setup-build.sh not created by init"
+
+    # Delete it to simulate missing file
+    rm "$CCO_GLOBAL_DIR/setup-build.sh"
+
+    # Run update — should restore it
+    run_cco update
+    [[ -f "$CCO_GLOBAL_DIR/setup-build.sh" ]] || fail "setup-build.sh not restored by update"
+    assert_output_contains "setup-build.sh"
+}
+
+test_update_global_existing_setup_build_sh_not_overwritten() {
+    # cco update does NOT overwrite existing global setup-build.sh
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    # User customizes setup-build.sh
+    printf '#!/bin/bash\napt-get install -y terraform\n' > "$CCO_GLOBAL_DIR/setup-build.sh"
+
+    run_cco update
+    # User content preserved
+    assert_file_contains "$CCO_GLOBAL_DIR/setup-build.sh" "apt-get install"
 }
 
 test_update_project_missing_setup_sh_restored() {

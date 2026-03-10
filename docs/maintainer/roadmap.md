@@ -178,28 +178,17 @@ The `Dockerfile` uses `npm install -g @anthropic-ai/claude-code` which is deprec
 
 ---
 
-### #B3 Global `setup.sh` (build-time) not effective at runtime
+### #B3 Global `setup.sh` (build-time) not effective at runtime ✓ FIXED
 
-**Reported**: 2026-03-09. A user added tmux configuration to `user-config/global/setup.sh` and ran `cco build`, but the configuration was not present in the container session. The same configuration works when placed in a project-level `setup.sh` (which runs at start time via entrypoint).
+**Fixed in**: `fix/setup/dual-phase-global`
 
-**Suspected causes** (requires investigation):
-1. **tmux overwrites config at start**: the container's entrypoint or tmux launch may overwrite `~/.tmux.conf` after the build-time setup.sh has run. The orchestrator's own `config/tmux.conf` is mounted and may take precedence.
-2. **Build layer caching**: Docker may cache the layer before `SETUP_SCRIPT_CONTENT` changes, not re-running the script. Needs `--no-cache` or correct cache invalidation.
-3. **File ownership**: build-time script runs as root; entrypoint creates the `claude` user's home — files may be overwritten or permissions may differ.
+**Root cause**: `global/setup.sh` ran only at build time (Dockerfile). User-level config (dotfiles, tmux keybindings) written during build was overwritten by Docker volume mounts at runtime. The `claude` user didn't exist yet at build time either.
 
-**Proposed fix — Dual-phase setup**:
-Split global setup into two scripts:
-- `user-config/global/setup-build.sh` — heavy installs (system packages, compilers). Runs at Docker build time (current behavior of `setup.sh`).
-- `user-config/global/setup.sh` — lightweight runtime config (dotfiles, shell aliases, `.tmux.conf`). Runs at container start time via entrypoint, before project setup.
+**Fix — Dual-phase setup**: Split global setup into two scripts:
+- `user-config/global/setup-build.sh` — heavy installs (apt packages, compilers). Runs at Docker build time as root.
+- `user-config/global/setup.sh` — lightweight runtime config (dotfiles, aliases, tmux). Runs at every `cco start` as user `claude`, before project setup.
 
-This mirrors the project-level pattern (start-time only) while preserving build-time for heavy operations. Requires:
-- Entrypoint change: add global `setup.sh` execution before project setup
-- Dockerfile change: rename build-time script to `setup-build.sh`
-- Migration: rename existing `setup.sh` → `setup-build.sh` for users who have it
-- Documentation: update `custom-environment.md` with dual-phase explanation
-- Tests: E2E test for both phases (dry-run can verify mount/copy)
-
-**Status**: To be investigated and fixed in a future sprint. Not blocking — project-level `setup.sh` provides a working workaround.
+Migration `005_split_global_setup.sh` renames existing `setup.sh` → `setup-build.sh` for users with build-time content.
 
 ---
 

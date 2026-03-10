@@ -337,6 +337,12 @@ YAML
             echo "      - ./mcp.json:/workspace/.mcp.json:ro"
         fi
 
+        # Global runtime setup script (executed by entrypoint before project setup)
+        if [[ -f "$GLOBAL_DIR/setup.sh" ]]; then
+            echo "      # Global runtime setup"
+            echo "      - ${GLOBAL_DIR}/setup.sh:/home/claude/global-setup.sh:ro"
+        fi
+
         # Project setup script (runtime, executed by entrypoint)
         if [[ -f "$project_dir/setup.sh" ]]; then
             echo "      # Project setup script"

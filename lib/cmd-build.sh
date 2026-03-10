@@ -51,18 +51,32 @@ EOF
         info "Pre-installing MCP packages: $mcp_packages"
     fi
 
-    # Include global setup script if present
-    if [[ -f "$GLOBAL_DIR/setup.sh" ]]; then
+    # Include global build-time setup script if present
+    local setup_build_file=""
+    if [[ -f "$GLOBAL_DIR/setup-build.sh" ]]; then
+        setup_build_file="$GLOBAL_DIR/setup-build.sh"
+    elif [[ -f "$GLOBAL_DIR/setup.sh" ]]; then
+        # Backward compatibility: pre-migration users may still have only setup.sh
+        # Check if it contains actual commands (not just comments/blanks)
+        if grep -qvE '^\s*$|^\s*#' "$GLOBAL_DIR/setup.sh" 2>/dev/null; then
+            warn "global/setup.sh has content but setup-build.sh does not exist."
+            warn "Since v2, setup.sh runs at start time (runtime). Build-time commands belong in setup-build.sh."
+            warn "Run 'cco update' to migrate, or rename setup.sh → setup-build.sh manually."
+            # Use it as build script for backward compat
+            setup_build_file="$GLOBAL_DIR/setup.sh"
+        fi
+    fi
+    if [[ -n "$setup_build_file" ]]; then
         local setup_content
-        setup_content=$(cat "$GLOBAL_DIR/setup.sh")
+        setup_content=$(cat "$setup_build_file")
         if [[ -n "$setup_content" ]]; then
-            # Warn if setup.sh appears to contain secrets (build args are visible in docker history)
-            if grep -qEi '(API_KEY|TOKEN|PASSWORD|SECRET)=' "$GLOBAL_DIR/setup.sh" 2>/dev/null; then
-                warn "global/setup.sh may contain secrets (KEY=, TOKEN=, PASSWORD=, SECRET=)."
+            # Warn if script appears to contain secrets (build args are visible in docker history)
+            if grep -qEi '(API_KEY|TOKEN|PASSWORD|SECRET)=' "$setup_build_file" 2>/dev/null; then
+                warn "$(basename "$setup_build_file") may contain secrets (KEY=, TOKEN=, PASSWORD=, SECRET=)."
                 warn "Build args are visible in 'docker history'. Move secrets to secrets.env instead."
             fi
-            build_args+=(--build-arg "SETUP_SCRIPT_CONTENT=$setup_content")
-            info "Including global/setup.sh in build"
+            build_args+=(--build-arg "SETUP_BUILD_SCRIPT_CONTENT=$setup_content")
+            info "Including $(basename "$setup_build_file") in build"
         fi
     fi
 

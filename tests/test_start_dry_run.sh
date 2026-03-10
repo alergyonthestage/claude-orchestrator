@@ -640,6 +640,30 @@ test_dry_run_setup_sh_not_mounted_when_missing() {
     assert_file_not_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" "setup.sh"
 }
 
+# ── Global runtime setup.sh mount ────────────────────────────────────
+
+test_dry_run_global_setup_mounted_when_exists() {
+    # global/setup.sh exists → mounted as /home/claude/global-setup.sh:ro
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    echo '#!/bin/bash' > "$CCO_GLOBAL_DIR/setup.sh"
+    run_cco start "test-proj" --dry-run
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" \
+        "global-setup.sh:ro"
+}
+
+test_dry_run_global_setup_not_mounted_when_missing() {
+    # No global/setup.sh → no global-setup mount in compose
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --dry-run
+    assert_file_not_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" "global-setup"
+}
+
 # ── Project mcp-packages.txt mount ──────────────────────────────────
 
 test_dry_run_mcp_packages_mounted_when_exists() {
