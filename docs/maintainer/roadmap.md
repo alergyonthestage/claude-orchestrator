@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-09 (ADR-13 security hardening complete; roadmap re-prioritized: Docker socket restriction + internet controls elevated; Linux OAuth added pre-open-source; E2E testing added).
+> Last updated: 2026-03-10 (Sprint 5 Interactive Tutorial complete; default rules aligned with structured agentic development guide).
 
 ---
 
@@ -107,9 +107,27 @@ Full secure-by-default config parsing and validation. Completed in commit `17407
 - Validation pass in `cmd_start()`: project name (regex + max 63 chars), `browser.cdp_port` (numeric 1-65535), `auth.method` (enum)
 - JSON escaping for `browser.mcp_args` to prevent injection
 - Security docs: ADR-13 (architecture.md), NFR-4/5 (spec.md), HIGH-5 (security.md), validation rules (project-yaml.md)
-- Test coverage: 44 yaml_parser tests (all passing, 482 total)
+- Test coverage: 44 yaml_parser tests (all passing, 508 total)
 
 **Breaking change note**: Projects with `extra_mounts:` entries that omit `readonly:` now mount read-only by default. Users who need write access must add `readonly: false` explicitly. No migration script needed — the default is managed by the CLI, not stored in user config files.
+
+---
+
+### Interactive Tutorial Project (Sprint 5) ✓
+
+Built-in interactive tutorial created by `cco init`. Users launch it with `cco start tutorial` for AI-guided onboarding, project setup assistance, and best practices guidance.
+
+**What was implemented**:
+- Tutorial project template (`defaults/tutorial/`): project.yml with path placeholders, CLAUDE.md with 12-module curriculum, documentation map, and session flow
+- 3 skills: `/tutorial` (guided onboarding), `/setup-project` (project creation wizard), `/setup-pack` (pack creation wizard)
+- `tutorial-behavior.md` rule: teacher-not-executor constraints, cco-is-host-only awareness
+- CLI integration: `cco init` creates tutorial with `{{CCO_REPO_ROOT}}` and `{{CCO_USER_CONFIG_DIR}}` substitution
+- Structured agentic development guide (`docs/user-guides/structured-agentic-development.md`): cco-specific version mapping 18 principles to framework features
+- Default rules aligned with guide: workflow.md Closure phase, scope discipline, test suite verification, doc accuracy check; /design skill ADR suggestion
+- Tutorial discovery in docs: overview.md, installation.md, first-project.md, README.md
+- Test coverage: 14 tutorial tests (508 total)
+
+**Docs**: [analysis](./tutorial-project/analysis.md) | [design](./tutorial-project/design.md)
 
 ---
 
@@ -212,9 +230,8 @@ Features are prioritized by impact for third-party users adopting claude-orchest
 
 ```mermaid
 graph LR
-    DONE["✅ Completed<br/>Bugfix #B1, Sprint 4,<br/>Sprint 6+10, Sprint 6b,<br/>ADR-13 Security Hardening"]
+    DONE["✅ Completed<br/>Sprint 4, Sprint 5,<br/>Sprint 6+10, Sprint 6b,<br/>ADR-13, Bugfix #B1"]
 
-    S5["Sprint 5 (onboarding)<br/>#5 Interactive Tutorial"]
     S6S["Sprint 6-Security<br/>#Docker Restriction<br/>#Internet Controls"]
     S7L["Sprint 7-Linux<br/>#Linux OAuth<br/>(pre-open-source)"]
     S8["Sprint 8 (isolamento)<br/>#6 Git Worktree<br/>#7 Session Resume"]
@@ -223,8 +240,7 @@ graph LR
     S11["Sprint 11 (polish)<br/>#10 cco project edit<br/>#10b StatusLine"]
     S12["Sprint 12 (intelligence)<br/>#13 Project RAG"]
 
-    DONE --> S5
-    S5 --> S6S
+    DONE --> S6S
     S6S --> S7L
     S7L --> S8
     S8 --> S9
@@ -257,44 +273,6 @@ Enable Claude to control a browser via Chrome DevTools MCP, with the browser vis
 **Deferred to future sprint**: container mode (`mode: container` — sibling Chrome + noVNC)
 
 **Docs**: [analysis](./browser-mcp/analysis.md) | [design](./browser-mcp/design.md)
-
----
-
-### Sprint 5 — Interactive Tutorial Project
-
-Required before open-source publication. Provides a guided, hands-on onboarding experience that teaches new users how to use claude-orchestrator effectively.
-
-#### #5 Interactive Tutorial Project — AI-Guided Onboarding
-
-A self-contained example project that users launch with `cco start tutorial` (or similar). Once inside the session, an AI agent guides the user through claude-orchestrator's features interactively — explaining concepts, demonstrating workflows, and answering questions in real time.
-
-**Goals**:
-- Lower the barrier to entry for new users adopting claude-orchestrator
-- Showcase key features (project setup, knowledge packs, agent teams, browser MCP, etc.) through hands-on exercises
-- Serve as living documentation — the tutorial itself uses the features it teaches
-- Clarify common doubts about architecture, configuration, and advanced techniques
-- Prepare the repository for open-source publication with a polished first-run experience
-
-**Key design points**:
-- Ships as a built-in example project (e.g. `examples/tutorial/`) with a pre-configured `project.yml`
-- A dedicated knowledge pack provides the tutorial curriculum and structured lesson content
-- An agent (skill or custom agent) orchestrates the interactive session: presents lessons, checks understanding, adapts to user pace
-- Progressive curriculum: basics (project structure, repos, CLAUDE.md) → intermediate (packs, secrets, MCP) → advanced (agent teams, worktrees, custom images)
-- Each lesson includes a practical exercise the user performs inside the tutorial session
-- The agent can answer free-form questions about claude-orchestrator at any point (FAQ mode)
-- `cco tutorial` shortcut command (alias for `cco start tutorial`) for discoverability
-
-**Scope**:
-- Tutorial project scaffold (`examples/tutorial/` or `defaults/tutorial/`)
-- Knowledge pack with curriculum content (lessons, exercises, reference material)
-- Tutorial agent/skill with interactive guidance logic
-- CLI integration (`cco tutorial` command or documented `cco start` usage)
-- Minimal test coverage for tutorial project generation
-
-**Open questions**:
-- Should the tutorial be a standalone `cco tutorial` command or a regular project the user creates via `cco project create --template tutorial`?
-- How many lessons / what depth for v1? Suggest starting with 5-7 core lessons covering the essentials
-- Should the tutorial track user progress across sessions (resume where you left off)?
 
 ---
 
