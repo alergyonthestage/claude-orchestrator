@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-10 (Sprint 5 Interactive Tutorial complete; default rules aligned with structured agentic development guide).
+> Last updated: 2026-03-10 (Sprint 5 review fixes; defaults restructuring and template system planned).
 
 ---
 
@@ -125,7 +125,7 @@ Built-in interactive tutorial created by `cco init`. Users launch it with `cco s
 - Structured agentic development guide (`docs/user-guides/structured-agentic-development.md`): cco-specific version mapping 18 principles to framework features
 - Default rules aligned with guide: workflow.md Closure phase, scope discipline, test suite verification, doc accuracy check; /design skill ADR suggestion
 - Tutorial discovery in docs: overview.md, installation.md, first-project.md, README.md
-- Test coverage: 14 tutorial tests (508 total)
+- Test coverage: 17 tutorial tests (dry-run compose, --force idempotency, setup.sh)
 
 **Docs**: [analysis](./tutorial-project/analysis.md) | [design](./tutorial-project/design.md)
 
@@ -232,6 +232,7 @@ Features are prioritized by impact for third-party users adopting claude-orchest
 graph LR
     DONE["✅ Completed<br/>Sprint 4, Sprint 5,<br/>Sprint 6+10, Sprint 6b,<br/>ADR-13, Bugfix #B1"]
 
+    S5b["Sprint 5b<br/>#Defaults restructure<br/>#Template system"]
     S6S["Sprint 6-Security<br/>#Docker Restriction<br/>#Internet Controls"]
     S7L["Sprint 7-Linux<br/>#Linux OAuth<br/>(pre-open-source)"]
     S8["Sprint 8 (isolamento)<br/>#6 Git Worktree<br/>#7 Session Resume"]
@@ -240,7 +241,8 @@ graph LR
     S11["Sprint 11 (polish)<br/>#10 cco project edit<br/>#10b StatusLine"]
     S12["Sprint 12 (intelligence)<br/>#13 Project RAG"]
 
-    DONE --> S6S
+    DONE --> S5b
+    S5b --> S6S
     S6S --> S7L
     S7L --> S8
     S8 --> S9
@@ -275,6 +277,48 @@ Enable Claude to control a browser via Chrome DevTools MCP, with the browser vis
 **Docs**: [analysis](./browser-mcp/analysis.md) | [design](./browser-mcp/design.md)
 
 ---
+
+---
+
+### Sprint 5b — Defaults Restructuring & Template System
+
+Refactoring leggero del layout `defaults/` e introduzione del meccanismo `--template` per installare progetti built-in opzionali.
+
+#### #A `defaults/` Directory Restructuring
+
+**Contesto**: `defaults/` ha una struttura piatta con directory di tipo diverso allo stesso livello (`managed/`, `global/`, `_template/`, `tutorial/`). Con l'aggiunta di template opzionali la struttura diventa poco chiara.
+
+**Obiettivo**: riorganizzare `defaults/` con sottodirectory per tipo, in modo che rispecchi la struttura di `user-config/`:
+
+```
+defaults/
+├── managed/          → /etc/claude-code/ (Docker image, invariato)
+├── global/           → user-config/global/ (cco init, invariato)
+├── projects/         → user-config/projects/
+│   ├── _template/    (scaffold per cco project create)
+│   └── tutorial/     (progetto tutorial built-in)
+└── packs/            (vuoto per ora, estendibile in futuro)
+```
+
+**File impattati**: `Dockerfile`, `bin/cco` (DEFAULTS_DIR, TEMPLATE_DIR), `lib/cmd-init.sh`, `lib/cmd-project.sh`, test, documentazione.
+
+#### #B `cco project create --template <name>`
+
+**Contesto**: l'unico modo per installare il tutorial è `cco init`. Un utente che ha già inizializzato e vuole il tutorial (o lo ha rimosso e vuole ricrearlo) non ha un comando diretto.
+
+**Obiettivo**: `--template` copia da `defaults/projects/<name>/` invece di `defaults/projects/_template/`, con sostituzione placeholder.
+
+```bash
+cco project create --template tutorial    # installa tutorial da defaults
+cco project create --template <name>      # estendibile a futuri template
+cco project create my-app --repo ~/code   # comportamento attuale (da _template)
+```
+
+**Logica**: se `--template` è presente e il template esiste in `defaults/projects/`, copia e sostituisci placeholder. Se non esiste, errore con elenco template disponibili.
+
+#### #C `cco tutorial` Alias
+
+Alias triviale in `bin/cco`: `cco tutorial` → `cco start tutorial`. Migliora discoverability per nuovi utenti.
 
 ---
 
