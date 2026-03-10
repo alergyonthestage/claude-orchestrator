@@ -2,6 +2,10 @@
 
 > Complete walkthrough: from project creation to your first Claude Code session.
 
+> **New to cco?** Run `cco start tutorial` for an interactive guide that walks you
+> through project creation, knowledge packs, and best practices. It can also help
+> you customize your default rules and workflow to match your preferences.
+
 ---
 
 ## 1. Create the project

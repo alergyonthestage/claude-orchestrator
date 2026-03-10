@@ -103,7 +103,7 @@ navigated on-demand (for specific questions). Adapt to the user's needs.
 - **M9: Browser automation** — Chrome DevTools, CDP setup, testing workflows
 
 ### Mastery
-- **M10: Structured development workflow** — phases (analysis→design→impl), phase gates
+- **M10: Structured development workflow** — phases (analysis→design→impl), phase gates. Core reference: `user-guides/structured-agentic-development.md`
 - **M11: Pack design patterns** — composability, rules vs knowledge, modularization, when to extract
 - **M12: Advanced topics** — context hierarchy deep-dive, migrations, update system
 

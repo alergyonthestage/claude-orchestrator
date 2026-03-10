@@ -47,3 +47,5 @@ Potential issues and how to address them.
 - Keep designs minimal — solve what's needed now, not hypothetical futures
 - Reference specific files that will be modified
 - Consider backwards compatibility and migration paths
+- For significant architectural decisions, consider saving the rationale
+  as an ADR (Architecture Decision Record) in `docs/adr/`

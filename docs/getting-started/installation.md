@@ -41,10 +41,15 @@ source ~/.zshrc
 cco init
 ```
 
-`cco init` performs three operations:
+`cco init` performs four operations:
 1. Copies user defaults to `user-config/global/.claude/` (agents, skills, rules, settings)
 2. Creates the `user-config/projects/` directory
-3. Runs `cco build` to build the Docker image
+3. Creates the **tutorial project** — an interactive guide to learn and configure cco
+4. Runs `cco build` to build the Docker image
+
+> **Tip**: Run `cco start tutorial` to start the interactive tutorial. It helps you
+> learn cco concepts, set up your first project, create knowledge packs, and
+> customize your default rules and workflow — all through guided conversation.
 
 ---
 
