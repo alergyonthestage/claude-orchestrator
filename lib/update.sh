@@ -13,6 +13,8 @@ GLOBAL_USER_FILES=("mcp.json" "setup.sh")
 PROJECT_USER_FILES=("CLAUDE.md" "rules/language.md")
 # Files that need special regeneration logic
 GLOBAL_SPECIAL_FILES=("rules/language.md")
+# Global root files: copied from defaults if missing, never overwritten
+GLOBAL_ROOT_COPY_IF_MISSING=("setup.sh")
 # Project root files: copied from template if missing, never overwritten
 PROJECT_ROOT_COPY_IF_MISSING=("setup.sh" "secrets.env" "mcp-packages.txt")
 
@@ -560,7 +562,17 @@ _update_global() {
     local pending_migrations=$(( latest_schema - current_schema ))
     [[ $pending_migrations -lt 0 ]] && pending_migrations=0
 
-    if [[ $actionable -eq 0 && $pending_migrations -eq 0 ]]; then
+    # Check for missing global root files (setup.sh)
+    local global_defaults_root="$DEFAULTS_DIR/global"
+    local root_missing=()
+    local rf
+    for rf in "${GLOBAL_ROOT_COPY_IF_MISSING[@]}"; do
+        if [[ -f "$global_defaults_root/$rf" && ! -f "$GLOBAL_DIR/$rf" ]]; then
+            root_missing+=("$rf")
+        fi
+    done
+
+    if [[ $actionable -eq 0 && $pending_migrations -eq 0 && ${#root_missing[@]} -eq 0 ]]; then
         ok "Global config is up to date."
         return 0
     fi
@@ -571,6 +583,18 @@ _update_global() {
 
     # Phase 2: APPLY — execute changes
     _apply_file_changes "$changes" "$defaults_dir" "$installed_dir" "$mode" "$dry_run"
+
+    # Copy missing root files from defaults
+    if [[ ${#root_missing[@]} -gt 0 ]]; then
+        for rf in "${root_missing[@]}"; do
+            if [[ "$dry_run" == "true" ]]; then
+                info "  + $rf (missing, will copy from defaults)"
+            else
+                cp "$global_defaults_root/$rf" "$GLOBAL_DIR/$rf"
+                ok "  + $rf (copied from defaults)"
+            fi
+        done
+    fi
 
     # Run migrations
     if [[ $pending_migrations -gt 0 ]]; then

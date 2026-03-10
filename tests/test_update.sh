@@ -419,3 +419,68 @@ test_migration_003_no_projects_dir() {
     assert_dir_exists "$tmpdir/user-config/projects"
     assert_dir_exists "$tmpdir/user-config/templates"
 }
+
+# ── Root file copy-if-missing ────────────────────────────────────────
+
+test_update_global_missing_setup_sh_restored() {
+    # cco update restores missing global setup.sh from defaults
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    # Verify setup.sh was created by init
+    [[ -f "$CCO_GLOBAL_DIR/setup.sh" ]] || fail "setup.sh not created by init"
+
+    # Delete it to simulate missing file
+    rm "$CCO_GLOBAL_DIR/setup.sh"
+    [[ ! -f "$CCO_GLOBAL_DIR/setup.sh" ]] || fail "setup.sh should be deleted"
+
+    # Run update — should restore it
+    run_cco update
+    [[ -f "$CCO_GLOBAL_DIR/setup.sh" ]] || fail "setup.sh not restored by update"
+    assert_output_contains "setup.sh"
+}
+
+test_update_global_existing_setup_sh_not_overwritten() {
+    # cco update does NOT overwrite existing global setup.sh
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    # User customizes setup.sh
+    printf '#!/bin/bash\napt-get install -y tmux\n' > "$CCO_GLOBAL_DIR/setup.sh"
+
+    run_cco update
+    # User content preserved
+    assert_file_contains "$CCO_GLOBAL_DIR/setup.sh" "apt-get install"
+}
+
+test_update_global_missing_setup_sh_dry_run() {
+    # --dry-run reports missing global setup.sh without copying
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    rm "$CCO_GLOBAL_DIR/setup.sh"
+
+    run_cco update --dry-run
+    assert_output_contains "setup.sh"
+    assert_output_contains "missing"
+    # File should NOT be created in dry-run
+    [[ ! -f "$CCO_GLOBAL_DIR/setup.sh" ]] || fail "setup.sh should not be created in dry-run"
+}
+
+test_update_project_missing_setup_sh_restored() {
+    # cco update --project restores missing project setup.sh from template
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+    run_cco project create "test-proj" --repo "$CCO_DUMMY_REPO"
+
+    # Delete setup.sh
+    rm "$CCO_PROJECTS_DIR/test-proj/setup.sh"
+
+    run_cco update --project test-proj
+    [[ -f "$CCO_PROJECTS_DIR/test-proj/setup.sh" ]] || fail "setup.sh not restored by update"
+    assert_output_contains "setup.sh"
+}
