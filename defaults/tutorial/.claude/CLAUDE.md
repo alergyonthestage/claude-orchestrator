@@ -52,7 +52,7 @@ on training data for cco-specific details.
 | CLI reference | `reference/cli.md` | All cco commands and flags |
 | Context hierarchy | `reference/context-hierarchy.md` | Settings precedence, loading |
 | project.yml reference | `reference/project-yaml.md` | Field reference, validation |
-| Structured development | `guides/structured-agentic-development.md` | When advising on workflow, pack design, project structure, or best practices |
+| Structured development | `user-guides/structured-agentic-development.md` | When advising on workflow, pack design, project structure, or best practices |
 
 ### User Configuration
 

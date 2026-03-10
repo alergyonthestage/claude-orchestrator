@@ -33,7 +33,7 @@ The lead agent IS the guide — no dedicated guide subagent. The project CLAUDE.
 ## 1.2 Structured Agentic Development Guide
 
 The general-purpose guide at `.claude/docs/resources/structured-agentic-development-guide.md`
-is transformed into a **cco-specific guide** and moved to `docs/guides/structured-agentic-development.md`.
+is transformed into a **cco-specific guide** and moved to `docs/user-guides/structured-agentic-development.md`.
 
 **Why transform (not copy)**: A general-purpose guide about agentic patterns is useful
 but abstract. A cco-specific version explicitly maps each principle to the feature
@@ -47,13 +47,14 @@ of claude-orchestrator that implements it, explaining:
 Splitting it into rules would violate the rules constraint (~30 lines, always loaded).
 The agent reads it on-demand when advising users on workflow, pack design, or project structure.
 
-**Why move to `docs/guides/`**: It becomes official cco documentation, mounted live
-via the `docs/` extra_mount in the tutorial project (and any future project that mounts docs).
-Maintainers update it alongside other docs — zero staleness risk.
+**Why move to `docs/user-guides/`**: It becomes official cco documentation alongside
+the other user-facing guides, mounted live via the `docs/` extra_mount in the tutorial
+project (and any future project that mounts docs). Maintainers update it alongside
+other docs — zero staleness risk.
 
 **CLAUDE.md doc map entry**:
 ```
-| Structured development | guides/structured-agentic-development.md | When advising on workflow, pack design, project structure, or best practices |
+| Structured development | user-guides/structured-agentic-development.md | When advising on workflow, pack design, project structure, or best practices |
 ```
 
 **Implementation**: Phase 0 (prerequisite) — transform the guide and move it before
