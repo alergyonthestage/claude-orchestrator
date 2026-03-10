@@ -135,6 +135,18 @@ test_tutorial_dry_run_generates_compose() {
     assert_file_not_contains "$compose" "/var/run/docker.sock"
 }
 
+test_tutorial_dry_run_warns_no_repos() {
+    # repos: [] is valid but should emit a warning (not an error)
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco init --lang "English"
+    mkdir -p "$REPO_ROOT/docs"
+
+    run_cco start "tutorial" --dry-run
+    assert_output_contains "No repositories defined"
+}
+
 test_init_skips_tutorial_with_force() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"

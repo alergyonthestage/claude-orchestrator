@@ -159,10 +159,10 @@ EOF
     local pack_names
     pack_names=$(yml_get_packs "$project_yml")
 
-    # Validate: at least one repo required for persistent work
+    # Warn if no repos defined (some projects like tutorial work without repos)
     local repos_check
     repos_check=$(yml_get_repos "$project_yml")
-    [[ -z "$repos_check" ]] && die "No repositories defined in project.yml. Add at least one repo under 'repos:' before starting."
+    [[ -z "$repos_check" ]] && warn "No repositories defined in project.yml. Work inside the container will not persist unless saved via extra_mounts."
 
     # Check for available updates
     local _global_meta="$GLOBAL_DIR/.claude/.cco-meta"

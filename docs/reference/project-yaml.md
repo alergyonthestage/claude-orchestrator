@@ -69,7 +69,7 @@ browser:
 |-------|----------|------|---------|-------------|
 | `name` | ✅ | string | — | Project identifier |
 | `description` | ❌ | string | `""` | Human-readable description |
-| `repos` | ✅ | list | — | Repositories to mount |
+| `repos` | ❌ | list | `[]` | Repositories to mount (empty allowed; a warning is shown at start) |
 | `repos[].path` | ✅ | string | — | Absolute path on host (~ expanded) |
 | `repos[].name` | ✅ | string | — | Directory name in /workspace/ |
 | `extra_mounts` | ❌ | list | `[]` | Additional volume mounts |
