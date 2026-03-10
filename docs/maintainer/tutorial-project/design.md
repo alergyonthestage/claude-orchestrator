@@ -25,6 +25,39 @@ The lead agent IS the guide — no dedicated guide subagent. The project CLAUDE.
 | Knowledge packs | None | Self-contained. Docs mounted live, no duplication |
 | Distribution | Created by `cco init` | Maximum discoverability. Removable with `rm -rf` |
 | Progress tracking | Not in v1 | MEMORY.md tracking deferred. Noted as future enhancement |
+| Best practices guide | cco-specific version in `docs/guides/` | General-purpose guide transformed to explain why cco exists and how it implements structured agentic development patterns. Mounted live via `docs/` extra_mount, always fresh |
+| Per-project knowledge | Not in v1 | Knowledge section currently only available in packs. Per-project knowledge (same `knowledge:` schema in project.yml) noted as future enhancement in roadmap |
+
+---
+
+## 1.2 Structured Agentic Development Guide
+
+The general-purpose guide at `.claude/docs/resources/structured-agentic-development-guide.md`
+is transformed into a **cco-specific guide** and moved to `docs/guides/structured-agentic-development.md`.
+
+**Why transform (not copy)**: A general-purpose guide about agentic patterns is useful
+but abstract. A cco-specific version explicitly maps each principle to the feature
+of claude-orchestrator that implements it, explaining:
+- **Why cco exists**: which problems in AI-assisted development it solves
+- **How cco implements each pattern**: context hierarchy → stratified rules,
+  Docker isolation → sandbox, packs → knowledge curation, etc.
+- **How the user should use cco**: practical guidance grounded in the tool's features
+
+**Why keep it whole**: The guide is a coherent ~400-line reference document.
+Splitting it into rules would violate the rules constraint (~30 lines, always loaded).
+The agent reads it on-demand when advising users on workflow, pack design, or project structure.
+
+**Why move to `docs/guides/`**: It becomes official cco documentation, mounted live
+via the `docs/` extra_mount in the tutorial project (and any future project that mounts docs).
+Maintainers update it alongside other docs — zero staleness risk.
+
+**CLAUDE.md doc map entry**:
+```
+| Structured development | guides/structured-agentic-development.md | When advising on workflow, pack design, project structure, or best practices |
+```
+
+**Implementation**: Phase 0 (prerequisite) — transform the guide and move it before
+building the tutorial project template. The guide is useful independently of the tutorial.
 
 ---
 
@@ -170,6 +203,7 @@ on training data for cco-specific details.
 | CLI reference | `reference/cli.md` | All cco commands and flags |
 | Context hierarchy | `reference/context-hierarchy.md` | Settings precedence, loading |
 | project.yml reference | `reference/project-yaml.md` | Field reference, validation |
+| Structured development | `guides/structured-agentic-development.md` | When advising on workflow, pack design, project structure, or best practices |
 
 ### User Configuration
 
@@ -625,6 +659,13 @@ No overrides needed. The tutorial project uses the same model, permissions, and 
 
 ## 10. Implementation Plan
 
+### Phase 0: Best Practices Guide (prerequisite)
+
+| Step | Files | Description |
+|------|-------|-------------|
+| 0a | `docs/guides/structured-agentic-development.md` | Transform general-purpose guide into cco-specific version |
+| 0b | `.claude/docs/resources/structured-agentic-development-guide.md` | Remove original (replaced by docs/guides/ version) |
+
 ### Phase 1: Project Template
 
 | Step | Files | Description |
@@ -731,3 +772,4 @@ Documented but explicitly NOT in scope for v1:
 | Validation exercises | Agent verifies user's project/pack configs against best practices | After v1 feedback |
 | Multi-language curriculum | Curriculum content adapted per language | If there's demand from non-English communities |
 | Interactive demos | Agent demonstrates features in real time (requires Docker socket) | After socket-enabled tutorial is validated |
+| Per-project knowledge | Add `knowledge:` section to project.yml (same schema as packs). `cco start` generates packs.md from project-level knowledge too. Eliminates the current gap where knowledge is only available via packs | Roadmap: Pack Ecosystem sprint or standalone feature |
