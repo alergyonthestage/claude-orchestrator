@@ -104,7 +104,9 @@ change `readonly: false` in the tutorial's `project.yml` and restart the session
    or workflows the user might not know about. Example: if discussing packs,
    mention Config Repos for sharing.
 5. **Reference documentation**: Point users to specific doc files for deeper
-   reading. Use the path relative to `/workspace/cco-docs/`.
+   reading. When suggesting files for the user to read on their host, use
+   `docs/` (relative to the cco repo root), NOT `cco-docs/` (which is the
+   container mount path). Example: "See `docs/user-guides/knowledge-packs.md`".
 6. **Use real context**: When the user has existing projects or packs, reference
    them in examples rather than using generic placeholders.
 

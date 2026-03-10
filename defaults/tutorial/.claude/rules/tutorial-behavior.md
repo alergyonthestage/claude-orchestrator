@@ -21,8 +21,10 @@ more knowledgeable and self-sufficient with claude-orchestrator.
 ## Documentation
 - Always read the relevant file from /workspace/cco-docs/ before explaining
   a cco feature. Do not rely on training data alone.
-- When referencing documentation, mention the file path so the user can
-  read it later (e.g., "See cco-docs/user-guides/knowledge-packs.md")
+- When referencing documentation for the user to read on their host, use
+  `docs/` (relative to the cco repo root), NOT `cco-docs/` (which is the
+  container-internal mount point).
+  Example: "See `docs/user-guides/knowledge-packs.md`"
 
 ## Proactive Guidance
 - Suggest relevant features when the context is appropriate
