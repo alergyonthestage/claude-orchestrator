@@ -33,6 +33,8 @@ packs:
 
 # ── Docker options ───────────────────────────────────────────────────
 docker:
+  mount_socket: true        # Enable Docker-from-Docker (default: false)
+
   # Port mappings (host:container)
   ports:
     - "3000:3000"       # Frontend dev
@@ -47,6 +49,35 @@ docker:
 
   # Network name for sibling containers
   network: cc-my-saas
+
+  # Container access policy (requires mount_socket: true)
+  containers:
+    policy: allowlist         # project_only | allowlist | denylist | unrestricted
+    allow:
+      - "cc-my-saas-*"
+      - "postgres-dev"
+    create: true
+    name_prefix: "cc-my-saas-"
+    required_labels:
+      cco.project: my-saas-platform
+
+  # Mount restrictions (requires mount_socket: true)
+  mounts:
+    policy: project_only      # none | project_only | allowlist | any
+    deny:
+      - "/etc/shadow"
+
+  # Security constraints (requires mount_socket: true)
+  security:
+    no_privileged: true
+    no_sensitive_mounts: true
+    drop_capabilities:
+      - SYS_ADMIN
+      - NET_ADMIN
+    resources:
+      memory: "4g"
+      cpus: "4"
+      max_containers: 10
 
 # ── Authentication ───────────────────────────────────────────────────
 auth:
@@ -142,6 +173,8 @@ When a security-relevant field is **omitted**, the default is always the most re
 | `browser.cdp_port` | Numeric, range 1–65535 | At parse time |
 | `browser.mcp_args` | Values JSON-escaped before injection | At compose generation |
 | `auth.method` | Enum: `oauth` \| `api_key` | At parse time |
+| `docker.containers.policy` | Enum: `project_only` \| `allowlist` \| `denylist` \| `unrestricted` | At start time |
+| `docker.mounts.policy` | Enum: `none` \| `project_only` \| `allowlist` \| `any` | At start time |
 
 ### Whitespace
 

@@ -552,7 +552,7 @@ This is a class of bugs where **config parsing errors silently weaken security**
 1. **Restrictive defaults**: When a security-relevant field is omitted, the default
    MUST be the most restrictive value. Specifically:
    - `extra_mounts[].readonly` → default `true` (read-only) when field is omitted
-   - `docker.mount_socket` → remains `true` (documented trade-off, see ADR-4)
+   - `docker.mount_socket` → default `false` (opt-in; changed in Sprint 6-Security Phase A)
    - `browser.enabled` → remains `false` (disabled)
    - `github.enabled` → remains `false` (disabled)
 

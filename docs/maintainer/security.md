@@ -93,7 +93,7 @@ It can be disabled per-session (`--no-docker`) or per-project
 
 **Mitigation (Sprint 6-Security):**
 - **Default changed to `false`** — Docker socket is now opt-in, not opt-out. Projects that need Docker access must explicitly declare `docker.mount_socket: true`. Migration 006 adds explicit `true` to existing projects to preserve behavior.
-- **Planned: Docker socket proxy** — Go binary filtering Docker API calls by container name/label, mount restrictions, and security constraints. See [docker-security design](./docker-security/design.md).
+- **Implemented: Docker socket proxy** — Go binary (`proxy/`) filtering Docker API calls by container name/label, mount restrictions, and security constraints. The proxy (`cco-docker-proxy`) runs between Claude and the real socket, enforcing `policy.json` rules generated from `project.yml`. See [docker-security design](./docker-security/design.md).
 
 ---
 

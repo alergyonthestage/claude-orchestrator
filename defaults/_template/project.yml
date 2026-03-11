@@ -13,26 +13,9 @@ repos: []
 #     readonly: true
 
 # ── Knowledge Packs (optional) ───────────────────────────────────────
-# Reference named packs defined in global/packs/<name>/pack.yml.
-# Each pack can provide: knowledge files, skills, agents, and rules.
-# On every `cco start`, knowledge files are listed in .claude/packs.md
-# and injected into the session context automatically (no CLAUDE.md edit needed).
-# Skills, agents, and rules are copied to .claude/ for project-scoped access.
-#
-# Pack schema (global/packs/<name>/pack.yml):
-# name: my-pack
-# knowledge:
-#   source: ~/path/to/docs   # optional; omit to use pack's own knowledge/ dir
-#   files:
-#     - path: guide.md
-#       description: "Read when working on X"
-#     - simple.md
-# skills:
-#   - deploy
-# agents:
-#   - specialist.md
-# rules:
-#   - conventions.md
+# Reference packs from user-config/packs/<name>/pack.yml.
+# Each pack can bundle: knowledge files, skills, agents, and rules.
+# See: docs/reference/project-yaml.md § Knowledge Packs for schema and examples.
 #
 # packs:
 #   - my-pack
@@ -63,12 +46,51 @@ repos: []
 # ── Docker options ───────────────────────────────────────────────────
 docker:
   # image: claude-orchestrator:latest  # Custom Docker image for this project
-  # mount_socket: false   # Set true to enable Docker socket mount (Docker-from-Docker)
+  mount_socket: false       # Set true to enable Docker-from-Docker (socket mount)
   ports:
     - "3000:3000"
     - "8080:8080"
   env: {}
   # network: cc-{{PROJECT_NAME}}
+
+  # ── Container access policy (requires mount_socket: true) ──────────
+  # Controls which containers Claude can see and manage.
+  # Policies: project_only | allowlist | denylist | unrestricted
+  #
+  # containers:
+  #   policy: project_only             # Default: only project-network containers
+  #   allow: []                        # Glob patterns (allowlist policy only)
+  #   deny: []                         # Glob patterns (denylist policy only)
+  #   create: true                     # Allow creating new containers
+  #   name_prefix: "cc-{{PROJECT_NAME}}-"  # Prefix enforced on new containers
+  #   required_labels:                 # Labels auto-injected on creation
+  #     cco.project: "{{PROJECT_NAME}}"
+
+  # ── Mount restrictions (requires mount_socket: true) ───────────────
+  # Controls which host paths Claude can mount into containers.
+  # Policies: none | project_only | allowlist | any
+  #
+  # mounts:
+  #   policy: project_only             # Default: only repos in this project
+  #   allow: []                        # Absolute paths (allowlist policy only)
+  #   deny: []                         # Paths always denied (all policies)
+  #   force_readonly: false            # Force all mounts read-only
+
+  # ── Security constraints (requires mount_socket: true) ─────────────
+  # Enforced on all containers Claude creates. Secure defaults applied
+  # automatically even if this section is omitted.
+  #
+  # security:
+  #   no_privileged: true              # Block --privileged flag
+  #   no_sensitive_mounts: true        # Block /proc, /sys, /etc/shadow mounts
+  #   force_non_root: false            # Block root user in containers
+  #   drop_capabilities:               # Linux capabilities to drop
+  #     - SYS_ADMIN
+  #     - NET_ADMIN
+  #   resources:                       # Per-container resource limits
+  #     memory: "4g"
+  #     cpus: "4"
+  #     max_containers: 10
 
 # ── Authentication ───────────────────────────────────────────────────
 auth:
