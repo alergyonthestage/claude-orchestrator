@@ -393,10 +393,10 @@ YAML
     assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" "ANTHROPIC_API_KEY"
 }
 
-# ── Knowledge packs (copied, not mounted) ────────────────────────────
+# ── Knowledge packs (mounted read-only, ADR-14) ──────────────────────
 
-test_dry_run_pack_knowledge_copied() {
-    # Knowledge files are copied to .claude/packs/, not mounted as volumes
+test_dry_run_pack_knowledge_mounted() {
+    # Knowledge dir is mounted read-only in docker-compose.yml, not copied
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -426,9 +426,10 @@ packs:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    local copied="$CCO_PROJECTS_DIR/test-proj/.claude/packs/my-pack/doc.md"
-    [[ -f "$copied" ]] || fail "Knowledge file not copied to $copied"
-    assert_file_contains "$copied" "test knowledge"
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    assert_file_contains "$compose" "${pack_src}:/workspace/.claude/packs/my-pack:ro"
+    # Knowledge must NOT be copied to project directory
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/packs/my-pack/doc.md"
 }
 
 # ── MCP server config ─────────────────────────────────────────────────

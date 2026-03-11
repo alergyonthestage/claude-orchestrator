@@ -366,14 +366,13 @@ test_project_yml_mounted_in_compose() {
         "./project.yml:/workspace/project.yml:ro"
 }
 
-# ── pack skills / agents / rules copy ────────────────────────────────
+# ── pack resource mounts in compose (ADR-14) ─────────────────────────
 
-test_pack_skills_copied_to_project_claude() {
-    # Skills defined in pack are copied to projects/<n>/.claude/skills/
+test_pack_skills_mounted_in_compose() {
+    # Skills defined in pack generate directory mount in docker-compose.yml
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    # Create pack with a skill
     local pack_dir="$tmpdir/user-config/packs/skill-pack"
     mkdir -p "$pack_dir/skills/deploy"
     echo "Deploy skill" > "$pack_dir/skills/deploy/SKILL.md"
@@ -393,11 +392,12 @@ packs:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.claude/skills/deploy/SKILL.md"
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    assert_file_contains "$compose" "skills/deploy:/workspace/.claude/skills/deploy:ro"
 }
 
-test_pack_agents_copied_to_project_claude() {
-    # Agents defined in pack are copied to projects/<n>/.claude/agents/
+test_pack_agents_mounted_in_compose() {
+    # Agents defined in pack generate per-file mount in docker-compose.yml
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -420,11 +420,12 @@ packs:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.claude/agents/devops.md"
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    assert_file_contains "$compose" "agents/devops.md:/workspace/.claude/agents/devops.md:ro"
 }
 
-test_pack_rules_copied_to_project_claude() {
-    # Rules defined in pack are copied to projects/<n>/.claude/rules/
+test_pack_rules_mounted_in_compose() {
+    # Rules defined in pack generate per-file mount in docker-compose.yml
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -447,21 +448,58 @@ packs:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.claude/rules/api-conventions.md"
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    assert_file_contains "$compose" "rules/api-conventions.md:/workspace/.claude/rules/api-conventions.md:ro"
 }
 
-# ── pack manifest (stale file cleanup) ──────────────────────────────
-
-test_pack_manifest_created_after_copy() {
-    # .pack-manifest is created listing all copied resources
+test_pack_knowledge_mounted_in_compose() {
+    # Knowledge dir generates a directory mount in docker-compose.yml
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_dir="$tmpdir/user-config/packs/mf-pack"
-    mkdir -p "$pack_dir/agents" "$pack_dir/rules"
-    echo "Agent" > "$pack_dir/agents/bot.md"
+    local pack_src="$tmpdir/pack-src"
+    mkdir -p "$pack_src"
+    echo "docs" > "$pack_src/overview.md"
+    create_pack "$tmpdir" "k-pack" "$(cat <<YAML
+name: k-pack
+knowledge:
+  source: $pack_src
+  files:
+    - overview.md
+YAML
+)"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+packs:
+  - k-pack
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    assert_file_contains "$compose" "${pack_src}:/workspace/.claude/packs/k-pack:ro"
+}
+
+test_pack_mounts_are_readonly() {
+    # All pack resource mounts must have :ro flag
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local pack_dir="$tmpdir/user-config/packs/ro-pack"
+    mkdir -p "$pack_dir/rules" "$pack_dir/agents" "$pack_dir/skills/my-skill"
     echo "Rule" > "$pack_dir/rules/style.md"
-    printf 'name: mf-pack\nagents:\n  - bot.md\nrules:\n  - style.md\n' > "$pack_dir/pack.yml"
+    echo "Agent" > "$pack_dir/agents/bot.md"
+    echo "Skill" > "$pack_dir/skills/my-skill/SKILL.md"
+    printf 'name: ro-pack\nrules:\n  - style.md\nagents:\n  - bot.md\nskills:\n  - my-skill\nknowledge:\n  files:\n    - dummy.md\n' > "$pack_dir/pack.yml"
+    mkdir -p "$pack_dir/knowledge"
+    echo "doc" > "$pack_dir/knowledge/dummy.md"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -473,26 +511,39 @@ repos:
   - path: $CCO_DUMMY_REPO
     name: dummy-repo
 packs:
-  - mf-pack
+  - ro-pack
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    local manifest="$CCO_PROJECTS_DIR/test-proj/.claude/.pack-manifest"
-    assert_file_exists "$manifest"
-    assert_file_contains "$manifest" "agents/bot.md"
-    assert_file_contains "$manifest" "rules/style.md"
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    # Extract all pack mount lines (after "Pack resources" comment) and verify all have :ro
+    local pack_lines
+    pack_lines=$(sed -n '/Pack resources/,/^ *#/p' "$compose" | grep '^\s*-' || true)
+    if [[ -z "$pack_lines" ]]; then
+        echo "ASSERTION FAILED: no pack mount lines found in compose"
+        return 1
+    fi
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        if ! echo "$line" | grep -qF ':ro'; then
+            echo "ASSERTION FAILED: pack mount missing :ro flag: $line"
+            return 1
+        fi
+    done <<< "$pack_lines"
 }
 
-test_pack_manifest_stale_files_cleaned() {
-    # When a pack removes a resource, the stale file is cleaned on next start
+test_pack_no_files_copied_to_project() {
+    # ADR-14: pack resources must NOT be copied into project .claude/ directory
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_dir="$tmpdir/user-config/packs/evolve-pack"
-    mkdir -p "$pack_dir/agents"
-    echo "Agent v1" > "$pack_dir/agents/old-agent.md"
-    echo "Agent v1" > "$pack_dir/agents/keep-agent.md"
-    printf 'name: evolve-pack\nagents:\n  - old-agent.md\n  - keep-agent.md\n' > "$pack_dir/pack.yml"
+    local pack_dir="$tmpdir/user-config/packs/no-copy-pack"
+    mkdir -p "$pack_dir/rules" "$pack_dir/agents" "$pack_dir/skills/deploy" "$pack_dir/knowledge"
+    echo "Rule" > "$pack_dir/rules/style.md"
+    echo "Agent" > "$pack_dir/agents/bot.md"
+    echo "Skill" > "$pack_dir/skills/deploy/SKILL.md"
+    echo "Knowledge" > "$pack_dir/knowledge/guide.md"
+    printf 'name: no-copy-pack\nrules:\n  - style.md\nagents:\n  - bot.md\nskills:\n  - deploy\nknowledge:\n  files:\n    - guide.md\n' > "$pack_dir/pack.yml"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -504,63 +555,41 @@ repos:
   - path: $CCO_DUMMY_REPO
     name: dummy-repo
 packs:
-  - evolve-pack
+  - no-copy-pack
 YAML
 )"
-    # First start: both agents copied
     run_cco start "test-proj" --dry-run
-    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.claude/agents/old-agent.md"
-    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.claude/agents/keep-agent.md"
-    # Remove old-agent from pack definition
-    printf 'name: evolve-pack\nagents:\n  - keep-agent.md\n' > "$pack_dir/pack.yml"
-    # Second start: old-agent should be cleaned
-    run_cco start "test-proj" --dry-run
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/agents/old-agent.md"
-    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.claude/agents/keep-agent.md"
+    # No pack files should exist in the project directory
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/rules/style.md"
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/agents/bot.md"
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/skills/deploy/SKILL.md"
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/packs/no-copy-pack/guide.md"
+    # No .pack-manifest should be created
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/.pack-manifest"
 }
 
-test_pack_manifest_no_packs_cleans_all() {
-    # Removing all packs from project.yml cleans previously copied resources
+# ── legacy manifest cleanup ──────────────────────────────────────────
+
+test_legacy_manifest_cleaned_on_start() {
+    # Pre-ADR-14 manifest files are cleaned up on start
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_dir="$tmpdir/user-config/packs/temp-pack"
-    mkdir -p "$pack_dir/rules"
-    echo "Rule" > "$pack_dir/rules/temp-rule.md"
-    printf 'name: temp-pack\nrules:\n  - temp-rule.md\n' > "$pack_dir/pack.yml"
-    create_project "$tmpdir" "test-proj" "$(cat <<YAML
-name: test-proj
-auth:
-  method: oauth
-docker:
-  ports: []
-  env: {}
-repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
-packs:
-  - temp-pack
-YAML
-)"
-    # First start: rule copied
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+
+    # Simulate legacy state: manifest + copied files
+    local proj_claude="$CCO_PROJECTS_DIR/test-proj/.claude"
+    mkdir -p "$proj_claude/rules" "$proj_claude/agents"
+    echo "old rule" > "$proj_claude/rules/legacy-rule.md"
+    echo "old agent" > "$proj_claude/agents/legacy-agent.md"
+    printf 'rules/legacy-rule.md\nagents/legacy-agent.md\n' > "$proj_claude/.pack-manifest"
+
     run_cco start "test-proj" --dry-run
-    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.claude/rules/temp-rule.md"
-    # Remove packs entirely
-    create_project "$tmpdir" "test-proj" "$(cat <<YAML
-name: test-proj
-auth:
-  method: oauth
-docker:
-  ports: []
-  env: {}
-repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
-YAML
-)"
-    # Second start: stale rule should be cleaned
-    run_cco start "test-proj" --dry-run
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/rules/temp-rule.md"
+
+    # Legacy files should be cleaned
+    assert_file_not_exists "$proj_claude/rules/legacy-rule.md"
+    assert_file_not_exists "$proj_claude/agents/legacy-agent.md"
+    assert_file_not_exists "$proj_claude/.pack-manifest"
 }
 
 # ── pack name conflict warnings ──────────────────────────────────────
@@ -697,8 +726,8 @@ YAML
     assert_output_contains "no valid top-level keys"
 }
 
-test_pack_yml_bad_indentation_skips_resources() {
-    # pack.yml with bad indentation must NOT copy any resources
+test_pack_yml_bad_indentation_skips_mounts() {
+    # pack.yml with bad indentation must NOT generate any mount lines
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -725,8 +754,12 @@ packs:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    # Rule must NOT be copied since pack.yml is invalid
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/rules/style.md"
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    # Compose must NOT contain any mount referencing bad-indent pack
+    if grep -q "bad-indent" "$compose"; then
+        echo "ASSERTION FAILED: compose should not contain mounts for pack with bad indentation"
+        return 1
+    fi
 }
 
 test_pack_yml_bad_indentation_skips_knowledge() {

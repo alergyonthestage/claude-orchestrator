@@ -150,15 +150,15 @@ knowledge:
       description: "Read for business context and product understanding"
     - testing-guidelines.md              # short form: no description
 
-# Skills — copied to /workspace/.claude/skills/ on cco start
+# Skills — mounted to /workspace/.claude/skills/ (:ro) on cco start
 skills:
   - deploy
 
-# Agents — copied to /workspace/.claude/agents/ on cco start
+# Agents — mounted to /workspace/.claude/agents/ (:ro, per file) on cco start
 agents:
   - devops-specialist.md
 
-# Rules — copied to /workspace/.claude/rules/ on cco start
+# Rules — mounted to /workspace/.claude/rules/ (:ro, per file) on cco start
 rules:
   - api-conventions.md
 ```
@@ -166,22 +166,20 @@ rules:
 All sections are optional. A knowledge-only pack needs only the `knowledge:` section.
 
 **How it works** — on every `cco start`:
-1. Stale files from the previous `.pack-manifest` are cleaned
-2. Name conflicts across packs are detected (warning emitted if same filename in agents/rules/skills)
-3. The `knowledge.source` directory is mounted at `/workspace/.packs/<name>/` (read-only)
+1. Name conflicts across packs are detected (warning emitted if same filename in agents/rules/skills)
+2. The `knowledge.source` directory is mounted at `/workspace/.claude/packs/<name>/` (read-only)
+3. Pack rules, agents, and skills are mounted into `/workspace/.claude/` via per-file (rules, agents) or per-directory (skills) read-only Docker volume mounts
 4. `.claude/packs.md` is generated with an instructional list of files and their descriptions:
    ```
    The following knowledge files provide project-specific conventions and context.
    Read the relevant files BEFORE starting any implementation, review, or design task.
 
-   - /workspace/.packs/my-client/backend-coding-conventions.md — Read when writing backend code
-   - /workspace/.packs/my-client/business-overview.md — Read for business context
+   - /workspace/.claude/packs/my-client/backend-coding-conventions.md — Read when writing backend code
+   - /workspace/.claude/packs/my-client/business-overview.md — Read for business context
    ```
 5. `session-context.sh` (SessionStart hook) injects `packs.md` into `additionalContext` automatically — **no CLAUDE.md edit needed**
-6. Skills, agents, and rules are copied from `user-config/packs/<name>/` into `user-config/projects/<n>/.claude/`
-7. A `.pack-manifest` file is written tracking all copied files (used for cleanup on next start)
 
-**Name conflicts**: If two packs define the same agent, rule, or skill name, the last pack listed in `project.yml` wins. A warning is emitted. See [ADR-9](../maintainer/architecture.md) for the design rationale.
+**Name conflicts**: If two packs define the same agent, rule, or skill name, the last pack listed in `project.yml` wins. A warning is emitted. See [ADR-14](../maintainer/architecture.md) for the design rationale.
 
 **Pack directory** — `user-config/packs/` (gitignored from orchestrator repo, created by `cco init`):
 ```

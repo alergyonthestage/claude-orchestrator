@@ -40,7 +40,7 @@ If you pass `--repo`, the CLI auto-detects basic information from the repositori
 |-------|---------|------------|-------------------|-------------|
 | `repos` | Active working repositories | `/workspace/<name>/` | On-demand (when Claude reads files) | Code Claude modifies |
 | `extra_mounts` | Reference material | Custom path | No (Claude reads on request) | Shared libs, API specs, datasets |
-| `packs` | Reusable cross-project knowledge + skills/agents/rules | `/workspace/.packs/<name>/` | Yes (automatic via SessionStart hook) | Conventions, business overviews, guidelines; shared skills/agents |
+| `packs` | Reusable cross-project knowledge + skills/agents/rules | `/workspace/.claude/packs/<name>/` | Yes (automatic via SessionStart hook) | Conventions, business overviews, guidelines; shared skills/agents |
 
 **repos** — The repositories Claude actively works on. Mounted as subdirectories of `/workspace/` with read-write access. Any `.claude/CLAUDE.md` inside a repo is loaded automatically when Claude reads files in that directory.
 
@@ -220,7 +220,7 @@ Claude Code loads instructions in order of precedence:
    + additionalContext (SessionStart hook):
        ├── project name, repos, MCP servers
        └── packs.md content               ← Knowledge packs (automatic)
-             /workspace/.packs/<name>/*.md  ← read on-demand by Claude
+             /workspace/.claude/packs/<name>/*.md  ← read on-demand by Claude
 
 3. /workspace/<repo>/.claude/CLAUDE.md          ← Repository (on-demand)
 ```

@@ -392,8 +392,8 @@ YAML
 
 # ── yml_get_packs: packs list parsing ────────────────────────────────
 
-test_yaml_parser_pack_knowledge_copied_not_mounted() {
-    # yml_get_packs: knowledge files are copied to .claude/packs/, not mounted as volumes
+test_yaml_parser_pack_knowledge_mounted_readonly() {
+    # yml_get_packs: knowledge dir is mounted read-only in compose (ADR-14)
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -423,23 +423,22 @@ packs:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    # Knowledge files should be copied, not mounted
-    local copied="$CCO_PROJECTS_DIR/test-proj/.claude/packs/my-pack/doc.md"
-    [[ -f "$copied" ]] || fail "Knowledge file not copied to $copied"
-    # Compose should NOT contain pack volume mounts
+    # Knowledge dir should be mounted read-only in compose
     local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
-    assert_file_not_contains "$compose" "/.packs/"
+    assert_file_contains "$compose" "${pack_src}:/workspace/.claude/packs/my-pack:ro"
+    # Knowledge should NOT be copied to project directory
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/packs/my-pack/doc.md"
 }
 
 test_yaml_parser_no_packs_section_no_pack_mounts() {
-    # yml_get_packs: no packs → no /.packs/ mounts in compose
+    # yml_get_packs: no packs → no pack mount lines in compose
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
     local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
-    assert_file_not_contains "$compose" "/.packs/"
+    assert_file_not_contains "$compose" "Pack resources"
 }
 
 # ── _parse_bool: boolean normalization (ADR-13) ─────────────────────

@@ -100,7 +100,7 @@ graph TB
 
 **Owner**: Per-project (scaffolded by `cco project create`, extended by packs)
 **Overridable**: Yes — by repo tier for CLAUDE.md and rules
-**Updated via**: User edits; `cco start` copies pack resources here
+**Updated via**: User edits; `cco start` mounts pack resources here (read-only)
 
 | Resource | Source | Purpose |
 |----------|--------|---------|
@@ -207,16 +207,16 @@ graph LR
     end
 
     subgraph "Container (cco start)"
-        KM["/workspace/.packs/my-pack/<br/>(mounted :ro)"]
-        SC["/workspace/.claude/skills/custom-deploy/<br/>(copied)"]
-        AC["/workspace/.claude/agents/domain-expert.md<br/>(copied)"]
-        RC["/workspace/.claude/rules/api-conventions.md<br/>(copied)"]
+        KM["/workspace/.claude/packs/my-pack/<br/>(mounted :ro)"]
+        SC["/workspace/.claude/skills/custom-deploy/<br/>(mounted :ro)"]
+        AC["/workspace/.claude/agents/domain-expert.md<br/>(mounted :ro)"]
+        RC["/workspace/.claude/rules/api-conventions.md<br/>(mounted :ro)"]
     end
 
-    PK -->|"Docker volume mount"| KM
-    PS -->|"file copy"| SC
-    PA -->|"file copy"| AC
-    PR -->|"file copy"| RC
+    PK -->|"Docker volume mount :ro"| KM
+    PS -->|"Docker volume mount :ro"| SC
+    PA -->|"Docker volume mount :ro"| AC
+    PR -->|"Docker volume mount :ro"| RC
 
     style KM fill:#45b7d1,color:#fff
     style SC fill:#45b7d1,color:#fff
@@ -226,17 +226,17 @@ graph LR
 
 | Resource type | Destination | Scope level | Mechanism |
 |---|---|---|---|
-| Knowledge files | `/workspace/.packs/<name>/` | Injected via hook | Docker volume mount (:ro) |
-| Skills | `/workspace/.claude/skills/` | **Project** | File copy |
-| Agents | `/workspace/.claude/agents/` | **Project** | File copy |
-| Rules | `/workspace/.claude/rules/` | **Project** | File copy |
+| Knowledge files | `/workspace/.claude/packs/<name>/` | Injected via hook | Docker volume mount (:ro) |
+| Skills | `/workspace/.claude/skills/` | **Project** | Docker volume mount (:ro) |
+| Agents | `/workspace/.claude/agents/` | **Project** | Docker volume mount (:ro, per file) |
+| Rules | `/workspace/.claude/rules/` | **Project** | Docker volume mount (:ro, per file) |
 
 ### 4.2 Why Project Level?
 
 Pack resources (skills, agents, rules) go in the **Project** tier because:
 
 1. **Per-project activation** — Different projects use different packs. A React pack should only be active in a React project.
-2. **Docker volume limitation** — Multiple packs can't mount to the same `.claude/agents/` directory (second mount shadows the first). Copying avoids this.
+2. **Per-file mounts** — Multiple packs contribute individual file mounts to `.claude/agents/` and `.claude/rules/` without shadowing (ADR-14). Skills use per-directory mounts.
 3. **Correct override semantics** — Pack agents at project level can override global agents (Project > User for agents). This is the expected behavior: a project-specific analyst should replace the generic one.
 
 ### 4.3 Pack Override Behavior
@@ -253,16 +253,14 @@ Pack resources (skills, agents, rules) go in the **Project** tier because:
 ```
 cco start <project>
   │
-  ├── 1. Clean stale files from previous .pack-manifest
-  ├── 2. For each pack in project.yml:
-  │   ├── Mount knowledge → /workspace/.packs/<name>/
-  │   ├── Copy skills → /workspace/.claude/skills/
-  │   ├── Copy agents → /workspace/.claude/agents/
-  │   ├── Copy rules → /workspace/.claude/rules/
+  ├── 1. For each pack in project.yml:
+  │   ├── Mount knowledge dir → /workspace/.claude/packs/<name>/ (:ro)
+  │   ├── Mount skills → /workspace/.claude/skills/<name>/ (:ro, per dir)
+  │   ├── Mount agents → /workspace/.claude/agents/<file>.md (:ro, per file)
+  │   ├── Mount rules → /workspace/.claude/rules/<file>.md (:ro, per file)
   │   └── Detect name conflicts → warn on duplicates
-  ├── 3. Generate packs.md (knowledge file list)
-  ├── 4. Save .pack-manifest (track copied files)
-  └── 5. session-context.sh injects packs.md into additionalContext
+  ├── 2. Generate packs.md (knowledge file list)
+  └── 3. session-context.sh injects packs.md into additionalContext
 ```
 
 ---
@@ -304,7 +302,7 @@ defaults/
 | `~/.claude/agents/` | `global/.claude/agents/` | User | `:ro` volume |
 | `~/.claude/skills/` | `global/.claude/skills/` | User | `:ro` volume |
 | `/workspace/.claude/` | `projects/<name>/.claude/` | Project | `:rw` volume |
-| `/workspace/.packs/` | Knowledge files | Pack data | `:ro` volume |
+| `/workspace/.claude/packs/` | Knowledge files | Pack data | `:ro` volume |
 | `/workspace/<repo>/` | Host repos | Repo | `:rw` volume |
 
 ---
@@ -351,6 +349,6 @@ This is Claude Code's native behavior, not our design choice. The practical impa
 
 - [ADR-3: Four-Tier Context Hierarchy](../architecture.md) — Architecture decision record
 - [ADR-8: Tool vs User Config Separation](../architecture.md) — Managed scope update
-- [ADR-9: Knowledge Packs — Copy vs Mount](../architecture.md) — Why pack resources are copied
+- [ADR-14: Zero-Duplication Pack Resource Delivery](../architecture.md) — Pack resources via read-only mounts
 - [Analysis: Scope Hierarchy](./analysis.md) — Detailed investigation and comparison of approaches
 - [Context & Settings Reference](../../reference/context-hierarchy.md) — Runtime context loading, hooks, MCP

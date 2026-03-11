@@ -48,7 +48,7 @@ name: my-client-knowledge
 
 # ── Knowledge files ─────────────────────────────────────────────────
 knowledge:
-  source: ~/documents/my-client-docs   # directory on host (files copied at startup)
+  source: ~/documents/my-client-docs   # directory on host (mounted read-only at startup)
   files:
     - path: backend-coding-conventions.md
       description: "Read when writing backend code, APIs, or DB logic"
@@ -77,7 +77,7 @@ The `knowledge` section is the heart of the pack: it allows you to inject docume
 
 ### source
 
-The `source` field specifies a directory on the host that contains documentation files. At `cco start`, the listed files are copied into the container at `/workspace/.claude/packs/<pack-name>/`.
+The `source` field specifies a directory on the host that contains documentation files. At `cco start`, the directory is mounted read-only into the container at `/workspace/.claude/packs/<pack-name>/`.
 
 ```yaml
 knowledge:
@@ -116,11 +116,11 @@ The description is important: it is included in Claude's context to help him dec
 
 ## Optional resources
 
-In addition to knowledge, a pack can include skills, agents, and rules that are copied to the project configuration.
+In addition to knowledge, a pack can include skills, agents, and rules that are mounted read-only into the project configuration.
 
 ### Skills
 
-Skills are directories containing a `SKILL.md` file. They are copied to `/workspace/.claude/skills/` and are available as slash commands (e.g., `/deploy`).
+Skills are directories containing a `SKILL.md` file. They are mounted read-only to `/workspace/.claude/skills/` and are available as slash commands (e.g., `/deploy`).
 
 ```yaml
 skills:
@@ -129,7 +129,7 @@ skills:
 
 ### Agents
 
-Agents are Markdown files that define specialized subagents. They are copied to `/workspace/.claude/agents/`.
+Agents are Markdown files that define specialized subagents. They are mounted read-only to `/workspace/.claude/agents/`.
 
 ```yaml
 agents:
@@ -138,7 +138,7 @@ agents:
 
 ### Rules
 
-Rules are Markdown files with additional instructions. They are copied to `/workspace/.claude/rules/`.
+Rules are Markdown files with additional instructions. They are mounted read-only to `/workspace/.claude/rules/`.
 
 ```yaml
 rules:
@@ -164,7 +164,7 @@ packs:
   - team-conventions
 ```
 
-Packs are processed at each `cco start`: all resources (knowledge files, skills, agents, rules) are copied automatically.
+Packs are processed at each `cco start`: all resources (knowledge files, skills, agents, rules) are mounted automatically via read-only Docker volumes.
 
 ### Precedence in case of conflicts
 
@@ -228,10 +228,9 @@ Knowledge pack injection is completely automatic and requires no changes to `CLA
 The process happens in two phases:
 
 **1. At `cco start` time:**
-- Knowledge files listed in `knowledge.files` are copied from `knowledge.source` to `/workspace/.claude/packs/<name>/`
+- Knowledge directories are mounted read-only at `/workspace/.claude/packs/<name>/`
+- Pack skills, agents, and rules are mounted read-only into `/workspace/.claude/` (per-file for rules/agents, per-directory for skills)
 - The `.claude/packs.md` file is generated with the list of files and their descriptions
-- Skills, agents, and rules are copied to the project's `.claude/` directory
-- A `.pack-manifest` file tracks copied files for cleanup on the next startup
 
 **2. When the Claude session starts:**
 - The `session-context.sh` hook (SessionStart) injects the contents of `packs.md` into `additionalContext`
@@ -244,9 +243,9 @@ Example of generated `packs.md`:
 The following knowledge files provide project-specific conventions and context.
 Read the relevant files BEFORE starting any implementation, review, or design task.
 
-- /workspace/.packs/my-client/backend-coding-conventions.md — Read when writing backend code
-- /workspace/.packs/my-client/business-overview.md — Read for business context
-- /workspace/.packs/my-client/testing-guidelines.md
+- /workspace/.claude/packs/my-client/backend-coding-conventions.md — Read when writing backend code
+- /workspace/.claude/packs/my-client/business-overview.md — Read for business context
+- /workspace/.claude/packs/my-client/testing-guidelines.md
 ```
 
 ---

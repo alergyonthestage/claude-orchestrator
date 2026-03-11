@@ -26,7 +26,7 @@ When summarizing this session, preserve the following information:
 
 4. The current git branch and any uncommitted changes that were discussed.
 
-5. Knowledge pack files are at /workspace/.packs/ — do not summarize their
+5. Knowledge pack files are at /workspace/.claude/packs/ — do not summarize their
    contents, just note which ones were consulted.
 
 Keep the summary under 400 words. Prioritize actionable state over background context.

@@ -408,22 +408,15 @@ graph LR
 
 ### ADR-9: Knowledge Packs — Copy vs Mount for Resources
 
+**Status**: Superseded by ADR-14 (Zero-Duplication Pack Resource Delivery)
+
 **Context**: Knowledge Packs bundle documentation (knowledge), plus optional skills, agents, and rules for project-level tooling. The knowledge files are large documents meant to be read by Claude at runtime. Skills, agents, and rules are configuration files that Claude Code expects at specific paths inside `.claude/`.
 
-**Decision**: Use two different strategies for the two resource types:
-- **Knowledge files** → mounted read-only as Docker volumes at `/workspace/.packs/<name>/`
+**Original Decision**: Use two different strategies for the two resource types:
+- **Knowledge files** → mounted read-only as Docker volumes at `/workspace/.claude/packs/<name>/`
 - **Skills, agents, rules** → copied into `projects/<name>/.claude/` at `cco start` time
 
-**Rationale**:
-- Docker volume mounts cannot merge multiple sources into one target directory. If two packs both define agents, they can't both mount to `.claude/agents/` — the second mount would shadow the first. Copying avoids this limitation entirely.
-- Knowledge files are read-only reference material — mounting `:ro` is natural and prevents accidental writes.
-- Skills/agents/rules need to live under `.claude/` where Claude Code discovers them. Copying into the project directory integrates seamlessly with the four-tier context hierarchy (ADR-3).
-- A `.pack-manifest` file tracks which files were copied. On each `cco start`, stale files from the previous manifest are cleaned before fresh copies — preventing ghost resources when packs evolve.
-
-**Consequences**:
-- Copied files become stale if the pack changes between sessions. This is acceptable: `cco start` always refreshes copies. The manifest-based cleanup ensures removed resources don't persist.
-- Name conflicts between packs (e.g., two packs defining `agents/reviewer.md`) result in last-wins overwrite. A warning is emitted to the user. Pack order in `project.yml` determines precedence.
-- Pack content is injected into the session via `session-context.sh` hook, not via `@import` in CLAUDE.md. This keeps project CLAUDE.md clean and makes pack presence transparent to the user.
+**Why Superseded**: ADR-14 eliminates the copy mechanism entirely. All pack resources (including skills, agents, and rules) are now delivered via read-only Docker volume mounts. Individual file mounts (one per rule/agent, one directory per skill) solve the Docker mount-shadowing problem without physical copying. This eliminates `.pack-manifest`, stale copy risk, and host filesystem pollution. See ADR-14 for the current design.
 
 ---
 
@@ -612,6 +605,31 @@ This is a class of bugs where **config parsing errors silently weaken security**
 - `cmd_start()` gains a validation pass before compose generation
 - Invalid config now produces user-visible warnings instead of silent acceptance
 - All boolean fields use the same normalization path
+
+---
+
+### ADR-14: Zero-Duplication Pack Resource Delivery
+
+**Date**: 2026-03-11
+**Status**: Accepted
+
+**Context**: Pack resources (knowledge, rules, agents, skills) were physically copied from `user-config/packs/` into each project's `.claude/` directory at `cco start` time. This caused file duplication across projects, risk of stale/divergent copies, and host filesystem pollution. The fundamental value proposition of packs is reuse without copy-paste.
+
+**Decision**: Pack resources are delivered to containers via read-only Docker volume mounts in the generated `docker-compose.yml`, never copied to project directories. Each resource type maps to the appropriate mount strategy:
+- Knowledge dirs: one directory mount per pack → `/workspace/.claude/packs/<name>:ro`
+- Rules: one file mount per rule → `/workspace/.claude/rules/<file>.md:ro` (Claude Code requires flat files)
+- Agents: one file mount per agent → `/workspace/.claude/agents/<file>.md:ro` (flat files)
+- Skills: one directory mount per skill → `/workspace/.claude/skills/<name>:ro`
+
+The `packs.md` index file remains generated into the project's `.claude/` as it is project-specific (lists only packs referenced in that project's `project.yml`).
+
+**Consequences**:
+- Zero file duplication: pack source in `user-config/packs/` is the single source of truth
+- Pack updates are immediately visible on next `cco start` (no stale copies)
+- Project `.claude/` directories contain only project-owned files
+- `.pack-manifest` tracking mechanism is eliminated
+- Mount count in docker-compose.yml increases (N mounts per pack instead of 1 copy operation), but compose is generated so verbosity is irrelevant
+- Read-only mounts prevent accidental in-container edits to pack resources
 
 ---
 

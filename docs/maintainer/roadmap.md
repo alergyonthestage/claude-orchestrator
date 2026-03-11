@@ -15,7 +15,7 @@ Pure bash test suite (`bin/test`) covering 154 test cases across 11 test files. 
 
 ### Knowledge Packs — Full Schema (knowledge + skills + agents + rules) ✓
 
-Packs now support the full expanded schema: `knowledge:` section for document mounts, plus `skills:`, `agents:`, and `rules:` for project-level tooling. Skills/agents/rules are copied at `cco start` time (not mounted, to avoid Docker volume collisions with multi-pack setups).
+Packs now support the full expanded schema: `knowledge:` section for document mounts, plus `skills:`, `agents:`, and `rules:` for project-level tooling. *(Originally copied at `cco start` time — superseded by ADR-14: all resources are now mounted `:ro` via Docker volumes.)*
 
 Knowledge files are injected automatically via `session-context.sh` hook (no `@.claude/packs.md` in CLAUDE.md required).
 
@@ -35,7 +35,7 @@ CLI robustness and settings alignment from the 24-02-2026 architecture review:
 
 ### Pack Manifest & Conflict Detection ✓
 
-Pack resources are now tracked in a `.pack-manifest` file. On each `cco start`, stale files from the previous session are cleaned before fresh copies. Name conflicts between packs (same agent/rule/skill name) emit a warning. ADR-9 documents the copy-vs-mount design trade-off.
+Name conflicts between packs (same agent/rule/skill name) emit a warning at `cco start`. *(Originally used `.pack-manifest` for copy tracking — superseded by ADR-14: resources are now mounted `:ro`, eliminating the need for copy/cleanup.)*
 
 ### Authentication & Secrets ✓
 

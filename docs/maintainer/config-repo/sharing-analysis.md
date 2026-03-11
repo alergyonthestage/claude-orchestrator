@@ -134,7 +134,7 @@ knowledge:
     - coding-conventions.md
 ```
 
-These files are **not in the pack directory** — they're copied at `cco start` time
+These files are **not in the pack directory** — they're mounted at `cco start` time
 from the host path. When published to a shared repo, the external files are absent
 and the `source:` path won't exist on the recipient's machine.
 
