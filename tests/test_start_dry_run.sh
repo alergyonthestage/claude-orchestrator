@@ -192,10 +192,24 @@ test_dry_run_project_claude_mounted_readwrite() {
 # ── Docker socket (Docker-from-Docker) ───────────────────────────────
 
 test_dry_run_docker_socket_mounted() {
+    # Docker socket is mounted when mount_socket: true is explicit
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+description: "Test project"
+auth:
+  method: oauth
+docker:
+  mount_socket: true
+  ports: []
+  env: {}
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
     run_cco start "test-proj" --dry-run
     assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" \
         "/var/run/docker.sock:/var/run/docker.sock"
@@ -530,7 +544,20 @@ test_dry_run_volume_order_git_before_docker_socket() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+description: "Test project"
+auth:
+  method: oauth
+docker:
+  mount_socket: true
+  ports: []
+  env: {}
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
     run_cco start "test-proj" --dry-run
     local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
     local git_line socket_line
@@ -584,12 +611,34 @@ test_dry_run_default_image_when_no_docker_image() {
 
 # ── Docker socket toggle ─────────────────────────────────────────────
 
-test_dry_run_docker_socket_mounted_by_default() {
-    # Docker socket is mounted when mount_socket is not specified
+test_dry_run_docker_socket_not_mounted_by_default() {
+    # Docker socket is NOT mounted when mount_socket is not specified (secure default)
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --dry-run
+    assert_file_not_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" "docker.sock"
+}
+
+test_dry_run_docker_socket_mounted_when_explicit_true() {
+    # docker.mount_socket: true explicitly enables Docker socket
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  mount_socket: true
+  ports: []
+  env: {}
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
     run_cco start "test-proj" --dry-run
     assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" \
         "/var/run/docker.sock:/var/run/docker.sock"
@@ -1053,11 +1102,24 @@ YAML
 }
 
 test_no_docker_disables_socket_for_session() {
-    # --no-docker disables Docker socket even when docker.mount_socket: true (default)
+    # --no-docker disables Docker socket even when docker.mount_socket: true in yml
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+description: "Test project"
+auth:
+  method: oauth
+docker:
+  mount_socket: true
+  ports: []
+  env: {}
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
     run_cco start "test-proj" --no-docker --dry-run
     assert_file_not_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" "docker.sock"
 }

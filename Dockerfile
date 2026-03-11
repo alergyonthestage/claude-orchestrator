@@ -1,3 +1,12 @@
+# ── Stage 1: Build Docker socket proxy ─────────────────────────────
+FROM golang:1.22-bookworm AS proxy-builder
+WORKDIR /build
+COPY proxy/go.mod proxy/go.sum* ./
+RUN go mod download 2>/dev/null || true
+COPY proxy/ .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o cco-docker-proxy ./cmd/cco-docker-proxy/
+
+# ── Stage 2: Main image ───────────────────────────────────────────
 FROM node:22-bookworm
 
 # ── System dependencies ──────────────────────────────────────────────
@@ -88,6 +97,10 @@ RUN if [ -n "$SETUP_BUILD_SCRIPT_CONTENT" ]; then \
 RUN useradd -m -s /bin/bash claude \
     && mkdir -p /home/claude/.claude /workspace \
     && chown -R claude:claude /home/claude /workspace
+
+# ── Docker socket proxy (from builder stage) ──────────────────────
+COPY --from=proxy-builder /build/cco-docker-proxy /usr/local/bin/cco-docker-proxy
+RUN chmod +x /usr/local/bin/cco-docker-proxy
 
 # ── Config files ─────────────────────────────────────────────────────
 COPY config/tmux.conf /home/claude/.tmux.conf

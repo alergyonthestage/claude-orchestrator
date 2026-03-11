@@ -79,7 +79,8 @@ used directly by a developer.
 - /var/run/docker.sock:/var/run/docker.sock
 ```
 
-The host Docker socket is bind-mounted into the container **by default**.
+The host Docker socket is bind-mounted into the container when
+`docker.mount_socket: true` is set in `project.yml`.
 Any process inside the container — including Claude — can:
 - Create new containers that mount the host filesystem (`/` -> `/mnt`).
 - Read arbitrary files from the host (including `/etc/shadow`, SSH keys, etc.).
@@ -90,14 +91,9 @@ Any process inside the container — including Claude — can:
 It can be disabled per-session (`--no-docker`) or per-project
 (`docker.mount_socket: false`).
 
-**Residual risk:** The default is `true`. A user who does not know about this
-feature has full Docker API exposure without realizing it. This is the single
-largest attack surface in the tool, though it requires trusting Claude Code —
-which the user implicitly does by running it with `--dangerously-skip-permissions`.
-
-**Mitigation options (not implemented):**
-- Document this risk prominently in user-facing docs and the README.
-- Consider a first-start warning when Docker socket is enabled.
+**Mitigation (Sprint 6-Security):**
+- **Default changed to `false`** — Docker socket is now opt-in, not opt-out. Projects that need Docker access must explicitly declare `docker.mount_socket: true`. Migration 006 adds explicit `true` to existing projects to preserve behavior.
+- **Implemented: Docker socket proxy** — Go binary (`proxy/`) filtering Docker API calls by container name/label, mount restrictions, and security constraints. The proxy (`cco-docker-proxy`) runs between Claude and the real socket, enforcing `policy.json` rules generated from `project.yml`. See [docker-security design](./docker-security/design.md).
 
 ---
 

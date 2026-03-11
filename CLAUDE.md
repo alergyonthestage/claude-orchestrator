@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 claude-orchestrator manages isolated Claude Code sessions in Docker containers for multi-project, multi-repo development. It provides a CLI (`bin/cco`) to launch preconfigured sessions with repos mounted, context loaded, and agent teams ready.
 
-**Current status**: v1 implemented, plus Auth & Secrets, Environment Extensibility, Docker Socket Toggle, Scope Hierarchy Refactor, and Config Repo sharing. Dockerfile, CLI, global config, project template, and all docs are in place.
+**Current status**: v1 implemented, plus Auth & Secrets, Environment Extensibility, Docker Socket Toggle, Scope Hierarchy Refactor, Config Repo sharing, and Docker Socket Security (Go proxy with policy-based filtering). Dockerfile, CLI, global config, project template, and all docs are in place.
 
 **Config separation**: Three-tier managed scope hierarchy leveraging Claude Code's native resolution:
 - `defaults/managed/` → baked into Docker image at `/etc/claude-code/` (Managed level — hooks, env, deny rules, framework instructions). Non-overridable.
@@ -110,8 +110,9 @@ Per `docs/maintainer/docker/design.md` (sezione directory structure):
 - `lib/manifest.sh` — manifest.yml lifecycle: init, refresh, validate, show
 - `lib/cmd-remote.sh` — Remote management: add, remove, list Config Repo remotes (.cco-remotes)
 - `lib/remote.sh` — Remote clone helper: sparse-checkout, shallow fallback, token auth
-- `Dockerfile` — Docker image (node:22-bookworm, Claude Code, gosu, tmux, docker CLI)
-- `config/entrypoint.sh` — Container entrypoint: socket GID fix, MCP merge, gosu, tmux/claude launch
+- `Dockerfile` — Docker image (node:22-bookworm, Claude Code, gosu, tmux, docker CLI, cco-docker-proxy)
+- `proxy/` — Go Docker socket proxy: filters API calls by container name/label, mount paths, security constraints
+- `config/entrypoint.sh` — Container entrypoint: socket GID fix, Docker proxy startup, MCP merge, gosu, tmux/claude launch
 - `config/tmux.conf` — tmux config for agent teams (colors, navigation, history)
 - `config/hooks/session-context.sh` — SessionStart hook: injects repo list and MCP info into context
 - `config/hooks/statusline.sh` — StatusLine hook: displays `[project] model | ctx XX% | $cost`

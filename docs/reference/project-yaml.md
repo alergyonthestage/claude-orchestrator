@@ -33,6 +33,8 @@ packs:
 
 # ── Docker options ───────────────────────────────────────────────────
 docker:
+  mount_socket: true        # Enable Docker-from-Docker (default: false)
+
   # Port mappings (host:container)
   ports:
     - "3000:3000"       # Frontend dev
@@ -47,6 +49,35 @@ docker:
 
   # Network name for sibling containers
   network: cc-my-saas
+
+  # Container access policy (requires mount_socket: true)
+  containers:
+    policy: allowlist         # project_only | allowlist | denylist | unrestricted
+    allow:
+      - "cc-my-saas-*"
+      - "postgres-dev"
+    create: true
+    name_prefix: "cc-my-saas-"
+    required_labels:
+      cco.project: my-saas-platform
+
+  # Mount restrictions (requires mount_socket: true)
+  mounts:
+    policy: project_only      # none | project_only | allowlist | any
+    deny:
+      - "/etc/shadow"
+
+  # Security constraints (requires mount_socket: true)
+  security:
+    no_privileged: true
+    no_sensitive_mounts: true
+    drop_capabilities:
+      - SYS_ADMIN
+      - NET_ADMIN
+    resources:
+      memory: "4g"
+      cpus: "4"
+      max_containers: 10
 
 # ── Authentication ───────────────────────────────────────────────────
 auth:
@@ -81,7 +112,24 @@ browser:
 | `docker.env` | ❌ | map | `{}` | Environment variables |
 | `docker.network` | ❌ | string | `cc-<name>` | Docker network name |
 | `docker.image` | ❌ | string | `claude-orchestrator:latest` | Custom Docker image for this project |
-| `docker.mount_socket` | ❌ | bool | `true` | Mount Docker socket (set false to disable Docker-from-Docker) |
+| `docker.mount_socket` | ❌ | bool | `false` | Mount Docker socket (set true to enable Docker-from-Docker) |
+| `docker.containers.policy` | ❌ | enum | `project_only` | Container access: `project_only` \| `allowlist` \| `denylist` \| `unrestricted` |
+| `docker.containers.allow` | ❌ | list | `[]` | Glob patterns for allowlist policy |
+| `docker.containers.deny` | ❌ | list | `[]` | Glob patterns for denylist policy |
+| `docker.containers.create` | ❌ | bool | `true` | Allow creating new containers |
+| `docker.containers.name_prefix` | ❌ | string | `cc-{name}-` | Enforced name prefix on create |
+| `docker.containers.required_labels` | ❌ | map | `cco.project: {name}` | Labels injected on create |
+| `docker.mounts.policy` | ❌ | enum | `project_only` | Mount restriction: `none` \| `project_only` \| `allowlist` \| `any` |
+| `docker.mounts.allow` | ❌ | list | `[]` | Allowed paths for allowlist policy |
+| `docker.mounts.deny` | ❌ | list | `[]` | Paths always denied |
+| `docker.mounts.force_readonly` | ❌ | bool | `false` | Force all mounts read-only |
+| `docker.security.no_privileged` | ❌ | bool | `true` | Block `--privileged` containers |
+| `docker.security.no_sensitive_mounts` | ❌ | bool | `true` | Block `/proc`, `/sys` mounts |
+| `docker.security.force_non_root` | ❌ | bool | `false` | Block root user in containers |
+| `docker.security.drop_capabilities` | ❌ | list | `[SYS_ADMIN, NET_ADMIN]` | Linux capabilities to drop |
+| `docker.security.resources.memory` | ❌ | string | `"4g"` | Max memory per container |
+| `docker.security.resources.cpus` | ❌ | string | `"4"` | Max CPUs per container |
+| `docker.security.resources.max_containers` | ❌ | int | `10` | Max simultaneous containers |
 | `auth.method` | ❌ | string | `oauth` | Authentication method |
 | `browser.enabled` | ❌ | bool | `false` | Activate browser automation ([guide](../user-guides/browser-automation.md)) |
 | `browser.mode` | ❌ | string | `host` | Where Chrome runs (`host` only in v1) |
@@ -111,7 +159,7 @@ When a security-relevant field is **omitted**, the default is always the most re
 | `extra_mounts[].readonly` | `true` (read-only) | Extra mounts are reference material; writes require explicit opt-in |
 | `browser.enabled` | `false` | Browser automation is an additional attack surface |
 | `github.enabled` | `false` | GitHub access requires explicit opt-in |
-| `docker.mount_socket` | `true` | Documented trade-off (see ADR-4); can be disabled per-project |
+| `docker.mount_socket` | `false` | Opt-in: Docker socket grants full host Docker API access (see [security analysis](../maintainer/docker-security/analysis.md)) |
 
 ### Field Validation
 
@@ -125,6 +173,8 @@ When a security-relevant field is **omitted**, the default is always the most re
 | `browser.cdp_port` | Numeric, range 1–65535 | At parse time |
 | `browser.mcp_args` | Values JSON-escaped before injection | At compose generation |
 | `auth.method` | Enum: `oauth` \| `api_key` | At parse time |
+| `docker.containers.policy` | Enum: `project_only` \| `allowlist` \| `denylist` \| `unrestricted` | At start time |
+| `docker.mounts.policy` | Enum: `none` \| `project_only` \| `allowlist` \| `any` | At start time |
 
 ### Whitespace
 

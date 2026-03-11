@@ -118,6 +118,153 @@ yml_get_list() {
     fi
 }
 
+# Read a value from a 3-level nested key (e.g., "docker.containers.policy")
+# Usage: yml_get_deep <file> <key>
+yml_get_deep() {
+    local file="$1"
+    local key="$2"
+
+    # Split key: docker.containers.policy → docker / containers / policy
+    local l1 l2 l3
+    l1="${key%%.*}"
+    local rest="${key#*.}"
+    l2="${rest%%.*}"
+    l3="${rest#*.}"
+
+    awk -v l1="$l1" -v l2="$l2" -v l3="$l3" '
+        $0 ~ "^"l1":" { in_l1=1; next }
+        in_l1 && /^[^ ]/ { exit }
+        in_l1 && $0 ~ "^  "l2":" { in_l2=1; next }
+        in_l2 && /^  [^ ]/ && !/^    / { exit }
+        in_l2 && /^[^ ]/ { exit }
+        in_l2 && $0 ~ "^    "l3":" {
+            sub(/^    [^:]+: */, "")
+            gsub(/["\047]/, "")
+            sub(/ *#.*$/, "")
+            gsub(/^ +| +$/, "")
+            print
+            exit
+        }
+    ' "$file"
+}
+
+# Read a list from a 3-level nested key (e.g., "docker.containers.allow")
+# Outputs one item per line
+# Usage: yml_get_deep_list <file> <key>
+yml_get_deep_list() {
+    local file="$1"
+    local key="$2"
+
+    local l1 l2 l3
+    l1="${key%%.*}"
+    local rest="${key#*.}"
+    l2="${rest%%.*}"
+    l3="${rest#*.}"
+
+    awk -v l1="$l1" -v l2="$l2" -v l3="$l3" '
+        $0 ~ "^"l1":" { in_l1=1; next }
+        in_l1 && /^[^ ]/ { exit }
+        in_l1 && $0 ~ "^  "l2":" { in_l2=1; next }
+        in_l2 && /^  [^ ]/ && !/^    / { exit }
+        in_l2 && /^[^ ]/ { exit }
+        in_l2 && $0 ~ "^    "l3":" { in_l3=1; next }
+        in_l3 && /^    [^ ]/ && !/^      / { exit }
+        in_l3 && /^  [^ ]/ && !/^    / { exit }
+        in_l3 && /^[^ ]/ { exit }
+        in_l3 && /^      - / {
+            sub(/^      - */, "")
+            gsub(/["\047]/, "")
+            sub(/ *#.*$/, "")
+            gsub(/^ +| +$/, "")
+            if ($0 != "") print
+        }
+    ' "$file"
+}
+
+# Read a map from a 3-level nested key (e.g., "docker.containers.required_labels")
+# Outputs lines of "key:value"
+# Usage: yml_get_deep_map <file> <key>
+yml_get_deep_map() {
+    local file="$1"
+    local key="$2"
+
+    local l1 l2 l3
+    l1="${key%%.*}"
+    local rest="${key#*.}"
+    l2="${rest%%.*}"
+    l3="${rest#*.}"
+
+    awk -v l1="$l1" -v l2="$l2" -v l3="$l3" '
+        $0 ~ "^"l1":" { in_l1=1; next }
+        in_l1 && /^[^ ]/ { exit }
+        in_l1 && $0 ~ "^  "l2":" { in_l2=1; next }
+        in_l2 && /^  [^ ]/ && !/^    / { exit }
+        in_l2 && /^[^ ]/ { exit }
+        in_l2 && $0 ~ "^    "l3":" { in_l3=1; next }
+        in_l3 && /^    [^ ]/ && !/^      / { exit }
+        in_l3 && /^  [^ ]/ && !/^    / { exit }
+        in_l3 && /^[^ ]/ { exit }
+        in_l3 && /^      [^ -]/ {
+            sub(/^      /, "")
+            sub(/ *#.*$/, "")
+            gsub(/["\047]/, "")
+            gsub(/^ +| +$/, "")
+            # Convert "key: value" to "key:value"
+            sub(/: +/, ":")
+            if ($0 != "") print
+        }
+    ' "$file"
+}
+
+# Read a value from a 4-level nested key (e.g., "docker.security.resources.memory")
+# Usage: yml_get_deep4 <file> <key>
+yml_get_deep4() {
+    local file="$1"
+    local key="$2"
+
+    local l1 l2 l3 l4
+    l1="${key%%.*}"
+    local rest="${key#*.}"
+    l2="${rest%%.*}"
+    rest="${rest#*.}"
+    l3="${rest%%.*}"
+    l4="${rest#*.}"
+
+    awk -v l1="$l1" -v l2="$l2" -v l3="$l3" -v l4="$l4" '
+        $0 ~ "^"l1":" { in_l1=1; next }
+        in_l1 && /^[^ ]/ { exit }
+        in_l1 && $0 ~ "^  "l2":" { in_l2=1; next }
+        in_l2 && /^  [^ ]/ && !/^    / { exit }
+        in_l2 && /^[^ ]/ { exit }
+        in_l2 && $0 ~ "^    "l3":" { in_l3=1; next }
+        in_l3 && /^    [^ ]/ && !/^      / { exit }
+        in_l3 && /^  [^ ]/ && !/^    / { exit }
+        in_l3 && /^[^ ]/ { exit }
+        in_l3 && $0 ~ "^      "l4":" {
+            sub(/^      [^:]+: */, "")
+            gsub(/["\047]/, "")
+            sub(/ *#.*$/, "")
+            gsub(/^ +| +$/, "")
+            print
+            exit
+        }
+    ' "$file"
+}
+
+# Validate an enum field. Returns the value if valid, or the default with a warning.
+# Usage: yml_validate_enum <value> <default> <valid1|valid2|valid3>
+yml_validate_enum() {
+    local value="$1" default="$2" valid_values="$3"
+    [[ -z "$value" ]] && { echo "$default"; return; }
+
+    if echo "$valid_values" | tr '|' '\n' | grep -qx "$value"; then
+        echo "$value"
+    else
+        warn "Invalid value '$value' — using default '$default' (valid: $valid_values)"
+        echo "$default"
+    fi
+}
+
 # Parse repos from project.yml
 # Outputs lines of "host_path:mount_name"
 yml_get_repos() {
