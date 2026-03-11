@@ -387,8 +387,8 @@ YAML
             done <<< "$extra_mounts"
         fi
 
-        # Knowledge packs: files are copied by _copy_pack_resources (not mounted).
-        # No volume mounts needed — knowledge files live in .claude/packs/<name>/.
+        # Pack resources: read-only mounts from central pack registry (ADR-14)
+        _generate_pack_mounts "$pack_names"
 
         # Git identity (commit author — read-only, no SSH keys)
         echo "      # Git identity"
@@ -473,22 +473,13 @@ YAML
     # Generate .claude/workspace.yml — structured project context for /init
     _generate_workspace_yml "$project_dir" "$project_name" "$project_yml" "$pack_names"
 
-    # Copy pack skills, agents, and rules into project's .claude/ directory
-    # Clean stale files from previous manifest, detect conflicts, then copy fresh
-    _clean_pack_manifest "$project_dir"
+    # Detect pack resource name conflicts (warning only)
     if [[ -n "$pack_names" ]]; then
         _detect_pack_conflicts "$pack_names"
-        local manifest_file="$project_dir/.claude/.pack-manifest"
-        : > "$manifest_file"
-        while IFS= read -r pack_name; do
-            [[ -z "$pack_name" ]] && continue
-            local pack_yml="$PACKS_DIR/${pack_name}/pack.yml"
-            [[ ! -f "$pack_yml" ]] && continue
-            _copy_pack_resources "$pack_name" "$pack_yml" "$project_dir" "$manifest_file"
-        done <<< "$pack_names"
-        # Remove manifest if empty (no resources were actually copied)
-        [[ ! -s "$manifest_file" ]] && rm -f "$manifest_file"
     fi
+
+    # One-shot cleanup of legacy copied pack files (pre-ADR-14)
+    _clean_pack_manifest "$project_dir"
 
     if $dry_run; then
         if [[ "$browser_enabled" == "true" ]]; then

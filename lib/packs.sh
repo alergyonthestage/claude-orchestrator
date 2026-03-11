@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# lib/packs.sh — Pack resource helpers (manifest, conflicts, copy, validate)
+# lib/packs.sh — Pack resource helpers (manifest cleanup, conflicts, validate)
 #
 # Provides: _clean_pack_manifest(), _detect_pack_conflicts(),
-#           _copy_pack_resources(), _validate_single_pack()
+#           _generate_pack_mounts(), _validate_single_pack()
 # Dependencies: colors.sh, utils.sh, yaml.sh
 # Globals: PACKS_DIR
 
@@ -70,104 +70,65 @@ _detect_pack_conflicts() {
     done <<< "$pack_names"
 }
 
-# Copy skills, agents, and rules from a pack into the project's .claude/ directory.
-# Appends copied paths to the manifest file (4th argument).
-# Called by cmd_start for each pack after compose generation.
-_copy_pack_resources() {
-    local pack_name="$1"
-    local pack_yml="$2"
-    local project_dir="$3"
-    local manifest="$4"
-    local pack_dir
-    pack_dir="$(dirname "$pack_yml")"
+# Generate Docker volume mount lines for pack resources (ADR-14).
+# Outputs compose-format volume lines to stdout for inclusion in docker-compose.yml.
+# Called during compose generation in cmd_start.
+_generate_pack_mounts() {
+    local pack_names="$1"
+    [[ -z "$pack_names" ]] && return 0
 
-    # Validate pack.yml structure: top-level keys must start at column 0
-    if ! grep -qE '^(name|knowledge|skills|agents|rules):' "$pack_yml"; then
-        warn "Pack '$pack_name': pack.yml has no valid top-level keys (name/knowledge/skills/agents/rules)."
-        warn "  Check for extra indentation — all keys must start at column 0."
-        return 0
-    fi
-
-    # Skills: each named subdirectory under pack/skills/ is a skill
-    local skills
-    skills=$(yml_get_pack_skills "$pack_yml")
-    if [[ -n "$skills" ]]; then
-        while IFS= read -r skill_name; do
-            [[ -z "$skill_name" ]] && continue
-            local skill_src="$pack_dir/skills/${skill_name}"
-            if [[ -d "$skill_src" ]]; then
-                mkdir -p "$project_dir/.claude/skills"
-                cp -r "$skill_src" "$project_dir/.claude/skills/"
-                echo "skills/${skill_name}" >> "$manifest"
-            else
-                warn "Pack '$pack_name' skill '$skill_name' not found at $skill_src — skipping"
-            fi
-        done <<< "$skills"
-    fi
-
-    # Agents: individual .md files under pack/agents/
-    local agents
-    agents=$(yml_get_pack_agents "$pack_yml")
-    if [[ -n "$agents" ]]; then
-        mkdir -p "$project_dir/.claude/agents"
-        while IFS= read -r agent_file; do
-            [[ -z "$agent_file" ]] && continue
-            local src="$pack_dir/agents/${agent_file}"
-            if [[ -f "$src" ]]; then
-                cp "$src" "$project_dir/.claude/agents/"
-                echo "agents/${agent_file}" >> "$manifest"
-            else
-                warn "Pack '$pack_name' agent '$agent_file' not found at $src — skipping"
-            fi
-        done <<< "$agents"
-    fi
-
-    # Rules: individual .md files under pack/rules/
-    local rules
-    rules=$(yml_get_pack_rules "$pack_yml")
-    if [[ -n "$rules" ]]; then
-        mkdir -p "$project_dir/.claude/rules"
-        while IFS= read -r rule_file; do
-            [[ -z "$rule_file" ]] && continue
-            local src="$pack_dir/rules/${rule_file}"
-            if [[ -f "$src" ]]; then
-                cp "$src" "$project_dir/.claude/rules/"
-                echo "rules/${rule_file}" >> "$manifest"
-            else
-                warn "Pack '$pack_name' rule '$rule_file' not found at $src — skipping"
-            fi
-        done <<< "$rules"
-    fi
-
-    # Knowledge: copy only the files listed in knowledge.files:
-    local pack_files
-    pack_files=$(yml_get_pack_knowledge_files "$pack_yml")
-    if [[ -n "$pack_files" ]]; then
-        local pack_source
-        pack_source=$(yml_get_pack_knowledge_source "$pack_yml")
-        [[ -z "$pack_source" ]] && pack_source="$pack_dir/knowledge"
-        pack_source=$(expand_path "$pack_source")
-        if [[ -d "$pack_source" ]]; then
-            mkdir -p "$project_dir/.claude/packs/${pack_name}"
-            local copied_any=0
-            while IFS=$'\t' read -r fname _fdesc; do
-                [[ -z "$fname" ]] && continue
-                local src="$pack_source/$fname"
-                local dst="$project_dir/.claude/packs/${pack_name}/$fname"
-                if [[ -f "$src" ]]; then
-                    mkdir -p "$(dirname "$dst")"
-                    cp "$src" "$dst"
-                    copied_any=1
-                else
-                    warn "Pack '$pack_name': knowledge file '$fname' not found in $pack_source"
-                fi
-            done <<< "$pack_files"
-            # Track directory in manifest (like skills) for clean removal
-            [[ $copied_any -eq 1 ]] && echo "packs/${pack_name}" >> "$manifest"
-        else
-            warn "Pack '$pack_name': knowledge source '$pack_source' not found"
+    echo "      # Knowledge packs (read-only mounts from central pack registry)"
+    while IFS= read -r _pname; do
+        [[ -z "$_pname" ]] && continue
+        local _pyml="$PACKS_DIR/${_pname}/pack.yml"
+        [[ ! -f "$_pyml" ]] && continue
+        if ! grep -qE '^(name|knowledge|skills|agents|rules):' "$_pyml"; then
+            continue
         fi
-    fi
+
+        # Knowledge: mount knowledge dir → /workspace/.claude/packs/<name>
+        local _k_files _k_source _k_dir
+        _k_files=$(yml_get_pack_knowledge_files "$_pyml")
+        if [[ -n "$_k_files" ]]; then
+            _k_source=$(yml_get_pack_knowledge_source "$_pyml")
+            _k_dir="${_k_source:-$(dirname "$_pyml")/knowledge}"
+            _k_dir=$(expand_path "$_k_dir")
+            [[ -d "$_k_dir" ]] && echo "      - ${_k_dir}:/workspace/.claude/packs/${_pname}:ro"
+        fi
+
+        # Rules: individual file mounts (Claude Code reads flat *.md in rules/)
+        local _rules
+        _rules=$(yml_get_pack_rules "$_pyml")
+        if [[ -n "$_rules" ]]; then
+            while IFS= read -r _rf; do
+                [[ -z "$_rf" ]] && continue
+                local _rsrc="$PACKS_DIR/${_pname}/rules/${_rf}"
+                [[ -f "$_rsrc" ]] && echo "      - ${_rsrc}:/workspace/.claude/rules/${_rf}:ro"
+            done <<< "$_rules"
+        fi
+
+        # Agents: individual file mounts (Claude Code reads flat *.md in agents/)
+        local _agents
+        _agents=$(yml_get_pack_agents "$_pyml")
+        if [[ -n "$_agents" ]]; then
+            while IFS= read -r _af; do
+                [[ -z "$_af" ]] && continue
+                local _asrc="$PACKS_DIR/${_pname}/agents/${_af}"
+                [[ -f "$_asrc" ]] && echo "      - ${_asrc}:/workspace/.claude/agents/${_af}:ro"
+            done <<< "$_agents"
+        fi
+
+        # Skills: directory mounts (Claude Code expects skill dirs with SKILL.md)
+        local _skills
+        _skills=$(yml_get_pack_skills "$_pyml")
+        if [[ -n "$_skills" ]]; then
+            while IFS= read -r _sf; do
+                [[ -z "$_sf" ]] && continue
+                local _ssrc="$PACKS_DIR/${_pname}/skills/${_sf}"
+                [[ -d "$_ssrc" ]] && echo "      - ${_ssrc}:/workspace/.claude/skills/${_sf}:ro"
+            done <<< "$_skills"
+        fi
+    done <<< "$pack_names"
 }
 
 # Validate a single pack's structure and references.
