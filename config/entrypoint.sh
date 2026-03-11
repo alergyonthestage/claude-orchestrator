@@ -1,6 +1,12 @@
 #!/bin/bash
 set -e
 
+# Cleanup background processes on exit
+_cleanup() {
+    [ -n "${PROXY_PID:-}" ] && kill "$PROXY_PID" 2>/dev/null || true
+}
+trap _cleanup EXIT
+
 # ── Docker socket permissions ────────────────────────────────────────
 # Match container's docker group GID to host's socket GID
 if [ -S /var/run/docker.sock ]; then
@@ -16,6 +22,40 @@ if [ -S /var/run/docker.sock ]; then
     else
         # Socket owned by root — add claude to root group (common on macOS)
         usermod -aG root claude
+    fi
+fi
+
+# ── Docker socket proxy ─────────────────────────────────────────────
+# When a policy file is present, start the filtering proxy between Claude
+# and the real Docker socket. The proxy runs as root (socket access);
+# Claude only sees the filtered proxy socket via DOCKER_HOST.
+if [ -S /var/run/docker.sock ] && [ -f /etc/cco/policy.json ]; then
+    /usr/local/bin/cco-docker-proxy \
+        -listen /var/run/docker-proxy.sock \
+        -upstream /var/run/docker.sock \
+        -policy /etc/cco/policy.json \
+        -log-denied &
+    PROXY_PID=$!
+
+    # Wait for proxy socket to appear (max 3s)
+    _proxy_wait=0
+    while [ ! -S /var/run/docker-proxy.sock ] && [ "$_proxy_wait" -lt 30 ]; do
+        sleep 0.1
+        _proxy_wait=$((_proxy_wait + 1))
+    done
+
+    if [ -S /var/run/docker-proxy.sock ]; then
+        # Proxy socket: accessible to claude user
+        chown claude:docker /var/run/docker-proxy.sock
+        chmod 660 /var/run/docker-proxy.sock
+        # Real socket: root only (prevents bypass)
+        chmod 600 /var/run/docker.sock
+        # Point Docker CLI to proxy
+        export DOCKER_HOST="unix:///var/run/docker-proxy.sock"
+        echo "[entrypoint] Docker socket proxy: active (policy=$(jq -r .containers.policy /etc/cco/policy.json 2>/dev/null))" >&2
+    else
+        echo "[entrypoint] WARNING: Docker socket proxy did not start — falling back to direct access" >&2
+        kill "$PROXY_PID" 2>/dev/null || true
     fi
 fi
 

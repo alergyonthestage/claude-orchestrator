@@ -241,6 +241,13 @@ EOF
         chmod 600 "$global_creds"
     fi
 
+    # ── Docker socket policy ──────────────────────────────────────────────
+    if [[ "$mount_socket" == "true" ]]; then
+        _generate_socket_policy "$project_yml" "$project_name" "$project_dir"
+    else
+        rm -f "$project_dir/.managed/policy.json"
+    fi
+
     # ── Generate .managed/ integrations ──────────────────────────────────
     if [[ "$browser_enabled" == "true" ]]; then
         mkdir -p "$project_dir/.managed"
@@ -399,10 +406,14 @@ YAML
         echo "      # Git identity"
         echo "      - \${HOME}/.gitconfig:/home/claude/.gitconfig:ro"
 
-        # Docker socket (opt-out via docker.mount_socket: false)
+        # Docker socket (opt-in via docker.mount_socket: true)
         if [[ "$mount_socket" != "false" ]]; then
             echo "      # Docker socket"
             echo "      - /var/run/docker.sock:/var/run/docker.sock"
+            # Policy file for socket proxy (if generated)
+            if [[ -f "$project_dir/.managed/policy.json" ]]; then
+                echo "      - ./.managed/policy.json:/etc/cco/policy.json:ro"
+            fi
         fi
 
         # Ports
@@ -651,4 +662,161 @@ _generate_github_mcp() {
     }
   }
 }\n' "$token_env" > "$out_file"
+}
+
+# Generates .managed/policy.json for the Docker socket proxy.
+# Reads docker.containers, docker.mounts, docker.security from project.yml.
+# $1 = project.yml path, $2 = project name, $3 = project dir
+_generate_socket_policy() {
+    local project_yml="$1" project_name="$2" project_dir="$3"
+
+    mkdir -p "$project_dir/.managed"
+    local out_file="$project_dir/.managed/policy.json"
+
+    # Container policy
+    local ct_policy ct_create ct_prefix
+    ct_policy=$(yml_get_deep "$project_yml" "docker.containers.policy")
+    ct_policy=$(yml_validate_enum "$ct_policy" "project_only" "project_only|allowlist|denylist|unrestricted")
+    ct_create=$(_parse_bool "$(yml_get_deep "$project_yml" "docker.containers.create")" "true")
+    ct_prefix=$(yml_get_deep "$project_yml" "docker.containers.name_prefix")
+    [[ -z "$ct_prefix" ]] && ct_prefix="cc-${project_name}-"
+
+    # Container allow/deny patterns
+    local ct_allow_json="[]" ct_deny_json="[]"
+    local ct_allow ct_deny
+    ct_allow=$(yml_get_deep_list "$project_yml" "docker.containers.allow")
+    ct_deny=$(yml_get_deep_list "$project_yml" "docker.containers.deny")
+    if [[ -n "$ct_allow" ]]; then
+        ct_allow_json=$(echo "$ct_allow" | jq -R . | jq -s .)
+    fi
+    if [[ -n "$ct_deny" ]]; then
+        ct_deny_json=$(echo "$ct_deny" | jq -R . | jq -s .)
+    fi
+
+    # Required labels
+    local ct_labels_json="{}"
+    local ct_labels
+    ct_labels=$(yml_get_deep_map "$project_yml" "docker.containers.required_labels")
+    if [[ -n "$ct_labels" ]]; then
+        ct_labels_json=$(echo "$ct_labels" | awk -F: '{printf "\"%s\":\"%s\"\n", $1, $2}' | jq -s 'from_entries')
+    else
+        ct_labels_json="{\"cco.project\":\"${project_name}\"}"
+    fi
+
+    # Mount policy
+    local mt_policy mt_force_ro
+    mt_policy=$(yml_get_deep "$project_yml" "docker.mounts.policy")
+    mt_policy=$(yml_validate_enum "$mt_policy" "project_only" "none|project_only|allowlist|any")
+    mt_force_ro=$(_parse_bool "$(yml_get_deep "$project_yml" "docker.mounts.force_readonly")" "false")
+
+    # Mount allowed paths: for project_only, collect repo paths
+    local mt_allowed_json="[]"
+    if [[ "$mt_policy" == "project_only" ]]; then
+        local repo_paths
+        repo_paths=$(yml_get_repos "$project_yml" | cut -d: -f1)
+        if [[ -n "$repo_paths" ]]; then
+            mt_allowed_json=$(echo "$repo_paths" | jq -R . | jq -s .)
+        fi
+    else
+        local mt_allow
+        mt_allow=$(yml_get_deep_list "$project_yml" "docker.mounts.allow")
+        if [[ -n "$mt_allow" ]]; then
+            mt_allowed_json=$(echo "$mt_allow" | jq -R . | jq -s .)
+        fi
+    fi
+
+    # Mount denied paths (explicit)
+    local mt_denied_json="[]"
+    local mt_deny
+    mt_deny=$(yml_get_deep_list "$project_yml" "docker.mounts.deny")
+    if [[ -n "$mt_deny" ]]; then
+        mt_denied_json=$(echo "$mt_deny" | jq -R . | jq -s .)
+    fi
+
+    # Security policy
+    local sec_no_priv sec_no_sens sec_force_nonroot
+    sec_no_priv=$(_parse_bool "$(yml_get_deep "$project_yml" "docker.security.no_privileged")" "true")
+    sec_no_sens=$(_parse_bool "$(yml_get_deep "$project_yml" "docker.security.no_sensitive_mounts")" "true")
+    sec_force_nonroot=$(_parse_bool "$(yml_get_deep "$project_yml" "docker.security.force_non_root")" "false")
+
+    # Drop capabilities
+    local sec_dropcaps_json="[\"SYS_ADMIN\",\"NET_ADMIN\"]"
+    local sec_dropcaps
+    sec_dropcaps=$(yml_get_deep_list "$project_yml" "docker.security.drop_capabilities")
+    if [[ -n "$sec_dropcaps" ]]; then
+        sec_dropcaps_json=$(echo "$sec_dropcaps" | jq -R . | jq -s .)
+    fi
+
+    # Resources
+    local sec_memory sec_cpus sec_max_ct
+    sec_memory=$(yml_get_deep4 "$project_yml" "docker.security.resources.memory")
+    sec_cpus=$(yml_get_deep4 "$project_yml" "docker.security.resources.cpus")
+    sec_max_ct=$(yml_get_deep4 "$project_yml" "docker.security.resources.max_containers")
+
+    # Convert memory string to bytes (e.g., "4g" → 4294967296)
+    local memory_bytes=4294967296  # default 4g
+    if [[ -n "$sec_memory" ]]; then
+        case "$sec_memory" in
+            *[gG]) memory_bytes=$(( ${sec_memory%[gG]} * 1024 * 1024 * 1024 )) ;;
+            *[mM]) memory_bytes=$(( ${sec_memory%[mM]} * 1024 * 1024 )) ;;
+            *)     memory_bytes="$sec_memory" ;;
+        esac
+    fi
+
+    # Convert CPUs to nanoCPUs (e.g., "4" → 4000000000)
+    local nano_cpus=4000000000  # default 4
+    if [[ -n "$sec_cpus" ]]; then
+        # Integer multiplication (no bc dependency)
+        nano_cpus=$(( ${sec_cpus%%.*} * 1000000000 ))
+    fi
+
+    [[ -z "$sec_max_ct" ]] && sec_max_ct=10
+
+    # Network allowed prefixes
+    local net_prefixes_json="[\"cc-${project_name}\"]"
+    local custom_network
+    custom_network=$(yml_get "$project_yml" "docker.network")
+    if [[ -n "$custom_network" ]]; then
+        net_prefixes_json="[\"${custom_network}\"]"
+    fi
+
+    # Write policy.json
+    cat > "$out_file" <<POLICY
+{
+  "project_name": "${project_name}",
+  "containers": {
+    "policy": "${ct_policy}",
+    "allow_patterns": ${ct_allow_json},
+    "deny_patterns": ${ct_deny_json},
+    "create_allowed": ${ct_create},
+    "name_prefix": "${ct_prefix}",
+    "required_labels": ${ct_labels_json}
+  },
+  "mounts": {
+    "policy": "${mt_policy}",
+    "allowed_paths": ${mt_allowed_json},
+    "denied_paths": ${mt_denied_json},
+    "implicit_deny": [
+      "/var/run/docker.sock",
+      "/etc/shadow",
+      "/etc/sudoers"
+    ],
+    "force_readonly": ${mt_force_ro}
+  },
+  "security": {
+    "no_privileged": ${sec_no_priv},
+    "no_sensitive_mounts": ${sec_no_sens},
+    "force_non_root": ${sec_force_nonroot},
+    "drop_capabilities": ${sec_dropcaps_json},
+    "max_memory_bytes": ${memory_bytes},
+    "max_nano_cpus": ${nano_cpus},
+    "max_containers": ${sec_max_ct}
+  },
+  "networks": {
+    "allowed_prefixes": ${net_prefixes_json}
+  }
+}
+POLICY
+
+    echo "[start] Generated Docker socket policy: containers=${ct_policy}, mounts=${mt_policy}" >&2
 }
