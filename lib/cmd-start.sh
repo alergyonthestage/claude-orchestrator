@@ -305,6 +305,11 @@ YAML
             echo "      - ${env}"
         done
 
+        # Docker socket proxy: advertise proxy socket to all processes in container
+        if [[ "$mount_socket" == "true" ]]; then
+            echo "      - DOCKER_HOST=unix:///var/run/docker-proxy.sock"
+        fi
+
         # CDP proxy port for entrypoint socat (Chrome 145+ Host header fix)
         if [[ "$browser_enabled" == "true" && "$browser_mode" == "host" ]]; then
             echo "      - CDP_PORT=${browser_effective_port}"
@@ -763,11 +768,11 @@ _generate_socket_policy() {
         esac
     fi
 
-    # Convert CPUs to nanoCPUs (e.g., "4" → 4000000000)
+    # Convert CPUs to nanoCPUs (e.g., "4" → 4000000000, "0.5" → 500000000)
     local nano_cpus=4000000000  # default 4
     if [[ -n "$sec_cpus" ]]; then
-        # Integer multiplication (no bc dependency)
-        nano_cpus=$(( ${sec_cpus%%.*} * 1000000000 ))
+        # Use awk for fractional support (no bc dependency)
+        nano_cpus=$(awk "BEGIN { printf \"%.0f\", $sec_cpus * 1000000000 }")
     fi
 
     [[ -z "$sec_max_ct" ]] && sec_max_ct=10

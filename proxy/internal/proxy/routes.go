@@ -98,3 +98,13 @@ func extractContainerID(path string) string {
 	}
 	return ""
 }
+
+// extractNetworkID extracts the network ID or name from a path like
+// /v1.44/networks/{id}/connect
+func extractNetworkID(path string) string {
+	matches := networkConnectPath.FindStringSubmatch(path)
+	if len(matches) >= 3 {
+		return matches[2]
+	}
+	return ""
+}

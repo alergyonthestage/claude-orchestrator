@@ -13,6 +13,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -31,6 +32,7 @@ type Proxy struct {
 	reverseProxy    *httputil.ReverseProxy
 	logDenied       bool
 	containerCount  atomic.Int32
+	trackedIDs      sync.Map // tracks container IDs created/counted by this proxy
 }
 
 // New creates a new proxy with the given policy and upstream socket.
@@ -71,10 +73,15 @@ func (p *Proxy) Init(ctx context.Context) error {
 	}
 	p.cache.StartPeriodicRefresh(ctx, 30*time.Second)
 
-	// Count existing project containers
+	// Count existing project containers and track their IDs
 	for _, info := range p.cache.All() {
 		if p.containerFilter.IsAllowed(info) {
 			p.containerCount.Add(1)
+			p.trackedIDs.Store(info.ID, true)
+			// Also track by name for lookup flexibility
+			if info.Name != "" {
+				p.trackedIDs.Store(info.Name, true)
+			}
 		}
 	}
 
@@ -256,7 +263,7 @@ func (p *Proxy) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 	rec := &responseRecorder{ResponseWriter: w, statusCode: 200}
 	p.reverseProxy.ServeHTTP(rec, r)
 
-	// If creation succeeded, add to cache and increment count
+	// If creation succeeded, add to cache, track ID, and increment count
 	if rec.statusCode == 201 {
 		var createResp struct {
 			ID string `json:"Id"`
@@ -264,6 +271,10 @@ func (p *Proxy) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 		if err := json.Unmarshal(rec.body.Bytes(), &createResp); err == nil {
 			p.cache.Add(createResp.ID, containerName, createReq.Labels)
 			p.containerCount.Add(1)
+			p.trackedIDs.Store(createResp.ID, true)
+			if containerName != "" {
+				p.trackedIDs.Store(containerName, true)
+			}
 		}
 	}
 }
@@ -421,9 +432,13 @@ func (p *Proxy) handleNetworkCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleNetworkConnect intercepts POST /networks/{id}/connect.
+// Docker accepts network name or ID in the URL path; we validate against allowed prefixes.
 func (p *Proxy) handleNetworkConnect(w http.ResponseWriter, r *http.Request, path string) {
-	// For now, allow network connect operations
-	// The network creation is already filtered
+	netIDOrName := extractNetworkID(path)
+	if netIDOrName != "" && !p.isNetworkAllowed(netIDOrName) {
+		p.deny(w, r, fmt.Sprintf("network %q not allowed for connect — must match prefix: %v", netIDOrName, p.policy.Networks.AllowedPrefixes))
+		return
+	}
 	p.forward(w, r)
 }
 
@@ -504,7 +519,10 @@ func (p *Proxy) forwardAndTrack(w http.ResponseWriter, r *http.Request, path str
 	if isDelete && (rec.statusCode == 200 || rec.statusCode == 204) {
 		idOrName := extractContainerID(path)
 		p.cache.Remove(idOrName)
-		p.containerCount.Add(-1)
+		// Only decrement if this container was tracked (created or counted by us)
+		if _, tracked := p.trackedIDs.LoadAndDelete(idOrName); tracked {
+			p.containerCount.Add(-1)
+		}
 	}
 }
 

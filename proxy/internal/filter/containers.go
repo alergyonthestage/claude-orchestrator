@@ -63,6 +63,7 @@ func (f *ContainerFilter) IsNameAllowed(name string) bool {
 }
 
 // AreLabelsAllowed checks if container labels match the policy.
+// All required labels must be present (AND logic).
 func (f *ContainerFilter) AreLabelsAllowed(labels map[string]string) bool {
 	p := f.policy.Containers
 
@@ -71,12 +72,16 @@ func (f *ContainerFilter) AreLabelsAllowed(labels map[string]string) bool {
 	}
 
 	if p.Policy == "project_only" {
-		// Check required labels
+		// All required labels must match
+		if len(p.RequiredLabels) == 0 {
+			return false
+		}
 		for k, v := range p.RequiredLabels {
-			if labels[k] == v {
-				return true
+			if labels[k] != v {
+				return false
 			}
 		}
+		return true
 	}
 
 	return false
