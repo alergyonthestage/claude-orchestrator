@@ -82,6 +82,23 @@ browser:
 | `docker.network` | ❌ | string | `cc-<name>` | Docker network name |
 | `docker.image` | ❌ | string | `claude-orchestrator:latest` | Custom Docker image for this project |
 | `docker.mount_socket` | ❌ | bool | `false` | Mount Docker socket (set true to enable Docker-from-Docker) |
+| `docker.containers.policy` | ❌ | enum | `project_only` | Container access: `project_only` \| `allowlist` \| `denylist` \| `unrestricted` |
+| `docker.containers.allow` | ❌ | list | `[]` | Glob patterns for allowlist policy |
+| `docker.containers.deny` | ❌ | list | `[]` | Glob patterns for denylist policy |
+| `docker.containers.create` | ❌ | bool | `true` | Allow creating new containers |
+| `docker.containers.name_prefix` | ❌ | string | `cc-{name}-` | Enforced name prefix on create |
+| `docker.containers.required_labels` | ❌ | map | `cco.project: {name}` | Labels injected on create |
+| `docker.mounts.policy` | ❌ | enum | `project_only` | Mount restriction: `none` \| `project_only` \| `allowlist` \| `any` |
+| `docker.mounts.allow` | ❌ | list | `[]` | Allowed paths for allowlist policy |
+| `docker.mounts.deny` | ❌ | list | `[]` | Paths always denied |
+| `docker.mounts.force_readonly` | ❌ | bool | `false` | Force all mounts read-only |
+| `docker.security.no_privileged` | ❌ | bool | `true` | Block `--privileged` containers |
+| `docker.security.no_sensitive_mounts` | ❌ | bool | `true` | Block `/proc`, `/sys` mounts |
+| `docker.security.force_non_root` | ❌ | bool | `false` | Block root user in containers |
+| `docker.security.drop_capabilities` | ❌ | list | `[SYS_ADMIN, NET_ADMIN]` | Linux capabilities to drop |
+| `docker.security.resources.memory` | ❌ | string | `"4g"` | Max memory per container |
+| `docker.security.resources.cpus` | ❌ | string | `"4"` | Max CPUs per container |
+| `docker.security.resources.max_containers` | ❌ | int | `10` | Max simultaneous containers |
 | `auth.method` | ❌ | string | `oauth` | Authentication method |
 | `browser.enabled` | ❌ | bool | `false` | Activate browser automation ([guide](../user-guides/browser-automation.md)) |
 | `browser.mode` | ❌ | string | `host` | Where Chrome runs (`host` only in v1) |
