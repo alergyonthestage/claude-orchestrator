@@ -108,7 +108,7 @@ EOF
     [[ -z "$docker_image" ]] && docker_image="$IMAGE_NAME"
 
     local mount_socket
-    mount_socket=$(_parse_bool "$(yml_get "$project_yml" "docker.mount_socket")" "true")
+    mount_socket=$(_parse_bool "$(yml_get "$project_yml" "docker.mount_socket")" "false")
     # --no-docker: disable Docker socket for this session only
     [[ "$opt_docker" == "off" ]] && mount_socket="false"
 

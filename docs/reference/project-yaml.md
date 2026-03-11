@@ -81,7 +81,7 @@ browser:
 | `docker.env` | ❌ | map | `{}` | Environment variables |
 | `docker.network` | ❌ | string | `cc-<name>` | Docker network name |
 | `docker.image` | ❌ | string | `claude-orchestrator:latest` | Custom Docker image for this project |
-| `docker.mount_socket` | ❌ | bool | `true` | Mount Docker socket (set false to disable Docker-from-Docker) |
+| `docker.mount_socket` | ❌ | bool | `false` | Mount Docker socket (set true to enable Docker-from-Docker) |
 | `auth.method` | ❌ | string | `oauth` | Authentication method |
 | `browser.enabled` | ❌ | bool | `false` | Activate browser automation ([guide](../user-guides/browser-automation.md)) |
 | `browser.mode` | ❌ | string | `host` | Where Chrome runs (`host` only in v1) |
@@ -111,7 +111,7 @@ When a security-relevant field is **omitted**, the default is always the most re
 | `extra_mounts[].readonly` | `true` (read-only) | Extra mounts are reference material; writes require explicit opt-in |
 | `browser.enabled` | `false` | Browser automation is an additional attack surface |
 | `github.enabled` | `false` | GitHub access requires explicit opt-in |
-| `docker.mount_socket` | `true` | Documented trade-off (see ADR-4); can be disabled per-project |
+| `docker.mount_socket` | `false` | Opt-in: Docker socket grants full host Docker API access (see [security analysis](../maintainer/docker-security/analysis.md)) |
 
 ### Field Validation
 

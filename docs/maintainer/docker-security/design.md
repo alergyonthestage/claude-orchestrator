@@ -112,30 +112,30 @@ mount_socket=$(_parse_bool "$(yml_get "$project_yml" "docker.mount_socket")" "fa
 
 ### 3.2 Breaking Change Mitigation
 
-Projects that rely on Docker socket without explicitly declaring `docker.mount_socket: true` will lose access. Migration:
+Projects that rely on Docker socket without explicitly declaring `docker.mount_socket: true` will lose access. Migration strategy: **security first** — the migration does NOT auto-enable the socket. It emits a warning during `cco update` so the user can review and explicitly opt-in per project.
 
-**File**: `migrations/project/004_mount_socket_explicit.sh`
+**File**: `migrations/project/006_mount_socket_default_false.sh`
 
 ```bash
-MIGRATION_ID=4
-MIGRATION_DESC="Make docker.mount_socket explicit (default changed to false)"
+MIGRATION_ID=6
+MIGRATION_DESC="Notify: docker.mount_socket default changed from true to false"
 
 migrate() {
-    local project_dir="$1"
-    local yml="$project_dir/project.yml"
+    local target_dir="$1"
+    local yml="$target_dir/project.yml"
 
-    # If project.yml has no mount_socket field AND no docker section,
-    # add docker.mount_socket: true to preserve current behavior
-    if ! grep -q 'mount_socket' "$yml" 2>/dev/null; then
-        if grep -q '^docker:' "$yml" 2>/dev/null; then
-            # docker section exists, add mount_socket under it
-            sed -i '/^docker:/a\  mount_socket: true    # Added by migration: default changed to false' "$yml"
-        else
-            # no docker section, add it
-            printf '\ndocker:\n  mount_socket: true    # Added by migration: default changed to false\n' >> "$yml"
-        fi
-        info "Added explicit docker.mount_socket: true to $yml"
+    [[ -f "$yml" ]] || return 0
+
+    # Skip if mount_socket is already declared explicitly
+    if grep -q 'mount_socket' "$yml" 2>/dev/null; then
+        return 0
     fi
+
+    # Emit warning — do NOT modify the file
+    warn "BREAKING CHANGE: docker.mount_socket now defaults to false (was true)"
+    warn "  If this project needs Docker socket access, add to project.yml:"
+    warn "    docker:"
+    warn "      mount_socket: true"
 }
 ```
 
