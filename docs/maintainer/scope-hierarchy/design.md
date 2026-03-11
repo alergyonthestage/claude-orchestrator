@@ -236,7 +236,7 @@ graph LR
 Pack resources (skills, agents, rules) go in the **Project** tier because:
 
 1. **Per-project activation** — Different projects use different packs. A React pack should only be active in a React project.
-2. **Docker volume limitation** — Multiple packs can't mount to the same `.claude/agents/` directory (second mount shadows the first). Copying avoids this.
+2. **Per-file mounts** — Multiple packs contribute individual file mounts to `.claude/agents/` and `.claude/rules/` without shadowing (ADR-14). Skills use per-directory mounts.
 3. **Correct override semantics** — Pack agents at project level can override global agents (Project > User for agents). This is the expected behavior: a project-specific analyst should replace the generic one.
 
 ### 4.3 Pack Override Behavior
@@ -253,16 +253,14 @@ Pack resources (skills, agents, rules) go in the **Project** tier because:
 ```
 cco start <project>
   │
-  ├── 1. Clean stale files from previous .pack-manifest
-  ├── 2. For each pack in project.yml:
-  │   ├── Mount knowledge → /workspace/.packs/<name>/
-  │   ├── Copy skills → /workspace/.claude/skills/
-  │   ├── Copy agents → /workspace/.claude/agents/
-  │   ├── Copy rules → /workspace/.claude/rules/
+  ├── 1. For each pack in project.yml:
+  │   ├── Mount knowledge dir → /workspace/.packs/<name>/ (:ro)
+  │   ├── Mount skills → /workspace/.claude/skills/<name>/ (:ro, per dir)
+  │   ├── Mount agents → /workspace/.claude/agents/<file>.md (:ro, per file)
+  │   ├── Mount rules → /workspace/.claude/rules/<file>.md (:ro, per file)
   │   └── Detect name conflicts → warn on duplicates
-  ├── 3. Generate packs.md (knowledge file list)
-  ├── 4. Save .pack-manifest (track copied files)
-  └── 5. session-context.sh injects packs.md into additionalContext
+  ├── 2. Generate packs.md (knowledge file list)
+  └── 3. session-context.sh injects packs.md into additionalContext
 ```
 
 ---

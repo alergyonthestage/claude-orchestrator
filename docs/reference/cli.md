@@ -169,10 +169,8 @@ Examples:
    - Write to user-config/projects/<project>/docker-compose.yml
 
 3. GENERATE pack resources
-   - Clean stale files from previous .pack-manifest
    - Detect name conflicts across packs (warn if same agent/rule/skill in multiple packs)
-   - Copy skills, agents, rules from each pack into user-config/projects/<n>/.claude/
-   - Write new .pack-manifest tracking all copied files
+   - Add pack resource mounts to docker-compose.yml (knowledge dirs, per-file rules/agents, per-dir skills — all :ro)
    - Generate .claude/packs.md (instructional list of knowledge files)
    - Generate .claude/workspace.yml (structured project summary for /init)
 
@@ -876,7 +874,7 @@ Examples:
 
 Repo paths are automatically reverse-templated (`~/projects/api` becomes
 `{{REPO_API}}`). Runtime files (`docker-compose.yml`, `.managed/`,
-`claude-state/`, `secrets.env`, `.pack-manifest`, `.cco-meta`) are excluded.
+`claude-state/`, `secrets.env`, `.cco-meta`) are excluded.
 
 By default, packs listed in `project.yml` are bundled into the remote repo.
 Use `--no-packs` to skip this.
