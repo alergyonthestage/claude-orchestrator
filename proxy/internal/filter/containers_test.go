@@ -61,6 +61,51 @@ func TestContainerFilter_ProjectOnly(t *testing.T) {
 	}
 }
 
+func TestContainerFilter_ProjectOnly_MultipleLabels(t *testing.T) {
+	policy := &config.Policy{
+		ProjectName: "myapp",
+		Containers: config.ContainerPolicy{
+			Policy:     "project_only",
+			NamePrefix: "cc-myapp-",
+			RequiredLabels: map[string]string{
+				"cco.project": "myapp",
+				"cco.env":     "dev",
+			},
+		},
+	}
+	f := NewContainerFilter(policy)
+
+	tests := []struct {
+		name    string
+		info    *cache.ContainerInfo
+		allowed bool
+	}{
+		{
+			name:    "all labels match",
+			info:    &cache.ContainerInfo{Name: "custom", Labels: map[string]string{"cco.project": "myapp", "cco.env": "dev"}},
+			allowed: true,
+		},
+		{
+			name:    "only one label matches (AND logic rejects)",
+			info:    &cache.ContainerInfo{Name: "custom", Labels: map[string]string{"cco.project": "myapp"}},
+			allowed: false,
+		},
+		{
+			name:    "no labels match",
+			info:    &cache.ContainerInfo{Name: "custom", Labels: map[string]string{}},
+			allowed: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := f.AreLabelsAllowed(tt.info.Labels); got != tt.allowed {
+				t.Errorf("AreLabelsAllowed() = %v, want %v", got, tt.allowed)
+			}
+		})
+	}
+}
+
 func TestContainerFilter_Allowlist(t *testing.T) {
 	policy := &config.Policy{
 		ProjectName: "myapp",

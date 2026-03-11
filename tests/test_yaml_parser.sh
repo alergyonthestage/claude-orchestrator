@@ -821,6 +821,154 @@ YAML
 other-pack" "$result"
 }
 
+# ── yml_get_deep: 3-level nested key parsing ─────────────────────────
+
+test_yaml_parser_deep_3level_value() {
+    # yml_get_deep reads 3-level "docker.containers.policy"
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/yaml.sh"
+    local tmpfile; tmpfile=$(mktemp); trap "rm -f '$tmpfile'" EXIT
+    cat > "$tmpfile" <<'YAML'
+docker:
+  containers:
+    policy: allowlist
+    create: true
+  mounts:
+    policy: none
+YAML
+    local result
+    result=$(yml_get_deep "$tmpfile" "docker.containers.policy")
+    assert_equals "allowlist" "$result"
+    result=$(yml_get_deep "$tmpfile" "docker.containers.create")
+    assert_equals "true" "$result"
+    result=$(yml_get_deep "$tmpfile" "docker.mounts.policy")
+    assert_equals "none" "$result"
+}
+
+test_yaml_parser_deep_3level_missing() {
+    # yml_get_deep returns empty for missing 3-level keys
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/yaml.sh"
+    local tmpfile; tmpfile=$(mktemp); trap "rm -f '$tmpfile'" EXIT
+    cat > "$tmpfile" <<'YAML'
+docker:
+  ports: []
+YAML
+    local result
+    result=$(yml_get_deep "$tmpfile" "docker.containers.policy")
+    assert_equals "" "$result"
+}
+
+# ── yml_get_deep_list: 3-level nested list parsing ───────────────────
+
+test_yaml_parser_deep_list() {
+    # yml_get_deep_list reads 3-level list "docker.security.drop_capabilities"
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/yaml.sh"
+    local tmpfile; tmpfile=$(mktemp); trap "rm -f '$tmpfile'" EXIT
+    cat > "$tmpfile" <<'YAML'
+docker:
+  security:
+    drop_capabilities:
+      - SYS_ADMIN
+      - NET_ADMIN
+      - NET_RAW
+YAML
+    local result
+    result=$(yml_get_deep_list "$tmpfile" "docker.security.drop_capabilities")
+    assert_equals "SYS_ADMIN
+NET_ADMIN
+NET_RAW" "$result"
+}
+
+# ── yml_get_deep_map: 3-level nested map parsing ────────────────────
+
+test_yaml_parser_deep_map() {
+    # yml_get_deep_map reads 3-level map "docker.containers.required_labels"
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/yaml.sh"
+    local tmpfile; tmpfile=$(mktemp); trap "rm -f '$tmpfile'" EXIT
+    cat > "$tmpfile" <<'YAML'
+docker:
+  containers:
+    required_labels:
+      cco.project: myapp
+      cco.env: dev
+YAML
+    local result
+    result=$(yml_get_deep_map "$tmpfile" "docker.containers.required_labels")
+    # Output should contain both key:value pairs
+    echo "$result" | grep -q "cco.project:myapp" || fail "missing cco.project label"
+    echo "$result" | grep -q "cco.env:dev" || fail "missing cco.env label"
+}
+
+# ── yml_get_deep4: 4-level nested key parsing ────────────────────────
+
+test_yaml_parser_deep4_value() {
+    # yml_get_deep4 reads 4-level "docker.security.resources.memory"
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/yaml.sh"
+    local tmpfile; tmpfile=$(mktemp); trap "rm -f '$tmpfile'" EXIT
+    cat > "$tmpfile" <<'YAML'
+docker:
+  security:
+    resources:
+      memory: 2g
+      cpus: 0.5
+      max_containers: 5
+YAML
+    local result
+    result=$(yml_get_deep4 "$tmpfile" "docker.security.resources.memory")
+    assert_equals "2g" "$result"
+    result=$(yml_get_deep4 "$tmpfile" "docker.security.resources.cpus")
+    assert_equals "0.5" "$result"
+    result=$(yml_get_deep4 "$tmpfile" "docker.security.resources.max_containers")
+    assert_equals "5" "$result"
+}
+
+test_yaml_parser_deep4_missing() {
+    # yml_get_deep4 returns empty for missing 4-level keys
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/yaml.sh"
+    local tmpfile; tmpfile=$(mktemp); trap "rm -f '$tmpfile'" EXIT
+    cat > "$tmpfile" <<'YAML'
+docker:
+  security:
+    no_privileged: true
+YAML
+    local result
+    result=$(yml_get_deep4 "$tmpfile" "docker.security.resources.memory")
+    assert_equals "" "$result"
+}
+
+# ── yml_validate_enum: enum validation with fallback ─────────────────
+
+test_yaml_parser_validate_enum_valid() {
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/yaml.sh"
+    local result
+    result=$(yml_validate_enum "allowlist" "project_only" "project_only|allowlist|denylist|unrestricted")
+    assert_equals "allowlist" "$result"
+}
+
+test_yaml_parser_validate_enum_default_on_empty() {
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/yaml.sh"
+    local result
+    result=$(yml_validate_enum "" "project_only" "project_only|allowlist|denylist|unrestricted")
+    assert_equals "project_only" "$result"
+}
+
+test_yaml_parser_validate_enum_fallback_on_invalid() {
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/yaml.sh"
+    local result
+    result=$(yml_validate_enum "bogus_value" "project_only" "project_only|allowlist|denylist|unrestricted" 2>/dev/null)
+    assert_equals "project_only" "$result"
+}
+
+# ── yml_get_list: inline comment stripping ───────────────────────────
+
 test_yaml_parser_list_with_inline_comment() {
     # yml_get_list: inline comments on list items are stripped
     source "$REPO_ROOT/lib/colors.sh"

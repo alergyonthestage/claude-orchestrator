@@ -356,3 +356,184 @@ YAML
     prefix=$(jq -r '.networks.allowed_prefixes[0]' "$policy")
     assert_equals "custom-net" "$prefix" "custom network prefix"
 }
+
+# ── Container denylist policy ─────────────────────────────────────────
+
+test_policy_container_denylist() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  mount_socket: true
+  ports: []
+  env: {}
+  containers:
+    policy: denylist
+    deny:
+      - "prod-*"
+      - "staging-db"
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    local policy="$CCO_PROJECTS_DIR/test-proj/.managed/policy.json"
+
+    local ct_policy
+    ct_policy=$(jq -r '.containers.policy' "$policy")
+    assert_equals "denylist" "$ct_policy" "containers.policy"
+
+    local deny_count
+    deny_count=$(jq '.containers.deny_patterns | length' "$policy")
+    assert_equals "2" "$deny_count" "deny_patterns count"
+}
+
+# ── Fractional CPU values ─────────────────────────────────────────────
+
+test_policy_fractional_cpus() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  mount_socket: true
+  ports: []
+  env: {}
+  security:
+    resources:
+      cpus: "0.5"
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    local policy="$CCO_PROJECTS_DIR/test-proj/.managed/policy.json"
+
+    local nano_cpus
+    nano_cpus=$(jq -r '.security.max_nano_cpus' "$policy")
+    assert_equals "500000000" "$nano_cpus" "max_nano_cpus (0.5 CPUs)"
+}
+
+# ── Force readonly mount policy ───────────────────────────────────────
+
+test_policy_mount_force_readonly() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  mount_socket: true
+  ports: []
+  env: {}
+  mounts:
+    policy: any
+    force_readonly: true
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    local policy="$CCO_PROJECTS_DIR/test-proj/.managed/policy.json"
+
+    local force_ro
+    force_ro=$(jq -r '.mounts.force_readonly' "$policy")
+    assert_equals "true" "$force_ro" "mounts.force_readonly"
+}
+
+# ── Custom name prefix override ──────────────────────────────────────
+
+test_policy_custom_name_prefix() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  mount_socket: true
+  ports: []
+  env: {}
+  containers:
+    name_prefix: "custom-prefix-"
+repos:
+  - path: $CCO_DUMMY_REPO
+    name: dummy-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    local policy="$CCO_PROJECTS_DIR/test-proj/.managed/policy.json"
+
+    local prefix
+    prefix=$(jq -r '.containers.name_prefix' "$policy")
+    assert_equals "custom-prefix-" "$prefix" "custom name_prefix"
+}
+
+# ── Multiple repos produce multiple allowed_paths ─────────────────────
+
+test_policy_multiple_repos_allowed_paths() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local repo1="$tmpdir/repo-one"
+    local repo2="$tmpdir/repo-two"
+    mkdir -p "$repo1" "$repo2"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  mount_socket: true
+  ports: []
+  env: {}
+repos:
+  - path: $repo1
+    name: repo-one
+  - path: $repo2
+    name: repo-two
+YAML
+)"
+    run_cco start "test-proj" --dry-run
+    local policy="$CCO_PROJECTS_DIR/test-proj/.managed/policy.json"
+
+    local path_count
+    path_count=$(jq '.mounts.allowed_paths | length' "$policy")
+    assert_equals "2" "$path_count" "allowed_paths count for 2 repos"
+}
+
+# ── DOCKER_HOST in compose when socket enabled ────────────────────────
+
+test_compose_docker_host_when_socket_enabled() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(socket_project_yml test-proj)"
+    run_cco start "test-proj" --dry-run
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+
+    assert_file_contains "$compose" "DOCKER_HOST=unix:///var/run/docker-proxy.sock"
+}
+
+test_compose_no_docker_host_when_socket_disabled() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --dry-run
+    local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+
+    assert_file_not_contains "$compose" "DOCKER_HOST"
+}

@@ -113,6 +113,44 @@ func TestSecurityFilter_Memory(t *testing.T) {
 	}
 }
 
+func TestSecurityFilter_CPU(t *testing.T) {
+	policy := &config.Policy{
+		ProjectName: "myapp",
+		Security:    config.SecurityPolicy{MaxNanoCPUs: 4000000000}, // 4 CPUs
+	}
+	f := NewSecurityFilter(policy)
+
+	// Within limit
+	if err := f.ValidateCPU(2000000000); err != nil {
+		t.Errorf("expected allowed for 2 CPUs, got: %v", err)
+	}
+
+	// Fractional within limit (0.5 CPU)
+	if err := f.ValidateCPU(500000000); err != nil {
+		t.Errorf("expected allowed for 0.5 CPU, got: %v", err)
+	}
+
+	// Over limit (8 CPUs)
+	if err := f.ValidateCPU(8000000000); err == nil {
+		t.Error("expected error for CPU over limit")
+	}
+
+	// Zero (no limit set by container) should pass
+	if err := f.ValidateCPU(0); err != nil {
+		t.Errorf("expected allowed for 0 nanoCPUs, got: %v", err)
+	}
+
+	// Zero policy (no limit enforced) should pass any value
+	policy2 := &config.Policy{
+		ProjectName: "myapp",
+		Security:    config.SecurityPolicy{MaxNanoCPUs: 0},
+	}
+	f2 := NewSecurityFilter(policy2)
+	if err := f2.ValidateCPU(99000000000); err != nil {
+		t.Errorf("expected allowed when policy has no CPU limit, got: %v", err)
+	}
+}
+
 func TestSecurityFilter_SensitiveMounts(t *testing.T) {
 	policy := &config.Policy{
 		ProjectName: "myapp",
