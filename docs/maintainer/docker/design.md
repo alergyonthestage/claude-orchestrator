@@ -682,9 +682,9 @@ claude-orchestrator/
     │   └── <pack-name>/
     │       ├── pack.yml                    # Pack manifest (knowledge, skills, agents, rules)
     │       ├── knowledge/                  # Optional: pack's own knowledge files (no source:)
-    │       ├── skills/                     # Optional: skills copied to projects on cco start
-    │       ├── agents/                     # Optional: agents copied to projects on cco start
-    │       └── rules/                      # Optional: rules copied to projects on cco start
+    │       ├── skills/                     # Optional: skills mounted read-only into projects
+    │       ├── agents/                     # Optional: agents mounted read-only into projects
+    │       └── rules/                      # Optional: rules mounted read-only into projects
     │
     ├── templates/                          # Project templates
     └── manifest.yml                        # Manifest for sharing via Config Repos

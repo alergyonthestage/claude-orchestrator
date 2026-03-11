@@ -438,7 +438,7 @@ test_yaml_parser_no_packs_section_no_pack_mounts() {
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
     local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
-    assert_file_not_contains "$compose" "Knowledge packs"
+    assert_file_not_contains "$compose" "Pack resources"
 }
 
 # ── _parse_bool: boolean normalization (ADR-13) ─────────────────────

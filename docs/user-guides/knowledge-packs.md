@@ -48,7 +48,7 @@ name: my-client-knowledge
 
 # ── Knowledge files ─────────────────────────────────────────────────
 knowledge:
-  source: ~/documents/my-client-docs   # directory on host (files copied at startup)
+  source: ~/documents/my-client-docs   # directory on host (mounted read-only at startup)
   files:
     - path: backend-coding-conventions.md
       description: "Read when writing backend code, APIs, or DB logic"

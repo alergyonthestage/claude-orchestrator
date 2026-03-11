@@ -259,6 +259,11 @@ EOF
         rm -f "$project_dir/.managed/github.json"
     fi
 
+    # Detect pack resource name conflicts (warning only, before compose generation)
+    if [[ -n "$pack_names" ]]; then
+        _detect_pack_conflicts "$pack_names"
+    fi
+
     # ── Generate docker-compose.yml ──────────────────────────────────
     local compose_file="$project_dir/docker-compose.yml"
 
@@ -472,11 +477,6 @@ YAML
 
     # Generate .claude/workspace.yml — structured project context for /init
     _generate_workspace_yml "$project_dir" "$project_name" "$project_yml" "$pack_names"
-
-    # Detect pack resource name conflicts (warning only)
-    if [[ -n "$pack_names" ]]; then
-        _detect_pack_conflicts "$pack_names"
-    fi
 
     # One-shot cleanup of legacy copied pack files (pre-ADR-14)
     _clean_pack_manifest "$project_dir"

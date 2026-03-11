@@ -516,9 +516,9 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     local compose="$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
-    # Extract pack mount lines (after "Knowledge packs" comment) and verify all have :ro
+    # Extract all pack mount lines (after "Pack resources" comment) and verify all have :ro
     local pack_lines
-    pack_lines=$(grep -A999 "Knowledge packs" "$compose" | grep "^\s*-.*ro-pack" || true)
+    pack_lines=$(sed -n '/Pack resources/,/^ *#/p' "$compose" | grep '^\s*-' || true)
     if [[ -z "$pack_lines" ]]; then
         echo "ASSERTION FAILED: no pack mount lines found in compose"
         return 1

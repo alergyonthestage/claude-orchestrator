@@ -100,7 +100,7 @@ graph TB
 
 **Owner**: Per-project (scaffolded by `cco project create`, extended by packs)
 **Overridable**: Yes — by repo tier for CLAUDE.md and rules
-**Updated via**: User edits; `cco start` copies pack resources here
+**Updated via**: User edits; `cco start` mounts pack resources here (read-only)
 
 | Resource | Source | Purpose |
 |----------|--------|---------|
@@ -208,15 +208,15 @@ graph LR
 
     subgraph "Container (cco start)"
         KM["/workspace/.claude/packs/my-pack/<br/>(mounted :ro)"]
-        SC["/workspace/.claude/skills/custom-deploy/<br/>(copied)"]
-        AC["/workspace/.claude/agents/domain-expert.md<br/>(copied)"]
-        RC["/workspace/.claude/rules/api-conventions.md<br/>(copied)"]
+        SC["/workspace/.claude/skills/custom-deploy/<br/>(mounted :ro)"]
+        AC["/workspace/.claude/agents/domain-expert.md<br/>(mounted :ro)"]
+        RC["/workspace/.claude/rules/api-conventions.md<br/>(mounted :ro)"]
     end
 
-    PK -->|"Docker volume mount"| KM
-    PS -->|"file copy"| SC
-    PA -->|"file copy"| AC
-    PR -->|"file copy"| RC
+    PK -->|"Docker volume mount :ro"| KM
+    PS -->|"Docker volume mount :ro"| SC
+    PA -->|"Docker volume mount :ro"| AC
+    PR -->|"Docker volume mount :ro"| RC
 
     style KM fill:#45b7d1,color:#fff
     style SC fill:#45b7d1,color:#fff
@@ -227,9 +227,9 @@ graph LR
 | Resource type | Destination | Scope level | Mechanism |
 |---|---|---|---|
 | Knowledge files | `/workspace/.claude/packs/<name>/` | Injected via hook | Docker volume mount (:ro) |
-| Skills | `/workspace/.claude/skills/` | **Project** | File copy |
-| Agents | `/workspace/.claude/agents/` | **Project** | File copy |
-| Rules | `/workspace/.claude/rules/` | **Project** | File copy |
+| Skills | `/workspace/.claude/skills/` | **Project** | Docker volume mount (:ro) |
+| Agents | `/workspace/.claude/agents/` | **Project** | Docker volume mount (:ro, per file) |
+| Rules | `/workspace/.claude/rules/` | **Project** | Docker volume mount (:ro, per file) |
 
 ### 4.2 Why Project Level?
 

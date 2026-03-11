@@ -179,7 +179,7 @@ All sections are optional. A knowledge-only pack needs only the `knowledge:` sec
    ```
 5. `session-context.sh` (SessionStart hook) injects `packs.md` into `additionalContext` automatically — **no CLAUDE.md edit needed**
 
-**Name conflicts**: If two packs define the same agent, rule, or skill name, the last pack listed in `project.yml` wins. A warning is emitted. See [ADR-9](../maintainer/architecture.md) for the design rationale.
+**Name conflicts**: If two packs define the same agent, rule, or skill name, the last pack listed in `project.yml` wins. A warning is emitted. See [ADR-14](../maintainer/architecture.md) for the design rationale.
 
 **Pack directory** — `user-config/packs/` (gitignored from orchestrator repo, created by `cco init`):
 ```

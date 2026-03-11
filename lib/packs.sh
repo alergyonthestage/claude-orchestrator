@@ -6,8 +6,8 @@
 # Dependencies: colors.sh, utils.sh, yaml.sh
 # Globals: PACKS_DIR
 
-# Remove stale files from a previous pack manifest that are no longer needed.
-# Reads .pack-manifest, deletes listed files, removes empty parent dirs.
+# Remove stale files from a previous pack manifest (pre-ADR-14 legacy cleanup).
+# Reads .pack-manifest, deletes listed files/dirs, then removes the manifest.
 _clean_pack_manifest() {
     local project_dir="$1"
     local manifest="$project_dir/.claude/.pack-manifest"
@@ -77,7 +77,7 @@ _generate_pack_mounts() {
     local pack_names="$1"
     [[ -z "$pack_names" ]] && return 0
 
-    echo "      # Knowledge packs (read-only mounts from central pack registry)"
+    echo "      # Pack resources (read-only mounts from central pack registry)"
     while IFS= read -r _pname; do
         [[ -z "$_pname" ]] && continue
         local _pyml="$PACKS_DIR/${_pname}/pack.yml"
