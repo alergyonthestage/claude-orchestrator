@@ -77,7 +77,7 @@ The `knowledge` section is the heart of the pack: it allows you to inject docume
 
 ### source
 
-The `source` field specifies a directory on the host that contains documentation files. At `cco start`, the directory is mounted read-only into the container at `/workspace/.packs/<pack-name>/`.
+The `source` field specifies a directory on the host that contains documentation files. At `cco start`, the directory is mounted read-only into the container at `/workspace/.claude/packs/<pack-name>/`.
 
 ```yaml
 knowledge:
@@ -228,7 +228,7 @@ Knowledge pack injection is completely automatic and requires no changes to `CLA
 The process happens in two phases:
 
 **1. At `cco start` time:**
-- Knowledge directories are mounted read-only at `/workspace/.packs/<name>/`
+- Knowledge directories are mounted read-only at `/workspace/.claude/packs/<name>/`
 - Pack skills, agents, and rules are mounted read-only into `/workspace/.claude/` (per-file for rules/agents, per-directory for skills)
 - The `.claude/packs.md` file is generated with the list of files and their descriptions
 
@@ -243,9 +243,9 @@ Example of generated `packs.md`:
 The following knowledge files provide project-specific conventions and context.
 Read the relevant files BEFORE starting any implementation, review, or design task.
 
-- /workspace/.packs/my-client/backend-coding-conventions.md — Read when writing backend code
-- /workspace/.packs/my-client/business-overview.md — Read for business context
-- /workspace/.packs/my-client/testing-guidelines.md
+- /workspace/.claude/packs/my-client/backend-coding-conventions.md — Read when writing backend code
+- /workspace/.claude/packs/my-client/business-overview.md — Read for business context
+- /workspace/.claude/packs/my-client/testing-guidelines.md
 ```
 
 ---

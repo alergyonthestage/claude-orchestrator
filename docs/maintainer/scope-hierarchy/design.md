@@ -207,7 +207,7 @@ graph LR
     end
 
     subgraph "Container (cco start)"
-        KM["/workspace/.packs/my-pack/<br/>(mounted :ro)"]
+        KM["/workspace/.claude/packs/my-pack/<br/>(mounted :ro)"]
         SC["/workspace/.claude/skills/custom-deploy/<br/>(copied)"]
         AC["/workspace/.claude/agents/domain-expert.md<br/>(copied)"]
         RC["/workspace/.claude/rules/api-conventions.md<br/>(copied)"]
@@ -226,7 +226,7 @@ graph LR
 
 | Resource type | Destination | Scope level | Mechanism |
 |---|---|---|---|
-| Knowledge files | `/workspace/.packs/<name>/` | Injected via hook | Docker volume mount (:ro) |
+| Knowledge files | `/workspace/.claude/packs/<name>/` | Injected via hook | Docker volume mount (:ro) |
 | Skills | `/workspace/.claude/skills/` | **Project** | File copy |
 | Agents | `/workspace/.claude/agents/` | **Project** | File copy |
 | Rules | `/workspace/.claude/rules/` | **Project** | File copy |
@@ -254,7 +254,7 @@ Pack resources (skills, agents, rules) go in the **Project** tier because:
 cco start <project>
   │
   ├── 1. For each pack in project.yml:
-  │   ├── Mount knowledge dir → /workspace/.packs/<name>/ (:ro)
+  │   ├── Mount knowledge dir → /workspace/.claude/packs/<name>/ (:ro)
   │   ├── Mount skills → /workspace/.claude/skills/<name>/ (:ro, per dir)
   │   ├── Mount agents → /workspace/.claude/agents/<file>.md (:ro, per file)
   │   ├── Mount rules → /workspace/.claude/rules/<file>.md (:ro, per file)
@@ -302,7 +302,7 @@ defaults/
 | `~/.claude/agents/` | `global/.claude/agents/` | User | `:ro` volume |
 | `~/.claude/skills/` | `global/.claude/skills/` | User | `:ro` volume |
 | `/workspace/.claude/` | `projects/<name>/.claude/` | Project | `:rw` volume |
-| `/workspace/.packs/` | Knowledge files | Pack data | `:ro` volume |
+| `/workspace/.claude/packs/` | Knowledge files | Pack data | `:ro` volume |
 | `/workspace/<repo>/` | Host repos | Repo | `:rw` volume |
 
 ---
@@ -349,6 +349,6 @@ This is Claude Code's native behavior, not our design choice. The practical impa
 
 - [ADR-3: Four-Tier Context Hierarchy](../architecture.md) — Architecture decision record
 - [ADR-8: Tool vs User Config Separation](../architecture.md) — Managed scope update
-- [ADR-9: Knowledge Packs — Copy vs Mount](../architecture.md) — Why pack resources are copied
+- [ADR-14: Zero-Duplication Pack Resource Delivery](../architecture.md) — Pack resources via read-only mounts
 - [Analysis: Scope Hierarchy](./analysis.md) — Detailed investigation and comparison of approaches
 - [Context & Settings Reference](../../reference/context-hierarchy.md) — Runtime context loading, hooks, MCP

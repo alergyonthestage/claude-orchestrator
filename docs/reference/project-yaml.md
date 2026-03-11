@@ -167,15 +167,15 @@ All sections are optional. A knowledge-only pack needs only the `knowledge:` sec
 
 **How it works** — on every `cco start`:
 1. Name conflicts across packs are detected (warning emitted if same filename in agents/rules/skills)
-2. The `knowledge.source` directory is mounted at `/workspace/.packs/<name>/` (read-only)
+2. The `knowledge.source` directory is mounted at `/workspace/.claude/packs/<name>/` (read-only)
 3. Pack rules, agents, and skills are mounted into `/workspace/.claude/` via per-file (rules, agents) or per-directory (skills) read-only Docker volume mounts
 4. `.claude/packs.md` is generated with an instructional list of files and their descriptions:
    ```
    The following knowledge files provide project-specific conventions and context.
    Read the relevant files BEFORE starting any implementation, review, or design task.
 
-   - /workspace/.packs/my-client/backend-coding-conventions.md — Read when writing backend code
-   - /workspace/.packs/my-client/business-overview.md — Read for business context
+   - /workspace/.claude/packs/my-client/backend-coding-conventions.md — Read when writing backend code
+   - /workspace/.claude/packs/my-client/business-overview.md — Read for business context
    ```
 5. `session-context.sh` (SessionStart hook) injects `packs.md` into `additionalContext` automatically — **no CLAUDE.md edit needed**
 

@@ -413,7 +413,7 @@ graph LR
 **Context**: Knowledge Packs bundle documentation (knowledge), plus optional skills, agents, and rules for project-level tooling. The knowledge files are large documents meant to be read by Claude at runtime. Skills, agents, and rules are configuration files that Claude Code expects at specific paths inside `.claude/`.
 
 **Original Decision**: Use two different strategies for the two resource types:
-- **Knowledge files** → mounted read-only as Docker volumes at `/workspace/.packs/<name>/`
+- **Knowledge files** → mounted read-only as Docker volumes at `/workspace/.claude/packs/<name>/`
 - **Skills, agents, rules** → copied into `projects/<name>/.claude/` at `cco start` time
 
 **Why Superseded**: ADR-14 eliminates the copy mechanism entirely. All pack resources (including skills, agents, and rules) are now delivered via read-only Docker volume mounts. Individual file mounts (one per rule/agent, one directory per skill) solve the Docker mount-shadowing problem without physical copying. This eliminates `.pack-manifest`, stale copy risk, and host filesystem pollution. See ADR-14 for the current design.

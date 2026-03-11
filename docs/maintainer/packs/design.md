@@ -84,7 +84,7 @@ If `knowledge.source` is omitted, knowledge files are searched in the `knowledge
 
 Reference documentation files. They are read-only material that Claude reads during the session to get context on conventions, architecture, business logic, etc.
 
-- **Mounted** as Docker read-only volumes at `/workspace/.packs/<name>/`
+- **Mounted** as Docker read-only volumes at `/workspace/.claude/packs/<name>/`
 - **Not copied** to the project's `.claude/` directory
 - **Injected** into context via `packs.md` and the `session-context.sh` hook
 
@@ -110,7 +110,7 @@ All pack resources are delivered via read-only Docker volume mounts — never co
 
 ### Knowledge → Directory mount
 
-Knowledge files are mounted as Docker read-only volumes `:ro` at `/workspace/.packs/<name>/`.
+Knowledge files are mounted as Docker read-only volumes `:ro` at `/workspace/.claude/packs/<name>/`.
 
 **Rationale**: knowledge files are reference material that Claude reads on-demand. Read-only mount is natural and prevents accidental writes. They don't need to reside under `.claude/` because they are not native Claude Code resources.
 
@@ -152,9 +152,9 @@ At `cco start`, the CLI generates the `.claude/packs.md` file in the project wit
 The following knowledge files provide project-specific conventions and context.
 Read the relevant files BEFORE starting any implementation, review, or design task.
 
-- /workspace/.packs/my-client/backend-coding-conventions.md — Read when writing backend code
-- /workspace/.packs/my-client/business-overview.md — Read for business context
-- /workspace/.packs/my-client/testing-guidelines.md
+- /workspace/.claude/packs/my-client/backend-coding-conventions.md — Read when writing backend code
+- /workspace/.claude/packs/my-client/business-overview.md — Read for business context
+- /workspace/.claude/packs/my-client/testing-guidelines.md
 ```
 
 Files without a description appear without the `—` suffix.
@@ -193,7 +193,7 @@ Pack resources are inserted at the **project** level of the context hierarchy:
 
 | Resource | Destination | Claude Code Level |
 |---------|-------------|---------------------|
-| Knowledge files | `/workspace/.packs/<name>/` | None (injected via hook) |
+| Knowledge files | `/workspace/.claude/packs/<name>/` | None (injected via hook) |
 | Skills | `/workspace/.claude/skills/` | Project |
 | Agents | `/workspace/.claude/agents/` | Project |
 | Rules | `/workspace/.claude/rules/` | Project |
@@ -214,7 +214,7 @@ Here's what happens, step by step, when `cco start` processes packs:
 
 3. **Knowledge mount** — for each pack with `knowledge.source`, the directory is added to the generated `docker-compose.yml` as a read-only volume:
    ```yaml
-   - ~/documents/my-client-knowledge:/workspace/.packs/my-client:ro
+   - ~/documents/my-client-knowledge:/workspace/.claude/packs/my-client:ro
    ```
 
 4. **Resource mounts** — skills, agents, and rules from each pack are added to the generated `docker-compose.yml` as read-only volume mounts:

@@ -52,7 +52,7 @@ Add them to the "Shared Libraries" section of CLAUDE.md.
 ## Step 3: Describe knowledge pack files (scope: packs or all)
 
 For each entry in the packs section of `workspace.yml`, read the referenced
-pack file (available at `/workspace/.packs/<pack-name>/<file>`) and write a
+pack file (available at `/workspace/.claude/packs/<pack-name>/<file>`) and write a
 1-sentence description of what it contains and when to consult it.
 
 ## Step 4: Read current CLAUDE.md
