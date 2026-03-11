@@ -15,4 +15,7 @@
 # See: docs/user-guides/advanced/custom-environment.md
 #
 # Example:
-#   apt-get update && apt-get install -y chromium && rm -rf /var/lib/apt/lists/*
+# Install tree command
+#   apt-get update \
+#     && apt-get install -y --no-install-recommends tree \
+#     && rm -rf /var/lib/apt/lists/*
