@@ -324,58 +324,32 @@ Alias triviale in `bin/cco`: `cco tutorial` → `cco start tutorial`. Migliora d
 
 ### Sprint 6-Security — Sandbox & Network Hardening
 
-Elevato a priorità alta. Due problemi di sicurezza residui che richiedono analisi e design approfondito prima dell'open source release: controllo granulare del Docker socket e gestione dell'accesso a internet. Include anche un bugfix al default di `mount_socket`.
+Elevato a priorità alta. Tre componenti di sicurezza: Docker socket proxy con filtro granulare, restrizioni mount per sibling container, e controllo dell'accesso internet. Include bugfix al default di `mount_socket`.
 
-#### #C `mount_socket` Safe Default → `false` (bugfix)
+**Status**: Analysis & Design complete. Implementation pending.
+**Docs**: [analysis](./docker-security/analysis.md) | [design](./docker-security/design.md)
 
-**Contesto**: `docker.mount_socket` ha default `true` in `lib/cmd-start.sh:111`. Quando il campo non è specificato nel `project.yml`, il socket Docker viene montato — contrariamente all'aspettativa di un default sicuro (opt-in, non opt-out).
+#### Phase A: `mount_socket` Safe Default → `false` (bugfix)
 
-**Fix**:
-- `cmd-start.sh:111`: cambiare il secondo argomento di `_parse_bool` da `"true"` a `"false"`
-- Template `defaults/projects/_template/project.yml`: aggiornare il commento da `# mount_socket: true` a `# mount_socket: false` e chiarire che è opt-in
-- Aggiungere migrazione per progetti esistenti che non specificano il campo (avvertire l'utente del cambio di comportamento)
-- Aggiornare test e documentazione
+Change default from `true` to `false` in `cmd-start.sh:111`. Migration adds explicit `mount_socket: true` to existing projects. Breaking change — projects relying on implicit socket access must declare it.
 
-**Breaking change**: progetti che montano il socket senza dichiararlo esplicitamente smetteranno di averlo. Mitigazione: migration script che scansiona `project.yml` esistenti e aggiunge `mount_socket: true` se il progetto lo usava implicitamente (rilevabile dall'assenza del campo + presenza di comandi docker nel `setup.sh`).
+#### Phase B: Docker Socket Proxy (Go binary)
 
-#### #A Docker Socket Restriction (nuovo ADR)
+Custom Go HTTP proxy (`cco-docker-proxy`) between Claude and Docker socket. Filters requests by:
+- **Container policy**: `project_only` (default) / `allowlist` / `denylist` / `unrestricted` — per name prefix and label
+- **Mount restrictions**: `none` / `project_only` (default) / `allowlist` / `any` — with implicit deny for sensitive paths
+- **Security constraints**: block `--privileged`, drop capabilities, resource limits, max container count
+- **Network filtering**: restrict container network membership to project networks
 
-**Contesto**: Claude ha accesso non filtrato al Docker socket dell'host — accesso root-equivalent su tutti i container del sistema. L'attuale `docker.mount_socket: false` è un toggle blunt (tutto o niente). Non esiste middle ground.
+Architecture: proxy listens on `/var/run/docker-proxy.sock`, forwards to real socket. Claude's `DOCKER_HOST` points to proxy. Proxy runs as root (socket access), Claude runs as unprivileged user.
 
-**Obiettivo**: consentire a Claude l'accesso ai container del progetto corrente (`cc-<project>-*` o label `cco.project=<name>`), bloccando operazioni su container non correlati.
+#### Phase C: Network Hardening (Squid sidecar)
 
-**Approcci da valutare** (richiede ADR dedicato):
-- **Tecnativa docker-socket-proxy**: filtra per API endpoint type (non per container specifico). Blocca `POST /containers/create` ma permette `GET /containers/json`. Soluzione consolidata, ma non offre isolamento per-container.
-- **Custom HTTP proxy**: intercetta le chiamate Docker API e filtra per container name/label nel payload. Richiede parsing del body — più potente ma custom.
-- **Docker Authorization Plugin**: richiede modifica del daemon host (`--authorization-plugin`). Non fattibile per uso personale.
-- **Configurazione in project.yml**: `docker.socket_policy: full | filtered | none` con allowlist container patterns.
+Layered defense for internet access control:
+- **Layer 1**: Claude Code deny rules (`WebFetch`, `WebSearch`, `curl`, `wget`) for restricted/none modes
+- **Layer 2**: Docker network `internal: true` + Squid proxy sidecar with SNI-based domain filtering
 
-**Scope analisi**:
-- Mappare le API Docker effettivamente usate da Claude (compose up/down, exec, logs, build)
-- Valutare impatto su workflow Docker-from-Docker (sibling containers `cc-<project>-*`)
-- Decidere se il proxy gira come sidecar nel container o come processo separato sull'host
-- Progettare la configurazione `project.yml` per la policy
-
-#### #B Internet Access Controls
-
-**Contesto**: Claude ha accesso completo a internet all'interno del container. Utile per la maggior parte dei workflow (npm install, git clone, API calls), ma introduce rischi in sessioni autonome o con poco human-in-the-loop: prompt injection via contenuti web, exfiltration di secrets, download di dipendenze non verificate.
-
-**Obiettivo**: ridurre la superficie di attacco per sessioni autonome, senza bloccare i workflow normali.
-
-**Approcci da valutare** (richiede ADR dedicato):
-- **Network policy per project**: `network.internet: full | restricted | none` in project.yml
-  - `full` (default): accesso completo (comportamento attuale)
-  - `restricted`: allowlist di domini (npm registry, github, pypi, etc.) via egress proxy
-  - `none`: solo rete interna `cc-<project>` (per sessioni puramente locali)
-- **Egress proxy (Squid/mitmproxy)**: sidecar container che implementa l'allowlist
-- **Claude Code deny rules**: usare `denyTools` per bloccare tool specifici (WebFetch, WebSearch) a livello managed — più semplice ma meno granulare
-- **Autonomy level come trigger**: `network.internet: restricted` automatico quando `autonomy: high` in project.yml
-
-**Scope analisi**:
-- Identificare i domini legittimi necessari (npm, github, pypi, anthropic API, etc.)
-- Valutare l'impatto sulle features esistenti (pack install, browser MCP, setup.sh)
-- Decidere la granularità: per-project vs per-session vs globale
-- Prompt injection via browser MCP: già mitigato parzialmente dai deny rules? Valutare.
+Configuration: `network.internet: full | restricted | none` with `allowed_domains` / `blocked_domains`. Squid sidecar bridges internal (project) and external (internet) networks. Created containers inherit the same restriction or can be overridden.
 
 ---
 
