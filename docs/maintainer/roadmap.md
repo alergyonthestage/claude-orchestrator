@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-10 (Sprint 5 review fixes; defaults restructuring and template system planned).
+> Last updated: 2026-03-11 (Sprint ordering revised: vault multi-PC sync added as Sprint 7, E2E moved up to Sprint 8, session resume deferred to exploratory, pack inheritance merged into Sprint 11).
 
 ---
 
@@ -233,22 +233,22 @@ graph LR
     DONE["✅ Completed<br/>Sprint 4, Sprint 5,<br/>Sprint 6+10, Sprint 6b,<br/>ADR-13, Bugfix #B1"]
 
     S5b["Sprint 5b<br/>#Defaults restructure<br/>#Template system"]
-    S6S["Sprint 6-Security<br/>#Docker Restriction<br/>#Internet Controls"]
-    S7L["Sprint 7-Linux<br/>#Linux OAuth<br/>(pre-open-source)"]
-    S8["Sprint 8 (isolamento)<br/>#6 Git Worktree<br/>#7 Session Resume"]
-    S9["Sprint 9 (testing)<br/>#E2E Test Suite"]
-    S10["Sprint 10 (ecosistema)<br/>#9 Pack inheritance"]
-    S11["Sprint 11 (polish)<br/>#10 cco project edit<br/>#10b StatusLine"]
-    S12["Sprint 12 (intelligence)<br/>#13 Project RAG"]
+    S6S["Sprint 6-Security<br/>#Docker Restriction<br/>#Internet Controls<br/>#mount_socket default fix"]
+    S7V["Sprint 7-Vault<br/>#Multi-PC sync<br/>#Memory policy"]
+    S8E["Sprint 8-E2E<br/>#E2E Test Suite"]
+    S9L["Sprint 9-Linux<br/>#Linux OAuth<br/>(pre-open-source)"]
+    S10I["Sprint 10-Isolation<br/>#Git Worktree"]
+    S11E["Sprint 11-Ecosystem<br/>#Pack inheritance<br/>#cco project edit<br/>#StatusLine"]
+    S12R["Sprint 12-RAG<br/>#Project RAG"]
 
     DONE --> S5b
     S5b --> S6S
-    S6S --> S7L
-    S7L --> S8
-    S8 --> S9
-    S8 --> S10
-    S10 --> S11
-    S11 --> S12
+    S6S --> S7V
+    S7V --> S8E
+    S8E --> S9L
+    S9L --> S10I
+    S10I --> S11E
+    S11E --> S12R
 ```
 
 ---
@@ -324,7 +324,19 @@ Alias triviale in `bin/cco`: `cco tutorial` → `cco start tutorial`. Migliora d
 
 ### Sprint 6-Security — Sandbox & Network Hardening
 
-Elevato a priorità alta. Due problemi di sicurezza residui che richiedono analisi e design approfondito prima dell'open source release: controllo granulare del Docker socket e gestione dell'accesso a internet.
+Elevato a priorità alta. Due problemi di sicurezza residui che richiedono analisi e design approfondito prima dell'open source release: controllo granulare del Docker socket e gestione dell'accesso a internet. Include anche un bugfix al default di `mount_socket`.
+
+#### #C `mount_socket` Safe Default → `false` (bugfix)
+
+**Contesto**: `docker.mount_socket` ha default `true` in `lib/cmd-start.sh:111`. Quando il campo non è specificato nel `project.yml`, il socket Docker viene montato — contrariamente all'aspettativa di un default sicuro (opt-in, non opt-out).
+
+**Fix**:
+- `cmd-start.sh:111`: cambiare il secondo argomento di `_parse_bool` da `"true"` a `"false"`
+- Template `defaults/projects/_template/project.yml`: aggiornare il commento da `# mount_socket: true` a `# mount_socket: false` e chiarire che è opt-in
+- Aggiungere migrazione per progetti esistenti che non specificano il campo (avvertire l'utente del cambio di comportamento)
+- Aggiornare test e documentazione
+
+**Breaking change**: progetti che montano il socket senza dichiararlo esplicitamente smetteranno di averlo. Mitigazione: migration script che scansiona `project.yml` esistenti e aggiunge `mount_socket: true` se il progetto lo usava implicitamente (rilevabile dall'assenza del campo + presenza di comandi docker nel `setup.sh`).
 
 #### #A Docker Socket Restriction (nuovo ADR)
 
@@ -367,7 +379,104 @@ Elevato a priorità alta. Due problemi di sicurezza residui che richiedono anali
 
 ---
 
-### Sprint 7-Linux — Linux OAuth Support
+### Sprint 7-Vault — Multi-PC Config Sync & Memory Policy
+
+Urgente. La suite vault attuale non supporta scenari multi-macchina con configurazioni diverse (es. progetti di lavoro su PC-A, progetti personali su PC-B). Inoltre manca una policy definita su quando usare la memoria automatica di Claude vs. la documentazione versionata del progetto.
+
+**Docs**: [analysis](./vault-multipc/analysis.md) ← da espandere in design doc all'inizio dello sprint.
+
+#### #A Vault Profile-Based Selective Sync
+
+**Contesto**: `cco vault push/pull` opera sull'intera `user-config/` come un singolo `git push/pull`. Con due PC che hanno progetti diversi su un remote condiviso, un `pull` porta progetti indesiderati sull'altro PC.
+
+**Obiettivo**: ogni macchina dichiara un profilo locale (`vault.yml`, gitignored) che specifica cosa sincronizzare:
+
+```yaml
+# user-config/vault.yml  (gitignored — locale per macchina)
+sync:
+  global: true
+  packs: true
+  templates: true
+  projects:
+    - work-proj-1
+    - work-proj-2
+```
+
+**Scope**:
+- `cco vault profile init` — setup interattivo del profilo locale
+- `cco vault profile add <type> <name>` / `remove` — gestione del profilo
+- `cco vault profile show` — mostra configurazione attuale
+- `cco vault push/pull` legge `vault.yml` e scopa le operazioni git ai path dichiarati
+- `vault.yml` aggiunto al `.gitignore` del vault
+
+**Approcci da valutare** (vedi analysis.md):
+- Profile-only (Phase 1): single branch, push/pull per path — immediato, semplice
+- Branch strategy (Phase 2): branch per macchina + merge del global da `main` — più pulito storicamente, più complesso
+
+**Decisione**: implementare Phase 1 in questo sprint. Phase 2 è opzionale e può seguire in futuro.
+
+#### #B Memory vs. Docs Policy
+
+**Contesto**: nessuna policy definisce quando Claude deve scrivere in `MEMORY.md` vs. nella documentazione del progetto (`.claude/`, `docs/`). Note importanti finiscono in memoria (locale-macchina, non versionata) quando dovrebbero stare nei doc del repo.
+
+**Obiettivo**: policy chiara e documentata, integrata nel CLAUDE.md globale e nel skill `/init-workspace`.
+
+**Use `MEMORY.md` for**: note temporanee di sessione, preferenze di interazione, context di breve durata.
+**Use project docs for**: decisioni architetturali, pattern appresi, convenzioni, regole → `.claude/rules/`, `docs/`.
+
+**Scope**:
+- Aggiornare `defaults/global/.claude/CLAUDE.md` con la policy
+- Aggiornare il skill `/init-workspace` per guidare la classificazione delle note
+- Documentare in `docs/reference/context-hierarchy.md` la sezione memoria
+
+#### #C Memory Vaulting (opzionale)
+
+**Contesto**: se si vuole sincronizzare `MEMORY.md` tra PC, occorre separare `memory/` da `claude-state/` (che contiene i transcript, troppo grandi per il vault).
+
+**Proposta**: montare `memory/` separatamente da `claude-state/`:
+```yaml
+- ./claude-state:/home/claude/.claude/projects/-workspace
+- ./memory:/home/claude/.claude/projects/-workspace/memory
+```
+
+`memory/` sarebbe tracciata dal vault (non gitignored), mentre `claude-state/` rimane esclusa.
+
+**Scope**:
+- Validare che il bind-mount override funzioni con Claude Code
+- Aggiornare `cmd-start.sh` e template docker-compose
+- Aggiornare `.gitignore` del vault
+- Migration per progetti esistenti
+
+**Priorità**: dipende dal feedback utente. Implementare solo se #B (policy) non è sufficiente.
+
+---
+
+### Sprint 8-E2E — E2E Integration Test Suite
+
+Anticipato rispetto alla pianificazione originale (era Sprint 9). La suite dry-run copre 482 test ma non verifica il comportamento reale del container. E2E è prerequisito per garantire la qualità prima di Sprint 9-Linux (onboarding di nuovi utenti su Linux).
+
+#### #E2E Integration Test Suite
+
+**Obiettivo**: testare il comportamento reale del container, non solo la generazione dei file di configurazione.
+
+**Scope**:
+- Entrypoint: socket GID resolution, MCP merge (`~/.claude/mcp.json` risultante), gosu, tmux session
+- Mount verification: repos presenti in `/workspace/`, `~/.claude/` montato correttamente, env var `CCO_*` presenti
+- Socket: presente se `mount_socket: true`, assente se `false`
+- Auth flow: credenziali copiate correttamente nel container
+- Setup.sh: script eseguito come `claude` (non root)
+- `cco stop`: container terminato correttamente
+
+**Architettura**:
+- Test runner separato (`bin/test-e2e`) che richiede Docker disponibile
+- Override dell'entrypoint con script di verifica interna (`tests/e2e/fixtures/verify-entrypoint.sh`) — no Claude interattivo
+- Fixture in `tests/e2e/fixtures/`: project.yml minimali, repo Git minimali per test di mount
+- CI: opzionale (richiede Docker), documentato come "local-first"
+- Non sostituisce la suite bash dry-run — la complementa
+
+---
+
+### Sprint 9-Linux — Linux OAuth Support
 
 **Priorità**: alta, richiesta pre-open-source. Attualmente l'autenticazione OAuth funziona solo su macOS via Keychain. Su Linux l'unica opzione è API key via env var.
 
@@ -395,7 +504,7 @@ Elevato a priorità alta. Due problemi di sicurezza residui che richiedono anali
 
 ---
 
-### Sprint 8 — Isolation features
+### Sprint 10-Isolation — Git Worktree
 
 #### #6 Git Worktree Isolation
 
@@ -410,21 +519,17 @@ Opt-in git isolation for container sessions. When enabled, repos are mounted at 
 - Commits persist in host repo via bind-mounted object store
 - Post-session cleanup integrated in `cmd_start()` (no `cco stop` needed)
 - Multiple merge/PR cycles during a single session via standard `gh pr create`
-- Session resume: branch `cco/<project>` persists, next `--worktree` start reuses it
+- Branch `cco/<project>` persists across sessions; next `--worktree` start reuses it
 
 **Docs**: [analysis](./future/worktree/analysis.md) | [design](./future/worktree/design.md) | [ADR-10](./architecture.md)
 
-#### #7 Session resume
-
-`cco resume <project>` — reattach to a running tmux session inside a running container. Complements worktree isolation: resume work on the same branch.
-
 ---
 
-### Sprint 8 — Pack ecosystem
+### Sprint 11-Ecosystem — Pack, Polish & Automation
 
-> Note: `cco pack create` (and the full pack CLI) was implemented earlier and is now in the Completed section.
+Raccoglie le feature di completamento rimaste dopo che pack CLI e sharing sono stati implementati.
 
-#### #9 Pack inheritance / composition
+#### #9 Pack Inheritance / Composition
 
 Allow packs to extend other packs:
 ```yaml
@@ -433,36 +538,7 @@ files:
   - additional-doc.md
 ```
 
----
-
-### Sprint 9 — E2E Testing
-
-Attualmente la test suite è composta da 482 test in modalità dry-run (no Docker). I bug di runtime (entrypoint, socket GID, MCP merge, gosu, tmux) non sono coperti. Per il mantenimento a lungo termine — specialmente post-open-source con contribuzioni esterne — una suite E2E è necessaria.
-
-#### #E2E Integration Test Suite
-
-**Obiettivo**: testare il comportamento reale del container, non solo la generazione dei file di configurazione.
-
-**Scope**:
-- `cco start <project>` lancia effettivamente un container Docker e verifica che Claude si avvii
-- Entrypoint: socket GID resolution, MCP merge (`~/.claude/mcp.json` risultante), gosu, tmux session
-- Auth flow: credenziali copiate correttamente nel container
-- Browser MCP: server avviato, porta CDP corretta
-- Setup.sh: script eseguito come `claude` (non root)
-- `cco stop`: container terminato correttamente
-
-**Architettura proposta**:
-- Test runner separato (`bin/test-e2e`) che richiede Docker disponibile
-- Ogni test lancia un container con `--dry-run-entrypoint` o override dell'entrypoint per verificare senza lanciare Claude interattivamente
-- Fixture di progetti di test in `tests/fixtures/`
-- CI: opzionale (può richiedere Docker in CI), documentato come "local-only" se necessario
-- Non sostituisce la suite bash dry-run — la complementa
-
-**Priorità**: media — importante per mantenimento a lungo termine, non urgente pre-release.
-
----
-
-### Sprint 10 — Automation and polish
+> Note: `cco pack create` (and the full pack CLI) was implemented in Sprint 6+10. Only inheritance/composition remains.
 
 #### #10 `cco project edit <name>` command
 
@@ -484,9 +560,7 @@ Improve the StatusLine hook (`config/hooks/statusline.sh`) for better usability.
 
 ---
 
----
-
-### Sprint 12 — Project RAG
+### Sprint 12-RAG — Project RAG
 
 Integrated semantic search over project knowledge, providing Claude with relevant context from large codebases and documentation without consuming the full context window.
 
@@ -547,9 +621,17 @@ rag:
 
 ## Long-term / Exploratory
 
-### Remote sessions
+### Session Reattach (`cco attach`)
 
-Mount repos from remote hosts via SSHFS or similar, enabling orchestrator sessions on remote development machines.
+**Background**: initially scoped as "Session Resume" (Sprint 8). Reassessed 2026-03-11.
+
+Claude Code's native `/resume` command already handles the primary use case: it reads session transcripts from `claude-state/` (mounted Docker volume) to restore conversation context, and works across container rebuilds.
+
+The feature `cco attach <project>` would add: reattach to a *currently running* container's tmux session after the terminal window closes or detaches. This is equivalent to `docker exec -it <container> tmux attach` and could be a simple convenience one-liner rather than a full sprint item.
+
+**Potential future value**: complements worktree isolation (Sprint 10) — after a worktree session, the user might want to reattach to continue on the same branch. Revisit after worktree isolation is implemented.
+
+**Decision**: defer. Implement as a one-liner `cco attach` if user demand emerges post-Sprint 10.
 
 ---
 
@@ -560,6 +642,15 @@ Mount repos from remote hosts via SSHFS or similar, enabling orchestrator sessio
 ### Multi-project sessions
 
 A single Claude session with repos from multiple projects, for cross-project refactoring or analysis tasks.
+
+### Vault Branch Strategy (Phase 2)
+
+After Sprint 7-Vault implements profile-based selective sync, a branch strategy can be layered on top for cleaner per-machine git history:
+- `main` branch: shared content (global, packs, templates)
+- Per-machine branches: `pc-work`, `pc-home`, etc.
+- `cco vault pull --global`: merge shared content from `main` into current branch
+
+This is not needed for the primary use case (preventing wrong-PC projects) but improves git history quality for power users.
 
 ### Web UI
 
