@@ -18,13 +18,13 @@ func NewMountFilter(policy *config.Policy) *MountFilter {
 }
 
 // ValidateBind checks if a bind mount string (host:container[:ro]) is allowed.
+// Docker accepts both "source:target" and bare "source" formats.
 func (f *MountFilter) ValidateBind(bind string) error {
 	parts := strings.SplitN(bind, ":", 3)
-	if len(parts) < 2 {
-		return nil // not a bind mount
-	}
-
 	hostPath := parts[0]
+	if hostPath == "" {
+		return nil // empty string, skip
+	}
 	return f.validatePath(hostPath)
 }
 

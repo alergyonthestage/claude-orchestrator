@@ -789,27 +789,37 @@ _generate_socket_policy() {
     mt_force_ro=$(_parse_bool "$(yml_get_deep "$project_yml" "docker.mounts.force_readonly")" "false")
 
     # Mount allowed paths: for project_only, collect repo paths
+    # All paths are expanded (~ → /home/user) to match what Docker sends at runtime.
     local mt_allowed_json="[]"
     if [[ "$mt_policy" == "project_only" ]]; then
         local repo_paths
         repo_paths=$(yml_get_repos "$project_yml" | cut -d: -f1)
         if [[ -n "$repo_paths" ]]; then
-            mt_allowed_json=$(echo "$repo_paths" | jq -R . | jq -s .)
+            mt_allowed_json=$(while IFS= read -r _p; do
+                [[ -z "$_p" ]] && continue
+                expand_path "$_p"
+            done <<< "$repo_paths" | jq -R . | jq -s .)
         fi
     else
         local mt_allow
         mt_allow=$(yml_get_deep_list "$project_yml" "docker.mounts.allow")
         if [[ -n "$mt_allow" ]]; then
-            mt_allowed_json=$(echo "$mt_allow" | jq -R . | jq -s .)
+            mt_allowed_json=$(while IFS= read -r _p; do
+                [[ -z "$_p" ]] && continue
+                expand_path "$_p"
+            done <<< "$mt_allow" | jq -R . | jq -s .)
         fi
     fi
 
-    # Mount denied paths (explicit)
+    # Mount denied paths (explicit) — expanded like allowed paths
     local mt_denied_json="[]"
     local mt_deny
     mt_deny=$(yml_get_deep_list "$project_yml" "docker.mounts.deny")
     if [[ -n "$mt_deny" ]]; then
-        mt_denied_json=$(echo "$mt_deny" | jq -R . | jq -s .)
+        mt_denied_json=$(while IFS= read -r _p; do
+            [[ -z "$_p" ]] && continue
+            expand_path "$_p"
+        done <<< "$mt_deny" | jq -R . | jq -s .)
     fi
 
     # Security policy
