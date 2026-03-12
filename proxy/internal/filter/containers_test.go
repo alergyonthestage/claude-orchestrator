@@ -211,3 +211,107 @@ func TestContainerFilter_ValidateCreateName(t *testing.T) {
 		t.Error("expected error when creation is disabled")
 	}
 }
+
+func TestContainerFilter_ValidateCreateName_Unrestricted(t *testing.T) {
+	policy := &config.Policy{
+		ProjectName: "myapp",
+		Containers: config.ContainerPolicy{
+			Policy:        "unrestricted",
+			CreateAllowed: true,
+		},
+	}
+	f := NewContainerFilter(policy)
+
+	// Unrestricted allows any name
+	name, err := f.ValidateCreateName("any-name-at-all")
+	if err != nil {
+		t.Errorf("expected allowed, got: %v", err)
+	}
+	if name != "any-name-at-all" {
+		t.Errorf("expected name returned unchanged, got %q", name)
+	}
+}
+
+func TestContainerFilter_RequiredLabels(t *testing.T) {
+	policy := &config.Policy{
+		ProjectName: "myapp",
+		Containers: config.ContainerPolicy{
+			Policy:         "project_only",
+			RequiredLabels: map[string]string{"cco.project": "myapp", "env": "dev"},
+		},
+	}
+	f := NewContainerFilter(policy)
+
+	labels := f.RequiredLabels()
+	if len(labels) != 2 {
+		t.Fatalf("expected 2 labels, got %d", len(labels))
+	}
+	if labels["cco.project"] != "myapp" {
+		t.Errorf("expected cco.project=myapp, got %q", labels["cco.project"])
+	}
+}
+
+func TestContainerFilter_EmptyAllowPatterns(t *testing.T) {
+	policy := &config.Policy{
+		ProjectName: "myapp",
+		Containers: config.ContainerPolicy{
+			Policy:        "allowlist",
+			AllowPatterns: []string{},
+		},
+	}
+	f := NewContainerFilter(policy)
+
+	// With empty allowlist, nothing should match
+	if f.IsNameAllowed("anything") {
+		t.Error("expected denied with empty allow patterns")
+	}
+}
+
+func TestContainerFilter_EmptyDenyPatterns(t *testing.T) {
+	policy := &config.Policy{
+		ProjectName: "myapp",
+		Containers: config.ContainerPolicy{
+			Policy:       "denylist",
+			DenyPatterns: []string{},
+		},
+	}
+	f := NewContainerFilter(policy)
+
+	// With empty denylist, everything should be allowed
+	if !f.IsNameAllowed("anything") {
+		t.Error("expected allowed with empty deny patterns")
+	}
+}
+
+func TestContainerFilter_Allowlist_EmptyLabels(t *testing.T) {
+	policy := &config.Policy{
+		ProjectName: "myapp",
+		Containers: config.ContainerPolicy{
+			Policy:        "allowlist",
+			AllowPatterns: []string{"cc-myapp-*"},
+		},
+	}
+	f := NewContainerFilter(policy)
+
+	// Labels check should return false for non-project_only policies
+	if f.AreLabelsAllowed(map[string]string{"cco.project": "myapp"}) {
+		t.Error("expected labels check to return false for allowlist policy")
+	}
+}
+
+func TestDeniedError(t *testing.T) {
+	err := &DeniedError{Reason: "test reason"}
+	expected := "cco-docker-proxy: denied — test reason"
+	if err.Error() != expected {
+		t.Errorf("expected %q, got %q", expected, err.Error())
+	}
+
+	if !IsDenied(err) {
+		t.Error("expected IsDenied to return true for DeniedError")
+	}
+
+	// Non-DeniedError
+	if IsDenied(nil) {
+		t.Error("expected IsDenied to return false for nil")
+	}
+}
