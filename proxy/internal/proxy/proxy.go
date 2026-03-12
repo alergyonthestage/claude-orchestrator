@@ -145,10 +145,18 @@ func (p *Proxy) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse create request
+	// Parse into typed struct for validation and into raw map for round-trip.
+	// The typed struct only declares fields the proxy inspects; marshaling it
+	// back would drop everything else (Image, Cmd, Env, ...).  The raw map
+	// preserves the full request so we only patch what we need.
 	var createReq createContainerRequest
 	if err := json.Unmarshal(body, &createReq); err != nil {
 		p.denyErr(w, r, "parse container create body", err)
+		return
+	}
+	var rawReq map[string]interface{}
+	if err := json.Unmarshal(body, &rawReq); err != nil {
+		p.denyErr(w, r, "parse container create body (raw)", err)
 		return
 	}
 
@@ -161,13 +169,15 @@ func (p *Proxy) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Inject required labels
-	if createReq.Labels == nil {
-		createReq.Labels = make(map[string]string)
+	// Inject required labels into the raw map (preserves all other fields)
+	rawLabels, _ := rawReq["Labels"].(map[string]interface{})
+	if rawLabels == nil {
+		rawLabels = make(map[string]interface{})
 	}
 	for k, v := range p.containerFilter.RequiredLabels() {
-		createReq.Labels[k] = v
+		rawLabels[k] = v
 	}
+	rawReq["Labels"] = rawLabels
 
 	// Validate privileged
 	if err := p.securityFilter.ValidatePrivileged(createReq.HostConfig.Privileged); err != nil {
@@ -223,7 +233,7 @@ func (p *Proxy) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Force readonly if policy requires
+	// Force readonly if policy requires — patch both typed struct and raw map
 	if p.mountFilter.ShouldForceReadonly() {
 		for i, bind := range createReq.HostConfig.Binds {
 			if !strings.HasSuffix(bind, ":ro") {
@@ -234,6 +244,14 @@ func (p *Proxy) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 					createReq.HostConfig.Binds[i] = parts[0] + ":" + parts[1] + ":ro"
 				}
 			}
+		}
+		// Sync back to raw map
+		if hc, ok := rawReq["HostConfig"].(map[string]interface{}); ok {
+			rawBinds := make([]interface{}, len(createReq.HostConfig.Binds))
+			for i, b := range createReq.HostConfig.Binds {
+				rawBinds[i] = b
+			}
+			hc["Binds"] = rawBinds
 		}
 	}
 
@@ -247,8 +265,8 @@ func (p *Proxy) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Re-serialize the modified body
-	modifiedBody, err := json.Marshal(createReq)
+	// Re-serialize from the raw map (preserves Image, Cmd, Env, and all other fields)
+	modifiedBody, err := json.Marshal(rawReq)
 	if err != nil {
 		p.denyErr(w, r, "serialize modified request", err)
 		return
