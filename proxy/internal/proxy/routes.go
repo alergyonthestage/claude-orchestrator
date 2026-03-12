@@ -16,6 +16,9 @@ var (
 	containerListPath    = regexp.MustCompile(`^(/v\d+\.\d+)?/containers/json$`)
 	containerOpPath      = regexp.MustCompile(`^(/v\d+\.\d+)?/containers/([^/]+)(/.*)?$`)
 
+	// Exec endpoints: POST /exec/{id}/start, POST /exec/{id}/resize, GET /exec/{id}/json
+	execOpPath           = regexp.MustCompile(`^(/v\d+\.\d+)?/exec/([^/]+)(/.*)?$`)
+
 	// Network endpoints
 	networkCreatePath    = regexp.MustCompile(`^(/v\d+\.\d+)?/networks/create$`)
 	networkConnectPath   = regexp.MustCompile(`^(/v\d+\.\d+)?/networks/([^/]+)/connect$`)
@@ -79,9 +82,20 @@ func isNetworkList(method, path string) bool {
 	return method == "GET" && networkListPath.MatchString(path)
 }
 
+func isExecOp(method, path string) bool {
+	return execOpPath.MatchString(path)
+}
+
 func isImageOp(path string) bool {
 	stripped := versionPrefix.ReplaceAllString(path, "")
 	return strings.HasPrefix(stripped, "/images") || strings.HasPrefix(stripped, "/build")
+}
+
+// isBuildKitOp checks if the path targets a BuildKit/buildx session endpoint.
+// BuildKit uses /session and /grpc endpoints for build operations.
+func isBuildKitOp(path string) bool {
+	stripped := versionPrefix.ReplaceAllString(path, "")
+	return stripped == "/session" || strings.HasPrefix(stripped, "/grpc")
 }
 
 func isVolumeOp(path string) bool {

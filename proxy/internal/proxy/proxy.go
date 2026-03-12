@@ -107,6 +107,11 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p.handleContainerOp(w, r, path)
 	case isContainerDelete(r.Method, path):
 		p.handleContainerDelete(w, r, path)
+	case isExecOp(r.Method, path):
+		// Exec endpoints (/exec/{id}/start, /exec/{id}/resize, /exec/{id}/json).
+		// The exec instance was created via POST /containers/{id}/exec which is
+		// already validated by handleContainerOp.  Allow the follow-up exec ops.
+		p.forward(w, r)
 	case isNetworkCreate(r.Method, path):
 		p.handleNetworkCreate(w, r)
 	case isNetworkConnect(r.Method, path):
@@ -115,6 +120,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p.handleNetworkList(w, r)
 	case isImageOp(path):
 		// Allow image operations (pull, build, list)
+		p.forward(w, r)
+	case isBuildKitOp(path):
+		// Allow BuildKit session/gRPC endpoints for docker build
 		p.forward(w, r)
 	case isVolumeOp(path):
 		// Allow volume operations
@@ -415,6 +423,13 @@ func (p *Proxy) handleContainerOp(w http.ResponseWriter, r *http.Request, path s
 		return
 	}
 
+	// Allow BuildKit builder containers — these are managed by Docker/buildx
+	// for `docker build` and are not created through the proxy.
+	if isBuildKitContainer(idOrName) {
+		p.forward(w, r)
+		return
+	}
+
 	info, found := p.cache.Resolve(idOrName)
 	if !found {
 		// Try refreshing cache for newly created containers
@@ -433,6 +448,13 @@ func (p *Proxy) handleContainerOp(w http.ResponseWriter, r *http.Request, path s
 	}
 
 	p.forward(w, r)
+}
+
+// isBuildKitContainer returns true if the ID/name matches a BuildKit builder
+// container pattern.  These containers are created by Docker/buildx for
+// `docker build` and must be accessible for builds to work.
+func isBuildKitContainer(idOrName string) bool {
+	return strings.HasPrefix(idOrName, "buildx_buildkit_")
 }
 
 // handleContainerDelete handles DELETE /containers/{id}.
