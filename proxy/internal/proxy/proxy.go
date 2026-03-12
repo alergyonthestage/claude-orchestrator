@@ -217,7 +217,7 @@ func (p *Proxy) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate bind mounts
+	// Validate bind mounts (path_map translation happens inside ValidateBind)
 	for _, bind := range createReq.HostConfig.Binds {
 		if err := p.mountFilter.ValidateBind(bind); err != nil {
 			p.deny(w, r, err.Error())
@@ -225,11 +225,33 @@ func (p *Proxy) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Validate Mounts array
+	// Validate Mounts array (path_map translation happens inside ValidateMount)
 	for _, mount := range createReq.HostConfig.Mounts {
 		if err := p.mountFilter.ValidateMount(mount.Source, mount.Type); err != nil {
 			p.deny(w, r, err.Error())
 			return
+		}
+	}
+
+	// Rewrite mount paths: translate container-local paths to host paths so
+	// the Docker daemon (running on the host) receives valid host paths.
+	// This must happen AFTER validation and BEFORE forwarding.
+	bindRewritten := false
+	for i, bind := range createReq.HostConfig.Binds {
+		translated := p.mountFilter.TranslateBind(bind)
+		if translated != bind {
+			createReq.HostConfig.Binds[i] = translated
+			bindRewritten = true
+		}
+	}
+	mountRewritten := false
+	for i, mount := range createReq.HostConfig.Mounts {
+		if mount.Type == "bind" || mount.Type == "" {
+			translated := p.mountFilter.TranslatePath(mount.Source)
+			if translated != mount.Source {
+				createReq.HostConfig.Mounts[i].Source = translated
+				mountRewritten = true
+			}
 		}
 	}
 
@@ -245,13 +267,32 @@ func (p *Proxy) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		// Sync back to raw map
+		bindRewritten = true
+	}
+
+	// Sync rewritten Binds back to raw map
+	if bindRewritten {
 		if hc, ok := rawReq["HostConfig"].(map[string]interface{}); ok {
 			rawBinds := make([]interface{}, len(createReq.HostConfig.Binds))
 			for i, b := range createReq.HostConfig.Binds {
 				rawBinds[i] = b
 			}
 			hc["Binds"] = rawBinds
+		}
+	}
+
+	// Sync rewritten Mounts back to raw map
+	if mountRewritten {
+		if hc, ok := rawReq["HostConfig"].(map[string]interface{}); ok {
+			if rawMounts, ok := hc["Mounts"].([]interface{}); ok {
+				for i, mount := range createReq.HostConfig.Mounts {
+					if i < len(rawMounts) {
+						if rm, ok := rawMounts[i].(map[string]interface{}); ok {
+							rm["Source"] = mount.Source
+						}
+					}
+				}
+			}
 		}
 	}
 

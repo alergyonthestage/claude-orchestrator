@@ -811,6 +811,45 @@ _generate_socket_policy() {
         fi
     fi
 
+    # Path map: container prefix → host path.  In Docker-from-Docker, bind
+    # mount paths reference the HOST filesystem, but shell expansion inside the
+    # container produces container-local paths (e.g. ~ → /home/claude).
+    # The proxy uses this map to translate container paths before validation
+    # AND before forwarding to the Docker daemon.
+    # Format: tab-separated lines "container_path\thost_path", fed to jq.
+    local mt_pathmap_json="{}"
+    local _pathmap_lines=""
+    # Map each repo: /workspace/<name> → expanded host path
+    local _repo_lines
+    _repo_lines=$(yml_get_repos "$project_yml")
+    if [[ -n "$_repo_lines" ]]; then
+        while IFS=: read -r _rp _rn; do
+            [[ -z "$_rp" ]] && continue
+            local _host_p
+            _host_p=$(expand_path "$_rp")
+            _pathmap_lines="${_pathmap_lines}/workspace/${_rn}"$'\t'"${_host_p}"$'\n'
+        done <<< "$_repo_lines"
+    fi
+    # Map extra_mounts: container target → expanded host source
+    local _extra_mounts
+    _extra_mounts=$(yml_get_extra_mounts "$project_yml" 2>/dev/null || true)
+    if [[ -n "$_extra_mounts" ]]; then
+        while IFS= read -r _em; do
+            [[ -z "$_em" ]] && continue
+            local _src="${_em%%:*}"
+            local _rest="${_em#*:}"
+            local _tgt="${_rest%%:*}"
+            _src=$(expand_path "$_src")
+            _pathmap_lines="${_pathmap_lines}${_tgt}"$'\t'"${_src}"$'\n'
+        done <<< "$_extra_mounts"
+    fi
+    # Map container home → host home (for ~/... expansion inside container)
+    _pathmap_lines="${_pathmap_lines}/home/claude"$'\t'"${HOME}"$'\n'
+    if [[ -n "$_pathmap_lines" ]]; then
+        mt_pathmap_json=$(printf '%s' "$_pathmap_lines" | grep -v '^$' | \
+            jq -R 'split("\t") | {key: .[0], value: .[1]}' | jq -s 'from_entries')
+    fi
+
     # Mount denied paths (explicit) — expanded like allowed paths
     local mt_denied_json="[]"
     local mt_deny
@@ -890,7 +929,8 @@ _generate_socket_policy() {
       "/etc/shadow",
       "/etc/sudoers"
     ],
-    "force_readonly": ${mt_force_ro}
+    "force_readonly": ${mt_force_ro},
+    "path_map": ${mt_pathmap_json}
   },
   "security": {
     "no_privileged": ${sec_no_priv},

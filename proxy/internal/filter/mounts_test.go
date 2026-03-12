@@ -296,6 +296,139 @@ func TestPathMatchesDeny(t *testing.T) {
 	}
 }
 
+func TestMountFilter_TranslatePath(t *testing.T) {
+	policy := &config.Policy{
+		ProjectName: "myapp",
+		Mounts: config.MountPolicy{
+			Policy:       "project_only",
+			AllowedPaths: []string{"/Users/alex/testing"},
+			PathMap: map[string]string{
+				"/workspace/testing": "/Users/alex/testing",
+				"/home/claude":      "/Users/alex",
+			},
+		},
+	}
+	f := NewMountFilter(policy)
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"workspace exact", "/workspace/testing", "/Users/alex/testing"},
+		{"workspace subdir", "/workspace/testing/src/main.go", "/Users/alex/testing/src/main.go"},
+		{"home tilde expand", "/home/claude/testing", "/Users/alex/testing"},
+		{"home subdir", "/home/claude/testing/src", "/Users/alex/testing/src"},
+		{"host path unchanged", "/Users/alex/testing", "/Users/alex/testing"},
+		{"unrelated path unchanged", "/tmp/foo", "/tmp/foo"},
+		{"no partial prefix match", "/workspace/testing-extra", "/workspace/testing-extra"},
+		{"no partial home match", "/home/claude2", "/home/claude2"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := f.TranslatePath(tt.input)
+			if got != tt.expected {
+				t.Errorf("TranslatePath(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestMountFilter_TranslateBind(t *testing.T) {
+	policy := &config.Policy{
+		ProjectName: "myapp",
+		Mounts: config.MountPolicy{
+			Policy: "any",
+			PathMap: map[string]string{
+				"/workspace/repo": "/Users/alex/repo",
+			},
+		},
+	}
+	f := NewMountFilter(policy)
+
+	tests := []struct {
+		name     string
+		bind     string
+		expected string
+	}{
+		{"full bind", "/workspace/repo:/app", "/Users/alex/repo:/app"},
+		{"bind with ro", "/workspace/repo:/app:ro", "/Users/alex/repo:/app:ro"},
+		{"subdir bind", "/workspace/repo/src:/app/src", "/Users/alex/repo/src:/app/src"},
+		{"no match", "/tmp/data:/data", "/tmp/data:/data"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := f.TranslateBind(tt.bind)
+			if got != tt.expected {
+				t.Errorf("TranslateBind(%q) = %q, want %q", tt.bind, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestMountFilter_TranslateAndValidate(t *testing.T) {
+	// Simulates the real DfD scenario: allowed_paths has host paths,
+	// user types container paths, path_map translates.
+	policy := &config.Policy{
+		ProjectName: "myapp",
+		Mounts: config.MountPolicy{
+			Policy:       "project_only",
+			AllowedPaths: []string{"/Users/alex/testing"},
+			PathMap: map[string]string{
+				"/workspace/testing": "/Users/alex/testing",
+				"/home/claude":      "/Users/alex",
+			},
+		},
+	}
+	f := NewMountFilter(policy)
+
+	// Container path via workspace → translated → allowed
+	if err := f.ValidateBind("/workspace/testing:/app"); err != nil {
+		t.Errorf("expected workspace path allowed, got: %v", err)
+	}
+
+	// Container path via ~ expansion → translated → allowed
+	if err := f.ValidateBind("/home/claude/testing:/app"); err != nil {
+		t.Errorf("expected home-expanded path allowed, got: %v", err)
+	}
+
+	// Host path directly → allowed
+	if err := f.ValidateBind("/Users/alex/testing:/app"); err != nil {
+		t.Errorf("expected host path allowed, got: %v", err)
+	}
+
+	// Unrelated container path → no translation → denied
+	if err := f.ValidateBind("/tmp/evil:/app"); err == nil {
+		t.Error("expected unrelated path denied")
+	}
+
+	// Path under home but NOT in allowed_paths → translated but denied
+	if err := f.ValidateBind("/home/claude/.ssh:/app"); err == nil {
+		t.Error("expected .ssh path denied even with home mapping")
+	}
+}
+
+func TestMountFilter_EmptyPathMap(t *testing.T) {
+	policy := &config.Policy{
+		ProjectName: "myapp",
+		Mounts: config.MountPolicy{
+			Policy:       "project_only",
+			AllowedPaths: []string{"/Users/alex/repo"},
+		},
+	}
+	f := NewMountFilter(policy)
+
+	// No path_map: host path works, container path doesn't
+	if err := f.ValidateBind("/Users/alex/repo:/app"); err != nil {
+		t.Errorf("expected host path allowed, got: %v", err)
+	}
+	if err := f.ValidateBind("/workspace/repo:/app"); err == nil {
+		t.Error("expected container path denied without path_map")
+	}
+}
+
 func TestPathIsUnderOrEqual(t *testing.T) {
 	tests := []struct {
 		hostPath string
