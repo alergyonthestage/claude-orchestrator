@@ -154,12 +154,15 @@ EOF
         echo "  echo 'export PATH=\"\$PATH:$REPO_ROOT/bin\"' >> ~/.zshrc && source ~/.zshrc"
     fi
 
-    # Try building Docker image
-    echo ""
-    if docker info >/dev/null 2>&1; then
+    # Try building Docker image (skipped when CCO_SKIP_BUILD=1, e.g. in test runner)
+    if [[ "${CCO_SKIP_BUILD:-}" == "1" ]]; then
+        : # Skip build silently (test mode)
+    elif docker info >/dev/null 2>&1; then
+        echo ""
         info "Building Docker image..."
         cmd_build
     else
+        echo ""
         warn "Docker not running. Run 'cco build' when Docker is available."
     fi
 
