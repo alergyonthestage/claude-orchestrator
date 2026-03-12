@@ -55,8 +55,10 @@ create_pack() {
 
 # Run bin/cco with CCO env vars set.
 # Captures stdout+stderr into CCO_OUTPUT. Returns exit code.
+# For dry-run commands, automatically extracts DRY_RUN_DIR from output.
 # Usage: run_cco [args...]
 run_cco() {
+    DRY_RUN_DIR=""
     CCO_OUTPUT=$(
         CCO_USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR" \
         CCO_GLOBAL_DIR="$CCO_GLOBAL_DIR" \
@@ -65,6 +67,12 @@ run_cco() {
         CCO_TEMPLATES_DIR="$CCO_TEMPLATES_DIR" \
         bash "$REPO_ROOT/bin/cco" "$@" 2>&1
     ) || return $?
+    # Auto-extract dry-run dir if present in output
+    local _dr
+    _dr=$(echo "$CCO_OUTPUT" | sed -n 's|.*Generated files available at: \(.*/.tmp\)/.*|\1|p')
+    if [[ -n "$_dr" ]]; then
+        DRY_RUN_DIR="$_dr"
+    fi
 }
 
 # ── Assertions ────────────────────────────────────────────────────────
@@ -256,6 +264,19 @@ assert_output_not_contains() {
         echo "  Found unwanted pattern: $(printf '%q' "$pattern")"
         echo "  Actual output:"
         echo "${CCO_OUTPUT:-}" | sed 's/^/    /'
+        return 1
+    fi
+}
+
+# Extract the dry-run output directory from CCO_OUTPUT.
+# dry-run prints "Generated files available at: <project_dir>/.tmp/"
+# Sets DRY_RUN_DIR to the extracted path.
+# Usage: extract_dry_run_dir
+extract_dry_run_dir() {
+    DRY_RUN_DIR=$(echo "${CCO_OUTPUT:-}" | sed -n 's|.*Generated files available at: \(.*/.tmp\)/.*|\1|p')
+    if [[ -z "$DRY_RUN_DIR" ]]; then
+        echo "HELPER ERROR: Could not extract dry-run directory from output"
+        echo "  Output: ${CCO_OUTPUT:-}"
         return 1
     fi
 }
