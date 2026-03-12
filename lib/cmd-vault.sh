@@ -17,6 +17,7 @@ secrets.env
 # Runtime files — generated, not user config
 projects/*/docker-compose.yml
 projects/*/.managed/
+projects/*/.tmp/
 projects/*/.pack-manifest
 projects/*/.cco-meta
 
