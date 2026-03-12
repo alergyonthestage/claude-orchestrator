@@ -494,7 +494,8 @@ func (p *Proxy) isNetworkAllowed(name string) bool {
 		return true
 	}
 	// Always allow default Docker networks
-	if name == "bridge" || name == "host" || name == "none" {
+	// "default" is used by Docker API when no --network is specified
+	if name == "bridge" || name == "host" || name == "none" || name == "default" {
 		return true
 	}
 	for _, prefix := range p.policy.Networks.AllowedPrefixes {

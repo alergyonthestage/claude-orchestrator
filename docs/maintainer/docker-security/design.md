@@ -918,6 +918,7 @@ docker:
 
 ### Phase C: Network Hardening
 
+- [ ] **Review default/bridge network policy**: Phase B allows `default`, `bridge`, `host`, `none` networks unconditionally in the proxy to support basic `docker run` without `--network`. Evaluate whether to restrict this — e.g., force `--network cc-<project>-*` for created containers, blocking `bridge`/`default` to prevent cross-project communication on the shared bridge network. Trade-off: stricter isolation vs usability (every `docker run` would require explicit `--network`).
 - [ ] Implement Squid config generation in `cmd-start.sh`
 - [ ] Generate `allowed_domains.txt` from project.yml
 - [ ] Generate `internal: true` network in compose
