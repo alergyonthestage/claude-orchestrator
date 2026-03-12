@@ -31,8 +31,10 @@ migrate() {
     fi
 
     # Insert after projects/*/.managed/ (contextually appropriate)
+    # Use awk for macOS/Linux compatibility (BSD sed -i and 'a' command differ)
     if grep -qF 'projects/*/.managed/' "$gitignore" 2>/dev/null; then
-        sed -i '/projects\/\*\/\.managed\//a projects/*/.tmp/' "$gitignore"
+        awk '/projects\/\*\/\.managed\//{print; print "projects/*/.tmp/"; next}1' \
+            "$gitignore" > "$gitignore.tmp" && mv "$gitignore.tmp" "$gitignore"
     else
         # Fallback: append to end
         echo "" >> "$gitignore"
