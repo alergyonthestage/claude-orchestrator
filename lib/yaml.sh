@@ -53,6 +53,7 @@ yml_get() {
         local child="${key#*.}"
         # Find lines under parent, get child value
         awk -v parent="$parent" -v child="$child" '
+            /^ *#/ { next }
             $0 ~ "^"parent":" { in_block=1; next }
             in_block && /^[^ ]/ { in_block=0 }
             in_block && $0 ~ "^  "child":" {
@@ -102,6 +103,7 @@ yml_get_list() {
         local parent="${key%%.*}"
         local child="${key#*.}"
         awk -v parent="$parent" -v child="$child" '
+            /^ *#/ { next }
             $0 ~ "^"parent":" { in_block=1; next }
             in_block && /^[^ ]/ { exit }
             in_block && $0 ~ "^  "child":" { in_list=1; next }
@@ -132,6 +134,7 @@ yml_get_deep() {
     l3="${rest#*.}"
 
     awk -v l1="$l1" -v l2="$l2" -v l3="$l3" '
+        /^ *#/ { next }
         $0 ~ "^"l1":" { in_l1=1; next }
         in_l1 && /^[^ ]/ { exit }
         in_l1 && $0 ~ "^  "l2":" { in_l2=1; next }
@@ -162,6 +165,7 @@ yml_get_deep_list() {
     l3="${rest#*.}"
 
     awk -v l1="$l1" -v l2="$l2" -v l3="$l3" '
+        /^ *#/ { next }
         $0 ~ "^"l1":" { in_l1=1; next }
         in_l1 && /^[^ ]/ { exit }
         in_l1 && $0 ~ "^  "l2":" { in_l2=1; next }
@@ -195,6 +199,7 @@ yml_get_deep_map() {
     l3="${rest#*.}"
 
     awk -v l1="$l1" -v l2="$l2" -v l3="$l3" '
+        /^ *#/ { next }
         $0 ~ "^"l1":" { in_l1=1; next }
         in_l1 && /^[^ ]/ { exit }
         in_l1 && $0 ~ "^  "l2":" { in_l2=1; next }
@@ -231,6 +236,7 @@ yml_get_deep4() {
     l4="${rest#*.}"
 
     awk -v l1="$l1" -v l2="$l2" -v l3="$l3" -v l4="$l4" '
+        /^ *#/ { next }
         $0 ~ "^"l1":" { in_l1=1; next }
         in_l1 && /^[^ ]/ { exit }
         in_l1 && $0 ~ "^  "l2":" { in_l2=1; next }
