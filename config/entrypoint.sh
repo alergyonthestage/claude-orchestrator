@@ -8,21 +8,32 @@ _cleanup() {
 trap _cleanup EXIT
 
 # ── Docker socket permissions ────────────────────────────────────────
-# Match container's docker group GID to host's socket GID
+# Match container's docker group GID to host's socket GID.
+# The docker group is pre-created in the Dockerfile (GID 999 placeholder).
+# Here we adjust its GID to match the host socket, ensuring Docker-from-Docker works.
 if [ -S /var/run/docker.sock ]; then
     SOCKET_GID=$(stat -c '%g' /var/run/docker.sock)
     if [ "$SOCKET_GID" != "0" ]; then
-        # Create or modify docker group to match host GID
+        # Adjust docker group GID to match host socket
         if getent group docker > /dev/null 2>&1; then
-            groupmod -g "$SOCKET_GID" docker
+            CURRENT_GID=$(getent group docker | cut -d: -f3)
+            if [ "$CURRENT_GID" != "$SOCKET_GID" ]; then
+                groupmod -g "$SOCKET_GID" docker 2>&1 >&2 \
+                    || echo "[entrypoint] WARNING: failed to set docker group GID to $SOCKET_GID" >&2
+            fi
         else
-            groupadd -g "$SOCKET_GID" docker
+            groupadd -g "$SOCKET_GID" docker 2>&1 >&2 \
+                || echo "[entrypoint] WARNING: failed to create docker group with GID $SOCKET_GID" >&2
         fi
-        usermod -aG docker claude
+        usermod -aG docker claude 2>&1 >&2
+        echo "[entrypoint] Docker socket: GID=$SOCKET_GID, claude added to docker group" >&2
     else
         # Socket owned by root — add claude to root group (common on macOS)
-        usermod -aG root claude
+        usermod -aG root claude 2>&1 >&2
+        echo "[entrypoint] Docker socket: GID=0 (root-owned), claude added to root group" >&2
     fi
+else
+    echo "[entrypoint] Docker socket: not mounted" >&2
 fi
 
 # ── Docker socket proxy ─────────────────────────────────────────────
@@ -46,7 +57,13 @@ if [ -S /var/run/docker.sock ] && [ -f /etc/cco/policy.json ]; then
 
     if [ -S /var/run/docker-proxy.sock ]; then
         # Proxy socket: accessible to claude user
-        chown claude:docker /var/run/docker-proxy.sock
+        # Verify docker group exists before chown (should always exist — pre-created in Dockerfile)
+        if getent group docker > /dev/null 2>&1; then
+            chown claude:docker /var/run/docker-proxy.sock
+        else
+            echo "[entrypoint] WARNING: docker group missing, proxy socket owned by claude:claude" >&2
+            chown claude:claude /var/run/docker-proxy.sock
+        fi
         chmod 660 /var/run/docker-proxy.sock
         # Real socket: root only (prevents bypass)
         chmod 600 /var/run/docker.sock
