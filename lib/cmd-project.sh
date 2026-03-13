@@ -14,11 +14,15 @@ cmd_project_create() {
     local name=""
     local repos=()
     local description=""
+    local template_name=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --repo) repos+=("$2"); shift 2 ;;
             --description) description="$2"; shift 2 ;;
+            --template)
+                [[ -z "${2:-}" ]] && die "--template requires a template name"
+                template_name="$2"; shift 2 ;;
             --help)
                 cat <<'EOF'
 Usage: cco project create <name> [OPTIONS]
@@ -26,6 +30,7 @@ Usage: cco project create <name> [OPTIONS]
 Options:
   --repo <path>        Add a repo to the project (repeatable)
   --description <d>    Project description
+  --template <name>    Use a specific template (default: base)
 EOF
                 return 0
                 ;;
@@ -50,13 +55,9 @@ EOF
     local project_dir="$PROJECTS_DIR/$name"
     [[ -d "$project_dir" ]] && die "Project '$name' already exists at projects/$name/"
 
-    # Resolve template (user templates take priority over native)
+    # Resolve template
     local template_dir
-    if [[ -d "$TEMPLATES_DIR/project/base" ]]; then
-        template_dir="$TEMPLATES_DIR/project/base"
-    else
-        template_dir="$NATIVE_TEMPLATES_DIR/project/base"
-    fi
+    template_dir=$(_resolve_template "project" "${template_name:-base}")
 
     # Copy template
     cp -r "$template_dir" "$project_dir"

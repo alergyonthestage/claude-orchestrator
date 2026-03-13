@@ -45,6 +45,7 @@ source "$LIB_DIR/cmd-stop.sh"
 source "$LIB_DIR/cmd-chrome.sh"
 source "$LIB_DIR/cmd-project.sh"
 source "$LIB_DIR/cmd-pack.sh"
+source "$LIB_DIR/cmd-template.sh"
 source "$LIB_DIR/cmd-update.sh"
 source "$LIB_DIR/manifest.sh"
 source "$LIB_DIR/cmd-remote.sh"
@@ -82,6 +83,9 @@ Projects & Packs:
   project <cmd>          Manage projects (create, install, list, show, validate)
   pack <cmd>             Manage knowledge packs (create, install, update, ...)
   chrome <cmd>           Manage Chrome debug session on host
+
+Templates:
+  template <cmd>         Manage project/pack templates (list, show, create, remove)
 
 Sharing & Versioning:
   remote <cmd>           Manage Config Repo remotes
@@ -173,6 +177,7 @@ EOF
             *)        die "Unknown pack command: $subcmd. Run 'cco pack --help'." ;;
         esac
         ;;
+    template) cmd_template "$@" ;;
     chrome)  cmd_chrome "$@" ;;
     remote)  cmd_remote "$@" ;;
     manifest) cmd_manifest "$@" ;;

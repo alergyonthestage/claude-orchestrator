@@ -14,14 +14,21 @@ cmd_pack_create() {
     check_global
 
     local name=""
+    local template_name=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            --template)
+                [[ -z "${2:-}" ]] && die "--template requires a template name"
+                template_name="$2"; shift 2 ;;
             --help)
                 cat <<'EOF'
-Usage: cco pack create <name>
+Usage: cco pack create <name> [--template <name>]
 
 Create a new knowledge pack.
+
+Options:
+  --template <name>    Use a specific template (default: base)
 EOF
                 return 0
                 ;;
@@ -46,33 +53,19 @@ EOF
     local pack_dir="$PACKS_DIR/$name"
     [[ -d "$pack_dir" ]] && die "Pack '$name' already exists at packs/$name/"
 
-    # Create directory structure
-    mkdir -p "$pack_dir"/{knowledge,skills,agents,rules}
+    # Resolve and copy template
+    local template_dir
+    template_dir=$(_resolve_template "pack" "${template_name:-base}")
+    cp -r "$template_dir" "$pack_dir"
 
-    # Generate pack.yml
-    cat > "$pack_dir/pack.yml" <<YAML
-name: $name
-
-# ── Knowledge files ─────────────────────────────────────────────────
-# knowledge:
-#   source: ~/path/to/docs    # optional; omit to use pack's own knowledge/ dir
-#   files:
-#     - path: guide.md
-#       description: "Read when working on X"
-#     - simple.md
-
-# ── Skills (directory names under skills/) ──────────────────────────
-# skills:
-#   - deploy
-
-# ── Agents (filenames under agents/) ────────────────────────────────
-# agents:
-#   - specialist.md
-
-# ── Rules (filenames under rules/) ──────────────────────────────────
-# rules:
-#   - conventions.md
-YAML
+    # Replace name placeholder in pack.yml if present
+    if [[ -f "$pack_dir/pack.yml" ]]; then
+        sed -i '' "s/{{PACK_NAME}}/$name/g" "$pack_dir/pack.yml" 2>/dev/null || \
+            sed -i "s/{{PACK_NAME}}/$name/g" "$pack_dir/pack.yml"
+        # Also replace literal "name: base" with actual name
+        sed -i '' "s/^name: base$/name: $name/" "$pack_dir/pack.yml" 2>/dev/null || \
+            sed -i "s/^name: base$/name: $name/" "$pack_dir/pack.yml"
+    fi
 
     # Update manifest.yml
     manifest_refresh "$USER_CONFIG_DIR"
