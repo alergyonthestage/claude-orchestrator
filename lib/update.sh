@@ -6,7 +6,7 @@
 #           _collect_file_changes(), _apply_file_changes(),
 #           _update_global(), _update_project()
 # Dependencies: colors.sh, utils.sh
-# Globals: GLOBAL_DIR, DEFAULTS_DIR, REPO_ROOT
+# Globals: GLOBAL_DIR, DEFAULTS_DIR, NATIVE_TEMPLATES_DIR, REPO_ROOT
 
 # Files that are always user-owned (never updated by cco update)
 GLOBAL_USER_FILES=("mcp.json" "setup.sh" "setup-build.sh")
@@ -662,7 +662,7 @@ _update_project() {
     local dry_run="$3"
     local meta_file="$project_dir/.cco-meta"
     local installed_dir="$project_dir/.claude"
-    local defaults_dir="$DEFAULTS_DIR/_template/.claude"
+    local defaults_dir="$NATIVE_TEMPLATES_DIR/project/base/.claude"
 
     # Read current state
     local current_schema
@@ -683,7 +683,7 @@ _update_project() {
     [[ $pending_migrations -lt 0 ]] && pending_migrations=0
 
     # Check for missing project root files (setup.sh, secrets.env, mcp-packages.txt)
-    local template_root="$DEFAULTS_DIR/_template"
+    local template_root="$NATIVE_TEMPLATES_DIR/project/base"
     local root_missing=()
     local rf
     for rf in "${PROJECT_ROOT_COPY_IF_MISSING[@]}"; do

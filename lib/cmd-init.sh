@@ -3,7 +3,7 @@
 #
 # Provides: cmd_init()
 # Dependencies: colors.sh, utils.sh, update.sh, cmd-build.sh, manifest.sh
-# Globals: USER_CONFIG_DIR, GLOBAL_DIR, DEFAULTS_DIR, PROJECTS_DIR, PACKS_DIR, TEMPLATES_DIR, REPO_ROOT
+# Globals: USER_CONFIG_DIR, GLOBAL_DIR, DEFAULTS_DIR, NATIVE_TEMPLATES_DIR, PROJECTS_DIR, PACKS_DIR, TEMPLATES_DIR, REPO_ROOT
 
 cmd_init() {
     local force=false
@@ -128,7 +128,7 @@ EOF
     local tutorial_dir="$PROJECTS_DIR/tutorial"
     if [[ ! -d "$tutorial_dir" ]]; then
         info "Creating tutorial project..."
-        cp -r "$DEFAULTS_DIR/tutorial" "$tutorial_dir"
+        cp -r "$NATIVE_TEMPLATES_DIR/project/tutorial" "$tutorial_dir"
 
         # Substitute path placeholders in project.yml
         local tutorial_yml="$tutorial_dir/project.yml"

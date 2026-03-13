@@ -1,0 +1,21 @@
+name: {{PACK_NAME}}
+
+# ── Knowledge files ─────────────────────────────────────────────────
+# knowledge:
+#   source: ~/path/to/docs    # optional; omit to use pack's own knowledge/ dir
+#   files:
+#     - path: guide.md
+#       description: "Read when working on X"
+#     - simple.md
+
+# ── Skills (directory names under skills/) ──────────────────────────
+# skills:
+#   - deploy
+
+# ── Agents (filenames under agents/) ────────────────────────────────
+# agents:
+#   - specialist.md
+
+# ── Rules (filenames under rules/) ──────────────────────────────────
+# rules:
+#   - conventions.md

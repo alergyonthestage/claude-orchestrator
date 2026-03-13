@@ -6,7 +6,7 @@
 #           cmd_project_add_pack(), cmd_project_remove_pack(),
 #           cmd_project_publish()
 # Dependencies: colors.sh, utils.sh, yaml.sh, remote.sh, manifest.sh
-# Globals: PROJECTS_DIR, GLOBAL_DIR, TEMPLATE_DIR, USER_CONFIG_DIR
+# Globals: PROJECTS_DIR, GLOBAL_DIR, NATIVE_TEMPLATES_DIR, TEMPLATES_DIR, USER_CONFIG_DIR
 
 cmd_project_create() {
     check_global
@@ -50,8 +50,16 @@ EOF
     local project_dir="$PROJECTS_DIR/$name"
     [[ -d "$project_dir" ]] && die "Project '$name' already exists at projects/$name/"
 
+    # Resolve template (user templates take priority over native)
+    local template_dir
+    if [[ -d "$TEMPLATES_DIR/project/base" ]]; then
+        template_dir="$TEMPLATES_DIR/project/base"
+    else
+        template_dir="$NATIVE_TEMPLATES_DIR/project/base"
+    fi
+
     # Copy template
-    cp -r "$TEMPLATE_DIR" "$project_dir"
+    cp -r "$template_dir" "$project_dir"
 
     # Replace placeholders
     [[ -z "$description" ]] && description="TODO: Add project description"
