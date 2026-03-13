@@ -777,7 +777,15 @@ _generate_socket_policy() {
     local ct_labels
     ct_labels=$(yml_get_deep_map "$project_yml" "docker.containers.required_labels")
     if [[ -n "$ct_labels" ]]; then
-        ct_labels_json=$(echo "$ct_labels" | awk -F: '{printf "\"%s\":\"%s\"\n", $1, $2}' | jq -s 'from_entries')
+        ct_labels_json=$(echo "$ct_labels" | awk '{
+            # Split only on the first colon to preserve colons in values
+            idx = index($0, ":")
+            if (idx > 0) {
+                key = substr($0, 1, idx-1)
+                val = substr($0, idx+1)
+                printf "\"%s\":\"%s\"\n", key, val
+            }
+        }' | jq -s 'from_entries')
     else
         ct_labels_json="{\"cco.project\":\"${project_name}\"}"
     fi

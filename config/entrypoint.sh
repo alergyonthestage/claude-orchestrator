@@ -41,6 +41,11 @@ fi
 # and the real Docker socket. The proxy runs as root (socket access);
 # Claude only sees the filtered proxy socket via DOCKER_HOST.
 if [ -S /var/run/docker.sock ] && [ -f /etc/cco/policy.json ]; then
+    # Lock down the real socket FIRST — before starting the proxy.
+    # This ensures the claude user can never access the unfiltered socket,
+    # even if the proxy fails to start.
+    chmod 600 /var/run/docker.sock
+
     /usr/local/bin/cco-docker-proxy \
         -listen /var/run/docker-proxy.sock \
         -upstream /var/run/docker.sock \
@@ -65,14 +70,13 @@ if [ -S /var/run/docker.sock ] && [ -f /etc/cco/policy.json ]; then
             chown claude:claude /var/run/docker-proxy.sock
         fi
         chmod 660 /var/run/docker-proxy.sock
-        # Real socket: root only (prevents bypass)
-        chmod 600 /var/run/docker.sock
         # Point Docker CLI to proxy
         export DOCKER_HOST="unix:///var/run/docker-proxy.sock"
         echo "[entrypoint] Docker socket proxy: active (policy=$(jq -r .containers.policy /etc/cco/policy.json 2>/dev/null))" >&2
     else
-        echo "[entrypoint] WARNING: Docker socket proxy did not start — falling back to direct access" >&2
+        echo "[entrypoint] FATAL: Docker socket proxy did not start — Docker access disabled" >&2
         kill "$PROXY_PID" 2>/dev/null || true
+        # Real socket already locked (chmod 600 above) — no Docker access possible
     fi
 fi
 

@@ -1114,7 +1114,45 @@ networks:
 
 ---
 
-## 6. Error Handling
+## 6. Docker Socket Security
+
+When `docker.mount_socket: true` is set in `project.yml`, the orchestrator deploys a filtering proxy (`cco-docker-proxy`) between Claude and the Docker socket. Claude interacts with Docker through the proxy; the real socket is inaccessible.
+
+### How it works
+
+1. `cco start` generates `.managed/policy.json` from `project.yml` docker settings
+2. The entrypoint starts `cco-docker-proxy` as root, listening on `/var/run/docker-proxy.sock`
+3. The real socket (`/var/run/docker.sock`) is locked to `chmod 600` (root-only)
+4. `DOCKER_HOST` is set to the proxy socket — all Docker CLI commands go through the proxy
+
+### Configuration
+
+All settings are in `project.yml` under the `docker` key. See [project-yaml.md](project-yaml.md) for the full field reference.
+
+| Section | Controls |
+|---------|----------|
+| `docker.containers` | Which containers Claude can see/create (policy, name prefix, labels) |
+| `docker.mounts` | Which host paths Claude can mount (policy, allowed paths, force readonly) |
+| `docker.security` | Privileged mode, root user, capabilities, resource limits, max containers |
+
+### Default security posture
+
+When `mount_socket: true` with no additional settings:
+
+- **Container policy**: `project_only` — Claude sees only containers with the project prefix
+- **Mount policy**: `project_only` — only project repo directories can be mounted
+- **Privileged**: blocked
+- **Sensitive mounts**: `/var/run/docker.sock`, `/etc/shadow`, `/etc/sudoers` always denied
+- **Network**: only `cc-<project>-*` networks can be created
+- **Resources**: 4GB memory, 4 CPUs, 10 containers max (defaults)
+
+### Proxy failure behavior
+
+If the proxy fails to start, the real socket remains locked (`chmod 600`). Docker commands will fail rather than fall back to unfiltered access.
+
+---
+
+## 7. Error Handling
 
 | Scenario | Behavior |
 |----------|----------|
@@ -1129,9 +1167,9 @@ networks:
 
 ---
 
-## 7. MCP Server Configuration
+## 8. MCP Server Configuration
 
-### 7.1 Project MCP (`mcp.json`)
+### 8.1 Project MCP (`mcp.json`)
 
 Each project can include a `mcp.json` file using Claude Code's native `.mcp.json` format:
 
@@ -1154,11 +1192,11 @@ The `${VAR}` placeholders are expanded **natively by Claude Code** inside the co
 
 **Important**: If a `${VAR}` reference in `mcp.json` cannot be resolved (env var not set), Claude Code will fail to parse the entire file and show "No MCP servers configured".
 
-### 7.2 Global MCP (`user-config/global/.claude/mcp.json`)
+### 8.2 Global MCP (`user-config/global/.claude/mcp.json`)
 
 MCP servers defined here are available in all projects. The entrypoint merges global and project MCP servers into `~/.claude.json` at container startup using `jq`. This ensures MCP servers are available via the user-scope mechanism (most reliable).
 
-### 7.3 Secrets (`user-config/global/secrets.env`)
+### 8.3 Secrets (`user-config/global/secrets.env`)
 
 ```bash
 # user-config/global/secrets.env — gitignored
@@ -1170,7 +1208,7 @@ Loaded by `cco start` and `cco new` as runtime `-e` flags. Never written to `doc
 
 ---
 
-## 8. Shell Completion (Future)
+## 9. Shell Completion (Future)
 
 Bash/Zsh completion for:
 - `cco start <TAB>` → list project names

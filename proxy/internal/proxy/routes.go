@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"path"
 	"regexp"
 	"strings"
 )
@@ -28,9 +29,9 @@ var (
 	alwaysAllowedPaths = []string{"/_ping", "/version", "/info"}
 )
 
-// cleanPath strips the API version prefix for matching.
-func cleanPath(path string) string {
-	return path
+// cleanPath normalizes the request path to prevent double-slash or ".." bypass.
+func cleanPath(p string) string {
+	return path.Clean(p)
 }
 
 func isAlwaysAllowed(path string) bool {
@@ -60,7 +61,7 @@ func isContainerOp(method, path string) bool {
 	if stripped == "/containers/create" || stripped == "/containers/json" {
 		return false
 	}
-	return method == "GET" || method == "POST" || method == "HEAD"
+	return method == "GET" || method == "POST" || method == "HEAD" || method == "PUT"
 }
 
 func isContainerDelete(method, path string) bool {
@@ -83,6 +84,10 @@ func isNetworkList(method, path string) bool {
 }
 
 func isExecOp(method, path string) bool {
+	// Only POST (start, resize) and GET (json/inspect) are valid exec methods
+	if method != "POST" && method != "GET" && method != "HEAD" {
+		return false
+	}
 	return execOpPath.MatchString(path)
 }
 

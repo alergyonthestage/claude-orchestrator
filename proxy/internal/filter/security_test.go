@@ -42,9 +42,13 @@ func TestSecurityFilter_User(t *testing.T) {
 		{"", false},
 		{"0", false},
 		{"root", false},
+		{"0:1000", false},     // root UID with non-root GID
+		{"0:nogroup", false},  // root UID with named group
+		{"root:docker", false}, // root name with group
 		{"1000", true},
 		{"claude", true},
 		{"1000:1000", true},
+		{"claude:docker", true},
 	}
 
 	for _, tt := range tests {
@@ -192,6 +196,22 @@ func TestSecurityFilter_SensitiveMounts_Disabled(t *testing.T) {
 	// When policy is disabled, even /proc should be allowed
 	if err := f.ValidateSensitiveMounts([]string{"/proc:/host/proc"}); err != nil {
 		t.Errorf("expected allowed when policy disabled, got: %v", err)
+	}
+}
+
+func TestSecurityFilter_SensitiveMounts_BareBind(t *testing.T) {
+	policy := &config.Policy{
+		ProjectName: "myapp",
+		Security:    config.SecurityPolicy{NoSensitiveMounts: true},
+	}
+	f := NewSecurityFilter(policy)
+
+	// Bare bind (no colon) should still be checked
+	if err := f.ValidateSensitiveMounts([]string{"/proc"}); err == nil {
+		t.Error("expected error for bare /proc mount")
+	}
+	if err := f.ValidateSensitiveMounts([]string{"/sys"}); err == nil {
+		t.Error("expected error for bare /sys mount")
 	}
 }
 

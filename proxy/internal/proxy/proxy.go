@@ -70,21 +70,74 @@ func (p *Proxy) Init(ctx context.Context) error {
 	if err := p.cache.Refresh(); err != nil {
 		log.Printf("warning: initial cache refresh failed: %v", err)
 	}
-	p.cache.StartPeriodicRefresh(ctx, 30*time.Second)
 
-	// Count existing project containers and track their IDs
-	for _, info := range p.cache.All() {
+	// Reconcile container count with cache state
+	p.reconcileCount()
+
+	// Periodic refresh with count reconciliation
+	p.cache.StartPeriodicRefresh(ctx, 30*time.Second)
+	go p.periodicReconcile(ctx, 30*time.Second)
+
+	return nil
+}
+
+// reconcileCount synchronizes containerCount and trackedIDs with the actual
+// cache state. This handles containers removed outside the proxy (host cleanup,
+// Docker pruning, crashes) that would otherwise cause count drift.
+func (p *Proxy) reconcileCount() {
+	allContainers := p.cache.All()
+
+	// Build set of live container IDs that are allowed by policy
+	liveIDs := make(map[string]bool)
+	for _, info := range allContainers {
 		if p.containerFilter.IsAllowed(info) {
-			p.containerCount.Add(1)
-			p.trackedIDs.Store(info.ID, true)
-			// Also track by name for lookup flexibility
-			if info.Name != "" {
-				p.trackedIDs.Store(info.Name, true)
-			}
+			liveIDs[info.ID] = true
 		}
 	}
 
-	return nil
+	// Remove tracked IDs that no longer exist in the cache
+	p.trackedIDs.Range(func(key, _ interface{}) bool {
+		id, ok := key.(string)
+		if !ok {
+			return true
+		}
+		// trackedIDs stores both IDs and names; only check IDs (64-char hex)
+		if len(id) == 64 && !liveIDs[id] {
+			p.trackedIDs.Delete(id)
+		}
+		return true
+	})
+
+	// Recount: number of live containers that are tracked by us
+	var count int32
+	for id := range liveIDs {
+		if _, tracked := p.trackedIDs.Load(id); tracked {
+			count++
+		}
+	}
+
+	// Also count containers that match policy but weren't tracked yet (pre-existing)
+	for id := range liveIDs {
+		if _, tracked := p.trackedIDs.Load(id); !tracked {
+			p.trackedIDs.Store(id, true)
+			count++
+		}
+	}
+
+	p.containerCount.Store(count)
+}
+
+func (p *Proxy) periodicReconcile(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			p.reconcileCount()
+		}
+	}
 }
 
 // ServeHTTP implements the http.Handler interface.
@@ -436,9 +489,13 @@ func (p *Proxy) handleContainerOp(w http.ResponseWriter, r *http.Request, path s
 
 	// Allow BuildKit builder containers — these are managed by Docker/buildx
 	// for `docker build` and are not created through the proxy.
+	// Only bypass if the container is NOT in our tracked set (i.e., it was
+	// created by buildx, not by the user naming a container buildx_buildkit_*).
 	if isBuildKitContainer(idOrName) {
-		p.forward(w, r)
-		return
+		if _, tracked := p.trackedIDs.Load(idOrName); !tracked {
+			p.forward(w, r)
+			return
+		}
 	}
 
 	info, found := p.cache.Resolve(idOrName)
@@ -585,9 +642,11 @@ func (p *Proxy) isNetworkAllowed(name string) bool {
 	if len(p.policy.Networks.AllowedPrefixes) == 0 {
 		return true
 	}
-	// Always allow default Docker networks
-	// "default" is used by Docker API when no --network is specified
-	if name == "bridge" || name == "host" || name == "none" || name == "default" {
+	// Allow safe default Docker networks.
+	// "host" is NOT allowed by default — it gives full access to the host
+	// network namespace in Docker-from-Docker, bypassing network isolation.
+	// "default" is used by Docker API when no --network is specified.
+	if name == "bridge" || name == "none" || name == "default" {
 		return true
 	}
 	for _, prefix := range p.policy.Networks.AllowedPrefixes {

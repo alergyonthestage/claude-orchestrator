@@ -365,7 +365,7 @@ Alias triviale in `bin/cco`: `cco tutorial` → `cco start tutorial`. Migliora d
 
 Elevato a priorità alta. Tre componenti di sicurezza: Docker socket proxy con filtro granulare, restrizioni mount per sibling container, e controllo dell'accesso internet. Include bugfix al default di `mount_socket`.
 
-**Status**: Analysis & Design complete. Implementation pending.
+**Status**: Phase A & B implemented. Phase C pending.
 **Docs**: [analysis](./docker-security/analysis.md) | [design](./docker-security/design.md)
 
 #### Phase A: `mount_socket` Safe Default → `false` (bugfix)
