@@ -13,7 +13,7 @@ graph TB
     subgraph HOST ["HOST (macOS + Docker Desktop)"]
         subgraph CCO ["claude-orchestrator/"]
             CLI["bin/cco (CLI)"]
-            DEFAULTS["defaults/<br/>├── global/.claude/<br/>└── _template/"]
+            DEFAULTS["defaults/<br/>├── global/.claude/<br/>templates/<br/>├── project/base/<br/>├── project/tutorial/<br/>└── pack/base/"]
             USERCONF["user-config/<br/>├── global/.claude/ (user)<br/>└── projects/my-saas/<br/>    ├── project.yml<br/>    └── .claude/"]
             DOCKERFILE[Dockerfile]
         end
@@ -383,7 +383,7 @@ graph LR
 **Decision**: Three-tier defaults leveraging Claude Code's native Managed level:
 - `defaults/managed/` — framework infrastructure (hooks, env, deny rules, framework CLAUDE.md), baked into Docker image at `/etc/claude-code/` (Managed level — non-overridable)
 - `defaults/global/` — user defaults (agents, skills, rules, settings.json, CLAUDE.md, mcp.json), copied once by `cco init` (User level — fully customizable)
-- `defaults/_template/` — project template, scaffolded by `cco project create`
+- `templates/project/base/` — default project template, scaffolded by `cco project create`
 - `user-config/` — gitignored, owned by the user (contains `global/`, `projects/`, `packs/`, `templates/`)
 
 **Mechanism**:

@@ -641,18 +641,24 @@ claude-orchestrator/
 │   │           ├── commit/SKILL.md         # /commit skill
 │   │           ├── design/SKILL.md         # /design skill
 │   │           └── review/SKILL.md         # /review skill
-│   └── _template/                          # Default project template
-│       ├── project.yml                     # Project metadata & config (with comments)
-│       ├── .claude/
-│       │   ├── CLAUDE.md                   # Project instructions template ({{PLACEHOLDERS}})
-│       │   ├── settings.json               # Project settings template (empty, overrides go here)
-│       │   ├── rules/
-│       │   │   └── language.md             # Language override (commented out by default)
-│       │   ├── agents/.gitkeep             # Project-specific agents
-│       │   └── skills/.gitkeep             # Project-specific skills
-│       └── claude-state/                   # Claude state dir placeholder
-│           ├── .gitkeep
-│           └── memory/.gitkeep             # Auto memory subdir placeholder
+│
+├── templates/                              # ── NATIVE TEMPLATES (tracked) ──
+│   ├── project/
+│   │   ├── base/                           # Default project template (used by cco project create)
+│   │   │   ├── project.yml                 # Project metadata & config (with comments)
+│   │   │   ├── .claude/
+│   │   │   │   ├── CLAUDE.md               # Project instructions template ({{PLACEHOLDERS}})
+│   │   │   │   ├── settings.json           # Project settings template (empty, overrides go here)
+│   │   │   │   ├── rules/
+│   │   │   │   │   └── language.md         # Language override (commented out by default)
+│   │   │   │   ├── agents/.gitkeep         # Project-specific agents
+│   │   │   │   └── skills/.gitkeep         # Project-specific skills
+│   │   │   └── claude-state/               # Claude state dir placeholder
+│   │   │       ├── .gitkeep
+│   │   │       └── memory/.gitkeep         # Auto memory subdir placeholder
+│   │   └── tutorial/                       # Interactive tutorial template (used by cco init)
+│   └── pack/
+│       └── base/                           # Default pack template (used by cco pack create)
 │
 └── user-config/                            # ── USER CONFIG (gitignored) ───
     ├── global/                             # Global Claude config
@@ -756,9 +762,9 @@ User defaults, copied to `user-config/global/.claude/` once by `cco init`. User 
 | `skills/design/SKILL.md` | `/design` skill | Implementation planning mode |
 | `skills/review/SKILL.md` | `/review` skill | Structured code review with checklist |
 
-#### defaults/_template/
+#### templates/project/base/
 
-Default project template, used by `cco project create` to scaffold new projects.
+Default project template, used by `cco project create` to scaffold new projects. User templates in `user-config/templates/project/` take priority over native templates with the same name.
 
 | File | Purpose | Notes |
 |------|---------|-------|
@@ -794,7 +800,7 @@ Recommended order for building the repo from scratch:
 |-------|-------|------------|
 | 1. Docker | `Dockerfile`, `config/entrypoint.sh`, `config/tmux.conf`, `config/hooks/*`, `.dockerignore` | Nothing |
 | 2. Global Config | `defaults/managed/*`, `defaults/global/.claude/*` | Nothing |
-| 3. Project Template | `defaults/_template/*` (all files) | Nothing |
+| 3. Project Template | `templates/project/base/*` (all files) | Nothing |
 | 4. CLI | `bin/cco` | Phases 1–3 (needs files to reference) |
 | 5. Root Files | `README.md`, `CLAUDE.md`, `.gitignore` | Phases 1–4 |
 | 6. Testing | Manual: create project, start session, verify | Phases 1–5 |

@@ -106,7 +106,7 @@ Per `docs/maintainer/docker/design.md` (sezione directory structure):
 
 1. **Docker**: `Dockerfile`, `config/entrypoint.sh`, `config/tmux.conf`, `config/hooks/`, `.dockerignore`
 2. **Global Config**: managed files in `defaults/managed/` (baked in image), user defaults in `defaults/global/.claude/` (copied once on init)
-3. **Project Template**: `defaults/_template/`
+3. **Project Template**: `templates/project/base/`
 4. **CLI**: `bin/cco`
 5. **Root Files**: `.gitignore`
 

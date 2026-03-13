@@ -267,7 +267,7 @@ cco vault push                    # Push to a remote for backup
 cco pack install git@github.com:my-org/cco-config
 ```
 
-When the orchestrator is updated (`git pull`), system files (skills, agents, rules, settings.json) are automatically synced on the next `cco start` or `cco init`. User defaults (CLAUDE.md, mcp.json, language.md) are not overwritten. To reset user defaults: `cco init --force`.
+When the orchestrator is updated (`git pull`), run `cco update` to apply framework changes using a 3-way merge that preserves your customizations. Files where both you and the framework changed are merged automatically when possible; conflicts produce `.bak` backups. Use `cco clean` to remove `.bak` files after reviewing. To reset user defaults entirely: `cco init --force`.
 
 For the full workflow (vault commands, multi-machine sync, team sharing, publishing), see the [Sharing & Backup guide](sharing.md).
 

@@ -47,7 +47,7 @@
 |----|-------------|----------|
 | FR-2.1 | Projects are defined as directories under `projects/` with a `project.yml` config | Must |
 | FR-2.2 | Each project specifies which repositories to mount and where | Must |
-| FR-2.3 | A `_template/` directory provides scaffolding for new projects | Must |
+| FR-2.3 | `templates/project/base/` provides scaffolding for new projects (`cco project create`). Additional templates available via `cco template list` | Must |
 | FR-2.4 | Projects can define extra volume mounts (docs, specs, etc.) | Should |
 | FR-2.5 | Temporary sessions (`cco new`) work without a project template | Must |
 | FR-2.6 | `docker-compose.yml` is auto-generated from `project.yml` by the CLI | Must |
