@@ -140,7 +140,7 @@ browser:
 
 ## Validation Rules
 
-> **Policy**: Secure-by-default. See [ADR-13](../maintainer/architecture.md) and [NFR-4/NFR-5](../maintainer/spec.md).
+> **Policy**: Secure-by-default. See [ADR-13](../maintainer/architecture/architecture.md) and [NFR-4/NFR-5](../maintainer/architecture/spec.md).
 
 ### Booleans
 
@@ -159,7 +159,7 @@ When a security-relevant field is **omitted**, the default is always the most re
 | `extra_mounts[].readonly` | `true` (read-only) | Extra mounts are reference material; writes require explicit opt-in |
 | `browser.enabled` | `false` | Browser automation is an additional attack surface |
 | `github.enabled` | `false` | GitHub access requires explicit opt-in |
-| `docker.mount_socket` | `false` | Opt-in: Docker socket grants full host Docker API access (see [security analysis](../maintainer/docker-security/analysis.md)) |
+| `docker.mount_socket` | `false` | Opt-in: Docker socket grants full host Docker API access (see [security analysis](../maintainer/integration/docker-security/analysis.md)) |
 
 ### Field Validation
 
@@ -229,7 +229,7 @@ All sections are optional. A knowledge-only pack needs only the `knowledge:` sec
    ```
 5. `session-context.sh` (SessionStart hook) injects `packs.md` into `additionalContext` automatically — **no CLAUDE.md edit needed**
 
-**Name conflicts**: If two packs define the same agent, rule, or skill name, the last pack listed in `project.yml` wins. A warning is emitted. See [ADR-14](../maintainer/architecture.md) for the design rationale.
+**Name conflicts**: If two packs define the same agent, rule, or skill name, the last pack listed in `project.yml` wins. A warning is emitted. See [ADR-14](../maintainer/architecture/architecture.md) for the design rationale.
 
 **Pack directory** — `user-config/packs/` (gitignored from orchestrator repo, created by `cco init`):
 ```

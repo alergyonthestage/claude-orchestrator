@@ -2,7 +2,7 @@
 
 > Back up your configuration, sync across machines, and share packs with your team.
 >
-> Related: [cli.md](../reference/cli.md) | [project-setup.md](./project-setup.md) | [knowledge-packs.md](./knowledge-packs.md) | [Config Repo Design](../maintainer/config-repo/design.md)
+> Related: [cli.md](../reference/cli.md) | [project-setup.md](./project-setup.md) | [knowledge-packs.md](./knowledge-packs.md) | [Config Repo Design](../maintainer/configuration/config-repo/design.md)
 
 ---
 

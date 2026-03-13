@@ -68,22 +68,30 @@ Architecture, specifications, and roadmap for project contributors.
 | Document | Content |
 |---|---|
 | [README.md](maintainer/README.md) | Contributor guide, code structure, documentation conventions |
-| [architecture.md](maintainer/architecture.md) | Architectural decisions (ADR) and system design |
-| [spec.md](maintainer/spec.md) | Functional and non-functional requirements |
-| [roadmap.md](maintainer/roadmap.md) | Feature progress, planned sprints, declined proposals |
+| [architecture.md](maintainer/architecture/architecture.md) | Architectural decisions (ADR) and system design |
+| [spec.md](maintainer/architecture/spec.md) | Functional and non-functional requirements |
+| [roadmap.md](maintainer/decisions/roadmap.md) | Feature progress, planned sprints, declined proposals |
 
 Design docs and analysis by area:
 
 | Area | Documents |
 |---|---|
-| Scope hierarchy | [analysis](maintainer/scope-hierarchy/analysis.md), [design](maintainer/scope-hierarchy/design.md) |
-| Authentication | [analysis](maintainer/auth/analysis.md), [design](maintainer/auth/design.md) |
-| Knowledge packs | [design](maintainer/packs/design.md) |
-| Environment | [analysis](maintainer/environment/analysis.md), [design](maintainer/environment/design.md) |
-| Docker | [design](maintainer/docker/design.md) |
-| Agent teams | [analysis](maintainer/agent-teams/analysis.md) |
-| Worktree (future) | [analysis](maintainer/future/worktree/analysis.md), [design](maintainer/future/worktree/design.md) |
-| Browser MCP | [analysis](maintainer/browser-mcp/analysis.md), [design](maintainer/browser-mcp/design.md) |
-| Config Repo | [design](maintainer/config-repo/design.md), [sharing design](maintainer/config-repo/sharing-design.md) |
-| Update system | [design](maintainer/update-system/design.md) |
-| Reviews | [24-02-2026](maintainer/reviews/24-02-2026-architecture-review.md), [26-02-2026](maintainer/reviews/26-02-2026-progress-review.md), [sprint plan](maintainer/reviews/sprint-2-3-implementation-plan.md) |
+| **Configuration** | |
+| Scope hierarchy | [analysis](maintainer/configuration/scope-hierarchy/analysis.md), [design](maintainer/configuration/scope-hierarchy/design.md) |
+| Knowledge packs | [design](maintainer/configuration/packs/design.md) |
+| Environment | [analysis](maintainer/configuration/environment/analysis.md), [design](maintainer/configuration/environment/design.md) |
+| Config Repo | [design](maintainer/configuration/config-repo/design.md), [sharing design](maintainer/configuration/config-repo/sharing-design.md) |
+| **Integration** | |
+| Docker | [design](maintainer/integration/docker/design.md) |
+| Docker Security | [analysis](maintainer/integration/docker-security/analysis.md), [design](maintainer/integration/docker-security/design.md) |
+| Authentication | [analysis](maintainer/integration/auth/analysis.md), [design](maintainer/integration/auth/design.md) |
+| Browser MCP | [analysis](maintainer/integration/browser-mcp/analysis.md), [design](maintainer/integration/browser-mcp/design.md) |
+| Agent teams | [analysis](maintainer/integration/agent-teams/analysis.md) |
+| **Features** | |
+| Defaults & Templates | [analysis](maintainer/features/defaults-templates-update/analysis.md), [design](maintainer/features/defaults-templates-update/design.md) |
+| Tutorial Project | [analysis](maintainer/features/tutorial-project/analysis.md), [design](maintainer/features/tutorial-project/design.md) |
+| Update system | [design](maintainer/features/update-system/design.md) |
+| Worktree isolation | [analysis](maintainer/features/worktree/analysis.md), [design](maintainer/features/worktree/design.md) |
+| Multi-PC Vault | [analysis](maintainer/features/vault-multipc/analysis.md) |
+| **Decisions** | |
+| Reviews | [24-02-2026](maintainer/decisions/reviews/24-02-2026-architecture-review.md), [26-02-2026](maintainer/decisions/reviews/26-02-2026-progress-review.md), [sprint plan](maintainer/decisions/reviews/sprint-2-3-implementation-plan.md) |

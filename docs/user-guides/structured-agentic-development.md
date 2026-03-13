@@ -111,7 +111,7 @@ needs to work on a module, it needs to understand not just *what* the architectu
 
 **How cco implements this:**
 
-- cco's own architecture uses ADRs extensively (`docs/maintainer/architecture.md`),
+- cco's own architecture uses ADRs extensively (`docs/maintainer/architecture/architecture.md`),
   providing a working example.
 - The **`/design` skill** produces design documents that capture context, decisions,
   alternatives, and consequences — the same structure as ADRs.

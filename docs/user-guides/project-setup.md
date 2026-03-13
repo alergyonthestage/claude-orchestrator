@@ -1,6 +1,6 @@
 # Project Setup Guide
 
-> Related: [cli.md](../reference/cli.md) | [context.md](../reference/context-hierarchy.md) | [architecture.md](../maintainer/architecture.md)
+> Related: [cli.md](../reference/cli.md) | [context.md](../reference/context-hierarchy.md) | [architecture.md](../maintainer/architecture/architecture.md)
 
 ---
 
