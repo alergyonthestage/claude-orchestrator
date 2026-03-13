@@ -88,6 +88,14 @@ func TestSecurityFilter_Capabilities(t *testing.T) {
 	if _, err := f.ValidateCapabilities([]string{"sys_admin"}); err == nil {
 		t.Error("expected error for sys_admin (lowercase)")
 	}
+
+	// Docker CLI v29+ sends capabilities with CAP_ prefix
+	if _, err := f.ValidateCapabilities([]string{"CAP_SYS_ADMIN"}); err == nil {
+		t.Error("expected error for CAP_SYS_ADMIN (with prefix)")
+	}
+	if _, err := f.ValidateCapabilities([]string{"CAP_NET_RAW"}); err != nil {
+		t.Errorf("expected allowed for CAP_NET_RAW (not in drop list), got: %v", err)
+	}
 }
 
 func TestSecurityFilter_Memory(t *testing.T) {

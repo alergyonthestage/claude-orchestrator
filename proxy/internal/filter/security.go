@@ -47,13 +47,13 @@ func (f *SecurityFilter) ValidateCapabilities(capAdd []string) ([]string, error)
 
 	dropSet := make(map[string]bool, len(f.policy.Security.DropCapabilities))
 	for _, cap := range f.policy.Security.DropCapabilities {
-		dropSet[strings.ToUpper(cap)] = true
+		dropSet[normalizeCap(cap)] = true
 	}
 
 	var denied []string
 	var allowed []string
 	for _, cap := range capAdd {
-		if dropSet[strings.ToUpper(cap)] {
+		if dropSet[normalizeCap(cap)] {
 			denied = append(denied, cap)
 		} else {
 			allowed = append(allowed, cap)
@@ -67,6 +67,14 @@ func (f *SecurityFilter) ValidateCapabilities(capAdd []string) ([]string, error)
 	}
 
 	return allowed, nil
+}
+
+// normalizeCap strips the "CAP_" prefix and uppercases for comparison.
+// Docker CLI v29+ sends capabilities as "CAP_SYS_ADMIN" while policies
+// typically use the short form "SYS_ADMIN".
+func normalizeCap(cap string) string {
+	cap = strings.ToUpper(cap)
+	return strings.TrimPrefix(cap, "CAP_")
 }
 
 // ValidateMemory checks if the memory limit is within policy bounds.
