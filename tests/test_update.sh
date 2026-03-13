@@ -113,6 +113,28 @@ test_update_keep_preserves() {
     cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
 }
 
+test_update_keep_survives_second_run() {
+    # After --keep, a second update must NOT overwrite the kept file
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    # Create conflict: user modifies + framework changes
+    printf '\n# My custom rule\n' >> "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
+    printf '\n# Framework update\n' >> "$REPO_ROOT/defaults/global/.claude/rules/workflow.md"
+
+    # First run: keep user version
+    run_cco update --keep
+
+    # Second run: no flags (default replace mode) — should see NO_UPDATE
+    run_cco update
+    assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "My custom rule" \
+        "Kept file must survive a second update"
+
+    # Restore
+    cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
+}
+
 test_update_replace_creates_bak() {
     # --replace creates .bak file and overwrites with new default
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT

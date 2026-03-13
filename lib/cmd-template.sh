@@ -274,8 +274,9 @@ EOF
 
         cp -r "$source_dir" "$target_dir"
 
-        # Strip runtime state
-        rm -rf "$target_dir/claude-state" "$target_dir/.cco-meta" "$target_dir/.cco-base"
+        # Strip runtime state and generated artifacts
+        rm -rf "$target_dir/claude-state" "$target_dir/.cco-meta" "$target_dir/.cco-base" \
+               "$target_dir/docker-compose.yml" "$target_dir/.tmp"
         # Clear secrets content but keep the file
         if [[ -f "$target_dir/secrets.env" ]]; then
             > "$target_dir/secrets.env"

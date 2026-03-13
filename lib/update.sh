@@ -496,8 +496,8 @@ _apply_file_changes() {
                         else
                             info "  ≡ $rel_path (kept user version)"
                         fi
-                        # Update manifest to current installed hash so conflict isn't re-reported
-                        local h; h=$(_file_hash "$installed_dir/$rel_path")
+                        # Save default hash so next run sees manifest==default → NO_UPDATE
+                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
                         _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                         ;;
                     replace)
@@ -703,8 +703,9 @@ _resolve_with_merge() {
                 _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                 ;;
             *)
+                # Save default hash so next run sees manifest==default → NO_UPDATE
                 info "  Kept user version of $rel_path"
-                local h; h=$(_file_hash "$installed_dir/$rel_path")
+                local h; h=$(_file_hash "$defaults_dir/$rel_path")
                 _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                 ;;
         esac
@@ -762,8 +763,9 @@ _resolve_conflict_interactive() {
             _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
             ;;
         *)
+            # Save default hash so next run sees manifest==default → NO_UPDATE
             info "  Kept user version of $rel_path"
-            local h; h=$(_file_hash "$installed_dir/$rel_path")
+            local h; h=$(_file_hash "$defaults_dir/$rel_path")
             _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
             ;;
     esac
