@@ -45,7 +45,7 @@ if [ -S /var/run/docker.sock ] && [ -f /etc/cco/policy.json ]; then
         -listen /var/run/docker-proxy.sock \
         -upstream /var/run/docker.sock \
         -policy /etc/cco/policy.json \
-        -log-denied &
+        -log-denied 2>&1 | tee /var/log/cco-proxy.log &
     PROXY_PID=$!
 
     # Wait for proxy socket to appear (max 3s)

@@ -875,15 +875,11 @@ _generate_socket_policy() {
         sec_dropcaps_json=$(echo "$sec_dropcaps" | jq -R . | jq -s .)
     fi
 
-    # Resources — try 4-level (docker.security.resources.X) first, fall back to
-    # 3-level (docker.security.X) for user convenience
+    # Resources (docker.security.resources.*)
     local sec_memory sec_cpus sec_max_ct
     sec_memory=$(yml_get_deep4 "$project_yml" "docker.security.resources.memory")
-    [[ -z "$sec_memory" ]] && sec_memory=$(yml_get_deep "$project_yml" "docker.security.memory")
     sec_cpus=$(yml_get_deep4 "$project_yml" "docker.security.resources.cpus")
-    [[ -z "$sec_cpus" ]] && sec_cpus=$(yml_get_deep "$project_yml" "docker.security.cpus")
     sec_max_ct=$(yml_get_deep4 "$project_yml" "docker.security.resources.max_containers")
-    [[ -z "$sec_max_ct" ]] && sec_max_ct=$(yml_get_deep "$project_yml" "docker.security.max_containers")
 
     # Convert memory string to bytes (e.g., "4g" → 4294967296)
     local memory_bytes=4294967296  # default 4g
