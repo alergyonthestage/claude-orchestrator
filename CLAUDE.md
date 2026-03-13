@@ -11,7 +11,8 @@ claude-orchestrator manages isolated Claude Code sessions in Docker containers f
 **Config separation**: Three-tier managed scope hierarchy leveraging Claude Code's native resolution:
 - `defaults/managed/` → baked into Docker image at `/etc/claude-code/` (Managed level — hooks, env, deny rules, framework instructions). Non-overridable.
 - `defaults/global/.claude/` → copied once to `user-config/global/.claude/` on `cco init` (User level — agents, skills, rules, settings, preferences). User-owned, never overwritten.
-- `defaults/_template/` → scaffolded per project (Project level). Per-project overrides.
+- `templates/` → native templates for projects and packs. User templates in `user-config/templates/` take priority.
+- `defaults/_template/` → legacy alias, project template is now at `templates/project/base/`
 
 **User config directory**: `user-config/` is the unified root for all user data:
 - `user-config/global/` — global Claude config (.claude/)
@@ -53,6 +54,15 @@ cco vault sync [msg]         # Commit config changes with secret detection
 cco vault diff               # Show uncommitted changes by category
 cco vault log                # Show commit history
 cco vault status             # Show vault state
+cco template list             # List available templates (native + user)
+cco template show <name>     # Show template details
+cco template create <n> --project|--pack  # Create user template
+cco template remove <name>   # Remove a user template
+cco update                   # Update config (3-way merge with .bak backup)
+cco update --all             # Update global + all projects
+cco update --dry-run         # Preview changes without modifying
+cco clean                    # Remove .bak files from update
+cco clean --all              # Clean global + all projects
 cco stop [project]           # Stop session(s)
 ```
  
@@ -96,7 +106,7 @@ Per `docs/maintainer/docker/design.md` (sezione directory structure):
 
 1. **Docker**: `Dockerfile`, `config/entrypoint.sh`, `config/tmux.conf`, `config/hooks/`, `.dockerignore`
 2. **Global Config**: managed files in `defaults/managed/` (baked in image), user defaults in `defaults/global/.claude/` (copied once on init)
-3. **Project Template**: `defaults/_template/`
+3. **Project Template**: `templates/project/base/`
 4. **CLI**: `bin/cco`
 5. **Root Files**: `.gitignore`
 
@@ -106,6 +116,10 @@ Per `docs/maintainer/docker/design.md` (sezione directory structure):
 - `bin/cco` — CLI entrypoint (dispatcher that sources `lib/*.sh` modules)
 - `lib/cmd-pack.sh` — Pack management: create, install, update, export, list, show, remove, validate
 - `lib/cmd-project.sh` — Project management: create, install, list, show, validate
+- `lib/cmd-template.sh` — Template management: list, show, create, remove + `_resolve_template()`
+- `lib/cmd-update.sh` — Update command: 3-way merge with .bak backup, --dry-run, --replace
+- `lib/cmd-clean.sh` — Clean .bak files: --project, --all, --dry-run
+- `lib/update.sh` — Update engine: declarative file policies, `_merge_file()`, `_resolve_with_merge()`
 - `lib/cmd-vault.sh` — Config versioning: init, sync, diff, log, status (git-backed)
 - `lib/manifest.sh` — manifest.yml lifecycle: init, refresh, validate, show
 - `lib/cmd-remote.sh` — Remote management: add, remove, list Config Repo remotes (.cco-remotes)
@@ -146,14 +160,14 @@ When a feature changes the structure of user-facing config files (`project.yml`,
 **Rules:**
 - New sections/fields in `project.yml` → create `migrations/project/NNN_description.sh`
 - New sections/fields in global config → create `migrations/global/NNN_description.sh`
-- Template changes (`defaults/_template/`, `defaults/global/`) only affect new projects/inits; existing ones need a migration
+- Template changes (`templates/project/base/`, `defaults/global/`) only affect new projects/inits; existing ones need a migration
 - Every migration must be **idempotent** (safe to run multiple times) and return 0 on success
 - Migration files define `MIGRATION_ID=N` and `MIGRATION_DESC="..."`, plus a `migrate()` function receiving the target directory
 - IDs must be sequential (check `migrations/{scope}/` for the current max)
 - `cco update` runs pending migrations automatically when `schema_version < latest`
 
 **Checklist for config changes:**
-1. Update `defaults/_template/` (or `defaults/global/`) with the new structure
+1. Update `templates/project/base/` (or `defaults/global/`) with the new structure
 2. Create migration script in `migrations/{scope}/`
 3. Test: `cco update --project <name>` applies the migration
 4. Verify idempotency: running update again produces no changes

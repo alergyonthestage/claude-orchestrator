@@ -294,7 +294,7 @@ Follow conventional commits:
 - Prefer many small commits over few large ones
 ```
 
-### 4.4 Project CLAUDE.md Template (`defaults/_template/.claude/CLAUDE.md`)
+### 4.4 Project CLAUDE.md Template (`templates/project/base/.claude/CLAUDE.md`)
 
 ```markdown
 # Project: {{PROJECT_NAME}}
@@ -336,7 +336,7 @@ Follow conventional commits:
 -->
 ```
 
-### 4.5 Project Settings Template (`defaults/_template/.claude/settings.json`)
+### 4.5 Project Settings Template (`templates/project/base/.claude/settings.json`)
 
 ```json
 {

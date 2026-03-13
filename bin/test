@@ -65,8 +65,9 @@ _run_test() {
     start_ms=$(_elapsed_ms)
 
     local output exit_code=0
-    # Run each test in a subshell for isolation; capture output
-    output=$(( "$fn_name" ) 2>&1) || exit_code=$?
+    # Run each test in a subshell for isolation; capture output.
+    # set -e must be explicit — bash disables it inside $() when || is used.
+    output=$(( set -e; "$fn_name" ) 2>&1) || exit_code=$?
 
     end_ms=$(_elapsed_ms)
     elapsed=$(( end_ms - start_ms ))

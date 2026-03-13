@@ -77,6 +77,11 @@ run_cco() {
 
 # ── Assertions ────────────────────────────────────────────────────────
 
+fail() {
+    echo "ASSERTION FAILED: $*"
+    return 1
+}
+
 assert_file_exists() {
     local file="$1"
     local msg="${2:-Expected file to exist: $file}"

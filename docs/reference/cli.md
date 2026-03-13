@@ -248,10 +248,12 @@ Arguments:
 Options:
   --repo <path>        Add a repo to the project (repeatable)
   --description <d>    Project description
+  --template <name>    Template to use (default: base). See `cco template list --project`
 
 Examples:
   cco project create my-saas --repo ~/projects/api --repo ~/projects/web
   cco project create experiment --description "Testing new auth flow"
+  cco project create guided --template tutorial
 ```
 
 **Flow**:
@@ -261,18 +263,22 @@ Examples:
    - Name is valid (lowercase, hyphens, no spaces)
    - user-config/projects/<name>/ does not already exist
 
-2. COPY template
-   - Copy defaults/_template/ → user-config/projects/<name>/
+2. RESOLVE template
+   - --template <name> or default "base"
+   - Resolution order: user-config/templates/project/<name>/ → templates/project/<name>/
 
-3. CONFIGURE
+3. COPY template
+   - Copy resolved template → user-config/projects/<name>/
+
+4. CONFIGURE
    - If --repo flags provided: write repos to project.yml
    - If --description provided: update project.yml and CLAUDE.md
    - Replace {{PROJECT_NAME}} and {{DESCRIPTION}} placeholders
 
-4. CREATE directories
+5. CREATE directories
    - user-config/projects/<name>/claude-state/memory/
 
-5. PRINT
+6. PRINT
    - "Project created at user-config/projects/<name>/"
    - "Edit project.yml to configure repos and settings"
    - "Run: cco start <name>"
@@ -291,11 +297,10 @@ Output:
   NAME           REPOS    STATUS
   my-saas        3        stopped
   experiment     1        running
-  _template      -        (template)
 ```
 
 **Implementation**:
-- List directories under `user-config/projects/` (exclude `_template`)
+- List directories under `user-config/projects/`
 - Parse each `project.yml` for repo count
 - Check Docker for running containers (`cc-<name>`)
 
@@ -369,14 +374,18 @@ Examples:
 Create a new knowledge pack scaffold.
 
 ```
-Usage: cco pack create <name>
+Usage: cco pack create <name> [OPTIONS]
 
 Arguments:
   name                 Pack name (lowercase letters, numbers, and hyphens only)
 
+Options:
+  --template <name>    Template to use (default: base). See `cco template list --pack`
+
 Examples:
   cco pack create react-guidelines
   cco pack create devops-tools
+  cco pack create my-pack --template custom-layout
 ```
 
 **Flow**:
@@ -596,7 +605,9 @@ Examples:
 
 ### 3.15 `cco update [OPTIONS]`
 
-Update global and/or project configuration from defaults.
+Update global and/or project configuration from defaults using a 3-way merge system.
+
+The update engine uses `.cco-base/` directories to track the original version of each file at install time. When updating, it performs a 3-way merge via `git merge-file` between the base version, the user's current version, and the new default. This preserves user customizations while applying framework updates.
 
 ```
 Usage: cco update [OPTIONS]
@@ -605,16 +616,18 @@ Options:
   --project <name>     Update a specific project (instead of global)
   --all                Update global config + all projects
   --dry-run            Show what would change without modifying anything
-  --force              Overwrite even user-modified files
+  --force              Overwrite even user-modified files (creates .bak)
   --keep               Always keep user version on conflicts
-  --backup             Create .bak backup + overwrite on conflicts
+  --replace            Replace changed files with new version + create .bak
+  --no-backup          Disable automatic .bak file creation
 
 Examples:
-  cco update                    # Update global defaults (interactive)
+  cco update                    # Update global defaults (3-way merge)
   cco update --dry-run          # Preview changes
   cco update --project myapp    # Update specific project
   cco update --all              # Update global + all projects
-  cco update --force            # Overwrite all conflicts
+  cco update --replace          # Replace all + .bak backup
+  cco update --force --no-backup  # Overwrite without backups
 ```
 
 **Flow**:
@@ -625,17 +638,25 @@ Examples:
    - --project <name>: update only the specified project
    - Default (no flags): update global config only
 
-2. UPDATE
-   - Detect changes between defaults and current config
-   - Preserve user modifications based on conflict mode:
-     - Interactive (default): prompt user for each conflict
-     - --force: overwrite all conflicts with defaults
+2. 3-WAY MERGE
+   - For each managed file, compare:
+     a. Base version (.cco-base/<file>) — the version at last install/update
+     b. User version (current file)
+     c. New version (from defaults/ or templates/)
+   - If only framework changed: auto-apply (user didn't modify)
+   - If only user changed: keep user version (framework didn't update)
+   - If both changed: attempt merge via `git merge-file`
+     - Clean merge: auto-apply
+     - Conflict: create .bak of user version, apply new version
+   - Conflict modes override this logic:
+     - --force: overwrite all (creates .bak)
      - --keep: always keep existing user version
-     - --backup: create .bak backup, then overwrite
+     - --replace: replace with new version + create .bak
 
 3. RESULT
    - --dry-run: "Dry run complete. No changes made."
    - Otherwise: "Update complete."
+   - Use `cco clean` to remove .bak files after reviewing
 ```
 
 ---
@@ -1030,6 +1051,84 @@ Display `manifest.yml` contents.
 
 ```
 Usage: cco manifest show
+```
+
+---
+
+### 3.27 `cco template`
+
+Manage project and pack templates. Native templates ship with the tool in `templates/`; user templates are stored in `user-config/templates/` and take priority over native ones with the same name.
+
+#### `cco template list [--project|--pack]`
+
+List available templates (both native and user).
+
+```
+Usage: cco template list [--project|--pack]
+
+Options:
+  --project    Show only project templates
+  --pack       Show only pack templates
+
+Examples:
+  cco template list
+  cco template list --project
+```
+
+#### `cco template show <name>`
+
+Show template details (files, description).
+
+```
+Usage: cco template show <name>
+
+Examples:
+  cco template show base
+  cco template show tutorial
+```
+
+#### `cco template create <name> --project|--pack`
+
+Create a new user template by copying a base template. User templates are stored in `user-config/templates/` and take priority over native templates with the same name.
+
+```
+Usage: cco template create <name> --project|--pack
+
+Examples:
+  cco template create my-stack --project
+  cco template create my-pack-layout --pack
+```
+
+#### `cco template remove <name>`
+
+Remove a user template.
+
+```
+Usage: cco template remove <name>
+
+Examples:
+  cco template remove my-stack
+```
+
+---
+
+### 3.28 `cco clean`
+
+Remove `.bak` files created by `cco update`.
+
+```
+Usage: cco clean [OPTIONS]
+
+Options:
+  --project <name>   Clean a specific project only
+  --all              Clean global config + all projects
+  --dry-run          Show what would be removed without deleting
+
+Examples:
+  cco clean                    # Clean global .bak files
+  cco clean --dry-run          # Preview what would be removed
+  cco clean --project myapp    # Clean specific project
+  cco clean --all              # Clean everything
 ```
 
 ---

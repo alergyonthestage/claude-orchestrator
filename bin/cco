@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DEFAULTS_DIR="$REPO_ROOT/defaults"
-TEMPLATE_DIR="$DEFAULTS_DIR/_template"
+NATIVE_TEMPLATES_DIR="$REPO_ROOT/templates"
 IMAGE_NAME="claude-orchestrator:latest"
 LIB_DIR="$REPO_ROOT/lib"
 
@@ -45,7 +45,9 @@ source "$LIB_DIR/cmd-stop.sh"
 source "$LIB_DIR/cmd-chrome.sh"
 source "$LIB_DIR/cmd-project.sh"
 source "$LIB_DIR/cmd-pack.sh"
+source "$LIB_DIR/cmd-template.sh"
 source "$LIB_DIR/cmd-update.sh"
+source "$LIB_DIR/cmd-clean.sh"
 source "$LIB_DIR/manifest.sh"
 source "$LIB_DIR/cmd-remote.sh"
 source "$LIB_DIR/remote.sh"
@@ -72,6 +74,7 @@ Getting Started:
   init                   Initialize user config from defaults
   build                  Build/rebuild the Docker image
   update                 Update config from defaults (with migrations)
+  clean                  Remove .bak files created by update
 
 Sessions:
   start <project>        Start a session for a configured project
@@ -82,6 +85,9 @@ Projects & Packs:
   project <cmd>          Manage projects (create, install, list, show, validate)
   pack <cmd>             Manage knowledge packs (create, install, update, ...)
   chrome <cmd>           Manage Chrome debug session on host
+
+Templates:
+  template <cmd>         Manage project/pack templates (list, show, create, remove)
 
 Sharing & Versioning:
   remote <cmd>           Manage Config Repo remotes
@@ -173,12 +179,14 @@ EOF
             *)        die "Unknown pack command: $subcmd. Run 'cco pack --help'." ;;
         esac
         ;;
+    template) cmd_template "$@" ;;
     chrome)  cmd_chrome "$@" ;;
     remote)  cmd_remote "$@" ;;
     manifest) cmd_manifest "$@" ;;
     share)    die "'cco share' has been renamed to 'cco manifest'. Run 'cco update' to migrate." ;;
     vault)   cmd_vault "$@" ;;
     update)  cmd_update "$@" ;;
+    clean)   cmd_clean "$@" ;;
     stop)    cmd_stop "$@" ;;
     help)    usage ;;
     *)       die "Unknown command: $cmd. Run 'cco help' for usage." ;;

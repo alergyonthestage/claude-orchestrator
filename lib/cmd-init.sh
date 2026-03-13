@@ -3,7 +3,7 @@
 #
 # Provides: cmd_init()
 # Dependencies: colors.sh, utils.sh, update.sh, cmd-build.sh, manifest.sh
-# Globals: USER_CONFIG_DIR, GLOBAL_DIR, DEFAULTS_DIR, PROJECTS_DIR, PACKS_DIR, TEMPLATES_DIR, REPO_ROOT
+# Globals: USER_CONFIG_DIR, GLOBAL_DIR, DEFAULTS_DIR, NATIVE_TEMPLATES_DIR, PROJECTS_DIR, PACKS_DIR, TEMPLATES_DIR, REPO_ROOT
 
 cmd_init() {
     local force=false
@@ -102,6 +102,9 @@ EOF
         ) | _generate_cco_meta "$meta_file" "$latest_schema" "$now" \
             "$comm_lang" "$docs_lang" "$code_lang"
 
+        # Save base versions for future 3-way merge
+        _save_all_base_versions "$GLOBAL_DIR/.claude/.cco-base" "$DEFAULTS_DIR/global/.claude" "global"
+
         # Run all migrations (marks schema as current — fresh install, nothing to migrate)
         _run_migrations "global" "$GLOBAL_DIR/.claude" 0 "$meta_file"
     fi
@@ -128,7 +131,7 @@ EOF
     local tutorial_dir="$PROJECTS_DIR/tutorial"
     if [[ ! -d "$tutorial_dir" ]]; then
         info "Creating tutorial project..."
-        cp -r "$DEFAULTS_DIR/tutorial" "$tutorial_dir"
+        cp -r "$NATIVE_TEMPLATES_DIR/project/tutorial" "$tutorial_dir"
 
         # Substitute path placeholders in project.yml
         local tutorial_yml="$tutorial_dir/project.yml"
