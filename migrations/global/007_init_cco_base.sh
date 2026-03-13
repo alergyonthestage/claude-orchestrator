@@ -15,8 +15,8 @@ MIGRATION_DESC="Initialize .cco-base for 3-way merge support"
 migrate() {
     local target_dir="$1"
     local base_dir
-    # target_dir is .claude/ — .cco-base goes one level up (sibling to .claude/)
-    base_dir="$(dirname "$target_dir")/.cco-base"
+    # target_dir is .claude/ — .cco-base is inside .claude/ (sibling to settings.json etc.)
+    base_dir="$target_dir/.cco-base"
     local defaults_dir="$DEFAULTS_DIR/global/.claude"
 
     # If .cco-base/ already exists, nothing to do

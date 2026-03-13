@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Migration: Initialize .cco-meta and .cco-base for pre-Sprint-5b projects
+# Migration: Initialize .cco-base for pre-Sprint-5b projects
 #
-# Projects created before Sprint 5b have no .cco-meta or .cco-base.
-# Without these, every modified file is flagged as CONFLICT on first update.
-# This migration creates them retroactively, using the current installed files
-# as the baseline so the 3-way merge system works on subsequent updates.
+# Projects created before Sprint 5b have no .cco-base/ directory.
+# (They may or may not have .cco-meta, depending on whether cco update
+# was run before.) Without .cco-base/, the 3-way merge falls back to
+# interactive mode. This migration creates .cco-base/ retroactively so
+# subsequent updates can auto-merge.
 
 MIGRATION_ID=7
-MIGRATION_DESC="Initialize .cco-meta and .cco-base for pre-Sprint-5b projects"
+MIGRATION_DESC="Initialize .cco-base for 3-way merge support"
 
 # $1 = target directory (e.g. projects/myapp)
 # Must be idempotent (safe to run multiple times)
