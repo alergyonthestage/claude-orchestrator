@@ -47,6 +47,7 @@ source "$LIB_DIR/cmd-project.sh"
 source "$LIB_DIR/cmd-pack.sh"
 source "$LIB_DIR/cmd-template.sh"
 source "$LIB_DIR/cmd-update.sh"
+source "$LIB_DIR/cmd-clean.sh"
 source "$LIB_DIR/manifest.sh"
 source "$LIB_DIR/cmd-remote.sh"
 source "$LIB_DIR/remote.sh"
@@ -73,6 +74,7 @@ Getting Started:
   init                   Initialize user config from defaults
   build                  Build/rebuild the Docker image
   update                 Update config from defaults (with migrations)
+  clean                  Remove .bak files created by update
 
 Sessions:
   start <project>        Start a session for a configured project
@@ -184,6 +186,7 @@ EOF
     share)    die "'cco share' has been renamed to 'cco manifest'. Run 'cco update' to migrate." ;;
     vault)   cmd_vault "$@" ;;
     update)  cmd_update "$@" ;;
+    clean)   cmd_clean "$@" ;;
     stop)    cmd_stop "$@" ;;
     help)    usage ;;
     *)       die "Unknown command: $cmd. Run 'cco help' for usage." ;;
