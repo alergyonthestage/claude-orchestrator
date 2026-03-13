@@ -26,11 +26,18 @@ func (f *SecurityFilter) ValidatePrivileged(privileged bool) error {
 }
 
 // ValidateUser checks if the container user is allowed.
+// Docker accepts User in formats: "user", "uid", "user:group", "uid:gid".
+// We extract the user/uid portion (before the first colon) for validation.
 func (f *SecurityFilter) ValidateUser(user string) error {
 	if !f.policy.Security.ForceNonRoot {
 		return nil
 	}
-	if user == "" || user == "0" || user == "root" {
+	// Extract user portion before any ":group" suffix
+	uid := user
+	if idx := strings.Index(user, ":"); idx >= 0 {
+		uid = user[:idx]
+	}
+	if uid == "" || uid == "0" || uid == "root" {
 		return &DeniedError{
 			Reason: "root user is blocked by policy — set a non-root USER in your Dockerfile",
 		}
@@ -47,13 +54,13 @@ func (f *SecurityFilter) ValidateCapabilities(capAdd []string) ([]string, error)
 
 	dropSet := make(map[string]bool, len(f.policy.Security.DropCapabilities))
 	for _, cap := range f.policy.Security.DropCapabilities {
-		dropSet[strings.ToUpper(cap)] = true
+		dropSet[normalizeCap(cap)] = true
 	}
 
 	var denied []string
 	var allowed []string
 	for _, cap := range capAdd {
-		if dropSet[strings.ToUpper(cap)] {
+		if dropSet[normalizeCap(cap)] {
 			denied = append(denied, cap)
 		} else {
 			allowed = append(allowed, cap)
@@ -67,6 +74,14 @@ func (f *SecurityFilter) ValidateCapabilities(capAdd []string) ([]string, error)
 	}
 
 	return allowed, nil
+}
+
+// normalizeCap strips the "CAP_" prefix and uppercases for comparison.
+// Docker CLI v29+ sends capabilities as "CAP_SYS_ADMIN" while policies
+// typically use the short form "SYS_ADMIN".
+func normalizeCap(cap string) string {
+	cap = strings.ToUpper(cap)
+	return strings.TrimPrefix(cap, "CAP_")
 }
 
 // ValidateMemory checks if the memory limit is within policy bounds.
@@ -105,9 +120,6 @@ func (f *SecurityFilter) ValidateSensitiveMounts(binds []string) error {
 
 	for _, bind := range binds {
 		parts := strings.SplitN(bind, ":", 3)
-		if len(parts) < 2 {
-			continue
-		}
 		src := parts[0]
 		if strings.HasPrefix(src, "/proc") || strings.HasPrefix(src, "/sys") {
 			return &DeniedError{

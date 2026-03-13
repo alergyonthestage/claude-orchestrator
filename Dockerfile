@@ -93,8 +93,11 @@ RUN if [ -n "$SETUP_BUILD_SCRIPT_CONTENT" ]; then \
     fi
 
 # ── User setup ───────────────────────────────────────────────────────
-# Create claude user. Docker socket GID is set at runtime via entrypoint.
-RUN useradd -m -s /bin/bash claude \
+# Create docker group with placeholder GID (adjusted at runtime by entrypoint
+# to match host socket GID). Pre-creating ensures `chown claude:docker` never
+# fails due to missing group.
+RUN groupadd -g 999 docker \
+    && useradd -m -s /bin/bash claude \
     && mkdir -p /home/claude/.claude /workspace \
     && chown -R claude:claude /home/claude /workspace
 

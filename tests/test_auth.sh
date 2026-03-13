@@ -24,11 +24,11 @@ test_auth_oauth_token_extracted_from_keychain() {
     PATH="$mock_bin:$PATH" run_cco start "test-proj" --dry-run
 
     # Compose should exist (dry-run succeeded)
-    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    assert_file_exists "$DRY_RUN_DIR/docker-compose.yml"
     # OAuth token must NOT be written to compose file (it's a runtime -e flag)
-    assert_file_not_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" \
+    assert_file_not_contains "$DRY_RUN_DIR/docker-compose.yml" \
         "fake-token-abc123"
-    assert_file_not_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" \
+    assert_file_not_contains "$DRY_RUN_DIR/docker-compose.yml" \
         "CLAUDE_CODE_OAUTH_TOKEN"
 }
 
@@ -47,7 +47,7 @@ test_auth_oauth_missing_keychain_continues_with_warning() {
     # Just verify dry-run succeeds with no token available
     PATH="$mock_bin:$PATH" run_cco start "test-proj" --dry-run
 
-    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml"
+    assert_file_exists "$DRY_RUN_DIR/docker-compose.yml"
 }
 
 test_auth_oauth_does_not_put_api_key_in_compose() {
@@ -57,7 +57,7 @@ test_auth_oauth_does_not_put_api_key_in_compose() {
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
-    assert_file_not_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" "ANTHROPIC_API_KEY"
+    assert_file_not_contains "$DRY_RUN_DIR/docker-compose.yml" "ANTHROPIC_API_KEY"
 }
 
 test_auth_api_key_method_adds_env_var_to_compose() {
@@ -78,5 +78,5 @@ repos:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/docker-compose.yml" "ANTHROPIC_API_KEY"
+    assert_file_contains "$DRY_RUN_DIR/docker-compose.yml" "ANTHROPIC_API_KEY"
 }

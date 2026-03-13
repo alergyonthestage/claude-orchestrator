@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"path"
 	"regexp"
 	"strings"
 )
@@ -16,6 +17,9 @@ var (
 	containerListPath    = regexp.MustCompile(`^(/v\d+\.\d+)?/containers/json$`)
 	containerOpPath      = regexp.MustCompile(`^(/v\d+\.\d+)?/containers/([^/]+)(/.*)?$`)
 
+	// Exec endpoints: POST /exec/{id}/start, POST /exec/{id}/resize, GET /exec/{id}/json
+	execOpPath           = regexp.MustCompile(`^(/v\d+\.\d+)?/exec/([^/]+)(/.*)?$`)
+
 	// Network endpoints
 	networkCreatePath    = regexp.MustCompile(`^(/v\d+\.\d+)?/networks/create$`)
 	networkConnectPath   = regexp.MustCompile(`^(/v\d+\.\d+)?/networks/([^/]+)/connect$`)
@@ -25,9 +29,9 @@ var (
 	alwaysAllowedPaths = []string{"/_ping", "/version", "/info"}
 )
 
-// cleanPath strips the API version prefix for matching.
-func cleanPath(path string) string {
-	return path
+// cleanPath normalizes the request path to prevent double-slash or ".." bypass.
+func cleanPath(p string) string {
+	return path.Clean(p)
 }
 
 func isAlwaysAllowed(path string) bool {
@@ -57,7 +61,7 @@ func isContainerOp(method, path string) bool {
 	if stripped == "/containers/create" || stripped == "/containers/json" {
 		return false
 	}
-	return method == "GET" || method == "POST" || method == "HEAD"
+	return method == "GET" || method == "POST" || method == "HEAD" || method == "PUT"
 }
 
 func isContainerDelete(method, path string) bool {
@@ -79,9 +83,24 @@ func isNetworkList(method, path string) bool {
 	return method == "GET" && networkListPath.MatchString(path)
 }
 
+func isExecOp(method, path string) bool {
+	// Only POST (start, resize) and GET (json/inspect) are valid exec methods
+	if method != "POST" && method != "GET" && method != "HEAD" {
+		return false
+	}
+	return execOpPath.MatchString(path)
+}
+
 func isImageOp(path string) bool {
 	stripped := versionPrefix.ReplaceAllString(path, "")
 	return strings.HasPrefix(stripped, "/images") || strings.HasPrefix(stripped, "/build")
+}
+
+// isBuildKitOp checks if the path targets a BuildKit/buildx session endpoint.
+// BuildKit uses /session and /grpc endpoints for build operations.
+func isBuildKitOp(path string) bool {
+	stripped := versionPrefix.ReplaceAllString(path, "")
+	return stripped == "/session" || strings.HasPrefix(stripped, "/grpc")
 }
 
 func isVolumeOp(path string) bool {

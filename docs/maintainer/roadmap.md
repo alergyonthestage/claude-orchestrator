@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-11 (Sprint ordering revised: vault multi-PC sync added as Sprint 7, E2E moved up to Sprint 8, session resume deferred to exploratory, pack inheritance merged into Sprint 11).
+> Last updated: 2026-03-13 (Sprint ordering revised: vault multi-PC sync added as Sprint 7, E2E moved up to Sprint 8, session resume deferred to exploratory, pack inheritance merged into Sprint 11. Added: #B4 cco update regression, hot-reload exploratory section, defaults/ structure review in Sprint 5b).
 
 ---
 
@@ -186,6 +186,27 @@ Improved tmux configuration for clipboard and selection:
 
 ## Known Bugs
 
+### #B4 `cco update --all` does not correctly update files from `defaults/`
+
+**Reported**: 2026-03-13 (field testing).
+
+**Symptom**: After a cco update that introduces changes to `defaults/global/` or `defaults/_template/`, running `cco update --all` does not propagate those changes to existing user installations. Users who had an older `project.yml` schema had to manually copy from the template and merge their customizations by hand.
+
+**Root cause (suspected)**: The update system's checksum manifest (`lib/update.sh`) tracks files under `.claude/` directories, but root-level files such as `project.yml` and `global/` non-`.claude/` files are not covered. When `defaults/` content changes, the manifest hash does not reflect the delta, so the update engine skips the file.
+
+**Impact**: Medium-high. Any user who initialized before a template change and then runs `cco update` will silently miss the new defaults. Manual merge is error-prone and un-documented.
+
+**Required work**:
+- Audit `cco update` for all file categories: `global/.claude/`, `projects/*/project.yml`, and root-level project files.
+- Implement intelligent merge for `project.yml`: add new keys from the template without overwriting user-customized values. Mirror the approach used for `.claude/` files (checksum + migration runner).
+- Introduce template versioning: record the template schema version in `.cco-meta` at `cco project create` / `cco init` time so the update engine can determine which migrations to run for `project.yml`.
+- Add migration coverage for `project.yml` schema changes retroactively (audit existing migrations `001`–`005` for completeness).
+- Extend test suite (`tests/test_update.sh`) with scenarios covering: outdated `project.yml`, partial user customizations, idempotent re-runs.
+
+**See also**: Sprint 5b #A (Defaults Restructuring) — a cleaner `defaults/` layout will make the scope of "what needs to be updated" more explicit.
+
+---
+
 ### #B2 Claude Code native installer — migration deferred
 
 The `Dockerfile` uses `npm install -g @anthropic-ai/claude-code` which is deprecated upstream in favor of a native installer. The native installer was not adopted because it exhibited bot-detection blocks when downloading from container/CI environments.
@@ -284,9 +305,27 @@ Enable Claude to control a browser via Chrome DevTools MCP, with the browser vis
 
 Refactoring leggero del layout `defaults/` e introduzione del meccanismo `--template` per installare progetti built-in opzionali.
 
-#### #A `defaults/` Directory Restructuring
+#### #A `defaults/` Directory Structure Review
 
-**Contesto**: `defaults/` ha una struttura piatta con directory di tipo diverso allo stesso livello (`managed/`, `global/`, `_template/`, `tutorial/`). Con l'aggiunta di template opzionali la struttura diventa poco chiara.
+**Context**: `defaults/` has a flat layout with directories of different types at the same level (`managed/`, `global/`, `_template/`, `tutorial/`). As optional templates are added, the structure becomes ambiguous. More importantly, the mapping of each `defaults/` subdirectory to its target scope (managed → global → project → repo) is not visually obvious to contributors, which creates confusion when deciding where a new default file should live.
+
+**Goal**: reorganize `defaults/` so that its subdirectory names mirror the four-tier config hierarchy and the `user-config/` structure:
+
+```
+defaults/
+├── managed/          → /etc/claude-code/ (Docker image, unchanged)
+├── global/           → user-config/global/ (cco init, unchanged)
+├── projects/         → user-config/projects/
+│   ├── _template/    (scaffold for cco project create)
+│   └── tutorial/     (built-in tutorial project)
+└── packs/            (empty for now, extensible)
+```
+
+**Secondary goal**: clarify in documentation which files in each tier are "write-once at install time" vs. "updated by `cco update`". This directly informs fix #B4 above — the update system must have an explicit list of paths it owns.
+
+**Impacted files**: `Dockerfile`, `bin/cco` (`DEFAULTS_DIR`, `TEMPLATE_DIR`), `lib/cmd-init.sh`, `lib/cmd-project.sh`, tests, documentation.
+
+**Contesto originale**: `defaults/` ha una struttura piatta con directory di tipo diverso allo stesso livello (`managed/`, `global/`, `_template/`, `tutorial/`). Con l'aggiunta di template opzionali la struttura diventa poco chiara.
 
 **Obiettivo**: riorganizzare `defaults/` con sottodirectory per tipo, in modo che rispecchi la struttura di `user-config/`:
 
@@ -326,7 +365,7 @@ Alias triviale in `bin/cco`: `cco tutorial` → `cco start tutorial`. Migliora d
 
 Elevato a priorità alta. Tre componenti di sicurezza: Docker socket proxy con filtro granulare, restrizioni mount per sibling container, e controllo dell'accesso internet. Include bugfix al default di `mount_socket`.
 
-**Status**: Analysis & Design complete. Implementation pending.
+**Status**: Phase A & B implemented. Phase C pending.
 **Docs**: [analysis](./docker-security/analysis.md) | [design](./docker-security/design.md)
 
 #### Phase A: `mount_socket` Safe Default → `false` (bugfix)
@@ -594,6 +633,33 @@ rag:
 ---
 
 ## Long-term / Exploratory
+
+### Hot-reload for In-Container Configuration
+
+**Raised**: 2026-03-13.
+
+**Context**: Currently all configuration changes (project.yml, policy.json, resource limits) require a full container restart. Some configuration categories are already live-reloadable because they are mounted as Docker volumes and read on every use; others are baked into the image or applied only at entrypoint time.
+
+**Analysis needed**:
+
+| Config category | Currently live? | Hot-reload feasible? |
+|---|---|---|
+| `project.yml` (repos, packs, browser) | No — parsed at `cco start` | Partial — volume-mounted but not re-read |
+| `project.yml` (security policy, resource limits) | No | Potentially yes with a file watcher |
+| `policy.json` (Docker proxy allow/denylist) | No — loaded at proxy start | Yes — proxy can `SIGHUP`-reload |
+| `global/.claude/` rules / agents / skills | Yes — mounted `:ro` | Already live |
+| `defaults/managed/` (hooks, deny rules) | No — baked in image | No — requires rebuild |
+| `secrets.env` | No — loaded at entrypoint | No — requires restart |
+| `setup.sh` (runtime) | No — run once at entrypoint | No — requires restart |
+
+**Proposed exploration**:
+- **Docker proxy `SIGHUP` reload** (`proxy/policy.json`): the Go proxy watches for `SIGHUP` or polls the file for changes, reloading the allow/denylist without restarting the container. This is the highest-value target since security policy changes currently require a full restart.
+- **File watcher on `project.yml`**: a lightweight watcher (e.g., `inotifywait`) in the entrypoint notifies the session of changes to fields that are safe to apply at runtime (e.g., `browser.enabled`, resource soft-limits). Changes to structural fields (repo list, image) still require restart.
+- **Explicit `cco reload <project>` command**: rather than automatic detection, expose a host-side command that sends a reload signal to the running container. Simpler, more predictable, no polling overhead.
+
+**Decision criteria**: hot-reload adds complexity (signal handling, partial-state risks). It is only worth implementing if the restart cost is measurably painful for users. Collect feedback before committing to an implementation approach.
+
+---
 
 ### Session Reattach (`cco attach`)
 

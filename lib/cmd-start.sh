@@ -184,86 +184,105 @@ EOF
         warn "You can safely remove the user copy: rm -rf global/.claude/skills/init-workspace"
     fi
 
-    # Ensure claude-state directory exists (migrates legacy memory/ if needed)
-    migrate_memory_to_claude_state "$project_dir"
+    # ── Dry-run: redirect all generated files to project .tmp/ dir ───────
+    # In dry-run mode, output_dir is <project_dir>/.tmp/ so no persistent
+    # artifacts are written but the user can easily inspect them.
+    local output_dir="$project_dir"
+    if $dry_run; then
+        output_dir="$project_dir/.tmp"
+        rm -rf "$output_dir"
+        mkdir -p "$output_dir/.claude" "$output_dir/.managed"
+    fi
 
-    # Ensure global state files exist (shared across all projects — must exist before Docker bind mount)
-    mkdir -p "$GLOBAL_DIR/claude-state"
+    # ── Persistent side effects: skip in dry-run ─────────────────────────
+    if ! $dry_run; then
+        # Ensure claude-state directory exists (migrates legacy memory/ if needed)
+        migrate_memory_to_claude_state "$project_dir"
 
-    # ~/.claude.json — preferences, MCP servers, session metadata (NOT auth tokens)
-    # Re-sync from host when host has been updated (higher numStartups = more recent).
-    local global_claude_json="$GLOBAL_DIR/claude-state/claude.json"
-    if [[ -f "$HOME/.claude.json" ]]; then
-        if [[ ! -f "$global_claude_json" ]]; then
-            cp "$HOME/.claude.json" "$global_claude_json"
-        else
-            local host_startups global_startups
-            host_startups=$(jq -r '.numStartups // 0' "$HOME/.claude.json" 2>/dev/null || echo 0)
-            global_startups=$(jq -r '.numStartups // 0' "$global_claude_json" 2>/dev/null || echo 0)
-            if [[ "$host_startups" -gt "$global_startups" ]]; then
+        # Ensure global state files exist (shared across all projects — must exist before Docker bind mount)
+        mkdir -p "$GLOBAL_DIR/claude-state"
+
+        # ~/.claude.json — preferences, MCP servers, session metadata (NOT auth tokens)
+        # Re-sync from host when host has been updated (higher numStartups = more recent).
+        local global_claude_json="$GLOBAL_DIR/claude-state/claude.json"
+        if [[ -f "$HOME/.claude.json" ]]; then
+            if [[ ! -f "$global_claude_json" ]]; then
                 cp "$HOME/.claude.json" "$global_claude_json"
+            else
+                local host_startups global_startups
+                host_startups=$(jq -r '.numStartups // 0' "$HOME/.claude.json" 2>/dev/null || echo 0)
+                global_startups=$(jq -r '.numStartups // 0' "$global_claude_json" 2>/dev/null || echo 0)
+                if [[ "$host_startups" -gt "$global_startups" ]]; then
+                    cp "$HOME/.claude.json" "$global_claude_json"
+                fi
             fi
+        elif [[ ! -f "$global_claude_json" ]]; then
+            echo '{}' > "$global_claude_json"
         fi
-    elif [[ ! -f "$global_claude_json" ]]; then
-        echo '{}' > "$global_claude_json"
-    fi
-    # Container must never show onboarding — force hasCompletedOnboarding after any sync/creation.
-    # Host may have false after logout+login; container needs true to skip the "theme: dark" screen.
-    local current_onboarding
-    current_onboarding=$(jq -r '.hasCompletedOnboarding // false' "$global_claude_json" 2>/dev/null || echo "false")
-    if [[ "$current_onboarding" != "true" ]]; then
-        jq '.hasCompletedOnboarding = true' "$global_claude_json" > "$global_claude_json.tmp" \
-            && mv "$global_claude_json.tmp" "$global_claude_json"
-    fi
+        # Container must never show onboarding — force hasCompletedOnboarding after any sync/creation.
+        # Host may have false after logout+login; container needs true to skip the "theme: dark" screen.
+        local current_onboarding
+        current_onboarding=$(jq -r '.hasCompletedOnboarding // false' "$global_claude_json" 2>/dev/null || echo "false")
+        if [[ "$current_onboarding" != "true" ]]; then
+            jq '.hasCompletedOnboarding = true' "$global_claude_json" > "$global_claude_json.tmp" \
+                && mv "$global_claude_json.tmp" "$global_claude_json"
+        fi
 
-    # ~/.claude/.credentials.json — OAuth tokens (access + refresh)
-    # On macOS, Claude stores tokens in Keychain. On Linux (container), it reads from
-    # ~/.claude/.credentials.json in plaintext. We seed this file from the macOS Keychain
-    # so the container can authenticate without manual login.
-    local global_creds="$GLOBAL_DIR/claude-state/.credentials.json"
-    if [[ "$(uname)" == "Darwin" ]] && [[ "$auth_method" == "oauth" ]]; then
-        local keychain_json
-        keychain_json=$(security find-generic-password -s "Claude Code-credentials" -a "$(whoami)" -w 2>/dev/null) || true
-        if [[ -n "$keychain_json" ]]; then
-            local keychain_expires file_expires
-            keychain_expires=$(echo "$keychain_json" | jq -r '.claudeAiOauth.expiresAt // 0' 2>/dev/null || echo 0)
-            file_expires=$(jq -r '.claudeAiOauth.expiresAt // 0' "$global_creds" 2>/dev/null || echo 0)
-            if [[ "$keychain_expires" -gt "$file_expires" ]]; then
-                echo "$keychain_json" > "$global_creds"
-                chmod 600 "$global_creds"
-                info "Seeded credentials from macOS Keychain (keychain token is newer)"
+        # ~/.claude/.credentials.json — OAuth tokens (access + refresh)
+        # On macOS, Claude stores tokens in Keychain. On Linux (container), it reads from
+        # ~/.claude/.credentials.json in plaintext. We seed this file from the macOS Keychain
+        # so the container can authenticate without manual login.
+        local global_creds="$GLOBAL_DIR/claude-state/.credentials.json"
+        if [[ "$(uname)" == "Darwin" ]] && [[ "$auth_method" == "oauth" ]]; then
+            local keychain_json
+            keychain_json=$(security find-generic-password -s "Claude Code-credentials" -a "$(whoami)" -w 2>/dev/null) || true
+            if [[ -n "$keychain_json" ]]; then
+                local keychain_expires file_expires
+                keychain_expires=$(echo "$keychain_json" | jq -r '.claudeAiOauth.expiresAt // 0' 2>/dev/null || echo 0)
+                file_expires=$(jq -r '.claudeAiOauth.expiresAt // 0' "$global_creds" 2>/dev/null || echo 0)
+                if [[ "$keychain_expires" -gt "$file_expires" ]]; then
+                    echo "$keychain_json" > "$global_creds"
+                    chmod 600 "$global_creds"
+                    info "Seeded credentials from macOS Keychain (keychain token is newer)"
+                fi
             fi
         fi
-    fi
-    # Ensure the file exists (even if empty) so Docker bind mount doesn't create a directory
-    if [[ ! -f "$global_creds" ]]; then
-        echo '{}' > "$global_creds"
-        chmod 600 "$global_creds"
+        # Ensure the file exists (even if empty) so Docker bind mount doesn't create a directory
+        if [[ ! -f "$global_creds" ]]; then
+            echo '{}' > "$global_creds"
+            chmod 600 "$global_creds"
+        fi
     fi
 
     # ── Docker socket policy ──────────────────────────────────────────────
     if [[ "$mount_socket" == "true" ]]; then
-        _generate_socket_policy "$project_yml" "$project_name" "$project_dir"
+        _generate_socket_policy "$project_yml" "$project_name" "$output_dir"
     else
-        rm -f "$project_dir/.managed/policy.json"
+        if ! $dry_run; then
+            rm -f "$project_dir/.managed/policy.json"
+        fi
     fi
 
     # ── Generate .managed/ integrations ──────────────────────────────────
     if [[ "$browser_enabled" == "true" ]]; then
-        mkdir -p "$project_dir/.managed"
-        _generate_browser_mcp "$project_dir/.managed/browser.json" \
+        mkdir -p "$output_dir/.managed"
+        _generate_browser_mcp "$output_dir/.managed/browser.json" \
             "$browser_mode" "$browser_effective_port" "$browser_mcp_args"
-        echo "$browser_effective_port" > "$project_dir/.managed/.browser-port"
+        echo "$browser_effective_port" > "$output_dir/.managed/.browser-port"
     else
-        # Clean up stale managed files from a previous session
-        rm -f "$project_dir/.managed/browser.json" "$project_dir/.managed/.browser-port"
+        if ! $dry_run; then
+            # Clean up stale managed files from a previous session
+            rm -f "$project_dir/.managed/browser.json" "$project_dir/.managed/.browser-port"
+        fi
     fi
 
     if [[ "$github_enabled" == "true" ]]; then
-        mkdir -p "$project_dir/.managed"
-        _generate_github_mcp "$project_dir/.managed/github.json" "$github_token_env"
+        mkdir -p "$output_dir/.managed"
+        _generate_github_mcp "$output_dir/.managed/github.json" "$github_token_env"
     else
-        rm -f "$project_dir/.managed/github.json"
+        if ! $dry_run; then
+            rm -f "$project_dir/.managed/github.json"
+        fi
     fi
 
     # Detect pack resource name conflicts (warning only, before compose generation)
@@ -272,7 +291,7 @@ EOF
     fi
 
     # ── Generate docker-compose.yml ──────────────────────────────────
-    local compose_file="$project_dir/docker-compose.yml"
+    local compose_file="$output_dir/docker-compose.yml"
 
     {
         cat <<YAML
@@ -373,7 +392,7 @@ YAML
         fi
 
         # Managed integrations directory (framework-generated, never edit manually)
-        if [[ -d "$project_dir/.managed" ]] && [[ -n "$(ls -A "$project_dir/.managed" 2>/dev/null)" ]]; then
+        if [[ -d "$output_dir/.managed" ]] && [[ -n "$(ls -A "$output_dir/.managed" 2>/dev/null)" ]]; then
             echo "      # Managed integrations"
             echo "      - ./.managed:/workspace/.managed:ro"
         fi
@@ -416,7 +435,7 @@ YAML
             echo "      # Docker socket"
             echo "      - /var/run/docker.sock:/var/run/docker.sock"
             # Policy file for socket proxy (if generated)
-            if [[ -f "$project_dir/.managed/policy.json" ]]; then
+            if [[ -f "$output_dir/.managed/policy.json" ]]; then
                 echo "      - ./.managed/policy.json:/etc/cco/policy.json:ro"
             fi
         fi
@@ -458,7 +477,7 @@ YAML
     } > "$compose_file"
 
     # Generate .claude/packs.md — instructional list of knowledge pack files
-    local packs_md="$project_dir/.claude/packs.md"
+    local packs_md="$output_dir/.claude/packs.md"
     if [[ -n "$pack_names" ]]; then
         local packs_md_lines=0
         {
@@ -492,31 +511,86 @@ YAML
     fi
 
     # Generate .claude/workspace.yml — structured project context for /init
-    _generate_workspace_yml "$project_dir" "$project_name" "$project_yml" "$pack_names"
+    _generate_workspace_yml "$output_dir" "$project_name" "$project_yml" "$pack_names"
 
-    # One-shot cleanup of legacy copied pack files (pre-ADR-14)
-    _clean_pack_manifest "$project_dir"
+    # One-shot cleanup of legacy copied pack files (pre-ADR-14) — skip in dry-run
+    if ! $dry_run; then
+        _clean_pack_manifest "$project_dir"
+    fi
 
     if $dry_run; then
+        # ── Structured dry-run summary ───────────────────────────────────
+        echo ""
+        info "${BOLD}Dry-run summary for '${project_name}'${NC}"
+        echo ""
+        info "  Image:          ${docker_image}"
+        info "  Auth:           ${auth_method}"
+        info "  Teammate mode:  ${teammate_mode}"
+        info "  Network:        ${network}"
+        info "  Docker socket:  ${mount_socket}"
+        if [[ "$mount_socket" == "true" ]]; then
+            local _pol="project_only"
+            _pol=$(yml_get_deep "$project_yml" "docker.containers.policy") || true
+            [[ -z "$_pol" ]] && _pol="project_only"
+            info "  Socket policy:  ${_pol}"
+        fi
         if [[ "$browser_enabled" == "true" ]]; then
-            info "Browser: ${browser_mode} mode (CDP proxy localhost:${browser_effective_port} → host:${browser_effective_port})"
+            info "  Browser:        ${browser_mode} mode (CDP port ${browser_effective_port})"
+        else
+            info "  Browser:        disabled"
         fi
-        info "Generated docker-compose.yml:"
-        echo "---"
-        cat "$compose_file"
-        if [[ "$browser_enabled" == "true" && -f "$project_dir/.managed/browser.json" ]]; then
-            echo ""
-            info "Generated .managed/browser.json:"
-            echo "---"
-            cat "$project_dir/.managed/browser.json"
+        if [[ "$github_enabled" == "true" ]]; then
+            info "  GitHub MCP:     enabled (token: \$${github_token_env})"
+        else
+            info "  GitHub MCP:     disabled"
         fi
-        if [[ "$github_enabled" == "true" && -f "$project_dir/.managed/github.json" ]]; then
-            echo ""
-            info "Generated .managed/github.json:"
-            echo "---"
-            cat "$project_dir/.managed/github.json"
+
+        # Ports
+        local all_ports=()
+        while IFS= read -r _p; do
+            [[ -z "$_p" ]] && continue
+            all_ports+=("$_p")
+        done <<< "$(yml_get_ports "$project_yml")"
+        for _p in "${extra_ports[@]+"${extra_ports[@]}"}"; do
+            all_ports+=("$_p")
+        done
+        if [[ ${#all_ports[@]} -gt 0 ]]; then
+            info "  Ports:          ${all_ports[*]}"
+        else
+            info "  Ports:          (none)"
         fi
-        [[ -f "$packs_md" ]] && { echo ""; info "Generated .claude/packs.md:"; echo "---"; cat "$packs_md"; }
+
+        # Repos
+        local _repos
+        _repos=$(yml_get_repos "$project_yml")
+        if [[ -n "$_repos" ]]; then
+            info "  Repos:"
+            while IFS=: read -r _rp _rn; do
+                [[ -z "$_rp" ]] && continue
+                info "    - ${_rn} (${_rp})"
+            done <<< "$_repos"
+        fi
+
+        # Packs
+        if [[ -n "$pack_names" ]]; then
+            info "  Packs:"
+            while IFS= read -r _pk; do
+                [[ -z "$_pk" ]] && continue
+                info "    - ${_pk}"
+            done <<< "$pack_names"
+        fi
+
+        echo ""
+        info "Generated files available at: ${output_dir}/"
+        echo ""
+        info "  docker-compose.yml"
+        [[ -f "$output_dir/.managed/policy.json" ]]  && info "  .managed/policy.json"
+        [[ -f "$output_dir/.managed/browser.json" ]]  && info "  .managed/browser.json"
+        [[ -f "$output_dir/.managed/github.json" ]]   && info "  .managed/github.json"
+        [[ -f "$packs_md" ]]                          && info "  .claude/packs.md"
+        [[ -f "$output_dir/.claude/workspace.yml" ]]  && info "  .claude/workspace.yml"
+        echo ""
+        info "Inspect with: cat ${output_dir}/docker-compose.yml"
         return 0
     fi
 
@@ -703,7 +777,15 @@ _generate_socket_policy() {
     local ct_labels
     ct_labels=$(yml_get_deep_map "$project_yml" "docker.containers.required_labels")
     if [[ -n "$ct_labels" ]]; then
-        ct_labels_json=$(echo "$ct_labels" | awk -F: '{printf "\"%s\":\"%s\"\n", $1, $2}' | jq -s 'from_entries')
+        ct_labels_json=$(echo "$ct_labels" | awk '{
+            # Split only on the first colon to preserve colons in values
+            idx = index($0, ":")
+            if (idx > 0) {
+                key = substr($0, 1, idx-1)
+                val = substr($0, idx+1)
+                printf "\"%s\":\"%s\"\n", key, val
+            }
+        }' | jq -s 'from_entries')
     else
         ct_labels_json="{\"cco.project\":\"${project_name}\"}"
     fi
@@ -715,27 +797,76 @@ _generate_socket_policy() {
     mt_force_ro=$(_parse_bool "$(yml_get_deep "$project_yml" "docker.mounts.force_readonly")" "false")
 
     # Mount allowed paths: for project_only, collect repo paths
+    # All paths are expanded (~ → /home/user) to match what Docker sends at runtime.
     local mt_allowed_json="[]"
     if [[ "$mt_policy" == "project_only" ]]; then
         local repo_paths
         repo_paths=$(yml_get_repos "$project_yml" | cut -d: -f1)
         if [[ -n "$repo_paths" ]]; then
-            mt_allowed_json=$(echo "$repo_paths" | jq -R . | jq -s .)
+            mt_allowed_json=$(while IFS= read -r _p; do
+                [[ -z "$_p" ]] && continue
+                expand_path "$_p"
+            done <<< "$repo_paths" | jq -R . | jq -s .)
         fi
     else
         local mt_allow
         mt_allow=$(yml_get_deep_list "$project_yml" "docker.mounts.allow")
         if [[ -n "$mt_allow" ]]; then
-            mt_allowed_json=$(echo "$mt_allow" | jq -R . | jq -s .)
+            mt_allowed_json=$(while IFS= read -r _p; do
+                [[ -z "$_p" ]] && continue
+                expand_path "$_p"
+            done <<< "$mt_allow" | jq -R . | jq -s .)
         fi
     fi
 
-    # Mount denied paths (explicit)
+    # Path map: container prefix → host path.  In Docker-from-Docker, bind
+    # mount paths reference the HOST filesystem, but shell expansion inside the
+    # container produces container-local paths (e.g. ~ → /home/claude).
+    # The proxy uses this map to translate container paths before validation
+    # AND before forwarding to the Docker daemon.
+    # Format: tab-separated lines "container_path\thost_path", fed to jq.
+    local mt_pathmap_json="{}"
+    local _pathmap_lines=""
+    # Map each repo: /workspace/<name> → expanded host path
+    local _repo_lines
+    _repo_lines=$(yml_get_repos "$project_yml")
+    if [[ -n "$_repo_lines" ]]; then
+        while IFS=: read -r _rp _rn; do
+            [[ -z "$_rp" ]] && continue
+            local _host_p
+            _host_p=$(expand_path "$_rp")
+            _pathmap_lines="${_pathmap_lines}/workspace/${_rn}"$'\t'"${_host_p}"$'\n'
+        done <<< "$_repo_lines"
+    fi
+    # Map extra_mounts: container target → expanded host source
+    local _extra_mounts
+    _extra_mounts=$(yml_get_extra_mounts "$project_yml" 2>/dev/null || true)
+    if [[ -n "$_extra_mounts" ]]; then
+        while IFS= read -r _em; do
+            [[ -z "$_em" ]] && continue
+            local _src="${_em%%:*}"
+            local _rest="${_em#*:}"
+            local _tgt="${_rest%%:*}"
+            _src=$(expand_path "$_src")
+            _pathmap_lines="${_pathmap_lines}${_tgt}"$'\t'"${_src}"$'\n'
+        done <<< "$_extra_mounts"
+    fi
+    # Map container home → host home (for ~/... expansion inside container)
+    _pathmap_lines="${_pathmap_lines}/home/claude"$'\t'"${HOME}"$'\n'
+    if [[ -n "$_pathmap_lines" ]]; then
+        mt_pathmap_json=$(printf '%s' "$_pathmap_lines" | grep -v '^$' | \
+            jq -R 'split("\t") | {key: .[0], value: .[1]}' | jq -s 'from_entries')
+    fi
+
+    # Mount denied paths (explicit) — expanded like allowed paths
     local mt_denied_json="[]"
     local mt_deny
     mt_deny=$(yml_get_deep_list "$project_yml" "docker.mounts.deny")
     if [[ -n "$mt_deny" ]]; then
-        mt_denied_json=$(echo "$mt_deny" | jq -R . | jq -s .)
+        mt_denied_json=$(while IFS= read -r _p; do
+            [[ -z "$_p" ]] && continue
+            expand_path "$_p"
+        done <<< "$mt_deny" | jq -R . | jq -s .)
     fi
 
     # Security policy
@@ -752,7 +883,7 @@ _generate_socket_policy() {
         sec_dropcaps_json=$(echo "$sec_dropcaps" | jq -R . | jq -s .)
     fi
 
-    # Resources
+    # Resources (docker.security.resources.*)
     local sec_memory sec_cpus sec_max_ct
     sec_memory=$(yml_get_deep4 "$project_yml" "docker.security.resources.memory")
     sec_cpus=$(yml_get_deep4 "$project_yml" "docker.security.resources.cpus")
@@ -806,7 +937,8 @@ _generate_socket_policy() {
       "/etc/shadow",
       "/etc/sudoers"
     ],
-    "force_readonly": ${mt_force_ro}
+    "force_readonly": ${mt_force_ro},
+    "path_map": ${mt_pathmap_json}
   },
   "security": {
     "no_privileged": ${sec_no_priv},

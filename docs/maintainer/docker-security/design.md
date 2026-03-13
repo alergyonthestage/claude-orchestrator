@@ -1,7 +1,7 @@
 # Design: Docker Socket Restriction & Network Hardening
 
 > **Version**: 1.0.0
-> **Status**: Design — pending approval
+> **Status**: Phase A & B implemented. Phase C pending.
 > **Date**: 2026-03-11
 > **Scope**: Sprint 6-Security
 > **Related**: [analysis.md](./analysis.md) | [security.md](../security.md) | [architecture.md](../architecture.md) | [docker/design.md](../docker/design.md)
@@ -756,8 +756,7 @@ When the proxy denies a request, it returns a Docker-compatible error:
 ```
 
 HTTP status codes:
-- `403 Forbidden` — policy violation
-- `429 Too Many Requests` — max_containers reached
+- `403 Forbidden` — policy violation (including max_containers reached)
 - `502 Bad Gateway` — upstream socket error
 
 ### 11.2 Startup Errors
@@ -918,6 +917,7 @@ docker:
 
 ### Phase C: Network Hardening
 
+- [ ] **Review default/bridge network policy**: Phase B allows `default`, `bridge`, `host`, `none` networks unconditionally in the proxy to support basic `docker run` without `--network`. Evaluate whether to restrict this — e.g., force `--network cc-<project>-*` for created containers, blocking `bridge`/`default` to prevent cross-project communication on the shared bridge network. Trade-off: stricter isolation vs usability (every `docker run` would require explicit `--network`).
 - [ ] Implement Squid config generation in `cmd-start.sh`
 - [ ] Generate `allowed_domains.txt` from project.yml
 - [ ] Generate `internal: true` network in compose

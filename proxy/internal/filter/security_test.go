@@ -42,9 +42,13 @@ func TestSecurityFilter_User(t *testing.T) {
 		{"", false},
 		{"0", false},
 		{"root", false},
+		{"0:1000", false},     // root UID with non-root GID
+		{"0:nogroup", false},  // root UID with named group
+		{"root:docker", false}, // root name with group
 		{"1000", true},
 		{"claude", true},
 		{"1000:1000", true},
+		{"claude:docker", true},
 	}
 
 	for _, tt := range tests {
@@ -87,6 +91,14 @@ func TestSecurityFilter_Capabilities(t *testing.T) {
 	// Case insensitive
 	if _, err := f.ValidateCapabilities([]string{"sys_admin"}); err == nil {
 		t.Error("expected error for sys_admin (lowercase)")
+	}
+
+	// Docker CLI v29+ sends capabilities with CAP_ prefix
+	if _, err := f.ValidateCapabilities([]string{"CAP_SYS_ADMIN"}); err == nil {
+		t.Error("expected error for CAP_SYS_ADMIN (with prefix)")
+	}
+	if _, err := f.ValidateCapabilities([]string{"CAP_NET_RAW"}); err != nil {
+		t.Errorf("expected allowed for CAP_NET_RAW (not in drop list), got: %v", err)
 	}
 }
 
@@ -171,5 +183,175 @@ func TestSecurityFilter_SensitiveMounts(t *testing.T) {
 	// Normal mount
 	if err := f.ValidateSensitiveMounts([]string{"/home/user:/app"}); err != nil {
 		t.Errorf("expected allowed, got: %v", err)
+	}
+}
+
+func TestSecurityFilter_SensitiveMounts_Disabled(t *testing.T) {
+	policy := &config.Policy{
+		ProjectName: "myapp",
+		Security:    config.SecurityPolicy{NoSensitiveMounts: false},
+	}
+	f := NewSecurityFilter(policy)
+
+	// When policy is disabled, even /proc should be allowed
+	if err := f.ValidateSensitiveMounts([]string{"/proc:/host/proc"}); err != nil {
+		t.Errorf("expected allowed when policy disabled, got: %v", err)
+	}
+}
+
+func TestSecurityFilter_SensitiveMounts_BareBind(t *testing.T) {
+	policy := &config.Policy{
+		ProjectName: "myapp",
+		Security:    config.SecurityPolicy{NoSensitiveMounts: true},
+	}
+	f := NewSecurityFilter(policy)
+
+	// Bare bind (no colon) should still be checked
+	if err := f.ValidateSensitiveMounts([]string{"/proc"}); err == nil {
+		t.Error("expected error for bare /proc mount")
+	}
+	if err := f.ValidateSensitiveMounts([]string{"/sys"}); err == nil {
+		t.Error("expected error for bare /sys mount")
+	}
+}
+
+func TestSecurityFilter_SensitiveMounts_SubPaths(t *testing.T) {
+	policy := &config.Policy{
+		ProjectName: "myapp",
+		Security:    config.SecurityPolicy{NoSensitiveMounts: true},
+	}
+	f := NewSecurityFilter(policy)
+
+	// /proc subpath should also be blocked
+	if err := f.ValidateSensitiveMounts([]string{"/proc/1/status:/status"}); err == nil {
+		t.Error("expected error for /proc subpath")
+	}
+
+	// /sys subpath
+	if err := f.ValidateSensitiveMounts([]string{"/sys/fs/cgroup:/cgroup"}); err == nil {
+		t.Error("expected error for /sys subpath")
+	}
+}
+
+func TestSecurityFilter_SensitiveMounts_EmptyList(t *testing.T) {
+	policy := &config.Policy{
+		ProjectName: "myapp",
+		Security:    config.SecurityPolicy{NoSensitiveMounts: true},
+	}
+	f := NewSecurityFilter(policy)
+
+	// Empty list should pass
+	if err := f.ValidateSensitiveMounts(nil); err != nil {
+		t.Errorf("expected allowed for nil binds, got: %v", err)
+	}
+	if err := f.ValidateSensitiveMounts([]string{}); err != nil {
+		t.Errorf("expected allowed for empty binds, got: %v", err)
+	}
+}
+
+func TestSecurityFilter_MaxContainers(t *testing.T) {
+	policy := &config.Policy{
+		ProjectName: "myapp",
+		Security:    config.SecurityPolicy{MaxContainers: 5},
+	}
+	f := NewSecurityFilter(policy)
+
+	if got := f.MaxContainers(); got != 5 {
+		t.Errorf("expected MaxContainers()=5, got %d", got)
+	}
+
+	// Zero means no explicit limit set
+	policy2 := &config.Policy{
+		ProjectName: "myapp",
+		Security:    config.SecurityPolicy{MaxContainers: 0},
+	}
+	f2 := NewSecurityFilter(policy2)
+	if got := f2.MaxContainers(); got != 0 {
+		t.Errorf("expected MaxContainers()=0, got %d", got)
+	}
+}
+
+func TestSecurityFilter_Memory_ZeroPolicy(t *testing.T) {
+	// Zero policy max means no limit enforced
+	policy := &config.Policy{
+		ProjectName: "myapp",
+		Security:    config.SecurityPolicy{MaxMemoryBytes: 0},
+	}
+	f := NewSecurityFilter(policy)
+
+	if err := f.ValidateMemory(99 * 1024 * 1024 * 1024); err != nil {
+		t.Errorf("expected allowed when policy has no memory limit, got: %v", err)
+	}
+}
+
+func TestSecurityFilter_Memory_ExactLimit(t *testing.T) {
+	policy := &config.Policy{
+		ProjectName: "myapp",
+		Security:    config.SecurityPolicy{MaxMemoryBytes: 1024},
+	}
+	f := NewSecurityFilter(policy)
+
+	// Exactly at limit should pass
+	if err := f.ValidateMemory(1024); err != nil {
+		t.Errorf("expected allowed at exact limit, got: %v", err)
+	}
+
+	// One byte over should fail
+	if err := f.ValidateMemory(1025); err == nil {
+		t.Error("expected error for one byte over limit")
+	}
+}
+
+func TestSecurityFilter_CPU_ExactLimit(t *testing.T) {
+	policy := &config.Policy{
+		ProjectName: "myapp",
+		Security:    config.SecurityPolicy{MaxNanoCPUs: 2000000000},
+	}
+	f := NewSecurityFilter(policy)
+
+	// Exactly at limit should pass
+	if err := f.ValidateCPU(2000000000); err != nil {
+		t.Errorf("expected allowed at exact limit, got: %v", err)
+	}
+
+	// One over should fail
+	if err := f.ValidateCPU(2000000001); err == nil {
+		t.Error("expected error for one nanoCPU over limit")
+	}
+}
+
+func TestSecurityFilter_Capabilities_EmptyDropList(t *testing.T) {
+	policy := &config.Policy{
+		ProjectName: "myapp",
+		Security:    config.SecurityPolicy{DropCapabilities: []string{}},
+	}
+	f := NewSecurityFilter(policy)
+
+	// With empty drop list, all capabilities should be allowed
+	caps, err := f.ValidateCapabilities([]string{"SYS_ADMIN", "NET_RAW"})
+	if err != nil {
+		t.Errorf("expected allowed with empty drop list, got: %v", err)
+	}
+	if len(caps) != 2 {
+		t.Errorf("expected 2 capabilities returned, got %d", len(caps))
+	}
+}
+
+func TestSecurityFilter_User_NonRootDisabled(t *testing.T) {
+	policy := &config.Policy{
+		ProjectName: "myapp",
+		Security:    config.SecurityPolicy{ForceNonRoot: false},
+	}
+	f := NewSecurityFilter(policy)
+
+	// When ForceNonRoot is false, even root should be allowed
+	if err := f.ValidateUser("root"); err != nil {
+		t.Errorf("expected root allowed when ForceNonRoot=false, got: %v", err)
+	}
+	if err := f.ValidateUser("0"); err != nil {
+		t.Errorf("expected uid 0 allowed when ForceNonRoot=false, got: %v", err)
+	}
+	if err := f.ValidateUser(""); err != nil {
+		t.Errorf("expected empty user allowed when ForceNonRoot=false, got: %v", err)
 	}
 }

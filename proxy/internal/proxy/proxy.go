@@ -70,21 +70,71 @@ func (p *Proxy) Init(ctx context.Context) error {
 	if err := p.cache.Refresh(); err != nil {
 		log.Printf("warning: initial cache refresh failed: %v", err)
 	}
-	p.cache.StartPeriodicRefresh(ctx, 30*time.Second)
 
-	// Count existing project containers and track their IDs
-	for _, info := range p.cache.All() {
+	// Reconcile container count with cache state
+	p.reconcileCount()
+
+	// Periodic refresh with count reconciliation
+	p.cache.StartPeriodicRefresh(ctx, 30*time.Second)
+	go p.periodicReconcile(ctx, 30*time.Second)
+
+	return nil
+}
+
+// reconcileCount synchronizes containerCount and trackedIDs with the actual
+// cache state. This handles containers removed outside the proxy (host cleanup,
+// Docker pruning, crashes) that would otherwise cause count drift.
+//
+// Semantics: max_containers budgets ALL running containers that match the
+// project policy, including pre-existing ones not created through the proxy.
+// This prevents the real container count from exceeding the policy limit
+// regardless of how containers were created.
+func (p *Proxy) reconcileCount() {
+	allContainers := p.cache.All()
+
+	// Build set of live container IDs that are allowed by policy
+	liveIDs := make(map[string]bool)
+	for _, info := range allContainers {
 		if p.containerFilter.IsAllowed(info) {
-			p.containerCount.Add(1)
-			p.trackedIDs.Store(info.ID, true)
-			// Also track by name for lookup flexibility
-			if info.Name != "" {
-				p.trackedIDs.Store(info.Name, true)
-			}
+			liveIDs[info.ID] = true
 		}
 	}
 
-	return nil
+	// Purge stale entries from trackedIDs (containers removed externally)
+	p.trackedIDs.Range(func(key, _ interface{}) bool {
+		id, ok := key.(string)
+		if !ok {
+			return true
+		}
+		// trackedIDs stores both IDs and names; only check IDs (64-char hex)
+		if len(id) == 64 && !liveIDs[id] {
+			p.trackedIDs.Delete(id)
+		}
+		return true
+	})
+
+	// Adopt any live allowed containers not yet tracked, and count all of them.
+	// This ensures pre-existing containers count against max_containers.
+	var count int32
+	for id := range liveIDs {
+		p.trackedIDs.Store(id, true)
+		count++
+	}
+
+	p.containerCount.Store(count)
+}
+
+func (p *Proxy) periodicReconcile(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			p.reconcileCount()
+		}
+	}
 }
 
 // ServeHTTP implements the http.Handler interface.
@@ -107,6 +157,11 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p.handleContainerOp(w, r, path)
 	case isContainerDelete(r.Method, path):
 		p.handleContainerDelete(w, r, path)
+	case isExecOp(r.Method, path):
+		// Exec endpoints (/exec/{id}/start, /exec/{id}/resize, /exec/{id}/json).
+		// The exec instance was created via POST /containers/{id}/exec which is
+		// already validated by handleContainerOp.  Allow the follow-up exec ops.
+		p.forward(w, r)
 	case isNetworkCreate(r.Method, path):
 		p.handleNetworkCreate(w, r)
 	case isNetworkConnect(r.Method, path):
@@ -115,6 +170,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p.handleNetworkList(w, r)
 	case isImageOp(path):
 		// Allow image operations (pull, build, list)
+		p.forward(w, r)
+	case isBuildKitOp(path):
+		// Allow BuildKit session/gRPC endpoints for docker build
 		p.forward(w, r)
 	case isVolumeOp(path):
 		// Allow volume operations
@@ -145,10 +203,18 @@ func (p *Proxy) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse create request
+	// Parse into typed struct for validation and into raw map for round-trip.
+	// The typed struct only declares fields the proxy inspects; marshaling it
+	// back would drop everything else (Image, Cmd, Env, ...).  The raw map
+	// preserves the full request so we only patch what we need.
 	var createReq createContainerRequest
 	if err := json.Unmarshal(body, &createReq); err != nil {
 		p.denyErr(w, r, "parse container create body", err)
+		return
+	}
+	var rawReq map[string]interface{}
+	if err := json.Unmarshal(body, &rawReq); err != nil {
+		p.denyErr(w, r, "parse container create body (raw)", err)
 		return
 	}
 
@@ -161,13 +227,15 @@ func (p *Proxy) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Inject required labels
-	if createReq.Labels == nil {
-		createReq.Labels = make(map[string]string)
+	// Inject required labels into the raw map (preserves all other fields)
+	rawLabels, _ := rawReq["Labels"].(map[string]interface{})
+	if rawLabels == nil {
+		rawLabels = make(map[string]interface{})
 	}
 	for k, v := range p.containerFilter.RequiredLabels() {
-		createReq.Labels[k] = v
+		rawLabels[k] = v
 	}
+	rawReq["Labels"] = rawLabels
 
 	// Validate privileged
 	if err := p.securityFilter.ValidatePrivileged(createReq.HostConfig.Privileged); err != nil {
@@ -181,7 +249,9 @@ func (p *Proxy) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate capabilities
+	// Validate capabilities.
+	// Docker CLI v29+ sends capabilities with CAP_ prefix (e.g. CAP_SYS_ADMIN);
+	// normalizeCap() in the security filter strips it for policy comparison.
 	if len(createReq.HostConfig.CapAdd) > 0 {
 		if _, err := p.securityFilter.ValidateCapabilities(createReq.HostConfig.CapAdd); err != nil {
 			p.deny(w, r, err.Error())
@@ -207,7 +277,7 @@ func (p *Proxy) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate bind mounts
+	// Validate bind mounts (path_map translation happens inside ValidateBind)
 	for _, bind := range createReq.HostConfig.Binds {
 		if err := p.mountFilter.ValidateBind(bind); err != nil {
 			p.deny(w, r, err.Error())
@@ -215,7 +285,7 @@ func (p *Proxy) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Validate Mounts array
+	// Validate Mounts array (path_map translation happens inside ValidateMount)
 	for _, mount := range createReq.HostConfig.Mounts {
 		if err := p.mountFilter.ValidateMount(mount.Source, mount.Type); err != nil {
 			p.deny(w, r, err.Error())
@@ -223,7 +293,29 @@ func (p *Proxy) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Force readonly if policy requires
+	// Rewrite mount paths: translate container-local paths to host paths so
+	// the Docker daemon (running on the host) receives valid host paths.
+	// This must happen AFTER validation and BEFORE forwarding.
+	bindRewritten := false
+	for i, bind := range createReq.HostConfig.Binds {
+		translated := p.mountFilter.TranslateBind(bind)
+		if translated != bind {
+			createReq.HostConfig.Binds[i] = translated
+			bindRewritten = true
+		}
+	}
+	mountRewritten := false
+	for i, mount := range createReq.HostConfig.Mounts {
+		if mount.Type == "bind" || mount.Type == "" {
+			translated := p.mountFilter.TranslatePath(mount.Source)
+			if translated != mount.Source {
+				createReq.HostConfig.Mounts[i].Source = translated
+				mountRewritten = true
+			}
+		}
+	}
+
+	// Force readonly if policy requires — patch both typed struct and raw map
 	if p.mountFilter.ShouldForceReadonly() {
 		for i, bind := range createReq.HostConfig.Binds {
 			if !strings.HasSuffix(bind, ":ro") {
@@ -232,6 +324,42 @@ func (p *Proxy) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 					createReq.HostConfig.Binds[i] = bind + ":ro"
 				} else if len(parts) == 3 && parts[2] != "ro" {
 					createReq.HostConfig.Binds[i] = parts[0] + ":" + parts[1] + ":ro"
+				}
+			}
+		}
+		bindRewritten = true
+
+		// Force readonly on Mounts array too (Docker CLI v29+ sends -v as Mounts)
+		for i := range createReq.HostConfig.Mounts {
+			if createReq.HostConfig.Mounts[i].Type == "bind" || createReq.HostConfig.Mounts[i].Type == "" {
+				createReq.HostConfig.Mounts[i].ReadOnly = true
+			}
+		}
+		mountRewritten = true
+	}
+
+	// Sync rewritten Binds back to raw map
+	if bindRewritten {
+		if hc, ok := rawReq["HostConfig"].(map[string]interface{}); ok {
+			rawBinds := make([]interface{}, len(createReq.HostConfig.Binds))
+			for i, b := range createReq.HostConfig.Binds {
+				rawBinds[i] = b
+			}
+			hc["Binds"] = rawBinds
+		}
+	}
+
+	// Sync rewritten Mounts back to raw map (Source and ReadOnly)
+	if mountRewritten {
+		if hc, ok := rawReq["HostConfig"].(map[string]interface{}); ok {
+			if rawMounts, ok := hc["Mounts"].([]interface{}); ok {
+				for i, mount := range createReq.HostConfig.Mounts {
+					if i < len(rawMounts) {
+						if rm, ok := rawMounts[i].(map[string]interface{}); ok {
+							rm["Source"] = mount.Source
+							rm["ReadOnly"] = mount.ReadOnly
+						}
+					}
 				}
 			}
 		}
@@ -247,8 +375,8 @@ func (p *Proxy) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Re-serialize the modified body
-	modifiedBody, err := json.Marshal(createReq)
+	// Re-serialize from the raw map (preserves Image, Cmd, Env, and all other fields)
+	modifiedBody, err := json.Marshal(rawReq)
 	if err != nil {
 		p.denyErr(w, r, "serialize modified request", err)
 		return
@@ -356,6 +484,17 @@ func (p *Proxy) handleContainerOp(w http.ResponseWriter, r *http.Request, path s
 		return
 	}
 
+	// Allow BuildKit builder containers — these are managed by Docker/buildx
+	// for `docker build` and are not created through the proxy.
+	// Only bypass if the container is NOT in our tracked set (i.e., it was
+	// created by buildx, not by the user naming a container buildx_buildkit_*).
+	if isBuildKitContainer(idOrName) {
+		if _, tracked := p.trackedIDs.Load(idOrName); !tracked {
+			p.forward(w, r)
+			return
+		}
+	}
+
 	info, found := p.cache.Resolve(idOrName)
 	if !found {
 		// Try refreshing cache for newly created containers
@@ -374,6 +513,13 @@ func (p *Proxy) handleContainerOp(w http.ResponseWriter, r *http.Request, path s
 	}
 
 	p.forward(w, r)
+}
+
+// isBuildKitContainer returns true if the ID/name matches a BuildKit builder
+// container pattern.  These containers are created by Docker/buildx for
+// `docker build` and must be accessible for builds to work.
+func isBuildKitContainer(idOrName string) bool {
+	return strings.HasPrefix(idOrName, "buildx_buildkit_")
 }
 
 // handleContainerDelete handles DELETE /containers/{id}.
@@ -493,8 +639,11 @@ func (p *Proxy) isNetworkAllowed(name string) bool {
 	if len(p.policy.Networks.AllowedPrefixes) == 0 {
 		return true
 	}
-	// Always allow default Docker networks
-	if name == "bridge" || name == "host" || name == "none" {
+	// Allow safe default Docker networks.
+	// "host" is NOT allowed by default — it gives full access to the host
+	// network namespace in Docker-from-Docker, bypassing network isolation.
+	// "default" is used by Docker API when no --network is specified.
+	if name == "bridge" || name == "none" || name == "default" {
 		return true
 	}
 	for _, prefix := range p.policy.Networks.AllowedPrefixes {
@@ -591,9 +740,10 @@ type createContainerRequest struct {
 		Memory     int64    `json:"Memory,omitempty"`
 		NanoCPUs   int64    `json:"NanoCpus,omitempty"`
 		Mounts     []struct {
-			Type   string `json:"Type,omitempty"`
-			Source string `json:"Source,omitempty"`
-			Target string `json:"Target,omitempty"`
+			Type     string `json:"Type,omitempty"`
+			Source   string `json:"Source,omitempty"`
+			Target   string `json:"Target,omitempty"`
+			ReadOnly bool   `json:"ReadOnly,omitempty"`
 		} `json:"Mounts,omitempty"`
 	} `json:"HostConfig,omitempty"`
 
@@ -601,3 +751,4 @@ type createContainerRequest struct {
 		EndpointsConfig map[string]interface{} `json:"EndpointsConfig,omitempty"`
 	} `json:"NetworkingConfig,omitempty"`
 }
+

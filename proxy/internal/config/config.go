@@ -28,11 +28,12 @@ type ContainerPolicy struct {
 
 // MountPolicy controls which host paths can be mounted in created containers.
 type MountPolicy struct {
-	Policy       string   `json:"policy"`        // none, project_only, allowlist, any
-	AllowedPaths []string `json:"allowed_paths"`
-	DeniedPaths  []string `json:"denied_paths"`
-	ImplicitDeny []string `json:"implicit_deny"`
-	ForceReadonly bool    `json:"force_readonly"`
+	Policy       string            `json:"policy"`        // none, project_only, allowlist, any
+	AllowedPaths []string          `json:"allowed_paths"`
+	DeniedPaths  []string          `json:"denied_paths"`
+	ImplicitDeny []string          `json:"implicit_deny"`
+	ForceReadonly bool             `json:"force_readonly"`
+	PathMap      map[string]string `json:"path_map"`      // container prefix → host path (for DfD translation)
 }
 
 // SecurityPolicy controls security constraints on created containers.

@@ -77,7 +77,9 @@ RUN if [ -n "$SETUP_SCRIPT_CONTENT" ]; then \
     fi
 
 # ── User setup ───────────────────────────────────────────────────────
-RUN useradd -m -s /bin/bash claude \
+# Pre-create docker group with placeholder GID (adjusted at runtime by entrypoint)
+RUN groupadd -g 999 docker \
+    && useradd -m -s /bin/bash claude \
     && mkdir -p /home/claude/.claude /workspace \
     && chown -R claude:claude /home/claude /workspace
 
@@ -103,13 +105,17 @@ The entrypoint handles Docker socket permissions, GitHub/git authentication, MCP
 set -e
 
 # ── Docker socket permissions ────────────────────────────────────────
-# Match container's docker group GID to host's socket GID
+# Match container's docker group GID to host's socket GID.
+# The docker group is pre-created in the Dockerfile (GID 999 placeholder).
+# Here we adjust its GID to match the host socket.
 if [ -S /var/run/docker.sock ]; then
     SOCKET_GID=$(stat -c '%g' /var/run/docker.sock)
     if [ "$SOCKET_GID" != "0" ]; then
-        # Create or modify docker group to match host GID
         if getent group docker > /dev/null 2>&1; then
-            groupmod -g "$SOCKET_GID" docker
+            CURRENT_GID=$(getent group docker | cut -d: -f3)
+            if [ "$CURRENT_GID" != "$SOCKET_GID" ]; then
+                groupmod -g "$SOCKET_GID" docker
+            fi
         else
             groupadd -g "$SOCKET_GID" docker
         fi
