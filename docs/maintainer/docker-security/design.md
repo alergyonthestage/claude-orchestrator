@@ -1,7 +1,7 @@
 # Design: Docker Socket Restriction & Network Hardening
 
 > **Version**: 1.0.0
-> **Status**: Design — pending approval
+> **Status**: Phase A & B implemented. Phase C pending.
 > **Date**: 2026-03-11
 > **Scope**: Sprint 6-Security
 > **Related**: [analysis.md](./analysis.md) | [security.md](../security.md) | [architecture.md](../architecture.md) | [docker/design.md](../docker/design.md)
@@ -756,8 +756,7 @@ When the proxy denies a request, it returns a Docker-compatible error:
 ```
 
 HTTP status codes:
-- `403 Forbidden` — policy violation
-- `429 Too Many Requests` — max_containers reached
+- `403 Forbidden` — policy violation (including max_containers reached)
 - `502 Bad Gateway` — upstream socket error
 
 ### 11.2 Startup Errors

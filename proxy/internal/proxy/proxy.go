@@ -84,6 +84,11 @@ func (p *Proxy) Init(ctx context.Context) error {
 // reconcileCount synchronizes containerCount and trackedIDs with the actual
 // cache state. This handles containers removed outside the proxy (host cleanup,
 // Docker pruning, crashes) that would otherwise cause count drift.
+//
+// Semantics: max_containers budgets ALL running containers that match the
+// project policy, including pre-existing ones not created through the proxy.
+// This prevents the real container count from exceeding the policy limit
+// regardless of how containers were created.
 func (p *Proxy) reconcileCount() {
 	allContainers := p.cache.All()
 
@@ -95,7 +100,7 @@ func (p *Proxy) reconcileCount() {
 		}
 	}
 
-	// Remove tracked IDs that no longer exist in the cache
+	// Purge stale entries from trackedIDs (containers removed externally)
 	p.trackedIDs.Range(func(key, _ interface{}) bool {
 		id, ok := key.(string)
 		if !ok {
@@ -108,20 +113,12 @@ func (p *Proxy) reconcileCount() {
 		return true
 	})
 
-	// Recount: number of live containers that are tracked by us
+	// Adopt any live allowed containers not yet tracked, and count all of them.
+	// This ensures pre-existing containers count against max_containers.
 	var count int32
 	for id := range liveIDs {
-		if _, tracked := p.trackedIDs.Load(id); tracked {
-			count++
-		}
-	}
-
-	// Also count containers that match policy but weren't tracked yet (pre-existing)
-	for id := range liveIDs {
-		if _, tracked := p.trackedIDs.Load(id); !tracked {
-			p.trackedIDs.Store(id, true)
-			count++
-		}
+		p.trackedIDs.Store(id, true)
+		count++
 	}
 
 	p.containerCount.Store(count)
