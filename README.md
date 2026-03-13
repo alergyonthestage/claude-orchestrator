@@ -88,7 +88,7 @@ bin/cco start my-app
 | **User guides** | [user-guides/](docs/user-guides/) — Project setup, packs, auth, agent teams, browser, sharing |
 | **Technical reference** | [reference/](docs/reference/) — CLI commands, project.yml format, context hierarchy |
 | **Contributing** | [maintainer/](docs/maintainer/) — Architecture, spec, roadmap, design docs |
-| **Security** | [maintainer/security.md](docs/maintainer/security.md) — Threat model, findings, fix priority |
+| **Security** | [maintainer/security.md](docs/maintainer/architecture/security.md) — Threat model, findings, fix priority |
 
 Full index: [docs/README.md](docs/README.md)
 
@@ -123,4 +123,4 @@ Or per-session: `cco start my-project --no-docker`
 
 Secrets (API keys, tokens) should go in `secrets.env` files (gitignored, `chmod 600`), never in `setup.sh` (which is baked into the Docker image and visible via `docker history`).
 
-For the full threat model and security analysis, see [docs/maintainer/security.md](docs/maintainer/security.md).
+For the full threat model and security analysis, see [docs/maintainer/architecture/security.md](docs/maintainer/architecture/security.md).

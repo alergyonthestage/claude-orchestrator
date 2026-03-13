@@ -2,7 +2,7 @@
 
 > Version: 1.1.0
 > Status: v1.1 — Merged from context.md + context-loading.md
-> Related: [architecture.md](../maintainer/architecture.md) | [spec.md](../maintainer/spec.md)
+> Related: [architecture.md](../maintainer/architecture/architecture.md) | [spec.md](../maintainer/architecture/spec.md)
 
 Complete reference for the context hierarchy, settings resolution, configuration
 files, and the full loading lifecycle — from `cco start` through session runtime.
@@ -11,7 +11,7 @@ files, and the full loading lifecycle — from `cco start` through session runti
 
 ## 1. Overview
 
-Claude Code loads configuration from multiple locations with a fixed precedence. The orchestrator maps its four-tier config (managed → global → project → repo) onto Claude Code's native hierarchy so that everything "just works" without hacks. See [scope-design.md](../maintainer/scope-hierarchy/design.md) for the complete design document.
+Claude Code loads configuration from multiple locations with a fixed precedence. The orchestrator maps its four-tier config (managed → global → project → repo) onto Claude Code's native hierarchy so that everything "just works" without hacks. See [scope-design.md](../maintainer/configuration/scope-hierarchy/design.md) for the complete design document.
 
 ---
 
@@ -414,7 +414,7 @@ Claude Code loads subagents from (highest to lowest priority):
 2. `/workspace/.claude/agents/` — Project-level (our `user-config/projects/<n>/.claude/agents/` + pack agents)
 3. `~/.claude/agents/` — User-level (our `user-config/global/.claude/agents/`)
 
-Project agents take precedence over user agents with the same name. See [scope-design.md §3.4](../maintainer/scope-hierarchy/design.md) for details.
+Project agents take precedence over user agents with the same name. See [scope-design.md §3.4](../maintainer/configuration/scope-hierarchy/design.md) for details.
 
 ### 6.2 Default Agents
 
@@ -482,7 +482,7 @@ User skills live in `defaults/global/.claude/skills/`, copied once to `user-conf
 
 ### 7.5 Project-Specific Skills
 
-Projects can add custom skills in `user-config/projects/<name>/.claude/skills/`. These are mounted read-write at `/workspace/.claude/skills/`. **Note**: For skills, User > Project — user-level skills take precedence over project-level skills with the same name. Packs can add new skills but cannot override existing global ones. See [scope-design.md §3.5](../maintainer/scope-hierarchy/design.md) for details.
+Projects can add custom skills in `user-config/projects/<name>/.claude/skills/`. These are mounted read-write at `/workspace/.claude/skills/`. **Note**: For skills, User > Project — user-level skills take precedence over project-level skills with the same name. Packs can add new skills but cannot override existing global ones. See [scope-design.md §3.5](../maintainer/configuration/scope-hierarchy/design.md) for details.
 
 ---
 

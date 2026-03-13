@@ -120,7 +120,7 @@ The Docker container is claude-orchestrator's isolation mechanism. Claude Code i
 
 The only privileged access point is the Docker socket mounted from the host, which allows Claude to create sibling containers (e.g., postgres, redis) on the host Docker daemon.
 
-Learn more: [architecture.md](../maintainer/architecture.md) (ADR-1: Docker as the Only Sandbox).
+Learn more: [architecture.md](../maintainer/architecture/architecture.md) (ADR-1: Docker as the Only Sandbox).
 
 ---
 

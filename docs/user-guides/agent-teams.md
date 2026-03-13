@@ -2,7 +2,7 @@
 
 > Version: 1.1.0
 > Status: v1.1 — Updated with copy-paste guide
-> Related: [architecture.md](../maintainer/architecture.md) | [subagents.md](./advanced/subagents.md)
+> Related: [architecture.md](../maintainer/architecture/architecture.md) | [subagents.md](./advanced/subagents.md)
 
 ---
 
