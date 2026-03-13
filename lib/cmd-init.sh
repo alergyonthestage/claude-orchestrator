@@ -102,6 +102,9 @@ EOF
         ) | _generate_cco_meta "$meta_file" "$latest_schema" "$now" \
             "$comm_lang" "$docs_lang" "$code_lang"
 
+        # Save base versions for future 3-way merge
+        _save_all_base_versions "$GLOBAL_DIR/.claude/.cco-base" "$DEFAULTS_DIR/global/.claude" "global"
+
         # Run all migrations (marks schema as current — fresh install, nothing to migrate)
         _run_migrations "global" "$GLOBAL_DIR/.claude" 0 "$meta_file"
     fi
