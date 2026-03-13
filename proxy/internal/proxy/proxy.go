@@ -199,9 +199,15 @@ func (p *Proxy) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate capabilities
-	if len(createReq.HostConfig.CapAdd) > 0 {
-		if _, err := p.securityFilter.ValidateCapabilities(createReq.HostConfig.CapAdd); err != nil {
+	// Validate capabilities — inspect both typed struct and raw map.
+	// Docker CLI v29+ may send CapAdd in a different casing or location
+	// than our typed struct captures, so fall back to the raw map.
+	capAdd := createReq.HostConfig.CapAdd
+	if len(capAdd) == 0 {
+		capAdd = extractCapAddFromRaw(rawReq)
+	}
+	if len(capAdd) > 0 {
+		if _, err := p.securityFilter.ValidateCapabilities(capAdd); err != nil {
 			p.deny(w, r, err.Error())
 			return
 		}
@@ -276,6 +282,14 @@ func (p *Proxy) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		bindRewritten = true
+
+		// Force readonly on Mounts array too (Docker CLI v29+ sends -v as Mounts)
+		for i := range createReq.HostConfig.Mounts {
+			if createReq.HostConfig.Mounts[i].Type == "bind" || createReq.HostConfig.Mounts[i].Type == "" {
+				createReq.HostConfig.Mounts[i].ReadOnly = true
+			}
+		}
+		mountRewritten = true
 	}
 
 	// Sync rewritten Binds back to raw map
@@ -289,7 +303,7 @@ func (p *Proxy) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Sync rewritten Mounts back to raw map
+	// Sync rewritten Mounts back to raw map (Source and ReadOnly)
 	if mountRewritten {
 		if hc, ok := rawReq["HostConfig"].(map[string]interface{}); ok {
 			if rawMounts, ok := hc["Mounts"].([]interface{}); ok {
@@ -297,6 +311,7 @@ func (p *Proxy) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 					if i < len(rawMounts) {
 						if rm, ok := rawMounts[i].(map[string]interface{}); ok {
 							rm["Source"] = mount.Source
+							rm["ReadOnly"] = mount.ReadOnly
 						}
 					}
 				}
@@ -673,13 +688,68 @@ type createContainerRequest struct {
 		Memory     int64    `json:"Memory,omitempty"`
 		NanoCPUs   int64    `json:"NanoCpus,omitempty"`
 		Mounts     []struct {
-			Type   string `json:"Type,omitempty"`
-			Source string `json:"Source,omitempty"`
-			Target string `json:"Target,omitempty"`
+			Type     string `json:"Type,omitempty"`
+			Source   string `json:"Source,omitempty"`
+			Target   string `json:"Target,omitempty"`
+			ReadOnly bool   `json:"ReadOnly,omitempty"`
 		} `json:"Mounts,omitempty"`
 	} `json:"HostConfig,omitempty"`
 
 	NetworkingConfig struct {
 		EndpointsConfig map[string]interface{} `json:"EndpointsConfig,omitempty"`
 	} `json:"NetworkingConfig,omitempty"`
+}
+
+// extractCapAddFromRaw looks for capability additions in the raw request map.
+// Docker CLI may send CapAdd in various casings or locations depending on
+// the API version and client implementation.
+func extractCapAddFromRaw(rawReq map[string]interface{}) []string {
+	hc, ok := rawReq["HostConfig"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	// Try known field names for capabilities
+	for _, key := range []string{"CapAdd", "capAdd", "cap_add"} {
+		if v, ok := hc[key]; ok {
+			return toStringSlice(v)
+		}
+	}
+	return nil
+}
+
+// extractBindsFromRaw extracts bind mounts from the raw HostConfig.
+// Docker CLI v29+ may send -v mounts in the Mounts array instead of Binds.
+func extractBindsFromRaw(rawReq map[string]interface{}) (binds []string, mounts []map[string]interface{}) {
+	hc, ok := rawReq["HostConfig"].(map[string]interface{})
+	if !ok {
+		return nil, nil
+	}
+
+	if rawBinds, ok := hc["Binds"]; ok {
+		binds = toStringSlice(rawBinds)
+	}
+
+	if rawMounts, ok := hc["Mounts"].([]interface{}); ok {
+		for _, m := range rawMounts {
+			if mm, ok := m.(map[string]interface{}); ok {
+				mounts = append(mounts, mm)
+			}
+		}
+	}
+	return binds, mounts
+}
+
+func toStringSlice(v interface{}) []string {
+	arr, ok := v.([]interface{})
+	if !ok {
+		return nil
+	}
+	result := make([]string, 0, len(arr))
+	for _, item := range arr {
+		if s, ok := item.(string); ok {
+			result = append(result, s)
+		}
+	}
+	return result
 }
