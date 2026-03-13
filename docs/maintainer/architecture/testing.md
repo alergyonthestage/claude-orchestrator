@@ -1,6 +1,6 @@
 # Testing Strategy
 
-> Related: [roadmap.md](roadmap.md) | [spec.md](spec.md)
+> Related: [roadmap.md](../decisions/roadmap.md) | [spec.md](spec.md)
 
 ---
 
@@ -70,7 +70,7 @@ Will test real container behavior: entrypoint execution, volume mounts, socket p
 **Planned runner**: `bin/test-e2e` (separate from `bin/test`)
 **Planned location**: `tests/e2e/`
 **Requires**: Docker daemon available, built image
-**See**: [roadmap.md — Sprint 8-E2E](roadmap.md) for full scope
+**See**: [roadmap.md — Sprint 8-E2E](../decisions/roadmap.md) for full scope
 
 ---
 
