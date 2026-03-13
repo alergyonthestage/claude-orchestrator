@@ -113,8 +113,8 @@ test_update_keep_preserves() {
     cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
 }
 
-test_update_backup_creates_bak() {
-    # --backup creates .bak file and overwrites
+test_update_replace_creates_bak() {
+    # --replace creates .bak file and overwrites with new default
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
@@ -123,8 +123,8 @@ test_update_backup_creates_bak() {
     printf '\n# My custom rule\n' >> "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
     printf '\n# Framework update\n' >> "$REPO_ROOT/defaults/global/.claude/rules/workflow.md"
 
-    run_cco update --backup
-    # Backup should exist
+    run_cco update --replace
+    # Backup should exist with user's version
     assert_file_exists "$CCO_GLOBAL_DIR/.claude/rules/workflow.md.bak"
     assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md.bak" "My custom rule"
     # Updated file should have framework changes

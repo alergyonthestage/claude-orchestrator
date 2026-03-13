@@ -34,14 +34,13 @@ GLOBAL_FILE_POLICIES=(
     "setup-build.sh:user-owned"
 )
 
+# Note: only .claude/ files are tracked here. Root files (project.yml, setup.sh,
+# secrets.env, mcp-packages.txt) are handled by PROJECT_ROOT_COPY_IF_MISSING —
+# they are copied once if missing but never overwritten by the update system.
 PROJECT_FILE_POLICIES=(
     ".claude/CLAUDE.md:user-owned"
     ".claude/settings.json:tracked"
     ".claude/rules/language.md:user-owned"
-    "project.yml:tracked"
-    "setup.sh:user-owned"
-    "secrets.env:user-owned"
-    "mcp-packages.txt:tracked"
 )
 
 # Derived lists for _collect_file_changes().
@@ -152,7 +151,7 @@ _merge_file() {
     cp "$base" "$tmpdir/base"
     cp "$new" "$tmpdir/new"
 
-    # Run 3-way merge. Exit code: 0=clean, >0=conflicts, <0=error
+    # Run 3-way merge. Exit code: 0=clean, 1..127=conflicts, >=128=error/signal
     git merge-file --diff3 \
         -L "your version" -L "previous default" -L "new default" \
         "$tmpdir/current" "$tmpdir/base" "$tmpdir/new" 2>/dev/null
@@ -163,10 +162,10 @@ _merge_file() {
 
     if [[ $exit_code -eq 0 ]]; then
         return 0  # Clean merge
-    elif [[ $exit_code -gt 0 ]]; then
-        return 1  # Conflicts exist
+    elif [[ $exit_code -lt 128 ]]; then
+        return 1  # Conflicts exist (exit code = number of conflict markers)
     else
-        return 2  # Error
+        return 2  # Error (signal/crash, git merge-file failed)
     fi
 }
 
@@ -432,6 +431,7 @@ _collect_file_changes() {
 # Reads "STATUS\tpath" lines from first argument (string).
 # Returns updated manifest entries via _UPDATE_MANIFEST_ENTRIES (newline-separated "path\thash").
 _UPDATE_MANIFEST_ENTRIES=""
+_LAST_RESOLVE_AUTOMERGE=false  # set by _resolve_with_merge for counter tracking
 
 _apply_file_changes() {
     local changes="$1"
@@ -473,9 +473,9 @@ _apply_file_changes() {
                 _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                 ;;
             CONFLICT)
-                conflicts=$(( conflicts + 1 ))
                 case "$mode" in
                     force)
+                        conflicts=$(( conflicts + 1 ))
                         if [[ "$dry_run" == "true" ]]; then
                             info "  ! $rel_path (conflict → force overwrite)"
                         else
@@ -490,6 +490,7 @@ _apply_file_changes() {
                         _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                         ;;
                     keep)
+                        conflicts=$(( conflicts + 1 ))
                         if [[ "$dry_run" == "true" ]]; then
                             info "  ≡ $rel_path (conflict → keep user version)"
                         else
@@ -500,6 +501,7 @@ _apply_file_changes() {
                         _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                         ;;
                     replace)
+                        conflicts=$(( conflicts + 1 ))
                         if [[ "$dry_run" == "true" ]]; then
                             info "  ↻ $rel_path (conflict → replace + backup)"
                         else
@@ -524,15 +526,24 @@ _apply_file_changes() {
                                 merge_out=$(mktemp)
                                 if _merge_file "$installed_dir/$rel_path" "$base_file" "$defaults_dir/$rel_path" "$merge_out"; then
                                     info "  ✓ $rel_path (auto-merge, no conflicts)"
+                                    merged=$(( merged + 1 ))
                                 else
                                     info "  ? $rel_path (merge has conflicts — needs resolution)"
+                                    conflicts=$(( conflicts + 1 ))
                                 fi
                                 rm -f "$merge_out"
                             else
                                 info "  ? $rel_path (both changed — needs resolution)"
+                                conflicts=$(( conflicts + 1 ))
                             fi
                         else
+                            _LAST_RESOLVE_AUTOMERGE=false
                             _resolve_with_merge "$rel_path" "$defaults_dir" "$installed_dir" "$base_dir" "$no_backup"
+                            if $_LAST_RESOLVE_AUTOMERGE; then
+                                merged=$(( merged + 1 ))
+                            else
+                                conflicts=$(( conflicts + 1 ))
+                            fi
                         fi
                         ;;
                 esac
@@ -615,6 +626,7 @@ _resolve_with_merge() {
 
     if [[ $merge_result -eq 0 ]]; then
         # Clean merge — auto-apply with backup
+        _LAST_RESOLVE_AUTOMERGE=true
         if [[ "$no_backup" != "true" ]]; then
             cp "$installed_dir/$rel_path" "$installed_dir/${rel_path}.bak"
         fi
@@ -684,8 +696,10 @@ _resolve_with_merge() {
                 _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                 ;;
             s)
-                info "  Skipped $rel_path (will be flagged again next update)"
-                local h; h=$(_file_hash "$installed_dir/$rel_path")
+                # Save default hash so: if default changes again → new CONFLICT,
+                # if default stays same → USER_MODIFIED (skipped silently)
+                info "  Skipped $rel_path (will be flagged if defaults change again)"
+                local h; h=$(_file_hash "$defaults_dir/$rel_path")
                 _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                 ;;
             *)
@@ -741,8 +755,10 @@ _resolve_conflict_interactive() {
             _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
             ;;
         s)
-            info "  Skipped $rel_path (will be flagged again next update)"
-            local h; h=$(_file_hash "$installed_dir/$rel_path")
+            # Save default hash so: if default changes again → new CONFLICT,
+            # if default stays same → USER_MODIFIED (skipped silently)
+            info "  Skipped $rel_path (will be flagged if defaults change again)"
+            local h; h=$(_file_hash "$defaults_dir/$rel_path")
             _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
             ;;
         *)

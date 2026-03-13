@@ -90,7 +90,7 @@ EOF
 
 # Find and remove .bak files in a directory.
 # Usage: _clean_dir <dir> <dry_run> <label>
-# Returns: count of files found
+# Prints count to stdout (for capture). Messages go to stderr.
 _clean_dir() {
     local dir="$1"
     local dry_run="$2"
@@ -103,7 +103,7 @@ _clean_dir() {
         count=$((count + 1))
         local rel="${bakfile#$dir/}"
         if $dry_run; then
-            echo "  [$label] $rel"
+            echo "  [$label] $rel" >&2
         else
             rm -f "$bakfile"
         fi
