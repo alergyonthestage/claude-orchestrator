@@ -153,6 +153,12 @@ func (p *Proxy) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Debug: log content-type and body length for diagnosis
+	if p.logDenied {
+		log.Printf("DEBUG create: Content-Type=%s Content-Encoding=%s Content-Length=%d body_len=%d",
+			r.Header.Get("Content-Type"), r.Header.Get("Content-Encoding"), r.ContentLength, len(body))
+	}
+
 	// Parse into typed struct for validation and into raw map for round-trip.
 	// The typed struct only declares fields the proxy inspects; marshaling it
 	// back would drop everything else (Image, Cmd, Env, ...).  The raw map
@@ -205,6 +211,33 @@ func (p *Proxy) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 	capAdd := createReq.HostConfig.CapAdd
 	if len(capAdd) == 0 {
 		capAdd = extractCapAddFromRaw(rawReq)
+	}
+	// Debug: log HostConfig keys for diagnosis
+	if p.logDenied {
+		if hc, ok := rawReq["HostConfig"].(map[string]interface{}); ok {
+			keys := make([]string, 0, len(hc))
+			for k := range hc {
+				keys = append(keys, k)
+			}
+			log.Printf("DEBUG create: HostConfig keys=%v", keys)
+			log.Printf("DEBUG create: typed CapAdd=%v Privileged=%v Memory=%d NanoCPUs=%d",
+				createReq.HostConfig.CapAdd, createReq.HostConfig.Privileged,
+				createReq.HostConfig.Memory, createReq.HostConfig.NanoCPUs)
+			// Log all cap-related keys
+			for k, v := range hc {
+				if strings.Contains(strings.ToLower(k), "cap") {
+					log.Printf("DEBUG create: HostConfig[%q] = %v (type: %T)", k, v, v)
+				}
+			}
+		} else {
+			log.Printf("DEBUG create: no HostConfig in raw map (rawReq keys: %v)", func() []string {
+				keys := make([]string, 0, len(rawReq))
+				for k := range rawReq {
+					keys = append(keys, k)
+				}
+				return keys
+			}())
+		}
 	}
 	if len(capAdd) > 0 {
 		if _, err := p.securityFilter.ValidateCapabilities(capAdd); err != nil {
@@ -270,6 +303,10 @@ func (p *Proxy) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Force readonly if policy requires — patch both typed struct and raw map
+	if p.logDenied {
+		log.Printf("DEBUG mounts: force_readonly=%v Binds=%v Mounts_count=%d",
+			p.mountFilter.ShouldForceReadonly(), createReq.HostConfig.Binds, len(createReq.HostConfig.Mounts))
+	}
 	if p.mountFilter.ShouldForceReadonly() {
 		for i, bind := range createReq.HostConfig.Binds {
 			if !strings.HasSuffix(bind, ":ro") {
