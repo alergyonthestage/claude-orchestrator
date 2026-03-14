@@ -74,7 +74,7 @@ Getting Started:
   init                   Initialize user config from defaults
   build                  Build/rebuild the Docker image
   update                 Update config from defaults (with migrations)
-  clean                  Remove .bak files created by update
+  clean                  Clean up .bak, .tmp/, docker-compose.yml
 
 Sessions:
   start <project>        Start a session for a configured project
