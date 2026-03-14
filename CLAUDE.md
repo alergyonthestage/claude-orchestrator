@@ -61,7 +61,6 @@ cco template remove <name>   # Remove a user template
 cco update                   # Update config (3-way merge with .bak backup)
 cco update --all             # Update global + all projects
 cco update --project <name>  # Update specific project
-cco update --sync-templates  # Also propagate changes from user-authored templates
 cco update --dry-run         # Preview changes without modifying
 cco clean                    # Remove .bak files from update
 cco clean --tmp              # Remove .tmp/ dirs (dry-run artifacts)
@@ -167,7 +166,7 @@ When a feature changes the structure of user-facing config files (`project.yml`,
 - New optional sections/keys in `project.yml` → update `templates/project/base/project.yml`; 3-way merge propagates automatically
 - Renamed/moved keys in `project.yml` → create `migrations/project/NNN_description.sh`
 - New sections/fields in global config → create `migrations/global/NNN_description.sh`
-- Template-specific files (non-base templates) → use `cco update --sync-templates` to propagate to existing projects
+- Template-specific files (non-base templates) → not auto-updated; future `cco template sync`
 - Every migration must be **idempotent** (safe to run multiple times) and return 0 on success
 - Migration files define `MIGRATION_ID=N` and `MIGRATION_DESC="..."`, plus a `migrate()` function receiving the target directory
 - IDs must be sequential (check `migrations/{scope}/` for the current max)

@@ -28,9 +28,9 @@ and ownership models.
 |--------|----------|-----------|
 | **When used** | `cco init`, `cco update` | `cco project create`, `cco pack create` |
 | **How many** | One set (global) | Multiple (base, tutorial, user-defined...) |
-| **Tracked by update** | Yes — all tracked files 3-way merged | Native: yes. User: only with `--sync-templates` |
+| **Tracked by update** | Yes — all tracked files 3-way merged | Base only — non-base template files not tracked |
 | **Relationship to user files** | 1:1 mapping (default → installed file) | 1:N mapping (template → many projects) |
-| **Framework updates** | Propagated via `cco update` | Native: `cco update`. User: `cco update --sync-templates` |
+| **Framework updates** | Propagated via `cco update` | Base: `cco update`. Non-base/user: not auto-updated |
 
 ---
 
@@ -160,18 +160,16 @@ This is the definitive reference for every file managed by the update system.
 | `.claude/settings.json` | `tracked` | ✅ always (native) | Project permissions; always uses `base` as native source |
 | `.claude/rules/language.md` | `copy-if-missing` | ❌ never | Optional project override; commented scaffold |
 | `.claude/agents/` | `user-owned` | ❌ never | Project agents are user-defined |
-| `.claude/skills/` | `user-owned` (or `tracked` if from template) | ⚠️ see note | User-defined; template-installed skills tracked with `--sync-templates` |
-| `project.yml` | `tracked` | ✅ native only | 3-way merge against `base` template; see section 4.16 |
+| `.claude/skills/` | `user-owned` | ❌ never | User-defined or template-installed; not tracked by update |
+| `project.yml` | `tracked` | ✅ always | 3-way merge against `base` template; see section 4.14 |
 | `setup.sh` | `copy-if-missing` | ❌ never | Written once at project create |
 | `secrets.env` | `copy-if-missing` | ❌ never | Written once; user fills secrets |
 | `mcp-packages.txt` | `copy-if-missing` | ❌ never | Written once; user adds packages |
 
 **Note on `.claude/skills/` in project scope:**
-- A project created from `base` template: no skills → nothing to track
-- A project created from `tutorial` template: has tutorial skills → tracked with `--sync-templates`
-  (because `template_source: native`, and tutorial is a native template)
-- A project created from a user template with custom skills → tracked with `--sync-templates`
-  (because `template_source: user`)
+Project-level skills (from tutorial template, user templates, or manually added)
+are not tracked by `cco update`. They are outside the base template and have no
+framework "new version" to merge against. Future `cco template sync` may handle this.
 
 ### 3.4 Runtime-Generated Files (not in update system)
 
@@ -335,7 +333,6 @@ cco update --force            # Overwrite everything (ignore user changes) + .ba
 cco update --keep             # Keep all user versions (skip all conflicts)
 cco update --replace          # Replace files with new version + .bak (no merge)
 cco update --no-backup        # Disable automatic .bak creation
-cco update --sync-templates   # Also update from user templates (see section 4.16)
 ```
 
 ### 4.9 Interactive Conflict Resolution
@@ -401,9 +398,8 @@ schema_version: 8
 created_at: 2026-01-15T10:00:00Z
 updated_at: 2026-03-14T10:00:00Z
 
-# Template origin (projects only)
+# Template origin (projects only — informational, not used for update source)
 template: base               # base | tutorial | <user-template-name>
-template_source: native      # native | user
 
 # Language preferences (global only)
 languages:
@@ -418,6 +414,10 @@ manifest:
   .claude/rules/workflow.md: i9j0k1l2...
   project.yml: m3n4o5p6...          # projects only
 ```
+
+Note: `template` is informational — it records which template was used at creation
+for user reference and future `cco template sync` (not yet implemented). The update
+source is always `templates/project/base/` for all projects (see section 4.14).
 
 ### 4.13 `project.yml` Tracking — Native Baseline
 
@@ -449,67 +449,33 @@ changes (renamed keys, moved files, incompatible schema changes).
 | New tracked file added to policy | Migration (bootstrap `.cco-base/` entry) + 3-way merge going forward |
 | Removed file | Migration |
 
-### 4.14 Template-Aware Update Source
+### 4.14 Update Source: Always Base Template
 
-Each project records the template used at creation in `.cco-meta`:
+`_update_project()` always uses `templates/project/base/` as its update source,
+regardless of which template was used to create the project. This is because:
 
-```yaml
-template: tutorial
-template_source: native   # native = ships with cco; user = user-config/templates/
-```
+1. **Base defines the schema**: project.yml structure, settings.json permissions
+2. **All projects share the same schema**: whether created from base, tutorial, or
+   a user template, the underlying project structure is the same
+3. **Template-specific files have no base equivalent**: tutorial skills, user custom
+   rules, etc. are not present in base and therefore cannot be merged
 
-`_update_project()` resolves the update source based on this metadata:
+**Consequence**: Files that exist only in non-base templates (e.g., tutorial skills)
+are never touched by `cco update`. They are the maintainer's or user's responsibility.
 
-```
-1. Read template + template_source from .cco-meta
-2. For always-native files (.claude/settings.json, project.yml):
-   → always use templates/project/base/ as source (native baseline)
-3. For template-specific files (skills, rules, CLAUDE.md from template):
-   → if template_source == native: use templates/project/<template>/ as source
-     → updated automatically by cco update
-   → if template_source == user: use user-config/templates/project/<template>/ as source
-     → updated ONLY with --sync-templates flag
-4. Fallback: if template not found, skip template-specific files with warning
-```
+**Migration 008** (project scope): adds `template: base` to `.cco-meta` for existing
+projects that predate this field (informational only, not used for update routing).
 
-**Migration 008** (project scope): adds `template: base` and `template_source: native`
-to `.cco-meta` for existing projects that predate this field.
+### 4.15 User Template Propagation — Future Command
 
-### 4.15 User Templates: `--sync-templates` Flag
+User template changes are NOT propagated by `cco update`. This is a non-negotiable
+boundary: `cco update` means "bring me framework improvements", not "sync my
+personal templates".
 
-`cco update` by default operates on **framework sources only** (defaults/ and
-native templates). This covers the most common use case: "I updated cco, pull
-improvements."
+A future `cco template sync <project-name>` command will handle user template
+propagation using the same 3-way merge engine. Design deferred to a future sprint.
 
-To propagate changes from user-authored templates to existing projects, use
-`--sync-templates`:
-
-```bash
-cco update --sync-templates                  # global + all projects, incl. user template files
-cco update --project myapp --sync-templates  # single project
-cco update --all --sync-templates            # explicit all-projects variant
-```
-
-**Behavioral matrix:**
-
-| Command | Global config | Native template projects | User template projects |
-|---------|--------------|--------------------------|------------------------|
-| `cco update` | ✅ all tracked | ✅ native files + template-specific | ⚠️ native files only |
-| `cco update --sync-templates` | ✅ all tracked | ✅ native files + template-specific | ✅ native files + template-specific |
-| `cco update --project <name>` | ❌ | depends on project | ⚠️ native files only |
-| `cco update --project <name> --sync-templates` | ❌ | depends on project | ✅ all tracked |
-
-> "Native files only" for user template projects means: `.claude/settings.json`
-> and `project.yml` are still updated (they always use the native `base` baseline).
-> Only files that came specifically from the user template (custom skills, custom
-> rules in `.claude/`) are skipped without `--sync-templates`.
-
-**Why separate?** The two operations have different triggers:
-- `cco update` = "the framework shipped improvements, receive them" (triggered by `cco` upgrade)
-- `cco update --sync-templates` = "I updated my template, push changes to projects" (triggered by user template edit)
-
-Mixing them by default would make `cco update` unpredictably touch user-authored
-content without explicit intent.
+See `analysis-v2.md` section 8 for full rationale.
 
 ### 4.16 Vault Integration Fix
 
@@ -649,7 +615,7 @@ removes the directory entirely, which is appropriate after inspection.
 | **Installation** | `project create --template` | `pack install` + reference in project.yml |
 | **After install** | Template recorded in `.cco-meta`; output tracked as project | Pack remains; updates via `pack update` |
 | **Content** | Full project structure with placeholders | Knowledge, rules, skills, agents |
-| **Update mechanism** | Native: `cco update`. User: `cco update --sync-templates` | `cco pack update` from source |
+| **Update mechanism** | Schema via `cco update`; template-specific: not auto-updated | `cco pack update` from source |
 
 ---
 
@@ -662,11 +628,9 @@ SYNOPSIS
     cco update --all [OPTIONS]
 
 OPTIONS
-    (no flags)              Update global config + all projects (native sources only)
+    (no flags)              Update global config + all projects
     --project <name>        Update a specific project only (+ global)
     --all                   Explicitly update global + all projects
-    --sync-templates        Also update files from user-authored templates
-                            (projects with template_source: user)
     --dry-run               Show what would change without applying
     --force                 Overwrite all user modifications (creates .bak)
     --keep                  Preserve all user modifications (skip conflicts)
@@ -675,9 +639,7 @@ OPTIONS
 
 SOURCES
     Global config           defaults/global/
-    Project native files    templates/project/base/          (always-native: settings.json, project.yml)
-    Project template files  templates/project/<template>/    (if template_source: native)
-                            user-config/templates/project/<template>/  (if template_source: user, requires --sync-templates)
+    Project schema files    templates/project/base/          (settings.json, project.yml)
 
 WHAT cco update DOES NOT TOUCH
     mcp.json                user-owned, personal MCP servers
@@ -686,7 +648,7 @@ WHAT cco update DOES NOT TOUCH
     project/secrets.env     copy-if-missing
     project/mcp-packages.txt   copy-if-missing
     .cco-base/              never modified by clean or update (only overwritten by update itself)
-    user-config/templates/  user template sources; only read with --sync-templates
+    user-config/templates/  never read by cco update (user domain)
 ```
 
 ---
@@ -699,9 +661,7 @@ WHAT cco update DOES NOT TOUCH
 | `git merge-file` not available | Merge fails | Always in Docker image; on host, detected at startup with helpful error |
 | False conflicts on first run | Unnecessary prompts | Best-effort base reconstruction in migration 007; clean on second run |
 | Vault prompt blocking merge | Update exits without merging | Fix: explicit TTY redirect + non-fatal error handling (section 4.16) |
-| User template drift | `--sync-templates` produces unexpected merges | Vault snapshot recommended before `--sync-templates`; `.bak` always created |
 | Conflict markers in YAML/JSON | Broken config | Post-merge validation; warn if markers remain |
-| Missing user template on `--sync-templates` | Cannot resolve source | Skip with warning; log template name so user can fix |
 
 ---
 
@@ -744,17 +704,17 @@ WHAT cco update DOES NOT TOUCH
     `base` template (never user templates) for consistent schema propagation.
     Template vars substituted from `.cco-meta` at merge time.
 
-13. **Template-aware update source** *(new, 2026-03-14)*: `.cco-meta` records
-    `template` and `template_source` (native/user). `_update_project()` resolves
-    the update source from these fields. Template-specific files (skills, rules
-    from non-base templates) use the stored template as their update source.
+13. **Update source is always base template** *(revised, 2026-03-14)*: `.cco-meta`
+    records `template` (informational only). `_update_project()` always uses
+    `templates/project/base/` as the update source. Template-specific files
+    (skills, rules from non-base templates) are not tracked — they have no
+    base equivalent. User template propagation deferred to future `cco template sync`.
 
-14. **`--sync-templates` flag** *(new, 2026-03-14)*: Separates native framework
-    updates (`cco update`) from user template propagation (`cco update --sync-templates`).
-    Without the flag, projects with `template_source: user` are updated for
-    native-baseline files only. With the flag, user template source is also read.
-    Rationale: different trigger conditions, different intent, prevents accidental
-    propagation of in-progress template edits.
+14. **`--sync-templates` removed** *(revised, 2026-03-14)*: User template
+    propagation is NOT a flag on `cco update`. It will be a separate future
+    command (`cco template sync`). Rationale: `cco update` = framework improvements
+    only; mixing user template changes conflates different operations with
+    different trust levels. See `analysis-v2.md` section 8.
 
 15. **`cco clean --tmp`** *(new, 2026-03-14)*: Removes `<project>/.tmp/`
     directories created by `cco start --dry-run`. These are intentionally

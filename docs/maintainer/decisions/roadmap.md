@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-14 (Post-Sprint-5b design finalized: `project.yml` as tracked, template-aware update source, `--sync-templates` flag, `cco clean` extended categories, vault prompt fix. See `docs/maintainer/features/defaults-templates-update/design.md`).
+> Last updated: 2026-03-14 (Post-Sprint-5b design revised: `project.yml` tracked, base-only update source, `cco clean` extended, vault prompt fix. `--sync-templates` removed in favor of future `cco template sync`. See `analysis-v2.md` + `design.md`).
 
 ---
 
@@ -394,14 +394,14 @@ Refactoring of `defaults/` layout, full template system with CLI management, and
 - Migration 007: retroactive `.cco-base/` bootstrap for pre-Sprint-5b installations
 - Template variable substitution (`{{VAR}}`) for project and pack templates
 
-**Post-sprint design additions** (2026-03-14, pending implementation):
-- `project.yml` promoted to `tracked` policy (3-way merge against native `base` baseline)
-- Template-aware update source: `.cco-meta` records `template` + `template_source`
-- `--sync-templates` flag: separates native framework updates from user-template propagation
+**Post-sprint design revisions** (2026-03-14, pending implementation):
+- `project.yml` promoted to `tracked` policy (3-way merge against `base` template)
+- Update source always `templates/project/base/`; `.cco-meta` records `template` (informational)
+- User template propagation deferred to future `cco template sync` (not `cco update`)
 - `cco clean` extended: `--tmp` (dry-run artifacts), `--generated` (docker-compose.yml)
-- Vault prompt bug: fix I/O redirect to prevent blocking merge flow (decision #17)
+- Vault prompt bug: fix I/O redirect to prevent blocking merge flow
 
-**Docs**: [analysis](../features/defaults-templates-update/analysis.md) | [design](../features/defaults-templates-update/design.md)
+**Docs**: [analysis-v2](../features/defaults-templates-update/analysis-v2.md) | [design](../features/defaults-templates-update/design.md)
 
 ---
 

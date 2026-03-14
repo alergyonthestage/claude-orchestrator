@@ -614,9 +614,7 @@ Usage: cco update [OPTIONS]
 
 Options:
   --project <name>     Update a specific project (instead of global)
-  --all                Update global config + all projects (native sources only)
-  --sync-templates     Also propagate changes from user-authored templates
-                       (projects with template_source: user in .cco-meta)
+  --all                Update global config + all projects
   --dry-run            Show what would change without modifying anything
   --force              Overwrite even user-modified files (creates .bak)
   --keep               Always keep user version on conflicts
@@ -624,20 +622,18 @@ Options:
   --no-backup          Disable automatic .bak file creation
 
 Examples:
-  cco update                              # Update global defaults (3-way merge)
-  cco update --dry-run                    # Preview changes
-  cco update --project myapp              # Update specific project
-  cco update --all                        # Update global + all projects
-  cco update --sync-templates             # Also propagate user template changes
-  cco update --project myapp --sync-templates  # Sync user template for one project
-  cco update --replace                    # Replace all + .bak backup
-  cco update --force --no-backup          # Overwrite without backups
+  cco update                    # Update global defaults (3-way merge)
+  cco update --dry-run          # Preview changes
+  cco update --project myapp    # Update specific project
+  cco update --all              # Update global + all projects
+  cco update --replace          # Replace all + .bak backup
+  cco update --force --no-backup  # Overwrite without backups
 ```
 
-**Native vs user template updates**: `cco update` uses only native framework sources
-(`defaults/`, `templates/project/`). For projects created from user templates, only
-native-baseline files (`.claude/settings.json`, `project.yml`) are updated. Use
-`--sync-templates` to also propagate changes from `user-config/templates/`.
+**Update sources**: `cco update` uses only native framework sources: `defaults/global/`
+for global config and `templates/project/base/` for project schema files (settings.json,
+project.yml). User templates and non-base template files are not touched — user template
+propagation will be handled by a future `cco template sync` command.
 
 **Flow**:
 
