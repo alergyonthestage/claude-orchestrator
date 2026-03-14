@@ -1,6 +1,11 @@
-# Update System Design
+# Update System Design (Pre-Sprint-5b)
 
-> Status: design completed, implementation completed.
+> **Superseded**: This document describes the original checksum + migrations design
+> (pre-Sprint-5b). The definitive design — including 3-way merge, template-aware
+> updates, and all post-sprint decisions — is in
+> [`../defaults-templates-update/design.md`](../defaults-templates-update/design.md).
+
+> Status: design completed, implementation completed (Sprint 4/5).
 
 ## Problem
 
