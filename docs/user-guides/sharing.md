@@ -398,10 +398,10 @@ cco project install https://github.com/acme/cco-config --pick acme-service --for
 | `cco vault profile switch <name>` | Switch to another profile (auto-commits pending changes) |
 | `cco vault profile rename <new-name>` | Rename the current profile |
 | `cco vault profile delete <name>` | Delete a profile (moves exclusive resources to main first) |
-| `cco vault profile add project <name>` | Add a project to the current profile (moves from main) |
-| `cco vault profile add pack <name>` | Add a pack to the current profile (makes exclusive) |
-| `cco vault profile remove project <name>` | Remove a project from the current profile (moves to main) |
-| `cco vault profile remove pack <name>` | Remove a pack from the current profile (makes shared) |
+| `cco vault profile add project <name>` | Mark a project as exclusive to this profile |
+| `cco vault profile add pack <name>` | Mark a pack as exclusive to this profile |
+| `cco vault profile remove project <name>` | Make a project shared again (removes profile exclusivity) |
+| `cco vault profile remove pack <name>` | Make a pack shared again (removes profile exclusivity) |
 | `cco vault profile move project <name> --to <profile>` | Move a project to a specific profile or main |
 | `cco vault profile move pack <name> --to <profile>` | Move a pack to a specific profile or main |
 
@@ -488,7 +488,18 @@ cco vault push
 
 Profiles use git branches under the hood. Shared resources (global config, packs, templates) live on `main` and are automatically synced between profiles when you push or pull. Each profile only sees its own exclusive projects plus the shared resources.
 
+> **Note — Tracking-only isolation**: Profile assignment (`profile add` / `profile remove`) is a tracking declaration in `.vault-profile` — it does not physically move or delete files. Resources remain on all branches. Isolation is enforced at sync time: `vault sync`, `vault push`, and `vault pull` use the profile's declared paths to selectively stage and commit only the relevant resources.
+
 Without profiles, the vault works exactly as before — everything on a single `main` branch. Profiles are opt-in and only needed when you want selective sync across machines.
+
+### Memory and session data
+
+Each project has two separate directories for Claude Code state:
+
+- **`projects/<name>/memory/`** — Auto memory files (`MEMORY.md` and topic files). This directory is **vault-tracked** and syncs across machines when you push/pull. It contains personal working notes, task progress, and session-specific context.
+- **`projects/<name>/claude-state/`** — Session transcripts (used by `/resume`). This directory is **local only** (gitignored in the vault). Transcripts are large and machine-specific, so they are not synced.
+
+Both are mounted into the container at runtime. The `memory/` directory is mounted as a Docker child mount that overrides the `memory/` subdirectory within `claude-state/`, ensuring the two remain separate.
 
 ### Team sharing (separate repos)
 

@@ -112,7 +112,7 @@ The host's Docker socket is mounted into the container. Claude can run `docker c
 - **Leverage native Claude Code behavior**: The fundamental rule of claude-orchestrator is to leverage Claude Code's native features as much as possible, avoiding custom reimplementations. The orchestrator maps its configuration tiers directly onto Claude Code's native settings resolution (managed → user → project → nested). Reference: `.claude/docs/claude-code/llms.txt` contains the full Claude Code documentation index.
 - **Docker IS the sandbox**: no native Claude Code sandboxing. `--dangerously-skip-permissions` is safe inside the container.
 - **Flat workspace layout**: WORKDIR is `/workspace`, each repo is a direct subdirectory. No `--add-dir` needed.
-- **Auto memory isolation**: each project's `claude-state/` dir is mounted to `~/.claude/projects/-workspace` so projects don't share memory or session transcripts.
+- **Auto memory isolation**: each project's `claude-state/` dir is mounted to `~/.claude/projects/-workspace` for session transcripts, and `memory/` is mounted as a child mount at `~/.claude/projects/-workspace/memory` for auto memory files. The two are separate: `claude-state/` is local/gitignored (transcripts), while `memory/` is vault-tracked and syncs across machines.
 - **Agent teams**: tmux by default (works everywhere), iTerm2 optional via `--teammate-mode auto`.
 - **Auth**: OAuth (credentials seeded from macOS Keychain to `~/.claude/.credentials.json`) by default, API key via env var as alternative. GitHub auth via `GITHUB_TOKEN` + `gh` CLI.
 

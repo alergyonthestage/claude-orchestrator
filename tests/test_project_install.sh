@@ -20,7 +20,7 @@ _create_mock_template_repo() {
     # Create templates
     local manifest_templates=""
     for name in "${template_names[@]}"; do
-        mkdir -p "$work_dir/templates/$name"/{.claude/rules,claude-state/memory}
+        mkdir -p "$work_dir/templates/$name"/{.claude/rules,claude-state,memory}
 
         cat > "$work_dir/templates/$name/project.yml" <<YAML
 name: {{PROJECT_NAME}}

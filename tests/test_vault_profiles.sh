@@ -10,6 +10,9 @@ _setup_vault_for_profiles() {
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
     run_cco vault init
+    # Set git identity to prevent CI failures on machines without global git config
+    git -C "$CCO_USER_CONFIG_DIR" config user.email "test@test.local"
+    git -C "$CCO_USER_CONFIG_DIR" config user.name "Test"
     # Create a test project
     run_cco project create "test-proj"
     run_cco vault sync "add test-proj" --yes
@@ -17,7 +20,13 @@ _setup_vault_for_profiles() {
 
 # Get the default branch name in the vault (main or master)
 _vault_default_branch() {
-    git -C "$CCO_USER_CONFIG_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null
+    if git -C "$CCO_USER_CONFIG_DIR" rev-parse --verify main >/dev/null 2>&1; then
+        echo "main"
+    elif git -C "$CCO_USER_CONFIG_DIR" rev-parse --verify master >/dev/null 2>&1; then
+        echo "master"
+    else
+        git -C "$CCO_USER_CONFIG_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null
+    fi
 }
 
 # ── profile create ───────────────────────────────────────────────────
@@ -330,7 +339,8 @@ test_vault_sync_with_profile_stages_exclusive() {
     _setup_vault_for_profiles "$tmpdir"
     run_cco vault profile create "work"
 
-    # Manually add project to profile's sync list
+    # NOTE: Manual heredoc write intentionally bypasses `profile add` to test
+    # the sync path in isolation (verifies staging logic, not the add command).
     cat > "$CCO_USER_CONFIG_DIR/.vault-profile" << 'YML'
 profile: work
 sync:
@@ -372,6 +382,8 @@ test_vault_sync_profile_does_not_stage_other_projects() {
 
     # Create profile with only test-proj
     run_cco vault profile create "work"
+    # NOTE: Manual heredoc write intentionally bypasses `profile add` to test
+    # the sync path in isolation (verifies staging logic, not the add command).
     cat > "$CCO_USER_CONFIG_DIR/.vault-profile" << 'YML'
 profile: work
 sync:
@@ -562,30 +574,29 @@ test_vault_pull_with_profile_syncs_shared() {
     run_cco vault profile create "work"
     run_cco vault push
 
-    # Simulate a change on the default branch (as if another machine pushed)
+    # Simulate a change on the default branch via a second clone (as if another machine pushed)
     local default_branch
     default_branch=$(_vault_default_branch)
-    git -C "$CCO_USER_CONFIG_DIR" checkout "$default_branch" -q
-    echo "# Remote change" >> "$CCO_USER_CONFIG_DIR/global/.claude/CLAUDE.md"
-    git -C "$CCO_USER_CONFIG_DIR" add -A
-    git -C "$CCO_USER_CONFIG_DIR" commit -q -m "remote: update shared"
-    git -C "$CCO_USER_CONFIG_DIR" push origin "$default_branch" -q
+    local clone2="$tmpdir/clone2"
+    git clone -q "$bare" "$clone2"
+    git -C "$clone2" config user.email "test@test.local"
+    git -C "$clone2" config user.name "Test"
+    echo "# Remote change from clone2" >> "$clone2/global/.claude/CLAUDE.md"
+    git -C "$clone2" add -A
+    git -C "$clone2" commit -q -m "remote: update shared from another machine"
+    git -C "$clone2" push origin "$default_branch" -q
 
-    # Switch back to profile
+    # Switch back to profile branch in our vault
     git -C "$CCO_USER_CONFIG_DIR" checkout "work" -q
 
     # Pull should fetch and sync shared resources from default
     run_cco vault pull
-    # Verify the shared resource was updated on the profile branch
+
+    # Verify the shared resource was synced onto the profile branch (from origin/default)
     local content
-    content=$(cat "$CCO_USER_CONFIG_DIR/global/.claude/CLAUDE.md")
-    if echo "$content" | grep -qF "Remote change"; then
-        # Shared resource was synced from default — success
-        :
-    else
-        # It's possible the sync did not detect differences (no origin/default diff).
-        # This is acceptable — the pull itself succeeded.
-        :
+    content=$(cat "$CCO_USER_CONFIG_DIR/global/.claude/CLAUDE.md" 2>/dev/null)
+    if ! echo "$content" | grep -qF "Remote change from clone2"; then
+        fail "Expected shared resource to be synced from default onto profile branch"
     fi
 }
 
@@ -703,6 +714,205 @@ test_profile_remove_verifies_main_state() {
     # The project should exist on default since it was originally synced there
     [[ -n "$proj_on_default" ]] || \
         fail "Expected project to be accessible on default branch after removal from profile"
+}
+
+# ── T1: vault diff with profile scoping ───────────────────────────────
+
+test_vault_diff_with_profile_shows_only_scoped_projects() {
+    # vault diff should only show changes for profile-scoped projects
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+
+    # Create second project and sync it
+    run_cco project create "other-proj"
+    run_cco vault sync "add other-proj" --yes
+
+    # Create profile with only test-proj
+    run_cco vault profile create "work"
+    run_cco vault profile add project "test-proj"
+
+    # Modify both projects (unstaged changes)
+    echo "# mod-test" >> "$CCO_USER_CONFIG_DIR/projects/test-proj/.claude/CLAUDE.md"
+    echo "# mod-other" >> "$CCO_USER_CONFIG_DIR/projects/other-proj/.claude/CLAUDE.md"
+
+    # vault diff should only show test-proj, not other-proj
+    run_cco vault diff
+    assert_output_contains "test-proj" "Expected diff to show profile-scoped project"
+    assert_output_not_contains "other-proj" "Expected diff NOT to show out-of-scope project"
+}
+
+# ── T3: auto-commit secret-filtering ─────────────────────────────────
+
+test_vault_auto_commit_skips_secret_files() {
+    # _vault_auto_commit (triggered by profile switch) should skip secret files
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    run_cco vault profile create "work"
+
+    # Create a secret file (matches _VAULT_SECRET_PATTERNS: *.env)
+    echo "SECRET=value" > "$CCO_USER_CONFIG_DIR/projects/test-proj/local.env"
+    # Create a normal file
+    echo "# Normal change" >> "$CCO_USER_CONFIG_DIR/projects/test-proj/.claude/CLAUDE.md"
+
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    # Switch profile triggers _vault_auto_commit
+    run_cco vault profile switch "$default_branch"
+
+    # Switch back and check commit history on the work branch
+    run_cco vault profile switch "work"
+    local committed_files
+    committed_files=$(git -C "$CCO_USER_CONFIG_DIR" show "work" --name-only --format= 2>/dev/null)
+
+    # The normal file should have been auto-committed
+    echo "$committed_files" | grep -q "CLAUDE.md" || \
+        fail "Expected normal file to be auto-committed"
+
+    # The secret file should NOT have been committed
+    if echo "$committed_files" | grep -q "local.env"; then
+        fail "Expected secret file (local.env) NOT to be auto-committed"
+    fi
+}
+
+# ── T4: profile create always branches from main ─────────────────────
+
+test_profile_create_branches_from_main() {
+    # Creating profile-B while on profile-A should branch from main, not profile-A
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    # Create profile-A and add a project to it (exclusive)
+    run_cco vault profile create "profile-a"
+    run_cco vault profile add project "test-proj"
+
+    # While on profile-A, create profile-B
+    run_cco vault profile create "profile-b"
+
+    # profile-B should NOT contain test-proj in its exclusive list
+    # (it was branched from main, not from profile-A)
+    assert_file_not_contains "$CCO_USER_CONFIG_DIR/.vault-profile" "test-proj" \
+        "profile-B should not inherit profile-A's exclusive resources"
+
+    # Verify by checking git: profile-B's .vault-profile should have empty lists
+    local profile_b_content
+    profile_b_content=$(git -C "$CCO_USER_CONFIG_DIR" show "profile-b:.vault-profile" 2>/dev/null)
+    if echo "$profile_b_content" | grep -qF "test-proj"; then
+        fail "profile-B should not contain test-proj (should branch from main)"
+    fi
+}
+
+# ── T5: profile move pack and profile remove pack ────────────────────
+
+test_profile_move_pack_to_profile() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+
+    # Create a pack and sync
+    run_cco pack create "my-pack"
+    run_cco vault sync "add pack" --yes
+
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    # Create two profiles
+    run_cco vault profile create "work"
+    run_cco vault profile switch "$default_branch"
+    run_cco vault profile create "personal"
+
+    # Move pack to work profile
+    run_cco vault profile move pack "my-pack" --to "work"
+    assert_output_contains "Moved"
+
+    # Verify the pack appears in the target profile's .vault-profile
+    local target_profile_content
+    target_profile_content=$(git -C "$CCO_USER_CONFIG_DIR" show "work:.vault-profile" 2>/dev/null)
+    if ! echo "$target_profile_content" | grep -qF "my-pack"; then
+        fail "Expected 'my-pack' to appear in work profile's .vault-profile"
+    fi
+}
+
+test_profile_remove_pack() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+
+    # Create a pack and sync
+    run_cco pack create "my-pack"
+    run_cco vault sync "add pack" --yes
+
+    # Create profile and add the pack
+    run_cco vault profile create "work"
+    run_cco vault profile add pack "my-pack"
+
+    # Verify it was added
+    assert_file_contains "$CCO_USER_CONFIG_DIR/.vault-profile" "my-pack"
+
+    # Remove the pack from the profile
+    run_cco vault profile remove pack "my-pack"
+
+    # Should no longer be in exclusive list
+    assert_file_not_contains "$CCO_USER_CONFIG_DIR/.vault-profile" "my-pack"
+
+    # Pack directory should still exist
+    [[ -d "$CCO_USER_CONFIG_DIR/packs/my-pack" ]] || \
+        fail "Expected pack directory to still exist after removal from profile"
+}
+
+# ── T6: profile add creates a commit ─────────────────────────────────
+
+test_profile_add_project_creates_commit() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    run_cco vault profile create "work"
+
+    # Record commit count before add
+    local before_count
+    before_count=$(git -C "$CCO_USER_CONFIG_DIR" rev-list --count HEAD)
+
+    run_cco vault profile add project "test-proj"
+
+    # Verify a new commit was created
+    local after_count
+    after_count=$(git -C "$CCO_USER_CONFIG_DIR" rev-list --count HEAD)
+    [[ "$after_count" -gt "$before_count" ]] || \
+        fail "Expected a new commit after profile add (before=$before_count, after=$after_count)"
+
+    # Verify the commit message relates to profile/add
+    local msg
+    msg=$(git -C "$CCO_USER_CONFIG_DIR" log -1 --format=%s)
+    [[ "$msg" == *"add"* ]] || [[ "$msg" == *"profile"* ]] || \
+        fail "Expected commit message to reference add or profile, got: $msg"
+}
+
+# ── T7: profile list resource counts ─────────────────────────────────
+
+test_profile_list_shows_resource_counts() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    run_cco vault profile create "work"
+    run_cco vault profile add project "test-proj"
+
+    run_cco vault profile list
+    assert_output_contains "1 project(s)" \
+        "Expected profile list to show '1 project(s)' after adding a project"
+}
+
+# ── T8: vault status exclusive resource counts ────────────────────────
+
+test_vault_status_shows_exclusive_counts() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    run_cco vault profile create "work"
+    run_cco vault profile add project "test-proj"
+
+    run_cco vault status
+    assert_output_contains "1 project(s)" \
+        "Expected vault status to show exclusive project count"
+    assert_output_contains "0 pack(s)" \
+        "Expected vault status to show exclusive pack count"
 }
 
 # ── W10: Conflict resolution (non-interactive fallback) ──────────────

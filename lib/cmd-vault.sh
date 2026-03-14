@@ -324,15 +324,6 @@ EOF
                     fi
                     ;;
                 packs/*)
-                    local pack_name="${file#packs/}"
-                    pack_name="${pack_name%%/*}"
-                    # Shared packs are in scope
-                    local is_exclusive=false
-                    if [[ -n "$pack_list" ]]; then
-                        while IFS= read -r p; do
-                            [[ "$p" == "$pack_name" ]] && is_exclusive=true && break
-                        done <<< "$pack_list"
-                    fi
                     # Both exclusive (owned by this profile) and shared packs are in scope
                     in_scope=true
                     ;;
@@ -573,8 +564,22 @@ EOF
         fi
     fi
 
-    # Pull current branch
-    git -C "$vault_dir" pull "$remote"
+    # Verify remote exists
+    if ! git -C "$vault_dir" remote get-url "$remote" >/dev/null 2>&1; then
+        die "Remote '$remote' not configured. Run 'cco vault remote add $remote <url>' first."
+    fi
+
+    # Pull current branch (verify branch exists on remote first)
+    local branch
+    branch=$(git -C "$vault_dir" rev-parse --abbrev-ref HEAD 2>/dev/null)
+    if ! git -C "$vault_dir" ls-remote --heads "$remote" "$branch" 2>/dev/null | grep -q .; then
+        info "Branch '$branch' not found on remote. Push first with 'cco vault push'."
+        return 0
+    fi
+    if ! git -C "$vault_dir" pull "$remote" "$branch"; then
+        warn "Failed to pull '$branch' from $remote"
+        return 1
+    fi
 
     # If on a profile branch, sync shared resources from default branch
     if [[ -n "$profile" ]]; then
@@ -775,7 +780,7 @@ _vault_auto_commit() {
         else
             git -C "$vault_dir" add -A
         fi
-        git -C "$vault_dir" commit -q -m "vault: auto-save before profile switch"
+        git -C "$vault_dir" commit -q -m "vault: auto-save before branch change"
         info "Auto-committed pending changes"
     fi
 }
@@ -1406,8 +1411,9 @@ EOF
             if ! git -C "$vault_dir" diff --cached --quiet 2>/dev/null; then
                 git -C "$vault_dir" commit -q -m "vault: move resources from deleted profile '$name'"
             fi
-            git -C "$vault_dir" checkout "$current_branch" -q
         fi
+        # ALWAYS restore original branch regardless of whether resources were moved
+        git -C "$vault_dir" checkout "$current_branch" -q
     fi
 
     # Delete branch
@@ -1465,9 +1471,11 @@ EOF
         _profile_add_to_list "packs" "$name"
     fi
 
-    # Stage and commit
+    # Stage and commit (skip if nothing actually changed)
     git -C "$vault_dir" add -A -- "$resource_path/" .vault-profile
-    git -C "$vault_dir" commit -q -m "vault: add $resource_type '$name' to profile '$profile'"
+    if ! git -C "$vault_dir" diff --cached --quiet 2>/dev/null; then
+        git -C "$vault_dir" commit -q -m "vault: add $resource_type '$name' to profile '$profile'"
+    fi
 
     ok "Added $resource_type '$name' to profile '$profile'"
 }
@@ -1566,7 +1574,7 @@ EOF
         resource_path="packs/$name"
     fi
 
-    [[ ! -d "$vault_dir/$resource_path" ]] && die "${resource_type^} '$name' not found"
+    [[ ! -d "$vault_dir/$resource_path" ]] && die "$(echo "$resource_type" | awk '{print toupper(substr($0,1,1)) substr($0,2)}') '$name' not found"
 
     # Determine if target is default branch or a profile
     local target_is_default=false
@@ -1600,19 +1608,26 @@ EOF
     fi
 
     if $target_is_default; then
-        # Moving to default branch — stage on default
+        # Moving to default branch — copy resource from current branch, stage on default
         git -C "$vault_dir" checkout "$default_branch" -q
+        # Checkout directory tree from source branch to ensure files exist on target
+        git -C "$vault_dir" checkout "$current_branch" -- "$resource_path/" 2>/dev/null || true
         git -C "$vault_dir" add -A -- "$resource_path/" 2>/dev/null || true
-        git -C "$vault_dir" commit -q -m "vault: add $resource_type '$name' (moved from profile)" 2>/dev/null || true
+        if ! git -C "$vault_dir" diff --cached --quiet 2>/dev/null; then
+            git -C "$vault_dir" commit -q -m "vault: add $resource_type '$name' (moved from profile)"
+        fi
         git -C "$vault_dir" checkout "$current_branch" -q
         ok "Moved $resource_type '$name' to $default_branch (shared)"
     else
-        # Moving to another profile
+        # Moving to another profile — copy resource from current branch
         git -C "$vault_dir" checkout "$target" -q
+        git -C "$vault_dir" checkout "$current_branch" -- "$resource_path/" 2>/dev/null || true
         git -C "$vault_dir" add -A -- "$resource_path/" 2>/dev/null || true
         _profile_add_to_list "${resource_type}s" "$name"
         git -C "$vault_dir" add -A -- .vault-profile
-        git -C "$vault_dir" commit -q -m "vault: add $resource_type '$name' to profile '$target'" 2>/dev/null || true
+        if ! git -C "$vault_dir" diff --cached --quiet 2>/dev/null; then
+            git -C "$vault_dir" commit -q -m "vault: add $resource_type '$name' to profile '$target'"
+        fi
         git -C "$vault_dir" checkout "$current_branch" -q
         ok "Moved $resource_type '$name' to profile '$target'"
     fi
@@ -1684,17 +1699,25 @@ _sync_shared_to_default() {
     # Pull latest default branch
     if ! git -C "$vault_dir" pull "$remote" "$default_branch" -q 2>/dev/null; then
         warn "Failed to pull $default_branch from $remote (network error or merge conflict)"
+        # Return to profile branch before aborting
+        git -C "$vault_dir" checkout "$profile_branch" -q 2>/dev/null || true
+        if $stashed; then
+            git -C "$vault_dir" stash pop -q 2>/dev/null || true
+        fi
+        return 1
     fi
 
     # Copy shared files from profile branch
+    # Hoist merge-base outside the per-file loop (W4)
+    local merge_base
+    merge_base=$(git -C "$vault_dir" merge-base "$default_branch" "$profile_branch" 2>/dev/null || true)
+
     local synced=0
     while IFS= read -r file; do
         [[ -z "$file" ]] && continue
 
         # Check if file was also modified on default branch
         local modified_on_default=false
-        local merge_base
-        merge_base=$(git -C "$vault_dir" merge-base "$default_branch" "$profile_branch" 2>/dev/null || true)
         if [[ -n "$merge_base" ]]; then
             local default_diff
             default_diff=$(git -C "$vault_dir" diff "$merge_base" "$default_branch" --name-only -- "$file" 2>/dev/null || true)
@@ -1753,14 +1776,23 @@ _sync_shared_from_default() {
     local profile_branch
     profile_branch=$(git -C "$vault_dir" rev-parse --abbrev-ref HEAD 2>/dev/null)
 
+    # Stash uncommitted work before modifying files
+    local stashed=false
+    if [[ -n "$(git -C "$vault_dir" status --porcelain 2>/dev/null)" ]]; then
+        git -C "$vault_dir" stash -q
+        stashed=true
+    fi
+
+    # Hoist merge-base outside the per-file loop (W4)
+    local merge_base
+    merge_base=$(git -C "$vault_dir" merge-base HEAD "origin/$default_branch" 2>/dev/null || true)
+
     local synced=0
     while IFS= read -r file; do
         [[ -z "$file" ]] && continue
 
         # Check if file was also modified locally
         local modified_locally=false
-        local merge_base
-        merge_base=$(git -C "$vault_dir" merge-base HEAD "origin/$default_branch" 2>/dev/null || true)
         if [[ -n "$merge_base" ]]; then
             local local_diff
             local_diff=$(git -C "$vault_dir" diff "$merge_base" HEAD --name-only -- "$file" 2>/dev/null || true)
@@ -1781,6 +1813,13 @@ _sync_shared_from_default() {
         git -C "$vault_dir" add -A -- "${shared_paths[@]}"
         git -C "$vault_dir" commit -q -m "sync: shared resources from $default_branch" 2>/dev/null || true
         ok "Synced $synced shared resource(s) from $default_branch"
+    fi
+
+    # Restore stashed work
+    if $stashed; then
+        if ! git -C "$vault_dir" stash pop -q 2>/dev/null; then
+            warn "Failed to restore stashed changes — use 'git stash list' in vault dir to recover"
+        fi
     fi
 }
 
@@ -1902,6 +1941,8 @@ Profiles (multi-PC selective sync):
   profile switch <name>   Switch to another profile
   profile rename <name>   Rename current profile
   profile delete <name>   Delete a profile
+  profile add <type> <name>   Add a resource to the current profile
+  profile remove <type> <name> Remove a resource from the current profile
 
 Remote backup:
   remote add <n> <url>    Add a git remote

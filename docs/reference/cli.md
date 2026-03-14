@@ -174,7 +174,8 @@ Examples:
    - Generate .claude/workspace.yml (structured project summary for /init)
 
 4. CREATE directories (if needed)
-   - user-config/projects/<project>/claude-state/memory/  (for auto memory + session transcripts; migrates legacy memory/ if present)
+   - user-config/projects/<project>/claude-state/  (session transcripts; enables /resume across rebuilds)
+   - user-config/projects/<project>/memory/  (auto memory; vault-tracked, separate from transcripts)
 
 5. LAUNCH
    - Load user-config/global/secrets.env as runtime env vars (validates KEY=VALUE format, skips malformed lines with warning)
@@ -275,7 +276,8 @@ Examples:
    - Replace {{PROJECT_NAME}} and {{DESCRIPTION}} placeholders
 
 5. CREATE directories
-   - user-config/projects/<name>/claude-state/memory/
+   - user-config/projects/<name>/claude-state/  (session transcripts)
+   - user-config/projects/<name>/memory/  (auto memory; vault-tracked)
 
 6. INITIALIZE update metadata
    - Generate .cco-meta (schema_version, template name, manifest hashes)
@@ -944,6 +946,25 @@ Show current profile details including exclusive resources and sync state.
 
 ```
 Usage: cco vault profile show
+
+Example output:
+  Profile: work
+  Branch: work
+  Sync state: up-to-date with main
+
+  Exclusive projects:
+    - work-api
+    - work-frontend
+
+  Exclusive packs:
+    - corporate-rules
+
+  Shared (from main):
+    - global/
+    - templates/ (2 template(s))
+    - packs/ (5 shared pack(s))
+
+  Uncommitted changes: 3 file(s)
 ```
 
 #### `cco vault profile switch <name>`
@@ -1332,8 +1353,10 @@ services:
       # Project config
       - ./.claude:/workspace/.claude
       - ./project.yml:/workspace/project.yml:ro
-      # Claude state: auto memory + session transcripts (enables /resume across rebuilds)
+      # Session transcripts (enables /resume across rebuilds)
       - ./claude-state:/home/claude/.claude/projects/-workspace
+      # Memory (vault-tracked, separate from transcripts)
+      - ./memory:/home/claude/.claude/projects/-workspace/memory
       # Global MCP servers (optional, merged into ~/.claude.json by entrypoint)
       # - ../../user-config/global/.claude/mcp.json:/home/claude/.claude/mcp-global.json:ro
       # Project MCP servers (optional, Claude Code expands ${VAR} natively)
