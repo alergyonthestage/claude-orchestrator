@@ -472,10 +472,17 @@ EOF
 
     echo -e "${BOLD}Vault:${NC} initialized at $vault_dir"
 
-    # Branch
+    # Branch and profile
     local branch
     branch=$(git -C "$vault_dir" rev-parse --abbrev-ref HEAD 2>/dev/null)
-    echo "  Branch: $branch"
+
+    local profile
+    profile=$(_get_active_profile)
+    if [[ -n "$profile" ]]; then
+        echo "  Profile: $profile (branch: $branch)"
+    else
+        echo "  Branch: $branch"
+    fi
 
     # Remotes
     local remotes
@@ -504,11 +511,619 @@ EOF
     echo "  Commits: $commit_count"
 }
 
+# ── Profile management ───────────────────────────────────────────────
+
+VAULT_PROFILE_FILE="$USER_CONFIG_DIR/.vault-profile"
+
+# Get active profile name (empty string if on main / no profile)
+_get_active_profile() {
+    local branch default_branch
+    branch=$(git -C "$USER_CONFIG_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)
+    default_branch=$(_vault_default_branch)
+    if [[ "$branch" != "$default_branch" ]] && [[ -f "$VAULT_PROFILE_FILE" ]]; then
+        yml_get "$VAULT_PROFILE_FILE" "profile"
+    fi
+}
+
+# Validate profile name: lowercase, hyphens, numbers, no spaces
+_validate_profile_name() {
+    local name="$1"
+    if [[ ! "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+        die "Invalid profile name '$name': must be lowercase letters, numbers, and hyphens only"
+    fi
+    if [[ "$name" == "main" || "$name" == "master" ]]; then
+        die "Cannot use '$name' as a profile name (reserved for shared resources)"
+    fi
+}
+
+# Write .vault-profile file
+_write_vault_profile() {
+    local name="$1"
+    local profile_file="$USER_CONFIG_DIR/.vault-profile"
+    local projects_yaml="" packs_yaml=""
+
+    # Read existing lists if file exists
+    if [[ -f "$profile_file" ]]; then
+        projects_yaml=$(yml_get_list "$profile_file" "sync.projects" 2>/dev/null || true)
+        packs_yaml=$(yml_get_list "$profile_file" "sync.packs" 2>/dev/null || true)
+    fi
+
+    {
+        echo "# Vault profile — tracked on this branch"
+        echo "# Defines which resources are exclusive to this profile"
+        echo "profile: $name"
+        echo "sync:"
+        echo "  projects:"
+        if [[ -n "$projects_yaml" ]]; then
+            while IFS= read -r p; do
+                [[ -n "$p" ]] && echo "    - $p"
+            done <<< "$projects_yaml"
+        else
+            echo "    []"
+        fi
+        echo "  packs:"
+        if [[ -n "$packs_yaml" ]]; then
+            while IFS= read -r p; do
+                [[ -n "$p" ]] && echo "    - $p"
+            done <<< "$packs_yaml"
+        else
+            echo "    []"
+        fi
+    } > "$profile_file"
+}
+
+# Auto-commit pending changes (used before branch switches)
+_vault_auto_commit() {
+    local vault_dir="$USER_CONFIG_DIR"
+    local status_output
+    status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
+    if [[ -n "$status_output" ]]; then
+        git -C "$vault_dir" add -A
+        git -C "$vault_dir" commit -q -m "vault: auto-save before profile switch"
+        info "Auto-committed pending changes"
+    fi
+}
+
+# List profile-exclusive projects from .vault-profile
+_profile_projects() {
+    [[ -f "$VAULT_PROFILE_FILE" ]] || return 0
+    yml_get_list "$VAULT_PROFILE_FILE" "sync.projects" 2>/dev/null || true
+}
+
+# List profile-exclusive packs from .vault-profile
+_profile_packs() {
+    [[ -f "$VAULT_PROFILE_FILE" ]] || return 0
+    yml_get_list "$VAULT_PROFILE_FILE" "sync.packs" 2>/dev/null || true
+}
+
+cmd_vault_profile() {
+    local subcmd="${1:-}"
+    if [[ -z "$subcmd" || "$subcmd" == "--help" ]]; then
+        cat <<'EOF'
+Usage: cco vault profile <command>
+
+Manage vault profiles for multi-PC selective sync.
+
+Commands:
+  create <name>      Create a new profile (branch from main)
+  list               List all profiles
+  show               Show current profile details
+  switch <name>      Switch to another profile
+  rename <new-name>  Rename current profile
+  delete <name>      Delete a profile (moves resources to main)
+
+Run 'cco vault profile <command> --help' for command-specific options.
+EOF
+        return 0
+    fi
+    shift
+
+    case "$subcmd" in
+        create) cmd_vault_profile_create "$@" ;;
+        list)   cmd_vault_profile_list "$@" ;;
+        show)   cmd_vault_profile_show "$@" ;;
+        switch) cmd_vault_profile_switch "$@" ;;
+        rename) cmd_vault_profile_rename "$@" ;;
+        delete) cmd_vault_profile_delete "$@" ;;
+        *)      die "Unknown profile command: $subcmd. Run 'cco vault profile --help'." ;;
+    esac
+}
+
+cmd_vault_profile_create() {
+    local name=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --help)
+                cat <<'EOF'
+Usage: cco vault profile create <name>
+
+Create a new vault profile. This creates a git branch from main and
+writes a .vault-profile configuration file.
+
+A profile is a work context (e.g., org-a, personal) — not a machine identity.
+Any machine can use any profile by switching to it.
+EOF
+                return 0
+                ;;
+            -*) die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$name" ]]; then
+                    name="$1"; shift
+                else
+                    die "Unexpected argument: $1"
+                fi
+                ;;
+        esac
+    done
+
+    [[ -z "$name" ]] && die "Usage: cco vault profile create <name>"
+
+    _check_vault
+    _validate_profile_name "$name"
+
+    local vault_dir="$USER_CONFIG_DIR"
+
+    # Check branch doesn't already exist
+    if git -C "$vault_dir" rev-parse --verify "$name" >/dev/null 2>&1; then
+        die "Profile '$name' already exists"
+    fi
+
+    # Auto-commit pending changes
+    _vault_auto_commit
+
+    # Create branch from default branch (main or master)
+    local default_branch
+    default_branch=$(_vault_default_branch)
+    git -C "$vault_dir" checkout -b "$name" "$default_branch" -q
+    _write_vault_profile "$name"
+    git -C "$vault_dir" add -A -- .vault-profile
+    git -C "$vault_dir" commit -q -m "vault: create profile '$name'"
+
+    ok "Profile '$name' created"
+    info "Use 'cco vault profile add project <name>' to add resources"
+}
+
+cmd_vault_profile_list() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --help)
+                cat <<'EOF'
+Usage: cco vault profile list
+
+List all vault profiles with their resource counts.
+EOF
+                return 0
+                ;;
+            *) die "Unknown option: $1" ;;
+        esac
+    done
+
+    _check_vault
+
+    local vault_dir="$USER_CONFIG_DIR"
+    local current_branch
+    current_branch=$(git -C "$vault_dir" rev-parse --abbrev-ref HEAD 2>/dev/null)
+
+    # Collect branches that have .vault-profile
+    local has_profiles=false
+
+    echo -e "${BOLD}Vault profiles:${NC}"
+
+    while IFS= read -r branch; do
+        [[ -z "$branch" ]] && continue
+        branch=$(echo "$branch" | sed 's/^[ *]*//')
+        local _default_branch
+        _default_branch=$(_vault_default_branch)
+        [[ "$branch" == "$_default_branch" ]] && continue
+
+        # Check if branch has .vault-profile
+        if git -C "$vault_dir" show "$branch:.vault-profile" >/dev/null 2>&1; then
+            has_profiles=true
+            local marker="  "
+            [[ "$branch" == "$current_branch" ]] && marker="* "
+
+            # Count resources from .vault-profile on that branch
+            local proj_count=0 pack_count=0
+            local profile_content
+            profile_content=$(git -C "$vault_dir" show "$branch:.vault-profile" 2>/dev/null || true)
+            if [[ -n "$profile_content" ]]; then
+                proj_count=$(echo "$profile_content" | grep -c '^\s*- ' 2>/dev/null || true)
+                # More precise: count under projects section
+                proj_count=$(echo "$profile_content" | awk '
+                    /^  projects:/ { in_proj=1; next }
+                    /^  packs:/ { in_proj=0; in_pack=1; next }
+                    /^[^ ]/ { in_proj=0; in_pack=0 }
+                    in_proj && /^    - / { pc++ }
+                    in_pack && /^    - / { kc++ }
+                    END { print pc+0 }
+                ')
+                pack_count=$(echo "$profile_content" | awk '
+                    /^  packs:/ { in_pack=1; next }
+                    /^[^ ]/ { in_pack=0 }
+                    in_pack && /^    - / { kc++ }
+                    END { print kc+0 }
+                ')
+            fi
+
+            local active_label=""
+            [[ "$branch" == "$current_branch" ]] && active_label=" (active)"
+
+            printf "  %s%-20s %d project(s), %d pack(s)%s\n" \
+                "$marker" "$branch" "$proj_count" "$pack_count" "$active_label"
+        fi
+    done < <(git -C "$vault_dir" branch 2>/dev/null)
+
+    if ! $has_profiles; then
+        echo "  (no profiles — vault uses main branch only)"
+        echo ""
+        info "Create a profile with: cco vault profile create <name>"
+    fi
+
+    # Show main summary
+    echo ""
+    local main_packs=0 main_templates=0
+    [[ -d "$vault_dir/packs" ]] && main_packs=$(find "$vault_dir/packs" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+    [[ -d "$vault_dir/templates" ]] && main_templates=$(find "$vault_dir/templates" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+    echo -e "  ${BOLD}Main (shared):${NC} global, ${main_templates} template(s), ${main_packs} pack(s)"
+}
+
+cmd_vault_profile_show() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --help)
+                cat <<'EOF'
+Usage: cco vault profile show
+
+Show details of the current active profile.
+EOF
+                return 0
+                ;;
+            *) die "Unknown option: $1" ;;
+        esac
+    done
+
+    _check_vault
+
+    local vault_dir="$USER_CONFIG_DIR"
+    local profile
+    profile=$(_get_active_profile)
+
+    if [[ -z "$profile" ]]; then
+        echo -e "${BOLD}Profile:${NC} (none — on main branch)"
+        echo "  All resources are shared. Create a profile for selective sync."
+        return 0
+    fi
+
+    local branch
+    branch=$(git -C "$vault_dir" rev-parse --abbrev-ref HEAD 2>/dev/null)
+
+    echo -e "${BOLD}Profile:${NC} $profile"
+    echo "  Branch: $branch"
+
+    # Sync state with default branch
+    local default_branch
+    default_branch=$(_vault_default_branch)
+    local behind ahead
+    behind=$(git -C "$vault_dir" rev-list --count "HEAD..origin/$default_branch" 2>/dev/null || echo "?")
+    ahead=$(git -C "$vault_dir" rev-list --count "origin/$default_branch..HEAD" 2>/dev/null || echo "?")
+    if [[ "$behind" == "0" && "$ahead" == "0" ]] 2>/dev/null; then
+        echo "  Sync state: up-to-date with main"
+    elif [[ "$behind" != "?" && "$ahead" != "?" ]]; then
+        echo "  Sync state: $ahead ahead, $behind behind main"
+    else
+        echo "  Sync state: unknown (no remote tracking)"
+    fi
+
+    # Exclusive projects
+    local projects
+    projects=$(_profile_projects)
+    if [[ -n "$projects" ]]; then
+        echo ""
+        echo -e "  ${BOLD}Exclusive projects:${NC}"
+        while IFS= read -r p; do
+            [[ -n "$p" ]] && echo "    - $p"
+        done <<< "$projects"
+    fi
+
+    # Exclusive packs
+    local packs
+    packs=$(_profile_packs)
+    if [[ -n "$packs" ]]; then
+        echo ""
+        echo -e "  ${BOLD}Exclusive packs:${NC}"
+        while IFS= read -r p; do
+            [[ -n "$p" ]] && echo "    - $p"
+        done <<< "$packs"
+    fi
+
+    # Shared resources
+    echo ""
+    echo -e "  ${BOLD}Shared (from main):${NC}"
+    echo "    - global/"
+    local template_count=0 pack_count=0
+    [[ -d "$vault_dir/templates" ]] && template_count=$(find "$vault_dir/templates" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+    echo "    - templates/ ($template_count template(s))"
+    # Count shared packs (not in profile's exclusive list)
+    local exclusive_packs
+    exclusive_packs=$(_profile_packs)
+    local total_packs=0 exclusive_pack_count=0
+    if [[ -d "$vault_dir/packs" ]]; then
+        total_packs=$(find "$vault_dir/packs" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+        if [[ -n "$exclusive_packs" ]]; then
+            exclusive_pack_count=$(echo "$exclusive_packs" | grep -c . || true)
+        fi
+    fi
+    local shared_packs=$((total_packs - exclusive_pack_count))
+    echo "    - packs/ ($shared_packs shared pack(s))"
+
+    # Uncommitted changes
+    echo ""
+    local status_output
+    status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
+    if [[ -z "$status_output" ]]; then
+        echo "  Uncommitted changes: none"
+    else
+        local count
+        count=$(echo "$status_output" | grep -c . || true)
+        echo "  Uncommitted changes: $count file(s)"
+    fi
+}
+
+cmd_vault_profile_switch() {
+    local name=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --help)
+                cat <<'EOF'
+Usage: cco vault profile switch <name>
+
+Switch to another vault profile. Auto-commits pending changes before switching.
+Use 'main' to switch back to the shared branch (no profile).
+EOF
+                return 0
+                ;;
+            -*) die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$name" ]]; then
+                    name="$1"; shift
+                else
+                    die "Unexpected argument: $1"
+                fi
+                ;;
+        esac
+    done
+
+    [[ -z "$name" ]] && die "Usage: cco vault profile switch <name>"
+
+    _check_vault
+
+    local vault_dir="$USER_CONFIG_DIR"
+    local current_branch
+    current_branch=$(git -C "$vault_dir" rev-parse --abbrev-ref HEAD 2>/dev/null)
+
+    if [[ "$name" == "$current_branch" ]]; then
+        info "Already on profile '$name'"
+        return 0
+    fi
+
+    # Verify target branch exists
+    if ! git -C "$vault_dir" rev-parse --verify "$name" >/dev/null 2>&1; then
+        die "Profile '$name' not found. Run 'cco vault profile list' to see available profiles."
+    fi
+
+    # Auto-commit pending changes
+    _vault_auto_commit
+
+    git -C "$vault_dir" checkout "$name" -q
+    ok "Switched to profile '$name'"
+}
+
+cmd_vault_profile_rename() {
+    local new_name=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --help)
+                cat <<'EOF'
+Usage: cco vault profile rename <new-name>
+
+Rename the current active profile.
+EOF
+                return 0
+                ;;
+            -*) die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$new_name" ]]; then
+                    new_name="$1"; shift
+                else
+                    die "Unexpected argument: $1"
+                fi
+                ;;
+        esac
+    done
+
+    [[ -z "$new_name" ]] && die "Usage: cco vault profile rename <new-name>"
+
+    _check_vault
+
+    local profile
+    profile=$(_get_active_profile)
+    [[ -z "$profile" ]] && die "No active profile. Switch to a profile first."
+
+    _validate_profile_name "$new_name"
+
+    local vault_dir="$USER_CONFIG_DIR"
+
+    # Check new name doesn't exist
+    if git -C "$vault_dir" rev-parse --verify "$new_name" >/dev/null 2>&1; then
+        die "Branch '$new_name' already exists"
+    fi
+
+    local old_name="$profile"
+
+    # Rename branch
+    git -C "$vault_dir" branch -m "$old_name" "$new_name" -q
+
+    # Update .vault-profile
+    _write_vault_profile "$new_name"
+    git -C "$vault_dir" add -A -- .vault-profile
+    git -C "$vault_dir" commit -q -m "vault: rename profile '$old_name' to '$new_name'"
+
+    # Update remote if exists
+    if git -C "$vault_dir" remote get-url origin >/dev/null 2>&1; then
+        info "Remote tracking updated. Push with: cco vault push"
+    fi
+
+    ok "Profile renamed from '$old_name' to '$new_name'"
+}
+
+cmd_vault_profile_delete() {
+    local name="" auto_yes=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --yes|-y) auto_yes=true; shift ;;
+            --help)
+                cat <<'EOF'
+Usage: cco vault profile delete <name> [--yes]
+
+Delete a vault profile. Moves all exclusive resources to main first.
+Cannot delete the currently active profile.
+
+Options:
+  --yes, -y   Skip confirmation prompt
+EOF
+                return 0
+                ;;
+            -*) die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$name" ]]; then
+                    name="$1"; shift
+                else
+                    die "Unexpected argument: $1"
+                fi
+                ;;
+        esac
+    done
+
+    [[ -z "$name" ]] && die "Usage: cco vault profile delete <name>"
+
+    _check_vault
+
+    local vault_dir="$USER_CONFIG_DIR"
+    local current_branch
+    current_branch=$(git -C "$vault_dir" rev-parse --abbrev-ref HEAD 2>/dev/null)
+
+    if [[ "$name" == "$current_branch" ]]; then
+        die "Cannot delete active profile. Switch to another profile or main first."
+    fi
+
+    # Verify branch exists and has .vault-profile
+    if ! git -C "$vault_dir" rev-parse --verify "$name" >/dev/null 2>&1; then
+        die "Profile '$name' not found"
+    fi
+
+    # Confirmation
+    if ! $auto_yes; then
+        if [[ -t 0 ]]; then
+            warn "All exclusive resources will be moved to main."
+            printf "Delete profile '$name'? [y/N] " >&2
+            local reply
+            read -r reply
+            if [[ ! "$reply" =~ ^[Yy]$ ]]; then
+                info "Aborted"
+                return 0
+            fi
+        else
+            die "Profile delete requires interactive confirmation (use --yes to skip)"
+        fi
+    fi
+
+    # Read exclusive resources from the profile branch
+    local profile_content
+    profile_content=$(git -C "$vault_dir" show "$name:.vault-profile" 2>/dev/null || true)
+
+    if [[ -n "$profile_content" ]]; then
+        # Get exclusive project and pack names
+        local excl_projects excl_packs
+        excl_projects=$(echo "$profile_content" | awk '
+            /^  projects:/ { in_proj=1; next }
+            /^  packs:/ { in_proj=0 }
+            /^[^ ]/ { in_proj=0 }
+            in_proj && /^    - / { sub(/^    - */, ""); print }
+        ')
+        excl_packs=$(echo "$profile_content" | awk '
+            /^  packs:/ { in_pack=1; next }
+            /^[^ ]/ { in_pack=0 }
+            in_pack && /^    - / { sub(/^    - */, ""); print }
+        ')
+
+        # Move exclusive resources to default branch
+        local _default_branch
+        _default_branch=$(_vault_default_branch)
+        local moved=0
+        if [[ -n "$excl_projects" ]]; then
+            while IFS= read -r proj; do
+                [[ -z "$proj" ]] && continue
+                if [[ -d "$vault_dir/projects/$proj" ]]; then
+                    git -C "$vault_dir" checkout "$_default_branch" -q
+                    git -C "$vault_dir" add -A -- "projects/$proj/" 2>/dev/null || true
+                    git -C "$vault_dir" checkout "$current_branch" -q
+                    ((moved++)) || true
+                fi
+            done <<< "$excl_projects"
+        fi
+        if [[ -n "$excl_packs" ]]; then
+            while IFS= read -r pack; do
+                [[ -z "$pack" ]] && continue
+                if [[ -d "$vault_dir/packs/$pack" ]]; then
+                    git -C "$vault_dir" checkout "$_default_branch" -q
+                    git -C "$vault_dir" add -A -- "packs/$pack/" 2>/dev/null || true
+                    git -C "$vault_dir" checkout "$current_branch" -q
+                    ((moved++)) || true
+                fi
+            done <<< "$excl_packs"
+        fi
+
+        if [[ $moved -gt 0 ]]; then
+            git -C "$vault_dir" checkout "$_default_branch" -q
+            git -C "$vault_dir" commit -q -m "vault: move resources from deleted profile '$name'" 2>/dev/null || true
+            git -C "$vault_dir" checkout "$current_branch" -q
+        fi
+    fi
+
+    # Delete branch
+    git -C "$vault_dir" branch -D "$name" -q 2>/dev/null
+
+    # Delete remote branch if exists
+    if git -C "$vault_dir" remote get-url origin >/dev/null 2>&1; then
+        git -C "$vault_dir" push origin --delete "$name" -q 2>/dev/null || true
+    fi
+
+    ok "Profile '$name' deleted"
+}
+
 # ── Internal helpers ──────────────────────────────────────────────────
 
 _check_vault() {
     if [[ ! -d "$USER_CONFIG_DIR/.git" ]]; then
         die "Vault not initialized. Run 'cco vault init' first."
+    fi
+}
+
+# Get the default branch name (main or master)
+_vault_default_branch() {
+    local vault_dir="$USER_CONFIG_DIR"
+    # Check if 'main' branch exists
+    if git -C "$vault_dir" rev-parse --verify main >/dev/null 2>&1; then
+        echo "main"
+    elif git -C "$vault_dir" rev-parse --verify master >/dev/null 2>&1; then
+        echo "master"
+    else
+        # Fallback: whatever HEAD points to
+        git -C "$vault_dir" rev-parse --abbrev-ref HEAD 2>/dev/null
     fi
 }
 
@@ -530,11 +1145,18 @@ Commands:
   restore <ref>           Restore config to a previous state
   status                  Show vault state and sync info
 
+Profiles (multi-PC selective sync):
+  profile create <name>   Create a new vault profile
+  profile list             List all profiles
+  profile show             Show current profile details
+  profile switch <name>   Switch to another profile
+  profile rename <name>   Rename current profile
+  profile delete <name>   Delete a profile
+
 Remote backup:
   remote add <n> <url>    Add a git remote
   remote remove <n>       Remove a git remote
   push [<remote>]         Push to remote (default: origin)
-  pull [<remote>]         Pull from remote (default: origin)
 
 Run 'cco vault <command> --help' for command-specific options.
 EOF
@@ -548,6 +1170,7 @@ EOF
         diff)    cmd_vault_diff "$@" ;;
         log)     cmd_vault_log "$@" ;;
         restore) cmd_vault_restore "$@" ;;
+        profile) cmd_vault_profile "$@" ;;
         remote)  cmd_vault_remote "$@" ;;
         push)    cmd_vault_push "$@" ;;
         pull)    cmd_vault_pull "$@" ;;
