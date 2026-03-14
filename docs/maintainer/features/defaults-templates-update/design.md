@@ -390,6 +390,28 @@ git merge-file [--diff3] <current> <base> <new>
 - Inserts standard conflict markers on conflicts
 - No git repository required — operates on plain files
 
+**Conflict resolution flow** (when `git merge-file` returns >0):
+
+1. Conflicting sections are shown inline in the terminal
+2. User chooses an action:
+   - **(M)erge** [default]: file is written with conflict markers + `.bak` backup.
+     User resolves markers manually in their editor of choice.
+   - **(E)dit**: same as Merge, but also opens `$EDITOR` immediately (only shown
+     if `$EDITOR` is set and available).
+   - **(R)eplace**: overwrite with framework version + `.bak`
+   - **(K)eep**: keep user version unchanged
+   - **(S)kip**: defer to next run
+3. After M/E: if conflict markers (`<<<<<<<`) are still present in the file,
+   `.cco-base/` is **not** updated — the file will be flagged again on the
+   next `cco update --apply`, giving the user another chance to resolve.
+4. Once the user resolves markers manually, the next `cco update` sees the
+   file as `USER_MODIFIED` (resolved version ≠ base) — a clean state.
+
+**Pre-start safety check**: `cco start` scans both global and project `.claude/`
+directories for unresolved conflict markers (`<<<<<<<` in `.md` and `.json` files).
+If any are found, the session is blocked with an error listing the affected files.
+This prevents launching a session with broken config files.
+
 ### 4.8 `.cco-base/` Update Rules
 
 `.cco-base/` is only updated by:
@@ -403,6 +425,8 @@ git merge-file [--diff3] <current> <base> <new>
 `.cco-base/` is NOT updated by:
 - `cco update` (discovery only — read-only operation)
 - `cco update --apply` with **(S)kip** — defers the decision
+- `cco update --apply` with **(M)erge**/**(E)dit** when conflict markers remain
+  unresolved — file is written but flagged again on next run
 - Any other cco command
 
 ### 4.9 Command Modes

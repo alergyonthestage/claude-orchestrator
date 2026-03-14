@@ -1393,3 +1393,57 @@ YAML
     assert_file_exists "$DRY_RUN_DIR/.managed/browser.json"
     assert_file_exists "$DRY_RUN_DIR/.managed/github.json"
 }
+
+# ── Unresolved merge conflict check ──────────────────────────────────
+
+test_start_blocked_by_global_conflict_markers() {
+    # cco start must fail if global config files contain unresolved conflict markers
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    # Inject conflict markers into a global config file
+    cat >> "$CCO_GLOBAL_DIR/.claude/agents/analyst.md" <<'MARKERS'
+
+<<<<<<< your version
+# My custom section
+=======
+# Framework section
+>>>>>>> new default
+MARKERS
+    if run_cco start "test-proj" --dry-run 2>/dev/null; then
+        echo "ASSERTION FAILED: cco start should fail when global config has conflict markers"
+        return 1
+    fi
+    assert_output_contains "Unresolved merge conflicts"
+    assert_output_contains "agents/analyst.md"
+}
+
+test_start_blocked_by_project_conflict_markers() {
+    # cco start must fail if project config files contain unresolved conflict markers
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    # Inject conflict markers into a project config file
+    cat >> "$CCO_PROJECTS_DIR/test-proj/.claude/settings.json" <<'MARKERS'
+<<<<<<< your version
+=======
+>>>>>>> new default
+MARKERS
+    if run_cco start "test-proj" --dry-run 2>/dev/null; then
+        echo "ASSERTION FAILED: cco start should fail when project config has conflict markers"
+        return 1
+    fi
+    assert_output_contains "Unresolved merge conflicts"
+}
+
+test_start_ok_without_conflict_markers() {
+    # cco start must succeed when no conflict markers exist
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --dry-run
+    assert_file_exists "$DRY_RUN_DIR/docker-compose.yml"
+}

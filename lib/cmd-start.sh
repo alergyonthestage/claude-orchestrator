@@ -177,6 +177,31 @@ EOF
         info "Run 'cco update' to initialize the update system."
     fi
 
+    # Check for unresolved merge conflicts in config files
+    local _conflict_files=()
+    local _check_dir _check_label
+    for _check_dir in "$GLOBAL_DIR/.claude" "$project_dir/.claude"; do
+        [[ ! -d "$_check_dir" ]] && continue
+        if [[ "$_check_dir" == "$GLOBAL_DIR/.claude" ]]; then
+            _check_label="global"
+        else
+            _check_label="project/$project"
+        fi
+        while IFS= read -r _cfile; do
+            [[ -z "$_cfile" ]] && continue
+            local _rel="${_cfile#$_check_dir/}"
+            _conflict_files+=("$_check_label/.claude/$_rel")
+        done < <(grep -rl '<<<<<<<' "$_check_dir" --include='*.md' --include='*.json' 2>/dev/null || true)
+    done
+    if [[ ${#_conflict_files[@]} -gt 0 ]]; then
+        error "Unresolved merge conflicts in config files:"
+        local _cf
+        for _cf in "${_conflict_files[@]}"; do
+            error "  - $_cf"
+        done
+        die "Resolve conflict markers before starting. Run 'cco update --apply' or edit the files manually."
+    fi
+
     # Warn about managed skills that shadow user-level copies
     if [[ -d "$GLOBAL_DIR/.claude/skills/init-workspace" ]]; then
         warn "init-workspace skill found in user global (global/.claude/skills/init-workspace)."

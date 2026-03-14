@@ -685,11 +685,25 @@ by `--project`/`--all`.
    - For each file with available update:
      - User unchanged + framework changed: offer Apply/Skip/Diff
      - Both changed: offer Merge/Replace/Keep/Skip/Diff
-   - User chooses per file (interactive)
+   - 3-way merge via `git merge-file`:
+     - Clean merge (no overlapping edits): auto-applied
+     - Conflicts: file written with conflict markers, user resolves manually
+   - Conflict resolution options:
+     - (M)erge [default]: write file with markers, resolve manually
+     - (E)dit: write + open in $EDITOR to resolve now
+     - (R)eplace: overwrite with framework version + .bak
+     - (K)eep: keep user version unchanged
+     - (S)kip: defer to next run
+   - If conflict markers remain after M/E: file is flagged again on next run
    - .bak created for each modified file (unless --no-backup)
    - .cco-base/ updated to reflect the applied framework version
    - Non-interactive fallback: defaults to Skip (no silent changes)
    - Use `cco clean` to remove .bak files after reviewing
+
+6. PRE-START SAFETY CHECK
+   - `cco start` scans global and project .claude/ dirs for conflict markers
+   - If unresolved `<<<<<<<` markers found: start is blocked with error
+   - Forces user to resolve conflicts before launching a session
 ```
 
 ---
