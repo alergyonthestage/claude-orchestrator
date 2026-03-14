@@ -164,8 +164,10 @@ print(', '.join(['$'+k for k in ['dev','build','test','start','lint'] if k in s]
         template_source="native:project/$resolved_template_name"
     fi
 
-    # Write .cco-source (flat string, single line)
-    printf '%s\n' "$template_source" > "$project_dir/.cco-source"
+    # Write .cco-source only for non-base templates (base is the default, tracked via .cco-meta)
+    if [[ "$resolved_template_name" != "base" ]]; then
+        printf '%s\n' "$template_source" > "$project_dir/.cco-source"
+    fi
 
     # Generate .cco-meta with schema_version and manifest
     local latest_schema

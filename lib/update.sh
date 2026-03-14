@@ -357,32 +357,15 @@ _in_array() {
     return 1
 }
 
-# Collect file changes between defaults and installed.
+# Collect file changes between defaults and installed using 3-version comparison.
+# Uses .cco-base/ files as the ancestor (base) version.
 # Output: "STATUS\trelative_path" lines to stdout.
-# STATUS: NEW, NO_UPDATE, SAFE_UPDATE, CONFLICT, USER_MODIFIED, REMOVED
+# STATUS: NEW, NO_UPDATE, UPDATE_AVAILABLE, MERGE_AVAILABLE, USER_MODIFIED, REMOVED, BASE_MISSING
 _collect_file_changes() {
     local defaults_dir="$1"
     local installed_dir="$2"
-    local meta_file="$3"
+    local base_dir="$3"
     local scope="$4"
-
-    # Build manifest lookup (associative via parallel arrays for bash 3.2 compat)
-    local manifest_paths=() manifest_hashes=()
-    while IFS=$'\t' read -r mpath mhash; do
-        [[ -z "$mpath" ]] && continue
-        manifest_paths+=("$mpath")
-        manifest_hashes+=("$mhash")
-    done < <(_read_manifest "$meta_file")
-
-    # Helper: look up hash from manifest
-    _manifest_hash_for() {
-        local path="$1"
-        local i
-        for (( i=0; i<${#manifest_paths[@]}; i++ )); do
-            [[ "${manifest_paths[$i]}" == "$path" ]] && echo "${manifest_hashes[$i]}" && return 0
-        done
-        echo ""
-    }
 
     # Discover default files (relative to .claude/)
     local default_files=()
@@ -409,53 +392,74 @@ _collect_file_changes() {
         done < <(find "$defaults_dir" -type f | sort)
     fi
 
-    # For each default file, classify
+    # Track which base files we've seen (for REMOVED detection)
+    local seen_base_files=""
+
+    # For each default file, classify using the 3-version algorithm
     local rel
-    for rel in "${default_files[@]}"; do
-        local default_hash installed_hash manifest_hash
+    for rel in ${default_files[@]+"${default_files[@]}"}; do
+        local new_hash installed_hash base_hash
 
-        default_hash=$(_file_hash "$defaults_dir/$rel")
+        new_hash=$(_file_hash "$defaults_dir/$rel")
         installed_hash=$(_file_hash "$installed_dir/$rel")
-        manifest_hash=$(_manifest_hash_for "$rel")
+        base_hash=$(_file_hash "$base_dir/$rel")
 
-        if [[ -z "$installed_hash" ]]; then
-            # File doesn't exist in installed dir
+        seen_base_files+="$rel"$'\n'
+
+        if [[ -z "$installed_hash" ]] && [[ -z "$base_hash" ]]; then
+            # File exists in defaults but not in target AND not in .cco-base/
             printf 'NEW\t%s\n' "$rel"
-        elif [[ -z "$manifest_hash" ]]; then
-            # File exists but not in manifest (pre-update era install)
-            # Treat as if manifest_hash == installed_hash (assume user hasn't changed)
-            if [[ "$installed_hash" == "$default_hash" ]]; then
+
+        elif [[ -z "$installed_hash" ]] && [[ -n "$base_hash" ]]; then
+            # File was in base but user deleted it — don't re-add
+            printf 'NO_UPDATE\t%s\n' "$rel"
+
+        elif [[ -z "$base_hash" ]]; then
+            # BASE_MISSING: no .cco-base/ entry for this file
+            # Fallback: compare defaults directly against user file
+            if [[ "$installed_hash" == "$new_hash" ]]; then
                 printf 'NO_UPDATE\t%s\n' "$rel"
             else
-                printf 'CONFLICT\t%s\n' "$rel"
+                printf 'BASE_MISSING\t%s\n' "$rel"
             fi
-        elif [[ "$manifest_hash" == "$default_hash" ]]; then
-            # Default hasn't changed since last update
-            printf 'NO_UPDATE\t%s\n' "$rel"
-        elif [[ "$installed_hash" == "$manifest_hash" ]]; then
-            # User hasn't modified, framework has updated → safe to overwrite
-            printf 'SAFE_UPDATE\t%s\n' "$rel"
-        elif [[ "$installed_hash" != "$manifest_hash" && "$default_hash" != "$manifest_hash" ]]; then
-            # Both user and framework have changed → conflict
-            printf 'CONFLICT\t%s\n' "$rel"
-        elif [[ "$installed_hash" != "$manifest_hash" && "$default_hash" == "$manifest_hash" ]]; then
-            # User modified, framework didn't change → skip
-            printf 'USER_MODIFIED\t%s\n' "$rel"
+
+        elif [[ "$new_hash" == "$base_hash" ]]; then
+            # Framework hasn't changed since last install/apply
+            if [[ "$installed_hash" != "$base_hash" ]]; then
+                printf 'USER_MODIFIED\t%s\n' "$rel"
+            else
+                printf 'NO_UPDATE\t%s\n' "$rel"
+            fi
+
+        elif [[ "$installed_hash" == "$base_hash" ]]; then
+            # User hasn't modified, framework has updated
+            printf 'UPDATE_AVAILABLE\t%s\n' "$rel"
+
+        elif [[ "$installed_hash" != "$base_hash" ]] && [[ "$new_hash" != "$base_hash" ]]; then
+            # Both user and framework have changed
+            printf 'MERGE_AVAILABLE\t%s\n' "$rel"
         fi
     done
 
-    # Detect files in manifest but no longer in defaults
-    local mpath
-    for (( i=0; i<${#manifest_paths[@]}; i++ )); do
-        mpath="${manifest_paths[$i]}"
-        if [[ ! -f "$defaults_dir/$mpath" ]]; then
-            # Skip user-owned files
-            if [[ "$scope" == "global" ]] && _in_array "$mpath" "${GLOBAL_USER_FILES[@]}"; then
+    # Detect files in .cco-base/ but no longer in defaults (REMOVED)
+    if [[ -d "$base_dir" ]]; then
+        while IFS= read -r fpath; do
+            [[ -z "$fpath" ]] && continue
+            local rel="${fpath#$base_dir/}"
+            # Skip if already processed (exists in defaults)
+            if echo "$seen_base_files" | grep -qxF "$rel"; then
                 continue
             fi
-            printf 'REMOVED\t%s\n' "$mpath"
-        fi
-    done
+            # Skip user-owned files
+            if [[ "$scope" == "global" ]] && _in_array "$rel" "${GLOBAL_USER_FILES[@]}"; then
+                continue
+            fi
+            if [[ "$scope" == "project" ]] && _in_array "$rel" "${PROJECT_USER_FILES[@]}"; then
+                continue
+            fi
+            printf 'REMOVED\t%s\n' "$rel"
+        done < <(find "$base_dir" -type f | sort)
+    fi
 }
 
 # ── File Change Application ──────────────────────────────────────────
@@ -494,10 +498,13 @@ _apply_file_changes() {
                 local h; h=$(_file_hash "$defaults_dir/$rel_path")
                 _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                 ;;
-            SAFE_UPDATE)
+            SAFE_UPDATE|UPDATE_AVAILABLE)
                 if [[ "$dry_run" == "true" ]]; then
-                    info "  ~ $rel_path (safe update)"
+                    info "  ~ $rel_path (framework updated, you haven't modified)"
                 else
+                    if [[ "$no_backup" != "true" && -f "$installed_dir/$rel_path" ]]; then
+                        cp "$installed_dir/$rel_path" "$installed_dir/${rel_path}.bak"
+                    fi
                     cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
                     ok "  ~ $rel_path (updated)"
                 fi
@@ -505,7 +512,22 @@ _apply_file_changes() {
                 local h; h=$(_file_hash "$defaults_dir/$rel_path")
                 _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                 ;;
-            CONFLICT)
+            BASE_MISSING)
+                # Treat as UPDATE_AVAILABLE (conservative fallback)
+                if [[ "$dry_run" == "true" ]]; then
+                    info "  ~ $rel_path (update available, base missing)"
+                else
+                    if [[ "$no_backup" != "true" && -f "$installed_dir/$rel_path" ]]; then
+                        cp "$installed_dir/$rel_path" "$installed_dir/${rel_path}.bak"
+                    fi
+                    cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
+                    ok "  ~ $rel_path (updated, base reconstructed)"
+                fi
+                updated=$(( updated + 1 ))
+                local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
+                ;;
+            CONFLICT|MERGE_AVAILABLE)
                 case "$mode" in
                     force)
                         conflicts=$(( conflicts + 1 ))
@@ -836,6 +858,44 @@ _detect_languages_from_file() {
     printf '%s\n%s\n%s\n' "${comm:-English}" "${docs:-English}" "${code:-English}"
 }
 
+# ── Discovery Summary ─────────────────────────────────────────────────
+
+# Show a concise read-only summary of discovered changes.
+# Input: newline-separated "STATUS\tpath" lines (from _collect_file_changes).
+# Only shows output if there are actionable changes. Silent if everything is NO_UPDATE.
+_show_discovery_summary() {
+    local changes="$1"
+    local scope_label="$2"  # e.g., "Global" or "Project 'myapp'"
+
+    [[ -z "$changes" ]] && return 0
+
+    local update_count=0 merge_count=0 new_count=0 removed_count=0 base_missing_count=0
+
+    while IFS=$'\t' read -r status rel_path; do
+        [[ -z "$status" ]] && continue
+        case "$status" in
+            UPDATE_AVAILABLE|SAFE_UPDATE) update_count=$(( update_count + 1 )) ;;
+            MERGE_AVAILABLE|CONFLICT)     merge_count=$(( merge_count + 1 )) ;;
+            NEW)                          new_count=$(( new_count + 1 )) ;;
+            REMOVED)                      removed_count=$(( removed_count + 1 )) ;;
+            BASE_MISSING)                 base_missing_count=$(( base_missing_count + 1 )) ;;
+        esac
+    done <<< "$changes"
+
+    local total=$(( update_count + merge_count + new_count + removed_count + base_missing_count ))
+    [[ $total -eq 0 ]] && return 0
+
+    echo ""
+    info "$scope_label: opinionated updates available:"
+    [[ $update_count -gt 0 ]] && info "  $update_count file(s) can be auto-applied (UPDATE_AVAILABLE)"
+    [[ $merge_count -gt 0 ]] && info "  $merge_count file(s) need merge (MERGE_AVAILABLE)"
+    [[ $new_count -gt 0 ]] && info "  $new_count new file(s) available (NEW)"
+    [[ $removed_count -gt 0 ]] && info "  $removed_count file(s) removed from defaults (REMOVED)"
+    [[ $base_missing_count -gt 0 ]] && info "  $base_missing_count file(s) with missing base (BASE_MISSING)"
+    echo ""
+    info "Run 'cco update --diff' for details, 'cco update --apply' to merge."
+}
+
 # ── Orchestration ────────────────────────────────────────────────────
 
 # Update global config
@@ -881,11 +941,11 @@ _update_global() {
 
     # Phase 1: COLLECT — detect file changes
     local changes
-    changes=$(_collect_file_changes "$defaults_dir" "$installed_dir" "$meta_file" "global")
+    changes=$(_collect_file_changes "$defaults_dir" "$installed_dir" "$base_dir" "global")
 
     # Count actionable changes
     local actionable
-    actionable=$(echo "$changes" | grep -cvE '^(NO_UPDATE|$)' || true)
+    actionable=$(echo "$changes" | grep -cvE '^(NO_UPDATE|USER_MODIFIED|$)' || true)
 
     # Count pending migrations
     local pending_migrations=$(( latest_schema - current_schema ))
@@ -1003,6 +1063,54 @@ _update_global() {
     fi
 }
 
+# Resolve the defaults directory for a project based on .cco-source.
+# Returns the path to the .claude/ directory in the template source.
+_resolve_project_defaults_dir() {
+    local project_dir="$1"
+    local source_file="$project_dir/.cco-source"
+    local fallback="$NATIVE_TEMPLATES_DIR/project/base/.claude"
+
+    if [[ ! -f "$source_file" ]]; then
+        echo "$fallback"
+        return 0
+    fi
+
+    local source_line
+    source_line=$(head -1 "$source_file")
+
+    case "$source_line" in
+        native:project/*)
+            local tmpl_name="${source_line#native:project/}"
+            local tmpl_dir="$NATIVE_TEMPLATES_DIR/project/$tmpl_name/.claude"
+            if [[ -d "$tmpl_dir" ]]; then
+                echo "$tmpl_dir"
+            else
+                warn "Template '$tmpl_name' referenced by project '$(basename "$project_dir")' not found."
+                warn "  Falling back to base template for discovery."
+                echo "$fallback"
+            fi
+            ;;
+        user:template/*)
+            local tmpl_name="${source_line#user:template/}"
+            local user_tmpl_dir="$TEMPLATES_DIR/project/$tmpl_name/.claude"
+            if [[ -d "$user_tmpl_dir" ]]; then
+                echo "$user_tmpl_dir"
+            else
+                # User template removed — fall back to base
+                echo "$fallback"
+            fi
+            ;;
+        http://*|https://*)
+            # Remote-installed project: use base template for opinionated files
+            echo "$fallback"
+            ;;
+        *)
+            # Unknown format — fall back to base
+            echo "$fallback"
+            ;;
+    esac
+}
+
 # Update a project's config
 _update_project() {
     local project_dir="$1"
@@ -1011,8 +1119,11 @@ _update_project() {
     local no_backup="${4:-false}"
     local meta_file="$project_dir/.cco-meta"
     local installed_dir="$project_dir/.claude"
-    local defaults_dir="$NATIVE_TEMPLATES_DIR/project/base/.claude"
     local base_dir="$project_dir/.cco-base"
+
+    # Resolve template source based on .cco-source
+    local defaults_dir
+    defaults_dir=$(_resolve_project_defaults_dir "$project_dir")
 
     # Read current state
     local current_schema
@@ -1022,11 +1133,11 @@ _update_project() {
 
     # Phase 1: COLLECT — detect file changes
     local changes
-    changes=$(_collect_file_changes "$defaults_dir" "$installed_dir" "$meta_file" "project")
+    changes=$(_collect_file_changes "$defaults_dir" "$installed_dir" "$base_dir" "project")
 
     # Count actionable changes
     local actionable
-    actionable=$(echo "$changes" | grep -cvE '^(NO_UPDATE|$)' || true)
+    actionable=$(echo "$changes" | grep -cvE '^(NO_UPDATE|USER_MODIFIED|$)' || true)
 
     # Count pending migrations
     local pending_migrations=$(( latest_schema - current_schema ))
