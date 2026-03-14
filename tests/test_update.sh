@@ -1288,3 +1288,76 @@ test_update_project_scope_isolation() {
     # Cleanup
     rm -f "$proj_defaults/rules/new-test-rule.md"
 }
+
+# ── Migration 008: separate memory from claude-state ─────────────────
+
+test_migration_008_copies_memory_from_claude_state() {
+    # Migration 008 should copy memory from claude-state/memory/ to memory/
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_migration_deps
+
+    # Create pre-migration layout: memory inside claude-state
+    local project_dir="$tmpdir/my-proj"
+    mkdir -p "$project_dir/claude-state/memory"
+    echo "# Memory Index" > "$project_dir/claude-state/memory/MEMORY.md"
+    echo "# Topic" > "$project_dir/claude-state/memory/topic.md"
+
+    source "$REPO_ROOT/migrations/project/008_separate_memory.sh"
+    migrate "$project_dir"
+
+    # Verify new location
+    assert_file_exists "$project_dir/memory/MEMORY.md"
+    assert_file_exists "$project_dir/memory/topic.md"
+    assert_file_contains "$project_dir/memory/MEMORY.md" "# Memory Index"
+
+    # Original should still exist (not deleted, just shadowed by mount)
+    assert_file_exists "$project_dir/claude-state/memory/MEMORY.md"
+}
+
+test_migration_008_idempotent() {
+    # Running migration 008 twice should be safe
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_migration_deps
+
+    local project_dir="$tmpdir/my-proj"
+    mkdir -p "$project_dir/claude-state/memory"
+    echo "# Memory" > "$project_dir/claude-state/memory/MEMORY.md"
+
+    source "$REPO_ROOT/migrations/project/008_separate_memory.sh"
+    migrate "$project_dir"
+
+    # Modify the migrated file
+    echo "# Updated" > "$project_dir/memory/MEMORY.md"
+
+    # Run again — should not overwrite
+    migrate "$project_dir"
+    assert_file_contains "$project_dir/memory/MEMORY.md" "# Updated"
+}
+
+test_migration_008_empty_claude_state_memory() {
+    # When claude-state/memory/ exists but is empty, create empty memory/
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_migration_deps
+
+    local project_dir="$tmpdir/my-proj"
+    mkdir -p "$project_dir/claude-state/memory"
+
+    source "$REPO_ROOT/migrations/project/008_separate_memory.sh"
+    migrate "$project_dir"
+
+    assert_dir_exists "$project_dir/memory"
+}
+
+test_migration_008_no_claude_state_memory() {
+    # When claude-state/memory/ doesn't exist, create empty memory/
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_migration_deps
+
+    local project_dir="$tmpdir/my-proj"
+    mkdir -p "$project_dir/claude-state"
+
+    source "$REPO_ROOT/migrations/project/008_separate_memory.sh"
+    migrate "$project_dir"
+
+    assert_dir_exists "$project_dir/memory"
+}

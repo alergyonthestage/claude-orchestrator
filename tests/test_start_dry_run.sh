@@ -208,6 +208,42 @@ test_dry_run_auto_memory_exact_path() {
         "claude-state:/home/claude/.claude/projects/-workspace"
 }
 
+test_dry_run_memory_child_mount() {
+    # Memory is a separate child mount that overrides the memory/ subdir
+    # inside the parent claude-state mount (vault-tracked, not gitignored)
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --dry-run
+    assert_file_contains "$DRY_RUN_DIR/docker-compose.yml" \
+        "./memory:/home/claude/.claude/projects/-workspace/memory"
+}
+
+test_dry_run_memory_mount_after_claude_state() {
+    # Memory child mount must appear AFTER the parent claude-state mount
+    # (Docker mount precedence: child overrides parent)
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --dry-run
+    local compose="$DRY_RUN_DIR/docker-compose.yml"
+    local state_line memory_line
+    state_line=$(grep -n "claude-state.*-workspace$" "$compose" | head -1 | cut -d: -f1)
+    memory_line=$(grep -n "memory.*-workspace/memory" "$compose" | head -1 | cut -d: -f1)
+    if [[ -z "$state_line" || -z "$memory_line" ]]; then
+        echo "ASSERTION FAILED: could not find claude-state or memory mount line"
+        return 1
+    fi
+    if [[ "$memory_line" -le "$state_line" ]]; then
+        echo "ASSERTION FAILED: memory mount must appear after claude-state mount"
+        echo "  claude-state at line: $state_line"
+        echo "  memory at line: $memory_line"
+        return 1
+    fi
+}
+
 # ── Volume mounts: project config (Design Invariant 2 - read-write) ──
 
 test_dry_run_project_claude_mounted_readwrite() {

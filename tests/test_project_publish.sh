@@ -31,7 +31,7 @@ YAML
 _create_test_project() {
     local name="$1"
     local project_dir="$CCO_PROJECTS_DIR/$name"
-    mkdir -p "$project_dir/.claude/rules" "$project_dir/claude-state/memory"
+    mkdir -p "$project_dir/.claude/rules" "$project_dir/claude-state" "$project_dir/memory"
 
     cat > "$project_dir/project.yml" <<YAML
 name: $name
@@ -146,6 +146,10 @@ test_project_publish_excludes_runtime_files() {
         echo "ASSERTION FAILED: secrets.env should be excluded"
         return 1
     }
+    [[ ! -d "$tmpl/memory" ]] || {
+        echo "ASSERTION FAILED: memory/ should be excluded"
+        return 1
+    }
 }
 
 test_project_publish_bundles_packs() {
@@ -225,7 +229,7 @@ test_project_publish_adds_url_from_git_remote() {
 
     # Create project pointing to that repo
     local project_dir="$CCO_PROJECTS_DIR/url-proj"
-    mkdir -p "$project_dir/.claude/rules" "$project_dir/claude-state/memory"
+    mkdir -p "$project_dir/.claude/rules" "$project_dir/claude-state" "$project_dir/memory"
     cat > "$project_dir/project.yml" <<YAML
 name: url-proj
 description: "Test"

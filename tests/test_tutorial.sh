@@ -89,7 +89,8 @@ test_init_tutorial_has_memory_dir() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
-    assert_dir_exists "$CCO_PROJECTS_DIR/tutorial/claude-state/memory"
+    assert_dir_exists "$CCO_PROJECTS_DIR/tutorial/claude-state"
+    assert_dir_exists "$CCO_PROJECTS_DIR/tutorial/memory"
 }
 
 test_init_skips_existing_tutorial() {

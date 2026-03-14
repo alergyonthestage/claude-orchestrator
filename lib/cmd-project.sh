@@ -147,8 +147,9 @@ print(', '.join(['$'+k for k in ['dev','build','test','start','lint'] if k in s]
         fi
     fi
 
-    # Ensure claude-state dir exists
-    mkdir -p "$project_dir/claude-state/memory"
+    # Ensure claude-state and memory dirs exist
+    mkdir -p "$project_dir/claude-state"
+    mkdir -p "$project_dir/memory"
 
     # ── Bootstrap .cco-meta, .cco-base/, .cco-source ─────────────────
     # Initialize update system metadata for the new project.
@@ -618,8 +619,9 @@ EOF
         fi
     done <<< "$project_packs"
 
-    # Ensure claude-state dir exists
-    mkdir -p "$target_dir/claude-state/memory"
+    # Ensure claude-state and memory dirs exist
+    mkdir -p "$target_dir/claude-state"
+    mkdir -p "$target_dir/memory"
 
     _cleanup_clone "$tmpdir"
     trap - EXIT
@@ -1126,6 +1128,7 @@ _copy_project_for_publish() {
         ".pack-manifest"
         ".cco-meta"
         "claude-state"
+        "memory"
         "secrets.env"
     )
 

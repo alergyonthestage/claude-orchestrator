@@ -224,6 +224,9 @@ EOF
         # Ensure claude-state directory exists (migrates legacy memory/ if needed)
         migrate_memory_to_claude_state "$project_dir"
 
+        # Ensure memory directory exists (vault-tracked, separate from claude-state)
+        mkdir -p "$project_dir/memory"
+
         # Ensure global state files exist (shared across all projects — must exist before Docker bind mount)
         mkdir -p "$GLOBAL_DIR/claude-state"
 
@@ -382,8 +385,10 @@ YAML
       # Project config
       - ./.claude:/workspace/.claude
       - ./project.yml:/workspace/project.yml:ro
-      # Claude state: auto memory + session transcripts (enables /resume across rebuilds)
+      # Claude state: session transcripts (enables /resume across rebuilds)
       - ./claude-state:/home/claude/.claude/projects/-workspace
+      # Memory: auto memory files (vault-tracked, separate from transcripts)
+      - ./memory:/home/claude/.claude/projects/-workspace/memory
 YAML
 
         # Global MCP config (merged into ~/.claude.json by entrypoint)

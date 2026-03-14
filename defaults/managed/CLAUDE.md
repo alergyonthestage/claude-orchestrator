@@ -13,6 +13,11 @@
 - Files at /workspace/ root are temporary (container-only, lost on exit)
 - Persistent work should go in repos and be versioned with git
 
+## Memory Policy
+- A managed rule (`memory-policy.md`) defines when to use MEMORY.md vs project docs
+- Memory is personal and transient — use docs for persistent project knowledge
+- See `.claude/rules/memory-policy.md` for the complete policy
+
 ## Agent Teams
 - The lead coordinates and delegates work to teammates
 - Each teammate focuses on their specialized domain

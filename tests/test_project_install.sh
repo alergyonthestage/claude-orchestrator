@@ -198,7 +198,8 @@ test_project_install_creates_claude_state() {
     local remote
     remote=$(_create_mock_template_repo "$tmpdir" "web-app")
     run_cco project install "$remote" --var "DESCRIPTION=App"
-    assert_dir_exists "$CCO_PROJECTS_DIR/web-app/claude-state/memory"
+    assert_dir_exists "$CCO_PROJECTS_DIR/web-app/claude-state"
+    assert_dir_exists "$CCO_PROJECTS_DIR/web-app/memory"
 }
 
 test_project_install_rejects_invalid_name() {
