@@ -518,51 +518,69 @@ _resolve_with_merge() {
         rm -f "$merge_out"
         ok "  ✓ $rel_path (auto-merged)"
     elif [[ $merge_result -eq 1 ]]; then
-        # Conflicts in merge — show to user
+        # Conflicts in merge — show conflict sections and let user resolve
         echo ""
         warn "Merge conflict: $rel_path"
-        echo "  Both you and the framework changed this file."
-        echo "  3-way merge produced conflicts that need resolution."
+        echo "  Both you and the framework changed overlapping sections."
+        echo ""
+
+        # Show conflict markers from merged output
+        echo "  Conflicting sections:"
+        grep -n -A 50 '<<<<<<<' "$merge_out" 2>/dev/null | while IFS= read -r line; do
+            echo "  $line"
+            # Stop after the closing marker
+            [[ "$line" == *">>>>>>>"* ]] && break
+        done
         echo ""
 
         local has_editor=false
         [[ -n "${EDITOR:-}" ]] && command -v "$EDITOR" >/dev/null 2>&1 && has_editor=true
 
+        echo "  (M)erge — write file with conflict markers, resolve manually"
         if $has_editor; then
-            echo "  (M)erge — open in \$EDITOR with conflict markers"
+            echo "  (E)dit — write + open in \$EDITOR to resolve now"
         fi
-        echo "  (K)eep your version (no changes)"
         echo "  (R)eplace with new default + create .bak"
+        echo "  (K)eep your version (no changes)"
         echo "  (S)kip (decide later)"
         echo ""
 
         local choice
         if (exec < /dev/tty) 2>/dev/null; then
             if $has_editor; then
-                read -rp "  Choice [K/m/r/s]: " choice < /dev/tty
+                read -rp "  Choice [M/e/r/k/s]: " choice < /dev/tty
             else
-                read -rp "  Choice [K/r/s]: " choice < /dev/tty
+                read -rp "  Choice [M/r/k/s]: " choice < /dev/tty
             fi
         else
             choice=""
         fi
-        choice="${choice:-K}"
+        choice="${choice:-M}"
         choice="$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')"
 
         case "$choice" in
-            m)
-                # Open merged file with conflicts in editor
+            m|e)
+                # Write merged file with conflict markers
                 _LAST_RESOLVE_SKIPPED=false
                 if [[ "$no_backup" != "true" ]]; then
                     cp "$installed_dir/$rel_path" "$installed_dir/${rel_path}.bak"
                 fi
                 cp "$merge_out" "$installed_dir/$rel_path"
-                "$EDITOR" "$installed_dir/$rel_path" < /dev/tty
+
+                # If edit mode and editor available, open it
+                if [[ "$choice" == "e" ]] && $has_editor; then
+                    "$EDITOR" "$installed_dir/$rel_path" < /dev/tty
+                fi
+
                 # Check if conflict markers were resolved
                 if grep -q '<<<<<<<' "$installed_dir/$rel_path" 2>/dev/null; then
-                    warn "  Conflict markers still present in $rel_path"
+                    # Markers remain — don't update .cco-base so it's flagged again
+                    _LAST_RESOLVE_SKIPPED=true
+                    warn "  ⚠ $rel_path written with conflict markers"
+                    info "    Resolve markers manually, then run 'cco update --apply' again."
+                    info "    Your original is saved as ${rel_path}.bak"
                 else
-                    ok "  ✓ $rel_path (manually merged)"
+                    ok "  ✓ $rel_path (conflicts resolved)"
                 fi
                 ;;
             r)
@@ -575,12 +593,15 @@ _resolve_with_merge() {
                 fi
                 cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
                 ;;
+            k)
+                _LAST_RESOLVE_SKIPPED=false
+                info "  Kept user version of $rel_path"
+                ;;
             s)
                 _LAST_RESOLVE_SKIPPED=true
                 info "  Skipped $rel_path (will be flagged again next run)"
                 ;;
             *)
-                # Keep user version but acknowledge the update
                 _LAST_RESOLVE_SKIPPED=false
                 info "  Kept user version of $rel_path"
                 ;;
