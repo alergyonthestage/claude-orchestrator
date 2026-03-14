@@ -46,7 +46,7 @@ test_update_no_changes() {
 }
 
 test_update_framework_changed() {
-    # When a default file changes but user hasn't modified it → safe update
+    # When a default file changes but user hasn't modified it → safe update via --force
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
@@ -54,7 +54,7 @@ test_update_framework_changed() {
     # Simulate framework update: modify a default file
     printf '# Updated workflow rules\n- New rule added\n' >> "$REPO_ROOT/defaults/global/.claude/rules/workflow.md"
 
-    run_cco update
+    run_cco update --force
     # The installed file should now contain the new content
     assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "New rule added"
 
@@ -157,7 +157,7 @@ test_update_replace_creates_bak() {
 }
 
 test_update_new_file_added() {
-    # New file in defaults is copied to installed dir
+    # New file in defaults is added via --force (auto-replace)
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
@@ -165,7 +165,7 @@ test_update_new_file_added() {
     # Add a new file to defaults
     printf '# New Rule\nSome new convention.\n' > "$REPO_ROOT/defaults/global/.claude/rules/new-rule.md"
 
-    run_cco update
+    run_cco update --force
     assert_file_exists "$CCO_GLOBAL_DIR/.claude/rules/new-rule.md"
     assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/new-rule.md" "New Rule"
 

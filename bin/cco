@@ -73,7 +73,7 @@ Usage: cco <command> [options]
 Getting Started:
   init                   Initialize user config from defaults
   build                  Build/rebuild the Docker image
-  update                 Update config from defaults (with migrations)
+  update                 Discover available updates (--diff, --apply, --news)
   clean                  Clean up .bak, .tmp/, docker-compose.yml
 
 Sessions:

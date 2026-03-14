@@ -3,14 +3,16 @@
 #
 # Provides: cmd_update()
 # Dependencies: colors.sh, utils.sh, update.sh
-# Globals: GLOBAL_DIR, DEFAULTS_DIR, PROJECTS_DIR
+# Globals: GLOBAL_DIR, DEFAULTS_DIR, PROJECTS_DIR, REPO_ROOT
 
 cmd_update() {
-    local mode="interactive"
+    local cmd_mode="discovery"   # discovery | diff | apply | news
     local dry_run=false
     local no_backup=false
     local project=""
     local update_all=false
+    # Hidden legacy auto-action modes (--force, --keep, --replace)
+    local auto_action=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -19,38 +21,45 @@ cmd_update() {
                 project="$2"; shift 2 ;;
             --all)        update_all=true; shift ;;
             --dry-run)    dry_run=true; shift ;;
-            --force)      mode="force"; shift ;;
-            --keep)       mode="keep"; shift ;;
-            --replace)    mode="replace"; shift ;;
+            --diff)       cmd_mode="diff"; shift ;;
+            --apply)      cmd_mode="apply"; shift ;;
+            --news)       cmd_mode="news"; shift ;;
             --no-backup)  no_backup=true; shift ;;
+            # Hidden backward-compatible aliases
+            --force)      cmd_mode="apply"; auto_action="replace"; shift ;;
+            --keep)       cmd_mode="apply"; auto_action="keep"; shift ;;
+            --replace)    cmd_mode="apply"; auto_action="replace"; shift ;;
             --help)
                 cat <<'EOF'
 Usage: cco update [OPTIONS]
 
-Update global and/or project configuration from defaults.
-Uses 3-way merge to preserve user customizations while applying framework updates.
+Migrations + discovery + additive notifications.
+Shows available opinionated file updates without modifying files.
+
+Modes:
+  (no flags)              Migrations + discovery summary + notifications
+  --diff                  Show detailed diffs for available updates
+  --apply                 Interactive per-file: apply/merge/replace/keep/skip
+  --news                  Show full details of additive changes
 
 Options:
-  --project <name>   Update a specific project (instead of global)
-  --all              Update global config + all projects
-  --dry-run          Show what would change without modifying anything
-  --force            Overwrite even user-modified files (creates .bak)
-  --keep             Always keep user version on conflicts
-  --replace          Replace changed files with new version + create .bak
-  --no-backup        Disable automatic .bak file creation
-  --help             Show this help message
+  --project <name>        Scope to specific project (+ global)
+  --all                   Scope to global + all projects (default if no --project)
+  --no-backup             Disable .bak creation (combine with --apply)
+  --dry-run               Show pending migrations without running + discovery
+  --help                  Show this help message
 
-Default behavior (no flags): 3-way merge with automatic backup.
-Files where both user and framework made changes are merged line-by-line.
-Clean merges are auto-applied. Conflicts prompt for resolution.
+Non-interactive mode:
+  When stdin is not a TTY, --apply defaults to (S)kip for all files.
 
 Examples:
-  cco update                    # Update global defaults (3-way merge)
-  cco update --dry-run          # Preview changes
-  cco update --project myapp    # Update specific project
-  cco update --all              # Update global + all projects
-  cco update --replace          # Replace all + .bak backup
-  cco update --force --no-backup  # Overwrite without backups
+  cco update                    # Discover available updates
+  cco update --diff             # Show diffs for all available updates
+  cco update --apply            # Interactively apply updates
+  cco update --project myapp    # Scope to global + myapp
+  cco update --all              # Global + all projects
+  cco update --dry-run          # Preview pending migrations
+  cco update --news             # Show new features and examples
 EOF
                 return 0
                 ;;
@@ -58,12 +67,33 @@ EOF
         esac
     done
 
+    # Validate flag combinations
+    if [[ "$cmd_mode" == "diff" && "$auto_action" == "replace" ]]; then
+        die "--diff and --apply/--force/--replace are mutually exclusive."
+    fi
+
+    # Non-TTY warning for --apply mode
+    if [[ "$cmd_mode" == "apply" && -z "$auto_action" ]]; then
+        if ! (exec < /dev/tty) 2>/dev/null; then
+            warn "Non-interactive mode: skipping all file changes. Use a terminal for interactive merge."
+            auto_action="skip"
+        fi
+    fi
+
     check_global
+
+    # Default scope: if no --project, behave like --all
+    if [[ -z "$project" ]]; then
+        update_all=true
+    fi
 
     if $update_all; then
         # Update global
         info "Updating global config..."
-        _update_global "$mode" "$dry_run" "$no_backup"
+        _update_global "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"
+
+        # Show changelog notifications (global scope only)
+        _update_changelog_notifications "$cmd_mode" "$dry_run"
 
         # Update all projects
         local project_dir
@@ -73,24 +103,30 @@ EOF
             local pname
             pname="$(basename "$project_dir")"
             info "Updating project '$pname'..."
-            _update_project "$project_dir" "$mode" "$dry_run" "$no_backup"
+            _update_project "$project_dir" "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"
         done
     elif [[ -n "$project" ]]; then
+        # Global always runs (even with --project)
+        info "Updating global config..."
+        _update_global "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"
+
+        # Show changelog notifications
+        _update_changelog_notifications "$cmd_mode" "$dry_run"
+
         # Update specific project
         local project_dir="$PROJECTS_DIR/$project"
         [[ ! -d "$project_dir" ]] && die "Project '$project' not found. Run 'cco project list'."
         [[ ! -f "$project_dir/project.yml" ]] && die "No project.yml in projects/$project/"
         info "Updating project '$project'..."
-        _update_project "$project_dir" "$mode" "$dry_run" "$no_backup"
-    else
-        # Default: update global only
-        info "Updating global config..."
-        _update_global "$mode" "$dry_run" "$no_backup"
+        _update_project "$project_dir" "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"
     fi
 
     if $dry_run; then
         echo ""
         info "Dry run complete. No changes made."
+    elif [[ "$cmd_mode" == "discovery" || "$cmd_mode" == "diff" ]]; then
+        echo ""
+        ok "Update check complete."
     else
         echo ""
         ok "Update complete."

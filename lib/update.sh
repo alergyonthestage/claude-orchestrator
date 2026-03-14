@@ -896,13 +896,429 @@ _show_discovery_summary() {
     info "Run 'cco update --diff' for details, 'cco update --apply' to merge."
 }
 
+# ── Diff Display ─────────────────────────────────────────────────────
+
+# Show detailed diffs for each discovered change.
+# Input: newline-separated "STATUS\tpath" lines (from _collect_file_changes).
+_show_file_diffs() {
+    local changes="$1"
+    local defaults_dir="$2"
+    local installed_dir="$3"
+    local base_dir="$4"
+    local scope_label="$5"
+
+    [[ -z "$changes" ]] && return 0
+
+    local shown=0
+
+    while IFS=$'\t' read -r status rel_path; do
+        [[ -z "$status" ]] && continue
+
+        case "$status" in
+            NEW)
+                echo ""
+                info "$scope_label: $rel_path (new framework file)"
+                echo "  --- /dev/null"
+                echo "  +++ $rel_path"
+                if [[ -f "$defaults_dir/$rel_path" ]]; then
+                    sed 's/^/  + /' "$defaults_dir/$rel_path"
+                fi
+                shown=$(( shown + 1 ))
+                ;;
+            UPDATE_AVAILABLE|SAFE_UPDATE)
+                echo ""
+                info "$scope_label: $rel_path (framework updated, you haven't modified)"
+                if command -v diff >/dev/null 2>&1; then
+                    diff -u "$installed_dir/$rel_path" "$defaults_dir/$rel_path" \
+                        --label "your version" --label "new default" 2>/dev/null | sed 's/^/  /' || true
+                fi
+                shown=$(( shown + 1 ))
+                ;;
+            BASE_MISSING)
+                echo ""
+                info "$scope_label: $rel_path (update available, base missing)"
+                if command -v diff >/dev/null 2>&1; then
+                    diff -u "$installed_dir/$rel_path" "$defaults_dir/$rel_path" \
+                        --label "your version" --label "new default" 2>/dev/null | sed 's/^/  /' || true
+                fi
+                shown=$(( shown + 1 ))
+                ;;
+            MERGE_AVAILABLE|CONFLICT)
+                echo ""
+                info "$scope_label: $rel_path (both modified — merge needed)"
+                if [[ -f "$base_dir/$rel_path" ]]; then
+                    echo "  --- framework changes (base → new):"
+                    diff -u "$base_dir/$rel_path" "$defaults_dir/$rel_path" \
+                        --label "previous default" --label "new default" 2>/dev/null | sed 's/^/  /' || true
+                    echo ""
+                    echo "  --- your changes (base → current):"
+                    diff -u "$base_dir/$rel_path" "$installed_dir/$rel_path" \
+                        --label "previous default" --label "your version" 2>/dev/null | sed 's/^/  /' || true
+                else
+                    diff -u "$installed_dir/$rel_path" "$defaults_dir/$rel_path" \
+                        --label "your version" --label "new default" 2>/dev/null | sed 's/^/  /' || true
+                fi
+                shown=$(( shown + 1 ))
+                ;;
+            REMOVED)
+                echo ""
+                info "$scope_label: $rel_path (removed from framework defaults)"
+                shown=$(( shown + 1 ))
+                ;;
+        esac
+    done <<< "$changes"
+
+    [[ $shown -eq 0 ]] && return 0
+    echo ""
+    info "$scope_label: $shown file(s) with available changes."
+    info "Run 'cco update --apply' to interactively apply."
+}
+
+# ── Interactive Apply ─────────────────────────────────────────────────
+
+# Interactive per-file apply with user prompts.
+# Called only in --apply mode.
+_interactive_apply() {
+    local changes="$1"
+    local defaults_dir="$2"
+    local installed_dir="$3"
+    local base_dir="$4"
+    local no_backup="$5"
+    local auto_action="$6"  # "" for interactive, "replace"|"keep"|"skip" for auto
+    local scope_label="$7"
+
+    [[ -z "$changes" ]] && return 0
+
+    _UPDATE_MANIFEST_ENTRIES=""
+    local applied=0 skipped=0 merged=0 kept=0
+
+    while IFS=$'\t' read -r status rel_path; do
+        [[ -z "$status" ]] && continue
+
+        case "$status" in
+            NEW)
+                local choice="$auto_action"
+                if [[ -z "$choice" ]]; then
+                    echo ""
+                    info "$scope_label: $rel_path (new framework file)"
+                    echo "  (A)dd file  (S)kip"
+                    if (exec < /dev/tty) 2>/dev/null; then
+                        read -rp "  Choice [A/s]: " choice < /dev/tty
+                    fi
+                    choice="${choice:-A}"
+                    choice="$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')"
+                fi
+                case "$choice" in
+                    a|add|replace)
+                        mkdir -p "$(dirname "$installed_dir/$rel_path")"
+                        cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
+                        ok "  + $rel_path (added)"
+                        applied=$(( applied + 1 ))
+                        ;;
+                    *)
+                        info "  Skipped $rel_path"
+                        skipped=$(( skipped + 1 ))
+                        ;;
+                esac
+                local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
+                ;;
+
+            UPDATE_AVAILABLE|SAFE_UPDATE|BASE_MISSING)
+                local choice="$auto_action"
+                if [[ -z "$choice" ]]; then
+                    echo ""
+                    info "$scope_label: $rel_path (framework updated, you haven't modified)"
+                    echo "  (A)pply update  (S)kip  (D)iff"
+                    if (exec < /dev/tty) 2>/dev/null; then
+                        read -rp "  Choice [A/s/d]: " choice < /dev/tty
+                    fi
+                    choice="${choice:-A}"
+                    choice="$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')"
+                    # Handle (D)iff: show diff then re-prompt
+                    if [[ "$choice" == "d" ]]; then
+                        diff -u "$installed_dir/$rel_path" "$defaults_dir/$rel_path" \
+                            --label "your version" --label "new default" 2>/dev/null | sed 's/^/  /' || true
+                        echo ""
+                        if (exec < /dev/tty) 2>/dev/null; then
+                            read -rp "  (A)pply update  (S)kip [A/s]: " choice < /dev/tty
+                        fi
+                        choice="${choice:-A}"
+                        choice="$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')"
+                    fi
+                fi
+                case "$choice" in
+                    a|apply|replace)
+                        if [[ "$no_backup" != "true" && -f "$installed_dir/$rel_path" ]]; then
+                            cp "$installed_dir/$rel_path" "$installed_dir/${rel_path}.bak"
+                        fi
+                        cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
+                        ok "  ~ $rel_path (updated)"
+                        applied=$(( applied + 1 ))
+                        ;;
+                    keep)
+                        info "  Kept user version of $rel_path"
+                        kept=$(( kept + 1 ))
+                        ;;
+                    *)
+                        info "  Skipped $rel_path"
+                        skipped=$(( skipped + 1 ))
+                        ;;
+                esac
+                local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
+                ;;
+
+            MERGE_AVAILABLE|CONFLICT)
+                local choice="$auto_action"
+                if [[ -z "$choice" ]]; then
+                    echo ""
+                    info "$scope_label: $rel_path (both modified — merge needed)"
+                    echo "  (M)erge 3-way  (R)eplace + .bak  (K)eep yours  (S)kip  (D)iff"
+                    if (exec < /dev/tty) 2>/dev/null; then
+                        read -rp "  Choice [M/r/k/s/d]: " choice < /dev/tty
+                    fi
+                    choice="${choice:-M}"
+                    choice="$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')"
+                    # Handle (D)iff: show diff then re-prompt
+                    if [[ "$choice" == "d" ]]; then
+                        if [[ -f "$base_dir/$rel_path" ]]; then
+                            echo "  --- framework changes (base → new):"
+                            diff -u "$base_dir/$rel_path" "$defaults_dir/$rel_path" \
+                                --label "previous default" --label "new default" 2>/dev/null | sed 's/^/  /' || true
+                            echo ""
+                            echo "  --- your changes (base → current):"
+                            diff -u "$base_dir/$rel_path" "$installed_dir/$rel_path" \
+                                --label "previous default" --label "your version" 2>/dev/null | sed 's/^/  /' || true
+                        else
+                            diff -u "$installed_dir/$rel_path" "$defaults_dir/$rel_path" \
+                                --label "your version" --label "new default" 2>/dev/null | sed 's/^/  /' || true
+                        fi
+                        echo ""
+                        if (exec < /dev/tty) 2>/dev/null; then
+                            read -rp "  (M)erge 3-way  (R)eplace + .bak  (K)eep yours  (S)kip [M/r/k/s]: " choice < /dev/tty
+                        fi
+                        choice="${choice:-M}"
+                        choice="$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')"
+                    fi
+                fi
+                case "$choice" in
+                    m|merge)
+                        _LAST_RESOLVE_AUTOMERGE=false
+                        _resolve_with_merge "$rel_path" "$defaults_dir" "$installed_dir" "$base_dir" "$no_backup"
+                        if $_LAST_RESOLVE_AUTOMERGE; then
+                            merged=$(( merged + 1 ))
+                        else
+                            applied=$(( applied + 1 ))
+                        fi
+                        ;;
+                    r|replace)
+                        if [[ "$no_backup" != "true" && -f "$installed_dir/$rel_path" ]]; then
+                            cp "$installed_dir/$rel_path" "$installed_dir/${rel_path}.bak"
+                            warn "  ↻ $rel_path (replaced, backup → ${rel_path}.bak)"
+                        else
+                            warn "  ↻ $rel_path (replaced)"
+                        fi
+                        cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
+                        applied=$(( applied + 1 ))
+                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                        _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
+                        ;;
+                    k|keep)
+                        info "  Kept user version of $rel_path"
+                        kept=$(( kept + 1 ))
+                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                        _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
+                        ;;
+                    *)
+                        info "  Skipped $rel_path"
+                        skipped=$(( skipped + 1 ))
+                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                        _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
+                        ;;
+                esac
+                ;;
+
+            USER_MODIFIED|NO_UPDATE)
+                # Keep current hash in manifest — no action needed
+                local h; h=$(_file_hash "$installed_dir/$rel_path")
+                _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
+                ;;
+
+            REMOVED)
+                local choice="$auto_action"
+                if [[ -z "$choice" ]]; then
+                    echo ""
+                    warn "$scope_label: $rel_path (removed from framework defaults)"
+                    echo "  File will be kept locally. No action needed."
+                fi
+                if [[ -f "$installed_dir/$rel_path" ]]; then
+                    local h; h=$(_file_hash "$installed_dir/$rel_path")
+                    _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
+                fi
+                ;;
+        esac
+    done <<< "$changes"
+
+    # Show summary
+    local total_changes=$(( applied + merged + kept ))
+    if [[ $total_changes -gt 0 || $skipped -gt 0 ]]; then
+        local parts=()
+        [[ $applied -gt 0 ]] && parts+=("$applied applied")
+        [[ $merged -gt 0 ]] && parts+=("$merged merged")
+        [[ $kept -gt 0 ]] && parts+=("$kept kept")
+        [[ $skipped -gt 0 ]] && parts+=("$skipped skipped")
+        if [[ ${#parts[@]} -gt 0 ]]; then
+            local summary
+            printf -v summary '%s, ' "${parts[@]}"
+            summary="${summary%, }"
+            info "$scope_label files: $summary"
+        fi
+    fi
+}
+
+# ── Changelog Notifications ──────────────────────────────────────────
+
+# Read changelog entries from changelog.yml.
+# Output: one line per entry as "id\tdate\ttitle\tdescription"
+_read_changelog_entries() {
+    local changelog="$REPO_ROOT/changelog.yml"
+    [[ ! -f "$changelog" ]] && return 0
+
+    # Parse YAML entries — simple line-based parser
+    local in_entry=false
+    local entry_id="" entry_date="" entry_title="" entry_desc=""
+
+    while IFS= read -r line; do
+        case "$line" in
+            "- id:"*)
+                # Emit previous entry if any
+                if [[ -n "$entry_id" ]]; then
+                    printf '%s\t%s\t%s\t%s\n' "$entry_id" "$entry_date" "$entry_title" "$entry_desc"
+                fi
+                entry_id="${line#*: }"
+                entry_date="" entry_title="" entry_desc=""
+                in_entry=true
+                ;;
+            *"date:"*)
+                $in_entry && entry_date="${line#*: }" && entry_date="${entry_date%\"}" && entry_date="${entry_date#\"}"
+                ;;
+            *"title:"*)
+                $in_entry && entry_title="${line#*: }" && entry_title="${entry_title%\"}" && entry_title="${entry_title#\"}"
+                ;;
+            *"description:"*)
+                $in_entry && entry_desc="${line#*: }" && entry_desc="${entry_desc%\"}" && entry_desc="${entry_desc#\"}"
+                ;;
+        esac
+    done < "$changelog"
+
+    # Emit last entry
+    if [[ -n "$entry_id" ]]; then
+        printf '%s\t%s\t%s\t%s\n' "$entry_id" "$entry_date" "$entry_title" "$entry_desc"
+    fi
+}
+
+# Show changelog summary (brief, shown in default mode).
+# Only shows entries with id > last_seen_changelog.
+_show_changelog_summary() {
+    local last_seen="$1"
+
+    local entries
+    entries=$(_read_changelog_entries)
+    [[ -z "$entries" ]] && return 0
+
+    local shown=0
+    while IFS=$'\t' read -r eid edate etitle edesc; do
+        [[ -z "$eid" ]] && continue
+        [[ "$eid" -le "$last_seen" ]] && continue
+        if [[ $shown -eq 0 ]]; then
+            echo ""
+            info "What's new in cco:"
+        fi
+        info "  + $etitle"
+        shown=$(( shown + 1 ))
+    done <<< "$entries"
+
+    if [[ $shown -gt 0 ]]; then
+        info "  Run 'cco update --news' for details and examples."
+    fi
+}
+
+# Show full changelog details (--news mode).
+_show_changelog_news() {
+    local last_seen="$1"
+
+    local entries
+    entries=$(_read_changelog_entries)
+    [[ -z "$entries" ]] && return 0
+
+    local shown=0
+    while IFS=$'\t' read -r eid edate etitle edesc; do
+        [[ -z "$eid" ]] && continue
+        [[ "$eid" -le "$last_seen" ]] && continue
+        echo ""
+        info "[$edate] $etitle"
+        [[ -n "$edesc" ]] && echo "  $edesc"
+        shown=$(( shown + 1 ))
+    done <<< "$entries"
+
+    if [[ $shown -eq 0 ]]; then
+        echo ""
+        ok "No new features since last check."
+    fi
+}
+
+# Get the highest changelog entry ID.
+_latest_changelog_id() {
+    local entries
+    entries=$(_read_changelog_entries)
+    [[ -z "$entries" ]] && echo "0" && return 0
+
+    local max_id=0
+    while IFS=$'\t' read -r eid edate etitle edesc; do
+        [[ -z "$eid" ]] && continue
+        [[ "$eid" -gt "$max_id" ]] && max_id="$eid"
+    done <<< "$entries"
+    echo "$max_id"
+}
+
+# Orchestrate changelog notifications based on cmd_mode.
+# Updates last_seen_changelog in .cco-meta after showing.
+_update_changelog_notifications() {
+    local cmd_mode="$1"
+    local dry_run="$2"
+    local meta_file="$GLOBAL_DIR/.claude/.cco-meta"
+
+    local last_seen
+    last_seen=$(_read_last_seen_changelog "$meta_file")
+
+    if [[ "$cmd_mode" == "news" ]]; then
+        _show_changelog_news "$last_seen"
+    else
+        _show_changelog_summary "$last_seen"
+    fi
+
+    # Update last_seen_changelog in .cco-meta (if not dry-run)
+    if [[ "$dry_run" != "true" && -f "$meta_file" ]]; then
+        local latest_id
+        latest_id=$(_latest_changelog_id)
+        if [[ "$latest_id" -gt "$last_seen" ]]; then
+            # Update the last_seen_changelog field in-place
+            if grep -q '^last_seen_changelog:' "$meta_file"; then
+                _sed_i "$meta_file" "^last_seen_changelog: .*" "last_seen_changelog: $latest_id"
+            fi
+        fi
+    fi
+}
+
 # ── Orchestration ────────────────────────────────────────────────────
 
 # Update global config
 _update_global() {
-    local mode="$1"
+    local cmd_mode="$1"       # discovery | diff | apply | news
     local dry_run="$2"
     local no_backup="${3:-false}"
+    local auto_action="${4:-}"  # "" | replace | keep | skip
     local meta_file="$GLOBAL_DIR/.claude/.cco-meta"
     local installed_dir="$GLOBAL_DIR/.claude"
     local defaults_dir="$DEFAULTS_DIR/global/.claude"
@@ -935,21 +1351,43 @@ _update_global() {
     code_lang="${code_lang:-English}"
 
     # Regenerate language.md from saved choices before comparing
-    if [[ "$dry_run" != "true" ]]; then
+    if [[ "$dry_run" != "true" && "$cmd_mode" != "news" ]]; then
         _regenerate_language_md "$installed_dir" "$comm_lang" "$docs_lang" "$code_lang"
     fi
 
-    # Phase 1: COLLECT — detect file changes
+    # Phase 1: Run migrations (always, unless --dry-run or --news)
+    local pending_migrations=$(( latest_schema - current_schema ))
+    [[ $pending_migrations -lt 0 ]] && pending_migrations=0
+
+    if [[ $pending_migrations -gt 0 && "$cmd_mode" != "news" ]]; then
+        if [[ "$dry_run" == "true" ]]; then
+            info "$pending_migrations global migration(s) pending"
+        else
+            _run_migrations "global" "$installed_dir" "$current_schema" "$meta_file"
+
+            # Refresh paths if migration moved the directory (e.g. 003_user-config-dir)
+            if [[ ! -d "$installed_dir" && -d "$USER_CONFIG_DIR/global/.claude" ]]; then
+                GLOBAL_DIR="$USER_CONFIG_DIR/global"
+                PROJECTS_DIR="$USER_CONFIG_DIR/projects"
+                PACKS_DIR="$USER_CONFIG_DIR/packs"
+                TEMPLATES_DIR="$USER_CONFIG_DIR/templates"
+                installed_dir="$GLOBAL_DIR/.claude"
+                meta_file="$installed_dir/.cco-meta"
+                base_dir="$GLOBAL_DIR/.claude/.cco-base"
+            fi
+        fi
+    fi
+
+    # --news mode: only changelog (handled by caller), skip discovery
+    [[ "$cmd_mode" == "news" ]] && return 0
+
+    # Phase 2: COLLECT — detect file changes
     local changes
     changes=$(_collect_file_changes "$defaults_dir" "$installed_dir" "$base_dir" "global")
 
     # Count actionable changes
     local actionable
     actionable=$(echo "$changes" | grep -cvE '^(NO_UPDATE|USER_MODIFIED|$)' || true)
-
-    # Count pending migrations
-    local pending_migrations=$(( latest_schema - current_schema ))
-    [[ $pending_migrations -lt 0 ]] && pending_migrations=0
 
     # Check for missing global root files (setup.sh)
     local global_defaults_root="$DEFAULTS_DIR/global"
@@ -966,49 +1404,40 @@ _update_global() {
         return 0
     fi
 
-    if [[ "$dry_run" == "true" ]]; then
-        info "Global config changes:"
-    fi
-
-    # Vault pre-update snapshot (optional)
-    if [[ "$dry_run" != "true" && "$mode" != "force" && "$mode" != "keep" ]]; then
-        if [[ -d "$USER_CONFIG_DIR/.git" ]]; then
-            local do_vault="y"
-            if (exec < /dev/tty) 2>/dev/null; then
-                read -rp "  Vault detected. Commit current state before updating? [Y/n] " do_vault < /dev/tty
-                do_vault="${do_vault:-y}"
+    # Phase 3: Route based on cmd_mode
+    case "$cmd_mode" in
+        discovery)
+            _show_discovery_summary "$changes" "Global"
+            ;;
+        diff)
+            _show_file_diffs "$changes" "$defaults_dir" "$installed_dir" "$base_dir" "Global"
+            ;;
+        apply)
+            # Vault pre-update snapshot (optional)
+            if [[ "$dry_run" != "true" && -z "$auto_action" ]]; then
+                if [[ -d "$USER_CONFIG_DIR/.git" ]]; then
+                    local do_vault="y"
+                    if (exec < /dev/tty) 2>/dev/null; then
+                        read -rp "  Vault detected. Commit current state before updating? [Y/n] " do_vault < /dev/tty
+                        do_vault="${do_vault:-y}"
+                    fi
+                    if [[ "$do_vault" =~ ^[Yy] ]]; then
+                        cmd_vault_sync "pre-update snapshot" </dev/tty >/dev/tty 2>/dev/tty || warn "Vault snapshot failed, continuing..."
+                        [[ "$no_backup" != "true" ]] && info "Vault snapshot created. You can use --no-backup to skip .bak files."
+                    fi
+                fi
             fi
-            if [[ "$do_vault" =~ ^[Yy] ]]; then
-                cmd_vault_sync "pre-update snapshot" </dev/tty >/dev/tty 2>/dev/tty || warn "Vault snapshot failed, continuing..."
-                [[ "$no_backup" != "true" ]] && info "Vault snapshot created. You can use --no-backup to skip .bak files."
+
+            if [[ "$dry_run" == "true" ]]; then
+                # In dry-run + apply, show what would be available
+                _show_discovery_summary "$changes" "Global"
+            else
+                _interactive_apply "$changes" "$defaults_dir" "$installed_dir" "$base_dir" "$no_backup" "$auto_action" "Global"
             fi
-        fi
-    fi
+            ;;
+    esac
 
-    # Phase 2: APPLY — execute changes
-    _apply_file_changes "$changes" "$defaults_dir" "$installed_dir" "$base_dir" "$mode" "$dry_run" "$no_backup"
-
-    # Run migrations (before copy-if-missing, so migrations can create files
-    # like setup-build.sh with migrated content before the template fallback)
-    if [[ $pending_migrations -gt 0 ]]; then
-        if [[ "$dry_run" == "true" ]]; then
-            info "$pending_migrations migration(s) pending"
-        else
-            _run_migrations "global" "$installed_dir" "$current_schema" "$meta_file"
-
-            # Refresh paths if migration moved the directory (e.g. 003_user-config-dir)
-            if [[ ! -d "$installed_dir" && -d "$USER_CONFIG_DIR/global/.claude" ]]; then
-                GLOBAL_DIR="$USER_CONFIG_DIR/global"
-                PROJECTS_DIR="$USER_CONFIG_DIR/projects"
-                PACKS_DIR="$USER_CONFIG_DIR/packs"
-                TEMPLATES_DIR="$USER_CONFIG_DIR/templates"
-                installed_dir="$GLOBAL_DIR/.claude"
-                meta_file="$installed_dir/.cco-meta"
-            fi
-        fi
-    fi
-
-    # Copy missing root files from defaults (after migrations, which may create some)
+    # Copy missing root files from defaults (after migrations)
     # Re-check what's actually missing now (migrations may have created files)
     root_missing=()
     for rf in "${GLOBAL_ROOT_COPY_IF_MISSING[@]}"; do
@@ -1027,7 +1456,7 @@ _update_global() {
         done
     fi
 
-    # Update .cco-meta
+    # Update .cco-meta (only in apply mode or after migrations)
     if [[ "$dry_run" != "true" ]]; then
         local created
         if [[ -f "$meta_file" ]]; then
@@ -1051,15 +1480,41 @@ _update_global() {
         local last_seen
         last_seen=$(_read_last_seen_changelog "$meta_file")
 
-        {
-            echo "$_UPDATE_MANIFEST_ENTRIES"
-            echo "$special_entries"
-        } | _generate_cco_meta \
-            "$meta_file" "$new_schema" "$created" \
-            "$comm_lang" "$docs_lang" "$code_lang" "$last_seen"
+        if [[ "$cmd_mode" == "apply" ]]; then
+            # Use manifest entries from _interactive_apply
+            {
+                echo "$_UPDATE_MANIFEST_ENTRIES"
+                echo "$special_entries"
+            } | _generate_cco_meta \
+                "$meta_file" "$new_schema" "$created" \
+                "$comm_lang" "$docs_lang" "$code_lang" "$last_seen"
 
-        # Save base versions for future 3-way merge
-        _save_all_base_versions "$base_dir" "$defaults_dir" "global"
+            # Save base versions for future 3-way merge
+            _save_all_base_versions "$base_dir" "$defaults_dir" "global"
+        else
+            # Discovery/diff mode: only update schema_version (from migrations)
+            if [[ $pending_migrations -gt 0 ]]; then
+                # Rebuild manifest from current installed files
+                local current_manifest=""
+                local entry rel policy
+                for entry in "${GLOBAL_FILE_POLICIES[@]}"; do
+                    rel="${entry%:*}"
+                    policy="${entry##*:}"
+                    [[ "$policy" == "user-owned" ]] && continue
+                    rel="${rel#.claude/}"
+                    if [[ -f "$installed_dir/$rel" ]]; then
+                        local h; h=$(_file_hash "$installed_dir/$rel")
+                        current_manifest+="${rel}	${h}"$'\n'
+                    fi
+                done
+                {
+                    echo "$current_manifest"
+                    echo "$special_entries"
+                } | _generate_cco_meta \
+                    "$meta_file" "$new_schema" "$created" \
+                    "$comm_lang" "$docs_lang" "$code_lang" "$last_seen"
+            fi
+        fi
     fi
 }
 
@@ -1114,9 +1569,12 @@ _resolve_project_defaults_dir() {
 # Update a project's config
 _update_project() {
     local project_dir="$1"
-    local mode="$2"
+    local cmd_mode="$2"       # discovery | diff | apply | news
     local dry_run="$3"
     local no_backup="${4:-false}"
+    local auto_action="${5:-}"  # "" | replace | keep | skip
+    local pname
+    pname="$(basename "$project_dir")"
     local meta_file="$project_dir/.cco-meta"
     local installed_dir="$project_dir/.claude"
     local base_dir="$project_dir/.cco-base"
@@ -1131,17 +1589,28 @@ _update_project() {
     local latest_schema
     latest_schema=$(_latest_schema_version "project")
 
-    # Phase 1: COLLECT — detect file changes
+    # Phase 1: Run migrations (always, unless --dry-run or --news)
+    local pending_migrations=$(( latest_schema - current_schema ))
+    [[ $pending_migrations -lt 0 ]] && pending_migrations=0
+
+    if [[ $pending_migrations -gt 0 && "$cmd_mode" != "news" ]]; then
+        if [[ "$dry_run" == "true" ]]; then
+            info "$pending_migrations project migration(s) pending for '$pname'"
+        else
+            _run_migrations "project" "$project_dir" "$current_schema" "$meta_file"
+        fi
+    fi
+
+    # --news mode: skip discovery for projects
+    [[ "$cmd_mode" == "news" ]] && return 0
+
+    # Phase 2: COLLECT — detect file changes
     local changes
     changes=$(_collect_file_changes "$defaults_dir" "$installed_dir" "$base_dir" "project")
 
     # Count actionable changes
     local actionable
     actionable=$(echo "$changes" | grep -cvE '^(NO_UPDATE|USER_MODIFIED|$)' || true)
-
-    # Count pending migrations
-    local pending_migrations=$(( latest_schema - current_schema ))
-    [[ $pending_migrations -lt 0 ]] && pending_migrations=0
 
     # Check for missing project root files (setup.sh, secrets.env, mcp-packages.txt)
     local template_root="$NATIVE_TEMPLATES_DIR/project/base"
@@ -1154,26 +1623,28 @@ _update_project() {
     done
 
     if [[ $actionable -eq 0 && $pending_migrations -eq 0 && ${#root_missing[@]} -eq 0 ]]; then
-        ok "Project config is up to date."
+        ok "Project '$pname' config is up to date."
         return 0
     fi
 
-    if [[ "$dry_run" == "true" ]]; then
-        info "Project config changes:"
-    fi
+    local scope_label="Project '$pname'"
 
-    # Phase 2: APPLY — execute changes
-    _apply_file_changes "$changes" "$defaults_dir" "$installed_dir" "$base_dir" "$mode" "$dry_run" "$no_backup"
-
-    # Run migrations (before copy-if-missing, so migrations can create files
-    # with migrated content before the template fallback kicks in)
-    if [[ $pending_migrations -gt 0 ]]; then
-        if [[ "$dry_run" == "true" ]]; then
-            info "$pending_migrations migration(s) pending"
-        else
-            _run_migrations "project" "$project_dir" "$current_schema" "$meta_file"
-        fi
-    fi
+    # Phase 3: Route based on cmd_mode
+    case "$cmd_mode" in
+        discovery)
+            _show_discovery_summary "$changes" "$scope_label"
+            ;;
+        diff)
+            _show_file_diffs "$changes" "$defaults_dir" "$installed_dir" "$base_dir" "$scope_label"
+            ;;
+        apply)
+            if [[ "$dry_run" == "true" ]]; then
+                _show_discovery_summary "$changes" "$scope_label"
+            else
+                _interactive_apply "$changes" "$defaults_dir" "$installed_dir" "$base_dir" "$no_backup" "$auto_action" "$scope_label"
+            fi
+            ;;
+    esac
 
     # Copy missing root files from template
     if [[ ${#root_missing[@]} -gt 0 ]]; then
@@ -1206,17 +1677,36 @@ _update_project() {
         elif [[ -f "$project_dir/.cco-source" ]]; then
             local src_line
             src_line=$(head -1 "$project_dir/.cco-source")
-            # Extract template name from native:project/<name> or user:template/<name>
             case "$src_line" in
                 native:project/*) tmpl_name="${src_line#native:project/}" ;;
                 user:template/*)  tmpl_name="${src_line#user:template/}" ;;
             esac
         fi
 
-        echo "$_UPDATE_MANIFEST_ENTRIES" | _generate_project_cco_meta \
-            "$meta_file" "$new_schema" "$created" "$tmpl_name"
+        if [[ "$cmd_mode" == "apply" ]]; then
+            echo "$_UPDATE_MANIFEST_ENTRIES" | _generate_project_cco_meta \
+                "$meta_file" "$new_schema" "$created" "$tmpl_name"
 
-        # Save base versions for future 3-way merge
-        _save_all_base_versions "$base_dir" "$defaults_dir" "project"
+            # Save base versions for future 3-way merge
+            _save_all_base_versions "$base_dir" "$defaults_dir" "project"
+        else
+            # Discovery/diff mode: only update schema_version (from migrations)
+            if [[ $pending_migrations -gt 0 ]]; then
+                local current_manifest=""
+                local entry rel policy
+                for entry in "${PROJECT_FILE_POLICIES[@]}"; do
+                    rel="${entry%:*}"
+                    policy="${entry##*:}"
+                    [[ "$policy" == "user-owned" ]] && continue
+                    rel="${rel#.claude/}"
+                    if [[ -f "$installed_dir/$rel" ]]; then
+                        local h; h=$(_file_hash "$installed_dir/$rel")
+                        current_manifest+="${rel}	${h}"$'\n'
+                    fi
+                done
+                echo "$current_manifest" | _generate_project_cco_meta \
+                    "$meta_file" "$new_schema" "$created" "$tmpl_name"
+            fi
+        fi
     fi
 }
