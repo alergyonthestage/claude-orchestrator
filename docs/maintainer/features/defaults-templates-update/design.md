@@ -401,11 +401,12 @@ git merge-file [--diff3] <current> <base> <new>
    - **(R)eplace**: overwrite with framework version + `.bak`
    - **(K)eep**: keep user version unchanged
    - **(S)kip**: defer to next run
-3. After M/E: if conflict markers (`<<<<<<<`) are still present in the file,
-   `.cco-base/` is **not** updated — the file will be flagged again on the
-   next `cco update --apply`, giving the user another chance to resolve.
+3. After M/E: `.cco-base/` is always updated (the user has dealt with the
+   merge). If conflict markers remain, `cco start` blocks until resolved —
+   that's the safety net, not the update system.
 4. Once the user resolves markers manually, the next `cco update` sees the
    file as `USER_MODIFIED` (resolved version ≠ base) — a clean state.
+   No infinite loop: the base is up-to-date, so no re-merge is triggered.
 
 **Pre-start safety check**: `cco start` scans both global and project `.claude/`
 directories for unresolved conflict markers (`<<<<<<<` in `.md` and `.json` files).
@@ -425,8 +426,6 @@ This prevents launching a session with broken config files.
 `.cco-base/` is NOT updated by:
 - `cco update` (discovery only — read-only operation)
 - `cco update --apply` with **(S)kip** — defers the decision
-- `cco update --apply` with **(M)erge**/**(E)dit** when conflict markers remain
-  unresolved — file is written but flagged again on next run
 - Any other cco command
 
 ### 4.9 Command Modes

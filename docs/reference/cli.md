@@ -694,7 +694,8 @@ by `--project`/`--all`.
      - (R)eplace: overwrite with framework version + .bak
      - (K)eep: keep user version unchanged
      - (S)kip: defer to next run
-   - If conflict markers remain after M/E: file is flagged again on next run
+   - If conflict markers remain after M/E: .cco-base is updated (no re-merge
+     loop), but `cco start` blocks until markers are resolved
    - .bak created for each modified file (unless --no-backup)
    - .cco-base/ updated to reflect the applied framework version
    - Non-interactive fallback: defaults to Skip (no silent changes)
