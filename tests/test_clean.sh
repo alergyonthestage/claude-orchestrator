@@ -302,3 +302,57 @@ test_clean_default_cleans_global_and_projects() {
     assert_file_not_exists "$proj_dir/.claude/test.md.bak"
     assert_output_contains "Removed 2 .bak"
 }
+
+# ── Combined Category & Dry-Run Tests ────────────────────────────────
+
+test_clean_all_categories_combined() {
+    # All three artifact types (.bak, .tmp/, docker-compose.yml) are removed together
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    local proj_dir="$CCO_PROJECTS_DIR/test-proj"
+    mkdir -p "$proj_dir/.claude" "$proj_dir/.tmp"
+
+    # .bak files
+    echo "backup" > "$proj_dir/.claude/test.md.bak"
+    # .tmp/ directory
+    echo "dry-run artifact" > "$proj_dir/.tmp/compose.yml"
+    # docker-compose.yml
+    echo "generated" > "$proj_dir/docker-compose.yml"
+
+    run_cco clean --all
+    assert_file_not_exists "$proj_dir/.claude/test.md.bak"
+    assert_dir_not_exists "$proj_dir/.tmp"
+    assert_file_not_exists "$proj_dir/docker-compose.yml"
+}
+
+test_clean_dry_run_no_deletion() {
+    # --dry-run reports but does NOT delete any files
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    # Create .bak files
+    echo "backup1" > "$CCO_GLOBAL_DIR/.claude/settings.json.bak"
+    echo "backup2" > "$CCO_GLOBAL_DIR/.claude/rules/workflow.md.bak"
+
+    run_cco clean --dry-run
+    assert_output_contains "[dry-run]"
+    # Files must still exist after dry-run
+    assert_file_exists "$CCO_GLOBAL_DIR/.claude/settings.json.bak"
+    assert_file_exists "$CCO_GLOBAL_DIR/.claude/rules/workflow.md.bak"
+}
+
+test_clean_nonexistent_project_error() {
+    # Cleaning a non-existent project should fail with an error message
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    run_cco clean --project nonexistent && {
+        fail "Expected clean --project nonexistent to fail"
+        return 1
+    }
+    return 0
+}

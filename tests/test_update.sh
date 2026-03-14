@@ -1040,3 +1040,251 @@ YML
     # Restore
     cp "$saved_changelog" "$REPO_ROOT/changelog.yml"
 }
+
+# ── 3-Way Merge Tests ────────────────────────────────────────────────
+
+test_merge_file_clean_merge() {
+    # When user and framework modify different sections, merge succeeds cleanly
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/update.sh"
+
+    # Base version (ancestor)
+    cat > "$tmpdir/base.md" <<'EOF'
+# Section A
+Original A content.
+
+# Section B
+Original B content.
+EOF
+
+    # User modified section A
+    cat > "$tmpdir/user.md" <<'EOF'
+# Section A
+User modified A content.
+
+# Section B
+Original B content.
+EOF
+
+    # Framework modified section B
+    cat > "$tmpdir/new.md" <<'EOF'
+# Section A
+Original A content.
+
+# Section B
+Framework modified B content.
+EOF
+
+    _merge_file "$tmpdir/user.md" "$tmpdir/base.md" "$tmpdir/new.md" "$tmpdir/output.md"
+    local rc=$?
+    [[ $rc -eq 0 ]] || fail "Expected clean merge (rc=0), got rc=$rc"
+
+    # Output should contain both modifications
+    assert_file_contains "$tmpdir/output.md" "User modified A content"
+    assert_file_contains "$tmpdir/output.md" "Framework modified B content"
+}
+
+test_merge_file_conflict() {
+    # When user and framework modify the same line, conflict markers appear
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/update.sh"
+
+    cat > "$tmpdir/base.md" <<'EOF'
+# Rules
+Follow the standard process.
+EOF
+
+    cat > "$tmpdir/user.md" <<'EOF'
+# Rules
+Follow the user custom process.
+EOF
+
+    cat > "$tmpdir/new.md" <<'EOF'
+# Rules
+Follow the improved framework process.
+EOF
+
+    _merge_file "$tmpdir/user.md" "$tmpdir/base.md" "$tmpdir/new.md" "$tmpdir/output.md"
+    local rc=$?
+    [[ $rc -ne 0 ]] || fail "Expected non-zero exit (conflict), got rc=0"
+
+    assert_file_contains "$tmpdir/output.md" "<<<<<<<"
+}
+
+test_merge_file_no_base_fallback() {
+    # When base file does not exist, _merge_file should fail gracefully
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/update.sh"
+
+    echo "user content" > "$tmpdir/user.md"
+    echo "new content" > "$tmpdir/new.md"
+
+    _merge_file "$tmpdir/user.md" "$tmpdir/nonexistent_base.md" "$tmpdir/new.md" "$tmpdir/output.md" 2>/dev/null
+    local rc=$?
+    [[ $rc -ne 0 ]] || fail "Expected non-zero exit for missing base file, got rc=0"
+}
+
+# ── Discovery Status Tests ───────────────────────────────────────────
+
+test_collect_file_changes_merge_available() {
+    # When both user and framework modified a file, status is MERGE_AVAILABLE
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/update.sh"
+
+    mkdir -p "$tmpdir/defaults" "$tmpdir/installed" "$tmpdir/base"
+
+    echo "original content" > "$tmpdir/base/testfile.md"
+    echo "user modified content" > "$tmpdir/installed/testfile.md"
+    echo "framework modified content" > "$tmpdir/defaults/testfile.md"
+
+    local changes
+    changes=$(_collect_file_changes "$tmpdir/defaults" "$tmpdir/installed" "$tmpdir/base" "project")
+    echo "$changes" | grep -qF "MERGE_AVAILABLE" || \
+        fail "Expected MERGE_AVAILABLE in output, got: $changes"
+}
+
+test_collect_file_changes_removed() {
+    # File in .cco-base but NOT in defaults → REMOVED
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/update.sh"
+
+    mkdir -p "$tmpdir/defaults" "$tmpdir/installed" "$tmpdir/base"
+
+    echo "old content" > "$tmpdir/base/obsolete.md"
+    echo "old content" > "$tmpdir/installed/obsolete.md"
+
+    local changes
+    changes=$(_collect_file_changes "$tmpdir/defaults" "$tmpdir/installed" "$tmpdir/base" "project")
+    echo "$changes" | grep -qF "REMOVED" || \
+        fail "Expected REMOVED in output, got: $changes"
+}
+
+test_collect_file_changes_base_missing() {
+    # File in defaults and installed, differs, no .cco-base → BASE_MISSING
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/update.sh"
+
+    mkdir -p "$tmpdir/defaults" "$tmpdir/installed" "$tmpdir/base"
+
+    echo "new default content" > "$tmpdir/defaults/somefile.md"
+    echo "different installed content" > "$tmpdir/installed/somefile.md"
+
+    local changes
+    changes=$(_collect_file_changes "$tmpdir/defaults" "$tmpdir/installed" "$tmpdir/base" "project")
+    echo "$changes" | grep -qF "BASE_MISSING" || \
+        fail "Expected BASE_MISSING in output, got: $changes"
+}
+
+test_collect_file_changes_user_modified() {
+    # Framework unchanged (defaults == base), user file differs → USER_MODIFIED
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/update.sh"
+
+    mkdir -p "$tmpdir/defaults" "$tmpdir/installed" "$tmpdir/base"
+
+    echo "same framework content" > "$tmpdir/defaults/rule.md"
+    echo "same framework content" > "$tmpdir/base/rule.md"
+    echo "user customized content" > "$tmpdir/installed/rule.md"
+
+    local changes
+    changes=$(_collect_file_changes "$tmpdir/defaults" "$tmpdir/installed" "$tmpdir/base" "project")
+    echo "$changes" | grep -qF "USER_MODIFIED" || \
+        fail "Expected USER_MODIFIED in output, got: $changes"
+}
+
+# ── Discovery Summary Tests ──────────────────────────────────────────
+
+test_show_discovery_summary_with_changes() {
+    # Summary should display counts and suggest --diff
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/update.sh"
+
+    local changes
+    changes=$(printf 'UPDATE_AVAILABLE\tfile1.md\nMERGE_AVAILABLE\tfile2.md\nNEW\tfile3.md\n')
+
+    local summary_output
+    summary_output=$(_show_discovery_summary "$changes" "Global" 2>&1)
+
+    echo "$summary_output" | grep -qF "update" || \
+        fail "Expected summary to mention updates, got: $summary_output"
+    echo "$summary_output" | grep -qF "cco update --diff" || \
+        fail "Expected summary to suggest --diff, got: $summary_output"
+}
+
+test_show_discovery_summary_no_changes() {
+    # When only NO_UPDATE entries, summary should output nothing
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/update.sh"
+
+    local changes
+    changes=$(printf 'NO_UPDATE\tfile1.md\nNO_UPDATE\tfile2.md\n')
+
+    local summary_output
+    summary_output=$(_show_discovery_summary "$changes" "Global" 2>&1)
+
+    [[ -z "$summary_output" ]] || \
+        fail "Expected empty summary for NO_UPDATE only, got: $summary_output"
+}
+
+# ── Project-Scoped Update Isolation ──────────────────────────────────
+
+test_update_project_scope_isolation() {
+    # Running update --project proj-a should NOT modify proj-b files
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    run_cco project create "proj-a" --repo "$CCO_DUMMY_REPO"
+    run_cco project create "proj-b" --repo "$CCO_DUMMY_REPO"
+
+    local proj_b_claude="$CCO_PROJECTS_DIR/proj-b/.claude/CLAUDE.md"
+    local hash_before
+    hash_before=$(sha256sum "$proj_b_claude" | cut -d' ' -f1)
+
+    # Simulate a framework change: add new file to project template defaults
+    local proj_defaults="$REPO_ROOT/templates/project/base/.claude"
+    printf '# New project rule\n' > "$proj_defaults/rules/new-test-rule.md"
+
+    # Run update scoped to proj-a only
+    run_cco update --project proj-a
+
+    # proj-b should NOT have the new file
+    assert_file_not_exists "$CCO_PROJECTS_DIR/proj-b/.claude/rules/new-test-rule.md" \
+        "proj-b should not be modified when updating only proj-a"
+
+    # proj-b CLAUDE.md hash should be unchanged
+    local hash_after
+    hash_after=$(sha256sum "$proj_b_claude" | cut -d' ' -f1)
+    [[ "$hash_before" == "$hash_after" ]] || \
+        fail "proj-b CLAUDE.md was modified by proj-a update"
+
+    # Cleanup
+    rm -f "$proj_defaults/rules/new-test-rule.md"
+}
