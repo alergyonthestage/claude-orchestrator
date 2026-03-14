@@ -3,7 +3,7 @@
 #
 # Provides: _file_hash(), _read_cco_meta(), _read_manifest(), _read_languages(),
 #           _generate_cco_meta(), _latest_schema_version(), _run_migrations(),
-#           _collect_file_changes(), _apply_file_changes(),
+#           _collect_file_changes(),
 #           _save_base_versions(), _merge_file(),
 #           _show_file_diffs(), _interactive_apply(),
 #           _read_changelog_entries(), _show_changelog_summary(),
@@ -476,193 +476,7 @@ _collect_file_changes() {
 _UPDATE_MANIFEST_ENTRIES=""
 _LAST_RESOLVE_AUTOMERGE=false  # set by _resolve_with_merge for counter tracking
 
-_apply_file_changes() {
-    local changes="$1"
-    local defaults_dir="$2"
-    local installed_dir="$3"
-    local base_dir="$4"     # .cco-base/ directory for 3-way merge
-    local mode="$5"         # force|keep|replace|interactive (default)
-    local dry_run="$6"
-    local no_backup="$7"    # "true" to skip .bak creation
-
-    _UPDATE_MANIFEST_ENTRIES=""
-    local updated=0 skipped=0 new_count=0 merged=0 conflicts=0
-
-    while IFS=$'\t' read -r status rel_path; do
-        [[ -z "$status" ]] && continue
-
-        case "$status" in
-            NEW)
-                if [[ "$dry_run" == "true" ]]; then
-                    info "  + $rel_path (new file)"
-                else
-                    mkdir -p "$(dirname "$installed_dir/$rel_path")"
-                    cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
-                    ok "  + $rel_path (new)"
-                fi
-                new_count=$(( new_count + 1 ))
-                local h; h=$(_file_hash "$defaults_dir/$rel_path")
-                _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
-                ;;
-            SAFE_UPDATE|UPDATE_AVAILABLE)
-                if [[ "$dry_run" == "true" ]]; then
-                    info "  ~ $rel_path (framework updated, you haven't modified)"
-                else
-                    if [[ "$no_backup" != "true" && -f "$installed_dir/$rel_path" ]]; then
-                        cp "$installed_dir/$rel_path" "$installed_dir/${rel_path}.bak"
-                    fi
-                    cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
-                    ok "  ~ $rel_path (updated)"
-                fi
-                updated=$(( updated + 1 ))
-                local h; h=$(_file_hash "$defaults_dir/$rel_path")
-                _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
-                ;;
-            BASE_MISSING)
-                # Treat as UPDATE_AVAILABLE (conservative fallback)
-                if [[ "$dry_run" == "true" ]]; then
-                    info "  ~ $rel_path (update available, base missing)"
-                else
-                    if [[ "$no_backup" != "true" && -f "$installed_dir/$rel_path" ]]; then
-                        cp "$installed_dir/$rel_path" "$installed_dir/${rel_path}.bak"
-                    fi
-                    cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
-                    ok "  ~ $rel_path (updated, base reconstructed)"
-                fi
-                updated=$(( updated + 1 ))
-                local h; h=$(_file_hash "$defaults_dir/$rel_path")
-                _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
-                ;;
-            CONFLICT|MERGE_AVAILABLE)
-                case "$mode" in
-                    force)
-                        conflicts=$(( conflicts + 1 ))
-                        if [[ "$dry_run" == "true" ]]; then
-                            info "  ! $rel_path (conflict → force overwrite)"
-                        else
-                            # Backup before overwrite (unless --no-backup)
-                            if [[ "$no_backup" != "true" ]]; then
-                                cp "$installed_dir/$rel_path" "$installed_dir/${rel_path}.bak"
-                            fi
-                            cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
-                            warn "  ! $rel_path (conflict → overwritten)"
-                        fi
-                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
-                        _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
-                        ;;
-                    keep)
-                        conflicts=$(( conflicts + 1 ))
-                        if [[ "$dry_run" == "true" ]]; then
-                            info "  ≡ $rel_path (conflict → keep user version)"
-                        else
-                            info "  ≡ $rel_path (kept user version)"
-                        fi
-                        # Save default hash so next run sees manifest==default → NO_UPDATE
-                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
-                        _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
-                        ;;
-                    replace)
-                        conflicts=$(( conflicts + 1 ))
-                        if [[ "$dry_run" == "true" ]]; then
-                            info "  ↻ $rel_path (conflict → replace + backup)"
-                        else
-                            if [[ "$no_backup" != "true" ]]; then
-                                cp "$installed_dir/$rel_path" "$installed_dir/${rel_path}.bak"
-                                warn "  ↻ $rel_path (replaced, backup → ${rel_path}.bak)"
-                            else
-                                warn "  ↻ $rel_path (replaced)"
-                            fi
-                            cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
-                        fi
-                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
-                        _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
-                        ;;
-                    *)
-                        # Default: attempt 3-way merge
-                        if [[ "$dry_run" == "true" ]]; then
-                            # Check if merge would succeed
-                            local base_file="$base_dir/$rel_path"
-                            if [[ -f "$base_file" ]]; then
-                                local merge_out
-                                merge_out=$(mktemp)
-                                if _merge_file "$installed_dir/$rel_path" "$base_file" "$defaults_dir/$rel_path" "$merge_out"; then
-                                    info "  ✓ $rel_path (auto-merge, no conflicts)"
-                                    merged=$(( merged + 1 ))
-                                else
-                                    info "  ? $rel_path (merge has conflicts — needs resolution)"
-                                    conflicts=$(( conflicts + 1 ))
-                                fi
-                                rm -f "$merge_out"
-                            else
-                                info "  ? $rel_path (both changed — needs resolution)"
-                                conflicts=$(( conflicts + 1 ))
-                            fi
-                        else
-                            _LAST_RESOLVE_AUTOMERGE=false
-                            _resolve_with_merge "$rel_path" "$defaults_dir" "$installed_dir" "$base_dir" "$no_backup"
-                            if $_LAST_RESOLVE_AUTOMERGE; then
-                                merged=$(( merged + 1 ))
-                            else
-                                conflicts=$(( conflicts + 1 ))
-                            fi
-                        fi
-                        ;;
-                esac
-                ;;
-            USER_MODIFIED)
-                if [[ "$dry_run" == "true" ]]; then
-                    info "  ≡ $rel_path (user modified, no framework change)"
-                fi
-                skipped=$(( skipped + 1 ))
-                # Keep current hash in manifest
-                local h; h=$(_file_hash "$installed_dir/$rel_path")
-                _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
-                ;;
-            NO_UPDATE)
-                # Keep current hash in manifest
-                local h; h=$(_file_hash "$installed_dir/$rel_path")
-                _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
-                ;;
-            REMOVED)
-                if [[ "$dry_run" == "true" ]]; then
-                    info "  - $rel_path (removed from defaults)"
-                else
-                    warn "  - $rel_path (removed from defaults, keeping local copy)"
-                fi
-                # Keep in manifest with current hash
-                if [[ -f "$installed_dir/$rel_path" ]]; then
-                    local h; h=$(_file_hash "$installed_dir/$rel_path")
-                    _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
-                fi
-                ;;
-        esac
-    done <<< "$changes"
-
-    # Show summary
-    local total_changes=$(( new_count + updated + merged + conflicts ))
-    if [[ $total_changes -gt 0 || $skipped -gt 0 ]]; then
-        if [[ "$dry_run" == "true" ]]; then
-            [[ $new_count -gt 0 ]] && info "$new_count new file(s) to add"
-            [[ $updated -gt 0 ]] && info "$updated file(s) to update"
-            [[ $merged -gt 0 ]] && info "$merged file(s) auto-merged"
-            [[ $conflicts -gt 0 ]] && info "$conflicts conflict(s) to resolve"
-            [[ $skipped -gt 0 ]] && info "$skipped file(s) with user modifications (preserved)"
-        else
-            local parts=()
-            [[ $new_count -gt 0 ]] && parts+=("$new_count added")
-            [[ $updated -gt 0 ]] && parts+=("$updated updated")
-            [[ $merged -gt 0 ]] && parts+=("$merged merged")
-            [[ $conflicts -gt 0 ]] && parts+=("$conflicts conflict(s)")
-            [[ $skipped -gt 0 ]] && parts+=("$skipped preserved")
-            if [[ ${#parts[@]} -gt 0 ]]; then
-                local summary
-                printf -v summary '%s, ' "${parts[@]}"
-                summary="${summary%, }"
-                info "Files: $summary"
-            fi
-        fi
-    fi
-}
+## _apply_file_changes — REMOVED (replaced by _interactive_apply in Sprint 3+4)
 
 # Resolve a conflict using 3-way merge, falling back to interactive prompt
 _resolve_with_merge() {
@@ -1196,24 +1010,26 @@ _read_changelog_entries() {
     local entry_id="" entry_date="" entry_title="" entry_desc=""
 
     while IFS= read -r line; do
-        case "$line" in
+        # Strip leading whitespace for matching (entries may be indented under `entries:`)
+        local trimmed="${line#"${line%%[![:space:]]*}"}"
+        case "$trimmed" in
             "- id:"*)
                 # Emit previous entry if any
                 if [[ -n "$entry_id" ]]; then
                     printf '%s\t%s\t%s\t%s\n' "$entry_id" "$entry_date" "$entry_title" "$entry_desc"
                 fi
-                entry_id="${line#*: }"
+                entry_id="${trimmed#*: }"
                 entry_date="" entry_title="" entry_desc=""
                 in_entry=true
                 ;;
-            *"date:"*)
-                $in_entry && entry_date="${line#*: }" && entry_date="${entry_date%\"}" && entry_date="${entry_date#\"}"
+            "date:"*|"- date:"*)
+                $in_entry && entry_date="${trimmed#*: }" && entry_date="${entry_date%\"}" && entry_date="${entry_date#\"}"
                 ;;
-            *"title:"*)
-                $in_entry && entry_title="${line#*: }" && entry_title="${entry_title%\"}" && entry_title="${entry_title#\"}"
+            "title:"*|"- title:"*)
+                $in_entry && entry_title="${trimmed#*: }" && entry_title="${trimmed#*: }" && entry_title="${entry_title%\"}" && entry_title="${entry_title#\"}"
                 ;;
-            *"description:"*)
-                $in_entry && entry_desc="${line#*: }" && entry_desc="${entry_desc%\"}" && entry_desc="${entry_desc#\"}"
+            "description:"*|"- description:"*)
+                $in_entry && entry_desc="${trimmed#*: }" && entry_desc="${entry_desc%\"}" && entry_desc="${entry_desc#\"}"
                 ;;
         esac
     done < "$changelog"

@@ -68,8 +68,8 @@ EOF
     done
 
     # Validate flag combinations
-    if [[ "$cmd_mode" == "diff" && "$auto_action" == "replace" ]]; then
-        die "--diff and --apply/--force/--replace are mutually exclusive."
+    if [[ "$cmd_mode" == "diff" && -n "$auto_action" ]]; then
+        die "--diff and --force/--keep/--replace are mutually exclusive."
     fi
 
     # Non-TTY warning for --apply mode
@@ -94,6 +94,10 @@ EOF
 
         # Show changelog notifications (global scope only)
         _update_changelog_notifications "$cmd_mode" "$dry_run"
+
+        # TODO: pack and template migration scopes (design §4.15)
+        # When migrations/pack/ or migrations/template/ exist, iterate
+        # user-config/packs/*/ and user-config/templates/*/ here.
 
         # Update all projects
         local project_dir
