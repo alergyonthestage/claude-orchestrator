@@ -1,284 +1,218 @@
 # Sprint 5b — Design: Defaults, Templates & Update System
 
-**Status**: Draft — In Review
-**Date**: 2026-03-13
+**Status**: Final — Revised 2026-03-14
+**Original date**: 2026-03-13
 **Scope**: Architecture-level
+
+> This document is the single authoritative reference for the update system design.
+> It incorporates decisions from Sprint 5b implementation and post-sprint analysis
+> (session 2026-03-14).
 
 ---
 
 ## 1. Business Model — Resource Taxonomy
 
-claude-orchestrator manages four distinct resource categories. Today they are mixed under `defaults/`. This design separates them by **lifecycle** and **ownership**.
+claude-orchestrator manages four distinct resource categories with different lifecycles
+and ownership models.
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                     Resource Taxonomy                                │
-├──────────────┬───────────────┬──────────────┬───────────────────────┤
-│  Category    │  Lifecycle    │  Ownership   │  Mutability           │
-├──────────────┼───────────────┼──────────────┼───────────────────────┤
-│  Managed     │  Baked in     │  Framework   │  Immutable (Docker)   │
-│              │  Docker image │              │                       │
-├──────────────┼───────────────┼──────────────┼───────────────────────┤
-│  Defaults    │  Copied once  │  Framework → │  User-owned after     │
-│              │  at cco init  │  User        │  install. Tracked     │
-│              │               │              │  for updates.         │
-├──────────────┼───────────────┼──────────────┼───────────────────────┤
-│  Templates   │  On-demand    │  Framework   │  Read-only source.    │
-│  (native)    │  scaffolding  │  (shipped)   │  Output is user-owned │
-├──────────────┼───────────────┼──────────────┼───────────────────────┤
-│  Templates   │  On-demand    │  User        │  User manages both    │
-│  (user)      │  scaffolding  │              │  source and output    │
-└──────────────┴───────────────┴──────────────┴───────────────────────┘
-```
+| Category | Lifecycle | Ownership | Mutability |
+|----------|-----------|-----------|------------|
+| **Managed** | Baked in Docker image | Framework | Immutable (rebuilt with `cco build`) |
+| **Defaults** | Copied once at `cco init` | Framework → User | User-owned after install; tracked for updates |
+| **Templates (native)** | On-demand scaffolding | Framework (shipped) | Read-only source; output is tracked as project |
+| **Templates (user)** | On-demand scaffolding | User | User manages both source and output |
 
 ### Key Distinctions
 
 | Aspect | Defaults | Templates |
 |--------|----------|-----------|
 | **When used** | `cco init`, `cco update` | `cco project create`, `cco pack create` |
-| **How many** | One set (global) | Multiple (project-base, tutorial, user-defined...) |
-| **Tracked by update** | Yes — checksum in `.cco-meta` | No — source is a blueprint, output is tracked as project |
+| **How many** | One set (global) | Multiple (base, tutorial, user-defined...) |
+| **Tracked by update** | Yes — all tracked files 3-way merged | Native: yes. User: only with `--sync-templates` |
 | **Relationship to user files** | 1:1 mapping (default → installed file) | 1:N mapping (template → many projects) |
-| **Framework updates** | Propagated via `cco update` | New template versions available but don't affect existing projects |
+| **Framework updates** | Propagated via `cco update` | Native: `cco update`. User: `cco update --sync-templates` |
 
 ---
 
-## 2. Directory Reorganization
-
-### 2.1 Current Structure (Problems)
+## 2. Directory Structure Map
 
 ```
-defaults/
-├── managed/      ← Framework infra (correct role, misleading parent name)
-├── global/       ← User defaults (correct role, misleading parent name)
-├── _template/    ← Project scaffold (underscore convention, single template)
-└── tutorial/     ← Pre-built project (is it a default? a template? unclear)
-```
-
-**Problems:**
-1. `defaults/` mixes two unrelated concepts (defaults vs templates)
-2. `_template/` underscore prefix is arbitrary — no way to add more templates
-3. `tutorial/` is semantically a template (pre-configured project), not a default
-4. Pack creation has no template (inline heredoc in code)
-
-### 2.2 Proposed Structure
-
-```
-defaults/                          # Framework-managed configuration sources
-├── managed/                       # Baked in Docker → /etc/claude-code/
-│   ├── managed-settings.json
-│   ├── CLAUDE.md
-│   └── .claude/skills/init-workspace/SKILL.md
+defaults/                              # Framework-managed configuration sources
+├── managed/                           # Baked in Docker → /etc/claude-code/
+│   ├── managed-settings.json          #   Hooks, env vars, deny rules (immutable)
+│   ├── CLAUDE.md                      #   Framework-level instructions (immutable)
+│   └── .claude/skills/init-workspace/ #   Managed skill (immutable)
 │
-└── global/                        # Copied to user-config/global/ at cco init
-    ├── setup.sh
-    ├── setup-build.sh
+└── global/                            # Copied to user-config/global/ at cco init
+    ├── setup.sh                       #   Host dotfiles bootstrap
+    ├── setup-build.sh                 #   Build dependencies
     └── .claude/
-        ├── CLAUDE.md
-        ├── settings.json
-        ├── mcp.json
-        ├── agents/{analyst,reviewer}.md
-        ├── rules/{language,diagrams,git-practices,workflow}.md
-        └── skills/{analyze,review,design,commit}/SKILL.md
+        ├── CLAUDE.md                  #   Global workflow instructions
+        ├── settings.json              #   Global Claude Code permissions
+        ├── mcp.json                   #   Personal MCP servers (user-owned)
+        ├── agents/
+        │   ├── analyst.md             #   Framework analyst agent spec
+        │   └── reviewer.md            #   Framework reviewer agent spec
+        ├── rules/
+        │   ├── diagrams.md            #   Diagram conventions
+        │   ├── git-practices.md       #   Git branch/commit conventions
+        │   ├── workflow.md            #   Phase-based workflow rules
+        │   └── language.md            #   Language prefs (generated from template)
+        └── skills/
+            ├── analyze/SKILL.md       #   /analyze skill
+            ├── commit/SKILL.md        #   /commit skill
+            ├── design/SKILL.md        #   /design skill
+            └── review/SKILL.md        #   /review skill
 
-templates/                         # Scaffolding blueprints (read-only sources)
-├── project/                       # Project templates
-│   ├── base/                      # Default template (used when no --template specified)
-│   │   ├── project.yml
-│   │   ├── setup.sh
-│   │   ├── secrets.env
-│   │   ├── mcp-packages.txt
-│   │   ├── claude-state/
-│   │   └── .claude/{CLAUDE.md,settings.json,rules/,agents/,skills/}
+templates/                             # Scaffolding blueprints (read-only sources)
+├── project/
+│   ├── base/                          # Default project template (no --template flag)
+│   │   ├── project.yml                #   Project manifest template
+│   │   ├── setup.sh                   #   Runtime setup script
+│   │   ├── secrets.env                #   Secrets placeholder
+│   │   ├── mcp-packages.txt           #   Optional MCP package list
+│   │   ├── claude-state/              #   Session memory dir (empty)
+│   │   └── .claude/
+│   │       ├── CLAUDE.md              #   Project context scaffold (user fills)
+│   │       ├── settings.json          #   Project permissions (minimal schema)
+│   │       ├── rules/language.md      #   Language override scaffold (commented)
+│   │       ├── agents/.gitkeep        #   Empty: project agents are user-defined
+│   │       └── skills/.gitkeep        #   Empty: project skills are user-defined
 │   │
-│   └── tutorial/                  # Tutorial template (installed at cco init)
+│   └── tutorial/                      # Tutorial template (--template tutorial)
 │       ├── project.yml
 │       ├── setup.sh
 │       ├── claude-state/
-│       └── .claude/{CLAUDE.md,settings.json,rules/,skills/}
+│       └── .claude/
+│           ├── CLAUDE.md
+│           ├── settings.json
+│           ├── rules/tutorial-behavior.md
+│           └── skills/
+│               ├── setup-pack/SKILL.md
+│               ├── setup-project/SKILL.md
+│               └── tutorial/SKILL.md
 │
-└── pack/                          # Pack templates
-    └── base/                      # Default pack template (minimal)
+└── pack/
+    └── base/                          # Default pack template
         ├── pack.yml
-        └── {knowledge,skills,agents,rules}/.gitkeep
+        ├── knowledge/.gitkeep
+        ├── skills/.gitkeep
+        ├── agents/.gitkeep
+        └── rules/.gitkeep
 ```
-
-### 2.3 User Config — Template Storage
-
-Users can create their own templates in `user-config/templates/`:
-
-```
-user-config/
-├── global/                        # Global defaults (from cco init)
-├── projects/                      # Installed projects
-├── packs/                         # Installed packs
-└── templates/                     # User-defined templates (NEW)
-    ├── project/                   # User project templates
-    │   └── my-preset/             # Example: pre-configured project with packs and settings
-    │       ├── project.yml
-    │       ├── setup.sh
-    │       └── .claude/...
-    └── pack/                      # User pack templates
-        └── my-pack-preset/        # Example: template for domain-specific packs
-            ├── pack.yml
-            └── knowledge/...
-```
-
-### 2.4 Template Resolution Order
-
-When `cco project create --template <name>`:
-
-```
-1. user-config/templates/project/<name>/     ← User templates (priority)
-2. <repo>/templates/project/<name>/          ← Native templates (fallback)
-```
-
-If `--template` is omitted → use `base/` template.
-
-### 2.5 Migration Path
-
-| Old Path | New Path | Change |
-|----------|----------|--------|
-| `defaults/managed/` | `defaults/managed/` | Unchanged |
-| `defaults/global/` | `defaults/global/` | Unchanged |
-| `defaults/_template/` | `templates/project/base/` | Moved + renamed |
-| `defaults/tutorial/` | `templates/project/tutorial/` | Moved |
-| _(new)_ | `templates/pack/base/` | New — pack template |
-
-**Code changes required** (~15 references):
-- `bin/cco`: Update `TEMPLATE_DIR` → `TEMPLATES_DIR` (already exists as variable)
-- `lib/cmd-project.sh`: Use template resolution logic
-- `lib/cmd-pack.sh`: Use pack template instead of inline heredoc
-- `Dockerfile`: No change (only copies `defaults/managed/`)
-- Tests: Update paths
 
 ---
 
-## 3. Template System
+## 3. Complete File Classification Map
 
-### 3.1 CLI Interface
+This is the definitive reference for every file managed by the update system.
 
-```bash
-# Project templates
-cco project create my-app                          # Uses base template
-cco project create my-app --template tutorial      # Uses tutorial template
-cco project create my-app --template my-preset     # Uses user template
+### Legend
 
-# Pack templates
-cco pack create my-pack                            # Uses base template
-cco pack create my-pack --template my-preset       # Uses user template
+| Policy | Meaning | `cco update` action |
+|--------|---------|---------------------|
+| `tracked` | Framework owns the content | 3-way merge (user customizations preserved) |
+| `user-owned` | User owns the content | Never touched after initial install |
+| `generated` | Rebuilt from template + saved values | Regenerated (e.g., `language.md`) |
+| `copy-if-missing` | Scaffold: written once if absent, then ignored | Written only if file doesn't exist |
+| `immutable` | Baked in Docker image | Only changes on `cco build` |
 
-# Template management
-cco template list                                  # List all templates
-cco template list --project                        # List project templates only
-cco template list --pack                           # List pack templates only
-cco template show <name>                           # Show template details
-cco template create <name> --project               # Create user project template
-cco template create <name> --pack                  # Create user pack template
-cco template create <name> --from <project>        # Create template from existing project
-cco template remove <name>                         # Remove user template
-```
+### 3.1 Managed Scope (immutable)
 
-### 3.2 Template Resolution
+> Not in the update system. Changes require `cco build`.
 
-```bash
-# Pseudo-code for template resolution
-resolve_template() {
-    local kind="$1"    # "project" or "pack"
-    local name="$2"    # template name or empty for "base"
+| File | Policy | Notes |
+|------|--------|-------|
+| `defaults/managed/CLAUDE.md` | `immutable` | Framework instructions, highest priority in Claude |
+| `defaults/managed/managed-settings.json` | `immutable` | Hooks, env, deny rules — cannot be overridden |
+| `defaults/managed/.claude/skills/init-workspace/SKILL.md` | `immutable` | Framework managed skill |
 
-    name="${name:-base}"
+### 3.2 Global Scope — `cco update` (native)
 
-    # 1. User templates (priority)
-    if [[ -d "$TEMPLATES_DIR/$kind/$name" ]]; then
-        echo "$TEMPLATES_DIR/$kind/$name"
-        return 0
-    fi
+> Source: `defaults/global/` → Installed: `user-config/global/`
 
-    # 2. Native templates (fallback)
-    if [[ -d "$REPO_ROOT/templates/$kind/$name" ]]; then
-        echo "$REPO_ROOT/templates/$kind/$name"
-        return 0
-    fi
+| File | Policy | Tracked by `cco update`? | Notes |
+|------|--------|--------------------------|-------|
+| `.claude/CLAUDE.md` | `tracked` | ✅ always | Framework workflow instructions |
+| `.claude/settings.json` | `tracked` | ✅ always | Global Claude Code permissions |
+| `.claude/mcp.json` | `user-owned` | ❌ never | Personal MCP servers |
+| `.claude/agents/analyst.md` | `tracked` | ✅ always | Framework agent spec |
+| `.claude/agents/reviewer.md` | `tracked` | ✅ always | Framework agent spec |
+| `.claude/rules/diagrams.md` | `tracked` | ✅ always | Framework diagram conventions |
+| `.claude/rules/git-practices.md` | `tracked` | ✅ always | Framework git conventions |
+| `.claude/rules/workflow.md` | `tracked` | ✅ always | Framework workflow rules |
+| `.claude/rules/language.md` | `generated` | ✅ always | Regenerated from template + `.cco-meta` saved choices |
+| `.claude/skills/analyze/SKILL.md` | `tracked` | ✅ always | Framework skill |
+| `.claude/skills/commit/SKILL.md` | `tracked` | ✅ always | Framework skill |
+| `.claude/skills/design/SKILL.md` | `tracked` | ✅ always | Framework skill |
+| `.claude/skills/review/SKILL.md` | `tracked` | ✅ always | Framework skill |
+| `setup.sh` | `user-owned` + `copy-if-missing` | ❌ never | Written once at init; user customizes |
+| `setup-build.sh` | `user-owned` + `copy-if-missing` | ❌ never | Written once at init; user customizes |
 
-    die "Template '$name' not found for $kind"
-}
-```
+### 3.3 Project Scope — `cco update --project` (native)
 
-### 3.3 Template Metadata
+> Source: `templates/project/base/` (or resolved template for template-specific files)
+> Installed: `user-config/projects/<name>/`
 
-Templates include a `template.yml` for discoverability and variable declaration:
+| File | Policy | Tracked by `cco update`? | Notes |
+|------|--------|--------------------------|-------|
+| `.claude/CLAUDE.md` | `user-owned` | ❌ never | User writes project context from scratch |
+| `.claude/settings.json` | `tracked` | ✅ always (native) | Project permissions; always uses `base` as native source |
+| `.claude/rules/language.md` | `copy-if-missing` | ❌ never | Optional project override; commented scaffold |
+| `.claude/agents/` | `user-owned` | ❌ never | Project agents are user-defined |
+| `.claude/skills/` | `user-owned` (or `tracked` if from template) | ⚠️ see note | User-defined; template-installed skills tracked with `--sync-templates` |
+| `project.yml` | `tracked` | ✅ native only | 3-way merge against `base` template; see section 4.16 |
+| `setup.sh` | `copy-if-missing` | ❌ never | Written once at project create |
+| `secrets.env` | `copy-if-missing` | ❌ never | Written once; user fills secrets |
+| `mcp-packages.txt` | `copy-if-missing` | ❌ never | Written once; user adds packages |
 
-```yaml
-# templates/project/tutorial/template.yml
-name: tutorial
-description: Interactive tutorial for learning claude-orchestrator
-author: claude-orchestrator
-tags: [tutorial, learning, onboarding]
-variables:
-  - name: PROJECT_NAME
-    description: Name of the project
-    required: true
-  - name: DESCRIPTION
-    description: Short project description
-    default: ""
-  - name: CCO_REPO_ROOT
-    description: Path to cco repository on host
-    source: env    # Resolved from environment variable
-  - name: CCO_USER_CONFIG_DIR
-    description: Path to user config directory
-    source: env
-```
+**Note on `.claude/skills/` in project scope:**
+- A project created from `base` template: no skills → nothing to track
+- A project created from `tutorial` template: has tutorial skills → tracked with `--sync-templates`
+  (because `template_source: native`, and tutorial is a native template)
+- A project created from a user template with custom skills → tracked with `--sync-templates`
+  (because `template_source: user`)
 
-**Variable resolution order:**
-1. `--var KEY=VALUE` CLI flags (explicit)
-2. Interactive prompt (if TTY available)
-3. `source: env` → resolved from environment
-4. `default:` value from template.yml
-5. Error if `required: true` and no value found
+### 3.4 Runtime-Generated Files (not in update system)
 
-Templates without `template.yml` work fine — directory name is the identifier, and `{{VAR}}` placeholders are resolved via the existing sed substitution (backward compatible).
+> Generated by `cco start`. Cleaned by `cco clean --generated`.
 
-### 3.4 `--from` Flag: Template from Existing Resource
+| File | Generated by | Cleaned by |
+|------|-------------|------------|
+| `user-config/projects/<name>/docker-compose.yml` | `cco start` | `cco clean --generated` |
+| `user-config/projects/<name>/.managed/` | `cco start` | `cco start` (regenerated each run) |
+| `user-config/projects/<name>/.tmp/` | `cco start --dry-run` | `cco clean --tmp` |
+| `user-config/global/.claude/.cco-meta` | `cco init` / `cco update` | ❌ do not delete |
+| `user-config/global/.claude/.cco-base/` | `cco init` / `cco update` | ❌ do not delete |
+| `user-config/projects/<name>/.cco-meta` | `cco project create` / `cco update` | ❌ do not delete |
+| `user-config/projects/<name>/.cco-base/` | `cco project create` / `cco update` | ❌ do not delete |
 
-```bash
-cco template create my-preset --from projects/my-app
-```
-
-**Flow:**
-1. Copy project directory to `user-config/templates/project/my-preset/`
-2. Strip runtime state (`claude-state/`, `.cco-meta`, `secrets.env` contents)
-3. Optionally replace project-specific values with `{{PLACEHOLDERS}}`
-4. Generate `template.yml` with metadata
+> **Warning**: `.cco-base/` is the ancestor for 3-way merge. Deleting it does not
+> break anything immediately, but the next `cco update` will fall back to
+> best-effort base reconstruction, potentially surfacing false conflicts.
 
 ---
 
-## 4. Update System Redesign — Git-Based 3-Way Merge
+## 4. Update System — 3-Way Merge Engine
 
 ### 4.1 Core Insight
 
-The current update system treats files as **atomic units**: a file is either replaced entirely or kept entirely. This forces users into all-or-nothing choices and loses customizations.
-
-A better approach: **line-level 3-way merge** using `git merge-file`. This command works on **individual files without requiring a git repository**, making it independent from vault.
+The update system treats files as **line-level editable content**, not atomic units.
+Using `git merge-file`, it performs 3-way merges that automatically apply framework
+improvements while preserving user customizations.
 
 ### 4.2 Why 3-Way Merge (Not 2-Way Diff)
 
-A 2-way diff (current vs new) sees that two versions differ, but **cannot determine who changed what**. Every difference becomes a potential conflict because there is no common ancestor to disambiguate.
-
-A 3-way merge adds the **base** (ancestor) version — the framework version the user originally received. This allows the algorithm to attribute each change:
+A 2-way diff (current vs new) cannot determine who changed what. Every difference
+is ambiguous. A 3-way merge adds the **base** (ancestor) — the framework version
+the user originally received — to disambiguate attribution:
 
 | current vs base | new vs base | Attribution | Action |
 |----------------|-------------|-------------|--------|
-| Same | Changed | Framework updated | Auto-apply framework change |
-| Changed | Same | User customized | Preserve user change |
-| Changed | Changed (same way) | Both agree | Auto-apply (identical change) |
+| Same | Changed | Framework updated | Auto-apply |
+| Changed | Same | User customized | Preserve |
+| Changed | Changed (same) | Both agree | Auto-apply |
 | Changed | Changed (differently) | True conflict | Prompt user |
-
-**Example**: `mount_socket: true` in user's file, `mount_socket: false` in new framework.
-- **2-way**: Is this a user preference or an old default? Unknown → conflict.
-- **3-way**: Base had `true` → user didn't change it → framework changed it → auto-apply `false`.
-
-Without the base, merge is reduced to "your version or theirs" — no automatic resolution possible.
 
 ### 4.3 How `git merge-file` Works
 
@@ -287,96 +221,53 @@ git merge-file [--diff3] <current> <base> <new>
 #                         ours     ancestor  theirs
 ```
 
-- **current** (ours): the user's file with customizations
-- **base** (ancestor): the framework version the user originally received
-- **new** (theirs): the updated framework version
-
-The command modifies `<current>` in-place, merging changes from both sides. If conflicts exist, it inserts standard conflict markers and returns a non-zero exit code.
-
-**Key properties:**
-- No git repository needed — operates on plain files
-- Standard 3-way merge algorithm (same as `git merge`)
+- Modifies `<current>` in-place, merging changes from both sides
 - Returns 0 if clean merge, >0 if conflicts remain
-- Conflict markers are human-readable and editor-compatible
-- Available everywhere git is installed (always true for cco — Docker image includes git)
+- Inserts standard conflict markers on conflicts
+- No git repository required — operates on plain files
 
-### 4.4 The Three Versions Problem
+### 4.4 The Three Versions
 
-For 3-way merge to work, we need three versions of each file:
+| Version | Source | Storage |
+|---------|--------|---------|
+| **Current** (ours) | User's installed file | `user-config/.../<file>` |
+| **Base** (ancestor) | Framework version at last install/update | `.cco-base/<file>` |
+| **New** (theirs) | Current framework version | `defaults/global/.../<file>` or resolved template |
 
-| Version | Source | Current Availability |
-|---------|--------|---------------------|
-| **Current** (ours) | User's installed file | Always available |
-| **Base** (ancestor) | Framework version at time of last install/update | **Not stored today** — only hash in `.cco-meta` |
-| **New** (theirs) | Updated framework version in `defaults/` | Always available |
+### 4.5 Base Version Storage — `.cco-base/`
 
-**The missing piece**: We have the hash of the base version (in `.cco-meta` manifest), but not the actual file content. We need the base content to perform 3-way merge.
-
-### 4.5 Approach: Base Version Storage
-
-**Option A: Store base files in `.cco-base/`**
-
-Store a copy of each framework file as it was at install/update time:
+A copy of each tracked file as delivered by the framework at install/update time.
+Stored alongside `.cco-meta`:
 
 ```
-user-config/global/
-├── .claude/
-│   ├── .cco-meta              # Manifest with hashes
-│   ├── .cco-base/             # Base versions for 3-way merge (NEW)
-│   │   ├── CLAUDE.md
-│   │   ├── settings.json
-│   │   ├── rules/workflow.md
-│   │   └── ...
-│   ├── CLAUDE.md              # User's current version
+user-config/global/.claude/
+├── .cco-meta                  # Manifest with hashes + metadata
+├── .cco-base/                 # Ancestor versions for 3-way merge
+│   ├── CLAUDE.md
 │   ├── settings.json
-│   └── ...
+│   ├── agents/analyst.md
+│   ├── rules/workflow.md
+│   └── skills/analyze/SKILL.md
+└── CLAUDE.md                  # User's current version
+...
+
+user-config/projects/<name>/
+├── .cco-meta
+├── .cco-base/
+│   ├── .claude/settings.json
+│   └── project.yml
+└── project.yml                # User's current version
 ```
 
-- Pro: Simple, self-contained, no external dependencies
-- Pro: Works offline, no git repo needed
-- Pro: Base is always available even if user reinstalls git
-- Con: Doubles storage for tracked files (~50KB total — negligible)
-- Con: Another hidden directory to maintain
+**Lifecycle:**
+- Created at `cco init` (global) and `cco project create` (project)
+- Updated after each successful `cco update`
+- Never modified by user (hidden, gitignored in vault)
+- Size: mirrors tracked files only (~50KB total — negligible)
 
-**Option B: Use git object store (requires vault)**
-
-Store base versions as git blobs, referenced by hash from `.cco-meta`:
+### 4.6 File Policies (Definitive)
 
 ```bash
-# Store: git hash-object -w <file> → returns SHA
-# Retrieve: git cat-file blob <sha> > /tmp/base_version
-```
-
-- Pro: No duplicate files on disk
-- Pro: Leverages existing git infrastructure
-- Con: Requires vault to be initialized (not optional anymore)
-- Con: More complex retrieval logic
-
-**Option C: Reconstruct base from defaults git history**
-
-Use `git log` on the cco repository to find the version of defaults that matches the manifest hash:
-
-- Pro: No additional storage
-- Con: Extremely fragile — depends on cco repo being available and unmodified
-- Con: Slow — requires git log traversal
-
-**Recommended: Option A (`.cco-base/`)**
-
-The storage cost is negligible (~50KB for all tracked files). It's self-contained, works without vault, and the implementation is trivial: after every install/update, copy the framework version to `.cco-base/`.
-
-### 4.6 Updated File Policies
-
-Replace the current multi-list approach with a single, declarative classification:
-
-```bash
-# File update policies
-# Format: "relative_path:policy"
-#
-# Policies:
-#   tracked    — 3-way merge on update (user customizations preserved)
-#   user-owned — never touched after initial copy
-#   generated  — regenerated from template + saved values (e.g., language.md)
-
 GLOBAL_FILE_POLICIES=(
     ".claude/CLAUDE.md:tracked"
     ".claude/settings.json:tracked"
@@ -397,138 +288,94 @@ GLOBAL_FILE_POLICIES=(
 
 PROJECT_FILE_POLICIES=(
     ".claude/CLAUDE.md:user-owned"
-    ".claude/settings.json:tracked"
-    ".claude/rules/language.md:user-owned"
-    "project.yml:tracked"
-    "setup.sh:user-owned"
-    "secrets.env:user-owned"
-    "mcp-packages.txt:tracked"
+    ".claude/settings.json:tracked"         # always-native source (base template)
+    ".claude/rules/language.md:user-owned"  # optional override; user writes it
+    "project.yml:tracked"                   # 3-way merge; native baseline only
 )
+
+GLOBAL_ROOT_COPY_IF_MISSING=("setup.sh" "setup-build.sh")
+PROJECT_ROOT_COPY_IF_MISSING=("setup.sh" "secrets.env" "mcp-packages.txt")
 ```
 
-Note: `root-tracked` policy is no longer needed. With 3-way merge, **all tracked files use the same mechanism** regardless of location. The distinction between `.claude/` files and root files disappears.
-
-### 4.7 Updated Algorithm
+### 4.7 Change Detection Algorithm
 
 For each `tracked` file:
 
 ```
 installed  = user's current file
-base       = .cco-base/<path>  (framework version at last install/update)
-new        = defaults/<path>   (current framework version)
-
-installed_hash = hash(installed)
-base_hash      = hash from .cco-meta manifest (or hash(base))
-new_hash       = hash(new)
+base       = .cco-base/<path>
+new        = defaults/<path>  (or resolved template for template-specific files)
 
 if installed doesn't exist and new exists:
-    → NEW: copy from defaults, save to .cco-base/
+    → NEW: copy from source, save to .cco-base/
 
-elif new_hash == base_hash:
-    → NO_UPDATE: framework hasn't changed
+elif hash(new) == hash(base):
+    → NO_UPDATE: framework hasn't changed → skip
 
-elif installed_hash == base_hash:
+elif hash(installed) == hash(base):
     → SAFE_UPDATE: user hasn't modified, framework updated
     → copy new version, update .cco-base/
 
-elif installed_hash != base_hash AND new_hash != base_hash:
+elif hash(installed) != hash(base) AND hash(new) != hash(base):
     → BOTH_CHANGED: 3-way merge needed
     → run git merge-file
     → if clean merge: auto-apply, update .cco-base/
-    → if conflicts: show to user for resolution
+    → if conflicts: prompt user (see section 4.9)
 
-elif installed_hash != base_hash AND new_hash == base_hash:
+elif hash(installed) != hash(base) AND hash(new) == hash(base):
     → USER_MODIFIED: user changed, framework didn't → skip
 ```
 
 ### 4.8 Merge Resolution Modes
 
 ```bash
-cco update                    # Default: 3-way merge with auto-backup
+cco update                    # Default: 3-way merge, interactive conflict resolution
 cco update --dry-run          # Preview changes without applying
-cco update --force            # Overwrite everything (ignore user changes)
-cco update --keep             # Keep all user versions (skip all updates)
-cco update --replace          # Replace files with new version + create .bak (no merge)
+cco update --force            # Overwrite everything (ignore user changes) + .bak
+cco update --keep             # Keep all user versions (skip all conflicts)
+cco update --replace          # Replace files with new version + .bak (no merge)
 cco update --no-backup        # Disable automatic .bak creation
+cco update --sync-templates   # Also update from user templates (see section 4.16)
 ```
 
-#### Backup Policy
-
-**Automatic `.bak` creation** is the default safety net. Whenever `cco update` modifies a user file (auto-merge, conflict resolution, or replace), it creates a `.bak` copy of the user's original version BEFORE applying changes. This ensures the user can always recover their previous version.
-
-| Scenario | `.bak` created? | Rationale |
-|----------|----------------|-----------|
-| SAFE_UPDATE (user unchanged) | No | Original matches base — no user work to preserve |
-| BOTH_CHANGED → auto-merge (clean) | **Yes** | User had customizations; merged result may need review |
-| BOTH_CHANGED → conflict resolution | **Yes** | User explicitly choosing; backup is safety net |
-| `--replace` mode | **Yes** | User's file replaced entirely; .bak is the only copy |
-| `--force` mode | **Yes** | Destructive; backup is critical |
-| `--keep` mode | No | File not modified |
-| `--no-backup` flag | No | User explicitly opts out |
-
-The `--no-backup` flag can be combined with any mode to disable `.bak` creation:
-```bash
-cco update --no-backup         # Merge without backups
-cco update --force --no-backup # Overwrite without backups
-```
-
-If vault is initialized and a pre-update snapshot was committed, `cco update` suggests `--no-backup` since vault already provides recovery:
-```
-ℹ Vault snapshot created. You can use --no-backup to skip .bak files.
-```
-
-#### Default Mode (3-way merge)
+### 4.9 Interactive Conflict Resolution
 
 ```
-For each BOTH_CHANGED file:
+For each BOTH_CHANGED file (default mode):
   1. Create temp copies: /tmp/cco-merge/{current,base,new}
   2. Run: git merge-file --diff3 /tmp/cco-merge/current base new
   3. If exit code 0 (clean merge):
      → Create .bak of user's current file
-     → Show diff of merged result vs current
+     → Show diff summary
      → "Auto-merged rules/workflow.md (no conflicts). Apply? [Y/n]"
      → If yes: copy merged result, update .cco-base/ and manifest
-  4. If exit code > 0 (conflicts):
+  4. If exit code > 0 (conflicts remain):
      → Show conflict summary
-     → Options:
-       (M)erge — open in $EDITOR with conflict markers for manual resolution
-       (K)eep your version (no changes)
-       (R)eplace with new default + create .bak
-       (S)kip (decide later)
-  5. If $EDITOR not set or not available:
-     → Show conflict markers inline
-     → Offer K/R/S (no edit option)
+     → Prompt:
+       (M)erge — open in $EDITOR with conflict markers
+       (K)eep   — keep your version unchanged (default if no TTY)
+       (R)eplace — use new framework version + .bak
+       (S)kip   — decide later
+  5. If $EDITOR not set: offer K/R/S only
 ```
 
-#### `--replace` Mode (Replace + Backup)
+### 4.10 Backup Policy
 
-Alternative to merge. Replaces user files entirely with the new framework version, creating `.bak` of each original. Useful when:
-- The file structure changed radically and merge produces poor results
-- User prefers to manually port customizations from `.bak` to the new file
-- Merge conflicts are too complex to resolve inline
+Automatic `.bak` creation is the default safety net.
 
-```bash
-cco update --replace                  # Replace all changed files + .bak
-cco update --replace --project myapp  # Replace only for a specific project
-```
+| Scenario | `.bak` created? |
+|----------|----------------|
+| SAFE_UPDATE (user unchanged) | No |
+| BOTH_CHANGED → auto-merge (clean) | **Yes** |
+| BOTH_CHANGED → conflict resolution | **Yes** |
+| `--replace` mode | **Yes** |
+| `--force` mode | **Yes** |
+| `--keep` mode | No |
+| `--no-backup` flag | No |
 
-Behavior per file:
-```
-For each BOTH_CHANGED or SAFE_UPDATE file:
-  1. Copy current → current.bak
-  2. Copy new framework version → current
-  3. Update .cco-base/ and manifest
-  User message: "↻ rules/workflow.md (replaced, backup → rules/workflow.md.bak)"
-```
+### 4.11 Diff Preview Summary
 
-#### `.bak` File Cleanup
-
-`.bak` files accumulate over updates. Cleanup via dedicated `cco clean` command (see section 6).
-Vault: `.bak` files are gitignored in vault (not versioned).
-
-### 4.9 Diff Preview
-
-Before applying any changes, `cco update` shows a clear summary:
+Before applying any changes:
 
 ```
 Global config update:
@@ -544,240 +391,380 @@ Global config update:
 Proceed? [Y/n]
 ```
 
-For `--dry-run`, show the same summary but don't apply.
+For `--dry-run`: same summary, no changes applied.
 
-### 4.10 .cco-meta Extension
+### 4.12 `.cco-meta` Schema
 
 ```yaml
 # Auto-generated by cco — do not edit
-schema_version: 7
+schema_version: 8
 created_at: 2026-01-15T10:00:00Z
-updated_at: 2026-03-13T14:30:00Z
+updated_at: 2026-03-14T10:00:00Z
 
-# Source template (for projects)
-template: base
-template_source: native
+# Template origin (projects only)
+template: base               # base | tutorial | <user-template-name>
+template_source: native      # native | user
 
+# Language preferences (global only)
 languages:
   communication: Italian
   documentation: English
   code_comments: English
 
+# Manifest: sha256 of each tracked file at last install/update
 manifest:
-  # All tracked files (both .claude/ and root)
   .claude/CLAUDE.md: a1b2c3d4...
   .claude/settings.json: e5f6g7h8...
   .claude/rules/workflow.md: i9j0k1l2...
-  project.yml: m3n4o5p6...
-  mcp-packages.txt: q7r8s9t0...
+  project.yml: m3n4o5p6...          # projects only
 ```
 
-### 4.11 .cco-base/ Directory
+### 4.13 `project.yml` Tracking — Native Baseline
 
-Stored alongside `.cco-meta`, contains the framework version of each tracked file at the time of last install/update:
+`project.yml` is `tracked` with a **native baseline**: the "new" version for
+3-way merge always comes from `templates/project/base/project.yml`, regardless
+of which template created the project.
+
+**Rationale:**
+- `project.yml` schema evolution (new sections like `github:`, `browser:`,
+  `docker.containers:`) is driven by the framework, not by the project template
+- The base template is the canonical schema reference
+- User's content (repos, packs, enabled flags) is preserved by 3-way merge
+
+**Template var handling:**
+`project.yml` contains `{{PROJECT_NAME}}` and `{{DESCRIPTION}}` in the template.
+After project creation, these are substituted — the installed file has real values.
+For update purposes, the "new" version is the base template with substitutions
+applied from `.cco-meta` metadata. This follows the same pattern as `language.md`.
+
+**Coexistence with migrations:**
+Schema additions that are content-only (new commented sections, new optional keys)
+are handled by 3-way merge — no migration needed. Migrations remain for structural
+changes (renamed keys, moved files, incompatible schema changes).
+
+| Change Type | Mechanism |
+|-------------|-----------|
+| New optional section in project.yml | 3-way merge (update template, auto-propagated) |
+| Renamed key in project.yml | Migration (surgical, explicit) |
+| New tracked file added to policy | Migration (bootstrap `.cco-base/` entry) + 3-way merge going forward |
+| Removed file | Migration |
+
+### 4.14 Template-Aware Update Source
+
+Each project records the template used at creation in `.cco-meta`:
+
+```yaml
+template: tutorial
+template_source: native   # native = ships with cco; user = user-config/templates/
+```
+
+`_update_project()` resolves the update source based on this metadata:
 
 ```
-user-config/global/.claude/.cco-base/
-├── CLAUDE.md
-├── settings.json
-├── agents/analyst.md
-├── agents/reviewer.md
-├── rules/diagrams.md
-├── rules/git-practices.md
-├── rules/workflow.md
-├── skills/analyze/SKILL.md
-├── skills/commit/SKILL.md
-├── skills/design/SKILL.md
-└── skills/review/SKILL.md
-
-user-config/projects/<project-name>/.cco-base/
-├── .claude/settings.json
-├── project.yml
-└── mcp-packages.txt
+1. Read template + template_source from .cco-meta
+2. For always-native files (.claude/settings.json, project.yml):
+   → always use templates/project/base/ as source (native baseline)
+3. For template-specific files (skills, rules, CLAUDE.md from template):
+   → if template_source == native: use templates/project/<template>/ as source
+     → updated automatically by cco update
+   → if template_source == user: use user-config/templates/project/<template>/ as source
+     → updated ONLY with --sync-templates flag
+4. Fallback: if template not found, skip template-specific files with warning
 ```
 
-**Lifecycle:**
-- Created at `cco init` (copy of each tracked file from defaults)
-- Updated at `cco update` (overwritten with new framework version after successful merge)
-- Never modified by user (hidden directory, gitignored in vault)
-- Size: mirrors tracked files only (~50KB total)
+**Migration 008** (project scope): adds `template: base` and `template_source: native`
+to `.cco-meta` for existing projects that predate this field.
 
-### 4.12 Vault Integration (Optional)
+### 4.15 User Templates: `--sync-templates` Flag
 
-Vault remains separate and optional. Single integration point:
+`cco update` by default operates on **framework sources only** (defaults/ and
+native templates). This covers the most common use case: "I updated cco, pull
+improvements."
+
+To propagate changes from user-authored templates to existing projects, use
+`--sync-templates`:
 
 ```bash
-# In update orchestration, before applying changes:
-if _vault_is_initialized && [[ "$mode" == "merge" ]]; then
-    if _prompt_yn "Vault detected. Commit current state before updating?" "Y"; then
-        cmd_vault_sync "pre-update snapshot"
-    fi
-fi
+cco update --sync-templates                  # global + all projects, incl. user template files
+cco update --project myapp --sync-templates  # single project
+cco update --all --sync-templates            # explicit all-projects variant
 ```
 
-- Only triggers if vault is initialized
-- Only in interactive/merge mode (skipped with `--force`, `--keep`, `--backup`)
-- Default: Yes (safe to snapshot before destructive operations)
+**Behavioral matrix:**
 
-### 4.13 Migration System — Coexistence
+| Command | Global config | Native template projects | User template projects |
+|---------|--------------|--------------------------|------------------------|
+| `cco update` | ✅ all tracked | ✅ native files + template-specific | ⚠️ native files only |
+| `cco update --sync-templates` | ✅ all tracked | ✅ native files + template-specific | ✅ native files + template-specific |
+| `cco update --project <name>` | ❌ | depends on project | ⚠️ native files only |
+| `cco update --project <name> --sync-templates` | ❌ | depends on project | ✅ all tracked |
 
-The migration system remains for **structural changes** (renaming directories, moving files, changing schema). The 3-way merge handles **content updates** to existing files.
+> "Native files only" for user template projects means: `.claude/settings.json`
+> and `project.yml` are still updated (they always use the native `base` baseline).
+> Only files that came specifically from the user template (custom skills, custom
+> rules in `.claude/`) are skipped without `--sync-templates`.
 
-| Change Type | Mechanism | Example |
-|-------------|-----------|---------|
-| New section in project.yml | 3-way merge | Adding `browser:` section |
-| Modified skill content | 3-way merge | Updating analyze/SKILL.md instructions |
-| Renamed directory | Migration | `memory/` → `claude-state/` |
-| New file type | Migration + 3-way merge | Migration creates `.cco-base/`, merge tracks going forward |
-| Removed file | Migration | Cleaning up deprecated files |
+**Why separate?** The two operations have different triggers:
+- `cco update` = "the framework shipped improvements, receive them" (triggered by `cco` upgrade)
+- `cco update --sync-templates` = "I updated my template, push changes to projects" (triggered by user template edit)
 
-**Key benefit**: Most updates no longer need explicit migrations. Adding a new commented section to `project.yml` just means updating the template — `cco update` will 3-way merge it into existing projects automatically.
+Mixing them by default would make `cco update` unpredictably touch user-authored
+content without explicit intent.
 
-### 4.14 Backward Compatibility
+### 4.16 Vault Integration Fix
 
-For existing installs without `.cco-base/`:
+The vault pre-update prompt must NOT block the merge flow. Correct integration:
 
-1. First `cco update` after this change detects missing `.cco-base/`
-2. Attempts to reconstruct base from current defaults (best effort)
-3. If installed_hash == manifest_hash → base = installed (user hasn't changed)
-4. If installed_hash != manifest_hash → base = defaults (approximate, may cause false conflicts on first run)
-5. Creates `.cco-base/` for future updates
-6. From second update onward, 3-way merge works correctly
+```bash
+# Run BEFORE collecting changes (not after), in background/non-blocking:
+if _vault_is_initialized && [[ "$dry_run" != "true" ]] && [[ "$mode" == "interactive" ]]; then
+    if _prompt_yn "Vault detected. Commit current state before updating?" "Y"; then
+        cmd_vault_sync "pre-update snapshot" </dev/tty >/dev/tty 2>/dev/tty || warn "Vault snapshot failed, continuing..."
+    fi
+fi
+# Then proceed unconditionally to merge
+_collect_file_changes ...
+_apply_file_changes ...
+```
+
+Key constraints:
+- Vault I/O must be explicitly redirected to/from `/dev/tty`
+- Failure is non-fatal (`|| warn ... `)
+- Merge proceeds regardless of vault result
+- Skipped with `--force`, `--keep`, `--dry-run`
 
 ---
 
-## 5. Template vs Pack — Clear Boundaries
+## 5. Template System
+
+### 5.1 CLI Interface
+
+```bash
+cco project create my-app                          # Uses base template
+cco project create my-app --template tutorial      # Uses tutorial template
+cco project create my-app --template my-preset     # Uses user template
+
+cco pack create my-pack                            # Uses base template
+cco pack create my-pack --template my-preset       # Uses user template
+
+cco template list                                  # List all templates (native + user)
+cco template list --project                        # Project templates only
+cco template list --pack                           # Pack templates only
+cco template show <name>                           # Show template details
+cco template create <name> --project               # Create empty user project template
+cco template create <name> --pack                  # Create empty user pack template
+cco template create <name> --from <project>        # Create template from existing project
+cco template remove <name>                         # Remove user template
+```
+
+### 5.2 Template Resolution
+
+```
+For --template <name> (or default "base"):
+1. user-config/templates/<kind>/<name>/    ← User templates (priority)
+2. <repo>/templates/<kind>/<name>/         ← Native templates (fallback)
+3. Error if not found
+```
+
+### 5.3 Template Metadata
+
+```yaml
+# templates/project/tutorial/template.yml
+name: tutorial
+description: Interactive tutorial for learning claude-orchestrator
+author: claude-orchestrator
+tags: [tutorial, learning, onboarding]
+variables:
+  - name: PROJECT_NAME
+    required: true
+  - name: DESCRIPTION
+    default: ""
+  - name: CCO_REPO_ROOT
+    source: env
+```
+
+Templates without `template.yml` work fine — `{{VAR}}` placeholders resolved via
+sed substitution (backward compatible).
+
+### 5.4 User Config — Template Storage
+
+```
+user-config/
+├── global/                         # Global defaults
+├── projects/                       # Installed projects
+├── packs/                          # Installed packs
+└── templates/                      # User-defined templates
+    ├── project/
+    │   └── my-preset/              # User project template
+    └── pack/
+        └── my-pack-preset/         # User pack template
+```
+
+---
+
+## 6. `cco clean` — Cleanup Command
+
+### 6.1 Final Behavior
+
+```bash
+cco clean                          # Remove .bak files (global + all projects)
+cco clean --tmp                    # Remove .tmp/ dirs (dry-run artifacts)
+cco clean --generated              # Remove docker-compose.yml (generated by cco start)
+cco clean --all                    # --bak + --tmp + --generated
+cco clean --project <name>         # Scope to specific project only
+cco clean --all --project <name>   # All categories, single project
+cco clean --dry-run                # Preview any combination without deleting
+```
+
+### 6.2 What Each Category Cleans
+
+| Flag | Target | Location |
+|------|--------|----------|
+| (default) | `*.bak` files | global `.claude/` + all project dirs |
+| `--tmp` | `.tmp/` directories | `user-config/projects/<name>/.tmp/` |
+| `--generated` | `docker-compose.yml` | `user-config/projects/<name>/docker-compose.yml` |
+
+> **`.cco-base/` is NOT cleaned** by any `cco clean` variant. It is the
+> 3-way merge ancestor and must not be deleted in normal operations. Future
+> `cco clean --reset` (not yet implemented) would handle full state reset.
+
+### 6.3 `.tmp/` Details
+
+`cco start --dry-run` writes all generated files to `<project_dir>/.tmp/`:
+- `docker-compose.yml`
+- `.managed/` (policy.json, browser config, etc.)
+
+The directory is recreated fresh on each dry-run (`rm -rf` + `mkdir`), so
+`.tmp/` always contains the most recent dry-run output. `cco clean --tmp`
+removes the directory entirely, which is appropriate after inspection.
+
+---
+
+## 7. Template vs Pack — Clear Boundaries
 
 | Aspect | Template | Pack |
 |--------|----------|------|
 | **Purpose** | Scaffold new resources | Reusable knowledge/config |
 | **Cardinality** | 1 template → N projects | 1 pack → N projects (shared) |
 | **Installation** | `project create --template` | `pack install` + reference in project.yml |
-| **After install** | Template forgotten, project lives independently | Pack remains, updates propagated |
-| **Content** | Full project/pack structure with placeholders | Knowledge, rules, skills, agents |
-| **Update mechanism** | Not updated (output is tracked as project) | `pack update` from source |
-| **Location (native)** | `templates/project/` or `templates/pack/` | _(not shipped — packs are user/community content)_ |
-| **Location (user)** | `user-config/templates/` | `user-config/packs/` |
+| **After install** | Template recorded in `.cco-meta`; output tracked as project | Pack remains; updates via `pack update` |
+| **Content** | Full project structure with placeholders | Knowledge, rules, skills, agents |
+| **Update mechanism** | Native: `cco update`. User: `cco update --sync-templates` | `cco pack update` from source |
 
 ---
 
-## 6. Command Changes Summary
+## 8. Command Reference — `cco update`
 
-### New Commands
+```
+SYNOPSIS
+    cco update [OPTIONS]
+    cco update --project <name> [OPTIONS]
+    cco update --all [OPTIONS]
 
-| Command | Description |
-|---------|-------------|
-| `cco template list [--project\|--pack]` | List available templates (native + user) |
-| `cco template show <name>` | Show template details and structure |
-| `cco template create <name> --project\|--pack` | Create empty user template |
-| `cco template create <name> --from <resource>` | Create template from existing project/pack (interactive templatization) |
-| `cco template remove <name>` | Remove user template |
-| `cco clean [--backups\|--tmp\|--generated\|--all]` | Remove generated/temporary files |
+OPTIONS
+    (no flags)              Update global config + all projects (native sources only)
+    --project <name>        Update a specific project only (+ global)
+    --all                   Explicitly update global + all projects
+    --sync-templates        Also update files from user-authored templates
+                            (projects with template_source: user)
+    --dry-run               Show what would change without applying
+    --force                 Overwrite all user modifications (creates .bak)
+    --keep                  Preserve all user modifications (skip conflicts)
+    --replace               Replace changed files entirely (creates .bak, no merge)
+    --no-backup             Disable .bak creation (combine with any mode)
 
-#### `cco clean` Details
+SOURCES
+    Global config           defaults/global/
+    Project native files    templates/project/base/          (always-native: settings.json, project.yml)
+    Project template files  templates/project/<template>/    (if template_source: native)
+                            user-config/templates/project/<template>/  (if template_source: user, requires --sync-templates)
 
-```bash
-cco clean                     # Interactive: show what can be cleaned, ask confirmation
-cco clean --backups           # Remove .bak files from global + all projects
-cco clean --tmp               # Remove .tmp/ directories (dry-run artifacts)
-cco clean --generated         # Remove framework-generated files (.cco-base/, .cco-meta)
-cco clean --all               # Remove all of the above
-cco clean --project <name>    # Scope to a specific project
-cco clean --dry-run           # Show what would be removed without deleting
+WHAT cco update DOES NOT TOUCH
+    mcp.json                user-owned, personal MCP servers
+    project/.claude/CLAUDE.md  user-owned, project context
+    project/setup.sh        copy-if-missing, only written at project create
+    project/secrets.env     copy-if-missing
+    project/mcp-packages.txt   copy-if-missing
+    .cco-base/              never modified by clean or update (only overwritten by update itself)
+    user-config/templates/  user template sources; only read with --sync-templates
 ```
 
-### Modified Commands
-
-| Command | Change |
-|---------|--------|
-| `cco project create` | Add `--template <name>` flag (default: `base`) |
-| `cco pack create` | Add `--template <name>` flag (default: `base`); use template instead of inline heredoc |
-| `cco update` | 3-way merge via `git merge-file`; track root files; `.cco-base/` storage; vault snapshot prompt; `--replace` and `--no-backup` flags |
-| `cco init` | Create `user-config/templates/` directory; use `templates/` as source; generate `.cco-base/` |
-
-### New Modules
-
-| File | Description |
-|------|-------------|
-| `lib/cmd-template.sh` | Template CLI: list, show, create, remove |
-| `lib/cmd-clean.sh` | Cleanup: backups, tmp, generated files |
-
 ---
 
-## 7. Implementation Plan
-
-### Phase 1: Directory Reorganization
-1. Create `templates/` directory with `project/base/`, `project/tutorial/`, `pack/base/`
-2. Move `defaults/_template/` → `templates/project/base/`
-3. Move `defaults/tutorial/` → `templates/project/tutorial/`
-4. Create `templates/pack/base/` with minimal pack template
-5. Update `bin/cco` variables and template resolution
-6. Update all references in `lib/*.sh`
-7. Update tests
-8. No user-facing migration needed (paths are in cco repo, not user-config)
-
-### Phase 2: Template System
-1. Implement `lib/cmd-template.sh` (list, show, create, remove)
-2. Implement template resolution function (user → native fallback)
-3. Add `--template` flag to `cco project create`
-4. Add `--template` flag to `cco pack create` (replace inline heredoc)
-5. Add `template.yml` with variable declarations to native templates
-6. Implement `--from` flag for creating templates from existing resources
-7. Create `user-config/templates/{project,pack}/` on `cco init`
-8. Add tests
-
-### Phase 3: Update System — 3-Way Merge
-1. Implement `.cco-base/` storage (create on init, update on update)
-2. Implement `_merge_file()` wrapper around `git merge-file`
-3. Implement declarative file policies (replace GLOBAL_USER_FILES lists)
-4. Extend `.cco-meta` to track root files and template source
-5. Refactor `_collect_file_changes()` to use new algorithm
-6. Refactor `_apply_file_changes()` with merge resolution
-7. Implement diff preview summary
-8. Add vault pre-update snapshot prompt
-9. Add migration for `.cco-base/` bootstrap on existing installs
-10. Update tests
-
-### Phase 4: Documentation & Cleanup
-1. Update `docs/maintainer/update-system/design.md`
-2. Update CLAUDE.md with new structure
-3. Update user-facing docs if needed
-
----
-
-## 8. Risks & Mitigations
+## 9. Risks & Mitigations
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| Breaking existing installs | Users can't start sessions | Migration bootstraps `.cco-base/`; fallback for missing base |
-| `git merge-file` not available | Merge fails | git is always in Docker image; on host, fallback to current checksum approach |
-| False conflicts on first run | User sees unnecessary prompts | Best-effort base reconstruction; clean merge on second run |
-| Template resolution ambiguity | Wrong template used | Clear priority (user > native); `--template` is explicit |
-| .cco-meta schema change | Old cco can't read new format | Backward-compatible (new fields added, none removed) |
-| Conflict markers left in config files | Broken YAML/JSON | Validate files after merge; warn if markers remain |
+| Breaking existing installs | Users can't start sessions | Migration 007 bootstraps `.cco-base/`; migration 008 adds template metadata |
+| `git merge-file` not available | Merge fails | Always in Docker image; on host, detected at startup with helpful error |
+| False conflicts on first run | Unnecessary prompts | Best-effort base reconstruction in migration 007; clean on second run |
+| Vault prompt blocking merge | Update exits without merging | Fix: explicit TTY redirect + non-fatal error handling (section 4.16) |
+| User template drift | `--sync-templates` produces unexpected merges | Vault snapshot recommended before `--sync-templates`; `.bak` always created |
+| Conflict markers in YAML/JSON | Broken config | Post-merge validation; warn if markers remain |
+| Missing user template on `--sync-templates` | Cannot resolve source | Skip with warning; log template name so user can fix |
 
 ---
 
-## 9. Decisions Log
+## 10. Decisions Log
 
-1. **Template variables**: Formalized via `template.yml` with `variables:` section declaring name, description, required, default, and source. Backward compatible with existing `{{VAR}}` sed substitution.
+1. **Template variables**: Formalized via `template.yml` with `variables:` section.
+   Backward compatible with existing `{{VAR}}` sed substitution.
 
-2. **Pack base template**: Minimal, like project base. An empty scaffold with the correct directory structure.
+2. **Pack base template**: Minimal scaffold with correct directory structure.
 
-3. **`cco template validate`**: Deferred to future sprint. Good to have but not blocking.
+3. **`cco template validate`**: Deferred. Good to have but not blocking.
 
-4. **Merge engine**: `git merge-file` — works on individual files without repository, standard 3-way merge, available everywhere git is installed.
+4. **Merge engine**: `git merge-file` — works without git repository, standard
+   3-way merge, always available in Docker image.
 
-5. **Base version storage**: `.cco-base/` directory alongside `.cco-meta` — simple, self-contained, no vault dependency.
+5. **Base version storage**: `.cco-base/` alongside `.cco-meta` — simple,
+   self-contained, no vault dependency.
 
-6. **Vault integration**: Optional pre-update snapshot prompt. Vault is user versioning, not framework versioning.
+6. **Vault integration**: Optional pre-update snapshot. Vault is user versioning,
+   not framework versioning. Must not block merge flow (see section 4.16).
 
-7. **3-way merge (not 2-way)**: The base version is essential for disambiguating "who changed what". Without it, every difference between current and new is ambiguous. The base acts as arbiter — same role as merge-base in git.
+7. **3-way merge (not 2-way)**: Base version is essential to disambiguate
+   "who changed what". Without it, every difference is ambiguous.
 
-8. **Automatic `.bak` backup**: Always created when user files are modified (auto-merge, conflict resolution, replace). Disabled only with explicit `--no-backup` flag. Safety net independent from vault.
+8. **Automatic `.bak` backup**: Created whenever user files are modified.
+   Disabled only with explicit `--no-backup`.
 
-9. **`--replace` mode**: Available as per-file option (R) during conflict resolution prompts. Replaces the file entirely with new framework version + creates `.bak`. Useful when merge produces poor results due to radical structure changes or heavy customizations. Also available as global flag `--replace` to apply to all files.
+9. **`--replace` mode**: Available per-file (option R in conflict prompt) and
+   as global flag. Creates `.bak`.
 
-10. **`cco clean` command**: Dedicated cleanup command for `.bak` files, `.tmp/` directories, and framework-generated files. Replaces per-command cleanup flags.
+10. **`cco clean` command**: Dedicated cleanup command. Categories: `.bak` (default),
+    `--tmp` (dry-run artifacts), `--generated` (docker-compose.yml).
+    `.cco-base/` excluded — it is the merge ancestor.
 
-11. **Template `--from` with interactive templatization**: When creating a template from an existing project/pack, interactive prompt asks which values to replace with `{{PLACEHOLDER}}` variables. Automatic detection of project-specific values (name, paths, descriptions) with user confirmation.
+11. **Template `--from` with interactive templatization**: Interactive prompt
+    to replace project-specific values with `{{PLACEHOLDER}}` variables.
+
+12. **`project.yml` as `tracked`** *(new, 2026-03-14)*: Added to
+    `PROJECT_FILE_POLICIES` as `tracked`. Update source is always the native
+    `base` template (never user templates) for consistent schema propagation.
+    Template vars substituted from `.cco-meta` at merge time.
+
+13. **Template-aware update source** *(new, 2026-03-14)*: `.cco-meta` records
+    `template` and `template_source` (native/user). `_update_project()` resolves
+    the update source from these fields. Template-specific files (skills, rules
+    from non-base templates) use the stored template as their update source.
+
+14. **`--sync-templates` flag** *(new, 2026-03-14)*: Separates native framework
+    updates (`cco update`) from user template propagation (`cco update --sync-templates`).
+    Without the flag, projects with `template_source: user` are updated for
+    native-baseline files only. With the flag, user template source is also read.
+    Rationale: different trigger conditions, different intent, prevents accidental
+    propagation of in-progress template edits.
+
+15. **`cco clean --tmp`** *(new, 2026-03-14)*: Removes `<project>/.tmp/`
+    directories created by `cco start --dry-run`. These are intentionally
+    persistent (for user inspection) but should be cleanable on demand.
+
+16. **`cco clean --generated`** *(new, 2026-03-14)*: Removes `docker-compose.yml`
+    from project directories. Regenerated by `cco start`, so safe to delete.
+    `.managed/` is excluded (regenerated automatically on each start).
+
+17. **Vault prompt bug** *(identified 2026-03-14)*: Current implementation
+    redirects vault prompt I/O in a way that breaks subsequent interactive merge
+    prompts. Fix: explicit `/dev/tty` redirect for vault commands; non-fatal
+    error handling; unconditional continuation to merge phase.

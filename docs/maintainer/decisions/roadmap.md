@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-13 (Sprint 5b completed: defaults restructuring, template system, 3-way merge update engine. Maintainer docs reorganized into macro-groupings: architecture/, configuration/, integration/, features/, decisions/).
+> Last updated: 2026-03-14 (Post-Sprint-5b design finalized: `project.yml` as tracked, template-aware update source, `--sync-templates` flag, `cco clean` extended categories, vault prompt fix. See `docs/maintainer/features/defaults-templates-update/design.md`).
 
 ---
 
@@ -393,6 +393,13 @@ Refactoring of `defaults/` layout, full template system with CLI management, and
 - `cco clean [--all|--project|--dry-run]` — cleanup `.bak` files from updates (`lib/cmd-clean.sh`)
 - Migration 007: retroactive `.cco-base/` bootstrap for pre-Sprint-5b installations
 - Template variable substitution (`{{VAR}}`) for project and pack templates
+
+**Post-sprint design additions** (2026-03-14, pending implementation):
+- `project.yml` promoted to `tracked` policy (3-way merge against native `base` baseline)
+- Template-aware update source: `.cco-meta` records `template` + `template_source`
+- `--sync-templates` flag: separates native framework updates from user-template propagation
+- `cco clean` extended: `--tmp` (dry-run artifacts), `--generated` (docker-compose.yml)
+- Vault prompt bug: fix I/O redirect to prevent blocking merge flow (decision #17)
 
 **Docs**: [analysis](../features/defaults-templates-update/analysis.md) | [design](../features/defaults-templates-update/design.md)
 
