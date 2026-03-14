@@ -832,16 +832,18 @@ _interactive_apply() {
                     a|add|replace)
                         mkdir -p "$(dirname "$installed_dir/$rel_path")"
                         cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
+                        _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
+                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                        _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                         ok "  + $rel_path (added)"
                         applied=$(( applied + 1 ))
                         ;;
                     *)
+                        # Skip: don't update .cco-base/ or manifest — will be reported again next run
                         info "  Skipped $rel_path"
                         skipped=$(( skipped + 1 ))
                         ;;
                 esac
-                local h; h=$(_file_hash "$defaults_dir/$rel_path")
-                _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                 ;;
 
             UPDATE_AVAILABLE|SAFE_UPDATE|BASE_MISSING)
@@ -873,20 +875,26 @@ _interactive_apply() {
                             cp "$installed_dir/$rel_path" "$installed_dir/${rel_path}.bak"
                         fi
                         cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
+                        _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
+                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                        _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                         ok "  ~ $rel_path (updated)"
                         applied=$(( applied + 1 ))
                         ;;
                     keep)
+                        # Keep user file but update .cco-base/ so update isn't reported again
+                        _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
+                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                        _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                         info "  Kept user version of $rel_path"
                         kept=$(( kept + 1 ))
                         ;;
                     *)
+                        # Skip: don't update .cco-base/ or manifest — will be reported again next run
                         info "  Skipped $rel_path"
                         skipped=$(( skipped + 1 ))
                         ;;
                 esac
-                local h; h=$(_file_hash "$defaults_dir/$rel_path")
-                _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                 ;;
 
             MERGE_AVAILABLE|CONFLICT)
@@ -926,6 +934,9 @@ _interactive_apply() {
                     m|merge)
                         _LAST_RESOLVE_AUTOMERGE=false
                         _resolve_with_merge "$rel_path" "$defaults_dir" "$installed_dir" "$base_dir" "$no_backup"
+                        _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
+                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                        _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                         if $_LAST_RESOLVE_AUTOMERGE; then
                             merged=$(( merged + 1 ))
                         else
@@ -940,21 +951,23 @@ _interactive_apply() {
                             warn "  ↻ $rel_path (replaced)"
                         fi
                         cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
-                        applied=$(( applied + 1 ))
+                        _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
                         local h; h=$(_file_hash "$defaults_dir/$rel_path")
                         _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
+                        applied=$(( applied + 1 ))
                         ;;
                     k|keep)
+                        # Keep user file but update .cco-base/ so update isn't reported again
+                        _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
+                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                        _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                         info "  Kept user version of $rel_path"
                         kept=$(( kept + 1 ))
-                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
-                        _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                         ;;
                     *)
+                        # Skip: don't update .cco-base/ or manifest — will be reported again next run
                         info "  Skipped $rel_path"
                         skipped=$(( skipped + 1 ))
-                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
-                        _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                         ;;
                 esac
                 ;;
@@ -1026,7 +1039,7 @@ _read_changelog_entries() {
                 $in_entry && entry_date="${trimmed#*: }" && entry_date="${entry_date%\"}" && entry_date="${entry_date#\"}"
                 ;;
             "title:"*|"- title:"*)
-                $in_entry && entry_title="${trimmed#*: }" && entry_title="${trimmed#*: }" && entry_title="${entry_title%\"}" && entry_title="${entry_title#\"}"
+                $in_entry && entry_title="${trimmed#*: }" && entry_title="${entry_title%\"}" && entry_title="${entry_title#\"}"
                 ;;
             "description:"*|"- description:"*)
                 $in_entry && entry_desc="${trimmed#*: }" && entry_desc="${entry_desc%\"}" && entry_desc="${entry_desc#\"}"
@@ -1172,8 +1185,8 @@ _update_global() {
     docs_lang="${docs_lang:-English}"
     code_lang="${code_lang:-English}"
 
-    # Regenerate language.md from saved choices before comparing
-    if [[ "$dry_run" != "true" && "$cmd_mode" != "news" ]]; then
+    # Regenerate language.md from saved choices before comparing (only in apply mode)
+    if [[ "$cmd_mode" == "apply" && "$dry_run" != "true" ]]; then
         _regenerate_language_md "$installed_dir" "$comm_lang" "$docs_lang" "$code_lang"
     fi
 
@@ -1311,8 +1324,8 @@ _update_global() {
                 "$meta_file" "$new_schema" "$created" \
                 "$comm_lang" "$docs_lang" "$code_lang" "$last_seen"
 
-            # Save base versions for future 3-way merge
-            _save_all_base_versions "$base_dir" "$defaults_dir" "global"
+            # Note: .cco-base/ is saved per-file inside _interactive_apply
+            # (only for Apply/Keep/Merge/Replace, not Skip)
         else
             # Discovery/diff mode: only update schema_version (from migrations)
             if [[ $pending_migrations -gt 0 ]]; then
@@ -1509,8 +1522,8 @@ _update_project() {
             echo "$_UPDATE_MANIFEST_ENTRIES" | _generate_project_cco_meta \
                 "$meta_file" "$new_schema" "$created" "$tmpl_name"
 
-            # Save base versions for future 3-way merge
-            _save_all_base_versions "$base_dir" "$defaults_dir" "project"
+            # Note: .cco-base/ is saved per-file inside _interactive_apply
+            # (only for Apply/Keep/Merge/Replace, not Skip)
         else
             # Discovery/diff mode: only update schema_version (from migrations)
             if [[ $pending_migrations -gt 0 ]]; then

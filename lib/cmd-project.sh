@@ -177,8 +177,14 @@ print(', '.join(['$'+k for k in ['dev','build','test','start','lint'] if k in s]
     local meta_file="$project_dir/.cco-meta"
 
     # Build manifest entries from tracked project files
+    # Use actual template source (not always base) for .cco-base/ seeding
     local defaults_dir
-    defaults_dir="$NATIVE_TEMPLATES_DIR/project/base/.claude"
+    local resolved_tmpl_dir="$NATIVE_TEMPLATES_DIR/project/$resolved_template_name/.claude"
+    if [[ -d "$resolved_tmpl_dir" ]]; then
+        defaults_dir="$resolved_tmpl_dir"
+    else
+        defaults_dir="$NATIVE_TEMPLATES_DIR/project/base/.claude"
+    fi
     (
         local entry rel policy
         for entry in "${PROJECT_FILE_POLICIES[@]}"; do

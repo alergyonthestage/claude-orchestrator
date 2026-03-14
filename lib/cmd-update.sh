@@ -92,8 +92,10 @@ EOF
         info "Updating global config..."
         _update_global "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"
 
-        # Show changelog notifications (global scope only)
-        _update_changelog_notifications "$cmd_mode" "$dry_run"
+        # Show changelog notifications (discovery and news modes only)
+        if [[ "$cmd_mode" == "discovery" || "$cmd_mode" == "news" ]]; then
+            _update_changelog_notifications "$cmd_mode" "$dry_run"
+        fi
 
         # TODO: pack and template migration scopes (design §4.15)
         # When migrations/pack/ or migrations/template/ exist, iterate
@@ -114,8 +116,10 @@ EOF
         info "Updating global config..."
         _update_global "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"
 
-        # Show changelog notifications
-        _update_changelog_notifications "$cmd_mode" "$dry_run"
+        # Show changelog notifications (discovery and news modes only)
+        if [[ "$cmd_mode" == "discovery" || "$cmd_mode" == "news" ]]; then
+            _update_changelog_notifications "$cmd_mode" "$dry_run"
+        fi
 
         # Update specific project
         local project_dir="$PROJECTS_DIR/$project"
