@@ -654,3 +654,389 @@ test_update_project_missing_setup_sh_restored() {
     [[ -f "$CCO_PROJECTS_DIR/test-proj/setup.sh" ]] || fail "setup.sh not restored by update"
     assert_output_contains "setup.sh"
 }
+
+# ── CLI Modes & Interactive Apply ────────────────────────────────────
+
+test_update_discovery_mode_no_file_changes() {
+    # Default mode (no flags) shows discovery summary but does NOT modify files
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    # Modify a default file to create an available update
+    printf '\n# Framework improvement\n' >> "$REPO_ROOT/defaults/global/.claude/rules/workflow.md"
+
+    # Save user file content before update
+    local before_hash; before_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" | cut -d' ' -f1)
+    local before_base_hash=""
+    [[ -f "$CCO_GLOBAL_DIR/.claude/.cco-base/rules/workflow.md" ]] && \
+        before_base_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/.cco-base/rules/workflow.md" | cut -d' ' -f1)
+
+    run_cco update
+    assert_output_contains "update"
+
+    # File must NOT be modified
+    local after_hash; after_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" | cut -d' ' -f1)
+    [[ "$before_hash" == "$after_hash" ]] || fail "Discovery mode modified installed file"
+
+    # .cco-base/ must NOT be updated
+    local after_base_hash=""
+    [[ -f "$CCO_GLOBAL_DIR/.claude/.cco-base/rules/workflow.md" ]] && \
+        after_base_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/.cco-base/rules/workflow.md" | cut -d' ' -f1)
+    [[ "$before_base_hash" == "$after_base_hash" ]] || fail "Discovery mode updated .cco-base/"
+
+    # Restore
+    cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
+}
+
+test_update_diff_shows_changes() {
+    # --diff mode shows diffs without modifying files
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    # Modify a default to create an available update
+    printf '\n# Diff test change\n' >> "$REPO_ROOT/defaults/global/.claude/rules/workflow.md"
+
+    local before_hash; before_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" | cut -d' ' -f1)
+
+    run_cco update --diff
+    # Output should contain either diff markers or the file path
+    assert_output_contains "workflow.md"
+
+    # File must NOT be modified
+    local after_hash; after_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" | cut -d' ' -f1)
+    [[ "$before_hash" == "$after_hash" ]] || fail "--diff mode modified installed file"
+
+    # Restore
+    cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
+}
+
+test_update_news_shows_entries() {
+    # --news mode shows changelog entries and updates last_seen_changelog
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    # Create a changelog with one entry
+    cat > "$REPO_ROOT/changelog.yml" <<'YML'
+entries:
+  - id: 1
+    date: "2026-03-01"
+    type: additive
+    title: "Test feature for news"
+    description: "A test description for news mode"
+YML
+
+    # Set last_seen_changelog to 0 in .cco-meta
+    local meta="$CCO_GLOBAL_DIR/.claude/.cco-meta"
+    if grep -q '^last_seen_changelog:' "$meta"; then
+        sed -i "s/^last_seen_changelog: .*/last_seen_changelog: 0/" "$meta"
+    fi
+
+    run_cco update --news
+    assert_output_contains "Test feature for news"
+
+    # last_seen_changelog should be updated to 1
+    assert_file_contains "$meta" "last_seen_changelog: 1"
+
+    # Restore changelog
+    cat > "$REPO_ROOT/changelog.yml" <<'YML'
+# changelog.yml — Additive changes notification
+# Each entry describes a new optional feature or configuration field.
+# Users are notified of new entries by `cco update`.
+#
+# Format:
+#   - id: <sequential integer>
+#     date: "YYYY-MM-DD"
+#     type: additive
+#     title: "Short description"
+#     description: "Details about the new feature and how to use it"
+
+entries: []
+YML
+}
+
+test_update_news_no_new_entries() {
+    # --news with no new entries shows "No new features"
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    # Create a changelog with one entry already seen
+    cat > "$REPO_ROOT/changelog.yml" <<'YML'
+entries:
+  - id: 1
+    date: "2026-03-01"
+    type: additive
+    title: "Already seen feature"
+    description: "Already seen"
+YML
+
+    # Set last_seen_changelog to 1 in .cco-meta (already seen)
+    local meta="$CCO_GLOBAL_DIR/.claude/.cco-meta"
+    if grep -q '^last_seen_changelog:' "$meta"; then
+        sed -i "s/^last_seen_changelog: .*/last_seen_changelog: 1/" "$meta"
+    fi
+
+    run_cco update --news
+    assert_output_contains "No new features"
+
+    # Restore changelog
+    cat > "$REPO_ROOT/changelog.yml" <<'YML'
+# changelog.yml — Additive changes notification
+entries: []
+YML
+}
+
+test_update_diff_force_mutual_exclusion() {
+    # --diff and --force are mutually exclusive
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    # Run with --force before --diff so --diff is parsed last and cmd_mode stays "diff"
+    run_cco update --force --diff && fail "Expected error for --force --diff" || true
+    assert_output_contains "mutually exclusive"
+}
+
+test_update_diff_keep_mutual_exclusion() {
+    # --diff and --keep are mutually exclusive
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    # Run with --keep before --diff so --diff is parsed last and cmd_mode stays "diff"
+    run_cco update --keep --diff && fail "Expected error for --keep --diff" || true
+    assert_output_contains "mutually exclusive"
+}
+
+test_update_apply_non_tty_skips() {
+    # Non-TTY stdin causes --apply to skip all changes
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    # Modify a default file to create an available update
+    printf '\n# Non-TTY test change\n' >> "$REPO_ROOT/defaults/global/.claude/rules/workflow.md"
+
+    local before_hash; before_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" | cut -d' ' -f1)
+
+    # Run --apply with stdin from /dev/null (non-TTY)
+    CCO_OUTPUT=$(
+        CCO_USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR" \
+        CCO_GLOBAL_DIR="$CCO_GLOBAL_DIR" \
+        CCO_PROJECTS_DIR="$CCO_PROJECTS_DIR" \
+        CCO_PACKS_DIR="$CCO_PACKS_DIR" \
+        CCO_TEMPLATES_DIR="$CCO_TEMPLATES_DIR" \
+        bash "$REPO_ROOT/bin/cco" update --apply < /dev/null 2>&1
+    ) || true
+    assert_output_contains "Non-interactive"
+
+    # File must NOT be modified (auto-skip)
+    local after_hash; after_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" | cut -d' ' -f1)
+    [[ "$before_hash" == "$after_hash" ]] || fail "Non-TTY apply modified installed file"
+
+    # Restore
+    cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
+}
+
+test_update_dry_run_shows_migrations() {
+    # --dry-run shows pending migrations without running them
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    # Lower schema_version to simulate pending migrations
+    local meta="$CCO_GLOBAL_DIR/.claude/.cco-meta"
+    sed -i "s/^schema_version: .*/schema_version: 0/" "$meta"
+
+    run_cco update --dry-run
+    assert_output_contains "migration(s) pending"
+    assert_output_contains "Dry run complete"
+
+    # schema_version must NOT be updated
+    assert_file_contains "$meta" "schema_version: 0"
+}
+
+test_update_force_applies_changes() {
+    # --force (hidden alias for --apply + auto_action=replace) applies all changes
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    # Create an update: modify default (framework changes)
+    printf '\n# Force-applied change\n' >> "$REPO_ROOT/defaults/global/.claude/rules/workflow.md"
+
+    run_cco update --force
+    assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "Force-applied change"
+
+    # Restore
+    cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
+}
+
+test_update_keep_preserves_user_file() {
+    # --keep preserves user file and updates .cco-base/ to current default
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    # Both user and framework change (conflict scenario)
+    printf '\n# User edit for keep test\n' >> "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
+    printf '\n# Framework edit for keep test\n' >> "$REPO_ROOT/defaults/global/.claude/rules/workflow.md"
+
+    run_cco update --keep
+    # User file must be preserved
+    assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "User edit for keep test"
+    # .cco-base/ IS updated to current default (so next update won't re-trigger)
+    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco-base/rules/workflow.md" "Framework edit for keep test"
+
+    # Restore
+    cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
+}
+
+# ── Project Create Bootstrap ─────────────────────────────────────────
+
+test_project_create_initializes_cco_meta() {
+    # cco project create should generate .cco-meta and .cco-base/
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+    run_cco project create "test-bootstrap" --repo "$CCO_DUMMY_REPO"
+
+    local proj_dir="$CCO_PROJECTS_DIR/test-bootstrap"
+    assert_file_exists "$proj_dir/.cco-meta" ".cco-meta should exist after project create"
+    assert_file_contains "$proj_dir/.cco-meta" "schema_version:"
+    assert_dir_exists "$proj_dir/.cco-base" ".cco-base/ should exist after project create"
+}
+
+test_project_create_cco_source_not_for_base() {
+    # Base template (default) should NOT create .cco-source
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+    run_cco project create "test-base-src" --repo "$CCO_DUMMY_REPO"
+
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-base-src/.cco-source" \
+        ".cco-source should NOT exist for base template"
+}
+
+test_project_create_cco_source_for_tutorial() {
+    # Tutorial template should create .cco-source with native:project/tutorial
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+    run_cco project create "test-tut-src" --repo "$CCO_DUMMY_REPO" --template tutorial
+
+    local source_file="$CCO_PROJECTS_DIR/test-tut-src/.cco-source"
+    assert_file_exists "$source_file" ".cco-source should exist for tutorial template"
+    assert_file_contains "$source_file" "native:project/tutorial"
+}
+
+# ── Template Source Resolution ───────────────────────────────────────
+
+test_resolve_project_defaults_dir_base() {
+    # Project with no .cco-source returns base template path
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+
+    # Source the necessary libs and set required globals
+    export NATIVE_TEMPLATES_DIR="$REPO_ROOT/templates"
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/update.sh"
+
+    # Create a minimal project dir without .cco-source
+    local proj_dir="$tmpdir/test-proj"
+    mkdir -p "$proj_dir"
+
+    local result
+    result=$(_resolve_project_defaults_dir "$proj_dir")
+    [[ "$result" == *"templates/project/base/.claude"* ]] || \
+        fail "Expected base template path, got: $result"
+}
+
+test_resolve_project_defaults_dir_tutorial() {
+    # Project with .cco-source pointing to tutorial returns tutorial template path
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+
+    export NATIVE_TEMPLATES_DIR="$REPO_ROOT/templates"
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/update.sh"
+
+    local proj_dir="$tmpdir/test-proj"
+    mkdir -p "$proj_dir"
+    printf 'native:project/tutorial\n' > "$proj_dir/.cco-source"
+
+    local result
+    result=$(_resolve_project_defaults_dir "$proj_dir")
+    [[ "$result" == *"templates/project/tutorial/.claude"* ]] || \
+        fail "Expected tutorial template path, got: $result"
+}
+
+# ── Changelog Parsing ────────────────────────────────────────────────
+
+test_read_changelog_entries_empty() {
+    # changelog.yml with entries: [] returns no output
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+
+    # Temporarily replace changelog.yml
+    local saved_changelog="$tmpdir/changelog.bak"
+    cp "$REPO_ROOT/changelog.yml" "$saved_changelog"
+
+    cat > "$REPO_ROOT/changelog.yml" <<'YML'
+entries: []
+YML
+
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/update.sh"
+
+    local result
+    result=$(_read_changelog_entries)
+    [[ -z "$result" ]] || fail "Expected empty output for empty changelog, got: $result"
+
+    # Restore
+    cp "$saved_changelog" "$REPO_ROOT/changelog.yml"
+}
+
+test_read_changelog_entries_with_entries() {
+    # changelog.yml with entries returns correct id/title pairs
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+
+    local saved_changelog="$tmpdir/changelog.bak"
+    cp "$REPO_ROOT/changelog.yml" "$saved_changelog"
+
+    cat > "$REPO_ROOT/changelog.yml" <<'YML'
+entries:
+  - id: 1
+    date: "2026-01-15"
+    type: additive
+    title: "First feature"
+    description: "First desc"
+  - id: 2
+    date: "2026-02-01"
+    type: additive
+    title: "Second feature"
+    description: "Second desc"
+YML
+
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/update.sh"
+
+    local result
+    result=$(_read_changelog_entries)
+    local count
+    count=$(echo "$result" | grep -c '.' || true)
+    [[ "$count" -eq 2 ]] || fail "Expected 2 entries, got $count"
+
+    # Verify entry content
+    echo "$result" | grep -qF "First feature" || fail "First entry title not found"
+    echo "$result" | grep -qF "Second feature" || fail "Second entry title not found"
+
+    # Restore
+    cp "$saved_changelog" "$REPO_ROOT/changelog.yml"
+}
