@@ -11,8 +11,7 @@ claude-orchestrator manages isolated Claude Code sessions in Docker containers f
 **Config separation**: Three-tier managed scope hierarchy leveraging Claude Code's native resolution:
 - `defaults/managed/` → baked into Docker image at `/etc/claude-code/` (Managed level — hooks, env, deny rules, framework instructions). Non-overridable.
 - `defaults/global/.claude/` → copied once to `user-config/global/.claude/` on `cco init` (User level — agents, skills, rules, settings, preferences). User-owned, never overwritten.
-- `templates/` → native templates for projects and packs. User templates in `user-config/templates/` take priority.
-- `defaults/_template/` → legacy alias, project template is now at `templates/project/base/`
+- `templates/` → native templates for projects (`templates/project/base/`, `templates/project/tutorial/`) and packs (`templates/pack/base/`). User templates in `user-config/templates/` take priority.
 
 **User config directory**: `user-config/` is the unified root for all user data:
 - `user-config/global/` — global Claude config (.claude/)

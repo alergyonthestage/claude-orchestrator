@@ -172,9 +172,9 @@ docker:
   mount_ssh_keys: false    # default: false. Set true for non-GitHub SSH remotes.
 ```
 
-### 3.7 `defaults/_template/` — New Files
+### 3.7 `templates/project/base/` — New Files
 
-**`defaults/_template/secrets.env`**:
+**`templates/project/base/secrets.env`**:
 ```bash
 # Project-specific secrets — overrides values from global/secrets.env
 # Format: KEY=VALUE (one per line, no spaces around =)
@@ -454,8 +454,8 @@ jq '.hasCompletedOnboarding = true' global/claude-state/claude.json > /tmp/fix.j
 - [ ] `bin/cco`: Add per-project `secrets.env` loading in `cmd_start()` and `cmd_new()`
 - [ ] `bin/cco`: Remove default SSH mount from compose generation
 - [ ] `bin/cco`: Add `docker.mount_ssh_keys` support in compose generation
-- [ ] `defaults/_template/secrets.env`: Create template file
-- [ ] `defaults/_template/project.yml`: Add `docker.mount_ssh_keys` (commented)
+- [ ] `templates/project/base/secrets.env`: Create template file
+- [ ] `templates/project/base/project.yml`: Add `docker.mount_ssh_keys` (commented)
 - [ ] `bin/test`: Tests for per-project secrets loading
 - [ ] `bin/test`: Tests for SSH mount opt-in in dry-run compose
 - [ ] Documentation: Update [cli.md](../../../reference/cli.md), [project-setup.md](../../../user-guides/project-setup.md)

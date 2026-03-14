@@ -76,7 +76,7 @@ Follow these steps in order. Skip optional steps if not needed.
 Add a top-level section to the project.yml template and schema:
 
 ```yaml
-# defaults/_template/project.yml
+# templates/project/base/project.yml
 my-integration:
   enabled: false
   # integration-specific options...
@@ -243,7 +243,7 @@ The Browser integration is the canonical example of all 9 steps:
 
 | Step | File | What it does |
 |------|------|-------------|
-| 1 | `defaults/_template/project.yml` | `browser: {enabled, cdp_port, mcp_args}` |
+| 1 | `templates/project/base/project.yml` | `browser: {enabled, cdp_port, mcp_args}` |
 | 2 | `lib/cmd-start.sh` `_generate_browser_mcp()` | Writes `.managed/browser.json` |
 | 3 | `lib/cmd-start.sh` (compose gen) | `.managed/` dir mount (generic) |
 | 4 | `config/entrypoint.sh` | Generic loop merges `browser.json` |
@@ -257,7 +257,7 @@ The Browser integration is the canonical example of all 9 steps:
 
 ## Checklist for New Integrations
 
-- [ ] Added `integration-name:` section to `defaults/_template/project.yml`
+- [ ] Added `integration-name:` section to `templates/project/base/project.yml`
 - [ ] Created `migrations/project/NNN_*.sh` if project.yml format changed
 - [ ] Added `_generate_<integration>()` function in `cmd-start.sh`
 - [ ] Generation call with `mkdir -p .managed` guard

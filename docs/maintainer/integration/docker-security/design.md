@@ -831,7 +831,7 @@ Real Docker interactions (requires running Docker daemon):
 
 ### 13.2 Template Update
 
-**File**: `defaults/_template/project.yml`
+**File**: `templates/project/base/project.yml`
 
 Add the new sections with secure defaults (commented out):
 
@@ -884,7 +884,7 @@ docker:
 
 - [ ] Change default in `lib/cmd-start.sh:111` from `"true"` to `"false"`
 - [ ] Create migration `migrations/project/004_mount_socket_explicit.sh`
-- [ ] Update `defaults/_template/project.yml` default
+- [ ] Update `templates/project/base/project.yml` default
 - [ ] Update `docs/reference/project-yaml.md`
 - [ ] Update `docs/maintainer/security.md` (HIGH-2 status)
 - [ ] Add test in `tests/test_docker_security.sh` for default behavior
@@ -909,7 +909,7 @@ docker:
 - [ ] Parse `docker.containers`, `docker.mounts`, `docker.security` in `cmd-start.sh`
 - [ ] Add DOCKER_HOST env var to compose generation
 - [ ] Mount policy.json in compose
-- [ ] Update template `defaults/_template/project.yml`
+- [ ] Update template `templates/project/base/project.yml`
 - [ ] Write integration tests (`tests/test_docker_security.sh`)
 - [ ] Update `docs/reference/project-yaml.md`
 - [ ] Update `docs/maintainer/security.md`

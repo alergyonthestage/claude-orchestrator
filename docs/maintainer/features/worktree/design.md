@@ -366,7 +366,7 @@ When implementing, update the following docs:
 - [ ] `bin/cco`: Post-session cleanup after `docker compose run` returns
 - [ ] `config/entrypoint.sh`: Worktree creation section
 - [ ] `config/hooks/session-context.sh`: Change `[ -d "${dir}.git" ]` to `[ -e "${dir}.git" ]`
-- [ ] `defaults/_template/project.yml`: Add commented `worktree:` field
+- [ ] `templates/project/base/project.yml`: Add commented `worktree:` field
 - [ ] `bin/test`: Tests for `--worktree` docker-compose generation (dry-run)
 - [ ] `bin/test`: Tests for post-session cleanup logic
 - [ ] Documentation updates (see §7)

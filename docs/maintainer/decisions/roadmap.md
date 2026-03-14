@@ -409,7 +409,7 @@ Refactoring of `defaults/` layout, full template system with CLI management, and
 Built-in interactive tutorial created by `cco init`. Users launch it with `cco start tutorial` for AI-guided onboarding, project setup assistance, and best practices guidance.
 
 **What was implemented**:
-- Tutorial project template (`defaults/tutorial/`): project.yml with path placeholders, CLAUDE.md with 12-module curriculum, documentation map, and session flow
+- Tutorial project template (`templates/project/tutorial/`): project.yml with path placeholders, CLAUDE.md with 12-module curriculum, documentation map, and session flow
 - 3 skills: `/tutorial` (guided onboarding), `/setup-project` (project creation wizard), `/setup-pack` (pack creation wizard)
 - `tutorial-behavior.md` rule: teacher-not-executor constraints, cco-is-host-only awareness
 - CLI integration: `cco init` creates tutorial with `{{CCO_REPO_ROOT}}` and `{{CCO_USER_CONFIG_DIR}}` substitution

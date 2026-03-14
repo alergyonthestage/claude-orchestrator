@@ -82,12 +82,12 @@ extra_mounts[].source              →    extra_mounts[].target              per
 
 ### 2.4 Path Resolution for Tutorial project.yml
 
-**Challenge**: The tutorial's `project.yml` needs absolute host paths for `extra_mounts`. But the template lives in `defaults/tutorial/` and gets copied to `user-config/projects/tutorial/` by `cco init`. At template time, we don't know the host paths.
+**Challenge**: The tutorial's `project.yml` needs absolute host paths for `extra_mounts`. But the template lives in `templates/project/tutorial/` and gets copied to `user-config/projects/tutorial/` by `cco init`. At template time, we don't know the host paths.
 
 **Solution**: `cco init` already performs placeholder substitution (see `cmd-init.sh:73-79` for `{{COMM_LANG}}` replacement). We extend this pattern:
 
 ```yaml
-# defaults/tutorial/project.yml (template)
+# templates/project/tutorial/project.yml (template)
 extra_mounts:
   - source: {{CCO_REPO_ROOT}}/docs
     target: /workspace/cco-docs
@@ -264,7 +264,7 @@ Session start
 ## 6. Tutorial Project Structure
 
 ```
-defaults/tutorial/
+templates/project/tutorial/
 ├── project.yml                    # Pre-configured: no repos, extra_mounts for docs + user-config
 ├── .claude/
 │   ├── CLAUDE.md                  # Agent instructions, curriculum, behavior rules
@@ -372,7 +372,7 @@ The agent reads these files on-demand based on the user's current question or mo
 | Component | Change | Scope |
 |-----------|--------|-------|
 | `lib/cmd-init.sh` | Add tutorial project creation with path substitution | ~20 lines |
-| `defaults/tutorial/` | New directory with all tutorial project files | New |
+| `templates/project/tutorial/` | New directory with all tutorial project files | New |
 | `bin/cco` | Add `cco tutorial` alias (optional, for discoverability) | ~5 lines |
 | `docs/maintainer/roadmap.md` | Update Sprint 5 status | Docs |
 | Tests | Test tutorial project creation by `cco init` | ~10-15 test cases |

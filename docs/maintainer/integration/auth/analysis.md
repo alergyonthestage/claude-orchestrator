@@ -129,7 +129,7 @@ projects/<name>/
 
 ### Template update
 
-The `defaults/_template/secrets.env` should be created (empty, with comments):
+The `templates/project/base/secrets.env` should be created (empty, with comments):
 
 ```bash
 # Project-specific secrets — overrides values from global/secrets.env

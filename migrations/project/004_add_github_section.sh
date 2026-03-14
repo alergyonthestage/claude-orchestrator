@@ -18,7 +18,7 @@ migrate() {
         return 0
     fi
 
-    # The block to insert (matches defaults/_template/project.yml)
+    # The block to insert (matches templates/project/base/project.yml)
     local github_block
     github_block='# ── GitHub Integration (optional) ────────────────────────────────────
 # Enable Claude to interact with GitHub via MCP (issues, PRs, code search).

@@ -532,7 +532,7 @@ starts a socat TCP proxy for the Chrome 145+ Host header fix (see D10):
 The `CDP_PORT` env var is set by `cmd-start.sh` in the compose file when browser
 host mode is active. It defaults to `9222` if not set.
 
-### 5.4 `defaults/_template/project.yml`
+### 5.4 `templates/project/base/project.yml`
 
 Add the `browser:` section after the `docker:` block, fully commented out:
 
@@ -1023,7 +1023,7 @@ bin/cco chrome --help
 bin/cco help | grep chrome
 ```
 
-### Step 8 — defaults/_template/project.yml
+### Step 8 — templates/project/base/project.yml
 
 Add commented `browser:` section after the `docker:` block, with all fields
 documented and defaulted.

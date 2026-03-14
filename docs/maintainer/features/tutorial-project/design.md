@@ -65,7 +65,7 @@ building the tutorial project template. The guide is useful independently of the
 ## 2. Project File Structure
 
 ```
-defaults/tutorial/
+templates/project/tutorial/
 ├── project.yml                        # Pre-configured: no repos, extra_mounts
 ├── .claude/
 │   ├── CLAUDE.md                      # Core: agent behavior + curriculum + doc map
@@ -626,7 +626,7 @@ For users who removed the tutorial and want it back, support via:
 cco project create --template tutorial
 ```
 
-This requires the existing `cmd_project_create` to recognize `tutorial` as a special template name and copy from `defaults/tutorial/` instead of `defaults/_template/`. Alternatively, document that `cco init --force` re-creates it (simpler, less code).
+This requires the existing `cmd_project_create` to recognize `tutorial` as a special template name and copy from `templates/project/tutorial/` instead of `templates/project/base/`. Alternatively, document that `cco init --force` re-creates it (simpler, less code).
 
 **Recommendation**: For v1, document `cco init` as the re-creation method. Add `--template` support in a future iteration if there's demand.
 
@@ -671,16 +671,16 @@ No overrides needed. The tutorial project uses the same model, permissions, and 
 
 | Step | Files | Description |
 |------|-------|-------------|
-| 1 | `defaults/tutorial/project.yml` | Project configuration with placeholders |
-| 2 | `defaults/tutorial/.claude/CLAUDE.md` | Agent behavior, curriculum, doc map |
-| 3 | `defaults/tutorial/.claude/settings.json` | Empty (inherits global) |
-| 4 | `defaults/tutorial/.claude/rules/tutorial-behavior.md` | Behavior constraints |
-| 5 | `defaults/tutorial/.claude/skills/tutorial/SKILL.md` | Guided onboarding skill |
-| 6 | `defaults/tutorial/.claude/skills/setup-project/SKILL.md` | Project creation wizard |
-| 7 | `defaults/tutorial/.claude/skills/setup-pack/SKILL.md` | Pack creation wizard |
-| 8 | `defaults/tutorial/.claude/agents/.gitkeep` | Empty agents dir |
-| 9 | `defaults/tutorial/claude-state/memory/.gitkeep` | Memory directory |
-| 10 | `defaults/tutorial/setup.sh` | Empty setup script |
+| 1 | `templates/project/tutorial/project.yml` | Project configuration with placeholders |
+| 2 | `templates/project/tutorial/.claude/CLAUDE.md` | Agent behavior, curriculum, doc map |
+| 3 | `templates/project/tutorial/.claude/settings.json` | Empty (inherits global) |
+| 4 | `templates/project/tutorial/.claude/rules/tutorial-behavior.md` | Behavior constraints |
+| 5 | `templates/project/tutorial/.claude/skills/tutorial/SKILL.md` | Guided onboarding skill |
+| 6 | `templates/project/tutorial/.claude/skills/setup-project/SKILL.md` | Project creation wizard |
+| 7 | `templates/project/tutorial/.claude/skills/setup-pack/SKILL.md` | Pack creation wizard |
+| 8 | `templates/project/tutorial/.claude/agents/.gitkeep` | Empty agents dir |
+| 9 | `templates/project/tutorial/claude-state/memory/.gitkeep` | Memory directory |
+| 10 | `templates/project/tutorial/setup.sh` | Empty setup script |
 
 ### Phase 2: CLI Integration
 

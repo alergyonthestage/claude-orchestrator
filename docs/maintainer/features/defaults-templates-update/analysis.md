@@ -1,3 +1,6 @@
+> **⚠️ Superseded**: This document has been superseded by [analysis-v2.md](analysis-v2.md) (2026-03-14).
+> Retained for historical reference only. For current design decisions, refer to analysis-v2.md.
+
 # Sprint 5b — Analysis: Defaults, Templates & Update System
 
 **Date**: 2026-03-13
@@ -95,7 +98,7 @@ Project: memory_to_claude_state, add_browser_section, managed_dir, add_github_se
 
 ### 3.1 Project Templates
 
-Single hardcoded template at `defaults/_template/`. No `--template` flag.
+Single hardcoded template at `templates/project/base/`. No `--template` flag.
 
 **Template substitution** is ad-hoc sed:
 ```bash

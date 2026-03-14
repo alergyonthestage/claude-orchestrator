@@ -50,7 +50,7 @@ Update projects and global scope **without deleting and redoing**, preserving:
 | `.claude/mcp.json` | **User** | Never | Don't touch |
 | `setup.sh` | **User** | Never | Don't touch |
 
-### Project (`defaults/_template/` → `projects/<name>/`)
+### Project (`templates/project/base/` → `projects/<name>/`)
 
 | File | Owner | Safe to update? | Strategy |
 |------|-------|-----------------|----------|

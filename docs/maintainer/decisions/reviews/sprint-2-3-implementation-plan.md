@@ -223,7 +223,7 @@ fi
 
 #### Step 6: Template update
 
-**File**: `defaults/_template/project.yml`
+**File**: `templates/project/base/project.yml`
 
 Add commented fields:
 

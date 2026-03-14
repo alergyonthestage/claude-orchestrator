@@ -18,7 +18,7 @@ migrate() {
         return 0
     fi
 
-    # The block to insert (matches defaults/_template/project.yml)
+    # The block to insert (matches templates/project/base/project.yml)
     local browser_block
     browser_block='# ── Browser Automation (optional) ───────────────────────────────────
 # Enable Claude to control a browser via chrome-devtools-mcp (CDP).

@@ -105,7 +105,7 @@ fi
 pip3 install --quiet pandas numpy scikit-learn 2>/dev/null
 ```
 
-**Default**: `defaults/_template/setup.sh` is an empty file with a header comment.
+**Default**: `templates/project/base/setup.sh` is an empty file with a header comment.
 
 ### 2.3 Per-Project MCP Packages (runtime)
 
@@ -140,7 +140,7 @@ fi
 @modelcontextprotocol/server-postgres
 ```
 
-**Default**: `defaults/_template/mcp-packages.txt` is an empty file with a header comment.
+**Default**: `templates/project/base/mcp-packages.txt` is an empty file with a header comment.
 
 ### 2.4 Custom Docker Image (per project)
 
@@ -210,10 +210,12 @@ defaults/
 ├── global/
 │   ├── setup.sh              ← NEW (empty template)
 │   └── mcp-packages.txt      ← EXISTS
-└── _template/
-    ├── setup.sh              ← NEW (empty template)
-    ├── mcp-packages.txt      ← NEW (empty template)
-    └── secrets.env           ← NEW (empty template, see auth-design.md)
+templates/
+└── project/
+    └── base/
+        ├── setup.sh              ← NEW (empty template)
+        ├── mcp-packages.txt      ← NEW (empty template)
+        └── secrets.env           ← NEW (empty template, see auth-design.md)
 
 global/                        ← user copy (gitignored)
 ├── setup.sh
@@ -237,10 +239,10 @@ projects/<name>/               ← user copy (gitignored)
 - [ ] `bin/cco`: Parse `docker.image` from project.yml, use in compose generation
 - [ ] `bin/cco`: Mount `setup.sh` and `mcp-packages.txt` if they exist
 - [ ] `defaults/global/setup.sh`: Create empty template with comments
-- [ ] `defaults/_template/setup.sh`: Create empty template with comments
-- [ ] `defaults/_template/mcp-packages.txt`: Create empty template with comments
-- [ ] `defaults/_template/secrets.env`: Create empty template with comments
-- [ ] `defaults/_template/project.yml`: Add `docker.image` and `docker.mount_ssh_keys` (commented)
+- [ ] `templates/project/base/setup.sh`: Create empty template with comments
+- [ ] `templates/project/base/mcp-packages.txt`: Create empty template with comments
+- [ ] `templates/project/base/secrets.env`: Create empty template with comments
+- [ ] `templates/project/base/project.yml`: Add `docker.image` and `docker.mount_ssh_keys` (commented)
 - [ ] `bin/test`: Tests for custom image in dry-run compose
 - [ ] `bin/test`: Tests for setup.sh and mcp-packages.txt mount presence
 - [ ] Documentation: Update [cli.md](../../../reference/cli.md), [project-setup.md](../../../user-guides/project-setup.md), [docker.md](../../integration/docker/design.md)
