@@ -413,3 +413,102 @@ test_vault_sync_profile_stages_shared_packs() {
     run_cco vault sync "update pack" --yes
     assert_output_contains "Committed"
 }
+
+# ── Phase 4: Resource movement ───────────────────────────────────────
+
+test_profile_add_project() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    run_cco vault profile create "work"
+
+    run_cco vault profile add project "test-proj"
+    assert_file_contains "$CCO_USER_CONFIG_DIR/.vault-profile" "test-proj"
+}
+
+test_profile_add_pack() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+
+    # Create a pack first
+    run_cco pack create "my-pack"
+    run_cco vault sync "add pack" --yes
+
+    run_cco vault profile create "work"
+    run_cco vault profile add pack "my-pack"
+    assert_file_contains "$CCO_USER_CONFIG_DIR/.vault-profile" "my-pack"
+}
+
+test_profile_add_nonexistent_fails() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    run_cco vault profile create "work"
+
+    if run_cco vault profile add project "nonexistent" 2>/dev/null; then
+        fail "Expected add of nonexistent project to fail"
+    fi
+}
+
+test_profile_add_requires_active_profile() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+
+    if run_cco vault profile add project "test-proj" 2>/dev/null; then
+        fail "Expected add without active profile to fail"
+    fi
+}
+
+test_profile_remove_project() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    run_cco vault profile create "work"
+    run_cco vault profile add project "test-proj"
+
+    # Verify it was added
+    assert_file_contains "$CCO_USER_CONFIG_DIR/.vault-profile" "test-proj"
+
+    run_cco vault profile remove project "test-proj"
+    # Should no longer be in exclusive list
+    assert_file_not_contains "$CCO_USER_CONFIG_DIR/.vault-profile" "test-proj"
+}
+
+test_profile_move_project_to_profile() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+
+    # Create two profiles
+    run_cco vault profile create "work"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+    run_cco vault profile switch "$default_branch"
+    run_cco vault profile create "personal"
+
+    # Move test-proj to work profile
+    run_cco vault profile move project "test-proj" --to "work"
+    assert_output_contains "Moved"
+}
+
+test_profile_move_missing_to_flag() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    run_cco vault profile create "work"
+
+    if run_cco vault profile move project "test-proj" 2>/dev/null; then
+        fail "Expected move without --to to fail"
+    fi
+}
+
+test_profile_add_help() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco vault profile add --help
+    assert_output_contains "project"
+    assert_output_contains "pack"
+}
+
+test_profile_move_help() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco vault profile move --help
+    assert_output_contains "project"
+    assert_output_contains "pack"
+}

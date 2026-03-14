@@ -673,6 +673,110 @@ _profile_packs() {
     yml_get_list "$VAULT_PROFILE_FILE" "sync.packs" 2>/dev/null || true
 }
 
+# Add an item to a list in .vault-profile (projects or packs)
+_profile_add_to_list() {
+    local list_name="$1" item="$2"
+    local profile_file="$VAULT_PROFILE_FILE"
+    [[ ! -f "$profile_file" ]] && die "No active profile"
+
+    local profile_name
+    profile_name=$(yml_get "$profile_file" "profile")
+
+    # Read current lists
+    local projects packs
+    projects=$(yml_get_list "$profile_file" "sync.projects" 2>/dev/null || true)
+    packs=$(yml_get_list "$profile_file" "sync.packs" 2>/dev/null || true)
+
+    # Add item to the appropriate list
+    if [[ "$list_name" == "projects" ]]; then
+        # Check not already present
+        if [[ -n "$projects" ]] && echo "$projects" | grep -qxF "$item"; then
+            return 0  # already present
+        fi
+        if [[ -n "$projects" ]]; then
+            projects="$projects"$'\n'"$item"
+        else
+            projects="$item"
+        fi
+    elif [[ "$list_name" == "packs" ]]; then
+        if [[ -n "$packs" ]] && echo "$packs" | grep -qxF "$item"; then
+            return 0
+        fi
+        if [[ -n "$packs" ]]; then
+            packs="$packs"$'\n'"$item"
+        else
+            packs="$item"
+        fi
+    fi
+
+    # Rewrite the file
+    {
+        echo "# Vault profile — tracked on this branch"
+        echo "# Defines which resources are exclusive to this profile"
+        echo "profile: $profile_name"
+        echo "sync:"
+        echo "  projects:"
+        if [[ -n "$projects" ]]; then
+            while IFS= read -r p; do
+                [[ -n "$p" ]] && echo "    - $p"
+            done <<< "$projects"
+        else
+            echo "    []"
+        fi
+        echo "  packs:"
+        if [[ -n "$packs" ]]; then
+            while IFS= read -r p; do
+                [[ -n "$p" ]] && echo "    - $p"
+            done <<< "$packs"
+        else
+            echo "    []"
+        fi
+    } > "$profile_file"
+}
+
+# Remove an item from a list in .vault-profile
+_profile_remove_from_list() {
+    local list_name="$1" item="$2"
+    local profile_file="$VAULT_PROFILE_FILE"
+    [[ ! -f "$profile_file" ]] && die "No active profile"
+
+    local profile_name
+    profile_name=$(yml_get "$profile_file" "profile")
+
+    local projects packs
+    projects=$(yml_get_list "$profile_file" "sync.projects" 2>/dev/null || true)
+    packs=$(yml_get_list "$profile_file" "sync.packs" 2>/dev/null || true)
+
+    if [[ "$list_name" == "projects" ]]; then
+        projects=$(echo "$projects" | grep -vxF "$item" || true)
+    elif [[ "$list_name" == "packs" ]]; then
+        packs=$(echo "$packs" | grep -vxF "$item" || true)
+    fi
+
+    {
+        echo "# Vault profile — tracked on this branch"
+        echo "# Defines which resources are exclusive to this profile"
+        echo "profile: $profile_name"
+        echo "sync:"
+        echo "  projects:"
+        if [[ -n "$projects" ]]; then
+            while IFS= read -r p; do
+                [[ -n "$p" ]] && echo "    - $p"
+            done <<< "$projects"
+        else
+            echo "    []"
+        fi
+        echo "  packs:"
+        if [[ -n "$packs" ]]; then
+            while IFS= read -r p; do
+                [[ -n "$p" ]] && echo "    - $p"
+            done <<< "$packs"
+        else
+            echo "    []"
+        fi
+    } > "$profile_file"
+}
+
 cmd_vault_profile() {
     local subcmd="${1:-}"
     if [[ -z "$subcmd" || "$subcmd" == "--help" ]]; then
@@ -688,6 +792,9 @@ Commands:
   switch <name>      Switch to another profile
   rename <new-name>  Rename current profile
   delete <name>      Delete a profile (moves resources to main)
+  add <type> <name>  Add a project/pack to current profile
+  remove <type> <n>  Remove a project/pack from current profile
+  move <type> <name> --to <target>  Move a resource between profiles
 
 Run 'cco vault profile <command> --help' for command-specific options.
 EOF
@@ -702,6 +809,9 @@ EOF
         switch) cmd_vault_profile_switch "$@" ;;
         rename) cmd_vault_profile_rename "$@" ;;
         delete) cmd_vault_profile_delete "$@" ;;
+        add)    cmd_vault_profile_add "$@" ;;
+        remove) cmd_vault_profile_remove "$@" ;;
+        move)   cmd_vault_profile_move "$@" ;;
         *)      die "Unknown profile command: $subcmd. Run 'cco vault profile --help'." ;;
     esac
 }
@@ -1180,6 +1290,196 @@ EOF
     fi
 
     ok "Profile '$name' deleted"
+}
+
+# ── Profile resource management (add/remove/move) ───────────────────
+
+cmd_vault_profile_add() {
+    local resource_type="${1:-}"
+    local name="${2:-}"
+
+    if [[ "$resource_type" == "--help" || -z "$resource_type" ]]; then
+        cat <<'EOF'
+Usage: cco vault profile add <project|pack> <name>
+
+Add an existing project or pack to the current profile (makes it exclusive).
+The resource is moved from the default branch to the profile branch.
+EOF
+        return 0
+    fi
+
+    [[ -z "$name" ]] && die "Usage: cco vault profile add <project|pack> <name>"
+    [[ "$resource_type" != "project" && "$resource_type" != "pack" ]] && \
+        die "Resource type must be 'project' or 'pack'"
+
+    _check_vault
+
+    local profile
+    profile=$(_get_active_profile)
+    [[ -z "$profile" ]] && die "No active profile. Switch to a profile first."
+
+    local vault_dir="$USER_CONFIG_DIR"
+    local resource_path
+    if [[ "$resource_type" == "project" ]]; then
+        resource_path="projects/$name"
+        [[ ! -d "$vault_dir/$resource_path" ]] && die "Project '$name' not found"
+        _profile_add_to_list "projects" "$name"
+    else
+        resource_path="packs/$name"
+        [[ ! -d "$vault_dir/$resource_path" ]] && die "Pack '$name' not found"
+        _profile_add_to_list "packs" "$name"
+    fi
+
+    # Stage and commit
+    git -C "$vault_dir" add -A -- "$resource_path/" .vault-profile
+    git -C "$vault_dir" commit -q -m "vault: add $resource_type '$name' to profile '$profile'"
+
+    ok "Added $resource_type '$name' to profile '$profile'"
+}
+
+cmd_vault_profile_remove() {
+    local resource_type="${1:-}"
+    local name="${2:-}"
+
+    if [[ "$resource_type" == "--help" || -z "$resource_type" ]]; then
+        cat <<'EOF'
+Usage: cco vault profile remove <project|pack> <name>
+
+Remove a project or pack from the current profile (makes it shared on main).
+EOF
+        return 0
+    fi
+
+    [[ -z "$name" ]] && die "Usage: cco vault profile remove <project|pack> <name>"
+    [[ "$resource_type" != "project" && "$resource_type" != "pack" ]] && \
+        die "Resource type must be 'project' or 'pack'"
+
+    _check_vault
+
+    local profile
+    profile=$(_get_active_profile)
+    [[ -z "$profile" ]] && die "No active profile. Switch to a profile first."
+
+    if [[ "$resource_type" == "project" ]]; then
+        _profile_remove_from_list "projects" "$name"
+    else
+        _profile_remove_from_list "packs" "$name"
+    fi
+
+    local vault_dir="$USER_CONFIG_DIR"
+    git -C "$vault_dir" add -A -- .vault-profile
+    git -C "$vault_dir" commit -q -m "vault: remove $resource_type '$name' from profile '$profile'"
+
+    ok "Removed $resource_type '$name' from profile '$profile'"
+    info "The resource is now shared (on the default branch)."
+}
+
+cmd_vault_profile_move() {
+    local resource_type="${1:-}"
+    local name=""
+    local target=""
+
+    if [[ "$resource_type" == "--help" || -z "$resource_type" ]]; then
+        cat <<'EOF'
+Usage: cco vault profile move <project|pack> <name> --to <profile|main>
+
+Move a project or pack to a different profile or to the default branch (main).
+EOF
+        return 0
+    fi
+
+    shift  # consume resource_type
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --to) target="$2"; shift 2 ;;
+            --help)
+                cat <<'EOF'
+Usage: cco vault profile move <project|pack> <name> --to <profile|main>
+EOF
+                return 0
+                ;;
+            -*) die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$name" ]]; then
+                    name="$1"; shift
+                else
+                    die "Unexpected argument: $1"
+                fi
+                ;;
+        esac
+    done
+
+    [[ -z "$name" ]] && die "Usage: cco vault profile move <project|pack> <name> --to <target>"
+    [[ -z "$target" ]] && die "Missing --to <target>"
+    [[ "$resource_type" != "project" && "$resource_type" != "pack" ]] && \
+        die "Resource type must be 'project' or 'pack'"
+
+    _check_vault
+
+    local vault_dir="$USER_CONFIG_DIR"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+    local current_branch
+    current_branch=$(git -C "$vault_dir" rev-parse --abbrev-ref HEAD 2>/dev/null)
+
+    local resource_path
+    if [[ "$resource_type" == "project" ]]; then
+        resource_path="projects/$name"
+    else
+        resource_path="packs/$name"
+    fi
+
+    [[ ! -d "$vault_dir/$resource_path" ]] && die "${resource_type^} '$name' not found"
+
+    # Determine if target is default branch or a profile
+    local target_is_default=false
+    if [[ "$target" == "$default_branch" || "$target" == "main" || "$target" == "master" ]]; then
+        target_is_default=true
+        target="$default_branch"
+    fi
+
+    if ! $target_is_default; then
+        # Verify target branch exists
+        if ! git -C "$vault_dir" rev-parse --verify "$target" >/dev/null 2>&1; then
+            die "Profile '$target' not found"
+        fi
+    fi
+
+    # Auto-commit pending changes
+    _vault_auto_commit
+
+    local profile
+    profile=$(_get_active_profile)
+
+    if [[ -n "$profile" ]]; then
+        # Remove from current profile's list
+        if [[ "$resource_type" == "project" ]]; then
+            _profile_remove_from_list "projects" "$name"
+        else
+            _profile_remove_from_list "packs" "$name"
+        fi
+        git -C "$vault_dir" add -A -- .vault-profile
+        git -C "$vault_dir" commit -q -m "vault: remove $resource_type '$name' from profile '$profile'" 2>/dev/null || true
+    fi
+
+    if $target_is_default; then
+        # Moving to default branch — stage on default
+        git -C "$vault_dir" checkout "$default_branch" -q
+        git -C "$vault_dir" add -A -- "$resource_path/" 2>/dev/null || true
+        git -C "$vault_dir" commit -q -m "vault: add $resource_type '$name' (moved from profile)" 2>/dev/null || true
+        git -C "$vault_dir" checkout "$current_branch" -q
+        ok "Moved $resource_type '$name' to $default_branch (shared)"
+    else
+        # Moving to another profile
+        git -C "$vault_dir" checkout "$target" -q
+        git -C "$vault_dir" add -A -- "$resource_path/" 2>/dev/null || true
+        _profile_add_to_list "${resource_type}s" "$name"
+        git -C "$vault_dir" add -A -- .vault-profile
+        git -C "$vault_dir" commit -q -m "vault: add $resource_type '$name' to profile '$target'" 2>/dev/null || true
+        git -C "$vault_dir" checkout "$current_branch" -q
+        ok "Moved $resource_type '$name' to profile '$target'"
+    fi
 }
 
 # ── Shared resource sync helpers ──────────────────────────────────────
