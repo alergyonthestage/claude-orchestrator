@@ -150,6 +150,49 @@ print(', '.join(['$'+k for k in ['dev','build','test','start','lint'] if k in s]
     # Ensure claude-state dir exists
     mkdir -p "$project_dir/claude-state/memory"
 
+    # ── Bootstrap .cco-meta, .cco-base/, .cco-source ─────────────────
+    # Initialize update system metadata for the new project.
+
+    # Determine template source string for .cco-source
+    local template_source=""
+    local resolved_template_name="${template_name:-base}"
+    if [[ -d "$TEMPLATES_DIR/project/$resolved_template_name" ]]; then
+        # User template
+        template_source="user:template/$resolved_template_name"
+    else
+        # Native template
+        template_source="native:project/$resolved_template_name"
+    fi
+
+    # Write .cco-source (flat string, single line)
+    printf '%s\n' "$template_source" > "$project_dir/.cco-source"
+
+    # Generate .cco-meta with schema_version and manifest
+    local latest_schema
+    latest_schema=$(_latest_schema_version "project")
+    local now
+    now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    local meta_file="$project_dir/.cco-meta"
+
+    # Build manifest entries from tracked project files
+    local defaults_dir
+    defaults_dir="$NATIVE_TEMPLATES_DIR/project/base/.claude"
+    (
+        local entry rel policy
+        for entry in "${PROJECT_FILE_POLICIES[@]}"; do
+            rel="${entry%:*}"
+            policy="${entry##*:}"
+            [[ "$policy" != "tracked" ]] && continue
+            rel="${rel#.claude/}"
+            if [[ -f "$project_dir/.claude/$rel" ]]; then
+                printf '%s\t%s\n' "$rel" "$(_file_hash "$project_dir/.claude/$rel")"
+            fi
+        done
+    ) | _generate_project_cco_meta "$meta_file" "$latest_schema" "$now" "$resolved_template_name"
+
+    # Save base versions for future 3-way merge
+    _save_all_base_versions "$project_dir/.cco-base" "$defaults_dir" "project"
+
     ok "Project created at projects/$name/"
     info "Edit project.yml to configure repos and settings"
     info "Edit projects/$name/.claude/CLAUDE.md to add instructions for Claude"

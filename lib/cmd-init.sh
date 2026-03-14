@@ -100,7 +100,7 @@ EOF
                 printf '%s\t%s\n' "$rel" "$(_file_hash "$GLOBAL_DIR/.claude/$rel")"
             done
         ) | _generate_cco_meta "$meta_file" "$latest_schema" "$now" \
-            "$comm_lang" "$docs_lang" "$code_lang"
+            "$comm_lang" "$docs_lang" "$code_lang" "0"
 
         # Save base versions for future 3-way merge
         _save_all_base_versions "$GLOBAL_DIR/.claude/.cco-base" "$DEFAULTS_DIR/global/.claude" "global"
@@ -139,6 +139,31 @@ EOF
             sed -i "s|{{CCO_REPO_ROOT}}|$REPO_ROOT|g" "$tutorial_yml"
         sed -i '' "s|{{CCO_USER_CONFIG_DIR}}|$USER_CONFIG_DIR|g" "$tutorial_yml" 2>/dev/null || \
             sed -i "s|{{CCO_USER_CONFIG_DIR}}|$USER_CONFIG_DIR|g" "$tutorial_yml"
+
+        # Bootstrap .cco-source, .cco-meta, .cco-base for tutorial project
+        printf 'native:project/tutorial\n' > "$tutorial_dir/.cco-source"
+
+        local tut_latest_schema
+        tut_latest_schema=$(_latest_schema_version "project")
+        local tut_now
+        tut_now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        local tut_meta="$tutorial_dir/.cco-meta"
+        local tut_defaults="$NATIVE_TEMPLATES_DIR/project/base/.claude"
+
+        (
+            local entry rel policy
+            for entry in "${PROJECT_FILE_POLICIES[@]}"; do
+                rel="${entry%:*}"
+                policy="${entry##*:}"
+                [[ "$policy" != "tracked" ]] && continue
+                rel="${rel#.claude/}"
+                if [[ -f "$tutorial_dir/.claude/$rel" ]]; then
+                    printf '%s\t%s\n' "$rel" "$(_file_hash "$tutorial_dir/.claude/$rel")"
+                fi
+            done
+        ) | _generate_project_cco_meta "$tut_meta" "$tut_latest_schema" "$tut_now" "tutorial"
+
+        _save_all_base_versions "$tutorial_dir/.cco-base" "$tut_defaults" "project"
 
         ok "Tutorial project ready — run 'cco start tutorial' to begin"
     fi
