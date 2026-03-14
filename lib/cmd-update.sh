@@ -87,9 +87,20 @@ EOF
         update_all=true
     fi
 
+    # Choose verb based on mode
+    local verb="Updating"
+    if [[ "$cmd_mode" == "discovery" || "$cmd_mode" == "diff" ]]; then
+        verb="Checking"
+    elif [[ "$cmd_mode" == "news" ]]; then
+        verb="Checking"
+    fi
+    if $dry_run; then
+        verb="Checking"
+    fi
+
     if $update_all; then
         # Update global
-        info "Updating global config..."
+        info "$verb global config..."
         _update_global "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"
 
         # Show changelog notifications (discovery and news modes only)
@@ -97,23 +108,26 @@ EOF
             _update_changelog_notifications "$cmd_mode" "$dry_run"
         fi
 
-        # TODO: pack and template migration scopes (design §4.15)
-        # When migrations/pack/ or migrations/template/ exist, iterate
-        # user-config/packs/*/ and user-config/templates/*/ here.
+        # --news only shows changelog, skip project iteration
+        if [[ "$cmd_mode" != "news" ]]; then
+            # TODO: pack and template migration scopes (design §4.15)
+            # When migrations/pack/ or migrations/template/ exist, iterate
+            # user-config/packs/*/ and user-config/templates/*/ here.
 
-        # Update all projects
-        local project_dir
-        for project_dir in "$PROJECTS_DIR"/*/; do
-            [[ ! -d "$project_dir" ]] && continue
-            [[ ! -f "$project_dir/project.yml" ]] && continue
-            local pname
-            pname="$(basename "$project_dir")"
-            info "Updating project '$pname'..."
-            _update_project "$project_dir" "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"
-        done
+            # Update all projects
+            local project_dir
+            for project_dir in "$PROJECTS_DIR"/*/; do
+                [[ ! -d "$project_dir" ]] && continue
+                [[ ! -f "$project_dir/project.yml" ]] && continue
+                local pname
+                pname="$(basename "$project_dir")"
+                info "$verb project '$pname'..."
+                _update_project "$project_dir" "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"
+            done
+        fi
     elif [[ -n "$project" ]]; then
         # Global always runs (even with --project)
-        info "Updating global config..."
+        info "$verb global config..."
         _update_global "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"
 
         # Show changelog notifications (discovery and news modes only)
@@ -121,18 +135,21 @@ EOF
             _update_changelog_notifications "$cmd_mode" "$dry_run"
         fi
 
-        # Update specific project
-        local project_dir="$PROJECTS_DIR/$project"
-        [[ ! -d "$project_dir" ]] && die "Project '$project' not found. Run 'cco project list'."
-        [[ ! -f "$project_dir/project.yml" ]] && die "No project.yml in projects/$project/"
-        info "Updating project '$project'..."
-        _update_project "$project_dir" "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"
+        # --news only shows changelog, skip project update
+        if [[ "$cmd_mode" != "news" ]]; then
+            # Update specific project
+            local project_dir="$PROJECTS_DIR/$project"
+            [[ ! -d "$project_dir" ]] && die "Project '$project' not found. Run 'cco project list'."
+            [[ ! -f "$project_dir/project.yml" ]] && die "No project.yml in projects/$project/"
+            info "$verb project '$project'..."
+            _update_project "$project_dir" "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"
+        fi
     fi
 
     if $dry_run; then
         echo ""
         info "Dry run complete. No changes made."
-    elif [[ "$cmd_mode" == "discovery" || "$cmd_mode" == "diff" ]]; then
+    elif [[ "$cmd_mode" == "discovery" || "$cmd_mode" == "diff" || "$cmd_mode" == "news" ]]; then
         echo ""
         ok "Update check complete."
     else

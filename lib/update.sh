@@ -417,8 +417,14 @@ _collect_file_changes() {
             printf 'NEW\t%s\n' "$rel"
 
         elif [[ -z "$installed_hash" ]] && [[ -n "$base_hash" ]]; then
-            # File was in base but user deleted it — don't re-add
-            printf 'NO_UPDATE\t%s\n' "$rel"
+            # File was in base but user deleted it
+            if [[ "$new_hash" != "$base_hash" ]]; then
+                # Framework updated the file since user deleted it — notify
+                printf 'DELETED_UPDATED\t%s\n' "$rel"
+            else
+                # Framework unchanged — respect user's deletion silently
+                printf 'NO_UPDATE\t%s\n' "$rel"
+            fi
 
         elif [[ -z "$base_hash" ]]; then
             # BASE_MISSING: no .cco-base/ entry for this file
@@ -475,6 +481,7 @@ _collect_file_changes() {
 # Returns updated manifest entries via _UPDATE_MANIFEST_ENTRIES (newline-separated "path\thash").
 _UPDATE_MANIFEST_ENTRIES=""
 _LAST_RESOLVE_AUTOMERGE=false  # set by _resolve_with_merge for counter tracking
+_LAST_RESOLVE_SKIPPED=false    # set by _resolve_with_merge when user chooses skip inside conflict
 
 ## _apply_file_changes — REMOVED (replaced by _interactive_apply in Sprint 3+4)
 
@@ -502,14 +509,13 @@ _resolve_with_merge() {
     if [[ $merge_result -eq 0 ]]; then
         # Clean merge — auto-apply with backup
         _LAST_RESOLVE_AUTOMERGE=true
+        _LAST_RESOLVE_SKIPPED=false
         if [[ "$no_backup" != "true" ]]; then
             cp "$installed_dir/$rel_path" "$installed_dir/${rel_path}.bak"
         fi
         cp "$merge_out" "$installed_dir/$rel_path"
         rm -f "$merge_out"
         ok "  ✓ $rel_path (auto-merged)"
-        local h; h=$(_file_hash "$installed_dir/$rel_path")
-        _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
     elif [[ $merge_result -eq 1 ]]; then
         # Conflicts in merge — show to user
         echo ""
@@ -545,6 +551,7 @@ _resolve_with_merge() {
         case "$choice" in
             m)
                 # Open merged file with conflicts in editor
+                _LAST_RESOLVE_SKIPPED=false
                 if [[ "$no_backup" != "true" ]]; then
                     cp "$installed_dir/$rel_path" "$installed_dir/${rel_path}.bak"
                 fi
@@ -556,10 +563,9 @@ _resolve_with_merge() {
                 else
                     ok "  ✓ $rel_path (manually merged)"
                 fi
-                local h; h=$(_file_hash "$installed_dir/$rel_path")
-                _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                 ;;
             r)
+                _LAST_RESOLVE_SKIPPED=false
                 if [[ "$no_backup" != "true" ]]; then
                     cp "$installed_dir/$rel_path" "$installed_dir/${rel_path}.bak"
                     warn "  ↻ $rel_path (replaced, backup → ${rel_path}.bak)"
@@ -567,21 +573,15 @@ _resolve_with_merge() {
                     warn "  ↻ $rel_path (replaced)"
                 fi
                 cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
-                local h; h=$(_file_hash "$defaults_dir/$rel_path")
-                _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                 ;;
             s)
-                # Save default hash so: if default changes again → new CONFLICT,
-                # if default stays same → USER_MODIFIED (skipped silently)
-                info "  Skipped $rel_path (will be flagged if defaults change again)"
-                local h; h=$(_file_hash "$defaults_dir/$rel_path")
-                _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
+                _LAST_RESOLVE_SKIPPED=true
+                info "  Skipped $rel_path (will be flagged again next run)"
                 ;;
             *)
-                # Save default hash so next run sees manifest==default → NO_UPDATE
+                # Keep user version but acknowledge the update
+                _LAST_RESOLVE_SKIPPED=false
                 info "  Kept user version of $rel_path"
-                local h; h=$(_file_hash "$defaults_dir/$rel_path")
-                _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                 ;;
         esac
         rm -f "$merge_out"
@@ -689,7 +689,7 @@ _show_discovery_summary() {
 
     [[ -z "$changes" ]] && return 0
 
-    local update_count=0 merge_count=0 new_count=0 removed_count=0 base_missing_count=0
+    local update_count=0 merge_count=0 new_count=0 removed_count=0 base_missing_count=0 deleted_updated_count=0
 
     while IFS=$'\t' read -r status rel_path; do
         [[ -z "$status" ]] && continue
@@ -699,10 +699,11 @@ _show_discovery_summary() {
             NEW)                          new_count=$(( new_count + 1 )) ;;
             REMOVED)                      removed_count=$(( removed_count + 1 )) ;;
             BASE_MISSING)                 base_missing_count=$(( base_missing_count + 1 )) ;;
+            DELETED_UPDATED)              deleted_updated_count=$(( deleted_updated_count + 1 )) ;;
         esac
     done <<< "$changes"
 
-    local total=$(( update_count + merge_count + new_count + removed_count + base_missing_count ))
+    local total=$(( update_count + merge_count + new_count + removed_count + base_missing_count + deleted_updated_count ))
     [[ $total -eq 0 ]] && return 0
 
     echo ""
@@ -712,6 +713,7 @@ _show_discovery_summary() {
     [[ $new_count -gt 0 ]] && info "  $new_count new file(s) available (NEW)"
     [[ $removed_count -gt 0 ]] && info "  $removed_count file(s) removed from defaults (REMOVED)"
     [[ $base_missing_count -gt 0 ]] && info "  $base_missing_count file(s) with missing base (BASE_MISSING)"
+    [[ $deleted_updated_count -gt 0 ]] && info "  $deleted_updated_count file(s) you deleted have framework updates (DELETED_UPDATED)"
     echo ""
     info "Run 'cco update --diff' for details, 'cco update --apply' to merge."
 }
@@ -783,6 +785,16 @@ _show_file_diffs() {
             REMOVED)
                 echo ""
                 info "$scope_label: $rel_path (removed from framework defaults)"
+                shown=$(( shown + 1 ))
+                ;;
+            DELETED_UPDATED)
+                echo ""
+                info "$scope_label: $rel_path (you deleted this file, but framework has updates)"
+                if [[ -f "$base_dir/$rel_path" ]]; then
+                    echo "  --- framework changes since you deleted:"
+                    diff -u "$base_dir/$rel_path" "$defaults_dir/$rel_path" \
+                        --label "version when deleted" --label "new default" 2>/dev/null | sed 's/^/  /' || true
+                fi
                 shown=$(( shown + 1 ))
                 ;;
         esac
@@ -933,14 +945,20 @@ _interactive_apply() {
                 case "$choice" in
                     m|merge)
                         _LAST_RESOLVE_AUTOMERGE=false
+                        _LAST_RESOLVE_SKIPPED=false
                         _resolve_with_merge "$rel_path" "$defaults_dir" "$installed_dir" "$base_dir" "$no_backup"
-                        _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
-                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
-                        _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
-                        if $_LAST_RESOLVE_AUTOMERGE; then
-                            merged=$(( merged + 1 ))
+                        if $_LAST_RESOLVE_SKIPPED; then
+                            # Skip inside conflict resolution — defer to next run
+                            skipped=$(( skipped + 1 ))
                         else
-                            applied=$(( applied + 1 ))
+                            _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
+                            local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                            _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
+                            if $_LAST_RESOLVE_AUTOMERGE; then
+                                merged=$(( merged + 1 ))
+                            else
+                                applied=$(( applied + 1 ))
+                            fi
                         fi
                         ;;
                     r|replace)
@@ -989,6 +1007,37 @@ _interactive_apply() {
                     local h; h=$(_file_hash "$installed_dir/$rel_path")
                     _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                 fi
+                ;;
+
+            DELETED_UPDATED)
+                local choice="$auto_action"
+                if [[ -z "$choice" ]]; then
+                    echo ""
+                    info "$scope_label: $rel_path (you deleted, framework has updates)"
+                    echo "  (A)dd back with new version  (S)kip"
+                    if (exec < /dev/tty) 2>/dev/null; then
+                        read -rp "  Choice [s/A]: " choice < /dev/tty
+                    fi
+                    choice="${choice:-s}"
+                    choice="$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')"
+                fi
+                case "$choice" in
+                    a|add|replace)
+                        mkdir -p "$(dirname "$installed_dir/$rel_path")"
+                        cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
+                        _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
+                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                        _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
+                        ok "  + $rel_path (re-added with latest version)"
+                        applied=$(( applied + 1 ))
+                        ;;
+                    *)
+                        # Skip: update .cco-base/ to stop notifying, respect deletion
+                        _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
+                        info "  Skipped $rel_path (won't notify again until next framework update)"
+                        skipped=$(( skipped + 1 ))
+                        ;;
+                esac
                 ;;
         esac
     done <<< "$changes"

@@ -1,12 +1,2 @@
 # changelog.yml — Additive changes notification
-# Each entry describes a new optional feature or configuration field.
-# Users are notified of new entries by `cco update`.
-#
-# Format:
-#   - id: <sequential integer>
-#     date: "YYYY-MM-DD"
-#     type: additive
-#     title: "Short description"
-#     description: "Details about the new feature and how to use it"
-
 entries: []
