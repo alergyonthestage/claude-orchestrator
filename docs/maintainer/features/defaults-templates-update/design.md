@@ -67,7 +67,7 @@ defaults/                              # Framework-managed configuration sources
 templates/                             # Scaffolding blueprints (read-only sources)
 ├── project/
 │   ├── base/                          # Default project template (no --template flag)
-│   │   ├── project.yml                #   Project manifest template
+│   │   ├── project.yml                #   Project configuration template
 │   │   ├── setup.sh                   #   Runtime setup script
 │   │   ├── secrets.env                #   Secrets placeholder
 │   │   ├── mcp-packages.txt           #   Optional MCP package list
@@ -170,9 +170,11 @@ New config sections are additive — code defaults handle missing fields. Schema
 changes use explicit migrations. See `analysis-v2.md` section 4.4.
 
 **Note on `.claude/skills/` in project scope:**
-Project-level skills (from tutorial template, user templates, or manually added)
-are not discovered by `cco update`. They are outside the base template and have no
-framework "new version" to compare against. Future `cco template sync` may handle this.
+For **base projects**, project-level skills are user-defined and not discovered.
+For **native template projects** (tutorial), template-provided skills ARE discovered
+because they have a framework source in `templates/project/<name>/`. The project's
+`.cco-source` (`native:project/tutorial`) tells the update engine where to look.
+User-added skills (not from the template) remain user-owned and undiscovered.
 
 ### 3.4 Runtime-Generated Files (not in update system)
 
@@ -187,6 +189,10 @@ framework "new version" to compare against. Future `cco template sync` may handl
 | `user-config/global/.claude/.cco-base/` | `cco init` / `cco update --apply` | ❌ do not delete |
 | `user-config/projects/<name>/.cco-meta` | `cco project create` / `cco update --apply` | ❌ do not delete |
 | `user-config/projects/<name>/.cco-base/` | `cco project create` / `cco update --apply` | ❌ do not delete |
+| `user-config/projects/<name>/.cco-source` | `cco project create --template` / `cco project install` | ❌ do not delete |
+| `user-config/packs/<name>/.cco-meta` | `cco pack create` / `cco pack install` | ❌ do not delete |
+| `user-config/packs/<name>/.cco-source` | `cco pack install` | ❌ do not delete |
+| `user-config/templates/<name>/.cco-meta` | `cco template create` | ❌ do not delete |
 
 > **Warning**: `.cco-base/` is the ancestor for 3-way merge. Deleting it does not
 > break anything immediately, but `cco update --apply` will fall back to
@@ -198,12 +204,14 @@ framework "new version" to compare against. Future `cco template sync` may handl
 
 ### 4.1 Core Principle
 
-`cco update` does **two things**:
+`cco update` does **three things**:
 1. **Migrations**: Run pending migration scripts (automatic, structural changes)
-2. **Discovery**: Compare framework sources against `.cco-base/` to find available updates
+2. **Discovery**: Compare framework sources against `.cco-base/` to find available opinionated file updates
+3. **Notifications**: Report additive changes (new features, new config fields) from `changelog.yml`
 
-It **never modifies user files**. File changes happen only via `cco update --apply`,
-where the user explicitly chooses what to integrate.
+It **never modifies user files** (except via migrations, which are structural).
+Content changes happen only via `cco update --apply`, where the user explicitly
+chooses what to integrate.
 
 ### 4.2 The Three Versions (for discovery and merge)
 
@@ -387,18 +395,42 @@ git merge-file [--diff3] <current> <base> <new>
 - `cco update --apply` with **(S)kip** — defers the decision
 - Any other cco command
 
-### 4.9 Apply Modes
+### 4.9 Command Modes
 
 ```bash
-cco update                    # Default: migrations + discovery report (no file changes)
-cco update --diff             # Show detailed diffs for available updates
+# Discovery (default — read-only, no file changes except migrations)
+cco update                    # Migrations + discovery + additive notifications
+cco update --project <name>   # Scope to specific project (+ global)
+cco update --all              # Scope to global + all projects (default if no --project)
+
+# Inspection
+cco update --diff             # Show detailed diffs for all available updates
 cco update --diff <file>      # Show 3-way diff for a specific file
-cco update --apply            # Interactive per-file merge/replace/keep/skip
-cco update --apply <file>     # Apply a specific file update
-cco update --apply --all      # Apply all updates (still interactive per file)
-cco update --dry-run          # Same as default (discovery is already read-only)
-cco update --no-backup        # Disable .bak creation when used with --apply
+
+# Application (interactive — modifies files on user confirmation)
+cco update --apply            # Interactive per-file: apply/merge/replace/keep/skip
+cco update --apply <file>     # Apply a specific file update only
+cco update --no-backup        # Disable .bak creation (combine with --apply)
+
+# Preview
+cco update --dry-run          # Show pending migrations without running them + discovery
 ```
+
+**Flag semantics:**
+- `--all` and `--project <name>` control **scope** (which projects to check)
+- `--diff` and `--apply` control **action** (inspect vs modify)
+- `--dry-run` prevents migrations from running (shows them as pending) and
+  performs discovery as usual. Useful to preview what `cco update` would do
+  before running it.
+
+**Per-file path resolution** (`--apply <file>` / `--diff <file>`):
+The `<file>` argument is matched against opinionated file paths in all scopes
+(global + projects in scope). If ambiguous (e.g., `settings.json` exists in
+global and project), the user is prompted to disambiguate. Full path syntax
+`global:settings.json` or `project/myapp:settings.json` resolves unambiguously.
+
+**Non-interactive fallback**: When stdin is not a TTY (e.g., CI), `--apply`
+defaults to **(S)kip** for all files (safest choice). No silent modifications.
 
 ### 4.10 Backup Policy
 
@@ -421,6 +453,9 @@ schema_version: 8
 created_at: 2026-01-15T10:00:00Z
 updated_at: 2026-03-14T10:00:00Z
 
+# Last seen changelog entry (global only — for additive change notifications)
+last_seen_changelog: 12
+
 # Template origin (projects only — informational, not used for update routing)
 template: base               # base | tutorial | <user-template-name>
 
@@ -437,23 +472,36 @@ manifest:
   .claude/rules/workflow.md: i9j0k1l2...
 ```
 
+**Variants by scope:**
+- **Global**: Full schema (languages, last_seen_changelog, manifest)
+- **Project**: `schema_version`, `template`, `manifest` (no languages, no changelog)
+- **Pack**: `schema_version`, `manifest` only
+- **User template**: `schema_version` only
+
 Note: `template` is informational — it records which template was used at creation
-for user reference and future `cco template sync` (not yet implemented). The update
-source for opinionated files is always `templates/project/base/` for all projects.
+for user reference and future `cco template sync` (not yet implemented).
 
-### 4.12 Update Source: Always Base Template
+### 4.12 Update Source Resolution
 
-`_update_project()` always uses `templates/project/base/` as its source for
-opinionated files, regardless of which template created the project:
+`_update_project()` resolves the update source based on the project's origin:
 
-1. **Base defines the schema**: settings.json permissions
-2. **All projects share the same schema**: whether created from base, tutorial, or
-   a user template, the underlying project structure is the same
-3. **Template-specific files have no base equivalent**: tutorial skills, user custom
-   rules, etc. are not present in base and therefore cannot be compared
+**For base projects** (no `--template` flag, or `.cco-source` absent):
+- Source: `templates/project/base/`
+- Discovers: `.claude/settings.json` only
 
-**Consequence**: Files that exist only in non-base templates (e.g., tutorial skills)
-are never discovered by `cco update`. They are the maintainer's or user's responsibility.
+**For native template projects** (`.cco-source` with `native:project/<name>`):
+- Source: `templates/project/<name>/` (e.g., `templates/project/tutorial/`)
+- Discovers: template-specific opinionated files (skills, rules) + base files (settings.json)
+- Base files are compared against `templates/project/base/` (schema source)
+- Template files are compared against `templates/project/<name>/` (content source)
+
+**For user template projects** (`.cco-source` absent, `.cco-meta` has `template: <user-name>`):
+- Source: `templates/project/base/` only (base opinionated files)
+- User template files are not discovered — future `cco template sync`
+
+**For remote-installed projects** (`.cco-source` with remote URL):
+- Source: `templates/project/base/` for opinionated files
+- Remote changes: notify only (see analysis-v2.md section 7.6)
 
 ### 4.13 User Template Propagation — Future Command
 
@@ -466,7 +514,115 @@ propagation using the same diff/merge engine. Design deferred to a future sprint
 
 See `analysis-v2.md` section 5 for full template philosophy.
 
-### 4.14 Vault Integration
+### 4.14 Additive Change Notifications (`changelog.yml`)
+
+`cco update` reports new features from a structured changelog so users discover
+capabilities without reading docs proactively.
+
+**File**: `changelog.yml` in the cco repo root:
+
+```yaml
+# changelog.yml — user-visible additive changes
+- id: 12
+  type: additive
+  date: 2026-03-14
+  summary: "New 'rag:' section in project.yml for semantic search"
+  docs: "docs/reference/project-yaml.md#rag"
+  example: |
+    rag:
+      enabled: true
+      provider: local-rag
+```
+
+**Tracking**: `.cco-meta` (global only) stores `last_seen_changelog: <id>`.
+`cco update` compares against the latest entry in `changelog.yml` and reports
+unseen changes. After reporting, updates `last_seen_changelog`.
+
+**Output**: Shown between migrations and discovery in the `cco update` output:
+
+```
+What's new in cco:
+  + project.yml: new 'rag:' section (semantic search)
+  Run 'cco update --news' for details and examples.
+```
+
+**Maintainer workflow**: Append entry with incremented `id` when adding an
+additive change. The entry is shown once to each user.
+
+### 4.15 Migration Scopes
+
+The migration runner supports four scopes:
+
+```
+migrations/
+├── global/       # cco update (always)
+├── project/      # cco update (per project)
+├── pack/         # cco update (per pack with .cco-meta)
+└── template/     # cco update (user templates with .cco-meta)
+```
+
+**Execution order in `cco update`:**
+1. Global migrations (affect `user-config/global/`)
+2. Pack migrations (iterate `user-config/packs/*/` with `.cco-meta`)
+3. User template migrations (iterate `user-config/templates/*/` with `.cco-meta`)
+4. Project migrations (per project in scope)
+5. Discovery (opinionated files) + additive notifications
+
+**Pack `.cco-meta` initialization:**
+- `cco pack create` and `cco pack install` create `.cco-meta` with
+  `schema_version: 0` and manifest hashes
+- Bootstrap migration for existing packs: a global migration iterates
+  `user-config/packs/*/` and creates `.cco-meta` where missing
+
+**Native templates** (`templates/project/*/`, `templates/pack/*/`):
+Maintained by the maintainer directly in the repo. NOT migrated by `cco update`.
+The maintainer:
+1. Updates the native template files directly (commit to repo)
+2. Creates a migration in `migrations/project/` for existing user projects
+3. `cco update` runs the migration on existing projects automatically
+
+### 4.16 Source Tracking (`.cco-source`)
+
+Resources with an authoritative source track their origin:
+
+```yaml
+# .cco-source — auto-generated, do not edit
+type: pack | project
+source:
+  url: https://github.com/team/config   # or "native:project/tutorial"
+  path: packs/my-pack                   # subdirectory in source
+  ref: main                             # branch/tag/commit
+  installed_at: 2026-03-01T10:00:00Z
+  updated_at: 2026-03-14T10:00:00Z
+  installed_hash: abc123                 # commit hash at install time
+```
+
+**Created by:**
+- `cco pack install` → remote URL (already implemented)
+- `cco pack create` → `source: local` (already implemented)
+- `cco project create --template <native>` → `native:project/<name>` (new)
+- `cco project install <url>` → remote URL (new)
+
+**Used by:**
+- `cco update` → resolve update source for native template projects
+- `cco update` → notify of remote updates for installed projects
+- `cco pack update` → pull from remote source (already implemented)
+
+### 4.17 Maintainer Rules for Migrations
+
+When writing migrations, maintainers MUST follow these rules:
+
+1. **If a migration renames/moves an opinionated file**: also update the
+   corresponding entry in `.cco-base/` so future discovery works correctly
+2. **If a migration changes project.yml structure**: update `templates/project/base/project.yml`
+   AND all non-base native templates (tutorial, etc.)
+3. **Post-migration warning**: if the change affects user templates, emit a
+   warning so users know to review their `user-config/templates/`
+4. **Idempotency**: every migration MUST be safe to run multiple times
+5. **Sequential IDs**: check `migrations/{scope}/` for the current max before
+   assigning an ID
+
+### 4.18 Vault Integration
 
 The vault pre-update prompt must NOT block the discovery/apply flow:
 
@@ -614,29 +770,38 @@ SYNOPSIS
     cco update --all [OPTIONS]
 
 MODES
-    (no flags)              Migrations + discovery report (no file changes)
+    (no flags)              Migrations + discovery + additive notifications
     --diff                  Show detailed diffs for available updates
     --diff <file>           Show 3-way diff for a specific file
     --apply                 Interactive per-file merge/replace/keep/skip
     --apply <file>          Apply a specific file update
-    --apply --all           Apply all updates (still interactive per file)
+    --news                  Show full details of additive changes (examples, docs)
 
 OPTIONS
     --project <name>        Scope to specific project (+ global)
-    --all                   Explicitly scope to global + all projects
+    --all                   Scope to global + all projects (default if no --project)
     --no-backup             Disable .bak creation (combine with --apply)
-    --dry-run               Same as default (discovery is already read-only)
+    --dry-run               Show pending migrations without running + discovery
 
 SOURCES
     Global config           defaults/global/
-    Project opinionated     templates/project/base/          (.claude/settings.json)
+    Project (base)          templates/project/base/          (.claude/settings.json)
+    Project (native tpl)    templates/project/<name>/        (template-specific files)
+    Additive changes        changelog.yml                    (structured notifications)
+
+MIGRATION SCOPES
+    global                  Run on user-config/global/
+    project                 Run on each project in scope
+    pack                    Run on each pack with .cco-meta
+    template                Run on each user template with .cco-meta
 
 WHAT cco update DOES (automatically)
-    Migrations              Run pending scripts from migrations/{global,project}/
+    Migrations              Run pending scripts from migrations/{scope}/
     Discovery               Compare framework sources against .cco-base/ for updates
+    Notifications           Report new features from changelog.yml
 
 WHAT cco update DOES NOT DO (automatically)
-    File modifications      Never — requires explicit --apply
+    File modifications      Never — requires explicit --apply (except migrations)
     Template sync           Never — future cco template sync command
     Pack updates            Never — use cco pack update
 
@@ -696,18 +861,18 @@ WHAT cco update --apply DOES NOT TOUCH
 10. **Template `--from` with interactive templatization**: Interactive prompt
     to replace project-specific values with `{{PLACEHOLDER}}` variables.
 
-11. **Update source is always base template** *(revised, 2026-03-14)*: `.cco-meta`
-    records `template` (informational only). Update always uses
-    `templates/project/base/` as the source. Template-specific files
-    are not discovered — they have no base equivalent.
+11. **Update source resolution** *(revised, 2026-03-14)*: Base projects use
+    `templates/project/base/`. Native template projects (tutorial) use the
+    template's own directory for template-specific files + base for shared
+    files. Source resolved via `.cco-source`.
 
 12. **`--sync-templates` removed** *(revised, 2026-03-14)*: User template
     propagation is NOT a flag on `cco update`. Deferred to future
     `cco template sync` command.
 
-13. **`cco update` = migrations + discovery** *(revised, 2026-03-14)*: No
-    automatic file modifications. Discovery is read-only. File changes
-    require explicit `--apply`. Even unmodified files are not silently updated.
+13. **`cco update` = migrations + discovery + notifications** *(revised, 2026-03-14)*:
+    No automatic file modifications. Discovery is read-only. File changes
+    require explicit `--apply`. Additive changes reported via `changelog.yml`.
 
 14. **`project.yml` is user-owned** *(revised, 2026-03-14)*: Removed from
     tracked/opinionated files. 100% user config — new fields are additive
@@ -722,3 +887,27 @@ WHAT cco update --apply DOES NOT TOUCH
 17. **Vault prompt bug** *(identified 2026-03-14)*: Current implementation
     redirects vault prompt I/O in a way that breaks subsequent interactive
     prompts. Fix: explicit `/dev/tty` redirect; non-fatal error handling.
+
+18. **Additive change notifications** *(new, 2026-03-14)*: `cco update` reports
+    new features from `changelog.yml`. Tracked via `last_seen_changelog` in
+    `.cco-meta`. Users discover capabilities without reading docs proactively.
+
+19. **Migration scopes extended** *(new, 2026-03-14)*: Four scopes: `global`,
+    `project`, `pack`, `template`. Pack and user-template migrations run
+    during `cco update`. Native templates maintained by maintainer directly.
+
+20. **Source tracking for all origin-aware resources** *(new, 2026-03-14)*:
+    `.cco-source` extended to native template projects and remote-installed
+    projects. Enables update discovery and remote change notification.
+
+21. **`cco project create` initializes `.cco-meta`/`.cco-base` immediately**
+    *(fix, 2026-03-14)*: Not deferred to bootstrap migration. Created at
+    project creation time alongside `.cco-source` for non-base templates.
+
+22. **`--dry-run` shows pending migrations** *(clarification, 2026-03-14)*:
+    `--dry-run` does NOT run migrations — it lists them as pending. Discovery
+    runs normally. This lets users preview what `cco update` would do.
+
+23. **Non-interactive fallback** *(clarification, 2026-03-14)*: When stdin is
+    not a TTY, `--apply` defaults to (S)kip for all files. No silent changes
+    in non-interactive environments.
