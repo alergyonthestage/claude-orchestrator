@@ -909,10 +909,107 @@ Examples:
 
 #### `cco vault status`
 
-Show vault state.
+Show vault state. With an active profile, also shows profile info, exclusive resources, and sync state with main.
 
 ```
 Usage: cco vault status
+```
+
+#### `cco vault profile create <name>`
+
+Create a new vault profile. Creates a git branch from main with a `.vault-profile` tracking file.
+
+```
+Usage: cco vault profile create <name>
+
+Arguments:
+  name                 Profile name (lowercase, hyphens allowed)
+
+Examples:
+  cco vault profile create work
+  cco vault profile create personal
+```
+
+#### `cco vault profile list`
+
+List all vault profiles with resource counts.
+
+```
+Usage: cco vault profile list
+```
+
+#### `cco vault profile show`
+
+Show current profile details including exclusive resources and sync state.
+
+```
+Usage: cco vault profile show
+```
+
+#### `cco vault profile switch <name>`
+
+Switch to another profile. Auto-commits pending changes before switching.
+
+```
+Usage: cco vault profile switch <name>
+
+Examples:
+  cco vault profile switch personal
+```
+
+#### `cco vault profile rename <new-name>`
+
+Rename the current profile (renames branch and updates `.vault-profile`).
+
+```
+Usage: cco vault profile rename <new-name>
+
+Examples:
+  cco vault profile rename work-2024
+```
+
+#### `cco vault profile delete <name>`
+
+Delete a profile. Moves all exclusive resources to main first, then deletes the branch.
+
+```
+Usage: cco vault profile delete <name> [--yes]
+
+Options:
+  --yes                Skip confirmation prompt
+
+Examples:
+  cco vault profile delete old-profile
+  cco vault profile delete old-profile --yes
+```
+
+#### `cco vault profile move project|pack <name> --to <target>`
+
+Move a project or pack between profiles and main.
+
+```
+Usage: cco vault profile move project <name> --to <profile|main>
+       cco vault profile move pack <name> --to <profile|main>
+
+Examples:
+  cco vault profile move project my-api --to work
+  cco vault profile move project my-api --to main
+  cco vault profile move pack corp-rules --to work
+```
+
+#### `cco vault profile add|remove project|pack <name>`
+
+Shortcuts for moving resources to/from the current profile.
+
+```
+Usage: cco vault profile add project <name>
+       cco vault profile add pack <name>
+       cco vault profile remove project <name>
+       cco vault profile remove pack <name>
+
+Examples:
+  cco vault profile add project new-api
+  cco vault profile remove pack old-rules
 ```
 
 ---

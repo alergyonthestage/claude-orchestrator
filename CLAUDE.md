@@ -53,6 +53,15 @@ cco vault sync [msg]         # Commit config changes with secret detection
 cco vault diff               # Show uncommitted changes by category
 cco vault log                # Show commit history
 cco vault status             # Show vault state
+cco vault profile create <n> # Create vault profile (branch-based isolation)
+cco vault profile list       # List all profiles
+cco vault profile show       # Show current profile details
+cco vault profile switch <n> # Switch to another profile
+cco vault profile rename <n> # Rename current profile
+cco vault profile delete <n> # Delete profile (moves resources to main)
+cco vault profile move project <n> --to <p>  # Move project between profiles
+cco vault profile add project <n>    # Add project to current profile
+cco vault profile remove project <n> # Remove project from current profile
 cco template list             # List available templates (native + user)
 cco template show <name>     # Show template details
 cco template create <n> --project|--pack  # Create user template
