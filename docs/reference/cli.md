@@ -605,28 +605,30 @@ Examples:
 
 ### 3.15 `cco update [OPTIONS]`
 
-Run pending migrations and discover available updates for opinionated files.
+Run pending migrations, discover available updates, and notify of new features.
 
-`cco update` performs two read-only operations: (1) run pending migration scripts
-from `migrations/` (automatic, for structural/breaking changes), and (2) compare
-framework sources against `.cco-base/` to discover available file updates. It
-**never modifies user files** — file changes require explicit `--apply`.
+`cco update` performs three operations: (1) run pending migration scripts from
+`migrations/` (automatic, for structural/breaking changes), (2) compare framework
+sources against `.cco-base/` to discover available file updates, and (3) report
+additive changes (new features) from `changelog.yml`. It **never modifies user
+files** (except via migrations) — content changes require explicit `--apply`.
 
 ```
 Usage: cco update [OPTIONS]
 
 Modes:
-  (no flags)              Migrations + discovery report (no file changes)
+  (no flags)              Migrations + discovery + additive notifications
   --diff                  Show detailed diffs for available updates
   --diff <file>           Show 3-way diff for a specific file
   --apply                 Interactive per-file merge/replace/keep/skip
   --apply <file>          Apply a specific file update
+  --news                  Show full details of additive changes
 
 Options:
   --project <name>     Scope to specific project (+ global)
-  --all                Explicitly scope to global + all projects
+  --all                Scope to global + all projects (default if no --project)
   --no-backup          Disable .bak creation (combine with --apply)
-  --dry-run            Same as default (discovery is already read-only)
+  --dry-run            Show pending migrations without running + discovery
 
 Examples:
   cco update                        # Run migrations + show available updates
@@ -635,43 +637,51 @@ Examples:
   cco update --apply rules/workflow.md  # Apply a specific file
   cco update --project myapp        # Scope to one project
   cco update --all                  # Global + all projects
+  cco update --news                 # Show new features and examples
 ```
 
-**Update sources**: `cco update` uses only native framework sources: `defaults/global/`
-for global config and `templates/project/base/` for project opinionated files
-(`.claude/settings.json`). User templates and non-base template files are not
-touched — user template propagation will be handled by a future `cco template sync`
-command. `project.yml` is user-owned and not discovered (new fields are additive
-with code defaults; schema changes use migrations).
+**Update sources**: `cco update` uses native framework sources: `defaults/global/`
+for global config, `templates/project/base/` for base project files, and
+`templates/project/<name>/` for native template-specific files (resolved via
+`.cco-source`). User templates are not touched — user template propagation will
+be handled by a future `cco template sync` command. `project.yml` is user-owned
+and not discovered (new fields are additive with code defaults; schema changes
+use migrations).
+
+**Migration scopes**: `global`, `project`, `pack`, `template`. All run automatically.
 
 **Flow**:
 
 ```
 1. DETERMINE scope
-   - --all: global config + all projects
-   - --project <name>: specific project + global
-   - Default (no flags): global config only
+   - --all: global + all projects (+ all packs/templates)
+   - --project <name>: specific project + global (+ all packs/templates)
+   - Default: global + all projects (same as --all)
 
-2. RUN MIGRATIONS
-   - Check schema_version in .cco-meta
-   - Run pending scripts from migrations/{global,project}/
-   - Update schema_version
+2. RUN MIGRATIONS (all scopes)
+   - Global: migrations/global/ → user-config/global/
+   - Pack: migrations/pack/ → each user-config/packs/*/ with .cco-meta
+   - Template: migrations/template/ → each user-config/templates/*/ with .cco-meta
+   - Project: migrations/project/ → each project in scope
+   - --dry-run: list pending migrations without running
 
-3. DISCOVER updates
-   - For each opinionated file, compare:
-     a. Base version (.cco-base/<file>) — version at last install/apply
-     b. New version (from defaults/ or templates/project/base/)
-   - If framework hasn't changed: skip (no update available)
-   - If framework changed: report as available update
-   - NO files are modified — discovery is read-only
+3. NOTIFY additive changes
+   - Compare changelog.yml against last_seen_changelog in .cco-meta
+   - Show new features since last check
+   - Update last_seen_changelog
 
-4. APPLY (only with --apply)
+4. DISCOVER opinionated file updates
+   - For each opinionated file, compare .cco-base/ vs framework source
+   - Report available updates (read-only, no file changes)
+
+5. APPLY (only with --apply)
    - For each file with available update:
      - User unchanged + framework changed: offer Apply/Skip/Diff
      - Both changed: offer Merge/Replace/Keep/Skip/Diff
    - User chooses per file (interactive)
    - .bak created for each modified file (unless --no-backup)
    - .cco-base/ updated to reflect the applied framework version
+   - Non-interactive fallback: defaults to Skip (no silent changes)
    - Use `cco clean` to remove .bak files after reviewing
 ```
 
