@@ -327,12 +327,12 @@ _run_migrations() {
         info "Running migration $mid: $mdesc"
 
         # Source the file to get migrate() function, then call it
+        local exit_code=0
         (
             # shellcheck source=/dev/null
             source "$migration_file"
             migrate "$target_dir"
-        )
-        local exit_code=$?
+        ) || exit_code=$?
 
         if [[ $exit_code -ne 0 ]]; then
             error "Migration $mid failed (exit code $exit_code)"
@@ -504,8 +504,8 @@ _resolve_with_merge() {
     # Attempt 3-way merge
     local merge_out
     merge_out=$(mktemp)
-    _merge_file "$installed_dir/$rel_path" "$base_file" "$defaults_dir/$rel_path" "$merge_out"
-    local merge_result=$?
+    local merge_result=0
+    _merge_file "$installed_dir/$rel_path" "$base_file" "$defaults_dir/$rel_path" "$merge_out" || merge_result=$?
 
     if [[ $merge_result -eq 0 ]]; then
         # Clean merge — auto-apply with backup

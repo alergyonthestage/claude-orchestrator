@@ -11,8 +11,8 @@ _supports_sparse_checkout() {
     local test_dir
     test_dir=$(mktemp -d)
     git -C "$test_dir" init -q 2>/dev/null
-    git -C "$test_dir" sparse-checkout set "dummy" 2>/dev/null
-    local rc=$?
+    local rc=0
+    git -C "$test_dir" sparse-checkout set "dummy" 2>/dev/null || rc=$?
     rm -rf "$test_dir"
     return $rc
 }
