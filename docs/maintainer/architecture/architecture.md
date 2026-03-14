@@ -192,29 +192,37 @@ The current model uses a shared writable `user-config/global/claude-state/claude
 
 ---
 
-### ADR-6: Claude State Isolation and Persistence
+### ADR-6: Claude State Isolation and Persistence (Updated — Sprint 7-Vault)
 
 **Context**: Claude Code stores auto memory and session transcripts at `~/.claude/projects/<project>/`. Since we mount `user-config/global/.claude/` to `~/.claude/`, all projects would share the same state location. Additionally, the ephemeral container (`--rm`) loses all in-container data on exit, including session transcripts needed for `/resume`.
 
-**Decision**: Each project gets a dedicated `claude-state/` directory, mounted to the full project state path. Memory lives inside it as `claude-state/memory/`.
+**Decision**: Each project gets a dedicated `claude-state/` directory for session transcripts, and a separate `memory/` directory for auto memory. Both are mounted to the appropriate paths inside the container.
 
 ```yaml
 volumes:
+  # Session transcripts (gitignored — large, transient)
   - ./claude-state:/home/claude/.claude/projects/-workspace
+  # Auto memory (vault-tracked — small, valuable)
+  - ./memory:/home/claude/.claude/projects/-workspace/memory
 ```
 
 The identifier `-workspace` comes from Claude Code encoding the absolute working directory path by replacing each `/` with `-`. Since WORKDIR is `/workspace`, the encoded identifier is `-workspace`.
+
+The child bind mount (`memory`) shadows the `memory/` subdirectory within the parent mount (`claude-state`). Docker's mount precedence guarantees the child mount takes priority at runtime. This means any files at `claude-state/memory/` (from pre-Sprint 7 installations) are invisible to the container — the new `memory/` directory is used instead.
 
 **Rationale**:
 - Auto memory is useful and should not be disabled
 - Project-specific insights should not leak across projects
 - Session transcripts (needed for `/resume`) must survive container restarts and image rebuilds
-- A single broad mount covers both memory and transcript storage
+- Memory files are small and valuable — they should be vault-tracked for multi-PC sync
+- Transcripts are large and transient — they should remain gitignored
+- Separating the two allows the vault to version memory without pulling in transcripts
 
 **Consequences**:
-- Each project directory includes a `claude-state/` folder with `memory/` inside
+- Each project directory has two state directories: `claude-state/` (gitignored) and `memory/` (vault-tracked)
+- Two Docker mounts per project: one for `claude-state/` (transcripts) and one for `memory/` (auto memory)
 - The mount target path depends on how Claude Code derives the project identifier
-- Existing projects with a `memory/` dir are auto-migrated to `claude-state/memory/` on next `cco start`
+- Migration 008 (`migrations/project/008_separate_memory.sh`) copies `claude-state/memory/` to `memory/` for existing projects; the old directory is kept as fallback but shadowed by the child mount at runtime
 
 ---
 

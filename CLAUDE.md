@@ -61,7 +61,9 @@ cco vault profile rename <n> # Rename current profile
 cco vault profile delete <n> # Delete profile (moves resources to main)
 cco vault profile move project <n> --to <p>  # Move project between profiles
 cco vault profile add project <n>    # Add project to current profile
+cco vault profile add pack <n>      # Add pack to current profile (makes exclusive)
 cco vault profile remove project <n> # Remove project from current profile
+cco vault profile remove pack <n>   # Remove pack from current profile (makes shared)
 cco template list             # List available templates (native + user)
 cco template show <name>     # Show template details
 cco template create <n> --project|--pack  # Create user template

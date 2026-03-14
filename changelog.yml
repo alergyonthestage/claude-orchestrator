@@ -15,4 +15,26 @@
 # The user's last-seen ID is tracked in their .cco-meta (last_seen_changelog).
 # Only entries with id > last_seen_changelog are shown as new.
 
-entries: []
+entries:
+  - id: 1
+    date: "2026-03-14"
+    type: additive
+    title: "Vault profiles for multi-PC selective sync"
+    description: >
+      Use vault profiles to sync different project sets to different machines.
+      Create a profile with `cco vault profile create <name>`, add projects
+      with `cco vault profile add project <name>`, and push/pull as usual.
+      Shared resources (global config, packs, templates) sync automatically
+      across all profiles. Without profiles, the vault works exactly as before.
+
+  - id: 2
+    date: "2026-03-14"
+    type: additive
+    title: "Memory is now vault-tracked, separated from claude-state"
+    description: >
+      Auto memory files (MEMORY.md and topic files) now live at
+      `projects/<name>/memory/` instead of inside `claude-state/memory/`.
+      This directory is vault-tracked, so memory syncs across machines via
+      `cco vault push/pull`. Session transcripts remain in `claude-state/`
+      (gitignored). Existing projects are migrated automatically by
+      `cco update` (migration 008).

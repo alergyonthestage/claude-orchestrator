@@ -257,6 +257,12 @@ EOF
         fi
 
         git -C "$vault_dir" add -A -- "${paths[@]}"
+
+        # Check if anything was actually staged (changes may be outside profile scope)
+        if git -C "$vault_dir" diff --cached --quiet 2>/dev/null; then
+            info "No changes in profile scope — nothing to commit"
+            return 0
+        fi
     else
         # Without profile: stage everything (backward compatible)
         git -C "$vault_dir" add -A
@@ -290,6 +296,57 @@ EOF
     if [[ -z "$status_output" ]]; then
         ok "No uncommitted changes"
         return 0
+    fi
+
+    # If a profile is active, filter diff output to profile-scoped paths
+    local profile
+    profile=$(_get_active_profile)
+    if [[ -n "$profile" ]]; then
+        local proj_list pack_list
+        proj_list=$(_profile_projects)
+        pack_list=$(_profile_packs)
+
+        local filtered_output=""
+        while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            local file="${line:3}"
+            local in_scope=false
+            case "$file" in
+                global/*|templates/*|.gitignore|manifest.yml|.vault-profile)
+                    in_scope=true ;;
+                projects/*)
+                    if [[ -n "$proj_list" ]]; then
+                        local proj_name="${file#projects/}"
+                        proj_name="${proj_name%%/*}"
+                        while IFS= read -r p; do
+                            [[ "$p" == "$proj_name" ]] && in_scope=true && break
+                        done <<< "$proj_list"
+                    fi
+                    ;;
+                packs/*)
+                    local pack_name="${file#packs/}"
+                    pack_name="${pack_name%%/*}"
+                    # Shared packs are in scope
+                    local is_exclusive=false
+                    if [[ -n "$pack_list" ]]; then
+                        while IFS= read -r p; do
+                            [[ "$p" == "$pack_name" ]] && is_exclusive=true && break
+                        done <<< "$pack_list"
+                    fi
+                    # Both exclusive (owned by this profile) and shared packs are in scope
+                    in_scope=true
+                    ;;
+            esac
+            if $in_scope; then
+                filtered_output+="$line"$'\n'
+            fi
+        done <<< "$status_output"
+
+        if [[ -z "$filtered_output" ]]; then
+            ok "No uncommitted changes in profile scope"
+            return 0
+        fi
+        status_output="$filtered_output"
     fi
 
     # Group by category
@@ -511,7 +568,9 @@ EOF
 
     if [[ -n "$profile" ]]; then
         # With profile: fetch first, then pull, then sync shared
-        git -C "$vault_dir" fetch "$remote" 2>/dev/null || true
+        if ! git -C "$vault_dir" fetch "$remote" 2>/dev/null; then
+            warn "Failed to fetch from $remote (network error?)"
+        fi
     fi
 
     # Pull current branch
@@ -557,6 +616,33 @@ EOF
     profile=$(_get_active_profile)
     if [[ -n "$profile" ]]; then
         echo "  Profile: $profile (branch: $branch)"
+
+        # Shared sync state
+        local default_branch
+        default_branch=$(_vault_default_branch)
+        local behind_count ahead_count
+        behind_count=$(git -C "$vault_dir" rev-list --count "HEAD..$default_branch" 2>/dev/null || echo "?")
+        ahead_count=$(git -C "$vault_dir" rev-list --count "$default_branch..HEAD" 2>/dev/null || echo "?")
+        if [[ "$behind_count" == "0" && "$ahead_count" == "0" ]] 2>/dev/null; then
+            echo "  Shared sync: up-to-date with $default_branch"
+        elif [[ "$behind_count" != "?" && "$ahead_count" != "?" ]]; then
+            echo "  Shared sync: $ahead_count ahead, $behind_count behind $default_branch"
+        else
+            echo "  Shared sync: unknown"
+        fi
+
+        # Exclusive resource counts
+        local excl_proj_count=0 excl_pack_count=0
+        local proj_list pack_list
+        proj_list=$(_profile_projects)
+        pack_list=$(_profile_packs)
+        if [[ -n "$proj_list" ]]; then
+            excl_proj_count=$(echo "$proj_list" | grep -c . || true)
+        fi
+        if [[ -n "$pack_list" ]]; then
+            excl_pack_count=$(echo "$pack_list" | grep -c . || true)
+        fi
+        echo "  Exclusive: $excl_proj_count project(s), $excl_pack_count pack(s)"
     else
         echo "  Branch: $branch"
     fi
@@ -655,7 +741,40 @@ _vault_auto_commit() {
     local status_output
     status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
     if [[ -n "$status_output" ]]; then
-        git -C "$vault_dir" add -A
+        # Secret detection — scan changed files for secret patterns before staging
+        local secret_found=false
+        local -a safe_files=()
+        while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            local file="${line:3}"
+            local is_secret=false
+            local basename_file
+            basename_file=$(basename "$file")
+            for pattern in "${_VAULT_SECRET_PATTERNS[@]}"; do
+                if [[ "$basename_file" == $pattern ]]; then
+                    is_secret=true
+                    break
+                fi
+            done
+            if $is_secret; then
+                secret_found=true
+                warn "Secret file detected in auto-commit, skipping: $file"
+            else
+                safe_files+=("$file")
+            fi
+        done <<< "$status_output"
+
+        if $secret_found && [[ ${#safe_files[@]} -eq 0 ]]; then
+            warn "Auto-commit skipped: only secret files detected"
+            return 0
+        fi
+
+        if $secret_found; then
+            # Stage only non-secret files
+            git -C "$vault_dir" add -A -- "${safe_files[@]}"
+        else
+            git -C "$vault_dir" add -A
+        fi
         git -C "$vault_dir" commit -q -m "vault: auto-save before profile switch"
         info "Auto-committed pending changes"
     fi
@@ -1248,16 +1367,20 @@ EOF
         ')
 
         # Move exclusive resources to default branch
+        # Strategy: checkout default branch once, copy all resources from profile
+        # branch, commit, then return. We must commit BEFORE checking back out,
+        # otherwise the checkout resets the index and loses staged additions.
         local _default_branch
         _default_branch=$(_vault_default_branch)
         local moved=0
+
+        # Collect resource paths to move
+        local -a move_paths=()
         if [[ -n "$excl_projects" ]]; then
             while IFS= read -r proj; do
                 [[ -z "$proj" ]] && continue
-                if [[ -d "$vault_dir/projects/$proj" ]]; then
-                    git -C "$vault_dir" checkout "$_default_branch" -q
-                    git -C "$vault_dir" add -A -- "projects/$proj/" 2>/dev/null || true
-                    git -C "$vault_dir" checkout "$current_branch" -q
+                if git -C "$vault_dir" ls-tree "$name" -- "projects/$proj/" >/dev/null 2>&1; then
+                    move_paths+=("projects/$proj/")
                     ((moved++)) || true
                 fi
             done <<< "$excl_projects"
@@ -1265,10 +1388,8 @@ EOF
         if [[ -n "$excl_packs" ]]; then
             while IFS= read -r pack; do
                 [[ -z "$pack" ]] && continue
-                if [[ -d "$vault_dir/packs/$pack" ]]; then
-                    git -C "$vault_dir" checkout "$_default_branch" -q
-                    git -C "$vault_dir" add -A -- "packs/$pack/" 2>/dev/null || true
-                    git -C "$vault_dir" checkout "$current_branch" -q
+                if git -C "$vault_dir" ls-tree "$name" -- "packs/$pack/" >/dev/null 2>&1; then
+                    move_paths+=("packs/$pack/")
                     ((moved++)) || true
                 fi
             done <<< "$excl_packs"
@@ -1276,7 +1397,15 @@ EOF
 
         if [[ $moved -gt 0 ]]; then
             git -C "$vault_dir" checkout "$_default_branch" -q
-            git -C "$vault_dir" commit -q -m "vault: move resources from deleted profile '$name'" 2>/dev/null || true
+            # Copy each resource from the profile branch
+            for rpath in "${move_paths[@]}"; do
+                git -C "$vault_dir" checkout "$name" -- "$rpath" 2>/dev/null || true
+            done
+            git -C "$vault_dir" add -A -- "${move_paths[@]}" 2>/dev/null || true
+            # Commit on default branch; skip if nothing was actually staged
+            if ! git -C "$vault_dir" diff --cached --quiet 2>/dev/null; then
+                git -C "$vault_dir" commit -q -m "vault: move resources from deleted profile '$name'"
+            fi
             git -C "$vault_dir" checkout "$current_branch" -q
         fi
     fi
@@ -1294,6 +1423,11 @@ EOF
 
 # ── Profile resource management (add/remove/move) ───────────────────
 
+# Design note: profile add/remove/move update .vault-profile tracking only.
+# Git-level isolation (git rm from source branch) is NOT enforced — resources
+# remain on all branches. Selective sync is handled at commit/push/pull time
+# by scoping operations to the profile's declared paths.
+
 cmd_vault_profile_add() {
     local resource_type="${1:-}"
     local name="${2:-}"
@@ -1302,8 +1436,9 @@ cmd_vault_profile_add() {
         cat <<'EOF'
 Usage: cco vault profile add <project|pack> <name>
 
-Add an existing project or pack to the current profile (makes it exclusive).
-The resource is moved from the default branch to the profile branch.
+Assign an existing project or pack to the current profile (marks it as exclusive).
+Note: isolation is tracking-only via .vault-profile — the resource is NOT git rm-ed
+from the default branch. Use 'vault sync' to commit profile-scoped changes.
 EOF
         return 0
     fi
@@ -1345,7 +1480,8 @@ cmd_vault_profile_remove() {
         cat <<'EOF'
 Usage: cco vault profile remove <project|pack> <name>
 
-Remove a project or pack from the current profile (makes it shared on main).
+Unassign a project or pack from the current profile (makes it shared again).
+Note: isolation is tracking-only via .vault-profile — the resource remains on disk.
 EOF
         return 0
     fi
@@ -1546,7 +1682,9 @@ _sync_shared_to_default() {
     git -C "$vault_dir" checkout "$default_branch" -q
 
     # Pull latest default branch
-    git -C "$vault_dir" pull "$remote" "$default_branch" -q 2>/dev/null || true
+    if ! git -C "$vault_dir" pull "$remote" "$default_branch" -q 2>/dev/null; then
+        warn "Failed to pull $default_branch from $remote (network error or merge conflict)"
+    fi
 
     # Copy shared files from profile branch
     local synced=0
@@ -1576,12 +1714,18 @@ _sync_shared_to_default() {
     if [[ $synced -gt 0 ]]; then
         git -C "$vault_dir" add -A -- "${shared_paths[@]}"
         git -C "$vault_dir" commit -q -m "sync: shared resources from profile '$profile_branch'" 2>/dev/null || true
-        git -C "$vault_dir" push "$remote" "$default_branch" -q 2>/dev/null || true
+        if ! git -C "$vault_dir" push "$remote" "$default_branch" -q 2>/dev/null; then
+            warn "Failed to push shared resources to $remote/$default_branch"
+        fi
     fi
 
     # Return to profile branch
     git -C "$vault_dir" checkout "$profile_branch" -q
-    $stashed && git -C "$vault_dir" stash pop -q 2>/dev/null || true
+    if $stashed; then
+        if ! git -C "$vault_dir" stash pop -q 2>/dev/null; then
+            warn "Failed to restore stashed changes — use 'git stash list' in vault dir to recover"
+        fi
+    fi
 
     [[ $synced -gt 0 ]] && ok "Shared resources synced to $default_branch ($synced file(s))"
 }
@@ -1763,6 +1907,7 @@ Remote backup:
   remote add <n> <url>    Add a git remote
   remote remove <n>       Remove a git remote
   push [<remote>]         Push to remote (default: origin)
+  pull [<remote>]         Pull from remote (default: origin)
 
 Run 'cco vault <command> --help' for command-specific options.
 EOF

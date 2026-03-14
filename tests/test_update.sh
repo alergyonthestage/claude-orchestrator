@@ -714,7 +714,11 @@ test_update_diff_shows_changes() {
 
 test_update_news_shows_entries() {
     # --news mode shows changelog entries and updates last_seen_changelog
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local tmpdir; tmpdir=$(mktemp -d)
+    local saved_changelog="$tmpdir/changelog.bak"
+    cp "$REPO_ROOT/changelog.yml" "$saved_changelog"
+    trap "cp '$saved_changelog' '$REPO_ROOT/changelog.yml'; rm -rf '$tmpdir'" EXIT
+
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
 
@@ -739,27 +743,15 @@ YML
 
     # last_seen_changelog should be updated to 1
     assert_file_contains "$meta" "last_seen_changelog: 1"
-
-    # Restore changelog
-    cat > "$REPO_ROOT/changelog.yml" <<'YML'
-# changelog.yml — Additive changes notification
-# Each entry describes a new optional feature or configuration field.
-# Users are notified of new entries by `cco update`.
-#
-# Format:
-#   - id: <sequential integer>
-#     date: "YYYY-MM-DD"
-#     type: additive
-#     title: "Short description"
-#     description: "Details about the new feature and how to use it"
-
-entries: []
-YML
 }
 
 test_update_news_no_new_entries() {
     # --news with no new entries shows "No new features"
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local tmpdir; tmpdir=$(mktemp -d)
+    local saved_changelog="$tmpdir/changelog.bak"
+    cp "$REPO_ROOT/changelog.yml" "$saved_changelog"
+    trap "cp '$saved_changelog' '$REPO_ROOT/changelog.yml'; rm -rf '$tmpdir'" EXIT
+
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
 
@@ -781,12 +773,6 @@ YML
 
     run_cco update --news
     assert_output_contains "No new features"
-
-    # Restore changelog
-    cat > "$REPO_ROOT/changelog.yml" <<'YML'
-# changelog.yml — Additive changes notification
-entries: []
-YML
 }
 
 test_update_diff_force_mutual_exclusion() {
@@ -982,34 +968,27 @@ test_read_changelog_entries_empty() {
     # changelog.yml with entries: [] returns no output
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
 
-    # Temporarily replace changelog.yml
-    local saved_changelog="$tmpdir/changelog.bak"
-    cp "$REPO_ROOT/changelog.yml" "$saved_changelog"
-
-    cat > "$REPO_ROOT/changelog.yml" <<'YML'
+    cat > "$tmpdir/changelog.yml" <<'YML'
 entries: []
 YML
 
-    source "$REPO_ROOT/lib/colors.sh"
-    source "$REPO_ROOT/lib/utils.sh"
-    source "$REPO_ROOT/lib/update.sh"
+    local saved_repo_root="$REPO_ROOT"
+    REPO_ROOT="$tmpdir"
+    source "$saved_repo_root/lib/colors.sh"
+    source "$saved_repo_root/lib/utils.sh"
+    source "$saved_repo_root/lib/update.sh"
 
     local result
     result=$(_read_changelog_entries)
+    REPO_ROOT="$saved_repo_root"
     [[ -z "$result" ]] || fail "Expected empty output for empty changelog, got: $result"
-
-    # Restore
-    cp "$saved_changelog" "$REPO_ROOT/changelog.yml"
 }
 
 test_read_changelog_entries_with_entries() {
     # changelog.yml with entries returns correct id/title pairs
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
 
-    local saved_changelog="$tmpdir/changelog.bak"
-    cp "$REPO_ROOT/changelog.yml" "$saved_changelog"
-
-    cat > "$REPO_ROOT/changelog.yml" <<'YML'
+    cat > "$tmpdir/changelog.yml" <<'YML'
 entries:
   - id: 1
     date: "2026-01-15"
@@ -1023,12 +1002,15 @@ entries:
     description: "Second desc"
 YML
 
-    source "$REPO_ROOT/lib/colors.sh"
-    source "$REPO_ROOT/lib/utils.sh"
-    source "$REPO_ROOT/lib/update.sh"
+    local saved_repo_root="$REPO_ROOT"
+    REPO_ROOT="$tmpdir"
+    source "$saved_repo_root/lib/colors.sh"
+    source "$saved_repo_root/lib/utils.sh"
+    source "$saved_repo_root/lib/update.sh"
 
     local result
     result=$(_read_changelog_entries)
+    REPO_ROOT="$saved_repo_root"
     local count
     count=$(echo "$result" | grep -c '.' || true)
     [[ "$count" -eq 2 ]] || fail "Expected 2 entries, got $count"
@@ -1036,9 +1018,6 @@ YML
     # Verify entry content
     echo "$result" | grep -qF "First feature" || fail "First entry title not found"
     echo "$result" | grep -qF "Second feature" || fail "Second entry title not found"
-
-    # Restore
-    cp "$saved_changelog" "$REPO_ROOT/changelog.yml"
 }
 
 # ── 3-Way Merge Tests ────────────────────────────────────────────────

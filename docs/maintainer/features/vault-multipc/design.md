@@ -873,48 +873,52 @@ Note: `projects/*/memory/` is intentionally NOT listed (vault-tracked).
 
 ## 11. Implementation Checklist
 
-### Phase 1: Memory (#B + #C)
-- [ ] Create `defaults/managed/.claude/rules/memory-policy.md`
-- [ ] Update `defaults/managed/CLAUDE.md` with memory policy reference
-- [ ] Update `defaults/managed/.claude/skills/init-workspace/SKILL.md`
-- [ ] Create `migrations/project/008_separate_memory.sh`
-- [ ] Update `lib/cmd-start.sh`: add memory child mount
-- [ ] Update `lib/cmd-project.sh`: create `memory/` instead of `claude-state/memory/`
-- [ ] Update `lib/cmd-project.sh`: exclude `memory/` from publish
-- [ ] Tests: memory mount, migration, publish exclusion
+**Status**: All phases implemented as part of Sprint 7-Vault.
 
-### Phase 2: Vault Profiles (#A — Core)
-- [ ] Add `.vault-profile` parsing functions to `lib/cmd-vault.sh`
-- [ ] Implement `vault profile create` (branch + `.vault-profile`)
-- [ ] Implement `vault profile list`
-- [ ] Implement `vault profile show`
-- [ ] Implement `vault profile switch` (auto-commit + branch checkout)
-- [ ] Implement `vault profile rename`
-- [ ] Implement `vault profile delete`
-- [ ] Tests: profile CRUD, switch, list/show
+### Phase 1: Memory (#B + #C) — Implemented
+- [x] Create `defaults/managed/.claude/rules/memory-policy.md`
+- [x] Update `defaults/managed/CLAUDE.md` with memory policy reference
+- [x] Update `defaults/managed/.claude/skills/init-workspace/SKILL.md`
+- [x] Create `migrations/project/008_separate_memory.sh`
+- [x] Update `lib/cmd-start.sh`: add memory child mount
+- [x] Update `lib/cmd-project.sh`: create `memory/` instead of `claude-state/memory/`
+- [x] Update `lib/cmd-project.sh`: exclude `memory/` from publish
+- [x] Tests: memory mount, migration, publish exclusion
 
-### Phase 3: Selective Sync (#A — Sync)
-- [ ] Modify `vault sync` to use profile-scoped staging
-- [ ] Modify `vault push` to sync shared resources to main
-- [ ] Modify `vault pull` to sync shared resources from main
-- [ ] Implement interactive conflict resolution (L/R/M/D)
-- [ ] Update `vault status` with profile info
-- [ ] Update `vault diff` with profile scoping
-- [ ] Tests: selective staging, push/pull sync, conflict resolution
+### Phase 2: Vault Profiles (#A — Core) — Implemented
+- [x] Add `.vault-profile` parsing functions to `lib/cmd-vault.sh`
+- [x] Implement `vault profile create` (branch + `.vault-profile`)
+- [x] Implement `vault profile list`
+- [x] Implement `vault profile show`
+- [x] Implement `vault profile switch` (auto-commit + branch checkout)
+- [x] Implement `vault profile rename`
+- [x] Implement `vault profile delete`
+- [x] Tests: profile CRUD, switch, list/show
 
-### Phase 4: Resource Movement (#A — Move)
-- [ ] Implement `vault profile move project --to`
-- [ ] Implement `vault profile move pack --to`
-- [ ] Implement `vault profile add/remove` shortcuts
-- [ ] Add `--profile` flag to `project create` and `pack create`
-- [ ] Tests: move project/pack between profiles and main
+### Phase 3: Selective Sync (#A — Sync) — Implemented
+- [x] Modify `vault sync` to use profile-scoped staging
+- [x] Modify `vault push` to sync shared resources to main
+- [x] Modify `vault pull` to sync shared resources from main
+- [x] Implement interactive conflict resolution (L/R/M/D)
+- [x] Update `vault status` with profile info
+- [x] Update `vault diff` with profile scoping
+- [x] Tests: selective staging, push/pull sync, conflict resolution
 
-### Phase 5: Validation & Polish
-- [ ] E2E test: memory mount override (Docker required)
-- [ ] E2E test: multi-profile push/pull cycle
-- [ ] Update roadmap.md
-- [ ] Update CLAUDE.md with vault profile commands
-- [ ] Update CLI reference (docs/reference/cli.md)
+### Phase 4: Resource Movement (#A — Move) — Implemented
+- [x] Implement `vault profile move project --to`
+- [x] Implement `vault profile move pack --to`
+- [x] Implement `vault profile add/remove` shortcuts
+- [x] `--profile` flag on `project create` and `pack create` is **deferred** to a future sprint (see §3.4)
+- [x] Tests: move project/pack between profiles and main
+
+### Phase 5: Validation & Polish — Implemented
+- [x] E2E test: memory mount override (Docker required)
+- [x] E2E test: multi-profile push/pull cycle
+- [x] Update roadmap.md
+- [x] Update CLAUDE.md with vault profile commands
+- [x] Update CLI reference (docs/reference/cli.md)
+
+> **Note**: The `--profile` flag on `cco project create` and `cco pack create` (§3.4) is deferred to a future sprint. Users can achieve the same result by creating the resource and then running `cco vault profile add project|pack <name>`.
 
 ---
 

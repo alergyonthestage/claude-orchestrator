@@ -392,6 +392,18 @@ cco project install https://github.com/acme/cco-config --pick acme-service --for
 | `cco vault push [<remote>]` | Push to remote (default: origin) |
 | `cco vault pull [<remote>]` | Pull from remote (default: origin) |
 | `cco vault status` | Show vault state, remotes, and uncommitted changes |
+| `cco vault profile create <name>` | Create a new vault profile (branch-based isolation) |
+| `cco vault profile list` | List all profiles with resource counts |
+| `cco vault profile show` | Show current profile details and sync state |
+| `cco vault profile switch <name>` | Switch to another profile (auto-commits pending changes) |
+| `cco vault profile rename <new-name>` | Rename the current profile |
+| `cco vault profile delete <name>` | Delete a profile (moves exclusive resources to main first) |
+| `cco vault profile add project <name>` | Add a project to the current profile (moves from main) |
+| `cco vault profile add pack <name>` | Add a pack to the current profile (makes exclusive) |
+| `cco vault profile remove project <name>` | Remove a project from the current profile (moves to main) |
+| `cco vault profile remove pack <name>` | Remove a pack from the current profile (makes shared) |
+| `cco vault profile move project <name> --to <profile>` | Move a project to a specific profile or main |
+| `cco vault profile move pack <name> --to <profile>` | Move a pack to a specific profile or main |
 
 ---
 
@@ -453,6 +465,30 @@ On the other machine:
 ```bash
 cco vault pull
 ```
+
+### Profiles for different project sets per machine
+
+If you have different project sets on different machines (e.g., work projects on one PC, personal projects on another), use vault profiles to keep them isolated while sharing global settings, packs, and templates.
+
+```bash
+# On your work machine — create a profile for work projects
+cco vault profile create work
+cco vault profile add project work-api
+cco vault profile add project work-frontend
+cco vault sync "add work projects"
+cco vault push
+
+# On your personal machine — create a profile for personal projects
+cco vault profile create personal
+cco vault profile add project side-project
+cco vault profile add project blog
+cco vault sync "add personal projects"
+cco vault push
+```
+
+Profiles use git branches under the hood. Shared resources (global config, packs, templates) live on `main` and are automatically synced between profiles when you push or pull. Each profile only sees its own exclusive projects plus the shared resources.
+
+Without profiles, the vault works exactly as before — everything on a single `main` branch. Profiles are opt-in and only needed when you want selective sync across machines.
 
 ### Team sharing (separate repos)
 
