@@ -605,62 +605,73 @@ Examples:
 
 ### 3.15 `cco update [OPTIONS]`
 
-Update global and/or project configuration from defaults using a 3-way merge system.
+Run pending migrations and discover available updates for opinionated files.
 
-The update engine uses `.cco-base/` directories to track the original version of each file at install time. When updating, it performs a 3-way merge via `git merge-file` between the base version, the user's current version, and the new default. This preserves user customizations while applying framework updates.
+`cco update` performs two read-only operations: (1) run pending migration scripts
+from `migrations/` (automatic, for structural/breaking changes), and (2) compare
+framework sources against `.cco-base/` to discover available file updates. It
+**never modifies user files** — file changes require explicit `--apply`.
 
 ```
 Usage: cco update [OPTIONS]
 
+Modes:
+  (no flags)              Migrations + discovery report (no file changes)
+  --diff                  Show detailed diffs for available updates
+  --diff <file>           Show 3-way diff for a specific file
+  --apply                 Interactive per-file merge/replace/keep/skip
+  --apply <file>          Apply a specific file update
+
 Options:
-  --project <name>     Update a specific project (instead of global)
-  --all                Update global config + all projects
-  --dry-run            Show what would change without modifying anything
-  --force              Overwrite even user-modified files (creates .bak)
-  --keep               Always keep user version on conflicts
-  --replace            Replace changed files with new version + create .bak
-  --no-backup          Disable automatic .bak file creation
+  --project <name>     Scope to specific project (+ global)
+  --all                Explicitly scope to global + all projects
+  --no-backup          Disable .bak creation (combine with --apply)
+  --dry-run            Same as default (discovery is already read-only)
 
 Examples:
-  cco update                    # Update global defaults (3-way merge)
-  cco update --dry-run          # Preview changes
-  cco update --project myapp    # Update specific project
-  cco update --all              # Update global + all projects
-  cco update --replace          # Replace all + .bak backup
-  cco update --force --no-backup  # Overwrite without backups
+  cco update                        # Run migrations + show available updates
+  cco update --diff                 # See what framework changed
+  cco update --apply                # Interactively apply updates
+  cco update --apply rules/workflow.md  # Apply a specific file
+  cco update --project myapp        # Scope to one project
+  cco update --all                  # Global + all projects
 ```
 
 **Update sources**: `cco update` uses only native framework sources: `defaults/global/`
-for global config and `templates/project/base/` for project schema files (settings.json,
-project.yml). User templates and non-base template files are not touched — user template
-propagation will be handled by a future `cco template sync` command.
+for global config and `templates/project/base/` for project opinionated files
+(`.claude/settings.json`). User templates and non-base template files are not
+touched — user template propagation will be handled by a future `cco template sync`
+command. `project.yml` is user-owned and not discovered (new fields are additive
+with code defaults; schema changes use migrations).
 
 **Flow**:
 
 ```
 1. DETERMINE scope
-   - --all: update global config, then iterate all projects
-   - --project <name>: update only the specified project
-   - Default (no flags): update global config only
+   - --all: global config + all projects
+   - --project <name>: specific project + global
+   - Default (no flags): global config only
 
-2. 3-WAY MERGE
-   - For each managed file, compare:
-     a. Base version (.cco-base/<file>) — the version at last install/update
-     b. User version (current file)
-     c. New version (from defaults/ or templates/)
-   - If only framework changed: auto-apply (user didn't modify)
-   - If only user changed: keep user version (framework didn't update)
-   - If both changed: attempt merge via `git merge-file`
-     - Clean merge: auto-apply
-     - Conflict: create .bak of user version, apply new version
-   - Conflict modes override this logic:
-     - --force: overwrite all (creates .bak)
-     - --keep: always keep existing user version
-     - --replace: replace with new version + create .bak
+2. RUN MIGRATIONS
+   - Check schema_version in .cco-meta
+   - Run pending scripts from migrations/{global,project}/
+   - Update schema_version
 
-3. RESULT
-   - --dry-run: "Dry run complete. No changes made."
-   - Otherwise: "Update complete."
+3. DISCOVER updates
+   - For each opinionated file, compare:
+     a. Base version (.cco-base/<file>) — version at last install/apply
+     b. New version (from defaults/ or templates/project/base/)
+   - If framework hasn't changed: skip (no update available)
+   - If framework changed: report as available update
+   - NO files are modified — discovery is read-only
+
+4. APPLY (only with --apply)
+   - For each file with available update:
+     - User unchanged + framework changed: offer Apply/Skip/Diff
+     - Both changed: offer Merge/Replace/Keep/Skip/Diff
+   - User chooses per file (interactive)
+   - .bak created for each modified file (unless --no-backup)
+   - .cco-base/ updated to reflect the applied framework version
    - Use `cco clean` to remove .bak files after reviewing
 ```
 
@@ -1147,7 +1158,7 @@ Examples:
 ```
 
 **Note:** `.cco-base/` directories are never removed by `cco clean`. They store the
-3-way merge ancestors required for `cco update` to function correctly.
+diff/merge ancestors required for `cco update` discovery and `--apply` to function correctly.
 
 ---
 

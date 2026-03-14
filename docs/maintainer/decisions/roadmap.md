@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-14 (Post-Sprint-5b design revised: `project.yml` tracked, base-only update source, `cco clean` extended, vault prompt fix. `--sync-templates` removed in favor of future `cco template sync`. See `analysis-v2.md` + `design.md`).
+> Last updated: 2026-03-14 (Post-Sprint-5b design revised: `cco update` = migrations + discovery only, `--apply` for on-demand merge, `project.yml` user-owned, `cco clean` extended, vault prompt fix. `--sync-templates` removed in favor of future `cco template sync`. See `analysis-v2.md` + `design.md`).
 
 ---
 
@@ -10,7 +10,7 @@
 | Status | Items | Section |
 |--------|-------|---------|
 | ✅ Completed | 18 sprints / features | [→ Completed](#completed) |
-| 🐛 Known Bugs | 2 open · 2 fixed | [→ Known Bugs](#known-bugs) |
+| 🐛 Known Bugs | 1 open · 3 fixed | [→ Known Bugs](#known-bugs) |
 | 🔜 Planned | Sprint 6 → 12 | [→ Planned Sprints](#planned-sprints) |
 | 🔭 Exploratory | 6 ideas | [→ Long-term / Exploratory](#long-term--exploratory) |
 | ❌ Declined | 3 items | [→ Declined / Won't Do](#declined--wont-do) |
@@ -319,24 +319,18 @@ rag:
 
 ## Known Bugs
 
-### #B4 `cco update --all` does not correctly update files from `defaults/`
+### #B4 `cco update --all` does not correctly update files from `defaults/` ✓ RESOLVED BY DESIGN
 
 **Reported**: 2026-03-13 (field testing).
+**Resolved**: 2026-03-14 (design revision).
 
-**Symptom**: After a cco update that introduces changes to `defaults/global/` or `defaults/_template/`, running `cco update --all` does not propagate those changes to existing user installations. Users who had an older `project.yml` schema had to manually copy from the template and merge their customizations by hand.
+**Original symptom**: `cco update --all` did not propagate changes to `project.yml` or root-level files.
 
-**Root cause (suspected)**: The update system's checksum manifest (`lib/update.sh`) tracks files under `.claude/` directories, but root-level files such as `project.yml` and `global/` non-`.claude/` files are not covered. When `defaults/` content changes, the manifest hash does not reflect the delta, so the update engine skips the file.
+**Resolution**: The post-Sprint-5b design revision resolves this by reclassifying `project.yml` as **user-owned** (not tracked). New `project.yml` fields are **additive** — code handles missing fields with sensible defaults. Schema-breaking changes use **explicit migrations**. There is no longer a need for automatic `project.yml` merge — the user adds new fields when they need the feature, reading the documentation.
 
-**Impact**: Medium-high. Any user who initialized before a template change and then runs `cco update` will silently miss the new defaults. Manual merge is error-prone and un-documented.
+The broader `cco update` redesign (migrations + discovery, no automatic file changes) also addresses the root cause: the update system no longer attempts silent file modifications that could miss files or produce unexpected results.
 
-**Required work**:
-- Audit `cco update` for all file categories: `global/.claude/`, `projects/*/project.yml`, and root-level project files.
-- Implement intelligent merge for `project.yml`: add new keys from the template without overwriting user-customized values. Mirror the approach used for `.claude/` files (checksum + migration runner).
-- Introduce template versioning: record the template schema version in `.cco-meta` at `cco project create` / `cco init` time so the update engine can determine which migrations to run for `project.yml`.
-- Add migration coverage for `project.yml` schema changes retroactively (audit existing migrations `001`–`005` for completeness).
-- Extend test suite (`tests/test_update.sh`) with scenarios covering: outdated `project.yml`, partial user customizations, idempotent re-runs.
-
-**See also**: Sprint 5b (Defaults Restructuring) — a cleaner `defaults/` layout makes the scope of "what needs to be updated" more explicit.
+**See also**: `analysis-v2.md` section 4.4, `design.md` section 3.3.
 
 ---
 
@@ -382,24 +376,27 @@ Migration `005_split_global_setup.sh` renames existing `setup.sh` → `setup-bui
 
 ### Defaults Restructuring & Template System (Sprint 5b) ✓
 
-Refactoring of `defaults/` layout, full template system with CLI management, and 3-way merge update engine using `git merge-file`.
+Refactoring of `defaults/` layout, full template system with CLI management, and update engine with migration runner and `.cco-base/` storage.
 
 **What was implemented**:
 - `defaults/` reorganized: `managed/`, `global/`, separated from `templates/` (project and pack blueprints)
 - `cco project create --template <name>` — template resolution (user templates take priority over native)
 - `cco template list|show|create|remove` — full template lifecycle CLI (`lib/cmd-template.sh`, 339 lines)
 - `cco template create <name> --from <resource>` — create templates from existing projects/packs
-- 3-way merge update engine (`lib/update.sh`): `.cco-base/` storage, declarative file policies (`tracked`/`user-owned`/`generated`), `git merge-file` for conflict-free merges, automatic `.bak` backups
+- Update engine (`lib/update.sh`): `.cco-base/` storage, declarative file policies, `git merge-file` for on-demand merge, automatic `.bak` backups
 - `cco clean [--all|--project|--dry-run]` — cleanup `.bak` files from updates (`lib/cmd-clean.sh`)
 - Migration 007: retroactive `.cco-base/` bootstrap for pre-Sprint-5b installations
 - Template variable substitution (`{{VAR}}`) for project and pack templates
 
 **Post-sprint design revisions** (2026-03-14, pending implementation):
-- `project.yml` promoted to `tracked` policy (3-way merge against `base` template)
+- `cco update` redesigned: migrations + discovery only (no automatic file changes)
+- `--apply` for on-demand merge, `--diff` for inspection
+- `project.yml` is user-owned (not tracked) — new fields are additive with code defaults
+- All installed files are user-owned after init/create — even unmodified files require explicit `--apply`
 - Update source always `templates/project/base/`; `.cco-meta` records `template` (informational)
 - User template propagation deferred to future `cco template sync` (not `cco update`)
 - `cco clean` extended: `--tmp` (dry-run artifacts), `--generated` (docker-compose.yml)
-- Vault prompt bug: fix I/O redirect to prevent blocking merge flow
+- Vault prompt bug: fix I/O redirect to prevent blocking apply flow
 
 **Docs**: [analysis-v2](../features/defaults-templates-update/analysis-v2.md) | [design](../features/defaults-templates-update/design.md)
 
