@@ -623,9 +623,7 @@ Usage: cco update [OPTIONS]
 Modes:
   (no flags)              Migrations + discovery + additive notifications
   --diff                  Show detailed diffs for available updates
-  --diff <file>           Show 3-way diff for a specific file
-  --apply                 Interactive per-file merge/replace/keep/skip
-  --apply <file>          Apply a specific file update
+  --apply                 Interactive per-file: apply/merge/replace/keep/skip
   --news                  Show full details of additive changes
 
 Options:
@@ -634,14 +632,17 @@ Options:
   --no-backup          Disable .bak creation (combine with --apply)
   --dry-run            Show pending migrations without running + discovery
 
+Non-interactive mode:
+  When stdin is not a TTY, --apply defaults to (S)kip for all files.
+
 Examples:
   cco update                        # Run migrations + show available updates
   cco update --diff                 # See what framework changed
   cco update --apply                # Interactively apply updates
-  cco update --apply rules/workflow.md  # Apply a specific file
   cco update --project myapp        # Scope to one project
   cco update --all                  # Global + all projects
   cco update --news                 # Show new features and examples
+  cco update --dry-run              # Preview pending migrations
 ```
 
 **Update sources**: `cco update` uses native framework sources: `defaults/global/`

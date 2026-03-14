@@ -1,11 +1,12 @@
 # Update System Design (Pre-Sprint-5b)
 
-> **Superseded**: This document describes the original checksum + migrations design
-> (pre-Sprint-5b). The definitive design — including 3-way merge, template-aware
-> updates, and all post-sprint decisions — is in
+> **⚠️ SUPERSEDED — DO NOT USE**: This document describes the original checksum +
+> auto-apply design (pre-Sprint-5b). The definitive design — discovery-only default,
+> `--apply` for interactive merge, 7-status discovery algorithm — is in
 > [`../defaults-templates-update/design.md`](../defaults-templates-update/design.md).
-
-> Status: design completed, implementation completed (Sprint 4/5).
+>
+> The old `--force`/`--keep`/`--replace` flags described here are now hidden
+> backward-compatible aliases. The auto-apply behavior no longer exists.
 
 ## Problem
 

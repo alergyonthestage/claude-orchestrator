@@ -184,10 +184,13 @@ Migration scopes: `global`, `project`, `pack`, `template`. All run automatically
 - IDs must be sequential (check `migrations/{scope}/` for the current max)
 - `cco update` runs pending migrations automatically when `schema_version < latest`
 
+**`changelog.yml`** (repo root): tracks additive changes for user notification. Each entry has `id` (sequential integer), `date`, `type: additive`, `title`, and `description`. Users see new entries via `cco update` (summary) or `cco update --news` (details). Tracking: `last_seen_changelog` in global `.cco-meta`.
+
 **Checklist for config changes:**
 1. Classify the change: additive, opinionated, or breaking
-2. Additive: add code-level default + update base template + append `changelog.yml`
-3. Opinionated: update `defaults/global/`; users discover via `cco update --diff`
+2. Additive: add code-level default + update base template + append entry to `changelog.yml`
+3. Opinionated: update `defaults/global/`; users discover via `cco update --diff`, apply via `--apply`
 4. Breaking: create migration in `migrations/{scope}/`, update base template AND non-base native templates
 5. If migration moves an opinionated file: also update `.cco-base/` in the migration
 6. Test: `cco update --project <name>` runs migrations; verify idempotency
+7. Non-base native templates: update directly in `templates/project/<name>/`, create migration for existing users

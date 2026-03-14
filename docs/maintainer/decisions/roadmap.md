@@ -388,15 +388,17 @@ Refactoring of `defaults/` layout, full template system with CLI management, and
 - Migration 007: retroactive `.cco-base/` bootstrap for pre-Sprint-5b installations
 - Template variable substitution (`{{VAR}}`) for project and pack templates
 
-**Post-sprint design revisions** (2026-03-14, pending implementation):
+**Post-sprint update system redesign** (2026-03-14, implemented):
 - `cco update` redesigned: migrations + discovery only (no automatic file changes)
-- `--apply` for on-demand merge, `--diff` for inspection
-- `project.yml` is user-owned (not tracked) — new fields are additive with code defaults
-- All installed files are user-owned after init/create — even unmodified files require explicit `--apply`
-- Update source always `templates/project/base/`; `.cco-meta` records `template` (informational)
-- User template propagation deferred to future `cco template sync` (not `cco update`)
-- `cco clean` extended: `--tmp` (dry-run artifacts), `--generated` (docker-compose.yml)
-- Vault prompt bug: fix I/O redirect to prevent blocking apply flow
+- New CLI modes: `--diff` (inspection), `--apply` (interactive merge with A/M/R/K/S/D prompts), `--news` (changelog)
+- Hidden backward-compat aliases: `--force`, `--keep`, `--replace`
+- Non-TTY fallback: `--apply` defaults to (S)kip
+- Discovery algorithm: 7 status codes (NEW, UPDATE_AVAILABLE, MERGE_AVAILABLE, USER_MODIFIED, NO_UPDATE, REMOVED, BASE_MISSING)
+- Template source resolution via `.cco-source` (native, user, remote, fallback to base)
+- `cco project create` bootstraps `.cco-meta`, `.cco-base/`, `.cco-source`
+- `changelog.yml` + `last_seen_changelog` tracking for additive change notifications
+- `cco clean` extended: `--tmp` (dry-run artifacts), `--generated` (docker-compose.yml), `--all`
+- Vault I/O redirect fix: `/dev/tty` redirection with non-fatal fallback
 
 **Docs**: [analysis-v2](../features/defaults-templates-update/analysis-v2.md) | [design](../features/defaults-templates-update/design.md)
 
