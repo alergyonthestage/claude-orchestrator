@@ -158,10 +158,11 @@ _merge_file() {
     cp "$new" "$tmpdir/new"
 
     # Run 3-way merge. Exit code: 0=clean, 1..127=conflicts, >=128=error/signal
+    # Must capture exit code inline (|| ...) to avoid set -e aborting on conflicts
+    local exit_code=0
     git merge-file --diff3 \
         -L "your version" -L "previous default" -L "new default" \
-        "$tmpdir/current" "$tmpdir/base" "$tmpdir/new" 2>/dev/null
-    local exit_code=$?
+        "$tmpdir/current" "$tmpdir/base" "$tmpdir/new" 2>/dev/null || exit_code=$?
 
     cp "$tmpdir/current" "$output"
     rm -rf "$tmpdir"

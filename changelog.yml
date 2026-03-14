@@ -1,2 +1,18 @@
-# changelog.yml — Additive changes notification
+# changelog.yml — Additive changes notification registry
+#
+# This file tracks additive (non-breaking) changes to cco that users should
+# know about. Each entry describes a new optional feature, config field, or
+# capability. Users are notified of new entries via `cco update` (summary)
+# or `cco update --news` (full details).
+#
+# Entry format:
+#   - id: <sequential integer>   # must increment; never reuse IDs
+#     date: "YYYY-MM-DD"
+#     type: additive
+#     title: "Short description"
+#     description: "Details about the new feature and how to use it"
+#
+# The user's last-seen ID is tracked in their .cco-meta (last_seen_changelog).
+# Only entries with id > last_seen_changelog are shown as new.
+
 entries: []
