@@ -5,6 +5,12 @@
 #           _generate_cco_meta(), _latest_schema_version(), _run_migrations(),
 #           _collect_file_changes(), _apply_file_changes(),
 #           _save_base_versions(), _merge_file(),
+#           _show_file_diffs(), _interactive_apply(),
+#           _read_changelog_entries(), _show_changelog_summary(),
+#           _show_changelog_details(), _show_changelog_news(),
+#           _update_changelog_notifications(),
+#           _max_changelog_id(), _latest_changelog_id(),
+#           _update_last_seen_changelog(),
 #           _update_global(), _update_project()
 # Dependencies: colors.sh, utils.sh
 # Globals: GLOBAL_DIR, DEFAULTS_DIR, NATIVE_TEMPLATES_DIR, REPO_ROOT
@@ -1708,5 +1714,41 @@ _update_project() {
                     "$meta_file" "$new_schema" "$created" "$tmpl_name"
             fi
         fi
+    fi
+}
+
+# ── Changelog Helpers (spec-compliant API) ───────────────────────────
+
+# Show full changelog details with title, date, and description.
+# Delegates to _show_changelog_news which implements the same behavior.
+_show_changelog_details() {
+    local last_seen="${1:-0}"
+    _show_changelog_news "$last_seen"
+}
+
+# Get the maximum changelog entry id from changelog.yml.
+_max_changelog_id() {
+    _latest_changelog_id
+}
+
+# Update last_seen_changelog in .cco-meta file.
+# Standalone helper for callers that need to update the field directly.
+_update_last_seen_changelog() {
+    local meta_file="$1"
+    local new_id="$2"
+
+    [[ ! -f "$meta_file" ]] && return 0
+
+    if grep -q '^last_seen_changelog:' "$meta_file" 2>/dev/null; then
+        _sed_i "$meta_file" "^last_seen_changelog: .*" "last_seen_changelog: $new_id"
+    else
+        # Field doesn't exist yet — append after updated_at
+        local tmpfile
+        tmpfile=$(mktemp)
+        awk -v new_id="$new_id" '
+            { print }
+            /^updated_at:/ { print ""; print "last_seen_changelog: " new_id }
+        ' "$meta_file" > "$tmpfile"
+        mv "$tmpfile" "$meta_file"
     fi
 }
