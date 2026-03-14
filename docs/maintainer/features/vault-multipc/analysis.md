@@ -1,6 +1,8 @@
 # Analysis: Multi-PC Vault Sync & Memory Policy
 
-> **Status**: Analysis completed 2026-03-11. To be expanded into a design doc at the start of Sprint 7-Vault.
+> **SUPERSEDED** by `analysis-v2.md` (2026-03-14). Option 4 was rejected — see §3.3 of v2. Do not use this document for implementation reference.
+
+> **Status**: Analysis completed 2026-03-11. Superseded by `analysis-v2.md`.
 > **Related sprint**: [Sprint 7-Vault](../../decisions/roadmap.md#sprint-7-vault--multi-pc-config-sync--memory-policy)
 
 ---

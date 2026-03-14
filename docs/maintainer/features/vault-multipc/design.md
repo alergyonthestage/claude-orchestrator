@@ -1,6 +1,6 @@
 # Sprint 7-Vault — Design: Multi-PC Sync, Memory Architecture & Policy
 
-**Status**: Draft — Pending review
+**Status**: Implemented — Sprint 7-Vault complete
 **Date**: 2026-03-14
 **Scope**: Architecture-level
 **Analysis**: `analysis-v2.md` (same directory)
@@ -138,34 +138,38 @@ cco vault profile delete <name>
 ### 3.2 Resource Movement
 
 ```bash
-# Move project to a profile (removes from main, adds to profile branch)
+# Mark project as exclusive to a profile (tracking-only)
 cco vault profile move project <name> --to <profile>
 
-# Move project back to main (removes from profile, adds to main)
+# Make project shared again (remove from profile tracking)
 cco vault profile move project <name> --to main
 
-# Move pack to a profile (makes it exclusive)
+# Mark pack as exclusive to a profile (tracking-only)
 cco vault profile move pack <name> --to <profile>
 
-# Move pack back to main (makes it shared)
+# Make pack shared again (remove from profile tracking)
 cco vault profile move pack <name> --to main
 ```
 
 ### 3.3 Quick Add/Remove (Current Profile)
 
 ```bash
-# Add existing project to current profile (moves from main)
+# Mark project as exclusive to current profile (tracking-only)
 cco vault profile add project <name>
 
-# Remove project from current profile (moves to main)
+# Make project shared again (removes from profile tracking)
 cco vault profile remove project <name>
 
-# Add pack to current profile (makes exclusive)
+# Mark pack as exclusive to current profile (tracking-only)
 cco vault profile add pack <name>
 
-# Remove pack from current profile (makes shared on main)
+# Make pack shared again (removes from profile tracking)
 cco vault profile remove pack <name>
 ```
+
+> **Note**: `add` and `remove` update `.vault-profile` only — they do not
+> `git rm` files from any branch. Isolation is enforced at sync time via
+> selective staging.
 
 ### 3.4 Create with Profile
 
@@ -405,52 +409,42 @@ This is the key advantage of using a tracked file over a gitignored one.
 
 ### 5.3 `vault profile move project <name> --to <target>`
 
-**Move project from main to profile:**
+> **Implementation note**: The actual implementation uses **tracking-only** isolation
+> rather than the original git-level move design described in the initial draft.
+> Resources are NOT `git rm`-ed from the source branch. Instead, `.vault-profile`
+> is updated to declare which resources are exclusive to each profile, and isolation
+> is enforced at sync time via selective staging (`vault sync`, `vault push`, `vault pull`
+> scope their `git add` to the profile's declared paths only).
+
+**Move project to a profile (tracking-only):**
 ```
 Preconditions:
   - Project directory exists: projects/<name>/
   - Target is a valid profile name or "main"
 
 Steps:
-  1. If target != "main", warn:
-     "⚠ Moving 'project-x' off main will remove it from machines
-      without a profile containing this project. Continue? [y/N]"
-  2. Ensure target branch exists
-  3. On current branch: verify project files are present
-  4. Switch to main: git checkout main
-  5. Remove project from main: git rm -r projects/<name>/
-  6. Commit: "vault: move projects/<name> to profile '<target>'"
-  7. Switch to target branch: git checkout <target>
-  8. Project files are still on disk (git rm only affects index)
-  9. Stage project files: git add -A -- projects/<name>/
-  10. Commit: "vault: add projects/<name> from main"
-  11. Update .vault-profile (add to sync.projects)
-  12. Commit: "vault: update profile metadata"
-  13. Return to original branch
+  1. If currently on a profile, switch to target profile branch
+  2. Update .vault-profile: add project to sync.projects list
+  3. Stage .vault-profile and the project directory
+  4. Commit: "vault: add project '<name>' to profile '<target>'"
+  5. Return to original branch if needed
 ```
 
-**Move project from profile to main:**
+**Move project back to main (tracking-only):**
 ```
 Steps:
-  1. Switch to profile branch
-  2. Note project files exist
-  3. Switch to main: git checkout main
-  4. Project files are on disk (exist as directories)
-  5. Stage: git add -A -- projects/<name>/
-  6. Commit: "vault: add projects/<name> from profile '<source>'"
-  7. Switch to profile branch
-  8. Remove from profile: git rm -r projects/<name>/
-  9. Update .vault-profile (remove from sync.projects)
-  10. Commit: "vault: remove projects/<name> (moved to main)"
+  1. Update .vault-profile: remove project from sync.projects list
+  2. Stage .vault-profile
+  3. Commit: "vault: remove project '<name>' from profile"
+  4. The project is now shared (synced to main at next push)
 ```
 
 **Move between profiles:**
 ```
 Steps:
-  1. Move from source profile to main (steps above)
-  2. Move from main to target profile (steps above)
-  3. Two intermediate commits on main, but main ends up without the project
-     (net effect: project moved between profiles)
+  1. Remove from source profile's .vault-profile
+  2. Add to target profile's .vault-profile
+  3. Net effect: resource tracked under new profile, isolation enforced at sync time
 ```
 
 ### 5.4 `vault profile rename <new-name>`
@@ -873,48 +867,52 @@ Note: `projects/*/memory/` is intentionally NOT listed (vault-tracked).
 
 ## 11. Implementation Checklist
 
-### Phase 1: Memory (#B + #C)
-- [ ] Create `defaults/managed/.claude/rules/memory-policy.md`
-- [ ] Update `defaults/managed/CLAUDE.md` with memory policy reference
-- [ ] Update `defaults/managed/.claude/skills/init-workspace/SKILL.md`
-- [ ] Create `migrations/project/008_separate_memory.sh`
-- [ ] Update `lib/cmd-start.sh`: add memory child mount
-- [ ] Update `lib/cmd-project.sh`: create `memory/` instead of `claude-state/memory/`
-- [ ] Update `lib/cmd-project.sh`: exclude `memory/` from publish
-- [ ] Tests: memory mount, migration, publish exclusion
+**Status**: All phases implemented as part of Sprint 7-Vault.
 
-### Phase 2: Vault Profiles (#A — Core)
-- [ ] Add `.vault-profile` parsing functions to `lib/cmd-vault.sh`
-- [ ] Implement `vault profile create` (branch + `.vault-profile`)
-- [ ] Implement `vault profile list`
-- [ ] Implement `vault profile show`
-- [ ] Implement `vault profile switch` (auto-commit + branch checkout)
-- [ ] Implement `vault profile rename`
-- [ ] Implement `vault profile delete`
-- [ ] Tests: profile CRUD, switch, list/show
+### Phase 1: Memory (#B + #C) — Implemented
+- [x] Create `defaults/managed/.claude/rules/memory-policy.md`
+- [x] Update `defaults/managed/CLAUDE.md` with memory policy reference
+- [x] Update `defaults/managed/.claude/skills/init-workspace/SKILL.md`
+- [x] Create `migrations/project/008_separate_memory.sh`
+- [x] Update `lib/cmd-start.sh`: add memory child mount
+- [x] Update `lib/cmd-project.sh`: create `memory/` instead of `claude-state/memory/`
+- [x] Update `lib/cmd-project.sh`: exclude `memory/` from publish
+- [x] Tests: memory mount, migration, publish exclusion
 
-### Phase 3: Selective Sync (#A — Sync)
-- [ ] Modify `vault sync` to use profile-scoped staging
-- [ ] Modify `vault push` to sync shared resources to main
-- [ ] Modify `vault pull` to sync shared resources from main
-- [ ] Implement interactive conflict resolution (L/R/M/D)
-- [ ] Update `vault status` with profile info
-- [ ] Update `vault diff` with profile scoping
-- [ ] Tests: selective staging, push/pull sync, conflict resolution
+### Phase 2: Vault Profiles (#A — Core) — Implemented
+- [x] Add `.vault-profile` parsing functions to `lib/cmd-vault.sh`
+- [x] Implement `vault profile create` (branch + `.vault-profile`)
+- [x] Implement `vault profile list`
+- [x] Implement `vault profile show`
+- [x] Implement `vault profile switch` (auto-commit + branch checkout)
+- [x] Implement `vault profile rename`
+- [x] Implement `vault profile delete`
+- [x] Tests: profile CRUD, switch, list/show
 
-### Phase 4: Resource Movement (#A — Move)
-- [ ] Implement `vault profile move project --to`
-- [ ] Implement `vault profile move pack --to`
-- [ ] Implement `vault profile add/remove` shortcuts
-- [ ] Add `--profile` flag to `project create` and `pack create`
-- [ ] Tests: move project/pack between profiles and main
+### Phase 3: Selective Sync (#A — Sync) — Implemented
+- [x] Modify `vault sync` to use profile-scoped staging
+- [x] Modify `vault push` to sync shared resources to main
+- [x] Modify `vault pull` to sync shared resources from main
+- [x] Implement interactive conflict resolution (L/R/M/D)
+- [x] Update `vault status` with profile info
+- [x] Update `vault diff` with profile scoping
+- [x] Tests: selective staging, push/pull sync, conflict resolution
 
-### Phase 5: Validation & Polish
-- [ ] E2E test: memory mount override (Docker required)
-- [ ] E2E test: multi-profile push/pull cycle
-- [ ] Update roadmap.md
-- [ ] Update CLAUDE.md with vault profile commands
-- [ ] Update CLI reference (docs/reference/cli.md)
+### Phase 4: Resource Movement (#A — Move) — Implemented
+- [x] Implement `vault profile move project --to`
+- [x] Implement `vault profile move pack --to`
+- [x] Implement `vault profile add/remove` shortcuts
+- [x] `--profile` flag on `project create` and `pack create` is **deferred** to a future sprint (see §3.4)
+- [x] Tests: move project/pack between profiles and main
+
+### Phase 5: Validation & Polish — Implemented
+- [x] E2E test: memory mount override (Docker required)
+- [x] E2E test: multi-profile push/pull cycle
+- [x] Update roadmap.md
+- [x] Update CLAUDE.md with vault profile commands
+- [x] Update CLI reference (docs/reference/cli.md)
+
+> **Note**: The `--profile` flag on `cco project create` and `cco pack create` (§3.4) is deferred to a future sprint. Users can achieve the same result by creating the resource and then running `cco vault profile add project|pack <name>`.
 
 ---
 

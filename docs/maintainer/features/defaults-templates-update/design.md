@@ -709,7 +709,55 @@ When writing migrations, maintainers MUST follow these rules:
 5. **Sequential IDs**: check `migrations/{scope}/` for the current max before
    assigning an ID
 
-### 4.18 Vault Integration
+### 4.18 Maintainer Change Checklist
+
+When making changes to claude-orchestrator, classify the change and follow the
+corresponding procedure. This checklist consolidates the rules from §4.14, §4.15,
+and §4.17 into a single operational reference.
+
+#### Step 1 — Classify the change
+
+| Change Type | Definition | Examples |
+|-------------|-----------|----------|
+| **Additive** | New optional feature or config field; existing installations work without changes | New CLI subcommand, new optional `project.yml` field, new vault capability |
+| **Opinionated** | Improvement to framework rules, agents, or skills | Better workflow rule, updated agent spec, new skill |
+| **Breaking** | Structural change requiring transformation of existing files | Renamed config key, moved file, schema format change |
+
+#### Step 2 — Execute the procedure
+
+**Additive changes:**
+1. Add code-level default so existing installations work without changes
+2. Update `templates/project/base/` for new projects
+3. Append entry to `changelog.yml` (repo root) with next sequential `id`:
+   ```yaml
+   - id: <next_id>
+     date: "YYYY-MM-DD"
+     type: additive
+     title: "Short description"
+     description: "Details about the new feature and how to use it"
+   ```
+4. Users are notified via `cco update` (summary) or `cco update --news` (details)
+
+**Opinionated changes:**
+1. Update the source file in `defaults/global/`
+2. Users discover via `cco update --diff`, apply via `cco update --apply`
+3. No migration needed — the discovery engine handles it automatically
+
+**Breaking changes:**
+1. Create migration in `migrations/{scope}/NNN_description.sh` (see §4.17)
+2. Update base template AND all non-base native templates
+3. If migration moves an opinionated file, also update `.cco-base/`
+4. Test: `cco update --project <name>` — verify migration runs and is idempotent
+5. If the change affects `project.yml` structure, update all template `project.yml` files
+
+#### Step 3 — Verify
+
+- [ ] Existing installations handle the change gracefully (additive: code defaults; breaking: migration)
+- [ ] New installations get the right defaults (templates updated)
+- [ ] `cco update` reports the change appropriately (changelog / discovery / migration)
+- [ ] Idempotency: running `cco update` twice produces the same result
+
+### 4.19 Vault Integration
 
 The vault pre-update prompt must NOT block the discovery/apply flow:
 

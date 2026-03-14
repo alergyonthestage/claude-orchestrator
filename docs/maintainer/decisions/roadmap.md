@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-14 (Post-Sprint-5b design revised: `cco update` = migrations + discovery only, `--apply` for on-demand merge, `project.yml` user-owned, `cco clean` extended, vault prompt fix. `--sync-templates` removed in favor of future `cco template sync`. See `analysis-v2.md` + `design.md`).
+> Last updated: 2026-03-14 (Sprint 7-Vault completed: vault profiles with branch-based isolation, selective sync, shared resource conflict resolution, memory separation from claude-state, managed memory policy rule).
 
 ---
 
@@ -9,10 +9,10 @@
 
 | Status | Items | Section |
 |--------|-------|---------|
-| ✅ Completed | 18 sprints / features | [→ Completed](#completed) |
+| ✅ Completed | 19 sprints / features | [→ Completed](#completed) |
 | 🐛 Known Bugs | 1 open · 3 fixed | [→ Known Bugs](#known-bugs) |
 | 🔜 Planned | Sprint 6 → 12 | [→ Planned Sprints](#planned-sprints) |
-| 🔭 Exploratory | 6 ideas | [→ Long-term / Exploratory](#long-term--exploratory) |
+| 🔭 Exploratory | 5 ideas | [→ Long-term / Exploratory](#long-term--exploratory) |
 | ❌ Declined | 3 items | [→ Declined / Won't Do](#declined--wont-do) |
 
 ---
@@ -23,10 +23,9 @@ Features are prioritized by impact for third-party users adopting claude-orchest
 
 ```mermaid
 graph LR
-    DONE["✅ Completed<br/>Sprint 4, Sprint 5, Sprint 5b,<br/>Sprint 6+10, Sprint 6b,<br/>ADR-13, Bugfix #B1"]
+    DONE["✅ Completed<br/>Sprint 4, Sprint 5, Sprint 5b,<br/>Sprint 6+10, Sprint 6b,<br/>ADR-13, Sprint 7-Vault, Bugfix #B1"]
 
     S6S["Sprint 6-Security<br/>#Docker Restriction<br/>#Internet Controls<br/>#mount_socket default fix"]
-    S7V["Sprint 7-Vault<br/>#Multi-PC sync<br/>#Memory policy"]
     S8E["Sprint 8-E2E<br/>#E2E Test Suite"]
     S9L["Sprint 9-Linux<br/>#Linux OAuth<br/>(pre-open-source)"]
     S10I["Sprint 10-Isolation<br/>#Git Worktree"]
@@ -34,8 +33,7 @@ graph LR
     S12R["Sprint 12-RAG<br/>#Project RAG"]
 
     DONE --> S6S
-    S6S --> S7V
-    S7V --> S8E
+    S6S --> S8E
     S8E --> S9L
     S9L --> S10I
     S10I --> S11E
@@ -76,76 +74,6 @@ Layered defense for internet access control:
 Configuration: `network.internet: full | restricted | none` with `allowed_domains` / `blocked_domains`. Squid sidecar bridges internal (project) and external (internet) networks. Created containers inherit the same restriction or can be overridden.
 
 ---
-
-### Sprint 7-Vault — Multi-PC Config Sync & Memory Policy
-
-Urgente. La suite vault attuale non supporta scenari multi-macchina con configurazioni diverse (es. progetti di lavoro su PC-A, progetti personali su PC-B). Inoltre manca una policy definita su quando usare la memoria automatica di Claude vs. la documentazione versionata del progetto.
-
-**Docs**: [analysis](../features/vault-multipc/analysis.md) ← da espandere in design doc all'inizio dello sprint.
-
-#### #A Vault Profile-Based Selective Sync
-
-**Contesto**: `cco vault push/pull` opera sull'intera `user-config/` come un singolo `git push/pull`. Con due PC che hanno progetti diversi su un remote condiviso, un `pull` porta progetti indesiderati sull'altro PC.
-
-**Obiettivo**: ogni macchina dichiara un profilo locale (`vault.yml`, gitignored) che specifica cosa sincronizzare:
-
-```yaml
-# user-config/vault.yml  (gitignored — locale per macchina)
-sync:
-  global: true
-  packs: true
-  templates: true
-  projects:
-    - work-proj-1
-    - work-proj-2
-```
-
-**Scope**:
-- `cco vault profile init` — setup interattivo del profilo locale
-- `cco vault profile add <type> <name>` / `remove` — gestione del profilo
-- `cco vault profile show` — mostra configurazione attuale
-- `cco vault push/pull` legge `vault.yml` e scopa le operazioni git ai path dichiarati
-- `vault.yml` aggiunto al `.gitignore` del vault
-
-**Approcci da valutare** (vedi analysis.md):
-- Profile-only (Phase 1): single branch, push/pull per path — immediato, semplice
-- Branch strategy (Phase 2): branch per macchina + merge del global da `main` — più pulito storicamente, più complesso
-
-**Decisione**: implementare Phase 1 in questo sprint. Phase 2 è opzionale e può seguire in futuro.
-
-#### #B Memory vs. Docs Policy
-
-**Contesto**: nessuna policy definisce quando Claude deve scrivere in `MEMORY.md` vs. nella documentazione del progetto (`.claude/`, `docs/`). Note importanti finiscono in memoria (locale-macchina, non versionata) quando dovrebbero stare nei doc del repo.
-
-**Obiettivo**: policy chiara e documentata, integrata nel CLAUDE.md globale e nel skill `/init-workspace`.
-
-**Use `MEMORY.md` for**: note temporanee di sessione, preferenze di interazione, context di breve durata.
-**Use project docs for**: decisioni architetturali, pattern appresi, convenzioni, regole → `.claude/rules/`, `docs/`.
-
-**Scope**:
-- Aggiornare `defaults/global/.claude/CLAUDE.md` con la policy
-- Aggiornare il skill `/init-workspace` per guidare la classificazione delle note
-- Documentare in `docs/reference/context-hierarchy.md` la sezione memoria
-
-#### #C Memory Vaulting (opzionale)
-
-**Contesto**: se si vuole sincronizzare `MEMORY.md` tra PC, occorre separare `memory/` da `claude-state/` (che contiene i transcript, troppo grandi per il vault).
-
-**Proposta**: montare `memory/` separatamente da `claude-state/`:
-```yaml
-- ./claude-state:/home/claude/.claude/projects/-workspace
-- ./memory:/home/claude/.claude/projects/-workspace/memory
-```
-
-`memory/` sarebbe tracciata dal vault (non gitignored), mentre `claude-state/` rimane esclusa.
-
-**Scope**:
-- Validare che il bind-mount override funzioni con Claude Code
-- Aggiornare `cmd-start.sh` e template docker-compose
-- Aggiornare `.gitignore` del vault
-- Migration per progetti esistenti
-
-**Priorità**: dipende dal feedback utente. Implementare solo se #B (policy) non è sufficiente.
 
 ---
 
@@ -373,6 +301,25 @@ Migration `005_split_global_setup.sh` renames existing `setup.sh` → `setup-bui
 ---
 
 ## Completed
+
+### Multi-PC Config Sync & Memory Policy (Sprint 7-Vault) ✓
+
+Vault profiles with branch-based isolation for multi-PC scenarios, memory separation from claude-state, and managed memory policy.
+
+**What was implemented**:
+- Vault profiles (`cco vault profile create|list|show|switch|rename|delete`): git branch per profile with `.vault-profile` tracking file
+- Selective sync: `vault sync/push/pull` operate on profile-scoped paths only (shared resources auto-synced to/from `main`)
+- Interactive conflict resolution (L/R/M/D) for shared resource conflicts using `git merge-file`
+- Resource movement: `vault profile move project|pack --to <profile|main>`, `vault profile add|remove` shortcuts
+- Memory separation: `memory/` moved from `claude-state/memory/` to standalone dir with Docker child bind mount
+- Memory policy: managed rule (`defaults/managed/.claude/rules/memory-policy.md`) defining when to use memory vs project docs
+- Migration 008: automatic memory separation for existing projects
+- Backward compatible: vaults without profiles work unchanged (single branch on `main`)
+- Test coverage: 44 new profile tests + existing vault tests updated (698 total, 0 failures)
+
+**Docs**: [analysis](../features/vault-multipc/analysis-v2.md) | [design](../features/vault-multipc/design.md)
+
+---
 
 ### Defaults Restructuring & Template System (Sprint 5b) ✓
 
@@ -676,17 +623,6 @@ Mount repos from remote hosts via SSHFS or similar, enabling orchestrator sessio
 ### Multi-project sessions
 
 A single Claude session with repos from multiple projects, for cross-project refactoring or analysis tasks.
-
----
-
-### Vault Branch Strategy (Phase 2)
-
-After Sprint 7-Vault implements profile-based selective sync, a branch strategy can be layered on top for cleaner per-machine git history:
-- `main` branch: shared content (global, packs, templates)
-- Per-machine branches: `pc-work`, `pc-home`, etc.
-- `cco vault pull --global`: merge shared content from `main` into current branch
-
-This is not needed for the primary use case (preventing wrong-PC projects) but improves git history quality for power users.
 
 ---
 

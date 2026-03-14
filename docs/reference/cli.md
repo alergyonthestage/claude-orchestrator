@@ -174,7 +174,8 @@ Examples:
    - Generate .claude/workspace.yml (structured project summary for /init)
 
 4. CREATE directories (if needed)
-   - user-config/projects/<project>/claude-state/memory/  (for auto memory + session transcripts; migrates legacy memory/ if present)
+   - user-config/projects/<project>/claude-state/  (session transcripts; enables /resume across rebuilds)
+   - user-config/projects/<project>/memory/  (auto memory; vault-tracked, separate from transcripts)
 
 5. LAUNCH
    - Load user-config/global/secrets.env as runtime env vars (validates KEY=VALUE format, skips malformed lines with warning)
@@ -275,7 +276,8 @@ Examples:
    - Replace {{PROJECT_NAME}} and {{DESCRIPTION}} placeholders
 
 5. CREATE directories
-   - user-config/projects/<name>/claude-state/memory/
+   - user-config/projects/<name>/claude-state/  (session transcripts)
+   - user-config/projects/<name>/memory/  (auto memory; vault-tracked)
 
 6. INITIALIZE update metadata
    - Generate .cco-meta (schema_version, template name, manifest hashes)
@@ -909,10 +911,126 @@ Examples:
 
 #### `cco vault status`
 
-Show vault state.
+Show vault state. With an active profile, also shows profile info, exclusive resources, and sync state with main.
 
 ```
 Usage: cco vault status
+```
+
+#### `cco vault profile create <name>`
+
+Create a new vault profile. Creates a git branch from main with a `.vault-profile` tracking file.
+
+```
+Usage: cco vault profile create <name>
+
+Arguments:
+  name                 Profile name (lowercase, hyphens allowed)
+
+Examples:
+  cco vault profile create work
+  cco vault profile create personal
+```
+
+#### `cco vault profile list`
+
+List all vault profiles with resource counts.
+
+```
+Usage: cco vault profile list
+```
+
+#### `cco vault profile show`
+
+Show current profile details including exclusive resources and sync state.
+
+```
+Usage: cco vault profile show
+
+Example output:
+  Profile: work
+  Branch: work
+  Sync state: up-to-date with main
+
+  Exclusive projects:
+    - work-api
+    - work-frontend
+
+  Exclusive packs:
+    - corporate-rules
+
+  Shared (from main):
+    - global/
+    - templates/ (2 template(s))
+    - packs/ (5 shared pack(s))
+
+  Uncommitted changes: 3 file(s)
+```
+
+#### `cco vault profile switch <name>`
+
+Switch to another profile. Auto-commits pending changes before switching.
+
+```
+Usage: cco vault profile switch <name>
+
+Examples:
+  cco vault profile switch personal
+```
+
+#### `cco vault profile rename <new-name>`
+
+Rename the current profile (renames branch and updates `.vault-profile`).
+
+```
+Usage: cco vault profile rename <new-name>
+
+Examples:
+  cco vault profile rename work-2024
+```
+
+#### `cco vault profile delete <name>`
+
+Delete a profile. Moves all exclusive resources to main first, then deletes the branch.
+
+```
+Usage: cco vault profile delete <name> [--yes]
+
+Options:
+  --yes                Skip confirmation prompt
+
+Examples:
+  cco vault profile delete old-profile
+  cco vault profile delete old-profile --yes
+```
+
+#### `cco vault profile move project|pack <name> --to <target>`
+
+Move a project or pack between profiles and main.
+
+```
+Usage: cco vault profile move project <name> --to <profile|main>
+       cco vault profile move pack <name> --to <profile|main>
+
+Examples:
+  cco vault profile move project my-api --to work
+  cco vault profile move project my-api --to main
+  cco vault profile move pack corp-rules --to work
+```
+
+#### `cco vault profile add|remove project|pack <name>`
+
+Shortcuts for moving resources to/from the current profile.
+
+```
+Usage: cco vault profile add project <name>
+       cco vault profile add pack <name>
+       cco vault profile remove project <name>
+       cco vault profile remove pack <name>
+
+Examples:
+  cco vault profile add project new-api
+  cco vault profile remove pack old-rules
 ```
 
 ---
@@ -1235,8 +1353,10 @@ services:
       # Project config
       - ./.claude:/workspace/.claude
       - ./project.yml:/workspace/project.yml:ro
-      # Claude state: auto memory + session transcripts (enables /resume across rebuilds)
+      # Session transcripts (enables /resume across rebuilds)
       - ./claude-state:/home/claude/.claude/projects/-workspace
+      # Memory (vault-tracked, separate from transcripts)
+      - ./memory:/home/claude/.claude/projects/-workspace/memory
       # Global MCP servers (optional, merged into ~/.claude.json by entrypoint)
       # - ../../user-config/global/.claude/mcp.json:/home/claude/.claude/mcp-global.json:ro
       # Project MCP servers (optional, Claude Code expands ${VAR} natively)

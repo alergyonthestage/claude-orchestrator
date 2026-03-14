@@ -134,3 +134,7 @@ config file and is not the right place for auto-generated descriptions.
 - If a repo path does not exist on disk, note it but continue with others
 - Keep CLAUDE.md under ~200 lines — use concise, factual language
 - Use `/init-workspace` to distinguish from the built-in `/init` command
+- When generating the CLAUDE.md, do NOT include memory-related content.
+  Memory policy is enforced by the managed rule `memory-policy.md`.
+  If you discover important patterns or conventions during exploration,
+  write them to `.claude/rules/` or the CLAUDE.md — not to memory.
