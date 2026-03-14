@@ -12,7 +12,7 @@
 | ✅ Completed | 19 sprints / features | [→ Completed](#completed) |
 | 🐛 Known Bugs | 1 open · 3 fixed | [→ Known Bugs](#known-bugs) |
 | 🔜 Planned | Sprint 6 → 12 | [→ Planned Sprints](#planned-sprints) |
-| 🔭 Exploratory | 5 ideas | [→ Long-term / Exploratory](#long-term--exploratory) |
+| 🔭 Exploratory | 7 ideas | [→ Long-term / Exploratory](#long-term--exploratory) |
 | ❌ Declined | 3 items | [→ Declined / Won't Do](#declined--wont-do) |
 
 ---
@@ -29,7 +29,7 @@ graph LR
     S8E["Sprint 8-E2E<br/>#E2E Test Suite"]
     S9L["Sprint 9-Linux<br/>#Linux OAuth<br/>(pre-open-source)"]
     S10I["Sprint 10-Isolation<br/>#Git Worktree"]
-    S11E["Sprint 11-Ecosystem<br/>#Pack inheritance<br/>#cco project edit<br/>#StatusLine"]
+    S11E["Sprint 11-Ecosystem<br/>#Pack inheritance<br/>#cco project edit<br/>#StatusLine<br/>#FI quick wins"]
     S12R["Sprint 12-RAG<br/>#Project RAG"]
 
     DONE --> S6S
@@ -153,7 +153,35 @@ Opt-in git isolation for container sessions. When enabled, repos are mounted at 
 
 ### Sprint 11-Ecosystem — Pack, Polish & Automation
 
-Raccoglie le feature di completamento rimaste dopo che pack CLI e sharing sono stati implementati.
+Raccoglie le feature di completamento rimaste dopo che pack CLI e sharing sono stati implementati. Include quick wins from [framework improvements analysis](framework-improvements.md).
+
+#### FI-6 Deny rules for project `.claude/` write protection
+
+Add deny patterns in `managed-settings.json` to prevent the agent from modifying user-defined `.claude/rules/`, `.claude/agents/`, `.claude/skills/` at project level. `/init-workspace` only writes `CLAUDE.md` and `workspace.yml`, which remain writable. Technical enforcement without mount complexity.
+
+**Ref**: [FI-6](framework-improvements.md#fi-6-read-only-mounts-for-user-owned-claude-config)
+**Effort**: Low.
+
+#### FI-3 Default ports: empty by default
+
+Change `templates/project/base/project.yml` default from `ports: ["3000:3000", "8080:8080"]` to `ports: []` with commented examples. Secure-by-default — users add only what they need. No migration needed (ports are user-owned and additive).
+
+**Ref**: [FI-3](framework-improvements.md#fi-3-default-ports-and-chrome-devtools-port-management)
+**Effort**: Low.
+
+#### FI-1 Framework operational context in managed CLAUDE.md
+
+Small additions to `defaults/managed/CLAUDE.md`: explicit mention that `cco` is host-only CLI (not available inside container), Docker network naming convention (`cc-<project>`), and `/init-workspace` availability.
+
+**Ref**: [FI-1](framework-improvements.md#fi-1-framework-context-for-the-coding-agent)
+**Effort**: Low.
+
+#### FI-2 `/init-workspace` empty workspace handling
+
+When no repos and no `workspace.yml` descriptions exist, the skill should ask the user for a brief project description before generating a nearly empty CLAUDE.md. Discovery-based flow unchanged when repos are present.
+
+**Ref**: [FI-2](framework-improvements.md#fi-2-init-workspace-on-empty-projects)
+**Effort**: Low.
 
 #### #9 Pack Inheritance / Composition
 
@@ -597,6 +625,36 @@ Pure bash test suite (`bin/test`) covering 154 test cases across 11 test files. 
 - **Explicit `cco reload <project>` command**: rather than automatic detection, expose a host-side command that sends a reload signal to the running container. Simpler, more predictable, no polling overhead.
 
 **Decision criteria**: hot-reload adds complexity (signal handling, partial-state risks). It is only worth implementing if the restart cost is measurably painful for users. Collect feedback before committing to an implementation approach.
+
+---
+
+### FI-4: Per-Project LLM Model Configuration
+
+**Raised**: 2026-03-14.
+
+Add `model:` field to `project.yml`, passed to `claude --model` at launch via entrypoint. Enables choosing different models per project (e.g., haiku for simple projects, opus for complex ones). Per-agent model is already supported natively via agent YAML frontmatter. Per-phase model is not practical (phases are conceptual, not framework-managed). Global default is a simple `CLAUDE_MODEL` env var.
+
+**Ref**: [FI-4](framework-improvements.md#fi-4-per-project-llm-model-configuration)
+**Effort**: Medium (project.yml schema, entrypoint integration, documentation).
+
+---
+
+### FI-5: Human Workflow & Review Best Practices Guide
+
+**Raised**: 2026-03-14.
+
+Create `docs/user-guides/development-workflow.md` — a practical operational guide covering:
+- Phase checklists (what to do, what to verify at each stage)
+- Recommended multi-pass review pattern: implementation → design alignment → docs freshness → test coverage
+- Common problems and workarounds (e.g., model forgets constraints in long sessions)
+- Precise git flow: branch naming, commit conventions, merge points as review gates
+- GitHub branch protection configuration for mechanical enforcement of human review
+- The core insight: **human-in-the-loop + automated multi-pass reviews drastically improve quality and prevent bug accumulation**
+
+Also update the base project template to reference these best practices.
+
+**Ref**: [FI-5](framework-improvements.md#fi-5-human-workflow-guide-and-review-best-practices)
+**Effort**: Medium (documentation writing, template updates).
 
 ---
 
