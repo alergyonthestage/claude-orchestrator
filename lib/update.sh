@@ -979,7 +979,7 @@ _update_global() {
                 do_vault="${do_vault:-y}"
             fi
             if [[ "$do_vault" =~ ^[Yy] ]]; then
-                cmd_vault_sync "pre-update snapshot" 2>/dev/null || true
+                cmd_vault_sync "pre-update snapshot" </dev/tty >/dev/tty 2>/dev/tty || warn "Vault snapshot failed, continuing..."
                 [[ "$no_backup" != "true" ]] && info "Vault snapshot created. You can use --no-backup to skip .bak files."
             fi
         fi
@@ -1165,6 +1165,16 @@ _update_project() {
     # Phase 2: APPLY — execute changes
     _apply_file_changes "$changes" "$defaults_dir" "$installed_dir" "$base_dir" "$mode" "$dry_run" "$no_backup"
 
+    # Run migrations (before copy-if-missing, so migrations can create files
+    # with migrated content before the template fallback kicks in)
+    if [[ $pending_migrations -gt 0 ]]; then
+        if [[ "$dry_run" == "true" ]]; then
+            info "$pending_migrations migration(s) pending"
+        else
+            _run_migrations "project" "$project_dir" "$current_schema" "$meta_file"
+        fi
+    fi
+
     # Copy missing root files from template
     if [[ ${#root_missing[@]} -gt 0 ]]; then
         for rf in "${root_missing[@]}"; do
@@ -1175,15 +1185,6 @@ _update_project() {
                 ok "  + $rf (copied from template)"
             fi
         done
-    fi
-
-    # Run migrations
-    if [[ $pending_migrations -gt 0 ]]; then
-        if [[ "$dry_run" == "true" ]]; then
-            info "$pending_migrations migration(s) pending"
-        else
-            _run_migrations "project" "$project_dir" "$current_schema" "$meta_file"
-        fi
     fi
 
     # Update .cco-meta (project scope: no languages, no changelog)
