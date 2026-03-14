@@ -448,7 +448,7 @@ graph LR
 - Docker-compose generation has two volume modes: direct mount (default) or `/git-repos/` mount (worktree)
 - Multiple projects cannot use `--worktree` on the same repo simultaneously with the same branch
 
-**Design doc**: [worktree-design.md](../features/worktree/design.md) | **Analysis**: [worktree-isolation.md](../features/worktree/analysis.md)
+**Design doc**: [worktree-design.md](../integration/worktree/design.md) | **Analysis**: [worktree-isolation.md](../integration/worktree/analysis.md)
 
 ---
 

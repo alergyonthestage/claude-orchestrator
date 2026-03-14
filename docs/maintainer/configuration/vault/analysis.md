@@ -2,7 +2,6 @@
 
 **Date**: 2026-03-14
 **Scope**: Architecture-level — cross-cutting analysis (vault, memory, sync)
-**Supersedes**: `analysis.md` (pre-Sprint-5b analysis, 2026-03-11)
 **Related**: `design.md` (definitive design, written in parallel)
 
 > This document establishes the vault profile model, shared resource sync

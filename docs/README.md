@@ -67,7 +67,7 @@ Architecture, specifications, and roadmap for project contributors.
 
 | Document | Content |
 |---|---|
-| [README.md](maintainer/README.md) | Contributor guide, code structure, documentation conventions |
+| [README.md](maintainer/README.md) | Contributor guide, documentation conventions |
 | [architecture.md](maintainer/architecture/architecture.md) | Architectural decisions (ADR) and system design |
 | [spec.md](maintainer/architecture/spec.md) | Functional and non-functional requirements |
 | [roadmap.md](maintainer/decisions/roadmap.md) | Feature progress, planned sprints, declined proposals |
@@ -80,18 +80,17 @@ Design docs and analysis by area:
 | Scope hierarchy | [analysis](maintainer/configuration/scope-hierarchy/analysis.md), [design](maintainer/configuration/scope-hierarchy/design.md) |
 | Knowledge packs | [design](maintainer/configuration/packs/design.md) |
 | Environment | [analysis](maintainer/configuration/environment/analysis.md), [design](maintainer/configuration/environment/design.md) |
-| Config Repo | [design](maintainer/configuration/config-repo/design.md), [sharing design](maintainer/configuration/config-repo/sharing-design.md) |
+| Sharing & Config Repo | [analysis](maintainer/configuration/sharing/analysis.md), [design](maintainer/configuration/sharing/design.md), [sharing enhancements](maintainer/configuration/sharing/sharing-design.md) |
+| Update System & Templates | [analysis](maintainer/configuration/update-system/analysis.md), [design](maintainer/configuration/update-system/design.md) |
+| Vault & Multi-PC Sync | [analysis](maintainer/configuration/vault/analysis.md), [design](maintainer/configuration/vault/design.md) |
 | **Integration** | |
 | Docker | [design](maintainer/integration/docker/design.md) |
 | Docker Security | [analysis](maintainer/integration/docker-security/analysis.md), [design](maintainer/integration/docker-security/design.md) |
 | Authentication | [analysis](maintainer/integration/auth/analysis.md), [design](maintainer/integration/auth/design.md) |
 | Browser MCP | [analysis](maintainer/integration/browser-mcp/analysis.md), [design](maintainer/integration/browser-mcp/design.md) |
 | Agent teams | [analysis](maintainer/integration/agent-teams/analysis.md) |
-| **Features** | |
-| Defaults & Templates | [analysis](maintainer/features/defaults-templates-update/analysis-v2.md), [design](maintainer/features/defaults-templates-update/design.md) |
-| Tutorial Project | [analysis](maintainer/features/tutorial-project/analysis.md), [design](maintainer/features/tutorial-project/design.md) |
-| Update system | [design](maintainer/features/update-system/design.md) |
-| Worktree isolation | [analysis](maintainer/features/worktree/analysis.md), [design](maintainer/features/worktree/design.md) |
-| Multi-PC Vault | [analysis](maintainer/features/vault-multipc/analysis.md) |
+| Worktree isolation | [analysis](maintainer/integration/worktree/analysis.md), [design](maintainer/integration/worktree/design.md) |
+| **Templates** | |
+| Tutorial Project | [analysis](maintainer/templates/tutorial/analysis.md), [design](maintainer/templates/tutorial/design.md) |
 | **Decisions** | |
 | Reviews | [24-02-2026](maintainer/decisions/reviews/24-02-2026-architecture-review.md), [26-02-2026](maintainer/decisions/reviews/26-02-2026-progress-review.md), [sprint plan](maintainer/decisions/reviews/sprint-2-3-implementation-plan.md) |

@@ -167,7 +167,7 @@ This is the definitive reference for every file managed by the update system.
 
 **Note on `project.yml`**: Modified by 100% of users (repos, packs, docker, ports).
 New config sections are additive — code defaults handle missing fields. Schema-breaking
-changes use explicit migrations. See `analysis-v2.md` section 4.4.
+changes use explicit migrations. See `analysis.md` section 4.4.
 
 **Note on `.claude/skills/` in project scope:**
 For **base projects**, project-level skills are user-defined and not discovered.
@@ -541,7 +541,7 @@ for user reference and future `cco template sync` (not yet implemented).
 
 **For remote-installed projects** (`.cco-source` with remote URL):
 - Source: `templates/project/base/` for opinionated files
-- Remote changes: notify only (see analysis-v2.md section 7.6)
+- Remote changes: notify only (see analysis.md section 7.6)
 
 **Missing source fallback**: If `.cco-source` references a native template that
 no longer exists (e.g., `native:project/tutorial` but `templates/project/tutorial/`
@@ -560,7 +560,7 @@ personal templates".
 A future `cco template sync <project-name>` command will handle user template
 propagation using the same diff/merge engine. Design deferred to a future sprint.
 
-See `analysis-v2.md` section 5 for full template philosophy.
+See `analysis.md` section 5 for full template philosophy.
 
 ### 4.14 Additive Change Notifications (`changelog.yml`)
 

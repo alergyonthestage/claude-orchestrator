@@ -103,8 +103,8 @@ No automated tests needed (visual configuration). Verify manually:
 **Sprint**: 3 (differentiating feature)
 **Effort**: Medium-high (2-3 sessions)
 **Risk**: Low — opt-in, default unchanged
-**Analysis doc**: [`worktree-isolation.md`](../../features/worktree/analysis.md)
-**Design doc**: [`worktree-design.md`](../../features/worktree/design.md)
+**Analysis doc**: [`worktree-isolation.md`](../../integration/worktree/analysis.md)
+**Design doc**: [`worktree-design.md`](../../integration/worktree/design.md)
 
 ### Prerequisites
 

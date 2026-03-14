@@ -2,7 +2,6 @@
 
 **Date**: 2026-03-14 (revised)
 **Scope**: Architecture-level — cross-cutting analysis
-**Supersedes**: `analysis.md` (Sprint 5b pre-implementation analysis)
 **Related**: `design.md` (definitive design, updated in parallel)
 
 > This document establishes the resource taxonomy, change categories, and update

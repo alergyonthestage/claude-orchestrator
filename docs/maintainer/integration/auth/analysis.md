@@ -2,7 +2,7 @@
 
 > Date: 2026-02-24
 > Status: Approved — proceed to implementation
-> Related: [auth-design.md](./design.md) | [architecture.md](../../architecture/architecture.md) (ADR-11) | [worktree-isolation.md](../../features/worktree/analysis.md)
+> Related: [auth-design.md](./design.md) | [architecture.md](../../architecture/architecture.md) (ADR-11) | [worktree-isolation.md](../../integration/worktree/analysis.md)
 
 ---
 
@@ -15,7 +15,7 @@ Container sessions need to interact with external services — primarily GitHub 
 - **MCP GitHub**: works only if `GITHUB_TOKEN` is manually set in `secrets.env`, but there's no documented setup flow
 - **No per-project secrets**: all projects share `global/secrets.env` — different token scopes per project are not possible
 
-This is a blocker for the worktree workflow (see [worktree analysis](../../features/worktree/analysis.md)), which relies on Claude creating PRs and pushing during sessions.
+This is a blocker for the worktree workflow (see [worktree analysis](../../integration/worktree/analysis.md)), which relies on Claude creating PRs and pushing during sessions.
 
 ---
 

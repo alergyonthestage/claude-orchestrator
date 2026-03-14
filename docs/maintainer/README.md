@@ -6,15 +6,16 @@ This section contains the internal technical documentation of claude-orchestrato
 
 ## Directory Structure
 
-Documentation is organized into five macro-areas by domain:
+Documentation is organized into six macro-areas by domain:
 
 ```
 maintainer/
 ├── architecture/       Core system design, ADRs, requirements, security
-├── configuration/      Config hierarchy, packs, sharing, environment
-├── integration/        Docker, auth, browser MCP, agent teams
-├── features/           Sprint-specific feature designs (templates, vault, worktree...)
-└── decisions/          Roadmap, protocols, historical reviews
+├── configuration/      Config hierarchy, packs, sharing, update system, vault, environment
+├── integration/        Docker, auth, browser MCP, agent teams, worktree
+├── templates/          Native template designs (tutorial, future cco-develop)
+├── decisions/          Roadmap, protocols, historical reviews
+└── README.md           This file
 ```
 
 ---
@@ -30,47 +31,48 @@ Foundation documents and architectural decisions.
 
 ---
 
-## Configuration — Config Hierarchy & Sharing
+## Configuration — Config Lifecycle & Distribution
 
-Everything related to the four-tier configuration model, knowledge packs, and the Config Repo sharing system.
+Everything related to the four-tier configuration model, knowledge packs, update system, vault, and sharing.
 
-| Area | Design | Analysis |
-|------|--------|----------|
-| Scope & Context Hierarchy | [design](configuration/scope-hierarchy/design.md) | [analysis](configuration/scope-hierarchy/analysis.md) |
-| Knowledge Packs | [design](configuration/packs/design.md) | — |
-| Config Repo & Vault | [design](configuration/config-repo/design.md) | [analysis](configuration/config-repo/analysis.md) |
-| Config Sharing | [design](configuration/config-repo/sharing-design.md) | [analysis](configuration/config-repo/sharing-analysis.md) |
-| Environment Extensibility | [design](configuration/environment/design.md) | [analysis](configuration/environment/analysis.md) |
+| Area | Design | Analysis | Status |
+|------|--------|----------|--------|
+| Scope & Context Hierarchy | [design](configuration/scope-hierarchy/design.md) | [analysis](configuration/scope-hierarchy/analysis.md) | Completed |
+| Knowledge Packs | [design](configuration/packs/design.md) | — | Completed |
+| Environment Extensibility | [design](configuration/environment/design.md) | [analysis](configuration/environment/analysis.md) | Completed |
+| Sharing & Config Repo | [design](configuration/sharing/design.md) | [analysis](configuration/sharing/analysis.md) | Completed |
+| Sharing Enhancements (6b) | [design](configuration/sharing/sharing-design.md) | [analysis](configuration/sharing/sharing-analysis.md) | Completed |
+| Update System & Templates | [design](configuration/update-system/design.md) | [analysis](configuration/update-system/analysis.md) | Completed |
+| Vault & Multi-PC Sync | [design](configuration/vault/design.md) | [analysis](configuration/vault/analysis.md) | Completed |
 
-Additional: [implementation plan](configuration/config-repo/implementation-plan.md) (sharing)
+Additional: [implementation plan](configuration/sharing/implementation-plan.md) (sharing)
 
 ---
 
 ## Integration — Infrastructure & External Services
 
-Docker setup, authentication, browser automation, and agent team configuration.
+Docker setup, authentication, browser automation, agent teams, and git worktree isolation.
 
-| Area | Design | Analysis |
-|------|--------|----------|
-| Docker Infrastructure | [design](integration/docker/design.md) | — |
-| Docker Security (Proxy) | [design](integration/docker-security/design.md) | [analysis](integration/docker-security/analysis.md) |
-| Authentication & Secrets | [design](integration/auth/design.md) | [analysis](integration/auth/analysis.md) |
-| Browser MCP | [design](integration/browser-mcp/design.md) | [analysis](integration/browser-mcp/analysis.md) |
-| Agent Teams | — | [analysis](integration/agent-teams/analysis.md) |
+| Area | Design | Analysis | Status |
+|------|--------|----------|--------|
+| Docker Infrastructure | [design](integration/docker/design.md) | — | Completed |
+| Docker Security (Proxy) | [design](integration/docker-security/design.md) | [analysis](integration/docker-security/analysis.md) | Phase A+B done |
+| Authentication & Secrets | [design](integration/auth/design.md) | [analysis](integration/auth/analysis.md) | Completed |
+| Browser MCP | [design](integration/browser-mcp/design.md) | [analysis](integration/browser-mcp/analysis.md) | Completed |
+| Agent Teams | — | [analysis](integration/agent-teams/analysis.md) | Completed |
+| Git Worktree Isolation | [design](integration/worktree/design.md) | [analysis](integration/worktree/analysis.md) | Planned (Sprint 10) |
 
 ---
 
-## Features — Sprint Designs
+## Templates — Native Template Designs
 
-Design and analysis documents for specific sprint features. Includes both completed and planned work.
+Design and analysis documents for native templates distributed with claude-orchestrator. These templates serve the framework itself (learning, onboarding, development).
 
-| Feature | Design | Analysis | Status |
-|---------|--------|----------|--------|
-| Defaults & Templates (5b) | [design](features/defaults-templates-update/design.md) | [analysis](features/defaults-templates-update/analysis-v2.md) | Completed |
-| Tutorial Project (5) | [design](features/tutorial-project/design.md) | [analysis](features/tutorial-project/analysis.md) | Completed |
-| Update System | [design](features/update-system/design.md) | — | Completed |
-| Multi-PC Vault (7) | — | [analysis](features/vault-multipc/analysis.md) | Planned |
-| Git Worktree Isolation (10) | [design](features/worktree/design.md) | [analysis](features/worktree/analysis.md) | Planned |
+| Template | Design | Analysis | Status |
+|----------|--------|----------|--------|
+| Tutorial Project | [design](templates/tutorial/design.md) | [analysis](templates/tutorial/analysis.md) | Completed (Sprint 5) |
+
+Future: `cco-develop` template for framework maintainers.
 
 ---
 
@@ -79,7 +81,7 @@ Design and analysis documents for specific sprint features. Includes both comple
 Project-level decisions, planning, and historical snapshots.
 
 - [roadmap.md](decisions/roadmap.md) — development plan, priorities, and feature progress
-- [managed-integrations.md](decisions/managed-integrations.md) — 8-step protocol for adding new managed MCP servers
+- [managed-integrations.md](decisions/managed-integrations.md) — 9-step protocol for adding new managed MCP servers
 
 ### Reviews
 

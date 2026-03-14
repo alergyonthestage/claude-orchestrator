@@ -147,7 +147,7 @@ Opt-in git isolation for container sessions. When enabled, repos are mounted at 
 - Multiple merge/PR cycles during a single session via standard `gh pr create`
 - Branch `cco/<project>` persists across sessions; next `--worktree` start reuses it
 
-**Docs**: [analysis](../features/worktree/analysis.md) | [design](../features/worktree/design.md) | [ADR-10](../architecture/architecture.md)
+**Docs**: [analysis](../integration/worktree/analysis.md) | [design](../integration/worktree/design.md) | [ADR-10](../architecture/architecture.md)
 
 ---
 
@@ -258,7 +258,7 @@ rag:
 
 The broader `cco update` redesign (migrations + discovery, no automatic file changes) also addresses the root cause: the update system no longer attempts silent file modifications that could miss files or produce unexpected results.
 
-**See also**: `analysis-v2.md` section 4.4, `design.md` section 3.3.
+**See also**: `analysis.md` section 4.4, `design.md` section 3.3.
 
 ---
 
@@ -317,7 +317,7 @@ Vault profiles with branch-based isolation for multi-PC scenarios, memory separa
 - Backward compatible: vaults without profiles work unchanged (single branch on `main`)
 - Test coverage: 44 new profile tests + existing vault tests updated (698 total, 0 failures)
 
-**Docs**: [analysis](../features/vault-multipc/analysis-v2.md) | [design](../features/vault-multipc/design.md)
+**Docs**: [analysis](../configuration/vault/analysis.md) | [design](../configuration/vault/design.md)
 
 ---
 
@@ -347,7 +347,7 @@ Refactoring of `defaults/` layout, full template system with CLI management, and
 - `cco clean` extended: `--tmp` (dry-run artifacts), `--generated` (docker-compose.yml), `--all`
 - Vault I/O redirect fix: `/dev/tty` redirection with non-fatal fallback
 
-**Docs**: [analysis-v2](../features/defaults-templates-update/analysis-v2.md) | [design](../features/defaults-templates-update/design.md)
+**Docs**: [analysis](../configuration/update-system/analysis.md) | [design](../configuration/update-system/design.md)
 
 ---
 
@@ -365,7 +365,7 @@ Built-in interactive tutorial created by `cco init`. Users launch it with `cco s
 - Tutorial discovery in docs: overview.md, installation.md, first-project.md, README.md
 - Test coverage: 17 tutorial tests (dry-run compose, --force idempotency, setup.sh)
 
-**Docs**: [analysis](../features/tutorial-project/analysis.md) | [design](../features/tutorial-project/design.md)
+**Docs**: [analysis](../templates/tutorial/analysis.md) | [design](../templates/tutorial/design.md)
 
 ---
 
@@ -408,7 +408,7 @@ Unified design implementing both sharing/import and personal vault under the Con
 - Vault `.gitignore` template (excludes secrets, runtime files, session state)
 - Test coverage: 102 tests (pack install 26, project install 17, share 19, vault 40)
 
-**Docs**: [analysis](../configuration/config-repo/analysis.md) | [design](../configuration/config-repo/design.md)
+**Docs**: [analysis](../configuration/sharing/analysis.md) | [design](../configuration/sharing/design.md)
 
 ---
 
@@ -424,7 +424,7 @@ Enhancements to the Config Repo sharing system. Addresses naming issues, portabi
 - `cco pack internalize` — convert source-referencing packs to self-contained
 - Enhanced `cco project install` — auto-install pack dependencies, template variable resolution
 
-**Docs**: [analysis](../configuration/config-repo/sharing-analysis.md) | [design](../configuration/config-repo/sharing-design.md)
+**Docs**: [analysis](../configuration/sharing/sharing-analysis.md) | [design](../configuration/sharing/sharing-design.md)
 
 ---
 
@@ -493,7 +493,7 @@ Intelligent config merge system to update `projects/` and `global/` without losi
 - `cco start` updated: shows hint if schema_version < latest
 - Test suite: `tests/test_update.sh` (14 scenarios)
 
-**Docs**: [update-system/design.md](../features/update-system/design.md)
+**Docs**: [design](../configuration/update-system/design.md)
 
 ---
 

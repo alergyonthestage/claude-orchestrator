@@ -3,7 +3,7 @@
 **Status**: Implemented — Sprint 7-Vault complete
 **Date**: 2026-03-14
 **Scope**: Architecture-level
-**Analysis**: `analysis-v2.md` (same directory)
+**Analysis**: `analysis.md` (same directory)
 
 > This document is the authoritative reference for Sprint 7-Vault implementation.
 > It covers vault profiles, shared resource sync, memory separation, and memory
