@@ -76,10 +76,9 @@ When `--lang` is provided, `{{COMM_LANG}}` is set to that language. `{{DOCS_LANG
    - Replace {{DOCS_LANG}} with English
    - Replace {{CODE_LANG}} with English
 
-3. SYNC system files: defaults/global/.claude/ → user-config/global/.claude/ (always, even without --force)
-   - Overwrites skills, agents, rules, settings.json from defaults
-   - Preserves user-added files not in the defaults
-   - Removes deprecated paths from previous versions
+3. INITIALIZE update metadata
+   - Generate .cco-meta (schema_version, language choices, manifest hashes)
+   - Save .cco-base/ (copies of opinionated files for future diff/merge)
 
 4. CREATE user-config/projects/ directory (if needed)
 
@@ -278,7 +277,12 @@ Examples:
 5. CREATE directories
    - user-config/projects/<name>/claude-state/memory/
 
-6. PRINT
+6. INITIALIZE update metadata
+   - Generate .cco-meta (schema_version, template name, manifest hashes)
+   - Save .cco-base/ (copies of opinionated files for future diff/merge)
+   - If native template (not base): create .cco-source with native:<template-path>
+
+7. PRINT
    - "Project created at user-config/projects/<name>/"
    - "Edit project.yml to configure repos and settings"
    - "Run: cco start <name>"
@@ -648,7 +652,9 @@ be handled by a future `cco template sync` command. `project.yml` is user-owned
 and not discovered (new fields are additive with code defaults; schema changes
 use migrations).
 
-**Migration scopes**: `global`, `project`, `pack`, `template`. All run automatically.
+**Migration scopes**: `global`, `project`, `pack`, `template`. Global, pack, and
+template migrations always run (shared resources). Project migrations are scoped
+by `--project`/`--all`.
 
 **Flow**:
 

@@ -391,15 +391,18 @@ This file enables update discovery, version comparison, and source attribution.
 
 ```yaml
 # .cco-source — auto-generated, do not edit
-type: pack | project                    # resource type
-source:
-  url: https://github.com/team/config   # remote URL, or "native:<template-path>"
-  path: packs/my-pack                   # subdirectory in source (empty if root)
-  ref: main                             # branch, tag, or commit SHA
-  installed_at: 2026-03-01T10:00:00Z    # first install date
-  updated_at: 2026-03-14T10:00:00Z      # last update date
-  installed_hash: abc123                 # commit hash at install time
+# Format: source is a string (URL, "local", or "native:<kind>/<name>")
+type: pack                              # pack | project
+source: https://github.com/team/config  # URL, "local", or "native:project/<name>"
+path: packs/my-pack                     # subdirectory in source (remote only)
+ref: main                               # branch/tag/commit (remote only)
+installed: 2026-03-01                   # install date
+updated: 2026-03-14                     # last update date (remote only)
 ```
+
+The `source` field is a flat string: a URL for remote resources, `"local"` for
+locally created resources, or `"native:<kind>/<name>"` for native template projects.
+Additional fields (`path`, `ref`, `updated`) are present only for remote resources.
 
 **Who creates `.cco-source`:**
 

@@ -28,7 +28,7 @@ and ownership models.
 |--------|----------|-----------|
 | **When used** | `cco init`, `cco update --apply` | `cco project create`, `cco pack create` |
 | **How many** | One set (global) | Multiple (base, tutorial, user-defined...) |
-| **Update role** | Opinionated files: discoverable, on-demand merge | Base: opinionated source. Non-base/user: not tracked |
+| **Update role** | Opinionated files: discoverable, on-demand merge | Base: opinionated source. Non-base/user: not discoverable |
 | **Relationship to user files** | 1:1 mapping (default → installed file) | 1:N mapping (template → many projects) |
 | **Framework updates** | Discovery via `cco update`; apply via `--apply` | Base: `cco update`. Non-base/user: not auto-updated |
 
@@ -324,9 +324,19 @@ elif hash(installed) != hash(base) AND hash(new) != hash(base):
 
 elif hash(installed) != hash(base) AND hash(new) == hash(base):
     → USER_MODIFIED: user changed, framework didn't → skip (nothing to offer)
+
+elif base doesn't exist:
+    → BASE_MISSING: .cco-base/ entry absent (pre-bootstrap or deleted)
+    → Fallback: treat installed as base (assume user hasn't modified)
+    → Reconstruct .cco-base/ from current installed file
+    → Compare reconstructed base vs new → if different: UPDATE_AVAILABLE
+    → Note: may produce false UPDATE_AVAILABLE if user modified the file,
+      but this is the safest fallback (user can Skip or Keep)
 ```
 
 Discovery is **read-only**. No files are modified. No prompts are shown.
+The BASE_MISSING fallback reconstructs `.cco-base/` only during `--apply`
+(when the user confirms), not during discovery.
 
 ### 4.6 On-Demand Merge (`--apply`)
 
@@ -429,6 +439,13 @@ The `<file>` argument is matched against opinionated file paths in all scopes
 global and project), the user is prompted to disambiguate. Full path syntax
 `global:settings.json` or `project/myapp:settings.json` resolves unambiguously.
 
+**Flag composition rules:**
+- `--diff` and `--apply` respect the same scope as discovery (`--project`/`--all`)
+- `--diff --project myapp` shows diffs for global + myapp opinionated files
+- `--apply --project myapp` prompts for global + myapp files
+- `--apply --dry-run` is an error (conflicting intent). Use `--diff` to preview.
+- `--diff` without scope flags uses the default scope (global + all projects)
+
 **Non-interactive fallback**: When stdin is not a TTY (e.g., CI), `--apply`
 defaults to **(S)kip** for all files (safest choice). No silent modifications.
 
@@ -503,6 +520,14 @@ for user reference and future `cco template sync` (not yet implemented).
 - Source: `templates/project/base/` for opinionated files
 - Remote changes: notify only (see analysis-v2.md section 7.6)
 
+**Missing source fallback**: If `.cco-source` references a native template that
+no longer exists (e.g., `native:project/tutorial` but `templates/project/tutorial/`
+was removed), `cco update` emits a warning and falls back to base-only discovery:
+```
+⚠ Template 'tutorial' referenced by project 'my-tutorial' not found.
+  Falling back to base template for discovery.
+```
+
 ### 4.13 User Template Propagation — Future Command
 
 User template changes are NOT propagated by `cco update`. This is a non-negotiable
@@ -546,6 +571,19 @@ What's new in cco:
   Run 'cco update --news' for details and examples.
 ```
 
+**Location**: `<repo-root>/changelog.yml` — shipped in the cco repo, read by
+the host-side CLI (not inside Docker). `cco update` runs on the host, so no
+Docker mount needed.
+
+**Fallback**: If `changelog.yml` does not exist or is empty, notifications are
+silently skipped (no error). This ensures backward compatibility when updating
+from a version that predates the changelog mechanism.
+
+**`--news` and seen tracking**: Both the default `cco update` and `cco update --news`
+update `last_seen_changelog` after reporting. Running `--news` immediately after
+`cco update` shows the same entries with full details (examples, docs links)
+but does not re-show the summary on the next `cco update`.
+
 **Maintainer workflow**: Append entry with incremented `id` when adding an
 additive change. The entry is shown once to each user.
 
@@ -562,11 +600,16 @@ migrations/
 ```
 
 **Execution order in `cco update`:**
-1. Global migrations (affect `user-config/global/`)
-2. Pack migrations (iterate `user-config/packs/*/` with `.cco-meta`)
-3. User template migrations (iterate `user-config/templates/*/` with `.cco-meta`)
-4. Project migrations (per project in scope)
-5. Discovery (opinionated files) + additive notifications
+1. Global migrations — always (affect `user-config/global/`)
+2. Pack migrations — always (iterate `user-config/packs/*/` with `.cco-meta`)
+3. User template migrations — always (iterate `user-config/templates/*/` with `.cco-meta`)
+4. Project migrations — per project in scope (controlled by `--project`/`--all`)
+5. Additive notifications — always (from `changelog.yml`)
+6. Discovery — per project in scope (opinionated files)
+
+**Important**: Migration scope is absolute for global/pack/template — they always
+run regardless of `--project` or `--all` flags, because these are shared resources.
+Only project migrations and discovery are limited by scope flags.
 
 **Pack `.cco-meta` initialization:**
 - `cco pack create` and `cco pack install` create `.cco-meta` with
@@ -587,15 +630,36 @@ Resources with an authoritative source track their origin:
 
 ```yaml
 # .cco-source — auto-generated, do not edit
-type: pack | project
-source:
-  url: https://github.com/team/config   # or "native:project/tutorial"
-  path: packs/my-pack                   # subdirectory in source
-  ref: main                             # branch/tag/commit
-  installed_at: 2026-03-01T10:00:00Z
-  updated_at: 2026-03-14T10:00:00Z
-  installed_hash: abc123                 # commit hash at install time
+# Remote resource (pack or project installed from URL)
+type: pack
+source: https://github.com/team/config  # remote URL
+path: packs/my-pack                     # subdirectory in source repo
+ref: main                               # branch/tag/commit
+installed: 2026-03-01                   # install date
+updated: 2026-03-14                     # last update date
 ```
+
+```yaml
+# .cco-source — auto-generated, do not edit
+# Local resource (pack created locally)
+type: pack
+source: local                           # string "local" — no remote
+installed: 2026-03-01
+```
+
+```yaml
+# .cco-source — auto-generated, do not edit
+# Native template project (created from a cco-shipped template)
+type: project
+source: native:project/tutorial         # native template reference
+installed: 2026-03-14
+```
+
+**Format notes**: The `source` field is a string (not a mapping). For remote
+resources it is a URL, for local resources the literal string `"local"`, and
+for native template resources the string `"native:<kind>/<name>"`. Additional
+fields (`path`, `ref`, `updated`, `publish_target`) are present only for
+remote resources.
 
 **Created by:**
 - `cco pack install` → remote URL (already implemented)
@@ -735,6 +799,10 @@ cco clean --dry-run                # Preview any combination without deleting
 
 > **`.cco-base/` is NOT cleaned** by any `cco clean` variant. It is the
 > diff/merge ancestor and must not be deleted in normal operations.
+
+**Scope behavior**: `--project <name>` limits cleanup to that project's directory
+only. Global `.bak` files are NOT cleaned when `--project` is specified. Use
+`cco clean` (no `--project`) to clean both global and all project directories.
 
 ### 6.3 `.tmp/` Details
 
