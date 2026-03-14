@@ -309,3 +309,107 @@ test_vault_help_includes_profile() {
     run_cco vault --help
     assert_output_contains "profile"
 }
+
+# ── Phase 3: Selective sync ──────────────────────────────────────────
+
+test_vault_sync_with_profile_stages_shared() {
+    # With active profile, vault sync stages shared resources
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    run_cco vault profile create "work"
+
+    # Modify a shared resource (global config)
+    echo "# Updated" >> "$CCO_USER_CONFIG_DIR/global/.claude/CLAUDE.md"
+    run_cco vault sync "update global" --yes
+    assert_output_contains "Committed"
+}
+
+test_vault_sync_with_profile_stages_exclusive() {
+    # Profile-exclusive projects are staged
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    run_cco vault profile create "work"
+
+    # Manually add project to profile's sync list
+    cat > "$CCO_USER_CONFIG_DIR/.vault-profile" << 'YML'
+profile: work
+sync:
+  projects:
+    - test-proj
+  packs:
+    []
+YML
+
+    # Modify the project
+    echo "# Updated" >> "$CCO_USER_CONFIG_DIR/projects/test-proj/.claude/CLAUDE.md"
+    run_cco vault sync "update proj" --yes
+    assert_output_contains "Committed"
+}
+
+test_vault_sync_without_profile_stages_all() {
+    # Without profile, vault sync stages everything (backward compatible)
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+
+    echo "# New file" > "$CCO_USER_CONFIG_DIR/global/.claude/test-file.md"
+    run_cco vault sync "add test file" --yes
+    assert_output_contains "Committed"
+
+    # Verify file was committed
+    local committed
+    committed=$(git -C "$CCO_USER_CONFIG_DIR" show HEAD --name-only --format= | grep "test-file.md" || true)
+    [[ -n "$committed" ]] || fail "Expected test-file.md to be committed"
+}
+
+test_vault_sync_profile_does_not_stage_other_projects() {
+    # Projects not in profile sync list should NOT be staged
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+
+    # Create second project
+    run_cco project create "other-proj"
+    run_cco vault sync "add other-proj" --yes
+
+    # Create profile with only test-proj
+    run_cco vault profile create "work"
+    cat > "$CCO_USER_CONFIG_DIR/.vault-profile" << 'YML'
+profile: work
+sync:
+  projects:
+    - test-proj
+  packs:
+    []
+YML
+
+    # Modify both projects
+    echo "# mod-test" >> "$CCO_USER_CONFIG_DIR/projects/test-proj/.claude/CLAUDE.md"
+    echo "# mod-other" >> "$CCO_USER_CONFIG_DIR/projects/other-proj/.claude/CLAUDE.md"
+
+    run_cco vault sync "selective" --yes
+
+    # test-proj should be committed, other-proj should NOT
+    local committed_files
+    committed_files=$(git -C "$CCO_USER_CONFIG_DIR" show HEAD --name-only --format=)
+    echo "$committed_files" | grep -q "test-proj" || fail "Expected test-proj changes to be committed"
+    if echo "$committed_files" | grep -q "other-proj"; then
+        fail "Expected other-proj changes NOT to be committed"
+    fi
+}
+
+test_vault_sync_profile_stages_shared_packs() {
+    # Packs not in exclusive list are shared and should be staged
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+
+    # Create a pack
+    run_cco pack create "shared-pack"
+    run_cco vault sync "add pack" --yes
+
+    # Create profile (pack NOT in exclusive list → shared)
+    run_cco vault profile create "work"
+
+    # Modify shared pack
+    echo "# Updated" >> "$CCO_USER_CONFIG_DIR/packs/shared-pack/pack.yml"
+    run_cco vault sync "update pack" --yes
+    assert_output_contains "Committed"
+}

@@ -211,8 +211,57 @@ EOF
         message="snapshot $(date +%Y-%m-%d)"
     fi
 
-    # Commit
-    git -C "$vault_dir" add -A
+    # Commit — profile-scoped staging if active profile
+    local profile
+    profile=$(_get_active_profile)
+
+    if [[ -n "$profile" ]]; then
+        # With profile: stage only profile-declared paths
+        local -a paths=()
+
+        # Shared resources (always staged)
+        paths+=("global/" "templates/" ".gitignore" "manifest.yml" ".vault-profile")
+
+        # Profile-exclusive resources
+        local proj_list pack_list
+        proj_list=$(_profile_projects)
+        pack_list=$(_profile_packs)
+
+        if [[ -n "$proj_list" ]]; then
+            while IFS= read -r p; do
+                [[ -n "$p" ]] && paths+=("projects/$p/")
+            done <<< "$proj_list"
+        fi
+        if [[ -n "$pack_list" ]]; then
+            while IFS= read -r p; do
+                [[ -n "$p" ]] && paths+=("packs/$p/")
+            done <<< "$pack_list"
+        fi
+
+        # Shared packs (not in profile's exclusive list)
+        if [[ -d "$vault_dir/packs" ]]; then
+            for pack_dir in "$vault_dir"/packs/*/; do
+                [[ ! -d "$pack_dir" ]] && continue
+                local pack_name
+                pack_name=$(basename "$pack_dir")
+                local is_exclusive=false
+                if [[ -n "$pack_list" ]]; then
+                    while IFS= read -r ep; do
+                        [[ "$ep" == "$pack_name" ]] && is_exclusive=true && break
+                    done <<< "$pack_list"
+                fi
+                if ! $is_exclusive; then
+                    paths+=("packs/$pack_name/")
+                fi
+            done
+        fi
+
+        git -C "$vault_dir" add -A -- "${paths[@]}"
+    else
+        # Without profile: stage everything (backward compatible)
+        git -C "$vault_dir" add -A
+    fi
+
     git -C "$vault_dir" commit -q -m "vault: $message"
     ok "Committed: vault: $message"
 }
@@ -397,7 +446,7 @@ EOF
 }
 
 cmd_vault_push() {
-    local remote="${1:-}"
+    local remote=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -406,6 +455,7 @@ cmd_vault_push() {
 Usage: cco vault push [<remote>]
 
 Push vault commits to a remote (default: origin).
+With an active profile, also syncs shared resources to the default branch.
 EOF
                 return 0
                 ;;
@@ -417,14 +467,24 @@ EOF
     _check_vault
     remote="${remote:-origin}"
 
+    local vault_dir="$USER_CONFIG_DIR"
     local branch
-    branch=$(git -C "$USER_CONFIG_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)
-    git -C "$USER_CONFIG_DIR" push -u "$remote" "$branch"
+    branch=$(git -C "$vault_dir" rev-parse --abbrev-ref HEAD 2>/dev/null)
+
+    # Step 1: Push current branch
+    git -C "$vault_dir" push -u "$remote" "$branch"
     ok "Pushed to $remote/$branch"
+
+    # Step 2: If on a profile branch, sync shared resources to default branch
+    local profile
+    profile=$(_get_active_profile)
+    if [[ -n "$profile" ]]; then
+        _sync_shared_to_default "$vault_dir" "$remote" "$branch"
+    fi
 }
 
 cmd_vault_pull() {
-    local remote="${1:-}"
+    local remote=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -433,6 +493,7 @@ cmd_vault_pull() {
 Usage: cco vault pull [<remote>]
 
 Pull vault updates from a remote (default: origin).
+With an active profile, also syncs shared resources from the default branch.
 EOF
                 return 0
                 ;;
@@ -443,7 +504,23 @@ EOF
 
     _check_vault
     remote="${remote:-origin}"
-    git -C "$USER_CONFIG_DIR" pull "$remote"
+
+    local vault_dir="$USER_CONFIG_DIR"
+    local profile
+    profile=$(_get_active_profile)
+
+    if [[ -n "$profile" ]]; then
+        # With profile: fetch first, then pull, then sync shared
+        git -C "$vault_dir" fetch "$remote" 2>/dev/null || true
+    fi
+
+    # Pull current branch
+    git -C "$vault_dir" pull "$remote"
+
+    # If on a profile branch, sync shared resources from default branch
+    if [[ -n "$profile" ]]; then
+        _sync_shared_from_default "$vault_dir" "$remote"
+    fi
 }
 
 cmd_vault_status() {
@@ -1103,6 +1180,235 @@ EOF
     fi
 
     ok "Profile '$name' deleted"
+}
+
+# ── Shared resource sync helpers ──────────────────────────────────────
+
+# List shared resource paths (everything NOT exclusive to current profile)
+_list_shared_paths() {
+    local vault_dir="$1"
+    local paths=("global/" "templates/" ".gitignore" "manifest.yml")
+
+    # Shared packs (not in profile's exclusive list)
+    local exclusive_packs
+    exclusive_packs=$(_profile_packs)
+    if [[ -d "$vault_dir/packs" ]]; then
+        for pack_dir in "$vault_dir"/packs/*/; do
+            [[ ! -d "$pack_dir" ]] && continue
+            local pack_name
+            pack_name=$(basename "$pack_dir")
+            local is_exclusive=false
+            if [[ -n "$exclusive_packs" ]]; then
+                while IFS= read -r ep; do
+                    [[ "$ep" == "$pack_name" ]] && is_exclusive=true && break
+                done <<< "$exclusive_packs"
+            fi
+            if ! $is_exclusive; then
+                paths+=("packs/$pack_name/")
+            fi
+        done
+    fi
+
+    printf '%s\n' "${paths[@]}"
+}
+
+# Sync shared resources from profile branch to default branch (push direction)
+_sync_shared_to_default() {
+    local vault_dir="$1" remote="$2" profile_branch="$3"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    # Find shared files that differ between profile and default branch
+    local shared_paths=()
+    while IFS= read -r p; do
+        [[ -n "$p" ]] && shared_paths+=("$p")
+    done < <(_list_shared_paths "$vault_dir")
+
+    [[ ${#shared_paths[@]} -eq 0 ]] && return 0
+
+    local changed_files
+    changed_files=$(git -C "$vault_dir" diff "$default_branch" --name-only -- \
+        "${shared_paths[@]}" 2>/dev/null || true)
+
+    [[ -z "$changed_files" ]] && return 0
+
+    local file_count
+    file_count=$(echo "$changed_files" | grep -c . || true)
+
+    # Stash uncommitted work
+    local stashed=false
+    if [[ -n "$(git -C "$vault_dir" status --porcelain 2>/dev/null)" ]]; then
+        git -C "$vault_dir" stash -q
+        stashed=true
+    fi
+
+    # Checkout default branch
+    git -C "$vault_dir" checkout "$default_branch" -q
+
+    # Pull latest default branch
+    git -C "$vault_dir" pull "$remote" "$default_branch" -q 2>/dev/null || true
+
+    # Copy shared files from profile branch
+    local synced=0
+    while IFS= read -r file; do
+        [[ -z "$file" ]] && continue
+
+        # Check if file was also modified on default branch
+        local modified_on_default=false
+        local merge_base
+        merge_base=$(git -C "$vault_dir" merge-base "$default_branch" "$profile_branch" 2>/dev/null || true)
+        if [[ -n "$merge_base" ]]; then
+            local default_diff
+            default_diff=$(git -C "$vault_dir" diff "$merge_base" "$default_branch" --name-only -- "$file" 2>/dev/null || true)
+            [[ -n "$default_diff" ]] && modified_on_default=true
+        fi
+
+        if $modified_on_default; then
+            # Both sides modified — interactive conflict resolution
+            _resolve_shared_conflict "$vault_dir" "$file" "$profile_branch" "$default_branch"
+        else
+            # Only profile changed — copy from profile
+            git -C "$vault_dir" checkout "$profile_branch" -- "$file" 2>/dev/null || true
+        fi
+        ((synced++)) || true
+    done <<< "$changed_files"
+
+    if [[ $synced -gt 0 ]]; then
+        git -C "$vault_dir" add -A -- "${shared_paths[@]}"
+        git -C "$vault_dir" commit -q -m "sync: shared resources from profile '$profile_branch'" 2>/dev/null || true
+        git -C "$vault_dir" push "$remote" "$default_branch" -q 2>/dev/null || true
+    fi
+
+    # Return to profile branch
+    git -C "$vault_dir" checkout "$profile_branch" -q
+    $stashed && git -C "$vault_dir" stash pop -q 2>/dev/null || true
+
+    [[ $synced -gt 0 ]] && ok "Shared resources synced to $default_branch ($synced file(s))"
+}
+
+# Sync shared resources from default branch to profile branch (pull direction)
+_sync_shared_from_default() {
+    local vault_dir="$1" remote="$2"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    # Find shared files that differ between default and profile
+    local shared_paths=()
+    while IFS= read -r p; do
+        [[ -n "$p" ]] && shared_paths+=("$p")
+    done < <(_list_shared_paths "$vault_dir")
+
+    [[ ${#shared_paths[@]} -eq 0 ]] && return 0
+
+    local changed_files
+    changed_files=$(git -C "$vault_dir" diff "HEAD" "origin/$default_branch" --name-only -- \
+        "${shared_paths[@]}" 2>/dev/null || true)
+
+    [[ -z "$changed_files" ]] && return 0
+
+    local profile_branch
+    profile_branch=$(git -C "$vault_dir" rev-parse --abbrev-ref HEAD 2>/dev/null)
+
+    local synced=0
+    while IFS= read -r file; do
+        [[ -z "$file" ]] && continue
+
+        # Check if file was also modified locally
+        local modified_locally=false
+        local merge_base
+        merge_base=$(git -C "$vault_dir" merge-base HEAD "origin/$default_branch" 2>/dev/null || true)
+        if [[ -n "$merge_base" ]]; then
+            local local_diff
+            local_diff=$(git -C "$vault_dir" diff "$merge_base" HEAD --name-only -- "$file" 2>/dev/null || true)
+            [[ -n "$local_diff" ]] && modified_locally=true
+        fi
+
+        if $modified_locally; then
+            # Both sides modified — interactive conflict resolution
+            _resolve_shared_conflict "$vault_dir" "$file" "origin/$default_branch" "$profile_branch"
+        else
+            # Only default changed — copy from default
+            git -C "$vault_dir" checkout "origin/$default_branch" -- "$file" 2>/dev/null || true
+        fi
+        ((synced++)) || true
+    done <<< "$changed_files"
+
+    if [[ $synced -gt 0 ]]; then
+        git -C "$vault_dir" add -A -- "${shared_paths[@]}"
+        git -C "$vault_dir" commit -q -m "sync: shared resources from $default_branch" 2>/dev/null || true
+        ok "Synced $synced shared resource(s) from $default_branch"
+    fi
+}
+
+# Interactive conflict resolution for a shared resource file
+# $1=vault_dir $2=file $3=source_ref (theirs) $4=target_ref (ours)
+_resolve_shared_conflict() {
+    local vault_dir="$1" file="$2" source_ref="$3" target_ref="$4"
+
+    if [[ ! -t 0 ]]; then
+        warn "Shared resource conflict in $file — skipped (non-interactive)"
+        warn "  Run 'cco vault pull' interactively to resolve"
+        return 0
+    fi
+
+    echo "" >&2
+    echo -e "${BOLD}Shared resource conflict: $file${NC}" >&2
+    echo "  Modified locally AND on the other branch" >&2
+    echo "" >&2
+    echo "  [L] Keep local version" >&2
+    echo "  [R] Keep remote version" >&2
+    echo "  [M] 3-way merge (may produce conflict markers)" >&2
+    echo "  [D] Show diff" >&2
+    echo "" >&2
+
+    while true; do
+        printf "  Choice [L/R/M/D]: " >&2
+        local choice
+        read -r choice
+        case "$choice" in
+            [Ll])
+                # Keep local — no action needed
+                info "Keeping local version of $file"
+                return 0
+                ;;
+            [Rr])
+                # Take remote version
+                git -C "$vault_dir" checkout "$source_ref" -- "$file" 2>/dev/null || true
+                info "Using remote version of $file"
+                return 0
+                ;;
+            [Mm])
+                # 3-way merge using git merge-file
+                local tmpdir
+                tmpdir=$(mktemp -d)
+                local merge_base
+                merge_base=$(git -C "$vault_dir" merge-base HEAD "$source_ref" 2>/dev/null || true)
+                if [[ -n "$merge_base" ]]; then
+                    git -C "$vault_dir" show "$merge_base:$file" > "$tmpdir/base" 2>/dev/null || echo "" > "$tmpdir/base"
+                else
+                    echo "" > "$tmpdir/base"
+                fi
+                git -C "$vault_dir" show "$source_ref:$file" > "$tmpdir/theirs" 2>/dev/null || echo "" > "$tmpdir/theirs"
+                local current_file="$vault_dir/$file"
+                if git merge-file "$current_file" "$tmpdir/base" "$tmpdir/theirs" 2>/dev/null; then
+                    info "Merged $file cleanly"
+                else
+                    warn "Merged $file with conflict markers — edit manually"
+                fi
+                rm -rf "$tmpdir"
+                return 0
+                ;;
+            [Dd])
+                # Show diff
+                echo "" >&2
+                diff "$vault_dir/$file" <(git -C "$vault_dir" show "$source_ref:$file" 2>/dev/null) 2>/dev/null | head -50 >&2 || true
+                echo "" >&2
+                ;;
+            *)
+                echo "  Invalid choice. Use L, R, M, or D." >&2
+                ;;
+        esac
+    done
 }
 
 # ── Internal helpers ──────────────────────────────────────────────────
