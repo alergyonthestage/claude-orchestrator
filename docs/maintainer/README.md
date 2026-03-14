@@ -66,7 +66,7 @@ Design and analysis documents for specific sprint features. Includes both comple
 
 | Feature | Design | Analysis | Status |
 |---------|--------|----------|--------|
-| Defaults & Templates (5b) | [design](features/defaults-templates-update/design.md) | [analysis](features/defaults-templates-update/analysis.md) | Completed |
+| Defaults & Templates (5b) | [design](features/defaults-templates-update/design.md) | [analysis](features/defaults-templates-update/analysis-v2.md) | Completed |
 | Tutorial Project (5) | [design](features/tutorial-project/design.md) | [analysis](features/tutorial-project/analysis.md) | Completed |
 | Update System | [design](features/update-system/design.md) | — | Completed |
 | Multi-PC Vault (7) | — | [analysis](features/vault-multipc/analysis.md) | Planned |

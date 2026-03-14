@@ -10,7 +10,7 @@
 |-----------|------|
 | **macOS or Linux** | Windows not supported (WSL2 not tested) |
 | **Docker Desktop** (macOS) or **Docker Engine** (Linux) | Must be running |
-| **Bash 4+** | macOS includes bash 3.2 (`/bin/bash`) — sufficient for the CLI |
+| **Bash 3.2+** | macOS includes bash 3.2 (`/bin/bash`) — sufficient for the CLI |
 | **jq** | `brew install jq` (macOS) / `apt install jq` (Linux) |
 | **Claude Code account** | Pro, Team, Enterprise, or API key |
 

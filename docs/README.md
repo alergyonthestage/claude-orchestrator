@@ -88,7 +88,7 @@ Design docs and analysis by area:
 | Browser MCP | [analysis](maintainer/integration/browser-mcp/analysis.md), [design](maintainer/integration/browser-mcp/design.md) |
 | Agent teams | [analysis](maintainer/integration/agent-teams/analysis.md) |
 | **Features** | |
-| Defaults & Templates | [analysis](maintainer/features/defaults-templates-update/analysis.md), [design](maintainer/features/defaults-templates-update/design.md) |
+| Defaults & Templates | [analysis](maintainer/features/defaults-templates-update/analysis-v2.md), [design](maintainer/features/defaults-templates-update/design.md) |
 | Tutorial Project | [analysis](maintainer/features/tutorial-project/analysis.md), [design](maintainer/features/tutorial-project/design.md) |
 | Update system | [design](maintainer/features/update-system/design.md) |
 | Worktree isolation | [analysis](maintainer/features/worktree/analysis.md), [design](maintainer/features/worktree/design.md) |

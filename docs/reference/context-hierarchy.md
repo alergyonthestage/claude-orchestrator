@@ -33,7 +33,7 @@ Claude Code resolves settings from highest to lowest precedence:
 
 ## 3. Memory (CLAUDE.md) Resolution
 
-### 3.1 Loaded at Launch
+### 3.1 Always Loaded
 
 These files are loaded into Claude's context when the session starts:
 
