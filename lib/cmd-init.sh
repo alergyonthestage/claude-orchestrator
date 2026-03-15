@@ -101,7 +101,7 @@ EOF
                 printf '%s\t%s\n' "$rel" "$(_file_hash "$GLOBAL_DIR/.claude/$rel")"
             done
         ) | _generate_cco_meta "$meta_file" "$latest_schema" "$now" \
-            "$comm_lang" "$docs_lang" "$code_lang" "0"
+            "$comm_lang" "$docs_lang" "$code_lang" "0" "0"
 
         # Save base versions for future 3-way merge
         _save_all_base_versions "$GLOBAL_DIR/.claude/.cco/base" "$DEFAULTS_DIR/global/.claude" "global"

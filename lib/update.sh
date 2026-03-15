@@ -184,6 +184,17 @@ _sed_i() {
         sed -i "s|${pattern}|${replacement}|g" "$file"
 }
 
+# Update a key: value field in-place, or append it if missing.
+# Usage: _sed_i_or_append <file> <key> <value>
+_sed_i_or_append() {
+    local file="$1" key="$2" value="$3"
+    if grep -q "^${key}:" "$file" 2>/dev/null; then
+        _sed_i "$file" "^${key}: .*" "${key}: ${value}"
+    else
+        printf '%s: %s\n' "$key" "$value" >> "$file"
+    fi
+}
+
 # ── .cco/meta I/O ────────────────────────────────────────────────────
 
 # Read schema_version from .cco/meta. Returns 0 if file missing.
@@ -1256,24 +1267,14 @@ _update_changelog_notifications() {
         _show_changelog_news "$last_read"
         # News updates both trackers
         if [[ "$dry_run" != "true" && -f "$meta_file" && "$latest_id" -gt "$last_read" ]]; then
-            if grep -q '^last_read_changelog:' "$meta_file"; then
-                _sed_i "$meta_file" "^last_read_changelog: .*" "last_read_changelog: $latest_id"
-            else
-                # Append field if missing (backward compat with older meta files)
-                sed -i'' "s/^last_seen_changelog: .*/last_seen_changelog: $latest_id\nlast_read_changelog: $latest_id/" "$meta_file" 2>/dev/null || \
-                    sed -i '' "s/^last_seen_changelog: .*/last_seen_changelog: $latest_id\nlast_read_changelog: $latest_id/" "$meta_file"
-            fi
-            if grep -q '^last_seen_changelog:' "$meta_file"; then
-                _sed_i "$meta_file" "^last_seen_changelog: .*" "last_seen_changelog: $latest_id"
-            fi
+            _sed_i_or_append "$meta_file" "last_read_changelog" "$latest_id"
+            _sed_i_or_append "$meta_file" "last_seen_changelog" "$latest_id"
         fi
     else
         _show_changelog_summary "$last_seen" "$last_read"
         # Discovery updates only last_seen
         if [[ "$dry_run" != "true" && -f "$meta_file" && "$latest_id" -gt "$last_seen" ]]; then
-            if grep -q '^last_seen_changelog:' "$meta_file"; then
-                _sed_i "$meta_file" "^last_seen_changelog: .*" "last_seen_changelog: $latest_id"
-            fi
+            _sed_i_or_append "$meta_file" "last_seen_changelog" "$latest_id"
         fi
     fi
 }

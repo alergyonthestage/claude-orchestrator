@@ -331,7 +331,8 @@ EOF
 
     # ── Generate docker-compose.yml ──────────────────────────────────
     mkdir -p "$output_dir/.cco"
-    local compose_file="$output_dir/.cco/docker-compose.yml"
+    local compose_file
+    compose_file=$(_cco_project_compose "$output_dir")
 
     {
         cat <<YAML

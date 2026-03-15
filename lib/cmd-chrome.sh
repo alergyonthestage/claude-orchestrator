@@ -38,13 +38,13 @@ Options:
 
 Port resolution priority:
   1. --port flag (explicit)
-  2. --project → .managed/.browser-port file (effective runtime port)
+  2. --project → .cco/managed/.browser-port file (effective runtime port)
   3. --project → project.yml browser.cdp_port
   4. Default: 9222
 EOF
 }
 
-# Resolve port: --port flag > .managed/.browser-port file > project.yml > default 9222
+# Resolve port: --port flag > .cco/managed/.browser-port file > project.yml > default 9222
 _chrome_resolve_port() {
     local opt_port="" opt_project=""
     while [[ $# -gt 0 ]]; do

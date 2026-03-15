@@ -148,9 +148,14 @@ EOF
         for pattern in "${_VAULT_SECRET_PATTERNS[@]}"; do
             local basename_file
             basename_file=$(basename "$file")
-            # Match exact name or glob pattern
-            if [[ "$basename_file" == $pattern ]]; then
+            # Match exact name, glob pattern on basename, or path suffix
+            if [[ "$basename_file" == $pattern || "$file" == *"$pattern" ]]; then
                 secret_files+=("$file")
+                break
+            fi
+            # Directory entries (e.g. ".cco/"): check if pattern starts with the dir path
+            if [[ "$file" == */ && "$pattern" == "${file}"* ]]; then
+                secret_files+=("$file (contains $pattern)")
                 break
             fi
         done
@@ -761,7 +766,7 @@ _vault_auto_commit() {
             local basename_file
             basename_file=$(basename "$file")
             for pattern in "${_VAULT_SECRET_PATTERNS[@]}"; do
-                if [[ "$basename_file" == $pattern ]]; then
+                if [[ "$basename_file" == $pattern || "$file" == *"$pattern" ]]; then
                     is_secret=true
                     break
                 fi
