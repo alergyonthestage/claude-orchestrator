@@ -1096,17 +1096,38 @@ _interactive_apply() {
 
 # Read changelog entries from changelog.yml.
 # Output: one line per entry as "id\tdate\ttitle\tdescription"
+# Supports YAML folded (>) and literal (|) block scalars for description.
 _read_changelog_entries() {
     local changelog="$REPO_ROOT/changelog.yml"
     [[ ! -f "$changelog" ]] && return 0
 
     # Parse YAML entries — simple line-based parser
-    local in_entry=false
+    local in_entry=false in_desc=false
     local entry_id="" entry_date="" entry_title="" entry_desc=""
 
     while IFS= read -r line; do
         # Strip leading whitespace for matching (entries may be indented under `entries:`)
         local trimmed="${line#"${line%%[![:space:]]*}"}"
+
+        # Check if this is a continuation line for a multi-line description.
+        # Continuation lines are non-empty, don't start a new field, and appear
+        # after a description: > or description: | declaration.
+        if $in_desc; then
+            case "$trimmed" in
+                "- id:"*|"date:"*|"title:"*|"type:"*|"description:"*|"- date:"*|"- title:"*|"- type:"*|"- description:"*)
+                    in_desc=false
+                    ;;
+                "")
+                    # Empty line inside block scalar — skip (YAML treats as paragraph break)
+                    ;;
+                *)
+                    # Continuation line — accumulate into description
+                    entry_desc="${entry_desc:+$entry_desc }${trimmed}"
+                    continue
+                    ;;
+            esac
+        fi
+
         case "$trimmed" in
             "- id:"*)
                 # Emit previous entry if any
@@ -1116,6 +1137,7 @@ _read_changelog_entries() {
                 entry_id="${trimmed#*: }"
                 entry_date="" entry_title="" entry_desc=""
                 in_entry=true
+                in_desc=false
                 ;;
             "date:"*|"- date:"*)
                 $in_entry && entry_date="${trimmed#*: }" && entry_date="${entry_date%\"}" && entry_date="${entry_date#\"}"
@@ -1124,7 +1146,20 @@ _read_changelog_entries() {
                 $in_entry && entry_title="${trimmed#*: }" && entry_title="${entry_title%\"}" && entry_title="${entry_title#\"}"
                 ;;
             "description:"*|"- description:"*)
-                $in_entry && entry_desc="${trimmed#*: }" && entry_desc="${entry_desc%\"}" && entry_desc="${entry_desc#\"}"
+                if $in_entry; then
+                    local desc_val="${trimmed#*: }"
+                    desc_val="${desc_val%\"}"
+                    desc_val="${desc_val#\"}"
+                    if [[ "$desc_val" == ">" || "$desc_val" == "|" || "$desc_val" == ">-" || "$desc_val" == "|-" ]]; then
+                        # Block scalar — actual content is on continuation lines
+                        entry_desc=""
+                        in_desc=true
+                    else
+                        # Inline value
+                        entry_desc="$desc_val"
+                        in_desc=false
+                    fi
+                fi
                 ;;
         esac
     done < "$changelog"
