@@ -545,7 +545,7 @@ EOF
             [[ ! -d "$dir" ]] && continue
             local pack_name
             pack_name=$(basename "$dir")
-            local source_file="$dir/.cco-source"
+            local source_file="$dir/.cco/source"
             [[ ! -f "$source_file" ]] && continue
             local source_url
             source_url=$(yml_get "$source_file" "source")
@@ -596,8 +596,8 @@ EOF
     [[ ! -d "$PACKS_DIR/$name" ]] && die "Pack '$name' not found"
 
     local archive="${name}.tar.gz"
-    tar czf "$archive" -C "$PACKS_DIR" --exclude='.cco-source' \
-        --exclude='.cco-install-tmp' "$name"
+    tar czf "$archive" -C "$PACKS_DIR" --exclude='.cco/source' \
+        --exclude='.cco/install-tmp' "$name"
     ok "Exported pack to $archive"
 }
 
@@ -621,8 +621,8 @@ _install_pack_from_dir() {
             rm -rf "$target_dir"
         else
             local existing_source=""
-            if [[ -f "$target_dir/.cco-source" ]]; then
-                existing_source=$(yml_get "$target_dir/.cco-source" "source")
+            if [[ -f "$target_dir/.cco/source" ]]; then
+                existing_source=$(yml_get "$target_dir/.cco/source" "source")
             fi
 
             if [[ "$existing_source" == "$url" ]]; then
@@ -642,10 +642,11 @@ _install_pack_from_dir() {
     # Remove .git if present (from single-pack repos)
     rm -rf "$target_dir/.git"
 
-    # Write .cco-source metadata
+    # Write .cco/source metadata
     local now
     now=$(date +%Y-%m-%d)
-    cat > "$target_dir/.cco-source" <<YAML
+    mkdir -p "$target_dir/.cco"
+    cat > "$target_dir/.cco/source" <<YAML
 source: $url
 path: ${path:-}
 ref: ${ref:-}
@@ -661,10 +662,10 @@ YAML
 _update_single_pack() {
     local name="$1"
     local force="${2:-false}"
-    local source_file="$PACKS_DIR/$name/.cco-source"
+    local source_file="$PACKS_DIR/$name/.cco/source"
 
     if [[ ! -f "$source_file" ]]; then
-        die "Pack '$name' has no .cco-source — cannot determine remote source"
+        die "Pack '$name' has no .cco/source — cannot determine remote source"
     fi
 
     local source_url source_ref source_path
@@ -698,12 +699,12 @@ _update_single_pack() {
     # Install (force=true since we're explicitly updating)
     _install_pack_from_dir "$remote_dir" "$name" "$source_url" "$source_ref" "$source_path" true
 
-    # Update the 'updated' date in .cco-source
+    # Update the 'updated' date in .cco/source
     local now
     now=$(date +%Y-%m-%d)
-    if [[ -f "$PACKS_DIR/$name/.cco-source" ]]; then
-        sed -i '' "s/^updated: .*/updated: $now/" "$PACKS_DIR/$name/.cco-source" 2>/dev/null || \
-            sed -i "s/^updated: .*/updated: $now/" "$PACKS_DIR/$name/.cco-source"
+    if [[ -f "$PACKS_DIR/$name/.cco/source" ]]; then
+        sed -i '' "s/^updated: .*/updated: $now/" "$PACKS_DIR/$name/.cco/source" 2>/dev/null || \
+            sed -i "s/^updated: .*/updated: $now/" "$PACKS_DIR/$name/.cco/source"
     fi
 
     # Update manifest.yml
@@ -834,7 +835,7 @@ Publish a pack to a remote Config Repo.
 
 Arguments:
   <name>             Pack to publish
-  <remote>           Remote name or URL (default: from .cco-source publish_target)
+  <remote>           Remote name or URL (default: from .cco/source publish_target)
 
 Options:
   --message <msg>    Commit message (default: "publish pack <name>")
@@ -892,7 +893,7 @@ EOF
         elif ! $force; then
             local diff_summary
             diff_summary=$(diff -rq "$pack_dir" "$tmpdir/packs/$name" 2>/dev/null \
-                | grep -v '.cco-source' | grep -v '.cco-install-tmp' | head -10)
+                | grep -v '.cco/source' | grep -v '.cco/install-tmp' | head -10)
             if [[ -n "$diff_summary" ]]; then
                 warn "Pack '$name' already exists on remote. Differences:"
                 echo "$diff_summary" | sed 's/^/  /'
@@ -914,8 +915,8 @@ EOF
     cp -R "$pack_dir" "$tmpdir/packs/$name"
 
     # Remove local-only files
-    rm -rf "$tmpdir/packs/$name/.cco-source"
-    rm -rf "$tmpdir/packs/$name/.cco-install-tmp"
+    rm -rf "$tmpdir/packs/$name/.cco/source"
+    rm -rf "$tmpdir/packs/$name/.cco"
 
     # Internalize if pack has knowledge.source
     local k_source
@@ -975,7 +976,7 @@ EOF
     git -C "$tmpdir" push origin HEAD >/dev/null 2>&1 \
         || { _cleanup_clone "$tmpdir"; die "Failed to push to $remote_url"; }
 
-    # Update local .cco-source with publish_target
+    # Update local .cco/source with publish_target
     if [[ -n "$remote_name" ]]; then
         _update_publish_target "$pack_dir" "$remote_name"
     fi
@@ -985,7 +986,7 @@ EOF
     ok "Published pack '$name' to $remote_url"
 }
 
-# Resolve remote for publish: name → URL, with fallback to .cco-source
+# Resolve remote for publish: name → URL, with fallback to .cco/source
 _resolve_publish_remote() {
     local remote_arg="$1" pack_dir="$2"
     # Output: sets _pub_remote_url and _pub_remote_name in caller scope
@@ -1007,10 +1008,10 @@ _resolve_publish_remote() {
         die "Remote '$remote_arg' not found. Register with 'cco remote add $remote_arg <url>'."
     fi
 
-    # Try .cco-source publish_target
-    if [[ -f "$pack_dir/.cco-source" ]]; then
+    # Try .cco/source publish_target
+    if [[ -f "$pack_dir/.cco/source" ]]; then
         local target
-        target=$(grep '^publish_target:' "$pack_dir/.cco-source" 2>/dev/null \
+        target=$(grep '^publish_target:' "$pack_dir/.cco/source" 2>/dev/null \
             | sed 's/^publish_target: *//' | tr -d '"'"'")
         if [[ -n "$target" ]]; then
             local resolved
@@ -1019,17 +1020,17 @@ _resolve_publish_remote() {
                 eval "$4=\$target"
                 return 0
             fi
-            die "publish_target '$target' in .cco-source is not a registered remote."
+            die "publish_target '$target' in .cco/source is not a registered remote."
         fi
     fi
 
-    die "No remote specified and no publish_target in .cco-source. Usage: cco pack publish <name> <remote>"
+    die "No remote specified and no publish_target in .cco/source. Usage: cco pack publish <name> <remote>"
 }
 
-# Update .cco-source with publish_target
+# Update .cco/source with publish_target
 _update_publish_target() {
     local pack_dir="$1" target="$2"
-    local source_file="$pack_dir/.cco-source"
+    local source_file="$pack_dir/.cco/source"
 
     if [[ -f "$source_file" ]]; then
         if grep -q '^publish_target:' "$source_file" 2>/dev/null; then

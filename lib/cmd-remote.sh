@@ -6,7 +6,7 @@
 # Dependencies: colors.sh, utils.sh
 # Globals: USER_CONFIG_DIR
 
-_remotes_file() { echo "$USER_CONFIG_DIR/.cco-remotes"; }
+_remotes_file() { _cco_remotes_file; }
 
 # ── Public helpers (used by other commands) ──────────────────────────
 
@@ -147,7 +147,7 @@ _cmd_remote_remove() {
         local -a affected=()
         for pack_dir in "$PACKS_DIR"/*/; do
             [[ ! -d "$pack_dir" ]] && continue
-            local source_file="$pack_dir/.cco-source"
+            local source_file="$pack_dir/.cco/source"
             [[ ! -f "$source_file" ]] && continue
             local target
             target=$(grep '^publish_target:' "$source_file" 2>/dev/null \
@@ -161,7 +161,7 @@ _cmd_remote_remove() {
         fi
     fi
 
-    # Remove from .cco-remotes (both url and token lines)
+    # Remove from .cco/remotes (both url and token lines)
     local tmpfile
     tmpfile=$(mktemp)
     grep -v "^${name}=" "$rf" | grep -v "^${name}\.token=" > "$tmpfile"
@@ -329,7 +329,7 @@ EOF
 Usage: cco remote set-token <name> <token>
 
 Save an auth token for a registered remote. The token is stored
-in .cco-remotes (gitignored) and used automatically for HTTPS
+in .cco/remotes (gitignored) and used automatically for HTTPS
 operations (install, update, publish).
 EOF
                         return 0
