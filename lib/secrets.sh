@@ -40,14 +40,17 @@ load_global_secrets() {
 
 # DEPRECATED: Use migrations/project/001_memory_to_claude_state.sh instead.
 # Kept for backward compatibility with cmd-start.sh (users who haven't run cco update).
+# Uses .cco/claude-state/ (post-consolidation path) with fallback for legacy installs.
 migrate_memory_to_claude_state() {
     local project_dir="$1"
-    if [[ -d "$project_dir/memory" && ! -d "$project_dir/claude-state" ]]; then
-        info "Migrating $project_dir/memory → claude-state/memory (one-time)"
-        mkdir -p "$project_dir/claude-state"
-        mv "$project_dir/memory" "$project_dir/claude-state/memory"
+    local cs_dir
+    cs_dir=$(_cco_project_claude_state "$project_dir")
+    if [[ -d "$project_dir/memory" && ! -d "$cs_dir" ]]; then
+        info "Migrating $project_dir/memory → $cs_dir/memory (one-time)"
+        mkdir -p "$cs_dir"
+        mv "$project_dir/memory" "$cs_dir/memory"
     fi
-    mkdir -p "$project_dir/claude-state/memory"
+    mkdir -p "$cs_dir" "$project_dir/memory"
 }
 
 # DEPRECATED: Use migrations/global/001_managed_scope.sh instead.

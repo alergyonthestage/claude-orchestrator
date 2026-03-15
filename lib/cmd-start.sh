@@ -165,7 +165,7 @@ EOF
     [[ -z "$repos_check" ]] && warn "No repositories defined in project.yml. Work inside the container will not persist unless saved via extra_mounts."
 
     # Check for available updates
-    local _global_meta="$GLOBAL_DIR/.claude/.cco/meta"
+    local _global_meta; _global_meta=$(_cco_global_meta)
     if [[ -f "$_global_meta" ]]; then
         local _current_schema _latest_schema
         _current_schema=$(_read_cco_meta "$_global_meta")

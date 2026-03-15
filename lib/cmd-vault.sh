@@ -28,6 +28,9 @@ projects/*/rag-data/
 # Global meta
 global/.claude/.cco/meta
 
+# Legacy pack manifest (inside .claude/)
+projects/*/.claude/.cco/pack-manifest
+
 # Pack install temporary files
 packs/*/.cco/install-tmp/
 
