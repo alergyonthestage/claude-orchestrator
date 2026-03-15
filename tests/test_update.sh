@@ -2,9 +2,9 @@
 # tests/test_update.sh — cco update command tests
 #
 # Verifies the update system: file change detection, conflict resolution,
-# migrations, .cco-meta generation, and dry-run mode.
+# migrations, .cco/meta generation, and dry-run mode.
 
-# ── Helper: init a global dir with .cco-meta ─────────────────────────
+# ── Helper: init a global dir with .cco/meta ─────────────────────────
 
 # Run cco init and return tmpdir. Sets up CCO env vars.
 _setup_initialized() {
@@ -17,10 +17,10 @@ _setup_initialized() {
 # ── Tests ─────────────────────────────────────────────────────────────
 
 test_update_first_run_no_meta() {
-    # First update on an install that has no .cco-meta should create it
+    # First update on an install that has no .cco/meta should create it
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    # Simulate pre-update install (no .cco-meta)
+    # Simulate pre-update install (no .cco/meta)
     setup_global_from_defaults "$tmpdir"
     # Substitute language placeholders manually (as old init would)
     sed -i "s/{{COMM_LANG}}/English/g" "$CCO_GLOBAL_DIR/.claude/rules/language.md"
@@ -28,10 +28,10 @@ test_update_first_run_no_meta() {
     sed -i "s/{{CODE_LANG}}/English/g" "$CCO_GLOBAL_DIR/.claude/rules/language.md"
 
     run_cco update
-    assert_file_exists "$CCO_GLOBAL_DIR/.claude/.cco-meta" \
-        "update should generate .cco-meta"
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco-meta" "schema_version:"
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco-meta" "manifest:"
+    assert_file_exists "$CCO_GLOBAL_DIR/.claude/.cco/meta" \
+        "update should generate .cco/meta"
+    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco/meta" "schema_version:"
+    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco/meta" "manifest:"
 }
 
 test_update_no_changes() {
@@ -203,8 +203,8 @@ test_update_migrations_run_in_order() {
     sed -i "s/{{DOCS_LANG}}/English/g" "$CCO_GLOBAL_DIR/.claude/rules/language.md"
     sed -i "s/{{CODE_LANG}}/English/g" "$CCO_GLOBAL_DIR/.claude/rules/language.md"
 
-    # Create .cco-meta with schema_version 0
-    create_cco_meta "$CCO_GLOBAL_DIR/.claude/.cco-meta" "schema_version: 0
+    # Create .cco/meta with schema_version 0
+    create_cco_meta "$CCO_GLOBAL_DIR/.claude/.cco/meta" "schema_version: 0
 created_at: 2026-01-01T00:00:00Z
 updated_at: 2026-01-01T00:00:00Z
 
@@ -217,7 +217,7 @@ manifest:"
 
     run_cco update
     # Schema version should be updated to latest (currently 7: migration 001-007)
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco-meta" "schema_version: 7"
+    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco/meta" "schema_version: 7"
 }
 
 test_update_migration_failure_stops() {
@@ -240,8 +240,8 @@ MIGRATION_DESC="Test failure migration"
 migrate() { return 1; }
 MIGEOF
 
-    # Create .cco-meta with schema_version 0
-    create_cco_meta "$CCO_GLOBAL_DIR/.claude/.cco-meta" "schema_version: 0
+    # Create .cco/meta with schema_version 0
+    create_cco_meta "$CCO_GLOBAL_DIR/.claude/.cco/meta" "schema_version: 0
 created_at: 2026-01-01T00:00:00Z
 updated_at: 2026-01-01T00:00:00Z
 
@@ -261,13 +261,13 @@ manifest:"
 }
 
 test_update_init_creates_cco_meta() {
-    # cco init should generate a correct .cco-meta file
+    # cco init should generate a correct .cco/meta file
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     run_cco init --lang "Italian:Italian:English"
 
-    local meta="$CCO_GLOBAL_DIR/.claude/.cco-meta"
-    assert_file_exists "$meta" ".cco-meta should be created by init"
+    local meta="$CCO_GLOBAL_DIR/.claude/.cco/meta"
+    assert_file_exists "$meta" ".cco/meta should be created by init"
     assert_file_contains "$meta" "schema_version:"
     assert_file_contains "$meta" "communication: Italian"
     assert_file_contains "$meta" "documentation: Italian"
@@ -293,8 +293,8 @@ test_update_language_preserved() {
 
     # Language should still be Italian
     assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/language.md" "Italian"
-    # .cco-meta should still have Italian
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco-meta" "communication: Italian"
+    # .cco/meta should still have Italian
+    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco/meta" "communication: Italian"
 }
 
 test_update_help() {
@@ -454,7 +454,7 @@ test_migration_005_renames_setup_with_build_content() {
     printf '#!/bin/bash\napt-get update && apt-get install -y vim\n' > "$CCO_GLOBAL_DIR/setup.sh"
 
     # Set schema_version to 4 (before migration 005)
-    create_cco_meta "$CCO_GLOBAL_DIR/.claude/.cco-meta" "schema_version: 4
+    create_cco_meta "$CCO_GLOBAL_DIR/.claude/.cco/meta" "schema_version: 4
 created_at: 2026-01-01T00:00:00Z
 updated_at: 2026-01-01T00:00:00Z
 
@@ -484,7 +484,7 @@ test_migration_005_empty_setup_creates_templates() {
     # Simulate pre-migration: setup.sh with only comments
     printf '#!/bin/bash\n# Global setup\n' > "$CCO_GLOBAL_DIR/setup.sh"
 
-    create_cco_meta "$CCO_GLOBAL_DIR/.claude/.cco-meta" "schema_version: 4
+    create_cco_meta "$CCO_GLOBAL_DIR/.claude/.cco/meta" "schema_version: 4
 created_at: 2026-01-01T00:00:00Z
 updated_at: 2026-01-01T00:00:00Z
 
@@ -512,7 +512,7 @@ test_migration_005_both_files_exist_warns() {
     printf '#!/bin/bash\napt-get install -y vim\n' > "$CCO_GLOBAL_DIR/setup-build.sh"
     printf '#!/bin/bash\napt-get install -y curl\n' > "$CCO_GLOBAL_DIR/setup.sh"
 
-    create_cco_meta "$CCO_GLOBAL_DIR/.claude/.cco-meta" "schema_version: 4
+    create_cco_meta "$CCO_GLOBAL_DIR/.claude/.cco/meta" "schema_version: 4
 created_at: 2026-01-01T00:00:00Z
 updated_at: 2026-01-01T00:00:00Z
 
@@ -538,7 +538,7 @@ test_migration_005_idempotent() {
 
     printf '#!/bin/bash\napt-get install -y vim\n' > "$CCO_GLOBAL_DIR/setup.sh"
 
-    create_cco_meta "$CCO_GLOBAL_DIR/.claude/.cco-meta" "schema_version: 4
+    create_cco_meta "$CCO_GLOBAL_DIR/.claude/.cco/meta" "schema_version: 4
 created_at: 2026-01-01T00:00:00Z
 updated_at: 2026-01-01T00:00:00Z
 
@@ -669,8 +669,8 @@ test_update_discovery_mode_no_file_changes() {
     # Save user file content before update
     local before_hash; before_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" | cut -d' ' -f1)
     local before_base_hash=""
-    [[ -f "$CCO_GLOBAL_DIR/.claude/.cco-base/rules/workflow.md" ]] && \
-        before_base_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/.cco-base/rules/workflow.md" | cut -d' ' -f1)
+    [[ -f "$CCO_GLOBAL_DIR/.claude/.cco/base/rules/workflow.md" ]] && \
+        before_base_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/.cco/base/rules/workflow.md" | cut -d' ' -f1)
 
     run_cco update
     assert_output_contains "update"
@@ -679,11 +679,11 @@ test_update_discovery_mode_no_file_changes() {
     local after_hash; after_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" | cut -d' ' -f1)
     [[ "$before_hash" == "$after_hash" ]] || fail "Discovery mode modified installed file"
 
-    # .cco-base/ must NOT be updated
+    # .cco/base/ must NOT be updated
     local after_base_hash=""
-    [[ -f "$CCO_GLOBAL_DIR/.claude/.cco-base/rules/workflow.md" ]] && \
-        after_base_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/.cco-base/rules/workflow.md" | cut -d' ' -f1)
-    [[ "$before_base_hash" == "$after_base_hash" ]] || fail "Discovery mode updated .cco-base/"
+    [[ -f "$CCO_GLOBAL_DIR/.claude/.cco/base/rules/workflow.md" ]] && \
+        after_base_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/.cco/base/rules/workflow.md" | cut -d' ' -f1)
+    [[ "$before_base_hash" == "$after_base_hash" ]] || fail "Discovery mode updated .cco/base/"
 
     # Restore
     cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
@@ -732,8 +732,8 @@ entries:
     description: "A test description for news mode"
 YML
 
-    # Set both trackers to 0 in .cco-meta
-    local meta="$CCO_GLOBAL_DIR/.claude/.cco-meta"
+    # Set both trackers to 0 in .cco/meta
+    local meta="$CCO_GLOBAL_DIR/.claude/.cco/meta"
     if grep -q '^last_seen_changelog:' "$meta"; then
         sed -i "s/^last_seen_changelog: .*/last_seen_changelog: 0/" "$meta"
     fi
@@ -767,7 +767,7 @@ entries:
 YML
 
     # Set both trackers to 1 (already seen and read)
-    local meta="$CCO_GLOBAL_DIR/.claude/.cco-meta"
+    local meta="$CCO_GLOBAL_DIR/.claude/.cco/meta"
     if grep -q '^last_seen_changelog:' "$meta"; then
         sed -i "s/^last_seen_changelog: .*/last_seen_changelog: 1/" "$meta"
     fi
@@ -801,7 +801,7 @@ entries:
     description: "Details about the feature"
 YML
 
-    local meta="$CCO_GLOBAL_DIR/.claude/.cco-meta"
+    local meta="$CCO_GLOBAL_DIR/.claude/.cco/meta"
     sed -i "s/^last_seen_changelog: .*/last_seen_changelog: 0/" "$meta"
 
     # Step 1: Discovery — shows summary, updates last_seen only
@@ -840,7 +840,7 @@ entries:
     description: "Detailed description"
 YML
 
-    local meta="$CCO_GLOBAL_DIR/.claude/.cco-meta"
+    local meta="$CCO_GLOBAL_DIR/.claude/.cco/meta"
     sed -i "s/^last_seen_changelog: .*/last_seen_changelog: 0/" "$meta"
 
     # Step 1: News first — shows details, updates both trackers
@@ -913,7 +913,7 @@ test_update_dry_run_shows_migrations() {
     run_cco init --lang "English"
 
     # Lower schema_version to simulate pending migrations
-    local meta="$CCO_GLOBAL_DIR/.claude/.cco-meta"
+    local meta="$CCO_GLOBAL_DIR/.claude/.cco/meta"
     sed -i "s/^schema_version: .*/schema_version: 0/" "$meta"
 
     run_cco update --dry-run
@@ -941,7 +941,7 @@ test_update_force_applies_changes() {
 }
 
 test_update_keep_preserves_user_file() {
-    # --keep preserves user file and updates .cco-base/ to current default
+    # --keep preserves user file and updates .cco/base/ to current default
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
@@ -953,8 +953,8 @@ test_update_keep_preserves_user_file() {
     run_cco update --keep
     # User file must be preserved
     assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "User edit for keep test"
-    # .cco-base/ IS updated to current default (so next update won't re-trigger)
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco-base/rules/workflow.md" "Framework edit for keep test"
+    # .cco/base/ IS updated to current default (so next update won't re-trigger)
+    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco/base/rules/workflow.md" "Framework edit for keep test"
 
     # Restore
     cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
@@ -963,45 +963,45 @@ test_update_keep_preserves_user_file() {
 # ── Project Create Bootstrap ─────────────────────────────────────────
 
 test_project_create_initializes_cco_meta() {
-    # cco project create should generate .cco-meta and .cco-base/
+    # cco project create should generate .cco/meta and .cco/base/
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
     run_cco project create "test-bootstrap" --repo "$CCO_DUMMY_REPO"
 
     local proj_dir="$CCO_PROJECTS_DIR/test-bootstrap"
-    assert_file_exists "$proj_dir/.cco-meta" ".cco-meta should exist after project create"
-    assert_file_contains "$proj_dir/.cco-meta" "schema_version:"
-    assert_dir_exists "$proj_dir/.cco-base" ".cco-base/ should exist after project create"
+    assert_file_exists "$proj_dir/.cco/meta" ".cco/meta should exist after project create"
+    assert_file_contains "$proj_dir/.cco/meta" "schema_version:"
+    assert_dir_exists "$proj_dir/.cco/base" ".cco/base/ should exist after project create"
 }
 
 test_project_create_cco_source_not_for_base() {
-    # Base template (default) should NOT create .cco-source
+    # Base template (default) should NOT create .cco/source
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
     run_cco project create "test-base-src" --repo "$CCO_DUMMY_REPO"
 
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-base-src/.cco-source" \
-        ".cco-source should NOT exist for base template"
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-base-src/.cco/source" \
+        ".cco/source should NOT exist for base template"
 }
 
 test_project_create_cco_source_for_tutorial() {
-    # Tutorial template should create .cco-source with native:project/tutorial
+    # Tutorial template should create .cco/source with native:project/tutorial
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
     run_cco project create "test-tut-src" --repo "$CCO_DUMMY_REPO" --template tutorial
 
-    local source_file="$CCO_PROJECTS_DIR/test-tut-src/.cco-source"
-    assert_file_exists "$source_file" ".cco-source should exist for tutorial template"
+    local source_file="$CCO_PROJECTS_DIR/test-tut-src/.cco/source"
+    assert_file_exists "$source_file" ".cco/source should exist for tutorial template"
     assert_file_contains "$source_file" "native:project/tutorial"
 }
 
 # ── Template Source Resolution ───────────────────────────────────────
 
 test_resolve_project_defaults_dir_base() {
-    # Project with no .cco-source returns base template path
+    # Project with no .cco/source returns base template path
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
 
@@ -1009,9 +1009,10 @@ test_resolve_project_defaults_dir_base() {
     export NATIVE_TEMPLATES_DIR="$REPO_ROOT/templates"
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
     source "$REPO_ROOT/lib/update.sh"
 
-    # Create a minimal project dir without .cco-source
+    # Create a minimal project dir without .cco/source
     local proj_dir="$tmpdir/test-proj"
     mkdir -p "$proj_dir"
 
@@ -1022,18 +1023,20 @@ test_resolve_project_defaults_dir_base() {
 }
 
 test_resolve_project_defaults_dir_tutorial() {
-    # Project with .cco-source pointing to tutorial returns tutorial template path
+    # Project with .cco/source pointing to tutorial returns tutorial template path
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
 
     export NATIVE_TEMPLATES_DIR="$REPO_ROOT/templates"
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/paths.sh"
     source "$REPO_ROOT/lib/update.sh"
 
     local proj_dir="$tmpdir/test-proj"
-    mkdir -p "$proj_dir"
-    printf 'native:project/tutorial\n' > "$proj_dir/.cco-source"
+    mkdir -p "$proj_dir/.cco"
+    printf 'native:project/tutorial\n' > "$proj_dir/.cco/source"
 
     local result
     result=$(_resolve_project_defaults_dir "$proj_dir")
@@ -1055,6 +1058,7 @@ YML
     REPO_ROOT="$tmpdir"
     source "$saved_repo_root/lib/colors.sh"
     source "$saved_repo_root/lib/utils.sh"
+    source "$saved_repo_root/lib/paths.sh"
     source "$saved_repo_root/lib/update.sh"
 
     local result
@@ -1085,6 +1089,7 @@ YML
     REPO_ROOT="$tmpdir"
     source "$saved_repo_root/lib/colors.sh"
     source "$saved_repo_root/lib/utils.sh"
+    source "$saved_repo_root/lib/paths.sh"
     source "$saved_repo_root/lib/update.sh"
 
     local result
@@ -1107,6 +1112,7 @@ test_merge_file_clean_merge() {
 
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
     source "$REPO_ROOT/lib/update.sh"
 
     # Base version (ancestor)
@@ -1151,6 +1157,7 @@ test_merge_file_conflict() {
 
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
     source "$REPO_ROOT/lib/update.sh"
 
     cat > "$tmpdir/base.md" <<'EOF'
@@ -1181,6 +1188,7 @@ test_merge_file_no_base_fallback() {
 
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
     source "$REPO_ROOT/lib/update.sh"
 
     echo "user content" > "$tmpdir/user.md"
@@ -1199,6 +1207,7 @@ test_collect_file_changes_merge_available() {
 
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
     source "$REPO_ROOT/lib/update.sh"
 
     mkdir -p "$tmpdir/defaults" "$tmpdir/installed" "$tmpdir/base"
@@ -1214,11 +1223,12 @@ test_collect_file_changes_merge_available() {
 }
 
 test_collect_file_changes_removed() {
-    # File in .cco-base but NOT in defaults → REMOVED
+    # File in .cco/base but NOT in defaults → REMOVED
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
 
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
     source "$REPO_ROOT/lib/update.sh"
 
     mkdir -p "$tmpdir/defaults" "$tmpdir/installed" "$tmpdir/base"
@@ -1233,11 +1243,12 @@ test_collect_file_changes_removed() {
 }
 
 test_collect_file_changes_base_missing() {
-    # File in defaults and installed, differs, no .cco-base → BASE_MISSING
+    # File in defaults and installed, differs, no .cco/base → BASE_MISSING
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
 
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
     source "$REPO_ROOT/lib/update.sh"
 
     mkdir -p "$tmpdir/defaults" "$tmpdir/installed" "$tmpdir/base"
@@ -1257,6 +1268,7 @@ test_collect_file_changes_user_modified() {
 
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
     source "$REPO_ROOT/lib/update.sh"
 
     mkdir -p "$tmpdir/defaults" "$tmpdir/installed" "$tmpdir/base"
@@ -1279,6 +1291,7 @@ test_show_discovery_summary_with_changes() {
 
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
     source "$REPO_ROOT/lib/update.sh"
 
     local changes
@@ -1299,6 +1312,7 @@ test_show_discovery_summary_no_changes() {
 
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
     source "$REPO_ROOT/lib/update.sh"
 
     local changes
