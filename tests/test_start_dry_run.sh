@@ -1511,3 +1511,30 @@ test_start_ok_without_conflict_markers() {
     run_cco start "test-proj" --dry-run --dump
     assert_file_exists "$DRY_RUN_DIR/.cco/docker-compose.yml"
 }
+
+# ── Scenario 8: cco start auto-cleans .tmp/ ──────────────────────────
+
+test_start_auto_cleans_stale_tmp() {
+    # A real cco start should auto-remove .tmp/ from a previous --dry-run --dump
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+
+    # Create a stale .tmp/ directory (as if from --dry-run --dump)
+    local project_dir="$CCO_PROJECTS_DIR/test-proj"
+    mkdir -p "$project_dir/.tmp"
+    echo "stale dump" > "$project_dir/.tmp/docker-compose.yml"
+
+    # Run dry-run (not real start, to avoid Docker), but this triggers the cleanup
+    # in the non-dry-run path. We test via --dry-run --dump which recreates .tmp/
+    # Instead, verify the cleanup code exists by checking a non-dump dry-run
+    # doesn't interfere (this is an indirect test — full start requires Docker).
+    # Best we can do: verify .tmp is cleaned when next --dry-run --dump runs
+    run_cco start "test-proj" --dry-run --dump
+
+    # .tmp/ should be recreated fresh (not have the stale file alongside new ones)
+    [[ ! -f "$project_dir/.tmp/docker-compose.yml" ]] || \
+        fail "Old .tmp/docker-compose.yml should be cleaned before fresh dump"
+    assert_file_exists "$DRY_RUN_DIR/.cco/docker-compose.yml"
+}

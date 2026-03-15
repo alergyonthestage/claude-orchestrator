@@ -288,3 +288,53 @@ test_template_help() {
     assert_output_contains "create"
     assert_output_contains "remove"
 }
+
+# ── Scenario 15: template create --project strips .cco/ ──────────────
+
+test_template_create_from_project_strips_cco() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    # Create a project with .cco/ runtime state
+    local project_dir="$CCO_PROJECTS_DIR/src-proj"
+    mkdir -p "$project_dir/.claude" "$project_dir/.cco/managed" "$project_dir/.cco/claude-state"
+    cat > "$project_dir/project.yml" <<'YAML'
+name: src-proj
+repos: []
+YAML
+    echo "schema_version: 9" > "$project_dir/.cco/meta"
+    echo "generated" > "$project_dir/.cco/docker-compose.yml"
+    echo "{}" > "$project_dir/.cco/managed/browser.json"
+    echo "session" > "$project_dir/.cco/claude-state/session.jsonl"
+    mkdir -p "$project_dir/.cco/base"
+    echo "base" > "$project_dir/.cco/base/settings.json"
+    echo "SECRET=pass" > "$project_dir/secrets.env"
+    mkdir -p "$project_dir/.tmp"
+    echo "dump" > "$project_dir/.tmp/output"
+
+    run_cco template create my-tmpl --project --from src-proj
+
+    local tmpl_dir="$CCO_TEMPLATES_DIR/project/my-tmpl"
+    assert_dir_exists "$tmpl_dir"
+    assert_file_exists "$tmpl_dir/project.yml"
+    # .cco/ should be completely stripped
+    [[ ! -d "$tmpl_dir/.cco" ]] || {
+        echo "ASSERTION FAILED: .cco/ should be stripped from template"
+        return 1
+    }
+    # .tmp/ should be stripped
+    [[ ! -d "$tmpl_dir/.tmp" ]] || {
+        echo "ASSERTION FAILED: .tmp/ should be stripped from template"
+        return 1
+    }
+    # secrets.env should exist but be empty
+    if [[ -f "$tmpl_dir/secrets.env" ]]; then
+        local size
+        size=$(wc -c < "$tmpl_dir/secrets.env")
+        [[ "$size" -eq 0 ]] || {
+            echo "ASSERTION FAILED: secrets.env should be emptied, not removed"
+            return 1
+        }
+    fi
+}

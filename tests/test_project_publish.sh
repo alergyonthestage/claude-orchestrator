@@ -331,3 +331,38 @@ test_project_publish_help() {
     run_cco project publish --help
     assert_output_contains "Publish a project"
 }
+
+# ── Scenario 16: pack cleanup strips .cco/source and .cco/install-tmp ─
+
+test_project_publish_strips_pack_cco_files() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    _create_test_project "my-proj"
+    _create_test_pack "test-pack"
+
+    # Add pack framework state that should be stripped during publish
+    mkdir -p "$CCO_PACKS_DIR/test-pack/.cco"
+    echo "remote:acme/test-pack" > "$CCO_PACKS_DIR/test-pack/.cco/source"
+    mkdir -p "$CCO_PACKS_DIR/test-pack/.cco/install-tmp"
+    echo "temp" > "$CCO_PACKS_DIR/test-pack/.cco/install-tmp/file.txt"
+
+    local bare_dir
+    bare_dir=$(_create_empty_bare_remote "$tmpdir")
+    run_cco remote add target "$bare_dir"
+    run_cco project publish my-proj target --force
+
+    local verify_dir="$tmpdir/verify"
+    git clone -q "$bare_dir" "$verify_dir"
+    local tmpl="$verify_dir/templates/my-proj"
+
+    # Pack .cco/source and .cco/install-tmp should be stripped
+    [[ ! -f "$tmpl/packs/test-pack/.cco/source" ]] || {
+        echo "ASSERTION FAILED: .cco/source should be stripped from bundled packs"
+        return 1
+    }
+    [[ ! -d "$tmpl/packs/test-pack/.cco/install-tmp" ]] || {
+        echo "ASSERTION FAILED: .cco/install-tmp should be stripped from bundled packs"
+        return 1
+    }
+}

@@ -456,3 +456,54 @@ test_vault_pull_help() {
     run_cco vault pull --help
     assert_output_contains "pull"
 }
+
+# ── Scenario 19: vault sync secret scan detects .cco/remotes ──────────
+
+test_vault_sync_aborts_on_cco_remotes() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault "$tmpdir"
+
+    # Create .cco/remotes with token (should be gitignored, but simulate bypass)
+    mkdir -p "$CCO_USER_CONFIG_DIR/.cco"
+    printf 'acme=git@example.com:acme.git\nacme_token=secret-token-123\n' > "$CCO_USER_CONFIG_DIR/.cco/remotes"
+
+    # Remove .cco/remotes from gitignore to simulate accidental inclusion
+    sed -i 's|^\.cco/remotes$|# .cco/remotes|' "$CCO_USER_CONFIG_DIR/.gitignore"
+
+    if run_cco vault sync --yes 2>/dev/null; then
+        echo "ASSERTION FAILED: sync should abort when .cco/remotes is detected as secret"
+        return 1
+    fi
+}
+
+# ── Scenario 12: vault sync tracks .cco/base/ ────────────────────────
+
+test_vault_sync_tracks_cco_base() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault "$tmpdir"
+
+    # Create .cco/base/ with content (should be tracked, not gitignored)
+    mkdir -p "$CCO_GLOBAL_DIR/.claude/.cco/base"
+    echo "base settings" > "$CCO_GLOBAL_DIR/.claude/.cco/base/settings.json"
+
+    # Also create .cco/meta (should be gitignored)
+    mkdir -p "$CCO_GLOBAL_DIR/.claude/.cco"
+    echo "schema_version: 9" > "$CCO_GLOBAL_DIR/.claude/.cco/meta"
+
+    run_cco vault sync --yes
+
+    # .cco/base/ content should be committed
+    local committed
+    committed=$(git -C "$CCO_USER_CONFIG_DIR" show HEAD --name-only)
+    if ! echo "$committed" | grep -qF ".cco/base/settings.json"; then
+        echo "ASSERTION FAILED: .cco/base/ should be vault-tracked"
+        echo "  Committed files: $committed"
+        return 1
+    fi
+
+    # .cco/meta should NOT be committed (gitignored)
+    if echo "$committed" | grep -qF ".cco/meta"; then
+        echo "ASSERTION FAILED: .cco/meta should be gitignored"
+        return 1
+    fi
+}

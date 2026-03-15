@@ -1542,7 +1542,7 @@ test_migration_009_idempotent() {
 }
 
 test_migration_009_partial_state() {
-    # When both old and new paths exist (partial migration), old is cleaned
+    # When both old and new paths exist (partial migration), skip safely — no data loss
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
 
     local target="$tmpdir/project"
@@ -1559,9 +1559,10 @@ test_migration_009_partial_state() {
 
     migrate "$target"
 
-    # New should be preserved, old should be cleaned
+    # New should be preserved (canonical copy)
     assert_file_contains "$target/.cco/meta" "new"
-    [[ ! -f "$target/.cco-meta" ]] || fail ".cco-meta should be cleaned when .cco/meta exists"
+    # Old should also be preserved (guarded skip, not deleted)
+    [[ -f "$target/.cco-meta" ]] || fail ".cco-meta should be preserved when both exist (guarded skip)"
 }
 
 test_migration_009_fresh_project() {
@@ -1659,4 +1660,196 @@ YML
     run_cco update --news
     assert_output_contains "Missing last_read test"
     assert_file_contains "$meta" "last_read_changelog: 1"
+}
+
+# ── Changelog scenario 3 fix: hint absent after news-first ────────────
+
+test_update_news_first_no_hint_on_discovery() {
+    # After --news updates both trackers, discovery must NOT show the --news hint
+    local tmpdir; tmpdir=$(mktemp -d)
+    local saved_changelog="$tmpdir/changelog.bak"
+    cp "$REPO_ROOT/changelog.yml" "$saved_changelog"
+    trap "cp '$saved_changelog' '$REPO_ROOT/changelog.yml'; rm -rf '$tmpdir'" EXIT
+
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    cat > "$REPO_ROOT/changelog.yml" <<'YML'
+entries:
+  - id: 1
+    date: "2026-03-01"
+    type: additive
+    title: "Hint suppression test"
+    description: "Details"
+YML
+
+    local meta="$CCO_GLOBAL_DIR/.claude/.cco/meta"
+    sed -i "s/^last_seen_changelog: .*/last_seen_changelog: 0/" "$meta"
+
+    # Step 1: News first — updates both trackers
+    run_cco update --news
+    assert_file_contains "$meta" "last_seen_changelog: 1"
+    assert_file_contains "$meta" "last_read_changelog: 1"
+
+    # Step 2: Discovery — nothing to show AND no --news hint
+    run_cco update
+    assert_output_not_contains "What's new"
+    assert_output_not_contains "Run 'cco update --news'"
+}
+
+# ── Changelog scenario 6: new entry after both read ───────────────────
+
+test_update_new_entry_after_both_read() {
+    # Both trackers at N, new entry N+1 arrives — discovery shows it, news shows it
+    local tmpdir; tmpdir=$(mktemp -d)
+    local saved_changelog="$tmpdir/changelog.bak"
+    cp "$REPO_ROOT/changelog.yml" "$saved_changelog"
+    trap "cp '$saved_changelog' '$REPO_ROOT/changelog.yml'; rm -rf '$tmpdir'" EXIT
+
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    # Initial state: one entry, both trackers at 1
+    cat > "$REPO_ROOT/changelog.yml" <<'YML'
+entries:
+  - id: 1
+    date: "2026-03-01"
+    type: additive
+    title: "First feature"
+    description: "First details"
+YML
+
+    local meta="$CCO_GLOBAL_DIR/.claude/.cco/meta"
+    sed -i "s/^last_seen_changelog: .*/last_seen_changelog: 1/" "$meta"
+    if grep -q '^last_read_changelog:' "$meta"; then
+        sed -i "s/^last_read_changelog: .*/last_read_changelog: 1/" "$meta"
+    else
+        sed -i '/^last_seen_changelog:/a last_read_changelog: 1' "$meta"
+    fi
+
+    # Add new entry
+    cat > "$REPO_ROOT/changelog.yml" <<'YML'
+entries:
+  - id: 1
+    date: "2026-03-01"
+    type: additive
+    title: "First feature"
+    description: "First details"
+  - id: 2
+    date: "2026-03-15"
+    type: additive
+    title: "Second feature"
+    description: "Second details"
+YML
+
+    # Step 1: Discovery — shows new entry, hint shown
+    run_cco update
+    assert_output_contains "Second feature"
+    assert_output_contains "Run 'cco update --news'"
+    assert_file_contains "$meta" "last_seen_changelog: 2"
+
+    # Step 2: News — shows new entry details
+    run_cco update --news
+    assert_output_contains "Second feature"
+    assert_output_contains "Second details"
+    assert_file_contains "$meta" "last_read_changelog: 2"
+
+    # Step 3: Both at 2, nothing more to show
+    run_cco update
+    assert_output_not_contains "What's new"
+}
+
+# ── Migration 009: global migration includes pack consolidation ───────
+
+test_migration_009_global_moves_packs() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+
+    local target="$tmpdir/global/.claude"
+    mkdir -p "$target"
+    echo "schema_version: 8" > "$target/.cco-meta"
+
+    # Set up packs with old-layout files
+    local packs_dir="$tmpdir/packs"
+    mkdir -p "$packs_dir/my-pack"
+    echo "remote:acme/my-pack" > "$packs_dir/my-pack/.cco-source"
+    mkdir -p "$packs_dir/my-pack/.cco-install-tmp"
+    echo "temp" > "$packs_dir/my-pack/.cco-install-tmp/file.txt"
+
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/update.sh"
+    source "$REPO_ROOT/migrations/global/009_cco_dir_consolidation.sh"
+
+    migrate "$target"
+
+    # Pack files moved to new locations
+    assert_file_exists "$packs_dir/my-pack/.cco/source"
+    assert_file_contains "$packs_dir/my-pack/.cco/source" "remote:acme/my-pack"
+    [[ -d "$packs_dir/my-pack/.cco/install-tmp" ]] || fail ".cco/install-tmp/ should exist"
+    # Old locations removed
+    [[ ! -f "$packs_dir/my-pack/.cco-source" ]] || fail ".cco-source should be removed"
+    [[ ! -d "$packs_dir/my-pack/.cco-install-tmp" ]] || fail ".cco-install-tmp/ should be removed"
+}
+
+# ── Migration 009: idempotency with directories ──────────────────────
+
+test_migration_009_idempotent_directories() {
+    # Guarded moves for directories: both old and new exist -> skip safely
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+
+    local target="$tmpdir/project"
+    mkdir -p "$target/.claude"
+    # Create both old and new directory locations
+    mkdir -p "$target/.managed"
+    echo "old" > "$target/.managed/browser.json"
+    mkdir -p "$target/.cco/managed"
+    echo "new" > "$target/.cco/managed/browser.json"
+
+    mkdir -p "$target/claude-state"
+    echo "old-session" > "$target/claude-state/session.jsonl"
+    mkdir -p "$target/.cco/claude-state"
+    echo "new-session" > "$target/.cco/claude-state/session.jsonl"
+
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/update.sh"
+    source "$REPO_ROOT/migrations/project/009_cco_dir_consolidation.sh"
+
+    migrate "$target"
+
+    # New should be preserved (not overwritten by old)
+    assert_file_contains "$target/.cco/managed/browser.json" "new"
+    assert_file_contains "$target/.cco/claude-state/session.jsonl" "new-session"
+    # Old directories still exist (guarded skip, not deleted)
+    [[ -d "$target/.managed" ]] || fail ".managed/ should be preserved when .cco/managed/ exists"
+    [[ -d "$target/claude-state" ]] || fail "claude-state/ should be preserved when .cco/claude-state/ exists"
+}
+
+# ── Migration 009: gitignore removes old pack-manifest pattern ────────
+
+test_migration_009_gitignore_removes_old_pack_manifest() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+
+    local target="$tmpdir/global/.claude"
+    mkdir -p "$target"
+
+    cat > "$tmpdir/.gitignore" <<'GI'
+secrets.env
+projects/*/.pack-manifest
+GI
+
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/update.sh"
+    source "$REPO_ROOT/migrations/global/009_cco_dir_consolidation.sh"
+
+    migrate "$target"
+
+    # Old pattern should be replaced
+    assert_file_not_contains "$tmpdir/.gitignore" "projects/*/.pack-manifest"
+    # New pattern should be present
+    assert_file_contains "$tmpdir/.gitignore" "projects/*/.claude/.cco/pack-manifest"
 }
