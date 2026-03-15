@@ -138,7 +138,7 @@ CCO does not implement resource-level access control. Visibility and authenticat
 
 ### KD-5: Pack source tracking
 
-Each pack installed from a remote source stores a `.cco-source` metadata file recording the origin URL, path, and ref. This enables `cco pack update <name>` to pull the latest version from the original source without user intervention.
+Each pack installed from a remote source stores a `.cco/source` metadata file recording the origin URL, path, and ref. This enables `cco pack update <name>` to pull the latest version from the original source without user intervention.
 
 ---
 

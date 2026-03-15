@@ -310,6 +310,8 @@ graph TD
 | `global/claude-state/.credentials.json` | `/home/claude/.claude/.credentials.json` | rw | OAuth tokens (access + refresh) |
 
 Both files are in `global/claude-state/` (shared across all projects, gitignored).
+`global/claude-state/` is intentionally not moved to `.cco/` — see section 5.4 of
+the `.cco/` consolidation design.
 
 #### Seeding flow (`cmd_start`)
 

@@ -218,8 +218,8 @@ cco pack publish alberghi-it
 1. `cco remote add <name> <url>` — registers a Config Repo remote (shared between
    vault and publish)
 2. `cco pack publish <name> <remote>` — publishes and remembers the remote in
-   `.cco-source` as `publish_target:`
-3. `cco pack publish <name>` — reuses cached `publish_target` from `.cco-source`
+   `.cco/source` as `publish_target:`
+3. `cco pack publish <name>` — reuses cached `publish_target` from `.cco/source`
 4. Positional URL also accepted as fallback: `cco pack publish <name> <url>`
    (auto-detected by presence of `:` or `/` in the argument)
 

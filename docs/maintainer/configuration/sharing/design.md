@@ -278,7 +278,7 @@ cco pack install <git-url> --token <token>    # explicit auth token (HTTPS)
      List available packs from manifest.yml
      Prompt user to select one or all
 6. Copy pack to $CCO_PACKS_DIR/<name>/
-7. Write .cco-source metadata (see §6)
+7. Write .cco/source metadata (see §6)
 8. Cleanup temp dir
 9. Print confirmation with resource summary
 ```
@@ -313,7 +313,7 @@ cco pack update <name>      # update one pack from its recorded source
 cco pack update --all       # update all packs with a remote source
 ```
 
-Reads `.cco-source`, re-runs the sparse-checkout with the same ref (or latest if ref was a branch). Does not overwrite local modifications unless `--force`.
+Reads `.cco/source`, re-runs the sparse-checkout with the same ref (or latest if ref was a branch). Does not overwrite local modifications unless `--force`.
 
 ### cco project install
 
@@ -329,10 +329,10 @@ Install flow mirrors `cco pack install`. Template `project.yml` may contain `{{P
 
 ## 6. Pack Source Metadata
 
-Every pack installed from a remote source carries a `.cco-source` file in its directory:
+Every pack installed from a remote source carries a `.cco/source` file in its directory:
 
 ```yaml
-# $CCO_PACKS_DIR/<name>/.cco-source
+# $CCO_PACKS_DIR/<name>/.cco/source
 
 source: https://github.com/team/team-config
 path: packs/react-guidelines         # subdirectory within the repo
@@ -348,7 +348,7 @@ source: local
 installed: 2026-03-04
 ```
 
-The `.cco-source` file is:
+The `.cco/source` file is:
 - Tracked in the vault (versioning records where each pack came from)
 - Excluded from `cco pack export` outputs (source is specific to the installer)
 
@@ -412,17 +412,17 @@ secrets.env
 *.pem
 
 # Runtime files — generated, not user config
-projects/*/docker-compose.yml
-projects/*/.managed/
+projects/*/.cco/docker-compose.yml
+projects/*/.cco/managed/
 projects/*/.pack-manifest
-projects/*/.cco-meta
+projects/*/.cco/meta
 
 # Session state — transient, large, personal
-projects/*/claude-state/
+projects/*/.cco/claude-state/
 projects/*/rag-data/
 
 # Pack install temporary files
-packs/*/.cco-install-tmp/
+packs/*/.cco/install-tmp/
 ```
 
 The template is conservative. Users may remove entries that do not apply to their setup, but CCO emits a warning if `secrets.env` is ever staged for commit.

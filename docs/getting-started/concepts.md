@@ -65,7 +65,7 @@ Commit this directory to a shared repository and every teammate runs `cco start 
 
 **What stays local (never commit):**
 - `secrets.env` — credentials and tokens, per user
-- `claude-state/` — session memory and transcripts, per user
+- `.cco/claude-state/` — session transcripts, per user
 
 **Sharing packs and project templates (Config Repos):**
 - Knowledge packs and project templates can be shared via git using Config Repos

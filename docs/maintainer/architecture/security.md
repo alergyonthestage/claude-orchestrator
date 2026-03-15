@@ -193,7 +193,7 @@ chmod 600 "$rf" 2>/dev/null || true
 ```
 
 If `chmod` fails (filesystem without Unix permissions, or an ownership issue),
-`.cco-remotes` containing tokens remains world-readable with no warning.
+`.cco/remotes` containing tokens remains world-readable with no warning.
 
 The credentials file at `cmd-start.sh:223` uses `chmod 600` without `|| true`,
 so a failure there would propagate correctly.
@@ -217,20 +217,20 @@ _VAULT_SECRET_PATTERNS=(
 )
 ```
 
-The vault `.gitignore` correctly excludes `*.env`, `.cco-remotes`, and
+The vault `.gitignore` correctly excludes `*.env`, `.cco/remotes`, and
 `*.credentials.json`. However, the pre-commit secret scan only checks the four
 patterns above.
 
 **Gap:** If the vault `.gitignore` is manually edited or deleted, and the user
 runs `cco vault sync`, the scan would not catch:
 - `*.env` files (only `secrets.env` is matched, not e.g. `production.env`)
-- `.cco-remotes`
+- `.cco/remotes`
 
 This is defense-in-depth: `.gitignore` is the primary barrier, the scan is the
 secondary one. The cost of adding the missing patterns is zero.
 
 **Mitigation options (not implemented):**
-- Add `'*.env'` and `'.cco-remotes'` to `_VAULT_SECRET_PATTERNS`.
+- Add `'*.env'` and `'.cco/remotes'` to `_VAULT_SECRET_PATTERNS`.
 
 ---
 
@@ -321,7 +321,7 @@ are mounted read-write intentionally.
 
 ---
 
-### [LOW-4] Vault push does not use the token stored in `.cco-remotes`
+### [LOW-4] Vault push does not use the token stored in `.cco/remotes`
 
 **File:** `lib/cmd-vault.sh:419`
 
@@ -333,7 +333,7 @@ credential helper, etc.). This is a **functional gap**, not a security issue.
 
 ## Secret storage strategy: current design vs alternatives
 
-The current approach stores tokens in plaintext in `user-config/.cco-remotes`
+The current approach stores tokens in plaintext in `user-config/.cco/remotes`
 with `chmod 600`. This is consistent with how virtually all developer tools
 handle credentials:
 
@@ -407,7 +407,7 @@ Ordered by a combination of effort required and risk addressed.
 
 | # | Finding | What was done | Status |
 |---|---|---|---|
-| 1 | **[MEDIUM-3]** Vault secret scan gaps | Added `'*.env'` and `'.cco-remotes'` to `_VAULT_SECRET_PATTERNS` | DONE |
+| 1 | **[MEDIUM-3]** Vault secret scan gaps | Added `'*.env'` and `'.cco/remotes'` to `_VAULT_SECRET_PATTERNS` | DONE |
 | 2 | **[MEDIUM-2]** Silent chmod failure | Replaced `\|\| true` with `warn` on failure | DONE |
 
 ### Short-term — low effort, meaningful hardening (DONE)

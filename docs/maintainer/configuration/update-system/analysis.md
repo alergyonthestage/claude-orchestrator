@@ -134,12 +134,12 @@ perform manual steps for the system to keep working.
 **Examples**:
 - `memory/` → `claude-state/` directory rename
 - `setup.sh` split into `setup.sh` + `setup-build.sh`
-- `.cco-base/` bootstrap for pre-Sprint-5b installations
-- Schema version bumps in `.cco-meta`
+- `.cco/base/` bootstrap for pre-Sprint-5b installations
+- Schema version bumps in `.cco/meta`
 
 **Design rule**: Migrations are idempotent, sequential, and explicit. Each migration
 is a script in `migrations/{scope}/NNN_description.sh` with a `migrate()` function.
-The migration runner tracks `schema_version` in `.cco-meta`.
+The migration runner tracks `schema_version` in `.cco/meta`.
 
 **Scopes**: The migration runner supports four scopes: `global`, `project`, `pack`,
 and `template`. All scopes use the same runner function (`_run_migrations`) and the
@@ -171,8 +171,8 @@ Is this change backward-compatible?
 cco init
   ├── Copy defaults/global/ → user-config/global/
   ├── Substitute language.md with user's language choices
-  ├── Generate .cco-meta (schema_version, manifest hashes)
-  └── Save .cco-base/ (base versions for future diff/merge)
+  ├── Generate .cco/meta (schema_version, manifest hashes)
+  └── Save .cco/base/ (base versions for future diff/merge)
 
 User works...
   ├── Modifies rules, agents, skills as needed
@@ -181,8 +181,8 @@ User works...
 
 cco update (after framework upgrade)
   ├── Run pending migrations (BREAKING changes)
-  ├── Compare defaults/ vs .cco-base/ → find what framework changed
-  ├── Compare user files vs .cco-base/ → find what user changed
+  ├── Compare defaults/ vs .cco/base/ → find what framework changed
+  ├── Compare user files vs .cco/base/ → find what user changed
   ├── Report: "N files have updates available"
   └── NO automatic file modifications
 
@@ -200,8 +200,8 @@ cco update --apply (user-initiated)
 cco project create <name> [--template tutorial]
   ├── Copy template files → user-config/projects/<name>/
   ├── Substitute {{PROJECT_NAME}}, {{DESCRIPTION}}
-  ├── Generate .cco-meta (template name, schema_version)
-  └── Save .cco-base/ (base versions of opinionated files)
+  ├── Generate .cco/meta (template name, schema_version)
+  └── Save .cco/base/ (base versions of opinionated files)
 
 User works...
   ├── Configures project.yml (repos, packs, docker, etc.)
@@ -383,13 +383,13 @@ for improvements.
 | Template (native) | Ships with cco | Maintainer (in repo) | N/A (maintainer runs migrations manually) |
 | Template (user) | `cco template create` | User directly | Migrations only |
 
-### 7.2 Source Tracking via `.cco-source`
+### 7.2 Source Tracking via `.cco/source`
 
-Every resource with an authoritative source tracks its origin in `.cco-source`.
+Every resource with an authoritative source tracks its origin in `.cco/source`.
 This file enables update discovery, version comparison, and source attribution.
 
 ```yaml
-# .cco-source — auto-generated, do not edit
+# .cco/source — auto-generated, do not edit
 # Format: source is a string (URL, "local", or "native:<kind>/<name>")
 type: pack                              # pack | project
 source: https://github.com/team/config  # URL, "local", or "native:project/<name>"
@@ -403,7 +403,7 @@ The `source` field is a flat string: a URL for remote resources, `"local"` for
 locally created resources, or `"native:<kind>/<name>"` for native template projects.
 Additional fields (`path`, `ref`, `updated`) are present only for remote resources.
 
-**Who creates `.cco-source`:**
+**Who creates `.cco/source`:**
 
 | Resource | Created by | Source value |
 |----------|-----------|-------------|
@@ -411,7 +411,7 @@ Additional fields (`path`, `ref`, `updated`) are present only for remote resourc
 | Pack (local) | `cco pack create` | `source: local` ✅ (already implemented) |
 | Project (from native template) | `cco project create --template` | `native:project/<template-name>` |
 | Project (from remote) | `cco project install` | Remote URL |
-| Project (from base) | `cco project create` | Not created (base is the default, tracked via `.cco-meta`) |
+| Project (from base) | `cco project create` | Not created (base is the default, tracked via `.cco/meta`) |
 
 ### 7.3 Update Policies by Resource Type
 
@@ -435,12 +435,12 @@ when the maintainer updates the template.
 
 At `cco project create --template tutorial`:
 1. Copy template files to `user-config/projects/<name>/`
-2. Create `.cco-source` with `source: native:project/tutorial`
-3. Create `.cco-meta` with `template: tutorial` and schema_version
-4. Save `.cco-base/` with base versions of template-specific opinionated files
+2. Create `.cco/source` with `source: native:project/tutorial`
+3. Create `.cco/meta` with `template: tutorial` and schema_version
+4. Save `.cco/base/` with base versions of template-specific opinionated files
 
 At `cco update --project <name>`:
-1. Read `.cco-source` → determine source is `native:project/tutorial`
+1. Read `.cco/source` → determine source is `native:project/tutorial`
 2. Run pending project migrations (from `migrations/project/`)
 3. Discover opinionated file updates:
    - Base files (settings.json) → compared against `templates/project/base/`
@@ -463,13 +463,13 @@ At `cco update --project <name>`:
 
 `cco pack update` is a separate system:
 - Full-replace from remote source (no merge — source is authoritative)
-- Tracked via `.cco-source` (URL, path, ref, timestamps)
+- Tracked via `.cco/source` (URL, path, ref, timestamps)
 - Affects all projects using the pack (packs are shared, mounted read-only)
 - `cco update` runs pending pack migrations but does NOT trigger pack updates
 
 **If a user has modified a remote pack:**
 The user should `cco pack internalize <name>` before updating. This converts the
-pack to local (removes `.cco-source`), making it fully user-owned. The pack will
+pack to local (removes `.cco/source`), making it fully user-owned. The pack will
 no longer receive remote updates. This is the intended escape hatch — the user
 explicitly chooses between "receive updates" and "customize freely".
 
@@ -480,7 +480,7 @@ Projects installed via `cco project install <url>` are heavily customized by use
 continuous source of truth.
 
 `cco update` can check if the remote has newer commits than `installed_hash` in
-`.cco-source` and notify:
+`.cco/source` and notify:
 
 ```
 Project 'my-app' (installed from github.com/team/config):
@@ -494,7 +494,7 @@ No automatic merge or replace. The user manually reviews and decides.
 
 Currently `cco pack update` pulls HEAD of the stored ref. No version pinning or
 lockfile exists. Acceptable for now; future enhancement could add version fields
-in `pack.yml` and `.cco-source`.
+in `pack.yml` and `.cco/source`.
 
 ---
 
@@ -506,7 +506,7 @@ in `pack.yml` and `.cco-source`.
 $ cco update
 
 Running migrations...
-  ✓ Migration 008: add template metadata to .cco-meta
+  ✓ Migration 008: add template metadata to .cco/meta
 
 Checking for updates...
 
@@ -573,14 +573,14 @@ $ cco update --apply rules/workflow.md
   ✓ Applied rules/workflow.md. Backup: rules/workflow.md.bak
 ```
 
-### 8.5 The `.cco-base/` and `.cco-meta` Role
+### 8.5 The `.cco/base/` and `.cco/meta` Role
 
 These internal files are essential for the discovery and merge tools:
 
-- **`.cco-base/`**: Stores the framework version of each opinionated file at the
+- **`.cco/base/`**: Stores the framework version of each opinionated file at the
   time of last install or apply. This is the "ancestor" for 3-way merge and the
   baseline for diff comparison.
-- **`.cco-meta`**: Stores schema version (for migrations), template name
+- **`.cco/meta`**: Stores schema version (for migrations), template name
   (informational), language preferences (for language.md generation), and
   manifest hashes (for change detection).
 
@@ -628,8 +628,10 @@ capabilities without reading docs proactively.
   docs: "docs/reference/project-yaml.md#docker-containers"
 ```
 
-**Tracking**: `.cco-meta` stores `last_seen_changelog: <id>`. `cco update` compares
-against the latest entry and reports unseen changes:
+**Tracking**: `.cco/meta` stores `last_seen_changelog: <id>` and
+`last_read_changelog: <id>`. `cco update` compares against the latest entry and
+reports unseen changes. Discovery updates `last_seen_changelog` only;
+`cco update --news` updates both:
 
 ```
 $ cco update
@@ -669,12 +671,12 @@ migrations/
 
 **When each scope runs:**
 
-| Scope | Trigger | Target directory | `.cco-meta` location |
+| Scope | Trigger | Target directory | `.cco/meta` location |
 |-------|---------|-----------------|---------------------|
-| `global` | `cco update` | `user-config/global/.claude/` | `user-config/global/.claude/.cco-meta` |
-| `project` | `cco update` (per project) | `user-config/projects/<name>/` | `user-config/projects/<name>/.cco-meta` |
-| `pack` | `cco update` (per pack) | `user-config/packs/<name>/` | `user-config/packs/<name>/.cco-meta` |
-| `template` | `cco update` (user templates) | `user-config/templates/<name>/` | `user-config/templates/<name>/.cco-meta` |
+| `global` | `cco update` | `user-config/global/.claude/` | `user-config/global/.claude/.cco/meta` |
+| `project` | `cco update` (per project) | `user-config/projects/<name>/` | `user-config/projects/<name>/.cco/meta` |
+| `pack` | `cco update` (per pack) | `user-config/packs/<name>/` | `user-config/packs/<name>/.cco/meta` |
+| `template` | `cco update` (user templates) | `user-config/templates/<name>/` | `user-config/templates/<name>/.cco/meta` |
 
 **Native templates** (`templates/project/*/`, `templates/pack/*/`):
 These are part of the cco repo and updated by the maintainer directly. They do
@@ -686,15 +688,15 @@ NOT run through `_run_migrations`. The maintainer's workflow is:
 4. `cco update` runs the migration on existing projects
 
 **Important rule for maintainers**: If a migration renames or moves an opinionated
-file, it MUST also update the corresponding entry in `.cco-base/` so that future
+file, it MUST also update the corresponding entry in `.cco/base/` so that future
 discovery works correctly.
 
-**Pack `.cco-meta` initialization**: Packs currently lack `.cco-meta`. A bootstrap
-migration (or `cco pack create`/`cco pack install` update) adds it. The `.cco-meta`
+**Pack `.cco/meta` initialization**: Packs currently lack `.cco/meta`. A bootstrap
+migration (or `cco pack create`/`cco pack install` update) adds it. The `.cco/meta`
 for packs omits the `languages:` section (not relevant) and contains only
 `schema_version` and `manifest`.
 
-**User template `.cco-meta`**: Same as packs — added by `cco template create` or
+**User template `.cco/meta`**: Same as packs — added by `cco template create` or
 bootstrap migration. Contains `schema_version` only. User templates rarely need
 migrations, but the mechanism is available.
 
@@ -717,17 +719,17 @@ structure, `cco update` warns if user templates may need updating:
 |------|--------|----------|
 | (default) | `*.bak` files | global + all project dirs |
 | `--tmp` | `.tmp/` directories | `user-config/projects/<name>/.tmp/` (dry-run artifacts) |
-| `--generated` | `docker-compose.yml` | `user-config/projects/<name>/` (regenerated by `cco start`) |
+| `--generated` | `.cco/docker-compose.yml` | `user-config/projects/<name>/` (regenerated by `cco start`) |
 | `--all` | All of the above | Combined |
 
-`.cco-base/` is NEVER cleaned — it is the merge ancestor and must be preserved.
+`.cco/base/` is NEVER cleaned — it is the merge ancestor and must be preserved.
 
 ### 9.2 Scoping
 
 ```bash
 cco clean                          # .bak files (global + all projects)
 cco clean --tmp                    # .tmp/ dirs (all projects)
-cco clean --generated              # docker-compose.yml (all projects)
+cco clean --generated              # .cco/docker-compose.yml (all projects)
 cco clean --all                    # everything
 cco clean --project <name>         # scope to one project
 cco clean --dry-run                # preview any combination
@@ -799,7 +801,7 @@ maintainers (template propagation), users (template updates), and teams (config 
 discover capabilities without reading docs proactively. Notification only — no
 action required.
 
-### D13: All resources with a source track it in `.cco-source`
+### D13: All resources with a source track it in `.cco/source`
 
 Remote packs, native template projects, and remote-installed projects track their
 origin. This enables update discovery, version comparison, and source attribution.
@@ -808,7 +810,7 @@ origin. This enables update discovery, version comparison, and source attributio
 
 Projects from native templates (tutorial, cco-develop) discover template-specific
 opinionated file updates, not just base files. The source template path is recorded
-in `.cco-source` and `.cco-base/` stores template-specific base versions.
+in `.cco/source` and `.cco/base/` stores template-specific base versions.
 
 ### D15: Migrations run on all scopes
 
@@ -816,10 +818,10 @@ The migration runner supports `global`, `project`, `pack`, and `template` scopes
 `cco update` runs migrations on all applicable scopes automatically. Native
 templates are maintained by the maintainer directly (not migrated by `cco update`).
 
-### D16: `cco project create` initializes `.cco-meta` and `.cco-base` immediately
+### D16: `cco project create` initializes `.cco/meta` and `.cco/base` immediately
 
 Not deferred to a bootstrap migration. Both files are created at project creation
-time, alongside `.cco-source` for non-base template projects.
+time, alongside `.cco/source` for non-base template projects.
 
 ---
 
@@ -882,7 +884,7 @@ This would enable semantic merge instead of text-based merge. Deferred because:
 ### Q1: ~~Template update notifications~~ → RESOLVED (D14)
 
 Projects from native templates now discover template-specific opinionated file
-updates via `.cco-source` + `.cco-base/`. See section 7.4.
+updates via `.cco/source` + `.cco/base/`. See section 7.4.
 
 ### Q2: Pack version pinning
 
@@ -895,7 +897,7 @@ diff/merge engine. Deferred — requires template-to-project file mapping design
 
 ### Q4: ~~Project install source tracking~~ → RESOLVED (D13)
 
-`cco project install <url>` now saves `.cco-source` with the remote URL.
+`cco project install <url>` now saves `.cco/source` with the remote URL.
 `cco update` can notify when the remote has newer commits. See section 7.6.
 
 ### Q5: `cco update --news` detail command
@@ -905,6 +907,6 @@ docs links), or just summaries? UX decision deferred to implementation.
 
 ### Q6: Pack migration scope bootstrap
 
-How to bootstrap `.cco-meta` for existing packs that predate migration support?
-A global migration can iterate `user-config/packs/*/` and create `.cco-meta`
+How to bootstrap `.cco/meta` for existing packs that predate migration support?
+A global migration can iterate `user-config/packs/*/` and create `.cco/meta`
 files with `schema_version: 0`.

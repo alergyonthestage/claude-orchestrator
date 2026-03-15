@@ -37,7 +37,7 @@ The vault is a git repository rooted at `user-config/`. Current behavior:
 - `cco vault init` → `git init` + `.gitignore` template + initial commit
 - `cco vault sync` → `git add -A` + `git commit` (stages everything)
 - `cco vault push/pull` → `git push/pull` on current branch (typically `main`)
-- `cco vault remote add/remove` → git remote + `.cco-remotes` file (tokens)
+- `cco vault remote add/remove` → git remote + `.cco/remotes` file (tokens)
 
 No granularity: push/pull operates on the entire `user-config/` directory.
 
@@ -81,8 +81,8 @@ repo or vault. On a second machine, that knowledge disappears.
 ### 2.4 What Changed Since the Original Analysis
 
 Sprint 5b delivered:
-- `.cco-meta` metadata tracking across all scopes
-- `.cco-base/` storage for 3-way merge ancestors
+- `.cco/meta` metadata tracking across all scopes
+- `.cco/base/` storage for 3-way merge ancestors
 - `git merge-file` infrastructure for on-demand file merging
 - Migration runner with 4 scopes (global, project, pack, template)
 - `cco clean` with multiple categories
@@ -90,7 +90,7 @@ Sprint 5b delivered:
 These are directly relevant to Sprint 7:
 - **3-way merge**: reusable for vault shared resource conflict resolution
 - **Migration runner**: handles vault migration (memory separation, .gitignore update)
-- **`.cco-meta`**: could track vault profile metadata (evaluated, decided against — see §4.2)
+- **`.cco/meta`**: could track vault profile metadata (evaluated, decided against — see §4.2)
 
 ---
 
@@ -234,7 +234,7 @@ branch. When switching profiles or cloning the vault on a new machine, the
 configuration must be available. A gitignored machine-local file would not
 survive branch operations or new clones.
 
-**Why not `.cco-meta`**: `.cco-meta` tracks schema versions and file manifests
+**Why not `.cco/meta`**: `.cco/meta` tracks schema versions and file manifests
 for the update system. Vault profiles are a separate concern (work context
 vs. framework versioning). Mixing them would violate single-responsibility.
 
@@ -401,7 +401,7 @@ as `cco update --apply`.
 
 **Current layout** (memory bundled with transcripts):
 ```
-projects/<name>/claude-state/       ← gitignored (ALL contents)
+projects/<name>/.cco/claude-state/  ← gitignored (ALL contents)
 ├── memory/MEMORY.md
 ├── memory/<topic>.md
 └── <session-transcripts>/
@@ -410,8 +410,9 @@ projects/<name>/claude-state/       ← gitignored (ALL contents)
 **New layout** (memory separated):
 ```
 projects/<name>/
-├── claude-state/                   ← gitignored (transcripts only)
-│   └── <session-transcripts>/
+├── .cco/
+│   └── claude-state/               ← gitignored (transcripts only)
+│       └── <session-transcripts>/
 ├── memory/                         ← vault-tracked
 │   ├── MEMORY.md
 │   └── <topic>.md
@@ -425,7 +426,7 @@ of the parent `claude-state` mount:
 
 ```yaml
 # Parent: maps entire claude-state to Claude Code's project directory
-- ./claude-state:/home/claude/.claude/projects/-workspace
+- ./.cco/claude-state:/home/claude/.claude/projects/-workspace
 # Child: overrides the memory subdirectory with a separate host directory
 - ./memory:/home/claude/.claude/projects/-workspace/memory
 ```
@@ -438,7 +439,7 @@ mounts take priority over parent mounts.
 **Behavior**:
 - Reads from `~/.../-workspace/memory/` go to `./memory/` on host
 - Writes to `~/.../-workspace/memory/` go to `./memory/` on host
-- `./claude-state/memory/` still exists on disk but is shadowed (invisible inside container)
+- `./.cco/claude-state/memory/` still exists on disk but is shadowed (invisible inside container)
 
 **Validation required**: Test that Claude Code correctly reads/writes
 MEMORY.md through the child mount override. The mount mechanism is
@@ -448,7 +449,7 @@ resolution should be validated with an E2E test.
 ### 6.3 Vault Tracking
 
 After separation:
-- `projects/*/claude-state/` → stays gitignored (transcripts, large, personal)
+- `projects/*/.cco/claude-state/` → stays gitignored (transcripts, large, personal)
 - `projects/*/memory/` → NOT gitignored → vault-tracked
 - Memory syncs with the project's profile branch (or main if no profiles)
 
@@ -584,30 +585,30 @@ Complete mapping of every resource type to its vault, sync, and sharing behavior
 | `global/.claude/agents/*.md` | Yes | main | main | No | User-owned |
 | `global/.claude/skills/` | Yes | main | main | No | User-owned |
 | `global/.claude/mcp.json` | Yes | main | main | No | User-owned |
-| `global/.claude/.cco-meta` | Yes | main | main | No | Schema tracking |
-| `global/.claude/.cco-base/` | Yes | main | main | No | Merge ancestors |
+| `global/.claude/.cco/meta` | Yes | main | main | No | Schema tracking |
+| `global/.claude/.cco/base/` | Yes | main | main | No | Merge ancestors |
 | `global/setup.sh` | Yes | main | main | No | Runtime setup |
 | `global/setup-build.sh` | Yes | main | main | No | Build-time setup |
 | `global/claude-state/` | **No** | — | — | No | Credentials, session metadata |
 | `templates/*/` | Yes | main | main (always) | Via manifest | Shared templates |
 | `packs/<name>/` (shared) | Yes | main | main | Via manifest | Default: shared |
 | `packs/<name>/` (exclusive) | Yes | main | profile branch | Via manifest | Listed in .vault-profile |
-| `packs/<name>/.cco-meta` | Yes | with pack | with pack | No | Schema tracking |
-| `packs/<name>/.cco-source` | Yes | with pack | with pack | No | Origin tracking |
+| `packs/<name>/.cco/meta` | Yes | with pack | with pack | No | Schema tracking |
+| `packs/<name>/.cco/source` | Yes | with pack | with pack | No | Origin tracking |
 | `projects/<name>/.claude/` | Yes | main | profile branch | Yes (publish) | Project context |
 | `projects/<name>/project.yml` | Yes | main | profile branch | Yes (publish) | Project config |
 | `projects/<name>/memory/` | **Yes** | main | profile branch | **No** | NEW: separated from claude-state |
-| `projects/<name>/claude-state/` | **No** | — | — | No | Transcripts only |
-| `projects/<name>/.cco-source` | Yes | main | profile branch | No | Origin tracking |
-| `projects/<name>/.cco-meta` | **No** | — | — | No | Gitignored |
-| `projects/<name>/docker-compose.yml` | **No** | — | — | No | Generated |
-| `projects/<name>/.managed/` | **No** | — | — | No | Runtime generated |
+| `projects/<name>/.cco/claude-state/` | **No** | — | — | No | Transcripts only |
+| `projects/<name>/.cco/source` | Yes | main | profile branch | No | Origin tracking |
+| `projects/<name>/.cco/meta` | **No** | — | — | No | Gitignored |
+| `projects/<name>/.cco/docker-compose.yml` | **No** | — | — | No | Generated |
+| `projects/<name>/.cco/managed/` | **No** | — | — | No | Runtime generated |
 | `projects/<name>/setup.sh` | Yes | main | profile branch | Yes (publish) | Copy-if-missing |
 | `projects/<name>/secrets.env` | **No** | — | — | No | Secret |
 | `projects/<name>/mcp-packages.txt` | Yes | main | profile branch | Yes (publish) | Copy-if-missing |
 | `manifest.yml` | Yes | main | main | N/A | Sharing manifest |
 | `.vault-profile` | Yes | — | profile branch | No | Profile metadata (tracked per branch) |
-| `.cco-remotes` | **No** | — | — | No | Machine-local tokens |
+| `.cco/remotes` | **No** | — | — | No | Machine-local tokens |
 | `.gitignore` | Yes | main | main | No | Vault structure |
 
 ---
@@ -662,7 +663,7 @@ not via per-profile global config.
 
 | # | Question (from analysis v1) | Resolution |
 |---|---|---|
-| 1 | `vault.yml` or `.cco-meta` for profiles? | `.vault-profile` — tracked per branch, separate concern from schema versioning |
+| 1 | `vault.yml` or `.cco/meta` for profiles? | `.vault-profile` — tracked per branch, separate concern from schema versioning |
 | 2 | How does sync handle untracked projects? | `vault sync` only stages paths declared in profile |
 | 3 | Separate `--global` flag on pull? | No — shared sync is automatic on every push/pull |
 | 4 | Does bind-mount override work? | Pattern confirmed by existing pack mounts; E2E test required |

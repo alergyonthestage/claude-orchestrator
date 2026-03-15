@@ -107,7 +107,7 @@ No new gitignore entries needed for profiles. `.vault-profile` is **tracked**
 (committed on each profile branch), not gitignored.
 
 Note: `projects/*/memory/` is NOT gitignored (intentionally tracked).
-The existing `projects/*/claude-state/` pattern stays (transcripts only).
+The existing `projects/*/.cco/claude-state/` pattern stays (transcripts only).
 
 ---
 
@@ -636,7 +636,7 @@ stays as fallback. Shadowed by mount at runtime.
 
 Current `.gitignore` already has:
 ```
-projects/*/claude-state/
+projects/*/.cco/claude-state/
 ```
 
 This covers `claude-state/` (including the old `memory/` subdirectory).
@@ -646,8 +646,8 @@ vault-tracked. Correct behavior.
 ### 6.7 Publish/Install Exclusion
 
 **`lib/cmd-project.sh` — publish flow**: Exclude `memory/` from the
-published archive. Add to the exclude list alongside `claude-state/`,
-`docker-compose.yml`, `.managed/`, `.tmp/`.
+published archive. Add to the exclude list alongside `.cco/claude-state/`,
+`.cco/docker-compose.yml`, `.cco/managed/`, `.tmp/`.
 
 **`lib/cmd-project.sh` — install flow**: Do not create `memory/` from
 remote templates. Memory is created by `cco project create` only.
@@ -807,22 +807,22 @@ secrets.env
 *.pem
 
 # Runtime files — generated, not user config
-projects/*/docker-compose.yml
-projects/*/.managed/
+projects/*/.cco/docker-compose.yml
+projects/*/.cco/managed/
 projects/*/.tmp/
-projects/*/.pack-manifest
-projects/*/.cco-meta
+projects/*/.claude/.cco/pack-manifest
+projects/*/.cco/meta
 
 # Session state — transient, large, personal
 global/claude-state/
-projects/*/claude-state/
+projects/*/.cco/claude-state/
 projects/*/rag-data/
 
 # Pack install temporary files
-packs/*/.cco-install-tmp/
+packs/*/.cco/install-tmp/
 
 # Machine-specific config
-.cco-remotes
+.cco/remotes
 ```
 
 Changes from current template:

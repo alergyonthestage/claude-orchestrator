@@ -228,7 +228,7 @@ Token management commands:
 | `cco remote remove-token <name>` | Remove saved token |
 | `cco remote list` | Show remotes with `[token]` indicator |
 
-Tokens are stored in `$USER_CONFIG_DIR/.cco-remotes`, which is gitignored
+Tokens are stored in `$USER_CONFIG_DIR/.cco/remotes`, which is gitignored
 (machine-specific, never committed to vault).
 
 ### HTTPS with --token flag

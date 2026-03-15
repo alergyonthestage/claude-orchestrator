@@ -209,7 +209,7 @@ graph TB
     subgraph "templates/project/base/ (12+ files)"
         TC[CLAUDE.md, settings.json<br/>rules/language.md]
         TT[project.yml, setup.sh<br/>secrets.env, mcp-packages.txt]
-        TD[claude-state/memory/<br/>agents/ skills/ rules/]
+        TD[.cco/claude-state/<br/>agents/ skills/ rules/]
     end
 
     SS -->|"_sync_system_files()<br/>ALWAYS synced"| G["global/.claude/"]

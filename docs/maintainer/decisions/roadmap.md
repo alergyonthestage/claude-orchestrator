@@ -1,7 +1,11 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-14 (Sprint 7-Vault completed: vault profiles with branch-based isolation, selective sync, shared resource conflict resolution, memory separation from claude-state, managed memory policy rule).
+> Last updated: 2026-03-15 (Sprint 8: .cco/ directory consolidation completed).
+>
+> **Note**: Sprint entries are historical. Path references (e.g., `.cco-meta`, `.cco-source`) in older
+> sprints reflect the layout at the time of writing. See Sprint 8 and the `.cco/` consolidation
+> design doc for current paths.
 
 ---
 

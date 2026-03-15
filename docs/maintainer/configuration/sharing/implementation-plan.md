@@ -330,8 +330,8 @@ test_migration_old_to_user_config() {
     export CCO_PROJECTS_DIR="$tmpdir/projects"
     unset CCO_USER_CONFIG_DIR CCO_PACKS_DIR CCO_TEMPLATES_DIR
 
-    # Create .cco-meta at schema 2
-    create_cco_meta "$tmpdir/global/.claude/.cco-meta" "schema_version: 2
+    # Create .cco/meta at schema 2
+    create_cco_meta "$tmpdir/global/.claude/.cco/meta" "schema_version: 2
 created_at: 2026-01-01T00:00:00Z
 updated_at: 2026-01-01T00:00:00Z
 languages:
@@ -553,7 +553,7 @@ Flow:
 5. If multi-pack + no `--pick` → interactive selection (list + prompt)
 6. If sparse-checkout supported: `git sparse-checkout set packs/<name>` + checkout
 7. Copy pack dir to `$PACKS_DIR/<name>/`
-8. Write `.cco-source` metadata (YAML: source, path, ref, installed, updated)
+8. Write `.cco/source` metadata (YAML: source, path, ref, installed, updated)
 9. Update local `manifest.yml` via `manifest_refresh "$USER_CONFIG_DIR"`
 10. Cleanup tmpdir via `_cleanup_clone()`
 11. Print confirmation
@@ -562,12 +562,12 @@ Flow:
 
 **File**: `lib/cmd-pack.sh`
 
-1. Read `$PACKS_DIR/<name>/.cco-source` via yaml.sh
+1. Read `$PACKS_DIR/<name>/.cco/source` via yaml.sh
 2. If `source: local` → error "Pack was created locally, no remote source"
 3. Clone from recorded source URL + ref
 4. Compare remote version vs local (`diff -rq`)
 5. If local modifications and no `--force` → warn and abort with diff preview
-6. Replace pack contents, update `.cco-source` updated date
+6. Replace pack contents, update `.cco/source` updated date
 7. `manifest_refresh "$USER_CONFIG_DIR"`
 
 ### 4.4 `cmd_pack_export()`
@@ -575,14 +575,14 @@ Flow:
 **File**: `lib/cmd-pack.sh`
 
 ```bash
-tar czf "${name}.tar.gz" -C "$PACKS_DIR" --exclude='.cco-source' \
-    --exclude='.cco-install-tmp' "$name"
+tar czf "${name}.tar.gz" -C "$PACKS_DIR" --exclude='.cco/source' \
+    --exclude='.cco/install-tmp' "$name"
 ```
 
 ### 4.5 Conflict handling
 
 Per design §5: check if `$PACKS_DIR/<name>` exists before copying.
-- Read existing `.cco-source` if present
+- Read existing `.cco/source` if present
 - If source URL matches → offer to update (call `cmd_pack_update`)
 - If source URL differs → prompt: overwrite / keep / abort
 - If `source: local` → always prompt before overwriting
