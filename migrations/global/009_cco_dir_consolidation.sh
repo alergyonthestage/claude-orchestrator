@@ -14,18 +14,14 @@ migrate() {
 
     mkdir -p "$target_dir/.cco"
 
-    # Move .cco-meta → .cco/meta
+    # Move .cco-meta → .cco/meta (guarded: skip if target exists)
     if [[ -f "$target_dir/.cco-meta" && ! -f "$target_dir/.cco/meta" ]]; then
         mv "$target_dir/.cco-meta" "$target_dir/.cco/meta"
-    elif [[ -f "$target_dir/.cco-meta" ]]; then
-        rm -f "$target_dir/.cco-meta"  # stale duplicate
     fi
 
     # Move .cco-base/ → .cco/base/ (guarded: skip if target exists)
     if [[ -d "$target_dir/.cco-base" && ! -d "$target_dir/.cco/base" ]]; then
         mv "$target_dir/.cco-base" "$target_dir/.cco/base"
-    elif [[ -d "$target_dir/.cco-base" ]]; then
-        rm -rf "$target_dir/.cco-base"  # stale duplicate
     fi
 
     # Top-level: .cco-remotes → .cco/remotes
@@ -34,8 +30,6 @@ migrate() {
     if [[ -f "$user_config_dir/.cco-remotes" && ! -f "$user_config_dir/.cco/remotes" ]]; then
         mkdir -p "$user_config_dir/.cco"
         mv "$user_config_dir/.cco-remotes" "$user_config_dir/.cco/remotes"
-    elif [[ -f "$user_config_dir/.cco-remotes" ]]; then
-        rm -f "$user_config_dir/.cco-remotes"
     fi
 
     # Pack consolidation (iterate packs/ from user-config root)
@@ -46,13 +40,9 @@ migrate() {
             mkdir -p "$pack_dir/.cco"
             if [[ -f "$pack_dir/.cco-source" && ! -f "$pack_dir/.cco/source" ]]; then
                 mv "$pack_dir/.cco-source" "$pack_dir/.cco/source"
-            elif [[ -f "$pack_dir/.cco-source" ]]; then
-                rm -f "$pack_dir/.cco-source"
             fi
             if [[ -d "$pack_dir/.cco-install-tmp" && ! -d "$pack_dir/.cco/install-tmp" ]]; then
                 mv "$pack_dir/.cco-install-tmp" "$pack_dir/.cco/install-tmp"
-            elif [[ -d "$pack_dir/.cco-install-tmp" ]]; then
-                rm -rf "$pack_dir/.cco-install-tmp"
             fi
         done
     fi
