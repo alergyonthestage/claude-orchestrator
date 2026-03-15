@@ -3,7 +3,7 @@
 #
 # Design: the awk-based YAML parsers in bin/cco are tested indirectly by
 # creating project.yml files with specific values and asserting that the
-# generated docker-compose.yml (via --dry-run) correctly reflects the parsing.
+# generated docker-compose.yml (via --dry-run --dump) correctly reflects the parsing.
 #
 # This catches regressions in: yml_get, yml_get_repos, yml_get_ports,
 # yml_get_env, yml_get_extra_mounts, yml_get_packs, yml_get_pack_files.
@@ -16,7 +16,7 @@ test_yaml_parser_top_level_name_used_in_container() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "PROJECT_NAME=test-proj"
 }
@@ -38,7 +38,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_not_contains "$compose" "ANTHROPIC_API_KEY"
 }
@@ -60,7 +60,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "ANTHROPIC_API_KEY"
 }
@@ -80,7 +80,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     # Default oauth → no API key in compose
     assert_file_not_contains "$compose" "ANTHROPIC_API_KEY"
@@ -107,7 +107,7 @@ repos:
     name: my-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "${fake_repo}:/workspace/my-repo"
 }
@@ -134,7 +134,7 @@ repos:
     name: repo-b
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "${repo_a}:/workspace/repo-a"
     assert_file_contains "$compose" "${repo_b}:/workspace/repo-b"
@@ -146,7 +146,7 @@ test_yaml_parser_empty_repos_list_no_repo_mount() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "# Repositories"
     # No actual repo lines after the comment
@@ -173,7 +173,7 @@ docker:
   env: {}
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     # Repos parsed correctly
     assert_file_contains "$compose" "${fake_repo}:/workspace/repo-a"
@@ -201,7 +201,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" '"5000:5000"'
 }
@@ -226,7 +226,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" '"3000:3000"'
     assert_file_contains "$compose" '"8080:8080"'
@@ -253,7 +253,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "NODE_ENV=production"
 }
@@ -278,7 +278,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "NODE_ENV=production"
     assert_file_contains "$compose" "LOG_LEVEL=debug"
@@ -291,7 +291,7 @@ test_yaml_parser_empty_env_no_extra_vars() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     # System env vars present, but no user-defined ones
     assert_file_contains "$compose" "PROJECT_NAME=test-proj"
@@ -323,7 +323,7 @@ extra_mounts:
     readonly: true
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "${docs_dir}:/workspace/docs:ro"
 }
@@ -351,7 +351,7 @@ extra_mounts:
     readonly: false
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "${rw_dir}:/workspace/rw"
     assert_file_not_contains "$compose" "${rw_dir}:/workspace/rw:ro"
@@ -384,7 +384,7 @@ extra_mounts:
     readonly: false
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "${dir_a}:/workspace/a:ro"
     assert_file_contains "$compose" "${dir_b}:/workspace/b"
@@ -422,7 +422,7 @@ packs:
   - my-pack
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     # Knowledge dir should be mounted read-only in compose
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "${pack_src}:/workspace/.claude/packs/my-pack:ro"
@@ -436,7 +436,7 @@ test_yaml_parser_no_packs_section_no_pack_mounts() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_not_contains "$compose" "Pack resources"
 }
@@ -527,7 +527,7 @@ extra_mounts:
     target: /workspace/docs
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "${docs_dir}:/workspace/docs:ro"
 }
@@ -552,7 +552,7 @@ extra_mounts:
     target: /workspace/docs
     readonly: true
 ' "$CCO_DUMMY_REPO" "$docs_dir")"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "${docs_dir}:/workspace/docs:ro"
 }
@@ -578,7 +578,7 @@ extra_mounts:
     readonly: yes
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "${docs_dir}:/workspace/docs:ro"
 }
@@ -604,7 +604,7 @@ extra_mounts:
     readonly: false
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "${rw_dir}:/workspace/rw"
     assert_file_not_contains "$compose" "${rw_dir}:/workspace/rw:ro"
@@ -627,7 +627,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    if run_cco start "test-proj" --dry-run 2>/dev/null; then
+    if run_cco start "test-proj" --dry-run --dump 2>/dev/null; then
         fail "Expected error for invalid project name with spaces"
     fi
     assert_output_contains "Invalid project name"
@@ -653,7 +653,7 @@ browser:
   cdp_port: abc
 YAML
 )"
-    if run_cco start "test-proj" --dry-run 2>/dev/null; then
+    if run_cco start "test-proj" --dry-run --dump 2>/dev/null; then
         fail "Expected error for non-numeric cdp_port"
     fi
     assert_output_contains "Invalid browser.cdp_port"
@@ -678,7 +678,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     # Invalid method → defaults to oauth → no API key in compose
     assert_file_not_contains "$compose" "ANTHROPIC_API_KEY"
@@ -705,7 +705,7 @@ repos:
     name: my-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "${fake_repo}:/workspace/my-repo"
     assert_file_not_contains "$compose" "# This is a comment"
@@ -728,7 +728,7 @@ repos:
     name: my-repo # main repository
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "${fake_repo}:/workspace/my-repo"
     assert_file_not_contains "$compose" "# main repository"
@@ -750,7 +750,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" '"3000:3000"'
     assert_file_not_contains "$compose" "# web server"
@@ -772,7 +772,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "NODE_ENV=production"
     assert_file_not_contains "$compose" "# deploy target"
@@ -799,7 +799,7 @@ extra_mounts:
     readonly: true # keep safe
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "${docs_dir}:/workspace/docs:ro"
     assert_file_not_contains "$compose" "# shared docs"

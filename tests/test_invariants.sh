@@ -47,7 +47,7 @@ test_invariant_2_global_config_at_home_claude_in_container() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "/home/claude/.claude/settings.json"
     assert_file_contains "$compose" "/home/claude/.claude/CLAUDE.md"
@@ -59,7 +59,7 @@ test_invariant_2_project_config_at_workspace_claude_readwrite() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "./.claude:/workspace/.claude"
     # MUST be read-write
@@ -80,7 +80,7 @@ test_invariant_3_auto_memory_exact_container_path() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "/home/claude/.claude/projects/-workspace"
 }
@@ -93,9 +93,9 @@ test_invariant_3_memory_is_project_specific_host_path() {
     create_project "$tmpdir" "proj-a" "$(minimal_project_yml proj-a)"
     create_project "$tmpdir" "proj-b" "$(minimal_project_yml proj-b)"
 
-    run_cco start "proj-a" --dry-run
+    run_cco start "proj-a" --dry-run --dump
     local dir_a="$DRY_RUN_DIR"
-    run_cco start "proj-b" --dry-run
+    run_cco start "proj-b" --dry-run --dump
     local dir_b="$DRY_RUN_DIR"
 
     local compose_a="$dir_a/docker-compose.yml"
@@ -115,7 +115,7 @@ test_invariant_4_container_name_is_cc_project() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "my-project" "$(minimal_project_yml my-project)"
-    run_cco start "my-project" --dry-run
+    run_cco start "my-project" --dry-run --dump
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
         "container_name: cc-my-project"
 }
@@ -125,7 +125,7 @@ test_invariant_4_network_name_is_cc_project() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "my-project" "$(minimal_project_yml my-project)"
-    run_cco start "my-project" --dry-run
+    run_cco start "my-project" --dry-run --dump
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
         "name: cc-my-project"
 }
@@ -138,9 +138,9 @@ test_invariant_4_two_projects_have_distinct_names() {
     create_project "$tmpdir" "proj-one" "$(minimal_project_yml proj-one)"
     create_project "$tmpdir" "proj-two" "$(minimal_project_yml proj-two)"
 
-    run_cco start "proj-one" --dry-run
+    run_cco start "proj-one" --dry-run --dump
     local dir_one="$DRY_RUN_DIR"
-    run_cco start "proj-two" --dry-run
+    run_cco start "proj-two" --dry-run --dump
     local dir_two="$DRY_RUN_DIR"
 
     assert_file_contains "$dir_one/docker-compose.yml" "cc-proj-one"
@@ -157,7 +157,7 @@ test_invariant_5_all_global_config_mounts_are_readonly() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
 
     # Every line mounting from the global config dir must end with :ro
@@ -200,7 +200,7 @@ test_invariant_9_secrets_not_written_to_compose() {
     printf 'MY_SECRET=hunter2\nDATABASE_PASSWORD=s3cr3t!\n' > "$CCO_GLOBAL_DIR/secrets.env"
 
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
 
     assert_file_not_contains "$compose" "hunter2"

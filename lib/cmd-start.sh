@@ -12,6 +12,7 @@ cmd_start() {
     local teammate_mode=""
     local use_api_key=false
     local dry_run=false
+    local dry_run_dump=false
     local opt_chrome=""      # "on" | "off" | "" (unset = read from project.yml)
     local opt_github=""      # "on" | "off" | "" (unset = read from project.yml)
     local opt_docker=""      # "off" | "" (unset = read from project.yml)
@@ -23,6 +24,7 @@ cmd_start() {
             --teammate-mode) teammate_mode="$2"; shift 2 ;;
             --api-key) use_api_key=true; shift ;;
             --dry-run) dry_run=true; shift ;;
+            --dump) dry_run_dump=true; shift ;;
             --chrome)     opt_chrome="on";  shift ;;
             --no-chrome)  opt_chrome="off"; shift ;;
             --github)     opt_github="on";  shift ;;
@@ -43,6 +45,7 @@ Options:
   --no-github          Disable GitHub MCP for this session only
   --no-docker          Disable Docker socket mount for this session only
   --dry-run            Show the generated docker-compose without running
+  --dump               With --dry-run: persist artifacts to .tmp/ for inspection
   --port <p>           Add extra port mapping (repeatable)
   --env <K=V>          Add extra environment variable (repeatable)
 
@@ -209,18 +212,26 @@ EOF
         warn "You can safely remove the user copy: rm -rf global/.claude/skills/init-workspace"
     fi
 
-    # ── Dry-run: redirect all generated files to project .tmp/ dir ───────
-    # In dry-run mode, output_dir is <project_dir>/.tmp/ so no persistent
-    # artifacts are written but the user can easily inspect them.
+    # ── Dry-run: redirect generated files to a staging directory ─────────
+    # Default dry-run: ephemeral temp dir, auto-cleaned on exit.
+    # --dump: persist to .tmp/ for manual inspection.
     local output_dir="$project_dir"
     if $dry_run; then
-        output_dir="$project_dir/.tmp"
-        rm -rf "$output_dir"
+        if $dry_run_dump; then
+            output_dir="$project_dir/.tmp"
+            rm -rf "$output_dir"
+        else
+            output_dir=$(mktemp -d)
+            trap "rm -rf '$output_dir'" EXIT
+        fi
         mkdir -p "$output_dir/.claude" "$output_dir/.cco/managed"
     fi
 
     # ── Persistent side effects: skip in dry-run ─────────────────────────
     if ! $dry_run; then
+        # Auto-clean stale dry-run dump (starting implies approval)
+        [[ -d "$project_dir/.tmp" ]] && rm -rf "$project_dir/.tmp"
+
         # Ensure claude-state directory exists (migrates legacy memory/ if needed)
         migrate_memory_to_claude_state "$project_dir"
 
@@ -612,16 +623,20 @@ YAML
         fi
 
         echo ""
-        info "Generated files available at: ${output_dir}/"
-        echo ""
-        info "  .cco/docker-compose.yml"
-        [[ -f "$output_dir/.cco/managed/policy.json" ]]  && info "  .cco/managed/policy.json"
-        [[ -f "$output_dir/.cco/managed/browser.json" ]]  && info "  .cco/managed/browser.json"
-        [[ -f "$output_dir/.cco/managed/github.json" ]]   && info "  .cco/managed/github.json"
-        [[ -f "$packs_md" ]]                          && info "  .claude/packs.md"
-        [[ -f "$output_dir/.claude/workspace.yml" ]]  && info "  .claude/workspace.yml"
-        echo ""
-        info "Inspect with: cat ${output_dir}/.cco/docker-compose.yml"
+        if $dry_run_dump; then
+            info "Generated files available at: ${output_dir}/"
+            echo ""
+            info "  .cco/docker-compose.yml"
+            [[ -f "$output_dir/.cco/managed/policy.json" ]]  && info "  .cco/managed/policy.json"
+            [[ -f "$output_dir/.cco/managed/browser.json" ]]  && info "  .cco/managed/browser.json"
+            [[ -f "$output_dir/.cco/managed/github.json" ]]   && info "  .cco/managed/github.json"
+            [[ -f "$packs_md" ]]                          && info "  .claude/packs.md"
+            [[ -f "$output_dir/.claude/workspace.yml" ]]  && info "  .claude/workspace.yml"
+            echo ""
+            info "Inspect with: cat ${output_dir}/.cco/docker-compose.yml"
+        else
+            ok "Dry-run complete. Use --dump to persist generated files for inspection."
+        fi
         return 0
     fi
 

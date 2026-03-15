@@ -125,7 +125,7 @@ test_tutorial_dry_run_generates_compose() {
     # Create the source dirs that extra_mounts reference
     mkdir -p "$REPO_ROOT/docs"
 
-    run_cco start "tutorial" --dry-run
+    run_cco start "tutorial" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_exists "$compose"
     # Verify extra_mounts for docs (read-only)
@@ -144,7 +144,7 @@ test_tutorial_dry_run_warns_no_repos() {
     run_cco init --lang "English"
     mkdir -p "$REPO_ROOT/docs"
 
-    run_cco start "tutorial" --dry-run
+    run_cco start "tutorial" --dry-run --dump
     assert_output_contains "No repositories defined"
 }
 

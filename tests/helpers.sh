@@ -67,9 +67,9 @@ run_cco() {
         CCO_TEMPLATES_DIR="$CCO_TEMPLATES_DIR" \
         bash "$REPO_ROOT/bin/cco" "$@" 2>&1
     ) || return $?
-    # Auto-extract dry-run dir if present in output
+    # Auto-extract dry-run dir if present in output (--dump mode persists to .tmp/)
     local _dr
-    _dr=$(echo "$CCO_OUTPUT" | sed -n 's|.*Generated files available at: \(.*/.tmp\)/.*|\1|p')
+    _dr=$(echo "$CCO_OUTPUT" | sed -n 's|.*Generated files available at: \(.*\)/|\1|p')
     if [[ -n "$_dr" ]]; then
         DRY_RUN_DIR="$_dr"
     fi

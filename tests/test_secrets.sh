@@ -19,7 +19,7 @@ test_project_secrets_not_in_compose() {
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     printf 'PROJECT_SECRET=top_secret_value\n' > "$CCO_PROJECTS_DIR/test-proj/secrets.env"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_not_contains "$compose" "top_secret_value"
     assert_file_not_contains "$compose" "PROJECT_SECRET"

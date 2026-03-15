@@ -30,7 +30,7 @@ test_policy_json_generated_when_socket_enabled() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(socket_project_yml test-proj)"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     assert_file_exists "$DRY_RUN_DIR/.cco/managed/policy.json"
 }
@@ -40,7 +40,7 @@ test_policy_json_not_generated_when_socket_disabled() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     assert_file_not_exists "$DRY_RUN_DIR/.cco/managed/policy.json"
 }
@@ -62,7 +62,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "myapp" --dry-run
+    run_cco start "myapp" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
     assert_file_exists "$policy"
@@ -112,7 +112,7 @@ repos:
     name: my-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -131,7 +131,7 @@ test_policy_implicit_deny_always_present() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(socket_project_yml test-proj)"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -164,7 +164,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -198,7 +198,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -229,7 +229,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -268,7 +268,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -296,7 +296,7 @@ test_compose_policy_mounted_when_socket_enabled() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(socket_project_yml test-proj)"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
 
@@ -308,7 +308,7 @@ test_compose_policy_not_mounted_when_socket_disabled() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
 
@@ -334,7 +334,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "myapp" --dry-run
+    run_cco start "myapp" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -361,7 +361,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "myapp" --dry-run
+    run_cco start "myapp" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -394,7 +394,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -429,7 +429,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -460,7 +460,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -490,7 +490,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -523,7 +523,7 @@ repos:
     name: repo-two
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -539,7 +539,7 @@ test_compose_docker_host_when_socket_enabled() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(socket_project_yml test-proj)"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
 
@@ -551,7 +551,7 @@ test_compose_no_docker_host_when_socket_disabled() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
 
@@ -579,7 +579,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -607,7 +607,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -637,7 +637,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -668,7 +668,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -704,7 +704,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -740,7 +740,7 @@ repos:
     name: gamma-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -773,7 +773,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -830,7 +830,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -879,7 +879,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     assert_file_not_exists "$DRY_RUN_DIR/.cco/managed/policy.json"
 }
@@ -906,7 +906,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -939,7 +939,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -972,7 +972,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -988,7 +988,7 @@ test_policy_security_defaults_complete() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(socket_project_yml test-proj)"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -1037,7 +1037,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -1068,7 +1068,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -1099,7 +1099,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -1115,7 +1115,7 @@ test_policy_json_valid_json() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(socket_project_yml test-proj)"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -1134,7 +1134,7 @@ test_policy_implicit_deny_all_critical_paths() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(socket_project_yml test-proj)"
-    run_cco start "test-proj" --dry-run
+    run_cco start "test-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
@@ -1171,7 +1171,7 @@ repos:
     name: dummy-repo
 YAML
 )"
-    run_cco start "my-special-proj" --dry-run
+    run_cco start "my-special-proj" --dry-run --dump
     extract_dry_run_dir
     local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
