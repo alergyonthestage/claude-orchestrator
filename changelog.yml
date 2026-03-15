@@ -12,8 +12,10 @@
 #     title: "Short description"
 #     description: "Details about the new feature and how to use it"
 #
-# The user's last-seen ID is tracked in their .cco-meta (last_seen_changelog).
-# Only entries with id > last_seen_changelog are shown as new.
+# Two trackers in .cco-meta control notification behavior:
+#   last_seen_changelog — updated by discovery + news, prevents repeated summary
+#   last_read_changelog — updated by news only, tracks detailed reading
+# Discovery shows entries with id > last_seen. News shows entries with id > last_read.
 
 entries:
   - id: 1

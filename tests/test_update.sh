@@ -713,7 +713,7 @@ test_update_diff_shows_changes() {
 }
 
 test_update_news_shows_entries() {
-    # --news mode shows changelog entries and updates last_seen_changelog
+    # --news mode shows changelog entries and updates both trackers
     local tmpdir; tmpdir=$(mktemp -d)
     local saved_changelog="$tmpdir/changelog.bak"
     cp "$REPO_ROOT/changelog.yml" "$saved_changelog"
@@ -732,7 +732,7 @@ entries:
     description: "A test description for news mode"
 YML
 
-    # Set last_seen_changelog to 0 in .cco-meta
+    # Set both trackers to 0 in .cco-meta
     local meta="$CCO_GLOBAL_DIR/.claude/.cco-meta"
     if grep -q '^last_seen_changelog:' "$meta"; then
         sed -i "s/^last_seen_changelog: .*/last_seen_changelog: 0/" "$meta"
@@ -741,8 +741,9 @@ YML
     run_cco update --news
     assert_output_contains "Test feature for news"
 
-    # last_seen_changelog should be updated to 1
+    # Both trackers should be updated to 1
     assert_file_contains "$meta" "last_seen_changelog: 1"
+    assert_file_contains "$meta" "last_read_changelog: 1"
 }
 
 test_update_news_no_new_entries() {
@@ -755,7 +756,7 @@ test_update_news_no_new_entries() {
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
 
-    # Create a changelog with one entry already seen
+    # Create a changelog with one entry already read
     cat > "$REPO_ROOT/changelog.yml" <<'YML'
 entries:
   - id: 1
@@ -765,14 +766,92 @@ entries:
     description: "Already seen"
 YML
 
-    # Set last_seen_changelog to 1 in .cco-meta (already seen)
+    # Set both trackers to 1 (already seen and read)
     local meta="$CCO_GLOBAL_DIR/.claude/.cco-meta"
     if grep -q '^last_seen_changelog:' "$meta"; then
         sed -i "s/^last_seen_changelog: .*/last_seen_changelog: 1/" "$meta"
     fi
+    # Append last_read_changelog if missing
+    if grep -q '^last_read_changelog:' "$meta"; then
+        sed -i "s/^last_read_changelog: .*/last_read_changelog: 1/" "$meta"
+    else
+        sed -i '/^last_seen_changelog:/a last_read_changelog: 1' "$meta"
+    fi
 
     run_cco update --news
     assert_output_contains "No new features"
+}
+
+test_update_discovery_then_news() {
+    # Discovery updates last_seen only; subsequent --news still shows details
+    local tmpdir; tmpdir=$(mktemp -d)
+    local saved_changelog="$tmpdir/changelog.bak"
+    cp "$REPO_ROOT/changelog.yml" "$saved_changelog"
+    trap "cp '$saved_changelog' '$REPO_ROOT/changelog.yml'; rm -rf '$tmpdir'" EXIT
+
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    cat > "$REPO_ROOT/changelog.yml" <<'YML'
+entries:
+  - id: 1
+    date: "2026-03-01"
+    type: additive
+    title: "Dual tracker test feature"
+    description: "Details about the feature"
+YML
+
+    local meta="$CCO_GLOBAL_DIR/.claude/.cco-meta"
+    sed -i "s/^last_seen_changelog: .*/last_seen_changelog: 0/" "$meta"
+
+    # Step 1: Discovery — shows summary, updates last_seen only
+    run_cco update
+    assert_output_contains "Dual tracker test feature"
+    assert_output_contains "Run 'cco update --news'"
+    assert_file_contains "$meta" "last_seen_changelog: 1"
+
+    # Step 2: News — still shows details (last_read was 0)
+    run_cco update --news
+    assert_output_contains "Dual tracker test feature"
+    assert_output_contains "Details about the feature"
+    assert_file_contains "$meta" "last_read_changelog: 1"
+
+    # Step 3: Discovery again — nothing to show
+    run_cco update
+    assert_output_not_contains "What's new"
+}
+
+test_update_news_first_then_discovery() {
+    # --news first updates both trackers; subsequent discovery shows nothing
+    local tmpdir; tmpdir=$(mktemp -d)
+    local saved_changelog="$tmpdir/changelog.bak"
+    cp "$REPO_ROOT/changelog.yml" "$saved_changelog"
+    trap "cp '$saved_changelog' '$REPO_ROOT/changelog.yml'; rm -rf '$tmpdir'" EXIT
+
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    cat > "$REPO_ROOT/changelog.yml" <<'YML'
+entries:
+  - id: 1
+    date: "2026-03-01"
+    type: additive
+    title: "News first test"
+    description: "Detailed description"
+YML
+
+    local meta="$CCO_GLOBAL_DIR/.claude/.cco-meta"
+    sed -i "s/^last_seen_changelog: .*/last_seen_changelog: 0/" "$meta"
+
+    # Step 1: News first — shows details, updates both trackers
+    run_cco update --news
+    assert_output_contains "News first test"
+    assert_file_contains "$meta" "last_seen_changelog: 1"
+    assert_file_contains "$meta" "last_read_changelog: 1"
+
+    # Step 2: Discovery — nothing to show (both at latest)
+    run_cco update
+    assert_output_not_contains "What's new"
 }
 
 test_update_diff_force_mutual_exclusion() {
