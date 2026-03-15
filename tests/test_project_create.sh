@@ -37,7 +37,7 @@ test_project_create_makes_settings_json() {
 }
 
 test_project_create_makes_memory_dir() {
-    # Memory separated from claude-state: standalone memory/ directory (vault-tracked)
+    # Memory separated from .cco/claude-state: standalone memory/ directory (vault-tracked)
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -46,25 +46,25 @@ test_project_create_makes_memory_dir() {
 }
 
 test_project_create_makes_claude_state_dir() {
-    # claude-state holds session transcripts only (gitignored)
+    # .cco/claude-state holds session transcripts only (gitignored)
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco project create "my-project"
-    assert_dir_exists "$CCO_PROJECTS_DIR/my-project/claude-state"
+    assert_dir_exists "$CCO_PROJECTS_DIR/my-project/.cco/claude-state"
 }
 
 test_project_create_memory_separate_from_claude_state() {
-    # memory/ is NOT inside claude-state/ — they are sibling directories
+    # memory/ is NOT inside .cco/claude-state/ — they are sibling directories
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco project create "my-project"
     assert_dir_exists "$CCO_PROJECTS_DIR/my-project/memory"
-    assert_dir_exists "$CCO_PROJECTS_DIR/my-project/claude-state"
-    # memory/ should NOT exist inside claude-state/
-    [[ ! -d "$CCO_PROJECTS_DIR/my-project/claude-state/memory" ]] || \
-        fail "memory/ should not be inside claude-state/"
+    assert_dir_exists "$CCO_PROJECTS_DIR/my-project/.cco/claude-state"
+    # memory/ should NOT exist inside .cco/claude-state/
+    [[ ! -d "$CCO_PROJECTS_DIR/my-project/.cco/claude-state/memory" ]] || \
+        fail "memory/ should not be inside .cco/claude-state/"
 }
 
 test_project_create_substitutes_project_name_in_yml() {

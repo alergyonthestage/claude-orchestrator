@@ -203,7 +203,7 @@ test_migration_to_managed() {
     assert_file_exists "$CCO_GLOBAL_DIR/.claude/settings.json.pre-managed"
     assert_file_contains "$CCO_GLOBAL_DIR/.claude/settings.json.pre-managed" '"hooks"'
 
-    # Old migration marker should be removed (replaced by .cco-meta schema_version)
+    # Old migration marker should be removed (replaced by .cco/meta schema_version)
     assert_file_not_exists "$CCO_GLOBAL_DIR/.claude/.managed-migration-done" \
         ".managed-migration-done should be removed by new migration system"
 }

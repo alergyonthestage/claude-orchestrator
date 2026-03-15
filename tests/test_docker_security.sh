@@ -32,7 +32,7 @@ test_policy_json_generated_when_socket_enabled() {
     create_project "$tmpdir" "test-proj" "$(socket_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    assert_file_exists "$DRY_RUN_DIR/.managed/policy.json"
+    assert_file_exists "$DRY_RUN_DIR/.cco/managed/policy.json"
 }
 
 test_policy_json_not_generated_when_socket_disabled() {
@@ -42,7 +42,7 @@ test_policy_json_not_generated_when_socket_disabled() {
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    assert_file_not_exists "$DRY_RUN_DIR/.managed/policy.json"
+    assert_file_not_exists "$DRY_RUN_DIR/.cco/managed/policy.json"
 }
 
 test_policy_defaults_project_only() {
@@ -64,7 +64,7 @@ YAML
 )"
     run_cco start "myapp" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
     assert_file_exists "$policy"
 
     # Default container policy is project_only
@@ -114,7 +114,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     # Allowed paths should include the repo path
     local path_count
@@ -133,7 +133,7 @@ test_policy_implicit_deny_always_present() {
     create_project "$tmpdir" "test-proj" "$(socket_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     # Implicit deny should always include docker.sock
     assert_file_contains "$policy" "/var/run/docker.sock"
@@ -166,7 +166,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     local ct_policy
     ct_policy=$(jq -r '.containers.policy' "$policy")
@@ -200,7 +200,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     local mt_policy
     mt_policy=$(jq -r '.mounts.policy' "$policy")
@@ -231,7 +231,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     local deny_count
     deny_count=$(jq '.mounts.denied_paths | length' "$policy")
@@ -270,7 +270,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     local force_nonroot
     force_nonroot=$(jq -r '.security.force_non_root' "$policy")
@@ -298,7 +298,7 @@ test_compose_policy_mounted_when_socket_enabled() {
     create_project "$tmpdir" "test-proj" "$(socket_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local compose="$DRY_RUN_DIR/docker-compose.yml"
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
 
     assert_file_contains "$compose" "policy.json:/etc/cco/policy.json:ro"
 }
@@ -310,7 +310,7 @@ test_compose_policy_not_mounted_when_socket_disabled() {
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local compose="$DRY_RUN_DIR/docker-compose.yml"
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
 
     assert_file_not_contains "$compose" "policy.json"
 }
@@ -336,7 +336,7 @@ YAML
 )"
     run_cco start "myapp" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     local prefix
     prefix=$(jq -r '.networks.allowed_prefixes[0]' "$policy")
@@ -363,7 +363,7 @@ YAML
 )"
     run_cco start "myapp" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     local prefix
     prefix=$(jq -r '.networks.allowed_prefixes[0]' "$policy")
@@ -396,7 +396,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     local ct_policy
     ct_policy=$(jq -r '.containers.policy' "$policy")
@@ -431,7 +431,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     local nano_cpus
     nano_cpus=$(jq -r '.security.max_nano_cpus' "$policy")
@@ -462,7 +462,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     local force_ro
     force_ro=$(jq -r '.mounts.force_readonly' "$policy")
@@ -492,7 +492,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     local prefix
     prefix=$(jq -r '.containers.name_prefix' "$policy")
@@ -525,7 +525,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     local path_count
     path_count=$(jq '.mounts.allowed_paths | length' "$policy")
@@ -541,7 +541,7 @@ test_compose_docker_host_when_socket_enabled() {
     create_project "$tmpdir" "test-proj" "$(socket_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local compose="$DRY_RUN_DIR/docker-compose.yml"
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
 
     assert_file_contains "$compose" "DOCKER_HOST=unix:///var/run/docker-proxy.sock"
 }
@@ -553,7 +553,7 @@ test_compose_no_docker_host_when_socket_disabled() {
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local compose="$DRY_RUN_DIR/docker-compose.yml"
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
 
     assert_file_not_contains "$compose" "DOCKER_HOST"
 }
@@ -581,7 +581,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     local ct_policy
     ct_policy=$(jq -r '.containers.policy' "$policy")
@@ -609,7 +609,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     local ct_policy
     ct_policy=$(jq -r '.containers.policy' "$policy")
@@ -639,7 +639,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     local mt_policy
     mt_policy=$(jq -r '.mounts.policy' "$policy")
@@ -670,7 +670,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     local mt_policy
     mt_policy=$(jq -r '.mounts.policy' "$policy")
@@ -706,7 +706,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     local mt_policy
     mt_policy=$(jq -r '.mounts.policy' "$policy")
@@ -742,7 +742,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     local path_count
     path_count=$(jq '.mounts.allowed_paths | length' "$policy")
@@ -775,7 +775,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     # Verify all security defaults
     local no_priv
@@ -832,7 +832,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     # Default container policy
     local ct_policy
@@ -881,7 +881,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    assert_file_not_exists "$DRY_RUN_DIR/.managed/policy.json"
+    assert_file_not_exists "$DRY_RUN_DIR/.cco/managed/policy.json"
 }
 
 # ── Edge case: empty allow/deny lists ───────────────────────────────────
@@ -908,7 +908,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     local ct_policy
     ct_policy=$(jq -r '.containers.policy' "$policy")
@@ -941,7 +941,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     local ct_policy
     ct_policy=$(jq -r '.containers.policy' "$policy")
@@ -974,7 +974,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     local deny_count
     deny_count=$(jq '.mounts.denied_paths | length' "$policy")
@@ -990,7 +990,7 @@ test_policy_security_defaults_complete() {
     create_project "$tmpdir" "test-proj" "$(socket_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     # no_privileged defaults to true
     local no_priv
@@ -1039,7 +1039,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     local mem
     mem=$(jq -r '.security.max_memory_bytes' "$policy")
@@ -1070,7 +1070,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     local mem
     mem=$(jq -r '.security.max_memory_bytes' "$policy")
@@ -1101,7 +1101,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     local nano_cpus
     nano_cpus=$(jq -r '.security.max_nano_cpus' "$policy")
@@ -1117,7 +1117,7 @@ test_policy_json_valid_json() {
     create_project "$tmpdir" "test-proj" "$(socket_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     # jq will fail on invalid JSON
     if ! jq . "$policy" >/dev/null 2>&1; then
@@ -1136,7 +1136,7 @@ test_policy_implicit_deny_all_critical_paths() {
     create_project "$tmpdir" "test-proj" "$(socket_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     local deny_count
     deny_count=$(jq '.mounts.implicit_deny | length' "$policy")
@@ -1173,7 +1173,7 @@ YAML
 )"
     run_cco start "my-special-proj" --dry-run
     extract_dry_run_dir
-    local policy="$DRY_RUN_DIR/.managed/policy.json"
+    local policy="$DRY_RUN_DIR/.cco/managed/policy.json"
 
     local pname
     pname=$(jq -r '.project_name' "$policy")

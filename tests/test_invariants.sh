@@ -48,7 +48,7 @@ test_invariant_2_global_config_at_home_claude_in_container() {
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
-    local compose="$DRY_RUN_DIR/docker-compose.yml"
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "/home/claude/.claude/settings.json"
     assert_file_contains "$compose" "/home/claude/.claude/CLAUDE.md"
     assert_file_contains "$compose" "/home/claude/.claude/rules"
@@ -60,7 +60,7 @@ test_invariant_2_project_config_at_workspace_claude_readwrite() {
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
-    local compose="$DRY_RUN_DIR/docker-compose.yml"
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "./.claude:/workspace/.claude"
     # MUST be read-write
     if grep -qF "./.claude:/workspace/.claude:ro" "$compose"; then
@@ -71,7 +71,7 @@ test_invariant_2_project_config_at_workspace_claude_readwrite() {
 }
 
 # ── Invariant 3: Auto Memory Path ────────────────────────────────────
-# Claude state (memory + transcripts) is mounted as claude-state/ on the host.
+# Claude state (memory + transcripts) is mounted as .cco/claude-state/ on the host.
 # Container path is /home/claude/.claude/projects/-workspace
 # (-workspace = WORKDIR /workspace with root slash replaced by dash)
 
@@ -81,7 +81,7 @@ test_invariant_3_auto_memory_exact_container_path() {
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
-    local compose="$DRY_RUN_DIR/docker-compose.yml"
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "/home/claude/.claude/projects/-workspace"
 }
 
@@ -101,11 +101,11 @@ test_invariant_3_memory_is_project_specific_host_path() {
     local compose_a="$dir_a/docker-compose.yml"
     local compose_b="$dir_b/docker-compose.yml"
 
-    # Each project's compose should reference its own claude-state directory
-    assert_file_contains "$compose_a" "proj-a/claude-state"
-    assert_file_contains "$compose_b" "proj-b/claude-state"
-    assert_file_not_contains "$compose_a" "proj-b/claude-state"
-    assert_file_not_contains "$compose_b" "proj-a/claude-state"
+    # Each project's compose should reference its own .cco/claude-state directory
+    assert_file_contains "$compose_a" "proj-a/.cco/claude-state"
+    assert_file_contains "$compose_b" "proj-b/.cco/claude-state"
+    assert_file_not_contains "$compose_a" "proj-b/.cco/claude-state"
+    assert_file_not_contains "$compose_b" "proj-a/.cco/claude-state"
 }
 
 # ── Invariant 4: Container/Network Naming ────────────────────────────
@@ -116,7 +116,7 @@ test_invariant_4_container_name_is_cc_project() {
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "my-project" "$(minimal_project_yml my-project)"
     run_cco start "my-project" --dry-run
-    assert_file_contains "$DRY_RUN_DIR/docker-compose.yml" \
+    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
         "container_name: cc-my-project"
 }
 
@@ -126,7 +126,7 @@ test_invariant_4_network_name_is_cc_project() {
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "my-project" "$(minimal_project_yml my-project)"
     run_cco start "my-project" --dry-run
-    assert_file_contains "$DRY_RUN_DIR/docker-compose.yml" \
+    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
         "name: cc-my-project"
 }
 
@@ -158,7 +158,7 @@ test_invariant_5_all_global_config_mounts_are_readonly() {
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
-    local compose="$DRY_RUN_DIR/docker-compose.yml"
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
 
     # Every line mounting from the global config dir must end with :ro
     local global_path="$CCO_GLOBAL_DIR/.claude"
@@ -201,7 +201,7 @@ test_invariant_9_secrets_not_written_to_compose() {
 
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
-    local compose="$DRY_RUN_DIR/docker-compose.yml"
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
 
     assert_file_not_contains "$compose" "hunter2"
     assert_file_not_contains "$compose" "s3cr3t!"

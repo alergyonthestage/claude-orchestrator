@@ -20,7 +20,7 @@ _create_mock_template_repo() {
     # Create templates
     local manifest_templates=""
     for name in "${template_names[@]}"; do
-        mkdir -p "$work_dir/templates/$name"/{.claude/rules,claude-state,memory}
+        mkdir -p "$work_dir/templates/$name"/{.claude/rules,.cco/claude-state,memory}
 
         cat > "$work_dir/templates/$name/project.yml" <<YAML
 name: {{PROJECT_NAME}}
@@ -198,7 +198,7 @@ test_project_install_creates_claude_state() {
     local remote
     remote=$(_create_mock_template_repo "$tmpdir" "web-app")
     run_cco project install "$remote" --var "DESCRIPTION=App"
-    assert_dir_exists "$CCO_PROJECTS_DIR/web-app/claude-state"
+    assert_dir_exists "$CCO_PROJECTS_DIR/web-app/.cco/claude-state"
     assert_dir_exists "$CCO_PROJECTS_DIR/web-app/memory"
 }
 

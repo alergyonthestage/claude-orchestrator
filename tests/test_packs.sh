@@ -196,7 +196,7 @@ YAML
     # Must not fail even though the pack doesn't exist
     run_cco start "test-proj" --dry-run
     # Compose file should still be generated
-    assert_file_exists "$DRY_RUN_DIR/docker-compose.yml"
+    assert_file_exists "$DRY_RUN_DIR/.cco/docker-compose.yml"
 }
 
 test_packs_md_description_included_when_present() {
@@ -362,7 +362,7 @@ test_project_yml_mounted_in_compose() {
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
-    assert_file_contains "$DRY_RUN_DIR/docker-compose.yml" \
+    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
         "./project.yml:/workspace/project.yml:ro"
 }
 
@@ -392,7 +392,7 @@ packs:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    local compose="$DRY_RUN_DIR/docker-compose.yml"
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "skills/deploy:/workspace/.claude/skills/deploy:ro"
 }
 
@@ -420,7 +420,7 @@ packs:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    local compose="$DRY_RUN_DIR/docker-compose.yml"
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "agents/devops.md:/workspace/.claude/agents/devops.md:ro"
 }
 
@@ -448,7 +448,7 @@ packs:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    local compose="$DRY_RUN_DIR/docker-compose.yml"
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "rules/api-conventions.md:/workspace/.claude/rules/api-conventions.md:ro"
 }
 
@@ -483,7 +483,7 @@ packs:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    local compose="$DRY_RUN_DIR/docker-compose.yml"
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "${pack_src}:/workspace/.claude/packs/k-pack:ro"
 }
 
@@ -515,7 +515,7 @@ packs:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    local compose="$DRY_RUN_DIR/docker-compose.yml"
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     # Extract all pack mount lines (after "Pack resources" comment) and verify all have :ro
     local pack_lines
     pack_lines=$(sed -n '/Pack resources/,/^ *#/p' "$compose" | grep '^\s*-' || true)
@@ -564,8 +564,8 @@ YAML
     assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/agents/bot.md"
     assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/skills/deploy/SKILL.md"
     assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/packs/no-copy-pack/guide.md"
-    # No .pack-manifest should be created
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/.pack-manifest"
+    # No .cco/pack-manifest should be created
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/.cco/pack-manifest"
 }
 
 # ── legacy manifest cleanup ──────────────────────────────────────────
@@ -580,17 +580,17 @@ test_legacy_manifest_cleaned_on_start() {
 
     # Simulate legacy state: manifest + copied files
     local proj_claude="$CCO_PROJECTS_DIR/test-proj/.claude"
-    mkdir -p "$proj_claude/rules" "$proj_claude/agents"
+    mkdir -p "$proj_claude/rules" "$proj_claude/agents" "$proj_claude/.cco"
     echo "old rule" > "$proj_claude/rules/legacy-rule.md"
     echo "old agent" > "$proj_claude/agents/legacy-agent.md"
-    printf 'rules/legacy-rule.md\nagents/legacy-agent.md\n' > "$proj_claude/.pack-manifest"
+    printf 'rules/legacy-rule.md\nagents/legacy-agent.md\n' > "$proj_claude/.cco/pack-manifest"
 
     run_cco start "test-proj" --dry-run
 
     # Dry-run is side-effect free — legacy files are preserved
     assert_file_exists "$proj_claude/rules/legacy-rule.md"
     assert_file_exists "$proj_claude/agents/legacy-agent.md"
-    assert_file_exists "$proj_claude/.pack-manifest"
+    assert_file_exists "$proj_claude/.cco/pack-manifest"
 }
 
 # ── pack name conflict warnings ──────────────────────────────────────
@@ -755,7 +755,7 @@ packs:
 YAML
 )"
     run_cco start "test-proj" --dry-run
-    local compose="$DRY_RUN_DIR/docker-compose.yml"
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     # Compose must NOT contain any mount referencing bad-indent pack
     if grep -q "bad-indent" "$compose"; then
         echo "ASSERTION FAILED: compose should not contain mounts for pack with bad indentation"

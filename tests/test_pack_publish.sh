@@ -112,8 +112,8 @@ test_pack_publish_creates_cco_source() {
     run_cco remote add target "$bare_dir"
     run_cco pack publish my-pack target
 
-    assert_file_exists "$CCO_PACKS_DIR/my-pack/.cco-source"
-    assert_file_contains "$CCO_PACKS_DIR/my-pack/.cco-source" "publish_target: target"
+    assert_file_exists "$CCO_PACKS_DIR/my-pack/.cco/source"
+    assert_file_contains "$CCO_PACKS_DIR/my-pack/.cco/source" "publish_target: target"
 }
 
 test_pack_publish_excludes_cco_source() {
@@ -121,7 +121,8 @@ test_pack_publish_excludes_cco_source() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     _create_local_pack "my-pack"
-    echo "source: local" > "$CCO_PACKS_DIR/my-pack/.cco-source"
+    mkdir -p "$CCO_PACKS_DIR/my-pack/.cco"
+    echo "source: local" > "$CCO_PACKS_DIR/my-pack/.cco/source"
 
     local bare_dir
     bare_dir=$(_create_empty_bare_remote "$tmpdir")
@@ -131,8 +132,8 @@ test_pack_publish_excludes_cco_source() {
 
     local verify_dir="$tmpdir/verify"
     git clone -q "$bare_dir" "$verify_dir"
-    [[ ! -f "$verify_dir/packs/my-pack/.cco-source" ]] || {
-        echo "ASSERTION FAILED: .cco-source should NOT be in remote"
+    [[ ! -f "$verify_dir/packs/my-pack/.cco/source" ]] || {
+        echo "ASSERTION FAILED: .cco/source should NOT be in remote"
         return 1
     }
 }

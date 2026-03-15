@@ -126,7 +126,7 @@ test_tutorial_dry_run_generates_compose() {
     mkdir -p "$REPO_ROOT/docs"
 
     run_cco start "tutorial" --dry-run
-    local compose="$DRY_RUN_DIR/docker-compose.yml"
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_exists "$compose"
     # Verify extra_mounts for docs (read-only)
     assert_file_contains "$compose" "$REPO_ROOT/docs:/workspace/cco-docs:ro"

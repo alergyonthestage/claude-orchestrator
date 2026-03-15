@@ -31,7 +31,7 @@ YAML
 _create_test_project() {
     local name="$1"
     local project_dir="$CCO_PROJECTS_DIR/$name"
-    mkdir -p "$project_dir/.claude/rules" "$project_dir/claude-state" "$project_dir/memory"
+    mkdir -p "$project_dir/.claude/rules" "$project_dir/.cco/claude-state" "$project_dir/memory"
 
     cat > "$project_dir/project.yml" <<YAML
 name: $name
@@ -58,11 +58,11 @@ MD
     echo "rule: follow conventions" > "$project_dir/.claude/rules/style.md"
 
     # Create runtime files that should be excluded
-    echo "generated" > "$project_dir/docker-compose.yml"
-    mkdir -p "$project_dir/.managed"
-    echo "{}" > "$project_dir/.managed/mcp.json"
-    echo "pack: stuff" > "$project_dir/.pack-manifest"
-    echo "schema_version: 1" > "$project_dir/.cco-meta"
+    echo "generated" > "$project_dir/.cco/docker-compose.yml"
+    mkdir -p "$project_dir/.cco/managed" "$project_dir/.claude/.cco"
+    echo "{}" > "$project_dir/.cco/managed/mcp.json"
+    echo "pack: stuff" > "$project_dir/.claude/.cco/pack-manifest"
+    echo "schema_version: 1" > "$project_dir/.cco/meta"
     echo "SECRET=pass" > "$project_dir/secrets.env"
 }
 
@@ -122,24 +122,24 @@ test_project_publish_excludes_runtime_files() {
     git clone -q "$bare_dir" "$verify_dir"
     local tmpl="$verify_dir/templates/my-proj"
 
-    [[ ! -f "$tmpl/docker-compose.yml" ]] || {
-        echo "ASSERTION FAILED: docker-compose.yml should be excluded"
+    [[ ! -f "$tmpl/.cco/docker-compose.yml" ]] || {
+        echo "ASSERTION FAILED: .cco/docker-compose.yml should be excluded"
         return 1
     }
-    [[ ! -d "$tmpl/.managed" ]] || {
-        echo "ASSERTION FAILED: .managed/ should be excluded"
+    [[ ! -d "$tmpl/.cco/managed" ]] || {
+        echo "ASSERTION FAILED: .cco/managed/ should be excluded"
         return 1
     }
-    [[ ! -f "$tmpl/.pack-manifest" ]] || {
-        echo "ASSERTION FAILED: .pack-manifest should be excluded"
+    [[ ! -f "$tmpl/.claude/.cco/pack-manifest" ]] || {
+        echo "ASSERTION FAILED: .claude/.cco/pack-manifest should be excluded"
         return 1
     }
-    [[ ! -f "$tmpl/.cco-meta" ]] || {
-        echo "ASSERTION FAILED: .cco-meta should be excluded"
+    [[ ! -f "$tmpl/.cco/meta" ]] || {
+        echo "ASSERTION FAILED: .cco/meta should be excluded"
         return 1
     }
-    [[ ! -d "$tmpl/claude-state" ]] || {
-        echo "ASSERTION FAILED: claude-state/ should be excluded"
+    [[ ! -d "$tmpl/.cco/claude-state" ]] || {
+        echo "ASSERTION FAILED: .cco/claude-state/ should be excluded"
         return 1
     }
     [[ ! -f "$tmpl/secrets.env" ]] || {
@@ -229,7 +229,7 @@ test_project_publish_adds_url_from_git_remote() {
 
     # Create project pointing to that repo
     local project_dir="$CCO_PROJECTS_DIR/url-proj"
-    mkdir -p "$project_dir/.claude/rules" "$project_dir/claude-state" "$project_dir/memory"
+    mkdir -p "$project_dir/.claude/rules" "$project_dir/.cco/claude-state" "$project_dir/memory"
     cat > "$project_dir/project.yml" <<YAML
 name: url-proj
 description: "Test"

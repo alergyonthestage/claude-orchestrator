@@ -130,9 +130,9 @@ test_pack_install_creates_cco_source() {
     local remote
     remote=$(_create_mock_config_repo "$tmpdir" "tracked")
     run_cco pack install "$remote" --pick "tracked"
-    assert_file_exists "$CCO_PACKS_DIR/tracked/.cco-source"
-    assert_file_contains "$CCO_PACKS_DIR/tracked/.cco-source" "source:"
-    assert_file_contains "$CCO_PACKS_DIR/tracked/.cco-source" "installed:"
+    assert_file_exists "$CCO_PACKS_DIR/tracked/.cco/source"
+    assert_file_contains "$CCO_PACKS_DIR/tracked/.cco/source" "source:"
+    assert_file_contains "$CCO_PACKS_DIR/tracked/.cco/source" "installed:"
 }
 
 test_pack_install_single_pack_repo() {
@@ -231,7 +231,7 @@ test_pack_update_from_source() {
     local remote
     remote=$(_create_mock_config_repo "$tmpdir" "updatable")
     run_cco pack install "$remote" --pick "updatable"
-    assert_file_exists "$CCO_PACKS_DIR/updatable/.cco-source"
+    assert_file_exists "$CCO_PACKS_DIR/updatable/.cco/source"
 
     # Modify the remote (add new file)
     local work_dir="$tmpdir/mock-work"
@@ -241,7 +241,7 @@ test_pack_update_from_source() {
     git -C "$work_dir" push -q origin main 2>/dev/null || \
         git -C "$work_dir" push -q origin master 2>/dev/null
 
-    # Fix .cco-source to use the same bare repo path (the update reads source from it)
+    # Fix .cco/source to use the same bare repo path (the update reads source from it)
     # The install recorded the bare path; re-cloning should pick up new commits
     run_cco pack update "updatable"
     assert_file_exists "$CCO_PACKS_DIR/updatable/agents/new-agent.md"
@@ -287,20 +287,20 @@ test_pack_export_excludes_cco_source() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
 
-    # Install a remote pack (has .cco-source)
+    # Install a remote pack (has .cco/source)
     local remote
     remote=$(_create_mock_config_repo "$tmpdir" "source-pack")
     run_cco pack install "$remote" --pick "source-pack"
-    assert_file_exists "$CCO_PACKS_DIR/source-pack/.cco-source"
+    assert_file_exists "$CCO_PACKS_DIR/source-pack/.cco/source"
 
     # Export
     cd "$tmpdir"
     run_cco pack export "source-pack"
     assert_file_exists "$tmpdir/source-pack.tar.gz"
 
-    # Verify .cco-source is NOT in the archive
-    if tar tzf "$tmpdir/source-pack.tar.gz" | grep -q '.cco-source'; then
-        echo "ASSERTION FAILED: .cco-source should be excluded from export"
+    # Verify .cco/source is NOT in the archive
+    if tar tzf "$tmpdir/source-pack.tar.gz" | grep -q '.cco/source'; then
+        echo "ASSERTION FAILED: .cco/source should be excluded from export"
         return 1
     fi
 }
@@ -346,7 +346,7 @@ test_pack_update_all_skips_local() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
 
-    # Create a local pack (no .cco-source)
+    # Create a local pack (no .cco/source)
     run_cco pack create "local-only"
 
     # Create a remote pack
@@ -401,8 +401,8 @@ test_pack_create_no_cco_source() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco pack create "manual-pack"
-    # Local packs should NOT have .cco-source
-    assert_file_not_exists "$CCO_PACKS_DIR/manual-pack/.cco-source"
+    # Local packs should NOT have .cco/source
+    assert_file_not_exists "$CCO_PACKS_DIR/manual-pack/.cco/source"
 }
 
 # ── install missing url ──────────────────────────────────────────────

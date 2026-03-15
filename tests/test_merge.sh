@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/test_merge.sh — Tests for 3-way merge engine and .cco-base lifecycle
+# tests/test_merge.sh — Tests for 3-way merge engine and .cco/base lifecycle
 
 # ── _merge_file unit tests ───────────────────────────────────────────
 
@@ -95,23 +95,23 @@ test_merge_file_no_git_fallback() {
     assert_file_contains "$tmpdir/output" "new version"
 }
 
-# ── .cco-base lifecycle ──────────────────────────────────────────────
+# ── .cco/base lifecycle ──────────────────────────────────────────────
 
 test_init_creates_cco_base() {
-    # cco init should create .cco-base/ with base versions of all managed files
+    # cco init should create .cco/base/ with base versions of all managed files
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
 
-    assert_dir_exists "$CCO_GLOBAL_DIR/.claude/.cco-base" \
-        ".cco-base/ should be created during init"
+    assert_dir_exists "$CCO_GLOBAL_DIR/.claude/.cco/base" \
+        ".cco/base/ should be created during init"
     # Should have copies of tracked files
-    assert_file_exists "$CCO_GLOBAL_DIR/.claude/.cco-base/settings.json" \
-        ".cco-base/ should contain settings.json"
+    assert_file_exists "$CCO_GLOBAL_DIR/.claude/.cco/base/settings.json" \
+        ".cco/base/ should contain settings.json"
 }
 
 test_update_refreshes_cco_base() {
-    # After cco update, .cco-base/ should reflect the latest defaults
+    # After cco update, .cco/base/ should reflect the latest defaults
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
@@ -120,8 +120,8 @@ test_update_refreshes_cco_base() {
     printf '\n# New framework line\n' >> "$REPO_ROOT/defaults/global/.claude/rules/workflow.md"
 
     run_cco update
-    # .cco-base should be updated to match the new default
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco-base/rules/workflow.md" "New framework line"
+    # .cco/base should be updated to match the new default
+    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco/base/rules/workflow.md" "New framework line"
 
     # Restore
     cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md

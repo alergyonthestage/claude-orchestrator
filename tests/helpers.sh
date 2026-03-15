@@ -244,7 +244,7 @@ except Exception as e:
 
 # ── Update System Helpers ──────────────────────────────────────────────
 
-# Create a .cco-meta file with the given content
+# Create a .cco/meta file with the given content
 # Usage: create_cco_meta "$meta_file" "$content"
 create_cco_meta() {
     local meta_file="$1"

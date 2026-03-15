@@ -167,11 +167,11 @@ test_clean_generated_removes_docker_compose() {
     run_cco init --lang "English"
 
     local proj_dir="$CCO_PROJECTS_DIR/test-proj"
-    mkdir -p "$proj_dir"
-    echo "generated" > "$proj_dir/docker-compose.yml"
+    mkdir -p "$proj_dir/.cco"
+    echo "generated" > "$proj_dir/.cco/docker-compose.yml"
 
     run_cco clean --generated
-    assert_file_not_exists "$proj_dir/docker-compose.yml"
+    assert_file_not_exists "$proj_dir/.cco/docker-compose.yml"
     assert_output_contains "Removed 1 docker-compose.yml"
 }
 
@@ -181,11 +181,11 @@ test_clean_generated_dry_run() {
     run_cco init --lang "English"
 
     local proj_dir="$CCO_PROJECTS_DIR/test-proj"
-    mkdir -p "$proj_dir"
-    echo "generated" > "$proj_dir/docker-compose.yml"
+    mkdir -p "$proj_dir/.cco"
+    echo "generated" > "$proj_dir/.cco/docker-compose.yml"
 
     run_cco clean --generated --dry-run
-    assert_file_exists "$proj_dir/docker-compose.yml"
+    assert_file_exists "$proj_dir/.cco/docker-compose.yml"
     assert_output_contains "Would remove 1 docker-compose.yml"
     assert_output_contains "[dry-run]"
 }
@@ -197,13 +197,13 @@ test_clean_generated_project_scoped() {
 
     local proj1="$CCO_PROJECTS_DIR/proj1"
     local proj2="$CCO_PROJECTS_DIR/proj2"
-    mkdir -p "$proj1" "$proj2"
-    echo "gen" > "$proj1/docker-compose.yml"
-    echo "gen" > "$proj2/docker-compose.yml"
+    mkdir -p "$proj1/.cco" "$proj2/.cco"
+    echo "gen" > "$proj1/.cco/docker-compose.yml"
+    echo "gen" > "$proj2/.cco/docker-compose.yml"
 
     run_cco clean --generated --project proj1
-    assert_file_not_exists "$proj1/docker-compose.yml"
-    assert_file_exists "$proj2/docker-compose.yml"
+    assert_file_not_exists "$proj1/.cco/docker-compose.yml"
+    assert_file_exists "$proj2/.cco/docker-compose.yml"
 }
 
 test_clean_generated_no_files() {
@@ -223,7 +223,7 @@ test_clean_all_categories() {
     run_cco init --lang "English"
 
     local proj_dir="$CCO_PROJECTS_DIR/test-proj"
-    mkdir -p "$proj_dir/.claude" "$proj_dir/.tmp"
+    mkdir -p "$proj_dir/.claude" "$proj_dir/.tmp" "$proj_dir/.cco"
 
     # .bak files
     echo "backup" > "$proj_dir/.claude/test.md.bak"
@@ -233,13 +233,13 @@ test_clean_all_categories() {
     echo "dry-run" > "$proj_dir/.tmp/compose.yml"
 
     # docker-compose.yml
-    echo "generated" > "$proj_dir/docker-compose.yml"
+    echo "generated" > "$proj_dir/.cco/docker-compose.yml"
 
     run_cco clean --all
     assert_file_not_exists "$proj_dir/.claude/test.md.bak"
     assert_file_not_exists "$CCO_GLOBAL_DIR/.claude/settings.json.bak"
     assert_dir_not_exists "$proj_dir/.tmp"
-    assert_file_not_exists "$proj_dir/docker-compose.yml"
+    assert_file_not_exists "$proj_dir/.cco/docker-compose.yml"
 
     assert_output_contains "Removed 2 .bak"
     assert_output_contains "Removed 1 .tmp/"
@@ -252,17 +252,17 @@ test_clean_all_categories_dry_run() {
     run_cco init --lang "English"
 
     local proj_dir="$CCO_PROJECTS_DIR/test-proj"
-    mkdir -p "$proj_dir/.claude" "$proj_dir/.tmp"
+    mkdir -p "$proj_dir/.claude" "$proj_dir/.tmp" "$proj_dir/.cco"
 
     echo "backup" > "$proj_dir/.claude/test.md.bak"
     echo "dry-run" > "$proj_dir/.tmp/compose.yml"
-    echo "generated" > "$proj_dir/docker-compose.yml"
+    echo "generated" > "$proj_dir/.cco/docker-compose.yml"
 
     run_cco clean --all --dry-run
     # Everything should still exist
     assert_file_exists "$proj_dir/.claude/test.md.bak"
     assert_dir_exists "$proj_dir/.tmp"
-    assert_file_exists "$proj_dir/docker-compose.yml"
+    assert_file_exists "$proj_dir/.cco/docker-compose.yml"
 
     assert_output_contains "[dry-run]"
     assert_output_contains "Run without --dry-run"
@@ -312,19 +312,19 @@ test_clean_all_categories_combined() {
     run_cco init --lang "English"
 
     local proj_dir="$CCO_PROJECTS_DIR/test-proj"
-    mkdir -p "$proj_dir/.claude" "$proj_dir/.tmp"
+    mkdir -p "$proj_dir/.claude" "$proj_dir/.tmp" "$proj_dir/.cco"
 
     # .bak files
     echo "backup" > "$proj_dir/.claude/test.md.bak"
     # .tmp/ directory
     echo "dry-run artifact" > "$proj_dir/.tmp/compose.yml"
     # docker-compose.yml
-    echo "generated" > "$proj_dir/docker-compose.yml"
+    echo "generated" > "$proj_dir/.cco/docker-compose.yml"
 
     run_cco clean --all
     assert_file_not_exists "$proj_dir/.claude/test.md.bak"
     assert_dir_not_exists "$proj_dir/.tmp"
-    assert_file_not_exists "$proj_dir/docker-compose.yml"
+    assert_file_not_exists "$proj_dir/.cco/docker-compose.yml"
 }
 
 test_clean_dry_run_no_deletion() {

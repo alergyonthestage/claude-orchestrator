@@ -16,7 +16,7 @@ _create_config_repo_with_packs() {
     local bare_dir="$tmpdir/mock-remote.git"
 
     mkdir -p "$work_dir/templates/$template_name/.claude/rules"
-    mkdir -p "$work_dir/templates/$template_name/claude-state/memory"
+    mkdir -p "$work_dir/templates/$template_name/.cco/claude-state/memory"
 
     # Build packs list for project.yml
     local packs_section="packs: []"
