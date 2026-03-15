@@ -15,14 +15,23 @@ MIGRATION_DESC="Initialize .cco-base for 3-way merge support"
 migrate() {
     local target_dir="$1"
     local base_dir
-    # target_dir is .claude/ — .cco-base is inside .claude/ (sibling to settings.json etc.)
-    base_dir="$target_dir/.cco-base"
     local defaults_dir="$DEFAULTS_DIR/global/.claude"
 
-    # If .cco-base/ already exists, nothing to do
+    # Post-consolidation path (.cco/base/) takes priority
+    if [[ -d "$target_dir/.cco/base" ]]; then
+        return 0
+    fi
+
+    # Pre-consolidation path (.cco-base/) — migration 009 will move it later
+    local base_dir="$target_dir/.cco-base"
     [[ -d "$base_dir" ]] && return 0
 
-    # Save current defaults as base versions for future 3-way merge
+    # Save current defaults as base versions for future 3-way merge.
+    # Create at .cco/base/ directly if .cco/ dir exists (post-009),
+    # otherwise at .cco-base/ (pre-009, will be moved by 009).
+    if [[ -d "$target_dir/.cco" ]]; then
+        base_dir="$target_dir/.cco/base"
+    fi
     _save_all_base_versions "$base_dir" "$defaults_dir" "global"
 
     return 0
