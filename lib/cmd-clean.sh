@@ -213,7 +213,7 @@ _clean_generated() {
     local dry_run="$2"
     local label="$3"
 
-    local compose_file="$dir/docker-compose.yml"
+    local compose_file="$dir/.cco/docker-compose.yml"
     if [[ -f "$compose_file" ]]; then
         if [[ "$dry_run" == "true" ]]; then
             echo "  [dry-run] [$label] docker-compose.yml" >&2

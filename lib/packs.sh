@@ -10,7 +10,7 @@
 # Reads .pack-manifest, deletes listed files/dirs, then removes the manifest.
 _clean_pack_manifest() {
     local project_dir="$1"
-    local manifest="$project_dir/.claude/.pack-manifest"
+    local manifest="$project_dir/.claude/.cco/pack-manifest"
     [[ ! -f "$manifest" ]] && return 0
     while IFS= read -r rel_path; do
         [[ -z "$rel_path" ]] && continue

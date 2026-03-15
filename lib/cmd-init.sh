@@ -58,8 +58,8 @@ EOF
     if [[ -d "$GLOBAL_DIR/.claude" ]] && ! $force; then
         warn "Config already initialized, skipping (use --force to overwrite)"
 
-        # Run pending migrations on existing install (if no .cco-meta yet)
-        if [[ ! -f "$GLOBAL_DIR/.claude/.cco-meta" ]]; then
+        # Run pending migrations on existing install (if no .cco/meta yet)
+        if [[ ! -f "$(_cco_global_meta)" ]]; then
             _run_migrations "global" "$GLOBAL_DIR/.claude" 0 ""
         fi
     else
@@ -80,17 +80,18 @@ EOF
 
         ok "Global config initialized (languages: $comm_lang / $docs_lang / $code_lang)"
 
-        # Generate .cco-meta with hashes of all installed files and latest schema
+        # Generate .cco/meta with hashes of all installed files and latest schema
         local latest_schema
         latest_schema=$(_latest_schema_version "global")
         local now
         now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
         # Build manifest entries for all managed files
-        local meta_file="$GLOBAL_DIR/.claude/.cco-meta"
+        mkdir -p "$GLOBAL_DIR/.claude/.cco"
+        local meta_file="$GLOBAL_DIR/.claude/.cco/meta"
         (
             cd "$GLOBAL_DIR/.claude" || exit 1
-            find . -type f ! -name '.cco-meta' | sed 's|^\./||' | sort | while IFS= read -r rel; do
+            find . -type f ! -name 'meta' ! -path './.cco/*' | sed 's|^\./||' | sort | while IFS= read -r rel; do
                 # Skip user-owned files
                 local skip=false
                 for uf in "${GLOBAL_USER_FILES[@]}"; do
@@ -103,7 +104,7 @@ EOF
             "$comm_lang" "$docs_lang" "$code_lang" "0"
 
         # Save base versions for future 3-way merge
-        _save_all_base_versions "$GLOBAL_DIR/.claude/.cco-base" "$DEFAULTS_DIR/global/.claude" "global"
+        _save_all_base_versions "$GLOBAL_DIR/.claude/.cco/base" "$DEFAULTS_DIR/global/.claude" "global"
 
         # Run all migrations (marks schema as current — fresh install, nothing to migrate)
         _run_migrations "global" "$GLOBAL_DIR/.claude" 0 "$meta_file"
@@ -140,14 +141,15 @@ EOF
         sed -i '' "s|{{CCO_USER_CONFIG_DIR}}|$USER_CONFIG_DIR|g" "$tutorial_yml" 2>/dev/null || \
             sed -i "s|{{CCO_USER_CONFIG_DIR}}|$USER_CONFIG_DIR|g" "$tutorial_yml"
 
-        # Bootstrap .cco-source, .cco-meta, .cco-base for tutorial project
-        printf 'native:project/tutorial\n' > "$tutorial_dir/.cco-source"
+        # Bootstrap .cco/source, .cco/meta, .cco/base for tutorial project
+        mkdir -p "$tutorial_dir/.cco"
+        printf 'native:project/tutorial\n' > "$tutorial_dir/.cco/source"
 
         local tut_latest_schema
         tut_latest_schema=$(_latest_schema_version "project")
         local tut_now
         tut_now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-        local tut_meta="$tutorial_dir/.cco-meta"
+        local tut_meta="$tutorial_dir/.cco/meta"
         local tut_defaults="$NATIVE_TEMPLATES_DIR/project/base/.claude"
 
         (
@@ -163,7 +165,7 @@ EOF
             done
         ) | _generate_project_cco_meta "$tut_meta" "$tut_latest_schema" "$tut_now" "tutorial"
 
-        _save_all_base_versions "$tutorial_dir/.cco-base" "$tut_defaults" "project"
+        _save_all_base_versions "$tutorial_dir/.cco/base" "$tut_defaults" "project"
 
         ok "Tutorial project ready — run 'cco start tutorial' to begin"
     fi

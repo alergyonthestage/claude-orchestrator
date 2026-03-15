@@ -15,22 +15,24 @@ secrets.env
 *.pem
 
 # Runtime files — generated, not user config
-projects/*/docker-compose.yml
-projects/*/.managed/
+projects/*/.cco/managed/
+projects/*/.cco/docker-compose.yml
 projects/*/.tmp/
-projects/*/.pack-manifest
-projects/*/.cco-meta
+projects/*/.cco/meta
 
 # Session state — transient, large, personal
 global/claude-state/
-projects/*/claude-state/
+projects/*/.cco/claude-state/
 projects/*/rag-data/
 
+# Global meta
+global/.claude/.cco/meta
+
 # Pack install temporary files
-packs/*/.cco-install-tmp/
+packs/*/.cco/install-tmp/
 
 # Machine-specific remote config
-.cco-remotes
+.cco/remotes
 '
 
 # ── Secret patterns for pre-commit scan ───────────────────────────────
@@ -41,7 +43,7 @@ _VAULT_SECRET_PATTERNS=(
     '*.key'
     '*.pem'
     '.credentials.json'
-    '.cco-remotes'
+    '.cco/remotes'
 )
 
 # ── Vault subcommands ─────────────────────────────────────────────────
@@ -482,7 +484,7 @@ EOF
 
     _check_vault
 
-    # Delegate to cco remote for add/remove (keeps .cco-remotes in sync)
+    # Delegate to cco remote for add/remove (keeps .cco/remotes in sync)
     case "$subcmd" in
         add)    _cmd_remote_add "$@" ;;
         remove) _cmd_remote_remove "$@" ;;

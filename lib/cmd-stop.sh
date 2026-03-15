@@ -41,8 +41,8 @@ EOF
         fi
 
         # Clean up managed integration runtime state
-        rm -f "$project_dir/.managed/browser.json" "$project_dir/.managed/.browser-port"
-        rm -f "$project_dir/.managed/github.json"
+        rm -f "$project_dir/.cco/managed/browser.json" "$project_dir/.cco/managed/.browser-port"
+        rm -f "$project_dir/.cco/managed/github.json"
     else
         local containers
         containers=$(docker ps --filter "name=cc-" --format '{{.Names}}' 2>/dev/null)
@@ -56,8 +56,8 @@ EOF
         done
         # Clean managed runtime state for all projects (all sessions stopped)
         for proj_dir in "$PROJECTS_DIR"/*/; do
-            rm -f "$proj_dir/.managed/browser.json" "$proj_dir/.managed/.browser-port"
-            rm -f "$proj_dir/.managed/github.json"
+            rm -f "$proj_dir/.cco/managed/browser.json" "$proj_dir/.cco/managed/.browser-port"
+            rm -f "$proj_dir/.cco/managed/github.json"
         done
     fi
 }

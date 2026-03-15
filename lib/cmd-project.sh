@@ -148,13 +148,13 @@ print(', '.join(['$'+k for k in ['dev','build','test','start','lint'] if k in s]
     fi
 
     # Ensure claude-state and memory dirs exist
-    mkdir -p "$project_dir/claude-state"
+    mkdir -p "$project_dir/.cco/claude-state"
     mkdir -p "$project_dir/memory"
 
-    # ── Bootstrap .cco-meta, .cco-base/, .cco-source ─────────────────
+    # ── Bootstrap .cco/meta, .cco/base/, .cco/source ─────────────────
     # Initialize update system metadata for the new project.
 
-    # Determine template source string for .cco-source
+    # Determine template source string for .cco/source
     local template_source=""
     local resolved_template_name="${template_name:-base}"
     if [[ -d "$TEMPLATES_DIR/project/$resolved_template_name" ]]; then
@@ -165,20 +165,21 @@ print(', '.join(['$'+k for k in ['dev','build','test','start','lint'] if k in s]
         template_source="native:project/$resolved_template_name"
     fi
 
-    # Write .cco-source only for non-base templates (base is the default, tracked via .cco-meta)
+    # Write .cco/source only for non-base templates (base is the default, tracked via .cco/meta)
+    mkdir -p "$project_dir/.cco"
     if [[ "$resolved_template_name" != "base" ]]; then
-        printf '%s\n' "$template_source" > "$project_dir/.cco-source"
+        printf '%s\n' "$template_source" > "$project_dir/.cco/source"
     fi
 
-    # Generate .cco-meta with schema_version and manifest
+    # Generate .cco/meta with schema_version and manifest
     local latest_schema
     latest_schema=$(_latest_schema_version "project")
     local now
     now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    local meta_file="$project_dir/.cco-meta"
+    local meta_file="$project_dir/.cco/meta"
 
     # Build manifest entries from tracked project files
-    # Use actual template source (not always base) for .cco-base/ seeding
+    # Use actual template source (not always base) for .cco/base/ seeding
     local defaults_dir
     local resolved_tmpl_dir="$NATIVE_TEMPLATES_DIR/project/$resolved_template_name/.claude"
     if [[ -d "$resolved_tmpl_dir" ]]; then
@@ -200,7 +201,7 @@ print(', '.join(['$'+k for k in ['dev','build','test','start','lint'] if k in s]
     ) | _generate_project_cco_meta "$meta_file" "$latest_schema" "$now" "$resolved_template_name"
 
     # Save base versions for future 3-way merge
-    _save_all_base_versions "$project_dir/.cco-base" "$defaults_dir" "project"
+    _save_all_base_versions "$project_dir/.cco/base" "$defaults_dir" "project"
 
     ok "Project created at projects/$name/"
     info "Edit project.yml to configure repos and settings"
@@ -620,7 +621,7 @@ EOF
     done <<< "$project_packs"
 
     # Ensure claude-state and memory dirs exist
-    mkdir -p "$target_dir/claude-state"
+    mkdir -p "$target_dir/.cco/claude-state"
     mkdir -p "$target_dir/memory"
 
     _cleanup_clone "$tmpdir"
@@ -1123,11 +1124,7 @@ _copy_project_for_publish() {
 
     # Copy everything except excluded patterns
     local -a excludes=(
-        "docker-compose.yml"
-        ".managed"
-        ".pack-manifest"
-        ".cco-meta"
-        "claude-state"
+        ".cco"
         "memory"
         "secrets.env"
     )
@@ -1220,8 +1217,7 @@ _publish_pack_to_tmpdir() {
         rm -rf "$tmpdir/packs/$pack_name"
     fi
     cp -R "$pack_dir" "$tmpdir/packs/$pack_name"
-    rm -rf "$tmpdir/packs/$pack_name/.cco-source"
-    rm -rf "$tmpdir/packs/$pack_name/.cco-install-tmp"
+    rm -rf "$tmpdir/packs/$pack_name/.cco"
 
     # Internalize if source-referencing
     local k_source

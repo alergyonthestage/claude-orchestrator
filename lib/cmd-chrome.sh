@@ -73,7 +73,7 @@ _chrome_resolve_port() {
                 warn "Container ${container_name} is not running. Port may be stale."
             fi
         fi
-        local runtime_file="$PROJECTS_DIR/$opt_project/.managed/.browser-port"
+        local runtime_file="$PROJECTS_DIR/$opt_project/.cco/managed/.browser-port"
         if [[ -f "$runtime_file" ]]; then
             cat "$runtime_file"; return
         fi
