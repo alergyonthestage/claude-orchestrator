@@ -65,7 +65,7 @@ not exist for the next session.
   `project.yml` and `.claude/` directories, all tracked in git. Analysis and design
   documents go in `docs/` within your repo. The agent's context comes from the repo,
   not from chat history.
-- **Auto memory is project-scoped.** Each project's `claude-state/` directory is mounted
+- **Auto memory is project-scoped.** Each project's `.cco/claude-state/` directory is mounted
   to `~/.claude/projects/-workspace/`, isolating session transcripts and memory per project.
   Memory persists across sessions within the project but never leaks between projects.
 
@@ -281,7 +281,7 @@ Analysis → [Human Review] → Design → [Human Review] → Implementation →
 - **Project-scoped sessions.** One project per container. No accidental cross-project
   modifications.
 - **Ephemeral by default.** The container is `--rm` — it is destroyed when the session ends.
-  Only repos (mounted from host) and auto memory (mounted to `claude-state/`) persist.
+  Only repos (mounted from host) and auto memory (mounted to `.cco/claude-state/`) persist.
   Everything else starts clean next session.
 
 ### 3.3 Session Handoff Through Artifacts
@@ -294,7 +294,7 @@ that capture the state at the boundary.
 - **Analysis and design docs serve as handoff documents.** The `/analyze` skill produces
   a structured analysis summary; `/design` produces a design specification. Both are
   versioned files in the repo that the next session can read.
-- **Auto memory** (`claude-state/`) provides continuity for context that does not belong
+- **Auto memory** (`.cco/claude-state/`) provides continuity for context that does not belong
   in committed files — current task state, debugging notes, session-specific context.
 - **CLAUDE.md as living state.** The project CLAUDE.md should reflect the current state
   of the project. Updating it at the end of significant phases ensures the next session

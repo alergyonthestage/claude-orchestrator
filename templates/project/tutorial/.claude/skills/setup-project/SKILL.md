@@ -48,7 +48,8 @@ If rw access is available and user approves:
 2. Write `project.yml` with the agreed configuration
 3. Write `.claude/CLAUDE.md` with project overview and repo descriptions
 4. Create empty directories: `.claude/agents/`, `.claude/rules/`, `.claude/skills/`
-5. Create `claude-state/memory/.gitkeep`
+5. Create `.cco/claude-state/` directory
+6. Create `memory/.gitkeep`
 
 If rw access is NOT available:
 1. Show the complete `project.yml` content the user should create

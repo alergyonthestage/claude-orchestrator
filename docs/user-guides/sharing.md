@@ -250,7 +250,7 @@ No `manifest.yml` is required in this case.
 
 ## 5. Updating Packs
 
-Every pack installed from a remote carries a `.cco-source` metadata file that records where it came from:
+Every pack installed from a remote carries a `.cco/source` metadata file that records where it came from:
 
 ```yaml
 source: https://github.com/acme/cco-config
@@ -284,7 +284,7 @@ Updates every pack that has a remote source (skips locally created packs). Combi
 cco pack update --all --force
 ```
 
-Packs created locally with `cco pack create` have `source: local` in their `.cco-source` and are never touched by `--all`.
+Packs created locally with `cco pack create` have `source: local` in their `.cco/source` and are never touched by `--all`.
 
 ---
 
@@ -296,7 +296,7 @@ To share a pack as a standalone archive (without requiring git):
 cco pack export acme-conventions
 ```
 
-This creates `acme-conventions.tar.gz` in the current directory. The archive excludes the `.cco-source` metadata file, so the recipient gets a clean copy.
+This creates `acme-conventions.tar.gz` in the current directory. The archive excludes the `.cco/source` metadata file, so the recipient gets a clean copy.
 
 The recipient can extract it into their packs directory:
 
@@ -497,9 +497,9 @@ Without profiles, the vault works exactly as before — everything on a single `
 Each project has two separate directories for Claude Code state:
 
 - **`projects/<name>/memory/`** — Auto memory files (`MEMORY.md` and topic files). This directory is **vault-tracked** and syncs across machines when you push/pull. It contains personal working notes, task progress, and session-specific context.
-- **`projects/<name>/claude-state/`** — Session transcripts (used by `/resume`). This directory is **local only** (gitignored in the vault). Transcripts are large and machine-specific, so they are not synced.
+- **`projects/<name>/.cco/claude-state/`** — Session transcripts (used by `/resume`). This directory is **local only** (gitignored in the vault). Transcripts are large and machine-specific, so they are not synced.
 
-Both are mounted into the container at runtime. The `memory/` directory is mounted as a Docker child mount that overrides the `memory/` subdirectory within `claude-state/`, ensuring the two remain separate.
+Both are mounted into the container at runtime. The `memory/` directory is mounted as a Docker child mount that overrides the `memory/` subdirectory within `.cco/claude-state/`, ensuring the two remain separate.
 
 ### Team sharing (separate repos)
 
@@ -519,7 +519,7 @@ Teammates install packs from the team repo:
 cco pack install git@github.com:acme/cco-config
 ```
 
-Each person's vault tracks where each pack was installed from via the `.cco-source` metadata.
+Each person's vault tracks where each pack was installed from via the `.cco/source` metadata.
 
 ---
 

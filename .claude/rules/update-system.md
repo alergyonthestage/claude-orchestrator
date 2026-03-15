@@ -28,7 +28,7 @@ When you make a **structural or schema-breaking change** (renames, moves, format
 2. The migration must define `MIGRATION_ID=N`, `MIGRATION_DESC="..."`, and a `migrate()` function
 3. Every migration **must be idempotent** (safe to run multiple times)
 4. Update base template AND non-base native templates
-5. If the migration moves an opinionated file, also update `.cco-base/` in the migration
+5. If the migration moves an opinionated file, also update `.cco/base/` in the migration
 6. Test with `cco update --project <name>` and verify idempotency
 
 ## Opinionated Changes → `defaults/global/`

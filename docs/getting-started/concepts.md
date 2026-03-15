@@ -86,9 +86,9 @@ Learn more: [Sharing & Backup guide](../user-guides/sharing.md).
 
 ## Auto memory
 
-Each project has its own isolated memory directory (`projects/<name>/claude-state/memory/`). Claude Code automatically saves notes and insights during sessions and reloads them in subsequent sessions.
+Each project has its own isolated memory directory (`projects/<name>/memory/`). Claude Code automatically saves notes and insights during sessions and reloads them in subsequent sessions.
 
-The isolation ensures that information from one project doesn't "leak" into another. The `claude-state/` directory also contains session transcripts, necessary for the `/resume` command that allows you to resume a previous session even after a Docker image rebuild.
+The isolation ensures that information from one project doesn't "leak" into another. The `.cco/claude-state/` directory also contains session transcripts, necessary for the `/resume` command that allows you to resume a previous session even after a Docker image rebuild.
 
 Learn more: [context-hierarchy.md](../reference/context-hierarchy.md) (Auto Memory section).
 

@@ -140,7 +140,7 @@ Per `docs/maintainer/integration/docker/design.md` (sezione directory structure)
 - `lib/update.sh` — Update engine: opinionated file policies, discovery algorithm, on-demand merge via `git merge-file`
 - `lib/cmd-vault.sh` — Config versioning: init, sync, diff, log, status (git-backed)
 - `lib/manifest.sh` — manifest.yml lifecycle: init, refresh, validate, show
-- `lib/cmd-remote.sh` — Remote management: add, remove, list Config Repo remotes (.cco-remotes)
+- `lib/cmd-remote.sh` — Remote management: add, remove, list Config Repo remotes (.cco/remotes)
 - `lib/remote.sh` — Remote clone helper: sparse-checkout, shallow fallback, token auth
 - `Dockerfile` — Docker image (node:22-bookworm, Claude Code, gosu, tmux, docker CLI, cco-docker-proxy)
 - `proxy/` — Go Docker socket proxy: filters API calls by container name/label, mount paths, security constraints
@@ -189,7 +189,7 @@ Migration scopes: `global`, `project`, `pack`, `template`. All run automatically
 - Renamed/moved keys in `project.yml` → create `migrations/project/NNN_description.sh`
 - New sections/fields in global config (breaking) → create `migrations/global/NNN_description.sh`
 - Improvements to opinionated files → update `defaults/global/`; `cco update` discovers them
-- Native template-specific files (tutorial skills/rules) → discoverable via `.cco-source`
+- Native template-specific files (tutorial skills/rules) → discoverable via `.cco/source`
 - User template-specific files → not auto-updated; future `cco template sync`
 - Every migration must be **idempotent** (safe to run multiple times) and return 0 on success
 - Migration files define `MIGRATION_ID=N` and `MIGRATION_DESC="..."`, plus a `migrate()` function receiving the target directory
@@ -203,6 +203,6 @@ Migration scopes: `global`, `project`, `pack`, `template`. All run automatically
 2. Additive: add code-level default + update base template + append entry to `changelog.yml`
 3. Opinionated: update `defaults/global/`; users discover via `cco update --diff`, apply via `--apply`
 4. Breaking: create migration in `migrations/{scope}/`, update base template AND non-base native templates
-5. If migration moves an opinionated file: also update `.cco-base/` in the migration
+5. If migration moves an opinionated file: also update `.cco/base/` in the migration
 6. Test: `cco update --project <name>` runs migrations; verify idempotency
 7. Non-base native templates: update directly in `templates/project/<name>/`, create migration for existing users

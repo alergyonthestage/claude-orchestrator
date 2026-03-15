@@ -77,8 +77,8 @@ When `--lang` is provided, `{{COMM_LANG}}` is set to that language. `{{DOCS_LANG
    - Replace {{CODE_LANG}} with English
 
 3. INITIALIZE update metadata
-   - Generate .cco-meta (schema_version, language choices, manifest hashes)
-   - Save .cco-base/ (copies of opinionated files for future diff/merge)
+   - Generate .cco/meta (schema_version, language choices, manifest hashes)
+   - Save .cco/base/ (copies of opinionated files for future diff/merge)
 
 4. CREATE user-config/projects/ directory (if needed)
 
@@ -165,7 +165,7 @@ Examples:
    - If mcp.json exists → mount as /workspace/.mcp.json (Claude Code expands ${VAR} natively)
    - Mount global MCP config for entrypoint merge
    - Apply CLI overrides (--port, --env, --teammate-mode)
-   - Write to user-config/projects/<project>/docker-compose.yml
+   - Write to user-config/projects/<project>/.cco/docker-compose.yml
 
 3. GENERATE pack resources
    - Detect name conflicts across packs (warn if same agent/rule/skill in multiple packs)
@@ -174,12 +174,12 @@ Examples:
    - Generate .claude/workspace.yml (structured project summary for /init)
 
 4. CREATE directories (if needed)
-   - user-config/projects/<project>/claude-state/  (session transcripts; enables /resume across rebuilds)
+   - user-config/projects/<project>/.cco/claude-state/  (session transcripts; enables /resume across rebuilds)
    - user-config/projects/<project>/memory/  (auto memory; vault-tracked, separate from transcripts)
 
 5. LAUNCH
    - Load user-config/global/secrets.env as runtime env vars (validates KEY=VALUE format, skips malformed lines with warning)
-   - docker compose -f user-config/projects/<project>/docker-compose.yml \
+   - docker compose -f user-config/projects/<project>/.cco/docker-compose.yml \
        run --rm --service-ports claude
 
 6. CLEANUP (after exit)
@@ -218,7 +218,7 @@ Examples:
 
 2. GENERATE temporary docker-compose
    - Create temp dir: /tmp/cc-<name>/
-   - Generate docker-compose.yml with:
+   - Generate .cco/docker-compose.yml with:
      - Global config mounted (same as user-config/projects)
      - No project .claude/ (empty /workspace/.claude/)
      - Specified repos mounted as subdirectories
@@ -229,7 +229,7 @@ Examples:
 
 4. CLEANUP
    - Container removed
-   - Temp dir preserved (claude-state/ may be useful)
+   - Temp dir preserved (.cco/claude-state/ may be useful)
    - Print path to temp dir for reference
 ```
 
@@ -276,13 +276,13 @@ Examples:
    - Replace {{PROJECT_NAME}} and {{DESCRIPTION}} placeholders
 
 5. CREATE directories
-   - user-config/projects/<name>/claude-state/  (session transcripts)
+   - user-config/projects/<name>/.cco/claude-state/  (session transcripts)
    - user-config/projects/<name>/memory/  (auto memory; vault-tracked)
 
 6. INITIALIZE update metadata
-   - Generate .cco-meta (schema_version, template name, manifest hashes)
-   - Save .cco-base/ (copies of opinionated files for future diff/merge)
-   - If native template (not base): create .cco-source with native:<template-path>
+   - Generate .cco/meta (schema_version, template name, manifest hashes)
+   - Save .cco/base/ (copies of opinionated files for future diff/merge)
+   - If native template (not base): create .cco/source with native:<template-path>
 
 7. PRINT
    - "Project created at user-config/projects/<name>/"
@@ -363,7 +363,7 @@ Examples:
 
 **Port resolution priority**:
 1. `--port <n>` — explicit flag
-2. `--project <name>` → reads `user-config/projects/<name>/.managed/.browser-port` (effective runtime port)
+2. `--project <name>` → reads `user-config/projects/<name>/.cco/managed/.browser-port` (effective runtime port)
 3. `--project <name>` → falls back to `user-config/projects/<name>/project.yml` `browser.cdp_port`
 4. Default: `9222`
 
@@ -615,7 +615,7 @@ Run pending migrations, discover available updates, and notify of new features.
 
 `cco update` performs three operations: (1) run pending migration scripts from
 `migrations/` (automatic, for structural/breaking changes), (2) compare framework
-sources against `.cco-base/` to discover available file updates, and (3) report
+sources against `.cco/base/` to discover available file updates, and (3) report
 additive changes (new features) from `changelog.yml`. It **never modifies user
 files** (except via migrations) — content changes require explicit `--apply`.
 
@@ -650,7 +650,7 @@ Examples:
 **Update sources**: `cco update` uses native framework sources: `defaults/global/`
 for global config, `templates/project/base/` for base project files, and
 `templates/project/<name>/` for native template-specific files (resolved via
-`.cco-source`). User templates are not touched — user template propagation will
+`.cco/source`). User templates are not touched — user template propagation will
 be handled by a future `cco template sync` command. `project.yml` is user-owned
 and not discovered (new fields are additive with code defaults; schema changes
 use migrations).
@@ -669,18 +669,18 @@ by `--project`/`--all`.
 
 2. RUN MIGRATIONS (all scopes)
    - Global: migrations/global/ → user-config/global/
-   - Pack: migrations/pack/ → each user-config/packs/*/ with .cco-meta
-   - Template: migrations/template/ → each user-config/templates/*/ with .cco-meta
+   - Pack: migrations/pack/ → each user-config/packs/*/ with .cco/meta
+   - Template: migrations/template/ → each user-config/templates/*/ with .cco/meta
    - Project: migrations/project/ → each project in scope
    - --dry-run: list pending migrations without running
 
 3. NOTIFY additive changes
-   - Compare changelog.yml against last_seen_changelog in .cco-meta
+   - Compare changelog.yml against last_seen_changelog in .cco/meta
    - Show new features since last check
    - Update last_seen_changelog
 
 4. DISCOVER opinionated file updates
-   - For each opinionated file, compare .cco-base/ vs framework source
+   - For each opinionated file, compare .cco/base/ vs framework source
    - Report available updates (read-only, no file changes)
 
 5. APPLY (only with --apply)
@@ -696,10 +696,10 @@ by `--project`/`--all`.
      - (R)eplace: overwrite with framework version + .bak
      - (K)eep: keep user version unchanged
      - (S)kip: defer to next run
-   - If conflict markers remain after M/E: .cco-base is updated (no re-merge
+   - If conflict markers remain after M/E: .cco/base is updated (no re-merge
      loop), but `cco start` blocks until markers are resolved
    - .bak created for each modified file (unless --no-backup)
-   - .cco-base/ updated to reflect the applied framework version
+   - .cco/base/ updated to reflect the applied framework version
    - Non-interactive fallback: defaults to Skip (no silent changes)
    - Use `cco clean` to remove .bak files after reviewing
 
@@ -1060,8 +1060,8 @@ Examples:
 ```
 
 Repo paths are automatically reverse-templated (`~/projects/api` becomes
-`{{REPO_API}}`). Runtime files (`docker-compose.yml`, `.managed/`,
-`claude-state/`, `secrets.env`, `.cco-meta`) are excluded.
+`{{REPO_API}}`). Runtime files (`.cco/docker-compose.yml`, `.cco/managed/`,
+`.cco/claude-state/`, `secrets.env`, `.cco/meta`) are excluded.
 
 By default, packs listed in `project.yml` are bundled into the remote repo.
 Use `--no-packs` to skip this.
@@ -1092,7 +1092,7 @@ Usage: cco pack publish <name> [<remote>] [OPTIONS]
 
 Arguments:
   name                 Pack to publish
-  remote               Remote name or direct URL (default: from .cco-source publish_target)
+  remote               Remote name or direct URL (default: from .cco/source publish_target)
 
 Options:
   --message <msg>      Commit message (default: "publish pack <name>")
@@ -1107,7 +1107,7 @@ Examples:
 ```
 
 The remote argument is resolved in order: registered remote name, direct URL,
-or `publish_target` from `.cco-source`. Source-referencing packs are
+or `publish_target` from `.cco/source`. Source-referencing packs are
 automatically internalized during publish (local pack unchanged).
 
 ---
@@ -1289,8 +1289,8 @@ Usage: cco clean [CATEGORY] [OPTIONS]
 Categories (combinable):
   (default)          Remove .bak backup files created by cco update
   --tmp              Remove .tmp/ directories (left by cco start --dry-run)
-  --generated        Remove docker-compose.yml (regenerated by cco start)
-  --all              All categories: .bak + .tmp + docker-compose.yml
+  --generated        Remove .cco/docker-compose.yml (regenerated by cco start)
+  --all              All categories: .bak + .tmp + .cco/docker-compose.yml
 
 Scope options:
   --project <name>   Scope to a specific project only
@@ -1299,7 +1299,7 @@ Scope options:
 Examples:
   cco clean                         # Remove .bak files (global + all projects)
   cco clean --tmp                   # Remove .tmp/ dirs from all projects
-  cco clean --generated             # Remove docker-compose.yml from all projects
+  cco clean --generated             # Remove .cco/docker-compose.yml from all projects
   cco clean --all                   # Remove all generated/temporary files
   cco clean --dry-run               # Preview everything that would be removed
   cco clean --project myapp         # Clean .bak files from a specific project
@@ -1307,7 +1307,7 @@ Examples:
   cco clean --tmp --dry-run         # Preview .tmp removal
 ```
 
-**Note:** `.cco-base/` directories are never removed by `cco clean`. They store the
+**Note:** `.cco/base/` directories are never removed by `cco clean`. They store the
 diff/merge ancestors required for `cco update` discovery and `--apply` to function correctly.
 
 ---
@@ -1318,9 +1318,9 @@ See [project-yaml.md](project-yaml.md) for the complete project.yml field refere
 
 ---
 
-## 5. Generated docker-compose.yml
+## 5. Generated .cco/docker-compose.yml
 
-The CLI generates `docker-compose.yml` from `project.yml`. The generated file includes a header comment:
+The CLI generates `.cco/docker-compose.yml` from `project.yml`. The generated file includes a header comment:
 
 ```yaml
 # AUTO-GENERATED by cco CLI from project.yml
@@ -1354,7 +1354,7 @@ services:
       - ./.claude:/workspace/.claude
       - ./project.yml:/workspace/project.yml:ro
       # Session transcripts (enables /resume across rebuilds)
-      - ./claude-state:/home/claude/.claude/projects/-workspace
+      - ./.cco/claude-state:/home/claude/.claude/projects/-workspace
       # Memory (vault-tracked, separate from transcripts)
       - ./memory:/home/claude/.claude/projects/-workspace/memory
       # Global MCP servers (optional, merged into ~/.claude.json by entrypoint)
