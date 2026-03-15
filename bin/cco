@@ -31,6 +31,7 @@ fi
 # ── Load modules ─────────────────────────────────────────────────────
 source "$LIB_DIR/colors.sh"
 source "$LIB_DIR/utils.sh"
+source "$LIB_DIR/paths.sh"
 source "$LIB_DIR/auth.sh"
 source "$LIB_DIR/yaml.sh"
 source "$LIB_DIR/secrets.sh"
