@@ -1433,3 +1433,230 @@ test_migration_008_no_claude_state_memory() {
 
     assert_dir_exists "$project_dir/memory"
 }
+
+# ── Migration 009: .cco/ directory consolidation (global) ────────────
+
+test_migration_009_moves_global_files() {
+    # Test that global migration moves .cco-meta -> .cco/meta and .cco-base -> .cco/base
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+
+    # Set up old-layout global dir
+    local target="$tmpdir/global/.claude"
+    mkdir -p "$target"
+    echo "schema_version: 8" > "$target/.cco-meta"
+    mkdir -p "$target/.cco-base"
+    echo "base content" > "$target/.cco-base/settings.json"
+
+    # Set up user-config root with .cco-remotes
+    local uc_dir="$tmpdir"
+    echo "acme=git@example.com:acme.git" > "$uc_dir/.cco-remotes"
+
+    # Source required libs
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/update.sh"
+    source "$REPO_ROOT/migrations/global/009_cco_dir_consolidation.sh"
+
+    migrate "$target"
+
+    # Verify files moved to new locations
+    assert_file_exists "$target/.cco/meta"
+    assert_file_contains "$target/.cco/meta" "schema_version: 8"
+    [[ -d "$target/.cco/base" ]] || fail ".cco/base/ should exist"
+    assert_file_exists "$target/.cco/base/settings.json"
+    assert_file_exists "$uc_dir/.cco/remotes"
+
+    # Verify old files removed
+    [[ ! -f "$target/.cco-meta" ]] || fail ".cco-meta should be removed"
+    [[ ! -d "$target/.cco-base" ]] || fail ".cco-base/ should be removed"
+    [[ ! -f "$uc_dir/.cco-remotes" ]] || fail ".cco-remotes should be removed"
+}
+
+# ── Migration 009: .cco/ directory consolidation (project) ───────────
+
+test_migration_009_moves_project_files() {
+    # Test that project migration moves all framework files into .cco/
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+
+    local target="$tmpdir/project"
+    mkdir -p "$target/.claude" "$target/.managed" "$target/claude-state"
+    echo "schema_version: 8" > "$target/.cco-meta"
+    mkdir -p "$target/.cco-base"
+    echo "base" > "$target/.cco-base/settings.json"
+    echo "managed" > "$target/.managed/browser.json"
+    echo "generated" > "$target/docker-compose.yml"
+    echo "transcript" > "$target/claude-state/session.jsonl"
+    mkdir -p "$target/.tmp"
+    echo "dry-run" > "$target/.tmp/output"
+
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/update.sh"
+    source "$REPO_ROOT/migrations/project/009_cco_dir_consolidation.sh"
+
+    migrate "$target"
+
+    # Verify new locations
+    assert_file_exists "$target/.cco/meta"
+    [[ -d "$target/.cco/base" ]] || fail ".cco/base/ should exist"
+    assert_file_exists "$target/.cco/managed/browser.json"
+    assert_file_exists "$target/.cco/docker-compose.yml"
+    assert_file_exists "$target/.cco/claude-state/session.jsonl"
+
+    # Verify old locations removed
+    [[ ! -f "$target/.cco-meta" ]] || fail ".cco-meta should be removed"
+    [[ ! -d "$target/.cco-base" ]] || fail ".cco-base/ should be removed"
+    [[ ! -d "$target/.managed" ]] || fail ".managed/ should be removed"
+    [[ ! -f "$target/docker-compose.yml" ]] || fail "docker-compose.yml should be removed"
+    [[ ! -d "$target/claude-state" ]] || fail "claude-state/ should be removed"
+
+    # .tmp should be cleaned (not moved)
+    [[ ! -d "$target/.tmp" ]] || fail ".tmp/ should be cleaned"
+}
+
+test_migration_009_idempotent() {
+    # Running migration twice should not cause errors or data loss
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+
+    local target="$tmpdir/project"
+    mkdir -p "$target/.claude"
+    echo "v8" > "$target/.cco-meta"
+    mkdir -p "$target/.cco-base"
+    echo "base" > "$target/.cco-base/s.json"
+
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/update.sh"
+    source "$REPO_ROOT/migrations/project/009_cco_dir_consolidation.sh"
+
+    migrate "$target"
+    migrate "$target"  # second run
+
+    # Files should still be at new locations
+    assert_file_exists "$target/.cco/meta"
+    [[ -d "$target/.cco/base" ]] || fail ".cco/base/ should exist after second run"
+    assert_file_exists "$target/.cco/base/s.json"
+}
+
+test_migration_009_partial_state() {
+    # When both old and new paths exist (partial migration), old is cleaned
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+
+    local target="$tmpdir/project"
+    mkdir -p "$target/.claude" "$target/.cco"
+    # Old AND new both exist
+    echo "old" > "$target/.cco-meta"
+    echo "new" > "$target/.cco/meta"
+
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/update.sh"
+    source "$REPO_ROOT/migrations/project/009_cco_dir_consolidation.sh"
+
+    migrate "$target"
+
+    # New should be preserved, old should be cleaned
+    assert_file_contains "$target/.cco/meta" "new"
+    [[ ! -f "$target/.cco-meta" ]] || fail ".cco-meta should be cleaned when .cco/meta exists"
+}
+
+test_migration_009_fresh_project() {
+    # Migration on fresh project (no old files) should just create .cco/
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+
+    local target="$tmpdir/project"
+    mkdir -p "$target/.claude"
+
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/update.sh"
+    source "$REPO_ROOT/migrations/project/009_cco_dir_consolidation.sh"
+
+    migrate "$target"
+
+    [[ -d "$target/.cco" ]] || fail ".cco/ should be created"
+}
+
+test_migration_009_gitignore_patterns() {
+    # Test that vault .gitignore patterns are migrated correctly
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+
+    local target="$tmpdir/global/.claude"
+    mkdir -p "$target"
+
+    # Create old-style .gitignore at user-config level
+    cat > "$tmpdir/.gitignore" <<'GI'
+secrets.env
+projects/*/.managed/
+projects/*/.tmp/
+projects/*/.cco-meta
+projects/*/docker-compose.yml
+projects/*/claude-state/
+packs/*/.cco-install-tmp/
+.cco-remotes
+GI
+
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/update.sh"
+    source "$REPO_ROOT/migrations/global/009_cco_dir_consolidation.sh"
+
+    migrate "$target"
+
+    # Verify new patterns
+    assert_file_contains "$tmpdir/.gitignore" "projects/*/.cco/managed/"
+    assert_file_contains "$tmpdir/.gitignore" "projects/*/.cco/meta"
+    assert_file_contains "$tmpdir/.gitignore" "projects/*/.cco/docker-compose.yml"
+    assert_file_contains "$tmpdir/.gitignore" "projects/*/.cco/claude-state/"
+    assert_file_contains "$tmpdir/.gitignore" "packs/*/.cco/install-tmp/"
+    assert_file_contains "$tmpdir/.gitignore" ".cco/remotes"
+    assert_file_contains "$tmpdir/.gitignore" "global/.claude/.cco/meta"
+    assert_file_contains "$tmpdir/.gitignore" "projects/*/.claude/.cco/pack-manifest"
+
+    # Verify .tmp/ NOT changed (stays outside .cco)
+    assert_file_contains "$tmpdir/.gitignore" "projects/*/.tmp/"
+
+    # Verify old patterns removed
+    assert_file_not_contains "$tmpdir/.gitignore" "projects/*/.managed/"
+    assert_file_not_contains "$tmpdir/.gitignore" ".cco-remotes"
+    assert_file_not_contains "$tmpdir/.gitignore" "projects/*/.cco-meta"
+}
+
+# ── Changelog: missing last_read field backward compat ───────────────
+
+test_update_changelog_missing_last_read_field() {
+    # Scenario 7: .cco/meta has last_seen but no last_read -> defaults to 0
+    local tmpdir; tmpdir=$(mktemp -d)
+    local saved_changelog="$tmpdir/changelog.bak"
+    cp "$REPO_ROOT/changelog.yml" "$saved_changelog"
+    trap "cp '$saved_changelog' '$REPO_ROOT/changelog.yml'; rm -rf '$tmpdir'" EXIT
+
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    cat > "$REPO_ROOT/changelog.yml" <<'YML'
+entries:
+  - id: 1
+    date: "2026-03-01"
+    type: additive
+    title: "Missing last_read test"
+    description: "Test backward compat"
+YML
+
+    # Manually set last_seen but remove last_read (simulate pre-upgrade meta)
+    local meta="$CCO_GLOBAL_DIR/.claude/.cco/meta"
+    sed -i "s/^last_seen_changelog: .*/last_seen_changelog: 0/" "$meta"
+    # Remove last_read_changelog line if present
+    sed -i '/^last_read_changelog:/d' "$meta"
+
+    # --news should show entry (last_read defaults to 0)
+    run_cco update --news
+    assert_output_contains "Missing last_read test"
+    assert_file_contains "$meta" "last_read_changelog: 1"
+}
