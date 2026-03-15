@@ -51,10 +51,12 @@ migrate() {
     # Clean up stale .tmp/ (now ephemeral, not migrated)
     [[ -d "$target_dir/.tmp" ]] && rm -rf "$target_dir/.tmp"
 
-    # Move .pack-manifest → .cco/pack-manifest (lives inside .claude/)
-    if [[ -f "$target_dir/.claude/.pack-manifest" ]]; then
+    # Move .pack-manifest → .cco/pack-manifest (lives inside .claude/, guarded)
+    if [[ -f "$target_dir/.claude/.pack-manifest" && ! -f "$target_dir/.claude/.cco/pack-manifest" ]]; then
         mkdir -p "$target_dir/.claude/.cco"
         mv "$target_dir/.claude/.pack-manifest" "$target_dir/.claude/.cco/pack-manifest"
+    elif [[ -f "$target_dir/.claude/.pack-manifest" ]]; then
+        rm -f "$target_dir/.claude/.pack-manifest"
     fi
 
     return 0

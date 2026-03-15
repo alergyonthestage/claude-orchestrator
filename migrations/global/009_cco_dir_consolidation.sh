@@ -76,37 +76,42 @@ migrate() {
 _migrate_vault_gitignore_009() {
     local gitignore="$1"
 
-    # Replace old patterns with new ones
+    # Replace old patterns with new ones.
+    # Each entry: old_grep_pattern|old_sed_pattern|new_pattern
+    # grep uses fixed strings (-F), sed uses the escaped version.
     local -a replacements=(
-        "projects/\\*/.managed/|projects/*/.cco/managed/"
-        "projects/\\*/.tmp/|projects/*/.cco/tmp/"
-        "projects/\\*/.pack-manifest|projects/*/.cco/pack-manifest"
-        "projects/\\*/.cco-meta|projects/*/.cco/meta"
-        "projects/\\*/docker-compose.yml|projects/*/.cco/docker-compose.yml"
-        "projects/\\*/claude-state/|projects/*/.cco/claude-state/"
-        "packs/\\*/.cco-install-tmp/|packs/*/.cco/install-tmp/"
-        ".cco-remotes|.cco/remotes"
+        "projects/*/.managed/|projects/\\*/.managed/|projects/*/.cco/managed/"
+        "projects/*/.pack-manifest|projects/\\*/.pack-manifest|projects/*/.claude/.cco/pack-manifest"
+        "projects/*/.cco-meta|projects/\\*/.cco-meta|projects/*/.cco/meta"
+        "projects/*/docker-compose.yml|projects/\\*/docker-compose.yml|projects/*/.cco/docker-compose.yml"
+        "projects/*/claude-state/|projects/\\*/claude-state/|projects/*/.cco/claude-state/"
+        "packs/*/.cco-install-tmp/|packs/\\*/.cco-install-tmp/|packs/*/.cco/install-tmp/"
+        ".cco-remotes|.cco-remotes|.cco/remotes"
     )
+    # Note: projects/*/.tmp/ is intentionally NOT replaced — it stays outside .cco/
 
-    for pair in "${replacements[@]}"; do
-        local old="${pair%%|*}"
-        local new="${pair##*|}"
-        if grep -qF "$old" "$gitignore" 2>/dev/null; then
-            sed -i '' "s|${old}|${new}|g" "$gitignore" 2>/dev/null || \
-                sed -i "s|${old}|${new}|g" "$gitignore"
+    for entry in "${replacements[@]}"; do
+        local grep_pat sed_pat new_pat
+        grep_pat="${entry%%|*}"
+        local rest="${entry#*|}"
+        sed_pat="${rest%%|*}"
+        new_pat="${rest##*|}"
+        if grep -qF "$grep_pat" "$gitignore" 2>/dev/null; then
+            sed -i '' "s|${sed_pat}|${new_pat}|g" "$gitignore" 2>/dev/null || \
+                sed -i "s|${sed_pat}|${new_pat}|g" "$gitignore"
         fi
     done
 
     # Add new patterns if missing
-    if ! grep -qF "global/.claude/.cco/meta" "$gitignore" 2>/dev/null; then
-        echo "global/.claude/.cco/meta" >> "$gitignore"
-    fi
-    if ! grep -qF "projects/*/.cco/docker-compose.yml" "$gitignore" 2>/dev/null && \
-       ! grep -qF ".cco/docker-compose.yml" "$gitignore" 2>/dev/null; then
-        echo "projects/*/.cco/docker-compose.yml" >> "$gitignore"
-    fi
-    if ! grep -qF "projects/*/.cco/claude-state/" "$gitignore" 2>/dev/null && \
-       ! grep -qF ".cco/claude-state/" "$gitignore" 2>/dev/null; then
-        echo "projects/*/.cco/claude-state/" >> "$gitignore"
-    fi
+    local -a new_patterns=(
+        "global/.claude/.cco/meta"
+        "projects/*/.cco/docker-compose.yml"
+        "projects/*/.cco/claude-state/"
+        "projects/*/.claude/.cco/pack-manifest"
+    )
+    for pat in "${new_patterns[@]}"; do
+        if ! grep -qF "$pat" "$gitignore" 2>/dev/null; then
+            echo "$pat" >> "$gitignore"
+        fi
+    done
 }
