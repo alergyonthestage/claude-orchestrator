@@ -20,6 +20,8 @@ claude-orchestrator manages isolated Claude Code sessions in Docker containers f
 - `user-config/templates/` — project templates
 - `user-config/manifest.yml` — manifest for sharing via Config Repos
 
+**Framework state**: All framework-managed files live inside per-scope `.cco/` directories (hidden from users). User-editable files remain at the project root. Path resolution is handled by `lib/paths.sh` helpers with dual-read fallback for backward compatibility.
+
 ## Build & Run Commands
 
 ```bash
@@ -112,7 +114,7 @@ The host's Docker socket is mounted into the container. Claude can run `docker c
 - **Leverage native Claude Code behavior**: The fundamental rule of claude-orchestrator is to leverage Claude Code's native features as much as possible, avoiding custom reimplementations. The orchestrator maps its configuration tiers directly onto Claude Code's native settings resolution (managed → user → project → nested). Reference: `.claude/docs/claude-code/llms.txt` contains the full Claude Code documentation index.
 - **Docker IS the sandbox**: no native Claude Code sandboxing. `--dangerously-skip-permissions` is safe inside the container.
 - **Flat workspace layout**: WORKDIR is `/workspace`, each repo is a direct subdirectory. No `--add-dir` needed.
-- **Auto memory isolation**: each project's `claude-state/` dir is mounted to `~/.claude/projects/-workspace` for session transcripts, and `memory/` is mounted as a child mount at `~/.claude/projects/-workspace/memory` for auto memory files. The two are separate: `claude-state/` is local/gitignored (transcripts), while `memory/` is vault-tracked and syncs across machines.
+- **Auto memory isolation**: each project's `.cco/claude-state/` dir is mounted to `~/.claude/projects/-workspace` for session transcripts, and `memory/` is mounted as a child mount at `~/.claude/projects/-workspace/memory` for auto memory files. The two are separate: `.cco/claude-state/` is local/gitignored (transcripts), while `memory/` is vault-tracked and syncs across machines.
 - **Agent teams**: tmux by default (works everywhere), iTerm2 optional via `--teammate-mode auto`.
 - **Auth**: OAuth (credentials seeded from macOS Keychain to `~/.claude/.credentials.json`) by default, API key via env var as alternative. GitHub auth via `GITHUB_TOKEN` + `gh` CLI.
 
@@ -163,7 +165,7 @@ Per `docs/maintainer/integration/docker/design.md` (sezione directory structure)
 
 - `project.yml` is the source of truth for each project; `docker-compose.yml` is generated from it and should not be committed.
 - `user-config/` is gitignored (user data). `defaults/` is tracked (tool code). Managed files are baked in the Docker image; global defaults are copied once on `cco init` and never overwritten.
-- Generated files: `projects/*/docker-compose.yml`, `projects/*/memory/`, `.env`.
+- Generated files: `projects/*/.cco/docker-compose.yml`, `projects/*/memory/`, `.env`.
 - Container user is `claude` (non-root), with docker group for socket access.
 - Entrypoint must handle Docker socket GID mismatch between host and container.
 - macOS Docker Desktop: never use `network_mode: host` (refers to Linux VM, not macOS). Always use port mappings.
@@ -194,7 +196,7 @@ Migration scopes: `global`, `project`, `pack`, `template`. All run automatically
 - IDs must be sequential (check `migrations/{scope}/` for the current max)
 - `cco update` runs pending migrations automatically when `schema_version < latest`
 
-**`changelog.yml`** (repo root): tracks additive changes for user notification. Each entry has `id` (sequential integer), `date`, `type: additive`, `title`, and `description`. Users see new entries via `cco update` (summary) or `cco update --news` (details). Tracking: `last_seen_changelog` in global `.cco-meta`.
+**`changelog.yml`** (repo root): tracks additive changes for user notification. Each entry has `id` (sequential integer), `date`, `type: additive`, `title`, and `description`. Users see new entries via `cco update` (summary) or `cco update --news` (details). Tracking: `last_seen_changelog` and `last_read_changelog` in global `.cco/meta`. Discovery updates `last_seen` only; `--news` updates both.
 
 **Checklist for config changes:**
 1. Classify the change: additive, opinionated, or breaking

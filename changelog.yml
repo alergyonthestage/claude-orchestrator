@@ -12,7 +12,7 @@
 #     title: "Short description"
 #     description: "Details about the new feature and how to use it"
 #
-# Two trackers in .cco-meta control notification behavior:
+# Two trackers in .cco/meta control notification behavior:
 #   last_seen_changelog — updated by discovery + news, prevents repeated summary
 #   last_read_changelog — updated by news only, tracks detailed reading
 # Discovery shows entries with id > last_seen. News shows entries with id > last_read.
@@ -37,6 +37,17 @@ entries:
       Auto memory files (MEMORY.md and topic files) now live at
       `projects/<name>/memory/` instead of inside `claude-state/memory/`.
       This directory is vault-tracked, so memory syncs across machines via
-      `cco vault push/pull`. Session transcripts remain in `claude-state/`
+      `cco vault push/pull`. Session transcripts remain in `.cco/claude-state/`
       (gitignored). Existing projects are migrated automatically by
       `cco update` (migration 008).
+
+  - id: 3
+    date: "2026-03-15"
+    type: additive
+    title: "Cleaner project layout — framework files hidden in .cco/"
+    description: >
+      All framework-managed files (.cco-meta, .cco-base/, .managed/,
+      docker-compose.yml, claude-state/) are now inside per-scope .cco/
+      directories. Your project root shows only files you edit: project.yml,
+      .claude/, memory/, setup.sh. Existing installations are migrated
+      automatically by `cco update` (migration 009). No action needed.
