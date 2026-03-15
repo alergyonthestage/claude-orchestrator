@@ -104,6 +104,7 @@ _cmd_remote_add() {
 
     # Create file with header if new
     if [[ ! -f "$rf" ]]; then
+        mkdir -p "$(dirname "$rf")"
         echo "# CCO Config Repo remotes" > "$rf"
         echo "# Format: name=url  |  name.token=token (optional)" >> "$rf"
     fi

@@ -1040,6 +1040,7 @@ _update_publish_target() {
             echo "publish_target: $target" >> "$source_file"
         fi
     else
+        mkdir -p "$(dirname "$source_file")"
         cat > "$source_file" <<YAML
 source: local
 publish_target: $target

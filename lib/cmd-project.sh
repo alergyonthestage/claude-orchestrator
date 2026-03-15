@@ -1140,6 +1140,9 @@ _copy_project_for_publish() {
         $skip && continue
         cp -R "$item" "$dst/"
     done
+
+    # Remove nested .cco/ directories that were copied inside .claude/
+    find "$dst" -mindepth 2 -name ".cco" -type d -exec rm -rf {} + 2>/dev/null || true
 }
 
 # Reverse-template repo paths: replace local paths with {{REPO_NAME}} variables
