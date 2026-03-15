@@ -165,7 +165,7 @@ EOF
     [[ -z "$repos_check" ]] && warn "No repositories defined in project.yml. Work inside the container will not persist unless saved via extra_mounts."
 
     # Check for available updates
-    local _global_meta="$GLOBAL_DIR/.claude/.cco-meta"
+    local _global_meta="$GLOBAL_DIR/.claude/.cco/meta"
     if [[ -f "$_global_meta" ]]; then
         local _current_schema _latest_schema
         _current_schema=$(_read_cco_meta "$_global_meta")
@@ -216,7 +216,7 @@ EOF
     if $dry_run; then
         output_dir="$project_dir/.tmp"
         rm -rf "$output_dir"
-        mkdir -p "$output_dir/.claude" "$output_dir/.managed"
+        mkdir -p "$output_dir/.claude" "$output_dir/.cco/managed"
     fi
 
     # ── Persistent side effects: skip in dry-run ─────────────────────────
@@ -287,29 +287,29 @@ EOF
         _generate_socket_policy "$project_yml" "$project_name" "$output_dir"
     else
         if ! $dry_run; then
-            rm -f "$project_dir/.managed/policy.json"
+            rm -f "$project_dir/.cco/managed/policy.json"
         fi
     fi
 
     # ── Generate .managed/ integrations ──────────────────────────────────
     if [[ "$browser_enabled" == "true" ]]; then
-        mkdir -p "$output_dir/.managed"
-        _generate_browser_mcp "$output_dir/.managed/browser.json" \
+        mkdir -p "$output_dir/.cco/managed"
+        _generate_browser_mcp "$output_dir/.cco/managed/browser.json" \
             "$browser_mode" "$browser_effective_port" "$browser_mcp_args"
-        echo "$browser_effective_port" > "$output_dir/.managed/.browser-port"
+        echo "$browser_effective_port" > "$output_dir/.cco/managed/.browser-port"
     else
         if ! $dry_run; then
             # Clean up stale managed files from a previous session
-            rm -f "$project_dir/.managed/browser.json" "$project_dir/.managed/.browser-port"
+            rm -f "$project_dir/.cco/managed/browser.json" "$project_dir/.cco/managed/.browser-port"
         fi
     fi
 
     if [[ "$github_enabled" == "true" ]]; then
-        mkdir -p "$output_dir/.managed"
-        _generate_github_mcp "$output_dir/.managed/github.json" "$github_token_env"
+        mkdir -p "$output_dir/.cco/managed"
+        _generate_github_mcp "$output_dir/.cco/managed/github.json" "$github_token_env"
     else
         if ! $dry_run; then
-            rm -f "$project_dir/.managed/github.json"
+            rm -f "$project_dir/.cco/managed/github.json"
         fi
     fi
 
@@ -319,7 +319,8 @@ EOF
     fi
 
     # ── Generate docker-compose.yml ──────────────────────────────────
-    local compose_file="$output_dir/docker-compose.yml"
+    mkdir -p "$output_dir/.cco"
+    local compose_file="$output_dir/.cco/docker-compose.yml"
 
     {
         cat <<YAML
@@ -386,7 +387,7 @@ YAML
       - ./.claude:/workspace/.claude
       - ./project.yml:/workspace/project.yml:ro
       # Claude state: session transcripts (enables /resume across rebuilds)
-      - ./claude-state:/home/claude/.claude/projects/-workspace
+      - ./.cco/claude-state:/home/claude/.claude/projects/-workspace
       # Memory: auto memory files (vault-tracked, separate from transcripts)
       - ./memory:/home/claude/.claude/projects/-workspace/memory
 YAML
@@ -422,9 +423,9 @@ YAML
         fi
 
         # Managed integrations directory (framework-generated, never edit manually)
-        if [[ -d "$output_dir/.managed" ]] && [[ -n "$(ls -A "$output_dir/.managed" 2>/dev/null)" ]]; then
+        if [[ -d "$output_dir/.cco/managed" ]] && [[ -n "$(ls -A "$output_dir/.cco/managed" 2>/dev/null)" ]]; then
             echo "      # Managed integrations"
-            echo "      - ./.managed:/workspace/.managed:ro"
+            echo "      - ./.cco/managed:/workspace/.managed:ro"
         fi
 
         # Repository mounts
@@ -465,8 +466,8 @@ YAML
             echo "      # Docker socket"
             echo "      - /var/run/docker.sock:/var/run/docker.sock"
             # Policy file for socket proxy (if generated)
-            if [[ -f "$output_dir/.managed/policy.json" ]]; then
-                echo "      - ./.managed/policy.json:/etc/cco/policy.json:ro"
+            if [[ -f "$output_dir/.cco/managed/policy.json" ]]; then
+                echo "      - ./.cco/managed/policy.json:/etc/cco/policy.json:ro"
             fi
         fi
 
@@ -613,14 +614,14 @@ YAML
         echo ""
         info "Generated files available at: ${output_dir}/"
         echo ""
-        info "  docker-compose.yml"
-        [[ -f "$output_dir/.managed/policy.json" ]]  && info "  .managed/policy.json"
-        [[ -f "$output_dir/.managed/browser.json" ]]  && info "  .managed/browser.json"
-        [[ -f "$output_dir/.managed/github.json" ]]   && info "  .managed/github.json"
+        info "  .cco/docker-compose.yml"
+        [[ -f "$output_dir/.cco/managed/policy.json" ]]  && info "  .cco/managed/policy.json"
+        [[ -f "$output_dir/.cco/managed/browser.json" ]]  && info "  .cco/managed/browser.json"
+        [[ -f "$output_dir/.cco/managed/github.json" ]]   && info "  .cco/managed/github.json"
         [[ -f "$packs_md" ]]                          && info "  .claude/packs.md"
         [[ -f "$output_dir/.claude/workspace.yml" ]]  && info "  .claude/workspace.yml"
         echo ""
-        info "Inspect with: cat ${output_dir}/docker-compose.yml"
+        info "Inspect with: cat ${output_dir}/.cco/docker-compose.yml"
         return 0
     fi
 
@@ -644,7 +645,7 @@ YAML
     load_secrets_file run_env "$project_dir/secrets.env"
 
     info "Starting session for project '${project_name}'..."
-    docker compose -f "$compose_file" run --rm --service-ports "${run_env[@]+"${run_env[@]}"}" claude
+    docker compose -f "$compose_file" --project-directory "$project_dir" run --rm --service-ports "${run_env[@]+"${run_env[@]}"}" claude
 
     ok "Session ended. Changes are in your repos."
 }
@@ -671,8 +672,8 @@ _collect_claimed_browser_ports() {
         local container="cc-${yml_name}"
         docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${container}$" || continue
         # Read effective port (runtime file > project.yml > default)
-        if [[ -f "$proj_dir/.managed/.browser-port" ]]; then
-            claimed+=("$(cat "$proj_dir/.managed/.browser-port")")
+        if [[ -f "$proj_dir/.cco/managed/.browser-port" ]]; then
+            claimed+=("$(cat "$proj_dir/.cco/managed/.browser-port")")
         else
             local port; port=$(yml_get "$yml" "browser.cdp_port")
             [[ -z "$port" ]] && port="9222"
@@ -779,8 +780,8 @@ _generate_github_mcp() {
 _generate_socket_policy() {
     local project_yml="$1" project_name="$2" project_dir="$3"
 
-    mkdir -p "$project_dir/.managed"
-    local out_file="$project_dir/.managed/policy.json"
+    mkdir -p "$project_dir/.cco/managed"
+    local out_file="$project_dir/.cco/managed/policy.json"
 
     # Container policy
     local ct_policy ct_create ct_prefix
