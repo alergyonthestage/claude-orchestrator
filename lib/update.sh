@@ -93,12 +93,12 @@ _file_hash() {
     fi
 }
 
-# ── Base Version Storage (.cco-base/) ─────────────────────────────────
+# ── Base Version Storage (.cco/base/) ─────────────────────────────────
 
-# Save a file to .cco-base/ (the framework version at install/update time).
+# Save a file to .cco/base/ (the framework version at install/update time).
 # Used as the "ancestor" in 3-way merge.
 _save_base_version() {
-    local base_dir="$1"  # .cco-base/ directory
+    local base_dir="$1"  # .cco/base/ directory
     local rel_path="$2"  # relative path (e.g., CLAUDE.md or project.yml)
     local source="$3"    # source file to copy
 
@@ -109,7 +109,7 @@ _save_base_version() {
 # Save base versions for all tracked files in a scope.
 # Called at cco init and after successful cco update.
 _save_all_base_versions() {
-    local base_dir="$1"       # .cco-base/ directory
+    local base_dir="$1"       # .cco/base/ directory
     local defaults_dir="$2"   # defaults source directory (already scoped to .claude/ for global)
     local scope="$3"          # "global" or "project"
 
@@ -184,16 +184,16 @@ _sed_i() {
         sed -i "s|${pattern}|${replacement}|g" "$file"
 }
 
-# ── .cco-meta I/O ───────────────────────────────────────────────────
+# ── .cco/meta I/O ────────────────────────────────────────────────────
 
-# Read schema_version from .cco-meta. Returns 0 if file missing.
+# Read schema_version from .cco/meta. Returns 0 if file missing.
 _read_cco_meta() {
     local meta_file="$1"
     [[ ! -f "$meta_file" ]] && echo "0" && return 0
     awk '/^schema_version:/ {print $2}' "$meta_file"
 }
 
-# Read last_seen_changelog from .cco-meta. Returns 0 if file missing or field absent.
+# Read last_seen_changelog from .cco/meta. Returns 0 if file missing or field absent.
 _read_last_seen_changelog() {
     local meta_file="$1"
     [[ ! -f "$meta_file" ]] && echo "0" && return 0
@@ -202,7 +202,7 @@ _read_last_seen_changelog() {
     echo "${val:-0}"
 }
 
-# Read last_read_changelog from .cco-meta. Returns 0 if file missing or field absent.
+# Read last_read_changelog from .cco/meta. Returns 0 if file missing or field absent.
 _read_last_read_changelog() {
     local meta_file="$1"
     [[ ! -f "$meta_file" ]] && echo "0" && return 0
@@ -211,7 +211,7 @@ _read_last_read_changelog() {
     echo "${val:-0}"
 }
 
-# Read manifest entries from .cco-meta. Output: "path\thash" per line.
+# Read manifest entries from .cco/meta. Output: "path\thash" per line.
 _read_manifest() {
     local meta_file="$1"
     [[ ! -f "$meta_file" ]] && return 0
@@ -226,7 +226,7 @@ _read_manifest() {
     ' "$meta_file"
 }
 
-# Read languages from .cco-meta. Output: three lines (communication, documentation, code_comments).
+# Read languages from .cco/meta. Output: three lines (communication, documentation, code_comments).
 _read_languages() {
     local meta_file="$1"
     [[ ! -f "$meta_file" ]] && return 0
@@ -239,7 +239,7 @@ _read_languages() {
     ' "$meta_file"
 }
 
-# Generate a complete .cco-meta file. Manifest entries read from stdin as "path\thash" lines.
+# Generate a complete .cco/meta file. Manifest entries read from stdin as "path\thash" lines.
 _generate_cco_meta() {
     local meta_file="$1"
     local schema="$2"
@@ -269,7 +269,7 @@ _generate_cco_meta() {
     } > "$meta_file"
 }
 
-# Generate a project-scope .cco-meta file. No languages, no changelog.
+# Generate a project-scope .cco/meta file. No languages, no changelog.
 # Manifest entries read from stdin as "path\thash" lines.
 _generate_project_cco_meta() {
     local meta_file="$1"
@@ -376,7 +376,7 @@ _in_array() {
 }
 
 # Collect file changes between defaults and installed using 3-version comparison.
-# Uses .cco-base/ files as the ancestor (base) version.
+# Uses .cco/base/ files as the ancestor (base) version.
 # Output: "STATUS\trelative_path" lines to stdout.
 # STATUS: NEW, NO_UPDATE, UPDATE_AVAILABLE, MERGE_AVAILABLE, USER_MODIFIED, REMOVED, BASE_MISSING
 _collect_file_changes() {
@@ -425,7 +425,7 @@ _collect_file_changes() {
         seen_base_files+="$rel"$'\n'
 
         if [[ -z "$installed_hash" ]] && [[ -z "$base_hash" ]]; then
-            # File exists in defaults but not in target AND not in .cco-base/
+            # File exists in defaults but not in target AND not in .cco/base/
             printf 'NEW\t%s\n' "$rel"
 
         elif [[ -z "$installed_hash" ]] && [[ -n "$base_hash" ]]; then
@@ -439,7 +439,7 @@ _collect_file_changes() {
             fi
 
         elif [[ -z "$base_hash" ]]; then
-            # BASE_MISSING: no .cco-base/ entry for this file
+            # BASE_MISSING: no .cco/base/ entry for this file
             # Fallback: compare defaults directly against user file
             if [[ "$installed_hash" == "$new_hash" ]]; then
                 printf 'NO_UPDATE\t%s\n' "$rel"
@@ -465,7 +465,7 @@ _collect_file_changes() {
         fi
     done
 
-    # Detect files in .cco-base/ but no longer in defaults (REMOVED)
+    # Detect files in .cco/base/ but no longer in defaults (REMOVED)
     if [[ -d "$base_dir" ]]; then
         while IFS= read -r fpath; do
             [[ -z "$fpath" ]] && continue
@@ -584,7 +584,7 @@ _resolve_with_merge() {
                 fi
 
                 # Check if conflict markers were resolved
-                # Either way, .cco-base is updated (user dealt with the merge).
+                # Either way, .cco/base is updated (user dealt with the merge).
                 # cco start blocks if markers remain — that's the safety net.
                 if grep -q '<<<<<<<' "$installed_dir/$rel_path" 2>/dev/null; then
                     warn "  ⚠ $rel_path written with conflict markers"
@@ -699,7 +699,7 @@ _regenerate_language_md() {
     _sed_i "$target" "{{CODE_LANG}}" "$code_lang"
 }
 
-# Extract language values from an existing language.md file (fallback if no .cco-meta)
+# Extract language values from an existing language.md file (fallback if no .cco/meta)
 _detect_languages_from_file() {
     local lang_file="$1"
     [[ ! -f "$lang_file" ]] && return 0
@@ -884,7 +884,7 @@ _interactive_apply() {
                         applied=$(( applied + 1 ))
                         ;;
                     *)
-                        # Skip: don't update .cco-base/ or manifest — will be reported again next run
+                        # Skip: don't update .cco/base/ or manifest — will be reported again next run
                         info "  Skipped $rel_path"
                         skipped=$(( skipped + 1 ))
                         ;;
@@ -927,7 +927,7 @@ _interactive_apply() {
                         applied=$(( applied + 1 ))
                         ;;
                     keep)
-                        # Keep user file but update .cco-base/ so update isn't reported again
+                        # Keep user file but update .cco/base/ so update isn't reported again
                         _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
                         local h; h=$(_file_hash "$defaults_dir/$rel_path")
                         _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
@@ -935,7 +935,7 @@ _interactive_apply() {
                         kept=$(( kept + 1 ))
                         ;;
                     *)
-                        # Skip: don't update .cco-base/ or manifest — will be reported again next run
+                        # Skip: don't update .cco/base/ or manifest — will be reported again next run
                         info "  Skipped $rel_path"
                         skipped=$(( skipped + 1 ))
                         ;;
@@ -1008,7 +1008,7 @@ _interactive_apply() {
                         applied=$(( applied + 1 ))
                         ;;
                     k|keep)
-                        # Keep user file but update .cco-base/ so update isn't reported again
+                        # Keep user file but update .cco/base/ so update isn't reported again
                         _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
                         local h; h=$(_file_hash "$defaults_dir/$rel_path")
                         _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
@@ -1016,7 +1016,7 @@ _interactive_apply() {
                         kept=$(( kept + 1 ))
                         ;;
                     *)
-                        # Skip: don't update .cco-base/ or manifest — will be reported again next run
+                        # Skip: don't update .cco/base/ or manifest — will be reported again next run
                         info "  Skipped $rel_path"
                         skipped=$(( skipped + 1 ))
                         ;;
@@ -1065,7 +1065,7 @@ _interactive_apply() {
                         applied=$(( applied + 1 ))
                         ;;
                     *)
-                        # Skip: update .cco-base/ to stop notifying, respect deletion
+                        # Skip: update .cco/base/ to stop notifying, respect deletion
                         _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
                         info "  Skipped $rel_path (won't notify again until next framework update)"
                         skipped=$(( skipped + 1 ))
@@ -1209,7 +1209,8 @@ _latest_changelog_id() {
 _update_changelog_notifications() {
     local cmd_mode="$1"
     local dry_run="$2"
-    local meta_file="$GLOBAL_DIR/.claude/.cco-meta"
+    local meta_file
+    meta_file=$(_cco_global_meta)
 
     local last_seen last_read latest_id
     last_seen=$(_read_last_seen_changelog "$meta_file")
@@ -1250,10 +1251,12 @@ _update_global() {
     local dry_run="$2"
     local no_backup="${3:-false}"
     local auto_action="${4:-}"  # "" | replace | keep | skip
-    local meta_file="$GLOBAL_DIR/.claude/.cco-meta"
+    local meta_file
+    meta_file=$(_cco_global_meta)
     local installed_dir="$GLOBAL_DIR/.claude"
     local defaults_dir="$DEFAULTS_DIR/global/.claude"
-    local base_dir="$GLOBAL_DIR/.claude/.cco-base"
+    local base_dir
+    base_dir=$(_cco_global_base_dir)
 
     # Read current state
     local current_schema
@@ -1303,8 +1306,8 @@ _update_global() {
                 PACKS_DIR="$USER_CONFIG_DIR/packs"
                 TEMPLATES_DIR="$USER_CONFIG_DIR/templates"
                 installed_dir="$GLOBAL_DIR/.claude"
-                meta_file="$installed_dir/.cco-meta"
-                base_dir="$GLOBAL_DIR/.claude/.cco-base"
+                meta_file=$(_cco_global_meta)
+                base_dir=$(_cco_global_base_dir)
             fi
         fi
     fi
@@ -1387,13 +1390,16 @@ _update_global() {
         done
     fi
 
-    # Update .cco-meta (only in apply mode or after migrations)
+    # Update .cco/meta (only in apply mode or after migrations)
     if [[ "$dry_run" != "true" ]]; then
         local created
         if [[ -f "$meta_file" ]]; then
             created=$(awk '/^created_at:/ {print $2}' "$meta_file")
         fi
         created="${created:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+
+        # Ensure .cco/ parent directory exists for writing
+        mkdir -p "$(dirname "$meta_file")"
 
         local new_schema="$latest_schema"
 
@@ -1421,7 +1427,7 @@ _update_global() {
                 "$meta_file" "$new_schema" "$created" \
                 "$comm_lang" "$docs_lang" "$code_lang" "$last_seen" "$last_read"
 
-            # Note: .cco-base/ is saved per-file inside _interactive_apply
+            # Note: .cco/base/ is saved per-file inside _interactive_apply
             # (only for Apply/Keep/Merge/Replace, not Skip)
         else
             # Discovery/diff mode: only update schema_version (from migrations)
@@ -1450,11 +1456,12 @@ _update_global() {
     fi
 }
 
-# Resolve the defaults directory for a project based on .cco-source.
+# Resolve the defaults directory for a project based on .cco/source.
 # Returns the path to the .claude/ directory in the template source.
 _resolve_project_defaults_dir() {
     local project_dir="$1"
-    local source_file="$project_dir/.cco-source"
+    local source_file
+    source_file=$(_cco_pack_source "$project_dir")
     local fallback="$NATIVE_TEMPLATES_DIR/project/base/.claude"
 
     if [[ ! -f "$source_file" ]]; then
@@ -1507,11 +1514,13 @@ _update_project() {
     local auto_action="${5:-}"  # "" | replace | keep | skip
     local pname
     pname="$(basename "$project_dir")"
-    local meta_file="$project_dir/.cco-meta"
+    local meta_file
+    meta_file=$(_cco_project_meta "$project_dir")
     local installed_dir="$project_dir/.claude"
-    local base_dir="$project_dir/.cco-base"
+    local base_dir
+    base_dir=$(_cco_project_base_dir "$project_dir")
 
-    # Resolve template source based on .cco-source
+    # Resolve template source based on .cco/source
     local defaults_dir
     defaults_dir=$(_resolve_project_defaults_dir "$project_dir")
 
@@ -1590,7 +1599,7 @@ _update_project() {
         done
     fi
 
-    # Update .cco-meta (project scope: no languages, no changelog)
+    # Update .cco/meta (project scope: no languages, no changelog)
     if [[ "$dry_run" != "true" ]]; then
         local created
         if [[ -f "$meta_file" ]]; then
@@ -1598,28 +1607,35 @@ _update_project() {
         fi
         created="${created:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 
+        # Ensure .cco/ parent directory exists for writing
+        mkdir -p "$(dirname "$meta_file")"
+
         local new_schema="$latest_schema"
 
-        # Read template name from existing .cco-meta or .cco-source
+        # Read template name from existing .cco/meta or .cco/source
         local tmpl_name="base"
         if [[ -f "$meta_file" ]]; then
             local tmpl_val
             tmpl_val=$(awk '/^template:/ {print $2}' "$meta_file")
             [[ -n "$tmpl_val" ]] && tmpl_name="$tmpl_val"
-        elif [[ -f "$project_dir/.cco-source" ]]; then
-            local src_line
-            src_line=$(head -1 "$project_dir/.cco-source")
-            case "$src_line" in
-                native:project/*) tmpl_name="${src_line#native:project/}" ;;
-                user:template/*)  tmpl_name="${src_line#user:template/}" ;;
-            esac
+        else
+            local source_file
+            source_file=$(_cco_pack_source "$project_dir")
+            if [[ -f "$source_file" ]]; then
+                local src_line
+                src_line=$(head -1 "$source_file")
+                case "$src_line" in
+                    native:project/*) tmpl_name="${src_line#native:project/}" ;;
+                    user:template/*)  tmpl_name="${src_line#user:template/}" ;;
+                esac
+            fi
         fi
 
         if [[ "$cmd_mode" == "apply" ]]; then
             echo "$_UPDATE_MANIFEST_ENTRIES" | _generate_project_cco_meta \
                 "$meta_file" "$new_schema" "$created" "$tmpl_name"
 
-            # Note: .cco-base/ is saved per-file inside _interactive_apply
+            # Note: .cco/base/ is saved per-file inside _interactive_apply
             # (only for Apply/Keep/Merge/Replace, not Skip)
         else
             # Discovery/diff mode: only update schema_version (from migrations)
@@ -1657,7 +1673,7 @@ _max_changelog_id() {
     _latest_changelog_id
 }
 
-# Update last_seen_changelog in .cco-meta file.
+# Update last_seen_changelog in .cco/meta file.
 # Standalone helper for callers that need to update the field directly.
 _update_last_seen_changelog() {
     local meta_file="$1"
