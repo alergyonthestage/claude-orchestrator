@@ -222,7 +222,8 @@ EOF
             rm -rf "$output_dir"
         else
             output_dir=$(mktemp -d)
-            trap "rm -rf '$output_dir'" EXIT
+            _cleanup_dry_run_dir() { rm -rf "$output_dir"; }
+            trap _cleanup_dry_run_dir EXIT
         fi
         mkdir -p "$output_dir/.claude" "$output_dir/.cco/managed"
     fi

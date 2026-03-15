@@ -737,6 +737,11 @@ YML
     if grep -q '^last_seen_changelog:' "$meta"; then
         sed -i "s/^last_seen_changelog: .*/last_seen_changelog: 0/" "$meta"
     fi
+    if grep -q '^last_read_changelog:' "$meta"; then
+        sed -i "s/^last_read_changelog: .*/last_read_changelog: 0/" "$meta"
+    else
+        sed -i '/^last_seen_changelog:/a last_read_changelog: 0' "$meta"
+    fi
 
     run_cco update --news
     assert_output_contains "Test feature for news"
@@ -816,9 +821,10 @@ YML
     assert_output_contains "Details about the feature"
     assert_file_contains "$meta" "last_read_changelog: 1"
 
-    # Step 3: Discovery again — nothing to show
+    # Step 3: Discovery again — nothing to show, no hint
     run_cco update
     assert_output_not_contains "What's new"
+    assert_output_not_contains "Run 'cco update --news'"
 }
 
 test_update_news_first_then_discovery() {
@@ -849,9 +855,10 @@ YML
     assert_file_contains "$meta" "last_seen_changelog: 1"
     assert_file_contains "$meta" "last_read_changelog: 1"
 
-    # Step 2: Discovery — nothing to show (both at latest)
+    # Step 2: Discovery — nothing to show, no hint (both at latest)
     run_cco update
     assert_output_not_contains "What's new"
+    assert_output_not_contains "Run 'cco update --news'"
 }
 
 test_update_diff_force_mutual_exclusion() {
@@ -1489,6 +1496,8 @@ test_migration_009_moves_project_files() {
     echo "transcript" > "$target/claude-state/session.jsonl"
     mkdir -p "$target/.tmp"
     echo "dry-run" > "$target/.tmp/output"
+    # .pack-manifest lives inside .claude/
+    echo "pack-data" > "$target/.claude/.pack-manifest"
 
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
@@ -1504,6 +1513,8 @@ test_migration_009_moves_project_files() {
     assert_file_exists "$target/.cco/managed/browser.json"
     assert_file_exists "$target/.cco/docker-compose.yml"
     assert_file_exists "$target/.cco/claude-state/session.jsonl"
+    assert_file_exists "$target/.claude/.cco/pack-manifest"
+    assert_file_contains "$target/.claude/.cco/pack-manifest" "pack-data"
 
     # Verify old locations removed
     [[ ! -f "$target/.cco-meta" ]] || fail ".cco-meta should be removed"
@@ -1511,6 +1522,7 @@ test_migration_009_moves_project_files() {
     [[ ! -d "$target/.managed" ]] || fail ".managed/ should be removed"
     [[ ! -f "$target/docker-compose.yml" ]] || fail "docker-compose.yml should be removed"
     [[ ! -d "$target/claude-state" ]] || fail "claude-state/ should be removed"
+    [[ ! -f "$target/.claude/.pack-manifest" ]] || fail ".claude/.pack-manifest should be removed"
 
     # .tmp should be cleaned (not moved)
     [[ ! -d "$target/.tmp" ]] || fail ".tmp/ should be cleaned"
@@ -1627,6 +1639,8 @@ GI
     assert_file_not_contains "$tmpdir/.gitignore" "projects/*/.managed/"
     assert_file_not_contains "$tmpdir/.gitignore" ".cco-remotes"
     assert_file_not_contains "$tmpdir/.gitignore" "projects/*/.cco-meta"
+    assert_file_not_contains "$tmpdir/.gitignore" "projects/*/docker-compose.yml"
+    assert_file_not_contains "$tmpdir/.gitignore" "packs/*/.cco-install-tmp/"
 }
 
 # ── Changelog: missing last_read field backward compat ───────────────
@@ -1852,4 +1866,98 @@ GI
     assert_file_not_contains "$tmpdir/.gitignore" "projects/*/.pack-manifest"
     # New pattern should be present
     assert_file_contains "$tmpdir/.gitignore" "projects/*/.claude/.cco/pack-manifest"
+}
+
+# ── Changelog scenario 8: dry-run does NOT update trackers ─────────
+
+test_update_dry_run_no_tracker_update() {
+    # Dry-run must show changelog output but NOT update last_seen or last_read
+    local tmpdir; tmpdir=$(mktemp -d)
+    local saved_changelog="$tmpdir/changelog.bak"
+    cp "$REPO_ROOT/changelog.yml" "$saved_changelog"
+    trap "cp '$saved_changelog' '$REPO_ROOT/changelog.yml'; rm -rf '$tmpdir'" EXIT
+
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    cat > "$REPO_ROOT/changelog.yml" <<'YML'
+entries:
+  - id: 1
+    date: "2026-03-01"
+    type: additive
+    title: "Dry-run tracker test"
+    description: "Should not update trackers"
+YML
+
+    local meta="$CCO_GLOBAL_DIR/.claude/.cco/meta"
+    sed -i "s/^last_seen_changelog: .*/last_seen_changelog: 0/" "$meta"
+    if grep -q '^last_read_changelog:' "$meta"; then
+        sed -i "s/^last_read_changelog: .*/last_read_changelog: 0/" "$meta"
+    else
+        sed -i '/^last_seen_changelog:/a last_read_changelog: 0' "$meta"
+    fi
+
+    # Dry-run discovery — should show changelog but NOT update trackers
+    run_cco update --dry-run
+    assert_file_contains "$meta" "last_seen_changelog: 0"
+    assert_file_contains "$meta" "last_read_changelog: 0"
+
+    # Dry-run news — should also NOT update trackers
+    run_cco update --news --dry-run
+    assert_file_contains "$meta" "last_seen_changelog: 0"
+    assert_file_contains "$meta" "last_read_changelog: 0"
+}
+
+# ── Migration 009: warns on running Docker session ─────────────────
+
+test_migration_009_warns_running_session() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+
+    local target="$tmpdir/global/.claude"
+    mkdir -p "$target"
+    echo "schema_version: 8" > "$target/.cco-meta"
+
+    # Set up mock docker that reports a running cc-* container
+    local mock_bin="$tmpdir/mock-bin"
+    source "$REPO_ROOT/tests/mocks.sh"
+    _mock_docker_with_containers "$mock_bin" "cc-my-proj"
+    export PATH="$mock_bin:$PATH"
+
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/update.sh"
+    source "$REPO_ROOT/migrations/global/009_cco_dir_consolidation.sh"
+
+    local output
+    output=$(migrate "$target" 2>&1)
+
+    echo "$output" | grep -q "Running sessions detected" || \
+        fail "Migration should warn about running sessions"
+}
+
+test_migration_009_no_warn_when_no_sessions() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+
+    local target="$tmpdir/global/.claude"
+    mkdir -p "$target"
+    echo "schema_version: 8" > "$target/.cco-meta"
+
+    # Set up mock docker with no running containers
+    local mock_bin="$tmpdir/mock-bin"
+    source "$REPO_ROOT/tests/mocks.sh"
+    _mock_docker_no_containers "$mock_bin"
+    export PATH="$mock_bin:$PATH"
+
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/update.sh"
+    source "$REPO_ROOT/migrations/global/009_cco_dir_consolidation.sh"
+
+    local output
+    output=$(migrate "$target" 2>&1)
+
+    echo "$output" | grep -q "Running sessions detected" && \
+        fail "Migration should NOT warn when no sessions running" || true
 }

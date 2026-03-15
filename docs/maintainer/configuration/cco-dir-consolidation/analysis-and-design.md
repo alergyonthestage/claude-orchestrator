@@ -413,7 +413,7 @@ projects/*/.cco/meta
 projects/*/.cco/managed/
 projects/*/.cco/docker-compose.yml
 projects/*/.cco/claude-state/
-projects/*/.cco/pack-manifest
+projects/*/.claude/.cco/pack-manifest
 packs/*/.cco/install-tmp/
 
 # Dry-run dump artifacts (outside .cco/, user-inspectable)

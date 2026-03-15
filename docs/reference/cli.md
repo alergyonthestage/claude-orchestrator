@@ -182,6 +182,7 @@ Examples:
 5. LAUNCH
    - Load user-config/global/secrets.env as runtime env vars (validates KEY=VALUE format, skips malformed lines with warning)
    - docker compose -f user-config/projects/<project>/.cco/docker-compose.yml \
+       --project-directory user-config/projects/<project> \
        run --rm --service-ports claude
 
 6. CLEANUP (after exit)

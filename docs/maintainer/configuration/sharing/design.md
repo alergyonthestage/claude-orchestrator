@@ -414,8 +414,10 @@ secrets.env
 # Runtime files — generated, not user config
 projects/*/.cco/docker-compose.yml
 projects/*/.cco/managed/
-projects/*/.pack-manifest
+projects/*/.claude/.cco/pack-manifest
 projects/*/.cco/meta
+global/.claude/.cco/meta
+.cco/remotes
 
 # Session state — transient, large, personal
 projects/*/.cco/claude-state/

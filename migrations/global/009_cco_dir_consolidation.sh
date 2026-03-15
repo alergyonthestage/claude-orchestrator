@@ -98,6 +98,7 @@ _migrate_vault_gitignore_009() {
         "projects/*/.cco/docker-compose.yml"
         "projects/*/.cco/claude-state/"
         "projects/*/.claude/.cco/pack-manifest"
+        ".cco/remotes"
     )
     for pat in "${new_patterns[@]}"; do
         if ! grep -qF "$pat" "$gitignore" 2>/dev/null; then

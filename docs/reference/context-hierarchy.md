@@ -882,5 +882,5 @@ context but is not part of the conversation history.
 | `/init-workspace` skill not found | Docker image outdated | Run `cco build` to rebuild the image; the skill is baked in at `/etc/claude-code/.claude/skills/init-workspace/SKILL.md` |
 | Repo not visible at `/workspace/<name>/` | Path doesn't exist on host | Check `repos.path:` in project.yml; ensure directory exists |
 | MCP server not loaded | mcp.json missing or bad JSON | Check `user-config/global/.claude/mcp.json`; run `cco start` and look for merge errors |
-| Auto memory not persisting | `.cco/claude-state/` not created | Run `cco start`; check for `migrate_memory_to_claude_state` in logs |
+| Auto memory not persisting | `memory/` dir not created or not mounted | Run `cco start`; check that `user-config/projects/<n>/memory/` exists and is mounted |
 | Context too large | Too many repos or large knowledge files | Reduce pack files; use `/compress` periodically |

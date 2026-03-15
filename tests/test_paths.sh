@@ -193,3 +193,50 @@ test_paths_pack_source_default_new() {
     local result; result=$(_cco_pack_source "$pack")
     [[ "$result" == "$pack/.cco/source" ]] || fail "Expected new pack source default, got: $result"
 }
+
+# ── Pack Install Tmp ─────────────────────────────────────────────────
+
+test_paths_pack_install_tmp_new_path() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    export USER_CONFIG_DIR="$tmpdir/uc"
+    export GLOBAL_DIR="$tmpdir/uc/global"
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+
+    local pack="$tmpdir/pack-a"
+    mkdir -p "$pack/.cco/install-tmp"
+
+    local result; result=$(_cco_pack_install_tmp "$pack")
+    [[ "$result" == "$pack/.cco/install-tmp" ]] || fail "Expected new install-tmp path, got: $result"
+}
+
+test_paths_pack_install_tmp_old_fallback() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    export USER_CONFIG_DIR="$tmpdir/uc"
+    export GLOBAL_DIR="$tmpdir/uc/global"
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+
+    local pack="$tmpdir/pack-a"
+    mkdir -p "$pack/.cco-install-tmp"
+
+    local result; result=$(_cco_pack_install_tmp "$pack")
+    [[ "$result" == "$pack/.cco-install-tmp" ]] || fail "Expected old .cco-install-tmp fallback, got: $result"
+}
+
+test_paths_pack_install_tmp_default_new() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    export USER_CONFIG_DIR="$tmpdir/uc"
+    export GLOBAL_DIR="$tmpdir/uc/global"
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+
+    local pack="$tmpdir/pack-a"
+    mkdir -p "$pack"
+
+    local result; result=$(_cco_pack_install_tmp "$pack")
+    [[ "$result" == "$pack/.cco/install-tmp" ]] || fail "Expected new install-tmp default, got: $result"
+}

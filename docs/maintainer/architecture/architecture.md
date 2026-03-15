@@ -508,7 +508,7 @@ graph LR
 
 ---
 
-## 6. ADR: Managed Integrations — `.managed/` Convention
+## 6. ADR: Managed Integrations — `.cco/managed/` Convention
 
 **Date**: 2026-03-03
 **Status**: Accepted
