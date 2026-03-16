@@ -60,7 +60,9 @@ EOF
 
         # Run pending migrations on existing install (if no .cco/meta yet)
         if [[ ! -f "$(_cco_global_meta)" ]]; then
-            _run_migrations "global" "$GLOBAL_DIR/.claude" 0 ""
+            if ! _run_migrations "global" "$GLOBAL_DIR/.claude" 0 ""; then
+                error "Migrations failed. Run 'cco update' to retry."
+            fi
         fi
     else
         info "Copying default global config..."
@@ -109,7 +111,9 @@ EOF
         _save_all_base_versions "$GLOBAL_DIR/.claude/.cco/base" "$DEFAULTS_DIR/global/.claude" "global"
 
         # Run all migrations (marks schema as current — fresh install, nothing to migrate)
-        _run_migrations "global" "$GLOBAL_DIR/.claude" 0 "$meta_file"
+        if ! _run_migrations "global" "$GLOBAL_DIR/.claude" 0 "$meta_file"; then
+            error "Migrations failed during init. Run 'cco update' to retry."
+        fi
     fi
 
     # Copy global setup scripts if not present

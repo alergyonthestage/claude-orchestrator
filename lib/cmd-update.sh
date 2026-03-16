@@ -98,10 +98,15 @@ EOF
         verb="Checking"
     fi
 
+    local global_failed=false
+
     if $update_all; then
         # Update global
         info "$verb global config..."
-        _update_global "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"
+        if ! _update_global "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"; then
+            global_failed=true
+            warn "Global update encountered errors. Project updates will still be attempted."
+        fi
 
         # Show changelog notifications (discovery and news modes only)
         if [[ "$cmd_mode" == "discovery" || "$cmd_mode" == "news" ]]; then
@@ -115,20 +120,29 @@ EOF
             # user-config/packs/*/ and user-config/templates/*/ here.
 
             # Update all projects
-            local project_dir
+            local project_dir project_errors=0
             for project_dir in "$PROJECTS_DIR"/*/; do
                 [[ ! -d "$project_dir" ]] && continue
                 [[ ! -f "$project_dir/project.yml" ]] && continue
                 local pname
                 pname="$(basename "$project_dir")"
                 info "$verb project '$pname'..."
-                _update_project "$project_dir" "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"
+                if ! _update_project "$project_dir" "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"; then
+                    warn "Project '$pname' update encountered errors."
+                    project_errors=$(( project_errors + 1 ))
+                fi
             done
+            if [[ $project_errors -gt 0 ]]; then
+                warn "$project_errors project(s) had update errors. Run 'cco update' again after resolving."
+            fi
         fi
     elif [[ -n "$project" ]]; then
         # Global always runs (even with --project)
         info "$verb global config..."
-        _update_global "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"
+        if ! _update_global "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"; then
+            global_failed=true
+            warn "Global update encountered errors."
+        fi
 
         # Show changelog notifications (discovery and news modes only)
         if [[ "$cmd_mode" == "discovery" || "$cmd_mode" == "news" ]]; then
@@ -142,8 +156,15 @@ EOF
             [[ ! -d "$project_dir" ]] && die "Project '$project' not found. Run 'cco project list'."
             [[ ! -f "$project_dir/project.yml" ]] && die "No project.yml in projects/$project/"
             info "$verb project '$project'..."
-            _update_project "$project_dir" "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"
+            if ! _update_project "$project_dir" "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"; then
+                warn "Project '$project' update encountered errors. Run 'cco update --project $project' again."
+            fi
         fi
+    fi
+
+    if $global_failed; then
+        error "Update completed with errors. Run 'cco update' again after resolving."
+        return 1
     fi
 
     if $dry_run; then

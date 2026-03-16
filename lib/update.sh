@@ -1333,7 +1333,10 @@ _update_global() {
         if [[ "$dry_run" == "true" ]]; then
             info "$pending_migrations global migration(s) pending"
         else
-            _run_migrations "global" "$installed_dir" "$current_schema" "$meta_file"
+            if ! _run_migrations "global" "$installed_dir" "$current_schema" "$meta_file"; then
+                error "Global migrations failed. Run 'cco update' again after resolving the issue."
+                return 1
+            fi
 
             # Refresh paths if migration moved the directory (e.g. 003_user-config-dir)
             if [[ ! -d "$installed_dir" && -d "$USER_CONFIG_DIR/global/.claude" ]]; then
@@ -1574,7 +1577,10 @@ _update_project() {
         if [[ "$dry_run" == "true" ]]; then
             info "$pending_migrations project migration(s) pending for '$pname'"
         else
-            _run_migrations "project" "$project_dir" "$current_schema" "$meta_file"
+            if ! _run_migrations "project" "$project_dir" "$current_schema" "$meta_file"; then
+                error "Project '$pname' migrations failed. Run 'cco update --project $pname' again after resolving the issue."
+                return 1
+            fi
         fi
     fi
 
