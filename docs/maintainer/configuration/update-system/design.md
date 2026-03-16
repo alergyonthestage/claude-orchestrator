@@ -1,12 +1,27 @@
 # Sprint 5b — Design: Defaults, Templates & Update System
 
-**Status**: Final — Revised 2026-03-14
+**Status**: Final — Revised 2026-03-14, amended 2026-03-16
 **Original date**: 2026-03-13
 **Scope**: Architecture-level
 
 > This document is the single authoritative reference for the update system design.
 > It incorporates decisions from Sprint 5b implementation and post-sprint analysis
 > (session 2026-03-14).
+>
+> **Amendment 2026-03-16**: Policy naming and project CLAUDE.md tracking updated.
+> See `resource-lifecycle/analysis.md` for the full analysis.
+>
+> Key changes:
+> - **Policy rename**: `user-owned` → `untracked` throughout. The new name
+>   communicates the actual behavior (not tracked by update system) rather than
+>   implying ownership semantics.
+> - **Project CLAUDE.md**: Changed from `untracked` to `opinionated` (tracked).
+>   Template-provided CLAUDE.md structure should be discoverable for updates.
+>   The 3-way merge preserves user content.
+> - **New sync option**: Skip + .new file — saves framework version alongside
+>   user's file for manual review. Recommended for heavily restructured files.
+> - **Tutorial**: Now an internal resource at `internal/tutorial/`, not a
+>   template. See `resource-lifecycle/analysis.md` §4.
 
 ---
 
@@ -80,16 +95,8 @@ templates/                             # Scaffolding blueprints (read-only sourc
 │   │       ├── agents/.gitkeep        #   Empty: project agents are user-defined
 │   │       └── skills/.gitkeep        #   Empty: project skills are user-defined
 │   │
-│   └── tutorial/                      # Tutorial template (--template tutorial)
-│       ├── project.yml
-│       ├── setup.sh
-│       ├── .cco/
-│       │   └── claude-state/
-│       └── .claude/
-│           ├── CLAUDE.md
-│           ├── settings.json
-│           ├── rules/tutorial-behavior.md
-│           └── skills/
+│   └── # Note: tutorial moved to internal/tutorial/ (2026-03-16)
+│     # See resource-lifecycle/analysis.md §4
 │               ├── setup-pack/SKILL.md
 │               ├── setup-project/SKILL.md
 │               └── tutorial/SKILL.md
@@ -113,8 +120,8 @@ This is the definitive reference for every file managed by the update system.
 
 | Policy | Meaning | `cco update` behavior |
 |--------|---------|----------------------|
-| `opinionated` | Framework provides defaults; user owns after install | Discovery: reported as available. Applied only via `--sync` |
-| `user-owned` | User owns the content entirely | Never touched — not even discovered |
+| `opinionated` (= `tracked` in resource-lifecycle taxonomy) | Framework provides defaults; user owns after install | Discovery: reported as available. Applied only via `--sync` |
+| `untracked` (renamed from `user-owned`, 2026-03-16) | User owns the content entirely | Never touched — not even discovered |
 | `generated` | Rebuilt from template + saved values | Regenerated on `--sync` (e.g., `language.md`) |
 | `copy-if-missing` | Scaffold: written once if absent, then ignored | Written only if file doesn't exist |
 | `immutable` | Baked in Docker image | Only changes on `cco build` |
@@ -157,12 +164,12 @@ This is the definitive reference for every file managed by the update system.
 
 | File | Policy | Discoverable? | Notes |
 |------|--------|---------------|-------|
-| `.claude/CLAUDE.md` | `user-owned` | ❌ | User writes project context from scratch |
+| `.claude/CLAUDE.md` | `opinionated` | ✅ | **Changed 2026-03-16**: Template provides structure; user fills content. 3-way merge preserves user content while offering framework improvements. |
 | `.claude/settings.json` | `opinionated` | ✅ | Project permissions; source is always `base` template |
 | `.claude/rules/language.md` | `copy-if-missing` | ❌ | Optional project override; commented scaffold |
-| `.claude/agents/` | `user-owned` | ❌ | Project agents are user-defined |
-| `.claude/skills/` | `user-owned` | ❌ | User-defined or template-installed; not discovered |
-| `project.yml` | `user-owned` | ❌ | 100% user config; new fields are additive (code defaults) |
+| `.claude/agents/` | `untracked` | ❌ | Project agents are user-defined |
+| `.claude/skills/` | `untracked` | ❌ | User-defined or template-installed; not discovered |
+| `project.yml` | `untracked` | ❌ | 100% user config; new fields are additive (code defaults) |
 | `setup.sh` | `copy-if-missing` | ❌ | Written once at project create |
 | `secrets.env` | `copy-if-missing` | ❌ | Written once; user fills secrets |
 | `mcp-packages.txt` | `copy-if-missing` | ❌ | Written once; user adds packages |
@@ -535,7 +542,7 @@ for user reference and future `cco template sync` (not yet implemented).
 - Discovers: `.claude/settings.json` only
 
 **For native template projects** (`.cco/source` with `native:project/<name>`):
-- Source: `templates/project/<name>/` (e.g., `templates/project/tutorial/`)
+- Source: `templates/project/<name>/` (e.g., `templates/project/config-editor/`; note: tutorial is now internal, see resource-lifecycle/analysis.md §4)
 - Discovers: template-specific opinionated files (skills, rules) + base files (settings.json)
 - Base files are compared against `templates/project/base/` (schema source)
 - Template files are compared against `templates/project/<name>/` (content source)
@@ -549,8 +556,7 @@ for user reference and future `cco template sync` (not yet implemented).
 - Remote changes: notify only (see analysis.md section 7.6)
 
 **Missing source fallback**: If `.cco/source` references a native template that
-no longer exists (e.g., `native:project/tutorial` but `templates/project/tutorial/`
-was removed), `cco update` emits a warning and falls back to base-only discovery:
+no longer exists (e.g., a template was renamed or removed), `cco update` emits a warning and falls back to base-only discovery:
 ```
 ⚠ Template 'tutorial' referenced by project 'my-tutorial' not found.
   Falling back to base template for discovery.
@@ -955,12 +961,13 @@ WHAT cco update DOES NOT DO (automatically)
     Pack updates            Never — use cco pack update
 
 WHAT cco update --sync DOES NOT TOUCH
-    mcp.json                user-owned, personal MCP servers
-    project.yml             user-owned, 100% user config
-    project/.claude/CLAUDE.md  user-owned, project context
+    mcp.json                untracked, personal MCP servers
+    project.yml             untracked, 100% user config
     project/setup.sh        copy-if-missing, only written at project create
     project/secrets.env     copy-if-missing
     project/mcp-packages.txt   copy-if-missing
+    # Note: project/.claude/CLAUDE.md is now opinionated/tracked (2026-03-16)
+    # — it IS discovered and syncable via --sync
     .cco/base/              only overwritten by --sync itself (not by clean or other commands)
     user-config/templates/  never read by cco update (user domain)
 ```

@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-16 (Added bugs #B5–#B7, FI-7 publish-install sync).
+> Last updated: 2026-03-16 (Resource lifecycle analysis, tutorial separation, file policy redesign).
 >
 > **Note**: Sprint entries are historical. Path references (e.g., `.cco-meta`, `.cco-source`) in older
 > sprints reflect the layout at the time of writing. See Sprint 8 and the `.cco/` consolidation
@@ -15,7 +15,7 @@
 |--------|-------|---------|
 | ✅ Completed | 19 sprints / features | [→ Completed](#completed) |
 | 🐛 Known Bugs | 1 open · 6 fixed | [→ Known Bugs](#known-bugs) |
-| 🔜 Planned | Sprint 6 → 12 | [→ Planned Sprints](#planned-sprints) |
+| 🔜 Planned | Sprint 5c → 12 | [→ Planned Sprints](#planned-sprints) |
 | 🔭 Exploratory | 8 ideas | [→ Long-term / Exploratory](#long-term--exploratory) |
 | ❌ Declined | 3 items | [→ Declined / Won't Do](#declined--wont-do) |
 
@@ -29,6 +29,7 @@ Features are prioritized by impact for third-party users adopting claude-orchest
 graph LR
     DONE["✅ Completed<br/>Sprint 4, Sprint 5, Sprint 5b,<br/>Sprint 6+10, Sprint 6b,<br/>ADR-13, Sprint 7-Vault,<br/>Bugfix #B1, Bugfix #B5–#B7"]
 
+    SRL["Sprint 5c-Lifecycle<br/>#File policy fix<br/>#Tutorial internal<br/>#Config-editor template<br/>#Skip+.new sync option"]
     S6S["Sprint 6-Security<br/>#Docker Restriction<br/>#Internet Controls<br/>#mount_socket default fix"]
     S8E["Sprint 8-E2E<br/>#E2E Test Suite"]
     S9L["Sprint 9-Linux<br/>#Linux OAuth<br/>(pre-open-source)"]
@@ -36,7 +37,8 @@ graph LR
     S11E["Sprint 11-Ecosystem<br/>#Pack inheritance<br/>#cco project edit<br/>#StatusLine<br/>#FI quick wins<br/>#FI-7 Publish-install sync"]
     S12R["Sprint 12-RAG<br/>#Project RAG"]
 
-    DONE --> S6S
+    DONE --> SRL
+    SRL --> S6S
     S6S --> S8E
     S8E --> S9L
     S9L --> S10I
@@ -69,6 +71,102 @@ Vault sync prompt aggiunto prima di `_run_migrations()` in `_update_global()`, c
 **Fixed in**: commit `5627ce4`.
 
 Tutti i chiamanti di `_run_migrations()` ora controllano il codice di ritorno. `cmd-update.sh` traccia errori per progetto e mostra un summary. Errori propagati con messaggi chiari e istruzioni per ri-tentare.
+
+---
+
+### Sprint 5c-Lifecycle — Resource Lifecycle, Policies & Tutorial Separation
+
+Risolve problemi identificati il 2026-03-16: il sistema di update non rileva modifiche
+al CLAUDE.md dei project (policy `user-owned` errata), il tutorial serve due scopi
+incompatibili (educazione vs editing config), e manca una strategia unificata per il
+lifecycle delle risorse (defaults, templates, publish/install).
+
+**Status**: Analysis complete. Ready for design review and implementation.
+**Analysis**: [`docs/maintainer/configuration/resource-lifecycle/analysis.md`](../configuration/resource-lifecycle/analysis.md)
+
+#### Problemi identificati
+
+1. **Project CLAUDE.md invisible agli update**: `PROJECT_FILE_POLICIES` marca
+   `.claude/CLAUDE.md` come `user-owned` → nessuna notifica di aggiornamenti
+   dal template. Il 75% delle modifiche al tutorial erano invisibili a `cco update`.
+2. **Policy `user-owned` troppo aggressiva**: silenzia completamente gli update,
+   corretto per file 100% utente (project.yml, secrets.env) ma sbagliato per file
+   dove il framework fornisce contenuto evolutivo.
+3. **Tutorial = due use case incompatibili**: contenuto educativo (deve essere sempre
+   aggiornato) + editor di configurazione (deve essere personalizzabile dall'utente).
+4. **Nessun meccanismo di update per publish/install**: FI-7 è in roadmap ma le
+   fondamenta (policy, lifecycle model) non erano definite.
+
+#### Task di implementazione
+
+**Phase 1: Bug fix — File policy (priorità immediata)**
+
+| # | Task | Ref |
+|---|------|-----|
+| 1a | Rename `user-owned` → `untracked` in `lib/update.sh` e variabili derivate | analysis §3.2 |
+| 1b | Cambiare `.claude/CLAUDE.md` da `untracked` a `tracked` in `PROJECT_FILE_POLICIES` | analysis §3.4, §7.2 |
+| 1c | Verificare che `.cco/base/CLAUDE.md` sia popolato alla creazione del project | analysis §8.1 |
+| 1d | Aggiungere opzione **(N)ew-file** a `_interactive_sync()` — salva versione framework come `.new` accanto al file utente | analysis §3.3 |
+
+**Phase 2: Tutorial separation**
+
+| # | Task | Ref |
+|---|------|-----|
+| 2a | Creare directory `internal/tutorial/` e spostare contenuti da `templates/project/tutorial/` | analysis §4.2 |
+| 2b | Aggiornare `cco start` per riconoscere `tutorial` come nome riservato e lanciare da `internal/tutorial/` | analysis §4.2, tutorial design §7 |
+| 2c | Gestire session state del tutorial (transcripts) in `user-config/.cco/tutorial-state/` o simile | analysis §10 Q4 |
+| 2d | Rimuovere creazione tutorial da `cco init` (era in `cmd-init.sh`) | tutorial design §7 (superseded) |
+| 2e | Aggiornare `cco project list` per escludere tutorial | analysis §4.2 |
+| 2f | Migration informativa per utenti con `user-config/projects/tutorial/` esistente | analysis §4.4 |
+
+**Phase 3: Config-editor template**
+
+| # | Task | Ref |
+|---|------|-----|
+| 3a | Creare template `templates/project/config-editor/` con `user-config` come repo (non extra mount) | analysis §4.3 |
+| 3b | CLAUDE.md con istruzioni su vault, publish/install, safety rules | analysis §4.3 |
+| 3c | Skills: `/setup-project`, `/setup-pack` (migrate da tutorial) | tutorial design §5.2, §5.3 |
+| 3d | Rules per config editing (backup, validazione, gestione vault) | analysis §4.3 |
+| 3e | Aggiungere template a `cco template list` | — |
+
+**Phase 4: Documentazione**
+
+| # | Task | Ref |
+|---|------|-----|
+| 4a | Riscrivere `update-system/design.md` con nuova tassonomia (eliminare annotazioni old/new) | analysis §3 |
+| 4b | Riscrivere `tutorial/design.md` per riflettere modello internal (eliminare annotazioni old/new) | analysis §4.2 |
+| 4c | Aggiornare `reference/cli.md` con `cco start tutorial` e nuovo comportamento | — |
+| 4d | Aggiornare `getting-started/first-project.md` con riferimento al tutorial built-in | — |
+
+#### Decisioni prese in questa sessione
+
+1. **Tutorial diventa internal** (Opzione D): non è un template, vive in `internal/tutorial/`,
+   `cco start tutorial` lo lancia direttamente. Non installato in user-config, non appare in
+   `cco project list`, sempre aggiornato.
+2. **`internal/` è la directory corretta**: `defaults/` ha semantica diversa (global = copiato
+   su init, managed = baked in Docker). Tutorial non è nessuna delle due.
+3. **Config-editor è un template separato**: monta `user-config` come repo (non extra mount ro),
+   include istruzioni su vault/publish/install, è user-owned con policy standard.
+4. **`user-owned` → `untracked`**: rename per chiarezza semantica.
+5. **Project CLAUDE.md → tracked**: il template fornisce struttura, il 3-way merge preserva
+   il contenuto utente.
+6. **Skip + .new**: nuova opzione sync per file ristrutturati dall'utente, alternativa a merge.
+7. **cco-develop usa publish/install**: non è un progetto internal come tutorial. Dimostra che
+   il Config Repo model funziona per team reali. Implementazione separata, dopo FI-7.
+8. **FI-7 beneficia di questo lavoro**: le fondamenta (policy, lifecycle model, `.cco/source`,
+   3-way merge engine) sono ora definite e documentate.
+
+#### Documenti di riferimento per l'implementazione
+
+| Documento | Ruolo |
+|-----------|-------|
+| `docs/maintainer/configuration/resource-lifecycle/analysis.md` | **Primario**: decisioni, policy, architettura, task list |
+| `docs/maintainer/templates/tutorial/design.md` §4-§6 | Contenuto dei file tutorial (CLAUDE.md, skills, rules) — ancora valido |
+| `docs/maintainer/configuration/update-system/design.md` | Contesto: come funziona il sistema di update (con note di amendment 2026-03-16) |
+| `lib/update.sh` linee 25-75 | Codice: file policies attuali da modificare |
+| `lib/update.sh` `_interactive_sync()` | Codice: dove aggiungere opzione Skip+.new |
+
+**Effort**: Medium. Phase 1 è low-effort (bugfix). Phase 2-3 sono medium. Phase 4 è follow-up.
 
 ---
 
