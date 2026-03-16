@@ -144,3 +144,43 @@
 **Decision**: Option 2 (deny rules in managed-settings.json) is the most elegant. Technical enforcement without mount complexity. Tutorial project can override if needed via its own settings.
 
 **Effort**: Low (deny rule additions to `managed-settings.json`).
+
+---
+
+## FI-7: Publish-Install Sync and Resource Versioning
+
+**Question**: After `cco project install`, the installed project has no connection to the source Config Repo. If the publisher pushes updates, how does the consumer know? Should there be a `cco project update` flow? What about versioning?
+
+**Context**: The current publish/install system is one-way:
+- `cco project publish <name> <remote>` exports project template to a Config Repo (excludes `.cco/`, `memory/`, session state)
+- `cco project install <url>` imports from a Config Repo, creates local project with `.cco/source` reference
+- After installation, there is no mechanism to check for or apply updates from the source
+- `cco pack install/update` already has a partial update flow via `.cco/source`, but `cco project install` does not
+
+**Analysis**:
+
+Flussi da valutare:
+
+1. **Publisher updates → consumer notification**: Il consumer dovrebbe poter eseguire `cco project update <name>` (o `--all`) per verificare se il Config Repo sorgente ha nuove versioni. La reference `.cco/source` già esiste dopo install — contiene URL e commit hash. Il confronto tra hash locale e remoto determina se ci sono aggiornamenti.
+
+2. **Consumer con modifiche locali → update**: Se il consumer ha personalizzato CLAUDE.md, rules, agents, l'update dovrebbe usare un merge 3-way (base installata vs nuova versione vs modifiche locali). Stesso algoritmo di `cco update --apply` (A/M/R/K/S/D).
+
+3. **Consumer con modifiche locali → publish accidentale**: Se un consumer con write access fa `cco project publish`, potrebbe involontariamente sovrascrivere la versione condivisa con le sue modifiche locali/personali. Serve un warning con diff review: "Il progetto locale differisce dalla versione pubblicata. Confermi il publish?"
+
+4. **Versioning**: Campo opzionale `version:` in `pack.yml` / project template metadata. Permette al publisher di taggare le versioni e al consumer di sapere quale versione ha installato. Non strettamente necessario (il commit hash è un version ID implicito), ma migliora la UX.
+
+5. **Multi-consumer**: Ogni consumer ha una copia indipendente. Non c'è sync tra consumer — ognuno applica gli update dal repo sorgente indipendentemente. Nessun conflitto possibile.
+
+6. **Packs condivisi**: Un pack aggiornato dal publisher dovrebbe essere rilevato da `cco pack update`. Questo flusso esiste già parzialmente. Verificare che funzioni end-to-end e che i progetti che usano il pack vengano notificati.
+
+**Rischi e trade-off**:
+- Il merge 3-way su update potrebbe produrre conflict markers se le personalizzazioni locali confliggono con le modifiche del publisher. L'utente deve risolverli manualmente — accettabile dato il modello interattivo.
+- Il versioning esplicito aggiunge complessità al workflow di publish. Potrebbe essere opzionale (default: commit hash come version ID implicito, `version:` field per chi vuole semantica chiara).
+- Le deny rules (FI-6) impediscono all'agente di modificare rules/agents/skills — ma un utente umano potrebbe farlo e poi fare publish, includendo modifiche indesiderate. Il diff review pre-publish mitiga questo rischio.
+
+**Decision**: Requires detailed analysis and design before implementation. Key questions:
+- Quanto del flusso `cco pack update` è riutilizzabile per `cco project update`?
+- Il `.cco/source` attuale contiene informazioni sufficienti per il check di aggiornamenti?
+- Servono API remote (Config Repo) per il version check, o basta un `git ls-remote`?
+
+**Effort**: Medium-High (analysis, design, implementation, tests).

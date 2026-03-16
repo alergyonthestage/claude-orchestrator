@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-15 (Sprint 8: .cco/ directory consolidation completed).
+> Last updated: 2026-03-16 (Added bugs #B5–#B7, FI-7 publish-install sync).
 >
 > **Note**: Sprint entries are historical. Path references (e.g., `.cco-meta`, `.cco-source`) in older
 > sprints reflect the layout at the time of writing. See Sprint 8 and the `.cco/` consolidation
@@ -14,7 +14,7 @@
 | Status | Items | Section |
 |--------|-------|---------|
 | ✅ Completed | 19 sprints / features | [→ Completed](#completed) |
-| 🐛 Known Bugs | 1 open · 3 fixed | [→ Known Bugs](#known-bugs) |
+| 🐛 Known Bugs | 1 open · 6 fixed | [→ Known Bugs](#known-bugs) |
 | 🔜 Planned | Sprint 6 → 12 | [→ Planned Sprints](#planned-sprints) |
 | 🔭 Exploratory | 7 ideas | [→ Long-term / Exploratory](#long-term--exploratory) |
 | ❌ Declined | 3 items | [→ Declined / Won't Do](#declined--wont-do) |
@@ -27,13 +27,13 @@ Features are prioritized by impact for third-party users adopting claude-orchest
 
 ```mermaid
 graph LR
-    DONE["✅ Completed<br/>Sprint 4, Sprint 5, Sprint 5b,<br/>Sprint 6+10, Sprint 6b,<br/>ADR-13, Sprint 7-Vault, Bugfix #B1"]
+    DONE["✅ Completed<br/>Sprint 4, Sprint 5, Sprint 5b,<br/>Sprint 6+10, Sprint 6b,<br/>ADR-13, Sprint 7-Vault,<br/>Bugfix #B1, Bugfix #B5–#B7"]
 
     S6S["Sprint 6-Security<br/>#Docker Restriction<br/>#Internet Controls<br/>#mount_socket default fix"]
     S8E["Sprint 8-E2E<br/>#E2E Test Suite"]
     S9L["Sprint 9-Linux<br/>#Linux OAuth<br/>(pre-open-source)"]
     S10I["Sprint 10-Isolation<br/>#Git Worktree"]
-    S11E["Sprint 11-Ecosystem<br/>#Pack inheritance<br/>#cco project edit<br/>#StatusLine<br/>#FI quick wins"]
+    S11E["Sprint 11-Ecosystem<br/>#Pack inheritance<br/>#cco project edit<br/>#StatusLine<br/>#FI quick wins<br/>#FI-7 Publish-install sync"]
     S12R["Sprint 12-RAG<br/>#Project RAG"]
 
     DONE --> S6S
@@ -47,6 +47,30 @@ graph LR
 ---
 
 ## Planned Sprints
+
+### Bugfix Sprint — #B5, #B6, #B7 ✓
+
+Correzione di tre bug identificati il 2026-03-16 nel sistema di update e vault. Tutti risolti il 2026-03-16.
+
+#### #B5 Changelog markers a 0 su first install ✓ FIXED
+
+**Fixed in**: commit `5f57d60`.
+
+`cco init` inizializzava `last_seen_changelog` e `last_read_changelog` a `0`. Ora inizializzati a `_latest_changelog_id()`.
+
+#### #B6 Nessun vault sync prompt prima delle migrazioni ✓ FIXED
+
+**Fixed in**: commit `10c7ea6`.
+
+Vault sync prompt aggiunto prima di `_run_migrations()` in `_update_global()`, condizionato a: vault inizializzato AND migrazioni pendenti > 0. Evita doppio prompt in `--apply` mode.
+
+#### #B7 Errori di migrazione potenzialmente silenziosi ✓ FIXED
+
+**Fixed in**: commit `5627ce4`.
+
+Tutti i chiamanti di `_run_migrations()` ora controllano il codice di ritorno. `cmd-update.sh` traccia errori per progetto e mostra un summary. Errori propagati con messaggi chiari e istruzioni per ri-tentare.
+
+---
 
 ### Sprint 6-Security — Sandbox & Network Hardening
 
@@ -202,6 +226,29 @@ files:
 
 Open project.yml in `$EDITOR` and regenerate docker-compose.yml after save.
 
+#### FI-7 Publish-install sync and resource versioning
+
+Il sistema publish/install è attualmente one-way: `cco project publish` esporta, `cco project install` importa, ma dopo l'installazione non c'è collegamento al repo sorgente. Chi pubblica aggiornamenti non ha modo di notificare i consumer.
+
+**Obiettivi**:
+- `cco project update <name>` / `cco project update --all`: controlla se il repo sorgente ha aggiornamenti e li applica con merge 3-way
+- Mantenere la reference `.cco/source` dopo install per abilitare update futuri
+- Notifica di aggiornamenti disponibili in `cco update` (discovery)
+- Gestione conflitti: merge 3-way tra versione sorgente, base installata, e modifiche locali
+- Protezione da publish accidentale di modifiche locali/personali (diff review prima di publish)
+- Versioning opzionale: campo `version:` in `pack.yml` / template metadata per tracciare le versioni pubblicate
+
+**Flussi da valutare**:
+1. Publisher (write access) aggiorna → consumer (read-only) riceve notifica → consumer applica update
+2. Consumer modifica localmente → publish dovrebbe avvertire delle differenze rispetto alla versione condivisa
+3. Due consumer installano lo stesso progetto → modifiche indipendenti, nessun conflitto (non c'è sync tra consumer)
+4. Packs condivisi tra progetti: un pack aggiornato dal publisher dovrebbe notificare tutti i progetti che lo usano
+
+**Ref**: [FI-7](framework-improvements.md#fi-7-publish-install-sync-and-resource-versioning)
+**Effort**: Medium-High. Richiede analisi e design approfonditi prima dell'implementazione.
+
+---
+
 #### #10b Status bar improvements
 
 Improve the StatusLine hook (`config/hooks/statusline.sh`) for better usability.
@@ -301,6 +348,30 @@ The `Dockerfile` uses `npm install -g @anthropic-ai/claude-code` which is deprec
 **Status**: No action needed now. npm install still works and no removal timeline is known. Revisit when Anthropic announces a deprecation date or ships a CI-friendly native installer.
 
 **Tracked**: add to a future maintenance sprint once the upstream situation is clearer.
+
+---
+
+### #B5 Changelog markers inizializzati a 0 su first install ✓ FIXED
+
+**Reported**: 2026-03-16. **Fixed**: 2026-03-16.
+
+`cco init` impostava `last_seen_changelog: 0` e `last_read_changelog: 0`. Al primo `cco update` tutte le entry del changelog apparivano come nuove. Fix: entrambi i marker inizializzati a `_latest_changelog_id()`.
+
+---
+
+### #B6 Nessun vault sync prima delle migrazioni in `cco update` ✓ FIXED
+
+**Reported**: 2026-03-16. **Fixed**: 2026-03-16.
+
+`cco update` eseguiva migrazioni senza offrire vault snapshot. Il prompt vault sync era solo in `--apply` mode. Fix: prompt aggiunto prima di `_run_migrations()`, condizionato a vault inizializzato AND migrazioni pendenti. Evita doppio prompt in `--apply`.
+
+---
+
+### #B7 Errori di migrazione potenzialmente silenziosi ✓ FIXED
+
+**Reported**: 2026-03-16. **Fixed**: 2026-03-16.
+
+Tutti i chiamanti di `_run_migrations()` ignoravano il codice di ritorno. Una migrazione fallita poteva passare inosservata. Fix: return code controllato in `_update_global`, `_update_project`, `cmd_init`. Summary errori per progetto in `cmd-update.sh`.
 
 ---
 
