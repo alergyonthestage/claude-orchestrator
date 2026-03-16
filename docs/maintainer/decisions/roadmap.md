@@ -16,7 +16,7 @@
 | ✅ Completed | 19 sprints / features | [→ Completed](#completed) |
 | 🐛 Known Bugs | 1 open · 6 fixed | [→ Known Bugs](#known-bugs) |
 | 🔜 Planned | Sprint 6 → 12 | [→ Planned Sprints](#planned-sprints) |
-| 🔭 Exploratory | 7 ideas | [→ Long-term / Exploratory](#long-term--exploratory) |
+| 🔭 Exploratory | 8 ideas | [→ Long-term / Exploratory](#long-term--exploratory) |
 | ❌ Declined | 3 items | [→ Declined / Won't Do](#declined--wont-do) |
 
 ---
@@ -714,22 +714,34 @@ Add `model:` field to `project.yml`, passed to `claude --model` at launch via en
 
 ---
 
-### FI-5: Human Workflow & Review Best Practices Guide
+### FI-5: Human Workflow & Review Best Practices Guide ✓ PARTIALLY DONE
 
-**Raised**: 2026-03-14.
+**Raised**: 2026-03-14. **Partially completed**: 2026-03-16.
 
-Create `docs/user-guides/development-workflow.md` — a practical operational guide covering:
-- Phase checklists (what to do, what to verify at each stage)
-- Recommended multi-pass review pattern: implementation → design alignment → docs freshness → test coverage
-- Common problems and workarounds (e.g., model forgets constraints in long sessions)
-- Precise git flow: branch naming, commit conventions, merge points as review gates
-- GitHub branch protection configuration for mechanical enforcement of human review
-- The core insight: **human-in-the-loop + automated multi-pass reviews drastically improve quality and prevent bug accumulation**
+~~Create `docs/user-guides/development-workflow.md`~~ — **Created**. Covers:
+- ✅ Context management and clean sessions per phase
+- ✅ Multi-pass review pattern (2-3 iterations)
+- ✅ Review types: alignment, bug hunting, docs, tests
+- ✅ Phase transitions and verification of intermediate artifacts
+- ✅ Testing and validation strategy
+- ✅ Periodic maintenance reviews (architecture, docs structure)
+- ✅ Permission modes per phase (plan mode for analysis/design, skip for impl)
+- ✅ Common pitfalls table
+- ✅ Session checklist (quick reference)
 
-Also update the base project template to reference these best practices.
+Also created `docs/user-guides/configuring-rules.md` — companion guide covering:
+- ✅ Rules vs Skills vs Agents vs Knowledge (when to use each)
+- ✅ Six categories of rules with scope recommendations
+- ✅ Grouping principle (correlated rules in same file)
+- ✅ Packs as single source of truth for shared resources
+- ✅ Per-project configuration guidance
+
+**Remaining**:
+- GitHub branch protection configuration for mechanical enforcement
+- Update base project template to reference these guides
 
 **Ref**: [FI-5](framework-improvements.md#fi-5-human-workflow-guide-and-review-best-practices)
-**Effort**: Medium (documentation writing, template updates).
+**Effort**: Remaining work is Low.
 
 ---
 
@@ -756,6 +768,30 @@ Mount repos from remote hosts via SSHFS or similar, enabling orchestrator sessio
 ### Multi-project sessions
 
 A single Claude session with repos from multiple projects, for cross-project refactoring or analysis tasks.
+
+---
+
+### System Notifications for Human-in-the-Loop
+
+**Raised**: 2026-03-16.
+
+**Context**: When the agent needs human intervention (phase transition approval, design
+review, error requiring decision), the user may not be watching the terminal. System
+notifications (macOS Notification Center, Linux desktop notifications) could alert the
+user when attention is needed.
+
+**Inspiration**: Boris Cherny (Claude Code creator) suggested this pattern for improving
+human-in-the-loop workflows.
+
+**Possible implementation**:
+- Hook-based: a `Notification` hook type that triggers OS notifications
+- Via `terminal-notifier` (macOS) or `notify-send` (Linux) called from hooks
+- Could also integrate with Slack/Discord via webhook for remote notifications
+- Configurable: which events trigger notifications (phase complete, error, review needed)
+
+**Effort**: Low-Medium. Investigate which Claude Code hook events best map to "needs
+human attention" signals. Consider both local (OS notification) and remote (webhook)
+delivery.
 
 ---
 

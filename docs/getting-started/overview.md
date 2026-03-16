@@ -41,6 +41,10 @@ claude-orchestrator manages Claude Code sessions inside Docker containers. Each 
 
 A single command (`cco start my-app`) launches everything.
 
+cco ships with recommended defaults (rules, skills, agents) as a tested starting point,
+but everything is fully customizable. The framework provides the mechanisms — you decide
+the workflow, conventions, and practices.
+
 ---
 
 ## How it works

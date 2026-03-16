@@ -1,8 +1,10 @@
 # claude-orchestrator
 
-> The shared Claude Code environment for your team and projects.
+> The fully customizable Claude Code environment for your team and projects.
 
 Per-project context and team sharing for Claude Code — powered by Docker. Every project has its own repos, instructions, and documentation ready at startup. Commit `project.yml` and your whole team gets the exact same environment.
+
+cco provides the mechanisms (Docker isolation, context hierarchy, knowledge packs, agent teams) and ships with **recommended defaults** tested through real-world agentic development. Every rule, skill, agent, and default is fully customizable — adopt what works, change what doesn't.
 
 ## Why claude-orchestrator?
 
@@ -58,10 +60,29 @@ cd claude-orchestrator
 # 2. Initialize (copy defaults, build Docker image)
 bin/cco init
 
-# 3. Create a project
-bin/cco project create my-app
+# 3. Start the interactive tutorial
+bin/cco start tutorial
+```
 
-# 4. Start the session
+### The Tutorial — Your Starting Point
+
+The built-in **project tutorial** is the recommended way to learn claude-orchestrator.
+It walks you through:
+
+- Creating and configuring your first project
+- Setting up knowledge packs for your stack and domain
+- Customizing rules, skills, and workflow to match your preferences
+- Understanding the context hierarchy and how to use it effectively
+
+The tutorial references the [user guides](docs/user-guides/) for detailed best practices,
+and helps you build a configuration that reflects your actual development workflow.
+
+### Manual setup
+
+If you prefer to skip the tutorial:
+
+```bash
+bin/cco project create my-app --repo ~/projects/my-repo
 bin/cco start my-app
 ```
 
@@ -85,7 +106,7 @@ bin/cco start my-app
 | Path | Content |
 |---|---|
 | **New users** | [getting-started/](docs/getting-started/) — Overview, installation, first project, key concepts |
-| **User guides** | [user-guides/](docs/user-guides/) — Project setup, packs, auth, agent teams, browser, sharing |
+| **User guides** | [user-guides/](docs/user-guides/) — Project setup, packs, auth, agent teams, [configuring rules](docs/user-guides/configuring-rules.md), [development workflow](docs/user-guides/development-workflow.md) |
 | **Technical reference** | [reference/](docs/reference/) — CLI commands, project.yml format, context hierarchy |
 | **Contributing** | [maintainer/](docs/maintainer/) — Architecture, spec, roadmap, design docs |
 | **Security** | [maintainer/security.md](docs/maintainer/architecture/security.md) — Threat model, findings, fix priority |

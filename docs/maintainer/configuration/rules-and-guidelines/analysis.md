@@ -251,6 +251,20 @@ Update existing defaults:
 4. **Additional workflow skills**: Evaluate `/implement`, `/document`, `/test` as global
    defaults or just document them as examples in the user guide.
 
+5. **`language.md` initialization flow**: Currently `cco init` interactively asks the
+   user for their preferred language and fills the `{{LANG}}` template. Alternatives
+   to evaluate:
+   - **Remove interactive init** — let the tutorial agent or user configure manually
+   - **Expand init** — ask for more preferences during init (git conventions, workflow)
+   - **Agent-assisted init** — run an agent during init that interviews the user
+   - **Keep template as-is** — `{{LANG}}` placeholders remain, no conflict with user edits
+
+   Key consideration: if `cco init` fills `language.md`, subsequent `cco update --sync`
+   must not overwrite user customizations. The current mechanism (copied once, never
+   overwritten) already handles this, but the template in `defaults/global/` still has
+   `{{LANG}}` which shows as a diff in `cco update --diff`. Need to decide if init
+   should transform the template or if the user should edit manually.
+
 ---
 
 ## Next Steps
