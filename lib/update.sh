@@ -1328,11 +1328,25 @@ _update_global() {
     # Phase 1: Run migrations (always, unless --dry-run or --news)
     local pending_migrations=$(( latest_schema - current_schema ))
     [[ $pending_migrations -lt 0 ]] && pending_migrations=0
+    local vault_synced_pre_migration=false
 
     if [[ $pending_migrations -gt 0 && "$cmd_mode" != "news" ]]; then
         if [[ "$dry_run" == "true" ]]; then
             info "$pending_migrations global migration(s) pending"
         else
+            # Vault pre-migration snapshot (prompt before any file modifications)
+            if [[ -d "$USER_CONFIG_DIR/.git" ]]; then
+                local do_vault="y"
+                if (exec < /dev/tty) 2>/dev/null; then
+                    read -rp "  Vault detected. Commit current state before running $pending_migrations migration(s)? [Y/n] " do_vault < /dev/tty
+                    do_vault="${do_vault:-y}"
+                fi
+                if [[ "$do_vault" =~ ^[Yy] ]]; then
+                    cmd_vault_sync "pre-migration snapshot" </dev/tty >/dev/tty 2>/dev/tty || warn "Vault snapshot failed, continuing..."
+                    vault_synced_pre_migration=true
+                fi
+            fi
+
             if ! _run_migrations "global" "$installed_dir" "$current_schema" "$meta_file"; then
                 error "Global migrations failed. Run 'cco update' again after resolving the issue."
                 return 1
@@ -1386,8 +1400,8 @@ _update_global() {
             _show_file_diffs "$changes" "$defaults_dir" "$installed_dir" "$base_dir" "Global"
             ;;
         apply)
-            # Vault pre-update snapshot (optional)
-            if [[ "$dry_run" != "true" && -z "$auto_action" ]]; then
+            # Vault pre-update snapshot (optional, skip if already done pre-migration)
+            if [[ "$dry_run" != "true" && -z "$auto_action" && "$vault_synced_pre_migration" != "true" ]]; then
                 if [[ -d "$USER_CONFIG_DIR/.git" ]]; then
                     local do_vault="y"
                     if (exec < /dev/tty) 2>/dev/null; then
