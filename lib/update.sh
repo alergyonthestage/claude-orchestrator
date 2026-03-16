@@ -5,7 +5,7 @@
 #           _generate_cco_meta(), _latest_schema_version(), _run_migrations(),
 #           _collect_file_changes(),
 #           _save_base_versions(), _merge_file(),
-#           _show_file_diffs(), _interactive_apply(),
+#           _show_file_diffs(), _interactive_sync(),
 #           _read_changelog_entries(), _show_changelog_summary(),
 #           _show_changelog_details(), _show_changelog_news(),
 #           _update_changelog_notifications(),
@@ -506,7 +506,7 @@ _UPDATE_MANIFEST_ENTRIES=""
 _LAST_RESOLVE_AUTOMERGE=false  # set by _resolve_with_merge for counter tracking
 _LAST_RESOLVE_SKIPPED=false    # set by _resolve_with_merge when user chooses skip inside conflict
 
-## _apply_file_changes — REMOVED (replaced by _interactive_apply in Sprint 3+4)
+## _apply_file_changes — REMOVED (replaced by _interactive_sync in Sprint 3+4)
 
 # Resolve a conflict using 3-way merge, falling back to interactive prompt
 _resolve_with_merge() {
@@ -854,7 +854,7 @@ _show_file_diffs() {
 
 # Interactive per-file apply with user prompts.
 # Called only in --sync mode.
-_interactive_apply() {
+_interactive_sync() {
     local changes="$1"
     local defaults_dir="$2"
     local installed_dir="$3"
@@ -1419,7 +1419,7 @@ _update_global() {
                 # In dry-run + sync, show what would be available
                 _show_discovery_summary "$changes" "Global"
             else
-                _interactive_apply "$changes" "$defaults_dir" "$installed_dir" "$base_dir" "$no_backup" "$auto_action" "Global"
+                _interactive_sync "$changes" "$defaults_dir" "$installed_dir" "$base_dir" "$no_backup" "$auto_action" "Global"
             fi
             ;;
     esac
@@ -1472,7 +1472,7 @@ _update_global() {
         last_read=$(_read_last_read_changelog "$meta_file")
 
         if [[ "$cmd_mode" == "sync" ]]; then
-            # Use manifest entries from _interactive_apply
+            # Use manifest entries from _interactive_sync
             {
                 echo "$_UPDATE_MANIFEST_ENTRIES"
                 echo "$special_entries"
@@ -1480,7 +1480,7 @@ _update_global() {
                 "$meta_file" "$new_schema" "$created" \
                 "$comm_lang" "$docs_lang" "$code_lang" "$last_seen" "$last_read"
 
-            # Note: .cco/base/ is saved per-file inside _interactive_apply
+            # Note: .cco/base/ is saved per-file inside _interactive_sync
             # (only for Apply/Keep/Merge/Replace, not Skip)
         else
             # Discovery/diff mode: only update schema_version (from migrations)
@@ -1592,7 +1592,7 @@ _update_project() {
             info "$pending_migrations project migration(s) pending for '$pname'"
         else
             if ! _run_migrations "project" "$project_dir" "$current_schema" "$meta_file"; then
-                error "Project '$pname' migrations failed. Run 'cco update --project $pname' again after resolving the issue."
+                error "Project '$pname' migrations failed. Run 'cco update' again after resolving the issue."
                 return 1
             fi
         fi
@@ -1638,7 +1638,7 @@ _update_project() {
             if [[ "$dry_run" == "true" ]]; then
                 _show_discovery_summary "$changes" "$scope_label"
             else
-                _interactive_apply "$changes" "$defaults_dir" "$installed_dir" "$base_dir" "$no_backup" "$auto_action" "$scope_label"
+                _interactive_sync "$changes" "$defaults_dir" "$installed_dir" "$base_dir" "$no_backup" "$auto_action" "$scope_label"
             fi
             ;;
     esac
@@ -1691,7 +1691,7 @@ _update_project() {
             echo "$_UPDATE_MANIFEST_ENTRIES" | _generate_project_cco_meta \
                 "$meta_file" "$new_schema" "$created" "$tmpl_name"
 
-            # Note: .cco/base/ is saved per-file inside _interactive_apply
+            # Note: .cco/base/ is saved per-file inside _interactive_sync
             # (only for Apply/Keep/Merge/Replace, not Skip)
         else
             # Discovery/diff mode: only update schema_version (from migrations)

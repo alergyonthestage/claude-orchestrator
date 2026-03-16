@@ -74,7 +74,7 @@ Usage: cco <command> [options]
 Getting Started:
   init                   Initialize user config from defaults
   build                  Build/rebuild the Docker image
-  update                 Discover available updates (--diff, --apply, --news)
+  update                 Run migrations + discover updates (--sync, --diff, --news)
   clean                  Clean up .bak, .tmp/, docker-compose.yml
 
 Sessions:

@@ -33,8 +33,8 @@ The value proposition of cco depends on:
 | Scope | Location | Ownership | Installed by | Updated by |
 |-------|----------|-----------|-------------|------------|
 | **Managed** | `defaults/managed/` → `/etc/claude-code/` | Framework (immutable) | `cco build` | `cco build` |
-| **Global** | `defaults/global/` → `user-config/global/` | User (after install) | `cco init` | User (assisted by `cco update --apply`) |
-| **Project** | `templates/project/*/` → `user-config/projects/<name>/` | User (after install) | `cco project create` | User (assisted by `cco update --apply`) |
+| **Global** | `defaults/global/` → `user-config/global/` | User (after install) | `cco init` | User (assisted by `cco update --sync`) |
+| **Project** | `templates/project/*/` → `user-config/projects/<name>/` | User (after install) | `cco project create` | User (assisted by `cco update --sync`) |
 | **Pack** | `user-config/packs/<name>/` | User or Remote | `cco pack create/install` | `cco pack update` (full replace) |
 
 **Key change from earlier designs**: Global and Project files are **user-owned after
@@ -110,7 +110,7 @@ See section 8.7 for the notification mechanism.
 workflow instructions — the methodology files that cco installs at init.
 **Constraint**: Never forced on the user. Discovery + on-demand merge only.
 **User action**: Review when interested, apply selectively.
-**Update mechanism**: `cco update` discovers and reports; `cco update --apply` merges.
+**Update mechanism**: `cco update` discovers and reports; `cco update --sync` merges.
 
 **Examples**:
 - Improved `workflow.md` with better phase descriptions
@@ -186,7 +186,7 @@ cco update (after framework upgrade)
   ├── Report: "N files have updates available"
   └── NO automatic file modifications
 
-cco update --apply (user-initiated)
+cco update --sync (user-initiated)
   ├── For each file with updates:
   │   ├── User unchanged + framework changed → offer: apply / skip
   │   ├── Both changed → offer: 3-way merge / .bak+replace / keep / skip
@@ -213,7 +213,7 @@ cco update --project <name>
   ├── Discover opinionated file updates (.claude/settings.json)
   └── Report available updates
 
-cco update --apply --project <name>
+cco update --sync <name>
   └── Merge/replace opinionated files on user request
 ```
 
@@ -308,7 +308,7 @@ These live in `user-config/templates/` and are fully user-managed.
 
 `cco update` never reads from or writes to user templates. If a user wants to
 propagate their template changes to existing projects, they use the same
-`cco update --diff` / `--apply` tool manually, pointing to the template as source.
+`cco update --diff` / `--sync` tool manually, pointing to the template as source.
 
 ### 5.4 Template Philosophy
 
@@ -374,9 +374,9 @@ for improvements.
 
 | Resource | Created by | Updated by | `cco update` role |
 |----------|-----------|------------|-------------------|
-| Global config | `cco init` | User + `cco update --apply` | Migrations + discovery + additive notifications |
-| Project (from base) | `cco project create` | User + `cco update --apply` | Migrations + discovery |
-| Project (from native template) | `cco project create --template` | User + `cco update --apply` | Migrations + discovery (template-specific files) |
+| Global config | `cco init` | User + `cco update --sync` | Migrations + discovery + additive notifications |
+| Project (from base) | `cco project create` | User + `cco update --sync` | Migrations + discovery |
+| Project (from native template) | `cco project create --template` | User + `cco update --sync` | Migrations + discovery (template-specific files) |
 | Project (from remote) | `cco project install` | User | Migrations only (notify of remote updates) |
 | Pack (local) | `cco pack create` | User directly | Migrations only |
 | Pack (remote) | `cco pack install` | `cco pack update` (full replace) | Migrations only |
@@ -421,7 +421,7 @@ Each resource type has a defined update policy based on how users interact with 
 |----------|--------------|-----------|
 | Pack (remote) | **Full replace** | Source is authoritative. Users who need to modify should `cco pack internalize` first |
 | Pack (local) | **User-managed** | No external source. User edits directly |
-| Project (from native template) | **Discovery + merge** | Template-specific opinionated files discovered; user chooses per file via `--apply` |
+| Project (from native template) | **Discovery + merge** | Template-specific opinionated files discovered; user chooses per file via `--sync` |
 | Project (from remote) | **Notify only** | Remote may have updates; user informed but must act manually |
 | Project (from base) | **Discovery + merge** | Only base opinionated files (settings.json) — see section 4.3 |
 
@@ -517,7 +517,7 @@ Global config (defaults/global/):
   ≡ agents/analyst.md — no framework changes
 
   3 updates available. Run 'cco update --diff' for details.
-  Apply with 'cco update --apply'.
+  Apply with 'cco update --sync'.
 
 Project 'my-app':
   ≡ .claude/settings.json — no changes
@@ -545,10 +545,10 @@ Global: CLAUDE.md
   Run 'cco update --diff CLAUDE.md' for full 3-way diff.
 ```
 
-### 8.3 Apply: On-Demand Merge
+### 8.3 Sync: On-Demand Merge
 
 ```
-$ cco update --apply
+$ cco update --sync
 
 Global: rules/workflow.md (framework updated, you haven't modified)
   (A)pply update  (S)kip  (D)iff → A
@@ -566,10 +566,10 @@ Global: CLAUDE.md (both modified — merge needed)
 3 files updated.
 ```
 
-### 8.4 Apply Specific File
+### 8.4 Sync Specific File
 
 ```
-$ cco update --apply rules/workflow.md
+$ cco update --sync rules/workflow.md
   ✓ Applied rules/workflow.md. Backup: rules/workflow.md.bak
 ```
 
@@ -585,11 +585,11 @@ These internal files are essential for the discovery and merge tools:
   manifest hashes (for change detection).
 
 Both are auto-generated. Users never edit them. They survive `cco update` and
-are only modified by `cco init`, `cco project create`, and `cco update --apply`.
+are only modified by `cco init`, `cco project create`, and `cco update --sync`.
 
 ### 8.6 Utility for Maintainers and Users Alike
 
-The `--diff` and `--apply` tools are not limited to global/project updates.
+The `--diff` and `--sync` tools are not limited to global/project updates.
 The same 3-way merge engine can be used by:
 
 - **Maintainers**: Compare base template changes against non-base templates
@@ -763,7 +763,7 @@ update their config files to maintain existing functionality.
 
 ### D5: Opinionated updates are opt-in
 
-The `cco update --apply` tool offers merge/replace/keep/skip per file. The user
+The `cco update --sync` tool offers merge/replace/keep/skip per file. The user
 explicitly chooses. No silent updates, even for unmodified files.
 
 ### D6: Breaking changes use explicit migrations
@@ -792,7 +792,7 @@ Changes require `cco build`. No runtime update mechanism.
 
 ### D11: The merge tool is general-purpose
 
-`--diff` and `--apply` can compare any source against any target. Useful for
+`--diff` and `--sync` can compare any source against any target. Useful for
 maintainers (template propagation), users (template updates), and teams (config sharing).
 
 ### D12: Additive changes are notified

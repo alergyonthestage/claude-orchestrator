@@ -10,8 +10,7 @@ cmd_update() {
     local dry_run=false
     local no_backup=false
     local scope=""               # "" = all, "global" = global only, "<name>" = project
-    # Hidden legacy auto-action modes (--force, --keep, --replace)
-    local auto_action=""
+    local auto_action=""         # "" = interactive, "replace" = overwrite, "keep" = preserve
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -32,12 +31,6 @@ cmd_update() {
             --news)       cmd_mode="news"; shift ;;
             --dry-run)    dry_run=true; shift ;;
             --no-backup)  no_backup=true; shift ;;
-            # Hidden backward-compatible aliases
-            --apply)      cmd_mode="sync"; shift ;;
-            --project)
-                [[ -z "${2:-}" ]] && die "--project requires a project name"
-                scope="$2"; shift 2 ;;
-            --all)        shift ;;  # no-op, default behavior
             --force)      cmd_mode="sync"; auto_action="replace"; shift ;;
             --keep)       cmd_mode="sync"; auto_action="keep"; shift ;;
             --replace)    cmd_mode="sync"; auto_action="replace"; shift ;;
@@ -59,6 +52,8 @@ Scope (for --sync and --diff):
   <project-name>      One specific project only (no global)
 
 Options:
+  --force             Non-interactive sync: overwrite all files with framework version
+  --keep              Non-interactive sync: keep all user files, update .cco/base/ only
   --no-backup         Skip .bak file creation (with --sync)
   --dry-run           Preview pending migrations without running
   --help              Show this help message
@@ -77,6 +72,8 @@ Examples:
   cco update --sync           # Interactively sync all config from defaults
   cco update --sync global    # Sync global config only
   cco update --sync myapp     # Sync one project only (no global)
+  cco update --force          # Overwrite all files with latest defaults
+  cco update --keep           # Keep all user files, mark defaults as seen
   cco update --news           # Show new features and examples
   cco update --dry-run        # Preview pending migrations
 EOF
@@ -99,7 +96,8 @@ EOF
         fi
     fi
 
-    # Validate scope
+    # Validate scope: "global" is a keyword (see RESERVED_PROJECT_NAMES),
+    # anything else must be an existing project
     if [[ -n "$scope" && "$scope" != "global" ]]; then
         local scoped_dir="$PROJECTS_DIR/$scope"
         [[ ! -d "$scoped_dir" ]] && die "Project '$scope' not found. Run 'cco project list'."
@@ -135,6 +133,7 @@ EOF
     fi
 
     local global_failed=false
+    local project_failed=false
 
     # Global update
     if $do_global; then
@@ -174,16 +173,18 @@ EOF
         done
         if [[ $project_errors -gt 0 ]]; then
             warn "$project_errors project(s) had update errors. Run 'cco update' again after resolving."
+            project_failed=true
         fi
     elif [[ "$do_projects" != "none" && "$do_projects" != "all" && "$cmd_mode" != "news" ]]; then
         local project_dir="$PROJECTS_DIR/$do_projects"
         info "$verb project '$do_projects'..."
         if ! _update_project "$project_dir" "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"; then
             warn "Project '$do_projects' update encountered errors. Run 'cco update --sync $do_projects' again."
+            project_failed=true
         fi
     fi
 
-    if $global_failed; then
+    if $global_failed || $project_failed; then
         error "Update completed with errors. Run 'cco update' again after resolving."
         return 1
     fi

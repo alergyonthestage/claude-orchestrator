@@ -46,7 +46,7 @@ test_update_no_changes() {
 }
 
 test_update_framework_changed() {
-    # When a default file changes but user hasn't modified it → safe update via --force
+    # When a default file changes but user hasn't modified it → safe sync via --force
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
@@ -77,7 +77,7 @@ test_update_user_modified() {
 }
 
 test_update_force_overwrites() {
-    # --force overwrites even user-modified files when there's a framework change
+    # --force overwrites even user-modified files when there's a framework change (auto-replace sync)
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
@@ -157,7 +157,7 @@ test_update_replace_creates_bak() {
 }
 
 test_update_new_file_added() {
-    # New file in defaults is added via --force (auto-replace)
+    # New file in defaults is added via --force (auto-replace sync)
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
@@ -641,7 +641,7 @@ test_update_global_existing_setup_build_sh_not_overwritten() {
 }
 
 test_update_project_missing_setup_sh_restored() {
-    # cco update --project restores missing project setup.sh from template
+    # cco update --sync <project> restores missing project setup.sh from template
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
@@ -650,12 +650,12 @@ test_update_project_missing_setup_sh_restored() {
     # Delete setup.sh
     rm "$CCO_PROJECTS_DIR/test-proj/setup.sh"
 
-    run_cco update --project test-proj
+    run_cco update --sync test-proj
     [[ -f "$CCO_PROJECTS_DIR/test-proj/setup.sh" ]] || fail "setup.sh not restored by update"
     assert_output_contains "setup.sh"
 }
 
-# ── CLI Modes & Interactive Apply ────────────────────────────────────
+# ── CLI Modes & Interactive Sync ─────────────────────────────────────
 
 test_update_discovery_mode_no_file_changes() {
     # Default mode (no flags) shows discovery summary but does NOT modify files
@@ -883,8 +883,8 @@ test_update_diff_keep_mutual_exclusion() {
     assert_output_contains "mutually exclusive"
 }
 
-test_update_apply_non_tty_skips() {
-    # Non-TTY stdin causes --apply to skip all changes
+test_update_sync_non_tty_skips() {
+    # Non-TTY stdin causes --sync to skip all changes
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
@@ -894,20 +894,20 @@ test_update_apply_non_tty_skips() {
 
     local before_hash; before_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" | cut -d' ' -f1)
 
-    # Run --apply with stdin from /dev/null (non-TTY)
+    # Run --sync with stdin from /dev/null (non-TTY)
     CCO_OUTPUT=$(
         CCO_USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR" \
         CCO_GLOBAL_DIR="$CCO_GLOBAL_DIR" \
         CCO_PROJECTS_DIR="$CCO_PROJECTS_DIR" \
         CCO_PACKS_DIR="$CCO_PACKS_DIR" \
         CCO_TEMPLATES_DIR="$CCO_TEMPLATES_DIR" \
-        bash "$REPO_ROOT/bin/cco" update --apply < /dev/null 2>&1
+        bash "$REPO_ROOT/bin/cco" update --sync < /dev/null 2>&1
     ) || true
     assert_output_contains "Non-interactive"
 
     # File must NOT be modified (auto-skip)
     local after_hash; after_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" | cut -d' ' -f1)
-    [[ "$before_hash" == "$after_hash" ]] || fail "Non-TTY apply modified installed file"
+    [[ "$before_hash" == "$after_hash" ]] || fail "Non-TTY sync modified installed file"
 
     # Restore
     cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
@@ -932,7 +932,7 @@ test_update_dry_run_shows_migrations() {
 }
 
 test_update_force_applies_changes() {
-    # --force (hidden alias for --apply + auto_action=replace) applies all changes
+    # --force (auto-replace sync) applies all framework changes non-interactively
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
@@ -1335,7 +1335,7 @@ test_show_discovery_summary_no_changes() {
 # ── Project-Scoped Update Isolation ──────────────────────────────────
 
 test_update_project_scope_isolation() {
-    # Running update --project proj-a should NOT modify proj-b files
+    # Running update --diff proj-a should NOT touch proj-b files
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
@@ -1351,8 +1351,8 @@ test_update_project_scope_isolation() {
     local proj_defaults="$REPO_ROOT/templates/project/base/.claude"
     printf '# New project rule\n' > "$proj_defaults/rules/new-test-rule.md"
 
-    # Run update scoped to proj-a only
-    run_cco update --project proj-a
+    # Run update scoped to proj-a only (diff mode — read-only, no modifications)
+    run_cco update --diff proj-a
 
     # proj-b should NOT have the new file
     assert_file_not_exists "$CCO_PROJECTS_DIR/proj-b/.claude/rules/new-test-rule.md" \

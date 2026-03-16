@@ -365,10 +365,10 @@ Shared resource conflict: global/.claude/CLAUDE.md
 ```
 
 The 3-way merge option uses `git merge-file` — the same infrastructure
-implemented in Sprint 5b for `cco update --apply`.
+implemented in Sprint 5b for `cco update --sync`.
 
 **Non-TTY fallback**: Skip (no modifications, warning message). Same pattern
-as `cco update --apply`.
+as `cco update --sync`.
 
 ### 5.4 Conflict Scenarios
 

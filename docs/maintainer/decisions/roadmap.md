@@ -440,9 +440,9 @@ Refactoring of `defaults/` layout, full template system with CLI management, and
 
 **Post-sprint update system redesign** (2026-03-14, implemented):
 - `cco update` redesigned: migrations + discovery only (no automatic file changes)
-- New CLI modes: `--diff` (inspection), `--apply` (interactive merge with A/M/R/K/S/D prompts), `--news` (changelog)
-- Hidden backward-compat aliases: `--force`, `--keep`, `--replace`
-- Non-TTY fallback: `--apply` defaults to (S)kip
+- New CLI modes: `--diff` (inspection), `--sync` (interactive merge with A/M/R/K/S/D prompts), `--news` (changelog)
+- `--force`, `--keep`, `--replace` as non-interactive sync modes
+- Non-TTY fallback: `--sync` defaults to (S)kip
 - Discovery algorithm: 7 status codes (NEW, UPDATE_AVAILABLE, MERGE_AVAILABLE, USER_MODIFIED, NO_UPDATE, REMOVED, BASE_MISSING)
 - Template source resolution via `.cco-source` (native, user, remote, fallback to base)
 - `cco project create` bootstraps `.cco-meta`, `.cco-base/`, `.cco-source`

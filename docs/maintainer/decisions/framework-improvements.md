@@ -163,7 +163,7 @@ Flussi da valutare:
 
 1. **Publisher updates → consumer notification**: Il consumer dovrebbe poter eseguire `cco project update <name>` (o `--all`) per verificare se il Config Repo sorgente ha nuove versioni. La reference `.cco/source` già esiste dopo install — contiene URL e commit hash. Il confronto tra hash locale e remoto determina se ci sono aggiornamenti.
 
-2. **Consumer con modifiche locali → update**: Se il consumer ha personalizzato CLAUDE.md, rules, agents, l'update dovrebbe usare un merge 3-way (base installata vs nuova versione vs modifiche locali). Stesso algoritmo di `cco update --apply` (A/M/R/K/S/D).
+2. **Consumer con modifiche locali → update**: Se il consumer ha personalizzato CLAUDE.md, rules, agents, l'update dovrebbe usare un merge 3-way (base installata vs nuova versione vs modifiche locali). Stesso algoritmo di `cco update --sync` (A/M/R/K/S/D).
 
 3. **Consumer con modifiche locali → publish accidentale**: Se un consumer con write access fa `cco project publish`, potrebbe involontariamente sovrascrivere la versione condivisa con le sue modifiche locali/personali. Serve un warning con diff review: "Il progetto locale differisce dalla versione pubblicata. Confermi il publish?"
 

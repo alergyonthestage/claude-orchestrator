@@ -1324,7 +1324,7 @@ Examples:
 ```
 
 **Note:** `.cco/base/` directories are never removed by `cco clean`. They store the
-diff/merge ancestors required for `cco update` discovery and `--apply` to function correctly.
+diff/merge ancestors required for `cco update` discovery and `--sync` to function correctly.
 
 ---
 

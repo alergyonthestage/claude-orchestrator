@@ -26,11 +26,11 @@ and ownership models.
 
 | Aspect | Defaults | Templates |
 |--------|----------|-----------|
-| **When used** | `cco init`, `cco update --apply` | `cco project create`, `cco pack create` |
+| **When used** | `cco init`, `cco update --sync` | `cco project create`, `cco pack create` |
 | **How many** | One set (global) | Multiple (base, tutorial, user-defined...) |
 | **Update role** | Opinionated files: discoverable, on-demand merge | Base: opinionated source. Non-base/user: not discoverable |
 | **Relationship to user files** | 1:1 mapping (default → installed file) | 1:N mapping (template → many projects) |
-| **Framework updates** | Discovery via `cco update`; apply via `--apply` | Base: `cco update`. Non-base/user: not auto-updated |
+| **Framework updates** | Discovery via `cco update`; sync via `--sync` | Base: `cco update`. Non-base/user: not auto-updated |
 
 ---
 
@@ -113,9 +113,9 @@ This is the definitive reference for every file managed by the update system.
 
 | Policy | Meaning | `cco update` behavior |
 |--------|---------|----------------------|
-| `opinionated` | Framework provides defaults; user owns after install | Discovery: reported as available. Applied only via `--apply` |
+| `opinionated` | Framework provides defaults; user owns after install | Discovery: reported as available. Applied only via `--sync` |
 | `user-owned` | User owns the content entirely | Never touched — not even discovered |
-| `generated` | Rebuilt from template + saved values | Regenerated on `--apply` (e.g., `language.md`) |
+| `generated` | Rebuilt from template + saved values | Regenerated on `--sync` (e.g., `language.md`) |
 | `copy-if-missing` | Scaffold: written once if absent, then ignored | Written only if file doesn't exist |
 | `immutable` | Baked in Docker image | Only changes on `cco build` |
 
@@ -187,17 +187,17 @@ User-added skills (not from the template) remain user-owned and undiscovered.
 | `user-config/projects/<name>/.cco/docker-compose.yml` | `cco start` | `cco clean --generated` |
 | `user-config/projects/<name>/.cco/managed/` | `cco start` | `cco start` (regenerated each run) |
 | `user-config/projects/<name>/.tmp/` | `cco start --dry-run` | `cco clean --tmp` |
-| `user-config/global/.claude/.cco/meta` | `cco init` / `cco update --apply` | ❌ do not delete |
-| `user-config/global/.claude/.cco/base/` | `cco init` / `cco update --apply` | ❌ do not delete |
-| `user-config/projects/<name>/.cco/meta` | `cco project create` / `cco update --apply` | ❌ do not delete |
-| `user-config/projects/<name>/.cco/base/` | `cco project create` / `cco update --apply` | ❌ do not delete |
+| `user-config/global/.claude/.cco/meta` | `cco init` / `cco update --sync` | ❌ do not delete |
+| `user-config/global/.claude/.cco/base/` | `cco init` / `cco update --sync` | ❌ do not delete |
+| `user-config/projects/<name>/.cco/meta` | `cco project create` / `cco update --sync` | ❌ do not delete |
+| `user-config/projects/<name>/.cco/base/` | `cco project create` / `cco update --sync` | ❌ do not delete |
 | `user-config/projects/<name>/.cco/source` | `cco project create --template` / `cco project install` | ❌ do not delete |
 | `user-config/packs/<name>/.cco/meta` | `cco pack create` / `cco pack install` | ❌ do not delete |
 | `user-config/packs/<name>/.cco/source` | `cco pack install` | ❌ do not delete |
 | `user-config/templates/<name>/.cco/meta` | `cco template create` | ❌ do not delete |
 
 > **Warning**: `.cco/base/` is the ancestor for 3-way merge. Deleting it does not
-> break anything immediately, but `cco update --apply` will fall back to
+> break anything immediately, but `cco update --sync` will fall back to
 > best-effort base reconstruction, potentially surfacing false conflicts.
 
 ---
@@ -212,7 +212,7 @@ User-added skills (not from the template) remain user-owned and undiscovered.
 3. **Notifications**: Report additive changes (new features, new config fields) from `changelog.yml`
 
 It **never modifies user files** (except via migrations, which are structural).
-Content changes happen only via `cco update --apply`, where the user explicitly
+Content changes happen only via `cco update --sync`, where the user explicitly
 chooses what to integrate.
 
 ### 4.2 The Three Versions (for discovery and merge)
@@ -251,7 +251,7 @@ user-config/projects/<name>/
 
 **Lifecycle:**
 - Created at `cco init` (global) and `cco project create` (project)
-- Updated after each successful `cco update --apply` (per file)
+- Updated after each successful `cco update --sync` (per file)
 - Never modified by user (hidden, gitignored in vault)
 - Size: mirrors opinionated files only (~50KB total — negligible)
 
@@ -259,7 +259,7 @@ user-config/projects/<name>/
 
 ```bash
 # Opinionated: framework provides defaults; discovered by cco update;
-# applied only via --apply. User-owned after install.
+# applied only via --sync. User-owned after install.
 GLOBAL_OPINIONATED_FILES=(
     ".claude/CLAUDE.md"
     ".claude/settings.json"
@@ -339,12 +339,12 @@ elif base doesn't exist:
 ```
 
 Discovery is **read-only**. No files are modified. No prompts are shown.
-The BASE_MISSING fallback reconstructs `.cco/base/` only during `--apply`
+The BASE_MISSING fallback reconstructs `.cco/base/` only during `--sync`
 (when the user confirms), not during discovery.
 
-### 4.6 On-Demand Merge (`--apply`)
+### 4.6 On-Demand Merge (`--sync`)
 
-When the user runs `cco update --apply`, each file with an available update is
+When the user runs `cco update --sync`, each file with an available update is
 presented interactively:
 
 **For UPDATE_AVAILABLE (user hasn't modified):**
@@ -422,14 +422,14 @@ This prevents launching a session with broken config files.
 `.cco/base/` is only updated by:
 - `cco init` — saves initial framework versions
 - `cco project create` — saves initial framework versions
-- `cco update --apply` with **(A)pply**, **(M)erge**, or **(R)eplace** — saves the
+- `cco update --sync` with **(A)pply**, **(M)erge**, or **(R)eplace** — saves the
   framework version that was applied
-- `cco update --apply` with **(K)eep** — saves the framework version that was
+- `cco update --sync` with **(K)eep** — saves the framework version that was
   acknowledged (so the update is not reported again)
 
 `.cco/base/` is NOT updated by:
 - `cco update` (discovery only — read-only operation)
-- `cco update --apply` with **(S)kip** — defers the decision
+- `cco update --sync` with **(S)kip** — defers the decision
 - Any other cco command
 
 ### 4.9 Command Modes
@@ -445,9 +445,9 @@ cco update --diff             # Show detailed diffs for all available updates
 cco update --diff <file>      # Show 3-way diff for a specific file
 
 # Application (interactive — modifies files on user confirmation)
-cco update --apply            # Interactive per-file: apply/merge/replace/keep/skip
-cco update --apply <file>     # Apply a specific file update only
-cco update --no-backup        # Disable .bak creation (combine with --apply)
+cco update --sync             # Interactive per-file: apply/merge/replace/keep/skip
+cco update --sync <file>      # Sync a specific file update only
+cco update --no-backup        # Disable .bak creation (combine with --sync)
 
 # Preview
 cco update --dry-run          # Show pending migrations without running them + discovery
@@ -455,30 +455,30 @@ cco update --dry-run          # Show pending migrations without running them + d
 
 **Flag semantics:**
 - `--all` and `--project <name>` control **scope** (which projects to check)
-- `--diff` and `--apply` control **action** (inspect vs modify)
+- `--diff` and `--sync` control **action** (inspect vs modify)
 - `--dry-run` prevents migrations from running (shows them as pending) and
   performs discovery as usual. Useful to preview what `cco update` would do
   before running it.
 
-**Per-file path resolution** (`--apply <file>` / `--diff <file>`):
+**Per-file path resolution** (`--sync <file>` / `--diff <file>`):
 The `<file>` argument is matched against opinionated file paths in all scopes
 (global + projects in scope). If ambiguous (e.g., `settings.json` exists in
 global and project), the user is prompted to disambiguate. Full path syntax
 `global:settings.json` or `project/myapp:settings.json` resolves unambiguously.
 
 **Flag composition rules:**
-- `--diff` and `--apply` respect the same scope as discovery (`--project`/`--all`)
-- `--diff --project myapp` shows diffs for global + myapp opinionated files
-- `--apply --project myapp` prompts for global + myapp files
-- `--apply --dry-run` is an error (conflicting intent). Use `--diff` to preview.
+- `--diff` and `--sync` respect the same scope as discovery
+- `--diff myapp` shows diffs for global + myapp opinionated files
+- `--sync myapp` prompts for global + myapp files
+- `--sync --dry-run` is an error (conflicting intent). Use `--diff` to preview.
 - `--diff` without scope flags uses the default scope (global + all projects)
 
-**Non-interactive fallback**: When stdin is not a TTY (e.g., CI), `--apply`
+**Non-interactive fallback**: When stdin is not a TTY (e.g., CI), `--sync`
 defaults to **(S)kip** for all files (safest choice). No silent modifications.
 
 ### 4.10 Backup Policy
 
-`.bak` files are created only during `--apply`:
+`.bak` files are created only during `--sync`:
 
 | Action | `.bak` created? |
 |--------|----------------|
@@ -747,7 +747,7 @@ and §4.17 into a single operational reference.
 
 **Opinionated changes:**
 1. Update the source file in `defaults/global/`
-2. Users discover via `cco update --diff`, apply via `cco update --apply`
+2. Users discover via `cco update --diff`, apply via `cco update --sync`
 3. No migration needed — the discovery engine handles it automatically
 
 **Breaking changes:**
@@ -770,7 +770,7 @@ The vault pre-update prompt must NOT block the discovery/apply flow:
 
 ```bash
 # Run BEFORE merge operations, in background/non-blocking:
-if _vault_is_initialized && [[ "$mode" == "apply" ]]; then
+if _vault_is_initialized && [[ "$mode" == "sync" ]]; then
     if _prompt_yn "Vault detected. Commit current state before applying?" "Y"; then
         cmd_vault_sync "pre-update snapshot" </dev/tty >/dev/tty 2>/dev/tty || warn "Vault snapshot failed, continuing..."
     fi
@@ -782,7 +782,7 @@ Key constraints:
 - Vault I/O must be explicitly redirected to/from `/dev/tty`
 - Failure is non-fatal (`|| warn ...`)
 - Apply proceeds regardless of vault result
-- Vault prompt only shown for `--apply` (not for discovery)
+- Vault prompt only shown for `--sync` (not for discovery)
 
 ---
 
@@ -906,7 +906,7 @@ dry-run behavior, which is appropriate after inspection.
 | **Installation** | `project create --template` | `pack install` + reference in project.yml |
 | **After install** | Template recorded in `.cco/meta`; output is user-owned | Pack remains; updates via `pack update` |
 | **Content** | Full project structure with placeholders | Knowledge, rules, skills, agents |
-| **Update mechanism** | Opinionated files via `cco update --apply`. Non-base: manual | `cco pack update` from source |
+| **Update mechanism** | Opinionated files via `cco update --sync`. Non-base: manual | `cco pack update` from source |
 
 ---
 
@@ -922,14 +922,14 @@ MODES
     (no flags)              Migrations + discovery + additive notifications
     --diff                  Show detailed diffs for available updates
     --diff <file>           Show 3-way diff for a specific file
-    --apply                 Interactive per-file merge/replace/keep/skip
-    --apply <file>          Apply a specific file update
+    --sync                  Interactive per-file merge/replace/keep/skip
+    --sync <file>           Sync a specific file update
     --news                  Show full details of additive changes (examples, docs)
 
 OPTIONS
     --project <name>        Scope to specific project (+ global)
     --all                   Scope to global + all projects (default if no --project)
-    --no-backup             Disable .bak creation (combine with --apply)
+    --no-backup             Disable .bak creation (combine with --sync)
     --dry-run               Show pending migrations without running + discovery
 
 SOURCES
@@ -950,18 +950,18 @@ WHAT cco update DOES (automatically)
     Notifications           Report new features from changelog.yml
 
 WHAT cco update DOES NOT DO (automatically)
-    File modifications      Never — requires explicit --apply (except migrations)
+    File modifications      Never — requires explicit --sync (except migrations)
     Template sync           Never — future cco template sync command
     Pack updates            Never — use cco pack update
 
-WHAT cco update --apply DOES NOT TOUCH
+WHAT cco update --sync DOES NOT TOUCH
     mcp.json                user-owned, personal MCP servers
     project.yml             user-owned, 100% user config
     project/.claude/CLAUDE.md  user-owned, project context
     project/setup.sh        copy-if-missing, only written at project create
     project/secrets.env     copy-if-missing
     project/mcp-packages.txt   copy-if-missing
-    .cco/base/              only overwritten by --apply itself (not by clean or other commands)
+    .cco/base/              only overwritten by --sync itself (not by clean or other commands)
     user-config/templates/  never read by cco update (user domain)
 ```
 
@@ -975,7 +975,7 @@ WHAT cco update --apply DOES NOT TOUCH
 | `git merge-file` not available | Merge fails | Always in Docker image; on host, detected at startup with helpful error |
 | Conflict markers in YAML/JSON | Broken config | Post-merge validation; warn if markers remain |
 | Vault prompt blocking apply | Apply exits without merging | Fix: explicit TTY redirect + non-fatal error handling (section 4.14) |
-| User confused by discovery output | Runs --apply without understanding | Clear messaging: "N updates available. Run --diff for details." |
+| User confused by discovery output | Runs --sync without understanding | Clear messaging: "N updates available. Run --diff for details." |
 
 ---
 
@@ -1001,7 +1001,7 @@ WHAT cco update --apply DOES NOT TOUCH
    "who changed what". Without it, every difference is ambiguous.
 
 8. **Automatic `.bak` backup**: Created whenever user files are modified
-   via `--apply`. Disabled only with explicit `--no-backup`.
+   via `--sync`. Disabled only with explicit `--no-backup`.
 
 9. **`cco clean` command**: Dedicated cleanup command. Categories: `.bak` (default),
    `--tmp` (dry-run artifacts), `--generated` (`.cco/docker-compose.yml`).
@@ -1021,7 +1021,7 @@ WHAT cco update --apply DOES NOT TOUCH
 
 13. **`cco update` = migrations + discovery + notifications** *(revised, 2026-03-14)*:
     No automatic file modifications. Discovery is read-only. File changes
-    require explicit `--apply`. Additive changes reported via `changelog.yml`.
+    require explicit `--sync`. Additive changes reported via `changelog.yml`.
 
 14. **`project.yml` is user-owned** *(revised, 2026-03-14)*: Removed from
     tracked/opinionated files. 100% user config — new fields are additive
@@ -1058,5 +1058,5 @@ WHAT cco update --apply DOES NOT TOUCH
     runs normally. This lets users preview what `cco update` would do.
 
 23. **Non-interactive fallback** *(clarification, 2026-03-14)*: When stdin is
-    not a TTY, `--apply` defaults to (S)kip for all files. No silent changes
+    not a TTY, `--sync` defaults to (S)kip for all files. No silent changes
     in non-interactive environments.
