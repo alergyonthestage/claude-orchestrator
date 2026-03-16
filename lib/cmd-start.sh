@@ -202,7 +202,7 @@ EOF
         for _cf in "${_conflict_files[@]}"; do
             error "  - $_cf"
         done
-        die "Resolve conflict markers before starting. Run 'cco update --apply' or edit the files manually."
+        die "Resolve conflict markers before starting. Run 'cco update --sync' or edit the files manually."
     fi
 
     # Warn about managed skills that shadow user-level copies

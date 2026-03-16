@@ -71,11 +71,9 @@ cco template show <name>     # Show template details
 cco template create <n> --project|--pack  # Create user template
 cco template remove <name>   # Remove a user template
 cco update                   # Migrations + discovery + additive notifications
-cco update --diff            # Show detailed diffs for available updates
-cco update --apply           # Interactively apply available updates
+cco update --diff [scope]    # Show detailed diffs for available config updates
+cco update --sync [scope]    # Interactively sync config from framework defaults
 cco update --news            # Show new features and examples
-cco update --all             # Scope to global + all projects
-cco update --project <name>  # Scope to specific project
 cco update --dry-run         # Preview pending migrations without running
 cco clean                    # Remove .bak files from update
 cco clean --tmp              # Remove .tmp/ dirs (dry-run artifacts)
@@ -135,7 +133,7 @@ Per `docs/maintainer/integration/docker/design.md` (sezione directory structure)
 - `lib/cmd-pack.sh` — Pack management: create, install, update, export, list, show, remove, validate
 - `lib/cmd-project.sh` — Project management: create, install, list, show, validate
 - `lib/cmd-template.sh` — Template management: list, show, create, remove + `_resolve_template()`
-- `lib/cmd-update.sh` — Update command: migrations + discovery, --diff, --apply
+- `lib/cmd-update.sh` — Update command: migrations + discovery, --diff, --sync
 - `lib/cmd-clean.sh` — Clean .bak files: --project, --all, --tmp, --generated, --dry-run
 - `lib/update.sh` — Update engine: opinionated file policies, discovery algorithm, on-demand merge via `git merge-file`
 - `lib/cmd-vault.sh` — Config versioning: init, sync, diff, log, status (git-backed)
@@ -175,7 +173,7 @@ Per `docs/maintainer/integration/docker/design.md` (sezione directory structure)
 
 The update system has three categories of changes:
 - **Additive**: New optional config fields → add code-level defaults. Notified via `changelog.yml`.
-- **Opinionated**: Improvements to framework rules/agents/skills → discovered by `cco update`, applied via `--apply`.
+- **Opinionated**: Improvements to framework rules/agents/skills → discovered by `cco update`, applied via `--sync`.
 - **Breaking**: Structural changes, renames, schema incompatibilities → explicit migration scripts.
 
 Migration scopes: `global`, `project`, `pack`, `template`. All run automatically by `cco update`.
@@ -201,7 +199,7 @@ Migration scopes: `global`, `project`, `pack`, `template`. All run automatically
 **Checklist for config changes:**
 1. Classify the change: additive, opinionated, or breaking
 2. Additive: add code-level default + update base template + append entry to `changelog.yml`
-3. Opinionated: update `defaults/global/`; users discover via `cco update --diff`, apply via `--apply`
+3. Opinionated: update `defaults/global/`; users discover via `cco update --diff`, apply via `--sync`
 4. Breaking: create migration in `migrations/{scope}/`, update base template AND non-base native templates
 5. If migration moves an opinionated file: also update `.cco/base/` in the migration
 6. Test: `cco update --project <name>` runs migrations; verify idempotency

@@ -759,7 +759,7 @@ _show_discovery_summary() {
     [[ $base_missing_count -gt 0 ]] && info "  $base_missing_count file(s) with missing base (BASE_MISSING)"
     [[ $deleted_updated_count -gt 0 ]] && info "  $deleted_updated_count file(s) you deleted have framework updates (DELETED_UPDATED)"
     echo ""
-    info "Run 'cco update --diff' for details, 'cco update --apply' to merge."
+    info "Run 'cco update --diff' for details, 'cco update --sync' to merge."
 }
 
 # ── Diff Display ─────────────────────────────────────────────────────
@@ -847,13 +847,13 @@ _show_file_diffs() {
     [[ $shown -eq 0 ]] && return 0
     echo ""
     info "$scope_label: $shown file(s) with available changes."
-    info "Run 'cco update --apply' to interactively apply."
+    info "Run 'cco update --sync' to interactively apply."
 }
 
 # ── Interactive Apply ─────────────────────────────────────────────────
 
 # Interactive per-file apply with user prompts.
-# Called only in --apply mode.
+# Called only in --sync mode.
 _interactive_apply() {
     local changes="$1"
     local defaults_dir="$2"
@@ -1283,7 +1283,7 @@ _update_changelog_notifications() {
 
 # Update global config
 _update_global() {
-    local cmd_mode="$1"       # discovery | diff | apply | news
+    local cmd_mode="$1"       # discovery | diff | sync | news
     local dry_run="$2"
     local no_backup="${3:-false}"
     local auto_action="${4:-}"  # "" | replace | keep | skip
@@ -1320,8 +1320,8 @@ _update_global() {
     docs_lang="${docs_lang:-English}"
     code_lang="${code_lang:-English}"
 
-    # Regenerate language.md from saved choices before comparing (only in apply mode)
-    if [[ "$cmd_mode" == "apply" && "$dry_run" != "true" ]]; then
+    # Regenerate language.md from saved choices before comparing (only in sync mode)
+    if [[ "$cmd_mode" == "sync" && "$dry_run" != "true" ]]; then
         _regenerate_language_md "$installed_dir" "$comm_lang" "$docs_lang" "$code_lang"
     fi
 
@@ -1399,7 +1399,7 @@ _update_global() {
         diff)
             _show_file_diffs "$changes" "$defaults_dir" "$installed_dir" "$base_dir" "Global"
             ;;
-        apply)
+        sync)
             # Vault pre-update snapshot (optional, skip if already done pre-migration)
             if [[ "$dry_run" != "true" && -z "$auto_action" && "$vault_synced_pre_migration" != "true" ]]; then
                 if [[ -d "$USER_CONFIG_DIR/.git" ]]; then
@@ -1416,7 +1416,7 @@ _update_global() {
             fi
 
             if [[ "$dry_run" == "true" ]]; then
-                # In dry-run + apply, show what would be available
+                # In dry-run + sync, show what would be available
                 _show_discovery_summary "$changes" "Global"
             else
                 _interactive_apply "$changes" "$defaults_dir" "$installed_dir" "$base_dir" "$no_backup" "$auto_action" "Global"
@@ -1443,7 +1443,7 @@ _update_global() {
         done
     fi
 
-    # Update .cco/meta (only in apply mode or after migrations)
+    # Update .cco/meta (only in sync mode or after migrations)
     if [[ "$dry_run" != "true" ]]; then
         local created
         if [[ -f "$meta_file" ]]; then
@@ -1471,7 +1471,7 @@ _update_global() {
         last_seen=$(_read_last_seen_changelog "$meta_file")
         last_read=$(_read_last_read_changelog "$meta_file")
 
-        if [[ "$cmd_mode" == "apply" ]]; then
+        if [[ "$cmd_mode" == "sync" ]]; then
             # Use manifest entries from _interactive_apply
             {
                 echo "$_UPDATE_MANIFEST_ENTRIES"
@@ -1561,7 +1561,7 @@ _resolve_project_defaults_dir() {
 # Update a project's config
 _update_project() {
     local project_dir="$1"
-    local cmd_mode="$2"       # discovery | diff | apply | news
+    local cmd_mode="$2"       # discovery | diff | sync | news
     local dry_run="$3"
     local no_backup="${4:-false}"
     local auto_action="${5:-}"  # "" | replace | keep | skip
@@ -1634,7 +1634,7 @@ _update_project() {
         diff)
             _show_file_diffs "$changes" "$defaults_dir" "$installed_dir" "$base_dir" "$scope_label"
             ;;
-        apply)
+        sync)
             if [[ "$dry_run" == "true" ]]; then
                 _show_discovery_summary "$changes" "$scope_label"
             else
@@ -1687,7 +1687,7 @@ _update_project() {
             fi
         fi
 
-        if [[ "$cmd_mode" == "apply" ]]; then
+        if [[ "$cmd_mode" == "sync" ]]; then
             echo "$_UPDATE_MANIFEST_ENTRIES" | _generate_project_cco_meta \
                 "$meta_file" "$new_schema" "$created" "$tmpl_name"
 

@@ -29,11 +29,11 @@ When you make a **structural or schema-breaking change** (renames, moves, format
 3. Every migration **must be idempotent** (safe to run multiple times)
 4. Update base template AND non-base native templates
 5. If the migration moves an opinionated file, also update `.cco/base/` in the migration
-6. Test with `cco update --project <name>` and verify idempotency
+6. Test with `cco update` and verify idempotency
 
 ## Opinionated Changes → `defaults/global/`
 
-Improvements to framework rules, agents, or skills: update `defaults/global/`. Users discover via `cco update --diff` and apply via `cco update --apply`.
+Improvements to framework rules, agents, or skills: update `defaults/global/`. Users discover via `cco update --diff` and apply via `cco update --sync`.
 
 ## Reminder
 

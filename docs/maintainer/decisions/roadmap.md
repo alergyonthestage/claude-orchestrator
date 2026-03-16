@@ -62,7 +62,7 @@ Correzione di tre bug identificati il 2026-03-16 nel sistema di update e vault. 
 
 **Fixed in**: commit `10c7ea6`.
 
-Vault sync prompt aggiunto prima di `_run_migrations()` in `_update_global()`, condizionato a: vault inizializzato AND migrazioni pendenti > 0. Evita doppio prompt in `--apply` mode.
+Vault sync prompt aggiunto prima di `_run_migrations()` in `_update_global()`, condizionato a: vault inizializzato AND migrazioni pendenti > 0. Evita doppio prompt in `--sync` mode.
 
 #### #B7 Errori di migrazione potenzialmente silenziosi ✓ FIXED
 
@@ -363,7 +363,7 @@ The `Dockerfile` uses `npm install -g @anthropic-ai/claude-code` which is deprec
 
 **Reported**: 2026-03-16. **Fixed**: 2026-03-16.
 
-`cco update` eseguiva migrazioni senza offrire vault snapshot. Il prompt vault sync era solo in `--apply` mode. Fix: prompt aggiunto prima di `_run_migrations()`, condizionato a vault inizializzato AND migrazioni pendenti. Evita doppio prompt in `--apply`.
+`cco update` eseguiva migrazioni senza offrire vault snapshot. Il prompt vault sync era solo in `--sync` (ex `--apply`) mode. Fix: prompt aggiunto prima di `_run_migrations()`, condizionato a vault inizializzato AND migrazioni pendenti. Evita doppio prompt in `--sync`.
 
 ---
 

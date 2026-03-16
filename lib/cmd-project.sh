@@ -51,6 +51,7 @@ EOF
     if [[ ! "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
         die "Project name must be lowercase letters, numbers, and hyphens only."
     fi
+    _check_reserved_project_name "$name"
 
     local project_dir="$PROJECTS_DIR/$name"
     [[ -d "$project_dir" ]] && die "Project '$name' already exists at projects/$name/"
@@ -581,6 +582,7 @@ EOF
         _cleanup_clone "$tmpdir"
         die "Project name must be lowercase letters, numbers, and hyphens only."
     fi
+    _check_reserved_project_name "$project_name"
 
     local target_dir="$PROJECTS_DIR/$project_name"
 

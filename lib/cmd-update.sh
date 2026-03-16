@@ -6,60 +6,79 @@
 # Globals: GLOBAL_DIR, DEFAULTS_DIR, PROJECTS_DIR, REPO_ROOT
 
 cmd_update() {
-    local cmd_mode="discovery"   # discovery | diff | apply | news
+    local cmd_mode="discovery"   # discovery | diff | sync | news
     local dry_run=false
     local no_backup=false
-    local project=""
-    local update_all=false
+    local scope=""               # "" = all, "global" = global only, "<name>" = project
     # Hidden legacy auto-action modes (--force, --keep, --replace)
     local auto_action=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --project)
-                [[ -z "${2:-}" ]] && die "--project requires a project name"
-                project="$2"; shift 2 ;;
-            --all)        update_all=true; shift ;;
-            --dry-run)    dry_run=true; shift ;;
-            --diff)       cmd_mode="diff"; shift ;;
-            --apply)      cmd_mode="apply"; shift ;;
+            --sync)
+                cmd_mode="sync"
+                # Optional scope argument (global | project-name)
+                if [[ -n "${2:-}" && "${2:0:1}" != "-" ]]; then
+                    scope="$2"; shift
+                fi
+                shift ;;
+            --diff)
+                cmd_mode="diff"
+                # Optional scope argument (global | project-name)
+                if [[ -n "${2:-}" && "${2:0:1}" != "-" ]]; then
+                    scope="$2"; shift
+                fi
+                shift ;;
             --news)       cmd_mode="news"; shift ;;
+            --dry-run)    dry_run=true; shift ;;
             --no-backup)  no_backup=true; shift ;;
             # Hidden backward-compatible aliases
-            --force)      cmd_mode="apply"; auto_action="replace"; shift ;;
-            --keep)       cmd_mode="apply"; auto_action="keep"; shift ;;
-            --replace)    cmd_mode="apply"; auto_action="replace"; shift ;;
+            --apply)      cmd_mode="sync"; shift ;;
+            --project)
+                [[ -z "${2:-}" ]] && die "--project requires a project name"
+                scope="$2"; shift 2 ;;
+            --all)        shift ;;  # no-op, default behavior
+            --force)      cmd_mode="sync"; auto_action="replace"; shift ;;
+            --keep)       cmd_mode="sync"; auto_action="keep"; shift ;;
+            --replace)    cmd_mode="sync"; auto_action="replace"; shift ;;
             --help)
                 cat <<'EOF'
 Usage: cco update [OPTIONS]
 
-Migrations + discovery + additive notifications.
-Shows available opinionated file updates without modifying files.
+Runs pending migrations (global + all projects) and shows available updates.
 
 Modes:
-  (no flags)              Migrations + discovery summary + notifications
-  --diff                  Show detailed diffs for available updates
-  --apply                 Interactive per-file: apply/merge/replace/keep/skip
-  --news                  Show full details of additive changes
+  (default)           Run migrations + show available config updates + changelog
+  --sync [scope]      Run migrations + interactively sync config from framework defaults
+  --diff [scope]      Run migrations + show diffs of available config updates
+  --news              Show details of new features and additive changes
+
+Scope (for --sync and --diff):
+  (omitted)           Global + all projects
+  global              Global config only
+  <project-name>      One specific project only (no global)
 
 Options:
-  --project <name>        Scope to specific project (+ global)
-  --all                   Scope to global + all projects (default if no --project)
-  --no-backup             Disable .bak creation (combine with --apply)
-  --dry-run               Show pending migrations without running + discovery
-  --help                  Show this help message
+  --no-backup         Skip .bak file creation (with --sync)
+  --dry-run           Preview pending migrations without running
+  --help              Show this help message
 
 Non-interactive mode:
-  When stdin is not a TTY, --apply defaults to (S)kip for all files.
+  When stdin is not a TTY, --sync defaults to (S)kip for all files.
+
+Migrations run automatically in all modes (except --news and --dry-run).
+Config sync (--sync) covers opinionated files: rules, agents, skills,
+and other framework defaults that you may have customized.
 
 Examples:
-  cco update                    # Discover available updates
-  cco update --diff             # Show diffs for all available updates
-  cco update --apply            # Interactively apply updates
-  cco update --project myapp    # Scope to global + myapp
-  cco update --all              # Global + all projects
-  cco update --dry-run          # Preview pending migrations
-  cco update --news             # Show new features and examples
+  cco update                  # Run migrations + show available updates
+  cco update --diff           # Show diffs for all available config updates
+  cco update --diff global    # Show diffs for global config only
+  cco update --sync           # Interactively sync all config from defaults
+  cco update --sync global    # Sync global config only
+  cco update --sync myapp     # Sync one project only (no global)
+  cco update --news           # Show new features and examples
+  cco update --dry-run        # Preview pending migrations
 EOF
                 return 0
                 ;;
@@ -72,93 +91,95 @@ EOF
         die "--diff and --force/--keep/--replace are mutually exclusive."
     fi
 
-    # Non-TTY warning for --apply mode
-    if [[ "$cmd_mode" == "apply" && -z "$auto_action" ]]; then
+    # Non-TTY warning for --sync mode
+    if [[ "$cmd_mode" == "sync" && -z "$auto_action" ]]; then
         if ! (exec < /dev/tty) 2>/dev/null; then
             warn "Non-interactive mode: skipping all file changes. Use a terminal for interactive merge."
             auto_action="skip"
         fi
     fi
 
-    check_global
-
-    # Default scope: if no --project, behave like --all
-    if [[ -z "$project" ]]; then
-        update_all=true
+    # Validate scope
+    if [[ -n "$scope" && "$scope" != "global" ]]; then
+        local scoped_dir="$PROJECTS_DIR/$scope"
+        [[ ! -d "$scoped_dir" ]] && die "Project '$scope' not found. Run 'cco project list'."
+        [[ ! -f "$scoped_dir/project.yml" ]] && die "No project.yml in projects/$scope/"
     fi
+
+    check_global
 
     # Choose verb based on mode
     local verb="Updating"
-    if [[ "$cmd_mode" == "discovery" || "$cmd_mode" == "diff" ]]; then
-        verb="Checking"
-    elif [[ "$cmd_mode" == "news" ]]; then
+    if [[ "$cmd_mode" == "discovery" || "$cmd_mode" == "diff" || "$cmd_mode" == "news" ]]; then
         verb="Checking"
     fi
     if $dry_run; then
         verb="Checking"
     fi
 
+    # Determine what to update based on scope
+    local do_global=true
+    local do_projects="all"   # "all" | "none" | project-name
+
+    case "$scope" in
+        "")       do_global=true;  do_projects="all" ;;
+        "global") do_global=true;  do_projects="none" ;;
+        *)        do_global=false; do_projects="$scope" ;;
+    esac
+
+    # In default mode (discovery), always update everything regardless of scope
+    # Scope filtering only applies to --sync and --diff
+    if [[ "$cmd_mode" == "discovery" || "$cmd_mode" == "news" ]]; then
+        do_global=true
+        do_projects="all"
+    fi
+
     local global_failed=false
 
-    if $update_all; then
-        # Update global
+    # Global update
+    if $do_global; then
         info "$verb global config..."
         if ! _update_global "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"; then
             global_failed=true
-            warn "Global update encountered errors. Project updates will still be attempted."
-        fi
-
-        # Show changelog notifications (discovery and news modes only)
-        if [[ "$cmd_mode" == "discovery" || "$cmd_mode" == "news" ]]; then
-            _update_changelog_notifications "$cmd_mode" "$dry_run"
-        fi
-
-        # --news only shows changelog, skip project iteration
-        if [[ "$cmd_mode" != "news" ]]; then
-            # TODO: pack and template migration scopes (design §4.15)
-            # When migrations/pack/ or migrations/template/ exist, iterate
-            # user-config/packs/*/ and user-config/templates/*/ here.
-
-            # Update all projects
-            local project_dir project_errors=0
-            for project_dir in "$PROJECTS_DIR"/*/; do
-                [[ ! -d "$project_dir" ]] && continue
-                [[ ! -f "$project_dir/project.yml" ]] && continue
-                local pname
-                pname="$(basename "$project_dir")"
-                info "$verb project '$pname'..."
-                if ! _update_project "$project_dir" "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"; then
-                    warn "Project '$pname' update encountered errors."
-                    project_errors=$(( project_errors + 1 ))
-                fi
-            done
-            if [[ $project_errors -gt 0 ]]; then
-                warn "$project_errors project(s) had update errors. Run 'cco update' again after resolving."
+            if [[ "$do_projects" != "none" ]]; then
+                warn "Global update encountered errors. Project updates will still be attempted."
+            else
+                warn "Global update encountered errors."
             fi
         fi
-    elif [[ -n "$project" ]]; then
-        # Global always runs (even with --project)
-        info "$verb global config..."
-        if ! _update_global "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"; then
-            global_failed=true
-            warn "Global update encountered errors."
-        fi
 
         # Show changelog notifications (discovery and news modes only)
         if [[ "$cmd_mode" == "discovery" || "$cmd_mode" == "news" ]]; then
             _update_changelog_notifications "$cmd_mode" "$dry_run"
         fi
+    fi
 
-        # --news only shows changelog, skip project update
-        if [[ "$cmd_mode" != "news" ]]; then
-            # Update specific project
-            local project_dir="$PROJECTS_DIR/$project"
-            [[ ! -d "$project_dir" ]] && die "Project '$project' not found. Run 'cco project list'."
-            [[ ! -f "$project_dir/project.yml" ]] && die "No project.yml in projects/$project/"
-            info "$verb project '$project'..."
+    # Project updates
+    if [[ "$do_projects" == "all" && "$cmd_mode" != "news" ]]; then
+        # TODO: pack and template migration scopes (design §4.15)
+        # When migrations/pack/ or migrations/template/ exist, iterate
+        # user-config/packs/*/ and user-config/templates/*/ here.
+
+        local project_dir project_errors=0
+        for project_dir in "$PROJECTS_DIR"/*/; do
+            [[ ! -d "$project_dir" ]] && continue
+            [[ ! -f "$project_dir/project.yml" ]] && continue
+            local pname
+            pname="$(basename "$project_dir")"
+            info "$verb project '$pname'..."
             if ! _update_project "$project_dir" "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"; then
-                warn "Project '$project' update encountered errors. Run 'cco update --project $project' again."
+                warn "Project '$pname' update encountered errors."
+                project_errors=$(( project_errors + 1 ))
             fi
+        done
+        if [[ $project_errors -gt 0 ]]; then
+            warn "$project_errors project(s) had update errors. Run 'cco update' again after resolving."
+        fi
+    elif [[ "$do_projects" != "none" && "$do_projects" != "all" && "$cmd_mode" != "news" ]]; then
+        local project_dir="$PROJECTS_DIR/$do_projects"
+        info "$verb project '$do_projects'..."
+        if ! _update_project "$project_dir" "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"; then
+            warn "Project '$do_projects' update encountered errors. Run 'cco update --sync $do_projects' again."
         fi
     fi
 

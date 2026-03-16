@@ -304,8 +304,8 @@ test_update_help() {
     run_cco update --help
     assert_output_contains "Usage: cco update"
     assert_output_contains "--dry-run"
-    assert_output_contains "--force"
-    assert_output_contains "--project"
+    assert_output_contains "--sync"
+    assert_output_contains "--diff"
 }
 
 # ── Migration 003: user-config-dir restructure ──────────────────────

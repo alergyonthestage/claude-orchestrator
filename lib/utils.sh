@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # lib/utils.sh — General utility functions
 #
-# Provides: expand_path(), check_docker(), check_image(), check_global()
+# Provides: expand_path(), check_docker(), check_image(), check_global(),
+#           _check_reserved_project_name()
 # Dependencies: colors.sh
 # Globals: IMAGE_NAME, GLOBAL_DIR
 
@@ -33,4 +34,18 @@ check_global() {
     if [[ ! -d "$GLOBAL_DIR/.claude" ]]; then
         die "Global config not found. Run 'cco init' first."
     fi
+}
+
+# Reserved project names (used as keywords by CLI commands)
+RESERVED_PROJECT_NAMES=("global" "all")
+
+# Check if a project name is reserved
+_check_reserved_project_name() {
+    local name="$1"
+    local reserved
+    for reserved in "${RESERVED_PROJECT_NAMES[@]}"; do
+        if [[ "$name" == "$reserved" ]]; then
+            die "Project name '$name' is reserved. Choose a different name."
+        fi
+    done
 }

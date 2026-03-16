@@ -616,38 +616,54 @@ Examples:
 
 Run pending migrations, discover available updates, and notify of new features.
 
-`cco update` performs three operations: (1) run pending migration scripts from
-`migrations/` (automatic, for structural/breaking changes), (2) compare framework
-sources against `.cco/base/` to discover available file updates, and (3) report
-additive changes (new features) from `changelog.yml`. It **never modifies user
-files** (except via migrations) — content changes require explicit `--apply`.
+`cco update` performs three categories of operations:
+
+1. **Migrations** (automatic): run pending migration scripts from `migrations/`
+   for structural/breaking changes. Always run on global + all projects.
+2. **Config discovery**: compare framework sources against `.cco/base/` to detect
+   available updates to opinionated files (rules, agents, skills).
+3. **Changelog**: report additive changes (new features) from `changelog.yml`.
+
+Migrations and discovery are read-only by default — opinionated file changes
+require explicit `--sync` to apply interactively.
 
 ```
 Usage: cco update [OPTIONS]
 
+Runs pending migrations (global + all projects) and shows available updates.
+
 Modes:
-  (no flags)              Migrations + discovery + additive notifications
-  --diff                  Show detailed diffs for available updates
-  --apply                 Interactive per-file: apply/merge/replace/keep/skip
-  --news                  Show full details of additive changes
+  (default)           Run migrations + show available config updates + changelog
+  --sync [scope]      Run migrations + interactively sync config from framework defaults
+  --diff [scope]      Run migrations + show diffs of available config updates
+  --news              Show details of new features and additive changes
+
+Scope (for --sync and --diff):
+  (omitted)           Global + all projects
+  global              Global config only
+  <project-name>      One specific project only (no global)
 
 Options:
-  --project <name>     Scope to specific project (+ global)
-  --all                Scope to global + all projects (default if no --project)
-  --no-backup          Disable .bak creation (combine with --apply)
-  --dry-run            Show pending migrations without running + discovery
+  --no-backup         Skip .bak file creation (with --sync)
+  --dry-run           Preview pending migrations without running
+  --help              Show this help message
 
 Non-interactive mode:
-  When stdin is not a TTY, --apply defaults to (S)kip for all files.
+  When stdin is not a TTY, --sync defaults to (S)kip for all files.
+
+Migrations run automatically in all modes (except --news and --dry-run).
+Config sync (--sync) covers opinionated files: rules, agents, skills,
+and other framework defaults that you may have customized.
 
 Examples:
-  cco update                        # Run migrations + show available updates
-  cco update --diff                 # See what framework changed
-  cco update --apply                # Interactively apply updates
-  cco update --project myapp        # Scope to one project
-  cco update --all                  # Global + all projects
-  cco update --news                 # Show new features and examples
-  cco update --dry-run              # Preview pending migrations
+  cco update                  # Run migrations + show available updates
+  cco update --diff           # Show diffs for all available config updates
+  cco update --diff global    # Show diffs for global config only
+  cco update --sync           # Interactively sync all config from defaults
+  cco update --sync global    # Sync global config only
+  cco update --sync myapp     # Sync one project only (no global)
+  cco update --news           # Show new features and examples
+  cco update --dry-run        # Preview pending migrations
 ```
 
 **Update sources**: `cco update` uses native framework sources: `defaults/global/`
@@ -658,36 +674,32 @@ be handled by a future `cco template sync` command. `project.yml` is user-owned
 and not discovered (new fields are additive with code defaults; schema changes
 use migrations).
 
-**Migration scopes**: `global`, `project`, `pack`, `template`. Global, pack, and
-template migrations always run (shared resources). Project migrations are scoped
-by `--project`/`--all`.
+**Migration scopes**: `global`, `project`, `pack`, `template`. Migrations always
+run on all scopes — they are not filtered by `--sync`/`--diff` scope.
 
 **Flow**:
 
 ```
-1. DETERMINE scope
-   - --all: global + all projects (+ all packs/templates)
-   - --project <name>: specific project + global (+ all packs/templates)
-   - Default: global + all projects (same as --all)
-
-2. RUN MIGRATIONS (all scopes)
+1. RUN MIGRATIONS (always global + all projects)
    - Global: migrations/global/ → user-config/global/
    - Pack: migrations/pack/ → each user-config/packs/*/ with .cco/meta
    - Template: migrations/template/ → each user-config/templates/*/ with .cco/meta
-   - Project: migrations/project/ → each project in scope
+   - Project: migrations/project/ → all projects
    - --dry-run: list pending migrations without running
 
-3. NOTIFY additive changes (dual-tracker)
+2. NOTIFY additive changes (dual-tracker)
    - Discovery (`cco update`): shows entries where id > last_seen_changelog,
      updates last_seen_changelog only
    - News (`cco update --news`): shows entries where id > last_read_changelog,
      updates BOTH last_read_changelog AND last_seen_changelog
 
-4. DISCOVER opinionated file updates
+3. DISCOVER opinionated file updates
    - For each opinionated file, compare .cco/base/ vs framework source
    - Report available updates (read-only, no file changes)
+   - Scope: default mode always checks global + all projects
 
-5. APPLY (only with --apply)
+4. SYNC (only with --sync)
+   - Scope: global + all projects, or filtered by scope argument
    - For each file with available update:
      - User unchanged + framework changed: offer Apply/Skip/Diff
      - Both changed: offer Merge/Replace/Keep/Skip/Diff

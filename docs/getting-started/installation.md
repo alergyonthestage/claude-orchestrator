@@ -90,8 +90,8 @@ cco new --repo ~/projects/api --repo ~/projects/frontend --port 3000:3000
 | `cco new --repo <path>` | Temporary session with specific repositories |
 | `cco project create <name>` | Create a new project from template |
 | `cco project list` | List available projects |
-| `cco update` | Update config from defaults (3-way merge) |
-| `cco update --all` | Update global + all projects |
+| `cco update` | Run migrations + discover available config updates |
+| `cco update --sync` | Interactively sync config from framework defaults |
 | `cco clean` | Remove .bak files from update |
 | `cco stop [project]` | Stop running session(s) |
 
