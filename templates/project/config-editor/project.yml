@@ -1,0 +1,24 @@
+name: {{PROJECT_NAME}}
+description: "Configuration editor for claude-orchestrator"
+
+# ── User Configuration (as repository) ──────────────────────────────
+# user-config is mounted as a repo — this project's purpose is to work on it.
+repos:
+  - path: {{CCO_USER_CONFIG_DIR}}
+    name: user-config
+
+# ── Documentation ───────────────────────────────────────────────────
+# cco documentation mounted read-only for accurate reference.
+extra_mounts:
+  - source: {{CCO_REPO_ROOT}}/docs
+    target: /workspace/cco-docs
+    readonly: true
+
+# ── Docker options ───────────────────────────────────────────────────
+docker:
+  mount_socket: false
+  ports: []
+  env: {}
+
+auth:
+  method: oauth
