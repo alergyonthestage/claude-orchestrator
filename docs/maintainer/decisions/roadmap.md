@@ -81,7 +81,7 @@ al CLAUDE.md dei project (policy `user-owned` errata), il tutorial serve due sco
 incompatibili (educazione vs editing config), e manca una strategia unificata per il
 lifecycle delle risorse (defaults, templates, publish/install).
 
-**Status**: Analysis complete. Ready for design review and implementation.
+**Status**: Implemented (2026-03-17). All 4 phases complete.
 **Analysis**: [`docs/maintainer/configuration/resource-lifecycle/analysis.md`](../configuration/resource-lifecycle/analysis.md)
 
 #### Problemi identificati
@@ -552,21 +552,25 @@ Refactoring of `defaults/` layout, full template system with CLI management, and
 
 ---
 
-### Interactive Tutorial Project (Sprint 5) ✓
+### Interactive Tutorial Project (Sprint 5 + 5c) ✓
 
-Built-in interactive tutorial created by `cco init`. Users launch it with `cco start tutorial` for AI-guided onboarding, project setup assistance, and best practices guidance.
+Built-in interactive tutorial. Users launch it with `cco start tutorial` for AI-guided onboarding. Since Sprint 5c, the tutorial is an internal framework resource at `internal/tutorial/` (no longer installed in user-config).
 
-**What was implemented**:
-- Tutorial project template (`templates/project/tutorial/`): project.yml with path placeholders, CLAUDE.md with 12-module curriculum, documentation map, and session flow
+**What was implemented (Sprint 5)**:
+- Tutorial content: CLAUDE.md with 14-module curriculum, documentation map, and session flow
 - 3 skills: `/tutorial` (guided onboarding), `/setup-project` (project creation wizard), `/setup-pack` (pack creation wizard)
 - `tutorial-behavior.md` rule: teacher-not-executor constraints, cco-is-host-only awareness
-- CLI integration: `cco init` creates tutorial with `{{CCO_REPO_ROOT}}` and `{{CCO_USER_CONFIG_DIR}}` substitution
-- Structured agentic development guide (`docs/user-guides/structured-agentic-development.md`): cco-specific version mapping 18 principles to framework features
-- Default rules aligned with guide: workflow.md Closure phase, scope discipline, test suite verification, doc accuracy check; /design skill ADR suggestion
-- Tutorial discovery in docs: overview.md, installation.md, first-project.md, README.md
-- Test coverage: 17 tutorial tests (dry-run compose, --force idempotency, setup.sh)
+- Structured agentic development guide (`docs/user-guides/structured-agentic-development.md`)
+- Default rules aligned with guide; tutorial discovery in user docs
 
-**Docs**: [analysis](../templates/tutorial/analysis.md) | [design](../templates/tutorial/design.md)
+**Sprint 5c changes** (resource lifecycle redesign):
+- Tutorial moved to `internal/tutorial/` — always current, no update tracking needed
+- `cco start tutorial` launches from internal source (reserved name)
+- Config editing use case separated into `config-editor` template
+- Migration 010 handles legacy `user-config/projects/tutorial/`
+- See Sprint 5c-Lifecycle section for full details
+
+**Docs**: [analysis](../internal/tutorial/analysis.md) | [design](../internal/tutorial/design.md)
 
 ---
 

@@ -45,7 +45,11 @@ These are not independent bugs — they are symptoms of a missing design layer:
 
 ## 2. Current State
 
-### 2.1 File Policies (lib/update.sh)
+### 2.1 File Policies (pre-Sprint 5c)
+
+> Policies shown below reflect the state **before** the redesign.
+> `user-owned` has since been renamed to `untracked`, and project
+> `CLAUDE.md` changed to `tracked`. See §3 for the redesign.
 
 ```
 GLOBAL_FILE_POLICIES:
@@ -85,7 +89,11 @@ implicitly tracked — they ARE discovered because they're not filtered out.
 **What breaks**: `CLAUDE.md` is explicitly filtered out as `user-owned` before
 discovery even runs. Template-specific CLAUDE.md changes are invisible.
 
-### 2.3 Template Taxonomy
+### 2.3 Template Taxonomy (pre-Sprint 5c)
+
+> This table describes the state **before** the redesign implemented in §4.
+> Tutorial has since moved to `internal/tutorial/` and config-editor was added
+> as a native template. See §5.2 for the current resource classification.
 
 | Type | Location | Owner | Update mechanism |
 |------|----------|-------|-----------------|

@@ -649,6 +649,11 @@ No overrides needed. The tutorial project uses the same model, permissions, and 
 
 ## 10. Implementation Plan
 
+> **Note**: This plan reflects the Sprint 5 implementation. Paths have since
+> changed (`templates/project/tutorial/` → `internal/tutorial/`) and CLI
+> integration moved from `cco init` to `cco start tutorial` (reserved name).
+> See §2 and §7 for the current architecture.
+
 ### Phase 0: Best Practices Guide (prerequisite)
 
 | Step | Files | Description |
