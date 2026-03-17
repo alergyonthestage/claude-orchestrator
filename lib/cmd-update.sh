@@ -204,6 +204,45 @@ EOF
         fi
     fi
 
+    # Pack remote discovery (discovery mode only, respect --offline)
+    if [[ "$do_projects" == "all" && "$cmd_mode" == "discovery" && "$offline_mode" != "true" ]]; then
+        local pack_dir
+        for pack_dir in "$PACKS_DIR"/*/; do
+            [[ ! -d "$pack_dir" ]] && continue
+            local pack_source_file="$pack_dir/.cco/source"
+            [[ ! -f "$pack_source_file" ]] && continue
+            local pack_source_url
+            pack_source_url=$(yml_get "$pack_source_file" "source")
+            [[ -z "$pack_source_url" || "$pack_source_url" == "local" ]] && continue
+            local pack_name
+            pack_name="$(basename "$pack_dir")"
+            local pack_meta_file="$pack_dir/.cco/meta"
+            local pack_remote_status
+            pack_remote_status=$(_check_remote_update "$pack_source_file" "$pack_meta_file" "$cache_mode")
+            # Format display URL
+            local pack_source_display="$pack_source_url"
+            pack_source_display="${pack_source_display#https://}"
+            pack_source_display="${pack_source_display#http://}"
+            pack_source_display="${pack_source_display%.git}"
+            case "$pack_remote_status" in
+                update_available)
+                    info "Pack '$pack_name' (from $pack_source_display): Update available"
+                    info "  -> run 'cco pack update $pack_name'"
+                    ;;
+                unknown)
+                    info "Pack '$pack_name' (from $pack_source_display): Version tracking not initialized"
+                    info "  -> run 'cco pack update $pack_name' to check"
+                    ;;
+                unreachable)
+                    warn "Pack '$pack_name' (from $pack_source_display): Remote unreachable"
+                    ;;
+                up_to_date)
+                    # Silent — no output for up-to-date packs
+                    ;;
+            esac
+        done
+    fi
+
     if $global_failed || $project_failed; then
         error "Update completed with errors. Run 'cco update' again after resolving."
         return 1

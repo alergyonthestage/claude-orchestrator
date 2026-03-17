@@ -47,19 +47,18 @@ test_update_no_changes() {
 
 test_update_framework_changed() {
     # When a default file changes but user hasn't modified it → safe sync via --force
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
 
-    # Simulate framework update: modify a default file
-    printf '# Updated workflow rules\n- New rule added\n' >> "$REPO_ROOT/defaults/global/.claude/rules/workflow.md"
+    # Simulate framework update with safe cleanup
+    with_framework_change "defaults/global/.claude/rules/workflow.md" \
+        $'# Updated workflow rules\n- New rule added\n'
 
     run_cco update --force
     # The installed file should now contain the new content
     assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "New rule added"
-
-    # Restore the default file
-    cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
+    # with_framework_change trap restores the default file automatically
 }
 
 test_update_user_modified() {
@@ -78,50 +77,47 @@ test_update_user_modified() {
 
 test_update_force_overwrites() {
     # --force overwrites even user-modified files when there's a framework change (auto-replace sync)
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
 
     # User modifies, then framework also changes (simulate conflict)
     printf '\n# My custom rule\n' >> "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
-    printf '\n# Framework update\n' >> "$REPO_ROOT/defaults/global/.claude/rules/workflow.md"
+    with_framework_change "defaults/global/.claude/rules/workflow.md" \
+        $'\n# Framework update\n'
 
     run_cco update --force
     # User modification should be gone, framework update present
     assert_file_not_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "My custom rule"
     assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "Framework update"
-
-    # Restore
-    cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
 }
 
 test_update_keep_preserves() {
     # --keep preserves user version on conflicts
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
 
     # Create conflict
     printf '\n# My custom rule\n' >> "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
-    printf '\n# Framework update\n' >> "$REPO_ROOT/defaults/global/.claude/rules/workflow.md"
+    with_framework_change "defaults/global/.claude/rules/workflow.md" \
+        $'\n# Framework update\n'
 
     run_cco update --keep
     # User version should be preserved
     assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "My custom rule"
-
-    # Restore
-    cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
 }
 
 test_update_keep_survives_second_run() {
     # After --keep, a second update must NOT overwrite the kept file
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
 
     # Create conflict: user modifies + framework changes
     printf '\n# My custom rule\n' >> "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
-    printf '\n# Framework update\n' >> "$REPO_ROOT/defaults/global/.claude/rules/workflow.md"
+    with_framework_change "defaults/global/.claude/rules/workflow.md" \
+        $'\n# Framework update\n'
 
     # First run: keep user version
     run_cco update --keep
@@ -130,20 +126,18 @@ test_update_keep_survives_second_run() {
     run_cco update
     assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "My custom rule" \
         "Kept file must survive a second update"
-
-    # Restore
-    cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
 }
 
 test_update_replace_creates_bak() {
     # --replace creates .bak file and overwrites with new default
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
 
     # Create conflict
     printf '\n# My custom rule\n' >> "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
-    printf '\n# Framework update\n' >> "$REPO_ROOT/defaults/global/.claude/rules/workflow.md"
+    with_framework_change "defaults/global/.claude/rules/workflow.md" \
+        $'\n# Framework update\n'
 
     run_cco update --replace
     # Backup should exist with user's version
@@ -151,45 +145,40 @@ test_update_replace_creates_bak() {
     assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md.bak" "My custom rule"
     # Updated file should have framework changes
     assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "Framework update"
-
-    # Restore
-    cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
 }
 
 test_update_new_file_added() {
     # New file in defaults is added via --force (auto-replace sync)
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
 
-    # Add a new file to defaults
-    printf '# New Rule\nSome new convention.\n' > "$REPO_ROOT/defaults/global/.claude/rules/new-rule.md"
+    # Add a new file to defaults (guarantee cleanup via trap)
+    local new_file="$REPO_ROOT/defaults/global/.claude/rules/new-rule.md"
+    printf '# New Rule\nSome new convention.\n' > "$new_file"
+    trap "rm -f '$new_file'; rm -rf '$tmpdir'" EXIT
 
     run_cco update --force
     assert_file_exists "$CCO_GLOBAL_DIR/.claude/rules/new-rule.md"
     assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/new-rule.md" "New Rule"
-
-    # Cleanup
-    rm -f "$REPO_ROOT/defaults/global/.claude/rules/new-rule.md"
 }
 
 test_update_dry_run() {
     # --dry-run shows what would change without modifying anything
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
 
-    # Add a new file to defaults
-    printf '# Dry Run Test\n' > "$REPO_ROOT/defaults/global/.claude/rules/dry-test.md"
+    # Add a new file to defaults (guarantee cleanup via trap)
+    local new_file="$REPO_ROOT/defaults/global/.claude/rules/dry-test.md"
+    printf '# Dry Run Test\n' > "$new_file"
+    trap "rm -f '$new_file'; rm -rf '$tmpdir'" EXIT
 
     run_cco update --dry-run
     assert_output_contains "Dry run complete"
     assert_output_contains "dry-test.md"
     # File should NOT actually exist
     assert_file_not_exists "$CCO_GLOBAL_DIR/.claude/rules/dry-test.md"
-
-    # Cleanup
-    rm -f "$REPO_ROOT/defaults/global/.claude/rules/dry-test.md"
 }
 
 test_update_migrations_run_in_order() {
@@ -659,12 +648,13 @@ test_update_project_missing_setup_sh_restored() {
 
 test_update_discovery_mode_no_file_changes() {
     # Default mode (no flags) shows discovery summary but does NOT modify files
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
 
-    # Modify a default file to create an available update
-    printf '\n# Framework improvement\n' >> "$REPO_ROOT/defaults/global/.claude/rules/workflow.md"
+    # Modify a default file to create an available update (safe cleanup via helper)
+    with_framework_change "defaults/global/.claude/rules/workflow.md" \
+        $'\n# Framework improvement\n'
 
     # Save user file content before update
     local before_hash; before_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" | cut -d' ' -f1)
@@ -684,19 +674,17 @@ test_update_discovery_mode_no_file_changes() {
     [[ -f "$CCO_GLOBAL_DIR/.claude/.cco/base/rules/workflow.md" ]] && \
         after_base_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/.cco/base/rules/workflow.md" | cut -d' ' -f1)
     [[ "$before_base_hash" == "$after_base_hash" ]] || fail "Discovery mode updated .cco/base/"
-
-    # Restore
-    cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
 }
 
 test_update_diff_shows_changes() {
     # --diff mode shows diffs without modifying files
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
 
-    # Modify a default to create an available update
-    printf '\n# Diff test change\n' >> "$REPO_ROOT/defaults/global/.claude/rules/workflow.md"
+    # Modify a default to create an available update (safe cleanup via helper)
+    with_framework_change "defaults/global/.claude/rules/workflow.md" \
+        $'\n# Diff test change\n'
 
     local before_hash; before_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" | cut -d' ' -f1)
 
@@ -707,9 +695,6 @@ test_update_diff_shows_changes() {
     # File must NOT be modified
     local after_hash; after_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" | cut -d' ' -f1)
     [[ "$before_hash" == "$after_hash" ]] || fail "--diff mode modified installed file"
-
-    # Restore
-    cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
 }
 
 test_update_news_shows_entries() {
@@ -885,12 +870,13 @@ test_update_diff_keep_mutual_exclusion() {
 
 test_update_sync_non_tty_skips() {
     # Non-TTY stdin causes --sync to skip all changes
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
 
-    # Modify a default file to create an available update
-    printf '\n# Non-TTY test change\n' >> "$REPO_ROOT/defaults/global/.claude/rules/workflow.md"
+    # Modify a default file to create an available update (safe cleanup via helper)
+    with_framework_change "defaults/global/.claude/rules/workflow.md" \
+        $'\n# Non-TTY test change\n'
 
     local before_hash; before_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" | cut -d' ' -f1)
 
@@ -908,9 +894,6 @@ test_update_sync_non_tty_skips() {
     # File must NOT be modified (auto-skip)
     local after_hash; after_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" | cut -d' ' -f1)
     [[ "$before_hash" == "$after_hash" ]] || fail "Non-TTY sync modified installed file"
-
-    # Restore
-    cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
 }
 
 test_update_dry_run_shows_migrations() {
@@ -933,38 +916,34 @@ test_update_dry_run_shows_migrations() {
 
 test_update_force_applies_changes() {
     # --force (auto-replace sync) applies all framework changes non-interactively
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
 
-    # Create an update: modify default (framework changes)
-    printf '\n# Force-applied change\n' >> "$REPO_ROOT/defaults/global/.claude/rules/workflow.md"
+    # Create an update: modify default (framework changes) with safe cleanup
+    with_framework_change "defaults/global/.claude/rules/workflow.md" \
+        $'\n# Force-applied change\n'
 
     run_cco update --force
     assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "Force-applied change"
-
-    # Restore
-    cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
 }
 
 test_update_keep_preserves_user_file() {
     # --keep preserves user file and updates .cco/base/ to current default
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
 
     # Both user and framework change (conflict scenario)
     printf '\n# User edit for keep test\n' >> "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
-    printf '\n# Framework edit for keep test\n' >> "$REPO_ROOT/defaults/global/.claude/rules/workflow.md"
+    with_framework_change "defaults/global/.claude/rules/workflow.md" \
+        $'\n# Framework edit for keep test\n'
 
     run_cco update --keep
     # User file must be preserved
     assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "User edit for keep test"
     # .cco/base/ IS updated to current default (so next update won't re-trigger)
     assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco/base/rules/workflow.md" "Framework edit for keep test"
-
-    # Restore
-    cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
 }
 
 # ── Project Create Bootstrap ─────────────────────────────────────────

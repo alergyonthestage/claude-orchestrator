@@ -3,7 +3,7 @@
 > How is a project/pack updated when its template source evolves?
 >
 > Date: 2026-03-16
-> Status: Analysis (pending review)
+> Status: Analysis — approved. Implemented as Sprint 5c + FI-7 (2026-03-17)
 > Scope: File policies, update mechanisms, tutorial separation, publish/install sync foundations
 
 ---

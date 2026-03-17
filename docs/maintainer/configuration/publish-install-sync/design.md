@@ -1,7 +1,7 @@
 # FI-7 — Publish-Install Sync: Design
 
 > **Date**: 2026-03-17
-> **Status**: Design — pending review
+> **Status**: Implemented — 2026-03-17
 > **Scope**: Architecture-level
 > **Analysis**: [analysis.md](./analysis.md)
 > **Prerequisites**: [resource-lifecycle analysis](../resource-lifecycle/analysis.md), [update system design](../update-system/design.md), [sharing design](../sharing/design.md)

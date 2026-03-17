@@ -706,8 +706,8 @@ resources using `git ls-remote` (lightweight, no clone). Results are cached for
 **Update sources**: `cco update` uses native framework sources: `defaults/global/`
 for global config, `templates/project/base/` for base project files, and
 `templates/project/<name>/` for native template-specific files (resolved via
-`.cco/source`). User templates are not touched. `project.yml` is user-owned
-and not discovered (new fields are additive with code defaults; schema changes
+`.cco/source`). User templates are not touched. `project.yml` is fully user-managed
+and not tracked by the update system (new fields are additive with code defaults; schema changes
 use migrations).
 
 **Migration scopes**: `global`, `project`, `pack`, `template`. Migrations always
@@ -1224,7 +1224,7 @@ Examples:
 
 ---
 
-### 3.23 `cco pack publish`
+### 3.25 `cco pack publish`
 
 Publish a pack to a remote Config Repo.
 
@@ -1253,7 +1253,7 @@ automatically internalized during publish (local pack unchanged).
 
 ---
 
-### 3.24 `cco pack internalize`
+### 3.26 `cco pack internalize`
 
 Convert a source-referencing pack to self-contained.
 
@@ -1270,7 +1270,7 @@ This is a one-way operation — the original source path is not preserved.
 
 ---
 
-### 3.25 `cco remote`
+### 3.27 `cco remote`
 
 Manage named Config Repo remotes for publishing and installing.
 
@@ -1332,7 +1332,7 @@ Examples:
 
 ---
 
-### 3.26 `cco manifest`
+### 3.28 `cco manifest`
 
 Manage the `manifest.yml` manifest for sharing packs and templates via Config Repos.
 
@@ -1362,7 +1362,7 @@ Usage: cco manifest show
 
 ---
 
-### 3.27 `cco template`
+### 3.29 `cco template`
 
 Manage project and pack templates. Native templates ship with the tool in `templates/`; user templates are stored in `user-config/templates/` and take priority over native ones with the same name.
 
@@ -1419,7 +1419,7 @@ Examples:
 
 ---
 
-### 3.28 `cco clean`
+### 3.30 `cco clean`
 
 Remove files generated or left behind by the framework. Supports multiple cleanup
 categories that can be combined.

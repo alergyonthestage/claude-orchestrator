@@ -286,6 +286,110 @@ extract_dry_run_dir() {
     fi
 }
 
+# ── Framework Change Helpers ──────────────────────────────────────────
+
+# Safely modify a tracked repo file for testing and guarantee restoration.
+# Uses a trap to restore the file even if the test fails mid-execution.
+# Usage: with_framework_change <file_relative_to_REPO_ROOT> <content_to_append>
+# The file is restored automatically on EXIT via trap.
+# NOTE: each call overwrites the previous trap; for multiple files use
+# with_framework_changes (plural) instead.
+with_framework_change() {
+    local rel_path="$1"
+    local content="$2"
+    local full_path="$REPO_ROOT/$rel_path"
+    # Save original content
+    local backup_file
+    backup_file=$(mktemp)
+    cp "$full_path" "$backup_file"
+    # Set trap to restore (preserves any previous EXIT trap by chaining)
+    trap "cp '$backup_file' '$full_path'; rm -f '$backup_file'" EXIT
+    # Apply change
+    printf '%s' "$content" >> "$full_path"
+}
+
+# Safely modify multiple tracked repo files with guaranteed restoration.
+# Usage: with_framework_changes <tmpdir_for_backups> <file1> <content1> [<file2> <content2> ...]
+# All files are restored on EXIT.
+with_framework_changes() {
+    local backup_dir="$1"; shift
+    mkdir -p "$backup_dir/__fw_backups"
+    local restore_cmd=""
+    while [[ $# -ge 2 ]]; do
+        local rel_path="$1" content="$2"; shift 2
+        local full_path="$REPO_ROOT/$rel_path"
+        local safe_name
+        safe_name=$(echo "$rel_path" | tr '/' '_')
+        cp "$full_path" "$backup_dir/__fw_backups/$safe_name"
+        restore_cmd+="cp '$backup_dir/__fw_backups/$safe_name' '$full_path'; "
+        printf '%s' "$content" >> "$full_path"
+    done
+    trap "${restore_cmd} rm -rf '$backup_dir'" EXIT
+}
+
+# Create a local bare Config Repo with a project template for testing.
+# Outputs the bare repo path. The repo contains:
+#   templates/<tmpl_name>/project.yml
+#   templates/<tmpl_name>/.claude/CLAUDE.md
+#   templates/<tmpl_name>/.claude/rules/<rule_file>
+#   manifest.yml
+# Usage: _create_config_repo_with_template <tmpdir> <tmpl_name> [rule_content]
+_create_config_repo_with_template() {
+    local tmpdir="$1"
+    local tmpl_name="$2"
+    local rule_content="${3:-# Default rule}"
+    local work_dir="$tmpdir/config-work"
+    local bare_dir="$tmpdir/config-repo.git"
+
+    mkdir -p "$work_dir/templates/$tmpl_name/.claude/rules"
+    printf 'name: %s\ndescription: test\nrepos: []\n' "$tmpl_name" \
+        > "$work_dir/templates/$tmpl_name/project.yml"
+    printf '# Test CLAUDE.md for %s\n' "$tmpl_name" \
+        > "$work_dir/templates/$tmpl_name/.claude/CLAUDE.md"
+    printf '%s\n' "$rule_content" \
+        > "$work_dir/templates/$tmpl_name/.claude/rules/team.md"
+    cat > "$work_dir/manifest.yml" <<YAML
+name: test-config
+description: test
+packs: []
+templates:
+  - name: $tmpl_name
+    description: test template
+YAML
+    git -C "$work_dir" init -q
+    git -C "$work_dir" add -A
+    git -C "$work_dir" commit -q -m "init"
+    git init --bare -q "$bare_dir"
+    git -C "$work_dir" remote add origin "$bare_dir"
+    git -C "$work_dir" push -q origin main 2>/dev/null || \
+        git -C "$work_dir" push -q origin master 2>/dev/null
+    echo "$bare_dir"
+}
+
+# Update a file in an existing Config Repo (push a new commit).
+# Usage: _update_config_repo <bare_dir> <file_rel_path> <new_content>
+_update_config_repo() {
+    local bare_dir="$1"
+    local rel_path="$2"
+    local new_content="$3"
+    local work_dir
+    work_dir=$(mktemp -d)
+    git clone -q "$bare_dir" "$work_dir"
+    mkdir -p "$(dirname "$work_dir/$rel_path")"
+    printf '%s\n' "$new_content" > "$work_dir/$rel_path"
+    git -C "$work_dir" add -A
+    git -C "$work_dir" commit -q -m "update: $rel_path"
+    git -C "$work_dir" push -q origin main 2>/dev/null || \
+        git -C "$work_dir" push -q origin master 2>/dev/null
+    rm -rf "$work_dir"
+}
+
+# Get latest commit hash from a bare repo.
+# Usage: _get_repo_head <bare_dir>
+_get_repo_head() {
+    git -C "$1" rev-parse HEAD
+}
+
 # ── Project Helpers ──────────────────────────────────────────────────
 
 # Minimal project.yml for tests that only need dry-run + compose assertions

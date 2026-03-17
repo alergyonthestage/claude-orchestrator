@@ -225,8 +225,9 @@ _is_installed_project() {
     first_line=$(head -1 "$source_file")
     case "$first_line" in
         http://*|https://*)
-            # Old single-line URL format — read as YAML
-            _INSTALLED_SOURCE_URL=$(yml_get "$source_file" "source")
+            # Old single-line bare URL format (pre-FI-7) — use directly
+            # Don't call yml_get: bare URL is not key: value YAML
+            _INSTALLED_SOURCE_URL="$first_line"
             ;;
         source:*)
             # YAML format
@@ -643,6 +644,7 @@ _collect_file_changes() {
 _UPDATE_MANIFEST_ENTRIES=""
 _LAST_RESOLVE_AUTOMERGE=false  # set by _resolve_with_merge for counter tracking
 _LAST_RESOLVE_SKIPPED=false    # set by _resolve_with_merge when user chooses skip inside conflict
+_SYNC_FILES_APPLIED=0          # set by _interactive_sync: count of files applied/merged/kept (not skipped)
 
 ## _apply_file_changes — REMOVED (replaced by _interactive_sync in Sprint 3+4)
 
@@ -1303,6 +1305,9 @@ _interactive_sync() {
         esac
     done <<< "$changes"
 
+    # Export sync result for callers that need to know if anything was applied
+    _SYNC_FILES_APPLIED=$(( applied + merged + kept ))
+
     # Show summary
     local total_changes=$(( applied + merged + kept ))
     if [[ $total_changes -gt 0 || $skipped -gt 0 ]]; then
@@ -1901,7 +1906,7 @@ _update_project() {
     [[ ${#root_missing[@]} -gt 0 ]] && has_anything=true
     [[ -n "$remote_status" && "$remote_status" != "up_to_date" ]] && has_anything=true
     if [[ "$is_installed" == "true" ]]; then
-        [[ $fw_actionable -gt 0 || -n "$remote_status" ]] && has_anything=true
+        [[ $fw_actionable -gt 0 ]] && has_anything=true
     else
         [[ $actionable -gt 0 ]] && has_anything=true
     fi

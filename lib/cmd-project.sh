@@ -1105,11 +1105,30 @@ EOF
 
     # STEP 3: SECRET SCAN (blocking)
     # Two-pass scan on files that would actually be published:
-    #   Pass 1: filename patterns (*.env, *.key, *.pem, .credentials.json)
+    #   Pass 1: filename patterns (*.env, *.key, *.pem, .credentials.json, .netrc)
     #   Pass 2: content patterns (API_KEY=, SECRET=, PASSWORD=, token strings)
     # Excludes: .cco/, memory/, secrets.env (same as _copy_project_for_publish)
+    # Also applies .cco/publish-ignore patterns so excluded files are not scanned.
     local -a secret_hits=()
     local -a _publishable_files=()
+
+    # Read .cco/publish-ignore patterns (same logic as _copy_project_for_publish)
+    local -a _scan_ignore_patterns=()
+    local _scan_ignore_file="$project_dir/.cco/publish-ignore"
+    if [[ -f "$_scan_ignore_file" ]]; then
+        while IFS= read -r _ig_line; do
+            [[ -z "$_ig_line" || "$_ig_line" == \#* ]] && continue
+            _scan_ignore_patterns+=("$_ig_line")
+        done < "$_scan_ignore_file"
+    fi
+
+    # Set up temp git repo for publish-ignore matching if patterns exist
+    local _scan_ignore_dir=""
+    if [[ ${#_scan_ignore_patterns[@]} -gt 0 ]]; then
+        _scan_ignore_dir=$(mktemp -d)
+        git -C "$_scan_ignore_dir" init -q 2>/dev/null || true
+        printf '%s\n' "${_scan_ignore_patterns[@]}" > "$_scan_ignore_dir/.gitignore"
+    fi
 
     # Collect all publishable files
     local -a _scan_dirs=()
@@ -1128,15 +1147,25 @@ EOF
         while IFS= read -r file; do
             [[ -z "$file" ]] && continue
             [[ "$file" == */.cco/* ]] && continue
+            # Apply publish-ignore filter: check if file matches any pattern
+            if [[ -n "$_scan_ignore_dir" ]]; then
+                local _scan_rel="${file#$project_dir/}"
+                if git -C "$_scan_ignore_dir" check-ignore -q "$_scan_rel" 2>/dev/null; then
+                    continue
+                fi
+            fi
             _publishable_files+=("$file")
         done < <(find "$_scan_target" -type f 2>/dev/null)
     done
+
+    # Clean up temp git repo for ignore matching
+    [[ -n "$_scan_ignore_dir" ]] && rm -rf "$_scan_ignore_dir"
 
     # Pass 1: filename patterns
     for file in "${_publishable_files[@]+"${_publishable_files[@]}"}"; do
         local base_name
         base_name=$(basename "$file")
-        for pattern in '*.env' '*.key' '*.pem' '.credentials.json'; do
+        for pattern in '*.env' '*.key' '*.pem' '.credentials.json' '.netrc'; do
             case "$base_name" in
                 $pattern)
                     secret_hits+=("${file#$project_dir/} (filename match: $pattern)")
@@ -1191,7 +1220,7 @@ EOF
 
     # Check for existing template on remote
     if [[ -d "$tmpdir/templates/$name" ]]; then
-        if ! $force && ! $dry_run; then
+        if ! $force && ! $dry_run && [[ "$yes_mode" != "true" ]]; then
             warn "Template '$name' already exists on remote."
             if [[ -t 0 ]]; then
                 printf "Overwrite? [y/N] " >&2
@@ -1199,7 +1228,7 @@ EOF
                 [[ ! "$reply" =~ ^[Yy]$ ]] && { _cleanup_clone "$tmpdir"; die "Aborted."; }
             else
                 _cleanup_clone "$tmpdir"
-                die "Template exists on remote. Use --force to overwrite."
+                die "Template exists on remote. Use --force or --yes to overwrite."
             fi
         fi
         rm -rf "$tmpdir/templates/$name"
@@ -1609,6 +1638,7 @@ EOF
 
     if $update_all; then
         local updated=0
+        local -a failed_projects=()
         for project_dir in "$PROJECTS_DIR"/*/; do
             [[ ! -d "$project_dir" ]] && continue
             [[ ! -f "$project_dir/project.yml" ]] && continue
@@ -1616,12 +1646,21 @@ EOF
                 local proj_name
                 proj_name=$(basename "$project_dir")
                 info "Checking project '$proj_name'..."
-                _update_single_project "$proj_name" "$force" "$dry_run"
-                updated=$((updated + 1))
+                # Isolate errors: run in subshell so die() does not abort the loop
+                if ( _update_single_project "$proj_name" "$force" "$dry_run" ); then
+                    updated=$((updated + 1))
+                else
+                    warn "Failed to update '$proj_name'"
+                    failed_projects+=("$proj_name")
+                fi
             fi
         done
-        if [[ $updated -eq 0 ]]; then
+        if [[ $updated -eq 0 && ${#failed_projects[@]} -eq 0 ]]; then
             info "No projects with remote sources found."
+        fi
+        if [[ ${#failed_projects[@]} -gt 0 ]]; then
+            error "Failed to update ${#failed_projects[@]} project(s): ${failed_projects[*]}"
+            return 1
         fi
         return 0
     fi
@@ -1657,8 +1696,8 @@ _update_single_project() {
             local reply
             read -r reply < /dev/tty
             if [[ ! "$reply" =~ ^[Nn]$ ]]; then
-                # Stage only tracked + new gitignore-respecting files (no -A to avoid secrets)
-                (cd "$USER_CONFIG_DIR" && git add --all --ignore-errors . && git diff --cached --quiet 2>/dev/null || git commit -q -m "vault: snapshot before project update ($name)") 2>/dev/null || true
+                # Stage only tracked + new gitignore-respecting files (git add . respects .gitignore)
+                (cd "$USER_CONFIG_DIR" && git add --ignore-errors . && git diff --cached --quiet 2>/dev/null || git commit -q -m "vault: snapshot before project update ($name)") 2>/dev/null || true
                 ok "Vault snapshot created."
             fi
         fi
@@ -1718,9 +1757,11 @@ _update_single_project() {
     local actionable
     actionable=$(echo "$changes" | grep -cvE '^(NO_UPDATE|USER_MODIFIED|$)' || true)
 
+    local sync_applied=0
     if [[ $actionable -eq 0 ]]; then
         ok "Project '$name' files are up to date (remote has same content)."
         # Still update metadata (commit hash may differ)
+        sync_applied=1  # No actionable changes means everything is in sync
     else
         local scope_label="Project '$name' (publisher update)"
         if [[ "$dry_run" == "true" ]]; then
@@ -1734,10 +1775,13 @@ _update_single_project() {
         [[ "$force" == "true" ]] && auto_action="replace"
 
         _interactive_sync "$changes" "$remote_claude_dir" "$installed_dir" "$base_dir" "false" "$auto_action" "$scope_label"
+        sync_applied=$_SYNC_FILES_APPLIED
     fi
 
-    # Update .cco/base/ to new remote version (for future merges)
-    if [[ "$dry_run" != "true" ]]; then
+    # Update .cco/base/ and .cco/source metadata only if at least one file
+    # was applied/merged/kept. If the user skipped everything, base and commit
+    # should stay unchanged so skipped files are flagged again on next update.
+    if [[ "$dry_run" != "true" && $sync_applied -gt 0 ]]; then
         _save_all_base_versions "$base_dir" "$remote_claude_dir" "project"
 
         # Update .cco/source metadata
@@ -1761,6 +1805,14 @@ _update_single_project() {
         local short_new="${remote_head:0:7}"
         [[ -z "$short_old" ]] && short_old="unknown"
         ok "Updated project '$name' (${short_old} -> ${short_new})"
+    elif [[ "$dry_run" != "true" && $sync_applied -eq 0 ]]; then
+        # User skipped everything — only update remote cache so we don't
+        # re-clone on every run, but keep base/commit unchanged
+        local meta_file
+        meta_file=$(_cco_project_meta "$project_dir")
+        yml_set "$meta_file" "remote_cache.commit" "$remote_head"
+        yml_set "$meta_file" "remote_cache.checked" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        info "All files skipped — base versions unchanged. Skipped files will be flagged again on next update."
     fi
 
     _cleanup_clone "$tmpdir"

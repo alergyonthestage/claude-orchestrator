@@ -529,6 +529,7 @@ of the same file. To minimize them:
 | `cco update --diff [scope]` | Preview framework changes |
 | `cco update --news` | Show changelog details |
 | `cco update --offline` | Skip remote source checks |
+| `cco update --no-cache` | Force fresh remote version check (ignore cache) |
 | `cco project update <name>` | Fetch and merge publisher updates |
 | `cco project update --all` | Update all installed projects |
 | `cco pack update <name>` | Update pack from remote (full-replace) |

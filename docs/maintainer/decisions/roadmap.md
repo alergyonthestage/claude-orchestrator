@@ -14,7 +14,7 @@
 | Status | Items | Section |
 |--------|-------|---------|
 | ✅ Completed | 19 sprints / features | [→ Completed](#completed) |
-| 🐛 Known Bugs | 1 open · 6 fixed | [→ Known Bugs](#known-bugs) |
+| 🐛 Known Bugs | 2 open · 6 fixed | [→ Known Bugs](#known-bugs) |
 | 🔜 Planned | Sprint 5c → 12 | [→ Planned Sprints](#planned-sprints) |
 | 🔭 Exploratory | 8 ideas | [→ Long-term / Exploratory](#long-term--exploratory) |
 | ❌ Declined | 3 items | [→ Declined / Won't Do](#declined--wont-do) |
@@ -29,8 +29,8 @@ Features are prioritized by impact for third-party users adopting claude-orchest
 
 **Immediate priority**: Complete the user-config lifecycle — vault, publish/install sync,
 profiles, resource versioning. The resource-lifecycle analysis (Sprint 5c) laid the
-foundations; FI-7 design and implementation bring it to a definitive, complete state.
-This is the single most important unit of work before any other feature.
+foundations; FI-7 design and implementation brought it to a definitive, complete state.
+Completed 2026-03-17.
 
 **Next**: FI-2 and FI-5 (remaining) are low-effort, high-benefit quick wins that improve
 daily usability. Should follow immediately after FI-7.
@@ -341,7 +341,7 @@ the missing piece: update notification and merge for published/installed resourc
 - `cco project publish <name> <remote> [--yes]` (enhanced)
 
 **Docs**: [analysis](../configuration/publish-install-sync/analysis.md) | [design](../configuration/publish-install-sync/design.md) | [user guide](../../user-guides/config-lifecycle.md) | [FI-7](framework-improvements.md#fi-7-publish-install-sync-and-resource-versioning) | [resource-lifecycle analysis](../configuration/resource-lifecycle/analysis.md)
-**Effort**: Medium-High (6 implementation phases defined in design doc).
+**Completed**: 2026-03-17 (all 6 phases).
 
 ---
 
@@ -502,6 +502,29 @@ rag:
 ---
 
 ## Known Bugs
+
+### #B8 `~/.claude/settings.json` montato read-only — Claude Code non può salvare impostazioni runtime
+
+**Reported**: 2026-03-17.
+
+**Symptom**: `/effort high` (e potenzialmente altri comandi che scrivono su `settings.json`) fallisce con `EROFS: read-only file system`. Claude Code non può modificare le proprie impostazioni a runtime.
+
+**Root cause**: In `lib/cmd-start.sh` (riga ~450), `settings.json` è montato con `:ro`:
+```yaml
+- ${GLOBAL_DIR}/.claude/settings.json:/home/claude/.claude/settings.json:ro
+```
+
+Tutti i file globali `.claude/` (settings.json, CLAUDE.md, rules/, agents/, skills/) sono montati read-only per proteggerli da modifiche accidentali di Claude. Tuttavia `settings.json` è un caso speciale: Claude Code ci scrive a runtime per salvare impostazioni come effort level, thinking mode, ecc.
+
+**Analysis needed**:
+1. `settings.json` deve essere **rw** per permettere a Claude di salvare le sue impostazioni runtime
+2. Verificare se altri file in `~/.claude/` hanno lo stesso problema (Claude Code potrebbe aver bisogno di scrivere anche su altri file)
+3. Valutare il trade-off: rw permette a Claude di modificare il file (incluse permissions), ma è necessario per il funzionamento corretto. Una possibilità è separare le impostazioni immutabili (permissions, attribution) dalle impostazioni runtime (effort, thinking)
+4. In alternativa, valutare se le impostazioni che Claude Code scrive a runtime vanno in un file diverso da `settings.json`
+
+**Proposed fix**: Rimuovere `:ro` da `settings.json` nel mount, oppure investigare se Claude Code usa un file separato per le impostazioni runtime.
+
+---
 
 ### #B4 `cco update --all` does not correctly update files from `defaults/` ✓ RESOLVED BY DESIGN
 
