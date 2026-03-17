@@ -1047,8 +1047,8 @@ test_resolve_project_defaults_dir_tutorial() {
 
     local result
     result=$(_resolve_project_defaults_dir "$proj_dir")
-    [[ "$result" == *"templates/project/tutorial/.claude"* ]] || \
-        fail "Expected tutorial template path, got: $result"
+    [[ "$result" == *"internal/tutorial/.claude"* ]] || \
+        fail "Expected internal tutorial path, got: $result"
 }
 
 # ── Changelog Parsing ────────────────────────────────────────────────
