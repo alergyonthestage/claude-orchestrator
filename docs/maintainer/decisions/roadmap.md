@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-16 (Resource lifecycle analysis, tutorial separation, file policy redesign).
+> Last updated: 2026-03-17 (Reprioritized: FI-7 config sync as P1, quick wins as P2, security as P3).
 >
 > **Note**: Sprint entries are historical. Path references (e.g., `.cco-meta`, `.cco-source`) in older
 > sprints reflect the layout at the time of writing. See Sprint 8 and the `.cco/` consolidation
@@ -23,27 +23,53 @@
 
 ## Sprint Roadmap
 
-Features are prioritized by impact for third-party users adopting claude-orchestrator. Each sprint can be implemented independently.
+Features are prioritized by impact for third-party users adopting claude-orchestrator.
+
+### Prioritization Notes (updated 2026-03-17)
+
+**Immediate priority**: Complete the user-config lifecycle — vault, publish/install sync,
+profiles, resource versioning. The resource-lifecycle analysis (Sprint 5c) laid the
+foundations; FI-7 design and implementation bring it to a definitive, complete state.
+This is the single most important unit of work before any other feature.
+
+**Next**: FI-2 and FI-5 (remaining) are low-effort, high-benefit quick wins that improve
+daily usability. Should follow immediately after FI-7.
+
+**Then**: Security (Sprint 6C), E2E testing (Sprint 8), Linux OAuth (Sprint 9) are
+required for open-source readiness but independent of the config lifecycle work.
+
+**Later**: Worktree isolation (Sprint 10), pack inheritance (#9), RAG (Sprint 12) are
+valuable but not blocking.
+
+| Category | Items | Effort | Benefit |
+|----------|-------|--------|---------|
+| **Config lifecycle (priority 1)** | FI-7 publish-install sync | Medium-High | Completes the framework's core value proposition |
+| **Quick wins (priority 2)** | FI-2 init-workspace, FI-5 remaining (branch protection docs + template ref) | Low | Immediate UX improvement |
+| **Security (priority 3)** | Sprint 6C network hardening | Medium-High | Required for production/open-source |
+| **Quality (priority 4)** | Sprint 8 E2E tests | Medium | Prerequisite for Linux onboarding |
+| **Onboarding (priority 5)** | Sprint 9 Linux OAuth | Medium | Pre-open-source requirement |
+| **Architecture (priority 6)** | Sprint 10 worktree, #9 pack inheritance, FI-4 model config | Medium | Valuable but not blocking |
+| **Exploratory** | Sprint 12 RAG, hot-reload, notifications, remote sessions, web UI | High | Long-term, evaluate demand |
 
 ```mermaid
 graph LR
-    DONE["✅ Completed<br/>Sprint 4, Sprint 5, Sprint 5b,<br/>Sprint 6+10, Sprint 6b,<br/>ADR-13, Sprint 7-Vault,<br/>Bugfix #B1, Bugfix #B5–#B7"]
+    DONE["✅ Completed<br/>Sprint 1-5c, Sprint 6+10,<br/>Sprint 6b, ADR-13,<br/>Sprint 7-Vault,<br/>Bugfix #B1-#B7"]
 
-    SRL["Sprint 5c-Lifecycle<br/>#File policy fix<br/>#Tutorial internal<br/>#Config-editor template<br/>#Skip+.new sync option"]
-    S6S["Sprint 6-Security<br/>#Docker Restriction<br/>#Internet Controls<br/>#mount_socket default fix"]
+    FI7["FI-7 Config Sync<br/>#Publish-install sync<br/>#Resource versioning<br/>#cco project update"]
+    QW["Quick Wins<br/>#FI-2 init-workspace<br/>#FI-5 branch protection<br/>#FI-4 model config<br/>#cco project edit"]
+    S6S["Sprint 6C-Security<br/>#Network Hardening<br/>#Squid proxy"]
     S8E["Sprint 8-E2E<br/>#E2E Test Suite"]
-    S9L["Sprint 9-Linux<br/>#Linux OAuth<br/>(pre-open-source)"]
-    S10I["Sprint 10-Isolation<br/>#Git Worktree"]
-    S11E["Sprint 11-Ecosystem<br/>#Pack inheritance<br/>#cco project edit<br/>#StatusLine<br/>#FI quick wins<br/>#FI-7 Publish-install sync"]
+    S9L["Sprint 9-Linux<br/>#Linux OAuth"]
+    S10["Sprint 10+<br/>#Worktree isolation<br/>#Pack inheritance<br/>#StatusLine"]
     S12R["Sprint 12-RAG<br/>#Project RAG"]
 
-    DONE --> SRL
-    SRL --> S6S
+    DONE --> FI7
+    FI7 --> QW
+    QW --> S6S
     S6S --> S8E
     S8E --> S9L
-    S9L --> S10I
-    S10I --> S11E
-    S11E --> S12R
+    S9L --> S10
+    S10 --> S12R
 ```
 
 ---
@@ -277,54 +303,15 @@ Opt-in git isolation for container sessions. When enabled, repos are mounted at 
 
 ---
 
-### Sprint 11-Ecosystem — Pack, Polish & Automation
+### FI-7 — Publish-Install Sync and Resource Versioning
 
-Raccoglie le feature di completamento rimaste dopo che pack CLI e sharing sono stati implementati. Include quick wins from [framework improvements analysis](framework-improvements.md).
+**Priority**: 1 (immediate). Completes the user-config lifecycle — the framework's core value proposition.
 
-#### FI-6 Deny rules for project `.claude/` write protection
+**Status**: Foundations laid (Sprint 5c resource-lifecycle analysis). Requires design and implementation.
 
-Add deny patterns in `managed-settings.json` to prevent the agent from modifying user-defined `.claude/rules/`, `.claude/agents/`, `.claude/skills/` at project level. `/init-workspace` only writes `CLAUDE.md` and `workspace.yml`, which remain writable. Technical enforcement without mount complexity.
-
-**Ref**: [FI-6](framework-improvements.md#fi-6-read-only-mounts-for-user-owned-claude-config)
-**Effort**: Low.
-
-#### FI-3 Default ports: empty by default
-
-Change `templates/project/base/project.yml` default from `ports: ["3000:3000", "8080:8080"]` to `ports: []` with commented examples. Secure-by-default — users add only what they need. No migration needed (ports are user-owned and additive).
-
-**Ref**: [FI-3](framework-improvements.md#fi-3-default-ports-and-chrome-devtools-port-management)
-**Effort**: Low.
-
-#### FI-1 Framework operational context in managed CLAUDE.md
-
-Small additions to `defaults/managed/CLAUDE.md`: explicit mention that `cco` is host-only CLI (not available inside container), Docker network naming convention (`cc-<project>`), and `/init-workspace` availability.
-
-**Ref**: [FI-1](framework-improvements.md#fi-1-framework-context-for-the-coding-agent)
-**Effort**: Low.
-
-#### FI-2 `/init-workspace` empty workspace handling
-
-When no repos and no `workspace.yml` descriptions exist, the skill should ask the user for a brief project description before generating a nearly empty CLAUDE.md. Discovery-based flow unchanged when repos are present.
-
-**Ref**: [FI-2](framework-improvements.md#fi-2-init-workspace-on-empty-projects)
-**Effort**: Low.
-
-#### #9 Pack Inheritance / Composition
-
-Allow packs to extend other packs:
-```yaml
-extends: base-client
-files:
-  - additional-doc.md
-```
-
-> Note: `cco pack create` (and the full pack CLI) was implemented in Sprint 6+10. Only inheritance/composition remains.
-
-#### #10 `cco project edit <name>` command
-
-Open project.yml in `$EDITOR` and regenerate docker-compose.yml after save.
-
-#### FI-7 Publish-install sync and resource versioning
+**Context**: The resource-lifecycle analysis (Sprint 5c) established file policies, the
+lifecycle model, and `.cco/source` tracking. FI-7 builds on these foundations to add
+the missing piece: update notification and merge for published/installed resources.
 
 Il sistema publish/install è attualmente one-way: `cco project publish` esporta, `cco project install` importa, ma dopo l'installazione non c'è collegamento al repo sorgente. Chi pubblica aggiornamenti non ha modo di notificare i consumer.
 
@@ -342,8 +329,103 @@ Il sistema publish/install è attualmente one-way: `cco project publish` esporta
 3. Due consumer installano lo stesso progetto → modifiche indipendenti, nessun conflitto (non c'è sync tra consumer)
 4. Packs condivisi tra progetti: un pack aggiornato dal publisher dovrebbe notificare tutti i progetti che lo usano
 
-**Ref**: [FI-7](framework-improvements.md#fi-7-publish-install-sync-and-resource-versioning)
-**Effort**: Medium-High. Richiede analisi e design approfonditi prima dell'implementazione.
+**Foundations already in place** (from Sprint 5c):
+- `.cco/source` tracks origin URL, path, ref, install/update dates
+- `.cco/base/` stores last-seen version for 3-way merge
+- `_collect_file_changes()` is source-agnostic (works on any defaults_dir/installed_dir)
+- `_interactive_sync()` has full merge UI including (N)ew-file option
+- File policies (tracked/untracked/generated) apply uniformly
+
+**What's missing**:
+- Remote version check (read `.cco/source`, fetch remote HEAD, compare hashes)
+- `cco project update <name>` command (3-way merge from remote source)
+- Discovery integration in `cco update` for installed resources
+- Publish safety (diff review before publish)
+- Version metadata (optional `version:` field)
+
+**Ref**: [FI-7](framework-improvements.md#fi-7-publish-install-sync-and-resource-versioning) | [resource-lifecycle analysis §6](../configuration/resource-lifecycle/analysis.md)
+**Effort**: Medium-High. Design needed before implementation.
+
+---
+
+### Quick Wins — FI-2, FI-5, FI-4, #10
+
+**Priority**: 2 (immediately after FI-7). Low effort, high benefit.
+
+#### FI-2 `/init-workspace` empty workspace handling
+
+When no repos and no `workspace.yml` descriptions exist, the skill should ask the user for a brief project description before generating a nearly empty CLAUDE.md. Discovery-based flow unchanged when repos are present.
+
+**Ref**: [FI-2](framework-improvements.md#fi-2-init-workspace-on-empty-projects)
+**Effort**: Low.
+
+#### FI-5 remaining: branch protection docs + template reference
+
+GitHub branch protection configuration for mechanical enforcement of human review.
+Update base project template to reference the development-workflow and configuring-rules guides.
+
+**Ref**: [FI-5](framework-improvements.md#fi-5-human-workflow-guide-and-review-best-practices)
+**Effort**: Low.
+
+#### FI-4 Per-project model configuration
+
+Add `model:` field to `project.yml`, passed to `claude --model` at launch.
+
+**Ref**: [FI-4](framework-improvements.md#fi-4-per-project-llm-model-configuration)
+**Effort**: Medium-Low.
+
+#### #10 `cco project edit <name>` command
+
+Open project.yml in `$EDITOR` and regenerate docker-compose.yml after save.
+
+**Effort**: Low.
+
+---
+
+### Sprint 6C-Security — Network Hardening
+
+**Priority**: 3 (security, required for open-source).
+
+**Status**: Phase A (mount_socket default) + Phase B (Docker socket proxy) implemented. Phase C pending.
+
+#### Phase C: Network Hardening (Squid sidecar)
+
+Layered defense for internet access control:
+- **Layer 1**: Claude Code deny rules (`WebFetch`, `WebSearch`, `curl`, `wget`) for restricted/none modes
+- **Layer 2**: Docker network `internal: true` + Squid proxy sidecar with SNI-based domain filtering
+
+Configuration: `network.internet: full | restricted | none` with `allowed_domains` / `blocked_domains`. Squid sidecar bridges internal (project) and external (internet) networks. Created containers inherit the same restriction or can be overridden.
+
+**Docs**: [analysis](../integration/docker-security/analysis.md) | [design](../integration/docker-security/design.md)
+**Effort**: Medium-High.
+
+---
+
+### Sprint 11-Ecosystem — Pack, Polish & Automation
+
+**Priority**: 3-4 (after security). Previously included FI-7 and quick wins — those are
+now elevated to their own priority levels above.
+
+**Remaining items**:
+
+#### FI-1 ✅ Implemented
+
+#### FI-3 ✅ Implemented
+
+#### FI-6 ✅ Implemented
+
+#### #9 Pack Inheritance / Composition
+
+Allow packs to extend other packs:
+```yaml
+extends: base-client
+files:
+  - additional-doc.md
+```
+
+> Note: `cco pack create` (and the full pack CLI) was implemented in Sprint 6+10. Only inheritance/composition remains.
+
+**Effort**: Medium.
 
 ---
 
