@@ -541,23 +541,32 @@ EOF
 
     if $update_all; then
         local updated=0
+        local -a failed_packs=()
         for dir in "$PACKS_DIR"/*/; do
             [[ ! -d "$dir" ]] && continue
             local pack_name
             pack_name=$(basename "$dir")
-            local source_file="$dir/.cco/source"
+            local source_file
+            source_file=$(_cco_pack_source "$dir")
             [[ ! -f "$source_file" ]] && continue
             local source_url
             source_url=$(yml_get "$source_file" "source")
             [[ "$source_url" == "local" || -z "$source_url" ]] && continue
             info "Updating $pack_name..."
-            _update_single_pack "$pack_name" "$force"
-            updated=$((updated + 1))
+            # Isolate errors: run in subshell so die() does not abort the loop
+            if ( _update_single_pack "$pack_name" "$force" ); then
+                updated=$((updated + 1))
+            else
+                warn "Failed to update '$pack_name'"
+                failed_packs+=("$pack_name")
+            fi
         done
-        if [[ $updated -eq 0 ]]; then
+        if [[ $updated -eq 0 && ${#failed_packs[@]} -eq 0 ]]; then
             info "No packs with remote sources found"
-        else
-            ok "Updated $updated pack(s)"
+        fi
+        if [[ ${#failed_packs[@]} -gt 0 ]]; then
+            error "Failed to update ${#failed_packs[@]} pack(s): ${failed_packs[*]}"
+            return 1
         fi
         return 0
     fi
@@ -725,9 +734,11 @@ cmd_pack_internalize() {
                 cat <<'EOF'
 Usage: cco pack internalize <name>
 
-Convert a source-referencing pack to self-contained by copying knowledge
-files from the external source directory into the pack's own knowledge/
-directory, then removing the source: field from pack.yml.
+Convert a pack to fully self-contained and locally owned:
+  - If pack.yml has knowledge.source, copies referenced files into
+    the pack's own knowledge/ directory and removes the source: field.
+  - If .cco/source tracks a remote Config Repo, disconnects by setting
+    source: local (the pack will no longer receive remote updates).
 EOF
                 return 0
                 ;;
@@ -750,27 +761,42 @@ EOF
     [[ ! -d "$pack_dir" ]] && die "Pack '$name' not found in packs/."
     [[ ! -f "$pack_yml" ]] && die "Pack '$name': pack.yml not found."
 
-    # Check for knowledge.source
+    local did_something=false
+
+    # ── 1. Knowledge source internalization ───────────────────────────
     local k_source
     k_source=$(yml_get_pack_knowledge_source "$pack_yml")
-    if [[ -z "$k_source" ]]; then
-        ok "Pack '$name' is already self-contained (no source: field)"
-        return 0
-    fi
+    if [[ -n "$k_source" ]]; then
+        # Expand and validate source path
+        local expanded_source
+        expanded_source=$(expand_path "$k_source")
+        if [[ ! -d "$expanded_source" ]]; then
+            die "Knowledge source not found: $k_source (expanded: $expanded_source)"
+        fi
 
-    # Expand and validate source path
-    local expanded_source
-    expanded_source=$(expand_path "$k_source")
-    if [[ ! -d "$expanded_source" ]]; then
-        die "Knowledge source not found: $k_source (expanded: $expanded_source)"
-    fi
+        # Get file list and copy
+        local k_files
+        k_files=$(yml_get_pack_knowledge_files "$pack_yml")
+        local count=0
+        if [[ -n "$k_files" ]]; then
+            mkdir -p "$pack_dir/knowledge"
+            while IFS=$'\t' read -r fname desc; do
+                [[ -z "$fname" ]] && continue
+                local src="$expanded_source/$fname"
+                local dst="$pack_dir/knowledge/$fname"
+                if [[ -f "$src" ]]; then
+                    mkdir -p "$(dirname "$dst")"
+                    cp "$src" "$dst"
+                    count=$((count + 1))
+                else
+                    warn "File not found: $src (skipping)"
+                fi
+            done <<< "$k_files"
+        fi
 
-    # Get file list
-    local k_files
-    k_files=$(yml_get_pack_knowledge_files "$pack_yml")
-    if [[ -z "$k_files" ]]; then
-        # Still remove source: field even if no files to copy (pack becomes self-contained)
-        local tmpfile; tmpfile=$(mktemp)
+        # Remove source: line from pack.yml
+        local tmpfile
+        tmpfile=$(mktemp)
         awk '
             /^knowledge:/ { in_k=1; print; next }
             in_k && /^  source:/ { next }
@@ -778,38 +804,38 @@ EOF
             { print }
         ' "$pack_yml" > "$tmpfile"
         mv "$tmpfile" "$pack_yml"
-        ok "Internalized pack '$name': 0 file(s) copied (source: field removed)"
-        return 0
+
+        ok "Knowledge internalized: $count file(s) copied to knowledge/"
+        did_something=true
     fi
 
-    # Copy files
-    mkdir -p "$pack_dir/knowledge"
-    local count=0
-    while IFS=$'\t' read -r fname desc; do
-        [[ -z "$fname" ]] && continue
-        local src="$expanded_source/$fname"
-        local dst="$pack_dir/knowledge/$fname"
-        if [[ -f "$src" ]]; then
-            mkdir -p "$(dirname "$dst")"
-            cp "$src" "$dst"
-            count=$((count + 1))
-        else
-            warn "File not found: $src (skipping)"
+    # ── 2. Config Repo source disconnection ───────────────────────────
+    local source_file="$pack_dir/.cco/source"
+    if [[ -f "$source_file" ]]; then
+        local source_url
+        source_url=$(yml_get "$source_file" "source")
+        if [[ -n "$source_url" && "$source_url" != "local" ]]; then
+            # Overwrite .cco/source — set to local, preserve install history as comment
+            {
+                printf 'source: local\n'
+                printf '# previously installed from: %s\n' "$source_url"
+            } > "$source_file"
+
+            # Clear remote_cache from .cco/meta if present
+            local meta_file="$pack_dir/.cco/meta"
+            if [[ -f "$meta_file" ]]; then
+                yml_remove "$meta_file" "remote_cache"
+            fi
+
+            ok "Disconnected from remote source: $source_url"
+            did_something=true
         fi
-    done <<< "$k_files"
+    fi
 
-    # Remove source: line from pack.yml
-    local tmpfile
-    tmpfile=$(mktemp)
-    awk '
-        /^knowledge:/ { in_k=1; print; next }
-        in_k && /^  source:/ { next }
-        in_k && /^[^ #]/ { in_k=0 }
-        { print }
-    ' "$pack_yml" > "$tmpfile"
-    mv "$tmpfile" "$pack_yml"
-
-    ok "Internalized pack '$name': $count file(s) copied to knowledge/"
+    # ── 3. Report if nothing to do ────────────────────────────────────
+    if [[ "$did_something" != "true" ]]; then
+        ok "Pack '$name' is already self-contained (no knowledge source, no remote tracking)"
+    fi
 }
 
 # ── Pack publish ─────────────────────────────────────────────────────

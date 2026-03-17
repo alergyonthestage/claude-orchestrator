@@ -1255,7 +1255,7 @@ automatically internalized during publish (local pack unchanged).
 
 ### 3.26 `cco pack internalize`
 
-Convert a source-referencing pack to self-contained.
+Convert a pack to fully self-contained and locally owned.
 
 ```
 Usage: cco pack internalize <name>
@@ -1264,9 +1264,21 @@ Examples:
   cco pack internalize my-docs-pack
 ```
 
-Copies knowledge files from the external `source:` directory into the pack's
-own `knowledge/` directory and removes the `source:` field from `pack.yml`.
-This is a one-way operation — the original source path is not preserved.
+Performs two independent operations as needed:
+
+1. **Knowledge source internalization**: If `pack.yml` has a `knowledge.source`
+   field pointing to an external directory, copies the referenced files into the
+   pack's own `knowledge/` directory and removes the `source:` field from
+   `pack.yml`. The original source path is not preserved.
+
+2. **Config Repo disconnection**: If the pack was installed from a remote Config
+   Repo (i.e., `.cco/source` tracks a remote URL), sets the source to `local`
+   and records the previous origin as a comment. After disconnection, the pack
+   will no longer receive updates via `cco pack update` — it becomes a fully
+   local pack.
+
+If neither condition applies, the command reports that the pack is already
+self-contained.
 
 ---
 

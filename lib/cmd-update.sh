@@ -209,7 +209,8 @@ EOF
         local pack_dir
         for pack_dir in "$PACKS_DIR"/*/; do
             [[ ! -d "$pack_dir" ]] && continue
-            local pack_source_file="$pack_dir/.cco/source"
+            local pack_source_file
+            pack_source_file=$(_cco_pack_source "$pack_dir")
             [[ ! -f "$pack_source_file" ]] && continue
             local pack_source_url
             pack_source_url=$(yml_get "$pack_source_file" "source")
