@@ -5,6 +5,11 @@
 > between framework defaults and user documentation.
 >
 > Date: 2026-03-15
+>
+> **Related**: For file update policies (tracked/untracked/generated) and resource
+> lifecycle mechanics, see [`resource-lifecycle/analysis.md`](../resource-lifecycle/analysis.md).
+> This document focuses on **content organization** (which rules go in which files),
+> not on update mechanics.
 
 ---
 

@@ -1,26 +1,10 @@
 # Tutorial Project — Design
 
-**Date**: 2026-03-10 (original), 2026-03-16 (updated)
-**Version**: 2.0
+**Date**: 2026-03-17
+**Version**: 2.1
 **Scope**: Sprint 5 — Interactive Tutorial Project
-**Status**: Updated — reflects internal positioning (2026-03-16)
+**Status**: Current — tutorial is an internal framework resource
 **Prerequisite**: [analysis.md](./analysis.md)
-
-> **Update 2026-03-16**: The tutorial is now an **internal framework resource**
-> at `internal/tutorial/`, not a template installed in user-config. Key changes:
-> - §2 (file structure): path changed from `templates/project/tutorial/` to
->   `internal/tutorial/`
-> - §3 (project.yml): no longer uses `{{placeholder}}` substitution (runs
->   in-place with env vars resolved at runtime)
-> - §7 (cmd-init.sh changes): superseded — tutorial is no longer created by
->   `cco init`
-> - §11 (migration): updated for transition from installed to internal
-> - Config editing capabilities moved to `config-editor` template
->   (see `docs/maintainer/configuration/resource-lifecycle/analysis.md` §4.3)
->
-> Sections that remain valid: §1 (design overview, with caveats), §4 (CLAUDE.md),
-> §5 (skills), §6 (rules), §8 (alias), §9 (settings), §10 (implementation plan,
-> partially updated).
 
 ---
 

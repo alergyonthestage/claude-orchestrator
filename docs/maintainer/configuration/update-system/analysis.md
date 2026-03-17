@@ -1,6 +1,6 @@
 # Update System — Architecture Analysis v2
 
-**Date**: 2026-03-14 (revised)
+**Date**: 2026-03-17 (Revised)
 **Scope**: Architecture-level — cross-cutting analysis
 **Related**: `design.md` (definitive design, updated in parallel)
 
@@ -197,7 +197,7 @@ cco update --sync (user-initiated)
 ### 4.2 Project Files
 
 ```
-cco project create <name> [--template tutorial]
+cco project create <name> [--template config-editor]
   ├── Copy template files → user-config/projects/<name>/
   ├── Substitute {{PROJECT_NAME}}, {{DESCRIPTION}}
   ├── Generate .cco/meta (template name, schema_version)
@@ -288,13 +288,18 @@ for `cco update` to compare opinionated files against.
 
 ### 5.2 Non-Base Native Templates
 
-| Template | Purpose | Relationship to base |
-|----------|---------|---------------------|
-| `tutorial` | Interactive cco learning | Independent; shares project.yml schema but has unique skills/rules/CLAUDE.md |
-| `cco-develop` (future) | Framework maintainer template | Independent; pre-configured for cco self-development |
+| Template | Location | Purpose | Relationship to base |
+|----------|----------|---------|---------------------|
+| `tutorial` | `internal/tutorial/` | Interactive cco learning | Internal resource, not a native template. Used directly at runtime, not installed in user-config |
+| `config-editor` | `templates/project/config-editor/` | Config editor project | Independent; shares project.yml schema but has unique skills/rules/CLAUDE.md |
+| `cco-develop` (future) | `templates/project/cco-develop/` | Framework maintainer template | Independent; pre-configured for cco self-development |
 
-Non-base templates are **completely independent** from base — there is no inheritance
-mechanism. Each template is self-contained.
+The tutorial was moved from `templates/project/tutorial/` to `internal/tutorial/`
+because it is a framework-internal resource used directly at runtime, not a project
+template that gets installed into user-config.
+
+Non-base templates (like `config-editor`) are **completely independent** from base
+— there is no inheritance mechanism. Each template is self-contained.
 
 **Maintainer responsibility**: When base evolves (new project.yml fields, new
 directory structure), the maintainer must update non-base templates to match.
@@ -444,7 +449,7 @@ At `cco update --project <name>`:
 2. Run pending project migrations (from `migrations/project/`)
 3. Discover opinionated file updates:
    - Base files (settings.json) → compared against `templates/project/base/`
-   - Template-specific files (tutorial skills, rules) → compared against `templates/project/tutorial/`
+   - Template-specific files (tutorial skills, rules) → compared against `internal/tutorial/`
 4. Report available updates
 
 **Which tutorial files are opinionated (discoverable)?**
@@ -456,8 +461,8 @@ At `cco update --project <name>`:
 | `.claude/skills/setup-pack/SKILL.md` | opinionated | Framework helper skill |
 | `.claude/rules/tutorial-behavior.md` | opinionated | Framework behavior rules |
 | `.claude/settings.json` | opinionated | From base (shared) |
-| `.claude/CLAUDE.md` | user-owned | User writes project context |
-| `project.yml` | user-owned | User configures repos, packs, docker |
+| `.claude/CLAUDE.md` | untracked | User writes project context |
+| `project.yml` | untracked | User configures repos, packs, docker |
 
 ### 7.5 Pack Update — Full Replace with Internalization Escape
 

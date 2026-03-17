@@ -1,5 +1,7 @@
 # Implementation Plan: Sprint 2 & Sprint 3
 
+> **Status**: Historical record
+
 > Date: 2026-02-26
 > Status: Sprint 2 completed — Sprint 3 pending
 > Related: [roadmap.md](../roadmap.md) | [progress review](./26-02-2026-progress-review.md)

@@ -1,27 +1,13 @@
 # Sprint 5b — Design: Defaults, Templates & Update System
 
-**Status**: Final — Revised 2026-03-14, amended 2026-03-16
+**Status**: Final — Revised 2026-03-17
 **Original date**: 2026-03-13
 **Scope**: Architecture-level
 
 > This document is the single authoritative reference for the update system design.
-> It incorporates decisions from Sprint 5b implementation and post-sprint analysis
-> (session 2026-03-14).
->
-> **Amendment 2026-03-16**: Policy naming and project CLAUDE.md tracking updated.
-> See `resource-lifecycle/analysis.md` for the full analysis.
->
-> Key changes:
-> - **Policy rename**: `user-owned` → `untracked` throughout. The new name
->   communicates the actual behavior (not tracked by update system) rather than
->   implying ownership semantics.
-> - **Project CLAUDE.md**: Changed from `untracked` to `opinionated` (tracked).
->   Template-provided CLAUDE.md structure should be discoverable for updates.
->   The 3-way merge preserves user content.
-> - **New sync option**: Skip + .new file — saves framework version alongside
->   user's file for manual review. Recommended for heavily restructured files.
-> - **Tutorial**: Now an internal resource at `internal/tutorial/`, not a
->   template. See `resource-lifecycle/analysis.md` §4.
+> It incorporates decisions from Sprint 5b implementation, post-sprint analysis
+> (session 2026-03-14), and policy/taxonomy revisions (2026-03-16).
+> See `resource-lifecycle/analysis.md` for the full resource lifecycle analysis.
 
 ---
 
@@ -95,11 +81,10 @@ templates/                             # Scaffolding blueprints (read-only sourc
 │   │       ├── agents/.gitkeep        #   Empty: project agents are user-defined
 │   │       └── skills/.gitkeep        #   Empty: project skills are user-defined
 │   │
-│   └── # Note: tutorial moved to internal/tutorial/ (2026-03-16)
-│     # See resource-lifecycle/analysis.md §4
-│               ├── setup-pack/SKILL.md
-│               ├── setup-project/SKILL.md
-│               └── tutorial/SKILL.md
+│   └── config-editor/                 # Config editor project template
+│       ├── project.yml
+│       └── .claude/
+│           └── ...                    # Template-specific config
 │
 └── pack/
     └── base/                          # Default pack template
@@ -144,7 +129,7 @@ This is the definitive reference for every file managed by the update system.
 |------|--------|---------------|-------|
 | `.claude/CLAUDE.md` | `opinionated` | ✅ | Framework workflow instructions |
 | `.claude/settings.json` | `opinionated` | ✅ | Global Claude Code permissions |
-| `.claude/mcp.json` | `user-owned` | ❌ | Personal MCP servers |
+| `.claude/mcp.json` | `untracked` | ❌ | Personal MCP servers |
 | `.claude/agents/analyst.md` | `opinionated` | ✅ | Framework agent spec |
 | `.claude/agents/reviewer.md` | `opinionated` | ✅ | Framework agent spec |
 | `.claude/rules/diagrams.md` | `opinionated` | ✅ | Framework diagram conventions |
@@ -155,8 +140,8 @@ This is the definitive reference for every file managed by the update system.
 | `.claude/skills/commit/SKILL.md` | `opinionated` | ✅ | Framework skill |
 | `.claude/skills/design/SKILL.md` | `opinionated` | ✅ | Framework skill |
 | `.claude/skills/review/SKILL.md` | `opinionated` | ✅ | Framework skill |
-| `setup.sh` | `user-owned` + `copy-if-missing` | ❌ | Written once at init; user customizes |
-| `setup-build.sh` | `user-owned` + `copy-if-missing` | ❌ | Written once at init; user customizes |
+| `setup.sh` | `untracked` + `copy-if-missing` | ❌ | Written once at init; user customizes |
+| `setup-build.sh` | `untracked` + `copy-if-missing` | ❌ | Written once at init; user customizes |
 
 ### 3.3 Project Scope — `cco update --project`
 
@@ -286,8 +271,8 @@ GLOBAL_GENERATED_FILES=(
     ".claude/rules/language.md"
 )
 
-# User-owned: never touched by cco update
-GLOBAL_USER_OWNED=(
+# Untracked: never touched by cco update
+GLOBAL_UNTRACKED=(
     ".claude/mcp.json"
     "setup.sh"
     "setup-build.sh"
@@ -298,8 +283,8 @@ PROJECT_OPINIONATED_FILES=(
     ".claude/settings.json"
 )
 
-# Project user-owned: never touched by cco update
-PROJECT_USER_OWNED=(
+# Project untracked: never touched by cco update
+PROJECT_UNTRACKED=(
     "project.yml"
     ".claude/CLAUDE.md"
     ".claude/rules/language.md"
@@ -798,7 +783,7 @@ Key constraints:
 
 ```bash
 cco project create my-app                          # Uses base template
-cco project create my-app --template tutorial      # Uses tutorial template
+cco project create my-app --template config-editor  # Uses config-editor template
 cco project create my-app --template my-preset     # Uses user template
 
 cco pack create my-pack                            # Uses base template
@@ -826,7 +811,7 @@ For --template <name> (or default "base"):
 ### 5.3 Template Metadata
 
 ```yaml
-# templates/project/tutorial/template.yml
+# internal/tutorial/template.yml
 name: tutorial
 description: Interactive tutorial for learning claude-orchestrator
 author: claude-orchestrator

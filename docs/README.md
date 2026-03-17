@@ -80,7 +80,7 @@ Design docs and analysis by area:
 | Scope hierarchy | [analysis](maintainer/configuration/scope-hierarchy/analysis.md), [design](maintainer/configuration/scope-hierarchy/design.md) |
 | Knowledge packs | [design](maintainer/configuration/packs/design.md) |
 | Environment | [analysis](maintainer/configuration/environment/analysis.md), [design](maintainer/configuration/environment/design.md) |
-| Sharing & Config Repo | [analysis](maintainer/configuration/sharing/analysis.md), [design](maintainer/configuration/sharing/design.md), [sharing enhancements](maintainer/configuration/sharing/sharing-design.md) |
+| Sharing & Config Repo | [analysis](maintainer/configuration/sharing/analysis.md), [design](maintainer/configuration/sharing/design.md), [enhancements](maintainer/configuration/sharing/enhancements-design.md) |
 | Update System & Templates | [analysis](maintainer/configuration/update-system/analysis.md), [design](maintainer/configuration/update-system/design.md) |
 | Vault & Multi-PC Sync | [analysis](maintainer/configuration/vault/analysis.md), [design](maintainer/configuration/vault/design.md) |
 | **Integration** | |
@@ -90,7 +90,7 @@ Design docs and analysis by area:
 | Browser MCP | [analysis](maintainer/integration/browser-mcp/analysis.md), [design](maintainer/integration/browser-mcp/design.md) |
 | Agent teams | [analysis](maintainer/integration/agent-teams/analysis.md) |
 | Worktree isolation | [analysis](maintainer/integration/worktree/analysis.md), [design](maintainer/integration/worktree/design.md) |
-| **Templates** | |
-| Tutorial Project | [analysis](maintainer/templates/tutorial/analysis.md), [design](maintainer/templates/tutorial/design.md) |
+| **Internal** | |
+| Tutorial Project | [analysis](maintainer/internal/tutorial/analysis.md), [design](maintainer/internal/tutorial/design.md) |
 | **Decisions** | |
 | Reviews | [24-02-2026](maintainer/decisions/reviews/24-02-2026-architecture-review.md), [26-02-2026](maintainer/decisions/reviews/26-02-2026-progress-review.md), [sprint plan](maintainer/decisions/reviews/sprint-2-3-implementation-plan.md) |

@@ -1,5 +1,7 @@
 # Progress Review: claude-orchestrator
 
+> **Status**: Historical record
+
 **Date**: 2026-02-26
 **Scope**: Project status, progress from previous review, readiness for Sprint 2-3
 **Baseline**: [24-02-2026 Architecture Review](./24-02-2026-architecture-review.md)

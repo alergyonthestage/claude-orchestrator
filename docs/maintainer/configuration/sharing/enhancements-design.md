@@ -1,10 +1,12 @@
-# Sharing System — Design
+# Sharing Enhancements — Design
 
-> Detailed design for the sharing enhancements identified in the
-> [sharing analysis](./sharing-analysis.md). Covers command signatures,
+> **Scope**: Detailed design for the enhancements identified in the
+> [enhancements analysis](./enhancements-analysis.md). Covers command signatures,
 > data flows, file formats, and implementation decisions.
+> Builds on the base [Config Repo design](./design.md).
 >
-> Produced: 2026-03-05. Builds on the existing [Config Repo design](./design.md).
+> **Date**: 2026-03-05
+> **Base docs**: [analysis.md](./analysis.md), [design.md](./design.md)
 
 ---
 

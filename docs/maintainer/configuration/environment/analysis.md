@@ -1,7 +1,7 @@
 # Analysis: Environment Extensibility
 
 > Date: 2026-02-24
-> Status: Approved — proceed to implementation
+> Status: Implemented (Sprint 4b, 2026-02-26)
 > Related: [environment-design.md](./design.md) | [architecture.md](../../architecture/architecture.md) (ADR-12) | [authentication-and-secrets.md](../../integration/auth/analysis.md)
 
 ---

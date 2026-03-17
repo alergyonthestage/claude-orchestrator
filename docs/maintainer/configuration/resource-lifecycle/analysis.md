@@ -755,7 +755,7 @@ Based on this analysis, the following principles are confirmed or added:
 |-------|----------|
 | Update system design | `docs/maintainer/configuration/update-system/design.md` |
 | Update system analysis | `docs/maintainer/configuration/update-system/analysis.md` |
-| Sharing/publish design | `docs/maintainer/configuration/sharing/sharing-design.md` |
+| Sharing/publish design | `docs/maintainer/configuration/sharing/enhancements-design.md` |
 | Config Repo design | `docs/maintainer/configuration/sharing/design.md` |
 | Vault design | `docs/maintainer/configuration/vault/design.md` |
 | FI-7 in roadmap | `docs/maintainer/decisions/roadmap.md` § Sprint 11 |

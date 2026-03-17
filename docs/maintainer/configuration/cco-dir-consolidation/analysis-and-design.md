@@ -1,6 +1,6 @@
 # .cco/ Directory Consolidation & Changelog Dual-Tracker
 
-**Status**: Proposed — 2026-03-15
+**Status**: Implemented (Sprint 8, migration 009, 2026-03-15)
 **Scope**: Module (update system) + Architecture (user-config layout)
 
 > Two related improvements to user-config hygiene and the changelog notification system.

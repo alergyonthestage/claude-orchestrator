@@ -1,8 +1,12 @@
-# Sharing System — Analysis
+# Sharing Enhancements — Analysis
 
-> Analyzes gaps, naming issues, and design questions for the sharing subsystem.
-> Produced during the 2026-03-05 review session. Builds on the existing
-> [Config Repo analysis](./analysis.md) and [design](./design.md).
+> **Scope**: Enhancements to the base Config Repo sharing system.
+> This document builds on the base [analysis](./analysis.md) and [design](./design.md)
+> (Sprint 6+10), identifying gaps, naming issues, and missing features discovered
+> during real-world usage and review.
+>
+> **Date**: 2026-03-05
+> **Design**: [enhancements-design.md](./enhancements-design.md)
 
 ---
 

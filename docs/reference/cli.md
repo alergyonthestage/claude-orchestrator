@@ -256,7 +256,7 @@ Options:
 Examples:
   cco project create my-saas --repo ~/projects/api --repo ~/projects/web
   cco project create experiment --description "Testing new auth flow"
-  cco project create guided --template tutorial
+  cco project create guided --template config-editor
 ```
 
 **Flow**:

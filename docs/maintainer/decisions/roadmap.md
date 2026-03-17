@@ -161,7 +161,7 @@ lifecycle delle risorse (defaults, templates, publish/install).
 | Documento | Ruolo |
 |-----------|-------|
 | `docs/maintainer/configuration/resource-lifecycle/analysis.md` | **Primario**: decisioni, policy, architettura, task list |
-| `docs/maintainer/templates/tutorial/design.md` §4-§6 | Contenuto dei file tutorial (CLAUDE.md, skills, rules) — ancora valido |
+| `docs/maintainer/internal/tutorial/design.md` §4-§6 | Contenuto dei file tutorial (CLAUDE.md, skills, rules) — ancora valido |
 | `docs/maintainer/configuration/update-system/design.md` | Contesto: come funziona il sistema di update (con note di amendment 2026-03-16) |
 | `lib/update.sh` linee 25-75 | Codice: file policies attuali da modificare |
 | `lib/update.sh` `_interactive_sync()` | Codice: dove aggiungere opzione Skip+.new |
@@ -625,7 +625,7 @@ Enhancements to the Config Repo sharing system. Addresses naming issues, portabi
 - `cco pack internalize` — convert source-referencing packs to self-contained
 - Enhanced `cco project install` — auto-install pack dependencies, template variable resolution
 
-**Docs**: [analysis](../configuration/sharing/sharing-analysis.md) | [design](../configuration/sharing/sharing-design.md)
+**Docs**: [analysis](../configuration/sharing/enhancements-analysis.md) | [design](../configuration/sharing/enhancements-design.md)
 
 ---
 

@@ -1,20 +1,9 @@
 # Tutorial Project — Analysis
 
-**Date**: 2026-03-10 (original), 2026-03-16 (updated)
-**Version**: 2.0
+**Date**: 2026-03-17
+**Version**: 2.1
 **Scope**: Sprint 5 — Interactive Tutorial Project
-**Status**: Superseded by resource-lifecycle analysis for positioning decisions
-
-> **Update 2026-03-16**: The tutorial's lifecycle model has changed.
-> The tutorial is now an **internal framework resource** (`internal/tutorial/`),
-> not a template installed in user-config. The educational content role remains
-> as designed below. The config editing role is separated into a new
-> `config-editor` template. See:
-> - `docs/maintainer/configuration/resource-lifecycle/analysis.md` §4 for
->   the separation rationale, positioning, and config-editor design
-> - Sections below remain valid for: technical findings (§2), architecture
->   decisions (§3 — except §3.4 which is superseded), curriculum (§5),
->   agent specs (§7)
+**Status**: Current — tutorial is an internal framework resource
 
 ---
 
