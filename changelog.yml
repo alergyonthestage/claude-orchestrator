@@ -86,3 +86,19 @@ entries:
       when you've restructured a file significantly. Also, project CLAUDE.md
       is now tracked for updates (previously silent). Run `cco clean --new`
       to remove .new files after review.
+
+  - id: 7
+    date: "2026-03-17"
+    type: additive
+    title: "Publish-install sync — update installed projects from remote"
+    description: >
+      Installed projects can now receive updates from their source.
+      `cco update` shows available updates from all sources (framework + remotes).
+      `cco project update <name>` fetches and merges publisher updates with
+      3-way merge preserving your local customizations.
+      `cco project publish` now includes safety checks (migration validation,
+      secret scan, framework alignment warning, diff review).
+      `cco project internalize <name>` disconnects from remote source.
+      `cco update --sync <project> --local` applies framework defaults directly
+      on installed projects (bypass publisher chain).
+      See `docs/user-guides/config-lifecycle.md` for the complete guide.

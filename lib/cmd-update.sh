@@ -11,6 +11,9 @@ cmd_update() {
     local no_backup=false
     local scope=""               # "" = all, "global" = global only, "<name>" = project
     local auto_action=""         # "" = interactive, "replace" = overwrite, "keep" = preserve
+    local offline_mode=false
+    local cache_mode="default"   # default | force
+    local local_override=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -34,11 +37,15 @@ cmd_update() {
             --force)      cmd_mode="sync"; auto_action="replace"; shift ;;
             --keep)       cmd_mode="sync"; auto_action="keep"; shift ;;
             --replace)    cmd_mode="sync"; auto_action="replace"; shift ;;
+            --offline)    offline_mode=true; shift ;;
+            --no-cache)   cache_mode="force"; shift ;;
+            --local)      local_override=true; shift ;;
             --help)
                 cat <<'EOF'
 Usage: cco update [OPTIONS]
 
 Runs pending migrations (global + all projects) and shows available updates.
+Checks both framework defaults and remote sources for installed projects/packs.
 
 Modes:
   (default)           Run migrations + show available config updates + changelog
@@ -54,6 +61,10 @@ Scope (for --sync and --diff):
 Options:
   --force             Non-interactive sync: overwrite all files with framework version
   --keep              Non-interactive sync: keep all user files, update .cco/base/ only
+  --local             Apply framework defaults directly on installed projects
+                      (bypasses publisher update chain; use with --sync)
+  --offline           Skip remote source checks (framework-only discovery)
+  --no-cache          Force fresh remote version check (ignore cache)
   --no-backup         Skip .bak file creation (with --sync)
   --dry-run           Preview pending migrations without running
   --help              Show this help message
@@ -65,6 +76,10 @@ Migrations run automatically in all modes (except --news and --dry-run).
 Config sync (--sync) covers opinionated files: rules, agents, skills,
 and other framework defaults that you may have customized.
 
+For installed projects (from Config Repos), framework updates are managed
+by the publisher. Use 'cco project update <name>' to get publisher updates.
+Use --local with --sync to apply framework defaults directly (escape hatch).
+
 Examples:
   cco update                  # Run migrations + show available updates
   cco update --diff           # Show diffs for all available config updates
@@ -72,10 +87,12 @@ Examples:
   cco update --sync           # Interactively sync all config from defaults
   cco update --sync global    # Sync global config only
   cco update --sync myapp     # Sync one project only (no global)
+  cco update --sync myapp --local  # Force framework sync on installed project
   cco update --force          # Overwrite all files with latest defaults
   cco update --keep           # Keep all user files, mark defaults as seen
   cco update --news           # Show new features and examples
   cco update --dry-run        # Preview pending migrations
+  cco update --offline        # Skip remote checks
 EOF
                 return 0
                 ;;
@@ -166,7 +183,7 @@ EOF
             local pname
             pname="$(basename "$project_dir")"
             info "$verb project '$pname'..."
-            if ! _update_project "$project_dir" "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"; then
+            if ! _update_project "$project_dir" "$cmd_mode" "$dry_run" "$no_backup" "$auto_action" "$offline_mode" "$cache_mode" "$local_override"; then
                 warn "Project '$pname' update encountered errors."
                 project_errors=$(( project_errors + 1 ))
             fi
@@ -178,7 +195,7 @@ EOF
     elif [[ "$do_projects" != "none" && "$do_projects" != "all" && "$cmd_mode" != "news" ]]; then
         local project_dir="$PROJECTS_DIR/$do_projects"
         info "$verb project '$do_projects'..."
-        if ! _update_project "$project_dir" "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"; then
+        if ! _update_project "$project_dir" "$cmd_mode" "$dry_run" "$no_backup" "$auto_action" "$offline_mode" "$cache_mode" "$local_override"; then
             warn "Project '$do_projects' update encountered errors. Run 'cco update --sync $do_projects' again."
             project_failed=true
         fi

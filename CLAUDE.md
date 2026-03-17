@@ -34,6 +34,9 @@ cco start <project>          # Start session for a project
 cco new --repo <path>        # Start temporary session with repos
 cco project create <name>    # Scaffold new project from template
 cco project install <url>    # Install project template from Config Repo
+cco project update <name>   # Update installed project from remote source
+cco project update --all    # Update all installed projects
+cco project internalize <name> # Disconnect from remote, convert to local
 cco project list             # List projects
 cco pack install <url>       # Install packs from a remote Config Repo
 cco pack update <name>       # Update a pack from its remote source
@@ -48,7 +51,7 @@ cco remote set-token <n> <t> # Save auth token for a remote
 cco remote remove-token <n>  # Remove saved token
 cco pack publish <n> [remote] # Publish pack to a Config Repo
 cco pack internalize <name>  # Convert source-referencing pack to self-contained
-cco project publish <n> <r>  # Publish project template to Config Repo
+cco project publish <n> <r>  # Publish project template to Config Repo (with safety checks)
 cco project add-pack <p> <k> # Add a pack to a project
 cco project remove-pack <p> <k> # Remove a pack from a project
 cco vault init               # Initialize git-backed config versioning
@@ -71,10 +74,13 @@ cco template list             # List available templates (native + user)
 cco template show <name>     # Show template details
 cco template create <n> --project|--pack  # Create user template
 cco template remove <name>   # Remove a user template
-cco update                   # Migrations + discovery + additive notifications
+cco update                   # Migrations + discovery (framework + remote) + changelog
 cco update --diff [scope]    # Show detailed diffs for available config updates
 cco update --sync [scope]    # Interactively sync config from framework defaults
+cco update --sync <p> --local # Apply framework defaults on installed project (escape hatch)
 cco update --news            # Show new features and examples
+cco update --offline         # Skip remote source checks
+cco update --no-cache        # Force fresh remote version check
 cco update --dry-run         # Preview pending migrations without running
 cco clean                    # Remove .bak files from update
 cco clean --tmp              # Remove .tmp/ dirs (dry-run artifacts)

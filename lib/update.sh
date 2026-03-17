@@ -199,6 +199,144 @@ _sed_i_or_append() {
     fi
 }
 
+# ── Remote Version Check ──────────────────────────────────────────────
+
+# Default cache TTL for remote version checks (seconds)
+REMOTE_CACHE_TTL=3600  # 1 hour
+
+# Check if a project has a remote source (installed from Config Repo).
+# Returns 0 (true) if installed from remote, 1 (false) if local.
+# Sets _INSTALLED_SOURCE_URL, _INSTALLED_SOURCE_REF, _INSTALLED_SOURCE_PATH,
+#      _INSTALLED_SOURCE_COMMIT on success.
+_is_installed_project() {
+    local project_dir="$1"
+    local source_file
+    source_file=$(_cco_project_source "$project_dir")
+
+    _INSTALLED_SOURCE_URL=""
+    _INSTALLED_SOURCE_REF=""
+    _INSTALLED_SOURCE_PATH=""
+    _INSTALLED_SOURCE_COMMIT=""
+
+    [[ ! -f "$source_file" ]] && return 1
+
+    # Check format: old format is single line (native:project/...), new format is YAML
+    local first_line
+    first_line=$(head -1 "$source_file")
+    case "$first_line" in
+        http://*|https://*)
+            # Old single-line URL format — read as YAML
+            _INSTALLED_SOURCE_URL=$(yml_get "$source_file" "source")
+            ;;
+        source:*)
+            # YAML format
+            _INSTALLED_SOURCE_URL=$(yml_get "$source_file" "source")
+            ;;
+        native:*|user:*|local)
+            # Local/native source — not a remote install
+            return 1
+            ;;
+        *)
+            # Unknown — try YAML
+            _INSTALLED_SOURCE_URL=$(yml_get "$source_file" "source")
+            ;;
+    esac
+
+    [[ -z "$_INSTALLED_SOURCE_URL" || "$_INSTALLED_SOURCE_URL" == "local" ]] && return 1
+
+    _INSTALLED_SOURCE_REF=$(yml_get "$source_file" "ref")
+    _INSTALLED_SOURCE_PATH=$(yml_get "$source_file" "path")
+    _INSTALLED_SOURCE_COMMIT=$(yml_get "$source_file" "commit")
+    return 0
+}
+
+# Check if a cached remote version is still fresh.
+# Returns 0 if fresh (within TTL), 1 if stale.
+_cache_fresh() {
+    local checked_time="$1"
+    local ttl="${2:-$REMOTE_CACHE_TTL}"
+
+    [[ -z "$checked_time" ]] && return 1
+
+    local checked_epoch now_epoch
+    # Parse ISO8601 timestamp to epoch (portable)
+    if date -d "$checked_time" +%s >/dev/null 2>&1; then
+        checked_epoch=$(date -d "$checked_time" +%s)
+    elif date -j -f "%Y-%m-%dT%H:%M:%SZ" "$checked_time" +%s >/dev/null 2>&1; then
+        checked_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$checked_time" +%s)
+    else
+        return 1  # Can't parse — treat as stale
+    fi
+    now_epoch=$(date +%s)
+
+    local age=$(( now_epoch - checked_epoch ))
+    [[ $age -lt $ttl ]]
+}
+
+# Check if a remote source has updates available.
+# Echoes: "update_available", "up_to_date", or "unreachable"
+_check_remote_update() {
+    local source_file="$1"
+    local meta_file="$2"
+    local cache_mode="${3:-default}"  # default | force
+
+    local source_url source_ref installed_commit
+    source_url=$(yml_get "$source_file" "source")
+    source_ref=$(yml_get "$source_file" "ref")
+    installed_commit=$(yml_get "$source_file" "commit")
+
+    # If no installed commit recorded, we can't compare — report as update available
+    if [[ -z "$installed_commit" ]]; then
+        echo "unknown"
+        return 0
+    fi
+
+    # Check cache (unless force refresh)
+    if [[ "$cache_mode" != "force" ]]; then
+        local cached_commit cached_time
+        cached_commit=$(yml_get "$meta_file" "remote_cache.commit" 2>/dev/null)
+        cached_time=$(yml_get "$meta_file" "remote_cache.checked" 2>/dev/null)
+
+        if [[ -n "$cached_commit" ]] && _cache_fresh "$cached_time"; then
+            if [[ "$cached_commit" != "$installed_commit" ]]; then
+                echo "update_available"
+            else
+                echo "up_to_date"
+            fi
+            return 0
+        fi
+    fi
+
+    # Fetch remote HEAD hash (lightweight — no clone)
+    local remote_head
+    # Auto-resolve token from registered remote
+    local token=""
+    token=$(remote_resolve_token_for_url "$source_url" 2>/dev/null) || true
+
+    local auth_url="$source_url"
+    if [[ -n "$token" && "$source_url" == https://* ]]; then
+        auth_url="${source_url/https:\/\//https://x-access-token:${token}@}"
+    fi
+
+    remote_head=$(git ls-remote "$auth_url" "${source_ref:-HEAD}" 2>/dev/null | head -1 | cut -f1)
+    if [[ -z "$remote_head" ]]; then
+        echo "unreachable"
+        return 0
+    fi
+
+    # Update cache
+    mkdir -p "$(dirname "$meta_file")"
+    yml_set "$meta_file" "remote_cache.commit" "$remote_head"
+    yml_set "$meta_file" "remote_cache.checked" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+    # Compare
+    if [[ "$remote_head" != "$installed_commit" ]]; then
+        echo "update_available"
+    else
+        echo "up_to_date"
+    fi
+}
+
 # ── .cco/meta I/O ────────────────────────────────────────────────────
 
 # Read schema_version from .cco/meta. Returns 0 if file missing.
@@ -1597,7 +1735,7 @@ _update_global() {
 _resolve_project_defaults_dir() {
     local project_dir="$1"
     local source_file
-    source_file=$(_cco_pack_source "$project_dir")
+    source_file=$(_cco_project_source "$project_dir")
     local fallback="$NATIVE_TEMPLATES_DIR/project/base/.claude"
 
     if [[ ! -f "$source_file" ]]; then
@@ -1652,6 +1790,9 @@ _update_project() {
     local dry_run="$3"
     local no_backup="${4:-false}"
     local auto_action="${5:-}"  # "" | replace | keep | skip
+    local offline_mode="${6:-false}"
+    local cache_mode="${7:-default}"
+    local local_override="${8:-false}"
     local pname
     pname="$(basename "$project_dir")"
     local meta_file
@@ -1659,6 +1800,18 @@ _update_project() {
     local installed_dir="$project_dir/.claude"
     local base_dir
     base_dir=$(_cco_project_base_dir "$project_dir")
+
+    # Check if project is installed from a remote source
+    local is_installed=false
+    local source_display=""
+    if _is_installed_project "$project_dir"; then
+        is_installed=true
+        # Extract short display name from URL
+        source_display="$_INSTALLED_SOURCE_URL"
+        source_display="${source_display#https://}"
+        source_display="${source_display#http://}"
+        source_display="${source_display%.git}"
+    fi
 
     # Resolve template source based on .cco/source
     local defaults_dir
@@ -1693,6 +1846,20 @@ _update_project() {
     # --news mode: skip discovery for projects
     [[ "$cmd_mode" == "news" ]] && return 0
 
+    # ── Source-aware sync (Phase 2) ──────────────────────────────────
+    # For installed projects with --sync (without --local), skip opinionated
+    # files and delegate to the publisher chain.
+    if [[ "$is_installed" == "true" && "$cmd_mode" == "sync" && "$local_override" != "true" ]]; then
+        if [[ "$is_installed" == "true" ]]; then
+            echo ""
+            info "Project '$pname' is installed from $source_display."
+            info "Framework opinionated updates are managed by the publisher."
+            info "  -> Run 'cco project update $pname' to check for publisher updates."
+            info "  -> Use '--local' to apply framework defaults directly."
+        fi
+        return 0
+    fi
+
     # Phase 2: COLLECT — detect file changes
     local changes
     changes=$(_collect_file_changes "$defaults_dir" "$installed_dir" "$base_dir" "project")
@@ -1711,17 +1878,59 @@ _update_project() {
         fi
     done
 
-    if [[ $actionable -eq 0 && $pending_migrations -eq 0 && ${#root_missing[@]} -eq 0 ]]; then
+    # ── Remote discovery ─────────────────────────────────────────────
+    # In discovery mode, check remote sources for installed projects
+    local remote_status=""
+    if [[ "$is_installed" == "true" && "$offline_mode" != "true" && "$cmd_mode" == "discovery" ]]; then
+        local source_file
+        source_file=$(_cco_project_source "$project_dir")
+        remote_status=$(_check_remote_update "$source_file" "$meta_file" "$cache_mode")
+    fi
+
+    # Also count framework changes for installed projects (informational)
+    local fw_actionable=0
+    if [[ "$is_installed" == "true" && $actionable -gt 0 ]]; then
+        fw_actionable=$actionable
+        # In discovery mode for installed projects, framework changes are informational
+        # (managed by publisher), so don't count them as actionable for the "up to date" check
+    fi
+
+    if [[ $actionable -eq 0 && $pending_migrations -eq 0 && ${#root_missing[@]} -eq 0 && -z "$remote_status" ]]; then
         ok "Project '$pname' config is up to date."
         return 0
     fi
 
     local scope_label="Project '$pname'"
+    if [[ "$is_installed" == "true" ]]; then
+        scope_label="Project '$pname' (from $source_display)"
+    fi
 
     # Phase 3: Route based on cmd_mode
     case "$cmd_mode" in
         discovery)
-            _show_discovery_summary "$changes" "$scope_label"
+            if [[ "$is_installed" == "true" ]]; then
+                # For installed projects, show remote status prominently
+                case "$remote_status" in
+                    update_available)
+                        info "  Publisher update available"
+                        info "    -> run 'cco project update $pname' to review"
+                        ;;
+                    unknown)
+                        info "  Version tracking not initialized — run 'cco project update $pname' to check"
+                        ;;
+                    unreachable)
+                        warn "  Remote unreachable — skipping remote check"
+                        ;;
+                    up_to_date)
+                        ok "  Publisher version: up to date"
+                        ;;
+                esac
+                if [[ $fw_actionable -gt 0 ]]; then
+                    info "  $fw_actionable framework default(s) also updated (managed by publisher)"
+                fi
+            else
+                _show_discovery_summary "$changes" "$scope_label"
+            fi
             ;;
         diff)
             _show_file_diffs "$changes" "$defaults_dir" "$installed_dir" "$base_dir" "$scope_label"
@@ -1730,6 +1939,10 @@ _update_project() {
             if [[ "$dry_run" == "true" ]]; then
                 _show_discovery_summary "$changes" "$scope_label"
             else
+                if [[ "$is_installed" == "true" && "$local_override" == "true" ]]; then
+                    info "Applying framework defaults directly (--local escape hatch)."
+                    yml_set "$meta_file" "local_framework_override" "true"
+                fi
                 _interactive_sync "$changes" "$defaults_dir" "$installed_dir" "$base_dir" "$no_backup" "$auto_action" "$scope_label"
             fi
             ;;
@@ -1768,7 +1981,7 @@ _update_project() {
             [[ -n "$tmpl_val" ]] && tmpl_name="$tmpl_val"
         else
             local source_file
-            source_file=$(_cco_pack_source "$project_dir")
+            source_file=$(_cco_project_source "$project_dir")
             if [[ -f "$source_file" ]]; then
                 local src_line
                 src_line=$(head -1 "$source_file")

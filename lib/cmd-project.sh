@@ -632,6 +632,24 @@ EOF
     mkdir -p "$target_dir/.cco/claude-state"
     mkdir -p "$target_dir/memory"
 
+    # Write .cco/source with remote origin metadata
+    local install_commit=""
+    install_commit=$(git -C "$tmpdir" rev-parse HEAD 2>/dev/null) || true
+    {
+        printf 'source: %s\n' "$url"
+        printf 'path: templates/%s\n' "$pick"
+        [[ -n "$ref" ]] && printf 'ref: %s\n' "$ref"
+        printf 'installed: %s\n' "$(date +%Y-%m-%d)"
+        [[ -n "$install_commit" ]] && printf 'commit: %s\n' "$install_commit"
+    } > "$target_dir/.cco/source"
+
+    # Save base versions from remote template (for future 3-way merge)
+    local project_base_dir="$target_dir/.cco/base"
+    mkdir -p "$project_base_dir"
+    if [[ -d "$template_dir/.claude" ]]; then
+        _save_all_base_versions "$project_base_dir" "$template_dir/.claude" "project"
+    fi
+
     _cleanup_clone "$tmpdir"
     trap - EXIT
 
@@ -967,7 +985,7 @@ _project_yml_remove_pack() {
 
 cmd_project_publish() {
     local name="" remote_arg="" message="" dry_run=false force=false
-    local token="" include_packs=true
+    local token="" include_packs=true yes_mode=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -976,6 +994,7 @@ cmd_project_publish() {
                 message="$2"; shift 2 ;;
             --dry-run)        dry_run=true; shift ;;
             --force)          force=true; shift ;;
+            --yes)            yes_mode=true; shift ;;
             --token)
                 [[ -z "${2:-}" ]] && die "--token requires a value"
                 token="$2"; shift 2 ;;
@@ -984,7 +1003,8 @@ cmd_project_publish() {
                 cat <<'EOF'
 Usage: cco project publish <name> [<remote>] [OPTIONS]
 
-Publish a project template to a remote Config Repo.
+Publish a project template to a remote Config Repo with safety checks:
+migration validation, secret scan, framework alignment, and diff review.
 
 Arguments:
   <name>             Project to publish
@@ -994,6 +1014,7 @@ Options:
   --message <msg>    Commit message (default: "publish project <name>")
   --dry-run          Show what would be published, don't push
   --force            Overwrite remote version without confirmation
+  --yes              Skip interactive prompts (safety checks still apply)
   --no-packs         Don't bundle project's packs
   --token <token>    Auth token for HTTPS remotes
 EOF
@@ -1043,6 +1064,85 @@ EOF
     fi
 
     [[ -z "$message" ]] && message="publish project $name"
+
+    # ── Pre-publish safety pipeline ──────────────────────────────────
+
+    # STEP 1: MIGRATION CHECK (blocking)
+    # Only block publish if project has been through the update system and has
+    # pending migrations. Projects with schema_version matching latest are current.
+    # Projects without .cco/meta or with uninitialized schema (0) are not checked.
+    local meta_file
+    meta_file=$(_cco_project_meta "$project_dir")
+    if [[ -f "$meta_file" ]]; then
+        local current_schema
+        current_schema=$(_read_cco_meta "$meta_file")
+        local latest_schema
+        latest_schema=$(_latest_schema_version "project")
+        # Check if project was created by current system (has created_at or template field)
+        # and has fallen behind on migrations
+        if [[ "$current_schema" -gt 0 ]]; then
+            local has_created_at=""
+            has_created_at=$(grep -c "^created_at:" "$meta_file" 2>/dev/null) || true
+            if [[ "${has_created_at:-0}" -gt 0 && "$current_schema" -lt "$latest_schema" ]]; then
+                error "Project '$name' has pending migrations (schema: $current_schema, latest: $latest_schema)."
+                die "Run 'cco update' first to apply migrations."
+            fi
+        fi
+    fi
+
+    # STEP 2: FRAMEWORK ALIGNMENT CHECK (warning)
+    local defaults_dir
+    defaults_dir=$(_resolve_project_defaults_dir "$project_dir")
+    local base_dir
+    base_dir=$(_cco_project_base_dir "$project_dir")
+    local fw_changes
+    fw_changes=$(_collect_file_changes "$defaults_dir" "$project_dir/.claude" "$base_dir" "project")
+    local fw_actionable
+    fw_actionable=$(echo "$fw_changes" | grep -cvE '^(NO_UPDATE|USER_MODIFIED|$)' || true)
+
+    if [[ $fw_actionable -gt 0 ]]; then
+        warn "$fw_actionable framework default(s) have updates not yet applied."
+        warn "Run 'cco update --sync $name' to review before publishing."
+        if [[ "$yes_mode" != "true" && -t 0 ]]; then
+            printf "Continue anyway? [y/N] " >&2
+            local reply
+            read -r reply < /dev/tty
+            [[ ! "$reply" =~ ^[Yy]$ ]] && die "Aborted."
+        fi
+    fi
+
+    # STEP 3: SECRET SCAN (blocking)
+    # Scan only files that would actually be published (exclude .cco, memory,
+    # secrets.env, and publish-ignore patterns — same as _copy_project_for_publish)
+    local -a secret_hits=()
+    local -a publish_excludes=(".cco" "memory" "secrets.env")
+    local publish_dir="$project_dir/.claude"
+    if [[ -d "$publish_dir" ]]; then
+        while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+            # Skip files inside .cco/ directories
+            [[ "$file" == */.cco/* ]] && continue
+            local base_name
+            base_name=$(basename "$file")
+            for pattern in '*.env' '*.key' '*.pem' '.credentials.json'; do
+                case "$base_name" in
+                    $pattern)
+                        local rel="${file#$project_dir/}"
+                        secret_hits+=("$rel")
+                        break
+                        ;;
+                esac
+            done
+        done < <(find "$publish_dir" -type f 2>/dev/null)
+    fi
+
+    if [[ ${#secret_hits[@]} -gt 0 ]]; then
+        error "Potential secrets detected in publishable files:"
+        for f in "${secret_hits[@]}"; do
+            error "  - $f"
+        done
+        die "Remove secrets or add patterns to .cco/publish-ignore"
+    fi
 
     info "Publishing project '$name' to $remote_url..."
 
@@ -1113,11 +1213,21 @@ EOF
     # Commit and push
     git -C "$tmpdir" add -A
     git -C "$tmpdir" commit -q -m "$message"
+    local publish_commit
+    publish_commit=$(git -C "$tmpdir" rev-parse HEAD 2>/dev/null) || true
     git -C "$tmpdir" push origin HEAD >/dev/null 2>&1 \
         || { _cleanup_clone "$tmpdir"; die "Failed to push to $remote_url"; }
 
     _cleanup_clone "$tmpdir"
     trap - EXIT
+
+    # Update publish metadata in .cco/source
+    local source_file
+    source_file=$(_cco_project_source "$project_dir")
+    if [[ -f "$source_file" ]]; then
+        yml_set "$source_file" "published" "$(date +%Y-%m-%d)"
+        [[ -n "$publish_commit" ]] && yml_set "$source_file" "publish_commit" "$publish_commit"
+    fi
 
     local summary="Published project '$name'"
     if [[ ${#published_packs[@]} -gt 0 ]]; then
@@ -1127,6 +1237,7 @@ EOF
 }
 
 # Copy project files for publishing, excluding runtime/generated files.
+# Reads .cco/publish-ignore for additional exclusion patterns.
 _copy_project_for_publish() {
     local src="$1" dst="$2"
 
@@ -1136,6 +1247,17 @@ _copy_project_for_publish() {
         "memory"
         "secrets.env"
     )
+
+    # Read .cco/publish-ignore patterns
+    local -a ignore_patterns=()
+    local ignore_file="$src/.cco/publish-ignore"
+    if [[ -f "$ignore_file" ]]; then
+        while IFS= read -r line; do
+            # Skip comments and empty lines
+            [[ -z "$line" || "$line" == \#* ]] && continue
+            ignore_patterns+=("$line")
+        done < "$ignore_file"
+    fi
 
     # Build rsync-like exclusion via find + copy
     find "$src" -mindepth 1 -maxdepth 1 | while IFS= read -r item; do
@@ -1151,6 +1273,16 @@ _copy_project_for_publish() {
 
     # Remove nested .cco/ directories that were copied inside .claude/
     find "$dst" -mindepth 2 -name ".cco" -type d -exec rm -rf {} + 2>/dev/null || true
+
+    # Apply publish-ignore patterns
+    if [[ ${#ignore_patterns[@]} -gt 0 ]]; then
+        local pattern
+        for pattern in "${ignore_patterns[@]}"; do
+            # Use find with -name or -path for glob matching
+            find "$dst" -name "$pattern" -exec rm -rf {} + 2>/dev/null || true
+            find "$dst" -path "*/$pattern" -exec rm -rf {} + 2>/dev/null || true
+        done
+    fi
 }
 
 # Reverse-template repo paths: replace local paths with {{REPO_NAME}} variables
@@ -1231,7 +1363,7 @@ _publish_pack_to_tmpdir() {
     rm -rf "$tmpdir/packs/$pack_name/.cco"
 
     # Internalize if source-referencing
-    local k_source
+    local k_source=""
     k_source=$(yml_get_pack_knowledge_source "$tmpdir/packs/$pack_name/pack.yml")
     if [[ -n "$k_source" ]]; then
         local expanded_source
@@ -1259,4 +1391,278 @@ _publish_pack_to_tmpdir() {
             mv "$tmpf" "$tmpdir/packs/$pack_name/pack.yml"
         fi
     fi
+}
+
+# ── Project Update from Remote ────────────────────────────────────────
+
+cmd_project_update() {
+    local name="" force=false dry_run=false update_all=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --all)     update_all=true; shift ;;
+            --force)   force=true; shift ;;
+            --dry-run) dry_run=true; shift ;;
+            --help)
+                cat <<'EOF'
+Usage: cco project update <name> [--force] [--dry-run]
+       cco project update --all [--dry-run]
+
+Check for and apply updates from the remote source of an installed project.
+Uses 3-way merge to preserve your local customizations.
+
+Options:
+  --all       Update all installed projects
+  --force     Replace all files without interactive merge (.bak saved)
+  --dry-run   Show what would change without modifying files
+EOF
+                return 0
+                ;;
+            -*)  die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$name" ]]; then
+                    name="$1"; shift
+                else
+                    die "Unexpected argument: $1"
+                fi
+                ;;
+        esac
+    done
+
+    check_global
+
+    if $update_all; then
+        local updated=0
+        for project_dir in "$PROJECTS_DIR"/*/; do
+            [[ ! -d "$project_dir" ]] && continue
+            [[ ! -f "$project_dir/project.yml" ]] && continue
+            if _is_installed_project "$project_dir"; then
+                local proj_name
+                proj_name=$(basename "$project_dir")
+                info "Checking project '$proj_name'..."
+                _update_single_project "$proj_name" "$force" "$dry_run"
+                updated=$((updated + 1))
+            fi
+        done
+        if [[ $updated -eq 0 ]]; then
+            info "No projects with remote sources found."
+        fi
+        return 0
+    fi
+
+    [[ -z "$name" ]] && die "Usage: cco project update <name> [--force] [--dry-run]"
+    [[ ! -d "$PROJECTS_DIR/$name" ]] && die "Project '$name' not found."
+
+    _update_single_project "$name" "$force" "$dry_run"
+}
+
+_update_single_project() {
+    local name="$1"
+    local force="${2:-false}"
+    local dry_run="${3:-false}"
+
+    local project_dir="$PROJECTS_DIR/$name"
+    local source_file
+    source_file=$(_cco_project_source "$project_dir")
+
+    if ! _is_installed_project "$project_dir"; then
+        die "Project '$name' is local — no remote source to update from. Use 'cco update --sync $name' for framework updates."
+    fi
+
+    local source_url="$_INSTALLED_SOURCE_URL"
+    local source_ref="$_INSTALLED_SOURCE_REF"
+    local source_path="$_INSTALLED_SOURCE_PATH"
+    local installed_commit="$_INSTALLED_SOURCE_COMMIT"
+
+    # Vault snapshot offer
+    if [[ -d "$USER_CONFIG_DIR/.git" && "$dry_run" != "true" ]]; then
+        if [[ -t 0 ]]; then
+            printf "Create vault snapshot before updating? [Y/n] " >&2
+            local reply
+            read -r reply < /dev/tty
+            if [[ ! "$reply" =~ ^[Nn]$ ]]; then
+                (cd "$USER_CONFIG_DIR" && git add -A && git commit -q -m "vault: snapshot before project update ($name)" 2>/dev/null) || true
+                ok "Vault snapshot created."
+            fi
+        fi
+    fi
+
+    # Auto-resolve token from registered remote
+    local token=""
+    token=$(remote_resolve_token_for_url "$source_url" 2>/dev/null) || true
+
+    info "Fetching $source_url${source_ref:+ (ref: $source_ref)}..."
+    local tmpdir
+    tmpdir=$(_clone_config_repo "$source_url" "$source_ref" "$token")
+    trap "_cleanup_clone '$tmpdir'" EXIT
+
+    # Compare versions
+    local remote_head
+    remote_head=$(git -C "$tmpdir" rev-parse HEAD 2>/dev/null) || true
+    if [[ -n "$installed_commit" && "$remote_head" == "$installed_commit" ]]; then
+        ok "Project '$name' is already up to date."
+        _cleanup_clone "$tmpdir"
+        trap - EXIT
+        return 0
+    fi
+
+    # Locate remote project directory
+    local remote_dir="$tmpdir"
+    if [[ -n "$source_path" ]]; then
+        remote_dir="$tmpdir/$source_path"
+    fi
+
+    if [[ ! -d "$remote_dir" ]]; then
+        _cleanup_clone "$tmpdir"
+        trap - EXIT
+        die "Remote path '$source_path' not found in cloned repo."
+    fi
+
+    # Resolve template variables in fetched version (same as install)
+    _resolve_template_vars "$remote_dir" "$name" "PROJECT_NAME=$name" 2>/dev/null || true
+
+    # Set up paths for 3-way merge
+    local installed_dir="$project_dir/.claude"
+    local base_dir
+    base_dir=$(_cco_project_base_dir "$project_dir")
+    local remote_claude_dir="$remote_dir/.claude"
+
+    if [[ ! -d "$remote_claude_dir" ]]; then
+        warn "No .claude/ directory in remote project template."
+        _cleanup_clone "$tmpdir"
+        trap - EXIT
+        return 0
+    fi
+
+    # Collect file changes (3-way: remote vs base vs installed)
+    local changes
+    changes=$(_collect_file_changes "$remote_claude_dir" "$installed_dir" "$base_dir" "project")
+
+    local actionable
+    actionable=$(echo "$changes" | grep -cvE '^(NO_UPDATE|USER_MODIFIED|$)' || true)
+
+    if [[ $actionable -eq 0 ]]; then
+        ok "Project '$name' files are up to date (remote has same content)."
+        # Still update metadata (commit hash may differ)
+    else
+        local scope_label="Project '$name' (publisher update)"
+        if [[ "$dry_run" == "true" ]]; then
+            _show_discovery_summary "$changes" "$scope_label"
+            _cleanup_clone "$tmpdir"
+            trap - EXIT
+            return 0
+        fi
+
+        local auto_action=""
+        [[ "$force" == "true" ]] && auto_action="replace"
+
+        _interactive_sync "$changes" "$remote_claude_dir" "$installed_dir" "$base_dir" "false" "$auto_action" "$scope_label"
+    fi
+
+    # Update .cco/base/ to new remote version (for future merges)
+    if [[ "$dry_run" != "true" ]]; then
+        _save_all_base_versions "$base_dir" "$remote_claude_dir" "project"
+
+        # Update .cco/source metadata
+        yml_set "$source_file" "commit" "$remote_head"
+        yml_set "$source_file" "updated" "$(date +%Y-%m-%d)"
+
+        # Read version field if publisher provides one
+        if [[ -f "$remote_dir/.cco/source" ]]; then
+            local new_version
+            new_version=$(yml_get "$remote_dir/.cco/source" "version" 2>/dev/null)
+            [[ -n "$new_version" ]] && yml_set "$source_file" "version" "$new_version"
+        fi
+
+        # Update remote cache in .cco/meta
+        local meta_file
+        meta_file=$(_cco_project_meta "$project_dir")
+        yml_set "$meta_file" "remote_cache.commit" "$remote_head"
+        yml_set "$meta_file" "remote_cache.checked" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+        local short_old="${installed_commit:0:7}"
+        local short_new="${remote_head:0:7}"
+        [[ -z "$short_old" ]] && short_old="unknown"
+        ok "Updated project '$name' (${short_old} -> ${short_new})"
+    fi
+
+    _cleanup_clone "$tmpdir"
+    trap - EXIT
+}
+
+# ── Project Internalize ───────────────────────────────────────────────
+
+cmd_project_internalize() {
+    local name=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --help)
+                cat <<'EOF'
+Usage: cco project internalize <name>
+
+Disconnect a project from its remote source, converting it to a local project.
+After internalizing, framework updates apply directly via 'cco update --sync'.
+EOF
+                return 0
+                ;;
+            -*)  die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$name" ]]; then
+                    name="$1"; shift
+                else
+                    die "Unexpected argument: $1"
+                fi
+                ;;
+        esac
+    done
+
+    [[ -z "$name" ]] && die "Usage: cco project internalize <name>"
+
+    local project_dir="$PROJECTS_DIR/$name"
+    [[ ! -d "$project_dir" ]] && die "Project '$name' not found."
+
+    if ! _is_installed_project "$project_dir"; then
+        ok "Project '$name' is already local."
+        return 0
+    fi
+
+    local source_url="$_INSTALLED_SOURCE_URL"
+
+    # Confirm
+    if [[ -t 0 ]]; then
+        printf "This will disconnect '%s' from %s.\n" "$name" "$source_url" >&2
+        printf "You will no longer receive publisher updates.\n" >&2
+        printf "Framework updates will apply directly via 'cco update --sync'.\n" >&2
+        printf "Continue? [y/N] " >&2
+        local reply
+        read -r reply < /dev/tty
+        [[ ! "$reply" =~ ^[Yy]$ ]] && die "Aborted."
+    fi
+
+    local source_file
+    source_file=$(_cco_project_source "$project_dir")
+
+    # Update .cco/source
+    {
+        printf '# Previously installed from: %s\n' "$source_url"
+        printf 'source: local\n'
+    } > "$source_file"
+
+    # Update .cco/base/ to framework base template (for future cco update --sync)
+    local base_dir
+    base_dir=$(_cco_project_base_dir "$project_dir")
+    rm -rf "$base_dir"
+    mkdir -p "$base_dir"
+    _save_all_base_versions "$base_dir" "$NATIVE_TEMPLATES_DIR/project/base/.claude" "project"
+
+    # Clear remote cache and override marker from .cco/meta
+    local meta_file
+    meta_file=$(_cco_project_meta "$project_dir")
+    if [[ -f "$meta_file" ]]; then
+        yml_remove "$meta_file" "remote_cache"
+        yml_remove "$meta_file" "local_framework_override"
+    fi
+
+    ok "Project '$name' is now local. Framework updates will apply directly via 'cco update --sync'."
 }

@@ -119,7 +119,9 @@ Usage: cco project <command> [options]
 Commands:
   create <name>          Create a new project from template
   install <url>          Install project template from a remote Config Repo
+  update <name>          Update an installed project from its remote source
   publish <name> <remote> Publish project as template to a Config Repo
+  internalize <name>     Disconnect from remote source, convert to local
   add-pack <proj> <pack> Add a knowledge pack to a project
   remove-pack <p> <pack> Remove a knowledge pack from a project
   list                   List available projects with status
@@ -134,7 +136,9 @@ EOF
         case "$subcmd" in
             create)      cmd_project_create "$@" ;;
             install)     cmd_project_install "$@" ;;
+            update)      cmd_project_update "$@" ;;
             publish)     cmd_project_publish "$@" ;;
+            internalize) cmd_project_internalize "$@" ;;
             add-pack)    cmd_project_add_pack "$@" ;;
             remove-pack) cmd_project_remove_pack "$@" ;;
             list)        cmd_project_list "$@" ;;

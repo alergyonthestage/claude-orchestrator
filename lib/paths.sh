@@ -4,7 +4,8 @@
 # Provides: _cco_remotes_file(), _cco_global_meta(), _cco_global_base_dir(),
 #           _cco_project_meta(), _cco_project_base_dir(), _cco_project_managed(),
 #           _cco_project_compose(), _cco_project_claude_state(),
-#           _cco_project_pack_manifest(), _cco_pack_source(), _cco_pack_install_tmp()
+#           _cco_project_pack_manifest(), _cco_project_source(),
+#           _cco_pack_source(), _cco_pack_install_tmp()
 # Dependencies: none
 # Globals: USER_CONFIG_DIR, GLOBAL_DIR
 
@@ -103,6 +104,15 @@ _cco_project_pack_manifest() {
 # ── Pack scope ($1 = pack_dir) ──────────────────────────────────────
 
 _cco_pack_source() {
+    local new="$1/.cco/source"
+    local old="$1/.cco-source"
+    if [[ -f "$new" ]]; then echo "$new"
+    elif [[ -f "$old" ]]; then echo "$old"
+    else echo "$new"
+    fi
+}
+
+_cco_project_source() {
     local new="$1/.cco/source"
     local old="$1/.cco-source"
     if [[ -f "$new" ]]; then echo "$new"

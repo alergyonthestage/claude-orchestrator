@@ -1,13 +1,77 @@
 #!/usr/bin/env bash
 # lib/yaml.sh — Simple YAML parsers for project.yml and pack.yml
 #
-# Provides: _parse_bool(), yml_get(), yml_get_list(), yml_get_repos(),
+# Provides: yml_set(), yml_remove(), _parse_bool(),
+#           yml_get(), yml_get_list(), yml_get_repos(),
 #           yml_get_ports(), yml_get_env(), yml_get_extra_mounts(),
 #           yml_get_packs(), yml_get_pack_knowledge_source(),
 #           yml_get_pack_knowledge_files(), yml_get_pack_skills(),
 #           yml_get_pack_agents(), yml_get_pack_rules()
 # Dependencies: colors.sh (warn)
 # Globals: none
+
+# Set a top-level key: value in a YAML file.
+# Updates the value if the key exists, appends if it doesn't.
+# For nested keys (e.g., "remote_cache.commit"), creates the parent block if needed.
+# Usage: yml_set <file> <key> <value>
+yml_set() {
+    local file="$1"
+    local key="$2"
+    local value="$3"
+
+    if [[ "$key" == *.* ]]; then
+        local parent="${key%%.*}"
+        local child="${key#*.}"
+        if grep -q "^${parent}:" "$file" 2>/dev/null; then
+            # Parent exists — check if child exists under it
+            if awk -v p="$parent" -v c="$child" '
+                $0 ~ "^"p":" { in_block=1; next }
+                in_block && /^[^ ]/ { exit 1 }
+                in_block && $0 ~ "^  "c":" { found=1; exit 0 }
+                END { exit (found ? 0 : 1) }
+            ' "$file" 2>/dev/null; then
+                # Child exists — update in place
+                sed -i '' "s|^  ${child}: .*|  ${child}: ${value}|" "$file" 2>/dev/null || \
+                    sed -i "s|^  ${child}: .*|  ${child}: ${value}|" "$file"
+            else
+                # Child doesn't exist — append under parent
+                sed -i '' "/^${parent}:/a\\
+  ${child}: ${value}" "$file" 2>/dev/null || \
+                    sed -i "/^${parent}:/a\\  ${child}: ${value}" "$file"
+            fi
+        else
+            # Parent doesn't exist — create block
+            printf '%s:\n  %s: %s\n' "$parent" "$child" "$value" >> "$file"
+        fi
+    else
+        # Top-level key
+        if grep -q "^${key}:" "$file" 2>/dev/null; then
+            sed -i '' "s|^${key}: .*|${key}: ${value}|" "$file" 2>/dev/null || \
+                sed -i "s|^${key}: .*|${key}: ${value}|" "$file"
+        else
+            printf '%s: %s\n' "$key" "$value" >> "$file"
+        fi
+    fi
+}
+
+# Remove a top-level key (and its nested block if any) from a YAML file.
+# Usage: yml_remove <file> <key>
+yml_remove() {
+    local file="$1"
+    local key="$2"
+
+    [[ ! -f "$file" ]] && return 0
+
+    local tmpf
+    tmpf=$(mktemp)
+    awk -v key="$key" '
+        $0 ~ "^"key":" { in_block=1; next }
+        in_block && /^  / { next }
+        in_block { in_block=0 }
+        { print }
+    ' "$file" > "$tmpf"
+    mv "$tmpf" "$file"
+}
 
 # Parse a YAML boolean value into canonical "true" or "false".
 # Trims whitespace, normalizes case, accepts YAML standard variants.
