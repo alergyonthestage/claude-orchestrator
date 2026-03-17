@@ -34,6 +34,13 @@ projects/*/.claude/.cco/pack-manifest
 # Pack install temporary files
 packs/*/.cco/install-tmp/
 
+# Update sync artifacts — temporary review files
+*.bak
+*.new
+
+# Internal tutorial runtime state
+.cco/internal/
+
 # Machine-specific remote config
 .cco/remotes
 '

@@ -51,3 +51,38 @@ entries:
       directories. Your project root shows only files you edit: project.yml,
       .claude/, memory/, setup.sh. Existing installations are migrated
       automatically by `cco update` (migration 009). No action needed.
+
+  - id: 4
+    date: "2026-03-17"
+    type: additive
+    title: "Built-in tutorial — always up to date"
+    description: >
+      The tutorial is now built into the framework. Run `cco start tutorial`
+      directly — no installation needed, always reflects the current framework
+      version. Existing tutorial projects in user-config are detected by
+      `cco update` (migration 010) with an option to remove them.
+      For config editing capabilities, use the new config-editor template:
+      `cco project create my-editor --template config-editor`.
+
+  - id: 5
+    date: "2026-03-17"
+    type: additive
+    title: "Config-editor project template"
+    description: >
+      New native template for editing your cco configuration directly. Mounts
+      user-config as a read-write repository with skills for assisted project
+      and pack creation. Includes safety rules for vault awareness and
+      protected paths. Create with:
+      `cco project create my-editor --template config-editor`.
+
+  - id: 6
+    date: "2026-03-17"
+    type: additive
+    title: "New-file sync option and improved update detection"
+    description: >
+      `cco update --sync` now offers a (N)ew-file option when merging
+      conflicting files. Instead of 3-way merge, it saves the framework
+      version as `.new` alongside your file for manual review — recommended
+      when you've restructured a file significantly. Also, project CLAUDE.md
+      is now tracked for updates (previously silent). Run `cco clean --new`
+      to remove .new files after review.

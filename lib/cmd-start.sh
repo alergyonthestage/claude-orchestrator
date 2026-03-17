@@ -21,12 +21,14 @@ _setup_internal_tutorial() {
 
     # Always refresh content from framework source (ensures tutorial is current)
     rm -rf "$runtime_dir/.claude"
-    cp -r "$source_dir/.claude" "$runtime_dir/.claude"
+    cp -r "$source_dir/.claude" "$runtime_dir/.claude" \
+        || die "Failed to refresh tutorial content from $source_dir. Check permissions and disk space."
 
     # Refresh project.yml with path substitution
     sed -e "s|{{CCO_REPO_ROOT}}|$REPO_ROOT|g" \
         -e "s|{{CCO_USER_CONFIG_DIR}}|$USER_CONFIG_DIR|g" \
-        "$source_dir/project.yml" > "$runtime_dir/project.yml"
+        "$source_dir/project.yml" > "$runtime_dir/project.yml" \
+        || die "Failed to generate tutorial project.yml"
 
     # Copy setup.sh if present
     if [[ -f "$source_dir/setup.sh" ]]; then

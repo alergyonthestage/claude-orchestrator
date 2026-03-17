@@ -7,6 +7,10 @@ repos:
   - path: {{CCO_USER_CONFIG_DIR}}
     name: user-config
 
+# ── Knowledge Packs (optional) ───────────────────────────────────────
+# packs:
+#   - my-pack
+
 # ── Documentation ───────────────────────────────────────────────────
 # cco documentation mounted read-only for accurate reference.
 extra_mounts:
