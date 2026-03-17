@@ -1,8 +1,9 @@
 # Sharing & Backup
 
-> Back up your configuration, sync across machines, and share packs with your team.
+> Back up your configuration, sync across machines, share packs with your team,
+> and receive updates from publishers.
 >
-> Related: [cli.md](../reference/cli.md) | [project-setup.md](./project-setup.md) | [knowledge-packs.md](./knowledge-packs.md) | [Config Repo Design](../maintainer/configuration/sharing/design.md)
+> Related: [cli.md](../reference/cli.md) | [project-setup.md](./project-setup.md) | [knowledge-packs.md](./knowledge-packs.md) | [config-lifecycle.md](./config-lifecycle.md) | [Config Repo Design](../maintainer/configuration/sharing/design.md)
 
 ---
 
@@ -376,7 +377,122 @@ cco project install https://github.com/acme/cco-config --pick acme-service --for
 
 ---
 
-## 8. Vault Commands Reference
+## 8. Updating Installed Projects
+
+Projects installed from a Config Repo maintain a connection to their source
+via `.cco/source` metadata. When the publisher releases updates, you can
+fetch and merge them while preserving your local customizations.
+
+### Check for updates
+
+```bash
+cco update
+```
+
+The unified discovery shows available updates from all sources — framework
+defaults AND remote publishers. Installed projects are labeled with their
+source and update status.
+
+### Apply publisher updates
+
+```bash
+cco project update team-service
+```
+
+This fetches the latest version from the publisher's Config Repo and offers
+an interactive 3-way merge. Your local customizations are preserved:
+
+- **Base**: publisher's version at install time (stored in `.cco/base/`)
+- **Theirs**: publisher's new version (fetched from remote)
+- **Yours**: your installed files (with customizations)
+
+Per-file options: (A)pply, (M)erge 3-way, (R)eplace+.bak, (K)eep, (S)kip,
+(N)ew-file, (D)iff.
+
+### Update all installed projects
+
+```bash
+cco project update --all
+```
+
+### Preview changes without applying
+
+```bash
+cco project update team-service --dry-run
+```
+
+### Framework updates on installed projects
+
+For installed projects, framework defaults (rules, skills, agents) are managed
+by the publisher. When the framework updates its defaults, the publisher
+integrates the changes and publishes a new version. You receive them via
+`cco project update`.
+
+If the publisher is slow or inactive, you can apply framework defaults directly:
+
+```bash
+cco update --sync team-service --local
+```
+
+This is an escape hatch — it bypasses the publisher chain. Your local changes
+from `--local` are treated as customizations during future publisher updates.
+
+### Disconnect from remote (internalize)
+
+To permanently disconnect a project from its publisher:
+
+```bash
+cco project internalize team-service
+```
+
+After internalizing:
+- The project becomes fully local
+- Framework updates apply directly via `cco update --sync`
+- Publisher updates are no longer available
+- Your customizations are preserved
+
+Use this when the publisher is inactive, you want to diverge permanently,
+or you installed the project as a starting point rather than for ongoing sync.
+
+---
+
+## 9. Publishing Projects
+
+When you publish a project, CCO runs a safety pipeline before pushing:
+
+1. **Migration check**: your project must be on the latest schema version
+2. **Framework alignment**: warns if framework defaults have pending updates
+3. **Secret scan**: blocks if secrets are detected (filenames AND content patterns)
+4. **Publish-ignore**: excludes files matching `.cco/publish-ignore` patterns
+5. **Diff review**: shows per-file changes vs last published version
+6. **Per-file confirmation**: choose to publish or skip each changed file
+
+```bash
+cco project publish my-project team-remote
+```
+
+### Excluding files from publish
+
+Create `.cco/publish-ignore` in your project (gitignore syntax):
+
+```
+# Personal notes
+.claude/rules/local-*.md
+*.draft
+```
+
+### Non-interactive publish
+
+```bash
+cco project publish my-project team-remote --yes
+```
+
+The `--yes` flag skips interactive prompts but migration and secret checks
+still block if issues are found.
+
+---
+
+## 10. Vault Commands Reference
 
 | Command | Description |
 |---------|-------------|
@@ -407,7 +523,7 @@ cco project install https://github.com/acme/cco-config --pick acme-service --for
 
 ---
 
-## 9. Multi-Machine Workflow
+## 11. Multi-Machine Workflow
 
 ### Machine A — Set up and push
 
@@ -523,7 +639,7 @@ Each person's vault tracks where each pack was installed from via the `.cco/sour
 
 ---
 
-## 10. manifest.yml Format
+## 12. manifest.yml Format
 
 The `manifest.yml` manifest is auto-generated and maintained by CCO. You can edit the `name`, `description`, and per-entry `description`/`tags` fields — they are preserved across `cco manifest refresh` runs.
 

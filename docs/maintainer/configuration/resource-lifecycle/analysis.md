@@ -526,58 +526,40 @@ internal mechanism.
 
 ---
 
-## 6. Foundations for FI-7 (Publish/Install Sync)
+## 6. FI-7 (Publish/Install Sync) — Implemented
 
-### 6.1 What Already Exists
+> FI-7 has been implemented. This section documents the foundations that were
+> established by this analysis and then built upon.
+> See [FI-7 design](../publish-install-sync/design.md) for full details.
+
+### 6.1 Foundations Established by This Analysis
 
 1. **`.cco/source`**: Records origin URL, path, ref, install/update dates
 2. **`.cco/base/`**: Stores last-seen version for 3-way merge
 3. **`_collect_file_changes()`**: Generic diff engine (works on any source/target)
-4. **`_interactive_sync()`**: Interactive merge UI (Apply/Merge/Replace/Keep/Skip)
+4. **`_interactive_sync()`**: Interactive merge UI (Apply/Merge/Replace/Keep/Skip/New)
 5. **`cco pack update`**: Full-replace update from remote (for packs)
 
-### 6.2 What's Missing for FI-7
+### 6.2 What FI-7 Added
 
-1. **Remote version check**: Read `.cco/source`, fetch remote HEAD hash,
-   compare with installed version hash. Determine if update available.
+1. **Remote version check** (`_check_remote_update()`): reads `.cco/source`,
+   uses `git ls-remote` for lightweight HEAD hash comparison, with 1-hour cache
+2. **`cco project update <name>`**: 3-way merge from remote source, preserves
+   consumer customizations
+3. **Unified discovery**: `cco update` reports framework + remote updates in one view
+4. **Source-aware sync**: `cco update --sync` skips opinionated files on installed
+   projects; `--local` as escape hatch
+5. **Publish safety pipeline**: migration check, secret scan (filename + content),
+   `.cco/publish-ignore`, diff review, per-file confirmation
+6. **`cco project internalize`**: disconnects from remote, converts to local
+7. **Version metadata**: `commit`, `version`, `published`, `publish_commit` in `.cco/source`
 
-2. **`cco project update <name>`**: Like `cco pack update` but with 3-way
-   merge instead of full-replace (projects have user modifications).
+### 6.3 Design Decisions Resolved by FI-7
 
-3. **Discovery integration**: `cco update` should check `.cco/source` for
-   all installed resources and report available updates from remotes. This
-   requires network access (sparse git fetch), so it should be opt-in or
-   cached.
-
-4. **Version metadata**: Optional `version:` field in template/pack metadata
-   for human-readable version tracking. Git commit hashes provide precise
-   comparison; version labels provide user communication.
-
-5. **Publish safety**: Before `cco project publish`, diff the local project
-   against the remote version to detect accidental inclusion of local-only
-   changes (personal CLAUDE.md content, local secrets references, etc.).
-
-### 6.3 Design Decisions Deferred to FI-7
-
-- Network access policy for discovery (check on every `cco update`? cache? opt-in?)
-- Version display format in `cco update` output
-- Conflict resolution UX for remote project updates
-- Pack update granularity (full-replace vs file-level merge for packs with
-  user customizations)
-- Interaction between vault profiles and remote updates
-
-### 6.4 What This Analysis Provides for FI-7
-
-The file policy redesign (§3) and the resource lifecycle model (§5) establish
-the framework within which FI-7 operates:
-
-- **Tracked files** in projects support 3-way merge → FI-7 reuses this for
-  remote project updates
-- **`.cco/source`** already tracks origin → FI-7 adds version comparison
-- **`.cco/base/`** already stores merge ancestor → FI-7 updates base after
-  remote sync
-- **Discovery engine** is source-agnostic → FI-7 adds "remote source" as
-  another discovery input alongside "framework defaults"
+- **Network access**: default on, `--offline` to skip, `--no-cache` to force refresh, 1h TTL cache
+- **Update chain**: Framework → Publisher → Consumer (source-aware sync respects this)
+- **Conflict resolution**: same interactive merge UI, consumer customizations preserved
+- **Pack update**: remains full-replace (packs are read-only; use `internalize` to fork)
 
 ---
 
@@ -724,36 +706,20 @@ Based on this analysis, the following principles are confirmed or added:
 
 ---
 
-## 10. Open Questions
+## 10. Open Questions — Resolved
 
-1. **Should `cco update` check remotes automatically?** Network access during
-   discovery adds latency and requires connectivity. Options: always check,
-   check only with `--remote` flag, cache with TTL, skip with `--offline`.
-   Decision deferred to FI-7 design.
+1. **Should `cco update` check remotes automatically?** ✓ RESOLVED (FI-7).
+   Default: check remotes with 1-hour cache. `--offline` to skip, `--no-cache` to force refresh.
 
-2. **Should packs support 3-way merge?** Currently packs are full-replaced on
-   update. If a user customizes a pack, their changes are lost. Options:
-   require `cco pack internalize` before modifying (current approach),
-   add merge support for packs. Decision: current approach is correct — packs
-   are mounted read-only, so customization should happen via fork
-   (internalize) not merge.
+2. **Should packs support 3-way merge?** ✓ RESOLVED. No — packs use full-replace.
+   Use `cco pack internalize` to fork before modifying.
 
-3. **Config-editor template scope**: What skills should it include? Should it
-   have access to Docker? Should it be able to run `cco` commands somehow?
-   Decision deferred to template creation.
+3. **Config-editor template scope**: Deferred to template creation.
 
-4. **Tutorial session state**: Where to store transcripts for `cco start
-   tutorial` when the project isn't in user-config? Options: `user-config/
-   .cco/tutorial-state/`, temp directory (lost on exit), dedicated location.
-   Decision deferred to implementation.
+4. **Tutorial session state**: Deferred to implementation.
 
-5. **Multiple simultaneous update sources**: A project created from a native
-   template and later also receiving updates from a remote Config Repo.
-   This is a conflicting scenario — should be prevented (one source per
-   resource) or handled (priority chain). Decision: one source per resource.
-   If user wants remote updates, they install from remote; if they want
-   framework updates, they use a native template. Switching source requires
-   explicit action.
+5. **Multiple simultaneous update sources**: ✓ RESOLVED. One source per resource.
+   `cco project internalize` to switch from remote to local.
 
 ---
 
@@ -766,7 +732,9 @@ Based on this analysis, the following principles are confirmed or added:
 | Sharing/publish design | `docs/maintainer/configuration/sharing/enhancements-design.md` |
 | Config Repo design | `docs/maintainer/configuration/sharing/design.md` |
 | Vault design | `docs/maintainer/configuration/vault/design.md` |
-| FI-7 in roadmap | `docs/maintainer/decisions/roadmap.md` § Sprint 11 |
+| FI-7 analysis | `docs/maintainer/configuration/publish-install-sync/analysis.md` |
+| FI-7 design | `docs/maintainer/configuration/publish-install-sync/design.md` |
+| FI-7 in roadmap | `docs/maintainer/decisions/roadmap.md` § FI-7 |
 | FI-7 details | `docs/maintainer/decisions/framework-improvements.md` § FI-7 |
 | Current file policies | `lib/update.sh` lines 25-50 |
 | Discovery engine | `lib/update.sh` `_collect_file_changes()` |

@@ -641,6 +641,7 @@ require explicit `--sync` to apply interactively.
 Usage: cco update [OPTIONS]
 
 Runs pending migrations (global + all projects) and shows available updates.
+Checks both framework defaults and remote sources for installed projects/packs.
 
 Modes:
   (default)           Run migrations + show available config updates + changelog
@@ -654,6 +655,12 @@ Scope (for --sync and --diff):
   <project-name>      One specific project only (no global)
 
 Options:
+  --local             Apply framework defaults directly on installed projects
+                      (bypasses publisher update chain; use with --sync)
+  --offline           Skip remote source checks (framework-only discovery)
+  --no-cache          Force fresh remote version check (ignore cache)
+  --force             Non-interactive sync: overwrite all files with framework version
+  --keep              Non-interactive sync: keep all user files, update .cco/base/ only
   --no-backup         Skip .bak file creation (with --sync)
   --dry-run           Preview pending migrations without running
   --help              Show this help message
@@ -665,6 +672,10 @@ Migrations run automatically in all modes (except --news and --dry-run).
 Config sync (--sync) covers opinionated files: rules, agents, skills,
 and other framework defaults that you may have customized.
 
+For installed projects (from Config Repos), framework updates are managed
+by the publisher. Use 'cco project update <name>' to get publisher updates.
+Use --local with --sync to apply framework defaults directly (escape hatch).
+
 Examples:
   cco update                  # Run migrations + show available updates
   cco update --diff           # Show diffs for all available config updates
@@ -672,15 +683,30 @@ Examples:
   cco update --sync           # Interactively sync all config from defaults
   cco update --sync global    # Sync global config only
   cco update --sync myapp     # Sync one project only (no global)
+  cco update --sync myapp --local  # Force framework sync on installed project
   cco update --news           # Show new features and examples
   cco update --dry-run        # Preview pending migrations
+  cco update --offline        # Skip remote checks
 ```
+
+**Unified discovery**: `cco update` shows a complete picture of all available
+updates: pending migrations, framework file changes, remote publisher updates
+for installed projects/packs, and changelog notifications. Each project is
+labeled with its type (`(local)` or `(from <remote>)`).
+
+**Source-aware sync**: for installed projects (from Config Repos), `--sync`
+skips opinionated file changes and delegates to the publisher chain. The update
+chain is Framework → Publisher → Consumer. Use `--local` to override this and
+apply framework defaults directly.
+
+**Remote checks**: by default, `cco update` checks remote sources for installed
+resources using `git ls-remote` (lightweight, no clone). Results are cached for
+1 hour. Use `--offline` to skip, `--no-cache` to force a fresh check.
 
 **Update sources**: `cco update` uses native framework sources: `defaults/global/`
 for global config, `templates/project/base/` for base project files, and
 `templates/project/<name>/` for native template-specific files (resolved via
-`.cco/source`). User templates are not touched — user template propagation will
-be handled by a future `cco template sync` command. `project.yml` is user-owned
+`.cco/source`). User templates are not touched. `project.yml` is user-owned
 and not discovered (new fields are additive with code defaults; schema changes
 use migrations).
 
@@ -826,6 +852,11 @@ Examples:
 **Auto-install packs**: if the template declares packs in its `packs:` list,
 they are automatically installed from the same Config Repo if available.
 Already-installed packs are skipped. Missing packs produce a warning.
+
+**Source tracking**: after install, `.cco/source` records the remote origin
+(URL, path, ref, commit hash, install date). This enables future updates via
+`cco project update <name>`. The `.cco/base/` directory stores the publisher's
+version at install time for 3-way merge during updates.
 
 ---
 
@@ -1061,9 +1092,71 @@ Examples:
 
 ---
 
-### 3.21 `cco project publish`
+### 3.21 `cco project update`
+
+Check for and apply updates from the remote source of an installed project.
+Uses 3-way merge to preserve your local customizations.
+
+```
+Usage: cco project update <name> [--force] [--dry-run]
+       cco project update --all [--dry-run]
+
+Options:
+  --all       Update all installed projects
+  --force     Replace all files without interactive merge (.bak saved)
+  --dry-run   Show what would change without modifying files
+
+Examples:
+  cco project update team-service          # Update one project from publisher
+  cco project update --all                 # Update all installed projects
+  cco project update team-service --dry-run  # Preview without applying
+```
+
+**How it works**: fetches the latest version from the remote Config Repo,
+compares with the installed version via 3-way merge (base = publisher's version
+at install time, theirs = new publisher version, ours = your customizations).
+Offers interactive merge per file: (A)pply, (M)erge, (R)eplace+.bak, (K)eep,
+(S)kip, (D)iff, (N)ew-file.
+
+After update, `.cco/source` is updated with the new commit hash and date,
+and `.cco/base/` is refreshed with the new publisher version for future merges.
+
+Only works on projects installed from a Config Repo (with remote `.cco/source`).
+For local projects, use `cco update --sync <name>` instead.
+
+---
+
+### 3.22 `cco project internalize`
+
+Disconnect a project from its remote source, converting it to a local project.
+
+```
+Usage: cco project internalize <name> [--yes]
+
+Options:
+  --yes     Skip confirmation prompt (required in non-interactive mode)
+
+Examples:
+  cco project internalize team-service
+  cco project internalize team-service --yes
+```
+
+After internalizing:
+- The project becomes fully local
+- Framework updates apply directly via `cco update --sync`
+- Publisher updates are no longer checked or available
+- Your customizations are preserved
+
+Use this when the publisher is inactive, you want to diverge permanently,
+or you installed the project as a starting point (not for ongoing sync).
+
+---
+
+### 3.23 `cco project publish`
 
 Publish a project as a shareable template to a remote Config Repo.
+Includes a safety pipeline: migration check, secret scan, framework alignment
+warning, diff review, and per-file confirmation.
 
 ```
 Usage: cco project publish <name> [<remote>] [OPTIONS]
@@ -1074,8 +1167,9 @@ Arguments:
 
 Options:
   --message <msg>      Commit message (default: "publish project <name>")
-  --dry-run            Show what would be published, don't push
+  --dry-run            Show what would be published with diff stat
   --force              Overwrite remote version without confirmation
+  --yes                Skip interactive prompts (safety checks still apply)
   --no-packs           Don't bundle the project's packs
   --token <token>      Auth token for HTTPS remotes
 
@@ -1083,18 +1177,39 @@ Examples:
   cco project publish my-project alberghi
   cco project publish my-project alberghi --no-packs
   cco project publish my-project --dry-run
+  cco project publish my-project alberghi --yes  # Non-interactive
 ```
 
+**Safety pipeline** (runs before push):
+
+1. **Migration check** (blocking): project must be on latest schema version
+2. **Framework alignment** (warning): reports pending framework updates
+3. **Secret scan** (blocking): checks filenames (`*.env`, `*.key`, `*.pem`) AND
+   file content (`API_KEY=`, `SECRET=`, `PASSWORD=`, token prefixes)
+4. **Publish-ignore**: excludes files matching `.cco/publish-ignore` patterns
+   (gitignore syntax — supports `**`, directory patterns, path-based patterns)
+5. **Diff review**: shows per-file changes vs last published version
+6. **Per-file confirmation**: (P)ublish/(S)kip/(D)iff/(A)bort per file
+
 Repo paths are automatically reverse-templated (`~/projects/api` becomes
-`{{REPO_API}}`). Runtime files (`.cco/docker-compose.yml`, `.cco/managed/`,
-`.cco/claude-state/`, `secrets.env`, `.cco/meta`) are excluded.
+`{{REPO_API}}`). Runtime files (`.cco/`, `memory/`, `secrets.env`) are excluded.
 
 By default, packs listed in `project.yml` are bundled into the remote repo.
 Use `--no-packs` to skip this.
 
+**`.cco/publish-ignore`**: optional file in the project directory (gitignore
+syntax) that excludes matching files from every publish:
+
+```
+# Don't publish local notes
+.claude/rules/local-*.md
+memory/
+*.draft
+```
+
 ---
 
-### 3.22 `cco project add-pack` / `cco project remove-pack`
+### 3.24 `cco project add-pack` / `cco project remove-pack`
 
 Add or remove a knowledge pack from a project's `packs:` list.
 

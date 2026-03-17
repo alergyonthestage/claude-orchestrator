@@ -53,9 +53,8 @@ valuable but not blocking.
 
 ```mermaid
 graph LR
-    DONE["✅ Completed<br/>Sprint 1-5c, Sprint 6+10,<br/>Sprint 6b, ADR-13,<br/>Sprint 7-Vault,<br/>Bugfix #B1-#B7"]
+    DONE["✅ Completed<br/>Sprint 1-5c, Sprint 6+10,<br/>Sprint 6b, ADR-13,<br/>Sprint 7-Vault,<br/>FI-7 Config Sync,<br/>Bugfix #B1-#B7"]
 
-    FI7["FI-7 Config Sync<br/>#Publish-install sync<br/>#Resource versioning<br/>#cco project update"]
     QW["Quick Wins<br/>#FI-2 init-workspace<br/>#FI-5 branch protection<br/>#FI-4 model config<br/>#cco project edit"]
     S6S["Sprint 6C-Security<br/>#Network Hardening<br/>#Squid proxy"]
     S8E["Sprint 8-E2E<br/>#E2E Test Suite"]
@@ -63,8 +62,7 @@ graph LR
     S10["Sprint 10+<br/>#Worktree isolation<br/>#Pack inheritance<br/>#StatusLine"]
     S12R["Sprint 12-RAG<br/>#Project RAG"]
 
-    DONE --> FI7
-    FI7 --> QW
+    DONE --> QW
     QW --> S6S
     S6S --> S8E
     S8E --> S9L
@@ -307,7 +305,7 @@ Opt-in git isolation for container sessions. When enabled, repos are mounted at 
 
 **Priority**: 1 (immediate). Completes the user-config lifecycle — the framework's core value proposition.
 
-**Status**: Analysis and design complete. Ready for implementation.
+**Status**: Implemented.
 
 **Context**: The resource-lifecycle analysis (Sprint 5c) established file policies, the
 lifecycle model, and `.cco/source` tracking. FI-7 builds on these foundations to add

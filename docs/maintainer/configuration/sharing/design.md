@@ -638,15 +638,23 @@ Run 'cco vault init' to enable versioning for your configuration.
 
 ---
 
-## 13. Future Evolution
+## 13. Publish-Install Sync (FI-7) — Implemented
 
-### Short-term (next sprints)
+The publish/install lifecycle has been completed with bidirectional sync.
+See [FI-7 design](../publish-install-sync/design.md) for full details.
 
-| Feature | Sprint | Notes |
-|---|---|---|
-| `cco pack publish <name> --to <remote>` | S8 | `git subtree push` wrapper — publishes one pack to a separate remote without maintaining a separate repo manually |
+**Key additions**:
+- `cco project update <name>`: fetch + 3-way merge from publisher
+- `cco project internalize <name>`: disconnect from remote
+- `cco update`: unified discovery (framework + remote sources)
+- `cco update --sync <project> --local`: escape hatch for installed projects
+- `cco project publish` safety pipeline: migration check, secret scan (filename + content), diff review, per-file confirmation, `.cco/publish-ignore`
 
-### Medium-term
+---
+
+## 14. Future Evolution
+
+### Short-term
 
 | Feature | Notes |
 |---|---|
