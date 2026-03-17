@@ -96,9 +96,9 @@ EOF
         (
             cd "$GLOBAL_DIR/.claude" || exit 1
             find . -type f ! -name 'meta' ! -path './.cco/*' | sed 's|^\./||' | sort | while IFS= read -r rel; do
-                # Skip user-owned files
+                # Skip untracked files
                 local skip=false
-                for uf in "${GLOBAL_USER_FILES[@]}"; do
+                for uf in "${GLOBAL_UNTRACKED_FILES[@]}"; do
                     [[ "$rel" == "$uf" ]] && skip=true && break
                 done
                 $skip && continue

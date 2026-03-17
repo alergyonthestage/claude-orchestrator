@@ -19,13 +19,13 @@
 # Declarative classification of all managed files.
 # Policies:
 #   tracked    — 3-way merge on update (user customizations preserved)
-#   user-owned — never touched after initial copy
+#   untracked  — never touched after initial copy, not discovered for updates
 #   generated  — regenerated from template + saved values (e.g., language.md)
 
 GLOBAL_FILE_POLICIES=(
     ".claude/CLAUDE.md:tracked"
     ".claude/settings.json:tracked"
-    ".claude/mcp.json:user-owned"
+    ".claude/mcp.json:untracked"
     ".claude/agents/analyst.md:tracked"
     ".claude/agents/reviewer.md:tracked"
     ".claude/rules/diagrams.md:tracked"
@@ -36,40 +36,44 @@ GLOBAL_FILE_POLICIES=(
     ".claude/skills/review/SKILL.md:tracked"
     ".claude/skills/design/SKILL.md:tracked"
     ".claude/skills/commit/SKILL.md:tracked"
-    "setup.sh:user-owned"
-    "setup-build.sh:user-owned"
+    "setup.sh:untracked"
+    "setup-build.sh:untracked"
 )
 
 # Note: only .claude/ files are tracked here. Root files (project.yml, setup.sh,
 # secrets.env, mcp-packages.txt) are handled by PROJECT_ROOT_COPY_IF_MISSING —
 # they are copied once if missing but never overwritten by the update system.
 PROJECT_FILE_POLICIES=(
-    ".claude/CLAUDE.md:user-owned"
+    ".claude/CLAUDE.md:tracked"
     ".claude/settings.json:tracked"
-    ".claude/rules/language.md:user-owned"
+    ".claude/rules/language.md:untracked"
 )
 
 # Derived lists for _collect_file_changes().
 # Global scope: _collect_file_changes operates on files relative to .claude/,
 # so we strip the ".claude/" prefix from policy paths inside .claude/.
 # Root files (setup.sh, etc.) are outside the scan scope — handled separately.
-GLOBAL_USER_FILES=()
+GLOBAL_UNTRACKED_FILES=()
 GLOBAL_SPECIAL_FILES=()
-PROJECT_USER_FILES=()
+PROJECT_UNTRACKED_FILES=()
 for _p in "${GLOBAL_FILE_POLICIES[@]}"; do
     _rel="${_p%:*}"
     _pol="${_p##*:}"
     # Strip .claude/ prefix for files inside .claude/
     _rel="${_rel#.claude/}"
     case "$_pol" in
-        user-owned) GLOBAL_USER_FILES+=("$_rel") ;;
-        generated)  GLOBAL_SPECIAL_FILES+=("$_rel") ;;
+        untracked) GLOBAL_UNTRACKED_FILES+=("$_rel") ;;
+        generated) GLOBAL_SPECIAL_FILES+=("$_rel") ;;
+        # tracked files need no special list — they are the default,
+        # discovered automatically by _collect_file_changes()
     esac
 done
+# Project scope: only untracked files need a filter list.
+# No 'generated' files at project scope currently.
 for _p in "${PROJECT_FILE_POLICIES[@]}"; do
     _rel="${_p%:*}"
     _rel="${_rel#.claude/}"
-    [[ "${_p##*:}" == "user-owned" ]] && PROJECT_USER_FILES+=("$_rel")
+    [[ "${_p##*:}" == "untracked" ]] && PROJECT_UNTRACKED_FILES+=("$_rel")
 done
 unset _p _rel _pol
 
@@ -403,9 +407,9 @@ _collect_file_changes() {
             [[ -z "$fpath" ]] && continue
             # Make relative to defaults_dir
             local rel="${fpath#$defaults_dir/}"
-            # Skip user-owned and special files
+            # Skip untracked and special files
             if [[ "$scope" == "global" ]]; then
-                if _in_array "$rel" "${GLOBAL_USER_FILES[@]}"; then
+                if _in_array "$rel" "${GLOBAL_UNTRACKED_FILES[@]}"; then
                     continue
                 fi
                 # Special files (language.md) are regenerated separately
@@ -413,7 +417,7 @@ _collect_file_changes() {
                     continue
                 fi
             elif [[ "$scope" == "project" ]]; then
-                if _in_array "$rel" "${PROJECT_USER_FILES[@]}"; then
+                if _in_array "$rel" "${PROJECT_UNTRACKED_FILES[@]}"; then
                     continue
                 fi
             fi
@@ -485,11 +489,11 @@ _collect_file_changes() {
             if echo "$seen_base_files" | grep -qxF "$rel"; then
                 continue
             fi
-            # Skip user-owned files
-            if [[ "$scope" == "global" ]] && _in_array "$rel" "${GLOBAL_USER_FILES[@]}"; then
+            # Skip untracked files
+            if [[ "$scope" == "global" ]] && _in_array "$rel" "${GLOBAL_UNTRACKED_FILES[@]}"; then
                 continue
             fi
-            if [[ "$scope" == "project" ]] && _in_array "$rel" "${PROJECT_USER_FILES[@]}"; then
+            if [[ "$scope" == "project" ]] && _in_array "$rel" "${PROJECT_UNTRACKED_FILES[@]}"; then
                 continue
             fi
             printf 'REMOVED\t%s\n' "$rel"
@@ -902,7 +906,7 @@ _interactive_sync() {
                 esac
                 ;;
 
-            UPDATE_AVAILABLE|SAFE_UPDATE|BASE_MISSING)
+            UPDATE_AVAILABLE|SAFE_UPDATE)
                 local choice="$auto_action"
                 if [[ -z "$choice" ]]; then
                     echo ""
@@ -953,14 +957,83 @@ _interactive_sync() {
                 esac
                 ;;
 
+            BASE_MISSING)
+                # No .cco/base/ entry — can't determine if user modified the file.
+                # Offer New-file as default since user may have customized this file.
+                # In non-TTY mode without auto_action, skip (don't silently create .new files).
+                local choice="$auto_action"
+                if [[ -z "$choice" ]]; then
+                    if ! (exec < /dev/tty) 2>/dev/null; then
+                        # Non-TTY: skip silently
+                        choice="s"
+                    else
+                        echo ""
+                        info "$scope_label: $rel_path (framework has updates, no baseline to compare)"
+                        echo "  (N)ew-file (.new)  (A)pply update  (K)eep yours  (S)kip  (D)iff"
+                        echo "  Tip: (N) saves framework version as .new for manual review — recommended if you customized this file"
+                        read -rp "  Choice [N/a/k/s/d]: " choice < /dev/tty
+                        choice="${choice:-N}"
+                    fi
+                    choice="$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')"
+                    # Handle (D)iff: show diff then re-prompt
+                    if [[ "$choice" == "d" ]]; then
+                        diff -u "$installed_dir/$rel_path" "$defaults_dir/$rel_path" \
+                            --label "your version" --label "new default" 2>/dev/null | sed 's/^/  /' || true
+                        echo ""
+                        if (exec < /dev/tty) 2>/dev/null; then
+                            read -rp "  (N)ew-file (.new)  (A)pply update  (K)eep yours  (S)kip [N/a/k/s]: " choice < /dev/tty
+                        fi
+                        choice="${choice:-N}"
+                        choice="$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')"
+                    fi
+                fi
+                case "$choice" in
+                    n|new)
+                        # Save framework version as .new alongside user's file
+                        cp "$defaults_dir/$rel_path" "$installed_dir/${rel_path}.new"
+                        _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
+                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                        _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
+                        ok "  ~ $rel_path → saved framework version as ${rel_path}.new"
+                        info "    Review .new and integrate changes manually, then delete the .new file"
+                        applied=$(( applied + 1 ))
+                        ;;
+                    a|apply|replace)
+                        if [[ "$no_backup" != "true" && -f "$installed_dir/$rel_path" ]]; then
+                            cp "$installed_dir/$rel_path" "$installed_dir/${rel_path}.bak"
+                        fi
+                        cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
+                        _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
+                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                        _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
+                        ok "  ~ $rel_path (updated)"
+                        applied=$(( applied + 1 ))
+                        ;;
+                    k|keep)
+                        # Keep user file but update .cco/base/ so update isn't reported again
+                        _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
+                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                        _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
+                        info "  Kept user version of $rel_path"
+                        kept=$(( kept + 1 ))
+                        ;;
+                    *)
+                        # Skip: don't update .cco/base/ or manifest — will be reported again next run
+                        info "  Skipped $rel_path"
+                        skipped=$(( skipped + 1 ))
+                        ;;
+                esac
+                ;;
+
             MERGE_AVAILABLE|CONFLICT)
                 local choice="$auto_action"
                 if [[ -z "$choice" ]]; then
                     echo ""
                     info "$scope_label: $rel_path (both modified — merge needed)"
-                    echo "  (M)erge 3-way  (R)eplace + .bak  (K)eep yours  (S)kip  (D)iff"
+                    echo "  (M)erge 3-way  (N)ew-file (.new)  (R)eplace + .bak  (K)eep yours  (S)kip  (D)iff"
+                    echo "  Tip: use (N) if you restructured this file — saves framework version as .new for manual review"
                     if (exec < /dev/tty) 2>/dev/null; then
-                        read -rp "  Choice [M/r/k/s/d]: " choice < /dev/tty
+                        read -rp "  Choice [M/n/r/k/s/d]: " choice < /dev/tty
                     fi
                     choice="${choice:-M}"
                     choice="$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')"
@@ -980,7 +1053,7 @@ _interactive_sync() {
                         fi
                         echo ""
                         if (exec < /dev/tty) 2>/dev/null; then
-                            read -rp "  (M)erge 3-way  (R)eplace + .bak  (K)eep yours  (S)kip [M/r/k/s]: " choice < /dev/tty
+                            read -rp "  (M)erge 3-way  (N)ew-file (.new)  (R)eplace + .bak  (K)eep yours  (S)kip [M/n/r/k/s]: " choice < /dev/tty
                         fi
                         choice="${choice:-M}"
                         choice="$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')"
@@ -1004,6 +1077,16 @@ _interactive_sync() {
                                 applied=$(( applied + 1 ))
                             fi
                         fi
+                        ;;
+                    n|new)
+                        # Save framework version as .new alongside user's file
+                        cp "$defaults_dir/$rel_path" "$installed_dir/${rel_path}.new"
+                        _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
+                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                        _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
+                        ok "  ~ $rel_path → saved framework version as ${rel_path}.new"
+                        info "    Review .new and integrate changes manually, then delete the .new file"
+                        applied=$(( applied + 1 ))
                         ;;
                     r|replace)
                         if [[ "$no_backup" != "true" && -f "$installed_dir/$rel_path" ]]; then
@@ -1491,7 +1574,7 @@ _update_global() {
                 for entry in "${GLOBAL_FILE_POLICIES[@]}"; do
                     rel="${entry%:*}"
                     policy="${entry##*:}"
-                    [[ "$policy" == "user-owned" ]] && continue
+                    [[ "$policy" == "untracked" ]] && continue
                     rel="${rel#.claude/}"
                     if [[ -f "$installed_dir/$rel" ]]; then
                         local h; h=$(_file_hash "$installed_dir/$rel")
@@ -1701,7 +1784,7 @@ _update_project() {
                 for entry in "${PROJECT_FILE_POLICIES[@]}"; do
                     rel="${entry%:*}"
                     policy="${entry##*:}"
-                    [[ "$policy" == "user-owned" ]] && continue
+                    [[ "$policy" == "untracked" ]] && continue
                     rel="${rel#.claude/}"
                     if [[ -f "$installed_dir/$rel" ]]; then
                         local h; h=$(_file_hash "$installed_dir/$rel")
