@@ -1846,13 +1846,11 @@ _update_project() {
     # For installed projects with --sync (without --local), skip opinionated
     # files and delegate to the publisher chain.
     if [[ "$is_installed" == "true" && "$cmd_mode" == "sync" && "$local_override" != "true" ]]; then
-        if [[ "$is_installed" == "true" ]]; then
-            echo ""
-            info "Project '$pname' is installed from $source_display."
-            info "Framework opinionated updates are managed by the publisher."
-            info "  -> Run 'cco project update $pname' to check for publisher updates."
-            info "  -> Use '--local' to apply framework defaults directly."
-        fi
+        echo ""
+        info "Project '$pname' is installed from $source_display."
+        info "Framework opinionated updates are managed by the publisher."
+        info "  -> Run 'cco project update $pname' to check for publisher updates."
+        info "  -> Use '--local' to apply framework defaults directly."
         return 0
     fi
 
@@ -1887,8 +1885,12 @@ _update_project() {
     local fw_actionable=0
     if [[ "$is_installed" == "true" && $actionable -gt 0 ]]; then
         fw_actionable=$actionable
-        # In discovery mode for installed projects, framework changes are informational
-        # (managed by publisher), so don't count them as actionable for the "up to date" check
+        # If --local was previously used, suppress the framework changes note
+        local local_override_marker=""
+        local_override_marker=$(yml_get "$meta_file" "local_framework_override" 2>/dev/null)
+        if [[ "$local_override_marker" == "true" ]]; then
+            fw_actionable=0
+        fi
     fi
 
     # For installed projects in discovery mode, fw_actionable is informational

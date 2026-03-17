@@ -1112,15 +1112,27 @@ EOF
     fi
 
     # STEP 3: SECRET SCAN (blocking)
-    # Scan only files that would actually be published (exclude .cco, memory,
-    # secrets.env, and publish-ignore patterns — same as _copy_project_for_publish)
+    # Scan files that would actually be published. Excludes: .cco/, memory/,
+    # secrets.env (same exclusion list as _copy_project_for_publish).
     local -a secret_hits=()
-    local -a publish_excludes=(".cco" "memory" "secrets.env")
-    local publish_dir="$project_dir/.claude"
-    if [[ -d "$publish_dir" ]]; then
+    local -a _scan_dirs=()
+    [[ -d "$project_dir/.claude" ]] && _scan_dirs+=("$project_dir/.claude")
+
+    # Also scan publishable root files (project.yml, setup.sh, etc.)
+    for _root_item in "$project_dir"/*; do
+        [[ ! -e "$_root_item" ]] && continue
+        local _root_base
+        _root_base=$(basename "$_root_item")
+        # Skip excluded items
+        case "$_root_base" in
+            .cco|.claude|memory|secrets.env) continue ;;
+        esac
+        [[ -f "$_root_item" ]] && _scan_dirs+=("$_root_item")
+    done
+
+    for _scan_target in "${_scan_dirs[@]+"${_scan_dirs[@]}"}"; do
         while IFS= read -r file; do
             [[ -z "$file" ]] && continue
-            # Skip files inside .cco/ directories
             [[ "$file" == */.cco/* ]] && continue
             local base_name
             base_name=$(basename "$file")
@@ -1133,8 +1145,8 @@ EOF
                         ;;
                 esac
             done
-        done < <(find "$publish_dir" -type f 2>/dev/null)
-    fi
+        done < <(find "$_scan_target" -type f 2>/dev/null)
+    done
 
     if [[ ${#secret_hits[@]} -gt 0 ]]; then
         error "Potential secrets detected in publishable files:"
@@ -1224,10 +1236,13 @@ EOF
     # Update publish metadata in .cco/source
     local source_file
     source_file=$(_cco_project_source "$project_dir")
-    if [[ -f "$source_file" ]]; then
-        yml_set "$source_file" "published" "$(date +%Y-%m-%d)"
-        [[ -n "$publish_commit" ]] && yml_set "$source_file" "publish_commit" "$publish_commit"
+    if [[ ! -f "$source_file" ]]; then
+        # Create .cco/source for locally-created projects (track publish history)
+        mkdir -p "$(dirname "$source_file")"
+        printf 'source: local\n' > "$source_file"
     fi
+    yml_set "$source_file" "published" "$(date +%Y-%m-%d)"
+    [[ -n "$publish_commit" ]] && yml_set "$source_file" "publish_commit" "$publish_commit"
 
     local summary="Published project '$name'"
     if [[ ${#published_packs[@]} -gt 0 ]]; then
@@ -1652,10 +1667,10 @@ EOF
     local source_file
     source_file=$(_cco_project_source "$project_dir")
 
-    # Update .cco/source
+    # Update .cco/source — source: local must be first line for format detection
     {
-        printf '# Previously installed from: %s\n' "$source_url"
         printf 'source: local\n'
+        printf '# previously installed from: %s\n' "$source_url"
     } > "$source_file"
 
     # Update .cco/base/ to framework base template (for future cco update --sync)

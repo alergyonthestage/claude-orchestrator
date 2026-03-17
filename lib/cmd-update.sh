@@ -104,6 +104,9 @@ EOF
     if [[ "$cmd_mode" == "diff" && -n "$auto_action" ]]; then
         die "--diff and --force/--keep/--replace are mutually exclusive."
     fi
+    if [[ "$local_override" == "true" && "$cmd_mode" != "sync" ]]; then
+        die "--local can only be used with --sync. Example: cco update --sync <project> --local"
+    fi
 
     # Non-TTY warning for --sync mode
     if [[ "$cmd_mode" == "sync" && -z "$auto_action" ]]; then

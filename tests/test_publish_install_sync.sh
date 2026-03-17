@@ -443,6 +443,80 @@ test_publish_ignore_excludes_files() {
 }
 
 # Helper for publish tests
+# ── --local validation ────────────────────────────────────────────────
+
+test_local_flag_requires_sync() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    ! run_cco update --local || \
+        fail "--local without --sync should fail"
+    assert_output_contains "--local can only be used with --sync"
+}
+
+# ── internalize writes source:local as first line ────────────────────
+
+test_internalize_source_local_first_line() {
+    _source_libs
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    create_project "$tmpdir" "remote-app" "name: remote-app"
+    mkdir -p "$CCO_PROJECTS_DIR/remote-app/.cco"
+    printf 'source: https://github.com/team/config.git\nref: main\n' \
+        > "$CCO_PROJECTS_DIR/remote-app/.cco/source"
+    printf 'schema_version: 10\nlocal_framework_override: true\n' \
+        > "$CCO_PROJECTS_DIR/remote-app/.cco/meta"
+    cp -r "$REPO_ROOT/templates/project/base/.claude/"* "$CCO_PROJECTS_DIR/remote-app/.claude/" 2>/dev/null || true
+
+    run_cco project internalize remote-app --yes
+
+    # source: local must be first line (not a comment)
+    local first_line
+    first_line=$(head -1 "$CCO_PROJECTS_DIR/remote-app/.cco/source")
+    assert_equals "source: local" "$first_line" \
+        "First line of .cco/source should be 'source: local'"
+
+    # local_framework_override should be cleared
+    assert_file_not_contains "$CCO_PROJECTS_DIR/remote-app/.cco/meta" "local_framework_override"
+}
+
+# ── Publish detects secrets at project root ──────────────────────────
+
+test_publish_detects_root_secrets() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+    run_cco project create secret-root-app
+
+    # Create a .key file at the project root (not inside .claude/)
+    touch "$CCO_PROJECTS_DIR/secret-root-app/server.key"
+
+    # Create bare remote
+    local bare_dir
+    bare_dir=$(_create_bare_remote_for_test "$tmpdir")
+
+    ! run_cco project publish secret-root-app "$bare_dir" --force || \
+        fail "Publish should block on root-level secrets"
+    assert_output_contains "secrets detected"
+}
+
+# ── _is_installed_project after internalize ──────────────────────────
+
+test_is_installed_project_after_internalize() {
+    _source_libs
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    mkdir -p "$tmpdir/project/.cco"
+    # Write internalized format: source: local on first line, comment on second
+    printf 'source: local\n# previously installed from: https://example.com\n' \
+        > "$tmpdir/project/.cco/source"
+
+    ! _is_installed_project "$tmpdir/project" || \
+        fail "Internalized project should be detected as local"
+}
+
+# ── Helper ────────────────────────────────────────────────────────────
+
 _create_bare_remote_for_test() {
     local tmpdir="$1"
     local bare_dir="$tmpdir/publish-remote.git"
