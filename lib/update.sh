@@ -1611,8 +1611,12 @@ _resolve_project_defaults_dir() {
     case "$source_line" in
         native:project/*)
             local tmpl_name="${source_line#native:project/}"
+            # Check internal projects first (e.g., tutorial moved to internal/)
+            local internal_dir="$REPO_ROOT/internal/$tmpl_name/.claude"
             local tmpl_dir="$NATIVE_TEMPLATES_DIR/project/$tmpl_name/.claude"
-            if [[ -d "$tmpl_dir" ]]; then
+            if [[ -d "$internal_dir" ]]; then
+                echo "$internal_dir"
+            elif [[ -d "$tmpl_dir" ]]; then
                 echo "$tmpl_dir"
             else
                 warn "Template '$tmpl_name' referenced by project '$(basename "$project_dir")' not found."
@@ -1679,6 +1683,11 @@ _update_project() {
                 return 1
             fi
         fi
+    fi
+
+    # Check if project was removed by a migration (e.g., tutorial → internal)
+    if [[ ! -d "$project_dir" ]]; then
+        return 0
     fi
 
     # --news mode: skip discovery for projects

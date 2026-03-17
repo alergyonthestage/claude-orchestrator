@@ -134,47 +134,8 @@ EOF
     ok "Packs directory ready"
     ok "Templates directory ready"
 
-    # Create tutorial project (unless it already exists)
-    local tutorial_dir="$PROJECTS_DIR/tutorial"
-    if [[ ! -d "$tutorial_dir" ]]; then
-        info "Creating tutorial project..."
-        cp -r "$NATIVE_TEMPLATES_DIR/project/tutorial" "$tutorial_dir"
-
-        # Substitute path placeholders in project.yml
-        local tutorial_yml="$tutorial_dir/project.yml"
-        sed -i '' "s|{{CCO_REPO_ROOT}}|$REPO_ROOT|g" "$tutorial_yml" 2>/dev/null || \
-            sed -i "s|{{CCO_REPO_ROOT}}|$REPO_ROOT|g" "$tutorial_yml"
-        sed -i '' "s|{{CCO_USER_CONFIG_DIR}}|$USER_CONFIG_DIR|g" "$tutorial_yml" 2>/dev/null || \
-            sed -i "s|{{CCO_USER_CONFIG_DIR}}|$USER_CONFIG_DIR|g" "$tutorial_yml"
-
-        # Bootstrap .cco/source, .cco/meta, .cco/base for tutorial project
-        mkdir -p "$tutorial_dir/.cco"
-        printf 'native:project/tutorial\n' > "$tutorial_dir/.cco/source"
-
-        local tut_latest_schema
-        tut_latest_schema=$(_latest_schema_version "project")
-        local tut_now
-        tut_now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-        local tut_meta="$tutorial_dir/.cco/meta"
-        local tut_defaults="$NATIVE_TEMPLATES_DIR/project/base/.claude"
-
-        (
-            local entry rel policy
-            for entry in "${PROJECT_FILE_POLICIES[@]}"; do
-                rel="${entry%:*}"
-                policy="${entry##*:}"
-                [[ "$policy" != "tracked" ]] && continue
-                rel="${rel#.claude/}"
-                if [[ -f "$tutorial_dir/.claude/$rel" ]]; then
-                    printf '%s\t%s\n' "$rel" "$(_file_hash "$tutorial_dir/.claude/$rel")"
-                fi
-            done
-        ) | _generate_project_cco_meta "$tut_meta" "$tut_latest_schema" "$tut_now" "tutorial"
-
-        _save_all_base_versions "$tutorial_dir/.cco/base" "$tut_defaults" "project"
-
-        ok "Tutorial project ready — run 'cco start tutorial' to begin"
-    fi
+    # Tutorial is now built-in (internal/tutorial/) — no longer installed in user-config.
+    # Run 'cco start tutorial' to launch it directly.
 
     # Generate manifest.yml if not present
     manifest_init "$USER_CONFIG_DIR"

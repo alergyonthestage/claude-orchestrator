@@ -1,9 +1,38 @@
 #!/usr/bin/env bash
 # lib/cmd-start.sh — Start project session command
 #
-# Provides: cmd_start()
+# Provides: _setup_internal_tutorial(), cmd_start()
 # Dependencies: colors.sh, utils.sh, yaml.sh, secrets.sh, workspace.sh, packs.sh
-# Globals: PROJECTS_DIR, GLOBAL_DIR, IMAGE_NAME
+# Globals: PROJECTS_DIR, GLOBAL_DIR, IMAGE_NAME, REPO_ROOT, USER_CONFIG_DIR
+
+# ── Internal Tutorial Setup ──────────────────────────────────────────
+# Prepares the runtime directory for the internal tutorial project.
+# Content (.claude/, project.yml) is refreshed from internal/tutorial/ every start.
+# Session state (.cco/claude-state/, memory/) persists across starts.
+_setup_internal_tutorial() {
+    local source_dir="$REPO_ROOT/internal/tutorial"
+    local runtime_dir="$USER_CONFIG_DIR/.cco/internal/tutorial"
+
+    [[ ! -d "$source_dir" ]] && die "Internal tutorial not found at $source_dir"
+
+    # Create runtime dir structure (first time only for state dirs)
+    mkdir -p "$runtime_dir/.cco/claude-state"
+    mkdir -p "$runtime_dir/memory"
+
+    # Always refresh content from framework source (ensures tutorial is current)
+    rm -rf "$runtime_dir/.claude"
+    cp -r "$source_dir/.claude" "$runtime_dir/.claude"
+
+    # Refresh project.yml with path substitution
+    sed -e "s|{{CCO_REPO_ROOT}}|$REPO_ROOT|g" \
+        -e "s|{{CCO_USER_CONFIG_DIR}}|$USER_CONFIG_DIR|g" \
+        "$source_dir/project.yml" > "$runtime_dir/project.yml"
+
+    # Copy setup.sh if present
+    if [[ -f "$source_dir/setup.sh" ]]; then
+        cp "$source_dir/setup.sh" "$runtime_dir/setup.sh"
+    fi
+}
 
 cmd_start() {
     check_global
@@ -67,11 +96,23 @@ EOF
 
     [[ -z "$project" ]] && die "Usage: cco start <project>. Run 'cco project list' to see available projects."
 
-    local project_dir="$PROJECTS_DIR/$project"
-    local project_yml="$project_dir/project.yml"
+    local project_dir
+    local project_yml
+    local is_internal=false
 
-    [[ ! -d "$project_dir" ]] && die "Project '$project' not found. Run 'cco project list' to see available projects."
-    [[ ! -f "$project_yml" ]] && die "No project.yml found in projects/$project/"
+    if [[ "$project" == "tutorial" ]]; then
+        # Tutorial is an internal project — always launched from internal/tutorial/
+        # Runtime state stored in user-config/.cco/internal/tutorial/
+        is_internal=true
+        _setup_internal_tutorial
+        project_dir="$USER_CONFIG_DIR/.cco/internal/tutorial"
+        project_yml="$project_dir/project.yml"
+    else
+        project_dir="$PROJECTS_DIR/$project"
+        project_yml="$project_dir/project.yml"
+        [[ ! -d "$project_dir" ]] && die "Project '$project' not found. Run 'cco project list' to see available projects."
+        [[ ! -f "$project_yml" ]] && die "No project.yml found in projects/$project/"
+    fi
 
     if ! $dry_run; then
         check_docker
