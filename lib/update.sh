@@ -309,16 +309,12 @@ _check_remote_update() {
 
     # Fetch remote HEAD hash (lightweight — no clone)
     local remote_head
-    # Auto-resolve token from registered remote
+    # Auto-resolve token and build auth URL via remote.sh helper
     local token=""
     token=$(remote_resolve_token_for_url "$source_url" 2>/dev/null) || true
+    _build_git_auth "$source_url" "$token"
 
-    local auth_url="$source_url"
-    if [[ -n "$token" && "$source_url" == https://* ]]; then
-        auth_url="${source_url/https:\/\//https://x-access-token:${token}@}"
-    fi
-
-    remote_head=$(git ls-remote "$auth_url" "${source_ref:-HEAD}" 2>/dev/null | head -1 | cut -f1)
+    remote_head=$(git "${_GIT_AUTH_OPTS[@]+"${_GIT_AUTH_OPTS[@]}"}" ls-remote "$_GIT_AUTH_URL" "${source_ref:-HEAD}" 2>/dev/null | head -1 | cut -f1)
     if [[ -z "$remote_head" ]]; then
         echo "unreachable"
         return 0
@@ -1895,7 +1891,20 @@ _update_project() {
         # (managed by publisher), so don't count them as actionable for the "up to date" check
     fi
 
-    if [[ $actionable -eq 0 && $pending_migrations -eq 0 && ${#root_missing[@]} -eq 0 && -z "$remote_status" ]]; then
+    # For installed projects in discovery mode, fw_actionable is informational
+    # but we still need to report it. "Up to date" = no migrations, no actionable
+    # changes, no remote status, AND no framework changes worth mentioning.
+    local has_anything=false
+    [[ $pending_migrations -gt 0 ]] && has_anything=true
+    [[ ${#root_missing[@]} -gt 0 ]] && has_anything=true
+    [[ -n "$remote_status" && "$remote_status" != "up_to_date" ]] && has_anything=true
+    if [[ "$is_installed" == "true" ]]; then
+        [[ $fw_actionable -gt 0 || -n "$remote_status" ]] && has_anything=true
+    else
+        [[ $actionable -gt 0 ]] && has_anything=true
+    fi
+
+    if [[ "$has_anything" != "true" ]]; then
         ok "Project '$pname' config is up to date."
         return 0
     fi

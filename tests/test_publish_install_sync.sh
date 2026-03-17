@@ -194,8 +194,8 @@ test_project_internalize() {
 
     cp -r "$REPO_ROOT/templates/project/base/.claude/"* "$CCO_PROJECTS_DIR/remote-app/.claude/" 2>/dev/null || true
 
-    # Internalize
-    echo "y" | run_cco project internalize remote-app
+    # Internalize (--yes for non-interactive)
+    run_cco project internalize remote-app --yes
     assert_output_contains "now local" \
         "Should report project is now local"
 
@@ -253,4 +253,209 @@ test_project_update_help() {
     setup_cco_env "$tmpdir"
     run_cco project update --help
     assert_output_contains "3-way merge"
+}
+
+# ── yml_set scoping (bug regression) ─────────────────────────────────
+
+test_yml_set_nested_scoped_to_parent() {
+    # Critical: yml_set must only update the child under the correct parent,
+    # not all children with the same name across different parents
+    _source_libs
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    cat > "$tmpdir/test.yml" <<'YAML'
+block_a:
+  commit: aaa
+  checked: time_a
+block_b:
+  commit: bbb
+  checked: time_b
+YAML
+
+    yml_set "$tmpdir/test.yml" "block_a.commit" "NEW"
+    assert_file_contains "$tmpdir/test.yml" "  commit: NEW"
+    # block_b's commit must NOT be changed
+    local block_b_commit
+    block_b_commit=$(awk '/^block_b:/{f=1;next} f&&/^[^ ]/{f=0} f&&/commit:/{print $2}' "$tmpdir/test.yml")
+    assert_equals "bbb" "$block_b_commit" \
+        "yml_set should only update child under the target parent"
+}
+
+test_yml_set_nested_add_new_child() {
+    _source_libs
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    printf 'remote_cache:\n  commit: abc\n' > "$tmpdir/test.yml"
+
+    yml_set "$tmpdir/test.yml" "remote_cache.checked" "2026-03-17"
+    assert_file_contains "$tmpdir/test.yml" "  checked: 2026-03-17"
+    assert_file_contains "$tmpdir/test.yml" "  commit: abc"
+}
+
+test_yml_remove_nonexistent_is_noop() {
+    _source_libs
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    printf 'name: test\nversion: 1\n' > "$tmpdir/test.yml"
+
+    yml_remove "$tmpdir/test.yml" "nonexistent"
+    assert_file_contains "$tmpdir/test.yml" "name: test"
+    assert_file_contains "$tmpdir/test.yml" "version: 1"
+}
+
+# ── _cache_fresh ─────────────────────────────────────────────────────
+
+test_cache_fresh_recent() {
+    _source_libs
+    local now
+    now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    _cache_fresh "$now" 3600 || fail "Recent timestamp should be fresh"
+}
+
+test_cache_fresh_expired() {
+    _source_libs
+    ! _cache_fresh "2020-01-01T00:00:00Z" 3600 || \
+        fail "Old timestamp should be expired"
+}
+
+test_cache_fresh_empty() {
+    _source_libs
+    ! _cache_fresh "" 3600 || \
+        fail "Empty timestamp should be treated as stale"
+}
+
+# ── --local flag on installed project ────────────────────────────────
+
+test_update_sync_installed_with_local() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    # Create installed project with a modified file to trigger sync
+    create_project "$tmpdir" "remote-app" "name: remote-app"
+    mkdir -p "$CCO_PROJECTS_DIR/remote-app/.cco/base" "$CCO_PROJECTS_DIR/remote-app/.claude"
+    local latest_schema
+    latest_schema=$(bash -c "source '$REPO_ROOT/lib/colors.sh'; source '$REPO_ROOT/lib/utils.sh'; source '$REPO_ROOT/lib/paths.sh'; source '$REPO_ROOT/lib/yaml.sh'; source '$REPO_ROOT/lib/update.sh'; _latest_schema_version project")
+    printf 'source: https://github.com/team/config.git\nref: main\ncommit: abc123\n' \
+        > "$CCO_PROJECTS_DIR/remote-app/.cco/source"
+    printf 'schema_version: %s\n' "$latest_schema" \
+        > "$CCO_PROJECTS_DIR/remote-app/.cco/meta"
+    # Copy base template files
+    cp -r "$REPO_ROOT/templates/project/base/.claude/"* "$CCO_PROJECTS_DIR/remote-app/.claude/" 2>/dev/null || true
+    # Save base versions (matching installed)
+    cp -r "$REPO_ROOT/templates/project/base/.claude/"* "$CCO_PROJECTS_DIR/remote-app/.cco/base/" 2>/dev/null || true
+    # Simulate framework update: modify a default file
+    printf '\n# Framework improvement\n' >> "$REPO_ROOT/defaults/global/.claude/rules/workflow.md"
+
+    # --local should apply framework defaults (not skip like without --local)
+    run_cco update --sync remote-app --local --keep
+    assert_output_contains "escape hatch" \
+        "Should mention --local escape hatch"
+    # Should set override marker in meta
+    assert_file_contains "$CCO_PROJECTS_DIR/remote-app/.cco/meta" "local_framework_override: true"
+
+    # Restore default
+    cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
+}
+
+# ── project internalize non-TTY requires --yes ───────────────────────
+
+test_project_internalize_non_tty_requires_yes() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    create_project "$tmpdir" "remote-app" "name: remote-app"
+    mkdir -p "$CCO_PROJECTS_DIR/remote-app/.cco"
+    printf 'source: https://github.com/team/config.git\nref: main\n' \
+        > "$CCO_PROJECTS_DIR/remote-app/.cco/source"
+
+    # Without --yes in non-TTY, should fail
+    ! run_cco project internalize remote-app || \
+        fail "internalize without --yes in non-TTY should fail"
+    assert_output_contains "--yes"
+}
+
+# ── project install writes .cco/source ───────────────────────────────
+
+test_project_install_writes_source_metadata() {
+    # After install, project should have .cco/source with YAML metadata
+    # This test requires a real Config Repo — we create one locally
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    # Create a bare Config Repo with a template
+    local repo_dir="$tmpdir/config-repo"
+    mkdir -p "$repo_dir/templates/test-tmpl/.claude/rules"
+    printf 'name: test-tmpl\ndescription: test\nrepos: []\n' > "$repo_dir/templates/test-tmpl/project.yml"
+    printf '# Test CLAUDE.md\n' > "$repo_dir/templates/test-tmpl/.claude/CLAUDE.md"
+    printf '# Test rule\n' > "$repo_dir/templates/test-tmpl/.claude/rules/test.md"
+    cat > "$repo_dir/manifest.yml" <<'YAML'
+name: test-config
+description: test
+packs: []
+templates:
+  - name: test-tmpl
+    description: test template
+YAML
+    git -C "$repo_dir" init -q
+    git -C "$repo_dir" add -A
+    git -C "$repo_dir" commit -q -m "init"
+
+    # Install from local git repo
+    run_cco project install "$repo_dir" --pick test-tmpl --as test-proj
+    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.cco/source" \
+        ".cco/source should be created after install"
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/.cco/source" "source: $repo_dir" \
+        ".cco/source should contain the remote URL"
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/.cco/source" "installed:" \
+        ".cco/source should contain install date"
+    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/.cco/source" "commit:" \
+        ".cco/source should contain commit hash"
+    assert_dir_exists "$CCO_PROJECTS_DIR/test-proj/.cco/base" \
+        ".cco/base should be created for future 3-way merge"
+}
+
+# ── publish safety: .cco/publish-ignore ──────────────────────────────
+
+test_publish_ignore_excludes_files() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    # Create project with publish-ignore
+    run_cco project create pub-test
+    mkdir -p "$CCO_PROJECTS_DIR/pub-test/.cco"
+    printf 'local-*.md\n*.draft\n' > "$CCO_PROJECTS_DIR/pub-test/.cco/publish-ignore"
+    echo "local notes" > "$CCO_PROJECTS_DIR/pub-test/.claude/rules/local-notes.md"
+    echo "draft" > "$CCO_PROJECTS_DIR/pub-test/.claude/rules/review.draft"
+
+    # Create bare remote
+    local bare_dir
+    bare_dir=$(_create_bare_remote_for_test "$tmpdir")
+
+    run_cco project publish pub-test "$bare_dir" --force
+    # Verify excluded files are not in the remote
+    local work_dir="$tmpdir/verify"
+    git clone -q "$bare_dir" "$work_dir"
+    assert_file_not_exists "$work_dir/templates/pub-test/.claude/rules/local-notes.md" \
+        "publish-ignore should exclude local-*.md"
+    assert_file_not_exists "$work_dir/templates/pub-test/.claude/rules/review.draft" \
+        "publish-ignore should exclude *.draft"
+}
+
+# Helper for publish tests
+_create_bare_remote_for_test() {
+    local tmpdir="$1"
+    local bare_dir="$tmpdir/publish-remote.git"
+    local work_dir="$tmpdir/init-work"
+    mkdir -p "$work_dir"
+    git -C "$work_dir" init -q
+    printf 'name: ""\ndescription: ""\npacks: []\ntemplates: []\n' > "$work_dir/manifest.yml"
+    git -C "$work_dir" add -A
+    git -C "$work_dir" commit -q -m "init"
+    git init --bare -q "$bare_dir"
+    git -C "$work_dir" remote add origin "$bare_dir"
+    git -C "$work_dir" push -q origin main 2>/dev/null || \
+        git -C "$work_dir" push -q origin master 2>/dev/null
+    rm -rf "$work_dir"
+    echo "$bare_dir"
 }

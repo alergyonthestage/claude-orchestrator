@@ -23,22 +23,27 @@ yml_set() {
         local parent="${key%%.*}"
         local child="${key#*.}"
         if grep -q "^${parent}:" "$file" 2>/dev/null; then
-            # Parent exists — check if child exists under it
-            if awk -v p="$parent" -v c="$child" '
-                $0 ~ "^"p":" { in_block=1; next }
-                in_block && /^[^ ]/ { exit 1 }
-                in_block && $0 ~ "^  "c":" { found=1; exit 0 }
-                END { exit (found ? 0 : 1) }
-            ' "$file" 2>/dev/null; then
-                # Child exists — update in place
-                sed -i '' "s|^  ${child}: .*|  ${child}: ${value}|" "$file" 2>/dev/null || \
-                    sed -i "s|^  ${child}: .*|  ${child}: ${value}|" "$file"
-            else
-                # Child doesn't exist — append under parent
-                sed -i '' "/^${parent}:/a\\
-  ${child}: ${value}" "$file" 2>/dev/null || \
-                    sed -i "/^${parent}:/a\\  ${child}: ${value}" "$file"
-            fi
+            # Parent exists — use awk to update/append ONLY under the correct parent
+            local tmpf
+            tmpf=$(mktemp)
+            awk -v p="$parent" -v c="$child" -v v="$value" '
+                $0 ~ "^"p":" { in_block=1; print; next }
+                in_block && /^[^ ]/ {
+                    # Leaving parent block — if child not found, insert before this line
+                    if (!found) { print "  " c ": " v; found=1 }
+                    in_block=0; print; next
+                }
+                in_block && $0 ~ "^  "c":" {
+                    # Found child under correct parent — replace
+                    print "  " c ": " v; found=1; next
+                }
+                { print }
+                END {
+                    # If still in block at EOF and child not found, append
+                    if (in_block && !found) print "  " c ": " v
+                }
+            ' "$file" > "$tmpf"
+            mv "$tmpf" "$file"
         else
             # Parent doesn't exist — create block
             printf '%s:\n  %s: %s\n' "$parent" "$child" "$value" >> "$file"
@@ -46,8 +51,13 @@ yml_set() {
     else
         # Top-level key
         if grep -q "^${key}:" "$file" 2>/dev/null; then
-            sed -i '' "s|^${key}: .*|${key}: ${value}|" "$file" 2>/dev/null || \
-                sed -i "s|^${key}: .*|${key}: ${value}|" "$file"
+            local tmpf
+            tmpf=$(mktemp)
+            awk -v k="$key" -v v="$value" '
+                $0 ~ "^"k":" { print k ": " v; next }
+                { print }
+            ' "$file" > "$tmpf"
+            mv "$tmpf" "$file"
         else
             printf '%s: %s\n' "$key" "$value" >> "$file"
         fi

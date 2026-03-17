@@ -1474,14 +1474,15 @@ _update_single_project() {
     local source_path="$_INSTALLED_SOURCE_PATH"
     local installed_commit="$_INSTALLED_SOURCE_COMMIT"
 
-    # Vault snapshot offer
+    # Vault snapshot offer — use git commit with .gitignore respected (no -A)
     if [[ -d "$USER_CONFIG_DIR/.git" && "$dry_run" != "true" ]]; then
         if [[ -t 0 ]]; then
             printf "Create vault snapshot before updating? [Y/n] " >&2
             local reply
             read -r reply < /dev/tty
             if [[ ! "$reply" =~ ^[Nn]$ ]]; then
-                (cd "$USER_CONFIG_DIR" && git add -A && git commit -q -m "vault: snapshot before project update ($name)" 2>/dev/null) || true
+                # Stage only tracked + new gitignore-respecting files (no -A to avoid secrets)
+                (cd "$USER_CONFIG_DIR" && git add --all --ignore-errors . && git diff --cached --quiet 2>/dev/null || git commit -q -m "vault: snapshot before project update ($name)") 2>/dev/null || true
                 ok "Vault snapshot created."
             fi
         fi
@@ -1593,16 +1594,20 @@ _update_single_project() {
 # ── Project Internalize ───────────────────────────────────────────────
 
 cmd_project_internalize() {
-    local name=""
+    local name="" yes_mode=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            --yes)  yes_mode=true; shift ;;
             --help)
                 cat <<'EOF'
-Usage: cco project internalize <name>
+Usage: cco project internalize <name> [--yes]
 
 Disconnect a project from its remote source, converting it to a local project.
 After internalizing, framework updates apply directly via 'cco update --sync'.
+
+Options:
+  --yes     Skip confirmation prompt
 EOF
                 return 0
                 ;;
@@ -1629,15 +1634,19 @@ EOF
 
     local source_url="$_INSTALLED_SOURCE_URL"
 
-    # Confirm
-    if [[ -t 0 ]]; then
-        printf "This will disconnect '%s' from %s.\n" "$name" "$source_url" >&2
-        printf "You will no longer receive publisher updates.\n" >&2
-        printf "Framework updates will apply directly via 'cco update --sync'.\n" >&2
-        printf "Continue? [y/N] " >&2
-        local reply
-        read -r reply < /dev/tty
-        [[ ! "$reply" =~ ^[Yy]$ ]] && die "Aborted."
+    # Confirm (required unless --yes)
+    if [[ "$yes_mode" != "true" ]]; then
+        if [[ -t 0 ]]; then
+            printf "This will disconnect '%s' from %s.\n" "$name" "$source_url" >&2
+            printf "You will no longer receive publisher updates.\n" >&2
+            printf "Framework updates will apply directly via 'cco update --sync'.\n" >&2
+            printf "Continue? [y/N] " >&2
+            local reply
+            read -r reply < /dev/tty
+            [[ ! "$reply" =~ ^[Yy]$ ]] && die "Aborted."
+        else
+            die "Non-interactive mode: use --yes to confirm internalization."
+        fi
     fi
 
     local source_file
