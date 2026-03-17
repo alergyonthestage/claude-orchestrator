@@ -1068,26 +1068,18 @@ EOF
     # ── Pre-publish safety pipeline ──────────────────────────────────
 
     # STEP 1: MIGRATION CHECK (blocking)
-    # Only block publish if project has been through the update system and has
-    # pending migrations. Projects with schema_version matching latest are current.
-    # Projects without .cco/meta or with uninitialized schema (0) are not checked.
+    # Block publish if project has a schema_version that is behind the latest.
+    # Projects without .cco/meta (schema=0) are not checked — they predate the
+    # migration system and will be migrated on first `cco update`.
     local meta_file
     meta_file=$(_cco_project_meta "$project_dir")
-    if [[ -f "$meta_file" ]]; then
-        local current_schema
-        current_schema=$(_read_cco_meta "$meta_file")
-        local latest_schema
-        latest_schema=$(_latest_schema_version "project")
-        # Check if project was created by current system (has created_at or template field)
-        # and has fallen behind on migrations
-        if [[ "$current_schema" -gt 0 ]]; then
-            local has_created_at=""
-            has_created_at=$(grep -c "^created_at:" "$meta_file" 2>/dev/null) || true
-            if [[ "${has_created_at:-0}" -gt 0 && "$current_schema" -lt "$latest_schema" ]]; then
-                error "Project '$name' has pending migrations (schema: $current_schema, latest: $latest_schema)."
-                die "Run 'cco update' first to apply migrations."
-            fi
-        fi
+    local current_schema
+    current_schema=$(_read_cco_meta "$meta_file")
+    local latest_schema
+    latest_schema=$(_latest_schema_version "project")
+    if [[ "$current_schema" -gt 0 && "$current_schema" -lt "$latest_schema" ]]; then
+        error "Project '$name' has pending migrations (schema: $current_schema, latest: $latest_schema)."
+        die "Run 'cco update' first to apply migrations."
     fi
 
     # STEP 2: FRAMEWORK ALIGNMENT CHECK (warning)
@@ -1112,18 +1104,20 @@ EOF
     fi
 
     # STEP 3: SECRET SCAN (blocking)
-    # Scan files that would actually be published. Excludes: .cco/, memory/,
-    # secrets.env (same exclusion list as _copy_project_for_publish).
+    # Two-pass scan on files that would actually be published:
+    #   Pass 1: filename patterns (*.env, *.key, *.pem, .credentials.json)
+    #   Pass 2: content patterns (API_KEY=, SECRET=, PASSWORD=, token strings)
+    # Excludes: .cco/, memory/, secrets.env (same as _copy_project_for_publish)
     local -a secret_hits=()
+    local -a _publishable_files=()
+
+    # Collect all publishable files
     local -a _scan_dirs=()
     [[ -d "$project_dir/.claude" ]] && _scan_dirs+=("$project_dir/.claude")
-
-    # Also scan publishable root files (project.yml, setup.sh, etc.)
     for _root_item in "$project_dir"/*; do
         [[ ! -e "$_root_item" ]] && continue
         local _root_base
         _root_base=$(basename "$_root_item")
-        # Skip excluded items
         case "$_root_base" in
             .cco|.claude|memory|secrets.env) continue ;;
         esac
@@ -1134,18 +1128,50 @@ EOF
         while IFS= read -r file; do
             [[ -z "$file" ]] && continue
             [[ "$file" == */.cco/* ]] && continue
-            local base_name
-            base_name=$(basename "$file")
-            for pattern in '*.env' '*.key' '*.pem' '.credentials.json'; do
-                case "$base_name" in
-                    $pattern)
-                        local rel="${file#$project_dir/}"
-                        secret_hits+=("$rel")
-                        break
-                        ;;
-                esac
-            done
+            _publishable_files+=("$file")
         done < <(find "$_scan_target" -type f 2>/dev/null)
+    done
+
+    # Pass 1: filename patterns
+    for file in "${_publishable_files[@]+"${_publishable_files[@]}"}"; do
+        local base_name
+        base_name=$(basename "$file")
+        for pattern in '*.env' '*.key' '*.pem' '.credentials.json'; do
+            case "$base_name" in
+                $pattern)
+                    secret_hits+=("${file#$project_dir/} (filename match: $pattern)")
+                    break
+                    ;;
+            esac
+        done
+    done
+
+    # Pass 2: content patterns (grep for common secret indicators)
+    # Only scan text files, skip binaries
+    local -a _content_patterns=(
+        'API_KEY\s*[=:]'
+        'SECRET_KEY\s*[=:]'
+        'SECRET\s*[=:]'
+        'PASSWORD\s*[=:]'
+        'PRIVATE_KEY'
+        'BEGIN RSA PRIVATE KEY'
+        'BEGIN OPENSSH PRIVATE KEY'
+        'ghp_[a-zA-Z0-9]'           # GitHub personal access token
+        'gho_[a-zA-Z0-9]'           # GitHub OAuth token
+        'sk-[a-zA-Z0-9]'            # OpenAI/Anthropic API key prefix
+    )
+    for file in "${_publishable_files[@]+"${_publishable_files[@]}"}"; do
+        # Skip binary files
+        file "$file" 2>/dev/null | grep -q "text" || continue
+        for pattern in "${_content_patterns[@]}"; do
+            if grep -qE "$pattern" "$file" 2>/dev/null; then
+                local rel="${file#$project_dir/}"
+                local match_line
+                match_line=$(grep -nE "$pattern" "$file" 2>/dev/null | head -1 | cut -d: -f1)
+                secret_hits+=("$rel:$match_line (content match: $pattern)")
+                break  # One hit per file is enough
+            fi
+        done
     done
 
     if [[ ${#secret_hits[@]} -gt 0 ]]; then
@@ -1153,7 +1179,7 @@ EOF
         for f in "${secret_hits[@]}"; do
             error "  - $f"
         done
-        die "Remove secrets or add patterns to .cco/publish-ignore"
+        die "Remove secrets or add to .cco/publish-ignore"
     fi
 
     info "Publishing project '$name' to $remote_url..."
@@ -1214,16 +1240,81 @@ EOF
             echo "  Packs: ${published_packs[*]}"
         fi
         echo "  Remote: $remote_url"
-        echo "  Files:"
-        find "$tmpdir/templates/$name" -type f | sed "s|$tmpdir/||; s/^/    /"
+        echo ""
+
+        # Show diff for dry-run
+        git -C "$tmpdir" add -A 2>/dev/null
+        local diff_stat
+        diff_stat=$(git -C "$tmpdir" diff --cached --stat 2>/dev/null)
+        if [[ -n "$diff_stat" ]]; then
+            echo -e "${BOLD}Changes vs published version:${NC}"
+            echo "$diff_stat" | sed 's/^/  /'
+        else
+            echo "  No changes vs published version."
+        fi
+
         _cleanup_clone "$tmpdir"
         trap - EXIT
         ok "Dry run complete — nothing pushed"
         return 0
     fi
 
-    # Commit and push
-    git -C "$tmpdir" add -A
+    # STEP 6: DIFF REVIEW (interactive)
+    # Show changes vs last published version and confirm
+    git -C "$tmpdir" add -A 2>/dev/null
+    local diff_stat
+    diff_stat=$(git -C "$tmpdir" diff --cached --stat 2>/dev/null)
+
+    if [[ -n "$diff_stat" ]]; then
+        echo ""
+        echo -e "${BOLD}Changes vs published version:${NC}"
+        echo "$diff_stat" | sed 's/^/  /'
+        echo ""
+
+        # STEP 7: PER-FILE CONFIRMATION (interactive)
+        if [[ "$yes_mode" != "true" && -t 0 ]]; then
+            # Collect changed files
+            local -a changed_files=()
+            while IFS= read -r cfile; do
+                [[ -z "$cfile" ]] && continue
+                changed_files+=("$cfile")
+            done < <(git -C "$tmpdir" diff --cached --name-only 2>/dev/null)
+
+            if [[ ${#changed_files[@]} -gt 5 ]]; then
+                # Many files: bulk confirm
+                printf "Publish all %d changed files? [Y/n/review] " "${#changed_files[@]}" >&2
+                local bulk_reply
+                read -r bulk_reply < /dev/tty
+                case "$bulk_reply" in
+                    [Nn])
+                        _cleanup_clone "$tmpdir"
+                        trap - EXIT
+                        die "Aborted."
+                        ;;
+                    review|r)
+                        # Fall through to per-file review
+                        _publish_per_file_review "$tmpdir" "${changed_files[@]}"
+                        ;;
+                esac
+            else
+                # Few files: per-file review
+                _publish_per_file_review "$tmpdir" "${changed_files[@]}"
+            fi
+        fi
+    else
+        info "No changes vs published version."
+    fi
+
+    # Commit and push (re-add in case per-file review unstaged some)
+    git -C "$tmpdir" add -A 2>/dev/null
+    local has_changes
+    has_changes=$(git -C "$tmpdir" diff --cached --quiet 2>/dev/null && echo "no" || echo "yes")
+    if [[ "$has_changes" == "no" ]]; then
+        _cleanup_clone "$tmpdir"
+        trap - EXIT
+        ok "No changes to publish."
+        return 0
+    fi
     git -C "$tmpdir" commit -q -m "$message"
     local publish_commit
     publish_commit=$(git -C "$tmpdir" rev-parse HEAD 2>/dev/null) || true
@@ -1249,6 +1340,61 @@ EOF
         summary+=" with packs: ${published_packs[*]}"
     fi
     ok "$summary"
+}
+
+# Interactive per-file review for publish.
+# Shows diff for each changed file, asks (P)ublish/(S)kip/(D)iff/(A)bort.
+# Skipped files are unstaged (git reset) so they won't be committed.
+# Usage: _publish_per_file_review <tmpdir> <file1> [file2 ...]
+_publish_per_file_review() {
+    local tmpdir="$1"
+    shift
+    local -a files=("$@")
+    local skipped=0
+
+    for file in "${files[@]}"; do
+        local status_char
+        status_char=$(git -C "$tmpdir" diff --cached --name-status -- "$file" 2>/dev/null | cut -f1)
+        local label="M"
+        case "$status_char" in
+            A) label="NEW" ;;
+            D) label="DEL" ;;
+            M) label="MOD" ;;
+        esac
+
+        printf "\n  %s [%s]\n" "$file" "$label" >&2
+        printf "  (P)ublish / (S)kip / (D)iff / (A)bort: " >&2
+        local reply
+        read -r reply < /dev/tty
+
+        case "$reply" in
+            [Dd])
+                # Show diff, then re-ask
+                echo "" >&2
+                git -C "$tmpdir" diff --cached -- "$file" 2>/dev/null | head -80 >&2
+                echo "" >&2
+                printf "  (P)ublish / (S)kip / (A)bort: " >&2
+                read -r reply < /dev/tty
+                case "$reply" in
+                    [Ss]) git -C "$tmpdir" reset -q HEAD -- "$file" 2>/dev/null; skipped=$((skipped + 1)) ;;
+                    [Aa]) die "Aborted." ;;
+                    # Default: publish (keep staged)
+                esac
+                ;;
+            [Ss])
+                git -C "$tmpdir" reset -q HEAD -- "$file" 2>/dev/null
+                skipped=$((skipped + 1))
+                ;;
+            [Aa])
+                die "Aborted."
+                ;;
+            # Default (P or enter): publish (keep staged)
+        esac
+    done
+
+    if [[ $skipped -gt 0 ]]; then
+        info "Skipped $skipped file(s) from this publish."
+    fi
 }
 
 # Copy project files for publishing, excluding runtime/generated files.
@@ -1289,14 +1435,29 @@ _copy_project_for_publish() {
     # Remove nested .cco/ directories that were copied inside .claude/
     find "$dst" -mindepth 2 -name ".cco" -type d -exec rm -rf {} + 2>/dev/null || true
 
-    # Apply publish-ignore patterns
+    # Apply publish-ignore patterns using a temporary .gitignore in a git repo
+    # for full gitignore semantics (**, directory trails, path patterns)
     if [[ ${#ignore_patterns[@]} -gt 0 ]]; then
-        local pattern
-        for pattern in "${ignore_patterns[@]}"; do
-            # Use find with -name or -path for glob matching
-            find "$dst" -name "$pattern" -exec rm -rf {} + 2>/dev/null || true
-            find "$dst" -path "*/$pattern" -exec rm -rf {} + 2>/dev/null || true
-        done
+        # Init temp git repo for check-ignore
+        git -C "$dst" init -q 2>/dev/null || true
+
+        # Write patterns as .gitignore
+        printf '%s\n' "${ignore_patterns[@]}" > "$dst/.gitignore"
+
+        # Collect all files, check each against ignore patterns
+        while IFS= read -r rel_path; do
+            [[ -z "$rel_path" ]] && continue
+            [[ "$rel_path" == .git/* || "$rel_path" == ".gitignore" ]] && continue
+            if git -C "$dst" check-ignore -q "$rel_path" 2>/dev/null; then
+                rm -rf "$dst/$rel_path"
+            fi
+        done < <(cd "$dst" && find . -mindepth 1 -not -path './.git/*' -print | sed 's|^\./||')
+
+        # Remove empty directories left behind
+        find "$dst" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+
+        # Clean up temp git repo and .gitignore
+        rm -rf "$dst/.git" "$dst/.gitignore"
     fi
 }
 

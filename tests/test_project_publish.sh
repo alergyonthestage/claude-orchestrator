@@ -62,7 +62,10 @@ MD
     mkdir -p "$project_dir/.cco/managed" "$project_dir/.claude/.cco"
     echo "{}" > "$project_dir/.cco/managed/mcp.json"
     echo "pack: stuff" > "$project_dir/.claude/.cco/pack-manifest"
-    echo "schema_version: 1" > "$project_dir/.cco/meta"
+    # Use latest schema version to pass migration check
+    local _latest
+    _latest=$(bash -c "source '$REPO_ROOT/lib/colors.sh'; source '$REPO_ROOT/lib/utils.sh'; source '$REPO_ROOT/lib/paths.sh'; source '$REPO_ROOT/lib/yaml.sh'; source '$REPO_ROOT/lib/update.sh'; _latest_schema_version project")
+    echo "schema_version: $_latest" > "$project_dir/.cco/meta"
     echo "SECRET=pass" > "$project_dir/secrets.env"
 }
 

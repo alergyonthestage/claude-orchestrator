@@ -515,6 +515,128 @@ test_is_installed_project_after_internalize() {
         fail "Internalized project should be detected as local"
 }
 
+# ── Content-based secret scan ─────────────────────────────────────────
+
+test_publish_blocks_on_content_secrets() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+    run_cco project create secret-content-app
+
+    # Create a file with secret content (not a secret filename)
+    printf '# Config\nAPI_KEY = sk-abc123def456\n' \
+        > "$CCO_PROJECTS_DIR/secret-content-app/.claude/rules/config.md"
+
+    local bare_dir
+    bare_dir=$(_create_bare_remote_for_test "$tmpdir")
+
+    ! run_cco project publish secret-content-app "$bare_dir" --force --yes || \
+        fail "Publish should block on content-based secret patterns"
+    assert_output_contains "secrets detected"
+    assert_output_contains "content match"
+}
+
+test_publish_passes_clean_project() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+    run_cco project create clean-app
+
+    local bare_dir
+    bare_dir=$(_create_bare_remote_for_test "$tmpdir")
+
+    run_cco project publish clean-app "$bare_dir" --force --yes
+    assert_output_contains "Published"
+}
+
+# ── Migration check (L-2 fix) ────────────────────────────────────────
+
+test_publish_blocks_on_pending_migrations() {
+    _source_libs
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+    run_cco project create migration-app
+
+    # Set schema_version to something behind latest (overwrite entire meta)
+    local meta_file="$CCO_PROJECTS_DIR/migration-app/.cco/meta"
+    printf 'schema_version: 1\n' > "$meta_file"
+
+    local bare_dir
+    bare_dir=$(_create_bare_remote_for_test "$tmpdir")
+
+    ! run_cco project publish migration-app "$bare_dir" --force --yes || \
+        fail "Publish should block on pending migrations"
+    assert_output_contains "pending migrations"
+}
+
+# ── Publish dry-run shows diff ────────────────────────────────────────
+
+test_publish_dry_run_shows_diff() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+    run_cco project create diff-app
+
+    local bare_dir
+    bare_dir=$(_create_bare_remote_for_test "$tmpdir")
+
+    run_cco project publish diff-app "$bare_dir" --dry-run
+    assert_output_contains "Dry run complete"
+}
+
+# ── Publish writes metadata ──────────────────────────────────────────
+
+test_publish_writes_metadata() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+    run_cco project create meta-app
+
+    local bare_dir
+    bare_dir=$(_create_bare_remote_for_test "$tmpdir")
+
+    run_cco project publish meta-app "$bare_dir" --force --yes
+    assert_output_contains "Published"
+
+    # .cco/source should be created with publish metadata
+    assert_file_exists "$CCO_PROJECTS_DIR/meta-app/.cco/source" \
+        ".cco/source should be created after publish"
+    assert_file_contains "$CCO_PROJECTS_DIR/meta-app/.cco/source" "published:" \
+        "should have publish date"
+    assert_file_contains "$CCO_PROJECTS_DIR/meta-app/.cco/source" "publish_commit:" \
+        "should have publish commit"
+}
+
+# ── Publish-ignore with path patterns ────────────────────────────────
+
+test_publish_ignore_path_patterns() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+    run_cco project create path-test
+
+    # Create files and publish-ignore with path-based patterns
+    mkdir -p "$CCO_PROJECTS_DIR/path-test/.claude/rules/local"
+    echo "local rule" > "$CCO_PROJECTS_DIR/path-test/.claude/rules/local/notes.md"
+    echo "keep" > "$CCO_PROJECTS_DIR/path-test/.claude/rules/keep.md"
+    mkdir -p "$CCO_PROJECTS_DIR/path-test/.cco"
+    printf 'rules/local/\n' > "$CCO_PROJECTS_DIR/path-test/.cco/publish-ignore"
+
+    local bare_dir
+    bare_dir=$(_create_bare_remote_for_test "$tmpdir")
+
+    run_cco project publish path-test "$bare_dir" --force --yes
+    assert_output_contains "Published"
+
+    local work_dir="$tmpdir/verify"
+    git clone -q "$bare_dir" "$work_dir"
+    assert_file_not_exists "$work_dir/templates/path-test/.claude/rules/local/notes.md" \
+        "publish-ignore path pattern should exclude directory"
+    assert_file_exists "$work_dir/templates/path-test/.claude/rules/keep.md" \
+        "non-ignored files should be published"
+}
+
 # ── Helper ────────────────────────────────────────────────────────────
 
 _create_bare_remote_for_test() {
