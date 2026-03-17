@@ -101,8 +101,21 @@ EOF
     local is_internal=false
 
     if [[ "$project" == "tutorial" ]]; then
-        # Tutorial is an internal project — always launched from internal/tutorial/
-        # Runtime state stored in user-config/.cco/internal/tutorial/
+        # "tutorial" is a reserved name — always launches the built-in tutorial.
+        # Block if user has a project named "tutorial" in user-config.
+        if [[ -d "$PROJECTS_DIR/tutorial" ]]; then
+            echo ""
+            error "'tutorial' is a reserved name for the built-in tutorial."
+            echo ""
+            echo "  You have a project named 'tutorial' in your user-config."
+            echo "  Please rename or remove it to use 'cco start tutorial':"
+            echo ""
+            echo "    Rename:  mv $PROJECTS_DIR/tutorial $PROJECTS_DIR/<new-name>"
+            echo "    Remove:  rm -rf $PROJECTS_DIR/tutorial"
+            echo ""
+            echo "  After renaming, update any references to the old project name."
+            die "Resolve the conflict and try again."
+        fi
         is_internal=true
         _setup_internal_tutorial
         project_dir="$USER_CONFIG_DIR/.cco/internal/tutorial"
