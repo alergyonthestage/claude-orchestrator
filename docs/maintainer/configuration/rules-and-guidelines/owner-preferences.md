@@ -32,6 +32,24 @@ written into configuration files.
   frequently catches implementation errors that were missed during coding.
 - Consider periodic **refactoring reviews** and **architecture optimization analyses**.
 
+### Periodic Maintenance Reviews (Long-term)
+
+Beyond code refactoring, every N development cycles perform broader maintenance reviews:
+- **Documentation structure review**: evaluate if docs need re-organization, merge files that
+  cover the same topics, verify docs are up-to-date with the current implementation
+- **Rule consistency check**: verify that rules across files are not contradictory or stale
+- The goal is to prevent documentation drift and structural entropy over time
+
+### Validation and Testing Strategy
+
+- **Always give Claude a way to test and validate its own code.** The specific method depends
+  on the project, but valid strategies include (also in combination):
+  - **Automated tests** (unit, integration, e2e)
+  - **Bash scripts** for quick validation of CLI tools or build outputs
+  - **Browser integration** (via Chrome DevTools MCP) to verify final UI behavior
+- Without a validation mechanism, Claude produces code it cannot verify, leading to
+  accumulated errors that only surface during human review
+
 ### Human in the Loop
 
 - The human must always control and direct:
@@ -101,6 +119,21 @@ topic (all "git" rules in one file, all "docs" rules in another) reduces the ris
 of creating inconsistencies. Some cross-category risks remain (e.g., docs vs language)
 but are acceptable.
 
+### Rules vs. Knowledge Loading
+
+> **Rules are always in context** — keep them short, focused, enforcement-oriented.
+> **Knowledge and docs are loaded on-demand** — put detailed guidelines, examples,
+> and reference material in knowledge docs or packs.
+
+A rule should be a directive (2-3 lines), not a detailed explanation. Comprehensive
+guidelines belong in documentation that the agent reads when relevant.
+
+### Packs as Single Source of Truth
+
+When a resource (rules, skills, agents, knowledge) must be shared across multiple
+projects, always define it in a **pack**. Never copy/paste between projects. A pack
+ensures a single source of truth: update once, all projects using it receive the update.
+
 ### Preferred File Organization (4 files)
 
 | File | Content |
@@ -155,6 +188,26 @@ but are acceptable.
 - **Regular refactoring reviews** to optimize architecture and encourage good
   software engineering patterns (reuse, maintainability, optimization)
 
+### Skills Beyond Workflow Phases
+
+Skills are not limited to workflow phase entry points. They are one of Claude's most
+powerful and widely-used mechanisms. Two conceptual categories:
+- **Capability upskill**: teaches Claude new abilities (frontend design, document
+  generation, framework-specific patterns). May become obsolete as models improve.
+- **Encoded preference**: captures repeatable workflows and processes (sprint planning,
+  code review methodology, analysis templates). Stays relevant regardless of model.
+
+cco should promote and guide skill creation as a core practice, not just for phases.
+Skills complement rules (always-on behavior) and knowledge (on-demand reference).
+
+### Permission Modes per Phase
+
+- **Plan mode** for analysis and design phases — agent proposes, human reviews
+- **Skip permissions** for implementation — after approved design, let the agent work freely
+- **Accept edits** for sensitive operations — line-by-line control when needed
+- Key insight: when analysis and design are thorough and reviewed, implementation is
+  frequently correct on the first pass (1-2 review iterations for bug fixes)
+
 ### Human in the Loop Preferences
 
 - **Requires human approval**:
@@ -187,6 +240,8 @@ but are acceptable.
 4. **Correlated rules in same file** — significantly reduces contradictory instructions
 5. **Minimal defaults + detailed guides** — respects user autonomy while sharing knowledge
 6. **Human in the loop at phase transitions** — catches direction errors early
+7. **Giving Claude a testing mechanism** — self-validation drastically reduces error accumulation
+8. **Periodic docs structure reviews** — prevents documentation drift and file duplication
 
 ### Common Pitfalls to Document
 
@@ -197,3 +252,7 @@ but are acceptable.
 5. **Maintenance policy not explicitly declared** — LLM defaults to conservative backward
    compatibility even during MVP phase, wasting effort on legacy support
 6. **Not verifying intermediate artifacts** — errors compound across phases
+7. **No testing/validation mechanism for Claude** — code is produced but never verified,
+   bugs pile up silently until human review
+8. **Never reviewing docs structure** — files accumulate, duplicate, and drift from
+   implementation over time

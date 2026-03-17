@@ -1,7 +1,7 @@
 # Design: Environment Extensibility
 
 > Version: 0.1.0
-> Status: Design — pending implementation
+> Status: Implemented (Sprint 4b, 2026-02-26)
 > Related: [analysis](./analysis.md) | [architecture.md](../../architecture/architecture.md) (ADR-12) | [auth-design.md](../../integration/auth/design.md)
 
 ---

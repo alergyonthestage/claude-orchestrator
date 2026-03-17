@@ -73,6 +73,12 @@ EOF
     sed -i '' "s/{{DESCRIPTION}}/$description/g" "$project_yml" 2>/dev/null || \
         sed -i "s/{{DESCRIPTION}}/$description/g" "$project_yml"
 
+    # Substitute framework path placeholders (used by config-editor, etc.)
+    sed -i '' "s|{{CCO_REPO_ROOT}}|$REPO_ROOT|g" "$project_yml" 2>/dev/null || \
+        sed -i "s|{{CCO_REPO_ROOT}}|$REPO_ROOT|g" "$project_yml"
+    sed -i '' "s|{{CCO_USER_CONFIG_DIR}}|$USER_CONFIG_DIR|g" "$project_yml" 2>/dev/null || \
+        sed -i "s|{{CCO_USER_CONFIG_DIR}}|$USER_CONFIG_DIR|g" "$project_yml"
+
     # Update CLAUDE.md placeholder replacement
     local claude_md="$project_dir/.claude/CLAUDE.md"
     sed -i '' "s/{{PROJECT_NAME}}/$name/g" "$claude_md" 2>/dev/null || \

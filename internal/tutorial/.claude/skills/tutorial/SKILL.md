@@ -16,7 +16,7 @@ Start the interactive tutorial. Adapt based on the argument or user's context.
 Parse `$ARGUMENTS`:
 - `beginner` or empty → Start from Module 1 (What is claude-orchestrator)
 - `intermediate` → Start from Module 4 (Knowledge packs)
-- `advanced` → Start from Module 10 (Structured development workflow)
+- `advanced` → Start from Module 10 (Configuring rules & workflow)
 - Any other text → Treat as a topic query, find the most relevant module
 
 Also check `/workspace/user-config/`:
@@ -40,6 +40,14 @@ While presenting modules, watch for opportunities to suggest related features:
 - Discussing packs → mention Config Repos for sharing
 - Discussing CLAUDE.md → mention /init-workspace skill
 - Discussing agents → mention agent teams (tmux)
+- Discussing rules → reference `configuring-rules.md` guide for rule categories,
+  grouping principle (correlated rules in same file), and the distinction between
+  rules (short, always loaded) vs knowledge docs (detailed, on-demand)
+- Discussing workflow → reference `development-workflow.md` guide for review cycles,
+  permission modes per phase, and testing strategy
+- Discussing configuration → help the user progressively build their user-config
+  using the recommended practices from the guides as a foundation, adapted to
+  their specific needs and workflow preferences
 
 ## Important
 

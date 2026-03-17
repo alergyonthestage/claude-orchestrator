@@ -19,14 +19,22 @@ decisions, defined workflows, and quality gates — make human-agent teams effec
 The difference is that agents require these practices to be *more explicit*, because they
 cannot infer organizational context the way a human colleague can.
 
-**claude-orchestrator (cco) exists to make these practices the default.** Rather than
-asking every developer to manually configure context hierarchies, write rules files,
-set up Docker isolation, and coordinate agent teams from scratch, cco provides an
-opinionated framework where structured development is the path of least resistance.
+**claude-orchestrator (cco) exists to make structured development accessible.** Rather
+than asking every developer to manually configure context hierarchies, write rules files,
+set up Docker isolation, and coordinate agent teams from scratch, cco provides a **fully
+customizable framework** with the environment, tools, and configuration mechanisms needed
+for structured agentic development.
 
-This guide explains *why* each practice matters and *how* cco implements it. If you are
+Out of the box, cco ships with a set of **recommended practices** — default rules, skills,
+agents, and guides that reflect patterns tested and refined through real-world agentic
+development. These recommendations are starting points, not mandates. Every rule, skill,
+agent, and default can be modified, replaced, or removed entirely. The built-in tutorial
+helps users build their own configuration informed by these practices, adapting them to
+their specific needs and workflow.
+
+This guide explains *why* each practice matters and *how* cco supports it. If you are
 new to cco, this is the conceptual foundation. If you are experienced, it serves as a
-reference for the design decisions behind the tool.
+reference for the design rationale behind the tool.
 
 ### Who This Guide Is For
 
@@ -42,7 +50,37 @@ Three pillars, mirroring the concerns every agentic project must address:
 2. **Context Engineering** — How cco structures what the agent knows and when
 3. **Workflow Orchestration** — The development cycle, quality gates, and session management
 
-Each section states the principle, explains the reasoning, and shows how cco implements it.
+Each section states the principle, explains the reasoning, and shows how cco supports it.
+
+---
+
+## Framework Philosophy
+
+claude-orchestrator is a **fully customizable framework**. It provides the environment
+(Docker isolation, multi-repo workspaces), the mechanisms (four-tier context hierarchy,
+knowledge packs, agent teams), and the tools (CLI, skills, hooks) — but it does not
+impose any specific workflow, conventions, or development practices.
+
+**What cco provides vs. what cco recommends:**
+
+| Layer | Customizable? | Examples |
+|-------|:------------:|---------|
+| **Framework mechanisms** | Configurable, not removable | Docker isolation, context hierarchy, packs, vault |
+| **Default rules & skills** | Fully customizable | `workflow.md`, `git-practices.md`, `/analyze`, `/review` |
+| **Recommended practices** | Advice only (in guides) | Review cycles, context cleanup, docs structure, maintenance |
+
+The default rules and skills shipped with cco reflect practices that have been tested and
+refined through extensive real-world use of agentic development. They are a **proven
+starting point** — but they remain starting points. Users are encouraged to:
+
+- **Modify** any default to match their preferred workflow
+- **Remove** defaults that don't apply to their context
+- **Add** new rules, skills, and agents for their specific needs
+- **Use the guides** as reference material, not as prescriptions
+
+The built-in tutorial helps users build their own configuration progressively, informed
+by these recommended practices. The guides in this section document the reasoning behind
+each recommendation, so users can make informed decisions about what to adopt.
 
 ---
 
@@ -81,9 +119,10 @@ of any module.
 **How cco implements this:**
 
 - **Conventional commits rule** (`defaults/global/.claude/rules/git-practices.md`) is
-  loaded in every session, instructing the agent to use `feat:`, `fix:`, `docs:`,
+  shipped as a default, instructing the agent to use `feat:`, `fix:`, `docs:`,
   `refactor:`, `test:`, `chore:` prefixes with scope when it adds clarity.
-- **Branch strategy rule** enforces `<type>/<scope>/<description>` naming and prevents
+  Users can modify or replace this with their own commit convention.
+- **Branch strategy rule** defines `<type>/<scope>/<description>` naming and discourages
   direct commits to main/master.
 - **Workflow phases** (see Pillar 3) create natural commit boundaries — each completed
   sub-task within a phase is a commit point.
@@ -95,8 +134,8 @@ a feature branch and is integrated through review.
 
 **How cco implements this:**
 
-- The **git-practices rule** defines the branching convention and is loaded in every session.
-- The **workflow rule** enforces that implementation happens on feature branches created
+- The **git-practices rule** defines the branching convention and is loaded as a default.
+- The **workflow rule** recommends that implementation happens on feature branches created
   at the start of the implementation phase.
 - The **`/review` skill** provides a structured code review checklist before merge.
 
@@ -129,7 +168,7 @@ and domain correctness.
   quality, convention adherence, potential bugs, test coverage gaps, and documentation
   completeness. It runs as a specialized subagent that does not modify code.
 - The **`/review` skill** provides a structured checklist the lead agent follows.
-- The **workflow phases** enforce human approval gates between analysis, design,
+- The **workflow phases** establish human approval gates between analysis, design,
   implementation, and documentation — the human is always the final quality gate.
 
 ---
@@ -191,7 +230,7 @@ information at the right time without overwhelming the agent.
 
 ### 2.3 Rules as the Primary Enforcement Mechanism
 
-**Principle**: Rules are the most reliable way to enforce consistent agent behavior.
+**Principle**: Rules are the most reliable way to guide consistent agent behavior.
 They should be explicit, versioned, and periodically reviewed.
 
 **How cco implements this:**
@@ -202,10 +241,12 @@ They should be explicit, versioned, and periodically reviewed.
   and documentation language preferences).
 - **Scoped rules**: Global rules apply everywhere. Project-level rules in
   `projects/<name>/.claude/rules/` override or extend for specific projects.
-- **Rules are short and focused.** Each rule file addresses one concern in ~20-40 lines.
+- **Rules are short and focused.** Each default rule file addresses one concern in
+  ~20-40 lines. Users can expand, split, or reorganize rules as their project evolves.
   This avoids rule fatigue (the tendency for rules to accumulate into an unmanageable mass).
 - **Rules are versioned.** Tracked in git, updated via `cco update`, with migrations
-  when structure changes.
+  when structure changes. See the [Configuring Rules](configuring-rules.md) guide for
+  how to organize and customize rules effectively.
 
 ### 2.4 Knowledge Packs — Curated Domain Context
 
@@ -248,8 +289,8 @@ operational instructions (what the agent should do now).
 
 ### 3.1 The Phased Development Cycle
 
-**Principle**: Every development cycle follows a defined sequence of phases with explicit
-transitions. Phase transitions require human approval.
+**Principle**: A structured development cycle follows a defined sequence of phases with
+explicit transitions. Phase transitions benefit from human approval.
 
 ```
 Analysis → [Human Review] → Design → [Human Review] → Implementation → [Human Review] → Documentation → Closure
@@ -257,16 +298,19 @@ Analysis → [Human Review] → Design → [Human Review] → Implementation →
 
 **How cco implements this:**
 
-- The **workflow rule** (`defaults/global/.claude/rules/workflow.md`) defines phase-specific
-  behavioral constraints:
+- The **default workflow rule** (`defaults/global/.claude/rules/workflow.md`) defines
+  recommended phase-specific behavioral constraints:
   - Analysis: read and understand, DO NOT modify files
   - Design: propose interfaces and models, DO NOT write implementation code
   - Implementation: follow the approved design, commit after each logical unit
   - Documentation: update docs, DO NOT add new features
+  Users can adjust, add, or remove phases to match their preferred workflow.
 - **Skills as phase entry points**: `/analyze` provides structured analysis templates,
-  `/design` provides design templates, `/review` provides review checklists.
-- **Human gates are explicit.** The CLAUDE.md framework instruction states: "Phase
+  `/design` provides design templates, `/review` provides review checklists. Additional
+  skills can be created for custom phases.
+- **Human gates are recommended.** The default CLAUDE.md instruction states: "Phase
   transitions are MANUAL — never skip ahead or auto-advance without explicit user approval."
+  Users can relax this for phases where autonomous progression is appropriate.
 
 ### 3.2 Docker Isolation — The Session Sandbox
 
@@ -345,8 +389,8 @@ might span multiple sessions, while a feature-level analysis might be a few para
 
 **How cco implements this:**
 
-- The **CLAUDE.md framework instruction** explicitly lists scope levels and requires
-  clarification of the current scope before starting work.
+- The **default CLAUDE.md instruction** lists scope levels and suggests clarifying
+  the current scope before starting work.
 - **Skills adapt to scope.** `/analyze` and `/design` produce proportional output
   based on the scope of the task.
 
@@ -359,10 +403,11 @@ might span multiple sessions, while a feature-level analysis might be a few para
 Effective prompts and instructions should be treated as code: versioned, refined, and
 reused. cco implements this through the **skills system**:
 
-- Global skills (`defaults/global/.claude/skills/`) provide reusable workflows available
-  in every project — analysis, design, review, commit.
+- Default skills (`defaults/global/.claude/skills/`) provide recommended workflows
+  available in every project — analysis, design, review, commit. Users can modify
+  these or create their own.
 - Project-level skills (`projects/<name>/.claude/skills/`) provide project-specific
-  workflows.
+  workflows that extend or override the defaults.
 - Skills are markdown files with structured instructions. They evolve with the project.
 
 ### Periodic Health Checks

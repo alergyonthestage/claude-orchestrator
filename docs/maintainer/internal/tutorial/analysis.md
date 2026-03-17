@@ -1,9 +1,9 @@
 # Tutorial Project — Analysis
 
-**Date**: 2026-03-10
-**Version**: 1.0
+**Date**: 2026-03-17
+**Version**: 2.1
 **Scope**: Sprint 5 — Interactive Tutorial Project
-**Status**: Analysis complete — ready for design review
+**Status**: Current — tutorial is an internal framework resource
 
 ---
 
@@ -158,17 +158,29 @@ The agent creates the files; the user runs `cco` commands to activate them.
 
 **Constraint**: The agent MUST explain what it wants to do, get user approval, and instruct the user on how cco processes the files. The goal is teaching, not just doing.
 
-### 3.4 Tutorial Created by Default with `cco init`
+### 3.4 Tutorial as Internal Resource (Updated 2026-03-16)
 
-**Decision**: `cco init` creates the tutorial project automatically in `user-config/projects/tutorial/`.
+> **Superseded**: The original decision was to install the tutorial in
+> `user-config/projects/tutorial/` via `cco init`. This has been replaced
+> by the internal model described below.
+
+**Decision**: The tutorial is a framework-internal resource at
+`internal/tutorial/`. It is NOT installed in user-config.
 
 **Rationale**:
-- Maximum discoverability for new users
-- Zero friction: `cco init` → `cco start tutorial` → guided onboarding
-- Users who don't want it can remove the directory (`rm -rf user-config/projects/tutorial/`)
-- Can also be created later via `cco project create --template tutorial` (for users who removed it)
+- Tutorial is educational content authored by the framework, not user config
+- Must always reflect the current framework version (no staleness)
+- No update tracking, no merge, no sync needed — runs directly from source
+- `cco start tutorial` launches from `internal/tutorial/` (reserved name)
+- Tutorial does not appear in `cco project list`
 
-**Implementation**: Add tutorial project creation to `cmd_init()` after the global config copy. Substitute `{{CCO_REPO_ROOT}}` and `{{CCO_USER_CONFIG_DIR}}` placeholders in `project.yml`.
+**Config editing use case**: Separated into a `config-editor` template
+(`templates/project/config-editor/`) that the user installs as a normal
+project. See `docs/maintainer/configuration/resource-lifecycle/analysis.md` §4.3.
+
+**Migration**: Users with existing `user-config/projects/tutorial/` are
+informed that the tutorial is now built-in. Their project can be removed.
+See `docs/maintainer/configuration/resource-lifecycle/analysis.md` §4.4.
 
 ### 3.5 Agent Behavior: Explain, Instruct, Get Approval
 

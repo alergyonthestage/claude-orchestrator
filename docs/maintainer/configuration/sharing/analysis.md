@@ -4,6 +4,7 @@
 > **Date**: 2026-03-04
 > **Scope**: Sprint 6 (Sharing & Import) + Sprint 10 (Config Vault)
 > **Related**: [roadmap.md](../../decisions/roadmap.md) §Sprint 6, §Sprint 10
+> **Enhancements**: [enhancements-analysis.md](./enhancements-analysis.md), [enhancements-design.md](./enhancements-design.md)
 
 ---
 

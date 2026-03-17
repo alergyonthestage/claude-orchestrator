@@ -1,16 +1,22 @@
 # Tutorial Project — Design
 
-**Date**: 2026-03-10
-**Version**: 1.0
+**Date**: 2026-03-17
+**Version**: 2.1
 **Scope**: Sprint 5 — Interactive Tutorial Project
-**Status**: Draft — pending review before implementation
+**Status**: Current — tutorial is an internal framework resource
 **Prerequisite**: [analysis.md](./analysis.md)
 
 ---
 
 ## 1. Design Overview
 
-The tutorial is a standard claude-orchestrator project created by `cco init`. It uses no knowledge packs. Documentation is mounted live from the claude-orchestrator repo (`docs/`), and the user's configuration directory (`user-config/`) is mounted for analysis (read-only by default, user can opt into read-write).
+The tutorial is a framework-internal project at `internal/tutorial/`. It is
+NOT installed in user-config — `cco start tutorial` launches it directly from
+its source directory.
+
+It uses no knowledge packs. Documentation is mounted live from the
+claude-orchestrator repo (`docs/`), and the user's configuration directory
+(`user-config/`) is mounted read-only for analysis.
 
 The lead agent IS the guide — no dedicated guide subagent. The project CLAUDE.md provides the tutorial behavior, curriculum, and documentation map. Three inline skills (`/tutorial`, `/setup-project`, `/setup-pack`) serve as entry points for common workflows.
 
@@ -23,7 +29,7 @@ The lead agent IS the guide — no dedicated guide subagent. The project CLAUDE.
 | Skills context | B) Inline (not fork) | Interactive dialogue — user needs continuous context. Lead can delegate to subagents in specific cases |
 | Docker socket | `false` by default | Safer. Agent explains how to enable if needed, with user approval |
 | Knowledge packs | None | Self-contained. Docs mounted live, no duplication |
-| Distribution | Created by `cco init` | Maximum discoverability. Removable with `rm -rf` |
+| Distribution | **Internal** (`cco start tutorial`, 2026-03-16) | Always current. No install, no update tracking. See docs/maintainer/configuration/resource-lifecycle/analysis.md §4 |
 | Progress tracking | Not in v1 | MEMORY.md tracking deferred. Noted as future enhancement |
 | Best practices guide | cco-specific version in `docs/guides/` | General-purpose guide transformed to explain why cco exists and how it implements structured agentic development patterns. Mounted live via `docs/` extra_mount, always fresh |
 | Per-project knowledge | Not in v1 | Knowledge section currently only available in packs. Per-project knowledge (same `knowledge:` schema in project.yml) noted as future enhancement in roadmap |
@@ -64,14 +70,16 @@ building the tutorial project template. The guide is useful independently of the
 
 ## 2. Project File Structure
 
+> **Updated 2026-03-16**: Path changed from `templates/project/tutorial/` to
+> `internal/tutorial/`. No `.cco/` metadata — internal resources don't
+> participate in the update system.
+
 ```
-templates/project/tutorial/
-├── project.yml                        # Pre-configured: no repos, extra_mounts
+internal/tutorial/
+├── project.yml                        # Fixed config: docs mount, user-config mount (ro)
 ├── .claude/
 │   ├── CLAUDE.md                      # Core: agent behavior + curriculum + doc map
 │   ├── settings.json                  # Empty (inherits global)
-│   ├── agents/                        # Empty (.gitkeep) — uses global agents only
-│   │   └── .gitkeep
 │   ├── skills/
 │   │   ├── tutorial/
 │   │   │   └── SKILL.md              # /tutorial — guided onboarding
@@ -81,17 +89,15 @@ templates/project/tutorial/
 │   │       └── SKILL.md              # /setup-pack — pack creation wizard
 │   └── rules/
 │       └── tutorial-behavior.md       # Behavior constraints
-├── claude-state/
-│   └── memory/
-│       └── .gitkeep
 └── setup.sh                           # Empty (no runtime setup needed)
 ```
 
 **Notes**:
 - No `agents/` definitions — the lead agent handles tutorial duties, delegates to global `analyst` when deeper code exploration is needed
 - No `mcp.json` — tutorial doesn't need MCP servers
-- No `mcp-packages.txt` — no additional npm packages
-- No `secrets.env` — tutorial doesn't need secrets
+- No `.cco/` metadata — internal resources don't need update tracking
+- No `claude-state/` or `memory/` — session state managed by the framework
+  (stored in `user-config/.cco/tutorial-state/` or similar)
 
 ---
 
@@ -585,50 +591,33 @@ more knowledgeable and self-sufficient with claude-orchestrator.
 
 ---
 
-## 7. Changes to `cmd-init.sh`
+## 7. Changes to `cmd-start.sh` (Updated 2026-03-16)
 
-### 7.1 Tutorial Project Creation
+> **Superseded**: The original §7 described adding tutorial creation to
+> `cmd-init.sh`. With the internal model, `cco init` no longer creates a
+> tutorial project. Instead, `cco start` handles the reserved name.
 
-Add tutorial project creation after global config initialization (after line 131 in current `cmd-init.sh`). The tutorial is created only if `user-config/projects/tutorial/` does not already exist.
+### 7.1 Reserved Name Handling in `cco start`
+
+`cco start tutorial` must recognize "tutorial" as a reserved internal project
+name and resolve it to `internal/tutorial/` instead of looking in
+`user-config/projects/tutorial/`.
 
 ```bash
-# Create tutorial project (unless it already exists)
-local tutorial_dir="$PROJECTS_DIR/tutorial"
-if [[ ! -d "$tutorial_dir" ]]; then
-    info "Creating tutorial project..."
-    cp -r "$DEFAULTS_DIR/tutorial" "$tutorial_dir"
-
-    # Substitute path placeholders in project.yml
-    local tutorial_yml="$tutorial_dir/project.yml"
-    sed -i '' "s|{{CCO_REPO_ROOT}}|$REPO_ROOT|g" "$tutorial_yml" 2>/dev/null || \
-        sed -i "s|{{CCO_REPO_ROOT}}|$REPO_ROOT|g" "$tutorial_yml"
-    sed -i '' "s|{{CCO_USER_CONFIG_DIR}}|$USER_CONFIG_DIR|g" "$tutorial_yml" 2>/dev/null || \
-        sed -i "s|{{CCO_USER_CONFIG_DIR}}|$USER_CONFIG_DIR|g" "$tutorial_yml"
-
-    ok "Tutorial project ready — run 'cco start tutorial' to begin"
+# In cmd_start():
+if [[ "$project_name" == "tutorial" ]]; then
+    local project_dir="$REPO_ROOT/internal/tutorial"
+    # Use internal project directly — no user-config copy
+    # Session state goes to user-config/.cco/tutorial-state/
 else
-    # Tutorial exists, just inform
-    ok "Tutorial project exists"
+    local project_dir="$PROJECTS_DIR/$project_name"
 fi
 ```
 
-**Notes**:
-- Uses the same dual-sed pattern as language substitution (macOS + Linux compat)
-- Idempotent: skips if tutorial already exists
-- Uses `|` as sed delimiter to avoid conflicts with `/` in paths
-- Runs AFTER the projects directory is created (`mkdir -p "$PROJECTS_DIR"` on line 120)
+### 7.2 No Template Re-creation Needed
 
-### 7.2 Template Re-creation
-
-For users who removed the tutorial and want it back, support via:
-
-```bash
-cco project create --template tutorial
-```
-
-This requires the existing `cmd_project_create` to recognize `tutorial` as a special template name and copy from `templates/project/tutorial/` instead of `templates/project/base/`. Alternatively, document that `cco init --force` re-creates it (simpler, less code).
-
-**Recommendation**: For v1, document `cco init` as the re-creation method. Add `--template` support in a future iteration if there's demand.
+Since the tutorial runs from `internal/tutorial/` directly, there is nothing
+to re-create. `cco start tutorial` always works, always up to date.
 
 ---
 
@@ -659,6 +648,11 @@ No overrides needed. The tutorial project uses the same model, permissions, and 
 ---
 
 ## 10. Implementation Plan
+
+> **Note**: This plan reflects the Sprint 5 implementation. Paths have since
+> changed (`templates/project/tutorial/` → `internal/tutorial/`) and CLI
+> integration moved from `cco init` to `cco start tutorial` (reserved name).
+> See §2 and §7 for the current architecture.
 
 ### Phase 0: Best Practices Guide (prerequisite)
 
@@ -746,18 +740,23 @@ test_tutorial_socket_disabled
 
 ---
 
-## 11. Migration
+## 11. Migration (Updated 2026-03-16)
 
-### Existing Installations
+### Transition from Installed to Internal
 
-Users who already ran `cco init` before this feature won't have the tutorial project. Two options:
+Users who have an existing `user-config/projects/tutorial/` from a previous
+`cco init` need to be informed that the tutorial is now built-in.
 
-1. **Manual**: User runs `cco init` again (skips existing global config, creates tutorial if missing)
-2. **Migration script**: `migrations/project/006_add_tutorial_project.sh` — creates tutorial project with correct paths
-
-**Recommendation**: Option 1 is sufficient. The tutorial creation in `cco init` is idempotent (skips if exists). Users run `cco init` and the tutorial appears. No migration script needed — the tutorial is an optional convenience, not a breaking change.
-
-Document in the changelog: "Run `cco init` to add the interactive tutorial project."
+**Approach**: Informational, not breaking.
+- `cco update` detects `user-config/projects/tutorial/` and shows a message:
+  "The tutorial is now built-in. Run `cco start tutorial` directly.
+  Your existing tutorial project can be removed with
+  `rm -rf user-config/projects/tutorial/`."
+- No migration script needed — the old project still works if the user
+  keeps it, but `cco start tutorial` now launches the internal version
+  (reserved name takes precedence)
+- If the user wants config editing capabilities, suggest:
+  `cco project create my-editor --template config-editor`
 
 ---
 

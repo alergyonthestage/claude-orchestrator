@@ -1,5 +1,7 @@
 # Technical Review: claude-orchestrator
 
+> **Status**: Historical record
+
 **Scope**: Architecture, design, implementation, Claude Code integration
 **Version analyzed**: v1 (branch `main` + `feat/packs/overhaul`)
 **Reference**: Claude Code official docs via `llms.txt` + `Agentic_Design_Patterns.pdf` + `agent-context-guide.md`

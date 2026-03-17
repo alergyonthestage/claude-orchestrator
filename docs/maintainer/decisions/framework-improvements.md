@@ -7,6 +7,8 @@
 
 ## FI-1: Framework Context for the Coding Agent
 
+**Status**: Implemented. Operational context added to `defaults/managed/CLAUDE.md` (Docker environment, workspace layout, agent teams, memory policy).
+
 **Question**: Should the coding agent inside the container know that it's running within claude-orchestrator? For example via managed CLAUDE.md or rules?
 
 **Context**: Currently the managed `CLAUDE.md` (`defaults/managed/CLAUDE.md`) tells the agent *how to behave* (workspace layout, memory policy, agent teams) but does not explain what claude-orchestrator is or how the framework works.
@@ -39,6 +41,8 @@
 ---
 
 ## FI-3: Default Ports and Chrome DevTools Port Management
+
+**Status**: Implemented. Template default changed to `ports: []` with example comments. Chrome DevTools port management unchanged (already correct).
 
 **Question**: The default `project.yml` template includes `ports: ["3000:3000", "8080:8080"]`. Is this correct? Should the default be empty? How should the Chrome DevTools port be managed — automatically by the framework or manually by the user? What about port conflicts?
 
@@ -82,6 +86,8 @@
 
 ## FI-5: Human Workflow Guide and Review Best Practices
 
+**Status**: Partially addressed. Guides written: `docs/user-guides/configuring-rules.md`, `docs/user-guides/development-workflow.md`. Template integration and GitHub branch protection documentation remain pending.
+
 **Question**: Should the documentation or tutorial include guidance on which tasks remain human responsibilities, the recommended development flow, common problems and workarounds?
 
 **Original observations from field usage**:
@@ -121,6 +127,8 @@
 
 ## FI-6: Read-Only Mounts for User-Owned `.claude/` Config
 
+**Status**: Implemented. Deny rules added to `defaults/managed/managed-settings.json` preventing agent writes to `.claude/rules/*`, `.claude/agents/*`, `.claude/skills/*` at project level.
+
 **Question**: Currently `.claude/` rules, agents, and other user-defined files can be modified by the agent inside the container. Should these be mounted read-only to prevent unintended modifications?
 
 **Original observation**: The agent was observed modifying user-defined rules and config files during a session. The only project that should legitimately modify these is the tutorial project (which explicitly mounts `user-config` in rw).
@@ -148,6 +156,8 @@
 ---
 
 ## FI-7: Publish-Install Sync and Resource Versioning
+
+**Status**: In design. Foundations laid in `resource-lifecycle/analysis.md` section 6 (source tracking via `.cco/source`). Full implementation planned for Sprint 11.
 
 **Question**: After `cco project install`, the installed project has no connection to the source Config Repo. If the publisher pushes updates, how does the consumer know? Should there be a `cco project update` flow? What about versioning?
 
