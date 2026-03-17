@@ -307,44 +307,43 @@ Opt-in git isolation for container sessions. When enabled, repos are mounted at 
 
 **Priority**: 1 (immediate). Completes the user-config lifecycle — the framework's core value proposition.
 
-**Status**: Foundations laid (Sprint 5c resource-lifecycle analysis). Requires design and implementation.
+**Status**: Analysis and design complete. Ready for implementation.
 
 **Context**: The resource-lifecycle analysis (Sprint 5c) established file policies, the
 lifecycle model, and `.cco/source` tracking. FI-7 builds on these foundations to add
 the missing piece: update notification and merge for published/installed resources.
 
-Il sistema publish/install è attualmente one-way: `cco project publish` esporta, `cco project install` importa, ma dopo l'installazione non c'è collegamento al repo sorgente. Chi pubblica aggiornamenti non ha modo di notificare i consumer.
+**Key design decisions** (see analysis and design docs for full rationale):
 
-**Obiettivi**:
-- `cco project update <name>` / `cco project update --all`: controlla se il repo sorgente ha aggiornamenti e li applica con merge 3-way
-- Mantenere la reference `.cco/source` dopo install per abilitare update futuri
-- Notifica di aggiornamenti disponibili in `cco update` (discovery)
-- Gestione conflitti: merge 3-way tra versione sorgente, base installata, e modifiche locali
-- Protezione da publish accidentale di modifiche locali/personali (diff review prima di publish)
-- Versioning opzionale: campo `version:` in `pack.yml` / template metadata per tracciare le versioni pubblicate
+1. **Unified discovery, separated actions** — `cco update` is the single entry point
+   for "what's new?" (framework + remotes + changelog). Actions are type-specific:
+   `--sync` for framework files, `cco project update` for publisher updates,
+   `cco pack update` for pack updates.
 
-**Flussi da valutare**:
-1. Publisher (write access) aggiorna → consumer (read-only) riceve notifica → consumer applica update
-2. Consumer modifica localmente → publish dovrebbe avvertire delle differenze rispetto alla versione condivisa
-3. Due consumer installano lo stesso progetto → modifiche indipendenti, nessun conflitto (non c'è sync tra consumer)
-4. Packs condivisi tra progetti: un pack aggiornato dal publisher dovrebbe notificare tutti i progetti che lo usano
+2. **Source-aware framework sync** — for installed projects, `cco update --sync`
+   applies migrations but skips opinionated files (managed by publisher chain).
+   `--local` flag as escape hatch to apply framework defaults directly.
 
-**Foundations already in place** (from Sprint 5c):
-- `.cco/source` tracks origin URL, path, ref, install/update dates
-- `.cco/base/` stores last-seen version for 3-way merge
-- `_collect_file_changes()` is source-agnostic (works on any defaults_dir/installed_dir)
-- `_interactive_sync()` has full merge UI including (N)ew-file option
-- File policies (tracked/untracked/generated) apply uniformly
+3. **Update chain**: Framework → Publisher → Consumer. The publisher integrates
+   framework improvements and publishes curated versions. Consumer receives via
+   `cco project update` with 3-way merge preserving local customizations.
 
-**What's missing**:
-- Remote version check (read `.cco/source`, fetch remote HEAD, compare hashes)
-- `cco project update <name>` command (3-way merge from remote source)
-- Discovery integration in `cco update` for installed resources
-- Publish safety (diff review before publish)
-- Version metadata (optional `version:` field)
+4. **Publish safety pipeline** — migration check (blocking), framework alignment
+   (warning), secret scan (blocking), `.cco/publish-ignore`, diff review,
+   per-file confirmation.
 
-**Ref**: [FI-7](framework-improvements.md#fi-7-publish-install-sync-and-resource-versioning) | [resource-lifecycle analysis §6](../configuration/resource-lifecycle/analysis.md)
-**Effort**: Medium-High. Design needed before implementation.
+5. **Project internalize** — `cco project internalize <name>` disconnects from
+   remote, converting to local project. Analogous to `cco pack internalize`.
+
+**New commands**:
+- `cco project update <name> [--force] [--dry-run]` / `--all`
+- `cco project internalize <name>`
+- `cco update [--offline] [--no-cache]` (new flags)
+- `cco update --sync <project> [--local]` (new flag)
+- `cco project publish <name> <remote> [--yes]` (enhanced)
+
+**Docs**: [analysis](../configuration/publish-install-sync/analysis.md) | [design](../configuration/publish-install-sync/design.md) | [user guide](../../user-guides/config-lifecycle.md) | [FI-7](framework-improvements.md#fi-7-publish-install-sync-and-resource-versioning) | [resource-lifecycle analysis](../configuration/resource-lifecycle/analysis.md)
+**Effort**: Medium-High (6 implementation phases defined in design doc).
 
 ---
 
