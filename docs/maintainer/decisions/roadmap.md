@@ -353,19 +353,21 @@ the missing piece: update notification and merge for published/installed resourc
 
 **Origin**: [Comprehensive review 2026-03-18](reviews/18-03-2026-comprehensive-review.md) — full codebase analysis covering architecture, code quality, tests, documentation, proxy, and configuration.
 
-#### RF-1: Foundations (Quick Wins)
+#### RF-1: Foundations (Quick Wins) ✓
 
-Low-effort, zero-regression-risk improvements that unblock subsequent phases.
+**Completed**: 2026-03-18. Branch: `refactor/rf-1/foundations`.
 
-| Item | Description | Files |
-|------|-------------|-------|
-| `lib/constants.sh` | Extract magic strings/numbers (Chrome paths, timeouts, ports) | New file; update `bin/cco` source list |
-| `_substitute()` helper | macOS/Linux-compatible `sed -i` placeholder replacement (10+ occurrences) | New helper in `lib/utils.sh` or dedicated file |
-| `_cco_resolve_path()` | Collapse 11 identical new→old path fallback functions into single helper | `lib/paths.sh` |
-| Error checks | Add `\|\| die` to critical file operations (`cp`, `mkdir`, `rm`) | `lib/cmd-init.sh`, `lib/cmd-new.sh`, `lib/cmd-project.sh` |
-| Exit traps | Add cleanup traps for temp resources | `lib/cmd-new.sh` |
+| Item | Status | Details |
+|------|--------|---------|
+| `_sed_i()`, `_sed_i_raw()` helpers | ✅ | Centralized in `lib/utils.sh`; ~20 inline `sed -i` patterns replaced across 4 modules |
+| `_substitute()` helper | ✅ | awk-based (avoids delimiter conflicts with `/` or `\|` in values); replaces `{{PLACEHOLDER}}` patterns |
+| `_sed_i_or_append()` helper | ✅ | Moved from `lib/update.sh` to `lib/utils.sh`; used by `cmd-pack.sh` |
+| `_cco_resolve_path()` | ✅ | Collapses 11 identical new→old path fallback functions in `lib/paths.sh` |
+| Error checks | ✅ | `\|\| die` on `mkdir`/`cp` in `cmd-init.sh`, `cmd-new.sh` |
+| Exit traps | ✅ | Cleanup trap for temp dir in `cmd-new.sh` |
+| `lib/constants.sh` | Deferred | Low value relative to effort; magic strings are few and localized |
 
-**Effort**: Low. **Risk**: Very low (additive changes, existing tests cover).
+**Result**: 96 lines added, 134 removed (net -38 lines). 801/806 tests pass (5 pre-existing failures).
 
 #### RF-2: YAML Parser Consolidation
 
