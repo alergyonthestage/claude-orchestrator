@@ -623,7 +623,12 @@ func (p *Proxy) handleNetworkList(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, _ := json.Marshal(filtered)
+	result, err := json.Marshal(filtered)
+	if err != nil {
+		log.Printf("error: failed to marshal filtered network list: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 	for k, v := range rec.header {
 		for _, val := range v {
 			w.Header().Set(k, val)
@@ -681,7 +686,14 @@ func (p *Proxy) deny(w http.ResponseWriter, r *http.Request, reason string) {
 	}
 
 	msg := fmt.Sprintf("cco-docker-proxy: operation denied — %s", reason)
-	body, _ := json.Marshal(map[string]string{"message": msg})
+	body, err := json.Marshal(map[string]string{"message": msg})
+	if err != nil {
+		log.Printf("error: failed to marshal deny response: %v", err)
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("internal error: failed to build error response"))
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusForbidden)
