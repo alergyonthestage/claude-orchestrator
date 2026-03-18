@@ -2,6 +2,7 @@
 package filter
 
 import (
+	"log"
 	"path/filepath"
 	"strings"
 
@@ -122,7 +123,12 @@ func (f *ContainerFilter) RequiredLabels() map[string]string {
 
 // matchGlob checks if name matches a glob pattern (supports * wildcard).
 func matchGlob(pattern, name string) bool {
-	matched, _ := filepath.Match(pattern, name)
+	matched, err := filepath.Match(pattern, name)
+	if err != nil {
+		// Invalid pattern (e.g., malformed character class); log and skip.
+		log.Printf("warning: invalid glob pattern %q: %v", pattern, err)
+		return false
+	}
 	if matched {
 		return true
 	}
