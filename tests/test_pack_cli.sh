@@ -43,6 +43,15 @@ test_pack_create_rejects_uppercase() {
     fi
 }
 
+test_pack_create_rejects_uppercase_error_message() {
+    # Error message should mention lowercase naming requirement
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco pack create "MyPack" || true
+    assert_output_contains "lowercase"
+}
+
 test_pack_create_rejects_leading_hyphen() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
@@ -62,6 +71,16 @@ test_pack_create_fails_if_exists() {
         echo "ASSERTION FAILED: second create should have failed"
         return 1
     fi
+}
+
+test_pack_create_duplicate_error_message() {
+    # Error message should mention pack already exists
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco pack create "my-pack"
+    run_cco pack create "my-pack" || true
+    assert_output_contains "already exists"
 }
 
 # ── list ──────────────────────────────────────────────────────────────

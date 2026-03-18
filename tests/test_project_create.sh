@@ -139,6 +139,15 @@ test_project_create_rejects_uppercase_name() {
     fi
 }
 
+test_project_create_rejects_uppercase_name_error_message() {
+    # Error message should mention lowercase requirement
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco project create "MyProject" || true
+    assert_output_contains "lowercase"
+}
+
 test_project_create_rejects_name_starting_with_hyphen() {
     # Design Invariant 10: name cannot start with hyphen
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
@@ -150,6 +159,15 @@ test_project_create_rejects_name_starting_with_hyphen() {
     fi
 }
 
+test_project_create_rejects_hyphen_name_error_message() {
+    # Names starting with hyphen are parsed as options, producing "Unknown option" error
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco project create "-bad-name" || true
+    assert_output_contains "Unknown option"
+}
+
 test_project_create_rejects_name_with_underscore() {
     # Design Invariant 10: underscores not allowed (only lowercase, digits, hyphens)
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
@@ -159,6 +177,15 @@ test_project_create_rejects_name_with_underscore() {
         echo "ASSERTION FAILED: should have rejected name with underscore"
         return 1
     fi
+}
+
+test_project_create_rejects_underscore_error_message() {
+    # Error message should mention naming requirement
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco project create "my_project" || true
+    assert_output_contains "lowercase"
 }
 
 test_project_create_accepts_valid_name_with_hyphens() {
@@ -180,6 +207,25 @@ test_project_create_fails_if_already_exists() {
         echo "ASSERTION FAILED: second create should have failed (project already exists)"
         return 1
     fi
+}
+
+test_project_create_duplicate_name_error_message() {
+    # Error message should mention the project already exists
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco project create "my-project"
+    run_cco project create "my-project" || true
+    assert_output_contains "already exists"
+}
+
+test_project_create_reserved_name_error_message() {
+    # Reserved names (global, all, tutorial) must produce a clear error
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco project create "global" || true
+    assert_output_contains "reserved"
 }
 
 # ── Template files from Sprint 1+2 ──────────────────────────────────

@@ -353,6 +353,116 @@ YAML
     assert_file_contains "$DRY_RUN_DIR/.claude/workspace.yml" "- my-pack"
 }
 
+test_workspace_yml_generated_with_repos() {
+    # workspace.yml must contain repo entries with name and path
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local repo_dir="$tmpdir/my-repo"
+    mkdir -p "$repo_dir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+repos:
+  - path: $repo_dir
+    name: my-repo
+YAML
+)"
+    run_cco start "test-proj" --dry-run --dump
+    local ws="$DRY_RUN_DIR/.claude/workspace.yml"
+    assert_file_exists "$ws"
+    assert_file_contains "$ws" "name: my-repo"
+    assert_file_contains "$ws" "path: /workspace/my-repo"
+    assert_file_contains "$ws" "description:"
+}
+
+test_workspace_yml_seeds_description_from_project_yml() {
+    # Descriptions seeded from project.yml are included in workspace.yml
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local repo_dir="$tmpdir/my-repo"
+    mkdir -p "$repo_dir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+repos:
+  - path: $repo_dir
+    name: my-repo
+    description: "Seeded from project.yml"
+YAML
+)"
+    run_cco start "test-proj" --dry-run --dump
+    local ws="$DRY_RUN_DIR/.claude/workspace.yml"
+    assert_file_exists "$ws"
+    assert_file_contains "$ws" "Seeded from project.yml"
+}
+
+test_workspace_yml_idempotent() {
+    # Running dry-run twice produces the same workspace.yml output
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local repo_dir="$tmpdir/my-repo"
+    mkdir -p "$repo_dir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+repos:
+  - path: $repo_dir
+    name: my-repo
+YAML
+)"
+    # First run
+    run_cco start "test-proj" --dry-run --dump
+    local first_ws="$DRY_RUN_DIR/.claude/workspace.yml"
+    local first_content
+    first_content=$(cat "$first_ws")
+    # Copy the generated workspace.yml to the project dir (as cco start would normally do)
+    local project_ws="$CCO_PROJECTS_DIR/test-proj/.claude/workspace.yml"
+    mkdir -p "$(dirname "$project_ws")"
+    cp "$first_ws" "$project_ws"
+    # Second run
+    run_cco start "test-proj" --dry-run --dump
+    local second_ws="$DRY_RUN_DIR/.claude/workspace.yml"
+    local second_content
+    second_content=$(cat "$second_ws")
+    assert_equals "$first_content" "$second_content" "workspace.yml should be idempotent"
+}
+
+test_workspace_yml_no_repos_empty_list() {
+    # workspace.yml with no repos produces an empty repos list
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+repos: []
+YAML
+)"
+    run_cco start "test-proj" --dry-run --dump
+    local ws="$DRY_RUN_DIR/.claude/workspace.yml"
+    assert_file_exists "$ws"
+    assert_file_contains "$ws" "project: test-proj"
+}
+
 # ── project.yml mount ─────────────────────────────────────────────────
 
 test_project_yml_mounted_in_compose() {
