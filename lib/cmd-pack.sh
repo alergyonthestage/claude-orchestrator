@@ -446,6 +446,10 @@ EOF
     tmpdir=$(_clone_config_repo "$url" "$ref" "$token")
     trap "_cleanup_clone '$tmpdir'" EXIT
 
+    # Capture commit hash for version tracking
+    local clone_commit=""
+    clone_commit=$(git -C "$tmpdir" rev-parse HEAD 2>/dev/null) || true
+
     # Detect repo type
     local single_pack=false
     local manifest_file=""
@@ -463,7 +467,7 @@ EOF
         local name
         name=$(yml_get "$tmpdir/pack.yml" "name")
         [[ -z "$name" ]] && die "pack.yml has no 'name' field"
-        _install_pack_from_dir "$tmpdir" "$name" "$url" "$ref" "" "$force"
+        _install_pack_from_dir "$tmpdir" "$name" "$url" "$ref" "" "$force" "$clone_commit"
     else
         # Multi-pack repo: read available packs from manifest
         local available
@@ -480,14 +484,14 @@ EOF
                 _cleanup_clone "$tmpdir"
                 die "Pack '$pick' not found in manifest. Available: $(echo "$available" | tr '\n' ' ')"
             fi
-            _install_pack_from_dir "$tmpdir/packs/$pick" "$pick" "$url" "$ref" "packs/$pick" "$force"
+            _install_pack_from_dir "$tmpdir/packs/$pick" "$pick" "$url" "$ref" "packs/$pick" "$force" "$clone_commit"
         else
             # Install all packs
             local count=0
             while IFS= read -r name; do
                 [[ -z "$name" ]] && continue
                 if [[ -d "$tmpdir/packs/$name" ]]; then
-                    _install_pack_from_dir "$tmpdir/packs/$name" "$name" "$url" "$ref" "packs/$name" "$force"
+                    _install_pack_from_dir "$tmpdir/packs/$name" "$name" "$url" "$ref" "packs/$name" "$force" "$clone_commit"
                     count=$((count + 1))
                 else
                     warn "Pack '$name' listed in manifest but not found on disk — skipping"
@@ -611,7 +615,7 @@ EOF
 # ── Internal helpers for install/update ────────────────────────────────
 
 # Install a pack from a local directory (clone temp or single-pack root).
-# Usage: _install_pack_from_dir <source_dir> <name> <url> <ref> <path> <force>
+# Usage: _install_pack_from_dir <source_dir> <name> <url> <ref> <path> <force> [commit]
 _install_pack_from_dir() {
     local source_dir="$1"
     local name="$2"
@@ -619,6 +623,7 @@ _install_pack_from_dir() {
     local ref="$4"
     local path="$5"
     local force="$6"
+    local commit="${7:-}"
 
     local target_dir="$PACKS_DIR/$name"
 
@@ -657,6 +662,7 @@ _install_pack_from_dir() {
 source: $url
 path: ${path:-}
 ref: ${ref:-}
+commit: ${commit:-}
 installed: $now
 updated: $now
 YAML
@@ -703,8 +709,12 @@ _update_single_pack() {
         die "Remote path '$source_path' not found in cloned repo"
     fi
 
+    # Capture commit hash for version tracking
+    local update_commit=""
+    update_commit=$(git -C "$tmpdir" rev-parse HEAD 2>/dev/null) || true
+
     # Install (force=true since we're explicitly updating)
-    _install_pack_from_dir "$remote_dir" "$name" "$source_url" "$source_ref" "$source_path" true
+    _install_pack_from_dir "$remote_dir" "$name" "$source_url" "$source_ref" "$source_path" true "$update_commit"
 
     # Update the 'updated' date in .cco/source
     local now

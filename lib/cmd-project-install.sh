@@ -97,6 +97,10 @@ EOF
     tmpdir=$(_clone_config_repo "$url" "$ref" "$token")
     trap "_cleanup_clone '$tmpdir'" EXIT
 
+    # Capture commit hash for version tracking
+    local clone_commit=""
+    clone_commit=$(git -C "$tmpdir" rev-parse HEAD 2>/dev/null) || true
+
     # Detect repo type
     local manifest_file=""
     if [[ -f "$tmpdir/manifest.yml" ]]; then
@@ -180,7 +184,7 @@ EOF
             info "Pack '$pack_name' already installed — skipping"
         elif [[ -d "$tmpdir/packs/$pack_name" ]]; then
             info "Auto-installing pack '$pack_name' from Config Repo..."
-            _install_pack_from_dir "$tmpdir/packs/$pack_name" "$pack_name" "$url" "$ref" "packs/$pack_name" false
+            _install_pack_from_dir "$tmpdir/packs/$pack_name" "$pack_name" "$url" "$ref" "packs/$pack_name" false "$clone_commit"
             installed_packs+=("$pack_name")
         else
             warn "Pack '$pack_name' required but not found. Install manually."
