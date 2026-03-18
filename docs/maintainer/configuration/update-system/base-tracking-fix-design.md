@@ -81,79 +81,37 @@ is substituted during install). The installed copy is the interpolated result.
 substitution flow (lines 593-631 of `cmd-project.sh`). After line 631, the
 target directory contains the interpolated files.
 
-### 2.3 Fix 3 — Migration 011: Seed base for newly-tracked CLAUDE.md
+### 2.3 ~~Fix 3 — Migration 011~~ → Handled by automatic policy transitions
 
-A new migration is required to create `.cco/base/CLAUDE.md` for existing
-projects that were created before CLAUDE.md became a tracked file.
+**Original design**: A migration to seed `.cco/base/CLAUDE.md` for existing
+projects. **Removed** — the automatic policy transition handler (§2.5) handles
+this case without a dedicated migration:
 
-**Strategy**: Generate a **synthetic base** by interpolating the current template
-with values recoverable from the project.
+1. `_handle_policy_transitions` runs before `_collect_file_changes` in **all**
+   modes (including `--diff` and `--dry-run`)
+2. On first run, it detects no saved `policies:` section in `.cco/meta`
+   (bootstrap path)
+3. For each `tracked` file without a base entry, it seeds the base via
+   `_seed_base_from_interpolated_template`
+4. It persists the current policies to `.cco/meta` directly
 
-```bash
-MIGRATION_ID=11
-MIGRATION_DESC="Seed base for project CLAUDE.md (newly tracked)"
-
-migrate() {
-    local target_dir="$1"
-    local base_dir="$target_dir/.cco/base"
-
-    # Skip if CLAUDE.md base already exists (idempotent)
-    [[ -f "$base_dir/CLAUDE.md" ]] && return 0
-
-    # Skip if no .claude/ directory
-    [[ -d "$target_dir/.claude" ]] || return 0
-
-    # Get project name from directory
-    local project_name
-    project_name=$(basename "$target_dir")
-
-    # Get description from project.yml
-    local description="TODO: Add project description"
-    local project_yml="$target_dir/project.yml"
-    if [[ -f "$project_yml" ]]; then
-        local yml_desc
-        yml_desc=$(grep '^description:' "$project_yml" \
-            | sed 's/^description: *//; s/^"//; s/"$//')
-        [[ -n "$yml_desc" ]] && description="$yml_desc"
-    fi
-
-    # Resolve template source
-    local defaults_dir
-    defaults_dir=$(_resolve_project_defaults_dir "$target_dir")
-    local template_claude_md="$defaults_dir/CLAUDE.md"
-
-    # If template CLAUDE.md doesn't exist, nothing to seed
-    [[ -f "$template_claude_md" ]] || return 0
-
-    # Create interpolated base
-    mkdir -p "$base_dir"
-    cp "$template_claude_md" "$base_dir/CLAUDE.md"
-
-    # Interpolate known placeholders
-    sed -i "s/{{PROJECT_NAME}}/$project_name/g" "$base_dir/CLAUDE.md"
-    sed -i "s/{{DESCRIPTION}}/$description/g" "$base_dir/CLAUDE.md"
-
-    # Network name placeholder (cc-{{PROJECT_NAME}})
-    # Handled by the PROJECT_NAME substitution above since it's embedded
-
-    return 0
-}
-```
+This eliminates the need for a one-off migration and establishes the pattern
+that **policy transitions never require migrations** — they are self-healing.
 
 **Why synthetic base works**: The base represents "what the framework gave the
-user". For existing projects, we reconstruct this from the current template +
-known values. The result:
+user". For existing projects, the transition handler reconstructs this from the
+current template + known values (`PROJECT_NAME` from directory, `DESCRIPTION`
+from `project.yml`). The result:
 
 - `base` = current template interpolated with project name + description
 - `new` = same template (no framework change since base was seeded)
 - `installed` = user's customized version
 
 Three-way comparison: `base == new` → status is `USER_MODIFIED` (or `NO_UPDATE`
-if user hasn't changed it). This is correct — no false `BASE_MISSING` or
-`UPDATE_AVAILABLE`.
+if user hasn't changed it). Correct — no false `BASE_MISSING`.
 
-When the framework later updates the template, `new ≠ base` → the change is
-correctly detected as `UPDATE_AVAILABLE` or `MERGE_AVAILABLE`.
+When the framework later updates the template, `new ≠ base` → correctly
+detected as `UPDATE_AVAILABLE` or `MERGE_AVAILABLE`.
 
 ### 2.4 Safety Net — Interpolate `{{PROJECT_NAME}}` in change detection
 
@@ -389,12 +347,14 @@ fi
 |---|---|---|
 | `lib/cmd-project.sh:211` | Save base from `$project_dir/.claude` | Bug fix |
 | `lib/cmd-project.sh:650` | Save base from `$target_dir/.claude` | Bug fix |
-| `lib/update.sh:593` | Interpolate `{{PROJECT_NAME}}` before hashing | Safety net |
-| `lib/update.sh` | Add `_handle_policy_transitions()` + `_seed_base_from_interpolated_template()` | Policy automation |
-| `lib/update.sh` | Update `_generate_project_cco_meta` to write `policies:` section | Policy persistence |
-| `lib/update.sh` | Call `_handle_policy_transitions` in `_update_project` before `_collect_file_changes` | Integration |
-| `migrations/project/011_seed_claude_md_base.sh` | Seed base + bootstrap policy tracking | Migration |
+| `lib/update.sh` | Add `_seed_base_from_interpolated_template()` helper | Helper |
+| `lib/update.sh` | Add `_handle_policy_transitions()` with self-persisting policies | Policy automation |
+| `lib/update.sh` | Interpolate `{{PROJECT_NAME}}` before hashing in `_collect_file_changes` | Safety net |
+| `lib/update.sh` | Write `policies:` section in `_generate_cco_meta` and `_generate_project_cco_meta` | Policy persistence |
+| `lib/update.sh` | Call `_handle_policy_transitions` unconditionally before `_collect_file_changes` | Integration |
 | `.claude/rules/update-system.md` | Document policy change rules | Rule update |
+
+**No migration needed**: `_handle_policy_transitions` is self-bootstrapping.
 
 ---
 
@@ -490,10 +450,7 @@ scratch in user projects → manual migration is still needed.
    `.cco/base/CLAUDE.md` has `# Project: test-project` (not `{{PROJECT_NAME}}`)
 2. **Installed project base contains interpolated CLAUDE.md**: Install from mock
    remote, verify base is interpolated
-3. **Migration 011 creates correct synthetic base**: Run migration on a project
-   with missing CLAUDE.md base, verify result
-4. **Migration 011 is idempotent**: Run twice, verify no change
-5. **Safety net prevents false positive**: Mock a scenario where base is missing
+3. **Safety net prevents false positive**: Mock a scenario where base is missing
    and template has `{{PROJECT_NAME}}`, verify no `BASE_MISSING` if the only
    difference is the project name substitution
 
@@ -529,22 +486,23 @@ scratch in user projects → manual migration is still needed.
 ## 6. Rollout
 
 1. Fixes 1-2 (`cmd-project.sh`) affect only **new** projects/installs
-2. Migration 011 fixes **existing** projects: seeds CLAUDE.md base + bootstraps
-   `policies:` section in `.cco/meta`
+2. `_handle_policy_transitions` self-heals **existing** projects on any
+   `cco update` variant (including `--diff` and `--dry-run`)
 3. Safety net provides defense-in-depth for any residual edge cases
 4. Policy transition handler provides future-proofing for all policy changes
 5. Changelog entry: not needed (bug fix, not new feature)
-6. **No breaking changes**: The migration only adds `.cco/base/CLAUDE.md` where
-   it was missing and adds metadata to `.cco/meta`. No user files are modified.
+6. **No breaking changes**: Only `.cco/base/` and `.cco/meta` are modified
+   (framework metadata). No user files are touched.
+7. **No migration needed**: The transition handler is self-bootstrapping
 
 ### Execution order within `_update_project`
 
 ```
-1. Run pending migrations (including 011)
-2. _handle_policy_transitions()   ← NEW: detect & handle policy changes
+1. Run pending migrations (if any)
+2. _handle_policy_transitions()   ← NEW: detect & handle policy changes, persist to meta
 3. _collect_file_changes()        ← existing: now has correct base + safety net
 4. _show_file_diffs / _interactive_sync  ← existing: display/apply
-5. _generate_project_cco_meta()   ← updated: writes policies: section
+5. _generate_project_cco_meta()   ← updated: writes policies: section (redundant with #2 but consistent)
 6. _save_all_base_versions()      ← existing: after sync applied
 ```
 

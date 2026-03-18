@@ -137,6 +137,163 @@ _save_all_base_versions() {
     done
 }
 
+# Seed a base file from an interpolated template. Resolves {{PROJECT_NAME}}
+# and {{DESCRIPTION}} using values recoverable from the project directory.
+# Used by _handle_policy_transitions().
+_seed_base_from_interpolated_template() {
+    local base_dir="$1"      # .cco/base/ directory
+    local rel="$2"           # relative path (e.g., CLAUDE.md)
+    local defaults_dir="$3"  # template .claude/ directory (may have placeholders)
+    local project_dir="$4"   # project root directory
+
+    local template_file="$defaults_dir/$rel"
+    [[ -f "$template_file" ]] || return 0
+
+    local project_name
+    project_name=$(basename "$project_dir")
+
+    mkdir -p "$(dirname "$base_dir/$rel")"
+    cp "$template_file" "$base_dir/$rel"
+
+    # Interpolate recoverable placeholders
+    sed -i "s/{{PROJECT_NAME}}/$project_name/g" "$base_dir/$rel"
+
+    # Interpolate DESCRIPTION from project.yml if available
+    local description="TODO: Add project description"
+    local project_yml="$project_dir/project.yml"
+    if [[ -f "$project_yml" ]]; then
+        local yml_desc
+        yml_desc=$(grep '^description:' "$project_yml" \
+            | sed 's/^description: *//; s/^"//; s/"$//')
+        [[ -n "$yml_desc" ]] && description="$yml_desc"
+    fi
+    sed -i "s/{{DESCRIPTION}}/$description/g" "$base_dir/$rel"
+}
+
+# ── Policy Transition Detection ──────────────────────────────────────
+
+# Detect and handle file policy transitions (untracked↔tracked↔generated).
+# Compares saved policies in .cco/meta against current *_FILE_POLICIES.
+# Must be called BEFORE _collect_file_changes() so bases are up to date.
+# Persists updated policies directly to .cco/meta (independent of
+# _generate_*_cco_meta, so transitions work even in discovery/diff mode).
+_handle_policy_transitions() {
+    local project_dir="$1"
+    local meta_file="$2"
+    local base_dir="$3"
+    local defaults_dir="$4"
+    local scope="$5"  # "global" or "project"
+
+    local policies_ref
+    if [[ "$scope" == "global" ]]; then
+        policies_ref=("${GLOBAL_FILE_POLICIES[@]}")
+    else
+        policies_ref=("${PROJECT_FILE_POLICIES[@]}")
+    fi
+
+    [[ -f "$meta_file" ]] || return 0
+
+    local needs_policy_write=false
+    local entry rel policy saved_policy
+    for entry in "${policies_ref[@]}"; do
+        rel="${entry%:*}"
+        policy="${entry##*:}"
+        rel="${rel#.claude/}"
+
+        # Read saved policy from .cco/meta (empty if not present)
+        saved_policy=$(yml_get "$meta_file" "policies.$rel" 2>/dev/null) || true
+
+        if [[ -z "$saved_policy" ]]; then
+            # No saved policy = first run with policy tracking (bootstrap).
+            # Seed base for tracked files that are missing from .cco/base/.
+            needs_policy_write=true
+            if [[ "$policy" == "tracked" && ! -f "$base_dir/$rel" ]]; then
+                if [[ "$scope" == "project" ]]; then
+                    _seed_base_from_interpolated_template \
+                        "$base_dir" "$rel" "$defaults_dir" "$project_dir"
+                else
+                    # Global scope: save from defaults directly (no placeholders in tracked global files)
+                    if [[ -f "$defaults_dir/$rel" ]]; then
+                        _save_base_version "$base_dir" "$rel" "$defaults_dir/$rel"
+                    fi
+                fi
+            fi
+            continue
+        fi
+
+        # Same policy = no transition
+        [[ "$saved_policy" == "$policy" ]] && continue
+
+        needs_policy_write=true
+
+        case "${saved_policy}_to_${policy}" in
+            untracked_to_tracked)
+                # File was user-owned, now framework tracks it for merge support.
+                if [[ "$scope" == "project" ]]; then
+                    _seed_base_from_interpolated_template \
+                        "$base_dir" "$rel" "$defaults_dir" "$project_dir"
+                else
+                    if [[ -f "$defaults_dir/$rel" ]]; then
+                        _save_base_version "$base_dir" "$rel" "$defaults_dir/$rel"
+                    fi
+                fi
+                ;;
+            tracked_to_untracked)
+                # Framework no longer tracks this file. Remove base entry.
+                rm -f "$base_dir/$rel"
+                ;;
+            generated_to_tracked)
+                # Was auto-regenerated, now user-customizable with merge support.
+                # Save current installed version as the base.
+                local _installed_dir
+                if [[ "$scope" == "project" ]]; then
+                    _installed_dir="$project_dir/.claude"
+                else
+                    _installed_dir="$GLOBAL_DIR/.claude"
+                fi
+                if [[ -f "$_installed_dir/$rel" ]]; then
+                    _save_base_version "$base_dir" "$rel" "$_installed_dir/$rel"
+                fi
+                ;;
+            tracked_to_generated)
+                # Now auto-regenerated; base is unnecessary.
+                rm -f "$base_dir/$rel"
+                ;;
+            *)
+                # Other transitions (untracked↔generated, etc.) — no base action.
+                ;;
+        esac
+    done
+
+    # Persist current policies to .cco/meta so future runs detect transitions.
+    # Written directly (not via _generate_*_cco_meta) so it works in all modes.
+    if [[ "$needs_policy_write" == "true" ]]; then
+        # Remove existing policies section if present, then append fresh
+        local tmp_meta
+        tmp_meta=$(mktemp)
+        # Remove old policies block (from "policies:" to next top-level key or EOF)
+        awk '
+            /^policies:/ { skip=1; next }
+            skip && /^[^ ]/ { skip=0 }
+            !skip { print }
+        ' "$meta_file" > "$tmp_meta"
+        # Remove trailing blank lines
+        sed -i -e :a -e '/^\s*$/{ $d; N; ba; }' "$tmp_meta"
+        # Append fresh policies
+        {
+            printf '\npolicies:\n'
+            local _we _wr _wp
+            for _we in "${policies_ref[@]}"; do
+                _wr="${_we%:*}"
+                _wp="${_we##*:}"
+                _wr="${_wr#.claude/}"
+                printf '  %s: %s\n' "$_wr" "$_wp"
+            done
+        } >> "$tmp_meta"
+        mv "$tmp_meta" "$meta_file"
+    fi
+}
+
 # ── 3-Way Merge ───────────────────────────────────────────────────────
 
 # Attempt 3-way merge using git merge-file.
@@ -416,6 +573,15 @@ _generate_cco_meta() {
             [[ -z "$path" ]] && continue
             printf '  %s: %s\n' "$path" "$hash"
         done
+        # Persist current file policies for transition detection on next update
+        printf '\npolicies:\n'
+        local _ge _gr _gp
+        for _ge in "${GLOBAL_FILE_POLICIES[@]}"; do
+            _gr="${_ge%:*}"
+            _gp="${_ge##*:}"
+            _gr="${_gr#.claude/}"
+            printf '  %s: %s\n' "$_gr" "$_gp"
+        done
     } > "$meta_file"
 }
 
@@ -448,6 +614,15 @@ _generate_project_cco_meta() {
         while IFS=$'\t' read -r path hash; do
             [[ -z "$path" ]] && continue
             printf '  %s: %s\n' "$path" "$hash"
+        done
+        # Persist current file policies for transition detection on next update
+        printf '\npolicies:\n'
+        local _pe _pr _pp
+        for _pe in "${PROJECT_FILE_POLICIES[@]}"; do
+            _pr="${_pe%:*}"
+            _pp="${_pe##*:}"
+            _pr="${_pr#.claude/}"
+            printf '  %s: %s\n' "$_pr" "$_pp"
         done
     } > "$meta_file"
 
@@ -590,7 +765,20 @@ _collect_file_changes() {
     for rel in ${default_files[@]+"${default_files[@]}"}; do
         local new_hash installed_hash base_hash
 
-        new_hash=$(_file_hash "$defaults_dir/$rel")
+        # Safety net: for project scope, interpolate {{PROJECT_NAME}} in the
+        # template before hashing. Prevents false positives if the base is
+        # missing/corrupted or the template has residual placeholders.
+        if [[ "$scope" == "project" ]]; then
+            local _project_name
+            _project_name=$(basename "$(dirname "$installed_dir")")
+            local _tmp_new
+            _tmp_new=$(mktemp)
+            sed "s/{{PROJECT_NAME}}/$_project_name/g" "$defaults_dir/$rel" > "$_tmp_new"
+            new_hash=$(_file_hash "$_tmp_new")
+            rm -f "$_tmp_new"
+        else
+            new_hash=$(_file_hash "$defaults_dir/$rel")
+        fi
         installed_hash=$(_file_hash "$installed_dir/$rel")
         base_hash=$(_file_hash "$base_dir/$rel")
 
@@ -966,8 +1154,18 @@ _show_file_diffs() {
                 echo ""
                 info "$scope_label: $rel_path (update available, base missing)"
                 if command -v diff >/dev/null 2>&1; then
-                    diff -u "$installed_dir/$rel_path" "$defaults_dir/$rel_path" \
+                    # Interpolate {{PROJECT_NAME}} in the displayed diff to avoid
+                    # confusing placeholder diffs (safety net for display).
+                    local _diff_tmp=""
+                    if [[ "$scope_label" != "Global" ]]; then
+                        local _diff_pname
+                        _diff_pname=$(basename "$(dirname "$installed_dir")")
+                        _diff_tmp=$(mktemp)
+                        sed "s/{{PROJECT_NAME}}/$_diff_pname/g" "$defaults_dir/$rel_path" > "$_diff_tmp"
+                    fi
+                    diff -u "$installed_dir/$rel_path" "${_diff_tmp:-$defaults_dir/$rel_path}" \
                         --label "your version" --label "new default" 2>/dev/null | sed 's/^/  /' || true
+                    [[ -n "$_diff_tmp" ]] && rm -f "$_diff_tmp"
                 fi
                 shown=$(( shown + 1 ))
                 ;;
@@ -1612,6 +1810,11 @@ _update_global() {
     # --news mode: only changelog (handled by caller), skip discovery
     [[ "$cmd_mode" == "news" ]] && return 0
 
+    # Phase 1.5: Handle policy transitions for global scope.
+    # Runs unconditionally (including dry-run) — transitions only modify
+    # framework metadata (.cco/base/ and .cco/meta), not user files.
+    _handle_policy_transitions "$GLOBAL_DIR" "$meta_file" "$base_dir" "$defaults_dir" "global"
+
     # Phase 2: COLLECT — detect file changes
     local changes
     changes=$(_collect_file_changes "$defaults_dir" "$installed_dir" "$base_dir" "global")
@@ -1888,6 +2091,12 @@ _update_project() {
         info "  -> Use '--local' to apply framework defaults directly."
         return 0
     fi
+
+    # Phase 1.5: Handle policy transitions (untracked↔tracked↔generated).
+    # Must run BEFORE _collect_file_changes so bases are seeded/removed as needed.
+    # Runs unconditionally (including dry-run) — transitions only modify
+    # framework metadata (.cco/base/ and .cco/meta), not user files.
+    _handle_policy_transitions "$project_dir" "$meta_file" "$base_dir" "$defaults_dir" "project"
 
     # Phase 2: COLLECT — detect file changes
     local changes

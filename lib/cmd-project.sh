@@ -207,8 +207,10 @@ print(', '.join(['$'+k for k in ['dev','build','test','start','lint'] if k in s]
         done
     ) | _generate_project_cco_meta "$meta_file" "$latest_schema" "$now" "$resolved_template_name"
 
-    # Save base versions for future 3-way merge
-    _save_all_base_versions "$project_dir/.cco/base" "$defaults_dir" "project"
+    # Save base versions for future 3-way merge.
+    # Use the interpolated project directory (not the raw template) so the base
+    # reflects what was actually delivered to the user (placeholders resolved).
+    _save_all_base_versions "$project_dir/.cco/base" "$project_dir/.claude" "project"
 
     ok "Project created at projects/$name/"
     info "Edit project.yml to configure repos and settings"
@@ -643,11 +645,13 @@ EOF
         [[ -n "$install_commit" ]] && printf 'commit: %s\n' "$install_commit"
     } > "$target_dir/.cco/source"
 
-    # Save base versions from remote template (for future 3-way merge)
+    # Save base versions for future 3-way merge.
+    # Use the installed directory (after placeholder interpolation) so the base
+    # reflects what was actually delivered, not the raw template with {{PLACEHOLDER}}.
     local project_base_dir="$target_dir/.cco/base"
     mkdir -p "$project_base_dir"
-    if [[ -d "$template_dir/.claude" ]]; then
-        _save_all_base_versions "$project_base_dir" "$template_dir/.claude" "project"
+    if [[ -d "$target_dir/.claude" ]]; then
+        _save_all_base_versions "$project_base_dir" "$target_dir/.claude" "project"
     fi
 
     _cleanup_clone "$tmpdir"
