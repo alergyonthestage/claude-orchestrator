@@ -68,23 +68,17 @@ EOF
 
     # Update project.yml
     local project_yml="$project_dir/project.yml"
-    sed -i '' "s/{{PROJECT_NAME}}/$name/g" "$project_yml" 2>/dev/null || \
-        sed -i "s/{{PROJECT_NAME}}/$name/g" "$project_yml"
-    sed -i '' "s/{{DESCRIPTION}}/$description/g" "$project_yml" 2>/dev/null || \
-        sed -i "s/{{DESCRIPTION}}/$description/g" "$project_yml"
+    _substitute "$project_yml" "PROJECT_NAME" "$name"
+    _substitute "$project_yml" "DESCRIPTION" "$description"
 
     # Substitute framework path placeholders (used by config-editor, etc.)
-    sed -i '' "s|{{CCO_REPO_ROOT}}|$REPO_ROOT|g" "$project_yml" 2>/dev/null || \
-        sed -i "s|{{CCO_REPO_ROOT}}|$REPO_ROOT|g" "$project_yml"
-    sed -i '' "s|{{CCO_USER_CONFIG_DIR}}|$USER_CONFIG_DIR|g" "$project_yml" 2>/dev/null || \
-        sed -i "s|{{CCO_USER_CONFIG_DIR}}|$USER_CONFIG_DIR|g" "$project_yml"
+    _sed_i "$project_yml" "{{CCO_REPO_ROOT}}" "$REPO_ROOT" "|"
+    _sed_i "$project_yml" "{{CCO_USER_CONFIG_DIR}}" "$USER_CONFIG_DIR" "|"
 
     # Update CLAUDE.md placeholder replacement
     local claude_md="$project_dir/.claude/CLAUDE.md"
-    sed -i '' "s/{{PROJECT_NAME}}/$name/g" "$claude_md" 2>/dev/null || \
-        sed -i "s/{{PROJECT_NAME}}/$name/g" "$claude_md"
-    sed -i '' "s/{{DESCRIPTION}}/$description/g" "$claude_md" 2>/dev/null || \
-        sed -i "s/{{DESCRIPTION}}/$description/g" "$claude_md"
+    _substitute "$claude_md" "PROJECT_NAME" "$name"
+    _substitute "$claude_md" "DESCRIPTION" "$description"
 
     # Add repos to project.yml and enrich CLAUDE.md if provided
     if [[ ${#repos[@]} -gt 0 ]]; then
@@ -132,10 +126,8 @@ print(', '.join(['$'+k for k in ['dev','build','test','start','lint'] if k in s]
         done
 
         # Replace the empty repos line in project.yml
-        sed -i '' '/^repos: \[\]/r '"$repos_tmp" "$project_yml" 2>/dev/null || \
-            sed -i '/^repos: \[\]/r '"$repos_tmp" "$project_yml"
-        sed -i '' '/^repos: \[\]/d' "$project_yml" 2>/dev/null || \
-            sed -i '/^repos: \[\]/d' "$project_yml"
+        _sed_i_raw "$project_yml" '/^repos: \[\]/r '"$repos_tmp"
+        _sed_i_raw "$project_yml" '/^repos: \[\]/d'
         rm -f "$repos_tmp"
 
         # Enrich CLAUDE.md with detected repo info
@@ -746,8 +738,7 @@ _resolve_template_vars() {
 
     # Apply substitutions to all template files
     for file in "${template_files[@]+"${template_files[@]}"}"; do
-        sed -i '' "${sed_args[@]}" "$file" 2>/dev/null || \
-            sed -i "${sed_args[@]}" "$file"
+        _sed_i_raw "$file" "${sed_args[@]}"
     done
 }
 
@@ -980,8 +971,7 @@ _project_yml_remove_pack() {
 
     # If packs section is now empty, replace with packs: []
     if ! awk '/^packs:/ { in_packs=1; next } in_packs && /^  - / { found=1; exit } in_packs && /^[^ #]/ { exit } END { exit !found }' "$file" 2>/dev/null; then
-        sed -i '' 's/^packs:$/packs: []/' "$file" 2>/dev/null || \
-            sed -i 's/^packs:$/packs: []/' "$file"
+        _sed_i_raw "$file" 's/^packs:$/packs: []/'
     fi
 }
 

@@ -344,24 +344,7 @@ _merge_file() {
     fi
 }
 
-# ── Portable sed -i ──────────────────────────────────────────────────
-
-_sed_i() {
-    local file="$1" pattern="$2" replacement="$3"
-    sed -i '' "s|${pattern}|${replacement}|g" "$file" 2>/dev/null || \
-        sed -i "s|${pattern}|${replacement}|g" "$file"
-}
-
-# Update a key: value field in-place, or append it if missing.
-# Usage: _sed_i_or_append <file> <key> <value>
-_sed_i_or_append() {
-    local file="$1" key="$2" value="$3"
-    if grep -q "^${key}:" "$file" 2>/dev/null; then
-        _sed_i "$file" "^${key}: .*" "${key}: ${value}"
-    else
-        printf '%s: %s\n' "$key" "$value" >> "$file"
-    fi
-}
+# NOTE: _sed_i() and _sed_i_or_append() are defined in lib/utils.sh
 
 # ── Remote Version Check ──────────────────────────────────────────────
 

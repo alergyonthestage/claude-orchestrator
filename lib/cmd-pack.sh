@@ -60,11 +60,9 @@ EOF
 
     # Replace name placeholder in pack.yml if present
     if [[ -f "$pack_dir/pack.yml" ]]; then
-        sed -i '' "s/{{PACK_NAME}}/$name/g" "$pack_dir/pack.yml" 2>/dev/null || \
-            sed -i "s/{{PACK_NAME}}/$name/g" "$pack_dir/pack.yml"
+        _substitute "$pack_dir/pack.yml" "PACK_NAME" "$name"
         # Also replace literal "name: base" with actual name
-        sed -i '' "s/^name: base$/name: $name/" "$pack_dir/pack.yml" 2>/dev/null || \
-            sed -i "s/^name: base$/name: $name/" "$pack_dir/pack.yml"
+        _sed_i "$pack_dir/pack.yml" "^name: base$" "name: $name"
     fi
 
     # Update manifest.yml
@@ -712,8 +710,7 @@ _update_single_pack() {
     local now
     now=$(date +%Y-%m-%d)
     if [[ -f "$PACKS_DIR/$name/.cco/source" ]]; then
-        sed -i '' "s/^updated: .*/updated: $now/" "$PACKS_DIR/$name/.cco/source" 2>/dev/null || \
-            sed -i "s/^updated: .*/updated: $now/" "$PACKS_DIR/$name/.cco/source"
+        _sed_i "$PACKS_DIR/$name/.cco/source" "^updated: .*" "updated: $now"
     fi
 
     # Update manifest.yml
@@ -1059,12 +1056,7 @@ _update_publish_target() {
     local source_file="$pack_dir/.cco/source"
 
     if [[ -f "$source_file" ]]; then
-        if grep -q '^publish_target:' "$source_file" 2>/dev/null; then
-            sed -i '' "s/^publish_target:.*/publish_target: $target/" "$source_file" 2>/dev/null || \
-                sed -i "s/^publish_target:.*/publish_target: $target/" "$source_file"
-        else
-            echo "publish_target: $target" >> "$source_file"
-        fi
+        _sed_i_or_append "$source_file" "publish_target" "$target"
     else
         mkdir -p "$(dirname "$source_file")"
         cat > "$source_file" <<YAML
