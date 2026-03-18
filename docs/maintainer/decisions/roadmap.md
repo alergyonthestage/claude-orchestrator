@@ -389,22 +389,24 @@ Replaced 6 near-identical awk getter functions with a single `_yml_query(file, k
 
 **Result**: 5,306 LOC decomposed. 802/807 tests pass (5 pre-existing).
 
-#### RF-4: Test & Proxy Gaps
+#### RF-4: Test & Proxy Gaps ✓
 
-Address the two highest-risk gaps identified in the review.
+**Completed**: 2026-03-18. Branch: `refactor/rf-4/test-proxy-gaps`.
 
-**Proxy (Go)**:
-- Add `internal/cache/cache_test.go` — mock Docker socket, test Refresh/Resolve/Add/Remove lifecycle
-- Add `internal/proxy/proxy_test.go` — HTTP handler tests with mock cache + upstream
-- Fix 2 ignored errors (`routes.go` filepath.Match, `proxy.go` json.Marshal)
-- Extract network filter to `internal/filter/networks.go` for consistency
+**Proxy (Go)** — 27 new tests:
+- ✅ `cache_test.go` (13 tests): Refresh, Resolve by ID/shortID/name, Add/Remove, stale updates
+- ✅ `proxy_test.go` (14 tests): create allowed/denied, label/readonly injection, container ops, list filtering, always-allowed paths, privileged denied, max containers, sensitive mounts
+- ✅ Fixed 2 ignored errors (filepath.Match in containers.go, json.Marshal in proxy.go)
+- Deferred: network filter extraction (low priority, inline implementation is functional)
 
-**Tests (bash)**:
-- Add error message validation to existing negative tests (check stderr content, not just exit code)
-- Expand `lib/secrets.sh` test coverage (pattern matching, false positives)
-- Expand `lib/workspace.sh` test coverage (mount generation, idempotency)
+**Tests (bash)** — 20 new tests:
+- ✅ Error message validation (7 tests): project create + pack create negative cases
+- ✅ secrets.sh coverage (9 tests): KEY=VALUE loading, comments, malformed lines, quotes, special chars
+- ✅ workspace.sh coverage (4 tests): repo generation, description seeding, idempotency
 
-**Effort**: Medium. **Impact**: Eliminates medium-risk security gaps in proxy; catches error message regressions.
+**Result**: Go proxy from 89 → 116 tests. Bash from 802 → 822 tests. Total +47 tests.
+
+**Bug found**: workspace.sh description preservation across sessions is broken (pre-existing, file redirect truncates before awk reads). Tracked separately.
 
 ---
 
