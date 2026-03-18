@@ -79,7 +79,11 @@ _sed_i_or_append() {
 _substitute() {
     local file="$1" placeholder="$2" value="$3"
     local token="{{${placeholder}}}"
-    awk -v tok="$token" -v val="$value" '{gsub(tok, val); print}' "$file" > "$file.tmp" \
+    # Escape & and \ in value to prevent awk gsub back-reference interpretation
+    awk -v tok="$token" -v val="$value" '
+        BEGIN { gsub(/\\/, "\\\\", val); gsub(/&/, "\\\\&", val) }
+        { gsub(tok, val); print }
+    ' "$file" > "$file.tmp" \
         && mv "$file.tmp" "$file"
 }
 

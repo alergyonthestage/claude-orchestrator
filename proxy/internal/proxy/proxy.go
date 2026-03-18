@@ -234,6 +234,11 @@ func (p *Proxy) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	for k, v := range p.containerFilter.RequiredLabels() {
 		rawLabels[k] = v
+		// Also update typed struct so cache.Add receives injected labels
+		if createReq.Labels == nil {
+			createReq.Labels = make(map[string]string)
+		}
+		createReq.Labels[k] = v
 	}
 	rawReq["Labels"] = rawLabels
 
