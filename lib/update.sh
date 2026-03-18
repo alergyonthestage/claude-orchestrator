@@ -1112,14 +1112,14 @@ _show_discovery_summary() {
 
     echo ""
     info "$scope_label: opinionated updates available:"
-    [[ $update_count -gt 0 ]] && info "  $update_count file(s) can be auto-applied (UPDATE_AVAILABLE)"
-    [[ $merge_count -gt 0 ]] && info "  $merge_count file(s) need merge (MERGE_AVAILABLE)"
-    [[ $new_count -gt 0 ]] && info "  $new_count new file(s) available (NEW)"
-    [[ $removed_count -gt 0 ]] && info "  $removed_count file(s) removed from defaults (REMOVED)"
-    [[ $base_missing_count -gt 0 ]] && info "  $base_missing_count file(s) with missing base (BASE_MISSING)"
-    [[ $deleted_updated_count -gt 0 ]] && info "  $deleted_updated_count file(s) you deleted have framework updates (DELETED_UPDATED)"
+    [[ $update_count -gt 0 ]] && info "  $update_count file(s) updated by the framework — safe to apply"
+    [[ $merge_count -gt 0 ]] && info "  $merge_count file(s) changed by both you and the framework — review needed"
+    [[ $new_count -gt 0 ]] && info "  $new_count new file(s) from the framework"
+    [[ $removed_count -gt 0 ]] && info "  $removed_count file(s) no longer shipped by the framework"
+    [[ $base_missing_count -gt 0 ]] && info "  $base_missing_count file(s) with available updates — manual review recommended"
+    [[ $deleted_updated_count -gt 0 ]] && info "  $deleted_updated_count file(s) you removed have new framework updates"
     echo ""
-    info "Run 'cco update --diff' for details, 'cco update --sync' to merge."
+    info "Run 'cco update --diff' for details, 'cco update --sync' to review and apply."
 }
 
 # ── Diff Display ─────────────────────────────────────────────────────
@@ -1162,7 +1162,7 @@ _show_file_diffs() {
                 ;;
             BASE_MISSING)
                 echo ""
-                info "$scope_label: $rel_path (update available, base missing)"
+                info "$scope_label: $rel_path (framework update available — manual review recommended)"
                 if command -v diff >/dev/null 2>&1; then
                     # Interpolate {{PROJECT_NAME}} in the displayed diff to avoid
                     # confusing placeholder diffs (safety net for display).
@@ -1183,7 +1183,7 @@ _show_file_diffs() {
                 ;;
             MERGE_AVAILABLE|CONFLICT)
                 echo ""
-                info "$scope_label: $rel_path (both modified — merge needed)"
+                info "$scope_label: $rel_path (both you and the framework modified this file)"
                 if [[ -f "$base_dir/$rel_path" ]]; then
                     echo "  --- framework changes (base → new):"
                     diff -u "$base_dir/$rel_path" "$defaults_dir/$rel_path" \
@@ -1336,7 +1336,7 @@ _interactive_sync() {
                         choice="s"
                     else
                         echo ""
-                        info "$scope_label: $rel_path (framework has updates, no baseline to compare)"
+                        info "$scope_label: $rel_path (framework update available — manual review recommended)"
                         echo "  (N)ew-file (.new)  (A)pply update  (K)eep yours  (S)kip  (D)iff"
                         echo "  Tip: (N) saves framework version as .new for manual review — recommended if you customized this file"
                         read -rp "  Choice [N/a/k/s/d]: " choice < /dev/tty
