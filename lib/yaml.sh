@@ -115,221 +115,132 @@ _parse_bool() {
     esac
 }
 
-# Read a value from project.yml using a simple parser (no yq dependency)
+# ── Generic YAML query engine ────────────────────────────────────────
+# Navigates to a dot-separated key path (1-4 levels deep) and extracts
+# a scalar value, list items, or map entries.
+#
+# Usage: _yml_query <file> <key_path> [mode]
+#   mode: "scalar" (default) | "list" | "map"
+#
+# Examples:
+#   _yml_query f "name"                              → depth 1 scalar
+#   _yml_query f "auth.method"                       → depth 2 scalar
+#   _yml_query f "docker.containers.policy"          → depth 3 scalar
+#   _yml_query f "docker.containers.allow" list      → depth 3 list
+#   _yml_query f "docker.containers.required_labels" map → depth 3 map
+#   _yml_query f "docker.security.resources.memory"  → depth 4 scalar
+_yml_query() {
+    local file="$1" key_path="$2" mode="${3:-scalar}"
+
+    # Split key path into up to 4 parts (bash 3.2 compatible)
+    local k1="" k2="" k3="" k4=""
+    IFS='.' read -r k1 k2 k3 k4 <<< "$key_path"
+
+    local depth=1
+    [[ -n "$k2" ]] && depth=2
+    [[ -n "$k3" ]] && depth=3
+    [[ -n "$k4" ]] && depth=4
+
+    awk -v k1="$k1" -v k2="$k2" -v k3="$k3" -v k4="$k4" \
+        -v depth="$depth" -v mode="$mode" '
+    function clean(s) {
+        gsub(/["\047]/, "", s)
+        sub(/ *#.*$/, "", s)
+        gsub(/^ +| +$/, "", s)
+        return s
+    }
+    /^ *#/ { next }
+
+    # Level 1: match top-level key
+    !at1 && $0 ~ "^"k1":" {
+        at1 = 1
+        if (depth == 1) {
+            if (mode == "scalar") { sub(/^[^:]+: */, ""); print clean($0); exit }
+            at_leaf = 1; li = 2; next
+        }
+        next
+    }
+
+    # Level 2: match 2-space indented key under level 1
+    at1 && !at2 {
+        if (/^[^ ]/) exit
+        if (depth >= 2 && $0 ~ "^  "k2":") {
+            at2 = 1
+            if (depth == 2) {
+                if (mode == "scalar") { sub(/^  [^:]+: */, ""); print clean($0); exit }
+                at_leaf = 1; li = 4; next
+            }
+            next
+        }
+    }
+
+    # Level 3: match 4-space indented key under level 2
+    at2 && !at3 {
+        if (/^  [^ ]/ && !/^    /) exit
+        if (/^[^ ]/) exit
+        if (depth >= 3 && $0 ~ "^    "k3":") {
+            at3 = 1
+            if (depth == 3) {
+                if (mode == "scalar") { sub(/^    [^:]+: */, ""); print clean($0); exit }
+                at_leaf = 1; li = 6; next
+            }
+            next
+        }
+    }
+
+    # Level 4: match 6-space indented key under level 3
+    at3 && !at_leaf {
+        if (/^    [^ ]/ && !/^      /) exit
+        if (/^  [^ ]/ && !/^    /) exit
+        if (/^[^ ]/) exit
+        if (depth >= 4 && $0 ~ "^      "k4":") {
+            if (mode == "scalar") { sub(/^      [^:]+: */, ""); print clean($0); exit }
+            at_leaf = 1; li = 8; next
+        }
+    }
+
+    # Leaf extraction: collect list items or map entries at leaf indent (li)
+    at_leaf {
+        match($0, /^ */)
+        if (RLENGTH < li && $0 !~ /^ *$/) exit
+
+        if (mode == "list") {
+            p = "^"; for (i = 0; i < li; i++) p = p " "; p = p "- "
+            if ($0 ~ p) { sub(p, ""); s = clean($0); if (s != "") print s }
+        }
+        if (mode == "map") {
+            p = "^"; for (i = 0; i < li; i++) p = p " "
+            if ($0 ~ (p "[^ -]")) {
+                sub(p, ""); sub(/ *#.*$/, ""); gsub(/["\047]/, "")
+                gsub(/^ +| +$/, ""); sub(/: +/, ":")
+                if ($0 != "") print
+            }
+        }
+    }
+    ' "$file"
+}
+
+# ── Public getter API (thin wrappers over _yml_query) ────────────────
+
+# Read a scalar value at any depth (1-4 levels).
 # Usage: yml_get <file> <key>
-# Supports simple top-level and nested keys like "auth.method"
-yml_get() {
-    local file="$1"
-    local key="$2"
+yml_get() { _yml_query "$1" "$2" scalar; }
 
-    if [[ "$key" == *.* ]]; then
-        local parent="${key%%.*}"
-        local child="${key#*.}"
-        # Find lines under parent, get child value
-        awk -v parent="$parent" -v child="$child" '
-            /^ *#/ { next }
-            $0 ~ "^"parent":" { in_block=1; next }
-            in_block && /^[^ ]/ { in_block=0 }
-            in_block && $0 ~ "^  "child":" {
-                sub(/^  [^:]+: */, "")
-                gsub(/["\047]/, "")
-                sub(/ *#.*$/, "")
-                gsub(/^ +| +$/, "")
-                print
-                exit
-            }
-        ' "$file"
-    else
-        awk -v key="$key" '
-            $0 ~ "^"key":" {
-                sub(/^[^:]+: */, "")
-                gsub(/["\047]/, "")
-                sub(/ *#.*$/, "")
-                gsub(/^ +| +$/, "")
-                print
-                exit
-            }
-        ' "$file"
-    fi
-}
-
-# Read a simple list under a nested key (e.g., "browser.mcp_args")
-# Outputs one item per line (stripped of quotes)
+# Read a list at any depth (1-4 levels).
 # Usage: yml_get_list <file> <key>
-yml_get_list() {
-    local file="$1"
-    local key="$2"
+yml_get_list() { _yml_query "$1" "$2" list; }
 
-    if [[ "$key" != *.* ]]; then
-        # Top-level list
-        awk -v key="$key" '
-            $0 ~ "^"key":" { in_list=1; next }
-            in_list && /^[^ #]/ { exit }
-            in_list && /^  - / {
-                sub(/^  - */, "")
-                gsub(/["\047]/, "")
-                sub(/ *#.*$/, "")
-                gsub(/^ +| +$/, "")
-                if ($0 != "") print
-            }
-        ' "$file"
-    else
-        local parent="${key%%.*}"
-        local child="${key#*.}"
-        awk -v parent="$parent" -v child="$child" '
-            /^ *#/ { next }
-            $0 ~ "^"parent":" { in_block=1; next }
-            in_block && /^[^ ]/ { exit }
-            in_block && $0 ~ "^  "child":" { in_list=1; next }
-            in_list && /^  [^ ]/ && !/^    / { exit }
-            in_list && /^[^ ]/ { exit }
-            in_list && /^    - / {
-                sub(/^    - */, "")
-                gsub(/["\047]/, "")
-                sub(/ *#.*$/, "")
-                gsub(/^ +| +$/, "")
-                if ($0 != "") print
-            }
-        ' "$file"
-    fi
-}
+# Read a scalar from a 3-level key. Alias for yml_get (depth auto-detected).
+yml_get_deep() { _yml_query "$1" "$2" scalar; }
 
-# Read a value from a 3-level nested key (e.g., "docker.containers.policy")
-# Usage: yml_get_deep <file> <key>
-yml_get_deep() {
-    local file="$1"
-    local key="$2"
+# Read a list from a 3-level key. Alias for yml_get_list (depth auto-detected).
+yml_get_deep_list() { _yml_query "$1" "$2" list; }
 
-    # Split key: docker.containers.policy → docker / containers / policy
-    local l1 l2 l3
-    l1="${key%%.*}"
-    local rest="${key#*.}"
-    l2="${rest%%.*}"
-    l3="${rest#*.}"
+# Read a map from a 3-level key. Outputs "key:value" lines.
+yml_get_deep_map() { _yml_query "$1" "$2" map; }
 
-    awk -v l1="$l1" -v l2="$l2" -v l3="$l3" '
-        /^ *#/ { next }
-        $0 ~ "^"l1":" { in_l1=1; next }
-        in_l1 && /^[^ ]/ { exit }
-        in_l1 && $0 ~ "^  "l2":" { in_l2=1; next }
-        in_l2 && /^  [^ ]/ && !/^    / { exit }
-        in_l2 && /^[^ ]/ { exit }
-        in_l2 && $0 ~ "^    "l3":" {
-            sub(/^    [^:]+: */, "")
-            gsub(/["\047]/, "")
-            sub(/ *#.*$/, "")
-            gsub(/^ +| +$/, "")
-            print
-            exit
-        }
-    ' "$file"
-}
-
-# Read a list from a 3-level nested key (e.g., "docker.containers.allow")
-# Outputs one item per line
-# Usage: yml_get_deep_list <file> <key>
-yml_get_deep_list() {
-    local file="$1"
-    local key="$2"
-
-    local l1 l2 l3
-    l1="${key%%.*}"
-    local rest="${key#*.}"
-    l2="${rest%%.*}"
-    l3="${rest#*.}"
-
-    awk -v l1="$l1" -v l2="$l2" -v l3="$l3" '
-        /^ *#/ { next }
-        $0 ~ "^"l1":" { in_l1=1; next }
-        in_l1 && /^[^ ]/ { exit }
-        in_l1 && $0 ~ "^  "l2":" { in_l2=1; next }
-        in_l2 && /^  [^ ]/ && !/^    / { exit }
-        in_l2 && /^[^ ]/ { exit }
-        in_l2 && $0 ~ "^    "l3":" { in_l3=1; next }
-        in_l3 && /^    [^ ]/ && !/^      / { exit }
-        in_l3 && /^  [^ ]/ && !/^    / { exit }
-        in_l3 && /^[^ ]/ { exit }
-        in_l3 && /^      - / {
-            sub(/^      - */, "")
-            gsub(/["\047]/, "")
-            sub(/ *#.*$/, "")
-            gsub(/^ +| +$/, "")
-            if ($0 != "") print
-        }
-    ' "$file"
-}
-
-# Read a map from a 3-level nested key (e.g., "docker.containers.required_labels")
-# Outputs lines of "key:value"
-# Usage: yml_get_deep_map <file> <key>
-yml_get_deep_map() {
-    local file="$1"
-    local key="$2"
-
-    local l1 l2 l3
-    l1="${key%%.*}"
-    local rest="${key#*.}"
-    l2="${rest%%.*}"
-    l3="${rest#*.}"
-
-    awk -v l1="$l1" -v l2="$l2" -v l3="$l3" '
-        /^ *#/ { next }
-        $0 ~ "^"l1":" { in_l1=1; next }
-        in_l1 && /^[^ ]/ { exit }
-        in_l1 && $0 ~ "^  "l2":" { in_l2=1; next }
-        in_l2 && /^  [^ ]/ && !/^    / { exit }
-        in_l2 && /^[^ ]/ { exit }
-        in_l2 && $0 ~ "^    "l3":" { in_l3=1; next }
-        in_l3 && /^    [^ ]/ && !/^      / { exit }
-        in_l3 && /^  [^ ]/ && !/^    / { exit }
-        in_l3 && /^[^ ]/ { exit }
-        in_l3 && /^      [^ -]/ {
-            sub(/^      /, "")
-            sub(/ *#.*$/, "")
-            gsub(/["\047]/, "")
-            gsub(/^ +| +$/, "")
-            # Convert "key: value" to "key:value"
-            sub(/: +/, ":")
-            if ($0 != "") print
-        }
-    ' "$file"
-}
-
-# Read a value from a 4-level nested key (e.g., "docker.security.resources.memory")
-# Usage: yml_get_deep4 <file> <key>
-yml_get_deep4() {
-    local file="$1"
-    local key="$2"
-
-    local l1 l2 l3 l4
-    l1="${key%%.*}"
-    local rest="${key#*.}"
-    l2="${rest%%.*}"
-    rest="${rest#*.}"
-    l3="${rest%%.*}"
-    l4="${rest#*.}"
-
-    awk -v l1="$l1" -v l2="$l2" -v l3="$l3" -v l4="$l4" '
-        /^ *#/ { next }
-        $0 ~ "^"l1":" { in_l1=1; next }
-        in_l1 && /^[^ ]/ { exit }
-        in_l1 && $0 ~ "^  "l2":" { in_l2=1; next }
-        in_l2 && /^  [^ ]/ && !/^    / { exit }
-        in_l2 && /^[^ ]/ { exit }
-        in_l2 && $0 ~ "^    "l3":" { in_l3=1; next }
-        in_l3 && /^    [^ ]/ && !/^      / { exit }
-        in_l3 && /^  [^ ]/ && !/^    / { exit }
-        in_l3 && /^[^ ]/ { exit }
-        in_l3 && $0 ~ "^      "l4":" {
-            sub(/^      [^:]+: */, "")
-            gsub(/["\047]/, "")
-            sub(/ *#.*$/, "")
-            gsub(/^ +| +$/, "")
-            print
-            exit
-        }
-    ' "$file"
-}
+# Read a scalar from a 4-level key. Alias for yml_get (depth auto-detected).
+yml_get_deep4() { _yml_query "$1" "$2" scalar; }
 
 # Validate an enum field. Returns the value if valid, or the default with a warning.
 # Usage: yml_validate_enum <value> <default> <valid1|valid2|valid3>
