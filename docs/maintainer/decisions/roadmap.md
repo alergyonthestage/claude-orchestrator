@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-17 (Reprioritized: FI-7 config sync as P1, quick wins as P2, security as P3).
+> Last updated: 2026-03-18 (Added refactoring RF-1→4 as P1 from comprehensive review).
 >
 > **Note**: Sprint entries are historical. Path references (e.g., `.cco-meta`, `.cco-source`) in older
 > sprints reflect the layout at the time of writing. See Sprint 8 and the `.cco/` consolidation
@@ -15,7 +15,7 @@
 |--------|-------|---------|
 | ✅ Completed | 19 sprints / features | [→ Completed](#completed) |
 | 🐛 Known Bugs | 2 open · 6 fixed | [→ Known Bugs](#known-bugs) |
-| 🔜 Planned | Sprint 5c → 12 | [→ Planned Sprints](#planned-sprints) |
+| 🔜 Planned | Refactoring RF-1→4, Quick Wins, Sprint 6C → 12 | [→ Planned Sprints](#planned-sprints) |
 | 🔭 Exploratory | 8 ideas | [→ Long-term / Exploratory](#long-term--exploratory) |
 | ❌ Declined | 3 items | [→ Declined / Won't Do](#declined--wont-do) |
 
@@ -25,25 +25,25 @@
 
 Features are prioritized by impact for third-party users adopting claude-orchestrator.
 
-### Prioritization Notes (updated 2026-03-17)
+### Prioritization Notes (updated 2026-03-18)
 
-**Immediate priority**: Complete the user-config lifecycle — vault, publish/install sync,
-profiles, resource versioning. The resource-lifecycle analysis (Sprint 5c) laid the
-foundations; FI-7 design and implementation brought it to a definitive, complete state.
-Completed 2026-03-17.
+**Immediate priority**: Codebase refactoring. The comprehensive review (2026-03-18)
+identified concrete maintainability improvements across all modules. Addressing these
+before adding new features reduces future development cost and regression risk.
+The refactoring is split in 4 phases with increasing effort.
 
 **Next**: FI-2 and FI-5 (remaining) are low-effort, high-benefit quick wins that improve
-daily usability. Should follow immediately after FI-7.
+daily usability.
 
 **Then**: Security (Sprint 6C), E2E testing (Sprint 8), Linux OAuth (Sprint 9) are
-required for open-source readiness but independent of the config lifecycle work.
+required for open-source readiness but independent of the refactoring work.
 
 **Later**: Worktree isolation (Sprint 10), pack inheritance (#9), RAG (Sprint 12) are
 valuable but not blocking.
 
 | Category | Items | Effort | Benefit |
 |----------|-------|--------|---------|
-| **Config lifecycle (priority 1)** | FI-7 publish-install sync | Medium-High | Completes the framework's core value proposition |
+| **Refactoring (priority 1)** | RF-1 to RF-4: utilities, YAML parser, module decomposition, test+proxy gaps | Low → High | Maintainability, testability, reduced duplication |
 | **Quick wins (priority 2)** | FI-2 init-workspace, FI-5 remaining (branch protection docs + template ref) | Low | Immediate UX improvement |
 | **Security (priority 3)** | Sprint 6C network hardening | Medium-High | Required for production/open-source |
 | **Quality (priority 4)** | Sprint 8 E2E tests | Medium | Prerequisite for Linux onboarding |
@@ -55,6 +55,7 @@ valuable but not blocking.
 graph LR
     DONE["✅ Completed<br/>Sprint 1-5c, Sprint 6+10,<br/>Sprint 6b, ADR-13,<br/>Sprint 7-Vault,<br/>FI-7 Config Sync,<br/>Bugfix #B1-#B7"]
 
+    RF["Refactoring<br/>#RF-1 Foundations<br/>#RF-2 YAML parser<br/>#RF-3 Module decomposition<br/>#RF-4 Test & proxy gaps"]
     QW["Quick Wins<br/>#FI-2 init-workspace<br/>#FI-5 branch protection<br/>#FI-4 model config<br/>#cco project edit"]
     S6S["Sprint 6C-Security<br/>#Network Hardening<br/>#Squid proxy"]
     S8E["Sprint 8-E2E<br/>#E2E Test Suite"]
@@ -62,7 +63,8 @@ graph LR
     S10["Sprint 10+<br/>#Worktree isolation<br/>#Pack inheritance<br/>#StatusLine"]
     S12R["Sprint 12-RAG<br/>#Project RAG"]
 
-    DONE --> QW
+    DONE --> RF
+    RF --> QW
     QW --> S6S
     S6S --> S8E
     S8E --> S9L
@@ -345,9 +347,70 @@ the missing piece: update notification and merge for published/installed resourc
 
 ---
 
+### Refactoring — RF-1, RF-2, RF-3, RF-4
+
+**Priority**: 1 (immediately). Improves maintainability before adding new features.
+
+**Origin**: [Comprehensive review 2026-03-18](reviews/18-03-2026-comprehensive-review.md) — full codebase analysis covering architecture, code quality, tests, documentation, proxy, and configuration.
+
+#### RF-1: Foundations (Quick Wins)
+
+Low-effort, zero-regression-risk improvements that unblock subsequent phases.
+
+| Item | Description | Files |
+|------|-------------|-------|
+| `lib/constants.sh` | Extract magic strings/numbers (Chrome paths, timeouts, ports) | New file; update `bin/cco` source list |
+| `_substitute()` helper | macOS/Linux-compatible `sed -i` placeholder replacement (10+ occurrences) | New helper in `lib/utils.sh` or dedicated file |
+| `_cco_resolve_path()` | Collapse 11 identical new→old path fallback functions into single helper | `lib/paths.sh` |
+| Error checks | Add `\|\| die` to critical file operations (`cp`, `mkdir`, `rm`) | `lib/cmd-init.sh`, `lib/cmd-new.sh`, `lib/cmd-project.sh` |
+| Exit traps | Add cleanup traps for temp resources | `lib/cmd-new.sh` |
+
+**Effort**: Low. **Risk**: Very low (additive changes, existing tests cover).
+
+#### RF-2: YAML Parser Consolidation
+
+The highest ROI refactoring. `yaml.sh` contains ~1,000 lines of near-identical awk patterns across 6 functions (`yml_get`, `yml_get_list`, `yml_get_deep`, `yml_get_deep_list`, `yml_get_deep_map`, `yml_get_deep4`).
+
+**Approach**: Create a generic `_yml_get_at_depth(file, key_path, mode)` that generates the awk script based on nesting depth (1-4) and output mode (scalar/list/map). Existing 6 public functions become thin wrappers.
+
+**Safety net**: 46 dedicated tests in `test_yaml_parser.sh` protect against regressions.
+
+**Effort**: Medium. **Impact**: ~1,000 lines → ~200 lines, single point for bug fixes.
+
+#### RF-3: Module Decomposition
+
+Split oversized modules for testability and navigability.
+
+| Module | Current | Target | Approach |
+|--------|---------|--------|----------|
+| `update.sh` (600+ LOC, 15+ fn) | God module: merge, discovery, migration, changelog, sync | 4-5 focused files: `update-merge.sh`, `update-discovery.sh`, `update-migration.sh`, `update-changelog.sh` + coordinator | Split by responsibility, 84 tests protect |
+| `cmd-project.sh` (1,909 LOC, 9 subcmds) | Monolithic with create/list/show/install/update/publish/pack-mgmt | 8 separate `cmd-project-*.sh` files | Update `bin/cco` dispatcher |
+| `cmd-start.sh` (1,063 LOC) | Monolithic with validation/compose/startup/cleanup | Extract 7 internal functions (~100 LOC each) | Keep single file, decompose internally |
+
+**Effort**: High. **Risk**: Medium (large surface, but well-tested modules).
+
+#### RF-4: Test & Proxy Gaps
+
+Address the two highest-risk gaps identified in the review.
+
+**Proxy (Go)**:
+- Add `internal/cache/cache_test.go` — mock Docker socket, test Refresh/Resolve/Add/Remove lifecycle
+- Add `internal/proxy/proxy_test.go` — HTTP handler tests with mock cache + upstream
+- Fix 2 ignored errors (`routes.go` filepath.Match, `proxy.go` json.Marshal)
+- Extract network filter to `internal/filter/networks.go` for consistency
+
+**Tests (bash)**:
+- Add error message validation to existing negative tests (check stderr content, not just exit code)
+- Expand `lib/secrets.sh` test coverage (pattern matching, false positives)
+- Expand `lib/workspace.sh` test coverage (mount generation, idempotency)
+
+**Effort**: Medium. **Impact**: Eliminates medium-risk security gaps in proxy; catches error message regressions.
+
+---
+
 ### Quick Wins — FI-2, FI-5, FI-4, #10
 
-**Priority**: 2 (immediately after FI-7). Low effort, high benefit.
+**Priority**: 2 (after refactoring). Low effort, high benefit.
 
 #### FI-2 `/init-workspace` empty workspace handling
 
