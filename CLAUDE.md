@@ -211,3 +211,4 @@ Migration scopes: `global`, `project`, `pack`, `template`. All run automatically
 5. If migration moves an opinionated file: also update `.cco/base/` in the migration
 6. Test: `cco update --project <name>` runs migrations; verify idempotency
 7. Non-base native templates: update directly in `templates/project/<name>/`, create migration for existing users
+8. Policy change in `*_FILE_POLICIES`: transitions between `tracked`/`untracked`/`generated` are handled automatically by the update engine (no migration needed). But adding a NEW file to the policy list or renaming/moving a file still requires a migration.

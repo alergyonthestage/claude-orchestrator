@@ -1,4 +1,4 @@
-# Update System — Changelog & Migrations
+# Update System — Changelog, Migrations & Policy Changes
 
 When making changes to claude-orchestrator, always consider the impact on existing user installations.
 
@@ -35,9 +35,46 @@ When you make a **structural or schema-breaking change** (renames, moves, format
 
 Improvements to framework rules, agents, or skills: update `defaults/global/`. Users discover via `cco update --diff` and apply via `cco update --sync`.
 
+## File Policy Changes (`*_FILE_POLICIES`)
+
+File policies (`tracked`, `untracked`, `generated`) in `lib/update.sh` control
+how the update system handles each managed file. Changing a policy affects
+existing installations.
+
+### Automatic transitions (no migration needed)
+
+The update engine persists active policies in `.cco/meta` and automatically
+detects transitions on the next `cco update`. These are handled automatically:
+
+| Transition | Automatic action |
+|---|---|
+| `untracked → tracked` | Seeds `.cco/base/` from interpolated template |
+| `tracked → untracked` | Removes `.cco/base/` entry |
+| `generated → tracked` | Saves current installed file as base |
+| `tracked → generated` | Removes base, starts regenerating |
+
+**To change a policy**: simply edit the policy array in `lib/update.sh`. The
+transition handler does the rest. No migration script needed.
+
+### Manual migration still required for
+
+| Change | Why it can't be automated |
+|---|---|
+| **Adding a new file** to the policy list | File may not exist in user's project; may need scaffolding |
+| **Removing a file** entirely from the policy list | May need cleanup or user notification |
+| **Renaming/moving** a tracked file | System doesn't know the old→new path mapping |
+| **Template structural changes** | Content-level transformation of user files |
+
+### Reference
+
+Design: `docs/maintainer/configuration/update-system/base-tracking-fix-design.md` §2.5
+
 ## Reminder
 
 Before completing any implementation task, ask yourself:
 - Did I add a new user-visible feature? → Update `changelog.yml`
 - Did I rename/move/restructure config files? → Create a migration
 - Did I improve a default rule/agent/skill? → Update `defaults/global/`
+- Did I change a file policy in `*_FILE_POLICIES`? → Verify it's an automatic
+  transition (see table above). If not, create a migration.
+- Did I add a NEW file to `*_FILE_POLICIES`? → Create a migration to scaffold it
