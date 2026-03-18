@@ -13,119 +13,80 @@
 # During rollout (migration 009), helpers check the new path first and
 # fall back to the old path for backward compatibility.
 
+# ── Generic path resolution ─────────────────────────────────────────
+# Resolve between new (post-migration) and old (pre-migration) paths.
+# Checks for existence with the appropriate test (-f for file, -d for dir),
+# returns the new path if neither exists (default for new installations).
+# Usage: _cco_resolve_path <type> <new_path> <old_path>
+#   type: "f" for file, "d" for directory
+_cco_resolve_path() {
+    local type="$1" new="$2" old="$3"
+    if [[ "-${type}" == "-f" ]]; then
+        if [[ -f "$new" ]]; then echo "$new"
+        elif [[ -f "$old" ]]; then echo "$old"
+        else echo "$new"
+        fi
+    else
+        if [[ -d "$new" ]]; then echo "$new"
+        elif [[ -d "$old" ]]; then echo "$old"
+        else echo "$new"
+        fi
+    fi
+}
+
 # ── Top-level ────────────────────────────────────────────────────────
 
 _cco_remotes_file() {
-    local new="$USER_CONFIG_DIR/.cco/remotes"
-    local old="$USER_CONFIG_DIR/.cco-remotes"
-    if [[ -f "$new" ]]; then echo "$new"
-    elif [[ -f "$old" ]]; then echo "$old"
-    else echo "$new"
-    fi
+    _cco_resolve_path f "$USER_CONFIG_DIR/.cco/remotes" "$USER_CONFIG_DIR/.cco-remotes"
 }
 
 # ── Global scope ─────────────────────────────────────────────────────
 
 _cco_global_meta() {
-    local new="$GLOBAL_DIR/.claude/.cco/meta"
-    local old="$GLOBAL_DIR/.claude/.cco-meta"
-    if [[ -f "$new" ]]; then echo "$new"
-    elif [[ -f "$old" ]]; then echo "$old"
-    else echo "$new"
-    fi
+    _cco_resolve_path f "$GLOBAL_DIR/.claude/.cco/meta" "$GLOBAL_DIR/.claude/.cco-meta"
 }
 
 _cco_global_base_dir() {
-    local new="$GLOBAL_DIR/.claude/.cco/base"
-    local old="$GLOBAL_DIR/.claude/.cco-base"
-    if [[ -d "$new" ]]; then echo "$new"
-    elif [[ -d "$old" ]]; then echo "$old"
-    else echo "$new"
-    fi
+    _cco_resolve_path d "$GLOBAL_DIR/.claude/.cco/base" "$GLOBAL_DIR/.claude/.cco-base"
 }
 
 # ── Project scope ($1 = project_dir) ────────────────────────────────
 
 _cco_project_meta() {
-    local new="$1/.cco/meta"
-    local old="$1/.cco-meta"
-    if [[ -f "$new" ]]; then echo "$new"
-    elif [[ -f "$old" ]]; then echo "$old"
-    else echo "$new"
-    fi
+    _cco_resolve_path f "$1/.cco/meta" "$1/.cco-meta"
 }
 
 _cco_project_base_dir() {
-    local new="$1/.cco/base"
-    local old="$1/.cco-base"
-    if [[ -d "$new" ]]; then echo "$new"
-    elif [[ -d "$old" ]]; then echo "$old"
-    else echo "$new"
-    fi
+    _cco_resolve_path d "$1/.cco/base" "$1/.cco-base"
 }
 
 _cco_project_managed() {
-    local new="$1/.cco/managed"
-    local old="$1/.managed"
-    if [[ -d "$new" ]]; then echo "$new"
-    elif [[ -d "$old" ]]; then echo "$old"
-    else echo "$new"
-    fi
+    _cco_resolve_path d "$1/.cco/managed" "$1/.managed"
 }
 
 _cco_project_compose() {
-    local new="$1/.cco/docker-compose.yml"
-    local old="$1/docker-compose.yml"
-    if [[ -f "$new" ]]; then echo "$new"
-    elif [[ -f "$old" ]]; then echo "$old"
-    else echo "$new"
-    fi
+    _cco_resolve_path f "$1/.cco/docker-compose.yml" "$1/docker-compose.yml"
 }
 
 _cco_project_claude_state() {
-    local new="$1/.cco/claude-state"
-    local old="$1/claude-state"
-    if [[ -d "$new" ]]; then echo "$new"
-    elif [[ -d "$old" ]]; then echo "$old"
-    else echo "$new"
-    fi
+    _cco_resolve_path d "$1/.cco/claude-state" "$1/claude-state"
 }
 
 # Note: pack-manifest lives inside .claude/, not project root
 _cco_project_pack_manifest() {
-    local new="$1/.claude/.cco/pack-manifest"
-    local old="$1/.claude/.pack-manifest"
-    if [[ -f "$new" ]]; then echo "$new"
-    elif [[ -f "$old" ]]; then echo "$old"
-    else echo "$new"
-    fi
+    _cco_resolve_path f "$1/.claude/.cco/pack-manifest" "$1/.claude/.pack-manifest"
 }
 
 # ── Pack scope ($1 = pack_dir) ──────────────────────────────────────
 
 _cco_pack_source() {
-    local new="$1/.cco/source"
-    local old="$1/.cco-source"
-    if [[ -f "$new" ]]; then echo "$new"
-    elif [[ -f "$old" ]]; then echo "$old"
-    else echo "$new"
-    fi
+    _cco_resolve_path f "$1/.cco/source" "$1/.cco-source"
 }
 
 _cco_project_source() {
-    local new="$1/.cco/source"
-    local old="$1/.cco-source"
-    if [[ -f "$new" ]]; then echo "$new"
-    elif [[ -f "$old" ]]; then echo "$old"
-    else echo "$new"
-    fi
+    _cco_resolve_path f "$1/.cco/source" "$1/.cco-source"
 }
 
 _cco_pack_install_tmp() {
-    local new="$1/.cco/install-tmp"
-    local old="$1/.cco-install-tmp"
-    if [[ -d "$new" ]]; then echo "$new"
-    elif [[ -d "$old" ]]; then echo "$old"
-    else echo "$new"
-    fi
+    _cco_resolve_path d "$1/.cco/install-tmp" "$1/.cco-install-tmp"
 }

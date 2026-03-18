@@ -171,6 +171,35 @@ _seed_base_from_interpolated_template() {
     }' "$template_file" > "$base_dir/$rel"
 }
 
+# Create an interpolated temp copy of a template file for comparison.
+# Resolves {{PROJECT_NAME}} and {{DESCRIPTION}} using values recoverable
+# from the project directory. Returns the temp file path on stdout.
+# Caller is responsible for rm -f of the returned file.
+_interpolate_template_tmp() {
+    local template_file="$1"   # path to the raw template file
+    local project_dir="$2"     # project root directory
+
+    local project_name
+    project_name=$(basename "$project_dir")
+
+    local description="TODO: Add project description"
+    local project_yml="$project_dir/project.yml"
+    if [[ -f "$project_yml" ]]; then
+        local yml_desc
+        yml_desc=$(yml_get "$project_yml" "description" 2>/dev/null) || true
+        [[ -n "$yml_desc" ]] && description="$yml_desc"
+    fi
+
+    local tmp
+    tmp=$(mktemp)
+    awk -v name="$project_name" -v desc="$description" '{
+        gsub(/\{\{PROJECT_NAME\}\}/, name)
+        gsub(/\{\{DESCRIPTION\}\}/, desc)
+        print
+    }' "$template_file" > "$tmp"
+    printf '%s' "$tmp"
+}
+
 # ── Policy Transition Detection ──────────────────────────────────────
 
 # Detect and handle file policy transitions (untracked↔tracked↔generated).
@@ -344,24 +373,7 @@ _merge_file() {
     fi
 }
 
-# ── Portable sed -i ──────────────────────────────────────────────────
-
-_sed_i() {
-    local file="$1" pattern="$2" replacement="$3"
-    sed -i '' "s|${pattern}|${replacement}|g" "$file" 2>/dev/null || \
-        sed -i "s|${pattern}|${replacement}|g" "$file"
-}
-
-# Update a key: value field in-place, or append it if missing.
-# Usage: _sed_i_or_append <file> <key> <value>
-_sed_i_or_append() {
-    local file="$1" key="$2" value="$3"
-    if grep -q "^${key}:" "$file" 2>/dev/null; then
-        _sed_i "$file" "^${key}: .*" "${key}: ${value}"
-    else
-        printf '%s: %s\n' "$key" "$value" >> "$file"
-    fi
-}
+# NOTE: _sed_i() and _sed_i_or_append() are defined in lib/utils.sh
 
 # ── Remote Version Check ──────────────────────────────────────────────
 
@@ -767,10 +779,14 @@ _collect_file_changes() {
     # Track which base files we've seen (for REMOVED detection)
     local seen_base_files=""
 
-    # For project scope, compute project name once for safety net interpolation
-    local _fc_project_name=""
+    # For project scope, derive project_dir for safety net interpolation.
+    # The safety net interpolates ALL recoverable placeholders ({{PROJECT_NAME}}
+    # and {{DESCRIPTION}}) to match what _seed_base_from_interpolated_template
+    # produces. Without this, base_hash (seeded with both interpolated) would
+    # differ from new_hash, causing false MERGE_AVAILABLE.
+    local _fc_project_dir=""
     if [[ "$scope" == "project" ]]; then
-        _fc_project_name=$(basename "$(dirname "$installed_dir")")
+        _fc_project_dir=$(dirname "$installed_dir")
     fi
 
     # For each default file, classify using the 3-version algorithm
@@ -778,14 +794,14 @@ _collect_file_changes() {
     for rel in ${default_files[@]+"${default_files[@]}"}; do
         local new_hash installed_hash base_hash
 
-        # Safety net: for project scope, interpolate {{PROJECT_NAME}} in the
-        # template before hashing. Prevents false positives if the base is
-        # missing/corrupted or the template has residual placeholders.
-        # Uses awk for safe substitution (handles special chars in name).
-        if [[ -n "$_fc_project_name" ]]; then
-            new_hash=$(awk -v name="$_fc_project_name" '{
-                gsub(/\{\{PROJECT_NAME\}\}/, name); print
-            }' "$defaults_dir/$rel" | sha256sum | awk '{print $1}')
+        # Safety net: for project scope, interpolate recoverable placeholders
+        # ({{PROJECT_NAME}} and {{DESCRIPTION}}) in the template before hashing.
+        # Must match _seed_base_from_interpolated_template to avoid false diffs.
+        if [[ -n "$_fc_project_dir" ]]; then
+            local _fc_tmp
+            _fc_tmp=$(_interpolate_template_tmp "$defaults_dir/$rel" "$_fc_project_dir")
+            new_hash=$(_file_hash "$_fc_tmp")
+            rm -f "$_fc_tmp"
         else
             new_hash=$(_file_hash "$defaults_dir/$rel")
         fi
@@ -1137,8 +1153,23 @@ _show_file_diffs() {
 
     local shown=0
 
+    # For project scope, prepare an interpolated temp copy of the template
+    # for display. This avoids showing raw {{PLACEHOLDER}} in diffs.
+    local _sfd_project_dir=""
+    if [[ "$scope_label" != "Global" ]]; then
+        _sfd_project_dir=$(dirname "$installed_dir")
+    fi
+
     while IFS=$'\t' read -r status rel_path; do
         [[ -z "$status" ]] && continue
+
+        # Get interpolated template path (temp file for project scope, raw for global)
+        local _sfd_new_file="$defaults_dir/$rel_path"
+        local _sfd_tmp=""
+        if [[ -n "$_sfd_project_dir" && -f "$defaults_dir/$rel_path" ]]; then
+            _sfd_tmp=$(_interpolate_template_tmp "$defaults_dir/$rel_path" "$_sfd_project_dir")
+            _sfd_new_file="$_sfd_tmp"
+        fi
 
         case "$status" in
             NEW)
@@ -1146,8 +1177,8 @@ _show_file_diffs() {
                 info "$scope_label: $rel_path (new framework file)"
                 echo "  --- /dev/null"
                 echo "  +++ $rel_path"
-                if [[ -f "$defaults_dir/$rel_path" ]]; then
-                    sed 's/^/  + /' "$defaults_dir/$rel_path"
+                if [[ -f "$_sfd_new_file" ]]; then
+                    sed 's/^/  + /' "$_sfd_new_file"
                 fi
                 shown=$(( shown + 1 ))
                 ;;
@@ -1155,7 +1186,7 @@ _show_file_diffs() {
                 echo ""
                 info "$scope_label: $rel_path (framework updated, you haven't modified)"
                 if command -v diff >/dev/null 2>&1; then
-                    diff -u "$installed_dir/$rel_path" "$defaults_dir/$rel_path" \
+                    diff -u "$installed_dir/$rel_path" "$_sfd_new_file" \
                         --label "your version" --label "new default" 2>/dev/null | sed 's/^/  /' || true
                 fi
                 shown=$(( shown + 1 ))
@@ -1164,20 +1195,8 @@ _show_file_diffs() {
                 echo ""
                 info "$scope_label: $rel_path (framework update available — manual review recommended)"
                 if command -v diff >/dev/null 2>&1; then
-                    # Interpolate {{PROJECT_NAME}} in the displayed diff to avoid
-                    # confusing placeholder diffs (safety net for display).
-                    local _diff_tmp=""
-                    if [[ "$scope_label" != "Global" ]]; then
-                        local _diff_pname
-                        _diff_pname=$(basename "$(dirname "$installed_dir")")
-                        _diff_tmp=$(mktemp)
-                        awk -v name="$_diff_pname" '{
-                            gsub(/\{\{PROJECT_NAME\}\}/, name); print
-                        }' "$defaults_dir/$rel_path" > "$_diff_tmp"
-                    fi
-                    diff -u "$installed_dir/$rel_path" "${_diff_tmp:-$defaults_dir/$rel_path}" \
+                    diff -u "$installed_dir/$rel_path" "$_sfd_new_file" \
                         --label "your version" --label "new default" 2>/dev/null | sed 's/^/  /' || true
-                    [[ -n "$_diff_tmp" ]] && rm -f "$_diff_tmp"
                 fi
                 shown=$(( shown + 1 ))
                 ;;
@@ -1186,14 +1205,14 @@ _show_file_diffs() {
                 info "$scope_label: $rel_path (both you and the framework modified this file)"
                 if [[ -f "$base_dir/$rel_path" ]]; then
                     echo "  --- framework changes (base → new):"
-                    diff -u "$base_dir/$rel_path" "$defaults_dir/$rel_path" \
+                    diff -u "$base_dir/$rel_path" "$_sfd_new_file" \
                         --label "previous default" --label "new default" 2>/dev/null | sed 's/^/  /' || true
                     echo ""
                     echo "  --- your changes (base → current):"
                     diff -u "$base_dir/$rel_path" "$installed_dir/$rel_path" \
                         --label "previous default" --label "your version" 2>/dev/null | sed 's/^/  /' || true
                 else
-                    diff -u "$installed_dir/$rel_path" "$defaults_dir/$rel_path" \
+                    diff -u "$installed_dir/$rel_path" "$_sfd_new_file" \
                         --label "your version" --label "new default" 2>/dev/null | sed 's/^/  /' || true
                 fi
                 shown=$(( shown + 1 ))
@@ -1208,12 +1227,15 @@ _show_file_diffs() {
                 info "$scope_label: $rel_path (you deleted this file, but framework has updates)"
                 if [[ -f "$base_dir/$rel_path" ]]; then
                     echo "  --- framework changes since you deleted:"
-                    diff -u "$base_dir/$rel_path" "$defaults_dir/$rel_path" \
+                    diff -u "$base_dir/$rel_path" "$_sfd_new_file" \
                         --label "version when deleted" --label "new default" 2>/dev/null | sed 's/^/  /' || true
                 fi
                 shown=$(( shown + 1 ))
                 ;;
         esac
+
+        # Clean up interpolated temp file for this iteration
+        [[ -n "$_sfd_tmp" ]] && rm -f "$_sfd_tmp"
     done <<< "$changes"
 
     [[ $shown -eq 0 ]] && return 0

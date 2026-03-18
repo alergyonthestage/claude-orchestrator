@@ -48,7 +48,8 @@ EOF
     fi
 
     local tmp_dir="/tmp/cc-${session_name}"
-    mkdir -p "$tmp_dir/claude-state/memory" "$tmp_dir/.claude"
+    mkdir -p "$tmp_dir/claude-state/memory" "$tmp_dir/.claude" || die "Failed to create temp directory: $tmp_dir"
+    trap 'rm -rf "'"$tmp_dir"'"' EXIT
 
     # Create minimal project CLAUDE.md
     cat > "$tmp_dir/.claude/CLAUDE.md" <<EOF
@@ -154,5 +155,5 @@ YAML
     info "Starting temporary session '${session_name}'..."
     docker compose -f "$compose_file" run --rm --service-ports "${run_env[@]+"${run_env[@]}"}" claude
 
-    ok "Session ended. Temp files at: $tmp_dir"
+    ok "Session ended."
 }

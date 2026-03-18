@@ -1293,6 +1293,38 @@ test_collect_file_changes_safety_net_no_false_no_update() {
         fail "Expected real update detected, got: $changes"
 }
 
+test_collect_file_changes_safety_net_interpolates_description() {
+    # Template with {{DESCRIPTION}} should NOT cause false MERGE_AVAILABLE
+    # when the base was seeded with the description interpolated.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/yaml.sh"
+    source "$REPO_ROOT/lib/update.sh"
+
+    # Template has both placeholders
+    mkdir -p "$tmpdir/defaults" "$tmpdir/my-proj/.claude" "$tmpdir/base"
+    printf "# Project: {{PROJECT_NAME}}\n{{DESCRIPTION}}\n" > "$tmpdir/defaults/CLAUDE.md"
+
+    # project.yml provides description
+    cat > "$tmpdir/my-proj/project.yml" <<'YML'
+name: my-proj
+description: My test project
+YML
+
+    # Base was seeded with interpolated values (as _seed_base_from_interpolated_template does)
+    printf "# Project: my-proj\nMy test project\n" > "$tmpdir/base/CLAUDE.md"
+    # User customized the file
+    printf "# Project: my-proj\nMy test project with custom docs\n" > "$tmpdir/my-proj/.claude/CLAUDE.md"
+
+    local changes
+    changes=$(_collect_file_changes "$tmpdir/defaults" "$tmpdir/my-proj/.claude" "$tmpdir/base" "project")
+    echo "$changes" | grep -qF "USER_MODIFIED" || \
+        fail "Expected USER_MODIFIED (safety net should interpolate description), got: $changes"
+}
+
 # ── Policy transition tests ──────────────────────────────────────────
 
 test_policy_transition_bootstrap_seeds_base() {

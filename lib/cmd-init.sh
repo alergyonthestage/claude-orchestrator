@@ -67,18 +67,15 @@ EOF
     else
         info "Copying default global config..."
         rm -rf "$GLOBAL_DIR"
-        mkdir -p "$USER_CONFIG_DIR"
-        mkdir -p "$GLOBAL_DIR"
-        cp -r "$DEFAULTS_DIR/global/.claude" "$GLOBAL_DIR/.claude"
+        mkdir -p "$USER_CONFIG_DIR" || die "Failed to create user config directory: $USER_CONFIG_DIR"
+        mkdir -p "$GLOBAL_DIR" || die "Failed to create global directory: $GLOBAL_DIR"
+        cp -r "$DEFAULTS_DIR/global/.claude" "$GLOBAL_DIR/.claude" || die "Failed to copy default config from $DEFAULTS_DIR/global/.claude"
 
         # Replace language placeholders
         local lang_file="$GLOBAL_DIR/.claude/rules/language.md"
-        sed -i '' "s/{{COMM_LANG}}/$comm_lang/g" "$lang_file" 2>/dev/null || \
-            sed -i "s/{{COMM_LANG}}/$comm_lang/g" "$lang_file"
-        sed -i '' "s/{{DOCS_LANG}}/$docs_lang/g" "$lang_file" 2>/dev/null || \
-            sed -i "s/{{DOCS_LANG}}/$docs_lang/g" "$lang_file"
-        sed -i '' "s/{{CODE_LANG}}/$code_lang/g" "$lang_file" 2>/dev/null || \
-            sed -i "s/{{CODE_LANG}}/$code_lang/g" "$lang_file"
+        _substitute "$lang_file" "COMM_LANG" "$comm_lang"
+        _substitute "$lang_file" "DOCS_LANG" "$docs_lang"
+        _substitute "$lang_file" "CODE_LANG" "$code_lang"
 
         ok "Global config initialized (languages: $comm_lang / $docs_lang / $code_lang)"
 
