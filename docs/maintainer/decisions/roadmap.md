@@ -369,15 +369,13 @@ the missing piece: update notification and merge for published/installed resourc
 
 **Result**: 96 lines added, 134 removed (net -38 lines). 801/806 tests pass (5 pre-existing failures).
 
-#### RF-2: YAML Parser Consolidation
+#### RF-2: YAML Parser Consolidation ✓
 
-The highest ROI refactoring. `yaml.sh` contains ~1,000 lines of near-identical awk patterns across 6 functions (`yml_get`, `yml_get_list`, `yml_get_deep`, `yml_get_deep_list`, `yml_get_deep_map`, `yml_get_deep4`).
+**Completed**: 2026-03-18. Branch: `refactor/rf-2/yaml-parser-consolidation`.
 
-**Approach**: Create a generic `_yml_get_at_depth(file, key_path, mode)` that generates the awk script based on nesting depth (1-4) and output mode (scalar/list/map). Existing 6 public functions become thin wrappers.
+Replaced 6 near-identical awk getter functions with a single `_yml_query(file, key_path, mode)` engine that auto-detects depth (1-4 levels) and extraction mode (scalar/list/map). The 6 public functions (`yml_get`, `yml_get_list`, `yml_get_deep`, `yml_get_deep_list`, `yml_get_deep_map`, `yml_get_deep4`) become one-liner wrappers. Specialized parsers (repos, ports, env, extra_mounts, packs, pack_*) unchanged.
 
-**Safety net**: 46 dedicated tests in `test_yaml_parser.sh` protect against regressions.
-
-**Effort**: Medium. **Impact**: ~1,000 lines → ~200 lines, single point for bug fixes.
+**Result**: 200 lines removed, 111 added (net -90 lines). 46/46 YAML parser tests pass.
 
 #### RF-3: Module Decomposition
 
