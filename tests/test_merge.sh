@@ -9,6 +9,13 @@ test_merge_file_clean_merge() {
 
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/update-hash-io.sh"
+    source "$REPO_ROOT/lib/update-merge.sh"
+    source "$REPO_ROOT/lib/update-meta.sh"
+    source "$REPO_ROOT/lib/update-discovery.sh"
+    source "$REPO_ROOT/lib/update-sync.sh"
+    source "$REPO_ROOT/lib/update-changelog.sh"
+    source "$REPO_ROOT/lib/update-remote.sh"
     source "$REPO_ROOT/lib/update.sh"
 
     # Base version
@@ -43,6 +50,13 @@ test_merge_file_conflict() {
 
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/update-hash-io.sh"
+    source "$REPO_ROOT/lib/update-merge.sh"
+    source "$REPO_ROOT/lib/update-meta.sh"
+    source "$REPO_ROOT/lib/update-discovery.sh"
+    source "$REPO_ROOT/lib/update-sync.sh"
+    source "$REPO_ROOT/lib/update-changelog.sh"
+    source "$REPO_ROOT/lib/update-remote.sh"
     source "$REPO_ROOT/lib/update.sh"
 
     cat > "$tmpdir/base" <<'EOF'
@@ -75,6 +89,13 @@ test_merge_file_no_git_fallback() {
 
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/update-hash-io.sh"
+    source "$REPO_ROOT/lib/update-merge.sh"
+    source "$REPO_ROOT/lib/update-meta.sh"
+    source "$REPO_ROOT/lib/update-discovery.sh"
+    source "$REPO_ROOT/lib/update-sync.sh"
+    source "$REPO_ROOT/lib/update-changelog.sh"
+    source "$REPO_ROOT/lib/update-remote.sh"
     source "$REPO_ROOT/lib/update.sh"
 
     echo "base" > "$tmpdir/base"

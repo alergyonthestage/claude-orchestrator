@@ -36,71 +36,15 @@ _setup_internal_tutorial() {
     fi
 }
 
-cmd_start() {
-    check_global
+# ── cmd_start() helper functions ─────────────────────────────────────
+# These functions are called from within cmd_start() and share its local
+# variable scope. They must NOT redeclare variables — they read/write
+# cmd_start()'s locals directly.
 
-    local project=""
-    local teammate_mode=""
-    local use_api_key=false
-    local dry_run=false
-    local dry_run_dump=false
-    local opt_chrome=""      # "on" | "off" | "" (unset = read from project.yml)
-    local opt_github=""      # "on" | "off" | "" (unset = read from project.yml)
-    local opt_docker=""      # "off" | "" (unset = read from project.yml)
-    local extra_ports=()
-    local extra_envs=()
-
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --teammate-mode) teammate_mode="$2"; shift 2 ;;
-            --api-key) use_api_key=true; shift ;;
-            --dry-run) dry_run=true; shift ;;
-            --dump) dry_run_dump=true; shift ;;
-            --chrome)     opt_chrome="on";  shift ;;
-            --no-chrome)  opt_chrome="off"; shift ;;
-            --github)     opt_github="on";  shift ;;
-            --no-github)  opt_github="off"; shift ;;
-            --no-docker)  opt_docker="off"; shift ;;
-            --port) extra_ports+=("$2"); shift 2 ;;
-            --env) extra_envs+=("$2"); shift 2 ;;
-            --help)
-                cat <<'EOF'
-Usage: cco start <project> [OPTIONS]
-
-Options:
-  --teammate-mode <m>  Override display mode: tmux | auto
-  --api-key            Use ANTHROPIC_API_KEY instead of OAuth
-  --chrome             Enable browser automation for this session only
-  --no-chrome          Disable browser automation for this session only
-  --github             Enable GitHub MCP for this session only
-  --no-github          Disable GitHub MCP for this session only
-  --no-docker          Disable Docker socket mount for this session only
-  --dry-run            Show the generated docker-compose without running
-  --dump               With --dry-run: persist artifacts to .tmp/ for inspection
-  --port <p>           Add extra port mapping (repeatable)
-  --env <K=V>          Add extra environment variable (repeatable)
-
-Session flags (--chrome, --no-chrome, --github, --no-github, --no-docker) override
-project.yml for one session only. To change the default, edit project.yml instead.
-EOF
-                return 0
-                ;;
-            -*)  die "Unknown option: $1" ;;
-            *)
-                if [[ -z "$project" ]]; then
-                    project="$1"; shift
-                else
-                    die "Unexpected argument: $1"
-                fi
-                ;;
-        esac
-    done
-
-    [[ -z "$project" ]] && die "Usage: cco start <project>. Run 'cco project list' to see available projects."
-
-    local project_dir
-    local project_yml
-    local is_internal=false
+# Resolves project name to directory and project.yml path.
+# Sets: project_dir, project_yml, is_internal
+_start_resolve_project() {
+    is_internal=false
 
     if [[ "$project" == "tutorial" ]]; then
         # "tutorial" is a reserved name — always launches the built-in tutorial.
@@ -133,9 +77,15 @@ EOF
         check_docker
         check_image
     fi
+}
 
+# Parses project.yml values and applies CLI overrides.
+# Sets: project_name, auth_method, docker_image, mount_socket, network,
+#       teammate_mode, browser_enabled, browser_mode, browser_cdp_port,
+#       browser_effective_port, browser_mcp_args, github_enabled,
+#       github_token_env, pack_names
+_start_load_config() {
     # Parse project config
-    local project_name
     project_name=$(yml_get "$project_yml" "name")
     [[ -z "$project_name" ]] && project_name="$project"
 
@@ -152,7 +102,6 @@ EOF
         die "Project '${project_name}' already has a running session (container cc-${project_name}). Run 'cco stop ${project}' first."
     fi
 
-    local auth_method
     auth_method=$(yml_get "$project_yml" "auth.method")
     [[ -z "$auth_method" ]] && auth_method="oauth"
     $use_api_key && auth_method="api_key"
@@ -162,23 +111,19 @@ EOF
         auth_method="oauth"
     fi
 
-    local docker_image
     docker_image=$(yml_get "$project_yml" "docker.image")
     [[ -z "$docker_image" ]] && docker_image="$IMAGE_NAME"
 
-    local mount_socket
     mount_socket=$(_parse_bool "$(yml_get "$project_yml" "docker.mount_socket")" "false")
     # --no-docker: disable Docker socket for this session only
     [[ "$opt_docker" == "off" ]] && mount_socket="false"
 
-    local network
     network=$(yml_get "$project_yml" "docker.network")
     [[ -z "$network" ]] && network="cc-${project_name}"
 
     [[ -z "$teammate_mode" ]] && teammate_mode="tmux"
 
     # ── Browser config ───────────────────────────────────────────────────
-    local browser_enabled browser_mode browser_cdp_port browser_effective_port browser_mcp_args
     browser_enabled=$(_parse_bool "$(yml_get "$project_yml" "browser.enabled")" "false")
 
     browser_mode=$(yml_get "$project_yml" "browser.mode")
@@ -204,7 +149,6 @@ EOF
     fi
 
     # ── GitHub config ─────────────────────────────────────────────────────
-    local github_enabled github_token_env
     github_enabled=$(_parse_bool "$(yml_get "$project_yml" "github.enabled")" "false")
 
     github_token_env=$(yml_get "$project_yml" "github.token_env")
@@ -215,14 +159,17 @@ EOF
     [[ "$opt_github" == "off" ]] && github_enabled="false"
 
     # Parse packs early (needed both for compose and packs.md generation)
-    local pack_names
     pack_names=$(yml_get_packs "$project_yml")
 
     # Warn if no repos defined (some projects like tutorial work without repos)
     local repos_check
     repos_check=$(yml_get_repos "$project_yml")
     [[ -z "$repos_check" ]] && warn "No repositories defined in project.yml. Work inside the container will not persist unless saved via extra_mounts."
+    return 0
+}
 
+# Startup health checks: schema version, merge conflicts, shadowed skills.
+_start_check_health() {
     # Check for available updates
     local _global_meta; _global_meta=$(_cco_global_meta)
     if [[ -f "$_global_meta" ]]; then
@@ -267,11 +214,15 @@ EOF
         warn "This skill is now managed (enterprise-level) and the managed version takes precedence."
         warn "You can safely remove the user copy: rm -rf global/.claude/skills/init-workspace"
     fi
+}
 
+# Prepares output directory and persistent state (skip side effects in dry-run).
+# Sets: output_dir
+_start_prepare_state() {
     # ── Dry-run: redirect generated files to a staging directory ─────────
     # Default dry-run: ephemeral temp dir, auto-cleaned on exit.
     # --dump: persist to .tmp/ for manual inspection.
-    local output_dir="$project_dir"
+    output_dir="$project_dir"
     if $dry_run; then
         if $dry_run_dump; then
             output_dir="$project_dir/.tmp"
@@ -349,7 +300,10 @@ EOF
             chmod 600 "$global_creds"
         fi
     fi
+}
 
+# Generates integration files: socket policy, browser MCP, GitHub MCP.
+_start_generate_integrations() {
     # ── Docker socket policy ──────────────────────────────────────────────
     if [[ "$mount_socket" == "true" ]]; then
         _generate_socket_policy "$project_yml" "$project_name" "$output_dir"
@@ -385,10 +339,13 @@ EOF
     if [[ -n "$pack_names" ]]; then
         _detect_pack_conflicts "$pack_names"
     fi
+}
 
+# Generates the docker-compose.yml file from project configuration.
+# Sets: compose_file
+_start_generate_compose() {
     # ── Generate docker-compose.yml ──────────────────────────────────
     mkdir -p "$output_dir/.cco"
-    local compose_file
     compose_file=$(_cco_project_compose "$output_dir")
 
     {
@@ -575,9 +532,12 @@ networks:
     driver: bridge
 YAML
     } > "$compose_file"
+}
 
+# Generates pack metadata (packs.md, workspace.yml) and cleans legacy files.
+_start_generate_metadata() {
     # Generate .claude/packs.md — instructional list of knowledge pack files
-    local packs_md="$output_dir/.claude/packs.md"
+    packs_md="$output_dir/.claude/packs.md"
     if [[ -n "$pack_names" ]]; then
         local packs_md_lines=0
         {
@@ -617,87 +577,90 @@ YAML
     if ! $dry_run; then
         _clean_pack_manifest "$project_dir"
     fi
+}
 
-    if $dry_run; then
-        # ── Structured dry-run summary ───────────────────────────────────
-        echo ""
-        info "${BOLD}Dry-run summary for '${project_name}'${NC}"
-        echo ""
-        info "  Image:          ${docker_image}"
-        info "  Auth:           ${auth_method}"
-        info "  Teammate mode:  ${teammate_mode}"
-        info "  Network:        ${network}"
-        info "  Docker socket:  ${mount_socket}"
-        if [[ "$mount_socket" == "true" ]]; then
-            local _pol="project_only"
-            _pol=$(yml_get_deep "$project_yml" "docker.containers.policy") || true
-            [[ -z "$_pol" ]] && _pol="project_only"
-            info "  Socket policy:  ${_pol}"
-        fi
-        if [[ "$browser_enabled" == "true" ]]; then
-            info "  Browser:        ${browser_mode} mode (CDP port ${browser_effective_port})"
-        else
-            info "  Browser:        disabled"
-        fi
-        if [[ "$github_enabled" == "true" ]]; then
-            info "  GitHub MCP:     enabled (token: \$${github_token_env})"
-        else
-            info "  GitHub MCP:     disabled"
-        fi
-
-        # Ports
-        local all_ports=()
-        while IFS= read -r _p; do
-            [[ -z "$_p" ]] && continue
-            all_ports+=("$_p")
-        done <<< "$(yml_get_ports "$project_yml")"
-        for _p in "${extra_ports[@]+"${extra_ports[@]}"}"; do
-            all_ports+=("$_p")
-        done
-        if [[ ${#all_ports[@]} -gt 0 ]]; then
-            info "  Ports:          ${all_ports[*]}"
-        else
-            info "  Ports:          (none)"
-        fi
-
-        # Repos
-        local _repos
-        _repos=$(yml_get_repos "$project_yml")
-        if [[ -n "$_repos" ]]; then
-            info "  Repos:"
-            while IFS=: read -r _rp _rn; do
-                [[ -z "$_rp" ]] && continue
-                info "    - ${_rn} (${_rp})"
-            done <<< "$_repos"
-        fi
-
-        # Packs
-        if [[ -n "$pack_names" ]]; then
-            info "  Packs:"
-            while IFS= read -r _pk; do
-                [[ -z "$_pk" ]] && continue
-                info "    - ${_pk}"
-            done <<< "$pack_names"
-        fi
-
-        echo ""
-        if $dry_run_dump; then
-            info "Generated files available at: ${output_dir}/"
-            echo ""
-            info "  .cco/docker-compose.yml"
-            [[ -f "$output_dir/.cco/managed/policy.json" ]]  && info "  .cco/managed/policy.json"
-            [[ -f "$output_dir/.cco/managed/browser.json" ]]  && info "  .cco/managed/browser.json"
-            [[ -f "$output_dir/.cco/managed/github.json" ]]   && info "  .cco/managed/github.json"
-            [[ -f "$packs_md" ]]                          && info "  .claude/packs.md"
-            [[ -f "$output_dir/.claude/workspace.yml" ]]  && info "  .claude/workspace.yml"
-            echo ""
-            info "Inspect with: cat ${output_dir}/.cco/docker-compose.yml"
-        else
-            ok "Dry-run complete. Use --dump to persist generated files for inspection."
-        fi
-        return 0
+# Displays the dry-run summary.
+_start_show_summary() {
+    # ── Structured dry-run summary ───────────────────────────────────
+    echo ""
+    info "${BOLD}Dry-run summary for '${project_name}'${NC}"
+    echo ""
+    info "  Image:          ${docker_image}"
+    info "  Auth:           ${auth_method}"
+    info "  Teammate mode:  ${teammate_mode}"
+    info "  Network:        ${network}"
+    info "  Docker socket:  ${mount_socket}"
+    if [[ "$mount_socket" == "true" ]]; then
+        local _pol="project_only"
+        _pol=$(yml_get_deep "$project_yml" "docker.containers.policy") || true
+        [[ -z "$_pol" ]] && _pol="project_only"
+        info "  Socket policy:  ${_pol}"
+    fi
+    if [[ "$browser_enabled" == "true" ]]; then
+        info "  Browser:        ${browser_mode} mode (CDP port ${browser_effective_port})"
+    else
+        info "  Browser:        disabled"
+    fi
+    if [[ "$github_enabled" == "true" ]]; then
+        info "  GitHub MCP:     enabled (token: \$${github_token_env})"
+    else
+        info "  GitHub MCP:     disabled"
     fi
 
+    # Ports
+    local all_ports=()
+    while IFS= read -r _p; do
+        [[ -z "$_p" ]] && continue
+        all_ports+=("$_p")
+    done <<< "$(yml_get_ports "$project_yml")"
+    for _p in "${extra_ports[@]+"${extra_ports[@]}"}"; do
+        all_ports+=("$_p")
+    done
+    if [[ ${#all_ports[@]} -gt 0 ]]; then
+        info "  Ports:          ${all_ports[*]}"
+    else
+        info "  Ports:          (none)"
+    fi
+
+    # Repos
+    local _repos
+    _repos=$(yml_get_repos "$project_yml")
+    if [[ -n "$_repos" ]]; then
+        info "  Repos:"
+        while IFS=: read -r _rp _rn; do
+            [[ -z "$_rp" ]] && continue
+            info "    - ${_rn} (${_rp})"
+        done <<< "$_repos"
+    fi
+
+    # Packs
+    if [[ -n "$pack_names" ]]; then
+        info "  Packs:"
+        while IFS= read -r _pk; do
+            [[ -z "$_pk" ]] && continue
+            info "    - ${_pk}"
+        done <<< "$pack_names"
+    fi
+
+    echo ""
+    if $dry_run_dump; then
+        info "Generated files available at: ${output_dir}/"
+        echo ""
+        info "  .cco/docker-compose.yml"
+        [[ -f "$output_dir/.cco/managed/policy.json" ]]  && info "  .cco/managed/policy.json"
+        [[ -f "$output_dir/.cco/managed/browser.json" ]]  && info "  .cco/managed/browser.json"
+        [[ -f "$output_dir/.cco/managed/github.json" ]]   && info "  .cco/managed/github.json"
+        [[ -f "$packs_md" ]]                          && info "  .claude/packs.md"
+        [[ -f "$output_dir/.claude/workspace.yml" ]]  && info "  .claude/workspace.yml"
+        echo ""
+        info "Inspect with: cat ${output_dir}/.cco/docker-compose.yml"
+    else
+        ok "Dry-run complete. Use --dump to persist generated files for inspection."
+    fi
+}
+
+# Launches the Docker session with auth and secrets.
+_start_launch() {
     # Ensure ~/.claude.json exists on host (needed for MCP, session metadata)
     if [[ ! -f "$HOME/.claude.json" ]]; then
         echo '{}' > "$HOME/.claude.json"
@@ -721,6 +684,97 @@ YAML
     docker compose -f "$compose_file" --project-directory "$project_dir" run --rm --service-ports "${run_env[@]+"${run_env[@]}"}" claude
 
     ok "Session ended. Changes are in your repos."
+}
+
+cmd_start() {
+    check_global
+
+    local project=""
+    local teammate_mode=""
+    local use_api_key=false
+    local dry_run=false
+    local dry_run_dump=false
+    local opt_chrome=""      # "on" | "off" | "" (unset = read from project.yml)
+    local opt_github=""      # "on" | "off" | "" (unset = read from project.yml)
+    local opt_docker=""      # "off" | "" (unset = read from project.yml)
+    local extra_ports=()
+    local extra_envs=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --teammate-mode) teammate_mode="$2"; shift 2 ;;
+            --api-key) use_api_key=true; shift ;;
+            --dry-run) dry_run=true; shift ;;
+            --dump) dry_run_dump=true; shift ;;
+            --chrome)     opt_chrome="on";  shift ;;
+            --no-chrome)  opt_chrome="off"; shift ;;
+            --github)     opt_github="on";  shift ;;
+            --no-github)  opt_github="off"; shift ;;
+            --no-docker)  opt_docker="off"; shift ;;
+            --port) extra_ports+=("$2"); shift 2 ;;
+            --env) extra_envs+=("$2"); shift 2 ;;
+            --help)
+                cat <<'EOF'
+Usage: cco start <project> [OPTIONS]
+
+Options:
+  --teammate-mode <m>  Override display mode: tmux | auto
+  --api-key            Use ANTHROPIC_API_KEY instead of OAuth
+  --chrome             Enable browser automation for this session only
+  --no-chrome          Disable browser automation for this session only
+  --github             Enable GitHub MCP for this session only
+  --no-github          Disable GitHub MCP for this session only
+  --no-docker          Disable Docker socket mount for this session only
+  --dry-run            Show the generated docker-compose without running
+  --dump               With --dry-run: persist artifacts to .tmp/ for inspection
+  --port <p>           Add extra port mapping (repeatable)
+  --env <K=V>          Add extra environment variable (repeatable)
+
+Session flags (--chrome, --no-chrome, --github, --no-github, --no-docker) override
+project.yml for one session only. To change the default, edit project.yml instead.
+EOF
+                return 0
+                ;;
+            -*)  die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$project" ]]; then
+                    project="$1"; shift
+                else
+                    die "Unexpected argument: $1"
+                fi
+                ;;
+        esac
+    done
+
+    [[ -z "$project" ]] && die "Usage: cco start <project>. Run 'cco project list' to see available projects."
+
+    # Variables set by helper functions (declared here for shared scope)
+    local project_dir project_yml is_internal
+    local project_name auth_method docker_image mount_socket network
+    local browser_enabled browser_mode browser_cdp_port browser_effective_port browser_mcp_args
+    local github_enabled github_token_env pack_names
+    local output_dir compose_file packs_md
+
+    _start_resolve_project
+
+    _start_load_config
+
+    _start_check_health
+
+    _start_prepare_state
+
+    _start_generate_integrations
+
+    _start_generate_compose
+
+    _start_generate_metadata
+
+    if $dry_run; then
+        _start_show_summary
+        return 0
+    fi
+
+    _start_launch
 }
 
 # ── Browser support helpers ──────────────────────────────────────────

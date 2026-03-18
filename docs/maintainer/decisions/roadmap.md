@@ -377,17 +377,17 @@ Replaced 6 near-identical awk getter functions with a single `_yml_query(file, k
 
 **Result**: 200 lines removed, 111 added (net -90 lines). 46/46 YAML parser tests pass.
 
-#### RF-3: Module Decomposition
+#### RF-3: Module Decomposition ✓
 
-Split oversized modules for testability and navigability.
+**Completed**: 2026-03-18. Branch: `refactor/rf-3/module-decomposition`.
 
-| Module | Current | Target | Approach |
-|--------|---------|--------|----------|
-| `update.sh` (600+ LOC, 15+ fn) | God module: merge, discovery, migration, changelog, sync | 4-5 focused files: `update-merge.sh`, `update-discovery.sh`, `update-migration.sh`, `update-changelog.sh` + coordinator | Split by responsibility, 84 tests protect |
-| `cmd-project.sh` (1,909 LOC, 9 subcmds) | Monolithic with create/list/show/install/update/publish/pack-mgmt | 8 separate `cmd-project-*.sh` files | Update `bin/cco` dispatcher |
-| `cmd-start.sh` (1,063 LOC) | Monolithic with validation/compose/startup/cleanup | Extract 7 internal functions (~100 LOC each) | Keep single file, decompose internally |
+| Module | Before | After | Result |
+|--------|--------|-------|--------|
+| `update.sh` (2,344 LOC, 37 fn) | God module: merge, discovery, migration, changelog, sync, remote | 8 files: `update-hash-io.sh`, `update-merge.sh`, `update-meta.sh`, `update-discovery.sh`, `update-sync.sh`, `update-changelog.sh`, `update-remote.sh` + coordinator | Split by responsibility |
+| `cmd-project.sh` (1,899 LOC, 20 fn) | Monolithic with 9 subcommands | 6 files: `cmd-project-create.sh`, `cmd-project-query.sh`, `cmd-project-install.sh`, `cmd-project-pack-ops.sh`, `cmd-project-publish.sh`, `cmd-project-update.sh` | Split by subcommand family |
+| `cmd-start.sh` (1,063 LOC) | Monolithic cmd_start() (~687 lines) | 9 focused helpers: `_start_resolve_project`, `_start_load_config`, `_start_check_health`, `_start_prepare_state`, `_start_generate_integrations`, `_start_generate_compose`, `_start_generate_metadata`, `_start_show_summary`, `_start_launch` | Internal decomposition, single file |
 
-**Effort**: High. **Risk**: Medium (large surface, but well-tested modules).
+**Result**: 5,306 LOC decomposed. 802/807 tests pass (5 pre-existing).
 
 #### RF-4: Test & Proxy Gaps
 
