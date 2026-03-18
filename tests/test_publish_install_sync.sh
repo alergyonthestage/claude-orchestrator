@@ -11,6 +11,13 @@ _source_libs() {
     source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/lib/paths.sh"
     source "$REPO_ROOT/lib/yaml.sh"
+    source "$REPO_ROOT/lib/update-hash-io.sh"
+    source "$REPO_ROOT/lib/update-merge.sh"
+    source "$REPO_ROOT/lib/update-meta.sh"
+    source "$REPO_ROOT/lib/update-discovery.sh"
+    source "$REPO_ROOT/lib/update-sync.sh"
+    source "$REPO_ROOT/lib/update-changelog.sh"
+    source "$REPO_ROOT/lib/update-remote.sh"
     source "$REPO_ROOT/lib/update.sh"
 }
 
@@ -149,7 +156,7 @@ test_update_installed_project_skips_sync() {
 
     # Bootstrap .cco/meta with current schema
     local latest_schema
-    latest_schema=$(bash -c "source '$REPO_ROOT/lib/colors.sh'; source '$REPO_ROOT/lib/utils.sh'; source '$REPO_ROOT/lib/paths.sh'; source '$REPO_ROOT/lib/yaml.sh'; source '$REPO_ROOT/lib/update.sh'; _latest_schema_version project")
+    latest_schema=$(bash -c "source '$REPO_ROOT/lib/colors.sh'; source '$REPO_ROOT/lib/utils.sh'; source '$REPO_ROOT/lib/paths.sh'; source '$REPO_ROOT/lib/yaml.sh'; source '$REPO_ROOT/lib/update-hash-io.sh'; source '$REPO_ROOT/lib/update-merge.sh'; source '$REPO_ROOT/lib/update-meta.sh'; source '$REPO_ROOT/lib/update-discovery.sh'; source '$REPO_ROOT/lib/update-sync.sh'; source '$REPO_ROOT/lib/update-changelog.sh'; source '$REPO_ROOT/lib/update-remote.sh'; source '$REPO_ROOT/lib/update.sh'; _latest_schema_version project")
     printf 'schema_version: %s\n' "$latest_schema" \
         > "$CCO_PROJECTS_DIR/remote-app/.cco/meta"
 
@@ -185,7 +192,7 @@ test_project_internalize() {
     create_project "$tmpdir" "remote-app" "name: remote-app"
     mkdir -p "$CCO_PROJECTS_DIR/remote-app/.cco"
     local latest_schema
-    latest_schema=$(bash -c "source '$REPO_ROOT/lib/colors.sh'; source '$REPO_ROOT/lib/utils.sh'; source '$REPO_ROOT/lib/paths.sh'; source '$REPO_ROOT/lib/yaml.sh'; source '$REPO_ROOT/lib/update.sh'; _latest_schema_version project")
+    latest_schema=$(bash -c "source '$REPO_ROOT/lib/colors.sh'; source '$REPO_ROOT/lib/utils.sh'; source '$REPO_ROOT/lib/paths.sh'; source '$REPO_ROOT/lib/yaml.sh'; source '$REPO_ROOT/lib/update-hash-io.sh'; source '$REPO_ROOT/lib/update-merge.sh'; source '$REPO_ROOT/lib/update-meta.sh'; source '$REPO_ROOT/lib/update-discovery.sh'; source '$REPO_ROOT/lib/update-sync.sh'; source '$REPO_ROOT/lib/update-changelog.sh'; source '$REPO_ROOT/lib/update-remote.sh'; source '$REPO_ROOT/lib/update.sh'; _latest_schema_version project")
     printf 'source: https://github.com/team/config.git\nref: main\ncommit: abc123\n' \
         > "$CCO_PROJECTS_DIR/remote-app/.cco/source"
     printf 'schema_version: %s\nremote_cache:\n  commit: abc123\n  checked: 2026-03-17\n' \
@@ -224,7 +231,7 @@ test_update_discovery_offline() {
     create_project "$tmpdir" "team-svc" "name: team-svc"
     mkdir -p "$CCO_PROJECTS_DIR/team-svc/.cco"
     local latest_schema
-    latest_schema=$(bash -c "source '$REPO_ROOT/lib/colors.sh'; source '$REPO_ROOT/lib/utils.sh'; source '$REPO_ROOT/lib/paths.sh'; source '$REPO_ROOT/lib/yaml.sh'; source '$REPO_ROOT/lib/update.sh'; _latest_schema_version project")
+    latest_schema=$(bash -c "source '$REPO_ROOT/lib/colors.sh'; source '$REPO_ROOT/lib/utils.sh'; source '$REPO_ROOT/lib/paths.sh'; source '$REPO_ROOT/lib/yaml.sh'; source '$REPO_ROOT/lib/update-hash-io.sh'; source '$REPO_ROOT/lib/update-merge.sh'; source '$REPO_ROOT/lib/update-meta.sh'; source '$REPO_ROOT/lib/update-discovery.sh'; source '$REPO_ROOT/lib/update-sync.sh'; source '$REPO_ROOT/lib/update-changelog.sh'; source '$REPO_ROOT/lib/update-remote.sh'; source '$REPO_ROOT/lib/update.sh'; _latest_schema_version project")
     printf 'source: https://github.com/team/config.git\nref: main\ncommit: abc123\n' \
         > "$CCO_PROJECTS_DIR/team-svc/.cco/source"
     printf 'schema_version: %s\n' "$latest_schema" \
@@ -332,7 +339,7 @@ test_update_sync_installed_with_local() {
     create_project "$tmpdir" "remote-app" "name: remote-app"
     mkdir -p "$CCO_PROJECTS_DIR/remote-app/.cco/base" "$CCO_PROJECTS_DIR/remote-app/.claude"
     local latest_schema
-    latest_schema=$(bash -c "source '$REPO_ROOT/lib/colors.sh'; source '$REPO_ROOT/lib/utils.sh'; source '$REPO_ROOT/lib/paths.sh'; source '$REPO_ROOT/lib/yaml.sh'; source '$REPO_ROOT/lib/update.sh'; _latest_schema_version project")
+    latest_schema=$(bash -c "source '$REPO_ROOT/lib/colors.sh'; source '$REPO_ROOT/lib/utils.sh'; source '$REPO_ROOT/lib/paths.sh'; source '$REPO_ROOT/lib/yaml.sh'; source '$REPO_ROOT/lib/update-hash-io.sh'; source '$REPO_ROOT/lib/update-merge.sh'; source '$REPO_ROOT/lib/update-meta.sh'; source '$REPO_ROOT/lib/update-discovery.sh'; source '$REPO_ROOT/lib/update-sync.sh'; source '$REPO_ROOT/lib/update-changelog.sh'; source '$REPO_ROOT/lib/update-remote.sh'; source '$REPO_ROOT/lib/update.sh'; _latest_schema_version project")
     printf 'source: https://github.com/team/config.git\nref: main\ncommit: abc123\n' \
         > "$CCO_PROJECTS_DIR/remote-app/.cco/source"
     printf 'schema_version: %s\n' "$latest_schema" \
@@ -843,7 +850,7 @@ test_update_discovery_offline_no_cache_update() {
     create_project "$tmpdir" "offline-svc" "name: offline-svc"
     mkdir -p "$CCO_PROJECTS_DIR/offline-svc/.cco"
     local latest_schema
-    latest_schema=$(bash -c "source '$REPO_ROOT/lib/colors.sh'; source '$REPO_ROOT/lib/utils.sh'; source '$REPO_ROOT/lib/paths.sh'; source '$REPO_ROOT/lib/yaml.sh'; source '$REPO_ROOT/lib/update.sh'; _latest_schema_version project")
+    latest_schema=$(bash -c "source '$REPO_ROOT/lib/colors.sh'; source '$REPO_ROOT/lib/utils.sh'; source '$REPO_ROOT/lib/paths.sh'; source '$REPO_ROOT/lib/yaml.sh'; source '$REPO_ROOT/lib/update-hash-io.sh'; source '$REPO_ROOT/lib/update-merge.sh'; source '$REPO_ROOT/lib/update-meta.sh'; source '$REPO_ROOT/lib/update-discovery.sh'; source '$REPO_ROOT/lib/update-sync.sh'; source '$REPO_ROOT/lib/update-changelog.sh'; source '$REPO_ROOT/lib/update-remote.sh'; source '$REPO_ROOT/lib/update.sh'; _latest_schema_version project")
     printf 'source: https://github.com/team/config.git\nref: main\ncommit: abc123\n' \
         > "$CCO_PROJECTS_DIR/offline-svc/.cco/source"
     printf 'schema_version: %s\nremote_cache:\n  commit: abc123\n  checked: 2026-03-17T10:00:00Z\n' \
