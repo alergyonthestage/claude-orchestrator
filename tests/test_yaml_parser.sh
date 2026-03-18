@@ -985,3 +985,29 @@ YAML
     assert_equals "--headless
 --no-sandbox" "$result"
 }
+
+# ── yml_get: dotted child keys (e.g., "policies.CLAUDE.md") ──────────
+
+test_yaml_parser_dotted_child_key() {
+    # yml_get must preserve dots in the child part of a 2-level key.
+    # "policies.CLAUDE.md" → parent=policies, child=CLAUDE.md
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/yaml.sh"
+    local tmpfile; tmpfile=$(mktemp); trap "rm -f '$tmpfile'" EXIT
+    cat > "$tmpfile" <<'YAML'
+policies:
+  CLAUDE.md: tracked
+  settings.json: tracked
+  rules/workflow.md: untracked
+  agents/analyst.md: tracked
+YAML
+    local result
+    result=$(yml_get "$tmpfile" "policies.CLAUDE.md")
+    assert_equals "tracked" "$result"
+    result=$(yml_get "$tmpfile" "policies.settings.json")
+    assert_equals "tracked" "$result"
+    result=$(yml_get "$tmpfile" "policies.rules/workflow.md")
+    assert_equals "untracked" "$result"
+    result=$(yml_get "$tmpfile" "policies.agents/analyst.md")
+    assert_equals "tracked" "$result"
+}

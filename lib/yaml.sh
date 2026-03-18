@@ -130,16 +130,37 @@ _parse_bool() {
 #   _yml_query f "docker.containers.required_labels" map → depth 3 map
 #   _yml_query f "docker.security.resources.memory"  → depth 4 scalar
 _yml_query() {
-    local file="$1" key_path="$2" mode="${3:-scalar}"
+    local file="$1" key_path="$2" mode="${3:-scalar}" depth="${4:-0}"
 
-    # Split key path into up to 4 parts (bash 3.2 compatible)
+    # Split key path. Use progressive peeling (%%.*/#*.) to preserve
+    # dots inside child keys (e.g., "policies.CLAUDE.md" → parent=policies, child=CLAUDE.md).
     local k1="" k2="" k3="" k4=""
-    IFS='.' read -r k1 k2 k3 k4 <<< "$key_path"
-
-    local depth=1
-    [[ -n "$k2" ]] && depth=2
-    [[ -n "$k3" ]] && depth=3
-    [[ -n "$k4" ]] && depth=4
+    if [[ "$key_path" != *.* ]]; then
+        k1="$key_path"
+        [[ "$depth" == "0" ]] && depth=1
+    else
+        k1="${key_path%%.*}"
+        local rest="${key_path#*.}"
+        if [[ "$depth" == "0" ]]; then
+            # Auto-detect: default to depth 2 (parent.child).
+            # Callers needing depth 3+ pass it explicitly via wrappers.
+            depth=2
+        fi
+        if [[ "$depth" -le 2 ]]; then
+            # Depth 2: child keeps any internal dots (e.g., "CLAUDE.md")
+            k2="$rest"
+        elif [[ "$depth" -le 3 ]]; then
+            # Depth 3: split rest into 2 parts
+            k2="${rest%%.*}"
+            k3="${rest#*.}"
+        else
+            # Depth 4: split rest into 3 parts
+            k2="${rest%%.*}"
+            rest="${rest#*.}"
+            k3="${rest%%.*}"
+            k4="${rest#*.}"
+        fi
+    fi
 
     awk -v k1="$k1" -v k2="$k2" -v k3="$k3" -v k4="$k4" \
         -v depth="$depth" -v mode="$mode" '
@@ -221,26 +242,28 @@ _yml_query() {
 }
 
 # ── Public getter API (thin wrappers over _yml_query) ────────────────
+# yml_get/yml_get_list auto-detect depth (default 2 for dotted keys,
+# preserving dots in the child part — e.g., "policies.CLAUDE.md").
+# yml_get_deep* pass explicit depth 3 or 4 to split further.
 
-# Read a scalar value at any depth (1-4 levels).
-# Usage: yml_get <file> <key>
+# Read a scalar value (depth 1-2, auto-detected).
+# Dotted child keys preserved: yml_get f "policies.CLAUDE.md" works.
 yml_get() { _yml_query "$1" "$2" scalar; }
 
-# Read a list at any depth (1-4 levels).
-# Usage: yml_get_list <file> <key>
+# Read a list (depth 1-2, auto-detected).
 yml_get_list() { _yml_query "$1" "$2" list; }
 
-# Read a scalar from a 3-level key. Alias for yml_get (depth auto-detected).
-yml_get_deep() { _yml_query "$1" "$2" scalar; }
+# Read a scalar from a 3-level key (e.g., "docker.containers.policy").
+yml_get_deep() { _yml_query "$1" "$2" scalar 3; }
 
-# Read a list from a 3-level key. Alias for yml_get_list (depth auto-detected).
-yml_get_deep_list() { _yml_query "$1" "$2" list; }
+# Read a list from a 3-level key (e.g., "docker.containers.allow").
+yml_get_deep_list() { _yml_query "$1" "$2" list 3; }
 
-# Read a map from a 3-level key. Outputs "key:value" lines.
-yml_get_deep_map() { _yml_query "$1" "$2" map; }
+# Read a map from a 3-level key (e.g., "docker.containers.required_labels").
+yml_get_deep_map() { _yml_query "$1" "$2" map 3; }
 
-# Read a scalar from a 4-level key. Alias for yml_get (depth auto-detected).
-yml_get_deep4() { _yml_query "$1" "$2" scalar; }
+# Read a scalar from a 4-level key (e.g., "docker.security.resources.memory").
+yml_get_deep4() { _yml_query "$1" "$2" scalar 4; }
 
 # Validate an enum field. Returns the value if valid, or the default with a warning.
 # Usage: yml_validate_enum <value> <default> <valid1|valid2|valid3>
