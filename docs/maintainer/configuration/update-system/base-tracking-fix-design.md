@@ -20,7 +20,7 @@ existing projects were created before this change, so their `.cco/base/` never
 included CLAUDE.md. No migration was added to seed the base for this
 newly-tracked file.
 
-**Bug 2 — Base saved from raw template**: `cmd-project.sh:211` passes the raw
+**Bug 2 — Base saved from raw template**: `cmd_project_create()` (`lib/cmd-project-create.sh`) passes the raw
 template directory (with `{{PLACEHOLDER}}`) to `_save_all_base_versions`. For
 projects created **after** the policy change, the base would contain raw
 placeholders (`# Project: {{PROJECT_NAME}}`), making the three-way merge
@@ -29,12 +29,12 @@ because all current projects predate the policy change (Bug 1 masks Bug 2).
 
 ### Affected components
 
-| Component | File | Lines | Issue |
+| Component | File | Function | Issue |
 |---|---|---|---|
-| Project create | `lib/cmd-project.sh` | 191, 211 | Saves base from raw template |
-| Project install | `lib/cmd-project.sh` | 646-651 | Saves base from raw remote template |
-| Migration 007 | `migrations/project/007_*.sh` | 34 | Same raw-template bug (but guarded — won't re-run) |
-| Change detection | `lib/update.sh` | 593, 613-620 | Hashes raw template → false BASE_MISSING |
+| Project create | `lib/cmd-project-create.sh` | `cmd_project_create()` | Saves base from raw template |
+| Project install | `lib/cmd-project-install.sh` | `cmd_project_install()` | Saves base from raw remote template |
+| Migration 007 | `migrations/project/007_*.sh` | `migrate()` | Same raw-template bug (but guarded — won't re-run) |
+| Change detection | `lib/update-discovery.sh` | `_collect_file_changes()` | Hashes raw template → false BASE_MISSING |
 
 ---
 
@@ -42,32 +42,34 @@ because all current projects predate the policy change (Bug 1 masks Bug 2).
 
 ### 2.1 Fix 1 — Save interpolated base on `cco project create`
 
-**Change**: In `cmd-project.sh`, save base from the **project directory** (which
-has already been interpolated) instead of from the raw template directory.
+**Change**: In `cmd_project_create()` (`lib/cmd-project-create.sh`), save base
+from the **project directory** (which has already been interpolated) instead of
+from the raw template directory.
 
 ```bash
-# BEFORE (cmd-project.sh:211):
+# BEFORE (in cmd_project_create()):
 _save_all_base_versions "$project_dir/.cco/base" "$defaults_dir" "project"
 
 # AFTER:
 _save_all_base_versions "$project_dir/.cco/base" "$project_dir/.claude" "project"
 ```
 
-**Rationale**: At line 211, the project files have already been interpolated
-(lines 66-87). The `.claude/` directory in the project IS the interpolated
-template. This is exactly what the base should be: "what the framework gave the
-user at creation time".
+**Rationale**: At this point in `cmd_project_create()`, the project files have
+already been interpolated. The `.claude/` directory in the project IS the
+interpolated template. This is exactly what the base should be: "what the
+framework gave the user at creation time".
 
-**Impact on meta manifest**: The manifest at lines 197-208 already hashes from
-`$project_dir/.claude/$rel` (the interpolated copy). No change needed there.
+**Impact on meta manifest**: The manifest generation in `cmd_project_create()`
+already hashes from `$project_dir/.claude/$rel` (the interpolated copy). No
+change needed there.
 
 ### 2.2 Fix 2 — Save interpolated base on `cco project install`
 
-**Change**: In `cmd-project.sh` for the install flow, save base from the
-installed project directory rather than the remote template directory.
+**Change**: In `cmd_project_install()` (`lib/cmd-project-install.sh`), save base
+from the installed project directory rather than the remote template directory.
 
 ```bash
-# BEFORE (cmd-project.sh:650):
+# BEFORE (in cmd_project_install()):
 _save_all_base_versions "$project_base_dir" "$template_dir/.claude" "project"
 
 # AFTER:
@@ -78,8 +80,8 @@ _save_all_base_versions "$project_base_dir" "$target_dir/.claude" "project"
 is substituted during install). The installed copy is the interpolated result.
 
 **Note**: Remote templates from Config Repos go through the same `sed`
-substitution flow (lines 593-631 of `cmd-project.sh`). After line 631, the
-target directory contains the interpolated files.
+substitution flow in `cmd_project_install()`. After substitution, the target
+directory contains the interpolated files.
 
 ### 2.3 ~~Fix 3 — Migration 011~~ → Handled by automatic policy transitions
 
@@ -120,11 +122,11 @@ A lightweight guard in `_collect_file_changes` that interpolates
 where the base might be absent, corrupted, or the template still has residual
 placeholders.
 
-**Location**: `lib/update.sh`, inside `_collect_file_changes`, before computing
-`new_hash`.
+**Location**: `lib/update-discovery.sh`, inside `_collect_file_changes()`, before
+computing `new_hash`.
 
 ```bash
-# In _collect_file_changes, after line 590 (for rel in ...):
+# In _collect_file_changes(), before computing new_hash:
 # Compute new_hash with placeholder interpolation for project scope
 if [[ "$scope" == "project" ]]; then
     local project_name
@@ -345,13 +347,13 @@ fi
 
 | File | Change | Type |
 |---|---|---|
-| `lib/cmd-project.sh:211` | Save base from `$project_dir/.claude` | Bug fix |
-| `lib/cmd-project.sh:650` | Save base from `$target_dir/.claude` | Bug fix |
-| `lib/update.sh` | Add `_seed_base_from_interpolated_template()` helper | Helper |
-| `lib/update.sh` | Add `_handle_policy_transitions()` with self-persisting policies | Policy automation |
-| `lib/update.sh` | Interpolate `{{PROJECT_NAME}}` before hashing in `_collect_file_changes` | Safety net |
-| `lib/update.sh` | Write `policies:` section in `_generate_cco_meta` and `_generate_project_cco_meta` | Policy persistence |
-| `lib/update.sh` | Call `_handle_policy_transitions` unconditionally before `_collect_file_changes` | Integration |
+| `lib/cmd-project-create.sh` | Save base from `$project_dir/.claude` in `cmd_project_create()` | Bug fix |
+| `lib/cmd-project-install.sh` | Save base from `$target_dir/.claude` in `cmd_project_install()` | Bug fix |
+| `lib/update-hash-io.sh` | Add `_seed_base_from_interpolated_template()` helper | Helper |
+| `lib/update-discovery.sh` | Add `_handle_policy_transitions()` with self-persisting policies | Policy automation |
+| `lib/update-discovery.sh` | Interpolate `{{PROJECT_NAME}}` before hashing in `_collect_file_changes()` | Safety net |
+| `lib/update-meta.sh` | Write `policies:` section in `_generate_cco_meta()` and `_generate_project_cco_meta()` | Policy persistence |
+| `lib/update.sh` | Call `_handle_policy_transitions()` unconditionally before `_collect_file_changes()` | Integration |
 | `.claude/rules/update-system.md` | Document policy change rules | Rule update |
 
 **No migration needed**: `_handle_policy_transitions` is self-bootstrapping.
@@ -485,7 +487,7 @@ scratch in user projects → manual migration is still needed.
 
 ## 6. Rollout
 
-1. Fixes 1-2 (`cmd-project.sh`) affect only **new** projects/installs
+1. Fixes 1-2 (`cmd-project-create.sh`, `cmd-project-install.sh`) affect only **new** projects/installs
 2. `_handle_policy_transitions` self-heals **existing** projects on any
    `cco update` variant (including `--diff` and `--dry-run`)
 3. Safety net provides defense-in-depth for any residual edge cases

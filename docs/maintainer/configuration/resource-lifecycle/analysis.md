@@ -736,8 +736,8 @@ Based on this analysis, the following principles are confirmed or added:
 | FI-7 design | `docs/maintainer/configuration/publish-install-sync/design.md` |
 | FI-7 in roadmap | `docs/maintainer/decisions/roadmap.md` § FI-7 |
 | FI-7 details | `docs/maintainer/decisions/framework-improvements.md` § FI-7 |
-| Current file policies | `lib/update.sh` lines 25-50 |
-| Discovery engine | `lib/update.sh` `_collect_file_changes()` |
-| Template resolution | `lib/update.sh` `_resolve_project_defaults_dir()` |
+| Current file policies | `lib/update.sh` (`GLOBAL_FILE_POLICIES`, `PROJECT_FILE_POLICIES`) |
+| Discovery engine | `_collect_file_changes()` in `lib/update-discovery.sh` |
+| Template resolution | `_resolve_project_defaults_dir()` in `lib/update-discovery.sh` |
 | Rules/guidelines analysis | `docs/maintainer/configuration/rules-and-guidelines/analysis.md` |
 | Owner preferences | `docs/maintainer/configuration/rules-and-guidelines/owner-preferences.md` |

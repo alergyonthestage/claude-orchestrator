@@ -586,7 +586,7 @@ mkdir -p "$project_dir/claude-state"
 mkdir -p "$project_dir/memory"
 ```
 
-### 6.4 Changes to `cmd-project.sh` (Project Create)
+### 6.4 Changes to `cmd-project-create.sh` (Project Create)
 
 Replace:
 ```bash
@@ -645,11 +645,11 @@ vault-tracked. Correct behavior.
 
 ### 6.7 Publish/Install Exclusion
 
-**`lib/cmd-project.sh` — publish flow**: Exclude `memory/` from the
+**`lib/cmd-project-publish.sh` — publish flow**: Exclude `memory/` from the
 published archive. Add to the exclude list alongside `.cco/claude-state/`,
 `.cco/docker-compose.yml`, `.cco/managed/`, `.tmp/`.
 
-**`lib/cmd-project.sh` — install flow**: Do not create `memory/` from
+**`lib/cmd-project-install.sh` — install flow**: Do not create `memory/` from
 remote templates. Memory is created by `cco project create` only.
 
 ---
@@ -875,8 +875,8 @@ Note: `projects/*/memory/` is intentionally NOT listed (vault-tracked).
 - [x] Update `defaults/managed/.claude/skills/init-workspace/SKILL.md`
 - [x] Create `migrations/project/008_separate_memory.sh`
 - [x] Update `lib/cmd-start.sh`: add memory child mount
-- [x] Update `lib/cmd-project.sh`: create `memory/` instead of `claude-state/memory/`
-- [x] Update `lib/cmd-project.sh`: exclude `memory/` from publish
+- [x] Update `lib/cmd-project-create.sh`: create `memory/` instead of `claude-state/memory/`
+- [x] Update `lib/cmd-project-publish.sh`: exclude `memory/` from publish
 - [x] Tests: memory mount, migration, publish exclusion
 
 ### Phase 2: Vault Profiles (#A — Core) — Implemented
@@ -944,7 +944,7 @@ model analysis is deferred to a future sprint.
 |---|---|
 | `lib/cmd-vault.sh` | Profile management, selective sync, enhanced status |
 | `lib/cmd-start.sh` | Memory child mount in docker-compose generation |
-| `lib/cmd-project.sh` | Memory dir creation, publish exclusion, `--profile` flag |
+| `lib/cmd-project-create.sh`, `lib/cmd-project-publish.sh` | Memory dir creation, publish exclusion, `--profile` flag |
 | `lib/cmd-pack.sh` | `--profile` flag |
 | `defaults/managed/.claude/rules/memory-policy.md` | NEW: managed memory policy |
 | `defaults/managed/CLAUDE.md` | Memory policy reference |

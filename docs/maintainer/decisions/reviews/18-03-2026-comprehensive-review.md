@@ -4,6 +4,9 @@
 **Scope**: Full codebase review — architecture, code quality, tests, documentation, proxy, configuration
 **Method**: 6 parallel analysis agents examining all source files with cross-referencing
 
+> **Status**: The findings in this review were addressed by RF-1 through RF-4, completed 2026-03-18.
+> See [roadmap](../roadmap.md) for implementation details per phase.
+
 ---
 
 ## Executive Summary
@@ -52,6 +55,8 @@ Layer 5 — CLI:       bin/cco (dispatcher, sources all lib/ modules)
 
 #### ARCH-1: `update.sh` is a God Module (HIGH)
 
+**Resolved**: RF-3 split into 8 modules (`update.sh`, `update-hash-io.sh`, `update-merge.sh`, `update-discovery.sh`, `update-meta.sh`, `update-sync.sh`, `update-changelog.sh`, `update-remote.sh`).
+
 **File**: `lib/update.sh` (~600+ LOC, 15+ functions)
 
 Mixes 10+ distinct responsibilities: file hashing, base version storage, policy transition handling, 3-way merge, remote version checks, migration running, changelog management, file change collection, interactive sync, diff display.
@@ -67,6 +72,8 @@ Mixes 10+ distinct responsibilities: file hashing, base version storage, policy 
 
 #### ARCH-2: `cmd-project.sh` and `cmd-pack.sh` are Oversized (MEDIUM)
 
+**Resolved**: RF-3 split `cmd-project.sh` into 6 files (`cmd-project.sh` dispatcher, `cmd-project-create.sh`, `cmd-project-install.sh`, `cmd-project-query.sh`, `cmd-project-pack-ops.sh`, `cmd-project-publish.sh`, `cmd-project-update.sh`).
+
 **File**: `lib/cmd-project.sh` (1,909 LOC, 9 subcommands)
 **File**: `lib/cmd-pack.sh` (~400 LOC, 9 subcommands)
 
@@ -75,6 +82,8 @@ Each file implements create, list, show, install, update, publish, validate, and
 **Recommendation**: Split into `cmd-project-create.sh`, `cmd-project-install.sh`, etc. Or at minimum add section markers and extract shared helpers.
 
 #### ARCH-3: Missing Abstraction for File Sync (MEDIUM)
+
+**Partially resolved**: RF-1 added shared helpers (`_sed_i`, `_substitute`) to reduce duplication across file sync operations.
 
 `cmd_init`, `cmd_update`, `cmd_project_install`, `cmd_pack_install` all perform similar file sync operations with no shared code. A `_sync_scope(scope, source, target)` function would reduce duplication.
 

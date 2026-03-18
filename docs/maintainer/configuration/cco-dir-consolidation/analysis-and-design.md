@@ -68,7 +68,7 @@ framework internals in their personal config directory.
 
 ### 2.2 Root cause
 
-In `lib/update.sh:1193-1218`, `_update_changelog_notifications()` updates
+In `_update_changelog_notifications()` (`lib/update-changelog.sh`), the function updates
 `last_seen_changelog` for **both** modes:
 
 ```bash
@@ -189,7 +189,7 @@ last_read_changelog: 2
 | New entries after both read | Yes (new ones) | Yes | Yes (new ones) |
 | Partial read (seen 1-3, new 4-5 arrive) | `last_seen=5`, `last_read=3` after discovery | Yes (4-5 unread) | Yes (shows 4-5) |
 
-### 4.4 Code changes in `lib/update.sh`
+### 4.4 Code changes in the update modules (`lib/update*.sh`)
 
 **Call graph** (for implementer clarity):
 ```
@@ -246,7 +246,7 @@ _update_changelog_notifications() {
 > in-place if it exists, or appends it if missing (for backward compatibility when
 > `last_read_changelog` is absent from older meta files). This replaces the
 > conceptual `_update_meta_field` from earlier drafts and follows the existing
-> `_sed_i` pattern already in use throughout `lib/update.sh`.
+> `_sed_i` pattern already in use throughout the update modules (`lib/update*.sh`).
 
 **Modified function** — `_show_changelog_summary()`:
 Add `last_read` parameter; only show hint if unread entries exist:
@@ -718,11 +718,11 @@ fi
 
 | File | Refs to change | Complexity | Notes |
 |------|---------------|------------|-------|
-| `lib/update.sh` | ~38 | High | .cco-meta and .cco-base throughout; changelog logic |
+| `lib/update*.sh` | ~38 | High | .cco-meta and .cco-base throughout; changelog logic (split across update-hash-io, update-meta, update-changelog, etc.) |
 | `lib/cmd-start.sh` | ~30 | Medium | .managed paths + compose generation + docker invocation + claude-state mount + dry-run refactor |
 | `lib/cmd-pack.sh` | ~24 | Medium | .cco-source references |
 | `lib/cmd-remote.sh` | ~4 | Low | Already uses `_remotes_file()` helper |
-| `lib/cmd-project.sh` | ~8 | Low | Meta and base references |
+| `lib/cmd-project-*.sh` | ~8 | Low | Meta and base references (split across cmd-project-create, cmd-project-install, etc.) |
 | `lib/cmd-init.sh` | ~10 | Low | Initial meta/base creation |
 | `lib/cmd-stop.sh` | ~4 | Low | .managed cleanup paths |
 | `lib/cmd-vault.sh` | ~5 | Low | Gitignore patterns + `_VAULT_SECRET_PATTERNS` (`.cco-remotes` → `.cco/remotes`) |
@@ -772,10 +772,10 @@ paths (handled by updating `cmd-init.sh`).
 
 ### Phase 1: Changelog dual-tracker (standalone, no migration)
 
-1. Add `_read_last_read_changelog()` to `lib/update.sh`
-2. Modify `_update_changelog_notifications()` with dual-tracker logic
-3. Modify `_show_changelog_summary()` to accept and use `last_read` for hint
-4. Modify `_generate_cco_meta()` to include `last_read_changelog`
+1. Add `_read_last_read_changelog()` to `lib/update-changelog.sh`
+2. Modify `_update_changelog_notifications()` in `lib/update-changelog.sh` with dual-tracker logic
+3. Modify `_show_changelog_summary()` in `lib/update-changelog.sh` to accept and use `last_read` for hint
+4. Modify `_generate_cco_meta()` in `lib/update-meta.sh` to include `last_read_changelog`
 5. Update tests in `tests/test_update.sh`
 6. Update `changelog.yml` header comment
 
@@ -813,9 +813,9 @@ paths (handled by updating `cmd-init.sh`).
 
 1. Remove dual-read fallback from helpers (simplify to new-path only)
 2. Update all tests to use new paths
-3. Update `lib/cmd-project.sh` publish exclude patterns (`.cco/` instead of individual files)
-4. Update `lib/cmd-project.sh` `_publish_pack_to_tmpdir()` cleanup paths
-   (lines ~1223-1224: `.cco-source` → `.cco/source`, `.cco-install-tmp` → `.cco/install-tmp`)
+3. Update `lib/cmd-project-publish.sh` publish exclude patterns (`.cco/` instead of individual files)
+4. Update `_publish_pack_to_tmpdir()` in `lib/cmd-project-publish.sh` cleanup paths
+   (`.cco-source` → `.cco/source`, `.cco-install-tmp` → `.cco/install-tmp`)
 5. Update `lib/cmd-template.sh` runtime artifact stripping (line ~278):
    replace individual `rm -rf` for `.cco-meta`, `.cco-base`, `.managed/`, etc.
    with `rm -rf "$target_dir/.cco"` (but preserve `.cco/base/` if needed in template)
