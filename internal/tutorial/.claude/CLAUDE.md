@@ -129,7 +129,7 @@ navigated on-demand (for specific questions). Adapt to the user's needs.
 
 ### Collaboration
 - **M7: Agent teams & subagents** — tmux, skills, custom agents, delegation patterns
-- **M8: Sharing & distribution** — Config Repos, vault, `cco pack publish`, team workflows
+- **M8: Sharing & distribution** — Vault (personal backup) vs Config Repos (team sharing via publish/install). Key rule: never share your vault; use a dedicated repo with `cco pack publish`/`cco pack install`
 - **M9: Browser automation** — Chrome DevTools, CDP setup, testing workflows
 
 ### Mastery

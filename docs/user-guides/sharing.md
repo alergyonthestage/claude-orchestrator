@@ -9,19 +9,39 @@
 
 ## 1. Overview
 
-A **Config Repo** is a git repository that follows the CCO directory convention. It serves two purposes:
+CCO uses git repositories for configuration management. There are two distinct use cases that must be kept separate:
 
-- **Vault**: a private, versioned backup of all your user configuration (packs, projects, global settings, templates)
-- **Shared bundle**: a repository that others can install packs and project templates from
+### Vault — Personal backup & sync
 
-Use a Config Repo when you want to:
+Your **vault** is a private Config Repo that backs up your entire `user-config/` directory: packs, projects, global settings, templates, and memory. It is strictly personal — use it to sync your own setup across your machines. **Never share your vault with teammates.**
 
-- **Back up** your configuration and restore it on another machine
-- **Share** knowledge packs with your team (conventions, guidelines, deployment patterns)
-- **Distribute** project templates so teammates can bootstrap projects with a single command
-- **Sync** your personal setup across multiple workstations
+```
+github.com/alice/cco-vault          ← private, single owner
+```
 
-CCO does not implement access control. Visibility is a git hosting concern — use private repos for personal vaults and team configs, public repos for open-source packs.
+Commands: `cco vault init`, `cco vault sync`, `cco vault push`, `cco vault pull`
+
+### Config Repo — Team sharing via publish/install
+
+A **shared Config Repo** is a dedicated repository where you publish packs and project templates for others to install. Only `packs/` and `templates/` are available to consumers — personal data (`global/`, `projects/`, `memory/`) is never included.
+
+```
+github.com/acme/cco-config          ← team/org members
+```
+
+Commands: `cco pack publish`, `cco pack install`, `cco project publish`, `cco project install`
+
+### Why the separation matters
+
+| | Vault | Shared Config Repo |
+|---|---|---|
+| **Purpose** | Personal backup & multi-PC sync | Team/community distribution |
+| **Visibility** | Private (single owner) | Team, org, or public |
+| **Content** | Everything (global, projects, packs, memory, templates) | Only packs and templates |
+| **Flow** | push/pull (bidirectional sync) | publish → install (one-way distribution) |
+| **Commands** | `cco vault push/pull/sync` | `cco pack publish/install`, `cco project publish/install` |
+
+CCO does not implement access control. Visibility is a git hosting concern — use private repos for personal vaults, org-scoped repos for team configs, and public repos for open-source packs.
 
 ### Config Repo Structure
 
@@ -619,23 +639,33 @@ Both are mounted into the container at runtime. The `memory/` directory is mount
 
 ### Team sharing (separate repos)
 
-For team use, keep your personal vault private and maintain a separate shared repo:
+For team use, keep your personal vault private and create a **dedicated shared Config Repo**:
 
 ```bash
-# Personal vault (private)
+# Personal vault (private — NEVER share this)
 github.com/alice/cco-vault
 
-# Team config (private, org members)
+# Team config (org members)
 github.com/acme/cco-config
 ```
 
-Teammates install packs from the team repo:
+Publish packs to the team repo:
+
+```bash
+cco pack publish my-pack team-remote
+cco project publish my-template team-remote
+```
+
+Teammates install from the team repo:
 
 ```bash
 cco pack install git@github.com:acme/cco-config
+cco project install git@github.com:acme/cco-config --pick acme-service
 ```
 
 Each person's vault tracks where each pack was installed from via the `.cco/source` metadata.
+
+> **Important**: Never suggest sharing or granting access to your personal vault as a way to distribute packs or templates. The vault contains personal settings, project configurations, memory, and other private data. Always use a dedicated Config Repo with `publish`/`install` for team sharing.
 
 ---
 
