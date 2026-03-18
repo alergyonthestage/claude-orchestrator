@@ -10,8 +10,6 @@ _LAST_RESOLVE_AUTOMERGE=false  # set by _resolve_with_merge for counter tracking
 _LAST_RESOLVE_SKIPPED=false    # set by _resolve_with_merge when user chooses skip inside conflict
 _SYNC_FILES_APPLIED=0          # set by _interactive_sync: count of files applied/merged/kept (not skipped)
 
-## _apply_file_changes — REMOVED (replaced by _interactive_sync in Sprint 3+4)
-
 # ── Interactive Apply ─────────────────────────────────────────────────
 
 # Interactive per-file apply with user prompts.

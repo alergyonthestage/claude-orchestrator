@@ -488,7 +488,7 @@ YAML
         echo "      - \${HOME}/.gitconfig:/home/claude/.gitconfig:ro"
 
         # Docker socket (opt-in via docker.mount_socket: true)
-        if [[ "$mount_socket" != "false" ]]; then
+        if [[ "$mount_socket" == "true" ]]; then
             echo "      # Docker socket"
             echo "      - /var/run/docker.sock:/var/run/docker.sock"
             # Policy file for socket proxy (if generated)

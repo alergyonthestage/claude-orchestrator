@@ -1,4 +1,9 @@
 # lib/update-merge.sh — 3-way merge engine and conflict resolution
+#
+# Cross-module globals (declared in update-sync.sh):
+#   _UPDATE_MANIFEST_ENTRIES — appended by _resolve_with_merge
+#   _LAST_RESOLVE_AUTOMERGE — set by _resolve_with_merge
+#   _LAST_RESOLVE_SKIPPED   — set by _resolve_conflict_interactive
 
 # ── 3-Way Merge ───────────────────────────────────────────────────────
 

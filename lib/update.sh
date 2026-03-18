@@ -77,9 +77,6 @@ PROJECT_ROOT_COPY_IF_MISSING=("setup.sh" "secrets.env" "mcp-packages.txt")
 
 # NOTE: _sed_i() and _sed_i_or_append() are defined in lib/utils.sh
 
-# Default cache TTL for remote version checks (seconds)
-REMOTE_CACHE_TTL=3600  # 1 hour
-
 # ── Orchestration ────────────────────────────────────────────────────
 
 # Update global config

@@ -112,13 +112,18 @@ During development, run only the tests relevant to the module you changed:
 
 | Changed file(s) | Test command |
 |-----------------|-------------|
-| `lib/cmd-start.sh` | `bin/test --file test_start_dry_run --file test_docker_security` |
+| `lib/cmd-start.sh` | `bin/test --file test_start_dry_run --file test_docker_security --file test_invariants` |
 | `lib/yaml.sh` | `bin/test --file test_yaml_parser` |
 | `lib/cmd-pack.sh`, `lib/packs.sh` | `bin/test --file test_pack_cli --file test_packs` |
-| `lib/cmd-project.sh` | `bin/test --file test_project_create --file test_project_list` |
+| `lib/cmd-project-create.sh` | `bin/test --file test_project_create` |
+| `lib/cmd-project-query.sh` | `bin/test --file test_project_list --file test_project_show` |
+| `lib/cmd-project-install.sh` | `bin/test --file test_project_install` |
+| `lib/cmd-project-publish.sh` | `bin/test --file test_project_publish --file test_publish_install_sync` |
+| `lib/cmd-project-update.sh` | `bin/test --file test_project_install_enhanced --file test_publish_install_sync` |
+| `lib/cmd-project-pack-ops.sh` | `bin/test --file test_project_pack` |
 | `lib/cmd-init.sh` | `bin/test --file test_init` |
-| `lib/cmd-vault.sh` | `bin/test --file test_vault` |
-| `lib/update.sh`, `lib/cmd-update.sh` | `bin/test --file test_update` |
+| `lib/cmd-vault.sh` | `bin/test --file test_vault --file test_vault_profiles` |
+| `lib/update*.sh`, `lib/cmd-update.sh` | `bin/test --file test_update --file test_merge` |
 | `lib/manifest.sh` | `bin/test --file test_manifest` |
 | `lib/cmd-remote.sh`, `lib/remote.sh` | `bin/test --file test_remote` |
 | `proxy/**` | `bin/test --file test_docker_security` + `cd proxy && go test ./...` |

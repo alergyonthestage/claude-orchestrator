@@ -138,11 +138,12 @@ Per `docs/maintainer/integration/docker/design.md` (sezione directory structure)
 **Implementation:**
 - `bin/cco` — CLI entrypoint (dispatcher that sources `lib/*.sh` modules)
 - `lib/cmd-pack.sh` — Pack management: create, install, update, export, list, show, remove, validate
-- `lib/cmd-project.sh` — Project management: create, install, list, show, validate
+- `lib/cmd-project-*.sh` — Project management split by subcommand: create, query (list/show/validate), install, pack-ops, publish, update
+- `lib/cmd-start.sh` — Session startup: decomposed into 9 internal helpers (_start_resolve_project, _start_load_config, _start_generate_compose, etc.)
 - `lib/cmd-template.sh` — Template management: list, show, create, remove + `_resolve_template()`
 - `lib/cmd-update.sh` — Update command: migrations + discovery, --diff, --sync
 - `lib/cmd-clean.sh` — Clean .bak files: --project, --all, --tmp, --generated, --dry-run
-- `lib/update.sh` — Update engine: opinionated file policies, discovery algorithm, on-demand merge via `git merge-file`
+- `lib/update*.sh` — Update engine split by responsibility: hash-io, merge, meta, discovery, sync, changelog, remote + orchestrator (update.sh)
 - `lib/cmd-vault.sh` — Config versioning: init, sync, diff, log, status (git-backed)
 - `lib/manifest.sh` — manifest.yml lifecycle: init, refresh, validate, show
 - `lib/cmd-remote.sh` — Remote management: add, remove, list Config Repo remotes (.cco/remotes)

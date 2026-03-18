@@ -1,5 +1,8 @@
 # lib/update-remote.sh — Remote Config Repo version checking and cache
 
+# Default cache TTL for remote version checks (seconds)
+REMOTE_CACHE_TTL=3600  # 1 hour
+
 # ── Remote Version Check ──────────────────────────────────────────────
 
 # Check if a project has a remote source (installed from Config Repo).
