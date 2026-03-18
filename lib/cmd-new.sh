@@ -49,7 +49,7 @@ EOF
 
     local tmp_dir="/tmp/cc-${session_name}"
     mkdir -p "$tmp_dir/claude-state/memory" "$tmp_dir/.claude" || die "Failed to create temp directory: $tmp_dir"
-    trap "rm -rf '$tmp_dir'" EXIT
+    trap 'rm -rf "'"$tmp_dir"'"' EXIT
 
     # Create minimal project CLAUDE.md
     cat > "$tmp_dir/.claude/CLAUDE.md" <<EOF

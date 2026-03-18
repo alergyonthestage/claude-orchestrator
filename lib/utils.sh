@@ -74,10 +74,13 @@ _sed_i_or_append() {
 }
 
 # Replace a {{PLACEHOLDER}} in a file with a value.
+# Uses awk to avoid delimiter conflicts (values may contain / or |).
 # Usage: _substitute <file> <placeholder> <value>
 _substitute() {
     local file="$1" placeholder="$2" value="$3"
-    _sed_i "$file" "{{${placeholder}}}" "$value" "/"
+    local token="{{${placeholder}}}"
+    awk -v tok="$token" -v val="$value" '{gsub(tok, val); print}' "$file" > "$file.tmp" \
+        && mv "$file.tmp" "$file"
 }
 
 # Run arbitrary sed expression(s) portably (macOS + GNU).
