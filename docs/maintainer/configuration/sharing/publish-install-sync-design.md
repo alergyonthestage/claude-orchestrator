@@ -605,7 +605,7 @@ cco project publish --help
 
 1. Test suite: `tests/test_publish_install_sync.sh`
 2. Update `docs/reference/cli.md` with new commands
-3. Update `docs/user-guides/config-lifecycle.md` (user guide)
+3. Update `docs/user-guides/configuration-management.md` (user guide)
 4. Update CLAUDE.md with new commands
 5. Add changelog entries
 6. Update roadmap: FI-7 status → implemented
@@ -653,4 +653,4 @@ No migration script needed — handled gracefully by the discovery logic.
 | Config Repo / sharing design | `./design.md` |
 | Vault profiles design | `../vault/design.md` |
 | FI-7 in roadmap | `../../decisions/roadmap.md` § FI-7 |
-| User guide | `../../../user-guides/config-lifecycle.md` |
+| User guide | `../../../user-guides/configuration-management.md` |

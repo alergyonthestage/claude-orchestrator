@@ -6,7 +6,7 @@
 |---|---|
 | **New user** | [Getting Started](getting-started/) — overview → install → first project → concepts. Then run `cco start tutorial` for interactive guidance |
 | **Configure a project** | [Project Setup](user-guides/project-setup.md) — repos, ports, packs, CLAUDE.md |
-| **Share packs with my team** | [Sharing & Backup](user-guides/sharing.md) — vault, Config Repos, multi-machine sync |
+| **Share packs with my team** | [Configuration Management](user-guides/configuration-management.md) — vault, Config Repos, sharing, updates |
 | **Something isn't working** | [Troubleshooting](user-guides/troubleshooting.md) — Docker, auth, tmux, MCP, packs |
 | **Looking for a command** | [CLI Reference](reference/cli.md) — all `cco` commands and flags |
 | **Contribute to the project** | [Maintainer Guide](maintainer/README.md) — architecture, design docs, roadmap |
@@ -35,9 +35,8 @@ Operational guides for everyday use. Each guide covers one topic in depth.
 | [authentication.md](user-guides/authentication.md) | OAuth, API key, GitHub token, secrets management, Config Repo auth |
 | [agent-teams.md](user-guides/agent-teams.md) | Agent teams: tmux mode, iTerm2 mode, copy-paste |
 | [browser-automation.md](user-guides/browser-automation.md) | Browser automation via Chrome DevTools Protocol |
-| [sharing.md](user-guides/sharing.md) | Vault backup, multi-machine sync, share packs and templates via Config Repos |
+| [configuration-management.md](user-guides/configuration-management.md) | Vault, profiles, Config Repos, sharing, publishing, installing, updates |
 | [troubleshooting.md](user-guides/troubleshooting.md) | Common issues and solutions by category |
-| [config-lifecycle.md](user-guides/config-lifecycle.md) | Configuration lifecycle: how cco manages, updates, and syncs config files |
 | [configuring-rules.md](user-guides/configuring-rules.md) | Writing and organizing Claude rules across scopes |
 | [development-workflow.md](user-guides/development-workflow.md) | Structured development workflow with cco |
 

@@ -270,7 +270,7 @@ cco pack install git@github.com:my-org/cco-config
 
 When the orchestrator is updated (`git pull`), run `cco update` to run migrations and discover available framework changes. Use `cco update --diff` to preview changes, and `cco update --sync` to interactively sync them via 3-way merge that preserves your customizations. When edits overlap, the file is written with conflict markers (like git) — resolve them manually, then run `cco update --sync` again. **Note**: `cco start` will block if any config files contain unresolved conflict markers. Use `cco clean` to remove `.bak` backups after reviewing. To reset user defaults entirely: `cco init --force`.
 
-For the full workflow (vault commands, multi-machine sync, team sharing, publishing), see the [Sharing & Backup guide](sharing.md).
+For the full workflow (vault commands, multi-machine sync, team sharing, publishing), see the [Configuration Management guide](configuration-management.md).
 
 ---
 

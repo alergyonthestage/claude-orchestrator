@@ -436,4 +436,4 @@ Note: `cco pack internalize` already exists with equivalent semantics.
 | FI-7 in roadmap | `../../decisions/roadmap.md` § FI-7 |
 | FI-7 overview | `../../decisions/framework-improvements.md` § FI-7 |
 | FI-7 design | `./publish-install-sync-design.md` |
-| User guide | `../../../user-guides/config-lifecycle.md` |
+| User guide | `../../../user-guides/configuration-management.md` |

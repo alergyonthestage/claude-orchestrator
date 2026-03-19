@@ -179,6 +179,6 @@
 
 6. **Version metadata** — optional `version:` field in `.cco/source` for human-readable labels; `commit:` field for precise comparison via `git ls-remote`.
 
-**Docs**: [analysis](../configuration/sharing/publish-install-sync-analysis.md) | [design](../configuration/sharing/publish-install-sync-design.md) | [user guide](../../user-guides/config-lifecycle.md)
+**Docs**: [analysis](../configuration/sharing/publish-install-sync-analysis.md) | [design](../configuration/sharing/publish-install-sync-design.md) | [user guide](../../user-guides/configuration-management.md)
 
 **Effort**: Medium-High (6 implementation phases defined in design doc).

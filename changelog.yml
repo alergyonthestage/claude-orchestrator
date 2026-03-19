@@ -101,7 +101,7 @@ entries:
       `cco project internalize <name>` disconnects from remote source.
       `cco update --sync <project> --local` applies framework defaults directly
       on installed projects (bypass publisher chain).
-      See `docs/user-guides/config-lifecycle.md` for the complete guide.
+      See `docs/user-guides/configuration-management.md` for the complete guide.
 
   - id: 8
     date: "2026-03-19"

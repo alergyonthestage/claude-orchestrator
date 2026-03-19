@@ -345,7 +345,7 @@ the missing piece: update notification and merge for published/installed resourc
 - `cco update --sync <project> [--local]` (new flag)
 - `cco project publish <name> <remote> [--yes]` (enhanced)
 
-**Docs**: [analysis](../configuration/sharing/publish-install-sync-analysis.md) | [design](../configuration/sharing/publish-install-sync-design.md) | [user guide](../../user-guides/config-lifecycle.md) | [FI-7](framework-improvements.md#fi-7-publish-install-sync-and-resource-versioning) | [resource-lifecycle analysis](../configuration/resource-lifecycle/analysis.md)
+**Docs**: [analysis](../configuration/sharing/publish-install-sync-analysis.md) | [design](../configuration/sharing/publish-install-sync-design.md) | [user guide](../../user-guides/configuration-management.md) | [FI-7](framework-improvements.md#fi-7-publish-install-sync-and-resource-versioning) | [resource-lifecycle analysis](../configuration/resource-lifecycle/analysis.md)
 **Completed**: 2026-03-17 (all 6 phases).
 
 ---

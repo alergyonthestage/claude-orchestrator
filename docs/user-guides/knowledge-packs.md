@@ -295,4 +295,4 @@ cco manifest refresh     # Generate manifest.yml manifest
 cco vault push           # Push to remote
 ```
 
-For the complete sharing workflow (multi-machine sync, team distribution, project templates), see the [Sharing & Backup guide](sharing.md).
+For the complete sharing workflow (multi-machine sync, team distribution, project templates), see the [Configuration Management guide](configuration-management.md).

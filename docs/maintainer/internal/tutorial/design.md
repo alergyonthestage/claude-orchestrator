@@ -201,7 +201,7 @@ on training data for cco-specific details.
 | Project configuration | `user-guides/project-setup.md` | project.yml, CLAUDE.md, repos, mounts, packs |
 | Knowledge packs | `user-guides/knowledge-packs.md` | Creating and managing packs |
 | Authentication | `user-guides/authentication.md` | OAuth, API key, GitHub token |
-| Sharing & backup | `user-guides/sharing.md` | Config Repos, vault, team sharing |
+| Configuration management | `user-guides/configuration-management.md` | Vault, Config Repos, sharing, updates |
 | Agent teams | `user-guides/agent-teams.md` | tmux, iTerm2, multi-agent setup |
 | Browser automation | `user-guides/browser-automation.md` | Chrome DevTools, CDP |
 | Custom subagents | `user-guides/advanced/subagents.md` | Creating agents, model selection |

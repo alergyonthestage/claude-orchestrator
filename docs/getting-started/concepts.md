@@ -80,7 +80,7 @@ Commit this directory to a shared repository and every teammate runs `cco start 
 
 This makes claude-orchestrator useful not just as a personal productivity tool, but as a team-wide standard for how Claude interacts with your codebase.
 
-Learn more: [Sharing & Backup guide](../user-guides/sharing.md).
+Learn more: [Configuration Management guide](../user-guides/configuration-management.md).
 
 ---
 

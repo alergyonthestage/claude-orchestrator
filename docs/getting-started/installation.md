@@ -130,4 +130,4 @@ For more troubleshooting, see [troubleshooting.md](../user-guides/troubleshootin
 - [Your first project](first-project.md) — step-by-step tutorial
 - [Key concepts](concepts.md) — context hierarchy, knowledge packs, agent teams
 - [Knowledge packs](../user-guides/knowledge-packs.md) — reusable cross-project documentation
-- [Sharing & backup](../user-guides/sharing.md) — version your config, share packs with your team
+- [Configuration management](../user-guides/configuration-management.md) — vault, sharing, updates
