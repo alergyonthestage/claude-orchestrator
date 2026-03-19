@@ -615,8 +615,8 @@ After this fix is implemented:
 
 - ~~Remove `docs/maintainer/placeholder-interpolation-path-b-analysis.md`~~
   Already removed
-- ~~Merge `base-tracking-bug-analysis.md` into this document~~
-  Done — analysis content integrated into §1
+- ~~Merge bug analysis into this document~~
+  Done — analysis content integrated into §1 (2026-03-19)
 - Consider whether `BASE_MISSING` status should trigger the safety net
   interpolation automatically in `_show_file_diffs` (display-level improvement)
 - Update `docs/maintainer/configuration/update-system/design.md` to document
