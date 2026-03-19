@@ -37,6 +37,9 @@ Operational guides for everyday use. Each guide covers one topic in depth.
 | [browser-automation.md](user-guides/browser-automation.md) | Browser automation via Chrome DevTools Protocol |
 | [sharing.md](user-guides/sharing.md) | Vault backup, multi-machine sync, share packs and templates via Config Repos |
 | [troubleshooting.md](user-guides/troubleshooting.md) | Common issues and solutions by category |
+| [config-lifecycle.md](user-guides/config-lifecycle.md) | Configuration lifecycle: how cco manages, updates, and syncs config files |
+| [configuring-rules.md](user-guides/configuring-rules.md) | Writing and organizing Claude rules across scopes |
+| [development-workflow.md](user-guides/development-workflow.md) | Structured development workflow with cco |
 
 ### Concepts & Best Practices
 

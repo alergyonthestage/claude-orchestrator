@@ -13,7 +13,7 @@ maintainer/
 ├── architecture/       Core system design, ADRs, requirements, security
 ├── configuration/      Config hierarchy, packs, sharing, update system, vault, environment
 ├── integration/        Docker, auth, browser MCP, agent teams, worktree
-├── templates/          Native template designs (tutorial, future cco-develop)
+├── internal/          Internal resources (tutorial, future cco-develop)
 ├── decisions/          Roadmap, protocols, historical reviews
 └── README.md           This file
 ```
@@ -61,13 +61,13 @@ Docker setup, authentication, browser automation, agent teams, and git worktree 
 
 ---
 
-## Templates — Native Template Designs
+## Internal — Framework-Internal Resources
 
-Design and analysis documents for native templates distributed with claude-orchestrator. These templates serve the framework itself (learning, onboarding, development).
+Design and analysis documents for internal resources distributed with claude-orchestrator (learning, onboarding, development).
 
-| Template | Design | Analysis | Status |
+| Resource | Design | Analysis | Status |
 |----------|--------|----------|--------|
-| Tutorial Project | [design](templates/tutorial/design.md) | [analysis](templates/tutorial/analysis.md) | Completed (Sprint 5) |
+| Tutorial Project | [design](internal/tutorial/design.md) | [analysis](internal/tutorial/analysis.md) | Completed (Sprint 5) |
 
 Future: `cco-develop` template for framework maintainers.
 
@@ -78,6 +78,7 @@ Future: `cco-develop` template for framework maintainers.
 Project-level decisions, planning, and historical snapshots.
 
 - [roadmap.md](decisions/roadmap.md) — development plan, priorities, and feature progress
+- [framework-improvements.md](decisions/framework-improvements.md) — framework improvement proposals and tracking
 - [managed-integrations.md](decisions/managed-integrations.md) — 9-step protocol for adding new managed MCP servers
 
 ### Reviews
@@ -87,6 +88,9 @@ The [reviews/](decisions/reviews/) directory contains architectural and progress
 - [24-02-2026](decisions/reviews/24-02-2026-architecture-review.md) — Architecture review
 - [26-02-2026](decisions/reviews/26-02-2026-progress-review.md) — Progress review
 - [Sprint 2-3 plan](decisions/reviews/sprint-2-3-implementation-plan.md) — Implementation plan
+- [18-03-2026 comprehensive](decisions/reviews/18-03-2026-comprehensive-review.md) — Comprehensive review
+- [18-03-2026 UX findings](decisions/reviews/18-03-2026-update-ux-findings.md) — Update UX findings
+- [18-03-2026 messages audit](decisions/reviews/18-03-2026-update-ux-messages-audit.md) — Update UX messages audit
 
 ---
 
