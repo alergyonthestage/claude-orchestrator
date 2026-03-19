@@ -237,7 +237,7 @@ They should be explicit, versioned, and periodically reviewed.
 
 - **Rules directory** (`defaults/global/.claude/rules/`) ships with focused rule files:
   `workflow.md` (phase constraints), `git-practices.md` (commit/branch conventions),
-  `diagrams.md` (Mermaid in docs, plain text in terminal), `language.md` (communication
+  `documentation.md` (Mermaid in docs, plain text in terminal, documentation structure), `language.md` (communication
   and documentation language preferences).
 - **Scoped rules**: Global rules apply everywhere. Project-level rules in
   `projects/<name>/.claude/rules/` override or extend for specific projects.

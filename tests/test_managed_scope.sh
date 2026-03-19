@@ -84,7 +84,7 @@ test_init_copies_global_defaults() {
 
     # Rules
     assert_file_exists "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
-    assert_file_exists "$CCO_GLOBAL_DIR/.claude/rules/diagrams.md"
+    assert_file_exists "$CCO_GLOBAL_DIR/.claude/rules/documentation.md"
     assert_file_exists "$CCO_GLOBAL_DIR/.claude/rules/git-practices.md"
     assert_file_exists "$CCO_GLOBAL_DIR/.claude/rules/language.md"
 

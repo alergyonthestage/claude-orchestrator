@@ -55,7 +55,7 @@ defaults/                              # Framework-managed configuration sources
         │   ├── analyst.md             #   Framework analyst agent spec
         │   └── reviewer.md            #   Framework reviewer agent spec
         ├── rules/
-        │   ├── diagrams.md            #   Diagram conventions
+        │   ├── documentation.md       #   Documentation conventions
         │   ├── git-practices.md       #   Git branch/commit conventions
         │   ├── workflow.md            #   Phase-based workflow rules
         │   └── language.md            #   Language prefs (generated from template)
@@ -132,7 +132,7 @@ This is the definitive reference for every file managed by the update system.
 | `.claude/mcp.json` | `untracked` | ❌ | Personal MCP servers |
 | `.claude/agents/analyst.md` | `opinionated` | ✅ | Framework agent spec |
 | `.claude/agents/reviewer.md` | `opinionated` | ✅ | Framework agent spec |
-| `.claude/rules/diagrams.md` | `opinionated` | ✅ | Framework diagram conventions |
+| `.claude/rules/documentation.md` | `opinionated` | ✅ | Framework documentation conventions |
 | `.claude/rules/git-practices.md` | `opinionated` | ✅ | Framework git conventions |
 | `.claude/rules/workflow.md` | `opinionated` | ✅ | Framework workflow rules |
 | `.claude/rules/language.md` | `generated` | ✅ | Regenerated from template + `.cco/meta` saved choices |
@@ -257,7 +257,7 @@ GLOBAL_OPINIONATED_FILES=(
     ".claude/settings.json"
     ".claude/agents/analyst.md"
     ".claude/agents/reviewer.md"
-    ".claude/rules/diagrams.md"
+    ".claude/rules/documentation.md"
     ".claude/rules/git-practices.md"
     ".claude/rules/workflow.md"
     ".claude/skills/analyze/SKILL.md"

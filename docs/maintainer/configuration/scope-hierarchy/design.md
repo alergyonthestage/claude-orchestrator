@@ -89,7 +89,7 @@ graph TB
 |----------|-------|---------|
 | `settings.json` | Allow rules, attribution, teammateMode, cleanup | User preferences (no infrastructure) |
 | `CLAUDE.md` | Development workflow, communication style | Customizable workflow instructions |
-| `rules/` | workflow.md, diagrams.md, git-practices.md, language.md | Modular rule files (team conventions) |
+| `rules/` | workflow.md, documentation.md, git-practices.md, language.md | Modular rule files (team conventions) |
 | `agents/` | analyst.md, reviewer.md | Default subagents (customizable) |
 | `skills/` | analyze, commit, design, review | Default skills (customizable) |
 | `mcp.json` | Global MCP servers | Empty by default |

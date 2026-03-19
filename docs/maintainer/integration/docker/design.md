@@ -633,7 +633,7 @@ claude-orchestrator/
 │   │       ├── rules/
 │   │       │   ├── workflow.md             # Development workflow phases
 │   │       │   ├── git-practices.md        # Git conventions
-│   │       │   ├── diagrams.md             # Mermaid diagram conventions
+│   │       │   ├── documentation.md         # Documentation conventions (diagrams, structure, tracking)
 │   │       │   └── language.md             # Language preferences (with {{LANG}} vars)
 │   │       ├── agents/
 │   │       │   ├── analyst.md              # Analysis specialist (haiku, read-only)
@@ -756,7 +756,7 @@ User defaults, copied to `user-config/global/.claude/` once by `cco init`. User 
 | `mcp.json` | Global MCP server list | Empty by default; user populates. See [context-hierarchy.md](../../../reference/context-hierarchy.md) §8 |
 | `rules/workflow.md` | Workflow phase rules | Analysis, Design, Implementation, Documentation phases |
 | `rules/git-practices.md` | Git conventions | Branch naming, conventional commits |
-| `rules/diagrams.md` | Diagram conventions | Always use Mermaid, never ASCII art |
+| `rules/documentation.md` | Documentation conventions | Mermaid diagrams, docs structure, project tracking |
 | `rules/language.md` | Language preferences | Has `{{COMM_LANG}}`, `{{DOCS_LANG}}`, `{{CODE_LANG}}` placeholders, substituted by `cco init --lang` |
 | `agents/analyst.md` | Analyst subagent | Haiku, read-only tools, user memory. See [subagents.md](../../../user-guides/advanced/subagents.md) §2.1 |
 | `agents/reviewer.md` | Reviewer subagent | Sonnet, read-only tools, user memory. See [subagents.md](../../../user-guides/advanced/subagents.md) §2.2 |

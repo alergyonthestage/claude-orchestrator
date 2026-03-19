@@ -212,8 +212,8 @@ ensures every document has an unambiguous home.
 **Recommended scope**: Global for general conventions, project-level for project-specific
 directory structure.
 
-**cco default**: `diagrams.md` — covers Mermaid usage. Consider expanding into a broader
-`documentation.md` rule.
+**cco default**: `documentation.md` — covers Mermaid diagrams, documentation structure,
+project tracking conventions, and stale content review practices.
 
 ### 3. Git Practices
 
