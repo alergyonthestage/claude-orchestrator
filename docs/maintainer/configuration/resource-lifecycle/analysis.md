@@ -741,4 +741,4 @@ Based on this analysis, the following principles are confirmed or added:
 | Discovery engine | `_collect_file_changes()` in `lib/update-discovery.sh` |
 | Template resolution | `_resolve_project_defaults_dir()` in `lib/update-discovery.sh` |
 | Rules/guidelines analysis | `docs/maintainer/configuration/rules-and-guidelines/analysis.md` |
-| Owner preferences | `docs/maintainer/configuration/rules-and-guidelines/owner-preferences.md` |
+| Defaults alignment design | `docs/maintainer/configuration/rules-and-guidelines/defaults-alignment-design.md` |

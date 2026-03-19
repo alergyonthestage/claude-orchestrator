@@ -15,7 +15,7 @@ feature or architectural concern.
 | **vault/** | Multi-PC sync, profiles, memory separation | `design.md` — canonical for vault mechanics |
 | **packs/** | Pack format, pack.yml schema, knowledge management | `design.md` |
 | **environment/** | Build-time and runtime extensibility (setup.sh, MCP, Docker) | `design.md` |
-| **rules-and-guidelines/** | Rule content organization (which rules in which files) | `analysis.md`, `owner-preferences.md` |
+| **rules-and-guidelines/** | Rule content organization (which rules in which files) | `analysis.md`, `defaults-alignment-design.md` |
 
 ## Concept Ownership
 
