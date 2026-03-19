@@ -26,7 +26,7 @@
 
 ## FI-2: `/init-workspace` on Empty Projects
 
-**Status**: Not implemented — planned as quick win (priority 2). The skill still proceeds silently on empty workspaces without asking clarification questions.
+**Status**: Implemented (2026-03-19). Adaptive flow added to init-workspace: detects empty workspaces and guides user through 3 detail levels (idea → decisions → specs).
 
 **Question**: When `/init-workspace` runs on an empty, unconfigured project, the agent doesn't know what to include. Should it ask the user clarification questions (project description, architecture, goals) before generating the CLAUDE.md? Or should init-workspace be suggested only after a first analysis phase?
 
@@ -90,7 +90,7 @@
 
 ## FI-5: Human Workflow Guide and Review Best Practices
 
-**Status**: Partially implemented (2026-03-16). Guides written: `docs/user-guides/configuring-rules.md`, `docs/user-guides/development-workflow.md`. Remaining: GitHub branch protection configuration docs and base project template references to these guides.
+**Status**: Implemented (2026-03-19). Guides written (2026-03-16), defaults aligned with guides (2026-03-19). Scope revised: branch protection docs dropped (out of cco scope — user configures via GitHub if needed). Instead, defaults aligned to guide recommendations: CLAUDE.md rewritten, workflow.md expanded, diagrams.md→documentation.md, template cleaned up.
 
 **Question**: Should the documentation or tutorial include guidance on which tasks remain human responsibilities, the recommended development flow, common problems and workarounds?
 

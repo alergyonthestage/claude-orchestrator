@@ -25,15 +25,17 @@
 
 Features are prioritized by impact for third-party users adopting claude-orchestrator.
 
-### Prioritization Notes (updated 2026-03-18)
+### Prioritization Notes (updated 2026-03-19)
 
 **Immediate priority**: Codebase refactoring. The comprehensive review (2026-03-18)
 identified concrete maintainability improvements across all modules. Addressing these
 before adding new features reduces future development cost and regression risk.
 The refactoring is split in 4 phases with increasing effort.
 
-**Next**: FI-2 and FI-5 (remaining) are low-effort, high-benefit quick wins that improve
-daily usability.
+**Completed**: FI-2 and FI-5 (2026-03-19). Defaults aligned with user guides,
+init-workspace adaptive flow, documentation rule expanded.
+
+**Next**: FI-8 (PromptSubmit hook), remaining quick wins (FI-4, #10).
 
 **Then**: Security (Sprint 6C), E2E testing (Sprint 8), Linux OAuth (Sprint 9) are
 required for open-source readiness but independent of the refactoring work.
@@ -44,11 +46,12 @@ valuable but not blocking.
 | Category | Items | Effort | Benefit |
 |----------|-------|--------|---------|
 | **Refactoring (priority 1)** | RF-1 to RF-4: utilities, YAML parser, module decomposition, test+proxy gaps | Low → High | Maintainability, testability, reduced duplication |
-| **Quick wins (priority 2)** | FI-2 init-workspace, FI-5 remaining (branch protection docs + template ref) | Low | Immediate UX improvement |
+| ~~**Quick wins (priority 2)**~~ | ~~FI-2 init-workspace, FI-5 defaults alignment~~ | ~~Low~~ | ✅ Done (2026-03-19) |
+| **Quick wins (priority 2)** | FI-4 model config, #10 project edit, FI-8 PromptSubmit hook | Low-Medium | UX improvement |
 | **Security (priority 3)** | Sprint 6C network hardening | Medium-High | Required for production/open-source |
 | **Quality (priority 4)** | Sprint 8 E2E tests | Medium | Prerequisite for Linux onboarding |
 | **Onboarding (priority 5)** | Sprint 9 Linux OAuth | Medium | Pre-open-source requirement |
-| **Architecture (priority 6)** | Sprint 10 worktree, #9 pack inheritance, FI-4 model config | Medium | Valuable but not blocking |
+| **Architecture (priority 6)** | Sprint 10 worktree, #9 pack inheritance | Medium | Valuable but not blocking |
 | **Exploratory** | Sprint 12 RAG, hot-reload, notifications, remote sessions, web UI | High | Long-term, evaluate demand |
 
 ```mermaid
@@ -410,24 +413,33 @@ Replaced 6 near-identical awk getter functions with a single `_yml_query(file, k
 
 ---
 
-### Quick Wins — FI-2, FI-5, FI-4, #10
+### Quick Wins — FI-2 ✓, FI-5 ✓, FI-4, #10
 
 **Priority**: 2 (after refactoring). Low effort, high benefit.
 
-#### FI-2 `/init-workspace` empty workspace handling
+#### FI-2 `/init-workspace` empty workspace handling ✓ DONE
 
-When no repos and no `workspace.yml` descriptions exist, the skill should ask the user for a brief project description before generating a nearly empty CLAUDE.md. Discovery-based flow unchanged when repos are present.
+**Completed**: 2026-03-19. Adaptive flow added to init-workspace skill: detects empty
+workspaces (no repos, no content) and guides the user through 3 levels of detail
+(idea only → some decisions → detailed specs). Existing repo-based discovery unchanged.
 
 **Ref**: [FI-2](framework-improvements.md#fi-2-init-workspace-on-empty-projects)
-**Effort**: Low.
+**Design**: [`defaults-alignment-design.md`](../configuration/rules-and-guidelines/defaults-alignment-design.md) §5
 
-#### FI-5 remaining: branch protection docs + template reference
+#### FI-5 remaining: defaults alignment ✓ DONE
 
-GitHub branch protection configuration for mechanical enforcement of human review.
-Update base project template to reference the development-workflow and configuring-rules guides.
+**Completed**: 2026-03-19. Scope revised from "branch protection docs" to "defaults
+alignment with user guides" — the actual gap was between shipped defaults and the
+practices documented in the guides. Changes:
+- Managed CLAUDE.md: +context hierarchy, +workspace safety
+- Global CLAUDE.md: rewritten (no duplications, points to rules)
+- `workflow.md`: +Principles (approval gates, decomposition)
+- `diagrams.md` → `documentation.md` (+ docs structure, project tracking, stale review)
+- Template cleanup (removed non-functional language.md override)
+- Migrations: global/011 (rename), project/012 (cleanup)
 
 **Ref**: [FI-5](framework-improvements.md#fi-5-human-workflow-guide-and-review-best-practices)
-**Effort**: Low.
+**Design**: [`defaults-alignment-design.md`](../configuration/rules-and-guidelines/defaults-alignment-design.md)
 
 #### FI-4 Per-project model configuration
 
@@ -973,34 +985,27 @@ Add `model:` field to `project.yml`, passed to `claude --model` at launch via en
 
 ---
 
-### FI-5: Human Workflow & Review Best Practices Guide ✓ PARTIALLY DONE
+### FI-5: Human Workflow & Review Best Practices Guide ✓ DONE
 
-**Raised**: 2026-03-14. **Partially completed**: 2026-03-16.
+**Raised**: 2026-03-14. **Guides completed**: 2026-03-16. **Defaults aligned**: 2026-03-19.
 
-~~Create `docs/user-guides/development-workflow.md`~~ — **Created**. Covers:
-- ✅ Context management and clean sessions per phase
-- ✅ Multi-pass review pattern (2-3 iterations)
-- ✅ Review types: alignment, bug hunting, docs, tests
-- ✅ Phase transitions and verification of intermediate artifacts
-- ✅ Testing and validation strategy
-- ✅ Periodic maintenance reviews (architecture, docs structure)
-- ✅ Permission modes per phase (plan mode for analysis/design, skip for impl)
-- ✅ Common pitfalls table
-- ✅ Session checklist (quick reference)
+**Phase 1** (2026-03-16): User guides written:
+- ✅ `docs/user-guides/development-workflow.md` — context, reviews, phases, maintenance
+- ✅ `docs/user-guides/configuring-rules.md` — rules categories, grouping, skills, packs
 
-Also created `docs/user-guides/configuring-rules.md` — companion guide covering:
-- ✅ Rules vs Skills vs Agents vs Knowledge (when to use each)
-- ✅ Six categories of rules with scope recommendations
-- ✅ Grouping principle (correlated rules in same file)
-- ✅ Packs as single source of truth for shared resources
-- ✅ Per-project configuration guidance
+**Phase 2** (2026-03-19): Defaults aligned with guides:
+- ✅ Global CLAUDE.md rewritten (no duplications, points to rules)
+- ✅ `workflow.md` expanded with approval gates and task decomposition
+- ✅ `diagrams.md` → `documentation.md` (+ docs structure, project tracking)
+- ✅ Template cleaned up (removed non-functional language.md override)
+- ✅ Managed CLAUDE.md: +context hierarchy, +workspace safety
 
-**Remaining**:
-- GitHub branch protection configuration for mechanical enforcement
-- Update base project template to reference these guides
+**Scope revision**: Branch protection docs dropped — out of cco scope. Users configure
+GitHub rulesets independently if needed. cco's role is providing defaults and guides,
+not configuring external services.
 
 **Ref**: [FI-5](framework-improvements.md#fi-5-human-workflow-guide-and-review-best-practices)
-**Effort**: Remaining work is Low.
+**Design**: [`defaults-alignment-design.md`](../configuration/rules-and-guidelines/defaults-alignment-design.md)
 
 ---
 
