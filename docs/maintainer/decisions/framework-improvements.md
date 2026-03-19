@@ -26,6 +26,8 @@
 
 ## FI-2: `/init-workspace` on Empty Projects
 
+**Status**: Not implemented — planned as quick win (priority 2). The skill still proceeds silently on empty workspaces without asking clarification questions.
+
 **Question**: When `/init-workspace` runs on an empty, unconfigured project, the agent doesn't know what to include. Should it ask the user clarification questions (project description, architecture, goals) before generating the CLAUDE.md? Or should init-workspace be suggested only after a first analysis phase?
 
 **Context**: The current skill (`defaults/managed/.claude/skills/init-workspace/SKILL.md`) proceeds silently with automatic discovery. It is explicitly instructed to "proceed without confirmation" if the file is empty/missing. On an empty workspace (no repos, no manifests), it generates a nearly empty CLAUDE.md with placeholder sections.
@@ -65,6 +67,8 @@
 
 ## FI-4: Per-Project LLM Model Configuration
 
+**Status**: Not implemented — planned as quick win (priority 2, effort medium-low). No `model:` field in `project.yml` or `--model` integration in entrypoint yet.
+
 **Question**: Could it be useful to set a default LLM model globally and a different default per project, per agent, or per workflow phase?
 
 **Context**:
@@ -86,7 +90,7 @@
 
 ## FI-5: Human Workflow Guide and Review Best Practices
 
-**Status**: Partially addressed. Guides written: `docs/user-guides/configuring-rules.md`, `docs/user-guides/development-workflow.md`. Template integration and GitHub branch protection documentation remain pending.
+**Status**: Partially implemented (2026-03-16). Guides written: `docs/user-guides/configuring-rules.md`, `docs/user-guides/development-workflow.md`. Remaining: GitHub branch protection configuration docs and base project template references to these guides.
 
 **Question**: Should the documentation or tutorial include guidance on which tasks remain human responsibilities, the recommended development flow, common problems and workarounds?
 
