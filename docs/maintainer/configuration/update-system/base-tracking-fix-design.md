@@ -1,33 +1,132 @@
 # Update System — Base Tracking Fix Design
 
 **Date**: 2026-03-18
-**Status**: Design — pending approval
-**Related**: `base-tracking-bug-analysis.md` (analysis), `design.md` (update system design)
+**Status**: Implemented
+**Related**: `design.md` (update system design), `../../decisions/framework-improvements.md` (FI-7)
 
 ---
 
-## 1. Problem Summary
+## 1. Bug Discovery & Analysis
 
-`cco update --diff` shows false positives for all projects. Every project reports
-`BASE_MISSING` for CLAUDE.md and shows a diff comparing user content against the
-raw template with `{{PLACEHOLDER}}` markers.
+### 1.1 Symptoms
 
-### Root causes (two co-occurring bugs)
+`cco update --diff` reports false positives for **every project** with customized
+CLAUDE.md files. All projects show `BASE_MISSING` status and display diffs comparing
+user-written content against the raw template with unresolved `{{PLACEHOLDER}}` markers.
 
-**Bug 1 — CLAUDE.md missing from base**: CLAUDE.md was changed from `untracked`
-to `tracked` in `PROJECT_FILE_POLICIES` on 2026-03-17 (commit `ac81cc4`). All
-existing projects were created before this change, so their `.cco/base/` never
-included CLAUDE.md. No migration was added to seed the base for this
-newly-tracked file.
+```
+ℹ Project 'cave-auth': opinionated updates available:
+ℹ   1 file(s) with missing base (BASE_MISSING)
+```
 
-**Bug 2 — Base saved from raw template**: `cmd_project_create()` (`lib/cmd-project-create.sh`) passes the raw
-template directory (with `{{PLACEHOLDER}}`) to `_save_all_base_versions`. For
-projects created **after** the policy change, the base would contain raw
-placeholders (`# Project: {{PROJECT_NAME}}`), making the three-way merge
-incorrect. This bug affects new project creation but hasn't been observed yet
-because all current projects predate the policy change (Bug 1 masks Bug 2).
+The diff output shows:
 
-### Affected components
+```diff
+--- your version
++++ new default
+-# Project: cave-auth
++# Project: {{PROJECT_NAME}}
+
+ ## Overview
++{{DESCRIPTION}}
+-Cave Auth è il sistema di autenticazione centralizzato...
+```
+
+This occurs for **all** projects created via `cco project create` from the base template.
+
+### 1.2 Impact
+
+- Users see spurious update notifications on every `cco update`
+- `cco update --sync` would offer to replace customized CLAUDE.md with the raw template
+- Trust in the update system is undermined — users learn to ignore notifications
+- `cco project publish` warns about "unapplied framework defaults" (false alarm)
+
+### 1.3 Root Causes (two co-occurring bugs)
+
+**Bug 1 (primary) — CLAUDE.md missing from base**: CLAUDE.md was changed from
+`untracked` to `tracked` in `PROJECT_FILE_POLICIES` on 2026-03-17 (commit
+`ac81cc4`). All existing projects were created before this change, so their
+`.cco/base/` never included CLAUDE.md. **No migration was added** to seed
+`.cco/base/CLAUDE.md` for existing projects when the policy changed.
+
+Evidence: every project's `.cco/base/` contains only `settings.json` (which was
+always tracked), never `CLAUDE.md`:
+
+```
+cave-auth/.cco/base/       → settings.json only
+caveresistance-server/.cco/base/ → settings.json only
+claude-orchestrator/.cco/base/   → settings.json only
+marius/.cco/base/                → settings.json only
+testing/.cco/base/               → settings.json only
+```
+
+**Bug 2 (latent) — Base saved from raw template**: `cmd_project_create()`
+(`lib/cmd-project-create.sh`) passes the raw template directory (with
+`{{PLACEHOLDER}}`) to `_save_all_base_versions`. For projects created **after**
+the policy change, the base would contain raw placeholders
+(`# Project: {{PROJECT_NAME}}`), making the three-way merge incorrect. This bug
+affects new project creation but hasn't been observed yet because all current
+projects predate the policy change (Bug 1 masks Bug 2).
+
+**Combined effect**: `base_hash` is empty (CLAUDE.md not in `.cco/base/`) →
+`_collect_file_changes` falls into the `BASE_MISSING` branch → compares raw
+template hash against installed hash → always different → false positive for
+every project.
+
+### 1.4 Affected Flows
+
+**`cco project create`** (all templates with placeholders):
+
+| Template | Placeholders in CLAUDE.md | Affected? |
+|----------|--------------------------|-----------|
+| `project/base` | `{{PROJECT_NAME}}`, `{{DESCRIPTION}}`, `cc-{{PROJECT_NAME}}` | **Yes** |
+| `project/config-editor` | `{{PROJECT_NAME}}` (description hardcoded) | **Yes** |
+| `internal/tutorial` | None (all hardcoded) | No |
+| User templates | Depends on content | If they use `{{...}}` in tracked files |
+
+**`cco project install`** (remote): Remote-installed projects fall back to
+`templates/project/base/.claude` for opinionated file comparison. Same bug
+applies: raw template with placeholders vs interpolated user content.
+
+**`cco update --diff` / `cco update --sync`**: Both use `_collect_file_changes`
+which reads the base. With missing/raw base, classification is wrong — should be
+`USER_MODIFIED` or `NO_UPDATE`, reports `BASE_MISSING` instead. Three-way merge
+is impossible without a correct base.
+
+**`cco project publish`** (alignment check): `_collect_file_changes` is called
+before publishing. False `BASE_MISSING` results trigger a warning that blocks
+the publish flow.
+
+### 1.5 Template and Placeholder Inventory
+
+| Placeholder | Used in | Recoverable at update? |
+|---|---|---|
+| `{{PROJECT_NAME}}` | base CLAUDE.md, base project.yml, config-editor CLAUDE.md, config-editor project.yml | **Yes** — always = directory name |
+| `{{DESCRIPTION}}` | base CLAUDE.md, base project.yml | **Partial** — stored in `project.yml`, but often stale |
+| `{{CCO_REPO_ROOT}}` | config-editor project.yml, tutorial project.yml | **Yes** — runtime path |
+| `{{CCO_USER_CONFIG_DIR}}` | config-editor project.yml, tutorial project.yml | **Yes** — runtime path |
+
+**Key insight**: `{{DESCRIPTION}}` is user content, not framework structure. After
+creation, users replace the entire Overview section with rich, project-specific
+content. The original placeholder value becomes irrelevant and **cannot be
+reliably re-interpolated** at update time.
+
+### 1.6 Approaches Evaluated
+
+**Path A — Fix base tracking**: Save interpolated base instead of raw template.
+Add migration for existing projects. Correct by construction; covers all template
+types uniformly. Requires migration for existing projects.
+
+**Path B — Interpolate templates at update-time**: Resolve `{{PLACEHOLDER}}` in
+the template before diffing. Low feasibility: `{{DESCRIPTION}}` is often
+stale/wrong, custom templates may have arbitrary placeholders.
+
+**Path C (chosen) — Path A + minimal safety net from Path B**: Fix base tracking
+(Path A) plus a lightweight guard that interpolates `{{PROJECT_NAME}}` in the
+template before hashing during `_collect_file_changes`. Correct base tracking +
+defense in depth with ~5 lines of safety net code.
+
+### 1.7 Affected Components
 
 | Component | File | Function | Issue |
 |---|---|---|---|
@@ -515,7 +614,9 @@ scratch in user projects → manual migration is still needed.
 After this fix is implemented:
 
 - ~~Remove `docs/maintainer/placeholder-interpolation-path-b-analysis.md`~~
-  Already removed (superseded by `base-tracking-bug-analysis.md`)
+  Already removed
+- ~~Merge `base-tracking-bug-analysis.md` into this document~~
+  Done — analysis content integrated into §1
 - Consider whether `BASE_MISSING` status should trigger the safety net
   interpolation automatically in `_show_file_diffs` (display-level improvement)
 - Update `docs/maintainer/configuration/update-system/design.md` to document
