@@ -401,10 +401,10 @@ YAML
         # ~/.claude/.credentials.json — OAuth tokens (seeded from macOS Keychain, auto-refreshed by Claude)
         echo "      - ${GLOBAL_DIR}/claude-state/.credentials.json:/home/claude/.claude/.credentials.json"
 
-        # Global config (read-only)
+        # Global config
         cat <<YAML
-      # Global config
-      - ${GLOBAL_DIR}/.claude/settings.json:/home/claude/.claude/settings.json:ro
+      # Global config (settings.json is rw — Claude Code writes runtime preferences like /effort)
+      - ${GLOBAL_DIR}/.claude/settings.json:/home/claude/.claude/settings.json
       - ${GLOBAL_DIR}/.claude/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
       - ${GLOBAL_DIR}/.claude/rules:/home/claude/.claude/rules:ro
       - ${GLOBAL_DIR}/.claude/agents:/home/claude/.claude/agents:ro

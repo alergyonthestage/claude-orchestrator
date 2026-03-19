@@ -568,26 +568,16 @@ rag:
 
 ## Known Bugs
 
-### #B8 `~/.claude/settings.json` montato read-only — Claude Code non può salvare impostazioni runtime
+### #B8 `~/.claude/settings.json` montato read-only — Claude Code non può salvare impostazioni runtime ✓ FIXED
 
-**Reported**: 2026-03-17.
+**Reported**: 2026-03-17. **Fixed**: 2026-03-19.
 
-**Symptom**: `/effort high` (e potenzialmente altri comandi che scrivono su `settings.json`) fallisce con `EROFS: read-only file system`. Claude Code non può modificare le proprie impostazioni a runtime.
+**Symptom**: `/effort high` fallisce con `EROFS: read-only file system`.
 
-**Root cause**: In `lib/cmd-start.sh` (riga ~450), `settings.json` è montato con `:ro`:
-```yaml
-- ${GLOBAL_DIR}/.claude/settings.json:/home/claude/.claude/settings.json:ro
-```
-
-Tutti i file globali `.claude/` (settings.json, CLAUDE.md, rules/, agents/, skills/) sono montati read-only per proteggerli da modifiche accidentali di Claude. Tuttavia `settings.json` è un caso speciale: Claude Code ci scrive a runtime per salvare impostazioni come effort level, thinking mode, ecc.
-
-**Analysis needed**:
-1. `settings.json` deve essere **rw** per permettere a Claude di salvare le sue impostazioni runtime
-2. Verificare se altri file in `~/.claude/` hanno lo stesso problema (Claude Code potrebbe aver bisogno di scrivere anche su altri file)
-3. Valutare il trade-off: rw permette a Claude di modificare il file (incluse permissions), ma è necessario per il funzionamento corretto. Una possibilità è separare le impostazioni immutabili (permissions, attribution) dalle impostazioni runtime (effort, thinking)
-4. In alternativa, valutare se le impostazioni che Claude Code scrive a runtime vanno in un file diverso da `settings.json`
-
-**Proposed fix**: Rimuovere `:ro` da `settings.json` nel mount, oppure investigare se Claude Code usa un file separato per le impostazioni runtime.
+**Fix**: Removed `:ro` from `settings.json` mount in `lib/cmd-start.sh`. Other global
+files (CLAUDE.md, rules/, agents/, skills/) remain `:ro` as intended — Claude Code
+does not write to them. Only `settings.json` needs write access for runtime preferences
+(effort level, thinking mode, etc.).
 
 ---
 
