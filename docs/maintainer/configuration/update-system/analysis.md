@@ -4,9 +4,9 @@
 **Scope**: Architecture-level — cross-cutting analysis
 **Related**: `design.md` (definitive design, updated in parallel)
 
-> This document establishes the resource taxonomy, change categories, and update
-> semantics for claude-orchestrator. It is the analytical foundation for the update
-> system design and for all future decisions about resource lifecycle.
+> This document establishes the change categories, update semantics, and `cco update`
+> behavior for claude-orchestrator. For the complete resource taxonomy and file
+> policies, see [resource-lifecycle/analysis.md](../resource-lifecycle/analysis.md).
 
 ---
 
@@ -28,52 +28,18 @@ The value proposition of cco depends on:
 
 ## 2. Resource Taxonomy — Four Scopes
 
-### 2.1 Scope Definitions
+The update system operates across four resource scopes: **Managed** (immutable,
+Docker-baked), **Global** (user-owned after `cco init`), **Project** (user-owned
+after `cco project create`), and **Pack** (independent lifecycle).
 
-| Scope | Location | Ownership | Installed by | Updated by |
-|-------|----------|-----------|-------------|------------|
-| **Managed** | `defaults/managed/` → `/etc/claude-code/` | Framework (immutable) | `cco build` | `cco build` |
-| **Global** | `defaults/global/` → `user-config/global/` | User (after install) | `cco init` | User (assisted by `cco update --sync`) |
-| **Project** | `templates/project/*/` → `user-config/projects/<name>/` | User (after install) | `cco project create` | User (assisted by `cco update --sync`) |
-| **Pack** | `user-config/packs/<name>/` | User or Remote | `cco pack create/install` | `cco pack update` (full replace) |
+> For the complete resource classification matrix, file policy definitions, and
+> directory structure details, see
+> [resource-lifecycle/analysis.md §5.2](../resource-lifecycle/analysis.md#52-resource-classification-matrix)
+> and [resource-lifecycle/analysis.md §7](../resource-lifecycle/analysis.md#7-file-by-file-policy-review).
 
-**Key change from earlier designs**: Global and Project files are **user-owned after
-installation**. The framework provides defaults at creation time and offers discovery
-and merge tools for updates, but never modifies user files automatically.
-
-### 2.2 What Lives Where
-
-```
-Managed (immutable, Docker-baked)
-├── Framework CLAUDE.md               — non-overridable instructions
-├── managed-settings.json             — hooks, env, deny rules
-└── init-workspace skill              — runtime CLAUDE.md population
-
-Global (installed at cco init, user-owned after)
-├── .claude/CLAUDE.md                 — workflow instructions (opinionated)
-├── .claude/settings.json             — global Claude Code permissions (opinionated)
-├── .claude/agents/{analyst,reviewer}  — framework agent specs (opinionated)
-├── .claude/rules/{workflow,git,diagrams} — framework conventions (opinionated)
-├── .claude/rules/language.md          — generated from saved preferences
-├── .claude/skills/{analyze,commit,design,review} — framework skills (opinionated)
-├── .claude/mcp.json                  — personal MCP servers
-├── setup.sh                          — dotfiles bootstrap
-└── setup-build.sh                    — build dependencies
-
-Project (installed at cco project create, user-owned after)
-├── project.yml                       — project configuration (user config)
-├── .claude/CLAUDE.md                 — project context (user content)
-├── .claude/settings.json             — project permissions (opinionated)
-├── .claude/rules/language.md         — optional language override
-├── setup.sh                          — runtime setup
-├── secrets.env                       — secret variables
-└── mcp-packages.txt                  — optional MCP packages
-
-Pack (independent lifecycle)
-├── pack.yml                          — pack manifest
-├── knowledge/                        — knowledge files (read-only in projects)
-├── rules/ agents/ skills/            — pack resources
-```
+**Key principle**: Global and Project files are **user-owned after installation**.
+The framework provides defaults at creation time and offers discovery and merge
+tools for updates, but never modifies user files automatically.
 
 ---
 
@@ -165,20 +131,17 @@ Is this change backward-compatible?
 
 ## 4. File Lifecycle — Creation to Update
 
-### 4.1 Global Files
+> For detailed file-by-file policy definitions (tracked, untracked, generated)
+> and the rationale behind each policy assignment, see
+> [resource-lifecycle/analysis.md §3](../resource-lifecycle/analysis.md#3-file-policy-redesign)
+> and [resource-lifecycle/analysis.md §7](../resource-lifecycle/analysis.md#7-file-by-file-policy-review).
+
+This section focuses on the **update flow** — how `cco update` discovers and
+applies changes at each scope.
+
+### 4.1 Global Update Flow
 
 ```
-cco init
-  ├── Copy defaults/global/ → user-config/global/
-  ├── Substitute language.md with user's language choices
-  ├── Generate .cco/meta (schema_version, manifest hashes)
-  └── Save .cco/base/ (base versions for future diff/merge)
-
-User works...
-  ├── Modifies rules, agents, skills as needed
-  ├── Adds custom MCP servers, setup scripts
-  └── Files are fully user-owned
-
 cco update (after framework upgrade)
   ├── Run pending migrations (BREAKING changes)
   ├── Compare defaults/ vs .cco/base/ → find what framework changed
@@ -194,66 +157,19 @@ cco update --sync (user-initiated)
   └── User chooses per file
 ```
 
-### 4.2 Project Files
+### 4.2 Project Update Flow
 
 ```
-cco project create <name> [--template config-editor]
-  ├── Copy template files → user-config/projects/<name>/
-  ├── Substitute {{PROJECT_NAME}}, {{DESCRIPTION}}
-  ├── Generate .cco/meta (template name, schema_version)
-  └── Save .cco/base/ (base versions of opinionated files)
-
-User works...
-  ├── Configures project.yml (repos, packs, docker, etc.)
-  ├── Writes .claude/CLAUDE.md with project context
-  └── Files are fully user-owned
-
 cco update --project <name>
   ├── Run pending project migrations
-  ├── Discover opinionated file updates (.claude/settings.json)
+  ├── Discover opinionated file updates (.claude/settings.json, CLAUDE.md)
   └── Report available updates
 
 cco update --sync <name>
   └── Merge/replace opinionated files on user request
 ```
 
-### 4.3 Which Files Are Opinionated (discoverable)?
-
-Only files that have a **framework source** in `defaults/` or `templates/project/base/`
-AND are expected to evolve with the framework. All other files are purely user-owned.
-
-**Global opinionated files** (source: `defaults/global/`):
-
-| File | Why opinionated | Why not managed |
-|------|-----------------|-----------------|
-| `.claude/CLAUDE.md` | Framework workflow methodology | User adds project-wide instructions |
-| `.claude/settings.json` | Framework permission baseline | User customizes permissions |
-| `.claude/agents/analyst.md` | Framework agent spec | User tunes agent behavior |
-| `.claude/agents/reviewer.md` | Framework agent spec | User tunes agent behavior |
-| `.claude/rules/diagrams.md` | Framework diagram conventions | User may prefer different conventions |
-| `.claude/rules/git-practices.md` | Framework git conventions | User may use different git workflow |
-| `.claude/rules/workflow.md` | Framework dev workflow | User may prefer different phases |
-| `.claude/skills/*/SKILL.md` | Framework skills | User may customize skill behavior |
-| `.claude/rules/language.md` | Generated from preferences | Regenerated, not merged |
-
-**Project opinionated files** (source: `templates/project/base/`):
-
-| File | Why opinionated | Notes |
-|------|-----------------|-------|
-| `.claude/settings.json` | Framework permission baseline | Usually not customized; quick apply |
-
-**Files NOT opinionated (purely user-owned)**:
-
-| File | Why user-owned |
-|------|----------------|
-| `project.yml` | 100% user config (repos, packs, docker, ports, etc.) |
-| `.claude/CLAUDE.md` (project) | Project-specific context, fully user-written |
-| `.claude/mcp.json` | Personal MCP server config |
-| `setup.sh`, `setup-build.sh` | Personal environment setup |
-| `secrets.env` | Secret values |
-| `mcp-packages.txt` | User's package list |
-
-### 4.4 Why `project.yml` Is User-Owned (Not Tracked)
+### 4.3 Why `project.yml` Is Untracked
 
 `project.yml` is modified by 100% of users — it contains repos, packs, docker
 ports, auth config, etc. There is no meaningful "unchanged" state.
@@ -375,131 +291,35 @@ for improvements.
 
 ## 7. Shared Resources — Source Tracking and Update Policies
 
-### 7.1 Resource Lifecycle by Source
+> For the complete resource classification matrix, source tracking format
+> (`.cco/source`), update policies by resource type, and the FI-7
+> publish/install sync mechanism, see
+> [resource-lifecycle/analysis.md §5](../resource-lifecycle/analysis.md#5-resource-lifecycle--unified-model)
+> and [resource-lifecycle/analysis.md §6](../resource-lifecycle/analysis.md#6-fi-7-publishinstall-sync--implemented).
 
-| Resource | Created by | Updated by | `cco update` role |
-|----------|-----------|------------|-------------------|
-| Global config | `cco init` | User + `cco update --sync` | Migrations + discovery + additive notifications |
-| Project (from base) | `cco project create` | User + `cco update --sync` | Migrations + discovery |
-| Project (from native template) | `cco project create --template` | User + `cco update --sync` | Migrations + discovery (template-specific files) |
-| Project (from remote) | `cco project install` | User | Migrations only (notify of remote updates) |
-| Pack (local) | `cco pack create` | User directly | Migrations only |
-| Pack (remote) | `cco pack install` | `cco pack update` (full replace) | Migrations only |
-| Template (native) | Ships with cco | Maintainer (in repo) | N/A (maintainer runs migrations manually) |
-| Template (user) | `cco template create` | User directly | Migrations only |
+This section summarizes the aspects most relevant to `cco update` behavior.
 
-### 7.2 Source Tracking via `.cco/source`
+### 7.1 What `cco update` Does per Resource Type
 
-Every resource with an authoritative source tracks its origin in `.cco/source`.
-This file enables update discovery, version comparison, and source attribution.
+| Resource | `cco update` role |
+|----------|-------------------|
+| Global config | Migrations + discovery + additive notifications |
+| Project (from base) | Migrations + discovery |
+| Project (from native template) | Migrations + discovery (template-specific files) |
+| Project (from remote) | Migrations + remote version check notification |
+| Pack (local/remote) | Migrations only (`cco pack update` handles remote sync) |
+| Template (user) | Migrations only |
+| Template (native) | N/A (maintainer updates directly in repo) |
 
-```yaml
-# .cco/source — auto-generated, do not edit
-# Format: source is a string (URL, "local", or "native:<kind>/<name>")
-type: pack                              # pack | project
-source: https://github.com/team/config  # URL, "local", or "native:project/<name>"
-path: packs/my-pack                     # subdirectory in source (remote only)
-ref: main                               # branch/tag/commit (remote only)
-installed: 2026-03-01                   # install date
-updated: 2026-03-14                     # last update date (remote only)
-```
+### 7.2 Pack Migrations vs Pack Updates
 
-The `source` field is a flat string: a URL for remote resources, `"local"` for
-locally created resources, or `"native:<kind>/<name>"` for native template projects.
-Additional fields (`path`, `ref`, `updated`) are present only for remote resources.
+`cco update` runs pending **pack migrations** (schema changes) but does NOT
+trigger **pack updates** (content sync from remote). These are separate:
 
-**Who creates `.cco/source`:**
+- `cco update` → runs `migrations/pack/NNN_*.sh` on each pack
+- `cco pack update <name>` → full-replace from remote source
 
-| Resource | Created by | Source value |
-|----------|-----------|-------------|
-| Pack (remote) | `cco pack install` | Remote URL ✅ (already implemented) |
-| Pack (local) | `cco pack create` | `source: local` ✅ (already implemented) |
-| Project (from native template) | `cco project create --template` | `native:project/<template-name>` |
-| Project (from remote) | `cco project install` | Remote URL |
-| Project (from base) | `cco project create` | Not created (base is the default, tracked via `.cco/meta`) |
-
-### 7.3 Update Policies by Resource Type
-
-Each resource type has a defined update policy based on how users interact with it:
-
-| Resource | Update policy | Rationale |
-|----------|--------------|-----------|
-| Pack (remote) | **Full replace** | Source is authoritative. Users who need to modify should `cco pack internalize` first |
-| Pack (local) | **User-managed** | No external source. User edits directly |
-| Project (from native template) | **Discovery + merge** | Template-specific opinionated files discovered; user chooses per file via `--sync` |
-| Project (from remote) | **Notify only** | Remote may have updates; user informed but must act manually |
-| Project (from base) | **Discovery + merge** | Only base opinionated files (settings.json) — see section 4.3 |
-
-### 7.4 Native Template Projects — Discovery of Template-Specific Files
-
-Projects created from non-base native templates (e.g., tutorial) have opinionated
-files that come from the template, not from base. These files should be discoverable
-when the maintainer updates the template.
-
-**Mechanism:**
-
-At `cco project create --template tutorial`:
-1. Copy template files to `user-config/projects/<name>/`
-2. Create `.cco/source` with `source: native:project/tutorial`
-3. Create `.cco/meta` with `template: tutorial` and schema_version
-4. Save `.cco/base/` with base versions of template-specific opinionated files
-
-At `cco update --project <name>`:
-1. Read `.cco/source` → determine source is `native:project/tutorial`
-2. Run pending project migrations (from `migrations/project/`)
-3. Discover opinionated file updates:
-   - Base files (settings.json) → compared against `templates/project/base/`
-   - Template-specific files (tutorial skills, rules) → compared against `internal/tutorial/`
-4. Report available updates
-
-**Which tutorial files are opinionated (discoverable)?**
-
-| File | Policy | Rationale |
-|------|--------|-----------|
-| `.claude/skills/tutorial/SKILL.md` | opinionated | Framework tutorial skill — evolves with cco |
-| `.claude/skills/setup-project/SKILL.md` | opinionated | Framework helper skill |
-| `.claude/skills/setup-pack/SKILL.md` | opinionated | Framework helper skill |
-| `.claude/rules/tutorial-behavior.md` | opinionated | Framework behavior rules |
-| `.claude/settings.json` | opinionated | From base (shared) |
-| `.claude/CLAUDE.md` | untracked | User writes project context |
-| `project.yml` | untracked | User configures repos, packs, docker |
-
-### 7.5 Pack Update — Full Replace with Internalization Escape
-
-`cco pack update` is a separate system:
-- Full-replace from remote source (no merge — source is authoritative)
-- Tracked via `.cco/source` (URL, path, ref, timestamps)
-- Affects all projects using the pack (packs are shared, mounted read-only)
-- `cco update` runs pending pack migrations but does NOT trigger pack updates
-
-**If a user has modified a remote pack:**
-The user should `cco pack internalize <name>` before updating. This converts the
-pack to local (removes `.cco/source`), making it fully user-owned. The pack will
-no longer receive remote updates. This is the intended escape hatch — the user
-explicitly chooses between "receive updates" and "customize freely".
-
-### 7.6 Remote-Installed Projects — Notify Only
-
-Projects installed via `cco project install <url>` are heavily customized by users
-(repos, docker, packs, etc.). The remote source is a starting point, not a
-continuous source of truth.
-
-`cco update` can check if the remote has newer commits than `installed_hash` in
-`.cco/source` and notify:
-
-```
-Project 'my-app' (installed from github.com/team/config):
-  ℹ Remote has updates since your install (2026-03-01).
-  Review with: cco project install <url> --diff
-```
-
-No automatic merge or replace. The user manually reviews and decides.
-
-### 7.7 Future: Pack Version Pinning
-
-Currently `cco pack update` pulls HEAD of the stored ref. No version pinning or
-lockfile exists. Acceptable for now; future enhancement could add version fields
-in `pack.yml` and `.cco/source`.
+Users who have modified a remote pack should `cco pack internalize <name>` first.
 
 ---
 
@@ -889,7 +709,8 @@ This would enable semantic merge instead of text-based merge. Deferred because:
 ### Q1: ~~Template update notifications~~ → RESOLVED (D14)
 
 Projects from native templates now discover template-specific opinionated file
-updates via `.cco/source` + `.cco/base/`. See section 7.4.
+updates via `.cco/source` + `.cco/base/`. See
+[resource-lifecycle/analysis.md §5.2](../resource-lifecycle/analysis.md#52-resource-classification-matrix).
 
 ### Q2: Pack version pinning
 
@@ -903,7 +724,8 @@ diff/merge engine. Deferred — requires template-to-project file mapping design
 ### Q4: ~~Project install source tracking~~ → RESOLVED (D13)
 
 `cco project install <url>` now saves `.cco/source` with the remote URL.
-`cco update` can notify when the remote has newer commits. See section 7.6.
+`cco update` can notify when the remote has newer commits. See
+[resource-lifecycle/analysis.md §5.3](../resource-lifecycle/analysis.md#53-update-flow-by-source-type).
 
 ### Q5: `cco update --news` detail command
 
