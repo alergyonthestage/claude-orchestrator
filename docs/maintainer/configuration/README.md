@@ -9,13 +9,13 @@ feature or architectural concern.
 | Subdirectory | Scope | Key File |
 |-------------|-------|----------|
 | **resource-lifecycle/** | File policies (tracked/untracked/generated), resource update model, tutorial separation, FI-7 foundations, .cco/ directory structure | `analysis.md` — policies and lifecycle; `design.md` — .cco/ layout, path helpers, changelog dual-tracker |
-| **update-system/** | Migration runner, discovery engine, opinionated file sync, change categories (additive/opinionated/breaking) | `design.md` — canonical for update mechanics |
+| **update-system/** | Migration runner, discovery engine, opinionated file sync, change categories (additive/opinionated/breaking) | `design.md` — canonical for update mechanics; `base-tracking-fix-design.md` — base version tracking fix |
 | **scope-hierarchy/** | Four-tier context hierarchy (managed/user/project/repo), override semantics | `design.md` — canonical for scope model |
 | **sharing/** | Config Repos, manifest, publish/install commands, remotes, publish-install sync | `analysis.md` + `design.md` (base), `publish-install-sync-analysis.md` + `publish-install-sync-design.md` (FI-7) |
 | **vault/** | Multi-PC sync, profiles, memory separation | `design.md` — canonical for vault mechanics |
 | **packs/** | Pack format, pack.yml schema, knowledge management | `design.md` |
 | **environment/** | Build-time and runtime extensibility (setup.sh, MCP, Docker) | `design.md` |
-| **rules-and-guidelines/** | Rule content organization (which rules in which files) | `analysis.md` |
+| **rules-and-guidelines/** | Rule content organization (which rules in which files) | `analysis.md`, `owner-preferences.md` |
 
 ## Concept Ownership
 

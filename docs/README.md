@@ -96,4 +96,6 @@ Design docs and analysis by area:
 | **Internal** | |
 | Tutorial Project | [analysis](maintainer/internal/tutorial/analysis.md), [design](maintainer/internal/tutorial/design.md) |
 | **Decisions** | |
-| Reviews | [24-02-2026](maintainer/decisions/reviews/24-02-2026-architecture-review.md), [26-02-2026](maintainer/decisions/reviews/26-02-2026-progress-review.md), [sprint plan](maintainer/decisions/reviews/sprint-2-3-implementation-plan.md) |
+| Framework Improvements | [framework-improvements](maintainer/decisions/framework-improvements.md) |
+| Managed Integrations | [protocol](maintainer/decisions/managed-integrations.md) |
+| Reviews | [18-03-2026 comprehensive](maintainer/decisions/reviews/18-03-2026-comprehensive-review.md), [18-03-2026 UX findings](maintainer/decisions/reviews/18-03-2026-update-ux-findings.md), [18-03-2026 UX audit](maintainer/decisions/reviews/18-03-2026-update-ux-messages-audit.md), [24-02-2026](maintainer/decisions/reviews/24-02-2026-architecture-review.md), [26-02-2026](maintainer/decisions/reviews/26-02-2026-progress-review.md), [sprint plan](maintainer/decisions/reviews/sprint-2-3-implementation-plan.md) |

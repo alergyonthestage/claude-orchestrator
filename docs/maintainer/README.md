@@ -43,6 +43,8 @@ Everything related to the four-tier configuration model, knowledge packs, update
 | Sharing & Config Repo | [design](configuration/sharing/design.md) | [analysis](configuration/sharing/analysis.md) | Completed |
 | Update System & Templates | [design](configuration/update-system/design.md) | [analysis](configuration/update-system/analysis.md) | Completed |
 | Vault & Multi-PC Sync | [design](configuration/vault/design.md) | [analysis](configuration/vault/analysis.md) | Completed |
+| Resource Lifecycle | [design](configuration/resource-lifecycle/design.md) | [analysis](configuration/resource-lifecycle/analysis.md) | Completed |
+| Rules & Guidelines | — | [analysis](configuration/rules-and-guidelines/analysis.md) | Completed |
 
 ---
 

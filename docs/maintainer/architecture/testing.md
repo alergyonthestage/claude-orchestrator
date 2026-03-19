@@ -134,6 +134,7 @@ During development, run only the tests relevant to the module you changed:
 | `lib/paths.sh` | `bin/test --file test_paths` |
 | `lib/secrets.sh` | `bin/test --file test_secrets` |
 | `lib/workspace.sh` | `bin/test --file test_packs` |
+| `lib/colors.sh`, `lib/utils.sh` | Utility libraries — covered indirectly by all test files |
 | `lib/cmd-build.sh`, `lib/cmd-new.sh` | No unit/integration test (Docker-dependent) |
 | `proxy/**` | `bin/test --file test_docker_security` + `cd proxy && go test ./...` |
 | `config/entrypoint.sh` | No unit/integration test (E2E only, Sprint 8) |
