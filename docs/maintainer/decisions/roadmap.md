@@ -15,7 +15,7 @@
 |--------|-------|---------|
 | ✅ Completed | 25 sprints / features | [→ Completed](#completed) |
 | 🐛 Known Bugs | 1 open · 8 fixed | [→ Known Bugs](#known-bugs) |
-| 🔜 Planned | FI-8, Quick Wins (FI-4, #10), Sprint 6C → 12 | [→ Planned Sprints](#planned-sprints) |
+| 🔜 Planned | Quick Wins (FI-4, #10), Sprint 6C → 12 | [→ Planned Sprints](#planned-sprints) |
 | 🔭 Exploratory | 7 ideas | [→ Long-term / Exploratory](#long-term--exploratory) |
 | ❌ Declined | 3 items | [→ Declined / Won't Do](#declined--wont-do) |
 
@@ -27,29 +27,27 @@ Features are prioritized by impact for third-party users adopting claude-orchest
 
 ### Prioritization Notes (updated 2026-03-19)
 
-**Completed**: RF-1→4, FI-2, FI-5, FI-7, Sprint 5c, Sprint 6 Phase A+B, Bugfix B5-B7.
+**Completed**: RF-1→4, FI-2, FI-5, FI-7, FI-8, Sprint 5c, Sprint 6 Phase A+B, Bugfix B5-B7.
 
-**Next**: FI-8 (PromptSubmit hook + hooks review).
+**Next**: Quick wins (FI-4, #10).
 
-**Then**: Quick wins (FI-4, #10), Security (Sprint 6C), E2E testing (Sprint 8), Linux OAuth (Sprint 9).
+**Then**: Security (Sprint 6C), E2E testing (Sprint 8), Linux OAuth (Sprint 9).
 
 **Later**: Worktree isolation (Sprint 10), Pack Inheritance (#9), StatusLine (#10b), RAG (Sprint 12).
 
 | Category | Items | Effort | Benefit |
 |----------|-------|--------|---------|
-| **PromptSubmit hook (priority 1)** | FI-8: hook + global defaults review | Medium | Rule enforcement, consistency |
-| **Quick wins (priority 2)** | FI-4 model config, #10 project edit | Low-Medium | UX improvement |
-| **Security (priority 3)** | Sprint 6C network hardening | Medium-High | Required for production/open-source |
-| **Quality (priority 4)** | Sprint 8 E2E tests | Medium | Prerequisite for Linux onboarding |
-| **Onboarding (priority 5)** | Sprint 9 Linux OAuth | Medium | Pre-open-source requirement |
-| **Architecture (priority 6)** | Sprint 10 worktree, #9 pack inheritance, #10b StatusLine | Medium | Valuable but not blocking |
+| **Quick wins (priority 1)** | FI-4 model config, #10 project edit | Low-Medium | UX improvement |
+| **Security (priority 2)** | Sprint 6C network hardening | Medium-High | Required for production/open-source |
+| **Quality (priority 3)** | Sprint 8 E2E tests | Medium | Prerequisite for Linux onboarding |
+| **Onboarding (priority 4)** | Sprint 9 Linux OAuth | Medium | Pre-open-source requirement |
+| **Architecture (priority 5)** | Sprint 10 worktree, #9 pack inheritance, #10b StatusLine | Medium | Valuable but not blocking |
 | **Exploratory** | Sprint 12 RAG, hot-reload, notifications, remote sessions, web UI | High | Long-term, evaluate demand |
 
 ```mermaid
 graph LR
-    DONE["✅ Completed<br/>Sprint 1-5c, Sprint 6+10,<br/>Sprint 6b, ADR-13,<br/>Sprint 7-Vault,<br/>FI-7 Config Sync,<br/>RF-1→4, FI-2, FI-5,<br/>Sprint 6 Phase A+B,<br/>Bugfix #B1-#B7"]
+    DONE["✅ Completed<br/>Sprint 1-5c, Sprint 6+10,<br/>Sprint 6b, ADR-13,<br/>Sprint 7-Vault,<br/>FI-7 Config Sync,<br/>RF-1→4, FI-2, FI-5, FI-8,<br/>Sprint 6 Phase A+B,<br/>Bugfix #B1-#B7"]
 
-    FI8["FI-8<br/>#PromptSubmit hook<br/>#Global defaults review"]
     QW["Quick Wins<br/>#FI-4 model config<br/>#cco project edit"]
     S6S["Sprint 6C-Security<br/>#Network Hardening<br/>#Squid proxy"]
     S8E["Sprint 8-E2E<br/>#E2E Test Suite"]
@@ -57,8 +55,7 @@ graph LR
     S10["Sprint 10+<br/>#Worktree isolation<br/>#Pack inheritance<br/>#StatusLine"]
     S12R["Sprint 12-RAG<br/>#Project RAG"]
 
-    DONE --> FI8
-    FI8 --> QW
+    DONE --> QW
     QW --> S6S
     S6S --> S8E
     S8E --> S9L
@@ -70,62 +67,9 @@ graph LR
 
 ## Planned Sprints
 
-### FI-8: PromptSubmit Hook + Global Defaults Review
-
-**Priority**: 1 (next).
-
-**Raised**: 2026-03-19.
-
-**Problem**: Rules are loaded at session start and always present in context, but in
-long sessions or after compaction the agent frequently forgets key behavioral rules —
-particularly git practices (working on branches, not committing to main) and commit
-discipline (frequent, atomic commits). This is a known limitation of current models:
-rules loaded at session start lose effective weight as the conversation grows.
-
-**Proposed solution**: A lightweight `UserPromptSubmit` hook that injects a concise
-reminder (5-10 lines) into every prompt. The reminder reinforces only the rules that
-are most frequently forgotten — not a repetition of all rules, but a targeted nudge.
-
-Example hook output:
-```
-⚠️ Reminders:
-- Work on feature branches, never commit to main/develop directly
-- Commit after each logical unit of work (frequent, atomic commits)
-- Follow the approved design — pause if changes are needed
-- Check git status before starting work
-```
-
-**Scope**: The hook would be a managed hook (in `managed-settings.json`), ensuring all
-sessions benefit from it. The reminder content should be reviewed and aligned with the
-global defaults shipped by cco.
-
-**Bundled with**: Review and update of `defaults/global/` rules and `defaults/managed/CLAUDE.md`
-to align with the user guides developed in FI-5 (development-workflow.md,
-configuring-rules.md). The global defaults were written before the guides existed and
-may need adjustments to reflect the practices documented there (task decomposition,
-branching model, review cycles).
-
-**Tasks**:
-
-| # | Task | Effort |
-|---|------|--------|
-| 8a | Create `config/hooks/prompt-submit.sh` — concise reminder of key rules | Low |
-| 8b | Register `UserPromptSubmit` hook in `managed-settings.json` | Low |
-| 8c | Review `defaults/global/.claude/rules/` against user guides — update for consistency | Medium |
-| 8d | Review `defaults/global/.claude/CLAUDE.md` against user guides — update for consistency | Medium |
-| 8e | Review `defaults/managed/CLAUDE.md` — update if needed | Low |
-| 8f | Test: verify hook fires correctly, measure context cost per prompt | Low |
-
-**Effort**: Medium overall. 8a-8b are low effort. 8c-8d require careful review.
-
-**Dependencies**: FI-5 completed (2026-03-19). Guides are finalized — defaults can
-now be aligned to them.
-
----
-
 ### Quick Wins — FI-4, #10
 
-**Priority**: 2 (after FI-8). Low effort, high benefit.
+**Priority**: 1 (next). Low effort, high benefit.
 
 #### FI-4 Per-project model configuration
 
@@ -448,6 +392,29 @@ Migration `005_split_global_setup.sh` renames existing `setup.sh` → `setup-bui
 
 **Ref**: [FI-2](framework-improvements.md#fi-2-init-workspace-on-empty-projects) | [FI-5](framework-improvements.md#fi-5-human-workflow-guide-and-review-best-practices)
 **Design**: [`defaults-alignment-design.md`](../configuration/rules-and-guidelines/defaults-alignment-design.md)
+
+---
+
+### FI-8: PromptSubmit Hook + Documentation-First Rule (2026-03-19) ✓
+
+Addresses rule drift in long sessions: rules loaded at session start lose effective weight
+as conversation grows or after compaction.
+
+**UserPromptSubmit hook** (`config/hooks/prompt-submit.sh`): managed hook injecting a concise
+per-prompt reminder. Follows the Content Principle — reminds the agent to check its configured
+rules rather than hardcoding specific rule content. Works regardless of how the user has
+customized their rules.
+
+**Documentation-first rule** (`defaults/managed/.claude/rules/documentation-first.md`): managed
+rule requiring the agent to check existing docs, design documents, ADRs, and prior analysis
+before starting new work. Prevents proposing solutions that contradict or duplicate existing
+design decisions.
+
+**Review of defaults (8c-8e)**: Global rules, global CLAUDE.md, and managed CLAUDE.md were
+reviewed against user guides — no changes needed beyond FI-5 alignment (already completed).
+
+**Ref**: [FI-8](framework-improvements.md)
+**Design**: [`defaults-alignment-design.md`](../configuration/rules-and-guidelines/defaults-alignment-design.md) §2.2, §2.3
 
 ---
 

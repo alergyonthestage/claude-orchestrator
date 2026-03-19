@@ -295,12 +295,26 @@ run broader reviews:
 Documentation entropy is real. Over time, files accumulate, topics get covered in
 multiple places, and the structure drifts from the implementation.
 
+**Why this matters for agent quality**: The agent checks existing documentation before
+starting new work (this is a framework-enforced behavior). When documentation is
+disorganized or duplicated, the agent either fails to find relevant prior decisions
+(and starts from scratch) or finds contradictory versions (and makes arbitrary choices).
+Documentation maintenance is not just housekeeping — it directly determines whether the
+agent builds on prior work or ignores it.
+
 Periodically review:
 - **File organization** — Does the directory structure still make sense? Should files
-  be merged or reorganized?
-- **Duplication** — Are multiple files covering the same topic? Merge them.
+  be merged or reorganized? Organize by domain/topic so all information about a subject
+  is discoverable in one place.
+- **Duplication** — Are multiple files covering the same topic? Merge them. Duplicated
+  content inevitably diverges, and the agent may read only one copy — acting on stale
+  information while a correct version exists elsewhere.
+- **Single source of truth** — Is every concept, decision, or plan described in exactly
+  one file? If it needs to be referenced elsewhere, use links rather than copying content.
+  A single roadmap, a single design doc per domain, a single set of conventions per topic.
 - **Accuracy** — Does the documentation match the current implementation? Update or
-  remove stale content.
+  remove stale content. Outdated documentation is actively harmful — the agent may find
+  and follow it.
 - **Rule consistency** — Are rules across files contradictory or outdated? Prune
   aggressively.
 
@@ -327,7 +341,7 @@ Patterns that consistently lead to poor results:
 | Rules in too many small files | Contradictions emerge unnoticed | Group correlated rules (see [configuring-rules.md](configuring-rules.md)) |
 | Not verifying intermediate artifacts | Errors compound across phases | Review every phase output before proceeding |
 | No explicit maintenance policy | Agent wastes effort on legacy compat during MVP | Define breaking changes policy per project |
-| Never reviewing docs structure | Files accumulate and duplicate | Periodic docs review every few cycles |
+| Never reviewing docs structure | Agent finds stale/contradictory docs, acts on wrong info | Periodic docs review every few cycles |
 | Too much autonomy | Architectural drift, unwanted changes | Clear human gates at phase transitions |
 | Too little autonomy | Slow, needy agent that asks about everything | Define what can be decided autonomously |
 | Asking too much in one prompt | Shallow, incomplete results across all areas | Decompose into focused tasks — one concern per prompt |

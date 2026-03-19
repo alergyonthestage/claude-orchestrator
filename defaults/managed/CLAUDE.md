@@ -1,7 +1,8 @@
 # claude-orchestrator Framework
 
 ## Context Hierarchy
-- Managed rules (this file, memory-policy.md) define framework behavior
+- Managed rules (this file, memory-policy.md, documentation-first.md)
+  define framework behavior
 - User rules in `.claude/rules/` define workflow, git, documentation,
   and other conventions — always check and follow them
 - Project-level rules (in `/workspace/.claude/rules/`) take precedence

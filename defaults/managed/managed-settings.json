@@ -38,6 +38,17 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/bin/cco-hooks/prompt-submit.sh",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   },
 

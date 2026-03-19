@@ -144,11 +144,13 @@ a feature branch and is integrated through review.
 ### 1.4 Architecture Decision Records
 
 **Principle**: Significant architectural or design decisions should be captured in ADRs,
-versioned in the repository.
+versioned in the repository, and organized so the agent can find them.
 
 ADRs are among the highest-value artifacts for agent-assisted development. When an agent
 needs to work on a module, it needs to understand not just *what* the architecture is but
-*why* it is that way and *what alternatives were considered*.
+*why* it is that way and *what alternatives were considered*. Without recorded decisions,
+the agent may propose changes that contradict prior choices or re-analyze problems that
+were already resolved — wasting effort and introducing inconsistencies.
 
 **How cco implements this:**
 
@@ -284,6 +286,47 @@ operational instructions (what the agent should do now).
   They define *how to act now*.
 - The three-way separation (CLAUDE.md for knowledge, rules for invariant behavior,
   skills for task-specific action) keeps each concern clean and maintainable.
+
+### 2.6 Documentation Organization for Agent Discoverability
+
+**Principle**: Documentation must be organized so the agent can find the right information
+before acting — not just for human readability, but for agent effectiveness.
+
+A well-structured agent checks existing documentation, design decisions, and prior analysis
+before starting new work on any topic. This is a fundamental behavior: it prevents the
+agent from proposing solutions that contradict established decisions, duplicating existing
+analysis, or ignoring constraints that were already identified. cco enforces this behavior
+through a managed rule (`documentation-first.md`).
+
+But this behavior is only as effective as the documentation it reads. If the documentation
+is disorganized, duplicated, or scattered across many files, the agent either:
+
+- **Does not find it** → starts from scratch, produces work inconsistent with prior decisions
+- **Finds contradictory versions** → makes arbitrary choices between conflicting sources
+- **Finds too much** → buries the relevant information in noise, reducing its effective weight
+
+This makes documentation organization a **prerequisite for agent quality**, not just a
+nice-to-have:
+
+| Practice | Why it matters for agents |
+|----------|--------------------------|
+| **Organize by domain/topic, not by type** | When the agent investigates authentication, it finds everything about auth in one place — decisions, analysis, design, implementation notes — rather than searching across `decisions/`, `analysis/`, `designs/` |
+| **Single source of truth per concept** | If business logic is described in both a design doc and a README, the agent may read only one. When they diverge (and they will), the agent acts on stale information |
+| **One roadmap, one place** | A single roadmap file lets the agent check what is planned, in progress, or completed before starting work. Multiple tracking files lead to contradictory status |
+| **ADRs close to the code they govern** | Design decisions in `docs/<domain>/design.md` are found when the agent explores that domain. Decisions buried in a generic `decisions/` folder may be missed |
+| **Merge overlapping documents** | Two files covering the same topic are worse than one comprehensive file. The agent may read only one, or read both and face contradictions |
+| **Delete superseded documents** | Outdated docs are actively harmful — the agent may find and follow them. If a design was replaced, remove or clearly mark the old version |
+
+**How cco supports this:**
+
+- The **documentation-first rule** (managed) instructs the agent to search for existing
+  docs before proposing new analysis or design. This creates the demand for organized docs.
+- The **documentation rule** (global default) establishes conventions: organize by domain,
+  review stale docs after development cycles, periodically evaluate structure.
+- The **`/analyze` and `/design` skills** produce documents in structured locations,
+  building an organized documentation base from the start.
+- **Knowledge packs** keep cross-project knowledge in curated, single-source-of-truth
+  bundles rather than duplicating it across projects.
 
 ---
 
