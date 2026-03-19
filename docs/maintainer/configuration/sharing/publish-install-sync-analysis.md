@@ -3,7 +3,7 @@
 > **Date**: 2026-03-17
 > **Status**: Analysis — approved
 > **Scope**: Update chain, merge scenarios, publish safety, UX unification
-> **Prerequisites**: [resource-lifecycle analysis](../resource-lifecycle/analysis.md), [update system design](../update-system/design.md), [sharing design](../sharing/design.md)
+> **Prerequisites**: [resource-lifecycle analysis](../resource-lifecycle/analysis.md), [update system design](../update-system/design.md), [sharing design](./design.md)
 
 ---
 
@@ -431,9 +431,9 @@ Note: `cco pack internalize` already exists with equivalent semantics.
 |-------|----------|
 | Resource lifecycle foundations | `../resource-lifecycle/analysis.md` |
 | Update system design | `../update-system/design.md` |
-| Config Repo / sharing design | `../sharing/design.md` |
+| Config Repo / sharing design | `./design.md` |
 | Vault profiles design | `../vault/design.md` |
 | FI-7 in roadmap | `../../decisions/roadmap.md` § FI-7 |
 | FI-7 overview | `../../decisions/framework-improvements.md` § FI-7 |
-| FI-7 design | `./design.md` |
+| FI-7 design | `./publish-install-sync-design.md` |
 | User guide | `../../../user-guides/config-lifecycle.md` |
