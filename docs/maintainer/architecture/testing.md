@@ -114,7 +114,7 @@ During development, run only the tests relevant to the module you changed:
 |-----------------|-------------|
 | `lib/cmd-start.sh` | `bin/test --file test_start_dry_run --file test_docker_security --file test_invariants` |
 | `lib/yaml.sh` | `bin/test --file test_yaml_parser` |
-| `lib/cmd-pack.sh`, `lib/packs.sh` | `bin/test --file test_pack_cli --file test_packs` |
+| `lib/cmd-pack.sh`, `lib/packs.sh` | `bin/test --file test_pack_cli --file test_packs --file test_pack_install --file test_pack_internalize --file test_pack_publish` |
 | `lib/cmd-project-create.sh` | `bin/test --file test_project_create` |
 | `lib/cmd-project-query.sh` | `bin/test --file test_project_list --file test_project_show` |
 | `lib/cmd-project-install.sh` | `bin/test --file test_project_install` |
@@ -126,6 +126,16 @@ During development, run only the tests relevant to the module you changed:
 | `lib/update*.sh`, `lib/cmd-update.sh` | `bin/test --file test_update --file test_merge` |
 | `lib/manifest.sh` | `bin/test --file test_manifest` |
 | `lib/cmd-remote.sh`, `lib/remote.sh` | `bin/test --file test_remote` |
+| `lib/auth.sh` | `bin/test --file test_auth` |
+| `lib/cmd-chrome.sh` | `bin/test --file test_chrome` |
+| `lib/cmd-clean.sh` | `bin/test --file test_clean` |
+| `lib/cmd-stop.sh` | `bin/test --file test_stop` |
+| `lib/cmd-template.sh` | `bin/test --file test_template` |
+| `lib/paths.sh` | `bin/test --file test_paths` |
+| `lib/secrets.sh` | `bin/test --file test_secrets` |
+| `lib/workspace.sh` | `bin/test --file test_packs` |
+| `lib/colors.sh`, `lib/utils.sh` | Utility libraries — covered indirectly by all test files |
+| `lib/cmd-build.sh`, `lib/cmd-new.sh` | No unit/integration test (Docker-dependent) |
 | `proxy/**` | `bin/test --file test_docker_security` + `cd proxy && go test ./...` |
 | `config/entrypoint.sh` | No unit/integration test (E2E only, Sprint 8) |
 | `Dockerfile` | No unit/integration test (E2E only, Sprint 8) |
@@ -136,7 +146,7 @@ During development, run only the tests relevant to the module you changed:
 
 ## Performance
 
-### Profiling (as of 2026-03-12, 543 tests)
+### Profiling (as of 2026-03-19, 827 tests across 33 files)
 
 | File | Time | Tests | Avg | Bottleneck |
 |------|------|-------|-----|------------|
@@ -146,8 +156,8 @@ During development, run only the tests relevant to the module you changed:
 | `test_update` | 15s | 29 | 505ms | `cco init` + migrations |
 | `test_manifest` | 14s | 23 | 612ms | `cco init` + manifest ops |
 | `test_managed_scope` | 10s | 17 | 566ms | `cco init` ×12 |
-| All other files (21) | 34s | 403 | 84ms | Fast — no `cco init` |
-| **Total** | **179s** | **543** | **330ms** | |
+| All other files (27) | — | — | — | Fast — no `cco init` |
+| **Total** | **—** | **827** | **—** | |
 
 ### Root Cause
 

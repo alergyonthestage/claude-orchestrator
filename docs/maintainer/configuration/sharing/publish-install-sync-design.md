@@ -3,8 +3,8 @@
 > **Date**: 2026-03-17
 > **Status**: Implemented — 2026-03-17
 > **Scope**: Architecture-level
-> **Analysis**: [analysis.md](./analysis.md)
-> **Prerequisites**: [resource-lifecycle analysis](../resource-lifecycle/analysis.md), [update system design](../update-system/design.md), [sharing design](../sharing/design.md)
+> **Analysis**: [publish-install-sync-analysis.md](./publish-install-sync-analysis.md)
+> **Prerequisites**: [resource-lifecycle analysis](../resource-lifecycle/analysis.md), [update system design](../update-system/design.md), [sharing design](./design.md)
 
 ---
 
@@ -647,10 +647,10 @@ No migration script needed — handled gracefully by the discovery logic.
 
 | Topic | Document |
 |-------|----------|
-| FI-7 analysis | `./analysis.md` |
+| FI-7 analysis | `./publish-install-sync-analysis.md` |
 | Resource lifecycle foundations | `../resource-lifecycle/analysis.md` |
 | Update system design | `../update-system/design.md` |
-| Config Repo / sharing design | `../sharing/design.md` |
+| Config Repo / sharing design | `./design.md` |
 | Vault profiles design | `../vault/design.md` |
 | FI-7 in roadmap | `../../decisions/roadmap.md` § FI-7 |
 | User guide | `../../../user-guides/config-lifecycle.md` |

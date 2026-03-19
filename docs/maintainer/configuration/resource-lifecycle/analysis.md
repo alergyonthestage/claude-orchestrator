@@ -530,7 +530,7 @@ internal mechanism.
 
 > FI-7 has been implemented. This section documents the foundations that were
 > established by this analysis and then built upon.
-> See [FI-7 design](../publish-install-sync/design.md) for full details.
+> See [FI-7 design](../sharing/publish-install-sync-design.md) for full details.
 
 ### 6.1 Foundations Established by This Analysis
 
@@ -727,13 +727,14 @@ Based on this analysis, the following principles are confirmed or added:
 
 | Topic | Document |
 |-------|----------|
+| .cco/ directory structure and path helpers | [design.md](design.md) |
 | Update system design | `docs/maintainer/configuration/update-system/design.md` |
 | Update system analysis | `docs/maintainer/configuration/update-system/analysis.md` |
-| Sharing/publish design | `docs/maintainer/configuration/sharing/enhancements-design.md` |
+| Sharing/publish design | `docs/maintainer/configuration/sharing/design.md` §15–§22 |
 | Config Repo design | `docs/maintainer/configuration/sharing/design.md` |
 | Vault design | `docs/maintainer/configuration/vault/design.md` |
-| FI-7 analysis | `docs/maintainer/configuration/publish-install-sync/analysis.md` |
-| FI-7 design | `docs/maintainer/configuration/publish-install-sync/design.md` |
+| FI-7 analysis | `docs/maintainer/configuration/sharing/publish-install-sync-analysis.md` |
+| FI-7 design | `docs/maintainer/configuration/sharing/publish-install-sync-design.md` |
 | FI-7 in roadmap | `docs/maintainer/decisions/roadmap.md` § FI-7 |
 | FI-7 details | `docs/maintainer/decisions/framework-improvements.md` § FI-7 |
 | Current file policies | `lib/update.sh` (`GLOBAL_FILE_POLICIES`, `PROJECT_FILE_POLICIES`) |

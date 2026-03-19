@@ -37,6 +37,9 @@ Operational guides for everyday use. Each guide covers one topic in depth.
 | [browser-automation.md](user-guides/browser-automation.md) | Browser automation via Chrome DevTools Protocol |
 | [sharing.md](user-guides/sharing.md) | Vault backup, multi-machine sync, share packs and templates via Config Repos |
 | [troubleshooting.md](user-guides/troubleshooting.md) | Common issues and solutions by category |
+| [config-lifecycle.md](user-guides/config-lifecycle.md) | Configuration lifecycle: how cco manages, updates, and syncs config files |
+| [configuring-rules.md](user-guides/configuring-rules.md) | Writing and organizing Claude rules across scopes |
+| [development-workflow.md](user-guides/development-workflow.md) | Structured development workflow with cco |
 
 ### Concepts & Best Practices
 
@@ -80,7 +83,7 @@ Design docs and analysis by area:
 | Scope hierarchy | [analysis](maintainer/configuration/scope-hierarchy/analysis.md), [design](maintainer/configuration/scope-hierarchy/design.md) |
 | Knowledge packs | [design](maintainer/configuration/packs/design.md) |
 | Environment | [analysis](maintainer/configuration/environment/analysis.md), [design](maintainer/configuration/environment/design.md) |
-| Sharing & Config Repo | [analysis](maintainer/configuration/sharing/analysis.md), [design](maintainer/configuration/sharing/design.md), [enhancements](maintainer/configuration/sharing/enhancements-design.md) |
+| Sharing & Config Repo | [analysis](maintainer/configuration/sharing/analysis.md), [design](maintainer/configuration/sharing/design.md) |
 | Update System & Templates | [analysis](maintainer/configuration/update-system/analysis.md), [design](maintainer/configuration/update-system/design.md) |
 | Vault & Multi-PC Sync | [analysis](maintainer/configuration/vault/analysis.md), [design](maintainer/configuration/vault/design.md) |
 | **Integration** | |
@@ -93,4 +96,6 @@ Design docs and analysis by area:
 | **Internal** | |
 | Tutorial Project | [analysis](maintainer/internal/tutorial/analysis.md), [design](maintainer/internal/tutorial/design.md) |
 | **Decisions** | |
-| Reviews | [24-02-2026](maintainer/decisions/reviews/24-02-2026-architecture-review.md), [26-02-2026](maintainer/decisions/reviews/26-02-2026-progress-review.md), [sprint plan](maintainer/decisions/reviews/sprint-2-3-implementation-plan.md) |
+| Framework Improvements | [framework-improvements](maintainer/decisions/framework-improvements.md) |
+| Managed Integrations | [protocol](maintainer/decisions/managed-integrations.md) |
+| Reviews | [18-03-2026 comprehensive](maintainer/decisions/reviews/18-03-2026-comprehensive-review.md), [18-03-2026 UX findings](maintainer/decisions/reviews/18-03-2026-update-ux-findings.md), [18-03-2026 UX audit](maintainer/decisions/reviews/18-03-2026-update-ux-messages-audit.md), [24-02-2026](maintainer/decisions/reviews/24-02-2026-architecture-review.md), [26-02-2026](maintainer/decisions/reviews/26-02-2026-progress-review.md), [sprint plan](maintainer/decisions/reviews/sprint-2-3-implementation-plan.md) |

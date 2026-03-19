@@ -5,7 +5,7 @@
 > **Scope**: Sprint 6 (Sharing & Import) + Sprint 10 (Config Vault)
 > **Analysis**: [analysis.md](./analysis.md)
 > **Roadmap**: [roadmap.md](../../decisions/roadmap.md) §Sprint 6, §Sprint 10
-> **Enhancements**: [enhancements-analysis.md](./enhancements-analysis.md), [enhancements-design.md](./enhancements-design.md)
+> **Enhancements**: Integrated below (§15–§22)
 
 ---
 
@@ -641,7 +641,7 @@ Run 'cco vault init' to enable versioning for your configuration.
 ## 13. Publish-Install Sync (FI-7) — Implemented
 
 The publish/install lifecycle has been completed with bidirectional sync.
-See [FI-7 design](../publish-install-sync/design.md) for full details.
+See [FI-7 design](./publish-install-sync-design.md) for full details.
 
 **Key additions**:
 - `cco project update <name>`: fetch + 3-way merge from publisher
@@ -668,3 +668,409 @@ See [FI-7 design](../publish-install-sync/design.md) for full details.
 - Auth is always delegated to the system git credential layer (SSH, GITHUB_TOKEN, or `--token`)
 - Secrets are never committed (`.gitignore` enforced with warning on `cco vault sync`)
 - The Config Repo structure is the same regardless of host (GitHub, GitLab, Gitea, bare server)
+
+---
+
+## Post-Implementation Enhancements
+
+> Sections 15–22 detail the design for enhancements identified after the base
+> Config Repo implementation (naming fixes, new commands, enhanced workflows).
+
+---
+
+## 15. Rename: share → manifest
+
+### What changed
+
+| Before | After |
+|---|---|
+| `cco share refresh` | `cco manifest refresh` |
+| `cco share validate` | `cco manifest validate` |
+| `cco share show` | `cco manifest show` |
+| `share.yml` | `manifest.yml` |
+| `lib/share.sh` | `lib/manifest.sh` |
+| `tests/test_share.sh` | `tests/test_manifest.sh` |
+
+### Migration
+
+Migration `005_rename_share_to_manifest.sh`:
+
+```bash
+migrate() {
+    local dir="$1"
+    if [[ -f "$dir/share.yml" && ! -f "$dir/manifest.yml" ]]; then
+        mv "$dir/share.yml" "$dir/manifest.yml"
+    fi
+}
+```
+
+No backward compatibility for `share.yml` in remote repos. Only `manifest.yml`
+is supported.
+
+---
+
+## 16. Remote Management: cco remote
+
+### Storage
+
+Remotes are stored in `$USER_CONFIG_DIR/.cco/remotes` (simple key-value file):
+
+```
+alberghi=git@github.com:alberghi-it/cco-config.git
+acme=git@github.com:acme-corp/cco-config.git
+personal=git@github.com:jdoe/cco-vault.git
+```
+
+Format: `<name>=<url>`, one per line. Lines starting with `#` are comments.
+File is gitignored by vault (contains no secrets, but is machine-specific).
+
+### Commands
+
+```
+cco remote add <name> <url> [--token <token>]
+cco remote remove <name>
+cco remote list
+cco remote set-token <name> <token>
+cco remote remove-token <name>
+```
+
+### Token resolution
+
+When performing HTTPS operations, the token is resolved in order:
+
+1. `--token` flag (explicit, per-command)
+2. Saved token for the remote name (`remote_get_token`)
+3. Saved token matched by URL (`remote_resolve_token_for_url`)
+4. `GITHUB_TOKEN` environment variable (for `github.com` URLs)
+
+### Vault integration
+
+If vault is initialized, `cco remote add` also adds the remote to the vault's
+git config. The `.cco/remotes` file is the source of truth; vault remotes are
+kept in sync.
+
+Implementation: `lib/cmd-remote.sh`.
+
+---
+
+## 17. Pack Publish
+
+### Signature
+
+```
+cco pack publish <name> [<remote>] [OPTIONS]
+
+Options:
+  --message <msg>    Commit message (default: "publish pack <name>")
+  --dry-run          Show what would be published, don't push
+  --force            Overwrite remote version without confirmation
+  --token <token>    Auth token for HTTPS remotes
+```
+
+### Argument resolution
+
+The `<remote>` argument is resolved in order:
+1. If it matches a registered remote name → use that URL
+2. If it contains `:` or `/` → treat as direct URL
+3. If omitted → read `publish_target` from `.cco/source`
+4. If none of the above → error with suggestion to register a remote
+
+### Flow
+
+```
+cco pack publish alberghi-it alberghi
+│
+├─ 1. Validate pack exists in $PACKS_DIR/alberghi-it/
+├─ 2. Resolve remote "alberghi" → git@github.com:alberghi-it/cco-config.git
+├─ 3. Clone remote repo to temp dir (_clone_config_repo)
+│     If empty repo (first publish): initialize with manifest.yml
+├─ 4. Internalize if needed:
+│     If pack has knowledge.source in pack.yml:
+│       Copy files from source → tmpdir/packs/<name>/knowledge/
+│       Remove source: field from tmpdir pack.yml
+│       (Local pack unchanged)
+├─ 5. Copy pack to tmpdir/packs/<name>/
+│     Exclude: .cco/source, .cco/install-tmp
+├─ 6. Refresh manifest in tmpdir (manifest_refresh on tmpdir)
+├─ 7. Git add + commit in tmpdir
+├─ 8. Git push to remote
+├─ 9. Update local .cco/source: publish_target: alberghi
+├─ 10. Cleanup tmpdir
+└─ 11. Print confirmation
+```
+
+### .cco/source extension
+
+```yaml
+# New field (for published packs):
+publish_target: alberghi
+```
+
+---
+
+## 18. Project Publish
+
+### Signature
+
+```
+cco project publish <name> [<remote>] [OPTIONS]
+
+Options:
+  --message <msg>    Commit message
+  --dry-run          Show what would be published
+  --force            Overwrite without confirmation
+  --token <token>    Auth token for HTTPS remotes
+  --no-packs         Don't bundle project's packs (default: packs are included)
+```
+
+### Reverse-templating
+
+When publishing a project, repo paths are converted to template variables
+and repo URLs are captured automatically:
+
+**Input** (local `project.yml`):
+```yaml
+repos:
+  - path: ~/projects/backend-api
+    name: backend-api
+```
+
+**Output** (published template):
+```yaml
+repos:
+  - path: "{{REPO_BACKEND_API}}"
+    name: backend-api
+    url: git@github.com:acme-corp/backend-api.git
+```
+
+### Reverse-template algorithm
+
+For each repo entry:
+1. Generate variable name: `REPO_` + uppercase(name with `-` → `_`)
+2. Replace `path:` value with the template variable
+3. Infer `url:` from the repo's git remote (`git remote get-url origin`)
+4. Keep `name:` unchanged
+
+The local `project.yml` is **never modified**. Reverse-templating happens only
+on the copy in the temp directory.
+
+### Pack bundling
+
+If the project declares `packs: [pack-a, pack-b]` and `--include-packs` is true
+(default), each declared pack is published alongside the project (including
+internalization of source-referencing packs).
+
+### Files excluded from publish
+
+- `.cco/docker-compose.yml` (generated by `cco start`)
+- `.cco/managed/` (runtime MCP configs)
+- `.claude/.cco/pack-manifest` (legacy pack tracking)
+- `.cco/meta` (update system metadata)
+- `.cco/claude-state/` (session transcripts, memory)
+- `secrets.env` (secrets)
+
+---
+
+## 19. Project add-pack / remove-pack
+
+### Signature
+
+```
+cco project add-pack <project> <pack>
+cco project remove-pack <project> <pack>
+```
+
+### YAML editing strategy
+
+The `packs:` section in `project.yml` is a simple YAML list:
+
+```yaml
+packs:
+  - pack-a
+  - pack-b
+```
+
+**add-pack**: append `  - <name>` after the last pack entry (or after `packs:`
+if list is empty / `packs: []`).
+
+**remove-pack**: delete the line matching `  - <name>` under `packs:`.
+
+Implementation: `cmd_project_add_pack()` and `cmd_project_remove_pack()` in
+`lib/cmd-project-pack-ops.sh`.
+
+---
+
+## 20. Pack Internalize
+
+### Signature
+
+```
+cco pack internalize <name>
+```
+
+Converts a source-referencing pack to self-contained by copying knowledge files
+from the external `source:` directory into the pack's own `knowledge/` directory
+and removing the `source:` field from `pack.yml`.
+
+### Flow
+
+1. Read `pack.yml` → extract `knowledge.source` and `knowledge.files`
+2. If no `source:` field → message "pack is already self-contained", exit 0
+3. Expand source path, validate directory exists
+4. For each file in `knowledge.files`: copy from `$source/$file` to `$pack_dir/knowledge/$file`
+5. Remove `source:` line from `pack.yml`
+6. Print summary: N files internalized
+
+This is a one-way operation. The original `source:` path is lost.
+
+---
+
+## 21. Enhanced Project Install (auto-clone + auto-packs)
+
+### Enhanced flow
+
+```
+cco project install <url> [--pick <name>] [--as <name>] [--var K=V]
+│
+├─ 1. Clone remote Config Repo
+├─ 2. Select template (--pick or auto if single)
+├─ 3. Copy to $PROJECTS_DIR/<name>/
+├─ 4. Resolve template variables (existing behavior)
+│
+│  ── Repo handling ──
+├─ 5. For each repo in template:
+│     ├─ Show: "backend-api (git@github.com:acme-corp/backend-api.git)"
+│     ├─ Prompt: "Local path [~/repos/backend-api]: "
+│     ├─ If path exists → use it
+│     ├─ If path doesn't exist AND url available → offer to clone
+│     └─ If path doesn't exist AND no url → error
+│
+│  ── Pack auto-install ──
+├─ 6. Read packs: list from installed project.yml
+├─ 7. For each pack:
+│     ├─ If exists in $PACKS_DIR/ → skip
+│     ├─ If exists in cloned Config Repo packs/ → auto-install
+│     └─ If not found → warn
+└─ 8. Print summary
+```
+
+**Default clone path**: `~/repos/<repo-name>`.
+
+**Non-interactive mode**: all repo paths must be provided via `--var`:
+```bash
+cco project install <url> --pick albit-book \
+  --var REPO_BACKEND_API=~/repos/backend-api
+```
+
+---
+
+## 22. Manifest Scope and Lifecycle
+
+### Where manifests live
+
+| Location | Purpose | Who creates it | Who reads it |
+|---|---|---|---|
+| `user-config/manifest.yml` | Index of local packs/templates | `cco manifest refresh` | Rare: only if user shares entire user-config |
+| `<shared-repo>/manifest.yml` | Index of shared resources | `cco pack/project publish` (auto) | `cco pack/project install` (consumer) |
+
+### When manifests are refreshed
+
+| Event | Local manifest | Remote manifest |
+|---|---|---|
+| `cco pack create` | Auto-refresh | N/A |
+| `cco pack remove` | Auto-refresh | N/A |
+| `cco pack publish` | No change | Auto-refresh in temp clone before push |
+| `cco project publish` | No change | Auto-refresh in temp clone before push |
+| `cco manifest refresh` | Explicit refresh | N/A (works on local only) |
+
+The `publish` commands handle remote manifest refresh transparently.
+
+---
+
+## Appendix E: Updated manifest.yml format
+
+```yaml
+# manifest.yml — auto-generated by cco, do not edit manually
+name: "alberghi-it-config"
+description: "Packs and project templates for Alberghi IT"
+
+packs:
+  - name: alberghi-it
+    description: "Knowledge base for alberghi.it development"
+    tags: [hospitality, backend, conventions]
+
+templates:
+  - name: albit-book
+    description: "Booking system project template"
+    tags: [booking, fullstack]
+    packs: [alberghi-it, alberghi-common]
+    repos:
+      - name: backend-api
+        url: git@github.com:acme-corp/backend-api.git
+```
+
+## Appendix F: .cco/source format (extended)
+
+```yaml
+# For a pack installed from a remote Config Repo:
+source: https://github.com/alberghi-it/cco-config.git
+path: packs/alberghi-it
+ref: main
+installed: 2026-03-05
+updated: 2026-03-05
+publish_target: alberghi
+
+# For a locally created pack:
+source: local
+publish_target: alberghi
+```
+
+## Appendix G: .cco/remotes format
+
+```
+# CCO Config Repo remotes
+# Format: name=url  |  name.token=token
+team=git@github.com:my-org/cco-config.git
+acme=https://github.com/acme-corp/cco-config.git
+acme.token=ghp_xxxxxxxxxxxx
+personal=git@github.com:jdoe/cco-vault.git
+```
+
+## Appendix H: Example end-to-end workflow
+
+### Publisher (Alice)
+
+```bash
+# Setup remotes (once)
+cco remote add alberghi git@github.com:alberghi-it/cco-config.git
+
+# Create pack and project
+cco pack create alberghi-it
+cco project create albit-book --repo ~/projects/albit-booking
+cco project add-pack albit-book alberghi-it
+
+# Publish
+cco pack publish alberghi-it alberghi
+cco project publish albit-book alberghi
+
+# Later updates
+cco pack publish alberghi-it         # remembers target
+```
+
+### Consumer (colleague Marco)
+
+```bash
+# Install project (includes pack auto-install + repo clone)
+cco project install git@github.com:alberghi-it/cco-config.git --pick albit-book
+
+# Output:
+# Installing template 'albit-book'...
+# This project requires 1 repository:
+#   albit-booking (git@github.com:alberghi-it/albit-booking.git)
+#     Local path [~/repos/albit-booking]: ~/dev/albit-booking
+#     Clone from git@github.com:...? [Y/n]: Y
+# Auto-installing pack 'alberghi-it' from same Config Repo...
+# Project 'albit-book' installed.
+
+cco start albit-book
+```
