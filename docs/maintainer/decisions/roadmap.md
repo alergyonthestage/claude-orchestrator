@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-18 (Added refactoring RF-1→4 as P1 from comprehensive review).
+> Last updated: 2026-03-19 (Added FI-8 PromptSubmit hook + global defaults review).
 >
 > **Note**: Sprint entries are historical. Path references (e.g., `.cco-meta`, `.cco-source`) in older
 > sprints reflect the layout at the time of writing. See Sprint 8 and the `.cco/` consolidation
@@ -1011,6 +1011,57 @@ Also created `docs/user-guides/configuring-rules.md` — companion guide coverin
 
 **Ref**: [FI-5](framework-improvements.md#fi-5-human-workflow-guide-and-review-best-practices)
 **Effort**: Remaining work is Low.
+
+---
+
+### FI-8: PromptSubmit Hook + Global Defaults Review
+
+**Raised**: 2026-03-19.
+
+**Problem**: Rules are loaded at session start and always present in context, but in
+long sessions or after compaction the agent frequently forgets key behavioral rules —
+particularly git practices (working on branches, not committing to main) and commit
+discipline (frequent, atomic commits). This is a known limitation of current models:
+rules loaded at session start lose effective weight as the conversation grows.
+
+**Proposed solution**: A lightweight `UserPromptSubmit` hook that injects a concise
+reminder (5-10 lines) into every prompt. The reminder reinforces only the rules that
+are most frequently forgotten — not a repetition of all rules, but a targeted nudge.
+
+Example hook output:
+```
+⚠️ Reminders:
+- Work on feature branches, never commit to main/develop directly
+- Commit after each logical unit of work (frequent, atomic commits)
+- Follow the approved design — pause if changes are needed
+- Check git status before starting work
+```
+
+**Scope**: The hook would be a managed hook (in `managed-settings.json`), ensuring all
+sessions benefit from it. The reminder content should be reviewed and aligned with the
+global defaults shipped by cco.
+
+**Bundled with**: Review and update of `defaults/global/` rules and `defaults/managed/CLAUDE.md`
+to align with the user guides developed in FI-5 (development-workflow.md,
+configuring-rules.md). The global defaults were written before the guides existed and
+may need adjustments to reflect the practices documented there (task decomposition,
+branching model, review cycles).
+
+**Tasks**:
+
+| # | Task | Effort |
+|---|------|--------|
+| 8a | Create `config/hooks/prompt-submit.sh` — concise reminder of key rules | Low |
+| 8b | Register `UserPromptSubmit` hook in `managed-settings.json` | Low |
+| 8c | Review `defaults/global/.claude/rules/` against user guides — update for consistency | Medium |
+| 8d | Review `defaults/global/.claude/CLAUDE.md` against user guides — update for consistency | Medium |
+| 8e | Review `defaults/managed/CLAUDE.md` — update if needed | Low |
+| 8f | Test: verify hook fires correctly, measure context cost per prompt | Low |
+
+**Effort**: Medium overall. 8a-8b are low effort. 8c-8d require careful review.
+
+**Dependencies**: Ideally done after FI-5 remaining (branch protection docs, template
+references) so the guides are finalized before aligning defaults to them.
 
 ---
 

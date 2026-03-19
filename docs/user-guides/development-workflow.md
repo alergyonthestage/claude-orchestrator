@@ -45,6 +45,94 @@ are persisted through the repository.
 
 ---
 
+## Task Decomposition
+
+### Why smaller tasks produce better results
+
+Each prompt consumes a fixed budget of compute. When you ask for an entire application
+in a single prompt, the agent spreads that budget across analysis, design, implementation,
+testing, and documentation simultaneously — producing shallow results across all of them.
+
+When you break the same work into focused phases and smaller units, the agent dedicates
+its full compute budget to each step. The result is consistently deeper, more accurate,
+and easier to review.
+
+**The principle**: One focused task per prompt. The narrower the scope, the higher
+the quality.
+
+### Decomposition levels
+
+Apply decomposition at multiple levels, each multiplying the quality improvement:
+
+| Level | What you decompose | Example |
+|-------|-------------------|---------|
+| **Phases** | Split work into analysis → design → implementation | Instead of "build auth", do: "analyze auth requirements" → review → "design auth module" → review → "implement auth" |
+| **Modules** | Split a feature into independent components | Instead of "build the whole app", do: "implement the data layer" → "implement the API" → "implement the UI" |
+| **Sub-tasks** | Split a complex module into smaller units | Instead of "implement the API", do: "implement CRUD endpoints" → "add validation" → "add auth middleware" |
+
+### When to decompose further
+
+If the agent's output on a task is unsatisfying — incomplete, error-prone, or shallow —
+the task is too large for a single prompt. The recommended recovery path:
+
+1. **Stop and re-analyze**: Go back to analysis to understand why the task is complex
+2. **Identify sub-problems**: Break the task into autonomous sub-tasks that can each
+   be completed in a single focused prompt
+3. **Simplify**: Sometimes the problem itself can be simplified — a simpler data model,
+   fewer edge cases handled initially, a phased rollout
+4. **Execute incrementally**: Complete each sub-task with its own analysis → implementation
+   → review cycle
+
+### Practical example
+
+Instead of:
+```
+> Build a user authentication system with OAuth, email/password, 2FA, and password reset
+```
+
+Decompose into:
+```
+Session 1: > Analyze authentication requirements for the project (read existing code,
+             identify constraints, list decisions needed)
+         → Review analysis, approve approach
+
+Session 2: > Design the auth module: data model, interfaces, flow diagrams
+         → Review design, approve
+
+Session 3: > Implement email/password registration and login
+         → Review, fix issues
+
+Session 4: > Implement OAuth provider integration
+         → Review, fix issues
+
+Session 5: > Implement password reset flow
+         → Review, fix issues
+
+Session 6: > Implement 2FA (TOTP)
+         → Review, fix issues
+
+Session 7: > Integration testing and documentation for the auth module
+         → Final review
+```
+
+Each session produces focused, high-quality output. The total result is significantly
+better than a single "build auth" prompt — and easier to review at each step.
+
+### Task decomposition and the workflow
+
+Task decomposition is complementary to the phased workflow. The workflow defines
+**what type of work** happens (analysis, design, implementation). Decomposition defines
+**how much work** happens per prompt. Both work together:
+
+- **Workflow phases** ensure you analyze before implementing
+- **Decomposition** ensures each phase focuses on a manageable scope
+- **Review gates** between phases catch issues before they compound
+
+The combination of phased workflow + decomposition + review gates is the highest-leverage
+practice for agentic development quality.
+
+---
+
 ## Permission Modes per Phase
 
 Claude Code's native permission modes map naturally to workflow phases. Use them to
@@ -242,6 +330,7 @@ Patterns that consistently lead to poor results:
 | Never reviewing docs structure | Files accumulate and duplicate | Periodic docs review every few cycles |
 | Too much autonomy | Architectural drift, unwanted changes | Clear human gates at phase transitions |
 | Too little autonomy | Slow, needy agent that asks about everything | Define what can be decided autonomously |
+| Asking too much in one prompt | Shallow, incomplete results across all areas | Decompose into focused tasks — one concern per prompt |
 
 ---
 

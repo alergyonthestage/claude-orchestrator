@@ -231,11 +231,34 @@ is inconsistent.
 - Merge flow and direction (which branches merge into which)
 - What merges correspond to (human review points, PRs)
 - What commits correspond to (automated by LLM within approved work)
+- Per-branch policies (what kind of work is allowed on each branch)
 
 **Recommended scope**: Global (git conventions rarely differ between projects).
 
 **cco default**: `git-practices.md` — covers branch naming, conventional commits, and
 commit frequency.
+
+**Important: define the branching model early**. Before the agent starts working on a
+project, establish clear per-branch policies. Without them, the agent may commit directly
+to `main` or mix feature work with hotfixes. A well-defined branching model tells the
+agent exactly where to work and what each branch is for.
+
+Example of per-branch policies in your git rule:
+```markdown
+## Branch Policies
+- `main` — production-ready code. Only hotfixes and merge commits from `develop`.
+  No direct feature work.
+- `develop` — integration branch. Only merge commits from feature branches.
+  No direct commits except minor fixes.
+- `feat/<scope>/<description>` — feature development. All new work happens here.
+  Branch from `develop`, merge back to `develop` via PR.
+- `fix/<scope>/<description>` — bug fixes. Branch from `develop` for normal fixes,
+  from `main` for hotfixes. Merge back to the source branch.
+```
+
+Every user's workflow is different — trunk-based, git-flow, or a custom model — but
+the key is to **define it explicitly** so the agent knows the rules. The cco default
+provides a starting point; customize it to match your team's actual flow.
 
 ### 4. Language
 
@@ -477,6 +500,38 @@ and improve skills.
 ---
 
 ## Getting Started
+
+### Before you start: key decisions
+
+Before writing any configuration, take a few minutes to answer these questions. The
+answers directly shape your rules and project setup — getting them right upfront prevents
+rework and misaligned agent behavior.
+
+**Essential** (without these, the agent starts with wrong assumptions):
+
+| # | Decision | Where it goes | Questions to answer |
+|---|----------|---------------|---------------------|
+| 1 | **Language** | `rules/language.md` | What language for chat? For documentation? For code comments? |
+| 2 | **Git branching model** | `rules/git-practices.md` | Which branches exist? What work is allowed on each? What's the merge flow? (See [Git Practices](#3-git-practices) for examples) |
+| 3 | **Autonomy level** | `rules/workflow.md` | What requires human approval? What can the agent decide alone? Where are the gates? |
+
+**Recommended** (defaults cover the base case, but customizing improves results):
+
+| # | Decision | Where it goes | Questions to answer |
+|---|----------|---------------|---------------------|
+| 4 | **Maintenance policy** | Project CLAUDE.md or project rule | Is this an MVP or production? Are breaking changes allowed? How to handle legacy code? |
+| 5 | **Testing strategy** | Project CLAUDE.md | Which test tools are available? When should the agent run tests? What coverage is expected? |
+| 6 | **Workflow phases** | `rules/workflow.md` | Are the default 4 phases (analysis → design → implementation → docs) right for you, or do you need a different flow? |
+
+**Why this matters**: The agent's first session sets the tone for the entire project.
+If the branching model isn't defined, the agent commits to `main`. If autonomy rules
+are vague, the agent either asks about everything or makes decisions you didn't want.
+If the maintenance policy is missing, the agent wastes effort on backward compatibility
+for an early MVP. Five minutes of upfront decisions prevent hours of correction later.
+
+**Practical approach**: You don't need to write perfect rules on day one. Start with
+the essentials (1-3), use the defaults for everything else, and refine based on
+experience. The [periodic review](#periodic-review) practice catches what needs updating.
 
 ### If you're new to cco
 

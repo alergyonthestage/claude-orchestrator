@@ -282,6 +282,7 @@ After `cco project create`:
 
 - [ ] Verify `project.yml`: repos, ports, environment variables
 - [ ] Customize `.claude/CLAUDE.md` (or use `/init-workspace` on the first session)
+- [ ] **Define your git branching model** in `global/.claude/rules/git-practices.md` — specify which branches exist, what work is allowed on each, and the merge flow direction. See [Configuring Rules — Git Practices](configuring-rules.md#3-git-practices) for guidance and examples
 - [ ] Add custom settings in `.claude/settings.json` if needed
 - [ ] Configure `packs:` in `project.yml` if you have cross-project knowledge or shared skills to include
 - [ ] (Packs no longer require any CLAUDE.md edit — they're injected automatically)
