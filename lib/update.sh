@@ -19,7 +19,7 @@ GLOBAL_FILE_POLICIES=(
     ".claude/mcp.json:untracked"
     ".claude/agents/analyst.md:tracked"
     ".claude/agents/reviewer.md:tracked"
-    ".claude/rules/diagrams.md:tracked"
+    ".claude/rules/documentation.md:tracked"
     ".claude/rules/git-practices.md:tracked"
     ".claude/rules/workflow.md:tracked"
     ".claude/rules/language.md:generated"
@@ -37,7 +37,6 @@ GLOBAL_FILE_POLICIES=(
 PROJECT_FILE_POLICIES=(
     ".claude/CLAUDE.md:tracked"
     ".claude/settings.json:tracked"
-    ".claude/rules/language.md:untracked"
 )
 
 # Derived lists for _collect_file_changes().

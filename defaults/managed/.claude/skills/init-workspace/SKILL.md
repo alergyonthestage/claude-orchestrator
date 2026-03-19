@@ -65,6 +65,39 @@ Read `/workspace/.claude/CLAUDE.md` if it exists. Identify:
 If CLAUDE.md has substantial manual content, briefly summarize what you found
 and confirm with the user before overwriting.
 
+## Step 4b: Empty Workspace — User-Guided Initialization
+
+If the workspace is empty (no repos in workspace.yml, no extra mounts, AND
+CLAUDE.md is empty/missing/placeholder-only), guide the user:
+
+1. Ask: "This workspace has no repositories yet. How much detail can you
+   provide about the project?"
+
+   - **(A) Just an idea** — ask for a 2-3 sentence description (what it does,
+     who it's for). Generate a minimal CLAUDE.md with Overview populated.
+     Suggest: "Consider running /analyze or starting a conversation to
+     explore requirements before defining architecture."
+
+   - **(B) Some decisions made** — ask follow-up questions:
+     - What tech stack? (languages, frameworks, key dependencies)
+     - What are the main components or services?
+     - Any infrastructure needs? (databases, caches, queues)
+     - Any integrations? (APIs, external services)
+     Generate CLAUDE.md with Overview, Architecture, and Infrastructure
+     populated from the answers.
+
+   - **(C) Detailed specs available** — ask the user to share specs or
+     design documents. Parse the information and populate all relevant
+     sections. Suggest: "Run /design to formalize the architecture."
+
+2. In all cases:
+   - Keep generated content concise and factual
+   - Mark sections needing further work with `<!-- TODO: define after analysis/design -->`
+   - Save descriptions to workspace.yml for persistence
+
+If the workspace has repos or existing content, skip this step entirely
+and proceed with automatic discovery (the existing flow).
+
 ## Step 5: Write CLAUDE.md
 
 Write `/workspace/.claude/CLAUDE.md` with the following structure:

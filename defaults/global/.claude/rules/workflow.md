@@ -1,5 +1,11 @@
 # Workflow Phase Rules
 
+## Principles
+- Phase transitions require explicit user approval — never auto-advance
+- Decompose complex tasks: clarify scope before starting work
+- If the approach changes during implementation, pause and discuss
+- At the end of each phase, summarize findings and propose next steps
+
 ## Analysis Phase
 - Read and understand all relevant code before proposing changes
 - Identify dependencies, constraints, and potential risks
@@ -12,7 +18,7 @@
 - Propose clear interfaces and data models
 - Consider error handling and edge cases
 - Evaluate alternatives and document trade-offs
-- Produce diagrams where helpful (see diagrams rule)
+- Produce diagrams where helpful
 - DO NOT write implementation code during design
 
 ## Implementation Phase

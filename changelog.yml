@@ -102,3 +102,16 @@ entries:
       `cco update --sync <project> --local` applies framework defaults directly
       on installed projects (bypass publisher chain).
       See `docs/user-guides/config-lifecycle.md` for the complete guide.
+
+  - id: 8
+    date: "2026-03-19"
+    type: additive
+    title: "Defaults alignment — improved rules, documentation practices, workspace safety"
+    description: >
+      Global defaults updated to align with user guides (FI-2 + FI-5).
+      Key changes: `diagrams.md` renamed to `documentation.md` (includes docs
+      structure practices), `workflow.md` expanded with approval gates and task
+      decomposition principles, global CLAUDE.md simplified (no longer duplicates
+      rule content). Managed CLAUDE.md now includes context hierarchy and workspace
+      safety guidance. `/init-workspace` guides users through empty workspace setup.
+      Run `cco update` to discover changes and `cco update --sync` to apply.
