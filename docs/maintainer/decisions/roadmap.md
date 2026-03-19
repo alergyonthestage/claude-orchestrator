@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-19 (Added FI-8 PromptSubmit hook + global defaults review).
+> Last updated: 2026-03-19 (Reorganization: completed items moved to Completed section, Planned section cleaned up).
 >
 > **Note**: Sprint entries are historical. Path references (e.g., `.cco-meta`, `.cco-source`) in older
 > sprints reflect the layout at the time of writing. See Sprint 8 and the `.cco/` consolidation
@@ -13,10 +13,10 @@
 
 | Status | Items | Section |
 |--------|-------|---------|
-| ✅ Completed | 19 sprints / features | [→ Completed](#completed) |
-| 🐛 Known Bugs | 2 open · 6 fixed | [→ Known Bugs](#known-bugs) |
-| 🔜 Planned | Refactoring RF-1→4, Quick Wins, Sprint 6C → 12 | [→ Planned Sprints](#planned-sprints) |
-| 🔭 Exploratory | 8 ideas | [→ Long-term / Exploratory](#long-term--exploratory) |
+| ✅ Completed | 25 sprints / features | [→ Completed](#completed) |
+| 🐛 Known Bugs | 1 open · 8 fixed | [→ Known Bugs](#known-bugs) |
+| 🔜 Planned | FI-8, Quick Wins (FI-4, #10), Sprint 6C → 12 | [→ Planned Sprints](#planned-sprints) |
+| 🔭 Exploratory | 7 ideas | [→ Long-term / Exploratory](#long-term--exploratory) |
 | ❌ Declined | 3 items | [→ Declined / Won't Do](#declined--wont-do) |
 
 ---
@@ -27,47 +27,38 @@ Features are prioritized by impact for third-party users adopting claude-orchest
 
 ### Prioritization Notes (updated 2026-03-19)
 
-**Immediate priority**: Codebase refactoring. The comprehensive review (2026-03-18)
-identified concrete maintainability improvements across all modules. Addressing these
-before adding new features reduces future development cost and regression risk.
-The refactoring is split in 4 phases with increasing effort.
+**Completed**: RF-1→4, FI-2, FI-5, FI-7, Sprint 5c, Sprint 6 Phase A+B, Bugfix B5-B7.
 
-**Completed**: FI-2 and FI-5 (2026-03-19). Defaults aligned with user guides,
-init-workspace adaptive flow, documentation rule expanded.
+**Next**: FI-8 (PromptSubmit hook + hooks review).
 
-**Next**: FI-8 (PromptSubmit hook), remaining quick wins (FI-4, #10).
+**Then**: Quick wins (FI-4, #10), Security (Sprint 6C), E2E testing (Sprint 8), Linux OAuth (Sprint 9).
 
-**Then**: Security (Sprint 6C), E2E testing (Sprint 8), Linux OAuth (Sprint 9) are
-required for open-source readiness but independent of the refactoring work.
-
-**Later**: Worktree isolation (Sprint 10), pack inheritance (#9), RAG (Sprint 12) are
-valuable but not blocking.
+**Later**: Worktree isolation (Sprint 10), Pack Inheritance (#9), StatusLine (#10b), RAG (Sprint 12).
 
 | Category | Items | Effort | Benefit |
 |----------|-------|--------|---------|
-| **Refactoring (priority 1)** | RF-1 to RF-4: utilities, YAML parser, module decomposition, test+proxy gaps | Low → High | Maintainability, testability, reduced duplication |
-| ~~**Quick wins (priority 2)**~~ | ~~FI-2 init-workspace, FI-5 defaults alignment~~ | ~~Low~~ | ✅ Done (2026-03-19) |
-| **Quick wins (priority 2)** | FI-4 model config, #10 project edit, FI-8 PromptSubmit hook | Low-Medium | UX improvement |
+| **PromptSubmit hook (priority 1)** | FI-8: hook + global defaults review | Medium | Rule enforcement, consistency |
+| **Quick wins (priority 2)** | FI-4 model config, #10 project edit | Low-Medium | UX improvement |
 | **Security (priority 3)** | Sprint 6C network hardening | Medium-High | Required for production/open-source |
 | **Quality (priority 4)** | Sprint 8 E2E tests | Medium | Prerequisite for Linux onboarding |
 | **Onboarding (priority 5)** | Sprint 9 Linux OAuth | Medium | Pre-open-source requirement |
-| **Architecture (priority 6)** | Sprint 10 worktree, #9 pack inheritance | Medium | Valuable but not blocking |
+| **Architecture (priority 6)** | Sprint 10 worktree, #9 pack inheritance, #10b StatusLine | Medium | Valuable but not blocking |
 | **Exploratory** | Sprint 12 RAG, hot-reload, notifications, remote sessions, web UI | High | Long-term, evaluate demand |
 
 ```mermaid
 graph LR
-    DONE["✅ Completed<br/>Sprint 1-5c, Sprint 6+10,<br/>Sprint 6b, ADR-13,<br/>Sprint 7-Vault,<br/>FI-7 Config Sync,<br/>Bugfix #B1-#B7"]
+    DONE["✅ Completed<br/>Sprint 1-5c, Sprint 6+10,<br/>Sprint 6b, ADR-13,<br/>Sprint 7-Vault,<br/>FI-7 Config Sync,<br/>RF-1→4, FI-2, FI-5,<br/>Sprint 6 Phase A+B,<br/>Bugfix #B1-#B7"]
 
-    RF["Refactoring<br/>#RF-1 Foundations<br/>#RF-2 YAML parser<br/>#RF-3 Module decomposition<br/>#RF-4 Test & proxy gaps"]
-    QW["Quick Wins<br/>#FI-2 init-workspace<br/>#FI-5 branch protection<br/>#FI-4 model config<br/>#cco project edit"]
+    FI8["FI-8<br/>#PromptSubmit hook<br/>#Global defaults review"]
+    QW["Quick Wins<br/>#FI-4 model config<br/>#cco project edit"]
     S6S["Sprint 6C-Security<br/>#Network Hardening<br/>#Squid proxy"]
     S8E["Sprint 8-E2E<br/>#E2E Test Suite"]
     S9L["Sprint 9-Linux<br/>#Linux OAuth"]
     S10["Sprint 10+<br/>#Worktree isolation<br/>#Pack inheritance<br/>#StatusLine"]
     S12R["Sprint 12-RAG<br/>#Project RAG"]
 
-    DONE --> RF
-    RF --> QW
+    DONE --> FI8
+    FI8 --> QW
     QW --> S6S
     S6S --> S8E
     S8E --> S9L
@@ -79,146 +70,83 @@ graph LR
 
 ## Planned Sprints
 
-### Bugfix Sprint — #B5, #B6, #B7 ✓
+### FI-8: PromptSubmit Hook + Global Defaults Review
 
-Correzione di tre bug identificati il 2026-03-16 nel sistema di update e vault. Tutti risolti il 2026-03-16.
+**Priority**: 1 (next).
 
-#### #B5 Changelog markers a 0 su first install ✓ FIXED
+**Raised**: 2026-03-19.
 
-**Fixed in**: commit `5f57d60`.
+**Problem**: Rules are loaded at session start and always present in context, but in
+long sessions or after compaction the agent frequently forgets key behavioral rules —
+particularly git practices (working on branches, not committing to main) and commit
+discipline (frequent, atomic commits). This is a known limitation of current models:
+rules loaded at session start lose effective weight as the conversation grows.
 
-`cco init` inizializzava `last_seen_changelog` e `last_read_changelog` a `0`. Ora inizializzati a `_latest_changelog_id()`.
+**Proposed solution**: A lightweight `UserPromptSubmit` hook that injects a concise
+reminder (5-10 lines) into every prompt. The reminder reinforces only the rules that
+are most frequently forgotten — not a repetition of all rules, but a targeted nudge.
 
-#### #B6 Nessun vault sync prompt prima delle migrazioni ✓ FIXED
+Example hook output:
+```
+⚠️ Reminders:
+- Work on feature branches, never commit to main/develop directly
+- Commit after each logical unit of work (frequent, atomic commits)
+- Follow the approved design — pause if changes are needed
+- Check git status before starting work
+```
 
-**Fixed in**: commit `10c7ea6`.
+**Scope**: The hook would be a managed hook (in `managed-settings.json`), ensuring all
+sessions benefit from it. The reminder content should be reviewed and aligned with the
+global defaults shipped by cco.
 
-Vault sync prompt aggiunto prima di `_run_migrations()` in `_update_global()`, condizionato a: vault inizializzato AND migrazioni pendenti > 0. Evita doppio prompt in `--sync` mode.
+**Bundled with**: Review and update of `defaults/global/` rules and `defaults/managed/CLAUDE.md`
+to align with the user guides developed in FI-5 (development-workflow.md,
+configuring-rules.md). The global defaults were written before the guides existed and
+may need adjustments to reflect the practices documented there (task decomposition,
+branching model, review cycles).
 
-#### #B7 Errori di migrazione potenzialmente silenziosi ✓ FIXED
+**Tasks**:
 
-**Fixed in**: commit `5627ce4`.
+| # | Task | Effort |
+|---|------|--------|
+| 8a | Create `config/hooks/prompt-submit.sh` — concise reminder of key rules | Low |
+| 8b | Register `UserPromptSubmit` hook in `managed-settings.json` | Low |
+| 8c | Review `defaults/global/.claude/rules/` against user guides — update for consistency | Medium |
+| 8d | Review `defaults/global/.claude/CLAUDE.md` against user guides — update for consistency | Medium |
+| 8e | Review `defaults/managed/CLAUDE.md` — update if needed | Low |
+| 8f | Test: verify hook fires correctly, measure context cost per prompt | Low |
 
-Tutti i chiamanti di `_run_migrations()` ora controllano il codice di ritorno. `cmd-update.sh` traccia errori per progetto e mostra un summary. Errori propagati con messaggi chiari e istruzioni per ri-tentare.
+**Effort**: Medium overall. 8a-8b are low effort. 8c-8d require careful review.
 
----
-
-### Sprint 5c-Lifecycle — Resource Lifecycle, Policies & Tutorial Separation
-
-Risolve problemi identificati il 2026-03-16: il sistema di update non rileva modifiche
-al CLAUDE.md dei project (policy `user-owned` errata), il tutorial serve due scopi
-incompatibili (educazione vs editing config), e manca una strategia unificata per il
-lifecycle delle risorse (defaults, templates, publish/install).
-
-**Status**: Implemented (2026-03-17). All 4 phases complete.
-**Analysis**: [`docs/maintainer/configuration/resource-lifecycle/analysis.md`](../configuration/resource-lifecycle/analysis.md)
-
-#### Problemi identificati
-
-1. **Project CLAUDE.md invisible agli update**: `PROJECT_FILE_POLICIES` marca
-   `.claude/CLAUDE.md` come `user-owned` → nessuna notifica di aggiornamenti
-   dal template. Il 75% delle modifiche al tutorial erano invisibili a `cco update`.
-2. **Policy `user-owned` troppo aggressiva**: silenzia completamente gli update,
-   corretto per file 100% utente (project.yml, secrets.env) ma sbagliato per file
-   dove il framework fornisce contenuto evolutivo.
-3. **Tutorial = due use case incompatibili**: contenuto educativo (deve essere sempre
-   aggiornato) + editor di configurazione (deve essere personalizzabile dall'utente).
-4. **Nessun meccanismo di update per publish/install**: FI-7 è in roadmap ma le
-   fondamenta (policy, lifecycle model) non erano definite.
-
-#### Task di implementazione
-
-**Phase 1: Bug fix — File policy (priorità immediata)**
-
-| # | Task | Ref |
-|---|------|-----|
-| 1a | Rename `user-owned` → `untracked` in `lib/update.sh` e variabili derivate | analysis §3.2 |
-| 1b | Cambiare `.claude/CLAUDE.md` da `untracked` a `tracked` in `PROJECT_FILE_POLICIES` | analysis §3.4, §7.2 |
-| 1c | Verificare che `.cco/base/CLAUDE.md` sia popolato alla creazione del project | analysis §8.1 |
-| 1d | Aggiungere opzione **(N)ew-file** a `_interactive_sync()` — salva versione framework come `.new` accanto al file utente | analysis §3.3 |
-
-**Phase 2: Tutorial separation**
-
-| # | Task | Ref |
-|---|------|-----|
-| 2a | Creare directory `internal/tutorial/` e spostare contenuti da `templates/project/tutorial/` | analysis §4.2 |
-| 2b | Aggiornare `cco start` per riconoscere `tutorial` come nome riservato e lanciare da `internal/tutorial/` | analysis §4.2, tutorial design §7 |
-| 2c | Gestire session state del tutorial (transcripts) in `user-config/.cco/tutorial-state/` o simile | analysis §10 Q4 |
-| 2d | Rimuovere creazione tutorial da `cco init` (era in `cmd-init.sh`) | tutorial design §7 (superseded) |
-| 2e | Aggiornare `cco project list` per escludere tutorial | analysis §4.2 |
-| 2f | Migration informativa per utenti con `user-config/projects/tutorial/` esistente | analysis §4.4 |
-
-**Phase 3: Config-editor template**
-
-| # | Task | Ref |
-|---|------|-----|
-| 3a | Creare template `templates/project/config-editor/` con `user-config` come repo (non extra mount) | analysis §4.3 |
-| 3b | CLAUDE.md con istruzioni su vault, publish/install, safety rules | analysis §4.3 |
-| 3c | Skills: `/setup-project`, `/setup-pack` (migrate da tutorial) | tutorial design §5.2, §5.3 |
-| 3d | Rules per config editing (backup, validazione, gestione vault) | analysis §4.3 |
-| 3e | Aggiungere template a `cco template list` | — |
-
-**Phase 4: Documentazione**
-
-| # | Task | Ref |
-|---|------|-----|
-| 4a | Riscrivere `update-system/design.md` con nuova tassonomia (eliminare annotazioni old/new) | analysis §3 |
-| 4b | Riscrivere `tutorial/design.md` per riflettere modello internal (eliminare annotazioni old/new) | analysis §4.2 |
-| 4c | Aggiornare `reference/cli.md` con `cco start tutorial` e nuovo comportamento | — |
-| 4d | Aggiornare `getting-started/first-project.md` con riferimento al tutorial built-in | — |
-
-#### Decisioni prese in questa sessione
-
-1. **Tutorial diventa internal** (Opzione D): non è un template, vive in `internal/tutorial/`,
-   `cco start tutorial` lo lancia direttamente. Non installato in user-config, non appare in
-   `cco project list`, sempre aggiornato.
-2. **`internal/` è la directory corretta**: `defaults/` ha semantica diversa (global = copiato
-   su init, managed = baked in Docker). Tutorial non è nessuna delle due.
-3. **Config-editor è un template separato**: monta `user-config` come repo (non extra mount ro),
-   include istruzioni su vault/publish/install, è user-owned con policy standard.
-4. **`user-owned` → `untracked`**: rename per chiarezza semantica.
-5. **Project CLAUDE.md → tracked**: il template fornisce struttura, il 3-way merge preserva
-   il contenuto utente.
-6. **Skip + .new**: nuova opzione sync per file ristrutturati dall'utente, alternativa a merge.
-7. **cco-develop usa publish/install**: non è un progetto internal come tutorial. Dimostra che
-   il Config Repo model funziona per team reali. Implementazione separata, dopo FI-7.
-8. **FI-7 beneficia di questo lavoro**: le fondamenta (policy, lifecycle model, `.cco/source`,
-   3-way merge engine) sono ora definite e documentate.
-
-#### Documenti di riferimento per l'implementazione
-
-| Documento | Ruolo |
-|-----------|-------|
-| `docs/maintainer/configuration/resource-lifecycle/analysis.md` | **Primario**: decisioni, policy, architettura, task list |
-| `docs/maintainer/internal/tutorial/design.md` §4-§6 | Contenuto dei file tutorial (CLAUDE.md, skills, rules) — ancora valido |
-| `docs/maintainer/configuration/update-system/design.md` | Contesto: come funziona il sistema di update (con note di amendment 2026-03-16) |
-| `lib/update.sh` linee 25-75 | Codice: file policies attuali da modificare |
-| `lib/update.sh` `_interactive_sync()` | Codice: dove aggiungere opzione Skip+.new |
-
-**Effort**: Medium. Phase 1 è low-effort (bugfix). Phase 2-3 sono medium. Phase 4 è follow-up.
+**Dependencies**: FI-5 completed (2026-03-19). Guides are finalized — defaults can
+now be aligned to them.
 
 ---
 
-### Sprint 6-Security — Sandbox & Network Hardening
+### Quick Wins — FI-4, #10
 
-Elevato a priorità alta. Tre componenti di sicurezza: Docker socket proxy con filtro granulare, restrizioni mount per sibling container, e controllo dell'accesso internet. Include bugfix al default di `mount_socket`.
+**Priority**: 2 (after FI-8). Low effort, high benefit.
 
-**Status**: Phase A & B implemented. Phase C pending.
-**Docs**: [analysis](../integration/docker-security/analysis.md) | [design](../integration/docker-security/design.md)
+#### FI-4 Per-project model configuration
 
-#### Phase A: `mount_socket` Safe Default → `false` (bugfix)
+Add `model:` field to `project.yml`, passed to `claude --model` at launch.
 
-Change default from `true` to `false` in `cmd-start.sh:111`. Migration adds explicit `mount_socket: true` to existing projects. Breaking change — projects relying on implicit socket access must declare it.
+**Ref**: [FI-4](framework-improvements.md#fi-4-per-project-llm-model-configuration)
+**Effort**: Medium-Low.
 
-#### Phase B: Docker Socket Proxy (Go binary)
+#### #10 `cco project edit <name>` command
 
-Custom Go HTTP proxy (`cco-docker-proxy`) between Claude and Docker socket. Filters requests by:
-- **Container policy**: `project_only` (default) / `allowlist` / `denylist` / `unrestricted` — per name prefix and label
-- **Mount restrictions**: `none` / `project_only` (default) / `allowlist` / `any` — with implicit deny for sensitive paths
-- **Security constraints**: block `--privileged`, drop capabilities, resource limits, max container count
-- **Network filtering**: restrict container network membership to project networks
+Open project.yml in `$EDITOR` and regenerate docker-compose.yml after save.
 
-Architecture: proxy listens on `/var/run/docker-proxy.sock`, forwards to real socket. Claude's `DOCKER_HOST` points to proxy. Proxy runs as root (socket access), Claude runs as unprivileged user.
+**Effort**: Low.
+
+---
+
+### Sprint 6C-Security — Network Hardening
+
+**Priority**: 3 (security, required for open-source).
+
+**Status**: Phase A (mount_socket default) + Phase B (Docker socket proxy) implemented. Phase C pending.
 
 #### Phase C: Network Hardening (Squid sidecar)
 
@@ -228,7 +156,8 @@ Layered defense for internet access control:
 
 Configuration: `network.internet: full | restricted | none` with `allowed_domains` / `blocked_domains`. Squid sidecar bridges internal (project) and external (internet) networks. Created containers inherit the same restriction or can be overridden.
 
----
+**Docs**: [analysis](../integration/docker-security/analysis.md) | [design](../integration/docker-security/design.md)
+**Effort**: Medium-High.
 
 ---
 
@@ -306,189 +235,7 @@ Opt-in git isolation for container sessions. When enabled, repos are mounted at 
 
 ---
 
-### FI-7 — Publish-Install Sync and Resource Versioning
-
-**Priority**: 1 (immediate). Completes the user-config lifecycle — the framework's core value proposition.
-
-**Status**: Implemented.
-
-**Context**: The resource-lifecycle analysis (Sprint 5c) established file policies, the
-lifecycle model, and `.cco/source` tracking. FI-7 builds on these foundations to add
-the missing piece: update notification and merge for published/installed resources.
-
-**Key design decisions** (see analysis and design docs for full rationale):
-
-1. **Unified discovery, separated actions** — `cco update` is the single entry point
-   for "what's new?" (framework + remotes + changelog). Actions are type-specific:
-   `--sync` for framework files, `cco project update` for publisher updates,
-   `cco pack update` for pack updates.
-
-2. **Source-aware framework sync** — for installed projects, `cco update --sync`
-   applies migrations but skips opinionated files (managed by publisher chain).
-   `--local` flag as escape hatch to apply framework defaults directly.
-
-3. **Update chain**: Framework → Publisher → Consumer. The publisher integrates
-   framework improvements and publishes curated versions. Consumer receives via
-   `cco project update` with 3-way merge preserving local customizations.
-
-4. **Publish safety pipeline** — migration check (blocking), framework alignment
-   (warning), secret scan (blocking), `.cco/publish-ignore`, diff review,
-   per-file confirmation.
-
-5. **Project internalize** — `cco project internalize <name>` disconnects from
-   remote, converting to local project. Analogous to `cco pack internalize`.
-
-**New commands**:
-- `cco project update <name> [--force] [--dry-run]` / `--all`
-- `cco project internalize <name>`
-- `cco update [--offline] [--no-cache]` (new flags)
-- `cco update --sync <project> [--local]` (new flag)
-- `cco project publish <name> <remote> [--yes]` (enhanced)
-
-**Docs**: [analysis](../configuration/sharing/publish-install-sync-analysis.md) | [design](../configuration/sharing/publish-install-sync-design.md) | [user guide](../../user-guides/configuration-management.md) | [FI-7](framework-improvements.md#fi-7-publish-install-sync-and-resource-versioning) | [resource-lifecycle analysis](../configuration/resource-lifecycle/analysis.md)
-**Completed**: 2026-03-17 (all 6 phases).
-
----
-
-### Refactoring — RF-1, RF-2, RF-3, RF-4
-
-**Priority**: 1 (immediately). Improves maintainability before adding new features.
-
-**Origin**: [Comprehensive review 2026-03-18](reviews/18-03-2026-comprehensive-review.md) — full codebase analysis covering architecture, code quality, tests, documentation, proxy, and configuration.
-
-#### RF-1: Foundations (Quick Wins) ✓
-
-**Completed**: 2026-03-18. Branch: `refactor/rf-1/foundations`.
-
-| Item | Status | Details |
-|------|--------|---------|
-| `_sed_i()`, `_sed_i_raw()` helpers | ✅ | Centralized in `lib/utils.sh`; ~20 inline `sed -i` patterns replaced across 4 modules |
-| `_substitute()` helper | ✅ | awk-based (avoids delimiter conflicts with `/` or `\|` in values); replaces `{{PLACEHOLDER}}` patterns |
-| `_sed_i_or_append()` helper | ✅ | Moved from `lib/update.sh` to `lib/utils.sh`; used by `cmd-pack.sh` |
-| `_cco_resolve_path()` | ✅ | Collapses 11 identical new→old path fallback functions in `lib/paths.sh` |
-| Error checks | ✅ | `\|\| die` on `mkdir`/`cp` in `cmd-init.sh`, `cmd-new.sh` |
-| Exit traps | ✅ | Cleanup trap for temp dir in `cmd-new.sh` |
-| `lib/constants.sh` | Deferred | Low value relative to effort; magic strings are few and localized |
-
-**Result**: 96 lines added, 134 removed (net -38 lines). 801/806 tests pass (5 pre-existing failures).
-
-#### RF-2: YAML Parser Consolidation ✓
-
-**Completed**: 2026-03-18. Branch: `refactor/rf-2/yaml-parser-consolidation`.
-
-Replaced 6 near-identical awk getter functions with a single `_yml_query(file, key_path, mode)` engine that auto-detects depth (1-4 levels) and extraction mode (scalar/list/map). The 6 public functions (`yml_get`, `yml_get_list`, `yml_get_deep`, `yml_get_deep_list`, `yml_get_deep_map`, `yml_get_deep4`) become one-liner wrappers. Specialized parsers (repos, ports, env, extra_mounts, packs, pack_*) unchanged.
-
-**Result**: 200 lines removed, 111 added (net -90 lines). 46/46 YAML parser tests pass.
-
-#### RF-3: Module Decomposition ✓
-
-**Completed**: 2026-03-18. Branch: `refactor/rf-3/module-decomposition`.
-
-| Module | Before | After | Result |
-|--------|--------|-------|--------|
-| `update.sh` (2,344 LOC, 37 fn) | God module: merge, discovery, migration, changelog, sync, remote | 8 files: `update-hash-io.sh`, `update-merge.sh`, `update-meta.sh`, `update-discovery.sh`, `update-sync.sh`, `update-changelog.sh`, `update-remote.sh` + coordinator | Split by responsibility |
-| `cmd-project.sh` (1,899 LOC, 20 fn) | Monolithic with 9 subcommands | 6 files: `cmd-project-create.sh`, `cmd-project-query.sh`, `cmd-project-install.sh`, `cmd-project-pack-ops.sh`, `cmd-project-publish.sh`, `cmd-project-update.sh` | Split by subcommand family |
-| `cmd-start.sh` (1,063 LOC) | Monolithic cmd_start() (~687 lines) | 9 focused helpers: `_start_resolve_project`, `_start_load_config`, `_start_check_health`, `_start_prepare_state`, `_start_generate_integrations`, `_start_generate_compose`, `_start_generate_metadata`, `_start_show_summary`, `_start_launch` | Internal decomposition, single file |
-
-**Result**: 5,306 LOC decomposed. 802/807 tests pass (5 pre-existing).
-
-#### RF-4: Test & Proxy Gaps ✓
-
-**Completed**: 2026-03-18. Branch: `refactor/rf-4/test-proxy-gaps`.
-
-**Proxy (Go)** — 27 new tests:
-- ✅ `cache_test.go` (13 tests): Refresh, Resolve by ID/shortID/name, Add/Remove, stale updates
-- ✅ `proxy_test.go` (14 tests): create allowed/denied, label/readonly injection, container ops, list filtering, always-allowed paths, privileged denied, max containers, sensitive mounts
-- ✅ Fixed 2 ignored errors (filepath.Match in containers.go, json.Marshal in proxy.go)
-- Deferred: network filter extraction (low priority, inline implementation is functional)
-
-**Tests (bash)** — 20 new tests:
-- ✅ Error message validation (7 tests): project create + pack create negative cases
-- ✅ secrets.sh coverage (9 tests): KEY=VALUE loading, comments, malformed lines, quotes, special chars
-- ✅ workspace.sh coverage (4 tests): repo generation, description seeding, idempotency
-
-**Result**: Go proxy from 89 → 116 tests. Bash from 802 → 822 tests. Total +47 tests.
-
-**Bug found**: workspace.sh description preservation across sessions is broken (pre-existing, file redirect truncates before awk reads). Tracked separately.
-
----
-
-### Quick Wins — FI-2 ✓, FI-5 ✓, FI-4, #10
-
-**Priority**: 2 (after refactoring). Low effort, high benefit.
-
-#### FI-2 `/init-workspace` empty workspace handling ✓ DONE
-
-**Completed**: 2026-03-19. Adaptive flow added to init-workspace skill: detects empty
-workspaces (no repos, no content) and guides the user through 3 levels of detail
-(idea only → some decisions → detailed specs). Existing repo-based discovery unchanged.
-
-**Ref**: [FI-2](framework-improvements.md#fi-2-init-workspace-on-empty-projects)
-**Design**: [`defaults-alignment-design.md`](../configuration/rules-and-guidelines/defaults-alignment-design.md) §5
-
-#### FI-5 remaining: defaults alignment ✓ DONE
-
-**Completed**: 2026-03-19. Scope revised from "branch protection docs" to "defaults
-alignment with user guides" — the actual gap was between shipped defaults and the
-practices documented in the guides. Changes:
-- Managed CLAUDE.md: +context hierarchy, +workspace safety
-- Global CLAUDE.md: rewritten (no duplications, points to rules)
-- `workflow.md`: +Principles (approval gates, decomposition)
-- `diagrams.md` → `documentation.md` (+ docs structure, project tracking, stale review)
-- Template cleanup (removed non-functional language.md override)
-- Migrations: global/011 (rename), project/012 (cleanup)
-
-**Ref**: [FI-5](framework-improvements.md#fi-5-human-workflow-guide-and-review-best-practices)
-**Design**: [`defaults-alignment-design.md`](../configuration/rules-and-guidelines/defaults-alignment-design.md)
-
-#### FI-4 Per-project model configuration
-
-Add `model:` field to `project.yml`, passed to `claude --model` at launch.
-
-**Ref**: [FI-4](framework-improvements.md#fi-4-per-project-llm-model-configuration)
-**Effort**: Medium-Low.
-
-#### #10 `cco project edit <name>` command
-
-Open project.yml in `$EDITOR` and regenerate docker-compose.yml after save.
-
-**Effort**: Low.
-
----
-
-### Sprint 6C-Security — Network Hardening
-
-**Priority**: 3 (security, required for open-source).
-
-**Status**: Phase A (mount_socket default) + Phase B (Docker socket proxy) implemented. Phase C pending.
-
-#### Phase C: Network Hardening (Squid sidecar)
-
-Layered defense for internet access control:
-- **Layer 1**: Claude Code deny rules (`WebFetch`, `WebSearch`, `curl`, `wget`) for restricted/none modes
-- **Layer 2**: Docker network `internal: true` + Squid proxy sidecar with SNI-based domain filtering
-
-Configuration: `network.internet: full | restricted | none` with `allowed_domains` / `blocked_domains`. Squid sidecar bridges internal (project) and external (internet) networks. Created containers inherit the same restriction or can be overridden.
-
-**Docs**: [analysis](../integration/docker-security/analysis.md) | [design](../integration/docker-security/design.md)
-**Effort**: Medium-High.
-
----
-
-### Sprint 11-Ecosystem — Pack, Polish & Automation
-
-**Priority**: 3-4 (after security). Previously included FI-7 and quick wins — those are
-now elevated to their own priority levels above.
-
-**Remaining items**:
-
-#### FI-1 ✅ Implemented
-
-#### FI-3 ✅ Implemented
-
-#### FI-6 ✅ Implemented
-
-#### #9 Pack Inheritance / Composition
+### #9 Pack Inheritance / Composition
 
 Allow packs to extend other packs:
 ```yaml
@@ -503,7 +250,7 @@ files:
 
 ---
 
-#### #10b Status bar improvements
+### #10b Status bar improvements
 
 Improve the StatusLine hook (`config/hooks/statusline.sh`) for better usability.
 
@@ -692,6 +439,73 @@ Migration `005_split_global_setup.sh` renames existing `setup.sh` → `setup-bui
 ---
 
 ## Completed
+
+### Quick Wins: FI-2 + FI-5 (2026-03-19) ✓
+
+**FI-2**: Adaptive init-workspace flow for empty workspaces — detects empty workspaces (no repos, no content) and guides the user through 3 levels of detail (idea only → some decisions → detailed specs). Existing repo-based discovery unchanged.
+
+**FI-5**: Defaults aligned with user guides — managed CLAUDE.md expanded (+context hierarchy, +workspace safety), global CLAUDE.md rewritten (no duplications, points to rules), `workflow.md` expanded with approval gates and task decomposition, `diagrams.md` → `documentation.md` (+ docs structure, project tracking, stale review), template cleaned up (removed non-functional language.md override), migrations 011 (global rename) and 012 (project cleanup).
+
+**Ref**: [FI-2](framework-improvements.md#fi-2-init-workspace-on-empty-projects) | [FI-5](framework-improvements.md#fi-5-human-workflow-guide-and-review-best-practices)
+**Design**: [`defaults-alignment-design.md`](../configuration/rules-and-guidelines/defaults-alignment-design.md)
+
+---
+
+### Codebase Refactoring RF-1→4 (2026-03-18) ✓
+
+Comprehensive codebase refactoring in 4 phases, addressing maintainability improvements identified in the [comprehensive review](reviews/18-03-2026-comprehensive-review.md).
+
+**RF-1 Foundations**: `_sed_i()`, `_substitute()`, `_cco_resolve_path()` helpers centralized in `lib/utils.sh` and `lib/paths.sh`. ~20 inline `sed -i` patterns replaced. Error checks and exit traps added. Net -38 lines.
+
+**RF-2 YAML Parser**: 6 near-identical awk getter functions replaced with single `_yml_query(file, key_path, mode)` engine. Net -90 lines. 46/46 YAML parser tests pass.
+
+**RF-3 Module Decomposition**: `update.sh` (2,344 LOC) split into 8 files by responsibility. `cmd-project.sh` (1,899 LOC) split into 6 files by subcommand. `cmd-start.sh` decomposed into 9 internal helpers. 5,306 LOC decomposed total.
+
+**RF-4 Test & Proxy Gaps**: +27 Go proxy tests (cache, proxy filtering, security). +20 bash tests (error messages, secrets.sh, workspace.sh). Total +47 tests. Fixed 2 ignored errors in Go code.
+
+---
+
+### FI-7: Publish-Install Sync (2026-03-17) ✓
+
+Completes the user-config lifecycle with update notification and merge for published/installed resources. Built on Sprint 5c foundations (file policies, lifecycle model, `.cco/source` tracking).
+
+**Key design**: Unified discovery via `cco update` (framework + remotes + changelog). Source-aware sync (`--sync` skips opinionated files for installed projects, `--local` as escape hatch). Update chain: Framework → Publisher → Consumer with 3-way merge. Publish safety pipeline (migration check, secret scan, diff review, per-file confirmation). `cco project internalize` to disconnect from remote.
+
+**New commands**: `cco project update`, `cco project internalize`, `cco update --offline/--no-cache`, `cco update --sync <project> --local`, `cco project publish` (enhanced).
+
+**Docs**: [analysis](../configuration/sharing/publish-install-sync-analysis.md) | [design](../configuration/sharing/publish-install-sync-design.md) | [FI-7](framework-improvements.md#fi-7-publish-install-sync-and-resource-versioning)
+
+---
+
+### Resource Lifecycle & Tutorial Separation (Sprint 5c) (2026-03-17) ✓
+
+Redesign of resource lifecycle policies and tutorial separation. Resolved: project CLAUDE.md invisible to updates (policy `user-owned` errata), tutorial serving two incompatible purposes, missing lifecycle model for publish/install.
+
+**Key changes**: `user-owned` → `untracked` rename for clarity. Project CLAUDE.md changed from `untracked` to `tracked` (3-way merge preserves user content). Tutorial moved to `internal/tutorial/` (always current, `cco start tutorial` launches directly). Config-editor separated as its own template. Skip+.new option added to `_interactive_sync()`. File policies formalized (untracked, tracked, generated).
+
+**Analysis**: [`docs/maintainer/configuration/resource-lifecycle/analysis.md`](../configuration/resource-lifecycle/analysis.md)
+
+---
+
+### Docker Socket Proxy — Sprint 6 Phase A+B ✓
+
+**Phase A**: `mount_socket` safe default changed from `true` to `false`. Migration adds explicit `mount_socket: true` to existing projects. Breaking change — projects relying on implicit socket access must declare it.
+
+**Phase B**: Custom Go HTTP proxy (`cco-docker-proxy`) between Claude and Docker socket. Filters by container policy (project_only/allowlist/denylist/unrestricted), mount restrictions (none/project_only/allowlist/any with implicit deny for sensitive paths), security constraints (block --privileged, drop capabilities, resource limits, max containers), and network filtering. Proxy listens on `/var/run/docker-proxy.sock`, Claude's `DOCKER_HOST` points to proxy.
+
+**Docs**: [analysis](../integration/docker-security/analysis.md) | [design](../integration/docker-security/design.md)
+
+---
+
+### Bugfix Sprint B5-B7 (2026-03-16) ✓
+
+Three bugs identified and fixed on 2026-03-16:
+
+- **B5**: `cco init` initialized changelog markers (`last_seen_changelog`, `last_read_changelog`) to `0` instead of `_latest_changelog_id()`. All changelog entries appeared as new on first update.
+- **B6**: No vault sync prompt before migrations in `cco update`. Prompt added before `_run_migrations()`, conditioned on vault initialized AND pending migrations > 0.
+- **B7**: All callers of `_run_migrations()` ignored return code. Fixed: return code checked in `_update_global`, `_update_project`, `cmd_init`. Error summary per project in `cmd-update.sh`.
+
+---
 
 ### Multi-PC Config Sync & Memory Policy (Sprint 7-Vault) ✓
 
@@ -1019,92 +833,6 @@ PATH setup, and testing of the native installer in Docker context.
 - **Explicit `cco reload <project>` command**: rather than automatic detection, expose a host-side command that sends a reload signal to the running container. Simpler, more predictable, no polling overhead.
 
 **Decision criteria**: hot-reload adds complexity (signal handling, partial-state risks). It is only worth implementing if the restart cost is measurably painful for users. Collect feedback before committing to an implementation approach.
-
----
-
-### FI-4: Per-Project LLM Model Configuration
-
-**Raised**: 2026-03-14.
-
-Add `model:` field to `project.yml`, passed to `claude --model` at launch via entrypoint. Enables choosing different models per project (e.g., haiku for simple projects, opus for complex ones). Per-agent model is already supported natively via agent YAML frontmatter. Per-phase model is not practical (phases are conceptual, not framework-managed). Global default is a simple `CLAUDE_MODEL` env var.
-
-**Ref**: [FI-4](framework-improvements.md#fi-4-per-project-llm-model-configuration)
-**Effort**: Medium (project.yml schema, entrypoint integration, documentation).
-
----
-
-### FI-5: Human Workflow & Review Best Practices Guide ✓ DONE
-
-**Raised**: 2026-03-14. **Guides completed**: 2026-03-16. **Defaults aligned**: 2026-03-19.
-
-**Phase 1** (2026-03-16): User guides written:
-- ✅ `docs/user-guides/development-workflow.md` — context, reviews, phases, maintenance
-- ✅ `docs/user-guides/configuring-rules.md` — rules categories, grouping, skills, packs
-
-**Phase 2** (2026-03-19): Defaults aligned with guides:
-- ✅ Global CLAUDE.md rewritten (no duplications, points to rules)
-- ✅ `workflow.md` expanded with approval gates and task decomposition
-- ✅ `diagrams.md` → `documentation.md` (+ docs structure, project tracking)
-- ✅ Template cleaned up (removed non-functional language.md override)
-- ✅ Managed CLAUDE.md: +context hierarchy, +workspace safety
-
-**Scope revision**: Branch protection docs dropped — out of cco scope. Users configure
-GitHub rulesets independently if needed. cco's role is providing defaults and guides,
-not configuring external services.
-
-**Ref**: [FI-5](framework-improvements.md#fi-5-human-workflow-guide-and-review-best-practices)
-**Design**: [`defaults-alignment-design.md`](../configuration/rules-and-guidelines/defaults-alignment-design.md)
-
----
-
-### FI-8: PromptSubmit Hook + Global Defaults Review
-
-**Raised**: 2026-03-19.
-
-**Problem**: Rules are loaded at session start and always present in context, but in
-long sessions or after compaction the agent frequently forgets key behavioral rules —
-particularly git practices (working on branches, not committing to main) and commit
-discipline (frequent, atomic commits). This is a known limitation of current models:
-rules loaded at session start lose effective weight as the conversation grows.
-
-**Proposed solution**: A lightweight `UserPromptSubmit` hook that injects a concise
-reminder (5-10 lines) into every prompt. The reminder reinforces only the rules that
-are most frequently forgotten — not a repetition of all rules, but a targeted nudge.
-
-Example hook output:
-```
-⚠️ Reminders:
-- Work on feature branches, never commit to main/develop directly
-- Commit after each logical unit of work (frequent, atomic commits)
-- Follow the approved design — pause if changes are needed
-- Check git status before starting work
-```
-
-**Scope**: The hook would be a managed hook (in `managed-settings.json`), ensuring all
-sessions benefit from it. The reminder content should be reviewed and aligned with the
-global defaults shipped by cco.
-
-**Bundled with**: Review and update of `defaults/global/` rules and `defaults/managed/CLAUDE.md`
-to align with the user guides developed in FI-5 (development-workflow.md,
-configuring-rules.md). The global defaults were written before the guides existed and
-may need adjustments to reflect the practices documented there (task decomposition,
-branching model, review cycles).
-
-**Tasks**:
-
-| # | Task | Effort |
-|---|------|--------|
-| 8a | Create `config/hooks/prompt-submit.sh` — concise reminder of key rules | Low |
-| 8b | Register `UserPromptSubmit` hook in `managed-settings.json` | Low |
-| 8c | Review `defaults/global/.claude/rules/` against user guides — update for consistency | Medium |
-| 8d | Review `defaults/global/.claude/CLAUDE.md` against user guides — update for consistency | Medium |
-| 8e | Review `defaults/managed/CLAUDE.md` — update if needed | Low |
-| 8f | Test: verify hook fires correctly, measure context cost per prompt | Low |
-
-**Effort**: Medium overall. 8a-8b are low effort. 8c-8d require careful review.
-
-**Dependencies**: Ideally done after FI-5 remaining (branch protection docs, template
-references) so the guides are finalized before aligning defaults to them.
 
 ---
 
