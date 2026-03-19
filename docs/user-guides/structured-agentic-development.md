@@ -2,6 +2,8 @@
 
 > How claude-orchestrator turns proven agentic development principles into
 > a ready-to-use framework — so you can focus on building, not on configuring.
+>
+> For operational practices: [development-workflow.md](development-workflow.md)
 
 ---
 
@@ -410,39 +412,13 @@ reused. cco implements this through the **skills system**:
   workflows that extend or override the defaults.
 - Skills are markdown files with structured instructions. They evolve with the project.
 
-### Periodic Health Checks
+### Maintenance, Drift, and Scope Creep
 
-At each major milestone, review:
+cco addresses common failure modes — stale docs, agent drift, scope creep — through
+short isolated sessions, explicit phase constraints, frequent commits, and review gates.
 
-- **Rules**: Still relevant? Any contradictions? Prune aggressively.
-- **Documentation**: Accurately reflects the current codebase?
-- **CLAUDE.md**: Up to date with current project state?
-- **Knowledge packs**: Still accurate? Any stale references?
-
-cco's migration system (`cco update`) handles framework-level updates automatically.
-Project-level health checks remain the developer's responsibility.
-
-### Handling Agent Drift
-
-Agent drift occurs when the agent gradually deviates from the intended approach during
-long tasks. cco's mitigations:
-
-- **Short sessions** (Docker isolation, one project per container)
-- **Frequent commits** (workflow rule, git-practices rule)
-- **Explicit constraints** in rules ("DO NOT modify files during analysis")
-- **Diff review** via `/review` skill and `reviewer` agent before merging
-
-### Scope Creep Prevention
-
-Agents tend toward "helpful over-reach" — fixing adjacent code, refactoring something
-they happen to read, adding features they think would be useful.
-
-cco addresses this through:
-
-- **Workflow phases** with explicit behavioral constraints (analysis = read only,
-  design = no implementation code)
-- **Rules** that can define explicit "do not modify" boundaries
-- **Review gates** that catch out-of-scope changes before they are merged
+For detailed operational practices (periodic maintenance checklists, review cycles,
+common pitfalls), see the [Development Workflow guide](development-workflow.md).
 
 ---
 
