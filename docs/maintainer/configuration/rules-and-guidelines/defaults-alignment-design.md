@@ -5,7 +5,7 @@
 >
 > Date: 2026-03-19
 >
-> **Status**: Design — pending review and approval.
+> **Status**: Implemented (2026-03-19).
 >
 > **Predecessors**:
 > - [`analysis.md`](analysis.md) — rules categories, scope mapping, file grouping

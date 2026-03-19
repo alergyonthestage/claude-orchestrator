@@ -8,6 +8,12 @@
 - After completing a development cycle, review and update stale docs
 - Periodically evaluate if docs need reorganization for better discovery
 
+## Project Tracking
+- Maintain a roadmap file (e.g., docs/roadmap.md) as the single source
+  of truth for planned work, priorities, and known issues
+- Update it at the end of each development cycle
+- Include status markers for completed, in-progress, and planned items
+
 ## Diagrams
 
 Mermaid diagrams are required in written artifacts — files written
