@@ -182,3 +182,21 @@
 **Docs**: [analysis](../configuration/sharing/publish-install-sync-analysis.md) | [design](../configuration/sharing/publish-install-sync-design.md) | [user guide](../../user-guides/configuration-management.md)
 
 **Effort**: Medium-High (6 implementation phases defined in design doc).
+
+## FI-8: PromptSubmit Hook + Documentation-First Rule
+
+**Status**: Implemented. See [defaults-alignment-design.md](../configuration/rules-and-guidelines/defaults-alignment-design.md) §2.2, §2.3.
+
+**Problem**: Rules loaded at session start lose effective weight as conversation grows or after compaction. The agent frequently forgets key behavioral rules — particularly git practices and commit discipline.
+
+**Solution**:
+
+1. **UserPromptSubmit hook** (`config/hooks/prompt-submit.sh`) — managed hook injecting a concise per-prompt reminder. Follows the Content Principle: reminds the agent to check its configured rules rather than hardcoding specific rule content. Works regardless of how the user has customized their rules.
+
+2. **Documentation-first rule** (`defaults/managed/.claude/rules/documentation-first.md`) — managed rule requiring the agent to check existing docs, design documents, ADRs, and prior analysis before starting new work. Prevents proposing solutions that contradict or duplicate existing design decisions.
+
+3. **Defaults review** (8c-8e) — global rules, global CLAUDE.md, and managed CLAUDE.md reviewed against user guides. No changes needed — FI-5 alignment was already complete.
+
+**Design principle**: The hook and rule are managed (framework behavior), not opinionated defaults. They govern *how to use existing artifacts*, not *which artifacts to create*. The hook references user-configured rules rather than encoding specific conventions.
+
+**Effort**: Low.

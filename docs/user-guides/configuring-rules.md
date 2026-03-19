@@ -197,14 +197,25 @@ documentation) with basic behavioral constraints.
 **What it covers**: Where documentation lives, how it's organized, formatting
 conventions, and diagram usage.
 
-**Why it matters**: Without explicit structure rules, agents create documentation in
-inconsistent locations, leading to duplicated or contradictory files. A clear structure
-ensures every document has an unambiguous home.
+**Why it matters**: The agent is required to check existing documentation before starting
+new analysis, design, or implementation (this is enforced by a managed framework rule).
+This means documentation organization directly impacts agent effectiveness: if the agent
+cannot find relevant prior decisions, it starts from scratch and may contradict them.
+
+Without explicit structure rules, agents create documentation in inconsistent locations,
+leading to duplicated or contradictory files. Duplication is particularly harmful: when
+the same concept is described in multiple files, they inevitably diverge over time, and the
+agent may read only one — acting on stale or incomplete information. A clear structure
+ensures every document has an unambiguous home and every concept has a single source of truth.
 
 **What to define**:
 - Directory structure (e.g., `/docs/user-guides/`, `/docs/maintainer/`, `/docs/reference/`)
 - File naming conventions (e.g., `analysis.md`, `design.md`, `adr-NNN.md`)
-- Organization principle (e.g., by domain/module, not by document type)
+- Organization principle (e.g., by domain/module, not by document type — so all information
+  about a topic is discoverable in one place)
+- Single source of truth: each concept, decision, or business domain described in exactly
+  one file. If it needs to be referenced elsewhere, link to it rather than duplicating
+- Roadmap and tracking: one file as the definitive source for project status and plans
 - Diagram conventions (e.g., Mermaid in written files, plain text in terminal output)
 - Changelog and versioning conventions
 - Where external documentation lives (e.g., MCP-connected systems like Docmost)

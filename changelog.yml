@@ -115,3 +115,16 @@ entries:
       rule content). Managed CLAUDE.md now includes context hierarchy and workspace
       safety guidance. `/init-workspace` guides users through empty workspace setup.
       Run `cco update` to discover changes and `cco update --sync` to apply.
+
+  - id: 9
+    date: "2026-03-19"
+    type: additive
+    title: "PromptSubmit hook and documentation-first rule"
+    description: >
+      New managed hook reinforces key behavioral rules on every prompt —
+      reminds the agent to check configured rules, verify git status,
+      commit atomically, and consult existing docs before proposing changes.
+      New managed rule (documentation-first.md) requires the agent to read
+      existing design documents, ADRs, and prior analysis before starting
+      new work on any topic. Both are baked into the Docker image and active
+      automatically after `cco build`.

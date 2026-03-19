@@ -87,14 +87,35 @@ global rules; global CLAUDE.md points to rules; neither duplicates rule content.
 - Context Hierarchy: framework fact (how cco's 4-tier system works), not an opinion
 - Workspace Safety: framework fact (Docker mount behavior), prevents data loss
 
-### 2.2 Managed Rules — no changes
+### 2.2 Managed Rules — add documentation-first.md (FI-8)
 
-`memory-policy.md` is already correct. No other managed rules needed.
+`memory-policy.md` is already correct. Added in FI-8:
 
-### 2.3 Managed Settings — no changes for FI-5
+**`documentation-first.md`** — a managed rule requiring the agent to check
+existing documentation, design docs, ADRs, and prior analysis before starting
+new work on any topic. This is a framework behavior (like memory-policy):
+it governs how to use existing artifacts, not which artifacts to create.
+Users should never need to disable this behavior.
+
+**Rationale:** Without this rule, the agent may propose analysis or solutions
+that contradict or duplicate existing design decisions. The failure mode is:
+the agent starts fresh analysis on a topic where prior decisions, constraints,
+and rationale already exist in documentation — producing work that is either
+redundant or inconsistent with established choices.
+
+### 2.3 Managed Settings — UserPromptSubmit hook (FI-8)
 
 `managed-settings.json` hooks and deny rules are framework infrastructure.
-FI-8 (PromptSubmit hook) is a separate item — not included in this design.
+
+Added in FI-8: `UserPromptSubmit` hook (`prompt-submit.sh`) that injects
+a concise reminder on every user prompt. The hook follows the Content
+Principle (§1.2): it reminds the agent to **check its configured rules**
+rather than hardcoding specific rule content. This ensures the reminder
+works regardless of how the user has customized their rules.
+
+The hook is registered as managed (non-overridable) because the behavior
+it enforces (check rules, check git status, follow design, commit atomically)
+is universally correct framework behavior.
 
 ---
 
@@ -507,7 +528,7 @@ Idempotent: yes (check existence before action)
 
 | File | Lines (approx) | Change |
 |------|----------------|--------|
-| `defaults/managed/CLAUDE.md` | 27 → 40 | +Context Hierarchy, +Workspace Safety |
+| `defaults/managed/CLAUDE.md` | 27 → 40 | +Context Hierarchy, +Workspace Safety, +documentation-first ref (FI-8) |
 | `defaults/managed/.claude/skills/init-workspace/SKILL.md` | 141 → ~175 | +Step 4b adaptive flow |
 | `defaults/global/.claude/CLAUDE.md` | 61 → ~18 | Rewrite: remove duplications |
 | `defaults/global/.claude/rules/workflow.md` | 31 → ~36 | +Principles section |
@@ -535,8 +556,10 @@ Idempotent: yes (check existence before action)
 | `defaults/global/.claude/skills/commit/SKILL.md` | Aligned with git-practices |
 | `defaults/global/.claude/settings.json` | Appropriate for container env |
 | `defaults/global/.claude/mcp.json` | Empty placeholder, correct |
-| `defaults/managed/managed-settings.json` | Framework hooks, no FI-5 changes |
+| `defaults/managed/managed-settings.json` | +UserPromptSubmit hook (FI-8) |
 | `defaults/managed/.claude/rules/memory-policy.md` | Already correct |
+| `defaults/managed/.claude/rules/documentation-first.md` | **Created** (FI-8) — check existing docs before proposing solutions |
+| `config/hooks/prompt-submit.sh` | **Created** (FI-8) — concise per-prompt reminder |
 
 ---
 
@@ -556,7 +579,7 @@ Idempotent: yes (check existence before action)
 
 | Question | Context | Deferred To |
 |----------|---------|-------------|
-| FI-8 PromptSubmit hook | Reinforcement reminder on every prompt. Depends on FI-5 defaults being finalized | FI-8 design (separate document) |
+| ~~FI-8 PromptSubmit hook~~ | ~~Reinforcement reminder on every prompt~~ | **Resolved** (2026-03-19): implemented in §2.2 and §2.3 above |
 | `/commit` skill referencing git rules | Minor improvement, not blocking | Future sprint |
 | Additional skills (`/implement`, `/document`, `/test`) | Mentioned in analysis.md, not yet prioritized | Evaluation in future sprint |
 | Communication Style as separate rule | Currently in global CLAUDE.md. Could become `communication.md` rule for user customization | Future if users request it |
