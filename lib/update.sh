@@ -157,9 +157,13 @@ _update_global() {
                 PACKS_DIR="$USER_CONFIG_DIR/packs"
                 TEMPLATES_DIR="$USER_CONFIG_DIR/templates"
                 installed_dir="$GLOBAL_DIR/.claude"
-                meta_file=$(_cco_global_meta)
-                base_dir=$(_cco_global_base_dir)
             fi
+
+            # Always refresh meta/base paths after migrations — migration 009
+            # moves .cco-meta → .cco/meta within the same directory, so the
+            # directory-level check above won't catch it.
+            meta_file=$(_cco_global_meta)
+            base_dir=$(_cco_global_base_dir)
         fi
     fi
 
@@ -424,6 +428,10 @@ _update_project() {
                 error "Project '$pname' migrations failed. Run 'cco update' again after resolving the issue."
                 return 1
             fi
+
+            # Refresh meta/base paths — migration 009 moves .cco-meta → .cco/meta
+            meta_file=$(_cco_project_meta "$project_dir")
+            base_dir=$(_cco_project_base_dir "$project_dir")
         fi
     fi
 
