@@ -68,7 +68,9 @@ RUN arch="$(dpkg --print-architecture)" \
 # Pin version for reproducible builds: cco build --build-arg CLAUDE_CODE_VERSION=1.0.x
 ARG CLAUDE_CODE_VERSION=latest
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
-ENV CLAUDE_CODE_DISABLE_AUTOUPDATE=1
+# Disable auto-updater: npm global dir is root-owned, claude user can't write.
+# Update via: cco build --no-cache (see roadmap for native installer migration).
+ENV DISABLE_AUTOUPDATER=1
 
 # ── Framework MCP servers (pre-installed for instant startup) ─────────
 # chrome-devtools-mcp: browser automation via CDP (used by browser.enabled feature)
