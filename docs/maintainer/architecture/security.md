@@ -95,6 +95,26 @@ It can be disabled per-session (`--no-docker`) or per-project
 - **Default changed to `false`** — Docker socket is now opt-in, not opt-out. Projects that need Docker access must explicitly declare `docker.mount_socket: true`. Migration 006 adds explicit `true` to existing projects to preserve behavior.
 - **Implemented: Docker socket proxy** — Go binary (`proxy/`) filtering Docker API calls by container name/label, mount restrictions, and security constraints. The proxy (`cco-docker-proxy`) runs between Claude and the real socket, enforcing `policy.json` rules generated from `project.yml`. See [docker-security design](../integration/docker-security/design.md).
 
+**Proxy internal structure** (4 packages, stdlib-only, no external dependencies):
+
+| Package | Files | LOC | Responsibility |
+|---------|-------|-----|----------------|
+| `internal/config` | `config.go` | 100 | Policy loading and validation from `policy.json` |
+| `internal/cache` | `cache.go` | 206 | Container ID-to-name resolution with periodic refresh (RWMutex + atomic) |
+| `internal/filter` | `containers.go`, `mounts.go`, `security.go`, `errors.go` | 482 | Modular filters: container name/label validation, mount path allow/deny, privilege escalation prevention |
+| `internal/proxy` | `proxy.go`, `routes.go` | 900 | HTTP reverse proxy handler, route matching, request interception, response modification |
+
+**Test coverage** (as of 2026-03-19 — all packages covered):
+
+| Package | Test file(s) | Tests | Test LOC | Status |
+|---------|-------------|-------|----------|--------|
+| `config` | `config_test.go` | 12 | 269 | All policies + edge cases |
+| `cache` | `cache_test.go` | 13 | 411 | Mock upstream socket, refresh logic, concurrent access |
+| `filter` | `containers_test.go`, `mounts_test.go`, `security_test.go` | 44 | 1,127 | All filter policies, DfD path translation, caps normalization |
+| `proxy` | `proxy_test.go`, `routes_test.go` | 23 | 758 | HTTP handler integration, route matching, label injection |
+
+**Totals**: 92 test functions, 2,565 lines of test code covering 1,688 lines of production code. All four packages have test coverage (cache and proxy handler tests added in RF-4, resolving PROXY-1 and PROXY-2 from the [comprehensive review](../decisions/reviews/18-03-2026-comprehensive-review.md)).
+
 ---
 
 ### [HIGH-3] `setup.sh` content passed as Docker build arg, visible in image history
