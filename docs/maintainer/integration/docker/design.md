@@ -61,7 +61,7 @@ RUN arch="$(dpkg --print-architecture)" \
 # Pin version for reproducible builds: cco build --claude-version 1.0.x
 ARG CLAUDE_CODE_VERSION=latest
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
-ENV CLAUDE_CODE_DISABLE_AUTOUPDATE=1
+ENV DISABLE_AUTOUPDATER=1
 
 # ── MCP Server packages (optional pre-installation) ──────────────────
 ARG MCP_PACKAGES=""
@@ -520,7 +520,7 @@ To pin a specific version for reproducible builds:
 cco build --claude-version 1.0.5
 ```
 
-The Dockerfile uses `ARG CLAUDE_CODE_VERSION=latest` — when no version is specified, the latest is installed. `CLAUDE_CODE_DISABLE_AUTOUPDATE=1` prevents Claude Code from self-updating inside the container.
+The Dockerfile uses `ARG CLAUDE_CODE_VERSION=latest` — when no version is specified, the latest is installed. `DISABLE_AUTOUPDATER=1` prevents Claude Code from self-updating inside the container.
 
 ---
 

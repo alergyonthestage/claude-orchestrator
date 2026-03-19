@@ -580,6 +580,27 @@ rag:
 
 ## Known Bugs
 
+### #B9 Wrong env var name disables nothing — "Auto-update failed" message shown ✓ FIXED
+
+**Reported**: 2026-03-19. **Fixed**: 2026-03-19.
+
+**Symptom**: Every session shows "Auto-update failed - try claude doctor or npm i -g
+@anthropic-ai/claude-code" — confusing for users who can't run those commands inside
+the container.
+
+**Root cause**: Dockerfile used `CLAUDE_CODE_DISABLE_AUTOUPDATE=1` — this env var
+does not exist. The correct name is `DISABLE_AUTOUPDATER=1`. The auto-updater was
+never actually disabled, tried to update (failed because npm global dir is root-owned),
+and showed the error message.
+
+**Fix**: Corrected env var to `DISABLE_AUTOUPDATER=1`. Added `companyAnnouncements`
+in managed-settings.json with correct update instructions (`cco build --no-cache`).
+
+**Long-term**: Migrate from deprecated npm install to native installer with persistent
+volume for auto-update support. See roadmap item below.
+
+---
+
 ### #B8 `~/.claude/settings.json` montato read-only — Claude Code non può salvare impostazioni runtime ✓ FIXED
 
 **Reported**: 2026-03-17. **Fixed**: 2026-03-19.
@@ -946,6 +967,33 @@ Pure bash test suite (`bin/test`) covering 154 test cases across 11 test files. 
 ---
 
 ## Long-term / Exploratory
+
+### Native Installer Migration — Auto-Update Support
+
+**Raised**: 2026-03-19.
+
+**Context**: Claude Code's npm installation is deprecated. The recommended native
+installer (`curl -fsSL https://claude.ai/install.sh | bash`) auto-updates in the
+background and installs to `~/.local/bin/claude` + `~/.local/share/claude/` (user-owned
+directories). Currently cco uses `npm install -g` in the Dockerfile with auto-update
+disabled because the npm global dir is root-owned.
+
+**Goal**: Switch to native installer so Claude Code auto-updates transparently. Updates
+persist across container restarts via a persistent volume.
+
+**Design considerations**:
+- Native installer may reject non-interactive/programmatic execution (to verify)
+- Install as `claude` user in Dockerfile, or install as root and chown
+- Mount `~/.local/share/claude/` (or `~/.local/`) as persistent volume
+- Entrypoint: ensure `~/.local/bin` is in PATH
+- Fallback: if volume is empty (first run), installer runs at container start
+- Version pinning: `curl ... | bash -s 1.0.x` for reproducible builds
+- `autoUpdatesChannel: "stable"` recommended for production stability
+
+**Effort**: Medium. Requires Dockerfile changes, volume mount in cmd-start.sh, entrypoint
+PATH setup, and testing of the native installer in Docker context.
+
+---
 
 ### Hot-reload for In-Container Configuration
 
