@@ -8,15 +8,14 @@ feature or architectural concern.
 
 | Subdirectory | Scope | Key File |
 |-------------|-------|----------|
-| **resource-lifecycle/** | File policies (tracked/untracked/generated), resource update model, tutorial separation, FI-7 foundations | `analysis.md` — canonical for policies and lifecycle |
+| **resource-lifecycle/** | File policies (tracked/untracked/generated), resource update model, tutorial separation, FI-7 foundations, .cco/ directory structure | `analysis.md` — policies and lifecycle; `design.md` — .cco/ layout, path helpers, changelog dual-tracker |
 | **update-system/** | Migration runner, discovery engine, opinionated file sync, change categories (additive/opinionated/breaking) | `design.md` — canonical for update mechanics |
 | **scope-hierarchy/** | Four-tier context hierarchy (managed/user/project/repo), override semantics | `design.md` — canonical for scope model |
-| **sharing/** | Config Repos, manifest, publish/install commands, remotes | `analysis.md` + `design.md` (base), `enhancements-*` (refinements) |
+| **sharing/** | Config Repos, manifest, publish/install commands, remotes, publish-install sync | `analysis.md` + `design.md` (base), `enhancements-*` (refinements), `publish-install-sync-analysis.md` + `publish-install-sync-design.md` (FI-7) |
 | **vault/** | Multi-PC sync, profiles, memory separation | `design.md` — canonical for vault mechanics |
 | **packs/** | Pack format, pack.yml schema, knowledge management | `design.md` |
 | **environment/** | Build-time and runtime extensibility (setup.sh, MCP, Docker) | `design.md` |
 | **rules-and-guidelines/** | Rule content organization (which rules in which files) | `analysis.md` |
-| **cco-dir-consolidation/** | .cco/ directory structure (migration 009) | `analysis-and-design.md` |
 
 ## Concept Ownership
 
@@ -30,6 +29,8 @@ To avoid duplication, each concept has a single canonical source:
 | Discovery + sync mechanics | `update-system/design.md` §4-5 |
 | Tutorial as internal resource | `resource-lifecycle/analysis.md` §4 |
 | Config-editor template | `resource-lifecycle/analysis.md` §4.3 |
-| Publish/install flow | `sharing/design.md` + `sharing/enhancements-design.md` |
+| Publish/install flow | `sharing/design.md` §15–§22 |
 | Vault profiles and sync | `vault/design.md` |
 | FI-7 foundations | `resource-lifecycle/analysis.md` §6 |
+| .cco/ directory structure and path helpers | `resource-lifecycle/design.md` §2-4 |
+| Changelog dual-tracker (last_seen + last_read) | `resource-lifecycle/design.md` §8 |

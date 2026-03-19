@@ -342,7 +342,7 @@ the missing piece: update notification and merge for published/installed resourc
 - `cco update --sync <project> [--local]` (new flag)
 - `cco project publish <name> <remote> [--yes]` (enhanced)
 
-**Docs**: [analysis](../configuration/publish-install-sync/analysis.md) | [design](../configuration/publish-install-sync/design.md) | [user guide](../../user-guides/config-lifecycle.md) | [FI-7](framework-improvements.md#fi-7-publish-install-sync-and-resource-versioning) | [resource-lifecycle analysis](../configuration/resource-lifecycle/analysis.md)
+**Docs**: [analysis](../configuration/sharing/publish-install-sync-analysis.md) | [design](../configuration/sharing/publish-install-sync-design.md) | [user guide](../../user-guides/config-lifecycle.md) | [FI-7](framework-improvements.md#fi-7-publish-install-sync-and-resource-versioning) | [resource-lifecycle analysis](../configuration/resource-lifecycle/analysis.md)
 **Completed**: 2026-03-17 (all 6 phases).
 
 ---
@@ -796,7 +796,7 @@ Enhancements to the Config Repo sharing system. Addresses naming issues, portabi
 - `cco pack internalize` — convert source-referencing packs to self-contained
 - Enhanced `cco project install` — auto-install pack dependencies, template variable resolution
 
-**Docs**: [analysis](../configuration/sharing/enhancements-analysis.md) | [design](../configuration/sharing/enhancements-design.md)
+**Docs**: [analysis](../configuration/sharing/analysis.md) §8–§14 | [design](../configuration/sharing/design.md) §15–§22
 
 ---
 

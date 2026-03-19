@@ -80,7 +80,7 @@ Design docs and analysis by area:
 | Scope hierarchy | [analysis](maintainer/configuration/scope-hierarchy/analysis.md), [design](maintainer/configuration/scope-hierarchy/design.md) |
 | Knowledge packs | [design](maintainer/configuration/packs/design.md) |
 | Environment | [analysis](maintainer/configuration/environment/analysis.md), [design](maintainer/configuration/environment/design.md) |
-| Sharing & Config Repo | [analysis](maintainer/configuration/sharing/analysis.md), [design](maintainer/configuration/sharing/design.md), [enhancements](maintainer/configuration/sharing/enhancements-design.md) |
+| Sharing & Config Repo | [analysis](maintainer/configuration/sharing/analysis.md), [design](maintainer/configuration/sharing/design.md) |
 | Update System & Templates | [analysis](maintainer/configuration/update-system/analysis.md), [design](maintainer/configuration/update-system/design.md) |
 | Vault & Multi-PC Sync | [analysis](maintainer/configuration/vault/analysis.md), [design](maintainer/configuration/vault/design.md) |
 | **Integration** | |

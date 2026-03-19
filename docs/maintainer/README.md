@@ -41,11 +41,8 @@ Everything related to the four-tier configuration model, knowledge packs, update
 | Knowledge Packs | [design](configuration/packs/design.md) | — | Completed |
 | Environment Extensibility | [design](configuration/environment/design.md) | [analysis](configuration/environment/analysis.md) | Completed |
 | Sharing & Config Repo | [design](configuration/sharing/design.md) | [analysis](configuration/sharing/analysis.md) | Completed |
-| Sharing Enhancements (6b) | [design](configuration/sharing/enhancements-design.md) | [analysis](configuration/sharing/enhancements-analysis.md) | Completed |
 | Update System & Templates | [design](configuration/update-system/design.md) | [analysis](configuration/update-system/analysis.md) | Completed |
 | Vault & Multi-PC Sync | [design](configuration/vault/design.md) | [analysis](configuration/vault/analysis.md) | Completed |
-
-Additional: [implementation plan](configuration/sharing/implementation-plan.md) (sharing)
 
 ---
 
