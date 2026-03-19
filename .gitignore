@@ -14,5 +14,8 @@ secrets.env
 # Allow template secrets.env (tracked tool code)
 !templates/project/base/secrets.env
 
+# Claude Code local settings (generated per-session)
+.claude/settings.local.json
+
 # macOS
 .DS_Store
