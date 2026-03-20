@@ -434,8 +434,10 @@ might span multiple sessions, while a feature-level analysis might be a few para
 
 **How cco implements this:**
 
-- The **default CLAUDE.md instruction** lists scope levels and suggests clarifying
-  the current scope before starting work.
+- The **default workflow instruction** suggests clarifying the scope and current phase
+  with the user before starting work. Defining which scope levels exist (project,
+  service, module, feature) is part of project-level configuration — you decide the
+  granularity that fits your workflow.
 - **Skills adapt to scope.** `/analyze` and `/design` produce proportional output
   based on the scope of the task.
 
@@ -473,7 +475,7 @@ common pitfalls), see the [Development Workflow guide](development-workflow.md).
 | 2 | Atomic, conventional commits | `git-practices.md` rule loaded in every session |
 | 3 | Branch-review-merge | Branch naming convention + `/review` skill |
 | 4 | ADRs for decisions | `/design` skill produces ADR-structured documents |
-| 5 | Two-layer review | `analyst` + `reviewer` agents (mechanical) + human gates (intent) |
+| 5 | Two-layer review | `reviewer` agent (mechanical quality) + human review (intent and domain) |
 | 6 | Minimum necessary context | Four-tier hierarchy, on-demand knowledge loading |
 | 7 | Stratified context | Managed → Global → Project → Nested tiers |
 | 8 | Living documentation | CLAUDE.md updated per phase, docs in repos |

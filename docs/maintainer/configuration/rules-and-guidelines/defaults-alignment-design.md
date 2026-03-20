@@ -558,8 +558,13 @@ Idempotent: yes (check existence before action)
 | `defaults/global/.claude/mcp.json` | Empty placeholder, correct |
 | `defaults/managed/managed-settings.json` | +UserPromptSubmit hook (FI-8) |
 | `defaults/managed/.claude/rules/memory-policy.md` | Already correct |
-| `defaults/managed/.claude/rules/documentation-first.md` | **Created** (FI-8) — check existing docs before proposing solutions |
-| `config/hooks/prompt-submit.sh` | **Created** (FI-8) — concise per-prompt reminder |
+
+### New Files (FI-8)
+
+| File | Purpose |
+|------|---------|
+| `defaults/managed/.claude/rules/documentation-first.md` | Check existing docs before proposing solutions |
+| `config/hooks/prompt-submit.sh` | Concise per-prompt behavioral reminder |
 
 ---
 

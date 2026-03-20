@@ -156,8 +156,12 @@ Rules and skills can live at different levels. Choose the right scope for each:
 | **Pack** | `packs/<name>/rules/`, `packs/<name>/skills/` | Reusable conventions shared across projects (e.g., a "React" pack with frontend rules) |
 | **Repo** | `<repo>/.claude/rules/` | Repo-specific rules committed to the repository itself (shared with all repo contributors) |
 
-**Resolution order**: Managed (framework) → Global → Project → Pack → Repo. When rules
-conflict, lower-scoped rules take precedence for their scope.
+**Resolution order**: cco's four-tier hierarchy maps to Claude Code's native resolution:
+Managed (framework) → Global → Project → Repo (nested). Pack rules and skills are
+mounted at the **Project tier** — they share the same resolution level as project rules.
+Within the project tier, pack resources complement project resources; if a pack rule
+and a project rule cover the same topic, the project rule takes precedence (it is loaded
+from `.claude/rules/` while pack rules are in `.claude/packs/<name>/rules/`).
 
 **Rule of thumb**: Start global. Move to project-level only when a rule genuinely differs
 between projects. Use packs when a set of rules applies to multiple projects sharing

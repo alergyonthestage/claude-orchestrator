@@ -33,6 +33,11 @@ debugging mindset, even when it's not relevant. Fresh context means fresh perspe
 inputs explicitly (reference specific documents) rather than relying on conversation
 history.
 
+**Mid-session drift**: The framework includes a managed per-prompt hook that reinforces
+key behavioral rules on every turn (check configured rules, verify git status, follow
+approved design). If the agent still drifts during a long session, use `/clear` and
+re-state the current objective with explicit references to the relevant design documents.
+
 ### One phase per session
 
 Treat each phase as a focused session with:
@@ -150,8 +155,12 @@ implementation is frequently correct on the first pass — typically requiring o
 review iterations for bug fixes. The investment in analysis and design quality pays off
 directly in implementation accuracy.
 
+**Note**: cco containers default to skip-permissions for all phases
+(`--dangerously-skip-permissions`). To use Plan mode or Accept Edits mode,
+toggle manually at the start of the session with `Shift+Tab`.
+
 **Practical flow**:
-1. Start in plan mode → agent produces analysis/design
+1. Toggle to plan mode → agent produces analysis/design
 2. Review and approve the plan
 3. Switch to skip permissions → agent implements
 4. Run `/review` → fix issues → run `/review` again
@@ -174,7 +183,9 @@ Implementation → Review #1 → Fix → Review #2 → Fix → [Review #3 if nee
 
 ### Types of review
 
-After each implementation cycle, run these reviews (can be parallel):
+After each implementation cycle, run these reviews (can be parallel — use the
+`reviewer` agent as a teammate for independent parallel review while the lead
+agent continues working):
 
 1. **Alignment review** — Does the implementation match the design documents?
    The agent should compare the actual code against the approved design, checking
@@ -318,6 +329,14 @@ Periodically review:
 - **Rule consistency** — Are rules across files contradictory or outdated? Prune
   aggressively.
 
+### Roadmap as single source of truth
+
+Maintain a single roadmap file (e.g., `docs/roadmap.md`) as the definitive source for
+planned work, priorities, current status, and known issues. Update it at the end of each
+development cycle. The agent checks this file before starting work — a current roadmap
+prevents duplicate effort and ensures the agent knows what is planned, in progress, or
+completed.
+
 ### CLAUDE.md freshness
 
 The project CLAUDE.md should always reflect the current state of the project. After
@@ -336,7 +355,7 @@ Patterns that consistently lead to poor results:
 | Pitfall | Consequence | Prevention |
 |---------|-------------|------------|
 | Skipping reviews | Accumulated bugs and design drift | Always run at least 2 review passes |
-| Not cleaning context | Later phases carry noise from earlier ones | Fresh session per phase |
+| Not cleaning context | Later phases carry noise from earlier ones | Fresh session per phase. If mid-session drift occurs, `/clear` and re-state the objective with explicit document references |
 | No testing mechanism | Silent error accumulation | Set up tests before implementation |
 | Rules in too many small files | Contradictions emerge unnoticed | Group correlated rules (see [configuring-rules.md](configuring-rules.md)) |
 | Not verifying intermediate artifacts | Errors compound across phases | Review every phase output before proceeding |
