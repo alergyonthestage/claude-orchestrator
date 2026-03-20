@@ -62,21 +62,27 @@ graph LR
 ```
 
 ```
-Setup: git clone → cco init → cco project create → cco start
+Setup: git clone → add to PATH → cco init → cco start tutorial
 ```
 
 ## Quick Start
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/user/claude-orchestrator.git
-cd claude-orchestrator
+git clone https://github.com/user/claude-orchestrator.git ~/claude-orchestrator
+cd ~/claude-orchestrator
 
-# 2. Initialize (copy defaults, build Docker image)
-bin/cco init
+# 2. Add the CLI to PATH
+# zsh (macOS default):
+echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.zshrc && source ~/.zshrc
+# bash:
+# echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.bashrc && source ~/.bashrc
 
-# 3. Start the interactive tutorial
-bin/cco start tutorial
+# 3. Initialize (copy defaults, build Docker image)
+cco init
+
+# 4. Start the interactive tutorial
+cco start tutorial
 ```
 
 ### The Tutorial — Your Starting Point
@@ -97,8 +103,8 @@ and helps you build a configuration that reflects your actual development workfl
 If you prefer to skip the tutorial:
 
 ```bash
-bin/cco project create my-app --repo ~/projects/my-repo
-bin/cco start my-app
+cco project create my-app --repo ~/projects/my-repo
+cco start my-app
 ```
 
 ## Key features
