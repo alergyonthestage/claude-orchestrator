@@ -180,7 +180,7 @@ _update_single_project() {
         local auto_action=""
         [[ "$force" == "true" ]] && auto_action="replace"
 
-        _interactive_sync "$changes" "$remote_claude_dir" "$installed_dir" "$base_dir" "false" "$auto_action" "$scope_label"
+        _interactive_sync "$changes" "$remote_claude_dir" "$installed_dir" "$base_dir" "false" "$auto_action" "$scope_label" "$project_dir"
         sync_applied=$_SYNC_FILES_APPLIED
     fi
 

@@ -224,7 +224,7 @@ _update_global() {
                 # In dry-run + sync, show what would be available
                 _show_discovery_summary "$changes" "Global"
             else
-                _interactive_sync "$changes" "$defaults_dir" "$installed_dir" "$base_dir" "$no_backup" "$auto_action" "Global"
+                _interactive_sync "$changes" "$defaults_dir" "$installed_dir" "$base_dir" "$no_backup" "$auto_action" "Global" ""
             fi
             ;;
     esac
@@ -559,7 +559,7 @@ _update_project() {
                     info "Applying framework defaults directly (--local escape hatch)."
                     yml_set "$meta_file" "local_framework_override" "true"
                 fi
-                _interactive_sync "$changes" "$defaults_dir" "$installed_dir" "$base_dir" "$no_backup" "$auto_action" "$scope_label"
+                _interactive_sync "$changes" "$defaults_dir" "$installed_dir" "$base_dir" "$no_backup" "$auto_action" "$scope_label" "$project_dir"
             fi
             ;;
     esac

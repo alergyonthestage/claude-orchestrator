@@ -10,6 +10,34 @@ _LAST_RESOLVE_AUTOMERGE=false  # set by _resolve_with_merge for counter tracking
 _LAST_RESOLVE_SKIPPED=false    # set by _resolve_with_merge when user chooses skip inside conflict
 _SYNC_FILES_APPLIED=0          # set by _interactive_sync: count of files applied/merged/kept (not skipped)
 
+# ── Scope-Aware Helpers ──────────────────────────────────────────────
+
+# Save base with interpolation for project scope, direct copy for global.
+# project_dir is empty string for global scope.
+_save_base_for_scope() {
+    local base_dir="$1" rel_path="$2" source="$3" project_dir="$4"
+    if [[ -n "$project_dir" ]]; then
+        local tmp; tmp=$(_interpolate_template_tmp "$source" "$project_dir")
+        _save_base_version "$base_dir" "$rel_path" "$tmp"
+        rm -f "$tmp"
+    else
+        _save_base_version "$base_dir" "$rel_path" "$source"
+    fi
+}
+
+# Hash with interpolation for project scope, direct hash for global.
+_hash_for_scope() {
+    local source="$1" project_dir="$2"
+    if [[ -n "$project_dir" ]]; then
+        local tmp; tmp=$(_interpolate_template_tmp "$source" "$project_dir")
+        local h; h=$(_file_hash "$tmp")
+        rm -f "$tmp"
+        printf '%s' "$h"
+    else
+        _file_hash "$source"
+    fi
+}
+
 # ── Interactive Apply ─────────────────────────────────────────────────
 
 # Interactive per-file apply with user prompts.
@@ -22,6 +50,7 @@ _interactive_sync() {
     local no_backup="$5"
     local auto_action="$6"  # "" for interactive, "replace"|"keep"|"skip" for auto
     local scope_label="$7"
+    local project_dir="${8:-}"  # project root dir (empty for global scope)
 
     [[ -z "$changes" ]] && return 0
 
@@ -48,8 +77,8 @@ _interactive_sync() {
                     a|add|replace)
                         mkdir -p "$(dirname "$installed_dir/$rel_path")"
                         cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
-                        _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
-                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                        _save_base_for_scope "$base_dir" "$rel_path" "$defaults_dir/$rel_path" "$project_dir"
+                        local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
                         _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                         ok "  + $rel_path (added)"
                         applied=$(( applied + 1 ))
@@ -91,16 +120,16 @@ _interactive_sync() {
                             cp "$installed_dir/$rel_path" "$installed_dir/${rel_path}.bak"
                         fi
                         cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
-                        _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
-                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                        _save_base_for_scope "$base_dir" "$rel_path" "$defaults_dir/$rel_path" "$project_dir"
+                        local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
                         _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                         ok "  ~ $rel_path (updated)"
                         applied=$(( applied + 1 ))
                         ;;
                     keep)
                         # Keep user file but update .cco/base/ so update isn't reported again
-                        _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
-                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                        _save_base_for_scope "$base_dir" "$rel_path" "$defaults_dir/$rel_path" "$project_dir"
+                        local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
                         _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                         info "  Kept user version of $rel_path"
                         kept=$(( kept + 1 ))
@@ -147,8 +176,8 @@ _interactive_sync() {
                     n|new)
                         # Save framework version as .new alongside user's file
                         cp "$defaults_dir/$rel_path" "$installed_dir/${rel_path}.new"
-                        _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
-                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                        _save_base_for_scope "$base_dir" "$rel_path" "$defaults_dir/$rel_path" "$project_dir"
+                        local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
                         _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                         ok "  ~ $rel_path → saved framework version as ${rel_path}.new"
                         info "    Review .new and integrate changes manually, then delete the .new file"
@@ -159,16 +188,16 @@ _interactive_sync() {
                             cp "$installed_dir/$rel_path" "$installed_dir/${rel_path}.bak"
                         fi
                         cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
-                        _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
-                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                        _save_base_for_scope "$base_dir" "$rel_path" "$defaults_dir/$rel_path" "$project_dir"
+                        local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
                         _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                         ok "  ~ $rel_path (updated)"
                         applied=$(( applied + 1 ))
                         ;;
                     k|keep)
                         # Keep user file but update .cco/base/ so update isn't reported again
-                        _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
-                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                        _save_base_for_scope "$base_dir" "$rel_path" "$defaults_dir/$rel_path" "$project_dir"
+                        local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
                         _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                         info "  Kept user version of $rel_path"
                         kept=$(( kept + 1 ))
@@ -219,7 +248,7 @@ _interactive_sync() {
                     m|merge)
                         _LAST_RESOLVE_AUTOMERGE=false
                         _LAST_RESOLVE_SKIPPED=false
-                        _resolve_with_merge "$rel_path" "$defaults_dir" "$installed_dir" "$base_dir" "$no_backup"
+                        _resolve_with_merge "$rel_path" "$defaults_dir" "$installed_dir" "$base_dir" "$no_backup" "$project_dir"
                         if $_LAST_RESOLVE_SKIPPED; then
                             # Skip inside conflict resolution — defer to next run
                             skipped=$(( skipped + 1 ))
@@ -237,8 +266,8 @@ _interactive_sync() {
                     n|new)
                         # Save framework version as .new alongside user's file
                         cp "$defaults_dir/$rel_path" "$installed_dir/${rel_path}.new"
-                        _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
-                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                        _save_base_for_scope "$base_dir" "$rel_path" "$defaults_dir/$rel_path" "$project_dir"
+                        local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
                         _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                         ok "  ~ $rel_path → saved framework version as ${rel_path}.new"
                         info "    Review .new and integrate changes manually, then delete the .new file"
@@ -252,15 +281,15 @@ _interactive_sync() {
                             warn "  ↻ $rel_path (replaced)"
                         fi
                         cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
-                        _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
-                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                        _save_base_for_scope "$base_dir" "$rel_path" "$defaults_dir/$rel_path" "$project_dir"
+                        local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
                         _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                         applied=$(( applied + 1 ))
                         ;;
                     k|keep)
                         # Keep user file but update .cco/base/ so update isn't reported again
-                        _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
-                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                        _save_base_for_scope "$base_dir" "$rel_path" "$defaults_dir/$rel_path" "$project_dir"
+                        local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
                         _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                         info "  Kept user version of $rel_path"
                         kept=$(( kept + 1 ))
@@ -308,15 +337,15 @@ _interactive_sync() {
                     a|add|replace)
                         mkdir -p "$(dirname "$installed_dir/$rel_path")"
                         cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
-                        _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
-                        local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                        _save_base_for_scope "$base_dir" "$rel_path" "$defaults_dir/$rel_path" "$project_dir"
+                        local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
                         _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                         ok "  + $rel_path (re-added with latest version)"
                         applied=$(( applied + 1 ))
                         ;;
                     *)
                         # Skip: update .cco/base/ to stop notifying, respect deletion
-                        _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
+                        _save_base_for_scope "$base_dir" "$rel_path" "$defaults_dir/$rel_path" "$project_dir"
                         info "  Skipped $rel_path (won't notify again until next framework update)"
                         skipped=$(( skipped + 1 ))
                         ;;

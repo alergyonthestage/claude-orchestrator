@@ -55,11 +55,12 @@ _resolve_with_merge() {
     local installed_dir="$3"
     local base_dir="$4"
     local no_backup="$5"
+    local project_dir="${6:-}"  # project root dir (empty for global scope)
     local base_file="$base_dir/$rel_path"
 
     # If no base version available, fall back to interactive (no merge possible)
     if [[ ! -f "$base_file" ]]; then
-        _resolve_conflict_interactive "$rel_path" "$defaults_dir" "$installed_dir" "$no_backup"
+        _resolve_conflict_interactive "$rel_path" "$defaults_dir" "$installed_dir" "$no_backup" "$project_dir"
         return
     fi
 
@@ -172,7 +173,7 @@ _resolve_with_merge() {
     else
         # Merge error — fall back to interactive
         rm -f "$merge_out"
-        _resolve_conflict_interactive "$rel_path" "$defaults_dir" "$installed_dir" "$no_backup"
+        _resolve_conflict_interactive "$rel_path" "$defaults_dir" "$installed_dir" "$no_backup" "$project_dir"
     fi
 }
 
@@ -182,6 +183,7 @@ _resolve_conflict_interactive() {
     local defaults_dir="$2"
     local installed_dir="$3"
     local no_backup="$4"
+    local project_dir="${5:-}"  # project root dir (empty for global scope)
 
     echo ""
     warn "Conflict: $rel_path"
@@ -211,20 +213,20 @@ _resolve_conflict_interactive() {
                 warn "  ↻ $rel_path (replaced)"
             fi
             cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
-            local h; h=$(_file_hash "$defaults_dir/$rel_path")
+            local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
             _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
             ;;
         s)
             # Save default hash so: if default changes again → new CONFLICT,
             # if default stays same → USER_MODIFIED (skipped silently)
             info "  Skipped $rel_path (will be flagged if defaults change again)"
-            local h; h=$(_file_hash "$defaults_dir/$rel_path")
+            local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
             _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
             ;;
         *)
             # Save default hash so next run sees manifest==default → NO_UPDATE
             info "  Kept user version of $rel_path"
-            local h; h=$(_file_hash "$defaults_dir/$rel_path")
+            local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
             _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
             ;;
     esac
