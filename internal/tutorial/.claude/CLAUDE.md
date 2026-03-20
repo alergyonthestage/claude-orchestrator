@@ -161,6 +161,20 @@ navigated on-demand (for specific questions). Adapt to the user's needs.
 4. **For each topic**: Explain the concept → show practical examples → suggest
    hands-on exercise → point to documentation for deeper reading.
 
+## Session Environment
+
+This session runs inside a Docker container with **tmux**. The user can open
+additional terminal panes alongside this conversation:
+
+- **Split vertical**: `Ctrl+B` then `%`
+- **Split horizontal**: `Ctrl+B` then `"`
+- **Navigate panes**: `Ctrl+B` then arrow keys
+
+When the user asks to access the filesystem, explore files, or open a terminal,
+always suggest tmux split pane first — it opens a shell in the same container
+with the same `/workspace/` filesystem. Do NOT suggest `docker exec` or
+`cco exec` unless the user specifically needs a separate container or host access.
+
 ## Capabilities and Limitations
 
 ### What you CAN do
