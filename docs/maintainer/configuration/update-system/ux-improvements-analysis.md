@@ -89,6 +89,19 @@ Additionally, in `lib/update-merge.sh`, `_resolve_conflict_interactive` (line ~2
 also saves `$defaults_dir/$rel_path` as manifest entry hash but does NOT call
 `_save_base_version` directly — the base save happens in the caller.
 
+Two additional cases in `DELETED_UPDATED` (lines ~311, ~319) also call
+`_save_base_version` with the raw template path (Add and Skip branches).
+
+In `lib/cmd-project-update.sh` (line ~183), `_interactive_sync` is called
+for publisher updates — this call site also needs `project_dir` threading.
+
+**Latent issue in `_resolve_conflict_interactive`**: When no base is available,
+this fallback writes `_file_hash "$defaults_dir/$rel_path"` (raw template hash)
+into `_UPDATE_MANIFEST_ENTRIES`. This hash ends up in `.cco/meta`. On the next
+run, `_collect_file_changes` computes `new_hash` from the interpolated template
+— the manifest hash and `new_hash` differ, potentially triggering false
+re-detection. Lower severity than P1 but same root cause.
+
 ### 2.3 Why This Wasn't Caught
 
 The base-tracking-fix focused on the **initial seeding** path (create, install,
@@ -392,7 +405,8 @@ The user ALWAYS reviews the AI merge result before it's applied.
 |--------|-------|-------------|
 | P1 fix | `lib/update-sync.sh` | Save interpolated base in project scope |
 | P1 fix | `lib/update.sh` | Pass `project_dir` to `_interactive_sync` |
-| P1 fix | `lib/update-merge.sh` | Pass `project_dir` to `_resolve_with_merge` |
+| P1 fix | `lib/update-merge.sh` | Pass `project_dir` to `_resolve_with_merge`; fix hash in `_resolve_conflict_interactive` |
+| P1 fix | `lib/cmd-project-update.sh` | Thread `project_dir` to `_interactive_sync` call (line ~183) |
 
 ### Short-term (UX improvements)
 
