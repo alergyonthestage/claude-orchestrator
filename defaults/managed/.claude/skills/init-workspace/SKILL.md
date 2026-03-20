@@ -100,7 +100,14 @@ and proceed with automatic discovery (the existing flow).
 
 ## Step 5: Write CLAUDE.md
 
-Write `/workspace/.claude/CLAUDE.md` with the following structure:
+Write `/workspace/.claude/CLAUDE.md` with the following structure.
+
+**Scope rule**: `/workspace/.claude/CLAUDE.md` is the project-level file — it
+describes the cross-repo/cross-mount coordination, overall architecture, and
+infrastructure. Even for single-repo projects, this is the primary file.
+Repo-specific details (stack, commands, internal architecture) belong in each
+repo's own `/workspace/<repo>/.claude/CLAUDE.md`. Do not duplicate repo-specific
+content in the project CLAUDE.md.
 
 ```
 # Project: <project-name>

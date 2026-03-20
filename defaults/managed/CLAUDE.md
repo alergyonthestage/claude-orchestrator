@@ -26,6 +26,21 @@
 - Write only in mounted repositories (/workspace/<repo-name>/) or
   extra mounts configured with :rw access
 
+## CLAUDE.md Hierarchy
+
+This workspace has multiple CLAUDE.md files with distinct scopes:
+
+- `/workspace/.claude/CLAUDE.md` — **Project-level**: cross-repo coordination,
+  overall architecture, infrastructure, and project-wide conventions. This is
+  the primary context file for the cco project. It covers ALL repos and mounts.
+- `/workspace/<repo>/.claude/CLAUDE.md` — **Repo-level**: repo-specific context
+  (stack, commands, patterns). Loaded on-demand when you read files in that repo.
+
+**Rule**: Even for single-repo projects, use the project-level CLAUDE.md as the
+primary file. If a second repo or mount is added later, the project CLAUDE.md
+remains valid because its scope is already cross-repo. The repo CLAUDE.md
+should contain only information specific to that repository.
+
 ## Memory Policy
 - A managed rule (`memory-policy.md`) defines when to use MEMORY.md vs project docs
 - Memory is personal and transient — use docs for persistent project knowledge

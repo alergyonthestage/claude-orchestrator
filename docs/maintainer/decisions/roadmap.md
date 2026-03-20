@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-19 (Reorganization: completed items moved to Completed section, Planned section cleaned up).
+> Last updated: 2026-03-20 (Added: UX Improvements completed, Phase 4 AI-merge planned, Minor Fixes batch, #B9 update).
 >
 > **Note**: Sprint entries are historical. Path references (e.g., `.cco-meta`, `.cco-source`) in older
 > sprints reflect the layout at the time of writing. See Sprint 8 and the `.cco/` consolidation
@@ -13,9 +13,9 @@
 
 | Status | Items | Section |
 |--------|-------|---------|
-| ✅ Completed | 25 sprints / features | [→ Completed](#completed) |
+| ✅ Completed | 27 sprints / features | [→ Completed](#completed) |
 | 🐛 Known Bugs | 1 open · 8 fixed | [→ Known Bugs](#known-bugs) |
-| 🔜 Planned | Quick Wins (FI-4, #10), Sprint 6C → 12 | [→ Planned Sprints](#planned-sprints) |
+| 🔜 Planned | Quick Wins (FI-4, #10), AI-merge, Sprint 6C → 12 | [→ Planned Sprints](#planned-sprints) |
 | 🔭 Exploratory | 7 ideas | [→ Long-term / Exploratory](#long-term--exploratory) |
 | ❌ Declined | 3 items | [→ Declined / Won't Do](#declined--wont-do) |
 
@@ -27,9 +27,9 @@ Features are prioritized by impact for third-party users adopting claude-orchest
 
 ### Prioritization Notes (updated 2026-03-19)
 
-**Completed**: RF-1→4, FI-2, FI-5, FI-7, FI-8, Sprint 5c, Sprint 6 Phase A+B, Bugfix B5-B7.
+**Completed**: RF-1→4, FI-2, FI-5, FI-7, FI-8, Sprint 5c, Sprint 6 Phase A+B, Bugfix B5-B7, UX Improvements P1-3, Minor Fixes batch.
 
-**Next**: Quick wins (FI-4, #10).
+**Next**: Quick wins (FI-4, #10), AI-assisted merge (P4).
 
 **Then**: Security (Sprint 6C), E2E testing (Sprint 8), Linux OAuth (Sprint 9).
 
@@ -38,17 +38,19 @@ Features are prioritized by impact for third-party users adopting claude-orchest
 | Category | Items | Effort | Benefit |
 |----------|-------|--------|---------|
 | **Quick wins (priority 1)** | FI-4 model config, #10 project edit | Low-Medium | UX improvement |
-| **Security (priority 2)** | Sprint 6C network hardening | Medium-High | Required for production/open-source |
-| **Quality (priority 3)** | Sprint 8 E2E tests | Medium | Prerequisite for Linux onboarding |
-| **Onboarding (priority 4)** | Sprint 9 Linux OAuth | Medium | Pre-open-source requirement |
-| **Architecture (priority 5)** | Sprint 10 worktree, #9 pack inheritance, #10b StatusLine | Medium | Valuable but not blocking |
+| **AI-merge (priority 2)** | Phase 4 AI-assisted merge | Low-Medium | Update UX quality |
+| **Security (priority 3)** | Sprint 6C network hardening | Medium-High | Required for production/open-source |
+| **Quality (priority 4)** | Sprint 8 E2E tests | Medium | Prerequisite for Linux onboarding |
+| **Onboarding (priority 5)** | Sprint 9 Linux OAuth | Medium | Pre-open-source requirement |
+| **Architecture (priority 6)** | Sprint 10 worktree, #9 pack inheritance, #10b StatusLine | Medium | Valuable but not blocking |
 | **Exploratory** | Sprint 12 RAG, hot-reload, notifications, remote sessions, web UI | High | Long-term, evaluate demand |
 
 ```mermaid
 graph LR
-    DONE["✅ Completed<br/>Sprint 1-5c, Sprint 6+10,<br/>Sprint 6b, ADR-13,<br/>Sprint 7-Vault,<br/>FI-7 Config Sync,<br/>RF-1→4, FI-2, FI-5, FI-8,<br/>Sprint 6 Phase A+B,<br/>Bugfix #B1-#B7"]
+    DONE["✅ Completed<br/>Sprint 1-5c, Sprint 6+10,<br/>Sprint 6b, ADR-13,<br/>Sprint 7-Vault,<br/>FI-7 Config Sync,<br/>RF-1→4, FI-2, FI-5, FI-8,<br/>Sprint 6 Phase A+B,<br/>Bugfix #B1-#B7,<br/>UX Improvements P1-3,<br/>Minor Fixes"]
 
     QW["Quick Wins<br/>#FI-4 model config<br/>#cco project edit"]
+    AIM["AI-Assisted Merge<br/>#Phase 4"]
     S6S["Sprint 6C-Security<br/>#Network Hardening<br/>#Squid proxy"]
     S8E["Sprint 8-E2E<br/>#E2E Test Suite"]
     S9L["Sprint 9-Linux<br/>#Linux OAuth"]
@@ -56,7 +58,8 @@ graph LR
     S12R["Sprint 12-RAG<br/>#Project RAG"]
 
     DONE --> QW
-    QW --> S6S
+    QW --> AIM
+    AIM --> S6S
     S6S --> S8E
     S8E --> S9L
     S9L --> S10
@@ -83,6 +86,20 @@ Add `model:` field to `project.yml`, passed to `claude --model` at launch.
 Open project.yml in `$EDITOR` and regenerate docker-compose.yml after save.
 
 **Effort**: Low.
+
+---
+
+### AI-Assisted Merge for Update System (Phase 4)
+
+**Priority**: 2 (natural extension of UX Improvements). Low-Medium effort.
+
+Add an (I) AI-merge option for `.md` files during `cco update --sync` when status is `MERGE_AVAILABLE`. Claude understands document semantics and can intelligently combine user content with framework updates, avoiding the noise of text-based 3-way merge.
+
+**Execution**: fallback chain — `claude` on host PATH → cco Docker image (`docker run --rm`) → option hidden from menu.
+
+**Scope**: new `lib/ai-merge.sh` module. Only for `MERGE_AVAILABLE` (not `USER_RESTRUCTURED`). Only `.md` files. User reviews result before acceptance.
+
+**Docs**: [design](../configuration/update-system/ux-improvements-design.md) §5
 
 ---
 
@@ -284,8 +301,10 @@ does not exist. The correct name is `DISABLE_AUTOUPDATER=1`. The auto-updater wa
 never actually disabled, tried to update (failed because npm global dir is root-owned),
 and showed the error message.
 
-**Fix**: Corrected env var to `DISABLE_AUTOUPDATER=1`. Added `companyAnnouncements`
-in managed-settings.json with correct update instructions (`cco build --no-cache`).
+**Fix**: Corrected env var to `DISABLE_AUTOUPDATER=1`. Originally added `companyAnnouncements`
+in managed-settings.json with update instructions — later removed (2026-03-20) because it
+exposed the user's org email via Claude Code's "Message from" UI. Update reminder remains
+in managed CLAUDE.md. See [MF-1](minor-fixes-20-03-2026.md#mf-1-remove-companyannouncements-from-managed-settings).
 
 **Long-term**: Migrate from deprecated npm install to native installer with persistent
 volume for auto-update support. See roadmap item below.
@@ -383,6 +402,24 @@ Migration `005_split_global_setup.sh` renames existing `setup.sh` → `setup-bui
 ---
 
 ## Completed
+
+### Minor Fixes Batch (2026-03-20) ✓
+
+Four minor fixes: removed `companyAnnouncements` from managed-settings.json (exposed org email, not controllable), added design-driven testing approach to workflow rules, added CLAUDE.md hierarchy explanation (project-level vs repo-level scope), added ADR practice to documentation rules.
+
+**Docs**: [decisions](minor-fixes-20-03-2026.md)
+
+---
+
+### Update System UX Improvements — Phase 1-3 (2026-03-20) ✓
+
+Three improvements to the update system UX: (P1) interpolated base in sync — fixes perpetual false `MERGE_AVAILABLE` after sync on project scope; (P2) `--diff` shows summary by default with scoped drill-down (`--diff <project>`, `--diff --all`); (P3) `USER_RESTRUCTURED` detection for heavily customized files (>3x base) with (N)ew-file default instead of broken 3-way merge.
+
+Phase 4 (AI-assisted merge) designed but deferred to a separate cycle.
+
+**Docs**: [analysis](../configuration/update-system/ux-improvements-analysis.md) | [design](../configuration/update-system/ux-improvements-design.md)
+
+---
 
 ### Quick Wins: FI-2 + FI-5 (2026-03-19) ✓
 

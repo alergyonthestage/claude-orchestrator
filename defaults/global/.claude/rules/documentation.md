@@ -14,6 +14,17 @@
 - Update it at the end of each development cycle
 - Include status markers for completed, in-progress, and planned items
 
+## Architecture Decision Records (ADR)
+
+- Record significant decisions in `docs/` as ADR documents
+- Each ADR captures: context, decision, alternatives considered, and rationale
+- ADRs are essential for agent continuity — they preserve the reasoning behind
+  decisions across sessions, preventing re-discussion of settled questions
+- Update ADRs when decisions are revisited or superseded (mark as superseded,
+  link to the new ADR)
+- Keep ADRs close to the domain they affect (e.g., `docs/auth/decisions/`,
+  `docs/maintainer/decisions/`)
+
 ## Diagrams
 
 Mermaid diagrams are required in written artifacts — files written
