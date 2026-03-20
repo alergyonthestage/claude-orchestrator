@@ -84,6 +84,7 @@ _update_global() {
     local dry_run="$2"
     local no_backup="${3:-false}"
     local auto_action="${4:-}"  # "" | replace | keep | skip
+    local diff_mode="${5:-full}"  # summary | full (for --diff mode)
     local meta_file
     meta_file=$(_cco_global_meta)
     local installed_dir="$GLOBAL_DIR/.claude"
@@ -202,7 +203,11 @@ _update_global() {
             _show_discovery_summary "$changes" "Global"
             ;;
         diff)
-            _show_file_diffs "$changes" "$defaults_dir" "$installed_dir" "$base_dir" "Global"
+            if [[ "$diff_mode" == "summary" ]]; then
+                _show_file_diffs_summary "$changes" "Global"
+            else
+                _show_file_diffs "$changes" "$defaults_dir" "$installed_dir" "$base_dir" "Global"
+            fi
             ;;
         sync)
             # Vault pre-update snapshot (optional, skip if already done pre-migration)
@@ -385,6 +390,7 @@ _update_project() {
     local offline_mode="${6:-false}"
     local cache_mode="${7:-default}"
     local local_override="${8:-false}"
+    local diff_mode="${9:-full}"  # summary | full (for --diff mode)
     local pname
     pname="$(basename "$project_dir")"
     local meta_file
@@ -549,7 +555,11 @@ _update_project() {
             fi
             ;;
         diff)
-            _show_file_diffs "$changes" "$defaults_dir" "$installed_dir" "$base_dir" "$scope_label"
+            if [[ "$diff_mode" == "summary" ]]; then
+                _show_file_diffs_summary "$changes" "$scope_label"
+            else
+                _show_file_diffs "$changes" "$defaults_dir" "$installed_dir" "$base_dir" "$scope_label"
+            fi
             ;;
         sync)
             if [[ "$dry_run" == "true" ]]; then

@@ -14,6 +14,7 @@ cmd_update() {
     local offline_mode=false
     local cache_mode="default"   # default | force
     local local_override=false
+    local diff_all=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -26,10 +27,14 @@ cmd_update() {
                 shift ;;
             --diff)
                 cmd_mode="diff"
-                # Optional scope argument (global | project-name)
-                if [[ -n "${2:-}" && "${2:0:1}" != "-" ]]; then
-                    scope="$2"; shift
-                fi
+                # Optional scope argument (global | project-name) and --all flag
+                while [[ -n "${2:-}" ]]; do
+                    case "$2" in
+                        --all) diff_all=true; shift ;;
+                        -*) break ;;
+                        *)  scope="$2"; shift ;;
+                    esac
+                done
                 shift ;;
             --news)       cmd_mode="news"; shift ;;
             --dry-run)    dry_run=true; shift ;;
@@ -50,7 +55,8 @@ Checks both framework defaults and remote sources for installed projects/packs.
 Modes:
   (default)           Run migrations + show available config updates + changelog
   --sync [scope]      Run migrations + interactively sync config from framework defaults
-  --diff [scope]      Run migrations + show diffs of available config updates
+  --diff [scope]      Run migrations + show summary of available config updates
+  --diff [scope] --all  Show full diffs (not just summary)
   --news              Show details of new features and additive changes
 
 Scope (for --sync and --diff):
@@ -124,6 +130,15 @@ EOF
         [[ ! -f "$scoped_dir/project.yml" ]] && die "No project.yml in projects/$scope/"
     fi
 
+    # Determine diff display mode: summary (file list only) or full (with diff content)
+    # --diff without scope → summary; --diff with scope or --all → full
+    local diff_mode="summary"
+    if [[ "$cmd_mode" == "diff" ]]; then
+        if [[ -n "$scope" || "$diff_all" == "true" ]]; then
+            diff_mode="full"
+        fi
+    fi
+
     check_global
 
     # Choose verb based on mode
@@ -158,7 +173,7 @@ EOF
     # Global update
     if $do_global; then
         info "$verb global config..."
-        if ! _update_global "$cmd_mode" "$dry_run" "$no_backup" "$auto_action"; then
+        if ! _update_global "$cmd_mode" "$dry_run" "$no_backup" "$auto_action" "$diff_mode"; then
             global_failed=true
             if [[ "$do_projects" != "none" ]]; then
                 warn "Global update encountered errors. Project updates will still be attempted."
@@ -186,7 +201,7 @@ EOF
             local pname
             pname="$(basename "$project_dir")"
             info "$verb project '$pname'..."
-            if ! _update_project "$project_dir" "$cmd_mode" "$dry_run" "$no_backup" "$auto_action" "$offline_mode" "$cache_mode" "$local_override"; then
+            if ! _update_project "$project_dir" "$cmd_mode" "$dry_run" "$no_backup" "$auto_action" "$offline_mode" "$cache_mode" "$local_override" "$diff_mode"; then
                 warn "Project '$pname' update encountered errors."
                 project_errors=$(( project_errors + 1 ))
             fi
@@ -198,7 +213,7 @@ EOF
     elif [[ "$do_projects" != "none" && "$do_projects" != "all" && "$cmd_mode" != "news" ]]; then
         local project_dir="$PROJECTS_DIR/$do_projects"
         info "$verb project '$do_projects'..."
-        if ! _update_project "$project_dir" "$cmd_mode" "$dry_run" "$no_backup" "$auto_action" "$offline_mode" "$cache_mode" "$local_override"; then
+        if ! _update_project "$project_dir" "$cmd_mode" "$dry_run" "$no_backup" "$auto_action" "$offline_mode" "$cache_mode" "$local_override" "$diff_mode"; then
             warn "Project '$do_projects' update encountered errors. Run 'cco update --sync $do_projects' again."
             project_failed=true
         fi
@@ -253,6 +268,10 @@ EOF
         echo ""
         info "Dry run complete. No changes made."
     elif [[ "$cmd_mode" == "discovery" || "$cmd_mode" == "diff" || "$cmd_mode" == "news" ]]; then
+        if [[ "$cmd_mode" == "diff" && "$diff_mode" == "summary" ]]; then
+            echo ""
+            info "Use 'cco update --diff <scope>' or 'cco update --diff --all' for full diffs."
+        fi
         echo ""
         ok "Update check complete."
     else

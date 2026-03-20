@@ -173,6 +173,39 @@ _show_discovery_summary() {
     info "Run 'cco update --diff' for details, 'cco update --sync' to review and apply."
 }
 
+# ── Diff Summary ─────────────────────────────────────────────────────
+
+# Show per-file summary (name + status) without diff content.
+# Used by --diff without scope (overview mode).
+_show_file_diffs_summary() {
+    local changes="$1"
+    local scope_label="$2"
+
+    [[ -z "$changes" ]] && return 0
+
+    local shown=0
+    local lines=""
+
+    while IFS=$'\t' read -r status rel_path; do
+        [[ -z "$status" ]] && continue
+        case "$status" in
+            NEW)                 lines+="  $rel_path — new framework file"$'\n'; shown=$(( shown + 1 )) ;;
+            UPDATE_AVAILABLE|SAFE_UPDATE) lines+="  $rel_path — framework updated (safe to apply)"$'\n'; shown=$(( shown + 1 )) ;;
+            BASE_MISSING)        lines+="  $rel_path — update available (manual review recommended)"$'\n'; shown=$(( shown + 1 )) ;;
+            MERGE_AVAILABLE|CONFLICT) lines+="  $rel_path — both modified (merge needed)"$'\n'; shown=$(( shown + 1 )) ;;
+            USER_RESTRUCTURED)   lines+="  $rel_path — heavily customized (review .new recommended)"$'\n'; shown=$(( shown + 1 )) ;;
+            REMOVED)             lines+="  $rel_path — removed from framework"$'\n'; shown=$(( shown + 1 )) ;;
+            DELETED_UPDATED)     lines+="  $rel_path — you deleted, framework has updates"$'\n'; shown=$(( shown + 1 )) ;;
+        esac
+    done <<< "$changes"
+
+    [[ $shown -eq 0 ]] && return 0
+
+    echo ""
+    info "$scope_label:"
+    printf '%s' "$lines"
+}
+
 # ── Diff Display ─────────────────────────────────────────────────────
 
 # Show detailed diffs for each discovered change.
