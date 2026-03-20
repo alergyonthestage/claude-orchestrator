@@ -13,7 +13,7 @@ ctx="<SessionReminders>
 - Verify git status and current branch before making changes
 - Commit after each logical unit of work (keep commits atomic)
 - Follow the approved design — pause and discuss if changes are needed
-- Check existing docs and design documents before proposing new analysis
+- Check existing docs and design documents before starting new work
 </SessionReminders>"
 
 jq -n --arg ctx "$ctx" '{
