@@ -25,6 +25,8 @@ Open a [GitHub Issue](../../issues/new?template=feature_request.md) describing:
 - Your proposed solution
 - Alternatives you considered
 
+**Tip:** Run `cco start tutorial` to launch an interactive session with an agent that knows the full codebase and documentation. Use it to explore architecture, clarify design decisions, evaluate ideas for consistency with the current design, or get guidance before writing a proposal.
+
 ## Submitting Changes
 
 ### Branch Strategy
