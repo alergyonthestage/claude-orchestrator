@@ -6,6 +6,21 @@ Per-project context and team sharing for Claude Code — powered by Docker. Ever
 
 cco provides the mechanisms (Docker isolation, context hierarchy, knowledge packs, agent teams) and ships with **recommended defaults** tested through real-world agentic development. Every rule, skill, agent, and default is fully customizable — adopt what works, change what doesn't.
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+## Status
+
+**Alpha (v0.1.0-alpha)** — This project is under active development and already used daily by the author for real-world agentic development. It works well in practice, but APIs, configuration format, and defaults may change between releases.
+
+**Platform support:**
+- **macOS** — fully tested, primary development environment. OAuth login supported.
+- **Linux** — functional but not yet thoroughly tested. OAuth login is not yet available; authentication requires `CLAUDE_API_KEY` (API key). Linux OAuth support with subscription-based login is planned — see the [roadmap](docs/maintainer/decisions/roadmap.md).
+- **Windows** — use via WSL2 + Docker Desktop (see [Requirements](#requirements)).
+
+**Planned before stable release:** network hardening (internet access control per project), E2E integration tests, Linux OAuth support. See the [roadmap](docs/maintainer/decisions/roadmap.md) for the full plan.
+
+Feedback, bug reports, and contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Why claude-orchestrator?
 
 - **Multi-repo workspaces** — Group multiple repos (frontend, backend, infra, docs) into a single project. Claude gets a cross-repo `CLAUDE.md` that understands how everything fits together — built on Claude Code's native features, not replacing them.
