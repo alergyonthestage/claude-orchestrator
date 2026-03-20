@@ -152,19 +152,27 @@ EOF
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
         local file="${line:3}"
-        for pattern in "${_VAULT_SECRET_PATTERNS[@]}"; do
-            local basename_file
-            basename_file=$(basename "$file")
-            # Match exact name, glob pattern on basename, or path suffix
-            if [[ "$basename_file" == $pattern || "$file" == *"$pattern" ]]; then
-                secret_files+=("$file")
-                break
-            fi
-            # Directory entries (e.g. ".cco/"): check if pattern starts with the dir path
-            if [[ "$file" == */ && "$pattern" == "${file}"* ]]; then
-                secret_files+=("$file (contains $pattern)")
-                break
-            fi
+        # Directory entries: expand to individual files so we match
+        # against actual unignored contents (not assumed by path prefix).
+        # git status --porcelain never lists ignored files, so if .gitignore
+        # covers a secret pattern, the file won't appear here.
+        local expanded_files=("$file")
+        if [[ "$file" == */ ]]; then
+            expanded_files=()
+            while IFS= read -r subfile; do
+                [[ -n "$subfile" ]] && expanded_files+=("${subfile:3}")
+            done < <(git -C "$vault_dir" status --porcelain -uall -- "$file" 2>/dev/null)
+        fi
+        for ef in ${expanded_files[@]+"${expanded_files[@]}"}; do
+            for pattern in "${_VAULT_SECRET_PATTERNS[@]}"; do
+                local basename_file
+                basename_file=$(basename "$ef")
+                # Match exact name, glob pattern on basename, or path suffix
+                if [[ "$basename_file" == $pattern || "$ef" == *"$pattern" ]]; then
+                    secret_files+=("$ef")
+                    break
+                fi
+            done
         done
     done <<< "$status_output"
 
