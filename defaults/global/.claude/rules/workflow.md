@@ -23,10 +23,19 @@
 
 ## Implementation Phase
 - Follow the approved design
-- Write tests alongside implementation
+- Write tests alongside implementation (design-driven)
 - Commit after each logical unit of work
 - Run existing tests to verify no regressions
 - If the design needs changes, pause and discuss
+
+### Testing Approach
+- Tests verify the expected behavior defined in the design, not the
+  implementation details
+- Write tests BEFORE or alongside the code they validate (TDD/design-driven)
+- When a test fails, question the implementation first — do not adjust tests
+  to match incorrect behavior
+- Test the contract (inputs → expected outputs), not internal mechanics
+- If the design is ambiguous about expected behavior, ask before assuming
 
 ## Documentation Phase
 - Update README if public API changed

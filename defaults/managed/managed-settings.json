@@ -62,9 +62,5 @@
       "Read(~/.claude.json)",
       "Read(~/.ssh/*)"
     ]
-  },
-
-  "companyAnnouncements": [
-    "To update Claude Code: exit the session and run 'cco build --no-cache' on the host."
-  ]
+  }
 }
