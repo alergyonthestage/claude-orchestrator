@@ -646,7 +646,8 @@ Checks both framework defaults and remote sources for installed projects/packs.
 Modes:
   (default)           Run migrations + show available config updates + changelog
   --sync [scope]      Run migrations + interactively sync config from framework defaults
-  --diff [scope]      Run migrations + show diffs of available config updates
+  --diff [scope]      Run migrations + show config update summary (or full diffs if scoped)
+  --diff --all        Run migrations + show full diffs for all scopes
   --news              Show details of new features and additive changes
 
 Scope (for --sync and --diff):
@@ -678,8 +679,10 @@ Use --local with --sync to apply framework defaults directly (escape hatch).
 
 Examples:
   cco update                  # Run migrations + show available updates
-  cco update --diff           # Show diffs for all available config updates
-  cco update --diff global    # Show diffs for global config only
+  cco update --diff           # Summary: file names + status per scope
+  cco update --diff global    # Full diffs for global config only
+  cco update --diff myapp     # Full diffs for one project
+  cco update --diff --all     # Full diffs for everything
   cco update --sync           # Interactively sync all config from defaults
   cco update --sync global    # Sync global config only
   cco update --sync myapp     # Sync one project only (no global)

@@ -1,7 +1,8 @@
 # Update System — UX Improvements Analysis
 
 **Date**: 2026-03-20
-**Status**: Analysis
+**Status**: Superseded — problem analysis retained for historical context
+**Superseded by**: `ux-improvements-design.md` (approved design, all three phases)
 **Related**: `base-tracking-fix-design.md` (prior fix, partially addresses), `design.md`, `analysis.md`
 **Trigger**: Real-world usage of `cco update` revealed three categories of problems
 

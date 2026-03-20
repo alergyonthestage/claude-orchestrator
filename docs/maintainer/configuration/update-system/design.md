@@ -315,8 +315,12 @@ elif hash(installed) == hash(base):
     → status: "framework has updates (you haven't modified)"
 
 elif hash(installed) != hash(base) AND hash(new) != hash(base):
-    → MERGE_AVAILABLE: both changed
-    → status: "framework has updates (you also modified — merge needed)"
+    if lines(installed) > 3 * lines(base):
+        → USER_RESTRUCTURED: both changed, heavily diverged
+        → status: "heavily customized — text merge unlikely to help"
+    else:
+        → MERGE_AVAILABLE: both changed, similar structure
+        → status: "framework has updates (you also modified — merge needed)"
 
 elif hash(installed) != hash(base) AND hash(new) == hash(base):
     → USER_MODIFIED: user changed, framework didn't → skip (nothing to offer)
@@ -366,6 +370,21 @@ Global: CLAUDE.md (both modified — merge needed)
   framework version without applying it, so it won't be reported again)
 - **(S)kip**: Defers decision (will be reported again next time)
 - **(D)iff**: Shows the three-way diff for review, then re-prompts
+
+**For USER_RESTRUCTURED (both changed, heavily diverged):**
+
+```
+ℹ Project 'myapp': CLAUDE.md (heavily customized — text merge unlikely to help)
+  (N)ew-file (.new)  (K)eep yours  (R)eplace + .bak  (S)kip  (D)iff
+  Tip: saves framework version as .new for manual review
+  Choice [N/k/r/s/d]:
+```
+
+No (M)erge option is offered — 3-way merge produces excessive conflicts on
+heavily restructured files. (N)ew-file is the default, saving the framework
+version as `.new` alongside the user's file for manual review.
+
+See `ux-improvements-design.md` §4 for the full design.
 
 **For NEW_AVAILABLE (new file from framework):**
 
@@ -433,8 +452,10 @@ cco update --project <name>   # Scope to specific project (+ global)
 cco update --all              # Scope to global + all projects (default if no --project)
 
 # Inspection
-cco update --diff             # Show detailed diffs for all available updates
-cco update --diff <file>      # Show 3-way diff for a specific file
+cco update --diff             # Summary: file names + status per scope (no diff content)
+cco update --diff <project>   # Full diffs for one project
+cco update --diff global      # Full diffs for global scope
+cco update --diff --all       # Full diffs for everything (legacy behavior)
 
 # Application (interactive — modifies files on user confirmation)
 cco update --sync             # Interactive per-file: apply/merge/replace/keep/skip
@@ -460,10 +481,11 @@ global and project), the user is prompted to disambiguate. Full path syntax
 
 **Flag composition rules:**
 - `--diff` and `--sync` respect the same scope as discovery
-- `--diff myapp` shows diffs for global + myapp opinionated files
+- `--diff` alone shows a **summary** (file names + status per scope, no diff content)
+- `--diff <scope>` shows **full diffs** for one scope (project name or `global`)
+- `--diff --all` shows **full diffs** for everything (backward-compatible behavior)
 - `--sync myapp` prompts for global + myapp files
 - `--sync --dry-run` is an error (conflicting intent). Use `--diff` to preview.
-- `--diff` without scope flags uses the default scope (global + all projects)
 
 **Non-interactive fallback**: When stdin is not a TTY (e.g., CI), `--sync`
 defaults to **(S)kip** for all files (safest choice). No silent modifications.
@@ -911,8 +933,9 @@ SYNOPSIS
 
 MODES
     (no flags)              Migrations + discovery + additive notifications
-    --diff                  Show detailed diffs for available updates
-    --diff <file>           Show 3-way diff for a specific file
+    --diff                  Summary: file names + status per scope
+    --diff <scope>          Full diffs for one scope (project name or 'global')
+    --diff --all            Full diffs for all scopes (legacy behavior)
     --sync                  Interactive per-file merge/replace/keep/skip
     --sync <file>           Sync a specific file update
     --news                  Show full details of additive changes (examples, docs)

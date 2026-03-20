@@ -2,7 +2,7 @@
 
 **Date**: 2026-03-17 (Revised)
 **Scope**: Architecture-level — cross-cutting analysis
-**Related**: `design.md` (definitive design, updated in parallel)
+**Related**: `design.md` (definitive design, updated in parallel), `ux-improvements-design.md` (Phase 2: `--diff` summary + scope filtering, Phase 3: `USER_RESTRUCTURED` divergence detection)
 
 > This document establishes the change categories, update semantics, and `cco update`
 > behavior for claude-orchestrator. For the complete resource taxonomy and file

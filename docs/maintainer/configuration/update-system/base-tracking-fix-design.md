@@ -1,8 +1,8 @@
 # Update System — Base Tracking Fix Design
 
 **Date**: 2026-03-18
-**Status**: Implemented
-**Related**: `design.md` (update system design), `../../decisions/framework-improvements.md` (FI-7)
+**Status**: Implemented — extended by `ux-improvements-design.md` Phase 1
+**Related**: `design.md` (update system design), `../../decisions/framework-improvements.md` (FI-7), `ux-improvements-design.md` (Phase 1 completes the sync-path fix)
 
 ---
 

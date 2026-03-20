@@ -75,7 +75,8 @@ cco template show <name>     # Show template details
 cco template create <n> --project|--pack  # Create user template
 cco template remove <name>   # Remove a user template
 cco update                   # Migrations + discovery (framework + remote) + changelog
-cco update --diff [scope]    # Show detailed diffs for available config updates
+cco update --diff [scope]    # Summary (no scope) or full diffs (scoped)
+cco update --diff --all      # Full diffs for all scopes
 cco update --sync [scope]    # Interactively sync config from framework defaults
 cco update --sync <p> --local # Apply framework defaults on installed project (escape hatch)
 cco update --news            # Show new features and examples
