@@ -31,6 +31,19 @@ user-config/projects/my-app/
 
 If you pass `--repo`, the CLI auto-detects basic information from the repositories (package.json, pyproject.toml, go.mod, etc.) and populates CLAUDE.md with relevant details.
 
+### Configuration Assistant
+
+If you prefer Claude's help to create and manage projects:
+
+```bash
+cco project create --template config-editor
+cco start config-editor
+```
+
+The config-editor project mounts your user-config directory with write access,
+allowing Claude to create projects, packs, and configuration files for you
+interactively.
+
 ---
 
 ## 2. Configure project.yml

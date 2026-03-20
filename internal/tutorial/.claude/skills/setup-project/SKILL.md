@@ -37,9 +37,10 @@ Present the suggested configuration and get approval.
 Before creating any files, verify:
 1. Is `/workspace/user-config` mounted read-write?
    - If yes → proceed to creation
-   - If no → explain how to enable rw mount, show the project.yml change,
-     and instruct the user to restart the session. Alternatively, show the
-     `cco project create` command they can run on their host.
+   - If no → suggest the user create a config-editor project on the host:
+     `cco project create --template config-editor && cco start config-editor`.
+     Alternatively, show the `cco project create` command with all flags
+     they can run on their host to create the project manually.
 
 ## Step 4: Create Project
 

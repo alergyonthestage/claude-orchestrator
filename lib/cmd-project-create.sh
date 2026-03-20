@@ -22,7 +22,11 @@ cmd_project_create() {
                 template_name="$2"; shift 2 ;;
             --help)
                 cat <<'EOF'
-Usage: cco project create <name> [OPTIONS]
+Usage: cco project create [<name>] [OPTIONS]
+
+Arguments:
+  name                 Project name (optional if --template is provided;
+                       defaults to the template name)
 
 Options:
   --repo <path>        Add a repo to the project (repeatable)
@@ -42,6 +46,10 @@ EOF
         esac
     done
 
+    # Default name to template name when --template is provided
+    if [[ -z "$name" && -n "$template_name" ]]; then
+        name="$template_name"
+    fi
     [[ -z "$name" ]] && die "Usage: cco project create <name>"
 
     # Validate name

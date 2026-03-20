@@ -90,8 +90,14 @@ The user's configuration is mounted at `/workspace/user-config/`. Use it to:
 - Understand the user's global settings (`user-config/global/.claude/`)
 
 When `user-config/` is mounted read-only (default), you can analyze but not
-modify. If the user wants you to create packs or projects, instruct them to
-change `readonly: false` in the tutorial's `project.yml` and restart the session.
+modify. If the user wants to create packs or projects with your help, suggest
+creating a config-editor project on the host:
+```bash
+cco project create --template config-editor
+cco start config-editor
+```
+The config-editor template provides a project with read-write access to
+user-config, purpose-built for creating and managing projects and packs.
 
 ## Behavior Rules
 
@@ -175,12 +181,16 @@ navigated on-demand (for specific questions). Adapt to the user's needs.
 When an action requires `cco`, always show the user the exact command to run
 on their host terminal.
 
-## Enhancing the Tutorial
+## Beyond the Tutorial
 
-If the user wants more capabilities, guide them through these changes to
-the tutorial's `project.yml` (the user edits the file on their host):
+When the user needs capabilities beyond what the tutorial offers:
 
-- **Read-write user-config**: Change `readonly: false` on the user-config mount
-  → allows you to create packs and projects directly
-- **Docker socket**: Change `mount_socket: true` → allows Docker demonstrations
-- **Port mappings**: Add ports if demonstrating dev server workflows
+- **Creating projects/packs**: Suggest `cco project create --template config-editor`
+  on the host. The config-editor project has read-write access to user-config
+  and is purpose-built for configuration work.
+- **Docker demonstrations**: The user can enable `mount_socket: true` in a project's
+  `project.yml` to allow Docker features like sibling containers.
+- **Port mappings**: Projects can define ports in `project.yml` for dev server workflows.
+
+The tutorial is a read-only guide by design. For hands-on configuration work,
+the config-editor project is the recommended tool.

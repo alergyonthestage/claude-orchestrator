@@ -14,7 +14,7 @@ extra_mounts:
     readonly: true
   # Your user configuration (projects, packs, global settings)
   # Default: read-only (agent can analyze but not modify)
-  # Change to readonly: false to let the agent create packs/projects for you
+  # Read-only: use `cco project create --template config-editor` for config editing
   - source: {{CCO_USER_CONFIG_DIR}}
     target: /workspace/user-config
     readonly: true

@@ -253,10 +253,11 @@ Examples:
 Create a new project from the template.
 
 ```
-Usage: cco project create <name> [OPTIONS]
+Usage: cco project create [<name>] [OPTIONS]
 
 Arguments:
-  name                 Project name (lowercase, hyphens, no spaces)
+  name                 Project name (lowercase, hyphens, no spaces).
+                       Optional when --template is provided (defaults to template name)
 
 Options:
   --repo <path>        Add a repo to the project (repeatable)
@@ -267,6 +268,7 @@ Examples:
   cco project create my-saas --repo ~/projects/api --repo ~/projects/web
   cco project create experiment --description "Testing new auth flow"
   cco project create guided --template config-editor
+  cco project create --template config-editor    # name defaults to "config-editor"
 ```
 
 **Flow**:

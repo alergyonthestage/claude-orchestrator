@@ -30,6 +30,15 @@ projects/my-app/
 └── memory/                  # Auto memory (vault-tracked)
 ```
 
+> **Tip**: Want Claude to help you create and configure projects? Use the
+> config-editor template:
+> ```bash
+> cco project create --template config-editor
+> cco start config-editor
+> ```
+> This gives Claude read-write access to your configuration, so it can create
+> projects and packs for you interactively.
+
 For multi-repo projects, pass multiple `--repo` flags:
 
 ```bash
