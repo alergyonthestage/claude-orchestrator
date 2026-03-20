@@ -107,8 +107,16 @@ _collect_file_changes() {
             printf 'UPDATE_AVAILABLE\t%s\n' "$rel"
 
         elif [[ "$installed_hash" != "$base_hash" ]] && [[ "$new_hash" != "$base_hash" ]]; then
-            # Both user and framework have changed
-            printf 'MERGE_AVAILABLE\t%s\n' "$rel"
+            # Both user and framework have changed — check divergence level
+            local inst_lines=0 base_lines=1
+            [[ -f "$installed_dir/$rel" ]] && inst_lines=$(wc -l < "$installed_dir/$rel")
+            [[ -f "$base_dir/$rel" ]] && base_lines=$(wc -l < "$base_dir/$rel")
+            [[ $base_lines -eq 0 ]] && base_lines=1
+            if [[ $inst_lines -gt $(( base_lines * 3 )) ]]; then
+                printf 'USER_RESTRUCTURED\t%s\n' "$rel"
+            else
+                printf 'MERGE_AVAILABLE\t%s\n' "$rel"
+            fi
         fi
     done
 
@@ -144,13 +152,14 @@ _show_discovery_summary() {
 
     [[ -z "$changes" ]] && return 0
 
-    local update_count=0 merge_count=0 new_count=0 removed_count=0 base_missing_count=0 deleted_updated_count=0
+    local update_count=0 merge_count=0 new_count=0 removed_count=0 base_missing_count=0 deleted_updated_count=0 restructured_count=0
 
     while IFS=$'\t' read -r status rel_path; do
         [[ -z "$status" ]] && continue
         case "$status" in
             UPDATE_AVAILABLE|SAFE_UPDATE) update_count=$(( update_count + 1 )) ;;
             MERGE_AVAILABLE|CONFLICT)     merge_count=$(( merge_count + 1 )) ;;
+            USER_RESTRUCTURED)            restructured_count=$(( restructured_count + 1 )) ;;
             NEW)                          new_count=$(( new_count + 1 )) ;;
             REMOVED)                      removed_count=$(( removed_count + 1 )) ;;
             BASE_MISSING)                 base_missing_count=$(( base_missing_count + 1 )) ;;
@@ -158,13 +167,14 @@ _show_discovery_summary() {
         esac
     done <<< "$changes"
 
-    local total=$(( update_count + merge_count + new_count + removed_count + base_missing_count + deleted_updated_count ))
+    local total=$(( update_count + merge_count + restructured_count + new_count + removed_count + base_missing_count + deleted_updated_count ))
     [[ $total -eq 0 ]] && return 0
 
     echo ""
     info "$scope_label: opinionated updates available:"
     [[ $update_count -gt 0 ]] && info "  $update_count file(s) updated by the framework — safe to apply"
     [[ $merge_count -gt 0 ]] && info "  $merge_count file(s) changed by both you and the framework — review needed"
+    [[ $restructured_count -gt 0 ]] && info "  $restructured_count file(s) heavily customized — .new review recommended"
     [[ $new_count -gt 0 ]] && info "  $new_count new file(s) from the framework"
     [[ $removed_count -gt 0 ]] && info "  $removed_count file(s) no longer shipped by the framework"
     [[ $base_missing_count -gt 0 ]] && info "  $base_missing_count file(s) with available updates — manual review recommended"
@@ -279,6 +289,19 @@ _show_file_diffs() {
                     echo "  --- your changes (base → current):"
                     diff -u "$base_dir/$rel_path" "$installed_dir/$rel_path" \
                         --label "previous default" --label "your version" 2>/dev/null | sed 's/^/  /' || true
+                else
+                    diff -u "$installed_dir/$rel_path" "$_sfd_new_file" \
+                        --label "your version" --label "new default" 2>/dev/null | sed 's/^/  /' || true
+                fi
+                shown=$(( shown + 1 ))
+                ;;
+            USER_RESTRUCTURED)
+                echo ""
+                info "$scope_label: $rel_path (heavily customized — text merge unlikely to help)"
+                if [[ -f "$base_dir/$rel_path" ]]; then
+                    echo "  --- framework changes (base → new):"
+                    diff -u "$base_dir/$rel_path" "$_sfd_new_file" \
+                        --label "previous default" --label "new default" 2>/dev/null | sed 's/^/  /' || true
                 else
                     diff -u "$installed_dir/$rel_path" "$_sfd_new_file" \
                         --label "your version" --label "new default" 2>/dev/null | sed 's/^/  /' || true

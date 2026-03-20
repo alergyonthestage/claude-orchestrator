@@ -302,6 +302,74 @@ _interactive_sync() {
                 esac
                 ;;
 
+            USER_RESTRUCTURED)
+                # File heavily customized (e.g., post-init-workspace). Merge won't help.
+                # Default to (N)ew-file so user gets framework version for reference.
+                local choice="$auto_action"
+                if [[ -z "$choice" ]]; then
+                    echo ""
+                    info "$scope_label: $rel_path (heavily customized — text merge unlikely to help)"
+                    echo "  (N)ew-file (.new)  (K)eep yours  (R)eplace + .bak  (S)kip  (D)iff"
+                    echo "  Tip: saves framework version as .new for manual review"
+                    if (exec < /dev/tty) 2>/dev/null; then
+                        read -rp "  Choice [N/k/r/s/d]: " choice < /dev/tty
+                    fi
+                    choice="${choice:-N}"
+                    choice="$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')"
+                    if [[ "$choice" == "d" ]]; then
+                        if [[ -f "$base_dir/$rel_path" ]]; then
+                            echo "  --- framework changes (base → new):"
+                            diff -u "$base_dir/$rel_path" "$defaults_dir/$rel_path" \
+                                --label "previous default" --label "new default" 2>/dev/null | sed 's/^/  /' || true
+                        else
+                            diff -u "$installed_dir/$rel_path" "$defaults_dir/$rel_path" \
+                                --label "your version" --label "new default" 2>/dev/null | sed 's/^/  /' || true
+                        fi
+                        echo ""
+                        if (exec < /dev/tty) 2>/dev/null; then
+                            read -rp "  (N)ew-file (.new)  (K)eep yours  (R)eplace + .bak  (S)kip [N/k/r/s]: " choice < /dev/tty
+                        fi
+                        choice="${choice:-N}"
+                        choice="$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')"
+                    fi
+                fi
+                case "$choice" in
+                    n|new)
+                        cp "$defaults_dir/$rel_path" "$installed_dir/${rel_path}.new"
+                        _save_base_for_scope "$base_dir" "$rel_path" "$defaults_dir/$rel_path" "$project_dir"
+                        local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
+                        _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
+                        ok "  ~ $rel_path → saved framework version as ${rel_path}.new"
+                        info "    Review .new and integrate changes manually, then delete the .new file"
+                        applied=$(( applied + 1 ))
+                        ;;
+                    r|replace)
+                        if [[ "$no_backup" != "true" && -f "$installed_dir/$rel_path" ]]; then
+                            cp "$installed_dir/$rel_path" "$installed_dir/${rel_path}.bak"
+                            warn "  ↻ $rel_path (replaced, backup → ${rel_path}.bak)"
+                        else
+                            warn "  ↻ $rel_path (replaced)"
+                        fi
+                        cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
+                        _save_base_for_scope "$base_dir" "$rel_path" "$defaults_dir/$rel_path" "$project_dir"
+                        local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
+                        _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
+                        applied=$(( applied + 1 ))
+                        ;;
+                    k|keep)
+                        _save_base_for_scope "$base_dir" "$rel_path" "$defaults_dir/$rel_path" "$project_dir"
+                        local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
+                        _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
+                        info "  Kept user version of $rel_path"
+                        kept=$(( kept + 1 ))
+                        ;;
+                    *)
+                        info "  Skipped $rel_path"
+                        skipped=$(( skipped + 1 ))
+                        ;;
+                esac
+                ;;
+
             USER_MODIFIED|NO_UPDATE)
                 # Keep current hash in manifest — no action needed
                 local h; h=$(_file_hash "$installed_dir/$rel_path")
