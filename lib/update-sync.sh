@@ -253,8 +253,8 @@ _interactive_sync() {
                             # Skip inside conflict resolution — defer to next run
                             skipped=$(( skipped + 1 ))
                         else
-                            _save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
-                            local h; h=$(_file_hash "$defaults_dir/$rel_path")
+                            _save_base_for_scope "$base_dir" "$rel_path" "$defaults_dir/$rel_path" "$project_dir"
+                            local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
                             _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
                             if $_LAST_RESOLVE_AUTOMERGE; then
                                 merged=$(( merged + 1 ))

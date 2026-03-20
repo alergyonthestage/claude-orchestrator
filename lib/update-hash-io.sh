@@ -87,6 +87,26 @@ _seed_base_from_interpolated_template() {
     }' "$template_file" > "$base_dir/$rel"
 }
 
+# Self-heal project base files that contain raw {{PROJECT_NAME}} placeholders.
+# Called before discovery to fix bases corrupted by pre-Phase-1 sync saves.
+# Only re-seeds files where placeholders are actually present (cheap grep check).
+_heal_corrupted_project_bases() {
+    local base_dir="$1"       # .cco/base/ directory
+    local defaults_dir="$2"   # template .claude/ directory
+    local project_dir="$3"    # project root directory
+
+    local entry rel policy
+    for entry in "${PROJECT_FILE_POLICIES[@]}"; do
+        rel="${entry%:*}"
+        policy="${entry##*:}"
+        [[ "$policy" != "tracked" ]] && continue
+        rel="${rel#.claude/}"
+        if [[ -f "$base_dir/$rel" ]] && grep -qF '{{PROJECT_NAME}}' "$base_dir/$rel" 2>/dev/null; then
+            _seed_base_from_interpolated_template "$base_dir" "$rel" "$defaults_dir" "$project_dir"
+        fi
+    done
+}
+
 # Create an interpolated temp copy of a template file for comparison.
 # Resolves {{PROJECT_NAME}} and {{DESCRIPTION}} using values recoverable
 # from the project directory. Returns the temp file path on stdout.

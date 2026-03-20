@@ -565,6 +565,8 @@ EOF
         done
         if [[ $updated -eq 0 && ${#failed_packs[@]} -eq 0 ]]; then
             info "No packs with remote sources found"
+        elif [[ $updated -gt 0 && ${#failed_packs[@]} -eq 0 ]]; then
+            ok "Updated $updated pack(s)"
         fi
         if [[ ${#failed_packs[@]} -gt 0 ]]; then
             error "Failed to update ${#failed_packs[@]} pack(s): ${failed_packs[*]}"

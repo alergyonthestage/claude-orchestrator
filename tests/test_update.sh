@@ -205,8 +205,8 @@ languages:
 manifest:"
 
     run_cco update
-    # Schema version should be updated to latest (currently 9: migration 001-009)
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco/meta" "schema_version: 9"
+    # Schema version should be updated to latest (currently 11: migration 001-011)
+    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco/meta" "schema_version: 11"
 }
 
 test_update_migration_failure_stops() {
@@ -972,16 +972,16 @@ test_project_create_cco_source_not_for_base() {
         ".cco/source should NOT exist for base template"
 }
 
-test_project_create_cco_source_for_tutorial() {
-    # Tutorial template should create .cco/source with native:project/tutorial
+test_project_create_cco_source_for_non_base_template() {
+    # Non-base templates should create .cco/source with template origin
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
-    run_cco project create "test-tut-src" --repo "$CCO_DUMMY_REPO" --template tutorial
+    run_cco project create "test-cfg-src" --repo "$CCO_DUMMY_REPO" --template config-editor
 
-    local source_file="$CCO_PROJECTS_DIR/test-tut-src/.cco/source"
-    assert_file_exists "$source_file" ".cco/source should exist for tutorial template"
-    assert_file_contains "$source_file" "native:project/tutorial"
+    local source_file="$CCO_PROJECTS_DIR/test-cfg-src/.cco/source"
+    assert_file_exists "$source_file" ".cco/source should exist for non-base template"
+    assert_file_contains "$source_file" "native:project/config-editor"
 }
 
 # ── Template Source Resolution ───────────────────────────────────────

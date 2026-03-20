@@ -130,6 +130,7 @@ test_setup_internal_tutorial_refreshes_on_rerun() {
 test_start_tutorial_blocks_on_name_conflict() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
 
     # Create a user project named "tutorial"
     mkdir -p "$CCO_PROJECTS_DIR/tutorial/.claude"
@@ -189,7 +190,7 @@ test_migration_010_legacy_tutorial_heuristic() {
 
     # Run migration — should detect as legacy via heuristic
     local output
-    output=$(source "$REPO_ROOT/migrations/project/010_tutorial_to_internal.sh" && migrate "$proj_dir" < /dev/null 2>&1)
+    output=$(source "$REPO_ROOT/lib/colors.sh" && source "$REPO_ROOT/migrations/project/010_tutorial_to_internal.sh" && migrate "$proj_dir" < /dev/null 2>&1)
 
     # Should mention "built-in" (legacy path, not user-project path)
     echo "$output" | grep -qF "built-in" || \

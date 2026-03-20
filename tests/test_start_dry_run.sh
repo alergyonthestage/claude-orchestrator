@@ -154,14 +154,18 @@ test_dry_run_agent_teams_env_var() {
 
 # ── Volume mounts: global config (Design Invariant 5 - read-only) ────
 
-test_dry_run_settings_json_mounted_readonly() {
-    # Design Invariant 5: global config always :ro
+test_dry_run_settings_json_mounted_rw() {
+    # settings.json is rw — Claude Code writes runtime preferences (e.g., /effort)
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run --dump
-    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "settings.json:/home/claude/.claude/settings.json:ro"
+    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "settings.json:/home/claude/.claude/settings.json"
+    # Must NOT have :ro
+    if grep -q "settings.json:/home/claude/.claude/settings.json:ro" "$DRY_RUN_DIR/.cco/docker-compose.yml"; then
+        fail "settings.json should be mounted rw, not ro"
+    fi
 }
 
 test_dry_run_claude_md_mounted_readonly() {
@@ -581,7 +585,7 @@ test_dry_run_volume_order_auth_before_global_config() {
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     local auth_line settings_line
     auth_line=$(grep -n ".claude.json:" "$compose" | head -1 | cut -d: -f1)
-    settings_line=$(grep -n "settings.json:ro" "$compose" | head -1 | cut -d: -f1)
+    settings_line=$(grep -n "settings.json:/home/claude" "$compose" | head -1 | cut -d: -f1)
     if [[ -z "$auth_line" || -z "$settings_line" ]]; then
         echo "ASSERTION FAILED: could not find auth or settings line in compose"
         return 1
@@ -603,7 +607,7 @@ test_dry_run_volume_order_global_before_project() {
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     local settings_line project_line
-    settings_line=$(grep -n "settings.json:ro" "$compose" | head -1 | cut -d: -f1)
+    settings_line=$(grep -n "settings.json:/home/claude" "$compose" | head -1 | cut -d: -f1)
     project_line=$(grep -n "./.claude:/workspace/.claude" "$compose" | head -1 | cut -d: -f1)
     if [[ -z "$settings_line" || -z "$project_line" ]]; then
         echo "ASSERTION FAILED: could not find settings or project config line"

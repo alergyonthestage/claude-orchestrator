@@ -281,7 +281,6 @@ YAML
         > "$CCO_PACKS_DIR/remote-only-pack/.cco/source"
 
     run_cco pack internalize remote-only-pack
-    # Current behavior: reports "already self-contained" because no knowledge.source
-    # This documents the gap: .cco/source tracking is not considered by pack internalize
-    assert_output_contains "already self-contained"
+    # .cco/source with remote URL is disconnected (set to local)
+    assert_output_contains "Disconnected from remote source"
 }

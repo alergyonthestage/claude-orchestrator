@@ -465,6 +465,13 @@ _update_project() {
     # In dry-run mode, detects transitions but skips disk writes.
     _handle_policy_transitions "$project_dir" "$meta_file" "$base_dir" "$defaults_dir" "project" "$dry_run"
 
+    # Phase 1.6: Self-heal corrupted bases (raw {{PROJECT_NAME}} placeholders).
+    # Pre-Phase-1-fix syncs saved raw template content. Re-interpolate if found.
+    # Skip for installed projects — their bases come from the publisher, not templates.
+    if [[ -d "$base_dir" && "$dry_run" != "true" && "$is_installed" != "true" ]]; then
+        _heal_corrupted_project_bases "$base_dir" "$defaults_dir" "$project_dir"
+    fi
+
     # Phase 2: COLLECT — detect file changes
     local changes
     changes=$(_collect_file_changes "$defaults_dir" "$installed_dir" "$base_dir" "project")

@@ -161,9 +161,10 @@ test_invariant_5_all_global_config_mounts_are_readonly() {
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
 
     # Every line mounting from the global config dir must end with :ro
+    # Exception: settings.json is rw (Claude Code writes runtime preferences)
     local global_path="$CCO_GLOBAL_DIR/.claude"
     local violations
-    violations=$(grep -F "$global_path" "$compose" | grep -v ":ro" || true)
+    violations=$(grep -F "$global_path" "$compose" | grep -v ":ro" | grep -v "settings.json:" || true)
     if [[ -n "$violations" ]]; then
         echo "ASSERTION FAILED: global config mount(s) without :ro (Design Invariant 5)"
         echo "$violations" | sed 's/^/  /'
