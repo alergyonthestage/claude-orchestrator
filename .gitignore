@@ -17,5 +17,12 @@ secrets.env
 # Claude Code local settings (generated per-session)
 .claude/settings.local.json
 
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
 # macOS
 .DS_Store
