@@ -28,6 +28,9 @@ Based on requirements, suggest:
 - **Auth**: OAuth (default) vs API key based on their setup
 - **Ports**: What ports their dev servers use
 - **MCP servers**: Do they need GitHub integration, browser automation, etc.?
+- **LLMs.txt**: Does the project use frameworks with llms.txt support? If so,
+  suggest `cco llms install <url>` and adding `llms:` to project.yml or to a pack.
+  This gives agents access to official, up-to-date framework documentation.
 - **Docker socket**: Do they need sibling containers (postgres, redis, etc.)?
 
 Present the suggested configuration and get approval.
@@ -38,8 +41,9 @@ After user approves:
 1. Create directory structure in `/workspace/user-config/projects/<name>/`
 2. Write `project.yml` with the agreed configuration
 3. Write `.claude/CLAUDE.md` with project overview and repo descriptions
-4. Create `.claude/settings.json` with `{}`
-5. Create supporting dirs: `.cco/claude-state/`, `memory/.gitkeep`
+4. Create empty directories: `.claude/agents/`, `.claude/rules/`, `.claude/skills/`
+5. Create `.cco/claude-state/` directory
+6. Create `memory/.gitkeep`
 
 ## Step 4: Post-Creation Guidance
 
@@ -49,6 +53,7 @@ After creation:
   detailed CLAUDE.md from the repositories
 - If packs were suggested but not created, mention `/setup-pack`
 - Reference: `cco-docs/user-guides/project-setup.md`
+- Remind the user to run `cco vault sync` after creation if vault is active
 
 ## Important
 
@@ -56,4 +61,3 @@ After creation:
 - Reference the official docs for each concept introduced
 - Show the equivalent `cco` CLI commands the user could use instead
 - Validate the project name (lowercase, hyphens, max 63 chars)
-- Remind the user to run `cco vault sync` after creation if vault is active

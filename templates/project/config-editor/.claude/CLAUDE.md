@@ -33,6 +33,7 @@ consult these files for accurate, up-to-date information.
 | Sharing & distribution | `user-guides/sharing.md` | Config Repos, vault, publishing |
 | Configuring rules | `user-guides/configuring-rules.md` | Rules vs skills vs agents, grouping |
 | Development workflow | `user-guides/development-workflow.md` | Review cycles, permission modes |
+| LLMs.txt docs | `reference/cli.md` § 3.31 | `cco llms` commands (install, list, update, rename, remove) |
 | CLI reference | `reference/cli.md` | All cco commands |
 | project.yml reference | `reference/project-yaml.md` | Field reference, validation |
 | Context hierarchy | `reference/context-hierarchy.md` | Settings precedence |
@@ -126,6 +127,9 @@ Common commands:
 - `cco project list` — list all projects
 - `cco pack create <name>` — scaffold new pack
 - `cco pack validate <name>` — validate pack structure
+- `cco llms install <url>` — install framework documentation (llms.txt)
+- `cco llms list` — list installed llms entries
+- `cco llms rename <old> <new>` — rename an llms entry
 - `cco start <project>` — launch project session
 - `cco vault sync [msg]` — commit config changes
 - `cco vault diff` — show uncommitted changes
