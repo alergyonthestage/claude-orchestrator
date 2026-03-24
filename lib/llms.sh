@@ -42,7 +42,9 @@ _collect_llms_names() {
     local pack_names="$2"  # newline-separated pack names
 
     # Use arrays for deduplication (project wins over pack)
+    # Note: empty array access requires guards for bash 3.2 + set -u
     local seen_keys=() seen_vals=()
+    local _seen_count=0
 
     # Pack llms first (lower priority)
     if [[ -n "$pack_names" ]]; then
@@ -56,12 +58,13 @@ _collect_llms_names() {
             while IFS=$'\t' read -r lname ldesc lvariant; do
                 [[ -z "$lname" ]] && continue
                 local found=false
-                for ((i=0; i<${#seen_keys[@]}; i++)); do
+                for ((i=0; i<_seen_count; i++)); do
                     [[ "${seen_keys[$i]}" == "$lname" ]] && { found=true; break; }
                 done
                 if [[ "$found" == "false" ]]; then
                     seen_keys+=("$lname")
                     seen_vals+=("${lname}	${ldesc}	${lvariant}")
+                    ((_seen_count++)) || true
                 fi
             done <<< "$pack_llms"
         done <<< "$pack_names"
@@ -75,7 +78,7 @@ _collect_llms_names() {
             while IFS=$'\t' read -r lname ldesc lvariant; do
                 [[ -z "$lname" ]] && continue
                 local found=false
-                for ((i=0; i<${#seen_keys[@]}; i++)); do
+                for ((i=0; i<_seen_count; i++)); do
                     if [[ "${seen_keys[$i]}" == "$lname" ]]; then
                         seen_vals[$i]="${lname}	${ldesc}	${lvariant}"
                         found=true
@@ -85,13 +88,14 @@ _collect_llms_names() {
                 if [[ "$found" == "false" ]]; then
                     seen_keys+=("$lname")
                     seen_vals+=("${lname}	${ldesc}	${lvariant}")
+                    ((_seen_count++)) || true
                 fi
             done <<< "$proj_llms"
         fi
     fi
 
     # Output all collected entries
-    if [[ ${#seen_vals[@]} -gt 0 ]]; then
+    if [[ $_seen_count -gt 0 ]]; then
         printf '%s\n' "${seen_vals[@]}"
     fi
 }
@@ -131,6 +135,7 @@ _generate_llms_packs_md() {
 
     # Buffer entries first to avoid orphaned header when all dirs are missing
     local buffered_lines=()
+    local _buf_count=0
     while IFS=$'\t' read -r lname ldesc lvariant; do
         [[ -z "$lname" ]] && continue
         local llms_dir="$LLMS_DIR/$lname"
@@ -166,14 +171,15 @@ _generate_llms_packs_md() {
         fi
 
         buffered_lines+=("- ${fpath} — ${desc_text}${type_hint}")
+        ((_buf_count++)) || true
     done <<< "$entries"
 
     # Only emit section if at least one valid entry exists
-    if [[ ${#buffered_lines[@]} -eq 0 ]]; then
+    if [[ $_buf_count -eq 0 ]]; then
         return 0
     fi
 
-    local lines=${#buffered_lines[@]}
+    local lines=$_buf_count
     echo ""
     echo "## Official Framework Documentation (llms.txt)"
     echo ""
@@ -224,6 +230,7 @@ _update_check_llms_freshness() {
     [[ ! -d "$LLMS_DIR" ]] && return 0
 
     local stale_entries=()
+    local _stale_count=0
     for dir in "$LLMS_DIR"/*/; do
         [[ ! -d "$dir" ]] && continue
         local dname
@@ -243,10 +250,11 @@ _update_check_llms_freshness() {
         age_days=$(( (today_epoch - dl_epoch) / 86400 ))
         if [[ $age_days -ge $threshold_days ]]; then
             stale_entries+=("$dname (${age_days} days ago)")
+            ((_stale_count++)) || true
         fi
     done
 
-    if [[ ${#stale_entries[@]} -gt 0 ]]; then
+    if [[ $_stale_count -gt 0 ]]; then
         echo ""
         info "llms.txt updates may be available:"
         for entry in "${stale_entries[@]}"; do
