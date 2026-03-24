@@ -53,7 +53,7 @@ rules:
   - api-conventions.md
 ```
 
-**Allowed top-level keys**: `name`, `knowledge`, `skills`, `agents`, `rules`.
+**Allowed top-level keys**: `name`, `knowledge`, `llms`, `skills`, `agents`, `rules`.
 
 The `name` field must match the pack's directory name. `cco pack validate` emits a warning if they mismatch.
 

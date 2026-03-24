@@ -108,6 +108,7 @@ browser:
 | `extra_mounts[].target` | ✅ | string | — | Container path |
 | `extra_mounts[].readonly` | ❌ | bool | `true` | Mount as read-only (secure default; set `false` explicitly for writable mounts) |
 | `packs` | ❌ | list | `[]` | Knowledge packs to activate (see Knowledge Packs section below) |
+| `llms` | ❌ | list | `[]` | LLMs.txt framework docs to include (see LLMs.txt section below) |
 | `docker.ports` | ❌ | list | see defaults | Port mappings |
 | `docker.env` | ❌ | map | `{}` | Environment variables |
 | `docker.network` | ❌ | string | `cc-<name>` | Docker network name |
@@ -247,3 +248,42 @@ user-config/
       rules/
         conventions.md
 ```
+
+---
+
+## LLMs.txt — Framework Documentation
+
+Projects and packs can reference installed llms.txt files via the `llms:` section.
+These are official framework documentation files (following the [llms.txt standard](https://llmstxt.org/))
+that are served to coding agents during sessions.
+
+### Schema
+
+```yaml
+# In project.yml or pack.yml
+llms:
+  - svelte                          # Short form: name only
+  - name: shadcn-svelte             # Long form: with overrides
+    description: "Component index — WebFetch for details"
+    variant: index                  # full | medium | small | index
+```
+
+| Field | Required | Type | Default | Description |
+|-------|----------|------|---------|-------------|
+| `llms[].name` | ✅ | string | — | Name matching `user-config/llms/<name>/` directory |
+| `llms[].description` | ❌ | string | Auto from H1 | Override description shown to the agent |
+| `llms[].variant` | ❌ | string | Auto (full > medium > small > index) | Force a specific file variant |
+
+### How It Works
+
+1. Install llms files with `cco llms install <url>` (stored in `user-config/llms/`)
+2. Reference them in `project.yml` or `pack.yml` via `llms:` section
+3. At `cco start`, directories are mounted read-only at `/workspace/.claude/llms/<name>/`
+4. The file list is appended to `.claude/packs.md` and injected into the agent's context
+5. A managed rule (`use-official-docs.md`) guides the agent to consult docs before writing code
+
+### Resolution
+
+When both a project and its packs reference the same llms name, the project's
+`description:` and `variant:` overrides take precedence. Each llms directory is
+mounted only once regardless of how many times it's referenced.

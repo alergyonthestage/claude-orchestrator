@@ -128,3 +128,18 @@ entries:
       existing design documents, ADRs, and prior analysis before starting
       new work on any topic. Both are baked into the Docker image and active
       automatically after `cco build`.
+
+  - id: 10
+    date: "2026-03-24"
+    type: additive
+    title: "llms.txt framework documentation support"
+    description: >
+      New `cco llms` command family for managing official framework documentation
+      following the llms.txt standard. Install docs with `cco llms install <url>`,
+      reference them from packs or projects via the new `llms:` section in
+      pack.yml/project.yml, and keep them updated with `cco llms update --all`.
+      Documentation files are mounted read-only and listed in the agent's context
+      at session start. A new managed rule (use-official-docs.md) guides agents
+      to consult installed docs before writing framework-specific code.
+      Run `cco build` to include the managed rule, then `cco llms install` to
+      add your first framework docs.
