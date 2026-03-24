@@ -19,3 +19,9 @@ name: {{PACK_NAME}}
 # ── Rules (filenames under rules/) ──────────────────────────────────
 # rules:
 #   - conventions.md
+
+# ── LLMs.txt Framework Docs (optional) ────────────────────────────
+# Reference official framework documentation installed via 'cco llms install'.
+# See: docs/reference/project-yaml.md (§ LLMs.txt) for schema.
+# llms:
+#   - svelte

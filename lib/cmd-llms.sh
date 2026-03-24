@@ -82,6 +82,11 @@ EOF
         [[ -z "$name" ]] && die "Cannot determine name from URL. Use --name <name>."
     fi
 
+    # Validate name: safe filesystem component, no path traversal
+    if [[ ! "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
+        die "Invalid llms name '$name': must start with alphanumeric and contain only [a-zA-Z0-9._-]"
+    fi
+
     local target_dir="$LLMS_DIR/$name"
 
     # Warn if already exists
@@ -120,10 +125,9 @@ EOF
         if [[ "$status" != "200" ]]; then
             die "No llms.txt files found at $base_url/ (tried llms.txt, llms-full.txt, etc.)"
         fi
-        # Download just the provided URL
+        # Download just the provided URL (normalize filename to llms.txt)
         info "Downloading $url..."
-        local fname
-        fname=$(basename "$url")
+        local fname="llms.txt"
         curl -sL --max-time 120 "$url" -o "$target_dir/$fname" || die "Download failed"
         local line_count
         line_count=$(wc -l < "$target_dir/$fname" | tr -d ' ')
@@ -432,12 +436,12 @@ _llms_update_single() {
             warn "  $fname: HTTP $http_status — skipped"
             continue
         fi
-        local old_hash new_content
+        local old_hash
         old_hash=$(md5sum "$f" 2>/dev/null | cut -d' ' -f1 || md5 -q "$f" 2>/dev/null)
-        new_content=$(curl -sL --max-time 120 "$vurl" 2>/dev/null) || { warn "  Failed to fetch $fname"; continue; }
-        printf '%s' "$new_content" > "$f"
+        curl -sL --max-time 120 "$vurl" -o "$f.tmp" 2>/dev/null || { warn "  Failed to fetch $fname"; rm -f "$f.tmp"; continue; }
         local new_hash
-        new_hash=$(md5sum "$f" 2>/dev/null | cut -d' ' -f1 || md5 -q "$f" 2>/dev/null)
+        new_hash=$(md5sum "$f.tmp" 2>/dev/null | cut -d' ' -f1 || md5 -q "$f.tmp" 2>/dev/null)
+        mv "$f.tmp" "$f"
         if [[ "$old_hash" != "$new_hash" ]]; then
             local new_lines
             new_lines=$(wc -l < "$f" | tr -d ' ')
@@ -630,10 +634,13 @@ _llms_add_to_yaml() {
 _llms_append_to_yaml_list() {
     local file="$1" key="$2" value="$3"
 
-    if grep -q "^${key}:" "$file" 2>/dev/null; then
+    # Escape sed metacharacters in value to prevent injection
+    local safe_value
+    safe_value=$(printf '%s' "$value" | sed 's/[&/\]/\\&/g')
+    if grep -qF "${key}:" "$file" 2>/dev/null; then
         # Key exists — append entry after it
         _sed_i_raw "$file" "/^${key}:/a\\
-  - ${value}"
+  - ${safe_value}"
     else
         # Key doesn't exist — append at end of file
         printf '\n%s:\n  - %s\n' "$key" "$value" >> "$file"

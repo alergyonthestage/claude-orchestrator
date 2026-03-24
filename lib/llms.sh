@@ -183,9 +183,9 @@ _generate_llms_packs_md() {
     echo ""
     printf '%s\n' "${buffered_lines[@]}"
 
-    # Set the count via nameref-compatible eval
+    # Set the count via printf -v (safer than eval)
     if [[ -n "$count_var" ]]; then
-        eval "$count_var=$lines"
+        printf -v "$count_var" '%d' "$lines"
     fi
 }
 
