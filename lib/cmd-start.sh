@@ -596,9 +596,11 @@ _start_generate_metadata() {
 
         # LLMs section
         if [[ "$has_llms" == "true" ]]; then
-            [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] metadata: calling _generate_llms_packs_md" >&2
-            _generate_llms_packs_md "$project_yml" "$pack_names" >> "$packs_md"
-            [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] metadata: _generate_llms_packs_md done" >&2
+            local _llms_md
+            _llms_md=$(_generate_llms_packs_md "$project_yml" "$pack_names")
+            if [[ -n "$_llms_md" ]]; then
+                echo "$_llms_md" >> "$packs_md"
+            fi
         fi
 
         local packs_md_lines
