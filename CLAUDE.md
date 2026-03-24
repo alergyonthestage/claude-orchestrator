@@ -51,6 +51,11 @@ cco remote set-token <n> <t> # Save auth token for a remote
 cco remote remove-token <n>  # Remove saved token
 cco pack publish <n> [remote] # Publish pack to a Config Repo
 cco pack internalize <name>  # Convert source-referencing pack to self-contained
+cco llms install <url>       # Install framework documentation (llms.txt)
+cco llms list                # List installed llms entries
+cco llms show <name>         # Show llms entry details
+cco llms update [name]       # Re-download from source (--all for all)
+cco llms remove <name>       # Remove an llms entry
 cco project publish <n> <r>  # Publish project template to Config Repo (with safety checks)
 cco project add-pack <p> <k> # Add a pack to a project
 cco project remove-pack <p> <k> # Remove a pack from a project

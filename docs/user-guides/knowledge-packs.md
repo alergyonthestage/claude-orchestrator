@@ -296,3 +296,11 @@ cco vault push           # Push to remote
 ```
 
 For the complete sharing workflow (multi-machine sync, team distribution, project templates), see the [Configuration Management guide](configuration-management.md).
+
+---
+
+## Related: Framework Documentation (llms.txt)
+
+While knowledge packs bundle user-written conventions and guidelines, official framework documentation can be installed separately via `cco llms install`. LLMs.txt files are stored centrally in `user-config/llms/` and referenced from packs or projects.
+
+See [project-yaml.md § LLMs.txt](../reference/project-yaml.md#llmstxt--framework-documentation) and `cco llms --help`.
