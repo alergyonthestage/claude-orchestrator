@@ -37,7 +37,10 @@ For each module:
 
 While presenting modules, watch for opportunities to suggest related features:
 - Discussing projects → mention packs if they don't use any
-- Discussing packs → mention Config Repos for sharing
+- Discussing packs → mention Config Repos for sharing, and llms.txt for framework docs
+- Discussing technology stacks → suggest `cco llms install` for official framework
+  documentation (e.g., Svelte, Tailwind, Drizzle). Explain that llms.txt files keep
+  agents up-to-date with latest APIs without relying on training data.
 - Discussing CLAUDE.md → mention /init-workspace skill
 - Discussing agents → mention agent teams (tmux)
 - Discussing rules → reference `configuring-rules.md` guide for rule categories,

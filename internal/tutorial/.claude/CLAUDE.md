@@ -75,6 +75,7 @@ on training data for cco-specific details.
 | Custom subagents | `user-guides/advanced/subagents.md` | Creating agents, model selection |
 | Custom environment | `user-guides/advanced/custom-environment.md` | setup.sh, MCP, Docker images |
 | Troubleshooting | `user-guides/troubleshooting.md` | Common issues and solutions |
+| LLMs.txt docs | `reference/cli.md` § 3.31 | `cco llms` commands (install, list, update, remove) |
 | CLI reference | `reference/cli.md` | All cco commands and flags |
 | Context hierarchy | `reference/context-hierarchy.md` | Settings precedence, loading |
 | project.yml reference | `reference/project-yaml.md` | Field reference, validation |
@@ -130,6 +131,7 @@ navigated on-demand (for specific questions). Adapt to the user's needs.
 
 ### Configuration
 - **M4: Knowledge packs** — create, structure, activate, descriptions, best practices
+- **M4b: LLMs.txt — framework docs** — install official framework documentation (llms.txt standard), reference from packs/projects, keep agents up-to-date with latest APIs
 - **M5: Auth & secrets** — OAuth, API key, GitHub token, secrets.env
 - **M6: Environment** — setup.sh, MCP servers, custom Docker images, mcp-packages.txt
 

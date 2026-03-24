@@ -28,6 +28,9 @@ Based on requirements, suggest:
 - **Auth**: OAuth (default) vs API key based on their setup
 - **Ports**: What ports their dev servers use
 - **MCP servers**: Do they need GitHub integration, browser automation, etc.?
+- **LLMs.txt**: Does the project use frameworks with llms.txt support? If so,
+  suggest `cco llms install <url>` and adding `llms:` to project.yml or to a pack.
+  This gives agents access to official, up-to-date framework documentation.
 - **Docker socket**: Do they need sibling containers (postgres, redis, etc.)?
 
 Present the suggested configuration and get approval.

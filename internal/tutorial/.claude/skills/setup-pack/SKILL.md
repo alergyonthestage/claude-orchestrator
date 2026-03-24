@@ -27,6 +27,9 @@ Based on the domain, suggest:
 - **Knowledge files**: Suggest files based on the domain, with descriptions
 - **Rules**: Are there non-negotiable conventions to enforce? (always-loaded, keep short)
 - **Skills/Agents**: Are there domain-specific workflows or specialist agents needed?
+- **LLMs.txt**: Does the domain use frameworks with llms.txt support? (e.g., Svelte,
+  Tailwind, Drizzle). If so, suggest `cco llms install <url>` and adding `llms:` to
+  the pack. This keeps agents current with official API docs.
 
 Apply pack design best practices:
 - **Composability**: One pack per concern, no cross-pack dependencies
