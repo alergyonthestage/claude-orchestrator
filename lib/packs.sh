@@ -83,7 +83,8 @@ _generate_pack_mounts() {
         [[ -z "$_pname" ]] && continue
         local _pyml="$PACKS_DIR/${_pname}/pack.yml"
         [[ ! -f "$_pyml" ]] && continue
-        if ! grep -qE '^(name|knowledge|skills|agents|rules):' "$_pyml"; then
+        if ! grep -qE '^(name|knowledge|llms|skills|agents|rules):' "$_pyml"; then
+            warn "Pack '$_pname': pack.yml has no valid top-level keys — check for extra indentation."
             continue
         fi
 
