@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Catch silent crashes: show file, line, and command on unexpected exit
+trap '_cco_err=$?; echo "[cco] ERROR at ${BASH_SOURCE[0]##*/}:${LINENO} (exit ${_cco_err}): ${BASH_COMMAND}" >&2' ERR
+
 # ── Constants ────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
