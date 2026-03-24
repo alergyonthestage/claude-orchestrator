@@ -22,11 +22,11 @@ graph TB
     subgraph "project A"
         PY_A["project.yml<br/>llms: [svelte, shadcn-svelte]"]
     end
-    subgraph "pack cave-web"
+    subgraph "pack frontend-stack"
         PACK["pack.yml<br/>llms: [svelte, svelte-kit, shadcn-svelte]"]
     end
-    subgraph "project B (uses cave-web)"
-        PY_B["project.yml<br/>packs: [cave-web]"]
+    subgraph "project B (uses frontend-stack)"
+        PY_B["project.yml<br/>packs: [frontend-stack]"]
     end
 
     PY_A -->|references| LLMS
@@ -99,12 +99,12 @@ override by specifying `variant:` in the YAML reference.
 ### 3.1 Pack Reference (`pack.yml`)
 
 ```yaml
-name: cave-web
-description: "Stack-specific conventions for Cave web services"
+name: frontend-stack
+description: "Stack-specific conventions for SvelteKit web applications"
 
 knowledge:
   files:
-    - path: cave-frontend-coding-conventions.md
+    - path: frontend-coding-conventions.md
       description: "Read when writing frontend code"
 
 # NEW: llms.txt references
@@ -115,7 +115,7 @@ llms:
     description: "Component index — read index, then WebFetch specific component pages"
 
 rules:
-  - cave-frontend-rules.md
+  - frontend-rules.md
 ```
 
 **Short form**: `- svelte` — references `user-config/llms/svelte/`, uses default
@@ -133,7 +133,7 @@ repos:
     name: my-app
 
 packs:
-  - cave-web
+  - frontend-stack
 
 # NEW: project-level llms (in addition to pack llms)
 llms:
@@ -194,8 +194,8 @@ cco llms install https://svelte.dev/docs/svelte/llms.txt
 cco llms install https://shadcn-svelte.com/llms.txt --name shadcn-svelte
 # → Downloads llms.txt (no full variant), saves to user-config/llms/shadcn-svelte/
 
-cco llms install https://svelte.dev/docs/svelte/llms.txt --variant medium --pack cave-web
-# → Downloads llms-medium.txt, adds "svelte" to cave-web pack.yml llms: list
+cco llms install https://svelte.dev/docs/svelte/llms.txt --variant medium --pack frontend-stack
+# → Downloads llms-medium.txt, adds "svelte" to frontend-stack pack.yml llms: list
 ```
 
 **Output**:
@@ -224,9 +224,9 @@ shadcn-svelte    index     117     2026-03-24    shadcn-svelte.com/llms.txt
 claude-code      index     60      2026-03-20    code.claude.com/docs/en/llms.txt
 
 Used by:
-  svelte         → cave-web (pack), my-svelte-app (project)
-  svelte-kit     → cave-web (pack)
-  shadcn-svelte  → cave-web (pack)
+  svelte         → frontend-stack (pack), my-svelte-app (project)
+  svelte-kit     → frontend-stack (pack)
+  shadcn-svelte  → frontend-stack (pack)
   claude-code    → (unused)
 ```
 
@@ -273,7 +273,7 @@ Removes an llms entry. Warns if referenced by any pack or project.
 
 ```bash
 cco llms remove svelte
-# Warning: 'svelte' is referenced by pack 'cave-web' and project 'my-svelte-app'.
+# Warning: 'svelte' is referenced by pack 'frontend-stack' and project 'my-svelte-app'.
 # Remove anyway? [y/N]
 ```
 
@@ -292,7 +292,7 @@ cco llms show svelte
 #   llms.txt      (42 lines, index)
 #   llms-full.txt (17140 lines, primary)
 # Used by:
-#   pack cave-web
+#   pack frontend-stack
 #   project my-svelte-app
 ```
 
@@ -309,7 +309,7 @@ knowledge:
 # In generated docker-compose.yml
 volumes:
   # Pack knowledge (existing)
-  - /path/to/packs/cave-web/knowledge:/workspace/.claude/packs/cave-web:ro
+  - /path/to/packs/frontend-stack/knowledge:/workspace/.claude/packs/frontend-stack:ro
   # LLMs docs (NEW)
   - /path/to/llms/svelte:/workspace/.claude/llms/svelte:ro
   - /path/to/llms/svelte-kit:/workspace/.claude/llms/svelte-kit:ro
@@ -352,8 +352,8 @@ The following knowledge files provide project-specific conventions and context.
 Read the relevant files BEFORE starting any implementation, review, or design task.
 Do not ask the user for context that is covered by these files.
 
-- /workspace/.claude/packs/cave-web/cave-frontend-coding-conventions.md — Read when writing frontend code
-- /workspace/.claude/packs/cave-web/cave-backend-coding-conventions.md — Read when writing backend code
+- /workspace/.claude/packs/frontend-stack/frontend-coding-conventions.md — Read when writing frontend code
+- /workspace/.claude/packs/frontend-stack/backend-coding-conventions.md — Read when writing backend code
 
 ## Official Framework Documentation (llms.txt)
 
