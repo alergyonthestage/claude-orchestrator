@@ -128,9 +128,11 @@ _generate_llms_packs_md() {
     local project_yml="$1"
     local pack_names="$2"
 
+    [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] llms_packs_md: entered" >&2
     local entries
     entries=$(_collect_llms_names "$project_yml" "$pack_names")
-    [[ -z "$entries" ]] && return 0
+    [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] llms_packs_md: entries='$(echo "$entries" | wc -l | tr -d ' ')' lines" >&2
+    if [[ -z "$entries" ]]; then return 0; fi
 
     # Buffer entries first to avoid orphaned header when all dirs are missing
     local buffered_lines=()
