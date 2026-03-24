@@ -784,18 +784,25 @@ EOF
     local output_dir compose_file packs_md
 
     _start_resolve_project
+    [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] resolve_project done" >&2
 
     _start_load_config
+    [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] load_config done" >&2
 
     _start_check_health
+    [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] check_health done" >&2
 
     _start_prepare_state
+    [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] prepare_state done" >&2
 
     _start_generate_integrations
+    [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] generate_integrations done" >&2
 
     _start_generate_compose
+    [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] generate_compose done" >&2
 
     _start_generate_metadata
+    [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] generate_metadata done" >&2
 
     if $dry_run; then
         _start_show_summary
