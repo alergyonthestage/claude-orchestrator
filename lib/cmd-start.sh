@@ -539,6 +539,7 @@ YAML
 
 # Generates pack metadata (packs.md, workspace.yml) and cleans legacy files.
 _start_generate_metadata() {
+    [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] metadata: entered" >&2
     # Generate .claude/packs.md — instructional list of knowledge + llms files
     packs_md="$output_dir/.claude/packs.md"
     local has_knowledge=false has_llms=false
@@ -551,8 +552,10 @@ _start_generate_metadata() {
             [[ -f "$_pyml" ]] && [[ -n "$(yml_get_pack_knowledge_files "$_pyml")" ]] && has_knowledge=true
         done <<< "$pack_names"
     fi
+    [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] metadata: knowledge check done" >&2
     local _llms_entries
     _llms_entries=$(_collect_llms_names "$project_yml" "$pack_names")
+    [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] metadata: llms_entries collected, has_knowledge=$has_knowledge has_llms=$has_llms" >&2
     [[ -n "$_llms_entries" ]] && has_llms=true
 
     if [[ "$has_knowledge" == "true" || "$has_llms" == "true" ]]; then
