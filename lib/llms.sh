@@ -207,7 +207,7 @@ _validate_llms_refs() {
         fi
     done <<< "$llms_names"
 
-    return $errors
+    [[ $errors -gt 0 ]] && return 1 || return 0
 }
 
 # Check llms.txt freshness for cco update discovery phase.

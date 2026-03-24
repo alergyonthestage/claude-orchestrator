@@ -402,14 +402,23 @@ _llms_update_single() {
         local fname vurl
         fname=$(basename "$f")
         vurl="${base_url}/${fname}"
-        local old_lines new_content
-        old_lines=$(wc -l < "$f" | tr -d ' ')
+        # Check HTTP status before downloading
+        local http_status
+        http_status=$(curl -sI -o /dev/null -w '%{http_code}' --max-time 10 "$vurl" 2>/dev/null || echo "000")
+        if [[ "$http_status" != "200" ]]; then
+            warn "  $fname: HTTP $http_status — skipped"
+            continue
+        fi
+        local old_hash new_content
+        old_hash=$(md5sum "$f" 2>/dev/null | cut -d' ' -f1 || md5 -q "$f" 2>/dev/null)
         new_content=$(curl -sL --max-time 120 "$vurl" 2>/dev/null) || { warn "  Failed to fetch $fname"; continue; }
-        local new_lines
-        new_lines=$(echo "$new_content" | wc -l | tr -d ' ')
-        echo "$new_content" > "$f"
-        if [[ "$old_lines" != "$new_lines" ]]; then
-            ok "  $fname updated ($old_lines → $new_lines lines)"
+        printf '%s' "$new_content" > "$f"
+        local new_hash
+        new_hash=$(md5sum "$f" 2>/dev/null | cut -d' ' -f1 || md5 -q "$f" 2>/dev/null)
+        if [[ "$old_hash" != "$new_hash" ]]; then
+            local new_lines
+            new_lines=$(wc -l < "$f" | tr -d ' ')
+            ok "  $fname updated ($new_lines lines)"
             any_updated=true
         fi
     done
@@ -600,7 +609,8 @@ _llms_append_to_yaml_list() {
 
     if grep -q "^${key}:" "$file" 2>/dev/null; then
         # Key exists — append entry after it
-        sed -i "/^${key}:/a\\  - ${value}" "$file"
+        _sed_i_raw "$file" "/^${key}:/a\\
+  - ${value}"
     else
         # Key doesn't exist — append at end of file
         printf '\n%s:\n  - %s\n' "$key" "$value" >> "$file"
