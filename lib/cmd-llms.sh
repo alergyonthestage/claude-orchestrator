@@ -44,7 +44,7 @@ EOF
 # ── install ──────────────────────────────────────────────────────────
 
 _llms_install() {
-    local url="" name="" variant="" pack="" project=""
+    local url="" name="" variant="" pack="" project="" force=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -52,6 +52,7 @@ _llms_install() {
             --variant) variant="$2"; shift 2 ;;
             --pack)    pack="$2"; shift 2 ;;
             --project) project="$2"; shift 2 ;;
+            --force)   force=true; shift ;;
             --help)
                 cat <<'EOF'
 Usage: cco llms install <url> [options]
@@ -59,10 +60,11 @@ Usage: cco llms install <url> [options]
 Download an llms.txt file and save it to user-config/llms/<name>/.
 
 Options:
-  --name <name>        Override the auto-detected framework name
+  --name <name>        Override the auto-detected name (skips confirmation)
   --variant <v>        Force variant: full, medium, small, index (default: auto)
   --pack <pack>        Add reference to this pack's pack.yml
   --project <project>  Add reference to this project's project.yml
+  --force              Overwrite if an entry with the same name exists
 
 Examples:
   cco llms install https://svelte.dev/docs/svelte/llms.txt
@@ -85,9 +87,19 @@ EOF
     [[ -z "$url" ]] && die "Usage: cco llms install <url> [--name <name>] [--variant <v>]"
 
     # Auto-detect name from URL if not provided
+    local name_confirmed=false
     if [[ -z "$name" ]]; then
         name=$(_llms_resolve_name_from_url "$url")
         [[ -z "$name" ]] && die "Cannot determine name from URL. Use --name <name>."
+        # Ask user to confirm the auto-detected name
+        printf "Save as: ${BOLD}%s${NC} [Y/n/custom name] " "$name" >&2
+        local reply
+        read -r reply
+        case "$reply" in
+            ""|[Yy]|[Yy]es) name_confirmed=true ;;
+            [Nn]|[Nn]o) die "Cancelled. Use --name <name> to specify a custom name." ;;
+            *) name="$reply" ;;
+        esac
     fi
 
     # Validate name: safe filesystem component, no path traversal
@@ -97,9 +109,9 @@ EOF
 
     local target_dir="$LLMS_DIR/$name"
 
-    # Warn if already exists
-    if [[ -d "$target_dir" ]]; then
-        warn "LLMs '$name' already exists. Files will be overwritten."
+    # Block overwrite unless --force
+    if [[ -d "$target_dir" && "$force" == "false" ]]; then
+        die "LLMs '$name' already exists. Use --force to overwrite or --name to choose a different name."
     fi
 
     mkdir -p "$target_dir" "$target_dir/.cco"
@@ -595,12 +607,19 @@ EOF
 
 # Extract framework name from URL.
 # Uses pure bash parameter expansion for macOS/GNU portability.
+# Strategy: domain (without generic subdomains/TLD) + meaningful path segments.
+# Generic subdomains (www, docs, api) and path segments (docs, api, etc.) are stripped.
+# Deduplicates when path segment equals domain name.
 #
 # Examples:
 #   https://svelte.dev/docs/svelte/llms.txt      → svelte
-#   https://svelte.dev/docs/kit/llms-small.txt   → kit
-#   https://shadcn-svelte.com/llms.txt            → shadcn-svelte
-#   https://www.shadcn-svelte.com/llms.txt        → shadcn-svelte
+#   https://svelte.dev/docs/kit/llms-small.txt   → svelte-kit
+#   https://shadcn-svelte.com/llms.txt           → shadcn-svelte
+#   https://www.shadcn-svelte.com/llms.txt       → shadcn-svelte
+#   https://tailwindcss.com/llms.txt             → tailwindcss
+#   https://react.dev/llms-full.txt              → react
+#   https://orm.drizzle.team/llms.txt            → orm-drizzle
+#   https://docs.astro.build/llms.txt            → astro
 _llms_resolve_name_from_url() {
     local url="$1"
 
@@ -613,17 +632,33 @@ _llms_resolve_name_from_url() {
     local path=""
     [[ "$rest" == */* ]] && path="/${rest#*/}"
 
-    # Strip llms filename from path
+    # Clean domain: strip generic subdomains and TLD, dots → hyphens
+    domain="${domain#www.}"
+    domain="${domain#docs.}"
+    domain="${domain#api.}"
+    domain="${domain%.*}"
+    domain="${domain//./-}"
+
+    # Strip llms filename from path, then extract meaningful segments
     path="${path%/llms*.txt}"
     path="${path%/}"
 
+    local segments=""
     if [[ -n "$path" ]]; then
-        # Use last path segment: /docs/svelte → svelte
-        basename "$path"
+        local IFS='/'
+        for seg in $path; do
+            [[ -z "$seg" ]] && continue
+            case "$seg" in
+                docs|api|reference|guide|manual|guides|references) continue ;;
+                *) segments="${segments:+$segments-}$seg" ;;
+            esac
+        done
+    fi
+
+    if [[ -n "$segments" && "$segments" != "$domain" ]]; then
+        echo "${domain}-${segments}"
     else
-        # Use domain: strip www. prefix and TLD
-        domain="${domain#www.}"
-        echo "${domain%.*}"
+        echo "$domain"
     fi
 }
 
