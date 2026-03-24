@@ -61,6 +61,7 @@ source "$LIB_DIR/cmd-project-pack-ops.sh"
 source "$LIB_DIR/cmd-project-publish.sh"
 source "$LIB_DIR/cmd-project-update.sh"
 source "$LIB_DIR/cmd-pack.sh"
+source "$LIB_DIR/cmd-llms.sh"
 source "$LIB_DIR/cmd-template.sh"
 source "$LIB_DIR/cmd-update.sh"
 source "$LIB_DIR/cmd-clean.sh"
@@ -100,6 +101,7 @@ Sessions:
 Projects & Packs:
   project <cmd>          Manage projects (create, install, list, show, validate)
   pack <cmd>             Manage knowledge packs (create, install, update, ...)
+  llms <cmd>             Manage llms.txt framework docs (install, update, ...)
   chrome <cmd>           Manage Chrome debug session on host
 
 Templates:
@@ -199,6 +201,7 @@ EOF
             *)        die "Unknown pack command: $subcmd. Run 'cco pack --help'." ;;
         esac
         ;;
+    llms)     cmd_llms "$@" ;;
     template) cmd_template "$@" ;;
     chrome)  cmd_chrome "$@" ;;
     remote)  cmd_remote "$@" ;;
