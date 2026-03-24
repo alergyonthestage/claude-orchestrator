@@ -105,6 +105,23 @@ knowledge:
 
 That's it — **no CLAUDE.md edit needed**. Every `cco start` mounts the source directory read-only, generates `.claude/packs.md` with the file list and descriptions, and the `session-context.sh` hook injects it into `additionalContext` automatically. Claude sees which files are available and reads them on-demand when relevant. The original files stay in your knowledge repo — zero duplication.
 
+### Install and Reference Framework Documentation
+
+Official framework documentation can be installed and referenced separately from knowledge packs:
+
+```bash
+cco llms install https://svelte.dev/docs/svelte/llms.txt
+```
+
+Reference in `project.yml`:
+
+```yaml
+llms:
+  - svelte
+```
+
+See [project-yaml.md § LLMs.txt](../reference/project-yaml.md#llmstxt--framework-documentation) for all options.
+
 ### Ports and Environment Variables
 
 ```yaml

@@ -28,6 +28,14 @@ Learn more: [project-setup.md](../user-guides/project-setup.md) (Configure a Pac
 
 ---
 
+## Framework Documentation (llms.txt)
+
+The [llms.txt standard](https://llmstxt.org/) provides a way for frameworks to expose their documentation in LLM-friendly format. claude-orchestrator can install these files and serve them to Claude during sessions, ensuring code is written against current APIs.
+
+Install with `cco llms install <url>`, reference in `project.yml` or `pack.yml` via `llms:`, and keep updated with `cco llms update --all`.
+
+---
+
 ## Context hierarchy
 
 claude-orchestrator organizes configuration across four levels, from highest to lowest priority:

@@ -1469,6 +1469,75 @@ Examples:
 **Note:** `.cco/base/` directories are never removed by `cco clean`. They store the
 diff/merge ancestors required for `cco update` discovery and `--sync` to function correctly.
 
+### 3.31 `cco llms`
+
+Manage llms.txt framework documentation. Downloads, stores, and serves official
+framework docs to coding agents during sessions.
+
+Files are stored centrally in `user-config/llms/<name>/` and referenced from
+packs (`pack.yml`) and projects (`project.yml`) via the `llms:` section.
+
+#### `cco llms install <url>`
+
+```
+Usage: cco llms install <url> [OPTIONS]
+
+Options:
+  --name <name>        Override the auto-detected framework name
+  --variant <v>        Force variant: full, medium, small, index (default: auto)
+  --pack <pack>        Add reference to this pack's pack.yml
+  --project <project>  Add reference to this project's project.yml
+
+Examples:
+  cco llms install https://svelte.dev/docs/svelte/llms.txt
+  cco llms install https://shadcn-svelte.com/llms.txt --name shadcn-svelte
+  cco llms install https://svelte.dev/llms.txt --variant medium --pack my-pack
+```
+
+Auto-detects available variants (`llms-full.txt`, `llms-medium.txt`, etc.) and
+downloads the best one (default: `full`). Always downloads the index `llms.txt`
+if available. Source metadata is stored in `.cco/source` for future updates.
+
+#### `cco llms list`
+
+```
+Usage: cco llms list
+```
+
+Lists all installed llms entries with variant, line count, download date, source
+URL, and which packs/projects reference them.
+
+#### `cco llms show <name>`
+
+```
+Usage: cco llms show <name>
+```
+
+Shows detailed information: source URL, variant, download date, files with line
+counts, and usage by packs/projects.
+
+#### `cco llms update [<name>] [--all]`
+
+```
+Usage: cco llms update [<name>] [--all]
+
+Examples:
+  cco llms update svelte          # Update one entry
+  cco llms update --all           # Update all installed entries
+```
+
+Re-downloads from source URLs. Reports line count changes. `cco update` also
+checks llms freshness and suggests `cco llms update --all` when entries are
+older than 30 days.
+
+#### `cco llms remove <name> [--force]`
+
+```
+Usage: cco llms remove <name> [--force]
+```
+
+Removes an llms entry. Warns if referenced by packs or projects unless `--force`.
+
 ---
 
 ## 4. Project Configuration Format (project.yml)

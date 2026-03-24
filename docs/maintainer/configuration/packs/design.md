@@ -40,6 +40,12 @@ knowledge:
       description: "Read for business context and product understanding"
     - testing-guidelines.md              # short form: without description
 
+# LLMs.txt references — framework docs from user-config/llms/ (mounted :ro at cco start)
+llms:
+  - svelte
+  - name: shadcn-svelte
+    description: "Component index — WebFetch for details"
+
 # Skills — mounted to /workspace/.claude/skills/ (:ro) at cco start
 skills:
   - deploy
@@ -53,7 +59,7 @@ rules:
   - api-conventions.md
 ```
 
-**Allowed top-level keys**: `name`, `knowledge`, `skills`, `agents`, `rules`.
+**Allowed top-level keys**: `name`, `knowledge`, `llms`, `skills`, `agents`, `rules`.
 
 The `name` field must match the pack's directory name. `cco pack validate` emits a warning if they mismatch.
 
@@ -101,6 +107,17 @@ Subagent definition `.md` files. They are mounted read-only to `/workspace/.clau
 ### 3.4 Rules
 
 Additional rules `.md` files. They are mounted read-only to `/workspace/.claude/rules/<file>.md` (one file mount per rule) and automatically loaded by Claude Code as project-level rules.
+
+### 3.5 LLMs.txt
+
+Official framework documentation files following the [llms.txt standard](https://llmstxt.org/). Unlike knowledge files (which are pack-owned), llms files are stored centrally in `user-config/llms/` and shared across packs and projects.
+
+- **Referenced** by name in `pack.yml` and `project.yml` (`llms:` section)
+- **Mounted** read-only at `/workspace/.claude/llms/<name>/` at `cco start`
+- **Listed** in `.claude/packs.md` under "Official Framework Documentation"
+- **Managed** via `cco llms install|update|remove` CLI commands
+
+See [llms design doc](../llms/design.md) for full architecture.
 
 ---
 

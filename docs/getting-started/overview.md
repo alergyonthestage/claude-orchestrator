@@ -16,6 +16,7 @@ claude-orchestrator builds on top of Claude Code's native features — it doesn'
 | Rules, agents, and conventions must be duplicated in each repo's `.claude/` | **Knowledge packs** bundle shared docs, agents, rules, and skills — activated per project, zero duplication |
 | Your team configures Claude differently — no shared baseline | Commit the project directory: everyone gets the same repos, instructions, rules, and agents |
 | Switching between clients means manually reloading context | Each project is isolated: its own repos, instructions, and memory. `cco start client-a` vs `cco start client-b` |
+| Framework docs get outdated or missed in prompts | **llms.txt integration** installs official framework documentation and serves it to Claude automatically |
 | Claude modifying files across the wrong project | Docker isolation: Claude can only touch what's mounted |
 | `--dangerously-skip-permissions` feels risky on your machine | Safe in the container — Docker is the sandbox |
 

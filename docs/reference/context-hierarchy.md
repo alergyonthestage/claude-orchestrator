@@ -101,6 +101,18 @@ Packs are activated by listing them in `project.yml`. No CLAUDE.md edit is requi
 
 See [CLI.md §4.2](./cli.md) for pack definition format. See [Loading Lifecycle](#12-loading-lifecycle) below for the full loading sequence.
 
+### LLMs.txt Framework Documentation
+
+Official framework documentation (llms.txt files) installed via `cco llms install` are mounted read-only at `/workspace/.claude/llms/<name>/`. They are listed in `.claude/packs.md` under "Official Framework Documentation" and injected into context via the `session-context.sh` hook.
+
+| Resource | Container Path | Mount Mode |
+|----------|---------------|------------|
+| LLMs docs | `/workspace/.claude/llms/<name>/` | `:ro` (read-only) |
+
+Unlike knowledge files which are read in full, llms.txt files can be very large (10K+ lines). The managed rule `use-official-docs.md` instructs agents to read them selectively using offset/limit.
+
+See [project-yaml.md § LLMs.txt](./project-yaml.md#llmstxt--framework-documentation) for configuration schema.
+
 ---
 
 ## 4. File Specifications

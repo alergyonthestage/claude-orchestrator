@@ -6,7 +6,8 @@
 #           yml_get_ports(), yml_get_env(), yml_get_extra_mounts(),
 #           yml_get_packs(), yml_get_pack_knowledge_source(),
 #           yml_get_pack_knowledge_files(), yml_get_pack_skills(),
-#           yml_get_pack_agents(), yml_get_pack_rules()
+#           yml_get_pack_agents(), yml_get_pack_rules(),
+#           yml_get_llms(), yml_get_llms_names()
 # Dependencies: colors.sh (warn)
 # Globals: none
 
@@ -500,4 +501,41 @@ yml_get_pack_rules() {
             if ($0 != "") print
         }
     ' "$file"
+}
+
+# Parse llms list from project.yml or pack.yml (llms:)
+# Outputs one entry per line as: "<name>\t<description>\t<variant>"
+# Supports short form ("- svelte") and long form ("- name: svelte").
+yml_get_llms() {
+    local file="$1"
+    awk '
+        /^llms:/ { in_l=1; next }
+        in_l && /^[^ #]/ { exit }
+        in_l && /^  - / {
+            if (/^  - name:/) {
+                if (name != "") print name "\t" desc "\t" variant
+                sub(/^  - name: */, ""); gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, "")
+                name=$0; desc=""; variant=""
+            } else {
+                if (name != "") print name "\t" desc "\t" variant
+                name=""; desc=""; variant=""
+                sub(/^  - */, ""); gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, "")
+                if ($0 != "") print $0 "\t\t"
+            }
+        }
+        in_l && /^    description:/ {
+            sub(/^    description: */, ""); gsub(/["\047]/, ""); sub(/ *#.*$/, ""); desc=$0
+        }
+        in_l && /^    variant:/ {
+            sub(/^    variant: */, ""); gsub(/["\047]/, ""); sub(/ *#.*$/, ""); variant=$0
+        }
+        END { if (name != "") print name "\t" desc "\t" variant }
+    ' "$file"
+}
+
+# Parse llms names only from project.yml or pack.yml (llms:)
+# Outputs one name per line (for deduplication and validation).
+yml_get_llms_names() {
+    local file="$1"
+    yml_get_llms "$file" | awk -F'\t' '{ if ($1 != "") print $1 }'
 }

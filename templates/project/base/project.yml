@@ -20,6 +20,16 @@ repos: []
 # packs:
 #   - my-pack
 
+# ── LLMs.txt Framework Docs (optional) ─────────────────────────────
+# Reference official framework documentation installed via 'cco llms install'.
+# Files are stored in user-config/llms/ and mounted read-only at session start.
+# See: docs/reference/project-yaml.md § LLMs.txt for schema and examples.
+#
+# llms:
+#   - svelte
+#   - name: shadcn-svelte
+#     description: "Component index — WebFetch for details"
+
 # ── GitHub Integration (optional) ────────────────────────────────────
 # Enable Claude to interact with GitHub via MCP (issues, PRs, code search).
 # Requires a GitHub token with appropriate scopes (repo, read:org, etc.).

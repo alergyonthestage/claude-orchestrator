@@ -16,6 +16,7 @@ feature or architectural concern.
 | **packs/** | Pack format, pack.yml schema, knowledge management | `design.md` |
 | **environment/** | Build-time and runtime extensibility (setup.sh, MCP, Docker) | `design.md` |
 | **rules-and-guidelines/** | Rule content organization (which rules in which files) | `analysis.md`, `defaults-alignment-design.md` |
+| **llms/** | LLMs.txt integration: storage, variant management, CLI commands | `analysis.md`, `design.md` |
 
 ## Concept Ownership
 

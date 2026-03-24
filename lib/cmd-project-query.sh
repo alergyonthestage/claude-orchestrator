@@ -225,6 +225,11 @@ EOF
         done <<< "$packs"
     fi
 
+    # Referenced llms entries exist
+    if ! _validate_llms_refs "$project_yml" "Project '$name'"; then
+        ((errors++))
+    fi
+
     if [[ $errors -gt 0 ]]; then
         return 1
     fi

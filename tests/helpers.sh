@@ -14,9 +14,10 @@ setup_cco_env() {
     export CCO_PROJECTS_DIR="$tmpdir/user-config/projects"
     export CCO_PACKS_DIR="$tmpdir/user-config/packs"
     export CCO_TEMPLATES_DIR="$tmpdir/user-config/templates"
+    export CCO_LLMS_DIR="$tmpdir/user-config/llms"
     export CCO_DUMMY_REPO="$tmpdir/dummy-repo"
     mkdir -p "$CCO_USER_CONFIG_DIR" "$CCO_GLOBAL_DIR" "$CCO_PROJECTS_DIR" \
-             "$CCO_PACKS_DIR" "$CCO_TEMPLATES_DIR" "$CCO_DUMMY_REPO"
+             "$CCO_PACKS_DIR" "$CCO_TEMPLATES_DIR" "$CCO_LLMS_DIR" "$CCO_DUMMY_REPO"
 }
 
 # Copy defaults/global/.claude into tmpdir/user-config/global/.claude
@@ -65,6 +66,7 @@ run_cco() {
         CCO_PROJECTS_DIR="$CCO_PROJECTS_DIR" \
         CCO_PACKS_DIR="$CCO_PACKS_DIR" \
         CCO_TEMPLATES_DIR="$CCO_TEMPLATES_DIR" \
+        CCO_LLMS_DIR="$CCO_LLMS_DIR" \
         bash "$REPO_ROOT/bin/cco" "$@" 2>&1
     ) || return $?
     # Auto-extract dry-run dir if present in output (--dump mode persists to .tmp/)
