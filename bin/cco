@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Catch silent crashes: show file, line, and command on unexpected exit
-trap '_cco_err=$?; echo "[cco] ERROR at ${BASH_SOURCE[0]##*/}:${LINENO} (exit ${_cco_err}): ${BASH_COMMAND}" >&2' ERR
+# Catch silent crashes (set -e/set -u violations)
+_cco_completed=false
+trap 'if [[ "$_cco_completed" != "true" ]]; then echo "[cco] CRASH (exit $?) — last command: ${BASH_COMMAND}" >&2; fi' EXIT
 
 # ── Constants ────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -217,3 +218,4 @@ EOF
     help)    usage ;;
     *)       die "Unknown command: $cmd. Run 'cco help' for usage." ;;
 esac
+_cco_completed=true
