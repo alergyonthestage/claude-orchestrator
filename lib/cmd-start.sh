@@ -590,14 +590,10 @@ _start_generate_metadata() {
 
             # LLMs section
             if [[ "$has_llms" == "true" ]]; then
-                [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] metadata: before _generate_llms_packs_md" >&2
-                local llms_count=0
-                _generate_llms_packs_md "$project_yml" "$pack_names" llms_count
-                [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] metadata: after _generate_llms_packs_md, llms_count=$llms_count" >&2
-                (( packs_md_lines += llms_count )) || true
+                _generate_llms_packs_md "$project_yml" "$pack_names"
             fi
-            [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] metadata: end of group command, packs_md_lines=$packs_md_lines" >&2
         } > "$packs_md"
+        packs_md_lines=$(grep -c '^- ' "$packs_md" 2>/dev/null || echo 0)
         ok "Generated .claude/packs.md (${packs_md_lines} file(s))"
     elif [[ -f "$packs_md" ]]; then
         rm -f "$packs_md"

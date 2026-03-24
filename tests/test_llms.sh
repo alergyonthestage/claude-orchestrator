@@ -219,7 +219,7 @@ test_packs_md_includes_header_and_entry() {
     local proj_yml="$tmpdir/project.yml"
     printf 'name: test\nllms:\n  - svelte\n' > "$proj_yml"
     local result
-    result=$(_generate_llms_packs_md "$proj_yml" "" "")
+    result=$(_generate_llms_packs_md "$proj_yml" "")
     echo "$result" | grep -q "Official Framework Documentation" || fail "Should include section header"
     echo "$result" | grep -q "/workspace/.claude/llms/svelte" || fail "Should include file path"
 }
@@ -230,20 +230,22 @@ test_packs_md_empty_when_dirs_missing() {
     local proj_yml="$tmpdir/project.yml"
     printf 'name: test\nllms:\n  - nonexistent\n' > "$proj_yml"
     local result
-    result=$(_generate_llms_packs_md "$proj_yml" "" "")
+    result=$(_generate_llms_packs_md "$proj_yml" "")
     assert_empty "$result" "Should return empty when all dirs missing (no orphaned header)"
 }
 
-test_packs_md_sets_count_var() {
+test_packs_md_count_via_grep() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_llms_env "$tmpdir"
     create_llms_entry "$tmpdir" "svelte" "llms-full.txt"
     create_llms_entry "$tmpdir" "react" "llms-full.txt"
     local proj_yml="$tmpdir/project.yml"
     printf 'name: test\nllms:\n  - svelte\n  - react\n' > "$proj_yml"
-    local my_count=0
-    _generate_llms_packs_md "$proj_yml" "" "my_count" > /dev/null
-    assert_equals "2" "$my_count" "Should set count variable to number of entries"
+    local result
+    result=$(_generate_llms_packs_md "$proj_yml" "")
+    local count
+    count=$(echo "$result" | grep -c '^- ' || echo 0)
+    assert_equals "2" "$count" "Should have 2 entry lines"
 }
 
 test_packs_md_index_type_hint() {
@@ -253,7 +255,7 @@ test_packs_md_index_type_hint() {
     local proj_yml="$tmpdir/project.yml"
     printf 'name: test\nllms:\n  - svelte\n' > "$proj_yml"
     local result
-    result=$(_generate_llms_packs_md "$proj_yml" "" "")
+    result=$(_generate_llms_packs_md "$proj_yml" "")
     echo "$result" | grep -q "WebFetch" || fail "Index files should have WebFetch type hint"
 }
 

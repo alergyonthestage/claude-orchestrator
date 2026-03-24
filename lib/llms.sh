@@ -127,7 +127,6 @@ _generate_llms_mounts() {
 _generate_llms_packs_md() {
     local project_yml="$1"
     local pack_names="$2"
-    local count_var="$3"  # name of variable to store line count
 
     local entries
     entries=$(_collect_llms_names "$project_yml" "$pack_names")
@@ -188,11 +187,6 @@ _generate_llms_packs_md() {
     echo "For large files, read selectively using offset/limit. For index files, WebFetch specific pages as needed."
     echo ""
     printf '%s\n' "${buffered_lines[@]}"
-
-    # Set the count via printf -v (safer than eval)
-    if [[ -n "$count_var" ]]; then
-        printf -v "$count_var" '%d' "$lines"
-    fi
 }
 
 # Validate llms references in a pack or project YAML file.
