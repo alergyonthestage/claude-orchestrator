@@ -16,7 +16,14 @@ Commands:
   list                 List installed llms documentation
   show <name>          Show details for an installed llms entry
   update [name]        Re-download llms files from source URLs
+  rename <old> <new>   Rename an installed llms entry
   remove <name>        Remove an installed llms entry
+
+Options (for install):
+  --name <name>        Override the auto-detected framework name
+  --variant <v>        Force variant: full, medium, small, index (default: auto)
+  --pack <pack>        Add reference to this pack's pack.yml
+  --project <project>  Add reference to this project's project.yml
 
 Run 'cco llms <command> --help' for command-specific options.
 EOF
@@ -28,6 +35,7 @@ EOF
         list)    _llms_list "$@" ;;
         show)    _llms_show "$@" ;;
         update)  _llms_update "$@" ;;
+        rename)  _llms_rename "$@" ;;
         remove)  _llms_remove "$@" ;;
         *)       die "Unknown llms command: $subcmd. Run 'cco llms --help'." ;;
     esac
@@ -260,7 +268,7 @@ EOF
 
     # Show usage by packs and projects
     echo ""
-    echo "${BOLD}Used by:${NC}"
+    echo -e "${BOLD}Used by:${NC}"
     local any_usage=false
     for dir in "$LLMS_DIR"/*/; do
         [[ ! -d "$dir" ]] && continue
@@ -308,7 +316,7 @@ EOF
     local llms_dir="$LLMS_DIR/$name"
     [[ ! -d "$llms_dir" ]] && die "LLMs '$name' not found. Run 'cco llms list' to see installed entries."
 
-    echo "${BOLD}Name:${NC}       $name"
+    echo -e "${BOLD}Name:${NC}       $name"
 
     local source_file="$llms_dir/.cco/source"
     if [[ -f "$source_file" ]]; then
@@ -317,13 +325,13 @@ EOF
         var=$(yml_get "$source_file" "variant" 2>/dev/null || echo "auto")
         downloaded=$(yml_get "$source_file" "downloaded" 2>/dev/null || echo "unknown")
         etag=$(yml_get "$source_file" "etag" 2>/dev/null || echo "")
-        echo "${BOLD}Source:${NC}     $url"
-        echo "${BOLD}Variant:${NC}    $var"
-        echo "${BOLD}Downloaded:${NC} $downloaded"
-        [[ -n "$etag" ]] && echo "${BOLD}ETag:${NC}       $etag"
+        echo -e "${BOLD}Source:${NC}     $url"
+        echo -e "${BOLD}Variant:${NC}    $var"
+        echo -e "${BOLD}Downloaded:${NC} $downloaded"
+        [[ -n "$etag" ]] && echo -e "${BOLD}ETag:${NC}       $etag"
     fi
 
-    echo "${BOLD}Files:${NC}"
+    echo -e "${BOLD}Files:${NC}"
     for f in "$llms_dir"/llms*.txt; do
         [[ ! -f "$f" ]] && continue
         local fname lc
@@ -339,9 +347,9 @@ EOF
     local users
     users=$(_llms_find_users "$name")
     if [[ -n "$users" ]]; then
-        echo "${BOLD}Used by:${NC}    $users"
+        echo -e "${BOLD}Used by:${NC}    $users"
     else
-        echo "${BOLD}Used by:${NC}    (none)"
+        echo -e "${BOLD}Used by:${NC}    (none)"
     fi
 }
 
@@ -465,6 +473,73 @@ _llms_update_single() {
         info "  $name: already up to date"
     fi
     return 0
+}
+
+# ── rename ───────────────────────────────────────────────────────────
+
+_llms_rename() {
+    local old_name="" new_name=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --help)
+                cat <<'EOF'
+Usage: cco llms rename <old-name> <new-name>
+
+Rename an installed llms entry. Updates references in packs and projects.
+
+Examples:
+  cco llms rename kit svelte-kit
+EOF
+                return 0
+                ;;
+            -*)  die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$old_name" ]]; then
+                    old_name="$1"; shift
+                elif [[ -z "$new_name" ]]; then
+                    new_name="$1"; shift
+                else
+                    die "Unexpected argument: $1"
+                fi
+                ;;
+        esac
+    done
+
+    [[ -z "$old_name" || -z "$new_name" ]] && die "Usage: cco llms rename <old-name> <new-name>"
+    [[ "$old_name" == "$new_name" ]] && die "Old and new names are the same."
+
+    # Validate new name
+    if [[ ! "$new_name" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
+        die "Invalid name '$new_name': must start with alphanumeric and contain only [a-zA-Z0-9._-]"
+    fi
+
+    local old_dir="$LLMS_DIR/$old_name"
+    local new_dir="$LLMS_DIR/$new_name"
+
+    [[ ! -d "$old_dir" ]] && die "LLMs '$old_name' not found."
+    [[ -d "$new_dir" ]] && die "LLMs '$new_name' already exists."
+
+    mv "$old_dir" "$new_dir"
+
+    # Update references in packs and projects
+    local updated_refs=0
+    for search_dir in "$PACKS_DIR" "$PROJECTS_DIR"; do
+        [[ ! -d "$search_dir" ]] && continue
+        for pdir in "$search_dir"/*/; do
+            [[ ! -d "$pdir" ]] && continue
+            for yml in "$pdir"pack.yml "$pdir"project.yml; do
+                [[ ! -f "$yml" ]] && continue
+                if grep -qF "$old_name" "$yml" 2>/dev/null; then
+                    sed "s|$old_name|$new_name|g" "$yml" > "$yml.tmp" && mv "$yml.tmp" "$yml"
+                    ((updated_refs++))
+                fi
+            done
+        done
+    done
+
+    ok "Renamed llms '$old_name' → '$new_name'"
+    [[ $updated_refs -gt 0 ]] && ok "Updated $updated_refs YAML reference(s)"
 }
 
 # ── remove ───────────────────────────────────────────────────────────
@@ -634,13 +709,12 @@ _llms_add_to_yaml() {
 _llms_append_to_yaml_list() {
     local file="$1" key="$2" value="$3"
 
-    # Escape sed metacharacters in value to prevent injection
-    local safe_value
-    safe_value=$(printf '%s' "$value" | sed 's/[&/\]/\\&/g')
     if grep -qF "${key}:" "$file" 2>/dev/null; then
-        # Key exists — append entry after it
-        _sed_i_raw "$file" "/^${key}:/a\\
-  - ${safe_value}"
+        # Key exists — append entry on new line after it
+        awk -v entry="  - ${value}" '
+            /^'"${key}"':/ { print; print entry; next }
+            { print }
+        ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
     else
         # Key doesn't exist — append at end of file
         printf '\n%s:\n  - %s\n' "$key" "$value" >> "$file"

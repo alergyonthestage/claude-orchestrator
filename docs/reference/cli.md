@@ -1530,6 +1530,14 @@ Re-downloads from source URLs. Reports line count changes. `cco update` also
 checks llms freshness and suggests `cco llms update --all` when entries are
 older than 30 days.
 
+#### `cco llms rename <old-name> <new-name>`
+
+```
+Usage: cco llms rename <old-name> <new-name>
+```
+
+Renames an installed llms entry (directory and YAML references in packs/projects).
+
 #### `cco llms remove <name> [--force]`
 
 ```

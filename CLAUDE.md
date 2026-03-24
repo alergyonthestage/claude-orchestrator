@@ -55,6 +55,7 @@ cco llms install <url>       # Install framework documentation (llms.txt)
 cco llms list                # List installed llms entries
 cco llms show <name>         # Show llms entry details
 cco llms update [name]       # Re-download from source (--all for all)
+cco llms rename <old> <new>  # Rename an llms entry (updates YAML refs)
 cco llms remove <name>       # Remove an llms entry
 cco project publish <n> <r>  # Publish project template to Config Repo (with safety checks)
 cco project add-pack <p> <k> # Add a pack to a project
