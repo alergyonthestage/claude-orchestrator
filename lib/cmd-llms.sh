@@ -594,17 +594,36 @@ EOF
 # ── Helpers ──────────────────────────────────────────────────────────
 
 # Extract framework name from URL.
+# Uses pure bash parameter expansion for macOS/GNU portability.
+#
+# Examples:
+#   https://svelte.dev/docs/svelte/llms.txt      → svelte
+#   https://svelte.dev/docs/kit/llms-small.txt   → kit
+#   https://shadcn-svelte.com/llms.txt            → shadcn-svelte
+#   https://www.shadcn-svelte.com/llms.txt        → shadcn-svelte
 _llms_resolve_name_from_url() {
     local url="$1"
-    local path
-    path=$(echo "$url" | sed 's|https\?://[^/]*||; s|/llms[^/]*$||; s|/$||')
 
-    if [[ -n "$path" && "$path" != "/" ]]; then
+    # Strip protocol
+    local rest="${url#http://}"
+    rest="${rest#https://}"
+
+    # Split domain and path
+    local domain="${rest%%/*}"
+    local path=""
+    [[ "$rest" == */* ]] && path="/${rest#*/}"
+
+    # Strip llms filename from path
+    path="${path%/llms*.txt}"
+    path="${path%/}"
+
+    if [[ -n "$path" ]]; then
         # Use last path segment: /docs/svelte → svelte
         basename "$path"
     else
-        # Use domain name: shadcn-svelte.com → shadcn-svelte
-        echo "$url" | sed 's|https\?://||; s|/.*||; s|\.[^.]*$||'
+        # Use domain: strip www. prefix and TLD
+        domain="${domain#www.}"
+        echo "${domain%.*}"
     fi
 }
 
