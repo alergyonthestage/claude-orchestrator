@@ -129,15 +129,8 @@ _generate_llms_packs_md() {
     entries=$(_collect_llms_names "$project_yml" "$pack_names")
     [[ -z "$entries" ]] && return 0
 
-    local lines=0
-    echo ""
-    echo "## Official Framework Documentation (llms.txt)"
-    echo ""
-    echo "The following official framework documentation files are installed."
-    echo "Consult them BEFORE writing code that uses these frameworks — do not rely solely on training data."
-    echo "For large files, read selectively using offset/limit. For index files, WebFetch specific pages as needed."
-    echo ""
-
+    # Buffer entries first to avoid orphaned header when all dirs are missing
+    local buffered_lines=()
     while IFS=$'\t' read -r lname ldesc lvariant; do
         [[ -z "$lname" ]] && continue
         local llms_dir="$LLMS_DIR/$lname"
@@ -172,9 +165,23 @@ _generate_llms_packs_md() {
             type_hint=" (${line_count} lines)"
         fi
 
-        echo "- ${fpath} — ${desc_text}${type_hint}"
-        (( lines++ )) || true
+        buffered_lines+=("- ${fpath} — ${desc_text}${type_hint}")
     done <<< "$entries"
+
+    # Only emit section if at least one valid entry exists
+    if [[ ${#buffered_lines[@]} -eq 0 ]]; then
+        return 0
+    fi
+
+    local lines=${#buffered_lines[@]}
+    echo ""
+    echo "## Official Framework Documentation (llms.txt)"
+    echo ""
+    echo "The following official framework documentation files are installed."
+    echo "Consult them BEFORE writing code that uses these frameworks — do not rely solely on training data."
+    echo "For large files, read selectively using offset/limit. For index files, WebFetch specific pages as needed."
+    echo ""
+    printf '%s\n' "${buffered_lines[@]}"
 
     # Set the count via nameref-compatible eval
     if [[ -n "$count_var" ]]; then

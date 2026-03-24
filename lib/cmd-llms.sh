@@ -136,7 +136,19 @@ EOF
     fi
 
     # Determine which variant to download as primary
-    local target_variant="${variant:-}"
+    local target_variant=""
+    if [[ -n "${variant:-}" ]]; then
+        # Check if user-requested variant is available
+        local variant_available=false
+        for ((i=0; i<${#variants_found[@]}; i++)); do
+            [[ "${variants_found[$i]}" == "$variant" ]] && { variant_available=true; break; }
+        done
+        if [[ "$variant_available" == "true" ]]; then
+            target_variant="$variant"
+        else
+            warn "Variant '$variant' not available. Auto-selecting best variant."
+        fi
+    fi
     if [[ -z "$target_variant" ]]; then
         # Auto-select: prefer full > medium > small > index
         for pref in full medium small index; do
@@ -194,7 +206,18 @@ EOF
         return 0
     fi
 
-    if [[ ! -d "$LLMS_DIR" ]] || ! ls -d "$LLMS_DIR"/*/ >/dev/null 2>&1; then
+    if [[ ! -d "$LLMS_DIR" ]]; then
+        info "No llms documentation installed. Use 'cco llms install <url>' to add some."
+        return 0
+    fi
+    # Check for at least one non-.cco entry directory
+    local has_entries=false
+    for _d in "$LLMS_DIR"/*/; do
+        [[ ! -d "$_d" ]] && continue
+        [[ "$(basename "$_d")" == ".cco" ]] && continue
+        has_entries=true; break
+    done
+    if [[ "$has_entries" == "false" ]]; then
         info "No llms documentation installed. Use 'cco llms install <url>' to add some."
         return 0
     fi
