@@ -20,11 +20,13 @@ if [[ -z "${CCO_USER_CONFIG_DIR:-}" && ! -d "$USER_CONFIG_DIR/global" && -d "$RE
     GLOBAL_DIR="${CCO_GLOBAL_DIR:-$REPO_ROOT/global}"
     PROJECTS_DIR="${CCO_PROJECTS_DIR:-$REPO_ROOT/projects}"
     PACKS_DIR="${CCO_PACKS_DIR:-$REPO_ROOT/global/packs}"
+    LLMS_DIR="${CCO_LLMS_DIR:-$USER_CONFIG_DIR/llms}"
     TEMPLATES_DIR="${CCO_TEMPLATES_DIR:-$USER_CONFIG_DIR/templates}"
 else
     GLOBAL_DIR="${CCO_GLOBAL_DIR:-$USER_CONFIG_DIR/global}"
     PROJECTS_DIR="${CCO_PROJECTS_DIR:-$USER_CONFIG_DIR/projects}"
     PACKS_DIR="${CCO_PACKS_DIR:-$USER_CONFIG_DIR/packs}"
+    LLMS_DIR="${CCO_LLMS_DIR:-$USER_CONFIG_DIR/llms}"
     TEMPLATES_DIR="${CCO_TEMPLATES_DIR:-$USER_CONFIG_DIR/templates}"
 fi
 
@@ -37,6 +39,7 @@ source "$LIB_DIR/yaml.sh"
 source "$LIB_DIR/secrets.sh"
 source "$LIB_DIR/workspace.sh"
 source "$LIB_DIR/packs.sh"
+source "$LIB_DIR/llms.sh"
 source "$LIB_DIR/update-hash-io.sh"
 source "$LIB_DIR/update-merge.sh"
 source "$LIB_DIR/update-meta.sh"

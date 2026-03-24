@@ -147,7 +147,7 @@ _validate_single_pack() {
     fi
 
     # Valid top-level keys (reuse existing regex)
-    if ! grep -qE '^(name|knowledge|skills|agents|rules):' "$pack_yml"; then
+    if ! grep -qE '^(name|knowledge|llms|skills|agents|rules):' "$pack_yml"; then
         error "Pack '$name': pack.yml has no valid top-level keys (check indentation)"
         return 1
     fi
@@ -211,6 +211,11 @@ _validate_single_pack() {
                 ((errors++))
             fi
         done <<< "$rules"
+    fi
+
+    # LLMs references exist
+    if ! _validate_llms_refs "$pack_yml" "Pack '$name'"; then
+        ((errors++))
     fi
 
     if [[ $errors -gt 0 ]]; then
