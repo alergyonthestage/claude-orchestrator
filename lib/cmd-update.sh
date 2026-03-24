@@ -259,6 +259,11 @@ EOF
         done
     fi
 
+    # LLMs.txt freshness check (discovery mode only)
+    if [[ "$do_projects" == "all" && "$cmd_mode" == "discovery" ]]; then
+        _update_check_llms_freshness
+    fi
+
     if $global_failed || $project_failed; then
         error "Update completed with errors. Run 'cco update' again after resolving."
         return 1

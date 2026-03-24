@@ -209,3 +209,42 @@ _validate_llms_refs() {
 
     return $errors
 }
+
+# Check llms.txt freshness for cco update discovery phase.
+# Warns if any llms entry was downloaded more than 30 days ago.
+_update_check_llms_freshness() {
+    local threshold_days=30
+    [[ ! -d "$LLMS_DIR" ]] && return 0
+
+    local stale_entries=()
+    for dir in "$LLMS_DIR"/*/; do
+        [[ ! -d "$dir" ]] && continue
+        local dname
+        dname=$(basename "$dir")
+        [[ "$dname" == ".cco" ]] && continue
+        local source_file="$dir/.cco/source"
+        [[ ! -f "$source_file" ]] && continue
+        local downloaded
+        downloaded=$(yml_get "$source_file" "downloaded" 2>/dev/null)
+        [[ -z "$downloaded" ]] && continue
+        # Extract date part (YYYY-MM-DD)
+        local dl_date="${downloaded%%T*}"
+        # Calculate age in days using portable date arithmetic
+        local dl_epoch today_epoch age_days
+        dl_epoch=$(date -d "$dl_date" +%s 2>/dev/null || date -jf "%Y-%m-%d" "$dl_date" +%s 2>/dev/null) || continue
+        today_epoch=$(date +%s)
+        age_days=$(( (today_epoch - dl_epoch) / 86400 ))
+        if [[ $age_days -ge $threshold_days ]]; then
+            stale_entries+=("$dname (${age_days} days ago)")
+        fi
+    done
+
+    if [[ ${#stale_entries[@]} -gt 0 ]]; then
+        echo ""
+        info "llms.txt updates may be available:"
+        for entry in "${stale_entries[@]}"; do
+            info "  $entry"
+        done
+        info "Run 'cco llms update --all' to refresh."
+    fi
+}
