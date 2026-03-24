@@ -534,7 +534,7 @@ EOF
 
     mv "$old_dir" "$new_dir"
 
-    # Update references in packs and projects
+    # Update references in packs and projects (only in llms: sections)
     local updated_refs=0
     for search_dir in "$PACKS_DIR" "$PROJECTS_DIR"; do
         [[ ! -d "$search_dir" ]] && continue
@@ -542,8 +542,7 @@ EOF
             [[ ! -d "$pdir" ]] && continue
             for yml in "$pdir"pack.yml "$pdir"project.yml; do
                 [[ ! -f "$yml" ]] && continue
-                if grep -qF "$old_name" "$yml" 2>/dev/null; then
-                    sed "s|$old_name|$new_name|g" "$yml" > "$yml.tmp" && mv "$yml.tmp" "$yml"
+                if _llms_rename_in_yaml "$yml" "$old_name" "$new_name"; then
                     ((updated_refs++))
                 fi
             done
@@ -604,6 +603,27 @@ EOF
 }
 
 # ── Helpers ──────────────────────────────────────────────────────────
+
+# Replace an llms name only within the llms: section of a YAML file.
+# Returns 0 if a replacement was made, 1 otherwise.
+_llms_rename_in_yaml() {
+    local file="$1" old="$2" new="$3"
+    # Only proceed if the file has an llms: section referencing the old name
+    awk -v old="$old" '
+        /^llms:/ { in_llms=1 }
+        in_llms && /^[^ ]/ && !/^llms:/ { in_llms=0 }
+        in_llms && $0 ~ "^  - " old "$" { found=1 }
+        END { exit found ? 0 : 1 }
+    ' "$file" || return 1
+
+    awk -v old="$old" -v new="$new" '
+        /^llms:/ { in_llms=1 }
+        in_llms && /^[^ ]/ && !/^llms:/ { in_llms=0 }
+        in_llms && $0 == "  - " old { print "  - " new; next }
+        { print }
+    ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+    return 0
+}
 
 # Extract framework name from URL.
 # Uses pure bash parameter expansion for macOS/GNU portability.
