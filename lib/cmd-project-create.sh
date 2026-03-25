@@ -210,6 +210,16 @@ print(', '.join(['$'+k for k in ['dev','build','test','start','lint'] if k in s]
     _save_all_base_versions "$project_dir/.cco/base" "$project_dir/.claude" "project"
 
     ok "Project created at projects/$name/"
+
+    # Auto-register in vault profile if active
+    local active_profile
+    active_profile=$(_get_active_profile 2>/dev/null || true)
+    if [[ -n "$active_profile" ]]; then
+        _profile_add_to_list "projects" "$name"
+        ok "Added to profile '$active_profile' (.vault-profile updated)"
+        info "Run 'cco vault save' to commit."
+    fi
+
     info "Edit project.yml to configure repos and settings"
     info "Edit projects/$name/.claude/CLAUDE.md to add instructions for Claude"
     info "Run: cco start $name"

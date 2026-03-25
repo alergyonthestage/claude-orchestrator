@@ -43,6 +43,15 @@ packs/*/.cco/install-tmp/
 
 # Machine-specific remote config
 .cco/remotes
+
+# Profile state — gitignored files stashed during profile switch
+.cco/profile-state/
+
+# Profile operation backups
+.cco/backups/
+
+# Profile operation log
+.cco/profile-ops.log
 '
 
 # ── Secret patterns for pre-commit scan ───────────────────────────────
@@ -702,6 +711,386 @@ EOF
     local commit_count
     commit_count=$(git -C "$vault_dir" rev-list --count HEAD 2>/dev/null || echo "0")
     echo "  Commits: $commit_count"
+}
+
+# ── Profile real isolation helpers ────────────────────────────────────
+
+# Portable gitignored file patterns for projects
+_PORTABLE_FILE_PATTERNS=("secrets.env" "*.env" "*.key" "*.pem")
+
+# Check if a pack is exclusive (listed in any profile's sync.packs)
+_is_exclusive_pack() {
+    local pack_name="$1"
+    local vault_dir="$USER_CONFIG_DIR"
+
+    while IFS= read -r branch; do
+        [[ -z "$branch" ]] && continue
+        branch=$(echo "$branch" | sed 's/^[ *]*//')
+        local _default_branch
+        _default_branch=$(_vault_default_branch)
+        [[ "$branch" == "$_default_branch" ]] && continue
+
+        local profile_content
+        profile_content=$(git -C "$vault_dir" show "$branch:.vault-profile" 2>/dev/null || true)
+        [[ -z "$profile_content" ]] && continue
+
+        if echo "$profile_content" | awk '
+            /^  packs:/ { in_pack=1; next }
+            /^[^ ]/ { in_pack=0 }
+            in_pack && /^    - / { sub(/^    - */, ""); if ($0 == "'"$pack_name"'") exit 0 }
+            END { exit 1 }
+        '; then
+            return 0
+        fi
+    done < <(git -C "$vault_dir" branch 2>/dev/null)
+
+    return 1
+}
+
+# Stash portable gitignored files for exclusive projects during profile switch
+# Args: vault_dir, profile_name
+_stash_gitignored_files() {
+    local vault_dir="$1" profile_name="$2"
+    local profile_file="$vault_dir/.vault-profile"
+    [[ ! -f "$profile_file" ]] && return 0
+
+    local proj_list
+    proj_list=$(yml_get_list "$profile_file" "sync.projects" 2>/dev/null || true)
+    [[ -z "$proj_list" ]] && return 0
+
+    while IFS= read -r proj; do
+        [[ -z "$proj" ]] && continue
+        local proj_dir="$vault_dir/projects/$proj"
+        [[ ! -d "$proj_dir" ]] && continue
+
+        local shadow_base="$vault_dir/.cco/profile-state/$profile_name/projects/$proj"
+
+        # claude-state directory
+        if [[ -d "$proj_dir/.cco/claude-state" ]]; then
+            mkdir -p "$shadow_base/.cco"
+            mv "$proj_dir/.cco/claude-state" "$shadow_base/.cco/claude-state"
+        fi
+
+        # .cco/meta file
+        if [[ -f "$proj_dir/.cco/meta" ]]; then
+            mkdir -p "$shadow_base/.cco"
+            mv "$proj_dir/.cco/meta" "$shadow_base/.cco/meta"
+        fi
+
+        # Portable secret files (secrets.env, *.env, *.key, *.pem)
+        for pattern in "${_PORTABLE_FILE_PATTERNS[@]}"; do
+            # Use find for glob matching at project root level only
+            while IFS= read -r fpath; do
+                [[ -z "$fpath" ]] && continue
+                local fname
+                fname=$(basename "$fpath")
+                mkdir -p "$shadow_base"
+                mv "$fpath" "$shadow_base/$fname"
+            done < <(find "$proj_dir" -maxdepth 1 -name "$pattern" -type f 2>/dev/null)
+        done
+    done <<< "$proj_list"
+}
+
+# Restore portable gitignored files for exclusive projects after profile switch
+# Args: vault_dir, profile_name
+_restore_gitignored_files() {
+    local vault_dir="$1" profile_name="$2"
+    local shadow_base="$vault_dir/.cco/profile-state/$profile_name"
+    [[ ! -d "$shadow_base" ]] && return 0
+
+    local profile_file="$vault_dir/.vault-profile"
+    [[ ! -f "$profile_file" ]] && return 0
+
+    local proj_list
+    proj_list=$(yml_get_list "$profile_file" "sync.projects" 2>/dev/null || true)
+    [[ -z "$proj_list" ]] && return 0
+
+    while IFS= read -r proj; do
+        [[ -z "$proj" ]] && continue
+        local proj_dir="$vault_dir/projects/$proj"
+        local shadow_proj="$shadow_base/projects/$proj"
+        [[ ! -d "$shadow_proj" ]] && continue
+
+        # claude-state directory
+        if [[ -d "$shadow_proj/.cco/claude-state" ]]; then
+            mkdir -p "$proj_dir/.cco"
+            mv "$shadow_proj/.cco/claude-state" "$proj_dir/.cco/claude-state"
+        fi
+
+        # .cco/meta file
+        if [[ -f "$shadow_proj/.cco/meta" ]]; then
+            mkdir -p "$proj_dir/.cco"
+            mv "$shadow_proj/.cco/meta" "$proj_dir/.cco/meta"
+        fi
+
+        # Portable secret files
+        for pattern in "${_PORTABLE_FILE_PATTERNS[@]}"; do
+            while IFS= read -r fpath; do
+                [[ -z "$fpath" ]] && continue
+                local fname
+                fname=$(basename "$fpath")
+                mkdir -p "$proj_dir"
+                mv "$fpath" "$proj_dir/$fname"
+            done < <(find "$shadow_proj" -maxdepth 1 -name "$pattern" -type f 2>/dev/null)
+        done
+    done <<< "$proj_list"
+}
+
+# Clean non-portable remnants for exclusive projects (regenerated by cco start)
+# Args: vault_dir
+_clean_nonportable_remnants() {
+    local vault_dir="$1"
+    local profile_file="$vault_dir/.vault-profile"
+    [[ ! -f "$profile_file" ]] && return 0
+
+    local proj_list
+    proj_list=$(yml_get_list "$profile_file" "sync.projects" 2>/dev/null || true)
+    [[ -z "$proj_list" ]] && return 0
+
+    while IFS= read -r proj; do
+        [[ -z "$proj" ]] && continue
+        local proj_dir="$vault_dir/projects/$proj"
+        [[ ! -d "$proj_dir" ]] && continue
+        rm -f "$proj_dir/.cco/docker-compose.yml"
+        rm -rf "$proj_dir/.cco/managed/"
+        rm -rf "$proj_dir/.tmp/"
+    done <<< "$proj_list"
+}
+
+# Check that no Docker sessions are active (blocks vault switch)
+_check_no_active_sessions() {
+    local running
+    running=$(docker ps --filter "label=cco.project" --format "{{.Names}}" 2>/dev/null || true)
+    if [[ -n "$running" ]]; then
+        echo -e "${RED}✗${NC} Cannot switch while Docker sessions are active." >&2
+        echo "  Running:" >&2
+        echo "$running" | sed 's/^/    - /' >&2
+        echo "  Stop sessions with 'cco stop' first." >&2
+        return 1
+    fi
+}
+
+# Append to profile operations log
+# Args: vault_dir, message...
+_vault_log_op() {
+    local vault_dir="$1"; shift
+    local log_file="$vault_dir/.cco/profile-ops.log"
+    mkdir -p "$(dirname "$log_file")"
+    echo "$(date -Iseconds) $*" >> "$log_file"
+}
+
+# List all profile branch names (excludes default branch)
+_list_profile_branches() {
+    local vault_dir="$USER_CONFIG_DIR"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    while IFS= read -r branch; do
+        [[ -z "$branch" ]] && continue
+        branch=$(echo "$branch" | sed 's/^[ *]*//')
+        [[ "$branch" == "$default_branch" ]] && continue
+        # Only include branches that have .vault-profile
+        if git -C "$vault_dir" show "$branch:.vault-profile" >/dev/null 2>&1; then
+            echo "$branch"
+        fi
+    done < <(git -C "$vault_dir" branch 2>/dev/null)
+}
+
+# Check if any profile branches exist
+_has_profiles() {
+    local first
+    first=$(_list_profile_branches | head -1)
+    [[ -n "$first" ]]
+}
+
+# Detect shared file changes in a commit
+# Args: vault_dir
+# Outputs list of shared files that changed in the latest commit
+_detect_shared_changes() {
+    local vault_dir="$1"
+    local shared_paths=()
+    while IFS= read -r p; do
+        [[ -n "$p" ]] && shared_paths+=("$p")
+    done < <(_list_shared_paths "$vault_dir")
+
+    [[ ${#shared_paths[@]} -eq 0 ]] && return 0
+
+    # Compare HEAD commit with its parent for shared paths
+    git -C "$vault_dir" diff HEAD~1 HEAD --name-only -- \
+        ${shared_paths[@]+"${shared_paths[@]}"} 2>/dev/null || true
+}
+
+# Sync shared resources from a source branch to main (local, with merge-base advancement)
+# Args: vault_dir, source_branch
+# Expects: caller is on source_branch
+_sync_shared_to_main() {
+    local vault_dir="$1" source_branch="$2"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    # Collect shared paths
+    local shared_paths=()
+    while IFS= read -r p; do
+        [[ -n "$p" ]] && shared_paths+=("$p")
+    done < <(_list_shared_paths "$vault_dir")
+
+    [[ ${#shared_paths[@]} -eq 0 ]] && return 0
+
+    # Find shared files that differ between source and main
+    local changed_files
+    changed_files=$(git -C "$vault_dir" diff "$default_branch" "$source_branch" \
+        --name-only -- ${shared_paths[@]+"${shared_paths[@]}"} 2>/dev/null || true)
+
+    [[ -z "$changed_files" ]] && return 0
+
+    # Switch to main
+    git -C "$vault_dir" checkout "$default_branch" -q
+
+    # Compute merge-base for direction detection
+    local merge_base
+    merge_base=$(git -C "$vault_dir" merge-base "$default_branch" "$source_branch" 2>/dev/null || true)
+
+    local synced=0
+    while IFS= read -r file; do
+        [[ -z "$file" ]] && continue
+
+        if [[ -n "$merge_base" ]]; then
+            local on_main on_source
+            on_main=$(git -C "$vault_dir" diff "$merge_base" "$default_branch" \
+                --name-only -- "$file" 2>/dev/null || true)
+            on_source=$(git -C "$vault_dir" diff "$merge_base" "$source_branch" \
+                --name-only -- "$file" 2>/dev/null || true)
+
+            if [[ -n "$on_main" && -n "$on_source" ]]; then
+                # Both changed — conflict (multi-PC scenario only)
+                _resolve_shared_conflict "$vault_dir" "$file" "$source_branch" "$default_branch"
+            elif [[ -n "$on_source" ]]; then
+                # Only source changed — auto-copy
+                git -C "$vault_dir" checkout "$source_branch" -- "$file"
+            fi
+            # Only main changed or neither → no action
+        else
+            # No merge-base — fall back to copying from source
+            git -C "$vault_dir" checkout "$source_branch" -- "$file"
+        fi
+        ((synced++)) || true
+    done <<< "$changed_files"
+
+    # Commit synced changes
+    if [[ $synced -gt 0 ]]; then
+        git -C "$vault_dir" add -A -- ${shared_paths[@]+"${shared_paths[@]}"}
+        git -C "$vault_dir" commit -q -m "sync: shared from '$source_branch'" 2>/dev/null || true
+    fi
+
+    # Merge-base advancement: git merge -s ours makes future syncs
+    # only compare changes since this sync point
+    git -C "$vault_dir" merge -s ours "$source_branch" -q \
+        -m "sync: merge-base with '$source_branch'" 2>/dev/null || true
+
+    # Return to source branch
+    git -C "$vault_dir" checkout "$source_branch" -q
+
+    return 0
+}
+
+# Sync shared resources from main to a target branch (local, with merge-base advancement)
+# Args: vault_dir, target_branch
+# Expects: caller is already on target_branch
+_sync_shared_from_main() {
+    local vault_dir="$1" target_branch="$2"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    # Collect shared paths
+    local shared_paths=()
+    while IFS= read -r p; do
+        [[ -n "$p" ]] && shared_paths+=("$p")
+    done < <(_list_shared_paths "$vault_dir")
+
+    [[ ${#shared_paths[@]} -eq 0 ]] && return 0
+
+    # Find shared files that differ between target and main
+    local changed_files
+    changed_files=$(git -C "$vault_dir" diff "$target_branch" "$default_branch" \
+        --name-only -- ${shared_paths[@]+"${shared_paths[@]}"} 2>/dev/null || true)
+
+    [[ -z "$changed_files" ]] && return 0
+
+    # Compute merge-base for direction detection
+    local merge_base
+    merge_base=$(git -C "$vault_dir" merge-base "$default_branch" "$target_branch" 2>/dev/null || true)
+
+    local synced=0
+    while IFS= read -r file; do
+        [[ -z "$file" ]] && continue
+
+        if [[ -n "$merge_base" ]]; then
+            local on_main on_target
+            on_main=$(git -C "$vault_dir" diff "$merge_base" "$default_branch" \
+                --name-only -- "$file" 2>/dev/null || true)
+            on_target=$(git -C "$vault_dir" diff "$merge_base" "$target_branch" \
+                --name-only -- "$file" 2>/dev/null || true)
+
+            if [[ -n "$on_main" && -n "$on_target" ]]; then
+                # Both changed — conflict (multi-PC scenario only)
+                _resolve_shared_conflict "$vault_dir" "$file" "$default_branch" "$target_branch"
+            elif [[ -n "$on_main" ]]; then
+                # Only main changed — auto-copy
+                git -C "$vault_dir" checkout "$default_branch" -- "$file"
+            fi
+            # Only target changed or neither → no action
+        else
+            # No merge-base — fall back to copying from main
+            git -C "$vault_dir" checkout "$default_branch" -- "$file"
+        fi
+        ((synced++)) || true
+    done <<< "$changed_files"
+
+    # Commit synced changes
+    if [[ $synced -gt 0 ]]; then
+        git -C "$vault_dir" add -A -- ${shared_paths[@]+"${shared_paths[@]}"}
+        git -C "$vault_dir" commit -q -m "sync: shared from main" 2>/dev/null || true
+    fi
+
+    # Merge-base advancement
+    git -C "$vault_dir" merge -s ours "$default_branch" -q \
+        -m "sync: merge-base with main" 2>/dev/null || true
+
+    return 0
+}
+
+# Propagate shared resources from main to all profile branches
+# Args: vault_dir
+# Expects: caller is on any branch (will return to it)
+_sync_shared_to_all_profiles() {
+    local vault_dir="$1"
+    local original_branch
+    original_branch=$(git -C "$vault_dir" rev-parse --abbrev-ref HEAD 2>/dev/null)
+
+    local profiles=()
+    while IFS= read -r p; do
+        [[ -n "$p" ]] && profiles+=("$p")
+    done < <(_list_profile_branches)
+
+    [[ ${#profiles[@]} -eq 0 ]] && return 0
+
+    local synced_count=0
+    for profile_branch in "${profiles[@]}"; do
+        [[ "$profile_branch" == "$original_branch" ]] && continue
+
+        git -C "$vault_dir" checkout "$profile_branch" -q 2>/dev/null || {
+            warn "Failed to checkout profile branch '$profile_branch' for sync"
+            continue
+        }
+
+        _sync_shared_from_main "$vault_dir" "$profile_branch" && {
+            ((synced_count++)) || true
+        }
+    done
+
+    # Return to original branch
+    git -C "$vault_dir" checkout "$original_branch" -q
+    return 0
 }
 
 # ── Profile management ───────────────────────────────────────────────
@@ -1953,21 +2342,24 @@ Git-backed versioning and backup for your configuration.
 
 Commands:
   init                    Initialize vault (git repo in user-config/)
-  sync [msg] [--yes]      Commit current state with secret detection
+  save [msg] [--yes]      Commit current state with secret detection
   diff                    Show uncommitted changes by category
   log [--limit N]         Show commit history
   restore <ref>           Restore config to a previous state
   status                  Show vault state and sync info
 
-Profiles (multi-PC selective sync):
+Profile operations (shortcuts):
+  switch <name>           Switch to another profile
+  move <type> <name> <target>  Move a resource between profiles
+  remove <type> <name>    Remove a resource from current profile
+
+Profile management:
   profile create <name>   Create a new vault profile
-  profile list             List all profiles
-  profile show             Show current profile details
-  profile switch <name>   Switch to another profile
+  profile list            List all profiles
+  profile show            Show current profile details
+  profile switch <name>   Switch to another profile (alias)
   profile rename <name>   Rename current profile
   profile delete <name>   Delete a profile
-  profile add <type> <name>   Add a resource to the current profile
-  profile remove <type> <name> Remove a resource from the current profile
 
 Remote backup:
   remote add <n> <url>    Add a git remote
@@ -1983,10 +2375,17 @@ EOF
 
     case "$subcmd" in
         init)    cmd_vault_init "$@" ;;
-        sync)    cmd_vault_sync "$@" ;;
+        save)    cmd_vault_sync "$@" ;;
+        sync)
+            warn "'vault sync' is deprecated. Use 'vault save' instead."
+            cmd_vault_sync "$@"
+            ;;
         diff)    cmd_vault_diff "$@" ;;
         log)     cmd_vault_log "$@" ;;
         restore) cmd_vault_restore "$@" ;;
+        switch)  cmd_vault_profile_switch "$@" ;;
+        move)    cmd_vault_profile_move "$@" ;;
+        remove)  cmd_vault_profile_remove "$@" ;;
         profile) cmd_vault_profile "$@" ;;
         remote)  cmd_vault_remote "$@" ;;
         push)    cmd_vault_push "$@" ;;
