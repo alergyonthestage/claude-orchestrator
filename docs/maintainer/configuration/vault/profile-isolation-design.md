@@ -50,14 +50,18 @@ This design replaces tracking-only with **real git-level isolation**:
 ### 2.1 Branch Structure
 
 ```
-main                    ← shared resources only (global, templates, shared packs)
+main                    ← shared resources + main-exclusive projects
 ├── org-a               ← shared + org-a-exclusive (projects, packs)
 └── personal            ← shared + personal-exclusive (projects, packs)
 ```
 
-Profile branches are created from `main` and contain a SUPERSET of main
-(shared resources + exclusive resources). Exclusive resources are `git rm`-ed
-from main and all other profile branches.
+Each project exists on exactly ONE branch at a time (main or a profile).
+Main acts as the default profile for projects: before any profiles exist,
+all projects live on main. New profiles are created empty (shared resources
+only); the user moves projects to them with `vault move`.
+
+Shared resources (global, templates, shared packs) are duplicated and
+synchronized across all branches via the shared sync algorithm.
 
 ### 2.2 Resource Classification
 
@@ -624,32 +628,32 @@ Output:
 
 ### 6.7 `vault profile create <name>` — Behavior Under Real Isolation
 
-Creates a new profile by branching from main.
+Creates a new profile by branching from main. The new profile contains
+**only shared resources** — no projects. Projects belong to main until
+explicitly moved to the new profile with `vault move`.
 
 ```
 Flow:
   1. Validate name (lowercase, hyphens, numbers)
   2. git checkout -b <name> main
-  3. Write .vault-profile (empty project/pack lists)
-  4. git add .vault-profile && git commit
+  3. git rm -r projects/ (remove all projects — they belong to main)
+  4. Write .vault-profile (empty project/pack lists)
+  5. git add -A && git commit
 
-  The new branch inherits all files currently on main:
+  The new branch contains:
     - Shared resources (global, templates, shared packs) ✓
-    - Projects still on main (not yet assigned to profiles) ✓
-    - Projects exclusive to other profiles: NOT inherited
-      (they were git rm-ed from main)
+    - NO projects (removed in step 3)
+    - Projects exclusive to other profiles: NOT present
+      (they were git rm-ed from main when moved)
 
-  5. Count projects on branch, inform user:
-     ✓ Profile '<name>' created
-     ℹ You have N projects on this branch.
-       Use 'cco vault move project <name> <profile>' to assign them.
-       Projects on other profiles are not visible here.
+  6. Inform user:
+     ✓ Profile '<name>' created (shared resources only)
+     ℹ Use 'cco vault move project <name> <profile>' to assign projects.
 ```
 
-**Key difference from tracking-only**: In tracking-only, profile create
-inherited ALL projects (they were never removed from main). With real
-isolation, only projects still on main are inherited. Projects already
-assigned to other profiles are absent.
+**Key principle**: Each project exists on exactly ONE branch at a time.
+Profile create does not duplicate projects — it creates an empty workspace.
+The user populates it by moving projects from main (or other profiles).
 
 ### 6.8 `cco project create` on a Profile Branch
 
@@ -1137,7 +1141,7 @@ All decisions approved in design session 2026-03-24.
 |---|----------|-----------|
 | D1 | Real git-level isolation (not tracking-only) | Tracking-only doesn't provide visible isolation at switch time |
 | D2 | Shadow directory for gitignored files | Git doesn't manage gitignored files; `mv` is O(1) on same fs |
-| D3 | Projects always exclusive, never shared | Context-specific state (secrets, sessions) makes sharing problematic |
+| D3 | Projects always exclusive — one branch only (main or a profile) | Context-specific state (secrets, sessions) makes sharing problematic. Main acts as default profile for projects. New profiles are empty. |
 | D4 | Packs shared by default, can be exclusive | Packs serve cross-context needs; exclusivity is the exception |
 | D5 | `vault sync` renamed to `vault save` | Clearer semantics; "save" not confused with remote sync |
 | D6 | `vault save` propagates shared to main + all profiles | Hub-and-spoke: main is the authoritative source for shared resources |
