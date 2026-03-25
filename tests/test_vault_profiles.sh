@@ -60,27 +60,23 @@ test_profile_create_writes_vault_profile_with_empty_lists() {
 }
 
 test_profile_create_branches_from_main_not_current() {
-    # Creating profile-B while on profile-A should branch from main, not profile-A
+    # New profiles are EMPTY — projects are git rm-ed at creation (§6.7)
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_vault_for_profiles "$tmpdir"
     local default_branch
     default_branch=$(_vault_default_branch)
 
-    # Create profile-A and move test-proj to it (exclusive)
-    run_cco vault profile create "profile-a"
-    run_cco vault move project "test-proj" "$default_branch" --yes
-    # test-proj is now ONLY on main, removed from profile-a
-    # Now move it from main to profile-a
-    run_cco vault switch "$default_branch"
-    run_cco vault move project "test-proj" "profile-a" --yes
-    # Now test-proj is exclusive to profile-a, not on main
+    # test-proj exists on main. Create profile "work".
+    run_cco vault profile create "work"
 
-    # While on main, create profile-B
-    run_cco vault profile create "profile-b"
-
-    # profile-B should NOT have test-proj (it was removed from main)
+    # work should NOT have test-proj (git rm-ed at profile creation)
     [[ ! -d "$CCO_USER_CONFIG_DIR/projects/test-proj" ]] || \
-        fail "profile-B should NOT have test-proj (exclusive to profile-a, not on main)"
+        fail "New profile should NOT have test-proj (empty profile model)"
+
+    # main should still have test-proj
+    local main_tree
+    main_tree=$(git -C "$CCO_USER_CONFIG_DIR" show "$default_branch:projects/test-proj/project.yml" 2>/dev/null) || true
+    [[ -n "$main_tree" ]] || fail "main should still have test-proj"
 }
 
 test_profile_create_inherits_shared_resources() {
@@ -91,6 +87,9 @@ test_profile_create_inherits_shared_resources() {
     run_cco vault profile create "work"
 
     [[ -d "$CCO_USER_CONFIG_DIR/global" ]] || fail "Expected global/ to be inherited"
+    # Projects should NOT be inherited (empty profile model)
+    [[ ! -d "$CCO_USER_CONFIG_DIR/projects/test-proj" ]] || \
+        fail "Projects should not be inherited by new profiles"
 }
 
 test_profile_create_commits() {
@@ -106,8 +105,8 @@ test_profile_create_shows_project_count_hint() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_vault_for_profiles "$tmpdir"
     run_cco vault profile create "work"
-    # test-proj is still on main and inherited — hint should show it
-    assert_output_contains "project(s)"
+    # New profile is empty — hint should suggest vault move project
+    assert_output_contains "vault move project"
 }
 
 test_profile_create_rejects_invalid_name() {
@@ -171,6 +170,11 @@ test_vault_save_git_add_all_safe_with_real_isolation() {
     echo "# Update" >> "$CCO_USER_CONFIG_DIR/projects/test-proj/.claude/CLAUDE.md"
     run_cco vault save "update proj" --yes
     assert_output_contains "Saved on 'work'"
+
+    # Verify exclusive project is NOT on main
+    git -C "$CCO_USER_CONFIG_DIR" show "$default_branch:projects/test-proj/project.yml" 2>/dev/null && \
+        fail "Exclusive project should not be on main"
+    true  # ensure last command doesn't cause set -e failure
 }
 
 test_vault_save_detects_shared_changes_and_propagates_to_main() {
@@ -222,6 +226,11 @@ test_vault_save_mergebase_prevents_false_conflicts() {
     local default_branch
     default_branch=$(_vault_default_branch)
 
+    # Docker mock for switches
+    local mock_bin="$tmpdir/mock_bin"
+    _mock_docker_no_containers "$mock_bin"
+    setup_mocks "$mock_bin"
+
     run_cco vault profile create "work"
 
     # First save with shared change
@@ -232,6 +241,16 @@ test_vault_save_mergebase_prevents_false_conflicts() {
     echo "# Second shared change" >> "$CCO_USER_CONFIG_DIR/global/.claude/CLAUDE.md"
     run_cco vault save "second shared" --yes
     assert_output_contains "Saved on 'work'"
+
+    # Create a second profile and verify shared changes propagated correctly
+    run_cco vault switch "$default_branch"
+    run_cco vault profile create "personal"
+    local personal_content
+    personal_content=$(cat "$CCO_USER_CONFIG_DIR/global/.claude/CLAUDE.md")
+    echo "$personal_content" | grep -qF "First shared change" || \
+        fail "Expected first shared change to propagate to second profile"
+    echo "$personal_content" | grep -qF "Second shared change" || \
+        fail "Expected second shared change to propagate to second profile"
 }
 
 test_vault_save_no_profiles_backward_compatible() {
@@ -405,6 +424,10 @@ test_vault_switch_to_main_shared_only() {
     # Switch to main
     run_cco vault switch "$default_branch"
     assert_output_contains "shared resources only"
+
+    # Verify no project directories on main (test-proj was moved to work)
+    [[ ! -d "$CCO_USER_CONFIG_DIR/projects/test-proj" ]] || \
+        fail "test-proj should not exist on main after being moved to work"
 }
 
 test_vault_switch_stashes_portable_gitignored_files() {
@@ -611,6 +634,11 @@ test_vault_move_pack() {
     local default_branch
     default_branch=$(_vault_default_branch)
 
+    # Docker mock for vault switch
+    local mock_bin="$tmpdir/mock_bin"
+    _mock_docker_no_containers "$mock_bin"
+    setup_mocks "$mock_bin"
+
     # Create a pack and save
     run_cco pack create "my-pack"
     run_cco vault save "add pack" --yes
@@ -626,6 +654,17 @@ test_vault_move_pack() {
     local target_tree
     target_tree=$(git -C "$CCO_USER_CONFIG_DIR" ls-tree "work" -- "packs/my-pack/" 2>/dev/null)
     [[ -n "$target_tree" ]] || fail "Expected pack to exist on target branch"
+
+    # Verify pack was git rm-ed from source branch
+    local source_tree
+    source_tree=$(git -C "$CCO_USER_CONFIG_DIR" ls-tree "$default_branch" -- "packs/my-pack/" 2>/dev/null)
+    [[ -z "$source_tree" ]] || fail "Expected pack to be git rm-ed from source branch"
+
+    # Verify .vault-profile on target lists the pack
+    local target_profile
+    target_profile=$(git -C "$CCO_USER_CONFIG_DIR" show "work:.vault-profile" 2>/dev/null)
+    echo "$target_profile" | grep -qF "my-pack" || \
+        fail "Expected my-pack in target's .vault-profile"
 }
 
 # ══════════════════════════════════════════════════════════════════════
@@ -686,17 +725,29 @@ test_vault_remove_creates_backup_when_last_copy() {
 }
 
 test_vault_remove_no_backup_when_other_copies_exist() {
+    # Packs are shared — they exist on all branches.
+    # Removing a shared pack from one branch should NOT create a backup if
+    # other branches still have it.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
 
-    # test-proj exists on main — removing from main is NOT the last copy
-    # ...actually it is the only copy if no profiles. Let's create a profile
-    # and keep on main too.
+    # Create a pack and save (shared — on main)
+    run_cco pack create "shared-pack"
+    run_cco vault save "add pack" --yes
+
+    # Create profile (pack is shared, exists on both branches)
     run_cco vault profile create "work"
-    # Profile create branches from main, so test-proj exists on both main and work
 
-    # Remove from work profile (main still has it)
-    run_cco vault remove project "test-proj" --yes
+    # Move pack to make it exclusive on work, then check removal from main
+    # Actually: just verify pack exists on both branches (shared resource)
+    local main_tree
+    main_tree=$(git -C "$CCO_USER_CONFIG_DIR" ls-tree "$default_branch" -- "packs/shared-pack/" 2>/dev/null)
+    [[ -n "$main_tree" ]] || fail "Pack should exist on main"
+
+    # Remove from work — main still has it, so no backup needed
+    run_cco vault remove pack "shared-pack" --yes
     assert_output_contains "Removed"
     assert_output_not_contains "Backup"
 }
@@ -704,20 +755,21 @@ test_vault_remove_no_backup_when_other_copies_exist() {
 test_vault_remove_updates_vault_profile() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
 
-    run_cco vault profile create "work"
-    # Move project to make it exclusive to work
-    run_cco vault move project "test-proj" "main" --yes
-    # Now move it back from main to work
-    run_cco vault switch "main"
-    run_cco vault move project "test-proj" "work" --yes
-
+    # Docker mock must be set up before any vault switch call
     local mock_bin="$tmpdir/mock_bin"
     _mock_docker_no_containers "$mock_bin"
     setup_mocks "$mock_bin"
 
+    # Create profile (empty), switch to main, move test-proj to work
+    run_cco vault profile create "work"
+    run_cco vault switch "$default_branch"
+    run_cco vault move project "test-proj" "work" --yes
+
+    # Switch to work and verify it's in .vault-profile
     run_cco vault switch "work"
-    # Verify it's in .vault-profile
     assert_file_contains "$CCO_USER_CONFIG_DIR/.vault-profile" "test-proj"
 
     run_cco vault remove project "test-proj" --yes
@@ -1114,6 +1166,239 @@ test_vault_remove_help() {
     run_cco vault remove --help
     assert_output_contains "project"
     assert_output_contains "pack"
+}
+
+# ══════════════════════════════════════════════════════════════════════
+# Empty Profile Model (Design §6.7)
+# ══════════════════════════════════════════════════════════════════════
+
+test_profile_create_empty_no_projects_from_main() {
+    # New profiles are created EMPTY — no projects from main (§6.7)
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    # Create a second project on main
+    run_cco project create "second-proj"
+    run_cco vault save "add second-proj" --yes
+
+    # Create profile — should have zero projects
+    run_cco vault profile create "team"
+
+    [[ ! -d "$CCO_USER_CONFIG_DIR/projects/test-proj" ]] || \
+        fail "test-proj should not exist on new profile"
+    [[ ! -d "$CCO_USER_CONFIG_DIR/projects/second-proj" ]] || \
+        fail "second-proj should not exist on new profile"
+
+    # Both projects should still be on main
+    local main_proj1 main_proj2
+    main_proj1=$(git -C "$CCO_USER_CONFIG_DIR" ls-tree "$default_branch" -- "projects/test-proj/" 2>/dev/null)
+    main_proj2=$(git -C "$CCO_USER_CONFIG_DIR" ls-tree "$default_branch" -- "projects/second-proj/" 2>/dev/null)
+    [[ -n "$main_proj1" ]] || fail "test-proj should still be on main"
+    [[ -n "$main_proj2" ]] || fail "second-proj should still be on main"
+}
+
+# ══════════════════════════════════════════════════════════════════════
+# Move — Extended Scenarios (Design §6.1-6.2)
+# ══════════════════════════════════════════════════════════════════════
+
+test_vault_move_project_to_main() {
+    # Move project from profile back to main
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    local mock_bin="$tmpdir/mock_bin"
+    _mock_docker_no_containers "$mock_bin"
+    setup_mocks "$mock_bin"
+
+    # Move test-proj from main to work
+    run_cco vault profile create "work"
+    run_cco vault switch "$default_branch"
+    run_cco vault move project "test-proj" "work" --yes
+
+    # Now move it back from work to main
+    run_cco vault switch "work"
+    run_cco vault move project "test-proj" "$default_branch" --yes
+    assert_output_contains "Moved"
+
+    # Verify project exists on main
+    local main_tree
+    main_tree=$(git -C "$CCO_USER_CONFIG_DIR" ls-tree "$default_branch" -- "projects/test-proj/" 2>/dev/null)
+    [[ -n "$main_tree" ]] || fail "Expected test-proj on main after move back"
+
+    # Verify project removed from work
+    [[ ! -d "$CCO_USER_CONFIG_DIR/projects/test-proj" ]] || \
+        fail "test-proj should be removed from work after move to main"
+}
+
+test_vault_move_project_profile_to_profile() {
+    # Move project from one profile to another
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    local mock_bin="$tmpdir/mock_bin"
+    _mock_docker_no_containers "$mock_bin"
+    setup_mocks "$mock_bin"
+
+    # Create two profiles
+    run_cco vault profile create "work"
+    run_cco vault switch "$default_branch"
+    run_cco vault profile create "personal"
+    run_cco vault switch "$default_branch"
+
+    # Move test-proj from main to work
+    run_cco vault move project "test-proj" "work" --yes
+
+    # Now move from work to personal
+    run_cco vault switch "work"
+    run_cco vault move project "test-proj" "personal" --yes
+    assert_output_contains "Moved"
+
+    # Verify on personal
+    local personal_tree
+    personal_tree=$(git -C "$CCO_USER_CONFIG_DIR" ls-tree "personal" -- "projects/test-proj/" 2>/dev/null)
+    [[ -n "$personal_tree" ]] || fail "Expected test-proj on personal"
+
+    # Verify removed from work
+    local work_tree
+    work_tree=$(git -C "$CCO_USER_CONFIG_DIR" ls-tree "work" -- "projects/test-proj/" 2>/dev/null)
+    [[ -z "$work_tree" ]] || fail "test-proj should be removed from work"
+}
+
+test_vault_move_to_nonexistent_target() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+
+    if run_cco vault move project "test-proj" "nonexistent-profile" --yes 2>/dev/null; then
+        fail "Expected move to nonexistent target to fail"
+    fi
+}
+
+# ══════════════════════════════════════════════════════════════════════
+# Remove — Shadow Directory Cleanup
+# ══════════════════════════════════════════════════════════════════════
+
+test_vault_remove_cleans_shadow_dir() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    local mock_bin="$tmpdir/mock_bin"
+    _mock_docker_no_containers "$mock_bin"
+    setup_mocks "$mock_bin"
+
+    # Move test-proj to work
+    run_cco vault profile create "work"
+    run_cco vault switch "$default_branch"
+    run_cco vault move project "test-proj" "work" --yes
+
+    # Switch to work, create portable files, then switch away to populate shadow
+    run_cco vault switch "work"
+    mkdir -p "$CCO_USER_CONFIG_DIR/projects/test-proj/.cco/claude-state"
+    echo "session" > "$CCO_USER_CONFIG_DIR/projects/test-proj/.cco/claude-state/transcript.json"
+    run_cco vault switch "$default_branch"
+
+    # Shadow dir should exist after stash
+    [[ -d "$CCO_USER_CONFIG_DIR/.cco/profile-state/work/projects/test-proj" ]] || \
+        fail "Expected shadow directory to exist after stash"
+
+    # Switch back and remove the project
+    run_cco vault switch "work"
+    run_cco vault remove project "test-proj" --yes
+
+    # Shadow dir entry should be cleaned
+    [[ ! -d "$CCO_USER_CONFIG_DIR/.cco/profile-state/work/projects/test-proj" ]] || \
+        fail "Expected shadow directory entry to be cleaned after remove"
+}
+
+# ══════════════════════════════════════════════════════════════════════
+# Switch — Stash/Restore on Main
+# ══════════════════════════════════════════════════════════════════════
+
+test_vault_switch_stash_restore_on_main() {
+    # Switch from main (with projects) to profile and back — portable files preserved
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    local mock_bin="$tmpdir/mock_bin"
+    _mock_docker_no_containers "$mock_bin"
+    setup_mocks "$mock_bin"
+
+    # Create portable files on main's test-proj
+    mkdir -p "$CCO_USER_CONFIG_DIR/projects/test-proj/.cco/claude-state"
+    echo "main-session" > "$CCO_USER_CONFIG_DIR/projects/test-proj/.cco/claude-state/data.json"
+
+    # Create profile and switch to it (stashes main's portable files)
+    run_cco vault profile create "work"
+
+    # Portable files should be stashed
+    [[ -f "$CCO_USER_CONFIG_DIR/.cco/profile-state/main/projects/test-proj/.cco/claude-state/data.json" ]] || \
+        fail "Expected main's portable files to be stashed"
+
+    # Switch back to main — portable files should be restored
+    run_cco vault switch "$default_branch"
+    [[ -f "$CCO_USER_CONFIG_DIR/projects/test-proj/.cco/claude-state/data.json" ]] || \
+        fail "Expected main's portable files to be restored after switch back"
+
+    local content
+    content=$(cat "$CCO_USER_CONFIG_DIR/projects/test-proj/.cco/claude-state/data.json")
+    [[ "$content" == "main-session" ]] || \
+        fail "Expected portable file content to be preserved, got: $content"
+}
+
+# ══════════════════════════════════════════════════════════════════════
+# Auto-Register on Profile (Design §6.8)
+# ══════════════════════════════════════════════════════════════════════
+
+test_profile_create_on_project_auto_registers() {
+    # Creating a project while on a profile auto-registers it in .vault-profile
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+
+    run_cco vault profile create "work"
+
+    # Create a new project while on the work profile
+    run_cco project create "profile-proj"
+
+    # .vault-profile should list it
+    assert_file_contains "$CCO_USER_CONFIG_DIR/.vault-profile" "profile-proj"
+
+    # Output should confirm auto-registration
+    assert_output_contains "Added to profile"
+}
+
+# ══════════════════════════════════════════════════════════════════════
+# Operation Logging
+# ══════════════════════════════════════════════════════════════════════
+
+test_vault_operation_log_written() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    local mock_bin="$tmpdir/mock_bin"
+    _mock_docker_no_containers "$mock_bin"
+    setup_mocks "$mock_bin"
+
+    # Move project to trigger a logged operation
+    run_cco vault profile create "work"
+    run_cco vault switch "$default_branch"
+    run_cco vault move project "test-proj" "work" --yes
+
+    # Verify profile-ops.log contains the move entry
+    local log_file="$CCO_USER_CONFIG_DIR/.cco/profile-ops.log"
+    [[ -f "$log_file" ]] || fail "Expected profile-ops.log to exist"
+    grep -qF "MOVE project test-proj" "$log_file" || \
+        fail "Expected MOVE entry in profile-ops.log"
 }
 
 # ══════════════════════════════════════════════════════════════════════
