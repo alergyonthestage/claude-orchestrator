@@ -1224,51 +1224,6 @@ _write_vault_profile() {
     } > "$profile_file"
 }
 
-# Auto-commit pending changes (used before branch switches)
-_vault_auto_commit() {
-    local vault_dir="$USER_CONFIG_DIR"
-    local status_output
-    status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
-    if [[ -n "$status_output" ]]; then
-        # Secret detection — scan changed files for secret patterns before staging
-        local secret_found=false
-        local -a safe_files=()
-        while IFS= read -r line; do
-            [[ -z "$line" ]] && continue
-            local file="${line:3}"
-            local is_secret=false
-            local basename_file
-            basename_file=$(basename "$file")
-            for pattern in "${_VAULT_SECRET_PATTERNS[@]}"; do
-                if [[ "$basename_file" == $pattern || "$file" == *"$pattern" ]]; then
-                    is_secret=true
-                    break
-                fi
-            done
-            if $is_secret; then
-                secret_found=true
-                warn "Secret file detected in auto-commit, skipping: $file"
-            else
-                safe_files+=("$file")
-            fi
-        done <<< "$status_output"
-
-        if $secret_found && [[ ${#safe_files[@]} -eq 0 ]]; then
-            warn "Auto-commit skipped: only secret files detected"
-            return 0
-        fi
-
-        if $secret_found; then
-            # Stage only non-secret files
-            git -C "$vault_dir" add -A -- "${safe_files[@]}"
-        else
-            git -C "$vault_dir" add -A
-        fi
-        git -C "$vault_dir" commit -q -m "vault: auto-save before branch change"
-        info "Auto-committed pending changes"
-    fi
-}
-
 # List profile-exclusive projects from .vault-profile
 _profile_projects() {
     [[ -f "$VAULT_PROFILE_FILE" ]] || return 0

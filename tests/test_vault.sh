@@ -68,24 +68,24 @@ test_vault_init_includes_manifest_yml() {
     fi
 }
 
-# ── vault sync ────────────────────────────────────────────────────────
+# ── vault save (replaces vault sync) ─────────────────────────────────
 
-test_vault_sync_no_changes() {
+test_vault_save_no_changes() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_vault "$tmpdir"
-    run_cco vault sync --yes
+    run_cco vault save --yes
     assert_output_contains "up to date"
 }
 
-test_vault_sync_commits_changes() {
+test_vault_save_commits_changes() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_vault "$tmpdir"
 
     # Make a change
     printf '# New rule\n' > "$CCO_GLOBAL_DIR/.claude/rules/test-rule.md"
 
-    run_cco vault sync "added test rule" --yes
-    assert_output_contains "Committed"
+    run_cco vault save "added test rule" --yes
+    assert_output_contains "Saved"
 
     # Verify commit exists
     local log
@@ -97,14 +97,14 @@ test_vault_sync_commits_changes() {
     fi
 }
 
-test_vault_sync_dry_run() {
+test_vault_save_dry_run() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_vault "$tmpdir"
 
     # Make a change
     printf '# New rule\n' > "$CCO_GLOBAL_DIR/.claude/rules/test-rule.md"
 
-    run_cco vault sync --dry-run
+    run_cco vault save --dry-run
     assert_output_contains "Dry run"
 
     # Should NOT be committed
@@ -116,7 +116,7 @@ test_vault_sync_dry_run() {
     fi
 }
 
-test_vault_sync_categorizes_changes() {
+test_vault_save_categorizes_changes() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_vault "$tmpdir"
 
@@ -125,12 +125,12 @@ test_vault_sync_categorizes_changes() {
     mkdir -p "$CCO_PACKS_DIR/test-pack"
     printf 'name: test-pack\n' > "$CCO_PACKS_DIR/test-pack/pack.yml"
 
-    run_cco vault sync --dry-run
+    run_cco vault save --dry-run
     assert_output_contains "global:"
     assert_output_contains "packs:"
 }
 
-test_vault_sync_aborts_on_secret_files() {
+test_vault_save_aborts_on_secret_files() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_vault "$tmpdir"
 
@@ -140,19 +140,19 @@ test_vault_sync_aborts_on_secret_files() {
     sed -i 's/^\*\.env$/# *.env/' "$CCO_USER_CONFIG_DIR/.gitignore"
     printf 'API_KEY=secret123\n' > "$CCO_USER_CONFIG_DIR/secrets.env"
 
-    if run_cco vault sync --yes 2>/dev/null; then
-        echo "ASSERTION FAILED: sync should abort when secret files are detected"
+    if run_cco vault save --yes 2>/dev/null; then
+        echo "ASSERTION FAILED: save should abort when secret files are detected"
         return 1
     fi
 }
 
-test_vault_sync_default_message() {
+test_vault_save_default_message() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_vault "$tmpdir"
 
     printf '# Change\n' > "$CCO_GLOBAL_DIR/.claude/rules/test.md"
 
-    run_cco vault sync --yes
+    run_cco vault save --yes
     local log
     log=$(git -C "$CCO_USER_CONFIG_DIR" log --oneline -1)
     if ! echo "$log" | grep -qF "vault: snapshot"; then
@@ -160,6 +160,19 @@ test_vault_sync_default_message() {
         echo "  Log: $log"
         return 1
     fi
+}
+
+# ── vault sync (deprecated alias) ───────────────────────────────────
+
+test_vault_sync_deprecated_alias() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault "$tmpdir"
+
+    printf '# Change\n' > "$CCO_GLOBAL_DIR/.claude/rules/test.md"
+
+    run_cco vault sync "via deprecated alias" --yes
+    assert_output_contains "deprecated"
+    assert_output_contains "Saved"
 }
 
 # ── vault diff ────────────────────────────────────────────────────────
@@ -196,9 +209,9 @@ test_vault_log_limit() {
 
     # Create extra commits
     printf '# A\n' > "$CCO_GLOBAL_DIR/.claude/rules/a.md"
-    run_cco vault sync "commit a" --yes
+    run_cco vault save "commit a" --yes
     printf '# B\n' > "$CCO_GLOBAL_DIR/.claude/rules/b.md"
-    run_cco vault sync "commit b" --yes
+    run_cco vault save "commit b" --yes
 
     run_cco vault log --limit 1
     # Should only show 1 commit
@@ -245,12 +258,12 @@ test_vault_status_clean() {
 
 # ── vault not initialized errors ─────────────────────────────────────
 
-test_vault_sync_fails_without_init() {
+test_vault_save_fails_without_init() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    if run_cco vault sync --yes 2>/dev/null; then
-        echo "ASSERTION FAILED: sync should fail without vault init"
+    if run_cco vault save --yes 2>/dev/null; then
+        echo "ASSERTION FAILED: save should fail without vault init"
         return 1
     fi
 }
@@ -309,7 +322,7 @@ test_vault_restore_non_interactive_fails() {
 
     # Create a second commit
     printf '# Change\n' > "$CCO_GLOBAL_DIR/.claude/rules/test.md"
-    run_cco vault sync "add test" --yes
+    run_cco vault save "add test" --yes
 
     # Pipe stdin (non-tty) — should refuse
     if echo "" | run_cco vault restore HEAD~1 2>/dev/null; then
@@ -424,7 +437,7 @@ test_vault_help() {
     run_cco vault --help
     assert_output_contains "vault"
     assert_output_contains "init"
-    assert_output_contains "sync"
+    assert_output_contains "save"
     assert_output_contains "diff"
     assert_output_contains "status"
 }
@@ -457,9 +470,9 @@ test_vault_pull_help() {
     assert_output_contains "pull"
 }
 
-# ── Scenario 19: vault sync secret scan detects .cco/remotes ──────────
+# ── Scenario 19: vault save secret scan detects .cco/remotes ──────────
 
-test_vault_sync_aborts_on_cco_remotes() {
+test_vault_save_aborts_on_cco_remotes() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_vault "$tmpdir"
 
@@ -470,15 +483,15 @@ test_vault_sync_aborts_on_cco_remotes() {
     # Remove .cco/remotes from gitignore to simulate accidental inclusion
     sed -i 's|^\.cco/remotes$|# .cco/remotes|' "$CCO_USER_CONFIG_DIR/.gitignore"
 
-    if run_cco vault sync --yes 2>/dev/null; then
-        echo "ASSERTION FAILED: sync should abort when .cco/remotes is detected as secret"
+    if run_cco vault save --yes 2>/dev/null; then
+        echo "ASSERTION FAILED: save should abort when .cco/remotes is detected as secret"
         return 1
     fi
 }
 
-# ── Scenario 12: vault sync tracks .cco/base/ ────────────────────────
+# ── Scenario 12: vault save tracks .cco/base/ ────────────────────────
 
-test_vault_sync_tracks_cco_base() {
+test_vault_save_tracks_cco_base() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_vault "$tmpdir"
 
@@ -490,7 +503,7 @@ test_vault_sync_tracks_cco_base() {
     mkdir -p "$CCO_GLOBAL_DIR/.claude/.cco"
     echo "schema_version: 9" > "$CCO_GLOBAL_DIR/.claude/.cco/meta"
 
-    run_cco vault sync --yes
+    run_cco vault save --yes
 
     # .cco/base/ content should be committed
     local committed
