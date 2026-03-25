@@ -277,7 +277,14 @@ EOF
 
     local profile_count
     profile_count=$(_list_profile_branches | grep -c . || true)
-    ok "Synced $shared_count shared file(s) to main and $profile_count profile(s)"
+    if [[ -n "$profile" ]]; then
+        # On a profile: synced to main + (N-1) other profiles
+        local other_count=$((profile_count > 1 ? profile_count - 1 : 0))
+        ok "Synced $shared_count shared file(s) to main and $other_count other profile(s)"
+    else
+        # On main: synced to N profiles
+        ok "Synced $shared_count shared file(s) to $profile_count profile(s)"
+    fi
 }
 
 # Deprecated alias for vault save (backward compatible)
@@ -1044,16 +1051,16 @@ _sync_shared_to_main() {
         fi
     done <<< "$changed_files"
 
-    # Commit synced changes
+    # Commit synced changes + merge-base advancement
     if [[ $synced -gt 0 ]]; then
         git -C "$vault_dir" add -A -- ${shared_paths[@]+"${shared_paths[@]}"}
         git -C "$vault_dir" commit -q -m "sync: shared from '$source_branch'" 2>/dev/null || true
-    fi
 
-    # Merge-base advancement: git merge -s ours makes future syncs
-    # only compare changes since this sync point
-    git -C "$vault_dir" merge -s ours "$source_branch" -q \
-        -m "sync: merge-base with '$source_branch'" 2>/dev/null || true
+        # Merge-base advancement: git merge -s ours makes future syncs
+        # only compare changes since this sync point (§8.5)
+        git -C "$vault_dir" merge -s ours "$source_branch" -q \
+            -m "sync: merge-base with '$source_branch'" 2>/dev/null || true
+    fi
 
     # Return to source branch
     git -C "$vault_dir" checkout "$source_branch" -q
@@ -1116,15 +1123,15 @@ _sync_shared_from_main() {
         fi
     done <<< "$changed_files"
 
-    # Commit synced changes
+    # Commit synced changes + merge-base advancement
     if [[ $synced -gt 0 ]]; then
         git -C "$vault_dir" add -A -- ${shared_paths[@]+"${shared_paths[@]}"}
         git -C "$vault_dir" commit -q -m "sync: shared from main" 2>/dev/null || true
-    fi
 
-    # Merge-base advancement
-    git -C "$vault_dir" merge -s ours "$default_branch" -q \
-        -m "sync: merge-base with main" 2>/dev/null || true
+        # Merge-base advancement (§8.5)
+        git -C "$vault_dir" merge -s ours "$default_branch" -q \
+            -m "sync: merge-base with main" 2>/dev/null || true
+    fi
 
     return 0
 }
@@ -1426,6 +1433,14 @@ EOF
     # Create branch from main (§6.7)
     local default_branch
     default_branch=$(_vault_default_branch)
+
+    # Stash departing profile's gitignored files before checkout (§5.3)
+    local departing_profile
+    departing_profile=$(_get_active_profile)
+    if [[ -n "$departing_profile" ]]; then
+        _stash_gitignored_files "$vault_dir" "$departing_profile"
+    fi
+
     git -C "$vault_dir" checkout -b "$name" "$default_branch" -q
     _write_vault_profile "$name"
     git -C "$vault_dir" add -A -- .vault-profile
@@ -1894,6 +1909,11 @@ EOF
         die "Profile '$name' not found"
     fi
 
+    # Working tree must be clean (§6.9)
+    local status_output
+    status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
+    [[ -n "$status_output" ]] && die "You have uncommitted changes. Run 'cco vault save' first."
+
     # Read exclusive resources from the profile branch (§6.6)
     local profile_content
     profile_content=$(git -C "$vault_dir" show "$name:.vault-profile" 2>/dev/null || true)
@@ -1970,7 +1990,9 @@ EOF
     fi
 
     if [[ $moved -gt 0 ]]; then
-        git -C "$vault_dir" checkout "$_default_branch" -q
+        if ! git -C "$vault_dir" checkout "$_default_branch" -q 2>/dev/null; then
+            die "Failed to checkout '$_default_branch' — profile delete aborted. No changes made."
+        fi
         for rpath in ${move_paths[@]+"${move_paths[@]}"}; do
             git -C "$vault_dir" checkout "$name" -- "$rpath" 2>/dev/null || true
         done
@@ -2177,7 +2199,9 @@ EOF
         git -C "$vault_dir" add -A -- .vault-profile
     fi
 
-    git -C "$vault_dir" commit -q -m "vault: remove $resource_type '$name' from ${profile:-$current_branch}"
+    if ! git -C "$vault_dir" diff --cached --quiet 2>/dev/null; then
+        git -C "$vault_dir" commit -q -m "vault: remove $resource_type '$name' from ${profile:-$current_branch}"
+    fi
 
     # Delete portable gitignored files
     if [[ "$resource_type" == "project" ]]; then
@@ -2300,7 +2324,17 @@ EOF
     local tracked_count
     tracked_count=$(git -C "$vault_dir" ls-tree -r --name-only HEAD -- "$resource_path/" 2>/dev/null | grep -c . || true)
 
-    # Confirmation
+    # Step 1: Detect if target already has this resource (§6.1)
+    local target_has_resource=false conflict_detected=false
+    if git -C "$vault_dir" ls-tree "$target" -- "$resource_path/" >/dev/null 2>&1 && \
+       [[ -n "$(git -C "$vault_dir" ls-tree "$target" -- "$resource_path/" 2>/dev/null)" ]]; then
+        target_has_resource=true
+        local diff_output
+        diff_output=$(git -C "$vault_dir" diff "$target" "$current_branch" -- "$resource_path/" 2>/dev/null || true)
+        [[ -n "$diff_output" ]] && conflict_detected=true
+    fi
+
+    # Step 2: Confirmation (includes conflict info)
     if ! $auto_yes; then
         if [[ ! -t 0 ]]; then
             die "Move requires interactive confirmation (use --yes to skip)"
@@ -2309,36 +2343,21 @@ EOF
         echo "Moving $resource_type '$name':" >&2
         echo "  From: $current_branch → To: $target" >&2
         echo "  Tracked files: $tracked_count file(s)" >&2
-        printf "\nProceed? [y/N] " >&2
+        if $conflict_detected; then
+            warn "$resource_type '$name' already exists on '$target' with different content."
+            printf "\n  This will overwrite the target version. Proceed? [y/N] " >&2
+        else
+            printf "\nProceed? [y/N] " >&2
+        fi
         local reply
         read -r reply
         if [[ ! "$reply" =~ ^[Yy]$ ]]; then
             info "Aborted"
             return 0
         fi
-    fi
-
-    # Step 1: Detect if target already has this resource (§6.1)
-    local target_has_resource=false
-    if git -C "$vault_dir" ls-tree "$target" -- "$resource_path/" >/dev/null 2>&1 && \
-       [[ -n "$(git -C "$vault_dir" ls-tree "$target" -- "$resource_path/" 2>/dev/null)" ]]; then
-        target_has_resource=true
-        # Check if files differ
-        local diff_output
-        diff_output=$(git -C "$vault_dir" diff "$target" "$current_branch" -- "$resource_path/" 2>/dev/null || true)
-        if [[ -n "$diff_output" ]]; then
-            warn "$resource_type '$name' already exists on '$target' with different content."
-            if [[ ! -t 0 ]]; then
-                die "Cannot resolve conflict non-interactively"
-            fi
-            printf "  Overwrite target version? [y/N] " >&2
-            local conflict_reply
-            read -r conflict_reply
-            if [[ ! "$conflict_reply" =~ ^[Yy]$ ]]; then
-                info "Aborted"
-                return 0
-            fi
-        fi
+    elif $conflict_detected; then
+        # --yes mode: warn about conflict but proceed
+        warn "$resource_type '$name' already exists on '$target' — overwriting (--yes)."
     fi
 
     # Step 3: Copy tracked files to target
@@ -2402,7 +2421,9 @@ EOF
         fi
     fi
     git -C "$vault_dir" add -A -- .vault-profile
-    git -C "$vault_dir" commit -q -m "vault: remove $resource_type '$name' (moved to $target)"
+    if ! git -C "$vault_dir" diff --cached --quiet 2>/dev/null; then
+        git -C "$vault_dir" commit -q -m "vault: remove $resource_type '$name' (moved to $target)"
+    fi
 
     # Step 7: Clean ghost directories
     find "$vault_dir/$resource_path" -type d -empty -delete 2>/dev/null || true
