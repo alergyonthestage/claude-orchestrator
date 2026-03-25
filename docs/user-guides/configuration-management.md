@@ -12,7 +12,7 @@ CCO manages your configuration across four dimensions:
 
 | Dimension | What it solves | Key commands |
 |-----------|---------------|--------------|
-| **Vault** | Versioning and backup | `cco vault sync`, `push`, `pull` |
+| **Vault** | Versioning and backup | `cco vault save`, `push`, `pull` |
 | **Profiles** | Multi-context isolation (work, personal) | `cco vault profile create`, `switch` |
 | **Updates** | Keeping config current with framework and publishers | `cco update`, `cco project update` |
 | **Sharing** | Publishing and installing projects and packs | `cco project publish`, `cco pack install` |
@@ -20,7 +20,7 @@ CCO manages your configuration across four dimensions:
 These form a coherent lifecycle:
 
 ```
-Create / Install → Customize → Vault sync → Update → Publish / Share
+Create / Install → Customize → Vault save → Update → Publish / Share
        ↑                                        │
        └────────────────────────────────────────┘
 ```
@@ -35,7 +35,7 @@ The vault is a git-backed versioning system for your entire `user-config/` direc
 
 ```bash
 cco vault init          # Initialize git repo in user-config/
-cco vault sync          # Commit current state (with secret detection)
+cco vault save          # Commit current state (with secret detection)
 cco vault push          # Push to remote (set up a private GitHub repo)
 cco vault pull          # Pull changes from remote
 ```
@@ -49,12 +49,14 @@ cco vault remote add origin git@github.com:youruser/cco-vault.git
 ### Day-to-day workflow
 
 1. **Work on your projects** — edit rules, create packs, customize CLAUDE.md
-2. **Sync periodically** — `cco vault sync "added deploy pack"` commits with a descriptive message
+2. **Save periodically** — `cco vault save "added deploy pack"` commits with a descriptive message
 3. **Push to remote** — `cco vault push` backs up to your private repo
 
-`cco vault sync` shows a categorized summary before committing and includes
+`cco vault save` shows a categorized summary before committing and includes
 **secret detection**: it scans for `.env` files, API keys, credentials, and
 other sensitive patterns. If secrets are found, the commit is blocked.
+
+> **Note**: `vault sync` is a deprecated alias for `vault save`.
 
 ### Inspecting changes
 
@@ -70,7 +72,8 @@ cco vault restore       # Restore a file from a previous commit
 ## 3. Profiles — Multi-Context Isolation
 
 Profiles let you maintain separate configuration contexts on the same machine.
-Each profile is a git branch with isolated resources.
+Each profile is a git branch with **real git-level isolation** — projects
+exist on exactly one branch at a time.
 
 ### When to use profiles
 
@@ -80,43 +83,72 @@ Each profile is a git branch with isolated resources.
 
 ### Creating and switching
 
+New profiles start **empty** — only shared resources (global config, templates,
+shared packs) are visible. Use `vault move` to assign projects to a profile.
+
 ```bash
-cco vault profile create work       # Create "work" profile
-cco vault profile create personal   # Create "personal" profile
-cco vault profile switch work       # Switch to "work" context
+cco vault profile create work       # Create "work" profile (empty)
+cco vault profile create personal   # Create "personal" profile (empty)
+cco vault switch work               # Switch to "work" context
 cco vault profile list              # Show all profiles
 cco vault profile show              # Show current profile details
 ```
 
+Switching requires a **clean working tree** (run `cco vault save` first) and
+**no active Docker sessions**. This prevents data loss during branch checkout.
+
 ### Resource isolation
 
-Projects can be **exclusive** to a profile (visible only when active) or
-**shared** (visible in all profiles via `main` branch).
+Each project exists on exactly **one branch** — either `main` (the default)
+or a profile branch. Moving a project physically relocates its files via git.
 
 ```bash
-cco vault profile add project my-work-app       # Make exclusive
-cco vault profile add pack work-conventions      # Make pack exclusive
-cco vault profile remove project my-work-app     # Make shared again
-cco vault profile move project my-app --to personal  # Move between profiles
+cco vault move project my-api work           # Move project to "work" profile
+cco vault move pack work-conventions work     # Move pack to "work" profile
+cco vault move project my-api main           # Move back to shared (main)
 ```
 
-> **Note — Tracking-only isolation**: Profile assignment is a tracking
-> declaration in `.vault-profile` — it does not physically move files.
-> Isolation is enforced at sync time: `vault sync`, `vault push`, and
-> `vault pull` selectively stage only the relevant resources.
+Global config, templates, and packs not assigned to any profile remain
+**shared** on `main` and are visible from all profiles.
 
-### Profile sync strategy
+### Profile workflow example
 
-When you switch profiles, resources sync automatically. For **shared
-resources** (packs, global settings) modified in another profile, CCO detects
-conflicts and offers interactive resolution.
+```bash
+# 1. Create a work profile
+cco vault profile create work
+
+# 2. Assign projects to it
+cco vault move project api work
+cco vault move project frontend work
+
+# 3. Switch to work context
+cco vault switch work
+
+# 4. Work and save
+cco start api
+cco vault save "end of day"
+
+# 5. Switch back to main when done
+cco vault switch main
+```
+
+### Shadow directory
+
+Profile switches use a shadow directory (`.cco/profile-state/`) to preserve
+portable gitignored files (like session state) across branch checkouts. This
+is automatic and transparent.
+
+### Shared resource sync
+
+When you push or pull, shared resources (global config, templates, shared packs)
+are synced between the profile branch and `main`. If both sides modified the
+same shared file, CCO offers interactive conflict resolution.
 
 **Best practice**: keep shared resources stable. Profile-specific customizations
-should go in exclusive resources. If you need different versions of a shared
-pack, make a copy exclusive to each profile instead of constantly merging.
+should go in exclusive resources.
 
 Without profiles, the vault works on a single `main` branch. Profiles are
-opt-in and only needed for selective sync.
+opt-in and only needed when you want project isolation.
 
 ---
 
@@ -133,7 +165,7 @@ distinct use cases:
 | **Visibility** | Private (single owner) | Team, org, or public |
 | **Content** | Everything (global, projects, packs, memory, templates) | Only packs and templates |
 | **Flow** | push/pull (bidirectional sync) | publish → install (one-way distribution) |
-| **Commands** | `cco vault push/pull/sync` | `cco pack publish/install`, `cco project publish/install` |
+| **Commands** | `cco vault push/pull/save` | `cco pack publish/install`, `cco project publish/install` |
 
 > **Important**: Never share your vault with teammates. It contains personal
 > settings, memory, and project configurations. Always use a dedicated Config
@@ -407,8 +439,8 @@ After internalizing:
 ```bash
 cco init && cco vault init && cco project create my-app
 
-# Daily: work, sync, push
-cco vault sync "end of day snapshot"
+# Daily: work, save, push
+cco vault save "end of day snapshot"
 cco vault push
 
 # Periodic: check for framework updates
@@ -419,12 +451,12 @@ cco update && cco update --sync
 
 ```bash
 # Machine A
-cco vault sync "added new pack" && cco vault push
+cco vault save "added new pack" && cco vault push
 
 # Machine B
 cco vault pull
 # ... work ...
-cco vault sync "changes from machine B" && cco vault push
+cco vault save "changes from machine B" && cco vault push
 ```
 
 Use profiles for different project sets per machine:
@@ -432,11 +464,11 @@ Use profiles for different project sets per machine:
 ```bash
 # Work machine
 cco vault profile create work
-cco vault profile add project work-api
+cco vault move project work-api work
 
 # Personal machine
 cco vault profile create personal
-cco vault profile add project side-project
+cco vault move project side-project personal
 ```
 
 ### Team — publisher workflow
@@ -466,7 +498,7 @@ cco update
 cco project update api-service
 
 # Vault your customizations
-cco vault sync "customized api-service" && cco vault push
+cco vault save "customized api-service" && cco vault push
 ```
 
 **Best practices**: customize freely (3-way merge preserves changes), prefer
@@ -490,30 +522,31 @@ Each project has two separate directories:
 | Command | Purpose |
 |---------|---------|
 | `cco vault init [<path>]` | Initialize git-backed config versioning |
-| `cco vault sync [message]` | Commit changes (with secret detection) |
-| `cco vault sync --dry-run` | Show summary without committing |
+| `cco vault save [message] [--yes]` | Commit changes (with secret detection) |
+| `cco vault save --dry-run` | Show summary without committing |
 | `cco vault diff` | Show uncommitted changes by category |
 | `cco vault log [--limit N]` | Show commit history |
 | `cco vault status` | Show vault state, remotes, uncommitted changes |
 | `cco vault restore <ref>` | Restore file from history |
+| `cco vault switch <name>` | Switch to another profile (clean tree required) |
+| `cco vault move <type> <name> <target>` | Move resource between profiles |
+| `cco vault remove <type> <name>` | Remove resource from current branch |
 | `cco vault push [<remote>]` | Push to remote |
 | `cco vault pull [<remote>]` | Pull from remote |
 | `cco vault remote add <n> <url>` | Add git remote |
 | `cco vault remote remove <n>` | Remove git remote |
+| `cco project delete <name> [--yes]` | Delete project from all branches |
 
 ### Profiles
 
 | Command | Purpose |
 |---------|---------|
-| `cco vault profile create <name>` | Create a new profile |
+| `cco vault profile create <name>` | Create a new profile (empty) |
 | `cco vault profile list` | List all profiles |
 | `cco vault profile show` | Show current profile details |
-| `cco vault profile switch <name>` | Switch active profile |
+| `cco vault profile switch <name>` | Switch active profile (alias for `vault switch`) |
 | `cco vault profile rename <name>` | Rename current profile |
 | `cco vault profile delete <name>` | Delete profile (moves resources to main) |
-| `cco vault profile add project/pack <n>` | Make resource exclusive to profile |
-| `cco vault profile remove project/pack <n>` | Make resource shared again |
-| `cco vault profile move project/pack <n> --to <p>` | Move resource between profiles |
 
 ### Updates
 

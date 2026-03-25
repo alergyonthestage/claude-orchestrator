@@ -47,7 +47,7 @@ Features are prioritized by impact for third-party users adopting claude-orchest
 
 ```mermaid
 graph LR
-    DONE["✅ Completed<br/>Sprint 1-5c, Sprint 6+10,<br/>Sprint 6b, ADR-13,<br/>Sprint 7-Vault,<br/>FI-7 Config Sync,<br/>RF-1→4, FI-2, FI-5, FI-8,<br/>Sprint 6 Phase A+B,<br/>Bugfix #B1-#B7,<br/>UX Improvements P1-3,<br/>Minor Fixes"]
+    DONE["✅ Completed<br/>Sprint 1-5c, Sprint 6+10,<br/>Sprint 6b, ADR-13,<br/>Sprint 7-Vault + Real Isolation,<br/>FI-7 Config Sync,<br/>RF-1→4, FI-2, FI-5, FI-8,<br/>Sprint 6 Phase A+B,<br/>Bugfix #B1-#B7,<br/>UX Improvements P1-3,<br/>Minor Fixes"]
 
     QW["Quick Wins<br/>#FI-4 model config<br/>#cco project edit"]
     AIM["AI-Assisted Merge<br/>#Phase 4"]
@@ -513,20 +513,22 @@ Three bugs identified and fixed on 2026-03-16:
 
 ### Multi-PC Config Sync & Memory Policy (Sprint 7-Vault) ✓
 
-Vault profiles with branch-based isolation for multi-PC scenarios, memory separation from claude-state, and managed memory policy.
+Vault profiles with branch-based isolation for multi-PC scenarios, memory separation from claude-state, and managed memory policy. **Updated**: profile isolation rewritten from tracking-only to real git-level isolation.
 
 **What was implemented**:
 - Vault profiles (`cco vault profile create|list|show|switch|rename|delete`): git branch per profile with `.vault-profile` tracking file
-- Selective sync: `vault sync/push/pull` operate on profile-scoped paths only (shared resources auto-synced to/from `main`)
+- **Real git-level isolation**: each project exists on exactly one branch (main or a profile). `vault move` physically relocates files via git. New profiles start empty.
+- Top-level commands promoted: `vault save` (renamed from `vault sync`), `vault switch`, `vault move`, `vault remove`
+- `cco project delete` — removes project from all branches
+- `vault switch` requires clean working tree and no active Docker sessions
+- Shadow directory (`.cco/profile-state/`) for portable gitignored files during profile switch
 - Interactive conflict resolution (L/R/M/D) for shared resource conflicts using `git merge-file`
-- Resource movement: `vault profile move project|pack --to <profile|main>`, `vault profile add|remove` shortcuts
 - Memory separation: `memory/` moved from `claude-state/memory/` to standalone dir with Docker child bind mount
 - Memory policy: managed rule (`defaults/managed/.claude/rules/memory-policy.md`) defining when to use memory vs project docs
 - Migration 008: automatic memory separation for existing projects
 - Backward compatible: vaults without profiles work unchanged (single branch on `main`)
-- Test coverage: 44 new profile tests + existing vault tests updated (698 total, 0 failures)
 
-**Docs**: [analysis](../configuration/vault/analysis.md) | [design](../configuration/vault/design.md)
+**Docs**: [analysis](../configuration/vault/analysis.md) | [design](../configuration/vault/design.md) | [profile-isolation-design](../configuration/vault/profile-isolation-design.md)
 
 ---
 

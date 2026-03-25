@@ -1,5 +1,10 @@
 # Sprint 7-Vault — Design: Multi-PC Sync, Memory Architecture & Policy
 
+> **STATUS: PARTIALLY SUPERSEDED** — The tracking-only isolation model described
+> in §5.3 and the selective-staging sync mechanics in §4 have been replaced by
+> real git-level isolation. See `profile-isolation-design.md` for the current
+> design. Memory architecture (§6) and memory policy (§7) remain current.
+
 **Status**: Implemented — Sprint 7-Vault complete
 **Date**: 2026-03-14
 **Scope**: Architecture-level

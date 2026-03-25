@@ -884,12 +884,14 @@ Examples:
   cco vault init ~/my-config
 ```
 
-#### `cco vault sync [msg]`
+#### `cco vault save [msg]`
 
-Commit config state with pre-commit summary.
+Commit config state with pre-commit summary and secret detection.
+
+> **Note**: `vault sync` is a deprecated alias for `vault save`.
 
 ```
-Usage: cco vault sync [msg] [OPTIONS]
+Usage: cco vault save [msg] [OPTIONS]
 
 Arguments:
   msg                  Optional commit message (auto-generated if omitted)
@@ -899,10 +901,10 @@ Options:
   --dry-run            Show what would be committed without committing
 
 Examples:
-  cco vault sync
-  cco vault sync "Added react-guidelines pack"
-  cco vault sync --dry-run
-  cco vault sync --yes
+  cco vault save
+  cco vault save "Added react-guidelines pack"
+  cco vault save --dry-run
+  cco vault save --yes
 ```
 
 #### `cco vault diff`
@@ -979,9 +981,86 @@ Show vault state. With an active profile, also shows profile info, exclusive res
 Usage: cco vault status
 ```
 
+#### `cco vault switch <name>`
+
+Switch to another profile. This is a top-level shortcut for `cco vault profile switch`.
+
+Requires a clean working tree (run `cco vault save` first) and no active Docker sessions.
+Each project exists on exactly one branch; switching profiles changes which projects are visible.
+
+```
+Usage: cco vault switch <name>
+
+Arguments:
+  name                 Profile name or 'main' to return to the shared branch
+
+Examples:
+  cco vault switch work
+  cco vault switch main
+```
+
+#### `cco vault move <project|pack> <name> <target>`
+
+Move a project or pack between profiles. Projects exist on exactly one branch — moving
+physically relocates the files via git. This is a top-level shortcut for the profile move operation.
+
+```
+Usage: cco vault move <project|pack> <name> <target> [--yes]
+
+Arguments:
+  project|pack         Resource type to move
+  name                 Resource name
+  target               Target profile name or 'main'
+
+Options:
+  --yes                Skip confirmation prompt
+
+Examples:
+  cco vault move project my-api work
+  cco vault move project my-api main
+  cco vault move pack corp-rules work
+```
+
+#### `cco vault remove <project|pack> <name>`
+
+Remove a resource from the current profile's branch. Deletes the resource files from the
+current branch only.
+
+```
+Usage: cco vault remove <project|pack> <name> [--yes]
+
+Arguments:
+  project|pack         Resource type to remove
+  name                 Resource name
+
+Options:
+  --yes                Skip confirmation prompt
+
+Examples:
+  cco vault remove project old-api
+  cco vault remove pack legacy-rules
+```
+
+#### `cco project delete <name>`
+
+Delete a project from disk entirely. When a vault is active, removes the project from ALL
+branches (profiles and main). This action is irreversible.
+
+```
+Usage: cco project delete <name> [--yes]
+
+Options:
+  --yes, -y            Skip confirmation prompt
+
+Examples:
+  cco project delete old-service
+  cco project delete old-service --yes
+```
+
 #### `cco vault profile create <name>`
 
-Create a new vault profile. Creates a git branch from main with a `.vault-profile` tracking file.
+Create a new vault profile. Creates a git branch from main with an empty `.vault-profile` file.
+New profiles start empty — use `cco vault move` to assign projects to the new profile.
 
 ```
 Usage: cco vault profile create <name>
@@ -1031,13 +1110,17 @@ Example output:
 
 #### `cco vault profile switch <name>`
 
-Switch to another profile. Auto-commits pending changes before switching.
+Switch to another profile. Alias for `cco vault switch`.
+
+Requires a clean working tree (run `cco vault save` first) and no active Docker sessions.
+Use `main` to switch back to the shared branch.
 
 ```
 Usage: cco vault profile switch <name>
 
 Examples:
   cco vault profile switch personal
+  cco vault profile switch main
 ```
 
 #### `cco vault profile rename <new-name>`
@@ -1066,33 +1149,35 @@ Examples:
   cco vault profile delete old-profile --yes
 ```
 
-#### `cco vault profile move project|pack <name> --to <target>`
+#### `cco vault profile move project|pack <name> <target>`
 
-Move a project or pack between profiles and main.
+Alias for `cco vault move`. Move a project or pack between profiles.
 
 ```
-Usage: cco vault profile move project <name> --to <profile|main>
-       cco vault profile move pack <name> --to <profile|main>
+Usage: cco vault profile move project <name> <target>
+       cco vault profile move pack <name> <target>
 
 Examples:
-  cco vault profile move project my-api --to work
-  cco vault profile move project my-api --to main
-  cco vault profile move pack corp-rules --to work
+  cco vault profile move project my-api work
+  cco vault profile move pack corp-rules main
 ```
 
-#### `cco vault profile add|remove project|pack <name>`
+#### `cco vault profile add project|pack <name>` (deprecated)
 
-Shortcuts for moving resources to/from the current profile.
+> **Deprecated**: Use `cco vault move` instead.
 
 ```
 Usage: cco vault profile add project <name>
        cco vault profile add pack <name>
-       cco vault profile remove project <name>
-       cco vault profile remove pack <name>
+```
 
-Examples:
-  cco vault profile add project new-api
-  cco vault profile remove pack old-rules
+#### `cco vault profile remove project|pack <name>`
+
+Alias for `cco vault remove`. Remove a resource from the current profile's branch.
+
+```
+Usage: cco vault profile remove project <name>
+       cco vault profile remove pack <name>
 ```
 
 ---
