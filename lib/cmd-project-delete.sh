@@ -98,14 +98,11 @@ _project_delete_with_vault() {
 
     while IFS= read -r branch; do
         [[ -z "$branch" ]] && continue
-        # Check if project directory exists on this branch
-        if git -C "$vault_dir" ls-tree --name-only "$branch" -- "$project_path/" >/dev/null 2>&1; then
-            local file_count
-            file_count=$(git -C "$vault_dir" ls-tree -r "$branch" -- "$project_path/" 2>/dev/null | wc -l | tr -d ' ')
-            if [[ "$file_count" -gt 0 ]]; then
-                branches_with_project+=("$branch")
-                branch_summaries+=("$branch: $file_count tracked files")
-            fi
+        local file_count
+        file_count=$(git -C "$vault_dir" ls-tree -r "$branch" -- "$project_path/" 2>/dev/null | wc -l | tr -d ' ')
+        if [[ "$file_count" -gt 0 ]]; then
+            branches_with_project+=("$branch")
+            branch_summaries+=("$branch: $file_count tracked files")
         fi
     done < <(git -C "$vault_dir" for-each-ref --format='%(refname:short)' refs/heads/)
 
