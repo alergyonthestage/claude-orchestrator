@@ -69,7 +69,26 @@ _start_resolve_project() {
     else
         project_dir="$PROJECTS_DIR/$project"
         project_yml="$project_dir/project.yml"
-        [[ ! -d "$project_dir" ]] && die "Project '$project' not found. Run 'cco project list' to see available projects."
+        if [[ ! -d "$project_dir" ]]; then
+            # Check if project exists on another vault profile branch
+            local _other_branch=""
+            if [[ -d "$USER_CONFIG_DIR/.git" ]]; then
+                local _branch
+                while IFS= read -r _branch; do
+                    _branch=$(echo "$_branch" | sed 's/^[ *]*//')
+                    [[ -z "$_branch" ]] && continue
+                    if [[ -n "$(git -C "$USER_CONFIG_DIR" ls-tree "$_branch" -- "projects/$project/" 2>/dev/null)" ]]; then
+                        _other_branch="$_branch"
+                        break
+                    fi
+                done < <(git -C "$USER_CONFIG_DIR" branch 2>/dev/null)
+            fi
+            if [[ -n "$_other_branch" ]]; then
+                die "Project '$project' is on profile '$_other_branch'. Run 'cco vault switch $_other_branch' first."
+            else
+                die "Project '$project' not found. Run 'cco project list' to see available projects."
+            fi
+        fi
         [[ ! -f "$project_yml" ]] && die "No project.yml found in projects/$project/"
     fi
 

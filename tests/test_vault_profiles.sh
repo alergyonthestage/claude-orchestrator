@@ -2119,3 +2119,31 @@ test_user_changes_still_block_even_with_memory() {
         fail "Expected switch to refuse when user changes exist alongside memory"
     fi
 }
+
+# ══════════════════════════════════════════════════════════════════════
+# Cross-Profile UX
+# ══════════════════════════════════════════════════════════════════════
+
+test_start_shows_profile_hint_when_project_on_other_branch() {
+    # When cco start fails because project is on another profile, hint which one
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    local mock_bin="$tmpdir/mock_bin"
+    _mock_docker_no_containers "$mock_bin"
+    setup_mocks "$mock_bin"
+
+    # Move test-proj to "work" profile
+    run_cco vault profile create "work"
+    run_cco vault switch "$default_branch"
+    run_cco vault move project "test-proj" "work" --yes
+
+    # Now on main, test-proj is gone. Try to start it.
+    if run_cco start test-proj --dry-run 2>/dev/null; then
+        fail "Expected start to fail when project is on another profile"
+    fi
+    assert_output_contains "profile 'work'"
+    assert_output_contains "vault switch work"
+}
