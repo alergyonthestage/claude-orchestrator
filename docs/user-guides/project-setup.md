@@ -291,7 +291,7 @@ Since `user-config/` is gitignored in the orchestrator repo, you can version it 
 ```bash
 # Version your config with automatic secret detection
 cco vault init
-cco vault sync "Initial config"
+cco vault save "Initial config"
 cco vault push                    # Push to a remote for backup
 
 # Install packs from a team Config Repo

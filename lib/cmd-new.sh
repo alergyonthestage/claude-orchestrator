@@ -84,6 +84,14 @@ services:
       - PROJECT_NAME=${session_name}
       - TEAMMATE_MODE=${teammate_mode}
       - CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+YAML
+
+        # Forward debug mode to container
+        if [[ "${CCO_DEBUG:-}" == "1" ]]; then
+            echo "      - CCO_DEBUG=1"
+        fi
+
+        cat <<YAML
     volumes:
       - \${HOME}/.claude.json:/home/claude/.claude.json.seed:ro
       # Global config

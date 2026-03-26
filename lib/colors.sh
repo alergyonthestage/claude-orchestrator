@@ -18,4 +18,4 @@ info()  { echo -e "${BLUE}ℹ${NC} $*" >&2; }
 ok()    { echo -e "${GREEN}✓${NC} $*" >&2; }
 warn()  { echo -e "${YELLOW}⚠${NC} $*" >&2; }
 error() { echo -e "${RED}✗${NC} $*" >&2; }
-die()   { error "$@"; exit 1; }
+die()   { error "$@"; _cco_completed=true; exit 1; }

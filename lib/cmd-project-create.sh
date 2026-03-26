@@ -61,6 +61,19 @@ EOF
     local project_dir="$PROJECTS_DIR/$name"
     [[ -d "$project_dir" ]] && die "Project '$name' already exists at projects/$name/"
 
+    # Check cross-branch uniqueness (if vault exists)
+    if [[ -d "$USER_CONFIG_DIR/.git" ]]; then
+        local current_branch
+        current_branch=$(git -C "$USER_CONFIG_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)
+        local conflict_branch
+        if conflict_branch=$(_name_exists_on_other_branch "$USER_CONFIG_DIR" "project" "$name" "$current_branch"); then
+            die "Project '$name' already exists on branch '$conflict_branch'. Project names must be unique across all profiles."
+        fi
+    fi
+
+    # Ensure projects directory exists (may have been removed by vault move)
+    mkdir -p "$PROJECTS_DIR"
+
     # Resolve template
     local template_dir
     template_dir=$(_resolve_template "project" "${template_name:-base}")
@@ -210,6 +223,16 @@ print(', '.join(['$'+k for k in ['dev','build','test','start','lint'] if k in s]
     _save_all_base_versions "$project_dir/.cco/base" "$project_dir/.claude" "project"
 
     ok "Project created at projects/$name/"
+
+    # Auto-register in vault profile if active
+    local active_profile
+    active_profile=$(_get_active_profile 2>/dev/null || true)
+    if [[ -n "$active_profile" ]]; then
+        _profile_add_to_list "projects" "$name"
+        ok "Added to profile '$active_profile' (.vault-profile updated)"
+        info "Run 'cco vault save' to commit."
+    fi
+
     info "Edit project.yml to configure repos and settings"
     info "Edit projects/$name/.claude/CLAUDE.md to add instructions for Claude"
     info "Run: cco start $name"

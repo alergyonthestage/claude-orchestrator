@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+# Debug logging: only show [entrypoint] info messages when CCO_DEBUG=1
+# WARNING and FATAL messages are always shown regardless of debug mode.
+_log() { if [ "${CCO_DEBUG:-}" = "1" ]; then echo "[entrypoint] $*" >&2; fi; }
+
 # Cleanup background processes on exit
 _cleanup() {
     [ -n "${PROXY_PID:-}" ] && kill "$PROXY_PID" 2>/dev/null || true
@@ -26,14 +30,14 @@ if [ -S /var/run/docker.sock ]; then
                 || echo "[entrypoint] WARNING: failed to create docker group with GID $SOCKET_GID" >&2
         fi
         usermod -aG docker claude 2>&1 >&2
-        echo "[entrypoint] Docker socket: GID=$SOCKET_GID, claude added to docker group" >&2
+        _log "Docker socket: GID=$SOCKET_GID, claude added to docker group"
     else
         # Socket owned by root — add claude to root group (common on macOS)
         usermod -aG root claude 2>&1 >&2
-        echo "[entrypoint] Docker socket: GID=0 (root-owned), claude added to root group" >&2
+        _log "Docker socket: GID=0 (root-owned), claude added to root group"
     fi
 else
-    echo "[entrypoint] Docker socket: not mounted" >&2
+    _log "Docker socket: not mounted"
 fi
 
 # ── Docker socket proxy ─────────────────────────────────────────────
@@ -72,7 +76,7 @@ if [ -S /var/run/docker.sock ] && [ -f /etc/cco/policy.json ]; then
         chmod 660 /var/run/docker-proxy.sock
         # Point Docker CLI to proxy
         export DOCKER_HOST="unix:///var/run/docker-proxy.sock"
-        echo "[entrypoint] Docker socket proxy: active (policy=$(jq -r .containers.policy /etc/cco/policy.json 2>/dev/null))" >&2
+        _log "Docker socket proxy: active (policy=$(jq -r .containers.policy /etc/cco/policy.json 2>/dev/null))"
     else
         echo "[entrypoint] FATAL: Docker socket proxy did not start — Docker access disabled" >&2
         kill "$PROXY_PID" 2>/dev/null || true
@@ -113,7 +117,7 @@ if [ -f "$MCP_GLOBAL" ]; then
     if [ "$server_count" -gt 0 ]; then
         merged=$(jq -s '.[0] * {mcpServers: ((.[0].mcpServers // {}) + (.[1].mcpServers // {}))}' \
             "$CLAUDE_JSON" "$MCP_GLOBAL" 2>/dev/null) && echo "$merged" > "$CLAUDE_JSON"
-        echo "[entrypoint] Merged $server_count global MCP server(s) into ~/.claude.json" >&2
+        _log "Merged $server_count global MCP server(s) into ~/.claude.json"
     fi
 fi
 
@@ -126,7 +130,7 @@ if [ -f "$MCP_PROJECT" ]; then
     if [ "$server_count" -gt 0 ]; then
         merged=$(jq -s '.[0] * {mcpServers: ((.[0].mcpServers // {}) + (.[1].mcpServers // {}))}' \
             "$CLAUDE_JSON" "$MCP_PROJECT" 2>/dev/null) && echo "$merged" > "$CLAUDE_JSON"
-        echo "[entrypoint] Merged $server_count project MCP server(s) into ~/.claude.json" >&2
+        _log "Merged $server_count project MCP server(s) into ~/.claude.json"
     fi
 fi
 
@@ -146,7 +150,7 @@ if [ -d "/workspace/.managed" ]; then
         if [ "$server_count" -gt 0 ]; then
             merged=$(jq -s '.[0] * {mcpServers: ((.[0].mcpServers // {}) + (.[1].mcpServers // {}))}' \
                 "$CLAUDE_JSON" "$mcp_file" 2>/dev/null) && echo "$merged" > "$CLAUDE_JSON"
-            echo "[entrypoint] Merged ${server_count} managed MCP server(s) from $(basename "$mcp_file")" >&2
+            _log "Merged ${server_count} managed MCP server(s) from $(basename "$mcp_file")"
         fi
     done
 fi
@@ -158,7 +162,7 @@ if [ -f "/workspace/.managed/browser.json" ]; then
     cdp_port="${CDP_PORT:-9222}"
     socat TCP-LISTEN:"${cdp_port}",fork,bind=127.0.0.1,reuseaddr \
           TCP:host.docker.internal:"${cdp_port}" &
-    echo "[entrypoint] CDP proxy: localhost:${cdp_port} → host.docker.internal:${cdp_port}" >&2
+    _log "CDP proxy: localhost:${cdp_port} → host.docker.internal:${cdp_port}"
 fi
 
 # ── GitHub / Git authentication ───────────────────────────────────
@@ -166,9 +170,9 @@ fi
 # This enables: git push (HTTPS), gh pr create, and MCP GitHub server.
 if [ -n "${GITHUB_TOKEN:-}" ]; then
     echo "$GITHUB_TOKEN" | gosu claude gh auth login --with-token 2>&1 >&2 \
-        && echo "[entrypoint] GitHub: authenticated gh CLI via GITHUB_TOKEN" >&2
+        && _log "GitHub: authenticated gh CLI via GITHUB_TOKEN"
     gosu claude gh auth setup-git 2>&1 >&2 \
-        && echo "[entrypoint] GitHub: configured git credential helper" >&2
+        && _log "GitHub: configured git credential helper"
 fi
 
 # ── Global runtime setup script ──────────────────────────────────
@@ -176,17 +180,17 @@ fi
 # Heavy installs (apt packages) belong in setup-build.sh (runs at cco build).
 GLOBAL_SETUP="/home/claude/global-setup.sh"
 if [ -f "$GLOBAL_SETUP" ]; then
-    echo "[entrypoint] Running global runtime setup..." >&2
+    _log "Running global runtime setup..."
     gosu claude bash "$GLOBAL_SETUP" 2>&1 >&2
-    echo "[entrypoint] Global runtime setup complete" >&2
+    _log "Global runtime setup complete"
 fi
 
 # ── Project setup script (runtime) ───────────────────────────────
 PROJECT_SETUP="/workspace/setup.sh"
 if [ -f "$PROJECT_SETUP" ]; then
-    echo "[entrypoint] Running project setup script..." >&2
+    _log "Running project setup script..."
     gosu claude bash "$PROJECT_SETUP" 2>&1 >&2
-    echo "[entrypoint] Project setup complete" >&2
+    _log "Project setup complete"
 fi
 
 # ── Per-project MCP packages (runtime) ───────────────────────────
@@ -195,16 +199,16 @@ if [ -f "$PROJECT_MCP_PACKAGES" ]; then
     pkg_count=$(grep -cv '^\s*$\|^\s*#' "$PROJECT_MCP_PACKAGES" 2>/dev/null || true)
     pkg_count=${pkg_count:-0}
     if [ "$pkg_count" -gt 0 ]; then
-        echo "[entrypoint] Installing $pkg_count project MCP package(s)..." >&2
+        _log "Installing $pkg_count project MCP package(s)..."
         grep -v '^\s*$\|^\s*#' "$PROJECT_MCP_PACKAGES" | \
             xargs gosu claude npm install -g 2>&1 >&2
-        echo "[entrypoint] Project MCP packages installed" >&2
+        _log "Project MCP packages installed"
     fi
 fi
 
 # ── Debug: log env vars and auth state ────────────────────────────────
-echo "[entrypoint] TEAMMATE_MODE=${TEAMMATE_MODE:-unset}" >&2
-echo "[entrypoint] ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:+SET}" >&2
+_log "TEAMMATE_MODE=${TEAMMATE_MODE:-unset}"
+_log "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:+SET}"
 
 # ── Switch to claude user and launch ─────────────────────────────────
 # gosu does exec directly without creating a new session, preserving
@@ -215,7 +219,7 @@ if [ "${TEAMMATE_MODE}" = "tmux" ] && [ -z "$TMUX" ]; then
     gosu claude tmux new-session -s claude "claude --dangerously-skip-permissions ${tmux_args% }"
     exit_code=$?
     set -e
-    [ $exit_code -ne 0 ] && echo "[entrypoint] claude exited with code ${exit_code}" >&2
+    [ $exit_code -ne 0 ] && echo "[entrypoint] WARNING: claude exited with code ${exit_code}" >&2
     exit $exit_code
 else
     exec gosu claude claude --dangerously-skip-permissions "$@"
