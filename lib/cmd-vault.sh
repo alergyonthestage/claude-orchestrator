@@ -1083,17 +1083,48 @@ _clean_nonportable_remnants() {
     done <<< "$proj_list"
 }
 
-# Check that no Docker sessions are active (blocks vault switch)
+# Check that no Docker sessions are active (blocks branch-switching operations: D25)
 _check_no_active_sessions() {
     local running
     running=$(docker ps --filter "label=cco.project" --format "{{.Names}}" 2>/dev/null || true)
     if [[ -n "$running" ]]; then
-        echo -e "${RED}✗${NC} Cannot switch while Docker sessions are active." >&2
+        echo -e "${RED}✗${NC} Cannot perform this operation while Docker sessions are active." >&2
         echo "  Running:" >&2
         echo "$running" | sed 's/^/    - /' >&2
         echo "  Stop sessions with 'cco stop' first." >&2
         return 1
     fi
+}
+
+# Check that a specific project doesn't have an active Docker session
+# Args: project_name
+_check_project_not_active() {
+    local project_name="$1"
+    local running
+    running=$(docker ps --filter "label=cco.project=$project_name" --format "{{.Names}}" 2>/dev/null || true)
+    if [[ -n "$running" ]]; then
+        echo -e "${RED}✗${NC} Cannot modify project '$project_name' while its Docker session is active." >&2
+        echo "  Running: $running" >&2
+        echo "  Stop the session with 'cco stop $project_name' first." >&2
+        return 1
+    fi
+}
+
+# Auto-restore tracked .gitkeep files that were deleted from disk.
+# .gitkeep files are framework infrastructure used to keep empty directories
+# tracked in git. External processes (e.g., Claude Code auto-memory) can
+# delete them, causing spurious "uncommitted changes" that block operations.
+# Args: vault_dir
+_restore_missing_gitkeep() {
+    local vault_dir="$1"
+    local deleted
+    deleted=$(git -C "$vault_dir" diff --name-only --diff-filter=D 2>/dev/null | grep '\.gitkeep$' || true)
+    [[ -z "$deleted" ]] && return 0
+    while IFS= read -r file; do
+        [[ -z "$file" ]] && continue
+        mkdir -p "$(dirname "$vault_dir/$file")"
+        touch "$vault_dir/$file"
+    done <<< "$deleted"
 }
 
 # Append to profile operations log
@@ -1117,7 +1148,7 @@ _list_profile_branches() {
         [[ "$branch" == "$default_branch" ]] && continue
         # Only include branches that have .vault-profile
         if git -C "$vault_dir" show "$branch:.vault-profile" >/dev/null 2>&1; then
-            echo "$branch"
+            echo "$branch" 2>/dev/null || true
         fi
     done < <(git -C "$vault_dir" branch 2>/dev/null)
 }
@@ -1615,10 +1646,16 @@ EOF
         die "Profile '$name' already exists"
     fi
 
+    # Auto-restore framework infrastructure files (D26)
+    _restore_missing_gitkeep "$vault_dir"
+
     # Working tree must be clean
     local status_output
     status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
     [[ -n "$status_output" ]] && die "You have uncommitted changes. Run 'cco vault save' first."
+
+    # No active Docker sessions — profile create involves branch checkout (D25)
+    _check_no_active_sessions || return 1
 
     # Create branch from main (§6.7)
     local default_branch
@@ -1968,6 +2005,9 @@ EOF
         return 0
     fi
 
+    # Auto-restore framework infrastructure files (D26)
+    _restore_missing_gitkeep "$vault_dir"
+
     # Check 1: Clean working tree (D7 — explicit saves, no auto-commit)
     local status_output
     status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
@@ -2164,10 +2204,16 @@ EOF
         die "Profile '$name' not found"
     fi
 
+    # Auto-restore framework infrastructure files (D26)
+    _restore_missing_gitkeep "$vault_dir"
+
     # Working tree must be clean (§6.9)
     local status_output
     status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
     [[ -n "$status_output" ]] && die "You have uncommitted changes. Run 'cco vault save' first."
+
+    # No active Docker sessions — profile delete may involve branch operations (D25)
+    _check_no_active_sessions || return 1
 
     # Read exclusive resources from the profile branch (§6.6)
     local profile_content
@@ -2423,10 +2469,18 @@ EOF
         fi
     fi
 
+    # Auto-restore framework infrastructure files (D26)
+    _restore_missing_gitkeep "$vault_dir"
+
     # Working tree must be clean
     local status_output
     status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
     [[ -n "$status_output" ]] && die "You have uncommitted changes. Run 'cco vault save' first."
+
+    # Block if the specific project has an active Docker session (D25)
+    if [[ "$resource_type" == "project" ]]; then
+        _check_project_not_active "$name" || return 1
+    fi
 
     # Check if project/pack exists on other branches
     local other_branches=""
@@ -2644,10 +2698,16 @@ EOF
     [[ -z "$source_branch" ]] && die "$type_label '$name' not found on any branch"
     [[ "$source_branch" == "$target" ]] && die "$type_label '$name' is already on '$target'"
 
+    # Auto-restore framework infrastructure files (D26)
+    _restore_missing_gitkeep "$vault_dir"
+
     # Working tree must be clean
     local status_output
     status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
     [[ -n "$status_output" ]] && die "You have uncommitted changes. Run 'cco vault save' first."
+
+    # No active Docker sessions — move involves branch switching (D25)
+    _check_no_active_sessions || return 1
 
     # Verify target branch exists
     if [[ "$target" != "$default_branch" ]]; then

@@ -245,6 +245,8 @@ _start_prepare_state() {
 
         # Ensure memory directory exists (vault-tracked, separate from claude-state)
         mkdir -p "$project_dir/memory"
+        # Restore .gitkeep if missing — keeps directory tracked in vault (D26)
+        [[ ! -f "$project_dir/memory/.gitkeep" ]] && touch "$project_dir/memory/.gitkeep"
 
         # Ensure global state files exist (shared across all projects — must exist before Docker bind mount)
         mkdir -p "$GLOBAL_DIR/claude-state"
