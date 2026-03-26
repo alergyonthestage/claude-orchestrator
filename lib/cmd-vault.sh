@@ -2676,6 +2676,25 @@ _check_vault() {
         die "Vault not initialized. Run 'cco vault init' first."
     fi
 
+    # Defensive: ensure .gitignore has profile-related entries (may be missing
+    # if vault was init'd before profile isolation was added)
+    local _gi="$USER_CONFIG_DIR/.gitignore"
+    if [[ -f "$_gi" ]]; then
+        local _gi_updated=false
+        for _pattern in ".cco/profile-ops.log" ".cco/profile-state/" ".cco/backups/"; do
+            if ! grep -qF "$_pattern" "$_gi" 2>/dev/null; then
+                printf '\n# Profile operations\n%s\n' "$_pattern" >> "$_gi"
+                _gi_updated=true
+            fi
+        done
+        if $_gi_updated; then
+            git -C "$USER_CONFIG_DIR" add .gitignore 2>/dev/null || true
+            if ! git -C "$USER_CONFIG_DIR" diff --cached --quiet 2>/dev/null; then
+                git -C "$USER_CONFIG_DIR" commit -q -m "vault: update .gitignore for profile operations"
+            fi
+        fi
+    fi
+
     # Defensive: untrack profile-ops.log if it was committed before gitignore update
     if git -C "$USER_CONFIG_DIR" ls-files --error-unmatch .cco/profile-ops.log >/dev/null 2>&1; then
         git -C "$USER_CONFIG_DIR" rm --cached -q .cco/profile-ops.log 2>/dev/null || true
