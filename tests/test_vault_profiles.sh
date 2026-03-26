@@ -1397,6 +1397,34 @@ test_vault_move_from_noncurrent_branch() {
     [[ "$current" == "cave" ]] || fail "Expected to remain on cave, got $current"
 }
 
+test_vault_move_preserves_unaccounted_files() {
+    # If stash misses a file (e.g., new file type), move must NOT delete it
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    # Create an unexpected file in the project (simulates future cco feature)
+    echo "important" > "$CCO_USER_CONFIG_DIR/projects/test-proj/custom-data.txt"
+
+    run_cco vault profile create "work"
+
+    # Move project from main while on work
+    run_cco vault move project "test-proj" "work" --yes
+    assert_output_contains "Moved"
+
+    # The unaccounted file should survive (not deleted by rm -rf)
+    # Switch to work to see the project
+    local mock_bin="$tmpdir/mock_bin"
+    _mock_docker_no_containers "$mock_bin"
+    setup_mocks "$mock_bin"
+    run_cco vault switch "$default_branch"
+
+    # On main: the unaccounted file should be preserved (safe_remove skipped it)
+    [[ -f "$CCO_USER_CONFIG_DIR/projects/test-proj/custom-data.txt" ]] || \
+        fail "Unaccounted file should be preserved — safe_remove must not delete unknown files"
+}
+
 test_vault_move_transfers_shadow_portable_files() {
     # When moving from main after profile create, portable files are in
     # main's shadow (stashed during create). Move must transfer them.
