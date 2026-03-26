@@ -1329,6 +1329,45 @@ test_vault_move_from_noncurrent_branch() {
     [[ "$current" == "cave" ]] || fail "Expected to remain on cave, got $current"
 }
 
+test_vault_move_transfers_shadow_portable_files() {
+    # When moving from main after profile create, portable files are in
+    # main's shadow (stashed during create). Move must transfer them.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    # Create portable files for test-proj on main
+    echo "SECRET=value" > "$CCO_USER_CONFIG_DIR/projects/test-proj/secrets.env"
+    mkdir -p "$CCO_USER_CONFIG_DIR/projects/test-proj/.cco/claude-state"
+    echo '{}' > "$CCO_USER_CONFIG_DIR/projects/test-proj/.cco/claude-state/data.json"
+
+    # Create profile — stashes main's portable files to shadow
+    run_cco vault profile create "work"
+
+    # Move from main while on work — secrets are in main's shadow
+    run_cco vault move project "test-proj" "work" --yes
+
+    # Main's shadow should be cleaned
+    [[ ! -d "$CCO_USER_CONFIG_DIR/.cco/profile-state/main/projects/test-proj" ]] || \
+        fail "Expected main's shadow for test-proj to be cleaned after move"
+
+    # Target shadow should have the portable files
+    [[ -f "$CCO_USER_CONFIG_DIR/.cco/profile-state/work/projects/test-proj/secrets.env" ]] || \
+        fail "Expected secrets.env in work's shadow"
+    [[ -d "$CCO_USER_CONFIG_DIR/.cco/profile-state/work/projects/test-proj/.cco/claude-state" ]] || \
+        fail "Expected claude-state in work's shadow"
+
+    # Switch to main — test-proj should NOT reappear
+    local mock_bin="$tmpdir/mock_bin"
+    _mock_docker_no_containers "$mock_bin"
+    setup_mocks "$mock_bin"
+    run_cco vault switch "$default_branch"
+
+    [[ ! -f "$CCO_USER_CONFIG_DIR/projects/test-proj/secrets.env" ]] || \
+        fail "secrets.env should NOT be restored on main after move to work"
+}
+
 # ══════════════════════════════════════════════════════════════════════
 # Remove — Shadow Directory Cleanup
 # ══════════════════════════════════════════════════════════════════════
