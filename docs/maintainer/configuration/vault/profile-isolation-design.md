@@ -1003,9 +1003,12 @@ For `vault remove`, the risk is narrower: only the specific project being
 removed has its files deleted. Other projects are unaffected since no branch
 switch occurs. The targeted `_check_project_not_active` check is sufficient.
 
-> **Implementation note**: The label `cco.project` is set by `cmd-start.sh`
-> (`ct_labels_json`). The targeted check uses `--filter "label=cco.project=<name>"`
-> to match a specific project's container.
+> **Implementation note**: The label `cco.project` is set as a Docker label
+> in the generated compose file (`labels: cco.project: <name>`) and also
+> passed to the proxy config (`ct_labels_json`). Both `_check_no_active_sessions`
+> and `_check_project_not_active` use label filter first, with a name-based
+> fallback (`--filter "name=cc-"` / `--filter "name=cc-<name>"`) for containers
+> started before the label was added. This matches the convention used by `cco stop`.
 
 ### 9.2 Backup on Remove (Last Copy)
 
@@ -1061,36 +1064,29 @@ is tracked, portable files are missing), they are auto-restored:
 This runs on every vault command, providing automatic recovery without
 requiring user intervention.
 
-### 9.5 Framework File Auto-Restore (D32)
+### 9.5 Framework-Managed File Auto-Resolution (D32, D33)
 
-`.gitkeep` files are framework infrastructure that keeps empty directories
-tracked in git. External processes (e.g., Claude Code auto-memory writing
-and cleaning files in `memory/`) can delete them from disk, causing spurious
-"uncommitted changes" that block vault operations.
+`_auto_resolve_framework_changes()` runs before the dirty-tree check in
+all sensitive operations. It handles two cases:
 
-**Solution**: `_restore_missing_gitkeep()` auto-restores tracked `.gitkeep`
-files before the dirty-tree check in all sensitive operations:
+**1. Deleted `.gitkeep` files (D32)**: `.gitkeep` files are framework
+infrastructure to keep empty directories tracked. External processes can
+delete them, causing spurious "uncommitted changes". The helper restores
+them silently.
 
-```bash
-_restore_missing_gitkeep() {
-    local vault_dir="$1"
-    local deleted
-    deleted=$(git -C "$vault_dir" diff --name-only --diff-filter=D 2>/dev/null \
-              | grep '\.gitkeep$' || true)
-    [[ -z "$deleted" ]] && return 0
-    while IFS= read -r file; do
-        [[ -z "$file" ]] && continue
-        mkdir -p "$(dirname "$vault_dir/$file")"
-        touch "$vault_dir/$file"
-    done <<< "$deleted"
-}
-```
+**2. Memory auto-commit (D33)**: Claude Code's auto-memory writes files
+to `memory/` that appear as untracked/modified changes. Since these are
+framework-managed (not user-edited), they are auto-staged and committed
+with a clear message (`vault: auto-save memory`) before the dirty check.
+
+User-meaningful changes (rules, CLAUDE.md, project.yml etc.) still
+require explicit `vault save`, preserving the D7 design principle.
 
 **Applied in**: `vault switch`, `vault move`, `vault remove`, `profile create`,
 `profile delete`.
 
 **Prevention**: `cco start` also restores `memory/.gitkeep` when preparing
-project state (`_start_prepare_state`), catching deletions at session start.
+project state (`_start_prepare_state`).
 
 ### 9.6 Operation Log
 
@@ -1133,6 +1129,8 @@ Maintain `.cco/profile-ops.log` (gitignored):
 | Profile delete with active session | Error: "Stop sessions first" (D31) |
 | Profile name invalid | Error with naming rules |
 | Dirty tree from deleted .gitkeep | Auto-restored silently before check (D32) |
+| Dirty tree from memory/ auto-files | Auto-committed before check (D33) |
+| `cco start` project on other profile | Error: "Project 'X' is on profile 'Y'. Switch first." (D34) |
 
 ### 10.2 Sync Errors
 
@@ -1299,4 +1297,6 @@ All decisions approved in design session 2026-03-24.
 | D29 | Shared pack remove guard | Removing shared pack from profile is blocked (re-sync risk). From main: auto-cleans all profile copies |
 | D30 | Pack name uniqueness across all branches | Same enforcement as projects (D23). Checked in `pack create` |
 | D31 | Active session check on all branch-switching operations | Extends D8: `vault move`, `profile create`, `profile delete` also block during active Docker sessions. `vault remove` uses targeted per-project check (no branch switch). |
-| D32 | `.gitkeep` auto-restore before dirty-tree checks | External processes can delete `.gitkeep` (framework infrastructure). `_restore_missing_gitkeep()` silently restores them before the clean-tree check. `cco start` also restores on session start. |
+| D32 | `.gitkeep` auto-restore before dirty-tree checks | External processes can delete `.gitkeep` (framework infrastructure). Auto-restored silently before the clean-tree check. `cco start` also restores on session start. |
+| D33 | Memory auto-commit before dirty-tree checks | Claude Code auto-memory writes to `memory/` — framework-managed, not user-edited. Auto-committed (`vault: auto-save memory`) before dirty check. User changes still require explicit `vault save` (D7). |
+| D34 | Cross-profile project hint in `cco start` | When `cco start <name>` fails because project is on another branch, search all branches and show: "Project 'X' is on profile 'Y'. Run 'cco vault switch Y' first." |
