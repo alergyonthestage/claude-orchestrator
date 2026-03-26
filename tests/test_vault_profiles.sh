@@ -1670,3 +1670,220 @@ test_vault_pull_with_profile_syncs_shared() {
     echo "$content" | grep -qF "Remote change" || \
         fail "Expected shared resource synced from default onto profile branch"
 }
+
+# ══════════════════════════════════════════════════════════════════════
+# Regression Tests — Session 2026-03-26 Fixes
+# ══════════════════════════════════════════════════════════════════════
+
+test_die_does_not_show_crash_message() {
+    # die() must set _cco_completed=true to suppress the EXIT trap CRASH message
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local output
+    output=$(CCO_USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR" bash "$REPO_ROOT/bin/cco" vault init --nonexistent-flag 2>&1 || true)
+    # Should NOT contain CRASH
+    if echo "$output" | grep -qF "CRASH"; then
+        fail "die() should suppress CRASH message, got: $output"
+    fi
+}
+
+test_gitignore_auto_update_for_old_vaults() {
+    # _check_vault adds missing profile entries to .gitignore
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+    run_cco vault init
+    git -C "$CCO_USER_CONFIG_DIR" config user.email "test@test.local"
+    git -C "$CCO_USER_CONFIG_DIR" config user.name "Test"
+
+    # Simulate old vault: remove profile entries from .gitignore
+    local gi="$CCO_USER_CONFIG_DIR/.gitignore"
+    grep -v "profile-ops.log\|profile-state\|backups" "$gi" > "$gi.tmp"
+    mv "$gi.tmp" "$gi"
+    git -C "$CCO_USER_CONFIG_DIR" add .gitignore
+    git -C "$CCO_USER_CONFIG_DIR" commit -q -m "simulate old vault"
+
+    # Any vault command triggers _check_vault which should add entries
+    run_cco vault diff
+
+    grep -qF ".cco/profile-ops.log" "$gi" || fail "Expected .gitignore to have profile-ops.log"
+    grep -qF ".cco/profile-state/" "$gi" || fail "Expected .gitignore to have profile-state/"
+    grep -qF ".cco/backups/" "$gi" || fail "Expected .gitignore to have backups/"
+}
+
+test_profile_list_shows_main_project_count() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+
+    run_cco vault profile list
+    # Main line should show project count (test-proj is on main)
+    assert_output_contains "1 project(s)"
+}
+
+test_profile_delete_rejects_nonempty_without_force() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    run_cco vault profile create "work"
+    run_cco vault switch "$default_branch"
+    run_cco vault move project "test-proj" "work" --yes
+
+    # Delete without --force should fail
+    if run_cco vault profile delete "work" --yes 2>/dev/null; then
+        fail "Expected delete of non-empty profile to be rejected without --force"
+    fi
+
+    # Branch should still exist
+    git -C "$CCO_USER_CONFIG_DIR" rev-parse --verify "work" >/dev/null 2>&1 || \
+        fail "Expected 'work' branch to still exist after rejected delete"
+}
+
+test_pack_create_rejects_duplicate_name_cross_branch() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    local mock_bin="$tmpdir/mock_bin"
+    _mock_docker_no_containers "$mock_bin"
+    setup_mocks "$mock_bin"
+
+    # Create pack and move to profile
+    run_cco pack create "my-pack"
+    run_cco vault save "add pack" --yes
+    run_cco vault profile create "work"
+    run_cco vault switch "$default_branch"
+    run_cco vault move pack "my-pack" "work" --yes
+
+    # Try to create same name on main — should fail
+    if run_cco pack create "my-pack" 2>/dev/null; then
+        fail "Expected duplicate pack name across branches to be rejected"
+    fi
+}
+
+test_pack_create_when_packs_dir_missing() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    local mock_bin="$tmpdir/mock_bin"
+    _mock_docker_no_containers "$mock_bin"
+    setup_mocks "$mock_bin"
+
+    # Create pack, move it away (removes packs/ dir), then create new pack
+    run_cco pack create "only-pack"
+    run_cco vault save "add pack" --yes
+    run_cco vault profile create "work"
+    run_cco vault switch "$default_branch"
+    run_cco vault move pack "only-pack" "work" --yes
+
+    # packs/ may not exist — create should still work
+    run_cco pack create "new-pack"
+    [[ -d "$CCO_USER_CONFIG_DIR/packs/new-pack" ]] || \
+        fail "Expected pack to be created even when packs/ was missing"
+}
+
+test_vault_remove_shared_pack_from_profile_blocked() {
+    # Removing a shared pack from a profile branch is blocked (would be re-synced)
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    local mock_bin="$tmpdir/mock_bin"
+    _mock_docker_no_containers "$mock_bin"
+    setup_mocks "$mock_bin"
+
+    # Create shared pack
+    run_cco pack create "shared-pack"
+    run_cco vault save "add pack" --yes
+
+    # Create profile and switch to it
+    run_cco vault profile create "work"
+
+    # Try to remove shared pack from profile — should be blocked
+    if run_cco vault remove pack "shared-pack" --yes 2>/dev/null; then
+        fail "Expected removing shared pack from profile to be blocked"
+    fi
+}
+
+test_vault_remove_shared_pack_from_main_cleans_profiles() {
+    # Removing a shared pack from main should clean all profile copies
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    local mock_bin="$tmpdir/mock_bin"
+    _mock_docker_no_containers "$mock_bin"
+    setup_mocks "$mock_bin"
+
+    # Create shared pack
+    run_cco pack create "shared-pack"
+    run_cco vault save "add pack" --yes
+
+    # Create profile (shared pack syncs to it)
+    run_cco vault profile create "work"
+    run_cco vault switch "$default_branch"
+
+    # Remove shared pack from main
+    run_cco vault remove pack "shared-pack" --yes
+    assert_output_contains "Removed"
+
+    # Pack should be gone from work profile too
+    local work_tree
+    work_tree=$(git -C "$CCO_USER_CONFIG_DIR" ls-tree "work" -- "packs/shared-pack/" 2>/dev/null)
+    [[ -z "$work_tree" ]] || fail "Expected shared pack removed from profile after delete from main"
+}
+
+test_self_healing_restores_shadow_after_direct_checkout() {
+    # _check_vault should restore portable files stuck in shadow
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    local mock_bin="$tmpdir/mock_bin"
+    _mock_docker_no_containers "$mock_bin"
+    setup_mocks "$mock_bin"
+
+    # Create secrets on main
+    echo "SECRET=val" > "$CCO_USER_CONFIG_DIR/projects/test-proj/secrets.env"
+
+    # Create profile — stashes main's secrets
+    run_cco vault profile create "work"
+
+    # Simulate direct git checkout back to main (bypassing cco)
+    git -C "$CCO_USER_CONFIG_DIR" checkout "$default_branch" -q
+
+    # secrets.env is in shadow, not on disk
+    [[ ! -f "$CCO_USER_CONFIG_DIR/projects/test-proj/secrets.env" ]] || \
+        fail "After direct checkout, secrets should be in shadow not on disk"
+
+    # Any vault command triggers self-healing
+    run_cco vault diff
+    assert_output_contains "Restored portable files"
+
+    # secrets.env should now be on disk
+    [[ -f "$CCO_USER_CONFIG_DIR/projects/test-proj/secrets.env" ]] || \
+        fail "Self-healing should have restored secrets.env from shadow"
+}
+
+test_profile_create_preserves_unaccounted_files() {
+    # verify-before-delete: unknown files should NOT be deleted during profile create
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+
+    # Add unexpected file to project (simulates future feature)
+    echo "important data" > "$CCO_USER_CONFIG_DIR/projects/test-proj/custom-report.txt"
+
+    run_cco vault profile create "work"
+    assert_output_contains "Unaccounted files"
+
+    # File should survive on disk (safe_remove skipped)
+    [[ -f "$CCO_USER_CONFIG_DIR/projects/test-proj/custom-report.txt" ]] || \
+        fail "Unaccounted file must survive profile create"
+}

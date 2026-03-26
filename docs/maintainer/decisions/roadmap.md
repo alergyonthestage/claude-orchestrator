@@ -538,6 +538,9 @@ Vault profiles with branch-based isolation for multi-PC scenarios, memory separa
 - `vault remove pack` from main: auto-removes synced copies from all profiles
 - `vault remove pack` from profile: blocked for shared packs (directs to main)
 - Pack name uniqueness enforced across all branches
+- Verify-before-delete (`_safe_remove_resource_dir`): whitelist-based safety for transfer operations
+- Self-healing shadow restore: `_check_vault` auto-restores portable files after direct `git checkout`
+- Test coverage: 94 profile tests + 42 vault tests (regression suite for all fixes)
 
 **Docs**: [analysis](../configuration/vault/analysis.md) | [design](../configuration/vault/design.md) | [profile-isolation-design](../configuration/vault/profile-isolation-design.md)
 

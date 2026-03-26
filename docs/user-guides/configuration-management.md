@@ -157,6 +157,18 @@ cco vault profile delete old-profile              # Fails if has projects/packs
 cco vault profile delete old-profile --force       # Moves resources to main first
 ```
 
+### Data safety
+
+CCO protects your files during profile operations:
+
+- **Verify-before-delete**: transfer operations (profile create, vault move)
+  never delete files that weren't properly saved. Unknown files are preserved
+  with a warning.
+- **Self-healing**: if you use `git checkout` directly (bypassing `cco vault
+  switch`), the next `cco` command auto-restores portable files from the shadow.
+- **Shared pack guards**: removing a shared pack from a profile is blocked
+  (it would be re-synced). Remove from main instead.
+
 ### Shadow directory
 
 Profile switches use a shadow directory (`.cco/profile-state/`) to preserve
