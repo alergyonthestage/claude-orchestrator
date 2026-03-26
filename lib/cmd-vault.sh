@@ -2501,21 +2501,41 @@ EOF
     local type_label
     type_label=$(echo "$resource_type" | awk '{print toupper(substr($0,1,1)) substr($0,2)}')
 
-    # Auto-detect source branch: find where the resource has tracked files
+    # Auto-detect source branch: find where the resource is authoritative.
+    # For packs: shared packs exist on ALL branches (synced). The authoritative
+    # source is main unless the pack is exclusive to a profile (listed in .vault-profile).
     local source_branch=""
-    if [[ -n "$(git -C "$vault_dir" ls-tree HEAD -- "$resource_path/" 2>/dev/null)" ]]; then
-        source_branch="$current_branch"
-    elif [[ -n "$(git -C "$vault_dir" ls-tree "$default_branch" -- "$resource_path/" 2>/dev/null)" ]]; then
-        source_branch="$default_branch"
-    else
-        # Search profile branches
+    if [[ "$resource_type" == "pack" ]]; then
+        # Check if pack is exclusive to a profile branch
         while IFS= read -r _branch; do
             [[ -z "$_branch" ]] && continue
-            if [[ -n "$(git -C "$vault_dir" ls-tree "$_branch" -- "$resource_path/" 2>/dev/null)" ]]; then
+            local _vp
+            _vp=$(git -C "$vault_dir" show "$_branch:.vault-profile" 2>/dev/null || true)
+            if [[ -n "$_vp" ]] && echo "$_vp" | grep -qF "$name"; then
                 source_branch="$_branch"
                 break
             fi
         done < <(_list_profile_branches)
+        # If not exclusive to any profile, source is main (shared)
+        if [[ -z "$source_branch" ]] && \
+           [[ -n "$(git -C "$vault_dir" ls-tree "$default_branch" -- "$resource_path/" 2>/dev/null)" ]]; then
+            source_branch="$default_branch"
+        fi
+    else
+        # For projects: find which branch has tracked files
+        if [[ -n "$(git -C "$vault_dir" ls-tree HEAD -- "$resource_path/" 2>/dev/null)" ]]; then
+            source_branch="$current_branch"
+        elif [[ -n "$(git -C "$vault_dir" ls-tree "$default_branch" -- "$resource_path/" 2>/dev/null)" ]]; then
+            source_branch="$default_branch"
+        else
+            while IFS= read -r _branch; do
+                [[ -z "$_branch" ]] && continue
+                if [[ -n "$(git -C "$vault_dir" ls-tree "$_branch" -- "$resource_path/" 2>/dev/null)" ]]; then
+                    source_branch="$_branch"
+                    break
+                fi
+            done < <(_list_profile_branches)
+        fi
     fi
 
     [[ -z "$source_branch" ]] && die "$type_label '$name' not found on any branch"
@@ -2688,20 +2708,27 @@ EOF
 
     ok "Moved $resource_type '$name' from '$source_branch' to '$target'"
 
-    # Warn about lazy cleanup for packs becoming exclusive (§6.2)
+    # Clean shared pack copies from other profiles when making exclusive (§6.2)
+    # When a shared pack (on main) is moved to a profile, it becomes exclusive.
+    # All other branches still have the synced copy — remove it from each.
     if [[ "$resource_type" == "pack" && "$source_branch" == "$default_branch" ]]; then
-        local other_profiles=""
+        local cleaned_profiles=""
         while IFS= read -r pb; do
             [[ -z "$pb" ]] && continue
             [[ "$pb" == "$target" ]] && continue
-            if git -C "$vault_dir" ls-tree "$pb" -- "$resource_path/" >/dev/null 2>&1 && \
-               [[ -n "$(git -C "$vault_dir" ls-tree "$pb" -- "$resource_path/" 2>/dev/null)" ]]; then
-                other_profiles+="$pb "
+            if [[ -n "$(git -C "$vault_dir" ls-tree "$pb" -- "$resource_path/" 2>/dev/null)" ]]; then
+                git -C "$vault_dir" checkout "$pb" -q
+                git -C "$vault_dir" rm -r "$resource_path/" -q 2>/dev/null || true
+                if ! git -C "$vault_dir" diff --cached --quiet 2>/dev/null; then
+                    git -C "$vault_dir" commit -q -m "vault: remove shared pack '$name' (now exclusive to $target)"
+                fi
+                cleaned_profiles+="$pb "
             fi
         done < <(_list_profile_branches)
-        if [[ -n "$other_profiles" ]]; then
-            warn "This pack may still exist on other profiles ($other_profiles)."
-            info "Switch to each and run 'cco vault remove pack $name' to clean up."
+        # Return to the branch we should be on
+        if [[ -n "$cleaned_profiles" ]]; then
+            git -C "$vault_dir" checkout "$current_branch" -q
+            info "Removed shared copies from: $cleaned_profiles"
         fi
     fi
 }

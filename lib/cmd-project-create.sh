@@ -71,6 +71,9 @@ EOF
         fi
     fi
 
+    # Ensure projects directory exists (may have been removed by vault move)
+    mkdir -p "$PROJECTS_DIR"
+
     # Resolve template
     local template_dir
     template_dir=$(_resolve_template "project" "${template_name:-base}")

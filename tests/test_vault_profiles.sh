@@ -687,6 +687,69 @@ test_vault_move_pack() {
         fail "Expected my-pack in target's .vault-profile"
 }
 
+test_vault_move_shared_pack_from_target_profile() {
+    # Moving a shared pack while on the target profile should auto-detect main as source
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    local mock_bin="$tmpdir/mock_bin"
+    _mock_docker_no_containers "$mock_bin"
+    setup_mocks "$mock_bin"
+
+    # Create a pack (shared on main) and save
+    run_cco pack create "shared-pack"
+    run_cco vault save "add pack" --yes
+
+    # Create profile and stay on it
+    run_cco vault profile create "work"
+
+    # Move shared pack to work while ON work — should detect source=main
+    run_cco vault move pack "shared-pack" "work" --yes
+    assert_output_contains "Moved"
+
+    # Pack should be exclusive to work now
+    local vp
+    vp=$(cat "$CCO_USER_CONFIG_DIR/.vault-profile" 2>/dev/null)
+    echo "$vp" | grep -qF "shared-pack" || fail "Expected pack in work's .vault-profile"
+}
+
+test_vault_move_shared_pack_cleans_other_profiles() {
+    # When a shared pack becomes exclusive, it must be removed from all other profiles
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    local mock_bin="$tmpdir/mock_bin"
+    _mock_docker_no_containers "$mock_bin"
+    setup_mocks "$mock_bin"
+
+    # Create shared pack
+    run_cco pack create "shared-pack"
+    run_cco vault save "add pack" --yes
+
+    # Create two profiles (shared pack syncs to both)
+    run_cco vault profile create "work"
+    run_cco vault switch "$default_branch"
+    run_cco vault profile create "personal"
+    run_cco vault switch "$default_branch"
+
+    # Move pack from main to work (making it exclusive)
+    run_cco vault move pack "shared-pack" "work" --yes
+
+    # Pack should NOT exist on personal anymore
+    local personal_tree
+    personal_tree=$(git -C "$CCO_USER_CONFIG_DIR" ls-tree "personal" -- "packs/shared-pack/" 2>/dev/null)
+    [[ -z "$personal_tree" ]] || fail "Shared pack should be removed from personal after move to work"
+
+    # Pack should NOT exist on main anymore
+    local main_tree
+    main_tree=$(git -C "$CCO_USER_CONFIG_DIR" ls-tree "$default_branch" -- "packs/shared-pack/" 2>/dev/null)
+    [[ -z "$main_tree" ]] || fail "Shared pack should be removed from main after move to work"
+}
+
 # ══════════════════════════════════════════════════════════════════════
 # Vault Remove (Design §6.3-6.4)
 # ══════════════════════════════════════════════════════════════════════
