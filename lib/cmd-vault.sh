@@ -1120,21 +1120,53 @@ _check_project_not_active() {
     fi
 }
 
-# Auto-restore tracked .gitkeep files that were deleted from disk.
-# .gitkeep files are framework infrastructure used to keep empty directories
-# tracked in git. External processes (e.g., Claude Code auto-memory) can
-# delete them, causing spurious "uncommitted changes" that block operations.
+# Auto-resolve framework-managed file changes that should not block operations.
+# Handles two cases:
+#   1. Deleted .gitkeep files — restored silently (D32)
+#   2. New/modified files in memory/ — auto-committed (D33, framework-managed)
 # Args: vault_dir
-_restore_missing_gitkeep() {
+_auto_resolve_framework_changes() {
     local vault_dir="$1"
+    local resolved=false
+
+    # Step 1: Restore deleted .gitkeep files (D32)
     local deleted
     deleted=$(git -C "$vault_dir" diff --name-only --diff-filter=D 2>/dev/null | grep '\.gitkeep$' || true)
-    [[ -z "$deleted" ]] && return 0
-    while IFS= read -r file; do
-        [[ -z "$file" ]] && continue
-        mkdir -p "$(dirname "$vault_dir/$file")"
-        touch "$vault_dir/$file"
-    done <<< "$deleted"
+    if [[ -n "$deleted" ]]; then
+        while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+            mkdir -p "$(dirname "$vault_dir/$file")"
+            touch "$vault_dir/$file"
+        done <<< "$deleted"
+    fi
+
+    # Step 2: Auto-commit memory/ changes (D33 — framework-managed auto-memory)
+    local memory_changes
+    memory_changes=$(git -C "$vault_dir" status --porcelain 2>/dev/null | grep '/memory/' || true)
+    if [[ -n "$memory_changes" ]]; then
+        # Stage all memory/ paths (new, modified, deleted)
+        while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            local file="${line:3}"
+            # Handle directory entries (trailing /) by adding the dir
+            if [[ "$file" == */ ]]; then
+                git -C "$vault_dir" add -- "$file" 2>/dev/null || true
+            else
+                git -C "$vault_dir" add -- "$file" 2>/dev/null || true
+            fi
+        done <<< "$memory_changes"
+        local staged
+        staged=$(git -C "$vault_dir" diff --cached --name-only 2>/dev/null)
+        if [[ -n "$staged" ]]; then
+            git -C "$vault_dir" commit -q -m "vault: auto-save memory"
+            resolved=true
+        fi
+    fi
+}
+
+# Backward-compatible alias
+_restore_missing_gitkeep() {
+    _auto_resolve_framework_changes "$@"
 }
 
 # Append to profile operations log

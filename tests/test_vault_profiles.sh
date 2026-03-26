@@ -2040,3 +2040,82 @@ test_gitkeep_auto_restore_allows_vault_move() {
         fail "Expected move to succeed after .gitkeep auto-restore"
     assert_output_contains "Moved project"
 }
+
+test_memory_auto_commit_allows_vault_switch() {
+    # D33: untracked memory files should be auto-committed before dirty check
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    local mock_bin="$tmpdir/mock_bin"
+    _mock_docker_no_containers "$mock_bin"
+    setup_mocks "$mock_bin"
+
+    run_cco vault profile create "work"
+    run_cco vault switch "$default_branch"
+
+    # Simulate Claude Code auto-memory writing files
+    echo "some memory data" > "$CCO_USER_CONFIG_DIR/projects/test-proj/memory/auto_memory.md"
+
+    # Verify tree is dirty
+    local dirty
+    dirty=$(git -C "$CCO_USER_CONFIG_DIR" status --porcelain 2>/dev/null)
+    echo "$dirty" | grep -q 'memory/' || fail "Expected memory/ to be dirty"
+
+    # Switch should succeed (auto-commit memory before dirty check)
+    run_cco vault switch "work" || \
+        fail "Expected switch to succeed after memory auto-commit"
+
+    # Verify memory was committed on main (not lost)
+    run_cco vault switch "$default_branch"
+    [[ -f "$CCO_USER_CONFIG_DIR/projects/test-proj/memory/auto_memory.md" ]] || \
+        fail "Expected auto-memory file to be committed and preserved"
+}
+
+test_memory_auto_commit_allows_vault_move() {
+    # D33: untracked memory files should not block vault move
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    local mock_bin="$tmpdir/mock_bin"
+    _mock_docker_no_containers "$mock_bin"
+    setup_mocks "$mock_bin"
+
+    run_cco vault profile create "work"
+    run_cco vault switch "$default_branch"
+
+    # Simulate Claude Code auto-memory writing files
+    echo "important context" > "$CCO_USER_CONFIG_DIR/projects/test-proj/memory/session_notes.md"
+
+    # Move should succeed (auto-commit memory before dirty check)
+    run_cco vault move project "test-proj" "work" --yes || \
+        fail "Expected move to succeed after memory auto-commit"
+    assert_output_contains "Moved project"
+}
+
+test_user_changes_still_block_even_with_memory() {
+    # D33: auto-commit only handles memory/. Other user changes must still block.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    local mock_bin="$tmpdir/mock_bin"
+    _mock_docker_no_containers "$mock_bin"
+    setup_mocks "$mock_bin"
+
+    run_cco vault profile create "work"
+    run_cco vault switch "$default_branch"
+
+    # Both memory AND user changes
+    echo "memory data" > "$CCO_USER_CONFIG_DIR/projects/test-proj/memory/auto.md"
+    echo "# User edit" >> "$CCO_USER_CONFIG_DIR/global/.claude/CLAUDE.md"
+
+    # Switch should FAIL (user changes still block, even though memory was auto-committed)
+    if run_cco vault switch "work" 2>/dev/null; then
+        fail "Expected switch to refuse when user changes exist alongside memory"
+    fi
+}
