@@ -448,7 +448,8 @@ Preconditions:
   - Project directory exists: projects/<name>/
   - Target is a valid profile name or "main"
   - Target != current branch
-  - Working tree is clean
+  - Working tree is clean (after .gitkeep auto-restore — D32)
+  - No active Docker sessions (D31 — move involves branch switching)
 
 Flow:
   1. Detect if target already has projects/<name>/
@@ -514,6 +515,10 @@ Same semantics as project move. Additional considerations:
 Deletes a project from the current branch.
 
 ```
+Preconditions:
+  - Working tree is clean (after .gitkeep auto-restore — D32)
+  - If project: no active Docker session for this project (D31)
+
 Flow:
   1. Check if project exists on any other branch
   2. Show summary with safety information:
@@ -593,6 +598,8 @@ Deletes a profile, moving all exclusive resources to main first.
 Preconditions:
   - Target profile != current branch (must switch away first)
   - Target profile exists
+  - Working tree is clean (after .gitkeep auto-restore — D32)
+  - No active Docker sessions (D31 — delete may involve branch operations)
 
 Flow:
   1. Show summary:
@@ -635,6 +642,10 @@ Creates a new profile by branching from main. The new profile contains
 explicitly moved to the new profile with `vault move`.
 
 ```
+Preconditions:
+  - Working tree is clean (after .gitkeep auto-restore — D32)
+  - No active Docker sessions (D31 — profile create involves branch checkout)
+
 Flow:
   1. Validate name (lowercase, hyphens, numbers)
   2. git checkout -b <name> main
@@ -939,18 +950,42 @@ command creates them on the profile. This already works correctly.
 
 ## 9. Safety
 
-### 9.1 Docker Session Check
+### 9.1 Docker Session Check (D8, D31)
 
-`vault switch` must refuse if any Docker session is running:
+All operations that involve git branch switching must refuse if any Docker
+session is running. This applies to:
+
+- **`vault switch`** — changes all files on disk
+- **`vault move`** — temporarily checks out target branch
+- **`vault profile create`** — checks out new branch from main
+- **`vault profile delete`** — may check out branches when rescuing resources
+
+For **`vault remove`**, no branch switch occurs. Instead, a targeted check
+verifies that the specific project being removed has no active session:
+
+```bash
+_check_project_not_active() {
+    local project_name="$1"
+    local running
+    running=$(docker ps --filter "label=cco.project=$project_name" --format "{{.Names}}" 2>/dev/null)
+    if [[ -n "$running" ]]; then
+        echo -e "${RED}✗${NC} Cannot modify project '$project_name' while its Docker session is active."
+        echo "  Running: $running"
+        echo "  Stop the session with 'cco stop $project_name' first."
+        return 1
+    fi
+}
+```
+
+The general check for branch-switching operations:
 
 ```bash
 _check_no_active_sessions() {
     local running
     # Match containers with the cco.project label (set by cmd-start.sh)
-    # or by name prefix cc- (used by cmd-stop.sh)
     running=$(docker ps --filter "label=cco.project" --format "{{.Names}}" 2>/dev/null)
     if [[ -n "$running" ]]; then
-        echo -e "${RED}✗${NC} Cannot switch while Docker sessions are active."
+        echo -e "${RED}✗${NC} Cannot perform this operation while Docker sessions are active."
         echo "  Running:"
         echo "$running" | sed 's/^/    - /'
         echo "  Stop sessions with 'cco stop' first."
@@ -959,12 +994,18 @@ _check_no_active_sessions() {
 }
 ```
 
-Rationale: switching profiles moves files that Docker containers have mounted.
-This would corrupt the running session's filesystem view.
+Rationale: branch-switching operations change files that Docker containers
+have bind-mounted. This would corrupt the running session's filesystem view.
+Even temporary branch switches (e.g., `vault move` checking out the target
+branch to copy files) affect all mounted paths for the duration.
+
+For `vault remove`, the risk is narrower: only the specific project being
+removed has its files deleted. Other projects are unaffected since no branch
+switch occurs. The targeted `_check_project_not_active` check is sufficient.
 
 > **Implementation note**: The label `cco.project` is set by `cmd-start.sh`
-> (line 987: `ct_labels_json`). An alternative filter is `--filter "name=cc-"`
-> (used by `cmd-stop.sh` line 48). Either approach detects cco-managed containers.
+> (`ct_labels_json`). The targeted check uses `--filter "label=cco.project=<name>"`
+> to match a specific project's container.
 
 ### 9.2 Backup on Remove (Last Copy)
 
@@ -1020,7 +1061,38 @@ is tracked, portable files are missing), they are auto-restored:
 This runs on every vault command, providing automatic recovery without
 requiring user intervention.
 
-### 9.5 Operation Log
+### 9.5 Framework File Auto-Restore (D32)
+
+`.gitkeep` files are framework infrastructure that keeps empty directories
+tracked in git. External processes (e.g., Claude Code auto-memory writing
+and cleaning files in `memory/`) can delete them from disk, causing spurious
+"uncommitted changes" that block vault operations.
+
+**Solution**: `_restore_missing_gitkeep()` auto-restores tracked `.gitkeep`
+files before the dirty-tree check in all sensitive operations:
+
+```bash
+_restore_missing_gitkeep() {
+    local vault_dir="$1"
+    local deleted
+    deleted=$(git -C "$vault_dir" diff --name-only --diff-filter=D 2>/dev/null \
+              | grep '\.gitkeep$' || true)
+    [[ -z "$deleted" ]] && return 0
+    while IFS= read -r file; do
+        [[ -z "$file" ]] && continue
+        mkdir -p "$(dirname "$vault_dir/$file")"
+        touch "$vault_dir/$file"
+    done <<< "$deleted"
+}
+```
+
+**Applied in**: `vault switch`, `vault move`, `vault remove`, `profile create`,
+`profile delete`.
+
+**Prevention**: `cco start` also restores `memory/.gitkeep` when preparing
+project state (`_start_prepare_state`), catching deletions at session start.
+
+### 9.6 Operation Log
 
 Maintain `.cco/profile-ops.log` (gitignored):
 
@@ -1051,11 +1123,16 @@ Maintain `.cco/profile-ops.log` (gitignored):
 | Move to self (same branch) | Error: "Project is already on this branch" |
 | Move non-existent project | Error: "Project 'X' not found on current branch" |
 | Move to non-existent profile | Error: "Profile 'X' not found" |
+| Move with active Docker session | Error: "Stop sessions first" (D31) |
 | Remove non-existent project | Error: "Project 'X' not found on current branch" |
+| Remove project with active session | Error: "Stop the session with 'cco stop X' first" (D31) |
 | Switch with dirty working tree | Error: "Run 'cco vault save' first" |
-| Switch with active Docker session | Error: "Stop sessions first" |
+| Switch with active Docker session | Error: "Stop sessions first" (D8) |
 | Switch to current profile | Info: "Already on profile 'X'" |
+| Profile create with active session | Error: "Stop sessions first" (D31) |
+| Profile delete with active session | Error: "Stop sessions first" (D31) |
 | Profile name invalid | Error with naming rules |
+| Dirty tree from deleted .gitkeep | Auto-restored silently before check (D32) |
 
 ### 10.2 Sync Errors
 
@@ -1100,14 +1177,16 @@ by a migration or by `vault profile create` (first profile creation).
 
 ### Phase 1: Core Infrastructure
 
-- [ ] Add `.cco/profile-state/`, `.cco/backups/`, `.cco/profile-ops.log` to
+- [x] Add `.cco/profile-state/`, `.cco/backups/`, `.cco/profile-ops.log` to
       vault `.gitignore` template
-- [ ] Implement `_stash_gitignored_files()` and `_restore_gitignored_files()`
-- [ ] Implement `_check_no_active_sessions()` (Docker check)
-- [ ] Implement `_sync_shared_to_main()` (local, with merge-base advancement)
-- [ ] Implement `_sync_shared_from_main()` (local, with merge-base advancement)
-- [ ] Implement `_sync_shared_to_all_profiles()` (iterates profile branches)
-- [ ] Implement operation logging helper
+- [x] Implement `_stash_gitignored_files()` and `_restore_gitignored_files()`
+- [x] Implement `_check_no_active_sessions()` (Docker check)
+- [x] Implement `_check_project_not_active()` (targeted per-project check — D31)
+- [x] Implement `_restore_missing_gitkeep()` (.gitkeep auto-restore — D32)
+- [x] Implement `_sync_shared_to_main()` (local, with merge-base advancement)
+- [x] Implement `_sync_shared_from_main()` (local, with merge-base advancement)
+- [x] Implement `_sync_shared_to_all_profiles()` (iterates profile branches)
+- [x] Implement operation logging helper
 
 ### Phase 2: Command Rewrites
 
@@ -1145,8 +1224,13 @@ by a migration or by `vault profile create` (first profile creation).
 - [ ] Test: save with shared propagation to all profiles
 - [ ] Test: switch with stash/restore of gitignored files
 - [ ] Test: switch refused with dirty tree / active Docker
+- [ ] Test: move refused with active Docker session (D31)
 - [ ] Test: move project between profiles (tracked + gitignored)
+- [ ] Test: remove refused when project has active session (D31)
 - [ ] Test: remove with last-copy backup
+- [ ] Test: profile create refused with active Docker session (D31)
+- [ ] Test: profile delete refused with active Docker session (D31)
+- [ ] Test: .gitkeep auto-restore before dirty check (D32)
 - [ ] Test: push/pull with shared sync
 - [ ] Test: merge-base advancement prevents false conflicts
 - [ ] Test: backward compatibility (no profiles)
@@ -1214,3 +1298,5 @@ All decisions approved in design session 2026-03-24.
 | D28 | Self-healing shadow restore in `_check_vault` | Detects portable files stuck in shadow after direct `git checkout` and auto-restores them |
 | D29 | Shared pack remove guard | Removing shared pack from profile is blocked (re-sync risk). From main: auto-cleans all profile copies |
 | D30 | Pack name uniqueness across all branches | Same enforcement as projects (D23). Checked in `pack create` |
+| D31 | Active session check on all branch-switching operations | Extends D8: `vault move`, `profile create`, `profile delete` also block during active Docker sessions. `vault remove` uses targeted per-project check (no branch switch). |
+| D32 | `.gitkeep` auto-restore before dirty-tree checks | External processes can delete `.gitkeep` (framework infrastructure). `_restore_missing_gitkeep()` silently restores them before the clean-tree check. `cco start` also restores on session start. |

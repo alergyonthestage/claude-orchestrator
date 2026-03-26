@@ -1083,7 +1083,7 @@ _clean_nonportable_remnants() {
     done <<< "$proj_list"
 }
 
-# Check that no Docker sessions are active (blocks branch-switching operations: D25)
+# Check that no Docker sessions are active (blocks branch-switching operations: D8, D31)
 _check_no_active_sessions() {
     local running
     running=$(docker ps --filter "label=cco.project" --format "{{.Names}}" 2>/dev/null || true)
@@ -1646,7 +1646,7 @@ EOF
         die "Profile '$name' already exists"
     fi
 
-    # Auto-restore framework infrastructure files (D26)
+    # Auto-restore framework infrastructure files (D32)
     _restore_missing_gitkeep "$vault_dir"
 
     # Working tree must be clean
@@ -1654,7 +1654,7 @@ EOF
     status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
     [[ -n "$status_output" ]] && die "You have uncommitted changes. Run 'cco vault save' first."
 
-    # No active Docker sessions — profile create involves branch checkout (D25)
+    # No active Docker sessions — profile create involves branch checkout (D31)
     _check_no_active_sessions || return 1
 
     # Create branch from main (§6.7)
@@ -2005,7 +2005,7 @@ EOF
         return 0
     fi
 
-    # Auto-restore framework infrastructure files (D26)
+    # Auto-restore framework infrastructure files (D32)
     _restore_missing_gitkeep "$vault_dir"
 
     # Check 1: Clean working tree (D7 — explicit saves, no auto-commit)
@@ -2204,7 +2204,7 @@ EOF
         die "Profile '$name' not found"
     fi
 
-    # Auto-restore framework infrastructure files (D26)
+    # Auto-restore framework infrastructure files (D32)
     _restore_missing_gitkeep "$vault_dir"
 
     # Working tree must be clean (§6.9)
@@ -2212,7 +2212,7 @@ EOF
     status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
     [[ -n "$status_output" ]] && die "You have uncommitted changes. Run 'cco vault save' first."
 
-    # No active Docker sessions — profile delete may involve branch operations (D25)
+    # No active Docker sessions — profile delete may involve branch operations (D31)
     _check_no_active_sessions || return 1
 
     # Read exclusive resources from the profile branch (§6.6)
@@ -2469,7 +2469,7 @@ EOF
         fi
     fi
 
-    # Auto-restore framework infrastructure files (D26)
+    # Auto-restore framework infrastructure files (D32)
     _restore_missing_gitkeep "$vault_dir"
 
     # Working tree must be clean
@@ -2477,7 +2477,7 @@ EOF
     status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
     [[ -n "$status_output" ]] && die "You have uncommitted changes. Run 'cco vault save' first."
 
-    # Block if the specific project has an active Docker session (D25)
+    # Block if the specific project has an active Docker session (D31)
     if [[ "$resource_type" == "project" ]]; then
         _check_project_not_active "$name" || return 1
     fi
@@ -2698,7 +2698,7 @@ EOF
     [[ -z "$source_branch" ]] && die "$type_label '$name' not found on any branch"
     [[ "$source_branch" == "$target" ]] && die "$type_label '$name' is already on '$target'"
 
-    # Auto-restore framework infrastructure files (D26)
+    # Auto-restore framework infrastructure files (D32)
     _restore_missing_gitkeep "$vault_dir"
 
     # Working tree must be clean
@@ -2706,7 +2706,7 @@ EOF
     status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
     [[ -n "$status_output" ]] && die "You have uncommitted changes. Run 'cco vault save' first."
 
-    # No active Docker sessions — move involves branch switching (D25)
+    # No active Docker sessions — move involves branch switching (D31)
     _check_no_active_sessions || return 1
 
     # Verify target branch exists
