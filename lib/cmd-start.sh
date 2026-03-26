@@ -402,6 +402,11 @@ YAML
             echo "      - ${env}"
         done
 
+        # Forward debug mode to container
+        if [[ "${CCO_DEBUG:-}" == "1" ]]; then
+            echo "      - CCO_DEBUG=1"
+        fi
+
         # Docker socket proxy: advertise proxy socket to all processes in container
         if [[ "$mount_socket" == "true" ]]; then
             echo "      - DOCKER_HOST=unix:///var/run/docker-proxy.sock"

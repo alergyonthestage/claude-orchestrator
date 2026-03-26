@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Catch silent crashes (set -e/set -u violations)
 _cco_completed=false
-trap 'if [[ "$_cco_completed" != "true" ]]; then echo "[cco] CRASH (exit $?) — last command: ${BASH_COMMAND}" >&2; fi' EXIT
+trap '_ec=$?; if [[ "$_cco_completed" != "true" ]]; then echo "✗ cco exited unexpectedly (exit $_ec). Run with CCO_DEBUG=1 for details." >&2; [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[cco] last command: ${BASH_COMMAND}" >&2; fi' EXIT
 
 # ── Constants ────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
