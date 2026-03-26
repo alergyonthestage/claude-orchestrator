@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-20 (Added: UX Improvements completed, Phase 4 AI-merge planned, Minor Fixes batch, #B9 update).
+> Last updated: 2026-03-26 (v0.2.0-alpha: llms.txt sprint completed, profile isolation review + merge).
 >
 > **Note**: Sprint entries are historical. Path references (e.g., `.cco-meta`, `.cco-source`) in older
 > sprints reflect the layout at the time of writing. See Sprint 8 and the `.cco/` consolidation
@@ -13,7 +13,7 @@
 
 | Status | Items | Section |
 |--------|-------|---------|
-| ✅ Completed | 27 sprints / features | [→ Completed](#completed) |
+| ✅ Completed | 29 sprints / features | [→ Completed](#completed) |
 | 🐛 Known Bugs | 1 open · 8 fixed | [→ Known Bugs](#known-bugs) |
 | 🔜 Planned | Quick Wins (FI-4, #10), AI-merge, Sprint 6C → 12 | [→ Planned Sprints](#planned-sprints) |
 | 🔭 Exploratory | 7 ideas | [→ Long-term / Exploratory](#long-term--exploratory) |
@@ -27,7 +27,7 @@ Features are prioritized by impact for third-party users adopting claude-orchest
 
 ### Prioritization Notes (updated 2026-03-19)
 
-**Completed**: RF-1→4, FI-2, FI-5, FI-7, FI-8, Sprint 5c, Sprint 6 Phase A+B, Bugfix B5-B7, UX Improvements P1-3, Minor Fixes batch.
+**Completed**: RF-1→4, FI-2, FI-5, FI-7, FI-8, Sprint 5c, Sprint 6 Phase A+B, Bugfix B5-B7, UX Improvements P1-3, Minor Fixes batch, llms.txt, Profile Isolation Review.
 
 **Next**: Quick wins (FI-4, #10), AI-assisted merge (P4).
 
@@ -47,7 +47,7 @@ Features are prioritized by impact for third-party users adopting claude-orchest
 
 ```mermaid
 graph LR
-    DONE["✅ Completed<br/>Sprint 1-5c, Sprint 6+10,<br/>Sprint 6b, ADR-13,<br/>Sprint 7-Vault + Real Isolation,<br/>FI-7 Config Sync,<br/>RF-1→4, FI-2, FI-5, FI-8,<br/>Sprint 6 Phase A+B,<br/>Bugfix #B1-#B7,<br/>UX Improvements P1-3,<br/>Minor Fixes"]
+    DONE["✅ Completed<br/>Sprint 1-5c, Sprint 6+10,<br/>Sprint 6b, ADR-13,<br/>Sprint 7-Vault + Real Isolation,<br/>llms.txt, FI-7 Config Sync,<br/>RF-1→4, FI-2, FI-5, FI-8,<br/>Sprint 6 Phase A+B,<br/>Bugfix #B1-#B7,<br/>UX Improvements P1-3,<br/>Minor Fixes"]
 
     QW["Quick Wins<br/>#FI-4 model config<br/>#cco project edit"]
     AIM["AI-Assisted Merge<br/>#Phase 4"]
@@ -403,6 +403,31 @@ Migration `005_split_global_setup.sh` renames existing `setup.sh` → `setup-bui
 
 ## Completed
 
+### Profile Isolation Review & v0.2.0-alpha (2026-03-26) ✓
+
+Code review of the real isolation sprint. Fixed 6 bugs (shadow key mismatch for master-named vaults, substring match in pack auto-detect, macOS date portability, profile delete shadow rescue timing, missing session check on shared pack removal, profile rename clean-tree check), added 10 new tests (115 total), updated stale documentation (changelog, project-setup, security.md, design.md §5.3), annotated revised design decisions in analysis and design docs.
+
+Tagged **v0.2.0-alpha** (llms.txt + profile real isolation).
+
+---
+
+### llms.txt Framework Documentation Support (2026-03-24) ✓
+
+Full lifecycle management for official framework documentation following the llms.txt standard.
+
+**What was implemented**:
+- `cco llms install <url>` — download and install framework docs from llms.txt URLs
+- `cco llms list|show|update|rename|remove` — complete lifecycle management
+- `llms:` section in `pack.yml` and `project.yml` for declarative doc references
+- Documentation files mounted read-only at `/workspace/.claude/llms/` in sessions
+- SessionStart hook lists installed docs in agent context
+- Managed rule `use-official-docs.md` — guides agents to consult docs before coding
+- Freshness check in `cco update` — warns when docs are stale
+
+**Docs**: changelog entry 10
+
+---
+
 ### Minor Fixes Batch (2026-03-20) ✓
 
 Four minor fixes: removed `companyAnnouncements` from managed-settings.json (exposed org email, not controllable), added design-driven testing approach to workflow rules, added CLAUDE.md hierarchy explanation (project-level vs repo-level scope), added ADR practice to documentation rules.
@@ -540,7 +565,8 @@ Vault profiles with branch-based isolation for multi-PC scenarios, memory separa
 - Pack name uniqueness enforced across all branches
 - Verify-before-delete (`_safe_remove_resource_dir`): whitelist-based safety for transfer operations
 - Self-healing shadow restore: `_check_vault` auto-restores portable files after direct `git checkout`
-- Test coverage: 94 profile tests + 42 vault tests (regression suite for all fixes)
+- Test coverage: 115 profile tests + 42 vault tests (regression suite for all fixes)
+- CCO_DEBUG=1 mode for crash diagnostics (improved crash trap, debug-gated entrypoint logs)
 
 **Docs**: [analysis](../configuration/vault/analysis.md) | [design](../configuration/vault/design.md) | [profile-isolation-design](../configuration/vault/profile-isolation-design.md)
 
