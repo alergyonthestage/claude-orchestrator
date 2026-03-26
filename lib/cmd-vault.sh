@@ -279,8 +279,8 @@ EOF
     profile_count=$(_list_profile_branches | grep -c . || true)
     if [[ -n "$profile" ]]; then
         # On a profile: synced to main + (N-1) other profiles
-        local other_count=$((profile_count > 1 ? profile_count - 1 : 0))
-        ok "Synced $shared_count shared file(s) to main and $other_count other profile(s)"
+        local other_profile_count=$((profile_count > 1 ? profile_count - 1 : 0))
+        ok "Synced $shared_count shared file(s) to main and $other_profile_count other profile(s)"
     else
         # On main: synced to N profiles
         ok "Synced $shared_count shared file(s) to $profile_count profile(s)"
