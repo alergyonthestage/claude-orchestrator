@@ -75,3 +75,33 @@ MOCK
 _mock_docker_no_containers() {
     _mock_docker_with_containers "$1"
 }
+
+# Install a smart mock docker that returns a container only for a specific project.
+# Supports both general label check (cco.project) and targeted check (cco.project=<name>).
+# Usage: _mock_docker_with_project_session "$mock_bin" "project-name" ["container-name"]
+_mock_docker_with_project_session() {
+    local dir="$1"
+    local project_name="$2"
+    local container_name="${3:-cc-${project_name}-abc123}"
+    mkdir -p "$dir"
+    cat > "$dir/docker" <<MOCK
+#!/usr/bin/env bash
+[[ -n "\${DOCKER_CALL_LOG:-}" ]] && echo "\$*" >> "\${DOCKER_CALL_LOG}"
+case "\$1" in
+    info)  exit 0 ;;
+    ps)
+        if echo "\$*" | grep -q "label=cco.project=${project_name}"; then
+            printf '%s\\n' '${container_name}'
+        elif echo "\$*" | grep -q 'label=cco.project='; then
+            :
+        elif echo "\$*" | grep -q 'label=cco.project'; then
+            printf '%s\\n' '${container_name}'
+        fi
+        ;;
+    stop)  ;;
+    image) exit 0 ;;
+    *)     exit 0 ;;
+esac
+MOCK
+    chmod +x "$dir/docker"
+}

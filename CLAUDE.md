@@ -61,21 +61,19 @@ cco project publish <n> <r>  # Publish project template to Config Repo (with saf
 cco project add-pack <p> <k> # Add a pack to a project
 cco project remove-pack <p> <k> # Remove a pack from a project
 cco vault init               # Initialize git-backed config versioning
-cco vault sync [msg]         # Commit config changes with secret detection
+cco vault save [msg] [--yes] # Commit config changes with secret detection
 cco vault diff               # Show uncommitted changes by category
 cco vault log                # Show commit history
 cco vault status             # Show vault state
-cco vault profile create <n> # Create vault profile (branch-based isolation)
+cco vault switch <name>      # Switch to another profile (clean tree required)
+cco vault move <type> <name> <target> [--yes]  # Move resource between profiles
+cco vault remove <type> <name> [--yes]         # Remove resource from current profile
+cco vault profile create <n> # Create vault profile (empty, branch-based)
 cco vault profile list       # List all profiles
 cco vault profile show       # Show current profile details
-cco vault profile switch <n> # Switch to another profile
 cco vault profile rename <n> # Rename current profile
-cco vault profile delete <n> # Delete profile (moves resources to main)
-cco vault profile move project <n> --to <p>  # Move project between profiles
-cco vault profile add project <n>    # Add project to current profile
-cco vault profile add pack <n>      # Add pack to current profile (makes exclusive)
-cco vault profile remove project <n> # Remove project from current profile
-cco vault profile remove pack <n>   # Remove pack from current profile (makes shared)
+cco vault profile delete <n> [--force]  # Delete profile (--force moves resources to main)
+cco project delete <name> [--yes]  # Delete project from all branches
 cco template list             # List available templates (native + user)
 cco template show <name>     # Show template details
 cco template create <n> --project|--pack  # Create user template
@@ -151,7 +149,7 @@ Per `docs/maintainer/integration/docker/design.md` (sezione directory structure)
 - `lib/cmd-update.sh` — Update command: migrations + discovery, --diff, --sync
 - `lib/cmd-clean.sh` — Clean .bak files: --project, --all, --tmp, --generated, --dry-run
 - `lib/update*.sh` — Update engine split by responsibility: hash-io, merge, meta, discovery, sync, changelog, remote + orchestrator (update.sh)
-- `lib/cmd-vault.sh` — Config versioning: init, sync, diff, log, status (git-backed)
+- `lib/cmd-vault.sh` — Config versioning: init, save, diff, log, status, switch, move, remove, profiles (git-backed)
 - `lib/manifest.sh` — manifest.yml lifecycle: init, refresh, validate, show
 - `lib/cmd-remote.sh` — Remote management: add, remove, list Config Repo remotes (.cco/remotes)
 - `lib/remote.sh` — Remote clone helper: sparse-checkout, shallow fallback, token auth

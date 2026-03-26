@@ -242,7 +242,7 @@ The vault `.gitignore` correctly excludes `*.env`, `.cco/remotes`, and
 patterns above.
 
 **Gap:** If the vault `.gitignore` is manually edited or deleted, and the user
-runs `cco vault sync`, the scan would not catch:
+runs `cco vault save`, the scan would not catch:
 - `*.env` files (only `secrets.env` is matched, not e.g. `production.env`)
 - `.cco/remotes`
 
