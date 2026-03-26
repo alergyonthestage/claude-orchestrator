@@ -2892,6 +2892,64 @@ _check_vault() {
             git -C "$USER_CONFIG_DIR" commit -q -m "vault: untrack profile-ops.log (gitignored)"
         fi
     fi
+
+    # Self-healing: restore shadow files if user did a direct git checkout.
+    # When cco vault switch runs, it stashes portable files to .cco/profile-state/<branch>/.
+    # If the user ran git checkout directly, the restore step was skipped.
+    # Detect: shadow dir exists for current branch AND target files are missing on disk.
+    local _current_branch
+    _current_branch=$(git -C "$USER_CONFIG_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)
+    local _default_branch
+    _default_branch=$(_vault_default_branch)
+    local _shadow_name
+    if [[ "$_current_branch" == "$_default_branch" ]]; then
+        _shadow_name="main"
+    else
+        _shadow_name="$_current_branch"
+    fi
+    local _shadow_dir="$USER_CONFIG_DIR/.cco/profile-state/$_shadow_name"
+    if [[ -d "$_shadow_dir/projects" ]]; then
+        local _restored=false
+        for _shadow_proj in "$_shadow_dir"/projects/*/; do
+            [[ ! -d "$_shadow_proj" ]] && continue
+            local _proj_name
+            _proj_name=$(basename "$_shadow_proj")
+            local _proj_dir="$USER_CONFIG_DIR/projects/$_proj_name"
+            # Only restore if the project exists on this branch (tracked files present)
+            if [[ ! -d "$_proj_dir" ]] || \
+               [[ -z "$(git -C "$USER_CONFIG_DIR" ls-tree HEAD -- "projects/$_proj_name/" 2>/dev/null)" ]]; then
+                continue
+            fi
+            # Restore claude-state
+            if [[ -d "$_shadow_proj/.cco/claude-state" && ! -d "$_proj_dir/.cco/claude-state" ]]; then
+                mkdir -p "$_proj_dir/.cco"
+                mv "$_shadow_proj/.cco/claude-state" "$_proj_dir/.cco/claude-state"
+                _restored=true
+            fi
+            # Restore .cco/meta
+            if [[ -f "$_shadow_proj/.cco/meta" && ! -f "$_proj_dir/.cco/meta" ]]; then
+                mkdir -p "$_proj_dir/.cco"
+                mv "$_shadow_proj/.cco/meta" "$_proj_dir/.cco/meta"
+                _restored=true
+            fi
+            # Restore portable files (secrets.env, *.env, *.key, *.pem)
+            for _pattern in "${_PORTABLE_FILE_PATTERNS[@]}"; do
+                while IFS= read -r _fpath; do
+                    [[ -z "$_fpath" ]] && continue
+                    local _fname
+                    _fname=$(basename "$_fpath")
+                    if [[ ! -f "$_proj_dir/$_fname" ]]; then
+                        mkdir -p "$_proj_dir"
+                        mv "$_fpath" "$_proj_dir/$_fname"
+                        _restored=true
+                    fi
+                done < <(find "$_shadow_proj" -maxdepth 1 -name "$_pattern" -type f 2>/dev/null)
+            done
+        done
+        if $_restored; then
+            warn "Restored portable files from shadow (direct git checkout detected)"
+        fi
+    fi
 }
 
 # Get the default branch name (main or master)
