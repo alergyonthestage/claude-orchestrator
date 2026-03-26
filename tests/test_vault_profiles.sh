@@ -1887,3 +1887,156 @@ test_profile_create_preserves_unaccounted_files() {
     [[ -f "$CCO_USER_CONFIG_DIR/projects/test-proj/custom-report.txt" ]] || \
         fail "Unaccounted file must survive profile create"
 }
+
+# ══════════════════════════════════════════════════════════════════════
+# Active Session Safety (D31)
+# ══════════════════════════════════════════════════════════════════════
+
+test_vault_move_refuses_active_docker_sessions() {
+    # D31: vault move involves branch switching — must block with active sessions
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+    run_cco vault profile create "work"
+    run_cco vault switch "$default_branch"
+
+    # Mock docker with running container
+    local mock_bin="$tmpdir/mock_bin"
+    _mock_docker_with_containers "$mock_bin" "cc-test-proj-abc123"
+    setup_mocks "$mock_bin"
+
+    if run_cco vault move project "test-proj" "work" --yes 2>/dev/null; then
+        fail "Expected move to refuse with active Docker sessions"
+    fi
+    assert_output_contains "Cannot perform this operation while Docker sessions are active"
+}
+
+test_vault_remove_refuses_active_project_session() {
+    # D31: vault remove should block if the specific project has an active session
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+
+    # Mock docker with session for test-proj specifically
+    local mock_bin="$tmpdir/mock_bin"
+    _mock_docker_with_project_session "$mock_bin" "test-proj"
+    setup_mocks "$mock_bin"
+
+    if run_cco vault remove project "test-proj" --yes 2>/dev/null; then
+        fail "Expected remove to refuse when project has active Docker session"
+    fi
+    assert_output_contains "Cannot modify project 'test-proj'"
+}
+
+test_vault_remove_allows_when_different_project_active() {
+    # D31: vault remove should succeed if a DIFFERENT project has an active session
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+
+    local mock_bin="$tmpdir/mock_bin"
+    # Mock docker with session for "other-proj" (not the one being removed)
+    _mock_docker_with_project_session "$mock_bin" "other-proj"
+    setup_mocks "$mock_bin"
+
+    # Remove test-proj should succeed (no session for it)
+    run_cco vault remove project "test-proj" --yes || \
+        fail "Expected remove to succeed when a different project has the active session"
+}
+
+test_vault_profile_create_refuses_active_docker_sessions() {
+    # D31: profile create involves branch checkout — must block with active sessions
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+
+    # Mock docker with running container
+    local mock_bin="$tmpdir/mock_bin"
+    _mock_docker_with_containers "$mock_bin" "cc-test-proj-abc123"
+    setup_mocks "$mock_bin"
+
+    if run_cco vault profile create "work" 2>/dev/null; then
+        fail "Expected profile create to refuse with active Docker sessions"
+    fi
+    assert_output_contains "Cannot perform this operation while Docker sessions are active"
+}
+
+test_vault_profile_delete_refuses_active_docker_sessions() {
+    # D31: profile delete may involve branch operations — must block with active sessions
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    # Create a profile first (with no active Docker)
+    local mock_bin="$tmpdir/mock_bin"
+    _mock_docker_no_containers "$mock_bin"
+    setup_mocks "$mock_bin"
+    run_cco vault profile create "work"
+    run_cco vault switch "$default_branch"
+
+    # Now mock active Docker session
+    _mock_docker_with_containers "$mock_bin" "cc-test-proj-abc123"
+
+    if run_cco vault profile delete "work" --force --yes 2>/dev/null; then
+        fail "Expected profile delete to refuse with active Docker sessions"
+    fi
+    assert_output_contains "Cannot perform this operation while Docker sessions are active"
+}
+
+# ══════════════════════════════════════════════════════════════════════
+# .gitkeep Auto-Restore (D32)
+# ══════════════════════════════════════════════════════════════════════
+
+test_gitkeep_auto_restore_allows_vault_switch() {
+    # D32: deleted .gitkeep should be silently restored before dirty check
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    local mock_bin="$tmpdir/mock_bin"
+    _mock_docker_no_containers "$mock_bin"
+    setup_mocks "$mock_bin"
+
+    run_cco vault profile create "work"
+    run_cco vault switch "$default_branch"
+
+    # Simulate external process deleting .gitkeep
+    rm -f "$CCO_USER_CONFIG_DIR/projects/test-proj/memory/.gitkeep"
+
+    # Verify it's indeed dirty
+    local dirty
+    dirty=$(git -C "$CCO_USER_CONFIG_DIR" status --porcelain 2>/dev/null)
+    echo "$dirty" | grep -q '\.gitkeep' || fail "Expected .gitkeep to be dirty"
+
+    # Switch should succeed (auto-restore)
+    run_cco vault switch "work" || \
+        fail "Expected switch to succeed after .gitkeep auto-restore"
+
+    # File should be restored on disk when back
+    run_cco vault switch "$default_branch"
+    [[ -f "$CCO_USER_CONFIG_DIR/projects/test-proj/memory/.gitkeep" ]] || \
+        fail "Expected .gitkeep to be restored"
+}
+
+test_gitkeep_auto_restore_allows_vault_move() {
+    # D32: deleted .gitkeep should not block vault move
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    local mock_bin="$tmpdir/mock_bin"
+    _mock_docker_no_containers "$mock_bin"
+    setup_mocks "$mock_bin"
+
+    run_cco vault profile create "work"
+    run_cco vault switch "$default_branch"
+
+    # Simulate external process deleting .gitkeep
+    rm -f "$CCO_USER_CONFIG_DIR/projects/test-proj/memory/.gitkeep"
+
+    # Move should succeed (auto-restore before dirty check)
+    run_cco vault move project "test-proj" "work" --yes || \
+        fail "Expected move to succeed after .gitkeep auto-restore"
+    assert_output_contains "Moved project"
+}
