@@ -1518,6 +1518,16 @@ EOF
     if [[ -d "$vault_dir/projects" ]] && \
        [[ -n "$(ls -A "$vault_dir/projects/" 2>/dev/null)" ]]; then
         git -C "$vault_dir" rm -r --quiet projects/ 2>/dev/null || true
+        # Clean gitignored remnants (docker-compose.yml, managed/, .tmp/) not removed by git rm
+        for _proj_dir in "$vault_dir"/projects/*/; do
+            [[ ! -d "$_proj_dir" ]] && continue
+            rm -f "$_proj_dir/.cco/docker-compose.yml"
+            rm -rf "$_proj_dir/.cco/managed/"
+            rm -rf "$_proj_dir/.tmp/"
+            find "$_proj_dir" -type d -empty -delete 2>/dev/null || true
+        done
+        # Recreate projects/ dir — project create expects it
+        mkdir -p "$vault_dir/projects"
     fi
 
     _write_vault_profile "$name"
@@ -1606,10 +1616,14 @@ EOF
 
     # Show main summary
     echo ""
-    local main_packs=0 main_templates=0
+    local main_projects=0 main_packs=0 main_templates=0
+    # Count projects on main by checking git tree (works from any branch)
+    main_projects=$(git -C "$vault_dir" ls-tree "$(_vault_default_branch)" -- projects/ 2>/dev/null | grep -c . || true)
     [[ -d "$vault_dir/packs" ]] && main_packs=$(find "$vault_dir/packs" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
     [[ -d "$vault_dir/templates" ]] && main_templates=$(find "$vault_dir/templates" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
-    echo -e "  ${BOLD}Main (shared):${NC} global, ${main_templates} template(s), ${main_packs} pack(s)"
+    local main_marker="  "
+    [[ "$current_branch" == "$(_vault_default_branch)" ]] && main_marker="* "
+    echo -e "  ${main_marker}${BOLD}Main:${NC} ${main_projects} project(s), ${main_packs} pack(s), ${main_templates} template(s), global"
 }
 
 cmd_vault_profile_show() {
@@ -2151,7 +2165,7 @@ EOF
 # vault remove <project|pack> <name> — delete from current branch (§6.3-6.4)
 cmd_vault_profile_remove() {
     local resource_type="${1:-}"
-    local name="${2:-}"
+    local name=""
     local auto_yes=false
 
     if [[ "$resource_type" == "--help" || -z "$resource_type" ]]; then
@@ -2380,8 +2394,28 @@ EOF
         resource_path="packs/$name"
     fi
 
-    [[ ! -d "$vault_dir/$resource_path" ]] && die "$(echo "$resource_type" | awk '{print toupper(substr($0,1,1)) substr($0,2)}') '$name' not found on current branch"
-    [[ "$target" == "$current_branch" ]] && die "$(echo "$resource_type" | awk '{print toupper(substr($0,1,1)) substr($0,2)}') is already on this branch"
+    local type_label
+    type_label=$(echo "$resource_type" | awk '{print toupper(substr($0,1,1)) substr($0,2)}')
+
+    # Auto-detect source branch: find where the resource has tracked files
+    local source_branch=""
+    if [[ -n "$(git -C "$vault_dir" ls-tree HEAD -- "$resource_path/" 2>/dev/null)" ]]; then
+        source_branch="$current_branch"
+    elif [[ -n "$(git -C "$vault_dir" ls-tree "$default_branch" -- "$resource_path/" 2>/dev/null)" ]]; then
+        source_branch="$default_branch"
+    else
+        # Search profile branches
+        while IFS= read -r _branch; do
+            [[ -z "$_branch" ]] && continue
+            if [[ -n "$(git -C "$vault_dir" ls-tree "$_branch" -- "$resource_path/" 2>/dev/null)" ]]; then
+                source_branch="$_branch"
+                break
+            fi
+        done < <(_list_profile_branches)
+    fi
+
+    [[ -z "$source_branch" ]] && die "$type_label '$name' not found on any branch"
+    [[ "$source_branch" == "$target" ]] && die "$type_label '$name' is already on '$target'"
 
     # Working tree must be clean
     local status_output
@@ -2395,6 +2429,11 @@ EOF
         fi
     fi
 
+    # Switch to source branch if needed
+    if [[ "$current_branch" != "$source_branch" ]]; then
+        git -C "$vault_dir" checkout "$source_branch" -q
+    fi
+
     # Count tracked files for summary
     local tracked_count
     tracked_count=$(git -C "$vault_dir" ls-tree -r --name-only HEAD -- "$resource_path/" 2>/dev/null | grep -c . || true)
@@ -2405,7 +2444,7 @@ EOF
        [[ -n "$(git -C "$vault_dir" ls-tree "$target" -- "$resource_path/" 2>/dev/null)" ]]; then
         target_has_resource=true
         local diff_output
-        diff_output=$(git -C "$vault_dir" diff "$target" "$current_branch" -- "$resource_path/" 2>/dev/null || true)
+        diff_output=$(git -C "$vault_dir" diff "$target" "$source_branch" -- "$resource_path/" 2>/dev/null || true)
         [[ -n "$diff_output" ]] && conflict_detected=true
     fi
 
@@ -2416,7 +2455,7 @@ EOF
         fi
         echo "" >&2
         echo "Moving $resource_type '$name':" >&2
-        echo "  From: $current_branch → To: $target" >&2
+        echo "  From: $source_branch → To: $target" >&2
         echo "  Tracked files: $tracked_count file(s)" >&2
         if $conflict_detected; then
             warn "$resource_type '$name' already exists on '$target' with different content."
@@ -2427,6 +2466,10 @@ EOF
         local reply
         read -r reply
         if [[ ! "$reply" =~ ^[Yy]$ ]]; then
+            # Return to original branch if we switched away
+            if [[ "$current_branch" != "$source_branch" ]]; then
+                git -C "$vault_dir" checkout "$current_branch" -q
+            fi
             info "Aborted"
             return 0
         fi
@@ -2437,17 +2480,19 @@ EOF
 
     # Step 3: Copy tracked files to target
     git -C "$vault_dir" checkout "$target" -q
-    git -C "$vault_dir" checkout "$current_branch" -- "$resource_path/"
+    git -C "$vault_dir" checkout "$source_branch" -- "$resource_path/"
 
     # Update .vault-profile on target (if target is a profile, not main)
     if [[ "$target" != "$default_branch" ]]; then
         _profile_add_to_list "${resource_type}s" "$name"
+        git -C "$vault_dir" add -A -- "$resource_path/" .vault-profile
+    else
+        git -C "$vault_dir" add -A -- "$resource_path/"
     fi
-    git -C "$vault_dir" add -A -- "$resource_path/" .vault-profile
     if ! git -C "$vault_dir" diff --cached --quiet 2>/dev/null; then
-        git -C "$vault_dir" commit -q -m "vault: add $resource_type '$name' (moved from $current_branch)"
+        git -C "$vault_dir" commit -q -m "vault: add $resource_type '$name' (moved from $source_branch)"
     fi
-    git -C "$vault_dir" checkout "$current_branch" -q
+    git -C "$vault_dir" checkout "$source_branch" -q
 
     # Step 4: Move portable gitignored files to shadow directory (projects only)
     if [[ "$resource_type" == "project" ]]; then
@@ -2494,8 +2539,8 @@ EOF
         else
             _profile_remove_from_list "packs" "$name"
         fi
+        git -C "$vault_dir" add -A -- .vault-profile
     fi
-    git -C "$vault_dir" add -A -- .vault-profile
     if ! git -C "$vault_dir" diff --cached --quiet 2>/dev/null; then
         git -C "$vault_dir" commit -q -m "vault: remove $resource_type '$name' (moved to $target)"
     fi
@@ -2504,12 +2549,17 @@ EOF
     find "$vault_dir/$resource_path" -type d -empty -delete 2>/dev/null || true
 
     # Step 8: Log
-    _vault_log_op "$vault_dir" "MOVE $resource_type $name ${current_branch}→${target}"
+    _vault_log_op "$vault_dir" "MOVE $resource_type $name ${source_branch}→${target}"
 
-    ok "Moved $resource_type '$name' to ${target}"
+    # Return to original branch if we switched away
+    if [[ "$current_branch" != "$source_branch" ]]; then
+        git -C "$vault_dir" checkout "$current_branch" -q
+    fi
+
+    ok "Moved $resource_type '$name' from '$source_branch' to '$target'"
 
     # Warn about lazy cleanup for packs becoming exclusive (§6.2)
-    if [[ "$resource_type" == "pack" && "$current_branch" == "$default_branch" ]]; then
+    if [[ "$resource_type" == "pack" && "$source_branch" == "$default_branch" ]]; then
         local other_profiles=""
         while IFS= read -r pb; do
             [[ -z "$pb" ]] && continue
@@ -2624,6 +2674,14 @@ _resolve_shared_conflict() {
 _check_vault() {
     if [[ ! -d "$USER_CONFIG_DIR/.git" ]]; then
         die "Vault not initialized. Run 'cco vault init' first."
+    fi
+
+    # Defensive: untrack profile-ops.log if it was committed before gitignore update
+    if git -C "$USER_CONFIG_DIR" ls-files --error-unmatch .cco/profile-ops.log >/dev/null 2>&1; then
+        git -C "$USER_CONFIG_DIR" rm --cached -q .cco/profile-ops.log 2>/dev/null || true
+        if ! git -C "$USER_CONFIG_DIR" diff --cached --quiet 2>/dev/null; then
+            git -C "$USER_CONFIG_DIR" commit -q -m "vault: untrack profile-ops.log (gitignored)"
+        fi
     fi
 }
 

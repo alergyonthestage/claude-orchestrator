@@ -109,6 +109,26 @@ test_profile_create_shows_project_count_hint() {
     assert_output_contains "vault move project"
 }
 
+test_profile_create_cleans_gitignored_remnants() {
+    # Gitignored files (docker-compose.yml, managed/) must be cleaned from
+    # projects removed during profile creation
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+
+    # Simulate runtime artifacts (created by cco start, gitignored)
+    mkdir -p "$CCO_USER_CONFIG_DIR/projects/test-proj/.cco/managed"
+    echo '{}' > "$CCO_USER_CONFIG_DIR/projects/test-proj/.cco/docker-compose.yml"
+    echo '{}' > "$CCO_USER_CONFIG_DIR/projects/test-proj/.cco/managed/policy.json"
+    mkdir -p "$CCO_USER_CONFIG_DIR/projects/test-proj/.tmp"
+    echo 'x' > "$CCO_USER_CONFIG_DIR/projects/test-proj/.tmp/scratch"
+
+    run_cco vault profile create "work"
+
+    # All project remnants should be gone
+    [[ ! -d "$CCO_USER_CONFIG_DIR/projects/test-proj" ]] || \
+        fail "Gitignored remnants should be cleaned after profile create"
+}
+
 test_profile_create_rejects_invalid_name() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_vault_for_profiles "$tmpdir"
@@ -1277,6 +1297,36 @@ test_vault_move_to_nonexistent_target() {
     if run_cco vault move project "test-proj" "nonexistent-profile" --yes 2>/dev/null; then
         fail "Expected move to nonexistent target to fail"
     fi
+}
+
+test_vault_move_from_noncurrent_branch() {
+    # User is on target profile, resource is on main — move should auto-detect source
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    run_cco vault profile create "cave"
+    # We're now on profile "cave" — project is on main
+
+    # Move project from main to cave (auto-detect source)
+    run_cco vault move project "test-proj" "cave" --yes
+    assert_output_contains "Moved"
+
+    # Verify project exists on target branch
+    local target_tree
+    target_tree=$(git -C "$CCO_USER_CONFIG_DIR" ls-tree "cave" -- "projects/test-proj/" 2>/dev/null)
+    [[ -n "$target_tree" ]] || fail "Expected project on cave branch"
+
+    # Verify removed from main
+    local main_tree
+    main_tree=$(git -C "$CCO_USER_CONFIG_DIR" ls-tree "$default_branch" -- "projects/test-proj/" 2>/dev/null)
+    [[ -z "$main_tree" ]] || fail "Expected project removed from main"
+
+    # We should still be on cave
+    local current
+    current=$(git -C "$CCO_USER_CONFIG_DIR" rev-parse --abbrev-ref HEAD)
+    [[ "$current" == "cave" ]] || fail "Expected to remain on cave, got $current"
 }
 
 # ══════════════════════════════════════════════════════════════════════
