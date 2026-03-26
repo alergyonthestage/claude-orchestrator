@@ -202,6 +202,10 @@ This works for remote sync but has gaps:
 
 ### 3.3 Proposed Approach: Sync at Switch Time
 
+> **REVISED**: This proposal was superseded during design. The final design
+> propagates shared resources at `vault save` time (to ALL profiles immediately),
+> making switch-time sync unnecessary. See design doc §8.1 and addendum below.
+
 Add shared resource sync to `profile switch`:
 
 ```
@@ -826,6 +830,9 @@ See §4.7 for the recommended approach.
 
 ### Q5: Projects on Main — Default Behavior
 
+> **RESOLVED**: Option B confirmed as D3 in the design document. Projects are
+> always exclusive to one branch. New profiles start empty. See addendum.
+
 With real isolation, what happens to projects on main that are NOT assigned
 to any profile? Options:
 
@@ -902,10 +909,12 @@ The following decisions were revised during the design discussion that followed
 this analysis. The definitive design is in `profile-isolation-design.md`, which
 takes precedence.
 
-| Topic | Original (this analysis) | Revised (design doc) |
-|-------|--------------------------|----------------------|
-| Commit command name | `vault sync` — commit config changes | Renamed to `vault save` (§ in design doc) |
-| `vault save` propagation | Proposed sync at switch time only | `vault save` propagates shared resources to main AND to all profiles immediately, not just at switch time |
-| Switch precondition | Auto-commit pending changes before switch | Switch requires a clean working tree — no auto-commit. User must run `vault save` manually before switching |
-| `copy` command | Proposed as advanced feature, kept for v1 (§10 Q3) | Deferred — not included in initial release |
-| Merge-base advancement | Not addressed in this analysis | After shared sync, the merge-base is advanced via `git merge -s ours` to prevent repeated conflict prompts for already-resolved divergences |
+| Topic | Original (this analysis) | Revised (design doc) | Rationale |
+|-------|--------------------------|----------------------|-----------|
+| Commit command name | `vault sync` — commit config changes | Renamed to `vault save` | Clearer semantics; "sync" confused with remote sync |
+| Shared sync trigger (§3.3) | Sync shared resources at switch time | `vault save` propagates to main + ALL profiles immediately. Switch does NO sync. | Save-time propagation means all profiles are always current. Switch-time sync would add latency and complexity for zero benefit — the data is already there. See design §8.1. |
+| Switch precondition (§6.2) | Auto-commit pending changes before switch | Switch requires a clean working tree — no auto-commit | Explicit saves with proper commit messages; no silent auto-commits that obscure history |
+| `copy` command (§10 Q3) | Proposed as advanced feature for v1 | Deferred — not included in initial release | Divergence risk; `move` + re-create covers use cases |
+| Q5: Projects on main | Option B proposed (main-only visibility) | Confirmed: D3 — projects always exclusive, one branch only | Each project has context-specific state (secrets, sessions) that makes sharing problematic. New profiles start empty. |
+| Exclusive packs on profile create | Not explicitly addressed | Not needed — `profile create` branches from main, which never has exclusive packs | Real isolation means `vault move pack` removes the pack from main. New profiles branch from main and only inherit shared resources by definition. |
+| Merge-base advancement | Not addressed in this analysis | After shared sync, `git merge -s ours` advances the merge-base | Prevents repeated conflict prompts for already-resolved divergences. On single-PC usage, shared sync is always conflict-free. |

@@ -819,6 +819,14 @@ vault pull:    remote → main → current profile
 vault switch:  no sync needed (save already propagated)
 ```
 
+> **Why switch does NOT sync**: The initial analysis (§3.3) proposed syncing
+> shared resources from main on every `vault switch`. This was revised because
+> `vault save` already propagates shared changes to ALL profiles immediately.
+> By the time the user switches, the target profile is already up to date.
+> Adding sync to switch would add latency for zero benefit in the single-PC
+> case. The only scenario requiring explicit sync is `vault pull` (remote
+> changes), which handles it directly. See analysis addendum for full history.
+
 ### 8.2 Determining Shared Paths
 
 Shared paths are identified by exclusion:
