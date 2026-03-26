@@ -534,6 +534,10 @@ Vault profiles with branch-based isolation for multi-PC scenarios, memory separa
 - `.gitignore` auto-updated for vaults initialized before profile isolation
 - `profile show` works on main (shows project list, shared resources)
 - `profile list` shows project count on main
+- Shared pack→exclusive: automatic cleanup of synced copies on all other branches
+- `vault remove pack` from main: auto-removes synced copies from all profiles
+- `vault remove pack` from profile: blocked for shared packs (directs to main)
+- Pack name uniqueness enforced across all branches
 
 **Docs**: [analysis](../configuration/vault/analysis.md) | [design](../configuration/vault/design.md) | [profile-isolation-design](../configuration/vault/profile-isolation-design.md)
 

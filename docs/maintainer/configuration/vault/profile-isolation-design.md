@@ -502,14 +502,10 @@ Output:
 
 Same semantics as project move. Additional considerations:
 
-- If moving a shared pack to a profile (making it exclusive): the pack must
-  be `git rm`-ed from main AND from all other profile branches
-- **Lazy cleanup**: Remove from main, add to target. Warn about other profiles:
-  ```
-  ✓ Moved pack 'my-tools' to profile 'org-a'
-  ⚠ This pack may still exist on other profiles (personal, org-b).
-    Switch to each and run 'cco vault remove pack my-tools' to clean up.
-  ```
+- If moving a shared pack to a profile (making it exclusive): the pack is
+  `git rm`-ed from main AND automatically cleaned from all other profile branches.
+- **Automatic cleanup**: The move iterates all other profile branches and removes
+  the synced copy of the pack, committing each removal.
 - Packs have minimal gitignored state (only `.cco/install-tmp/`, ephemeral).
   No shadow directory handling needed for packs.
 
@@ -560,6 +556,12 @@ Output:
 
 Same semantics as project remove. Packs have minimal gitignored state.
 Auto-backup only when it is the last copy.
+
+**Shared pack guards**:
+- Removing a shared pack from a **profile** is blocked — the pack lives on main
+  and would be re-synced. The user is directed to switch to main first.
+- Removing a shared pack from **main** automatically cleans all profile branches
+  (removes the synced copy from each).
 
 ### 6.5 `cco project delete <name>`
 
@@ -1155,7 +1157,7 @@ All decisions approved in design session 2026-03-24.
 | D14 | `cco project delete` added | Full lifecycle command — deletes from all branches and profiles; no project-level delete existed |
 | D15 | Auto-backup on remove when last copy | Safety net for destructive operations |
 | D16 | `.vault-profile` retained as metadata | Still needed for sync scoping, profile detection, display |
-| D17 | Lazy cleanup when making shared pack exclusive | Safe: warn about other branches instead of auto-cleaning |
+| D17 | ~~Lazy cleanup~~ → Automatic cleanup when making shared pack exclusive | Auto-removes synced copies from all other branches (supersedes lazy warn approach) |
 | D18 | Push/pull: current profile + main only | Other profiles pushed when user works on them |
 | D19 | Backward compatible: no profiles = no change | All profile logic gated behind `_get_active_profile` checks |
 | D20 | Profile-scoped staging removed | With real isolation, `git add -A` is safe on any branch |

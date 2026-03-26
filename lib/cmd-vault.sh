@@ -2337,6 +2337,22 @@ EOF
 
     [[ ! -d "$vault_dir/$resource_path" ]] && die "$(echo "$resource_type" | awk '{print toupper(substr($0,1,1)) substr($0,2)}') '$name' not found on current branch"
 
+    # Block removing a shared pack from a profile (it would be re-synced from main)
+    local default_branch
+    default_branch=$(_vault_default_branch)
+    if [[ "$resource_type" == "pack" && "$current_branch" != "$default_branch" ]]; then
+        local profile
+        profile=$(_get_active_profile)
+        if [[ -n "$profile" ]]; then
+            local prof_packs
+            prof_packs=$(_profile_packs)
+            if [[ -z "$prof_packs" ]] || ! echo "$prof_packs" | grep -qxF "$name"; then
+                die "Pack '$name' is shared (lives on main). Remove it from main instead:
+  cco vault switch main && cco vault remove pack $name"
+            fi
+        fi
+    fi
+
     # Working tree must be clean
     local status_output
     status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
@@ -2420,6 +2436,23 @@ EOF
     # Clean shadow directory entry for this resource
     if [[ -n "$profile" && "$resource_type" == "project" ]]; then
         rm -rf "$vault_dir/.cco/profile-state/$profile/projects/$name/"
+    fi
+
+    # Clean shared pack copies from profiles when removing from main
+    local default_branch
+    default_branch=$(_vault_default_branch)
+    if [[ "$resource_type" == "pack" && "$current_branch" == "$default_branch" ]]; then
+        while IFS= read -r pb; do
+            [[ -z "$pb" ]] && continue
+            if [[ -n "$(git -C "$vault_dir" ls-tree "$pb" -- "$resource_path/" 2>/dev/null)" ]]; then
+                git -C "$vault_dir" checkout "$pb" -q
+                git -C "$vault_dir" rm -r "$resource_path/" -q 2>/dev/null || true
+                if ! git -C "$vault_dir" diff --cached --quiet 2>/dev/null; then
+                    git -C "$vault_dir" commit -q -m "vault: remove shared pack '$name' (deleted from main)"
+                fi
+            fi
+        done < <(_list_profile_branches)
+        git -C "$vault_dir" checkout "$current_branch" -q
     fi
 
     # Log
