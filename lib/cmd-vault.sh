@@ -1518,9 +1518,10 @@ EOF
     if [[ -d "$vault_dir/projects" ]] && \
        [[ -n "$(ls -A "$vault_dir/projects/" 2>/dev/null)" ]]; then
         git -C "$vault_dir" rm -r --quiet projects/ 2>/dev/null || true
-        # Remove ALL remnants: gitignored files, Docker mount points, empty dirs
-        # git rm only removes tracked files; everything else must be cleaned explicitly
-        rm -rf "$vault_dir/projects"
+        # Remove ALL remnants: gitignored files, Docker mount points, empty dirs.
+        # git rm only removes tracked files; everything else must be cleaned explicitly.
+        # Docker Desktop mount point stubs (owned by root) may survive — harmless.
+        rm -rf "$vault_dir/projects" 2>/dev/null || true
         mkdir -p "$vault_dir/projects"
     fi
 
@@ -2329,7 +2330,7 @@ EOF
     fi
 
     # Clean ALL remnants (gitignored files, mount points, empty dirs)
-    rm -rf "$vault_dir/$resource_path"
+    rm -rf "$vault_dir/$resource_path" 2>/dev/null || true
 
     # Clean shadow directory entry for this resource
     if [[ -n "$profile" && "$resource_type" == "project" ]]; then
@@ -2557,7 +2558,7 @@ EOF
     fi
 
     # Step 6: Clean ALL remnants (gitignored files, mount points, empty dirs)
-    rm -rf "$vault_dir/$resource_path"
+    rm -rf "$vault_dir/$resource_path" 2>/dev/null || true
 
     # Step 8: Log
     _vault_log_op "$vault_dir" "MOVE $resource_type $name ${source_branch}→${target}"
