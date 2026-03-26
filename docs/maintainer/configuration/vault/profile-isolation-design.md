@@ -1,6 +1,6 @@
 # Vault Profile Real Isolation — Design v2
 
-**Status**: Approved — pending implementation
+**Status**: Implemented
 **Date**: 2026-03-24
 **Scope**: Architecture-level — vault profiles, shared sync, CLI, safety
 **Supersedes**: Tracking-only isolation model in `design.md` §5.3 (Sprint 7-Vault)
@@ -1159,3 +1159,9 @@ All decisions approved in design session 2026-03-24.
 | D18 | Push/pull: current profile + main only | Other profiles pushed when user works on them |
 | D19 | Backward compatible: no profiles = no change | All profile logic gated behind `_get_active_profile` checks |
 | D20 | Profile-scoped staging removed | With real isolation, `git add -A` is safe on any branch |
+| D21 | `vault move` auto-detects source branch | User can move from any branch, not just current — searches main, then profiles |
+| D22 | `profile delete` requires `--force` for non-empty profiles | Safety: prevents accidental deletion of profiles with resources |
+| D23 | Project name uniqueness across all branches | Each name can exist on exactly one branch; prevents merge conflicts |
+| D24 | `_force_remove_dir`: Docker stub cleanup via Docker itself | macOS Docker Desktop mount points resist `rm -rf`; fallback uses `docker run alpine rm -rf` |
+| D25 | Shadow file transfer on move | When moving a project whose portable files are in source's shadow (stashed during profile create/switch), transfer to target's shadow |
+| D26 | `.gitignore` auto-update in `_check_vault` | Vaults initialized before profile isolation get missing entries automatically |

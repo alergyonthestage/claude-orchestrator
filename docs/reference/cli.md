@@ -1136,17 +1136,19 @@ Examples:
 
 #### `cco vault profile delete <name>`
 
-Delete a profile. Moves all exclusive resources to main first, then deletes the branch.
+Delete a profile. Requires the profile to be **empty** (no exclusive projects or packs).
+Use `--force` to delete a non-empty profile — this moves all exclusive resources to main first.
 
 ```
-Usage: cco vault profile delete <name> [--yes]
+Usage: cco vault profile delete <name> [--yes] [--force]
 
 Options:
   --yes                Skip confirmation prompt
+  --force, -f          Allow deleting non-empty profiles (moves resources to main)
 
 Examples:
   cco vault profile delete old-profile
-  cco vault profile delete old-profile --yes
+  cco vault profile delete old-profile --yes --force
 ```
 
 #### `cco vault profile move project|pack <name> <target>`

@@ -101,12 +101,17 @@ Switching requires a **clean working tree** (run `cco vault save` first) and
 
 Each project exists on exactly **one branch** — either `main` (the default)
 or a profile branch. Moving a project physically relocates its files via git.
+`vault move` auto-detects where the resource is tracked — you don't need to
+be on the source branch.
 
 ```bash
 cco vault move project my-api work           # Move project to "work" profile
 cco vault move pack work-conventions work     # Move pack to "work" profile
 cco vault move project my-api main           # Move back to shared (main)
 ```
+
+**Project names must be unique** across all branches. You cannot create a project
+with the same name on two different profiles.
 
 Global config, templates, and packs not assigned to any profile remain
 **shared** on `main` and are visible from all profiles.
@@ -130,6 +135,26 @@ cco vault save "end of day"
 
 # 5. Switch back to main when done
 cco vault switch main
+```
+
+### Inspecting profiles
+
+`profile show` displays details about the current context — whether on a profile
+or on main:
+
+```bash
+cco vault profile show     # Shows projects, packs, shared resources, sync state
+cco vault profile list     # Lists all profiles with resource counts + main summary
+```
+
+### Deleting profiles
+
+Empty profiles can be deleted directly. Non-empty profiles require `--force`,
+which moves all exclusive resources back to main before deleting the branch:
+
+```bash
+cco vault profile delete old-profile              # Fails if has projects/packs
+cco vault profile delete old-profile --force       # Moves resources to main first
 ```
 
 ### Shadow directory

@@ -527,6 +527,13 @@ Vault profiles with branch-based isolation for multi-PC scenarios, memory separa
 - Memory policy: managed rule (`defaults/managed/.claude/rules/memory-policy.md`) defining when to use memory vs project docs
 - Migration 008: automatic memory separation for existing projects
 - Backward compatible: vaults without profiles work unchanged (single branch on `main`)
+- `vault move` auto-detects source branch (can move from any branch, not just current)
+- `profile delete` requires `--force` for non-empty profiles (safety: prevents accidental deletion)
+- Project name uniqueness enforced across all branches
+- `_force_remove_dir`: Docker mount point stub cleanup via Docker fallback
+- `.gitignore` auto-updated for vaults initialized before profile isolation
+- `profile show` works on main (shows project list, shared resources)
+- `profile list` shows project count on main
 
 **Docs**: [analysis](../configuration/vault/analysis.md) | [design](../configuration/vault/design.md) | [profile-isolation-design](../configuration/vault/profile-isolation-design.md)
 

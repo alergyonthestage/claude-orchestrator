@@ -72,7 +72,7 @@ cco vault profile create <n> # Create vault profile (empty, branch-based)
 cco vault profile list       # List all profiles
 cco vault profile show       # Show current profile details
 cco vault profile rename <n> # Rename current profile
-cco vault profile delete <n> # Delete profile (moves resources to main)
+cco vault profile delete <n> [--force]  # Delete profile (--force moves resources to main)
 cco project delete <name> [--yes]  # Delete project from all branches
 cco template list             # List available templates (native + user)
 cco template show <name>     # Show template details
