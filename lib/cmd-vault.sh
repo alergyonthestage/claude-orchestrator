@@ -1084,9 +1084,14 @@ _clean_nonportable_remnants() {
 }
 
 # Check that no Docker sessions are active (blocks branch-switching operations: D8, D31)
+# Uses label filter (new containers) with name filter fallback (pre-label containers)
 _check_no_active_sessions() {
     local running
     running=$(docker ps --filter "label=cco.project" --format "{{.Names}}" 2>/dev/null || true)
+    # Fallback: match by container name convention (cc-*), same as cco stop
+    if [[ -z "$running" ]]; then
+        running=$(docker ps --filter "name=cc-" --format "{{.Names}}" 2>/dev/null || true)
+    fi
     if [[ -n "$running" ]]; then
         echo -e "${RED}✗${NC} Cannot perform this operation while Docker sessions are active." >&2
         echo "  Running:" >&2
@@ -1097,11 +1102,16 @@ _check_no_active_sessions() {
 }
 
 # Check that a specific project doesn't have an active Docker session
+# Uses label filter (new containers) with name filter fallback (pre-label containers)
 # Args: project_name
 _check_project_not_active() {
     local project_name="$1"
     local running
     running=$(docker ps --filter "label=cco.project=$project_name" --format "{{.Names}}" 2>/dev/null || true)
+    # Fallback: match by container name convention (cc-<project_name>)
+    if [[ -z "$running" ]]; then
+        running=$(docker ps --filter "name=cc-${project_name}" --format "{{.Names}}" 2>/dev/null || true)
+    fi
     if [[ -n "$running" ]]; then
         echo -e "${RED}✗${NC} Cannot modify project '$project_name' while its Docker session is active." >&2
         echo "  Running: $running" >&2

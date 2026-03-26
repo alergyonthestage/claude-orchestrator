@@ -360,6 +360,8 @@ services:
   claude:
     image: ${docker_image}
     container_name: cc-${project_name}
+    labels:
+      cco.project: "${project_name}"
     stdin_open: true
     tty: true
     environment:
