@@ -1518,15 +1518,9 @@ EOF
     if [[ -d "$vault_dir/projects" ]] && \
        [[ -n "$(ls -A "$vault_dir/projects/" 2>/dev/null)" ]]; then
         git -C "$vault_dir" rm -r --quiet projects/ 2>/dev/null || true
-        # Clean gitignored remnants (docker-compose.yml, managed/, .tmp/) not removed by git rm
-        for _proj_dir in "$vault_dir"/projects/*/; do
-            [[ ! -d "$_proj_dir" ]] && continue
-            rm -f "$_proj_dir/.cco/docker-compose.yml"
-            rm -rf "$_proj_dir/.cco/managed/"
-            rm -rf "$_proj_dir/.tmp/"
-            find "$_proj_dir" -type d -empty -delete 2>/dev/null || true
-        done
-        # Recreate projects/ dir — project create expects it
+        # Remove ALL remnants: gitignored files, Docker mount points, empty dirs
+        # git rm only removes tracked files; everything else must be cleaned explicitly
+        rm -rf "$vault_dir/projects"
         mkdir -p "$vault_dir/projects"
     fi
 
@@ -1648,8 +1642,44 @@ EOF
     profile=$(_get_active_profile)
 
     if [[ -z "$profile" ]]; then
-        echo -e "${BOLD}Profile:${NC} (none — on main branch)"
-        echo "  All resources are shared. Create a profile for selective sync."
+        local default_branch
+        default_branch=$(_vault_default_branch)
+        echo -e "${BOLD}Branch:${NC} $default_branch (main)"
+        echo ""
+
+        # Projects on main
+        echo -e "  ${BOLD}Projects:${NC}"
+        local has_main_projects=false
+        if [[ -d "$vault_dir/projects" ]]; then
+            local dir
+            for dir in "$vault_dir/projects"/*/; do
+                [[ ! -d "$dir" ]] && continue
+                has_main_projects=true
+                echo "    - $(basename "$dir")"
+            done
+        fi
+        if ! $has_main_projects; then
+            echo "    (none)"
+        fi
+
+        # Shared resources
+        echo ""
+        local main_packs=0 main_templates=0
+        [[ -d "$vault_dir/packs" ]] && main_packs=$(find "$vault_dir/packs" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+        [[ -d "$vault_dir/templates" ]] && main_templates=$(find "$vault_dir/templates" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+        echo -e "  ${BOLD}Shared:${NC} global, $main_templates template(s), $main_packs pack(s)"
+
+        # Uncommitted changes
+        echo ""
+        local status_output
+        status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
+        if [[ -z "$status_output" ]]; then
+            echo "  Uncommitted changes: none"
+        else
+            local count
+            count=$(echo "$status_output" | grep -c . || true)
+            echo "  Uncommitted changes: $count file(s)"
+        fi
         return 0
     fi
 
@@ -2298,20 +2328,8 @@ EOF
         git -C "$vault_dir" commit -q -m "vault: remove $resource_type '$name' from ${profile:-$current_branch}"
     fi
 
-    # Delete portable gitignored files
-    if [[ "$resource_type" == "project" ]]; then
-        rm -rf "$vault_dir/$resource_path/.cco/claude-state/"
-        for pattern in "${_PORTABLE_FILE_PATTERNS[@]}"; do
-            find "$vault_dir/$resource_path" -maxdepth 1 -name "$pattern" -type f -delete 2>/dev/null || true
-        done
-        rm -f "$vault_dir/$resource_path/.cco/meta"
-        rm -f "$vault_dir/$resource_path/.cco/docker-compose.yml"
-        rm -rf "$vault_dir/$resource_path/.cco/managed/"
-        rm -rf "$vault_dir/$resource_path/.tmp/"
-    fi
-
-    # Clean ghost directories
-    find "$vault_dir/$resource_path" -type d -empty -delete 2>/dev/null || true
+    # Clean ALL remnants (gitignored files, mount points, empty dirs)
+    rm -rf "$vault_dir/$resource_path"
 
     # Clean shadow directory entry for this resource
     if [[ -n "$profile" && "$resource_type" == "project" ]]; then
@@ -2520,14 +2538,7 @@ EOF
         done
     fi
 
-    # Step 5: Clean non-portable remnants
-    if [[ "$resource_type" == "project" ]]; then
-        rm -f "$vault_dir/$resource_path/.cco/docker-compose.yml"
-        rm -rf "$vault_dir/$resource_path/.cco/managed/"
-        rm -rf "$vault_dir/$resource_path/.tmp/"
-    fi
-
-    # Step 6: Remove tracked files from source
+    # Step 5: Remove tracked files from source
     git -C "$vault_dir" rm -r "$resource_path/" -q 2>/dev/null || true
 
     # Update .vault-profile on source (remove from list if applicable)
@@ -2545,8 +2556,8 @@ EOF
         git -C "$vault_dir" commit -q -m "vault: remove $resource_type '$name' (moved to $target)"
     fi
 
-    # Step 7: Clean ghost directories
-    find "$vault_dir/$resource_path" -type d -empty -delete 2>/dev/null || true
+    # Step 6: Clean ALL remnants (gitignored files, mount points, empty dirs)
+    rm -rf "$vault_dir/$resource_path"
 
     # Step 8: Log
     _vault_log_op "$vault_dir" "MOVE $resource_type $name ${source_branch}→${target}"
