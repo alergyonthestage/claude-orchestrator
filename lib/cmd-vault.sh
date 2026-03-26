@@ -1080,6 +1080,43 @@ _detect_shared_changes() {
         ${shared_paths[@]+"${shared_paths[@]}"} 2>/dev/null || true
 }
 
+# Check if a project/pack name exists on any branch other than the specified one.
+# Returns 0 if a conflict is found (name exists elsewhere), 1 if unique.
+# Args: vault_dir, resource_type (project|pack), name, exclude_branch
+# Outputs: the conflicting branch name (if any)
+_name_exists_on_other_branch() {
+    local vault_dir="$1" resource_type="$2" name="$3" exclude_branch="$4"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    local resource_path
+    if [[ "$resource_type" == "project" ]]; then
+        resource_path="projects/$name"
+    else
+        resource_path="packs/$name"
+    fi
+
+    # Check default branch
+    if [[ "$exclude_branch" != "$default_branch" ]]; then
+        if [[ -n "$(git -C "$vault_dir" ls-tree "$default_branch" -- "$resource_path/" 2>/dev/null)" ]]; then
+            echo "$default_branch"
+            return 0
+        fi
+    fi
+
+    # Check profile branches
+    while IFS= read -r branch; do
+        [[ -z "$branch" ]] && continue
+        [[ "$branch" == "$exclude_branch" ]] && continue
+        if [[ -n "$(git -C "$vault_dir" ls-tree "$branch" -- "$resource_path/" 2>/dev/null)" ]]; then
+            echo "$branch"
+            return 0
+        fi
+    done < <(_list_profile_branches)
+
+    return 1
+}
+
 # Sync shared resources from a source branch to main (local, with merge-base advancement)
 # Args: vault_dir, source_branch
 # Expects: caller is on source_branch
@@ -2009,20 +2046,23 @@ EOF
 }
 
 cmd_vault_profile_delete() {
-    local name="" auto_yes=false
+    local name="" auto_yes=false force=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --yes|-y) auto_yes=true; shift ;;
+            --force|-f) force=true; shift ;;
             --help)
                 cat <<'EOF'
-Usage: cco vault profile delete <name> [--yes]
+Usage: cco vault profile delete <name> [--yes] [--force]
 
-Delete a vault profile. Moves all exclusive resources to main first.
+Delete a vault profile. Requires the profile to be empty (no exclusive
+projects or packs). Use --force to delete anyway and move resources to main.
 Cannot delete the currently active profile.
 
 Options:
-  --yes, -y   Skip confirmation prompt
+  --yes, -y     Skip confirmation prompt
+  --force, -f   Allow deleting non-empty profiles (moves resources to main)
 EOF
                 return 0
                 ;;
@@ -2082,23 +2122,49 @@ EOF
     [[ -n "$excl_projects" ]] && proj_count=$(echo "$excl_projects" | grep -c . || true)
     [[ -n "$excl_packs" ]] && pack_count=$(echo "$excl_packs" | grep -c . || true)
 
+    # Block delete of non-empty profiles unless --force
+    if [[ $proj_count -gt 0 || $pack_count -gt 0 ]] && ! $force; then
+        error "Profile '$name' has $proj_count project(s) and $pack_count pack(s)."
+        echo "  Move resources first, or use --force to delete and move them to main." >&2
+        if [[ -n "$excl_projects" ]]; then
+            echo "  Projects:" >&2
+            while IFS= read -r _p; do
+                [[ -n "$_p" ]] && echo "    - $_p" >&2
+            done <<< "$excl_projects"
+        fi
+        if [[ -n "$excl_packs" ]]; then
+            echo "  Packs:" >&2
+            while IFS= read -r _p; do
+                [[ -n "$_p" ]] && echo "    - $_p" >&2
+            done <<< "$excl_packs"
+        fi
+        return 1
+    fi
+
     # Confirmation
     if ! $auto_yes; then
         if [[ ! -t 0 ]]; then
             die "Profile delete requires interactive confirmation (use --yes to skip)"
         fi
         echo "" >&2
-        echo "Deleting profile '$name':" >&2
-        if [[ $proj_count -gt 0 ]]; then
-            echo "  Exclusive projects ($proj_count): $excl_projects" >&2
-        fi
-        if [[ $pack_count -gt 0 ]]; then
-            echo "  Exclusive packs ($pack_count): $excl_packs" >&2
-        fi
         if [[ $proj_count -gt 0 || $pack_count -gt 0 ]]; then
-            echo "  These will be moved to main." >&2
+            echo "Deleting profile '$name' (--force: moving resources to main):" >&2
+            if [[ -n "$excl_projects" ]]; then
+                echo "  Projects ($proj_count):" >&2
+                while IFS= read -r _p; do
+                    [[ -n "$_p" ]] && echo "    - $_p" >&2
+                done <<< "$excl_projects"
+            fi
+            if [[ -n "$excl_packs" ]]; then
+                echo "  Packs ($pack_count):" >&2
+                while IFS= read -r _p; do
+                    [[ -n "$_p" ]] && echo "    - $_p" >&2
+                done <<< "$excl_packs"
+            fi
+        else
+            echo "Deleting empty profile '$name'." >&2
         fi
-        printf "\nDelete profile '$name'? [y/N] " >&2
+        printf "\nProceed? [y/N] " >&2
         local reply
         read -r reply
         if [[ ! "$reply" =~ ^[Yy]$ ]]; then

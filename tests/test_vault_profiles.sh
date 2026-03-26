@@ -826,8 +826,13 @@ test_profile_delete_moves_exclusive_to_main() {
     run_cco vault switch "$default_branch"
     run_cco vault move project "test-proj" "to-delete" --yes
 
-    # Delete the profile
-    run_cco vault profile delete "to-delete" --yes
+    # Delete without --force should fail (has resources)
+    if run_cco vault profile delete "to-delete" --yes 2>/dev/null; then
+        fail "Expected delete of non-empty profile to be rejected without --force"
+    fi
+
+    # Delete with --force should work
+    run_cco vault profile delete "to-delete" --yes --force
 
     # Branch should be gone
     if git -C "$CCO_USER_CONFIG_DIR" rev-parse --verify "to-delete" >/dev/null 2>&1; then
@@ -1462,6 +1467,19 @@ test_profile_create_on_project_auto_registers() {
 
     # Output should confirm auto-registration
     assert_output_contains "Added to profile"
+}
+
+test_project_create_rejects_duplicate_name_cross_branch() {
+    # project names must be unique across all branches
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+
+    # test-proj already exists on main
+    run_cco vault profile create "work"
+    # On profile "work" — try to create project with same name as main
+    if run_cco project create "test-proj" 2>/dev/null; then
+        fail "Expected duplicate project name across branches to be rejected"
+    fi
 }
 
 # ══════════════════════════════════════════════════════════════════════
