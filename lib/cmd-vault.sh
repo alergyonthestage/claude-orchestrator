@@ -916,12 +916,15 @@ _stash_gitignored_files_main() {
     local vault_dir="$1"
     [[ ! -d "$vault_dir/projects" ]] && return 0
 
+    local _default_branch
+    _default_branch=$(_vault_default_branch)
+
     local proj_name
     for proj_dir in "$vault_dir"/projects/*/; do
         [[ ! -d "$proj_dir" ]] && continue
         proj_name=$(basename "$proj_dir")
 
-        local shadow_base="$vault_dir/.cco/profile-state/main/projects/$proj_name"
+        local shadow_base="$vault_dir/.cco/profile-state/$_default_branch/projects/$proj_name"
 
         if [[ -d "$proj_dir/.cco/claude-state" ]]; then
             mkdir -p "$shadow_base/.cco"
@@ -947,7 +950,9 @@ _stash_gitignored_files_main() {
 # Args: vault_dir
 _restore_gitignored_files_main() {
     local vault_dir="$1"
-    local shadow_base="$vault_dir/.cco/profile-state/main"
+    local _default_branch
+    _default_branch=$(_vault_default_branch)
+    local shadow_base="$vault_dir/.cco/profile-state/$_default_branch"
     [[ ! -d "$shadow_base/projects" ]] && return 0
 
     local proj_name
@@ -1175,7 +1180,7 @@ _vault_log_op() {
     local vault_dir="$1"; shift
     local log_file="$vault_dir/.cco/profile-ops.log"
     mkdir -p "$(dirname "$log_file")"
-    echo "$(date -Iseconds) $*" >> "$log_file"
+    echo "$(date +%Y-%m-%dT%H:%M:%S) $*" >> "$log_file"
 }
 
 # List all profile branch names (excludes default branch)
@@ -2166,6 +2171,16 @@ EOF
 
     local vault_dir="$USER_CONFIG_DIR"
 
+    # Auto-resolve framework infrastructure files (D32/D33)
+    _auto_resolve_framework_changes "$vault_dir"
+
+    # Working tree must be clean
+    local status_output
+    status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
+    if [[ -n "$status_output" ]]; then
+        die "You have uncommitted changes. Run 'cco vault save' first."
+    fi
+
     # Check new name doesn't exist
     if git -C "$vault_dir" rev-parse --verify "$new_name" >/dev/null 2>&1; then
         die "Branch '$new_name' already exists"
@@ -2370,37 +2385,38 @@ EOF
             git -C "$vault_dir" commit -q -m "vault: rescue resources from deleted profile '$name'"
         fi
         ok "Moved $moved resource(s) to main"
+
+        # Step 3: Move portable gitignored files from shadow dir while still on default branch.
+        # The rescued projects' tracked files are on this branch — shadow files must land here.
+        if [[ -n "$excl_projects" ]]; then
+            while IFS= read -r proj; do
+                [[ -z "$proj" ]] && continue
+                local shadow_proj="$vault_dir/.cco/profile-state/$name/projects/$proj"
+                [[ ! -d "$shadow_proj" ]] && continue
+                local proj_dir="$vault_dir/projects/$proj"
+
+                if [[ -d "$shadow_proj/.cco/claude-state" ]]; then
+                    mkdir -p "$proj_dir/.cco"
+                    mv "$shadow_proj/.cco/claude-state" "$proj_dir/.cco/claude-state"
+                fi
+                if [[ -f "$shadow_proj/.cco/meta" ]]; then
+                    mkdir -p "$proj_dir/.cco"
+                    mv "$shadow_proj/.cco/meta" "$proj_dir/.cco/meta"
+                fi
+                for pattern in "${_PORTABLE_FILE_PATTERNS[@]}"; do
+                    while IFS= read -r fpath; do
+                        [[ -z "$fpath" ]] && continue
+                        local fname
+                        fname=$(basename "$fpath")
+                        mkdir -p "$proj_dir"
+                        mv "$fpath" "$proj_dir/$fname"
+                    done < <(find "$shadow_proj" -maxdepth 1 -name "$pattern" -type f 2>/dev/null)
+                done
+            done <<< "$excl_projects"
+        fi
     fi
     # Always restore original branch
     git -C "$vault_dir" checkout "$current_branch" -q
-
-    # Step 3: Move portable gitignored files from shadow dir
-    if [[ -n "$excl_projects" ]]; then
-        while IFS= read -r proj; do
-            [[ -z "$proj" ]] && continue
-            local shadow_proj="$vault_dir/.cco/profile-state/$name/projects/$proj"
-            [[ ! -d "$shadow_proj" ]] && continue
-            local proj_dir="$vault_dir/projects/$proj"
-
-            if [[ -d "$shadow_proj/.cco/claude-state" ]]; then
-                mkdir -p "$proj_dir/.cco"
-                mv "$shadow_proj/.cco/claude-state" "$proj_dir/.cco/claude-state"
-            fi
-            if [[ -f "$shadow_proj/.cco/meta" ]]; then
-                mkdir -p "$proj_dir/.cco"
-                mv "$shadow_proj/.cco/meta" "$proj_dir/.cco/meta"
-            fi
-            for pattern in "${_PORTABLE_FILE_PATTERNS[@]}"; do
-                while IFS= read -r fpath; do
-                    [[ -z "$fpath" ]] && continue
-                    local fname
-                    fname=$(basename "$fpath")
-                    mkdir -p "$proj_dir"
-                    mv "$fpath" "$proj_dir/$fname"
-                done < <(find "$shadow_proj" -maxdepth 1 -name "$pattern" -type f 2>/dev/null)
-            done
-        done <<< "$excl_projects"
-    fi
 
     # Step 4: Delete the profile branch
     git -C "$vault_dir" branch -D "$name" -q 2>/dev/null
@@ -2608,6 +2624,8 @@ EOF
     local default_branch
     default_branch=$(_vault_default_branch)
     if [[ "$resource_type" == "pack" && "$current_branch" == "$default_branch" ]]; then
+        # Branch switching required — check no Docker sessions active (D31)
+        _check_no_active_sessions || return 1
         while IFS= read -r pb; do
             [[ -z "$pb" ]] && continue
             if [[ -n "$(git -C "$vault_dir" ls-tree "$pb" -- "$resource_path/" 2>/dev/null)" ]]; then
@@ -2710,7 +2728,12 @@ EOF
             [[ -z "$_branch" ]] && continue
             local _vp
             _vp=$(git -C "$vault_dir" show "$_branch:.vault-profile" 2>/dev/null || true)
-            if [[ -n "$_vp" ]] && echo "$_vp" | grep -qF "$name"; then
+            if [[ -n "$_vp" ]] && echo "$_vp" | awk -v res="$name" '
+                /^  packs:/ { in_list=1; next }
+                /^[^ ]/ { in_list=0 }
+                in_list && /^    - / { sub(/^    - */, ""); if ($0 == res) found=1 }
+                END { exit (found ? 0 : 1) }
+            '; then
                 source_branch="$_branch"
                 break
             fi
@@ -2825,12 +2848,13 @@ EOF
 
     # Step 4: Move portable gitignored files to target shadow directory (projects only)
     if [[ "$resource_type" == "project" ]]; then
+        # Use actual branch name as shadow key (consistent with stash/restore helpers)
         local shadow_base="$vault_dir/.cco/profile-state/$target/projects/$name"
 
         # Determine source shadow directory (files may be stashed there during switch/create)
         local source_shadow_name
         if [[ "$source_branch" == "$default_branch" ]]; then
-            source_shadow_name="main"
+            source_shadow_name="$default_branch"
         else
             source_shadow_name="$source_branch"
         fi
@@ -3075,7 +3099,7 @@ _check_vault() {
     _default_branch=$(_vault_default_branch)
     local _shadow_name
     if [[ "$_current_branch" == "$_default_branch" ]]; then
-        _shadow_name="main"
+        _shadow_name="$_default_branch"
     else
         _shadow_name="$_current_branch"
     fi

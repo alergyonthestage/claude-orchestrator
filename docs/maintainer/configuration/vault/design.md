@@ -414,12 +414,11 @@ This is the key advantage of using a tracked file over a gitignored one.
 
 ### 5.3 `vault profile move project <name> --to <target>`
 
-> **Implementation note**: The actual implementation uses **tracking-only** isolation
-> rather than the original git-level move design described in the initial draft.
-> Resources are NOT `git rm`-ed from the source branch. Instead, `.vault-profile`
-> is updated to declare which resources are exclusive to each profile, and isolation
-> is enforced at sync time via selective staging (`vault sync`, `vault push`, `vault pull`
-> scope their `git add` to the profile's declared paths only).
+> **SUPERSEDED**: This section describes the Sprint 7-Vault tracking-only isolation
+> model, which was the initial implementation. It has since been replaced by
+> **real git-level isolation** where `vault move` physically relocates files via
+> `git rm` on the source branch and `git checkout` on the target branch.
+> See `profile-isolation-design.md` for the current design.
 
 **Move project to a profile (tracking-only):**
 ```

@@ -24,8 +24,8 @@ entries:
     title: "Vault profiles for multi-PC selective sync"
     description: >
       Use vault profiles to sync different project sets to different machines.
-      Create a profile with `cco vault profile create <name>`, add projects
-      with `cco vault profile add project <name>`, and push/pull as usual.
+      Create a profile with `cco vault profile create <name>`, move projects
+      with `cco vault move project <name> <profile>`, and push/pull as usual.
       Shared resources (global config, packs, templates) sync automatically
       across all profiles. Without profiles, the vault works exactly as before.
 
@@ -143,3 +143,19 @@ entries:
       to consult installed docs before writing framework-specific code.
       Run `cco build` to include the managed rule, then `cco llms install` to
       add your first framework docs.
+
+  - id: 11
+    date: "2026-03-26"
+    type: additive
+    title: "Real profile isolation — vault switch changes files on disk"
+    description: >
+      Vault profiles now provide real git-level isolation. `vault switch`
+      changes the files visible on disk — each project exists on exactly one
+      branch. Key changes: `vault sync` renamed to `vault save` (commits +
+      propagates shared resources to all profiles). `vault move project <name>
+      <target>` physically relocates files between branches. `vault remove`
+      deletes from current branch with auto-backup for last-copy scenarios.
+      New profiles start empty — use `vault move` to assign projects.
+      Portable files (secrets.env, session transcripts) are preserved across
+      switches via shadow directories. Tracking-only profiles from Sprint 7
+      must be reset manually (delete branches, re-create with new commands).
