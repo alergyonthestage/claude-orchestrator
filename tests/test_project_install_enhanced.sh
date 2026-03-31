@@ -247,9 +247,10 @@ YAML
     git -C "$work_dir" push -q origin main 2>/dev/null || \
         git -C "$work_dir" push -q origin master 2>/dev/null
 
-    # Non-interactive: should warn about missing path
+    # Non-interactive: should warn about missing path and suggest cco project resolve
     run_cco project install "$bare_dir"
     assert_output_contains "does not exist"
+    assert_output_contains "cco project resolve"
 }
 
 test_install_noninteractive_fails_for_missing_repo_var() {
@@ -294,13 +295,10 @@ YAML
     git -C "$work_dir" push -q origin main 2>/dev/null || \
         git -C "$work_dir" push -q origin master 2>/dev/null
 
-    # Non-interactive: should fail for missing REPO_* variable
-    if run_cco project install "$bare_dir" 2>/dev/null; then
-        echo "ASSERTION FAILED: should fail for missing REPO_* var in non-interactive mode"
-        return 1
-    fi
-    assert_output_contains "REPO_MY_API"
-    assert_output_contains "--var"
+    # Non-interactive: legacy {{REPO_*}} treated as unresolved path — warn, don't abort
+    run_cco project install "$bare_dir"
+    assert_output_contains "does not exist"
+    assert_output_contains "cco project resolve"
 }
 
 test_install_noninteractive_succeeds_with_repo_var() {

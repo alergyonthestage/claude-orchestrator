@@ -395,9 +395,8 @@ _start_resolve_paths() {
                 local url
                 url=$(_get_repo_url "$project_yml" "$repo_name")
 
-                local resolved
-                resolved=$(_resolve_entry "$project_dir" "repos" "$repo_name" "$url")
-                local rc=$?
+                local resolved rc=0
+                resolved=$(_resolve_entry "$project_dir" "repos" "$repo_name" "$url") || rc=$?
 
                 if [[ $rc -eq 0 && -n "$resolved" ]]; then
                     _update_yml_path "$project_yml" "repos" "name" "$repo_name" "path" "$resolved"
@@ -422,9 +421,8 @@ _start_resolve_paths() {
             local target="${rest%%:*}"
 
             if [[ "$source" == "@local" ]]; then
-                local resolved
-                resolved=$(_resolve_entry "$project_dir" "extra_mounts" "$target" "")
-                local rc=$?
+                local resolved rc=0
+                resolved=$(_resolve_entry "$project_dir" "extra_mounts" "$target" "") || rc=$?
 
                 if [[ $rc -eq 0 && -n "$resolved" ]]; then
                     _update_yml_path "$project_yml" "extra_mounts" "target" "$target" "source" "$resolved"

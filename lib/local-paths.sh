@@ -58,7 +58,7 @@ _local_paths_set() {
     fi
 
     # Check if section and key exist
-    local has_section has_key
+    local has_section has_key=""
     has_section=$(awk -v s="$section" '$0 == s":" { print "yes"; exit }' "$file")
     if [[ "$has_section" == "yes" ]]; then
         has_key=$(awk -v section="$section" -v key="$key" '
@@ -270,7 +270,13 @@ _sanitize_project_paths() {
 
         # repos: section — replace path: and inject url:
         /^repos:/ { in_repos=1; in_mounts=0; print; next }
-        in_repos && /^[^ #]/ { in_repos=0; pending_url="" }
+        in_repos && /^[^ #]/ {
+            if (pending_url != "") {
+                print "    url: " pending_url
+                pending_url = ""
+            }
+            in_repos=0
+        }
 
         # If we have a pending url to inject, check if next line is url:
         in_repos && pending_url != "" {
@@ -788,15 +794,18 @@ _resolve_installed_paths() {
                 local url
                 url=$(_get_repo_url "$project_yml" "$repo_name")
 
-                local resolved
-                resolved=$(_resolve_entry "$project_dir" "repos" "$repo_name" "$url")
-                local rc=$?
+                local resolved rc=0
+                resolved=$(_resolve_entry "$project_dir" "repos" "$repo_name" "$url") || rc=$?
 
                 if [[ $rc -eq 0 && -n "$resolved" ]]; then
                     _update_yml_path "$project_yml" "repos" "name" "$repo_name" "path" "$resolved"
                     resolved_repos+=("$repo_name")
                 elif [[ $rc -eq 2 ]]; then
-                    die "Installation aborted."
+                    if [[ ! -t 0 ]]; then
+                        warn "Repository '$repo_name' path does not exist — run 'cco project resolve' to configure"
+                    else
+                        die "Installation aborted."
+                    fi
                 fi
             fi
         done <<< "$repos"
@@ -813,14 +822,17 @@ _resolve_installed_paths() {
             local target="${rest%%:*}"
 
             if [[ "$source" == "@local" ]]; then
-                local resolved
-                resolved=$(_resolve_entry "$project_dir" "extra_mounts" "$target" "")
-                local rc=$?
+                local resolved rc=0
+                resolved=$(_resolve_entry "$project_dir" "extra_mounts" "$target" "") || rc=$?
 
                 if [[ $rc -eq 0 && -n "$resolved" ]]; then
                     _update_yml_path "$project_yml" "extra_mounts" "target" "$target" "source" "$resolved"
                 elif [[ $rc -eq 2 ]]; then
-                    die "Installation aborted."
+                    if [[ ! -t 0 ]]; then
+                        warn "Mount '$target' path does not exist — run 'cco project resolve' to configure"
+                    else
+                        die "Installation aborted."
+                    fi
                 fi
             fi
         done <<< "$mounts"
