@@ -140,7 +140,7 @@ _update_global() {
                     do_vault="${do_vault:-y}"
                 fi
                 if [[ "$do_vault" =~ ^[Yy] ]]; then
-                    cmd_vault_sync "pre-migration snapshot" </dev/tty >/dev/tty 2>/dev/tty || warn "Vault snapshot failed, continuing..."
+                    cmd_vault_save "pre-migration snapshot" </dev/tty >/dev/tty 2>/dev/tty || warn "Vault snapshot failed, continuing..."
                     vault_synced_pre_migration=true
                 fi
             fi
@@ -219,7 +219,7 @@ _update_global() {
                         do_vault="${do_vault:-y}"
                     fi
                     if [[ "$do_vault" =~ ^[Yy] ]]; then
-                        cmd_vault_sync "pre-update snapshot" </dev/tty >/dev/tty 2>/dev/tty || warn "Vault snapshot failed, continuing..."
+                        cmd_vault_save "pre-update snapshot" </dev/tty >/dev/tty 2>/dev/tty || warn "Vault snapshot failed, continuing..."
                         [[ "$no_backup" != "true" ]] && info "Vault snapshot created. You can use --no-backup to skip .bak files."
                     fi
                 fi
@@ -269,7 +269,7 @@ _update_global() {
         # Add special files (language.md) to manifest entries
         local special_entries=""
         local sf
-        for sf in "${GLOBAL_SPECIAL_FILES[@]}"; do
+        for sf in ${GLOBAL_SPECIAL_FILES[@]+"${GLOBAL_SPECIAL_FILES[@]}"}; do
             if [[ -f "$installed_dir/$sf" ]]; then
                 local sh; sh=$(_file_hash "$installed_dir/$sf")
                 special_entries+="${sf}	${sh}"$'\n'

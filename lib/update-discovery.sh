@@ -21,15 +21,15 @@ _collect_file_changes() {
             local rel="${fpath#$defaults_dir/}"
             # Skip untracked and special files
             if [[ "$scope" == "global" ]]; then
-                if _in_array "$rel" "${GLOBAL_UNTRACKED_FILES[@]}"; then
+                if [[ ${#GLOBAL_UNTRACKED_FILES[@]} -gt 0 ]] && _in_array "$rel" "${GLOBAL_UNTRACKED_FILES[@]}"; then
                     continue
                 fi
                 # Special files (language.md) are regenerated separately
-                if _in_array "$rel" "${GLOBAL_SPECIAL_FILES[@]}"; then
+                if [[ ${#GLOBAL_SPECIAL_FILES[@]} -gt 0 ]] && _in_array "$rel" "${GLOBAL_SPECIAL_FILES[@]}"; then
                     continue
                 fi
             elif [[ "$scope" == "project" ]]; then
-                if _in_array "$rel" "${PROJECT_UNTRACKED_FILES[@]}"; then
+                if [[ ${#PROJECT_UNTRACKED_FILES[@]} -gt 0 ]] && _in_array "$rel" "${PROJECT_UNTRACKED_FILES[@]}"; then
                     continue
                 fi
             fi
@@ -130,10 +130,10 @@ _collect_file_changes() {
                 continue
             fi
             # Skip untracked files
-            if [[ "$scope" == "global" ]] && _in_array "$rel" "${GLOBAL_UNTRACKED_FILES[@]}"; then
+            if [[ "$scope" == "global" && ${#GLOBAL_UNTRACKED_FILES[@]} -gt 0 ]] && _in_array "$rel" "${GLOBAL_UNTRACKED_FILES[@]}"; then
                 continue
             fi
-            if [[ "$scope" == "project" ]] && _in_array "$rel" "${PROJECT_UNTRACKED_FILES[@]}"; then
+            if [[ "$scope" == "project" && ${#PROJECT_UNTRACKED_FILES[@]} -gt 0 ]] && _in_array "$rel" "${PROJECT_UNTRACKED_FILES[@]}"; then
                 continue
             fi
             printf 'REMOVED\t%s\n' "$rel"

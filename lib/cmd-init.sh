@@ -95,7 +95,7 @@ EOF
             find . -type f ! -name 'meta' ! -path './.cco/*' | sed 's|^\./||' | sort | while IFS= read -r rel; do
                 # Skip untracked files
                 local skip=false
-                for uf in "${GLOBAL_UNTRACKED_FILES[@]}"; do
+                for uf in ${GLOBAL_UNTRACKED_FILES[@]+"${GLOBAL_UNTRACKED_FILES[@]}"}; do
                     [[ "$rel" == "$uf" ]] && skip=true && break
                 done
                 $skip && continue
