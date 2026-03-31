@@ -786,3 +786,55 @@ Currently `url:` is only supported on repo entries. Extra mounts could gain
 a similar field for remote sources (e.g., a git repo containing API specs).
 The resolution prompt would offer clone for mounts too. Low priority — mounts
 are typically local-only resources.
+
+---
+
+## 10. Post-Implementation Fixes (2026-03-31)
+
+Issues discovered during first real-world usage of the local-paths feature.
+
+### 10.1 AWK newline in -v (macOS BWK awk)
+
+**Problem**: `_sanitize_project_paths` and `_resolve_project_paths` passed
+multiline strings to AWK via `-v url_map="$url_map"`. macOS BWK awk does
+not support literal newlines in `-v` assignments, causing:
+
+```
+awk: newline in string claude-orchestrator=... at source line 1
+```
+
+**Fix**: Replace newline (`$'\n'`) with ASCII Record Separator (`$'\036'`)
+as delimiter for `url_map`, `repo_map`, and `mount_map`. Update AWK
+`split()` calls to use `"\036"`.
+
+### 10.2 vault save "nothing to commit" after extraction
+
+**Problem**: After `_extract_local_paths`, project.yml files revert to
+committed `@local` state. If no other files changed, `git commit` fails
+with "nothing to commit", crashing cco with exit 2.
+
+The change count displayed before the prompt includes local-path
+differences (real paths vs @local), which are virtual — they resolve to
+nothing after extraction.
+
+**Fix**: After `git add -A`, check `git diff --cached --quiet`. If empty,
+restore paths and return cleanly with "Nothing to commit — vault is up
+to date".
+
+### 10.3 Dirty checks block vault operations
+
+**Problem**: All vault commands that require a clean working tree
+(`vault switch`, `profile create/rename/delete/move/remove`, `vault push`)
+use `git status --porcelain` to detect uncommitted changes. After the
+first `vault save`, project.yml files in the working copy have real paths
+while the committed version has `@local` markers — they always appear
+"modified". This blocks all profile operations.
+
+**Design gap**: The design (§8.2) correctly states "working copy restored
+with real paths" but did not address the implication: `git status` always
+reports modifications, breaking all dirty checks.
+
+**Fix**: Add `_vault_has_real_changes()` helper that temporarily extracts
+local paths (sanitizing project.yml), checks `git status`, and restores.
+Returns true only if there are REAL changes beyond local-path differences.
+Applied to all 7 dirty check points in `cmd-vault.sh`.
