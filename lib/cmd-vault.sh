@@ -52,6 +52,12 @@ packs/*/.cco/install-tmp/
 
 # Profile operation log
 .cco/profile-ops.log
+
+# Machine-specific local path mappings
+projects/*/.cco/local-paths.yml
+
+# Temporary backup during vault save path extraction
+projects/*/.cco/project.yml.pre-save
 '
 
 # ── Secret patterns for pre-commit scan ───────────────────────────────
@@ -240,10 +246,12 @@ EOF
         message="snapshot $(date +%Y-%m-%d)"
     fi
 
-    # Step 1: Stage and commit on current branch
+    # Step 1: Extract local paths, stage, commit, then restore
     # With real isolation, git add -A is safe on any branch (D20)
+    _extract_local_paths "$vault_dir"
     git -C "$vault_dir" add -A
     git -C "$vault_dir" commit -q -m "vault: $message"
+    _restore_local_paths "$vault_dir"
 
     local current_branch
     current_branch=$(git -C "$vault_dir" rev-parse --abbrev-ref HEAD 2>/dev/null)
@@ -634,6 +642,9 @@ EOF
     if [[ -n "$profile" ]]; then
         _sync_shared_from_main "$vault_dir" "$branch"
     fi
+
+    # Step 5: Resolve @local markers from local-paths.yml (best-effort, silent)
+    _resolve_all_local_paths "$vault_dir"
 }
 
 # Validate .vault-profile against actual branch content
@@ -850,6 +861,12 @@ _stash_gitignored_files() {
             mv "$proj_dir/.cco/meta" "$shadow_base/.cco/meta"
         fi
 
+        # .cco/local-paths.yml (machine-specific path mappings)
+        if [[ -f "$proj_dir/.cco/local-paths.yml" ]]; then
+            mkdir -p "$shadow_base/.cco"
+            mv "$proj_dir/.cco/local-paths.yml" "$shadow_base/.cco/local-paths.yml"
+        fi
+
         # Portable secret files (secrets.env, *.env, *.key, *.pem)
         for pattern in "${_PORTABLE_FILE_PATTERNS[@]}"; do
             # Use find for glob matching at project root level only
@@ -896,6 +913,12 @@ _restore_gitignored_files() {
             mv "$shadow_proj/.cco/meta" "$proj_dir/.cco/meta"
         fi
 
+        # .cco/local-paths.yml (machine-specific path mappings)
+        if [[ -f "$shadow_proj/.cco/local-paths.yml" ]]; then
+            mkdir -p "$proj_dir/.cco"
+            mv "$shadow_proj/.cco/local-paths.yml" "$proj_dir/.cco/local-paths.yml"
+        fi
+
         # Portable secret files
         for pattern in "${_PORTABLE_FILE_PATTERNS[@]}"; do
             while IFS= read -r fpath; do
@@ -934,6 +957,10 @@ _stash_gitignored_files_main() {
             mkdir -p "$shadow_base/.cco"
             mv "$proj_dir/.cco/meta" "$shadow_base/.cco/meta"
         fi
+        if [[ -f "$proj_dir/.cco/local-paths.yml" ]]; then
+            mkdir -p "$shadow_base/.cco"
+            mv "$proj_dir/.cco/local-paths.yml" "$shadow_base/.cco/local-paths.yml"
+        fi
         for pattern in "${_PORTABLE_FILE_PATTERNS[@]}"; do
             while IFS= read -r fpath; do
                 [[ -z "$fpath" ]] && continue
@@ -968,6 +995,10 @@ _restore_gitignored_files_main() {
         if [[ -f "$shadow_proj/.cco/meta" ]]; then
             mkdir -p "$proj_dir/.cco"
             mv "$shadow_proj/.cco/meta" "$proj_dir/.cco/meta"
+        fi
+        if [[ -f "$shadow_proj/.cco/local-paths.yml" ]]; then
+            mkdir -p "$proj_dir/.cco"
+            mv "$shadow_proj/.cco/local-paths.yml" "$proj_dir/.cco/local-paths.yml"
         fi
         for pattern in "${_PORTABLE_FILE_PATTERNS[@]}"; do
             while IFS= read -r fpath; do
@@ -2108,6 +2139,9 @@ EOF
             _restore_gitignored_files "$vault_dir" "$target_profile"
         fi
     fi
+
+    # Step 7: Resolve @local markers from restored local-paths.yml
+    _resolve_all_local_paths "$vault_dir"
 
     # Log operation
     _vault_log_op "$vault_dir" "SWITCH ${current_branch}→${name}"
