@@ -182,10 +182,26 @@ EOF
 
     local vault_dir="$USER_CONFIG_DIR"
 
-    # Check for changes
+    # Quick check — no changes at all?
+    local raw_status
+    raw_status=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
+    if [[ -z "$raw_status" ]]; then
+        ok "Nothing to commit — vault is up to date"
+        return 0
+    fi
+
+    # Extract local paths BEFORE counting so the summary reflects real
+    # changes only, not virtual diffs (real paths vs committed @local).
+    # Trap ensures restore even on error; abort paths restore explicitly.
+    trap '_restore_local_paths "$vault_dir"' ERR
+    _extract_local_paths "$vault_dir"
+
+    # Re-check after extraction — virtual-only changes disappear
     local status_output
     status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
     if [[ -z "$status_output" ]]; then
+        trap - ERR
+        _restore_local_paths "$vault_dir"
         ok "Nothing to commit — vault is up to date"
         return 0
     fi
@@ -215,6 +231,8 @@ EOF
     done <<< "$status_output"
 
     if [[ ${#secret_files[@]} -gt 0 ]]; then
+        trap - ERR
+        _restore_local_paths "$vault_dir"
         error "Secret files detected — aborting vault save"
         for f in "${secret_files[@]}"; do
             echo "  - $f" >&2
@@ -225,7 +243,7 @@ EOF
         return 1
     fi
 
-    # Categorize changes
+    # Categorize changes (post-extraction — accurate counts)
     local packs_count=0 projects_count=0 global_count=0 templates_count=0 other_count=0
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
@@ -252,6 +270,8 @@ EOF
 
     if $dry_run; then
         echo ""
+        trap - ERR
+        _restore_local_paths "$vault_dir"
         ok "Dry run complete — no changes committed"
         return 0
     fi
@@ -263,6 +283,8 @@ EOF
             local reply
             read -r reply
             if [[ "$reply" =~ ^[Nn]$ ]]; then
+                trap - ERR
+                _restore_local_paths "$vault_dir"
                 info "Aborted"
                 return 0
             fi
@@ -274,22 +296,9 @@ EOF
         message="snapshot $(date +%Y-%m-%d)"
     fi
 
-    # Step 1: Extract local paths, stage, commit, then restore
+    # Step 1: Stage and commit (paths already extracted above)
     # With real isolation, git add -A is safe on any branch (D20)
-    # Trap set BEFORE extraction so restore runs even on extract failure
-    trap '_restore_local_paths "$vault_dir"' ERR
-    _extract_local_paths "$vault_dir"
     git -C "$vault_dir" add -A
-
-    # After extraction, local-paths-only changes become no-ops (project.yml
-    # reverts to committed @local state). Handle gracefully instead of failing.
-    if git -C "$vault_dir" diff --cached --quiet 2>/dev/null; then
-        trap - ERR
-        _restore_local_paths "$vault_dir"
-        ok "Nothing to commit — vault is up to date"
-        return 0
-    fi
-
     git -C "$vault_dir" commit -q -m "vault: $message"
     trap - ERR
     _restore_local_paths "$vault_dir"
