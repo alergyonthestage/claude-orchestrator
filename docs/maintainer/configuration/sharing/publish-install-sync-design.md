@@ -422,9 +422,10 @@ cco project publish myapp my-remote
   │     Exclude matching files from publish set
   │     Report: "Excluding N files matching .cco/publish-ignore"
   │
-  ├─ 5. REVERSE-TEMPLATE [existing]
-  │     Replace local paths with {{VAR}} placeholders
-  │     Already implemented in cmd-project.sh
+  ├─ 5. PATH SANITIZATION [updated]
+  │     Replace local paths with @local markers (repos + extra_mounts)
+  │     Inject url: from git remotes for repos
+  │     Supersedes _reverse_template_repos() — see local-path-resolution-design.md
   │
   ├─ 6. DIFF REVIEW [interactive]
   │     If previous published version exists (.cco/source has publish_commit):

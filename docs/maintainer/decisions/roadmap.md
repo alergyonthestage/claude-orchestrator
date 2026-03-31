@@ -25,20 +25,21 @@
 
 Features are prioritized by impact for third-party users adopting claude-orchestrator.
 
-### Prioritization Notes (updated 2026-03-19)
+### Prioritization Notes (updated 2026-03-31)
 
 **Completed**: RF-1→4, FI-2, FI-5, FI-7, FI-8, Sprint 5c, Sprint 6 Phase A+B, Bugfix B5-B7, UX Improvements P1-3, Minor Fixes batch, llms.txt, Profile Isolation Review.
 
-**Next**: Quick wins (FI-4, #10), AI-assisted merge (P4).
+**Next**: #LP local path resolution (design ready), then FI-4, #10.
 
-**Then**: Security (Sprint 6C), E2E testing (Sprint 8), Linux OAuth (Sprint 9).
+**Then**: AI-assisted merge (P4), Security (Sprint 6C), E2E testing (Sprint 8), Linux OAuth (Sprint 9).
 
 **Later**: Worktree isolation (Sprint 10), Pack Inheritance (#9), StatusLine (#10b), RAG (Sprint 12).
 
 | Category | Items | Effort | Benefit |
 |----------|-------|--------|---------|
-| **Quick wins (priority 1)** | FI-4 model config, #10 project edit | Low-Medium | UX improvement |
-| **AI-merge (priority 2)** | Phase 4 AI-assisted merge | Low-Medium | Update UX quality |
+| **#LP local paths (priority 1)** | Unified path portability — design approved | Medium | Cross-PC usability, publish fix |
+| **Quick wins (priority 2)** | FI-4 model config, #10 project edit | Low-Medium | UX improvement |
+| **AI-merge (priority 3)** | Phase 4 AI-assisted merge | Low-Medium | Update UX quality |
 | **Security (priority 3)** | Sprint 6C network hardening | Medium-High | Required for production/open-source |
 | **Quality (priority 4)** | Sprint 8 E2E tests | Medium | Prerequisite for Linux onboarding |
 | **Onboarding (priority 5)** | Sprint 9 Linux OAuth | Medium | Pre-open-source requirement |
@@ -49,6 +50,7 @@ Features are prioritized by impact for third-party users adopting claude-orchest
 graph LR
     DONE["✅ Completed<br/>Sprint 1-5c, Sprint 6+10,<br/>Sprint 6b, ADR-13,<br/>Sprint 7-Vault + Real Isolation,<br/>llms.txt, FI-7 Config Sync,<br/>RF-1→4, FI-2, FI-5, FI-8,<br/>Sprint 6 Phase A+B,<br/>Bugfix #B1-#B7,<br/>UX Improvements P1-3,<br/>Minor Fixes"]
 
+    LP["#LP Local Paths<br/>Unified path portability"]
     QW["Quick Wins<br/>#FI-4 model config<br/>#cco project edit"]
     AIM["AI-Assisted Merge<br/>#Phase 4"]
     S6S["Sprint 6C-Security<br/>#Network Hardening<br/>#Squid proxy"]
@@ -57,7 +59,8 @@ graph LR
     S10["Sprint 10+<br/>#Worktree isolation<br/>#Pack inheritance<br/>#StatusLine"]
     S12R["Sprint 12-RAG<br/>#Project RAG"]
 
-    DONE --> QW
+    DONE --> LP
+    LP --> QW
     QW --> AIM
     AIM --> S6S
     S6S --> S8E
@@ -86,6 +89,19 @@ Add `model:` field to `project.yml`, passed to `claude --model` at launch.
 Open project.yml in `$EDITOR` and regenerate docker-compose.yml after save.
 
 **Effort**: Low.
+
+#### #LP Local Path Resolution (unified path portability)
+
+Unify path handling across vault push/pull AND publish/install. All
+machine-specific paths use `@local` markers (replacing `{{REPO_*}}` for
+publish). `.cco/local-paths.yml` (gitignored) stores per-machine mappings.
+`cco start` resolves with interactive prompt + auto-clone from `url:`.
+Covers both repos AND extra_mounts (publish currently ignores mounts).
+New `cco project resolve` command. New shared `lib/local-paths.sh` module
+supersedes `_reverse_template_repos()` and `_resolve_repo_entries()`.
+
+**Docs**: [design](../configuration/vault/local-path-resolution-design.md)
+**Effort**: Medium.
 
 ---
 

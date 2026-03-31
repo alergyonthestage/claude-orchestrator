@@ -101,11 +101,12 @@ browser:
 | `name` | ✅ | string | — | Project identifier |
 | `description` | ❌ | string | `""` | Human-readable description |
 | `repos` | ❌ | list | `[]` | Repositories to mount (empty allowed; a warning is shown at start) |
-| `repos[].path` | ✅ | string | — | Absolute path on host (~ expanded) |
-| `repos[].name` | ✅ | string | — | Directory name in /workspace/ |
+| `repos[].path` | ✅ | string | — | Absolute path on host (~ expanded). In portable copies (vault remote, published templates), this is `@local` — resolved from `.cco/local-paths.yml` at start time. See [local path resolution](../maintainer/configuration/vault/local-path-resolution-design.md) |
+| `repos[].name` | ✅ | string | — | Directory name in /workspace/ (also serves as portable identifier for cross-PC path resolution) |
+| `repos[].url` | ❌ | string | — | Git remote URL (auto-injected by vault save and publish). Portable metadata — committed/published. Used by `cco start` to offer auto-clone when path is missing |
 | `extra_mounts` | ❌ | list | `[]` | Additional volume mounts |
-| `extra_mounts[].source` | ✅ | string | — | Host path |
-| `extra_mounts[].target` | ✅ | string | — | Container path |
+| `extra_mounts[].source` | ✅ | string | — | Host path (may be `@local` in portable copies). See [local path resolution](../maintainer/configuration/vault/local-path-resolution-design.md) |
+| `extra_mounts[].target` | ✅ | string | — | Container path (also serves as identifier for cross-PC path resolution) |
 | `extra_mounts[].readonly` | ❌ | bool | `true` | Mount as read-only (secure default; set `false` explicitly for writable mounts) |
 | `packs` | ❌ | list | `[]` | Knowledge packs to activate (see Knowledge Packs section below) |
 | `llms` | ❌ | list | `[]` | LLMs.txt framework docs to include (see LLMs.txt section below) |

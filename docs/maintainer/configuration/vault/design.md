@@ -13,6 +13,9 @@
 > This document is the authoritative reference for Sprint 7-Vault implementation.
 > It covers vault profiles, shared resource sync, memory separation, and memory
 > policy. All design decisions are justified in the analysis document.
+>
+> **Cross-PC path portability** (machine-specific repo paths in `project.yml`)
+> is covered in a separate design: `local-path-resolution-design.md`.
 
 ---
 

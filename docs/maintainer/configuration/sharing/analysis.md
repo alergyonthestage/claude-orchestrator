@@ -306,10 +306,19 @@ When shared, these paths don't exist on the recipient's machine.
 - Repo paths could use template variables: `path: "{{REPO_BACKEND_API}}"`
 - But the recipient doesn't know *what* repo to clone or *where* to find it
 
-**Decision**: add optional `url:` field to repo entries in templates. During
-`project publish`, real paths are reverse-templated and URLs are inferred from
-`git remote`. During `project install`, URLs are shown as hints and auto-clone
-is offered.
+**Original decision**: add optional `url:` field to repo entries in templates.
+During `project publish`, real paths are reverse-templated and URLs are inferred
+from `git remote`. During `project install`, URLs are shown as hints and
+auto-clone is offered.
+
+> **SUPERSEDED by unified design**: The publish/install path handling has been
+> unified with vault push/pull into a single mechanism. Both scenarios now use
+> `@local` markers (replacing `{{REPO_*}}` template variables for publish) and
+> `.cco/local-paths.yml` for machine-specific path storage. The `url:` field is
+> retained and extended to vault save as well.
+>
+> See `../vault/local-path-resolution-design.md` for the complete unified design.
+> Legacy `{{REPO_*}}` templates remain supported for backward compatibility.
 
 ### 10.2 Knowledge packs with external source
 
