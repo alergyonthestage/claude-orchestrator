@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # lib/cmd-project-install.sh — Install projects from remote Config Repos
 #
-# Provides: cmd_project_install(), _resolve_repo_entries()
+# Provides: cmd_project_install()
 # Dependencies: colors.sh, utils.sh, yaml.sh, remote.sh, manifest.sh, paths.sh
 # NOTE: _resolve_template_vars() is defined in cmd-project-create.sh
 # Globals: PROJECTS_DIR, PACKS_DIR, USER_CONFIG_DIR

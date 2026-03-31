@@ -2,8 +2,7 @@
 # lib/cmd-project-publish.sh — Publish projects to Config Repos
 #
 # Provides: cmd_project_publish(), _publish_per_file_review(),
-#           _copy_project_for_publish(), _reverse_template_repos(),
-#           _publish_pack_to_tmpdir()
+#           _copy_project_for_publish(), _publish_pack_to_tmpdir()
 # Dependencies: colors.sh, utils.sh, yaml.sh, remote.sh, manifest.sh, paths.sh, update.sh
 # Globals: PROJECTS_DIR, PACKS_DIR
 

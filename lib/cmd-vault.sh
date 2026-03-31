@@ -248,9 +248,12 @@ EOF
 
     # Step 1: Extract local paths, stage, commit, then restore
     # With real isolation, git add -A is safe on any branch (D20)
+    # Trap ensures restore runs even if git add/commit fails (review #2)
     _extract_local_paths "$vault_dir"
+    trap '_restore_local_paths "$vault_dir"' ERR
     git -C "$vault_dir" add -A
     git -C "$vault_dir" commit -q -m "vault: $message"
+    trap - ERR
     _restore_local_paths "$vault_dir"
 
     local current_branch

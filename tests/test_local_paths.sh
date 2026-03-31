@@ -23,7 +23,7 @@ test_local_paths_set_creates_file() {
 
     assert_file_exists "$lp"
     assert_file_contains "$lp" "repos:"
-    assert_file_contains "$lp" "backend-api: ~/Projects/backend-api"
+    assert_file_contains "$lp" 'backend-api: "~/Projects/backend-api"'
 }
 
 test_local_paths_get_reads_value() {
@@ -333,8 +333,8 @@ YAML
 
     # Verify: local-paths.yml created
     assert_file_exists "$proj/.cco/local-paths.yml"
-    assert_file_contains "$proj/.cco/local-paths.yml" "api: ~/Projects/myapp-api"
-    assert_file_contains "$proj/.cco/local-paths.yml" "web: ~/dev/myapp-web"
+    assert_file_contains "$proj/.cco/local-paths.yml" 'api: "~/Projects/myapp-api"'
+    assert_file_contains "$proj/.cco/local-paths.yml" 'web: "~/dev/myapp-web"'
 
     # Restore (post-commit)
     _restore_local_paths "$vault_dir"
@@ -398,7 +398,7 @@ YAML
     # After extract, the backup should be there (because real paths were extracted again)
     # and project.yml should be sanitized with the real path extracted
     assert_file_exists "$proj/.cco/local-paths.yml"
-    assert_file_contains "$proj/.cco/local-paths.yml" "api: ~/real-path"
+    assert_file_contains "$proj/.cco/local-paths.yml" 'api: "~/real-path"'
 }
 
 # ── _resolve_all_local_paths ─────────────────────────────────────────

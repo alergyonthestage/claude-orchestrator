@@ -52,7 +52,7 @@ _local_paths_set() {
             echo "# Do not edit manually; use 'cco project resolve <name>' to update paths"
             echo ""
             echo "${section}:"
-            echo "  ${key}: ${value}"
+            echo "  ${key}: \"${value}\""
         } > "$file"
         return 0
     fi
@@ -78,6 +78,8 @@ _local_paths_set() {
 
     if [[ "$has_key" == "yes" ]]; then
         # Update existing entry
+        local tmpf
+        tmpf=$(mktemp "${file}.XXXXXX")
         awk -v section="$section" -v key="$key" -v value="$value" '
             $0 == section":" { in_section=1; print; next }
             in_section && /^[^ #]/ { in_section=0 }
@@ -88,32 +90,34 @@ _local_paths_set() {
                 if (colon > 0) {
                     k = substr(line, 1, colon - 1)
                     if (k == key) {
-                        print "  " key ": " value
+                        print "  " key ": \"" value "\""
                         next
                     }
                 }
             }
             { print }
-        ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+        ' "$file" > "$tmpf" && mv "$tmpf" "$file"
     elif [[ "$has_section" == "yes" ]]; then
         # Append entry to existing section (before next section or EOF)
+        local tmpf2
+        tmpf2=$(mktemp "${file}.XXXXXX")
         awk -v section="$section" -v key="$key" -v value="$value" '
             $0 == section":" { in_section=1; print; next }
             in_section && /^[^ #]/ {
                 # End of section — insert before next section
-                print "  " key ": " value
+                print "  " key ": \"" value "\""
                 in_section=0
                 inserted=1
             }
             { print }
-            END { if (in_section && !inserted) print "  " key ": " value }
-        ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+            END { if (in_section && !inserted) print "  " key ": \"" value "\"" }
+        ' "$file" > "$tmpf2" && mv "$tmpf2" "$file"
     else
         # Append new section
         {
             echo ""
             echo "${section}:"
-            echo "  ${key}: ${value}"
+            echo "  ${key}: \"${value}\""
         } >> "$file"
     fi
 }
@@ -169,7 +173,7 @@ _prompt_for_path() {
                     warn "Path '$expanded' does not exist"
                     return 1
                 fi
-                echo "$reply"
+                echo "$expanded"
                 return 0
             fi
             local clone_target="${suggested:-$HOME/Projects/$name}"
@@ -197,7 +201,7 @@ _prompt_for_path() {
                 warn "Path '$expanded' does not exist"
                 return 1
             fi
-            echo "$reply"
+            echo "$expanded"
             return 0
             ;;
         [Ss])
@@ -221,6 +225,8 @@ _prompt_for_path() {
 # Usage: _sanitize_project_paths <project_yml>
 _sanitize_project_paths() {
     local yml_file="$1"
+    local tmpf
+    tmpf=$(mktemp "${yml_file}.XXXXXX")
 
     # Capture original repo info for URL extraction
     local orig_repos
@@ -246,6 +252,8 @@ _sanitize_project_paths() {
     fi
 
     # Replace paths with @local and inject url: fields
+    # Uses a pending_url flag instead of nested getline to avoid
+    # consuming the next entry's "- path:" line (see review #1).
     awk -v url_map="$url_map" '
         BEGIN {
             n = split(url_map, entries, "\n")
@@ -257,11 +265,28 @@ _sanitize_project_paths() {
                     urls[k] = substr(entries[i], eq + 1)
                 }
             }
+            pending_url = ""
         }
 
         # repos: section — replace path: and inject url:
         /^repos:/ { in_repos=1; in_mounts=0; print; next }
-        in_repos && /^[^ #]/ { in_repos=0 }
+        in_repos && /^[^ #]/ { in_repos=0; pending_url="" }
+
+        # If we have a pending url to inject, check if next line is url:
+        in_repos && pending_url != "" {
+            if ($0 ~ /^    url:/) {
+                # Existing url: line — replace with our value
+                print "    url: " pending_url
+                pending_url = ""
+                next
+            } else {
+                # Not a url: line — inject url before this line
+                print "    url: " pending_url
+                pending_url = ""
+                # Fall through to process this line normally
+            }
+        }
+
         in_repos && /^  - path:/ {
             saved=$0; getline
             if ($0 ~ /^    name:/) {
@@ -281,21 +306,9 @@ _sanitize_project_paths() {
                 } else {
                     print "  - path: \"@local\""
                     print $0
-                    # Inject url: if available and not already present
+                    # Schedule url injection for next iteration
                     if (name_line in urls) {
-                        # Peek at next line for existing url:
-                        if ((getline next_line) > 0) {
-                            if (next_line ~ /^    url:/) {
-                                # url: already exists — update it
-                                print "    url: " urls[name_line]
-                            } else {
-                                # No url: — inject it, then print the peeked line
-                                print "    url: " urls[name_line]
-                                print next_line
-                            }
-                        } else {
-                            print "    url: " urls[name_line]
-                        }
+                        pending_url = urls[name_line]
                     }
                 }
             } else {
@@ -306,7 +319,7 @@ _sanitize_project_paths() {
         }
 
         # extra_mounts: section — replace source:
-        /^extra_mounts:/ { in_mounts=1; in_repos=0; print; next }
+        /^extra_mounts:/ { in_mounts=1; in_repos=0; pending_url=""; print; next }
         in_mounts && /^[^ #]/ { in_mounts=0 }
         in_mounts && /^  - source:/ {
             # Check if already @local
@@ -322,7 +335,11 @@ _sanitize_project_paths() {
         }
 
         { print }
-    ' "$yml_file" > "$yml_file.tmp" && mv "$yml_file.tmp" "$yml_file"
+        END {
+            # Flush any remaining pending url (last entry in file)
+            if (pending_url != "") print "    url: " pending_url
+        }
+    ' "$yml_file" > "$tmpf" && mv "$tmpf" "$yml_file"
 }
 
 # ── Resolve: restore @local → real paths ─────────────────────────────
@@ -334,6 +351,7 @@ _resolve_project_paths() {
     local project_dir="$1"
     local project_yml="$project_dir/project.yml"
     local local_paths="$project_dir/.cco/local-paths.yml"
+    local tmpf
 
     [[ ! -f "$project_yml" ]] && return 0
     [[ ! -f "$local_paths" ]] && return 0
@@ -386,6 +404,7 @@ _resolve_project_paths() {
     [[ -n "$mounts_content" ]] && mount_map="$mounts_content"
 
     # Apply substitutions to project.yml
+    tmpf=$(mktemp "${project_yml}.XXXXXX")
     awk -v repo_map="$repo_map" -v mount_map="$mount_map" '
         BEGIN {
             # Parse repo map
@@ -459,7 +478,7 @@ _resolve_project_paths() {
         }
 
         { print }
-    ' "$project_yml" > "$project_yml.tmp" && mv "$project_yml.tmp" "$project_yml"
+    ' "$project_yml" > "$tmpf" && mv "$tmpf" "$project_yml"
 }
 
 # ── Single entry resolution ──────────────────────────────────────────
@@ -648,7 +667,13 @@ _extract_local_paths() {
             cp "$project_yml" "$backup"
 
             # Write current paths to local-paths.yml
-            _write_local_paths "$project_yml" "$local_paths"
+            # If this fails, restore from backup to avoid path loss (review #5)
+            if ! _write_local_paths "$project_yml" "$local_paths"; then
+                warn "Failed to save local paths for $(basename "$project_dir"), restoring backup"
+                cp "$backup" "$project_yml"
+                rm -f "$backup"
+                continue
+            fi
 
             # Sanitize project.yml (replace paths with @local)
             _sanitize_project_paths "$project_yml"
@@ -696,6 +721,8 @@ _resolve_all_local_paths() {
 # path_field: "path" or "source"
 _update_yml_path() {
     local yml_file="$1" section="$2" key_field="$3" key_value="$4" path_field="$5" new_path="$6"
+    local tmpf
+    tmpf=$(mktemp "${yml_file}.XXXXXX")
 
     awk -v section="$section" -v key_field="$key_field" -v key_value="$key_value" \
         -v path_field="$path_field" -v new_path="$new_path" '
@@ -723,7 +750,7 @@ _update_yml_path() {
         }
 
         { print }
-    ' "$yml_file" > "$yml_file.tmp" && mv "$yml_file.tmp" "$yml_file"
+    ' "$yml_file" > "$tmpf" && mv "$tmpf" "$yml_file"
 }
 
 # ── Install: resolve paths after project install ─────────────────────
