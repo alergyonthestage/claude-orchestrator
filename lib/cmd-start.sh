@@ -362,6 +362,82 @@ _start_generate_integrations() {
     fi
 }
 
+# Resolves @local markers and legacy {{REPO_*}} in project.yml before
+# compose generation. Writes resolved paths to .cco/local-paths.yml
+# and updates project.yml working copy. Interactive prompt on TTY,
+# abort on non-TTY with unresolved paths.
+_start_resolve_paths() {
+    # Skip for internal projects (tutorial uses template paths)
+    $is_internal && return 0
+
+    local local_paths="$project_dir/.cco/local-paths.yml"
+    local has_unresolved=false
+
+    # Resolve repos
+    local repos
+    repos=$(yml_get_repos "$project_yml" 2>/dev/null)
+    if [[ -n "$repos" ]]; then
+        while IFS=: read -r repo_path repo_name; do
+            [[ -z "$repo_name" ]] && continue
+
+            local needs_resolve=false
+            if [[ "$repo_path" == "@local" || "$repo_path" == *"{{REPO_"* ]]; then
+                needs_resolve=true
+            else
+                local expanded
+                expanded=$(expand_path "$repo_path")
+                if [[ ! -d "$expanded" ]]; then
+                    needs_resolve=true
+                fi
+            fi
+
+            if $needs_resolve; then
+                local url
+                url=$(_get_repo_url "$project_yml" "$repo_name")
+
+                local resolved
+                resolved=$(_resolve_entry "$project_dir" "repos" "$repo_name" "$url")
+                local rc=$?
+
+                if [[ $rc -eq 0 && -n "$resolved" ]]; then
+                    _update_yml_path "$project_yml" "repos" "name" "$repo_name" "path" "$resolved"
+                elif [[ $rc -eq 2 ]]; then
+                    die "Aborted."
+                else
+                    # Skipped — warn but continue (user chose to skip)
+                    warn "Repository '$repo_name' skipped — it will not be available in this session"
+                fi
+            fi
+        done <<< "$repos"
+    fi
+
+    # Resolve extra_mounts
+    local mounts
+    mounts=$(yml_get_extra_mounts "$project_yml" 2>/dev/null)
+    if [[ -n "$mounts" ]]; then
+        while IFS= read -r mount_line; do
+            [[ -z "$mount_line" ]] && continue
+            local source="${mount_line%%:*}"
+            local rest="${mount_line#*:}"
+            local target="${rest%%:*}"
+
+            if [[ "$source" == "@local" ]]; then
+                local resolved
+                resolved=$(_resolve_entry "$project_dir" "extra_mounts" "$target" "")
+                local rc=$?
+
+                if [[ $rc -eq 0 && -n "$resolved" ]]; then
+                    _update_yml_path "$project_yml" "extra_mounts" "target" "$target" "source" "$resolved"
+                elif [[ $rc -eq 2 ]]; then
+                    die "Aborted."
+                else
+                    warn "Mount '$target' skipped — it will not be available in this session"
+                fi
+            fi
+        done <<< "$mounts"
+    fi
+}
+
 # Generates the docker-compose.yml file from project configuration.
 # Sets: compose_file
 _start_generate_compose() {
@@ -486,6 +562,8 @@ YAML
         echo "      # Repositories"
         while IFS=: read -r repo_path repo_name; do
             [[ -z "$repo_path" ]] && continue
+            # Skip unresolved @local or legacy {{REPO_*}} markers
+            [[ "$repo_path" == "@local" || "$repo_path" == *"{{REPO_"* ]] && continue
             repo_path=$(expand_path "$repo_path")
             if [[ ! -d "$repo_path" ]]; then
                 warn "Repository path '$repo_path' does not exist — skipping"
@@ -503,6 +581,8 @@ YAML
                 [[ -z "$mount_line" ]] && continue
                 local source="${mount_line%%:*}"
                 local rest="${mount_line#*:}"
+                # Skip unresolved @local markers
+                [[ "$source" == "@local" ]] && continue
                 source=$(expand_path "$source")
                 echo "      - ${source}:${rest}"
             done <<< "$extra_mounts"
@@ -830,6 +910,9 @@ EOF
     _start_generate_integrations
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] generate_integrations done" >&2
 
+    _start_resolve_paths
+    [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] resolve_paths done" >&2
+
     _start_generate_compose
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] generate_compose done" >&2
 
@@ -1029,7 +1112,7 @@ _generate_socket_policy() {
         repo_paths=$(yml_get_repos "$project_yml" | cut -d: -f1)
         if [[ -n "$repo_paths" ]]; then
             mt_allowed_json=$(while IFS= read -r _p; do
-                [[ -z "$_p" ]] && continue
+                [[ -z "$_p" || "$_p" == "@local" || "$_p" == *"{{REPO_"* ]] && continue
                 expand_path "$_p"
             done <<< "$repo_paths" | jq -R . | jq -s .)
         fi
@@ -1057,7 +1140,7 @@ _generate_socket_policy() {
     _repo_lines=$(yml_get_repos "$project_yml")
     if [[ -n "$_repo_lines" ]]; then
         while IFS=: read -r _rp _rn; do
-            [[ -z "$_rp" ]] && continue
+            [[ -z "$_rp" || "$_rp" == "@local" || "$_rp" == *"{{REPO_"* ]] && continue
             local _host_p
             _host_p=$(expand_path "$_rp")
             _pathmap_lines="${_pathmap_lines}/workspace/${_rn}"$'\t'"${_host_p}"$'\n'
@@ -1072,6 +1155,7 @@ _generate_socket_policy() {
             local _src="${_em%%:*}"
             local _rest="${_em#*:}"
             local _tgt="${_rest%%:*}"
+            [[ "$_src" == "@local" ]] && continue
             _src=$(expand_path "$_src")
             _pathmap_lines="${_pathmap_lines}${_tgt}"$'\t'"${_src}"$'\n'
         done <<< "$_extra_mounts"
