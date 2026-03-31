@@ -44,6 +44,7 @@ source "$LIB_DIR/secrets.sh"
 source "$LIB_DIR/workspace.sh"
 source "$LIB_DIR/packs.sh"
 source "$LIB_DIR/llms.sh"
+source "$LIB_DIR/local-paths.sh"
 source "$LIB_DIR/update-hash-io.sh"
 source "$LIB_DIR/update-merge.sh"
 source "$LIB_DIR/update-meta.sh"
@@ -147,6 +148,7 @@ Commands:
   internalize <name>     Disconnect from remote source, convert to local
   add-pack <proj> <pack> Add a knowledge pack to a project
   remove-pack <p> <pack> Remove a knowledge pack from a project
+  resolve <name>         Configure local paths for repos and mounts
   list                   List available projects with status
   show <name>            Show project details (repos, packs, config)
   validate [name]        Validate project structure and configuration
@@ -165,6 +167,7 @@ EOF
             internalize) cmd_project_internalize "$@" ;;
             add-pack)    cmd_project_add_pack "$@" ;;
             remove-pack) cmd_project_remove_pack "$@" ;;
+            resolve)     cmd_project_resolve "$@" ;;
             list)        cmd_project_list "$@" ;;
             show)        cmd_project_show "$@" ;;
             validate)    cmd_project_validate "$@" ;;
