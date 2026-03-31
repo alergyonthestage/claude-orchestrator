@@ -126,6 +126,33 @@ EOF
     echo "  cco vault push"
 }
 
+# Check for real uncommitted changes (excluding local-path differences).
+# project.yml files always appear "modified" because the working copy has
+# real paths while the committed version has @local markers. This helper
+# temporarily extracts local paths to see if there are REAL changes beyond
+# the expected path differences.
+# Returns: 0 = real changes exist, 1 = clean (or local-paths only)
+# Outputs: file count to stdout when real changes exist
+_vault_has_real_changes() {
+    local vault_dir="$1"
+    local status_output
+    status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
+    [[ -z "$status_output" ]] && return 1
+
+    # Temporarily extract local paths to check for real changes
+    _extract_local_paths "$vault_dir"
+    trap '_restore_local_paths "$vault_dir"' ERR
+    status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
+    trap - ERR
+    _restore_local_paths "$vault_dir"
+
+    if [[ -n "$status_output" ]]; then
+        echo "$status_output" | grep -c . || true
+        return 0
+    fi
+    return 1
+}
+
 cmd_vault_save() {
     local message="" dry_run=false auto_yes=false
 
@@ -252,6 +279,16 @@ EOF
     _extract_local_paths "$vault_dir"
     trap '_restore_local_paths "$vault_dir"' ERR
     git -C "$vault_dir" add -A
+
+    # After extraction, local-paths-only changes become no-ops (project.yml
+    # reverts to committed @local state). Handle gracefully instead of failing.
+    if git -C "$vault_dir" diff --cached --quiet 2>/dev/null; then
+        trap - ERR
+        _restore_local_paths "$vault_dir"
+        ok "Nothing to commit — vault is up to date"
+        return 0
+    fi
+
     git -C "$vault_dir" commit -q -m "vault: $message"
     trap - ERR
     _restore_local_paths "$vault_dir"
@@ -553,10 +590,8 @@ EOF
     local default_branch
     default_branch=$(_vault_default_branch)
 
-    # Step 1: Auto-save (commit + shared sync) if there are pending changes
-    local status_output
-    status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
-    if [[ -n "$status_output" ]]; then
+    # Step 1: Auto-save (commit + shared sync) if there are real pending changes
+    if _vault_has_real_changes "$vault_dir"; then
         cmd_vault_save "pre-push save" --yes || return 1
     fi
 
@@ -1730,10 +1765,8 @@ EOF
     # Auto-restore framework infrastructure files (D32)
     _restore_missing_gitkeep "$vault_dir"
 
-    # Working tree must be clean
-    local status_output
-    status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
-    [[ -n "$status_output" ]] && die "You have uncommitted changes. Run 'cco vault save' first."
+    # Working tree must be clean (excluding local-path differences)
+    _vault_has_real_changes "$vault_dir" && die "You have uncommitted changes. Run 'cco vault save' first."
 
     # No active Docker sessions — profile create involves branch checkout (D31)
     _check_no_active_sessions || return 1
@@ -2090,11 +2123,9 @@ EOF
     _restore_missing_gitkeep "$vault_dir"
 
     # Check 1: Clean working tree (D7 — explicit saves, no auto-commit)
-    local status_output
-    status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
-    if [[ -n "$status_output" ]]; then
-        local dirty_count
-        dirty_count=$(echo "$status_output" | grep -c . || true)
+    # Uses _vault_has_real_changes to exclude local-path-only differences
+    local dirty_count
+    if dirty_count=$(_vault_has_real_changes "$vault_dir"); then
         die "You have uncommitted changes ($dirty_count files).
   Run 'cco vault save \"message\"' to save your work first."
     fi
@@ -2211,12 +2242,8 @@ EOF
     # Auto-resolve framework infrastructure files (D32/D33)
     _auto_resolve_framework_changes "$vault_dir"
 
-    # Working tree must be clean
-    local status_output
-    status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
-    if [[ -n "$status_output" ]]; then
-        die "You have uncommitted changes. Run 'cco vault save' first."
-    fi
+    # Working tree must be clean (excluding local-path differences)
+    _vault_has_real_changes "$vault_dir" && die "You have uncommitted changes. Run 'cco vault save' first."
 
     # Check new name doesn't exist
     if git -C "$vault_dir" rev-parse --verify "$new_name" >/dev/null 2>&1; then
@@ -2301,10 +2328,8 @@ EOF
     # Auto-restore framework infrastructure files (D32)
     _restore_missing_gitkeep "$vault_dir"
 
-    # Working tree must be clean (§6.9)
-    local status_output
-    status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
-    [[ -n "$status_output" ]] && die "You have uncommitted changes. Run 'cco vault save' first."
+    # Working tree must be clean (§6.9, excluding local-path differences)
+    _vault_has_real_changes "$vault_dir" && die "You have uncommitted changes. Run 'cco vault save' first."
 
     # No active Docker sessions — profile delete may involve branch operations (D31)
     _check_no_active_sessions || return 1
@@ -2567,10 +2592,8 @@ EOF
     # Auto-restore framework infrastructure files (D32)
     _restore_missing_gitkeep "$vault_dir"
 
-    # Working tree must be clean
-    local status_output
-    status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
-    [[ -n "$status_output" ]] && die "You have uncommitted changes. Run 'cco vault save' first."
+    # Working tree must be clean (excluding local-path differences)
+    _vault_has_real_changes "$vault_dir" && die "You have uncommitted changes. Run 'cco vault save' first."
 
     # Block if the specific project has an active Docker session (D31)
     if [[ "$resource_type" == "project" ]]; then
@@ -2803,10 +2826,8 @@ EOF
     # Auto-restore framework infrastructure files (D32)
     _restore_missing_gitkeep "$vault_dir"
 
-    # Working tree must be clean
-    local status_output
-    status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
-    [[ -n "$status_output" ]] && die "You have uncommitted changes. Run 'cco vault save' first."
+    # Working tree must be clean (excluding local-path differences)
+    _vault_has_real_changes "$vault_dir" && die "You have uncommitted changes. Run 'cco vault save' first."
 
     # No active Docker sessions — move involves branch switching (D31)
     _check_no_active_sessions || return 1
