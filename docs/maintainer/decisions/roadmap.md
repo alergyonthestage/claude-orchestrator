@@ -194,6 +194,19 @@ Opt-in git isolation for container sessions. When enabled, repos are mounted at 
 
 **Docs**: [analysis](../integration/worktree/analysis.md) | [design](../integration/worktree/design.md) | [ADR-10](../architecture/architecture.md)
 
+#### #6b Worktree-Based Vault Profile Sync
+
+`vault save` syncs shared resources to profile branches via `git checkout`, which
+fails when Docker sessions are active (mounted vault dirs block checkout). Currently
+mitigated by detecting active sessions and deferring sync.
+
+A worktree-based approach would create temporary worktrees in `/tmp` for each profile
+branch, eliminating the need for checkout and allowing sync even with running sessions.
+Should be implemented alongside or after #6 (same worktree infrastructure).
+
+**Current mitigation**: `_check_no_active_sessions_quiet()` in `cmd_vault_save()`
+skips sync with user-visible warning when Docker sessions are active.
+
 ---
 
 ### #9 Pack Inheritance / Composition
@@ -412,6 +425,10 @@ both repos and extra_mounts. `cco start` resolves interactively with
 auto-clone from `url:` metadata. New `cco project resolve` command. New
 shared `lib/local-paths.sh` module supersedes `_reverse_template_repos()`
 and `_resolve_repo_entries()`. Legacy `{{REPO_*}}` templates remain supported.
+
+Post-release review fixed: migration 012 path calculation, AWK getline fragility
+(entry buffering), path quoting for spaces, AWK -v backslash expansion, ERR trap
+ordering, and vault save profile sync skipping when Docker sessions are active.
 
 **Docs**: [design](../configuration/vault/local-path-resolution-design.md) | changelog entry 12
 
