@@ -233,7 +233,9 @@ _sanitize_project_paths() {
     local orig_repos
     orig_repos=$(yml_get_repos "$yml_file" 2>/dev/null)
 
-    # Build url map: name=url (newline-separated)
+    # Build url map: name=url (RS-separated, \036)
+    # Uses ASCII Record Separator instead of newline because macOS BWK awk
+    # does not support literal newlines in -v variable assignments.
     local url_map=""
     if [[ -n "$orig_repos" ]]; then
         while IFS=: read -r repo_path repo_name; do
@@ -246,7 +248,7 @@ _sanitize_project_paths() {
                 local remote_url
                 remote_url=$(git -C "$expanded" remote get-url origin 2>/dev/null) || true
                 if [[ -n "$remote_url" ]]; then
-                    url_map+="${repo_name}=${remote_url}"$'\n'
+                    url_map+="${repo_name}=${remote_url}"$'\036'
                 fi
             fi
         done <<< "$orig_repos"
@@ -257,7 +259,7 @@ _sanitize_project_paths() {
     # consuming the next entry's "- path:" line (see review #1).
     awk -v url_map="$url_map" '
         BEGIN {
-            n = split(url_map, entries, "\n")
+            n = split(url_map, entries, "\036")
             for (i = 1; i <= n; i++) {
                 if (entries[i] == "") continue
                 eq = index(entries[i], "=")
@@ -389,7 +391,8 @@ _resolve_project_paths() {
             }
         }
     ' "$local_paths")
-    [[ -n "$repos_content" ]] && repo_map="$repos_content"
+    # Convert newlines to RS (\036) — macOS BWK awk rejects newlines in -v
+    [[ -n "$repos_content" ]] && repo_map=$(printf '%s' "$repos_content" | tr '\n' '\036')
 
     # Read extra_mounts section
     local mounts_content
@@ -408,14 +411,14 @@ _resolve_project_paths() {
             }
         }
     ' "$local_paths")
-    [[ -n "$mounts_content" ]] && mount_map="$mounts_content"
+    [[ -n "$mounts_content" ]] && mount_map=$(printf '%s' "$mounts_content" | tr '\n' '\036')
 
     # Apply substitutions to project.yml
     tmpf=$(mktemp "${project_yml}.XXXXXX")
     awk -v repo_map="$repo_map" -v mount_map="$mount_map" '
         BEGIN {
-            # Parse repo map
-            n = split(repo_map, entries, "\n")
+            # Parse repo map (RS-separated, \036)
+            n = split(repo_map, entries, "\036")
             for (i = 1; i <= n; i++) {
                 if (entries[i] == "") continue
                 eq = index(entries[i], "=")
@@ -423,8 +426,8 @@ _resolve_project_paths() {
                     repos[substr(entries[i], 1, eq - 1)] = substr(entries[i], eq + 1)
                 }
             }
-            # Parse mount map
-            n = split(mount_map, entries, "\n")
+            # Parse mount map (RS-separated, \036)
+            n = split(mount_map, entries, "\036")
             for (i = 1; i <= n; i++) {
                 if (entries[i] == "") continue
                 eq = index(entries[i], "=")
