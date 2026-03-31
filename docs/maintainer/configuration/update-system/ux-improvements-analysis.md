@@ -138,6 +138,27 @@ base was saved raw from a previous sync, the diff will show raw placeholders
 until the base is re-saved correctly. A one-time base repair during the next
 sync (or a migration) would clean this up.
 
+### 2.5 Implementation Note (2026-03-31)
+
+The initial Phase 1 implementation (2026-03-20) correctly addressed base saves
+and manifest hashes via `_save_base_for_scope` and `_hash_for_scope` helpers.
+However, three additional categories of raw template usage were left unfixed:
+
+1. **`cp` operations** (9 occurrences in `update-sync.sh`) — copied raw template
+   to user's installed files, corrupting them with `{{PLACEHOLDER}}`
+2. **`diff` display** (6 occurrences in `update-sync.sh`) — showed raw
+   `{{PROJECT_NAME}}` in interactive diff output
+3. **3-way merge + conflict replace** (3 occurrences in `update-merge.sh`) —
+   used raw template as "new" version in `_merge_file` and `cp` in conflict
+   resolution fallbacks
+
+These were fixed by adding per-iteration interpolated temp files in
+`_interactive_sync` (`$_is_new_file`), `_resolve_with_merge` (`$_rwm_new_file`),
+and `_resolve_conflict_interactive` (`$_rci_new_file`), following the same
+pattern already used by `_show_file_diffs` in `update-discovery.sh`.
+
+See updated design: `ux-improvements-design.md` §2.2 and §2.4.
+
 ---
 
 ## 3. Design Analysis: CLAUDE.md Structural Divergence (P3)
