@@ -211,8 +211,8 @@ test_project_publish_reverse_templates_repos() {
     local verify_dir="$tmpdir/verify"
     git clone -q "$bare_dir" "$verify_dir"
     local published_yml="$verify_dir/templates/my-proj/project.yml"
-    grep -q '{{REPO_MY_REPO}}' "$published_yml" || {
-        echo "ASSERTION FAILED: repo path should be reverse-templated"
+    grep -q '@local' "$published_yml" || {
+        echo "ASSERTION FAILED: repo path should be sanitized with @local marker"
         cat "$published_yml"
         return 1
     }

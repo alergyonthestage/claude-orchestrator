@@ -159,3 +159,17 @@ entries:
       Portable files (secrets.env, session transcripts) are preserved across
       switches via shadow directories. Tracking-only profiles from Sprint 7
       must be reset manually (delete branches, re-create with new commands).
+
+  - id: 12
+    date: "2026-03-31"
+    type: additive
+    title: "Unified local path resolution for portable configs"
+    description: >
+      Project configs are now fully portable across machines. When using vault
+      save or publishing to Config Repos, machine-specific repo paths and extra
+      mount sources are automatically replaced with @local markers. Each PC
+      maintains its own path mappings in .cco/local-paths.yml (auto-managed,
+      gitignored). On `cco start`, missing paths prompt interactively with
+      clone-from-URL option. New `cco project resolve <name>` command for
+      explicit path management. Existing workflows require no changes —
+      the first `vault save` extracts paths automatically.

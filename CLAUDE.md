@@ -58,6 +58,7 @@ cco llms update [name]       # Re-download from source (--all for all)
 cco llms rename <old> <new>  # Rename an llms entry (updates YAML refs)
 cco llms remove <name>       # Remove an llms entry
 cco project publish <n> <r>  # Publish project template to Config Repo (with safety checks)
+cco project resolve <name>  # Configure local paths for repos and mounts
 cco project add-pack <p> <k> # Add a pack to a project
 cco project remove-pack <p> <k> # Remove a pack from a project
 cco vault init               # Initialize git-backed config versioning
@@ -149,6 +150,7 @@ Per `docs/maintainer/integration/docker/design.md` (sezione directory structure)
 - `lib/cmd-update.sh` — Update command: migrations + discovery, --diff, --sync
 - `lib/cmd-clean.sh` — Clean .bak files: --project, --all, --tmp, --generated, --dry-run
 - `lib/update*.sh` — Update engine split by responsibility: hash-io, merge, meta, discovery, sync, changelog, remote + orchestrator (update.sh)
+- `lib/local-paths.sh` — Unified local path resolution: @local markers, .cco/local-paths.yml, sanitize/resolve for vault/publish/install/start
 - `lib/cmd-vault.sh` — Config versioning: init, save, diff, log, status, switch, move, remove, profiles (git-backed)
 - `lib/manifest.sh` — manifest.yml lifecycle: init, refresh, validate, show
 - `lib/cmd-remote.sh` — Remote management: add, remove, list Config Repo remotes (.cco/remotes)

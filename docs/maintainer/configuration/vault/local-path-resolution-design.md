@@ -1,6 +1,6 @@
 # Local Path Resolution — Design
 
-**Status**: Proposed
+**Status**: Implemented
 **Date**: 2026-03-31
 **Scope**: Unified path portability for vault sync AND publish/install
 **Analysis**: `../sharing/analysis.md` §10 (portability problems)
