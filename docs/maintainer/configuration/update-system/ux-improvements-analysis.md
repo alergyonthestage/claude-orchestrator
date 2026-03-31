@@ -157,7 +157,7 @@ These were fixed by adding per-iteration interpolated temp files in
 and `_resolve_conflict_interactive` (`$_rci_new_file`), following the same
 pattern already used by `_show_file_diffs` in `update-discovery.sh`.
 
-See updated design: `ux-improvements-design.md` §2.2 and §2.4.
+See updated design: `ux-improvements-design.md` §2.2 (Solution) and §2.4 (Operations Fixed).
 
 ---
 

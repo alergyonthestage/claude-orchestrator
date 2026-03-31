@@ -401,7 +401,11 @@ _start_resolve_paths() {
                 if [[ $rc -eq 0 && -n "$resolved" ]]; then
                     _update_yml_path "$project_yml" "repos" "name" "$repo_name" "path" "$resolved"
                 elif [[ $rc -eq 2 ]]; then
-                    die "Aborted."
+                    if [[ ! -t 0 ]]; then
+                        die "Unresolved @local paths — run 'cco project resolve $project_name' to configure"
+                    else
+                        die "Aborted."
+                    fi
                 else
                     # Skipped — warn but continue (user chose to skip)
                     warn "Repository '$repo_name' skipped — it will not be available in this session"
@@ -427,7 +431,11 @@ _start_resolve_paths() {
                 if [[ $rc -eq 0 && -n "$resolved" ]]; then
                     _update_yml_path "$project_yml" "extra_mounts" "target" "$target" "source" "$resolved"
                 elif [[ $rc -eq 2 ]]; then
-                    die "Aborted."
+                    if [[ ! -t 0 ]]; then
+                        die "Unresolved @local paths — run 'cco project resolve $project_name' to configure"
+                    else
+                        die "Aborted."
+                    fi
                 else
                     warn "Mount '$target' skipped — it will not be available in this session"
                 fi

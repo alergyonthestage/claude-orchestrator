@@ -140,8 +140,9 @@ _vault_has_real_changes() {
     [[ -z "$status_output" ]] && return 1
 
     # Temporarily extract local paths to check for real changes
-    _extract_local_paths "$vault_dir"
+    # Trap set BEFORE extraction so restore runs even if extract fails
     trap '_restore_local_paths "$vault_dir"' ERR
+    _extract_local_paths "$vault_dir"
     status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
     trap - ERR
     _restore_local_paths "$vault_dir"
@@ -275,9 +276,9 @@ EOF
 
     # Step 1: Extract local paths, stage, commit, then restore
     # With real isolation, git add -A is safe on any branch (D20)
-    # Trap ensures restore runs even if git add/commit fails (review #2)
-    _extract_local_paths "$vault_dir"
+    # Trap set BEFORE extraction so restore runs even on extract failure
     trap '_restore_local_paths "$vault_dir"' ERR
+    _extract_local_paths "$vault_dir"
     git -C "$vault_dir" add -A
 
     # After extraction, local-paths-only changes become no-ops (project.yml

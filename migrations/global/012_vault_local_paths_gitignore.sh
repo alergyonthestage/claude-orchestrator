@@ -13,9 +13,10 @@ migrate() {
     local target_dir="$1"
 
     # This migration operates on the vault .gitignore, not the global config.
-    # The vault dir is the parent of global/ — i.e., user-config/.
-    local vault_dir
-    vault_dir=$(dirname "$target_dir")
+    # target_dir = user-config/global/.claude → global → user-config
+    local global_dir vault_dir
+    global_dir=$(dirname "$target_dir")
+    vault_dir=$(dirname "$global_dir")
 
     local gitignore="$vault_dir/.gitignore"
 

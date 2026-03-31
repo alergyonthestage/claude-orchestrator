@@ -192,8 +192,8 @@ YAML
 
     _resolve_project_paths "$proj"
 
-    assert_file_contains "$proj/project.yml" "path: ~/Projects/backend-api"
-    assert_file_contains "$proj/project.yml" "path: ~/dev/frontend"
+    assert_file_contains "$proj/project.yml" 'path: "~/Projects/backend-api"'
+    assert_file_contains "$proj/project.yml" 'path: "~/dev/frontend"'
     assert_file_not_contains "$proj/project.yml" "@local"
 }
 
@@ -251,8 +251,8 @@ YAML
 
     _resolve_project_paths "$proj"
 
-    assert_file_contains "$proj/project.yml" "path: ~/Projects/api"
-    assert_file_contains "$proj/project.yml" "source: ~/documents/docs"
+    assert_file_contains "$proj/project.yml" 'path: "~/Projects/api"'
+    assert_file_contains "$proj/project.yml" 'source: "~/documents/docs"'
     assert_file_not_contains "$proj/project.yml" "@local"
 }
 
@@ -293,8 +293,8 @@ YAML
     _resolve_project_paths "$proj"
 
     # Verify restored
-    assert_file_contains "$proj/project.yml" "path: ~/Projects/backend-api"
-    assert_file_contains "$proj/project.yml" "source: ~/docs/specs"
+    assert_file_contains "$proj/project.yml" 'path: "~/Projects/backend-api"'
+    assert_file_contains "$proj/project.yml" 'source: "~/docs/specs"'
     assert_file_not_contains "$proj/project.yml" "@local"
 }
 
@@ -439,8 +439,8 @@ YAML
 
     _resolve_all_local_paths "$vault_dir"
 
-    assert_file_contains "$proj1/project.yml" "path: ~/app1/api"
-    assert_file_contains "$proj2/project.yml" "path: ~/app2/web"
+    assert_file_contains "$proj1/project.yml" 'path: "~/app1/api"'
+    assert_file_contains "$proj2/project.yml" 'path: "~/app2/web"'
 }
 
 # ── Mixed real + @local paths ────────────────────────────────────────
@@ -672,7 +672,7 @@ YAML
 
     _update_yml_path "$tmpdir/project.yml" "repos" "name" "api" "path" "~/Projects/api"
 
-    assert_file_contains "$tmpdir/project.yml" "path: ~/Projects/api"
+    assert_file_contains "$tmpdir/project.yml" 'path: "~/Projects/api"'
     # web should remain @local
     local at_local_count
     at_local_count=$(grep -c '@local' "$tmpdir/project.yml" || true)
@@ -695,7 +695,7 @@ YAML
 
     _update_yml_path "$tmpdir/project.yml" "extra_mounts" "target" "/workspace/docs" "source" "~/my-docs"
 
-    assert_file_contains "$tmpdir/project.yml" "source: ~/my-docs"
+    assert_file_contains "$tmpdir/project.yml" 'source: "~/my-docs"'
     # /workspace/specs should remain @local
     local at_local_count
     at_local_count=$(grep -c '@local' "$tmpdir/project.yml" || true)
@@ -798,8 +798,8 @@ YAML
     # Resolve (simulates vault pull on same PC)
     _resolve_project_paths "$proj"
 
-    # Path restored, url should survive (resolve doesn't strip url:)
-    assert_file_contains "$proj/project.yml" "path: $repo_dir"
+    # Path restored (quoted), url should survive (resolve doesn't strip url:)
+    assert_file_contains "$proj/project.yml" "path: \"$repo_dir\""
     assert_file_contains "$proj/project.yml" "url: git@github.com:acme/api.git"
     assert_file_not_contains "$proj/project.yml" "@local"
 }
@@ -844,9 +844,9 @@ YAML
     _resolve_project_paths "$proj"
 
     # All paths restored
-    assert_file_contains "$proj/project.yml" "source: ~/docs/specs"
-    assert_file_contains "$proj/project.yml" "source: ~/data/fixtures"
-    assert_file_contains "$proj/project.yml" "path: ~/Projects/api"
+    assert_file_contains "$proj/project.yml" 'source: "~/docs/specs"'
+    assert_file_contains "$proj/project.yml" 'source: "~/data/fixtures"'
+    assert_file_contains "$proj/project.yml" 'path: "~/Projects/api"'
     assert_file_not_contains "$proj/project.yml" "@local"
 }
 

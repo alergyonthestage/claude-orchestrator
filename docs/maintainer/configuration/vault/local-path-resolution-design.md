@@ -458,16 +458,20 @@ All path resolution logic lives in a single new module. This replaces the
 path-handling code currently spread across three files:
 
 ```
-lib/local-paths.sh (NEW)
-├─ _local_paths_get(file, section, key)       # Read path from local-paths.yml
-├─ _local_paths_set(file, section, key, val)  # Write path to local-paths.yml
-├─ _sanitize_project_paths(project_yml)       # Replace real paths with @local, inject url:
-├─ _resolve_project_paths(project_dir)        # Restore @local → real paths from local-paths.yml
-├─ _resolve_entry(project_dir, section, key)  # Resolve single entry (with prompt fallback)
-├─ _extract_local_paths(vault_dir)            # Pre-commit: extract all projects
-├─ _restore_local_paths(vault_dir)            # Post-commit: restore from backup
-├─ _resolve_all_local_paths(vault_dir)        # Post-pull/switch: resolve all projects
-└─ _prompt_for_path(name, url, suggested)     # Interactive TTY prompt with clone option
+lib/local-paths.sh
+├─ _local_paths_get(file, section, key)         # Read path from local-paths.yml
+├─ _local_paths_set(file, section, key, val)    # Write path to local-paths.yml
+├─ _prompt_for_path(name, url, suggested)       # Interactive TTY prompt with clone option
+├─ _sanitize_project_paths(project_yml)         # Replace real paths with @local, inject url:
+├─ _resolve_project_paths(project_dir)          # Restore @local → real paths from local-paths.yml
+├─ _get_repo_url(project_yml, repo_name)        # Extract url: for a repo from project.yml
+├─ _resolve_entry(project_dir, section, key)    # Resolve single entry (with prompt fallback)
+├─ _write_local_paths(project_dir, project_yml) # Write paths to .cco/local-paths.yml
+├─ _extract_local_paths(vault_dir)              # Pre-commit: extract all projects
+├─ _restore_local_paths(vault_dir)              # Post-commit: restore from backup
+├─ _resolve_all_local_paths(vault_dir)          # Post-pull/switch: resolve all projects
+├─ _update_yml_path(yml, section, ...)          # Update single path value in project.yml
+└─ _resolve_installed_paths(project_dir, yml)   # Resolve @local entries after project install
 ```
 
 ### 5.2 Functions superseded
@@ -838,3 +842,33 @@ reports modifications, breaking all dirty checks.
 local paths (sanitizing project.yml), checks `git status`, and restores.
 Returns true only if there are REAL changes beyond local-path differences.
 Applied to all 7 dirty check points in `cmd-vault.sh`.
+
+### 10.4 Pre-release review fixes (2026-03-31)
+
+Comprehensive code review before release identified 2 bugs and 6 warnings:
+
+**B1: Migration 012 wrong vault_dir** — Used single `dirname` (`→ user-config/global`)
+instead of double (`→ user-config/`). The `.gitignore` patterns were never applied
+to existing vaults. Fixed 012 + created 013 to re-apply for vaults that already
+ran the broken migration (also cleans up incorrectly placed patterns).
+
+**B2: Non-TTY abort missing guidance** — `_start_resolve_paths` in `cmd-start.sh`
+emitted `die "Aborted."` without hinting at `cco project resolve`, unlike the
+install flow. Added context-aware message for non-TTY callers.
+
+**W1: AWK getline ordering fragility** — `_sanitize_project_paths`,
+`_resolve_project_paths`, and `_update_yml_path` used `getline` assuming YAML
+fields appear in `path → name` order. Replaced with entry buffering that collects
+all fields before processing, handling any field order gracefully.
+
+**W2: Unquoted paths in YAML output** — `_update_yml_path` and `_resolve_project_paths`
+emitted paths without double quotes, breaking YAML when paths contain spaces.
+All path output now uses `"quoted"` format.
+
+**W3: AWK -v backslash expansion** — `_local_paths_set` and `_update_yml_path`
+passed user paths via AWK `-v`, which interprets escape sequences (`\n`, `\t`).
+Switched to `ENVIRON[]` for path values.
+
+**W4: ERR trap timing** — `_vault_has_real_changes` and `cmd_vault_save` set the
+ERR trap AFTER `_extract_local_paths`. If extraction failed, restore would not
+run. Moved trap before extraction call.

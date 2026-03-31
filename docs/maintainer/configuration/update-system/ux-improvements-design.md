@@ -251,9 +251,9 @@ Fallback chain:
 | 5b | P1 | Diff display shows interpolated values (no `{{PLACEHOLDER}}`) |
 | 5c | P1 | 3-way merge uses interpolated "new" version |
 | 5d | P1 | New-file (.new) contains interpolated content |
-| 5 | P2 | `--diff` without scope shows summary (no diff content) |
-| 6 | P2 | `--diff <project>` shows scoped diffs |
-| 7 | P2 | `--diff --all` shows all diffs (backward compat) |
-| 8 | P3 | File >3x base → `USER_RESTRUCTURED` |
-| 9 | P3 | File similar size → `MERGE_AVAILABLE` |
-| 10 | P3 | `USER_RESTRUCTURED` sync defaults to (N) |
+| 6 | P2 | `--diff` without scope shows summary (no diff content) |
+| 7 | P2 | `--diff <project>` shows scoped diffs |
+| 8 | P2 | `--diff --all` shows all diffs (backward compat) |
+| 9 | P3 | File >3x base → `USER_RESTRUCTURED` |
+| 10 | P3 | File similar size → `MERGE_AVAILABLE` |
+| 11 | P3 | `USER_RESTRUCTURED` sync defaults to (N) |

@@ -81,7 +81,9 @@ _local_paths_set() {
         # Update existing entry
         local tmpf
         tmpf=$(mktemp "${file}.XXXXXX")
-        awk -v section="$section" -v key="$key" -v value="$value" '
+        # Pass value via env to avoid AWK -v backslash expansion
+        CCO_VALUE="$value" awk -v section="$section" -v key="$key" '
+            BEGIN { value = ENVIRON["CCO_VALUE"] }
             $0 == section":" { in_section=1; print; next }
             in_section && /^[^ #]/ { in_section=0 }
             in_section {
@@ -102,7 +104,8 @@ _local_paths_set() {
         # Append entry to existing section (before next section or EOF)
         local tmpf2
         tmpf2=$(mktemp "${file}.XXXXXX")
-        awk -v section="$section" -v key="$key" -v value="$value" '
+        CCO_VALUE="$value" awk -v section="$section" -v key="$key" '
+            BEGIN { value = ENVIRON["CCO_VALUE"] }
             $0 == section":" { in_section=1; print; next }
             in_section && /^[^ #]/ {
                 # End of section — insert before next section
@@ -274,6 +277,12 @@ _sanitize_project_paths() {
         # repos: section — replace path: and inject url:
         /^repos:/ { in_repos=1; in_mounts=0; print; next }
         in_repos && /^[^ #]/ {
+            # Flush pending entry if section ends mid-collection
+            if (_in_entry) {
+                print _entry_path_line
+                for (_bi = 1; _bi <= _entry_buf_n; _bi++) print _entry_buf[_bi]
+                _in_entry = 0
+            }
             if (pending_url != "") {
                 print "    url: " pending_url
                 pending_url = ""
@@ -296,35 +305,52 @@ _sanitize_project_paths() {
             }
         }
 
-        in_repos && /^  - path:/ {
-            saved=$0; getline
+        # Entry buffering: handles any field order (path/name/url)
+        in_repos && /^  - path:/ && !_in_entry {
+            _entry_path_line = $0
+            _entry_path_val = $0
+            sub(/^  - path: */, "", _entry_path_val)
+            gsub(/[\"'"'"'[:space:]]/, "", _entry_path_val)
+            _entry_buf_n = 0
+            delete _entry_buf
+            _in_entry = 1
+            next
+        }
+
+        in_repos && _in_entry {
             if ($0 ~ /^    name:/) {
-                name_line=$0
-                sub(/^    name: */, "", name_line)
-                gsub(/[\"'"'"'[:space:]]/, "", name_line)
+                _name_val = $0
+                sub(/^    name: */, "", _name_val)
+                gsub(/[\"'"'"'[:space:]]/, "", _name_val)
 
-                # Check if path is already @local
-                p = saved
-                sub(/^  - path: */, "", p)
-                gsub(/[\"'"'"'[:space:]]/, "", p)
-
-                if (p == "@local") {
-                    # Already sanitized — preserve as-is
-                    print saved
-                    print $0
+                if (_entry_path_val == "@local") {
+                    print _entry_path_line
+                    for (_bi = 1; _bi <= _entry_buf_n; _bi++) print _entry_buf[_bi]
                 } else {
                     print "  - path: \"@local\""
-                    print $0
-                    # Schedule url injection for next iteration
-                    if (name_line in urls) {
-                        pending_url = urls[name_line]
+                    # Skip buffered url: lines (will be re-injected via pending_url)
+                    for (_bi = 1; _bi <= _entry_buf_n; _bi++) {
+                        if (_entry_buf[_bi] !~ /^    url:/) print _entry_buf[_bi]
+                    }
+                    if (_name_val in urls) {
+                        pending_url = urls[_name_val]
                     }
                 }
-            } else {
-                print saved
                 print $0
+                _in_entry = 0
+                next
             }
-            next
+            if ($0 ~ /^  - / || ($0 !~ /^    / && $0 !~ /^$/)) {
+                # Entry/section boundary without name: — flush as-is
+                print _entry_path_line
+                for (_bi = 1; _bi <= _entry_buf_n; _bi++) print _entry_buf[_bi]
+                _in_entry = 0
+                # Fall through to normal processing
+            } else {
+                _entry_buf_n++
+                _entry_buf[_entry_buf_n] = $0
+                next
+            }
         }
 
         # extra_mounts: section — replace source:
@@ -345,7 +371,11 @@ _sanitize_project_paths() {
 
         { print }
         END {
-            # Flush any remaining pending url (last entry in file)
+            # Flush pending entry if file ends mid-collection
+            if (_in_entry) {
+                print _entry_path_line
+                for (_bi = 1; _bi <= _entry_buf_n; _bi++) print _entry_buf[_bi]
+            }
             if (pending_url != "") print "    url: " pending_url
         }
     ' "$yml_file" > "$tmpf" && mv "$tmpf" "$yml_file"
@@ -437,57 +467,107 @@ _resolve_project_paths() {
             }
         }
 
-        # repos: section — look for @local path, peek at name to resolve
+        # repos: section — resolve @local path using name as key
         /^repos:/ { in_repos=1; in_mounts=0; print; next }
-        in_repos && /^[^ #]/ { in_repos=0 }
-        in_repos && /^  - path:/ {
-            p = $0; sub(/^  - path: */, "", p); gsub(/[\"'"'"'[:space:]]/, "", p)
-            if (p == "@local") {
-                saved=$0; getline
-                if ($0 ~ /^    name:/) {
-                    nm = $0; sub(/^    name: */, "", nm); gsub(/[\"'"'"'[:space:]]/, "", nm)
-                    if (nm in repos) {
-                        print "  - path: " repos[nm]
-                    } else {
-                        print saved
-                    }
-                    print $0
-                } else {
-                    print saved
-                    print $0
-                }
+        in_repos && /^[^ #]/ {
+            if (_in_entry) {
+                print _entry_first_line
+                for (_bi = 1; _bi <= _entry_buf_n; _bi++) print _entry_buf[_bi]
+                _in_entry = 0
+            }
+            in_repos=0
+        }
+
+        in_repos && /^  - path:/ && !_in_entry {
+            _p = $0; sub(/^  - path: */, "", _p); gsub(/[\"'"'"'[:space:]]/, "", _p)
+            if (_p == "@local") {
+                _entry_first_line = $0
+                _entry_buf_n = 0
+                delete _entry_buf
+                _in_entry = 1
+                _entry_section = "repos"
             } else {
                 print $0
             }
             next
         }
 
-        # extra_mounts: section — look for @local source, peek at target to resolve
-        /^extra_mounts:/ { in_mounts=1; in_repos=0; print; next }
-        in_mounts && /^[^ #]/ { in_mounts=0 }
-        in_mounts && /^  - source:/ {
-            p = $0; sub(/^  - source: */, "", p); gsub(/[\"'"'"'[:space:]]/, "", p)
-            if (p == "@local") {
-                saved=$0; getline
-                if ($0 ~ /^    target:/) {
-                    tgt = $0; sub(/^    target: */, "", tgt); gsub(/[\"'"'"'[:space:]]/, "", tgt)
-                    if (tgt in mounts) {
-                        print "  - source: " mounts[tgt]
-                    } else {
-                        print saved
-                    }
-                    print $0
+        in_repos && _in_entry {
+            if ($0 ~ /^    name:/) {
+                _nm = $0; sub(/^    name: */, "", _nm); gsub(/[\"'"'"'[:space:]]/, "", _nm)
+                if (_nm in repos) {
+                    print "  - path: \"" repos[_nm] "\""
                 } else {
-                    print saved
-                    print $0
+                    print _entry_first_line
                 }
+                for (_bi = 1; _bi <= _entry_buf_n; _bi++) print _entry_buf[_bi]
+                print $0
+                _in_entry = 0
+                next
+            }
+            if ($0 ~ /^  - / || ($0 !~ /^    / && $0 !~ /^$/)) {
+                print _entry_first_line
+                for (_bi = 1; _bi <= _entry_buf_n; _bi++) print _entry_buf[_bi]
+                _in_entry = 0
+            } else {
+                _entry_buf_n++; _entry_buf[_entry_buf_n] = $0; next
+            }
+        }
+
+        # extra_mounts: section — resolve @local source using target as key
+        /^extra_mounts:/ { in_mounts=1; in_repos=0; print; next }
+        in_mounts && /^[^ #]/ {
+            if (_in_entry) {
+                print _entry_first_line
+                for (_bi = 1; _bi <= _entry_buf_n; _bi++) print _entry_buf[_bi]
+                _in_entry = 0
+            }
+            in_mounts=0
+        }
+
+        in_mounts && /^  - source:/ && !_in_entry {
+            _p = $0; sub(/^  - source: */, "", _p); gsub(/[\"'"'"'[:space:]]/, "", _p)
+            if (_p == "@local") {
+                _entry_first_line = $0
+                _entry_buf_n = 0
+                delete _entry_buf
+                _in_entry = 1
+                _entry_section = "mounts"
             } else {
                 print $0
             }
             next
+        }
+
+        in_mounts && _in_entry {
+            if ($0 ~ /^    target:/) {
+                _tgt = $0; sub(/^    target: */, "", _tgt); gsub(/[\"'"'"'[:space:]]/, "", _tgt)
+                if (_tgt in mounts) {
+                    print "  - source: \"" mounts[_tgt] "\""
+                } else {
+                    print _entry_first_line
+                }
+                for (_bi = 1; _bi <= _entry_buf_n; _bi++) print _entry_buf[_bi]
+                print $0
+                _in_entry = 0
+                next
+            }
+            if ($0 ~ /^  - / || ($0 !~ /^    / && $0 !~ /^$/)) {
+                print _entry_first_line
+                for (_bi = 1; _bi <= _entry_buf_n; _bi++) print _entry_buf[_bi]
+                _in_entry = 0
+            } else {
+                _entry_buf_n++; _entry_buf[_entry_buf_n] = $0; next
+            }
         }
 
         { print }
+        END {
+            if (_in_entry) {
+                print _entry_first_line
+                for (_bi = 1; _bi <= _entry_buf_n; _bi++) print _entry_buf[_bi]
+            }
+        }
     ' "$project_yml" > "$tmpf" && mv "$tmpf" "$project_yml"
 }
 
@@ -734,32 +814,68 @@ _update_yml_path() {
     local tmpf
     tmpf=$(mktemp "${yml_file}.XXXXXX")
 
-    awk -v section="$section" -v key_field="$key_field" -v key_value="$key_value" \
-        -v path_field="$path_field" -v new_path="$new_path" '
-        BEGIN { section_re = "^" section ":$" }
+    # Pass new_path via env to avoid AWK -v backslash expansion (W3)
+    CCO_NEW_PATH="$new_path" awk -v section="$section" -v key_field="$key_field" \
+        -v key_value="$key_value" -v path_field="$path_field" '
+        BEGIN {
+            section_re = "^" section ":$"
+            new_path = ENVIRON["CCO_NEW_PATH"]
+        }
         $0 ~ section_re { in_section=1; print; next }
-        in_section && /^[^ #]/ { in_section=0 }
+        in_section && /^[^ #]/ {
+            if (_in_entry) {
+                print _entry_path_line
+                for (_bi = 1; _bi <= _entry_buf_n; _bi++) print _entry_buf[_bi]
+                _in_entry = 0
+            }
+            in_section=0
+        }
 
-        in_section && $0 ~ "^  - " path_field ":" {
-            saved_path=$0; getline
-            # Check if the key_field matches
+        in_section && $0 ~ "^  - " path_field ":" && !_in_entry {
+            _entry_path_line = $0
+            _entry_buf_n = 0
+            delete _entry_buf
+            _in_entry = 1
+            next
+        }
+
+        in_section && _in_entry {
             kf_re = "^    " key_field ":"
             if ($0 ~ kf_re) {
                 kv = $0; sub("^    " key_field ": *", "", kv)
                 gsub(/[\"'"'"'"'"'"'[:space:]]/, "", kv)
                 if (kv == key_value) {
-                    print "  - " path_field ": " new_path
+                    print "  - " path_field ": \"" new_path "\""
+                    for (_bi = 1; _bi <= _entry_buf_n; _bi++) print _entry_buf[_bi]
                     print $0
+                    _in_entry = 0
                     next
                 }
+                # Key field found but value differs — not our entry, flush as-is
+                print _entry_path_line
+                for (_bi = 1; _bi <= _entry_buf_n; _bi++) print _entry_buf[_bi]
+                print $0
+                _in_entry = 0
+                next
             }
-            # Not our entry — print as-is
-            print saved_path
-            print $0
-            next
+            if ($0 ~ /^  - / || ($0 !~ /^    / && $0 !~ /^$/)) {
+                # Entry boundary — not our entry, flush as-is
+                print _entry_path_line
+                for (_bi = 1; _bi <= _entry_buf_n; _bi++) print _entry_buf[_bi]
+                _in_entry = 0
+                # Fall through
+            } else {
+                _entry_buf_n++; _entry_buf[_entry_buf_n] = $0; next
+            }
         }
 
         { print }
+        END {
+            if (_in_entry) {
+                print _entry_path_line
+                for (_bi = 1; _bi <= _entry_buf_n; _bi++) print _entry_buf[_bi]
+            }
+        }
     ' "$yml_file" > "$tmpf" && mv "$tmpf" "$yml_file"
 }
 

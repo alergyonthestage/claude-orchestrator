@@ -73,8 +73,8 @@ cco project resolve myapp --repo backend ~/dev/be  # Direct set
 cco project resolve myapp --show                   # Show status
 ```
 
-This applies to both vault sync and Config Repo install/publish. You write real
-paths — the system handles portability transparently.
+This applies to both vault save/push/pull and Config Repo install/publish. You
+write real paths — the system handles portability transparently.
 
 ### Inspecting changes
 
