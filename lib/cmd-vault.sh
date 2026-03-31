@@ -315,6 +315,13 @@ EOF
     local shared_count
     shared_count=$(echo "$shared_changes" | grep -c . || true)
 
+    # Sync requires branch checkout — block if Docker sessions are active (D8)
+    if ! _check_no_active_sessions_quiet; then
+        warn "Shared resource sync skipped — Docker sessions are active"
+        info "Profiles will be synced on next 'cco vault save' after stopping sessions"
+        return 0
+    fi
+
     if [[ -n "$profile" ]]; then
         # On a profile branch: sync to main, then to all other profiles
         _sync_shared_to_main "$vault_dir" "$current_branch"
@@ -1156,6 +1163,17 @@ _clean_nonportable_remnants() {
         rm -rf "$proj_dir/.cco/managed/"
         rm -rf "$proj_dir/.tmp/"
     done <<< "$proj_list"
+}
+
+# Check that no Docker sessions are active — quiet version (return code only)
+# Used by vault save to skip sync without verbose error output.
+_check_no_active_sessions_quiet() {
+    local running
+    running=$(docker ps --filter "label=cco.project" --format "{{.Names}}" 2>/dev/null || true)
+    if [[ -z "$running" ]]; then
+        running=$(docker ps --filter "name=cc-" --format "{{.Names}}" 2>/dev/null || true)
+    fi
+    [[ -z "$running" ]]
 }
 
 # Check that no Docker sessions are active (blocks branch-switching operations: D8, D31)
