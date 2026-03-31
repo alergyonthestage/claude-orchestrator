@@ -308,9 +308,6 @@ _resolve_template_vars() {
             # Non-interactive: use sensible defaults or fail for required vars
             case "$name" in
                 DESCRIPTION) value="TODO: Add project description" ;;
-                REPO_*)
-                    die "Required variable '$name' not set. Use --var $name=<path> in non-interactive mode."
-                    ;;
                 *)  value="$name" ;;
             esac
         fi

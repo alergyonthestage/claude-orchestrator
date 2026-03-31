@@ -262,8 +262,8 @@ EOF
     mkdir -p "$tmpdir/templates/$name"
     _copy_project_for_publish "$project_dir" "$tmpdir/templates/$name"
 
-    # Reverse-template repo paths in the published project.yml
-    _reverse_template_repos "$tmpdir/templates/$name/project.yml"
+    # Sanitize paths: replace local paths with @local markers, inject url: fields
+    _sanitize_project_paths "$tmpdir/templates/$name/project.yml"
 
     # Bundle packs if requested
     local -a published_packs=()
@@ -512,71 +512,6 @@ _copy_project_for_publish() {
         # Clean up temp git repo and .gitignore
         rm -rf "$dst/.git" "$dst/.gitignore"
     fi
-}
-
-# Reverse-template repo paths: replace local paths with {{REPO_NAME}} variables
-# and add url: field from git remote.
-_reverse_template_repos() {
-    local yml_file="$1"
-
-    # Capture original repo info BEFORE transforming paths
-    # Format: "path:name" per line
-    local orig_repos
-    orig_repos=$(yml_get_repos "$yml_file" 2>/dev/null)
-
-    # Build url map: name → git remote URL (best-effort)
-    local url_map=""
-    if [[ -n "$orig_repos" ]]; then
-        while IFS=: read -r repo_path repo_name; do
-            [[ -z "$repo_name" ]] && continue
-            local expanded
-            expanded=$(expand_path "$repo_path" 2>/dev/null) || continue
-            if [[ -d "$expanded/.git" ]]; then
-                local remote_url
-                remote_url=$(git -C "$expanded" remote get-url origin 2>/dev/null) || true
-                if [[ -n "$remote_url" ]]; then
-                    url_map+="${repo_name}=${remote_url}"$'\n'
-                fi
-            fi
-        done <<< "$orig_repos"
-    fi
-
-    # Replace paths with template variables and add url: fields
-    awk -v url_map="$url_map" '
-        BEGIN {
-            n = split(url_map, entries, "\n")
-            for (i = 1; i <= n; i++) {
-                if (entries[i] == "") continue
-                eq = index(entries[i], "=")
-                if (eq > 0) {
-                    k = substr(entries[i], 1, eq - 1)
-                    urls[k] = substr(entries[i], eq + 1)
-                }
-            }
-        }
-        /^repos:/ { in_repos=1; print; next }
-        in_repos && /^[^ #]/ { in_repos=0; print; next }
-        in_repos && /^  - path:/ {
-            saved=$0; getline
-            if ($0 ~ /^    name:/) {
-                name_line=$0
-                sub(/^    name: */, "", name_line)
-                gsub(/[\"'\''[:space:]]/, "", name_line)
-                var = toupper(name_line)
-                gsub(/-/, "_", var)
-                print "  - path: \"{{REPO_" var "}}\""
-                print $0
-                if (name_line in urls) {
-                    print "    url: " urls[name_line]
-                }
-            } else {
-                print saved
-                print $0
-            }
-            next
-        }
-        { print }
-    ' "$yml_file" > "$yml_file.tmp" && mv "$yml_file.tmp" "$yml_file"
 }
 
 # Publish a pack into a tmpdir for bundling with a project.
