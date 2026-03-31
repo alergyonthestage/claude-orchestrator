@@ -304,7 +304,35 @@ For the full workflow (vault commands, multi-machine sync, team sharing, publish
 
 ---
 
-## 7. Post-Creation Checklist
+## 7. Path Portability (Multi-Machine)
+
+When you sync your vault across machines, repo and mount paths in `project.yml`
+are automatically handled: `cco vault save` replaces machine-specific paths with
+`@local` markers and stores the real paths in `.cco/local-paths.yml` (gitignored,
+per-machine). `cco vault pull` restores paths from local mappings if available.
+
+On a new machine (or after `cco project install`), `cco start` detects unresolved
+`@local` entries and prompts you to:
+
+- **(c) Clone** — auto-clone from the `url:` metadata (extracted from git remotes)
+- **(p) Specify path** — enter the path where the repo lives on this machine
+- **(s) Skip** — skip the repo for this session (prompted again next time)
+
+You can also configure paths ahead of time:
+
+```bash
+cco project resolve myapp                          # Interactive mode
+cco project resolve myapp --repo backend ~/dev/be  # Direct set
+cco project resolve myapp --show                   # Show status
+```
+
+This is transparent — you write real paths in `project.yml`, and the system
+handles portability behind the scenes. Published templates and installed projects
+use the same mechanism.
+
+---
+
+## 8. Post-Creation Checklist
 
 > See also: [Knowledge Packs guide](knowledge-packs.md) for creating and managing packs, [Authentication guide](authentication.md) for OAuth and API key setup.
 

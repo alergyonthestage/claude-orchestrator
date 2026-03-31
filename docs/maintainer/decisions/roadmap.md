@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-26 (v0.2.0-alpha: llms.txt sprint completed, profile isolation review + merge).
+> Last updated: 2026-03-31 (v0.2.0-alpha: #LP local path resolution implemented).
 >
 > **Note**: Sprint entries are historical. Path references (e.g., `.cco-meta`, `.cco-source`) in older
 > sprints reflect the layout at the time of writing. See Sprint 8 and the `.cco/` consolidation
@@ -13,9 +13,9 @@
 
 | Status | Items | Section |
 |--------|-------|---------|
-| ✅ Completed | 29 sprints / features | [→ Completed](#completed) |
+| ✅ Completed | 30 sprints / features | [→ Completed](#completed) |
 | 🐛 Known Bugs | 1 open · 8 fixed | [→ Known Bugs](#known-bugs) |
-| 🔜 Planned | Quick Wins (FI-4, #10), AI-merge, Sprint 6C → 12 | [→ Planned Sprints](#planned-sprints) |
+| 🔜 Planned | Quick Wins (FI-4, #10), AI-merge, Sprint 6C → 12 | [→ Planned](#planned-sprints) |
 | 🔭 Exploratory | 7 ideas | [→ Long-term / Exploratory](#long-term--exploratory) |
 | ❌ Declined | 3 items | [→ Declined / Won't Do](#declined--wont-do) |
 
@@ -27,9 +27,9 @@ Features are prioritized by impact for third-party users adopting claude-orchest
 
 ### Prioritization Notes (updated 2026-03-31)
 
-**Completed**: RF-1→4, FI-2, FI-5, FI-7, FI-8, Sprint 5c, Sprint 6 Phase A+B, Bugfix B5-B7, UX Improvements P1-3, Minor Fixes batch, llms.txt, Profile Isolation Review.
+**Completed**: RF-1→4, FI-2, FI-5, FI-7, FI-8, Sprint 5c, Sprint 6 Phase A+B, Bugfix B5-B7, UX Improvements P1-3, Minor Fixes batch, llms.txt, Profile Isolation Review, #LP Local Paths.
 
-**Next**: #LP local path resolution (design ready), then FI-4, #10.
+**Next**: FI-4 model config, #10 project edit.
 
 **Then**: AI-assisted merge (P4), Security (Sprint 6C), E2E testing (Sprint 8), Linux OAuth (Sprint 9).
 
@@ -37,20 +37,18 @@ Features are prioritized by impact for third-party users adopting claude-orchest
 
 | Category | Items | Effort | Benefit |
 |----------|-------|--------|---------|
-| **#LP local paths (priority 1)** | Unified path portability — design approved | Medium | Cross-PC usability, publish fix |
-| **Quick wins (priority 2)** | FI-4 model config, #10 project edit | Low-Medium | UX improvement |
-| **AI-merge (priority 3)** | Phase 4 AI-assisted merge | Low-Medium | Update UX quality |
-| **Security (priority 3)** | Sprint 6C network hardening | Medium-High | Required for production/open-source |
-| **Quality (priority 4)** | Sprint 8 E2E tests | Medium | Prerequisite for Linux onboarding |
-| **Onboarding (priority 5)** | Sprint 9 Linux OAuth | Medium | Pre-open-source requirement |
-| **Architecture (priority 6)** | Sprint 10 worktree, #9 pack inheritance, #10b StatusLine | Medium | Valuable but not blocking |
+| **Quick wins (priority 1)** | FI-4 model config, #10 project edit | Low-Medium | UX improvement |
+| **AI-merge (priority 2)** | Phase 4 AI-assisted merge | Low-Medium | Update UX quality |
+| **Security (priority 2)** | Sprint 6C network hardening | Medium-High | Required for production/open-source |
+| **Quality (priority 3)** | Sprint 8 E2E tests | Medium | Prerequisite for Linux onboarding |
+| **Onboarding (priority 4)** | Sprint 9 Linux OAuth | Medium | Pre-open-source requirement |
+| **Architecture (priority 5)** | Sprint 10 worktree, #9 pack inheritance, #10b StatusLine | Medium | Valuable but not blocking |
 | **Exploratory** | Sprint 12 RAG, hot-reload, notifications, remote sessions, web UI | High | Long-term, evaluate demand |
 
 ```mermaid
 graph LR
-    DONE["✅ Completed<br/>Sprint 1-5c, Sprint 6+10,<br/>Sprint 6b, ADR-13,<br/>Sprint 7-Vault + Real Isolation,<br/>llms.txt, FI-7 Config Sync,<br/>RF-1→4, FI-2, FI-5, FI-8,<br/>Sprint 6 Phase A+B,<br/>Bugfix #B1-#B7,<br/>UX Improvements P1-3,<br/>Minor Fixes"]
+    DONE["✅ Completed<br/>Sprint 1-5c, Sprint 6+10,<br/>Sprint 6b, ADR-13,<br/>Sprint 7-Vault + Real Isolation,<br/>llms.txt, FI-7 Config Sync,<br/>RF-1→4, FI-2, FI-5, FI-8,<br/>Sprint 6 Phase A+B,<br/>Bugfix #B1-#B7,<br/>UX Improvements P1-3,<br/>Minor Fixes, #LP Local Paths"]
 
-    LP["#LP Local Paths<br/>Unified path portability"]
     QW["Quick Wins<br/>#FI-4 model config<br/>#cco project edit"]
     AIM["AI-Assisted Merge<br/>#Phase 4"]
     S6S["Sprint 6C-Security<br/>#Network Hardening<br/>#Squid proxy"]
@@ -59,8 +57,7 @@ graph LR
     S10["Sprint 10+<br/>#Worktree isolation<br/>#Pack inheritance<br/>#StatusLine"]
     S12R["Sprint 12-RAG<br/>#Project RAG"]
 
-    DONE --> LP
-    LP --> QW
+    DONE --> QW
     QW --> AIM
     AIM --> S6S
     S6S --> S8E
@@ -89,19 +86,6 @@ Add `model:` field to `project.yml`, passed to `claude --model` at launch.
 Open project.yml in `$EDITOR` and regenerate docker-compose.yml after save.
 
 **Effort**: Low.
-
-#### #LP Local Path Resolution (unified path portability)
-
-Unify path handling across vault push/pull AND publish/install. All
-machine-specific paths use `@local` markers (replacing `{{REPO_*}}` for
-publish). `.cco/local-paths.yml` (gitignored) stores per-machine mappings.
-`cco start` resolves with interactive prompt + auto-clone from `url:`.
-Covers both repos AND extra_mounts (publish currently ignores mounts).
-New `cco project resolve` command. New shared `lib/local-paths.sh` module
-supersedes `_reverse_template_repos()` and `_resolve_repo_entries()`.
-
-**Docs**: [design](../configuration/vault/local-path-resolution-design.md)
-**Effort**: Medium.
 
 ---
 
@@ -418,6 +402,20 @@ Migration `005_split_global_setup.sh` renames existing `setup.sh` → `setup-bui
 ---
 
 ## Completed
+
+### #LP Local Path Resolution (2026-03-31) ✓
+
+Unified path portability across vault sync, publish/install, and `cco start`.
+Machine-specific paths in `project.yml` replaced with `@local` markers;
+real paths stored in `.cco/local-paths.yml` (gitignored, per-PC). Covers
+both repos and extra_mounts. `cco start` resolves interactively with
+auto-clone from `url:` metadata. New `cco project resolve` command. New
+shared `lib/local-paths.sh` module supersedes `_reverse_template_repos()`
+and `_resolve_repo_entries()`. Legacy `{{REPO_*}}` templates remain supported.
+
+**Docs**: [design](../configuration/vault/local-path-resolution-design.md) | changelog entry 12
+
+---
 
 ### Profile Isolation Review & v0.2.0-alpha (2026-03-26) ✓
 

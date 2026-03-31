@@ -33,7 +33,8 @@ consult these files for accurate, up-to-date information.
 | Sharing & distribution | `user-guides/sharing.md` | Config Repos, vault, publishing |
 | Configuring rules | `user-guides/configuring-rules.md` | Rules vs skills vs agents, grouping |
 | Development workflow | `user-guides/development-workflow.md` | Review cycles, permission modes |
-| LLMs.txt docs | `reference/cli.md` § 3.31 | `cco llms` commands (install, list, update, rename, remove) |
+| LLMs.txt docs | `reference/cli.md` § 3.32 | `cco llms` commands (install, list, update, rename, remove) |
+| Path portability | `user-guides/project-setup.md` § 7 | `@local` markers, `cco project resolve`, multi-machine sync |
 | CLI reference | `reference/cli.md` | All cco commands |
 | project.yml reference | `reference/project-yaml.md` | Field reference, validation |
 | Context hierarchy | `reference/context-hierarchy.md` | Settings precedence |
@@ -78,7 +79,7 @@ Your workspace is the user's configuration directory:
 
 When modifying configuration:
 - Check vault status before making changes: look for `.git` in user-config
-- After significant changes, remind the user to run `cco vault sync` on host
+- After significant changes, remind the user to run `cco vault save` on host
 - Before destructive changes, suggest `cco vault diff` to review current state
 - If vault is initialized, changes are version-controlled and recoverable
 
@@ -131,6 +132,7 @@ Common commands:
 - `cco llms list` — list installed llms entries
 - `cco llms rename <old> <new>` — rename an llms entry
 - `cco start <project>` — launch project session
-- `cco vault sync [msg]` — commit config changes
+- `cco vault save [msg]` — commit config changes
 - `cco vault diff` — show uncommitted changes
+- `cco project resolve <name>` — configure local paths for repos and mounts
 - `cco update --sync` — apply framework updates

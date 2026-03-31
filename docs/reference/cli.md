@@ -624,7 +624,50 @@ Examples:
 
 ---
 
-### 3.15 `cco update [OPTIONS]`
+### 3.15 `cco project resolve <project>`
+
+Configure local paths for a project's repos and mounts. Each machine stores
+its own path mappings in `.cco/local-paths.yml` (gitignored). This command
+lets you set paths explicitly or interactively before `cco start` prompts.
+
+```
+Usage: cco project resolve <project> [OPTIONS]
+
+Arguments:
+  project              Project name
+
+Options:
+  --repo <name> <path>      Set local path for a repository
+  --mount <target> <path>   Set local path for an extra mount
+  --show                    Show current path mappings (no changes)
+  --reset                   Remove all local overrides (re-prompt on next start)
+
+Examples:
+  cco project resolve myapp                          # Interactive mode
+  cco project resolve myapp --repo backend ~/dev/be  # Direct set
+  cco project resolve myapp --mount /workspace/docs ~/docs  # Direct set mount
+  cco project resolve myapp --show                   # Show status
+  cco project resolve myapp --reset                  # Clear all mappings
+```
+
+**Flow (interactive mode)**:
+
+```
+1. LOAD project.yml and .cco/local-paths.yml
+2. For each repo and extra_mount:
+   - Show status (✓ resolved / ✗ needs path)
+   - If @local and no stored path → prompt for path or clone
+3. Updated paths saved to .cco/local-paths.yml
+```
+
+**Context**: When `project.yml` is synced via vault or installed from a
+Config Repo, repo paths are replaced with `@local` markers. `cco start`
+resolves these interactively, but `project resolve` lets you configure
+paths ahead of time (useful for non-TTY environments or scripted setup).
+
+---
+
+### 3.16 `cco update [OPTIONS]`
 
 Run pending migrations, discover available updates, and notify of new features.
 
@@ -768,7 +811,7 @@ run on all scopes — they are not filtered by `--sync`/`--diff` scope.
 
 ---
 
-### 3.16 `cco pack install <url>`
+### 3.17 `cco pack install <url>`
 
 Install packs from a remote Config Repo.
 
@@ -791,7 +834,7 @@ Examples:
 
 ---
 
-### 3.17 `cco pack update`
+### 3.18 `cco pack update`
 
 Update pack(s) from their remote source.
 
@@ -814,7 +857,7 @@ Examples:
 
 ---
 
-### 3.18 `cco pack export <name>`
+### 3.19 `cco pack export <name>`
 
 Export a pack as a `.tar.gz` archive.
 
@@ -830,7 +873,7 @@ Examples:
 
 ---
 
-### 3.19 `cco project install <url>`
+### 3.20 `cco project install <url>`
 
 Install a project template from a Config Repo.
 
@@ -865,7 +908,7 @@ version at install time for 3-way merge during updates.
 
 ---
 
-### 3.20 `cco vault`
+### 3.21 `cco vault`
 
 Git-backed configuration versioning for `user-config/`.
 
@@ -1184,7 +1227,7 @@ Usage: cco vault profile remove project <name>
 
 ---
 
-### 3.21 `cco project update`
+### 3.22 `cco project update`
 
 Check for and apply updates from the remote source of an installed project.
 Uses 3-way merge to preserve your local customizations.
@@ -1218,7 +1261,7 @@ For local projects, use `cco update --sync <name>` instead.
 
 ---
 
-### 3.22 `cco project internalize`
+### 3.23 `cco project internalize`
 
 Disconnect a project from its remote source, converting it to a local project.
 
@@ -1244,7 +1287,7 @@ or you installed the project as a starting point (not for ongoing sync).
 
 ---
 
-### 3.23 `cco project publish`
+### 3.24 `cco project publish`
 
 Publish a project as a shareable template to a remote Config Repo.
 Includes a safety pipeline: migration check, secret scan, framework alignment
@@ -1301,7 +1344,7 @@ memory/
 
 ---
 
-### 3.24 `cco project add-pack` / `cco project remove-pack`
+### 3.25 `cco project add-pack` / `cco project remove-pack`
 
 Add or remove a knowledge pack from a project's `packs:` list.
 
@@ -1316,7 +1359,7 @@ Examples:
 
 ---
 
-### 3.25 `cco pack publish`
+### 3.26 `cco pack publish`
 
 Publish a pack to a remote Config Repo.
 
@@ -1345,7 +1388,7 @@ automatically internalized during publish (local pack unchanged).
 
 ---
 
-### 3.26 `cco pack internalize`
+### 3.27 `cco pack internalize`
 
 Convert a pack to fully self-contained and locally owned.
 
@@ -1374,7 +1417,7 @@ self-contained.
 
 ---
 
-### 3.27 `cco remote`
+### 3.28 `cco remote`
 
 Manage named Config Repo remotes for publishing and installing.
 
@@ -1436,7 +1479,7 @@ Examples:
 
 ---
 
-### 3.28 `cco manifest`
+### 3.29 `cco manifest`
 
 Manage the `manifest.yml` manifest for sharing packs and templates via Config Repos.
 
@@ -1466,7 +1509,7 @@ Usage: cco manifest show
 
 ---
 
-### 3.29 `cco template`
+### 3.30 `cco template`
 
 Manage project and pack templates. Native templates ship with the tool in `templates/`; user templates are stored in `user-config/templates/` and take priority over native ones with the same name.
 
@@ -1523,7 +1566,7 @@ Examples:
 
 ---
 
-### 3.30 `cco clean`
+### 3.31 `cco clean`
 
 Remove files generated or left behind by the framework. Supports multiple cleanup
 categories that can be combined.
@@ -1556,7 +1599,7 @@ Examples:
 **Note:** `.cco/base/` directories are never removed by `cco clean`. They store the
 diff/merge ancestors required for `cco update` discovery and `--sync` to function correctly.
 
-### 3.31 `cco llms`
+### 3.32 `cco llms`
 
 Manage llms.txt framework documentation. Downloads, stores, and serves official
 framework docs to coding agents during sessions.
