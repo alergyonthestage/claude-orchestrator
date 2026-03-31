@@ -641,7 +641,57 @@ The `packs.md` index file remains generated into the project's `.claude/` as it 
 
 ---
 
-## 7. Limitations and Trade-offs
+## 7. Error Handling
+
+### 7.1 Two-tier error model
+
+The CLI distinguishes **expected errors** (validation failures, precondition
+checks) from **unexpected crashes** (set -e/set -u violations, syntax errors):
+
+| Type | Example | Handler | User sees |
+|------|---------|---------|-----------|
+| Expected | "You have uncommitted changes" | `die()` or `return 1` from command | Error message only |
+| Unexpected | Unbound variable, broken pipe | EXIT trap | "cco exited unexpectedly (exit N)" |
+
+### 7.2 Mechanism
+
+```
+bin/cco
+  set -euo pipefail
+  trap '...' EXIT              ← fires only when _cco_completed != true
+  ...
+  _cco_rc=0
+  cmd_vault "$@" || _cco_rc=$?  ← captures expected errors
+  _cco_completed=true           ← suppresses EXIT trap
+  exit $_cco_rc                 ← propagates original exit code
+```
+
+The `|| _cco_rc=$?` pattern prevents `set -e` from killing the script when
+a command returns non-zero. The dispatcher captures the return code, marks
+completion, and exits cleanly.
+
+### 7.3 Conventions for command functions
+
+- **`die "message"`**: Print error + exit 1. Sets `_cco_completed=true` internally.
+  Use for fatal validation errors.
+- **`return 1`**: Return error to caller. The dispatcher captures it. Use when
+  the function has already printed its error (e.g., `_check_no_active_sessions`).
+- **`error "message"; return 1`**: Print error + return. Same as above, explicit.
+- Never use `exit 1` directly from library functions — only `die()` or `return`.
+
+### 7.4 Output helpers (`lib/colors.sh`)
+
+| Function | Prefix | Use |
+|----------|--------|-----|
+| `info()` | `ℹ` | Status updates, progress |
+| `ok()` | `✓` | Success confirmations |
+| `warn()` | `⚠` | Non-fatal warnings |
+| `error()` | `✗` | Error messages (caller continues) |
+| `die()` | `✗` | Fatal error + exit 1 |
+
+---
+
+## 8. Limitations and Trade-offs
 
 | Limitation | Impact | Workaround |
 |------------|--------|------------|
