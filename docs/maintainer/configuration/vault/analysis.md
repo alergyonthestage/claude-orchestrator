@@ -575,6 +575,10 @@ should instruct Claude to:
 
 ## 8. Resource Tracking Matrix
 
+> **Canonical reference**: `file-classification.md` is the single source of truth
+> for file classification, gitignore policy, and per-operation behavior. The table
+> below is the original analysis; see that document for the complete, maintained version.
+
 Complete mapping of every resource type to its vault, sync, and sharing behavior.
 
 | Resource | In vault? | Branch (no profiles) | Branch (with profiles) | Publish/Install | Notes |

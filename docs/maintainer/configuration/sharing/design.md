@@ -402,6 +402,11 @@ sed "${substitutions[@]}" "$template_file" > "$target_file"
 
 ## 8. Vault .gitignore Template
 
+> **Canonical reference**: `../vault/file-classification.md` §5 has the complete,
+> maintained gitignore reference with per-pattern classification and rationale.
+> The template below is the original design; the code in `_VAULT_GITIGNORE` and
+> the classification document are authoritative.
+
 Written by `cco vault init` to `<user-config>/.gitignore`:
 
 ```gitignore

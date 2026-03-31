@@ -65,6 +65,9 @@ synchronized across all branches via the shared sync algorithm.
 
 ### 2.2 Resource Classification
 
+> **See also**: `file-classification.md` §3-4 for the complete per-file
+> classification including gitignore, publish/install, and UX visibility.
+
 | Resource | Sharing | Default | At switch time |
 |----------|---------|---------|----------------|
 | `global/` | Always shared | Shared | Synced from main (at `vault save`) |
