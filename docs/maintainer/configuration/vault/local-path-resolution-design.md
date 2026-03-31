@@ -872,3 +872,37 @@ Switched to `ENVIRON[]` for path values.
 **W4: ERR trap timing** — `_vault_has_real_changes` and `cmd_vault_save` set the
 ERR trap AFTER `_extract_local_paths`. If extraction failed, restore would not
 run. Moved trap before extraction call.
+
+### 10.5 Post-release fixes (2026-03-31)
+
+**B3: `vault diff` shows virtual diffs** — `cmd_vault_diff` used raw `git status`
+without path normalization. `project.yml` always appeared modified (real paths vs
+committed `@local`). Meanwhile `vault save` correctly normalized before counting,
+causing UX inconsistency: diff shows changes, save says "nothing to commit."
+
+**Fix**: `cmd_vault_diff` now calls `_extract_local_paths` / `_restore_local_paths`
+before reading git status, matching the normalization flow in `vault save`. Added
+to the design: vault diff is the 8th normalization point alongside the 7 dirty
+checks.
+
+**B4: `.cco/project.yml.pre-save` tracked in git (phantom D entries)** — Migration
+012 had a bug (B1); during the window before migration 013 fixed the `.gitignore`,
+some vaults committed pre-save backups. Adding the gitignore pattern doesn't
+untrack already-committed files, causing persistent `D` status in diff.
+
+**Fix**: Migration 014 runs `git rm --cached` on the current branch. A lazy
+cleanup helper (`_untrack_stale_pre_save`) runs at the start of `vault save` and
+`vault diff` to fix remaining branches when the user first operates on them.
+
+**B5: `.cco/*` files not filtered from user-content categories in diff/save** —
+The categorization only filtered `.cco/base/*` and `.cco/source*` as metadata.
+Other `.cco/` files (e.g., pre-save backups that escaped gitignore) appeared
+under "Projects" in the diff output.
+
+**Fix**: Broadened the metadata filter to `*/.cco/*` (catch-all). Framework-tracking
+files (base, source) were already covered; the wider pattern adds defense-in-depth
+for any `.cco/` file that escapes gitignore.
+
+**UX1: Shared sync preview in save** — Added informational message before the
+commit prompt when shared resources (global, templates, packs) will be synced
+to other profiles. Previously, users had no preview of cross-profile propagation.

@@ -118,6 +118,22 @@ EOF
     echo "  cco vault push"
 }
 
+# Lazy cleanup: untrack .cco/project.yml.pre-save files that were
+# accidentally committed before the gitignore pattern existed (migration 012
+# bug). Migration 014 fixes the current branch; this handles other branches
+# when the user first runs vault save/diff on them.
+_untrack_stale_pre_save() {
+    local vault_dir="$1"
+    local tracked
+    tracked=$(git -C "$vault_dir" ls-files -- 'projects/*/.cco/project.yml.pre-save' 2>/dev/null)
+    [[ -z "$tracked" ]] && return 0
+
+    echo "$tracked" | xargs git -C "$vault_dir" rm --cached -q -- 2>/dev/null || true
+    if ! git -C "$vault_dir" diff --cached --quiet 2>/dev/null; then
+        git -C "$vault_dir" commit -q -m "vault: untrack machine-specific pre-save backups"
+    fi
+}
+
 # Check for real uncommitted changes (excluding local-path differences).
 # project.yml files always appear "modified" because the working copy has
 # real paths while the committed version has @local markers. This helper
@@ -127,6 +143,10 @@ EOF
 # Outputs: file count to stdout when real changes exist
 _vault_has_real_changes() {
     local vault_dir="$1"
+
+    # Untrack stale pre-save backups so they don't count as changes
+    _untrack_stale_pre_save "$vault_dir"
+
     local status_output
     status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
     [[ -z "$status_output" ]] && return 1
@@ -173,6 +193,9 @@ EOF
     _check_vault
 
     local vault_dir="$USER_CONFIG_DIR"
+
+    # Lazy cleanup: untrack pre-save backups if still tracked (see migration 014)
+    _untrack_stale_pre_save "$vault_dir"
 
     # Quick check — no changes at all?
     local raw_status
@@ -236,13 +259,15 @@ EOF
     fi
 
     # Categorize changes (post-extraction — accurate counts)
-    # Separates user content from framework-tracking files (see file-classification.md §6.1)
+    # Separates user content from framework/internal files (see file-classification.md §6.1)
     local packs_count=0 projects_count=0 global_count=0 templates_count=0 metadata_count=0
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
         local file="${line:3}"
-        # Framework-tracking files (.cco/base/, .cco/source*) and vault infra
-        if [[ "$file" == */.cco/base/* || "$file" == */.cco/source* \
+        # Framework-tracking, vault infra, and any .cco/ internal files
+        # Defense-in-depth: .cco/* catch-all prevents machine-specific files
+        # from appearing as user content if they escape gitignore
+        if [[ "$file" == */.cco/* || "$file" == .cco/* \
            || "$file" == ".gitignore" || "$file" == "manifest.yml" \
            || "$file" == ".vault-profile" ]]; then
             metadata_count=$((metadata_count + 1))
@@ -267,6 +292,16 @@ EOF
 
     local total=$((packs_count + projects_count + global_count + templates_count + metadata_count))
     echo "  total:     $total file(s)"
+
+    # Shared sync preview — inform user if shared resources will propagate
+    if _has_profiles 2>/dev/null; then
+        local shared_hint=$((global_count + templates_count))
+        if [[ $shared_hint -gt 0 || $packs_count -gt 0 ]]; then
+            local profile_count
+            profile_count=$(_list_profile_branches | grep -c . || true)
+            info "Shared resources will be synced to $profile_count profile(s) after commit"
+        fi
+    fi
 
     if $dry_run; then
         echo ""
@@ -376,15 +411,28 @@ EOF
     _check_vault
 
     local vault_dir="$USER_CONFIG_DIR"
+
+    # Lazy cleanup: untrack pre-save backups if still tracked (see migration 014)
+    _untrack_stale_pre_save "$vault_dir"
+
+    # Normalize local paths to eliminate virtual diffs (real paths vs @local).
+    # Without this, project.yml always appears modified. Same normalization
+    # that vault save applies before counting changes.
+    trap '_restore_local_paths "$vault_dir"' ERR
+    _extract_local_paths "$vault_dir"
     local status_output
     status_output=$(git -C "$vault_dir" status --short 2>/dev/null)
+    trap - ERR
+    _restore_local_paths "$vault_dir"
 
     if [[ -z "$status_output" ]]; then
         ok "No uncommitted changes"
         return 0
     fi
 
-    # If a profile is active, filter diff output to profile-scoped paths
+    # If a profile is active, filter diff output to profile-scoped paths.
+    # With real isolation (D20), this filter is a no-op — other profiles' files
+    # don't exist on this branch. Kept as defense-in-depth.
     local profile
     profile=$(_get_active_profile)
     if [[ -n "$profile" ]]; then
@@ -426,14 +474,16 @@ EOF
         status_output="$filtered_output"
     fi
 
-    # Group by category, separating framework-tracking from user content
+    # Group by category, separating framework/internal from user content
     # (see file-classification.md §6.2)
     local packs="" projects="" global_files="" templates="" metadata=""
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
         local file="${line:3}"
-        # Framework-tracking files (.cco/base/, .cco/source*) and vault infra
-        if [[ "$file" == */.cco/base/* || "$file" == */.cco/source* \
+        # Framework-tracking, vault infra, and any .cco/ internal files
+        # Defense-in-depth: .cco/* catch-all prevents machine-specific files
+        # from appearing as user content if they escape gitignore
+        if [[ "$file" == */.cco/* || "$file" == .cco/* \
            || "$file" == ".gitignore" || "$file" == "manifest.yml" \
            || "$file" == ".vault-profile" ]]; then
             metadata+="$line"$'\n'
@@ -2182,7 +2232,13 @@ EOF
         die "Profile '$name' not found. Run 'cco vault profile list' to see available profiles."
     fi
 
+    # Step 0: Extract local paths — sanitize project.yml to @local markers so
+    # the working tree matches the committed version. Without this, resolved
+    # machine-specific paths make git refuse the checkout (dirty tree).
+    _extract_local_paths "$vault_dir"
+
     # Step 1-2: Stash portable gitignored files for departing branch
+    # (stash picks up the local-paths.yml created by extract — correct for this machine)
     local current_profile
     current_profile=$(_get_active_profile)
     if [[ -n "$current_profile" ]]; then
@@ -2195,7 +2251,8 @@ EOF
 
     # Step 4: git checkout target
     if ! git -C "$vault_dir" checkout "$name" -q 2>/dev/null; then
-        # Rollback: restore stashed files if checkout failed
+        # Rollback: restore local paths + stashed files
+        _restore_local_paths "$vault_dir"
         if [[ -n "$current_profile" ]]; then
             _restore_gitignored_files "$vault_dir" "$current_profile"
         else
@@ -2206,6 +2263,16 @@ EOF
 
     # Step 5: Clean ghost directories (empty dirs left after git checkout)
     find "$vault_dir/projects" -type d -empty -delete 2>/dev/null || true
+
+    # Clean up pre-save backups from the departed branch (gitignored, persist
+    # across checkout). Must remove before any vault save on the target branch,
+    # otherwise _extract_local_paths would mistake them for interrupted saves.
+    if [[ -d "$vault_dir/projects" ]]; then
+        local _pdir
+        for _pdir in "$vault_dir"/projects/*/; do
+            rm -f "$_pdir/.cco/project.yml.pre-save" 2>/dev/null
+        done
+    fi
 
     # Step 6: Restore portable gitignored files for arriving branch
     if [[ "$name" == "$default_branch" ]]; then

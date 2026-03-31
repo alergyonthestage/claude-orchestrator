@@ -337,6 +337,20 @@ to the current branch (exclusive + shared).
 The complex profile-scoped staging logic (lines 243-294 of current
 `cmd-vault.sh`) can be removed.
 
+### 4.6 Profile Filtering in `vault diff` (Defense-in-Depth)
+
+With real isolation, `vault diff`'s profile-scoped filtering is also a no-op:
+other profiles' files don't exist on this branch, so there is nothing to filter
+out. The filter is kept as defense-in-depth but is not load-bearing. This is
+analogous to D20 for `vault save` — real isolation makes explicit path scoping
+unnecessary, but harmless guards are acceptable.
+
+`vault diff` also applies local path normalization (`_extract_local_paths` /
+`_restore_local_paths`) before reading git status, matching the behavior of
+`vault save`. Without this, `project.yml` always appears modified (real paths
+vs committed `@local` markers), creating UX inconsistency where diff shows
+changes that save reports as "nothing to commit."
+
 ---
 
 ## 5. `vault switch` — Complete Flow

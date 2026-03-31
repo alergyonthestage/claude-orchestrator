@@ -308,10 +308,17 @@ The change summary groups committed files into user-meaningful categories:
 ### 6.2 `vault diff` display
 
 - **User content** is grouped and shown by category (Packs, Projects, Global, Templates)
-- **Framework-tracking files** (`.cco/base/`, `.cco/source`) are either:
-  - Filtered entirely (simplest, recommended for now)
-  - Or shown under a collapsed "Framework" section
+- **All `.cco/` internal files** are classified as "Metadata" and shown separately
+  - This includes framework-tracking (`.cco/base/`, `.cco/source`) and any other
+    `.cco/` file that might escape gitignore (defense-in-depth)
+  - The `*/.cco/*` catch-all filter in the categorization code ensures no `.cco/`
+    file appears under user-content categories
 - Users should never wonder "did I accidentally edit `.cco/base/`?"
+- **Local path normalization**: `vault diff` runs `_extract_local_paths` /
+  `_restore_local_paths` before reading git status. Without this, `project.yml`
+  always appears modified (real paths vs committed `@local` markers). This
+  matches the normalization in `vault save` and prevents UX inconsistency
+  (diff showing changes that save says don't exist).
 
 ### 6.3 Pre-commit messages
 
@@ -319,6 +326,9 @@ The change summary groups committed files into user-meaningful categories:
   (virtual path diffs are eliminated by pre-extraction)
 - Secret warning if `secrets.env` or credential files are staged
 - Shared sync warning if Docker sessions prevent profile propagation
+- Shared sync preview: when profiles exist and shared resources (global,
+  templates, packs) are among the changes, vault save shows an informational
+  line before the prompt indicating cross-profile propagation
 
 ---
 
