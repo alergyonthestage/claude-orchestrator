@@ -7,57 +7,49 @@
 
 # ── Vault .gitignore template ─────────────────────────────────────────
 
-_VAULT_GITIGNORE='# Secrets — never committed
+_VAULT_GITIGNORE='# Vault .gitignore — see docs/maintainer/configuration/vault/file-classification.md
+#
+# NOTE: .cco/base/ and .cco/source* are NOT gitignored — they must be
+# committed for update system merge and origin tracking across machines.
+# NOTE: memory/ is NOT gitignored — auto-memory files sync via vault (D33).
+
+# ── Secrets — never committed ────────────────────────────────────
 secrets.env
 *.env
 .credentials.json
 *.key
 *.pem
 
-# Runtime files — generated, not user config
+# ── Framework metadata — machine-regenerable state ──────────────
+# Schema version, file hashes, changelog markers. Not committed because
+# migrations are idempotent and updated_at would cause merge conflicts.
+projects/*/.cco/meta
+global/.claude/.cco/meta
+
+# ── Runtime-generated — created by cco start ─────────────────────
 projects/*/.cco/managed/
 projects/*/.cco/docker-compose.yml
 projects/*/.tmp/
-projects/*/.cco/meta
+.cco/internal/
+packs/*/.cco/install-tmp/
+projects/*/.claude/.cco/pack-manifest
 
-# Session state — transient, large, personal
+# ── Session state — transient, large, personal ───────────────────
 global/claude-state/
 projects/*/.cco/claude-state/
 projects/*/rag-data/
 
-# Global meta
-global/.claude/.cco/meta
-
-# Legacy pack manifest (inside .claude/)
-projects/*/.claude/.cco/pack-manifest
-
-# Pack install temporary files
-packs/*/.cco/install-tmp/
-
-# Update sync artifacts — temporary review files
-*.bak
-*.new
-
-# Internal tutorial runtime state
-.cco/internal/
-
-# Machine-specific remote config
+# ── Machine-specific — per-PC paths, tokens, profile stash ──────
+projects/*/.cco/local-paths.yml
+projects/*/.cco/project.yml.pre-save
 .cco/remotes
-
-# Profile state — gitignored files stashed during profile switch
 .cco/profile-state/
-
-# Profile operation backups
 .cco/backups/
-
-# Profile operation log
 .cco/profile-ops.log
 
-# Machine-specific local path mappings
-projects/*/.cco/local-paths.yml
-
-# Temporary backup during vault save path extraction
-projects/*/.cco/project.yml.pre-save
+# ── Update artifacts — temporary review files ────────────────────
+*.bak
+*.new
 '
 
 # ── Secret patterns for pre-commit scan ───────────────────────────────
@@ -244,16 +236,24 @@ EOF
     fi
 
     # Categorize changes (post-extraction — accurate counts)
-    local packs_count=0 projects_count=0 global_count=0 templates_count=0 other_count=0
+    # Separates user content from framework-tracking files (see file-classification.md §6.1)
+    local packs_count=0 projects_count=0 global_count=0 templates_count=0 metadata_count=0
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
         local file="${line:3}"
+        # Framework-tracking files (.cco/base/, .cco/source*) and vault infra
+        if [[ "$file" == */.cco/base/* || "$file" == */.cco/source* \
+           || "$file" == ".gitignore" || "$file" == "manifest.yml" \
+           || "$file" == ".vault-profile" ]]; then
+            metadata_count=$((metadata_count + 1))
+            continue
+        fi
         case "$file" in
             packs/*)     packs_count=$((packs_count + 1)) ;;
             projects/*)  projects_count=$((projects_count + 1)) ;;
             global/*)    global_count=$((global_count + 1)) ;;
             templates/*) templates_count=$((templates_count + 1)) ;;
-            *)           other_count=$((other_count + 1)) ;;
+            *)           metadata_count=$((metadata_count + 1)) ;;
         esac
     done <<< "$status_output"
 
@@ -263,9 +263,9 @@ EOF
     [[ $projects_count -gt 0 ]]  && echo "  projects:  $projects_count file(s)"
     [[ $global_count -gt 0 ]]    && echo "  global:    $global_count file(s)"
     [[ $templates_count -gt 0 ]] && echo "  templates: $templates_count file(s)"
-    [[ $other_count -gt 0 ]]     && echo "  other:     $other_count file(s)"
+    [[ $metadata_count -gt 0 ]]  && echo "  metadata:  $metadata_count file(s)"
 
-    local total=$((packs_count + projects_count + global_count + templates_count + other_count))
+    local total=$((packs_count + projects_count + global_count + templates_count + metadata_count))
     echo "  total:     $total file(s)"
 
     if $dry_run; then
@@ -426,17 +426,25 @@ EOF
         status_output="$filtered_output"
     fi
 
-    # Group by category
-    local packs="" projects="" global_files="" templates="" other=""
+    # Group by category, separating framework-tracking from user content
+    # (see file-classification.md §6.2)
+    local packs="" projects="" global_files="" templates="" metadata=""
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
         local file="${line:3}"
+        # Framework-tracking files (.cco/base/, .cco/source*) and vault infra
+        if [[ "$file" == */.cco/base/* || "$file" == */.cco/source* \
+           || "$file" == ".gitignore" || "$file" == "manifest.yml" \
+           || "$file" == ".vault-profile" ]]; then
+            metadata+="$line"$'\n'
+            continue
+        fi
         case "$file" in
             packs/*)     packs+="$line"$'\n' ;;
             projects/*)  projects+="$line"$'\n' ;;
             global/*)    global_files+="$line"$'\n' ;;
             templates/*) templates+="$line"$'\n' ;;
-            *)           other+="$line"$'\n' ;;
+            *)           metadata+="$line"$'\n' ;;
         esac
     done <<< "$status_output"
 
@@ -456,9 +464,9 @@ EOF
         echo -e "${BOLD}Templates:${NC}"
         printf '%s' "$templates" | sed 's/^/  /'
     fi
-    if [[ -n "$other" ]]; then
-        echo -e "${BOLD}Other:${NC}"
-        printf '%s' "$other" | sed 's/^/  /'
+    if [[ -n "$metadata" ]]; then
+        echo -e "${BOLD}Metadata:${NC}"
+        printf '%s' "$metadata" | sed 's/^/  /'
     fi
 }
 
