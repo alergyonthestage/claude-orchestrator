@@ -5,10 +5,11 @@
 # project.yml in vault/published copies uses @local markers;
 # real paths are stored in .cco/local-paths.yml (gitignored, per-PC).
 #
-# Provides: _local_paths_get(), _local_paths_set(), _sanitize_project_paths(),
-#   _resolve_project_paths(), _resolve_entry(), _extract_local_paths(),
-#   _restore_local_paths(), _resolve_all_local_paths(), _resolve_installed_paths(),
-#   _prompt_for_path()
+# Provides: _local_paths_get(), _local_paths_set(), _prompt_for_path(),
+#   _sanitize_project_paths(), _resolve_project_paths(), _get_repo_url(),
+#   _resolve_entry(), _write_local_paths(), _extract_local_paths(),
+#   _restore_local_paths(), _resolve_all_local_paths(), _update_yml_path(),
+#   _resolve_installed_paths()
 # Dependencies: colors.sh, utils.sh, yaml.sh
 
 # ── local-paths.yml read/write helpers ───────────────────────────────
