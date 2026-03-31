@@ -407,7 +407,7 @@ test_vault_push_to_bare_remote() {
 
     # Push
     run_cco vault push
-    assert_output_contains "Pushed to"
+    assert_output_contains "Pushed '"
 
     # Verify commit exists in bare repo
     local count

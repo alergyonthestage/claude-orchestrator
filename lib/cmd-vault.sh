@@ -610,6 +610,12 @@ EOF
     remote="${remote:-origin}"
 
     local vault_dir="$USER_CONFIG_DIR"
+
+    # Verify remote exists
+    if ! git -C "$vault_dir" remote get-url "$remote" >/dev/null 2>&1; then
+        die "Remote '$remote' not configured. Run 'cco vault remote add $remote <url>' first."
+    fi
+
     local branch
     branch=$(git -C "$vault_dir" rev-parse --abbrev-ref HEAD 2>/dev/null)
     local default_branch
@@ -621,7 +627,9 @@ EOF
     fi
 
     # Step 2: Push current branch
-    git -C "$vault_dir" push -u "$remote" "$branch"
+    if ! git -C "$vault_dir" push -u "$remote" "$branch"; then
+        die "Failed to push '$branch' to $remote"
+    fi
     ok "Pushed '$branch' to $remote"
 
     # Step 3: Push main (shared resources) — only if we have profiles
