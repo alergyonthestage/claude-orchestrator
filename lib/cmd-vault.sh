@@ -140,6 +140,86 @@ EOF
     echo "  cco vault push"
 }
 
+# Runtime invariant: ensure the vault .gitignore contains every pattern
+# from the canonical _VAULT_GITIGNORE template.
+#
+# Why: migrations that update the .gitignore only touch the branch that
+# is currently checked out. Profile branches created BEFORE a new pattern
+# was added (e.g. `projects/*/.cco/project.yml.pre-save` from migration
+# 013) never receive the pattern, which then causes machine-specific
+# files like pre-save backups to surface as `??` in vault diff/save.
+#
+# The fix is to self-heal at every vault operation: read the committed
+# .gitignore of the current branch, compare against the template, and
+# append any missing pattern blocks. Idempotent (no-op when aligned).
+#
+# Usage: _ensure_vault_gitignore <vault_dir>
+# Commits silently when patterns are added (same convention as
+# _untrack_stale_pre_save).
+_ensure_vault_gitignore() {
+    local vault_dir="$1"
+    local gitignore="$vault_dir/.gitignore"
+
+    # Without a .gitignore the vault is not a real vault (pre-init). No-op.
+    [[ ! -f "$gitignore" ]] && return 0
+
+    # Walk every non-comment, non-empty line of the canonical template.
+    # For each missing line, append its block (preceding blank line +
+    # comment, if present in the template) to the working .gitignore.
+    # Pattern lookup uses grep -qxF so we only match EXACT pattern lines,
+    # not partial substrings.
+    local added_any=false
+    local line=""
+    local prev_comment=""
+    while IFS= read -r line; do
+        if [[ -z "$line" ]]; then
+            prev_comment=""
+            continue
+        fi
+        if [[ "$line" == \#* ]]; then
+            # Keep the most recent comment block for context when appending
+            if [[ -z "$prev_comment" ]]; then
+                prev_comment="$line"
+            else
+                prev_comment="$prev_comment"$'\n'"$line"
+            fi
+            continue
+        fi
+        # Skip if already present (literal) OR explicitly commented out
+        # by the user. Commented-out patterns reflect a deliberate user
+        # choice (test_vault_save_aborts_on_cco_remotes exercises this
+        # exact pattern to verify the secret-scan safety net works even
+        # when a user bypasses the gitignore manually). The self-heal
+        # must never fight a user edit — only fill in truly missing
+        # patterns.
+        if grep -qxF -- "$line" "$gitignore" 2>/dev/null \
+           || grep -qxF -- "# $line" "$gitignore" 2>/dev/null; then
+            prev_comment=""
+            continue
+        fi
+        # Pattern missing — append with its comment block preceded by a
+        # blank line (so the edited .gitignore stays readable).
+        {
+            echo ""
+            [[ -n "$prev_comment" ]] && echo "$prev_comment"
+            echo "$line"
+        } >> "$gitignore"
+        added_any=true
+        prev_comment=""
+    done <<< "$_VAULT_GITIGNORE"
+
+    if ! $added_any; then
+        return 0
+    fi
+
+    # Commit silently on this branch. If the working tree has other
+    # staged changes, do not pull them in — stage the .gitignore alone.
+    git -C "$vault_dir" add .gitignore 2>/dev/null
+    if ! git -C "$vault_dir" diff --cached --quiet -- .gitignore 2>/dev/null; then
+        git -C "$vault_dir" commit -q -m "vault: self-heal .gitignore with canonical patterns" -- .gitignore
+    fi
+}
+
 # Lazy cleanup: untrack .cco/project.yml.pre-save files that were
 # accidentally committed before the gitignore pattern existed (migration 012
 # bug). Migration 014 fixes the current branch; this handles other branches
@@ -238,10 +318,8 @@ EOF
 
     local vault_dir="$USER_CONFIG_DIR"
 
-    # Lazy cleanup: untrack pre-save backups if still tracked (see migration 014)
-    _untrack_stale_pre_save "$vault_dir"
-
     # Quick check — no changes at all?
+    # (_check_vault already ran _ensure_vault_gitignore + _untrack_stale_pre_save)
     local raw_status
     raw_status=$(git -C "$vault_dir" status --porcelain --no-renames 2>/dev/null)
     if [[ -z "$raw_status" ]]; then
@@ -443,8 +521,7 @@ EOF
 
     local vault_dir="$USER_CONFIG_DIR"
 
-    # Lazy cleanup: untrack pre-save backups if still tracked (see migration 014)
-    _untrack_stale_pre_save "$vault_dir"
+    # (_check_vault already ran the runtime invariants)
 
     # Normalize local paths to eliminate virtual diffs (real paths vs @local).
     # Without this, project.yml always appears modified. Same normalization
@@ -682,6 +759,8 @@ EOF
 
     local vault_dir="$USER_CONFIG_DIR"
 
+    # (_check_vault already ran the runtime invariants)
+
     # Verify remote exists
     if ! git -C "$vault_dir" remote get-url "$remote" >/dev/null 2>&1; then
         die "Remote '$remote' not configured. Run 'cco vault remote add $remote <url>' first."
@@ -738,6 +817,8 @@ EOF
     remote="${remote:-origin}"
 
     local vault_dir="$USER_CONFIG_DIR"
+
+    # (_check_vault already ran the runtime invariants pre-pull)
 
     # Verify remote exists
     if ! git -C "$vault_dir" remote get-url "$remote" >/dev/null 2>&1; then
@@ -864,9 +945,14 @@ EOF
     # Check initialized
     if [[ ! -d "$vault_dir/.git" ]]; then
         echo -e "${BOLD}Vault:${NC} not initialized"
-        info "Run 'cco vault init' to enable versioning"
         return 0
     fi
+
+    # Runtime invariants: self-heal .gitignore + untrack stale pre-save
+    # so `cco vault status` on a stale branch shows the real state
+    # (no phantom ?? lines from missing patterns).
+    _ensure_vault_gitignore "$vault_dir"
+    _untrack_stale_pre_save "$vault_dir"
 
     echo -e "${BOLD}Vault:${NC} initialized at $vault_dir"
 
@@ -2216,6 +2302,9 @@ EOF
     local default_branch
     default_branch=$(_vault_default_branch)
 
+    # (_check_vault already ran runtime invariants on the source branch.
+    # The target branch is healed after checkout — see end of flow.)
+
     # Allow "main"/"master" as target
     if [[ "$name" == "main" || "$name" == "master" ]]; then
         name="$default_branch"
@@ -2305,7 +2394,13 @@ EOF
         fi
     fi
 
-    # Step 7: Resolve @local markers from restored local-paths.yml
+    # Step 7: Runtime invariants on the target branch — if this branch
+    # pre-dates current .gitignore / untrack migrations, heal it so the
+    # user's next `cco vault diff/save` shows a clean state.
+    _ensure_vault_gitignore "$vault_dir"
+    _untrack_stale_pre_save "$vault_dir"
+
+    # Step 8: Resolve @local markers from restored local-paths.yml
     _resolve_all_local_paths "$vault_dir"
 
     # Log operation
@@ -3251,32 +3346,13 @@ _check_vault() {
         die "Vault not initialized. Run 'cco vault init' first."
     fi
 
-    # Defensive: ensure .gitignore has profile-related entries (may be missing
-    # if vault was init'd before profile isolation was added)
-    local _gi="$USER_CONFIG_DIR/.gitignore"
-    if [[ -f "$_gi" ]]; then
-        local _gi_updated=false
-        for _pattern in ".cco/profile-ops.log" ".cco/profile-state/" ".cco/backups/"; do
-            if ! grep -qF "$_pattern" "$_gi" 2>/dev/null; then
-                printf '\n# Profile operations\n%s\n' "$_pattern" >> "$_gi"
-                _gi_updated=true
-            fi
-        done
-        if $_gi_updated; then
-            git -C "$USER_CONFIG_DIR" add .gitignore 2>/dev/null || true
-            if ! git -C "$USER_CONFIG_DIR" diff --cached --quiet 2>/dev/null; then
-                git -C "$USER_CONFIG_DIR" commit -q -m "vault: update .gitignore for profile operations"
-            fi
-        fi
-    fi
-
-    # Defensive: untrack profile-ops.log if it was committed before gitignore update
-    if git -C "$USER_CONFIG_DIR" ls-files --error-unmatch .cco/profile-ops.log >/dev/null 2>&1; then
-        git -C "$USER_CONFIG_DIR" rm --cached -q .cco/profile-ops.log 2>/dev/null || true
-        if ! git -C "$USER_CONFIG_DIR" diff --cached --quiet 2>/dev/null; then
-            git -C "$USER_CONFIG_DIR" commit -q -m "vault: untrack profile-ops.log (gitignored)"
-        fi
-    fi
+    # Runtime invariants — canonical entry point for every vault command
+    # that goes through _check_vault (save, diff, push, pull, switch, etc.).
+    # Each op is idempotent and silently commits the heal if needed.
+    # Fix finding #B15: pre-existing branches missing current .gitignore
+    # patterns + #B17: tracked pre-save backups leftover from old bugs.
+    _ensure_vault_gitignore "$USER_CONFIG_DIR"
+    _untrack_stale_pre_save "$USER_CONFIG_DIR"
 
     # Self-healing: restore shadow files if user did a direct git checkout.
     # When cco vault switch runs, it stashes portable files to .cco/profile-state/<branch>/.
