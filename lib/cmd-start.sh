@@ -363,85 +363,12 @@ _start_generate_integrations() {
 }
 
 # Resolves @local markers and legacy {{REPO_*}} in project.yml before
-# compose generation. Writes resolved paths to .cco/local-paths.yml
-# and updates project.yml working copy. Interactive prompt on TTY,
-# abort on non-TTY with unresolved paths.
+# compose generation. Delegates to the shared impl in local-paths.sh;
+# the only start-specific concern is skipping the tutorial/internal
+# project (which uses template-baked paths, nothing to resolve).
 _start_resolve_paths() {
-    # Skip for internal projects (tutorial uses template paths)
     $is_internal && return 0
-
-    local local_paths="$project_dir/.cco/local-paths.yml"
-    local has_unresolved=false
-
-    # Resolve repos
-    local repos
-    repos=$(yml_get_repos "$project_yml" 2>/dev/null)
-    if [[ -n "$repos" ]]; then
-        while IFS=: read -r repo_path repo_name; do
-            [[ -z "$repo_name" ]] && continue
-
-            local needs_resolve=false
-            if [[ "$repo_path" == "@local" || "$repo_path" == *"{{REPO_"* ]]; then
-                needs_resolve=true
-            else
-                local expanded
-                expanded=$(expand_path "$repo_path")
-                if [[ ! -d "$expanded" ]]; then
-                    needs_resolve=true
-                fi
-            fi
-
-            if $needs_resolve; then
-                local url
-                url=$(_get_repo_url "$project_yml" "$repo_name")
-
-                local resolved rc=0
-                resolved=$(_resolve_entry "$project_dir" "repos" "$repo_name" "$url") || rc=$?
-
-                if [[ $rc -eq 0 && -n "$resolved" ]]; then
-                    _update_yml_path "$project_yml" "repos" "name" "$repo_name" "path" "$resolved"
-                elif [[ $rc -eq 2 ]]; then
-                    if [[ ! -t 0 ]]; then
-                        die "Unresolved @local paths — run 'cco project resolve $project_name' to configure"
-                    else
-                        die "Aborted."
-                    fi
-                else
-                    # Skipped — warn but continue (user chose to skip)
-                    warn "Repository '$repo_name' skipped — it will not be available in this session"
-                fi
-            fi
-        done <<< "$repos"
-    fi
-
-    # Resolve extra_mounts
-    local mounts
-    mounts=$(yml_get_extra_mounts "$project_yml" 2>/dev/null)
-    if [[ -n "$mounts" ]]; then
-        while IFS= read -r mount_line; do
-            [[ -z "$mount_line" ]] && continue
-            local source="${mount_line%%:*}"
-            local rest="${mount_line#*:}"
-            local target="${rest%%:*}"
-
-            if [[ "$source" == "@local" ]]; then
-                local resolved rc=0
-                resolved=$(_resolve_entry "$project_dir" "extra_mounts" "$target" "") || rc=$?
-
-                if [[ $rc -eq 0 && -n "$resolved" ]]; then
-                    _update_yml_path "$project_yml" "extra_mounts" "target" "$target" "source" "$resolved"
-                elif [[ $rc -eq 2 ]]; then
-                    if [[ ! -t 0 ]]; then
-                        die "Unresolved @local paths — run 'cco project resolve $project_name' to configure"
-                    else
-                        die "Aborted."
-                    fi
-                else
-                    warn "Mount '$target' skipped — it will not be available in this session"
-                fi
-            fi
-        done <<< "$mounts"
-    fi
+    _resolve_start_paths "$project_dir"
 }
 
 # Generates the docker-compose.yml file from project configuration.

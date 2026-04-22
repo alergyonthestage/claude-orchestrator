@@ -879,17 +879,30 @@ _update_yml_path() {
     ' "$yml_file" > "$tmpf" && mv "$tmpf" "$yml_file"
 }
 
-# ── Install: resolve paths after project install ─────────────────────
+# ── Project path resolution ──────────────────────────────────────────
 
-# Resolve @local entries in a newly installed project.
-# More aggressive than start-time: prompts for ALL unresolved immediately.
-# Usage: _resolve_installed_paths <project_dir>
-_resolve_installed_paths() {
-    local project_dir="$1"
+# Resolve @local entries (repos + extra_mounts) in a project.yml.
+# Shared implementation between install-time and session-start flows.
+#
+# Usage: _resolve_project_paths_impl <project_dir> <mode>
+#   mode=install : non-TTY on unresolved → warn & continue; on abort → die
+#                  "Installation aborted."; summarize resolved repos at end.
+#   mode=start   : non-TTY on unresolved → die (cannot launch session);
+#                  on abort → die "Aborted."; skip paths surface as warn
+#                  (user chose to skip); no end-of-run summary.
+#
+# Design note: a single implementation prevents the class of drift that
+# caused #B10 (status/diff divergence) — when two callsites reimplement
+# the same categorization/resolution loop, they go out of sync silently.
+_resolve_project_paths_impl() {
+    local project_dir="$1" mode="$2"
     local project_yml="$project_dir/project.yml"
-    local local_paths="$project_dir/.cco/local-paths.yml"
 
     [[ ! -f "$project_yml" ]] && return 0
+
+    local unresolved_msg="Unresolved @local paths — run 'cco project resolve' to configure"
+    local abort_msg="Aborted."
+    [[ "$mode" == "install" ]] && abort_msg="Installation aborted."
 
     local -a resolved_repos=()
 
@@ -900,7 +913,6 @@ _resolve_installed_paths() {
         while IFS=: read -r repo_path repo_name; do
             [[ -z "$repo_name" ]] && continue
 
-            # Check if path needs resolution
             local needs_resolve=false
             if [[ "$repo_path" == "@local" || "$repo_path" == *"{{REPO_"* ]]; then
                 needs_resolve=true
@@ -921,10 +933,21 @@ _resolve_installed_paths() {
                     _update_yml_path "$project_yml" "repos" "name" "$repo_name" "path" "$resolved"
                     resolved_repos+=("$repo_name")
                 elif [[ $rc -eq 2 ]]; then
+                    # Unresolved (non-TTY without data, or explicit abort)
                     if [[ ! -t 0 ]]; then
-                        warn "Repository '$repo_name' path does not exist — run 'cco project resolve' to configure"
+                        if [[ "$mode" == "start" ]]; then
+                            die "$unresolved_msg"
+                        else
+                            warn "Repository '$repo_name' path does not exist — run 'cco project resolve' to configure"
+                        fi
                     else
-                        die "Installation aborted."
+                        die "$abort_msg"
+                    fi
+                else
+                    # Skipped — only start mode warns (session launches without it);
+                    # install mode treats skip as silent (user will resolve later).
+                    if [[ "$mode" == "start" ]]; then
+                        warn "Repository '$repo_name' skipped — it will not be available in this session"
                     fi
                 fi
             fi
@@ -949,16 +972,38 @@ _resolve_installed_paths() {
                     _update_yml_path "$project_yml" "extra_mounts" "target" "$target" "source" "$resolved"
                 elif [[ $rc -eq 2 ]]; then
                     if [[ ! -t 0 ]]; then
-                        warn "Mount '$target' path does not exist — run 'cco project resolve' to configure"
+                        if [[ "$mode" == "start" ]]; then
+                            die "$unresolved_msg"
+                        else
+                            warn "Mount '$target' path does not exist — run 'cco project resolve' to configure"
+                        fi
                     else
-                        die "Installation aborted."
+                        die "$abort_msg"
+                    fi
+                else
+                    if [[ "$mode" == "start" ]]; then
+                        warn "Mount '$target' skipped — it will not be available in this session"
                     fi
                 fi
             fi
         done <<< "$mounts"
     fi
 
-    if [[ ${#resolved_repos[@]} -gt 0 ]]; then
+    if [[ "$mode" == "install" && ${#resolved_repos[@]} -gt 0 ]]; then
         ok "Resolved paths: ${resolved_repos[*]}"
     fi
+}
+
+# Resolve @local entries in a newly installed project.
+# Prompts for ALL unresolved immediately; warn on non-TTY unresolved.
+# Usage: _resolve_installed_paths <project_dir>
+_resolve_installed_paths() {
+    _resolve_project_paths_impl "$1" "install"
+}
+
+# Resolve @local entries before session start (cco start flow).
+# Non-TTY unresolved is fatal: the session cannot launch without paths.
+# Usage: _resolve_start_paths <project_dir>
+_resolve_start_paths() {
+    _resolve_project_paths_impl "$1" "start"
 }
