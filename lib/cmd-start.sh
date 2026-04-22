@@ -1039,15 +1039,18 @@ _generate_socket_policy() {
 
     # Mount allowed paths: for project_only, collect repo paths
     # All paths are expanded (~ → /home/user) to match what Docker sends at runtime.
+    # NB: yml_get_repos emits "path:name" lines — use the canonical IFS=: parser
+    # (same as L.1075 below), not `cut -d:` which would truncate paths that
+    # legitimately contain colons.
     local mt_allowed_json="[]"
     if [[ "$mt_policy" == "project_only" ]]; then
-        local repo_paths
-        repo_paths=$(yml_get_repos "$project_yml" | cut -d: -f1)
-        if [[ -n "$repo_paths" ]]; then
-            mt_allowed_json=$(while IFS= read -r _p; do
+        local _allowed_repos
+        _allowed_repos=$(yml_get_repos "$project_yml")
+        if [[ -n "$_allowed_repos" ]]; then
+            mt_allowed_json=$(while IFS=: read -r _p _n; do
                 [[ -z "$_p" || "$_p" == "@local" || "$_p" == *"{{REPO_"* ]] && continue
                 expand_path "$_p"
-            done <<< "$repo_paths" | jq -R . | jq -s .)
+            done <<< "$_allowed_repos" | jq -R . | jq -s .)
         fi
     else
         local mt_allow
