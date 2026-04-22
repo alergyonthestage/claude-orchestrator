@@ -14,7 +14,7 @@
 | Status | Items | Section |
 |--------|-------|---------|
 | ✅ Completed | 31 sprints / features | [→ Completed](#completed) |
-| 🐛 Known Bugs | 3 open · 11 fixed | [→ Known Bugs](#known-bugs) |
+| 🐛 Known Bugs | 3 open · 15 fixed | [→ Known Bugs](#known-bugs) |
 | 🔜 Planned | Quick Wins (FI-4, #10), AI-merge, Sprint 6C → 12 | [→ Planned](#planned-sprints) |
 | 🔭 Exploratory | 7 ideas | [→ Long-term / Exploratory](#long-term--exploratory) |
 | ❌ Declined | 3 items | [→ Declined / Won't Do](#declined--wont-do) |
@@ -341,6 +341,123 @@ helper.
 
 **See also**: `lib/cmd-llms.sh:643`, `tests/test_llms.sh:68`,
 `test_resolve_name_from_domain_url` (passing, returns `shadcn-svelte`).
+
+---
+
+### #B18 `cco project resolve` says `✓ exists` while `cco start` says `Unresolved` ✓ FIXED
+
+**Reported**: 2026-04-22 (post-merge field testing). **Fixed**: 2026-04-22.
+
+**Symptom**: `cco project resolve <name> --show` listed every repo /
+mount as `✓ exists`, but `cco start <name>` on the same project failed
+with `Unresolved @local paths`. After the user manually commented out
+an `extra_mount` that pointed to a missing `.docx` file, `cco start`
+passed but the main repo was still not mounted (Docker created an
+empty bind). Same class as `#B10`: two commands answering the same
+"where is this path?" question via divergent code paths.
+
+**Root cause**: `cmd_project_resolve --show` composed status from
+`project.yml` + `.cco/local-paths.yml` with its own loop; `cco start`
+invoked `_resolve_entry` which checked `[[ -d "$expanded" ]]` (false
+for file mounts like `.docx`, so fell through to non-TTY die).
+
+**Fix**: new canonical reader `_project_effective_paths` in
+`lib/local-paths.sh` emits `<kind>\t<key>\t<effective_path>\t<status>`
+per entry. `cmd_project_resolve --show` delegates to it (previous
+~90-line duplicated loop removed). `cco start` calls
+`_assert_resolved_paths` (also built on the same reader) right after
+`_resolve_start_paths`. `-d` checks across local-paths.sh + query.sh
+migrated to `_path_exists` so file mounts are accepted.
+
+**See also**: `lib/local-paths.sh`, `lib/cmd-project-query.sh`,
+`lib/utils.sh:_path_exists`,
+[coding-conventions](../architecture/coding-conventions.md)
+§"Two sources of truth → single helper".
+
+---
+
+### #B17 `cco start` silently launches with unresolved `@local` repo ✓ FIXED
+
+**Reported**: 2026-04-22 (post-merge field testing). **Fixed**: 2026-04-22.
+
+**Symptom**: `cco start <project>` completed without error, but the
+repo was not mounted inside the container. `project.yml` still had
+`path: "@local"` and no entry in `local-paths.yml`; Docker silently
+created an empty bind-mount at the target path.
+
+**Root cause**: `_start_generate_compose` and
+`_proxy_collect_allowed_paths` / `_proxy_collect_pathmap` silently
+`continue`d on `@local` / missing paths. `_resolve_start_paths`
+correctly handled the interactive case, but once the user was back on
+an out-of-sync `project.yml` the compose generator just skipped.
+
+**Fix**: hard guard `_assert_resolved_paths` invoked at the end of
+`_start_resolve_paths` dies with a list of concrete problems if any
+entry is unresolved or missing. Silent `@local` continues removed
+from `_start_generate_compose`, `_proxy_collect_allowed_paths`, and
+`_proxy_collect_pathmap` (dead code once the guard is in place).
+
+**See also**: `lib/cmd-start.sh`, `lib/local-paths.sh:_assert_resolved_paths`.
+
+---
+
+### #B16 Profile switch leaves ghost directories of exclusive projects ✓ FIXED
+
+**Reported**: 2026-04-22 (post-merge field testing). **Fixed**: 2026-04-22.
+
+**Symptom**: after `cco vault switch`, `projects/<X>/` directories of
+the source profile's exclusive projects survived on the target branch
+— with `.cco/claude-state/`, `.cco/meta`, and `memory/` residue inside.
+Broke the "real isolation" guarantee of the profile design.
+
+**Root cause**: `git checkout` removes tracked files of departed
+projects, but each project's gitignored state keeps the parent
+`projects/<name>/` directory alive. The existing cleanup
+(`find projects -type d -empty -delete`) handles only truly-empty
+dirs, so any gitignored leftover defeats it.
+
+**Fix**: new runtime invariant `_clean_branch_ghost_projects` in
+`lib/cmd-vault.sh`. Any `projects/<X>/` with no tracked content on
+HEAD gets `rm -rf`; orphan shadow dirs under `.cco/profile-state/<br>/`
+whose branch no longer exists get pruned. Wired into
+`cmd_vault_profile_switch` as Step 8 (post-checkout, before the
+`@local` resolver).
+
+**See also**: `lib/cmd-vault.sh`, `docs/maintainer/configuration/vault/profile-isolation-design.md` §5.3.
+
+---
+
+### #B15 Pre-existing branch misses `.gitignore` patterns forever ✓ FIXED
+
+**Reported**: 2026-04-22 (post-merge field testing). **Fixed**: 2026-04-22.
+
+**Symptom**: on a vault whose `cave` profile branch had been created
+before migration 013, `.cco/project.yml.pre-save` files created at
+every `cco vault save` surfaced as `??` untracked entries that the
+"metadata" category then surfaced to the user. Saving committed them;
+the next save saw them as new `??` again. Infinite loop.
+
+**Root cause**: migrations that update `.gitignore` only touch the
+currently checked-out branch (011/012/013). Branches that pre-date
+the migration never receive the pattern and no code path healed them.
+`_untrack_stale_pre_save` (existing) untracked but did not restore
+missing patterns.
+
+**Fix**: new runtime invariant `_ensure_vault_gitignore` in
+`lib/cmd-vault.sh` walks the canonical `_VAULT_GITIGNORE` template and
+appends any missing pattern block (preserving header comments). The
+helper respects commented patterns (never fights an intentional user
+bypass — see `test_vault_save_aborts_on_cco_remotes`). Wired into
+`_check_vault` (single gate for save/diff/push/pull/switch/profile/
+...), `cmd_vault_status`, and `cmd_vault_profile_switch` post-checkout.
+
+Per-user impact: at next `cco vault <op>` on any stale branch, the
+pattern is auto-added and a silent commit is recorded. No migration
+015 was created (the invariant is strictly more complete — a migration
+would have to either cycle every branch proactively, which is
+invasive, or only cover `main`, which would not help).
+
+**See also**: `lib/cmd-vault.sh`, `docs/maintainer/configuration/vault/file-classification.md` §8.
 
 ---
 

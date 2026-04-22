@@ -173,3 +173,24 @@ entries:
       clone-from-URL option. New `cco project resolve <name>` command for
       explicit path management. Existing workflows require no changes —
       the first `vault save` extracts paths automatically.
+
+  - id: 13
+    date: "2026-04-22"
+    type: additive
+    title: "Vault runtime invariants — self-healing gitignore, ghost cleanup, start guard"
+    description: >
+      Four subtle bugs affecting users with pre-existing vaults and profile
+      branches are now self-healed at every vault operation, so no migration
+      or manual action is required. (#B15) Branches missing .gitignore
+      patterns added in later migrations are auto-patched on the next vault
+      command — the persistent `?? projects/*/.cco/project.yml.pre-save`
+      phantom-diff loop is gone. (#B16) Profile switch now removes ghost
+      project directories whose content on disk is entirely gitignored
+      residue of the source branch. (#B17) `cco start` now refuses to
+      launch if any repo or mount remains @local after resolution — no more
+      silent empty bind mounts. (#B18) `cco project resolve --show` and
+      `cco start` share a single effective-paths reader, eliminating the
+      `✓ exists` vs `Unresolved` divergence. Extra mounts pointing to
+      single files (not directories) are also accepted throughout. No user
+      action needed — every new fix is self-applied the next time a
+      relevant vault command runs.
