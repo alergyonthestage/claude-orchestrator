@@ -170,14 +170,14 @@ _vault_has_real_changes() {
     _untrack_stale_pre_save "$vault_dir"
 
     local status_output
-    status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
+    status_output=$(git -C "$vault_dir" status --porcelain --no-renames 2>/dev/null)
     [[ -z "$status_output" ]] && return 1
 
     # Temporarily extract local paths to check for real changes
     # Trap set BEFORE extraction so restore runs even if extract fails
     trap '_restore_local_paths "$vault_dir"' ERR
     _extract_local_paths "$vault_dir"
-    status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
+    status_output=$(git -C "$vault_dir" status --porcelain --no-renames 2>/dev/null)
     trap - ERR
     _restore_local_paths "$vault_dir"
 
@@ -221,7 +221,7 @@ EOF
 
     # Quick check — no changes at all?
     local raw_status
-    raw_status=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
+    raw_status=$(git -C "$vault_dir" status --porcelain --no-renames 2>/dev/null)
     if [[ -z "$raw_status" ]]; then
         ok "Nothing to commit — vault is up to date"
         return 0
@@ -235,7 +235,7 @@ EOF
 
     # Re-check after extraction — virtual-only changes disappear
     local status_output
-    status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
+    status_output=$(git -C "$vault_dir" status --porcelain --no-renames 2>/dev/null)
     if [[ -z "$status_output" ]]; then
         trap - ERR
         _restore_local_paths "$vault_dir"
@@ -253,7 +253,7 @@ EOF
             expanded_files=()
             while IFS= read -r subfile; do
                 [[ -n "$subfile" ]] && expanded_files+=("${subfile:3}")
-            done < <(git -C "$vault_dir" status --porcelain -uall -- "$file" 2>/dev/null)
+            done < <(git -C "$vault_dir" status --porcelain --no-renames -uall -- "$file" 2>/dev/null)
         fi
         for ef in ${expanded_files[@]+"${expanded_files[@]}"}; do
             for pattern in "${_VAULT_SECRET_PATTERNS[@]}"; do
@@ -433,7 +433,7 @@ EOF
     trap '_restore_local_paths "$vault_dir"' ERR
     _extract_local_paths "$vault_dir"
     local status_output
-    status_output=$(git -C "$vault_dir" status --short 2>/dev/null)
+    status_output=$(git -C "$vault_dir" status --porcelain --no-renames 2>/dev/null)
     trap - ERR
     _restore_local_paths "$vault_dir"
 
@@ -1310,7 +1310,7 @@ _auto_resolve_framework_changes() {
 
     # Step 2: Auto-commit memory/ changes (D33 — framework-managed auto-memory)
     local memory_changes
-    memory_changes=$(git -C "$vault_dir" status --porcelain 2>/dev/null | grep '/memory/' || true)
+    memory_changes=$(git -C "$vault_dir" status --porcelain --no-renames 2>/dev/null | grep '/memory/' || true)
     if [[ -n "$memory_changes" ]]; then
         # Stage all memory/ paths (new, modified, deleted)
         while IFS= read -r line; do
