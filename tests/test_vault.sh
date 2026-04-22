@@ -759,3 +759,111 @@ YAML
         return 1
     fi
 }
+
+# #B19 — legacy vault with real paths committed is auto-normalized to
+# @local on the next vault op, without touching the working tree.
+test_normalize_committed_paths_upgrades_legacy_vault() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault "$tmpdir"
+
+    # Simulate a legacy vault: commit project.yml with real paths.
+    local legit_repo="$tmpdir/realrepo"
+    local legit_doc="$tmpdir/realdoc"
+    mkdir -p "$legit_repo" "$legit_doc"
+    local proj="$CCO_USER_CONFIG_DIR/projects/legacy"
+    mkdir -p "$proj"
+    cat > "$proj/project.yml" <<YAML
+name: legacy
+repos:
+  - path: "$legit_repo"
+    name: legacy
+    url: git@example.com:legacy.git
+extra_mounts:
+  - source: "$legit_doc"
+    target: /workspace/doc
+    readonly: true
+YAML
+    git -C "$CCO_USER_CONFIG_DIR" add "projects/legacy/project.yml"
+    git -C "$CCO_USER_CONFIG_DIR" commit -q -m "legacy: real paths committed"
+
+    # Run the invariant (same entry point _check_vault invokes)
+    ( export USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR"
+      source "$REPO_ROOT/lib/colors.sh"
+      source "$REPO_ROOT/lib/utils.sh"
+      source "$REPO_ROOT/lib/yaml.sh"
+      source "$REPO_ROOT/lib/local-paths.sh"
+      source "$REPO_ROOT/lib/cmd-vault.sh"
+      _normalize_committed_paths "$CCO_USER_CONFIG_DIR" )
+
+    # Committed should now be @local
+    local committed
+    committed=$(git -C "$CCO_USER_CONFIG_DIR" show HEAD:projects/legacy/project.yml)
+    if ! echo "$committed" | grep -qxF '  - path: "@local"'; then
+        echo "ASSERTION FAILED: committed repos.path was not normalized to @local"
+        echo "$committed" | sed 's/^/    /'
+        return 1
+    fi
+    if ! echo "$committed" | grep -qxF '  - source: "@local"'; then
+        echo "ASSERTION FAILED: committed extra_mounts.source was not normalized to @local"
+        return 1
+    fi
+
+    # Working tree MUST stay with real paths (design: working=real)
+    if grep -qxF '  - path: "@local"' "$proj/project.yml"; then
+        echo "ASSERTION FAILED: working copy was wrongly flipped to @local"
+        cat "$proj/project.yml" | sed 's/^/    /'
+        return 1
+    fi
+
+    # local-paths.yml should have received the real-path mappings
+    local lp="$proj/.cco/local-paths.yml"
+    if ! grep -qF "legacy: \"$legit_repo\"" "$lp" 2>/dev/null; then
+        echo "ASSERTION FAILED: local-paths.yml missing repo mapping"
+        cat "$lp" 2>/dev/null | sed 's/^/    /'
+        return 1
+    fi
+    if ! grep -qF "/workspace/doc: \"$legit_doc\"" "$lp" 2>/dev/null; then
+        echo "ASSERTION FAILED: local-paths.yml missing mount mapping"
+        return 1
+    fi
+}
+
+# #B19b — _normalize_committed_paths is idempotent: a second run on an
+# already-normalized vault does not create a second commit.
+test_normalize_committed_paths_is_idempotent() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault "$tmpdir"
+
+    local proj="$CCO_USER_CONFIG_DIR/projects/already"
+    mkdir -p "$proj"
+    cat > "$proj/project.yml" <<'YAML'
+name: already
+repos:
+  - path: "@local"
+    name: already
+    url: git@example.com:already.git
+YAML
+    git -C "$CCO_USER_CONFIG_DIR" add "projects/already/project.yml"
+    git -C "$CCO_USER_CONFIG_DIR" commit -q -m "already @local"
+
+    local commits_before
+    commits_before=$(git -C "$CCO_USER_CONFIG_DIR" rev-list --count HEAD)
+
+    ( export USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR"
+      source "$REPO_ROOT/lib/colors.sh"
+      source "$REPO_ROOT/lib/utils.sh"
+      source "$REPO_ROOT/lib/yaml.sh"
+      source "$REPO_ROOT/lib/local-paths.sh"
+      source "$REPO_ROOT/lib/cmd-vault.sh"
+      _normalize_committed_paths "$CCO_USER_CONFIG_DIR" )
+
+    local commits_after
+    commits_after=$(git -C "$CCO_USER_CONFIG_DIR" rev-list --count HEAD)
+
+    if [[ "$commits_before" != "$commits_after" ]]; then
+        echo "ASSERTION FAILED: normalize was not idempotent"
+        echo "  commits before: $commits_before"
+        echo "  commits after:  $commits_after"
+        return 1
+    fi
+}
