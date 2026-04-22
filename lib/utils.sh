@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # lib/utils.sh — General utility functions
 #
-# Provides: expand_path(), check_docker(), check_image(), check_global(),
-#           _check_reserved_project_name(), _sed_i(), _sed_i_or_append(),
-#           _substitute()
+# Provides: expand_path(), _path_exists(), check_docker(), check_image(),
+#           check_global(), _check_reserved_project_name(), _sed_i(),
+#           _sed_i_or_append(), _substitute()
 # Dependencies: colors.sh
 # Globals: IMAGE_NAME, GLOBAL_DIR
 
@@ -14,6 +14,18 @@ expand_path() {
         path="${HOME}${path#\~}"
     fi
     echo "$path"
+}
+
+# Check if a path exists as either a file or a directory.
+# Canonical check for project.yml sources — repos are directories,
+# but extra_mounts can legitimately be single files (e.g. a .docx).
+# Using `-d` alone (as pre-runtime-invariants code did) produced false
+# negatives for file mounts. Always expand ~ before checking.
+# Usage: _path_exists <path>
+_path_exists() {
+    local path
+    path=$(expand_path "$1")
+    [[ -e "$path" ]]
 }
 
 # Check Docker is running
