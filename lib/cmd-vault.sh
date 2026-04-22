@@ -250,7 +250,9 @@ _untrack_gitignored_files() {
     tracked_ignored=$(git -C "$vault_dir" ls-files -i -c --exclude-standard 2>/dev/null)
     [[ -z "$tracked_ignored" ]] && return 0
 
-    # Use NUL-safe xargs for paths with spaces/newlines
+    # Space-safe via xargs -I{} (each line becomes one argument).
+    # Not NUL-safe: file names containing newlines are not supported,
+    # but vault-tracked paths never contain newlines in practice.
     echo "$tracked_ignored" | xargs -I {} git -C "$vault_dir" rm --cached -q -- "{}" 2>/dev/null || true
     if ! git -C "$vault_dir" diff --cached --quiet 2>/dev/null; then
         git -C "$vault_dir" commit -q -m "vault: untrack gitignored files (self-heal)"
@@ -304,9 +306,15 @@ _normalize_committed_paths() {
     [[ -z "$tracked" ]] && return 0
 
     local rel_path proj_name proj_dir local_paths
-    local temp_orig temp_sanitized blob_hash repos mounts
+    local temp_orig="" temp_sanitized="" blob_hash repos mounts
     local has_real _p _n _src
     local normalized_any=false
+
+    # Cleanup any /tmp tempfile left behind if the loop is interrupted
+    # between mktemp and the atomic rm -f. Same pattern as the 5 mktemp
+    # sites in lib/local-paths.sh (see #B20).
+    # shellcheck disable=SC2064
+    trap 'rm -f ${temp_orig:+"$temp_orig"} ${temp_sanitized:+"$temp_sanitized"}' RETURN
 
     while IFS= read -r rel_path; do
         [[ -z "$rel_path" ]] && continue
