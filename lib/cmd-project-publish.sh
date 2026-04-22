@@ -2,9 +2,24 @@
 # lib/cmd-project-publish.sh — Publish projects to Config Repos
 #
 # Provides: cmd_project_publish(), _publish_per_file_review(),
-#           _copy_project_for_publish(), _publish_pack_to_tmpdir()
+#           _copy_project_for_publish(), _publish_pack_to_tmpdir(),
+#           _read_publish_ignore()
 # Dependencies: colors.sh, utils.sh, yaml.sh, remote.sh, manifest.sh, paths.sh, update.sh
 # Globals: PROJECTS_DIR, PACKS_DIR
+
+# Read .cco/publish-ignore patterns from <file>.
+# Skips empty lines and comment lines (#...). Emits one pattern per line
+# on stdout. Canonical reader used by both the pre-publish secret scan
+# and _copy_project_for_publish — do not inline this logic.
+_read_publish_ignore() {
+    local file="$1"
+    [[ -f "$file" ]] || return 0
+    local line
+    while IFS= read -r line; do
+        [[ -z "$line" || "$line" == \#* ]] && continue
+        printf '%s\n' "$line"
+    done < "$file"
+}
 
 cmd_project_publish() {
     local name="" remote_arg="" message="" dry_run=false force=false
@@ -135,15 +150,12 @@ EOF
     local -a secret_hits=()
     local -a _publishable_files=()
 
-    # Read .cco/publish-ignore patterns (same logic as _copy_project_for_publish)
+    # Read .cco/publish-ignore patterns (shared helper with _copy_project_for_publish)
     local -a _scan_ignore_patterns=()
-    local _scan_ignore_file="$project_dir/.cco/publish-ignore"
-    if [[ -f "$_scan_ignore_file" ]]; then
-        while IFS= read -r _ig_line; do
-            [[ -z "$_ig_line" || "$_ig_line" == \#* ]] && continue
-            _scan_ignore_patterns+=("$_ig_line")
-        done < "$_scan_ignore_file"
-    fi
+    local _ig_line
+    while IFS= read -r _ig_line; do
+        [[ -n "$_ig_line" ]] && _scan_ignore_patterns+=("$_ig_line")
+    done < <(_read_publish_ignore "$project_dir/.cco/publish-ignore")
 
     # Set up temp git repo for publish-ignore matching if patterns exist
     local _scan_ignore_dir=""
@@ -438,16 +450,12 @@ _copy_project_for_publish() {
         "secrets.env"
     )
 
-    # Read .cco/publish-ignore patterns
+    # Read .cco/publish-ignore patterns (shared helper)
     local -a ignore_patterns=()
-    local ignore_file="$src/.cco/publish-ignore"
-    if [[ -f "$ignore_file" ]]; then
-        while IFS= read -r line; do
-            # Skip comments and empty lines
-            [[ -z "$line" || "$line" == \#* ]] && continue
-            ignore_patterns+=("$line")
-        done < "$ignore_file"
-    fi
+    local _ig_line
+    while IFS= read -r _ig_line; do
+        [[ -n "$_ig_line" ]] && ignore_patterns+=("$_ig_line")
+    done < <(_read_publish_ignore "$src/.cco/publish-ignore")
 
     # Build rsync-like exclusion via find + copy
     find "$src" -mindepth 1 -maxdepth 1 | while IFS= read -r item; do
