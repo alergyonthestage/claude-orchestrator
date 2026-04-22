@@ -14,14 +14,16 @@
 
 # ── local-paths.yml read/write helpers ───────────────────────────────
 
-# Read a path value from local-paths.yml.
-# Usage: _local_paths_get <file> <section> <key>
-# Output: the path value (stdout), or empty string if not found.
-_local_paths_get() {
-    local file="$1" section="$2" key="$3"
+# Dump all key=value pairs of a section from local-paths.yml.
+# Usage: _local_paths_get_section <file> <section>
+# Output: newline-separated "key=value" lines (stdout), empty if no section.
+# Note: sole entry point for reading sections; _local_paths_get and
+# _resolve_project_paths both go through this helper to avoid drift.
+_local_paths_get_section() {
+    local file="$1" section="$2"
     [[ ! -f "$file" ]] && return 0
 
-    awk -v section="$section" -v key="$key" '
+    awk -v section="$section" '
         $0 == section":" { in_section=1; next }
         in_section && /^[^ #]/ { exit }
         in_section && /^  / {
@@ -33,10 +35,28 @@ _local_paths_get() {
                 v = substr(line, colon + 1)
                 sub(/^ +/, "", v)
                 gsub(/["\047]/, "", v)
-                if (k == key) { print v; exit }
+                if (k != "" && v != "") print k "=" v
             }
         }
     ' "$file"
+}
+
+# Read a single path value from local-paths.yml.
+# Usage: _local_paths_get <file> <section> <key>
+# Output: the path value (stdout), or empty string if not found.
+_local_paths_get() {
+    local file="$1" section="$2" key="$3"
+    local dump
+    dump=$(_local_paths_get_section "$file" "$section")
+    [[ -z "$dump" ]] && return 0
+    local line
+    while IFS= read -r line; do
+        local k="${line%%=*}" v="${line#*=}"
+        if [[ "$k" == "$key" ]]; then
+            printf '%s\n' "$v"
+            return 0
+        fi
+    done <<< "$dump"
 }
 
 # Write or update a path value in local-paths.yml.
@@ -400,47 +420,14 @@ _resolve_project_paths() {
         return 0
     fi
 
-    # Build substitution maps from local-paths.yml
-    # Format: section:key=value (newline-separated)
+    # Build substitution maps from local-paths.yml using the canonical
+    # section reader (_local_paths_get_section). Convert newlines to RS
+    # (\036) because macOS BWK awk rejects embedded newlines in -v.
     local repo_map="" mount_map=""
-
-    # Read repos section
-    local repos_content
-    repos_content=$(awk '
-        /^repos:/ { in_section=1; next }
-        in_section && /^[^ #]/ { exit }
-        in_section && /^  / {
-            line = $0; sub(/^  /, "", line)
-            colon = index(line, ":")
-            if (colon > 0) {
-                k = substr(line, 1, colon - 1)
-                v = substr(line, colon + 1)
-                sub(/^ +/, "", v)
-                gsub(/["\047]/, "", v)
-                if (k != "" && v != "") print k "=" v
-            }
-        }
-    ' "$local_paths")
-    # Convert newlines to RS (\036) — macOS BWK awk rejects newlines in -v
-    [[ -n "$repos_content" ]] && repo_map=$(printf '%s' "$repos_content" | tr '\n' '\036')
-
-    # Read extra_mounts section
-    local mounts_content
-    mounts_content=$(awk '
-        /^extra_mounts:/ { in_section=1; next }
-        in_section && /^[^ #]/ { exit }
-        in_section && /^  / {
-            line = $0; sub(/^  /, "", line)
-            colon = index(line, ":")
-            if (colon > 0) {
-                k = substr(line, 1, colon - 1)
-                v = substr(line, colon + 1)
-                sub(/^ +/, "", v)
-                gsub(/["\047]/, "", v)
-                if (k != "" && v != "") print k "=" v
-            }
-        }
-    ' "$local_paths")
+    local repos_content mounts_content
+    repos_content=$(_local_paths_get_section "$local_paths" "repos")
+    mounts_content=$(_local_paths_get_section "$local_paths" "extra_mounts")
+    [[ -n "$repos_content" ]]  && repo_map=$(printf '%s'  "$repos_content"  | tr '\n' '\036')
     [[ -n "$mounts_content" ]] && mount_map=$(printf '%s' "$mounts_content" | tr '\n' '\036')
 
     # Apply substitutions to project.yml
