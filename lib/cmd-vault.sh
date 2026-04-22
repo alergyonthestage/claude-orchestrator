@@ -134,6 +134,28 @@ _untrack_stale_pre_save() {
     fi
 }
 
+# Categorize a vault file path into one of the canonical buckets used by
+# vault save/diff summaries: packs | projects | global | templates | metadata.
+# Framework-tracking files (.cco/*, .gitignore, manifest.yml, .vault-profile)
+# always map to "metadata", regardless of the top-level directory.
+# Reference: docs/maintainer/configuration/vault/file-classification.md §6.1-6.2
+_vault_categorize_file() {
+    local file="$1"
+    if [[ "$file" == */.cco/* || "$file" == .cco/* \
+       || "$file" == ".gitignore" || "$file" == "manifest.yml" \
+       || "$file" == ".vault-profile" ]]; then
+        echo "metadata"
+        return
+    fi
+    case "$file" in
+        packs/*)     echo "packs" ;;
+        projects/*)  echo "projects" ;;
+        global/*)    echo "global" ;;
+        templates/*) echo "templates" ;;
+        *)           echo "metadata" ;;
+    esac
+}
+
 # Check for real uncommitted changes (excluding local-path differences).
 # project.yml files always appear "modified" because the working copy has
 # real paths while the committed version has @local markers. This helper
@@ -259,26 +281,16 @@ EOF
     fi
 
     # Categorize changes (post-extraction — accurate counts)
-    # Separates user content from framework/internal files (see file-classification.md §6.1)
     local packs_count=0 projects_count=0 global_count=0 templates_count=0 metadata_count=0
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
         local file="${line:3}"
-        # Framework-tracking, vault infra, and any .cco/ internal files
-        # Defense-in-depth: .cco/* catch-all prevents machine-specific files
-        # from appearing as user content if they escape gitignore
-        if [[ "$file" == */.cco/* || "$file" == .cco/* \
-           || "$file" == ".gitignore" || "$file" == "manifest.yml" \
-           || "$file" == ".vault-profile" ]]; then
-            metadata_count=$((metadata_count + 1))
-            continue
-        fi
-        case "$file" in
-            packs/*)     packs_count=$((packs_count + 1)) ;;
-            projects/*)  projects_count=$((projects_count + 1)) ;;
-            global/*)    global_count=$((global_count + 1)) ;;
-            templates/*) templates_count=$((templates_count + 1)) ;;
-            *)           metadata_count=$((metadata_count + 1)) ;;
+        case "$(_vault_categorize_file "$file")" in
+            packs)     packs_count=$((packs_count + 1)) ;;
+            projects)  projects_count=$((projects_count + 1)) ;;
+            global)    global_count=$((global_count + 1)) ;;
+            templates) templates_count=$((templates_count + 1)) ;;
+            metadata)  metadata_count=$((metadata_count + 1)) ;;
         esac
     done <<< "$status_output"
 
@@ -474,27 +486,17 @@ EOF
         status_output="$filtered_output"
     fi
 
-    # Group by category, separating framework/internal from user content
-    # (see file-classification.md §6.2)
+    # Group by category for display
     local packs="" projects="" global_files="" templates="" metadata=""
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
         local file="${line:3}"
-        # Framework-tracking, vault infra, and any .cco/ internal files
-        # Defense-in-depth: .cco/* catch-all prevents machine-specific files
-        # from appearing as user content if they escape gitignore
-        if [[ "$file" == */.cco/* || "$file" == .cco/* \
-           || "$file" == ".gitignore" || "$file" == "manifest.yml" \
-           || "$file" == ".vault-profile" ]]; then
-            metadata+="$line"$'\n'
-            continue
-        fi
-        case "$file" in
-            packs/*)     packs+="$line"$'\n' ;;
-            projects/*)  projects+="$line"$'\n' ;;
-            global/*)    global_files+="$line"$'\n' ;;
-            templates/*) templates+="$line"$'\n' ;;
-            *)           metadata+="$line"$'\n' ;;
+        case "$(_vault_categorize_file "$file")" in
+            packs)     packs+="$line"$'\n' ;;
+            projects)  projects+="$line"$'\n' ;;
+            global)    global_files+="$line"$'\n' ;;
+            templates) templates+="$line"$'\n' ;;
+            metadata)  metadata+="$line"$'\n' ;;
         esac
     done <<< "$status_output"
 
