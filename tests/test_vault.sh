@@ -256,6 +256,44 @@ test_vault_status_clean() {
     assert_output_contains "clean"
 }
 
+# Regression: status and diff must agree after save with local paths.
+# Before the fix, `cco vault status` counted raw git status lines without
+# the @local normalization that `cco vault diff` applies. A project.yml
+# with real paths in the working tree and @local in HEAD produced a
+# virtual diff: status reported "1 uncommitted file(s)" while diff
+# reported "No uncommitted changes".
+test_vault_status_and_diff_agree_after_save_with_local_paths() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault "$tmpdir"
+
+    # Plant a project with a real (non-@local) path. vault save will
+    # extract @local, commit, and restore real paths in the working tree.
+    local proj="$CCO_PROJECTS_DIR/myapp"
+    mkdir -p "$proj/.cco" "$proj/.claude" "$proj/memory"
+    cat > "$proj/project.yml" <<'YAML'
+name: myapp
+description: "Test"
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+repos:
+  - path: ~/Projects/myapp-api
+    name: api
+YAML
+
+    run_cco vault save "add myapp" --yes
+
+    # Working tree now has ~/Projects/myapp-api; HEAD has "@local".
+    # Both commands must see this as clean (virtual-only diff).
+    run_cco vault diff
+    assert_output_contains "No uncommitted"
+
+    run_cco vault status
+    assert_output_contains "clean"
+}
+
 # ── vault not initialized errors ─────────────────────────────────────
 
 test_vault_save_fails_without_init() {
