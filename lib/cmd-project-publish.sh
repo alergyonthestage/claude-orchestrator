@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 # lib/cmd-project-publish.sh — Publish projects to Config Repos
 #
-# Provides: cmd_project_publish(), _publish_per_file_review(),
+# Provides: cmd_project_publish() — orchestrator
 #           _copy_project_for_publish(), _publish_pack_to_tmpdir(),
+#           _publish_per_file_review(),
 #           _read_publish_ignore()
-# Dependencies: colors.sh, utils.sh, yaml.sh, remote.sh, manifest.sh, paths.sh, update.sh
+# Pre-publish safety checks (internal):
+#           _publish_check_migrations()
+#           _publish_check_framework_alignment()
+#           _publish_scan_secrets()
+# Dependencies: colors.sh, utils.sh, yaml.sh, remote.sh, manifest.sh, paths.sh, update.sh, secrets.sh
 # Globals: PROJECTS_DIR, PACKS_DIR
 
 # Read .cco/publish-ignore patterns from <file>.
@@ -19,6 +24,139 @@ _read_publish_ignore() {
         [[ -z "$line" || "$line" == \#* ]] && continue
         printf '%s\n' "$line"
     done < "$file"
+}
+
+# ── Pre-publish safety checks ────────────────────────────────────────
+
+# Block publish if the project has pending migrations (schema behind latest).
+# Projects without .cco/meta (schema=0) predate the migration system and are
+# migrated on first `cco update`; they are not checked.
+# Usage: _publish_check_migrations <project_dir> <project_name>
+_publish_check_migrations() {
+    local project_dir="$1" name="$2"
+    local meta_file
+    meta_file=$(_cco_project_meta "$project_dir")
+    local current_schema
+    current_schema=$(_read_cco_meta "$meta_file")
+    local latest_schema
+    latest_schema=$(_latest_schema_version "project")
+    if [[ "$current_schema" -gt 0 && "$current_schema" -lt "$latest_schema" ]]; then
+        error "Project '$name' has pending migrations (schema: $current_schema, latest: $latest_schema)."
+        die "Run 'cco update' first to apply migrations."
+    fi
+}
+
+# Warn (not block) if framework defaults have updates the project has not yet
+# applied. Prompts the user to continue (unless --yes or non-TTY).
+# Usage: _publish_check_framework_alignment <project_dir> <project_name> <yes_mode>
+_publish_check_framework_alignment() {
+    local project_dir="$1" name="$2" yes_mode="$3"
+    local defaults_dir
+    defaults_dir=$(_resolve_project_defaults_dir "$project_dir")
+    local base_dir
+    base_dir=$(_cco_project_base_dir "$project_dir")
+    local fw_changes
+    fw_changes=$(_collect_file_changes "$defaults_dir" "$project_dir/.claude" "$base_dir" "project")
+    local fw_actionable
+    fw_actionable=$(echo "$fw_changes" | grep -cvE '^(NO_UPDATE|USER_MODIFIED|$)' || true)
+
+    [[ $fw_actionable -eq 0 ]] && return 0
+
+    warn "$fw_actionable framework default(s) have updates not yet applied."
+    warn "Run 'cco update --sync $name' to review before publishing."
+    if [[ "$yes_mode" != "true" && -t 0 ]]; then
+        printf "Continue anyway? [y/N] " >&2
+        local reply
+        read -r reply < /dev/tty
+        [[ ! "$reply" =~ ^[Yy]$ ]] && die "Aborted."
+    fi
+}
+
+# Block publish if secrets are detected among publishable files.
+# Two-pass scan using the canonical helpers from lib/secrets.sh:
+#   Pass 1: filename patterns (_secret_match_filename)
+#   Pass 2: content patterns   (_secret_match_content)
+# Applies .cco/publish-ignore so excluded files are not scanned and
+# replicates _copy_project_for_publish's exclusions (.cco/, .claude/ is
+# included, memory/ and secrets.env excluded).
+# Usage: _publish_scan_secrets <project_dir>
+_publish_scan_secrets() {
+    local project_dir="$1"
+    local -a secret_hits=()
+    local -a _publishable_files=()
+
+    # Read .cco/publish-ignore patterns (shared helper with copy step)
+    local -a _scan_ignore_patterns=()
+    local _ig_line
+    while IFS= read -r _ig_line; do
+        [[ -n "$_ig_line" ]] && _scan_ignore_patterns+=("$_ig_line")
+    done < <(_read_publish_ignore "$project_dir/.cco/publish-ignore")
+
+    # Temp git repo for publish-ignore matching (gitignore semantics)
+    local _scan_ignore_dir=""
+    if [[ ${#_scan_ignore_patterns[@]} -gt 0 ]]; then
+        _scan_ignore_dir=$(mktemp -d)
+        git -C "$_scan_ignore_dir" init -q 2>/dev/null || true
+        printf '%s\n' "${_scan_ignore_patterns[@]}" > "$_scan_ignore_dir/.gitignore"
+    fi
+
+    # Collect publishable files (same exclusions as _copy_project_for_publish)
+    local -a _scan_dirs=()
+    [[ -d "$project_dir/.claude" ]] && _scan_dirs+=("$project_dir/.claude")
+    local _root_item _root_base
+    for _root_item in "$project_dir"/*; do
+        [[ ! -e "$_root_item" ]] && continue
+        _root_base=$(basename "$_root_item")
+        case "$_root_base" in
+            .cco|.claude|memory|secrets.env) continue ;;
+        esac
+        [[ -f "$_root_item" ]] && _scan_dirs+=("$_root_item")
+    done
+
+    local _scan_target file
+    for _scan_target in "${_scan_dirs[@]+"${_scan_dirs[@]}"}"; do
+        while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+            [[ "$file" == */.cco/* ]] && continue
+            if [[ -n "$_scan_ignore_dir" ]]; then
+                local _scan_rel="${file#$project_dir/}"
+                if git -C "$_scan_ignore_dir" check-ignore -q "$_scan_rel" 2>/dev/null; then
+                    continue
+                fi
+            fi
+            _publishable_files+=("$file")
+        done < <(find "$_scan_target" -type f 2>/dev/null)
+    done
+
+    [[ -n "$_scan_ignore_dir" ]] && rm -rf "$_scan_ignore_dir"
+
+    # Pass 1: filename match (canonical patterns in lib/secrets.sh)
+    local match_pattern
+    for file in "${_publishable_files[@]+"${_publishable_files[@]}"}"; do
+        if match_pattern=$(_secret_match_filename "$file"); then
+            secret_hits+=("${file#$project_dir/} (filename match: $match_pattern)")
+        fi
+    done
+
+    # Pass 2: content match (canonical patterns in lib/secrets.sh)
+    local match_info
+    for file in "${_publishable_files[@]+"${_publishable_files[@]}"}"; do
+        if match_info=$(_secret_match_content "$file"); then
+            local rel="${file#$project_dir/}"
+            local match_line="${match_info%%:*}"
+            match_pattern="${match_info#*:}"
+            secret_hits+=("$rel:$match_line (content match: $match_pattern)")
+        fi
+    done
+
+    if [[ ${#secret_hits[@]} -gt 0 ]]; then
+        error "Potential secrets detected in publishable files:"
+        local f
+        for f in "${secret_hits[@]}"; do
+            error "  - $f"
+        done
+        die "Remove secrets or add to .cco/publish-ignore"
+    fi
 }
 
 cmd_project_publish() {
@@ -104,124 +242,12 @@ EOF
     [[ -z "$message" ]] && message="publish project $name"
 
     # ── Pre-publish safety pipeline ──────────────────────────────────
-
-    # STEP 1: MIGRATION CHECK (blocking)
-    # Block publish if project has a schema_version that is behind the latest.
-    # Projects without .cco/meta (schema=0) are not checked — they predate the
-    # migration system and will be migrated on first `cco update`.
-    local meta_file
-    meta_file=$(_cco_project_meta "$project_dir")
-    local current_schema
-    current_schema=$(_read_cco_meta "$meta_file")
-    local latest_schema
-    latest_schema=$(_latest_schema_version "project")
-    if [[ "$current_schema" -gt 0 && "$current_schema" -lt "$latest_schema" ]]; then
-        error "Project '$name' has pending migrations (schema: $current_schema, latest: $latest_schema)."
-        die "Run 'cco update' first to apply migrations."
-    fi
-
-    # STEP 2: FRAMEWORK ALIGNMENT CHECK (warning)
-    local defaults_dir
-    defaults_dir=$(_resolve_project_defaults_dir "$project_dir")
-    local base_dir
-    base_dir=$(_cco_project_base_dir "$project_dir")
-    local fw_changes
-    fw_changes=$(_collect_file_changes "$defaults_dir" "$project_dir/.claude" "$base_dir" "project")
-    local fw_actionable
-    fw_actionable=$(echo "$fw_changes" | grep -cvE '^(NO_UPDATE|USER_MODIFIED|$)' || true)
-
-    if [[ $fw_actionable -gt 0 ]]; then
-        warn "$fw_actionable framework default(s) have updates not yet applied."
-        warn "Run 'cco update --sync $name' to review before publishing."
-        if [[ "$yes_mode" != "true" && -t 0 ]]; then
-            printf "Continue anyway? [y/N] " >&2
-            local reply
-            read -r reply < /dev/tty
-            [[ ! "$reply" =~ ^[Yy]$ ]] && die "Aborted."
-        fi
-    fi
-
-    # STEP 3: SECRET SCAN (blocking)
-    # Two-pass scan on files that would actually be published:
-    #   Pass 1: filename patterns (*.env, *.key, *.pem, .credentials.json, .netrc)
-    #   Pass 2: content patterns (API_KEY=, SECRET=, PASSWORD=, token strings)
-    # Excludes: .cco/, memory/, secrets.env (same as _copy_project_for_publish)
-    # Also applies .cco/publish-ignore patterns so excluded files are not scanned.
-    local -a secret_hits=()
-    local -a _publishable_files=()
-
-    # Read .cco/publish-ignore patterns (shared helper with _copy_project_for_publish)
-    local -a _scan_ignore_patterns=()
-    local _ig_line
-    while IFS= read -r _ig_line; do
-        [[ -n "$_ig_line" ]] && _scan_ignore_patterns+=("$_ig_line")
-    done < <(_read_publish_ignore "$project_dir/.cco/publish-ignore")
-
-    # Set up temp git repo for publish-ignore matching if patterns exist
-    local _scan_ignore_dir=""
-    if [[ ${#_scan_ignore_patterns[@]} -gt 0 ]]; then
-        _scan_ignore_dir=$(mktemp -d)
-        git -C "$_scan_ignore_dir" init -q 2>/dev/null || true
-        printf '%s\n' "${_scan_ignore_patterns[@]}" > "$_scan_ignore_dir/.gitignore"
-    fi
-
-    # Collect all publishable files
-    local -a _scan_dirs=()
-    [[ -d "$project_dir/.claude" ]] && _scan_dirs+=("$project_dir/.claude")
-    for _root_item in "$project_dir"/*; do
-        [[ ! -e "$_root_item" ]] && continue
-        local _root_base
-        _root_base=$(basename "$_root_item")
-        case "$_root_base" in
-            .cco|.claude|memory|secrets.env) continue ;;
-        esac
-        [[ -f "$_root_item" ]] && _scan_dirs+=("$_root_item")
-    done
-
-    for _scan_target in "${_scan_dirs[@]+"${_scan_dirs[@]}"}"; do
-        while IFS= read -r file; do
-            [[ -z "$file" ]] && continue
-            [[ "$file" == */.cco/* ]] && continue
-            # Apply publish-ignore filter: check if file matches any pattern
-            if [[ -n "$_scan_ignore_dir" ]]; then
-                local _scan_rel="${file#$project_dir/}"
-                if git -C "$_scan_ignore_dir" check-ignore -q "$_scan_rel" 2>/dev/null; then
-                    continue
-                fi
-            fi
-            _publishable_files+=("$file")
-        done < <(find "$_scan_target" -type f 2>/dev/null)
-    done
-
-    # Clean up temp git repo for ignore matching
-    [[ -n "$_scan_ignore_dir" ]] && rm -rf "$_scan_ignore_dir"
-
-    # Pass 1: filename match (canonical patterns in lib/secrets.sh)
-    for file in "${_publishable_files[@]+"${_publishable_files[@]}"}"; do
-        local match_pattern
-        if match_pattern=$(_secret_match_filename "$file"); then
-            secret_hits+=("${file#$project_dir/} (filename match: $match_pattern)")
-        fi
-    done
-
-    # Pass 2: content match (canonical patterns in lib/secrets.sh)
-    for file in "${_publishable_files[@]+"${_publishable_files[@]}"}"; do
-        local match_info
-        if match_info=$(_secret_match_content "$file"); then
-            local rel="${file#$project_dir/}"
-            local match_line="${match_info%%:*}"
-            local match_pattern="${match_info#*:}"
-            secret_hits+=("$rel:$match_line (content match: $match_pattern)")
-        fi
-    done
-
-    if [[ ${#secret_hits[@]} -gt 0 ]]; then
-        error "Potential secrets detected in publishable files:"
-        for f in "${secret_hits[@]}"; do
-            error "  - $f"
-        done
-        die "Remove secrets or add to .cco/publish-ignore"
-    fi
+    # STEP 1 : migrations up-to-date (blocking)
+    # STEP 2 : framework alignment (warning — confirm to continue)
+    # STEP 3 : secret scan (blocking)
+    _publish_check_migrations           "$project_dir" "$name"
+    _publish_check_framework_alignment  "$project_dir" "$name" "$yes_mode"
+    _publish_scan_secrets               "$project_dir"
 
     info "Publishing project '$name' to $remote_url..."
 
