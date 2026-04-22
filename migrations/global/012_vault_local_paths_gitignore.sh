@@ -4,6 +4,14 @@
 # The unified local path resolution feature stores machine-specific paths
 # in .cco/local-paths.yml (gitignored) and creates temporary backups during
 # vault save. Both patterns must be excluded from version control.
+#
+# SUPERSEDED: this migration computes `vault_dir = dirname(global_dir)`
+# which evaluates to `user-config/global` instead of `user-config/`, so
+# for every existing user this migration found no `.gitignore` and was
+# effectively a no-op. Migration 013 adds the patterns at the correct
+# vault root and cleans up any stray markers this migration left in
+# global/.gitignore. Kept here only to preserve sequential migration
+# IDs; do not amend this file — fix logic belongs in 013.
 
 MIGRATION_ID=12
 MIGRATION_DESC="Add local path resolution patterns to vault .gitignore"
