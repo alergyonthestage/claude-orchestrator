@@ -177,9 +177,9 @@ entries:
   - id: 13
     date: "2026-04-22"
     type: additive
-    title: "Vault runtime invariants — self-healing gitignore, ghost cleanup, start guard"
+    title: "Vault runtime invariants — self-healing gitignore, ghost cleanup, legacy normalize, start guard"
     description: >
-      Four subtle bugs affecting users with pre-existing vaults and profile
+      Five subtle bugs affecting users with pre-existing vaults and profile
       branches are now self-healed at every vault operation, so no migration
       or manual action is required. (#B15) Branches missing .gitignore
       patterns added in later migrations are auto-patched on the next vault
@@ -190,7 +190,13 @@ entries:
       launch if any repo or mount remains @local after resolution — no more
       silent empty bind mounts. (#B18) `cco project resolve --show` and
       `cco start` share a single effective-paths reader, eliminating the
-      `✓ exists` vs `Unresolved` divergence. Extra mounts pointing to
-      single files (not directories) are also accepted throughout. No user
-      action needed — every new fix is self-applied the next time a
-      relevant vault command runs.
+      `✓ exists` vs `Unresolved` divergence. (#B19) Legacy vaults whose
+      project.yml files were committed with real absolute host paths (pre-
+      @local feature) are auto-upgraded: the real paths move into the
+      PC-local `.cco/local-paths.yml`, the committed tree is rewritten to
+      `@local`, and the user's working copy is left untouched. This
+      unblocks `vault diff/save/switch` on legacy branches that used to
+      show perpetual M, refuse to commit, and refuse to switch. Extra
+      mounts pointing to single files (not directories) are also accepted
+      throughout. No user action needed — every new fix is self-applied
+      the next time a relevant vault command runs.

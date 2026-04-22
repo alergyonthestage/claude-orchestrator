@@ -366,6 +366,7 @@ points in the profile-switch flow):
 |---|---|---|---|
 | `_ensure_vault_gitignore` | current branch | `_check_vault`, `cmd_vault_status`, `cmd_vault_profile_switch` (post-checkout) | Append any missing pattern from `_VAULT_GITIGNORE`. Respects user-commented patterns (never reverts a deliberate bypass). Silent commit if needed. |
 | `_untrack_stale_pre_save` | current branch | same as above | `git rm --cached` any `project.yml.pre-save` tracked from pre-migration bugs. |
+| `_normalize_committed_paths` | current branch | same as above | Upgrade legacy project.yml committed with real host paths to `@local`. Saves the real paths into `.cco/local-paths.yml` first so the PC keeps the mapping. Stages via `git hash-object -w` + `update-index`; the WORKING TREE is never touched (design: working=real, committed=`@local`). |
 | `_clean_branch_ghost_projects` | current branch | `cmd_vault_profile_switch` (post-checkout) | Remove `projects/<X>/` directories whose content is entirely gitignored residue of another branch. Also prune orphan `.cco/profile-state/<branch>/` shadows. |
 
 **Rule for new code**: if you introduce a machine-specific file class

@@ -14,7 +14,7 @@
 | Status | Items | Section |
 |--------|-------|---------|
 | ✅ Completed | 31 sprints / features | [→ Completed](#completed) |
-| 🐛 Known Bugs | 3 open · 15 fixed | [→ Known Bugs](#known-bugs) |
+| 🐛 Known Bugs | 3 open · 16 fixed | [→ Known Bugs](#known-bugs) |
 | 🔜 Planned | Quick Wins (FI-4, #10), AI-merge, Sprint 6C → 12 | [→ Planned](#planned-sprints) |
 | 🔭 Exploratory | 7 ideas | [→ Long-term / Exploratory](#long-term--exploratory) |
 | ❌ Declined | 3 items | [→ Declined / Won't Do](#declined--wont-do) |
@@ -341,6 +341,61 @@ helper.
 
 **See also**: `lib/cmd-llms.sh:643`, `tests/test_llms.sh:68`,
 `test_resolve_name_from_domain_url` (passing, returns `shadcn-svelte`).
+
+---
+
+### #B19 Legacy vaults with real paths committed trap user in divergence loop ✓ FIXED
+
+**Reported**: 2026-04-22 (field test, after runtime invariants shipped).
+**Fixed**: 2026-04-22.
+
+**Symptom**: on a vault created before the `@local` feature, the
+profile branches (e.g. `cave`) had `project.yml` committed with real
+absolute paths (`~/Projects/.../cave-auth`). After shipping the
+runtime invariants that sanitize working → `@local` for comparison,
+every vault operation on those legacy branches produced a persistent
+divergence:
+
+- `cco vault diff` showed `M projects/*/project.yml` forever (working
+  post-sanitize `@local` ≠ committed real).
+- `cco vault save` replied "Nothing to commit — vault is up to date"
+  because the pre-extract `raw_status` was empty (working = committed
+  = real), so the save early-returned without normalizing.
+- `cco vault switch main` failed with "Failed to switch. Working tree
+  restored." because `git checkout` refused to overwrite project.yml
+  files that were "modified" post-extract.
+- The user experienced a feeling of the working-copy `project.yml`
+  being "replaced with @local" after every op, because the sanitize
+  fired and the restore struggled.
+
+**Root cause**: the `@local` contract requires `committed = @local,
+working = real`. Legacy vaults violated the committed side. No path in
+the code upgraded that committed state — migrations only touched the
+current branch's gitignore, not project.yml content.
+
+**Fix**: new runtime invariant `_normalize_committed_paths` in
+`lib/cmd-vault.sh` that, for every `projects/<X>/project.yml` tracked
+on HEAD:
+1. Reads the committed blob.
+2. If it contains any non-`@local` real path, extracts the real paths
+   into `.cco/local-paths.yml` (so the PC keeps the mapping).
+3. Sanitizes a temp copy of the committed blob (paths → `@local`).
+4. Stages the sanitized blob via `git hash-object -w` +
+   `git update-index --cacheinfo` — the WORKING TREE is never touched.
+5. Commits silently ("vault: normalize committed paths to @local
+   (legacy vault)").
+
+Wired into `_check_vault`, `cmd_vault_status`, and
+`cmd_vault_profile_switch` post-checkout (so the target branch gets
+normalized before `_resolve_all_local_paths` runs). Idempotent.
+
+**User impact**: no manual step required. At the next `cco vault <any>`
+on a legacy branch, a single normalization commit appears in the log
+and every subsequent op works against the `@local` contract.
+
+**See also**: `lib/cmd-vault.sh:_normalize_committed_paths`,
+[coding-conventions](../architecture/coding-conventions.md)
+§"Prefer runtime invariants to migrations for cross-branch state".
 
 ---
 

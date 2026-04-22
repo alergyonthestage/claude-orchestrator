@@ -55,6 +55,7 @@ extend it if your case is not covered.
 | Self-heal vault `.gitignore` to match `_VAULT_GITIGNORE` template | `_ensure_vault_gitignore` | `lib/cmd-vault.sh` |
 | Untrack stale pre-save backups at any branch | `_untrack_stale_pre_save` | `lib/cmd-vault.sh` |
 | Remove ghost project directories and orphan shadows post-switch | `_clean_branch_ghost_projects` | `lib/cmd-vault.sh` |
+| Normalize legacy vaults that committed real host paths (pre-@local) | `_normalize_committed_paths` | `lib/cmd-vault.sh` |
 | Test if a filesystem path exists (file OR directory) | `_path_exists` | `lib/utils.sh` |
 | Get the effective source path for every repo / mount of a project (single source of truth for display + runtime) | `_project_effective_paths` | `lib/local-paths.sh` |
 | Die if any project.yml path is unresolved or missing (start guard) | `_assert_resolved_paths` | `lib/local-paths.sh` |
