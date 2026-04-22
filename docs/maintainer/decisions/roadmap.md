@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-31 (v0.2.0-alpha: #LP local path resolution implemented).
+> Last updated: 2026-04-22 (vault status/diff consistency fix + DRY refactor).
 >
 > **Note**: Sprint entries are historical. Path references (e.g., `.cco-meta`, `.cco-source`) in older
 > sprints reflect the layout at the time of writing. See Sprint 8 and the `.cco/` consolidation
@@ -14,7 +14,7 @@
 | Status | Items | Section |
 |--------|-------|---------|
 | ✅ Completed | 30 sprints / features | [→ Completed](#completed) |
-| 🐛 Known Bugs | 1 open · 8 fixed | [→ Known Bugs](#known-bugs) |
+| 🐛 Known Bugs | 3 open · 9 fixed | [→ Known Bugs](#known-bugs) |
 | 🔜 Planned | Quick Wins (FI-4, #10), AI-merge, Sprint 6C → 12 | [→ Planned](#planned-sprints) |
 | 🔭 Exploratory | 7 ideas | [→ Long-term / Exploratory](#long-term--exploratory) |
 | ❌ Declined | 3 items | [→ Declined / Won't Do](#declined--wont-do) |
@@ -300,6 +300,76 @@ rag:
 ---
 
 ## Known Bugs
+
+### #B12 `test_update_migrations_run_in_order` asserts outdated schema_version — open
+
+**Reported**: 2026-04-22 (noticed during pre-existing failures audit).
+
+**Symptom**: `bin/test --filter test_update_migrations_run_in_order` fails with
+`Expected '…/.cco/meta' to contain: schema_version: 11`. The codebase has 14
+global migrations (001–014) and the engine correctly bumps the meta file, but
+the test hardcodes `schema_version: 11`.
+
+**Classification**: Test maintenance, not a production bug. The assertion
+becomes stale every time a new migration is added.
+
+**Proposed fix**: Make the test derive the expected value dynamically (e.g.,
+`ls migrations/global/ | sort -r | head -1 | cut -d_ -f1`) instead of
+hardcoding. Alternative: a helper `_latest_migration_id "global"` reused across
+tests.
+
+**See also**: `tests/test_update.sh:184`, `lib/update.sh` migration runner.
+
+---
+
+### #B11 `_llms_resolve_name_from_url` returns domain-prefixed segment for variant URLs — open
+
+**Reported**: 2026-04-22 (noticed during pre-existing failures audit).
+
+**Symptom**: `bin/test --filter test_resolve_name_from_full_variant_url` fails.
+For URL `https://example.com/docs/react/llms-full.txt` the helper returns
+`example-react` while the test expects `react`.
+
+**Root cause hypothesis**: ambiguous. The helper (in `lib/cmd-llms.sh:643`) is
+designed to concatenate `domain-segment` to avoid collisions across sources.
+Either the test was written with outdated expectations, or the helper regressed
+and the collision-avoidance behavior is a later addition the test didn't track.
+
+**Decision needed**: clarify the contract first (when should the helper return
+only the segment vs `domain-segment`?), then either update the test or fix the
+helper.
+
+**See also**: `lib/cmd-llms.sh:643`, `tests/test_llms.sh:68`,
+`test_resolve_name_from_domain_url` (passing, returns `shadcn-svelte`).
+
+---
+
+### #B10 `cco vault status` and `cco vault diff` report divergent uncommitted count ✓ FIXED
+
+**Reported**: 2026-04-22. **Fixed**: 2026-04-22 (commits 819f119, 5cdf44e, af2b8a2).
+
+**Symptom**: on a vault with a `project.yml` whose working-copy path was restored
+to a real absolute path (post-save on any PC, or post-checkout from a different PC),
+`cco vault status` reported `Changes: 1 uncommitted file(s)` while `cco vault diff`
+reported `No uncommitted changes` on the same state.
+
+**Root cause**: `cmd_vault_status` (L.906) and both branches of
+`cmd_vault_profile_show` (L.2047, L.2160) ran `git status --porcelain` directly
+and counted raw lines. `cmd_vault_save` and `cmd_vault_diff` instead normalized
+via `_extract_local_paths` + `_untrack_stale_pre_save` before counting (helper:
+`_vault_has_real_changes`). The three status-read sites were missed when the
+normalization was added.
+
+**Fix**: replaced the three raw counts with `_vault_has_real_changes`, capturing
+its stdout for the display. Also extracted `_vault_categorize_file` helper
+(DRY refactor) to deduplicate the shared categorization logic between
+`cmd_vault_save` and `cmd_vault_diff`. Regression test added in
+`tests/test_vault.sh`.
+
+**See also**: `docs/maintainer/configuration/vault/file-classification.md`,
+`docs/maintainer/configuration/vault/local-path-resolution-design.md`.
+
+---
 
 ### #B9 Wrong env var name disables nothing — "Auto-update failed" message shown ✓ FIXED
 
