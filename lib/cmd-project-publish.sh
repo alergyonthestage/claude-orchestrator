@@ -184,46 +184,23 @@ EOF
     # Clean up temp git repo for ignore matching
     [[ -n "$_scan_ignore_dir" ]] && rm -rf "$_scan_ignore_dir"
 
-    # Pass 1: filename patterns
+    # Pass 1: filename match (canonical patterns in lib/secrets.sh)
     for file in "${_publishable_files[@]+"${_publishable_files[@]}"}"; do
-        local base_name
-        base_name=$(basename "$file")
-        for pattern in '*.env' '*.key' '*.pem' '.credentials.json' '.netrc'; do
-            case "$base_name" in
-                $pattern)
-                    secret_hits+=("${file#$project_dir/} (filename match: $pattern)")
-                    break
-                    ;;
-            esac
-        done
+        local match_pattern
+        if match_pattern=$(_secret_match_filename "$file"); then
+            secret_hits+=("${file#$project_dir/} (filename match: $match_pattern)")
+        fi
     done
 
-    # Pass 2: content patterns (grep for common secret indicators)
-    # Only scan text files, skip binaries
-    local -a _content_patterns=(
-        'API_KEY\s*[=:]'
-        'SECRET_KEY\s*[=:]'
-        'SECRET\s*[=:]'
-        'PASSWORD\s*[=:]'
-        'PRIVATE_KEY'
-        'BEGIN RSA PRIVATE KEY'
-        'BEGIN OPENSSH PRIVATE KEY'
-        'ghp_[a-zA-Z0-9]'           # GitHub personal access token
-        'gho_[a-zA-Z0-9]'           # GitHub OAuth token
-        'sk-[a-zA-Z0-9]'            # OpenAI/Anthropic API key prefix
-    )
+    # Pass 2: content match (canonical patterns in lib/secrets.sh)
     for file in "${_publishable_files[@]+"${_publishable_files[@]}"}"; do
-        # Skip binary files
-        file "$file" 2>/dev/null | grep -q "text" || continue
-        for pattern in "${_content_patterns[@]}"; do
-            if grep -qE "$pattern" "$file" 2>/dev/null; then
-                local rel="${file#$project_dir/}"
-                local match_line
-                match_line=$(grep -nE "$pattern" "$file" 2>/dev/null | head -1 | cut -d: -f1)
-                secret_hits+=("$rel:$match_line (content match: $pattern)")
-                break  # One hit per file is enough
-            fi
-        done
+        local match_info
+        if match_info=$(_secret_match_content "$file"); then
+            local rel="${file#$project_dir/}"
+            local match_line="${match_info%%:*}"
+            local match_pattern="${match_info#*:}"
+            secret_hits+=("$rel:$match_line (content match: $match_pattern)")
+        fi
     done
 
     if [[ ${#secret_hits[@]} -gt 0 ]]; then

@@ -81,16 +81,9 @@ projects/*/.cco/project.yml.pre-save
 *.new
 '
 
-# ── Secret patterns for pre-commit scan ───────────────────────────────
-
-_VAULT_SECRET_PATTERNS=(
-    'secrets.env'
-    '*.env'
-    '*.key'
-    '*.pem'
-    '.credentials.json'
-    '.cco/remotes'
-)
+# Secret scan uses the canonical patterns in lib/secrets.sh
+# (_SECRET_FILENAME_PATTERNS + _secret_match_filename). Keep a single
+# source of truth so vault save and project publish never drift.
 
 # ── Vault subcommands ─────────────────────────────────────────────────
 
@@ -272,7 +265,9 @@ EOF
         return 0
     fi
 
-    # Secret detection — scan for files that should never be committed
+    # Secret detection — scan for files that should never be committed.
+    # Uses canonical _secret_match_filename from lib/secrets.sh so the
+    # pattern list is shared with project publish (see #D2 review).
     local secret_files=()
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
@@ -285,14 +280,9 @@ EOF
             done < <(git -C "$vault_dir" status --porcelain --no-renames -uall -- "$file" 2>/dev/null)
         fi
         for ef in ${expanded_files[@]+"${expanded_files[@]}"}; do
-            for pattern in "${_VAULT_SECRET_PATTERNS[@]}"; do
-                local basename_file
-                basename_file=$(basename "$ef")
-                if [[ "$basename_file" == $pattern || "$ef" == *"$pattern" ]]; then
-                    secret_files+=("$ef")
-                    break
-                fi
-            done
+            if _secret_match_filename "$ef" >/dev/null; then
+                secret_files+=("$ef")
+            fi
         done
     done <<< "$status_output"
 

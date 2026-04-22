@@ -1,11 +1,85 @@
 #!/usr/bin/env bash
-# lib/secrets.sh — Secrets loading and migration helpers
+# lib/secrets.sh — Secrets loading, scan helpers, and migration helpers
 #
-# Provides: load_secrets_file(), load_global_secrets(),
-#           migrate_memory_to_claude_state() [deprecated — use migrations/project/001],
-#           _migrate_to_managed() [deprecated — use migrations/global/001]
+# Provides:
+#   Loading:   load_secrets_file(), load_global_secrets()
+#   Scanning:  _secret_match_filename(), _secret_match_content()
+#              _SECRET_FILENAME_PATTERNS, _SECRET_CONTENT_PATTERNS
+#   Deprecated: migrate_memory_to_claude_state() [use migrations/project/001],
+#               _migrate_to_managed() [use migrations/global/001]
 # Dependencies: colors.sh, utils.sh
 # Globals: GLOBAL_DIR, DEFAULTS_DIR
+#
+# Scanning rationale: vault save (pre-commit) and project publish
+# (pre-push) both need to block known-secret files. Keeping the pattern
+# lists and match semantics here avoids drift across the two gates —
+# same class of mistake as #B10 (status/diff divergent counts).
+
+# ── Secret patterns — canonical source of truth ─────────────────────
+
+# Filename patterns (glob-style). Match is by basename or by path
+# suffix — `.credentials.json` matches both `foo/.credentials.json` and
+# a bare `.credentials.json`, and `.cco/remotes` matches any file
+# ending with that relative path.
+_SECRET_FILENAME_PATTERNS=(
+    'secrets.env'
+    '*.env'
+    '*.key'
+    '*.pem'
+    '.credentials.json'
+    '.netrc'
+    '.cco/remotes'
+)
+
+# Content patterns (ERE). Scanned only on text files.
+_SECRET_CONTENT_PATTERNS=(
+    'API_KEY\s*[=:]'
+    'SECRET_KEY\s*[=:]'
+    'SECRET\s*[=:]'
+    'PASSWORD\s*[=:]'
+    'PRIVATE_KEY'
+    'BEGIN RSA PRIVATE KEY'
+    'BEGIN OPENSSH PRIVATE KEY'
+    'ghp_[a-zA-Z0-9]'       # GitHub personal access token
+    'gho_[a-zA-Z0-9]'       # GitHub OAuth token
+    'sk-[a-zA-Z0-9]'        # OpenAI / Anthropic API key prefix
+)
+
+# Match a path against _SECRET_FILENAME_PATTERNS.
+# Echoes the matched pattern on hit; return 0 on match, 1 otherwise.
+# Usage: if hit=$(_secret_match_filename "$path"); then ...; fi
+_secret_match_filename() {
+    local path="$1"
+    local base
+    base=$(basename "$path")
+    local pattern
+    for pattern in "${_SECRET_FILENAME_PATTERNS[@]}"; do
+        if [[ "$base" == $pattern || "$path" == *"$pattern" ]]; then
+            echo "$pattern"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Scan a file's contents for _SECRET_CONTENT_PATTERNS.
+# Text-files only (binaries skipped). Stops at first match.
+# Echoes "<line_number>:<pattern>" on hit; return 0 on match, 1 otherwise.
+_secret_match_content() {
+    local file="$1"
+    [[ ! -f "$file" ]] && return 1
+    file "$file" 2>/dev/null | grep -q "text" || return 1
+    local pattern
+    for pattern in "${_SECRET_CONTENT_PATTERNS[@]}"; do
+        local match_line
+        match_line=$(grep -nE "$pattern" "$file" 2>/dev/null | head -1 | cut -d: -f1)
+        if [[ -n "$match_line" ]]; then
+            echo "${match_line}:${pattern}"
+            return 0
+        fi
+    done
+    return 1
+}
 
 # Load secrets from a specific file into an array of -e flags
 # Usage: load_secrets_file array_name file_path
