@@ -236,6 +236,127 @@ _untrack_stale_pre_save() {
     fi
 }
 
+# Runtime invariant: normalize legacy committed project.yml files that
+# still contain real (machine-specific) paths instead of @local markers.
+# Fix finding #B19 (legacy vaults pre-dating the @local feature).
+#
+# Why: vaults created before the unified local-path resolution were
+# committed with absolute host paths in repos[].path and
+# extra_mounts[].source. After the @local feature shipped, those older
+# branches were never rewritten, so every `cco vault diff/save/switch`
+# saw a virtual-only `M` on the project.yml (sanitized working vs
+# real committed), leading to:
+#   - cco vault save reporting "Nothing to commit" while diff shows M
+#   - cco vault switch failing with "Failed to switch" because git
+#     refused to overwrite modified files
+#   - the working-copy project.yml oscillating to @local with no
+#     obvious way back to real paths
+#
+# What it does:
+#   1. For every project.yml tracked on HEAD, read the committed blob.
+#   2. If it contains non-@local real paths, extract those paths into
+#      the project's .cco/local-paths.yml on the current PC (so the
+#      user does not lose the mapping).
+#   3. Sanitize a temp copy of the committed content (paths → @local).
+#   4. Stage the sanitized version via `git hash-object -w` +
+#      `git update-index` so the WORKING TREE is untouched.
+#   5. Commit silently once all staged entries are in the index.
+#
+# Idempotent: a second invocation finds every committed file already
+# @local and returns without side effects.
+#
+# Usage: _normalize_committed_paths <vault_dir>
+_normalize_committed_paths() {
+    local vault_dir="$1"
+    [[ ! -d "$vault_dir/.git" ]] && return 0
+
+    local tracked
+    tracked=$(git -C "$vault_dir" ls-tree -r HEAD --name-only 2>/dev/null \
+              | grep -E '^projects/[^/]+/project\.yml$' || true)
+    [[ -z "$tracked" ]] && return 0
+
+    local rel_path proj_name proj_dir local_paths
+    local temp_orig temp_sanitized blob_hash repos mounts
+    local has_real _p _n _src
+    local normalized_any=false
+
+    while IFS= read -r rel_path; do
+        [[ -z "$rel_path" ]] && continue
+        proj_name="${rel_path#projects/}"
+        proj_name="${proj_name%/project.yml}"
+        proj_dir="$vault_dir/projects/$proj_name"
+        local_paths="$proj_dir/.cco/local-paths.yml"
+
+        temp_orig=$(mktemp)
+        if ! git -C "$vault_dir" show "HEAD:$rel_path" > "$temp_orig" 2>/dev/null; then
+            rm -f "$temp_orig"
+            continue
+        fi
+
+        # Determine: does the committed blob contain any real path?
+        has_real=false
+        repos=$(yml_get_repos "$temp_orig" 2>/dev/null)
+        if [[ -n "$repos" ]]; then
+            while IFS=: read -r _p _n; do
+                [[ -z "$_p" ]] && continue
+                if [[ "$_p" != "@local" && "$_p" != *"{{REPO_"* ]]; then
+                    has_real=true; break
+                fi
+            done <<< "$repos"
+        fi
+        if ! $has_real; then
+            mounts=$(yml_get_extra_mounts "$temp_orig" 2>/dev/null)
+            if [[ -n "$mounts" ]]; then
+                local mount_line
+                while IFS= read -r mount_line; do
+                    [[ -z "$mount_line" ]] && continue
+                    _src="${mount_line%%:*}"
+                    if [[ "$_src" != "@local" && -n "$_src" ]]; then
+                        has_real=true; break
+                    fi
+                done <<< "$mounts"
+            fi
+        fi
+
+        if ! $has_real; then
+            rm -f "$temp_orig"
+            continue
+        fi
+
+        # Save the real paths so the user keeps the mapping on this PC.
+        # _write_local_paths is idempotent (uses _local_paths_set).
+        mkdir -p "$proj_dir/.cco"
+        _write_local_paths "$temp_orig" "$local_paths" >/dev/null 2>&1 || true
+
+        # Sanitize the temp copy (not the working tree's project.yml).
+        temp_sanitized=$(mktemp)
+        cp "$temp_orig" "$temp_sanitized"
+        _sanitize_project_paths "$temp_sanitized"
+
+        # Skip if sanitizing produced no actual change (defense in depth)
+        if cmp -s "$temp_orig" "$temp_sanitized"; then
+            rm -f "$temp_orig" "$temp_sanitized"
+            continue
+        fi
+
+        # Stage the sanitized blob in the git index WITHOUT touching the
+        # working tree — the user's on-disk project.yml stays as-is.
+        blob_hash=$(git -C "$vault_dir" hash-object -w "$temp_sanitized" 2>/dev/null)
+        if [[ -n "$blob_hash" ]]; then
+            git -C "$vault_dir" update-index --add --cacheinfo "100644,$blob_hash,$rel_path" 2>/dev/null \
+                && normalized_any=true
+        fi
+
+        rm -f "$temp_orig" "$temp_sanitized"
+    done <<< "$tracked"
+
+    if $normalized_any; then
+        if ! git -C "$vault_dir" diff --cached --quiet 2>/dev/null; then
+            git -C "$vault_dir" commit -q -m "vault: normalize committed paths to @local (legacy vault)"
+        fi
+    fi
+}
+
 # Runtime invariant: remove ghost project directories that belong to a
 # different profile's branch. Fix finding #B16 (post-switch ghost files).
 #
@@ -1005,10 +1126,11 @@ EOF
     fi
 
     # Runtime invariants: self-heal .gitignore + untrack stale pre-save
-    # so `cco vault status` on a stale branch shows the real state
-    # (no phantom ?? lines from missing patterns).
+    # + normalize legacy committed real paths (#B19) so `cco vault
+    # status` on a stale/legacy branch reports the real state.
     _ensure_vault_gitignore "$vault_dir"
     _untrack_stale_pre_save "$vault_dir"
+    _normalize_committed_paths "$vault_dir"
 
     echo -e "${BOLD}Vault:${NC} initialized at $vault_dir"
 
@@ -2452,9 +2574,12 @@ EOF
 
     # Step 7: Runtime invariants on the target branch — if this branch
     # pre-dates current .gitignore / untrack migrations, heal it so the
-    # user's next `cco vault diff/save` shows a clean state.
+    # user's next `cco vault diff/save` shows a clean state. Also
+    # normalize legacy committed real paths → @local (#B19) so the
+    # resolver in Step 9 below has @local to work against.
     _ensure_vault_gitignore "$vault_dir"
     _untrack_stale_pre_save "$vault_dir"
+    _normalize_committed_paths "$vault_dir"
 
     # Step 8: Remove ghost project directories (gitignored residue of
     # projects that belonged to the source branch). Fixes #B16.
@@ -3409,10 +3534,14 @@ _check_vault() {
     # Runtime invariants — canonical entry point for every vault command
     # that goes through _check_vault (save, diff, push, pull, switch, etc.).
     # Each op is idempotent and silently commits the heal if needed.
-    # Fix finding #B15: pre-existing branches missing current .gitignore
-    # patterns + #B17: tracked pre-save backups leftover from old bugs.
+    # #B15: branches missing current .gitignore patterns.
+    # #B17: tracked pre-save backups leftover from old bugs.
+    # #B19: legacy vaults that committed real host paths before @local
+    #       existed — normalize the committed tree so working/committed
+    #       stop diverging virtually on every diff/save/switch.
     _ensure_vault_gitignore "$USER_CONFIG_DIR"
     _untrack_stale_pre_save "$USER_CONFIG_DIR"
+    _normalize_committed_paths "$USER_CONFIG_DIR"
 
     # Self-healing: restore shadow files if user did a direct git checkout.
     # When cco vault switch runs, it stashes portable files to .cco/profile-state/<branch>/.
