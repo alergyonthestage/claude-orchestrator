@@ -14,7 +14,7 @@
 | Status | Items | Section |
 |--------|-------|---------|
 | ✅ Completed | 31 sprints / features | [→ Completed](#completed) |
-| 🐛 Known Bugs | 3 open · 16 fixed | [→ Known Bugs](#known-bugs) |
+| 🐛 Known Bugs | 3 open · 18 fixed | [→ Known Bugs](#known-bugs) |
 | 🔜 Planned | Quick Wins (FI-4, #10), AI-merge, Sprint 6C → 12 | [→ Planned](#planned-sprints) |
 | 🔭 Exploratory | 7 ideas | [→ Long-term / Exploratory](#long-term--exploratory) |
 | ❌ Declined | 3 items | [→ Declined / Won't Do](#declined--wont-do) |
@@ -341,6 +341,72 @@ helper.
 
 **See also**: `lib/cmd-llms.sh:643`, `tests/test_llms.sh:68`,
 `test_resolve_name_from_domain_url` (passing, returns `shadcn-svelte`).
+
+---
+
+### #B21 `cco project resolve` interactive reports file mounts missing, prints "All paths resolved" anyway ✓ FIXED
+
+**Reported**: 2026-04-22 (field test). **Fixed**: 2026-04-22.
+
+**Symptom**: the user ran `cco project resolve <name>` with a working
+project.yml where an extra_mount pointed to a single file
+(`~/Desktop/…docx`). The command reported `✗ path missing` for the
+file even though it existed on disk, then printed `✓ All paths
+resolved.` at the end — two contradictions at once.
+
+**Root cause**: when #B18 migrated `cco project resolve --show` to
+the canonical `_project_effective_paths` reader (which calls
+`_path_exists`, file-or-dir), the interactive branch (L.380-495)
+was left with the legacy inline loop that still used `-d`
+(directory-only). Additionally, the literal-path "missing" branch
+in that loop did not set `any_unresolved=true`, so the final check
+would conclude "resolved" even when a path was missing. Two copies
+of the same display logic — the exact class #B10 / coding-conventions
+§"single source of truth" warns against.
+
+**Fix**: collapse the interactive mode onto
+`_project_effective_paths` (same reader used by `--show` and
+`_assert_resolved_paths`). The display loop is now single-source;
+every `missing` / `unresolved` entry sets the summary flag; file
+mounts are detected correctly via `_path_exists`.
+
+**See also**: `lib/cmd-project-query.sh:cmd_project_resolve`.
+
+---
+
+### #B20 Gitignored files still tracked from legacy commits (mktemp leftovers, .bak) ✓ FIXED
+
+**Reported**: 2026-04-22 (field test, after #B19). **Fixed**: 2026-04-22.
+
+**Symptom**: the user ran `cco vault diff` on a healthy vault and
+saw deleted-but-tracked ghost files surface:
+```
+Projects:
+   D projects/claude-orchestrator/project.yml.TIG8lP
+   D projects/marius/.claude/CLAUDE.md.bak
+```
+`project.yml.TIG8lP` was a `mktemp` tempfile leftover from an older
+cco version whose AWK rewrite crashed before the atomic `mv`, then
+got committed via a subsequent `git add -A`. `CLAUDE.md.bak` was an
+`*.bak` backup that the canonical `.gitignore` covers — but it had
+already been committed before that pattern shipped, and git does
+not retroactively ignore tracked files.
+
+**Fix**: three coordinated changes.
+1. `_VAULT_GITIGNORE` extended with `projects/*/project.yml.??????`
+   and `projects/*/.cco/local-paths.yml.??????` to catch future
+   mktemp leftovers (glob `??????` matches the 6-char suffix).
+2. `_untrack_stale_pre_save` generalized to
+   `_untrack_gitignored_files` — uses `git ls-files -i -c
+   --exclude-standard` to enumerate every tracked file that matches
+   the `.gitignore` (pre-save, `.bak`, `.new`, tempfiles, anything)
+   and `git rm --cached` them in one silent self-heal commit.
+3. Defensive `trap '…' RETURN` on the five `mktemp "${target}.XXXXXX"`
+   sites in `lib/local-paths.sh` so a failing AWK rewrite no longer
+   leaves an orphan tempfile in the working tree.
+
+**See also**: `lib/cmd-vault.sh:_untrack_gitignored_files`,
+`lib/local-paths.sh` (5 mktemp trap sites).
 
 ---
 

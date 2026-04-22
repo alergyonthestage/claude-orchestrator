@@ -179,24 +179,34 @@ entries:
     type: additive
     title: "Vault runtime invariants — self-healing gitignore, ghost cleanup, legacy normalize, start guard"
     description: >
-      Five subtle bugs affecting users with pre-existing vaults and profile
-      branches are now self-healed at every vault operation, so no migration
-      or manual action is required. (#B15) Branches missing .gitignore
-      patterns added in later migrations are auto-patched on the next vault
-      command — the persistent `?? projects/*/.cco/project.yml.pre-save`
-      phantom-diff loop is gone. (#B16) Profile switch now removes ghost
-      project directories whose content on disk is entirely gitignored
-      residue of the source branch. (#B17) `cco start` now refuses to
-      launch if any repo or mount remains @local after resolution — no more
-      silent empty bind mounts. (#B18) `cco project resolve --show` and
-      `cco start` share a single effective-paths reader, eliminating the
-      `✓ exists` vs `Unresolved` divergence. (#B19) Legacy vaults whose
-      project.yml files were committed with real absolute host paths (pre-
-      @local feature) are auto-upgraded: the real paths move into the
-      PC-local `.cco/local-paths.yml`, the committed tree is rewritten to
+      Seven subtle bugs affecting users with pre-existing vaults and
+      profile branches are now self-healed at every vault operation, so
+      no migration or manual action is required. (#B15) Branches missing
+      .gitignore patterns added in later migrations are auto-patched on
+      the next vault command — the persistent `?? projects/*/.cco/
+      project.yml.pre-save` phantom-diff loop is gone. (#B16) Profile
+      switch now removes ghost project directories whose content on
+      disk is entirely gitignored residue of the source branch. (#B17)
+      `cco start` now refuses to launch if any repo or mount remains
+      @local after resolution — no more silent empty bind mounts.
+      (#B18) `cco project resolve --show` and `cco start` share a
+      single effective-paths reader, eliminating the `✓ exists` vs
+      `Unresolved` divergence. (#B19) Legacy vaults whose project.yml
+      files were committed with real absolute host paths (pre-@local
+      feature) are auto-upgraded: the real paths move into the PC-local
+      `.cco/local-paths.yml`, the committed tree is rewritten to
       `@local`, and the user's working copy is left untouched. This
       unblocks `vault diff/save/switch` on legacy branches that used to
-      show perpetual M, refuse to commit, and refuse to switch. Extra
-      mounts pointing to single files (not directories) are also accepted
-      throughout. No user action needed — every new fix is self-applied
-      the next time a relevant vault command runs.
+      show perpetual M, refuse to commit, and refuse to switch. (#B20)
+      Every tracked file that matches the current `.gitignore` is
+      auto-untracked — mktemp leftovers (`project.yml.XXXXXX`), `.bak`
+      backups, and anything else that became gitignored after it was
+      first committed. The mktemp sites in local-paths.sh now install
+      a RETURN trap so future failed AWK rewrites can no longer leave
+      orphan tempfiles. (#B21) `cco project resolve` interactive mode
+      now uses the same canonical reader as `--show`, so file mounts
+      are correctly accepted and the "All paths resolved" summary
+      never contradicts itself. Extra mounts pointing to single files
+      (not directories) are also accepted throughout. No user action
+      needed — every new fix is self-applied the next time a relevant
+      vault command runs.
