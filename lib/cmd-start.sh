@@ -369,6 +369,10 @@ _start_generate_integrations() {
 _start_resolve_paths() {
     $is_internal && return 0
     _resolve_start_paths "$project_dir"
+    # Hard guard: after resolution every entry must be resolvable and
+    # exist on disk — otherwise docker-compose would get @local or a
+    # missing source and silently create empty bind mounts (#B17).
+    _assert_resolved_paths "$project_dir" "$project_name"
 }
 
 # Generates the docker-compose.yml file from project configuration.
@@ -491,21 +495,21 @@ YAML
             echo "      - ./.cco/managed:/workspace/.managed:ro"
         fi
 
-        # Repository mounts
+        # Repository mounts.
+        # By design, _start_resolve_paths + _assert_resolved_paths run
+        # BEFORE this point, so every repo path is guaranteed to be a
+        # real, existing filesystem path — no @local markers, no missing
+        # sources. Any inconsistency here would be an internal bug, not
+        # a user-facing error, so we do not silently skip (fix #B17).
         echo "      # Repositories"
         while IFS=: read -r repo_path repo_name; do
             [[ -z "$repo_path" ]] && continue
-            # Skip unresolved @local or legacy {{REPO_*}} markers
-            [[ "$repo_path" == "@local" || "$repo_path" == *"{{REPO_"* ]] && continue
             repo_path=$(expand_path "$repo_path")
-            if [[ ! -d "$repo_path" ]]; then
-                warn "Repository path '$repo_path' does not exist — skipping"
-                continue
-            fi
             echo "      - ${repo_path}:/workspace/${repo_name}"
         done <<< "$(yml_get_repos "$project_yml")"
 
-        # Extra mounts
+        # Extra mounts (same invariant as repos — resolved + existence
+        # asserted upstream, so we only need to expand ~ and emit).
         local extra_mounts
         extra_mounts=$(yml_get_extra_mounts "$project_yml")
         if [[ -n "$extra_mounts" ]]; then
@@ -514,8 +518,6 @@ YAML
                 [[ -z "$mount_line" ]] && continue
                 local source="${mount_line%%:*}"
                 local rest="${mount_line#*:}"
-                # Skip unresolved @local markers
-                [[ "$source" == "@local" ]] && continue
                 source=$(expand_path "$source")
                 echo "      - ${source}:${rest}"
             done <<< "$extra_mounts"
@@ -989,8 +991,10 @@ _generate_github_mcp() {
 # $1 = project.yml path, $2 = project name, $3 = project dir
 # Build the mounts.allowed_paths JSON array for the proxy policy.
 # For policy=project_only, uses each repo's resolved host path; for other
-# policies, uses the explicit docker.mounts.allow list. Skips @local and
-# legacy {{REPO_*}} placeholders (resolved separately earlier).
+# policies, uses the explicit docker.mounts.allow list.
+# By design, _start_resolve_paths + _assert_resolved_paths ran before
+# this — every repo path is guaranteed resolved and existing. No @local
+# skip needed.
 # Usage: _proxy_collect_allowed_paths <project_yml> <mt_policy>
 # Output: JSON array on stdout (e.g. `[]` or `["/path/a","/path/b"]`)
 _proxy_collect_allowed_paths() {
@@ -1000,7 +1004,7 @@ _proxy_collect_allowed_paths() {
         repos=$(yml_get_repos "$project_yml")
         [[ -z "$repos" ]] && { echo "[]"; return 0; }
         while IFS=: read -r _p _n; do
-            [[ -z "$_p" || "$_p" == "@local" || "$_p" == *"{{REPO_"* ]] && continue
+            [[ -z "$_p" ]] && continue
             expand_path "$_p"
         done <<< "$repos" | jq -R . | jq -s .
     else
@@ -1027,11 +1031,13 @@ _proxy_collect_pathmap() {
     local _pathmap_lines=""
 
     # /workspace/<repo_name> → expanded host path per repo
+    # (post-_assert_resolved_paths so no @local remains; see same comment
+    # in _proxy_collect_allowed_paths)
     local _repo_lines
     _repo_lines=$(yml_get_repos "$project_yml")
     if [[ -n "$_repo_lines" ]]; then
         while IFS=: read -r _rp _rn; do
-            [[ -z "$_rp" || "$_rp" == "@local" || "$_rp" == *"{{REPO_"* ]] && continue
+            [[ -z "$_rp" ]] && continue
             local _host_p
             _host_p=$(expand_path "$_rp")
             _pathmap_lines="${_pathmap_lines}/workspace/${_rn}"$'\t'"${_host_p}"$'\n'
@@ -1047,7 +1053,6 @@ _proxy_collect_pathmap() {
             local _src="${_em%%:*}"
             local _rest="${_em#*:}"
             local _tgt="${_rest%%:*}"
-            [[ "$_src" == "@local" ]] && continue
             _src=$(expand_path "$_src")
             _pathmap_lines="${_pathmap_lines}${_tgt}"$'\t'"${_src}"$'\n'
         done <<< "$_extra_mounts"

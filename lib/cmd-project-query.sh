@@ -310,99 +310,50 @@ EOF
         return 0
     fi
 
-    # --show: display current mappings
+    # --show: display current mappings.
+    # Delegates to _project_effective_paths (single source of truth, same
+    # helper used by `cco start` via _assert_resolved_paths). This
+    # eliminates the old divergence where --show could report `✓ exists`
+    # for an entry that cco start then rejected with "Unresolved" — they
+    # now derive from the exact same data (fix #B18).
     if $show_only; then
         echo -e "${BOLD}Project: $name${NC}"
         echo ""
 
-        # Show repos
-        local repos
-        repos=$(yml_get_repos "$project_yml" 2>/dev/null)
-        if [[ -n "$repos" ]]; then
-            echo "  Repos:"
-            while IFS=: read -r repo_path repo_name; do
-                [[ -z "$repo_name" ]] && continue
-                local display_path="$repo_path"
-                local status_icon
+        local have_repos=false have_mounts=false
+        local effective_lines
+        effective_lines=$(_project_effective_paths "$project_dir")
 
-                # Check local-paths.yml for resolved path
-                if [[ "$repo_path" == "@local" || "$repo_path" == *"{{REPO_"* ]]; then
-                    local lp
-                    lp=$(_local_paths_get "$local_paths" "repos" "$repo_name")
-                    if [[ -n "$lp" ]]; then
-                        display_path="$lp"
-                        local expanded
-                        expanded=$(expand_path "$lp")
-                        if [[ -d "$expanded" ]]; then
-                            status_icon="${GREEN}✓ exists${NC}"
-                        else
-                            status_icon="${YELLOW}✗ path missing${NC}"
-                        fi
-                    else
-                        display_path="@local (not configured)"
-                        status_icon="${RED}✗ needs path${NC}"
-                    fi
-                else
-                    local expanded
-                    expanded=$(expand_path "$repo_path")
-                    if [[ -d "$expanded" ]]; then
-                        status_icon="${GREEN}✓ exists${NC}"
-                    else
-                        status_icon="${YELLOW}✗ path missing${NC}"
-                    fi
-                fi
-                printf "    %-20s %-35s %b\n" "$repo_name" "$display_path" "$status_icon"
-            done <<< "$repos"
-        else
-            echo "  Repos: (none)"
-        fi
+        # Repos section
+        local kind key effective status display_path status_icon
+        echo "  Repos:"
+        while IFS=$'\t' read -r kind key effective status; do
+            [[ "$kind" != "repos" ]] && continue
+            have_repos=true
+            case "$status" in
+                exists)     display_path="$effective"; status_icon="${GREEN}✓ exists${NC}" ;;
+                missing)    display_path="$effective"; status_icon="${YELLOW}✗ path missing${NC}" ;;
+                unresolved) display_path="@local (not configured)"; status_icon="${RED}✗ needs path${NC}" ;;
+            esac
+            printf "    %-20s %-35s %b\n" "$key" "$display_path" "$status_icon"
+        done <<< "$effective_lines"
+        $have_repos || echo "    (none)"
 
         echo ""
 
-        # Show extra_mounts
-        local mounts
-        mounts=$(yml_get_extra_mounts "$project_yml" 2>/dev/null)
-        if [[ -n "$mounts" ]]; then
-            echo "  Extra mounts:"
-            while IFS= read -r mount_line; do
-                [[ -z "$mount_line" ]] && continue
-                local source="${mount_line%%:*}"
-                local rest="${mount_line#*:}"
-                local target="${rest%%:*}"
-
-                local display_source="$source"
-                local status_icon
-
-                if [[ "$source" == "@local" ]]; then
-                    local lp
-                    lp=$(_local_paths_get "$local_paths" "extra_mounts" "$target")
-                    if [[ -n "$lp" ]]; then
-                        display_source="$lp"
-                        local expanded
-                        expanded=$(expand_path "$lp")
-                        if [[ -d "$expanded" ]]; then
-                            status_icon="${GREEN}✓ exists${NC}"
-                        else
-                            status_icon="${YELLOW}✗ path missing${NC}"
-                        fi
-                    else
-                        display_source="@local (not configured)"
-                        status_icon="${RED}✗ needs path${NC}"
-                    fi
-                else
-                    local expanded
-                    expanded=$(expand_path "$source")
-                    if [[ -d "$expanded" ]]; then
-                        status_icon="${GREEN}✓ exists${NC}"
-                    else
-                        status_icon="${YELLOW}✗ path missing${NC}"
-                    fi
-                fi
-                printf "    %-20s %-35s %b\n" "$target" "$display_source" "$status_icon"
-            done <<< "$mounts"
-        else
-            echo "  Extra mounts: (none)"
-        fi
+        # Extra mounts section
+        echo "  Extra mounts:"
+        while IFS=$'\t' read -r kind key effective status; do
+            [[ "$kind" != "mounts" ]] && continue
+            have_mounts=true
+            case "$status" in
+                exists)     display_path="$effective"; status_icon="${GREEN}✓ exists${NC}" ;;
+                missing)    display_path="$effective"; status_icon="${YELLOW}✗ path missing${NC}" ;;
+                unresolved) display_path="@local (not configured)"; status_icon="${RED}✗ needs path${NC}" ;;
+            esac
+            printf "    %-20s %-35s %b\n" "$key" "$display_path" "$status_icon"
+        done <<< "$effective_lines"
+        $have_mounts || echo "    (none)"
 
         return 0
     fi
