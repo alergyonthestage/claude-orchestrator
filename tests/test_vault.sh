@@ -920,3 +920,77 @@ test_untrack_gitignored_files_cleans_all_tracked_ignored() {
         return 1
     fi
 }
+
+# #B21 — cmd_project_resolve must use _path_exists (not `-d`) so
+# extra_mounts pointing to a single file are correctly shown as
+# "exists", and must NOT print "All paths resolved" when any entry is
+# actually missing. Regression of the interactive mode that still had
+# the legacy `-d` check after --show was migrated to the canonical
+# reader.
+test_project_resolve_file_mount_not_reported_missing() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    local proj="$CCO_USER_CONFIG_DIR/projects/filemount"
+    mkdir -p "$proj/.cco"
+    cat > "$proj/project.yml" <<YAML
+name: filemount
+repos:
+  - path: "$tmpdir/repo"
+    name: filemount
+    url: git@example.com:filemount.git
+extra_mounts:
+  - source: "$tmpdir/doc.md"
+    target: /workspace/doc.md
+    readonly: true
+YAML
+    mkdir -p "$tmpdir/repo"
+    echo "md content" > "$tmpdir/doc.md"
+
+    # Non-TTY invocation (no args after the name) would normally trigger
+    # the interactive branch. Drop stdin so _resolve_entry would abort
+    # if the file mount is wrongly flagged missing.
+    run_cco project resolve filemount < /dev/null
+
+    # The mount MUST display as ✓ exists (file path, not a dir).
+    assert_output_contains "/workspace/doc.md"
+    assert_output_contains "✓ exists"
+
+    # And the summary MUST be "All paths resolved" since everything is fine.
+    assert_output_contains "All paths resolved"
+}
+
+test_project_resolve_reports_unresolved_when_anything_missing() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    local proj="$CCO_USER_CONFIG_DIR/projects/broken"
+    mkdir -p "$proj/.cco"
+    # A literal path that doesn't exist + a valid repo, so we isolate
+    # the "literal-missing" pathway that #B21 left silently "resolved".
+    cat > "$proj/project.yml" <<YAML
+name: broken
+repos:
+  - path: "$tmpdir/real-repo"
+    name: broken
+extra_mounts:
+  - source: "$tmpdir/does-not-exist-$RANDOM"
+    target: /workspace/ghost
+    readonly: true
+YAML
+    mkdir -p "$tmpdir/real-repo"
+
+    # Non-TTY: _resolve_entry for the missing literal returns rc!=0,
+    # but the point of this test is the pre-prompt status — "path
+    # missing" must be surfaced and "All paths resolved" must NOT.
+    run_cco project resolve broken < /dev/null 2>/dev/null || true
+
+    assert_output_contains "path missing"
+    if echo "$CCO_OUTPUT" | grep -qF "All paths resolved"; then
+        echo "ASSERTION FAILED: 'All paths resolved' printed while a path was missing"
+        echo "$CCO_OUTPUT" | sed 's/^/    /'
+        return 1
+    fi
+}
