@@ -60,6 +60,16 @@ _interactive_sync() {
     while IFS=$'\t' read -r status rel_path; do
         [[ -z "$status" ]] && continue
 
+        # For project scope, interpolate placeholders in the template file.
+        # Without this, diffs show raw {{PROJECT_NAME}} and cp would install
+        # uninterpolated templates, breaking the user's project files.
+        local _is_new_file="$defaults_dir/$rel_path"
+        local _is_tmp=""
+        if [[ -n "$project_dir" && -f "$defaults_dir/$rel_path" ]]; then
+            _is_tmp=$(_interpolate_template_tmp "$defaults_dir/$rel_path" "$project_dir")
+            _is_new_file="$_is_tmp"
+        fi
+
         case "$status" in
             NEW)
                 local choice="$auto_action"
@@ -76,7 +86,7 @@ _interactive_sync() {
                 case "$choice" in
                     a|add|replace)
                         mkdir -p "$(dirname "$installed_dir/$rel_path")"
-                        cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
+                        cp "$_is_new_file" "$installed_dir/$rel_path"
                         _save_base_for_scope "$base_dir" "$rel_path" "$defaults_dir/$rel_path" "$project_dir"
                         local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
                         _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
@@ -104,7 +114,7 @@ _interactive_sync() {
                     choice="$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')"
                     # Handle (D)iff: show diff then re-prompt
                     if [[ "$choice" == "d" ]]; then
-                        diff -u "$installed_dir/$rel_path" "$defaults_dir/$rel_path" \
+                        diff -u "$installed_dir/$rel_path" "$_is_new_file" \
                             --label "your version" --label "new default" 2>/dev/null | sed 's/^/  /' || true
                         echo ""
                         if (exec < /dev/tty) 2>/dev/null; then
@@ -119,7 +129,7 @@ _interactive_sync() {
                         if [[ "$no_backup" != "true" && -f "$installed_dir/$rel_path" ]]; then
                             cp "$installed_dir/$rel_path" "$installed_dir/${rel_path}.bak"
                         fi
-                        cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
+                        cp "$_is_new_file" "$installed_dir/$rel_path"
                         _save_base_for_scope "$base_dir" "$rel_path" "$defaults_dir/$rel_path" "$project_dir"
                         local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
                         _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
@@ -162,7 +172,7 @@ _interactive_sync() {
                     choice="$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')"
                     # Handle (D)iff: show diff then re-prompt
                     if [[ "$choice" == "d" ]]; then
-                        diff -u "$installed_dir/$rel_path" "$defaults_dir/$rel_path" \
+                        diff -u "$installed_dir/$rel_path" "$_is_new_file" \
                             --label "your version" --label "new default" 2>/dev/null | sed 's/^/  /' || true
                         echo ""
                         if (exec < /dev/tty) 2>/dev/null; then
@@ -175,7 +185,7 @@ _interactive_sync() {
                 case "$choice" in
                     n|new)
                         # Save framework version as .new alongside user's file
-                        cp "$defaults_dir/$rel_path" "$installed_dir/${rel_path}.new"
+                        cp "$_is_new_file" "$installed_dir/${rel_path}.new"
                         _save_base_for_scope "$base_dir" "$rel_path" "$defaults_dir/$rel_path" "$project_dir"
                         local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
                         _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
@@ -187,7 +197,7 @@ _interactive_sync() {
                         if [[ "$no_backup" != "true" && -f "$installed_dir/$rel_path" ]]; then
                             cp "$installed_dir/$rel_path" "$installed_dir/${rel_path}.bak"
                         fi
-                        cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
+                        cp "$_is_new_file" "$installed_dir/$rel_path"
                         _save_base_for_scope "$base_dir" "$rel_path" "$defaults_dir/$rel_path" "$project_dir"
                         local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
                         _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
@@ -226,14 +236,14 @@ _interactive_sync() {
                     if [[ "$choice" == "d" ]]; then
                         if [[ -f "$base_dir/$rel_path" ]]; then
                             echo "  --- framework changes (base → new):"
-                            diff -u "$base_dir/$rel_path" "$defaults_dir/$rel_path" \
+                            diff -u "$base_dir/$rel_path" "$_is_new_file" \
                                 --label "previous default" --label "new default" 2>/dev/null | sed 's/^/  /' || true
                             echo ""
                             echo "  --- your changes (base → current):"
                             diff -u "$base_dir/$rel_path" "$installed_dir/$rel_path" \
                                 --label "previous default" --label "your version" 2>/dev/null | sed 's/^/  /' || true
                         else
-                            diff -u "$installed_dir/$rel_path" "$defaults_dir/$rel_path" \
+                            diff -u "$installed_dir/$rel_path" "$_is_new_file" \
                                 --label "your version" --label "new default" 2>/dev/null | sed 's/^/  /' || true
                         fi
                         echo ""
@@ -265,7 +275,7 @@ _interactive_sync() {
                         ;;
                     n|new)
                         # Save framework version as .new alongside user's file
-                        cp "$defaults_dir/$rel_path" "$installed_dir/${rel_path}.new"
+                        cp "$_is_new_file" "$installed_dir/${rel_path}.new"
                         _save_base_for_scope "$base_dir" "$rel_path" "$defaults_dir/$rel_path" "$project_dir"
                         local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
                         _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
@@ -280,7 +290,7 @@ _interactive_sync() {
                         else
                             warn "  ↻ $rel_path (replaced)"
                         fi
-                        cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
+                        cp "$_is_new_file" "$installed_dir/$rel_path"
                         _save_base_for_scope "$base_dir" "$rel_path" "$defaults_dir/$rel_path" "$project_dir"
                         local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
                         _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
@@ -319,10 +329,10 @@ _interactive_sync() {
                     if [[ "$choice" == "d" ]]; then
                         if [[ -f "$base_dir/$rel_path" ]]; then
                             echo "  --- framework changes (base → new):"
-                            diff -u "$base_dir/$rel_path" "$defaults_dir/$rel_path" \
+                            diff -u "$base_dir/$rel_path" "$_is_new_file" \
                                 --label "previous default" --label "new default" 2>/dev/null | sed 's/^/  /' || true
                         else
-                            diff -u "$installed_dir/$rel_path" "$defaults_dir/$rel_path" \
+                            diff -u "$installed_dir/$rel_path" "$_is_new_file" \
                                 --label "your version" --label "new default" 2>/dev/null | sed 's/^/  /' || true
                         fi
                         echo ""
@@ -335,7 +345,7 @@ _interactive_sync() {
                 fi
                 case "$choice" in
                     n|new)
-                        cp "$defaults_dir/$rel_path" "$installed_dir/${rel_path}.new"
+                        cp "$_is_new_file" "$installed_dir/${rel_path}.new"
                         _save_base_for_scope "$base_dir" "$rel_path" "$defaults_dir/$rel_path" "$project_dir"
                         local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
                         _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
@@ -350,7 +360,7 @@ _interactive_sync() {
                         else
                             warn "  ↻ $rel_path (replaced)"
                         fi
-                        cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
+                        cp "$_is_new_file" "$installed_dir/$rel_path"
                         _save_base_for_scope "$base_dir" "$rel_path" "$defaults_dir/$rel_path" "$project_dir"
                         local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
                         _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
@@ -404,7 +414,7 @@ _interactive_sync() {
                 case "$choice" in
                     a|add|replace)
                         mkdir -p "$(dirname "$installed_dir/$rel_path")"
-                        cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
+                        cp "$_is_new_file" "$installed_dir/$rel_path"
                         _save_base_for_scope "$base_dir" "$rel_path" "$defaults_dir/$rel_path" "$project_dir"
                         local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
                         _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
@@ -420,6 +430,9 @@ _interactive_sync() {
                 esac
                 ;;
         esac
+
+        # Clean up interpolated temp file
+        [[ -n "$_is_tmp" ]] && rm -f "$_is_tmp"
     done <<< "$changes"
 
     # Export sync result for callers that need to know if anything was applied

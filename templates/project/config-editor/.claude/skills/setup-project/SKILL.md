@@ -53,7 +53,7 @@ After creation:
   detailed CLAUDE.md from the repositories
 - If packs were suggested but not created, mention `/setup-pack`
 - Reference: `cco-docs/user-guides/project-setup.md`
-- Remind the user to run `cco vault sync` after creation if vault is active
+- Remind the user to run `cco vault save` after creation if vault is active
 
 ## Important
 

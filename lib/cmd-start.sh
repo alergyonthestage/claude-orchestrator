@@ -362,6 +362,19 @@ _start_generate_integrations() {
     fi
 }
 
+# Resolves @local markers and legacy {{REPO_*}} in project.yml before
+# compose generation. Delegates to the shared impl in local-paths.sh;
+# the only start-specific concern is skipping the tutorial/internal
+# project (which uses template-baked paths, nothing to resolve).
+_start_resolve_paths() {
+    $is_internal && return 0
+    _resolve_start_paths "$project_dir"
+    # Hard guard: after resolution every entry must be resolvable and
+    # exist on disk — otherwise docker-compose would get @local or a
+    # missing source and silently create empty bind mounts (#B17).
+    _assert_resolved_paths "$project_dir" "$project_name"
+}
+
 # Generates the docker-compose.yml file from project configuration.
 # Sets: compose_file
 _start_generate_compose() {
@@ -482,19 +495,21 @@ YAML
             echo "      - ./.cco/managed:/workspace/.managed:ro"
         fi
 
-        # Repository mounts
+        # Repository mounts.
+        # By design, _start_resolve_paths + _assert_resolved_paths run
+        # BEFORE this point, so every repo path is guaranteed to be a
+        # real, existing filesystem path — no @local markers, no missing
+        # sources. Any inconsistency here would be an internal bug, not
+        # a user-facing error, so we do not silently skip (fix #B17).
         echo "      # Repositories"
         while IFS=: read -r repo_path repo_name; do
             [[ -z "$repo_path" ]] && continue
             repo_path=$(expand_path "$repo_path")
-            if [[ ! -d "$repo_path" ]]; then
-                warn "Repository path '$repo_path' does not exist — skipping"
-                continue
-            fi
             echo "      - ${repo_path}:/workspace/${repo_name}"
         done <<< "$(yml_get_repos "$project_yml")"
 
-        # Extra mounts
+        # Extra mounts (same invariant as repos — resolved + existence
+        # asserted upstream, so we only need to expand ~ and emit).
         local extra_mounts
         extra_mounts=$(yml_get_extra_mounts "$project_yml")
         if [[ -n "$extra_mounts" ]]; then
@@ -830,6 +845,9 @@ EOF
     _start_generate_integrations
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] generate_integrations done" >&2
 
+    _start_resolve_paths
+    [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] resolve_paths done" >&2
+
     _start_generate_compose
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] generate_compose done" >&2
 
@@ -971,6 +989,86 @@ _generate_github_mcp() {
 # Generates .managed/policy.json for the Docker socket proxy.
 # Reads docker.containers, docker.mounts, docker.security from project.yml.
 # $1 = project.yml path, $2 = project name, $3 = project dir
+# Build the mounts.allowed_paths JSON array for the proxy policy.
+# For policy=project_only, uses each repo's resolved host path; for other
+# policies, uses the explicit docker.mounts.allow list.
+# By design, _start_resolve_paths + _assert_resolved_paths ran before
+# this — every repo path is guaranteed resolved and existing. No @local
+# skip needed.
+# Usage: _proxy_collect_allowed_paths <project_yml> <mt_policy>
+# Output: JSON array on stdout (e.g. `[]` or `["/path/a","/path/b"]`)
+_proxy_collect_allowed_paths() {
+    local project_yml="$1" mt_policy="$2"
+    if [[ "$mt_policy" == "project_only" ]]; then
+        local repos
+        repos=$(yml_get_repos "$project_yml")
+        [[ -z "$repos" ]] && { echo "[]"; return 0; }
+        while IFS=: read -r _p _n; do
+            [[ -z "$_p" ]] && continue
+            expand_path "$_p"
+        done <<< "$repos" | jq -R . | jq -s .
+    else
+        local mt_allow
+        mt_allow=$(yml_get_deep_list "$project_yml" "docker.mounts.allow")
+        [[ -z "$mt_allow" ]] && { echo "[]"; return 0; }
+        while IFS= read -r _p; do
+            [[ -z "$_p" ]] && continue
+            expand_path "$_p"
+        done <<< "$mt_allow" | jq -R . | jq -s .
+    fi
+}
+
+# Build the mounts.path_map JSON object for the proxy policy.
+# Maps each container-visible prefix → host path so the proxy can
+# translate bind-mount paths coming from the sibling container before
+# forwarding to the Docker daemon.
+# Includes: /workspace/<repo_name> per repo, extra_mounts targets, and
+# /home/claude → $HOME for ~/... expansions inside the container.
+# Usage: _proxy_collect_pathmap <project_yml>
+# Output: JSON object on stdout (e.g. `{"/workspace/foo":"/abs/foo",...}`)
+_proxy_collect_pathmap() {
+    local project_yml="$1"
+    local _pathmap_lines=""
+
+    # /workspace/<repo_name> → expanded host path per repo
+    # (post-_assert_resolved_paths so no @local remains; see same comment
+    # in _proxy_collect_allowed_paths)
+    local _repo_lines
+    _repo_lines=$(yml_get_repos "$project_yml")
+    if [[ -n "$_repo_lines" ]]; then
+        while IFS=: read -r _rp _rn; do
+            [[ -z "$_rp" ]] && continue
+            local _host_p
+            _host_p=$(expand_path "$_rp")
+            _pathmap_lines="${_pathmap_lines}/workspace/${_rn}"$'\t'"${_host_p}"$'\n'
+        done <<< "$_repo_lines"
+    fi
+
+    # extra_mounts: container target → expanded host source
+    local _extra_mounts
+    _extra_mounts=$(yml_get_extra_mounts "$project_yml" 2>/dev/null || true)
+    if [[ -n "$_extra_mounts" ]]; then
+        while IFS= read -r _em; do
+            [[ -z "$_em" ]] && continue
+            local _src="${_em%%:*}"
+            local _rest="${_em#*:}"
+            local _tgt="${_rest%%:*}"
+            _src=$(expand_path "$_src")
+            _pathmap_lines="${_pathmap_lines}${_tgt}"$'\t'"${_src}"$'\n'
+        done <<< "$_extra_mounts"
+    fi
+
+    # /home/claude → $HOME (for ~/... expansion inside the container)
+    _pathmap_lines="${_pathmap_lines}/home/claude"$'\t'"${HOME}"$'\n'
+
+    if [[ -z "$_pathmap_lines" ]]; then
+        echo "{}"
+        return 0
+    fi
+    printf '%s' "$_pathmap_lines" | grep -v '^$' | \
+        jq -R 'split("\t") | {key: .[0], value: .[1]}' | jq -s 'from_entries'
+}
+
 _generate_socket_policy() {
     local project_yml="$1" project_name="$2" project_dir="$3"
 
@@ -1021,67 +1119,12 @@ _generate_socket_policy() {
     mt_policy=$(yml_validate_enum "$mt_policy" "project_only" "none|project_only|allowlist|any")
     mt_force_ro=$(_parse_bool "$(yml_get_deep "$project_yml" "docker.mounts.force_readonly")" "false")
 
-    # Mount allowed paths: for project_only, collect repo paths
-    # All paths are expanded (~ → /home/user) to match what Docker sends at runtime.
-    local mt_allowed_json="[]"
-    if [[ "$mt_policy" == "project_only" ]]; then
-        local repo_paths
-        repo_paths=$(yml_get_repos "$project_yml" | cut -d: -f1)
-        if [[ -n "$repo_paths" ]]; then
-            mt_allowed_json=$(while IFS= read -r _p; do
-                [[ -z "$_p" ]] && continue
-                expand_path "$_p"
-            done <<< "$repo_paths" | jq -R . | jq -s .)
-        fi
-    else
-        local mt_allow
-        mt_allow=$(yml_get_deep_list "$project_yml" "docker.mounts.allow")
-        if [[ -n "$mt_allow" ]]; then
-            mt_allowed_json=$(while IFS= read -r _p; do
-                [[ -z "$_p" ]] && continue
-                expand_path "$_p"
-            done <<< "$mt_allow" | jq -R . | jq -s .)
-        fi
-    fi
-
-    # Path map: container prefix → host path.  In Docker-from-Docker, bind
-    # mount paths reference the HOST filesystem, but shell expansion inside the
-    # container produces container-local paths (e.g. ~ → /home/claude).
-    # The proxy uses this map to translate container paths before validation
-    # AND before forwarding to the Docker daemon.
-    # Format: tab-separated lines "container_path\thost_path", fed to jq.
-    local mt_pathmap_json="{}"
-    local _pathmap_lines=""
-    # Map each repo: /workspace/<name> → expanded host path
-    local _repo_lines
-    _repo_lines=$(yml_get_repos "$project_yml")
-    if [[ -n "$_repo_lines" ]]; then
-        while IFS=: read -r _rp _rn; do
-            [[ -z "$_rp" ]] && continue
-            local _host_p
-            _host_p=$(expand_path "$_rp")
-            _pathmap_lines="${_pathmap_lines}/workspace/${_rn}"$'\t'"${_host_p}"$'\n'
-        done <<< "$_repo_lines"
-    fi
-    # Map extra_mounts: container target → expanded host source
-    local _extra_mounts
-    _extra_mounts=$(yml_get_extra_mounts "$project_yml" 2>/dev/null || true)
-    if [[ -n "$_extra_mounts" ]]; then
-        while IFS= read -r _em; do
-            [[ -z "$_em" ]] && continue
-            local _src="${_em%%:*}"
-            local _rest="${_em#*:}"
-            local _tgt="${_rest%%:*}"
-            _src=$(expand_path "$_src")
-            _pathmap_lines="${_pathmap_lines}${_tgt}"$'\t'"${_src}"$'\n'
-        done <<< "$_extra_mounts"
-    fi
-    # Map container home → host home (for ~/... expansion inside container)
-    _pathmap_lines="${_pathmap_lines}/home/claude"$'\t'"${HOME}"$'\n'
-    if [[ -n "$_pathmap_lines" ]]; then
-        mt_pathmap_json=$(printf '%s' "$_pathmap_lines" | grep -v '^$' | \
-            jq -R 'split("\t") | {key: .[0], value: .[1]}' | jq -s 'from_entries')
-    fi
+    # Mount allowed paths + container→host path_map — see the dedicated
+    # helpers above. Keeping policy data collection separate from the
+    # JSON-template rendering below is an SRP hygiene measure.
+    local mt_allowed_json mt_pathmap_json
+    mt_allowed_json=$(_proxy_collect_allowed_paths "$project_yml" "$mt_policy")
+    mt_pathmap_json=$(_proxy_collect_pathmap       "$project_yml")
 
     # Mount denied paths (explicit) — expanded like allowed paths
     local mt_denied_json="[]"

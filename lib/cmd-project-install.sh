@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # lib/cmd-project-install.sh — Install projects from remote Config Repos
 #
-# Provides: cmd_project_install(), _resolve_repo_entries()
+# Provides: cmd_project_install()
 # Dependencies: colors.sh, utils.sh, yaml.sh, remote.sh, manifest.sh, paths.sh
 # NOTE: _resolve_template_vars() is defined in cmd-project-create.sh
 # Globals: PROJECTS_DIR, PACKS_DIR, USER_CONFIG_DIR
@@ -171,8 +171,8 @@ EOF
     # Resolve template variables in key files
     _resolve_template_vars "$target_dir" "$project_name" "${vars[@]+"${vars[@]}"}"
 
-    # Resolve repo entries: validate paths, offer to clone from url if available
-    _resolve_repo_entries "$target_dir/project.yml" "${vars[@]+"${vars[@]}"}"
+    # Resolve @local paths: validate, offer clone from url, save to local-paths.yml
+    _resolve_installed_paths "$target_dir"
 
     # Auto-install packs from the same Config Repo
     local -a installed_packs=()
@@ -228,68 +228,3 @@ EOF
     info "Run: cco start $project_name"
 }
 
-# Resolve repo entries in an installed project: validate paths exist,
-# offer to clone from url: field if available and path is missing.
-# Usage: _resolve_repo_entries <project_yml> [vars...]
-_resolve_repo_entries() {
-    local project_yml="$1"
-    shift
-
-    local repos
-    repos=$(yml_get_repos "$project_yml" 2>/dev/null)
-    [[ -z "$repos" ]] && return 0
-
-    local -a cloned_repos=()
-    while IFS=: read -r repo_path repo_name; do
-        [[ -z "$repo_path" ]] && continue
-        local expanded
-        expanded=$(expand_path "$repo_path")
-
-        if [[ -d "$expanded" ]]; then
-            continue  # path exists, nothing to do
-        fi
-
-        # Check if there's a url: field for this repo
-        local repo_url
-        repo_url=$(awk -v name="$repo_name" '
-            /^repos:/ { in_repos=1; next }
-            in_repos && /^[^ #]/ { exit }
-            in_repos && /^    name:/ {
-                n=$0; sub(/^    name: */, "", n); gsub(/[\"'\''[:space:]]/, "", n)
-                current_name=n
-            }
-            in_repos && /^    url:/ && current_name == name {
-                u=$0; sub(/^    url: */, "", u); gsub(/[\"'\''[:space:]]/, "", u)
-                print u; exit
-            }
-        ' "$project_yml")
-
-        if [[ -n "$repo_url" ]] && [[ -t 0 ]]; then
-            echo ""
-            echo -e "  ${BOLD}$repo_name${NC} ($repo_url)"
-            echo -e "  Path ${YELLOW}$repo_path${NC} does not exist."
-            printf "  Clone from %s? [Y/n] " "$repo_url" >&2
-            local reply
-            read -r reply < /dev/tty
-            if [[ -z "$reply" || "$reply" =~ ^[Yy]$ ]]; then
-                local parent; parent=$(dirname "$expanded")
-                mkdir -p "$parent"
-                info "Cloning into $expanded..."
-                if git clone "$repo_url" "$expanded" >/dev/null 2>&1; then
-                    cloned_repos+=("$repo_name")
-                    ok "Cloned $repo_name"
-                else
-                    warn "Failed to clone $repo_url"
-                fi
-            fi
-        elif [[ -n "$repo_url" ]]; then
-            warn "Repo path $repo_path does not exist. Clone manually: git clone $repo_url $expanded"
-        else
-            warn "Repo path $repo_path does not exist."
-        fi
-    done <<< "$repos"
-
-    if [[ ${#cloned_repos[@]} -gt 0 ]]; then
-        ok "Repos cloned: ${cloned_repos[*]}"
-    fi
-}

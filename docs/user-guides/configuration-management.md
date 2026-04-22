@@ -58,6 +58,24 @@ other sensitive patterns. If secrets are found, the commit is blocked.
 
 > **Note**: `vault sync` is a deprecated alias for `vault save`.
 
+### Path portability
+
+When you `vault save`, repo and mount paths in `project.yml` are replaced with
+`@local` markers. Real paths are stored in `.cco/local-paths.yml` (gitignored,
+per-machine). On `vault pull` to a different machine, `cco start` detects
+unresolved `@local` entries and prompts to clone or specify local paths.
+
+To pre-configure paths without starting a session:
+
+```bash
+cco project resolve myapp                          # Interactive
+cco project resolve myapp --repo backend ~/dev/be  # Direct set
+cco project resolve myapp --show                   # Show status
+```
+
+This applies to both vault save/push/pull and Config Repo install/publish. You
+write real paths — the system handles portability transparently.
+
 ### Inspecting changes
 
 ```bash
@@ -618,6 +636,7 @@ Each project has two separate directories:
 | Command | Purpose |
 |---------|---------|
 | `cco project install <url>` | Install project from Config Repo |
+| `cco project resolve <name>` | Configure local paths for repos and mounts |
 | `cco pack install <url>` | Install packs from Config Repo |
 | `cco project internalize <name>` | Disconnect project from remote |
 | `cco pack internalize <name>` | Disconnect pack from remote |

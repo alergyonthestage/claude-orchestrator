@@ -22,33 +22,60 @@ in a separate cycle.
 
 ---
 
-## 2. Phase 1: Interpolated Base in Sync (Bug Fix)
+## 2. Phase 1: Interpolated Templates in Sync (Bug Fix)
 
 ### 2.1 Problem
 
 The base-tracking-fix (2026-03-18) corrected base seeding in `cco project create`,
 `cco project install`, and `_handle_policy_transitions`. But `_interactive_sync`
-still saves the raw template (with `{{PLACEHOLDER}}`) as base via:
+still uses the raw template (with `{{PLACEHOLDER}}`) for:
 
-```bash
-_save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"
-```
+1. **Base saves** — `_save_base_version "$base_dir" "$rel_path" "$defaults_dir/$rel_path"`
+   saves `{{PROJECT_NAME}}` as base. Next run: `base_hash != new_hash` → perpetual
+   false `MERGE_AVAILABLE`.
+2. **File copy** — `cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"` writes
+   `{{PROJECT_NAME}}` and `{{DESCRIPTION}}` to user's project files, corrupting them.
+3. **Diff display** — `diff -u ... "$defaults_dir/$rel_path"` shows `{{PLACEHOLDER}}`
+   to the user instead of actual values.
+4. **3-way merge** — `_merge_file ... "$defaults_dir/$rel_path"` uses the raw template
+   as "new version", producing spurious conflicts on placeholder lines.
 
-Meanwhile, `_collect_file_changes` computes `new_hash` from the **interpolated**
-template. After any sync action, `base_hash != new_hash` → false `MERGE_AVAILABLE`
-on every subsequent run.
+The analysis (§1.1) documented problem #2 directly: *"user chose (R)eplace, which
+**overwrote their customized CLAUDE.md with the raw skeleton template**"*.
 
 ### 2.2 Solution
 
 Add `project_dir` as 8th parameter to `_interactive_sync`. When non-empty
-(project scope), use interpolated copies for base saves and manifest hashes.
+(project scope), **all operations** use interpolated template copies.
 
-Two scope-aware helpers in `update-sync.sh`:
+**Scope-aware helpers** in `update-sync.sh` (for base saves and hash computation):
 
 - `_save_base_for_scope(base_dir, rel_path, source, project_dir)`: saves
   interpolated base for project scope, direct copy for global.
 - `_hash_for_scope(source, project_dir)`: returns hash of interpolated
   template for project scope, direct hash for global.
+
+**Per-iteration interpolation** (for cp, diff, and merge operations):
+
+At the start of each loop iteration in `_interactive_sync`, an interpolated
+temp file is created and used for all file-facing operations:
+
+```bash
+local _is_new_file="$defaults_dir/$rel_path"
+local _is_tmp=""
+if [[ -n "$project_dir" && -f "$defaults_dir/$rel_path" ]]; then
+    _is_tmp=$(_interpolate_template_tmp "$defaults_dir/$rel_path" "$project_dir")
+    _is_new_file="$_is_tmp"
+fi
+# ... use $_is_new_file for cp, diff, merge; cleanup at end of iteration
+[[ -n "$_is_tmp" ]] && rm -f "$_is_tmp"
+```
+
+The same pattern is applied in `_resolve_with_merge` (`_rwm_new_file`) and
+`_resolve_conflict_interactive` (`_rci_new_file`) in `update-merge.sh`.
+
+This mirrors the existing pattern in `_show_file_diffs` (`update-discovery.sh`),
+which already interpolates correctly for `--diff` display.
 
 ### 2.3 Call Chain Threading
 
@@ -60,12 +87,23 @@ _update_single_project()  → _interactive_sync(..., "$project_dir")
     └ _resolve_with_merge → _resolve_conflict_interactive(..., "$project_dir")
 ```
 
-### 2.4 Files Modified
+### 2.4 Operations Fixed
+
+| Operation | File | Fix |
+|-----------|------|-----|
+| Base saves | `update-sync.sh` | `_save_base_for_scope` helper (interpolates internally) |
+| Manifest hashes | `update-sync.sh` | `_hash_for_scope` helper (interpolates internally) |
+| `cp` to installed file | `update-sync.sh` | `cp "$_is_new_file"` (9 occurrences across NEW, UPDATE, BASE_MISSING, MERGE, USER_RESTRUCTURED, DELETED_UPDATED cases) |
+| `diff` display | `update-sync.sh` | `diff -u ... "$_is_new_file"` (6 occurrences, all interactive "d" prompts) |
+| 3-way merge "new" | `update-merge.sh` | `_merge_file ... "$_rwm_new_file"` in `_resolve_with_merge` |
+| Conflict replace | `update-merge.sh` | `cp "$_rwm_new_file"` and `cp "$_rci_new_file"` |
+
+### 2.5 Files Modified
 
 | File | Change |
 |------|--------|
-| `lib/update-sync.sh` | Add `project_dir` param; add helpers; replace all raw base saves and hash computations |
-| `lib/update-merge.sh` | Thread `project_dir` to `_resolve_with_merge` and `_resolve_conflict_interactive`; fix manifest hashes |
+| `lib/update-sync.sh` | Add `project_dir` param; add helpers; per-iteration interpolated temp; replace all raw template operations |
+| `lib/update-merge.sh` | Thread `project_dir`; add interpolation in `_resolve_with_merge` and `_resolve_conflict_interactive`; fix cp and merge operations |
 | `lib/update.sh` | Pass `""` or `"$project_dir"` at call sites (lines ~227, ~562) |
 | `lib/cmd-project-update.sh` | Pass project dir at line ~183 |
 
@@ -209,9 +247,13 @@ Fallback chain:
 | 2 | P1 | No false positive after sync (`NO_UPDATE` or `USER_MODIFIED`) |
 | 3 | P1 | Global scope unaffected (direct base save) |
 | 4 | P1 | Manifest hash matches interpolated template hash |
-| 5 | P2 | `--diff` without scope shows summary (no diff content) |
-| 6 | P2 | `--diff <project>` shows scoped diffs |
-| 7 | P2 | `--diff --all` shows all diffs (backward compat) |
-| 8 | P3 | File >3x base → `USER_RESTRUCTURED` |
-| 9 | P3 | File similar size → `MERGE_AVAILABLE` |
-| 10 | P3 | `USER_RESTRUCTURED` sync defaults to (N) |
+| 5a | P1 | Replace/Apply installs interpolated file (no `{{PLACEHOLDER}}` in installed) |
+| 5b | P1 | Diff display shows interpolated values (no `{{PLACEHOLDER}}`) |
+| 5c | P1 | 3-way merge uses interpolated "new" version |
+| 5d | P1 | New-file (.new) contains interpolated content |
+| 6 | P2 | `--diff` without scope shows summary (no diff content) |
+| 7 | P2 | `--diff <project>` shows scoped diffs |
+| 8 | P2 | `--diff --all` shows all diffs (backward compat) |
+| 9 | P3 | File >3x base → `USER_RESTRUCTURED` |
+| 10 | P3 | File similar size → `MERGE_AVAILABLE` |
+| 11 | P3 | `USER_RESTRUCTURED` sync defaults to (N) |

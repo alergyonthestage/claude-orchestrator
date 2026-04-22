@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-03-26 (v0.2.0-alpha: llms.txt sprint completed, profile isolation review + merge).
+> Last updated: 2026-04-22 (pre-merge hardening: #B13/#B14 fixed, DRY/SRP refactor).
 >
 > **Note**: Sprint entries are historical. Path references (e.g., `.cco-meta`, `.cco-source`) in older
 > sprints reflect the layout at the time of writing. See Sprint 8 and the `.cco/` consolidation
@@ -13,9 +13,9 @@
 
 | Status | Items | Section |
 |--------|-------|---------|
-| ✅ Completed | 29 sprints / features | [→ Completed](#completed) |
-| 🐛 Known Bugs | 1 open · 8 fixed | [→ Known Bugs](#known-bugs) |
-| 🔜 Planned | Quick Wins (FI-4, #10), AI-merge, Sprint 6C → 12 | [→ Planned Sprints](#planned-sprints) |
+| ✅ Completed | 31 sprints / features | [→ Completed](#completed) |
+| 🐛 Known Bugs | 3 open · 18 fixed | [→ Known Bugs](#known-bugs) |
+| 🔜 Planned | Quick Wins (FI-4, #10), AI-merge, Sprint 6C → 12 | [→ Planned](#planned-sprints) |
 | 🔭 Exploratory | 7 ideas | [→ Long-term / Exploratory](#long-term--exploratory) |
 | ❌ Declined | 3 items | [→ Declined / Won't Do](#declined--wont-do) |
 
@@ -27,9 +27,9 @@ Features are prioritized by impact for third-party users adopting claude-orchest
 
 ### Prioritization Notes (updated 2026-03-31)
 
-**Completed**: RF-1→4, FI-2, FI-5, FI-7, FI-8, Sprint 5c, Sprint 6 Phase A+B, Bugfix B5-B7, UX Improvements P1-3, Minor Fixes batch, llms.txt, Profile Isolation Review.
+**Completed**: RF-1→4, FI-2, FI-5, FI-7, FI-8, Sprint 5c, Sprint 6 Phase A+B, Bugfix B5-B7, UX Improvements P1-3, Minor Fixes batch, llms.txt, Profile Isolation Review, #LP Local Paths.
 
-**Next**: #LP local path resolution (design ready), then FI-4, #10.
+**Next**: FI-4 model config, #10 project edit.
 
 **Then**: AI-assisted merge (P4), Security (Sprint 6C), E2E testing (Sprint 8), Linux OAuth (Sprint 9).
 
@@ -37,20 +37,18 @@ Features are prioritized by impact for third-party users adopting claude-orchest
 
 | Category | Items | Effort | Benefit |
 |----------|-------|--------|---------|
-| **#LP local paths (priority 1)** | Unified path portability — design approved | Medium | Cross-PC usability, publish fix |
-| **Quick wins (priority 2)** | FI-4 model config, #10 project edit | Low-Medium | UX improvement |
-| **AI-merge (priority 3)** | Phase 4 AI-assisted merge | Low-Medium | Update UX quality |
-| **Security (priority 3)** | Sprint 6C network hardening | Medium-High | Required for production/open-source |
-| **Quality (priority 4)** | Sprint 8 E2E tests | Medium | Prerequisite for Linux onboarding |
-| **Onboarding (priority 5)** | Sprint 9 Linux OAuth | Medium | Pre-open-source requirement |
-| **Architecture (priority 6)** | Sprint 10 worktree, #9 pack inheritance, #10b StatusLine | Medium | Valuable but not blocking |
+| **Quick wins (priority 1)** | FI-4 model config, #10 project edit | Low-Medium | UX improvement |
+| **AI-merge (priority 2)** | Phase 4 AI-assisted merge | Low-Medium | Update UX quality |
+| **Security (priority 2)** | Sprint 6C network hardening | Medium-High | Required for production/open-source |
+| **Quality (priority 3)** | Sprint 8 E2E tests | Medium | Prerequisite for Linux onboarding |
+| **Onboarding (priority 4)** | Sprint 9 Linux OAuth | Medium | Pre-open-source requirement |
+| **Architecture (priority 5)** | Sprint 10 worktree, #9 pack inheritance, #10b StatusLine | Medium | Valuable but not blocking |
 | **Exploratory** | Sprint 12 RAG, hot-reload, notifications, remote sessions, web UI | High | Long-term, evaluate demand |
 
 ```mermaid
 graph LR
-    DONE["✅ Completed<br/>Sprint 1-5c, Sprint 6+10,<br/>Sprint 6b, ADR-13,<br/>Sprint 7-Vault + Real Isolation,<br/>llms.txt, FI-7 Config Sync,<br/>RF-1→4, FI-2, FI-5, FI-8,<br/>Sprint 6 Phase A+B,<br/>Bugfix #B1-#B7,<br/>UX Improvements P1-3,<br/>Minor Fixes"]
+    DONE["✅ Completed<br/>Sprint 1-5c, Sprint 6+10,<br/>Sprint 6b, ADR-13,<br/>Sprint 7-Vault + Real Isolation,<br/>llms.txt, FI-7 Config Sync,<br/>RF-1→4, FI-2, FI-5, FI-8,<br/>Sprint 6 Phase A+B,<br/>Bugfix #B1-#B7,<br/>UX Improvements P1-3,<br/>Minor Fixes, #LP Local Paths"]
 
-    LP["#LP Local Paths<br/>Unified path portability"]
     QW["Quick Wins<br/>#FI-4 model config<br/>#cco project edit"]
     AIM["AI-Assisted Merge<br/>#Phase 4"]
     S6S["Sprint 6C-Security<br/>#Network Hardening<br/>#Squid proxy"]
@@ -59,8 +57,7 @@ graph LR
     S10["Sprint 10+<br/>#Worktree isolation<br/>#Pack inheritance<br/>#StatusLine"]
     S12R["Sprint 12-RAG<br/>#Project RAG"]
 
-    DONE --> LP
-    LP --> QW
+    DONE --> QW
     QW --> AIM
     AIM --> S6S
     S6S --> S8E
@@ -89,19 +86,6 @@ Add `model:` field to `project.yml`, passed to `claude --model` at launch.
 Open project.yml in `$EDITOR` and regenerate docker-compose.yml after save.
 
 **Effort**: Low.
-
-#### #LP Local Path Resolution (unified path portability)
-
-Unify path handling across vault push/pull AND publish/install. All
-machine-specific paths use `@local` markers (replacing `{{REPO_*}}` for
-publish). `.cco/local-paths.yml` (gitignored) stores per-machine mappings.
-`cco start` resolves with interactive prompt + auto-clone from `url:`.
-Covers both repos AND extra_mounts (publish currently ignores mounts).
-New `cco project resolve` command. New shared `lib/local-paths.sh` module
-supersedes `_reverse_template_repos()` and `_resolve_repo_entries()`.
-
-**Docs**: [design](../configuration/vault/local-path-resolution-design.md)
-**Effort**: Medium.
 
 ---
 
@@ -210,6 +194,19 @@ Opt-in git isolation for container sessions. When enabled, repos are mounted at 
 
 **Docs**: [analysis](../integration/worktree/analysis.md) | [design](../integration/worktree/design.md) | [ADR-10](../architecture/architecture.md)
 
+#### #6b Worktree-Based Vault Profile Sync
+
+`vault save` syncs shared resources to profile branches via `git checkout`, which
+fails when Docker sessions are active (mounted vault dirs block checkout). Currently
+mitigated by detecting active sessions and deferring sync.
+
+A worktree-based approach would create temporary worktrees in `/tmp` for each profile
+branch, eliminating the need for checkout and allowing sync even with running sessions.
+Should be implemented alongside or after #6 (same worktree infrastructure).
+
+**Current mitigation**: `_check_no_active_sessions_quiet()` in `cmd_vault_save()`
+skips sync with user-visible warning when Docker sessions are active.
+
 ---
 
 ### #9 Pack Inheritance / Composition
@@ -303,6 +300,360 @@ rag:
 ---
 
 ## Known Bugs
+
+### #B12 `test_update_migrations_run_in_order` asserts outdated schema_version — open
+
+**Reported**: 2026-04-22 (noticed during pre-existing failures audit).
+
+**Symptom**: `bin/test --filter test_update_migrations_run_in_order` fails with
+`Expected '…/.cco/meta' to contain: schema_version: 11`. The codebase has 14
+global migrations (001–014) and the engine correctly bumps the meta file, but
+the test hardcodes `schema_version: 11`.
+
+**Classification**: Test maintenance, not a production bug. The assertion
+becomes stale every time a new migration is added.
+
+**Proposed fix**: Make the test derive the expected value dynamically (e.g.,
+`ls migrations/global/ | sort -r | head -1 | cut -d_ -f1`) instead of
+hardcoding. Alternative: a helper `_latest_migration_id "global"` reused across
+tests.
+
+**See also**: `tests/test_update.sh:184`, `lib/update.sh` migration runner.
+
+---
+
+### #B11 `_llms_resolve_name_from_url` returns domain-prefixed segment for variant URLs — open
+
+**Reported**: 2026-04-22 (noticed during pre-existing failures audit).
+
+**Symptom**: `bin/test --filter test_resolve_name_from_full_variant_url` fails.
+For URL `https://example.com/docs/react/llms-full.txt` the helper returns
+`example-react` while the test expects `react`.
+
+**Root cause hypothesis**: ambiguous. The helper (in `lib/cmd-llms.sh:643`) is
+designed to concatenate `domain-segment` to avoid collisions across sources.
+Either the test was written with outdated expectations, or the helper regressed
+and the collision-avoidance behavior is a later addition the test didn't track.
+
+**Decision needed**: clarify the contract first (when should the helper return
+only the segment vs `domain-segment`?), then either update the test or fix the
+helper.
+
+**See also**: `lib/cmd-llms.sh:643`, `tests/test_llms.sh:68`,
+`test_resolve_name_from_domain_url` (passing, returns `shadcn-svelte`).
+
+---
+
+### #B21 `cco project resolve` interactive reports file mounts missing, prints "All paths resolved" anyway ✓ FIXED
+
+**Reported**: 2026-04-22 (field test). **Fixed**: 2026-04-22.
+
+**Symptom**: the user ran `cco project resolve <name>` with a working
+project.yml where an extra_mount pointed to a single file
+(`~/Desktop/…docx`). The command reported `✗ path missing` for the
+file even though it existed on disk, then printed `✓ All paths
+resolved.` at the end — two contradictions at once.
+
+**Root cause**: when #B18 migrated `cco project resolve --show` to
+the canonical `_project_effective_paths` reader (which calls
+`_path_exists`, file-or-dir), the interactive branch (L.380-495)
+was left with the legacy inline loop that still used `-d`
+(directory-only). Additionally, the literal-path "missing" branch
+in that loop did not set `any_unresolved=true`, so the final check
+would conclude "resolved" even when a path was missing. Two copies
+of the same display logic — the exact class #B10 / coding-conventions
+§"single source of truth" warns against.
+
+**Fix**: collapse the interactive mode onto
+`_project_effective_paths` (same reader used by `--show` and
+`_assert_resolved_paths`). The display loop is now single-source;
+every `missing` / `unresolved` entry sets the summary flag; file
+mounts are detected correctly via `_path_exists`.
+
+**See also**: `lib/cmd-project-query.sh:cmd_project_resolve`.
+
+---
+
+### #B20 Gitignored files still tracked from legacy commits (mktemp leftovers, .bak) ✓ FIXED
+
+**Reported**: 2026-04-22 (field test, after #B19). **Fixed**: 2026-04-22.
+
+**Symptom**: the user ran `cco vault diff` on a healthy vault and
+saw deleted-but-tracked ghost files surface:
+```
+Projects:
+   D projects/claude-orchestrator/project.yml.TIG8lP
+   D projects/marius/.claude/CLAUDE.md.bak
+```
+`project.yml.TIG8lP` was a `mktemp` tempfile leftover from an older
+cco version whose AWK rewrite crashed before the atomic `mv`, then
+got committed via a subsequent `git add -A`. `CLAUDE.md.bak` was an
+`*.bak` backup that the canonical `.gitignore` covers — but it had
+already been committed before that pattern shipped, and git does
+not retroactively ignore tracked files.
+
+**Fix**: three coordinated changes.
+1. `_VAULT_GITIGNORE` extended with `projects/*/project.yml.??????`
+   and `projects/*/.cco/local-paths.yml.??????` to catch future
+   mktemp leftovers (glob `??????` matches the 6-char suffix).
+2. `_untrack_stale_pre_save` generalized to
+   `_untrack_gitignored_files` — uses `git ls-files -i -c
+   --exclude-standard` to enumerate every tracked file that matches
+   the `.gitignore` (pre-save, `.bak`, `.new`, tempfiles, anything)
+   and `git rm --cached` them in one silent self-heal commit.
+3. Defensive `trap '…' RETURN` on the five `mktemp "${target}.XXXXXX"`
+   sites in `lib/local-paths.sh` so a failing AWK rewrite no longer
+   leaves an orphan tempfile in the working tree.
+
+**See also**: `lib/cmd-vault.sh:_untrack_gitignored_files`,
+`lib/local-paths.sh` (5 mktemp trap sites).
+
+---
+
+### #B19 Legacy vaults with real paths committed trap user in divergence loop ✓ FIXED
+
+**Reported**: 2026-04-22 (field test, after runtime invariants shipped).
+**Fixed**: 2026-04-22.
+
+**Symptom**: on a vault created before the `@local` feature, the
+profile branches (e.g. `cave`) had `project.yml` committed with real
+absolute paths (`~/Projects/.../cave-auth`). After shipping the
+runtime invariants that sanitize working → `@local` for comparison,
+every vault operation on those legacy branches produced a persistent
+divergence:
+
+- `cco vault diff` showed `M projects/*/project.yml` forever (working
+  post-sanitize `@local` ≠ committed real).
+- `cco vault save` replied "Nothing to commit — vault is up to date"
+  because the pre-extract `raw_status` was empty (working = committed
+  = real), so the save early-returned without normalizing.
+- `cco vault switch main` failed with "Failed to switch. Working tree
+  restored." because `git checkout` refused to overwrite project.yml
+  files that were "modified" post-extract.
+- The user experienced a feeling of the working-copy `project.yml`
+  being "replaced with @local" after every op, because the sanitize
+  fired and the restore struggled.
+
+**Root cause**: the `@local` contract requires `committed = @local,
+working = real`. Legacy vaults violated the committed side. No path in
+the code upgraded that committed state — migrations only touched the
+current branch's gitignore, not project.yml content.
+
+**Fix**: new runtime invariant `_normalize_committed_paths` in
+`lib/cmd-vault.sh` that, for every `projects/<X>/project.yml` tracked
+on HEAD:
+1. Reads the committed blob.
+2. If it contains any non-`@local` real path, extracts the real paths
+   into `.cco/local-paths.yml` (so the PC keeps the mapping).
+3. Sanitizes a temp copy of the committed blob (paths → `@local`).
+4. Stages the sanitized blob via `git hash-object -w` +
+   `git update-index --cacheinfo` — the WORKING TREE is never touched.
+5. Commits silently ("vault: normalize committed paths to @local
+   (legacy vault)").
+
+Wired into `_check_vault`, `cmd_vault_status`, and
+`cmd_vault_profile_switch` post-checkout (so the target branch gets
+normalized before `_resolve_all_local_paths` runs). Idempotent.
+
+**User impact**: no manual step required. At the next `cco vault <any>`
+on a legacy branch, a single normalization commit appears in the log
+and every subsequent op works against the `@local` contract.
+
+**See also**: `lib/cmd-vault.sh:_normalize_committed_paths`,
+[coding-conventions](../architecture/coding-conventions.md)
+§"Prefer runtime invariants to migrations for cross-branch state".
+
+---
+
+### #B18 `cco project resolve` says `✓ exists` while `cco start` says `Unresolved` ✓ FIXED
+
+**Reported**: 2026-04-22 (post-merge field testing). **Fixed**: 2026-04-22.
+
+**Symptom**: `cco project resolve <name> --show` listed every repo /
+mount as `✓ exists`, but `cco start <name>` on the same project failed
+with `Unresolved @local paths`. After the user manually commented out
+an `extra_mount` that pointed to a missing `.docx` file, `cco start`
+passed but the main repo was still not mounted (Docker created an
+empty bind). Same class as `#B10`: two commands answering the same
+"where is this path?" question via divergent code paths.
+
+**Root cause**: `cmd_project_resolve --show` composed status from
+`project.yml` + `.cco/local-paths.yml` with its own loop; `cco start`
+invoked `_resolve_entry` which checked `[[ -d "$expanded" ]]` (false
+for file mounts like `.docx`, so fell through to non-TTY die).
+
+**Fix**: new canonical reader `_project_effective_paths` in
+`lib/local-paths.sh` emits `<kind>\t<key>\t<effective_path>\t<status>`
+per entry. `cmd_project_resolve --show` delegates to it (previous
+~90-line duplicated loop removed). `cco start` calls
+`_assert_resolved_paths` (also built on the same reader) right after
+`_resolve_start_paths`. `-d` checks across local-paths.sh + query.sh
+migrated to `_path_exists` so file mounts are accepted.
+
+**See also**: `lib/local-paths.sh`, `lib/cmd-project-query.sh`,
+`lib/utils.sh:_path_exists`,
+[coding-conventions](../architecture/coding-conventions.md)
+§"Two sources of truth → single helper".
+
+---
+
+### #B17 `cco start` silently launches with unresolved `@local` repo ✓ FIXED
+
+**Reported**: 2026-04-22 (post-merge field testing). **Fixed**: 2026-04-22.
+
+**Symptom**: `cco start <project>` completed without error, but the
+repo was not mounted inside the container. `project.yml` still had
+`path: "@local"` and no entry in `local-paths.yml`; Docker silently
+created an empty bind-mount at the target path.
+
+**Root cause**: `_start_generate_compose` and
+`_proxy_collect_allowed_paths` / `_proxy_collect_pathmap` silently
+`continue`d on `@local` / missing paths. `_resolve_start_paths`
+correctly handled the interactive case, but once the user was back on
+an out-of-sync `project.yml` the compose generator just skipped.
+
+**Fix**: hard guard `_assert_resolved_paths` invoked at the end of
+`_start_resolve_paths` dies with a list of concrete problems if any
+entry is unresolved or missing. Silent `@local` continues removed
+from `_start_generate_compose`, `_proxy_collect_allowed_paths`, and
+`_proxy_collect_pathmap` (dead code once the guard is in place).
+
+**See also**: `lib/cmd-start.sh`, `lib/local-paths.sh:_assert_resolved_paths`.
+
+---
+
+### #B16 Profile switch leaves ghost directories of exclusive projects ✓ FIXED
+
+**Reported**: 2026-04-22 (post-merge field testing). **Fixed**: 2026-04-22.
+
+**Symptom**: after `cco vault switch`, `projects/<X>/` directories of
+the source profile's exclusive projects survived on the target branch
+— with `.cco/claude-state/`, `.cco/meta`, and `memory/` residue inside.
+Broke the "real isolation" guarantee of the profile design.
+
+**Root cause**: `git checkout` removes tracked files of departed
+projects, but each project's gitignored state keeps the parent
+`projects/<name>/` directory alive. The existing cleanup
+(`find projects -type d -empty -delete`) handles only truly-empty
+dirs, so any gitignored leftover defeats it.
+
+**Fix**: new runtime invariant `_clean_branch_ghost_projects` in
+`lib/cmd-vault.sh`. Any `projects/<X>/` with no tracked content on
+HEAD gets `rm -rf`; orphan shadow dirs under `.cco/profile-state/<br>/`
+whose branch no longer exists get pruned. Wired into
+`cmd_vault_profile_switch` as Step 8 (post-checkout, before the
+`@local` resolver).
+
+**See also**: `lib/cmd-vault.sh`, `docs/maintainer/configuration/vault/profile-isolation-design.md` §5.3.
+
+---
+
+### #B15 Pre-existing branch misses `.gitignore` patterns forever ✓ FIXED
+
+**Reported**: 2026-04-22 (post-merge field testing). **Fixed**: 2026-04-22.
+
+**Symptom**: on a vault whose `cave` profile branch had been created
+before migration 013, `.cco/project.yml.pre-save` files created at
+every `cco vault save` surfaced as `??` untracked entries that the
+"metadata" category then surfaced to the user. Saving committed them;
+the next save saw them as new `??` again. Infinite loop.
+
+**Root cause**: migrations that update `.gitignore` only touch the
+currently checked-out branch (011/012/013). Branches that pre-date
+the migration never receive the pattern and no code path healed them.
+`_untrack_stale_pre_save` (existing) untracked but did not restore
+missing patterns.
+
+**Fix**: new runtime invariant `_ensure_vault_gitignore` in
+`lib/cmd-vault.sh` walks the canonical `_VAULT_GITIGNORE` template and
+appends any missing pattern block (preserving header comments). The
+helper respects commented patterns (never fights an intentional user
+bypass — see `test_vault_save_aborts_on_cco_remotes`). Wired into
+`_check_vault` (single gate for save/diff/push/pull/switch/profile/
+...), `cmd_vault_status`, and `cmd_vault_profile_switch` post-checkout.
+
+Per-user impact: at next `cco vault <op>` on any stale branch, the
+pattern is auto-added and a silent commit is recorded. No migration
+015 was created (the invariant is strictly more complete — a migration
+would have to either cycle every branch proactively, which is
+invasive, or only cover `main`, which would not help).
+
+**See also**: `lib/cmd-vault.sh`, `docs/maintainer/configuration/vault/file-classification.md` §8.
+
+---
+
+### #B14 `git status --porcelain` parser mishandles rename entries ✓ FIXED
+
+**Reported**: 2026-04-22 (pre-merge review, finding M2). **Fixed**: 2026-04-22.
+
+**Symptom**: `vault save` / `vault diff` / `vault status` parsed git
+output with `local file="${line:3}"`. For rename entries (`R  old -> new`,
+emitted when git's default rename detection is active) this produced
+the literal string `old -> new` as the "path", which the categorizer
+could not route to any bucket and the secret scanner could not match.
+
+**Fix**: unified all seven vault callsites on `git status --porcelain
+--no-renames`. Also converted `cmd_vault_diff` from `--short` to
+`--porcelain` for a consistent contract across the module. The vault
+does not need rename detection — each side of a rename still needs to
+be categorized independently.
+
+**See also**: `lib/cmd-vault.sh` module header.
+
+---
+
+### #B13 `cmd_vault_profile_switch` leaves `project.yml` with `@local` on stash failure ✓ FIXED
+
+**Reported**: 2026-04-22 (pre-merge review, finding C1). **Fixed**: 2026-04-22.
+
+**Symptom**: if `_stash_gitignored_files` (or any helper between
+`_extract_local_paths` and the `git checkout`) failed under `set -e`,
+the working-copy `project.yml` was left with `@local` markers instead
+of being restored. Manual rollback existed only for the `git checkout`
+failure path.
+
+**Root cause**: the save/diff sites set `trap '_restore_local_paths
+"$vault_dir"' ERR` before extraction; the profile-switch site had
+omitted this trap.
+
+**Fix**: mirror the save/diff pattern — set `trap ... ERR` before
+`_extract_local_paths`, clear it with `trap - ERR` immediately before
+the `git checkout` where rollback semantics change (stash is consumed;
+restoring local paths from the source-branch backup would be wrong
+post-checkout). Documented the invariant in the module header of
+`lib/cmd-vault.sh`.
+
+**See also**: [coding-conventions](../architecture/coding-conventions.md)
+§"Protect atomicity with traps, not discipline".
+
+---
+
+### #B10 `cco vault status` and `cco vault diff` report divergent uncommitted count ✓ FIXED
+
+**Reported**: 2026-04-22. **Fixed**: 2026-04-22 (commits 819f119, 5cdf44e, af2b8a2).
+
+**Symptom**: on a vault with a `project.yml` whose working-copy path was restored
+to a real absolute path (post-save on any PC, or post-checkout from a different PC),
+`cco vault status` reported `Changes: 1 uncommitted file(s)` while `cco vault diff`
+reported `No uncommitted changes` on the same state.
+
+**Root cause**: `cmd_vault_status` (L.906) and both branches of
+`cmd_vault_profile_show` (L.2047, L.2160) ran `git status --porcelain` directly
+and counted raw lines. `cmd_vault_save` and `cmd_vault_diff` instead normalized
+via `_extract_local_paths` + `_untrack_stale_pre_save` before counting (helper:
+`_vault_has_real_changes`). The three status-read sites were missed when the
+normalization was added.
+
+**Fix**: replaced the three raw counts with `_vault_has_real_changes`, capturing
+its stdout for the display. Also extracted `_vault_categorize_file` helper
+(DRY refactor) to deduplicate the shared categorization logic between
+`cmd_vault_save` and `cmd_vault_diff`. Regression test added in
+`tests/test_vault.sh`.
+
+**See also**: `docs/maintainer/configuration/vault/file-classification.md`,
+`docs/maintainer/configuration/vault/local-path-resolution-design.md`.
+
+---
 
 ### #B9 Wrong env var name disables nothing — "Auto-update failed" message shown ✓ FIXED
 
@@ -418,6 +769,91 @@ Migration `005_split_global_setup.sh` renames existing `setup.sh` → `setup-bui
 ---
 
 ## Completed
+
+### Pre-merge hardening (2026-04-22) ✓
+
+Pre-release cleanup of `develop` before merging into `main`. A dual
+review (design-adherence + code-quality) surfaced one correctness gap,
+one parsing fragility, and several DRY/SRP drifts. All resolved on
+`fix/vault/pre-merge-hardening`.
+
+**Correctness**
+
+- **#B13 (C1)** `cmd_vault_profile_switch` extracted local paths without
+  a `trap ... ERR`, so if `_stash_gitignored_files` failed under `set
+  -e` between extraction and the `git checkout`, `project.yml` was left
+  with `@local` markers. Fixed by mirroring the save/diff pattern: trap
+  before extraction, clear trap before the checkout where rollback
+  semantics change. Module header in `lib/cmd-vault.sh` now documents
+  the trap/die invariant (`#M1`).
+- **#B14 (M2)** `git status --porcelain` parsing used `${line:3}` which
+  returns `old -> new` for rename entries when git's rename detection
+  is on (default in recent git). Normalized all seven vault callsites
+  to `--porcelain --no-renames`; `cmd_vault_diff` also converted from
+  `--short` to `--porcelain` (same effect, explicit contract — `#I3`).
+
+**DRY / SRP**
+
+- **#D1** `_start_resolve_paths` and `_resolve_installed_paths`
+  implemented the same repos+extra_mounts loop with subtly different
+  non-TTY / skip behaviors — exactly the class of drift that caused
+  `#B10`. Unified under `_resolve_project_paths_impl <dir> <mode>` in
+  `lib/local-paths.sh`; both callers now go through a thin wrapper.
+- **#D2** Vault-save and project-publish scanned for secrets with
+  independent pattern lists. Canonical
+  `_SECRET_FILENAME_PATTERNS` / `_SECRET_CONTENT_PATTERNS` +
+  `_secret_match_filename` / `_secret_match_content` now live in
+  `lib/secrets.sh`; both gates call the shared helpers.
+- **#D3** `local-paths.yml` section parsing had three AWK
+  reimplementations (`_local_paths_get` + two inline reads in
+  `_resolve_project_paths`). Extracted `_local_paths_get_section`; the
+  single-value getter now layers on top.
+- **#D4** `.cco/publish-ignore` was read twice with identical loops.
+  Extracted `_read_publish_ignore` in `cmd-project-publish.sh`.
+- **#I2** `cmd-start.sh` had one callsite that parsed repo paths with
+  `yml_get_repos | cut -d: -f1`, inconsistent with the canonical
+  `IFS=: read` pattern used elsewhere. Standardized.
+- **#S1** `cmd_project_publish` mixed seven responsibilities in ~380
+  lines. Safety checks extracted as
+  `_publish_check_migrations` / `_publish_check_framework_alignment`
+  / `_publish_scan_secrets`; orchestrator is now 249 lines with a
+  three-line pipeline summary.
+- **#S2** `_generate_socket_policy` mixed YAML collection with JSON
+  rendering. Extracted `_proxy_collect_allowed_paths` and
+  `_proxy_collect_pathmap` as pure collectors.
+- **#m1** Documented the `yml_get_repos` "path:name" flat-format
+  contract (paths with embedded colons are not supported; switch to a
+  tab separator if that changes).
+- **#m3** Annotated migration 012 as superseded (wrong `vault_dir`
+  calculation, corrected by 013).
+
+**Docs**
+
+New [coding-conventions](../architecture/coding-conventions.md) doc
+lists canonical shared services and encodes the rules future code must
+follow to avoid re-introducing the drift class that caused `#B10` /
+`#B13` / `#D1`. Module header in `lib/cmd-vault.sh` documents the
+trap-and-die invariant.
+
+---
+
+### #LP Local Path Resolution (2026-03-31) ✓
+
+Unified path portability across vault sync, publish/install, and `cco start`.
+Machine-specific paths in `project.yml` replaced with `@local` markers;
+real paths stored in `.cco/local-paths.yml` (gitignored, per-PC). Covers
+both repos and extra_mounts. `cco start` resolves interactively with
+auto-clone from `url:` metadata. New `cco project resolve` command. New
+shared `lib/local-paths.sh` module supersedes `_reverse_template_repos()`
+and `_resolve_repo_entries()`. Legacy `{{REPO_*}}` templates remain supported.
+
+Post-release review fixed: migration 012 path calculation, AWK getline fragility
+(entry buffering), path quoting for spaces, AWK -v backslash expansion, ERR trap
+ordering, and vault save profile sync skipping when Docker sessions are active.
+
+**Docs**: [design](../configuration/vault/local-path-resolution-design.md) | changelog entry 12
+
+---
 
 ### Profile Isolation Review & v0.2.0-alpha (2026-03-26) ✓
 

@@ -58,9 +58,18 @@ _resolve_with_merge() {
     local project_dir="${6:-}"  # project root dir (empty for global scope)
     local base_file="$base_dir/$rel_path"
 
+    # For project scope, interpolate placeholders in the template file
+    local _rwm_new_file="$defaults_dir/$rel_path"
+    local _rwm_tmp=""
+    if [[ -n "$project_dir" && -f "$defaults_dir/$rel_path" ]]; then
+        _rwm_tmp=$(_interpolate_template_tmp "$defaults_dir/$rel_path" "$project_dir")
+        _rwm_new_file="$_rwm_tmp"
+    fi
+
     # If no base version available, fall back to interactive (no merge possible)
     if [[ ! -f "$base_file" ]]; then
         _resolve_conflict_interactive "$rel_path" "$defaults_dir" "$installed_dir" "$no_backup" "$project_dir"
+        [[ -n "$_rwm_tmp" ]] && rm -f "$_rwm_tmp"
         return
     fi
 
@@ -68,7 +77,7 @@ _resolve_with_merge() {
     local merge_out
     merge_out=$(mktemp)
     local merge_result=0
-    _merge_file "$installed_dir/$rel_path" "$base_file" "$defaults_dir/$rel_path" "$merge_out" || merge_result=$?
+    _merge_file "$installed_dir/$rel_path" "$base_file" "$_rwm_new_file" "$merge_out" || merge_result=$?
 
     if [[ $merge_result -eq 0 ]]; then
         # Clean merge — auto-apply with backup
@@ -154,7 +163,7 @@ _resolve_with_merge() {
                 else
                     warn "  ↻ $rel_path (replaced)"
                 fi
-                cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
+                cp "$_rwm_new_file" "$installed_dir/$rel_path"
                 ;;
             k)
                 _LAST_RESOLVE_SKIPPED=false
@@ -175,6 +184,8 @@ _resolve_with_merge() {
         rm -f "$merge_out"
         _resolve_conflict_interactive "$rel_path" "$defaults_dir" "$installed_dir" "$no_backup" "$project_dir"
     fi
+
+    [[ -n "$_rwm_tmp" ]] && rm -f "$_rwm_tmp"
 }
 
 # Fallback interactive conflict resolution (no base available for merge)
@@ -184,6 +195,14 @@ _resolve_conflict_interactive() {
     local installed_dir="$3"
     local no_backup="$4"
     local project_dir="${5:-}"  # project root dir (empty for global scope)
+
+    # For project scope, interpolate placeholders in the template file
+    local _rci_new_file="$defaults_dir/$rel_path"
+    local _rci_tmp=""
+    if [[ -n "$project_dir" && -f "$defaults_dir/$rel_path" ]]; then
+        _rci_tmp=$(_interpolate_template_tmp "$defaults_dir/$rel_path" "$project_dir")
+        _rci_new_file="$_rci_tmp"
+    fi
 
     echo ""
     warn "Conflict: $rel_path"
@@ -212,7 +231,7 @@ _resolve_conflict_interactive() {
             else
                 warn "  ↻ $rel_path (replaced)"
             fi
-            cp "$defaults_dir/$rel_path" "$installed_dir/$rel_path"
+            cp "$_rci_new_file" "$installed_dir/$rel_path"
             local h; h=$(_hash_for_scope "$defaults_dir/$rel_path" "$project_dir")
             _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
             ;;
@@ -230,6 +249,8 @@ _resolve_conflict_interactive() {
             _UPDATE_MANIFEST_ENTRIES+="${rel_path}	${h}"$'\n'
             ;;
     esac
+
+    [[ -n "$_rci_tmp" ]] && rm -f "$_rci_tmp"
 }
 
 # ── Language Regeneration ────────────────────────────────────────────

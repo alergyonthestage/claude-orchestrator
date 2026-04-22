@@ -1,6 +1,6 @@
 # Local Path Resolution — Design
 
-**Status**: Proposed
+**Status**: Implemented
 **Date**: 2026-03-31
 **Scope**: Unified path portability for vault sync AND publish/install
 **Analysis**: `../sharing/analysis.md` §10 (portability problems)
@@ -458,16 +458,20 @@ All path resolution logic lives in a single new module. This replaces the
 path-handling code currently spread across three files:
 
 ```
-lib/local-paths.sh (NEW)
-├─ _local_paths_get(file, section, key)       # Read path from local-paths.yml
-├─ _local_paths_set(file, section, key, val)  # Write path to local-paths.yml
-├─ _sanitize_project_paths(project_yml)       # Replace real paths with @local, inject url:
-├─ _resolve_project_paths(project_dir)        # Restore @local → real paths from local-paths.yml
-├─ _resolve_entry(project_dir, section, key)  # Resolve single entry (with prompt fallback)
-├─ _extract_local_paths(vault_dir)            # Pre-commit: extract all projects
-├─ _restore_local_paths(vault_dir)            # Post-commit: restore from backup
-├─ _resolve_all_local_paths(vault_dir)        # Post-pull/switch: resolve all projects
-└─ _prompt_for_path(name, url, suggested)     # Interactive TTY prompt with clone option
+lib/local-paths.sh
+├─ _local_paths_get(file, section, key)         # Read path from local-paths.yml
+├─ _local_paths_set(file, section, key, val)    # Write path to local-paths.yml
+├─ _prompt_for_path(name, url, suggested)       # Interactive TTY prompt with clone option
+├─ _sanitize_project_paths(project_yml)         # Replace real paths with @local, inject url:
+├─ _resolve_project_paths(project_dir)          # Restore @local → real paths from local-paths.yml
+├─ _get_repo_url(project_yml, repo_name)        # Extract url: for a repo from project.yml
+├─ _resolve_entry(project_dir, section, key)    # Resolve single entry (with prompt fallback)
+├─ _write_local_paths(project_dir, project_yml) # Write paths to .cco/local-paths.yml
+├─ _extract_local_paths(vault_dir)              # Pre-commit: extract all projects
+├─ _restore_local_paths(vault_dir)              # Post-commit: restore from backup
+├─ _resolve_all_local_paths(vault_dir)          # Post-pull/switch: resolve all projects
+├─ _update_yml_path(yml, section, ...)          # Update single path value in project.yml
+└─ _resolve_installed_paths(project_dir, yml)   # Resolve @local entries after project install
 ```
 
 ### 5.2 Functions superseded
@@ -786,3 +790,146 @@ Currently `url:` is only supported on repo entries. Extra mounts could gain
 a similar field for remote sources (e.g., a git repo containing API specs).
 The resolution prompt would offer clone for mounts too. Low priority — mounts
 are typically local-only resources.
+
+---
+
+## 10. Post-Implementation Fixes (2026-03-31)
+
+Issues discovered during first real-world usage of the local-paths feature.
+
+### 10.1 AWK newline in -v (macOS BWK awk)
+
+**Problem**: `_sanitize_project_paths` and `_resolve_project_paths` passed
+multiline strings to AWK via `-v url_map="$url_map"`. macOS BWK awk does
+not support literal newlines in `-v` assignments, causing:
+
+```
+awk: newline in string claude-orchestrator=... at source line 1
+```
+
+**Fix**: Replace newline (`$'\n'`) with ASCII Record Separator (`$'\036'`)
+as delimiter for `url_map`, `repo_map`, and `mount_map`. Update AWK
+`split()` calls to use `"\036"`.
+
+### 10.2 vault save "nothing to commit" after extraction
+
+**Problem**: After `_extract_local_paths`, project.yml files revert to
+committed `@local` state. If no other files changed, `git commit` fails
+with "nothing to commit", crashing cco with exit 2.
+
+The change count displayed before the prompt includes local-path
+differences (real paths vs @local), which are virtual — they resolve to
+nothing after extraction.
+
+**Fix**: After `git add -A`, check `git diff --cached --quiet`. If empty,
+restore paths and return cleanly with "Nothing to commit — vault is up
+to date".
+
+### 10.3 Dirty checks block vault operations
+
+**Problem**: All vault commands that require a clean working tree
+(`vault switch`, `profile create/rename/delete/move/remove`, `vault push`)
+use `git status --porcelain` to detect uncommitted changes. After the
+first `vault save`, project.yml files in the working copy have real paths
+while the committed version has `@local` markers — they always appear
+"modified". This blocks all profile operations.
+
+**Design gap**: The design (§8.2) correctly states "working copy restored
+with real paths" but did not address the implication: `git status` always
+reports modifications, breaking all dirty checks.
+
+**Fix**: Add `_vault_has_real_changes()` helper that temporarily extracts
+local paths (sanitizing project.yml), checks `git status`, and restores.
+Returns true only if there are REAL changes beyond local-path differences.
+Applied to all 7 dirty check points in `cmd-vault.sh`.
+
+### 10.4 Pre-release review fixes (2026-03-31)
+
+Comprehensive code review before release identified 2 bugs and 6 warnings:
+
+**B1: Migration 012 wrong vault_dir** — Used single `dirname` (`→ user-config/global`)
+instead of double (`→ user-config/`). The `.gitignore` patterns were never applied
+to existing vaults. Fixed 012 + created 013 to re-apply for vaults that already
+ran the broken migration (also cleans up incorrectly placed patterns).
+
+**B2: Non-TTY abort missing guidance** — `_start_resolve_paths` in `cmd-start.sh`
+emitted `die "Aborted."` without hinting at `cco project resolve`, unlike the
+install flow. Added context-aware message for non-TTY callers.
+
+**W1: AWK getline ordering fragility** — `_sanitize_project_paths`,
+`_resolve_project_paths`, and `_update_yml_path` used `getline` assuming YAML
+fields appear in `path → name` order. Replaced with entry buffering that collects
+all fields before processing, handling any field order gracefully.
+
+**W2: Unquoted paths in YAML output** — `_update_yml_path` and `_resolve_project_paths`
+emitted paths without double quotes, breaking YAML when paths contain spaces.
+All path output now uses `"quoted"` format.
+
+**W3: AWK -v backslash expansion** — `_local_paths_set` and `_update_yml_path`
+passed user paths via AWK `-v`, which interprets escape sequences (`\n`, `\t`).
+Switched to `ENVIRON[]` for path values.
+
+**W4: ERR trap timing** — `_vault_has_real_changes` and `cmd_vault_save` set the
+ERR trap AFTER `_extract_local_paths`. If extraction failed, restore would not
+run. Moved trap before extraction call.
+
+### 10.5 Post-release fixes (2026-03-31)
+
+**B3: `vault diff` shows virtual diffs** — `cmd_vault_diff` used raw `git status`
+without path normalization. `project.yml` always appeared modified (real paths vs
+committed `@local`). Meanwhile `vault save` correctly normalized before counting,
+causing UX inconsistency: diff shows changes, save says "nothing to commit."
+
+**Fix**: `cmd_vault_diff` now calls `_extract_local_paths` / `_restore_local_paths`
+before reading git status, matching the normalization flow in `vault save`. Added
+to the design: vault diff is the 8th normalization point alongside the 7 dirty
+checks.
+
+**B4: `.cco/project.yml.pre-save` tracked in git (phantom D entries)** — Migration
+012 had a bug (B1); during the window before migration 013 fixed the `.gitignore`,
+some vaults committed pre-save backups. Adding the gitignore pattern doesn't
+untrack already-committed files, causing persistent `D` status in diff.
+
+**Fix**: Migration 014 runs `git rm --cached` on the current branch. A lazy
+cleanup helper (`_untrack_stale_pre_save`) runs at the start of `vault save` and
+`vault diff` to fix remaining branches when the user first operates on them.
+
+**B5: `.cco/*` files not filtered from user-content categories in diff/save** —
+The categorization only filtered `.cco/base/*` and `.cco/source*` as metadata.
+Other `.cco/` files (e.g., pre-save backups that escaped gitignore) appeared
+under "Projects" in the diff output.
+
+**Fix**: Broadened the metadata filter to `*/.cco/*` (catch-all). Framework-tracking
+files (base, source) were already covered; the wider pattern adds defense-in-depth
+for any `.cco/` file that escapes gitignore.
+
+**UX1: Shared sync preview in save** — Added informational message before the
+commit prompt when shared resources (global, templates, packs) will be synced
+to other profiles. Previously, users had no preview of cross-profile propagation.
+
+**B6 (#B13): `cmd_vault_profile_switch` trap ERR gap** — The save/diff sites
+set `trap '_restore_local_paths "$vault_dir"' ERR` before extraction so a
+failing command under `set -e` triggers a restore. `cmd_vault_profile_switch`
+had omitted this trap, so if `_stash_gitignored_files` failed between
+extraction and the `git checkout`, `project.yml` would be left with `@local`
+markers.
+
+**Fix**: mirror the save/diff trap pattern; clear the trap immediately before
+`git checkout` where rollback semantics change (post-checkout, the working
+tree belongs to the target branch — restoring from the source's pre-save
+backup would be wrong). The two invariants (explicit restore before `die`,
+and clear trap before checkout) are now codified in the module header of
+`lib/cmd-vault.sh` and in [coding-conventions](../../architecture/coding-conventions.md).
+
+**B7 (#B14): `git status --porcelain` rename parsing** — `${line:3}` produces
+the literal `old -> new` string for rename entries when git's default rename
+detection is on. Normalized all seven vault callsites on `--porcelain
+--no-renames`; vault-level categorization does not need rename tracking.
+
+**DRY (#D1): `_start_resolve_paths` vs `_resolve_installed_paths` drift** —
+The two loops implemented the same repos+extra_mounts resolution with subtly
+different non-TTY / skip semantics — the same class of drift that caused
+`#B10`. Unified under `_resolve_project_paths_impl <dir> <mode>` in
+`lib/local-paths.sh`; `start` and `install` each call a thin wrapper. See
+[coding-conventions](../../architecture/coding-conventions.md) §"Single
+source of truth".

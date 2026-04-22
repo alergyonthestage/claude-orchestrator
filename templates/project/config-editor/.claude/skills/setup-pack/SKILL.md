@@ -63,7 +63,7 @@ After creation:
 - If the pack should be shared, mention Config Repos and `cco pack publish`
 - Suggest writing knowledge file content (the actual conventions, guidelines, etc.)
 - Reference: `cco-docs/user-guides/knowledge-packs.md`
-- Remind the user to run `cco vault sync` after creation if vault is active
+- Remind the user to run `cco vault save` after creation if vault is active
 
 ## Important
 

@@ -99,6 +99,10 @@ templates/                             # Scaffolding blueprints (read-only sourc
 
 ## 3. Complete File Classification Map
 
+> **See also**: `../vault/file-classification.md` for the unified vault-wide
+> classification (gitignore, profile sharing, publish/install, UX visibility).
+> This section focuses on the **update system** perspective (policies and discovery).
+
 This is the definitive reference for every file managed by the update system.
 
 ### Legend

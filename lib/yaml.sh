@@ -282,6 +282,12 @@ yml_validate_enum() {
 
 # Parse repos from project.yml
 # Outputs lines of "host_path:mount_name"
+#
+# Parsing contract: consumers MUST split on the LAST `:` (use `IFS=: read
+# -r path name` only when path is guaranteed colon-free). Paths that
+# embed a literal `:` are not supported by this flat format. If that
+# becomes necessary in the future, switch the emitter to a tab
+# separator and update every IFS=: consumer (finding m1 from review).
 yml_get_repos() {
     local file="$1"
     awk '

@@ -314,6 +314,14 @@ Step 6: Output summary
 
 ### 4.4 Interactive Conflict Resolution
 
+> **Implementation status** (verified 2026-04-22): this section is implemented.
+> The prompt and logic live in `_resolve_shared_conflict()` in `lib/cmd-vault.sh`
+> and are invoked by `_sync_shared_to_main` (during `cco vault save` on a
+> profile branch) and `_sync_shared_from_main` (during `cco vault save`
+> propagation to profiles, and during `cco vault pull` after fetching `main`).
+> The branch arguments are internal refs (local `main` / local profile branch),
+> not `origin/main` — the design language is preserved below for clarity.
+
 When both sides modified a shared file, the user is prompted:
 
 ```

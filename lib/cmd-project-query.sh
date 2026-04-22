@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# lib/cmd-project-query.sh — Project listing, display, and validation
+# lib/cmd-project-query.sh — Project listing, display, validation, and path resolution
 #
-# Provides: cmd_project_list(), cmd_project_show(), cmd_project_validate()
-# Dependencies: colors.sh, utils.sh, yaml.sh
+# Provides: cmd_project_list(), cmd_project_show(), cmd_project_validate(),
+#   cmd_project_resolve()
+# Dependencies: colors.sh, utils.sh, yaml.sh, local-paths.sh
 # Globals: PROJECTS_DIR, PACKS_DIR
 
 cmd_project_list() {
@@ -234,4 +235,249 @@ EOF
         return 1
     fi
     ok "Project '$name' is valid"
+}
+
+# ── cco project resolve ─────────────────────────────────────────────
+
+cmd_project_resolve() {
+    local name="" show_only=false reset=false
+    local -a repo_args=()
+    local -a mount_args=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --help)
+                cat <<'EOF'
+Usage: cco project resolve <project> [options]
+
+Configure local paths for a project's repositories and mounts.
+
+Without flags: interactive mode — shows all entries and prompts for unresolved.
+With flags: set specific paths non-interactively.
+
+Options:
+  --repo <name> <path>      Set local path for a repository
+  --mount <target> <path>   Set local path for an extra mount
+  --show                    Show current path mappings (no changes)
+  --reset                   Remove all local overrides (re-prompt on next start)
+
+Examples:
+  cco project resolve myapp                          # Interactive
+  cco project resolve myapp --repo backend ~/dev/be  # Direct
+  cco project resolve myapp --show                   # Status
+EOF
+                return 0
+                ;;
+            --show)  show_only=true; shift ;;
+            --reset) reset=true; shift ;;
+            --repo)
+                [[ $# -lt 3 ]] && die "--repo requires <name> and <path>"
+                repo_args+=("$2=$3"); shift 3
+                ;;
+            --mount)
+                [[ $# -lt 3 ]] && die "--mount requires <target> and <path>"
+                mount_args+=("$2=$3"); shift 3
+                ;;
+            -*) die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$name" ]]; then
+                    name="$1"; shift
+                else
+                    die "Unexpected argument: $1"
+                fi
+                ;;
+        esac
+    done
+
+    [[ -z "$name" ]] && die "Usage: cco project resolve <project>. Run 'cco project list' to see available projects."
+
+    local project_dir="$PROJECTS_DIR/$name"
+    [[ ! -d "$project_dir" ]] && die "Project '$name' not found."
+
+    local project_yml="$project_dir/project.yml"
+    [[ ! -f "$project_yml" ]] && die "No project.yml found for '$name'."
+
+    local local_paths="$project_dir/.cco/local-paths.yml"
+
+    # --reset: remove local-paths.yml
+    if $reset; then
+        if [[ -f "$local_paths" ]]; then
+            rm -f "$local_paths"
+            ok "Local path mappings removed for '$name'. Paths will be prompted on next 'cco start'."
+        else
+            info "No local path mappings to remove."
+        fi
+        return 0
+    fi
+
+    # --show: display current mappings.
+    # Delegates to _project_effective_paths (single source of truth, same
+    # helper used by `cco start` via _assert_resolved_paths). This
+    # eliminates the old divergence where --show could report `✓ exists`
+    # for an entry that cco start then rejected with "Unresolved" — they
+    # now derive from the exact same data (fix #B18).
+    if $show_only; then
+        echo -e "${BOLD}Project: $name${NC}"
+        echo ""
+
+        local have_repos=false have_mounts=false
+        local effective_lines
+        effective_lines=$(_project_effective_paths "$project_dir")
+
+        # Repos section
+        local kind key effective status display_path status_icon
+        echo "  Repos:"
+        while IFS=$'\t' read -r kind key effective status; do
+            [[ "$kind" != "repos" ]] && continue
+            have_repos=true
+            case "$status" in
+                exists)     display_path="$effective"; status_icon="${GREEN}✓ exists${NC}" ;;
+                missing)    display_path="$effective"; status_icon="${YELLOW}✗ path missing${NC}" ;;
+                unresolved) display_path="@local (not configured)"; status_icon="${RED}✗ needs path${NC}" ;;
+            esac
+            printf "    %-20s %-35s %b\n" "$key" "$display_path" "$status_icon"
+        done <<< "$effective_lines"
+        $have_repos || echo "    (none)"
+
+        echo ""
+
+        # Extra mounts section
+        echo "  Extra mounts:"
+        while IFS=$'\t' read -r kind key effective status; do
+            [[ "$kind" != "mounts" ]] && continue
+            have_mounts=true
+            case "$status" in
+                exists)     display_path="$effective"; status_icon="${GREEN}✓ exists${NC}" ;;
+                missing)    display_path="$effective"; status_icon="${YELLOW}✗ path missing${NC}" ;;
+                unresolved) display_path="@local (not configured)"; status_icon="${RED}✗ needs path${NC}" ;;
+            esac
+            printf "    %-20s %-35s %b\n" "$key" "$display_path" "$status_icon"
+        done <<< "$effective_lines"
+        $have_mounts || echo "    (none)"
+
+        return 0
+    fi
+
+    # --repo / --mount: direct set mode
+    if [[ ${#repo_args[@]} -gt 0 || ${#mount_args[@]} -gt 0 ]]; then
+        for entry in ${repo_args[@]+"${repo_args[@]}"}; do
+            local rname="${entry%%=*}"
+            local rpath="${entry#*=}"
+            _local_paths_set "$local_paths" "repos" "$rname" "$rpath"
+            _update_yml_path "$project_yml" "repos" "name" "$rname" "path" "$rpath"
+            ok "Saved: $rname → $rpath"
+        done
+        for entry in ${mount_args[@]+"${mount_args[@]}"}; do
+            local mtarget="${entry%%=*}"
+            local mpath="${entry#*=}"
+            _local_paths_set "$local_paths" "extra_mounts" "$mtarget" "$mpath"
+            _update_yml_path "$project_yml" "extra_mounts" "target" "$mtarget" "source" "$mpath"
+            ok "Saved: $mtarget → $mpath"
+        done
+        return 0
+    fi
+
+    # Interactive mode: show status and prompt for unresolved.
+    # Single source of truth (same as --show): _project_effective_paths
+    # emits one tab-separated line per repo/mount with kind/key/path/status.
+    # This eliminates two copies of the display logic and fixes #B21 —
+    # the previous inline loop used `-d` (directory-only), so file-mounts
+    # like .docx were always "path missing" and did not set
+    # any_unresolved → the summary printed "All paths resolved".
+    echo -e "${BOLD}Project: $name${NC}"
+    echo ""
+
+    local effective_lines
+    effective_lines=$(_project_effective_paths "$project_dir")
+
+    local any_unresolved=false
+    local -a unresolved_entries=()  # kind<TAB>key per entry
+
+    # Repos section
+    local kind key effective status display_path status_icon
+    local have_repos=false
+    echo "  Repos:"
+    while IFS=$'\t' read -r kind key effective status; do
+        [[ "$kind" != "repos" ]] && continue
+        have_repos=true
+        case "$status" in
+            exists)
+                display_path="$effective"
+                status_icon="${GREEN}✓ exists${NC}"
+                ;;
+            missing)
+                display_path="$effective"
+                status_icon="${YELLOW}✗ path missing${NC}"
+                any_unresolved=true
+                unresolved_entries+=("repos"$'\t'"$key")
+                ;;
+            unresolved)
+                display_path="@local (not configured)"
+                status_icon="${RED}✗ needs path${NC}"
+                any_unresolved=true
+                unresolved_entries+=("repos"$'\t'"$key")
+                ;;
+        esac
+        printf "    %-20s %-35s %b\n" "$key" "$display_path" "$status_icon"
+    done <<< "$effective_lines"
+    $have_repos || echo "    (none)"
+
+    echo ""
+
+    # Extra mounts section
+    local have_mounts=false
+    echo "  Extra mounts:"
+    while IFS=$'\t' read -r kind key effective status; do
+        [[ "$kind" != "mounts" ]] && continue
+        have_mounts=true
+        case "$status" in
+            exists)
+                display_path="$effective"
+                status_icon="${GREEN}✓ exists${NC}"
+                ;;
+            missing)
+                display_path="$effective"
+                status_icon="${YELLOW}✗ path missing${NC}"
+                any_unresolved=true
+                unresolved_entries+=("extra_mounts"$'\t'"$key")
+                ;;
+            unresolved)
+                display_path="@local (not configured)"
+                status_icon="${RED}✗ needs path${NC}"
+                any_unresolved=true
+                unresolved_entries+=("extra_mounts"$'\t'"$key")
+                ;;
+        esac
+        printf "    %-20s %-35s %b\n" "$key" "$display_path" "$status_icon"
+    done <<< "$effective_lines"
+    $have_mounts || echo "    (none)"
+
+    echo ""
+
+    if ! $any_unresolved; then
+        ok "All paths resolved."
+        return 0
+    fi
+
+    # Prompt interactively for every unresolved entry.
+    local entry section path_field key_field url resolved rc
+    for entry in ${unresolved_entries[@]+"${unresolved_entries[@]}"}; do
+        IFS=$'\t' read -r section key <<< "$entry"
+        url=""
+        if [[ "$section" == "repos" ]]; then
+            path_field="path"
+            key_field="name"
+            url=$(_get_repo_url "$project_yml" "$key")
+        else
+            path_field="source"
+            key_field="target"
+        fi
+        rc=0
+        resolved=$(_resolve_entry "$project_dir" "$section" "$key" "$url") || rc=$?
+        if [[ $rc -eq 0 && -n "$resolved" ]]; then
+            _update_yml_path "$project_yml" "$section" "$key_field" "$key" "$path_field" "$resolved"
+        elif [[ $rc -eq 2 ]]; then
+            return 0
+        fi
+    done
 }
