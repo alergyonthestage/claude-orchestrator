@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-04-22 (vault status/diff consistency fix + DRY refactor).
+> Last updated: 2026-04-22 (pre-merge hardening: #B13/#B14 fixed, DRY/SRP refactor).
 >
 > **Note**: Sprint entries are historical. Path references (e.g., `.cco-meta`, `.cco-source`) in older
 > sprints reflect the layout at the time of writing. See Sprint 8 and the `.cco/` consolidation
@@ -13,8 +13,8 @@
 
 | Status | Items | Section |
 |--------|-------|---------|
-| ✅ Completed | 30 sprints / features | [→ Completed](#completed) |
-| 🐛 Known Bugs | 3 open · 9 fixed | [→ Known Bugs](#known-bugs) |
+| ✅ Completed | 31 sprints / features | [→ Completed](#completed) |
+| 🐛 Known Bugs | 3 open · 11 fixed | [→ Known Bugs](#known-bugs) |
 | 🔜 Planned | Quick Wins (FI-4, #10), AI-merge, Sprint 6C → 12 | [→ Planned](#planned-sprints) |
 | 🔭 Exploratory | 7 ideas | [→ Long-term / Exploratory](#long-term--exploratory) |
 | ❌ Declined | 3 items | [→ Declined / Won't Do](#declined--wont-do) |
@@ -344,6 +344,52 @@ helper.
 
 ---
 
+### #B14 `git status --porcelain` parser mishandles rename entries ✓ FIXED
+
+**Reported**: 2026-04-22 (pre-merge review, finding M2). **Fixed**: 2026-04-22.
+
+**Symptom**: `vault save` / `vault diff` / `vault status` parsed git
+output with `local file="${line:3}"`. For rename entries (`R  old -> new`,
+emitted when git's default rename detection is active) this produced
+the literal string `old -> new` as the "path", which the categorizer
+could not route to any bucket and the secret scanner could not match.
+
+**Fix**: unified all seven vault callsites on `git status --porcelain
+--no-renames`. Also converted `cmd_vault_diff` from `--short` to
+`--porcelain` for a consistent contract across the module. The vault
+does not need rename detection — each side of a rename still needs to
+be categorized independently.
+
+**See also**: `lib/cmd-vault.sh` module header.
+
+---
+
+### #B13 `cmd_vault_profile_switch` leaves `project.yml` with `@local` on stash failure ✓ FIXED
+
+**Reported**: 2026-04-22 (pre-merge review, finding C1). **Fixed**: 2026-04-22.
+
+**Symptom**: if `_stash_gitignored_files` (or any helper between
+`_extract_local_paths` and the `git checkout`) failed under `set -e`,
+the working-copy `project.yml` was left with `@local` markers instead
+of being restored. Manual rollback existed only for the `git checkout`
+failure path.
+
+**Root cause**: the save/diff sites set `trap '_restore_local_paths
+"$vault_dir"' ERR` before extraction; the profile-switch site had
+omitted this trap.
+
+**Fix**: mirror the save/diff pattern — set `trap ... ERR` before
+`_extract_local_paths`, clear it with `trap - ERR` immediately before
+the `git checkout` where rollback semantics change (stash is consumed;
+restoring local paths from the source-branch backup would be wrong
+post-checkout). Documented the invariant in the module header of
+`lib/cmd-vault.sh`.
+
+**See also**: [coding-conventions](../architecture/coding-conventions.md)
+§"Protect atomicity with traps, not discipline".
+
+---
+
 ### #B10 `cco vault status` and `cco vault diff` report divergent uncommitted count ✓ FIXED
 
 **Reported**: 2026-04-22. **Fixed**: 2026-04-22 (commits 819f119, 5cdf44e, af2b8a2).
@@ -485,6 +531,73 @@ Migration `005_split_global_setup.sh` renames existing `setup.sh` → `setup-bui
 ---
 
 ## Completed
+
+### Pre-merge hardening (2026-04-22) ✓
+
+Pre-release cleanup of `develop` before merging into `main`. A dual
+review (design-adherence + code-quality) surfaced one correctness gap,
+one parsing fragility, and several DRY/SRP drifts. All resolved on
+`fix/vault/pre-merge-hardening`.
+
+**Correctness**
+
+- **#B13 (C1)** `cmd_vault_profile_switch` extracted local paths without
+  a `trap ... ERR`, so if `_stash_gitignored_files` failed under `set
+  -e` between extraction and the `git checkout`, `project.yml` was left
+  with `@local` markers. Fixed by mirroring the save/diff pattern: trap
+  before extraction, clear trap before the checkout where rollback
+  semantics change. Module header in `lib/cmd-vault.sh` now documents
+  the trap/die invariant (`#M1`).
+- **#B14 (M2)** `git status --porcelain` parsing used `${line:3}` which
+  returns `old -> new` for rename entries when git's rename detection
+  is on (default in recent git). Normalized all seven vault callsites
+  to `--porcelain --no-renames`; `cmd_vault_diff` also converted from
+  `--short` to `--porcelain` (same effect, explicit contract — `#I3`).
+
+**DRY / SRP**
+
+- **#D1** `_start_resolve_paths` and `_resolve_installed_paths`
+  implemented the same repos+extra_mounts loop with subtly different
+  non-TTY / skip behaviors — exactly the class of drift that caused
+  `#B10`. Unified under `_resolve_project_paths_impl <dir> <mode>` in
+  `lib/local-paths.sh`; both callers now go through a thin wrapper.
+- **#D2** Vault-save and project-publish scanned for secrets with
+  independent pattern lists. Canonical
+  `_SECRET_FILENAME_PATTERNS` / `_SECRET_CONTENT_PATTERNS` +
+  `_secret_match_filename` / `_secret_match_content` now live in
+  `lib/secrets.sh`; both gates call the shared helpers.
+- **#D3** `local-paths.yml` section parsing had three AWK
+  reimplementations (`_local_paths_get` + two inline reads in
+  `_resolve_project_paths`). Extracted `_local_paths_get_section`; the
+  single-value getter now layers on top.
+- **#D4** `.cco/publish-ignore` was read twice with identical loops.
+  Extracted `_read_publish_ignore` in `cmd-project-publish.sh`.
+- **#I2** `cmd-start.sh` had one callsite that parsed repo paths with
+  `yml_get_repos | cut -d: -f1`, inconsistent with the canonical
+  `IFS=: read` pattern used elsewhere. Standardized.
+- **#S1** `cmd_project_publish` mixed seven responsibilities in ~380
+  lines. Safety checks extracted as
+  `_publish_check_migrations` / `_publish_check_framework_alignment`
+  / `_publish_scan_secrets`; orchestrator is now 249 lines with a
+  three-line pipeline summary.
+- **#S2** `_generate_socket_policy` mixed YAML collection with JSON
+  rendering. Extracted `_proxy_collect_allowed_paths` and
+  `_proxy_collect_pathmap` as pure collectors.
+- **#m1** Documented the `yml_get_repos` "path:name" flat-format
+  contract (paths with embedded colons are not supported; switch to a
+  tab separator if that changes).
+- **#m3** Annotated migration 012 as superseded (wrong `vault_dir`
+  calculation, corrected by 013).
+
+**Docs**
+
+New [coding-conventions](../architecture/coding-conventions.md) doc
+lists canonical shared services and encodes the rules future code must
+follow to avoid re-introducing the drift class that caused `#B10` /
+`#B13` / `#D1`. Module header in `lib/cmd-vault.sh` documents the
+trap-and-die invariant.
+
+---
 
 ### #LP Local Path Resolution (2026-03-31) ✓
 

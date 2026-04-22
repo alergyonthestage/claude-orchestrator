@@ -691,6 +691,16 @@ completion, and exits cleanly.
 
 ---
 
+## 7.6 Coding Conventions
+
+See [coding-conventions.md](coding-conventions.md) for the canonical
+list of shared services (categorizers, path resolvers, secret scanners)
+and the DRY / SRP / atomicity rules that new code must follow. The
+document codifies the lessons from the `#B10` / `#B13` / `#D1` class
+of bugs so the same drift does not recur.
+
+---
+
 ## 8. Limitations and Trade-offs
 
 | Limitation | Impact | Workaround |

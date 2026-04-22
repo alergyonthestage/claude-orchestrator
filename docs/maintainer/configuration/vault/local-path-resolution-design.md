@@ -906,3 +906,30 @@ for any `.cco/` file that escapes gitignore.
 **UX1: Shared sync preview in save** — Added informational message before the
 commit prompt when shared resources (global, templates, packs) will be synced
 to other profiles. Previously, users had no preview of cross-profile propagation.
+
+**B6 (#B13): `cmd_vault_profile_switch` trap ERR gap** — The save/diff sites
+set `trap '_restore_local_paths "$vault_dir"' ERR` before extraction so a
+failing command under `set -e` triggers a restore. `cmd_vault_profile_switch`
+had omitted this trap, so if `_stash_gitignored_files` failed between
+extraction and the `git checkout`, `project.yml` would be left with `@local`
+markers.
+
+**Fix**: mirror the save/diff trap pattern; clear the trap immediately before
+`git checkout` where rollback semantics change (post-checkout, the working
+tree belongs to the target branch — restoring from the source's pre-save
+backup would be wrong). The two invariants (explicit restore before `die`,
+and clear trap before checkout) are now codified in the module header of
+`lib/cmd-vault.sh` and in [coding-conventions](../../architecture/coding-conventions.md).
+
+**B7 (#B14): `git status --porcelain` rename parsing** — `${line:3}` produces
+the literal `old -> new` string for rename entries when git's default rename
+detection is on. Normalized all seven vault callsites on `--porcelain
+--no-renames`; vault-level categorization does not need rename tracking.
+
+**DRY (#D1): `_start_resolve_paths` vs `_resolve_installed_paths` drift** —
+The two loops implemented the same repos+extra_mounts resolution with subtly
+different non-TTY / skip semantics — the same class of drift that caused
+`#B10`. Unified under `_resolve_project_paths_impl <dir> <mode>` in
+`lib/local-paths.sh`; `start` and `install` each call a thin wrapper. See
+[coding-conventions](../../architecture/coding-conventions.md) §"Single
+source of truth".
