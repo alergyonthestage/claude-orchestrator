@@ -52,6 +52,13 @@ extend it if your case is not covered.
 | Read `.cco/publish-ignore` skipping blanks/comments | `_read_publish_ignore` | `lib/cmd-project-publish.sh` |
 | Get a repo's host path from `project.yml` in "path:name" form | `yml_get_repos` + `IFS=: read -r path name` | `lib/yaml.sh` |
 | Get a project's `.cco/meta` / `.cco/base` / `.cco/source` path | `_cco_project_meta` / `_cco_project_base_dir` / `_cco_project_source` | `lib/paths.sh` |
+| Self-heal vault `.gitignore` to match `_VAULT_GITIGNORE` template | `_ensure_vault_gitignore` | `lib/cmd-vault.sh` |
+| Untrack every tracked file that now matches `.gitignore` (pre-save, bak, tempfiles, …) | `_untrack_gitignored_files` | `lib/cmd-vault.sh` |
+| Remove ghost project directories and orphan shadows post-switch | `_clean_branch_ghost_projects` | `lib/cmd-vault.sh` |
+| Normalize legacy vaults that committed real host paths (pre-@local) | `_normalize_committed_paths` | `lib/cmd-vault.sh` |
+| Test if a filesystem path exists (file OR directory) | `_path_exists` | `lib/utils.sh` |
+| Get the effective source path for every repo / mount of a project (single source of truth for display + runtime) | `_project_effective_paths` | `lib/local-paths.sh` |
+| Die if any project.yml path is unresolved or missing (start guard) | `_assert_resolved_paths` | `lib/local-paths.sh` |
 
 ## Rules you are likely to violate
 
@@ -99,6 +106,44 @@ turns out to be wrong (as `012` did), **do not amend it** — add a
 corrective migration at the next ID (as `013` did) and annotate the
 original as superseded. Existing users have already run the broken
 migration; changing its behavior invalidates their state.
+
+### Prefer runtime invariants to migrations for cross-branch state
+
+A migration runs on the currently checked-out branch. When a fix must
+apply to every profile branch of a git-backed vault (e.g. a missing
+`.gitignore` pattern), a single migration leaves all other branches
+untouched forever. Prefer a **runtime invariant** — a self-heal helper
+that every entry point calls — over a migration that cannot reach the
+branches it needs to.
+
+Examples: `_ensure_vault_gitignore`, `_untrack_stale_pre_save`,
+`_clean_branch_ghost_projects`. See vault/file-classification.md §8.
+
+### Paths that may be files: use `_path_exists`, not `-d`
+
+`repos[].path` is always a directory, but `extra_mounts[].source` can
+be a single file (e.g. a `.docx`, a `.md`). Every existence check on a
+user-supplied project path must use `_path_exists` (which tests `-e`
+after `~` expansion). Literal `[[ -d "$p" ]]` checks on mount sources
+produce false negatives and flow through to prompt / die paths.
+
+### `cco start` and `@local` resolution
+
+`cco start` must call `_assert_resolved_paths` after
+`_resolve_start_paths`. Do not silently `continue` on a residual
+`@local` during compose generation — a silently-skipped mount becomes
+a Docker empty bind (#B17). If `_resolve_start_paths` cannot guarantee
+every entry is resolved, that is a bug in the resolver, not something
+to paper over downstream.
+
+### Two sources of truth for the same question → single helper
+
+`cmd_project_resolve --show` and `cco start` both answer "where does
+this repo live on this machine?". They must use the **same** helper —
+`_project_effective_paths` — so a `✓ exists` in display never diverges
+from an "Unresolved" at runtime (#B18). Same class as #B10. Whenever
+two commands respond to the same data-model question, add or reuse a
+canonical reader; never copy the loop.
 
 ## Case study — `#B10` (vault status vs diff divergence)
 

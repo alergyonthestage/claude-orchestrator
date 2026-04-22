@@ -79,6 +79,14 @@ projects/*/.cco/project.yml.pre-save
 # ── Update artifacts — temporary review files ────────────────────
 *.bak
 *.new
+
+# ── Atomic-rewrite tempfiles — leftover of mktemp+mv pattern ──────
+# Used by _update_yml_path / _sanitize_project_paths / _write_local_paths
+# when an AWK rewrite fails before the atomic mv. Each creates a
+# sibling named <target>.XXXXXX; the glob ?????? matches the 6-char
+# suffix that mktemp appends.
+projects/*/project.yml.??????
+projects/*/.cco/local-paths.yml.??????
 '
 
 # Secret scan uses the canonical patterns in lib/secrets.sh
@@ -140,20 +148,305 @@ EOF
     echo "  cco vault push"
 }
 
-# Lazy cleanup: untrack .cco/project.yml.pre-save files that were
-# accidentally committed before the gitignore pattern existed (migration 012
-# bug). Migration 014 fixes the current branch; this handles other branches
-# when the user first runs vault save/diff on them.
-_untrack_stale_pre_save() {
+# Runtime invariant: ensure the vault .gitignore contains every pattern
+# from the canonical _VAULT_GITIGNORE template.
+#
+# Why: migrations that update the .gitignore only touch the branch that
+# is currently checked out. Profile branches created BEFORE a new pattern
+# was added (e.g. `projects/*/.cco/project.yml.pre-save` from migration
+# 013) never receive the pattern, which then causes machine-specific
+# files like pre-save backups to surface as `??` in vault diff/save.
+#
+# The fix is to self-heal at every vault operation: read the committed
+# .gitignore of the current branch, compare against the template, and
+# append any missing pattern blocks. Idempotent (no-op when aligned).
+#
+# Usage: _ensure_vault_gitignore <vault_dir>
+# Commits silently when patterns are added (same convention as
+# _untrack_stale_pre_save).
+_ensure_vault_gitignore() {
     local vault_dir="$1"
+    local gitignore="$vault_dir/.gitignore"
+
+    # Without a .gitignore the vault is not a real vault (pre-init). No-op.
+    [[ ! -f "$gitignore" ]] && return 0
+
+    # Walk every non-comment, non-empty line of the canonical template.
+    # For each missing line, append its block (preceding blank line +
+    # comment, if present in the template) to the working .gitignore.
+    # Pattern lookup uses grep -qxF so we only match EXACT pattern lines,
+    # not partial substrings.
+    local added_any=false
+    local line=""
+    local prev_comment=""
+    while IFS= read -r line; do
+        if [[ -z "$line" ]]; then
+            prev_comment=""
+            continue
+        fi
+        if [[ "$line" == \#* ]]; then
+            # Keep the most recent comment block for context when appending
+            if [[ -z "$prev_comment" ]]; then
+                prev_comment="$line"
+            else
+                prev_comment="$prev_comment"$'\n'"$line"
+            fi
+            continue
+        fi
+        # Skip if already present (literal) OR explicitly commented out
+        # by the user. Commented-out patterns reflect a deliberate user
+        # choice (test_vault_save_aborts_on_cco_remotes exercises this
+        # exact pattern to verify the secret-scan safety net works even
+        # when a user bypasses the gitignore manually). The self-heal
+        # must never fight a user edit — only fill in truly missing
+        # patterns.
+        if grep -qxF -- "$line" "$gitignore" 2>/dev/null \
+           || grep -qxF -- "# $line" "$gitignore" 2>/dev/null; then
+            prev_comment=""
+            continue
+        fi
+        # Pattern missing — append with its comment block preceded by a
+        # blank line (so the edited .gitignore stays readable).
+        {
+            echo ""
+            [[ -n "$prev_comment" ]] && echo "$prev_comment"
+            echo "$line"
+        } >> "$gitignore"
+        added_any=true
+        prev_comment=""
+    done <<< "$_VAULT_GITIGNORE"
+
+    if ! $added_any; then
+        return 0
+    fi
+
+    # Commit silently on this branch. If the working tree has other
+    # staged changes, do not pull them in — stage the .gitignore alone.
+    git -C "$vault_dir" add .gitignore 2>/dev/null
+    if ! git -C "$vault_dir" diff --cached --quiet -- .gitignore 2>/dev/null; then
+        git -C "$vault_dir" commit -q -m "vault: self-heal .gitignore with canonical patterns" -- .gitignore
+    fi
+}
+
+# Runtime invariant: untrack every file that is currently tracked AND
+# matches the vault .gitignore. This generalizes the older
+# _untrack_stale_pre_save helper to cover the whole class of "file
+# should be gitignored but was committed before the pattern existed".
+#
+# Covers at least: `projects/*/.cco/project.yml.pre-save` (migration
+# 012/013 window), `*.bak` / `*.new` leftovers from past update ops,
+# `.cco/meta`, machine-specific files from legacy vaults, and any
+# mktemp tempfile (`*.XXXXXX`) that an older cco version may have
+# left behind after a failed YAML rewrite.
+#
+# Uses `git ls-files -i -c --exclude-standard`: lists files that are
+# tracked AND match the .gitignore. Silent commit if anything was
+# staged. Idempotent.
+#
+# Usage: _untrack_gitignored_files <vault_dir>
+_untrack_gitignored_files() {
+    local vault_dir="$1"
+    local tracked_ignored
+    tracked_ignored=$(git -C "$vault_dir" ls-files -i -c --exclude-standard 2>/dev/null)
+    [[ -z "$tracked_ignored" ]] && return 0
+
+    # Space-safe via xargs -I{} (each line becomes one argument).
+    # Not NUL-safe: file names containing newlines are not supported,
+    # but vault-tracked paths never contain newlines in practice.
+    echo "$tracked_ignored" | xargs -I {} git -C "$vault_dir" rm --cached -q -- "{}" 2>/dev/null || true
+    if ! git -C "$vault_dir" diff --cached --quiet 2>/dev/null; then
+        git -C "$vault_dir" commit -q -m "vault: untrack gitignored files (self-heal)"
+    fi
+}
+
+# Deprecated name kept as a thin alias so external references keep
+# working during the transition. New code must call the generalized
+# helper directly. Removed in a follow-up release.
+_untrack_stale_pre_save() {
+    _untrack_gitignored_files "$@"
+}
+
+# Runtime invariant: normalize legacy committed project.yml files that
+# still contain real (machine-specific) paths instead of @local markers.
+# Fix finding #B19 (legacy vaults pre-dating the @local feature).
+#
+# Why: vaults created before the unified local-path resolution were
+# committed with absolute host paths in repos[].path and
+# extra_mounts[].source. After the @local feature shipped, those older
+# branches were never rewritten, so every `cco vault diff/save/switch`
+# saw a virtual-only `M` on the project.yml (sanitized working vs
+# real committed), leading to:
+#   - cco vault save reporting "Nothing to commit" while diff shows M
+#   - cco vault switch failing with "Failed to switch" because git
+#     refused to overwrite modified files
+#   - the working-copy project.yml oscillating to @local with no
+#     obvious way back to real paths
+#
+# What it does:
+#   1. For every project.yml tracked on HEAD, read the committed blob.
+#   2. If it contains non-@local real paths, extract those paths into
+#      the project's .cco/local-paths.yml on the current PC (so the
+#      user does not lose the mapping).
+#   3. Sanitize a temp copy of the committed content (paths → @local).
+#   4. Stage the sanitized version via `git hash-object -w` +
+#      `git update-index` so the WORKING TREE is untouched.
+#   5. Commit silently once all staged entries are in the index.
+#
+# Idempotent: a second invocation finds every committed file already
+# @local and returns without side effects.
+#
+# Usage: _normalize_committed_paths <vault_dir>
+_normalize_committed_paths() {
+    local vault_dir="$1"
+    [[ ! -d "$vault_dir/.git" ]] && return 0
+
     local tracked
-    tracked=$(git -C "$vault_dir" ls-files -- 'projects/*/.cco/project.yml.pre-save' 2>/dev/null)
+    tracked=$(git -C "$vault_dir" ls-tree -r HEAD --name-only 2>/dev/null \
+              | grep -E '^projects/[^/]+/project\.yml$' || true)
     [[ -z "$tracked" ]] && return 0
 
-    echo "$tracked" | xargs git -C "$vault_dir" rm --cached -q -- 2>/dev/null || true
-    if ! git -C "$vault_dir" diff --cached --quiet 2>/dev/null; then
-        git -C "$vault_dir" commit -q -m "vault: untrack machine-specific pre-save backups"
+    local rel_path proj_name proj_dir local_paths
+    local temp_orig="" temp_sanitized="" blob_hash repos mounts
+    local has_real _p _n _src
+    local normalized_any=false
+
+    # Cleanup any /tmp tempfile left behind if the loop is interrupted
+    # between mktemp and the atomic rm -f. Same pattern as the 5 mktemp
+    # sites in lib/local-paths.sh (see #B20).
+    # shellcheck disable=SC2064
+    trap 'rm -f ${temp_orig:+"$temp_orig"} ${temp_sanitized:+"$temp_sanitized"}' RETURN
+
+    while IFS= read -r rel_path; do
+        [[ -z "$rel_path" ]] && continue
+        proj_name="${rel_path#projects/}"
+        proj_name="${proj_name%/project.yml}"
+        proj_dir="$vault_dir/projects/$proj_name"
+        local_paths="$proj_dir/.cco/local-paths.yml"
+
+        temp_orig=$(mktemp)
+        if ! git -C "$vault_dir" show "HEAD:$rel_path" > "$temp_orig" 2>/dev/null; then
+            rm -f "$temp_orig"
+            continue
+        fi
+
+        # Determine: does the committed blob contain any real path?
+        has_real=false
+        repos=$(yml_get_repos "$temp_orig" 2>/dev/null)
+        if [[ -n "$repos" ]]; then
+            while IFS=: read -r _p _n; do
+                [[ -z "$_p" ]] && continue
+                if [[ "$_p" != "@local" && "$_p" != *"{{REPO_"* ]]; then
+                    has_real=true; break
+                fi
+            done <<< "$repos"
+        fi
+        if ! $has_real; then
+            mounts=$(yml_get_extra_mounts "$temp_orig" 2>/dev/null)
+            if [[ -n "$mounts" ]]; then
+                local mount_line
+                while IFS= read -r mount_line; do
+                    [[ -z "$mount_line" ]] && continue
+                    _src="${mount_line%%:*}"
+                    if [[ "$_src" != "@local" && -n "$_src" ]]; then
+                        has_real=true; break
+                    fi
+                done <<< "$mounts"
+            fi
+        fi
+
+        if ! $has_real; then
+            rm -f "$temp_orig"
+            continue
+        fi
+
+        # Save the real paths so the user keeps the mapping on this PC.
+        # _write_local_paths is idempotent (uses _local_paths_set).
+        mkdir -p "$proj_dir/.cco"
+        _write_local_paths "$temp_orig" "$local_paths" >/dev/null 2>&1 || true
+
+        # Sanitize the temp copy (not the working tree's project.yml).
+        temp_sanitized=$(mktemp)
+        cp "$temp_orig" "$temp_sanitized"
+        _sanitize_project_paths "$temp_sanitized"
+
+        # Skip if sanitizing produced no actual change (defense in depth)
+        if cmp -s "$temp_orig" "$temp_sanitized"; then
+            rm -f "$temp_orig" "$temp_sanitized"
+            continue
+        fi
+
+        # Stage the sanitized blob in the git index WITHOUT touching the
+        # working tree — the user's on-disk project.yml stays as-is.
+        blob_hash=$(git -C "$vault_dir" hash-object -w "$temp_sanitized" 2>/dev/null)
+        if [[ -n "$blob_hash" ]]; then
+            git -C "$vault_dir" update-index --add --cacheinfo "100644,$blob_hash,$rel_path" 2>/dev/null \
+                && normalized_any=true
+        fi
+
+        rm -f "$temp_orig" "$temp_sanitized"
+    done <<< "$tracked"
+
+    if $normalized_any; then
+        if ! git -C "$vault_dir" diff --cached --quiet 2>/dev/null; then
+            git -C "$vault_dir" commit -q -m "vault: normalize committed paths to @local (legacy vault)"
+        fi
     fi
+}
+
+# Runtime invariant: remove ghost project directories that belong to a
+# different profile's branch. Fix finding #B16 (post-switch ghost files).
+#
+# Why: profile "real isolation" (profile-isolation-design.md §5.3)
+# requires that after a `vault switch`, the working tree contains only
+# the current branch's tracked files plus each project's gitignored
+# state (claude-state, local-paths.yml, meta). A `git checkout` removes
+# tracked files of departed projects but leaves gitignored content
+# behind — `.cco/claude-state/`, `.cco/meta`, `memory/` — which keeps
+# the parent `projects/<ghost>/` directory alive and visible. The old
+# `find projects -type d -empty -delete` only handles truly-empty dirs.
+#
+# Policy: a directory under `projects/<name>/` is a "ghost" when
+# nothing under `projects/<name>/` is tracked on the current HEAD. In
+# that case its entire subtree is gitignored-only leftover from some
+# prior branch — safe to rm -rf.
+#
+# Also prunes stale stash shadows in .cco/profile-state/<branch>/
+# when <branch> no longer exists as a git branch.
+#
+# Usage: _clean_branch_ghost_projects <vault_dir>
+_clean_branch_ghost_projects() {
+    local vault_dir="$1"
+    [[ ! -d "$vault_dir/projects" ]] && return 0
+    [[ ! -d "$vault_dir/.git" ]] && return 0
+
+    local proj_dir proj_name
+    for proj_dir in "$vault_dir"/projects/*/; do
+        [[ ! -d "$proj_dir" ]] && continue
+        proj_name=$(basename "$proj_dir")
+        # If nothing under this project is tracked on HEAD, everything
+        # left here is gitignored residue from another branch → ghost.
+        if [[ -z "$(git -C "$vault_dir" ls-tree --name-only HEAD -- "projects/$proj_name/" 2>/dev/null)" ]]; then
+            rm -rf "$proj_dir"
+        fi
+    done
+
+    # Prune orphan stash shadows. Each shadow lives at
+    # .cco/profile-state/<branch>/; if <branch> is not an existing
+    # local git branch name, it can never be restored and is garbage.
+    local shadow_root="$vault_dir/.cco/profile-state"
+    [[ ! -d "$shadow_root" ]] && return 0
+
+    local shadow_dir shadow_name
+    # Build a set of current branches for O(1) lookup (bash 3.2: use -v check)
+    local branches_list
+    branches_list=$(git -C "$vault_dir" for-each-ref --format='%(refname:short)' refs/heads 2>/dev/null)
+    for shadow_dir in "$shadow_root"/*/; do
+        [[ ! -d "$shadow_dir" ]] && continue
+        shadow_name=$(basename "$shadow_dir")
+        if ! grep -qxF -- "$shadow_name" <<< "$branches_list"; then
+            rm -rf "$shadow_dir"
+        fi
+    done
 }
 
 # Categorize a vault file path into one of the canonical buckets used by
@@ -238,10 +531,8 @@ EOF
 
     local vault_dir="$USER_CONFIG_DIR"
 
-    # Lazy cleanup: untrack pre-save backups if still tracked (see migration 014)
-    _untrack_stale_pre_save "$vault_dir"
-
     # Quick check — no changes at all?
+    # (_check_vault already ran _ensure_vault_gitignore + _untrack_stale_pre_save)
     local raw_status
     raw_status=$(git -C "$vault_dir" status --porcelain --no-renames 2>/dev/null)
     if [[ -z "$raw_status" ]]; then
@@ -443,8 +734,7 @@ EOF
 
     local vault_dir="$USER_CONFIG_DIR"
 
-    # Lazy cleanup: untrack pre-save backups if still tracked (see migration 014)
-    _untrack_stale_pre_save "$vault_dir"
+    # (_check_vault already ran the runtime invariants)
 
     # Normalize local paths to eliminate virtual diffs (real paths vs @local).
     # Without this, project.yml always appears modified. Same normalization
@@ -682,6 +972,8 @@ EOF
 
     local vault_dir="$USER_CONFIG_DIR"
 
+    # (_check_vault already ran the runtime invariants)
+
     # Verify remote exists
     if ! git -C "$vault_dir" remote get-url "$remote" >/dev/null 2>&1; then
         die "Remote '$remote' not configured. Run 'cco vault remote add $remote <url>' first."
@@ -738,6 +1030,8 @@ EOF
     remote="${remote:-origin}"
 
     local vault_dir="$USER_CONFIG_DIR"
+
+    # (_check_vault already ran the runtime invariants pre-pull)
 
     # Verify remote exists
     if ! git -C "$vault_dir" remote get-url "$remote" >/dev/null 2>&1; then
@@ -864,9 +1158,15 @@ EOF
     # Check initialized
     if [[ ! -d "$vault_dir/.git" ]]; then
         echo -e "${BOLD}Vault:${NC} not initialized"
-        info "Run 'cco vault init' to enable versioning"
         return 0
     fi
+
+    # Runtime invariants: self-heal .gitignore + untrack stale pre-save
+    # + normalize legacy committed real paths (#B19) so `cco vault
+    # status` on a stale/legacy branch reports the real state.
+    _ensure_vault_gitignore "$vault_dir"
+    _untrack_stale_pre_save "$vault_dir"
+    _normalize_committed_paths "$vault_dir"
 
     echo -e "${BOLD}Vault:${NC} initialized at $vault_dir"
 
@@ -2216,6 +2516,9 @@ EOF
     local default_branch
     default_branch=$(_vault_default_branch)
 
+    # (_check_vault already ran runtime invariants on the source branch.
+    # The target branch is healed after checkout — see end of flow.)
+
     # Allow "main"/"master" as target
     if [[ "$name" == "main" || "$name" == "master" ]]; then
         name="$default_branch"
@@ -2305,7 +2608,20 @@ EOF
         fi
     fi
 
-    # Step 7: Resolve @local markers from restored local-paths.yml
+    # Step 7: Runtime invariants on the target branch — if this branch
+    # pre-dates current .gitignore / untrack migrations, heal it so the
+    # user's next `cco vault diff/save` shows a clean state. Also
+    # normalize legacy committed real paths → @local (#B19) so the
+    # resolver in Step 9 below has @local to work against.
+    _ensure_vault_gitignore "$vault_dir"
+    _untrack_stale_pre_save "$vault_dir"
+    _normalize_committed_paths "$vault_dir"
+
+    # Step 8: Remove ghost project directories (gitignored residue of
+    # projects that belonged to the source branch). Fixes #B16.
+    _clean_branch_ghost_projects "$vault_dir"
+
+    # Step 9: Resolve @local markers from restored local-paths.yml
     _resolve_all_local_paths "$vault_dir"
 
     # Log operation
@@ -3251,32 +3567,17 @@ _check_vault() {
         die "Vault not initialized. Run 'cco vault init' first."
     fi
 
-    # Defensive: ensure .gitignore has profile-related entries (may be missing
-    # if vault was init'd before profile isolation was added)
-    local _gi="$USER_CONFIG_DIR/.gitignore"
-    if [[ -f "$_gi" ]]; then
-        local _gi_updated=false
-        for _pattern in ".cco/profile-ops.log" ".cco/profile-state/" ".cco/backups/"; do
-            if ! grep -qF "$_pattern" "$_gi" 2>/dev/null; then
-                printf '\n# Profile operations\n%s\n' "$_pattern" >> "$_gi"
-                _gi_updated=true
-            fi
-        done
-        if $_gi_updated; then
-            git -C "$USER_CONFIG_DIR" add .gitignore 2>/dev/null || true
-            if ! git -C "$USER_CONFIG_DIR" diff --cached --quiet 2>/dev/null; then
-                git -C "$USER_CONFIG_DIR" commit -q -m "vault: update .gitignore for profile operations"
-            fi
-        fi
-    fi
-
-    # Defensive: untrack profile-ops.log if it was committed before gitignore update
-    if git -C "$USER_CONFIG_DIR" ls-files --error-unmatch .cco/profile-ops.log >/dev/null 2>&1; then
-        git -C "$USER_CONFIG_DIR" rm --cached -q .cco/profile-ops.log 2>/dev/null || true
-        if ! git -C "$USER_CONFIG_DIR" diff --cached --quiet 2>/dev/null; then
-            git -C "$USER_CONFIG_DIR" commit -q -m "vault: untrack profile-ops.log (gitignored)"
-        fi
-    fi
+    # Runtime invariants — canonical entry point for every vault command
+    # that goes through _check_vault (save, diff, push, pull, switch, etc.).
+    # Each op is idempotent and silently commits the heal if needed.
+    # #B15: branches missing current .gitignore patterns.
+    # #B17: tracked pre-save backups leftover from old bugs.
+    # #B19: legacy vaults that committed real host paths before @local
+    #       existed — normalize the committed tree so working/committed
+    #       stop diverging virtually on every diff/save/switch.
+    _ensure_vault_gitignore "$USER_CONFIG_DIR"
+    _untrack_stale_pre_save "$USER_CONFIG_DIR"
+    _normalize_committed_paths "$USER_CONFIG_DIR"
 
     # Self-healing: restore shadow files if user did a direct git checkout.
     # When cco vault switch runs, it stashes portable files to .cco/profile-state/<branch>/.

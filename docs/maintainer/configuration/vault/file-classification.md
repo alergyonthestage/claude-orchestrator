@@ -340,8 +340,42 @@ When introducing a new file in the vault directory tree:
 2. **Add to the master table** in §3
 3. **Add gitignore pattern** if class requires it (§5)
 4. **Update `_VAULT_GITIGNORE`** in `lib/cmd-vault.sh`
-5. **Create a migration** to add the pattern to existing vaults
+5. **No migration required for pattern-only changes** (see §8 —
+   `_ensure_vault_gitignore` self-heals every branch on next vault op).
+   Migrations are still needed for schema-breaking moves/renames.
 6. **Update per-operation tables** in §4 if the file has special behavior
 7. **Update publish exclusions** in `_copy_project_for_publish()` if needed
 8. **Update profile shared paths** in `_list_shared_paths()` if applicable
 9. **Update this document** — it is the canonical reference
+
+---
+
+## 8. Runtime Invariants
+
+Migrations that update `.gitignore` (006, 009, 012, 013) only touch the
+currently checked-out branch. Profile branches created *before* a new
+pattern was added never receive the pattern, and machine-specific files
+like `projects/*/.cco/project.yml.pre-save` then surface as untracked
+`??` entries on those branches forever.
+
+To avoid repeating that class of problem, three runtime invariants run
+at every vault operation (invoked from `_check_vault` and at specific
+points in the profile-switch flow):
+
+| Helper | Scope | Site | Purpose |
+|---|---|---|---|
+| `_ensure_vault_gitignore` | current branch | `_check_vault`, `cmd_vault_status`, `cmd_vault_profile_switch` (post-checkout) | Append any missing pattern from `_VAULT_GITIGNORE`. Respects user-commented patterns (never reverts a deliberate bypass). Silent commit if needed. |
+| `_untrack_gitignored_files` | current branch | same as above | `git rm --cached` any tracked file that matches the current `.gitignore` (pre-save backups, `*.bak` leftovers, `*.new`, `mktemp` tempfiles, or anything else that became gitignored after it was first committed). Uses `git ls-files -i -c --exclude-standard`. `_untrack_stale_pre_save` is kept as a thin alias. |
+| `_normalize_committed_paths` | current branch | same as above | Upgrade legacy project.yml committed with real host paths to `@local`. Saves the real paths into `.cco/local-paths.yml` first so the PC keeps the mapping. Stages via `git hash-object -w` + `update-index`; the WORKING TREE is never touched (design: working=real, committed=`@local`). |
+| `_clean_branch_ghost_projects` | current branch | `cmd_vault_profile_switch` (post-checkout) | Remove `projects/<X>/` directories whose content is entirely gitignored residue of another branch. Also prune orphan `.cco/profile-state/<branch>/` shadows. |
+
+**Rule for new code**: if you introduce a machine-specific file class
+whose presence must never be committed, add the pattern to
+`_VAULT_GITIGNORE` and rely on `_ensure_vault_gitignore` to propagate
+it — do not write a migration just for the pattern. For schema/path
+renames, migrations are still needed.
+
+**Design pointer**: the invariants codify the single-source-of-truth
+principle from [coding-conventions](../../architecture/coding-conventions.md) —
+gitignore patterns are defined once in `_VAULT_GITIGNORE` and every
+branch derives from it.

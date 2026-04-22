@@ -310,99 +310,50 @@ EOF
         return 0
     fi
 
-    # --show: display current mappings
+    # --show: display current mappings.
+    # Delegates to _project_effective_paths (single source of truth, same
+    # helper used by `cco start` via _assert_resolved_paths). This
+    # eliminates the old divergence where --show could report `✓ exists`
+    # for an entry that cco start then rejected with "Unresolved" — they
+    # now derive from the exact same data (fix #B18).
     if $show_only; then
         echo -e "${BOLD}Project: $name${NC}"
         echo ""
 
-        # Show repos
-        local repos
-        repos=$(yml_get_repos "$project_yml" 2>/dev/null)
-        if [[ -n "$repos" ]]; then
-            echo "  Repos:"
-            while IFS=: read -r repo_path repo_name; do
-                [[ -z "$repo_name" ]] && continue
-                local display_path="$repo_path"
-                local status_icon
+        local have_repos=false have_mounts=false
+        local effective_lines
+        effective_lines=$(_project_effective_paths "$project_dir")
 
-                # Check local-paths.yml for resolved path
-                if [[ "$repo_path" == "@local" || "$repo_path" == *"{{REPO_"* ]]; then
-                    local lp
-                    lp=$(_local_paths_get "$local_paths" "repos" "$repo_name")
-                    if [[ -n "$lp" ]]; then
-                        display_path="$lp"
-                        local expanded
-                        expanded=$(expand_path "$lp")
-                        if [[ -d "$expanded" ]]; then
-                            status_icon="${GREEN}✓ exists${NC}"
-                        else
-                            status_icon="${YELLOW}✗ path missing${NC}"
-                        fi
-                    else
-                        display_path="@local (not configured)"
-                        status_icon="${RED}✗ needs path${NC}"
-                    fi
-                else
-                    local expanded
-                    expanded=$(expand_path "$repo_path")
-                    if [[ -d "$expanded" ]]; then
-                        status_icon="${GREEN}✓ exists${NC}"
-                    else
-                        status_icon="${YELLOW}✗ path missing${NC}"
-                    fi
-                fi
-                printf "    %-20s %-35s %b\n" "$repo_name" "$display_path" "$status_icon"
-            done <<< "$repos"
-        else
-            echo "  Repos: (none)"
-        fi
+        # Repos section
+        local kind key effective status display_path status_icon
+        echo "  Repos:"
+        while IFS=$'\t' read -r kind key effective status; do
+            [[ "$kind" != "repos" ]] && continue
+            have_repos=true
+            case "$status" in
+                exists)     display_path="$effective"; status_icon="${GREEN}✓ exists${NC}" ;;
+                missing)    display_path="$effective"; status_icon="${YELLOW}✗ path missing${NC}" ;;
+                unresolved) display_path="@local (not configured)"; status_icon="${RED}✗ needs path${NC}" ;;
+            esac
+            printf "    %-20s %-35s %b\n" "$key" "$display_path" "$status_icon"
+        done <<< "$effective_lines"
+        $have_repos || echo "    (none)"
 
         echo ""
 
-        # Show extra_mounts
-        local mounts
-        mounts=$(yml_get_extra_mounts "$project_yml" 2>/dev/null)
-        if [[ -n "$mounts" ]]; then
-            echo "  Extra mounts:"
-            while IFS= read -r mount_line; do
-                [[ -z "$mount_line" ]] && continue
-                local source="${mount_line%%:*}"
-                local rest="${mount_line#*:}"
-                local target="${rest%%:*}"
-
-                local display_source="$source"
-                local status_icon
-
-                if [[ "$source" == "@local" ]]; then
-                    local lp
-                    lp=$(_local_paths_get "$local_paths" "extra_mounts" "$target")
-                    if [[ -n "$lp" ]]; then
-                        display_source="$lp"
-                        local expanded
-                        expanded=$(expand_path "$lp")
-                        if [[ -d "$expanded" ]]; then
-                            status_icon="${GREEN}✓ exists${NC}"
-                        else
-                            status_icon="${YELLOW}✗ path missing${NC}"
-                        fi
-                    else
-                        display_source="@local (not configured)"
-                        status_icon="${RED}✗ needs path${NC}"
-                    fi
-                else
-                    local expanded
-                    expanded=$(expand_path "$source")
-                    if [[ -d "$expanded" ]]; then
-                        status_icon="${GREEN}✓ exists${NC}"
-                    else
-                        status_icon="${YELLOW}✗ path missing${NC}"
-                    fi
-                fi
-                printf "    %-20s %-35s %b\n" "$target" "$display_source" "$status_icon"
-            done <<< "$mounts"
-        else
-            echo "  Extra mounts: (none)"
-        fi
+        # Extra mounts section
+        echo "  Extra mounts:"
+        while IFS=$'\t' read -r kind key effective status; do
+            [[ "$kind" != "mounts" ]] && continue
+            have_mounts=true
+            case "$status" in
+                exists)     display_path="$effective"; status_icon="${GREEN}✓ exists${NC}" ;;
+                missing)    display_path="$effective"; status_icon="${YELLOW}✗ path missing${NC}" ;;
+                unresolved) display_path="@local (not configured)"; status_icon="${RED}✗ needs path${NC}" ;;
+            esac
+            printf "    %-20s %-35s %b\n" "$key" "$display_path" "$status_icon"
+        done <<< "$effective_lines"
+        $have_mounts || echo "    (none)"
 
         return 0
     fi
@@ -426,120 +377,107 @@ EOF
         return 0
     fi
 
-    # Interactive mode: show status and prompt for unresolved
+    # Interactive mode: show status and prompt for unresolved.
+    # Single source of truth (same as --show): _project_effective_paths
+    # emits one tab-separated line per repo/mount with kind/key/path/status.
+    # This eliminates two copies of the display logic and fixes #B21 —
+    # the previous inline loop used `-d` (directory-only), so file-mounts
+    # like .docx were always "path missing" and did not set
+    # any_unresolved → the summary printed "All paths resolved".
     echo -e "${BOLD}Project: $name${NC}"
     echo ""
 
+    local effective_lines
+    effective_lines=$(_project_effective_paths "$project_dir")
+
     local any_unresolved=false
+    local -a unresolved_entries=()  # kind<TAB>key per entry
 
-    # Repos
-    local repos
-    repos=$(yml_get_repos "$project_yml" 2>/dev/null)
-    if [[ -n "$repos" ]]; then
-        echo "  Repos:"
-        while IFS=: read -r repo_path repo_name; do
-            [[ -z "$repo_name" ]] && continue
-
-            local needs_resolve=false
-            if [[ "$repo_path" == "@local" || "$repo_path" == *"{{REPO_"* ]]; then
-                # Check local-paths.yml
-                local lp
-                lp=$(_local_paths_get "$local_paths" "repos" "$repo_name")
-                if [[ -n "$lp" ]]; then
-                    local expanded; expanded=$(expand_path "$lp")
-                    if [[ -d "$expanded" ]]; then
-                        printf "    %-20s %-35s ${GREEN}✓ exists${NC}\n" "$repo_name" "$lp"
-                    else
-                        printf "    %-20s %-35s ${YELLOW}✗ path missing${NC}\n" "$repo_name" "$lp"
-                        needs_resolve=true
-                    fi
-                else
-                    printf "    %-20s %-35s ${RED}✗ needs path${NC}\n" "$repo_name" "@local (not configured)"
-                    needs_resolve=true
-                fi
-            else
-                local expanded; expanded=$(expand_path "$repo_path")
-                if [[ -d "$expanded" ]]; then
-                    printf "    %-20s %-35s ${GREEN}✓ exists${NC}\n" "$repo_name" "$repo_path"
-                else
-                    printf "    %-20s %-35s ${YELLOW}✗ path missing${NC}\n" "$repo_name" "$repo_path"
-                    needs_resolve=true
-                fi
-            fi
-
-            if $needs_resolve; then
+    # Repos section
+    local kind key effective status display_path status_icon
+    local have_repos=false
+    echo "  Repos:"
+    while IFS=$'\t' read -r kind key effective status; do
+        [[ "$kind" != "repos" ]] && continue
+        have_repos=true
+        case "$status" in
+            exists)
+                display_path="$effective"
+                status_icon="${GREEN}✓ exists${NC}"
+                ;;
+            missing)
+                display_path="$effective"
+                status_icon="${YELLOW}✗ path missing${NC}"
                 any_unresolved=true
-                local url
-                url=$(_get_repo_url "$project_yml" "$repo_name")
-                local resolved
-                resolved=$(_resolve_entry "$project_dir" "repos" "$repo_name" "$url")
-                local rc=$?
-                if [[ $rc -eq 0 && -n "$resolved" ]]; then
-                    _update_yml_path "$project_yml" "repos" "name" "$repo_name" "path" "$resolved"
-                elif [[ $rc -eq 2 ]]; then
-                    return 0
-                fi
-            fi
-        done <<< "$repos"
-    fi
+                unresolved_entries+=("repos"$'\t'"$key")
+                ;;
+            unresolved)
+                display_path="@local (not configured)"
+                status_icon="${RED}✗ needs path${NC}"
+                any_unresolved=true
+                unresolved_entries+=("repos"$'\t'"$key")
+                ;;
+        esac
+        printf "    %-20s %-35s %b\n" "$key" "$display_path" "$status_icon"
+    done <<< "$effective_lines"
+    $have_repos || echo "    (none)"
 
     echo ""
 
-    # Extra mounts
-    local mounts
-    mounts=$(yml_get_extra_mounts "$project_yml" 2>/dev/null)
-    if [[ -n "$mounts" ]]; then
-        echo "  Extra mounts:"
-        while IFS= read -r mount_line; do
-            [[ -z "$mount_line" ]] && continue
-            local source="${mount_line%%:*}"
-            local rest="${mount_line#*:}"
-            local target="${rest%%:*}"
-
-            if [[ "$source" == "@local" ]]; then
-                local lp
-                lp=$(_local_paths_get "$local_paths" "extra_mounts" "$target")
-                if [[ -n "$lp" ]]; then
-                    local expanded; expanded=$(expand_path "$lp")
-                    if [[ -d "$expanded" ]]; then
-                        printf "    %-20s %-35s ${GREEN}✓ exists${NC}\n" "$target" "$lp"
-                    else
-                        printf "    %-20s %-35s ${YELLOW}✗ path missing${NC}\n" "$target" "$lp"
-                        any_unresolved=true
-                        local resolved
-                        resolved=$(_resolve_entry "$project_dir" "extra_mounts" "$target" "")
-                        local rc=$?
-                        if [[ $rc -eq 0 && -n "$resolved" ]]; then
-                            _update_yml_path "$project_yml" "extra_mounts" "target" "$target" "source" "$resolved"
-                        elif [[ $rc -eq 2 ]]; then
-                            return 0
-                        fi
-                    fi
-                else
-                    printf "    %-20s %-35s ${RED}✗ needs path${NC}\n" "$target" "@local (not configured)"
-                    any_unresolved=true
-                    local resolved
-                    resolved=$(_resolve_entry "$project_dir" "extra_mounts" "$target" "")
-                    local rc=$?
-                    if [[ $rc -eq 0 && -n "$resolved" ]]; then
-                        _update_yml_path "$project_yml" "extra_mounts" "target" "$target" "source" "$resolved"
-                    elif [[ $rc -eq 2 ]]; then
-                        return 0
-                    fi
-                fi
-            else
-                local expanded; expanded=$(expand_path "$source")
-                if [[ -d "$expanded" ]]; then
-                    printf "    %-20s %-35s ${GREEN}✓ exists${NC}\n" "$target" "$source"
-                else
-                    printf "    %-20s %-35s ${YELLOW}✗ path missing${NC}\n" "$target" "$source"
-                fi
-            fi
-        done <<< "$mounts"
-    fi
+    # Extra mounts section
+    local have_mounts=false
+    echo "  Extra mounts:"
+    while IFS=$'\t' read -r kind key effective status; do
+        [[ "$kind" != "mounts" ]] && continue
+        have_mounts=true
+        case "$status" in
+            exists)
+                display_path="$effective"
+                status_icon="${GREEN}✓ exists${NC}"
+                ;;
+            missing)
+                display_path="$effective"
+                status_icon="${YELLOW}✗ path missing${NC}"
+                any_unresolved=true
+                unresolved_entries+=("extra_mounts"$'\t'"$key")
+                ;;
+            unresolved)
+                display_path="@local (not configured)"
+                status_icon="${RED}✗ needs path${NC}"
+                any_unresolved=true
+                unresolved_entries+=("extra_mounts"$'\t'"$key")
+                ;;
+        esac
+        printf "    %-20s %-35s %b\n" "$key" "$display_path" "$status_icon"
+    done <<< "$effective_lines"
+    $have_mounts || echo "    (none)"
 
     echo ""
+
     if ! $any_unresolved; then
         ok "All paths resolved."
+        return 0
     fi
+
+    # Prompt interactively for every unresolved entry.
+    local entry section path_field key_field url resolved rc
+    for entry in ${unresolved_entries[@]+"${unresolved_entries[@]}"}; do
+        IFS=$'\t' read -r section key <<< "$entry"
+        url=""
+        if [[ "$section" == "repos" ]]; then
+            path_field="path"
+            key_field="name"
+            url=$(_get_repo_url "$project_yml" "$key")
+        else
+            path_field="source"
+            key_field="target"
+        fi
+        rc=0
+        resolved=$(_resolve_entry "$project_dir" "$section" "$key" "$url") || rc=$?
+        if [[ $rc -eq 0 && -n "$resolved" ]]; then
+            _update_yml_path "$project_yml" "$section" "$key_field" "$key" "$path_field" "$resolved"
+        elif [[ $rc -eq 2 ]]; then
+            return 0
+        fi
+    done
 }

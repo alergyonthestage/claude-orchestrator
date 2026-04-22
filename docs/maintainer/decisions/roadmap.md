@@ -14,7 +14,7 @@
 | Status | Items | Section |
 |--------|-------|---------|
 | ✅ Completed | 31 sprints / features | [→ Completed](#completed) |
-| 🐛 Known Bugs | 3 open · 11 fixed | [→ Known Bugs](#known-bugs) |
+| 🐛 Known Bugs | 3 open · 18 fixed | [→ Known Bugs](#known-bugs) |
 | 🔜 Planned | Quick Wins (FI-4, #10), AI-merge, Sprint 6C → 12 | [→ Planned](#planned-sprints) |
 | 🔭 Exploratory | 7 ideas | [→ Long-term / Exploratory](#long-term--exploratory) |
 | ❌ Declined | 3 items | [→ Declined / Won't Do](#declined--wont-do) |
@@ -341,6 +341,244 @@ helper.
 
 **See also**: `lib/cmd-llms.sh:643`, `tests/test_llms.sh:68`,
 `test_resolve_name_from_domain_url` (passing, returns `shadcn-svelte`).
+
+---
+
+### #B21 `cco project resolve` interactive reports file mounts missing, prints "All paths resolved" anyway ✓ FIXED
+
+**Reported**: 2026-04-22 (field test). **Fixed**: 2026-04-22.
+
+**Symptom**: the user ran `cco project resolve <name>` with a working
+project.yml where an extra_mount pointed to a single file
+(`~/Desktop/…docx`). The command reported `✗ path missing` for the
+file even though it existed on disk, then printed `✓ All paths
+resolved.` at the end — two contradictions at once.
+
+**Root cause**: when #B18 migrated `cco project resolve --show` to
+the canonical `_project_effective_paths` reader (which calls
+`_path_exists`, file-or-dir), the interactive branch (L.380-495)
+was left with the legacy inline loop that still used `-d`
+(directory-only). Additionally, the literal-path "missing" branch
+in that loop did not set `any_unresolved=true`, so the final check
+would conclude "resolved" even when a path was missing. Two copies
+of the same display logic — the exact class #B10 / coding-conventions
+§"single source of truth" warns against.
+
+**Fix**: collapse the interactive mode onto
+`_project_effective_paths` (same reader used by `--show` and
+`_assert_resolved_paths`). The display loop is now single-source;
+every `missing` / `unresolved` entry sets the summary flag; file
+mounts are detected correctly via `_path_exists`.
+
+**See also**: `lib/cmd-project-query.sh:cmd_project_resolve`.
+
+---
+
+### #B20 Gitignored files still tracked from legacy commits (mktemp leftovers, .bak) ✓ FIXED
+
+**Reported**: 2026-04-22 (field test, after #B19). **Fixed**: 2026-04-22.
+
+**Symptom**: the user ran `cco vault diff` on a healthy vault and
+saw deleted-but-tracked ghost files surface:
+```
+Projects:
+   D projects/claude-orchestrator/project.yml.TIG8lP
+   D projects/marius/.claude/CLAUDE.md.bak
+```
+`project.yml.TIG8lP` was a `mktemp` tempfile leftover from an older
+cco version whose AWK rewrite crashed before the atomic `mv`, then
+got committed via a subsequent `git add -A`. `CLAUDE.md.bak` was an
+`*.bak` backup that the canonical `.gitignore` covers — but it had
+already been committed before that pattern shipped, and git does
+not retroactively ignore tracked files.
+
+**Fix**: three coordinated changes.
+1. `_VAULT_GITIGNORE` extended with `projects/*/project.yml.??????`
+   and `projects/*/.cco/local-paths.yml.??????` to catch future
+   mktemp leftovers (glob `??????` matches the 6-char suffix).
+2. `_untrack_stale_pre_save` generalized to
+   `_untrack_gitignored_files` — uses `git ls-files -i -c
+   --exclude-standard` to enumerate every tracked file that matches
+   the `.gitignore` (pre-save, `.bak`, `.new`, tempfiles, anything)
+   and `git rm --cached` them in one silent self-heal commit.
+3. Defensive `trap '…' RETURN` on the five `mktemp "${target}.XXXXXX"`
+   sites in `lib/local-paths.sh` so a failing AWK rewrite no longer
+   leaves an orphan tempfile in the working tree.
+
+**See also**: `lib/cmd-vault.sh:_untrack_gitignored_files`,
+`lib/local-paths.sh` (5 mktemp trap sites).
+
+---
+
+### #B19 Legacy vaults with real paths committed trap user in divergence loop ✓ FIXED
+
+**Reported**: 2026-04-22 (field test, after runtime invariants shipped).
+**Fixed**: 2026-04-22.
+
+**Symptom**: on a vault created before the `@local` feature, the
+profile branches (e.g. `cave`) had `project.yml` committed with real
+absolute paths (`~/Projects/.../cave-auth`). After shipping the
+runtime invariants that sanitize working → `@local` for comparison,
+every vault operation on those legacy branches produced a persistent
+divergence:
+
+- `cco vault diff` showed `M projects/*/project.yml` forever (working
+  post-sanitize `@local` ≠ committed real).
+- `cco vault save` replied "Nothing to commit — vault is up to date"
+  because the pre-extract `raw_status` was empty (working = committed
+  = real), so the save early-returned without normalizing.
+- `cco vault switch main` failed with "Failed to switch. Working tree
+  restored." because `git checkout` refused to overwrite project.yml
+  files that were "modified" post-extract.
+- The user experienced a feeling of the working-copy `project.yml`
+  being "replaced with @local" after every op, because the sanitize
+  fired and the restore struggled.
+
+**Root cause**: the `@local` contract requires `committed = @local,
+working = real`. Legacy vaults violated the committed side. No path in
+the code upgraded that committed state — migrations only touched the
+current branch's gitignore, not project.yml content.
+
+**Fix**: new runtime invariant `_normalize_committed_paths` in
+`lib/cmd-vault.sh` that, for every `projects/<X>/project.yml` tracked
+on HEAD:
+1. Reads the committed blob.
+2. If it contains any non-`@local` real path, extracts the real paths
+   into `.cco/local-paths.yml` (so the PC keeps the mapping).
+3. Sanitizes a temp copy of the committed blob (paths → `@local`).
+4. Stages the sanitized blob via `git hash-object -w` +
+   `git update-index --cacheinfo` — the WORKING TREE is never touched.
+5. Commits silently ("vault: normalize committed paths to @local
+   (legacy vault)").
+
+Wired into `_check_vault`, `cmd_vault_status`, and
+`cmd_vault_profile_switch` post-checkout (so the target branch gets
+normalized before `_resolve_all_local_paths` runs). Idempotent.
+
+**User impact**: no manual step required. At the next `cco vault <any>`
+on a legacy branch, a single normalization commit appears in the log
+and every subsequent op works against the `@local` contract.
+
+**See also**: `lib/cmd-vault.sh:_normalize_committed_paths`,
+[coding-conventions](../architecture/coding-conventions.md)
+§"Prefer runtime invariants to migrations for cross-branch state".
+
+---
+
+### #B18 `cco project resolve` says `✓ exists` while `cco start` says `Unresolved` ✓ FIXED
+
+**Reported**: 2026-04-22 (post-merge field testing). **Fixed**: 2026-04-22.
+
+**Symptom**: `cco project resolve <name> --show` listed every repo /
+mount as `✓ exists`, but `cco start <name>` on the same project failed
+with `Unresolved @local paths`. After the user manually commented out
+an `extra_mount` that pointed to a missing `.docx` file, `cco start`
+passed but the main repo was still not mounted (Docker created an
+empty bind). Same class as `#B10`: two commands answering the same
+"where is this path?" question via divergent code paths.
+
+**Root cause**: `cmd_project_resolve --show` composed status from
+`project.yml` + `.cco/local-paths.yml` with its own loop; `cco start`
+invoked `_resolve_entry` which checked `[[ -d "$expanded" ]]` (false
+for file mounts like `.docx`, so fell through to non-TTY die).
+
+**Fix**: new canonical reader `_project_effective_paths` in
+`lib/local-paths.sh` emits `<kind>\t<key>\t<effective_path>\t<status>`
+per entry. `cmd_project_resolve --show` delegates to it (previous
+~90-line duplicated loop removed). `cco start` calls
+`_assert_resolved_paths` (also built on the same reader) right after
+`_resolve_start_paths`. `-d` checks across local-paths.sh + query.sh
+migrated to `_path_exists` so file mounts are accepted.
+
+**See also**: `lib/local-paths.sh`, `lib/cmd-project-query.sh`,
+`lib/utils.sh:_path_exists`,
+[coding-conventions](../architecture/coding-conventions.md)
+§"Two sources of truth → single helper".
+
+---
+
+### #B17 `cco start` silently launches with unresolved `@local` repo ✓ FIXED
+
+**Reported**: 2026-04-22 (post-merge field testing). **Fixed**: 2026-04-22.
+
+**Symptom**: `cco start <project>` completed without error, but the
+repo was not mounted inside the container. `project.yml` still had
+`path: "@local"` and no entry in `local-paths.yml`; Docker silently
+created an empty bind-mount at the target path.
+
+**Root cause**: `_start_generate_compose` and
+`_proxy_collect_allowed_paths` / `_proxy_collect_pathmap` silently
+`continue`d on `@local` / missing paths. `_resolve_start_paths`
+correctly handled the interactive case, but once the user was back on
+an out-of-sync `project.yml` the compose generator just skipped.
+
+**Fix**: hard guard `_assert_resolved_paths` invoked at the end of
+`_start_resolve_paths` dies with a list of concrete problems if any
+entry is unresolved or missing. Silent `@local` continues removed
+from `_start_generate_compose`, `_proxy_collect_allowed_paths`, and
+`_proxy_collect_pathmap` (dead code once the guard is in place).
+
+**See also**: `lib/cmd-start.sh`, `lib/local-paths.sh:_assert_resolved_paths`.
+
+---
+
+### #B16 Profile switch leaves ghost directories of exclusive projects ✓ FIXED
+
+**Reported**: 2026-04-22 (post-merge field testing). **Fixed**: 2026-04-22.
+
+**Symptom**: after `cco vault switch`, `projects/<X>/` directories of
+the source profile's exclusive projects survived on the target branch
+— with `.cco/claude-state/`, `.cco/meta`, and `memory/` residue inside.
+Broke the "real isolation" guarantee of the profile design.
+
+**Root cause**: `git checkout` removes tracked files of departed
+projects, but each project's gitignored state keeps the parent
+`projects/<name>/` directory alive. The existing cleanup
+(`find projects -type d -empty -delete`) handles only truly-empty
+dirs, so any gitignored leftover defeats it.
+
+**Fix**: new runtime invariant `_clean_branch_ghost_projects` in
+`lib/cmd-vault.sh`. Any `projects/<X>/` with no tracked content on
+HEAD gets `rm -rf`; orphan shadow dirs under `.cco/profile-state/<br>/`
+whose branch no longer exists get pruned. Wired into
+`cmd_vault_profile_switch` as Step 8 (post-checkout, before the
+`@local` resolver).
+
+**See also**: `lib/cmd-vault.sh`, `docs/maintainer/configuration/vault/profile-isolation-design.md` §5.3.
+
+---
+
+### #B15 Pre-existing branch misses `.gitignore` patterns forever ✓ FIXED
+
+**Reported**: 2026-04-22 (post-merge field testing). **Fixed**: 2026-04-22.
+
+**Symptom**: on a vault whose `cave` profile branch had been created
+before migration 013, `.cco/project.yml.pre-save` files created at
+every `cco vault save` surfaced as `??` untracked entries that the
+"metadata" category then surfaced to the user. Saving committed them;
+the next save saw them as new `??` again. Infinite loop.
+
+**Root cause**: migrations that update `.gitignore` only touch the
+currently checked-out branch (011/012/013). Branches that pre-date
+the migration never receive the pattern and no code path healed them.
+`_untrack_stale_pre_save` (existing) untracked but did not restore
+missing patterns.
+
+**Fix**: new runtime invariant `_ensure_vault_gitignore` in
+`lib/cmd-vault.sh` walks the canonical `_VAULT_GITIGNORE` template and
+appends any missing pattern block (preserving header comments). The
+helper respects commented patterns (never fights an intentional user
+bypass — see `test_vault_save_aborts_on_cco_remotes`). Wired into
+`_check_vault` (single gate for save/diff/push/pull/switch/profile/
+...), `cmd_vault_status`, and `cmd_vault_profile_switch` post-checkout.
+
+Per-user impact: at next `cco vault <op>` on any stale branch, the
+pattern is auto-added and a silent commit is recorded. No migration
+015 was created (the invariant is strictly more complete — a migration
+would have to either cycle every branch proactively, which is
+invasive, or only cover `main`, which would not help).
+
+**See also**: `lib/cmd-vault.sh`, `docs/maintainer/configuration/vault/file-classification.md` §8.
 
 ---
 
