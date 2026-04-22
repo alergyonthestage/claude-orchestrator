@@ -2229,6 +2229,10 @@ EOF
     # Step 0: Extract local paths — sanitize project.yml to @local markers so
     # the working tree matches the committed version. Without this, resolved
     # machine-specific paths make git refuse the checkout (dirty tree).
+    # Trap set BEFORE extraction so restore runs if anything between here and
+    # the git checkout fails (e.g. stash helpers). Same pattern as
+    # _vault_has_real_changes (L.178) and cmd_vault_diff.
+    trap '_restore_local_paths "$vault_dir"' ERR
     _extract_local_paths "$vault_dir"
 
     # Step 1-2: Stash portable gitignored files for departing branch
@@ -2243,7 +2247,10 @@ EOF
         _stash_gitignored_files_main "$vault_dir"
     fi
 
-    # Step 4: git checkout target
+    # Step 4: git checkout target. From here the rollback is manual: after a
+    # successful checkout, project.yml belongs to the target branch and must
+    # not be "restored" from the source branch's pre-save backup.
+    trap - ERR
     if ! git -C "$vault_dir" checkout "$name" -q 2>/dev/null; then
         # Rollback: restore local paths + stashed files
         _restore_local_paths "$vault_dir"
