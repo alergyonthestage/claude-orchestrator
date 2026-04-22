@@ -4,6 +4,35 @@
 # Provides: cmd_vault()
 # Dependencies: colors.sh, utils.sh, manifest.sh
 # Globals: USER_CONFIG_DIR
+#
+# ── Error-handling invariants ─────────────────────────────────────────
+#
+# vault save / diff / switch temporarily rewrite project.yml files,
+# replacing resolved machine paths with @local markers before any git
+# operation. Callers MUST restore the original paths on every exit path,
+# including error paths.
+#
+# Pattern (see _vault_has_real_changes, cmd_vault_save, cmd_vault_diff,
+# cmd_vault_profile_switch):
+#
+#     trap '_restore_local_paths "$vault_dir"' ERR
+#     _extract_local_paths "$vault_dir"
+#     ...work...
+#     trap - ERR
+#     _restore_local_paths "$vault_dir"
+#
+# Two subtleties to preserve:
+#   1. bash `die()` calls `exit 1` — `exit` does NOT fire ERR. So every
+#      abort path between extract and restore MUST call
+#      `_restore_local_paths` explicitly BEFORE `die`, not rely on the
+#      trap. The trap catches failing commands (set -e); die is voluntary.
+#   2. After a successful `git checkout` in profile switch, the working
+#      tree belongs to the target branch. Restoring local paths from the
+#      source-branch pre-save backup at that point is wrong — clear the
+#      trap before the checkout and handle rollback manually.
+#
+# New vault code that extracts local paths must follow the same
+# protocol. See docs/maintainer/architecture/coding-conventions.md.
 
 # ── Vault .gitignore template ─────────────────────────────────────────
 
