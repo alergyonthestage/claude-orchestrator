@@ -658,7 +658,13 @@ EOF
     git -C "$vault_dir" add -A
     git -C "$vault_dir" commit -q -m "vault: $message"
     trap - ERR
-    _restore_local_paths "$vault_dir"
+
+    # Invariant: _restore_local_paths MUST run AFTER any shared sync.
+    # Restoring real paths here would make project.yml modified in the working
+    # tree (HEAD has @local, working copy has real paths). A subsequent
+    # `git checkout <profile>` during sync would then fail with "local changes
+    # would be overwritten", silently skipping the sync for that profile.
+    # Every exit path below calls _restore_local_paths before returning.
 
     local current_branch
     current_branch=$(git -C "$vault_dir" rev-parse --abbrev-ref HEAD 2>/dev/null)
@@ -670,13 +676,17 @@ EOF
 
     # Step 2-4: Shared sync (only if profiles exist)
     if ! _has_profiles; then
+        _restore_local_paths "$vault_dir"
         return 0
     fi
 
     # Detect shared file changes in the commit
     local shared_changes
     shared_changes=$(_detect_shared_changes "$vault_dir")
-    [[ -z "$shared_changes" ]] && return 0
+    if [[ -z "$shared_changes" ]]; then
+        _restore_local_paths "$vault_dir"
+        return 0
+    fi
 
     local shared_count
     shared_count=$(echo "$shared_changes" | grep -c . || true)
@@ -685,6 +695,7 @@ EOF
     if ! _check_no_active_sessions_quiet; then
         warn "Shared resource sync skipped — Docker sessions are active"
         info "Profiles will be synced on next 'cco vault save' after stopping sessions"
+        _restore_local_paths "$vault_dir"
         return 0
     fi
 
@@ -696,6 +707,10 @@ EOF
         # On main: sync to all profile branches
         _sync_shared_to_all_profiles "$vault_dir"
     fi
+
+    # Restore ONLY after all branch checkouts completed — sync helpers always
+    # return to the original branch before returning.
+    _restore_local_paths "$vault_dir"
 
     local profile_count
     profile_count=$(_list_profile_branches | grep -c . || true)

@@ -1086,6 +1086,88 @@ test_shared_sync_mergebase_prevents_false_conflicts_across_saves() {
     echo "$main_content" | grep -qF "Edit 2" || fail "Expected Edit 2 on main"
 }
 
+test_shared_sync_with_exclusive_project_having_real_paths() {
+    # Regression (post-v0.3.0): shared sync must succeed even when main has
+    # projects with real paths that don't exist on profile branches.
+    #
+    # Before the fix, `_restore_local_paths` ran between commit and sync.
+    # That left project.yml dirty in the working tree (HEAD has @local,
+    # working copy has real paths). `git checkout <profile>` then failed
+    # with "local changes would be overwritten" for any profile whose tree
+    # differs in projects/<name>/project.yml, silently skipping the sync.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault_for_profiles "$tmpdir"
+    local default_branch
+    default_branch=$(_vault_default_branch)
+
+    # Add a real path to the test project so _extract/_restore round-trip
+    # actually modifies project.yml (the base template has repos: []).
+    cat >> "$CCO_USER_CONFIG_DIR/projects/test-proj/project.yml" <<YAML
+repos:
+  - path: /tmp/fake-repo
+    name: fake-repo
+YAML
+    run_cco vault save "add real repo path" --yes
+
+    # Create two profiles that both exist without test-proj.
+    # After move to a throwaway profile, test-proj lives off main and is
+    # absent from the other two profile branches — the exact condition that
+    # triggers the `git checkout` refusal when the working tree is dirty.
+    run_cco vault profile create "albit"
+    run_cco vault switch "$default_branch"
+    run_cco vault profile create "cave"
+    run_cco vault switch "$default_branch"
+
+    # Give main an exclusive project that profiles don't have, to guarantee
+    # checkout would require removing a file that the working tree has
+    # modified (via the restored real path).
+    # (Both profiles were created BEFORE main modifications above, so they
+    # share the same tree for test-proj at creation time. We need a
+    # divergence: modify project.yml on main only.)
+    cat >> "$CCO_USER_CONFIG_DIR/projects/test-proj/project.yml" <<YAML
+
+extra_mounts:
+  - source: /tmp/fake-docs
+    target: /workspace/docs
+    readonly: true
+YAML
+    run_cco vault save "add extra_mount on main only" --yes
+
+    # Now modify a shared resource on main — the sync must propagate to
+    # both profiles even though project.yml on main diverges from the
+    # profile branches.
+    echo "# Shared propagation test" >> "$CCO_USER_CONFIG_DIR/global/.claude/CLAUDE.md"
+    run_cco vault save "shared change across divergent profiles" --yes
+
+    # Assert: sync did NOT warn about checkout failures.
+    if grep -q "Failed to checkout profile branch" <<< "$CCO_OUTPUT"; then
+        fail "vault save reported checkout failures during shared sync: $CCO_OUTPUT"
+    fi
+
+    # Assert: both profiles received the shared change.
+    local albit_content cave_content
+    albit_content=$(git -C "$CCO_USER_CONFIG_DIR" show "albit:global/.claude/CLAUDE.md" 2>/dev/null)
+    cave_content=$(git -C "$CCO_USER_CONFIG_DIR" show "cave:global/.claude/CLAUDE.md" 2>/dev/null)
+    echo "$albit_content" | grep -qF "Shared propagation test" || \
+        fail "Expected shared change on albit profile"
+    echo "$cave_content" | grep -qF "Shared propagation test" || \
+        fail "Expected shared change on cave profile"
+
+    # Assert: working copy project.yml has the real path restored at the
+    # end (post-sync restore ran correctly).
+    grep -qF "/tmp/fake-repo" "$CCO_USER_CONFIG_DIR/projects/test-proj/project.yml" || \
+        fail "Expected real path restored in working copy after save"
+
+    # Assert: committed project.yml on main has @local, not the real path.
+    local main_proj
+    main_proj=$(git -C "$CCO_USER_CONFIG_DIR" show "$default_branch:projects/test-proj/project.yml" 2>/dev/null)
+    echo "$main_proj" | grep -qF "@local" || \
+        fail "Expected @local marker in committed project.yml on main"
+    if echo "$main_proj" | grep -qF "/tmp/fake-repo"; then
+        fail "Expected real path NOT to be committed on main"
+    fi
+}
+
 # ══════════════════════════════════════════════════════════════════════
 # Profile List, Show, Rename
 # ══════════════════════════════════════════════════════════════════════

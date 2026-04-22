@@ -232,14 +232,25 @@ cmd_vault_save()
 │
 ├─ (existing) git add -A + git commit
 │
-├─ NEW: _restore_local_paths()
+├─ (existing) Shared sync (profiles)
 │   │
-│   └─ For each project with .cco/project.yml.pre-save:
-│       ├─ Restore project.yml from backup
-│       └─ Remove .cco/project.yml.pre-save
+│   └─ git checkout <profile_branch> + _sync_shared_from_main + checkout back
 │
-└─ (existing) Shared sync (profiles)
+└─ NEW: _restore_local_paths()
+    │
+    └─ For each project with .cco/project.yml.pre-save:
+        ├─ Restore project.yml from backup
+        └─ Remove .cco/project.yml.pre-save
 ```
+
+**Ordering invariant (post-v0.3.0)**: `_restore_local_paths` runs AFTER the
+shared sync, not between commit and sync. Restoring real paths before sync
+leaves the working copy dirty (HEAD has `@local`, working copy has real
+paths), which causes `git checkout <profile>` during sync to fail with
+"local changes would be overwritten" for any profile whose tree differs in
+`projects/*/project.yml` (typical for exclusive-project profiles). The
+sync then silently skips those profiles, leaving shared resources
+out-of-sync. See `cmd_vault_save` in `lib/cmd-vault.sh`.
 
 **url: injection during save**: vault save extracts `url:` from git remotes
 (same logic as `_reverse_template_repos`) and writes it into the committed
@@ -248,7 +259,8 @@ the user's project.yml is unchanged. The URL is portable metadata that helps
 other PCs clone the repo.
 
 **Safety mechanism**: The backup `.cco/project.yml.pre-save` is written BEFORE
-any modification. If the process crashes:
+any modification and is gitignored (`projects/*/.cco/project.yml.pre-save`),
+so it survives branch checkouts during the sync. If the process crashes:
 - Next `cco vault save` detects the backup and restores before proceeding
 - Next `cco start` detects `@local` markers and resolves from `local-paths.yml`
 - The user is never left with unusable paths
