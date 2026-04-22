@@ -236,6 +236,62 @@ _untrack_stale_pre_save() {
     fi
 }
 
+# Runtime invariant: remove ghost project directories that belong to a
+# different profile's branch. Fix finding #B16 (post-switch ghost files).
+#
+# Why: profile "real isolation" (profile-isolation-design.md §5.3)
+# requires that after a `vault switch`, the working tree contains only
+# the current branch's tracked files plus each project's gitignored
+# state (claude-state, local-paths.yml, meta). A `git checkout` removes
+# tracked files of departed projects but leaves gitignored content
+# behind — `.cco/claude-state/`, `.cco/meta`, `memory/` — which keeps
+# the parent `projects/<ghost>/` directory alive and visible. The old
+# `find projects -type d -empty -delete` only handles truly-empty dirs.
+#
+# Policy: a directory under `projects/<name>/` is a "ghost" when
+# nothing under `projects/<name>/` is tracked on the current HEAD. In
+# that case its entire subtree is gitignored-only leftover from some
+# prior branch — safe to rm -rf.
+#
+# Also prunes stale stash shadows in .cco/profile-state/<branch>/
+# when <branch> no longer exists as a git branch.
+#
+# Usage: _clean_branch_ghost_projects <vault_dir>
+_clean_branch_ghost_projects() {
+    local vault_dir="$1"
+    [[ ! -d "$vault_dir/projects" ]] && return 0
+    [[ ! -d "$vault_dir/.git" ]] && return 0
+
+    local proj_dir proj_name
+    for proj_dir in "$vault_dir"/projects/*/; do
+        [[ ! -d "$proj_dir" ]] && continue
+        proj_name=$(basename "$proj_dir")
+        # If nothing under this project is tracked on HEAD, everything
+        # left here is gitignored residue from another branch → ghost.
+        if [[ -z "$(git -C "$vault_dir" ls-tree --name-only HEAD -- "projects/$proj_name/" 2>/dev/null)" ]]; then
+            rm -rf "$proj_dir"
+        fi
+    done
+
+    # Prune orphan stash shadows. Each shadow lives at
+    # .cco/profile-state/<branch>/; if <branch> is not an existing
+    # local git branch name, it can never be restored and is garbage.
+    local shadow_root="$vault_dir/.cco/profile-state"
+    [[ ! -d "$shadow_root" ]] && return 0
+
+    local shadow_dir shadow_name
+    # Build a set of current branches for O(1) lookup (bash 3.2: use -v check)
+    local branches_list
+    branches_list=$(git -C "$vault_dir" for-each-ref --format='%(refname:short)' refs/heads 2>/dev/null)
+    for shadow_dir in "$shadow_root"/*/; do
+        [[ ! -d "$shadow_dir" ]] && continue
+        shadow_name=$(basename "$shadow_dir")
+        if ! grep -qxF -- "$shadow_name" <<< "$branches_list"; then
+            rm -rf "$shadow_dir"
+        fi
+    done
+}
+
 # Categorize a vault file path into one of the canonical buckets used by
 # vault save/diff summaries: packs | projects | global | templates | metadata.
 # Framework-tracking files (.cco/*, .gitignore, manifest.yml, .vault-profile)
@@ -2400,7 +2456,11 @@ EOF
     _ensure_vault_gitignore "$vault_dir"
     _untrack_stale_pre_save "$vault_dir"
 
-    # Step 8: Resolve @local markers from restored local-paths.yml
+    # Step 8: Remove ghost project directories (gitignored residue of
+    # projects that belonged to the source branch). Fixes #B16.
+    _clean_branch_ghost_projects "$vault_dir"
+
+    # Step 9: Resolve @local markers from restored local-paths.yml
     _resolve_all_local_paths "$vault_dir"
 
     # Log operation
