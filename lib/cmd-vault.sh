@@ -901,15 +901,13 @@ EOF
         echo "  Remotes: (none)"
     fi
 
-    # Uncommitted changes
-    local status_output
-    status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
-    if [[ -z "$status_output" ]]; then
-        echo "  Changes: none (clean)"
-    else
-        local count
-        count=$(echo "$status_output" | grep -c . || true)
+    # Uncommitted changes — use _vault_has_real_changes to exclude virtual
+    # local-path diffs and stale pre-save backups (consistent with vault diff).
+    local count
+    if count=$(_vault_has_real_changes "$vault_dir"); then
         echo "  Changes: $count uncommitted file(s)"
+    else
+        echo "  Changes: none (clean)"
     fi
 
     # Commits
@@ -2041,16 +2039,13 @@ EOF
         [[ -d "$vault_dir/templates" ]] && main_templates=$(find "$vault_dir/templates" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
         echo -e "  ${BOLD}Shared:${NC} global, $main_templates template(s), $main_packs pack(s)"
 
-        # Uncommitted changes
+        # Uncommitted changes — normalized count (consistent with vault diff)
         echo ""
-        local status_output
-        status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
-        if [[ -z "$status_output" ]]; then
-            echo "  Uncommitted changes: none"
-        else
-            local count
-            count=$(echo "$status_output" | grep -c . || true)
+        local count
+        if count=$(_vault_has_real_changes "$vault_dir"); then
             echo "  Uncommitted changes: $count file(s)"
+        else
+            echo "  Uncommitted changes: none"
         fi
         return 0
     fi
@@ -2154,16 +2149,13 @@ EOF
     local shared_packs=$((total_packs - exclusive_pack_count))
     echo "    - packs/ ($shared_packs shared pack(s))"
 
-    # Uncommitted changes
+    # Uncommitted changes — normalized count (consistent with vault diff)
     echo ""
-    local status_output
-    status_output=$(git -C "$vault_dir" status --porcelain 2>/dev/null)
-    if [[ -z "$status_output" ]]; then
-        echo "  Uncommitted changes: none"
-    else
-        local count
-        count=$(echo "$status_output" | grep -c . || true)
+    local count
+    if count=$(_vault_has_real_changes "$vault_dir"); then
         echo "  Uncommitted changes: $count file(s)"
+    else
+        echo "  Uncommitted changes: none"
     fi
 }
 
