@@ -558,3 +558,204 @@ test_vault_save_tracks_cco_base() {
         return 1
     fi
 }
+
+# ── Scenario 13: runtime invariants (#B15-B18) ───────────────────────
+
+# #B15 — a vault .gitignore missing a canonical pattern is self-healed
+# at the next vault operation.
+test_vault_ensure_gitignore_heals_missing_pattern() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault "$tmpdir"
+
+    # Simulate a pre-migration branch: strip the pre-save pattern from
+    # .gitignore and commit the mutation.
+    local gi="$CCO_USER_CONFIG_DIR/.gitignore"
+    sed -i '/projects\/\*\/\.cco\/project\.yml\.pre-save/d' "$gi"
+    git -C "$CCO_USER_CONFIG_DIR" add .gitignore
+    git -C "$CCO_USER_CONFIG_DIR" commit -q -m "test: simulate stale gitignore"
+
+    # Any vault op (here: status) should self-heal on its way in.
+    run_cco vault status >/dev/null
+
+    if ! grep -qxF 'projects/*/.cco/project.yml.pre-save' "$gi"; then
+        echo "ASSERTION FAILED: _ensure_vault_gitignore did not heal the missing pattern"
+        echo "  Current .gitignore:"
+        sed 's/^/    /' "$gi"
+        return 1
+    fi
+}
+
+# #B15 — a commented-out pattern is respected (user bypass, test is the
+# existing one at test_vault_save_aborts_on_cco_remotes). Here we also
+# assert that _ensure_vault_gitignore does NOT re-add it.
+test_vault_ensure_gitignore_respects_commented_pattern() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault "$tmpdir"
+
+    local gi="$CCO_USER_CONFIG_DIR/.gitignore"
+    sed -i 's|^\.cco/remotes$|# .cco/remotes|' "$gi"
+    git -C "$CCO_USER_CONFIG_DIR" add .gitignore
+    git -C "$CCO_USER_CONFIG_DIR" commit -q -m "test: user commented a pattern"
+
+    run_cco vault status >/dev/null
+
+    local occurrences
+    occurrences=$(grep -cE '^[#[:space:]]*\.cco/remotes$' "$gi" || true)
+    if [[ "$occurrences" -ne 1 ]]; then
+        echo "ASSERTION FAILED: self-heal should not duplicate a commented pattern"
+        echo "  Occurrences of .cco/remotes in .gitignore: $occurrences"
+        sed 's/^/    /' "$gi"
+        return 1
+    fi
+}
+
+# #B16 — _clean_branch_ghost_projects removes project directories that
+# contain only gitignored leftover (nothing tracked on HEAD). This is
+# the exact post-switch scenario: git checkout removed the departing
+# branch's tracked files, but gitignored content (claude-state, meta)
+# kept the parent dir visible.
+test_clean_branch_ghost_projects_removes_untracked_dirs() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault "$tmpdir"
+
+    # A legit project with tracked content — must NOT be removed.
+    local legit="$CCO_USER_CONFIG_DIR/projects/legitproj"
+    mkdir -p "$legit"
+    echo "name: legitproj" > "$legit/project.yml"
+    git -C "$CCO_USER_CONFIG_DIR" add "projects/legitproj/project.yml"
+    git -C "$CCO_USER_CONFIG_DIR" commit -q -m "test: add legitproj"
+    mkdir -p "$legit/.cco/claude-state"
+    echo "transcript" > "$legit/.cco/claude-state/session.jsonl"
+
+    # Simulate leftover of a project NOT tracked on HEAD — gitignored
+    # content only. The helper should wipe it.
+    local ghost="$CCO_USER_CONFIG_DIR/projects/ghostproj"
+    mkdir -p "$ghost/.cco/claude-state"
+    echo "transcript" > "$ghost/.cco/claude-state/session.jsonl"
+    echo "schema_version: 1" > "$ghost/.cco/meta"
+
+    # Call the helper directly (same API the switch flow uses).
+    ( export USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR"
+      source "$REPO_ROOT/lib/colors.sh"
+      source "$REPO_ROOT/lib/utils.sh"
+      source "$REPO_ROOT/lib/yaml.sh"
+      source "$REPO_ROOT/lib/cmd-vault.sh"
+      _clean_branch_ghost_projects "$CCO_USER_CONFIG_DIR" )
+
+    if [[ -d "$ghost" ]]; then
+        echo "ASSERTION FAILED: ghost project directory was not cleaned"
+        find "$ghost" | sed 's/^/    /'
+        return 1
+    fi
+    if [[ ! -d "$legit" ]]; then
+        echo "ASSERTION FAILED: legit (tracked) project directory was wrongly removed"
+        return 1
+    fi
+    if [[ ! -f "$legit/.cco/claude-state/session.jsonl" ]]; then
+        echo "ASSERTION FAILED: gitignored content of a tracked project was removed"
+        return 1
+    fi
+}
+
+# #B16b — _clean_branch_ghost_projects prunes orphan shadow dirs in
+# .cco/profile-state/<name>/ when <name> is not a local git branch.
+test_clean_branch_ghost_projects_prunes_orphan_shadows() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault "$tmpdir"
+
+    # Use whatever branch git initialized (main or master depending on config)
+    local default_branch
+    default_branch=$(git -C "$CCO_USER_CONFIG_DIR" rev-parse --abbrev-ref HEAD)
+    local live="$CCO_USER_CONFIG_DIR/.cco/profile-state/$default_branch"
+    mkdir -p "$live/projects/foo"
+    echo "x" > "$live/projects/foo/secrets.env"
+
+    local orphan="$CCO_USER_CONFIG_DIR/.cco/profile-state/deadbranch"
+    mkdir -p "$orphan/projects/bar"
+    echo "x" > "$orphan/projects/bar/.env"
+
+    ( export USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR"
+      source "$REPO_ROOT/lib/colors.sh"
+      source "$REPO_ROOT/lib/utils.sh"
+      source "$REPO_ROOT/lib/yaml.sh"
+      source "$REPO_ROOT/lib/cmd-vault.sh"
+      _clean_branch_ghost_projects "$CCO_USER_CONFIG_DIR" )
+
+    if [[ ! -d "$live" ]]; then
+        echo "ASSERTION FAILED: shadow for existing branch was wrongly pruned"
+        return 1
+    fi
+    if [[ -d "$orphan" ]]; then
+        echo "ASSERTION FAILED: orphan shadow (deadbranch) was not pruned"
+        return 1
+    fi
+}
+
+# #B17 — cco start must refuse to launch if any repo / mount remains
+# @local after resolution (no silent skip that would yield empty mounts).
+test_start_asserts_resolved_paths() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    # Create a project whose repo is @local with no local-paths.yml entry.
+    mkdir -p "$CCO_USER_CONFIG_DIR/projects/broken"
+    cat > "$CCO_USER_CONFIG_DIR/projects/broken/project.yml" <<'YAML'
+name: broken
+repos:
+  - path: "@local"
+    name: broken
+YAML
+
+    # Non-TTY start: must die, not silently succeed.
+    if run_cco start broken --dry-run 2>/dev/null; then
+        echo "ASSERTION FAILED: start should have failed on unresolved @local"
+        return 1
+    fi
+}
+
+# #B18 — _path_exists / _resolve_entry accept file mounts (not only dirs).
+test_resolve_entry_accepts_file_mount() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    # Create a project with a file extra_mount already mapped via
+    # local-paths.yml.
+    local proj="$CCO_USER_CONFIG_DIR/projects/filemount"
+    mkdir -p "$proj/.cco"
+    cat > "$proj/project.yml" <<'YAML'
+name: filemount
+repos:
+  - path: "@local"
+    name: filemount
+extra_mounts:
+  - source: "@local"
+    target: /workspace/doc.md
+    readonly: true
+YAML
+    local sample_file="$tmpdir/doc.md"
+    echo "sample" > "$sample_file"
+    local repo_dir="$tmpdir/repo"
+    mkdir -p "$repo_dir"
+    cat > "$proj/.cco/local-paths.yml" <<YAML
+repos:
+  filemount: "$repo_dir"
+extra_mounts:
+  /workspace/doc.md: "$sample_file"
+YAML
+
+    # _project_effective_paths must resolve both entries to "exists".
+    local out
+    out=$(source "$REPO_ROOT/lib/colors.sh"
+          source "$REPO_ROOT/lib/utils.sh"
+          source "$REPO_ROOT/lib/yaml.sh"
+          source "$REPO_ROOT/lib/local-paths.sh"
+          _project_effective_paths "$proj")
+    if ! grep -qE $'^mounts\t/workspace/doc\\.md\t'"$sample_file"$'\texists$' <<< "$out"; then
+        echo "ASSERTION FAILED: file mount was not reported as exists"
+        echo "  _project_effective_paths output:"
+        echo "$out" | sed 's/^/    /'
+        return 1
+    fi
+}
