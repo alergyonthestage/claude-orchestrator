@@ -867,3 +867,56 @@ YAML
         return 1
     fi
 }
+
+# #B20 — _untrack_gitignored_files removes tracked files that match
+# the canonical .gitignore patterns (bak, new, mktemp tempfiles, and
+# anything else gitignored that was committed before the pattern
+# existed).
+test_untrack_gitignored_files_cleans_all_tracked_ignored() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_vault "$tmpdir"
+
+    # Pre-existing committed files that MATCH the canonical gitignore.
+    local proj="$CCO_USER_CONFIG_DIR/projects/demo"
+    mkdir -p "$proj/.cco"
+    # Simulate mktemp leftover (6 char suffix) and .bak
+    echo "tempfile leftover" > "$proj/project.yml.AbC123"
+    echo "backup" > "$proj/.claude-backup.bak" 2>/dev/null || true
+    mkdir -p "$proj/.claude"
+    echo "bak" > "$proj/.claude/CLAUDE.md.bak"
+
+    # Force-add them bypassing gitignore (simulate legacy commit)
+    git -C "$CCO_USER_CONFIG_DIR" add --force \
+        "projects/demo/project.yml.AbC123" \
+        "projects/demo/.claude/CLAUDE.md.bak" 2>/dev/null
+    git -C "$CCO_USER_CONFIG_DIR" commit -q -m "legacy: ignored files were tracked"
+
+    # Pre-check: they are tracked
+    if ! git -C "$CCO_USER_CONFIG_DIR" ls-files --error-unmatch \
+         "projects/demo/project.yml.AbC123" >/dev/null 2>&1; then
+        echo "ASSERTION FAILED (setup): tempfile should have been committed"
+        return 1
+    fi
+
+    # Run the invariant (same entry point _check_vault calls)
+    ( export USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR"
+      source "$REPO_ROOT/lib/colors.sh"
+      source "$REPO_ROOT/lib/utils.sh"
+      source "$REPO_ROOT/lib/yaml.sh"
+      source "$REPO_ROOT/lib/local-paths.sh"
+      source "$REPO_ROOT/lib/cmd-vault.sh"
+      _ensure_vault_gitignore "$CCO_USER_CONFIG_DIR"
+      _untrack_gitignored_files "$CCO_USER_CONFIG_DIR" )
+
+    # Post-check: untracked
+    if git -C "$CCO_USER_CONFIG_DIR" ls-files --error-unmatch \
+         "projects/demo/project.yml.AbC123" >/dev/null 2>&1; then
+        echo "ASSERTION FAILED: mktemp tempfile was not untracked"
+        return 1
+    fi
+    if git -C "$CCO_USER_CONFIG_DIR" ls-files --error-unmatch \
+         "projects/demo/.claude/CLAUDE.md.bak" >/dev/null 2>&1; then
+        echo "ASSERTION FAILED: .bak leftover was not untracked"
+        return 1
+    fi
+}

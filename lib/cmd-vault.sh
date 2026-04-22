@@ -79,6 +79,14 @@ projects/*/.cco/project.yml.pre-save
 # ── Update artifacts — temporary review files ────────────────────
 *.bak
 *.new
+
+# ── Atomic-rewrite tempfiles — leftover of mktemp+mv pattern ──────
+# Used by _update_yml_path / _sanitize_project_paths / _write_local_paths
+# when an AWK rewrite fails before the atomic mv. Each creates a
+# sibling named <target>.XXXXXX; the glob ?????? matches the 6-char
+# suffix that mktemp appends.
+projects/*/project.yml.??????
+projects/*/.cco/local-paths.yml.??????
 '
 
 # Secret scan uses the canonical patterns in lib/secrets.sh
@@ -220,20 +228,40 @@ _ensure_vault_gitignore() {
     fi
 }
 
-# Lazy cleanup: untrack .cco/project.yml.pre-save files that were
-# accidentally committed before the gitignore pattern existed (migration 012
-# bug). Migration 014 fixes the current branch; this handles other branches
-# when the user first runs vault save/diff on them.
-_untrack_stale_pre_save() {
+# Runtime invariant: untrack every file that is currently tracked AND
+# matches the vault .gitignore. This generalizes the older
+# _untrack_stale_pre_save helper to cover the whole class of "file
+# should be gitignored but was committed before the pattern existed".
+#
+# Covers at least: `projects/*/.cco/project.yml.pre-save` (migration
+# 012/013 window), `*.bak` / `*.new` leftovers from past update ops,
+# `.cco/meta`, machine-specific files from legacy vaults, and any
+# mktemp tempfile (`*.XXXXXX`) that an older cco version may have
+# left behind after a failed YAML rewrite.
+#
+# Uses `git ls-files -i -c --exclude-standard`: lists files that are
+# tracked AND match the .gitignore. Silent commit if anything was
+# staged. Idempotent.
+#
+# Usage: _untrack_gitignored_files <vault_dir>
+_untrack_gitignored_files() {
     local vault_dir="$1"
-    local tracked
-    tracked=$(git -C "$vault_dir" ls-files -- 'projects/*/.cco/project.yml.pre-save' 2>/dev/null)
-    [[ -z "$tracked" ]] && return 0
+    local tracked_ignored
+    tracked_ignored=$(git -C "$vault_dir" ls-files -i -c --exclude-standard 2>/dev/null)
+    [[ -z "$tracked_ignored" ]] && return 0
 
-    echo "$tracked" | xargs git -C "$vault_dir" rm --cached -q -- 2>/dev/null || true
+    # Use NUL-safe xargs for paths with spaces/newlines
+    echo "$tracked_ignored" | xargs -I {} git -C "$vault_dir" rm --cached -q -- "{}" 2>/dev/null || true
     if ! git -C "$vault_dir" diff --cached --quiet 2>/dev/null; then
-        git -C "$vault_dir" commit -q -m "vault: untrack machine-specific pre-save backups"
+        git -C "$vault_dir" commit -q -m "vault: untrack gitignored files (self-heal)"
     fi
+}
+
+# Deprecated name kept as a thin alias so external references keep
+# working during the transition. New code must call the generalized
+# helper directly. Removed in a follow-up release.
+_untrack_stale_pre_save() {
+    _untrack_gitignored_files "$@"
 }
 
 # Runtime invariant: normalize legacy committed project.yml files that

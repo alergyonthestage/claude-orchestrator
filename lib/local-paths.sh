@@ -97,9 +97,14 @@ _local_paths_set() {
         ' "$file")
     fi
 
+    # Cleanup any tempfile left behind if the AWK rewrite fails before
+    # the atomic mv (so we never commit `foo.XXXXXX` ghosts — see #B20).
+    local tmpf="" tmpf2=""
+    # shellcheck disable=SC2064
+    trap 'rm -f ${tmpf:+"$tmpf"} ${tmpf2:+"$tmpf2"}' RETURN
+
     if [[ "$has_key" == "yes" ]]; then
         # Update existing entry
-        local tmpf
         tmpf=$(mktemp "${file}.XXXXXX")
         # Pass value via env to avoid AWK -v backslash expansion
         CCO_VALUE="$value" awk -v section="$section" -v key="$key" '
@@ -122,7 +127,6 @@ _local_paths_set() {
         ' "$file" > "$tmpf" && mv "$tmpf" "$file"
     elif [[ "$has_section" == "yes" ]]; then
         # Append entry to existing section (before next section or EOF)
-        local tmpf2
         tmpf2=$(mktemp "${file}.XXXXXX")
         CCO_VALUE="$value" awk -v section="$section" -v key="$key" '
             BEGIN { value = ENVIRON["CCO_VALUE"] }
@@ -251,7 +255,9 @@ _prompt_for_path() {
 # Usage: _sanitize_project_paths <project_yml>
 _sanitize_project_paths() {
     local yml_file="$1"
-    local tmpf
+    local tmpf=""
+    # shellcheck disable=SC2064
+    trap 'rm -f ${tmpf:+"$tmpf"}' RETURN
     tmpf=$(mktemp "${yml_file}.XXXXXX")
 
     # Capture original repo info for URL extraction
@@ -412,7 +418,9 @@ _resolve_project_paths() {
     local project_dir="$1"
     local project_yml="$project_dir/project.yml"
     local local_paths="$project_dir/.cco/local-paths.yml"
-    local tmpf
+    local tmpf=""
+    # shellcheck disable=SC2064
+    trap 'rm -f ${tmpf:+"$tmpf"}' RETURN
 
     [[ ! -f "$project_yml" ]] && return 0
     [[ ! -f "$local_paths" ]] && return 0
@@ -800,7 +808,9 @@ _resolve_all_local_paths() {
 # path_field: "path" or "source"
 _update_yml_path() {
     local yml_file="$1" section="$2" key_field="$3" key_value="$4" path_field="$5" new_path="$6"
-    local tmpf
+    local tmpf=""
+    # shellcheck disable=SC2064
+    trap 'rm -f ${tmpf:+"$tmpf"}' RETURN
     tmpf=$(mktemp "${yml_file}.XXXXXX")
 
     # Pass new_path via env to avoid AWK -v backslash expansion (W3)
