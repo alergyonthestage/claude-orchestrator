@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-04-22 (pre-merge hardening: #B13/#B14 fixed, DRY/SRP refactor).
+> Last updated: 2026-04-22 (#B22 vault sync checkout fix; #6c interim-sync + vault UI/UX planned).
 >
 > **Note**: Sprint entries are historical. Path references (e.g., `.cco-meta`, `.cco-source`) in older
 > sprints reflect the layout at the time of writing. See Sprint 8 and the `.cco/` consolidation
@@ -14,7 +14,7 @@
 | Status | Items | Section |
 |--------|-------|---------|
 | ✅ Completed | 31 sprints / features | [→ Completed](#completed) |
-| 🐛 Known Bugs | 3 open · 18 fixed | [→ Known Bugs](#known-bugs) |
+| 🐛 Known Bugs | 3 open · 19 fixed | [→ Known Bugs](#known-bugs) |
 | 🔜 Planned | Quick Wins (FI-4, #10), AI-merge, Sprint 6C → 12 | [→ Planned](#planned-sprints) |
 | 🔭 Exploratory | 7 ideas | [→ Long-term / Exploratory](#long-term--exploratory) |
 | ❌ Declined | 3 items | [→ Declined / Won't Do](#declined--wont-do) |
@@ -207,6 +207,104 @@ Should be implemented alongside or after #6 (same worktree infrastructure).
 **Current mitigation**: `_check_no_active_sessions_quiet()` in `cmd_vault_save()`
 skips sync with user-visible warning when Docker sessions are active.
 
+#### #6c Interim sync robustness (before worktrees)
+
+**Context**: until #6b lands, `vault save` silently skips shared sync when
+Docker sessions are active (session containers hold bind mounts on the vault
+dir → `git checkout <profile>` fails). The commit succeeds but the profile
+branches stay out-of-date until the user saves again with no sessions
+running. In multi-profile setups this can accumulate drift that the user
+only notices when switching profiles and finding stale shared resources.
+
+This is a design choice to discuss and decide before implementation.
+Two preventive strategies, alternatives or complementary:
+
+**Option A — Block `vault save` while sessions are active**
+
+Refuse `vault save` (not just the sync step) whenever any session is
+running, with an explicit error pointing to `cco stop`. Since `vault
+switch` already requires both a clean tree AND no active sessions, this
+guarantees that any save that completes also completes the sync, and
+therefore profiles are never out-of-date at switch time.
+
+- **Pros**: trivial to implement (reuse `_check_no_active_sessions`);
+  preserves the invariant "save always syncs"; no deferred state to
+  track; mirrors the existing `vault switch` constraint.
+- **Cons**: limits a legitimate use case — saving configuration changes
+  for a project that isn't the one currently in session (e.g. editing
+  `global/` rules while a session runs on another project). Forces the
+  user to stop a working session to commit unrelated config.
+- **Scope**: `lib/cmd-vault.sh` — upgrade `_check_no_active_sessions_quiet`
+  call to `_check_no_active_sessions` (hard-fail) before the commit itself.
+
+**Option B — Deferred sync recovery**
+
+Let `vault save` proceed as today (commit always; sync skipped if sessions
+active), but record a persistent marker (`.cco/pending-sync`) listing the
+commits that still need to propagate. Automatically replay the sync:
+- on the next `vault save` with no active sessions, before the new commit;
+- on `vault switch` if no active sessions (switch already blocks when
+  sessions run).
+
+- **Pros**: save is always allowed; drift is self-healing; handles the
+  worktree-active case generically (works for #6b's intermediate states
+  too).
+- **Cons**: more code and more moving parts (marker file, idempotent
+  replay, conflict handling on replay); user sees "catching up sync…"
+  on seemingly unrelated commands.
+- **Scope**: new helper `_replay_pending_sync`; marker I/O; hooks in
+  `cmd_vault_save` (before commit) and `cmd_vault_profile_switch`
+  (after clean-tree check).
+
+**Recommendation direction**: evaluate A first — it's smaller and the
+"can't save while a session runs" restriction may be acceptable in
+practice given that `vault switch` already has the same constraint. Fall
+back to B if the use case (saving config while an unrelated session
+runs) turns out to be frequent. Either is obsolete once #6 + #6b land.
+
+**Effort**: A — Low (single `_check` upgrade + tests). B — Low-Medium
+(marker format, replay helper, integration in two commands).
+
+---
+
+### Vault UI/UX enhancements
+
+**Priority**: 1 (quick wins). Small additive improvements to vault
+commands so users can see and interact with multi-profile state without
+switching branches. Each item is independent; all are backward-compatible.
+
+1. **`vault status` cross-profile summary**
+   Extend the output with an "Other profiles" section listing every
+   profile branch with: active-state marker, number of exclusive
+   projects/packs, and sync state vs. the default branch
+   (`up-to-date` / `N ahead, M behind`). Default view unchanged for
+   users without profiles.
+
+2. **`vault diff <file>` — per-file diff**
+   Accept an optional positional path (or `--file <path>`). Without
+   arguments, output stays as today (list of changed files grouped by
+   category). With a path, run `git diff HEAD -- <path>` so the user
+   sees actual line-level changes. Optional `--full` to dump all diffs
+   at once.
+
+3. **`vault switch` without argument**
+   When invoked with no target, print the list of profiles (including
+   `main`) with a `*` marker on the current one, plus exclusive
+   project/pack counts. Invoking with an argument keeps current behavior.
+
+4. **`project list --all` and `pack list --all`**
+   Opt-in flag to include resources from other profiles, grouped by
+   profile (`=== main ===`, `=== albit ===`, …) with a `[profile]` tag
+   per row. Default (no flag) still shows only the current profile.
+   Helpful to answer "where does this resource live?" without switching.
+
+**Effort**: Low (each item ~30–80 lines). No migrations, no schema
+changes, no breaking behavior. Can be shipped as separate commits or
+bundled.
+
+**Docs update required**: `docs/reference/cli.md`, command `--help`
+strings, `changelog.yml` entry per feature (additive).
+
 ---
 
 ### #9 Pack Inheritance / Composition
@@ -341,6 +439,64 @@ helper.
 
 **See also**: `lib/cmd-llms.sh:643`, `tests/test_llms.sh:68`,
 `test_resolve_name_from_domain_url` (passing, returns `shadcn-svelte`).
+
+---
+
+### #B22 `vault save` silently skips profile sync when project has real paths ✓ FIXED
+
+**Reported**: 2026-04-22 (field test, post v0.3.0). **Fixed**: 2026-04-22.
+
+**Symptom**: after `cco vault save` that touched shared resources
+(`global/`, `templates/`, `packs/`), the output reported
+`⚠ Failed to checkout profile branch '<name>' for sync` for every
+profile, even with no Docker sessions active. The success line
+`✓ Synced N shared file(s) to N profile(s)` printed regardless. Then
+`cco vault switch <profile>` showed the profile had NOT received the
+shared change.
+
+**Root cause**: `_restore_local_paths` ran between `git commit` and the
+shared sync step. Restore rewrites `projects/*/project.yml` in the
+working copy, replacing the committed `@local` markers with real host
+paths read from `.cco/local-paths.yml`. The working tree becomes
+modified vs. HEAD. `_sync_shared_to_all_profiles` then runs
+`git checkout <profile_branch>` to copy shared files onto each
+profile — but if that profile's tree differs in `projects/*/project.yml`
+(typical for exclusive-project profiles, or when main has projects the
+profile doesn't), git refuses the checkout with "Your local changes to
+the following files would be overwritten by checkout". The error was
+silenced by `2>/dev/null` at the call site; the code saw the non-zero
+exit, emitted a generic `Failed to checkout` warn, and continued — so
+the sync ran only against profiles whose tree matched exactly, and
+`synced_count` still reached the same number as the per-file copy
+calls that did succeed on main itself, producing a misleading success
+line.
+
+Vaults where all projects had `@local` (never pulled on this PC) or no
+path fields were unaffected — `_extract_local_paths` would exit early
+and `_restore_local_paths` would have nothing to do. That's why test
+suites that use the base template (`repos: []`) never caught this.
+
+**Fix**: move `_restore_local_paths` to AFTER the shared sync. The
+working tree matches HEAD during every checkout, so no "local changes"
+conflict can arise. The pre-save backup file
+(`.cco/project.yml.pre-save`, gitignored) survives the intermediate
+branch checkouts, so the final restore reads the correct pre-save
+content. Every post-commit exit path explicitly calls the restore
+before returning.
+
+Added a regression test
+(`test_shared_sync_with_exclusive_project_having_real_paths`) that
+seeds a project with a real `repos: path` and a main-only
+`extra_mounts` entry before creating two profiles, then saves a
+shared change and asserts (a) no "Failed to checkout" warnings, (b)
+the shared change lands on every profile, (c) the working copy
+retains the real path after save.
+
+Also updated the design doc (`local-path-resolution-design.md` §4.1)
+with the new ordering invariant.
+
+**See also**: `lib/cmd-vault.sh:656-717` (cmd_vault_save),
+`tests/test_vault_profiles.sh:1089`.
 
 ---
 
