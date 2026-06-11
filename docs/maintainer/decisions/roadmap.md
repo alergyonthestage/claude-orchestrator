@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-04-22 (#B22 vault sync checkout fix; #6c interim-sync + vault UI/UX planned).
+> Last updated: 2026-06-11 (#B23 bash 3.2 resolve-prompt fix; DECIDED Vault Simplification — single filesystem + profiles-as-tags; #6b/#6c superseded).
 >
 > **Note**: Sprint entries are historical. Path references (e.g., `.cco-meta`, `.cco-source`) in older
 > sprints reflect the layout at the time of writing. See Sprint 8 and the `.cco/` consolidation
@@ -14,7 +14,7 @@
 | Status | Items | Section |
 |--------|-------|---------|
 | ✅ Completed | 31 sprints / features | [→ Completed](#completed) |
-| 🐛 Known Bugs | 3 open · 19 fixed | [→ Known Bugs](#known-bugs) |
+| 🐛 Known Bugs | 3 open · 20 fixed | [→ Known Bugs](#known-bugs) |
 | 🔜 Planned | Quick Wins (FI-4, #10), AI-merge, Sprint 6C → 12 | [→ Planned](#planned-sprints) |
 | 🔭 Exploratory | 7 ideas | [→ Long-term / Exploratory](#long-term--exploratory) |
 | ❌ Declined | 3 items | [→ Declined / Won't Do](#declined--wont-do) |
@@ -69,6 +69,79 @@ graph LR
 ---
 
 ## Planned Sprints
+
+### Vault Simplification — Single Filesystem + Profiles-as-Tags (DECIDED 2026-06-11)
+
+**Status**: Decided — refactor pending on `feat/vault/single-filesystem`.
+**Priority**: 0 (next major work). **Supersedes**: branch-switch real-isolation
+model in `../../configuration/vault/profile-isolation-design.md` (v2).
+
+**Decision**: Stop switching the filesystem by `git checkout` of vault profile
+branches. All projects coexist on a single working tree at all times.
+"Profiles" are demoted to **tags** (display filter + grouping); they no longer
+gate which projects exist on disk or which can be started.
+
+**Why**:
+- **Recurring bug class**: #B13, #B16–#B23 all live in the same switch /
+  `@local`-sanitize / gitignored-shuffle machinery. Each interaction edge
+  between (a) checkout-swap, (b) path sanitization, (c) portable-file stashing
+  has produced a field bug. The fragility is structural, not incidental.
+- **Opaque failures**: `cco vault move` can no-op silently while `cco vault
+  diff` reports a clean tree, because the diff deliberately ignores `@local`
+  path differences. A diff that hides files makes failures undiagnosable.
+- **Hard UX limit**: only one profile's projects are on disk at a time, so you
+  cannot run projects from different profiles concurrently on the same machine
+  — a frequent, legitimate need (e.g. a Cave session alongside a personal one).
+- **bash 3.2 incident (#B23)**: latest regression in the same fragile path.
+
+**Target model**:
+- Single branch (`main`) holds all projects. Profile branches dropped as a
+  *selection* mechanism.
+- `project.yml` gains a `tags: []` field (or `profile:` retained as a tag alias).
+- `cco project list --tag <t>` / UI filter for grouping; `cco start <any>`
+  works regardless of tag, concurrently.
+- `vault switch` retired as a filesystem operation; `profile create/move`
+  semantics re-cast as tagging.
+
+```mermaid
+flowchart LR
+  subgraph OLD["Before — branch switch (fragile)"]
+    V[(central vault)] -->|checkout cave| FS1[disk: only cave projects]
+    V -->|checkout main| FS2[disk: only main projects]
+  end
+  subgraph NEW["After — single filesystem + tags"]
+    A[all projects on disk, always] --> T1[tag: cave]
+    A --> T2[tag: main]
+    A --> T3[tag: personal]
+    T1 -.filter / group only.-> UI[cco list / start]
+    T2 -.-> UI
+    T3 -.-> UI
+  end
+```
+
+**Superseded / mooted by this decision**:
+- **#6b** Worktree-Based Vault Profile Sync — obsolete (no branch-switch left
+  to make robust).
+- **#6c** Interim sync robustness — obsolete (no profile-branch drift to
+  recover).
+- **Vault UI/UX item #4** (`list --all` cross-profile) — absorbed into the tag
+  filter.
+
+**Open for later discussion (NOT in this step)** — decentralized config:
+Each project's cco config could live in its own project folder (IDE-friendly),
+versioned alongside the code, giving per-project git histories. For multi-repo
+sessions (e.g. `cave-auth` + `cave-auth-web` + `cave-infrastructure`) the open
+idea is **IDE-driven multi-repo config auto-sync**: associate the same cco
+project from each related repo, and the config travels into / stays in sync
+across all associated repos. Container agents can still commit to every mounted
+repo and mount extra resources; only *selected* mounts participate in the sync.
+Versioning ownership (which repo is canonical, or all of them) is an open
+question. To be designed only after the single-filesystem refactor lands.
+
+**Next**: Analysis → Design on `feat/vault/single-filesystem`, then an ADR in
+`../../configuration/vault/`.
+
+---
 
 ### Quick Wins — FI-4, #10
 
@@ -194,7 +267,10 @@ Opt-in git isolation for container sessions. When enabled, repos are mounted at 
 
 **Docs**: [analysis](../integration/worktree/analysis.md) | [design](../integration/worktree/design.md) | [ADR-10](../architecture/architecture.md)
 
-#### #6b Worktree-Based Vault Profile Sync
+#### #6b Worktree-Based Vault Profile Sync — ⚠️ SUPERSEDED (2026-06-11)
+
+> Obsolete under the "Single Filesystem + Profiles-as-Tags" decision: with no
+> profile-branch checkout, there is no cross-branch sync to make robust.
 
 `vault save` syncs shared resources to profile branches via `git checkout`, which
 fails when Docker sessions are active (mounted vault dirs block checkout). Currently
@@ -207,7 +283,10 @@ Should be implemented alongside or after #6 (same worktree infrastructure).
 **Current mitigation**: `_check_no_active_sessions_quiet()` in `cmd_vault_save()`
 skips sync with user-visible warning when Docker sessions are active.
 
-#### #6c Interim sync robustness (before worktrees)
+#### #6c Interim sync robustness (before worktrees) — ⚠️ SUPERSEDED (2026-06-11)
+
+> Obsolete under the "Single Filesystem + Profiles-as-Tags" decision: no
+> profile-branch drift to recover once switch-by-checkout is removed.
 
 **Context**: until #6b lands, `vault save` silently skips shared sync when
 Docker sessions are active (session containers hold bind mounts on the vault
@@ -439,6 +518,35 @@ helper.
 
 **See also**: `lib/cmd-llms.sh:643`, `tests/test_llms.sh:68`,
 `test_resolve_name_from_domain_url` (passing, returns `shadcn-svelte`).
+
+---
+
+### #B23 `cco project resolve` interactive prompt aborts on macOS bash 3.2 (`${label,,}`) ✓ FIXED
+
+**Reported**: 2026-06-11 (field use). **Fixed**: 2026-06-11.
+
+**Symptom**: `cco project resolve <name>` (and any interactive `@local`
+resolution, including during `cco start`) printed the path menu and then
+died with `lib/local-paths.sh: line 182: (s) Skip this ${label,,}: bad
+substitution`. The user could neither specify nor skip a path, so
+stale/missing mounts could not be resolved and affected projects stayed
+unstartable (`Unresolved @local paths`).
+
+**Root cause**: `${label,,}` (bash 4+ lowercase parameter expansion) in
+`_prompt_for_path()`. macOS ships bash 3.2, where this is a fatal "bad
+substitution" that aborts the function before `read`. A regression
+against the project's documented bash-3.2 compatibility (cf.
+`lib/yaml.sh:106`, which carries an explicit "no `${val,,}`" note).
+
+**Fix**: replace with the repo's existing bash-3.2 idiom
+`printf '%s' "$label" | tr '[:upper:]' '[:lower:]'`
+(`lib/local-paths.sh:182`).
+
+**Impact**: interactive path resolution (clone / specify / skip / exit)
+works again on macOS. This was the dominant cause of the 2026-06-11 field
+report (broken resolve + unskippable stale mounts blocking `cco start`).
+
+**See also**: `lib/local-paths.sh:_prompt_for_path`.
 
 ---
 
