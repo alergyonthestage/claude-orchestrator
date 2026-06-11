@@ -179,7 +179,8 @@ _prompt_for_path() {
         options="p/s/q"
     fi
     echo "  (p) Specify path" >&2
-    echo "  (s) Skip this ${label,,}" >&2
+    # bash 3.2 compatible lowercase — no ${label,,} (macOS default bash)
+    echo "  (s) Skip this $(printf '%s' "$label" | tr '[:upper:]' '[:lower:]')" >&2
     echo "  (q) Exit" >&2
     echo "" >&2
 
