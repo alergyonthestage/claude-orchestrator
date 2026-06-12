@@ -58,7 +58,10 @@ flowchart LR
 - G7 — Structural secret-leak safety.
 
 **Non-Goals**
-- N1 — A live/continuous config sync daemon (sync is explicit, on-demand).
+- N1 — A real-time file-watcher syncing on every keystroke. (Event-driven
+  triggers — git hooks, a lightweight daemon, or auto-on-`cco`-command — ARE in
+  scope as a design question; see §5/RD9, to prevent forgotten syncs and incoherent
+  `.cco` across a project's repos.)
 - N2 — The monolithic vault that stores projects + profiles + switches the
   filesystem. (Personal multi-PC sync *survives* in slim form — see §6, Domain A.)
 - N3 — Cross-team config governance beyond the existing Config Repo sharing.
@@ -81,7 +84,7 @@ flowchart LR
 | **AD8** | Multi-repo config **sync is explicit and on-demand**, dual-mode (root / rootless-policy), and **reuses the existing 3-way merge engine** with a committed `sync-base/` snapshot (see §5). |
 | **AD9** | Migration from the vault is a **one-time, interactive, backed-up** operation; the vault is removable afterward. |
 | **AD10** | **Two sync domains, kept strictly separate** (§6): (A) **personal multi-PC** sync of the user's own config; (B) **team/external sharing** via Config Repos (publish/install — audited unchanged). Within A, per-repo `.cco` is **user-managed** (explicit, versioned with code) while `~/.cco` is **cco-managed** (automatic, best-effort) to avoid manual central-repo handling. |
-| **AD11** | cco may later be distributed as an installable package (npm/npx) + image registry so users need not clone the source — **separate future workstream**, out of scope here (§9). |
+| **AD11** | cco may later be distributed as an installable package (npm/npx) + image registry so users need not clone the source — detailed design is a **separate next-sprint workstream** (§9). **This design stays packaging-aware**: file/service organization must not preclude that distribution. |
 
 ---
 
@@ -116,7 +119,9 @@ flowchart LR
 ```
 
 - **FR-S1** — All cco config under `.cco/`; committed content confined to
-  `.cco/config/`, `.cco/claude/`, and `.cco/tracked/`. The repo-root `.claude/`
+  the committed subtree(s) and `.cco/tracked/`. *(Open: `project.yml` at
+  `.cco/project.yml` for entry-point discoverability vs under a `.cco/config/`
+  subdir for grouping/secret-safety — RD10.)* The repo-root `.claude/`
   (repo-local Claude config) is the only committed Claude-related content outside
   `.cco/` (Claude Code native; repo-scoped, not synced — AD4).
 - **FR-S2** — `state/` and `secrets/` are **blanket-gitignored**; a secret cannot
@@ -155,8 +160,15 @@ flowchart LR
   `git show <branch>:…` without checkout.
 - **FR-Y7** — Idempotent: re-running with no new commits is a no-op (exit 0).
   `sync-base/` is updated only on success, never on skip/conflict.
-- **FR-Y8** — No pre-commit auto-sync by default (loop risk); an opt-in pre-push
-  `--check` is permitted.
+- **FR-Y8** — Auto-sync triggers must avoid loops; any hook/daemon trigger is
+  guarded against re-entrancy.
+- **FR-Y9 (trigger & coherence)** — The sync **trigger** for per-repo `.cco`
+  (manual `cco sync` vs git hooks pre-commit/pre-push vs a lightweight daemon vs
+  auto-on-`cco`-command) is an **open design decision** (RD9), chosen to **prevent
+  forgotten syncs and incoherent `.cco` across a project's repos**. The design must
+  specify **sync timing/sequencing** (sequence diagrams) so that per-repo `.cco`,
+  cross-PC git, and `~/.cco` managed sync stay coherent and avoid version-skew
+  (RD11).
 
 ```mermaid
 flowchart TD
@@ -266,6 +278,9 @@ commands, gitignore rules, and workflows. They must never be conflated.
 | **RD6** | Domain-A managed-sync conflict on `~/.cco` (PC1 & PC2 both edit) | Auto-merge via the merge engine; surface only true conflicts (`cco config sync`). No last-write-wins. |
 | **RD7** | Are `remotes` synced in Domain A? | No — tokens are per-machine secrets; re-add per PC. |
 | **RD8** | Managed auto-sync triggers/throttling (avoid redundant pulls within a short window) | Design a lightweight freshness check (skip pull if synced < N seconds ago); detail in `design.md`. |
+| **RD9** | Per-repo `.cco` sync **trigger** (coherence vs intrusiveness) | Evaluate manual vs git-hook (pre-commit/pre-push) vs daemon vs auto-on-`cco`-command. **Design-wave topic** — pros/cons + reco for approval. |
+| **RD10** | `.cco/project.yml` flat vs `.cco/config/project.yml` | Entry-point discoverability (flat) vs grouping/secret-safety (subdir). **Design-wave topic.** |
+| **RD11** | Cross-resource sync timing/coherence (repo `.cco` ↔ cross-PC git ↔ `~/.cco`) | Define sequence diagrams; avoid `~/.cco`/repo version-skew. **Design-wave topic.** |
 
 ---
 

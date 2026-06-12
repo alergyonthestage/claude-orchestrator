@@ -70,11 +70,18 @@ graph LR
 
 ## Planned Sprints
 
-### Vault Simplification — Single Filesystem + Profiles-as-Tags (DECIDED 2026-06-11)
+### Vault Simplification → Decentralized In-Repo Config (DECIDED 2026-06-11; evolved 2026-06-12)
 
-**Status**: Decided — refactor pending on `feat/vault/single-filesystem`.
+**Status**: Decided — requirements converged
+(`../configuration/decentralized-config/requirements.md`); design wave in progress
+on `feat/vault/decentralized-config`.
 **Priority**: 0 (next major work). **Supersedes**: branch-switch real-isolation
-model in `../../configuration/vault/profile-isolation-design.md` (v2).
+model in `../../configuration/vault/profile-isolation-design.md` (v2) **and** the
+central-vault project store.
+
+> Evolved 2026-06-12 from "single filesystem + tags" to a full **decentralized
+> in-repo config** model after design discussion. The motivation (below) is
+> unchanged; the target model is broader.
 
 **Decision**: Stop switching the filesystem by `git checkout` of vault profile
 branches. All projects coexist on a single working tree at all times.
@@ -94,28 +101,26 @@ gate which projects exist on disk or which can be started.
   — a frequent, legitimate need (e.g. a Cave session alongside a personal one).
 - **bash 3.2 incident (#B23)**: latest regression in the same fragile path.
 
-**Target model**:
-- Single branch (`main`) holds all projects. Profile branches dropped as a
-  *selection* mechanism.
-- `project.yml` gains a `tags: []` field (or `profile:` retained as a tag alias).
-- `cco project list --tag <t>` / UI filter for grouping; `cco start <any>`
-  works regardless of tag, concurrently.
-- `vault switch` retired as a filesystem operation; `profile create/move`
-  semantics re-cast as tagging.
+**Target model** (decentralized in-repo config):
+- Each project's cco config lives in `<repo>/.cco/`, versioned with the code; the
+  central vault is retired. Profiles → tags (the IDE is the project browser).
+- Multi-repo projects: same config across repos, kept identical by explicit sync
+  that **reuses the existing merge engine** (+ a `sync-base/` ancestor).
+- `@local` path contract retained; a `~/.cco` central store keeps a registry +
+  caches + global config, with **cco-managed** multi-PC auto-sync.
+- Two strictly-separated sync domains: personal multi-PC vs team/external sharing.
+- Full requirements + decisions: `../configuration/decentralized-config/requirements.md`.
 
 ```mermaid
 flowchart LR
-  subgraph OLD["Before — branch switch (fragile)"]
-    V[(central vault)] -->|checkout cave| FS1[disk: only cave projects]
-    V -->|checkout main| FS2[disk: only main projects]
+  subgraph OLD["Before — central vault + branch switch (fragile)"]
+    V[(central vault)] -->|checkout profile| FS[disk: only that profile]
   end
-  subgraph NEW["After — single filesystem + tags"]
-    A[all projects on disk, always] --> T1[tag: cave]
-    A --> T2[tag: main]
-    A --> T3[tag: personal]
-    T1 -.filter / group only.-> UI[cco list / start]
-    T2 -.-> UI
-    T3 -.-> UI
+  subgraph NEW["After — decentralized in-repo config"]
+    RA["repo A/.cco/"] --> CCO[cco]
+    RB["repo B/.cco/"] --> CCO
+    REG[("~/.cco: registry + caches<br/>cco-managed sync")] --> CCO
+    CCO --> S["session: repos + mounts + context"]
   end
 ```
 
@@ -127,19 +132,15 @@ flowchart LR
 - **Vault UI/UX item #4** (`list --all` cross-profile) — absorbed into the tag
   filter.
 
-**Open for later discussion (NOT in this step)** — decentralized config:
-Each project's cco config could live in its own project folder (IDE-friendly),
-versioned alongside the code, giving per-project git histories. For multi-repo
-sessions (e.g. `cave-auth` + `cave-auth-web` + `cave-infrastructure`) the open
-idea is **IDE-driven multi-repo config auto-sync**: associate the same cco
-project from each related repo, and the config travels into / stays in sync
-across all associated repos. Container agents can still commit to every mounted
-repo and mount extra resources; only *selected* mounts participate in the sync.
-Versioning ownership (which repo is canonical, or all of them) is an open
-question. To be designed only after the single-filesystem refactor lands.
+**Related future workstreams (separate, NOT in this refactor)**:
+- **cco packaging** — distribute as npm/npx + publish the image to a registry so
+  users need not clone the source (this refactor stays packaging-aware).
+- **Persistent `/workspace` root** — optional `.cco/workspace/` mount for
+  host-accessible session artifacts.
 
-**Next**: Analysis → Design on `feat/vault/single-filesystem`, then an ADR in
-`../../configuration/vault/`.
+**Next**: design wave (sync architecture & coherence, `.cco/` layout/UX, command
+surface, teardown + migration) → architectural choices approved by maintainer →
+`design.md` + ADR in `../configuration/decentralized-config/`.
 
 ---
 
