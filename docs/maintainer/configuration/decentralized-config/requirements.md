@@ -1,6 +1,6 @@
 # Decentralized In-Repo Config — Requirements
 
-**Status**: Draft — requirements converged, pending residual decisions (§8)
+**Status**: Draft — converged across three analyst waves; awaiting final sign-off (§8: RD1/RD2 decided, open design questions remain for `design.md`)
 **Date**: 2026-06-12
 **Supersedes**: `../vault/profile-isolation-design.md` (branch-switch real isolation)
 and the central-vault project store. Reuses `../vault/local-path-resolution-design.md`
@@ -59,9 +59,11 @@ flowchart LR
 
 **Non-Goals**
 - N1 — A live/continuous config sync daemon (sync is explicit, on-demand).
-- N2 — Preserving the "one `vault pull` syncs everything across PCs" workflow
-  (replaced by per-repo git remotes + `~/.cco` caches; see §6).
+- N2 — The monolithic vault that stores projects + profiles + switches the
+  filesystem. (Personal multi-PC sync *survives* in slim form — see §6, Domain A.)
 - N3 — Cross-team config governance beyond the existing Config Repo sharing.
+- N4 — Packaging cco as an installable npm/npx artifact + image registry — a
+  valuable **separate future workstream**, not part of this refactor (see §9).
 
 ---
 
@@ -72,12 +74,14 @@ flowchart LR
 | **AD1** | Config is **decentralized**: `<repo>/.cco/` holds a project's cco config, versioned with the code. The central vault is retired. |
 | **AD2** | **Profiles → tags.** No git-branch profiles, no `vault switch`. Tags are optional metadata for CLI grouping; the IDE is the project browser. |
 | **AD3** | `.cco/` is internally **split by subdirectory**: committed config vs gitignored state/secrets (see §4). |
-| **AD4** | Project-level `.claude/` **stays at the repo root** (Claude Code reads it natively from `/workspace/.claude`). It is committed and part of the synced set. `.cco/` holds cco-specific config only. |
+| **AD4** | **Dual `.claude` scope** (verified: `/workspace/.claude` IS loaded by Claude Code at WORKDIR `/workspace`, plus nested `<repo>/.claude` on-demand — `cmd-start.sh:454`, `Dockerfile:125`, code-claude llms). **Project/cross-repo** Claude config lives at `<repo>/.cco/claude/` → mounted `/workspace/.claude`, committed **and synced**. **Repo-local** Claude config stays at `<repo>/.claude/` → `/workspace/<repo>/.claude`, committed in that repo, **not synced**. No duplication of cross-repo resources into each repo is needed. |
 | **AD5** | The `@local` path contract is **retained and reused** (~13/18 `local-paths.sh` functions unchanged). Committed `project.yml` is identical across a project's repos (all `@local`); real paths live in a **per-repo, gitignored, never-synced** `local-paths.yml`. |
 | **AD6** | The host repo (the one holding `.cco/`) is the **implicit** primary at path `.`; only *sibling* repos appear in `repos[]`. |
 | **AD7** | A central **`~/.cco/`** keeps: a project **registry** (name → repo paths, tags, sync metadata), shared **caches** (packs, templates, llms), global config, and remotes. |
 | **AD8** | Multi-repo config **sync is explicit and on-demand**, dual-mode (root / rootless-policy), and **reuses the existing 3-way merge engine** with a committed `sync-base/` snapshot (see §5). |
 | **AD9** | Migration from the vault is a **one-time, interactive, backed-up** operation; the vault is removable afterward. |
+| **AD10** | **Two sync domains, kept strictly separate** (§6): (A) **personal multi-PC** sync of the user's own config; (B) **team/external sharing** via Config Repos (publish/install — audited unchanged). |
+| **AD11** | cco may later be distributed as an installable package (npm/npx) + image registry so users need not clone the source — **separate future workstream**, out of scope here (§9). |
 
 ---
 
@@ -85,12 +89,15 @@ flowchart LR
 
 ```
 <repo>/
-├── .claude/                 # COMMITTED, repo root — Claude Code native (rules, agents, skills, CLAUDE.md)
+├── .claude/                 # COMMITTED, repo root — REPO-LOCAL Claude config -> /workspace/<repo>/.claude (NOT synced)
 ├── .cco/
 │   ├── .gitignore           # blanket-ignores state/ and secrets/
 │   ├── config/              # COMMITTED — cco config the user edits
 │   │   ├── project.yml
 │   │   └── secrets.env.example
+│   ├── claude/              # COMMITTED + SYNCED — PROJECT/cross-repo Claude config -> /workspace/.claude
+│   │   ├── CLAUDE.md
+│   │   ├── rules/  agents/  skills/
 │   ├── tracked/             # COMMITTED — framework bookkeeping (not user-edited)
 │   │   ├── base/            #   update-system 3-way merge ancestor
 │   │   ├── sync-base/       #   cross-repo sync 3-way ancestor
@@ -109,8 +116,9 @@ flowchart LR
 ```
 
 - **FR-S1** — All cco config under `.cco/`; committed content confined to
-  `.cco/config/` and `.cco/tracked/`. The repo-root `.claude/` is the only
-  committed cco-related content outside `.cco/` (Claude Code constraint, AD4).
+  `.cco/config/`, `.cco/claude/`, and `.cco/tracked/`. The repo-root `.claude/`
+  (repo-local Claude config) is the only committed Claude-related content outside
+  `.cco/` (Claude Code native; repo-scoped, not synced — AD4).
 - **FR-S2** — `state/` and `secrets/` are **blanket-gitignored**; a secret cannot
   structurally sit inside a committed directory.
 - **FR-S3** — Defense-in-depth: explicit secret patterns (`secrets.env`, `*.env`,
@@ -126,10 +134,10 @@ flowchart LR
 
 ## 5. Sync Requirements (FR-Y)
 
-- **FR-Y1** — Sync operates **only** on the committed config set:
-  `.claude/**` (tracked subset) + `.cco/config/project.yml` +
-  `.cco/tracked/{source,source-url}`. Never secrets, `state/`, `local-paths.yml`,
-  or `memory/`.
+- **FR-Y1** — Sync operates **only** on the project's committed config set:
+  `.cco/config/project.yml` + `.cco/claude/**` (project/cross-repo Claude config)
+  + `.cco/tracked/{source,source-url}`. **Never** the repo-local root `.claude/`,
+  secrets, `state/`, `local-paths.yml`, or `memory/`.
 - **FR-Y2** — Sync **reuses the existing engine**: `_merge_file`,
   `_resolve_with_merge` (merge/edit/replace/keep/skip), `_interactive_sync`,
   `_file_hash`, `_save_base_version` — no new merge logic.
@@ -164,21 +172,38 @@ flowchart TD
 
 ---
 
-## 6. Central Store, Registry & Sharing (FR-C)
+## 6. Central Store, Registry & the Two Sync Domains (FR-C)
 
 - **FR-C1** — `~/.cco/` holds: `registry.yml` (project → repo paths, tags, sync
-  metadata), `packs/`, `templates/`, `llms/` caches, `global/` config, `remotes`.
+  metadata), `packs/` (authored) + `installed/` (from Config Repos) + `templates/`
+  + `llms/` caches, `global/` config, `remotes`.
 - **FR-C2** — `registry.yml` is the source for `cco list` and tag filtering
   (`cco list --tag <t>`); kept fresh on `init`/`start`/`create`/`delete`; stale
   entries (missing repos) flagged, prunable via a refresh.
-- **FR-C3** — Sharing is **unchanged in spirit**: packs/templates published to and
-  installed from external Config Repos; `~/.cco` is the local cache.
-- **FR-C4** — Cross-project reuse: a pack/template made in one repo can be exported
-  to the `~/.cco` cache and installed into another (copy `~/.cco` → `<repo>/.cco`),
-  via the existing pack export/install primitives.
-- **FR-C5** — Multi-PC config travel is per-repo: clone the repo (config comes with
-  it) + resolve `@local` siblings; shared packs via `~/.cco`/Config Repos; secrets
-  re-entered per machine (never in git).
+
+The two domains below are **strictly separated** (AD10): different stores,
+commands, gitignore rules, and workflows. They must never be conflated.
+
+**Domain A — personal multi-PC sync (same user).**
+- **FR-C3** — A project's `<repo>/.cco/` config travels with the **repo's own git
+  remote** (clone/pull brings it); nothing extra is needed. Machine-specific
+  `local-paths.yml` stays gitignored, per-machine.
+- **FR-C4** — Central `~/.cco/` resources (global `.claude/`, user-**authored**
+  packs/templates) sync via an **optional, slim, versioned `~/.cco`**:
+  `cco config init [url] | push | pull | status | diff` — plain git over `~/.cco`,
+  **no profiles, no branch-switch**. Gitignored (never synced): `remotes` (tokens),
+  `registry.yml` (per-machine paths), `installed/` + `llms/` caches,
+  `global/secrets.env`. Reuses the vault's gitignore-setup + clone helpers.
+
+**Domain B — team/external sharing.**
+- **FR-C5** — Sharing projects/packs/templates with **other users** stays on
+  external **Config Repos** via `publish` / `install` / `update` / `export` —
+  **audited as unchanged** (`cmd-project-publish.sh`, `cmd-project-install.sh`,
+  `cmd-pack.sh`, `cmd-remote.sh`, `remote.sh`). `~/.cco` is the local cache.
+- **FR-C6** — A and B are **orthogonal**: a user-authored pack has a *personal
+  working copy* (Domain A, synced) and, when shared, an independent *published
+  copy* in a Config Repo (Domain B). Secrets never travel via either git channel;
+  re-entered per machine.
 
 ---
 
@@ -200,14 +225,26 @@ flowchart TD
 
 ---
 
-## 8. Residual Decisions (need sign-off)
+## 8. Decisions & Open Questions
 
-| # | Decision | Recommendation |
-|---|----------|----------------|
-| **RD1** | `memory/` handling without the vault | **Gitignored per-machine** by default (personal session memory); opt-in to commit per-repo. |
-| **RD2** | Default sync mode for a new multi-repo project | `peer` + `confirm` (safest); `root` opt-in. |
-| **RD3** | `sync-base/` committed disk cost (a config snapshot per repo) | Accept (small, <~MB); document `cco clean` reset. |
-| **RD4** | `cco update` integration — should it offer sibling sync? | Defer to design.md; lean yes as a prompt, not automatic. |
+**Decided** (user sign-off, 2026-06-12):
+| # | Decision | Outcome |
+|---|----------|---------|
+| **RD1** | `memory/` handling without the vault | ✅ **Gitignored per-machine** (personal session memory); opt-in to commit per-repo. |
+| **RD2** | Default sync mode for a new multi-repo project | ✅ **`peer` + `confirm`** (safest); `root` opt-in. |
+| **D-claude** | `.claude` scope model | ✅ **Dual scope** confirmed (AD4); `/workspace/.claude` verified loaded. |
+| **D-domains** | personal sync vs team sharing | ✅ **Two separate domains** (AD10, §6). |
+| **D-pkg** | npm/npx packaging | ✅ **Separate future workstream** (AD11, §9). |
+| **D-ws** | persistent `/workspace` root | ✅ **Separate roadmap item** (§9), feasible, out of scope. |
+
+**Open — defer to `design.md`:**
+| # | Question | Lean |
+|---|----------|------|
+| **RD3** | `sync-base/` committed disk cost | Accept (small, <~MB); `cco clean` reset. |
+| **RD4** | `cco update` offers sibling sync? | Yes as a prompt, not automatic. |
+| **RD5** | `~/.cco` authored vs installed packs layout | Separate `~/.cco/packs/` (authored, synced) from `~/.cco/installed/` (from Config Repos, not synced) to keep Domain-A sync clean. |
+| **RD6** | Domain-A multi-PC conflict on `~/.cco` (PC1 & PC2 both edit) | Reuse the merge engine / plain git conflict resolution; no last-write-wins. |
+| **RD7** | Are `remotes` synced in Domain A? | No — tokens are per-machine secrets; re-add per PC. |
 
 ---
 
@@ -217,5 +254,17 @@ flowchart TD
   store; reuses `../vault/local-path-resolution-design.md`.
 - Roadmap: update the "Vault Simplification" entry from "single filesystem + tags"
   to **decentralized in-repo config**; mark vault profile/switch items removed.
-- Next artifacts: `design.md` (detailed design) and an ADR recording the decision
-  and its rationale/alternatives.
+
+**Separate roadmap items (NOT in this refactor's scope):**
+- **R-pkg** — Distribute cco as an installable package: npm/npx for the bash CLI
+  **plus** publishing the Docker image to a container registry (so users `docker
+  pull` instead of `cco build`). Enabled by decentralization (tool decoupled from
+  config). Two-part epic; design separately. (AD11, N4.)
+- **R-workspace** — Persistent `/workspace` root: today `/workspace` root is not a
+  mount (files there are ephemeral, documented + rule-warned). Optionally mount
+  `<proj-repo>/.cco/workspace/` (gitignored) → `/workspace` so root-level session
+  artifacts persist and are host-accessible. Verified feasible + Docker-socket-safe;
+  separate analysis/design.
+
+**Next artifacts:** `design.md` (detailed design) and an ADR recording the
+decision, rationale, and alternatives.
