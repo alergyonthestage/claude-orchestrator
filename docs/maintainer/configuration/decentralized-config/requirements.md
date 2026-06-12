@@ -269,18 +269,23 @@ commands, gitignore rules, and workflows. They must never be conflated.
 | **D-pkg** | npm/npx packaging | ✅ **Separate future workstream** (AD11, §9). |
 | **D-ws** | persistent `/workspace` root | ✅ **Separate roadmap item** (§9), feasible, out of scope. |
 
-**Open — defer to `design.md`:**
+**Decided in the design wave (2026-06-12 — see `design.md`):**
+| # | Question | Outcome |
+|---|----------|---------|
+| **RD9** | Per-repo `.cco` sync **trigger** | ✅ **auto-on-`cco`-command + opt-in hooks**; daemon = future evolution (`design.md` §5.3, §12). |
+| **RD10** | `.cco/project.yml` flat vs subdir | ✅ **Hybrid** — `project.yml` flat, rest grouped (`design.md` §2). |
+| **T3** | Multi-repo member config | ✅ **Explicit synced copies** (not symlink) (`design.md` §5.1). |
+| **RD11** | Cross-resource sync timing/coherence | ✅ Addressed via sequence diagrams + skew mitigations (`design.md` §5.4, §6.1). |
+
+**Open — deferred to implementation:**
 | # | Question | Lean |
 |---|----------|------|
 | **RD3** | `sync-base/` committed disk cost | Accept (small, <~MB); `cco clean` reset. |
 | **RD4** | `cco update` offers sibling sync? | Yes as a prompt, not automatic. |
-| **RD5** | `~/.cco` authored vs installed packs layout | Separate `~/.cco/packs/` (authored, synced) from `~/.cco/installed/` (from Config Repos, not synced) to keep Domain-A sync clean. |
-| **RD6** | Domain-A managed-sync conflict on `~/.cco` (PC1 & PC2 both edit) | Auto-merge via the merge engine; surface only true conflicts (`cco config sync`). No last-write-wins. |
+| **RD5** | `~/.cco` authored vs installed packs layout | `~/.cco/packs/` (authored, synced) vs `~/.cco/installed/` (Config Repos, not synced). |
+| **RD6** | Domain-A managed-sync conflict on `~/.cco` | Auto-merge; surface only true conflicts (`cco config sync`). |
 | **RD7** | Are `remotes` synced in Domain A? | No — tokens are per-machine secrets; re-add per PC. |
-| **RD8** | Managed auto-sync triggers/throttling (avoid redundant pulls within a short window) | Design a lightweight freshness check (skip pull if synced < N seconds ago); detail in `design.md`. |
-| **RD9** | Per-repo `.cco` sync **trigger** (coherence vs intrusiveness) | Evaluate manual vs git-hook (pre-commit/pre-push) vs daemon vs auto-on-`cco`-command. **Design-wave topic** — pros/cons + reco for approval. |
-| **RD10** | `.cco/project.yml` flat vs `.cco/config/project.yml` | Entry-point discoverability (flat) vs grouping/secret-safety (subdir). **Design-wave topic.** |
-| **RD11** | Cross-resource sync timing/coherence (repo `.cco` ↔ cross-PC git ↔ `~/.cco`) | Define sequence diagrams; avoid `~/.cco`/repo version-skew. **Design-wave topic.** |
+| **RD8** | Managed auto-sync throttling | Freshness check (skip pull if synced < ~120 s ago). |
 
 ---
 
