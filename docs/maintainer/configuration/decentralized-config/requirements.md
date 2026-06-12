@@ -80,7 +80,7 @@ flowchart LR
 | **AD7** | A central **`~/.cco/`** keeps: a project **registry** (name → repo paths, tags, sync metadata), shared **caches** (packs, templates, llms), global config, and remotes. |
 | **AD8** | Multi-repo config **sync is explicit and on-demand**, dual-mode (root / rootless-policy), and **reuses the existing 3-way merge engine** with a committed `sync-base/` snapshot (see §5). |
 | **AD9** | Migration from the vault is a **one-time, interactive, backed-up** operation; the vault is removable afterward. |
-| **AD10** | **Two sync domains, kept strictly separate** (§6): (A) **personal multi-PC** sync of the user's own config; (B) **team/external sharing** via Config Repos (publish/install — audited unchanged). |
+| **AD10** | **Two sync domains, kept strictly separate** (§6): (A) **personal multi-PC** sync of the user's own config; (B) **team/external sharing** via Config Repos (publish/install — audited unchanged). Within A, per-repo `.cco` is **user-managed** (explicit, versioned with code) while `~/.cco` is **cco-managed** (automatic, best-effort) to avoid manual central-repo handling. |
 | **AD11** | cco may later be distributed as an installable package (npm/npx) + image registry so users need not clone the source — **separate future workstream**, out of scope here (§9). |
 
 ---
@@ -189,11 +189,30 @@ commands, gitignore rules, and workflows. They must never be conflated.
   remote** (clone/pull brings it); nothing extra is needed. Machine-specific
   `local-paths.yml` stays gitignored, per-machine.
 - **FR-C4** — Central `~/.cco/` resources (global `.claude/`, user-**authored**
-  packs/templates) sync via an **optional, slim, versioned `~/.cco`**:
-  `cco config init [url] | push | pull | status | diff` — plain git over `~/.cco`,
-  **no profiles, no branch-switch**. Gitignored (never synced): `remotes` (tokens),
-  `registry.yml` (per-machine paths), `installed/` + `llms/` caches,
-  `global/secrets.env`. Reuses the vault's gitignore-setup + clone helpers.
+  packs/templates) sync via a **cco-managed `~/.cco` git store** — *not* a
+  user-managed repo. This is the key contrast with per-repo `.cco` (which the user
+  versions explicitly alongside code): `~/.cco` is managed automatically so the
+  decentralized model never re-introduces manual central-repo handling. It is plain
+  single-branch `git pull/push` — **none** of the old vault's switch/sanitize/shadow
+  machinery, so it does not reintroduce that fragility. Enabled opt-in by
+  registering a personal remote (`cco config init <url>`); without it, no sync
+  (single-PC). Reuses the vault's gitignore-setup + clone helpers.
+  - **FR-C4.1 (managed default, manual opt-in)** — Default mode is **managed**:
+    cco auto-pulls before reading and auto-commits+pushes after modifying `~/.cco`
+    resources, keeping the user's registered PCs eventually consistent. An opt-in
+    **manual** mode exposes `cco config push/pull/status/diff` and disables auto,
+    for users who want control or to avoid per-op network.
+  - **FR-C4.2 (best-effort, non-blocking)** — Auto-sync MUST **never block or fail**
+    a primary command. Offline / auth-failure / non-fast-forward → warn and continue
+    with local state, deferring the sync.
+  - **FR-C4.3 (conflict)** — Auto-pull fast-forwards or auto-merges (reuse the merge
+    engine); a true conflict is the **only** case surfaced to the user
+    (`cco config sync` to resolve). Rare for a single user across their own PCs.
+  - **FR-C4.4 (granularity)** — Sync triggers only on operations that **touch
+    `~/.cco`** (read-sync before `cco start`/install-from-cache; write-sync after
+    `cco pack create/update`, global-config edits) — not on every command.
+  - Gitignored (never synced): `remotes` (tokens), `registry.yml` (per-machine
+    paths), `installed/` + `llms/` caches, `global/secrets.env`.
 
 **Domain B — team/external sharing.**
 - **FR-C5** — Sharing projects/packs/templates with **other users** stays on
@@ -234,6 +253,7 @@ commands, gitignore rules, and workflows. They must never be conflated.
 | **RD2** | Default sync mode for a new multi-repo project | ✅ **`peer` + `confirm`** (safest); `root` opt-in. |
 | **D-claude** | `.claude` scope model | ✅ **Dual scope** confirmed (AD4); `/workspace/.claude` verified loaded. |
 | **D-domains** | personal sync vs team sharing | ✅ **Two separate domains** (AD10, §6). |
+| **D-managed** | `~/.cco` personal-sync model | ✅ **cco-managed auto-sync** (best-effort, non-blocking, conflict-surfacing); manual mode opt-in (FR-C4). |
 | **D-pkg** | npm/npx packaging | ✅ **Separate future workstream** (AD11, §9). |
 | **D-ws** | persistent `/workspace` root | ✅ **Separate roadmap item** (§9), feasible, out of scope. |
 
@@ -243,8 +263,9 @@ commands, gitignore rules, and workflows. They must never be conflated.
 | **RD3** | `sync-base/` committed disk cost | Accept (small, <~MB); `cco clean` reset. |
 | **RD4** | `cco update` offers sibling sync? | Yes as a prompt, not automatic. |
 | **RD5** | `~/.cco` authored vs installed packs layout | Separate `~/.cco/packs/` (authored, synced) from `~/.cco/installed/` (from Config Repos, not synced) to keep Domain-A sync clean. |
-| **RD6** | Domain-A multi-PC conflict on `~/.cco` (PC1 & PC2 both edit) | Reuse the merge engine / plain git conflict resolution; no last-write-wins. |
+| **RD6** | Domain-A managed-sync conflict on `~/.cco` (PC1 & PC2 both edit) | Auto-merge via the merge engine; surface only true conflicts (`cco config sync`). No last-write-wins. |
 | **RD7** | Are `remotes` synced in Domain A? | No — tokens are per-machine secrets; re-add per PC. |
+| **RD8** | Managed auto-sync triggers/throttling (avoid redundant pulls within a short window) | Design a lightweight freshness check (skip pull if synced < N seconds ago); detail in `design.md`. |
 
 ---
 
