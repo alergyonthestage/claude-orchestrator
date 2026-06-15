@@ -185,12 +185,30 @@ sync:
     - cave-infrastructure
   # root mode: root: <repo-name>
 ```
-- **peer + confirm** (default, RD2): detect divergence vs `sync-base`; resolve
-  interactively (merge / keep / update) via the existing engine.
-- **peer + last-commit-wins**: propagate the most-recently-committed `.cco`.
-- **root**: a designated repo is authoritative; root → members.
+- **peer + confirm** (default, RD2) — the **safe** mode. Compares each repo's
+  **working-tree** `.cco` (files on disk, so uncommitted edits ARE captured)
+  against its `sync-base` (3-way). If repos differ, shows a **per-file diff** and
+  asks what to keep: **merge / keep-mine / take-theirs / skip**. It **never
+  silently discards** an edit.
+- **peer + last-commit-wins** — convenience mode for the no-prompt workflow.
+  "Most recent" = **git commit time** of `.cco` (the only reliable cross-repo /
+  cross-machine timestamp; file mtime is unreliable — touched by clones, checkouts,
+  editors). It therefore operates on **committed** state and **refuses, or
+  warns-and-skips, any repo whose `.cco` working tree is dirty**, so uncommitted
+  edits are never overwritten.
+- **root** — a designated repo is authoritative; root → members (3-way merge per
+  member, same never-discard rule).
+
+**Safety invariant — no lost edits.** Sync NEVER discards a user edit without
+showing it and getting an explicit choice. confirm/root merge via `sync-base` and
+surface conflicts per file; last-commit-wins requires a clean `.cco` tree.
+`cco sync --check` (read-only) and `--dry-run` (preview, no writes) let the user
+inspect before anything is written. This is the deliberate guard against the old
+vault's silent/opaque failures — the user is always in the loop on divergence.
 
 ### 5.3 Trigger (RD9, approved): auto-on-`cco`-command + opt-in hooks
+The trigger is **user-configurable** (e.g. `sync.trigger: on-command | manual |
+hooks` in `project.yml` or a global setting); the default is `on-command`.
 - **Default — auto-on-`cco`-command**: any `cco` command that touches the project
   (notably `cco start`, `cco sync`) runs a best-effort sync first. Non-intrusive,
   no product-repo pollution, immune to the "hooks aren't cloned" problem.

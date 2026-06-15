@@ -57,6 +57,7 @@ Move to a **decentralized, in-repo configuration** model:
 | **Per-repo config only, no `~/.cco` central store** | Loses cross-project sharing (packs/templates/global) and multi-PC sync of those resources; they have no natural per-repo home. |
 | **`.cco/config/` subdir for `project.yml`** | Buries the entry-point file the user wants immediately visible; the hybrid layout keeps secret-safety without that cost. |
 | **Symlink member repos to a primary `.cco/`** | Breaks clone/push portability and couples repos on the filesystem; explicit copies are clone-safe. |
+| **`~/.cco` as a single source-of-truth hub for project config** (repos sync to a central per-machine copy, last-update-wins) | Reintroduces a central source of truth for project config (undoes decentralization, AD1/G6). Cross-PC it creates **two** sources — the repo's own git *and* the per-machine `~/.cco` hub — which diverge → worse version-skew (RD11). Couples Domains A and B (AD10) and degrades to silent last-write-wins. **peer mode already provides "no arbitrary root"** (symmetric, sync-base + merge) without any of these costs. Rejected 2026-06-15. |
 
 ## Consequences
 
