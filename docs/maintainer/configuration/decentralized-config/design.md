@@ -1,321 +1,245 @@
 # Decentralized In-Repo Config — Design
 
-**Status**: Draft — design approved at the architectural-choice level (RD9, RD10,
-T3 signed off 2026-06-12); ready to drive implementation phases.
-**Date**: 2026-06-12
-**Requirements**: `requirements.md` (AD1-AD11, FR-*, RD1-RD11)
-**Decision record**: `decisions/0001-decentralized-in-repo-config.md`
-**Source**: design-wave (sync architecture, `.cco/` layout, command surface,
-teardown+migration) + maintainer sign-off.
+**Status**: Approved for implementation (2026-06-15). Authoritative design; drives
+the phased implementation (§9).
+**Requirements**: `requirements.md` (AD1-AD12, FR-*).
+**Decision record**: `decisions/0001-decentralized-in-repo-config.md`.
+**Decision history**: `reviews/15-06-2026-sync-adversarial-review.md`.
 
-> `requirements.md` says **what** and **why**; this document says **how**. It is
-> the authoritative design for the refactor and drives the phased implementation
-> (§9). It supersedes `../vault/profile-isolation-design.md`.
+> `requirements.md` says **what** and **why**; this document says **how**. It is the
+> single source of truth for the refactor. Open questions are isolated in §13 and are
+> the subject of dedicated follow-up analyses; everything else is decided.
 
 ---
 
 ## 1. Architecture Overview
 
-Two stores, two sync domains, one merge engine.
+Three ideas, no custom diff/merge: **machine-agnostic committed config**, **plain
+git as the cross-PC transport**, and **sync = copy** within a project on one machine.
 
 ```mermaid
 flowchart TB
-  subgraph repoA["repo A (primary)"]
-    A1[".cco/project.yml"]
+  subgraph repoA["repo A"]
+    A1[".cco/project.yml (logical names, no paths)"]
     A2[".cco/claude/ (project scope)"]
     A3[".claude/ (repo scope)"]
+    A4[".cco/secrets.env (gitignored)"]
   end
   subgraph repoB["repo B (member)"]
-    B1[".cco/project.yml (synced copy)"]
+    B1[".cco/ (identical copy after cco sync)"]
   end
-  subgraph home["~/.cco (cco-managed)"]
-    R["registry.yml"]
+  subgraph sys["system dirs (per machine, hidden)"]
+    IDX["index: name->abs path, project->repos"]
+    ST["state/ per project (compose, claude-state, tmp)"]
+    CA["cache/ (llms, installed)"]
+  end
+  subgraph home["~/.cco (personal git store)"]
     P["packs/ (authored)"]
+    T["templates/"]
     G["global/.claude"]
   end
-  A1 -- "cco sync (explicit copy + 3-way merge)" --> B1
-  R --> CCO[cco]
-  G --> CCO
+  A1 -- "cco sync = copy (filesystem)" --> B1
+  IDX --> CCO[cco]
   repoA --> CCO
-  CCO --> SESS["docker session: /workspace/<repo> mounts + /workspace/.claude"]
-  home -. "Domain A: managed multi-PC git push/pull" .-> REMOTE[(personal remote)]
-  CCO -. "Domain B: publish/install" .-> CONFIGREPO[(Config Repos)]
+  home --> CCO
+  CCO --> SESS["docker session: /workspace/<repo> + /workspace/.claude"]
+  repoA -. "git push/pull (cross-PC transport)" .-> REM[(repo A remote)]
+  home -. "Domain A (managed, deferred)" .-> PREM[(personal remote)]
+  CCO -. "Domain B: publish/install" .-> CR[(Config Repos)]
 ```
 
-- **Per-repo `.cco/`** — a project's config, versioned with the code (user-managed git).
-- **`~/.cco/`** — central registry + caches + global config (cco-managed git, opt-in multi-PC sync).
-- **Sync** — explicit, reuses the existing 3-way merge engine; triggered auto-on-`cco`-command (+ opt-in hooks).
-- **Two domains** — personal multi-PC (A) vs team/external Config Repos (B), strictly separate.
+- **Committed `<repo>/.cco/`** — machine-agnostic config, versioned with the code.
+- **System dirs** — per-machine state, cache, and the name→path index; hidden, never committed.
+- **`~/.cco/`** — personal git store for global resources (Domain A; depth deferred).
+- **Sync** — a plain copy from a chosen source repo to targets (no merge engine).
+- **Cross-PC** — plain `git` on each repo's own remote.
 
 ---
 
-## 2. `.cco/` Layout (RD10 = Hybrid, approved)
+## 2. Layout
 
-`project.yml` and `secrets.env.example` sit **flat** at `.cco/` root (entry-point
-discoverability); everything else is grouped. `state/` and `secrets/` are
-blanket-gitignored so a secret can never sit in a committed directory.
-
+### 2.1 In-repo (committed) — machine-agnostic only
 ```
 <repo>/
-├── .claude/                  # COMMITTED, repo root — REPO-LOCAL Claude config
-│                             #   → /workspace/<repo>/.claude  (NOT synced)
+├── .claude/                  # COMMITTED — repo-local Claude config → /workspace/<repo>/.claude
 ├── .cco/
-│   ├── .gitignore            # blanket-ignores state/ + secrets/ (+ patterns)
-│   ├── project.yml           # COMMITTED — entry point (flat, discoverable)
-│   ├── secrets.env.example   # COMMITTED — secret skeleton (no real values)
-│   ├── claude/               # COMMITTED + SYNCED — PROJECT/cross-repo Claude config
-│   │   └── CLAUDE.md, rules/, agents/, skills/   → /workspace/.claude
-│   ├── tracked/              # COMMITTED — framework bookkeeping (not user-edited)
-│   │   ├── base/             #   update-system 3-way ancestor
-│   │   ├── sync-base/        #   cross-repo sync 3-way ancestor
-│   │   ├── source            #   "local" | "native:<tmpl>" | remote ref
-│   │   └── source-url
-│   ├── state/                # GITIGNORED (blanket) — machine/runtime
-│   │   ├── meta, docker-compose.yml, managed/, claude-state/, local-paths.yml, .tmp/
-│   └── secrets/              # GITIGNORED (blanket)
-│       └── secrets.env
-└── memory/                   # GITIGNORED per-machine (RD1); opt-in commit
+│   ├── .gitignore            # ignores secrets.env (+ secret patterns)
+│   ├── project.yml           # logical names only; identical across the project's repos
+│   ├── secrets.env.example   # COMMITTED skeleton
+│   ├── secrets.env           # GITIGNORED — real values, user-edited (only in-repo exception)
+│   └── claude/               # COMMITTED + (copy-)synced → /workspace/.claude
+│       └── CLAUDE.md, rules/, agents/, skills/
 ```
-
-**`.cco/.gitignore`** (committed; reuses `lib/secrets.sh` patterns as defense-in-depth):
-
+`.cco/.gitignore` (committed):
 ```gitignore
-# blanket: runtime + secrets (no committed content lives here)
-state/
-secrets/
-# defense-in-depth secret patterns
 secrets.env
 *.env
 *.key
 *.pem
 .credentials.json
-# tempfiles / artifacts
-*.bak
-*.new
-project.yml.??????
+!secrets.env.example
 ```
+A pre-commit/pre-push scan (reused from `lib/secrets.sh`) refuses real secrets and
+**exempts `*.example` from the content scan** (FR-S3).
 
-**Why airtight**: a file under `state/`/`secrets/` is structurally un-stageable
-(ignored by directory), and the filename patterns catch strays elsewhere. A
-pre-commit/pre-push scan (reused from `cmd_vault_save`) refuses anything matching.
+### 2.2 System dirs (per machine, hidden, never committed) — RD-paths
+```
+<state>/cco/projects/<id>/   # generated docker-compose.yml, claude-state/, .tmp/, meta
+<state>/cco/index            # name -> absolute path; project -> [repo names]; tags
+<cache>/cco/                 # llms/, installed/ (Config-Repo caches)
+```
+`<state>`/`<cache>` follow OS conventions (XDG on Linux; macOS equivalent) — exact
+paths finalized in RD-paths. Rationale: keep the committed `.cco/` small and clean,
+make state un-committable by construction, and protect it from accidental edits.
 
-**`.claude` dual scope** (AD4, verified): `.cco/claude/` → `/workspace/.claude`
-(project, synced); `<repo>/.claude/` → `/workspace/<repo>/.claude` (repo, not synced).
-
-**Path helpers** (`lib/paths.sh`): dual-read — prefer new subdir locations, fall
-back to today's flat `.cco/` for legacy installs (backward compatible during the
-deprecation window).
-
----
-
-## 3. `~/.cco/` Central Store & Registry
-
+### 2.3 `~/.cco/` — personal git store (Domain A; depth deferred to RD-home)
 ```
 ~/.cco/
-├── .git/             # cco-managed (Domain A); opt-in remote
-├── .gitignore        # ignores registry.yml, remotes, installed/, llms/, secrets
-├── registry.yml      # GITIGNORED — project → paths, tags, sync metadata (per-machine)
-├── packs/            # COMMITTED + SYNCED — user-authored packs
-├── templates/        # COMMITTED + SYNCED — user-authored templates
-├── installed/        # GITIGNORED — packs/templates from Config Repos (cache)
-├── llms/             # GITIGNORED — llms.txt cache
-├── global/
-│   ├── .claude/      # COMMITTED + SYNCED — global Claude config
-│   └── secrets.env   # GITIGNORED
-├── remotes           # GITIGNORED — Config Repo URLs + tokens (per-machine)
-└── backups/          # GITIGNORED — vault migration archives
+├── .git/                # personal store, opt-in remote
+├── .gitignore           # allowlist discipline: only packs/ templates/ global/.claude committed
+├── packs/               # authored packs
+├── templates/           # authored templates
+├── global/.claude/      # global Claude config
+└── backups/             # vault migration archives
 ```
 
-**`registry.yml`** (per-machine; real paths differ per PC, so it is gitignored —
-NOT synced):
+### 2.4 `project.yml` (machine-agnostic, symmetric)
+```yaml
+name: cave
+tags: [cave]
+repos:                   # ALL members by logical name; no paths; identical in every repo
+  - cave-auth
+  - cave-auth-web
+  - cave-infrastructure
+extra_mounts:            # auxiliary mounts by logical name; default readonly
+  - name: shared-assets
+    readonly: true
+entry: cave-auth         # OPTIONAL tie-breaker for `cco start cave` (name-based); not a privilege
+packs: [...]             # references only; packs live in ~/.cco, not in the repo
+```
+The host repo is **not** written in the file — it is the invoking repo at runtime
+(AD6). Absolute paths for every `repos[]`/`extra_mounts[]` name come from the
+machine-local index (§3).
 
+---
+
+## 3. Machine-Agnostic Config & the Local Path Index
+
+The single source of machine-specific truth is the **index** (`<state>/cco/index`),
+never committed, never synced:
 ```yaml
 version: 1
-projects:
-  cave-auth:
-    tags: [cave]
-    repos:
-      - { name: cave-auth, path: ~/dev/cave-auth, role: primary }
-      - { name: cave-auth-web, path: ~/dev/cave-auth-web }
-    sync: { mode: peer, policy: confirm }
-    last_start: 2026-06-12T10:30:00Z
+paths:                       # logical name -> absolute path (repos AND extra mounts)
+  cave-auth:      /Users/me/dev/cave-auth
+  cave-auth-web:  /Users/me/dev/cave-auth-web
+  shared-assets:  /Users/me/assets
+projects:                    # subsumes the old registry
+  cave: { repos: [cave-auth, cave-auth-web, cave-infrastructure], tags: [cave] }
 ```
-
-- Freshness: updated on `init`/`start`/`create`/`delete`; stale entries (missing
-  repos) flagged on `cco list`, prunable via `cco registry refresh`.
-- `cco list [--tag <t>]` filters in memory — profiles are gone (AD2).
+- **Uniqueness invariant (AD5)**: a logical name maps to exactly one absolute path
+  per machine. `cco init`/`cco join` refuse a name already bound to a different path.
+- **Absolute paths only**; CLI commands accept paths relative to the cwd and resolve
+  to absolute before storing.
+- **Maintenance CLI**: `cco resolve [project]` (interactive resolve/repair),
+  `cco path set <name> <path>` / `cco path list` (move dirs, fix divergence,
+  external installs). Manual edit allowed but discouraged.
+- **Bootstrap / fresh machine**: `cco index refresh --scan <dir>` rebuilds the index
+  by scanning for `.cco/project.yml`; first `cco start` resolves any missing name via
+  prompt/clone. So a fresh clone is not stranded by an empty index (closes the old
+  registry-bootstrap gap).
+- **`@local`** resolution logic is reused; it now reads the index instead of a
+  per-repo `local-paths.yml`. Because no real path is ever written into `project.yml`,
+  there is nothing to sanitize and `git diff` is always truthful (AD3/G8).
 
 ---
 
-## 4. `@local` Path Resolution (reused)
+## 4. Sync = Copy
 
-Retained from `../vault/local-path-resolution-design.md`; ~13/18 `local-paths.sh`
-functions unchanged.
+### 4.1 Model
+`cco sync` copies a **source** repo's committed `.cco/` set into **target** repos on
+the same machine (filesystem copy). Synced set: `project.yml` + `claude/**`
+(+ `secrets.env.example`). Never: `secrets.env`, repo-root `.claude/`, system dirs.
 
-- Committed `project.yml` uses `@local` for sibling repos + extra mounts; the
-  **host repo is implicit `.`** (AD6) — only siblings appear in `repos[]`.
-- Real paths live in `.cco/state/local-paths.yml` (gitignored, **per-repo,
-  per-machine, never synced**) → committed `project.yml` is identical across a
-  project's repos; only the local map differs per machine. Clean and skew-free.
-- **Bootstrap (fresh machine)**: clone repo A → `cco start` resolves each `@local`
-  sibling via prompt/clone-from-`url:` → writes `local-paths.yml`. No vault needed.
-- Optional `path_root` in `local-paths.yml` lets relative sibling paths rebase on
-  a new machine (low-priority enhancement).
+No merge engine, no `sync-base`, no commit-time, no peer/root modes, no
+confirm/last-commit-wins policies. Divergence is allowed and visible; the user picks
+the source. (This is the deliberate replacement for the old vault's opaque
+merge/diff failures — the review's C1/C2/C3 and H1/H3/H4/H5/H6 dissolve because there
+is no reconciliation algorithm, only a copy.)
 
----
+### 4.2 Command surface (positional = target, `--from` = source; default source = cwd)
+| Command | Source | Targets |
+|---------|--------|---------|
+| `cco sync` | current repo | all repos in `project.yml` |
+| `cco sync <repo>` | current repo | only `<repo>` |
+| `cco sync --from <repo>` | `<repo>` | all repos |
+| `cco sync <repoA> --from <repoB>` | `<repoB>` | only `<repoA>` |
 
-## 5. Multi-Repo Config Sync
+Flags: `--dry-run` (preview), `--auto-approve` (skip the confirm), `--check`
+(exit-code only, for the user's own CI/hooks).
 
-### 5.1 Model
-A project's config exists as **explicit copies** in each member repo's `.cco/`
-(T3, approved — clone-safe, branch-independent), kept identical by `cco sync`. The
-**synced set** is: `.cco/project.yml` + `.cco/claude/**` + `.cco/tracked/{source,source-url}`.
-**Never**: root `.claude/`, `state/`, `secrets/`, `local-paths.yml`, `memory/`.
-
-A committed **`.cco/tracked/sync-base/`** snapshot is the 3-way ancestor (analogous
-to `base/`), updated only on successful sync.
-
-### 5.2 Dual mode (`project.yml`)
-```yaml
-sync:
-  mode: peer            # peer | root
-  policy: confirm       # confirm | last-commit-wins   (peer only)
-  members:              # or `peers:` — sibling repo names (resolved via registry+local-paths)
-    - cave-auth-web
-    - cave-infrastructure
-  # root mode: root: <repo-name>
-```
-- **peer + confirm** (default, RD2) — the **safe** mode. Compares each repo's
-  **working-tree** `.cco` (files on disk, so uncommitted edits ARE captured)
-  against its `sync-base` (3-way). If repos differ, shows a **per-file diff** and
-  asks what to keep: **merge / keep-mine / take-theirs / skip**. It **never
-  silently discards** an edit.
-- **peer + last-commit-wins** — convenience mode for the no-prompt workflow.
-  "Most recent" = **git commit time** of `.cco` (the only reliable cross-repo /
-  cross-machine timestamp; file mtime is unreliable — touched by clones, checkouts,
-  editors). It therefore operates on **committed** state and **refuses, or
-  warns-and-skips, any repo whose `.cco` working tree is dirty**, so uncommitted
-  edits are never overwritten.
-- **root** — a designated repo is authoritative; root → members (3-way merge per
-  member, same never-discard rule).
-
-**Safety invariant — no lost edits.** Sync NEVER discards a user edit without
-showing it and getting an explicit choice. confirm/root merge via `sync-base` and
-surface conflicts per file; last-commit-wins requires a clean `.cco` tree.
-`cco sync --check` (read-only) and `--dry-run` (preview, no writes) let the user
-inspect before anything is written. This is the deliberate guard against the old
-vault's silent/opaque failures — the user is always in the loop on divergence.
-
-### 5.3 Trigger (RD9, approved): auto-on-`cco`-command + opt-in hooks
-The trigger is **user-configurable** (e.g. `sync.trigger: on-command | manual |
-hooks` in `project.yml` or a global setting); the default is `on-command`.
-- **Default — auto-on-`cco`-command**: any `cco` command that touches the project
-  (notably `cco start`, `cco sync`) runs a best-effort sync first. Non-intrusive,
-  no product-repo pollution, immune to the "hooks aren't cloned" problem.
-  Coherence is guaranteed at the point that matters — when a session reads config.
-- **Opt-in hooks**: `cco sync --install-hooks` installs `pre-commit`/`pre-push`
-  per repo (re-entrancy-guarded via `CCO_SYNCING`; escape `SKIP_CCO_HOOKS=1`;
-  pre-commit may block, pre-push warns) for users who want commit-time enforcement.
-  Documented caveat: `.git/hooks` is not cloned — `cco init` re-installs on a new
-  machine.
-- **`cco sync --check`** (exit-code only) is exposed so users can wire it into
-  their own CI/hooks.
-- **Future evolution (not now)**: a lightweight background daemon — see §12.
-
-### 5.4 Coherence & timing (RD11)
+### 4.3 Behavior
+1. Resolve source and targets (names → paths via the index).
+2. Compute a **truthful diff** (plain diff; machine-agnostic content) source↔each target.
+3. If no differences → no-op (exit 0).
+4. Otherwise show the diff and **ask for confirmation** (unless `--auto-approve`).
+5. On confirm, copy the source set into each target. A target without `.cco/`
+   (code-only member, Case A) simply receives a copy.
+6. Targets that are non-git or on any branch are irrelevant — sync is a filesystem
+   copy, not a git operation. The user commits each repo with their normal git flow
+   (`git log -- .cco/` isolates config history). `cco sync` prints a reminder of
+   which repos changed.
 
 ```mermaid
 sequenceDiagram
-  participant Dev as Dev @ PC1
-  participant Repos as repo A/B/C
-  participant Git as remotes
-  participant PC2 as Dev @ PC2
-  Dev->>Repos: edit .cco in A
-  Dev->>Repos: cco sync project  (A -> B,C, update sync-base)
-  Dev->>Git: commit A,B,C then `git push` each (cco prints the push list)
-  PC2->>Git: git pull each repo  (.cco rides with the code)
-  PC2->>PC2: cco start project  (auto-sync: no-op, already coherent)
+  participant Dev
+  participant Src as source repo (.cco)
+  participant Tgt as target repos
+  Dev->>Src: edit .cco in the IDE
+  Dev->>Tgt: cco sync   (source = cwd)
+  Tgt-->>Dev: truthful diff + confirm (unless --auto-approve)
+  Dev->>Tgt: confirm -> filesystem copy
+  Dev->>Tgt: git commit/push each changed repo (normal git)
 ```
 
-Version-skew mitigations:
-- **Per-repo set:** `cco sync` writes all members + `sync-base` atomically before
-  the user commits; `cco sync` prints the exact `git push` list so members aren't
-  left unpushed.
-- **`~/.cco` vs repo `.cco`:** independent stores; `~/.cco` carries global/packs,
-  not project config — no cross-store version coupling. Managed `~/.cco` sync is
-  freshness-throttled (§6.1).
-- **Different branches:** a member on another branch is read via `git show
-  <branch>:.cco/...` (no checkout); `cco sync` reports each member's active branch.
+### 4.4 `cco start` source selection & divergence
+- **From a repo dir**: use the invoking repo's `.cco/` (AD6). Unambiguous.
+- **By name `cco start <project>`**: if repos are aligned, any copy works; if they
+  diverge and there is no clear source, use the optional `entry` repo, else prompt.
+- **Divergence is never silently reconciled**: if a project's repos have divergent
+  `.cco/`, `cco start` uses the chosen source and **prints a non-blocking notice**
+  ("project repos have divergent .cco; started from <repo>; run `cco sync` to
+  converge"). This realizes the user policy: sync-off → use cwd; sync-on → user runs
+  `cco sync` to converge from a chosen source.
 
-### 5.5 Engine reuse
-`_merge_file`, `_resolve_with_merge` (merge/keep/replace/skip), `_interactive_sync`,
-`_file_hash`, `_save_base_version` are reused unchanged (`lib/update-merge.sh`,
-`lib/update-sync.sh`, `lib/update-hash-io.sh`). Sync supplies (current, sync-base,
-incoming); the engine does the rest.
+### 4.5 Cases (see requirements §5.3)
+- **A** code-only members (no `.cco/`), single config in the host repo.
+- **B** synced copies kept identical via `cco sync`.
+- **C** intentional divergence (sync off); `cco sync` converges to B anytime.
 
-Sync is **optional** per project (FR-Y10): a project may run with no sync and
-deliberately divergent repo configs (e.g. different MCP per repo). Manual sync or
-enabling a mode later is always possible — enabling on a divergent project enters
-confirm/diff resolution, never a silent overwrite.
+---
 
-### 5.6 Open questions for the sync robustness review (next session)
-An adversarial review must resolve these before implementation — capturing
-maintainer intent on **choice vs transparency**, with a hard guarantee of **no lost
-edits / no unwanted syncs**:
-1. **Uncommitted edits during sync.** If repo A's `.cco` has uncommitted changes
-   and the user syncs the *other* repos: is A's working tree a valid source
-   (propagate WIP) or must A be committed/clean first? Decide per mode (confirm
-   reads working-tree; last-commit-wins reads committed + refuses dirty) — and never
-   lose A's WIP either way.
-2. **Trigger-mode × divergence matrix.** For each trigger (manual / on-command /
-   hooks / future daemon), map where committed *and* uncommitted divergence can
-   persist, what the user sees, and where they must get a choice. Goal: painless,
-   transparent, no surprise overwrites.
-3. **Future daemon semantics.** A daemon would likely watch the **working tree**
-   (filesystem), not commits — commit-based would be redundant with hooks. Evaluate
-   the risk of propagating half-finished edits (debounce, on-save only, dirty-guard)
-   before committing to a daemon.
-4. **No-sync / intentional-divergence** projects (FR-Y10): UX of running without
-   sync and of enabling sync later on already-divergent repos.
+## 5. `@local` Path Resolution (reused, index-backed)
+
+Retained from `../vault/local-path-resolution-design.md`; now resolves against the
+machine-local index (§3) rather than a per-repo file. `project.yml` carries only
+logical names; the index provides absolute paths; bootstrap on a fresh machine via
+`cco index refresh --scan` + on-demand prompt/clone at `cco start`.
 
 ---
 
 ## 6. Two Sync Domains
 
-### 6.1 Domain A — personal multi-PC (cco-managed)
-`~/.cco` is a cco-managed git store (opt-in via `cco config init <url>`). Per-repo
-`.cco/` rides with the repo's own remote (nothing extra).
-
-- **Managed mode (default)**: pull-before-read / commit+push-after-write on
-  operations that touch `~/.cco`. **Best-effort & non-blocking** (FR-C4.2): offline
-  / auth / non-fast-forward → warn, continue with local state, defer.
-- **Throttle (RD8)**: skip pull if synced < ~120 s ago.
-- **Conflict (FR-C4.3)**: auto fast-forward/merge; a true conflict is the only
-  case surfaced → `cco config sync` (reuses the merge engine).
-- **Manual mode (opt-in)**: `cco config push/pull/status/diff`, auto disabled.
-- Gitignored (never synced): `registry.yml`, `remotes` (tokens), `installed/`,
-  `llms/`, `global/secrets.env`.
-
-```mermaid
-sequenceDiagram
-  participant Cmd as cco <cmd> touching ~/.cco
-  participant Sync as managed-sync
-  participant Rem as personal remote
-  Cmd->>Sync: pre-read hook
-  Sync->>Sync: fresh < 120s? skip
-  Sync->>Rem: git pull --ff-only (best-effort)
-  Rem-->>Sync: ok / offline / conflict
-  Sync-->>Cmd: continue (warn if offline/conflict — never block)
-  Cmd->>Sync: post-write hook (after pack create/edit)
-  Sync->>Rem: commit + push (best-effort; mark pending on failure)
-```
+### 6.1 Domain A — personal multi-PC
+- Per-repo `.cco/` rides each repo's **own git remote** (AD8): clone/pull brings it;
+  concurrent cross-PC edits are ordinary git conflicts resolved in the IDE.
+- `~/.cco` global resources sync via the **personal git store**. Mechanism depth
+  (managed auto pull/commit/push, conflict handling, manual vs managed) is **deferred
+  to RD-home**. Hard rule regardless: commit via an explicit **allowlist**
+  (`packs/ templates/ global/.claude/`), never `git add -A`.
 
 ### 6.2 Domain B — team/external (unchanged)
 Publish/install/update/export over Config Repos (`cmd-project-publish.sh`,
-`cmd-project-install.sh`, `cmd-pack.sh`, `cmd-remote.sh`, `remote.sh`) — audited
-unchanged. `installed/` caches what was installed. A user-authored pack has a
-personal working copy (A, synced) and, when shared, an independent published copy
-(B). Secrets never travel via either git channel.
+`cmd-project-install.sh`, `cmd-pack.sh`, `cmd-remote.sh`, `remote.sh`) — unchanged.
 
 ---
 
@@ -323,21 +247,21 @@ personal working copy (A, synced) and, when shared, an independent published cop
 
 | Area | Command | Status |
 |------|---------|--------|
-| Init | `cco init` (scaffold `<repo>/.cco/`), `cco init --sync <project>` (associate a repo), `cco init --migrate <legacy>` | NEW/transform |
-| Run | `cco start [project]` (cwd-aware; auto-resolve `@local`; auto-sync first) | transform |
-| Sync | `cco sync <project>` `[--dry-run|--check|--force]`, `cco sync --install-hooks` | NEW |
-| Personal store | `cco config init <url> | push | pull | status | diff | sync` | NEW |
-| Discovery | `cco list [--tag <t>]`, tag set/edit | NEW |
+| Init | `cco init` (scaffold `<repo>/.cco/`), `cco init --migrate <legacy>` | NEW/transform |
+| Membership | `cco join <project>` (add the current repo to a project) | NEW |
+| Run | `cco start [project]` (cwd-aware source; index-resolve `@local`) | transform |
+| Sync | `cco sync [target] [--from <src>] [--dry-run|--auto-approve|--check]` | NEW |
+| Paths | `cco resolve [project]`, `cco path set/list`, `cco index refresh --scan` | NEW |
+| Discovery | `cco list [--tag <t>]`, tag set/edit | transform |
+| Global store | `cco config …` (manage `~/.cco`; depth = RD-home) | NEW |
 | Sharing | `cco pack/project publish|install|update|export`, `cco remote …` | unchanged |
-| Legacy | `cco vault *` | deprecated alias → migration |
+| Update | `cco update …` (framework→user; merge engine unchanged) | unchanged |
+| Legacy | `cco vault *` → deprecated alias → `cco vault migrate` | deprecated |
 
-**Discovery**: cwd-first — if the current dir (or an ancestor) has `.cco/project.yml`,
-use it; else resolve `<project>` via the registry. Project identity = name key in
-`registry.yml`; `.cco/tracked/source` records the project name in-repo.
-
-Naming choices (approved direction): `cco sync` (top-level, not `cco project sync`);
-`cco config` for the managed `~/.cco` store; `cco vault` kept only as a deprecated
-alias during the migration window.
+**Removed**: the entire `cco vault save/diff/switch/move/profile` surface and
+`cco project create` (replaced by `cco init`). Discovery is **cwd-first**: if the cwd
+(or an ancestor) has `.cco/project.yml`, use it; else resolve `<project>` via the
+index.
 
 ---
 
@@ -346,20 +270,18 @@ alias during the migration window.
 ```mermaid
 flowchart TD
   subgraph J1["Single-repo"]
-    a1[cco init in repo] --> a2[edit .cco/project.yml] --> a3[cco start]
+    a1[cco init] --> a2[edit .cco in IDE] --> a3[cco start] --> a4[git commit/push]
   end
-  subgraph J2["Multi-repo associate"]
-    b1[configure in repo A] --> b2[repo B: cco init --sync project] --> b3[cco sync project]
+  subgraph J2["Add a member"]
+    b1[in repo B: cco join cave] --> b2[in repo A: cco sync] --> b3[B has the config]
   end
   subgraph J3["Fresh machine"]
-    c1[git clone repo A] --> c2[cco start] --> c3[resolve @local siblings: prompt/clone] --> c4[run]
+    c1[git clone repo A] --> c2[cco start] --> c3[index resolve: prompt/clone siblings] --> c4[run]
   end
   subgraph J6["Migration"]
-    d1[cco vault migrate] --> d2[map each vault project to a repo] --> d3[copy into .cco/ + register + backup]
+    d1[cco vault migrate] --> d2[map projects to repos] --> d3[write machine-agnostic .cco + index + backup]
   end
 ```
-
-(J4 personal multi-PC and J5 team sharing follow §6.)
 
 ---
 
@@ -367,36 +289,36 @@ flowchart TD
 
 Each phase leaves cco runnable + tests green.
 
-- **Phase 0 — new layout + path helpers.** Add the hybrid `.cco/` structure,
-  `.gitignore` template, `lib/paths.sh` dual-read, structure migration. Additive.
-- **Phase 1 — remove profiles.** Delete profile branch/switch/shadow/shared-sync
-  machinery (~1900 lines of `cmd-vault.sh`); keep `@local`, secret-scan,
-  gitignore-heal, `_normalize_committed_paths`. Remove `tests/test_vault_profiles.sh`
-  (2391 lines); rewrite `test_vault.sh`. All projects coexist; profiles→tags.
-- **Phase 2 — Domain A.** `lib/cmd-config.sh` (`cco config …`), `~/.cco` registry +
-  managed sync; repurpose vault remote ops (single-branch, no checkout).
-- **Phase 3 — per-repo sync + migration.** `lib/cmd-sync.sh` (`cco sync`), `cco
-  vault migrate`. Dual-read keeps legacy vault readable.
-- **Phase 4 — vault sunset (future).** Drop dual-read after 1-2 releases.
+- **Phase 0 — machine-agnostic layout + index + path helpers.** New committed `.cco/`
+  (logical names only), system-dir state/cache, machine-local index, `lib/paths.sh`
+  dual-read. Verify the `/workspace/.claude` mount vs pack injection (RD-claude-mount).
+  Additive.
+- **Phase 1 — remove profiles + the custom diff/save layer.** Delete profile
+  branch/switch/shadow machinery **and** `project.yml` sanitize/virtual-diff/
+  extract-restore/backup-trap (now unnecessary — AD3). Keep `@local` (index-backed),
+  secret-scan, gitignore-heal. Profiles → tags.
+- **Phase 2 — sync-as-copy.** `lib/cmd-sync.sh` (the 4 command forms, diff+confirm,
+  copy). No merge engine, no sync-base. `cco resolve`/`cco path`/`cco index`.
+- **Phase 3 — global store + migration.** `cco config` (`~/.cco`; managed depth per
+  RD-home), `cco vault migrate`. Dual-read keeps legacy readable.
+- **Phase 4 — vault sunset (future).** Drop dual-read after 1–2 releases.
 
-**Migration flow** (`cco vault migrate`, interactive, idempotent, backed-up):
-discover vault projects (known only by `@local`) → map each onto a physical repo
-(offer clone if missing; designate primary for multi-repo) → copy config into
-`<repo>/.cco/` (hybrid layout) + init `sync-base/` → register in `registry.yml` →
-`tar.gz` the vault to `~/.cco/backups/` → report + `git push` hint. Rollback:
-`.cco/` is in each repo's git; the vault archive preserves full history.
+**Migration flow** (`cco vault migrate`, interactive, idempotent, backed-up): discover
+vault projects → map each onto physical repo(s) (offer clone if missing; pick member
+repos) → write machine-agnostic `.cco/` → build the index → archive the vault to
+`~/.cco/backups/` → print a `git` reminder. Re-runs skip migrated projects and never
+overwrite an existing `.cco/` without confirm. Rollback: `.cco/` is in each repo's
+git; the archive preserves full vault history.
 
 ---
 
 ## 10. Packaging-Awareness (AD11)
 
-Decentralization cleanly separates **tool** (`bin/cco`, `lib/`, `defaults/`,
-`templates/`, `proxy/`, Dockerfile) from **user data** (`~/.cco`, per-repo `.cco`).
-This refactor must keep that separation so a future npm/npx package + container
-image (a next-sprint workstream) is a drop-in: per-repo `.cco/` holds only
-config/bookkeeping (no tool binaries); `~/.cco` is user-local; `bin/cco` resolves
-`lib/` relative to its install location. No design choice here may put tool code
-inside a repo's `.cco/` or require a source clone to run.
+Decentralization separates **tool** (`bin/cco`, `lib/`, `defaults/`, `templates/`,
+`proxy/`, Dockerfile) from **user data** (`~/.cco`, per-repo `.cco`, system dirs). No
+design choice may put tool code inside a `.cco/` or require a source clone to run;
+any future hooks invoke `cco` by PATH. This keeps a future npm/npx + image package
+(R-pkg) a drop-in.
 
 ---
 
@@ -404,32 +326,39 @@ inside a repo's `.cco/` or require a source clone to run.
 
 | Phase | New | Rewrite | Remove |
 |-------|-----|---------|--------|
-| 0 | dual-read path tests | — | — |
-| 1 | multi-project coexistence | `test_vault.sh` | `test_vault_profiles.sh` (2391) |
-| 2 | `test_config.sh` (Domain A) | `test_vault.sh` | — |
-| 3 | `test_sync.sh`, `test_migrate.sh` | `test_vault.sh`, `test_local_paths.sh` | — |
+| 0 | machine-agnostic layout + index + dual-read tests | — | — |
+| 1 | multi-project coexistence; truthful-diff (no sanitize) tests | `test_vault.sh` | `test_vault_profiles.sh`; custom-diff tests |
+| 2 | `test_sync.sh` (copy semantics, 4 forms, confirm) | `test_local_paths.sh` | sync-base/merge-engine sync tests (never built) |
+| 3 | `test_config.sh` (Domain A), `test_migrate.sh` | `test_vault.sh` | — |
 
-Net: ~2400 lines removed, ~1500 added → narrower, clearer test surface.
-
----
-
-## 12. Future Evolutions (out of this refactor's scope)
-
-- **Background sync daemon (evaluate)** — an alternative/complement to
-  auto-on-`cco`-command + hooks, for fully transparent coherence. Likely
-  **working-tree / filesystem-watch** based (commit-based would be redundant with
-  hooks). Evaluation axes:
-  complexity (lifecycle, re-entrancy, cross-platform service mgmt), failure modes
-  (silent staleness), UX (invisibility vs debuggability). Likely a file-watch +
-  debounce process scoped to registered projects, reusing `cco sync` internals.
-  To be designed only if auto-on-command proves insufficient in practice.
-- **cco packaging** — npm/npx CLI + image registry (R-pkg).
-- **Persistent `/workspace` root** — optional `.cco/workspace/` mount (R-workspace).
+Net: a narrower surface — no custom diff/save/merge sync code to test; the `cco
+update` merge engine tests are untouched.
 
 ---
 
-## 13. Deferred to Implementation
-- `registry.yml` exact schema evolution + staleness GC policy.
-- Managed-sync backoff/retry specifics; throttle constant (default ~120 s).
-- `sync-base/` reset on `cco clean --all`.
-- `cco update` offering sibling sync (RD4) — prompt, not automatic.
+## 12. Future Evolutions (out of scope)
+
+- **Auto-sync triggers (RD-triggers)** — opt-in background daemon and/or native hooks
+  in select cco commands vs opt-in git hooks. Manual `cco sync` is the v1 model.
+- **`~/.cco` auto-management (RD-home)** — managed pull/commit/push with allowlist.
+- **`cco update` native (R-update-native)** — cco fully agnostic; opinionated
+  packs/templates via native publish/install; keep a `cco update` for installed packs.
+- **cco packaging (R-pkg)** — npm/npx + image registry.
+- **Persistent `/workspace` root (R-workspace).**
+
+---
+
+## 13. Open Questions (dedicated follow-up analyses)
+
+These are deliberately **not** decided here; each gets its own analysis after this
+design is persisted. None blocks Phase 0 except RD-claude-mount (a Phase-0 check).
+
+| # | Question |
+|---|----------|
+| **RD-syncmeta** | Keep an internal last-synced snapshot to enable fast rollback and to distinguish user edits vs cco-sync edits (and flag divergence before `cco start`)? UX benefit vs complexity. |
+| **RD-home** | `~/.cco` management depth: auto vs manual, conflict handling, allowlist enforcement. |
+| **RD-authoring** | Authoring global packs/templates: direct `~/.cco` edit (lean) vs authoring-in-repo + promote. |
+| **RD-paths** | Exact system-dir locations for state/cache/index on macOS & Linux (XDG-style, per-user, no home clutter). |
+| **RD-memory** | `memory/` handling: per-machine vs committed vs team-shared. |
+| **RD-triggers** | Future opt-in auto-sync (daemon / native hooks / git hooks / manual-only). |
+| **RD-claude-mount** | Phase-0: single `/workspace/.claude` mount (cwd repo's `.cco/claude/`) vs pack-injected files in the same tree — verify no bind-mount shadowing. |

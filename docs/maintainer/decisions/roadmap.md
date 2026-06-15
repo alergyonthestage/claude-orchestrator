@@ -70,11 +70,12 @@ graph LR
 
 ## Planned Sprints
 
-### Vault Simplification → Decentralized In-Repo Config (DECIDED 2026-06-11; evolved 2026-06-12)
+### Vault Simplification → Decentralized In-Repo Config (DECIDED 2026-06-11; evolved 2026-06-12; model finalized 2026-06-15)
 
-**Status**: Decided — requirements converged
-(`../configuration/decentralized-config/requirements.md`); design wave in progress
-on `feat/vault/decentralized-config`.
+**Status**: Design APPROVED for implementation (2026-06-15). Requirements + design +
+ADR rewritten as the single source of truth
+(`../configuration/decentralized-config/`); adversarial sync review persisted
+(`.../reviews/15-06-2026-sync-adversarial-review.md`). On `feat/vault/decentralized-config`.
 **Priority**: 0 (next major work). **Supersedes**: branch-switch real-isolation
 model in `../../configuration/vault/profile-isolation-design.md` (v2) **and** the
 central-vault project store.
@@ -101,15 +102,24 @@ gate which projects exist on disk or which can be started.
   — a frequent, legitimate need (e.g. a Cave session alongside a personal one).
 - **bash 3.2 incident (#B23)**: latest regression in the same fragile path.
 
-**Target model** (decentralized in-repo config):
+**Target model** (decentralized in-repo config — finalized 2026-06-15):
 - Each project's cco config lives in `<repo>/.cco/`, versioned with the code; the
   central vault is retired. Profiles → tags (the IDE is the project browser).
-- Multi-repo projects: same config across repos, kept identical by explicit sync
-  that **reuses the existing merge engine** (+ a `sync-base/` ancestor).
-- `@local` path contract retained; a `~/.cco` central store keeps a registry +
-  caches + global config, with **cco-managed** multi-PC auto-sync.
+- **Machine-agnostic committed config**: `project.yml` uses logical names only (no
+  real paths) and is identical across a project's repos → a plain `git diff` is
+  always truthful. The custom diff/save/sanitize/virtual-diff layer is **removed**.
+- **Sync = copy** (no merge engine, no `sync-base`, no commit-time, no peer/root):
+  `cco sync` copies a chosen source repo's `.cco/` into target repos on the same
+  machine. **Plain git is the only cross-PC transport** (conflicts resolved in the
+  IDE). Real paths live in a machine-local index (CLI-managed, never committed).
+- No privileged repo: `cco start` uses the invoking repo's config (cwd) or a flag.
+- Config/state/cache separated by location: state + cache live in system dirs
+  outside the repo; `secrets.env` is the one in-repo (gitignored) exception.
 - Two strictly-separated sync domains: personal multi-PC vs team/external sharing.
-- Full requirements + decisions: `../configuration/decentralized-config/requirements.md`.
+- The `cco update` 3-way merge engine is **unchanged** (it was never config-sync).
+- Full requirements + design + ADR: `../configuration/decentralized-config/`.
+- Follow-up dedicated analyses (do not block Phase 0): RD-syncmeta, RD-home,
+  RD-authoring, RD-paths, RD-memory, RD-triggers, RD-claude-mount.
 
 ```mermaid
 flowchart LR
@@ -133,14 +143,19 @@ flowchart LR
   filter.
 
 **Related future workstreams (separate, NOT in this refactor)**:
-- **cco packaging** — distribute as npm/npx + publish the image to a registry so
-  users need not clone the source (this refactor stays packaging-aware).
-- **Persistent `/workspace` root** — optional `.cco/workspace/` mount for
-  host-accessible session artifacts.
+- **cco packaging (R-pkg)** — distribute as npm/npx + publish the image to a registry
+  so users need not clone the source (this refactor stays packaging-aware).
+- **`cco update` native (R-update-native)** — evolve `cco update`: make cco fully
+  agnostic and distribute opinionated packs/project-templates via native
+  publish/install (like any user), keeping a `cco update` for installed packs (merge
+  local edits vs replace/discard). Recorded so it is not forgotten; designed
+  separately (the 3-way merge engine stays unchanged for now).
+- **Persistent `/workspace` root (R-workspace)** — optional mount for host-accessible
+  session artifacts.
 
-**Next**: design wave (sync architecture & coherence, `.cco/` layout/UX, command
-surface, teardown + migration) → architectural choices approved by maintainer →
-`design.md` + ADR in `../configuration/decentralized-config/`.
+**Next**: design is approved + persisted. Run the dedicated follow-up analyses
+(RD-* above) → then implement per `design.md` §9 phases (Phase 0 = machine-agnostic
+layout + index + path helpers).
 
 ---
 

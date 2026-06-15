@@ -1,84 +1,107 @@
-# ADR 0001 — Decentralized In-Repo Configuration
+# ADR 0001 — Decentralized In-Repo Configuration (sync-as-copy)
 
-**Status**: Accepted (2026-06-12)
-**Deciders**: maintainer + design session
+**Status**: Accepted (2026-06-15)
+**Deciders**: maintainer + design sessions
 **Context docs**: `../requirements.md`, `../design.md`
-**Supersedes**: `../../vault/profile-isolation-design.md` (branch-switch real isolation)
+**Decision history**: `../reviews/15-06-2026-sync-adversarial-review.md`
+**Supersedes**: the central git-backed vault (projects + branch profiles + custom
+config diff/save) and `../../vault/profile-isolation-design.md`.
 
 ---
 
 ## Context
 
 The central git-backed vault stored all projects under `user-config/projects/` and
-used **git branches as profiles**: switching profile did a `git checkout` that
-swapped which projects existed on disk. This coupled two orthogonal concerns —
-*config storage* and *workspace selection* — and produced:
+used **git branches as profiles** (checkout swapped which projects existed on disk).
+Two structural problems followed:
 
-- A recurring, structural bug class (#B13, #B16–#B23) in the
-  switch / `@local`-sanitize / gitignored-shuffle machinery (~60% of
-  `cmd-vault.sh`).
-- Opaque failures (`cco vault move` no-op while `cco vault diff` shows clean,
-  because the diff hides `@local` differences).
-- A hard UX limit: only one profile's projects on disk at a time → no concurrent
-  cross-profile sessions on one machine.
-- Friction with the developer's IDE-centric workflow (config versioned separately
-  from the code it configures; constant IDE↔terminal↔vault context switching).
+1. **Storage coupled to selection** → a recurring bug class (#B13–#B23), opaque
+   failures, and no concurrent cross-profile sessions on one machine.
+2. **Committed config was machine-specific** → real paths in `project.yml` were
+   rewritten to `@local` on save and back on read, so a plain `git diff` was
+   untruthful. The vault carried a **custom diff/save/sanitize/virtual-diff** layer
+   purely to hide that discrepancy — a large, fragile subsystem in its own right.
+
+An adversarial review of an initial decentralized design (which kept a custom 3-way
+merge/`sync-base`/commit-time sync engine for multi-repo config) found that engine to
+be non-reusable, non-deterministic for N≥3 repos, and prone to silent
+ancestor-drift — i.e. it re-imported the very opaque-failure class being removed.
 
 ## Decision
 
-Move to a **decentralized, in-repo configuration** model:
+Adopt **decentralized, in-repo configuration with machine-agnostic committed files,
+plain git as the only cross-PC transport, and sync-as-copy**:
 
 1. Each project's cco config lives in `<repo>/.cco/`, versioned with the code; the
    central vault is retired.
-2. Profiles are removed; optional **tags** (registry metadata) provide grouping.
-   The IDE is the project browser. Projects run concurrently.
-3. `.cco/` uses a **hybrid layout** (RD10): `project.yml` + `secrets.env.example`
-   flat for discoverability; `claude/`, `tracked/`, `state/`, `secrets/` grouped;
-   `state/` + `secrets/` blanket-gitignored (structural secret safety).
-4. The `@local` path contract is retained and reused; the host repo is implicit.
-5. Multi-repo projects keep config as **explicit synced copies** (T3) in each
-   repo's `.cco/`, kept identical by `cco sync`, which **reuses the existing 3-way
-   merge engine** plus a committed `sync-base/` ancestor. Dual-mode
-   (root / peer+confirm, default peer+confirm).
-6. Sync is triggered **auto-on-`cco`-command + opt-in git hooks** (RD9); a
-   background daemon is a possible future evolution.
-7. A central **`~/.cco/`** holds the registry + caches + global config, with
-   **cco-managed**, best-effort, non-blocking multi-PC auto-sync.
-8. Two strictly-separated sync domains: **A** personal multi-PC (`~/.cco` managed +
-   per-repo git) and **B** team/external sharing (Config Repos, unchanged).
+2. **Committed config is 100% machine-agnostic**: `project.yml` references repos and
+   extra mounts by **logical name** only (no real paths) and is identical across a
+   project's repos. Real absolute paths live in a **machine-local index** (never
+   committed/synced). Therefore a plain `git diff` is always truthful, and the entire
+   custom diff/save/sanitize/virtual-diff layer is **deleted**.
+3. Profiles are removed; optional **tags** provide grouping. Projects run
+   concurrently; the IDE is the project browser.
+4. **No privileged repo.** Any repo with a `.cco/` is a valid entry point; `cco
+   start` uses the **invoking repo's** config (cwd) or a flag. An optional per-project
+   `entry` repo is only a tie-breaker for name-based `cco start <project>`.
+5. **Sync = copy.** `cco sync` copies a chosen source repo's `.cco/` set into target
+   repos on the same machine (filesystem copy). No merge engine, no `sync-base`, no
+   commit-time, no peer/root modes, no confirm/last-commit-wins policies. Divergence
+   is allowed and visible; the user picks the source. Default is diff + confirm
+   (`--auto-approve` to skip).
+6. **Git is the only cross-PC transport.** A repo's `.cco/` rides its own remote;
+   concurrent cross-PC edits are ordinary git conflicts resolved in the IDE. Repos
+   need not be git for core operation or same-machine sync; git is required only to
+   travel across machines.
+7. **Config/state/cache separated by location.** The committed `<repo>/.cco/` holds
+   only machine-agnostic config. State (generated compose, claude-state, the index,
+   temp) and cache live in **system directories** outside the repo, hidden.
+   `secrets.env` is the one in-repo exception (gitignored, user-edited).
+8. A central **`~/.cco/`** holds authored packs/templates/global-claude as a personal
+   git store (Domain A; management depth deferred). Team sharing stays on Config Repos
+   (Domain B, unchanged).
+9. The 3-way merge engine is **kept unchanged** for `cco update` (framework→user
+   template/pack updates); it was never config-sync machinery.
 
 ## Alternatives Considered
 
 | Alternative | Why not |
 |-------------|---------|
-| **Keep branch-switch, harden it** (worktree sync #6b/#6c) | Leaves the structural fragility and the no-concurrent-sessions limit; patches symptoms. |
-| **Single filesystem + tags on the *central* vault** | Removes switch fragility and fixes concurrency, but keeps a manually-managed central repo and gives no per-project history / IDE-locality. Was the initial decision (2026-06-11); superseded by full decentralization. |
-| **Decentralized with live multi-repo auto-sync daemon** | The sync-divergence risk and daemon complexity are unjustified up front; explicit copy-sync (manual trigger / hooks / on-command) achieves coherence more simply. Daemon kept as a future option. |
-| **Per-repo config only, no `~/.cco` central store** | Loses cross-project sharing (packs/templates/global) and multi-PC sync of those resources; they have no natural per-repo home. |
-| **`.cco/config/` subdir for `project.yml`** | Buries the entry-point file the user wants immediately visible; the hybrid layout keeps secret-safety without that cost. |
-| **Symlink member repos to a primary `.cco/`** | Breaks clone/push portability and couples repos on the filesystem; explicit copies are clone-safe. |
-| **`~/.cco` as a single source-of-truth hub for project config** (repos sync to a central per-machine copy, last-update-wins) | Reintroduces a central source of truth for project config (undoes decentralization, AD1/G6). Cross-PC it creates **two** sources — the repo's own git *and* the per-machine `~/.cco` hub — which diverge → worse version-skew (RD11). Couples Domains A and B (AD10) and degrades to silent last-write-wins. **peer mode already provides "no arbitrary root"** (symmetric, sync-base + merge) without any of these costs. Rejected 2026-06-15. |
+| **Keep the vault (branch-switch), harden it** | Leaves storage/selection coupling, the no-concurrent-sessions limit, and the custom-diff fragility; patches symptoms. |
+| **Decentralize but keep machine-specific committed paths (@local rewrite-on-save)** | Re-imports the untruthful-`git diff` problem → still needs a custom diff/save layer. Rejected: machine-agnostic committed config removes the need entirely. |
+| **Custom 3-way merge + `sync-base` + commit-time sync engine for multi-repo config** | The adversarial review showed it non-reusable (the existing engine is framework-directional), non-deterministic for N≥3, and prone to silent ancestor-drift across independent remotes — re-importing opaque failures. Replaced by sync-as-copy. |
+| **Primary-holds-config (only one repo carries project-scope config)** | Simpler, but makes one repo privileged: the user could not edit config from any repo's IDE, and peer-style workflows have no defined config holder. Rejected in favor of "any repo is a source; cwd decides; sync = copy". |
+| **`~/.cco` as a source-of-truth hub that repos copy from** | Reintroduces a central source of truth for project config (undoes decentralization) and, cross-PC, creates two diverging sources (repo remote + per-machine hub). Rejected. |
+| **Symlink member repos to one `.cco/`** | Breaks clone/push portability and couples repos on the filesystem; explicit copies (via `cco sync`) are clone-safe. |
+| **Per-repo config only, no `~/.cco`** | Loses cross-project sharing (packs/templates/global) and multi-PC sync of those resources, which have no per-repo home. |
 
 ## Consequences
 
 **Positive**
-- Removes the entire fragile switch/sanitize/shadow subsystem (~1900 lines + a
-  2391-line test file); net complexity goes down.
-- Concurrent cross-project sessions; IDE-first ergonomics; per-project config
-  history versioned with code.
-- Reuses proven machinery (`@local`, merge engine, secret-scan, gitignore-heal).
+- Removes the fragile switch/sanitize/shadow subsystem **and** the custom config
+  diff/save/merge layer; net complexity drops sharply.
+- A plain `git diff` on `.cco/` is always truthful (no cco-specific diff to learn).
+- Concurrent cross-project sessions; IDE-first ergonomics; per-project config history
+  with code; no privileged repo.
+- Sync is a copy — the review's C1/C2/C3 and H1/H3/H4/H5/H6 dissolve (no
+  reconciliation algorithm exists).
 - Cleanly separates tool from user data → enables future npm/npx + image packaging.
 
 **Negative / costs**
-- A large, mostly-subtractive refactor across `cmd-vault.sh`, `local-paths.sh`,
-  `cmd-start.sh`, and tests; a phased teardown + a one-time interactive migration.
-- Multi-PC sync of central resources is now cco-managed git on `~/.cco` (not the
-  old monolithic vault) — a new, slim subsystem (low risk: single-branch git).
-- `.git/hooks` are not cloned → opt-in hooks must be re-installed per machine
-  (mitigated by auto-on-`cco`-command as the default trigger).
-- A deprecation window with dual-read fallback must be maintained for 1-2 releases.
+- Concurrent **cross-PC** edits surface as ordinary git merge conflicts the user
+  resolves with git tooling (acceptable for an IDE-first audience; must be documented).
+- Multi-repo config changes mean committing N repos (config rides with code, G6);
+  `git log -- .cco/` isolates config history; `cco sync` prints which repos changed.
+- A new machine-local index must be maintained (CLI-managed; rebuildable by scan).
+- A deprecation window with dual-read must be kept for 1–2 releases.
+
+## Open (dedicated follow-up analyses; do not block Phase 0 except RD-claude-mount)
+RD-syncmeta (last-synced snapshot/rollback), RD-home (`~/.cco` management depth),
+RD-authoring (global pack/template authoring), RD-paths (system-dir locations),
+RD-memory (`memory/` handling), RD-triggers (future auto-sync), RD-claude-mount
+(Phase-0 mount vs pack-injection check). See `../requirements.md` §8 and
+`../design.md` §13.
 
 ## Follow-ups (separate workstreams)
-- cco packaging (npm/npx + image registry).
-- Persistent `/workspace` root via `.cco/workspace/`.
-- Background sync daemon (evaluate if on-command proves insufficient).
+cco packaging (R-pkg); `cco update` native publish/install (R-update-native);
+persistent `/workspace` root (R-workspace).
