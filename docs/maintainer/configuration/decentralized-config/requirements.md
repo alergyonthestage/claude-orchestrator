@@ -169,6 +169,14 @@ flowchart LR
   specify **sync timing/sequencing** (sequence diagrams) so that per-repo `.cco`,
   cross-PC git, and `~/.cco` managed sync stay coherent and avoid version-skew
   (RD11).
+- **FR-Y10 (sync is OPTIONAL)** — Sync is **opt-in per project**. A project may
+  declare no sync (`sync:` absent or `mode: none`), in which case the repos' `.cco/`
+  may **intentionally diverge** (e.g. different MCP servers, or scope-specific
+  config per repo) and cco never reconciles them. Manual `cco sync` or enabling a
+  sync mode later is always available; enabling sync on an already-divergent project
+  enters confirm/diff resolution — **never** a silent overwrite. The mechanism must
+  be painless and transparent, balancing user choice against lost edits / unwanted
+  syncs.
 
 ```mermaid
 flowchart TD

@@ -253,6 +253,31 @@ Version-skew mitigations:
 `lib/update-sync.sh`, `lib/update-hash-io.sh`). Sync supplies (current, sync-base,
 incoming); the engine does the rest.
 
+Sync is **optional** per project (FR-Y10): a project may run with no sync and
+deliberately divergent repo configs (e.g. different MCP per repo). Manual sync or
+enabling a mode later is always possible — enabling on a divergent project enters
+confirm/diff resolution, never a silent overwrite.
+
+### 5.6 Open questions for the sync robustness review (next session)
+An adversarial review must resolve these before implementation — capturing
+maintainer intent on **choice vs transparency**, with a hard guarantee of **no lost
+edits / no unwanted syncs**:
+1. **Uncommitted edits during sync.** If repo A's `.cco` has uncommitted changes
+   and the user syncs the *other* repos: is A's working tree a valid source
+   (propagate WIP) or must A be committed/clean first? Decide per mode (confirm
+   reads working-tree; last-commit-wins reads committed + refuses dirty) — and never
+   lose A's WIP either way.
+2. **Trigger-mode × divergence matrix.** For each trigger (manual / on-command /
+   hooks / future daemon), map where committed *and* uncommitted divergence can
+   persist, what the user sees, and where they must get a choice. Goal: painless,
+   transparent, no surprise overwrites.
+3. **Future daemon semantics.** A daemon would likely watch the **working tree**
+   (filesystem), not commits — commit-based would be redundant with hooks. Evaluate
+   the risk of propagating half-finished edits (debounce, on-save only, dirty-guard)
+   before committing to a daemon.
+4. **No-sync / intentional-divergence** projects (FR-Y10): UX of running without
+   sync and of enabling sync later on already-divergent repos.
+
 ---
 
 ## 6. Two Sync Domains
@@ -391,7 +416,9 @@ Net: ~2400 lines removed, ~1500 added → narrower, clearer test surface.
 ## 12. Future Evolutions (out of this refactor's scope)
 
 - **Background sync daemon (evaluate)** — an alternative/complement to
-  auto-on-`cco`-command + hooks, for fully transparent coherence. Evaluation axes:
+  auto-on-`cco`-command + hooks, for fully transparent coherence. Likely
+  **working-tree / filesystem-watch** based (commit-based would be redundant with
+  hooks). Evaluation axes:
   complexity (lifecycle, re-entrancy, cross-platform service mgmt), failure modes
   (silent staleness), UX (invisibility vs debuggability). Likely a file-watch +
   debounce process scoped to registered projects, reusing `cco sync` internals.
