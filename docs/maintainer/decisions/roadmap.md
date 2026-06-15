@@ -72,10 +72,11 @@ graph LR
 
 ### Vault Simplification → Decentralized In-Repo Config (DECIDED 2026-06-11; evolved 2026-06-12; model finalized 2026-06-15)
 
-**Status**: Design APPROVED for implementation (2026-06-15). Requirements + design +
-ADR rewritten as the single source of truth
-(`../configuration/decentralized-config/`); adversarial sync review persisted
-(`.../reviews/15-06-2026-sync-adversarial-review.md`). On `feat/vault/decentralized-config`.
+**Status**: Design APPROVED for implementation (2026-06-15). Living `requirements.md`
++ `design.md` are the single source of truth; decisions recorded in ADRs 0001–0005
+(`../configuration/decentralized-config/decisions/`); analyses kept as history
+(`.../reviews/15-06-2026-sync-adversarial-review.md`,
+`.../reviews/15-06-2026-simplification-analysis.md`). On `feat/vault/decentralized-config`.
 **Priority**: 0 (next major work). **Supersedes**: branch-switch real-isolation
 model in `../../configuration/vault/profile-isolation-design.md` (v2) **and** the
 central-vault project store.
@@ -127,9 +128,11 @@ flowchart LR
     V[(central vault)] -->|checkout profile| FS[disk: only that profile]
   end
   subgraph NEW["After — decentralized in-repo config"]
-    RA["repo A/.cco/"] --> CCO[cco]
-    RB["repo B/.cco/"] --> CCO
-    REG[("~/.cco: registry + caches<br/>cco-managed sync")] --> CCO
+    RA["repo A/.cco/ (machine-agnostic)"] -->|"cco sync = copy"| RB["repo B/.cco/"]
+    RA --> CCO[cco]
+    RB --> CCO
+    HOME[("~/.cco: global resources<br/>packs/templates/global .claude")] --> CCO
+    SYS[("system dirs: machine-local index<br/>+ state + cache")] --> CCO
     CCO --> S["session: repos + mounts + context"]
   end
 ```

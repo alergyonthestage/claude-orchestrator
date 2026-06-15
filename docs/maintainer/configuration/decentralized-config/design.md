@@ -3,8 +3,11 @@
 **Status**: Approved for implementation (2026-06-15). Authoritative design; drives
 the phased implementation (§9).
 **Requirements**: `requirements.md` (AD1-AD12, FR-*).
-**Decision record**: `decisions/0001-decentralized-in-repo-config.md`.
-**Decision history**: `reviews/15-06-2026-sync-adversarial-review.md`.
+**Decision records**: `decisions/` — ADR-0001 (decentralization), 0002
+(machine-agnostic config), 0003 (sync-as-copy), 0004 (config/state/cache separation),
+0005 (dual `.claude` scope).
+**Decision history (historical)**: `reviews/15-06-2026-sync-adversarial-review.md`,
+`reviews/15-06-2026-simplification-analysis.md`.
 
 > `requirements.md` says **what** and **why**; this document says **how**. It is the
 > single source of truth for the refactor. Open questions are isolated in §13 and are

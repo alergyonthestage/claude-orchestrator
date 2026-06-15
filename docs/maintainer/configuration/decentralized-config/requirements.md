@@ -2,14 +2,15 @@
 
 **Status**: Approved for implementation (model finalized 2026-06-15). This is the
 authoritative requirements document; the detailed design is in `design.md` and the
-decision record in `decisions/0001-decentralized-in-repo-config.md`.
+decision records (ADRs 0001–0005) in `decisions/`.
 **Date**: 2026-06-15
 **Supersedes**: the central git-backed vault (`user-config/` projects + branch
 profiles) and `../vault/profile-isolation-design.md`. Reuses the `@local` path
 contract from `../vault/local-path-resolution-design.md`.
-**Decision history**: see `reviews/15-06-2026-sync-adversarial-review.md` (the
-adversarial review that drove the move from a custom sync/merge engine to the
-sync-as-copy model below).
+**Decision history (historical, do not edit)**:
+`reviews/15-06-2026-sync-adversarial-review.md` (adversarial review refuting the custom
+sync/merge engine) and `reviews/15-06-2026-simplification-analysis.md` (diff
+archaeology + plain-git feasibility that drove the sync-as-copy model).
 
 ---
 
