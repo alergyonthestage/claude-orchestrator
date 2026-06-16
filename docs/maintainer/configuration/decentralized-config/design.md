@@ -124,6 +124,15 @@ protect it from accidental edits.
 ├── global/.claude/      # global Claude config
 └── backups/             # vault migration archives
 ```
+> **Profiles → how to organize `~/.cco` resources (open evaluation).** Legacy vault
+> profiles (git branches) are obsolete for *projects* (decentralization moots them) and
+> disappear. They may survive only as a way to **organize global resources in `~/.cco`**
+> (which stays global). Two options to evaluate: **(default) tag-only** — a profile
+> becomes a tag on a resource, used to filter CLI lists; **(alt) subdirs** — a profile
+> becomes a subdirectory under `packs/`/`templates/`. Default is **tag-only**; adopt
+> subdirs only if it earns its keep, otherwise tags only (subdirs add filesystem/layout
+> complexity). The migration flatten (§9) already translates legacy profiles → tags, so
+> tag-only needs no extra migration work. *(Fits RD-authoring scope.)*
 
 ### 2.4 `project.yml` (machine-agnostic, symmetric)
 ```yaml
@@ -456,18 +465,20 @@ phase leaves cco runnable + tests green.
 
 > **Migration constraint — multi-profile + uncommitted (note for the detailed migration
 > design/impl).** In the legacy vault, **profiles are git branches** and a single checkout
-> exposes only the active profile's resources. The backup (step 1) and the migrate reader
-> (step 2) must therefore be **branch-aware**:
-> - The archive must preserve **all profile branches** — archive the full `.git` (or
->   `git bundle --all`), never just the working tree, or other profiles' resources are
->   silently lost.
+> exposes only the active profile's resources. Profile branches **do not survive** into
+> decentralized cco, so the branch-awareness lives entirely in the **save/backup step**,
+> which must **flatten** the profiles into a plain, branchless backup layout; the migrate
+> reader then does an ordinary plain retrieve.
+> - The backup step **iterates all profile branches** and serializes their resources into
+>   a **plain backup** (no git branches in the archive). The flatten **translates each
+>   profile into a tag** on its resources (profiles → tags, the new model), so nothing is
+>   lost and the origin profile is preserved as metadata.
 > - **Uncommitted working-tree changes** belong only to the *active* profile; the backup
->   must capture them (e.g. include the dirty working tree as-is, and/or warn the user to
+>   must capture them (include the dirty working tree as-is, and/or warn the user to
 >   commit first) so no WIP is dropped. Other (non-checked-out) profiles contribute only
 >   their committed state by construction.
-> - `cco migrate <project>` must **locate the project across profile branches** inside the
->   backup (a project may live on any profile branch), i.e. iterate/read the relevant
->   branch rather than assuming the single checked-out tree.
+> - `cco migrate <project>` reads the project's config from the **plain** backup with a
+>   normal retrieve — **no branch traversal** (the flatten already happened at save time).
 3. The user opts into Case B (`cco sync`) or Case C (`cco init` other repos), or stays
    in A. Re-runs never overwrite an existing `.cco/` without confirm. Rollback: `.cco/`
    is in the repo's git; the backup archive preserves full vault history.

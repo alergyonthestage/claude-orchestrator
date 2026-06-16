@@ -264,10 +264,12 @@ flowchart TD
   (`~/.cco/backups/vault-<date>.tar.gz`), informs the user, prints migration
   instructions, and offers to remove the old vault. No project is migrated
   automatically. **The backup MUST be all-profiles-complete (see design §9 migration
-  constraints):** legacy profiles are git branches, so the archive must preserve **every
-  profile branch** (not just the checked-out one — archive `.git`/`git bundle --all`,
-  never only the working tree) and must capture **uncommitted working-tree changes** of
-  the active profile so no WIP is lost.
+  constraints):** legacy profiles are git branches that do not survive into the new model,
+  so the **save/backup step flattens** every profile branch into a **plain, branchless
+  backup** (translating each profile into a **tag** on its resources — profiles → tags),
+  and must capture **uncommitted working-tree changes** of the active profile so no WIP is
+  lost. `cco migrate` then reads the plain backup with a normal retrieve (no branch
+  traversal).
 - **FR-M2 (lazy per-project migrate)** — `cco migrate <project>` is run **inside an
   already-cloned repo**: instead of `cco init` (clean scaffold), it initializes that
   repo's `.cco/` from the backup's project config (machine-agnostic), registers it in
