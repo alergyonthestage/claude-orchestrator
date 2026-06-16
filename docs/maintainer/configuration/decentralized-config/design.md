@@ -6,7 +6,7 @@ the phased implementation (§9).
 **Decision records**: `decisions/` — ADR-0001 (decentralization), 0002
 (machine-agnostic config), 0003 (sync-as-copy), 0004 (config/state/cache separation),
 0005 (dual `.claude` scope), 0006 (breaking cutover + lazy migration), 0007 (system-dir
-locations / XDG), 0008 (config versioning model).
+locations / XDG), 0008 (config versioning model), 0009 (auto-memory is machine-local STATE).
 **Decision history (historical)**: `reviews/15-06-2026-sync-adversarial-review.md`,
 `reviews/15-06-2026-simplification-analysis.md`.
 
@@ -94,7 +94,7 @@ A pre-commit/pre-push scan (reused from `lib/secrets.sh`) refuses real secrets a
 
 ### 2.2 System dirs (per machine, hidden, never committed) — ADR-0007
 ```
-<state>/cco/projects/<id>/   # generated docker-compose.yml, claude-state/, .tmp/, meta
+<state>/cco/projects/<id>/   # generated docker-compose.yml, claude-state/, memory/, .tmp/, meta
 <state>/cco/index            # name -> absolute path; project -> [repo names]; tags
 <state>/cco/                 # remotes+tokens, last_seen/last_read, sync-meta (§4.6), seeds
 <cache>/cco/                 # llms/, installed/ (Config-Repo caches)
@@ -109,6 +109,15 @@ CONFIG). Resolve bases **host-side only** (never compute `$XDG_*` inside the
 container); ignore unset/empty/non-absolute XDG values; create `0700`. Rationale: keep
 the committed `.cco/` small and clean, make state un-committable by construction, and
 protect it from accidental edits.
+
+**Auto-memory is STATE (ADR-0009).** Claude Code's auto-memory (`memory/`) is, like
+session transcripts (`claude-state/`), session/runtime **state** — not config. It lives
+**machine-local** in `<state>/cco/projects/<id>/memory/`, never in `~/.cco` or
+`<repo>/.cco/` (which hold only authored config, ADR-0008). It is **not versioned and not
+synced cross-PC in v1**: the vault's auto-commit (D33) + `.gitkeep` (D32) machinery is
+dropped with the vault (§9). Cross-PC / cross-team sync of *state* (memory **and**
+transcripts) is a deferred opt-in feature (R-state-sync, §12). This resolves RD-memory and
+satisfies the Phase-3 gate (review BL2).
 
 ### 2.3 `~/.cco/` — personal git store (Domain A; management model = ADR-0008)
 > CONFIG store deliberately keeps the `~/.cco` **dotdir** (ADR-0007), not
@@ -433,7 +442,9 @@ phase leaves cco runnable + tests green.
   (`~/.cco` + system dirs when missing — journey J0); first-run **legacy-vault backup**
   + instructions; `cco migrate <project>` (lazy, per-project, from the backup);
   `cco init`/`cco join`. A minimal legacy-vault reader exists **only** inside
-  `cco migrate`.
+  `cco migrate`. **Memory relocation (ADR-0009)**: `cco migrate` copies the project's
+  `memory/` from the backup into `<state>/cco/projects/<id>/memory/` (one-time file copy,
+  machine-local, no versioning) so accumulated auto-memory is not lost in the cutover.
 - **Phase 3 — remove the legacy vault entirely (breaking).** Delete the
   profile/switch/shadow machinery, `cco vault *`, `cco project create`, and the
   custom `project.yml` sanitize/virtual-diff/extract-restore/backup-trap (unnecessary
@@ -442,11 +453,19 @@ phase leaves cco runnable + tests green.
   whitelist `.gitignore` + `.example` exemption. Also re-home the `cco update` merge
   engine artifacts (`.cco/base/`, `.cco/meta`) out of the committed `.cco/` into STATE
   (H6 — "unchanged" is true for the merge logic, not its paths).
-  > **GATE (BL2):** Phase 3 must **not** proceed until **RD-memory** assigns `memory/`
-  > a home (transport + versioning). Removing the vault deletes the only mechanism that
-  > versions/syncs `memory/` today (`cmd-vault.sh` auto-commit); without RD-memory this
-  > is a silent regression of the cross-PC auto-memory sync. RD-memory gates Phase 3 the
-  > way RD-claude-mount gated Phase 0.
+  **Auto-memory (ADR-0009)**: drop the vault's memory auto-commit
+  (`_auto_resolve_framework_changes`, D33) and `.gitkeep` tracking (D32) along with the
+  vault; `memory/` is now machine-local STATE (§2.2). Update the managed rule
+  `defaults/managed/.claude/rules/memory-policy.md` and `docs/reference/context-hierarchy.md`
+  to drop *"vault-synced"* / the `user-config/projects/<n>/memory/` location → *"machine-local
+  STATE; cross-PC sync = future opt-in (R-state-sync)"*.
+  > **GATE (BL2) — SATISFIED (2026-06-16, ADR-0009).** Phase 3 was gated on **RD-memory**
+  > assigning `memory/` a home; ADR-0009 resolves it: auto-memory is **machine-local STATE**
+  > (`<state>/cco/projects/<id>/memory/`), preserved across the cutover by `cco migrate`
+  > (Phase 2). The vault's auto-commit (D33) is the only cross-PC sync today; v1 **drops** it
+  > intentionally (the accepted regression, ADR-0009 Consequences) and reframes cross-PC /
+  > cross-team *state* sync as a deferred opt-in feature (R-state-sync, §12). Phase 3 may now
+  > proceed.
 
 **Migration flow** (lazy, per-project, idempotent, backed-up):
 1. **First run** detects a legacy vault → archive it to
@@ -503,8 +522,8 @@ any future hooks invoke `cco` by PATH. This keeps a future npm/npx + image packa
 |-------|-----|---------|--------|
 | 0 | machine-agnostic layout + index tests (new layout only, no dual-read); **XDG resolver matrix** (unset/empty/relative + `CCO_*_HOME` override, `0700`, host-side/anti-in-container guard); **absolute-mount generation** in compose; **F2 cross-tree collision warning** (committed `rules/foo.md` vs pack `rules/foo.md`, pack `:ro` wins); symlink-safe tool root | `test_local_paths.sh` | — |
 | 1 | `test_sync.sh` (copy semantics, 4 forms, confirm); resolve incl. clone-from-remote; **reminder aggregator** (a/b/c) + **H1 ordering** (resolve before notices) | — | — |
-| 2 | `test_migrate.sh` (lazy per-project from backup; backup-verified-before-read, M8); first-run bootstrap (per-root idempotent) | — | — |
-| 3 | multi-project coexistence; truthful-diff (no sanitize) tests; `test_config.sh` (Domain A: allowlist staging never `git add -A`, **secret-scan `.example` exemption** — skeleton passes, real `secrets.env` blocked); merge-engine path remap (`.cco/base`/`meta` in STATE) | `test_vault.sh` (shrink to migrate-reader) | `test_vault_profiles.sh`; custom-diff/sanitize tests |
+| 2 | `test_migrate.sh` (lazy per-project from backup; backup-verified-before-read, M8; **memory relocation backup→`<state>/cco/projects/<id>/memory/`**, ADR-0009); first-run bootstrap (per-root idempotent) | — | — |
+| 3 | multi-project coexistence; truthful-diff (no sanitize) tests; `test_config.sh` (Domain A: allowlist staging never `git add -A`, **secret-scan `.example` exemption** — skeleton passes, real `secrets.env` blocked); merge-engine path remap (`.cco/base`/`meta` in STATE); **memory-as-STATE** (ADR-0009: `memory/` in STATE persists across starts, no auto-commit, no `.gitkeep`) | `test_vault.sh` (shrink to migrate-reader) | `test_vault_profiles.sh`; custom-diff/sanitize tests; **D33 memory auto-commit / D32 `.gitkeep` tests** |
 
 Net: a narrower surface — no custom diff/save/merge sync code to test, no dual-read; the
 `cco update` merge engine **logic** tests are untouched (only its paths are remapped, H6).
@@ -518,6 +537,12 @@ Net: a narrower surface — no custom diff/save/merge sync code to test, no dual
 - **`~/.cco` background auto-sync (RD-triggers)** — managed pull/commit/push. The
   *versioning model* (explicit manual commits + allowlist) is resolved by ADR-0008; only
   the optional background/managed auto-sync is future work, owned by RD-triggers.
+- **State sync (R-state-sync)** — opt-in cross-PC / cross-team sync of *state*
+  (auto-memory **and** session transcripts), the capability the vault provided for memory
+  and that v1 drops (ADR-0009). Two scenarios to design separately: (a) one user's multiple
+  machines; (b) team members on a shared project. Kept out of the CONFIG sync (ADR-0008) so
+  state and config responsibilities stay separate; a single transport can serve both memory
+  and transcripts since both are STATE.
 - **`cco update` native (R-update-native)** — cco fully agnostic; opinionated
   packs/templates via native publish/install; keep a `cco update` for installed packs.
 - **cco packaging (R-pkg)** — npm/npx + image registry.
@@ -533,7 +558,6 @@ design is persisted.
 | # | Question |
 |---|----------|
 | **RD-authoring** | Authoring global packs/templates: direct `~/.cco` edit (lean) vs authoring-in-repo + promote. |
-| **RD-memory** | `memory/` handling: per-machine vs committed vs team-shared. |
 | **RD-triggers** | Future opt-in auto-sync (daemon / native hooks / git hooks / manual-only). Now also owns `~/.cco` background/managed auto-sync (ADR-0008). |
 
 **Resolved:**
@@ -542,3 +566,4 @@ design is persisted.
 | **RD-claude-mount** | ✅ 2026-06-16 (ADR-0005). Nested-overlay composition is source-agnostic → no bind-mount shadowing. Surfaced F1 (generate `packs.md`/`workspace.yml` into cache + `:ro` overlay, not into committed `.cco/claude/`), F2 (reserve `packs/`/`llms/`, warn on cross-tree collisions), F3 (parent rw, overlays `:ro`). |
 | **RD-paths** | ✅ 2026-06-16 (ADR-0007). XDG on both OSes: STATE `$CCO_STATE_HOME`→`$XDG_STATE_HOME/cco`→`~/.local/state/cco`, CACHE `$CCO_CACHE_HOME`→`$XDG_CACHE_HOME/cco`→`~/.cache/cco`; index in STATE; CONFIG keeps `~/.cco` dotdir; host-side resolution, `0700`, XDG-validation. |
 | **RD-home** | ✅ 2026-06-16 (ADR-0008). Unified **explicit manual commit** model for `~/.cco` + `<repo>/.cco` (semantic user-named snapshots; **no auto-commit** in v1 — deferred for atomic config-mutating commands). Non-blocking **reminders** (old clean-tree gate, now advisory) flag uncommitted `~/.cco`, uncommitted involved `<repo>/.cco`, cross-repo divergence. Allowlist double-barrier (whitelist `.gitignore` + explicit staging, never `git add -A`); 2-pass secret scan + `.example` exemption; explicit `cco config push/pull` (sync transports commits, never fabricates them); auto-sync → RD-triggers. |
+| **RD-memory** | ✅ 2026-06-16 (ADR-0009). Auto-memory is **machine-local STATE** (`<state>/cco/projects/<id>/memory/`), co-located with transcripts — not config, never in `~/.cco`/`<repo>/.cco`. **No versioning/sync in v1**: the vault auto-commit (D33) + `.gitkeep` (D32) machinery is dropped; `cco migrate` relocates memory from the backup (lossless). Team-shared project knowledge stays in committed docs/rules (not memory). **Satisfies the Phase-3 gate (BL2).** Cross-PC/cross-team *state* sync (memory + transcripts) deferred → R-state-sync (§12). |

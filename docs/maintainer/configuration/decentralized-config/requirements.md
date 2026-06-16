@@ -2,7 +2,7 @@
 
 **Status**: Approved for implementation (model finalized 2026-06-15). This is the
 authoritative requirements document; the detailed design is in `design.md` and the
-decision records (ADRs 0001–0008) in `decisions/`.
+decision records (ADRs 0001–0009) in `decisions/`.
 **Date**: 2026-06-15
 **Supersedes**: the central git-backed vault (`user-config/` projects + branch
 profiles) and `../vault/profile-isolation-design.md`. Reuses the `@local` path
@@ -97,7 +97,7 @@ flowchart LR
 | **AD6** | **No privileged repo.** Any repo carrying a `.cco/` is a valid project entry point. `cco start` uses the config of the **invoking repo** (cwd) by default, or the one given by flag. The session's source is therefore always unambiguous. An optional per-project *entry* repo is only a tie-breaker for name-based `cco start <project>`. |
 | **AD7** | **Sync is a plain copy (N1).** `cco sync` copies a source repo's committed `.cco/` set into target repos. No merge engine, no `sync-base`, no commit-time heuristic, no peer/root modes, no confirm/last-commit-wins policies. Works on the **same machine over the filesystem** (so it does not require repos to be git). Divergence between repos is allowed and visible; the user picks the source. |
 | **AD8** | **Git is the only cross-PC transport.** A repo's `.cco/` travels on the repo's own git remote (clone/pull brings it). Concurrent cross-PC edits surface as ordinary git merge conflicts the user resolves in their IDE. No cco-specific cross-PC reconciliation. A non-git repo simply does not travel across machines (sync within a project on one machine still works — AD7). |
-| **AD9** | **Config / state / cache are separated by location.** The committed `<repo>/.cco/` holds **only** machine-agnostic user config. Machine/runtime **state** (generated compose, claude-state, the local-path index, temp) and **cache** (llms, installed resources) live in **system directories outside the repo**, hidden from the user. `secrets.env` is the one exception that stays in the repo (gitignored) because the user edits it by hand. Exact filesystem locations: resolved by ADR-0007 (XDG state/cache). |
+| **AD9** | **Config / state / cache are separated by location.** The committed `<repo>/.cco/` holds **only** machine-agnostic user config. Machine/runtime **state** (generated compose, claude-state, auto-memory (ADR-0009), the local-path index, temp) and **cache** (llms, installed resources) live in **system directories outside the repo**, hidden from the user. `secrets.env` is the one exception that stays in the repo (gitignored) because the user edits it by hand. Exact filesystem locations: resolved by ADR-0007 (XDG state/cache). |
 | **AD10** | A central **`~/.cco/`** holds the user's **global resources** (authored packs, templates, global `.claude`) as a personal git store, plus references. Two strictly-separated sync domains: **A** personal multi-PC (the user's own `~/.cco` + per-repo git) and **B** team/external sharing (Config Repos publish/install — unchanged). `~/.cco` **versioning model is resolved by ADR-0008** (explicit manual commits + allowlist + reminders); only the optional background/managed auto-sync is deferred (RD-triggers). |
 | **AD11** | cco may later be distributed as an installable package (npm/npx) + image registry. **This design stays packaging-aware**: no tool code in any `.cco/`, no requirement to clone the cco source to run; hooks (if any) invoke `cco` by PATH. Detailed packaging design is a separate workstream (§9). |
 | **AD12** | **Breaking cutover + lazy per-project migration.** The refactor is a **direct breaking change**: no legacy runtime support, no dual-read, no deprecation window (the user base is tiny and known; migration is lossless). On first run of the new version with a legacy vault present, cco **backs up the vault** to a user-accessible location, tells the user, and offers to remove the old vault. Migration is then **lazy and per-project**: inside an already-cloned repo, `cco migrate <project>` initializes that repo's `.cco/` from the backup (instead of `cco init` clean), leaving the project in Case A; the user then chooses Case A/B/C via `cco sync`/`cco init`. See ADR-0006. |
@@ -125,7 +125,7 @@ machine/runtime state and cache live outside the repo (AD9).
 
 State/cache/index live in system directories (AD9; exact paths = RD-paths):
 ```
-<state-dir>/cco/projects/<id>/   # generated docker-compose, claude-state, .tmp, meta
+<state-dir>/cco/projects/<id>/   # generated docker-compose, claude-state, memory (ADR-0009), .tmp, meta
 <state-dir>/cco/index            # machine-local name→abs-path + project→repos index (AD5)
 <cache-dir>/cco/                 # llms, installed resources
 ~/.cco/                          # personal git store: packs/, templates/, global/.claude/  (AD10)
@@ -308,12 +308,12 @@ flowchart TD
 | RD-claude-mount resolved (2026-06-16, ADR-0005) | ✅ single `/workspace/.claude` rw mount + nested `:ro` pack/llms overlays = source-agnostic composition, no shadowing; generated files (`packs.md`/`workspace.yml`) → machine-local cache + `:ro` overlay, never into committed `.cco/claude/`; `packs/`/`llms/` reserved |
 | RD-paths resolved (2026-06-16, ADR-0007) | ✅ XDG on both OSes (no `~/Library`): STATE `$CCO_STATE_HOME`→`$XDG_STATE_HOME/cco`→`~/.local/state/cco`; CACHE `$CCO_CACHE_HOME`→`$XDG_CACHE_HOME/cco`→`~/.cache/cco`; index in STATE; CONFIG keeps `~/.cco` dotdir; host-side resolution, XDG-validation, `0700` |
 | RD-home resolved (2026-06-16, ADR-0008) | ✅ Unified explicit manual commit model for `~/.cco` + `<repo>/.cco` (semantic snapshots, NO auto-commit in v1); non-blocking reminders (uncommitted `~/.cco`/`<repo>/.cco` + cross-repo divergence); allowlist double-barrier (never `git add -A`); 2-pass secret scan + `.example` exemption; explicit `cco config push/pull` (sync moves commits, never fabricates); auto-sync + atomic-command auto-commit → deferred (RD-triggers / future) |
+| RD-memory resolved (2026-06-16, ADR-0009) | ✅ Auto-memory is **machine-local STATE** (`<state>/cco/projects/<id>/memory/`, co-located with transcripts) — not config, never in `~/.cco`/`<repo>/.cco`; NO versioning/sync in v1 (vault auto-commit D33 + `.gitkeep` D32 dropped); `cco migrate` relocates memory from backup (lossless); team-shared knowledge stays in committed docs/rules. **Satisfies the Phase-3 gate (review BL2).** Cross-PC/cross-team state sync (memory + transcripts) deferred → R-state-sync |
 
 **Open — deferred to dedicated analyses (run after this design is persisted):**
 | # | Question |
 |---|----------|
 | **RD-authoring** | How users author global packs/templates (direct `~/.cco` edit vs authoring-in-repo + promote). Lean: `~/.cco` is a personal repo opened directly at global scope. |
-| **RD-memory** | `memory/` handling: per-machine vs committed-in-repo vs team-shared. Teams may want shared memory for project state/decisions; others may not want it committed. |
 | **RD-triggers** | Future opt-in auto-sync: background daemon and/or native hooks in select cco commands vs opt-in git hooks vs manual-only. Manual-only is the v1 default. |
 
 ---
@@ -331,8 +331,12 @@ flowchart TD
   opinionated packs/project-templates via native publish/install (like any user),
   keeping a `cco update` for installed packs (merge local edits vs replace/discard).
   Recorded now so it is not forgotten; designed separately (N5).
+- **R-state-sync** — Opt-in cross-PC / cross-team sync of *state* (auto-memory **and**
+  session transcripts), the capability the vault gave memory and that v1 drops (ADR-0009).
+  Scenarios: (a) one user's multiple machines; (b) team members on a shared project. Kept
+  separate from CONFIG sync (ADR-0008) so state and config responsibilities stay distinct.
 - **R-workspace** — Persistent `/workspace` root.
 
-**Artifacts (produced):** `design.md` and ADR 0001–0008. Remaining: dedicated analyses
-for the open RD-* questions (RD-authoring, RD-memory, RD-triggers) plus the follow-ups
+**Artifacts (produced):** `design.md` and ADR 0001–0009. Remaining: dedicated analyses
+for the open RD-* questions (RD-authoring, RD-triggers) plus the follow-ups
 raised by the 16-06 coherence review (`reviews/16-06-2026-design-coherence-review.md`).
