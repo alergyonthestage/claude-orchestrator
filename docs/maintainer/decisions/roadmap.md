@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-06-11 (#B23 bash 3.2 resolve-prompt fix; DECIDED Vault Simplification — single filesystem + profiles-as-tags; #6b/#6c superseded).
+> Last updated: 2026-06-16 (decentralized-config RD-* analyses: RD-claude-mount + RD-paths resolved, ADR-0005/0007; ~/.cco confirmed as dotdir-as-git-repo).
 >
 > **Note**: Sprint entries are historical. Path references (e.g., `.cco-meta`, `.cco-source`) in older
 > sprints reflect the layout at the time of writing. See Sprint 8 and the `.cco/` consolidation
@@ -122,8 +122,11 @@ gate which projects exist on disk or which can be started.
   base). First run backs up the legacy vault; **lazy per-project** `cco migrate
   <project>` from the backup. Entry points: `cco init` | `cco join` | `cco migrate`.
 - Full requirements + design + ADR: `../configuration/decentralized-config/`.
-- Follow-up dedicated analyses (do not block Phase 0): RD-syncmeta, RD-home,
-  RD-authoring, RD-paths, RD-memory, RD-triggers, RD-claude-mount.
+- Follow-up dedicated analyses (do not block Phase 0). **Resolved**: RD-syncmeta
+  (sync-state tracking in scope, FR-Y-S6/§4.6), RD-claude-mount (ADR-0005 — nested
+  overlay source-agnostic, no shadowing; F1 generated files → cache + `:ro`),
+  RD-paths (ADR-0007 — XDG state/cache, index in STATE, `~/.cco` dotdir-as-git-repo).
+  **Remaining**: RD-home, RD-authoring, RD-memory, RD-triggers.
 
 ```mermaid
 flowchart LR
@@ -159,9 +162,11 @@ flowchart LR
 - **Persistent `/workspace` root (R-workspace)** — optional mount for host-accessible
   session artifacts.
 
-**Next**: design is approved + persisted. Run the dedicated follow-up analyses
-(RD-* above) → then implement per `design.md` §9 phases (Phase 0 = machine-agnostic
-layout + index + path helpers).
+**Next**: design approved + persisted; RD-* analyses in progress (RD-syncmeta,
+RD-claude-mount, RD-paths resolved 2026-06-16 — see ADR-0005/0007). Finish the
+remaining analyses (RD-home → RD-authoring → RD-memory → RD-triggers) → then
+implement per `design.md` §9 phases (Phase 0 = machine-agnostic layout + index +
+path helpers).
 
 ---
 
