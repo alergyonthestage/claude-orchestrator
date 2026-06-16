@@ -73,9 +73,10 @@ repo) is the right boundary for cco specifically:
 - **Correct precedent is `pass`, not docker/cargo.** `~/.docker` / `~/.cargo` are dotdir
   *homes* but **not** git repos with remotes; they justify the *naming*, not the
   *git-repo* model. The battle-tested precedent for "a tool owns a dotdir, `git init`s
-  it in place, auto-commits mutations, and offers `tool git push/pull` to a user-chosen
-  remote" is **`pass`** (`~/.password-store` + `pass git`); a clean `~/.config/nvim`
-  under a personal git remote is a second precedent.
+  it in place and offers `tool git push/pull` to a user-chosen remote" is **`pass`**
+  (`~/.password-store` + `pass git`); a clean `~/.config/nvim` under a personal git
+  remote is a second precedent. (cco adopts the *boundary* but not pass's
+  auto-commit-on-mutation — see Guardrails / ADR-0008.)
 - **Dotdir-as-repo is clean *only* when the dir holds authored content only.** The
   frictionless cases (pass, nvim config) commit only authored files and push state/cache
   elsewhere; the cases that fight `.gitignore` (oh-my-zsh) or need `showUntrackedFiles=no`
@@ -93,12 +94,14 @@ repo) is the right boundary for cco specifically:
   resolve dual-scope config. The shared `.cco` name is a coherence win. **Caveat:**
   `<repo>/.cco/` must never be `git init`'d (no nested repo); the only `.git` cco owns
   is `~/.cco/.git`.
-- **Guardrails (owned by RD-home, noted here):** like `pass`, cco auto-commits its own
-  mutations with structured messages and exposes `cco sync`/`cco <git-subcommand>`;
-  stage **explicit paths, never `git add -A`**; ship a committed whitelist `.gitignore`
-  in `~/.cco`; the remote is opt-in and should be **private**; the framework 3-way merge
-  engine (`cco update`) stays pointed at defaults and **out** of the personal store's
-  history.
+- **Versioning model → ADR-0008 (RD-home, resolved).** **Unlike `pass`, cco does NOT
+  auto-commit**: `~/.cco` is hand-authored (cco only scaffolds via `cco pack create`), so
+  commits are **explicit and manual** with semantic messages — via `cco config save` or
+  plain git — and remote sync is **explicit** `cco config push/pull` (the verb `cco sync`
+  is the *project multi-repo* command, never the personal store). Allowlist = committed
+  whitelist `.gitignore` + explicit-path staging, **never `git add -A`**; the framework
+  3-way merge engine (`cco update`) stays **out** of the personal store's history;
+  the remote is opt-in and should be **private**. Background auto-sync → RD-triggers.
 5. **Override env vars** `CCO_STATE_HOME` / `CCO_CACHE_HOME` rank **above** `XDG_*` so a
    user can relocate cco alone without perturbing every XDG tool (precedent:
    `GH_CONFIG_DIR`, `DOCKER_CONFIG`). They supersede the legacy `CCO_USER_CONFIG_DIR` /

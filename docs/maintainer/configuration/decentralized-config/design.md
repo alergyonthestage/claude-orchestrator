@@ -5,7 +5,8 @@ the phased implementation (§9).
 **Requirements**: `requirements.md` (AD1-AD12, FR-*).
 **Decision records**: `decisions/` — ADR-0001 (decentralization), 0002
 (machine-agnostic config), 0003 (sync-as-copy), 0004 (config/state/cache separation),
-0005 (dual `.claude` scope), 0006 (breaking cutover + lazy migration).
+0005 (dual `.claude` scope), 0006 (breaking cutover + lazy migration), 0007 (system-dir
+locations / XDG), 0008 (config versioning model).
 **Decision history (historical)**: `reviews/15-06-2026-sync-adversarial-review.md`,
 `reviews/15-06-2026-simplification-analysis.md`.
 
@@ -256,8 +257,8 @@ This tracking drives:
   sync" notice (§4.4);
 - optional **fast rollback** of the last sync.
 
-Exact format and the rollback-snapshot richness are implementation details (was
-RD-syncmeta; now in scope — requirements §8).
+Exact format and the rollback-snapshot richness are implementation details (this was
+previously a separate open question, now folded into scope as FR-Y-S6 — requirements §8).
 
 ---
 
@@ -309,7 +310,7 @@ Publish/install/update/export over Config Repos (`cmd-project-publish.sh`,
 | Sync | `cco sync [target] [--from <src>] [--dry-run\|--auto-approve\|--check]` | NEW |
 | Paths/resolve | `cco resolve [project]` (resolve unresolved repos/mounts: pick a local path **or** clone from remote to a chosen destination), `cco path set/list`, `cco index refresh --scan` | NEW |
 | Discovery | `cco list [--tag <t>]`, tag set/edit | transform |
-| Global store | `cco config …` (manage `~/.cco`; depth = RD-home) | NEW |
+| Global store | `cco config …` (manage `~/.cco`; versioning model = ADR-0008) | NEW |
 | Sharing | `cco pack/project publish\|install\|update\|export`, `cco remote …` | unchanged |
 | Update | `cco update …` (framework→user; merge engine unchanged) | unchanged |
 
@@ -398,7 +399,7 @@ phase leaves cco runnable + tests green.
   profile/switch/shadow machinery, `cco vault *`, `cco project create`, and the
   custom `project.yml` sanitize/virtual-diff/extract-restore/backup-trap (unnecessary
   under AD3). Keep `@local` (index-backed), secret-scan, gitignore-heal. Profiles →
-  tags. `cco config` (`~/.cco`; managed depth per RD-home).
+  tags. `cco config` (`~/.cco`; versioning model per ADR-0008).
 
 **Migration flow** (lazy, per-project, idempotent, backed-up):
 1. **First run** detects a legacy vault → archive it to
@@ -443,7 +444,9 @@ Net: a narrower surface — no custom diff/save/merge sync code to test, no dual
 
 - **Auto-sync triggers (RD-triggers)** — opt-in background daemon and/or native hooks
   in select cco commands vs opt-in git hooks. Manual `cco sync` is the v1 model.
-- **`~/.cco` auto-management (RD-home)** — managed pull/commit/push with allowlist.
+- **`~/.cco` background auto-sync (RD-triggers)** — managed pull/commit/push. The
+  *versioning model* (explicit manual commits + allowlist) is resolved by ADR-0008; only
+  the optional background/managed auto-sync is future work, owned by RD-triggers.
 - **`cco update` native (R-update-native)** — cco fully agnostic; opinionated
   packs/templates via native publish/install; keep a `cco update` for installed packs.
 - **cco packaging (R-pkg)** — npm/npx + image registry.

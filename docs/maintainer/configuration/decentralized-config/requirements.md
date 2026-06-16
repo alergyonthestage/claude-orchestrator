@@ -2,7 +2,7 @@
 
 **Status**: Approved for implementation (model finalized 2026-06-15). This is the
 authoritative requirements document; the detailed design is in `design.md` and the
-decision records (ADRs 0001–0006) in `decisions/`.
+decision records (ADRs 0001–0008) in `decisions/`.
 **Date**: 2026-06-15
 **Supersedes**: the central git-backed vault (`user-config/` projects + branch
 profiles) and `../vault/profile-isolation-design.md`. Reuses the `@local` path
@@ -97,8 +97,8 @@ flowchart LR
 | **AD6** | **No privileged repo.** Any repo carrying a `.cco/` is a valid project entry point. `cco start` uses the config of the **invoking repo** (cwd) by default, or the one given by flag. The session's source is therefore always unambiguous. An optional per-project *entry* repo is only a tie-breaker for name-based `cco start <project>`. |
 | **AD7** | **Sync is a plain copy (N1).** `cco sync` copies a source repo's committed `.cco/` set into target repos. No merge engine, no `sync-base`, no commit-time heuristic, no peer/root modes, no confirm/last-commit-wins policies. Works on the **same machine over the filesystem** (so it does not require repos to be git). Divergence between repos is allowed and visible; the user picks the source. |
 | **AD8** | **Git is the only cross-PC transport.** A repo's `.cco/` travels on the repo's own git remote (clone/pull brings it). Concurrent cross-PC edits surface as ordinary git merge conflicts the user resolves in their IDE. No cco-specific cross-PC reconciliation. A non-git repo simply does not travel across machines (sync within a project on one machine still works — AD7). |
-| **AD9** | **Config / state / cache are separated by location.** The committed `<repo>/.cco/` holds **only** machine-agnostic user config. Machine/runtime **state** (generated compose, claude-state, the local-path index, temp) and **cache** (llms, installed resources) live in **system directories outside the repo**, hidden from the user. `secrets.env` is the one exception that stays in the repo (gitignored) because the user edits it by hand. Exact filesystem locations: see open question RD-paths. |
-| **AD10** | A central **`~/.cco/`** holds the user's **global resources** (authored packs, templates, global `.claude`) as a personal git store, plus references. Two strictly-separated sync domains: **A** personal multi-PC (the user's own `~/.cco` + per-repo git) and **B** team/external sharing (Config Repos publish/install — unchanged). `~/.cco` management (incl. auto-management) is **deferred to a dedicated analysis** (RD-home). |
+| **AD9** | **Config / state / cache are separated by location.** The committed `<repo>/.cco/` holds **only** machine-agnostic user config. Machine/runtime **state** (generated compose, claude-state, the local-path index, temp) and **cache** (llms, installed resources) live in **system directories outside the repo**, hidden from the user. `secrets.env` is the one exception that stays in the repo (gitignored) because the user edits it by hand. Exact filesystem locations: resolved by ADR-0007 (XDG state/cache). |
+| **AD10** | A central **`~/.cco/`** holds the user's **global resources** (authored packs, templates, global `.claude`) as a personal git store, plus references. Two strictly-separated sync domains: **A** personal multi-PC (the user's own `~/.cco` + per-repo git) and **B** team/external sharing (Config Repos publish/install — unchanged). `~/.cco` **versioning model is resolved by ADR-0008** (explicit manual commits + allowlist + reminders); only the optional background/managed auto-sync is deferred (RD-triggers). |
 | **AD11** | cco may later be distributed as an installable package (npm/npx) + image registry. **This design stays packaging-aware**: no tool code in any `.cco/`, no requirement to clone the cco source to run; hooks (if any) invoke `cco` by PATH. Detailed packaging design is a separate workstream (§9). |
 | **AD12** | **Breaking cutover + lazy per-project migration.** The refactor is a **direct breaking change**: no legacy runtime support, no dual-read, no deprecation window (the user base is tiny and known; migration is lossless). On first run of the new version with a legacy vault present, cco **backs up the vault** to a user-accessible location, tells the user, and offers to remove the old vault. Migration is then **lazy and per-project**: inside an already-cloned repo, `cco migrate <project>` initializes that repo's `.cco/` from the backup (instead of `cco init` clean), leaving the project in Case A; the user then chooses Case A/B/C via `cco sync`/`cco init`. See ADR-0006. |
 
@@ -229,7 +229,7 @@ flowchart TD
 
 ---
 
-## 6. Central Store `~/.cco` & Domains (FR-C) — depth deferred
+## 6. Central Store `~/.cco` & Domains (FR-C) — versioning model = ADR-0008; auto-sync deferred (RD-triggers)
 
 - **FR-C1** — `~/.cco/` holds the user's **global resources**: authored `packs/`,
   `templates/`, and `global/.claude/`. It is a personal git store (Domain A).
@@ -297,7 +297,7 @@ flowchart TD
 | Vault removed; `project create` removed | ✅ surface = `cco init` + `cco join` + `cco migrate` + `cco sync` + `cco start` + global-store mgmt + existing publish/install/remote/pack/llms/update |
 | Breaking cutover; lazy per-project migration (AD12, ADR-0006) | ✅ no dual-read / no deprecation window; first-run backup + `cco migrate <project>` from backup |
 | Sync default = diff + confirm; `--auto-approve` | ✅ |
-| Sync-state tracking in scope (FR-Y-S6, §4.6) | ✅ per-machine metadata: sync-set membership + last-synced fingerprint (not a merge sync-base); exact format/rollback richness = impl |
+| Sync-state tracking in scope (FR-Y-S6, design §4.6) | ✅ per-machine metadata: sync-set membership + last-synced fingerprint (not a merge sync-base); exact format/rollback richness = impl |
 | Merge engine stays for `cco update` only (N5) | ✅ |
 | RD-claude-mount resolved (2026-06-16, ADR-0005) | ✅ single `/workspace/.claude` rw mount + nested `:ro` pack/llms overlays = source-agnostic composition, no shadowing; generated files (`packs.md`/`workspace.yml`) → machine-local cache + `:ro` overlay, never into committed `.cco/claude/`; `packs/`/`llms/` reserved |
 | RD-paths resolved (2026-06-16, ADR-0007) | ✅ XDG on both OSes (no `~/Library`): STATE `$CCO_STATE_HOME`→`$XDG_STATE_HOME/cco`→`~/.local/state/cco`; CACHE `$CCO_CACHE_HOME`→`$XDG_CACHE_HOME/cco`→`~/.cache/cco`; index in STATE; CONFIG keeps `~/.cco` dotdir; host-side resolution, XDG-validation, `0700` |
@@ -327,5 +327,6 @@ flowchart TD
   Recorded now so it is not forgotten; designed separately (N5).
 - **R-workspace** — Persistent `/workspace` root.
 
-**Next artifacts:** `design.md` (detailed design, authoritative for implementation)
-and ADR `0001` (decision record). Dedicated analyses for the RD-* open questions.
+**Artifacts (produced):** `design.md` and ADR 0001–0008. Remaining: dedicated analyses
+for the open RD-* questions (RD-authoring, RD-memory, RD-triggers) plus the follow-ups
+raised by the 16-06 coherence review (`reviews/16-06-2026-design-coherence-review.md`).
