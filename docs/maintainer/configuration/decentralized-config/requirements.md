@@ -339,8 +339,8 @@ flowchart TD
   separate from CONFIG sync (ADR-0008) so state and config responsibilities stay distinct.
 - **R-workspace** — Persistent `/workspace` root.
 
-**Artifacts (produced):** `design.md` and ADR 0001–0010. Remaining: a dedicated analysis
-for the open RD-triggers question, a **global resource-coherence inventory** (every
-skill/agent/rule/template/doc/managed file referencing the old model — surfaced by ADR-0010),
-plus the follow-ups raised by the 16-06 coherence review
-(`reviews/16-06-2026-design-coherence-review.md`).
+**Artifacts (produced):** `design.md`, ADR 0001–0010, and the
+**`resource-coherence-inventory.md`** (every skill/agent/rule/template/doc/managed file
+referencing the old model + required change + phase — surfaced by ADR-0010). Remaining: a
+dedicated analysis for the open RD-triggers question, plus the follow-ups raised by the 16-06
+coherence review (`reviews/16-06-2026-design-coherence-review.md`).
