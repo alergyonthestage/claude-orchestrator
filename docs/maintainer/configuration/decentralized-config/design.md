@@ -109,7 +109,7 @@ container); ignore unset/empty/non-absolute XDG values; create `0700`. Rationale
 the committed `.cco/` small and clean, make state un-committable by construction, and
 protect it from accidental edits.
 
-### 2.3 `~/.cco/` — personal git store (Domain A; depth deferred to RD-home)
+### 2.3 `~/.cco/` — personal git store (Domain A; management model = ADR-0008)
 > CONFIG store deliberately keeps the `~/.cco` **dotdir** (ADR-0007), not
 > `$XDG_CONFIG_HOME/cco`: it is a user-facing, git-versioned tree the user authors in
 > directly (docker `~/.docker` / cargo `~/.cargo` precedent). Clean split: `~/.cco` =
@@ -273,10 +273,14 @@ logical names; the index provides absolute paths; bootstrap on a fresh machine v
 ### 6.1 Domain A — personal multi-PC
 - Per-repo `.cco/` rides each repo's **own git remote** (AD8): clone/pull brings it;
   concurrent cross-PC edits are ordinary git conflicts resolved in the IDE.
-- `~/.cco` global resources sync via the **personal git store**. Mechanism depth
-  (managed auto pull/commit/push, conflict handling, manual vs managed) is **deferred
-  to RD-home**. Hard rule regardless: commit via an explicit **allowlist**
-  (`packs/ templates/ global/.claude/`), never `git add -A`.
+- `~/.cco` global resources sync via the **personal git store** (ADR-0008): **manual
+  `pass` model** — cco auto-commits its own mutations via explicit-path allowlist
+  staging; remote sync is **explicit** (`cco config push/pull`), never per-command.
+  Local conflicts on `pull` → fast-forward or **abort + notify** (resolve in IDE), no
+  auto-merge. **Allowlist = double barrier**: committed whitelist `.gitignore`
+  (`*` then `!packs/ !templates/ !global/.claude/`) + explicit-path staging, never
+  `git add -A`. Secret scan (2-pass, with `.example` exemption) blocks on hit.
+  Background/managed auto-sync is **deferred to RD-triggers**.
 
 ### 6.2 Domain B — team/external (unchanged)
 Publish/install/update/export over Config Repos (`cmd-project-publish.sh`,
@@ -444,13 +448,13 @@ design is persisted.
 
 | # | Question |
 |---|----------|
-| **RD-home** | `~/.cco` management depth: auto vs manual, conflict handling, allowlist enforcement. |
 | **RD-authoring** | Authoring global packs/templates: direct `~/.cco` edit (lean) vs authoring-in-repo + promote. |
 | **RD-memory** | `memory/` handling: per-machine vs committed vs team-shared. |
-| **RD-triggers** | Future opt-in auto-sync (daemon / native hooks / git hooks / manual-only). |
+| **RD-triggers** | Future opt-in auto-sync (daemon / native hooks / git hooks / manual-only). Now also owns `~/.cco` background/managed auto-sync (ADR-0008). |
 
 **Resolved:**
 | # | Resolution |
 |---|----------|
 | **RD-claude-mount** | ✅ 2026-06-16 (ADR-0005). Nested-overlay composition is source-agnostic → no bind-mount shadowing. Surfaced F1 (generate `packs.md`/`workspace.yml` into cache + `:ro` overlay, not into committed `.cco/claude/`), F2 (reserve `packs/`/`llms/`, warn on cross-tree collisions), F3 (parent rw, overlays `:ro`). |
 | **RD-paths** | ✅ 2026-06-16 (ADR-0007). XDG on both OSes: STATE `$CCO_STATE_HOME`→`$XDG_STATE_HOME/cco`→`~/.local/state/cco`, CACHE `$CCO_CACHE_HOME`→`$XDG_CACHE_HOME/cco`→`~/.cache/cco`; index in STATE; CONFIG keeps `~/.cco` dotdir; host-side resolution, `0700`, XDG-validation. |
+| **RD-home** | ✅ 2026-06-16 (ADR-0008). `~/.cco` managed via the manual `pass` model: auto local commits with explicit-path allowlist staging (never `git add -A`) + double-barrier whitelist `.gitignore`; explicit `cco config push/pull`; pull non-FF → abort+notify; 2-pass secret scan + `.example` exemption. Background auto-sync deferred to RD-triggers. |

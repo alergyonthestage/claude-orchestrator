@@ -237,11 +237,14 @@ flowchart TD
   filtering; it lives in a system dir, is per-machine, and is rebuildable by scanning
   known directories (`cco index refresh --scan`) so a fresh machine can repopulate.
 - **FR-C3 (Domain A)** — Personal multi-PC: per-repo `.cco/` rides each repo's own
-  remote; `~/.cco` global resources sync via the personal store. **Auto-management,
-  conflict handling, and the exact mechanism are deferred to a dedicated analysis
-  (RD-home).** Whatever the mechanism, it MUST commit via an **explicit allowlist**
-  (`packs/ templates/ global/.claude/`), never `git add -A`, so machine-specific or
-  secret files can never be pushed.
+  remote; `~/.cco` global resources sync via the personal store. **Management model =
+  ADR-0008 (RD-home resolved)**: manual `pass` model — cco auto-commits its own
+  mutations; remote sync is explicit (`cco config push/pull`), never per-command;
+  pull non-fast-forward → abort + notify (resolve in IDE), no auto-merge. Commit via an
+  **explicit allowlist** (`packs/ templates/ global/.claude/`) + a committed whitelist
+  `.gitignore`, **never `git add -A`**, so machine-specific or secret files can never be
+  pushed; a 2-pass secret scan (with `.example` exemption) blocks on hit. Background/
+  managed auto-sync is deferred to **RD-triggers**.
 - **FR-C4 (Domain B)** — Team/external sharing via Config Repos
   (`publish`/`install`/`update`/`export`) is **unchanged**. Authoring of global
   resources happens directly in `~/.cco` (opened in an IDE when working at global
@@ -293,11 +296,11 @@ flowchart TD
 | Merge engine stays for `cco update` only (N5) | ✅ |
 | RD-claude-mount resolved (2026-06-16, ADR-0005) | ✅ single `/workspace/.claude` rw mount + nested `:ro` pack/llms overlays = source-agnostic composition, no shadowing; generated files (`packs.md`/`workspace.yml`) → machine-local cache + `:ro` overlay, never into committed `.cco/claude/`; `packs/`/`llms/` reserved |
 | RD-paths resolved (2026-06-16, ADR-0007) | ✅ XDG on both OSes (no `~/Library`): STATE `$CCO_STATE_HOME`→`$XDG_STATE_HOME/cco`→`~/.local/state/cco`; CACHE `$CCO_CACHE_HOME`→`$XDG_CACHE_HOME/cco`→`~/.cache/cco`; index in STATE; CONFIG keeps `~/.cco` dotdir; host-side resolution, XDG-validation, `0700` |
+| RD-home resolved (2026-06-16, ADR-0008) | ✅ `~/.cco` = manual `pass` model: auto local commits, explicit-path allowlist staging (never `git add -A`) + whitelist `.gitignore`; explicit `cco config push/pull`; pull non-FF → abort+notify; 2-pass secret scan + `.example` exemption. Auto-sync → RD-triggers |
 
 **Open — deferred to dedicated analyses (run after this design is persisted):**
 | # | Question |
 |---|----------|
-| **RD-home** | `~/.cco` management depth: auto-management (pull-before-read / commit+push-after-write) feasibility, conflict handling, allowlist enforcement, manual vs managed modes. |
 | **RD-authoring** | How users author global packs/templates (direct `~/.cco` edit vs authoring-in-repo + promote). Lean: `~/.cco` is a personal repo opened directly at global scope. |
 | **RD-memory** | `memory/` handling: per-machine vs committed-in-repo vs team-shared. Teams may want shared memory for project state/decisions; others may not want it committed. |
 | **RD-triggers** | Future opt-in auto-sync: background daemon and/or native hooks in select cco commands vs opt-in git hooks vs manual-only. Manual-only is the v1 default. |
