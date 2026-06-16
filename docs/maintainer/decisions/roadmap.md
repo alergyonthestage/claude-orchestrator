@@ -170,11 +170,13 @@ flowchart LR
 - **Persistent `/workspace` root (R-workspace)** — optional mount for host-accessible
   session artifacts.
 
-**Next**: design approved + persisted; RD-* analyses in progress (RD-syncmeta,
-RD-claude-mount, RD-paths resolved 2026-06-16 — see ADR-0005/0007). Finish the
-remaining analyses (RD-home → RD-authoring → RD-memory → RD-triggers) → then
-implement per `design.md` §9 phases (Phase 0 = machine-agnostic layout + index +
-path helpers).
+**Next**: design approved + persisted; RD-syncmeta/RD-claude-mount/RD-paths/RD-home
+resolved 2026-06-16 (ADR-0005/0007/0008) + cross-domain coherence review done with
+doc-fixes/phase write-downs applied. **Next analysis = RD-memory** (gates Phase 3),
+then RD-authoring (incl. the tag-only-vs-subdirs `~/.cco` organization eval) and
+RD-triggers, plus the review's follow-up analyses (reminder-aggregator cost, project-
+config inventory, merge-engine path remap, index concurrency/namespacing, sync-state
+lifecycle, join Case-C). Then implement per `design.md` §9 phases (Phase 0 ready).
 
 ---
 
