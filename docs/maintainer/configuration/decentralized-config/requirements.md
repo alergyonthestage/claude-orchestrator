@@ -185,16 +185,26 @@ current repo):
   visible; `cco start` always uses an unambiguous source (AD6).
 - **FR-Y-S3** — By default sync shows a **truthful diff and asks for confirmation**;
   `--auto-approve` (or equivalent) skips the prompt. `--dry-run` previews without
-  writing. *(Snapshot/rollback and user-vs-sync change detection — see RD-syncmeta.)*
+  writing. *(Snapshot/rollback and user-vs-sync change detection — see FR-Y-S6 / design §4.6.)*
 - **FR-Y-S4** — A repo without `.cco/` is a code-only member (Case A): it is a valid
   target of sync (gains a copy) but cannot be a start source.
 - **FR-Y-S5 (membership / `cco join`)** — A repo becomes a **member** of a project
-  either by listing its name in the holder's `project.yml` `repos[]`, or by running
-  `cco join <project>` from that repo (which registers it in the index and adds it to
-  the holder's `project.yml`). By default the joining repo gets **no `.cco/`**
-  (code-only member); `cco join --sync` (or interactive confirm) copies the project's
-  `.cco/` into it. If the project's repos are divergent (Case C), `--sync` prompts
-  which repo to copy from.
+  either by listing its name in `project.yml` `repos[]`, or by running
+  `cco join <project>` from that repo (registers it in the index and adds it to
+  `repos[]`). Since `project.yml` is a synced file, the `repos[]` edit must reach every
+  repo that holds a copy: in **Case B** (repos in sync) join updates `project.yml` in
+  **all synced repos**; in **Case C** (divergent, no sync) join **prompts** which
+  repo's `project.yml` to update, or all (membership only, no content sync). The
+  joining repo gets **no `.cco/`** (code-only member) unless `cco join --sync` (or
+  interactive confirm), which copies the project's `.cco/` into it (source prompted if
+  divergent).
+- **FR-Y-S6 (sync-state tracking)** — cco keeps lightweight **per-machine** sync
+  metadata (in the system state dir, never committed; not a merge `sync-base`):
+  which member repos carry a synced copy vs are divergent, and a **last-synced
+  fingerprint** per repo to distinguish a repo edited **locally since the last sync**
+  from one that merely **received** a sync. It drives `cco sync`/`cco join` target
+  selection (Case B all vs Case C prompt), divergence flagging before `cco start`, and
+  optional fast rollback. Exact format / rollback richness = implementation detail.
 
 ### 5.3 Supported cases (project: repo1 + repo2 + repo3)
 - **Case A — single-config, no copies.** `cco init` only in repo1; sync off. repo2/3
@@ -278,13 +288,13 @@ flowchart TD
 | Config/state/cache separated by location (AD9) | ✅ state+cache out of repo; `secrets.env` the in-repo exception |
 | Vault removed; `project create` removed | ✅ surface = `cco init` + `cco join` + `cco migrate` + `cco sync` + `cco start` + global-store mgmt + existing publish/install/remote/pack/llms/update |
 | Breaking cutover; lazy per-project migration (AD12, ADR-0006) | ✅ no dual-read / no deprecation window; first-run backup + `cco migrate <project>` from backup |
-| Sync default = diff + confirm; `--auto-approve` | ✅ (snapshot/rollback = RD-syncmeta) |
+| Sync default = diff + confirm; `--auto-approve` | ✅ |
+| Sync-state tracking in scope (FR-Y-S6, §4.6) | ✅ per-machine metadata: sync-set membership + last-synced fingerprint (not a merge sync-base); exact format/rollback richness = impl |
 | Merge engine stays for `cco update` only (N5) | ✅ |
 
 **Open — deferred to dedicated analyses (run after this design is persisted):**
 | # | Question |
 |---|----------|
-| **RD-syncmeta** | Should sync keep a last-synced snapshot for fast rollback and to distinguish user edits vs cco-sync edits (and surface divergence before `cco start`)? Internal-only metadata; evaluate UX benefit vs complexity. |
 | **RD-home** | `~/.cco` management depth: auto-management (pull-before-read / commit+push-after-write) feasibility, conflict handling, allowlist enforcement, manual vs managed modes. |
 | **RD-authoring** | How users author global packs/templates (direct `~/.cco` edit vs authoring-in-repo + promote). Lean: `~/.cco` is a personal repo opened directly at global scope. |
 | **RD-paths** | Exact filesystem locations for state/cache/index on macOS & Linux (XDG-style per-user `~/.local/state`, `~/.cache`, `~/.config` vs other). Avoid cluttering the home dir; per-user not root. |

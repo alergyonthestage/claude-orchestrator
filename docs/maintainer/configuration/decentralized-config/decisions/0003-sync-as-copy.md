@@ -45,6 +45,14 @@ Replace reconciliation with a **plain copy**:
 4. **Git is the only cross-PC transport.** Each repo's `.cco/` rides its own remote;
    concurrent cross-PC edits are ordinary git conflicts resolved in the IDE. Repos
    need not be git for same-machine sync; git is required only to travel across PCs.
+5. **Membership propagation.** `cco join` adds a repo to `project.yml` `repos[]`; since
+   that is a synced file, the edit reaches **all synced repos** (Case B) or **prompts**
+   in a divergent project (Case C). The joining repo gets a copy only with `--sync`.
+6. **Sync-state tracking (in scope).** cco keeps lightweight **per-machine** metadata
+   (sync-set membership + a last-synced fingerprint per repo) — **not** a merge
+   `sync-base` — to drive join/sync target selection, flag divergence before
+   `cco start`, and distinguish dev-local edits from received syncs (FR-Y-S6, design
+   §4.6).
 
 ## Alternatives Considered
 
@@ -69,6 +77,6 @@ committing N repos (`git log -- .cco/` isolates config history; `cco sync` repor
 changed repos); cross-PC concurrent edits require git literacy (documented).
 
 ## Open
-RD-syncmeta (optional last-synced snapshot for fast rollback + user-vs-sync change
-detection), RD-triggers (future opt-in daemon/hooks; manual is v1). Neither blocks
-Phase 0.
+Sync-state tracking is **in scope** (decision #6 above); only its exact format and
+rollback-snapshot richness are implementation details. RD-triggers (future opt-in
+daemon/hooks; manual is v1) remains deferred. Neither blocks Phase 0.

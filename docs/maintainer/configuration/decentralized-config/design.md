@@ -219,6 +219,26 @@ sequenceDiagram
 - **B** synced copies kept identical via `cco sync`.
 - **C** intentional divergence (sync off); `cco sync` converges to B anytime.
 
+### 4.6 Sync-state tracking (internal, per-machine)
+cco keeps lightweight **per-machine** sync metadata in the system state dir (§2.2, never
+committed). This is **not** a merge `sync-base` (no 3-way merge) — just bookkeeping that
+records, per project:
+- **which member repos carry a synced copy** (vs code-only) and which are currently
+  **divergent** from each other;
+- a **last-synced fingerprint** per repo (e.g. a content hash of the synced set at the
+  last `cco sync`), so cco can tell a repo edited **locally by the dev since the last
+  sync** apart from one that merely **received** a sync.
+
+This tracking drives:
+- **`cco sync` / `cco join` target selection** — knowing which repos are in sync (update
+  all — Case B) vs divergent (prompt — Case C);
+- **divergence flagging before `cco start`** — a non-blocking "repos diverged since last
+  sync" notice (§4.4);
+- optional **fast rollback** of the last sync.
+
+Exact format and the rollback-snapshot richness are implementation details (was
+RD-syncmeta; now in scope — requirements §8).
+
 ---
 
 ## 5. `@local` Path Resolution (reused, index-backed)
@@ -251,7 +271,7 @@ Publish/install/update/export over Config Repos (`cmd-project-publish.sh`,
 | Area | Command | Status |
 |------|---------|--------|
 | Entry: clean | `cco init` (scaffold a clean `<repo>/.cco/` in the current repo) | NEW/transform |
-| Entry: join | `cco join <project>` (add the current repo to `<project>` as a **member**: register it in the index + add it to the project's `repos[]` in the holder repo's `project.yml`). The current repo gets **no `.cco/`** (code-only member) **unless** `--sync` / interactive confirm, which copies the project's `.cco/` into it — **alternative to `cco init`** | NEW |
+| Entry: join | `cco join <project>` (add the current repo to `<project>` as a **member**: register it in the index + add it to `repos[]` in the project's `project.yml`). The new member's `repos[]` edit propagates to **every repo that carries a synced copy** (Case B); in a divergent project (Case C) join **prompts** which repo's `project.yml` to update, or all. The joining repo gets **no `.cco/`** (code-only member) **unless** `--sync` / interactive confirm, which copies the project's `.cco/` into it (source prompted if divergent) — **alternative to `cco init`** | NEW |
 | Entry: migrate | `cco migrate <project>` (current repo, from the legacy vault backup: write `.cco/` with the migrated project config) — **alternative to `cco init`** | NEW |
 | Run | `cco start [project]` (cwd-aware source; index-resolve `@local`; resolve unresolved repos/mounts) | transform |
 | Sync | `cco sync [target] [--from <src>] [--dry-run\|--auto-approve\|--check]` | NEW |
@@ -263,10 +283,13 @@ Publish/install/update/export over Config Repos (`cmd-project-publish.sh`,
 
 **`cco init` / `cco join` / `cco migrate` are mutually exclusive** entry points for a
 repo: `init` = clean config; `join` = become a **member** of a project already defined
-in another repo (adds this repo to the holder's `project.yml`; copies `.cco/` into it
-only with `--sync`); `migrate` = bring a legacy vault project's config into this repo.
-For `cco join --sync`, the copy source is the project's existing config; if the
-project's repos are divergent (Case C), join prompts which repo to copy from.
+in another repo; `migrate` = bring a legacy vault project's config into this repo.
+Because the new member is added to `project.yml` (a synced file), the edit must reach
+every repo holding a copy: in **Case B** (repos in sync) join updates `project.yml` in
+**all synced repos**; in **Case C** (divergent, no sync) join **prompts** which repo's
+`project.yml` to update, or all (membership only, no content sync). The joining repo
+gets a `.cco/` copy only with `--sync` (source prompted if divergent). cco knows which
+repos are synced vs divergent from its internal sync-state tracking (§4.6).
 **Removed (breaking, no alias)**: the entire `cco vault *` surface
 (save/diff/switch/move/profile) and `cco project create`. **First run** with no
 `~/.cco`/system dirs bootstraps global resources first (journey J0); with a legacy
@@ -399,7 +422,6 @@ design is persisted. None blocks Phase 0 except RD-claude-mount (a Phase-0 check
 
 | # | Question |
 |---|----------|
-| **RD-syncmeta** | Keep an internal last-synced snapshot to enable fast rollback and to distinguish user edits vs cco-sync edits (and flag divergence before `cco start`)? UX benefit vs complexity. |
 | **RD-home** | `~/.cco` management depth: auto vs manual, conflict handling, allowlist enforcement. |
 | **RD-authoring** | Authoring global packs/templates: direct `~/.cco` edit (lean) vs authoring-in-repo + promote. |
 | **RD-paths** | Exact system-dir locations for state/cache/index on macOS & Linux (XDG-style, per-user, no home clutter). |
