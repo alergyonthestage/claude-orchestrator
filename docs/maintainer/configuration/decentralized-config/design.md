@@ -6,7 +6,8 @@ the phased implementation (§9).
 **Decision records**: `decisions/` — ADR-0001 (decentralization), 0002
 (machine-agnostic config), 0003 (sync-as-copy), 0004 (config/state/cache separation),
 0005 (dual `.claude` scope), 0006 (breaking cutover + lazy migration), 0007 (system-dir
-locations / XDG), 0008 (config versioning model), 0009 (auto-memory is machine-local STATE).
+locations / XDG), 0008 (config versioning model), 0009 (auto-memory is machine-local STATE),
+0010 (resource authoring + per-user tags).
 **Decision history (historical)**: `reviews/15-06-2026-sync-adversarial-review.md`,
 `reviews/15-06-2026-simplification-analysis.md`.
 
@@ -127,26 +128,33 @@ satisfies the Phase-3 gate (review BL2).
 ```
 ~/.cco/
 ├── .git/                # personal store, opt-in remote
-├── .gitignore           # allowlist discipline: only packs/ templates/ global/.claude committed
-├── packs/               # authored packs
+├── .gitignore           # allowlist discipline: only packs/ templates/ global/.claude + tags.yml committed
+├── packs/               # authored packs (flat, one dir per pack)
 ├── templates/           # authored templates
 ├── global/.claude/      # global Claude config
+├── tags.yml             # per-user tag registry: resource -> [tags] (ADR-0010; Domain A, never Domain B)
 └── backups/             # vault migration archives
 ```
-> **Profiles → how to organize `~/.cco` resources (open evaluation).** Legacy vault
-> profiles (git branches) are obsolete for *projects* (decentralization moots them) and
-> disappear. They may survive only as a way to **organize global resources in `~/.cco`**
-> (which stays global). Two options to evaluate: **(default) tag-only** — a profile
-> becomes a tag on a resource, used to filter CLI lists; **(alt) subdirs** — a profile
-> becomes a subdirectory under `packs/`/`templates/`. Default is **tag-only**; adopt
-> subdirs only if it earns its keep, otherwise tags only (subdirs add filesystem/layout
-> complexity). The migration flatten (§9) already translates legacy profiles → tags, so
-> tag-only needs no extra migration work. *(Fits RD-authoring scope.)*
+> **Resource organization → tags, not profiles (RESOLVED — ADR-0010).** Legacy vault
+> profiles (git branches) are **removed entirely** (ADR-0006); a **net-new `tags`** system
+> replaces them — **no overlap, no dual-axis machinery**. Tags are **multi-valued per
+> resource** and transversal (the correct semantics vs a profile's single membership); the
+> store stays **flat** (no per-profile subdirs — subdirs break the repo-wide flat-by-name
+> assumptions + manifest scan, force single membership, and don't even solve filename
+> collisions since resource files mount flat into the container). Tags are **per-user**: they
+> live in a per-user registry **`~/.cco/tags.yml`** (`resource → [tags]`, packs **and**
+> projects), synced across the *user's* machines (Domain A, `cco config push/pull`) but
+> **never shared with third parties** (Domain B) — so they are **not** in `pack.yml`/
+> `project.yml`/manifest/index. `cco list [--tag <t>]` reads the registry. **Authoring** is
+> **direct `~/.cco` edit** (IDE or the rehomed `config-editor` agent); cco only scaffolds
+> (`cco pack create`, `cco template create`). Migration: `cco migrate` **prompts** whether to
+> convert legacy profiles into tags (seed origin profile as a tag) or start untagged.
 
 ### 2.4 `project.yml` (machine-agnostic, symmetric)
 ```yaml
 name: projectA
-tags: [groupA]
+# NOTE: no `tags:` here — tags are per-user and live in ~/.cco/tags.yml (ADR-0010),
+# never in the committed/published project.yml (would leak to third parties on publish).
 repos:                   # ALL members by logical name; no paths; identical in every repo
   - repo1
   - repo2
@@ -173,9 +181,11 @@ paths:                       # logical name -> absolute path (repos AND extra mo
   repo1:          /Users/me/dev/repo1
   repo2:          /Users/me/dev/repo2
   shared-assets:  /Users/me/assets
-projects:                    # subsumes the old registry
-  projectA: { repos: [repo1, repo2, repo3], tags: [groupA] }
+projects:                    # subsumes the old registry — paths/repos only, NO tags
+  projectA: { repos: [repo1, repo2, repo3] }
 ```
+> Tags are **not** in the index (ADR-0010): the index is machine-local STATE (paths/repos
+> only, ADR-0002/0007). Per-user tags live in `~/.cco/tags.yml` (Domain A synced).
 - **Uniqueness invariant (AD5)**: a logical name maps to exactly one absolute path
   per machine. `cco init`/`cco join` refuse a name already bound to a different path.
 - **Absolute paths only**; CLI commands accept paths relative to the cwd and resolve
@@ -317,8 +327,8 @@ logical names; the index provides absolute paths; bootstrap on a fresh machine v
   (allowlist staging + secret scan); remote sync **explicit** (`cco config push/pull`),
   never per-command; pull non-FF → abort + notify. `<repo>/.cco/` is committed with the
   user's normal git flow (rides the repo remote). **Allowlist = double barrier**
-  (whitelist `.gitignore` `*`→`!packs/ !templates/ !global/.claude/` + explicit-path
-  staging, never `git add -A`); 2-pass secret scan + `.example` exemption.
+  (whitelist `.gitignore` `*`→`!packs/ !templates/ !global/.claude/ !tags.yml` +
+  explicit-path staging, never `git add -A`); 2-pass secret scan + `.example` exemption.
 - **Non-blocking reminders** (ADR-0008): the old clean-tree gate is now advisory (no
   branch switch to protect, ADR-0006). Config-sensitive commands warn (never block;
   user may proceed) about (a) uncommitted `~/.cco`, (b) uncommitted `<repo>/.cco` of
@@ -342,7 +352,8 @@ Publish/install/update/export over Config Repos (`cmd-project-publish.sh`,
 | Run | `cco start [project]` (cwd-aware source; index-resolve `@local`; resolve unresolved repos/mounts) | transform |
 | Sync | `cco sync [target] [--from <src>] [--dry-run\|--auto-approve\|--check]` | NEW |
 | Paths/resolve | `cco resolve [project]` (resolve unresolved repos/mounts: pick a local path **or** clone from remote to a chosen destination), `cco path set/list`, `cco index refresh --scan` | NEW |
-| Discovery | `cco list [--tag <t>]`, tag set/edit | transform |
+| Discovery | `cco list [--tag <t>]`, tag set/edit (reads/writes the per-user `~/.cco/tags.yml`, ADR-0010) | transform |
+| Authoring | Direct `~/.cco` edit (IDE or rehomed `config-editor` agent); cco only **scaffolds**: `cco pack create`, `cco template create` (ADR-0008/0010) | transform |
 | Global store | `cco config …` (manage `~/.cco`; versioning model = ADR-0008) | NEW |
 | Sharing | `cco pack/project publish\|install\|update\|export`, `cco remote …` | unchanged |
 | Update | `cco update …` (framework→user; merge engine unchanged) | unchanged |
@@ -445,12 +456,19 @@ phase leaves cco runnable + tests green.
   `cco migrate`. **Memory relocation (ADR-0009)**: `cco migrate` copies the project's
   `memory/` from the backup into `<state>/cco/projects/<id>/memory/` (one-time file copy,
   machine-local, no versioning) so accumulated auto-memory is not lost in the cutover.
+  **Profile→tag prompt (ADR-0010)**: migration **asks the user (CLI)** whether to convert
+  legacy profiles into tags (seed each resource's origin profile as a tag value in
+  `~/.cco/tags.yml`) or start untagged — lossless either way.
 - **Phase 3 — remove the legacy vault entirely (breaking).** Delete the
   profile/switch/shadow machinery, `cco vault *`, `cco project create`, and the
   custom `project.yml` sanitize/virtual-diff/extract-restore/backup-trap (unnecessary
-  under AD3). Keep `@local` (index-backed), secret-scan, gitignore-heal. Profiles →
-  tags. `cco config` (`~/.cco`; versioning model per ADR-0008) + allowlist staging +
-  whitelist `.gitignore` + `.example` exemption. Also re-home the `cco update` merge
+  under AD3). Keep `@local` (index-backed), secret-scan, gitignore-heal. **Profiles → tags
+  (ADR-0010)**: remove the profile-branch system entirely; add the per-user tag registry
+  `~/.cco/tags.yml` + `cco list --tag` (allowlist gains `!tags.yml`). **Authoring (ADR-0010)**:
+  rehome the `config-editor` template to mount `~/.cco` (was `user-config/`) and update its
+  `setup-pack`/`setup-project` skills (write into `~/.cco/packs|templates/`) and `config-safety`
+  rule (`cco vault save` → `cco config save`). `cco config` (`~/.cco`; versioning model per
+  ADR-0008) + allowlist staging + whitelist `.gitignore` + `.example` exemption. Also re-home the `cco update` merge
   engine artifacts (`.cco/base/`, `.cco/meta`) out of the committed `.cco/` into STATE
   (H6 — "unchanged" is true for the merge logic, not its paths).
   **Auto-memory (ADR-0009)**: drop the vault's memory auto-commit
@@ -522,8 +540,8 @@ any future hooks invoke `cco` by PATH. This keeps a future npm/npx + image packa
 |-------|-----|---------|--------|
 | 0 | machine-agnostic layout + index tests (new layout only, no dual-read); **XDG resolver matrix** (unset/empty/relative + `CCO_*_HOME` override, `0700`, host-side/anti-in-container guard); **absolute-mount generation** in compose; **F2 cross-tree collision warning** (committed `rules/foo.md` vs pack `rules/foo.md`, pack `:ro` wins); symlink-safe tool root | `test_local_paths.sh` | — |
 | 1 | `test_sync.sh` (copy semantics, 4 forms, confirm); resolve incl. clone-from-remote; **reminder aggregator** (a/b/c) + **H1 ordering** (resolve before notices) | — | — |
-| 2 | `test_migrate.sh` (lazy per-project from backup; backup-verified-before-read, M8; **memory relocation backup→`<state>/cco/projects/<id>/memory/`**, ADR-0009); first-run bootstrap (per-root idempotent) | — | — |
-| 3 | multi-project coexistence; truthful-diff (no sanitize) tests; `test_config.sh` (Domain A: allowlist staging never `git add -A`, **secret-scan `.example` exemption** — skeleton passes, real `secrets.env` blocked); merge-engine path remap (`.cco/base`/`meta` in STATE); **memory-as-STATE** (ADR-0009: `memory/` in STATE persists across starts, no auto-commit, no `.gitkeep`) | `test_vault.sh` (shrink to migrate-reader) | `test_vault_profiles.sh`; custom-diff/sanitize tests; **D33 memory auto-commit / D32 `.gitkeep` tests** |
+| 2 | `test_migrate.sh` (lazy per-project from backup; backup-verified-before-read, M8; **memory relocation backup→`<state>/cco/projects/<id>/memory/`**, ADR-0009; **profile→tag prompt** both branches — convert vs untagged, ADR-0010); first-run bootstrap (per-root idempotent) | — | — |
+| 3 | multi-project coexistence; truthful-diff (no sanitize) tests; `test_config.sh` (Domain A: allowlist staging never `git add -A`, **secret-scan `.example` exemption** — skeleton passes, real `secrets.env` blocked); merge-engine path remap (`.cco/base`/`meta` in STATE); **memory-as-STATE** (ADR-0009: `memory/` in STATE persists across starts, no auto-commit, no `.gitkeep`); **per-user tags** (ADR-0010: `~/.cco/tags.yml` registry, `cco list --tag` filter, tags NOT in `pack.yml`/`project.yml`/manifest/index, allowlist `!tags.yml`) | `test_vault.sh` (shrink to migrate-reader) | `test_vault_profiles.sh`; custom-diff/sanitize tests; **D33 memory auto-commit / D32 `.gitkeep` tests** |
 
 Net: a narrower surface — no custom diff/save/merge sync code to test, no dual-read; the
 `cco update` merge engine **logic** tests are untouched (only its paths are remapped, H6).
@@ -557,7 +575,6 @@ design is persisted.
 
 | # | Question |
 |---|----------|
-| **RD-authoring** | Authoring global packs/templates: direct `~/.cco` edit (lean) vs authoring-in-repo + promote. |
 | **RD-triggers** | Future opt-in auto-sync (daemon / native hooks / git hooks / manual-only). Now also owns `~/.cco` background/managed auto-sync (ADR-0008). |
 
 **Resolved:**
@@ -567,3 +584,4 @@ design is persisted.
 | **RD-paths** | ✅ 2026-06-16 (ADR-0007). XDG on both OSes: STATE `$CCO_STATE_HOME`→`$XDG_STATE_HOME/cco`→`~/.local/state/cco`, CACHE `$CCO_CACHE_HOME`→`$XDG_CACHE_HOME/cco`→`~/.cache/cco`; index in STATE; CONFIG keeps `~/.cco` dotdir; host-side resolution, `0700`, XDG-validation. |
 | **RD-home** | ✅ 2026-06-16 (ADR-0008). Unified **explicit manual commit** model for `~/.cco` + `<repo>/.cco` (semantic user-named snapshots; **no auto-commit** in v1 — deferred for atomic config-mutating commands). Non-blocking **reminders** (old clean-tree gate, now advisory) flag uncommitted `~/.cco`, uncommitted involved `<repo>/.cco`, cross-repo divergence. Allowlist double-barrier (whitelist `.gitignore` + explicit staging, never `git add -A`); 2-pass secret scan + `.example` exemption; explicit `cco config push/pull` (sync transports commits, never fabricates them); auto-sync → RD-triggers. |
 | **RD-memory** | ✅ 2026-06-16 (ADR-0009). Auto-memory is **machine-local STATE** (`<state>/cco/projects/<id>/memory/`), co-located with transcripts — not config, never in `~/.cco`/`<repo>/.cco`. **No versioning/sync in v1**: the vault auto-commit (D33) + `.gitkeep` (D32) machinery is dropped; `cco migrate` relocates memory from the backup (lossless). Team-shared project knowledge stays in committed docs/rules (not memory). **Satisfies the Phase-3 gate (BL2).** Cross-PC/cross-team *state* sync (memory + transcripts) deferred → R-state-sync (§12). |
+| **RD-authoring** | ✅ 2026-06-16 (ADR-0010). Authoring = **direct `~/.cco` edit** (IDE / rehomed `config-editor` agent); cco only scaffolds (`pack/template create`); no author-in-repo+promote in v1. Organization = **tags, not profiles** (clean removal + net-new system, multi-valued, flat store — no subdirs). Tags are **per-user** in `~/.cco/tags.yml` (Domain A synced, **never** Domain B); **not** in `pack.yml`/`project.yml`/manifest/index (project tags moved out of `project.yml` §2.4 + index §3). `cco list --tag` reads the registry. Migration **prompts** profile→tag conversion. |
