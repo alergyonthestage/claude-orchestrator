@@ -38,11 +38,17 @@ it → internal.*
 | **`~/.cco/`** | global resources the user **curates/authors** (`packs/`, `templates/`, `global/.claude/`, `tags.yml`) | user-facing personal store |
 | **STATE** (`$XDG_STATE_HOME/cco` → `~/.local/state/cco`) | machine-local persistent **state** (index, generated compose, transcripts, memory, meta, seeds, sync-meta) | **hidden** (internal) |
 | **CACHE** (`$XDG_CACHE_HOME/cco` → `~/.cache/cco`) | regenerable / re-fetchable / transient (generated overlays, Config-Repo clones, `.bak`) | **hidden** (internal) |
-| **(possible 4th) internal-but-synced** | cco-managed, hidden, **not** config, but worth private multi-PC sync (candidates: TBD — remotes registry? manifest? tags?) | **hidden** (internal) — *existence + membership = domain A (T2)* |
+| **(possible 4th) internal-but-synced** | cco-managed (CLI-updated, hidden, **not** IDE-edited config), but worth **private multi-PC** sync (candidates under review: `tags.yml`? remotes registry? manifest?) | **hidden** (internal) — *existence + membership = analysis **R1*** |
 
 The two config buckets (`<repo>/.cco`, `~/.cco`) hold **only** P1-config. STATE/CACHE hold **only**
-P1-internal. Today there is **no** home for "internal yet privately synced" data — whether one is
-needed, and what falls in it, is the open question for domain A.
+P1-internal that is **not** synced. Today there is **no** home for "internal yet privately synced"
+data — whether one is needed, and what falls in it, is **open (analysis R1)**.
+
+> **`tags.yml` nature is under review (R1).** It was provisionally placed in `~/.cco` as config, but
+> if tags are set via the CLI (`cco tag …`) rather than hand-edited in an IDE, then by P1 they are
+> **internal**, not config — and "internal + per-user + synced" is exactly the 4th-category profile.
+> ADR-0010 fixed the *semantics* (tags are per-user, never team-shared, synced across the user's PCs);
+> **R1 validates the physical bucket & nature** and may refine ADR-0010's placement.
 
 ## P3 — Two **orthogonal** sync axes (never conflate them)
 
@@ -56,6 +62,11 @@ needed, and what falls in it, is the open question for domain A.
 
 A resource's **destination (P2)** and its **sync profile** `{none | private-multi-PC | team | both}`
 are independent dimensions. Classifying a resource means answering **both**.
+
+> **Axis-1 remote access (open, → S).** The `~/.cco` personal remote is intended **private**, reached
+> via the user's own git auth (token or local `.ssh`). Whether to **support a public repo for Axis-1**
+> (technically against "private, same-user", but enforcing privacy may be excessive for cco) — forbid,
+> allow, or allow with an **escape hatch** — is an open question owned by the sharing analysis (S).
 
 ```mermaid
 flowchart LR
@@ -116,6 +127,16 @@ No tool code lives in any data bucket (AD11); hooks invoke `cco` by PATH. cco's 
 default resources** may become an **official public Config Repo**, shipped separately (relates to
 R-pkg / R-update-native). The framework stays agnostic; opinionated content travels via the same
 Domain-B sharing path any user would use.
+
+## P10 — Classify by role & problem, not by surface (method)
+A resource is placed (P2 destination + P3 sync profile) **only after** establishing its **role, the
+problem it solves, and how it is mutated** — never from its current path or name. Surface placement
+(e.g. "it lives under `~/.cco` today") is not evidence; the *role* is. A resource whose role does not
+clearly map to a principle is **not** force-fit — it gets a dedicated analysis. This is why each
+borderline resource/concept gets its **own clean session** (see `analysis-roadmap.md`): correct
+classification needs undivided context on that resource's purpose. Every analysis must: (1) state the
+resource's role + problem solved; (2) classify on both axes via P1–P9; (3) flag/resolve any conflict
+with the current `design.md`/ADRs; (4) record an ADR + propagate to the living docs.
 
 ---
 
