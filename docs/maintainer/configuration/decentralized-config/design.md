@@ -108,16 +108,16 @@ make state un-committable by construction, and protect it from accidental edits.
 
 ### 2.4 `project.yml` (machine-agnostic, symmetric)
 ```yaml
-name: cave
-tags: [cave]
+name: projectA
+tags: [groupA]
 repos:                   # ALL members by logical name; no paths; identical in every repo
-  - cave-auth
-  - cave-auth-web
-  - cave-infrastructure
+  - repo1
+  - repo2
+  - repo3
 extra_mounts:            # auxiliary mounts by logical name; default readonly
   - name: shared-assets
     readonly: true
-entry: cave-auth         # OPTIONAL tie-breaker for `cco start cave` (name-based); not a privilege
+entry: repo1             # OPTIONAL tie-breaker for `cco start projectA` (name-based); not a privilege
 packs: [...]             # references only; packs live in ~/.cco, not in the repo
 ```
 The host repo is **not** written in the file — it is the invoking repo at runtime
@@ -133,11 +133,11 @@ never committed, never synced:
 ```yaml
 version: 1
 paths:                       # logical name -> absolute path (repos AND extra mounts)
-  cave-auth:      /Users/me/dev/cave-auth
-  cave-auth-web:  /Users/me/dev/cave-auth-web
+  repo1:          /Users/me/dev/repo1
+  repo2:          /Users/me/dev/repo2
   shared-assets:  /Users/me/assets
 projects:                    # subsumes the old registry
-  cave: { repos: [cave-auth, cave-auth-web, cave-infrastructure], tags: [cave] }
+  projectA: { repos: [repo1, repo2, repo3], tags: [groupA] }
 ```
 - **Uniqueness invariant (AD5)**: a logical name maps to exactly one absolute path
   per machine. `cco init`/`cco join` refuse a name already bound to a different path.
@@ -250,9 +250,9 @@ Publish/install/update/export over Config Repos (`cmd-project-publish.sh`,
 
 | Area | Command | Status |
 |------|---------|--------|
-| Init (clean) | `cco init` (scaffold a clean `<repo>/.cco/` in the current repo) | NEW/transform |
-| Init (join) | `cco join <project>` (current repo joins an existing project: scaffold its `.cco/`, add it to the project's `repos[]`, optional sync) — **alternative to `cco init`** | NEW |
-| Init (migrate) | `cco migrate <project>` (current repo, from the legacy vault backup: scaffold `.cco/` with the migrated project config) — **alternative to `cco init`** | NEW |
+| Entry: clean | `cco init` (scaffold a clean `<repo>/.cco/` in the current repo) | NEW/transform |
+| Entry: join | `cco join <project>` (add the current repo to `<project>` as a **member**: register it in the index + add it to the project's `repos[]` in the holder repo's `project.yml`). The current repo gets **no `.cco/`** (code-only member) **unless** `--sync` / interactive confirm, which copies the project's `.cco/` into it — **alternative to `cco init`** | NEW |
+| Entry: migrate | `cco migrate <project>` (current repo, from the legacy vault backup: write `.cco/` with the migrated project config) — **alternative to `cco init`** | NEW |
 | Run | `cco start [project]` (cwd-aware source; index-resolve `@local`; resolve unresolved repos/mounts) | transform |
 | Sync | `cco sync [target] [--from <src>] [--dry-run\|--auto-approve\|--check]` | NEW |
 | Paths/resolve | `cco resolve [project]` (resolve unresolved repos/mounts: pick a local path **or** clone from remote to a chosen destination), `cco path set/list`, `cco index refresh --scan` | NEW |
@@ -262,8 +262,11 @@ Publish/install/update/export over Config Repos (`cmd-project-publish.sh`,
 | Update | `cco update …` (framework→user; merge engine unchanged) | unchanged |
 
 **`cco init` / `cco join` / `cco migrate` are mutually exclusive** entry points for a
-repo: `init` = clean config; `join` = become part of a project already defined in
-another repo; `migrate` = bring a legacy vault project's config into this repo.
+repo: `init` = clean config; `join` = become a **member** of a project already defined
+in another repo (adds this repo to the holder's `project.yml`; copies `.cco/` into it
+only with `--sync`); `migrate` = bring a legacy vault project's config into this repo.
+For `cco join --sync`, the copy source is the project's existing config; if the
+project's repos are divergent (Case C), join prompts which repo to copy from.
 **Removed (breaking, no alias)**: the entire `cco vault *` surface
 (save/diff/switch/move/profile) and `cco project create`. **First run** with no
 `~/.cco`/system dirs bootstraps global resources first (journey J0); with a legacy
@@ -290,16 +293,19 @@ flowchart TD
     b1["cco init in repo1"] --> b2["edit .cco; add repo2/3 to project.yml repos[]"]
     b2 --> b3["optional: cco sync (-> Case B)"] --> b4["cco start"]
   end
-  subgraph JE["Join an existing project (E)  — alternative to init"]
-    e1["enter repoX"] --> e2["cco join cave"]
-    e2 --> e3["scaffold repoX/.cco + add to project.yml + optional sync"]
+  subgraph JE["Join an existing project (E) — alternative to init"]
+    e1["enter repo3 (new member)"] --> e2["cco join projectA"]
+    e2 --> e3["register repo3 + add it to project.yml repos[] (in the holder repo)"]
+    e3 --> e4{"--sync / confirm?"}
+    e4 -->|yes| e5["repo3 gets a .cco copy (-> Case B)"]
+    e4 -->|no| e6["repo3 stays code-only member (Case A)"]
   end
   subgraph JC["Clone a shared repo that already has .cco (C)"]
     c1["git clone repo"] --> c2["cco start  (no init; .cco already present)"]
   end
   subgraph JA["Migrate a legacy project (A) — lazy, per-project"]
     a1["first run: cco backs up the legacy vault + instructions"] --> a2["enter cloned repo"]
-    a2 --> a3["cco migrate cave  (from backup -> Case A)"]
+    a2 --> a3["cco migrate projectA  (from backup -> Case A)"]
     a3 --> a4["optional cco sync / cco init others -> Case B or C"]
   end
   subgraph JF["Resolve unresolved repos/mounts (F)"]

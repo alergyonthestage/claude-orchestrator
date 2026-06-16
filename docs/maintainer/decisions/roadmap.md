@@ -100,7 +100,7 @@ gate which projects exist on disk or which can be started.
   path differences. A diff that hides files makes failures undiagnosable.
 - **Hard UX limit**: only one profile's projects are on disk at a time, so you
   cannot run projects from different profiles concurrently on the same machine
-  — a frequent, legitimate need (e.g. a Cave session alongside a personal one).
+  — a frequent, legitimate need (e.g. a work-project session alongside a personal one).
 - **bash 3.2 incident (#B23)**: latest regression in the same fragile path.
 
 **Target model** (decentralized in-repo config — finalized 2026-06-15):

@@ -63,8 +63,8 @@ flowchart LR
 - G3 — IDE-first: configure and run from a repo you already have open.
 - G4 — Net **reduction** in framework machinery: delete the vault, the
   profile/switch layer, **and** the custom config diff/save/merge layer.
-- G5 — Multi-repo agentic sessions preserved (e.g. `cave-auth` + `cave-auth-web` +
-  `cave-infrastructure` in one session).
+- G5 — Multi-repo agentic sessions preserved (e.g. `repo1` + `repo2` + `repo3` of one
+  project in a single session).
 - G6 — Per-project git history for config (config commits ride with code commits).
 - G7 — Structural secret-leak safety.
 - G8 — **Truthful diff**: a plain `git diff` on `.cco/` always reflects real config
@@ -188,14 +188,21 @@ current repo):
   writing. *(Snapshot/rollback and user-vs-sync change detection — see RD-syncmeta.)*
 - **FR-Y-S4** — A repo without `.cco/` is a code-only member (Case A): it is a valid
   target of sync (gains a copy) but cannot be a start source.
+- **FR-Y-S5 (membership / `cco join`)** — A repo becomes a **member** of a project
+  either by listing its name in the holder's `project.yml` `repos[]`, or by running
+  `cco join <project>` from that repo (which registers it in the index and adds it to
+  the holder's `project.yml`). By default the joining repo gets **no `.cco/`**
+  (code-only member); `cco join --sync` (or interactive confirm) copies the project's
+  `.cco/` into it. If the project's repos are divergent (Case C), `--sync` prompts
+  which repo to copy from.
 
-### 5.3 Supported cases (project repo1 + repo2 + repo3)
+### 5.3 Supported cases (project: repo1 + repo2 + repo3)
 - **Case A — single-config, no copies.** `cco init` only in repo1; sync off. repo2/3
-  are listed in repo1's `project.yml` and mounted as **code only** (no `.cco/`).
-  `cco start` runs from repo1.
-- **Case B — synced copies.** `cco init` repo1, add repo2/3 as members; `cco sync`
-  gives repo2/3 a copy of `.cco/`. `cco start` uses the invoking repo's `.cco`
-  (or `--from`); if copies diverge it is always clear which was used; sync anytime.
+  are members of repo1's `project.yml` (added by hand or via `cco join` from each) and
+  mounted as **code only** (no `.cco/`). `cco start` runs from repo1.
+- **Case B — synced copies.** From Case A, `cco sync` (or `cco join --sync`) gives
+  repo2/3 a copy of `.cco/`. `cco start` uses the invoking repo's `.cco` (or `--from`);
+  if copies diverge it is always clear which was used; sync anytime.
 - **Case C — intentional divergence.** `cco init` in all three with **different**
   `.cco/`; sync off. Repos diverge by design; `cco start` uses the invoking repo's
   config; running `cco sync` at any time converges to Case B.
