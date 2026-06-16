@@ -91,18 +91,29 @@ secrets.env
 A pre-commit/pre-push scan (reused from `lib/secrets.sh`) refuses real secrets and
 **exempts `*.example` from the content scan** (FR-S3).
 
-### 2.2 System dirs (per machine, hidden, never committed) — RD-paths
+### 2.2 System dirs (per machine, hidden, never committed) — ADR-0007
 ```
 <state>/cco/projects/<id>/   # generated docker-compose.yml, claude-state/, .tmp/, meta
 <state>/cco/index            # name -> absolute path; project -> [repo names]; tags
+<state>/cco/                 # remotes+tokens, last_seen/last_read, sync-meta (§4.6), seeds
 <cache>/cco/                 # llms/, installed/ (Config-Repo caches)
 <cache>/cco/projects/<id>/   # generated .claude overlays (packs.md, workspace.yml) → :ro into /workspace/.claude
 ```
-`<state>`/`<cache>` follow OS conventions (XDG on Linux; macOS equivalent) — exact
-paths finalized in RD-paths. Rationale: keep the committed `.cco/` small and clean,
-make state un-committable by construction, and protect it from accidental edits.
+**Locations (ADR-0007)** — XDG layout on both Linux *and* macOS (no `~/Library`):
+- `<state>` = `$CCO_STATE_HOME` → `$XDG_STATE_HOME/cco` → `~/.local/state/cco`
+- `<cache>` = `$CCO_CACHE_HOME` → `$XDG_CACHE_HOME/cco` → `~/.cache/cco`
+
+The **index lives in STATE** (machine-local, non-portable, scan-rebuildable — not
+CONFIG). Resolve bases **host-side only** (never compute `$XDG_*` inside the
+container); ignore unset/empty/non-absolute XDG values; create `0700`. Rationale: keep
+the committed `.cco/` small and clean, make state un-committable by construction, and
+protect it from accidental edits.
 
 ### 2.3 `~/.cco/` — personal git store (Domain A; depth deferred to RD-home)
+> CONFIG store deliberately keeps the `~/.cco` **dotdir** (ADR-0007), not
+> `$XDG_CONFIG_HOME/cco`: it is a user-facing, git-versioned tree the user authors in
+> directly (docker `~/.docker` / cargo `~/.cargo` precedent). Clean split: `~/.cco` =
+> what you edit and version; XDG state/cache = machine-internal plumbing you never touch.
 ```
 ~/.cco/
 ├── .git/                # personal store, opt-in remote
@@ -435,7 +446,6 @@ design is persisted.
 |---|----------|
 | **RD-home** | `~/.cco` management depth: auto vs manual, conflict handling, allowlist enforcement. |
 | **RD-authoring** | Authoring global packs/templates: direct `~/.cco` edit (lean) vs authoring-in-repo + promote. |
-| **RD-paths** | Exact system-dir locations for state/cache/index on macOS & Linux (XDG-style, per-user, no home clutter). |
 | **RD-memory** | `memory/` handling: per-machine vs committed vs team-shared. |
 | **RD-triggers** | Future opt-in auto-sync (daemon / native hooks / git hooks / manual-only). |
 
@@ -443,3 +453,4 @@ design is persisted.
 | # | Resolution |
 |---|----------|
 | **RD-claude-mount** | ✅ 2026-06-16 (ADR-0005). Nested-overlay composition is source-agnostic → no bind-mount shadowing. Surfaced F1 (generate `packs.md`/`workspace.yml` into cache + `:ro` overlay, not into committed `.cco/claude/`), F2 (reserve `packs/`/`llms/`, warn on cross-tree collisions), F3 (parent rw, overlays `:ro`). |
+| **RD-paths** | ✅ 2026-06-16 (ADR-0007). XDG on both OSes: STATE `$CCO_STATE_HOME`→`$XDG_STATE_HOME/cco`→`~/.local/state/cco`, CACHE `$CCO_CACHE_HOME`→`$XDG_CACHE_HOME/cco`→`~/.cache/cco`; index in STATE; CONFIG keeps `~/.cco` dotdir; host-side resolution, `0700`, XDG-validation. |

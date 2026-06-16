@@ -292,13 +292,13 @@ flowchart TD
 | Sync-state tracking in scope (FR-Y-S6, §4.6) | ✅ per-machine metadata: sync-set membership + last-synced fingerprint (not a merge sync-base); exact format/rollback richness = impl |
 | Merge engine stays for `cco update` only (N5) | ✅ |
 | RD-claude-mount resolved (2026-06-16, ADR-0005) | ✅ single `/workspace/.claude` rw mount + nested `:ro` pack/llms overlays = source-agnostic composition, no shadowing; generated files (`packs.md`/`workspace.yml`) → machine-local cache + `:ro` overlay, never into committed `.cco/claude/`; `packs/`/`llms/` reserved |
+| RD-paths resolved (2026-06-16, ADR-0007) | ✅ XDG on both OSes (no `~/Library`): STATE `$CCO_STATE_HOME`→`$XDG_STATE_HOME/cco`→`~/.local/state/cco`; CACHE `$CCO_CACHE_HOME`→`$XDG_CACHE_HOME/cco`→`~/.cache/cco`; index in STATE; CONFIG keeps `~/.cco` dotdir; host-side resolution, XDG-validation, `0700` |
 
 **Open — deferred to dedicated analyses (run after this design is persisted):**
 | # | Question |
 |---|----------|
 | **RD-home** | `~/.cco` management depth: auto-management (pull-before-read / commit+push-after-write) feasibility, conflict handling, allowlist enforcement, manual vs managed modes. |
 | **RD-authoring** | How users author global packs/templates (direct `~/.cco` edit vs authoring-in-repo + promote). Lean: `~/.cco` is a personal repo opened directly at global scope. |
-| **RD-paths** | Exact filesystem locations for state/cache/index on macOS & Linux (XDG-style per-user `~/.local/state`, `~/.cache`, `~/.config` vs other). Avoid cluttering the home dir; per-user not root. |
 | **RD-memory** | `memory/` handling: per-machine vs committed-in-repo vs team-shared. Teams may want shared memory for project state/decisions; others may not want it committed. |
 | **RD-triggers** | Future opt-in auto-sync: background daemon and/or native hooks in select cco commands vs opt-in git hooks vs manual-only. Manual-only is the v1 default. |
 

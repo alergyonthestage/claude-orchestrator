@@ -59,4 +59,7 @@ bootstrap via `cco index refresh --scan` + on-demand resolution.
 rebuild); a global per-machine uniqueness constraint on logical names.
 
 ## Open
-RD-paths (exact system-dir location of the index). Does not block Phase 0 design.
+~~RD-paths (exact system-dir location of the index).~~ **Resolved 2026-06-16 by
+ADR-0007**: the index lives in STATE at `<state>/cco/index`
+(`$CCO_STATE_HOME` → `$XDG_STATE_HOME/cco` → `~/.local/state/cco`). It is STATE, not
+CONFIG (machine-local, non-portable, scan-rebuildable).

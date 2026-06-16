@@ -52,5 +52,8 @@ must be chosen and documented); `secrets.env` remains the single in-repo gitigno
 exception (justified: it is user-edited project config, not runtime state).
 
 ## Open
-RD-paths (exact system-dir locations for state/cache/index on macOS & Linux — XDG-style,
-per-user, no home clutter). Does not block Phase 0 design.
+~~RD-paths (exact system-dir locations for state/cache/index on macOS & Linux).~~
+**Resolved 2026-06-16 by ADR-0007**: XDG layout on both OSes — STATE
+`$CCO_STATE_HOME` → `$XDG_STATE_HOME/cco` → `~/.local/state/cco`; CACHE
+`$CCO_CACHE_HOME` → `$XDG_CACHE_HOME/cco` → `~/.cache/cco`. Config personal store
+keeps the `~/.cco` dotdir.
