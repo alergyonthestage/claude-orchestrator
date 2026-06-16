@@ -114,6 +114,11 @@ repo) is the right boundary for cco specifically:
 - Resolve bases on the **host only**; never compute `$XDG_*` inside the container
   (`$HOME=/home/claude` there). The index stores host-absolute paths that get
   bind-mounted to fixed container paths — the two namespaces must never be conflated.
+  The resolver MUST carry an **explicit anti-in-container guard** (refuse/abort if
+  `$HOME=/home/claude` or `/.dockerenv` is present) so a hook or agent that invokes `cco`
+  from inside the container cannot create/read state under the container's home. Today
+  resolution is already host-side (`config/entrypoint.sh` resolves no host config paths),
+  so this guard prevents a *future* regression, not a current bug.
 - Create dirs `mkdir -p` with mode `0700` (the index can reveal project layout). Quote
   every expansion; route values through the existing `expand_path()` (no `~` expansion
   inside quotes). Refuse or warn under root/`sudo` (per-user, not root).

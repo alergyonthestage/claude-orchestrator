@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-06-16 (decentralized-config RD-* analyses: RD-claude-mount, RD-paths, RD-home resolved — ADR-0005/0007/0008; ~/.cco = dotdir-as-git-repo; unified explicit-commit + non-blocking-reminder model).
+> Last updated: 2026-06-16 (decentralized-config: RD-claude-mount/RD-paths/RD-home resolved — ADR-0005/0007/0008; cross-domain coherence review done + doc-fixes/phase write-downs applied; RD-memory now gates Phase 3).
 >
 > **Note**: Sprint entries are historical. Path references (e.g., `.cco-meta`, `.cco-source`) in older
 > sprints reflect the layout at the time of writing. See Sprint 8 and the `.cco/` consolidation
@@ -129,7 +129,12 @@ gate which projects exist on disk or which can be started.
   RD-home (ADR-0008 — unified explicit manual-commit model for `~/.cco` + `<repo>/.cco`,
   no auto-commit in v1; non-blocking reminders for uncommitted/divergence; allowlist
   double-barrier; explicit `cco config push/pull`; auto-sync → RD-triggers).
-  **Remaining**: RD-authoring, RD-memory, RD-triggers.
+  **Remaining RDs**: RD-authoring, **RD-memory (gates Phase 3)**, RD-triggers.
+- **Coherence review 2026-06-16** (`reviews/16-06-2026-design-coherence-review.md`):
+  architecture coherent, Phase 0 ready. Doc-fixes + phase write-downs applied. New
+  follow-up analyses raised: reminder-aggregator cost & scoping, project-config inventory
+  (mcp.json/setup.sh/mcp-packages.txt/.cco/managed), merge-engine path remap, index
+  concurrency & namespacing, sync-state lifecycle + sync edge-cases, join Case-C flow.
 
 ```mermaid
 flowchart LR

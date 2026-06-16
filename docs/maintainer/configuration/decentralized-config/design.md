@@ -235,6 +235,21 @@ sequenceDiagram
   non-blocking reminder aggregator (ADR-0008): the same command surface also flags
   uncommitted changes in `~/.cco` and in the involved `<repo>/.cco/`.
 
+**Ordered `cco start` sequence (H1 — resolution before notices).** The divergence notice
+and the reminder aggregator both read the members' `.cco/`, which requires the members to
+be resolved first; on a fresh machine the index is empty, so notices/reminders cannot be
+computed before resolution. The defined order is therefore:
+1. resolve the **source** (cwd repo's `.cco/`, AD6; or by-name via the index);
+2. resolve the project **members** via the index (a missing `cco start <project>` name
+   triggers/suggests `cco index refresh --scan`, §3);
+3. for any **unresolved** member/mount → resolve or clone (journey JF);
+4. **only now** compute divergence + the uncommitted/divergence reminders;
+5. start the session.
+
+> **Global invariant (H1):** any cross-repo divergence check or reminder is computed
+> **after** member resolution — never against an unresolved/empty index. This invariant
+> is shared by `cco start`, `cco sync`, and the reminder aggregator.
+
 ### 4.5 Cases (see requirements §5.3)
 - **A** code-only members (no `.cco/`), single config in the host repo.
 - **B** synced copies kept identical via `cco sync`.
@@ -387,9 +402,24 @@ phase leaves cco runnable + tests green.
   machine-local cache and overlay them `:ro` instead of writing into committed
   `.cco/claude/`; (F2) treat `packs/`/`llms/` as reserved + warn on cross-tree name
   collisions; (F3) keep the parent mount rw, overlays `:ro`.
+  **Additional Phase-0 action items** (from the 16-06 coherence review):
+  - **Absolute mounts (BL3)**: convert every *framework* compose mount source from the
+    current relative `./…` (anchored to one `project_dir`, `cmd-start.sh:454-495`) to a
+    **host-absolute path**, and pick the compose base dir (STATE), since config/state/cache
+    now live under three different roots and `--project-directory` can anchor only one.
+  - **Host-side resolver guard (H4)**: the XDG resolver (in `lib/paths.sh`) must refuse to
+    compute bases inside the container (`$HOME=/home/claude` / `/.dockerenv`); see ADR-0007
+    Robustness rules.
+  - **Symlink-safe tool root (L5)**: while rewriting `lib/paths.sh`, fix `bin/cco`
+    self-location to resolve through symlinks (`BASH_SOURCE` + `readlink` loop) so a
+    PATH-symlinked `cco` resolves the real install dir.
 - **Phase 1 — sync-as-copy + resolve.** `lib/cmd-sync.sh` (the 4 command forms,
   diff+confirm, copy; no merge engine, no sync-base). `cco resolve`/`cco path`/`cco
-  index` (incl. clone-from-remote resolution).
+  index` (incl. clone-from-remote resolution). Also the **non-blocking reminder
+  aggregator** observable from here (ADR-0008): reminders (a) uncommitted `~/.cco` and
+  (b) uncommitted involved `<repo>/.cco`, plus (c) cross-repo divergence (with the
+  sync-state tracking, §4.6). All reminders fire **after** member resolution (H1
+  invariant, §4.4). `cco config save/push/pull` + allowlist staging land in Phase 3.
 - **Phase 2 — migration + first-run bootstrap.** First-run global bootstrap
   (`~/.cco` + system dirs when missing — journey J0); first-run **legacy-vault backup**
   + instructions; `cco migrate <project>` (lazy, per-project, from the backup);
@@ -399,15 +429,30 @@ phase leaves cco runnable + tests green.
   profile/switch/shadow machinery, `cco vault *`, `cco project create`, and the
   custom `project.yml` sanitize/virtual-diff/extract-restore/backup-trap (unnecessary
   under AD3). Keep `@local` (index-backed), secret-scan, gitignore-heal. Profiles →
-  tags. `cco config` (`~/.cco`; versioning model per ADR-0008).
+  tags. `cco config` (`~/.cco`; versioning model per ADR-0008) + allowlist staging +
+  whitelist `.gitignore` + `.example` exemption. Also re-home the `cco update` merge
+  engine artifacts (`.cco/base/`, `.cco/meta`) out of the committed `.cco/` into STATE
+  (H6 — "unchanged" is true for the merge logic, not its paths).
+  > **GATE (BL2):** Phase 3 must **not** proceed until **RD-memory** assigns `memory/`
+  > a home (transport + versioning). Removing the vault deletes the only mechanism that
+  > versions/syncs `memory/` today (`cmd-vault.sh` auto-commit); without RD-memory this
+  > is a silent regression of the cross-PC auto-memory sync. RD-memory gates Phase 3 the
+  > way RD-claude-mount gated Phase 0.
 
 **Migration flow** (lazy, per-project, idempotent, backed-up):
 1. **First run** detects a legacy vault → archive it to
    `~/.cco/backups/vault-<date>.tar.gz`, inform the user, print instructions, offer to
-   remove the old vault. No project migrated automatically.
+   remove the old vault. No project migrated automatically. **Ordering invariant (M8):**
+   `~/.cco` is bootstrapped *before* the backup is written; the backup is **verified**
+   (archive integrity) before the offer-to-remove; the legacy vault is removed **only**
+   after a verified backup. A second first-run must not re-archive (a "backed-up" marker
+   in STATE meta guards idempotency).
 2. Per project: in an already-cloned repo, `cco migrate <project>` reads that
    project's config from the backup → writes a machine-agnostic `.cco/` in the repo →
-   registers it in the index. The repo lands in **Case A**.
+   registers it in the index. The repo lands in **Case A**. `cco migrate` **verifies the
+   backup exists and is readable before reading** (M8) — Phase 3 deletes the only
+   surviving legacy reader, so a migrate against a missing/corrupt backup must fail
+   loudly, never silently.
 3. The user opts into Case B (`cco sync`) or Case C (`cco init` other repos), or stays
    in A. Re-runs never overwrite an existing `.cco/` without confirm. Rollback: `.cco/`
    is in the repo's git; the backup archive preserves full vault history.
@@ -430,13 +475,13 @@ any future hooks invoke `cco` by PATH. This keeps a future npm/npx + image packa
 
 | Phase | New | Rewrite | Remove |
 |-------|-----|---------|--------|
-| 0 | machine-agnostic layout + index tests (new layout only, no dual-read) | `test_local_paths.sh` | — |
-| 1 | `test_sync.sh` (copy semantics, 4 forms, confirm); resolve incl. clone-from-remote | — | — |
-| 2 | `test_migrate.sh` (lazy per-project from backup); first-run bootstrap | — | — |
-| 3 | multi-project coexistence; truthful-diff (no sanitize) tests; `test_config.sh` (Domain A) | `test_vault.sh` (shrink to migrate-reader) | `test_vault_profiles.sh`; custom-diff/sanitize tests |
+| 0 | machine-agnostic layout + index tests (new layout only, no dual-read); **XDG resolver matrix** (unset/empty/relative + `CCO_*_HOME` override, `0700`, host-side/anti-in-container guard); **absolute-mount generation** in compose; **F2 cross-tree collision warning** (committed `rules/foo.md` vs pack `rules/foo.md`, pack `:ro` wins); symlink-safe tool root | `test_local_paths.sh` | — |
+| 1 | `test_sync.sh` (copy semantics, 4 forms, confirm); resolve incl. clone-from-remote; **reminder aggregator** (a/b/c) + **H1 ordering** (resolve before notices) | — | — |
+| 2 | `test_migrate.sh` (lazy per-project from backup; backup-verified-before-read, M8); first-run bootstrap (per-root idempotent) | — | — |
+| 3 | multi-project coexistence; truthful-diff (no sanitize) tests; `test_config.sh` (Domain A: allowlist staging never `git add -A`, **secret-scan `.example` exemption** — skeleton passes, real `secrets.env` blocked); merge-engine path remap (`.cco/base`/`meta` in STATE) | `test_vault.sh` (shrink to migrate-reader) | `test_vault_profiles.sh`; custom-diff/sanitize tests |
 
 Net: a narrower surface — no custom diff/save/merge sync code to test, no dual-read; the
-`cco update` merge engine tests are untouched.
+`cco update` merge engine **logic** tests are untouched (only its paths are remapped, H6).
 
 ---
 

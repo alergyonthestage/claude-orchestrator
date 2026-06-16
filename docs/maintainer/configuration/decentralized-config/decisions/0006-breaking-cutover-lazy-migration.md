@@ -59,7 +59,13 @@ clearer surface and test matrix.
 
 **Negative** — a hard break: an un-migrated install of the new version will not read old
 config until `cco migrate` is run (mitigated: known users, backup, instructions); a
-minimal legacy-vault reader must live inside `cco migrate`.
+minimal legacy-vault reader must live inside `cco migrate`. **Capability regression:**
+removing the vault (Phase 3) also removes the only mechanism that today versions and
+syncs `memory/` across machines (vault auto-commit). The new layout has no home for
+`memory/` yet → its cross-PC sync regresses unless **RD-memory** resolves a home first.
+This is recorded as an explicit **Phase-3 gate** (design §9): Phase 3 does not proceed
+until RD-memory decides `memory/`'s transport + versioning.
 
 ## Open
-None blocking. `cco migrate --all` deferred (optional/discouraged).
+None blocking for the cutover itself. **RD-memory gates Phase 3** (memory/ home, see
+Consequences). `cco migrate --all` deferred (optional/discouraged).
