@@ -15,7 +15,7 @@ CLAUDE.md files. All projects show `BASE_MISSING` status and display diffs compa
 user-written content against the raw template with unresolved `{{PLACEHOLDER}}` markers.
 
 ```
-ℹ Project 'cave-auth': opinionated updates available:
+ℹ Project 'project-a': opinionated updates available:
 ℹ   1 file(s) with missing base (BASE_MISSING)
 ```
 
@@ -24,12 +24,12 @@ The diff output shows:
 ```diff
 --- your version
 +++ new default
--# Project: cave-auth
+-# Project: project-a
 +# Project: {{PROJECT_NAME}}
 
  ## Overview
 +{{DESCRIPTION}}
--Cave Auth è il sistema di autenticazione centralizzato...
+-Project A is the centralized authentication system...
 ```
 
 This occurs for **all** projects created via `cco project create` from the base template.
@@ -53,8 +53,8 @@ Evidence: every project's `.cco/base/` contains only `settings.json` (which was
 always tracked), never `CLAUDE.md`:
 
 ```
-cave-auth/.cco/base/       → settings.json only
-caveresistance-server/.cco/base/ → settings.json only
+project-a/.cco/base/       → settings.json only
+project-b/.cco/base/       → settings.json only
 claude-orchestrator/.cco/base/   → settings.json only
 marius/.cco/base/                → settings.json only
 testing/.cco/base/               → settings.json only
@@ -495,7 +495,7 @@ the installed file → status = `NO_UPDATE`. Correct.
 ### 4.6 Projects where agent heavily customized CLAUDE.md
 
 If `/init-workspace` or manual editing replaced the entire content (e.g.,
-`cave-auth`), the migration creates a base from the template, and the installed
+`project-a`), the migration creates a base from the template, and the installed
 file diverges heavily → status = `USER_MODIFIED`. When the framework later
 updates the template → `MERGE_AVAILABLE` with three-way merge support. Correct.
 
