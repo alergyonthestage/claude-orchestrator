@@ -4,7 +4,7 @@
 **Deciders**: maintainer + design session
 **Context docs**: `../requirements.md` (AD4), `../design.md` §2.1
 **Related ADRs**: 0001 (decentralization), 0003 (sync-as-copy), 0004 (separation)
-**Open question owned**: RD-claude-mount (Phase-0 mount-resolution detail)
+**Open question owned**: RD-claude-mount (Phase-0 mount-resolution detail) — **resolved 2026-06-16**, see Resolution below
 
 ---
 
@@ -54,5 +54,47 @@ directly onto Claude Code's native resolution.
 `.cco/claude/` with pack-injected files without bind-mount shadowing; this is an
 explicit Phase-0 item (RD-claude-mount), not a silent risk.
 
-## Open
-RD-claude-mount — the only open question that gates Phase 0. See `../design.md` §13.
+## Resolution — RD-claude-mount (2026-06-16)
+
+Code-grounded verification (`lib/cmd-start.sh`, `lib/packs.sh`, `lib/llms.sh`).
+
+**Mechanism.** `/workspace/.claude` is a single **rw directory** bind-mount
+(`cmd-start.sh:454`). Pack/llms resources are **nested bind-mounts** overlaid at
+deeper paths inside that tree — `/workspace/.claude/{packs/<n>, llms/<n>, rules/<f>,
+agents/<f>, skills/<d>}`, all `:ro` (`packs.sh:98-130`, `llms.sh:118`). Docker Compose
+applies mounts ordered by destination-path depth (parent before child), so the nested
+overlays compose *on top of* the parent without hiding its sibling content. **This is
+the behavior today and is proven.**
+
+**Shadowing verdict: NEGATIVE.** This ADR + ADR-0003 change only the *source* of the
+parent mount (central `projects/<name>/.claude/` → cwd repo's `.cco/claude/`). The
+nested-overlay composition is **source-agnostic**, so changing the source introduces
+**no new bind-mount shadowing**. RD-claude-mount does not block Phase 0 as a shadowing
+risk.
+
+The single-mount move does, however, surface three adjacent items the central model hid:
+
+- **F1 — derived files must leave the committed tree.** `_start_generate_metadata`
+  writes `.claude/packs.md` (`cmd-start.sh:586`) and `.claude/workspace.yml`
+  (`648-649`) *into* the mount-source dir. Under the decentralized model the source is
+  the committed, sync-as-copy `.cco/claude/` (ADR-0003), which must stay
+  machine-agnostic (ADR-0002) and config-only (ADR-0004). **Decision:** generated files
+  are NOT written into `.cco/claude/`; they are produced in a machine-local **cache**
+  dir (location → RD-paths) and overlaid with the same nested `:ro` mechanism as packs
+  (`<cache>/packs.md:/workspace/.claude/packs.md:ro`, idem `workspace.yml`). Keeps the
+  committed tree pristine and the `git diff` truthful.
+- **F2 — reserved namespaces.** `packs/` and `llms/` (and pack-supplied filenames in
+  `rules/`/`agents/`/`skills/`) are **framework-reserved** within `/workspace/.claude`;
+  committed config must not author into them. Within-pack collisions are warned by
+  `_detect_pack_conflicts`; cross-tree (committed-config vs pack) collisions are not
+  detected today — add a warning at implementation time. Precedence: a pack `:ro`
+  overlay wins over a committed file of the same path.
+- **F3 — parent stays rw.** In-session edits to cross-repo config must land in the cwd
+  repo's `.cco/claude/` for commit, so the parent mount stays rw; pack/llms overlays
+  stay `:ro` (central registry, not editable in-session).
+
+F1 has a soft dependency on RD-paths (the cache location) but the *decision* — never
+generate derived files into committed config — is independent and locked here. F1/F2
+become Phase-0/early-impl action items; F3 is a recorded invariant.
+
+**Status: resolved.** Open question owned by this ADR is closed.

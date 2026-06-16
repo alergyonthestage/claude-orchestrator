@@ -71,8 +71,14 @@ flowchart TB
 │   ├── secrets.env.example   # COMMITTED skeleton
 │   ├── secrets.env           # GITIGNORED — real values, user-edited (only in-repo exception)
 │   └── claude/               # COMMITTED + (copy-)synced → /workspace/.claude
-│       └── CLAUDE.md, rules/, agents/, skills/
+│       └── CLAUDE.md, rules/, agents/, skills/   # authored config ONLY — no generated files
 ```
+This tree holds **authored config only**. Framework-generated files (`packs.md`,
+`workspace.yml`) are NOT written here — they would pollute the truthful `git diff` and
+the sync (ADR-0002/0004). They are produced in the machine-local cache (§2.2) and
+overlaid into `/workspace/.claude` via nested `:ro` mounts, exactly like pack/llms
+resources (RD-claude-mount, ADR-0005). `packs/` and `llms/` are framework-reserved
+sub-paths within `/workspace/.claude`; committed config must not author into them.
 `.cco/.gitignore` (committed):
 ```gitignore
 secrets.env
@@ -90,6 +96,7 @@ A pre-commit/pre-push scan (reused from `lib/secrets.sh`) refuses real secrets a
 <state>/cco/projects/<id>/   # generated docker-compose.yml, claude-state/, .tmp/, meta
 <state>/cco/index            # name -> absolute path; project -> [repo names]; tags
 <cache>/cco/                 # llms/, installed/ (Config-Repo caches)
+<cache>/cco/projects/<id>/   # generated .claude overlays (packs.md, workspace.yml) → :ro into /workspace/.claude
 ```
 `<state>`/`<cache>` follow OS conventions (XDG on Linux; macOS equivalent) — exact
 paths finalized in RD-paths. Rationale: keep the committed `.cco/` small and clean,
@@ -348,8 +355,12 @@ phase leaves cco runnable + tests green.
 
 - **Phase 0 — machine-agnostic layout + index + path helpers.** New committed `.cco/`
   (logical names only, **new layout only — no dual-read**), system-dir state/cache,
-  machine-local index. Verify the `/workspace/.claude` mount vs pack injection
-  (RD-claude-mount).
+  machine-local index. `/workspace/.claude` mount vs pack injection resolved
+  (RD-claude-mount / ADR-0005): nested-overlay composition is source-agnostic — no
+  shadowing. Action items it surfaced: (F1) generate `packs.md`/`workspace.yml` into the
+  machine-local cache and overlay them `:ro` instead of writing into committed
+  `.cco/claude/`; (F2) treat `packs/`/`llms/` as reserved + warn on cross-tree name
+  collisions; (F3) keep the parent mount rw, overlays `:ro`.
 - **Phase 1 — sync-as-copy + resolve.** `lib/cmd-sync.sh` (the 4 command forms,
   diff+confirm, copy; no merge engine, no sync-base). `cco resolve`/`cco path`/`cco
   index` (incl. clone-from-remote resolution).
@@ -418,7 +429,7 @@ Net: a narrower surface — no custom diff/save/merge sync code to test, no dual
 ## 13. Open Questions (dedicated follow-up analyses)
 
 These are deliberately **not** decided here; each gets its own analysis after this
-design is persisted. None blocks Phase 0 except RD-claude-mount (a Phase-0 check).
+design is persisted.
 
 | # | Question |
 |---|----------|
@@ -427,4 +438,8 @@ design is persisted. None blocks Phase 0 except RD-claude-mount (a Phase-0 check
 | **RD-paths** | Exact system-dir locations for state/cache/index on macOS & Linux (XDG-style, per-user, no home clutter). |
 | **RD-memory** | `memory/` handling: per-machine vs committed vs team-shared. |
 | **RD-triggers** | Future opt-in auto-sync (daemon / native hooks / git hooks / manual-only). |
-| **RD-claude-mount** | Phase-0: single `/workspace/.claude` mount (cwd repo's `.cco/claude/`) vs pack-injected files in the same tree — verify no bind-mount shadowing. |
+
+**Resolved:**
+| # | Resolution |
+|---|----------|
+| **RD-claude-mount** | ✅ 2026-06-16 (ADR-0005). Nested-overlay composition is source-agnostic → no bind-mount shadowing. Surfaced F1 (generate `packs.md`/`workspace.yml` into cache + `:ro` overlay, not into committed `.cco/claude/`), F2 (reserve `packs/`/`llms/`, warn on cross-tree collisions), F3 (parent rw, overlays `:ro`). |
