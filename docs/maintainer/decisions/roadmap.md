@@ -702,8 +702,8 @@ not retroactively ignore tracked files.
 **Fixed**: 2026-04-22.
 
 **Symptom**: on a vault created before the `@local` feature, the
-profile branches (e.g. `cave`) had `project.yml` committed with real
-absolute paths (`~/Projects/.../cave-auth`). After shipping the
+profile branches (e.g. `projectA`) had `project.yml` committed with real
+absolute paths (`~/dev/repo1`). After shipping the
 runtime invariants that sanitize working → `@local` for comparison,
 every vault operation on those legacy branches produced a persistent
 divergence:
@@ -838,7 +838,7 @@ whose branch no longer exists get pruned. Wired into
 
 **Reported**: 2026-04-22 (post-merge field testing). **Fixed**: 2026-04-22.
 
-**Symptom**: on a vault whose `cave` profile branch had been created
+**Symptom**: on a vault whose `projectA` profile branch had been created
 before migration 013, `.cco/project.yml.pre-save` files created at
 every `cco vault save` surfaced as `??` untracked entries that the
 "metadata" category then surfaced to the user. Saving committed them;
