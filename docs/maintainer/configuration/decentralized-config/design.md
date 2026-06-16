@@ -453,6 +453,21 @@ phase leaves cco runnable + tests green.
    backup exists and is readable before reading** (M8) — Phase 3 deletes the only
    surviving legacy reader, so a migrate against a missing/corrupt backup must fail
    loudly, never silently.
+
+> **Migration constraint — multi-profile + uncommitted (note for the detailed migration
+> design/impl).** In the legacy vault, **profiles are git branches** and a single checkout
+> exposes only the active profile's resources. The backup (step 1) and the migrate reader
+> (step 2) must therefore be **branch-aware**:
+> - The archive must preserve **all profile branches** — archive the full `.git` (or
+>   `git bundle --all`), never just the working tree, or other profiles' resources are
+>   silently lost.
+> - **Uncommitted working-tree changes** belong only to the *active* profile; the backup
+>   must capture them (e.g. include the dirty working tree as-is, and/or warn the user to
+>   commit first) so no WIP is dropped. Other (non-checked-out) profiles contribute only
+>   their committed state by construction.
+> - `cco migrate <project>` must **locate the project across profile branches** inside the
+>   backup (a project may live on any profile branch), i.e. iterate/read the relevant
+>   branch rather than assuming the single checked-out tree.
 3. The user opts into Case B (`cco sync`) or Case C (`cco init` other repos), or stays
    in A. Re-runs never overwrite an existing `.cco/` without confirm. Rollback: `.cco/`
    is in the repo's git; the backup archive preserves full vault history.
