@@ -73,7 +73,7 @@ graph LR
 ### Vault Simplification → Decentralized In-Repo Config (DECIDED 2026-06-11; evolved 2026-06-12; model finalized 2026-06-15)
 
 **Status**: Design APPROVED for implementation (2026-06-15). Living `requirements.md`
-+ `design.md` are the single source of truth; decisions recorded in ADRs 0001–0005
++ `design.md` are the single source of truth; decisions recorded in ADRs 0001–0006
 (`../configuration/decentralized-config/decisions/`); analyses kept as history
 (`.../reviews/15-06-2026-sync-adversarial-review.md`,
 `.../reviews/15-06-2026-simplification-analysis.md`). On `feat/vault/decentralized-config`.
@@ -118,6 +118,9 @@ gate which projects exist on disk or which can be started.
   outside the repo; `secrets.env` is the one in-repo (gitignored) exception.
 - Two strictly-separated sync domains: personal multi-PC vs team/external sharing.
 - The `cco update` 3-way merge engine is **unchanged** (it was never config-sync).
+- **Breaking cutover** (ADR-0006): no dual-read / deprecation window (2-user known
+  base). First run backs up the legacy vault; **lazy per-project** `cco migrate
+  <project>` from the backup. Entry points: `cco init` | `cco join` | `cco migrate`.
 - Full requirements + design + ADR: `../configuration/decentralized-config/`.
 - Follow-up dedicated analyses (do not block Phase 0): RD-syncmeta, RD-home,
   RD-authoring, RD-paths, RD-memory, RD-triggers, RD-claude-mount.

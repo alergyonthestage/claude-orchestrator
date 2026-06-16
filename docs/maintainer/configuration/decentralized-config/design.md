@@ -5,7 +5,7 @@ the phased implementation (§9).
 **Requirements**: `requirements.md` (AD1-AD12, FR-*).
 **Decision records**: `decisions/` — ADR-0001 (decentralization), 0002
 (machine-agnostic config), 0003 (sync-as-copy), 0004 (config/state/cache separation),
-0005 (dual `.claude` scope).
+0005 (dual `.claude` scope), 0006 (breaking cutover + lazy migration).
 **Decision history (historical)**: `reviews/15-06-2026-sync-adversarial-review.md`,
 `reviews/15-06-2026-simplification-analysis.md`.
 
@@ -250,39 +250,62 @@ Publish/install/update/export over Config Repos (`cmd-project-publish.sh`,
 
 | Area | Command | Status |
 |------|---------|--------|
-| Init | `cco init` (scaffold `<repo>/.cco/`), `cco init --migrate <legacy>` | NEW/transform |
-| Membership | `cco join <project>` (add the current repo to a project) | NEW |
-| Run | `cco start [project]` (cwd-aware source; index-resolve `@local`) | transform |
-| Sync | `cco sync [target] [--from <src>] [--dry-run|--auto-approve|--check]` | NEW |
-| Paths | `cco resolve [project]`, `cco path set/list`, `cco index refresh --scan` | NEW |
+| Init (clean) | `cco init` (scaffold a clean `<repo>/.cco/` in the current repo) | NEW/transform |
+| Init (join) | `cco join <project>` (current repo joins an existing project: scaffold its `.cco/`, add it to the project's `repos[]`, optional sync) — **alternative to `cco init`** | NEW |
+| Init (migrate) | `cco migrate <project>` (current repo, from the legacy vault backup: scaffold `.cco/` with the migrated project config) — **alternative to `cco init`** | NEW |
+| Run | `cco start [project]` (cwd-aware source; index-resolve `@local`; resolve unresolved repos/mounts) | transform |
+| Sync | `cco sync [target] [--from <src>] [--dry-run\|--auto-approve\|--check]` | NEW |
+| Paths/resolve | `cco resolve [project]` (resolve unresolved repos/mounts: pick a local path **or** clone from remote to a chosen destination), `cco path set/list`, `cco index refresh --scan` | NEW |
 | Discovery | `cco list [--tag <t>]`, tag set/edit | transform |
 | Global store | `cco config …` (manage `~/.cco`; depth = RD-home) | NEW |
-| Sharing | `cco pack/project publish|install|update|export`, `cco remote …` | unchanged |
+| Sharing | `cco pack/project publish\|install\|update\|export`, `cco remote …` | unchanged |
 | Update | `cco update …` (framework→user; merge engine unchanged) | unchanged |
-| Legacy | `cco vault *` → deprecated alias → `cco vault migrate` | deprecated |
 
-**Removed**: the entire `cco vault save/diff/switch/move/profile` surface and
-`cco project create` (replaced by `cco init`). Discovery is **cwd-first**: if the cwd
-(or an ancestor) has `.cco/project.yml`, use it; else resolve `<project>` via the
-index.
+**`cco init` / `cco join` / `cco migrate` are mutually exclusive** entry points for a
+repo: `init` = clean config; `join` = become part of a project already defined in
+another repo; `migrate` = bring a legacy vault project's config into this repo.
+**Removed (breaking, no alias)**: the entire `cco vault *` surface
+(save/diff/switch/move/profile) and `cco project create`. **First run** with no
+`~/.cco`/system dirs bootstraps global resources first (journey J0); with a legacy
+vault present it backs the vault up and prints migration instructions (FR-M1).
+Discovery is **cwd-first**: if the cwd (or an ancestor) has `.cco/project.yml`, use
+it; else resolve `<project>` via the index.
 
 ---
 
 ## 8. Key User Journeys
 
+Entry points per repo are mutually exclusive: **init** (clean) | **join** (existing
+project) | **migrate** (from legacy backup). `cco start` runs once configured.
+
 ```mermaid
 flowchart TD
-  subgraph J1["Single-repo"]
-    a1[cco init] --> a2[edit .cco in IDE] --> a3[cco start] --> a4[git commit/push]
+  subgraph J0["First run on a machine (D)"]
+    z1["any cco command"] --> z2{"~/.cco + system dirs exist?"}
+    z2 -->|no| z3["bootstrap global resources (~/.cco, system dirs)"]
+    z2 -->|yes| z4["proceed"]
+    z3 --> z4
   end
-  subgraph J2["Add a member"]
-    b1[in repo B: cco join cave] --> b2[in repo A: cco sync] --> b3[B has the config]
+  subgraph JB["New project (B)"]
+    b1["cco init in repo1"] --> b2["edit .cco; add repo2/3 to project.yml repos[]"]
+    b2 --> b3["optional: cco sync (-> Case B)"] --> b4["cco start"]
   end
-  subgraph J3["Fresh machine"]
-    c1[git clone repo A] --> c2[cco start] --> c3[index resolve: prompt/clone siblings] --> c4[run]
+  subgraph JE["Join an existing project (E)  — alternative to init"]
+    e1["enter repoX"] --> e2["cco join cave"]
+    e2 --> e3["scaffold repoX/.cco + add to project.yml + optional sync"]
   end
-  subgraph J6["Migration"]
-    d1[cco vault migrate] --> d2[map projects to repos] --> d3[write machine-agnostic .cco + index + backup]
+  subgraph JC["Clone a shared repo that already has .cco (C)"]
+    c1["git clone repo"] --> c2["cco start  (no init; .cco already present)"]
+  end
+  subgraph JA["Migrate a legacy project (A) — lazy, per-project"]
+    a1["first run: cco backs up the legacy vault + instructions"] --> a2["enter cloned repo"]
+    a2 --> a3["cco migrate cave  (from backup -> Case A)"]
+    a3 --> a4["optional cco sync / cco init others -> Case B or C"]
+  end
+  subgraph JF["Resolve unresolved repos/mounts (F)"]
+    f1["cco start with an unresolved repo/mount"] --> f2{"resolve"}
+    f2 -->|local| f3["point to an existing local path"]
+    f2 -->|remote| f4["clone from remote to a chosen destination"]
   end
 ```
 
@@ -290,28 +313,40 @@ flowchart TD
 
 ## 9. Teardown & Migration (phased)
 
-Each phase leaves cco runnable + tests green.
+**Breaking cutover** (AD12): no dual-read, no deprecation window. Development happens on
+`feat/*` → `develop`; only a working version is merged to `main` for release. Each
+phase leaves cco runnable + tests green.
 
 - **Phase 0 — machine-agnostic layout + index + path helpers.** New committed `.cco/`
-  (logical names only), system-dir state/cache, machine-local index, `lib/paths.sh`
-  dual-read. Verify the `/workspace/.claude` mount vs pack injection (RD-claude-mount).
-  Additive.
-- **Phase 1 — remove profiles + the custom diff/save layer.** Delete profile
-  branch/switch/shadow machinery **and** `project.yml` sanitize/virtual-diff/
-  extract-restore/backup-trap (now unnecessary — AD3). Keep `@local` (index-backed),
-  secret-scan, gitignore-heal. Profiles → tags.
-- **Phase 2 — sync-as-copy.** `lib/cmd-sync.sh` (the 4 command forms, diff+confirm,
-  copy). No merge engine, no sync-base. `cco resolve`/`cco path`/`cco index`.
-- **Phase 3 — global store + migration.** `cco config` (`~/.cco`; managed depth per
-  RD-home), `cco vault migrate`. Dual-read keeps legacy readable.
-- **Phase 4 — vault sunset (future).** Drop dual-read after 1–2 releases.
+  (logical names only, **new layout only — no dual-read**), system-dir state/cache,
+  machine-local index. Verify the `/workspace/.claude` mount vs pack injection
+  (RD-claude-mount).
+- **Phase 1 — sync-as-copy + resolve.** `lib/cmd-sync.sh` (the 4 command forms,
+  diff+confirm, copy; no merge engine, no sync-base). `cco resolve`/`cco path`/`cco
+  index` (incl. clone-from-remote resolution).
+- **Phase 2 — migration + first-run bootstrap.** First-run global bootstrap
+  (`~/.cco` + system dirs when missing — journey J0); first-run **legacy-vault backup**
+  + instructions; `cco migrate <project>` (lazy, per-project, from the backup);
+  `cco init`/`cco join`. A minimal legacy-vault reader exists **only** inside
+  `cco migrate`.
+- **Phase 3 — remove the legacy vault entirely (breaking).** Delete the
+  profile/switch/shadow machinery, `cco vault *`, `cco project create`, and the
+  custom `project.yml` sanitize/virtual-diff/extract-restore/backup-trap (unnecessary
+  under AD3). Keep `@local` (index-backed), secret-scan, gitignore-heal. Profiles →
+  tags. `cco config` (`~/.cco`; managed depth per RD-home).
 
-**Migration flow** (`cco vault migrate`, interactive, idempotent, backed-up): discover
-vault projects → map each onto physical repo(s) (offer clone if missing; pick member
-repos) → write machine-agnostic `.cco/` → build the index → archive the vault to
-`~/.cco/backups/` → print a `git` reminder. Re-runs skip migrated projects and never
-overwrite an existing `.cco/` without confirm. Rollback: `.cco/` is in each repo's
-git; the archive preserves full vault history.
+**Migration flow** (lazy, per-project, idempotent, backed-up):
+1. **First run** detects a legacy vault → archive it to
+   `~/.cco/backups/vault-<date>.tar.gz`, inform the user, print instructions, offer to
+   remove the old vault. No project migrated automatically.
+2. Per project: in an already-cloned repo, `cco migrate <project>` reads that
+   project's config from the backup → writes a machine-agnostic `.cco/` in the repo →
+   registers it in the index. The repo lands in **Case A**.
+3. The user opts into Case B (`cco sync`) or Case C (`cco init` other repos), or stays
+   in A. Re-runs never overwrite an existing `.cco/` without confirm. Rollback: `.cco/`
+   is in the repo's git; the backup archive preserves full vault history.
+A `cco migrate --all` is **optional and discouraged** (no A/B/C control; would default
+to B) — evaluate before adding.
 
 ---
 
@@ -329,13 +364,13 @@ any future hooks invoke `cco` by PATH. This keeps a future npm/npx + image packa
 
 | Phase | New | Rewrite | Remove |
 |-------|-----|---------|--------|
-| 0 | machine-agnostic layout + index + dual-read tests | — | — |
-| 1 | multi-project coexistence; truthful-diff (no sanitize) tests | `test_vault.sh` | `test_vault_profiles.sh`; custom-diff tests |
-| 2 | `test_sync.sh` (copy semantics, 4 forms, confirm) | `test_local_paths.sh` | sync-base/merge-engine sync tests (never built) |
-| 3 | `test_config.sh` (Domain A), `test_migrate.sh` | `test_vault.sh` | — |
+| 0 | machine-agnostic layout + index tests (new layout only, no dual-read) | `test_local_paths.sh` | — |
+| 1 | `test_sync.sh` (copy semantics, 4 forms, confirm); resolve incl. clone-from-remote | — | — |
+| 2 | `test_migrate.sh` (lazy per-project from backup); first-run bootstrap | — | — |
+| 3 | multi-project coexistence; truthful-diff (no sanitize) tests; `test_config.sh` (Domain A) | `test_vault.sh` (shrink to migrate-reader) | `test_vault_profiles.sh`; custom-diff/sanitize tests |
 
-Net: a narrower surface — no custom diff/save/merge sync code to test; the `cco
-update` merge engine tests are untouched.
+Net: a narrower surface — no custom diff/save/merge sync code to test, no dual-read; the
+`cco update` merge engine tests are untouched.
 
 ---
 

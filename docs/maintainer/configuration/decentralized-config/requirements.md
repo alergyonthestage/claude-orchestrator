@@ -2,7 +2,7 @@
 
 **Status**: Approved for implementation (model finalized 2026-06-15). This is the
 authoritative requirements document; the detailed design is in `design.md` and the
-decision records (ADRs 0001–0005) in `decisions/`.
+decision records (ADRs 0001–0006) in `decisions/`.
 **Date**: 2026-06-15
 **Supersedes**: the central git-backed vault (`user-config/` projects + branch
 profiles) and `../vault/profile-isolation-design.md`. Reuses the `@local` path
@@ -100,7 +100,7 @@ flowchart LR
 | **AD9** | **Config / state / cache are separated by location.** The committed `<repo>/.cco/` holds **only** machine-agnostic user config. Machine/runtime **state** (generated compose, claude-state, the local-path index, temp) and **cache** (llms, installed resources) live in **system directories outside the repo**, hidden from the user. `secrets.env` is the one exception that stays in the repo (gitignored) because the user edits it by hand. Exact filesystem locations: see open question RD-paths. |
 | **AD10** | A central **`~/.cco/`** holds the user's **global resources** (authored packs, templates, global `.claude`) as a personal git store, plus references. Two strictly-separated sync domains: **A** personal multi-PC (the user's own `~/.cco` + per-repo git) and **B** team/external sharing (Config Repos publish/install — unchanged). `~/.cco` management (incl. auto-management) is **deferred to a dedicated analysis** (RD-home). |
 | **AD11** | cco may later be distributed as an installable package (npm/npx) + image registry. **This design stays packaging-aware**: no tool code in any `.cco/`, no requirement to clone the cco source to run; hooks (if any) invoke `cco` by PATH. Detailed packaging design is a separate workstream (§9). |
-| **AD12** | **Migration is one-time, interactive, backed-up.** `cco vault migrate` maps each legacy vault project onto physical repos, writes machine-agnostic `.cco/`, builds the index, archives the vault. Dual-read keeps the legacy layout readable for 1–2 releases. |
+| **AD12** | **Breaking cutover + lazy per-project migration.** The refactor is a **direct breaking change**: no legacy runtime support, no dual-read, no deprecation window (the user base is tiny and known; migration is lossless). On first run of the new version with a legacy vault present, cco **backs up the vault** to a user-accessible location, tells the user, and offers to remove the old vault. Migration is then **lazy and per-project**: inside an already-cloned repo, `cco migrate <project>` initializes that repo's `.cco/` from the backup (instead of `cco init` clean), leaving the project in Case A; the user then chooses Case A/B/C via `cco sync`/`cco init`. See ADR-0006. |
 
 ---
 
@@ -143,9 +143,9 @@ State/cache/index live in system directories (AD9; exact paths = RD-paths):
   `secrets.env.example` stageable while refusing `secrets.env`.
 - **FR-S4** — `secrets.env.example` (committed, no values) documents required vars;
   `secrets.env` (gitignored, in-repo) holds real values, copy-if-missing.
-- **FR-S5** — Path helpers (`lib/paths.sh`) gain the new locations with dual-read
-  fallback to the legacy flat `.cco/` layout during the deprecation window;
-  precedence when both exist must be explicit.
+- **FR-S5** — Path helpers (`lib/paths.sh`) target the new layout only. **No
+  dual-read** of any legacy layout at runtime (breaking cutover, AD12); the only
+  reader of the old format is `cco migrate`, which consumes the vault backup.
 
 ---
 
@@ -205,7 +205,7 @@ flowchart TD
   U["cco sync [target] [--from source]"] --> SRC["pick source (default: cwd)"]
   SRC --> D{diff vs targets}
   D -->|no change| NOOP[no-op]
-  D -->|change| C{confirm? (unless --auto-approve)}
+  D -->|change| C{"confirm? (unless --auto-approve)"}
   C -->|yes| CP["copy source .cco -> targets"]
   C -->|no| ABORT[abort, nothing written]
 ```
@@ -234,12 +234,20 @@ flowchart TD
 
 ## 7. Migration & Constraints
 
-- **FR-M1** — `cco vault migrate` (interactive, idempotent, backed-up): maps each
-  legacy vault project onto physical repo(s), writes machine-agnostic `.cco/`, builds
-  the index, archives the vault to `~/.cco/backups/vault-<date>.tar.gz`. Re-runs skip
-  already-migrated projects and never overwrite an existing `.cco/` without confirm.
-- **FR-M2** — Deprecation window: legacy `user-config/` and the flat `.cco/` layout
-  remain readable for 1–2 releases via dual-read; a boot warning points to migrate.
+- **FR-M1 (first-run backup)** — On first run of the new version with a legacy vault
+  present, cco archives it to a user-accessible location
+  (`~/.cco/backups/vault-<date>.tar.gz`), informs the user, prints migration
+  instructions, and offers to remove the old vault. No project is migrated
+  automatically.
+- **FR-M2 (lazy per-project migrate)** — `cco migrate <project>` is run **inside an
+  already-cloned repo**: instead of `cco init` (clean scaffold), it initializes that
+  repo's `.cco/` from the backup's project config (machine-agnostic), registers it in
+  the index. The repo lands in **Case A**; the user then opts into Case B (`cco sync`)
+  or Case C (`cco init` other repos) or stays in A. Idempotent: never overwrites an
+  existing `.cco/` without confirm. A `cco migrate --all` convenience is **optional and
+  discouraged** (no per-project A/B/C control; would default to B) — evaluate before
+  adding. **Breaking cutover**: no dual-read; the legacy vault is read only from the
+  backup, only by `cco migrate`.
 - **C1** — bash 3.2 compatibility (macOS default) — no bash-4 constructs.
 - **C2** — `.claude/` must remain at the repo root (Claude Code native).
 - **C3** — Repos may be plain directories (not git). The model must not assume git
@@ -261,7 +269,8 @@ flowchart TD
 | Sync = copy, 4 command forms (AD7, §5.2) | ✅ no merge engine / sync-base / commit-time / peer-root / confirm-LCW policies |
 | Git is the only cross-PC transport (AD8) | ✅ conflicts resolved natively in IDE |
 | Config/state/cache separated by location (AD9) | ✅ state+cache out of repo; `secrets.env` the in-repo exception |
-| Vault removed; `project create` removed | ✅ surface = `cco init` + `cco sync` + `cco start` + global-store mgmt + existing publish/install/remote/pack/llms/update |
+| Vault removed; `project create` removed | ✅ surface = `cco init` + `cco join` + `cco migrate` + `cco sync` + `cco start` + global-store mgmt + existing publish/install/remote/pack/llms/update |
+| Breaking cutover; lazy per-project migration (AD12, ADR-0006) | ✅ no dual-read / no deprecation window; first-run backup + `cco migrate <project>` from backup |
 | Sync default = diff + confirm; `--auto-approve` | ✅ (snapshot/rollback = RD-syncmeta) |
 | Merge engine stays for `cco update` only (N5) | ✅ |
 

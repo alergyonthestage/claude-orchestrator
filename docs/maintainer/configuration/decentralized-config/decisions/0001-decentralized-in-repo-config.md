@@ -59,8 +59,9 @@ future packaging).
 
 **Negative** — a large, mostly-subtractive refactor across `cmd-vault.sh`,
 `local-paths.sh`, `cmd-start.sh`, and tests; a phased teardown + a one-time
-interactive migration; a deprecation window with dual-read for 1–2 releases.
+migration. It is a **breaking change with no legacy support** (see ADR-0006).
 
 ## Follow-ups
-ADR-0002/0003/0004 (the mechanics). Separate workstreams: cco packaging (R-pkg),
-`cco update` native publish/install (R-update-native), persistent `/workspace` root.
+ADR-0002/0003/0004/0005 (the mechanics), ADR-0006 (breaking cutover + migration).
+Separate workstreams: cco packaging (R-pkg), `cco update` native publish/install
+(R-update-native), persistent `/workspace` root.
