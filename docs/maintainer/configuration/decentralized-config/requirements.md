@@ -237,14 +237,19 @@ flowchart TD
   filtering; it lives in a system dir, is per-machine, and is rebuildable by scanning
   known directories (`cco index refresh --scan`) so a fresh machine can repopulate.
 - **FR-C3 (Domain A)** — Personal multi-PC: per-repo `.cco/` rides each repo's own
-  remote; `~/.cco` global resources sync via the personal store. **Management model =
-  ADR-0008 (RD-home resolved)**: manual `pass` model — cco auto-commits its own
-  mutations; remote sync is explicit (`cco config push/pull`), never per-command;
-  pull non-fast-forward → abort + notify (resolve in IDE), no auto-merge. Commit via an
-  **explicit allowlist** (`packs/ templates/ global/.claude/`) + a committed whitelist
-  `.gitignore`, **never `git add -A`**, so machine-specific or secret files can never be
-  pushed; a 2-pass secret scan (with `.example` exemption) blocks on hit. Background/
-  managed auto-sync is deferred to **RD-triggers**.
+  remote; `~/.cco` global resources sync via the personal store. **Versioning model =
+  ADR-0008 (RD-home resolved)**: a single **explicit, manual, semantic-commit** model
+  across `~/.cco` and `<repo>/.cco` — **no auto-commit in v1** (`~/.cco` content is
+  hand-authored; cco only scaffolds via `cco pack create`). `~/.cco` committed via git
+  or `cco config save [-m]`; remote sync explicit (`cco config push/pull`), never
+  per-command; pull non-fast-forward → abort + notify (resolve in IDE), no auto-merge.
+  Commit via an **explicit allowlist** (`packs/ templates/ global/.claude/`) + a
+  committed whitelist `.gitignore`, **never `git add -A`**; a 2-pass secret scan (with
+  `.example` exemption) blocks on hit. **Non-blocking reminders** at config-sensitive
+  commands flag uncommitted `~/.cco`, uncommitted involved `<repo>/.cco`, and cross-repo
+  divergence (the old clean-tree gate is now advisory — no branch switch to protect).
+  Sync transports commits, never fabricates them; background/managed auto-sync is
+  deferred to **RD-triggers**.
 - **FR-C4 (Domain B)** — Team/external sharing via Config Repos
   (`publish`/`install`/`update`/`export`) is **unchanged**. Authoring of global
   resources happens directly in `~/.cco` (opened in an IDE when working at global
@@ -296,7 +301,7 @@ flowchart TD
 | Merge engine stays for `cco update` only (N5) | ✅ |
 | RD-claude-mount resolved (2026-06-16, ADR-0005) | ✅ single `/workspace/.claude` rw mount + nested `:ro` pack/llms overlays = source-agnostic composition, no shadowing; generated files (`packs.md`/`workspace.yml`) → machine-local cache + `:ro` overlay, never into committed `.cco/claude/`; `packs/`/`llms/` reserved |
 | RD-paths resolved (2026-06-16, ADR-0007) | ✅ XDG on both OSes (no `~/Library`): STATE `$CCO_STATE_HOME`→`$XDG_STATE_HOME/cco`→`~/.local/state/cco`; CACHE `$CCO_CACHE_HOME`→`$XDG_CACHE_HOME/cco`→`~/.cache/cco`; index in STATE; CONFIG keeps `~/.cco` dotdir; host-side resolution, XDG-validation, `0700` |
-| RD-home resolved (2026-06-16, ADR-0008) | ✅ `~/.cco` = manual `pass` model: auto local commits, explicit-path allowlist staging (never `git add -A`) + whitelist `.gitignore`; explicit `cco config push/pull`; pull non-FF → abort+notify; 2-pass secret scan + `.example` exemption. Auto-sync → RD-triggers |
+| RD-home resolved (2026-06-16, ADR-0008) | ✅ Unified explicit manual commit model for `~/.cco` + `<repo>/.cco` (semantic snapshots, NO auto-commit in v1); non-blocking reminders (uncommitted `~/.cco`/`<repo>/.cco` + cross-repo divergence); allowlist double-barrier (never `git add -A`); 2-pass secret scan + `.example` exemption; explicit `cco config push/pull` (sync moves commits, never fabricates); auto-sync + atomic-command auto-commit → deferred (RD-triggers / future) |
 
 **Open — deferred to dedicated analyses (run after this design is persisted):**
 | # | Question |

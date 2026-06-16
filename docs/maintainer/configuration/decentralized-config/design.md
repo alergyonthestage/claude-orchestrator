@@ -230,7 +230,9 @@ sequenceDiagram
   `.cco/`, `cco start` uses the chosen source and **prints a non-blocking notice**
   ("project repos have divergent .cco; started from <repo>; run `cco sync` to
   converge"). This realizes the user policy: sync-off → use cwd; sync-on → user runs
-  `cco sync` to converge from a chosen source.
+  `cco sync` to converge from a chosen source. This notice is one facet of the unified
+  non-blocking reminder aggregator (ADR-0008): the same command surface also flags
+  uncommitted changes in `~/.cco` and in the involved `<repo>/.cco/`.
 
 ### 4.5 Cases (see requirements §5.3)
 - **A** code-only members (no `.cco/`), single config in the host repo.
@@ -273,14 +275,22 @@ logical names; the index provides absolute paths; bootstrap on a fresh machine v
 ### 6.1 Domain A — personal multi-PC
 - Per-repo `.cco/` rides each repo's **own git remote** (AD8): clone/pull brings it;
   concurrent cross-PC edits are ordinary git conflicts resolved in the IDE.
-- `~/.cco` global resources sync via the **personal git store** (ADR-0008): **manual
-  `pass` model** — cco auto-commits its own mutations via explicit-path allowlist
-  staging; remote sync is **explicit** (`cco config push/pull`), never per-command.
-  Local conflicts on `pull` → fast-forward or **abort + notify** (resolve in IDE), no
-  auto-merge. **Allowlist = double barrier**: committed whitelist `.gitignore`
-  (`*` then `!packs/ !templates/ !global/.claude/`) + explicit-path staging, never
-  `git add -A`. Secret scan (2-pass, with `.example` exemption) blocks on hit.
-  Background/managed auto-sync is **deferred to RD-triggers**.
+- `~/.cco` global resources sync via the **personal git store**. Versioning model =
+  **ADR-0008** (unified across `~/.cco` and `<repo>/.cco`): **explicit, manual,
+  semantic commits — no auto-commit in v1**. `~/.cco` content (packs, templates,
+  global `.claude`) is hand-authored (IDE / `config-editor` agent; cco only scaffolds
+  via `cco pack create`); committed via git or a thin `cco config save [-m]`
+  (allowlist staging + secret scan); remote sync **explicit** (`cco config push/pull`),
+  never per-command; pull non-FF → abort + notify. `<repo>/.cco/` is committed with the
+  user's normal git flow (rides the repo remote). **Allowlist = double barrier**
+  (whitelist `.gitignore` `*`→`!packs/ !templates/ !global/.claude/` + explicit-path
+  staging, never `git add -A`); 2-pass secret scan + `.example` exemption.
+- **Non-blocking reminders** (ADR-0008): the old clean-tree gate is now advisory (no
+  branch switch to protect, ADR-0006). Config-sensitive commands warn (never block;
+  user may proceed) about (a) uncommitted `~/.cco`, (b) uncommitted `<repo>/.cco` of
+  involved repos, (c) cross-repo divergence within a project (see §4.4 / §4.6).
+- Sync **transports commits, never fabricates them** — so a future background auto-sync
+  (RD-triggers) and semantic snapshots do not conflict.
 
 ### 6.2 Domain B — team/external (unchanged)
 Publish/install/update/export over Config Repos (`cmd-project-publish.sh`,
@@ -457,4 +467,4 @@ design is persisted.
 |---|----------|
 | **RD-claude-mount** | ✅ 2026-06-16 (ADR-0005). Nested-overlay composition is source-agnostic → no bind-mount shadowing. Surfaced F1 (generate `packs.md`/`workspace.yml` into cache + `:ro` overlay, not into committed `.cco/claude/`), F2 (reserve `packs/`/`llms/`, warn on cross-tree collisions), F3 (parent rw, overlays `:ro`). |
 | **RD-paths** | ✅ 2026-06-16 (ADR-0007). XDG on both OSes: STATE `$CCO_STATE_HOME`→`$XDG_STATE_HOME/cco`→`~/.local/state/cco`, CACHE `$CCO_CACHE_HOME`→`$XDG_CACHE_HOME/cco`→`~/.cache/cco`; index in STATE; CONFIG keeps `~/.cco` dotdir; host-side resolution, `0700`, XDG-validation. |
-| **RD-home** | ✅ 2026-06-16 (ADR-0008). `~/.cco` managed via the manual `pass` model: auto local commits with explicit-path allowlist staging (never `git add -A`) + double-barrier whitelist `.gitignore`; explicit `cco config push/pull`; pull non-FF → abort+notify; 2-pass secret scan + `.example` exemption. Background auto-sync deferred to RD-triggers. |
+| **RD-home** | ✅ 2026-06-16 (ADR-0008). Unified **explicit manual commit** model for `~/.cco` + `<repo>/.cco` (semantic user-named snapshots; **no auto-commit** in v1 — deferred for atomic config-mutating commands). Non-blocking **reminders** (old clean-tree gate, now advisory) flag uncommitted `~/.cco`, uncommitted involved `<repo>/.cco`, cross-repo divergence. Allowlist double-barrier (whitelist `.gitignore` + explicit staging, never `git add -A`); 2-pass secret scan + `.example` exemption; explicit `cco config push/pull` (sync transports commits, never fabricates them); auto-sync → RD-triggers. |

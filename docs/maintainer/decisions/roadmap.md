@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-06-16 (decentralized-config RD-* analyses: RD-claude-mount, RD-paths, RD-home resolved — ADR-0005/0007/0008; ~/.cco = dotdir-as-git-repo, manual pass model).
+> Last updated: 2026-06-16 (decentralized-config RD-* analyses: RD-claude-mount, RD-paths, RD-home resolved — ADR-0005/0007/0008; ~/.cco = dotdir-as-git-repo; unified explicit-commit + non-blocking-reminder model).
 >
 > **Note**: Sprint entries are historical. Path references (e.g., `.cco-meta`, `.cco-source`) in older
 > sprints reflect the layout at the time of writing. See Sprint 8 and the `.cco/` consolidation
@@ -126,8 +126,9 @@ gate which projects exist on disk or which can be started.
   (sync-state tracking in scope, FR-Y-S6/§4.6), RD-claude-mount (ADR-0005 — nested
   overlay source-agnostic, no shadowing; F1 generated files → cache + `:ro`),
   RD-paths (ADR-0007 — XDG state/cache, index in STATE, `~/.cco` dotdir-as-git-repo),
-  RD-home (ADR-0008 — `~/.cco` manual `pass` model: allowlist staging + whitelist
-  `.gitignore`, explicit `cco config push/pull`, auto-sync → RD-triggers).
+  RD-home (ADR-0008 — unified explicit manual-commit model for `~/.cco` + `<repo>/.cco`,
+  no auto-commit in v1; non-blocking reminders for uncommitted/divergence; allowlist
+  double-barrier; explicit `cco config push/pull`; auto-sync → RD-triggers).
   **Remaining**: RD-authoring, RD-memory, RD-triggers.
 
 ```mermaid
