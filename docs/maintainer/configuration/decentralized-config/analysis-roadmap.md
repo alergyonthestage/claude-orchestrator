@@ -2,7 +2,7 @@
 
 **Status**: Living tracker (started 2026-06-16). Orders the remaining design analyses by
 dependency/convenience so each runs in its **own clean session** without losing context.
-**Foundation**: every analysis opens by reading **`guiding-principles.md`** (P1–P10, source of truth)
+**Foundation**: every analysis opens by reading **`guiding-principles.md`** (P1–P11, source of truth)
 and validates its decisions against it. Decisions are recorded as ADRs + propagated to `design.md`,
 `requirements.md`, and `resource-coherence-inventory.md`.
 
@@ -29,7 +29,7 @@ and validates its decisions against it. Decisions are recorded as ADRs + propaga
 | RD-claude-mount / RD-paths / RD-home / RD-memory / RD-authoring | ADR-0005 / 0007 / 0008 / 0009 / 0010 |
 | Cross-domain coherence review | `reviews/16-06-2026-design-coherence-review.md` |
 | Resource-coherence inventory (old-model references) | `resource-coherence-inventory.md` |
-| **Guiding principles (foundation, P1–P10)** | `guiding-principles.md` |
+| **Guiding principles (foundation, P1–P11)** | `guiding-principles.md` (P11 added by R3, ADR-0013) |
 | **Preliminary grounding** (destination + sync model) | folded into R1–R4 / M below |
 
 ---
@@ -69,7 +69,25 @@ and repo identity are **write-only**. The local `~/.cco/manifest.yml` has **no c
 need (YAGNI). **Output**: ADR-0012; the team-sharing **refactor is owned by S**. **Moots**
 inventory open #1.
 
-### R3 — Internal metadata & the unified update/merge mechanism  ·  status: REFRAMED → dedicated clean session
+### R3 — Internal metadata & the unified update/merge mechanism  ·  status: DONE (ADR-0013, 2026-06-17)
+**Resolved**: all in-scope files are **internal** → excluded a priori from `~/.cco`/`<repo>/.cco`
+(P1/P6); they go to **STATE/CACHE/cat-4**, **centralized keyed-by-resource/project identity** even
+as config decentralizes per-repo. This **dissolves** the dual-axis `<repo>/.cco` leak (internal data
+no longer rides the repo remote) and closes inventory **C4**. STATE refined with a three-value
+**sync class** (`never`/`opt-in`/`required`) + recommended internal partition (`/session` vs
+`/update`) so the future P8 sync is allowlist-bounded. `.cco/meta` **split by responsibility**
+(hashes/schema/policies/changelog→STATE·`never`; `languages`→**config/preference**, the one
+exception; `remote_cache`→CACHE; flags→STATE). `base/`→**STATE, `never`-sync** (corrects today's
+vault-sync; H6 merge-path refactor **accepted**). remotes **split** (token→STATE·`never`;
+de-tokenized registry→**cat-4 candidate**). `source`→internal **cat-4 candidate** (sidecar dropped).
+`pack-manifest`→**removed** outright (no migrator). **R3↔S boundary**: R3 owns local+Axis-1 (Class B);
+team-sharing/publish-install/opinionated-package (A+C, P9)→**S**, consuming R3's shared-surface map.
+**New principle P11** (three-question classification) added to `guiding-principles.md`.
+**Output**: ADR-0013. **Feeds**: Cat-4 synthesis (`source` + registry candidates) + M.
+
+<details><summary>Original reframing note (kept for context)</summary>
+
+**status: REFRAMED → dedicated clean session**
 **Scope (resources)**: `.cco/source` (project/pack/llms provenance), `.cco/meta` (a **grab-bag**:
 schema/hashes/policies/changelog/languages/remote_cache/flags), `.cco/base/` (merge ancestors),
 `.claude/.cco/pack-manifest` (legacy), remotes registry **+ tokens**.
@@ -90,6 +108,7 @@ cost); `pack-manifest` → **remove** (legacy, mooted by cutover); remotes → *
 never-synced · de-tokenized registry→cat-4 candidate). **Principle**: *co-locate by sync-profile, not
 just functional domain.* **Full context + open questions**: see **`R3-update-metadata-handoff.md`**.
 **Output**: ADR(s) + feed M + the Cat-4 synthesis (source/remotes inputs). Absorbs H6/M3.
+</details>
 
 ### R4 — llms: nature & shareable references  ·  status: TODO
 **Role/problem to establish first**: are llms **URL-only re-fetchable** (→ CACHE) or also
@@ -115,7 +134,7 @@ transport is shared). **Output**: ADR (cat-4 existence + membership + tags place
 
 ### M — Consolidated resource taxonomy & mapping  ·  status: BLOCKED on R1–R4 + Cat-4
 **Goal**: THE authoritative, exhaustive `resource → (destination, sync-profile)` table; **validate the
-whole design against P1–P10 and fix the conflicts**; rewrite the layout trees to be exhaustive.
+whole design against P1–P11 and fix the conflicts**; rewrite the layout trees to be exhaustive.
 **Conflicts to fix (from grounding)**: **C1** `design.md:136` `backups/` in `~/.cco` → STATE; **C2** ADR-0007
 `llms/`→CACHE conditional on R4; **C3** `design.md §2.3` `~/.cco` tree **incomplete** (missing global
 `secrets.env`, `setup.sh`, `setup-build.sh`, `mcp-packages.txt`) — *note: `manifest.yml` is **removed**
@@ -155,9 +174,9 @@ are absorbed by M/R3.)
 ## Dependency order
 ```mermaid
 flowchart LR
-  P["guiding-principles P1-P10 (done)"] --> R1["R1 · tags nature (done, ADR-0011)"]
+  P["guiding-principles P1-P11 (done)"] --> R1["R1 · tags nature (done, ADR-0011)"]
   P --> R2["R2 · manifest (done, ADR-0012 → REMOVE)"]
-  P --> R3["R3 · remotes-split + internal metadata"]
+  P --> R3["R3 · internal metadata (done, ADR-0013)"]
   P --> R4["R4 · llms & shareable refs"]
   R1 --> C4["Cat-4 · 4th-category synthesis<br/>(exist? membership? tags placement)"]
   R3 --> C4
@@ -172,11 +191,10 @@ flowchart LR
   S --> T
   M -.-> E["E · review follow-ups (impl-time)"]
 ```
-**Recommended sequence**: R1 ✅ → R2 ✅ → **R3 (reframed → dedicated clean session: update/merge
-mechanism + metadata split; see `R3-update-metadata-handoff.md`)** → R4 → **Cat-4 synthesis**
-(cross-cutting verdict over R1/R3/R4, manifest excluded) → **M** (consolidate + fix conflicts) → S
-(executes the manifest-removal refactor) → (T, E around implementation). **R3 is the suggested next
-session — start from the handoff doc (Phase 0 cardinal points).**
+**Recommended sequence**: R1 ✅ → R2 ✅ → R3 ✅ (ADR-0013) → **R4 (suggested next session: llms
+nature + shareable references)** → **Cat-4 synthesis** (cross-cutting verdict over R1/R3/R4, manifest
+excluded) → **M** (consolidate + fix conflicts) → S (executes the manifest-removal refactor) →
+(T, E around implementation).
 
 ## Notes
 - R1 is **resolved-partial** (ADR-0011): tag *nature* fixed (CLI-canonical → internal); the
@@ -186,10 +204,12 @@ session — start from the handoff doc (Phase 0 cardinal points).**
 - R2 is **DONE** (ADR-0012): `manifest.yml` is functionally redundant (every read is
   discovery/validation, replaceable by the Config Repo's directory structure) → **removed**; the
   team-sharing refactor is owned by S. Not a cat-4 candidate.
-- R3 is **REFRAMED → dedicated clean session** (2026-06-17): the internal-metadata files all serve
-  the **unified diff/update/merge mechanism**, and `.cco/meta` mixes profiles → the analysis is
-  reframed as *(Phase 0)* framing the mechanism + the team-shared↔private-multi-PC boundary, then
-  *(Phase 1)* splitting/placing by sync-profile. Validated conclusions, code anchors, principles,
-  and open questions are persisted in **`R3-update-metadata-handoff.md`** (the next session opens
-  from it). Key principle: **co-locate by sync-profile, not just functional domain.**
-- ADR numbers are assigned when each session runs (next free number; last used = **0012**).
+- R3 is **DONE** (ADR-0013, 2026-06-17): all in-scope internal-metadata files are **internal** →
+  excluded from the config buckets and **centralized keyed-by-identity** in STATE/CACHE/cat-4 (config
+  decentralizes, internal centralizes), which **dissolves** the dual-axis `<repo>/.cco` leak. `.cco/meta`
+  split by responsibility; `base/`→STATE·`never`-sync (H6 refactor accepted); remotes split
+  (token·`never` / registry→cat-4); `source`→cat-4 candidate (sidecar dropped); `pack-manifest`
+  removed. STATE refined with a `never`/`opt-in`/`required` sync class. Principle **P11** added.
+  Team-sharing (A+C) handed to **S** via R3's shared-surface map. Full context:
+  **`R3-update-metadata-handoff.md`** (now annotated as resolved).
+- ADR numbers are assigned when each session runs (next free number; last used = **0013**).

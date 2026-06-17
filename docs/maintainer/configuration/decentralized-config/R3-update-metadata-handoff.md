@@ -1,11 +1,18 @@
 # R3 — Internal Metadata & the Unified Update/Merge Mechanism · Analysis Handoff
 
-**Status**: Analysis-prep / handoff (2026-06-17). **R3 is reframed and deferred to a dedicated
-clean session.** This document persists the session's findings, the maintainer's validated
-intuitions, the method, and the open questions, so the next session starts with full context.
-**Foundation**: read `guiding-principles.md` (P1–P10) first; then this doc; then the per-file
+> **✅ RESOLVED by ADR-0013 (2026-06-17).** R3 is **DONE**. This document is kept as the
+> code-grounded record (anchors, validated intuitions, method) behind the decision; the verdicts
+> live in **`decisions/0013-internal-metadata-split.md`**. Where this doc left a question OPEN
+> (e.g. the `source` sidecar, the dual-axis repo-scoped tension), the ADR **supersedes** it: all
+> in-scope files are **internal → centralized in STATE/CACHE/cat-4** (config decentralizes, internal
+> centralizes), which **dissolves** the dual-axis leak; `source` is a **cat-4 candidate** (sidecar
+> dropped); the `source`/registry cat-4 verdict is deferred to the **Cat-4 synthesis**. Read the ADR
+> for the current model; read below only for the grounding.
+
+**Status**: Resolved (2026-06-17) — superseded by ADR-0013. (Originally: analysis-prep / handoff.)
+**Foundation**: read `guiding-principles.md` (P1–P11) first; then this doc; then the per-file
 code anchors below.
-**Prior**: R1 (ADR-0011, tag nature) · R2 (ADR-0012, manifest removed). Next free ADR = **0013**.
+**Prior**: R1 (ADR-0011, tag nature) · R2 (ADR-0012, manifest removed). **This = ADR-0013.**
 
 ---
 

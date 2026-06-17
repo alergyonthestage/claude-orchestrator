@@ -38,7 +38,7 @@ it → internal.*
 | **`~/.cco/`** | global resources the user **curates/authors** (`packs/`, `templates/`, `global/.claude/`, `tags.yml`) | user-facing personal store |
 | **STATE** (`$XDG_STATE_HOME/cco` → `~/.local/state/cco`) | machine-local persistent **state** (index, generated compose, transcripts, memory, meta, seeds, sync-meta) | **hidden** (internal) |
 | **CACHE** (`$XDG_CACHE_HOME/cco` → `~/.cache/cco`) | regenerable / re-fetchable / transient (generated overlays, Config-Repo clones, `.bak`) | **hidden** (internal) |
-| **(possible 4th) internal-but-synced** | cco-managed (CLI-updated, hidden, **not** IDE-edited config), but worth **private multi-PC** sync (candidates: `tags.yml` (internal nature fixed — ADR-0011); de-tokenized remotes registry (R3). *Manifest **removed**, not a candidate — ADR-0012*) | **hidden** (internal) — *existence + membership decided by the **Cat-4 synthesis** after R1–R4 (ADR-0011); **not** pre-judged* |
+| **(possible 4th) internal-but-synced** | cco-managed (CLI-updated, hidden, **not** IDE-edited config), but worth **private multi-PC** sync (candidates: `tags.yml` (internal nature fixed — ADR-0011); de-tokenized remotes registry **+ `source` provenance** (R3, ADR-0013). *Manifest **removed**, not a candidate — ADR-0012*) | **hidden** (internal) — *existence + membership decided by the **Cat-4 synthesis** after R1–R4 (ADR-0011); **not** pre-judged* |
 
 The two config buckets (`<repo>/.cco`, `~/.cco`) hold **only** P1-config. STATE/CACHE hold **only**
 P1-internal that is **not** synced. Today there is **no** home for "internal yet privately synced"
@@ -150,6 +150,25 @@ corrects. (b) **Maintainer confirmation** is required on choices that affect how
 (UX, interface, sync strategy) — these are not derivable from code alone. (c) **Cross-cutting
 verdicts are synthesised, not per-resource** — e.g. the 4th-category existence is decided by a
 dedicated synthesis over *all* candidates (R1–R4), not inside any single resource analysis.
+
+## P11 — Classify every cco datum on three questions (the R3 method, generalized)
+
+For **every** piece of cco-managed information — a **new file**, or **each datum inside one** —
+answer three questions **before** placing it. This generalizes the per-datum method R3 applied
+(ADR-0013) and must guide the design of any new cco file and every future analysis.
+
+- **(a) Scope / ownership** — is it needed **even without team-sharing** (local + Axis-1 private →
+  owned by the config/update analyses, e.g. R3) or is it **exclusive to team-sharing / opinionated
+  defaults distribution** (Axis-2 + Class C, P9 → owned by the sharing analysis **S**)?
+- **(b) Sync class** — **`never`** (syncing **breaks cco** or violates a security invariant —
+  version-tied state, hashes, tokens) · **`opt-in`** (desirable but user-gated, e.g. `memory/` /
+  transcripts, P8) · **`required`** (multi-PC by design, Axis-1, **never team** — cat-4 members)?
+- **(c) Shared surface** — what does it **touch or share** with the unified diff/update/merge
+  mechanism (so a later analysis consumes the boundary instead of re-deriving it)?
+
+A file whose data give **heterogeneous** answers across (a)/(b)/(c) is a **split signal** (cf.
+P3/P4; the `.cco/meta` grab-bag was split exactly this way). Co-locate by **answer profile**, not
+merely by functional domain.
 
 ---
 

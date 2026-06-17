@@ -182,6 +182,12 @@ Section "Vault Simplification → Decentralized In-Repo Config" already exists (
    inventory" follow-up (mcp.json/setup.sh/mcp-packages.txt/.cco/managed). Confirm there.
 4. **`.cco/claude-state/` (transcripts) and `memory/`** both become STATE under
    `<state>/cco/projects/<id>/` (ADR-0007 + 0009) — neither stays in the repo.
+5. **Internal metadata (`source`, `base/`, `meta`, `pack-manifest`, remotes registry+tokens)**:
+   **all internal → out of the config buckets**, centralized keyed-by-identity in STATE/CACHE/cat-4
+   (**ADR-0013**, resolves conflict **C4**). `base/`→STATE·`never`-sync (H6 merge-path refactor);
+   `.cco/meta` split (`languages`→config/preference is the lone exception); `remote_cache`→CACHE;
+   token→STATE·`never`; de-tokenized registry + `source`→**cat-4 candidates** (verdict → Cat-4
+   synthesis); **`pack-manifest` removed outright** (no migrator). Team-sharing surface → S.
 
 ---
 
