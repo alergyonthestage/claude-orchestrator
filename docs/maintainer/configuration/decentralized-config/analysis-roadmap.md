@@ -141,6 +141,9 @@ allowlist** and separate dirs. Refines ADR-0007 §Decision-2 (registry STATE→D
 (byte-level layout + registry scope/namespacing).
 
 ### M — Consolidated resource taxonomy & mapping  ·  status: READY (R1–R4 + Cat-4 all done; **suggested next**)
+> **Start here**: `M-handoff-consolidated-design.md` — the cross-ADR end-state synthesis (4-bucket
+> trees, consolidated `resource→(bucket,sync)` table, the legacy→new **migration fan-out map**, the
+> conflicts/open-decisions checklist). Maintainer-validated 2026-06-17; it is M's working scaffold.
 **Goal**: THE authoritative, exhaustive `resource → (destination, sync-profile)` table; **validate the
 whole design against P1–P12 and fix the conflicts**; rewrite the layout trees to be exhaustive.
 **Conflicts to fix (from grounding)**: **C1** `design.md:136` `backups/` in `~/.cco` → STATE; **C2** ADR-0007
