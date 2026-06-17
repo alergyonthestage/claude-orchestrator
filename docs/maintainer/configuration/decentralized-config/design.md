@@ -135,7 +135,14 @@ satisfies the Phase-3 gate (review BL2).
 ├── tags.yml             # per-user tag registry: resource -> [tags] (ADR-0010; Domain A, never Domain B)
 └── backups/             # vault migration archives
 ```
-> **Resource organization → tags, not profiles (RESOLVED — ADR-0010).** Legacy vault
+> **⚠️ Nature/placement updated by ADR-0011 (2026-06-17).** Tags are **CLI-canonical → internal**
+> (not hand-edited config); ADR-0010's provisional "config in `~/.cco`" framing below is **superseded
+> for nature**. The **physical placement** (dedicated 4th "internal-but-synced" bucket vs co-locate in
+> `~/.cco`) and the **`.gitignore` allowlist / sync transport** are **deferred to the Cat-4 synthesis**
+> (after R1–R4); the tree/allowlist lines above are therefore **provisional**. Full §2 rewrite lands at
+> **M**. Semantics (per-user, never-team, cross-PC) are unchanged.
+>
+> **Resource organization → tags, not profiles (semantics RESOLVED — ADR-0010).** Legacy vault
 > profiles (git branches) are **removed entirely** (ADR-0006); a **net-new `tags`** system
 > replaces them — **no overlap, no dual-axis machinery**. Tags are **multi-valued per
 > resource** and transversal (the correct semantics vs a profile's single membership); the

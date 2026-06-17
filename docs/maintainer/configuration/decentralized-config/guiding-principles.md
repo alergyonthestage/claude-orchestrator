@@ -38,17 +38,22 @@ it → internal.*
 | **`~/.cco/`** | global resources the user **curates/authors** (`packs/`, `templates/`, `global/.claude/`, `tags.yml`) | user-facing personal store |
 | **STATE** (`$XDG_STATE_HOME/cco` → `~/.local/state/cco`) | machine-local persistent **state** (index, generated compose, transcripts, memory, meta, seeds, sync-meta) | **hidden** (internal) |
 | **CACHE** (`$XDG_CACHE_HOME/cco` → `~/.cache/cco`) | regenerable / re-fetchable / transient (generated overlays, Config-Repo clones, `.bak`) | **hidden** (internal) |
-| **(possible 4th) internal-but-synced** | cco-managed (CLI-updated, hidden, **not** IDE-edited config), but worth **private multi-PC** sync (candidates under review: `tags.yml`? remotes registry? manifest?) | **hidden** (internal) — *existence + membership = analysis **R1*** |
+| **(possible 4th) internal-but-synced** | cco-managed (CLI-updated, hidden, **not** IDE-edited config), but worth **private multi-PC** sync (candidates: `tags.yml` (internal nature fixed — ADR-0011); de-tokenized remotes registry (R3); manifest (R2)) | **hidden** (internal) — *existence + membership decided by the **Cat-4 synthesis** after R1–R4 (ADR-0011); **not** pre-judged* |
 
 The two config buckets (`<repo>/.cco`, `~/.cco`) hold **only** P1-config. STATE/CACHE hold **only**
 P1-internal that is **not** synced. Today there is **no** home for "internal yet privately synced"
-data — whether one is needed, and what falls in it, is **open (analysis R1)**.
+data — whether one is needed, and what falls in it, is **decided by the Cat-4 synthesis after
+R1–R4 (ADR-0011)**, not assumed a priori. Selection rule: co-locate a lone such resource in
+`~/.cco` only if it is the *sole* member (balance cost/benefit); otherwise prefer a dedicated 4th
+bucket for architectural cleanliness. *(See also the Cat-4 ∩ STATE-sync (P8) note in ADR-0011: the
+sync transport may be unified across STATE, tags, and any cat-4 member.)*
 
-> **`tags.yml` nature is under review (R1).** It was provisionally placed in `~/.cco` as config, but
-> if tags are set via the CLI (`cco tag …`) rather than hand-edited in an IDE, then by P1 they are
-> **internal**, not config — and "internal + per-user + synced" is exactly the 4th-category profile.
-> ADR-0010 fixed the *semantics* (tags are per-user, never team-shared, synced across the user's PCs);
-> **R1 validates the physical bucket & nature** and may refine ADR-0010's placement.
+> **`tags.yml` nature RESOLVED (ADR-0011); placement deferred.** R1 fixed the **nature**: the tag
+> interface is **CLI-canonical** (`cco tag add/rm` + `cco list --tag`), so by P1 tags are **internal**
+> (cco-managed, not hand-edited) — correcting ADR-0010's provisional "config" framing. Semantics are
+> unchanged (per-user, never team-shared, synced cross-PC). The **physical placement** (dedicated 4th
+> bucket vs co-locate in `~/.cco`) is **deferred to the Cat-4 synthesis** after R1–R4, per the
+> selection rule above. ADR-0010 still owns the *semantics*; ADR-0011 owns *nature & method*.
 
 ## P3 — Two **orthogonal** sync axes (never conflate them)
 
@@ -137,6 +142,14 @@ borderline resource/concept gets its **own clean session** (see `analysis-roadma
 classification needs undivided context on that resource's purpose. Every analysis must: (1) state the
 resource's role + problem solved; (2) classify on both axes via P1–P9; (3) flag/resolve any conflict
 with the current `design.md`/ADRs; (4) record an ADR + propagate to the living docs.
+
+**Method lessons (ADR-0011).** (a) **Validate, don't assume** — never discard or accept a candidate
+*a priori*; classify only from the validated, code-grounded role. A first pass that classified tags
+from the *absence* of a CLI (instead of a deliberate CLI-vs-IDE design choice) was the error this
+corrects. (b) **Maintainer confirmation** is required on choices that affect how the toolkit is used
+(UX, interface, sync strategy) — these are not derivable from code alone. (c) **Cross-cutting
+verdicts are synthesised, not per-resource** — e.g. the 4th-category existence is decided by a
+dedicated synthesis over *all* candidates (R1–R4), not inside any single resource analysis.
 
 ---
 

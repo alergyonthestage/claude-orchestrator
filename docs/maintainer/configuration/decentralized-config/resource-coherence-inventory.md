@@ -23,7 +23,7 @@ tree is the NEW design (source of truth) and is excluded.
 |---|---|
 | `user-config/` central root (`projects/`, `packs/`, `templates/`, `global/`) | **REMOVED.** Project config → `<repo>/.cco/`; global resources → `~/.cco/` (`packs/ templates/ global/.claude/ tags.yml manifest.yml`); state/cache → XDG (`~/.local/state/cco`, `~/.cache/cco`); machine-local index → STATE |
 | `cco vault *` (save/diff/switch/move/profile/init/log/status) | **REMOVED.** Normal git for `<repo>/.cco/`; `cco config save/push/pull` for `~/.cco/` (ADR-0008) |
-| **Profiles** (vault git branches, `.vault-profile`) | **REMOVED.** Per-user **tags** in `~/.cco/tags.yml`; `cco list --tag` (ADR-0010) |
+| **Profiles** (vault git branches, `.vault-profile`) | **REMOVED.** Per-user **tags**, **CLI-canonical → internal** (`cco tag add/rm` + `cco list --tag`, ADR-0011); registry `tags.yml` **placement** (4th bucket vs `~/.cco`) deferred to the Cat-4 synthesis; semantics per ADR-0010 |
 | `@local` markers + per-repo `local-paths.yml` | Logical names resolved via the machine-local index (ADR-0002) |
 | `memory/` (vault-tracked, auto-committed, cross-PC synced) | Machine-local **STATE** `<state>/cco/projects/<id>/memory/`, **no sync in v1** (ADR-0009) |
 | `cco project create` | **REMOVED.** Entry points = `cco init` \| `cco join` \| `cco migrate` |

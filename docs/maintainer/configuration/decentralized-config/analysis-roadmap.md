@@ -6,11 +6,19 @@ dependency/convenience so each runs in its **own clean session** without losing 
 and validates its decisions against it. Decisions are recorded as ADRs + propagated to `design.md`,
 `requirements.md`, and `resource-coherence-inventory.md`.
 
-> **Method (P10)**: classify each resource from its **role + problem solved + principles**, never from
-> its current surface/path. A borderline resource gets its **own clean session**; correct placement
-> needs undivided context on that resource's purpose. Each analysis: (1) state role + problem solved;
-> (2) classify on both axes (destination P2 + sync-profile P3) via P1–P9; (3) flag/resolve conflicts
-> with `design.md`/ADRs; (4) record an ADR + propagate to living docs; (5) mark `DONE` here.
+> **Method (P10 + ADR-0011)**: classify each resource from its **role + problem solved + principles**,
+> never from its current surface/path. A borderline resource gets its **own clean session**; correct
+> placement needs undivided context on that resource's purpose. Each analysis validates resources
+> **one-by-one**: (1) **current-state recap (code-grounded)**; (2) state role + problem solved;
+> (3) classify on both axes (destination P2 + sync-profile P3) via P1–P9; (4) flag/resolve conflicts
+> with `design.md`/ADRs; (5) **maintainer confirm/reject** on UX/usage-impacting choices (interface,
+> sync strategy) — not derivable from code alone; (6) record an ADR + propagate to living docs; (7)
+> mark `DONE` here.
+>
+> **Lessons (ADR-0011)**: *don't discard/accept a priori* — classify only from the validated role (a
+> first pass mis-classified tags from the *absence* of a CLI). **Cross-cutting verdicts are
+> synthesised, not per-resource** — the 4th-category existence is decided by a dedicated **Cat-4
+> synthesis** over *all* candidates (R1–R4), not inside any single resource analysis.
 
 ---
 
@@ -33,15 +41,18 @@ and validates its decisions against it. Decisions are recorded as ADRs + propaga
 > grounding had answered too quickly (tags/4th-category, manifest, internal metadata). Each becomes a
 > dedicated role-first analysis (R1–R3) that feeds the consolidated mapping (M).
 
-### R1 — Category-4 & tags classification  ·  status: TODO (next)
-**Role/problem to establish first**: how is a tag *set* — by editing `tags.yml` in an IDE (→ config,
-P1) or via a `cco tag …` CLI (→ internal, P1)? What problem do tags solve and for whom?
-**Decide**: (a) does a **4th "internal-but-synced" category** exist (cco-managed, hidden, NOT
-IDE-edited, but private-multi-PC synced)? Weigh completeness/future-extension vs duplication vs
-alternatives that avoid a 4th bucket. (b) Is `tags.yml` config (`~/.cco`) or internal-but-synced? Other
-members? **Validate the maintainer's intuition explicitly (confirm or reject with reasons).**
-**Note**: ADR-0010 fixed tag *semantics* (per-user, never team, synced); R1 fixes the *bucket & nature*
-and may refine ADR-0010's placement. **Output**: ADR + update `guiding-principles.md` P2 (4th row) + feed M.
+### R1 — tags nature & the Cat-4 method  ·  status: RESOLVED-PARTIAL (ADR-0011, 2026-06-17)
+**Resolved (nature)**: the tag interface is **CLI-canonical** (`cco tag add/rm` + `cco list --tag`),
+so by P1 tags are **internal** (cco-managed, not hand-edited) — correcting ADR-0010's provisional
+"config" framing. Semantics unchanged (per-user, never-team, synced cross-PC). UX-confirmed by the
+maintainer (CLI assign/filter >> hand-editing YAML; registry is a structured table, cf. `.git/index`).
+**Deferred (placement + cat-4 verdict)**: `tags.yml`'s **physical bucket** (dedicated 4th
+"internal-but-synced" bucket vs co-locate in `~/.cco`) and the **4th-category existence/membership**
+are decided by the **Cat-4 synthesis** (new step below), since both depend on the full validated
+candidate set (R1–R4). Selection rule: co-locate in `~/.cco` only if tags are the *sole* member;
+else prefer a dedicated bucket. **Method correction recorded**: cat-4 is a *synthesis* verdict, not a
+per-resource one — do not pre-judge. **Output**: ADR-0011 (+ `guiding-principles.md` P2/P10 +
+`design.md` annotations updated). **Feeds**: the Cat-4 synthesis, then M.
 
 ### R2 — manifest.yml: role & necessity  ·  status: TODO
 **Role/problem to establish first**: what problem did `manifest.yml` solve; is it auto-generated,
@@ -67,7 +78,20 @@ axes (private multi-PC *and* team). Evaluate "promote full source/URL into proje
 vs alternatives. **Output**: ADR (llms nature + shareable-reference model) + fills the llms cell in M +
 closes inventory open #2. Interlinks with S (team resolve).
 
-### M — Consolidated resource taxonomy & mapping  ·  status: BLOCKED on R1–R4
+### Cat-4 — 4th-category synthesis  ·  status: BLOCKED on R1–R4 (new step, ADR-0011)
+**Goal**: the cross-cutting verdict R1 deliberately deferred. With **all** candidates validated
+(R1 tags · R2 manifest · R3 remotes-split + internal metadata · R4 llms), decide: **(1)** does the
+4th "internal-but-synced" category **exist** (cco-managed, hidden, NOT IDE-edited, but private
+multi-PC synced)? **(2)** its **membership** (each of: `tags.yml`; de-tokenized remotes registry;
+others — **never** tokens, which stay STATE non-synced for security); **(3)** the **placement of
+`tags.yml`** per the selection rule (sole member → co-locate in `~/.cco`, balance cost/benefit;
+else → dedicated bucket for cleanliness). **Also weigh (informational)**: whether the cat-4 sync
+**transport** should be **unified** with the future STATE-sync (P8) — one "internal cross-PC sync"
+mechanism across STATE, tags, and any cat-4 member (STATE keeps its dedicated XDG dir; only the
+transport is shared). **Output**: ADR (cat-4 existence + membership + tags placement) → feeds M.
+**Depends on**: R1–R4. **Blocks**: the tag/remotes cells of M.
+
+### M — Consolidated resource taxonomy & mapping  ·  status: BLOCKED on R1–R4 + Cat-4
 **Goal**: THE authoritative, exhaustive `resource → (destination, sync-profile)` table; **validate the
 whole design against P1–P10 and fix the conflicts**; rewrite the layout trees to be exhaustive.
 **Conflicts to fix (from grounding)**: **C1** `design.md:136` `backups/` in `~/.cco` → STATE; **C2** ADR-0007
@@ -104,23 +128,33 @@ are absorbed by M/R3.)
 ## Dependency order
 ```mermaid
 flowchart LR
-  P["guiding-principles P1-P10 (done)"] --> R1["R1 · cat-4 & tags"]
+  P["guiding-principles P1-P10 (done)"] --> R1["R1 · tags nature (done, ADR-0011)"]
   P --> R2["R2 · manifest role"]
-  P --> R3["R3 · internal metadata"]
+  P --> R3["R3 · remotes-split + internal metadata"]
   P --> R4["R4 · llms & shareable refs"]
-  R1 --> M["M · consolidated mapping (ADR + design §2 rewrite, fix C1-C4)"]
+  R1 --> C4["Cat-4 · 4th-category synthesis<br/>(exist? membership? tags placement)"]
+  R2 --> C4
+  R3 --> C4
+  R4 --> C4
+  C4 --> M["M · consolidated mapping (ADR + design §2 rewrite, fix C1-C4)"]
   R2 --> M
   R3 --> M
   R4 --> M
   R4 --> S["S · sharing unification (+ A4 fallback, Axis-1 public-repo)"]
   M --> S
-  S --> T["T · RD-triggers / R-state-sync (future)"]
+  C4 -.-> T["T · RD-triggers / R-state-sync (future); cat-4 ∩ P8 sync transport"]
+  S --> T
   M -.-> E["E · review follow-ups (impl-time)"]
 ```
-**Recommended sequence**: R1 → R2 → R3 → R4 (independent; can interleave) → **M** (consolidate + fix
-conflicts) → S → (T, E around implementation). R1 is the suggested **next** session.
+**Recommended sequence**: R1 ✅ → R2 → R3 → R4 (independent; can interleave) → **Cat-4 synthesis**
+(cross-cutting verdict over R1–R4) → **M** (consolidate + fix conflicts) → S → (T, E around
+implementation). **R2 (manifest) is the suggested next session.**
 
 ## Notes
-- The three former "carried confirmations" are **now analyses** R1 (4th-category/tags), R2 (manifest),
-  R3 (`.cco/source`/`.cco/meta`) — not quick confirmations: each needs role-first analysis (P10).
-- ADR numbers are assigned when each session runs (next free number; last used = 0010).
+- R1 is **resolved-partial** (ADR-0011): tag *nature* fixed (CLI-canonical → internal); the
+  *4th-category verdict* + tag *placement* were **deferred** to the new **Cat-4 synthesis** step,
+  because a cross-cutting verdict must be synthesised over *all* validated candidates, not decided
+  inside one resource analysis.
+- The former "carried confirmations" are analyses R2 (manifest), R3 (remotes-split + `.cco/source`/
+  `.cco/meta`) — each needs a code-grounded per-resource recap + maintainer confirmation (P10).
+- ADR numbers are assigned when each session runs (next free number; last used = **0011**).
