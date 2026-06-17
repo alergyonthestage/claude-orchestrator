@@ -69,13 +69,26 @@ and repo identity are **write-only**. The local `~/.cco/manifest.yml` has **no c
 need (YAGNI). **Output**: ADR-0012; the team-sharing **refactor is owned by S**. **Moots**
 inventory open #1.
 
-### R3 — Internal metadata & state placement  ·  status: TODO
-**Scope (resources)**: `.cco/source` (project + pack provenance), pack `.cco/meta`, `.cco/base/`
-(merge-engine ancestors, project + global), `.claude/.cco/pack-manifest`, remotes registry **+ tokens**.
-**Role/problem to establish first**: each is cco-managed metadata coupled to a resource; today several sit
-*inside* config buckets (violating P6) or hold secrets (tokens). **Decide**: STATE mirror (strict P6) vs a
-documented sidecar exception; how the merge engine resolves `base/` from STATE (H6); tokens stay STATE +
-never synced (security invariant). **Output**: ADR + feed M. Absorbs review follow-ups H6/M3.
+### R3 — Internal metadata & the unified update/merge mechanism  ·  status: REFRAMED → dedicated clean session
+**Scope (resources)**: `.cco/source` (project/pack/llms provenance), `.cco/meta` (a **grab-bag**:
+schema/hashes/policies/changelog/languages/remote_cache/flags), `.cco/base/` (merge ancestors),
+`.claude/.cco/pack-manifest` (legacy), remotes registry **+ tokens**.
+**Reframed (this session, 2026-06-17)**: these files are all metadata serving **one** thing — the
+resource **diff/update/merge mechanism** — and several **mix responsibilities with different
+sync/sharing profiles in one file** (esp. `.cco/meta`). Placement can't be decided until the
+mechanism's shape + the **team-shared ↔ private-multi-PC boundary** are framed. **Two-phase plan**:
+**Phase 0** — cardinal points (resource classes A team-shared / B private-multi-PC / C cco
+opinionated-as-external-package; per-datum: what/why/scope/sync-profile; the A↔B boundary; couples
+with **S** + **P9**); **Phase 1** — split each file by profile & place each datum.
+**Validated conclusions (carry forward)**: `source` = resource-coupled provenance (multi-PC synced
+*with* the resource, **never team**, publish-excluded; cat-4 *profile* but **sidecar**, not a bucket
+member); `.cco/meta` → **split by responsibility/profile** (update-state→STATE · languages→preference
+· changelog→notification · remote_cache→CACHE); `.cco/base/` → **STATE, machine-local, NOT synced**
+(corrects today's vault-tracking; same profile as meta-hashes → co-locate; H6 merge-engine refactor
+cost); `pack-manifest` → **remove** (legacy, mooted by cutover); remotes → **split** (tokens→STATE
+never-synced · de-tokenized registry→cat-4 candidate). **Principle**: *co-locate by sync-profile, not
+just functional domain.* **Full context + open questions**: see **`R3-update-metadata-handoff.md`**.
+**Output**: ADR(s) + feed M + the Cat-4 synthesis (source/remotes inputs). Absorbs H6/M3.
 
 ### R4 — llms: nature & shareable references  ·  status: TODO
 **Role/problem to establish first**: are llms **URL-only re-fetchable** (→ CACHE) or also
@@ -158,10 +171,11 @@ flowchart LR
   S --> T
   M -.-> E["E · review follow-ups (impl-time)"]
 ```
-**Recommended sequence**: R1 ✅ → R2 ✅ → R3 → R4 (independent; can interleave) → **Cat-4 synthesis**
-(cross-cutting verdict over R1–R4, manifest excluded) → **M** (consolidate + fix conflicts) → S
-(executes the manifest-removal refactor) → (T, E around implementation). **R3 (remotes-split +
-internal metadata) is the suggested next session.**
+**Recommended sequence**: R1 ✅ → R2 ✅ → **R3 (reframed → dedicated clean session: update/merge
+mechanism + metadata split; see `R3-update-metadata-handoff.md`)** → R4 → **Cat-4 synthesis**
+(cross-cutting verdict over R1/R3/R4, manifest excluded) → **M** (consolidate + fix conflicts) → S
+(executes the manifest-removal refactor) → (T, E around implementation). **R3 is the suggested next
+session — start from the handoff doc (Phase 0 cardinal points).**
 
 ## Notes
 - R1 is **resolved-partial** (ADR-0011): tag *nature* fixed (CLI-canonical → internal); the
@@ -171,6 +185,10 @@ internal metadata) is the suggested next session.**
 - R2 is **DONE** (ADR-0012): `manifest.yml` is functionally redundant (every read is
   discovery/validation, replaceable by the Config Repo's directory structure) → **removed**; the
   team-sharing refactor is owned by S. Not a cat-4 candidate.
-- Remaining "carried confirmation": R3 (remotes-split + `.cco/source`/`.cco/meta`) — needs a
-  code-grounded per-resource recap + maintainer confirmation (P10).
+- R3 is **REFRAMED → dedicated clean session** (2026-06-17): the internal-metadata files all serve
+  the **unified diff/update/merge mechanism**, and `.cco/meta` mixes profiles → the analysis is
+  reframed as *(Phase 0)* framing the mechanism + the team-shared↔private-multi-PC boundary, then
+  *(Phase 1)* splitting/placing by sync-profile. Validated conclusions, code anchors, principles,
+  and open questions are persisted in **`R3-update-metadata-handoff.md`** (the next session opens
+  from it). Key principle: **co-locate by sync-profile, not just functional domain.**
 - ADR numbers are assigned when each session runs (next free number; last used = **0012**).
