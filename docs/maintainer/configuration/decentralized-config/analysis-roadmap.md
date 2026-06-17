@@ -2,7 +2,7 @@
 
 **Status**: Living tracker (started 2026-06-16). Orders the remaining design analyses by
 dependency/convenience so each runs in its **own clean session** without losing context.
-**Foundation**: every analysis opens by reading **`guiding-principles.md`** (P1–P11, source of truth)
+**Foundation**: every analysis opens by reading **`guiding-principles.md`** (P1–P12, source of truth)
 and validates its decisions against it. Decisions are recorded as ADRs + propagated to `design.md`,
 `requirements.md`, and `resource-coherence-inventory.md`.
 
@@ -29,7 +29,7 @@ and validates its decisions against it. Decisions are recorded as ADRs + propaga
 | RD-claude-mount / RD-paths / RD-home / RD-memory / RD-authoring | ADR-0005 / 0007 / 0008 / 0009 / 0010 |
 | Cross-domain coherence review | `reviews/16-06-2026-design-coherence-review.md` |
 | Resource-coherence inventory (old-model references) | `resource-coherence-inventory.md` |
-| **Guiding principles (foundation, P1–P11)** | `guiding-principles.md` (P11 added by R3, ADR-0013) |
+| **Guiding principles (foundation, P1–P12)** | `guiding-principles.md` (P11 added by R3/ADR-0013; P12 + ADR-0014 method lesson added by R4) |
 | **Preliminary grounding** (destination + sync model) | folded into R1–R4 / M below |
 
 ---
@@ -110,23 +110,31 @@ just functional domain.* **Full context + open questions**: see **`R3-update-met
 **Output**: ADR(s) + feed M + the Cat-4 synthesis (source/remotes inputs). Absorbs H6/M3.
 </details>
 
-### R4 — llms: nature & shareable references  ·  status: TODO
-**Role/problem to establish first**: are llms **URL-only re-fetchable** (→ CACHE) or also
-**manually-editable curated** resources (→ `~/.cco` config)? **Then**: what must travel so a third party
-can fully **resolve** a shared project/pack — llms **source URLs** and repo **remote URLs** — across both
-axes (private multi-PC *and* team). Evaluate "promote full source/URL into project/pack by name+source"
-vs alternatives. **Output**: ADR (llms nature + shareable-reference model) + fills the llms cell in M +
-closes inventory open #2. Interlinks with S (team resolve).
+### R4 — llms: nature & shareable references  ·  status: DONE (ADR-0014, 2026-06-17)
+**Resolved**: llms **content** = re-fetchable → **CACHE** (`never`-sync; hand-curated llms **not**
+supported — no code path, YAGNI). The shareable-reference question generalized: llms URLs and project
+**repo** URLs are the **same data category** — *coordinates of by-name-referenced resources* — designed
+together (**model C, unified**). A referenced resource decomposes by sync-profile: **name** (config,
+travels with the manifest) · **coordinate `name→url`(+variant/ref)** (**config** — team-shared ⇒ not
+internal by P6; stored **once**/DRY; **synced cross-PC + resolved-at-publish for team**; enables
+auto-resolve) · **local-path** (repos: internal, **local-only**, explicit `cco resolve`) · **content**
+(llms: CACHE). **Option A (inline url per-manifest) rejected** (denormalization → update anomaly).
+**Refines C2** (only llms *content*→CACHE; *coordinate*→config). **Removes llms from Cat-4** (config,
+not internal-never-team); R3 install-provenance `source` stays a candidate (kept **distinct**). New
+**principle P12** + **ADR-0014 method lesson** (the reusable analysis lens) added to
+`guiding-principles.md`. **Output**: ADR-0014. **Hands to M** (registry scope/namespacing) **and S**
+(publish-boundary resolution, repo URL persistence/Axis-1 gap, `llms:`/`repos:` schema + migration).
 
-### Cat-4 — 4th-category synthesis  ·  status: BLOCKED on R1–R4 (new step, ADR-0011)
+### Cat-4 — 4th-category synthesis  ·  status: READY (R1–R4 all done; **suggested next**)
 **Goal**: the cross-cutting verdict R1 deliberately deferred. With **all** candidates validated
-(R1 tags · ~~R2 manifest~~ → **removed, ADR-0012, not a candidate** · R3 remotes-split + internal
-metadata · R4 llms), decide: **(1)** does the
-4th "internal-but-synced" category **exist** (cco-managed, hidden, NOT IDE-edited, but private
-multi-PC synced)? **(2)** its **membership** (each of: `tags.yml`; de-tokenized remotes registry;
-others — **never** tokens, which stay STATE non-synced for security); **(3)** the **placement of
-`tags.yml`** per the selection rule (sole member → co-locate in `~/.cco`, balance cost/benefit;
-else → dedicated bucket for cleanliness). **Also weigh (informational)**: whether the cat-4 sync
+(R1 tags · ~~R2 manifest~~ → **removed, ADR-0012** · R3 remotes-split + install-provenance `source`,
+ADR-0013 · ~~R4 llms~~ → **config, removed as a candidate, ADR-0014**), the **final candidate set** is:
+**`tags.yml`** (R1) · **de-tokenized remotes registry** + **install-provenance `source`** (R3) —
+**never** tokens (STATE, security) and **not** the llms/repo coordinate (config, P12/ADR-0014). Decide:
+**(1)** does the 4th "internal-but-synced **never-team**" category **exist** (cco-managed, hidden, NOT
+IDE-edited, private multi-PC synced)? **(2)** its **membership** (from the set above); **(3)** the
+**placement of `tags.yml`** per the selection rule (sole member → co-locate in `~/.cco`, balance
+cost/benefit; else → dedicated bucket for cleanliness). **Also weigh (informational)**: whether the cat-4 sync
 **transport** should be **unified** with the future STATE-sync (P8) — one "internal cross-PC sync"
 mechanism across STATE, tags, and any cat-4 member (STATE keeps its dedicated XDG dir; only the
 transport is shared). **Output**: ADR (cat-4 existence + membership + tags placement) → feeds M.
@@ -134,7 +142,7 @@ transport is shared). **Output**: ADR (cat-4 existence + membership + tags place
 
 ### M — Consolidated resource taxonomy & mapping  ·  status: BLOCKED on R1–R4 + Cat-4
 **Goal**: THE authoritative, exhaustive `resource → (destination, sync-profile)` table; **validate the
-whole design against P1–P11 and fix the conflicts**; rewrite the layout trees to be exhaustive.
+whole design against P1–P12 and fix the conflicts**; rewrite the layout trees to be exhaustive.
 **Conflicts to fix (from grounding)**: **C1** `design.md:136` `backups/` in `~/.cco` → STATE; **C2** ADR-0007
 `llms/`→CACHE conditional on R4; **C3** `design.md §2.3` `~/.cco` tree **incomplete** (missing global
 `secrets.env`, `setup.sh`, `setup-build.sh`, `mcp-packages.txt`) — *note: `manifest.yml` is **removed**
@@ -177,7 +185,7 @@ flowchart LR
   P["guiding-principles P1-P11 (done)"] --> R1["R1 · tags nature (done, ADR-0011)"]
   P --> R2["R2 · manifest (done, ADR-0012 → REMOVE)"]
   P --> R3["R3 · internal metadata (done, ADR-0013)"]
-  P --> R4["R4 · llms & shareable refs"]
+  P --> R4["R4 · llms & coordinates (done, ADR-0014)"]
   R1 --> C4["Cat-4 · 4th-category synthesis<br/>(exist? membership? tags placement)"]
   R3 --> C4
   R4 --> C4
@@ -191,9 +199,10 @@ flowchart LR
   S --> T
   M -.-> E["E · review follow-ups (impl-time)"]
 ```
-**Recommended sequence**: R1 ✅ → R2 ✅ → R3 ✅ (ADR-0013) → **R4 (suggested next session: llms
-nature + shareable references)** → **Cat-4 synthesis** (cross-cutting verdict over R1/R3/R4, manifest
-excluded) → **M** (consolidate + fix conflicts) → S (executes the manifest-removal refactor) →
+**Recommended sequence**: R1 ✅ → R2 ✅ → R3 ✅ (ADR-0013) → R4 ✅ (ADR-0014) → **Cat-4 synthesis
+(suggested next: cross-cutting verdict over the final candidate set — tags · de-tokenized registry ·
+install-provenance source)** → **M** (consolidate + fix conflicts; coordinate registry scope) → S
+(manifest-removal refactor + coordinate resolve-at-publish + repo URL persistence) →
 (T, E around implementation).
 
 ## Notes
@@ -212,4 +221,11 @@ excluded) → **M** (consolidate + fix conflicts) → S (executes the manifest-r
   removed. STATE refined with a `never`/`opt-in`/`required` sync class. Principle **P11** added.
   Team-sharing (A+C) handed to **S** via R3's shared-surface map. Full context:
   **`R3-update-metadata-handoff.md`** (now annotated as resolved).
-- ADR numbers are assigned when each session runs (next free number; last used = **0013**).
+- R4 is **DONE** (ADR-0014, 2026-06-17): llms content → CACHE (hand-curated rejected); the
+  shareable-reference question generalized into the **"referenced-resource coordinate" model** (repos
+  + llms, **unified — option C**): reference by-name; one **canonical coordinate `name→url`(+variant/
+  ref)** = config, synced cross-PC + resolved-at-publish (DRY, auto-resolve); **local-path** stays
+  internal-local; **content** → CACHE. Inline-A rejected (denormalization). llms removed from Cat-4
+  (config). New **P12** + **method lesson** (the reusable analysis lens) added. Registry
+  scope/namespacing → M; resolve-at-publish + repo URL persistence + schema/migration → S.
+- ADR numbers are assigned when each session runs (next free number; last used = **0014**).

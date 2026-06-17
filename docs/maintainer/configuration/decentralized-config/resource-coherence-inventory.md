@@ -175,8 +175,14 @@ Section "Vault Simplification → Decentralized In-Repo Config" already exists (
    `lib/manifest.sh` + `cco manifest` + all `manifest_refresh`/`manifest_init` call sites are
    dropped; the **structure-based-discovery refactor is owned by S**. *(Cleanup of inert
    `manifest.yml` files rides the Phase-3 cutover.)*
-2. **`llms/`**: downloads live in **CACHE** `~/.cache/cco/llms/` (ADR-0007). Update base template comment
-   accordingly.
+2. **`llms/`** (refined by **ADR-0014**, conflict **C2** resolved): only the **content/downloads** live
+   in **CACHE** `~/.cache/cco/llms/` (ADR-0007). The llms **coordinate** (`url`+`variant`) is **config**
+   (user-known) → part of the unified **referenced-resource coordinate registry** (`name→url`, synced
+   cross-PC + resolved-at-publish, DRY-by-name; **P12**), **not** CACHE and **not** cat-4. Same category
+   as project **repo URLs**: persist the URL as a synced coordinate (closes the Axis-1 auto-resolve gap),
+   reference by-name, **resolve at the publish boundary** — registry scope/namespacing → **M**; resolve
+   mechanism + repo integration + `llms:`/`repos:` schema/migration → **S**. Update base template comments
+   accordingly. Hand-curated llms is **not** supported (content is re-fetchable).
 3. **`project.yml` container mount path** and the `init-workspace` skill's rw write-back
    (`/workspace/.claude/project.yml` vs `/workspace/project.yml`): tied to the H5 "project-config
    inventory" follow-up (mcp.json/setup.sh/mcp-packages.txt/.cco/managed). Confirm there.

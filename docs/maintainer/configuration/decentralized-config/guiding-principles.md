@@ -151,6 +151,20 @@ corrects. (b) **Maintainer confirmation** is required on choices that affect how
 verdicts are synthesised, not per-resource** — e.g. the 4th-category existence is decided by a
 dedicated synthesis over *all* candidates (R1–R4), not inside any single resource analysis.
 
+**Method lessons (ADR-0014) — the analysis lens (reusable model).** The winning lens that produced
+R4, to re-adopt in future designs: **(1)** ground in code first (current state, role, *how mutated*)
+before classifying; **(2) decompose the resource into its constituent data** — a file/resource rarely
+has one profile (an llms entry = content + coordinate + cache-state; a repo reference = name + url +
+local-path); **(3)** classify each datum on the orthogonal pair **resource-type × sharing/sync-profile**
+(P1/P3/P4); **(4) apply the defined principles as discriminators** — notably **P6** (team-shared ⇒ not
+internal) and **DRY** (a canonical value is stored once, referenced by-name, never duplicated);
+**(5)** heterogeneous profiles within one file = **split signal** → co-locate by profile;
+**(6)** separate the **canonical datum** from its **references** and its **local materializations**,
+and **resolve at the boundary** instead of duplicating eagerly (normalization over denormalization);
+**(7)** fix **nature/classification now**, hand **mechanism** to the owning analysis (S/M), leave
+**cross-cutting verdicts** (cat-4) to their synthesis. In short:
+*(resource-type × sharing-type) + DRY + principle-coherence + decompose/split + resolve-at-boundary.*
+
 ## P11 — Classify every cco datum on three questions (the R3 method, generalized)
 
 For **every** piece of cco-managed information — a **new file**, or **each datum inside one** —
@@ -169,6 +183,31 @@ answer three questions **before** placing it. This generalizes the per-datum met
 A file whose data give **heterogeneous** answers across (a)/(b)/(c) is a **split signal** (cf.
 P3/P4; the `.cco/meta` grab-bag was split exactly this way). Co-locate by **answer profile**, not
 merely by functional domain.
+
+## P12 — Referenced-resource coordinates: reference by-name, one canonical coordinate, resolve at the boundary
+
+A resource **referenced by name** from `project.yml`/`pack.yml` (a repo mount, an llms doc) is **not a
+monolith** — it decomposes into data with **different sync-profiles**, co-located accordingly (P3/P4):
+
+- **name (id)** — the reference handle in the consuming manifest; travels **with that manifest** (both
+  axes).
+- **coordinate** `name → url` (+ `variant` for llms / `ref` for repos) — the canonical, **user-known
+  locator**. It is **config** (it must be team-shared so a recipient can resolve the resource, and by
+  P6 anything team-shared **cannot** be internal); **stored once** (DRY — one update point for N
+  references); **synced cross-PC** (Axis-1) **and carried to the team by resolution at the publish
+  boundary** (never by publishing the whole registry, which would leak unrelated entries). It enables
+  **auto-resolve** (clone/fetch).
+- **local materialization** — machine-specific, **internal, local-only, never synced/shared**: the
+  repo **local-path** (`cco … resolve`, explicit per PC) and the llms **content** (CACHE, re-fetched
+  from the coordinate).
+
+**Never duplicate a coordinate across consumer manifests** (denormalization → update anomaly):
+reference **by-name** and **resolve at the boundary** (publish/install/start). This unifies repo-mount
+and llms references under one coordinate model; only the *resolution backend* differs (repo → clone
+into a local-path; llms → fetch into CACHE). Distinguish this **config coordinate** from internal,
+CLI-managed, **never-team** data (tags → ADR-0011; install-provenance `source` → ADR-0013 — both cat-4
+candidates): the **team-share requirement is the discriminator** (team-shared ⇒ config, not internal).
+*(Established by ADR-0014, R4.)*
 
 ---
 
