@@ -36,24 +36,28 @@ it → internal.*
 |---|---|---|
 | **`<repo>/.cco/`** | project config, machine-agnostic, authored (`project.yml`, `claude/`, `secrets.env` gitignored) | user-facing, in the code repo |
 | **`~/.cco/`** | global resources the user **curates/authors** (`packs/`, `templates/`, `global/.claude/`, `tags.yml`) | user-facing personal store |
-| **STATE** (`$XDG_STATE_HOME/cco` → `~/.local/state/cco`) | machine-local persistent **state** (index, generated compose, transcripts, memory, meta, seeds, sync-meta) | **hidden** (internal) |
-| **CACHE** (`$XDG_CACHE_HOME/cco` → `~/.cache/cco`) | regenerable / re-fetchable / transient (generated overlays, Config-Repo clones, `.bak`) | **hidden** (internal) |
-| **(possible 4th) internal-but-synced** | cco-managed (CLI-updated, hidden, **not** IDE-edited config), but worth **private multi-PC** sync (candidates: `tags.yml` (internal nature fixed — ADR-0011); de-tokenized remotes registry **+ `source` provenance** (R3, ADR-0013). *Manifest **removed**, not a candidate — ADR-0012*) | **hidden** (internal) — *existence + membership decided by the **Cat-4 synthesis** after R1–R4 (ADR-0011); **not** pre-judged* |
+| **DATA** (`$XDG_DATA_HOME/cco` → `~/.local/share/cco`) | **internal-but-synced, never-team** — cco-managed (CLI-updated, hidden, **not** IDE-edited), worth **private multi-PC** sync (Axis-1), **never** team: `tags.yml` (ADR-0011), de-tokenized remotes registry, install-provenance `source` (ADR-0013/0015) | **hidden** (internal) — *the 4th bucket, **RESOLVED** by the Cat-4 synthesis (ADR-0015)* |
+| **STATE** (`$XDG_STATE_HOME/cco` → `~/.local/state/cco`) | machine-local persistent **state**, **non-portable** (index, generated compose, transcripts, memory, meta, base, hashes, tokens, seeds, sync-meta) | **hidden** (internal) |
+| **CACHE** (`$XDG_CACHE_HOME/cco` → `~/.cache/cco`) | regenerable / re-fetchable / transient (generated overlays, Config-Repo clones, llms content, `.bak`) | **hidden** (internal) |
 
-The two config buckets (`<repo>/.cco`, `~/.cco`) hold **only** P1-config. STATE/CACHE hold **only**
-P1-internal that is **not** synced. Today there is **no** home for "internal yet privately synced"
-data — whether one is needed, and what falls in it, is **decided by the Cat-4 synthesis after
-R1–R4 (ADR-0011)**, not assumed a priori. Selection rule: co-locate a lone such resource in
-`~/.cco` only if it is the *sole* member (balance cost/benefit); otherwise prefer a dedicated 4th
-bucket for architectural cleanliness. *(See also the Cat-4 ∩ STATE-sync (P8) note in ADR-0011: the
-sync transport may be unified across STATE, tags, and any cat-4 member.)*
+The two config buckets (`<repo>/.cco`, `~/.cco`) hold **only** P1-config. **DATA** holds P1-internal
+that is **synced cross-PC but never team** (Axis-1 only); **STATE/CACHE** hold P1-internal that is
+**not** synced. The "internal yet privately synced" home — once open — is **RESOLVED**: the **Cat-4
+synthesis (ADR-0015)** confirmed the 4th category **exists** and is the XDG **DATA** tier (completing
+ADR-0007's CONFIG/DATA/STATE/CACHE mapping, which had left DATA unassigned). Selection rule (applied):
+co-locate a lone such resource in `~/.cco` only if it is the *sole* member; with **≥2 members** (tags,
+registry, source) a **dedicated bucket** was chosen for cleanliness. *(Transport ∩ STATE-sync (P8):
+one git engine may serve DATA + STATE-`/session` + `~/.cco`, with a **per-store sync-class allowlist**
+and separate directories — owned by T; ADR-0015 D6.)*
 
-> **`tags.yml` nature RESOLVED (ADR-0011); placement deferred.** R1 fixed the **nature**: the tag
-> interface is **CLI-canonical** (`cco tag add/rm` + `cco list --tag`), so by P1 tags are **internal**
-> (cco-managed, not hand-edited) — correcting ADR-0010's provisional "config" framing. Semantics are
-> unchanged (per-user, never team-shared, synced cross-PC). The **physical placement** (dedicated 4th
-> bucket vs co-locate in `~/.cco`) is **deferred to the Cat-4 synthesis** after R1–R4, per the
-> selection rule above. ADR-0010 still owns the *semantics*; ADR-0011 owns *nature & method*.
+> **`tags.yml` nature + placement RESOLVED (ADR-0011 nature, ADR-0015 placement).** R1 fixed the
+> **nature**: the tag interface is **CLI-canonical** (`cco tag add/rm` + `cco list --tag`), so by P1
+> tags are **internal** (cco-managed, not hand-edited) — correcting ADR-0010's provisional "config"
+> framing. Semantics unchanged (per-user, never team-shared, synced cross-PC). The **physical
+> placement** is now resolved by the **Cat-4 synthesis (ADR-0015)**: with ≥2 cat-4 members the
+> selection rule chose a **dedicated bucket** → `tags.yml` lives at `<DATA>/cco/tags.yml`
+> (`~/.local/share/cco`), **not** in `~/.cco`. ADR-0010 owns *semantics*; ADR-0011 *nature & method*;
+> ADR-0015 *placement*.
 
 ## P3 — Two **orthogonal** sync axes (never conflate them)
 

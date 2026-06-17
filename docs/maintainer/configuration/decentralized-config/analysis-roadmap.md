@@ -29,7 +29,7 @@ and validates its decisions against it. Decisions are recorded as ADRs + propaga
 | RD-claude-mount / RD-paths / RD-home / RD-memory / RD-authoring | ADR-0005 / 0007 / 0008 / 0009 / 0010 |
 | Cross-domain coherence review | `reviews/16-06-2026-design-coherence-review.md` |
 | Resource-coherence inventory (old-model references) | `resource-coherence-inventory.md` |
-| **Guiding principles (foundation, P1–P12)** | `guiding-principles.md` (P11 added by R3/ADR-0013; P12 + ADR-0014 method lesson added by R4) |
+| **Guiding principles (foundation, P1–P12)** | `guiding-principles.md` (P11 added by R3/ADR-0013; P12 + ADR-0014 method lesson added by R4; P2 4th-bucket **resolved** = XDG DATA by Cat-4/ADR-0015) |
 | **Preliminary grounding** (destination + sync model) | folded into R1–R4 / M below |
 
 ---
@@ -125,22 +125,22 @@ not internal-never-team); R3 install-provenance `source` stays a candidate (kept
 `guiding-principles.md`. **Output**: ADR-0014. **Hands to M** (registry scope/namespacing) **and S**
 (publish-boundary resolution, repo URL persistence/Axis-1 gap, `llms:`/`repos:` schema + migration).
 
-### Cat-4 — 4th-category synthesis  ·  status: READY (R1–R4 all done; **suggested next**)
-**Goal**: the cross-cutting verdict R1 deliberately deferred. With **all** candidates validated
-(R1 tags · ~~R2 manifest~~ → **removed, ADR-0012** · R3 remotes-split + install-provenance `source`,
-ADR-0013 · ~~R4 llms~~ → **config, removed as a candidate, ADR-0014**), the **final candidate set** is:
-**`tags.yml`** (R1) · **de-tokenized remotes registry** + **install-provenance `source`** (R3) —
-**never** tokens (STATE, security) and **not** the llms/repo coordinate (config, P12/ADR-0014). Decide:
-**(1)** does the 4th "internal-but-synced **never-team**" category **exist** (cco-managed, hidden, NOT
-IDE-edited, private multi-PC synced)? **(2)** its **membership** (from the set above); **(3)** the
-**placement of `tags.yml`** per the selection rule (sole member → co-locate in `~/.cco`, balance
-cost/benefit; else → dedicated bucket for cleanliness). **Also weigh (informational)**: whether the cat-4 sync
-**transport** should be **unified** with the future STATE-sync (P8) — one "internal cross-PC sync"
-mechanism across STATE, tags, and any cat-4 member (STATE keeps its dedicated XDG dir; only the
-transport is shared). **Output**: ADR (cat-4 existence + membership + tags placement) → feeds M.
-**Depends on**: R1–R4. **Blocks**: the tag/remotes cells of M.
+### Cat-4 — 4th-category synthesis  ·  status: DONE (ADR-0015, 2026-06-17) — **EXISTS = XDG DATA**
+**Resolved**: the cross-cutting verdict R1 deferred. **(1) The 4th "internal-but-synced **never-team**"
+category EXISTS** — none of config/STATE/CACHE expresses the `(internal · Axis-1 · never-team)` profile;
+it is the XDG **DATA** tier, **completing** ADR-0007's CONFIG/DATA/STATE/CACHE map (DATA was left
+unassigned). Location: **`$XDG_DATA_HOME/cco` → `~/.local/share/cco`** (override `$CCO_DATA_HOME`).
+**(2) Membership** = `tags.yml` (R1) · **de-tokenized remotes registry** + **install-provenance
+`source`** (R3) — `source` sync-class resolved to **`required`** (travels with its Axis-1-synced
+resource; never-team via publish re-strip). **Excluded**: tokens (STATE·`never`, security), llms/repo
+coordinate (config, P12), manifest (removed). **(3) `tags.yml` placement**: ≥2 members → selection rule
+picks a **dedicated bucket** → `<DATA>/cco/tags.yml` (**not** `~/.cco`). **(informational, → T)**: one
+git transport (ADR-0008) may serve DATA + STATE-`/session` + `~/.cco`, with a **per-store sync-class
+allowlist** and separate dirs. Refines ADR-0007 §Decision-2 (registry STATE→DATA; token stays STATE).
+**Output**: ADR-0015 (+ `guiding-principles.md` P2 + roadmap + inventory updated). **Feeds & unblocks**: M
+(byte-level layout + registry scope/namespacing).
 
-### M — Consolidated resource taxonomy & mapping  ·  status: BLOCKED on R1–R4 + Cat-4
+### M — Consolidated resource taxonomy & mapping  ·  status: READY (R1–R4 + Cat-4 all done; **suggested next**)
 **Goal**: THE authoritative, exhaustive `resource → (destination, sync-profile)` table; **validate the
 whole design against P1–P12 and fix the conflicts**; rewrite the layout trees to be exhaustive.
 **Conflicts to fix (from grounding)**: **C1** `design.md:136` `backups/` in `~/.cco` → STATE; **C2** ADR-0007
@@ -150,7 +150,12 @@ whole design against P1–P12 and fix the conflicts**; rewrite the layout trees 
 pack `.cco/meta` inside config buckets violate P6 (→ R3). **Already grounded (decided pending M)**: project
 `mcp.json`/`setup.sh`/`mcp-packages.txt` → `<repo>/.cco/` (H5); `.cco/managed`, generated compose,
 `claude-state`, `memory`, `meta`, `pack-manifest` → STATE; `install-tmp`/`.bak`/overlays/Config-Repo clones
-→ CACHE. **Output**: **ADR (resource taxonomy)** + rewrite `design.md §2.1/2.2/2.3` + close inventory open
+→ CACHE; `tags.yml` + de-tokenized remotes registry + install-provenance `source` → **DATA**
+(`$XDG_DATA_HOME/cco`, ADR-0015). **Cat-4 byte-level (from ADR-0015 D5)**: finalize the exhaustive
+`<DATA>/cco/` layout (`tags.yml`, `remotes`, `projects|packs|templates/<id>/source`), the `source` file
+format (standalone vs folded), and the **registry scope/namespacing** (global vs per-project — shared
+with ADR-0014's coordinate-registry scope). **Output**: **ADR (resource taxonomy)** + rewrite
+`design.md §2.1/2.2/2.3` (now a **4-bucket** layout: CONFIG/DATA/STATE/CACHE) + close inventory open
 items. Absorbs review follow-ups H5/H6/M3.
 
 ### S — Sharing model unification  ·  status: TODO (after R4)
@@ -186,7 +191,7 @@ flowchart LR
   P --> R2["R2 · manifest (done, ADR-0012 → REMOVE)"]
   P --> R3["R3 · internal metadata (done, ADR-0013)"]
   P --> R4["R4 · llms & coordinates (done, ADR-0014)"]
-  R1 --> C4["Cat-4 · 4th-category synthesis<br/>(exist? membership? tags placement)"]
+  R1 --> C4["Cat-4 · synthesis (done, ADR-0015)<br/>EXISTS = XDG DATA; tags+registry+source"]
   R3 --> C4
   R4 --> C4
   C4 --> M["M · consolidated mapping (ADR + design §2 rewrite, fix C1-C4)"]
@@ -199,11 +204,11 @@ flowchart LR
   S --> T
   M -.-> E["E · review follow-ups (impl-time)"]
 ```
-**Recommended sequence**: R1 ✅ → R2 ✅ → R3 ✅ (ADR-0013) → R4 ✅ (ADR-0014) → **Cat-4 synthesis
-(suggested next: cross-cutting verdict over the final candidate set — tags · de-tokenized registry ·
-install-provenance source)** → **M** (consolidate + fix conflicts; coordinate registry scope) → S
-(manifest-removal refactor + coordinate resolve-at-publish + repo URL persistence) →
-(T, E around implementation).
+**Recommended sequence**: R1 ✅ → R2 ✅ → R3 ✅ (ADR-0013) → R4 ✅ (ADR-0014) → **Cat-4 synthesis ✅
+(ADR-0015 — 4th bucket EXISTS = XDG DATA; members tags · registry · source)** → **M** (suggested next:
+consolidate + fix conflicts C1–C4; 4-bucket design §2 rewrite; DATA byte-level layout + registry
+scope/namespacing) → S (manifest-removal refactor + coordinate resolve-at-publish + repo URL
+persistence) → (T, E around implementation).
 
 ## Notes
 - R1 is **resolved-partial** (ADR-0011): tag *nature* fixed (CLI-canonical → internal); the
@@ -228,4 +233,13 @@ install-provenance source)** → **M** (consolidate + fix conflicts; coordinate 
   internal-local; **content** → CACHE. Inline-A rejected (denormalization). llms removed from Cat-4
   (config). New **P12** + **method lesson** (the reusable analysis lens) added. Registry
   scope/namespacing → M; resolve-at-publish + repo URL persistence + schema/migration → S.
-- ADR numbers are assigned when each session runs (next free number; last used = **0014**).
+- Cat-4 is **DONE** (ADR-0015, 2026-06-17): the 4th "internal-but-synced, never-team" category
+  **EXISTS** = the XDG **DATA** tier (`$XDG_DATA_HOME/cco` → `~/.local/share/cco`, override
+  `$CCO_DATA_HOME`), completing ADR-0007's CONFIG/DATA/STATE/CACHE map (DATA was unassigned). Members:
+  `tags.yml` · de-tokenized remotes registry · install-provenance `source` (sync resolved to
+  **`required`**). Tokens excluded (STATE·`never`, security); llms/repo coordinate excluded (config,
+  P12); manifest removed. `tags.yml` placement → **dedicated bucket** (≥2 members ⇒ selection rule),
+  `<DATA>/cco/tags.yml`. Transport ∩ P8 (one git engine, per-store allowlist) → informational, owned
+  by T. P2 of `guiding-principles.md` updated (4th bucket now resolved). Byte-level layout + registry
+  scope/namespacing → **M**. Refines ADR-0007 §Decision-2 (registry STATE→DATA; token stays STATE).
+- ADR numbers are assigned when each session runs (next free number; last used = **0015**).

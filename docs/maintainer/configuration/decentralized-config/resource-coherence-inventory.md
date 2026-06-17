@@ -21,9 +21,9 @@ tree is the NEW design (source of truth) and is excluded.
 
 | Old-model marker | New model |
 |---|---|
-| `user-config/` central root (`projects/`, `packs/`, `templates/`, `global/`) | **REMOVED.** Project config → `<repo>/.cco/`; global resources → `~/.cco/` (`packs/ templates/ global/.claude/ tags.yml` — **`manifest.yml` removed**, ADR-0012); state/cache → XDG (`~/.local/state/cco`, `~/.cache/cco`); machine-local index → STATE |
+| `user-config/` central root (`projects/`, `packs/`, `templates/`, `global/`) | **REMOVED.** Project config → `<repo>/.cco/`; global resources → `~/.cco/` (`packs/ templates/ global/.claude/` — **`manifest.yml` removed**, ADR-0012); **internal-but-synced → DATA** (`~/.local/share/cco`: `tags.yml`, de-tokenized remotes registry, install-provenance `source` — ADR-0015); state/cache → XDG (`~/.local/state/cco`, `~/.cache/cco`); machine-local index → STATE |
 | `cco vault *` (save/diff/switch/move/profile/init/log/status) | **REMOVED.** Normal git for `<repo>/.cco/`; `cco config save/push/pull` for `~/.cco/` (ADR-0008) |
-| **Profiles** (vault git branches, `.vault-profile`) | **REMOVED.** Per-user **tags**, **CLI-canonical → internal** (`cco tag add/rm` + `cco list --tag`, ADR-0011); registry `tags.yml` **placement** (4th bucket vs `~/.cco`) deferred to the Cat-4 synthesis; semantics per ADR-0010 |
+| **Profiles** (vault git branches, `.vault-profile`) | **REMOVED.** Per-user **tags**, **CLI-canonical → internal** (`cco tag add/rm` + `cco list --tag`, ADR-0011); registry `tags.yml` → **DATA bucket** `<DATA>/cco/tags.yml` (4th bucket EXISTS, ADR-0015 — not `~/.cco`); semantics per ADR-0010 |
 | `@local` markers + per-repo `local-paths.yml` | Logical names resolved via the machine-local index (ADR-0002) |
 | `memory/` (vault-tracked, auto-committed, cross-PC synced) | Machine-local **STATE** `<state>/cco/projects/<id>/memory/`, **no sync in v1** (ADR-0009) |
 | `cco project create` | **REMOVED.** Entry points = `cco init` \| `cco join` \| `cco migrate` |
@@ -189,11 +189,13 @@ Section "Vault Simplification → Decentralized In-Repo Config" already exists (
 4. **`.cco/claude-state/` (transcripts) and `memory/`** both become STATE under
    `<state>/cco/projects/<id>/` (ADR-0007 + 0009) — neither stays in the repo.
 5. **Internal metadata (`source`, `base/`, `meta`, `pack-manifest`, remotes registry+tokens)**:
-   **all internal → out of the config buckets**, centralized keyed-by-identity in STATE/CACHE/cat-4
+   **all internal → out of the config buckets**, centralized keyed-by-identity in STATE/CACHE/**DATA**
    (**ADR-0013**, resolves conflict **C4**). `base/`→STATE·`never`-sync (H6 merge-path refactor);
    `.cco/meta` split (`languages`→config/preference is the lone exception); `remote_cache`→CACHE;
-   token→STATE·`never`; de-tokenized registry + `source`→**cat-4 candidates** (verdict → Cat-4
-   synthesis); **`pack-manifest` removed outright** (no migrator). Team-sharing surface → S.
+   token→STATE·`never`; de-tokenized registry + `source`→**DATA** (cat-4, `required`-sync — **ADR-0015**
+   resolved the verdict: the 4th category EXISTS = XDG **DATA** `~/.local/share/cco`; `source` syncs
+   `required`); **`pack-manifest` removed outright** (no migrator). Team-sharing surface → S. Byte-level
+   layout + registry scope → **M**.
 
 ---
 
