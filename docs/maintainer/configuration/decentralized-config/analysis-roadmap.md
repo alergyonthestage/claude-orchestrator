@@ -81,8 +81,9 @@ mechanism's shape + the **team-shared ↔ private-multi-PC boundary** are framed
 opinionated-as-external-package; per-datum: what/why/scope/sync-profile; the A↔B boundary; couples
 with **S** + **P9**); **Phase 1** — split each file by profile & place each datum.
 **Validated conclusions (carry forward)**: `source` = resource-coupled provenance (multi-PC synced
-*with* the resource, **never team**, publish-excluded; cat-4 *profile* but **sidecar**, not a bucket
-member); `.cco/meta` → **split by responsibility/profile** (update-state→STATE · languages→preference
+*with* the resource, **never team**); sidecar works for `~/.cco`-resident resources, but for
+`<repo>/.cco` the repo remote couples sync+sharing (P5) so "multi-PC yes, team no" is **not**
+expressible there → **cat-4 *location* reopened** for repo-scoped per-user data (OPEN, not settled); `.cco/meta` → **split by responsibility/profile** (update-state→STATE · languages→preference
 · changelog→notification · remote_cache→CACHE); `.cco/base/` → **STATE, machine-local, NOT synced**
 (corrects today's vault-tracking; same profile as meta-hashes → co-locate; H6 merge-engine refactor
 cost); `pack-manifest` → **remove** (legacy, mooted by cutover); remotes → **split** (tokens→STATE

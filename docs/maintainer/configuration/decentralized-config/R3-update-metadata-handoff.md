@@ -45,9 +45,16 @@ with *different* sync/sharing needs in a single file.** You cannot correctly pla
 > ad-hoc paths. The metadata (`source`, hashes, `base/`) is the machinery of that mechanism.
 
 ### The discriminator (method)
-For **every piece of information** a file carries, ask: *what does it track, for what function,
-for which scope, and what is its desired sync/sharing profile?* If one file carries info with
-**heterogeneous** sync/sharing profiles → that is the signal it must be **split**.
+For **every piece of information** a file carries, classify it **consciously on two orthogonal
+axes** (P3/P4), then place it:
+- **(a) Resource type** — `config` (user-authored, IDE-edited) · `internal` (cco-managed, CLI,
+  hidden) · `state` (machine-local runtime) · `cache` (regenerable/transient).
+- **(b) Sync/sharing profile** — `none` (machine-local, never travels) · `user-multi-PC`
+  (Axis-1, the user's own machines) · `team-sharing` (Axis-2, other users, always via a Config
+  Repo) — and note that `<repo>/.cco`'s git remote couples user-multi-PC **and** team-sharing
+  onto one transport (P5), so "user-multi-PC but **not** team" is **not** expressible there.
+If one file carries info with **heterogeneous** (a)/(b) values → that is the signal it must be
+**split**. **Co-locate by sync-profile, not merely by functional domain.**
 
 > **Co-locate by sync-profile, not merely by functional domain.** `source`, `meta.manifest`
 > (hashes) and `base/` belong to the *same functional domain* (update/merge) but have
@@ -74,14 +81,22 @@ for which scope, and what is its desired sync/sharing profile?* If one file carr
   a trivial `source: local` / `native:`/`user:` marker.
 - **Nature & profile**: **internal** (cco-managed, not hand-edited); **multi-PC synced WITH its
   resource**; **never team-shared** → it must **never sit in a publish-included path**.
-- **Cat-4?** **Profile = yes; bucket-membership = no.** `source` already has a home (coupled to
-  its resource) and rides the resource's own transport (project → repo git; pack → `~/.cco`)
-  **+ publish-exclusion**. It does **not** need a dedicated cat-4 bucket. It reveals **two
-  realizations** of the "internal-but-synced, never-team" profile: **(i)** a dedicated bucket
-  (for data with no resource home — de-tokenized remotes registry, tags); **(ii)** a
-  **resource-coupled sidecar + publish-exclusion** (source). *Feed this distinction to the Cat-4
-  synthesis: it strengthens that the profile is real and recurring, but the bucket is not its
-  only realization.*
+- **Cat-4? — REOPENED for repo-scoped resources (maintainer correction, 2026-06-17).** The
+  "sidecar" realization satisfies "multi-PC yes, team never" **only when the resource lives in
+  `~/.cco`** (private-only by P5: multi-PC via `cco config push/pull`, never-team via privacy +
+  publish-exclusion). **But for a resource in `<repo>/.cco` the repo's git remote serves BOTH
+  axes at once (P5: team-shared by construction)** — so a sidecar there **cannot** give
+  "multi-PC yes, team no": committing it shares it with teammates; gitignoring it removes it from
+  multi-PC too (same transport). → For repo-scoped per-user data, a **dedicated cat-4 *location*
+  outside the repo (privately synced, keyed by resource identity)** may be the only clean home.
+  So the profile has **two candidate realizations** — **(i)** dedicated cat-4 bucket/location
+  (data with no private home, or repo-scoped data that must NOT leak to the team); **(ii)**
+  resource-coupled sidecar + publish-exclusion (works only for `~/.cco`-resident data). **This is
+  an OPEN design question for R3 + the Cat-4 synthesis — do not treat the sidecar as settled.**
+  Also clarify whether project `source` even *needs* to stay team-private (a teammate installs
+  the template from the Config Repo and writes their *own* source; cloning the working repo would
+  inherit it) — the principle (per-user provenance, re-established by each install) suggests it
+  should not leak.
 - **Not rebuildable** (the upstream URL exists nowhere else). **No secrets** (token comes from
   the remotes registry, matched via `remote_resolve_token_for_url(source.url)` — see remotes).
 
@@ -158,15 +173,25 @@ Concrete flows (who/when/why):
    Define the **A ↔ B boundary** of that mechanism — couples with **S** and **P9**.
 2. **Classify each datum by sync/sharing profile**, then **co-locate by profile** (not just by
    functional domain). A file mixing profiles = a split signal.
-3. **The "internal-but-synced, never-team" profile has two realizations**: a dedicated cat-4
-   **bucket** (data with no resource home) vs a **resource-coupled sidecar + publish-exclusion**
-   (data coupled to a resource, e.g. `source`). The Cat-4 synthesis must account for both.
+3. **The "internal-but-synced, never-team" profile has two candidate realizations** — and the
+   choice is **OPEN**: a dedicated cat-4 **bucket/location** (data with no private home, **or
+   repo-scoped data that must not leak to the team**) vs a **resource-coupled sidecar +
+   publish-exclusion** (works only for `~/.cco`-resident data — **fails for `<repo>/.cco`**,
+   whose remote couples both axes, P5). The Cat-4 synthesis must decide per datum; the sidecar is
+   **not** a settled default.
 4. **Security invariant**: tokens (and any inline-token in an llms `source.url`) → STATE,
    machine-local, **never synced, never published**.
 5. **Provenance ≠ update-state**: `source` (synced-with-resource) and `{hashes + base/}`
    (machine-local) are the same *domain* but **different files** by profile.
 
 ## Open questions for the clean session
+- **Repo-scoped per-user data vs the dual-axis `<repo>/.cco` transport (key).** Since
+  `<repo>/.cco`'s remote serves user-multi-PC **and** team at once (P5), any datum that must be
+  "multi-PC yes, team no" (e.g. project `source`, or future per-user internal metadata attached
+  to a team-shared repo) **cannot** live there as a sidecar. Decide: (i) a dedicated cat-4
+  *location* outside the repo (privately synced, keyed by resource identity), or (ii) accept
+  team-visibility where the datum is genuinely harmless to share, or (iii) re-establish it locally
+  per install (no travel). Ties to the **A4 solo-adopter** tension (P5).
 - The exact **A ↔ B boundary** of the update/merge mechanism, and where **C** (opinionated
   package) plugs in (with S / P9).
 - `.cco/meta` split: confirm the target file/path per responsibility (update-state vs preference
