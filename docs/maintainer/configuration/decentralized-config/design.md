@@ -10,7 +10,8 @@ locations / XDG), 0008 (config versioning model), 0009 (auto-memory is machine-l
 0010 (resource authoring + per-user tags), 0011 (tag nature & Cat-4 method), 0012 (manifest
 removed), 0013 (internal-metadata split), 0014 (referenced-resource coordinates), 0015 (Cat-4 =
 XDG DATA), **0016 (consolidated resource taxonomy — the authoritative `resource → (bucket, sync)`
-map; §2 here is its tree projection)**.
+map; §2 here is its tree projection)**, **0017 (coordinate field semantics + CLI consolidation +
+first-run/`~/.cco` lifecycle refinements)**.
 **Decision history (historical)**: `reviews/15-06-2026-sync-adversarial-review.md`,
 `reviews/15-06-2026-simplification-analysis.md`.
 
@@ -257,6 +258,21 @@ the **url** coordinates persist here. Cross-unit coordinate consistency is enfor
 (`cco repo/llms add`, `cco config coords --diff/--sync`), not by storage (ADR-0016 D3); an opt-in
 `cco config validate` pre-commit hook guards sharing integrity (ADR-0016 D9).
 
+**Coordinate field semantics (ADR-0017 D1).**
+- repo **`url` is OPTIONAL** — a persisted bootstrap pointer (the canonical clone source for other
+  PCs/teammates). Present → `cco resolve` offers *specify local path* **or** *auto-clone from `url`*;
+  absent → *specify local path* only (§3/§7).
+- repo **`ref` is OPTIONAL** — the git ref (branch/tag/commit) to check out on auto-clone (the repo
+  analog of llms `variant`); default = the remote's **default branch**. Machine-agnostic.
+- llms **`url` is MANDATORY** (+ optional `variant`); a hand-curated local-file llms with no `url` is
+  **not supported in v1** (future F1, §12).
+- **Derivation = `origin`**: `cco join` / the integrity check derive a repo's canonical `url` from
+  `git remote get-url origin` (no `origin`/ambiguous → prompt or leave unset; exactly one canonical
+  `url` per repo).
+- The manifest `url` **MAY differ** from the clone's actual remote (ssh-vs-https, fork, mirror) — the
+  manifest `url` is the *shared-truth*, the clone's `origin` is *this machine's reality*. The integrity
+  check therefore **warns on mismatch, never enforces** equality.
+
 ---
 
 ## 3. Machine-Agnostic Config & the Local Path Index
@@ -282,10 +298,14 @@ projects:                    # subsumes the old registry — paths/repos only, N
   per machine. `cco init`/`cco join` refuse a name already bound to a different path.
 - **Absolute paths only**; CLI commands accept paths relative to the cwd and resolve
   to absolute before storing.
-- **Maintenance CLI**: `cco resolve [project]` (interactive resolve/repair),
-  `cco path set <name> <path>` / `cco path list` (move dirs, fix divergence,
-  external installs). Manual edit allowed but discouraged.
-- **Bootstrap / fresh machine**: `cco index refresh --scan <dir>` rebuilds the index
+- **Resolution CLI — consolidated on `cco resolve` (ADR-0017 D2)**: `cco resolve [project]`
+  (interactively resolve each unresolved repo/mount: *specify local path* · *clone-from-`url`* ·
+  *skip*), `cco resolve --all` (all projects), and `cco resolve --scan <dir>` (auto-discover by
+  scanning for `.cco/project.yml` and (re)build the index — **absorbs** the old
+  `cco resolve --scan`). `cco path set <name> <path>` / `cco path list` remain the
+  **low-level** index editor (move dirs, fix divergence, external installs). Manual edit allowed but
+  discouraged. (`cco resolve` is today's `cco project resolve`, kept as the familiar verb.)
+- **Bootstrap / fresh machine**: `cco resolve --scan <dir>` rebuilds the index
   by scanning for `.cco/project.yml`; first `cco start` resolves any missing name via
   prompt/clone. So a fresh clone is not stranded by an empty index (closes the old
   registry-bootstrap gap).
@@ -347,8 +367,14 @@ sequenceDiagram
 
 ### 4.4 `cco start` source selection & divergence
 - **From a repo dir**: use the invoking repo's `.cco/` (AD6). Unambiguous.
-- **By name `cco start <project>`**: if repos are aligned, any copy works; if they
-  diverge and there is no clear source, use the optional `entry` repo, else prompt.
+- **By name `cco start <project>`**: if repos are aligned (Case A/B), any copy works; if they
+  diverge (Case C), the **source precedence is `--from <repo>` > the optional `entry` repo > prompt**
+  (ADR-0017 D2). `cco start [project] --from <repo>` explicitly selects which member's `<repo>/.cco`
+  to use, mirroring `cco sync --from` — no prompt, no `entry` needed.
+- **Unresolved paths → explicit prompt, never a silent launch (ADR-0017 D2).** If any repo/mount is
+  unresolved at start, cco **prompts**: (a) **resolve now** (`cco resolve`), or (b) **proceed without
+  mounting the unresolved entries** (with a warning). This is a *conscious* skip, surfaced to the user
+  — distinct from the silent empty-mount that #B17/#B18 forbade.
 - **Divergence is never silently reconciled**: if a project's repos have divergent
   `.cco/`, `cco start` uses the chosen source and **prints a non-blocking notice**
   ("project repos have divergent .cco; started from <repo>; run `cco sync` to
@@ -363,7 +389,7 @@ be resolved first; on a fresh machine the index is empty, so notices/reminders c
 computed before resolution. The defined order is therefore:
 1. resolve the **source** (cwd repo's `.cco/`, AD6; or by-name via the index);
 2. resolve the project **members** via the index (a missing `cco start <project>` name
-   triggers/suggests `cco index refresh --scan`, §3);
+   triggers/suggests `cco resolve --scan`, §3);
 3. for any **unresolved** member/mount → resolve or clone (journey JF);
 4. **only now** compute divergence + the uncommitted/divergence reminders;
 5. start the session.
@@ -404,7 +430,7 @@ previously a separate open question, now folded into scope as FR-Y-S6 — requir
 Retained from `../vault/local-path-resolution-design.md`; now resolves against the
 machine-local index (§3) rather than a per-repo file. `project.yml` carries only
 logical names; the index provides absolute paths; bootstrap on a fresh machine via
-`cco index refresh --scan` + on-demand prompt/clone at `cco start`.
+`cco resolve --scan` + on-demand prompt/clone at `cco start`.
 
 ---
 
@@ -413,11 +439,16 @@ logical names; the index provides absolute paths; bootstrap on a fresh machine v
 ### 6.1 Domain A — personal multi-PC
 - Per-repo `.cco/` rides each repo's **own git remote** (AD8): clone/pull brings it;
   concurrent cross-PC edits are ordinary git conflicts resolved in the IDE.
-- `~/.cco` global resources sync via the **personal git store**. Versioning model =
-  **ADR-0008** (unified across `~/.cco` and `<repo>/.cco`): **explicit, manual,
-  semantic commits — no auto-commit in v1**. `~/.cco` content (packs, templates,
-  global `.claude`) is hand-authored (IDE / `config-editor` agent; cco only scaffolds
-  via `cco pack create`); committed via git or a thin `cco config save [-m]`
+- `~/.cco` global resources sync via the **personal git store**. **`~/.cco` is ALWAYS a `git init`'d,
+  versioned working tree (ADR-0017 D4)** — versioning is not optional; only the **remote** is opt-in.
+  The remote is **private by default**; a **public remote is allowed by explicit user choice, with a
+  warning** (cco does not enforce privacy — that is fragile and excessive; resolves the P3 Axis-1
+  public-repo question → *allow + warn*). The guides **document and recommend** that team-sharing
+  happens via dedicated **Config Repos** (Domain B), *outside* `~/.cco` (which holds the user's
+  **personal global config** only). Versioning model = **ADR-0008** (unified across `~/.cco` and
+  `<repo>/.cco`): **explicit, manual, semantic commits — no auto-commit in v1**. `~/.cco` content
+  (packs, templates, global `.claude`) is hand-authored (IDE / `config-editor` agent; cco only
+  scaffolds via `cco pack create`); committed via git or a thin `cco config save [-m]`
   (allowlist staging + secret scan); remote sync **explicit** (`cco config push/pull`),
   never per-command; pull non-FF → abort + notify. `<repo>/.cco/` is committed with the
   user's normal git flow (rides the repo remote). **Allowlist = double barrier**
@@ -445,9 +476,9 @@ Publish/install/update/export over Config Repos (`cmd-project-publish.sh`,
 | Entry: clean | `cco init` (scaffold a clean `<repo>/.cco/` in the current repo) | NEW/transform |
 | Entry: join | `cco join <project>` (add the current repo to `<project>` as a **member**: register it in the index + add it to `repos[]` in the project's `project.yml`). The new member's `repos[]` edit propagates to **every repo that carries a synced copy** (Case B); in a divergent project (Case C) join **prompts** which repo's `project.yml` to update, or all. The joining repo gets **no `.cco/`** (code-only member) **unless** `--sync` / interactive confirm, which copies the project's `.cco/` into it (source prompted if divergent) — **alternative to `cco init`** | NEW |
 | Entry: migrate | `cco migrate <project>` (current repo, from the legacy vault backup: write `.cco/` with the migrated project config) — **alternative to `cco init`** | NEW |
-| Run | `cco start [project]` (cwd-aware source; index-resolve `@local`; resolve unresolved repos/mounts) | transform |
+| Run | `cco start [project] [--from <repo>]` (cwd-aware source; `--from` picks the Case-C source `<repo>/.cco`, ADR-0017 D2; index-resolve names; on unresolved → prompt resolve\|proceed-without) | transform |
 | Sync | `cco sync [target] [--from <src>] [--dry-run\|--auto-approve\|--check]` | NEW |
-| Paths/resolve | `cco resolve [project]` (resolve unresolved repos/mounts: pick a local path **or** clone from remote to a chosen destination), `cco path set/list`, `cco index refresh --scan` | NEW |
+| Paths/resolve | `cco resolve [project]` (resolve each unresolved repo/mount: specify local path · clone-from-`url` · skip), `cco resolve --all` (all projects), `cco resolve --scan <dir>` (auto-discover/rebuild index — **absorbs** `cco index refresh`), `cco path set/list` (low-level index editor) — ADR-0017 D2 | NEW |
 | Discovery | `cco list [--tag <t>]`, `cco tag add/rm` (reads/writes the per-user `<data>/cco/tags.yml`, DATA bucket — ADR-0011/0015) | transform |
 | Authoring | Direct `~/.cco` edit (IDE or rehomed `config-editor` agent); cco only **scaffolds**: `cco pack create`, `cco template create` (ADR-0008/0010) | transform |
 | Global store | `cco config …` (manage `~/.cco`; versioning model = ADR-0008) | NEW |
@@ -470,6 +501,14 @@ vault present it backs the vault up and prints migration instructions (FR-M1).
 Discovery is **cwd-first**: if the cwd (or an ancestor) has `.cco/project.yml`, use
 it; else resolve `<project>` via the index.
 
+> **First-run bootstrap is not owned by `cco init` (ADR-0017 D3).** **Any** `cco` command on a
+> fresh machine — including `cco start` (a freshly-cloned repo) and `cco init` — runs J0 **first**.
+> J0 creates all **four** roots when missing — `~/.cco` (git-init'd, §6.1) **and** the three XDG
+> internal bases **including DATA** (`~/.local/share/cco`), not just STATE/CACHE — **idempotent,
+> per-root** (a missing single root is created without disturbing the others; review M6). Under the
+> future npx/npm packaging (R-pkg, no source clone for users), J0-on-first-use stays the system-dir
+> init point; an explicit `cco setup` is an optional future convenience.
+
 ---
 
 ## 8. Key User Journeys
@@ -479,9 +518,9 @@ project) | **migrate** (from legacy backup). `cco start` runs once configured.
 
 ```mermaid
 flowchart TD
-  subgraph J0["First run on a machine (D)"]
-    z1["any cco command"] --> z2{"~/.cco + system dirs exist?"}
-    z2 -->|no| z3["bootstrap global resources (~/.cco, system dirs)"]
+  subgraph J0["First run on a machine (D) — any command, incl. start/init"]
+    z1["any cco command"] --> z2{"4 roots exist?<br/>~/.cco + DATA + STATE + CACHE"}
+    z2 -->|no| z3["bootstrap missing roots (per-root, idempotent):<br/>~/.cco git-init + ~/.local/{share,state,cache}/cco"]
     z2 -->|yes| z4["proceed"]
     z3 --> z4
   end
@@ -545,8 +584,9 @@ phase leaves cco runnable + tests green.
   (b) uncommitted involved `<repo>/.cco`, plus (c) cross-repo divergence (with the
   sync-state tracking, §4.6). All reminders fire **after** member resolution (H1
   invariant, §4.4). `cco config save/push/pull` + allowlist staging land in Phase 3.
-- **Phase 2 — migration + first-run bootstrap.** First-run global bootstrap
-  (`~/.cco` + system dirs when missing — journey J0); first-run **legacy-vault backup**
+- **Phase 2 — migration + first-run bootstrap.** First-run global bootstrap on **any** command
+  (J0, ADR-0017 D3): create the four roots when missing — `~/.cco` (git-init'd) + DATA/STATE/CACHE
+  (`~/.local/{share,state,cache}/cco`), per-root idempotent (M6); first-run **legacy-vault backup**
   + instructions; `cco migrate <project>` (lazy, per-project, from the backup);
   `cco init`/`cco join`. A minimal legacy-vault reader exists **only** inside
   `cco migrate`. **Memory relocation (ADR-0009)**: `cco migrate` copies the project's
@@ -660,9 +700,26 @@ Net: a narrower surface — no custom diff/save/merge sync code to test, no dual
   machines; (b) team members on a shared project. Kept out of the CONFIG sync (ADR-0008) so
   state and config responsibilities stay separate; a single transport can serve both memory
   and transcripts since both are STATE.
+- **DATA/STATE sync-engine choice (ADR-0017 F4, → T)** — the unified **git** engine (ADR-0015 D6)
+  is a *recommendation*, **not a constraint**; a more appropriate engine may fit the internal
+  DATA/STATE-`/session` stores. Evaluate **transversally with the project-sync daemon** (RD-triggers):
+  different scopes, but the daemon may be shared infrastructure. The per-store allowlist + separate
+  dirs (ADR-0015 D6) keep the engine swappable, so v1 does not lock it in.
+- **Case-C convergence merge (ADR-0017 F2)** — v1 `cco sync` is deliberately **copy-only**
+  (ADR-0003). A future **opt-in assisted merge** could let the user *choose how to assemble* divergent
+  `.cco/` back into one (Case C → B/A), **reusing** `cco update`'s 3-way merge engine + the sync-state
+  tracking (§4.6). The copy default and the existing engine make this additive — v1 does not preclude it.
+- **Local-file llms (ADR-0017 F1)** — a hand-curated llms with no download `url` (an existing local
+  `.txt`). Not supported in v1 (no code path / no concrete need, ADR-0014 D1); the manifest schema is
+  extensible (add a `path:`/`local:` field) so v1 does not paint it out.
+- **Domain-B Config-Repo realignment (ADR-0017 F3, → S)** — the team-shared repo / Config-Repo
+  structure was **not** revised by the decentralization work and may have drifted (manifest removed;
+  coordinates now resolve-at-publish; structure-based discovery). Owned by **S** as part of the
+  publish/install/update/export revision + opinionated-defaults-as-package (R-pkg / R-update-native).
 - **`cco update` native (R-update-native)** — cco fully agnostic; opinionated
   packs/templates via native publish/install; keep a `cco update` for installed packs.
-- **cco packaging (R-pkg)** — npm/npx + image registry.
+- **cco packaging (R-pkg)** — npm/npx + image registry. (First-run J0 stays the system-dir init point
+  with no source clone; an explicit `cco setup` is an optional future, ADR-0017 D3.)
 - **Persistent `/workspace` root (R-workspace).**
 
 ---
