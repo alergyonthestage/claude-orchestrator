@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-06-16 (decentralized-config: RD-claude-mount/RD-paths/RD-home resolved — ADR-0005/0007/0008; cross-domain coherence review done + doc-fixes/phase write-downs applied; RD-memory now gates Phase 3).
+> Last updated: 2026-06-17 (decentralized-config: ALL config analyses resolved — RD-* + R1–R4 + Cat-4 + M, ADRs 0005–0017; 4-bucket taxonomy + coordinate-per-unit + M-review refinements; config design CLOSED; next analysis = S sharing unification).
 >
 > **Note**: Sprint entries are historical. Path references (e.g., `.cco-meta`, `.cco-source`) in older
 > sprints reflect the layout at the time of writing. See Sprint 8 and the `.cco/` consolidation
@@ -72,11 +72,13 @@ graph LR
 
 ### Vault Simplification → Decentralized In-Repo Config (DECIDED 2026-06-11; evolved 2026-06-12; model finalized 2026-06-15)
 
-**Status**: Design APPROVED for implementation (2026-06-15). Living `requirements.md`
-+ `design.md` are the single source of truth; decisions recorded in ADRs 0001–0006
-(`../configuration/decentralized-config/decisions/`); analyses kept as history
-(`.../reviews/15-06-2026-sync-adversarial-review.md`,
-`.../reviews/15-06-2026-simplification-analysis.md`). On `feat/vault/decentralized-config`.
+**Status**: Design APPROVED (2026-06-15); **config design CLOSED through the consolidated taxonomy +
+M-review refinements (2026-06-17)**. Living `requirements.md` + `design.md` are the single source of
+truth; decisions recorded in ADRs **0001–0017** (`../configuration/decentralized-config/decisions/`);
+the role-first analyses (R1–R4, Cat-4, M) are tracked in `analysis-roadmap.md`; analyses kept as
+history under `.../reviews/`. On `feat/vault/decentralized-config` (commits **local only**, pushed
+from the maintainer's Mac). **Next analysis = S (sharing model unification)** — see
+`S-handoff-sharing-unification.md`; then implementation (design §9 phases, Phase 0 ready).
 **Priority**: 0 (next major work). **Supersedes**: branch-switch real-isolation
 model in `../../configuration/vault/profile-isolation-design.md` (v2) **and** the
 central-vault project store.
@@ -122,14 +124,19 @@ gate which projects exist on disk or which can be started.
   base). First run backs up the legacy vault; **lazy per-project** `cco migrate
   <project>` from the backup. Entry points: `cco init` | `cco join` | `cco migrate`.
 - Full requirements + design + ADR: `../configuration/decentralized-config/`.
-- Follow-up dedicated analyses (do not block Phase 0). **Resolved**: RD-syncmeta
-  (sync-state tracking in scope, FR-Y-S6/§4.6), RD-claude-mount (ADR-0005 — nested
-  overlay source-agnostic, no shadowing; F1 generated files → cache + `:ro`),
-  RD-paths (ADR-0007 — XDG state/cache, index in STATE, `~/.cco` dotdir-as-git-repo),
-  RD-home (ADR-0008 — unified explicit manual-commit model for `~/.cco` + `<repo>/.cco`,
-  no auto-commit in v1; non-blocking reminders for uncommitted/divergence; allowlist
-  double-barrier; explicit `cco config push/pull`; auto-sync → RD-triggers).
-  **Remaining RDs**: RD-authoring, **RD-memory (gates Phase 3)**, RD-triggers.
+- Follow-up dedicated analyses (do not block Phase 0). **ALL config analyses RESOLVED**:
+  RD-syncmeta (FR-Y-S6/§4.6), RD-claude-mount (ADR-0005), RD-paths (ADR-0007), RD-home (ADR-0008),
+  RD-memory (ADR-0009 — auto-memory is machine-local STATE, no sync v1), RD-authoring (ADR-0010 —
+  direct `~/.cco` edit + tags-not-profiles). Then the **role-first analyses**: R1 tags-nature
+  (ADR-0011), R2 manifest-removed (ADR-0012), R3 internal-metadata-split (ADR-0013), R4
+  referenced-resource-coordinates (ADR-0014), **Cat-4** = 4th bucket EXISTS = XDG **DATA** (ADR-0015),
+  **M** consolidated 4-bucket taxonomy (ADR-0016) + **M-review refinements** (ADR-0017 — coordinate
+  fields, CLI consolidation, J0 4-bucket bootstrap, `~/.cco` always-git + public-remote allow+warn).
+  Key end-state: **config decentralizes** (project→`<repo>/.cco`, personal→`~/.cco`), **internal
+  centralizes keyed-by-identity** (DATA/STATE/CACHE), **referenced-resource coordinates embedded
+  per-unit in the manifest** (`package.json` model). **Remaining**: **S** (sharing/Config-Repo
+  unification — *next analysis*), **T** (RD-triggers / R-state-sync / DATA-STATE sync-engine — future),
+  **E** (impl-time review follow-ups H6/M3/H7 etc.).
 - **Coherence review 2026-06-16** (`reviews/16-06-2026-design-coherence-review.md`):
   architecture coherent, Phase 0 ready. Doc-fixes + phase write-downs applied. New
   follow-up analyses raised: reminder-aggregator cost & scoping, project-config inventory
@@ -170,13 +177,17 @@ flowchart LR
 - **Persistent `/workspace` root (R-workspace)** — optional mount for host-accessible
   session artifacts.
 
-**Next**: design approved + persisted; RD-syncmeta/RD-claude-mount/RD-paths/RD-home
-resolved 2026-06-16 (ADR-0005/0007/0008) + cross-domain coherence review done with
-doc-fixes/phase write-downs applied. **Next analysis = RD-memory** (gates Phase 3),
-then RD-authoring (incl. the tag-only-vs-subdirs `~/.cco` organization eval) and
-RD-triggers, plus the review's follow-up analyses (reminder-aggregator cost, project-
-config inventory, merge-engine path remap, index concurrency/namespacing, sync-state
-lifecycle, join Case-C). Then implement per `design.md` §9 phases (Phase 0 ready).
+**Next**: ALL config analyses resolved (RD-* + R1–R4 + Cat-4 + M, ADRs 0005–0017); the consolidated
+4-bucket taxonomy (ADR-0016) + M-review refinements (ADR-0017) close the config design. **Next
+analysis = S (sharing model unification)** — start in a clean session reading
+`S-handoff-sharing-unification.md` (+ `guiding-principles.md`). S owns: Config-Repo team-sharing
+unification, the publish-boundary **coordinate resolution**, the `cco config coords`/`cco config
+validate` + coordinate CLI mechanism, the **Domain-B Config-Repo structure realignment** (manifest
+removed, structure-based discovery), `~/.cco` public-remote warning, `llms:`/`repos:` schema+migration,
+A4 fallback, Axis-1 public-repo mechanism. **Then** T (RD-triggers / R-state-sync / DATA-STATE
+sync-engine — future) and implement per `design.md` §9 phases (Phase 0 ready); E = impl-time review
+follow-ups (H6 merge-path, M3 remote decoupling, H7 index concurrency, reminder-aggregator, join
+Case-C). The vault/`@local`/profile **bug class #B13–#B23 is mooted** by the removal.
 
 ---
 
