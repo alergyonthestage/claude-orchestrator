@@ -1,13 +1,16 @@
 # Decentralized In-Repo Config — Design
 
-**Status**: Approved for implementation (2026-06-15). Authoritative design; drives
-the phased implementation (§9).
+**Status**: Approved for implementation (2026-06-15); **§2 layout rewritten to the 4-bucket
+taxonomy by ADR-0016 (M, 2026-06-17)**. Authoritative design; drives the phased implementation (§9).
 **Requirements**: `requirements.md` (AD1-AD12, FR-*).
 **Decision records**: `decisions/` — ADR-0001 (decentralization), 0002
 (machine-agnostic config), 0003 (sync-as-copy), 0004 (config/state/cache separation),
 0005 (dual `.claude` scope), 0006 (breaking cutover + lazy migration), 0007 (system-dir
 locations / XDG), 0008 (config versioning model), 0009 (auto-memory is machine-local STATE),
-0010 (resource authoring + per-user tags).
+0010 (resource authoring + per-user tags), 0011 (tag nature & Cat-4 method), 0012 (manifest
+removed), 0013 (internal-metadata split), 0014 (referenced-resource coordinates), 0015 (Cat-4 =
+XDG DATA), **0016 (consolidated resource taxonomy — the authoritative `resource → (bucket, sync)`
+map; §2 here is its tree projection)**.
 **Decision history (historical)**: `reviews/15-06-2026-sync-adversarial-review.md`,
 `reviews/15-06-2026-simplification-analysis.md`.
 
@@ -63,25 +66,47 @@ flowchart TB
 
 ## 2. Layout
 
-### 2.1 In-repo (committed) — machine-agnostic only
+> **Authoritative as of ADR-0016 (M, 2026-06-17).** The layout is **four destination
+> buckets** — two CONFIG (user-edited, IDE-reachable) and three internal (cco-managed,
+> hidden): `<repo>/.cco` · `~/.cco` · **DATA** · STATE · CACHE. The full
+> `resource → (bucket, mutator, sync)` table lives in `decisions/0016-…`; this section is
+> its directory-tree projection. CONFIG buckets hold **only** P1-config; internal data is
+> centralized keyed-by-identity in DATA/STATE/CACHE (ADR-0013/0015).
+>
+> | Bucket | Path (default) | Override | Nature | Sync |
+> |---|---|---|---|---|
+> | CONFIG / repo | `<repo>/.cco/` | — | config | Axis-1 (repo remote) **+ Axis-2 by construction** |
+> | CONFIG / personal | `~/.cco/` | — | config | Axis-1 **private only** — never team |
+> | **DATA** | `$XDG_DATA_HOME/cco` → `~/.local/share/cco` | `$CCO_DATA_HOME` | internal | **`required`, never team** |
+> | STATE | `$XDG_STATE_HOME/cco` → `~/.local/state/cco` | `$CCO_STATE_HOME` | internal | **`never`** |
+> | CACHE | `$XDG_CACHE_HOME/cco` → `~/.cache/cco` | `$CCO_CACHE_HOME` | internal | **`never`** |
+
+### 2.1 In-repo CONFIG (committed) — `<repo>/.cco/`, machine-agnostic only
 ```
 <repo>/
 ├── .claude/                  # COMMITTED — repo-local Claude config → /workspace/<repo>/.claude
 ├── .cco/
-│   ├── .gitignore            # ignores secrets.env (+ secret patterns)
-│   ├── project.yml           # logical names only; identical across the project's repos
+│   ├── .gitignore            # ignores secrets.env (+ secret patterns); !secrets.env.example
+│   ├── project.yml           # logical names + embedded repo/llms coordinates (url/ref/variant); identical across repos
 │   ├── secrets.env.example   # COMMITTED skeleton
 │   ├── secrets.env           # GITIGNORED — real values, user-edited (only in-repo exception)
+│   ├── mcp.json              # project MCP config (H5)
+│   ├── setup.sh              # project setup script (H5)
+│   ├── mcp-packages.txt      # project MCP package list (H5)
 │   └── claude/               # COMMITTED + (copy-)synced → /workspace/.claude
-│       └── CLAUDE.md, rules/, agents/, skills/   # authored config ONLY — no generated files
+│       └── CLAUDE.md, rules/, agents/, skills/, settings.json   # authored config ONLY — no generated files
 ```
-This tree holds **authored config only**. Framework-generated files (`packs.md`,
-`workspace.yml`) are NOT written here — they would pollute the truthful `git diff` and
-the sync (ADR-0002/0004). They are produced in the machine-local cache (§2.2) and
-overlaid into `/workspace/.claude` via nested `:ro` mounts, exactly like pack/llms
-resources (RD-claude-mount, ADR-0005). `packs/` and `llms/` are framework-reserved
+This tree holds **authored config only** (ADR-0016 D8). **No internal data lives here**
+(ADR-0013, fixes inventory C4): `source`, `meta`, `base/`, `local-paths.yml`, generated
+`docker-compose.yml`, generated `managed/`, `claude-state/`, and `memory/` are all
+**evicted** to DATA/STATE/CACHE. Framework-generated files (`packs.md`, `workspace.yml`,
+`managed/{browser,github,policy}.json`) are NOT written here — they would pollute the
+truthful `git diff` and the sync (ADR-0002/0004). They are produced in the machine-local
+cache (§2.2) and overlaid into `/workspace/.claude` via nested `:ro` mounts, exactly like
+pack/llms resources (RD-claude-mount, ADR-0005). `packs/` and `llms/` are framework-reserved
 sub-paths within `/workspace/.claude`; committed config must not author into them.
-`.cco/.gitignore` (committed):
+**H5**: `mcp.json`/`setup.sh`/`mcp-packages.txt` are project config (here); the generated
+`.cco/managed/` follows F1 → CACHE (§2.2). `.cco/.gitignore` (committed):
 ```gitignore
 secrets.env
 *.env
@@ -93,32 +118,64 @@ secrets.env
 A pre-commit/pre-push scan (reused from `lib/secrets.sh`) refuses real secrets and
 **exempts `*.example` from the content scan** (FR-S3).
 
-### 2.2 System dirs (per machine, hidden, never committed) — ADR-0007
-```
-<state>/cco/projects/<id>/   # generated docker-compose.yml, claude-state/, memory/, .tmp/, meta
-<state>/cco/index            # name -> absolute path; project -> [repo names]; tags
-<state>/cco/                 # remotes+tokens, last_seen/last_read, sync-meta (§4.6), seeds
-<cache>/cco/                 # llms/, installed/ (Config-Repo caches)
-<cache>/cco/projects/<id>/   # generated .claude overlays (packs.md, workspace.yml) → :ro into /workspace/.claude
-```
-**Locations (ADR-0007)** — XDG layout on both Linux *and* macOS (no `~/Library`):
-- `<state>` = `$CCO_STATE_HOME` → `$XDG_STATE_HOME/cco` → `~/.local/state/cco`
-- `<cache>` = `$CCO_CACHE_HOME` → `$XDG_CACHE_HOME/cco` → `~/.cache/cco`
+### 2.2 Internal buckets (per machine, hidden, never committed) — DATA / STATE / CACHE
+The three internal buckets are **centralized keyed-by-identity** (ADR-0013 corollary: config
+decentralizes, internal centralizes). Byte-level layout fixed by ADR-0016 (D5/D6/D7):
 
-The **index lives in STATE** (machine-local, non-portable, scan-rebuildable — not
-CONFIG). Resolve bases **host-side only** (never compute `$XDG_*` inside the
-container); ignore unset/empty/non-absolute XDG values; create `0700`. Rationale: keep
-the committed `.cco/` small and clean, make state un-committable by construction, and
-protect it from accidental edits.
+**DATA** — `$CCO_DATA_HOME` → `$XDG_DATA_HOME/cco` → `~/.local/share/cco` — *internal-but-synced,
+never-team* (`required`, ADR-0015):
+```
+<data>/cco/
+  tags.yml                       # per-user global tag registry — typed keys {packs,projects,templates}→[tags]
+  remotes                        # de-tokenized Config-Repo endpoint registry: name→url (token in STATE)
+  projects/<id>/source           # install-provenance (url+ref[+resource]), keyed by identity — standalone file
+  packs/<name>/source            # idem
+  templates/<name>/source        # idem
+```
 
-**Auto-memory is STATE (ADR-0009).** Claude Code's auto-memory (`memory/`) is, like
-session transcripts (`claude-state/`), session/runtime **state** — not config. It lives
-**machine-local** in `<state>/cco/projects/<id>/memory/`, never in `~/.cco` or
-`<repo>/.cco/` (which hold only authored config, ADR-0008). It is **not versioned and not
-synced cross-PC in v1**: the vault's auto-commit (D33) + `.gitkeep` (D32) machinery is
-dropped with the vault (§9). Cross-PC / cross-team sync of *state* (memory **and**
-transcripts) is a deferred opt-in feature (R-state-sync, §12). This resolves RD-memory and
-satisfies the Phase-3 gate (review BL2).
+**STATE** — `$CCO_STATE_HOME` → `$XDG_STATE_HOME/cco` → `~/.local/state/cco` — machine-local,
+non-portable (`never`); partitioned by sync-eligibility (ADR-0013 D2):
+```
+<state>/cco/
+  index                          # name→abs-path + project→members — SUBSUMES @local + per-repo local-paths.yml (§3)
+  remotes-token                  # SECRET, isolated, 0600, never-sync (split from the DATA registry; M3)
+  last_seen / last_read          # global changelog markers
+  claude.json / .credentials.json  # seeded auth
+  sync-meta                      # sync-set membership + last-synced fingerprints (§4.6)
+  backups/                       # vault-migration archives — moved OUT of ~/.cco (fixes inventory C1)
+  projects/<id>/
+    session/   memory/  claude-state/(transcripts)   # opt-in P8 (future R-state-sync)
+    update/    meta(hashes, schema_version, policies, flags, local_framework_override)  base/(3-way ancestors)
+    docker-compose.yml   .tmp/
+```
+The `/session` (opt-in) vs `/update` (never) split is the **allowlist boundary** protecting the
+future P8 state-sync from ever sweeping base/hashes/tokens.
+
+**CACHE** — `$CCO_CACHE_HOME` → `$XDG_CACHE_HOME/cco` → `~/.cache/cco` — regenerable (`never`):
+```
+<cache>/cco/
+  llms/<name>/                   # llms CONTENT download + cache-state (etag, resolved_url, downloaded) — C2
+  installed/                     # Config-Repo clones for install/update
+  remote_cache                   # remote HEAD + ts (avoids network on update checks)
+  coords-lookup                  # derived name→url lookup (advisory; scan-regenerable) — ADR-0016 D3
+  projects/<id>/.claude/         # generated overlays (packs.md, workspace.yml) → :ro into /workspace/.claude (F1)
+  projects/<id>/managed/         # generated browser.json / github.json / policy.json → :ro overlay (H5)
+  *.bak   dry-run/               # update artifacts (cco clean)
+```
+
+**Resolver (ADR-0007/0015), all bases incl. DATA**: resolve **host-side only** (never compute
+`$XDG_*` inside the container — explicit anti-in-container guard on `$HOME=/home/claude` /
+`/.dockerenv`); treat unset/empty/non-absolute XDG values as absent; `mkdir -p` mode `0700`. The
+**index lives in STATE** (machine-local, non-portable, scan-rebuildable — not CONFIG; putting it in
+CONFIG would invite hand-edit + cross-machine sync, the coupling ADR-0002 breaks).
+
+**Auto-memory is STATE (ADR-0009).** Claude Code's auto-memory (`memory/`) is, like session
+transcripts (`claude-state/`), session/runtime **state** — not config. It lives **machine-local** in
+`<state>/cco/projects/<id>/session/memory/`, never in `~/.cco` or `<repo>/.cco/` (which hold only
+authored config, ADR-0008). It is **not versioned and not synced cross-PC in v1**: the vault's
+auto-commit (D33) + `.gitkeep` (D32) machinery is dropped with the vault (§9). Cross-PC / cross-team
+sync of *state* (memory **and** transcripts) is a deferred opt-in feature (R-state-sync, §12). This
+resolves RD-memory and satisfies the Phase-3 gate (review BL2).
 
 ### 2.3 `~/.cco/` — personal git store (Domain A; management model = ADR-0008)
 > CONFIG store deliberately keeps the `~/.cco` **dotdir** (ADR-0007), not
@@ -128,19 +185,28 @@ satisfies the Phase-3 gate (review BL2).
 ```
 ~/.cco/
 ├── .git/                # personal store, opt-in remote
-├── .gitignore           # allowlist discipline: only packs/ templates/ global/.claude + tags.yml committed
-├── packs/               # authored packs (flat, one dir per pack)
-├── templates/           # authored templates
-├── global/.claude/      # global Claude config
-├── tags.yml             # per-user tag registry: resource -> [tags] (ADR-0010; Domain A, never Domain B)
-└── backups/             # vault migration archives
+├── .gitignore           # allowlist whitelist: only packs/ templates/ global/.claude (+ setup/mcp/languages) committed
+├── packs/<name>/        # authored packs (flat): pack.yml (incl. embedded llms coordinates) + .md
+├── templates/<name>/    # authored project/pack templates
+├── global/.claude/      # global Claude config (CLAUDE.md, rules, agents, skills, settings.json, mcp.json)
+├── secrets.env          # global secrets, GITIGNORED
+├── secrets.env.example  # committed skeleton (C3)
+├── languages            # the ONE config datum split from .cco/meta (ADR-0013 D4); regenerates language.md
+├── setup.sh             # global setup script (C3)
+├── setup-build.sh       # global build-time setup (C3)
+└── mcp-packages.txt     # global MCP package list (C3)
 ```
-> **⚠️ Nature/placement updated by ADR-0011 (2026-06-17).** Tags are **CLI-canonical → internal**
-> (not hand-edited config); ADR-0010's provisional "config in `~/.cco`" framing below is **superseded
-> for nature**. The **physical placement** (dedicated 4th "internal-but-synced" bucket vs co-locate in
-> `~/.cco`) and the **`.gitignore` allowlist / sync transport** are **deferred to the Cat-4 synthesis**
-> (after R1–R4); the tree/allowlist lines above are therefore **provisional**. Full §2 rewrite lands at
-> **M**. Semantics (per-user, never-team, cross-PC) are unchanged.
+> **Moved OUT (ADR-0016 D8, fixes C1/C3):** `tags.yml` → **DATA** (ADR-0015, not `~/.cco`);
+> `manifest.yml` → **removed** (ADR-0012, must not appear); `backups/` → **STATE** (C1); the
+> `!tags.yml` allowlist line → **dropped**; llms **content** → **CACHE** (C2); **no** central
+> coordinate registry file (coordinates live in the manifests, ADR-0016 D2). `~/.cco` stays
+> **authored-content-only** — the precondition ADR-0007 relies on for the clean in-place git-repo
+> model and for P6.
+> **Nature/placement RESOLVED (ADR-0011 nature, ADR-0015 placement, ADR-0016 layout).** Tags are
+> **CLI-canonical → internal** (not hand-edited config) → they do **not** live in `~/.cco`; the
+> registry is `<data>/cco/tags.yml` (the **DATA** bucket; ADR-0015 selection rule — ≥2 cat-4 members
+> ⇒ dedicated bucket). The `!tags.yml` allowlist is dropped. Semantics below (per-user, never-team,
+> cross-PC `required`) are unchanged.
 >
 > **Resource organization → tags, not profiles (semantics RESOLVED — ADR-0010).** Legacy vault
 > profiles (git branches) are **removed entirely** (ADR-0006); a **net-new `tags`** system
@@ -149,32 +215,47 @@ satisfies the Phase-3 gate (review BL2).
 > store stays **flat** (no per-profile subdirs — subdirs break the repo-wide flat-by-name
 > assumptions + manifest scan, force single membership, and don't even solve filename
 > collisions since resource files mount flat into the container). Tags are **per-user**: they
-> live in a per-user registry **`~/.cco/tags.yml`** (`resource → [tags]`, packs **and**
-> projects), synced across the *user's* machines (Domain A, `cco config push/pull`) but
+> live in a per-user registry **`<data>/cco/tags.yml`** (typed keys `{packs,projects,templates}
+> → [tags]`; ADR-0015/0016), synced across the *user's* machines (Axis-1 `required`) but
 > **never shared with third parties** (Domain B) — so they are **not** in `pack.yml`/
 > `project.yml`/manifest/index. `cco list [--tag <t>]` reads the registry. **Authoring** is
 > **direct `~/.cco` edit** (IDE or the rehomed `config-editor` agent); cco only scaffolds
 > (`cco pack create`, `cco template create`). Migration: `cco migrate` **prompts** whether to
 > convert legacy profiles into tags (seed origin profile as a tag) or start untagged.
 
-### 2.4 `project.yml` (machine-agnostic, symmetric)
+### 2.4 `project.yml` (machine-agnostic, symmetric; embedded coordinates — ADR-0016 D2)
+`project.yml` and `pack.yml` share **one uniform schema**: each `repos:`/`llms:` reference entry
+carries its **coordinate** (`url` + `ref`/`variant`) inline. The coordinate is **machine-agnostic**
+config (a URL is the same on every machine; the *path* is not, and lives in the index, §3). It
+**travels with the manifest** — for `<repo>/.cco` that means the repo remote (Axis-1 **+ Axis-2 by
+construction**, P5), closing the repo auto-resolve gap that ADR-0014 left open. This is the
+`package.json` model: the manifest is the per-unit source of truth; the index (§3) is the
+machine-local `node_modules`-equivalent.
 ```yaml
 name: projectA
-# NOTE: no `tags:` here — tags are per-user and live in ~/.cco/tags.yml (ADR-0010),
+# NOTE: no `tags:` here — tags are per-user and live in <data>/cco/tags.yml (ADR-0015/0016),
 # never in the committed/published project.yml (would leak to third parties on publish).
-repos:                   # ALL members by logical name; no paths; identical in every repo
-  - repo1
-  - repo2
-  - repo3
+repos:                   # ALL members by logical name; embedded coordinate; identical in every repo
+  - name: repo1
+    url: git@github.com:org/repo1.git   # coordinate (machine-agnostic). Truth = the clone's git
+    ref: main                           #   remote; this url is a persisted bootstrap pointer (self-healing)
+  - name: repo2
+    url: git@github.com:org/repo2.git
+llms:                    # referenced docs by name + coordinate (content → CACHE, re-fetched)
+  - name: react
+    url: https://react.dev/llms-full.txt
+    variant: full
 extra_mounts:            # auxiliary mounts by logical name; default readonly
   - name: shared-assets
     readonly: true
 entry: repo1             # OPTIONAL tie-breaker for `cco start projectA` (name-based); not a privilege
 packs: [...]             # references only; packs live in ~/.cco, not in the repo
 ```
-The host repo is **not** written in the file — it is the invoking repo at runtime
-(AD6). Absolute paths for every `repos[]`/`extra_mounts[]` name come from the
-machine-local index (§3).
+The host repo is **not** written in the file — it is the invoking repo at runtime (AD6).
+**Absolute paths** for every `repos[]`/`extra_mounts[]` name come from the machine-local index (§3);
+the **url** coordinates persist here. Cross-unit coordinate consistency is enforced by CLI tooling
+(`cco repo/llms add`, `cco config coords --diff/--sync`), not by storage (ADR-0016 D3); an opt-in
+`cco config validate` pre-commit hook guards sharing integrity (ADR-0016 D9).
 
 ---
 
@@ -191,8 +272,12 @@ paths:                       # logical name -> absolute path (repos AND extra mo
 projects:                    # subsumes the old registry — paths/repos only, NO tags
   projectA: { repos: [repo1, repo2, repo3] }
 ```
-> Tags are **not** in the index (ADR-0010): the index is machine-local STATE (paths/repos
-> only, ADR-0002/0007). Per-user tags live in `~/.cco/tags.yml` (Domain A synced).
+> The index **subsumes** both `@local` markers and the per-repo `<repo>/.cco/local-paths.yml`
+> (ADR-0016 D4): the per-repo file is removed (it was internal data inside a config bucket — a P6
+> violation, C4-class). The index is the **local-path materialization** of the repo coordinate
+> (ADR-0014 D2): `project.yml` carries `name`+`url` (machine-agnostic), the index maps `name→path`
+> (machine-local). Tags are **not** in the index (machine-local STATE, paths/repos only); per-user
+> tags live in `<data>/cco/tags.yml` (DATA, Axis-1 `required`).
 - **Uniqueness invariant (AD5)**: a logical name maps to exactly one absolute path
   per machine. `cco init`/`cco join` refuse a name already bound to a different path.
 - **Absolute paths only**; CLI commands accept paths relative to the cwd and resolve
@@ -204,9 +289,11 @@ projects:                    # subsumes the old registry — paths/repos only, N
   by scanning for `.cco/project.yml`; first `cco start` resolves any missing name via
   prompt/clone. So a fresh clone is not stranded by an empty index (closes the old
   registry-bootstrap gap).
-- **`@local`** resolution logic is reused; it now reads the index instead of a
-  per-repo `local-paths.yml`. Because no real path is ever written into `project.yml`,
-  there is nothing to sanitize and `git diff` is always truthful (AD3/G8).
+- **`@local` markers are gone** (ADR-0016 D4): `project.yml` carries logical names +
+  machine-agnostic `url` coordinates only, with absolute paths resolved from the index. The
+  resolution logic is reused but now reads the **unified index** instead of a per-repo
+  `local-paths.yml`. Because no real path is ever written into `project.yml`, there is nothing to
+  sanitize and `git diff` is always truthful (AD3/G8).
 
 ---
 
@@ -494,9 +581,10 @@ phase leaves cco runnable + tests green.
 
 **Migration flow** (lazy, per-project, idempotent, backed-up):
 1. **First run** detects a legacy vault → archive it to
-   `~/.cco/backups/vault-<date>.tar.gz`, inform the user, print instructions, offer to
+   `<state>/cco/backups/vault-<date>.tar.gz` (STATE, machine-local, never synced — moved out of
+   `~/.cco`, fixes C1; ADR-0016 D6), inform the user, print instructions, offer to
    remove the old vault. No project migrated automatically. **Ordering invariant (M8):**
-   `~/.cco` is bootstrapped *before* the backup is written; the backup is **verified**
+   `~/.cco` + system dirs are bootstrapped *before* the backup is written; the backup is **verified**
    (archive integrity) before the offer-to-remove; the legacy vault is removed **only**
    after a verified backup. A second first-run must not re-archive (a "backed-up" marker
    in STATE meta guards idempotency).
