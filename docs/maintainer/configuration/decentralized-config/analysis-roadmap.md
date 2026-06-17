@@ -165,6 +165,8 @@ standalone `source` files (upstream-only, `required`). Also fixed: the **STATE i
 > (resolves P3)**. Futures F1–F4 → S (Domain-B realignment) / T (DATA-STATE sync-engine).
 
 ### S — Sharing model unification  ·  status: READY (R4 + M done — **suggested next**)
+> **Start here**: `S-handoff-sharing-unification.md` — the S scaffold (what S produces S1–S11, what it
+> consumes [ADR-0016 table, R3 shared-surface map, coordinate model], open decisions, reading order).
 **Goal**: unify/simplify team-sharing (Config Repos = a third repo as remote; access via git token /
 public). Confirm `~/.cco` = private-only; team-sharing always via a Config Repo. Evaluate cco's
 **opinionated defaults as an official public Config Repo, shipped separately** (R-pkg / R-update-native).
