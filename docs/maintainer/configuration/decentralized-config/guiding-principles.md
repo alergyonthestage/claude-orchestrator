@@ -38,7 +38,7 @@ it → internal.*
 | **`~/.cco/`** | global resources the user **curates/authors** (`packs/`, `templates/`, `global/.claude/`, `tags.yml`) | user-facing personal store |
 | **STATE** (`$XDG_STATE_HOME/cco` → `~/.local/state/cco`) | machine-local persistent **state** (index, generated compose, transcripts, memory, meta, seeds, sync-meta) | **hidden** (internal) |
 | **CACHE** (`$XDG_CACHE_HOME/cco` → `~/.cache/cco`) | regenerable / re-fetchable / transient (generated overlays, Config-Repo clones, `.bak`) | **hidden** (internal) |
-| **(possible 4th) internal-but-synced** | cco-managed (CLI-updated, hidden, **not** IDE-edited config), but worth **private multi-PC** sync (candidates: `tags.yml` (internal nature fixed — ADR-0011); de-tokenized remotes registry (R3); manifest (R2)) | **hidden** (internal) — *existence + membership decided by the **Cat-4 synthesis** after R1–R4 (ADR-0011); **not** pre-judged* |
+| **(possible 4th) internal-but-synced** | cco-managed (CLI-updated, hidden, **not** IDE-edited config), but worth **private multi-PC** sync (candidates: `tags.yml` (internal nature fixed — ADR-0011); de-tokenized remotes registry (R3). *Manifest **removed**, not a candidate — ADR-0012*) | **hidden** (internal) — *existence + membership decided by the **Cat-4 synthesis** after R1–R4 (ADR-0011); **not** pre-judged* |
 
 The two config buckets (`<repo>/.cco`, `~/.cco`) hold **only** P1-config. STATE/CACHE hold **only**
 P1-internal that is **not** synced. Today there is **no** home for "internal yet privately synced"

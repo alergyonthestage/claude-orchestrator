@@ -21,7 +21,7 @@ tree is the NEW design (source of truth) and is excluded.
 
 | Old-model marker | New model |
 |---|---|
-| `user-config/` central root (`projects/`, `packs/`, `templates/`, `global/`) | **REMOVED.** Project config → `<repo>/.cco/`; global resources → `~/.cco/` (`packs/ templates/ global/.claude/ tags.yml manifest.yml`); state/cache → XDG (`~/.local/state/cco`, `~/.cache/cco`); machine-local index → STATE |
+| `user-config/` central root (`projects/`, `packs/`, `templates/`, `global/`) | **REMOVED.** Project config → `<repo>/.cco/`; global resources → `~/.cco/` (`packs/ templates/ global/.claude/ tags.yml` — **`manifest.yml` removed**, ADR-0012); state/cache → XDG (`~/.local/state/cco`, `~/.cache/cco`); machine-local index → STATE |
 | `cco vault *` (save/diff/switch/move/profile/init/log/status) | **REMOVED.** Normal git for `<repo>/.cco/`; `cco config save/push/pull` for `~/.cco/` (ADR-0008) |
 | **Profiles** (vault git branches, `.vault-profile`) | **REMOVED.** Per-user **tags**, **CLI-canonical → internal** (`cco tag add/rm` + `cco list --tag`, ADR-0011); registry `tags.yml` **placement** (4th bucket vs `~/.cco`) deferred to the Cat-4 synthesis; semantics per ADR-0010 |
 | `@local` markers + per-repo `local-paths.yml` | Logical names resolved via the machine-local index (ADR-0002) |
@@ -55,7 +55,7 @@ Its `project.yml`, `CLAUDE.md`, `config-safety` rule, and both skills are built 
 |---|---|---|---|
 | `templates/project/config-editor/project.yml:7` | `- path: {{CCO_USER_CONFIG_DIR}}` | Mount `~/.cco/` via the new global-dir placeholder/var (`CCO_USER_CONFIG_DIR` removed) | **0/3** (coordinate with the `bin/cco`/`lib/paths.sh` rename) |
 | `…/project.yml:5,8` | `# user-config is mounted as a repo`; `name: user-config` | Rename mount (e.g. `cco-config`) + reword comment to "`~/.cco` global resources" | 3 |
-| `…/.claude/CLAUDE.md:50-74` | `/workspace/user-config/` layout tree (`projects/`, `packs/`, `memory/ (vault-tracked)`, `manifest.yml`) | Rewrite the whole layout block: `~/.cco/` (packs/templates/global/tags.yml/manifest.yml) + `<repo>/.cco/` + STATE/XDG | 3 |
+| `…/.claude/CLAUDE.md:50-74` | `/workspace/user-config/` layout tree (`projects/`, `packs/`, `memory/ (vault-tracked)`, `manifest.yml`) | Rewrite the whole layout block: `~/.cco/` (packs/templates/global/tags.yml — **no `manifest.yml`**, removed ADR-0012) + `<repo>/.cco/` + STATE/XDG | 3 |
 | `…/.claude/CLAUDE.md:13,78-92` | `### Vault Management`; `cco vault save/diff`; project-creation flow under `projects/<name>/` | Replace with `cco config save/push/pull` (`~/.cco`) + normal git (`<repo>/.cco`); entry = init/join/migrate | 3 |
 | `…/.claude/CLAUDE.md:37,127,135-137` | `@local … cco project resolve`; `cco project create`; `cco vault save`; `cco vault diff`; `cco project resolve` (command list) | Remove/replace each removed command | 3 |
 | `…/.claude/rules/config-safety.md:14-17` | `## Vault Awareness` + `cco vault save/diff` + "reference the vault" | Rewrite: `cco config save/push/pull` + normal git; drop "vault" | 3 |
@@ -168,9 +168,13 @@ Section "Vault Simplification → Decentralized In-Repo Config" already exists (
 
 ## Open items to confirm during implementation
 
-1. **`manifest.yml`**: survives **unchanged in function** (Domain B sharing index for Config Repos,
-   `N3`); rehomed to `~/.cco/manifest.yml`, enumerating `~/.cco/packs|templates`. It is **not** replaced
-   by `tags.yml` (tags = per-user local org; manifest = sharing). *(Confirm during Phase 3.)*
+1. **`manifest.yml`**: ~~survives unchanged~~ → **REMOVED entirely (ADR-0012)**. R2 found every
+   functional read is discovery/validation, replaceable by the Config Repo's directory structure
+   (`templates/*/`, `packs/*/`); no manifest-exclusive datum is consumed (repo URLs travel in the
+   published `project.yml`; descriptions in `pack.yml`; sharing tags/identity are write-only).
+   `lib/manifest.sh` + `cco manifest` + all `manifest_refresh`/`manifest_init` call sites are
+   dropped; the **structure-based-discovery refactor is owned by S**. *(Cleanup of inert
+   `manifest.yml` files rides the Phase-3 cutover.)*
 2. **`llms/`**: downloads live in **CACHE** `~/.cache/cco/llms/` (ADR-0007). Update base template comment
    accordingly.
 3. **`project.yml` container mount path** and the `init-workspace` skill's rw write-back
