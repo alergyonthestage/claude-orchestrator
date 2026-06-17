@@ -72,10 +72,12 @@ and separate directories — owned by T; ADR-0015 D6.)*
 A resource's **destination (P2)** and its **sync profile** `{none | private-multi-PC | team | both}`
 are independent dimensions. Classifying a resource means answering **both**.
 
-> **Axis-1 remote access (open, → S).** The `~/.cco` personal remote is intended **private**, reached
-> via the user's own git auth (token or local `.ssh`). Whether to **support a public repo for Axis-1**
-> (technically against "private, same-user", but enforcing privacy may be excessive for cco) — forbid,
-> allow, or allow with an **escape hatch** — is an open question owned by the sharing analysis (S).
+> **Axis-1 remote access (RESOLVED — ADR-0017 D4).** `~/.cco` is **always** a `git init`'d, versioned
+> working tree; only the **remote** is opt-in. The remote is **private by default**, reached via the
+> user's own git auth (token or local `.ssh`); a **public remote is allowed by explicit user choice,
+> with a warning** (cco does not enforce privacy — fragile and excessive). The guides document/recommend
+> that team-sharing happens via dedicated **Config Repos** (Axis-2), *outside* `~/.cco`. The warning
+> *mechanism* is owned by **S**.
 
 ```mermaid
 flowchart LR

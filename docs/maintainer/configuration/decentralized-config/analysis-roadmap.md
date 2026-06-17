@@ -140,7 +140,7 @@ allowlist** and separate dirs. Refines ADR-0007 §Decision-2 (registry STATE→D
 **Output**: ADR-0015 (+ `guiding-principles.md` P2 + roadmap + inventory updated). **Feeds & unblocks**: M
 (byte-level layout + registry scope/namespacing).
 
-### M — Consolidated resource taxonomy & mapping  ·  status: DONE (ADR-0016, 2026-06-17)
+### M — Consolidated resource taxonomy & mapping  ·  status: DONE (ADR-0016 + ADR-0017, 2026-06-17)
 **Resolved**: produced THE authoritative `resource → (bucket, mutator, sync)` table; rewrote
 `design.md §2.1/2.2/2.3` to the **4-bucket** layout (CONFIG×2/DATA/STATE/CACHE); fixed conflicts
 **C1–C4**; absorbed **H5/H6/M3**. **Two open decisions settled**: (1) **coordinate scope** = *per-unit,
@@ -158,6 +158,11 @@ standalone `source` files (upstream-only, `required`). Also fixed: the **STATE i
 > **Scaffold (history)**: `M-handoff-consolidated-design.md` — the cross-ADR end-state synthesis
 > (4-bucket trees, consolidated table, legacy→new fan-out map, conflicts/open-decisions). Maintainer-
 > validated 2026-06-17; consumed by ADR-0016.
+> **M-review refinements → ADR-0017** (maintainer, same day): coordinate field semantics (url/ref
+> optional, llms url mandatory, origin derivation, url-may-differ→warn); CLI consolidation (`cco resolve
+> [--scan][--all]` absorbs `index refresh`; `cco start --from`; start-unresolved prompt); J0 bootstraps
+> all 4 buckets incl DATA on any command; `~/.cco` always git-versioned + **public-remote allow+warn
+> (resolves P3)**. Futures F1–F4 → S (Domain-B realignment) / T (DATA-STATE sync-engine).
 
 ### S — Sharing model unification  ·  status: READY (R4 + M done — **suggested next**)
 **Goal**: unify/simplify team-sharing (Config Repos = a third repo as remote; access via git token /
@@ -172,13 +177,20 @@ question** (P3 note — forbid/allow/escape-hatch for a public personal remote);
 `~/.cco/projects/` re-expansion, `cco start` discovery/precedence; post-v1). **Now also owns (from
 ADR-0016)**: the **coordinate CLI** (`cco repo/llms add`, `cco config coords --diff/--sync/--sanitize`),
 the **opt-in `cco config validate`** pre-commit hook (D9), and the **publish-boundary resolution** of
-the per-unit coordinates. **Consumes**: ADR-0016's authoritative table + R3's shared-surface map.
-**Depends on**: R4, M (both done). **Output**: ADR(s) / a dedicated sharing design doc.
+the per-unit coordinates. **From ADR-0017**: the **`~/.cco` public-remote warning** mechanism (D4) and
+the **Domain-B Config-Repo structure realignment** (F3 — clean the team-shared repo layout to the
+decentralized model: manifest removed, coordinates resolve-at-publish, structure-based discovery), as
+part of the publish/install/update/export revision + opinionated-defaults-as-package. **Consumes**:
+ADR-0016's authoritative table + R3's shared-surface map. **Depends on**: R4, M (both done). **Output**:
+ADR(s) / a dedicated sharing design doc.
 
 ### T — RD-triggers / R-state-sync  ·  status: FUTURE
 Background daemon / native hooks / git hooks vs manual-only (v1 = manual). Owns `~/.cco` background
 auto-sync and **R-state-sync** (memory + transcripts cross-PC/cross-team opt-in, ADR-0009) — the future
-STATE-sync category (P8). **Depends on**: R1–S settled.
+STATE-sync category (P8). **From ADR-0017 (F4)**: the **DATA/STATE sync-engine choice** — git (ADR-0015
+D6) is a *recommendation*, not a constraint; a more appropriate engine may fit, **evaluated
+transversally with the project-sync daemon** (different scopes, possibly shared infra). **Depends on**:
+R1–S settled.
 
 ### E — Review follow-ups (implementation-detail)  ·  status: TODO (during/just-before implementation)
 From `reviews/16-06-2026-design-coherence-review.md`, not blocking Phase 0: H2 (reminder-aggregator cost),
@@ -256,4 +268,12 @@ refactor; repo URL persistence) → (T, E around implementation).
   per-repo `local-paths.yml`, D4). **DATA byte-level** finalized (`tags.yml` typed keys · `remotes` ·
   per-identity standalone `source`). **P12 refined**; opt-in `cco config validate` hook (D9). Coordinate
   CLI + publish resolution + `llms:`/`repos:` schema/migration → **S**; H6/M3/H7 → **E**.
-- ADR numbers are assigned when each session runs (next free number; last used = **0016**).
+- M-review refinements (maintainer, 2026-06-17) → **ADR-0017**: coordinate field semantics (repo `url`
+  optional/bootstrap, `ref` optional/default-branch, llms `url` mandatory, `origin` derivation,
+  url-may-differ→**warn not enforce**); CLI consolidation onto **`cco resolve`** (`--scan` absorbs
+  `index refresh`, `--all`) + **`cco start --from`** (Case-C source) + explicit prompt on
+  start-with-unresolved; **J0** bootstraps all 4 buckets incl **DATA** on **any** command, per-root
+  idempotent; **`~/.cco` always git-versioned**, remote opt-in private-default, **public allow+warn →
+  resolves P3**. Futures F1 (local-file llms) · F2 (Case-C convergence merge, reuse 3-way) → §12; F3
+  (Domain-B Config-Repo realignment) → **S**; F4 (DATA/STATE sync-engine choice) → **T**.
+- ADR numbers are assigned when each session runs (next free number; last used = **0017**).
