@@ -818,7 +818,7 @@ _update_yml_path() {
     CCO_NEW_PATH="$new_path" awk -v section="$section" -v key_field="$key_field" \
         -v key_value="$key_value" -v path_field="$path_field" '
         BEGIN {
-            section_re = "^" section ":$"
+            section_re = "^" section ":[[:space:]]*$"
             new_path = ENVIRON["CCO_NEW_PATH"]
         }
         $0 ~ section_re { in_section=1; print; next }
