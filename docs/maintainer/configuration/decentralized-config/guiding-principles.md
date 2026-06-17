@@ -188,7 +188,7 @@ A file whose data give **heterogeneous** answers across (a)/(b)/(c) is a **split
 P3/P4; the `.cco/meta` grab-bag was split exactly this way). Co-locate by **answer profile**, not
 merely by functional domain.
 
-## P12 — Referenced-resource coordinates: reference by-name, one canonical coordinate, resolve at the boundary
+## P12 — Referenced-resource coordinates: config, decentralized per-unit in the versioned manifest
 
 A resource **referenced by name** from `project.yml`/`pack.yml` (a repo mount, an llms doc) is **not a
 monolith** — it decomposes into data with **different sync-profiles**, co-located accordingly (P3/P4):
@@ -197,21 +197,30 @@ monolith** — it decomposes into data with **different sync-profiles**, co-loca
   axes).
 - **coordinate** `name → url` (+ `variant` for llms / `ref` for repos) — the canonical, **user-known
   locator**. It is **config** (it must be team-shared so a recipient can resolve the resource, and by
-  P6 anything team-shared **cannot** be internal); **stored once** (DRY — one update point for N
-  references); **synced cross-PC** (Axis-1) **and carried to the team by resolution at the publish
-  boundary** (never by publishing the whole registry, which would leak unrelated entries). It enables
-  **auto-resolve** (clone/fetch).
+  P6 anything team-shared **cannot** be internal). It is **embedded per-unit in the versioned manifest**
+  (one uniform `project.yml`/`pack.yml` schema; the `package.json` model — ADR-0016 D2), **not** a
+  central registry. The **source of truth is the unit's manifest**; for a **repo** the clone's own git
+  remote is ultimately authoritative and the manifest `url` is a **self-healing bootstrap pointer**.
+  It travels **with the manifest**: project coordinates ride the **repo remote** (Axis-1 **+ Axis-2 by
+  construction**, P5 — there is **no publish boundary** to inject at); pack coordinates ride
+  `cco config push/pull` (Axis-1) **and** are resolved-at-publish for the team (the Config-Repo path
+  *does* have a discrete boundary). It enables **auto-resolve** (clone/fetch).
 - **local materialization** — machine-specific, **internal, local-only, never synced/shared**: the
-  repo **local-path** (`cco … resolve`, explicit per PC) and the llms **content** (CACHE, re-fetched
-  from the coordinate).
+  repo **local-path** (the **STATE index**, `cco … resolve`, explicit per PC — *not* a per-repo file)
+  and the llms **content** (CACHE, re-fetched from the coordinate, deduped per machine by name).
 
-**Never duplicate a coordinate across consumer manifests** (denormalization → update anomaly):
-reference **by-name** and **resolve at the boundary** (publish/install/start). This unifies repo-mount
-and llms references under one coordinate model; only the *resolution backend* differs (repo → clone
-into a local-path; llms → fetch into CACHE). Distinguish this **config coordinate** from internal,
-CLI-managed, **never-team** data (tags → ADR-0011; install-provenance `source` → ADR-0013 — both cat-4
-candidates): the **team-share requirement is the discriminator** (team-shared ⇒ config, not internal).
-*(Established by ADR-0014, R4.)*
+**DRY is scoped to the unit** (the publishable/shareable unit), not globally. Within a unit a
+coordinate is stored once; **cross-unit replication of the same upstream is intentional independence,
+not an update anomaly** — mirroring the deliberate `project.yml` symmetry across a project's repos
+(ADR-0002). Cross-unit consistency is enforced by **CLI tooling** (`cco repo/llms add`, `cco config
+coords --diff/--sync`), **not by storage** (ADR-0016 D3) — so no global source of truth is
+re-introduced. This unifies repo-mount and llms references under one coordinate model; only the
+*resolution backend* differs (repo → clone into the index local-path; llms → fetch into CACHE).
+Distinguish this **config coordinate** from internal, CLI-managed, **never-team** data (tags →
+ADR-0011; install-provenance `source` → ADR-0013/0015 — DATA): the **team-share requirement is the
+discriminator** (team-shared ⇒ config, not internal). *(Established by ADR-0014; **placement
+finalized + the central-registry hint corrected by ADR-0016/M** — the by-construction-shared repo
+has no publish boundary, so the coordinate must travel in the versioned config.)*
 
 ---
 
