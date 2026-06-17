@@ -702,6 +702,29 @@ YAML
     [[ "$at_local_count" -eq 1 ]] || fail "Expected 1 @local remaining, got $at_local_count"
 }
 
+# Regression: a section header with trailing whitespace after the colon
+# (e.g. "repos: ") must still match so the path is updated. The old regex
+# required the colon to be the final character and silently failed here.
+test_update_yml_path_tolerates_trailing_whitespace_in_section_header() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_local_paths
+
+    # Note the trailing space after "repos:" below.
+    printf '%s\n' \
+        'name: test-project' \
+        'repos: ' \
+        '  - path: "@local"' \
+        '    name: api' \
+        > "$tmpdir/project.yml"
+
+    _update_yml_path "$tmpdir/project.yml" "repos" "name" "api" "path" "~/Projects/api"
+
+    assert_file_contains "$tmpdir/project.yml" 'path: "~/Projects/api"'
+    local at_local_count
+    at_local_count=$(grep -c '@local' "$tmpdir/project.yml" || true)
+    [[ "$at_local_count" -eq 0 ]] || fail "Expected 0 @local remaining, got $at_local_count"
+}
+
 # ── _write_local_paths ──────────────────────────────────────────────
 
 test_write_local_paths_extracts_repos_and_mounts() {
