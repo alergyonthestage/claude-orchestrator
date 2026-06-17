@@ -1,7 +1,7 @@
 # Resource-Coherence Inventory — Decentralized In-Repo Config
 
-**Status**: Implementation-prep checklist (DESIGN phase, 2026-06-16). Living artifact —
-update as items are completed during implementation.
+**Status**: Implementation-prep checklist (DESIGN phase, 2026-06-16; open items updated by M/ADR-0016,
+2026-06-17). Living artifact — update as items are completed during implementation.
 **Method**: 3 code-grounded analyst agents in parallel (templates/skills/agents · docs/roadmap ·
 managed/infra/CLAUDE.md), then synthesis. No files modified by the analysis.
 **Scope**: every resource **outside the core CLI** (`lib/*.sh`, `bin/cco` — covered by the
@@ -24,7 +24,7 @@ tree is the NEW design (source of truth) and is excluded.
 | `user-config/` central root (`projects/`, `packs/`, `templates/`, `global/`) | **REMOVED.** Project config → `<repo>/.cco/`; global resources → `~/.cco/` (`packs/ templates/ global/.claude/` — **`manifest.yml` removed**, ADR-0012); **internal-but-synced → DATA** (`~/.local/share/cco`: `tags.yml`, de-tokenized remotes registry, install-provenance `source` — ADR-0015); state/cache → XDG (`~/.local/state/cco`, `~/.cache/cco`); machine-local index → STATE |
 | `cco vault *` (save/diff/switch/move/profile/init/log/status) | **REMOVED.** Normal git for `<repo>/.cco/`; `cco config save/push/pull` for `~/.cco/` (ADR-0008) |
 | **Profiles** (vault git branches, `.vault-profile`) | **REMOVED.** Per-user **tags**, **CLI-canonical → internal** (`cco tag add/rm` + `cco list --tag`, ADR-0011); registry `tags.yml` → **DATA bucket** `<DATA>/cco/tags.yml` (4th bucket EXISTS, ADR-0015 — not `~/.cco`); semantics per ADR-0010 |
-| `@local` markers + per-repo `local-paths.yml` | Logical names resolved via the machine-local index (ADR-0002) |
+| `@local` markers + per-repo `local-paths.yml` | **REMOVED.** Subsumed into the unified machine-local **STATE `index`** (`name→abs-path`); per-repo file evicted (internal-in-config-bucket, P6) — `project.yml` carries logical names + machine-agnostic `url` coordinates only (ADR-0002/0016 D4) |
 | `memory/` (vault-tracked, auto-committed, cross-PC synced) | Machine-local **STATE** `<state>/cco/projects/<id>/memory/`, **no sync in v1** (ADR-0009) |
 | `cco project create` | **REMOVED.** Entry points = `cco init` \| `cco join` \| `cco migrate` |
 | `cco project resolve` | `cco resolve` / `cco path` (index-backed clone/resolve) |
@@ -175,17 +175,21 @@ Section "Vault Simplification → Decentralized In-Repo Config" already exists (
    `lib/manifest.sh` + `cco manifest` + all `manifest_refresh`/`manifest_init` call sites are
    dropped; the **structure-based-discovery refactor is owned by S**. *(Cleanup of inert
    `manifest.yml` files rides the Phase-3 cutover.)*
-2. **`llms/`** (refined by **ADR-0014**, conflict **C2** resolved): only the **content/downloads** live
-   in **CACHE** `~/.cache/cco/llms/` (ADR-0007). The llms **coordinate** (`url`+`variant`) is **config**
-   (user-known) → part of the unified **referenced-resource coordinate registry** (`name→url`, synced
-   cross-PC + resolved-at-publish, DRY-by-name; **P12**), **not** CACHE and **not** cat-4. Same category
-   as project **repo URLs**: persist the URL as a synced coordinate (closes the Axis-1 auto-resolve gap),
-   reference by-name, **resolve at the publish boundary** — registry scope/namespacing → **M**; resolve
-   mechanism + repo integration + `llms:`/`repos:` schema/migration → **S**. Update base template comments
-   accordingly. Hand-curated llms is **not** supported (content is re-fetchable).
-3. **`project.yml` container mount path** and the `init-workspace` skill's rw write-back
-   (`/workspace/.claude/project.yml` vs `/workspace/project.yml`): tied to the H5 "project-config
-   inventory" follow-up (mcp.json/setup.sh/mcp-packages.txt/.cco/managed). Confirm there.
+2. **`llms/`** (refined by **ADR-0014**, conflict **C2** resolved; **scope finalized by ADR-0016/M**):
+   only the **content/downloads** live in **CACHE** `~/.cache/cco/llms/<name>/` (ADR-0007), deduped per
+   machine by name. The llms **coordinate** (`url`+`variant`) is **config** (user-known) and is
+   **embedded per-unit in the versioned manifest** (`project.yml`/`pack.yml`, uniform schema —
+   `package.json` model; ADR-0016 D2), **not** a central registry, **not** CACHE, **not** cat-4. Same
+   category as project **repo URLs**: persist the URL as a manifest coordinate (closes the Axis-1
+   auto-resolve gap; for repos the clone's git remote is the self-healing source of truth). Cross-unit
+   consistency is **tooling-enforced** (`cco config coords`, ADR-0016 D3), not a central store. Resolve
+   mechanism + publish-boundary resolution + `llms:`/`repos:` schema/migration → **S**. Update base
+   template comments accordingly. Hand-curated llms is **not** supported (content is re-fetchable).
+3. **H5 project-config inventory — RESOLVED (ADR-0016 D7/D8)**: project `mcp.json`/`setup.sh`/
+   `mcp-packages.txt` are **project config** → `<repo>/.cco/`; the framework-**generated** `.cco/managed/`
+   (browser/github/policy JSON) follows F1 → **CACHE** `<cache>/cco/projects/<id>/managed/`, overlaid
+   `:ro`. The remaining `project.yml` **container mount path** + `init-workspace` rw write-back
+   (`/workspace/.claude/project.yml` vs `/workspace/project.yml`) is an impl detail → **E**.
 4. **`.cco/claude-state/` (transcripts) and `memory/`** both become STATE under
    `<state>/cco/projects/<id>/` (ADR-0007 + 0009) — neither stays in the repo.
 5. **Internal metadata (`source`, `base/`, `meta`, `pack-manifest`, remotes registry+tokens)**:
@@ -194,8 +198,11 @@ Section "Vault Simplification → Decentralized In-Repo Config" already exists (
    `.cco/meta` split (`languages`→config/preference is the lone exception); `remote_cache`→CACHE;
    token→STATE·`never`; de-tokenized registry + `source`→**DATA** (cat-4, `required`-sync — **ADR-0015**
    resolved the verdict: the 4th category EXISTS = XDG **DATA** `~/.local/share/cco`; `source` syncs
-   `required`); **`pack-manifest` removed outright** (no migrator). Team-sharing surface → S. Byte-level
-   layout + registry scope → **M**.
+   `required`); **`pack-manifest` removed outright** (no migrator). Team-sharing surface → S. **Byte-level
+   layout RESOLVED (ADR-0016/M)**: DATA = `tags.yml` (typed keys) · `remotes` · per-identity standalone
+   `source` files (upstream `url+ref` only, `required`); STATE `index` **subsumes** `@local` + per-repo
+   `local-paths.yml` (D4); STATE `/update` (`base/`/`meta`, H6) vs `/session` (memory/transcripts);
+   `backups/` → STATE (C1). H6 merge-path remap + M3 `cmd-remote.sh` decoupling → **E**.
 
 ---
 

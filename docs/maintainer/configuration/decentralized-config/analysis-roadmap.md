@@ -140,28 +140,26 @@ allowlist** and separate dirs. Refines ADR-0007 §Decision-2 (registry STATE→D
 **Output**: ADR-0015 (+ `guiding-principles.md` P2 + roadmap + inventory updated). **Feeds & unblocks**: M
 (byte-level layout + registry scope/namespacing).
 
-### M — Consolidated resource taxonomy & mapping  ·  status: READY (R1–R4 + Cat-4 all done; **suggested next**)
-> **Start here**: `M-handoff-consolidated-design.md` — the cross-ADR end-state synthesis (4-bucket
-> trees, consolidated `resource→(bucket,sync)` table, the legacy→new **migration fan-out map**, the
-> conflicts/open-decisions checklist). Maintainer-validated 2026-06-17; it is M's working scaffold.
-**Goal**: THE authoritative, exhaustive `resource → (destination, sync-profile)` table; **validate the
-whole design against P1–P12 and fix the conflicts**; rewrite the layout trees to be exhaustive.
-**Conflicts to fix (from grounding)**: **C1** `design.md:136` `backups/` in `~/.cco` → STATE; **C2** ADR-0007
-`llms/`→CACHE conditional on R4; **C3** `design.md §2.3` `~/.cco` tree **incomplete** (missing global
-`secrets.env`, `setup.sh`, `setup-build.sh`, `mcp-packages.txt`) — *note: `manifest.yml` is **removed**
-(ADR-0012), so it must **not** appear in the tree*; **C4** `.cco/source` /
-pack `.cco/meta` inside config buckets violate P6 (→ R3). **Already grounded (decided pending M)**: project
-`mcp.json`/`setup.sh`/`mcp-packages.txt` → `<repo>/.cco/` (H5); `.cco/managed`, generated compose,
-`claude-state`, `memory`, `meta`, `pack-manifest` → STATE; `install-tmp`/`.bak`/overlays/Config-Repo clones
-→ CACHE; `tags.yml` + de-tokenized remotes registry + install-provenance `source` → **DATA**
-(`$XDG_DATA_HOME/cco`, ADR-0015). **Cat-4 byte-level (from ADR-0015 D5)**: finalize the exhaustive
-`<DATA>/cco/` layout (`tags.yml`, `remotes`, `projects|packs|templates/<id>/source`), the `source` file
-format (standalone vs folded), and the **registry scope/namespacing** (global vs per-project — shared
-with ADR-0014's coordinate-registry scope). **Output**: **ADR (resource taxonomy)** + rewrite
-`design.md §2.1/2.2/2.3` (now a **4-bucket** layout: CONFIG/DATA/STATE/CACHE) + close inventory open
-items. Absorbs review follow-ups H5/H6/M3.
+### M — Consolidated resource taxonomy & mapping  ·  status: DONE (ADR-0016, 2026-06-17)
+**Resolved**: produced THE authoritative `resource → (bucket, mutator, sync)` table; rewrote
+`design.md §2.1/2.2/2.3` to the **4-bucket** layout (CONFIG×2/DATA/STATE/CACHE); fixed conflicts
+**C1–C4**; absorbed **H5/H6/M3**. **Two open decisions settled**: (1) **coordinate scope** = *per-unit,
+embedded in the versioned manifest* (uniform `project.yml`/`pack.yml` schema, `package.json` model) —
+**refines ADR-0014**: the maintainer surfaced that the by-construction-shared repo (P5) has **no
+publish boundary**, so a central registry can't reach a repo-cloning teammate; source-of-truth = the
+unit's manifest (repos self-heal from their git remote), cross-unit replication = intentional
+independence, consistency **by tooling not storage** (`cco config coords --diff/--sync`), content→CACHE,
+local-path→STATE index; (2) **DATA byte-level** = `tags.yml` (typed keys) · `remotes` · per-identity
+standalone `source` files (upstream-only, `required`). Also fixed: the **STATE index subsumes** `@local`
++ per-repo `local-paths.yml` (byte-level, D4); **P12 refined**; opt-in `cco config validate` hook (D9).
+**Output**: ADR-0016 + `design.md §2` rewrite + `guiding-principles.md` P12 + this roadmap + inventory.
+**Hands to**: **S** (publish resolution, coordinate CLI + validation, `llms:`/`repos:` schema+migration),
+**E** (H6 merge-path, M3 remote decoupling, index concurrency/H7).
+> **Scaffold (history)**: `M-handoff-consolidated-design.md` — the cross-ADR end-state synthesis
+> (4-bucket trees, consolidated table, legacy→new fan-out map, conflicts/open-decisions). Maintainer-
+> validated 2026-06-17; consumed by ADR-0016.
 
-### S — Sharing model unification  ·  status: TODO (after R4)
+### S — Sharing model unification  ·  status: READY (R4 + M done — **suggested next**)
 **Goal**: unify/simplify team-sharing (Config Repos = a third repo as remote; access via git token /
 public). Confirm `~/.cco` = private-only; team-sharing always via a Config Repo. Evaluate cco's
 **opinionated defaults as an official public Config Repo, shipped separately** (R-pkg / R-update-native).
@@ -171,8 +169,11 @@ the empty-repo `manifest_init` with a `.gitkeep`/first-resource commit, and deci
 repo identity/catalogue surface is worth re-introducing (default: no, YAGNI); the **Axis-1 public-repo
 question** (P3 note — forbid/allow/escape-hatch for a public personal remote); the **A4 fallback option
 (B)** (solo adopter: project `.cco/` under `~/.cco`, outside the repo — index `config_path` field,
-`~/.cco/projects/` re-expansion, `cco start` discovery/precedence; post-v1). **Depends on**: R4 (what
-travels), M. **Output**: ADR(s) / a dedicated sharing design doc.
+`~/.cco/projects/` re-expansion, `cco start` discovery/precedence; post-v1). **Now also owns (from
+ADR-0016)**: the **coordinate CLI** (`cco repo/llms add`, `cco config coords --diff/--sync/--sanitize`),
+the **opt-in `cco config validate`** pre-commit hook (D9), and the **publish-boundary resolution** of
+the per-unit coordinates. **Consumes**: ADR-0016's authoritative table + R3's shared-surface map.
+**Depends on**: R4, M (both done). **Output**: ADR(s) / a dedicated sharing design doc.
 
 ### T — RD-triggers / R-state-sync  ·  status: FUTURE
 Background daemon / native hooks / git hooks vs manual-only (v1 = manual). Owns `~/.cco` background
@@ -197,21 +198,21 @@ flowchart LR
   R1 --> C4["Cat-4 · synthesis (done, ADR-0015)<br/>EXISTS = XDG DATA; tags+registry+source"]
   R3 --> C4
   R4 --> C4
-  C4 --> M["M · consolidated mapping (ADR + design §2 rewrite, fix C1-C4)"]
+  C4 --> M["M · consolidated mapping (done, ADR-0016)<br/>4-bucket; coord per-unit; C1-C4 fixed; H5/H6/M3"]
   R3 --> M
   R4 --> M
-  R4 --> S["S · sharing unification (+ manifest-removal refactor, A4 fallback, Axis-1 public-repo)"]
+  R4 --> S["S · sharing unification (suggested next; + coord CLI/validate, manifest-removal, A4, Axis-1 public-repo)"]
   R2 -- "manifest removal → structure-based discovery" --> S
   M --> S
   C4 -.-> T["T · RD-triggers / R-state-sync (future); cat-4 ∩ P8 sync transport"]
   S --> T
   M -.-> E["E · review follow-ups (impl-time)"]
 ```
-**Recommended sequence**: R1 ✅ → R2 ✅ → R3 ✅ (ADR-0013) → R4 ✅ (ADR-0014) → **Cat-4 synthesis ✅
-(ADR-0015 — 4th bucket EXISTS = XDG DATA; members tags · registry · source)** → **M** (suggested next:
-consolidate + fix conflicts C1–C4; 4-bucket design §2 rewrite; DATA byte-level layout + registry
-scope/namespacing) → S (manifest-removal refactor + coordinate resolve-at-publish + repo URL
-persistence) → (T, E around implementation).
+**Recommended sequence**: R1 ✅ → R2 ✅ → R3 ✅ (ADR-0013) → R4 ✅ (ADR-0014) → **Cat-4 ✅ (ADR-0015 —
+4th bucket EXISTS = XDG DATA)** → **M ✅ (ADR-0016 — authoritative table; 4-bucket §2 rewrite; coordinate
+per-unit/`package.json` model; DATA byte-level; STATE index subsumes @local; C1–C4; H5/H6/M3)** → **S**
+(suggested next: coordinate CLI + `cco config validate`; publish-boundary resolution; manifest-removal
+refactor; repo URL persistence) → (T, E around implementation).
 
 ## Notes
 - R1 is **resolved-partial** (ADR-0011): tag *nature* fixed (CLI-canonical → internal); the
@@ -245,4 +246,14 @@ persistence) → (T, E around implementation).
   `<DATA>/cco/tags.yml`. Transport ∩ P8 (one git engine, per-store allowlist) → informational, owned
   by T. P2 of `guiding-principles.md` updated (4th bucket now resolved). Byte-level layout + registry
   scope/namespacing → **M**. Refines ADR-0007 §Decision-2 (registry STATE→DATA; token stays STATE).
-- ADR numbers are assigned when each session runs (next free number; last used = **0015**).
+- M is **DONE** (ADR-0016, 2026-06-17): the authoritative `resource → (bucket, mutator, sync)` table +
+  4-bucket `design.md §2` rewrite + C1–C4 fixes + H5/H6/M3. **Coordinate placement resolved per-unit,
+  embedded in the versioned manifest** (uniform `project.yml`/`pack.yml` schema, `package.json` model) —
+  **refines ADR-0014**: a maintainer-surfaced gap (the by-construction-shared repo, P5, has **no publish
+  boundary** → a central registry can't reach a repo-cloning teammate). Source-of-truth = the unit's
+  manifest (repos self-heal from their git remote); cross-unit replication = intentional independence;
+  consistency **by tooling not storage**; content→CACHE; local-path→**STATE index** (subsumes `@local` +
+  per-repo `local-paths.yml`, D4). **DATA byte-level** finalized (`tags.yml` typed keys · `remotes` ·
+  per-identity standalone `source`). **P12 refined**; opt-in `cco config validate` hook (D9). Coordinate
+  CLI + publish resolution + `llms:`/`repos:` schema/migration → **S**; H6/M3/H7 → **E**.
+- ADR numbers are assigned when each session runs (next free number; last used = **0016**).
