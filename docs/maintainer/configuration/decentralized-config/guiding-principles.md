@@ -4,9 +4,9 @@
 whole "decentralized in-repo config" refactor. **Every domain analysis must validate its
 decisions against this document**; a decision that clashes with a principle is a defect to
 correct (in the decision or, deliberately, in the principle).
-**Grounded in**: ADRs 0001–0010 (this document distills their *cross-cutting* rules; it does not
-restate each ADR). See also `requirements.md`, `design.md`, `resource-coherence-inventory.md`,
-`analysis-roadmap.md`.
+**Grounded in**: ADRs 0001–0010 (P1–P12 distil their *cross-cutting* rules) and **0018–0020 (P13–P17,
+S cycle)**; this document does not restate each ADR. See also `requirements.md`, `design.md`,
+`resource-coherence-inventory.md`, `analysis-roadmap.md`.
 
 > **Why this exists**: the resource→location mapping and the sharing/sync model were scattered
 > across several ADRs and design sections, and destination was being conflated with sync. This
@@ -223,6 +223,74 @@ ADR-0011; install-provenance `source` → ADR-0013/0015 — DATA): the **team-sh
 discriminator** (team-shared ⇒ config, not internal). *(Established by ADR-0014; **placement
 finalized + the central-registry hint corrected by ADR-0016/M** — the by-construction-shared repo
 has no publish boundary, so the coordinate must travel in the versioned config.)*
+
+---
+
+> **P13–P17 added by the S cycle (sharing model unification, 2026-06-18).** These distil the
+> *cross-cutting* rules of ADRs 0018/0019/0020 (as P1–P12 did for 0001–0017). They are recorded as
+> **principles and emergent facts** — including the maintainer's in-session corrections, captured as
+> the *principle that emerged* (not as error→fix history) so future analyses avoid the same biases.
+
+## P13 — Sharing path follows the resource's **role**; the project↔pack asymmetry is inherent
+
+A **project** is a *unit-of-work*: config, code, and repos belong together and share **by construction**
+via the code-repo remote (Axis 1+2, P5) — there is **no publish boundary**. A **pack/template** is a
+*reusable library*: it has no intrinsic code remote and shares via a **dedicated sharing repo** (Axis-2,
+a discrete `publish`/`install` boundary). The difference in *sharing mechanism* follows the difference
+in *resource role*; it is **structural, intentional, and to be kept** — not a UX wart to erase. Reframe
+the mental model (*referenced resources are coordinates; the sharing path follows the role*); do **not**
+unify the *mechanism* (a `cco share` facade is lipstick; packs-as-repos buys illusory uniformity).
+**Nomenclature (ADR-0018 D1):** "config repo" is retired → **config bucket** (`~/.cco` + `<repo>/.cco`)
+and **sharing repo** (the publish/install remote for packs/templates). *Firm constraint:* no rollback to
+a central vault — per-project-in-its-repo is a decided win (ADR-0001). *(Established by ADR-0018.)*
+
+## P14 — Referenced-resource reachability is **unified and boundary-less**
+
+repos, llms, and packs are **one category**: resources a unit references **by name + coordinate**. A
+**team-shared** unit must carry a **reachable coordinate** for each. Because a project has **no publish
+boundary** (P5/P13), reachability is enforced by a **distributed, best-effort, layered** model — **never
+a hard block**: *embed-at-add* (the CLI embeds the coordinate) · *heal-at-resolve/start* (backfill a
+missing coordinate when the clone is in hand — catches hand-edited, IDE-editable config) · *warn-at-
+`cco config validate`* (a deliberate, hook-independent share-readiness check) · *opt-in pre-commit hook*
+· *passive ⚠ at start/list*. This **subsumes the repo-URL question and the "never-published pack" gap
+into one mechanism** (P-URL ≡ pack-reachability). The validity contract: every referenced id has its
+coordinate; ids unique per section; config machine-agnostic (truthful `git diff`, G8). *(ADR-0019 D2.)*
+
+## P15 — A shared resource's **local copy is never its source** (DRY by nature)
+
+Packs (and any DRY referenced resource) are **authored once and reused across N units**; the maintainer's
+update **propagates to all consumers — already locally, before any team-sharing**. Therefore a local
+**materialization** of a referenced resource is a **reference or cache**, *governed by the live source*
+— **never** the source-of-truth. *Discriminator:* the **presence of a coordinate** marks a copy as a
+cache of an upstream (live-source-first); its **absence** marks an authored-here, scope-local source.
+**Internalizing a copy must never become the source** — that severs exactly the propagation the resource
+exists for; internalization is only an explicit **last-layer cache** (or the deliberate `internalize`
+verb that cuts the cord). **Bias to avoid (the in-session correction):** treating a "self-contained /
+vendored copy" as free — it silently breaks DRY/update propagation. *(ADR-0019 D3.)*
+
+## P16 — Source-of-truth follows **publish**; two **parallel axes** (mount vs update)
+
+On `publish`, the **sharing repo becomes the source-of-truth for everyone** (maintainers included); the
+local copy is a **working copy** synced via publish (push) / update (pull) — the git clone↔remote model.
+**`publish` must sync-before-push** (pull + 3-way merge), **never** fast-forward-clobber a co-maintainer.
+Keep two axes **separate**: **resolution/mount** (what runs: local working-copy → fetch-from-url → cache;
+*local has precedence* — you run what you have/edited) is distinct from **update/source-of-truth** (where
+updates come from: the remote, post-publish). Do not conflate "what I run" with "where updates come
+from." *(ADR-0019 D4/D5.)*
+
+## P17 — **Delegate enforcement to git**; cco assists, never gatekeeps
+
+Permission enforcement (who may **write** vs **read**) is the **git host's** job — exactly as **auth** is
+delegated to git (P7). cco is **not in the push path** (sync is plain git + remote, ADR-0008); building a
+cco-native enforcer would require a server-side hook and **contradict** the plain-git model. So:
+**sharing repo** → host read/write split (read-only token can't push); granular *read*-hiding by
+**splitting into multiple repos** per audience; granular *write* via host path-rules (advanced/optional).
+**Project repo** → `<repo>/.cco/` is **co-writable** with the code by design (P5; like Claude Code's own
+`.claude/`); project config is **intentionally unified** (1 project = 1+ teams). The **only** added
+distinction (who may edit `.cco/`) is delegated to **CODEOWNERS + host rulesets**. cco's value-add is
+**setup assistance** (optional `cco config protect` scaffolds CODEOWNERS + emits host instructions),
+**never enforcement**. **Bias to avoid:** "team needs granular permissions → cco should implement them"
+— the intersection with plain-git sync makes a cco-native enforcer self-defeating. *(ADR-0020.)*
 
 ---
 
