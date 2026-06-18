@@ -1,8 +1,17 @@
 # S — Sharing Model Unification: handoff for the next (clean) session
 
+> **✅ RESOLVED — S DONE (2026-06-18).** This scaffold is consumed by **ADR-0018** (sharing surface:
+> nomenclature, 2×2 command matrix, structure-based discovery, asymmetry, solo-adopter A+B), **ADR-0019**
+> (referenced-resource reachability + pack lifecycle: coordinate model extended to packs, working-copy
+> lifecycle, internalize-as-cache), and **ADR-0020** (permissions delegated to git). New cardinal
+> principles **P13–P17** in `guiding-principles.md`. Decisions propagated to `design.md` §2.1/§2.4/§6.2/
+> §7/§12, `analysis-roadmap.md`, `resource-coherence-inventory.md`, `requirements.md`, and the global
+> roadmap. Kept below as history (the S1–S11 scope map and reading order). **Next = implementation (E).**
+
 **Status**: Handoff scaffold for analysis **S** (team-sharing / Config-Repo unification). Produced
-2026-06-17 after M + the M-review refinements (ADR-0016/0017). S runs in its **own clean session**,
-opening by reading `guiding-principles.md` (P1–P12, source of truth) **and this file**.
+2026-06-17 after M + the M-review refinements (ADR-0016/0017). **Resolved 2026-06-18 by
+ADR-0018/0019/0020.** S ran in its **own clean session**, opening by reading `guiding-principles.md`
+(P1–P12, source of truth) **and this file**.
 
 **Read first**: `guiding-principles.md` (esp. **P3** two axes, **P5** sharing asymmetry, **P6**
 hide-internal, **P9** packaging-aware, **P12** referenced-resource coordinates). **Grounded in**: ADRs
