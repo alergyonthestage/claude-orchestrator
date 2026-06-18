@@ -1969,9 +1969,52 @@ sanitization (explicit, preview-first, **never automatic** — non-resolving ≠
 propagates across machines); F43 (`<state>/cco/migration-state` marker + archive authoritative); F44
 (atomic staged migrate). Both repo↔internal **drift states accepted** (self-healing + harmless orphans).
 
-## Clusters 2–5 — OPEN
+## Cluster 2 — Phasing & test-plan re-sync — RESOLVED & PERSISTED (2026-06-18)
 
-See the per-severity findings above. **Cluster 2** also inherits the completeness-critic's HIGH
-finding (existing 35-file `tests/` suite has no teardown plan — the §9 "tests green per phase" invariant)
-and the entrypoint/secrets-env-injection/spec.md items. **Cluster 4/5** own F19 (coordinate-add verbs),
-the `cco config` namespace, and the exact `cco config validate` contract referenced by ADR-0021.
+Resolved with the maintainer; persisted to **design.md §9 (rewritten) + §11 (rewritten)**,
+**analysis-roadmap.md** (E section + dependency mermaid + recommended sequence), and
+**resource-coherence-inventory.md** (items 2/3/5/6 phase homes). Findings closed: **F2, F7, F35, F36**
++ the **completeness-critic HIGH** (existing-suite teardown) + the critic mediums BL3 (per-mount bucket
+map) and secrets-env-injection. (spec.md/architecture.md FR staleness + roadmap/inventory ADR-range
+remain **Cluster 3** doc-drift.)
+
+**Reframing — the decisive maintainer directive.** The design is closed; the *implementation order is
+not bound to the design's chronology*. The order is re-derived from **dependency + reuse + open-closed**:
+build the most-reused substrate first; build every module **once in its final form** (no intermediate
+versions, no schema-migrating a file twice). **Design and UX are unchanged — only the build order.** The
+former "→ E" workstream is **dissolved**; every E item now has a phase home. §9 is now a **6-phase
+dependency-layer map**: **0** substrate · **1** core-local · **2** migration · **3** legacy-cutover ·
+**4** sharing-core · **5** sharing-ext.
+
+Decisions (maintainer = "follow your recommendations" + the open-closed principle):
+1. **F36 / D1 — coordinate schema → Phase 0**, *refined by open-closed*: ALL coordinate **schema +
+   parsers** (repos/llms **and** packs) are built once in the Phase-0 substrate; the Phase-2 migration
+   writes the complete final `project.yml` in **one pass** (pack backfill from DATA `source`, F37) — so
+   **no `project.yml` is ever schema-migrated twice**. Only sharing **behavior** (resolution, publish-
+   embed) lands in Phases 4–5. (Recommendation = Phase 0; open-closed sharpened "repos/llms in P0 / pack
+   in sharing" → "all schema in P0 / behavior in sharing".)
+2. **F2 / D2 — two sharing phases**: Phase 4 sharing-core (manifest deletion · structure discovery ·
+   **sync-before-publish data-loss fix** · 2×2 wiring · nomenclature) + Phase 5 sharing-ext (3-layer
+   pack resolution · internalize-as-cache · bundle-packs · update --check · validate · forget · delete-
+   cascade · S8 · config protect). Now **thin**, because the substrate is pre-built.
+3. **critic-HIGH / D3 — categorized teardown + harness-in-Phase-0**: `helpers.sh`/`mocks.sh` migrate to
+   the new schema **first** (Phase 0); the 35-file suite is classed by disposition (harness · schema/
+   paths/registries · migration/update · legacy-removed · manifest-removed · sharing-rewritten · harness-
+   dependent light-touch · model-agnostic) and each class tied to the phase that touches it — making
+   "tests green per phase" achievable. (Categorized, not a brittle 35-row table.)
+4. **F35 / D4 — facet-model anchoring**, *improved by open-closed*: the classification verdict (settled,
+   ADR-0013/0016) stays; **impl** for H6 + M3 moves **earlier** to the Phase-0 substrate (reused
+   substrate), not Phase 3 — so the **M3→S8 prerequisite is satisfied by construction**; **H7** → Phase 0
+   (index born). H2/M1/M2 → Phase 1; H8 → Phase 2; M4/M5 → Phase 0+2.
+
+**Code-grounded** during the pass: 35 `test_*.sh` auto-run by `bin/test:147`; `helpers.sh:404-411`
+emits the old `repos:\n  - path:` schema; M3 encapsulated behind `remote_get_url/get_token/
+resolve_token_for_url` (5 downstream callers unaffected); H6 paths at `paths.sh:46-60`; sync-before-
+publish defect at `cmd-pack.sh:1024` (`git push origin HEAD`, no fetch/merge).
+
+## Clusters 3–5 — OPEN
+
+See the per-severity findings above. **Cluster 3** = doc drift (incl. spec.md/architecture.md FR
+staleness + roadmap/inventory ADR-range, inherited from the critic). **Cluster 4/5** own F19 (coordinate-
+add verbs), the `cco config` namespace, and the exact `cco config validate` contract referenced by
+ADR-0021. **Next session = Cluster 3** (mostly mechanical edits; clean session preferred).

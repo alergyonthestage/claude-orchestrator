@@ -230,11 +230,18 @@ whole body as one. **Run in a clean session, ideally with parallel agents on dif
 `reviews/<date>-impl-readiness-review.md` (severity-ranked findings + maintainer-decision flags).
 **Does NOT** write code or re-open settled decisions without a principle-level reason. **Then → E.**
 
-### E — Review follow-ups (implementation-detail)  ·  status: TODO (during/just-before implementation; after V)
-From `reviews/16-06-2026-design-coherence-review.md`, not blocking Phase 0: H2 (reminder-aggregator cost),
-H7 (index concurrency & namespacing), M1/M2 (sync edge cases + sync-state lifecycle), H8 (join Case-C),
-M4/M5 (extra_mounts schema/migration). Best resolved against real code during implementation. (H5/H6/M3
-are absorbed by M/R3.)
+### E — Implementation  ·  status: DISSOLVED into the dependency-layered phase map (design.md §9, Cluster 2, 2026-06-18)
+The former "E" workstream is **no longer a separate timeline**. Cluster 2 of the V impl-readiness review
+re-derived the implementation order from **dependency + reuse + open-closed** (build the most-reused
+substrate first; build every module once in its final form) — design and UX unchanged, only the build
+order. Every former "→ E" item now has a **phase home** in design.md §9 (Phase 0 substrate · 1 core ·
+2 migration · 3 cutover · 4 sharing-core · 5 sharing-ext). Carried-item anchors: **H7** (index
+concurrency/namespacing) → Phase 0 (where the index is born); **H6** (`base`/`meta`→STATE merge-paths)
+and **M3** (remotes DATA/STATE split) → Phase 0 substrate (reused by update + sync-before-publish; M3
+satisfies the Phase-5 S8 invariant by construction) — *classification absorbed by M/R3*; **H2**
+(reminder-aggregator cost), **M1/M2** (sync edge cases + sync-state lifecycle) → Phase 1; **H8** (join
+Case-C) → Phase 2; **M4/M5** (extra_mounts schema/migration) → Phase 0 (schema) + Phase 2 (migration).
+Test contracts + existing-suite teardown: design.md §11.
 
 ---
 
@@ -256,7 +263,7 @@ flowchart LR
   M --> S
   C4 -.-> T["T · RD-triggers / R-state-sync (future); cat-4 ∩ P8 sync transport"]
   S --> V["V · impl-readiness review (NEXT) — whole-scope validation, parallel perspectives"]
-  V --> E["E · impl: manifest deletion, sync-before-publish, 2×2 wiring, schema+migration, cco config protect"]
+  V --> E["impl · dependency-layered phases (design.md §9)<br/>P0 substrate · P1 core · P2 migration · P3 cutover · P4 sharing-core · P5 sharing-ext"]
   V --> T
   M -.-> E
 ```
@@ -266,7 +273,8 @@ per-unit/`package.json` model; DATA byte-level; STATE index subsumes @local; C1�
 (ADR-0018/0019/0020 — sharing unification: 2×2 matrix, pack coordinates + reachability P14, DRY P15,
 working-copy lifecycle P16, permissions delegated-to-git P17; manifest-removal realized; solo-adopter
 A+B)** → **V (NEXT — impl-readiness review: whole-scope validation, parallel perspectives, read-only
-gate)** → E (impl) → (T future). **Config + sharing design CLOSED; next = V then E.**
+gate)** → impl (dependency-layered phases, design.md §9; "E" dissolved, Cluster 2) → (T future).
+**Config + sharing design CLOSED; V running cluster-by-cluster — Cluster 2 (phasing & test-plan) DONE.**
 
 ## Notes
 - R1 is **resolved-partial** (ADR-0011): tag *nature* fixed (CLI-canonical → internal); the

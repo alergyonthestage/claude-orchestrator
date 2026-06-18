@@ -184,14 +184,18 @@ Section "Vault Simplification → Decentralized In-Repo Config" already exists (
    `package.json` model; ADR-0016 D2), **not** a central registry, **not** CACHE, **not** cat-4. Same
    category as project **repo URLs**: persist the URL as a manifest coordinate (closes the Axis-1
    auto-resolve gap; for repos the clone's git remote is the self-healing source of truth). Cross-unit
-   consistency is **tooling-enforced** (`cco config coords`, ADR-0016 D3), not a central store. Resolve
-   mechanism + publish-boundary resolution + `llms:`/`repos:` schema/migration → **S**. Update base
-   template comments accordingly. Hand-curated llms is **not** supported (content is re-fetchable).
+   consistency is **tooling-enforced** (`cco config coords`, ADR-0016 D3), not a central store. **Phase
+   homes (Cluster 2, corrects the earlier "→ S" mis-routing — F36):** the `llms:`/`repos:` coordinate
+   **schema + parsers** → **Phase 0** (substrate; by P11(a) they are needed without team-sharing —
+   auto-resolve, clone-from-`url`, re-fetch); the **resolve mechanism** → **Phase 1**; **publish-
+   boundary resolution** → **Phase 4** (sharing). Update base template comments accordingly. Hand-
+   curated llms is **not** supported (content is re-fetchable).
 3. **H5 project-config inventory — RESOLVED (ADR-0016 D7/D8)**: project `mcp.json`/`setup.sh`/
    `mcp-packages.txt` are **project config** → `<repo>/.cco/`; the framework-**generated** `.cco/managed/`
    (browser/github/policy JSON) follows F1 → **CACHE** `<cache>/cco/projects/<id>/managed/`, overlaid
    `:ro`. The remaining `project.yml` **container mount path** + `init-workspace` rw write-back
-   (`/workspace/.claude/project.yml` vs `/workspace/project.yml`) is an impl detail → **E**.
+   (`/workspace/.claude/project.yml` vs `/workspace/project.yml`) → **Phase 0** (compose mount bucket
+   map, BL3; the container side of `entrypoint.sh` is the preserved invariant).
 4. **`.cco/claude-state/` (transcripts) and `memory/`** both become STATE under
    `<state>/cco/projects/<id>/` (ADR-0007 + 0009) — neither stays in the repo.
 5. **Internal metadata (`source`, `base/`, `meta`, `pack-manifest`, remotes registry+tokens)**:
@@ -204,10 +208,16 @@ Section "Vault Simplification → Decentralized In-Repo Config" already exists (
    layout RESOLVED (ADR-0016/M)**: DATA = `tags.yml` (typed keys) · `remotes` · per-identity standalone
    `source` files (upstream `url+ref` only, `required`); STATE `index` **subsumes** `@local` + per-repo
    `local-paths.yml` (D4); STATE `/update` (`base/`/`meta`, H6) vs `/session` (memory/transcripts);
-   `backups/` → STATE (C1). H6 merge-path remap + M3 `cmd-remote.sh` decoupling → **E**.
+   `backups/` → STATE (C1). **H6** merge-path remap + **M3** `cmd-remote.sh` decoupling → **Phase 0
+   substrate** (§9, Cluster 2 — both are reused substrate: H6 by `cco update` + sync-before-publish,
+   M3 satisfies the Phase-5 S8 no-token-leak invariant by construction; the 5 downstream callers
+   consume the public helpers, unaffected).
 6. **Pack references & lifecycle (ADR-0019)**: `packs:` join the **coordinate model** (`name` +
-   optional `url`/`ref`/`resource`) — schema change + migration of name-only `project.yml`/`pack.yml`
-   (→ E). New optional **`<repo>/.cco/packs/<name>/`** location: project-local **authored** pack (no
+   optional `url`/`ref`/`resource`). **Phase homes (Cluster 2, open-closed):** the pack **schema +
+   parser** → **Phase 0** (built once with repos/llms, so no parser rewrite); the bare-list→map
+   **migration** (backfill `url`/`ref`/`resource` from the installed pack's DATA `source`, absent →
+   authored-in-repo, F37) → **Phase 2** (one complete `project.yml` write, no double migration);
+   pack **resolution behavior** → **Phase 4–5**. New optional **`<repo>/.cco/packs/<name>/`** location: project-local **authored** pack (no
    coordinate = source) **or** last-layer **cache** of a referenced pack (has coordinate). Resolution
    is **two-axis**: mount (`~/.cco/packs` → fetch-from-`url` → `<repo>/.cco/packs` cache) vs
    update/source-of-truth (sharing repo post-publish, **working-copy** model). **Defect to fix**:
