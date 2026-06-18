@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-06-18 (decentralized-config: ALL config **and sharing** analyses resolved — RD-* + R1–R4 + Cat-4 + M + **S**, ADRs 0005–**0021**; 4-bucket taxonomy + coordinate-per-unit + sharing unification [2×2 matrix, pack coordinates, reachability, working-copy lifecycle, permissions delegated-to-git] + principles **P1–P17**; **config + sharing design CLOSED. Impl-readiness review (V) DONE** — `reviews/18-06-2026-impl-readiness-review.md`, 58 findings/37 decisions, being resolved **cluster by cluster**: Cluster 1 RESOLVED → ADR-0021 + ADR-0006/0009/0010; Clusters 2–5 OPEN [see `W-handoff-cluster-resolution.md`]. Next = Cluster 2 → then implementation (E); T future**).
+> Last updated: 2026-06-18 (decentralized-config: ALL config **and sharing** analyses resolved — RD-* + R1–R4 + Cat-4 + M + **S**, ADRs 0005–**0021**; 4-bucket taxonomy + coordinate-per-unit + sharing unification [2×2 matrix, pack coordinates, reachability, working-copy lifecycle, permissions delegated-to-git] + principles **P1–P17**; **config + sharing design CLOSED. Impl-readiness review (V) DONE** — `reviews/18-06-2026-impl-readiness-review.md`, 58 findings/37 decisions, being resolved **cluster by cluster**: Cluster 1 RESOLVED → ADR-0021 + ADR-0006/0009/0010; Cluster 2 RESOLVED → impl order re-derived (dependency+reuse+open-closed) into a 6-phase dependency-layer map, design §9/§11 rewritten; Clusters 3–5 OPEN [see `W-handoff-cluster-resolution.md`]. Next = Cluster 3 → then implementation; T future**).
 >
 > **Note**: Sprint entries are historical. Path references (e.g., `.cco-meta`, `.cco-source`) in older
 > sprints reflect the layout at the time of writing. See Sprint 8 and the `.cco/` consolidation
@@ -82,12 +82,16 @@ coordinates + reachability, working-copy lifecycle, permissions delegated-to-git
 **V DONE (2026-06-18)** — multi-agent ultracode review (10 lenses → adversarial verify → dedup → option
 analysis → critic) produced **`reviews/18-06-2026-impl-readiness-review.md`** (58 findings + 5 critic;
 37 decisions). Findings are being resolved **cluster by cluster** with the maintainer, persisted into
-the ADRs/design before E. **Cluster 1 (migration safety) RESOLVED & PERSISTED** → **new ADR-0021**
-(resource lifecycle: `cco init --migrate` / `cco forget` / F59 cleanup) + ADR-0006/0009/0010 + design
-§7/§9/§11 + requirements FR-M1/M2. **Clusters 2–5 OPEN** (phasing & test-teardown · doc-resync ·
-coordinate model · command/UX). **Next session = Cluster 2 in a clean session** — see
-`W-handoff-cluster-resolution.md`. **Then implementation (E)** (design §9 phases, re-validated by
-Cluster 2). T is future.
+the ADRs/design before implementation. **Cluster 1 (migration safety) RESOLVED & PERSISTED** → **new
+ADR-0021** (resource lifecycle: `cco init --migrate` / `cco forget` / F59 cleanup) + ADR-0006/0009/0010
++ design §7/§9/§11 + requirements FR-M1/M2. **Cluster 2 (phasing & test-plan) RESOLVED & PERSISTED**
+(2026-06-18, commit 0e640fb): impl order re-derived from **dependency + reuse + open-closed** (design +
+UX unchanged) → the "→ E" workstream is **dissolved** into a **6-phase dependency-layer map** (P0
+substrate · P1 core-local · P2 migration · P3 legacy-cutover · P4 sharing-core · P5 sharing-ext); design
+§9/§11 rewritten (incl. existing 35-file test-suite teardown) + analysis-roadmap/inventory phase-homes.
+**Clusters 3–5 OPEN** (doc-resync · coordinate model · command/UX). **Next session = Cluster 3 in a
+clean session** — see `W-handoff-cluster-resolution.md`. **Then implementation** (design §9 dependency-
+layered phases). T is future.
 **Priority**: 0 (next major work). **Supersedes**: branch-switch real-isolation
 model in `../../configuration/vault/profile-isolation-design.md` (v2) **and** the
 central-vault project store.

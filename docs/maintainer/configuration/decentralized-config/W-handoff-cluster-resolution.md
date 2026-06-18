@@ -2,10 +2,11 @@
 
 **Status**: The impl-readiness review (gate **V**) is **DONE**. Findings are resolved **cluster by
 cluster** with the maintainer; each agreed resolution is persisted into the ADRs/design/requirements
-before moving on. **Cluster 1 (migration safety) is RESOLVED & PERSISTED.** Clusters 2–5 are OPEN —
-this file lets a **fresh clean session** resume without losing the workflow results, the method, or the
-remaining work. Produced 2026-06-18 on branch `feat/vault/decentralized-config` (commits **local**,
-pushed from the maintainer's Mac).
+before moving on. **Clusters 1 and 2 are RESOLVED & PERSISTED.** Clusters 3–5 are OPEN — **next session
+= Cluster 3** (doc drift / re-sync; mostly mechanical edits, clean session preferred). This file lets a
+**fresh clean session** resume without losing the workflow results, the method, or the remaining work.
+Produced 2026-06-18 on branch `feat/vault/decentralized-config` (commits **local**, pushed from the
+maintainer's Mac).
 
 ---
 
@@ -48,16 +49,28 @@ corrections are in the report's Cluster Resolution Log. Verbs decided: **`cco in
 (top-level `cco migrate` dropped), **`cco forget <project>`**, **`cco config validate [--fix]`** (orphan
 sanitization, explicit/preview-first/never-automatic).
 
+## 3b. Cluster 2 — Phasing & test-plan re-sync — RESOLVED & PERSISTED (2026-06-18, commit 0e640fb)
+
+Closed `F2 F7 F35 F36` + **critic HIGH** (existing-suite teardown) + critic mediums **BL3** (per-mount
+bucket map) and **secrets env-injection**. The **decisive maintainer directive**: now that the design is
+closed, the **implementation order is not bound to the design's chronology** — re-derive it from
+**dependency + reuse + open-closed** (build the most-reused substrate first; build every module **once**
+in its final form; never schema-migrate a file twice). **Design and UX unchanged — only the build
+order.** The "→ E" workstream is **dissolved** into a **6-phase dependency-layer map**: **0** substrate ·
+**1** core-local · **2** migration · **3** legacy-cutover · **4** sharing-core · **5** sharing-ext.
+Open-closed sharpened the report's recommendations: ALL coordinate schema+parsers (repos/llms **and**
+packs) in Phase 0; the Phase-2 migration writes the complete final `project.yml` in one pass (no double
+migration, F37 backfill); **H6 + M3 move to the Phase-0 substrate** (reused; M3 satisfies the Phase-5 S8
+invariant by construction); H7→P0. §11 now carries the **categorized teardown** of the 35-file suite
+(harness `helpers.sh`/`mocks.sh` migrates first in P0). Persisted: **design.md §9/§11 rewritten** +
+§6.2/§12 xrefs; analysis-roadmap (E dissolved + mermaid + sequence); inventory items 2/3/5/6 phase-homes;
+review Cluster-Resolution-Log. *(The critic mediums spec.md/architecture.md FR-staleness + roadmap/
+inventory ADR-range are doc-drift → handled in **Cluster 3**.)*
+
 ## 4. Clusters still OPEN (the work remaining)
 
-Finding IDs reference the report. Present per cluster, decide, persist.
+Finding IDs reference the report. Present per cluster, decide, persist. **Next = Cluster 3.**
 
-- **Cluster 2 — Phasing & test-plan re-sync** (`F2 F7 F35 F36` + **critic HIGH**: the existing 35-file
-  `tests/` suite + `helpers.sh` old-schema harness has **no teardown plan** → the §9 "tests green per
-  phase" invariant is unachievable; + critic mediums: entrypoint↔compose container-path contract, global
-  secrets/OAuth env-injection re-point, spec.md/architecture.md FR-level staleness, roadmap ADR-range).
-  §9 phases 0–3 predate the S/coordinate cycle and ADR-0021 — produce an updated phase map (note already
-  left in design.md §11). **Recommended:** Phase 4 sharing-core + Phase 5 sharing-ext (report F2).
 - **Cluster 3 — Doc drift / re-sync** (mostly mechanical `edit`s): `F3` (requirements.md residual stale
   spots beyond what Cluster 1 touched), `F20` (top-level README), `F21` (internal/tutorial subtree),
   `F22 F23 F24` (early-ADR forward-annotations), `F30 F31 F32 F33` (user-doc realignment + "Config Repo"
@@ -82,5 +95,5 @@ Finding IDs reference the report. Present per cluster, decide, persist.
 
 ## 6. Preference
 
-Tackling Cluster 2 (or any further cluster) in a **fresh clean session** is preferred (context hygiene);
+Tackling Cluster 3 (or any further cluster) in a **fresh clean session** is preferred (context hygiene);
 this handoff + the report + the persisted ADRs carry everything forward.
