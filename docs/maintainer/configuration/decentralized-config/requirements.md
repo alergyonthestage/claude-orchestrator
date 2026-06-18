@@ -267,25 +267,27 @@ flowchart TD
 ## 7. Migration & Constraints
 
 - **FR-M1 (first-run backup)** — On first run of the new version with a legacy vault
-  present, cco archives it to a user-accessible location
-  (`~/.cco/backups/vault-<date>.tar.gz`), informs the user, prints migration
-  instructions, and offers to remove the old vault. No project is migrated
-  automatically. **The backup MUST be all-profiles-complete (see design §9 migration
-  constraints):** legacy profiles are git branches that do not survive into the new model,
-  so the **save/backup step flattens** every profile branch into a **plain, branchless
-  backup** (translating each profile into a **tag** on its resources — profiles → tags),
-  and must capture **uncommitted working-tree changes** of the active profile so no WIP is
-  lost. `cco migrate` then reads the plain backup with a normal retrieve (no branch
-  traversal).
-- **FR-M2 (lazy per-project migrate)** — `cco migrate <project>` is run **inside an
-  already-cloned repo**: instead of `cco init` (clean scaffold), it initializes that
-  repo's `.cco/` from the backup's project config (machine-agnostic), registers it in
-  the index. The repo lands in **Case A**; the user then opts into Case B (`cco sync`)
-  or Case C (`cco init` other repos) or stays in A. Idempotent: never overwrites an
-  existing `.cco/` without confirm. A `cco migrate --all` convenience is **optional and
-  discouraged** (no per-project A/B/C control; would default to B) — evaluate before
-  adding. **Breaking cutover**: no dual-read; the legacy vault is read only from the
-  backup, only by `cco migrate`.
+  present, cco archives it to **`<state>/cco/backups/vault-<date>.tar.gz`** (STATE —
+  machine-local, never synced, `0600`; ADR-0016 D6, **not** the authored-config-only
+  `~/.cco`), informs the user, prints migration instructions, and offers to remove the old
+  vault. No project is migrated automatically. **The backup MUST be all-profiles-complete
+  (refined by V — F1/F9, see design §9):** it is a **raw `tar` of the whole vault dir as-is**,
+  **including `.git` and the `.cco/profile-state/<branch>/` stash shadows**. Because the vault
+  keeps every profile's gitignored secrets/local-paths on disk (active in the working tree,
+  inactive in the shadows) and `tar` ignores `.gitignore`, this single archive captures **all
+  profiles' committed config (via `.git`) AND all profiles' secrets** — no per-branch checkout,
+  no flatten-at-save. The profile→tag flatten happens **at read time** in the migrate mode.
+- **FR-M2 (lazy per-project migrate)** — `cco init --migrate <project> [--sync]` (ADR-0021 — a
+  mode of `cco init`, not a top-level `cco migrate`) is run **inside an already-cloned repo**:
+  instead of a clean `cco init`, it hydrates that repo's `.cco/` from the backup's project
+  config (machine-agnostic), registers it in the index. The repo lands in **Case A** (`--sync`
+  propagates to member repos, symmetric to `cco join --sync`); the user then opts into Case B
+  (`cco sync`) or Case C (`cco init` other repos) or stays in A. Idempotent (atomic & staged,
+  F44): never overwrites an existing `.cco/` or the STATE `memory/` without confirm. A
+  `cco init --migrate --all` convenience is **optional and discouraged** (no per-project A/B/C
+  control; would default to B). **Breaking cutover**: no dual-read; the legacy vault is read
+  only from the backup, only by the migrate mode. **Removal/deregistration** (`cco forget`) +
+  orphan cleanup (`cco config validate`) → ADR-0021.
 - **C1** — bash 3.2 compatibility (macOS default) — no bash-4 constructs.
 - **C2** — `.claude/` must remain at the repo root (Claude Code native).
 - **C3** — Repos may be plain directories (not git). The model must not assume git

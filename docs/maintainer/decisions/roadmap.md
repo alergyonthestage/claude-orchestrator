@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-06-18 (decentralized-config: ALL config **and sharing** analyses resolved — RD-* + R1–R4 + Cat-4 + M + **S**, ADRs 0005–**0020**; 4-bucket taxonomy + coordinate-per-unit + sharing unification [2×2 matrix, pack coordinates, reachability, working-copy lifecycle, permissions delegated-to-git] + principles **P1–P17**; **config + sharing design CLOSED; next = impl-readiness review (V — whole-scope validation, parallel perspectives) → then implementation (E); T future**).
+> Last updated: 2026-06-18 (decentralized-config: ALL config **and sharing** analyses resolved — RD-* + R1–R4 + Cat-4 + M + **S**, ADRs 0005–**0021**; 4-bucket taxonomy + coordinate-per-unit + sharing unification [2×2 matrix, pack coordinates, reachability, working-copy lifecycle, permissions delegated-to-git] + principles **P1–P17**; **config + sharing design CLOSED. Impl-readiness review (V) DONE** — `reviews/18-06-2026-impl-readiness-review.md`, 58 findings/37 decisions, being resolved **cluster by cluster**: Cluster 1 RESOLVED → ADR-0021 + ADR-0006/0009/0010; Clusters 2–5 OPEN [see `W-handoff-cluster-resolution.md`]. Next = Cluster 2 → then implementation (E); T future**).
 >
 > **Note**: Sprint entries are historical. Path references (e.g., `.cco-meta`, `.cco-source`) in older
 > sprints reflect the layout at the time of writing. See Sprint 8 and the `.cco/` consolidation
@@ -72,17 +72,22 @@ graph LR
 
 ### Vault Simplification → Decentralized In-Repo Config (DECIDED 2026-06-11; evolved 2026-06-12; model finalized 2026-06-15)
 
-**Status**: Design APPROVED (2026-06-15); **config design CLOSED through the consolidated taxonomy +
-M-review refinements (2026-06-17)**. Living `requirements.md` + `design.md` are the single source of
-truth; decisions recorded in ADRs **0001–0017** (`../configuration/decentralized-config/decisions/`);
-the role-first analyses (R1–R4, Cat-4, M, **S**) are tracked in `analysis-roadmap.md`; analyses kept as
-history under `.../reviews/`. On `feat/vault/decentralized-config` (commits **local only**, pushed
-from the maintainer's Mac). **S DONE (ADR-0018/0019/0020, 2026-06-18)** — sharing model unified
-(2×2 matrix, pack coordinates + reachability, working-copy lifecycle, permissions delegated-to-git;
-principles P13–P17). **Next = impl-readiness review (V)** — a read-only whole-scope validation gate
-over all ADRs 0001–0020 + P1–P17 + living docs + code, run in a clean session with parallel agents on
-different perspectives (see `V-handoff-impl-readiness-review.md`); **then implementation (E)** (design
-§9 phases, Phase 0 ready). T is future.
+**Status**: Design APPROVED (2026-06-15); **config + sharing design CLOSED**; **impl-readiness review
+(V) DONE (2026-06-18)**. Living `requirements.md` + `design.md` are the single source of truth;
+decisions recorded in ADRs **0001–0021** (`../configuration/decentralized-config/decisions/`); the
+role-first analyses (R1–R4, Cat-4, M, **S**) are tracked in `analysis-roadmap.md`; analyses + the V
+report kept under `.../reviews/`. On `feat/vault/decentralized-config` (commits **local only**, pushed
+from the maintainer's Mac). **S DONE (ADR-0018/0019/0020)** — sharing model unified (2×2 matrix, pack
+coordinates + reachability, working-copy lifecycle, permissions delegated-to-git; principles P13–P17).
+**V DONE (2026-06-18)** — multi-agent ultracode review (10 lenses → adversarial verify → dedup → option
+analysis → critic) produced **`reviews/18-06-2026-impl-readiness-review.md`** (58 findings + 5 critic;
+37 decisions). Findings are being resolved **cluster by cluster** with the maintainer, persisted into
+the ADRs/design before E. **Cluster 1 (migration safety) RESOLVED & PERSISTED** → **new ADR-0021**
+(resource lifecycle: `cco init --migrate` / `cco forget` / F59 cleanup) + ADR-0006/0009/0010 + design
+§7/§9/§11 + requirements FR-M1/M2. **Clusters 2–5 OPEN** (phasing & test-teardown · doc-resync ·
+coordinate model · command/UX). **Next session = Cluster 2 in a clean session** — see
+`W-handoff-cluster-resolution.md`. **Then implementation (E)** (design §9 phases, re-validated by
+Cluster 2). T is future.
 **Priority**: 0 (next major work). **Supersedes**: branch-switch real-isolation
 model in `../../configuration/vault/profile-isolation-design.md` (v2) **and** the
 central-vault project store.

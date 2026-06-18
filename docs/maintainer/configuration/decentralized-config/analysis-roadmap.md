@@ -31,6 +31,23 @@ P13–P17 added by the S cycle) and validates its decisions against it. Decision
 | Resource-coherence inventory (old-model references) | `resource-coherence-inventory.md` |
 | **Guiding principles (foundation, P1–P12)** | `guiding-principles.md` (P11 added by R3/ADR-0013; P12 + ADR-0014 method lesson added by R4; P2 4th-bucket **resolved** = XDG DATA by Cat-4/ADR-0015) |
 | **Preliminary grounding** (destination + sync model) | folded into R1–R4 / M below |
+| **S — sharing model unification** | ADR-0018 / 0019 / 0020 (P13–P17) |
+| **V — impl-readiness review** (whole-scope, multi-agent ultracode) | `reviews/18-06-2026-impl-readiness-review.md` (58 findings + 5 critic; 37 decisions) |
+
+---
+
+## Post-V: cluster-by-cluster resolution (in progress, 2026-06-18)
+
+V findings are resolved **cluster by cluster** with the maintainer, persisted to ADRs/design before E.
+See **`W-handoff-cluster-resolution.md`** for the method + the open clusters.
+
+| Cluster | Scope | Status |
+|---|---|---|
+| 1 — Migration safety | F1/F9/F10/F11/F12/F42/F43/F44 + new F59 | **RESOLVED & PERSISTED** → ADR-0021 (new) + ADR-0006/0009/0010 + design §7/§9/§11 + requirements FR-M1/M2 |
+| 2 — Phasing & test-plan re-sync | F2/F7/F35/F36 + critic (test-suite teardown, entrypoint, secrets-env, spec.md, roadmap) | OPEN (next; clean session) |
+| 3 — Doc drift / re-sync | F3/F20/F21/F22/F23/F24/F30/F31/F32/F33 + critic | OPEN |
+| 4 — Coordinate model & resolution | F4/F6/F14/F15/F16/F17/F29/F37–F41/F45/F48/F56 | OPEN |
+| 5 — Command surface & UX | F13/F18/F19/F25/F26/F27/F34/F46/F47/F49/F50 | OPEN |
 
 ---
 

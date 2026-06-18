@@ -69,10 +69,15 @@ v1; cross-PC / cross-user state sync becomes a dedicated future opt-in feature.*
    BL3, and with transcripts already moving to STATE).
 5. **Publish stays excluded** — now **structurally**: memory is no longer in the repo, so it
    cannot be published. The Domain-B exclusion is preserved by construction.
-6. **Migration preserves it (lossless, AD12).** The vault backup contains
-   `projects/<name>/memory/`; `cco migrate <project>` (Phase 2) copies that project's memory
-   into `<state>/cco/projects/<id>/memory/`. A one-time per-project file copy — no versioning,
-   no branch traversal (the backup is already flattened, design §9).
+6. **Migration preserves it (lossless, AD12).** The vault backup (a raw archive of the whole
+   vault dir incl. `.git` + `profile-state` shadows — ADR-0006 Dec-2, refined by V) contains
+   `projects/<name>/memory/`; `cco init --migrate <project>` (Phase 2, ADR-0021) copies that
+   project's memory into `<state>/cco/projects/<id>/memory/`. A one-time per-project file copy —
+   no versioning. **Non-clobbering on re-run (F11).** Because memory is STATE with no sync, the
+   STATE copy accumulates machine-local auto-memory after the first migrate and is the **only**
+   copy; the migrate copy is therefore **copy-if-missing with confirm-gated overwrite** (the same
+   non-clobbering guard the design applies to `<repo>/.cco/`, extended to the STATE target) —
+   "idempotent" means a safe no-op on re-run, never a blind re-copy that overwrites newer memory.
 7. **Cross-PC / cross-user state sync → future opt-in feature (R-state-sync).** The two useful
    scenarios are recorded but **deliberately deferred** and to be designed separately:
    (a) sync of memory **and** transcripts across one user's machines; (b) sync of memory among

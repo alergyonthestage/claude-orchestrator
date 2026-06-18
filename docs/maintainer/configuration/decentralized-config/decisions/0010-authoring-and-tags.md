@@ -89,10 +89,24 @@ published template); the index stays **paths/repos only** (machine-local, ADR-00
 tags). Clean split: a project's *config* is shared; the user's *tagging* of it is personal.
 
 ### 5. Migration is user-chosen (profiles → tags or not)
-`cco migrate` **prompts the user (CLI)** whether to **convert legacy profiles into tags** —
-seeding each resource's origin profile as a tag value in `~/.cco/tags.yml` — or to **start with
-no tags**. Lossless either way (the backup preserves full history). Because tags are an
-independent new system, this conversion is a one-shot data seed, not a structural coupling.
+Profile→tag conversion is **opt-in and granular**, matching the lazy per-project migration
+(ADR-0006/0021): for **projects**, `cco init --migrate <project>` **prompts the user (CLI)** whether
+to **convert that project's origin profile into a tag** — seeding it in `<data>/cco/tags.yml` (DATA
+bucket — ADR-0015/0016, not `~/.cco`) — or to **start untagged**. For **shared resources** (packs and
+templates, which do not migrate per-project), conversion is **atomic**: when `~/.cco` is populated from
+the backup, the profile-exclusive packs' origin tags are seeded as a set (templates are always-shared
+→ no origin tag). Because tags are an independent new system, this is a one-shot data seed, not a
+structural coupling.
+
+> **What is preserved vs. what is an accepted regression (F42).** Legacy profiles did **two** jobs:
+> (a) *organization* (which resources belong together) and (b) *workspace selection/visibility* (which
+> projects appear when a profile is active). Conversion preserves **(a) as tags**; **(b) has no v1
+> equivalent** and is an **accepted regression** (same precedent as ADR-0009's dropped cross-PC memory
+> sync) — there is no "switch to profile X → these projects appear". `cco list --tag` joins `tags.yml`
+> against the STATE index at read time; under the lazy model a tag is seeded only when its project is
+> migrated (hence resolvable), so "tagged-but-unresolved" is rare — and where it occurs (e.g. a later
+> `cco forget`/manual removal) it is **shown with an `(unresolved)` marker, never hidden** (warn-never-
+> hide, ADR-0019). The migration docs must drop the blanket "lossless" wording for selection.
 
 ## Alternatives Considered
 
