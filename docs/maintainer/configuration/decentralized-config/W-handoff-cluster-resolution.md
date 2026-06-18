@@ -18,8 +18,14 @@ completeness critic; 59 agents) validated the **whole** decentralized-config sco
   blocker, 20 high, 26 medium, 11 nit; 37 decisions) + 5 completeness-critic findings, each with
   location · issue · why · proposed resolution, and **principle-aligned options + a recommendation** for
   every decision-finding. The report's tail has a **Cluster Resolution Log** tracking what is resolved.
+- **`reviews/18-06-2026-impl-readiness-review.json`** — the **raw machine-readable workflow output**
+  (the source the `.md` was generated from; 59-agent run, `.result.findings`/`.options`/`.critic`/
+  `.coverage`, verified byte-complete vs the report). Use it only to re-process/re-generate
+  programmatically; the `.md` is the canonical human+agent-readable form.
 
-**Do not re-run the workflow.** Read the report. Resolve the remaining clusters against it.
+**Do not re-run the workflow.** Read the report (`.md`). Resolve the remaining clusters against it.
+(The per-agent execution transcripts are NOT persisted — they were session-scoped/ephemeral and are
+process, not product; everything decision-relevant is in the report + this archive.)
 
 ## 2. Method (keep using this)
 
@@ -69,7 +75,8 @@ Finding IDs reference the report. Present per cluster, decide, persist.
 ## 5. Reading order for the fresh session
 
 1. `guiding-principles.md` (P1–P17). 2. **This file.** 3. `reviews/18-06-2026-impl-readiness-review.md`
-(esp. the target cluster's findings + the Cluster Resolution Log). 4. The ADRs the cluster touches
+(esp. the target cluster's findings + the Cluster Resolution Log; the sibling
+`…review.json` is the raw machine-readable source if needed). 4. The ADRs the cluster touches
 (latest first: 0021, 0020→0016, then the refinement chains). 5. Code grounding for the cluster
 (`bin/cco`, the relevant `lib/*.sh`). 6. `design.md` sections the cluster edits.
 
