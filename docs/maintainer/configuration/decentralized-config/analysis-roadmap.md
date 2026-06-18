@@ -200,7 +200,20 @@ D6) is a *recommendation*, not a constraint; a more appropriate engine may fit, 
 transversally with the project-sync daemon** (different scopes, possibly shared infra). **Depends on**:
 R1–S settled.
 
-### E — Review follow-ups (implementation-detail)  ·  status: TODO (during/just-before implementation)
+### V — Impl-readiness review (whole-scope validation)  ·  status: NEXT (before E)
+> **Start here**: `V-handoff-impl-readiness-review.md` — scope (all ADRs 0001–0020 + P1–P17 + living
+> docs + code), **8 parallel review perspectives** (cross-ADR/principle coherence; design↔ADR↔req sync;
+> completeness/gaps; ambiguity/impl-readiness; §9 phasing re-validation; code-grounding/feasibility;
+> doc-coherence-sweep readiness; migration/cutover safety), method, reading order.
+**Goal**: a **read-only validation gate** over the *entire* decentralized-config design **before**
+implementation — find inconsistencies, gaps, ambiguities, cross-ADR conflicts, impl-readiness blockers
+on paper (cheap to fix). The design grew across ~20 ADRs + refinement cycles; no pass has validated the
+whole body as one. **Run in a clean session, ideally with parallel agents on different perspectives**
+(multi-modal sweep → adversarial verify → dedup → severity-rank → completeness critic). **Output**:
+`reviews/<date>-impl-readiness-review.md` (severity-ranked findings + maintainer-decision flags).
+**Does NOT** write code or re-open settled decisions without a principle-level reason. **Then → E.**
+
+### E — Review follow-ups (implementation-detail)  ·  status: TODO (during/just-before implementation; after V)
 From `reviews/16-06-2026-design-coherence-review.md`, not blocking Phase 0: H2 (reminder-aggregator cost),
 H7 (index concurrency & namespacing), M1/M2 (sync edge cases + sync-state lifecycle), H8 (join Case-C),
 M4/M5 (extra_mounts schema/migration). Best resolved against real code during implementation. (H5/H6/M3
@@ -225,8 +238,9 @@ flowchart LR
   R2 -- "manifest removal → structure-based discovery" --> S
   M --> S
   C4 -.-> T["T · RD-triggers / R-state-sync (future); cat-4 ∩ P8 sync transport"]
-  S --> T
-  S --> E["E · impl: manifest deletion, sync-before-publish, 2×2 wiring, schema+migration, cco config protect"]
+  S --> V["V · impl-readiness review (NEXT) — whole-scope validation, parallel perspectives"]
+  V --> E["E · impl: manifest deletion, sync-before-publish, 2×2 wiring, schema+migration, cco config protect"]
+  V --> T
   M -.-> E
 ```
 **Recommended sequence**: R1 ✅ → R2 ✅ → R3 ✅ (ADR-0013) → R4 ✅ (ADR-0014) → **Cat-4 ✅ (ADR-0015 —
@@ -234,7 +248,8 @@ flowchart LR
 per-unit/`package.json` model; DATA byte-level; STATE index subsumes @local; C1–C4; H5/H6/M3)** → **S ✅
 (ADR-0018/0019/0020 — sharing unification: 2×2 matrix, pack coordinates + reachability P14, DRY P15,
 working-copy lifecycle P16, permissions delegated-to-git P17; manifest-removal realized; solo-adopter
-A+B)** → (T, E around implementation). **Config + sharing design CLOSED; next = E (impl) / T (future).**
+A+B)** → **V (NEXT — impl-readiness review: whole-scope validation, parallel perspectives, read-only
+gate)** → E (impl) → (T future). **Config + sharing design CLOSED; next = V then E.**
 
 ## Notes
 - R1 is **resolved-partial** (ADR-0011): tag *nature* fixed (CLI-canonical → internal); the

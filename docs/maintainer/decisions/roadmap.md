@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-06-18 (decentralized-config: ALL config **and sharing** analyses resolved — RD-* + R1–R4 + Cat-4 + M + **S**, ADRs 0005–**0020**; 4-bucket taxonomy + coordinate-per-unit + sharing unification [2×2 matrix, pack coordinates, reachability, working-copy lifecycle, permissions delegated-to-git] + principles **P1–P17**; **config + sharing design CLOSED; next = implementation (E) / T future**).
+> Last updated: 2026-06-18 (decentralized-config: ALL config **and sharing** analyses resolved — RD-* + R1–R4 + Cat-4 + M + **S**, ADRs 0005–**0020**; 4-bucket taxonomy + coordinate-per-unit + sharing unification [2×2 matrix, pack coordinates, reachability, working-copy lifecycle, permissions delegated-to-git] + principles **P1–P17**; **config + sharing design CLOSED; next = impl-readiness review (V — whole-scope validation, parallel perspectives) → then implementation (E); T future**).
 >
 > **Note**: Sprint entries are historical. Path references (e.g., `.cco-meta`, `.cco-source`) in older
 > sprints reflect the layout at the time of writing. See Sprint 8 and the `.cco/` consolidation
@@ -79,7 +79,10 @@ the role-first analyses (R1–R4, Cat-4, M, **S**) are tracked in `analysis-road
 history under `.../reviews/`. On `feat/vault/decentralized-config` (commits **local only**, pushed
 from the maintainer's Mac). **S DONE (ADR-0018/0019/0020, 2026-06-18)** — sharing model unified
 (2×2 matrix, pack coordinates + reachability, working-copy lifecycle, permissions delegated-to-git;
-principles P13–P17). **Next = implementation (E)** (design §9 phases, Phase 0 ready); T is future.
+principles P13–P17). **Next = impl-readiness review (V)** — a read-only whole-scope validation gate
+over all ADRs 0001–0020 + P1–P17 + living docs + code, run in a clean session with parallel agents on
+different perspectives (see `V-handoff-impl-readiness-review.md`); **then implementation (E)** (design
+§9 phases, Phase 0 ready). T is future.
 **Priority**: 0 (next major work). **Supersedes**: branch-switch real-isolation
 model in `../../configuration/vault/profile-isolation-design.md` (v2) **and** the
 central-vault project store.
@@ -139,11 +142,13 @@ gate which projects exist on disk or which can be started.
   Key end-state: **config decentralizes** (project→`<repo>/.cco`, personal→`~/.cco`), **internal
   centralizes keyed-by-identity** (DATA/STATE/CACHE), **referenced-resource coordinates embedded
   per-unit in the manifest** (`package.json` model; repos/llms/**packs**), **team-sharing via sharing
-  repos** (packs/templates publish/install; projects ride the repo remote). **Remaining**: **E**
-  (implementation — manifest deletion, structure-based discovery, sync-before-publish, 2×2 wiring,
-  pack-coordinate schema + migration, `cco update --check`, `cco config protect`, S8; + review
-  follow-ups H6/M3/H7), **T** (RD-triggers / R-state-sync / DATA-STATE sync-engine — future), and a
-  **post-v1** analysis for solo-adopter Case C. **Config + sharing design CLOSED.**
+  repos** (packs/templates publish/install; projects ride the repo remote). **Remaining**: **V**
+  (impl-readiness review — whole-scope validation gate before coding; parallel perspectives;
+  `V-handoff-impl-readiness-review.md`), then **E** (implementation — manifest deletion, structure-based
+  discovery, sync-before-publish, 2×2 wiring, pack-coordinate schema + migration, `cco update --check`,
+  `cco config protect`, S8; + review follow-ups H6/M3/H7), **T** (RD-triggers / R-state-sync /
+  DATA-STATE sync-engine — future), and a **post-v1** analysis for solo-adopter Case C. **Config +
+  sharing design CLOSED.**
 - **Coherence review 2026-06-16** (`reviews/16-06-2026-design-coherence-review.md`):
   architecture coherent, Phase 0 ready. Doc-fixes + phase write-downs applied. New
   follow-up analyses raised: reminder-aggregator cost & scoping, project-config inventory
@@ -192,8 +197,13 @@ the 4-bucket taxonomy (ADR-0016) + M-review (ADR-0017) close the **config** desi
 resource's local copy is never its source** (DRY, P15); **working-copy lifecycle + sync-before-publish**
 (P16); **internalize-as-cache** (opt-in, last-layer); **permissions delegated to git** (P17, optional
 `cco config protect`); S8 no-token-leak; opinionated-defaults-as-sharing-repo designed (migrated
-post-impl). Principles **P13–P17** added. **Next = implementation (E)**: manifest deletion + structure-
-based discovery, sync-before-publish fix, 2×2 wiring, pack-coordinate schema + migration, `cco update
+post-impl). Principles **P13–P17** added. **Next = impl-readiness review (V)** — a read-only whole-scope
+validation gate over all ADRs 0001–0020 + P1–P17 + living docs + code, run in a clean session with
+parallel agents on different perspectives (cross-ADR/principle coherence, design↔ADR↔req sync,
+completeness/gaps, ambiguity/impl-readiness, §9 phasing re-validation, code-grounding/feasibility,
+doc-sweep readiness, migration/cutover safety); output a severity-ranked findings report. See
+`V-handoff-impl-readiness-review.md`. **Then implementation (E)**: manifest deletion + structure-based
+discovery, sync-before-publish fix, 2×2 wiring, pack-coordinate schema + migration, `cco update
 --check`, `cco config protect`, S8 checklist; plus the earlier impl-time review follow-ups (H6
 merge-path, M3 remote decoupling, H7 index concurrency, reminder-aggregator, join Case-C). Implement per
 `design.md` §9 phases (Phase 0 ready). **T** (RD-triggers / R-state-sync / DATA-STATE sync-engine) and
