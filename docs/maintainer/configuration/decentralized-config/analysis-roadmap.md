@@ -2,8 +2,8 @@
 
 **Status**: Living tracker (started 2026-06-16). Orders the remaining design analyses by
 dependency/convenience so each runs in its **own clean session** without losing context.
-**Foundation**: every analysis opens by reading **`guiding-principles.md`** (P1–P12, source of truth)
-and validates its decisions against it. Decisions are recorded as ADRs + propagated to `design.md`,
+**Foundation**: every analysis opens by reading **`guiding-principles.md`** (P1–P17, source of truth;
+P13–P17 added by the S cycle) and validates its decisions against it. Decisions are recorded as ADRs + propagated to `design.md`,
 `requirements.md`, and `resource-coherence-inventory.md`.
 
 > **Method (P10 + ADR-0011)**: classify each resource from its **role + problem solved + principles**,
@@ -164,27 +164,33 @@ standalone `source` files (upstream-only, `required`). Also fixed: the **STATE i
 > all 4 buckets incl DATA on any command; `~/.cco` always git-versioned + **public-remote allow+warn
 > (resolves P3)**. Futures F1–F4 → S (Domain-B realignment) / T (DATA-STATE sync-engine).
 
-### S — Sharing model unification  ·  status: READY (R4 + M done — **suggested next**)
-> **Start here**: `S-handoff-sharing-unification.md` — the S scaffold (what S produces S1–S11, what it
-> consumes [ADR-0016 table, R3 shared-surface map, coordinate model], open decisions, reading order).
-**Goal**: unify/simplify team-sharing (Config Repos = a third repo as remote; access via git token /
-public). Confirm `~/.cco` = private-only; team-sharing always via a Config Repo. Evaluate cco's
-**opinionated defaults as an official public Config Repo, shipped separately** (R-pkg / R-update-native).
-**Also owns**: the **manifest-removal refactor (ADR-0012)** — replace `manifest.yml` discovery/validation
-in `project/pack install` with **structure-based discovery** (`ls templates/*/`, `ls packs/*/`), replace
-the empty-repo `manifest_init` with a `.gitkeep`/first-resource commit, and decide whether any **minimal**
-repo identity/catalogue surface is worth re-introducing (default: no, YAGNI); the **Axis-1 public-repo
-question** (P3 note — forbid/allow/escape-hatch for a public personal remote); the **A4 fallback option
-(B)** (solo adopter: project `.cco/` under `~/.cco`, outside the repo — index `config_path` field,
-`~/.cco/projects/` re-expansion, `cco start` discovery/precedence; post-v1). **Now also owns (from
-ADR-0016)**: the **coordinate CLI** (`cco repo/llms add`, `cco config coords --diff/--sync/--sanitize`),
-the **opt-in `cco config validate`** pre-commit hook (D9), and the **publish-boundary resolution** of
-the per-unit coordinates. **From ADR-0017**: the **`~/.cco` public-remote warning** mechanism (D4) and
-the **Domain-B Config-Repo structure realignment** (F3 — clean the team-shared repo layout to the
-decentralized model: manifest removed, coordinates resolve-at-publish, structure-based discovery), as
-part of the publish/install/update/export revision + opinionated-defaults-as-package. **Consumes**:
-ADR-0016's authoritative table + R3's shared-surface map. **Depends on**: R4, M (both done). **Output**:
-ADR(s) / a dedicated sharing design doc.
+### S — Sharing model unification  ·  status: DONE (ADR-0018 + ADR-0019 + ADR-0020, 2026-06-18)
+> **Scaffold (history)**: `S-handoff-sharing-unification.md` (S1–S11 scope, consumed inputs, open
+> decisions, reading order) — now resolved by ADR-0018/0019/0020.
+**Resolved** across three ADRs:
+- **ADR-0018 (sharing surface)**: nomenclature **config bucket vs sharing repo** ("config repo"
+  retired); a symmetric **2×2 command matrix** (`publish`↔`install` for packs/templates; `export`↔
+  `import` tar for all incl. projects); **projects do NOT publish/install** — `<repo>/.cco` rides the
+  code-repo remote (P5/**P13**), the asymmetry is **inherent & kept** (reject `cco share` facade /
+  packs-as-repos); sharing-repo structure = `packs/`+`templates/` only, **structure-based discovery**
+  (manifest removed, ADR-0012), init-at-first-publish, merge-on-existing; **`cco update --check`**;
+  **solo-adopter A+B v1, C post-v1** with reserved hooks (the A4 fallback folds here).
+- **ADR-0019 (reachability & pack lifecycle)**: coordinate model **extended to packs**; **unified
+  boundary-less reachability** (P-URL ≡ pack-reachability; layered embed/heal/validate, never
+  hard-block, **P14**); **a shared resource's local copy is never its source** (DRY, **P15** — the
+  maintainer correction); **working-copy lifecycle + sync-before-publish** fix (**P16**); **two
+  resolution axes** (mount local-first vs update source-of-truth); **internalize-as-cache** (opt-in,
+  last-layer, the sole cache exception; `export --bundle-packs` for tar dependency-closure); templates
+  scaffold-only; the **coordinate CLI / `cco config validate`** reachability contract.
+- **ADR-0020 (permissions)**: enforcement **delegated to git** (**P17**, like auth P7) — cco assists
+  (optional `cco config protect`), never gatekeeps; sharing-repo whole-repo split + repo-splitting for
+  read granularity; project-repo `<repo>/.cco` co-writability accepted; **S8 no-token-leak** invariant
+  confirmed.
+**Principles persisted**: `guiding-principles.md` **P13–P17**. **Propagated**: `design.md`
+§2.1/§2.4/§6.2/§7/§12 + this roadmap + `resource-coherence-inventory.md` + `requirements.md` +
+`docs/maintainer/decisions/roadmap.md`. **Hands to**: **E** (impl: manifest deletion, structure-based
+discovery, sync-before-publish, 2×2 wiring, pack-coordinate schema + migration, `cco update --check`,
+`cco config protect`, S8 checklist), **a dedicated post-v1 analysis** (solo-adopter Case C).
 
 ### T — RD-triggers / R-state-sync  ·  status: FUTURE
 Background daemon / native hooks / git hooks vs manual-only (v1 = manual). Owns `~/.cco` background
@@ -215,18 +221,20 @@ flowchart LR
   C4 --> M["M · consolidated mapping (done, ADR-0016)<br/>4-bucket; coord per-unit; C1-C4 fixed; H5/H6/M3"]
   R3 --> M
   R4 --> M
-  R4 --> S["S · sharing unification (suggested next; + coord CLI/validate, manifest-removal, A4, Axis-1 public-repo)"]
+  R4 --> S["S · sharing unification (done, ADR-0018/0019/0020)<br/>2×2 matrix; pack coordinates; reachability P14; DRY P15; permissions P17"]
   R2 -- "manifest removal → structure-based discovery" --> S
   M --> S
   C4 -.-> T["T · RD-triggers / R-state-sync (future); cat-4 ∩ P8 sync transport"]
   S --> T
-  M -.-> E["E · review follow-ups (impl-time)"]
+  S --> E["E · impl: manifest deletion, sync-before-publish, 2×2 wiring, schema+migration, cco config protect"]
+  M -.-> E
 ```
 **Recommended sequence**: R1 ✅ → R2 ✅ → R3 ✅ (ADR-0013) → R4 ✅ (ADR-0014) → **Cat-4 ✅ (ADR-0015 —
 4th bucket EXISTS = XDG DATA)** → **M ✅ (ADR-0016 — authoritative table; 4-bucket §2 rewrite; coordinate
-per-unit/`package.json` model; DATA byte-level; STATE index subsumes @local; C1–C4; H5/H6/M3)** → **S**
-(suggested next: coordinate CLI + `cco config validate`; publish-boundary resolution; manifest-removal
-refactor; repo URL persistence) → (T, E around implementation).
+per-unit/`package.json` model; DATA byte-level; STATE index subsumes @local; C1–C4; H5/H6/M3)** → **S ✅
+(ADR-0018/0019/0020 — sharing unification: 2×2 matrix, pack coordinates + reachability P14, DRY P15,
+working-copy lifecycle P16, permissions delegated-to-git P17; manifest-removal realized; solo-adopter
+A+B)** → (T, E around implementation). **Config + sharing design CLOSED; next = E (impl) / T (future).**
 
 ## Notes
 - R1 is **resolved-partial** (ADR-0011): tag *nature* fixed (CLI-canonical → internal); the
@@ -278,4 +286,15 @@ refactor; repo URL persistence) → (T, E around implementation).
   idempotent; **`~/.cco` always git-versioned**, remote opt-in private-default, **public allow+warn →
   resolves P3**. Futures F1 (local-file llms) · F2 (Case-C convergence merge, reuse 3-way) → §12; F3
   (Domain-B Config-Repo realignment) → **S**; F4 (DATA/STATE sync-engine choice) → **T**.
-- ADR numbers are assigned when each session runs (next free number; last used = **0017**).
+- S is **DONE** (ADR-0018/0019/0020, 2026-06-18): sharing model unified. **Config bucket vs sharing
+  repo** nomenclature; **2×2 command matrix** (projects ride the repo remote — no publish/install,
+  the asymmetry is inherent & kept, **P13**); **coordinate model extended to packs** with **unified
+  boundary-less reachability** (layered embed/heal/validate, never hard-block, **P14**); **a shared
+  resource's local copy is never its source** (DRY, **P15** — the maintainer's in-session correction
+  captured as principle); **working-copy lifecycle + sync-before-publish** (**P16**); **two resolution
+  axes** (mount local-first vs update source-of-truth); **internalize-as-cache** (opt-in, last-layer,
+  the sole cache exception); templates scaffold-only; **permissions delegated to git, cco assists**
+  (**P17**); S8 no-token-leak confirmed. Manifest-removal (ADR-0012) is realized via structure-based
+  discovery. Opinionated-defaults-as-sharing-repo (F-opin) designed, migrated post-impl. New principles
+  **P13–P17** added. Impl → **E**; solo-adopter Case C → dedicated post-v1 analysis.
+- ADR numbers are assigned when each session runs (next free number; last used = **0020**).

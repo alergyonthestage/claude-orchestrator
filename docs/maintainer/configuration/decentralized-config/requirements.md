@@ -98,7 +98,7 @@ flowchart LR
 | **AD7** | **Sync is a plain copy (N1).** `cco sync` copies a source repo's committed `.cco/` set into target repos. No merge engine, no `sync-base`, no commit-time heuristic, no peer/root modes, no confirm/last-commit-wins policies. Works on the **same machine over the filesystem** (so it does not require repos to be git). Divergence between repos is allowed and visible; the user picks the source. |
 | **AD8** | **Git is the only cross-PC transport.** A repo's `.cco/` travels on the repo's own git remote (clone/pull brings it). Concurrent cross-PC edits surface as ordinary git merge conflicts the user resolves in their IDE. No cco-specific cross-PC reconciliation. A non-git repo simply does not travel across machines (sync within a project on one machine still works — AD7). |
 | **AD9** | **Config / state / cache are separated by location.** The committed `<repo>/.cco/` holds **only** machine-agnostic user config. Machine/runtime **state** (generated compose, claude-state, auto-memory (ADR-0009), the local-path index, temp) and **cache** (llms, installed resources) live in **system directories outside the repo**, hidden from the user. `secrets.env` is the one exception that stays in the repo (gitignored) because the user edits it by hand. Exact filesystem locations: resolved by ADR-0007 (XDG state/cache). |
-| **AD10** | A central **`~/.cco/`** holds the user's **global resources** (authored packs, templates, global `.claude`) as a personal git store, plus references. Two strictly-separated sync domains: **A** personal multi-PC (the user's own `~/.cco` + per-repo git) and **B** team/external sharing (Config Repos publish/install — unchanged). `~/.cco` **versioning model is resolved by ADR-0008** (explicit manual commits + allowlist + reminders); only the optional background/managed auto-sync is deferred (RD-triggers). |
+| **AD10** | A central **`~/.cco/`** holds the user's **global resources** (authored packs, templates, global `.claude`) as a personal git store, plus references. Two strictly-separated sync domains: **A** personal multi-PC (the user's own `~/.cco` + per-repo git) and **B** team/external sharing (**sharing repos**, publish/install of packs/templates — realigned by ADR-0018/0019/0020; projects ride the code-repo remote, P5/P13). `~/.cco` **versioning model is resolved by ADR-0008** (explicit manual commits + allowlist + reminders); only the optional background/managed auto-sync is deferred (RD-triggers). |
 | **AD11** | cco may later be distributed as an installable package (npm/npx) + image registry. **This design stays packaging-aware**: no tool code in any `.cco/`, no requirement to clone the cco source to run; hooks (if any) invoke `cco` by PATH. Detailed packaging design is a separate workstream (§9). |
 | **AD12** | **Breaking cutover + lazy per-project migration.** The refactor is a **direct breaking change**: no legacy runtime support, no dual-read, no deprecation window (the user base is tiny and known; migration is lossless). On first run of the new version with a legacy vault present, cco **backs up the vault** to a user-accessible location, tells the user, and offers to remove the old vault. Migration is then **lazy and per-project**: inside an already-cloned repo, `cco migrate <project>` initializes that repo's `.cco/` from the backup (instead of `cco init` clean), leaving the project in Case A; the user then chooses Case A/B/C via `cco sync`/`cco init`. See ADR-0006. |
 
@@ -250,9 +250,14 @@ flowchart TD
   divergence (the old clean-tree gate is now advisory — no branch switch to protect).
   Sync transports commits, never fabricates them; background/managed auto-sync is
   deferred to **RD-triggers**.
-- **FR-C4 (Domain B)** — Team/external sharing via Config Repos
-  (`publish`/`install`/`update`/`export`) is **unchanged**. Authoring of global
-  resources happens **directly in `~/.cco`** (opened in an IDE, or via the rehomed
+- **FR-C4 (Domain B)** — Team/external sharing **realigned by the S cycle (ADR-0018/0019/0020)**:
+  the term "Config Repo" → **sharing repo** (config bucket vs sharing repo); a symmetric **2×2**
+  surface (`publish`↔`install` for packs/templates; `export`↔`import` tar for all incl. projects);
+  **projects do NOT publish/install** (they ride the code-repo remote, P5/P13); **structure-based**
+  sharing-repo discovery (manifest removed); referenced resources (repos/llms/**packs**) travel as
+  **coordinates** with layered reachability (P14); pack **working-copy lifecycle** + sync-before-publish
+  (P16); **permissions delegated to git** (P17). `cco update --check` lists available updates. Authoring
+  of global resources happens **directly in `~/.cco`** (opened in an IDE, or via the rehomed
   `config-editor` agent); cco only scaffolds (`pack/template create`) — ADR-0010.
   Per-user **tags** (`~/.cco/tags.yml`) organize resources locally and sync across the
   user's PCs (Domain A) but are **never** shared via Domain B.

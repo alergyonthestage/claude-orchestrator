@@ -1,7 +1,8 @@
 # Resource-Coherence Inventory — Decentralized In-Repo Config
 
 **Status**: Implementation-prep checklist (DESIGN phase, 2026-06-16; open items updated by M/ADR-0016,
-2026-06-17). Living artifact — update as items are completed during implementation.
+2026-06-17; **sharing/pack/permission items by S/ADR-0018-0020, 2026-06-18**). Living artifact —
+update as items are completed during implementation.
 **Method**: 3 code-grounded analyst agents in parallel (templates/skills/agents · docs/roadmap ·
 managed/infra/CLAUDE.md), then synthesis. No files modified by the analysis.
 **Scope**: every resource **outside the core CLI** (`lib/*.sh`, `bin/cco` — covered by the
@@ -66,7 +67,7 @@ Its `project.yml`, `CLAUDE.md`, `config-safety` rule, and both skills are built 
 
 | Resource (file:line) | Old-model reference | Required change | Phase |
 |---|---|---|---|
-| `templates/project/base/project.yml:16` | `# Reference packs from user-config/packs/<name>/pack.yml` | `~/.cco/packs/<name>/pack.yml` | 1 |
+| `templates/project/base/project.yml:16` | `# Reference packs from user-config/packs/<name>/pack.yml` | Packs referenced by **name + OPTIONAL coordinate** (`url`/`ref`/`resource`, ADR-0019 D1); resolved into `~/.cco/packs/<name>`; show the coordinate schema + the project-local `<repo>/.cco/packs/` option | 1 |
 | `templates/project/base/project.yml:25` | `# Files are stored in user-config/llms/ … mounted read-only` | `~/.cache/cco/llms/` (CACHE, ADR-0007) | 1 |
 
 ### A.3 Verified clean (no change)
@@ -173,8 +174,9 @@ Section "Vault Simplification → Decentralized In-Repo Config" already exists (
    (`templates/*/`, `packs/*/`); no manifest-exclusive datum is consumed (repo URLs travel in the
    published `project.yml`; descriptions in `pack.yml`; sharing tags/identity are write-only).
    `lib/manifest.sh` + `cco manifest` + all `manifest_refresh`/`manifest_init` call sites are
-   dropped; the **structure-based-discovery refactor is owned by S**. *(Cleanup of inert
-   `manifest.yml` files rides the Phase-3 cutover.)*
+   dropped; the **structure-based-discovery refactor is DECIDED by ADR-0018** (sharing-repo layout =
+   `packs/`+`templates/` only; `git ls-tree` over a treeless clone; init-at-first-publish + merge-on-
+   existing) — **impl → E**. *(Cleanup of inert `manifest.yml` files rides the Phase-3 cutover.)*
 2. **`llms/`** (refined by **ADR-0014**, conflict **C2** resolved; **scope finalized by ADR-0016/M**):
    only the **content/downloads** live in **CACHE** `~/.cache/cco/llms/<name>/` (ADR-0007), deduped per
    machine by name. The llms **coordinate** (`url`+`variant`) is **config** (user-known) and is
@@ -203,6 +205,19 @@ Section "Vault Simplification → Decentralized In-Repo Config" already exists (
    `source` files (upstream `url+ref` only, `required`); STATE `index` **subsumes** `@local` + per-repo
    `local-paths.yml` (D4); STATE `/update` (`base/`/`meta`, H6) vs `/session` (memory/transcripts);
    `backups/` → STATE (C1). H6 merge-path remap + M3 `cmd-remote.sh` decoupling → **E**.
+6. **Pack references & lifecycle (ADR-0019)**: `packs:` join the **coordinate model** (`name` +
+   optional `url`/`ref`/`resource`) — schema change + migration of name-only `project.yml`/`pack.yml`
+   (→ E). New optional **`<repo>/.cco/packs/<name>/`** location: project-local **authored** pack (no
+   coordinate = source) **or** last-layer **cache** of a referenced pack (has coordinate). Resolution
+   is **two-axis**: mount (`~/.cco/packs` → fetch-from-`url` → `<repo>/.cco/packs` cache) vs
+   update/source-of-truth (sharing repo post-publish, **working-copy** model). **Defect to fix**:
+   `cco pack publish` does a fast-forward push → must **sync-before-publish** (3-way merge). New:
+   `cco project internalize`, `cco config validate` reachability contract, `export --bundle-packs`
+   dependency-closure, internalize-as-cache prompt. Templates are scaffold-only (no coordinate). → **E**.
+7. **Permissions (ADR-0020)**: enforcement **delegated to git** (no cco gatekeeper). Optional
+   **`cco config protect`** scaffolds `<repo>/.cco/CODEOWNERS` + emits host ruleset instructions;
+   document the sharing-repo (whole-repo split + repo-splitting for read granularity) vs project-repo
+   (co-writable `<repo>/.cco`) governance. **S8 no-token-leak** = checklist + tests. → **E**.
 
 ---
 
