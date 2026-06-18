@@ -1,7 +1,9 @@
 # Decentralized In-Repo Config — Design
 
 **Status**: Approved for implementation (2026-06-15); **§2 layout rewritten to the 4-bucket
-taxonomy by ADR-0016 (M, 2026-06-17)**. Authoritative design; drives the phased implementation (§9).
+taxonomy by ADR-0016 (M, 2026-06-17)**; **Domain-B sharing realigned by the S cycle — §2.1/§2.4
+(pack coordinates + project-local packs), §6.2, §7, §12 (ADR-0018/0019/0020, 2026-06-18)**.
+Authoritative design; drives the phased implementation (§9).
 **Requirements**: `requirements.md` (AD1-AD12, FR-*).
 **Decision records**: `decisions/` — ADR-0001 (decentralization), 0002
 (machine-agnostic config), 0003 (sync-as-copy), 0004 (config/state/cache separation),
@@ -11,7 +13,11 @@ locations / XDG), 0008 (config versioning model), 0009 (auto-memory is machine-l
 removed), 0013 (internal-metadata split), 0014 (referenced-resource coordinates), 0015 (Cat-4 =
 XDG DATA), **0016 (consolidated resource taxonomy — the authoritative `resource → (bucket, sync)`
 map; §2 here is its tree projection)**, **0017 (coordinate field semantics + CLI consolidation +
-first-run/`~/.cco` lifecycle refinements)**.
+first-run/`~/.cco` lifecycle refinements)**, **0018 (sharing model unification — config-bucket vs
+sharing-repo nomenclature, 2×2 command matrix, project/pack asymmetry, sharing-repo structure),
+0019 (referenced-resource reachability & pack lifecycle — coordinate model extended to packs,
+working-copy lifecycle, internalize-as-cache), 0020 (maintainer/consumer permissions — enforcement
+delegated to git, cco assists)**.
 **Decision history (historical)**: `reviews/15-06-2026-sync-adversarial-review.md`,
 `reviews/15-06-2026-simplification-analysis.md`.
 
@@ -94,8 +100,10 @@ flowchart TB
 │   ├── mcp.json              # project MCP config (H5)
 │   ├── setup.sh              # project setup script (H5)
 │   ├── mcp-packages.txt      # project MCP package list (H5)
-│   └── claude/               # COMMITTED + (copy-)synced → /workspace/.claude
-│       └── CLAUDE.md, rules/, agents/, skills/, settings.json   # authored config ONLY — no generated files
+│   ├── claude/               # COMMITTED + (copy-)synced → /workspace/.claude
+│   │   └── CLAUDE.md, rules/, agents/, skills/, settings.json   # authored config ONLY — no generated files
+│   └── packs/<name>/         # OPTIONAL (ADR-0019) — project-scoped AUTHORED pack (no coordinate = source)
+│                             #   OR last-layer CACHE of a referenced pack (has coordinate); ~/.cco/packs resolves first
 ```
 This tree holds **authored config only** (ADR-0016 D8). **No internal data lives here**
 (ADR-0013, fixes inventory C4): `source`, `meta`, `base/`, `local-paths.yml`, generated
@@ -250,7 +258,11 @@ extra_mounts:            # auxiliary mounts by logical name; default readonly
   - name: shared-assets
     readonly: true
 entry: repo1             # OPTIONAL tie-breaker for `cco start projectA` (name-based); not a privilege
-packs: [...]             # references only; packs live in ~/.cco, not in the repo
+packs:                   # referenced by name + OPTIONAL coordinate (ADR-0019 D1); resolved into ~/.cco/packs
+  - name: shared-pack
+    url: https://github.com/org/cco-sharing.git   # coordinate → the pack's sharing repo (OPTIONAL)
+    ref: v1.0                                      #   url absent → project-local AUTHORED pack in <repo>/.cco/packs/
+  - name: project-local-pack                       # no url, lives in <repo>/.cco/packs/ — it IS the source (P15)
 ```
 The host repo is **not** written in the file — it is the invoking repo at runtime (AD6).
 **Absolute paths** for every `repos[]`/`extra_mounts[]` name come from the machine-local index (§3);
@@ -272,6 +284,20 @@ the **url** coordinates persist here. Cross-unit coordinate consistency is enfor
 - The manifest `url` **MAY differ** from the clone's actual remote (ssh-vs-https, fork, mirror) — the
   manifest `url` is the *shared-truth*, the clone's `origin` is *this machine's reality*. The integrity
   check therefore **warns on mismatch, never enforces** equality.
+
+**Pack references (ADR-0019).** `packs:` join the **same coordinate model** as `repos:`/`llms:`: a pack
+entry is `name` + **optional** `url`(+`ref`/`resource`). A pack is a referenced resource of a project,
+not embedded in it. Resolution (`cco start`/`cco resolve`) uses a **two-axis** model: the **mount** axis
+resolves `~/.cco/packs/<name>` (local working copy) → fetch from `url` (sharing repo, into `~/.cco/packs`)
+→ `<repo>/.cco/packs/<name>` (last-layer cache); the **update** axis takes the source-of-truth from the
+sharing repo after publish (working-copy model). A pack `url`-absent entry is a **project-local authored
+pack** in `<repo>/.cco/packs/` (it *is* the source — P15); a `url`-present `<repo>/.cco/packs/<name>` is a
+**cache** of an upstream (opt-in, last resort — ADR-0019 D3/D6). Packs are the **sole** cache exception:
+`repos:` carry no local cache (a missing url for a shared project is surfaced by `validate`, never
+vendored), and llms content already lives in CACHE. **Reachability** (a shared project's referenced ids
+must have reachable coordinates) is surfaced by the layered `embed-at-add` / `heal-at-resolve` /
+`cco config validate` model — **never a hard block** (ADR-0019 D2 / P14). **Templates** are scaffold-time
+only — **not** referenced here (ADR-0019 D7).
 
 ---
 
@@ -463,9 +489,28 @@ logical names; the index provides absolute paths; bootstrap on a fresh machine v
 - Sync **transports commits, never fabricates them** — so a future background auto-sync
   (RD-triggers) and semantic snapshots do not conflict.
 
-### 6.2 Domain B — team/external (unchanged)
-Publish/install/update/export over Config Repos (`cmd-project-publish.sh`,
-`cmd-project-install.sh`, `cmd-pack.sh`, `cmd-remote.sh`, `remote.sh`) — unchanged.
+### 6.2 Domain B — team/external (realigned by the S cycle — ADR-0018/0019/0020)
+Team-sharing flows through a **sharing repo** (the retired term "config repo" → **config bucket**
+`~/.cco`/`<repo>/.cco` vs **sharing repo**; ADR-0018 D1). The surface is a symmetric **2×2**:
+`publish`↔`install` (sharing repo, live source, updatable) and `export`↔`import` (tar snapshot).
+
+- **Packs/templates** use the full 2×2; a sharing repo holds `packs/` + `templates/` only (**no
+  `projects/`**), discovered **structure-based** (no `manifest.yml`; ADR-0012/0018 D3), init-at-first-
+  publish, merge-on-existing.
+- **Projects do NOT publish/install** — `<repo>/.cco/` is team-shared **by construction** via the code
+  repo remote (Axis 1+2, P5/P13); a repo without `.cco/` is bootstrapped by `cco init`/`cco migrate`/
+  `cco project import` (tar). Projects get **export/import** only.
+- **Referenced resources** (repos/llms/packs) travel as **coordinates** in the manifest; reachability is
+  surfaced by the layered `embed/heal/validate` model, never hard-blocked (ADR-0019 D2/P14). Pack
+  source-of-truth follows the **working-copy** model with **sync-before-publish** (ADR-0019 D4/P16).
+- **`cco update --check`** lists resources with available updates (reuses `source` + `remote_cache`).
+- **Permissions** are **delegated to git** (P17/ADR-0020): a read-only token can't push (sharing-repo
+  split); granular read-hiding by splitting repos; `<repo>/.cco/` is co-writable (optional
+  `cco config protect` scaffolds CODEOWNERS + host rulesets). cco assists, never gatekeeps.
+
+Implementation (`cmd-project-publish.sh`, `cmd-project-install.sh`, `cmd-pack.sh`, `cmd-remote.sh`,
+`remote.sh`) is **revised** accordingly (→ E): `lib/manifest.sh` deleted, sync-before-publish fix,
+2×2 verb wiring, structure-based discovery. See ADR-0018/0019/0020.
 
 ---
 
@@ -482,8 +527,9 @@ Publish/install/update/export over Config Repos (`cmd-project-publish.sh`,
 | Discovery | `cco list [--tag <t>]`, `cco tag add/rm` (reads/writes the per-user `<data>/cco/tags.yml`, DATA bucket — ADR-0011/0015) | transform |
 | Authoring | Direct `~/.cco` edit (IDE or rehomed `config-editor` agent); cco only **scaffolds**: `cco pack create`, `cco template create` (ADR-0008/0010) | transform |
 | Global store | `cco config …` (manage `~/.cco`; versioning model = ADR-0008) | NEW |
-| Sharing | `cco pack/project publish\|install\|update\|export`, `cco remote …` | unchanged |
-| Update | `cco update …` (framework→user; merge engine unchanged) | unchanged |
+| Sharing (2×2, ADR-0018 D2) | **packs/templates**: `cco <res> publish\|install` (sharing repo) + `export\|import` (tar); **projects**: `cco project export\|import` only (no publish/install — ride the repo remote, P5/P13). `cco <res> internalize` cuts the coordinate. `cco remote …` manages sharing-repo endpoints. | transform |
+| Update | `cco update …` (framework→user; merge engine unchanged) + **`cco update --check`** (list resources with available updates) + `cco <res> update --dry-run` (ADR-0018 D5) | transform |
+| Permissions (ADR-0020) | `cco config protect` (OPTIONAL — scaffold `<repo>/.cco/CODEOWNERS` + emit host ruleset instructions; enforcement delegated to git) | NEW (optional) |
 
 **`cco init` / `cco join` / `cco migrate` are mutually exclusive** entry points for a
 repo: `init` = clean config; `join` = become a **member** of a project already defined
@@ -712,10 +758,24 @@ Net: a narrower surface — no custom diff/save/merge sync code to test, no dual
 - **Local-file llms (ADR-0017 F1)** — a hand-curated llms with no download `url` (an existing local
   `.txt`). Not supported in v1 (no code path / no concrete need, ADR-0014 D1); the manifest schema is
   extensible (add a `path:`/`local:` field) so v1 does not paint it out.
-- **Domain-B Config-Repo realignment (ADR-0017 F3, → S)** — the team-shared repo / Config-Repo
-  structure was **not** revised by the decentralization work and may have drifted (manifest removed;
-  coordinates now resolve-at-publish; structure-based discovery). Owned by **S** as part of the
-  publish/install/update/export revision + opinionated-defaults-as-package (R-pkg / R-update-native).
+- **Domain-B realignment (ADR-0017 F3) — ✅ RESOLVED by the S cycle (ADR-0018/0019/0020).** The
+  team-shared **sharing repo** structure, the 2×2 command matrix, the referenced-resource reachability
+  + pack lifecycle, and the permission model are now decided; impl is owned by **E** (manifest deletion,
+  structure-based discovery, sync-before-publish, 2×2 wiring, schema + migration, `cco update --check`,
+  optional `cco config protect`).
+- **Solo-adopter Case C (post-v1, → dedicated analysis; ADR-0018 D6)** — built-in fallback to
+  *centralized* project config (`<repo>/.cco/` relocated under `~/.cco/projects/<name>`, Axis-1 synced,
+  outside the repo) for a user the team forbids committing `.cco/`. A simplified per-project vault (no
+  branches/custom-diff) with a second `cco start` discovery path. v1 **reserves** the hooks (index
+  `config_path` field; `cco start` precedence `<repo>/.cco` → `~/.cco/projects/<name>`). ADR-0019's pack
+  model reduces the need (project-scoped packs + by-url references handle the common case). Cases **A**
+  (tolerant team) and **B** (gitignore `.cco/`) are supported in v1.
+- **Opinionated defaults as an official public sharing repo (F-opin; P9, → E with R-pkg).** cco's
+  opinionated rules/templates/global defaults (today baked-in `defaults/global/`, `templates/`) become a
+  separate **official cco sharing repo**, distributed via the same publish/install path any user uses;
+  the functional `managed/` (hooks/rules guaranteeing cco operation + convention adoption) stays baked-in.
+  Documented now; the capability is designed in S; the migration is implemented **after** decentralized
+  config + sharing are working (then core is cleaned up). Coordinates with R-pkg / R-update-native.
 - **`cco update` native (R-update-native)** — cco fully agnostic; opinionated
   packs/templates via native publish/install; keep a `cco update` for installed packs.
 - **cco packaging (R-pkg)** — npm/npx + image registry. (First-run J0 stays the system-dir init point
