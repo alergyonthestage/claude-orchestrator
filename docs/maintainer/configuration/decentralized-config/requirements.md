@@ -2,7 +2,9 @@
 
 **Status**: Approved for implementation (model finalized 2026-06-15). This is the
 authoritative requirements document; the detailed design is in `design.md` and the
-decision records (ADRs 0001–0010) in `decisions/`.
+decision records (ADRs 0001–0021) in `decisions/` — ADRs 0011–0021 refine the model
+post-2026-06-15 (tag nature/placement, referenced-resource coordinates, manifest
+removal, sharing-model unification, resource lifecycle).
 **Date**: 2026-06-15
 **Supersedes**: the central git-backed vault (`user-config/` projects + branch
 profiles) and `../vault/profile-isolation-design.md`. Reuses the `@local` path
@@ -75,7 +77,7 @@ flowchart LR
   config sync. (Sync is a plain **copy** from a chosen source — see §5. A background
   daemon or git hooks are possible **future opt-in** evolutions, not in scope.)
 - N2 — The monolithic vault (projects + profiles + filesystem switch + custom diff).
-- N3 — Cross-team config governance beyond the existing Config Repo sharing.
+- N3 — Cross-team config governance beyond the existing sharing-repo publish/install (ADR-0018).
 - N4 — Packaging cco as an installable npm/npx artifact + image registry — a valuable
   **separate future workstream**, not part of this refactor (§9).
 - N5 — Reworking the `cco update` engine. The 3-way merge engine stays **as-is** for
@@ -90,7 +92,7 @@ flowchart LR
 | # | Decision |
 |---|----------|
 | **AD1** | Config is **decentralized**: `<repo>/.cco/` holds a project's committed cco config, versioned with the code. The central vault is retired. |
-| **AD2** | **Profiles → tags (ADR-0010).** No git-branch profiles, no `vault switch` — the profile system is removed and replaced by a net-new, **multi-valued, per-user** tag system (no overlap). Tags live in a per-user registry `~/.cco/tags.yml` (`resource → [tags]`, packs **and** projects), synced across the *user's* machines (Domain A) but **never** shared with third parties (Domain B) — so never in `pack.yml`/`project.yml`/manifest/index. `cco list [--tag]` filters; the IDE is the project browser. |
+| **AD2** | **Profiles → tags (ADR-0010; nature & placement refined by ADR-0011/0015/0016).** No git-branch profiles, no `vault switch` — the profile system is removed and replaced by a net-new, **multi-valued, per-user** tag system (no overlap). The tag interface is **CLI-canonical** (`cco tag add/rm` + `cco list --tag`), so tags are **internal** (cco-managed, never hand-edited — ADR-0011); the registry lives in the **DATA** bucket `<data>/cco/tags.yml` (`~/.local/share/cco`, **not** `~/.cco` — ADR-0015), `resource → [tags]` for packs **and** projects. Synced across the *user's* machines (Domain A / Axis-1, `required`) but **never** shared with third parties (Domain B) — so never in `pack.yml`/`project.yml`/index. The IDE is the project browser. |
 | **AD3** | **Machine-agnostic committed config (G8).** Committed files contain **no machine-specific data** — no real paths. `project.yml` references repos and extra mounts by **logical name** only and is **byte-identical across a project's repos**. Real absolute paths live in a machine-local index outside the repo (AD5). A plain `git diff` is therefore always truthful; the custom diff/save/sanitize/virtual-diff layer is removed. |
 | **AD4** | **Dual `.claude` scope** (verified: `/workspace/.claude` IS loaded at WORKDIR `/workspace`, plus nested `<repo>/.claude` on-demand). **Project/cross-repo** Claude config lives at `<repo>/.cco/claude/` → mounted `/workspace/.claude`. **Repo-local** Claude config stays at `<repo>/.claude/` → `/workspace/<repo>/.claude`, never part of project config. |
 | **AD5** | **`@local` retained, resolved via a machine-local index (AD3).** The index maps `logical-name → absolute path` for repos and extra mounts, is **per-machine, never committed, never synced**, and is maintained by dedicated CLI commands (manual edit allowed but discouraged). It stores **absolute paths only**; CLI commands accept paths relative to the cwd and resolve them to absolute. The index also records `project → [member repo names]` (it subsumes the old registry). |
@@ -235,7 +237,8 @@ flowchart TD
   `templates/`, and `global/.claude/`. It is a personal git store (Domain A).
 - **FR-C2** — The machine-local index (AD5) is the source for `cco list` and tag
   filtering; it lives in a system dir, is per-machine, and is rebuildable by scanning
-  known directories (`cco index refresh --scan`) so a fresh machine can repopulate.
+  known directories (`cco resolve --scan`; `cco path set/list` is the low-level editor —
+  ADR-0017 D2) so a fresh machine can repopulate.
 - **FR-C3 (Domain A)** — Personal multi-PC: per-repo `.cco/` rides each repo's own
   remote; `~/.cco` global resources sync via the personal store. **Versioning model =
   ADR-0008 (RD-home resolved)**: a single **explicit, manual, semantic-commit** model
@@ -259,8 +262,9 @@ flowchart TD
   (P16); **permissions delegated to git** (P17). `cco update --check` lists available updates. Authoring
   of global resources happens **directly in `~/.cco`** (opened in an IDE, or via the rehomed
   `config-editor` agent); cco only scaffolds (`pack/template create`) — ADR-0010.
-  Per-user **tags** (`~/.cco/tags.yml`) organize resources locally and sync across the
-  user's PCs (Domain A) but are **never** shared via Domain B.
+  Per-user **tags** (DATA `<data>/cco/tags.yml`, internal/CLI-managed — ADR-0011/0015)
+  organize resources locally and sync across the user's PCs (Domain A) but are **never**
+  shared via Domain B.
 
 ---
 
@@ -309,8 +313,8 @@ flowchart TD
 | Sync = copy, 4 command forms (AD7, §5.2) | ✅ no merge engine / sync-base / commit-time / peer-root / confirm-LCW policies |
 | Git is the only cross-PC transport (AD8) | ✅ conflicts resolved natively in IDE |
 | Config/state/cache separated by location (AD9) | ✅ state+cache out of repo; `secrets.env` the in-repo exception |
-| Vault removed; `project create` removed | ✅ surface = `cco init` + `cco join` + `cco migrate` + `cco sync` + `cco start` + global-store mgmt + existing publish/install/remote/pack/llms/update |
-| Breaking cutover; lazy per-project migration (AD12, ADR-0006) | ✅ no dual-read / no deprecation window; first-run backup + `cco migrate <project>` from backup |
+| Vault removed; `project create` removed | ✅ surface = `cco init` (incl. `--migrate`, ADR-0021) + `cco join` + `cco sync` + `cco start` + `cco forget` + global-store mgmt + publish/install (**packs/templates only — 2×2 matrix, ADR-0018; projects use export/import**) + remote/pack/llms/update |
+| Breaking cutover; lazy per-project migration (AD12, ADR-0006) | ✅ no dual-read / no deprecation window; first-run backup + `cco init --migrate <project>` from backup (ADR-0021) |
 | Sync default = diff + confirm; `--auto-approve` | ✅ |
 | Sync-state tracking in scope (FR-Y-S6, design §4.6) | ✅ per-machine metadata: sync-set membership + last-synced fingerprint (not a merge sync-base); exact format/rollback richness = impl |
 | Merge engine stays for `cco update` only (N5) | ✅ |
@@ -318,7 +322,7 @@ flowchart TD
 | RD-paths resolved (2026-06-16, ADR-0007) | ✅ XDG on both OSes (no `~/Library`): STATE `$CCO_STATE_HOME`→`$XDG_STATE_HOME/cco`→`~/.local/state/cco`; CACHE `$CCO_CACHE_HOME`→`$XDG_CACHE_HOME/cco`→`~/.cache/cco`; index in STATE; CONFIG keeps `~/.cco` dotdir; host-side resolution, XDG-validation, `0700` |
 | RD-home resolved (2026-06-16, ADR-0008) | ✅ Unified explicit manual commit model for `~/.cco` + `<repo>/.cco` (semantic snapshots, NO auto-commit in v1); non-blocking reminders (uncommitted `~/.cco`/`<repo>/.cco` + cross-repo divergence); allowlist double-barrier (never `git add -A`); 2-pass secret scan + `.example` exemption; explicit `cco config push/pull` (sync moves commits, never fabricates); auto-sync + atomic-command auto-commit → deferred (RD-triggers / future) |
 | RD-memory resolved (2026-06-16, ADR-0009) | ✅ Auto-memory is **machine-local STATE** (`<state>/cco/projects/<id>/memory/`, co-located with transcripts) — not config, never in `~/.cco`/`<repo>/.cco`; NO versioning/sync in v1 (vault auto-commit D33 + `.gitkeep` D32 dropped); `cco migrate` relocates memory from backup (lossless); team-shared knowledge stays in committed docs/rules. **Satisfies the Phase-3 gate (review BL2).** Cross-PC/cross-team state sync (memory + transcripts) deferred → R-state-sync |
-| RD-authoring resolved (2026-06-16, ADR-0010) | ✅ Authoring = **direct `~/.cco` edit** (IDE / rehomed `config-editor`); cco only scaffolds; no author-in-repo+promote in v1. Organization = **tags not profiles** (clean removal + net-new, multi-valued, flat store — no subdirs). Tags **per-user** in `~/.cco/tags.yml` (Domain A synced, never Domain B); not in `pack.yml`/`project.yml`/manifest/index (project tags removed from `project.yml`+index); `cco list --tag` reads it; migration **prompts** profile→tag conversion. Next: global resource-coherence inventory |
+| RD-authoring resolved (2026-06-16, ADR-0010) | ✅ Authoring = **direct `~/.cco` edit** (IDE / rehomed `config-editor`); cco only scaffolds; no author-in-repo+promote in v1. Organization = **tags not profiles** (clean removal + net-new, multi-valued, flat store — no subdirs). Tags **per-user**, internal/CLI-canonical, in **DATA** `<data>/cco/tags.yml` (ADR-0011/0015; Domain A synced `required`, never Domain B); not in `pack.yml`/`project.yml`/index (project tags removed from `project.yml`+index); `cco list --tag` reads it; migration **prompts** profile→tag conversion. Next: global resource-coherence inventory |
 
 **Open — deferred to dedicated analyses (run after this design is persisted):**
 | # | Question |
@@ -346,7 +350,7 @@ flowchart TD
   separate from CONFIG sync (ADR-0008) so state and config responsibilities stay distinct.
 - **R-workspace** — Persistent `/workspace` root.
 
-**Artifacts (produced):** `design.md`, ADR 0001–0010, and the
+**Artifacts (produced):** `design.md`, ADRs 0001–0021, and the
 **`resource-coherence-inventory.md`** (every skill/agent/rule/template/doc/managed file
 referencing the old model + required change + phase — surfaced by ADR-0010). Remaining: a
 dedicated analysis for the open RD-triggers question, plus the follow-ups raised by the 16-06

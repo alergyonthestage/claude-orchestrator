@@ -67,6 +67,15 @@ A resource **referenced by name** from a manifest decomposes into data with **di
 | **content** (llms only) | re-fetchable | **CACHE** | `never` | re-fetched from the coordinate |
 | `etag`/`resolved_url`/`downloaded` (llms) | cache-state | CACHE | `never` | re-derived on fetch |
 
+> **Placement REFINED by ADR-0016 D2 (forward-annotation; the row above is kept as
+> written):** the coordinate is **embedded per-unit in the versioned manifest**
+> (`project.yml`/`pack.yml`, the `package.json` model), **NOT** a central registry — the
+> by-construction-shared repo has **no publish boundary** to inject a registry at (P5).
+> The *category* (config, user-known locator) and the *DRY-by-name* intent stand; only the
+> "canonical registry, stored once" placement is superseded (see also ADR-0016 D8, which
+> forbids a central coordinate-registry file). The repos-only `local-path` row likewise
+> moves into the STATE **index** (ADR-0016 D4), not a per-repo `.cco/local-paths.yml`.
+
 The **coordinate is unified** across repos and llms (same data category: `name→url`); only the
 **resolution backend differs** (repo → `git clone` into a local-path, interactive, per-PC; llms →
 fetch into CACHE, automatic). The key cut is **`name→url` (synced + shared) vs `name→local-path`

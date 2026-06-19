@@ -2,7 +2,9 @@
 
 **Status**: Approved for implementation (2026-06-15); **§2 layout rewritten to the 4-bucket
 taxonomy by ADR-0016 (M, 2026-06-17)**; **Domain-B sharing realigned by the S cycle — §2.1/§2.4
-(pack coordinates + project-local packs), §6.2, §7, §12 (ADR-0018/0019/0020, 2026-06-18)**.
+(pack coordinates + project-local packs), §6.2, §7, §12 (ADR-0018/0019/0020, 2026-06-18)**;
+**§1 overview realigned to ADR-0008 (`~/.cco` management) + sharing-repo nomenclature
+(Cluster 3 doc-resync, 2026-06-19)**.
 Authoritative design; drives the phased implementation (§9).
 **Requirements**: `requirements.md` (AD1-AD12, FR-*).
 **Decision records**: `decisions/` — ADR-0001 (decentralization), 0002
@@ -59,13 +61,13 @@ flowchart TB
   home --> CCO
   CCO --> SESS["docker session: /workspace/<repo> + /workspace/.claude"]
   repoA -. "git push/pull (cross-PC transport)" .-> REM[(repo A remote)]
-  home -. "Domain A (managed, deferred)" .-> PREM[(personal remote)]
-  CCO -. "Domain B: publish/install" .-> CR[(Config Repos)]
+  home -. "Domain A (cco config push/pull, ADR-0008)" .-> PREM[(personal remote)]
+  CCO -. "Domain B: publish/install" .-> CR[(sharing repo)]
 ```
 
 - **Committed `<repo>/.cco/`** — machine-agnostic config, versioned with the code.
 - **System dirs** — per-machine state, cache, and the name→path index; hidden, never committed.
-- **`~/.cco/`** — personal git store for global resources (Domain A; depth deferred).
+- **`~/.cco/`** — personal git store for global resources (Domain A; management = ADR-0008).
 - **Sync** — a plain copy from a chosen source repo to targets (no merge engine).
 - **Cross-PC** — plain `git` on each repo's own remote.
 

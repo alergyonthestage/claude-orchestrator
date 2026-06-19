@@ -39,6 +39,15 @@ Make committed config **100% machine-agnostic**:
 4. Because no real path is ever written into committed files, a plain `git diff` is
    always truthful, and the custom diff/save/sanitize/virtual-diff layer is **removed**.
 
+> **Refined since (forward-annotation; the decision above is kept as written):**
+> - **Decision 2 — tags removed from the index.** Tags no longer live in the index;
+>   they are per-user, internal/CLI-canonical, in the **DATA** bucket
+>   `<data>/cco/tags.yml` (**ADR-0010 §4, ADR-0015, ADR-0016 D4**). The index records
+>   `project → [member repo names]` and absolute paths only.
+> - **Decision 3 / Open — CLI consolidated.** `cco index refresh --scan` is retired;
+>   index (re)build is folded into **`cco resolve --scan`**, with `cco path set/list`
+>   as the low-level editor (**ADR-0017 D2**).
+
 ## Alternatives Considered
 
 | Alternative | Pros | Cons | Verdict |
