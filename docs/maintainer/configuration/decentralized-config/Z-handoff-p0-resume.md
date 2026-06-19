@@ -145,9 +145,11 @@ existing-suite teardown). 4. ADRs **0007/0015/0016** (buckets/taxonomy), **0022*
 
 ## 8. Start here
 
-Next free ADR = **0024** (none needed for Commit-A/B/T8 unless a new decision surfaces). Begin with the
-coordinated **Commit A** (repos/mount/index/harness — the big breaking cutover; recon its 23 consumers +
-harness flip first, per §5), keep the suite delta-green, commit atomically. Then **Commit B** (buckets),
+Next free ADR = **0024** (none needed for Commit-A/B/T8 unless a new decision surfaces). **The next clean
+session executes Commit A via its dedicated launch handoff → `Z2-handoff-commit-a.md`** (source-of-truth
+refs + mandatory preliminary analysis + scope with exact symbols). Begin with the coordinated **Commit A**
+(repos/mount/index/harness — the big breaking cutover; recon its consumers + harness flip first, per §5),
+keep the suite delta-green, commit atomically. Then **Commit B** (buckets),
 then **T8**. **Both relocation items are re-sequenced OUT of P0** (§3): **T4-source → P4** (source→DATA +
 F4), **T5 → P2** (base/meta→STATE, H6 + global decompose). Pause and discuss if a real design gap surfaces;
 otherwise the ADRs/design are the spec.
