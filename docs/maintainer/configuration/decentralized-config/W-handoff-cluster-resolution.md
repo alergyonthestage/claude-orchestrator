@@ -114,7 +114,9 @@ Finding IDs reference the report. Present per cluster, decide, persist. **Next =
   exact **`cco config validate` contract** (F26) referenced by ADR-0021, the `cco config` namespace
   coherence (F46), coordinate-add verbs `cco repo/llms add` (F19), `cco new` (F18), template sharing
   symmetry (F47), `internalize` semantics clash (F13). Agent-3's command-symmetry analysis (current vs
-  new verb table, entry-points category, project-removal philosophy) feeds this cluster.
+  new verb table, entry-points category, project-removal philosophy) feeds this cluster. **Launch pad:
+  `X-handoff-cluster5-command-ux.md`** (groups, reference docs per finding, the Cluster-4 carry-ins the
+  command surface must wire, likely ADR-0023 shape).
 
 ## 5. Reading order for the fresh session
 
