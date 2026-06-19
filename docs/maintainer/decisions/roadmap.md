@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-06-19 (decentralized-config: ALL config **and sharing** analyses resolved — RD-* + R1–R4 + Cat-4 + M + **S**, ADRs 0005–**0023**; 4-bucket taxonomy + coordinate-per-unit + sharing unification [2×2 matrix, pack coordinates, reachability, working-copy lifecycle, permissions delegated-to-git] + principles **P1–P17**; **config + sharing design CLOSED. Impl-readiness review (V) DONE** — `reviews/18-06-2026-impl-readiness-review.md`, 58 findings/37 decisions, being resolved **cluster by cluster**: Cluster 1 RESOLVED → ADR-0021 + ADR-0006/0009/0010; Cluster 2 RESOLVED → impl order re-derived (dependency+reuse+open-closed) into a 6-phase dependency-layer map, design §9/§11 rewritten; Cluster 3 Block A RESOLVED → doc-lifecycle rule + design-intent re-sync; Cluster 4 RESOLVED → ADR-0022 + forward-annot ADR-0016/0017/0018/0019 + design §2.2–§12 + FR-Y-S6; Cluster 5 RESOLVED → **ADR-0023** (D1–D6: `cco config`/`cco project` namespace + `cco project validate` contract + `cco project add <res>`/`--path` + sharing-surface/internalize family + `cco new`/`extra_mounts` + `cco config protect`) + forward-annot ADR-0016/0018/0019/0020/0021. **ALL 5 CLUSTERS RESOLVED → impl-readiness review (V) FULLY CLOSED (2026-06-19). Implementation IN PROGRESS — Phase 0 (T1/T2a/T3/T4-remotes landed `ff8278b`→`2bdf80e`, suite delta-green); remaining P0 = Commit A (repos/mount+harness) → Commit B (buckets) → T8 [the two internal-artifact relocations re-sequenced OUT of P0 2026-06-19: T4-source→P4, T5→P2]; next = Commit A; resume cursor = `Z-handoff-p0-resume.md`, Commit-A launch handoff = `Z2-handoff-commit-a.md`; T future**).
+> Last updated: 2026-06-19 (decentralized-config: ALL config **and sharing** analyses resolved — RD-* + R1–R4 + Cat-4 + M + **S**, ADRs 0005–**0023**; 4-bucket taxonomy + coordinate-per-unit + sharing unification [2×2 matrix, pack coordinates, reachability, working-copy lifecycle, permissions delegated-to-git] + principles **P1–P17**; **config + sharing design CLOSED. Impl-readiness review (V) DONE** — `reviews/18-06-2026-impl-readiness-review.md`, 58 findings/37 decisions, being resolved **cluster by cluster**: Cluster 1 RESOLVED → ADR-0021 + ADR-0006/0009/0010; Cluster 2 RESOLVED → impl order re-derived (dependency+reuse+open-closed) into a 6-phase dependency-layer map, design §9/§11 rewritten; Cluster 3 Block A RESOLVED → doc-lifecycle rule + design-intent re-sync; Cluster 4 RESOLVED → ADR-0022 + forward-annot ADR-0016/0017/0018/0019 + design §2.2–§12 + FR-Y-S6; Cluster 5 RESOLVED → **ADR-0023** (D1–D6: `cco config`/`cco project` namespace + `cco project validate` contract + `cco project add <res>`/`--path` + sharing-surface/internalize family + `cco new`/`extra_mounts` + `cco config protect`) + forward-annot ADR-0016/0018/0019/0020/0021. **ALL 5 CLUSTERS RESOLVED → impl-readiness review (V) FULLY CLOSED (2026-06-19). Implementation IN PROGRESS — Phase 0 (T1/T2a/T3/T4-remotes + **Commit A** landed `ff8278b`→`c8ae080`, suite 991/2 delta-green); Commit A = repos/mount resolution wired to the STATE index via a **transitional schema-bridge** + **keep-transitional** @local plumbing (deviates from handoff "delete/no-dual-read", resolves §9-vs-§11, dies P3/P4); remaining P0 = Commit B (buckets) → T8 [the two internal-artifact relocations re-sequenced OUT of P0 2026-06-19: T4-source→P4, T5→P2]; next = Commit B; resume cursor = `Z-handoff-p0-resume.md`, Commit-B launch handoff = `Z3-handoff-commit-b.md`; T future**).
 >
 > **Note**: Sprint entries are historical. Path references (e.g., `.cco-meta`, `.cco-source`) in older
 > sprints reflect the layout at the time of writing. See Sprint 8 and the `.cco/` consolidation
@@ -107,13 +107,18 @@ PERSISTED** (2026-06-19): all 11 findings → **new ADR-0023** (D1–D6: `cco co
 + design §2.4/§3/§4.4/§6.2/§7/§8 re-sync. **ALL 5 CLUSTERS RESOLVED → the review (V) is fully closed.**
 **IMPLEMENTATION IN PROGRESS — Phase 0 (substrate)**: landed `feat/vault/decentralized-config` (commits
 local) — **T1** resolver+H4+L5 (`ff8278b`), **T2a** index API (`d913e5c`), **T3** coordinate parsers
-(`992738d`), **T4-remotes** M3 split (`2bdf80e`); suite **985/2** (the 2 are pre-existing baseline drift,
-delta-green). **Remaining P0 = Commit A (repos/mount schema + harness, coordinated cutover) → Commit B
-(bucket re-point) → T8** (pure substrate). The two internal-artifact relocations are re-sequenced OUT of
-P0 (their tests are hardcoded in later phases): **T4-source → P4** (source→DATA/F4) and **T5 → P2**
-(base/meta→STATE, H6 + global-meta decompose) — both 2026-06-19; design §2.2/§9/§11 + ADR-0022 D1 /
-ADR-0016 D6 forward-annotations. **Resume cursor = `Z-handoff-p0-resume.md`**; **Commit-A launch handoff =
-`Z2-handoff-commit-a.md`** (method/phase-map = `Y-handoff-implementation.md`). T (state-sync) is future.
+(`992738d`), **T4-remotes** M3 split (`2bdf80e`), **Commit A** repos/mount resolution wired to the STATE
+index (`c8ae080`, 2026-06-19); suite **991/2** (the 2 are pre-existing baseline drift, delta-green; +6 new
+index tests). Commit A made two maintainer-confirmed **transitional** choices that DEVIATE from the
+handoff's literal "delete / no-dual-read" (resolving a §9-vs-§11 contradiction, per the Z §5 precedent):
+**keep-transitional** @local/sanitize plumbing (kept for vault/publish, deleted P3/P4) and a **per-section
+schema bridge** (legacy `path:`/`source:` ⇒ legacy chain; logical-name ⇒ STATE index; collapses to
+index-only when legacy dies P3/P4 — final state honors §9). **Remaining P0 = Commit B (bucket re-point) →
+T8** (pure substrate). The two internal-artifact relocations are re-sequenced OUT of P0 (their tests are
+hardcoded in later phases): **T4-source → P4** (source→DATA/F4) and **T5 → P2** (base/meta→STATE, H6 +
+global-meta decompose) — both 2026-06-19; design §2.2/§9/§11 + ADR-0022 D1 / ADR-0016 D6 forward-
+annotations. **Resume cursor = `Z-handoff-p0-resume.md`**; **Commit-B launch handoff =
+`Z3-handoff-commit-b.md`** (method/phase-map = `Y-handoff-implementation.md`). T (state-sync) is future.
 **Priority**: 0 (next major work). **Supersedes**: branch-switch real-isolation
 model in `../../configuration/vault/profile-isolation-design.md` (v2) **and** the
 central-vault project store.

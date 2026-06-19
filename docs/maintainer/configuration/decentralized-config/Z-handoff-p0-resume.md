@@ -19,18 +19,18 @@ maintainer's Mac).
 | **T2a** | `d913e5c` | `lib/index.sh` — machine-local STATE index API (`paths:` name→abs + `projects:` members), atomic `mktemp`+`mv`, global-flat (H7), `_index_path_conflicts` for AD5. Additive (sourced, not wired) | +9 |
 | **T3** | `992738d` | Final coordinate parsers in `lib/yaml.sh`: `yml_get_repo_coords`/`yml_get_mount_coords`/`yml_get_pack_coords`; `yml_get_packs` now map+string; `yml_get_llms` +url. **Additive** — legacy `yml_get_repos`/`yml_get_extra_mounts` untouched | +7 |
 | **T4-remotes** | `2bdf80e` | M3 remotes split: url→DATA `<data>/cco/remotes`, token→STATE `<state>/cco/remotes-token` (0600). `setup_cco_env` now exports `CCO_{DATA,STATE,CACHE}_HOME`+`CCO_ALLOW_HOST_RESOLVE` (additive) | rewrite |
+| **Commit A** | `c8ae080` | repos/mount resolution wired to the STATE index via a **transitional schema-bridge** (per-section: legacy `- path:`/`- source:` ⇒ legacy chain; logical-name ⇒ index) + **keep-transitional** @local plumbing (NOT deleted — kept for vault/publish until P3/P4). `local-paths.sh` bridge emitters + `_resolve_entry_index`; cmd-start/workspace/cmd-project-query bridged; harness `minimal_project_yml`→new schema + `seed_index_path`; +6 index tests. **DEVIATES from this file's §3 literal scope** (see §2.5 / Z2-superseding note below) | 991/2 |
 
 ```mermaid
 flowchart LR
-  subgraph done["✅ done (this session)"]
-    T1["T1 resolver+H4+L5"] --> T2a["T2a index API"] --> T3["T3 coord parsers"] --> T4r["T4 remotes split M3"]
+  subgraph done["✅ done (incl. Commit A c8ae080)"]
+    T1["T1 resolver+H4+L5"] --> T2a["T2a index API"] --> T3["T3 coord parsers"] --> T4r["T4 remotes split M3"] --> CA["Commit A — repos/mount → index<br/>(schema-bridge, keep-transitional)"]
   end
-  subgraph next["▶ remaining P0 = Commit A → B → T8 (pure substrate)"]
-    CA["Commit A — repos/mount schema cutover<br/>resolution+mount-gen+harness together"]
-    CA --> CB["Commit B — bucket re-point GLOBAL_DIR→~/.cco + harness HOME"]
+  subgraph next["▶ remaining P0 = Commit B → T8 (pure substrate)"]
+    CB["Commit B — bucket re-point GLOBAL_DIR→~/.cco + harness HOME"]
     CB --> T8["T8 CACHE overlays (F1/F2/F3)"]
   end
-  T4r --> CA
+  CA --> CB
   T8 -. "RE-SEQUENCED OUT of P0" .-> later["T4-source → P4 (source→DATA + F4)<br/>T5 → P2 (base/meta→STATE, H6 + global decompose)"]
 ```
 
@@ -49,9 +49,9 @@ flowchart LR
 
 ## 3. Remaining P0 — detailed scope
 
-**Remaining P0 = Commit A → Commit B → T8 (pure substrate).** Both "internal-artifact relocation" items
-(T4-source, T5) are re-sequenced OUT of P0 (their tests are hardcoded in later phases — see below). **Start
-with Commit A.**
+**Remaining P0 = Commit B → T8 (pure substrate); Commit A is DONE (`c8ae080`).** Both "internal-artifact
+relocation" items (T4-source, T5) are re-sequenced OUT of P0 (their tests are hardcoded in later phases —
+see below). **Start with Commit B (dedicated launch handoff `Z3-handoff-commit-b.md`).**
 
 - **T4-source — RE-SEQUENCED to P4 (maintainer-confirmed 2026-06-19, Option B).** The `source`→DATA
   relocation + key-rename (`url`/`ref`/`resource`) + `commit`/`version`→STATE-meta + `publish_target`
@@ -76,18 +76,27 @@ with Commit A.**
   version`/policies→**`<state>/cco/global/update/`** (new home, pinned — filled the §2.2/ADR-0016-D6 gap),
   `manifest:` dropped. `test_publish_install_sync` meta/base refs get a P2 spot-fix (full rewrite P4).
   Persisted: `design.md` §2.2 + §9 (P0 note, P2) + §11; ADR-0016 D6 forward-annotated. H6/ADR-0016 D5.
-- **Commit A** (BIG, coordinated): repos/mount schema cutover.
-  - `lib/local-paths.sh`: **delete** the `@local`/sanitize/extract/restore/`local-paths.yml` plumbing;
-    rewire resolution to read the **index** (T2a) for paths and `yml_get_repo_coords`/`yml_get_mount_coords`
-    (T3) for names/coords. Keep the interactive prompt UI, redirect its storage to the index.
-  - `lib/cmd-start.sh` / `lib/workspace.sh`: rewire mount-gen to read repo/mount **names** + look up paths
-    in the index (the old `yml_get_repos`/`yml_get_extra_mounts` path:name emitters are deleted here).
-  - `tests/helpers.sh`: migrate `minimal_project_yml` to the **new schema** (name+url/ref) **and seed the
-    index** so fixtures match the code (this is the co-dependent flip).
-  - Neutralize the `_sanitize_project_paths` / extract-restore calls in `cmd-vault.sh` and
-    `cmd-project-publish.sh` (no-op under AD3; vault is deleted in P3).
-  - Rewrite `test_local_paths.sh` to the index model.
-- **Commit B** (BIG, coordinated): bucket re-point.
+- **Commit A ✅ DONE (`c8ae080`, 2026-06-19): repos/mount resolution wired to the STATE index.** The
+  end-state matches the design, but **TWO maintainer-confirmed refinements changed HOW** (vs the bullets
+  that originally stood here — see Z2 §4 + the vault progress memory):
+  - **Keep-transitional, NOT delete.** The `@local`/sanitize/extract/restore/`local-paths.yml` plumbing in
+    `local-paths.sh` was **NOT deleted**, and the sanitize calls in `cmd-vault.sh`/`cmd-project-publish.sh`
+    were **NOT neutralized** — deleting now breaks vault/publish tests that assert `@local` and are
+    scheduled for P3/P4 → delta-green break. They stay alive (consumed only by vault/publish) and die in **P3/P4**.
+  - **Transitional per-section schema bridge, NOT "no dual-read".** `§9 "no dual-read"` vs `§11 "delta-green
+    with only test_local_paths rewritten"` were contradictory: ~12 P3/P4/P5 test files pass OLD-schema
+    fixtures to `cco start`/resolve. The resolver/mount-gen detect schema per section
+    (`yml_get_repos`/`yml_get_extra_mounts` non-empty ⇒ legacy chain; empty ⇒ `yml_get_repo_coords`/
+    `yml_get_mount_coords` + STATE index). Collapses to index-only when legacy dies (P3/P4); final shipped
+    state is index-only (honors §9 intent). Bridge emitters `_effective_repo_mounts`/`_effective_extra_mounts`
+    + `_resolve_entry_index` in `local-paths.sh`; cmd-start/workspace/cmd-project-query read via the bridge.
+  - `tests/helpers.sh`: `minimal_project_yml`→new schema + `seed_index_path` seeds `dummy-repo` in
+    `setup_cco_env`. `test_local_paths.sh` = **ADDED** index-resolution tests (NOT rewritten — @local funcs
+    kept). Coord reads use tab-PEEL splitting (`IFS=$'\t' read` collapses empty middle fields → mis-assigns
+    a name-only mount's target/readonly).
+  - Both deviations follow the **Z §5 transitional precedent** (vault-git mirror kept till P3). **Do NOT**
+    "fix" them by deleting early — that re-breaks delta-green. They are removed in P3/P4 by design.
+- **Commit B** (BIG, coordinated): bucket re-point. **← NEXT (see `Z3-handoff-commit-b.md`).**
   - `lib/cmd-start.sh` / `lib/cmd-new.sh`: final host-absolute mount map — `claude-state`→STATE,
     `memory`→STATE, `.cco/managed`→CACHE (`:ro`), global config/`secrets.env`/`mcp.json`→`~/.cco`;
     `GLOBAL_DIR`→`~/.cco`; `secrets.sh:load_global_secrets` re-pointed. **Container side of
@@ -145,11 +154,12 @@ existing-suite teardown). 4. ADRs **0007/0015/0016** (buckets/taxonomy), **0022*
 
 ## 8. Start here
 
-Next free ADR = **0024** (none needed for Commit-A/B/T8 unless a new decision surfaces). **The next clean
-session executes Commit A via its dedicated launch handoff → `Z2-handoff-commit-a.md`** (source-of-truth
-refs + mandatory preliminary analysis + scope with exact symbols). Begin with the coordinated **Commit A**
-(repos/mount/index/harness — the big breaking cutover; recon its consumers + harness flip first, per §5),
-keep the suite delta-green, commit atomically. Then **Commit B** (buckets),
-then **T8**. **Both relocation items are re-sequenced OUT of P0** (§3): **T4-source → P4** (source→DATA +
-F4), **T5 → P2** (base/meta→STATE, H6 + global decompose). Pause and discuss if a real design gap surfaces;
-otherwise the ADRs/design are the spec.
+Next free ADR = **0024** (none needed for Commit-B/T8 unless a new decision surfaces). **Commit A is DONE
+(`c8ae080`); the next clean session executes Commit B via its dedicated launch handoff →
+`Z3-handoff-commit-b.md`** (source-of-truth refs + mandatory preliminary analysis + scope with exact
+symbols). Begin with the coordinated **Commit B** (bucket re-point `GLOBAL_DIR`→`~/.cco` + host-absolute
+STATE/CACHE mounts + harness `HOME` — the big breaking cutover; recon its consumers + harness flip first,
+per §5), keep the suite delta-green (the 2 baseline failures only), commit atomically. Then **T8**. **Both
+relocation items are re-sequenced OUT of P0** (§3): **T4-source → P4** (source→DATA + F4), **T5 → P2**
+(base/meta→STATE, H6 + global decompose). Pause and discuss if a real design gap surfaces; otherwise the
+ADRs/design are the spec.
