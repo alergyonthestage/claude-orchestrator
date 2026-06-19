@@ -6,7 +6,35 @@
 # Dependencies: colors.sh, utils.sh
 # Globals: USER_CONFIG_DIR
 
-_remotes_file() { _cco_remotes_file; }
+# M3 split (ADR-0016 D7): the url registry (name=url) lives in DATA, synced
+# across the user's machines but de-tokenized; auth tokens (name=token) live in
+# a separate STATE file (0600, never-sync), so no secret rides a synced file.
+_remotes_file()       { _cco_remotes_file; }
+_remotes_token_file() { _cco_remotes_token_file; }
+
+# Upsert a token in the STATE token store (0600).
+_remote_token_set() {
+    local name="$1" token="$2"
+    local tf; tf=$(_remotes_token_file)
+    mkdir -p "$(dirname "$tf")"
+    if [[ -f "$tf" ]] && grep -q "^${name}=" "$tf" 2>/dev/null; then
+        local tmpf; tmpf=$(mktemp); grep -v "^${name}=" "$tf" > "$tmpf"; mv "$tmpf" "$tf"
+    fi
+    echo "${name}=${token}" >> "$tf"
+    if ! chmod 600 "$tf" 2>/dev/null; then
+        warn "Could not set permissions on $(basename "$tf") — file may be world-readable"
+    fi
+}
+
+# Remove a token from the STATE token store. Returns 1 if none existed.
+_remote_token_remove() {
+    local name="$1"
+    local tf; tf=$(_remotes_token_file)
+    [[ -f "$tf" ]] || return 1
+    grep -q "^${name}=" "$tf" 2>/dev/null || return 1
+    local tmpf; tmpf=$(mktemp); grep -v "^${name}=" "$tf" > "$tmpf"; mv "$tmpf" "$tf"
+    return 0
+}
 
 # ── Public helpers (used by other commands) ──────────────────────────
 
@@ -21,18 +49,18 @@ remote_get_url() {
     echo "${line#*=}"
 }
 
-# Resolve a remote name to its stored token.
+# Resolve a remote name to its stored token (STATE token store).
 # Returns the token on stdout, or returns 1 if not found.
 remote_get_token() {
     local name="$1"
-    local rf; rf=$(_remotes_file)
-    [[ ! -f "$rf" ]] && return 1
+    local tf; tf=$(_remotes_token_file)
+    [[ ! -f "$tf" ]] && return 1
     local line
-    line=$(grep -m1 "^${name}\.token=" "$rf" 2>/dev/null) || return 1
+    line=$(grep -m1 "^${name}=" "$tf" 2>/dev/null) || return 1
     echo "${line#*=}"
 }
 
-# Resolve a token for a given URL by matching against registered remotes.
+# Resolve a token for a given URL by matching against the url registry.
 # Returns the token on stdout, or returns 1 if no match.
 remote_resolve_token_for_url() {
     local url="$1"
@@ -41,7 +69,7 @@ remote_resolve_token_for_url() {
     # Normalize: strip trailing .git and /
     local norm_url="${url%.git}"; norm_url="${norm_url%/}"
     while IFS='=' read -r rname rurl; do
-        [[ -z "$rname" || "$rname" == \#* || "$rname" == *.* ]] && continue
+        [[ -z "$rname" || "$rname" == \#* ]] && continue
         local norm_rurl="${rurl%.git}"; norm_rurl="${norm_rurl%/}"
         if [[ "$norm_rurl" == "$norm_url" ]]; then
             remote_get_token "$rname" && return 0
@@ -50,11 +78,11 @@ remote_resolve_token_for_url() {
     return 1
 }
 
-# List all remote names (one per line).
+# List all remote names (one per line) from the url registry.
 remote_list_names() {
     local rf; rf=$(_remotes_file)
     [[ ! -f "$rf" ]] && return 0
-    grep -v '^#' "$rf" | grep -v '^$' | grep -v '\.token=' | cut -d= -f1
+    grep -v '^#' "$rf" | grep -v '^$' | cut -d= -f1
 }
 
 # ── Subcommands ──────────────────────────────────────────────────────
@@ -102,24 +130,20 @@ _cmd_remote_add() {
         die "Remote '$name' already exists. Remove it first with 'cco remote remove $name'."
     fi
 
-    # Create file with header if new
+    # Create url registry with header if new
     if [[ ! -f "$rf" ]]; then
         mkdir -p "$(dirname "$rf")"
-        echo "# CCO Config Repo remotes" > "$rf"
-        echo "# Format: name=url  |  name.token=token (optional)" >> "$rf"
+        echo "# CCO sharing-repo remotes — name=url (DATA, de-tokenized; tokens in STATE)" > "$rf"
     fi
 
     echo "${name}=${url}" >> "$rf"
 
-    # Store token if provided
-    if [[ -n "$token" ]]; then
-        echo "${name}.token=${token}" >> "$rf"
-        if ! chmod 600 "$rf" 2>/dev/null; then
-            warn "Could not set permissions on $(basename "$rf") — file may be world-readable"
-        fi
-    fi
+    # Store token (STATE token store, 0600) if provided
+    [[ -n "$token" ]] && _remote_token_set "$name" "$token"
 
-    # Sync with vault git if initialized
+    # Sync with vault git if initialized. Transitional: the vault (and this
+    # coupling) is removed in Phase 3 — M3 here only splits the registry storage
+    # into DATA (url) + STATE (token).
     if [[ -d "$USER_CONFIG_DIR/.git" ]]; then
         if ! git -C "$USER_CONFIG_DIR" remote get-url "$name" >/dev/null 2>&1; then
             git -C "$USER_CONFIG_DIR" remote add "$name" "$url" 2>/dev/null || true
@@ -162,13 +186,14 @@ _cmd_remote_remove() {
         fi
     fi
 
-    # Remove from .cco/remotes (both url and token lines)
+    # Remove from the url registry (DATA) and the token store (STATE)
     local tmpfile
     tmpfile=$(mktemp)
-    grep -v "^${name}=" "$rf" | grep -v "^${name}\.token=" > "$tmpfile"
+    grep -v "^${name}=" "$rf" > "$tmpfile"
     mv "$tmpfile" "$rf"
+    _remote_token_remove "$name" || true
 
-    # Sync with vault git if initialized
+    # Sync with vault git if initialized (transitional — removed in Phase 3).
     if [[ -d "$USER_CONFIG_DIR/.git" ]]; then
         git -C "$USER_CONFIG_DIR" remote remove "$name" 2>/dev/null || true
     fi
@@ -183,22 +208,12 @@ _cmd_remote_set_token() {
 
     local rf; rf=$(_remotes_file)
 
-    # Verify remote exists
+    # Verify remote exists in the url registry
     if [[ ! -f "$rf" ]] || ! grep -q "^${name}=" "$rf" 2>/dev/null; then
         die "Remote '$name' not found."
     fi
 
-    # Remove old token if any
-    if grep -q "^${name}\.token=" "$rf" 2>/dev/null; then
-        local tmpfile; tmpfile=$(mktemp)
-        grep -v "^${name}\.token=" "$rf" > "$tmpfile"
-        mv "$tmpfile" "$rf"
-    fi
-
-    echo "${name}.token=${token}" >> "$rf"
-    if ! chmod 600 "$rf" 2>/dev/null; then
-        warn "Could not set permissions on $(basename "$rf") — file may be world-readable"
-    fi
+    _remote_token_set "$name" "$token"
     ok "Token saved for remote '$name'"
 }
 
@@ -206,15 +221,9 @@ _cmd_remote_remove_token() {
     local name="${1:-}"
     [[ -z "$name" ]] && die "Usage: cco remote remove-token <name>"
 
-    local rf; rf=$(_remotes_file)
-
-    if [[ ! -f "$rf" ]] || ! grep -q "^${name}\.token=" "$rf" 2>/dev/null; then
+    if ! _remote_token_remove "$name"; then
         die "No token found for remote '$name'."
     fi
-
-    local tmpfile; tmpfile=$(mktemp)
-    grep -v "^${name}\.token=" "$rf" > "$tmpfile"
-    mv "$tmpfile" "$rf"
 
     ok "Removed token for remote '$name'"
 }
@@ -228,12 +237,13 @@ _cmd_remote_list() {
         return 0
     fi
 
+    local tf; tf=$(_remotes_token_file)
     local found=false
     echo -e "${BOLD}Remotes:${NC}"
     while IFS='=' read -r name url; do
-        [[ -z "$name" || "$name" == \#* || "$name" == *.* ]] && continue
+        [[ -z "$name" || "$name" == \#* ]] && continue
         local token_tag=""
-        if grep -q "^${name}\.token=" "$rf" 2>/dev/null; then
+        if [[ -f "$tf" ]] && grep -q "^${name}=" "$tf" 2>/dev/null; then
             token_tag="  [token]"
         fi
         printf "  %-16s %s%s\n" "$name" "$url" "$token_tag"
@@ -277,9 +287,9 @@ EOF
                         cat <<'EOF'
 Usage: cco remote add <name> <url> [--token <token>]
 
-Register a named remote Config Repo. Names must be lowercase
-alphanumeric with hyphens. If vault is initialized, the remote
-is also added to the vault's git config.
+Register a named remote sharing repo. Names must be lowercase
+alphanumeric with hyphens. The url registry is synced across your
+machines (de-tokenized); any token is stored separately, machine-local.
 
 Use --token to save an auth token for HTTPS repos.
 EOF
@@ -297,7 +307,7 @@ EOF
                         cat <<'EOF'
 Usage: cco remote remove <name>
 
-Unregister a remote. Also removes from vault git config if initialized.
+Unregister a remote (removes its url entry and any saved token).
 EOF
                         return 0
                         ;;
@@ -330,7 +340,7 @@ EOF
 Usage: cco remote set-token <name> <token>
 
 Save an auth token for a registered remote. The token is stored
-in .cco/remotes (gitignored) and used automatically for HTTPS
+machine-local (0600, never synced) and used automatically for HTTPS
 operations (install, update, publish).
 EOF
                         return 0

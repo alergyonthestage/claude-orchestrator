@@ -100,49 +100,24 @@ test_paths_project_managed_dir_default_new() {
     [[ "$result" == "$proj/.cco/managed" ]] || fail "Expected new managed dir default, got: $result"
 }
 
-# ── Remotes File ─────────────────────────────────────────────────────
+# ── Remotes registry (M3 split: url->DATA, token->STATE) ─────────────
 
-test_paths_remotes_file_new_path() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    export USER_CONFIG_DIR="$tmpdir/uc"
-    export GLOBAL_DIR="$tmpdir/uc/global"
-    mkdir -p "$USER_CONFIG_DIR/.cco"
+test_paths_remotes_file_in_data() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/lib/paths.sh"
-
-    echo "remote=git@example.com:r.git" > "$USER_CONFIG_DIR/.cco/remotes"
-
-    local result; result=$(_cco_remotes_file)
-    [[ "$result" == "$USER_CONFIG_DIR/.cco/remotes" ]] || fail "Expected new remotes path, got: $result"
+    local rf; rf=$( export HOME="$tmp/home" CCO_ALLOW_HOST_RESOLVE=1 CCO_DATA_HOME="$tmp/data"; _cco_remotes_file )
+    [[ "$rf" == "$tmp/data/remotes" ]] || fail "Expected remotes in DATA, got: $rf"
 }
 
-test_paths_remotes_file_old_fallback() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    export USER_CONFIG_DIR="$tmpdir/uc"
-    export GLOBAL_DIR="$tmpdir/uc/global"
-    mkdir -p "$USER_CONFIG_DIR"
+test_paths_remotes_token_file_in_state() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/lib/paths.sh"
-
-    echo "remote=git@example.com:r.git" > "$USER_CONFIG_DIR/.cco-remotes"
-
-    local result; result=$(_cco_remotes_file)
-    [[ "$result" == "$USER_CONFIG_DIR/.cco-remotes" ]] || fail "Expected old .cco-remotes fallback, got: $result"
-}
-
-test_paths_remotes_file_default_new() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    export USER_CONFIG_DIR="$tmpdir/uc"
-    export GLOBAL_DIR="$tmpdir/uc/global"
-    mkdir -p "$USER_CONFIG_DIR"
-    source "$REPO_ROOT/lib/colors.sh"
-    source "$REPO_ROOT/lib/utils.sh"
-    source "$REPO_ROOT/lib/paths.sh"
-
-    local result; result=$(_cco_remotes_file)
-    [[ "$result" == "$USER_CONFIG_DIR/.cco/remotes" ]] || fail "Expected new remotes default, got: $result"
+    local tf; tf=$( export HOME="$tmp/home" CCO_ALLOW_HOST_RESOLVE=1 CCO_STATE_HOME="$tmp/state"; _cco_remotes_token_file )
+    [[ "$tf" == "$tmp/state/remotes-token" ]] || fail "Expected remotes-token in STATE, got: $tf"
 }
 
 # ── Pack Source ──────────────────────────────────────────────────────

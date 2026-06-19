@@ -16,6 +16,13 @@ setup_cco_env() {
     export CCO_TEMPLATES_DIR="$tmpdir/user-config/templates"
     export CCO_LLMS_DIR="$tmpdir/user-config/llms"
     export CCO_DUMMY_REPO="$tmpdir/dummy-repo"
+    # XDG 4-bucket overrides (decentralized config). Additive alongside the
+    # legacy CCO_*_DIR during the P0 cutover; CCO_ALLOW_HOST_RESOLVE bypasses
+    # the in-container guard so the host-side resolver runs in test/dev.
+    export CCO_DATA_HOME="$tmpdir/data"
+    export CCO_STATE_HOME="$tmpdir/state"
+    export CCO_CACHE_HOME="$tmpdir/cache"
+    export CCO_ALLOW_HOST_RESOLVE=1
     mkdir -p "$CCO_USER_CONFIG_DIR" "$CCO_GLOBAL_DIR" "$CCO_PROJECTS_DIR" \
              "$CCO_PACKS_DIR" "$CCO_TEMPLATES_DIR" "$CCO_LLMS_DIR" "$CCO_DUMMY_REPO"
 }

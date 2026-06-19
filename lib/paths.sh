@@ -39,8 +39,16 @@ _cco_resolve_path() {
 
 # ── Top-level ────────────────────────────────────────────────────────
 
+# Remote registry — name->url, de-tokenized, in DATA (synced, never-team; M3 /
+# ADR-0016 D7). Tokens live separately in STATE (never-sync) — see below.
 _cco_remotes_file() {
-    _cco_resolve_path f "$USER_CONFIG_DIR/.cco/remotes" "$USER_CONFIG_DIR/.cco-remotes"
+    printf '%s\n' "$(_cco_data_dir)/remotes"
+}
+
+# Remote auth tokens — name->token, in STATE (0600, machine-local, never-sync;
+# the M3 split that keeps secrets off the synced DATA registry).
+_cco_remotes_token_file() {
+    printf '%s\n' "$(_cco_state_dir)/remotes-token"
 }
 
 # ── Global scope ─────────────────────────────────────────────────────
