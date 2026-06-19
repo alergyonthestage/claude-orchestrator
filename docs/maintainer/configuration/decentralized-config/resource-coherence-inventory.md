@@ -1,13 +1,15 @@
 # Resource-Coherence Inventory — Decentralized In-Repo Config
 
 **Status**: Implementation-prep checklist (DESIGN phase, 2026-06-16; open items updated by M/ADR-0016,
-2026-06-17; **sharing/pack/permission items by S/ADR-0018-0020, 2026-06-18**). Living artifact —
-update as items are completed during implementation.
+2026-06-17; **sharing/pack/permission items by S/ADR-0018-0020, 2026-06-18**; **doc-sweep coverage
+completed by Cluster 3 — repo README, `internal/tutorial`, docs index pages, "Config Repo" nomenclature,
+spec.md FR-level, maintainer-design archive — 2026-06-19**). Living artifact — update as items are
+completed during implementation.
 **Method**: 3 code-grounded analyst agents in parallel (templates/skills/agents · docs/roadmap ·
 managed/infra/CLAUDE.md), then synthesis. No files modified by the analysis.
 **Scope**: every resource **outside the core CLI** (`lib/*.sh`, `bin/cco` — covered by the
 phased teardown in `design.md §9`) that references the **old** config model and must be realigned
-to the decentralized model (ADRs 0001–0010). The `docs/maintainer/configuration/decentralized-config/`
+to the decentralized model (ADRs 0001–0021). The `docs/maintainer/configuration/decentralized-config/`
 tree is the NEW design (source of truth) and is excluded.
 
 > **Purpose**: when the vault/profile/`user-config/` model is removed, dozens of peripheral
@@ -30,6 +32,7 @@ tree is the NEW design (source of truth) and is excluded.
 | `cco project create` | **REMOVED.** Entry points = `cco init` \| `cco join` \| `cco migrate` |
 | `cco project resolve` | `cco resolve` / `cco path` (index-backed clone/resolve) |
 | Generated `packs.md`/`workspace.yml`/`docker-compose.yml` written in-repo | → CACHE/STATE, overlaid `:ro` (ADR-0005/0007) |
+| **"Config Repo"** (the term, any doc) | **sharing repo** — ADR-0018 D1/P13 retired "config repo"; the term splits into **config bucket** (`~/.cco` + `<repo>/.cco`) vs **sharing repo** (the publish/install remote for packs/templates). Context-sensitive rename (the third-repo concept survives), not a blind `s///` |
 
 ---
 
@@ -75,6 +78,20 @@ Its `project.yml`, `CLAUDE.md`, `config-safety` rule, and both skills are built 
 `defaults/global/.claude/skills/{analyze,commit,design,review}` — the `memory: user` frontmatter is
 native Claude-Code **subagent** scope, NOT the cco memory/vault model (do not touch).
 
+### A.4 `internal/tutorial/` — runtime onboarding tutorial (substantial rewrite, ride cutover)
+Built end-to-end on the old model and a **near-duplicate of the A.1 `config-editor` skills** (same
+`cco vault save` reminders, same `user-config/` paths). The org-policy `CLAUDE.md` defines
+`internal/tutorial/` as a runtime-used resource, so it is in scope (previously missing).
+
+| Resource (file:line) | Old-model reference | Required change | Phase |
+|---|---|---|---|
+| `internal/tutorial/.claude/CLAUDE.md:88-205` | hard-codes `/workspace/user-config/` (`projects/`, `packs/`, `global/.claude/`) | Remap to `~/.cco/` + `<repo>/.cco/` + STATE/XDG (same remap as A.1 CLAUDE.md) | 3 |
+| `internal/tutorial/.claude/skills/setup-project/SKILL.md` | `cco project create --template config-editor`; create under `user-config/projects/` | In-repo `<repo>/.cco/` init (`cco init`/`join`) + `~/.cco/packs/`; drop `project create` | 3 |
+| `internal/tutorial/.claude/skills/setup-pack/SKILL.md` | create under `user-config/packs/`; `cco vault save` reminder | `~/.cco/packs/<name>/`; `cco config save`/git | 3 |
+| `internal/tutorial/.claude/skills/tutorial/SKILL.md` | old-model walkthrough | Align the flow to init/join/migrate + `cco config` + per-user tags | 3 |
+| `internal/tutorial/.claude/rules/tutorial-behavior.md:18,38` | `cco project create`; `cco vault push` | init/join/migrate; `cco config push` | 3 |
+| `internal/tutorial/project.yml:18-19` | mounts target `/workspace/user-config` | Retarget to the `~/.cco` global mount (new global-dir var) | 3 |
+
 ---
 
 ## B. Managed config + infrastructure + CLAUDE.md
@@ -103,7 +120,19 @@ mounts → host-absolute — which lives in `lib/cmd-start.sh`, Phase 0, tracked
 
 ---
 
-## C. Documentation (`docs/`)
+## C. Documentation (`docs/` + repo-root landing files)
+
+### C.0 Repo-root `README.md` (GitHub landing page — heavy rewrite, ride cutover)
+The single most user-facing file; was absent from this inventory. Carries actively-false old-model
+references (downgraded blocker→high: most-discoverable in any sweep, mechanical-once-flagged).
+Disambiguate from `docs/user-guides/README.md` (a different file).
+
+| Resource (file:line) | Old-model reference | Required change | Phase |
+|---|---|---|---|
+| `README.md:28` | "share your own with `cco manifest`" | Structure-based **sharing repo** (manifest removed, ADR-0012) | 3 |
+| `README.md:29,117` | "Vault versioning — `cco vault` versions your `user-config/` with git" | `cco config save/push/pull` on `~/.cco` + git on `<repo>/.cco` (ADR-0008); drop vault/`user-config` | 3 |
+| `README.md:106` | `cco project create my-app` | `cco init` \| `cco join` \| `cco init --migrate` | 3 |
+| `README.md:116` | "Config Repo sharing … `cco manifest` to export" | sharing repo (ADR-0018); drop `cco manifest`; 2×2 publish/install + export/import | 3 |
 
 ### C.1 Full rewrite — entire sections describe REMOVED features (highest user-facing risk)
 
@@ -119,6 +148,7 @@ mounts → host-absolute — which lives in `lib/cmd-start.sh`, Phase 0, tracked
 | `docs/reference/context-hierarchy.md` (43-46, 144-510, 784-808; memory 380-416, 867-897) | scope tables "Real Location" + mount/memory | Remap global→`~/.cco`, project→`<repo>/.cco`, secrets in-repo gitignored; mount = single `/workspace/.claude` + `:ro` overlays (ADR-0005); memory = STATE |
 | `docs/maintainer/architecture/architecture.md` (17-123 diagram/table; memory 197-222; 280, 394-505, 624-664) | architecture diagram + memory rationale | Redraw on decentralized model; rewrite memory rationale (ADR-0009); update command list |
 | `docs/maintainer/integration/docker/design.md` (mount table 389-410; tree 649-716; memory 556-816; gen files 788-791) | Docker mount table = contract | Remap mount sources (host-absolute, ADR-0005); generated files → CACHE; memory → STATE |
+| `docs/maintainer/architecture/spec.md` (FR-2.1:48 "Projects … under `projects/`"; FR-2.3; NFR-3.3:141; user story :186 `cco project create`) — **LIVE authoritative spec (repo `CLAUDE.md` "Key Files" cites it); promoted from C4 (critic)** | FR/requirements-level centralized `projects/` model | Rewrite FR-2.1/FR-2.3/NFR-3.3 + the user story to the **decentralized `<repo>/.cco`** model + init/join/migrate; the centralized `projects/` model is **abolished** (structural, not a path swap) |
 
 ### C.3 Medium — onboarding (first commands the user types: correctness-critical)
 
@@ -127,28 +157,69 @@ mounts → host-absolute — which lives in `lib/cmd-start.sh`, Phase 0, tracked
 | `docs/getting-started/installation.md` (45-104) | `cco project create` → init/join/migrate; `user-config/` → `~/.cco`/`<repo>/.cco` |
 | `docs/getting-started/first-project.md` (14-45; memory 30) | same command swap; memory note |
 | `docs/user-guides/project-setup.md` (10-339; vault 289-339) | command swap; remove the "built-in vault"/`@local` section → git on `.cco/` + index |
+| `docs/getting-started/concepts.md` (78-83 "Sharing packs and project templates (Config Repos)") — **promoted from C4 (F33)** | **Structural** rewrite: remove the `cco manifest refresh`/`manifest.yml` workflow (removed, ADR-0012); "Config Repos" → sharing repo; keep the path + `cco vault push`→`cco config push` swaps |
+| `docs/user-guides/knowledge-packs.md` (284-295 publish workflow; 304 central llms) — **promoted from C4 (F33)** | **Structural** rewrite: remove `cco manifest refresh`/`manifest.yml`; "Config Repos" → sharing repo; line 304 "LLMs.txt stored centrally in `user-config/llms/`" → **CACHE content + per-unit coordinate** (ADR-0014/0016) |
 
 ### C.4 Light — mechanical path/command substitution
 
-`docs/getting-started/concepts.md` (83 `cco vault push`→`cco config push`; 11,114 paths) ·
-`docs/user-guides/knowledge-packs.md` (paths; 295 `cco vault push`) ·
 `docs/user-guides/authentication.md` (claude-state→STATE; secrets paths) ·
 `docs/user-guides/troubleshooting.md` (paths; 366 `project create`) ·
 `docs/user-guides/advanced/custom-environment.md` (`user-config/global/`→`~/.cco/global/`) ·
 `docs/reference/project-yaml.md` (8,32,104-280: paths, `@local`, fix link to retired
-`vault/local-path-resolution-design.md`) · `docs/maintainer/architecture/spec.md` (50,91,186
-`project create` in FRs) · `docs/user-guides/{agent-teams.md,advanced/subagents.md,README.md,
-structured-agentic-development.md}` (path mentions / "vault" word).
+`vault/local-path-resolution-design.md`) · `docs/user-guides/{agent-teams.md,advanced/subagents.md,
+README.md,structured-agentic-development.md}` (path mentions / "vault" word).
+
+*(Moved out of C.4 by Cluster 3: `concepts.md` + `knowledge-packs.md` → **C.3** (F33 — structural
+manifest/Config-Repo/llms rewrite, not mechanical); `docs/maintainer/architecture/spec.md` → **C.2**
+(critic — FR-level model rewrite, a LIVE authoritative spec).)*
 
 **Confirmed false positives (no action):** `browser-automation.md` (Chrome profile),
 `development-workflow.md`/`configuring-rules.md` ("risk profile"), `installation.md:35-37`
 (`~/.bash_profile`), `troubleshooting.md:31` (npm registry), `concepts.md:156` (agents "profiles").
 
 ### C.5 Roadmap (`docs/maintainer/decisions/roadmap.md`)
-Section "Vault Simplification → Decentralized In-Repo Config" already exists (status "Design APPROVED
-2026-06-15"). **Reconcile, don't rewrite**: bump ADR range 0001–0006 → **0001–0010**; mark RD-memory
-+ RD-authoring **resolved** (only RD-triggers + review follow-ups remain); mark bug class #B13–#B23
-(vault/`@local`/profile) as **mooted** by the removal; add implementation-phase status when impl starts.
+Section "Vault Simplification → Decentralized In-Repo Config" already exists. **Reconcile, don't
+rewrite**: ADR range already bumped to **0001–0021** (done — header + body, Cluster 1/2); RD-memory +
+RD-authoring already marked **resolved** (only RD-triggers + review follow-ups remain); mark bug class
+#B13–#B23 (vault/`@local`/profile) as **mooted** by the removal; add implementation-phase status when
+impl starts.
+
+### C.6 Docs index / navigation READMEs (TOC realignment, ride cutover)
+Discovery entry points still advertise removed sections; not previously inventoried.
+
+| Doc (representative lines) | Old-model TOC | Action |
+|---|---|---|
+| `docs/README.md` (9,38,87) | "vault, profiles, Config Repos"; "Vault & Multi-PC Sync" link | Drop vault/profiles/Config-Repos rows; relabel to git-on-`.cco` + `cco config` + per-user tags + sharing repo |
+| `docs/maintainer/README.md` (14,36,45) | vault/profiles/Config-Repos/manifest TOC | Same realignment; fix any link to a retired `vault/` design doc |
+| `docs/maintainer/configuration/README.md` (14,15,34) | names vault/sharing/resource-lifecycle as canonical | Redirect canonical pointers to `decentralized-config/` (see Section D); drop manifest |
+| `docs/user-guides/README.md` (18) | "Config Repos, manifest … vault profiles" | sharing repo; drop manifest/profiles |
+
+---
+
+## D. Maintainer-design history subtrees (archive at cutover)
+
+The old maintainer-design subtrees under `docs/maintainer/configuration/{vault,sharing,
+resource-lifecycle}/` (~15 files) describe the **removed** mechanism (vault profiles, Config Repos +
+manifest, `@local` + `local-paths`, `.cco`-remotes migration). Per the **`documentation-lifecycle`**
+rule, a removed-feature design doc with no living successor is **archived — not in-place-bannered and
+not deleted** (the successor is this `decentralized-config/` tree; history is preserved in `_archive/`
++ git).
+
+**Disposition (Phase 3 cutover):**
+1. Create `docs/maintainer/configuration/_archive/` and **move** `vault/` + `sharing/` + the **dead
+   remainder** of `resource-lifecycle/` into it.
+2. **`resource-lifecycle/` is only PARTIALLY removed:** its file-policy (tracked/untracked/generated)
+   + changelog dual-tracker concepts are **live**, referenced by `.claude/rules/update-system.md` and
+   `docs/maintainer/configuration/update-system/`. **Re-home the surviving concepts into the living
+   `update-system/` design first**, then archive only the `.cco/`-layout remainder.
+3. Update `docs/maintainer/configuration/README.md` (Document Map + Concept Ownership) so its
+   "canonical source" pointers for vault profiles, publish/install flow, and `.cco/` layout
+   **redirect to `decentralized-config/`** (also tracked in C.6).
+4. Back-references from frozen ADRs to `../vault/…`/`../sharing/…` may dangle after the move — accept
+   (ADRs are history) or fix in one pass; do not block the cutover on it.
+
+*(Decided 2026-06-19, Cluster 3: archive chosen over the review's F30 option-A in-place supersede
+banners — see the `documentation-lifecycle` rule.)*
 
 ---
 
@@ -164,6 +235,12 @@ Section "Vault Simplification → Decentralized In-Repo Config" already exists (
    `memory-policy.md` → ADR-0009 makes it STATE, no sync v1. A **capability promise that disappears** —
    change rationale, not just paths.
 4. **`cco project create`** in every onboarding doc + repo `CLAUDE.md` → init/join/migrate.
+5. **"Config Repo" (the term)** — ADR-0018 D1/P13 retired it (config bucket vs sharing repo).
+   **~43 occurrences across 9 user docs** (`README.md`, `getting-started/concepts.md`,
+   `reference/cli.md`, `user-guides/{authentication,configuration-management,knowledge-packs,
+   project-setup,README,structured-agentic-development}.md`) swept to **sharing repo** at the cutover.
+   **Context-sensitive** swap, not a blind `s///`: the *concept* (a third git repo as a publish/install
+   remote) survives — only the name changes; never rename references to the **config bucket**.
 
 ---
 

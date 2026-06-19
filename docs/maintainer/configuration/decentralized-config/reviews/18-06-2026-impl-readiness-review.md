@@ -2012,9 +2012,45 @@ emits the old `repos:\n  - path:` schema; M3 encapsulated behind `remote_get_url
 resolve_token_for_url` (5 downstream callers unaffected); H6 paths at `paths.sh:46-60`; sync-before-
 publish defect at `cmd-pack.sh:1024` (`git push origin HEAD`, no fetch/merge).
 
-## Clusters 3–5 — OPEN
+## Cluster 3 — Doc drift / re-sync — Block A RESOLVED & PERSISTED (2026-06-19)
 
-See the per-severity findings above. **Cluster 3** = doc drift (incl. spec.md/architecture.md FR
-staleness + roadmap/inventory ADR-range, inherited from the critic). **Cluster 4/5** own F19 (coordinate-
-add verbs), the `cco config` namespace, and the exact `cco config validate` contract referenced by
-ADR-0021. **Next session = Cluster 3** (mostly mechanical edits; clean session preferred).
+**Policy decided first** (persisted as the repo rule `.claude/rules/documentation-lifecycle.md`): three
+doc classes — **decision/analysis history** (ADRs, reviews, analyses: immutable, superseded +
+forward-annotated, never rewritten) · **living design/architecture docs** (rewritten to current truth in
+place, no inline "superseded" sections; history in git) · **removed-feature design docs** (archived at
+cutover, not bannered, not deleted). Update-**timing** discriminator: **design-intent docs → now**;
+**shipped-behavior docs → ride the phase that makes them true / the cutover sweep** (never rewrite ahead
+of the code). This **supersedes the review's F30 option-A in-place-banner recommendation** with an
+archive policy.
+
+**Block A — persisted now (design-intent docs + sweep inventory):**
+- **F3** — `requirements.md` re-synced: tags → internal/CLI-canonical in DATA `<data>/cco/tags.yml`
+  (ADR-0011/0015/0016); `cco index refresh --scan` → `cco resolve --scan` (ADR-0017 D2); ADR range
+  0001–0010 → 0001–0021; publish/install qualified to the 2×2 (ADR-0018); `cco migrate` → `cco init
+  --migrate` (ADR-0021); internal "Config Repo" → sharing repo.
+- **F24** — `design.md §1` diagram/bullets relabelled (Domain A = ADR-0008; "Config Repos" node →
+  sharing repo); §1 added to the realigned-sections note.
+- **F22 / F23** — forward-annotation notes added to ADR-0002 (tags out of the index; CLI → `cco resolve
+  --scan`) and ADR-0014 D2 (coordinate placement refined to per-unit manifest embedding, not a central
+  registry). Decision text kept verbatim (no-edit-history convention).
+- **Inventory completed** (`resource-coherence-inventory.md`), the driver for the cutover sweep: new
+  **A.4** `internal/tutorial` (F21), **C.0** repo-root README (F20), **C.6** docs index pages (F31);
+  `concepts.md`/`knowledge-packs.md` promoted **C4 → C3** (F33); `spec.md` promoted **C4 → C2**, FR-level
+  (critic); legend row + cross-cutting pattern #5 for the "Config Repo" → sharing-repo rename (F32); new
+  **Section D** maintainer-design archive (F30); ADR-range nits fixed (scope note + C.5; `roadmap.md`
+  already at 0001–0021).
+
+**Block B — deferred to the implementation cutover (shipped-behavior docs, per the timing policy):** the
+actual rewrites of `README.md`, the user guides, `internal/tutorial`, `concepts.md`, `knowledge-packs.md`,
+`spec.md`/`architecture.md` FRs, the four docs index pages, the ~43-occurrence "Config Repo" sweep, and
+the Section-D archive move. All are inventoried and ride the Phase-3 cutover; none can be rewritten ahead
+of the code without misdescribing what currently ships.
+
+Commits (local, `feat/vault/decentralized-config`): policy rule · design-intent re-sync · inventory
+completion + this log.
+
+## Clusters 4–5 — OPEN
+
+See the per-severity findings above. **Cluster 4/5** own F19 (coordinate-add verbs), the `cco config`
+namespace, and the exact `cco config validate` contract referenced by ADR-0021. **Next = Cluster 4**
+(coordinate model & resolution).
