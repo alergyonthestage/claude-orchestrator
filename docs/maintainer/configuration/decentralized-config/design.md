@@ -139,10 +139,14 @@ never-team* (`required`, ADR-0015):
 <data>/cco/
   tags.yml                       # per-user global tag registry — typed keys {packs,projects,templates}→[tags]
   remotes                        # de-tokenized Config-Repo endpoint registry: name→url (token in STATE)
-  projects/<id>/source           # install-provenance (url+ref[+resource]), keyed by identity — standalone file
+  projects/<id>/source           # upstream coordinate ONLY (url/ref[/resource]), keyed by identity — standalone file
   packs/<name>/source            # idem
   templates/<name>/source        # idem
 ```
+The `source` file is a **pure upstream coordinate** (`url`/`ref`/`resource` — renamed from the legacy
+`source:`/`path:`; ADR-0022 D1). Machine-local bookkeeping is **not** kept here: `commit`/`installed`/
+`version` live in STATE `/update` meta, and `publish_target` is **dropped — re-derived on demand** by
+reverse-looking-up `url` in the `remotes` registry (so nothing machine-local rides a `required`-synced file).
 
 **STATE** — `$CCO_STATE_HOME` → `$XDG_STATE_HOME/cco` → `~/.local/state/cco` — machine-local,
 non-portable (`never`); partitioned by sync-eligibility (ADR-0013 D2):
@@ -156,9 +160,14 @@ non-portable (`never`); partitioned by sync-eligibility (ADR-0013 D2):
   backups/                       # vault-migration archives — moved OUT of ~/.cco (fixes inventory C1)
   projects/<id>/
     session/   memory/  claude-state/(transcripts)   # opt-in P8 (future R-state-sync)
-    update/    meta(hashes, schema_version, policies, flags, local_framework_override)  base/(3-way ancestors)
+    update/    meta(hashes, schema_version, policies, flags, local_framework_override, installed-commit)  base/(3-way ancestors)
     docker-compose.yml   .tmp/
+  packs/<name>/update/base/        # pack-scoped 3-way merge ancestor (sync-before-publish; ADR-0022 D5) — never-sync
 ```
+STATE `/update` meta also carries the per-identity **installed-commit** (relocated out of DATA `source`,
+ADR-0022 D1) that `cco update --check` diffs against; and the pack-scoped `base/` ancestor for
+sync-before-publish (ADR-0022 D5), mirroring the project `base/`. Both are **machine-local, never-sync**.
+
 The `/session` (opt-in) vs `/update` (never) split is the **allowlist boundary** protecting the
 future P8 state-sync from ever sweeping base/hashes/tokens.
 
@@ -168,7 +177,7 @@ future P8 state-sync from ever sweeping base/hashes/tokens.
   llms/<name>/                   # llms CONTENT download + cache-state (etag, resolved_url, downloaded) — C2
   installed/                     # Config-Repo clones for install/update
   remote_cache                   # remote HEAD + ts (avoids network on update checks)
-  coords-lookup                  # derived name→url lookup (advisory; scan-regenerable) — ADR-0016 D3
+  # coords-lookup                # v1: derived name→url lookup is computed ON DEMAND, NOT persisted (ADR-0022/F45)
   projects/<id>/.claude/         # generated overlays (packs.md, workspace.yml) → :ro into /workspace/.claude (F1)
   projects/<id>/managed/         # generated browser.json / github.json / policy.json → :ro overlay (H5)
   *.bak   dry-run/               # update artifacts (cco clean)
@@ -302,6 +311,26 @@ must have reachable coordinates) is surfaced by the layered `embed-at-add` / `he
 `cco config validate` model — **never a hard block** (ADR-0019 D2 / P14). **Templates** are scaffold-time
 only — **not** referenced here (ADR-0019 D7).
 
+**Invariant (ADR-0022 D4):** `<repo>/.cco/packs/X` is a **CACHE iff** its `packs:` entry carries a `url`,
+an **authored-in-repo SOURCE iff** it does not. The discriminator is the manifest coordinate the resolver
+already reads — not a flag inside the pack files. **One deterministic resolver** implements this table
+(mount order for the cache case: `~/.cco/packs/X` → url-fetch → `<repo>/.cco/packs/X`):
+
+| entry has `url`? | `~/.cco/packs/X` | `<repo>/.cco/packs/X` | url-fetch | Resolved (mount) | `cco config validate` |
+|---|---|---|---|---|---|
+| yes (cache) | present | — | — | `~/.cco/packs/X` (local working copy) | OK |
+| yes (cache) | absent | — | reachable | fetch `url` → `~/.cco/packs/X` | OK |
+| yes (cache) | absent | present | unreachable | `<repo>/.cco/packs/X` (last-layer cache) | WARN (degraded) |
+| yes (cache) | absent | absent | unreachable | unresolved | WARN (unreachable) |
+| no (authored) | absent | present | — | `<repo>/.cco/packs/X` (the source) | OK |
+| no (authored) | **present** | **present** | — | `~/.cco/packs/X` wins at mount | **ERROR** — two unrelated sources collide on one name (silent-wrong-build) |
+| no (authored) | — | absent | — | unresolved | WARN (missing authored pack) |
+
+Only the bolded row is an **ERROR** (a no-coordinate authored pack shadowed by an unrelated same-name
+global pack, with nothing upstream to reconcile); every reachability gap and the cache-degrades case stay
+**WARN** (P14/P17). The ERROR is exit-code only inside `cco config validate`, never the git push path; the
+command's full contract is **Cluster 5**.
+
 ---
 
 ## 3. Machine-Agnostic Config & the Local Path Index
@@ -325,19 +354,27 @@ projects:                    # subsumes the old registry — paths/repos only, N
 > tags live in `<data>/cco/tags.yml` (DATA, Axis-1 `required`).
 - **Uniqueness invariant (AD5)**: a logical name maps to exactly one absolute path
   per machine. `cco init`/`cco join` refuse a name already bound to a different path.
+  The index is **global-flat** for v1 (one machine-global `paths:` map; a repo used by two projects =
+  one entry); per-project namespacing is **reserved post-v1** (ADR-0022 D2). Writes are **atomic**
+  (`mktemp` + `mv`, the existing `local-paths.sh` convention), single-writer, **no file lock** in v1 —
+  writes are user-serial; a rare race is last-writer-wins and self-heals via `cco resolve --scan`.
 - **Absolute paths only**; CLI commands accept paths relative to the cwd and resolve
   to absolute before storing.
 - **Resolution CLI — consolidated on `cco resolve` (ADR-0017 D2)**: `cco resolve [project]`
   (interactively resolve each unresolved repo/mount: *specify local path* · *clone-from-`url`* ·
   *skip*), `cco resolve --all` (all projects), and `cco resolve --scan <dir>` (auto-discover by
-  scanning for `.cco/project.yml` and (re)build the index — **absorbs** the old
-  `cco resolve --scan`). `cco path set <name> <path>` / `cco path list` remain the
+  scanning for `.cco/project.yml` and **reconcile (upsert)** the index — **absorbs** the old
+  `cco index refresh --scan`). `--scan` is **non-destructive** (ADR-0022 D3): it upserts each
+  discovered `name→path` + `repos[]`, **never deletes** out-of-`<dir>` mappings or `cco path set`
+  overrides, and on a name-already-bound-to-a-different-path conflict applies **AD5** (warn +
+  keep-existing, optionally prompt) — never silent overwrite. **No `--prune` in v1** (stale-entry GC is
+  a reserved future). `cco path set <name> <path>` / `cco path list` remain the
   **low-level** index editor (move dirs, fix divergence, external installs). Manual edit allowed but
   discouraged. (`cco resolve` is today's `cco project resolve`, kept as the familiar verb.)
-- **Bootstrap / fresh machine**: `cco resolve --scan <dir>` rebuilds the index
-  by scanning for `.cco/project.yml`; first `cco start` resolves any missing name via
-  prompt/clone. So a fresh clone is not stranded by an empty index (closes the old
-  registry-bootstrap gap).
+- **Bootstrap / fresh machine**: `cco resolve --scan <dir>` populates the index
+  by scanning for `.cco/project.yml` (the empty-index case of the same upsert path); first
+  `cco start` resolves any missing name via prompt/clone. So a fresh clone is not stranded by an
+  empty index (closes the old registry-bootstrap gap).
 - **`@local` markers are gone** (ADR-0016 D4): `project.yml` carries logical names +
   machine-agnostic `url` coordinates only, with absolute paths resolved from the index. The
   resolution logic is reused but now reads the **unified index** instead of a per-repo
@@ -449,8 +486,18 @@ This tracking drives:
   sync" notice (§4.4);
 - optional **fast rollback** of the last sync.
 
-Exact format and the rollback-snapshot richness are implementation details (this was
-previously a separate open question, now folded into scope as FR-Y-S6 — requirements §8).
+**Fingerprint contract (ADR-0022/F39 — the load-bearing semantic, format still deferred).** The
+fingerprint is a hash over the **exact synced set of §4.1** (`project.yml` + `claude/**`
+[+ `secrets.env.example`]; never `secrets.env`/repo-root `.claude/`/system dirs), so one definition feeds
+both write and compare. It is **written/updated** (a) after a repo **successfully receives** a sync
+(target side) and (b) for the **source** repo at the same `cco sync` — so immediately after a sync every
+touched repo's fingerprint equals its on-disk synced-set hash. **Divergence is lazy, read-time**: a repo
+is "edited locally since the last sync" iff its *current* synced-set hash ≠ its stored fingerprint
+(recomputed on read; no eager clear, no event hook). A repo with **no stored fingerprint** (code-only
+Case A / fresh machine / never-synced) is **pristine**, never divergent. This per-repo "who moved" signal
+is distinct from the §4.3 content diff ("are A and B different now") — the Case-B-vs-C branch consumes
+both. Exact hash algorithm and the rollback-snapshot richness remain implementation details (folded into
+scope as FR-Y-S6 — requirements §8).
 
 ---
 
@@ -506,10 +553,31 @@ Team-sharing flows through a **sharing repo** (the retired term "config repo" �
 - **Referenced resources** (repos/llms/packs) travel as **coordinates** in the manifest; reachability is
   surfaced by the layered `embed/heal/validate` model, never hard-blocked (ADR-0019 D2/P14). Pack
   source-of-truth follows the **working-copy** model with **sync-before-publish** (ADR-0019 D4/P16).
-- **`cco update --check`** lists resources with available updates (reuses `source` + `remote_cache`).
+- **`cco update --check`** lists resources with available updates — **DATA `source`-driven**, gated on
+  local install presence, 3-state output (*not installed here* / comparable / indeterminate); the
+  installed-commit baseline lives in **STATE `/update`** (ADR-0022 D6, detail in §7).
 - **Permissions** are **delegated to git** (P17/ADR-0020): a read-only token can't push (sharing-repo
   split); granular read-hiding by splitting repos; `<repo>/.cco/` is co-writable (optional
   `cco config protect` scaffolds CODEOWNERS + host rulesets). cco assists, never gatekeeps.
+
+**Pack publish path — consolidated sequence (ADR-0022 D5; sync-before-publish).** `cco pack publish
+<name> [remote]` is **one** owning sequence folding the three converging refactors (ADR-0019 D4 merge +
+ADR-0018 D3 structure-discovery/init-or-merge + ADR-0013 H6 `base/`→STATE):
+1. **Resolve the remote** — explicit arg, else re-derive `publish_target` by reverse-looking `url` up in
+   the DATA `remotes` registry (ADR-0022 D1; no stored pointer).
+2. **Structure-discover + clone push-ready** — treeless/shallow `ls-tree` over `packs/*/`,`templates/*/`
+   (ADR-0018 D3), reusing `remote.sh` minus the deleted `manifest_init` (init-or-merge by structure).
+3. **Sync-before-publish.** *Subsequent publish* (a STATE `base/` exists for `<name>` at
+   `<state>/cco/packs/<name>/update/base/`) → **3-way merge**: base = last-published tree, ours =
+   `~/.cco/packs/<name>`, theirs = remote `packs/<name>/`, reusing `_collect_file_changes` / the
+   project-update 3-way engine; **abort on conflict** ("run `cco pack update` first", P7). *First publish*
+   (no recorded base) → init/add into the (possibly empty) structure, push if fast-forward; if the remote
+   already carries the pack, treat as divergence → merge path (**never blind-overwrite**).
+4. **Commit** (init-on-empty or merge-on-existing) and **push**.
+5. **Record** the published tree as the new STATE `base/` (and likewise on `cco pack install`). The base
+   is **STATE never-sync** — a local merge ancestor per machine (ADR-0013 D2), never carried in the
+   sharing repo. This replaces the prior **clone-then-overwrite** path (clone HEAD → `rm -rf` → `cp -R` →
+   push) that silently discarded co-maintainers' remote-only changes.
 
 Implementation (`cmd-project-publish.sh`, `cmd-project-install.sh`, `cmd-pack.sh`, `cmd-remote.sh`,
 `remote.sh`) is **revised** accordingly (→ **Phases 4–5**, §9, built on the Phase-0 final
@@ -528,12 +596,12 @@ discovery. See ADR-0018/0019/0020.
 | Lifecycle: forget | `cco forget <project>` (deregister: remove cco's internal id-keyed state — index/tags/source/STATE/CACHE — **without** touching the repo or its committed `.cco/`; ADR-0021) | NEW |
 | Run | `cco start [project] [--from <repo>]` (cwd-aware source; `--from` picks the Case-C source `<repo>/.cco`, ADR-0017 D2; index-resolve names; on unresolved → prompt resolve\|proceed-without) | transform |
 | Sync | `cco sync [target] [--from <src>] [--dry-run\|--auto-approve\|--check]` | NEW |
-| Paths/resolve | `cco resolve [project]` (resolve each unresolved repo/mount: specify local path · clone-from-`url` · skip), `cco resolve --all` (all projects), `cco resolve --scan <dir>` (auto-discover/rebuild index — **absorbs** `cco index refresh`), `cco path set/list` (low-level index editor) — ADR-0017 D2 | NEW |
+| Paths/resolve | `cco resolve [project]` (resolve each unresolved repo/mount: specify local path · clone-from-`url` · skip), `cco resolve --all` (all projects), `cco resolve --scan <dir>` (auto-discover + **reconcile/upsert** index, non-destructive, AD5-conflict; no `--prune` in v1 — ADR-0022 D3; **absorbs** `cco index refresh`), `cco path set/list` (low-level index editor) — ADR-0017 D2 | NEW |
 | Discovery | `cco list [--tag <t>]`, `cco tag add/rm` (reads/writes the per-user `<data>/cco/tags.yml`, DATA bucket — ADR-0011/0015) | transform |
 | Authoring | Direct `~/.cco` edit (IDE or rehomed `config-editor` agent); cco only **scaffolds**: `cco pack create`, `cco template create` (ADR-0008/0010) | transform |
 | Global store | `cco config …` (manage `~/.cco`; versioning model = ADR-0008) + **`cco config validate [--dry-run\|--fix]`** (detect/report — and optionally prune, preview-first, confirmed — orphaned internal id-keyed state after manual deletion; warn-never-hide, never automatic; ADR-0021. STATE/CACHE freely rebuildable via `cco resolve --scan`; DATA pruned only on confirm) | NEW |
 | Sharing (2×2, ADR-0018 D2) | **packs/templates**: `cco <res> publish\|install` (sharing repo) + `export\|import` (tar); **projects**: `cco project export\|import` only (no publish/install — ride the repo remote, P5/P13). `cco <res> internalize` cuts the coordinate. `cco remote …` manages sharing-repo endpoints. | transform |
-| Update | `cco update …` (framework→user; merge engine unchanged) + **`cco update --check`** (list resources with available updates) + `cco <res> update --dry-run` (ADR-0018 D5) | transform |
+| Update | `cco update …` (framework→user; merge engine unchanged) + **`cco update --check`** (list resources with available updates — DATA `source`-driven, install-presence-gated, **3-state** *not-installed-here / comparable / indeterminate*; one greppable line/resource + summary, **exit 0 always**; advancement = same-ref `ls-remote` resolve; `--offline`/`--no-cache` reuse `cmd-update.sh` — ADR-0022 D6 / ADR-0018 D5) + `cco <res> update --dry-run` | transform |
 | Permissions (ADR-0020) | `cco config protect` (OPTIONAL — scaffold `<repo>/.cco/CODEOWNERS` + emit host ruleset instructions; enforcement delegated to git) | NEW (optional) |
 
 **`cco init` (incl. `cco init --migrate`) and `cco join` are mutually exclusive** entry points
@@ -676,8 +744,12 @@ is in §11.
   per-project, from the backup); `cco init`/`cco join`. A minimal legacy-vault reader exists **only**
   inside the migrate mode. The migration **writes the complete final `project.yml` in one pass** —
   repos + llms + **packs** coordinates all in final form, the pack `url`/`ref`/`resource` backfilled
-  from the installed pack's DATA `source` (absent → authored-in-repo, P15/F37) — so **no migrated
-  file is ever schema-migrated again** (open-closed; the Phase-0 parser already reads the map shape).
+  from the installed pack's DATA `source` (absent → authored-in-repo, P15/F37; the migrator **never
+  fabricates** a `url` it cannot read from a recorded source) — so **no migrated file is ever
+  schema-migrated again** (open-closed; the Phase-0 parser already reads the map shape). The `packs:`
+  list→map transform is a **project-scope** migration; the declared-but-missing `migrations/pack/` +
+  `migrations/template/` scope dirs are also created so the scopes named in `CLAUDE.md`/
+  `.claude/rules/update-system.md` are real (F37).
   **Memory relocation (ADR-0009)**: `cco init --migrate` copies the project's `memory/` from the
   backup into `<state>/cco/projects/<id>/memory/` (one-time file copy, machine-local, no versioning)
   so accumulated auto-memory is not lost in the cutover. **Profile→tag prompt (ADR-0010)**: migration
@@ -709,22 +781,34 @@ is in §11.
   > cross-team *state* sync as a deferred opt-in feature (R-state-sync, §12). Phase 3 may now
   > proceed.
 
-- **Phase 4 — Sharing core (behavior on the final substrate).** `lib/manifest.sh` deletion +
-  **structure-based discovery** (no `manifest.yml`; ADR-0012/0018 D3) + init-at-first-publish /
-  merge-on-existing. **sync-before-publish fix** — the data-loss defect (`cco pack publish`
-  `cmd-pack.sh:1024` and `cco project publish` push HEAD with no fetch/merge): pull + 3-way merge
-  (**reusing the Phase-0-relocated merge engine**), never fast-forward-clobber a co-maintainer
-  (ADR-0019 D4/P16). **2×2 verb wiring** (`publish`/`install` + `export`/`import`; projects-don't-
-  publish guard, P5/P13). **Nomenclature migration** ("config repo" → "sharing repo"; ADR-0018 D1).
-  Built on the Phase-0 final schema/registries/merge-engine, so `cmd-pack.sh`/`cmd-remote.sh` sharing
-  logic is written once on top of an already-final substrate.
+- **Phase 4 — Sharing core (behavior on the final substrate).** Manifest removal is a **code/data
+  split** (F14): the **code** is replaced here, the **inert `manifest.yml` files** in existing installs
+  are cleaned by the Phase-3 breaking cutover (no standalone migrator; ADR-0012 Open). **Order matters —
+  discovery before delete**: (1) build **structure-based discovery** (`git ls-tree packs/*/`,
+  `templates/*/` on a treeless/shallow clone, reusing `remote.sh`; generalize `cmd_pack_install`'s
+  single-pack `pack.yml`-at-root fallback) + init-at-first-publish / merge-on-existing; (2) rewrite the
+  manifest-gated call-sites (`cmd-pack` install/publish, `cmd-project-install`, `remote.sh`
+  `_clone_for_publish` empty-repo seed → `.gitkeep`/first-commit); (3) delete `lib/manifest.sh` +
+  `cco manifest` **last**, once nothing references it (ADR-0012/0018 D3). The new `cco init` (built in
+  P0/P1) **never emits a manifest** (the `cmd-init.sh:138` `manifest_init` call is dropped), so no
+  in-between phase reads a manifest the new init never wrote. **sync-before-publish fix** — the data-loss
+  defect (`cco pack publish` `cmd-pack.sh:1024` clone-then-overwrite and `cco project publish` push HEAD
+  with no fetch/merge): the consolidated publish-path sequence (§6.2 / ADR-0022 D5) — pull + 3-way merge
+  against the **pack-scoped STATE `base/`** (**reusing the Phase-0-relocated merge engine**), never
+  clobber a co-maintainer (ADR-0019 D4/P16). **2×2 verb wiring** (`publish`/`install` + `export`/`import`;
+  projects-don't-publish guard, P5/P13). **Nomenclature migration** ("config repo" → "sharing repo";
+  ADR-0018 D1). Built on the Phase-0 final schema/registries/merge-engine, so `cmd-pack.sh`/
+  `cmd-remote.sh` sharing logic is written once on top of an already-final substrate.
 - **Phase 5 — Sharing extensions & lifecycle.** **Three-layer pack resolution** (mount: local
-  `~/.cco/packs` → fetch-from-`url` → `<repo>/.cco/packs` cache; ADR-0019); **internalize-as-cache**
-  + `cco <res> internalize`; **`export --bundle-packs`** (dependency closure); **`cco update --check`**
-  (reuses `source` + `remote_cache`). **Lifecycle (ADR-0021)**: `cco forget` (deregister id-keyed
+  `~/.cco/packs` → fetch-from-`url` → `<repo>/.cco/packs` cache; ADR-0019) — **one deterministic
+  resolver** from the §2.4 worked-example table, cache-iff-coordinate discriminator (ADR-0022 D4);
+  **internalize-as-cache** + `cco <res> internalize`; **`export --bundle-packs`** (dependency closure);
+  **`cco update --check`** — DATA `source`-driven, install-presence-gated, 3-state, installed-commit from
+  STATE `/update` (ADR-0022 D6). **Lifecycle (ADR-0021)**: `cco forget` (deregister id-keyed
   internal state, repo untouched); **delete-cascade** on `pack/template/llms remove` (tags.yml + DATA
   source) and `remote remove` (DATA url + STATE token); **`cco config validate [--fix]`** (reachability
-  + orphan prune, preview-first, never automatic). **`cco config protect`** (optional CODEOWNERS
+  + orphan prune, preview-first, never automatic) — **WARN** for reachability gaps, **ERROR** for the one
+  same-name authored-vs-global pack collision (ADR-0022 D4; full contract Cluster 5). **`cco config protect`** (optional CODEOWNERS
   scaffold; ADR-0020). **S8 no-token-leak checklist** — M3 done in Phase 0, so the de-tokenized
   registry the invariant needs is already in place.
 
@@ -795,12 +879,12 @@ categorized disposition immediately below the table.
 
 | Phase | New | Rewrite | Remove |
 |-------|-----|---------|--------|
-| 0 (substrate) | machine-agnostic layout + index tests (new layout only, no dual-read); **XDG resolver matrix** (unset/empty/relative + `CCO_*_HOME` override, `0700`, host-side/anti-in-container guard); **schema+parser round-trip** (repos/llms/**packs map** `name`+`url?`+`ref?`+`resource?`, bash-3.2 clean, F5); **compose mount bucket map (BL3)** (`claude-state`/`memory`→STATE, `.cco/managed`→CACHE, global/`secrets.env`/`mcp.json`→`~/.cco`, host-absolute); **secrets/OAuth env-injection re-point** (`GLOBAL_DIR`→`~/.cco`, `cco start`+`cco new`); **registries**: `tags.yml` (DATA), **remotes split** (DATA `url` + STATE `token` `0600`, no-leak, M3), `source`→DATA (`url`/`ref`/`resource`, `publish_target` re-derived, F4); **merge-engine path remap** (`.cco/base`/`meta`→STATE, H6); **index atomicity + cross-project namespacing** (H7); **F2 cross-tree collision warning** (committed `rules/foo.md` vs pack `rules/foo.md`, pack `:ro` wins); symlink-safe tool root | harness `helpers.sh` (`minimal_project_yml`→name+url/ref schema) + `mocks.sh`; `test_yaml_parser.sh`; `test_paths.sh`; `test_local_paths.sh`; `test_remote.sh` (M3 split) | — |
-| 1 (core local) | `test_sync.sh` (copy semantics, 4 forms, confirm); resolve incl. clone-from-`url` + `--scan`; **reminder aggregator** (a/b/c) + **H1 ordering** (resolve before notices) | — | — |
+| 0 (substrate) | machine-agnostic layout + index tests (new layout only, no dual-read); **XDG resolver matrix** (unset/empty/relative + `CCO_*_HOME` override, `0700`, host-side/anti-in-container guard); **schema+parser round-trip** (repos/llms/**packs map** `name`+`url?`+`ref?`+`resource?`, bash-3.2 clean, F5); **compose mount bucket map (BL3)** (`claude-state`/`memory`→STATE, `.cco/managed`→CACHE, global/`secrets.env`/`mcp.json`→`~/.cco`, host-absolute); **secrets/OAuth env-injection re-point** (`GLOBAL_DIR`→`~/.cco`, `cco start`+`cco new`); **registries**: `tags.yml` (DATA), **remotes split** (DATA `url` + STATE `token` `0600`, no-leak, M3), `source`→DATA (`url`/`ref`/`resource`, `publish_target` re-derived, F4); **merge-engine path remap** (`.cco/base`/`meta`→STATE, H6); **index atomicity** (`mktemp`+`mv`, single-writer, no-lock) + **global-flat ratified**, namespacing reserved post-v1 (H7/ADR-0022 D2); **F2 cross-tree collision warning** (committed `rules/foo.md` vs pack `rules/foo.md`, pack `:ro` wins); symlink-safe tool root | harness `helpers.sh` (`minimal_project_yml`→name+url/ref schema) + `mocks.sh`; `test_yaml_parser.sh`; `test_paths.sh`; `test_local_paths.sh`; `test_remote.sh` (M3 split) | — |
+| 1 (core local) | `test_sync.sh` (copy semantics, 4 forms, confirm); resolve incl. clone-from-`url` + **`--scan` non-destructive upsert** (preserves out-of-`<dir>` + `cco path set`; AD5 conflict keep-existing; no `--prune`; ADR-0022 D3); **sync-meta fingerprint** (write post-receive + source-side, lazy compare, no-fingerprint=pristine; ADR-0022/F39); **reminder aggregator** (a/b/c) + **H1 ordering** (resolve before notices) | — | — |
 | 2 (migration) | `test_migrate.sh` (`cco init --migrate` lazy per-project from backup; backup-verified-before-read, M8; **raw-tar backup captures all profiles' secrets** — active in working tree + inactive in `profile-state/<branch>/` shadows, F1/F9; **memory relocation backup→`<state>/cco/projects/<id>/memory/`** + **re-run non-clobber**, F11/ADR-0009; **profile→tag prompt** both branches, ADR-0010; **interrupted-migrate atomicity** — partial `.cco/` cleaned, re-run safe, F44; **defensive name-uniqueness assert**, F12; **complete-final-`project.yml`-in-one-pass** — repos+llms+**packs** coordinates written together, pack backfill from DATA `source`, **no second schema-migration**, F37); first-run bootstrap (per-root idempotent) + `<state>/cco/migration-state` marker idempotency (F43) | `test_init.sh`; `test_update.sh` (H6 paths + `--check`) | — |
 | 3 (legacy cutover) | multi-project coexistence; truthful-diff (no sanitize) tests; `test_config.sh` (Domain A: allowlist staging never `git add -A`, **secret-scan `.example` exemption** — skeleton passes, real `secrets.env` blocked); **memory-as-STATE** (ADR-0009: `memory/` in STATE persists across starts, no auto-commit, no `.gitkeep`); **tag wiring** (ADR-0011/0015: `cco tag add/rm` + `cco list --tag` over the DATA `tags.yml`, tags NOT in `pack.yml`/`project.yml`/manifest/index) | `test_vault.sh` (shrink to migrate-reader) | `test_vault_profiles.sh`; `test_project_create.sh`; custom-diff/sanitize tests; **D33 memory auto-commit / D32 `.gitkeep` tests** |
-| 4 (sharing core) | **sync-before-publish no-clobber** (co-maintainer divergence → pull + 3-way merge, never fast-forward-clobber; pins `cmd-pack.sh:1024`); **structure-based discovery** (no `manifest.yml`; init-at-first-publish / merge-on-existing); **2×2 verbs** incl. **project-has-no-publish guard** (P5/P13); nomenclature ("config repo"→"sharing repo") | `test_pack_publish.sh`; `test_pack_install.sh`; `test_publish_install_sync.sh`; `test_project_install.sh`/`test_project_install_enhanced.sh`; `test_project_publish.sh`; `test_template.sh` | `test_manifest.sh` |
-| 5 (sharing ext + lifecycle) | **3-layer pack resolution** + collision; **internalize-as-cache** prompt + `cco <res> internalize`; **`export --bundle-packs`** dependency-closure; **`cco update --check`**; **`cco config validate [--fix]`** reachability + orphan prune (warn-never-hide, STATE/CACHE rebuildable, DATA confirm-only); **`cco forget`** + self-healing index via `cco resolve --scan`; **delete-cascade** (`pack/template/llms remove` → tags.yml + DATA source; `remote remove` → DATA url + STATE token); **S8 no-token-leak checklist**; **`cco config protect`** scaffold | `test_pack_cli.sh`; `test_pack_internalize.sh`; `test_packs.sh`; `test_project_pack.sh`; `test_llms.sh` | — |
+| 4 (sharing core) | **sync-before-publish no-clobber** (co-maintainer divergence → pull + 3-way merge against the **pack-scoped STATE `base/`**; first-publish init/add vs subsequent merge, abort-on-conflict; corrects the clone-then-overwrite `cmd-pack.sh:1024`; ADR-0022 D5); **discovery-before-delete** ordering (structure-based discovery built before `lib/manifest.sh` delete; new `cco init` emits no manifest; F14); **structure-based discovery** (no `manifest.yml`; init-at-first-publish / merge-on-existing); **2×2 verbs** incl. **project-has-no-publish guard** (P5/P13); nomenclature ("config repo"→"sharing repo") | `test_pack_publish.sh`; `test_pack_install.sh`; `test_publish_install_sync.sh`; `test_project_install.sh`/`test_project_install_enhanced.sh`; `test_project_publish.sh`; `test_template.sh` | `test_manifest.sh` |
+| 5 (sharing ext + lifecycle) | **3-layer pack resolution** — resolver-table rows incl. **ERROR** on the same-name authored-vs-global collision, WARN on reachability/cache-degrade (ADR-0022 D4); **internalize-as-cache** prompt + `cco <res> internalize`; **`export --bundle-packs`** dependency-closure; **`cco update --check`** (DATA-driven, install-presence-gated **3-state**, installed-commit from STATE, exit-0; ADR-0022 D6); **llms CACHE re-fetch-on-url-mismatch** (F56); **`cco config validate [--fix]`** reachability + orphan prune (warn-never-hide, STATE/CACHE rebuildable, DATA confirm-only); **`cco forget`** + self-healing index via `cco resolve --scan`; **delete-cascade** (`pack/template/llms remove` → tags.yml + DATA source; `remote remove` → DATA url + STATE token); **S8 no-token-leak checklist**; **`cco config protect`** scaffold | `test_pack_cli.sh`; `test_pack_internalize.sh`; `test_packs.sh`; `test_project_pack.sh`; `test_llms.sh` | — |
 
 **Existing-suite teardown — categorized disposition (resolves the critic-HIGH gap).** The current
 suite is **35 `test_*.sh` files** auto-discovered + run by `bin/test:147`, all built on the shared
@@ -866,10 +950,12 @@ Net: a narrower surface — no custom diff/save/merge sync code to test, no dual
 - **Solo-adopter Case C (post-v1, → dedicated analysis; ADR-0018 D6)** — built-in fallback to
   *centralized* project config (`<repo>/.cco/` relocated under `~/.cco/projects/<name>`, Axis-1 synced,
   outside the repo) for a user the team forbids committing `.cco/`. A simplified per-project vault (no
-  branches/custom-diff) with a second `cco start` discovery path. v1 **reserves** the hooks (index
-  `config_path` field; `cco start` precedence `<repo>/.cco` → `~/.cco/projects/<name>`). ADR-0019's pack
-  model reduces the need (project-scoped packs + by-url references handle the common case). Cases **A**
-  (tolerant team) and **B** (gitignore `.cco/`) are supported in v1.
+  branches/custom-diff) with a second `cco start` discovery path. v1 builds **nothing** for it: the index
+  is machine-local, scan-rebuildable, never-synced STATE, so a future per-project `config_path` field is
+  **additive-by-construction, non-breaking** — there is no slot to reserve (ADR-0022/F41). `config_path`
+  is named only as the *intended* future mechanism; the `<repo>/.cco` → `~/.cco/projects/<name>` precedence
+  is explicitly post-v1. ADR-0019's pack model reduces the need (project-scoped packs + by-url references
+  handle the common case). Cases **A** (tolerant team) and **B** (gitignore `.cco/`) are supported in v1.
 - **Opinionated defaults as an official public sharing repo (F-opin; P9, post-impl with R-pkg).** cco's
   opinionated rules/templates/global defaults (today baked-in `defaults/global/`, `templates/`) become a
   separate **official cco sharing repo**, distributed via the same publish/install path any user uses;
