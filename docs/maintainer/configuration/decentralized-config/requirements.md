@@ -206,7 +206,12 @@ current repo):
   fingerprint** per repo to distinguish a repo edited **locally since the last sync**
   from one that merely **received** a sync. It drives `cco sync`/`cco join` target
   selection (Case B all vs Case C prompt), divergence flagging before `cco start`, and
-  optional fast rollback. Exact format / rollback richness = implementation detail.
+  optional fast rollback. **Fingerprint contract (ADR-0022/F39; design §4.6 normative):**
+  the fingerprint is a hash over the **exact synced set** (FR-Y / design §4.1), **written**
+  after a repo receives a sync and for the source repo at the same `cco sync`; **divergence**
+  is the lazy read-time predicate *current synced-set hash ≠ stored fingerprint*; **no stored
+  fingerprint = pristine** (never divergent). Only the hash algorithm and rollback richness
+  remain implementation detail.
 
 ### 5.3 Supported cases (project: repo1 + repo2 + repo3)
 - **Case A — single-config, no copies.** `cco init` only in repo1; sync off. repo2/3
