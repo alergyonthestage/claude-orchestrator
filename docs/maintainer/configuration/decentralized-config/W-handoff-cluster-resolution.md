@@ -2,12 +2,12 @@
 
 **Status**: The impl-readiness review (gate **V**) is **DONE**. Findings are resolved **cluster by
 cluster** with the maintainer; each agreed resolution is persisted into the ADRs/design/requirements
-before moving on. **Clusters 1 and 2 are RESOLVED & PERSISTED; Cluster 3 (doc-resync) Block A is
-RESOLVED & PERSISTED — Block B rides the Phase-3 cutover (see §3c).** Clusters 4–5 are OPEN — **next
-session = Cluster 4** (coordinate model & resolution; clean session preferred). This file lets a **fresh
+before moving on. **Clusters 1, 2 and 4 are RESOLVED & PERSISTED; Cluster 3 (doc-resync) Block A is
+RESOLVED & PERSISTED — Block B rides the Phase-3 cutover (see §3c).** Only **Cluster 5** remains OPEN —
+**next session = Cluster 5** (command surface & UX; clean session preferred). This file lets a **fresh
 clean session** resume without losing the workflow results, the method, or the remaining work. Produced
 2026-06-18 on branch `feat/vault/decentralized-config` (commits **local**, pushed from the maintainer's
-Mac); updated 2026-06-19 (Cluster 3 Block A).
+Mac); updated 2026-06-19 (Cluster 3 Block A; Cluster 4).
 
 ---
 
@@ -97,15 +97,19 @@ inventoried; none can be rewritten ahead of the code without misdescribing what 
 
 ## 4. Clusters still OPEN (the work remaining)
 
-Finding IDs reference the report. Present per cluster, decide, persist. **Next = Cluster 4.**
+Finding IDs reference the report. Present per cluster, decide, persist. **Next = Cluster 5.**
 
 - **Cluster 3 — Doc drift / re-sync — Block A RESOLVED & PERSISTED (2026-06-19; see §3c).** Design-intent
   docs re-synced (`F3 F22 F23 F24`) + inventory completed as the cutover-sweep driver (`F20 F21 F30 F31
   F32 F33` + spec.md/roadmap/inventory critic). **Block B** = the user-facing rewrites those inventory
   items describe, **deferred to the Phase-3 cutover** (shipped-behavior; never ahead of code).
-- **Cluster 4 — Coordinate model & resolution** (technical): `F4 F6 F14 F15 F16 F17 F29 F37 F38 F39 F40
-  F41 F45 F48 F56`. Schema/migration of coordinates, three-layer pack resolution, M3 remotes url/token
-  split (intersects ADR-0021 delete-cascade), index atomicity/namespacing (H7).
+- **Cluster 4 — Coordinate model & resolution — RESOLVED & PERSISTED (2026-06-19).** All 15 findings
+  (`F4 F6 F14 F15 F16 F17 F29 F37 F38 F39 F40 F41 F45 F48 F56`) resolved → **new ADR-0022** (6 new
+  decisions: source-relocation/publish_target · global-flat index/H7 · `--scan` upsert · pack
+  cache-iff-coordinate+ERROR · pack STATE `base/`/sync-before-publish · `--check` 3-state) + forward-
+  annotations to ADR-0016/0017/0018/0019 + design.md re-sync (§2.2–§12) + requirements FR-Y-S6. Phasing
+  re-read onto the Cluster-2 P0–P5 map (no renumber). See the review's Cluster-4 Resolution Log for the
+  full per-finding outcomes + the 4 maintainer-confirmed forks.
 - **Cluster 5 — Command surface & UX** (ux/both): `F13 F18 F19 F25 F26 F27 F34 F46 F47 F49 F50`. Owns the
   exact **`cco config validate` contract** (F26) referenced by ADR-0021, the `cco config` namespace
   coherence (F46), coordinate-add verbs `cco repo/llms add` (F19), `cco new` (F18), template sharing

@@ -2049,8 +2049,48 @@ of the code without misdescribing what currently ships.
 Commits (local, `feat/vault/decentralized-config`): policy rule · design-intent re-sync · inventory
 completion + this log.
 
-## Clusters 4–5 — OPEN
+## Cluster 4 — Coordinate model & resolution — RESOLVED & PERSISTED (2026-06-19)
 
-See the per-severity findings above. **Cluster 4/5** own F19 (coordinate-add verbs), the `cco config`
-namespace, and the exact `cco config validate` contract referenced by ADR-0021. **Next = Cluster 4**
-(coordinate model & resolution).
+All 15 findings resolved with the maintainer and persisted. **Phasing reconciliation:** the review's
+"Phases 0–3 + E / Phase 4" language is superseded by Cluster 2's 6-layer map (P0–P5); every resolution
+names its P0–P5 home, none renumbers a phase (this dissolved the "schema lands later in E" half of
+F14/F15). **Code-grounded** before asserting (publish_target/`_resolve_publish_remote`, the url+token
+remotes file + vault-git coupling, the pack-publish clone-then-overwrite, project-only `base/`).
+
+**Maintainer-confirmed (4 design/UX forks):** F4 `publish_target` **re-derived on demand** (Option A);
+F15 **generic resolve/start loop** from P1, pack backend added in P4 (Option A); F29 validate **ERROR**
+on the one same-name authored-vs-global pack collision, rest WARN (Option A); F38 `--scan` **non-destructive
+merge-upsert** + AD5 conflict, no `--prune` (Option A). Plus the ADR-structure choice: **one new
+ADR-0022** for the six genuinely-new decisions.
+
+**New decision record — ADR-0022** consolidates: **D1** `source` relocation→DATA + field rename +
+`publish_target` re-derive + `commit/version`→STATE (F4); **D2** index global-flat ratified + atomic
+no-lock write / H7 (F17); **D3** `--scan` merge-upsert + AD5 (F38); **D4** cache-iff-coordinate invariant +
+worked-example resolver table + one ERROR row (F29); **D5** pack-scoped STATE `base/` + sync-before-publish
+sequence (F16); **D6** `--check` DATA-driven, install-presence-gated 3-state contract + installed-commit→
+STATE (F40).
+
+**Spec-fills persisted in place** (no new ADR): F6 remotes split decomposition (§9 Phase-0 + §11; already
+moved early by Cluster 2); F14 manifest code/data split + discovery-before-delete (§9 Phase 3/4); F37 pack
+name-only→coordinate backfill + `migrations/pack`+`template` scope dirs (§9 Phase 2 + §11); F39 fingerprint
+write/compare/pristine contract (§4.6 + requirements FR-Y-S6); F41 Case-C "reserved hooks" reframed
+additive-by-construction (§12 + ADR-0018 D6); F45 coords-lookup on-demand only (ADR-0016 D3/D7 + §2.2);
+F48 `coords --sync` explicit `--from`, never auto-elect (ADR-0016 D3); F56 llms CACHE re-fetch-on-url-
+mismatch (ADR-0016 D2 note).
+
+**Forward-annotations** (decision text kept verbatim, per `documentation-lifecycle`): ADR-0016 D2/D3/D4/
+D5/D7, ADR-0017 D2, ADR-0018 D5/D6, ADR-0019 D3/D4/D5. **Living-doc re-sync:** `design.md`
+§2.2/§2.4/§3/§4.6/§6.2/§7/§9/§11/§12; `requirements.md` FR-Y-S6.
+
+**Cross-cluster:** the `cco config validate`/`cco config coords` **command surface** (carrying D4's ERROR
+row + F48's `--from`) is owned by **Cluster 5** (F26/F46) — Cluster 4 pinned only the semantic invariants.
+
+Commits (local, `feat/vault/decentralized-config`): ADR-0022 + forward-annotations · design.md re-sync ·
+FR-Y-S6 · this log.
+
+## Cluster 5 — Command surface & UX — OPEN
+
+`F13 F18 F19 F25 F26 F27 F34 F46 F47 F49 F50`. Owns the exact `cco config validate` contract (F26,
+referenced by ADR-0021 + ADR-0022 D4), the `cco config` namespace coherence (F46), coordinate-add verbs
+`cco repo/llms add` (F19), `cco new` (F18), template sharing symmetry (F47), `internalize` semantics
+clash (F13). **Next = Cluster 5.**
