@@ -158,6 +158,7 @@ non-portable (`never`); partitioned by sync-eligibility (ADR-0013 D2):
   claude.json / .credentials.json  # seeded auth
   sync-meta                      # sync-set membership + last-synced fingerprints (§4.6)
   backups/                       # vault-migration archives — moved OUT of ~/.cco (fixes inventory C1)
+  global/update/                 # global-scope update artifacts — meta(schema_version, policies, flags, local_framework_override) + base/(3-way ancestors); the global `.cco/meta` DECOMPOSE (ADR-0013 D4): languages→~/.cco, markers→top-level above (H6, relocated P2 — §9 P2)
   projects/<id>/
     session/   memory/  claude-state/(transcripts)   # opt-in P8 (future R-state-sync)
     update/    meta(hashes, schema_version, policies, flags, local_framework_override, installed-commit)  base/(3-way ancestors)
@@ -758,9 +759,16 @@ is in §11.
     > Nothing in P0–P3 needs `source` in DATA — the P2 pack-`url` backfill reads provenance **in place**
     > (see P2). Co-located with the sharing rewrite, `source` is touched once (**build-once**). *(ADR-0022
     > D1 decision unchanged; only its build phase is refined — forward-annotated there.)*
-  - **Merge-engine artifact paths (H6)**: `.cco/base/` + `.cco/meta` → STATE `/update`
-    (`paths.sh:46-60` — relocate the **paths only**, the merge *logic* is unchanged). Built once here
-    because both `cco update` and the Phase-4 sync-before-publish 3-way merge reuse it.
+  - *(**Merge-engine artifact paths (H6)** — `.cco/base/` + `.cco/meta` → STATE `/update` — is
+    **re-sequenced to Phase 2**, not built here. Confirmed 2026-06-19. Reason: its consumers are the
+    update/sharing engines whose tests are hardcoded across **P2** (`test_update`, ~122 global+project
+    `.cco/{meta,base}` refs) **and P4–P5** (`test_publish_install_sync`, ~40 project refs) — relocating
+    in P0 breaks delta-green against tests not yet due for rewrite. Nothing in P0–P1 needs base/meta in
+    STATE; the **P2 migration is what creates base/meta**, so relocating there writes them in final form
+    once (**build-once**) and co-locates with `test_update`'s P2 rewrite. The **global `.cco/meta`** is
+    additionally a **decompose** (ADR-0013 D4: `languages`→`~/.cco/languages`, `last_seen`/`last_read`→
+    STATE top-level, `schema_version`/policies/flags→STATE; `manifest:` removed) and its STATE home is
+    pinned at P2 (see P2). See §9 P2 + §11.)*
   - **Compose generation, final mount map (BL3)**: per-mount **bucket destinations** —
     `claude-state`→STATE, `memory`→STATE, `.cco/managed`→CACHE (overlaid `:ro`), global
     config/`secrets.env`/`mcp.json`→`~/.cco`; convert every *framework* compose mount source from the
@@ -796,6 +804,20 @@ is in §11.
   list→map transform is a **project-scope** migration; the declared-but-missing `migrations/pack/` +
   `migrations/template/` scope dirs are also created so the scopes named in `CLAUDE.md`/
   `.claude/rules/update-system.md` are real (F37).
+  **Merge-engine artifact paths → STATE (H6 / ADR-0016 D5 — re-sequenced here from P0).** Relocate the
+  update-engine artifacts `.cco/base/` + `.cco/meta` → STATE `/update`, keyed by identity
+  (`<state>/cco/projects/<id>/update/{meta,base}`, packs at `<state>/cco/packs/<name>/update/base/`):
+  re-point the `paths.sh` helpers (`_cco_project_meta`/`_cco_project_base_dir` + the global/pack
+  variants); the merge **logic** in `update-merge.sh` is unchanged. Built here (not P0) because the P2
+  migration is what **creates** base/meta — so they are written in final form once (**build-once**) — and
+  because the relocation's tests are the update/sharing tests rewritten in P2 (`test_update`) and P4–P5
+  (`test_publish_install_sync`); relocating earlier breaks delta-green. The **global `.cco/meta` is
+  decomposed, not merely relocated** (ADR-0013 D4): `languages` → config `~/.cco/languages`,
+  `last_seen`/`last_read` → STATE top-level (§2.2), `schema_version`/policies/flags/`local_framework_
+  override` → the global STATE `/update` meta (**home pinned here**: `<state>/cco/global/update/{meta,
+  base}` — fills the §2.2 gap that omitted a global STATE update home), `manifest:` marker dropped
+  (ADR-0012). Both `cco update` and the Phase-4 sync-before-publish 3-way merge reuse the relocated
+  helpers.
   **Memory relocation (ADR-0009)**: `cco init --migrate` copies the project's `memory/` from the
   backup into `<state>/cco/projects/<id>/memory/` (one-time file copy, machine-local, no versioning)
   so accumulated auto-memory is not lost in the cutover. **Profile→tag prompt (ADR-0010)**: migration
@@ -840,7 +862,7 @@ is in §11.
   in-between phase reads a manifest the new init never wrote. **sync-before-publish fix** — the data-loss
   defect (`cco pack publish` `cmd-pack.sh:1024` clone-then-overwrite and `cco project publish` push HEAD
   with no fetch/merge): the consolidated publish-path sequence (§6.2 / ADR-0022 D5) — pull + 3-way merge
-  against the **pack-scoped STATE `base/`** (**reusing the Phase-0-relocated merge engine**), never
+  against the **pack-scoped STATE `base/`** (**reusing the Phase-2-relocated merge engine**, H6), never
   clobber a co-maintainer (ADR-0019 D4/P16). **2×2 verb wiring** (`publish`/`install` + `export`/`import`;
   projects-don't-publish guard, P5/P13). **Nomenclature migration** ("config repo" → "sharing repo";
   ADR-0018 D1). **`source`-provenance relocation (ADR-0022 D1, re-sequenced here from P0)**: relocate
@@ -938,9 +960,9 @@ categorized disposition immediately below the table.
 
 | Phase | New | Rewrite | Remove |
 |-------|-----|---------|--------|
-| 0 (substrate) | machine-agnostic layout + index tests (new layout only, no dual-read); **XDG resolver matrix** (unset/empty/relative + `CCO_*_HOME` override, `0700`, host-side/anti-in-container guard); **schema+parser round-trip** (repos/llms/**packs map** `name`+`url?`+`ref?`+`resource?`, bash-3.2 clean, F5); **compose mount bucket map (BL3)** (`claude-state`/`memory`→STATE, `.cco/managed`→CACHE, global/`secrets.env`/`mcp.json`→`~/.cco`, host-absolute); **secrets/OAuth env-injection re-point** (`GLOBAL_DIR`→`~/.cco`, `cco start`+`cco new`); **registries**: `tags.yml` (DATA), **remotes split** (DATA `url` + STATE `token` `0600`, no-leak, M3); **merge-engine path remap** (`.cco/base`/`meta`→STATE, H6); **index atomicity** (`mktemp`+`mv`, single-writer, no-lock) + **global-flat ratified**, namespacing reserved post-v1 (H7/ADR-0022 D2); **F2 cross-tree collision warning** (committed `rules/foo.md` vs pack `rules/foo.md`, pack `:ro` wins); symlink-safe tool root | harness `helpers.sh` (`minimal_project_yml`→name+url/ref schema) + `mocks.sh`; `test_yaml_parser.sh`; `test_paths.sh`; `test_local_paths.sh`; `test_remote.sh` (M3 split) | — |
+| 0 (substrate) | machine-agnostic layout + index tests (new layout only, no dual-read); **XDG resolver matrix** (unset/empty/relative + `CCO_*_HOME` override, `0700`, host-side/anti-in-container guard); **schema+parser round-trip** (repos/llms/**packs map** `name`+`url?`+`ref?`+`resource?`, bash-3.2 clean, F5); **compose mount bucket map (BL3)** (`claude-state`/`memory`→STATE, `.cco/managed`→CACHE, global/`secrets.env`/`mcp.json`→`~/.cco`, host-absolute); **secrets/OAuth env-injection re-point** (`GLOBAL_DIR`→`~/.cco`, `cco start`+`cco new`); **registries**: `tags.yml` (DATA), **remotes split** (DATA `url` + STATE `token` `0600`, no-leak, M3); **index atomicity** (`mktemp`+`mv`, single-writer, no-lock) + **global-flat ratified**, namespacing reserved post-v1 (H7/ADR-0022 D2); **F2 cross-tree collision warning** (committed `rules/foo.md` vs pack `rules/foo.md`, pack `:ro` wins); symlink-safe tool root | harness `helpers.sh` (`minimal_project_yml`→name+url/ref schema) + `mocks.sh`; `test_yaml_parser.sh`; `test_paths.sh`; `test_local_paths.sh`; `test_remote.sh` (M3 split) | — |
 | 1 (core local) | `test_sync.sh` (copy semantics, 4 forms, confirm); resolve incl. clone-from-`url` + **`--scan` non-destructive upsert** (preserves out-of-`<dir>` + `cco path set`; AD5 conflict keep-existing; no `--prune`; ADR-0022 D3); **sync-meta fingerprint** (write post-receive + source-side, lazy compare, no-fingerprint=pristine; ADR-0022/F39); **reminder aggregator** (a/b/c) + **H1 ordering** (resolve before notices) | — | — |
-| 2 (migration) | `test_migrate.sh` (`cco init --migrate` lazy per-project from backup; backup-verified-before-read, M8; **raw-tar backup captures all profiles' secrets** — active in working tree + inactive in `profile-state/<branch>/` shadows, F1/F9; **memory relocation backup→`<state>/cco/projects/<id>/memory/`** + **re-run non-clobber**, F11/ADR-0009; **profile→tag prompt** both branches, ADR-0010; **interrupted-migrate atomicity** — partial `.cco/` cleaned, re-run safe, F44; **defensive name-uniqueness assert**, F12; **complete-final-`project.yml`-in-one-pass** — repos+llms+**packs** coordinates written together, pack backfill from recorded `source` read **in place** (the `source`→DATA relocation is P4), **no second schema-migration**, F37); first-run bootstrap (per-root idempotent) + `<state>/cco/migration-state` marker idempotency (F43) | `test_init.sh`; `test_update.sh` (H6 paths + `--check`) | — |
+| 2 (migration) | `test_migrate.sh` (`cco init --migrate` lazy per-project from backup; backup-verified-before-read, M8; **raw-tar backup captures all profiles' secrets** — active in working tree + inactive in `profile-state/<branch>/` shadows, F1/F9; **memory relocation backup→`<state>/cco/projects/<id>/memory/`** + **re-run non-clobber**, F11/ADR-0009; **profile→tag prompt** both branches, ADR-0010; **interrupted-migrate atomicity** — partial `.cco/` cleaned, re-run safe, F44; **defensive name-uniqueness assert**, F12; **complete-final-`project.yml`-in-one-pass** — repos+llms+**packs** coordinates written together, pack backfill from recorded `source` read **in place** (the `source`→DATA relocation is P4), **no second schema-migration**, F37); **merge-engine path remap → STATE** (`.cco/base`/`meta`→`<state>/cco/{projects/<id>,packs/<name>,global}/update/`, H6/ADR-0016 D5 — re-sequenced from P0; merge *logic* unchanged) + **global `.cco/meta` decompose** (`languages`→`~/.cco`, `last_seen`/`last_read`→STATE top-level, `schema_version`/policies→global STATE update meta, `manifest:` dropped; ADR-0013 D4); first-run bootstrap (per-root idempotent) + `<state>/cco/migration-state` marker idempotency (F43) | `test_init.sh`; `test_update.sh` (H6 paths + `--check`); **`test_publish_install_sync.sh` meta/base refs spot-fixed to STATE** (full rewrite still P4) | — |
 | 3 (legacy cutover) | multi-project coexistence; truthful-diff (no sanitize) tests; `test_config.sh` (Domain A: allowlist staging never `git add -A`, **secret-scan `.example` exemption** — skeleton passes, real `secrets.env` blocked); **memory-as-STATE** (ADR-0009: `memory/` in STATE persists across starts, no auto-commit, no `.gitkeep`); **tag wiring** (ADR-0011/0015: `cco tag add/rm` + `cco list --tag` over the DATA `tags.yml`, tags NOT in `pack.yml`/`project.yml`/manifest/index) | `test_vault.sh` (shrink to migrate-reader) | `test_vault_profiles.sh`; `test_project_create.sh`; custom-diff/sanitize tests; **D33 memory auto-commit / D32 `.gitkeep` tests** |
 | 4 (sharing core) | **sync-before-publish no-clobber** (co-maintainer divergence → pull + 3-way merge against the **pack-scoped STATE `base/`**; first-publish init/add vs subsequent merge, abort-on-conflict; corrects the clone-then-overwrite `cmd-pack.sh:1024`; ADR-0022 D5); **discovery-before-delete** ordering (structure-based discovery built before `lib/manifest.sh` delete; new `cco init` emits no manifest; F14); **structure-based discovery** (no `manifest.yml`; init-at-first-publish / merge-on-existing); **2×2 verbs** incl. **project-has-no-publish guard** (P5/P13); nomenclature ("config repo"→"sharing repo"); **`source`→DATA relocation** (rename `url`/`ref`/`resource`, `commit`/`version`→STATE meta, `publish_target` re-derived via `remotes` reverse-lookup; F4/ADR-0022 D1 — re-sequenced from P0; all read/write sites + existing-install relocation flip together with these tests) | `test_pack_publish.sh`; `test_pack_install.sh`; `test_publish_install_sync.sh`; `test_project_install.sh`/`test_project_install_enhanced.sh`; `test_project_publish.sh`; `test_template.sh` | `test_manifest.sh` |
 | 5 (sharing ext + lifecycle) | **3-layer pack resolution** — resolver-table rows incl. **ERROR** on the same-name authored-vs-global collision, WARN on reachability/cache-degrade (ADR-0022 D4); **internalize-as-cache** prompt + `cco <res> internalize`; **`export --bundle-packs`** dependency-closure; **`cco update --check`** (DATA-driven, install-presence-gated **3-state**, installed-commit from STATE, exit-0; ADR-0022 D6); **llms CACHE re-fetch-on-url-mismatch** (F56); **`cco project validate`** share-readiness (reachability WARN + pack-collision ERROR; ADR-0023 D2) + **`cco config validate [--fix]`** orphan prune (warn-never-hide, STATE/CACHE rebuildable, DATA confirm-only); **`cco forget`** + self-healing index via `cco resolve --scan`; **delete-cascade** (`pack/template/llms remove` → tags.yml + DATA source; `remote remove` → DATA url + STATE token); **S8 no-token-leak checklist**; **`cco config protect`** scaffold | `test_pack_cli.sh`; `test_pack_internalize.sh`; `test_packs.sh`; `test_project_pack.sh`; `test_llms.sh` | — |
@@ -971,7 +993,7 @@ touches its feature. Disposition by class (not file-by-file — durable against 
 > exact file boundaries may shift during implementation.
 
 Net: a narrower surface — no custom diff/save/merge sync code to test, no dual-read; the
-`cco update` merge engine **logic** tests are untouched (only its paths are remapped in Phase 0, H6).
+`cco update` merge engine **logic** tests are untouched (only its paths are remapped in Phase 2, H6).
 
 ---
 

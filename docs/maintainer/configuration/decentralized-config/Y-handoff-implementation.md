@@ -67,8 +67,12 @@ Each phase consumes the one before it; nothing in an earlier phase is touched ag
     re-derivation (F4)** is **re-sequenced to P4**, not built here — confirmed Option B, 2026-06-19; its
     test surface is the sharing tests rewritten in P4–P5, and nothing in P0–P3 needs `source` in DATA.
     See `design.md` §9 P0 note / P4 and ADR-0022 D1 forward-annotation.)*
-  - **Merge-engine artifact paths (H6)**: `.cco/base/` + `.cco/meta` → STATE `/update` (relocate paths
-    only; merge *logic* unchanged) — reused by both `cco update` and the P4 sync-before-publish.
+  - *(**Merge-engine artifact paths (H6)** — `.cco/base/` + `.cco/meta` → STATE `/update` — is
+    **re-sequenced to P2**, not built here. Confirmed 2026-06-19. Its tests are hardcoded across P2
+    (`test_update`) and P4–P5 (`test_publish_install_sync`); nothing in P0–P1 needs base/meta in STATE; the
+    **P2 migration creates them** → relocate there in final form (build-once). The **global `.cco/meta` is
+    a decompose**, not just a relocate (ADR-0013 D4) — global STATE home pinned `<state>/cco/global/update/`.
+    See `design.md` §2.2 + §9 P2 + §11; ADR-0016 D6 forward-annotation.)*
   - **Compose generation, final mount map (BL3)**: per-mount bucket destinations; host-absolute mount
     sources; `GLOBAL_DIR`→`~/.cco` for **both `cco start` and `cco new`**. The **container side of
     `entrypoint.sh` is unchanged** — the compose↔entrypoint container-path contract is an invariant.
@@ -84,9 +88,13 @@ Each phase consumes the one before it; nothing in an earlier phase is touched ag
   the 4 roots on any command (ADR-0017 D3); legacy-vault **backup** + instructions; **`cco init --migrate
   <project> [--sync]`** (lazy, per-project, from the backup) + `cco init`/`cco join`. Migration writes the
   **complete final `project.yml` in one pass** (repos+llms+**packs** coords; pack `url` backfilled only
-  from the installed pack's DATA `source`, **never fabricated** — F37/P15). Create `migrations/pack/` +
-  `migrations/template/` scope dirs. **Memory relocation** (ADR-0009, non-clobber F11). **Profile→tag**
-  CLI prompt (ADR-0010, lossless).
+  from the installed pack's recorded `source` read **in place** — `source`→DATA relocation is P4 — **never
+  fabricated** — F37/P15). Create `migrations/pack/` + `migrations/template/` scope dirs. **Merge-engine
+  artifact paths → STATE (H6, re-sequenced from P0)**: `.cco/base`/`meta` → `<state>/cco/{projects/<id>,
+  packs/<name>,global}/update/`, helpers re-pointed, merge *logic* unchanged; **global `.cco/meta`
+  decompose** (`languages`→`~/.cco`, markers→STATE top-level, `schema_version`/policies→global STATE update
+  meta; ADR-0013 D4). **Memory relocation** (ADR-0009, non-clobber F11). **Profile→tag** CLI prompt
+  (ADR-0010, lossless).
 - **P3 — Legacy cutover** (the big breaking deletion, *after* migration exists): delete profile/switch/
   shadow machinery, `cco vault *`, `cco project create`, the sanitize/virtual-diff/extract-restore. Wire
   `cco tag add/rm` + `cco list --tag` over `<data>/cco/tags.yml`. Rehome the `config-editor` template to
@@ -98,7 +106,7 @@ Each phase consumes the one before it; nothing in an earlier phase is touched ag
   rewrite the manifest-gated call-sites, delete `lib/manifest.sh` + `cco manifest` **last**; new `cco
   init` never emits a manifest. **sync-before-publish fix** (the data-loss defect) — consolidated
   publish-path (§6.2 / ADR-0022 D5): pull + 3-way merge against the **pack-scoped STATE `base/`** (reusing
-  the P0-relocated merge engine), never clobber a co-maintainer (P16). **2×2 verb wiring**
+  the P2-relocated merge engine, H6), never clobber a co-maintainer (P16). **2×2 verb wiring**
   (publish/install + export/import; projects-don't-publish guard, P13). **Nomenclature migration**
   ("config repo"→"sharing repo"). **`source` provenance → DATA (re-sequenced here from P0; ADR-0022 D1)**:
   relocate `<repo|pack>/.cco/source` → `<data>/cco/{projects,packs,templates}/<id>/source`, rename

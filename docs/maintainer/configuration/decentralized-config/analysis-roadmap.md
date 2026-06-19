@@ -49,7 +49,7 @@ See **`W-handoff-cluster-resolution.md`** for the method + the open clusters.
 | 4 — Coordinate model & resolution | F4/F6/F14/F15/F16/F17/F29/F37–F41/F45/F48/F56 | **RESOLVED & PERSISTED** → ADR-0022 (new) + forward-annot ADR-0016/0017/0018/0019 + design §2.2–§12 + requirements FR-Y-S6 |
 | 5 — Command surface & UX | F13/F18/F19/F25/F26/F27/F34/F46/F47/F49/F50 | **RESOLVED & PERSISTED** → ADR-0023 (new, D1–D6) + forward-annot ADR-0016/0018/0019/0020/0021 + design §2.4/§3/§4.4/§6.2/§7/§8 |
 
-**The impl-readiness review (V) is FULLY RESOLVED — all 5 clusters closed (2026-06-19). Implementation IN PROGRESS along the `design.md` §9 P0–P5 phases.** Phase 0 (substrate) commits landed (`feat/vault/decentralized-config`, local): **T1** resolver+H4+L5 `ff8278b` · **T2a** index API `d913e5c` · **T3** coordinate parsers `992738d` · **T4-remotes** M3 split `2bdf80e`; suite **985/2** (2 pre-existing baseline drift = delta-green). **Remaining P0**: T5 → Commit A (repos/mount schema + harness, coordinated cutover) → Commit B (bucket re-point) → T8. (**T4-source re-sequenced P0→P4**, Option B 2026-06-19 — its `source`→DATA relocation/F4 test surface is the P4–P5 sharing tests; design §9/§11 + ADR-0022 D1 forward-annot.) **Resume cursor = `Z-handoff-p0-resume.md`** (method = `Y-handoff-implementation.md`). T = post-v1 state-sync.
+**The impl-readiness review (V) is FULLY RESOLVED — all 5 clusters closed (2026-06-19). Implementation IN PROGRESS along the `design.md` §9 P0–P5 phases.** Phase 0 (substrate) commits landed (`feat/vault/decentralized-config`, local): **T1** resolver+H4+L5 `ff8278b` · **T2a** index API `d913e5c` · **T3** coordinate parsers `992738d` · **T4-remotes** M3 split `2bdf80e`; suite **985/2** (2 pre-existing baseline drift = delta-green). **Remaining P0 = Commit A (repos/mount schema + harness, coordinated cutover) → Commit B (bucket re-point) → T8** (pure substrate). Both "internal-artifact relocation" items are re-sequenced OUT of P0 (their tests are hardcoded in later phases): **T4-source → P4** (source→DATA/F4; P4–P5 sharing tests; ADR-0022 D1 forward-annot) and **T5 → P2** (base/meta→STATE H6 + global-meta decompose; test_update P2 + test_publish_install_sync P4; ADR-0016 D6 forward-annot). Both 2026-06-19, design §2.2/§9/§11. **Resume cursor = `Z-handoff-p0-resume.md`** (method = `Y-handoff-implementation.md`). T = post-v1 state-sync.
 
 ---
 
@@ -238,9 +238,10 @@ re-derived the implementation order from **dependency + reuse + open-closed** (b
 substrate first; build every module once in its final form) — design and UX unchanged, only the build
 order. Every former "→ E" item now has a **phase home** in design.md §9 (Phase 0 substrate · 1 core ·
 2 migration · 3 cutover · 4 sharing-core · 5 sharing-ext). Carried-item anchors: **H7** (index
-concurrency/namespacing) → Phase 0 (where the index is born); **H6** (`base`/`meta`→STATE merge-paths)
-and **M3** (remotes DATA/STATE split) → Phase 0 substrate (reused by update + sync-before-publish; M3
-satisfies the Phase-5 S8 invariant by construction) — *classification absorbed by M/R3*; **H2**
+concurrency/namespacing) → Phase 0 (where the index is born); **M3** (remotes DATA/STATE split) → Phase 0
+substrate (M3 satisfies the Phase-5 S8 invariant by construction); **H6** (`base`/`meta`→STATE merge-paths)
+→ **Phase 2** (re-sequenced from P0 2026-06-19 — tests straddle P2/P4 + global-meta decompose; reused by
+update + sync-before-publish) — *classification absorbed by M/R3*; **H2**
 (reminder-aggregator cost), **M1/M2** (sync edge cases + sync-state lifecycle) → Phase 1; **H8** (join
 Case-C) → Phase 2; **M4/M5** (extra_mounts schema/migration) → Phase 0 (schema) + Phase 2 (migration).
 Test contracts + existing-suite teardown: design.md §11.

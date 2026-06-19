@@ -25,14 +25,13 @@ flowchart LR
   subgraph done["✅ done (this session)"]
     T1["T1 resolver+H4+L5"] --> T2a["T2a index API"] --> T3["T3 coord parsers"] --> T4r["T4 remotes split M3"]
   end
-  subgraph next["▶ remaining P0 (T5 first — independent)"]
-    T5["T5 merge-engine paths→STATE (H6)"]
-    T5 --> CA["Commit A — repos/mount schema cutover<br/>resolution+mount-gen+harness together"]
+  subgraph next["▶ remaining P0 = Commit A → B → T8 (pure substrate)"]
+    CA["Commit A — repos/mount schema cutover<br/>resolution+mount-gen+harness together"]
     CA --> CB["Commit B — bucket re-point GLOBAL_DIR→~/.cco + harness HOME"]
     CB --> T8["T8 CACHE overlays (F1/F2/F3)"]
   end
-  T4r --> T5
-  T8 -. "T4-source RE-SEQUENCED → P4" .-> P4["P4 sharing: source→DATA + F4"]
+  T4r --> CA
+  T8 -. "RE-SEQUENCED OUT of P0" .-> later["T4-source → P4 (source→DATA + F4)<br/>T5 → P2 (base/meta→STATE, H6 + global decompose)"]
 ```
 
 ## 2. Decisions LOCKED this session (do not re-litigate)
@@ -50,7 +49,9 @@ flowchart LR
 
 ## 3. Remaining P0 — detailed scope
 
-**Start with T5 (independent, bank a green commit), then the big cutover (Commit A → B), then T8.**
+**Remaining P0 = Commit A → Commit B → T8 (pure substrate).** Both "internal-artifact relocation" items
+(T4-source, T5) are re-sequenced OUT of P0 (their tests are hardcoded in later phases — see below). **Start
+with Commit A.**
 
 - **T4-source — RE-SEQUENCED to P4 (maintainer-confirmed 2026-06-19, Option B).** The `source`→DATA
   relocation + key-rename (`url`/`ref`/`resource`) + `commit`/`version`→STATE-meta + `publish_target`
@@ -64,9 +65,17 @@ flowchart LR
   caller-map omitted the test files (the §5 trap) — recon caught it before any code was written.
 - **T4-tags**: **DEFERRED to P3** — the DATA `tags.yml` registry has no consumer until `cco tag add/rm` +
   `cco list --tag` are wired (P3). Nothing to build in P0.
-- **T5** (independent commit): relocate merge-engine artifacts `.cco/base/` + `.cco/meta` → STATE
-  `/update` (`lib/paths.sh` helpers `_cco_project_meta`/`_cco_project_base_dir` etc.). **Paths only — the
-  `update-merge.sh` logic is unchanged.** Adjust `test_update.sh` paths. H6 / ADR-0016 D5.
+- **T5 — RE-SEQUENCED to P2 (maintainer-confirmed 2026-06-19).** Relocate merge-engine artifacts
+  `.cco/base/` + `.cco/meta` → STATE `/update` (`lib/paths.sh` helpers `_cco_project_meta`/
+  `_cco_project_base_dir` + global/pack variants; merge *logic* unchanged). **Not P0.** Reason: its tests
+  are hardcoded across **P2** (`test_update`, ~122 global+project `.cco/{meta,base}` refs) **and P4–P5**
+  (`test_publish_install_sync`, ~40 project refs) — relocating in P0 breaks delta-green. Nothing in P0–P1
+  needs base/meta in STATE; the **P2 migration creates base/meta** → relocate there in final form
+  (build-once) + co-locate with `test_update`'s P2 rewrite. The **global `.cco/meta` is a DECOMPOSE** (not
+  just relocate; ADR-0013 D4): `languages`→`~/.cco`, `last_seen`/`last_read`→STATE top-level, `schema_
+  version`/policies→**`<state>/cco/global/update/`** (new home, pinned — filled the §2.2/ADR-0016-D6 gap),
+  `manifest:` dropped. `test_publish_install_sync` meta/base refs get a P2 spot-fix (full rewrite P4).
+  Persisted: `design.md` §2.2 + §9 (P0 note, P2) + §11; ADR-0016 D6 forward-annotated. H6/ADR-0016 D5.
 - **Commit A** (BIG, coordinated): repos/mount schema cutover.
   - `lib/local-paths.sh`: **delete** the `@local`/sanitize/extract/restore/`local-paths.yml` plumbing;
     rewire resolution to read the **index** (T2a) for paths and `yml_get_repo_coords`/`yml_get_mount_coords`
@@ -136,8 +145,9 @@ existing-suite teardown). 4. ADRs **0007/0015/0016** (buckets/taxonomy), **0022*
 
 ## 8. Start here
 
-Next free ADR = **0024** (none needed for T5/Commit-A/B unless a new decision surfaces). Begin with
-**T5** (merge-engine paths→STATE, H6 — independent, low test surface), keep the suite delta-green, commit
-atomically. Then the coordinated **Commit A** (repos/mount/harness) and **Commit B** (buckets), then
-**T8**. **T4-source is re-sequenced to P4** (§3 — confirmed Option B). Pause and discuss if a real design
-gap surfaces; otherwise the ADRs/design are the spec.
+Next free ADR = **0024** (none needed for Commit-A/B/T8 unless a new decision surfaces). Begin with the
+coordinated **Commit A** (repos/mount/index/harness — the big breaking cutover; recon its 23 consumers +
+harness flip first, per §5), keep the suite delta-green, commit atomically. Then **Commit B** (buckets),
+then **T8**. **Both relocation items are re-sequenced OUT of P0** (§3): **T4-source → P4** (source→DATA +
+F4), **T5 → P2** (base/meta→STATE, H6 + global decompose). Pause and discuss if a real design gap surfaces;
+otherwise the ADRs/design are the spec.

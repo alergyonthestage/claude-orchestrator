@@ -248,6 +248,21 @@ move from the committed `.cco/` into STATE `/update`; the merge helpers (`_cco_p
 `_cco_project_base_dir`/`_cco_project_compose`, `_merge_file`/`_resolve_with_merge`) take **separate config vs
 state bases** — the `cco update` merge *logic* is unchanged, its *paths* are remapped.
 
+> **Forward-annotation (2026-06-19) — D6 refinements (decision unchanged).** Two clarifications, both
+> persisted in `design.md` §2.2 + §9 P2/§11; the D6 *decision* (base/meta→STATE `/update`, partitioned
+> by sync-eligibility) stands verbatim:
+> 1. **Global STATE update home pinned (fills a D6 enumeration gap).** The tree above lists
+>    `projects/<id>/update/` + (D5) `packs/<name>/update/base/` but **omitted a global home**. The global
+>    scope's update artifacts live at **`<state>/cco/global/update/{meta,base}`** (parallel to the
+>    project entry). The global `.cco/meta` is **decomposed** (ADR-0013 D4): `languages`→`~/.cco`,
+>    `last_seen`/`last_read`→STATE top-level (already shown), `schema_version`/policies/flags/
+>    `local_framework_override`→this global update meta; `manifest:` marker dropped (ADR-0012).
+> 2. **H6 build phase = Phase 2** (not P0). The "→ E" tag predates the Cluster-2 phase map; E is dissolved.
+>    The relocation co-locates with the P2 migration (which *creates* base/meta in final form, build-once)
+>    and `test_update`'s P2 rewrite — relocating in P0 would break delta-green against the hardcoded
+>    `.cco/{meta,base}` assertions in `test_update` (P2) and `test_publish_install_sync` (P4–P5).
+>    (Maintainer-confirmed re-sequence, 2026-06-19.)
+
 ### D7 — CACHE internal layout (regenerable; C2/H5/F1)
 
 ```
