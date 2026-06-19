@@ -106,10 +106,12 @@ load_secrets_file() {
     done < "$secrets_file"
 }
 
-# Load global secrets from global/secrets.env into an array of -e flags
+# Load global secrets from the CONFIG bucket (~/.cco/secrets.env) into an array
+# of -e flags. The secrets file is gitignored config, top-level in ~/.cco
+# (design §2.3 / ADR-0016), NOT under global/.
 # Usage: load_global_secrets array_name
 load_global_secrets() {
-    load_secrets_file "$1" "$GLOBAL_DIR/secrets.env"
+    load_secrets_file "$1" "$(_cco_config_dir)/secrets.env"
 }
 
 # DEPRECATED: Use migrations/project/001_memory_to_claude_state.sh instead.

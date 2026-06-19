@@ -32,6 +32,7 @@ test_project_secrets_not_in_compose() {
 _source_secrets_lib() {
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
     source "$REPO_ROOT/lib/secrets.sh"
 }
 
@@ -163,13 +164,15 @@ test_secrets_inline_comment_stripped() {
     fi
 }
 
-test_secrets_global_secrets_uses_global_dir() {
-    # load_global_secrets reads from GLOBAL_DIR/secrets.env
+test_secrets_global_secrets_uses_config_bucket() {
+    # load_global_secrets reads from the CONFIG bucket (~/.cco/secrets.env;
+    # design §2.3 — top-level, not under global/)
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _source_secrets_lib
-    export GLOBAL_DIR="$tmpdir/global"
-    mkdir -p "$GLOBAL_DIR"
-    printf 'GLOBAL_SECRET=top_secret\n' > "$GLOBAL_DIR/secrets.env"
+    export HOME="$tmpdir/home"
+    export CCO_ALLOW_HOST_RESOLVE=1
+    mkdir -p "$HOME/.cco"
+    printf 'GLOBAL_SECRET=top_secret\n' > "$HOME/.cco/secrets.env"
     local result=()
     load_global_secrets result
     local joined="${result[*]}"

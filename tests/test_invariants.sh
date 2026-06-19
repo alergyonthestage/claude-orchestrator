@@ -101,11 +101,12 @@ test_invariant_3_memory_is_project_specific_host_path() {
     local compose_a="$dir_a/docker-compose.yml"
     local compose_b="$dir_b/docker-compose.yml"
 
-    # Each project's compose should reference its own .cco/claude-state directory
-    assert_file_contains "$compose_a" "proj-a/.cco/claude-state"
-    assert_file_contains "$compose_b" "proj-b/.cco/claude-state"
-    assert_file_not_contains "$compose_a" "proj-b/.cco/claude-state"
-    assert_file_not_contains "$compose_b" "proj-a/.cco/claude-state"
+    # Each project's compose references its own STATE claude-state directory
+    # (machine-local, keyed by project identity; design §2.2)
+    assert_file_contains "$compose_a" "projects/proj-a/session/claude-state"
+    assert_file_contains "$compose_b" "projects/proj-b/session/claude-state"
+    assert_file_not_contains "$compose_a" "projects/proj-b/session/claude-state"
+    assert_file_not_contains "$compose_b" "projects/proj-a/session/claude-state"
 }
 
 # ── Invariant 4: Container/Network Naming ────────────────────────────
@@ -162,7 +163,8 @@ test_invariant_5_all_global_config_mounts_are_readonly() {
 
     # Every line mounting from the global config dir must end with :ro
     # Exception: settings.json is rw (Claude Code writes runtime preferences)
-    local global_path="$CCO_GLOBAL_DIR/.claude"
+    # Global config now lives in the CONFIG bucket (~/.cco/global; design §2.3)
+    local global_path="$HOME/.cco/global/.claude"
     local violations
     violations=$(grep -F "$global_path" "$compose" | grep -v ":ro" | grep -v "settings.json:" || true)
     if [[ -n "$violations" ]]; then
@@ -197,8 +199,8 @@ test_invariant_9_secrets_not_written_to_compose() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
 
-    # Plant a recognizable secret value
-    printf 'MY_SECRET=hunter2\nDATABASE_PASSWORD=s3cr3t!\n' > "$CCO_GLOBAL_DIR/secrets.env"
+    # Plant a recognizable secret value where cco now reads it (~/.cco/secrets.env)
+    printf 'MY_SECRET=hunter2\nDATABASE_PASSWORD=s3cr3t!\n' > "$HOME/.cco/secrets.env"
 
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run --dump

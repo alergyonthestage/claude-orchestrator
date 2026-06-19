@@ -237,7 +237,7 @@ test_dry_run_auto_memory_exact_path() {
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run --dump
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
-        ".cco/claude-state:/home/claude/.claude/projects/-workspace"
+        "session/claude-state:/home/claude/.claude/projects/-workspace"
 }
 
 test_dry_run_memory_child_mount() {
@@ -249,7 +249,7 @@ test_dry_run_memory_child_mount() {
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run --dump
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
-        "./memory:/home/claude/.claude/projects/-workspace/memory"
+        "session/memory:/home/claude/.claude/projects/-workspace/memory"
 }
 
 test_dry_run_memory_mount_after_claude_state() {
@@ -262,7 +262,7 @@ test_dry_run_memory_mount_after_claude_state() {
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     local state_line memory_line
-    state_line=$(grep -n ".cco/claude-state.*-workspace$" "$compose" | head -1 | cut -d: -f1)
+    state_line=$(grep -n "session/claude-state.*-workspace$" "$compose" | head -1 | cut -d: -f1)
     memory_line=$(grep -n "memory.*-workspace/memory" "$compose" | head -1 | cut -d: -f1)
     if [[ -z "$state_line" || -z "$memory_line" ]]; then
         echo "ASSERTION FAILED: could not find claude-state or memory mount line"
@@ -567,7 +567,7 @@ test_dry_run_global_mcp_not_mounted_when_absent() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    rm -f "$CCO_GLOBAL_DIR/.claude/mcp.json"
+    rm -f "$HOME/.cco/global/.claude/mcp.json"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run --dump
     assert_file_not_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "mcp-global.json"
@@ -630,7 +630,7 @@ test_dry_run_volume_order_memory_before_git() {
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     local memory_line git_line
-    memory_line=$(grep -n ".cco/claude-state.*-workspace" "$compose" | head -1 | cut -d: -f1)
+    memory_line=$(grep -n "session/claude-state.*-workspace" "$compose" | head -1 | cut -d: -f1)
     git_line=$(grep -n ".gitconfig:ro" "$compose" | head -1 | cut -d: -f1)
     if [[ -z "$memory_line" || -z "$git_line" ]]; then
         echo "ASSERTION FAILED: could not find memory or git line"
@@ -782,7 +782,7 @@ test_dry_run_setup_sh_mounted_when_exists() {
     echo '#!/bin/bash' > "$CCO_PROJECTS_DIR/test-proj/setup.sh"
     run_cco start "test-proj" --dry-run --dump
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
-        "./setup.sh:/workspace/setup.sh:ro"
+        "/setup.sh:/workspace/setup.sh:ro"
 }
 
 test_dry_run_setup_sh_not_mounted_when_missing() {
@@ -803,7 +803,7 @@ test_dry_run_global_setup_mounted_when_exists() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
-    echo '#!/bin/bash' > "$CCO_GLOBAL_DIR/setup.sh"
+    echo '#!/bin/bash' > "$HOME/.cco/setup.sh"
     run_cco start "test-proj" --dry-run --dump
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
         "global-setup.sh:ro"
@@ -830,7 +830,7 @@ test_dry_run_mcp_packages_mounted_when_exists() {
     echo '# packages' > "$CCO_PROJECTS_DIR/test-proj/mcp-packages.txt"
     run_cco start "test-proj" --dry-run --dump
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
-        "./mcp-packages.txt:/workspace/mcp-packages.txt:ro"
+        "/mcp-packages.txt:/workspace/mcp-packages.txt:ro"
 }
 
 test_dry_run_mcp_packages_not_mounted_when_missing() {
@@ -854,7 +854,7 @@ test_browser_disabled_by_default() {
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_not_contains "$compose" "extra_hosts"
-    assert_file_not_contains "$compose" ".cco/managed"
+    assert_file_not_contains "$compose" "/managed:/workspace/.managed"
     assert_file_not_exists "$DRY_RUN_DIR/.cco/managed/browser.json"
 }
 
@@ -928,7 +928,7 @@ YAML
 )"
     run_cco start "test-proj" --dry-run --dump
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
-        "./.cco/managed:/workspace/.managed:ro"
+        "/managed:/workspace/.managed:ro"
 }
 
 test_browser_custom_cdp_port() {
@@ -964,7 +964,7 @@ test_browser_chrome_flag_override() {
     run_cco start "test-proj" --chrome --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "host.docker.internal:host-gateway"
-    assert_file_contains "$compose" "./.cco/managed:/workspace/.managed:ro"
+    assert_file_contains "$compose" "/managed:/workspace/.managed:ro"
     assert_file_exists "$DRY_RUN_DIR/.cco/managed/browser.json"
 }
 
@@ -1175,7 +1175,7 @@ YAML
     run_cco start "test-proj" --no-chrome --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_not_contains "$compose" "extra_hosts"
-    assert_file_not_contains "$compose" ".cco/managed"
+    assert_file_not_contains "$compose" "/managed:/workspace/.managed"
     assert_file_not_contains "$compose" "CDP_PORT"
     assert_file_not_exists "$DRY_RUN_DIR/.cco/managed/browser.json"
 }
@@ -1202,7 +1202,7 @@ YAML
     run_cco start "test-proj" --dry-run --dump   # NO --chrome flag
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "host.docker.internal:host-gateway"
-    assert_file_contains "$compose" "./.cco/managed:/workspace/.managed:ro"
+    assert_file_contains "$compose" "/managed:/workspace/.managed:ro"
     assert_file_exists "$DRY_RUN_DIR/.cco/managed/browser.json"
 }
 
@@ -1429,7 +1429,7 @@ repos:
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
-    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "./.cco/managed:/workspace/.managed:ro"
+    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "/managed:/workspace/.managed:ro"
 }
 
 test_browser_and_github_both_enabled_single_managed_mount() {
@@ -1456,7 +1456,7 @@ YAML
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     local mount_count
-    mount_count=$(grep -c ".cco/managed:/workspace/.managed:ro" "$compose" || true)
+    mount_count=$(grep -c "/managed:/workspace/.managed:ro" "$compose" || true)
     assert_equals "1" "$mount_count" ".cco/managed mount must appear exactly once"
     assert_file_exists "$DRY_RUN_DIR/.cco/managed/browser.json"
     assert_file_exists "$DRY_RUN_DIR/.cco/managed/github.json"
@@ -1471,7 +1471,7 @@ test_start_blocked_by_global_conflict_markers() {
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     # Inject conflict markers into a global config file
-    cat >> "$CCO_GLOBAL_DIR/.claude/agents/analyst.md" <<'MARKERS'
+    cat >> "$HOME/.cco/global/.claude/agents/analyst.md" <<'MARKERS'
 
 <<<<<<< your version
 # My custom section

@@ -473,7 +473,7 @@ test_project_yml_mounted_in_compose() {
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run --dump
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
-        "./project.yml:/workspace/project.yml:ro"
+        "/project.yml:/workspace/project.yml:ro"
 }
 
 # ── pack resource mounts in compose (ADR-14) ─────────────────────────

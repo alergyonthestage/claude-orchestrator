@@ -51,6 +51,11 @@ EOF
     mkdir -p "$tmp_dir/claude-state/memory" "$tmp_dir/.claude" || die "Failed to create temp directory: $tmp_dir"
     trap 'rm -rf "'"$tmp_dir"'"' EXIT
 
+    # Global config lives in the CONFIG bucket (~/.cco/global; design §2.3).
+    # cco new is an ephemeral session: its transcripts/memory stay in tmp_dir
+    # (no persistent project identity to key STATE by).
+    local config_global; config_global="$(_cco_config_dir)/global"
+
     # Create minimal project CLAUDE.md
     cat > "$tmp_dir/.claude/CLAUDE.md" <<EOF
 # Temporary Session: ${session_name}
@@ -95,11 +100,11 @@ YAML
     volumes:
       - \${HOME}/.claude.json:/home/claude/.claude.json.seed:ro
       # Global config
-      - ${GLOBAL_DIR}/.claude/settings.json:/home/claude/.claude/settings.json:ro
-      - ${GLOBAL_DIR}/.claude/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
-      - ${GLOBAL_DIR}/.claude/rules:/home/claude/.claude/rules:ro
-      - ${GLOBAL_DIR}/.claude/agents:/home/claude/.claude/agents:ro
-      - ${GLOBAL_DIR}/.claude/skills:/home/claude/.claude/skills:ro
+      - ${config_global}/.claude/settings.json:/home/claude/.claude/settings.json:ro
+      - ${config_global}/.claude/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
+      - ${config_global}/.claude/rules:/home/claude/.claude/rules:ro
+      - ${config_global}/.claude/agents:/home/claude/.claude/agents:ro
+      - ${config_global}/.claude/skills:/home/claude/.claude/skills:ro
       # Session config
       - ${tmp_dir}/.claude:/workspace/.claude
       # Claude state: auto memory + session transcripts (enables /resume across rebuilds)
@@ -107,9 +112,9 @@ YAML
 YAML
 
         # Global MCP config
-        if [[ -f "$GLOBAL_DIR/.claude/mcp.json" ]]; then
+        if [[ -f "$config_global/.claude/mcp.json" ]]; then
             echo "      # Global MCP servers"
-            echo "      - ${GLOBAL_DIR}/.claude/mcp.json:/home/claude/.claude/mcp-global.json:ro"
+            echo "      - ${config_global}/.claude/mcp.json:/home/claude/.claude/mcp-global.json:ro"
         fi
 
         echo "      # Repositories"

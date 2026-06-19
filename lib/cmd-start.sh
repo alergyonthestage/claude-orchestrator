@@ -185,6 +185,14 @@ _start_load_config() {
     local repos_check
     repos_check=$(_effective_repo_mounts "$project_yml")
     [[ -z "$repos_check" ]] && warn "No repositories defined in project.yml. Work inside the container will not persist unless saved via extra_mounts."
+
+    # ── Per-machine bucket homes (decentralized config; design §2.2) ─────
+    # CONFIG (~/.cco) = user-authored global config; STATE/CACHE = this
+    # project's machine-local session state and regenerable overlays, keyed
+    # by project identity (ADR-0005/0007/0015/0016). Resolved host-side only.
+    config_dir=$(_cco_config_dir)
+    session_state_dir="$(_cco_state_dir)/projects/$project_name"
+    session_cache_dir="$(_cco_cache_dir)/projects/$project_name"
     return 0
 }
 
@@ -206,9 +214,9 @@ _start_check_health() {
     # Check for unresolved merge conflicts in config files
     local _conflict_files=()
     local _check_dir _check_label
-    for _check_dir in "$GLOBAL_DIR/.claude" "$project_dir/.claude"; do
+    for _check_dir in "$config_dir/global/.claude" "$project_dir/.claude"; do
         [[ ! -d "$_check_dir" ]] && continue
-        if [[ "$_check_dir" == "$GLOBAL_DIR/.claude" ]]; then
+        if [[ "$_check_dir" == "$config_dir/global/.claude" ]]; then
             _check_label="global"
         else
             _check_label="project/$project"
@@ -229,7 +237,7 @@ _start_check_health() {
     fi
 
     # Warn about managed skills that shadow user-level copies
-    if [[ -d "$GLOBAL_DIR/.claude/skills/init-workspace" ]]; then
+    if [[ -d "$config_dir/global/.claude/skills/init-workspace" ]]; then
         warn "init-workspace skill found in user global (global/.claude/skills/init-workspace)."
         warn "This skill is now managed (enterprise-level) and the managed version takes precedence."
         warn "You can safely remove the user copy: rm -rf global/.claude/skills/init-workspace"
@@ -253,6 +261,11 @@ _start_prepare_state() {
             trap _cleanup_dry_run_dir EXIT
         fi
         mkdir -p "$output_dir/.claude" "$output_dir/.cco/managed"
+        # Dry-run inspects generated managed overlays under the dump dir.
+        managed_gen_dir="$output_dir/.cco/managed"
+    else
+        # Real start: managed overlays are regenerable → CACHE (keyed by id).
+        managed_gen_dir="$session_cache_dir/managed"
     fi
 
     # ── Persistent side effects: skip in dry-run ─────────────────────────
@@ -260,20 +273,20 @@ _start_prepare_state() {
         # Auto-clean stale dry-run dump (starting implies approval)
         [[ -d "$project_dir/.tmp" ]] && rm -rf "$project_dir/.tmp"
 
-        # Ensure claude-state directory exists (migrates legacy memory/ if needed)
-        migrate_memory_to_claude_state "$project_dir"
+        # Session transcripts + auto-memory are machine-local STATE, keyed by
+        # project identity (ADR-0009): never committed, never in ~/.cco. The
+        # /session partition is the future state-sync opt-in boundary (§2.2).
+        mkdir -p "$session_state_dir/session/claude-state" \
+                 "$session_state_dir/session/memory" \
+                 "$managed_gen_dir"
 
-        # Ensure memory directory exists (vault-tracked, separate from claude-state)
-        mkdir -p "$project_dir/memory"
-        # Restore .gitkeep if missing — keeps directory tracked in vault (D32)
-        [[ ! -f "$project_dir/memory/.gitkeep" ]] && touch "$project_dir/memory/.gitkeep"
-
-        # Ensure global state files exist (shared across all projects — must exist before Docker bind mount)
-        mkdir -p "$GLOBAL_DIR/claude-state"
+        # Global auth/session state, shared across all projects → STATE
+        # top-level (machine-local, never synced; design §2.2 / ADR-0016).
+        local state_root; state_root=$(_cco_state_dir)
 
         # ~/.claude.json — preferences, MCP servers, session metadata (NOT auth tokens)
         # Re-sync from host when host has been updated (higher numStartups = more recent).
-        local global_claude_json="$GLOBAL_DIR/claude-state/claude.json"
+        local global_claude_json="$state_root/claude.json"
         if [[ -f "$HOME/.claude.json" ]]; then
             if [[ ! -f "$global_claude_json" ]]; then
                 cp "$HOME/.claude.json" "$global_claude_json"
@@ -301,7 +314,7 @@ _start_prepare_state() {
         # On macOS, Claude stores tokens in Keychain. On Linux (container), it reads from
         # ~/.claude/.credentials.json in plaintext. We seed this file from the macOS Keychain
         # so the container can authenticate without manual login.
-        local global_creds="$GLOBAL_DIR/claude-state/.credentials.json"
+        local global_creds="$state_root/.credentials.json"
         if [[ "$(uname)" == "Darwin" ]] && [[ "$auth_method" == "oauth" ]]; then
             local keychain_json
             keychain_json=$(security find-generic-password -s "Claude Code-credentials" -a "$(whoami)" -w 2>/dev/null) || true
@@ -328,32 +341,32 @@ _start_prepare_state() {
 _start_generate_integrations() {
     # ── Docker socket policy ──────────────────────────────────────────────
     if [[ "$mount_socket" == "true" ]]; then
-        _generate_socket_policy "$project_yml" "$project_name" "$output_dir"
+        _generate_socket_policy "$project_yml" "$project_name" "$managed_gen_dir"
     else
         if ! $dry_run; then
-            rm -f "$project_dir/.cco/managed/policy.json"
+            rm -f "$managed_gen_dir/policy.json"
         fi
     fi
 
-    # ── Generate .managed/ integrations ──────────────────────────────────
+    # ── Generate .managed/ integrations (regenerable overlays → CACHE) ────
     if [[ "$browser_enabled" == "true" ]]; then
-        mkdir -p "$output_dir/.cco/managed"
-        _generate_browser_mcp "$output_dir/.cco/managed/browser.json" \
+        mkdir -p "$managed_gen_dir"
+        _generate_browser_mcp "$managed_gen_dir/browser.json" \
             "$browser_mode" "$browser_effective_port" "$browser_mcp_args"
-        echo "$browser_effective_port" > "$output_dir/.cco/managed/.browser-port"
+        echo "$browser_effective_port" > "$managed_gen_dir/.browser-port"
     else
         if ! $dry_run; then
             # Clean up stale managed files from a previous session
-            rm -f "$project_dir/.cco/managed/browser.json" "$project_dir/.cco/managed/.browser-port"
+            rm -f "$managed_gen_dir/browser.json" "$managed_gen_dir/.browser-port"
         fi
     fi
 
     if [[ "$github_enabled" == "true" ]]; then
-        mkdir -p "$output_dir/.cco/managed"
-        _generate_github_mcp "$output_dir/.cco/managed/github.json" "$github_token_env"
+        mkdir -p "$managed_gen_dir"
+        _generate_github_mcp "$managed_gen_dir/github.json" "$github_token_env"
     else
         if ! $dry_run; then
-            rm -f "$project_dir/.cco/managed/github.json"
+            rm -f "$managed_gen_dir/github.json"
         fi
     fi
 
@@ -380,8 +393,20 @@ _start_resolve_paths() {
 # Sets: compose_file
 _start_generate_compose() {
     # ── Generate docker-compose.yml ──────────────────────────────────
-    mkdir -p "$output_dir/.cco"
-    compose_file=$(_cco_project_compose "$output_dir")
+    # Real start writes the compose into STATE (machine-local, keyed by id;
+    # design §2.2 BL3). Dry-run dumps it under the inspection dir. Every
+    # framework mount source below is host-absolute (config/state/cache roots
+    # now diverge, so a single --project-directory can no longer anchor them).
+    local state_root config_global
+    state_root=$(_cco_state_dir)
+    config_global="$config_dir/global"
+    if $dry_run; then
+        mkdir -p "$output_dir/.cco"
+        compose_file="$output_dir/.cco/docker-compose.yml"
+    else
+        mkdir -p "$session_state_dir"
+        compose_file="$session_state_dir/docker-compose.yml"
+    fi
 
     {
         cat <<YAML
@@ -438,62 +463,62 @@ YAML
 
         echo "    volumes:"
 
-        # ~/.claude.json — preferences, MCP servers, session metadata (persisted globally)
-        echo "      - ${GLOBAL_DIR}/claude-state/claude.json:/home/claude/.claude.json"
-        # ~/.claude/.credentials.json — OAuth tokens (seeded from macOS Keychain, auto-refreshed by Claude)
-        echo "      - ${GLOBAL_DIR}/claude-state/.credentials.json:/home/claude/.claude/.credentials.json"
+        # ~/.claude.json — preferences, MCP servers, session metadata (machine-local STATE)
+        echo "      - ${state_root}/claude.json:/home/claude/.claude.json"
+        # ~/.claude/.credentials.json — OAuth tokens (machine-local STATE, never synced)
+        echo "      - ${state_root}/.credentials.json:/home/claude/.claude/.credentials.json"
 
         # Global config
         cat <<YAML
       # Global config (settings.json is rw — Claude Code writes runtime preferences like /effort)
-      - ${GLOBAL_DIR}/.claude/settings.json:/home/claude/.claude/settings.json
-      - ${GLOBAL_DIR}/.claude/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
-      - ${GLOBAL_DIR}/.claude/rules:/home/claude/.claude/rules:ro
-      - ${GLOBAL_DIR}/.claude/agents:/home/claude/.claude/agents:ro
-      - ${GLOBAL_DIR}/.claude/skills:/home/claude/.claude/skills:ro
+      - ${config_global}/.claude/settings.json:/home/claude/.claude/settings.json
+      - ${config_global}/.claude/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
+      - ${config_global}/.claude/rules:/home/claude/.claude/rules:ro
+      - ${config_global}/.claude/agents:/home/claude/.claude/agents:ro
+      - ${config_global}/.claude/skills:/home/claude/.claude/skills:ro
       # Project config
-      - ./.claude:/workspace/.claude
-      - ./project.yml:/workspace/project.yml:ro
-      # Claude state: session transcripts (enables /resume across rebuilds)
-      - ./.cco/claude-state:/home/claude/.claude/projects/-workspace
-      # Memory: auto memory files (vault-tracked, separate from transcripts)
-      - ./memory:/home/claude/.claude/projects/-workspace/memory
+      - ${project_dir}/.claude:/workspace/.claude
+      - ${project_dir}/project.yml:/workspace/project.yml:ro
+      # Claude state: session transcripts (machine-local STATE; enables /resume across rebuilds)
+      - ${session_state_dir}/session/claude-state:/home/claude/.claude/projects/-workspace
+      # Memory: auto memory files (machine-local STATE, separate from transcripts)
+      - ${session_state_dir}/session/memory:/home/claude/.claude/projects/-workspace/memory
 YAML
 
         # Global MCP config (merged into ~/.claude.json by entrypoint)
-        if [[ -f "$GLOBAL_DIR/.claude/mcp.json" ]]; then
+        if [[ -f "$config_global/.claude/mcp.json" ]]; then
             echo "      # Global MCP servers"
-            echo "      - ${GLOBAL_DIR}/.claude/mcp.json:/home/claude/.claude/mcp-global.json:ro"
+            echo "      - ${config_global}/.claude/mcp.json:/home/claude/.claude/mcp-global.json:ro"
         fi
 
         # Project MCP config (Claude Code expands ${VAR} natively)
         if [[ -f "$project_dir/mcp.json" ]]; then
             echo "      # Project MCP servers"
-            echo "      - ./mcp.json:/workspace/.mcp.json:ro"
+            echo "      - ${project_dir}/mcp.json:/workspace/.mcp.json:ro"
         fi
 
         # Global runtime setup script (executed by entrypoint before project setup)
-        if [[ -f "$GLOBAL_DIR/setup.sh" ]]; then
+        if [[ -f "$config_dir/setup.sh" ]]; then
             echo "      # Global runtime setup"
-            echo "      - ${GLOBAL_DIR}/setup.sh:/home/claude/global-setup.sh:ro"
+            echo "      - ${config_dir}/setup.sh:/home/claude/global-setup.sh:ro"
         fi
 
         # Project setup script (runtime, executed by entrypoint)
         if [[ -f "$project_dir/setup.sh" ]]; then
             echo "      # Project setup script"
-            echo "      - ./setup.sh:/workspace/setup.sh:ro"
+            echo "      - ${project_dir}/setup.sh:/workspace/setup.sh:ro"
         fi
 
         # Project MCP packages (runtime, installed by entrypoint)
         if [[ -f "$project_dir/mcp-packages.txt" ]]; then
             echo "      # Project MCP packages"
-            echo "      - ./mcp-packages.txt:/workspace/mcp-packages.txt:ro"
+            echo "      - ${project_dir}/mcp-packages.txt:/workspace/mcp-packages.txt:ro"
         fi
 
-        # Managed integrations directory (framework-generated, never edit manually)
-        if [[ -d "$output_dir/.cco/managed" ]] && [[ -n "$(ls -A "$output_dir/.cco/managed" 2>/dev/null)" ]]; then
+        # Managed integrations (framework-generated overlays → CACHE, :ro)
+        if [[ -d "$managed_gen_dir" ]] && [[ -n "$(ls -A "$managed_gen_dir" 2>/dev/null)" ]]; then
             echo "      # Managed integrations"
-            echo "      - ./.cco/managed:/workspace/.managed:ro"
+            echo "      - ${session_cache_dir}/managed:/workspace/.managed:ro"
         fi
 
         # Repository mounts.
@@ -538,8 +563,8 @@ YAML
             echo "      # Docker socket"
             echo "      - /var/run/docker.sock:/var/run/docker.sock"
             # Policy file for socket proxy (if generated)
-            if [[ -f "$output_dir/.cco/managed/policy.json" ]]; then
-                echo "      - ./.cco/managed/policy.json:/etc/cco/policy.json:ro"
+            if [[ -f "$managed_gen_dir/policy.json" ]]; then
+                echo "      - ${session_cache_dir}/managed/policy.json:/etc/cco/policy.json:ro"
             fi
         fi
 
@@ -756,7 +781,7 @@ _start_launch() {
     load_secrets_file run_env "$project_dir/secrets.env"
 
     info "Starting session for project '${project_name}'..."
-    docker compose -f "$compose_file" --project-directory "$project_dir" run --rm --service-ports "${run_env[@]+"${run_env[@]}"}" claude
+    docker compose -f "$compose_file" --project-directory "$session_state_dir" run --rm --service-ports "${run_env[@]+"${run_env[@]}"}" claude
 
     ok "Session ended. Changes are in your repos."
 }
@@ -829,6 +854,7 @@ EOF
     local browser_enabled browser_mode browser_cdp_port browser_effective_port browser_mcp_args
     local github_enabled github_token_env pack_names
     local output_dir compose_file packs_md
+    local config_dir session_state_dir session_cache_dir managed_gen_dir
 
     _start_resolve_project
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] resolve_project done" >&2
@@ -1064,10 +1090,10 @@ _proxy_collect_pathmap() {
 }
 
 _generate_socket_policy() {
-    local project_yml="$1" project_name="$2" project_dir="$3"
+    local project_yml="$1" project_name="$2" managed_dir="$3"
 
-    mkdir -p "$project_dir/.cco/managed"
-    local out_file="$project_dir/.cco/managed/policy.json"
+    mkdir -p "$managed_dir"
+    local out_file="$managed_dir/policy.json"
 
     # Container policy
     local ct_policy ct_create ct_prefix

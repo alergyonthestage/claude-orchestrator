@@ -9,6 +9,27 @@
 # Usage: setup_cco_env "$tmpdir"
 setup_cco_env() {
     local tmpdir="$1"
+    # Redirect HOME so the CONFIG bucket (~/.cco) and every HOME-anchored
+    # resolver land inside the tmpdir, not the developer's real home. After
+    # Commit B, cco start/new read global config + secrets from ~/.cco and
+    # session state from the STATE/CACHE buckets below.
+    export HOME="$tmpdir/home"
+    mkdir -p "$HOME"
+    # Hermetic git identity in the redirected HOME: the suite has ~12
+    # git-committing tests that previously relied on the ambient ~/.gitconfig.
+    # protocol.file.allow=always is required for the local file:// remotes the
+    # pack/project install/publish tests use.
+    cat > "$HOME/.gitconfig" <<'GITCFG'
+[user]
+	name = cco-test
+	email = cco-test@example.com
+[protocol "file"]
+	allow = always
+GITCFG
+
+    # Legacy central-layout dirs — still consumed by the not-yet-cutover
+    # commands (init/update/build/clean/project-create/vault) and their tests,
+    # which ride later phases. Kept until those phases cut over.
     export CCO_USER_CONFIG_DIR="$tmpdir/user-config"
     export CCO_GLOBAL_DIR="$tmpdir/user-config/global"
     export CCO_PROJECTS_DIR="$tmpdir/user-config/projects"
@@ -16,9 +37,8 @@ setup_cco_env() {
     export CCO_TEMPLATES_DIR="$tmpdir/user-config/templates"
     export CCO_LLMS_DIR="$tmpdir/user-config/llms"
     export CCO_DUMMY_REPO="$tmpdir/dummy-repo"
-    # XDG 4-bucket overrides (decentralized config). Additive alongside the
-    # legacy CCO_*_DIR during the P0 cutover; CCO_ALLOW_HOST_RESOLVE bypasses
-    # the in-container guard so the host-side resolver runs in test/dev.
+    # XDG 4-bucket overrides (decentralized config). CCO_ALLOW_HOST_RESOLVE
+    # bypasses the in-container guard so the host-side resolver runs in test/dev.
     export CCO_DATA_HOME="$tmpdir/data"
     export CCO_STATE_HOME="$tmpdir/state"
     export CCO_CACHE_HOME="$tmpdir/cache"
@@ -52,9 +72,16 @@ seed_index_path() {
 # Usage: setup_global_from_defaults "$tmpdir"
 setup_global_from_defaults() {
     local tmpdir="$1"
-    mkdir -p "$tmpdir/user-config/global"
-    cp -r "$REPO_ROOT/defaults/global/.claude" "$tmpdir/user-config/global/.claude"
-    mkdir -p "$tmpdir/user-config/packs"
+    # Legacy central global — what check_global and the not-yet-cutover
+    # commands (init/update/build/clean/vault) still read via GLOBAL_DIR.
+    mkdir -p "$CCO_GLOBAL_DIR"
+    cp -r "$REPO_ROOT/defaults/global/.claude" "$CCO_GLOBAL_DIR/.claude"
+    mkdir -p "$CCO_PACKS_DIR"
+    # Decentralized CONFIG bucket global — what cco start/new now mount
+    # (_cco_config_dir/global == ~/.cco/global; design §2.3). Seeded in
+    # parallel during the P0 cutover so both worlds resolve.
+    mkdir -p "$HOME/.cco/global"
+    cp -r "$REPO_ROOT/defaults/global/.claude" "$HOME/.cco/global/.claude"
 }
 
 # Create a minimal project directory with the given project.yml content.
