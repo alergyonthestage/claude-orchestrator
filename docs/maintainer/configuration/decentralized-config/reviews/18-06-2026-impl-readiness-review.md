@@ -2165,4 +2165,23 @@ via a maintainer-driven analysis.
 Living re-sync: `design.md` §6.2 (verdict note + template disambiguation), §7 (Sharing row + new
 Lifecycle row). Forward-annotations (text verbatim): ADR-0018 D6, ADR-0019 D3/D7.
 
-**Groups D–E OPEN. Next = Group D (F18 `cco new` / F25 `extra_mounts`).**
+### Group D — entry points & schema — RESOLVED & PERSISTED (2026-06-19)
+
+Findings `F18 F25` → **ADR-0023 D5**. F25 **extended** by the maintainer (optional `url` for
+extra_mounts; explicitly no vendor).
+- **F18** (Option A): `cco new` **survives index-less** — literal paths, no `project.yml`/index/
+  coordinates; shares the Phase-0 compose/mount primitives with `cco start` but **skips H1**; J0 still
+  bootstraps the four roots but writes nothing to the index; ephemeral state in a trap-cleaned `mktemp`
+  (STATE-class). §7 Run row + §8/J0 note added.
+- **F25** (Option A + extension): `extra_mounts` join the unified coordinate model — `name` + OPTIONAL
+  `url`/`ref` (machine-agnostic coordinate, like `repos:`) + OPTIONAL `target` (container path, default
+  `/workspace/<name>`) + `readonly`; the host path lives in the STATE index keyed by `name`. Resolution:
+  `url` → clone-from-url; else specify-path/skip (non-essential). **No cache/vendor** — extra_mounts
+  follow the repo no-cache rule (content is DATA, not config; `design.md` §2.4); the maintainer's
+  vendor-opt-in idea was evaluated and declined on that principle. Migration `source:/target:` →
+  `name`+`target`(+`url?`) + index seed (P2); `yml_get_extra_mounts` rewritten.
+
+Living re-sync: `design.md` §2.4 (extra_mounts schema + no-cache note), §7 (ad-hoc Run row), §8 (J0
+note). Forward-annotation: ADR-0016 §Open (M5 resolved).
+
+**Group E OPEN (last). Next = Group E (F27 — `cco config protect`).**

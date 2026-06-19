@@ -1,6 +1,6 @@
 # ADR 0023 — Command Surface & UX: `cco config`/`cco project` namespace, validate contract, coordinate-add verbs
 
-**Status**: Accepted (2026-06-19) — Groups A–C (D1–D4); D5+ appended as Cluster 5 Groups D–E land
+**Status**: Accepted (2026-06-19) — Groups A–D (D1–D5); D6 appended as Cluster 5 Group E lands
 **Deciders**: maintainer + impl-readiness review (V), Cluster 5
 **Context docs**: `../design.md` §7 (command table — centre of gravity), §2.4/§3/§4.4/§6.2; `../requirements.md`; `../reviews/18-06-2026-impl-readiness-review.md` (F46/F26/F19 + the Cluster-4 carry-ins F48/F45/F29-D4)
 **Related ADRs**: 0008 (`~/.cco` versioning — `config save/push/pull`), 0016 (taxonomy — D3 coords tooling, D9 validity contract), 0017 (CLI lifecycle — D1 coordinate fields, D2 `cco resolve`/`--from`), 0019 (reachability — D2 layered embed/heal/validate), 0020 (permissions — D4 `cco config protect`), 0021 (lifecycle — §5 orphan sanitization), 0022 (D4 pack-collision ERROR row carried by validate)
@@ -196,6 +196,55 @@ upstream again). Un-disconnect a project (post-v1) = move `~/.cco/projects/<id>`
 `add --url` redefinitions are **breaking** for existing users → migration + changelog + behavior-change
 note (update-system.md).
 
+### D5 — Entry points & schema: `cco new` index-less ephemeral; `extra_mounts` join the coordinate model (review F18/F25 + maintainer `url` extension)
+
+**(a) `cco new` survives as an explicit index-less ephemeral escape hatch (F18 — Option A).** `cco new`
+is a shipped top-level entry (spec FR-2.5/US-2; `bin/cco:141`/`lib/cmd-new.sh`) that takes literal
+`--repo <path>` mounts and generates its own compose — the decentralized-config corpus never mentioned
+it. Decided: it **survives unchanged in behavior**, as the deliberate "no config, no project, scratch
+session" path. Contract for E:
+
+- `cco new [--repo <path>]… [--name|--port|--teammate-mode]`: **literal** paths, **no** `project.yml`,
+  **no** index read/write, **no** coordinates, no divergence/reminder logic.
+- It shares the **Phase-0 compose/mount primitives** being rewritten with `cco start` — host-absolute
+  mount sources (BL3), the host-side XDG resolver guard (H4), `GLOBAL_DIR`→`~/.cco/global/.claude` — but
+  deliberately **stops short of H1 resolution** (no index lookup, no member resolution).
+- **J0** (ADR-0017 D3) still bootstraps the four roots first on `cco new` like any command, but `cco new`
+  writes **nothing** into the index. Ephemeral state (`claude-state`, `memory/`) lives in a trap-cleaned
+  `mktemp` dir — STATE-class, never synced (ADR-0009).
+- Edits: a §7 **Run** row for `cco new`; a §8/J0 note that J0 runs but the index is untouched; a Phase-0
+  note pinning the shared-primitive-vs-skip-H1 boundary. (Formalizes the prior review M10 disposition.)
+
+**(b) `extra_mounts` join the unified coordinate model (F25 — Option A + the maintainer's `url`
+extension).** The new schema deferred to E (ADR-0016 §Open M5) is decided here. `§2.4` gave extra_mounts
+only `name`+`readonly`, dropping the container target; the code uses `source:`/`target:` and
+`yml_get_extra_mounts` (`yaml.sh:350`) requires both. New schema (uniform with `repos:`):
+
+```yaml
+extra_mounts:
+  - name: shared-assets        # index key for the machine-local host path
+    url:  git@github.com:org/assets.git   # OPTIONAL machine-agnostic coordinate (git-backed mount)
+    ref:  main                            # OPTIONAL
+    target: /workspace/assets             # OPTIONAL container path, default /workspace/<name>
+    readonly: true                        # default true
+```
+
+- **Axis split** (AD3/G8): `url`/`ref`/`target`/`readonly` are machine-agnostic **config** (`project.yml`);
+  the absolute **host path** is **STATE index**, keyed by `name` (exactly like `repos:`). The index keys on
+  `name`, not on `target` as today.
+- **Resolution**: `url` present → `cco resolve` offers *clone-from-`url`* (the repo mechanism); `url`
+  absent → *specify-path* or **skip** (extra_mounts are non-essential by nature — skip is legitimate). An
+  unreachable `url` on a shared project → `cco project validate` **WARN** (like repos).
+- **No vendoring / no local cache** (maintainer-confirmed). extra_mounts follow the **repo no-cache rule**
+  (`design.md` §2.4: *"`repos:` carry no local cache … never vendored; packs are the sole cache
+  exception"*): an extra_mount's content is arbitrary **DATA**, not machine-agnostic config (P1/P6), and
+  may be large — the `url` coordinate is the sole sharing mechanism, never a `<repo>/.cco` cache.
+- **Migration** (P2): for each legacy `- source:/target:`, derive `name` (slugify the `target` basename,
+  or prompt), write `name`+`target`+`readonly` (`url` absent — local-only), seed the index
+  `name → expand(source)`. Rewrite `yml_get_extra_mounts` to parse `name`+`url?`+`ref?`+`target`(+default)+
+  `readonly`; the resolver keys on `name`. `§3` notes the index supplies only the host path for an
+  extra_mount `name`.
+
 ## Alternatives Considered
 
 | Decision | Chosen | Rejected alternative(s) | Why |
@@ -205,6 +254,8 @@ note (update-system.md).
 | D3 add verbs | `cco project add <res>` + one-shot `--path`, url-from-origin | per-resource namespaces `cco repo add`/`cco llms add` (Shape B); path-inline + `verify`-sanitize (note Option 2) | Shape B scatters add across three homes and adds a top-level `cco repo` only for `add`; the sanitize flow re-adds removed complexity + a path-leak window (AD3/G8). Folding under `cco project` matches D1 and the user's own `cco project add repo` instinct. |
 | D4 templates | full 2×2 (F47-A, disambiguate D2/D3 vs D7) | export/import-only (F34-A) | export/import-only **reverses** the settled ADR-0018 D2/D3 (publish/install for templates) and loses the publish-template-to-a-team use case; disambiguation honors both ADRs verbatim. |
 | D4 internalize | unified "sever-coupling" family, 2 axes (Coupling/Locality); project = Case-C, post-v1 | review F13-A (redefine project internalize = vendor referenced packs); 3-axis split (update/sharing/locality) | F13-A conflated the cord-cut with the cache (orthogonal axes, opposite coordinate effect — the UX confusion the maintainer flagged); the 3-axis split was refuted (no resource carries both update- and sharing-coupling, so update∪sharing is one axis realized per-resource). |
+| D5 `cco new` | survives index-less (F18-A) | route through the index (B); drop (C) | B over-engineers a throwaway literal-path session (nothing to resolve, AD5-collision risk); C removes a Must capability outside the refactor's charter. |
+| D5 `extra_mounts` | `target` config + optional `url` coordinate, no cache (F25-A + extension) | drop `target`, always `/workspace/<name>` (F25-B); add an opt-in vendor like packs | F25-B loses the existing arbitrary-target capability; vendoring extra_mount content violates the "packs are the sole cache exception" rule (repo-like content, possibly large DATA, not config). |
 
 ## Consequences
 
@@ -228,7 +279,7 @@ D3's `add <res>` is net-new verb wiring across `cmd-project-*`.
 |---------|---------|
 | `cco project resolve --repo/--mount <name> <path>` index writer (`cmd-project-query.sh:259`); the `_sanitize_project_paths` **origin-derivation** half (`local-paths.sh:281`); `_prompt_for_path` non-TTY guard (`local-paths.sh:159`); `lib/secrets.sh` heuristic-scan philosophy; the `cco sync --from` precedent for `coords --sync` | **Reuse** |
 | `cco config coords` / share-readiness `cco config validate` naming; the path-in-`project.yml` → sanitize-on-commit flow (already dropped by §3 D4); F19's separate top-level `cco repo` namespace; `cco llms install`'s embed side-effect (`_llms_add_to_yaml`) once `add` exists | **Drop / repurpose** |
-| `cmd_pack_internalize` / `cmd_project_internalize` (verbs exist; cut to the coupling-family semantics); pack sharing path (templates reuse it for the four template verbs) | **Refactor** (not net-new / not Reuse — corrects ADR-0019 D3/D4 verdicts) |
+| `cmd_pack_internalize` / `cmd_project_internalize` (verbs exist; cut to the coupling-family semantics); pack sharing path (templates reuse it for the four template verbs); `cco new` literal-path compose/mount (shares the P0 primitives with `cco start`, skips H1); `yml_get_extra_mounts` parser (extend to `name`+`url?`+`ref?`+`target`+`readonly`) | **Refactor / Reuse** (not net-new — corrects ADR-0019 D3/D4 verdicts; `cco new` keeps its behavior) |
 | `cmd-project-publish.sh` + `cmd-project-install.sh` + their `bin/cco` arms (project publish/install removed, ADR-0018 D2); the `knowledge.source` copy step in `cmd_pack_internalize` | **Drop** |
 | `cco project validate` share-readiness contract (invocation/exit/output/agnostic-detection/`--reachable`/hook/non-TTY); `cco project add <repo\|mount\|llms\|pack>` + one-shot `--path` + url-from-origin; `cco project coords` relocation; template `publish/install/export/import` (reuse pack path); `internalize --as` fork; `cco project internalize` Case-C (post-v1) | **Build-new** (spec here; mechanism → E along P0–P5) |
 
@@ -243,7 +294,8 @@ D3's `add <res>` is net-new verb wiring across `cmd-project-*`.
   full 2×2 (disambiguate D2/D3-distribution vs D7-scaffold-output); `internalize` = unified sever-coupling
   family (pack/template cut-url v1 + `--as` fork; project = Case-C, post-v1) with the cache on a separate
   Locality axis. Forward-annotations: ADR-0018 D6, ADR-0019 D3/D7.
-- **F18** (Group D) — `cco new` as an index-less ephemeral entry; **F25** — `extra_mounts` schema +
-  the optional machine-agnostic `--target` of D3's `add mount`.
+- **F18/F25** (Group D) — **RESOLVED 2026-06-19** (D5): `cco new` survives index-less (shared P0
+  primitives, skips H1); `extra_mounts` join the coordinate model (`name`+`url?`+`ref?`+`target?`+
+  `readonly`, host path in the index, no cache/vendor). Forward-annotation: ADR-0016 §Open (M5).
 - **F27** (Group E) — `cco config protect` contract (kept under `config` here by D1; full content/
   location/ship-in-v1 decision in Group E).

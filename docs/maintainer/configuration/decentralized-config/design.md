@@ -266,9 +266,11 @@ llms:                    # referenced docs by name + coordinate (content → CAC
   - name: react
     url: https://react.dev/llms-full.txt
     variant: full
-extra_mounts:            # auxiliary mounts by logical name; default readonly
+extra_mounts:            # auxiliary mounts by logical name; join the coordinate model (ADR-0023 D5)
   - name: shared-assets
-    readonly: true
+    url: git@github.com:org/assets.git   # OPTIONAL coordinate (git-backed mount); absent → local-only
+    target: /workspace/assets            # OPTIONAL container path (machine-agnostic); default /workspace/<name>
+    readonly: true                       # default true
 entry: repo1             # OPTIONAL tie-breaker for `cco start projectA` (name-based); not a privilege
 packs:                   # referenced by name + OPTIONAL coordinate (ADR-0019 D1); resolved into ~/.cco/packs
   - name: shared-pack
@@ -305,8 +307,8 @@ resolves `~/.cco/packs/<name>` (local working copy) → fetch from `url` (sharin
 sharing repo after publish (working-copy model). A pack `url`-absent entry is a **project-local authored
 pack** in `<repo>/.cco/packs/` (it *is* the source — P15); a `url`-present `<repo>/.cco/packs/<name>` is a
 **cache** of an upstream (opt-in, last resort — ADR-0019 D3/D6). Packs are the **sole** cache exception:
-`repos:` carry no local cache (a missing url for a shared project is surfaced by `validate`, never
-vendored), and llms content already lives in CACHE. **Reachability** (a shared project's referenced ids
+`repos:`/`extra_mounts:` carry no local cache (a missing url for a shared project is surfaced by
+`validate`, never vendored — ADR-0023 D5), and llms content already lives in CACHE. **Reachability** (a shared project's referenced ids
 must have reachable coordinates) is surfaced by the layered `embed-at-add` / `heal-at-resolve` /
 `cco project validate` model — **never a hard block** (ADR-0019 D2 / P14). **Templates** are scaffold-time
 only — **not** referenced here (ADR-0019 D7).
@@ -625,6 +627,7 @@ ADR-0018/0019/0020/0023.
 | Entry: migrate | `cco init --migrate <project> [--sync]` (current repo, from the legacy vault backup: hydrate `.cco/` with the migrated project config; `--sync` propagates to all member repos, symmetric to `cco join --sync`) — a **mode of `cco init`**, NOT a top-level `cco migrate` (ADR-0021, resolves the `migrate`↔`update` clash) | NEW |
 | Lifecycle: forget | `cco forget <project>` (deregister: remove cco's internal id-keyed state — index/tags/source/STATE/CACHE — **without** touching the repo or its committed `.cco/`; ADR-0021) | NEW |
 | Run | `cco start [project] [--from <repo>]` (cwd-aware source; `--from` picks the Case-C source `<repo>/.cco`, ADR-0017 D2; index-resolve names; on unresolved → prompt resolve\|proceed-without) | transform |
+| Run: ad-hoc | `cco new [--repo <path>]… [--name\|--port\|--teammate-mode]` (ephemeral scratch session: **literal** paths, no `project.yml`, **no index** read/write, no coordinates; shares the Phase-0 compose/mount primitives with `cco start` but **skips H1 resolution**; J0 still bootstraps the four roots but writes nothing to the index — ADR-0023 D5) | transform |
 | Sync | `cco sync [target] [--from <src>] [--dry-run\|--auto-approve\|--check]` | NEW |
 | Paths/resolve | `cco resolve [project]` (resolve each unresolved repo/mount: specify local path · clone-from-`url` · skip), `cco resolve --all` (all projects), `cco resolve --scan <dir>` (auto-discover + **reconcile/upsert** index, non-destructive, AD5-conflict; no `--prune` in v1 — ADR-0022 D3; **absorbs** `cco index refresh`), `cco path set/list` (low-level index editor) — ADR-0017 D2 | NEW |
 | Discovery | `cco list [--tag <t>]`, `cco tag add/rm` (reads/writes the per-user `<data>/cco/tags.yml`, DATA bucket — ADR-0011/0015) | transform |
@@ -654,7 +657,8 @@ Discovery is **cwd-first**: if the cwd (or an ancestor) has `.cco/project.yml`, 
 it; else resolve `<project>` via the index.
 
 > **First-run bootstrap is not owned by `cco init` (ADR-0017 D3).** **Any** `cco` command on a
-> fresh machine — including `cco start` (a freshly-cloned repo) and `cco init` — runs J0 **first**.
+> fresh machine — including `cco start` (a freshly-cloned repo), `cco new` (which then writes nothing to
+> the index — ADR-0023 D5), and `cco init` — runs J0 **first**.
 > J0 creates all **four** roots when missing — `~/.cco` (git-init'd, §6.1) **and** the three XDG
 > internal bases **including DATA** (`~/.local/share/cco`), not just STATE/CACHE — **idempotent,
 > per-root** (a missing single root is created without disturbing the others; review M6). Under the

@@ -428,3 +428,8 @@ resolution, coordinate CLI, validation, index concurrency) is owned by S/E.
 - **E (impl)** — H6 merge-path remap; M3 `cmd-remote.sh` decoupling; index atomicity/locking + global-vs-
   namespaced logical names (H7); `coords-lookup` persistence-vs-on-demand; CACHE name-collision disambiguation;
   extra_mounts `target` schema/migration (M5).
+
+> **M5 RESOLVED by ADR-0023 D5 (2026-06-19):** the `extra_mounts` schema is `name` + OPTIONAL
+> `url`/`ref` (coordinate, like `repos:`) + OPTIONAL `target` (machine-agnostic container path, default
+> `/workspace/<name>`) + `readonly`; the host path lives in the STATE index keyed by `name`. No local
+> cache/vendor (repo rule). Migration `source:/target:` → `name`+`target`(+`url?`) + index seed (P2).
