@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-06-19 (decentralized-config: ALL config **and sharing** analyses resolved — RD-* + R1–R4 + Cat-4 + M + **S**, ADRs 0005–**0023**; 4-bucket taxonomy + coordinate-per-unit + sharing unification [2×2 matrix, pack coordinates, reachability, working-copy lifecycle, permissions delegated-to-git] + principles **P1–P17**; **config + sharing design CLOSED. Impl-readiness review (V) DONE** — `reviews/18-06-2026-impl-readiness-review.md`, 58 findings/37 decisions, being resolved **cluster by cluster**: Cluster 1 RESOLVED → ADR-0021 + ADR-0006/0009/0010; Cluster 2 RESOLVED → impl order re-derived (dependency+reuse+open-closed) into a 6-phase dependency-layer map, design §9/§11 rewritten; Cluster 3 Block A RESOLVED → doc-lifecycle rule + design-intent re-sync; Cluster 4 RESOLVED → ADR-0022 + forward-annot ADR-0016/0017/0018/0019 + design §2.2–§12 + FR-Y-S6; Cluster 5 RESOLVED → **ADR-0023** (D1–D6: `cco config`/`cco project` namespace + `cco project validate` contract + `cco project add <res>`/`--path` + sharing-surface/internalize family + `cco new`/`extra_mounts` + `cco config protect`) + forward-annot ADR-0016/0018/0019/0020/0021. **ALL 5 CLUSTERS RESOLVED → impl-readiness review (V) FULLY CLOSED (2026-06-19). Next = implementation along design §9 P0–P5; T future**).
+> Last updated: 2026-06-19 (decentralized-config: ALL config **and sharing** analyses resolved — RD-* + R1–R4 + Cat-4 + M + **S**, ADRs 0005–**0023**; 4-bucket taxonomy + coordinate-per-unit + sharing unification [2×2 matrix, pack coordinates, reachability, working-copy lifecycle, permissions delegated-to-git] + principles **P1–P17**; **config + sharing design CLOSED. Impl-readiness review (V) DONE** — `reviews/18-06-2026-impl-readiness-review.md`, 58 findings/37 decisions, being resolved **cluster by cluster**: Cluster 1 RESOLVED → ADR-0021 + ADR-0006/0009/0010; Cluster 2 RESOLVED → impl order re-derived (dependency+reuse+open-closed) into a 6-phase dependency-layer map, design §9/§11 rewritten; Cluster 3 Block A RESOLVED → doc-lifecycle rule + design-intent re-sync; Cluster 4 RESOLVED → ADR-0022 + forward-annot ADR-0016/0017/0018/0019 + design §2.2–§12 + FR-Y-S6; Cluster 5 RESOLVED → **ADR-0023** (D1–D6: `cco config`/`cco project` namespace + `cco project validate` contract + `cco project add <res>`/`--path` + sharing-surface/internalize family + `cco new`/`extra_mounts` + `cco config protect`) + forward-annot ADR-0016/0018/0019/0020/0021. **ALL 5 CLUSTERS RESOLVED → impl-readiness review (V) FULLY CLOSED (2026-06-19). Implementation IN PROGRESS — Phase 0 (T1/T2a/T3/T4-remotes landed `ff8278b`→`2bdf80e`, suite delta-green); remaining P0 = T4-source → T5 → Commit A (repos/mount+harness) → Commit B (buckets) → T8; resume cursor = `Z-handoff-p0-resume.md`; T future**).
 >
 > **Note**: Sprint entries are historical. Path references (e.g., `.cco-meta`, `.cco-source`) in older
 > sprints reflect the layout at the time of writing. See Sprint 8 and the `.cco/` consolidation
@@ -73,7 +73,8 @@ graph LR
 ### Vault Simplification → Decentralized In-Repo Config (DECIDED 2026-06-11; evolved 2026-06-12; model finalized 2026-06-15)
 
 **Status**: Design APPROVED (2026-06-15); **config + sharing design CLOSED**; **impl-readiness review
-(V) FULLY RESOLVED — all 5 clusters closed (2026-06-19)**; **✅ DESIGN READY FOR IMPLEMENTATION**.
+(V) FULLY RESOLVED — all 5 clusters closed (2026-06-19)**; **design CLOSED → ✅ IMPLEMENTATION IN
+PROGRESS (Phase 0 substrate; 4 commits landed 2026-06-19, suite delta-green)**.
 Living `requirements.md` + `design.md` are the single source of truth;
 decisions recorded in ADRs **0001–0023** (`../configuration/decentralized-config/decisions/`); the
 role-first analyses (R1–R4, Cat-4, M, **S**) are tracked in `analysis-roadmap.md`; analyses + the V
@@ -103,10 +104,13 @@ FR-Y-S6; phasing re-read onto the Cluster-2 P0–P5 map. **Cluster 5 (command su
 PERSISTED** (2026-06-19): all 11 findings → **new ADR-0023** (D1–D6: `cco config`/`cco project` namespace
 + `cco project validate` contract + `cco project add <res>`/`--path` + sharing-surface/internalize family
 + `cco new`/`extra_mounts` + `cco config protect`) + forward-annotations to ADR-0016/0018/0019/0020/0021
-+ design §2.4/§3/§4.4/§6.2/§7/§8 re-sync. **ALL 5 CLUSTERS RESOLVED → the review (V) is fully closed and
-the design is READY for implementation.** **Next session = IMPLEMENTATION**, starting at **Phase 0** of
-the design §9 **P0–P5** dependency-layer map — see **`Y-handoff-implementation.md`**. T (state-sync) is
-future.
++ design §2.4/§3/§4.4/§6.2/§7/§8 re-sync. **ALL 5 CLUSTERS RESOLVED → the review (V) is fully closed.**
+**IMPLEMENTATION IN PROGRESS — Phase 0 (substrate)**: landed `feat/vault/decentralized-config` (commits
+local) — **T1** resolver+H4+L5 (`ff8278b`), **T2a** index API (`d913e5c`), **T3** coordinate parsers
+(`992738d`), **T4-remotes** M3 split (`2bdf80e`); suite **985/2** (the 2 are pre-existing baseline drift,
+delta-green). **Remaining P0**: T4-source → T5 → Commit A (repos/mount schema + harness, coordinated) →
+Commit B (bucket re-point) → T8. **Resume cursor = `Z-handoff-p0-resume.md`** (method/phase-map =
+`Y-handoff-implementation.md`). T (state-sync) is future.
 **Priority**: 0 (next major work). **Supersedes**: branch-switch real-isolation
 model in `../../configuration/vault/profile-isolation-design.md` (v2) **and** the
 central-vault project store.
