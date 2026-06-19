@@ -1,5 +1,10 @@
 # X — Cluster 5 handoff (Command surface & UX)
 
+> **✅ CLOSED 2026-06-19 — Cluster 5 RESOLVED & PERSISTED.** All 11 findings resolved in 5 groups (A–E)
+> → **new ADR-0023** (D1–D6) + `design.md` re-sync + forward-annotations. The impl-readiness review (V)
+> is **fully closed (all 5 clusters)**; the project proceeds to **implementation** along `design.md` §9
+> P0–P5. See the review's *Cluster 5 — COMPLETE* log. This file is kept as the launch-pad record.
+
 **Status**: Clusters 1–4 of the impl-readiness review (V) are **RESOLVED & PERSISTED**. **Cluster 5 is the
 last open cluster.** This file lets a fresh clean session run Cluster 5 with the same method, then move to
 implementation. Produced 2026-06-19 on `feat/vault/decentralized-config` (commits **local**, pushed from

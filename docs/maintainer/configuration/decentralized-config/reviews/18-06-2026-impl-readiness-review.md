@@ -2088,7 +2088,7 @@ row + F48's `--from`) is owned by **Cluster 5** (F26/F46) — Cluster 4 pinned o
 Commits (local, `feat/vault/decentralized-config`): ADR-0022 + forward-annotations · design.md re-sync ·
 FR-Y-S6 · this log.
 
-## Cluster 5 — Command surface & UX — IN PROGRESS
+## Cluster 5 — Command surface & UX — RESOLVED & PERSISTED ✅
 
 `F13 F18 F19 F25 F26 F27 F34 F46 F47 F49 F50`, resolved in 5 groups (A namespace · B resolution-UX ·
 C sharing-surface · D entry-points/schema · E permissions). Method = the Cluster 1–4 loop (recap →
@@ -2184,4 +2184,26 @@ extra_mounts; explicitly no vendor).
 Living re-sync: `design.md` §2.4 (extra_mounts schema + no-cache note), §7 (ad-hoc Run row), §8 (J0
 note). Forward-annotation: ADR-0016 §Open (M5 resolved).
 
-**Group E OPEN (last). Next = Group E (F27 — `cco config protect`).**
+### Group E — permissions scaffold — RESOLVED & PERSISTED (2026-06-19)
+
+Finding `F27` → **ADR-0023 D6**. **Option 1** (confirms the ADR-0020 §Open recorded preference): `cco
+config protect` is **documentation-only in v1**; the helper is **deferred (post-v1)** with a **pinned
+contract** — CODEOWNERS at a **host-recognized** path (repo root / `.github/`, never
+`<repo>/.cco/CODEOWNERS` — removes the GitHub no-op), `/.cco/** @org/cco-maintainers`, host-detected from
+`origin` (`lib/remote.sh`), + per-host ruleset strings (GitHub/Gitea/GitLab/generic). §7 row re-marked
+"DOCS (v1) / helper deferred". Forward-annotation: ADR-0020 D4 (location fix + `cco project validate`
+rename). cco assists, never gatekeeps (P17).
+
+---
+
+## Cluster 5 — COMPLETE ✅ (all 5 groups RESOLVED & PERSISTED, 2026-06-19)
+
+**`F13 F18 F19 F25 F26 F27 F34 F46 F47 F49 F50` — all resolved.** Persisted: **new ADR-0023** (D1–D6:
+namespace taxonomy · `cco project validate` contract · `cco project add <res>` + `--path` · sharing
+surface + internalize family · `cco new`/`extra_mounts` · `cco config protect`). Living re-sync:
+`design.md` §2.4/§3/§4.4/§6.2/§7/§8. Forward-annotations: ADR-0016 D3/D9/§Open, ADR-0018 D6, ADR-0019
+D2/D3/D7, ADR-0020 D4, ADR-0021 §5. Commits (local, `feat/vault/decentralized-config`): Group A
+`e0ea715` · B `c96264c` · C `39c520e` · D `1f46515` · E + wrap.
+
+**The impl-readiness review (V) is FULLY RESOLVED — all 5 clusters closed.** The project proceeds to
+**implementation** along the `design.md` §9 **P0–P5** dependency-layered phases (T = post-v1 state-sync).

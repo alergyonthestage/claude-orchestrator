@@ -1,6 +1,6 @@
 # ADR 0023 — Command Surface & UX: `cco config`/`cco project` namespace, validate contract, coordinate-add verbs
 
-**Status**: Accepted (2026-06-19) — Groups A–D (D1–D5); D6 appended as Cluster 5 Group E lands
+**Status**: Accepted (2026-06-19) — Cluster 5 **complete** (Groups A–E, D1–D6)
 **Deciders**: maintainer + impl-readiness review (V), Cluster 5
 **Context docs**: `../design.md` §7 (command table — centre of gravity), §2.4/§3/§4.4/§6.2; `../requirements.md`; `../reviews/18-06-2026-impl-readiness-review.md` (F46/F26/F19 + the Cluster-4 carry-ins F48/F45/F29-D4)
 **Related ADRs**: 0008 (`~/.cco` versioning — `config save/push/pull`), 0016 (taxonomy — D3 coords tooling, D9 validity contract), 0017 (CLI lifecycle — D1 coordinate fields, D2 `cco resolve`/`--from`), 0019 (reachability — D2 layered embed/heal/validate), 0020 (permissions — D4 `cco config protect`), 0021 (lifecycle — §5 orphan sanitization), 0022 (D4 pack-collision ERROR row carried by validate)
@@ -245,6 +245,33 @@ extra_mounts:
   `readonly`; the resolver keys on `name`. `§3` notes the index supplies only the host path for an
   extra_mount `name`.
 
+### D6 — `cco config protect`: documentation-only in v1; helper deferred with a pinned contract (review F27 — Option 1)
+
+ADR-0020 D4 scaffolds a **`<repo>/.cco/CODEOWNERS`** — which **GitHub does not honor** (CODEOWNERS is
+recognized only at repo root, `.github/`, or `docs/`), so the literal scaffold is a **no-op**; and the
+ship-in-v1 decision was open. Decided (confirming the ADR-0020 §Open recorded preference):
+
+- **v1 = documentation only.** Ship a governance guide (the sharing-repo read/write split, and the
+  project-repo CODEOWNERS + host-ruleset setup, per host). The `cco config protect` **helper is a
+  near-term opt-in addition, NOT scheduled in v1 E** — so an "optional" §7 row never silently becomes an
+  "unscheduled" phase item. `cco config protect` stays under `cco config` (the D1 documented exception).
+- **Pinned contract for the deferred helper** (so it is not re-litigated):
+  1. **Location fix** — the scaffolded CODEOWNERS goes to a **host-recognized** path: repo-root
+     `CODEOWNERS` (or `.github/CODEOWNERS` when a `.github/` dir exists), **never** `<repo>/.cco/CODEOWNERS`,
+     with the rule line `/.cco/** @org/cco-maintainers`.
+  2. **Host detection** from the code repo's `origin` URL (reuse the `*github.com*`-style parsing in
+     `lib/remote.sh:35`; `--host` flag / prompt when `origin` is absent or unrecognized).
+  3. **Per-host instruction strings** — GitHub: a branch **Ruleset** with fnmatch path `/.cco/**` +
+     "require review from Code Owners"; Gitea: protected-branch file-pattern glob on `.cco/**`; GitLab:
+     push rules are filename-regex only → a path-scoped block needs a **pre-receive** hook (advisory Code
+     Owners noted as bypassable); generic git: a server-side **pre-receive** hook.
+- **Presentation**: the §7 row is re-marked **"DOCS (v1) / helper deferred (post-v1)"**; §9/§12 state the
+  helper is not a v1 E item. The footgun-surfacing check ADR-0020 D4 cites is the **`cco project
+  validate`** share-readiness verb (renamed by D1), not `cco config validate`.
+
+This honors P17 (cco assists, never gatekeeps — guidance is the purest assistance), removes the GitHub
+no-op for v1, and keeps E's v1 scope to the S8 token-leak checklist + the governance guide.
+
 ## Alternatives Considered
 
 | Decision | Chosen | Rejected alternative(s) | Why |
@@ -256,6 +283,7 @@ extra_mounts:
 | D4 internalize | unified "sever-coupling" family, 2 axes (Coupling/Locality); project = Case-C, post-v1 | review F13-A (redefine project internalize = vendor referenced packs); 3-axis split (update/sharing/locality) | F13-A conflated the cord-cut with the cache (orthogonal axes, opposite coordinate effect — the UX confusion the maintainer flagged); the 3-axis split was refuted (no resource carries both update- and sharing-coupling, so update∪sharing is one axis realized per-resource). |
 | D5 `cco new` | survives index-less (F18-A) | route through the index (B); drop (C) | B over-engineers a throwaway literal-path session (nothing to resolve, AD5-collision risk); C removes a Must capability outside the refactor's charter. |
 | D5 `extra_mounts` | `target` config + optional `url` coordinate, no cache (F25-A + extension) | drop `target`, always `/workspace/<name>` (F25-B); add an opt-in vendor like packs | F25-B loses the existing arbitrary-target capability; vendoring extra_mount content violates the "packs are the sole cache exception" rule (repo-like content, possibly large DATA, not config). |
+| D6 `protect` | doc-only v1, helper deferred + pinned contract (F27-1) | ship the helper in v1 (F27-2); print-only command (F27-3) | F27-2 overrides the ADR-0020 recorded preference + writes outside `.cco/` + adds low-frequency work to the v1 path; F27-3 is largely redundant with the doc baseline. Both fix the location no-op, which the pinned contract also does. |
 
 ## Consequences
 
@@ -283,7 +311,7 @@ D3's `add <res>` is net-new verb wiring across `cmd-project-*`.
 | `cmd-project-publish.sh` + `cmd-project-install.sh` + their `bin/cco` arms (project publish/install removed, ADR-0018 D2); the `knowledge.source` copy step in `cmd_pack_internalize` | **Drop** |
 | `cco project validate` share-readiness contract (invocation/exit/output/agnostic-detection/`--reachable`/hook/non-TTY); `cco project add <repo\|mount\|llms\|pack>` + one-shot `--path` + url-from-origin; `cco project coords` relocation; template `publish/install/export/import` (reuse pack path); `internalize --as` fork; `cco project internalize` Case-C (post-v1) | **Build-new** (spec here; mechanism → E along P0–P5) |
 
-## Open / cross-refs (Cluster 5 Groups B–E — appended as D4+ or `design.md` §7 refinements)
+## Open / cross-refs (Cluster 5 — all groups RESOLVED)
 
 - **F49/F50** (Group B) — **RESOLVED 2026-06-19** as `design.md` refinements (no ADR D-section):
   §4.4 named unresolved-start affordances + source-transparency print + passive-⚠ naming `cco project
@@ -297,5 +325,6 @@ D3's `add <res>` is net-new verb wiring across `cmd-project-*`.
 - **F18/F25** (Group D) — **RESOLVED 2026-06-19** (D5): `cco new` survives index-less (shared P0
   primitives, skips H1); `extra_mounts` join the coordinate model (`name`+`url?`+`ref?`+`target?`+
   `readonly`, host path in the index, no cache/vendor). Forward-annotation: ADR-0016 §Open (M5).
-- **F27** (Group E) — `cco config protect` contract (kept under `config` here by D1; full content/
-  location/ship-in-v1 decision in Group E).
+- **F27** (Group E) — **RESOLVED 2026-06-19** (D6): `cco config protect` is **doc-only in v1**; the
+  helper is deferred with a pinned contract (host-recognized CODEOWNERS location, origin host-detection,
+  per-host strings). Kept under `cco config` (D1). Forward-annotation: ADR-0020 D4.

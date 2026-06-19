@@ -47,7 +47,9 @@ See **`W-handoff-cluster-resolution.md`** for the method + the open clusters.
 | 2 — Phasing & test-plan re-sync | F2/F7/F35/F36 + critic (test-suite teardown, entrypoint, secrets-env, spec.md, roadmap) | **RESOLVED & PERSISTED** → no new ADR; design §9/§11 6-phase map (E dissolved) + §6.2/§12 xrefs |
 | 3 — Doc drift / re-sync | F3/F20/F21/F22/F23/F24/F30/F31/F32/F33 + critic | **Block A RESOLVED & PERSISTED** (rule `documentation-lifecycle.md` + design-intent re-sync + inventory); **Block B** rides the Phase-3 cutover |
 | 4 — Coordinate model & resolution | F4/F6/F14/F15/F16/F17/F29/F37–F41/F45/F48/F56 | **RESOLVED & PERSISTED** → ADR-0022 (new) + forward-annot ADR-0016/0017/0018/0019 + design §2.2–§12 + requirements FR-Y-S6 |
-| 5 — Command surface & UX | F13/F18/F19/F25/F26/F27/F34/F46/F47/F49/F50 | OPEN (next) |
+| 5 — Command surface & UX | F13/F18/F19/F25/F26/F27/F34/F46/F47/F49/F50 | **RESOLVED & PERSISTED** → ADR-0023 (new, D1–D6) + forward-annot ADR-0016/0018/0019/0020/0021 + design §2.4/§3/§4.4/§6.2/§7/§8 |
+
+**The impl-readiness review (V) is FULLY RESOLVED — all 5 clusters closed (2026-06-19). Next = implementation along the `design.md` §9 P0–P5 phases (T = post-v1 state-sync).**
 
 ---
 
@@ -337,4 +339,4 @@ gate)** → impl (dependency-layered phases, design.md §9; "E" dissolved, Clust
   (**P17**); S8 no-token-leak confirmed. Manifest-removal (ADR-0012) is realized via structure-based
   discovery. Opinionated-defaults-as-sharing-repo (F-opin) designed, migrated post-impl. New principles
   **P13–P17** added. Impl → **E**; solo-adopter Case C → dedicated post-v1 analysis.
-- ADR numbers are assigned when each session runs (next free number; last used = **0020**).
+- ADR numbers are assigned when each session runs (next free number; last used = **0023**; next free = **0024**).

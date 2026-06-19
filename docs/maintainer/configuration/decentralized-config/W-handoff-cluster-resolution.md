@@ -1,5 +1,10 @@
 # W — Cluster-resolution handoff (post-V impl-readiness review)
 
+> **✅ ALL CLUSTERS RESOLVED 2026-06-19.** Clusters 1–5 are RESOLVED & PERSISTED. Cluster 5 (the last)
+> → **new ADR-0023** (command-surface & UX, D1–D6). The impl-readiness review (V) is **fully closed**;
+> next = **implementation** along `design.md` §9 P0–P5 (T = post-v1 state-sync). This handoff is kept as
+> the method/record for the cluster-resolution loop.
+
 **Status**: The impl-readiness review (gate **V**) is **DONE**. Findings are resolved **cluster by
 cluster** with the maintainer; each agreed resolution is persisted into the ADRs/design/requirements
 before moving on. **Clusters 1, 2 and 4 are RESOLVED & PERSISTED; Cluster 3 (doc-resync) Block A is

@@ -85,6 +85,14 @@ cco may help a team **set up** the host's protection without ever enforcing it:
   being a **visible diff in the PR** (truthful `git diff`, G8); (c) the recommended CODEOWNERS
   convention. cco surfaces; it does not block.
 
+> **CONTRACT PINNED + ship-in-v1 RESOLVED by ADR-0023 D6 (2026-06-19; the D4 text above is kept as
+> written):** v1 ships **documentation only**; the `cco config protect` helper is **deferred (post-v1)**
+> (confirms the §Open recorded preference). **Location corrected**: the scaffolded CODEOWNERS goes to a
+> **host-recognized** path — repo-root `CODEOWNERS` or `.github/CODEOWNERS`, **never**
+> `<repo>/.cco/CODEOWNERS` (GitHub does not honor `.cco/`) — with `/.cco/** @org/cco-maintainers`,
+> host-detected from `origin` (`lib/remote.sh`). The footgun-surfacing check is **`cco project validate`**
+> (the share-readiness verb renamed by ADR-0023 D1), not `cco config validate`.
+
 ### D5 — No-token-leak invariant (S8, confirmed; executed in E)
 
 The maintainer/consumer split must not leak the auth token. Confirmed invariants (audit in E):
