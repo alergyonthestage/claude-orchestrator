@@ -117,6 +117,16 @@ implicit cache.
 > **worked-example resolution table** (design.md §2.4) enumerates every layer combination with the resolved
 > winner, so E codes **one** deterministic resolver, not ad-hoc branches.
 
+> **`internalize` MODEL REFINED by ADR-0023 D4 (2026-06-19; the D3 text above is kept as written):**
+> `internalize` = **sever the resource's one external coupling** (uniform intent, per-resource mechanism),
+> on a **Coupling** axis that is **orthogonal** to **Locality** (the cache). Corrections to this ADR's
+> verdicts: **both** `cco pack internalize` and `cco project internalize` **already exist** → **Refactor**,
+> not "net-new"/"Reuse" (D4 line 140, Reuse-table lines 244/248). `cco project internalize` does **not**
+> "cut a coordinate" (a project has none — it rides the code remote, P13); it is the **Case-C
+> sharing-disconnect** (`<repo>/.cco`→`~/.cco/projects`, ADR-0018 D6, **post-v1**). The pack/template
+> cord-cut (cut `url`) stays v1, with a `--as <name>` fork. The **internalize-as-cache** (D6) is the
+> **Locality** axis — a *separate* operation that **keeps** the coordinate, **not** a kind of internalize.
+
 ### D4 — Source-of-truth = working-copy / git-clone model; **sync-before-publish** (see P16)
 
 - A pack authored in `~/.cco/packs/X` is the source **until first published**. On `cco pack publish` →
@@ -199,6 +209,13 @@ already-scaffolded project does **not** receive template updates. (The framework
 template files update via the opinionated channel — `cco update --sync` from the official sharing repo,
 F-opin / ADR-0018 D5 of the packaging work — not via a "template update".) A user-content "update from
 template" is a deferred advanced feature (merge/divergence) — out of scope.
+
+> **Scope CLARIFIED by ADR-0023 D4 (2026-06-19; the D7 text above is kept as written):** "no live
+> reference" governs the **scaffolded output** (the project/pack created via `--template`), **not** the
+> template artifact's own distribution. Templates **do** get the full 2×2 (`publish`/`install` +
+> `export`/`import`, ADR-0018 D2/D3) as a reusable library in `~/.cco/templates` — D2/D3 (distribution)
+> and D7 (scaffold-output lifecycle) are **orthogonal**, so they do not conflict. Templates still carry
+> **no referenced-resource coordinate** (P14 = packs/repos/llms only), exactly as D7 asserts.
 
 ---
 

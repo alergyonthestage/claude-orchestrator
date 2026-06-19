@@ -1,6 +1,6 @@
 # ADR 0023 — Command Surface & UX: `cco config`/`cco project` namespace, validate contract, coordinate-add verbs
 
-**Status**: Accepted (2026-06-19) — Group A; D4+ appended as Cluster 5 Groups B–E land
+**Status**: Accepted (2026-06-19) — Groups A–C (D1–D4); D5+ appended as Cluster 5 Groups D–E land
 **Deciders**: maintainer + impl-readiness review (V), Cluster 5
 **Context docs**: `../design.md` §7 (command table — centre of gravity), §2.4/§3/§4.4/§6.2; `../requirements.md`; `../reviews/18-06-2026-impl-readiness-review.md` (F46/F26/F19 + the Cluster-4 carry-ins F48/F45/F29-D4)
 **Related ADRs**: 0008 (`~/.cco` versioning — `config save/push/pull`), 0016 (taxonomy — D3 coords tooling, D9 validity contract), 0017 (CLI lifecycle — D1 coordinate fields, D2 `cco resolve`/`--from`), 0019 (reachability — D2 layered embed/heal/validate), 0020 (permissions — D4 `cco config protect`), 0021 (lifecycle — §5 orphan sanitization), 0022 (D4 pack-collision ERROR row carried by validate)
@@ -135,6 +135,67 @@ project's `<repo>/.cco`. This is the P14 **layer-a** ("embed-at-add", ADR-0019 D
   `<repo>/.cco`), contradicting AD3/G8. `cco project validate` *detects* a hand-edited absolute path
   (D2, exit 2) but never strips it.
 
+### D4 — Sharing-surface accuracy: verdict-faithful §6.2/§7, templates on the full 2×2, and `internalize` as the unified "sever-coupling" family (review F34/F47/F13, refined)
+
+Three coupled sharing-surface corrections, plus a maintainer-refined model for `internalize`.
+
+**(a) Verdict-faithful §6.2/§7 (F34).** `design.md` §6.2/§7 mislabel removed/refactored work as "revised"/
+"transform". Reword by the per-element ADR verdicts: **REMOVED** = `cmd-project-publish.sh` +
+`cmd-project-install.sh` + their `bin/cco` dispatch arms (project publish/install are deleted — ADR-0018
+D2); **REFACTORED** = `cmd-pack.sh` (sync-before-publish, ADR-0022 D5), `cmd-remote.sh`/`remote.sh`
+(sharing-repo endpoints, structure-based discovery); **DROPPED** = `lib/manifest.sh` (ADR-0012/0018 D3);
+**BUILD-NEW** = pack `import`, project `export`/`import`, template `publish`/`install`/`export`/`import`
+(b), `cco update --check`, sync-before-publish, structure-based discovery. Split the single §7 Sharing
+"transform" row into Refactor / Build-new / Removed. §11 asserts both **presence** of the new verbs and
+**absence** (clear rejection) of the removed ones (`project publish/install`).
+
+**(b) Templates keep the full 2×2 (F47 — Option A).** Templates retain `publish`/`install` +
+`export`/`import` (ADR-0018 D2/D3 **as written**). The apparent contradiction with ADR-0019 D7
+(templates "scaffold-only, no live reference") is resolved by **disambiguation, not reversal**: D2/D3
+govern the template **artifact's distribution** (a reusable library living in `~/.cco/templates`,
+distributed via a sharing repo exactly like a pack); D7 governs the **scaffolded output** (the
+project/pack created via `--template` carries no coordinate back to the template and never auto-updates).
+The "no live reference" D7 denies is the **scaffold→template link in a consuming manifest**, not the
+template's own publish/install channel. Templates get **no referenced-resource coordinate** (P14 stays
+packs/repos/llms only). E wires the four template verbs reusing the pack sharing path (`templates/*/` is
+already in structure-discovery, D3). Add the missing §7 **Templates sharing** row.
+
+**(c) `internalize` = sever the resource's external coupling — one family, two axes (F13, refined).**
+The review's "net-new"/"Reuse" verdicts for `internalize` are factually wrong (**both verbs exist** —
+`cmd_project_internalize`, `cmd_pack_internalize`) → **Refactor**. The deeper model (maintainer analysis,
+validated): a referenced resource has **two orthogonal axes** —
+
+- **Coupling** (the resource's *one* external tie): `internalize` **severs** it. The tie is realized
+  differently per resource because their distribution models differ (P13), but the **intent is uniform**
+  ("make it self-contained/personal"):
+  - **pack / template (v1)** — the tie is the **upstream `url`** (update/publish). `internalize` **cuts
+    the coordinate** from the manifest → the local copy becomes the authored source (P15 deliberate
+    cord-cut); **drop the legacy `knowledge.source` copy step** (`cmd-pack.sh`, pre-coordinate model).
+  - **project (post-v1, name reserved)** — a project has **no upstream** (it rides the code remote, P13);
+    its external tie is **Axis-2 team-sharing**. `cco project internalize` = the **Case-C disconnect**
+    (relocate `<repo>/.cco` → `~/.cco/projects`, ADR-0018 D6) — a coherent member of the same family, not
+    a separate verb. This *strengthens* ADR-0018 D6's additive-by-construction framing by giving Case-C a
+    name. The existing project-disconnect-from-central-source semantic is **retired** with the
+    project-install model (ADR-0018 D2).
+  - **fork variant**: `cco <res> internalize --as <newname>` creates an internalized copy while leaving
+    the original **tracked/synced** (duplicate-then-cut).
+- **Locality** (offline cache copy): a **separate** axis, **not** `internalize`. Copying a referenced
+  pack into `<repo>/.cco/packs` as a **cache** (coordinate **kept** → still tracked) is the ADR-0019 D6
+  internalize-as-**cache**, reached via the **opt-in resolve-time prompt** + the tar `export
+  --bundle-packs`. **No standalone `vendor` verb in v1.** (Renaming away from "internalize-as-cache" is a
+  D6 nomenclature refinement — the cache and the cord-cut are *orthogonal*, not opposite.)
+
+**Inverses (no `un-internalize` verb).** Re-track a cut pack = `cco project add pack --url <x>` (**adopt**
+an upstream; local becomes a cache) *or* `cco pack publish` (**publish your** copy as the new upstream) —
+the two intents are disambiguated by the verb chosen; `cco project validate`/`show` surfaces the current
+tracked-vs-authored state. Un-cache = delete the `<repo>/.cco/packs/X` dir (coordinate stays → resolves
+upstream again). Un-disconnect a project (post-v1) = move `~/.cco/projects/<id>` back to `<repo>/.cco`.
+
+**Presentation.** Move `internalize` **out of the 2×2** into a §7 **Lifecycle** line, documented
+**per-resource** (because the mechanism differs even though the intent is uniform). `internalize` and
+`add --url` redefinitions are **breaking** for existing users → migration + changelog + behavior-change
+note (update-system.md).
+
 ## Alternatives Considered
 
 | Decision | Chosen | Rejected alternative(s) | Why |
@@ -142,6 +203,8 @@ project's `<repo>/.cco`. This is the P14 **layer-a** ("embed-at-add", ADR-0019 D
 | D1 namespace | split `validate` by job; `cco config`=store, `cco project`=cwd unit | A-unified (one `cco config validate` does both jobs, only `coords` moves); B (umbrella, enumerate+annotate, no relocation); C (also move `protect` out) | A-unified keeps the cross-bucket verb the finding flags; B documents the overload without curing it; C renames the ADR-0020-settled `cco config protect` for marginal gain. The job-split alone gives each `validate` predicate-set the correct scope. |
 | D2 validate contract | exit 0/1/2, one-line, presence-only + `--reachable`, docs-only hook, non-TTY no-op | binary 0/1 exit (B); table output (B); no `--reachable` in v1 (B); first-class hook installer `cco config protect --hook` (C) | B drops the per-class CI signal the finding asks for and resolves the presence-vs-network fork by omission; C adds git-hook-generation surface the codebase has no precedent for and leans hardest on P17. A reuses shipped patterns (`_prompt_for_path`, inline secret scan). |
 | D3 add verbs | `cco project add <res>` + one-shot `--path`, url-from-origin | per-resource namespaces `cco repo add`/`cco llms add` (Shape B); path-inline + `verify`-sanitize (note Option 2) | Shape B scatters add across three homes and adds a top-level `cco repo` only for `add`; the sanitize flow re-adds removed complexity + a path-leak window (AD3/G8). Folding under `cco project` matches D1 and the user's own `cco project add repo` instinct. |
+| D4 templates | full 2×2 (F47-A, disambiguate D2/D3 vs D7) | export/import-only (F34-A) | export/import-only **reverses** the settled ADR-0018 D2/D3 (publish/install for templates) and loses the publish-template-to-a-team use case; disambiguation honors both ADRs verbatim. |
+| D4 internalize | unified "sever-coupling" family, 2 axes (Coupling/Locality); project = Case-C, post-v1 | review F13-A (redefine project internalize = vendor referenced packs); 3-axis split (update/sharing/locality) | F13-A conflated the cord-cut with the cache (orthogonal axes, opposite coordinate effect — the UX confusion the maintainer flagged); the 3-axis split was refuted (no resource carries both update- and sharing-coupling, so update∪sharing is one axis realized per-resource). |
 
 ## Consequences
 
@@ -165,7 +228,9 @@ D3's `add <res>` is net-new verb wiring across `cmd-project-*`.
 |---------|---------|
 | `cco project resolve --repo/--mount <name> <path>` index writer (`cmd-project-query.sh:259`); the `_sanitize_project_paths` **origin-derivation** half (`local-paths.sh:281`); `_prompt_for_path` non-TTY guard (`local-paths.sh:159`); `lib/secrets.sh` heuristic-scan philosophy; the `cco sync --from` precedent for `coords --sync` | **Reuse** |
 | `cco config coords` / share-readiness `cco config validate` naming; the path-in-`project.yml` → sanitize-on-commit flow (already dropped by §3 D4); F19's separate top-level `cco repo` namespace; `cco llms install`'s embed side-effect (`_llms_add_to_yaml`) once `add` exists | **Drop / repurpose** |
-| `cco project validate` share-readiness contract (invocation/exit/output/agnostic-detection/`--reachable`/hook/non-TTY); `cco project add <repo\|mount\|llms\|pack>` + one-shot `--path` + url-from-origin; `cco project coords` relocation | **Build-new** (spec here; mechanism → E along P0–P5) |
+| `cmd_pack_internalize` / `cmd_project_internalize` (verbs exist; cut to the coupling-family semantics); pack sharing path (templates reuse it for the four template verbs) | **Refactor** (not net-new / not Reuse — corrects ADR-0019 D3/D4 verdicts) |
+| `cmd-project-publish.sh` + `cmd-project-install.sh` + their `bin/cco` arms (project publish/install removed, ADR-0018 D2); the `knowledge.source` copy step in `cmd_pack_internalize` | **Drop** |
+| `cco project validate` share-readiness contract (invocation/exit/output/agnostic-detection/`--reachable`/hook/non-TTY); `cco project add <repo\|mount\|llms\|pack>` + one-shot `--path` + url-from-origin; `cco project coords` relocation; template `publish/install/export/import` (reuse pack path); `internalize --as` fork; `cco project internalize` Case-C (post-v1) | **Build-new** (spec here; mechanism → E along P0–P5) |
 
 ## Open / cross-refs (Cluster 5 Groups B–E — appended as D4+ or `design.md` §7 refinements)
 
@@ -174,8 +239,10 @@ D3's `add <res>` is net-new verb wiring across `cmd-project-*`.
   validate`; §6.2 `cco update` discovery-flag division-of-labor table + `--dry-run` scope
   disambiguation. The illustrative `cco config validate` next-step was renamed to `cco project validate`
   (D1).
-- **F34/F47/F13** (Group C) — §6.2/§7 sharing-surface verdict split; template 2×2 vs scaffold-only;
-  `cco project internalize` semantics clash (the §7 `internalize` row references this).
+- **F34/F47/F13** (Group C) — **RESOLVED 2026-06-19** (D4): verdict-faithful §6.2/§7; templates on the
+  full 2×2 (disambiguate D2/D3-distribution vs D7-scaffold-output); `internalize` = unified sever-coupling
+  family (pack/template cut-url v1 + `--as` fork; project = Case-C, post-v1) with the cache on a separate
+  Locality axis. Forward-annotations: ADR-0018 D6, ADR-0019 D3/D7.
 - **F18** (Group D) — `cco new` as an index-less ephemeral entry; **F25** — `extra_mounts` schema +
   the optional machine-agnostic `--target` of D3's `add mount`.
 - **F27** (Group E) — `cco config protect` contract (kept under `config` here by D1; full content/

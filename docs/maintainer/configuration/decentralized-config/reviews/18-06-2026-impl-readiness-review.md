@@ -2139,4 +2139,30 @@ proposed copy/table verbatim.
   changelog) + explicit **`--dry-run` scope disambiguation** (`cco update` = migrations preview;
   `cco <res> update` = 3-way-merge preview); §7 Update row cross-refs it.
 
-**Groups C–E OPEN. Next = Group C (F34/F47/F13 — sharing-surface accuracy).**
+### Group C — sharing-surface accuracy & the internalize family — RESOLVED & PERSISTED (2026-06-19)
+
+Findings `F34 F47 F13` → **ADR-0023 D4**. The review's F34-A and F47-A recommendations **contradicted** on
+template scope; resolved toward **F47-A** (no ADR reversal). F13 was **refined beyond review Option A**
+via a maintainer-driven analysis.
+- **F34** (verdict accuracy): §6.2/§7 reworded by per-element verdict — project publish/install
+  **REMOVED** (ADR-0018 D2; `cmd-project-publish/install.sh` + arms), pack/remote **REFACTORED**,
+  manifest **DROPPED**, pack import + project export/import + template 2×2 **BUILD-NEW**; §11 asserts
+  presence (new verbs) + absence (removed verbs rejected).
+- **F47** (template 2×2): templates keep the **full 2×2** (ADR-0018 D2/D3 verbatim); the D2/D3-vs-D7
+  tension resolved by **disambiguation** — D2/D3 = artifact distribution, D7 = scaffolded-output lifecycle
+  (orthogonal). Templates carry no referenced-resource coordinate. New §7 Templates sharing row.
+- **F13** (internalize): the review's "net-new"/"Reuse" verdicts are factually wrong (both verbs exist) →
+  **Refactor**. **Maintainer analysis (validated):** `internalize` = **sever the resource's one external
+  coupling** — a single **Coupling** axis (update∪sharing) realized per-resource (pack/template = cut the
+  upstream `url`, v1, + `--as` fork; **project = Case-C sharing-disconnect, post-v1, name reserved**),
+  **orthogonal** to the **Locality** (cache) axis. The "3-axis" framing was **refuted** by the
+  co-occurrence test (no resource carries both update- and sharing-coupling of its own, so they are one
+  axis projected onto two resource classes via P13's distribution asymmetry). Caching a referenced pack
+  (keeps the coordinate) is the **separate** Locality op — resolve-prompt + `export --bundle-packs`, no
+  `vendor` verb in v1. Inverses: `add --url` (adopt) / `pack publish` (publish-yours) / drop-cache; no
+  un-internalize verb. `internalize` moves out of the 2×2 into a §7 Lifecycle line (breaking → migration).
+
+Living re-sync: `design.md` §6.2 (verdict note + template disambiguation), §7 (Sharing row + new
+Lifecycle row). Forward-annotations (text verbatim): ADR-0018 D6, ADR-0019 D3/D7.
+
+**Groups D–E OPEN. Next = Group D (F18 `cco new` / F25 `extra_mounts`).**

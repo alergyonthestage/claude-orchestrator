@@ -174,6 +174,12 @@ For a user adopting cco alone inside a team's shared code repo:
 > is explicitly **post-v1**. `config_path` is still named here as the *intended* future mechanism (breadcrumb),
 > just labelled additive-by-construction rather than a carved-out slot.
 
+> **NAMED by ADR-0023 D4 (2026-06-19; the D6 text above is kept as written):** the Case-C disconnect
+> (relocate `<repo>/.cco`→`~/.cco/projects`) is the **project member of the `internalize` family** —
+> `cco project internalize` (post-v1). Rationale: `internalize` = sever a resource's one external coupling;
+> a project has no upstream (P13), so its coupling **is** the Axis-2 team-sharing, and severing it = the
+> Case-C relocation. This gives Case-C a name without building it in v1 (still additive-by-construction).
+
 ---
 
 ## Principles & method-lessons (persisted — see guiding-principles P13)

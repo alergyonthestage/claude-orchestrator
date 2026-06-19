@@ -554,7 +554,10 @@ Team-sharing flows through a **sharing repo** (the retired term "config repo" �
 
 - **Packs/templates** use the full 2×2; a sharing repo holds `packs/` + `templates/` only (**no
   `projects/`**), discovered **structure-based** (no `manifest.yml`; ADR-0012/0018 D3), init-at-first-
-  publish, merge-on-existing.
+  publish, merge-on-existing. Templates `publish`/`install` govern the **template artifact's
+  distribution** (a reusable library, same path as packs); the **scaffolded output** stays one-shot with
+  no coordinate back and no auto-update (ADR-0019 D7) — the two are orthogonal, so D2/D3 and D7 do not
+  conflict (ADR-0023 D4). Templates carry **no referenced-resource coordinate** (P14 = packs/repos/llms).
 - **Projects do NOT publish/install** — `<repo>/.cco/` is team-shared **by construction** via the code
   repo remote (Axis 1+2, P5/P13); a repo without `.cco/` is bootstrapped by `cco init`/`cco init --migrate`/
   `cco project import` (tar). Projects get **export/import** only.
@@ -603,10 +606,13 @@ ADR-0018 D3 structure-discovery/init-or-merge + ADR-0013 H6 `base/`→STATE):
    sharing repo. This replaces the prior **clone-then-overwrite** path (clone HEAD → `rm -rf` → `cp -R` →
    push) that silently discarded co-maintainers' remote-only changes.
 
-Implementation (`cmd-project-publish.sh`, `cmd-project-install.sh`, `cmd-pack.sh`, `cmd-remote.sh`,
-`remote.sh`) is **revised** accordingly (→ **Phases 4–5**, §9, built on the Phase-0 final
-substrate): `lib/manifest.sh` deleted, sync-before-publish fix, 2×2 verb wiring, structure-based
-discovery. See ADR-0018/0019/0020.
+Implementation by **verdict** (→ **Phases 4–5**, §9, built on the Phase-0 substrate; ADR-0023 D4):
+**REMOVED** = `cmd-project-publish.sh` + `cmd-project-install.sh` + their `bin/cco` arms (project
+publish/install deleted — ADR-0018 D2); **REFACTORED** = `cmd-pack.sh` (sync-before-publish, ADR-0022
+D5), `cmd-remote.sh`/`remote.sh` (sharing-repo endpoints, structure-based discovery); **DROPPED** =
+`lib/manifest.sh`; **BUILD-NEW** = pack `import`, project `export`/`import`, template
+`publish`/`install`/`export`/`import` (reuse the pack sharing path), `cco update --check`. See
+ADR-0018/0019/0020/0023.
 
 ---
 
@@ -625,7 +631,8 @@ discovery. See ADR-0018/0019/0020.
 | Project config / coordinates (cwd `<repo>/.cco`) | `cco project add repo\|mount\|llms\|pack <name> [--url --ref --variant --readonly] [--path]` (**embed-at-add**, P14 layer-a: coordinate → manifest **and** optional `--path` → index, in one call; `url` auto-derived from `origin` when `--path` is a clone — ADR-0023 D3; `add-pack` kept as alias of `add pack`), `cco project coords --diff [--sync --from <unit>]` (cross-unit coordinate consistency; `--sync` explicit-`--from`, never auto-elect — ADR-0016 D3 / ADR-0022 F48), `cco project validate [--all] [--reachable]` (**share-readiness**: every referenced id has a reachable coordinate + machine-agnostic + the pack-collision ERROR; cwd-first, exit 0/1/2, detect-only, never blocks — ADR-0023 D2) | NEW |
 | Authoring | Direct `~/.cco` edit (IDE or rehomed `config-editor` agent); cco only **scaffolds**: `cco pack create`, `cco template create` (ADR-0008/0010) | transform |
 | Global store (`~/.cco` + internal) | `cco config save [-m] / push / pull` (version + sync the personal `~/.cco` store; ADR-0008) + **`cco config validate [--dry-run\|--fix]`** (**orphan-sanitization** of global id-keyed internal state after manual deletion: detect/report, optionally prune preview-first/confirmed; warn-never-hide, never automatic; ADR-0021. STATE/CACHE freely rebuildable via `cco resolve --scan`; DATA pruned only on confirm). *Share-readiness* validate is `cco project validate` (below), **not** this verb — ADR-0023 D1 | transform |
-| Sharing (2×2, ADR-0018 D2) | **packs/templates**: `cco <res> publish\|install` (sharing repo) + `export\|import` (tar); **projects**: `cco project export\|import` only (no publish/install — ride the repo remote, P5/P13). `cco <res> internalize` cuts the coordinate. `cco remote …` manages sharing-repo endpoints. | transform |
+| Sharing (2×2, ADR-0018 D2) | **packs**: `cco pack publish\|install\|export\|import`; **templates**: `cco template publish\|install\|export\|import` (distribution; scaffolded output stays one-shot — D7/ADR-0023 D4); **projects**: `cco project export\|import` **only** (no publish/install — ride the repo remote, P5/P13). `cco remote …` manages sharing-repo endpoints. **Verdicts** (ADR-0023 D4): project publish/install **REMOVED**; pack publish/remote **REFACTORED**; manifest **DROPPED**; pack import + project export/import + template 2×2 **BUILD-NEW** | transform |
+| Lifecycle: internalize (ADR-0023 D4) | `cco <res> internalize [--as <name>]` = **sever the resource's external coupling** (one intent, per-resource mechanism): **pack/template** cut the upstream `url` → authored source (P15); **project** = Case-C disconnect (`<repo>/.cco`→`~/.cco/projects`, **post-v1**, ADR-0018 D6). `--as` forks (keeps the original tracked). **Inverse** = `cco project add … --url` (adopt) / `cco pack publish` (publish yours) / drop the cache dir. Caching a referenced pack (**Locality**, keeps the coordinate) is **separate**: the opt-in resolve prompt (ADR-0019 D6) + `export --bundle-packs`, **no `vendor` verb in v1** | NEW |
 | Update | `cco update …` (framework→user; merge engine unchanged) + **`cco update --check`** (list resources with available updates — DATA `source`-driven, install-presence-gated, **3-state** *not-installed-here / comparable / indeterminate*; one greppable line/resource + summary, **exit 0 always**; advancement = same-ref `ls-remote` resolve; `--offline`/`--no-cache` reuse `cmd-update.sh` — ADR-0022 D6 / ADR-0018 D5) + `cco <res> update --dry-run`. Discovery-flag division of labor (`--check`/`--diff`/`--dry-run`/`--news`) → §6.2 table (F50) | transform |
 | Permissions (ADR-0020) | `cco config protect` (OPTIONAL — scaffold `<repo>/.cco/CODEOWNERS` + emit host ruleset instructions; enforcement delegated to git). **The single `cco config` verb scoped to `<repo>/.cco` rather than `~/.cco`** — documented exception (ADR-0023 D1); full contract = Group E / F27 | NEW (optional) |
 
