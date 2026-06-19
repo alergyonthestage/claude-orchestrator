@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-06-18 (decentralized-config: ALL config **and sharing** analyses resolved — RD-* + R1–R4 + Cat-4 + M + **S**, ADRs 0005–**0021**; 4-bucket taxonomy + coordinate-per-unit + sharing unification [2×2 matrix, pack coordinates, reachability, working-copy lifecycle, permissions delegated-to-git] + principles **P1–P17**; **config + sharing design CLOSED. Impl-readiness review (V) DONE** — `reviews/18-06-2026-impl-readiness-review.md`, 58 findings/37 decisions, being resolved **cluster by cluster**: Cluster 1 RESOLVED → ADR-0021 + ADR-0006/0009/0010; Cluster 2 RESOLVED → impl order re-derived (dependency+reuse+open-closed) into a 6-phase dependency-layer map, design §9/§11 rewritten; Clusters 3–5 OPEN [see `W-handoff-cluster-resolution.md`]. Next = Cluster 3 → then implementation; T future**).
+> Last updated: 2026-06-19 (decentralized-config: ALL config **and sharing** analyses resolved — RD-* + R1–R4 + Cat-4 + M + **S**, ADRs 0005–**0022**; 4-bucket taxonomy + coordinate-per-unit + sharing unification [2×2 matrix, pack coordinates, reachability, working-copy lifecycle, permissions delegated-to-git] + principles **P1–P17**; **config + sharing design CLOSED. Impl-readiness review (V) DONE** — `reviews/18-06-2026-impl-readiness-review.md`, 58 findings/37 decisions, being resolved **cluster by cluster**: Cluster 1 RESOLVED → ADR-0021 + ADR-0006/0009/0010; Cluster 2 RESOLVED → impl order re-derived (dependency+reuse+open-closed) into a 6-phase dependency-layer map, design §9/§11 rewritten; Cluster 3 Block A RESOLVED → doc-lifecycle rule + design-intent re-sync; Cluster 4 RESOLVED → ADR-0022 + forward-annot ADR-0016/0017/0018/0019 + design §2.2–§12 + FR-Y-S6; **only Cluster 5 OPEN** [see `W-handoff-cluster-resolution.md`]. Next = Cluster 5 → then implementation; T future**).
 >
 > **Note**: Sprint entries are historical. Path references (e.g., `.cco-meta`, `.cco-source`) in older
 > sprints reflect the layout at the time of writing. See Sprint 8 and the `.cco/` consolidation
@@ -74,7 +74,7 @@ graph LR
 
 **Status**: Design APPROVED (2026-06-15); **config + sharing design CLOSED**; **impl-readiness review
 (V) DONE (2026-06-18)**. Living `requirements.md` + `design.md` are the single source of truth;
-decisions recorded in ADRs **0001–0021** (`../configuration/decentralized-config/decisions/`); the
+decisions recorded in ADRs **0001–0022** (`../configuration/decentralized-config/decisions/`); the
 role-first analyses (R1–R4, Cat-4, M, **S**) are tracked in `analysis-roadmap.md`; analyses + the V
 report kept under `.../reviews/`. On `feat/vault/decentralized-config` (commits **local only**, pushed
 from the maintainer's Mac). **S DONE (ADR-0018/0019/0020)** — sharing model unified (2×2 matrix, pack
@@ -94,9 +94,13 @@ rule `.claude/rules/documentation-lifecycle.md` — history-vs-living-vs-archive
 design-intent-now / shipped-behavior-at-cutover timing); design-intent docs re-synced (`requirements.md`,
 `design.md §1`, ADR-0002/0014 forward-annotations) and `resource-coherence-inventory.md` completed as the
 Phase-3 cutover-sweep driver. Block B (user-facing doc rewrites) is inventoried and rides the cutover.
-**Clusters 4–5 OPEN** (coordinate model · command/UX). **Next session = Cluster 4 in a clean session** —
-see `W-handoff-cluster-resolution.md`. **Then implementation** (design §9 dependency-layered phases). T is
-future.
+**Cluster 4 (coordinate model & resolution) RESOLVED & PERSISTED** (2026-06-19): all 15 findings →
+**new ADR-0022** (source-relocation/`publish_target` re-derive · global-flat index/H7 · `--scan`
+merge-upsert · pack cache-iff-coordinate + one ERROR · pack STATE `base/`/sync-before-publish · `--check`
+3-state) + forward-annotations to ADR-0016/0017/0018/0019 + design.md §2.2–§12 re-sync + requirements
+FR-Y-S6; phasing re-read onto the Cluster-2 P0–P5 map. **Only Cluster 5 OPEN** (command surface & UX).
+**Next session = Cluster 5 in a clean session** — see `W-handoff-cluster-resolution.md`. **Then
+implementation** (design §9 dependency-layered phases). T is future.
 **Priority**: 0 (next major work). **Supersedes**: branch-switch real-isolation
 model in `../../configuration/vault/profile-isolation-design.md` (v2) **and** the
 central-vault project store.
