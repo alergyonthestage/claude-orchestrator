@@ -954,6 +954,40 @@ _resolve_project_paths_impl() {
                 fi
             fi
         done <<< "$repos"
+    else
+        # NEW schema — resolve logical names into the STATE index.
+        local _ln name url rest path needs_resolve
+        while IFS= read -r _ln; do
+            [[ -z "$_ln" ]] && continue
+            name="${_ln%%$'\t'*}"; rest="${_ln#*$'\t'}"; url="${rest%%$'\t'*}"
+            [[ -z "$name" ]] && continue
+            path=$(_index_get_path "$name")
+            needs_resolve=false
+            if [[ -z "$path" ]] || ! _path_exists "$path"; then
+                needs_resolve=true
+            fi
+            if $needs_resolve; then
+                local resolved rc=0
+                resolved=$(_resolve_entry_index "$project_dir" "repos" "$name" "$url") || rc=$?
+                if [[ $rc -eq 0 && -n "$resolved" ]]; then
+                    resolved_repos+=("$name")
+                elif [[ $rc -eq 2 ]]; then
+                    if [[ ! -t 0 ]]; then
+                        if [[ "$mode" == "start" ]]; then
+                            die "$unresolved_msg"
+                        else
+                            warn "Repository '$name' path does not exist — run 'cco resolve' to configure"
+                        fi
+                    else
+                        die "$abort_msg"
+                    fi
+                else
+                    if [[ "$mode" == "start" ]]; then
+                        warn "Repository '$name' skipped — it will not be available in this session"
+                    fi
+                fi
+            fi
+        done < <(yml_get_repo_coords "$project_yml" 2>/dev/null)
     fi
 
     # Resolve extra_mounts
@@ -989,6 +1023,40 @@ _resolve_project_paths_impl() {
                 fi
             fi
         done <<< "$mounts"
+    else
+        # NEW schema — resolve logical mount names into the STATE index.
+        local _ln name url rest path needs_resolve
+        while IFS= read -r _ln; do
+            [[ -z "$_ln" ]] && continue
+            name="${_ln%%$'\t'*}"; rest="${_ln#*$'\t'}"; url="${rest%%$'\t'*}"
+            [[ -z "$name" ]] && continue
+            path=$(_index_get_path "$name")
+            needs_resolve=false
+            if [[ -z "$path" ]] || ! _path_exists "$path"; then
+                needs_resolve=true
+            fi
+            if $needs_resolve; then
+                local resolved rc=0
+                resolved=$(_resolve_entry_index "$project_dir" "extra_mounts" "$name" "$url") || rc=$?
+                if [[ $rc -eq 0 && -n "$resolved" ]]; then
+                    :
+                elif [[ $rc -eq 2 ]]; then
+                    if [[ ! -t 0 ]]; then
+                        if [[ "$mode" == "start" ]]; then
+                            die "$unresolved_msg"
+                        else
+                            warn "Mount '$name' path does not exist — run 'cco resolve' to configure"
+                        fi
+                    else
+                        die "$abort_msg"
+                    fi
+                else
+                    if [[ "$mode" == "start" ]]; then
+                        warn "Mount '$name' skipped — it will not be available in this session"
+                    fi
+                fi
+            fi
+        done < <(yml_get_mount_coords "$project_yml" 2>/dev/null)
     fi
 
     if [[ "$mode" == "install" && ${#resolved_repos[@]} -gt 0 ]]; then
@@ -1008,6 +1076,129 @@ _resolve_installed_paths() {
 # Usage: _resolve_start_paths <project_dir>
 _resolve_start_paths() {
     _resolve_project_paths_impl "$1" "start"
+}
+
+# ── Schema bridge (transitional) ─────────────────────────────────────
+#
+# Commit A introduces the decentralized schema (logical names + the STATE
+# index) without deleting the legacy `@local` + `.cco/local-paths.yml`
+# machinery, which the vault/publish code and their tests still exercise
+# (kept transitional, removed in P3/P4). The resolution + mount-generation
+# consumers therefore read BOTH shapes, detected per-section:
+#   - LEGACY: project.yml carries `repos:\n  - path:` / `extra_mounts:\n  -
+#     source:` → yml_get_repos / yml_get_extra_mounts return non-empty.
+#   - NEW: logical names only → those legacy parsers return empty; coordinates
+#     come from yml_get_repo_coords / yml_get_mount_coords and the absolute
+#     path from the STATE index (lib/index.sh).
+# This whole section collapses to index-only once the legacy paths are deleted
+# with the vault (P3) and the sharing rewrite (P4).
+
+# Emit the RESOLVED repo set as "<name>\t<abs_path>" lines (one per repo),
+# schema-agnostic. Callers are post-resolution consumers (mount-gen, proxy,
+# workspace, summaries) — by contract _resolve_*_paths + _assert_resolved_paths
+# have already run, so legacy paths are real (no @local) and index names are
+# bound. LEGACY: literal project.yml path, expanded. NEW: index lookup by name.
+_effective_repo_mounts() {
+    local project_yml="$1"
+    local legacy
+    legacy=$(yml_get_repos "$project_yml" 2>/dev/null)
+    if [[ -n "$legacy" ]]; then
+        local rp rn
+        while IFS=: read -r rp rn; do
+            [[ -z "$rp" ]] && continue
+            printf '%s\t%s\n' "$rn" "$(expand_path "$rp")"
+        done <<< "$legacy"
+    else
+        # Peel fields by tab (IFS=$'\t' read collapses empty middle fields).
+        local _ln name
+        while IFS= read -r _ln; do
+            [[ -z "$_ln" ]] && continue
+            name="${_ln%%$'\t'*}"
+            [[ -z "$name" ]] && continue
+            printf '%s\t%s\n' "$name" "$(_index_get_path "$name")"
+        done < <(yml_get_repo_coords "$project_yml" 2>/dev/null)
+    fi
+}
+
+# Companion bridge for extra mounts. Emit "<abs_source>\t<target>\t<ro>" per
+# mount (ro = "true"|"false"). LEGACY: source/target/ro from project.yml
+# (source already resolved + expanded). NEW: source from the index by name,
+# target defaults to /workspace/<name>, readonly defaults to true.
+_effective_extra_mounts() {
+    local project_yml="$1"
+    local legacy
+    legacy=$(yml_get_extra_mounts "$project_yml" 2>/dev/null)
+    if [[ -n "$legacy" ]]; then
+        local line src rest tgt ro
+        while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            src="${line%%:*}"
+            rest="${line#*:}"
+            if [[ "$rest" == *:ro ]]; then
+                tgt="${rest%:ro}"; ro="true"
+            else
+                tgt="$rest"; ro="false"
+            fi
+            printf '%s\t%s\t%s\n' "$(expand_path "$src")" "$tgt" "$ro"
+        done <<< "$legacy"
+    else
+        # Peel fields by tab (IFS=$'\t' read collapses empty middle fields, so
+        # a name-only mount "name\t\t\ttarget\tro" would mis-assign target/ro).
+        local _ln name target ro_raw ro rest
+        while IFS= read -r _ln; do
+            [[ -z "$_ln" ]] && continue
+            name="${_ln%%$'\t'*}"; rest="${_ln#*$'\t'}"   # rest = url\tref\ttarget\tro
+            rest="${rest#*$'\t'}"                          # drop url
+            rest="${rest#*$'\t'}"                          # drop ref
+            target="${rest%%$'\t'*}"
+            ro_raw="${rest#*$'\t'}"
+            [[ -z "$name" ]] && continue
+            [[ -z "$target" ]] && target="/workspace/$name"
+            ro=$(_parse_bool "$ro_raw" "true")
+            printf '%s\t%s\t%s\n' "$(_index_get_path "$name")" "$target" "$ro"
+        done < <(yml_get_mount_coords "$project_yml" 2>/dev/null)
+    fi
+}
+
+# NEW-schema single-entry resolution (index-backed counterpart of
+# _resolve_entry): look up <name> in the STATE index; if unresolved or its path
+# is gone, prompt (reusing _prompt_for_path) and store the result in the index.
+# No local-paths.yml, no project.yml write (AD3 — project.yml has no path).
+# Output: resolved abs path (stdout). Exit: 0=resolved, 1=skipped, 2=abort.
+_resolve_entry_index() {
+    local project_dir="$1" section="$2" name="$3" url="${4:-}"
+
+    local existing
+    existing=$(_index_get_path "$name")
+    if [[ -n "$existing" ]] && _path_exists "$existing"; then
+        echo "$existing"
+        return 0
+    fi
+
+    local label="Repository"
+    [[ "$section" == "extra_mounts" ]] && label="Mount"
+
+    # Best-effort suggestion: a sibling directory from an existing index entry.
+    local suggested=""
+    if [[ "$section" == "repos" ]]; then
+        local sib sibp
+        sib=$(_index_list_paths | head -1)
+        sibp="${sib#*=}"
+        [[ -n "$sib" && -n "$sibp" ]] && suggested="$(dirname "$sibp")/$name"
+    fi
+
+    local resolved rc=0
+    resolved=$(_prompt_for_path "$name" "$url" "$suggested" "$label") || rc=$?
+
+    if [[ $rc -eq 0 && -n "$resolved" ]]; then
+        _index_set_path "$name" "$resolved"
+        echo "$resolved"
+        return 0
+    elif [[ $rc -eq 2 ]]; then
+        return 2
+    else
+        return 1
+    fi
 }
 
 # ── Effective paths — single source of truth for consumers ───────────
@@ -1063,6 +1254,25 @@ _project_effective_paths() {
             fi
             printf 'repos\t%s\t%s\t%s\n' "$repo_name" "$effective" "$status"
         done <<< "$repos"
+    else
+        # NEW schema — logical names; abs path from the STATE index.
+        local _ln name effective status
+        while IFS= read -r _ln; do
+            [[ -z "$_ln" ]] && continue
+            name="${_ln%%$'\t'*}"
+            [[ -z "$name" ]] && continue
+            effective=$(_index_get_path "$name")
+            if [[ -z "$effective" ]]; then
+                printf 'repos\t%s\t\tunresolved\n' "$name"
+                continue
+            fi
+            if _path_exists "$effective"; then
+                status="exists"
+            else
+                status="missing"
+            fi
+            printf 'repos\t%s\t%s\t%s\n' "$name" "$effective" "$status"
+        done < <(yml_get_repo_coords "$project_yml" 2>/dev/null)
     fi
 
     # Mounts — sourced from "source:target:readonly" lines; keyed by target
@@ -1092,6 +1302,25 @@ _project_effective_paths() {
             fi
             printf 'mounts\t%s\t%s\t%s\n' "$target" "$effective" "$status"
         done <<< "$mounts"
+    else
+        # NEW schema — logical names; abs source from the STATE index; key = name.
+        local _ln name effective status
+        while IFS= read -r _ln; do
+            [[ -z "$_ln" ]] && continue
+            name="${_ln%%$'\t'*}"
+            [[ -z "$name" ]] && continue
+            effective=$(_index_get_path "$name")
+            if [[ -z "$effective" ]]; then
+                printf 'mounts\t%s\t\tunresolved\n' "$name"
+                continue
+            fi
+            if _path_exists "$effective"; then
+                status="exists"
+            else
+                status="missing"
+            fi
+            printf 'mounts\t%s\t%s\t%s\n' "$name" "$effective" "$status"
+        done < <(yml_get_mount_coords "$project_yml" 2>/dev/null)
     fi
 }
 

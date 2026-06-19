@@ -2,7 +2,7 @@
 # lib/workspace.sh — Workspace YAML generation
 #
 # Provides: _generate_workspace_yml()
-# Dependencies: yaml.sh, utils.sh
+# Dependencies: yaml.sh, utils.sh, local-paths.sh (schema bridge), index.sh
 # Globals: none
 
 # Generate .claude/workspace.yml for a project (idempotent: preserves descriptions).
@@ -21,13 +21,13 @@ _generate_workspace_yml() {
         echo ""
         echo "repos:"
         local repos_output
-        repos_output=$(yml_get_repos "$project_yml")
+        repos_output=$(_effective_repo_mounts "$project_yml")
         if [[ -z "$repos_output" ]]; then
             echo "  []"
         else
-            while IFS=: read -r repo_path repo_name; do
-                [[ -z "$repo_path" ]] && continue
-                repo_path=$(expand_path "$repo_path")
+            local repo_name repo_path
+            while IFS=$'\t' read -r repo_name repo_path; do
+                [[ -z "$repo_name" ]] && continue
                 # Preserve existing description from workspace.yml; fall back to
                 # project.yml description as seed on first run (if manually set).
                 local desc=""
@@ -74,24 +74,21 @@ _generate_workspace_yml() {
             echo "  []"
         fi
 
-        # Extra mounts (shared libs, read-only assets): list container target paths only
+        # Extra mounts (shared libs, read-only assets): list container target paths only.
+        # Bridge emits abs_source<TAB>target<TAB>ro (schema-agnostic).
         local extra_mounts_output
-        extra_mounts_output=$(yml_get_extra_mounts "$project_yml")
+        extra_mounts_output=$(_effective_extra_mounts "$project_yml")
         if [[ -n "$extra_mounts_output" ]]; then
             echo ""
             echo "extra_mounts:"
-            while IFS= read -r mount_line; do
-                [[ -z "$mount_line" ]] && continue
-                # mount_line is source:target[:ro] — extract target (field 2)
-                local target
-                target=$(echo "$mount_line" | awk -F: '{print $2}')
-                local ro_flag
-                ro_flag=$(echo "$mount_line" | awk -F: '{print $3}')
-                if [[ "$ro_flag" == "ro" ]]; then
-                    echo "  - target: ${target}"
+            local _ws_src _ws_tgt _ws_ro
+            while IFS=$'\t' read -r _ws_src _ws_tgt _ws_ro; do
+                [[ -z "$_ws_tgt" ]] && continue
+                if [[ "$_ws_ro" == "true" ]]; then
+                    echo "  - target: ${_ws_tgt}"
                     echo "    readonly: true"
                 else
-                    echo "  - target: ${target}"
+                    echo "  - target: ${_ws_tgt}"
                 fi
             done <<< "$extra_mounts_output"
         fi

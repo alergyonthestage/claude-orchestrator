@@ -25,6 +25,26 @@ setup_cco_env() {
     export CCO_ALLOW_HOST_RESOLVE=1
     mkdir -p "$CCO_USER_CONFIG_DIR" "$CCO_GLOBAL_DIR" "$CCO_PROJECTS_DIR" \
              "$CCO_PACKS_DIR" "$CCO_TEMPLATES_DIR" "$CCO_LLMS_DIR" "$CCO_DUMMY_REPO"
+    # Seed the STATE index for the new-schema fixture (minimal_project_yml uses
+    # the logical name "dummy-repo"). Legacy-schema fixtures (inline `- path:`)
+    # are unaffected — they resolve via the transitional legacy path, not the
+    # index.
+    seed_index_path "dummy-repo" "$CCO_DUMMY_REPO"
+}
+
+# Seed a logical name → absolute path binding in the STATE index (the
+# decentralized-config materialization of a repo/mount coordinate). Uses the
+# real index API so the on-disk format matches production exactly.
+# Usage: seed_index_path <name> <abs_path>
+seed_index_path() {
+    local name="$1" path="$2"
+    (
+        source "$REPO_ROOT/lib/colors.sh"
+        source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/paths.sh"
+        source "$REPO_ROOT/lib/index.sh"
+        _index_set_path "$name" "$path"
+    )
 }
 
 # Copy defaults/global/.claude into tmpdir/user-config/global/.claude
@@ -401,8 +421,10 @@ _get_repo_head() {
 
 # ── Project Helpers ──────────────────────────────────────────────────
 
-# Minimal project.yml for tests that only need dry-run + compose assertions
-# Usage: minimal_project_yml "<name>"  (no repos, oauth auth, empty ports/env)
+# Minimal project.yml for tests that only need dry-run + compose assertions.
+# New (decentralized) schema: repos are logical names only — the absolute path
+# for "dummy-repo" lives in the STATE index, seeded by setup_cco_env.
+# Usage: minimal_project_yml "<name>"  (oauth auth, empty ports/env)
 minimal_project_yml() {
     local name="${1:-test-proj}"
     cat <<YAML
@@ -414,7 +436,6 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 }

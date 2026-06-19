@@ -180,9 +180,10 @@ _start_load_config() {
     # Parse packs early (needed both for compose and packs.md generation)
     pack_names=$(yml_get_packs "$project_yml")
 
-    # Warn if no repos defined (some projects like tutorial work without repos)
+    # Warn if no repos defined (some projects like tutorial work without repos).
+    # Schema-agnostic via the bridge (legacy path:name or new logical names).
     local repos_check
-    repos_check=$(yml_get_repos "$project_yml")
+    repos_check=$(_effective_repo_mounts "$project_yml")
     [[ -z "$repos_check" ]] && warn "No repositories defined in project.yml. Work inside the container will not persist unless saved via extra_mounts."
     return 0
 }
@@ -502,24 +503,23 @@ YAML
         # sources. Any inconsistency here would be an internal bug, not
         # a user-facing error, so we do not silently skip (fix #B17).
         echo "      # Repositories"
-        while IFS=: read -r repo_path repo_name; do
-            [[ -z "$repo_path" ]] && continue
-            repo_path=$(expand_path "$repo_path")
+        while IFS=$'\t' read -r repo_name repo_path; do
+            [[ -z "$repo_name" ]] && continue
             echo "      - ${repo_path}:/workspace/${repo_name}"
-        done <<< "$(yml_get_repos "$project_yml")"
+        done < <(_effective_repo_mounts "$project_yml")
 
         # Extra mounts (same invariant as repos — resolved + existence
-        # asserted upstream, so we only need to expand ~ and emit).
+        # asserted upstream). The bridge emits abs_source<TAB>target<TAB>ro.
         local extra_mounts
-        extra_mounts=$(yml_get_extra_mounts "$project_yml")
+        extra_mounts=$(_effective_extra_mounts "$project_yml")
         if [[ -n "$extra_mounts" ]]; then
             echo "      # Extra mounts"
-            while IFS= read -r mount_line; do
-                [[ -z "$mount_line" ]] && continue
-                local source="${mount_line%%:*}"
-                local rest="${mount_line#*:}"
-                source=$(expand_path "$source")
-                echo "      - ${source}:${rest}"
+            local _ms _mt _mro _suffix
+            while IFS=$'\t' read -r _ms _mt _mro; do
+                [[ -z "$_ms" ]] && continue
+                _suffix=""
+                [[ "$_mro" == "true" ]] && _suffix=":ro"
+                echo "      - ${_ms}:${_mt}${_suffix}"
             done <<< "$extra_mounts"
         fi
 
@@ -699,11 +699,11 @@ _start_show_summary() {
 
     # Repos
     local _repos
-    _repos=$(yml_get_repos "$project_yml")
+    _repos=$(_effective_repo_mounts "$project_yml")
     if [[ -n "$_repos" ]]; then
         info "  Repos:"
-        while IFS=: read -r _rp _rn; do
-            [[ -z "$_rp" ]] && continue
+        while IFS=$'\t' read -r _rn _rp; do
+            [[ -z "$_rn" ]] && continue
             info "    - ${_rn} (${_rp})"
         done <<< "$_repos"
     fi
@@ -1001,11 +1001,11 @@ _proxy_collect_allowed_paths() {
     local project_yml="$1" mt_policy="$2"
     if [[ "$mt_policy" == "project_only" ]]; then
         local repos
-        repos=$(yml_get_repos "$project_yml")
+        repos=$(_effective_repo_mounts "$project_yml")
         [[ -z "$repos" ]] && { echo "[]"; return 0; }
-        while IFS=: read -r _p _n; do
+        while IFS=$'\t' read -r _n _p; do
             [[ -z "$_p" ]] && continue
-            expand_path "$_p"
+            printf '%s\n' "$_p"
         done <<< "$repos" | jq -R . | jq -s .
     else
         local mt_allow
@@ -1034,26 +1034,20 @@ _proxy_collect_pathmap() {
     # (post-_assert_resolved_paths so no @local remains; see same comment
     # in _proxy_collect_allowed_paths)
     local _repo_lines
-    _repo_lines=$(yml_get_repos "$project_yml")
+    _repo_lines=$(_effective_repo_mounts "$project_yml")
     if [[ -n "$_repo_lines" ]]; then
-        while IFS=: read -r _rp _rn; do
-            [[ -z "$_rp" ]] && continue
-            local _host_p
-            _host_p=$(expand_path "$_rp")
+        while IFS=$'\t' read -r _rn _host_p; do
+            [[ -z "$_rn" ]] && continue
             _pathmap_lines="${_pathmap_lines}/workspace/${_rn}"$'\t'"${_host_p}"$'\n'
         done <<< "$_repo_lines"
     fi
 
     # extra_mounts: container target → expanded host source
     local _extra_mounts
-    _extra_mounts=$(yml_get_extra_mounts "$project_yml" 2>/dev/null || true)
+    _extra_mounts=$(_effective_extra_mounts "$project_yml" 2>/dev/null || true)
     if [[ -n "$_extra_mounts" ]]; then
-        while IFS= read -r _em; do
-            [[ -z "$_em" ]] && continue
-            local _src="${_em%%:*}"
-            local _rest="${_em#*:}"
-            local _tgt="${_rest%%:*}"
-            _src=$(expand_path "$_src")
+        while IFS=$'\t' read -r _src _tgt _ro; do
+            [[ -z "$_src" ]] && continue
             _pathmap_lines="${_pathmap_lines}${_tgt}"$'\t'"${_src}"$'\n'
         done <<< "$_extra_mounts"
     fi

@@ -27,7 +27,7 @@ EOF
         local project_yml="$dir/project.yml"
         local repo_count="-"
         if [[ -f "$project_yml" ]]; then
-            repo_count=$(yml_get_repos "$project_yml" | grep -c . 2>/dev/null || echo "0")
+            repo_count=$(_effective_repo_mounts "$project_yml" | grep -c . 2>/dev/null || echo "0")
         fi
 
         local status="stopped"
@@ -82,16 +82,15 @@ EOF
     [[ -n "$description" ]] && echo "  $description"
     echo ""
 
-    # Repos
+    # Repos (schema-agnostic via the bridge: name<TAB>abs_path)
     echo -e "${BOLD}Repos:${NC}"
     local repos
-    repos=$(yml_get_repos "$project_yml")
+    repos=$(_effective_repo_mounts "$project_yml")
     if [[ -n "$repos" ]]; then
-        while IFS=: read -r repo_path repo_name; do
-            [[ -z "$repo_path" ]] && continue
-            local expanded
-            expanded=$(expand_path "$repo_path")
-            if [[ -d "$expanded" ]]; then
+        local repo_name repo_path
+        while IFS=$'\t' read -r repo_name repo_path; do
+            [[ -z "$repo_name" ]] && continue
+            if [[ -d "$repo_path" ]]; then
                 echo "  $repo_name ($repo_path)"
             else
                 echo -e "  $repo_name ($repo_path) ${YELLOW}[missing]${NC}"
@@ -196,17 +195,16 @@ EOF
         warn "Project '$name': .claude/ directory missing"
     fi
 
-    # Repos paths exist
+    # Repos paths exist (schema-agnostic via the bridge: name<TAB>abs_path)
     local repos
-    repos=$(yml_get_repos "$project_yml")
+    repos=$(_effective_repo_mounts "$project_yml")
     if [[ -z "$repos" ]]; then
         warn "Project '$name': no repos configured"
     else
-        while IFS=: read -r repo_path repo_name; do
-            [[ -z "$repo_path" ]] && continue
-            local expanded
-            expanded=$(expand_path "$repo_path")
-            if [[ ! -d "$expanded" ]]; then
+        local repo_name repo_path
+        while IFS=$'\t' read -r repo_name repo_path; do
+            [[ -z "$repo_name" ]] && continue
+            if [[ ! -d "$repo_path" ]]; then
                 error "Project '$name': repo path not found: $repo_path"
                 ((errors++))
             fi
@@ -358,20 +356,32 @@ EOF
         return 0
     fi
 
-    # --repo / --mount: direct set mode
+    # --repo / --mount: direct set mode. Schema-bridged: legacy projects keep
+    # writing local-paths.yml + project.yml; new-schema projects write the index.
     if [[ ${#repo_args[@]} -gt 0 || ${#mount_args[@]} -gt 0 ]]; then
+        local _legacy_repos _legacy_mounts
+        _legacy_repos=$(yml_get_repos "$project_yml" 2>/dev/null)
+        _legacy_mounts=$(yml_get_extra_mounts "$project_yml" 2>/dev/null)
         for entry in ${repo_args[@]+"${repo_args[@]}"}; do
             local rname="${entry%%=*}"
             local rpath="${entry#*=}"
-            _local_paths_set "$local_paths" "repos" "$rname" "$rpath"
-            _update_yml_path "$project_yml" "repos" "name" "$rname" "path" "$rpath"
+            if [[ -n "$_legacy_repos" ]]; then
+                _local_paths_set "$local_paths" "repos" "$rname" "$rpath"
+                _update_yml_path "$project_yml" "repos" "name" "$rname" "path" "$rpath"
+            else
+                _index_set_path "$rname" "$(expand_path "$rpath")"
+            fi
             ok "Saved: $rname → $rpath"
         done
         for entry in ${mount_args[@]+"${mount_args[@]}"}; do
             local mtarget="${entry%%=*}"
             local mpath="${entry#*=}"
-            _local_paths_set "$local_paths" "extra_mounts" "$mtarget" "$mpath"
-            _update_yml_path "$project_yml" "extra_mounts" "target" "$mtarget" "source" "$mpath"
+            if [[ -n "$_legacy_mounts" ]]; then
+                _local_paths_set "$local_paths" "extra_mounts" "$mtarget" "$mpath"
+                _update_yml_path "$project_yml" "extra_mounts" "target" "$mtarget" "source" "$mpath"
+            else
+                _index_set_path "$mtarget" "$(expand_path "$mpath")"
+            fi
             ok "Saved: $mtarget → $mpath"
         done
         return 0
@@ -459,25 +469,36 @@ EOF
         return 0
     fi
 
-    # Prompt interactively for every unresolved entry.
-    local entry section path_field key_field url resolved rc
+    # Prompt interactively for every unresolved entry. Schema-bridged: legacy
+    # projects resolve via local-paths.yml + project.yml; new-schema projects
+    # resolve into the STATE index (no project.yml path write — AD3).
+    local entry section path_field key_field url resolved rc legacy
     for entry in ${unresolved_entries[@]+"${unresolved_entries[@]}"}; do
         IFS=$'\t' read -r section key <<< "$entry"
         url=""
         if [[ "$section" == "repos" ]]; then
-            path_field="path"
-            key_field="name"
-            url=$(_get_repo_url "$project_yml" "$key")
+            path_field="path"; key_field="name"
+            legacy=$(yml_get_repos "$project_yml" 2>/dev/null)
+            if [[ -n "$legacy" ]]; then
+                url=$(_get_repo_url "$project_yml" "$key")
+            else
+                url=$(yml_get_repo_coords "$project_yml" 2>/dev/null | awk -F'\t' -v n="$key" '$1==n{print $2; exit}')
+            fi
         else
-            path_field="source"
-            key_field="target"
+            path_field="source"; key_field="target"
+            legacy=$(yml_get_extra_mounts "$project_yml" 2>/dev/null)
         fi
         rc=0
-        resolved=$(_resolve_entry "$project_dir" "$section" "$key" "$url") || rc=$?
-        if [[ $rc -eq 0 && -n "$resolved" ]]; then
-            _update_yml_path "$project_yml" "$section" "$key_field" "$key" "$path_field" "$resolved"
-        elif [[ $rc -eq 2 ]]; then
-            return 0
+        if [[ -n "$legacy" ]]; then
+            resolved=$(_resolve_entry "$project_dir" "$section" "$key" "$url") || rc=$?
+            if [[ $rc -eq 0 && -n "$resolved" ]]; then
+                _update_yml_path "$project_yml" "$section" "$key_field" "$key" "$path_field" "$resolved"
+            elif [[ $rc -eq 2 ]]; then
+                return 0
+            fi
+        else
+            resolved=$(_resolve_entry_index "$project_dir" "$section" "$key" "$url") || rc=$?
+            [[ $rc -eq 2 ]] && return 0
         fi
     done
 }
