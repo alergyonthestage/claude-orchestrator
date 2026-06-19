@@ -103,6 +103,13 @@ aggressiveness follows the bucket's **sync-class + regenerability** (ADR-0016):
 here (the index is machine-local). Orphans are surfaced via the existing **reminder** mechanism
 (ADR-0008: nudge, never auto-act).
 
+> **Namespace REFINED by ADR-0023 D1 (2026-06-19; the contract above is kept as written):** this
+> orphan-sanitization job keeps the verb **`cco config validate [--dry-run|--fix]`** (global, id-keyed
+> internal state). The *share-readiness* validate (every referenced coordinate reachable + machine-
+> agnostic; ADR-0016 D9 / ADR-0019 D2 / ADR-0022 D4 pack-ERROR) is a **separate job on a separate scope**
+> and moves to **`cco project validate`** (ADR-0023 D2). The two `validate` verbs are intentional —
+> different scope, different question ("is my internal state clean?" vs "is this project share-ready?").
+
 ### 6. Defensive uniqueness (F12 dismissed)
 
 The legacy vault already enforces cross-resource name uniqueness at create

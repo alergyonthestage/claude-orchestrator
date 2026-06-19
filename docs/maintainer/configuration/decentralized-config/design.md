@@ -279,8 +279,8 @@ packs:                   # referenced by name + OPTIONAL coordinate (ADR-0019 D1
 The host repo is **not** written in the file — it is the invoking repo at runtime (AD6).
 **Absolute paths** for every `repos[]`/`extra_mounts[]` name come from the machine-local index (§3);
 the **url** coordinates persist here. Cross-unit coordinate consistency is enforced by CLI tooling
-(`cco repo/llms add`, `cco config coords --diff/--sync`), not by storage (ADR-0016 D3); an opt-in
-`cco config validate` pre-commit hook guards sharing integrity (ADR-0016 D9).
+(`cco project add repo/llms`, `cco project coords --diff/--sync`), not by storage (ADR-0016 D3); an
+opt-in `cco project validate` pre-commit hook guards sharing integrity (ADR-0016 D9 / ADR-0023 D2).
 
 **Coordinate field semantics (ADR-0017 D1).**
 - repo **`url` is OPTIONAL** — a persisted bootstrap pointer (the canonical clone source for other
@@ -308,7 +308,7 @@ pack** in `<repo>/.cco/packs/` (it *is* the source — P15); a `url`-present `<r
 `repos:` carry no local cache (a missing url for a shared project is surfaced by `validate`, never
 vendored), and llms content already lives in CACHE. **Reachability** (a shared project's referenced ids
 must have reachable coordinates) is surfaced by the layered `embed-at-add` / `heal-at-resolve` /
-`cco config validate` model — **never a hard block** (ADR-0019 D2 / P14). **Templates** are scaffold-time
+`cco project validate` model — **never a hard block** (ADR-0019 D2 / P14). **Templates** are scaffold-time
 only — **not** referenced here (ADR-0019 D7).
 
 **Invariant (ADR-0022 D4):** `<repo>/.cco/packs/X` is a **CACHE iff** its `packs:` entry carries a `url`,
@@ -316,7 +316,7 @@ an **authored-in-repo SOURCE iff** it does not. The discriminator is the manifes
 already reads — not a flag inside the pack files. **One deterministic resolver** implements this table
 (mount order for the cache case: `~/.cco/packs/X` → url-fetch → `<repo>/.cco/packs/X`):
 
-| entry has `url`? | `~/.cco/packs/X` | `<repo>/.cco/packs/X` | url-fetch | Resolved (mount) | `cco config validate` |
+| entry has `url`? | `~/.cco/packs/X` | `<repo>/.cco/packs/X` | url-fetch | Resolved (mount) | `cco project validate` |
 |---|---|---|---|---|---|
 | yes (cache) | present | — | — | `~/.cco/packs/X` (local working copy) | OK |
 | yes (cache) | absent | — | reachable | fetch `url` → `~/.cco/packs/X` | OK |
@@ -328,8 +328,8 @@ already reads — not a flag inside the pack files. **One deterministic resolver
 
 Only the bolded row is an **ERROR** (a no-coordinate authored pack shadowed by an unrelated same-name
 global pack, with nothing upstream to reconcile); every reachability gap and the cache-degrades case stay
-**WARN** (P14/P17). The ERROR is exit-code only inside `cco config validate`, never the git push path; the
-command's full contract is **Cluster 5**.
+**WARN** (P14/P17). The ERROR is exit-code only inside `cco project validate`, never the git push path; the
+command's full contract is **ADR-0023 D2** (share-readiness validate).
 
 ---
 
@@ -598,11 +598,12 @@ discovery. See ADR-0018/0019/0020.
 | Sync | `cco sync [target] [--from <src>] [--dry-run\|--auto-approve\|--check]` | NEW |
 | Paths/resolve | `cco resolve [project]` (resolve each unresolved repo/mount: specify local path · clone-from-`url` · skip), `cco resolve --all` (all projects), `cco resolve --scan <dir>` (auto-discover + **reconcile/upsert** index, non-destructive, AD5-conflict; no `--prune` in v1 — ADR-0022 D3; **absorbs** `cco index refresh`), `cco path set/list` (low-level index editor) — ADR-0017 D2 | NEW |
 | Discovery | `cco list [--tag <t>]`, `cco tag add/rm` (reads/writes the per-user `<data>/cco/tags.yml`, DATA bucket — ADR-0011/0015) | transform |
+| Project config / coordinates (cwd `<repo>/.cco`) | `cco project add repo\|mount\|llms\|pack <name> [--url --ref --variant --readonly] [--path]` (**embed-at-add**, P14 layer-a: coordinate → manifest **and** optional `--path` → index, in one call; `url` auto-derived from `origin` when `--path` is a clone — ADR-0023 D3; `add-pack` kept as alias of `add pack`), `cco project coords --diff [--sync --from <unit>]` (cross-unit coordinate consistency; `--sync` explicit-`--from`, never auto-elect — ADR-0016 D3 / ADR-0022 F48), `cco project validate [--all] [--reachable]` (**share-readiness**: every referenced id has a reachable coordinate + machine-agnostic + the pack-collision ERROR; cwd-first, exit 0/1/2, detect-only, never blocks — ADR-0023 D2) | NEW |
 | Authoring | Direct `~/.cco` edit (IDE or rehomed `config-editor` agent); cco only **scaffolds**: `cco pack create`, `cco template create` (ADR-0008/0010) | transform |
-| Global store | `cco config …` (manage `~/.cco`; versioning model = ADR-0008) + **`cco config validate [--dry-run\|--fix]`** (detect/report — and optionally prune, preview-first, confirmed — orphaned internal id-keyed state after manual deletion; warn-never-hide, never automatic; ADR-0021. STATE/CACHE freely rebuildable via `cco resolve --scan`; DATA pruned only on confirm) | NEW |
+| Global store (`~/.cco` + internal) | `cco config save [-m] / push / pull` (version + sync the personal `~/.cco` store; ADR-0008) + **`cco config validate [--dry-run\|--fix]`** (**orphan-sanitization** of global id-keyed internal state after manual deletion: detect/report, optionally prune preview-first/confirmed; warn-never-hide, never automatic; ADR-0021. STATE/CACHE freely rebuildable via `cco resolve --scan`; DATA pruned only on confirm). *Share-readiness* validate is `cco project validate` (below), **not** this verb — ADR-0023 D1 | transform |
 | Sharing (2×2, ADR-0018 D2) | **packs/templates**: `cco <res> publish\|install` (sharing repo) + `export\|import` (tar); **projects**: `cco project export\|import` only (no publish/install — ride the repo remote, P5/P13). `cco <res> internalize` cuts the coordinate. `cco remote …` manages sharing-repo endpoints. | transform |
 | Update | `cco update …` (framework→user; merge engine unchanged) + **`cco update --check`** (list resources with available updates — DATA `source`-driven, install-presence-gated, **3-state** *not-installed-here / comparable / indeterminate*; one greppable line/resource + summary, **exit 0 always**; advancement = same-ref `ls-remote` resolve; `--offline`/`--no-cache` reuse `cmd-update.sh` — ADR-0022 D6 / ADR-0018 D5) + `cco <res> update --dry-run` | transform |
-| Permissions (ADR-0020) | `cco config protect` (OPTIONAL — scaffold `<repo>/.cco/CODEOWNERS` + emit host ruleset instructions; enforcement delegated to git) | NEW (optional) |
+| Permissions (ADR-0020) | `cco config protect` (OPTIONAL — scaffold `<repo>/.cco/CODEOWNERS` + emit host ruleset instructions; enforcement delegated to git). **The single `cco config` verb scoped to `<repo>/.cco` rather than `~/.cco`** — documented exception (ADR-0023 D1); full contract = Group E / F27 | NEW (optional) |
 
 **`cco init` (incl. `cco init --migrate`) and `cco join` are mutually exclusive** entry points
 for a repo: `cco init` = clean config; `cco init --migrate <old>` = bring a legacy vault
@@ -806,9 +807,10 @@ is in §11.
   **`cco update --check`** — DATA `source`-driven, install-presence-gated, 3-state, installed-commit from
   STATE `/update` (ADR-0022 D6). **Lifecycle (ADR-0021)**: `cco forget` (deregister id-keyed
   internal state, repo untouched); **delete-cascade** on `pack/template/llms remove` (tags.yml + DATA
-  source) and `remote remove` (DATA url + STATE token); **`cco config validate [--fix]`** (reachability
-  + orphan prune, preview-first, never automatic) — **WARN** for reachability gaps, **ERROR** for the one
-  same-name authored-vs-global pack collision (ADR-0022 D4; full contract Cluster 5). **`cco config protect`** (optional CODEOWNERS
+  source) and `remote remove` (DATA url + STATE token); **`cco project validate`** (share-readiness:
+  **WARN** for reachability gaps, **ERROR** for the one same-name authored-vs-global pack collision —
+  ADR-0022 D4; full contract ADR-0023 D2) **+ `cco config validate [--fix]`** (orphan prune, preview-first,
+  never automatic — ADR-0021 §5). **`cco config protect`** (optional CODEOWNERS
   scaffold; ADR-0020). **S8 no-token-leak checklist** — M3 done in Phase 0, so the de-tokenized
   registry the invariant needs is already in place.
 
@@ -884,7 +886,7 @@ categorized disposition immediately below the table.
 | 2 (migration) | `test_migrate.sh` (`cco init --migrate` lazy per-project from backup; backup-verified-before-read, M8; **raw-tar backup captures all profiles' secrets** — active in working tree + inactive in `profile-state/<branch>/` shadows, F1/F9; **memory relocation backup→`<state>/cco/projects/<id>/memory/`** + **re-run non-clobber**, F11/ADR-0009; **profile→tag prompt** both branches, ADR-0010; **interrupted-migrate atomicity** — partial `.cco/` cleaned, re-run safe, F44; **defensive name-uniqueness assert**, F12; **complete-final-`project.yml`-in-one-pass** — repos+llms+**packs** coordinates written together, pack backfill from DATA `source`, **no second schema-migration**, F37); first-run bootstrap (per-root idempotent) + `<state>/cco/migration-state` marker idempotency (F43) | `test_init.sh`; `test_update.sh` (H6 paths + `--check`) | — |
 | 3 (legacy cutover) | multi-project coexistence; truthful-diff (no sanitize) tests; `test_config.sh` (Domain A: allowlist staging never `git add -A`, **secret-scan `.example` exemption** — skeleton passes, real `secrets.env` blocked); **memory-as-STATE** (ADR-0009: `memory/` in STATE persists across starts, no auto-commit, no `.gitkeep`); **tag wiring** (ADR-0011/0015: `cco tag add/rm` + `cco list --tag` over the DATA `tags.yml`, tags NOT in `pack.yml`/`project.yml`/manifest/index) | `test_vault.sh` (shrink to migrate-reader) | `test_vault_profiles.sh`; `test_project_create.sh`; custom-diff/sanitize tests; **D33 memory auto-commit / D32 `.gitkeep` tests** |
 | 4 (sharing core) | **sync-before-publish no-clobber** (co-maintainer divergence → pull + 3-way merge against the **pack-scoped STATE `base/`**; first-publish init/add vs subsequent merge, abort-on-conflict; corrects the clone-then-overwrite `cmd-pack.sh:1024`; ADR-0022 D5); **discovery-before-delete** ordering (structure-based discovery built before `lib/manifest.sh` delete; new `cco init` emits no manifest; F14); **structure-based discovery** (no `manifest.yml`; init-at-first-publish / merge-on-existing); **2×2 verbs** incl. **project-has-no-publish guard** (P5/P13); nomenclature ("config repo"→"sharing repo") | `test_pack_publish.sh`; `test_pack_install.sh`; `test_publish_install_sync.sh`; `test_project_install.sh`/`test_project_install_enhanced.sh`; `test_project_publish.sh`; `test_template.sh` | `test_manifest.sh` |
-| 5 (sharing ext + lifecycle) | **3-layer pack resolution** — resolver-table rows incl. **ERROR** on the same-name authored-vs-global collision, WARN on reachability/cache-degrade (ADR-0022 D4); **internalize-as-cache** prompt + `cco <res> internalize`; **`export --bundle-packs`** dependency-closure; **`cco update --check`** (DATA-driven, install-presence-gated **3-state**, installed-commit from STATE, exit-0; ADR-0022 D6); **llms CACHE re-fetch-on-url-mismatch** (F56); **`cco config validate [--fix]`** reachability + orphan prune (warn-never-hide, STATE/CACHE rebuildable, DATA confirm-only); **`cco forget`** + self-healing index via `cco resolve --scan`; **delete-cascade** (`pack/template/llms remove` → tags.yml + DATA source; `remote remove` → DATA url + STATE token); **S8 no-token-leak checklist**; **`cco config protect`** scaffold | `test_pack_cli.sh`; `test_pack_internalize.sh`; `test_packs.sh`; `test_project_pack.sh`; `test_llms.sh` | — |
+| 5 (sharing ext + lifecycle) | **3-layer pack resolution** — resolver-table rows incl. **ERROR** on the same-name authored-vs-global collision, WARN on reachability/cache-degrade (ADR-0022 D4); **internalize-as-cache** prompt + `cco <res> internalize`; **`export --bundle-packs`** dependency-closure; **`cco update --check`** (DATA-driven, install-presence-gated **3-state**, installed-commit from STATE, exit-0; ADR-0022 D6); **llms CACHE re-fetch-on-url-mismatch** (F56); **`cco project validate`** share-readiness (reachability WARN + pack-collision ERROR; ADR-0023 D2) + **`cco config validate [--fix]`** orphan prune (warn-never-hide, STATE/CACHE rebuildable, DATA confirm-only); **`cco forget`** + self-healing index via `cco resolve --scan`; **delete-cascade** (`pack/template/llms remove` → tags.yml + DATA source; `remote remove` → DATA url + STATE token); **S8 no-token-leak checklist**; **`cco config protect`** scaffold | `test_pack_cli.sh`; `test_pack_internalize.sh`; `test_packs.sh`; `test_project_pack.sh`; `test_llms.sh` | — |
 
 **Existing-suite teardown — categorized disposition (resolves the critic-HIGH gap).** The current
 suite is **35 `test_*.sh` files** auto-discovered + run by `bin/test:147`, all built on the shared

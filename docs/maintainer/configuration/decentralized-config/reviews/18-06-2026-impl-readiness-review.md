@@ -2088,9 +2088,39 @@ row + F48's `--from`) is owned by **Cluster 5** (F26/F46) — Cluster 4 pinned o
 Commits (local, `feat/vault/decentralized-config`): ADR-0022 + forward-annotations · design.md re-sync ·
 FR-Y-S6 · this log.
 
-## Cluster 5 — Command surface & UX — OPEN
+## Cluster 5 — Command surface & UX — IN PROGRESS
 
-`F13 F18 F19 F25 F26 F27 F34 F46 F47 F49 F50`. Owns the exact `cco config validate` contract (F26,
-referenced by ADR-0021 + ADR-0022 D4), the `cco config` namespace coherence (F46), coordinate-add verbs
-`cco repo/llms add` (F19), `cco new` (F18), template sharing symmetry (F47), `internalize` semantics
-clash (F13). **Next = Cluster 5.**
+`F13 F18 F19 F25 F26 F27 F34 F46 F47 F49 F50`, resolved in 5 groups (A namespace · B resolution-UX ·
+C sharing-surface · D entry-points/schema · E permissions). Method = the Cluster 1–4 loop (recap →
+maintainer decision → code-grounded persist → atomic commit; no phase renumber).
+
+### Group A — `cco config`/`cco project` namespace, validate contract, add verbs — RESOLVED & PERSISTED (2026-06-19)
+
+Findings `F46 F26 F19` (+ a maintainer UX note on add-with-path). **3 maintainer-confirmed forks:**
+- **F46 — Option A *refined*** (namespace): `cco config` = personal `~/.cco` store **+ global
+  orphan-sanitization** `cco config validate [--fix]`; `cco project` = the cwd `<repo>/.cco`. The crux:
+  `validate` is split **by job** — orphan-sanitization stays `cco config validate` (ADR-0021 §5),
+  *share-readiness* becomes **`cco project validate`**. This resolves F46 + F26-scope + **F53** (one home
+  per predicate-set) and reconciles the Cluster-4 carry-in (its "one contract" = the share-readiness set,
+  now under `cco project validate`; orphan was always a separate scope). `cco config protect` kept as the
+  single documented exception. `cco config coords` → `cco project coords`.
+- **F26 — Option A** (validate contract): `cco project validate [project] [--all] [--reachable]`,
+  cwd-first, exit `0/1/2` highest-wins, one-line-per-id output, anchored-ERE machine-agnostic detection,
+  presence-only default + `--reachable` opt-in probe, docs-only pre-commit hook (no installer v1), non-TTY
+  heal no-op; **detect-only** (backfill via `cco resolve`); carries ADR-0022 D4's pack-ERROR row.
+- **F19 — Shape A + note Option 1** (add verbs): `cco project add repo|mount|llms|pack <name>
+  [coordinate] [--path]` — embed-at-add (coordinate → manifest) **and** optional `--path` → index in one
+  call; `url` auto-derived from `git remote get-url origin` when `--path` is a clone (ADR-0017 D1; reuses
+  `_sanitize_project_paths` origin logic). No new top-level `cco repo` namespace; `add-pack` → `add pack`
+  alias. The path-inline + verify-sanitize alternative was **rejected** (re-adds the removed sanitize step
+  + a path-leak window; AD3/G8) — `cco project validate` detects a hand-edited path but never strips it.
+
+**Persisted: new ADR-0023** (D1 namespace / D2 validate / D3 add-verbs; D4+ reserved for Groups B–E).
+**Living-doc re-sync:** `design.md` §7 (config row enumerated + new project-config/coordinates row +
+protect annotated), §2.4 (tooling verbs renamed + pack-ERROR pointer → ADR-0023 D2). **Forward-
+annotations** (decision text verbatim, per `documentation-lifecycle`): ADR-0016 D3/D9, ADR-0019 D2,
+ADR-0021 §5.
+
+**Groups B–E OPEN.** Code-grounded before asserting: `cco repo/path/config` are net-new arms (`bin/cco`);
+`cco project resolve --repo <name> <path>` index-writer already exists (`cmd-project-query.sh:259`);
+`cco llms install` already embeds (`_llms_add_to_yaml`). **Next = Group B (F49/F50).**

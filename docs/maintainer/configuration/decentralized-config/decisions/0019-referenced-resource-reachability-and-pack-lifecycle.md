@@ -84,6 +84,12 @@ referenced by a **team-shared** project must have a reachable coordinate (or a b
 hand-edit that bypasses the CLI is surfaced. This subsumes the earlier "repo-URL" (P-URL) question and
 the "never-published pack" hole into **one** mechanism.
 
+> **Layer verbs RESOLVED by ADR-0023 D1/D2/D3 (2026-06-19; the layer table above is kept as written):**
+> layer **a** (embed-at-add) is **`cco project add repo|mount|llms|pack`** (one home under `cco project`,
+> with a one-shot `--path` that also writes the index — ADR-0023 D3), not a separate `cco repo`/`cco llms
+> add` namespace; layer **c** (the share-readiness check) is **`cco project validate`** (full I/O
+> contract ADR-0023 D2), distinct from the orphan-sanitization `cco config validate` (ADR-0021 §5).
+
 ### D3 — A shared resource's local copy is never its source (internalize = cache only) — see P15
 
 Because packs are intrinsically DRY (P15), the discriminator across pack locations is the **presence

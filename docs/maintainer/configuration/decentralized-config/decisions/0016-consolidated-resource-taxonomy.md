@@ -141,6 +141,12 @@ invariant — and crucially this introduces **no** global source of truth:
 >   (ADR-0017 D2); `--diff` stays read-only. This is a one-shot user-directed bulk edit — no persisted authority,
 >   so P12's "no global source of truth" holds. (The command's full UX surface is **Cluster 5**.)
 
+> **Command surface RESOLVED by ADR-0023 D1/D3 (2026-06-19; the bullets above are kept as written):** the
+> coordinate-add verbs are **`cco project add repo/llms`** (embed-at-add under one `cco project` home,
+> with a one-shot `--path` — ADR-0023 D3), not a separate `cco repo`/`cco llms add` namespace; and the
+> consistency tooling `cco config coords --diff/--sync` is relocated to **`cco project coords`**
+> (project-scoped, ADR-0023 D1). The illustrative naming above was deferred to S/E and is refined, not reversed.
+
 ### D4 — STATE **index** subsumes `@local` + per-repo `local-paths.yml` (byte-level; resolves the flagged ambiguity)
 
 There is **one** unified, machine-local **STATE index** `<state>/cco/index` — **not** a per-project file. It is
@@ -311,6 +317,12 @@ broken for recipients. The **validity contract** (recorded here; mechanism → S
 `repos:`/`llms:` id has its coordinate; ids are unique within their section; the config is **machine-agnostic**
 (no real paths → truthful `git diff`, G8). Surfaced as `cco config validate` (exit-code only, invocable from the
 user's own git hook / CI — cf. `cco sync --check`); never blocks by default (ADR-0008 reminder philosophy).
+
+> **Surfaced verb RESOLVED by ADR-0023 D2 (2026-06-19; the validity contract above is kept as written):**
+> the share-readiness check is **`cco project validate`** (cwd-first; exit 0/1/2; presence-only by default
+> + `--reachable` opt-in network probe; docs-only pre-commit snippet, no installer in v1; non-TTY no-op),
+> **not** `cco config validate` (which ADR-0023 D1 keeps for orphan-sanitization, ADR-0021 §5). Full I/O
+> contract: ADR-0023 D2.
 
 ---
 
