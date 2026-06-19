@@ -113,6 +113,12 @@ The expensive datum (downloaded content) stays **globally deduplicated per machi
 is a user-level naming choice and low-stakes since content is re-fetchable; cache-state records `resolved_url`
 to disambiguate — byte-level note, not a blocker.)
 
+> **Deferred note RESOLVED by ADR-0022 (F56, 2026-06-19; the row/note above is kept as written):** on every
+> llms resolve, if the cached `resolved_url` ≠ the requesting unit's url → **re-fetch and overwrite**
+> (last-writer per machine, one-line notice); if equal → reuse with no network. Layout stays name-keyed; a
+> unit never silently runs with a foreign url's content. Cross-unit divergence is surfaced by
+> `cco config coords --diff`/`cco config validate`, not encoded into storage.
+
 ### D3 — Consistency is enforced by tooling, not by storage (maintainer consideration 2)
 
 Because storage is decentralized, cross-unit coordinate consistency is a **CLI** concern, **not** a storage
@@ -124,6 +130,16 @@ invariant — and crucially this introduces **no** global source of truth:
 - Command surface (mechanism owned by **S/E**): `cco repo add <name>` / `cco llms add <name>` auto-resolves the
   `url` from a known id; `cco config coords --diff` lists units that disagree on the same id; `--sync`/
   `--sanitize` apply a coordinate globally across units. "Coherence by tooling, not by storage."
+
+> **Deferred items RESOLVED by ADR-0022 (2026-06-19; the bullets above are kept as written):**
+> - **F45 — coords-lookup is on-demand only for v1.** It is computed by a deterministic scan of the known
+>   manifests every time, with **no persisted artifact** (the `<cache>/cco/coords-lookup` file is dropped — see
+>   D7 annotation). Persisted caching is recorded as a future optimization. (Removes all invalidation/staleness
+>   logic; a never-persisted value cannot drift.)
+> - **F48 — `cco config coords --sync`/`--sanitize` never auto-elect a winner.** When units disagree the user
+>   names the authoritative coordinate via `--from <unit>` (or an interactive pick), mirroring `cco sync --from`
+>   (ADR-0017 D2); `--diff` stays read-only. This is a one-shot user-directed bulk edit — no persisted authority,
+>   so P12's "no global source of truth" holds. (The command's full UX surface is **Cluster 5**.)
 
 ### D4 — STATE **index** subsumes `@local` + per-repo `local-paths.yml` (byte-level; resolves the flagged ambiguity)
 
@@ -146,6 +162,14 @@ projects:                    # subsumes the old registry — membership only, NO
 Uniqueness invariant (AD5): one logical name → one absolute path per machine; this also serves the shared-repo
 case (a repo used by two projects = one `paths:` entry). Concurrency/atomicity and the global-vs-namespaced
 name question (H7) are impl-time (**E**); M fixes the byte-level shape and the subsumption.
+
+> **H7 RESOLVED by ADR-0022 D2 (F17, 2026-06-19; the text above is kept as written):** the **global-flat**
+> model is **ratified for v1** — the AD5 uniqueness invariant and the shared-repo-one-entry rule above are the
+> v1 schema; per-project **namespacing is reserved post-v1** (it would require revising AD5 + the join
+> semantics). The "global-vs-namespaced … is impl-time (E)" framing is therefore **superseded**: it was a
+> schema/invariant question, not an impl detail. What remains for E is **pure mechanism**: atomic write =
+> `mktemp` + `mv` (the existing `local-paths.sh` convention), single-writer, **no file lock** in v1 (writes are
+> user-serial; a rare race is last-writer-wins and self-heals via the idempotent `cco resolve --scan`).
 
 ### D5 — DATA byte-level layout (resolves ADR-0015 D5)
 
@@ -187,6 +211,15 @@ name question (H7) are impl-time (**E**); M fixes the byte-level shape and the s
 **never-team**) is **distinct** from the D2 **coordinate** (referenced-resource locators, **team-shared →
 config in the manifest**). Same `name→url` shape, opposite Axis-2 → opposite bucket.
 
+> **`source` schema + migration SPECIFIED by ADR-0022 D1 (F4, 2026-06-19; the layout above is kept as
+> written):** the relocation from the config-bucket `<repo|pack>/.cco/source` to the DATA path above is a
+> **cross-bucket relocation + field rename + reader rewrite** (not "Reuse"): `source:`→`url:`, `path:`→
+> `resource:`, `ref:` kept. The machine-local bookkeeping (`commit`/`installed`/`updated`/`version`) moves to
+> **STATE `/update` meta** (keyed by identity), so the DATA `source` is a **pure upstream coordinate** —
+> confirming "no machine-specific leak". The machine-local `publish_target` is **dropped and re-derived on
+> demand** (reverse-lookup of `url` in the DATA `remotes` registry). llms `source` is **not** relocated (D2/D7
+> split it). The P2 migration writes the complete final form in one pass.
+
 ### D6 — STATE internal layout, partitioned by sync-eligibility (ADR-0013 D2; H6)
 
 ```
@@ -216,7 +249,7 @@ state bases** — the `cco update` merge *logic* is unchanged, its *paths* are r
   llms/<name>/                         # llms CONTENT download + cache-state (etag, resolved_url, downloaded)
   installed/                           # Config-Repo clones for install/update
   remote_cache                         # remote HEAD + ts (avoids network on update checks)
-  coords-lookup                        # D3 — derived name→url lookup (advisory; scan-regenerable)
+  coords-lookup                        # D3 — derived name→url lookup (advisory; scan-regenerable) [v1: NOT persisted — see below]
   projects/<id>/
     .claude/                           # generated overlays (packs.md, workspace.yml) → :ro into /workspace/.claude (F1)
     managed/                           # generated browser.json / github.json / policy.json → :ro overlay (H5)
@@ -227,6 +260,11 @@ state bases** — the `cco update` merge *logic* is unchanged, its *paths* are r
 (D8); the framework-**generated** `.cco/managed/` (browser/github/policy JSON) follows F1 → **CACHE**, overlaid
 `:ro` like `packs.md` (today it is generated into `<repo>/.cco/managed/` by `cmd-start.sh` — relocate). **C2
 resolution:** only llms **content** → CACHE; the llms **coordinate** → the manifest (D2).
+
+> **`coords-lookup` REFINED by ADR-0022 D-set (F45, 2026-06-19; the layout above is kept as written):** for v1
+> `coords-lookup` is **computed on demand, never persisted** — the standalone CACHE file is **not created**.
+> The line is retained above only to document where a future persisted cache would live if a measured need
+> appears. (Eliminates invalidation/staleness handling entirely.)
 
 ### D8 — The two CONFIG buckets, exhaustive (fixes C3/C4)
 

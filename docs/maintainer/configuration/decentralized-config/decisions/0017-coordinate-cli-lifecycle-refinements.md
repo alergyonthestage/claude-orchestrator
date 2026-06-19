@@ -81,6 +81,13 @@ replacing the M-era split (`cco resolve` + `cco index refresh --scan`):
   warning). This differs from the silent-empty-mount bug #B17/#B18 forbade: here the skip is a
   **conscious user choice**, surfaced — not a silent `continue`.
 
+> **`--scan` semantics SPECIFIED by ADR-0022 D3 (F38, 2026-06-19; the text above is kept as written):**
+> `--scan` is an **upsert / reconcile**, **not** a wholesale rebuild — read "(re)build" as "reconcile". It
+> upserts each discovered `name→path` + `repos[]`, **never deletes** out-of-`<dir>` mappings or `cco path set`
+> overrides, and on a name-already-bound-to-a-different-path conflict applies **AD5**: warn + keep-existing
+> (optionally prompt), never silent overwrite. Bootstrap (empty index) is the trivial degenerate case. No
+> `--prune` in v1 (stale-entry GC reserved as a future enabler — would re-add surface this D2 is shrinking).
+
 ### D3 — First-run lifecycle (J0): any command bootstraps all 4 buckets
 
 The first-run global bootstrap (journey J0, design §8) is refined for the 4-bucket model:

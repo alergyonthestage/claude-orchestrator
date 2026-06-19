@@ -140,6 +140,16 @@ the S asymmetry analysis):
 Reuses the R3 shared-surface machinery (`source` provenance, `remote_cache`, 3-way `base/` merge —
 ADR-0013 D7); no new transport.
 
+> **`--check` contract SPECIFIED by ADR-0022 D6 (F40, 2026-06-19; the text above is kept as written):** after
+> the ADR-0016 bucket split, `source` (DATA), the installed baseline (STATE), and `remote_cache` (CACHE) are no
+> longer co-located, so "reuse R3 machinery" is made true by **gating, not co-location**. Iterate the **DATA
+> `source`** set; per resource report **3 states** — *not installed here* (DATA source present, no STATE
+> install/base → advisory, exit 0; the freshly-synced-second-PC case), *comparable*, *indeterminate*. The
+> installed-commit baseline moves to **STATE `/update` meta** (the ADR-0022 D1 relocation). Advancement =
+> resolve the **same ref `source` pins** via `ls-remote` (immutable tag never advances; moving branch does).
+> Output = one greppable line per resource + summary, **exit 0 always**; `--offline`/`--no-cache` reuse the
+> `cmd-update.sh` conventions. Scope stays packs/templates **and** projects (ADR-0018 D5 wording kept).
+
 ### D6 — Solo-adopter: A+B in v1; Case C post-v1 with reserved hooks
 
 For a user adopting cco alone inside a team's shared code repo:
@@ -156,6 +166,13 @@ For a user adopting cco alone inside a team's shared code repo:
   (`<repo>/.cco` → `~/.cco/projects/<name>`). ADR-0019's pack model (project-scoped authored packs +
   by-url references) **reduces the need** for C (the common "I want my packs with my project" case is
   handled without it), which is why C can be deferred with confidence.
+
+> **"Reserved hooks" REFRAMED by ADR-0022 (F41, 2026-06-19; the text above is kept as written):** the index is
+> machine-local, scan-rebuildable, never-synced **STATE**, so any future per-project field such as `config_path`
+> is an **additive, non-breaking** change by construction — **nothing is reserved or built in v1** (no
+> `config_path` slot, no `cco start` precedence code). The `<repo>/.cco` → `~/.cco/projects/<name>` precedence
+> is explicitly **post-v1**. `config_path` is still named here as the *intended* future mechanism (breadcrumb),
+> just labelled additive-by-construction rather than a carved-out slot.
 
 ---
 

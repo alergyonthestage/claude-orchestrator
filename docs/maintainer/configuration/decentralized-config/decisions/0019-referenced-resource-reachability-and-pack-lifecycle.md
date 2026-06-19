@@ -104,6 +104,13 @@ with live-source-first resolution (D5). `cco pack internalize` (already in the c
 act of cutting the coordinate to make a pack self-contained — distinct from, and the opposite of, the
 implicit cache.
 
+> **Discriminator SHARPENED by ADR-0022 D4 (F29, 2026-06-19; the text above is kept as written):** the
+> source-vs-cache discriminator is the **coordinate in the referencing `project.yml` `packs:` entry** (the
+> data the resolver already reads) — **not** a flag inside the pack files. Invariant: `<repo>/.cco/packs/X` is a
+> **CACHE iff** its entry carries a `url`, an **authored-in-repo SOURCE iff** it does not. A single
+> **worked-example resolution table** (design.md §2.4) enumerates every layer combination with the resolved
+> winner, so E codes **one** deterministic resolver, not ad-hoc branches.
+
 ### D4 — Source-of-truth = working-copy / git-clone model; **sync-before-publish** (see P16)
 
 - A pack authored in `~/.cco/packs/X` is the source **until first published**. On `cco pack publish` →
@@ -115,6 +122,15 @@ implicit cache.
   current code does a **fast-forward push** that can silently clobber a co-maintainer's changes
   (`lib/cmd-pack.sh` publish path) — a **defect to fix** (→ E). Reuses the `cco project update` 3-way
   `base/` merge (R3, ADR-0013 D7).
+
+> **Publish-path CONSOLIDATED + corrected by ADR-0022 D5 (F16, 2026-06-19; the text above is kept as
+> written):** the defect is a **clone-then-overwrite** (clone HEAD → `rm -rf packs/<name>` → `cp -R` → push),
+> which discards remote-only changes — not a literal "fast-forward push"; the wording is corrected accordingly.
+> Packs have **no `base/`** today (`base/` was project-update-only). ADR-0022 D5 introduces a **pack-scoped
+> `base/` in STATE keyed by identity** (`<STATE>/cco/update/packs/<name>/base/`, never-sync — ADR-0013 D2),
+> populated on install **and** publish: **first publish** = init/add (push if FF; divergence → merge path,
+> never blind-overwrite); **subsequent** = 3-way merge (base = last-published, ours = local, theirs = remote
+> HEAD), abort on conflict. The full sequence lives in design.md §6.2.
 - `cco pack internalize` / `cco project internalize` (the latter is net-new, → E) cut the coordinate →
   the resource becomes a self-contained local source (stops receiving updates).
 
@@ -134,6 +150,14 @@ it never shadows a reachable source, so a maintainer's update propagates to ever
 only an access-less consumer sees the frozen cache. **Name collision** (a pack name present both as a
 global `~/.cco/packs/X` and as an authored `<repo>/.cco/packs/X`): `cco config validate` flags it; at
 mount the local working copy (`~/.cco/packs/X`) wins per the order above.
+
+> **Collision severity SET by ADR-0022 D4 (F29, 2026-06-19; the text above is kept as written):** the specific
+> collision in this paragraph — a **no-coordinate authored-in-repo** `<repo>/.cco/packs/X` that **also** exists
+> as `~/.cco/packs/X` — escalates from WARN to **ERROR** in `cco config validate` (exit non-zero), because
+> mount-precedence then silently runs a **different, unrelated** pack than the one the project committed (a
+> silent-wrong-build with nothing upstream to reconcile). All reachability gaps and the cache-degrades-
+> gracefully case stay **WARN** (P14/P17 intact). validate remains advisory tooling, never the git push path;
+> its full contract is **Cluster 5 / F26**.
 
 ### D6 — Internalize-as-cache: explicit, opt-in, last-layer (and the sole exception)
 
