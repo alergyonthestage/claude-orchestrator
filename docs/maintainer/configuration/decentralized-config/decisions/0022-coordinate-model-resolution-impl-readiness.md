@@ -66,6 +66,17 @@ Decided (review F4 — Option A):
    (the bare-URL / `native:` / `local` branches become the legacy trigger). It writes the **complete
    final** form in one pass (no double schema-migration — coherent with Cluster 2).
 
+> **Forward-annotation (2026-06-19) — D1 build-phase refined P0/P2 → P4 (decision unchanged).** The D1
+> *decision* (source→DATA, field rename, `commit`/`version`→STATE meta, `publish_target` re-derived)
+> stands verbatim. Its **build phase** is re-sequenced: the relocation + rename + field-drop is built in
+> **Phase 4** (sharing core), **not** P0 and **not** the P2 migration. Reason (code-grounded): the
+> read/write sites are the sharing/update commands whose ~100 hardcoded `.cco/source` test assertions are
+> rewritten in P4–P5, so relocating earlier breaks delta-green against tests not yet due for rewrite.
+> Consequently **point 6 is refined**: the P2 migration does **not** relocate `source`; P2 reads the
+> installed pack's provenance **in place** for the project.yml `url` backfill, and Phase 4 owns the full
+> relocation **including migrating any existing old-location `source` into DATA**. See `design.md`
+> §9 (P0 note, P2, P4) + §11. (Maintainer-confirmed re-sequence, Option B.)
+
 ### D2 — Index: ratify the global-flat model for v1; pin the write mechanism (H7)
 
 ADR-0016 D4 and `design.md` §3 already assert a single machine-global `paths:` map with the **AD5

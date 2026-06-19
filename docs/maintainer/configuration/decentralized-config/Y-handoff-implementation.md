@@ -63,8 +63,10 @@ Each phase consumes the one before it; nothing in an earlier phase is touched ag
     though pack *behavior* lands in P4/P5.
   - **DATA/STATE registries, final form**: `tags.yml` (DATA); **remotes split** `<data>/cco/remotes`
     (name→url) + `<state>/cco/remotes-token` (0600) — **M3**, `cmd-remote.sh` rewritten once (5 callers
-    consume the public helpers, unaffected — F6); `source` provenance → `<data>/cco/{packs,projects,
-    templates}/<id>/source` with `url:`/`ref:`/`resource:`; `publish_target` re-derived on demand (F4).
+    consume the public helpers, unaffected — F6). *(The **`source` provenance → DATA + `publish_target`
+    re-derivation (F4)** is **re-sequenced to P4**, not built here — confirmed Option B, 2026-06-19; its
+    test surface is the sharing tests rewritten in P4–P5, and nothing in P0–P3 needs `source` in DATA.
+    See `design.md` §9 P0 note / P4 and ADR-0022 D1 forward-annotation.)*
   - **Merge-engine artifact paths (H6)**: `.cco/base/` + `.cco/meta` → STATE `/update` (relocate paths
     only; merge *logic* unchanged) — reused by both `cco update` and the P4 sync-before-publish.
   - **Compose generation, final mount map (BL3)**: per-mount bucket destinations; host-absolute mount
@@ -98,7 +100,12 @@ Each phase consumes the one before it; nothing in an earlier phase is touched ag
   publish-path (§6.2 / ADR-0022 D5): pull + 3-way merge against the **pack-scoped STATE `base/`** (reusing
   the P0-relocated merge engine), never clobber a co-maintainer (P16). **2×2 verb wiring**
   (publish/install + export/import; projects-don't-publish guard, P13). **Nomenclature migration**
-  ("config repo"→"sharing repo").
+  ("config repo"→"sharing repo"). **`source` provenance → DATA (re-sequenced here from P0; ADR-0022 D1)**:
+  relocate `<repo|pack>/.cco/source` → `<data>/cco/{projects,packs,templates}/<id>/source`, rename
+  `source:`→`url:` / `path:`→`resource:` (`ref:` kept), move `commit`/`version`→STATE `/update` meta,
+  **drop `publish_target`** (re-derive via `remotes` reverse-lookup, F4); all read/write sites flip
+  together with their tests + a relocation step migrates existing old-location `source`. llms `source`
+  excluded (already CACHE/coordinate-split).
 - **P5 — Sharing extensions & lifecycle**: **three-layer pack resolution** (one deterministic resolver
   from the §2.4 table, cache-iff-coordinate ADR-0022 D4); **internalize** (pack/template cut-url + `--as`
   fork — ADR-0023 D4) + internalize-as-cache prompt + `export --bundle-packs`; **`cco update --check`**

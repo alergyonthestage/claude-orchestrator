@@ -25,13 +25,14 @@ flowchart LR
   subgraph done["✅ done (this session)"]
     T1["T1 resolver+H4+L5"] --> T2a["T2a index API"] --> T3["T3 coord parsers"] --> T4r["T4 remotes split M3"]
   end
-  subgraph next["▶ remaining P0 (independent first)"]
-    T4s["T4-source provenance→DATA"] --> T5["T5 merge-engine paths→STATE (H6)"]
+  subgraph next["▶ remaining P0 (T5 first — independent)"]
+    T5["T5 merge-engine paths→STATE (H6)"]
     T5 --> CA["Commit A — repos/mount schema cutover<br/>resolution+mount-gen+harness together"]
     CA --> CB["Commit B — bucket re-point GLOBAL_DIR→~/.cco + harness HOME"]
     CB --> T8["T8 CACHE overlays (F1/F2/F3)"]
   end
-  T4r --> T4s
+  T4r --> T5
+  T8 -. "T4-source RE-SEQUENCED → P4" .-> P4["P4 sharing: source→DATA + F4"]
 ```
 
 ## 2. Decisions LOCKED this session (do not re-litigate)
@@ -49,13 +50,18 @@ flowchart LR
 
 ## 3. Remaining P0 — detailed scope
 
-**Do the two independent items first (lower risk, bank green commits), then the big cutover.**
+**Start with T5 (independent, bank a green commit), then the big cutover (Commit A → B), then T8.**
 
-- **T4-source** (independent commit): relocate resource provenance from `<resource>/.cco/source` to DATA
-  `<data>/cco/{packs,projects,templates}/<id>/source` with **renamed keys** `url:`/`ref:`/`resource:`
-  (was `source:`/`path:`); move `commit`/`installed-commit`/`version` to STATE `/update` meta;
-  **drop `publish_target`** — re-derive on demand by reverse-looking-up `url` in the `remotes` registry
-  (F4). Consumers: `update*.sh`, `cmd-pack.sh`, `cmd-project-{install,update,publish}.sh`. ADR-0022 D1.
+- **T4-source — RE-SEQUENCED to P4 (maintainer-confirmed 2026-06-19, Option B).** The `source`→DATA
+  relocation + key-rename (`url`/`ref`/`resource`) + `commit`/`version`→STATE-meta + `publish_target`
+  re-derivation (F4, ADR-0022 D1) is **no longer a P0 item**. Code-grounded reason: its read/write sites
+  are the sharing/update commands whose **~100 hardcoded `.cco/source` test assertions**
+  (`test_publish_install_sync` 53, `test_pack_internalize` 16, `test_pack_install` 13,
+  `test_pack_publish`/`test_project_publish` 5 each) are rewritten in **P4–P5**; relocating in P0 would
+  add ~100 new failures, breaking delta-green. Nothing in P0–P3 needs `source` in DATA — the P2 pack-`url`
+  backfill reads provenance **in place**. Persisted: `design.md` §9 (P0 note, P2, P4) + §11; ADR-0022 D1
+  forward-annotated (decision unchanged, build phase P0/P2→P4). The handoff's original T4-source
+  caller-map omitted the test files (the §5 trap) — recon caught it before any code was written.
 - **T4-tags**: **DEFERRED to P3** — the DATA `tags.yml` registry has no consumer until `cco tag add/rm` +
   `cco list --tag` are wired (P3). Nothing to build in P0.
 - **T5** (independent commit): relocate merge-engine artifacts `.cco/base/` + `.cco/meta` → STATE
@@ -130,7 +136,8 @@ existing-suite teardown). 4. ADRs **0007/0015/0016** (buckets/taxonomy), **0022*
 
 ## 8. Start here
 
-Next free ADR = **0024** (none needed for T4-source/T5/Commit-A/B unless a new decision surfaces). Begin
-with **T4-source** (or **T5** — both independent), keep the suite delta-green, commit atomically. Then the
-coordinated **Commit A** (repos/mount/harness) and **Commit B** (buckets), then **T8**. Pause and discuss
-if a real design gap surfaces; otherwise the ADRs/design are the spec.
+Next free ADR = **0024** (none needed for T5/Commit-A/B unless a new decision surfaces). Begin with
+**T5** (merge-engine paths→STATE, H6 — independent, low test surface), keep the suite delta-green, commit
+atomically. Then the coordinated **Commit A** (repos/mount/harness) and **Commit B** (buckets), then
+**T8**. **T4-source is re-sequenced to P4** (§3 — confirmed Option B). Pause and discuss if a real design
+gap surfaces; otherwise the ADRs/design are the spec.
