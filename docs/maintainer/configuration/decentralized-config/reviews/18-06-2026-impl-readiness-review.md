@@ -2121,6 +2121,22 @@ protect annotated), §2.4 (tooling verbs renamed + pack-ERROR pointer → ADR-00
 annotations** (decision text verbatim, per `documentation-lifecycle`): ADR-0016 D3/D9, ADR-0019 D2,
 ADR-0021 §5.
 
-**Groups B–E OPEN.** Code-grounded before asserting: `cco repo/path/config` are net-new arms (`bin/cco`);
+Code-grounded before asserting: `cco repo/path/config` are net-new arms (`bin/cco`);
 `cco project resolve --repo <name> <path>` index-writer already exists (`cmd-project-query.sh:259`);
-`cco llms install` already embeds (`_llms_add_to_yaml`). **Next = Group B (F49/F50).**
+`cco llms install` already embeds (`_llms_add_to_yaml`).
+
+### Group B — resolution & discovery UX — RESOLVED & PERSISTED (2026-06-19)
+
+Findings `F49 F50` (both nits, `design.md` refinements — no new ADR D-section). Maintainer confirmed the
+proposed copy/table verbatim.
+- **F49**: `design.md` §4.4 — unresolved-start prompt gets **named affordances** (`[r]esolve` ·
+  `[c]lone from <url>` when a `url` exists · `[s]kip`) + sample copy; `cco start` **prints the source it
+  used** (`source: --from | entry | cwd`); the passive ⚠ at `cco start`/`cco list` **names
+  `cco project validate`** as the next step (renamed from the illustrative `cco config validate`,
+  per Group A / D1). Awareness, never a block (P14).
+- **F50**: `design.md` §6.2 — a **division-of-labor table** for the four `cco update` discovery surfaces
+  (`--check` upstream / `--diff` framework-defaults / `--dry-run` migrations-or-merge / `--news`
+  changelog) + explicit **`--dry-run` scope disambiguation** (`cco update` = migrations preview;
+  `cco <res> update` = 3-way-merge preview); §7 Update row cross-refs it.
+
+**Groups C–E OPEN. Next = Group C (F34/F47/F13 — sharing-surface accuracy).**

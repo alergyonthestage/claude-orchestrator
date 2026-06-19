@@ -169,8 +169,11 @@ D3's `add <res>` is net-new verb wiring across `cmd-project-*`.
 
 ## Open / cross-refs (Cluster 5 Groups B–E — appended as D4+ or `design.md` §7 refinements)
 
-- **F49/F50** (Group B) — unresolved-start prompt copy + passive-⚠ next-step naming `cco project
-  validate`; `cco update` discovery-flag division of labor (`--check`/`--diff`/`--dry-run`/`--news`).
+- **F49/F50** (Group B) — **RESOLVED 2026-06-19** as `design.md` refinements (no ADR D-section):
+  §4.4 named unresolved-start affordances + source-transparency print + passive-⚠ naming `cco project
+  validate`; §6.2 `cco update` discovery-flag division-of-labor table + `--dry-run` scope
+  disambiguation. The illustrative `cco config validate` next-step was renamed to `cco project validate`
+  (D1).
 - **F34/F47/F13** (Group C) — §6.2/§7 sharing-surface verdict split; template 2×2 vs scaffold-only;
   `cco project internalize` semantics clash (the §7 `internalize` row references this).
 - **F18** (Group D) — `cco new` as an index-less ephemeral entry; **F25** — `extra_mounts` schema +

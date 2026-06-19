@@ -438,9 +438,12 @@ sequenceDiagram
   (ADR-0017 D2). `cco start [project] --from <repo>` explicitly selects which member's `<repo>/.cco`
   to use, mirroring `cco sync --from` — no prompt, no `entry` needed.
 - **Unresolved paths → explicit prompt, never a silent launch (ADR-0017 D2).** If any repo/mount is
-  unresolved at start, cco **prompts**: (a) **resolve now** (`cco resolve`), or (b) **proceed without
-  mounting the unresolved entries** (with a warning). This is a *conscious* skip, surfaced to the user
-  — distinct from the silent empty-mount that #B17/#B18 forbade.
+  unresolved at start, cco **prompts** with **named affordances**: **[r]esolve now** (`cco resolve`) —
+  when the entry carries a `url`, also offer **[c]lone from `<url>`** — or **[s]kip** (proceed without
+  mounting the unresolved entry, with a warning). This is a *conscious* skip, surfaced to the user —
+  distinct from the silent empty-mount that #B17/#B18 forbade. Sample copy (F49): `repo '<name>' is
+  unresolved on this machine — [r]esolve (cco resolve) · [c]lone from <url> · [s]kip (start without it)`
+  (the clone option is omitted when the entry has no `url`).
 - **Divergence is never silently reconciled**: if a project's repos have divergent
   `.cco/`, `cco start` uses the chosen source and **prints a non-blocking notice**
   ("project repos have divergent .cco; started from <repo>; run `cco sync` to
@@ -448,6 +451,11 @@ sequenceDiagram
   `cco sync` to converge from a chosen source. This notice is one facet of the unified
   non-blocking reminder aggregator (ADR-0008): the same command surface also flags
   uncommitted changes in `~/.cco` and in the involved `<repo>/.cco/`.
+- **Source transparency & the passive ⚠ (F49 / ADR-0019 D2 layer-e).** `cco start` always prints which
+  `<repo>/.cco` source it used — `started <project> from <repo> [source: --from | entry | cwd]` — so the
+  precedence is never opaque. The passive unresolved/unreachable badge at `cco start`/`cco list` **names
+  the next step explicitly**: `⚠ <project>: N reference(s) unresolved/unreachable — run 'cco project
+  validate' for details`. The badge is awareness, never a block (P14).
 
 **Ordered `cco start` sequence (H1 — resolution before notices).** The divergence notice
 and the reminder aggregator both read the members' `.cco/`, which requires the members to
@@ -556,6 +564,22 @@ Team-sharing flows through a **sharing repo** (the retired term "config repo" �
 - **`cco update --check`** lists resources with available updates — **DATA `source`-driven**, gated on
   local install presence, 3-state output (*not installed here* / comparable / indeterminate); the
   installed-commit baseline lives in **STATE `/update`** (ADR-0022 D6, detail in §7).
+
+**`cco update` discovery flags — division of labor (F49/F50).** Four surfaces answer different "what
+would change?" questions; only the shared `--dry-run` token is genuinely overloaded (disambiguated
+below):
+
+| Flag | Question | Source compared | Applies? |
+|------|----------|-----------------|----------|
+| `--check` | Is a newer **upstream** available? (ADR-0022 D6) | DATA `source` → sharing-repo HEAD (`ls-remote`, no merge) | No — read-only list, exit 0 |
+| `--diff [--all]` | What would the **framework defaults** change? | installed config vs `defaults/` (+ `.cco/base/`) | No — preview; apply via `--sync` |
+| `--dry-run` | What would actually **run/merge**? | `cco update --dry-run` = pending **migrations** · `cco <res> update --dry-run` = that resource's **3-way merge** | No — preview |
+| `--news` | What **new features** shipped? | `changelog.yml` additive entries | No |
+
+The `--dry-run` token is **scope-dependent**: on `cco update` it previews pending migrations; on
+`cco <res> update` it previews that resource's 3-way merge. `--check`/`<res> update` target
+sharing-repo **upstreams**; `--diff`/`--news` answer the **framework-defaults** question — they do not
+overlap in source.
 - **Permissions** are **delegated to git** (P17/ADR-0020): a read-only token can't push (sharing-repo
   split); granular read-hiding by splitting repos; `<repo>/.cco/` is co-writable (optional
   `cco config protect` scaffolds CODEOWNERS + host rulesets). cco assists, never gatekeeps.
@@ -602,7 +626,7 @@ discovery. See ADR-0018/0019/0020.
 | Authoring | Direct `~/.cco` edit (IDE or rehomed `config-editor` agent); cco only **scaffolds**: `cco pack create`, `cco template create` (ADR-0008/0010) | transform |
 | Global store (`~/.cco` + internal) | `cco config save [-m] / push / pull` (version + sync the personal `~/.cco` store; ADR-0008) + **`cco config validate [--dry-run\|--fix]`** (**orphan-sanitization** of global id-keyed internal state after manual deletion: detect/report, optionally prune preview-first/confirmed; warn-never-hide, never automatic; ADR-0021. STATE/CACHE freely rebuildable via `cco resolve --scan`; DATA pruned only on confirm). *Share-readiness* validate is `cco project validate` (below), **not** this verb — ADR-0023 D1 | transform |
 | Sharing (2×2, ADR-0018 D2) | **packs/templates**: `cco <res> publish\|install` (sharing repo) + `export\|import` (tar); **projects**: `cco project export\|import` only (no publish/install — ride the repo remote, P5/P13). `cco <res> internalize` cuts the coordinate. `cco remote …` manages sharing-repo endpoints. | transform |
-| Update | `cco update …` (framework→user; merge engine unchanged) + **`cco update --check`** (list resources with available updates — DATA `source`-driven, install-presence-gated, **3-state** *not-installed-here / comparable / indeterminate*; one greppable line/resource + summary, **exit 0 always**; advancement = same-ref `ls-remote` resolve; `--offline`/`--no-cache` reuse `cmd-update.sh` — ADR-0022 D6 / ADR-0018 D5) + `cco <res> update --dry-run` | transform |
+| Update | `cco update …` (framework→user; merge engine unchanged) + **`cco update --check`** (list resources with available updates — DATA `source`-driven, install-presence-gated, **3-state** *not-installed-here / comparable / indeterminate*; one greppable line/resource + summary, **exit 0 always**; advancement = same-ref `ls-remote` resolve; `--offline`/`--no-cache` reuse `cmd-update.sh` — ADR-0022 D6 / ADR-0018 D5) + `cco <res> update --dry-run`. Discovery-flag division of labor (`--check`/`--diff`/`--dry-run`/`--news`) → §6.2 table (F50) | transform |
 | Permissions (ADR-0020) | `cco config protect` (OPTIONAL — scaffold `<repo>/.cco/CODEOWNERS` + emit host ruleset instructions; enforcement delegated to git). **The single `cco config` verb scoped to `<repo>/.cco` rather than `~/.cco`** — documented exception (ADR-0023 D1); full contract = Group E / F27 | NEW (optional) |
 
 **`cco init` (incl. `cco init --migrate`) and `cco join` are mutually exclusive** entry points
