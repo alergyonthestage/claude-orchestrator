@@ -219,7 +219,7 @@ D6) is a *recommendation*, not a constraint; a more appropriate engine may fit, 
 transversally with the project-sync daemon** (different scopes, possibly shared infra). **Depends on**:
 R1–S settled.
 
-### V — Impl-readiness review (whole-scope validation)  ·  status: NEXT (before E)
+### V — Impl-readiness review (whole-scope validation)  ·  status: ✅ DONE & FULLY RESOLVED (all 5 clusters, 2026-06-19) → implementation
 > **Start here**: `V-handoff-impl-readiness-review.md` — scope (all ADRs 0001–0020 + P1–P17 + living
 > docs + code), **8 parallel review perspectives** (cross-ADR/principle coherence; design↔ADR↔req sync;
 > completeness/gaps; ambiguity/impl-readiness; §9 phasing re-validation; code-grounding/feasibility;
@@ -264,7 +264,7 @@ flowchart LR
   R2 -- "manifest removal → structure-based discovery" --> S
   M --> S
   C4 -.-> T["T · RD-triggers / R-state-sync (future); cat-4 ∩ P8 sync transport"]
-  S --> V["V · impl-readiness review (NEXT) — whole-scope validation, parallel perspectives"]
+  S --> V["V · impl-readiness review (✅ DONE & RESOLVED) — whole-scope validation, parallel perspectives"]
   V --> E["impl · dependency-layered phases (design.md §9)<br/>P0 substrate · P1 core · P2 migration · P3 cutover · P4 sharing-core · P5 sharing-ext"]
   V --> T
   M -.-> E
@@ -274,8 +274,9 @@ flowchart LR
 per-unit/`package.json` model; DATA byte-level; STATE index subsumes @local; C1–C4; H5/H6/M3)** → **S ✅
 (ADR-0018/0019/0020 — sharing unification: 2×2 matrix, pack coordinates + reachability P14, DRY P15,
 working-copy lifecycle P16, permissions delegated-to-git P17; manifest-removal realized; solo-adopter
-A+B)** → **V (NEXT — impl-readiness review: whole-scope validation, parallel perspectives, read-only
-gate)** → impl (dependency-layered phases, design.md §9; "E" dissolved, Cluster 2) → (T future).
+A+B)** → **V ✅ (DONE & FULLY RESOLVED — all 5 clusters; Cluster 5 → ADR-0023; design READY)** →
+**impl (NEXT — dependency-layered phases P0–P5, design.md §9; "E" dissolved, Cluster 2; see
+`Y-handoff-implementation.md`)** → (T future).
 **Config + sharing design CLOSED; V running cluster-by-cluster — Cluster 2 (phasing & test-plan) DONE.**
 
 ## Notes

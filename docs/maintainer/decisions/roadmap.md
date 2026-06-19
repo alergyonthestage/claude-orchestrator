@@ -73,8 +73,9 @@ graph LR
 ### Vault Simplification → Decentralized In-Repo Config (DECIDED 2026-06-11; evolved 2026-06-12; model finalized 2026-06-15)
 
 **Status**: Design APPROVED (2026-06-15); **config + sharing design CLOSED**; **impl-readiness review
-(V) DONE (2026-06-18)**. Living `requirements.md` + `design.md` are the single source of truth;
-decisions recorded in ADRs **0001–0022** (`../configuration/decentralized-config/decisions/`); the
+(V) FULLY RESOLVED — all 5 clusters closed (2026-06-19)**; **✅ DESIGN READY FOR IMPLEMENTATION**.
+Living `requirements.md` + `design.md` are the single source of truth;
+decisions recorded in ADRs **0001–0023** (`../configuration/decentralized-config/decisions/`); the
 role-first analyses (R1–R4, Cat-4, M, **S**) are tracked in `analysis-roadmap.md`; analyses + the V
 report kept under `.../reviews/`. On `feat/vault/decentralized-config` (commits **local only**, pushed
 from the maintainer's Mac). **S DONE (ADR-0018/0019/0020)** — sharing model unified (2×2 matrix, pack
@@ -98,9 +99,14 @@ Phase-3 cutover-sweep driver. Block B (user-facing doc rewrites) is inventoried 
 **new ADR-0022** (source-relocation/`publish_target` re-derive · global-flat index/H7 · `--scan`
 merge-upsert · pack cache-iff-coordinate + one ERROR · pack STATE `base/`/sync-before-publish · `--check`
 3-state) + forward-annotations to ADR-0016/0017/0018/0019 + design.md §2.2–§12 re-sync + requirements
-FR-Y-S6; phasing re-read onto the Cluster-2 P0–P5 map. **Only Cluster 5 OPEN** (command surface & UX).
-**Next session = Cluster 5 in a clean session** — see `W-handoff-cluster-resolution.md`. **Then
-implementation** (design §9 dependency-layered phases). T is future.
+FR-Y-S6; phasing re-read onto the Cluster-2 P0–P5 map. **Cluster 5 (command surface & UX) RESOLVED &
+PERSISTED** (2026-06-19): all 11 findings → **new ADR-0023** (D1–D6: `cco config`/`cco project` namespace
++ `cco project validate` contract + `cco project add <res>`/`--path` + sharing-surface/internalize family
++ `cco new`/`extra_mounts` + `cco config protect`) + forward-annotations to ADR-0016/0018/0019/0020/0021
++ design §2.4/§3/§4.4/§6.2/§7/§8 re-sync. **ALL 5 CLUSTERS RESOLVED → the review (V) is fully closed and
+the design is READY for implementation.** **Next session = IMPLEMENTATION**, starting at **Phase 0** of
+the design §9 **P0–P5** dependency-layer map — see **`Y-handoff-implementation.md`**. T (state-sync) is
+future.
 **Priority**: 0 (next major work). **Supersedes**: branch-switch real-isolation
 model in `../../configuration/vault/profile-isolation-design.md` (v2) **and** the
 central-vault project store.
