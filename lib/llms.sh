@@ -55,7 +55,7 @@ _collect_llms_names() {
             local pack_llms
             pack_llms=$(yml_get_llms "$pack_yml")
             [[ -z "$pack_llms" ]] && continue
-            while IFS=$'\t' read -r lname ldesc lvariant; do
+            while IFS=$'\t' read -r lname ldesc lvariant lurl; do
                 [[ -z "$lname" ]] && continue
                 local found=false
                 for ((i=0; i<_seen_count; i++)); do
@@ -75,7 +75,7 @@ _collect_llms_names() {
         local proj_llms
         proj_llms=$(yml_get_llms "$project_yml")
         if [[ -n "$proj_llms" ]]; then
-            while IFS=$'\t' read -r lname ldesc lvariant; do
+            while IFS=$'\t' read -r lname ldesc lvariant lurl; do
                 [[ -z "$lname" ]] && continue
                 local found=false
                 for ((i=0; i<_seen_count; i++)); do

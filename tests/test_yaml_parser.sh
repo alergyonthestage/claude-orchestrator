@@ -1011,3 +1011,107 @@ YAML
     result=$(yml_get "$tmpfile" "policies.agents/analyst.md")
     assert_equals "tracked" "$result"
 }
+
+# ── Coordinate parsers (T3: final decentralized-config schema) ───────
+# Direct-source unit tests for the final name+coordinate readers (ADR-0016 D2 /
+# ADR-0019 / ADR-0023 D5). Output is tab-separated; absent fields are empty.
+
+test_yaml_repo_coords_name_url_ref() {
+    source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/yaml.sh"
+    local f; f=$(mktemp); trap "rm -f '$f'" EXIT
+    cat > "$f" <<'YAML'
+name: projectA
+repos:
+  - name: repo1
+    url: git@github.com:org/repo1.git
+    ref: main
+  - name: repo2
+    url: git@github.com:org/repo2.git
+llms:
+  - name: react
+    url: https://react.dev/llms-full.txt
+YAML
+    # path is NOT emitted (it lives in the index); stops at the llms: section.
+    assert_equals $'repo1\tgit@github.com:org/repo1.git\tmain\nrepo2\tgit@github.com:org/repo2.git\t' "$(yml_get_repo_coords "$f")"
+}
+
+test_yaml_repo_coords_url_optional() {
+    source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/yaml.sh"
+    local f; f=$(mktemp); trap "rm -f '$f'" EXIT
+    cat > "$f" <<'YAML'
+repos:
+  - name: solo
+YAML
+    assert_equals $'solo\t\t' "$(yml_get_repo_coords "$f")"
+}
+
+test_yaml_mount_coords_full_and_minimal() {
+    source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/yaml.sh"
+    local f; f=$(mktemp); trap "rm -f '$f'" EXIT
+    cat > "$f" <<'YAML'
+extra_mounts:
+  - name: shared-assets
+    url: git@github.com:org/assets.git
+    ref: v2
+    target: /workspace/assets
+    readonly: false
+  - name: local-only
+YAML
+    # readonly is emitted RAW (the consumer applies the true default).
+    assert_equals $'shared-assets\tgit@github.com:org/assets.git\tv2\t/workspace/assets\tfalse\nlocal-only\t\t\t\t' "$(yml_get_mount_coords "$f")"
+}
+
+test_yaml_pack_coords_map_and_authored() {
+    source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/yaml.sh"
+    local f; f=$(mktemp); trap "rm -f '$f'" EXIT
+    cat > "$f" <<'YAML'
+packs:
+  - name: shared-pack
+    url: https://github.com/org/cco-sharing.git
+    ref: v1.0
+    resource: packs/shared-pack
+  - project-local-pack
+YAML
+    # bare entry = authored-in-repo pack (empty coordinate, P15).
+    assert_equals $'shared-pack\thttps://github.com/org/cco-sharing.git\tv1.0\tpacks/shared-pack\nproject-local-pack\t\t\t' "$(yml_get_pack_coords "$f")"
+}
+
+test_yaml_packs_names_from_map() {
+    source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/yaml.sh"
+    local f; f=$(mktemp); trap "rm -f '$f'" EXIT
+    cat > "$f" <<'YAML'
+packs:
+  - name: shared-pack
+    url: https://github.com/org/cco-sharing.git
+  - project-local-pack
+YAML
+    # yml_get_packs stays name-only across both forms (stable consumer contract).
+    assert_equals $'shared-pack\nproject-local-pack' "$(yml_get_packs "$f")"
+}
+
+test_yaml_packs_names_from_string_list_regression() {
+    source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/yaml.sh"
+    local f; f=$(mktemp); trap "rm -f '$f'" EXIT
+    cat > "$f" <<'YAML'
+packs:
+  - pack-a
+  - pack-b
+YAML
+    assert_equals $'pack-a\npack-b' "$(yml_get_packs "$f")"
+}
+
+test_yaml_llms_emits_url() {
+    source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/yaml.sh"
+    local f; f=$(mktemp); trap "rm -f '$f'" EXIT
+    cat > "$f" <<'YAML'
+llms:
+  - name: react
+    url: https://react.dev/llms-full.txt
+    variant: full
+  - svelte
+YAML
+    # final field is url; short form yields empty desc/variant/url.
+    assert_equals $'react\t\tfull\thttps://react.dev/llms-full.txt\nsvelte\t\t\t' "$(yml_get_llms "$f")"
+    # names-only accessor unaffected (regression).
+    assert_equals $'react\nsvelte' "$(yml_get_llms_names "$f")"
+}
