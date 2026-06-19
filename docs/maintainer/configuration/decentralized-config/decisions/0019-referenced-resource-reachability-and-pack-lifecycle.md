@@ -127,7 +127,7 @@ implicit cache.
 > written):** the defect is a **clone-then-overwrite** (clone HEAD → `rm -rf packs/<name>` → `cp -R` → push),
 > which discards remote-only changes — not a literal "fast-forward push"; the wording is corrected accordingly.
 > Packs have **no `base/`** today (`base/` was project-update-only). ADR-0022 D5 introduces a **pack-scoped
-> `base/` in STATE keyed by identity** (`<STATE>/cco/update/packs/<name>/base/`, never-sync — ADR-0013 D2),
+> `base/` in STATE keyed by identity** (`<STATE>/cco/packs/<name>/update/base/`, never-sync — ADR-0013 D2),
 > populated on install **and** publish: **first publish** = init/add (push if FF; divergence → merge path,
 > never blind-overwrite); **subsequent** = 3-way merge (base = last-published, ours = local, theirs = remote
 > HEAD), abort on conflict. The full sequence lives in design.md §6.2.

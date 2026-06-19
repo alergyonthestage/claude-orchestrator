@@ -146,8 +146,8 @@ project-update-only concept — `_cco_project_base_dir`).
 
 Decided (review F16 — Option A); the detailed sequence lives in `design.md` §6.2:
 
-- Introduce a **pack-scoped `base/` in STATE**, keyed by identity: `<STATE>/cco/update/packs/<name>/base/`
-  (mirroring `_cco_project_base_dir`). It is **STATE never-sync** — a local, version-tied merge ancestor
+- Introduce a **pack-scoped `base/` in STATE**, keyed by identity: `<STATE>/cco/packs/<name>/update/base/`
+  (mirroring the project form `<STATE>/cco/projects/<id>/update/base/` / `_cco_project_base_dir`). It is **STATE never-sync** — a local, version-tied merge ancestor
   per machine, never carried in the sharing repo (ADR-0013 D2). Populated on `cco pack install` **and**
   `cco pack publish` (the published tree becomes the recorded last-published commit).
 - **First publish** (no recorded base/source) = the init/add path: write the pack into the
@@ -218,7 +218,7 @@ with a real merge ancestor (D5); `update --check` works on a freshly-synced seco
 (D6). No settled model decision is re-opened.
 
 **Negative** — D1 is the largest single migration (relocate + rename + field-drop + reader rewrite +
-STATE-meta writes) and D5 introduces a new STATE store (`update/packs/<name>/base/`); both add code paths
+STATE-meta writes) and D5 introduces a new STATE store (`packs/<name>/update/base/`); both add code paths
 to keep idempotent and to test. D1's `publish_target` re-derive is a mild UX regression when the url is
 not in the local registry. D4 adds a second severity tier to `validate` that E must apply narrowly.
 
