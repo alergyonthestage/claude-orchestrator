@@ -2,11 +2,12 @@
 
 **Status**: The impl-readiness review (gate **V**) is **DONE**. Findings are resolved **cluster by
 cluster** with the maintainer; each agreed resolution is persisted into the ADRs/design/requirements
-before moving on. **Clusters 1 and 2 are RESOLVED & PERSISTED.** Clusters 3–5 are OPEN — **next session
-= Cluster 3** (doc drift / re-sync; mostly mechanical edits, clean session preferred). This file lets a
-**fresh clean session** resume without losing the workflow results, the method, or the remaining work.
-Produced 2026-06-18 on branch `feat/vault/decentralized-config` (commits **local**, pushed from the
-maintainer's Mac).
+before moving on. **Clusters 1 and 2 are RESOLVED & PERSISTED; Cluster 3 (doc-resync) Block A is
+RESOLVED & PERSISTED — Block B rides the Phase-3 cutover (see §3c).** Clusters 4–5 are OPEN — **next
+session = Cluster 4** (coordinate model & resolution; clean session preferred). This file lets a **fresh
+clean session** resume without losing the workflow results, the method, or the remaining work. Produced
+2026-06-18 on branch `feat/vault/decentralized-config` (commits **local**, pushed from the maintainer's
+Mac); updated 2026-06-19 (Cluster 3 Block A).
 
 ---
 
@@ -67,15 +68,41 @@ invariant by construction); H7→P0. §11 now carries the **categorized teardown
 review Cluster-Resolution-Log. *(The critic mediums spec.md/architecture.md FR-staleness + roadmap/
 inventory ADR-range are doc-drift → handled in **Cluster 3**.)*
 
+## 3c. Cluster 3 — Doc drift / re-sync — Block A RESOLVED & PERSISTED (2026-06-19)
+
+**Policy fixed first** and persisted as the repo rule **`.claude/rules/documentation-lifecycle.md`**:
+three doc classes — **decision/analysis history** (ADRs/reviews/analyses: immutable, superseded +
+forward-annotated, never rewritten) · **living design/architecture docs** (rewritten to current truth in
+place, **no inline "superseded" sections**; history in git) · **removed-feature design docs** (archived
+at cutover, not bannered, not deleted). Update-**timing** discriminator: **design-intent docs → now**;
+**shipped-behavior docs → ride the phase that makes them true / the cutover sweep** (never rewrite ahead
+of the code). This **supersedes the review's F30 option-A in-place-banner recommendation** with an archive
+policy. Cluster 3 added **no new ADR** (the policy is a rule, not an ADR).
+
+**Block A — persisted now** (commits `ca18919`, `0b735db`, `85cdd9b`):
+- `requirements.md` (F3) re-synced (tags → DATA internal `<data>/cco/tags.yml`; `cco index refresh --scan`
+  → `cco resolve --scan`; ADR range 0001–0021; publish/install → 2×2; `cco migrate` → `cco init
+  --migrate`); `design.md §1` (F24) relabelled; ADR-0002 (F22) + ADR-0014 D2 (F23) forward-annotated
+  (decision text kept verbatim).
+- `resource-coherence-inventory.md` **completed** as the cutover-sweep driver: A.4 `internal/tutorial`
+  (F21), C.0 repo-root README (F20), C.6 docs index pages (F31); `concepts.md`/`knowledge-packs.md`
+  C4→C3 (F33); `spec.md` C4→C2 FR-level (critic); legend + cross-cutting pattern #5 for "Config Repo"→
+  sharing-repo (F32); **Section D** maintainer-design archive (F30); ADR-range nits. Review
+  Cluster-Resolution-Log updated.
+
+**Block B — deferred to the Phase-3 cutover** (shipped-behavior docs): the actual rewrites of `README.md`,
+the user guides, `internal/tutorial`, `concepts.md`/`knowledge-packs.md`, `spec.md`/`architecture.md` FRs,
+the four docs index pages, the ~43-occurrence "Config Repo" sweep, and the Section-D `_archive/` move. All
+inventoried; none can be rewritten ahead of the code without misdescribing what currently ships.
+
 ## 4. Clusters still OPEN (the work remaining)
 
-Finding IDs reference the report. Present per cluster, decide, persist. **Next = Cluster 3.**
+Finding IDs reference the report. Present per cluster, decide, persist. **Next = Cluster 4.**
 
-- **Cluster 3 — Doc drift / re-sync** (mostly mechanical `edit`s): `F3` (requirements.md residual stale
-  spots beyond what Cluster 1 touched), `F20` (top-level README), `F21` (internal/tutorial subtree),
-  `F22 F23 F24` (early-ADR forward-annotations), `F30 F31 F32 F33` (user-doc realignment + "Config Repo"
-  →"sharing repo"), + critic: `spec.md`/`architecture.md`, roadmap/inventory ADR-range. Re-sync toward
-  design.md; nomenclature pass.
+- **Cluster 3 — Doc drift / re-sync — Block A RESOLVED & PERSISTED (2026-06-19; see §3c).** Design-intent
+  docs re-synced (`F3 F22 F23 F24`) + inventory completed as the cutover-sweep driver (`F20 F21 F30 F31
+  F32 F33` + spec.md/roadmap/inventory critic). **Block B** = the user-facing rewrites those inventory
+  items describe, **deferred to the Phase-3 cutover** (shipped-behavior; never ahead of code).
 - **Cluster 4 — Coordinate model & resolution** (technical): `F4 F6 F14 F15 F16 F17 F29 F37 F38 F39 F40
   F41 F45 F48 F56`. Schema/migration of coordinates, three-layer pack resolution, M3 remotes url/token
   split (intersects ADR-0021 delete-cascade), index atomicity/namespacing (H7).
@@ -95,5 +122,5 @@ Finding IDs reference the report. Present per cluster, decide, persist. **Next =
 
 ## 6. Preference
 
-Tackling Cluster 3 (or any further cluster) in a **fresh clean session** is preferred (context hygiene);
+Tackling Cluster 4 (or any further cluster) in a **fresh clean session** is preferred (context hygiene);
 this handoff + the report + the persisted ADRs carry everything forward.

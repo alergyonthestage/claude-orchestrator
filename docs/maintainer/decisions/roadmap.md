@@ -89,9 +89,14 @@ ADR-0021** (resource lifecycle: `cco init --migrate` / `cco forget` / F59 cleanu
 UX unchanged) → the "→ E" workstream is **dissolved** into a **6-phase dependency-layer map** (P0
 substrate · P1 core-local · P2 migration · P3 legacy-cutover · P4 sharing-core · P5 sharing-ext); design
 §9/§11 rewritten (incl. existing 35-file test-suite teardown) + analysis-roadmap/inventory phase-homes.
-**Clusters 3–5 OPEN** (doc-resync · coordinate model · command/UX). **Next session = Cluster 3 in a
-clean session** — see `W-handoff-cluster-resolution.md`. **Then implementation** (design §9 dependency-
-layered phases). T is future.
+**Cluster 3 (doc-resync) Block A RESOLVED & PERSISTED** (2026-06-19): doc-handling **policy** fixed (repo
+rule `.claude/rules/documentation-lifecycle.md` — history-vs-living-vs-archived doc classes +
+design-intent-now / shipped-behavior-at-cutover timing); design-intent docs re-synced (`requirements.md`,
+`design.md §1`, ADR-0002/0014 forward-annotations) and `resource-coherence-inventory.md` completed as the
+Phase-3 cutover-sweep driver. Block B (user-facing doc rewrites) is inventoried and rides the cutover.
+**Clusters 4–5 OPEN** (coordinate model · command/UX). **Next session = Cluster 4 in a clean session** —
+see `W-handoff-cluster-resolution.md`. **Then implementation** (design §9 dependency-layered phases). T is
+future.
 **Priority**: 0 (next major work). **Supersedes**: branch-switch real-isolation
 model in `../../configuration/vault/profile-isolation-design.md` (v2) **and** the
 central-vault project store.
