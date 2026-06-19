@@ -8,8 +8,18 @@ _cco_completed=false
 trap '_ec=$?; if [[ "$_cco_completed" != "true" ]]; then echo "✗ cco exited unexpectedly (exit $_ec). Run with CCO_DEBUG=1 for details." >&2; [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[cco] last command: ${BASH_COMMAND}" >&2; fi' EXIT
 
 # ── Constants ────────────────────────────────────────────────────────
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve this script's real path, following symlinks (L5): a PATH symlink
+# like /usr/local/bin/cco -> .../bin/cco must still locate the tool root.
+# Uses a readlink loop rather than `readlink -f`, which is absent on macOS.
+_cco_src="${BASH_SOURCE[0]}"
+while [[ -h "$_cco_src" ]]; do
+    _cco_dir="$(cd -P "$(dirname "$_cco_src")" >/dev/null 2>&1 && pwd)"
+    _cco_src="$(readlink "$_cco_src")"
+    [[ "$_cco_src" == /* ]] || _cco_src="$_cco_dir/$_cco_src"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$_cco_src")" >/dev/null 2>&1 && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+unset _cco_src _cco_dir
 DEFAULTS_DIR="$REPO_ROOT/defaults"
 NATIVE_TEMPLATES_DIR="$REPO_ROOT/templates"
 IMAGE_NAME="claude-orchestrator:latest"

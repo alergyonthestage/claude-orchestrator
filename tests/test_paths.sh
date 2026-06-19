@@ -240,3 +240,118 @@ test_paths_pack_install_tmp_default_new() {
     local result; result=$(_cco_pack_install_tmp "$pack")
     [[ "$result" == "$pack/.cco/install-tmp" ]] || fail "Expected new install-tmp default, got: $result"
 }
+
+# ── XDG 4-bucket resolver (T1: ADR-0007/0015) ────────────────────────
+# Helper (not a test_* function, so the runner does not execute it as a test):
+# portable file-mode reader (GNU stat vs BSD/macOS stat).
+_paths_stat_mode() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
+
+# Defaults: with no overrides, each bucket resolves under $HOME.
+test_paths_xdg_defaults() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+
+    local config data state cache
+    config=$( export HOME="$tmp/home" CCO_ALLOW_HOST_RESOLVE=1; _cco_config_dir )
+    data=$(   export HOME="$tmp/home" CCO_ALLOW_HOST_RESOLVE=1; unset CCO_DATA_HOME XDG_DATA_HOME;   _cco_data_dir )
+    state=$(  export HOME="$tmp/home" CCO_ALLOW_HOST_RESOLVE=1; unset CCO_STATE_HOME XDG_STATE_HOME; _cco_state_dir )
+    cache=$(  export HOME="$tmp/home" CCO_ALLOW_HOST_RESOLVE=1; unset CCO_CACHE_HOME XDG_CACHE_HOME; _cco_cache_dir )
+
+    [[ "$config" == "$tmp/home/.cco" ]]                || fail "CONFIG default: $config"
+    [[ "$data"   == "$tmp/home/.local/share/cco" ]]    || fail "DATA default: $data"
+    [[ "$state"  == "$tmp/home/.local/state/cco" ]]    || fail "STATE default: $state"
+    [[ "$cache"  == "$tmp/home/.cache/cco" ]]          || fail "CACHE default: $cache"
+}
+
+# Precedence: $CCO_*_HOME (the cco dir itself) ranks above $XDG_*_HOME/cco.
+test_paths_xdg_cco_override_ranks_above_xdg() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+
+    local val
+    val=$( export HOME="$tmp/home" CCO_ALLOW_HOST_RESOLVE=1 \
+                  CCO_DATA_HOME="$tmp/cco-data" XDG_DATA_HOME="$tmp/xdg-data"; _cco_data_dir )
+    [[ "$val" == "$tmp/cco-data" ]] || fail "Expected CCO override (no /cco suffix), got: $val"
+}
+
+# $XDG_*_HOME is used (with /cco appended) when no $CCO_*_HOME override.
+test_paths_xdg_used_when_no_cco_override() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+
+    local val
+    val=$( export HOME="$tmp/home" CCO_ALLOW_HOST_RESOLVE=1 XDG_CACHE_HOME="$tmp/xdg-cache"; \
+           unset CCO_CACHE_HOME; _cco_cache_dir )
+    [[ "$val" == "$tmp/xdg-cache/cco" ]] || fail "Expected XDG+/cco, got: $val"
+}
+
+# Unset/empty/non-absolute overrides are treated as absent → fall to default.
+test_paths_xdg_empty_and_relative_treated_absent() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+
+    local val
+    val=$( export HOME="$tmp/home" CCO_ALLOW_HOST_RESOLVE=1 \
+                  CCO_DATA_HOME="" XDG_DATA_HOME="relative/path"; _cco_data_dir )
+    [[ "$val" == "$tmp/home/.local/share/cco" ]] || fail "Expected default (empty+relative absent), got: $val"
+}
+
+# Created bucket dirs are mode 0700.
+test_paths_xdg_resolver_creates_0700() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+
+    local val mode
+    val=$( export HOME="$tmp/home" CCO_ALLOW_HOST_RESOLVE=1; unset CCO_STATE_HOME XDG_STATE_HOME; _cco_state_dir )
+    [[ -d "$val" ]] || fail "Expected STATE dir created: $val"
+    mode=$(_paths_stat_mode "$val")
+    [[ "$mode" == "700" ]] || fail "Expected mode 700, got: $mode ($val)"
+}
+
+# H4 guard: in-container resolution aborts without the escape hatch.
+test_paths_resolver_guard_blocks_in_container() {
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+
+    local out rc=0
+    # Force the container condition deterministically (valid on host too).
+    out=$( export HOME=/home/claude; unset CCO_ALLOW_HOST_RESOLVE; _cco_data_dir 2>&1 ) || rc=$?
+    [[ $rc -ne 0 ]] || fail "Expected anti-in-container guard to abort, got rc=0 (out: $out)"
+    [[ "$out" == *"anti-in-container"* ]] || fail "Expected guard message, got: $out"
+}
+
+# H4 escape hatch: CCO_ALLOW_HOST_RESOLVE=1 bypasses the guard (for tests/dev).
+test_paths_resolver_guard_hatch_allows() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+
+    local val
+    val=$( export HOME=/home/claude CCO_ALLOW_HOST_RESOLVE=1 CCO_DATA_HOME="$tmp/d"; _cco_data_dir )
+    [[ "$val" == "$tmp/d" ]] || fail "Expected hatch to bypass guard, got: $val"
+}
+
+# ── L5: symlink-safe tool root ───────────────────────────────────────
+# A PATH symlink to bin/cco must still locate the tool root (lib/).
+test_paths_symlink_safe_tool_root() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    mkdir -p "$tmp/bin"
+    ln -s "$REPO_ROOT/bin/cco" "$tmp/bin/cco"
+
+    local out rc=0
+    out=$( CCO_ALLOW_HOST_RESOLVE=1 bash "$tmp/bin/cco" help 2>&1 ) || rc=$?
+    [[ $rc -eq 0 ]] || fail "Symlinked cco help failed (rc=$rc): $out"
+    [[ "$out" == *"Usage:"* ]] || fail "Symlinked cco did not locate libs (no Usage): $out"
+}
