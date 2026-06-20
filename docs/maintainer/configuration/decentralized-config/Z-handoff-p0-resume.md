@@ -19,18 +19,18 @@ maintainer's Mac).
 | **T2a** | `d913e5c` | `lib/index.sh` — machine-local STATE index API (`paths:` name→abs + `projects:` members), atomic `mktemp`+`mv`, global-flat (H7), `_index_path_conflicts` for AD5. Additive (sourced, not wired) | +9 |
 | **T3** | `992738d` | Final coordinate parsers in `lib/yaml.sh`: `yml_get_repo_coords`/`yml_get_mount_coords`/`yml_get_pack_coords`; `yml_get_packs` now map+string; `yml_get_llms` +url. **Additive** — legacy `yml_get_repos`/`yml_get_extra_mounts` untouched | +7 |
 | **T4-remotes** | `2bdf80e` | M3 remotes split: url→DATA `<data>/cco/remotes`, token→STATE `<state>/cco/remotes-token` (0600). `setup_cco_env` now exports `CCO_{DATA,STATE,CACHE}_HOME`+`CCO_ALLOW_HOST_RESOLVE` (additive) | rewrite |
-| **Commit A** | `c8ae080` | repos/mount resolution wired to the STATE index via a **transitional schema-bridge** (per-section: legacy `- path:`/`- source:` ⇒ legacy chain; logical-name ⇒ index) + **keep-transitional** @local plumbing (NOT deleted — kept for vault/publish until P3/P4). `local-paths.sh` bridge emitters + `_resolve_entry_index`; cmd-start/workspace/cmd-project-query bridged; harness `minimal_project_yml`→new schema + `seed_index_path`; +6 index tests. **DEVIATES from this file's §3 literal scope** (see §2.5 / Z2-superseding note below) | 991/2 |
+| **Commit A** | `c8ae080` | repos/mount resolution wired to the STATE index via a **transitional schema-bridge** (per-section: legacy `- path:`/`- source:` ⇒ legacy chain; logical-name ⇒ index) + **keep-transitional** @local plumbing (NOT deleted — kept for vault/publish until P3/P4). `local-paths.sh` bridge emitters + `_resolve_entry_index`; cmd-start/workspace/cmd-project-query bridged; harness `minimal_project_yml`→new schema + `seed_index_path`; +6 index tests | 991/2 |
+| **Commit B** | `848cf63` | session-mount **bucket re-point** + harness HOME flip (folds T6+T7-HOME). Final host-absolute map in `cmd-start.sh`/`cmd-new.sh`: global config→CONFIG `~/.cco/global`, `secrets.env`/`setup.sh`→CONFIG `~/.cco` top-level, auth-seeds+transcripts+memory→**STATE** (keyed by id, `…/session/{claude-state,memory}`), managed overlays gen+mount→**CACHE**; `secrets.sh:load_global_secrets`→`~/.cco/secrets.env`; compose→STATE + `--project-directory`→STATE; **`entrypoint.sh` container side UNCHANGED**. Harness `setup_cco_env`: HOME flip + hermetic gitconfig + dual-seed; legacy `CCO_*_DIR` **KEPT**. Maintainer **D1** (design §2.2/2.3 over the Z3-handoff's coarse "→ ~/.cco": auth=STATE, global under ~/.cco/global, secrets/setup top-level) + **D2** (managed gen→CACHE now) | 991/2 |
 
 ```mermaid
 flowchart LR
-  subgraph done["✅ done (incl. Commit A c8ae080)"]
-    T1["T1 resolver+H4+L5"] --> T2a["T2a index API"] --> T3["T3 coord parsers"] --> T4r["T4 remotes split M3"] --> CA["Commit A — repos/mount → index<br/>(schema-bridge, keep-transitional)"]
+  subgraph done["✅ done (Phase 0 substrate, incl. Commit B 848cf63)"]
+    T1["T1 resolver+H4+L5"] --> T2a["T2a index API"] --> T3["T3 coord parsers"] --> T4r["T4 remotes split M3"] --> CA["Commit A — repos/mount → index<br/>(schema-bridge, keep-transitional)"] --> CB["Commit B — bucket re-point<br/>+ harness HOME flip"]
   end
-  subgraph next["▶ remaining P0 = Commit B → T8 (pure substrate)"]
-    CB["Commit B — bucket re-point GLOBAL_DIR→~/.cco + harness HOME"]
-    CB --> T8["T8 CACHE overlays (F1/F2/F3)"]
+  subgraph next["▶ remaining P0 = T8 (closes Phase 0)"]
+    T8["T8 — CACHE overlays F1/F2/F3<br/>packs.md/workspace.yml → CACHE :ro"]
   end
-  CA --> CB
+  CB --> T8
   T8 -. "RE-SEQUENCED OUT of P0" .-> later["T4-source → P4 (source→DATA + F4)<br/>T5 → P2 (base/meta→STATE, H6 + global decompose)"]
 ```
 
@@ -49,9 +49,9 @@ flowchart LR
 
 ## 3. Remaining P0 — detailed scope
 
-**Remaining P0 = Commit B → T8 (pure substrate); Commit A is DONE (`c8ae080`).** Both "internal-artifact
-relocation" items (T4-source, T5) are re-sequenced OUT of P0 (their tests are hardcoded in later phases —
-see below). **Start with Commit B (dedicated launch handoff `Z3-handoff-commit-b.md`).**
+**Remaining P0 = T8 (pure substrate); Commit A (`c8ae080`) and Commit B (`848cf63`) are DONE.** Both
+"internal-artifact relocation" items (T4-source, T5) are re-sequenced OUT of P0 (their tests are hardcoded
+in later phases — see below). **Start with T8 (dedicated launch handoff `Z4-handoff-t8.md`).**
 
 - **T4-source — RE-SEQUENCED to P4 (maintainer-confirmed 2026-06-19, Option B).** The `source`→DATA
   relocation + key-rename (`url`/`ref`/`resource`) + `commit`/`version`→STATE-meta + `publish_target`
@@ -96,15 +96,25 @@ see below). **Start with Commit B (dedicated launch handoff `Z3-handoff-commit-b
     a name-only mount's target/readonly).
   - Both deviations follow the **Z §5 transitional precedent** (vault-git mirror kept till P3). **Do NOT**
     "fix" them by deleting early — that re-breaks delta-green. They are removed in P3/P4 by design.
-- **Commit B** (BIG, coordinated): bucket re-point. **← NEXT (see `Z3-handoff-commit-b.md`).**
-  - `lib/cmd-start.sh` / `lib/cmd-new.sh`: final host-absolute mount map — `claude-state`→STATE,
-    `memory`→STATE, `.cco/managed`→CACHE (`:ro`), global config/`secrets.env`/`mcp.json`→`~/.cco`;
-    `GLOBAL_DIR`→`~/.cco`; `secrets.sh:load_global_secrets` re-pointed. **Container side of
-    `entrypoint.sh` UNCHANGED** (compose↔entrypoint container-path contract = invariant).
-  - `tests/helpers.sh`: `setup_cco_env` sets `HOME=$tmpdir/home` (to redirect `~/.cco`) and drops the
-    legacy `CCO_*_DIR` exports. (Careful: changing HOME globally — verify no test depends on real HOME.)
-- **T8**: carried RD-claude-mount (ADR-0005) — generate `packs.md`/`workspace.yml` into CACHE + overlay
-  `:ro` (F1); reserve `packs/`/`llms/` + cross-tree collision warning (F2); parent rw, overlays `:ro` (F3).
+- **Commit B ✅ DONE (`848cf63`, 2026-06-20): bucket re-point + harness HOME flip.** End-state matches the
+  design; **two maintainer decisions** (AskUserQuestion) refined the Z3-handoff's literal scope:
+  - **D1 — follow design §2.2/§2.3, not the Z3 coarse "→ ~/.cco".** Auth seeds (`claude.json`/
+    `.credentials.json`) → **STATE** top-level (machine-local, never synced); global config (`.claude/*`,
+    `mcp.json`) → CONFIG **`~/.cco/global`**; `secrets.env`/`setup.sh` → CONFIG **`~/.cco` top-level** (not
+    under `global/`); transcripts+memory → STATE `…/projects/<id>/session/{claude-state,memory}`. Reason:
+    design is the frozen spec **and** it is build-once (the handoff-literal layout would force a Phase-2/3
+    re-migration). `--project-directory` → STATE; every framework `./…` → host-absolute.
+  - **D2 — managed generation target → CACHE in this commit** (`<cache>/cco/projects/<id>/managed`), not
+    deferred to T8. `load_global_secrets` → `~/.cco/secrets.env`. **`entrypoint.sh` container side UNCHANGED.**
+  - **Harness `setup_cco_env`: KEPT legacy `CCO_*_DIR`** (the Z3 said "drop", but they are still consumed by
+    the not-yet-cutover init/update/build/clean/project-create/vault commands + ~20 vault-profile tests that
+    hardcode `$CCO_USER_CONFIG_DIR/global` → dropping breaks delta-green; the §5 consumer-map lesson).
+    Added: `HOME=$tmpdir/home` + hermetic `~/.gitconfig` (identity + `protocol.file.allow=always` — the ~12
+    git-committing suites). `setup_global_from_defaults` **dual-seeds** legacy GLOBAL_DIR + new `~/.cco/global`;
+    `check_global` (17 callers) NOT re-pointed → satisfied by the dual-seed. **Do NOT undo these** (die P3/P4).
+- **T8** ← **NEXT (see `Z4-handoff-t8.md`)**: carried RD-claude-mount (ADR-0005) — generate `packs.md`/
+  `workspace.yml` into CACHE + overlay `:ro` (F1); reserve `packs/`/`llms/` + cross-tree collision warning
+  (F2); parent rw, overlays `:ro` (F3). Closes Phase 0.
 
 ## 4. The 2 known baseline failures — DO NOT re-investigate
 
@@ -126,14 +136,21 @@ you introduced — fix it before committing.
   consumer** relying on the git side-effect → 4 vault tests regressed. Fix: the **vault-git mirror is KEPT
   transitional** (removed in P3 with the vault). Lesson: a "clean caller map" can miss side-effect
   consumers — run `./bin/test` (full) after every cutover.
-- **The harness already exports the 4-bucket env additively** (`CCO_{DATA,STATE,CACHE}_HOME` +
-  `CCO_ALLOW_HOST_RESOLVE`) alongside legacy `CCO_*_DIR`. Commit B removes the legacy `CCO_*_DIR` and adds
-  `HOME` override; until then both coexist.
-- **Coordinate parsers exist but are not yet consumed.** `yml_get_repo_coords`/`mount_coords`/`pack_coords`
-  are built (T3); the legacy `yml_get_repos`/`yml_get_extra_mounts` still serve their consumers until
-  Commit A deletes them. Use the `*_coords` parsers in Commit A.
-- **Index is wired-ready but unwired.** `lib/index.sh` is sourced in `bin/cco` and fully tested; nothing
-  calls it yet. Commit A is where resolution starts reading/writing it.
+- **Commit B KEPT the legacy `CCO_*_DIR` (the Z3 "drop" was wrong — code-grounded recon caught it).** They
+  are still consumed by the not-yet-cutover commands (init/update/build/clean/project-create/vault) + ~20
+  vault-profile tests that hardcode `$CCO_USER_CONFIG_DIR/global`; dropping them breaks delta-green. The
+  harness now ALSO sets `HOME=$tmpdir/home` (redirect `~/.cco`) + a hermetic `~/.gitconfig` (the ~12
+  git-committing suites relied on the ambient identity; `protocol.file.allow=always` for `file://` remotes),
+  and `setup_global_from_defaults` **dual-seeds** legacy GLOBAL_DIR + new `~/.cco/global`. They die in the
+  later phases.
+- **Dry-run model (Commit B).** Compose mount sources are the **real bucket paths** (config/state/cache)
+  always; `--dry-run --dump` still writes the compose + managed files under `$output_dir/.cco/` for
+  inspection (dump layout unchanged) while the mounts reference the real buckets. Most `test_start_dry_run`
+  assertions check the container-path **suffix** (not the host prefix), so they survived; the few that pinned
+  `./…`/`.cco/…` host prefixes were rewritten to bucket forms.
+- **The runner asserts only the LAST line's status.** Bare `assert_*` calls don't `return` on failure, so a
+  test "passes" if its final assertion passes even when an earlier one failed. When updating mount assertions,
+  fix **all** occurrences (incl. masked ones), not just the ones the runner flags red.
 
 ## 6. Working agreement (unchanged — see Y §1–§2)
 
@@ -145,21 +162,24 @@ real design/sequencing gap (design FROZEN).
 
 ## 7. Reading order for the resume session
 
-1. **This file** (cursor). 2. `Y-handoff-implementation.md` (method + full P0–P5 map + invariants).
-3. `design.md` **§2.2/§2.4/§3** (buckets/schema/index), **§9** (P0–P5 build script), **§11** (test plan +
-existing-suite teardown). 4. ADRs **0007/0015/0016** (buckets/taxonomy), **0022** (coordinate/source/index),
-**0009/0010** (memory/tags) for the cutover. 5. The code touched so far: `lib/paths.sh`, `lib/index.sh`,
-`lib/yaml.sh`, `lib/cmd-remote.sh`, `tests/helpers.sh`. 6. Personal progress note (vault memory):
-`decentralized-config-impl-progress.md`.
+1. **`Z4-handoff-t8.md`** (the dedicated T8 launch handoff — working method, source-of-truth, preliminary
+analysis, scope). 2. **This file** (cursor). 3. `Y-handoff-implementation.md` (method + full P0–P5 map +
+invariants). 4. `design.md` **§2.2** (buckets — CACHE `projects/<id>/.claude/` overlays), **§9** Phase 0
+(F1/F2/F3 bullets), **§11** (Phase-0 test row). 5. ADR **0005** (RD-claude-mount/dual-claude-scope),
+**0007/0015/0016** (buckets/taxonomy). 6. The code touched so far: `lib/paths.sh`, `lib/index.sh`,
+`lib/yaml.sh`, `lib/cmd-remote.sh`, `lib/cmd-start.sh`, `lib/cmd-new.sh`, `lib/secrets.sh`, `tests/helpers.sh`.
+7. Personal progress note (vault memory): `decentralized-config-impl-progress.md`.
 
 ## 8. Start here
 
-Next free ADR = **0024** (none needed for Commit-B/T8 unless a new decision surfaces). **Commit A is DONE
-(`c8ae080`); the next clean session executes Commit B via its dedicated launch handoff →
-`Z3-handoff-commit-b.md`** (source-of-truth refs + mandatory preliminary analysis + scope with exact
-symbols). Begin with the coordinated **Commit B** (bucket re-point `GLOBAL_DIR`→`~/.cco` + host-absolute
-STATE/CACHE mounts + harness `HOME` — the big breaking cutover; recon its consumers + harness flip first,
-per §5), keep the suite delta-green (the 2 baseline failures only), commit atomically. Then **T8**. **Both
-relocation items are re-sequenced OUT of P0** (§3): **T4-source → P4** (source→DATA + F4), **T5 → P2**
-(base/meta→STATE, H6 + global decompose). Pause and discuss if a real design gap surfaces; otherwise the
-ADRs/design are the spec.
+Next free ADR = **0024** (none needed for T8 unless a new decision surfaces). **Commit A (`c8ae080`) and
+Commit B (`848cf63`) are DONE; the next clean session executes T8 via its dedicated launch handoff →
+`Z4-handoff-t8.md`** (source-of-truth refs + working method + mandatory preliminary analysis + scope).
+T8 = carried RD-claude-mount (ADR-0005): generate `packs.md`/`workspace.yml` into **CACHE** + overlay `:ro`
+(F1, stop writing them into the committed project `.claude/`); reserve `packs/`/`llms/` + cross-tree
+collision warning (F2); keep the parent `.claude` mount rw, overlays `:ro` (F3). It **extends the CACHE
+overlay model Commit B already established** for `managed/`. Keep the suite delta-green (the 2 baseline
+failures only), commit atomically. T8 **closes Phase 0**. **Both relocation items are re-sequenced OUT of
+P0** (§3): **T4-source → P4** (source→DATA + F4), **T5 → P2** (base/meta→STATE, H6 + global decompose).
+Pause and discuss if a real design gap surfaces; otherwise **`design.md` + `guiding-principles.md` + the ADRs
+are the spec**.
