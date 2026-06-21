@@ -257,8 +257,13 @@ _start_prepare_state() {
             rm -rf "$output_dir"
         else
             output_dir=$(mktemp -d)
-            _cleanup_dry_run_dir() { rm -rf "$output_dir"; }
-            trap _cleanup_dry_run_dir EXIT
+            # Embed the path in the trap body rather than referencing $output_dir:
+            # the EXIT trap fires after cmd_start returns, when the function-local
+            # output_dir is out of scope — under set -u a bare "$output_dir" there
+            # is an unbound variable, so the trap both errors (cco start --dry-run
+            # exits non-zero) AND skips cleanup (the temp dir leaks). Substituting
+            # the value at registration makes cleanup robust and the exit clean.
+            trap "rm -rf '$output_dir'" EXIT
         fi
         mkdir -p "$output_dir/.claude" "$output_dir/.cco/managed"
         # Dry-run inspects generated overlays under the dump dir.
@@ -397,6 +402,27 @@ _start_resolve_paths() {
     # exist on disk — otherwise docker-compose would get @local or a
     # missing source and silently create empty bind mounts (#B17).
     _assert_resolved_paths "$project_dir" "$project_name"
+}
+
+# Emit the non-blocking config reminder aggregator (ADR-0008) for this project's
+# RESOLVED member repos. Invariant H1: this runs ONLY after _start_resolve_paths,
+# so the index is populated — reminders are never computed against an empty/
+# unresolved index. Silent when members carry no <repo>/.cco/ (the pre-P2
+# central layout). The remaining cco start source-selection wiring (§4.4:
+# --from, Case-C precedence, the divergence notice, the source-transparency
+# line + passive ⚠ badge) lands in P2, built once against the decentralized
+# layout. Always non-blocking (P14).
+_start_emit_reminders() {
+    $is_internal && return 0
+    local -a roots=()
+    local _name _path
+    while IFS=$'\t' read -r _name _path; do
+        [[ -z "$_path" ]] && continue
+        roots+=("$_path")
+    done < <(_effective_repo_mounts "$project_yml" 2>/dev/null)
+    [[ ${#roots[@]} -eq 0 ]] && return 0
+    _emit_config_reminders "${roots[@]}"
+    return 0
 }
 
 # Generates the docker-compose.yml file from project configuration.
@@ -898,6 +924,11 @@ EOF
 
     _start_resolve_paths
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] resolve_paths done" >&2
+
+    # H1: config reminders fire AFTER member resolution, never against an empty
+    # index (ADR-0008). Silent on the pre-P2 central layout (no per-repo .cco/).
+    _start_emit_reminders
+    [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] emit_reminders done" >&2
 
     # Generate the .claude overlays (packs.md, workspace.yml) BEFORE compose so
     # compose can mount them :ro by existence — the same generate-then-mount
