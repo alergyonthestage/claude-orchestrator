@@ -25,7 +25,7 @@
 # Provides: _index_file(), _index_get_path(), _index_set_path(),
 #   _index_remove_path(), _index_path_conflicts(), _index_list_paths(),
 #   _index_get_project_repos(), _index_set_project_repos(),
-#   _index_remove_project()
+#   _index_remove_project(), _index_list_projects()
 # Dependencies: colors.sh, paths.sh (_cco_state_dir)
 
 # Absolute path to the index file (STATE; host-side guard applies via resolver).
@@ -170,6 +170,9 @@ _index_remove_path() { _index_section_remove paths "$1"; }
 
 # List all bound names as "name=path" lines.
 _index_list_paths() { _index_section_dump paths; }
+
+# List all recorded projects as "project=<space-separated repo names>" lines.
+_index_list_projects() { _index_section_dump projects; }
 
 # Return 0 (true) iff <name> is already bound to a DIFFERENT absolute path
 # (the AD5 uniqueness violation that init/join/scan must refuse). Returns 1 if
