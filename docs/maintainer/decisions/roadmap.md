@@ -74,7 +74,7 @@ graph LR
 
 **Status**: Design APPROVED (2026-06-15); **config + sharing design CLOSED**; **impl-readiness review
 (V) FULLY RESOLVED — all 5 clusters closed (2026-06-19)**; **design CLOSED → ✅ IMPLEMENTATION IN
-PROGRESS (Phase 0 substrate ✅ CLOSED — T1/T2a/T3/T4-remotes + Commit A + Commit B + T8 landed through 2026-06-21, suite 995/2 delta-green; next = adherence audit → Phase 1 core-local commands)**.
+PROGRESS (Phase 0 substrate ✅ CLOSED — T1/T2a/T3/T4-remotes + Commit A + Commit B + T8 landed through 2026-06-21, suite 995/2 delta-green; **adherence audit DONE 2026-06-21** → `../configuration/decentralized-config/reviews/21-06-2026-impl-adherence-review.md`: delta-green re-confirmed live 995/2, Transitional Registry intact, 0 🔴 code bugs; 1 test-infra finding raised as HITL-1 [runner masks non-final assertions — fix before P1 tests] + HITL-2 [low]; **next = Phase 1 core-local commands**)**.
 Living `requirements.md` + `design.md` are the single source of truth;
 decisions recorded in ADRs **0001–0023** (`../configuration/decentralized-config/decisions/`); the
 role-first analyses (R1–R4, Cat-4, M, **S**) are tracked in `analysis-roadmap.md`; analyses + the V
@@ -105,7 +105,7 @@ PERSISTED** (2026-06-19): all 11 findings → **new ADR-0023** (D1–D6: `cco co
 + `cco project validate` contract + `cco project add <res>`/`--path` + sharing-surface/internalize family
 + `cco new`/`extra_mounts` + `cco config protect`) + forward-annotations to ADR-0016/0018/0019/0020/0021
 + design §2.4/§3/§4.4/§6.2/§7/§8 re-sync. **ALL 5 CLUSTERS RESOLVED → the review (V) is fully closed.**
-**IMPLEMENTATION IN PROGRESS — Phase 0 (substrate) ✅ CLOSED; next = adherence audit → Phase 1**: landed
+**IMPLEMENTATION IN PROGRESS — Phase 0 (substrate) ✅ CLOSED; adherence audit DONE 2026-06-21; next = Phase 1**: landed
 `feat/vault/decentralized-config` (commits local) — **T1** resolver+H4+L5 (`ff8278b`), **T2a** index API
 (`d913e5c`), **T3** coordinate parsers (`992738d`), **T4-remotes** M3 split (`2bdf80e`), **Commit A**
 repos/mount resolution wired to the STATE index (`c8ae080`), **Commit B** session-mount bucket re-point +
@@ -124,8 +124,7 @@ Harness kept legacy `CCO_*_DIR` + dual-seed + HOME flip + hermetic gitconfig. Co
 choices stand (keep-transitional @local plumbing + per-section schema bridge; die P3/P4). The two
 internal-artifact relocations are re-sequenced OUT of P0 (tests hardcoded in later phases): **T4-source →
 P4** (source→DATA/F4) and **T5 → P2** (base/meta→STATE, H6 + global-meta decompose); design §2.2/§9/§11 +
-ADR-0022 D1 / ADR-0016 D6 forward-annotations. **Next = adherence audit
-(`implementation-review-handoff.md`) → Phase 1** (`P1-handoff-core-local.md` — core-local commands:
+ADR-0022 D1 / ADR-0016 D6 forward-annotations. **Adherence audit DONE 2026-06-21** (`reviews/21-06-2026-impl-adherence-review.md`, first run of the recurring playbook): live delta-green re-confirmed **995/2**, Transitional Registry **fully intact** (no early cleanup / no unsanctioned dual-read), **0 🔴 code-conformance bugs**; one **test-infra** finding → **HITL-1** (runner `( set -e; fn )` masks all non-final assertions; the `[[ … ]] || fail` idiom in new `test_index.sh`/`test_paths.sh` masks too — only `… || return 1` aborts; recommended fix = runner treats `ASSERTION FAILED` sentinel as failure, **decide before P1 tests are authored**) + **HITL-2** (low: `remotes-token` 0600 mode unasserted). **Next = Phase 1** (`P1-handoff-core-local.md` — core-local commands:
 `cco sync` [4 forms, copy], `cco resolve`/`cco path` incl. clone-from-`url` + `--scan` upsert, the
 non-blocking reminder aggregator, sync-meta fingerprint, generic `cco project add/validate/coords`;
 **`cco config save/push/pull` is Phase 3**). Method/phase-map = `Y-handoff-implementation.md`. T

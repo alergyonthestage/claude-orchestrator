@@ -7,9 +7,15 @@ parsers). This file is self-contained: working method, source-of-truth, mandator
 scope with exact symbols, invariants, test contracts, and what comes after. Produced 2026-06-21 on
 `feat/vault/decentralized-config` (commits **local** — the maintainer pushes from the Mac).
 
-> **Run the adherence audit first.** Before starting P1, launch **`implementation-review-handoff.md`** (a
-> read-only gap audit of the whole decentralized-config scope vs design/ADRs). Its findings refine this
-> handoff's preliminary analysis and may reclassify a P1 item. Then implement P1.
+> **Adherence audit DONE (2026-06-21)** — `reviews/21-06-2026-impl-adherence-review.md` (first run of
+> `implementation-review-handoff.md`). Result: P0 substrate **conformant**, delta-green re-confirmed live
+> **995/2**, Transitional Registry **fully intact**, **0 🔴 code bugs**. **One test-infra blocker for P1
+> test-writing → HITL-1**: the runner `( set -e; fn )` **masks all non-final assertion failures**, and the
+> `[[ … ]] || fail` idiom (used in the new `test_index.sh`/`test_paths.sh`) masks **just as much** as bare
+> `assert_*` — only `… || return 1` reliably aborts. **Resolve HITL-1 BEFORE authoring the P1 tests** (see
+> §5) so `test_sync.sh`/resolve/fingerprint/aggregator contracts are real, not masked. Recommended fix
+> (maintainer's call): make `_run_test` treat a captured `ASSERTION FAILED` sentinel as a failure regardless
+> of exit code (one line, zero test churn). HITL-2 (low): `remotes-token` 0600 mode is unasserted.
 
 ```mermaid
 flowchart LR
@@ -138,8 +144,11 @@ Build the first command layer on the P0 substrate. Final form, no merge engine, 
 - **Tests (§11 row 1):** NEW `test_sync.sh` (copy semantics, 4 forms, confirm, the never-sync exclusions);
   `cco resolve` incl. clone-from-`url` + `--scan` upsert (preserves out-of-dir + `path set`; AD5
   keep-existing; no `--prune`); **sync-meta fingerprint** (write post-receive + source-side, lazy compare,
-  no-fp = pristine); **reminder aggregator (a/b/c) + H1 ordering** (resolve before notices). Multi-assert
-  tests use `|| return 1` (bare `assert_*` are masked under the runner's `set -e`).
+  no-fp = pristine); **reminder aggregator (a/b/c) + H1 ordering** (resolve before notices). **Mask-safe
+  assertions (HITL-1, 2026-06-21 audit):** under the runner `( set -e; fn )`, **both** bare `assert_*`
+  **and** `[[ … ]] || fail "msg"` swallow non-final failures — only `… || return 1` aborts the test fn. Write
+  every multi-assert P1 test with `… || return 1` (or land HITL-1's runner-side sentinel fix first); after
+  writing, re-run the full suite to surface anything the masking was hiding.
 
 ## 6. Invariants (never violate)
 
