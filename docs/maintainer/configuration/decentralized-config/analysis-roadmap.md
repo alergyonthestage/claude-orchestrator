@@ -38,8 +38,9 @@ P13–P17 added by the S cycle) and validates its decisions against it. Decision
 
 ## Post-V: cluster-by-cluster resolution (in progress, 2026-06-18)
 
-V findings are resolved **cluster by cluster** with the maintainer, persisted to ADRs/design before E.
-See **`W-handoff-cluster-resolution.md`** for the method + the open clusters.
+V findings were resolved **cluster by cluster** with the maintainer, persisted to ADRs/design before
+implementation. The method + outcomes live in `reviews/18-06-2026-impl-readiness-review.md` and ADRs
+0021–0023 (the cluster-resolution scaffold handoff was consumed — in git history).
 
 | Cluster | Scope | Status |
 |---|---|---|
@@ -49,7 +50,7 @@ See **`W-handoff-cluster-resolution.md`** for the method + the open clusters.
 | 4 — Coordinate model & resolution | F4/F6/F14/F15/F16/F17/F29/F37–F41/F45/F48/F56 | **RESOLVED & PERSISTED** → ADR-0022 (new) + forward-annot ADR-0016/0017/0018/0019 + design §2.2–§12 + requirements FR-Y-S6 |
 | 5 — Command surface & UX | F13/F18/F19/F25/F26/F27/F34/F46/F47/F49/F50 | **RESOLVED & PERSISTED** → ADR-0023 (new, D1–D6) + forward-annot ADR-0016/0018/0019/0020/0021 + design §2.4/§3/§4.4/§6.2/§7/§8 |
 
-**The impl-readiness review (V) is FULLY RESOLVED — all 5 clusters closed (2026-06-19). Implementation IN PROGRESS along the `design.md` §9 P0–P5 phases.** Phase 0 (substrate) commits landed (`feat/vault/decentralized-config`, local): **T1** resolver+H4+L5 `ff8278b` · **T2a** index API `d913e5c` · **T3** coordinate parsers `992738d` · **T4-remotes** M3 split `2bdf80e` · **Commit A** repos/mount resolution wired to the STATE index `c8ae080` (suite **991/2**, +6 index tests) · **Commit B** session-mount bucket re-point + harness HOME flip `848cf63` (2026-06-20; suite **991/2** delta-green). Commit B emits the **final host-absolute mount map**: global config→CONFIG `~/.cco/global`, `secrets.env`/`setup.sh`→CONFIG `~/.cco` top-level, auth-seeds+transcripts+memory→STATE (keyed by project id), managed overlays generated+mounted→CACHE; `load_global_secrets`→`~/.cco/secrets.env`; container side of `entrypoint.sh` **unchanged** (compose↔entrypoint contract). Two maintainer decisions: **D1** follow design §2.2/§2.3 over the Z3-handoff's coarse "→ ~/.cco" (auth seeds = machine-local STATE, not CONFIG; global config under `~/.cco/global`; secrets/setup top-level — it is the frozen spec and is build-once) and **D2** managed **generation** target → CACHE here (not deferred to T8). Harness: HOME flipped into the tmpdir + hermetic `~/.gitconfig` (the ~12 git-committing suites + `protocol.file.allow=always`), **dual-seed** (legacy GLOBAL_DIR + new `~/.cco/global`), legacy `CCO_*_DIR` **KEPT** (still consumed by the not-yet-cutover commands → dropping breaks delta-green; the §3/§5 consumer-map lesson). Commit A's two **transitional** choices stand (keep-transitional @local plumbing + per-section schema bridge; die in P3/P4). **T8** `7dcf1e8` (2026-06-21) **closes Phase 0**: the generated `.claude` overlays `packs.md`/`workspace.yml` now generate into the CACHE bucket (`<cache>/cco/projects/<id>/.claude/`) and overlay `:ro` onto `/workspace/.claude` (ADR-0005 **F1** — extends Commit B's managed CACHE-overlay model; metadata generated before compose so overlays mount by existence), `_detect_cross_tree_conflicts` warns on committed-config vs pack/llms overlay collisions (**F2** — reserved `packs/`/`llms/` + per-file `rules`/`agents`/`skills`; pack `:ro` wins, never hard-block, P14), and the parent `.claude` mount stays rw with the committed tree never written (**F3**; +4 tests, fixed a masked F3 assertion). Suite **995/2** delta-green. Both "internal-artifact relocation" items remain re-sequenced OUT of P0 (tests hardcoded in later phases): **T4-source → P4** (source→DATA/F4; ADR-0022 D1 forward-annot) and **T5 → P2** (base/meta→STATE H6 + global-meta decompose; ADR-0016 D6 forward-annot). **Phase 0 substrate ✅ CLOSED → next = Phase 1** (core-local commands); method/phase-map = `Y-handoff-implementation.md` (Z2/Z3/Z4 consumed). T = post-v1 state-sync.
+**The impl-readiness review (V) is FULLY RESOLVED — all 5 clusters closed (2026-06-19). Implementation IN PROGRESS along the `design.md` §9 P0–P5 phases.** Phase 0 (substrate) commits landed (`feat/vault/decentralized-config`, local): **T1** resolver+H4+L5 `ff8278b` · **T2a** index API `d913e5c` · **T3** coordinate parsers `992738d` · **T4-remotes** M3 split `2bdf80e` · **Commit A** repos/mount resolution wired to the STATE index `c8ae080` (suite **991/2**, +6 index tests) · **Commit B** session-mount bucket re-point + harness HOME flip `848cf63` (2026-06-20; suite **991/2** delta-green). Commit B emits the **final host-absolute mount map**: global config→CONFIG `~/.cco/global`, `secrets.env`/`setup.sh`→CONFIG `~/.cco` top-level, auth-seeds+transcripts+memory→STATE (keyed by project id), managed overlays generated+mounted→CACHE; `load_global_secrets`→`~/.cco/secrets.env`; container side of `entrypoint.sh` **unchanged** (compose↔entrypoint contract). Two maintainer decisions: **D1** follow design §2.2/§2.3 over the earlier coarse "→ ~/.cco" mapping (auth seeds = machine-local STATE, not CONFIG; global config under `~/.cco/global`; secrets/setup top-level — it is the frozen spec and is build-once) and **D2** managed **generation** target → CACHE here (not deferred to T8). Harness: HOME flipped into the tmpdir + hermetic `~/.gitconfig` (the ~12 git-committing suites + `protocol.file.allow=always`), **dual-seed** (legacy GLOBAL_DIR + new `~/.cco/global`), legacy `CCO_*_DIR` **KEPT** (still consumed by the not-yet-cutover commands → dropping breaks delta-green; the §3/§5 consumer-map lesson). Commit A's two **transitional** choices stand (keep-transitional @local plumbing + per-section schema bridge; die in P3/P4). **T8** `7dcf1e8` (2026-06-21) **closes Phase 0**: the generated `.claude` overlays `packs.md`/`workspace.yml` now generate into the CACHE bucket (`<cache>/cco/projects/<id>/.claude/`) and overlay `:ro` onto `/workspace/.claude` (ADR-0005 **F1** — extends Commit B's managed CACHE-overlay model; metadata generated before compose so overlays mount by existence), `_detect_cross_tree_conflicts` warns on committed-config vs pack/llms overlay collisions (**F2** — reserved `packs/`/`llms/` + per-file `rules`/`agents`/`skills`; pack `:ro` wins, never hard-block, P14), and the parent `.claude` mount stays rw with the committed tree never written (**F3**; +4 tests, fixed a masked F3 assertion). Suite **995/2** delta-green. Both "internal-artifact relocation" items remain re-sequenced OUT of P0 (tests hardcoded in later phases): **T4-source → P4** (source→DATA/F4; ADR-0022 D1 forward-annot) and **T5 → P2** (base/meta→STATE H6 + global-meta decompose; ADR-0016 D6 forward-annot). **Phase 0 substrate ✅ CLOSED → next = adherence audit (`implementation-review-handoff.md`) → Phase 1** (`P1-handoff-core-local.md`, core-local commands); method/phase-map = `Y-handoff-implementation.md` (the per-cycle scaffold handoffs M/R3/S/V/W/X/Z* were consumed and removed — in git history). T = post-v1 state-sync.
 
 ---
 
@@ -125,8 +126,8 @@ expressible there → **cat-4 *location* reopened** for repo-scoped per-user dat
 (corrects today's vault-tracking; same profile as meta-hashes → co-locate; H6 merge-engine refactor
 cost); `pack-manifest` → **remove** (legacy, mooted by cutover); remotes → **split** (tokens→STATE
 never-synced · de-tokenized registry→cat-4 candidate). **Principle**: *co-locate by sync-profile, not
-just functional domain.* **Full context + open questions**: see **`R3-update-metadata-handoff.md`**.
-**Output**: ADR(s) + feed M + the Cat-4 synthesis (source/remotes inputs). Absorbs H6/M3.
+just functional domain.* **Full context**: ADR-0013 (the R3 scaffold handoff was consumed — in git
+history). **Output**: ADR(s) + feed M + the Cat-4 synthesis (source/remotes inputs). Absorbs H6/M3.
 </details>
 
 ### R4 — llms: nature & shareable references  ·  status: DONE (ADR-0014, 2026-06-17)
@@ -174,9 +175,9 @@ standalone `source` files (upstream-only, `required`). Also fixed: the **STATE i
 **Output**: ADR-0016 + `design.md §2` rewrite + `guiding-principles.md` P12 + this roadmap + inventory.
 **Hands to**: **S** (publish resolution, coordinate CLI + validation, `llms:`/`repos:` schema+migration),
 **E** (H6 merge-path, M3 remote decoupling, index concurrency/H7).
-> **Scaffold (history)**: `M-handoff-consolidated-design.md` — the cross-ADR end-state synthesis
-> (4-bucket trees, consolidated table, legacy→new fan-out map, conflicts/open-decisions). Maintainer-
-> validated 2026-06-17; consumed by ADR-0016.
+> **Scaffold (consumed — in git history)**: the M cross-ADR end-state synthesis (4-bucket trees,
+> consolidated table, legacy→new fan-out map, conflicts/open-decisions). Maintainer-validated
+> 2026-06-17; consumed by ADR-0016.
 > **M-review refinements → ADR-0017** (maintainer, same day): coordinate field semantics (url/ref
 > optional, llms url mandatory, origin derivation, url-may-differ→warn); CLI consolidation (`cco resolve
 > [--scan][--all]` absorbs `index refresh`; `cco start --from`; start-unresolved prompt); J0 bootstraps
@@ -184,8 +185,8 @@ standalone `source` files (upstream-only, `required`). Also fixed: the **STATE i
 > (resolves P3)**. Futures F1–F4 → S (Domain-B realignment) / T (DATA-STATE sync-engine).
 
 ### S — Sharing model unification  ·  status: DONE (ADR-0018 + ADR-0019 + ADR-0020, 2026-06-18)
-> **Scaffold (history)**: `S-handoff-sharing-unification.md` (S1–S11 scope, consumed inputs, open
-> decisions, reading order) — now resolved by ADR-0018/0019/0020.
+> **Scaffold (consumed — in git history)**: the S sharing-unification scope (S1–S11, consumed inputs,
+> open decisions, reading order) — resolved by ADR-0018/0019/0020.
 **Resolved** across three ADRs:
 - **ADR-0018 (sharing surface)**: nomenclature **config bucket vs sharing repo** ("config repo"
   retired); a symmetric **2×2 command matrix** (`publish`↔`install` for packs/templates; `export`↔
@@ -220,7 +221,7 @@ transversally with the project-sync daemon** (different scopes, possibly shared 
 R1–S settled.
 
 ### V — Impl-readiness review (whole-scope validation)  ·  status: ✅ DONE & FULLY RESOLVED (all 5 clusters, 2026-06-19) → implementation
-> **Start here**: `V-handoff-impl-readiness-review.md` — scope (all ADRs 0001–0020 + P1–P17 + living
+> **Report**: `reviews/18-06-2026-impl-readiness-review.md` — scope (all ADRs 0001–0020 + P1–P17 + living
 > docs + code), **8 parallel review perspectives** (cross-ADR/principle coherence; design↔ADR↔req sync;
 > completeness/gaps; ambiguity/impl-readiness; §9 phasing re-validation; code-grounding/feasibility;
 > doc-coherence-sweep readiness; migration/cutover safety), method, reading order.
@@ -230,7 +231,9 @@ on paper (cheap to fix). The design grew across ~20 ADRs + refinement cycles; no
 whole body as one. **Run in a clean session, ideally with parallel agents on different perspectives**
 (multi-modal sweep → adversarial verify → dedup → severity-rank → completeness critic). **Output**:
 `reviews/<date>-impl-readiness-review.md` (severity-ranked findings + maintainer-decision flags).
-**Does NOT** write code or re-open settled decisions without a principle-level reason. **Then → E.**
+**Does NOT** write code or re-open settled decisions without a principle-level reason. (The V launch
+scaffold was consumed — in git history.) The recurring **implementation-adherence** equivalent, run at
+each phase boundary during the build, is now `implementation-review-handoff.md`. **Then → implementation.**
 
 ### E — Implementation  ·  status: DISSOLVED into the dependency-layered phase map (design.md §9, Cluster 2, 2026-06-18)
 The former "E" workstream is **no longer a separate timeline**. Cluster 2 of the V impl-readiness review
@@ -276,9 +279,10 @@ per-unit/`package.json` model; DATA byte-level; STATE index subsumes @local; C1�
 (ADR-0018/0019/0020 — sharing unification: 2×2 matrix, pack coordinates + reachability P14, DRY P15,
 working-copy lifecycle P16, permissions delegated-to-git P17; manifest-removal realized; solo-adopter
 A+B)** → **V ✅ (DONE & FULLY RESOLVED — all 5 clusters; Cluster 5 → ADR-0023; design READY)** →
-**impl (NEXT — dependency-layered phases P0–P5, design.md §9; "E" dissolved, Cluster 2; see
-`Y-handoff-implementation.md`)** → (T future).
-**Config + sharing design CLOSED; V running cluster-by-cluster — Cluster 2 (phasing & test-plan) DONE.**
+**impl IN PROGRESS — dependency-layered phases P0–P5, design.md §9; **Phase 0 ✅ CLOSED**, next =
+adherence audit (`implementation-review-handoff.md`) → Phase 1 (`P1-handoff-core-local.md`); see
+`Y-handoff-implementation.md`** → (T future).
+**Config + sharing design CLOSED; V fully resolved (all 5 clusters); implementation Phase 0 closed.**
 
 ## Notes
 - R1 is **resolved-partial** (ADR-0011): tag *nature* fixed (CLI-canonical → internal); the
@@ -294,8 +298,8 @@ A+B)** → **V ✅ (DONE & FULLY RESOLVED — all 5 clusters; Cluster 5 → ADR-
   split by responsibility; `base/`→STATE·`never`-sync (H6 refactor accepted); remotes split
   (token·`never` / registry→cat-4); `source`→cat-4 candidate (sidecar dropped); `pack-manifest`
   removed. STATE refined with a `never`/`opt-in`/`required` sync class. Principle **P11** added.
-  Team-sharing (A+C) handed to **S** via R3's shared-surface map. Full context:
-  **`R3-update-metadata-handoff.md`** (now annotated as resolved).
+  Team-sharing (A+C) handed to **S** via R3's shared-surface map. Full context: ADR-0013 (the R3
+  scaffold handoff was consumed — in git history).
 - R4 is **DONE** (ADR-0014, 2026-06-17): llms content → CACHE (hand-curated rejected); the
   shareable-reference question generalized into the **"referenced-resource coordinate" model** (repos
   + llms, **unified — option C**): reference by-name; one **canonical coordinate `name→url`(+variant/

@@ -1,7 +1,7 @@
 # Roadmap
 
 > Tracks planned features, improvements, and known issues for future iterations.
-> Last updated: 2026-06-21 (decentralized-config: ALL config **and sharing** analyses resolved — RD-* + R1–R4 + Cat-4 + M + **S**, ADRs 0005–**0023**; 4-bucket taxonomy + coordinate-per-unit + sharing unification [2×2 matrix, pack coordinates, reachability, working-copy lifecycle, permissions delegated-to-git] + principles **P1–P17**; **config + sharing design CLOSED. Impl-readiness review (V) DONE** — `reviews/18-06-2026-impl-readiness-review.md`, 58 findings/37 decisions, being resolved **cluster by cluster**: Cluster 1 RESOLVED → ADR-0021 + ADR-0006/0009/0010; Cluster 2 RESOLVED → impl order re-derived (dependency+reuse+open-closed) into a 6-phase dependency-layer map, design §9/§11 rewritten; Cluster 3 Block A RESOLVED → doc-lifecycle rule + design-intent re-sync; Cluster 4 RESOLVED → ADR-0022 + forward-annot ADR-0016/0017/0018/0019 + design §2.2–§12 + FR-Y-S6; Cluster 5 RESOLVED → **ADR-0023** (D1–D6: `cco config`/`cco project` namespace + `cco project validate` contract + `cco project add <res>`/`--path` + sharing-surface/internalize family + `cco new`/`extra_mounts` + `cco config protect`) + forward-annot ADR-0016/0018/0019/0020/0021. **ALL 5 CLUSTERS RESOLVED → impl-readiness review (V) FULLY CLOSED (2026-06-19). Implementation IN PROGRESS — Phase 0 (T1/T2a/T3/T4-remotes + **Commit A** `c8ae080` + **Commit B** `848cf63` + **T8** `7dcf1e8`, suite 995/2 delta-green) ✅ **CLOSED**; Commit A = repos/mount → STATE index (transitional schema-bridge + keep-transitional @local, die P3/P4); Commit B = session-mount bucket re-point + harness HOME flip (global→CONFIG ~/.cco/global, auth+transcripts+memory→STATE, managed→CACHE; **D1** design §2.2/2.3 over Z3-coarse "→ ~/.cco", **D2** managed-gen→CACHE; kept legacy CCO_*_DIR + dual-seed); T8 = `.claude` overlays packs.md/workspace.yml → CACHE :ro (ADR-0005 F1/F2/F3; F2 cross-tree collision warn); [internal-artifact relocations re-sequenced OUT of P0: T4-source→P4, T5→P2]; **next = Phase 1** core-local commands; method/phase-map = `Y-handoff-implementation.md`; T future**).
+> Last updated: 2026-06-21 (decentralized-config: ALL config **and sharing** analyses resolved — RD-* + R1–R4 + Cat-4 + M + **S**, ADRs 0005–**0023**; 4-bucket taxonomy + coordinate-per-unit + sharing unification [2×2 matrix, pack coordinates, reachability, working-copy lifecycle, permissions delegated-to-git] + principles **P1–P17**; **config + sharing design CLOSED. Impl-readiness review (V) DONE** — `reviews/18-06-2026-impl-readiness-review.md`, 58 findings/37 decisions, being resolved **cluster by cluster**: Cluster 1 RESOLVED → ADR-0021 + ADR-0006/0009/0010; Cluster 2 RESOLVED → impl order re-derived (dependency+reuse+open-closed) into a 6-phase dependency-layer map, design §9/§11 rewritten; Cluster 3 Block A RESOLVED → doc-lifecycle rule + design-intent re-sync; Cluster 4 RESOLVED → ADR-0022 + forward-annot ADR-0016/0017/0018/0019 + design §2.2–§12 + FR-Y-S6; Cluster 5 RESOLVED → **ADR-0023** (D1–D6: `cco config`/`cco project` namespace + `cco project validate` contract + `cco project add <res>`/`--path` + sharing-surface/internalize family + `cco new`/`extra_mounts` + `cco config protect`) + forward-annot ADR-0016/0018/0019/0020/0021. **ALL 5 CLUSTERS RESOLVED → impl-readiness review (V) FULLY CLOSED (2026-06-19). Implementation IN PROGRESS — Phase 0 (T1/T2a/T3/T4-remotes + **Commit A** `c8ae080` + **Commit B** `848cf63` + **T8** `7dcf1e8`, suite 995/2 delta-green) ✅ **CLOSED**; Commit A = repos/mount → STATE index (transitional schema-bridge + keep-transitional @local, die P3/P4); Commit B = session-mount bucket re-point + harness HOME flip (global→CONFIG ~/.cco/global, auth+transcripts+memory→STATE, managed→CACHE; **D1** design §2.2/2.3 over the earlier coarse "→ ~/.cco" mapping, **D2** managed-gen→CACHE; kept legacy CCO_*_DIR + dual-seed); T8 = `.claude` overlays packs.md/workspace.yml → CACHE :ro (ADR-0005 F1/F2/F3; F2 cross-tree collision warn); [internal-artifact relocations re-sequenced OUT of P0: T4-source→P4, T5→P2]; **next = adherence audit (`implementation-review-handoff.md`) → Phase 1** core-local commands (`P1-handoff-core-local.md`); method/phase-map = `Y-handoff-implementation.md`; T future**).
 >
 > **Note**: Sprint entries are historical. Path references (e.g., `.cco-meta`, `.cco-source`) in older
 > sprints reflect the layout at the time of writing. See Sprint 8 and the `.cco/` consolidation
@@ -74,7 +74,7 @@ graph LR
 
 **Status**: Design APPROVED (2026-06-15); **config + sharing design CLOSED**; **impl-readiness review
 (V) FULLY RESOLVED — all 5 clusters closed (2026-06-19)**; **design CLOSED → ✅ IMPLEMENTATION IN
-PROGRESS (Phase 0 substrate ✅ CLOSED — T1/T2a/T3/T4-remotes + Commit A + Commit B + T8 landed through 2026-06-21, suite 995/2 delta-green; next = Phase 1 core-local commands)**.
+PROGRESS (Phase 0 substrate ✅ CLOSED — T1/T2a/T3/T4-remotes + Commit A + Commit B + T8 landed through 2026-06-21, suite 995/2 delta-green; next = adherence audit → Phase 1 core-local commands)**.
 Living `requirements.md` + `design.md` are the single source of truth;
 decisions recorded in ADRs **0001–0023** (`../configuration/decentralized-config/decisions/`); the
 role-first analyses (R1–R4, Cat-4, M, **S**) are tracked in `analysis-roadmap.md`; analyses + the V
@@ -105,7 +105,7 @@ PERSISTED** (2026-06-19): all 11 findings → **new ADR-0023** (D1–D6: `cco co
 + `cco project validate` contract + `cco project add <res>`/`--path` + sharing-surface/internalize family
 + `cco new`/`extra_mounts` + `cco config protect`) + forward-annotations to ADR-0016/0018/0019/0020/0021
 + design §2.4/§3/§4.4/§6.2/§7/§8 re-sync. **ALL 5 CLUSTERS RESOLVED → the review (V) is fully closed.**
-**IMPLEMENTATION IN PROGRESS — Phase 0 (substrate) ✅ CLOSED; next = Phase 1**: landed
+**IMPLEMENTATION IN PROGRESS — Phase 0 (substrate) ✅ CLOSED; next = adherence audit → Phase 1**: landed
 `feat/vault/decentralized-config` (commits local) — **T1** resolver+H4+L5 (`ff8278b`), **T2a** index API
 (`d913e5c`), **T3** coordinate parsers (`992738d`), **T4-remotes** M3 split (`2bdf80e`), **Commit A**
 repos/mount resolution wired to the STATE index (`c8ae080`), **Commit B** session-mount bucket re-point +
@@ -114,7 +114,7 @@ harness HOME flip (`848cf63`, 2026-06-20), **T8** `.claude` overlays → CACHE :
 Commit A, +4 overlay/collision tests from T8). Commit B emits the **final host-absolute mount map** (global
 config→CONFIG `~/.cco/global`, secrets/setup→CONFIG `~/.cco` top-level, auth-seeds+transcripts+memory→STATE
 keyed-by-id, managed overlays→CACHE; container side of `entrypoint.sh` unchanged) with two maintainer
-decisions: **D1** follow design §2.2/§2.3 over the Z3-handoff's coarse "→ ~/.cco" (auth=STATE; global under
+decisions: **D1** follow design §2.2/§2.3 over the earlier coarse "→ ~/.cco" mapping (auth=STATE; global under
 `~/.cco/global`; secrets/setup top-level — frozen spec + build-once) and **D2** managed generation → CACHE
 here. **T8** extends that CACHE-overlay model to the generated `packs.md`/`workspace.yml` (ADR-0005 F1:
 generate into `<cache>/cco/projects/<id>/.claude/` + child `:ro` overlay onto `/workspace/.claude`, metadata
@@ -124,9 +124,12 @@ Harness kept legacy `CCO_*_DIR` + dual-seed + HOME flip + hermetic gitconfig. Co
 choices stand (keep-transitional @local plumbing + per-section schema bridge; die P3/P4). The two
 internal-artifact relocations are re-sequenced OUT of P0 (tests hardcoded in later phases): **T4-source →
 P4** (source→DATA/F4) and **T5 → P2** (base/meta→STATE, H6 + global-meta decompose); design §2.2/§9/§11 +
-ADR-0022 D1 / ADR-0016 D6 forward-annotations. **Next = Phase 1** (core-local commands: `cco config
-save/push/pull`, `cco resolve`/`cco path` incl. clone-from-`url` + `--scan` upsert, the non-blocking reminder
-aggregator). Method/phase-map = `Y-handoff-implementation.md`. T (state-sync) is future.
+ADR-0022 D1 / ADR-0016 D6 forward-annotations. **Next = adherence audit
+(`implementation-review-handoff.md`) → Phase 1** (`P1-handoff-core-local.md` — core-local commands:
+`cco sync` [4 forms, copy], `cco resolve`/`cco path` incl. clone-from-`url` + `--scan` upsert, the
+non-blocking reminder aggregator, sync-meta fingerprint, generic `cco project add/validate/coords`;
+**`cco config save/push/pull` is Phase 3**). Method/phase-map = `Y-handoff-implementation.md`. T
+(state-sync) is future.
 **Priority**: 0 (next major work). **Supersedes**: branch-switch real-isolation
 model in `../../configuration/vault/profile-isolation-design.md` (v2) **and** the
 central-vault project store.
@@ -186,13 +189,14 @@ gate which projects exist on disk or which can be started.
   Key end-state: **config decentralizes** (project→`<repo>/.cco`, personal→`~/.cco`), **internal
   centralizes keyed-by-identity** (DATA/STATE/CACHE), **referenced-resource coordinates embedded
   per-unit in the manifest** (`package.json` model; repos/llms/**packs**), **team-sharing via sharing
-  repos** (packs/templates publish/install; projects ride the repo remote). **Remaining**: **V**
-  (impl-readiness review — whole-scope validation gate before coding; parallel perspectives;
-  `V-handoff-impl-readiness-review.md`), then **E** (implementation — manifest deletion, structure-based
-  discovery, sync-before-publish, 2×2 wiring, pack-coordinate schema + migration, `cco update --check`,
-  `cco config protect`, S8; + review follow-ups H6/M3/H7), **T** (RD-triggers / R-state-sync /
-  DATA-STATE sync-engine — future), and a **post-v1** analysis for solo-adopter Case C. **Config +
-  sharing design CLOSED.**
+  repos** (packs/templates publish/install; projects ride the repo remote). **Status**: **V**
+  impl-readiness review DONE (`reviews/18-06-2026-impl-readiness-review.md`); **implementation IN
+  PROGRESS** along design §9 P0–P5 — **Phase 0 substrate ✅ CLOSED** (T1/T2a/T3/T4-remotes + Commit A +
+  Commit B + T8; suite 995/2 delta-green), **next = Phase 1** (core local commands), preceded by an
+  adherence audit (`implementation-review-handoff.md`); later phases cover migration, legacy cutover,
+  manifest deletion + structure-based discovery, sync-before-publish, 2×2 wiring, `source`→DATA,
+  `cco update --check`, `cco config protect`, S8. **T** (RD-triggers / R-state-sync / DATA-STATE
+  sync-engine) and solo-adopter Case C are **post-v1**. **Config + sharing design CLOSED.**
 - **Coherence review 2026-06-16** (`reviews/16-06-2026-design-coherence-review.md`):
   architecture coherent, Phase 0 ready. Doc-fixes + phase write-downs applied. New
   follow-up analyses raised: reminder-aggregator cost & scoping, project-config inventory
@@ -241,16 +245,15 @@ the 4-bucket taxonomy (ADR-0016) + M-review (ADR-0017) close the **config** desi
 resource's local copy is never its source** (DRY, P15); **working-copy lifecycle + sync-before-publish**
 (P16); **internalize-as-cache** (opt-in, last-layer); **permissions delegated to git** (P17, optional
 `cco config protect`); S8 no-token-leak; opinionated-defaults-as-sharing-repo designed (migrated
-post-impl). Principles **P13–P17** added. **Next = impl-readiness review (V)** — a read-only whole-scope
-validation gate over all ADRs 0001–0020 + P1–P17 + living docs + code, run in a clean session with
-parallel agents on different perspectives (cross-ADR/principle coherence, design↔ADR↔req sync,
+post-impl). Principles **P13–P17** added. **The impl-readiness review (V) is DONE** — a read-only
+whole-scope validation gate (parallel perspectives: cross-ADR/principle coherence, design↔ADR↔req sync,
 completeness/gaps, ambiguity/impl-readiness, §9 phasing re-validation, code-grounding/feasibility,
-doc-sweep readiness, migration/cutover safety); output a severity-ranked findings report. See
-`V-handoff-impl-readiness-review.md`. **Then implementation (E)**: manifest deletion + structure-based
-discovery, sync-before-publish fix, 2×2 wiring, pack-coordinate schema + migration, `cco update
---check`, `cco config protect`, S8 checklist; plus the earlier impl-time review follow-ups (H6
-merge-path, M3 remote decoupling, H7 index concurrency, reminder-aggregator, join Case-C). Implement per
-`design.md` §9 phases (Phase 0 ready). **T** (RD-triggers / R-state-sync / DATA-STATE sync-engine) and
+doc-sweep readiness, migration/cutover safety) → severity-ranked findings, all 5 clusters resolved into
+ADRs 0021–0023 + forward-annotations. Report: `reviews/18-06-2026-impl-readiness-review.md`. **Implementation
+IN PROGRESS** per `design.md` §9 P0–P5 — **Phase 0 ✅ CLOSED**, next = Phase 1; later phases cover manifest
+deletion + structure-based discovery, sync-before-publish fix, 2×2 wiring, `source`→DATA, `cco update
+--check`, `cco config protect`, S8, and the merge-path/remote/index follow-ups (H6/M3/H7). The recurring
+**`implementation-review-handoff.md`** runs an adherence/gap audit at each phase boundary. **T** (RD-triggers / R-state-sync / DATA-STATE sync-engine) and
 **solo-adopter Case C** are post-v1. The vault/`@local`/profile **bug class #B13–#B23 is mooted** by the
 removal.
 
