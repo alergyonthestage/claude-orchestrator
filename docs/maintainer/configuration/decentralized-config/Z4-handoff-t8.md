@@ -1,5 +1,12 @@
 # Z4 — T8 launch handoff (CACHE overlays — closes Phase 0)
 
+> **✅ CONSUMED 2026-06-21.** T8 landed as `7dcf1e8` on `feat/vault/decentralized-config`: `packs.md`/
+> `workspace.yml` generate into the CACHE bucket and overlay `:ro` onto `/workspace/.claude` (F1),
+> `_detect_cross_tree_conflicts` warns on committed-config↔pack/llms collisions (F2), the parent `.claude`
+> mount stays rw with the committed tree never written (F3). Suite **995/2** delta-green (+4 tests; a masked
+> F3 assertion was fixed). **Phase 0 (substrate) is CLOSED → next = Phase 1** (core-local commands). The
+> roadmaps + `analysis-roadmap.md` are updated. Kept for reference; no further action.
+
 **Purpose.** Launch **T8** in a fresh, clean session. T8 is the **last Phase-0 item**: it carries the
 RD-claude-mount items (ADR-0005) — generate `packs.md`/`workspace.yml` into **CACHE** and overlay them
 `:ro` (F1), reserve `packs/`/`llms/` + warn on cross-tree name collisions (F2), and keep the parent
