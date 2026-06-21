@@ -913,3 +913,52 @@ YAML
         return 1
     fi
 }
+
+# ── F2: cross-tree collision detection (ADR-0005) ─────────────────────
+# A committed .claude file that maps to the same container path as a pack/llms
+# overlay is shadowed (the :ro child mount wins over the rw parent). cco start
+# warns; it never hard-blocks (layered reachability philosophy, P14).
+
+test_cross_tree_pack_file_collision_warns() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    mkdir -p "$CCO_PACKS_DIR/r-pack/rules"
+    create_pack "$tmpdir" "r-pack" "$(printf 'name: r-pack\nrules:\n  - foo.md\n')"
+    echo "pack rule" > "$CCO_PACKS_DIR/r-pack/rules/foo.md"
+    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nrepos:\n  - name: dummy-repo\npacks:\n  - r-pack\n')"
+    # Committed config authors the same relative path the pack mounts to.
+    mkdir -p "$CCO_PROJECTS_DIR/test-proj/.claude/rules"
+    echo "user rule" > "$CCO_PROJECTS_DIR/test-proj/.claude/rules/foo.md"
+    run_cco start "test-proj" --dry-run --dump
+    assert_output_contains ".claude/rules/foo.md collides with pack 'r-pack'"
+}
+
+test_cross_tree_no_collision_no_warn() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    mkdir -p "$CCO_PACKS_DIR/r-pack/rules"
+    create_pack "$tmpdir" "r-pack" "$(printf 'name: r-pack\nrules:\n  - foo.md\n')"
+    echo "pack rule" > "$CCO_PACKS_DIR/r-pack/rules/foo.md"
+    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nrepos:\n  - name: dummy-repo\npacks:\n  - r-pack\n')"
+    # No committed .claude/rules/foo.md → nothing collides.
+    run_cco start "test-proj" --dry-run --dump
+    if echo "${CCO_OUTPUT:-}" | grep -qFe "collides with pack"; then
+        echo "ASSERTION FAILED: no collision expected when committed config is clean"
+        return 1
+    fi
+}
+
+test_cross_tree_reserved_namespace_warns() {
+    # packs/ and llms/ are framework-reserved subtrees; committed content there
+    # is shadowed by pack/llms overlays — warn even with no packs configured.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nrepos:\n  - name: dummy-repo\n')"
+    mkdir -p "$CCO_PROJECTS_DIR/test-proj/.claude/packs/stale"
+    echo "x" > "$CCO_PROJECTS_DIR/test-proj/.claude/packs/stale/x.md"
+    run_cco start "test-proj" --dry-run --dump
+    assert_output_contains ".claude/packs/ is framework-reserved"
+}

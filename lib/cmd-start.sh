@@ -261,11 +261,15 @@ _start_prepare_state() {
             trap _cleanup_dry_run_dir EXIT
         fi
         mkdir -p "$output_dir/.claude" "$output_dir/.cco/managed"
-        # Dry-run inspects generated managed overlays under the dump dir.
+        # Dry-run inspects generated overlays under the dump dir.
         managed_gen_dir="$output_dir/.cco/managed"
+        claude_gen_dir="$output_dir/.claude"
     else
-        # Real start: managed overlays are regenerable → CACHE (keyed by id).
+        # Real start: generated overlays are regenerable → CACHE (keyed by id).
+        # packs.md/workspace.yml are produced here and mounted :ro on top of the
+        # rw project .claude (ADR-0005 F1), never written into the committed tree.
         managed_gen_dir="$session_cache_dir/managed"
+        claude_gen_dir="$session_cache_dir/.claude"
     fi
 
     # ── Persistent side effects: skip in dry-run ─────────────────────────
@@ -278,7 +282,8 @@ _start_prepare_state() {
         # /session partition is the future state-sync opt-in boundary (§2.2).
         mkdir -p "$session_state_dir/session/claude-state" \
                  "$session_state_dir/session/memory" \
-                 "$managed_gen_dir"
+                 "$managed_gen_dir" \
+                 "$claude_gen_dir"
 
         # Global auth/session state, shared across all projects → STATE
         # top-level (machine-local, never synced; design §2.2 / ADR-0016).
@@ -374,6 +379,11 @@ _start_generate_integrations() {
     if [[ -n "$pack_names" ]]; then
         _detect_pack_conflicts "$pack_names"
     fi
+
+    # Warn on cross-tree collisions between committed .claude config and the
+    # framework-reserved overlay tree (ADR-0005 F2). Unconditional — reserved
+    # packs//llms/ violations apply even with no packs configured.
+    _detect_cross_tree_conflicts "$project_yml" "$pack_names" "$project_dir"
 }
 
 # Resolves @local markers and legacy {{REPO_*}} in project.yml before
@@ -484,6 +494,18 @@ YAML
       # Memory: auto memory files (machine-local STATE, separate from transcripts)
       - ${session_state_dir}/session/memory:/home/claude/.claude/projects/-workspace/memory
 YAML
+
+        # Generated .claude overlays (packs.md, workspace.yml) → CACHE, layered
+        # :ro on top of the rw project .claude mount above (ADR-0005 F1/F3).
+        # Docker applies child mounts after their parent regardless of order, so
+        # the parent stays rw while these stay read-only; the committed project
+        # .claude/ is never written by cco start.
+        if [[ -f "$claude_gen_dir/packs.md" ]]; then
+            echo "      - ${session_cache_dir}/.claude/packs.md:/workspace/.claude/packs.md:ro"
+        fi
+        if [[ -f "$claude_gen_dir/workspace.yml" ]]; then
+            echo "      - ${session_cache_dir}/.claude/workspace.yml:/workspace/.claude/workspace.yml:ro"
+        fi
 
         # Global MCP config (merged into ~/.claude.json by entrypoint)
         if [[ -f "$config_global/.claude/mcp.json" ]]; then
@@ -606,9 +628,12 @@ YAML
 }
 
 # Generates pack metadata (packs.md, workspace.yml) and cleans legacy files.
+# The two files are regenerable framework overlays (ADR-0005 F1): produced into
+# claude_gen_dir (CACHE on a real start, the dump dir under --dry-run --dump) and
+# mounted :ro by _start_generate_compose, never written into the committed tree.
 _start_generate_metadata() {
-    # Generate .claude/packs.md — instructional list of knowledge + llms files
-    packs_md="$output_dir/.claude/packs.md"
+    # Generate packs.md — instructional list of knowledge + llms files
+    packs_md="$claude_gen_dir/packs.md"
     local has_knowledge=false has_llms=false
 
     # Check if there's any content to generate
@@ -670,8 +695,8 @@ _start_generate_metadata() {
         rm -f "$packs_md"
     fi
 
-    # Generate .claude/workspace.yml — structured project context for /init
-    _generate_workspace_yml "$output_dir" "$project_name" "$project_yml" "$pack_names"
+    # Generate workspace.yml — structured project context for /init
+    _generate_workspace_yml "$claude_gen_dir" "$project_name" "$project_yml" "$pack_names"
 
     # One-shot cleanup of legacy copied pack files (pre-ADR-14) — skip in dry-run
     if ! $dry_run; then
@@ -751,7 +776,7 @@ _start_show_summary() {
         [[ -f "$output_dir/.cco/managed/browser.json" ]]  && info "  .cco/managed/browser.json"
         [[ -f "$output_dir/.cco/managed/github.json" ]]   && info "  .cco/managed/github.json"
         [[ -f "$packs_md" ]]                          && info "  .claude/packs.md"
-        [[ -f "$output_dir/.claude/workspace.yml" ]]  && info "  .claude/workspace.yml"
+        [[ -f "$claude_gen_dir/workspace.yml" ]]      && info "  .claude/workspace.yml"
         echo ""
         info "Inspect with: cat ${output_dir}/.cco/docker-compose.yml"
     else
@@ -854,7 +879,7 @@ EOF
     local browser_enabled browser_mode browser_cdp_port browser_effective_port browser_mcp_args
     local github_enabled github_token_env pack_names
     local output_dir compose_file packs_md
-    local config_dir session_state_dir session_cache_dir managed_gen_dir
+    local config_dir session_state_dir session_cache_dir managed_gen_dir claude_gen_dir
 
     _start_resolve_project
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] resolve_project done" >&2
@@ -874,11 +899,14 @@ EOF
     _start_resolve_paths
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] resolve_paths done" >&2
 
-    _start_generate_compose
-    [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] generate_compose done" >&2
-
+    # Generate the .claude overlays (packs.md, workspace.yml) BEFORE compose so
+    # compose can mount them :ro by existence — the same generate-then-mount
+    # ordering used for the managed/ overlays (ADR-0005 F1).
     _start_generate_metadata
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] generate_metadata done" >&2
+
+    _start_generate_compose
+    [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] generate_compose done" >&2
 
     if $dry_run; then
         _start_show_summary

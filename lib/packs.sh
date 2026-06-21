@@ -2,7 +2,8 @@
 # lib/packs.sh — Pack resource helpers (manifest cleanup, conflicts, validate)
 #
 # Provides: _clean_pack_manifest(), _detect_pack_conflicts(),
-#           _generate_pack_mounts(), _validate_single_pack()
+#           _detect_cross_tree_conflicts(), _generate_pack_mounts(),
+#           _validate_single_pack()
 # Dependencies: colors.sh, utils.sh, yaml.sh
 # Globals: PACKS_DIR
 
@@ -68,6 +69,54 @@ _detect_pack_conflicts() {
             [[ -n "$owner" ]] && warn "Skill '$f' defined in both pack '$owner' and '$pack_name' — '$pack_name' will overwrite"
             seen_skills_keys+=("$f"); seen_skills_vals+=("$pack_name")
         done <<< "$skills"
+    done <<< "$pack_names"
+}
+
+# Detect cross-tree collisions between the committed project .claude/ config and
+# the framework-reserved overlay tree (ADR-0005 F2). Pack and llms resources are
+# overlaid read-only at /workspace/.claude/{packs,llms,rules,agents,skills}/...;
+# a committed file at the same container path is shadowed (Docker applies the
+# child :ro mount on top of the rw parent, so the overlay wins). This is
+# detect-and-warn only — never a hard block (layered reachability, P14).
+# Args: project_yml, pack_names, project_dir.
+_detect_cross_tree_conflicts() {
+    local project_yml="$1" pack_names="$2" project_dir="$3"
+    local claude_dir="$project_dir/.claude"
+    [[ ! -d "$claude_dir" ]] && return 0
+
+    # Reserved namespaces: packs/ and llms/ are framework-owned subtrees (pack
+    # knowledge dirs + llms docs mount here). Committed config must not author
+    # into them — warn regardless of whether packs/llms are currently configured.
+    local _ns
+    for _ns in packs llms; do
+        if [[ -d "$claude_dir/$_ns" ]] && [[ -n "$(ls -A "$claude_dir/$_ns" 2>/dev/null)" ]]; then
+            warn "Committed .claude/$_ns/ is framework-reserved — its contents are shadowed by pack/llms :ro overlays."
+        fi
+    done
+
+    # Per-file collisions in the shared rules/agents/skills trees. A user may
+    # legitimately author there, so report the specific overlapping file.
+    [[ -z "$pack_names" ]] && return 0
+    local _pn _f
+    while IFS= read -r _pn; do
+        [[ -z "$_pn" ]] && continue
+        local _pyml="$PACKS_DIR/${_pn}/pack.yml"
+        [[ ! -f "$_pyml" ]] && continue
+        while IFS= read -r _f; do
+            [[ -z "$_f" ]] && continue
+            [[ -e "$claude_dir/rules/$_f" ]] && \
+                warn "Committed .claude/rules/$_f collides with pack '$_pn' — the pack ':ro' overlay wins."
+        done <<< "$(yml_get_pack_rules "$_pyml")"
+        while IFS= read -r _f; do
+            [[ -z "$_f" ]] && continue
+            [[ -e "$claude_dir/agents/$_f" ]] && \
+                warn "Committed .claude/agents/$_f collides with pack '$_pn' — the pack ':ro' overlay wins."
+        done <<< "$(yml_get_pack_agents "$_pyml")"
+        while IFS= read -r _f; do
+            [[ -z "$_f" ]] && continue
+            [[ -e "$claude_dir/skills/$_f" ]] && \
+                warn "Committed .claude/skills/$_f collides with pack '$_pn' — the pack ':ro' overlay wins."
+        done <<< "$(yml_get_pack_skills "$_pyml")"
     done <<< "$pack_names"
 }
 

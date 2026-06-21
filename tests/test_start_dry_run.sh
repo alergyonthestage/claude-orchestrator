@@ -279,19 +279,58 @@ test_dry_run_memory_mount_after_claude_state() {
 # ── Volume mounts: project config (Design Invariant 2 - read-write) ──
 
 test_dry_run_project_claude_mounted_readwrite() {
-    # Design Invariant 2: project .claude must be rw (no :ro)
+    # Design Invariant 2 / ADR-0005 F3: the parent project .claude must be rw
+    # (the generated overlays layered on top are :ro — see the F1 test below).
+    # Host mount sources are absolute (Commit B), so match the container side at
+    # end-of-line rather than a literal "./.claude" prefix.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
-    assert_file_contains "$compose" "./.claude:/workspace/.claude"
-    # Must NOT have :ro suffix on project config
-    if grep -qF "./.claude:/workspace/.claude:ro" "$compose"; then
+    # Parent mount present: a volume line whose container side is exactly
+    # /workspace/.claude (the child overlays carry a deeper path).
+    if ! grep -qE ':/workspace/\.claude$' "$compose"; then
+        echo "ASSERTION FAILED: project .claude parent mount not found"
+        cat "$compose"
+        return 1
+    fi
+    # The parent must NOT be read-only (it stays rw so in-session edits persist).
+    if grep -qE ':/workspace/\.claude:ro$' "$compose"; then
         echo "ASSERTION FAILED: project .claude must be rw, not :ro"
         return 1
     fi
+}
+
+test_dry_run_claude_overlays_cache_readonly() {
+    # ADR-0005 F1: packs.md and workspace.yml are generated into the CACHE bucket
+    # and overlaid :ro onto /workspace/.claude — never written into the committed
+    # project .claude/ (keeps the repo's git diff truthful, P6/G8).
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    # A pack with a knowledge file makes packs.md non-empty (it is otherwise
+    # omitted); workspace.yml is always generated.
+    local pack_src="$CCO_PACKS_DIR/k-pack/knowledge"
+    mkdir -p "$pack_src"
+    create_pack "$tmpdir" "k-pack" "$(printf 'name: k-pack\nknowledge:\n  source: %s\n  files:\n    - overview.md\n' "$pack_src")"
+    echo "# Overview" > "$pack_src/overview.md"
+    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nrepos:\n  - name: dummy-repo\npacks:\n  - k-pack\n')"
+    run_cco start "test-proj" --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    # Both overlays mounted :ro from the CACHE bucket (host-absolute, exact).
+    # (|| return 1 — bare asserts are masked under the runner's set -e.)
+    assert_file_contains "$compose" \
+        "$CCO_CACHE_HOME/projects/test-proj/.claude/workspace.yml:/workspace/.claude/workspace.yml:ro" || return 1
+    assert_file_contains "$compose" \
+        "$CCO_CACHE_HOME/projects/test-proj/.claude/packs.md:/workspace/.claude/packs.md:ro" || return 1
+    # The committed project .claude/ never receives the generated files.
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/packs.md" || return 1
+    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/workspace.yml" || return 1
+    # The --dump inspection copy still lands under the dump .claude/ (unchanged).
+    assert_file_exists "$DRY_RUN_DIR/.claude/packs.md" || return 1
+    assert_file_exists "$DRY_RUN_DIR/.claude/workspace.yml" || return 1
 }
 
 # ── Docker socket (Docker-from-Docker) ───────────────────────────────
