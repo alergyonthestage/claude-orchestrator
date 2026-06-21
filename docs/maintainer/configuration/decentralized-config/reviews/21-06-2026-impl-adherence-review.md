@@ -27,7 +27,8 @@ The **one substantive finding is in the test harness, not the production code**:
 > P0 conformance was verified independently). The **3 P0-scope `test_invariants`** ones (stale relative
 > `./` mount literal + missing `.cco/` compose sub-path) were **spot-fixed** (§11 "light-touch"), giving
 > a verified **981/16**. The remaining **16 are the corrected known-failure baseline** (registry §4),
-> owned by their rewrite/removal phases (P2/P3/P4–P5). HITL-1 is thus **resolved**; HITL-2 (low) remains.
+> owned by their rewrite/removal phases (P2/P3/P4–P5). **HITL-1 resolved.** **HITL-2 also closed** (a
+> `0600` mode assertion added for `remotes-token`) → **final baseline `982/16`**.
 
 ```mermaid
 flowchart LR
@@ -60,7 +61,7 @@ element divergences, so they sit outside the four-state table by nature; they ar
 - **Reported delta-green (live run, masked)**: `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test` →
   **`995 passed, 2 failed, 997 total`**. The two *visible* failures matched the documented baseline
   (`test_resolve_name_from_full_variant_url` P4–P5; `test_update_migrations_run_in_order` P2). **But
-  this count was masked** — see §9: the true figure is **981/16** after the audit's runner fix.
+  this count was masked** — see §9: the true figure is **982/16** after the audit's runner fix + HITL-2.
 - **Delta-green awareness (caveat → confirmed live)**: a green count is *not* proof of conformance. The
   masked-assertion finding (§6 F-A / HITL-1) meant a subset of contract tests asserted only their
   **last** check. Applying the fix proved the risk was real: **17 masked failures surfaced**. The lens
@@ -216,7 +217,7 @@ no-token-leak violation) would not be caught by this test.
 **Not a P0 code bug, but NOT a benign false-green either** (corrected post-fix — see §9): the masking
 was **actively hiding 17 failing test functions**. P0 *production-code* conformance holds (verified
 independently by the lenses), but the "995/2 delta-green" itself was masked — the true figure is
-**981/16** once the failures are unmasked.
+**981/16** once the failures are unmasked (**982/16** after the HITL-2 0600 test, §9).
 
 **Resolution — Option A applied (maintainer-approved):** the runner now treats a captured
 `ASSERTION FAILED` sentinel as a failure regardless of exit code (`bin/test:_run_test`). One line,
@@ -241,26 +242,25 @@ Low priority; the runtime `chmod` is correct.
 ## 7. HITL flags
 
 1. **HITL-1 — assertion masking (test methodology). ✅ RESOLVED (maintainer-approved, Option A).** Runner
-   fix applied + suite re-baselined (§9). The masking was concealing 17 failing tests; the true baseline
-   is now **981/16**.
-2. **HITL-2 — `remotes-token` 0600 assertion (low). ⏳ OPEN.** Add a `stat`-based mode check (now
-   mask-safe under the §9 runner fix), or accept the gap for v1.
+   fix applied + suite re-baselined (§9). The masking was concealing 17 failing tests.
+2. **HITL-2 — `remotes-token` 0600 assertion (low). ✅ RESOLVED.** Added `test_remote_token_file_is_0600`
+   (portable `stat` mode check; mask-safe under the §9 runner fix). Final baseline **982/16**.
 
-Neither is a design/ADR contradiction; both are test-infrastructure decisions.
+Neither was a design/ADR contradiction; both were test-infrastructure decisions.
 
 ---
 
 ## 8. Close-the-loop actions (this audit)
 
 - ✅ Gap report written (this file, incl. §9 post-fix outcome).
-- ✅ Roadmaps + memory updated: Phase-0 audit done, **true baseline 981/16** (was 995/2 masked), registry
+- ✅ Roadmaps + memory updated: Phase-0 audit done, **true baseline 982/16** (was 995/2 masked), registry
   intact (see `analysis-roadmap.md`, global `roadmap.md`, progress memory).
 - ✅ **Transitional Registry §4 refreshed**: the "known baseline failures" list expanded from 2 → **16**
   (the masking previously hid 14), grouped by owning phase, in `implementation-review-handoff.md`.
-- ✅ P1 handoff updated: baseline `981/16`, HITL-1 resolved.
-- ✅ **HITL-1 applied** (runner sentinel fix + 3 P0 `test_invariants` spot-fixes) — committed with this
-   audit's docs (maintainer-approved Option A). ⏳ HITL-2 open; the 16 known-failures are scheduled into
-   their rewrite/removal phases (§9).
+- ✅ P1 handoff updated: baseline `982/16`, HITL-1/HITL-2 resolved.
+- ✅ **HITL-1 applied** (runner sentinel fix + 3 P0 `test_invariants` spot-fixes; maintainer-approved
+   Option A) **+ HITL-2 applied** (`test_remote_token_file_is_0600`). The 16 known-failures are scheduled
+   into their rewrite/removal phases (§9).
 
 ---
 
@@ -292,6 +292,10 @@ concentrated in exactly the §11 rewrite/remove buckets:
    2 original + the 14 legacy/stale ones above, each tagged with its owning phase. They turn ❌→✅ (or
    are removed) when their phase rewrites/removes them.
 
-**Verified final**: `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test` → **`981 passed, 16 failed, 997 total`**, the
+**Verified after HITL-1**: `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test` → **`981 passed, 16 failed, 997 total`**.
+
+**HITL-2 then closed (same session):** added `test_remote_token_file_is_0600` (`test_remote.sh`) —
+a portable `stat` mode check that the STATE `remotes-token` file is **0600** (the M3 / S8 no-token-leak
+invariant the suite previously left unverified). **Final**: **`982 passed, 16 failed, 998 total`**, the
 16 failures being exactly the re-baselined set. Delta-green going forward is measured against **16**,
 not 2 — an honest signal the build method can now trust.

@@ -251,6 +251,23 @@ test_remote_add_with_token() {
     assert_output_contains "[token saved]"
 }
 
+# Portable file-mode reader (GNU stat vs BSD/macOS stat).
+_remote_stat_mode() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
+
+# HITL-2 (adherence audit 2026-06-21): the STATE remotes-token file holds a
+# secret and must be 0600 — the M3 no-token-leak invariant (S8). cmd-remote.sh
+# `chmod 600`s it; this guards that the mode actually lands.
+test_remote_token_file_is_0600() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco remote add acme https://github.com/acme/config.git --token ghp_test123
+    local tf="$CCO_STATE_HOME/remotes-token"
+    assert_file_exists "$tf"
+    local mode; mode=$(_remote_stat_mode "$tf")
+    [[ "$mode" == "600" ]] || fail "remotes-token must be mode 0600 (S8 no-token-leak), got: $mode"
+}
+
 test_remote_set_token() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"

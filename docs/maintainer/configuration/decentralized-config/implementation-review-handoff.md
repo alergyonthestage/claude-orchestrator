@@ -97,7 +97,8 @@ present, that flips to 🔴 (the cleanup was missed). Keep this registry **curre
 - **Known baseline test failures — 16 (NOT regressions — do not re-investigate). Re-baselined
   2026-06-21** after the adherence audit applied the runner mask-guard (HITL-1) and **un-masked 14 that
   the `( set -e; fn )` runner had been hiding** (`reviews/21-06-2026-impl-adherence-review.md` §9). The
-  suite is now **981/16**; delta-green is measured against these 16, **not** the old masked 2. All are
+  suite is now **982/16** (incl. the HITL-2 `test_remote_token_file_is_0600` 0600 check); delta-green is
+  measured against these 16, **not** the old masked 2. All are
   stale-assertion / legacy test-drift in the §11 rewrite/remove buckets — each ❌→✅ (or removed) when its
   phase lands:
   - **P2 — update/migration rewrite (8):** `test_update_migrations_run_in_order` (stale

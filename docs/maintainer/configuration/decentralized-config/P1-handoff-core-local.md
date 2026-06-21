@@ -14,9 +14,9 @@ scope with exact symbols, invariants, test contracts, and what comes after. Prod
 > `assert_*`; only `… || return 1` aborts). `bin/test:_run_test` now treats a captured `ASSERTION FAILED`
 > sentinel as a failure — this **un-masked 17 hidden failures**: the 3 P0 `test_invariants` ones were
 > spot-fixed (green), the other 14 are stale/legacy and joined the **re-baselined known-failure set**.
-> **New delta-green baseline = `981/16`** (see §4), NOT the old masked 995/2. HITL-2 (low, OPEN):
-> `remotes-token` 0600 mode is still unasserted. **Write every P1 test mask-safe** (the runner now catches
-> masking, but prefer `… || return 1` too — see §5).
+> **New delta-green baseline = `982/16`** (see §4), NOT the old masked 995/2. **HITL-2 also resolved**:
+> `test_remote_token_file_is_0600` now asserts the `remotes-token` 0600 mode (S8). **Write every P1 test
+> mask-safe** (the runner now catches masking, but prefer `… || return 1` too — see §5).
 
 ```mermaid
 flowchart LR
@@ -79,7 +79,7 @@ just produced (gap state). 5. `design.md` §3 / §4 / §9 P1 / §11 row 1. 6. AD
 ## 3. Mandatory preliminary analysis (before writing code)
 
 1. **Confirm baseline green-as-expected.** `git status` clean on `feat/vault/decentralized-config`; run the
-   FULL `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test` → **981 passed / 16 failed** (§4 — the re-baselined set after
+   FULL `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test` → **982 passed / 16 failed** (§4 — the re-baselined set after
    the 2026-06-21 audit un-masked 14 hidden failures). A **17th** failure ⇒ stop.
 2. **Read the actual current code** (line numbers drift):
    - `bin/cco` dispatcher — there is **no** top-level `cco sync` / `cco resolve` / `cco path` yet (only
