@@ -11,16 +11,23 @@ design-readiness baseline is `reviews/18-06-2026-impl-readiness-review.md`).
 
 ## 0. Verdict (TL;DR)
 
-**Phase 0 substrate is conformant and ready for Phase 1.** Delta-green holds exactly (995/2). The
-Transitional Registry is **fully intact** — no early cleanup, no unsanctioned dual-read. **Zero `🔴`
-code-conformance bugs** were found.
+**Phase 0 substrate production code is conformant and ready for Phase 1.** The Transitional Registry is
+**fully intact** — no early cleanup, no unsanctioned dual-read. **Zero `🔴` code-conformance bugs**
+were found.
 
 The **one substantive finding is in the test harness, not the production code**: the test runner
-**masks all non-final assertion failures** in multi-assert test functions — and this affects **both**
-the bare `assert_*` idiom *and* the `[[ … ]] || fail` idiom used in the brand-new P0 `test_index.sh` /
-`test_paths.sh`. This weakens the "green per phase" guarantee that the whole build method rests on. It
-is raised as **HITL-1** (a test-methodology decision affecting every future phase). One minor
-test-coverage gap (HITL-2, low) is also noted.
+**masks all non-final assertion failures** in multi-assert test functions — affecting **both** the bare
+`assert_*` idiom *and* the `[[ … ]] || fail` idiom used in the brand-new P0 `test_index.sh` /
+`test_paths.sh`. This weakened the "green per phase" guarantee that the whole build method rests on.
+
+> **⚑ Resolution (post-audit, maintainer-approved — see §6 F-A / §9).** The reported delta-green
+> **995/2 was masked**. Applying the recommended runner fix (treat the `ASSERTION FAILED` sentinel as a
+> failure regardless of exit code) revealed **17 previously-masked failures → true count 978/19**, all
+> **stale-assertion / legacy test-drift** in the §11 rewrite/remove buckets (not P0 code regressions —
+> P0 conformance was verified independently). The **3 P0-scope `test_invariants`** ones (stale relative
+> `./` mount literal + missing `.cco/` compose sub-path) were **spot-fixed** (§11 "light-touch"), giving
+> a verified **981/16**. The remaining **16 are the corrected known-failure baseline** (registry §4),
+> owned by their rewrite/removal phases (P2/P3/P4–P5). HITL-1 is thus **resolved**; HITL-2 (low) remains.
 
 ```mermaid
 flowchart LR
@@ -50,16 +57,15 @@ element divergences, so they sit outside the four-state table by nature; they ar
 - **Multi-lens, code-grounded** (the V methodology, lighter cycle): 8 review lenses run as parallel
   read-only passes, each citing `file:line`, then adversarially verified and de-duplicated. Only
   Phase 0 is built, so most lenses converge on a bounded surface (commits `ff8278b`→`7dcf1e8`).
-- **Delta-green confirmed (live run)**: `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test` →
-  **`995 passed, 2 failed, 997 total`**. The two failures are **exactly** the sanctioned baseline:
-  - `test_llms / test_resolve_name_from_full_variant_url` — stale name-derivation → rewritten P4–P5.
-  - `test_update / test_update_migrations_run_in_order` — stale `schema_version` (`meta` expects
-    `schema_version: 11`) → rewritten P2.
-  - **No third failure ⇒ no regression.**
-- **Delta-green awareness (caveat)**: a green count is *not* proof of conformance. The masked-assertion
-  finding (§6 / HITL-1) means a subset of the P0 contract tests effectively assert only their **last**
-  check, so green is weaker evidence than the count suggests. The lens results below were therefore
-  code-grounded against the implementation directly, not inferred from the pass count.
+- **Reported delta-green (live run, masked)**: `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test` →
+  **`995 passed, 2 failed, 997 total`**. The two *visible* failures matched the documented baseline
+  (`test_resolve_name_from_full_variant_url` P4–P5; `test_update_migrations_run_in_order` P2). **But
+  this count was masked** — see §9: the true figure is **981/16** after the audit's runner fix.
+- **Delta-green awareness (caveat → confirmed live)**: a green count is *not* proof of conformance. The
+  masked-assertion finding (§6 F-A / HITL-1) meant a subset of contract tests asserted only their
+  **last** check. Applying the fix proved the risk was real: **17 masked failures surfaced**. The lens
+  results below were code-grounded against the implementation directly (not the pass count), so they
+  hold; the masking finding is what the count itself hid.
 
 ---
 
@@ -207,21 +213,17 @@ positions; the only effective assert is `[token saved]` (`:251`). There is **no*
 token is **absent** from the DATA `remotes` registry. A regression writing the token into DATA (an S8
 no-token-leak violation) would not be caught by this test.
 
-**Not a code bug, not a current false-green**: delta-green is genuinely 995/2; no known regression is
-being hidden today. The risk is forward-looking (drift hidden in later phases) and it qualifies the
-evidentiary weight of the P0 contract tests this audit relied on (mitigated here by direct
-code-grounding, not pass-count).
+**Not a P0 code bug, but NOT a benign false-green either** (corrected post-fix — see §9): the masking
+was **actively hiding 17 failing test functions**. P0 *production-code* conformance holds (verified
+independently by the lenses), but the "995/2 delta-green" itself was masked — the true figure is
+**981/16** once the failures are unmasked.
 
-**Proposed resolutions (maintainer decision — affects test methodology for every phase):**
-- **(A · recommended) Runner-side, zero test churn**: in `_run_test`, treat any captured
-  `ASSERTION FAILED` in `output` as a failure regardless of exit code (all `assert_*`/`fail` already
-  echo that sentinel). One-line, catches every masked case, no test rewrite, no false negatives.
-- **(B) Convert assertions to `… || return 1`** across the suite — mechanical but large (~350+ sites),
-  and easy to regress on the next test written.
-- **(C) Make `assert_*`/`fail` `exit 1`** — rejected: breaks tests that intentionally probe failure via
-  `if cmd; then fail; fi` (e.g. `test_index_path_conflicts`).
-- Whichever is chosen, **adopt it before P1 tests are written** (the new `test_sync.sh` etc. must be
-  mask-safe), and re-run the suite to surface any assertion currently masked.
+**Resolution — Option A applied (maintainer-approved):** the runner now treats a captured
+`ASSERTION FAILED` sentinel as a failure regardless of exit code (`bin/test:_run_test`). One line,
+zero test churn, no false negatives (verified: inline negative-test echoes always pair with `return 1`).
+Alternatives considered: (B) convert ~350 asserts to `… || return 1` (large, regress-prone);
+(C) make `assert_*` `exit 1` (rejected — breaks `if cmd; then fail; fi` negative tests). The full
+post-fix outcome (17 surfaced, 3 P0 spot-fixed, 16-row baseline) is **§9**.
 
 ### F-B · `remotes-token` 0600 mode not asserted in tests — **HITL-2** · severity **low/nit** · test-coverage
 **Observed**: `cmd-remote.sh` `chmod 600` the token file, but `test_remote.sh` asserts token *content*
@@ -236,26 +238,60 @@ Low priority; the runtime `chmod` is correct.
 
 ---
 
-## 7. HITL flags (for maintainer decision)
+## 7. HITL flags
 
-1. **HITL-1 — assertion masking (test methodology).** Choose a fix (recommend **A**: runner treats
-   `ASSERTION FAILED` sentinel as failure). Decide **before** Phase 1 tests are authored. Affects how
-   every phase's "green" is interpreted → not derivable from spec; surfaced, not auto-resolved.
-2. **HITL-2 — `remotes-token` 0600 assertion (low).** Add a mode check when HITL-1 lands, or accept the
-   gap for v1.
+1. **HITL-1 — assertion masking (test methodology). ✅ RESOLVED (maintainer-approved, Option A).** Runner
+   fix applied + suite re-baselined (§9). The masking was concealing 17 failing tests; the true baseline
+   is now **981/16**.
+2. **HITL-2 — `remotes-token` 0600 assertion (low). ⏳ OPEN.** Add a `stat`-based mode check (now
+   mask-safe under the §9 runner fix), or accept the gap for v1.
 
-Neither is a design/ADR contradiction; both are test-infrastructure decisions. No production-code fix
-is required at this boundary.
+Neither is a design/ADR contradiction; both are test-infrastructure decisions.
 
 ---
 
 ## 8. Close-the-loop actions (this audit)
 
-- ✅ Gap report written (this file).
-- ✅ Roadmaps + memory updated: Phase-0 audit done, delta-green 995/2 re-confirmed, registry intact,
-  HITL-1/2 open (see `analysis-roadmap.md`, global `roadmap.md`, progress memory).
-- ✅ Transitional Registry re-affirmed current (no retirements at P0→P1).
-- ✅ P1 handoff annotated: HITL-1 added as a test-writing prerequisite.
-- ⏳ HITL-1/HITL-2 to be resolved with the maintainer (then, if A is chosen, applied as a one-line
-  runner change + suite re-run — a separate, explicitly-approved change, **not** part of this read-only
-  audit).
+- ✅ Gap report written (this file, incl. §9 post-fix outcome).
+- ✅ Roadmaps + memory updated: Phase-0 audit done, **true baseline 981/16** (was 995/2 masked), registry
+  intact (see `analysis-roadmap.md`, global `roadmap.md`, progress memory).
+- ✅ **Transitional Registry §4 refreshed**: the "known baseline failures" list expanded from 2 → **16**
+  (the masking previously hid 14), grouped by owning phase, in `implementation-review-handoff.md`.
+- ✅ P1 handoff updated: baseline `981/16`, HITL-1 resolved.
+- ✅ **HITL-1 applied** (runner sentinel fix + 3 P0 `test_invariants` spot-fixes) — committed with this
+   audit's docs (maintainer-approved Option A). ⏳ HITL-2 open; the 16 known-failures are scheduled into
+   their rewrite/removal phases (§9).
+
+---
+
+## 9. Post-fix outcome (HITL-1 applied — the audit's load-bearing result)
+
+Applying Option A (runner treats the `ASSERTION FAILED` sentinel as a failure) flipped the suite from
+the **masked** `995/2` to a true **`978/19`** — i.e. **17 failing test functions were being hidden by
+the masking**. This is the **silent-drift failure mode** the playbook exists to catch (§"Why this
+exists"), now **proven active**: P0's mount-map changes *should* have triggered the §11 "light-touch
+spot-fix" of `test_invariants`, but the red was masked, so it never happened.
+
+**Adversarial characterization** — none of the 17 is a P0 *production-code* regression (P0 conformance
+was verified independently by the lenses). All 17 are **stale-assertion / legacy test-drift**,
+concentrated in exactly the §11 rewrite/remove buckets:
+
+| Group | Count | Owning phase (§11) | Nature |
+|---|---|---|---|
+| `test_invariants` (`invariant_2/3/4`) | 3 | **P0 — light-touch spot-fix** | stale literal `./.claude` mount (now host-absolute) + compose path missing `.cco/`; the real invariants hold (rw mount, claude-state→STATE, distinct names) |
+| `test_update_*` + `test_migration_005` | 7 | **P2 — rewrite** (H6 base/meta→STATE, `--check`) | assert `.cco/base`/`.cco/meta`/changelog at pre-cutover locations |
+| `test_publish_ignore_path_patterns`, `test_project_internalize_updates_base` | 2 | **P4–P5 — rewrite** (sharing) | assert `.cco/base`/publish-ignore legacy behavior |
+| `test_vault_*` / `test_profile_*` | 5 | **P3 — remove** (vault/profiles deleted) | profile/switch/move behavior perturbed by the Commit-B harness HOME-flip |
+
+**Action taken (maintainer-approved):**
+1. **Spot-fixed the 3 P0-scope `test_invariants`** to the shipped Phase-0 behavior — `invariant_2`:
+   relative `./.claude:/workspace/.claude` → host-absolute `/.claude:/workspace/.claude` + the rw `:ro`
+   guard re-anchored; `invariant_3`/`invariant_4`: compose path `$dir/docker-compose.yml` →
+   `$dir/.cco/docker-compose.yml` (the dump writes to `.cco/`). Verified: `test_invariants` now **16/0**.
+2. **Re-baselined** the documented known-failure set from 2 → **16** (registry §4 / P1-handoff §4): the
+   2 original + the 14 legacy/stale ones above, each tagged with its owning phase. They turn ❌→✅ (or
+   are removed) when their phase rewrites/removes them.
+
+**Verified final**: `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test` → **`981 passed, 16 failed, 997 total`**, the
+16 failures being exactly the re-baselined set. Delta-green going forward is measured against **16**,
+not 2 — an honest signal the build method can now trust.

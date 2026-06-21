@@ -69,6 +69,17 @@ _run_test() {
     # set -e must be explicit — bash disables it inside $() when || is used.
     output=$(( set -e; "$fn_name" ) 2>&1) || exit_code=$?
 
+    # Mask-guard (adherence audit 2026-06-21, HITL-1): under `( set -e; fn )`,
+    # a non-final assertion failure is swallowed — a failing `assert_*` (or a
+    # `[[ … ]] || fail`) that is not the LAST command leaves exit_code 0, so the
+    # mid-test failure passes silently. Every assert/`fail` helper echoes the
+    # sentinel "ASSERTION FAILED:"; treat its presence as a failure regardless
+    # of exit code so masked failures cannot hide drift. (Inline negative-test
+    # echoes always pair with `return 1`, so this never false-positives them.)
+    if [[ $exit_code -eq 0 ]] && printf '%s\n' "$output" | grep -qE '^[[:space:]]*ASSERTION FAILED'; then
+        exit_code=1
+    fi
+
     end_ms=$(_elapsed_ms)
     elapsed=$(( end_ms - start_ms ))
 

@@ -8,14 +8,15 @@ scope with exact symbols, invariants, test contracts, and what comes after. Prod
 `feat/vault/decentralized-config` (commits **local** — the maintainer pushes from the Mac).
 
 > **Adherence audit DONE (2026-06-21)** — `reviews/21-06-2026-impl-adherence-review.md` (first run of
-> `implementation-review-handoff.md`). Result: P0 substrate **conformant**, delta-green re-confirmed live
-> **995/2**, Transitional Registry **fully intact**, **0 🔴 code bugs**. **One test-infra blocker for P1
-> test-writing → HITL-1**: the runner `( set -e; fn )` **masks all non-final assertion failures**, and the
-> `[[ … ]] || fail` idiom (used in the new `test_index.sh`/`test_paths.sh`) masks **just as much** as bare
-> `assert_*` — only `… || return 1` reliably aborts. **Resolve HITL-1 BEFORE authoring the P1 tests** (see
-> §5) so `test_sync.sh`/resolve/fingerprint/aggregator contracts are real, not masked. Recommended fix
-> (maintainer's call): make `_run_test` treat a captured `ASSERTION FAILED` sentinel as a failure regardless
-> of exit code (one line, zero test churn). HITL-2 (low): `remotes-token` 0600 mode is unasserted.
+> `implementation-review-handoff.md`). Result: P0 substrate **conformant**, Transitional Registry **fully
+> intact**, **0 🔴 code bugs**. **HITL-1 (masking) RESOLVED + applied**: the runner `( set -e; fn )` was
+> masking **all non-final assertion failures** (the `[[ … ]] || fail` idiom masks just as much as bare
+> `assert_*`; only `… || return 1` aborts). `bin/test:_run_test` now treats a captured `ASSERTION FAILED`
+> sentinel as a failure — this **un-masked 17 hidden failures**: the 3 P0 `test_invariants` ones were
+> spot-fixed (green), the other 14 are stale/legacy and joined the **re-baselined known-failure set**.
+> **New delta-green baseline = `981/16`** (see §4), NOT the old masked 995/2. HITL-2 (low, OPEN):
+> `remotes-token` 0600 mode is still unasserted. **Write every P1 test mask-safe** (the runner now catches
+> masking, but prefer `… || return 1` too — see §5).
 
 ```mermaid
 flowchart LR
@@ -78,7 +79,8 @@ just produced (gap state). 5. `design.md` §3 / §4 / §9 P1 / §11 row 1. 6. AD
 ## 3. Mandatory preliminary analysis (before writing code)
 
 1. **Confirm baseline green-as-expected.** `git status` clean on `feat/vault/decentralized-config`; run the
-   FULL `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test` → **995 passed / 2 failed** (§4). A third failure ⇒ stop.
+   FULL `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test` → **981 passed / 16 failed** (§4 — the re-baselined set after
+   the 2026-06-21 audit un-masked 14 hidden failures). A **17th** failure ⇒ stop.
 2. **Read the actual current code** (line numbers drift):
    - `bin/cco` dispatcher — there is **no** top-level `cco sync` / `cco resolve` / `cco path` yet (only
      **`cco project resolve`**, the legacy local-path resolver). Decide the new dispatch entries.
@@ -96,12 +98,23 @@ just produced (gap state). 5. `design.md` §3 / §4 / §9 P1 / §11 row 1. 6. AD
    call-sites; identify which existing tests touch resolution/divergence so the new tests slot in cleanly.
 4. **Confirm the invariants (§5) + the delta-green contract before the first edit.**
 
-## 4. The 2 known baseline failures — DO NOT re-investigate
+## 4. The 16 known baseline failures — DO NOT re-investigate
 
-- `test_update / test_update_migrations_run_in_order` — stale `schema_version` → rewritten in **P2**.
-- `test_llms / test_resolve_name_from_full_variant_url` — stale name-derivation → rewritten in **P4–P5**.
+Re-baselined 2026-06-21: the audit's runner mask-guard (HITL-1) un-masked 14 failures the
+`( set -e; fn )` runner had hidden. Full list + rationale: `implementation-review-handoff.md` §4 /
+`reviews/21-06-2026-impl-adherence-review.md` §9. All stale-assertion / legacy test-drift in §11
+rewrite/remove buckets:
+- **P2 rewrite (8):** `test_update_migrations_run_in_order`, `test_update_refreshes_cco_base`,
+  `test_update_automerge_non_overlapping`, `test_update_dry_run`, `test_update_discovery_then_news`,
+  `test_update_news_first_then_discovery`, `test_update_news_first_no_hint_on_discovery`,
+  `test_migration_005_renames_setup_with_build_content`.
+- **P3 remove (5):** `test_vault_switch_to_main_shared_only`, `test_profile_show_active_profile`,
+  `test_vault_move_preserves_unaccounted_files`, `test_vault_push_with_profile_syncs_shared`,
+  `test_profile_create_preserves_unaccounted_files`.
+- **P4–P5 rewrite (3):** `test_resolve_name_from_full_variant_url`, `test_publish_ignore_path_patterns`,
+  `test_project_internalize_updates_base`.
 
-Delta-green = after each P1 commit the FAIL set is exactly these two. A third failure = a regression.
+Delta-green = after each P1 commit the FAIL set is exactly these **16**. A **17th** failure = a regression.
 
 ## 5. P1 — scope (confirm against the code you just read)
 

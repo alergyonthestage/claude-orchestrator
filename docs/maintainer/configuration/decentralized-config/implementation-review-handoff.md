@@ -94,9 +94,26 @@ present, that flips to 🔴 (the cleanup was missed). Keep this registry **curre
   - **T5 → P2**: merge-engine artifacts `.cco/base/` + `.cco/meta` stay in `.cco/`; the →STATE relocation
     (H6) + global-`.cco/meta` decompose (ADR-0013 D4/0016 D6) lands in P2.
   - **T4-tags → P3**: DATA `tags.yml` has no consumer until `cco tag add/rm` + `cco list --tag` (P3).
-- **Known baseline test failures (NOT regressions — do not re-investigate):**
-  - `test_update / test_update_migrations_run_in_order` (stale `schema_version`) → rewritten in **P2**.
-  - `test_llms / test_resolve_name_from_full_variant_url` (stale name-derivation) → rewritten in **P4–P5**.
+- **Known baseline test failures — 16 (NOT regressions — do not re-investigate). Re-baselined
+  2026-06-21** after the adherence audit applied the runner mask-guard (HITL-1) and **un-masked 14 that
+  the `( set -e; fn )` runner had been hiding** (`reviews/21-06-2026-impl-adherence-review.md` §9). The
+  suite is now **981/16**; delta-green is measured against these 16, **not** the old masked 2. All are
+  stale-assertion / legacy test-drift in the §11 rewrite/remove buckets — each ❌→✅ (or removed) when its
+  phase lands:
+  - **P2 — update/migration rewrite (8):** `test_update_migrations_run_in_order` (stale
+    `schema_version: 11`) · `test_update_refreshes_cco_base` · `test_update_automerge_non_overlapping` ·
+    `test_update_dry_run` · `test_update_discovery_then_news` · `test_update_news_first_then_discovery` ·
+    `test_update_news_first_no_hint_on_discovery` · `test_migration_005_renames_setup_with_build_content`
+    (assert `.cco/base`/`.cco/meta`/changelog at pre-cutover locations; H6 relocation lands P2).
+  - **P3 — vault/profiles removed (5):** `test_vault_switch_to_main_shared_only` ·
+    `test_profile_show_active_profile` · `test_vault_move_preserves_unaccounted_files` ·
+    `test_vault_push_with_profile_syncs_shared` · `test_profile_create_preserves_unaccounted_files`
+    (profile behavior perturbed by the Commit-B harness HOME-flip; these files are **deleted** in P3).
+  - **P4–P5 — sharing rewrite (3):** `test_resolve_name_from_full_variant_url` (stale llms
+    name-derivation) · `test_publish_ignore_path_patterns` · `test_project_internalize_updates_base`.
+  > The 3 P0-scope `test_invariants` failures the mask-guard surfaced were **spot-fixed** at the audit
+  > (stale `./` mount literal + missing `.cco/` compose path; §11 "light-touch") and are **green**, so
+  > they are **not** in this list. The fix itself lives in `bin/test:_run_test` — keep it.
 - **Legacy commands still live** (cut over in P3/P4): `cco vault *`, `cco project create`, `cco manifest`,
   the profile/switch/shadow machinery. Present-but-legacy is **expected** until their phase.
 

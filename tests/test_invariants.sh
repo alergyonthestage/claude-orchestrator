@@ -61,9 +61,11 @@ test_invariant_2_project_config_at_workspace_claude_readwrite() {
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
-    assert_file_contains "$compose" "./.claude:/workspace/.claude"
+    # Mount source is now host-absolute (Phase-0 BL3: relative ./ -> abs path);
+    # the container target /workspace/.claude is the fixed contract.
+    assert_file_contains "$compose" "/.claude:/workspace/.claude"
     # MUST be read-write
-    if grep -qF "./.claude:/workspace/.claude:ro" "$compose"; then
+    if grep -qE "/\.claude:/workspace/\.claude:ro" "$compose"; then
         echo "ASSERTION FAILED: project .claude must be mounted rw, not :ro"
         echo "  (Design Invariant 2: project config is read-write so Claude can update it)"
         return 1
@@ -98,8 +100,8 @@ test_invariant_3_memory_is_project_specific_host_path() {
     run_cco start "proj-b" --dry-run --dump
     local dir_b="$DRY_RUN_DIR"
 
-    local compose_a="$dir_a/docker-compose.yml"
-    local compose_b="$dir_b/docker-compose.yml"
+    local compose_a="$dir_a/.cco/docker-compose.yml"
+    local compose_b="$dir_b/.cco/docker-compose.yml"
 
     # Each project's compose references its own STATE claude-state directory
     # (machine-local, keyed by project identity; design §2.2)
@@ -144,10 +146,10 @@ test_invariant_4_two_projects_have_distinct_names() {
     run_cco start "proj-two" --dry-run --dump
     local dir_two="$DRY_RUN_DIR"
 
-    assert_file_contains "$dir_one/docker-compose.yml" "cc-proj-one"
-    assert_file_contains "$dir_two/docker-compose.yml" "cc-proj-two"
-    assert_file_not_contains "$dir_one/docker-compose.yml" "cc-proj-two"
-    assert_file_not_contains "$dir_two/docker-compose.yml" "cc-proj-one"
+    assert_file_contains "$dir_one/.cco/docker-compose.yml" "cc-proj-one"
+    assert_file_contains "$dir_two/.cco/docker-compose.yml" "cc-proj-two"
+    assert_file_not_contains "$dir_one/.cco/docker-compose.yml" "cc-proj-two"
+    assert_file_not_contains "$dir_two/.cco/docker-compose.yml" "cc-proj-one"
 }
 
 # ── Invariant 5: Read-Only Mounts ─────────────────────────────────────
