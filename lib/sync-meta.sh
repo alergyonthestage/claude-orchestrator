@@ -25,7 +25,7 @@
 # set lives in <repo-root>/.cco/). `cco sync` writes the fingerprint (a) after a
 # target successfully receives a sync and (b) for the source at the same sync.
 #
-# Provides: _sync_meta_file(), _sync_fingerprint_compute(),
+# Provides: _sync_meta_file(), _sync_synced_files(), _sync_fingerprint_compute(),
 #   _sync_fingerprint_get(), _sync_fingerprint_set(), _sync_fingerprint_clear(),
 #   _sync_is_divergent(), _sync_record()
 # Dependencies: paths.sh (_cco_state_dir). Hash via shasum/sha256sum/cksum.
@@ -56,26 +56,35 @@ _sync_hash_file() {
     printf '%s %s\n' "$label" "$h"
 }
 
+# Echo the synced set of a <cco_dir> as .cco-relative paths (§4.1): project.yml,
+# secrets.env.example (if present), and every file under claude/. NEVER
+# secrets.env, the repo-root .claude/, or system dirs. This is the SINGLE
+# definition of the synced set — both the fingerprint (below) and `cco sync`'s
+# diff/copy consume it, so write and compare can never drift apart.
+# Usage: _sync_synced_files <cco_dir>
+_sync_synced_files() {
+    local cco="$1"
+    [[ -f "$cco/project.yml" ]]         && echo "project.yml"
+    [[ -f "$cco/secrets.env.example" ]] && echo "secrets.env.example"
+    if [[ -d "$cco/claude" ]]; then
+        ( cd "$cco" && find claude -type f 2>/dev/null | LC_ALL=C sort )
+    fi
+}
+
 # Compute the fingerprint of a repo's synced set (§4.1). Echoes the digest, or
 # empty if the repo has no .cco/. Deterministic and machine-agnostic: each file
 # contributes "<rel-path> <content-hash>", the list is sorted, and the whole
 # stream is hashed.
 # Usage: _sync_fingerprint_compute <repo_root>
 _sync_fingerprint_compute() {
-    local repo_root="$1" cco="$1/.cco"
+    local repo_root="$1" cco="$1/.cco" rel
     [[ -d "$cco" ]] || { printf '%s\n' ""; return 0; }
 
     {
-        [[ -f "$cco/project.yml" ]]         && _sync_hash_file "$cco/project.yml" "project.yml"
-        [[ -f "$cco/secrets.env.example" ]] && _sync_hash_file "$cco/secrets.env.example" "secrets.env.example"
-        if [[ -d "$cco/claude" ]]; then
-            local f rel
-            while IFS= read -r f; do
-                [[ -z "$f" ]] && continue
-                rel="claude/${f#"$cco"/claude/}"
-                _sync_hash_file "$f" "$rel"
-            done < <(find "$cco/claude" -type f 2>/dev/null | LC_ALL=C sort)
-        fi
+        while IFS= read -r rel; do
+            [[ -z "$rel" ]] && continue
+            _sync_hash_file "$cco/$rel" "$rel"
+        done < <(_sync_synced_files "$cco")
     } | LC_ALL=C sort | _sync_hash_stdin
 }
 

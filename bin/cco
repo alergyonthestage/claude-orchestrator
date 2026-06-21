@@ -73,6 +73,7 @@ source "$LIB_DIR/cmd-init.sh"
 source "$LIB_DIR/cmd-start.sh"
 source "$LIB_DIR/cmd-new.sh"
 source "$LIB_DIR/cmd-resolve.sh"
+source "$LIB_DIR/cmd-sync.sh"
 source "$LIB_DIR/cmd-stop.sh"
 source "$LIB_DIR/cmd-chrome.sh"
 source "$LIB_DIR/cmd-project-create.sh"
@@ -120,9 +121,10 @@ Sessions:
   new                    Start a temporary session with specific repos
   stop [project]         Stop running session(s)
 
-Local paths:
+Local paths & sync:
   resolve [project]      Resolve repos/mounts into the machine-local index
   path <set|list>        Low-level path index editor
+  sync [repo] [--from r] Copy .cco config between a project's repos (copy, no merge)
 
 Projects & Packs:
   project <cmd>          Manage projects (create, install, delete, list, show, validate)
@@ -159,6 +161,7 @@ case "$cmd" in
     new)     cmd_new "$@"   || _cco_rc=$? ;;
     resolve) cmd_resolve "$@" || _cco_rc=$? ;;
     path)    cmd_path "$@"     || _cco_rc=$? ;;
+    sync)    cmd_sync "$@"     || _cco_rc=$? ;;
     project)
         subcmd="${1:-}"
         if [[ -z "$subcmd" || "$subcmd" == "--help" ]]; then
