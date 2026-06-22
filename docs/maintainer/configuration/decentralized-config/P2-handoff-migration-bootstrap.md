@@ -27,9 +27,16 @@ contracts, and what comes after. Produced 2026-06-22 on `feat/vault/decentralize
 >    (`mcp.json`/`setup.sh`/`mcp-packages.txt` file-checks, forward-compat). **Suite 1044/16 delta-green**
 >    (the +1 vs 1043 is the new clobber-guard test; the 16 known failures are unchanged). P0 schema and
 >    the global-flat index were **NOT** touched. **Deferred ADR-0024 items → built in P2/P4** (see §5a below).
-> 3. **Resume P2 design — NEXT** from §4a below (now baseline **1044/16**, P1 audit clean, locked
->    `<id>=name`, the 2 smaller open items, the H6 map, the dogfooding plan) — still valid; layer the
->    ADR-0024 deferred items (§5a) on top.
+> 3. ✅ **P2 design — DONE (2026-06-22) → ADR-0025.** Both §4a open items closed: (1) the `.cco/meta`
+>    hash `manifest:` block **travels into the STATE `/update` meta** (ADR-0013 D3, code-confirmed —
+>    NOT dropped; only `manifest.yml`/`pack-manifest` removed); (2) **migration ownership** =
+>    **eager global via `cco update`** + **lazy per-project via `cco init --migrate`** (the prior
+>    "global mode of `cco init --migrate`" candidate rejected; `cco migrate` stays dropped; backup on
+>    any command; vault removal offered only at `cco update`, default keep). Living re-sync done; the
+>    `<id>=name` decision + H6 map + dogfooding plan stay valid.
+> 4. **P2 implementation — NEXT.** Follow the maintainer-approved **build sequence §5b (P2-1 … P2-5)**;
+>    baseline **1044/16**, delta-green shrinks 16→8 at P2-2. **Start a clean session at P2-1**, read the
+>    current code (§3) per commit. Resume cursor = **P2-1 (bootstrap + backup)**.
 >
 > The §4a findings, the `<id>=name` decision (design §2.2), and `P2-dogfooding-validation.md` remain
 > valid inputs. **Front A/E note:** the user-guide rewrites (the `.claude` hierarchy; "how to share a
@@ -291,6 +298,26 @@ following to build **here in P2** (D3/D5) and **P4** (packs), in final form (bui
   passive ⚠ badge (P14). Keep the ordered sequence: resolve source → resolve members → resolve/clone
   unresolved → **only now** compute divergence + reminders → start (H1). *(Pause + maintainer-confirm any
   UX nuance, e.g. exact prompt/notice copy.)*
+
+## 5b. Approved build sequence (P2-1 … P2-5)
+
+Maintainer-approved 2026-06-22. **Cutover = a few large, coordinated commits** (the relocations are
+coupled), each full-suite delta-green before+after. The FAIL set shrinks **16 → 8** at P2-2 (when the 8
+owned `test_update_*`/`test_merge`/`migration_005` flip ❌→✅) and **stays 8** thereafter (the 5 P3 + 3
+P4–5). A new red outside the owned set = a regression → stop. Read the actual current code (handoff §3)
+at the start of each commit; line numbers drift.
+
+| # | Commit | Scope (from §5/§5a) | Delta-green |
+|---|--------|---------------------|-------------|
+| **P2-1** | bootstrap + backup | J0 four-root bootstrap, per-root idempotent (M6), on **any** command · raw-`tar` legacy-vault backup → STATE (F1/F9; M8 ordering; `migration-state` marker + archive-authoritative idempotency F43; atomic-staged F44) · new `test_migrate.sh` (backup facets) | 16 (no new red) |
+| **P2-2** | **H6 paths → STATE + global-meta decompose** *(large, coordinated)* | re-point `paths.sh` helpers (`_cco_project_{meta,base_dir}` + global home `<state>/cco/global/update/` + **create** `_cco_pack_{base_dir,meta}`) · global `.cco/meta` decompose (`languages`→`~/.cco`, markers→STATE top-level, hashes/`schema_version`/policies→global STATE meta — hash `manifest:` **kept**, only `manifest.yml`/`pack-manifest` removed; ADR-0013 D3/D4, ADR-0025) · **merge logic unchanged** · rewrite the **8 owned tests** (`test_update.sh`×6, `test_merge.sh`×2, `migration_005`) + `test_init.sh` + spot-fix `test_publish_install_sync.sh` meta/base refs | **16 → 8** |
+| **P2-3** | `cco update` eager global migration (ADR-0025) | populate `~/.cco` from backup (`global/.claude` + authored `packs/`/`templates/` + `setup*.sh`/`mcp-packages.txt`/`languages`/`secrets.env`) + global internal dirs + decompose/relocate (P2-2) + **atomic** shared profile→tag seed (ADR-0010 §5) + legacy-vault **offer-to-remove default-keep** (manual fs-delete in warn) · `test_update.sh` first-run path + `test_migrate.sh` global facets | 8 |
+| **P2-4** | `cco init --migrate <project>` (lazy) + `cco init`/`cco join` | complete final `project.yml` in ONE pass (repos+llms+**packs** coordinates; pack `url`/`ref`/`resource` backfilled from the recorded `source` read **in place** — P4 relocation; absent→authored P15/F37; **never fabricate** a url) · memory relocation backup→STATE + non-clobber (F11) · per-project profile→tag prompt · atomic-staged (F44) · name-uniqueness assert (F12) · index-register last · create `migrations/{pack,template}/` (F37) + packs list→map project migration · `test_migrate.sh` per-project + `test_init.sh` | 8 |
+| **P2-5** | D-start source-selection + D5 observability (ADR-0024 D3/D5; D-start re-seq from P1) | `cco start [project] --from <repo>` (precedence `--from` > `entry` > prompt) · cwd-first → **hosted** project · unresolved member/mount prompt (F49, `_prompt_for_path`) · divergence notice + source-transparency line + passive ⚠ badge · ordered sequence (H1) · `_index_repos_get_projects` + `cco project show` roles/referenced-by + repo-centric view · `test_start_*` / `test_project_show` | 8 (= 5 P3 + 3 P4–5) |
+
+UX copy (F49 prompt, divergence notice, `started <project> from <repo> [source: …]`, profile→tag
+prompt, the `cco update` migration summary + keep/remove note) is **maintainer-confirmed at build time**
+per commit (P10 lesson b) — present options + a spec-grounded recommendation, then persist.
 
 ## 6. Invariants (never violate)
 
