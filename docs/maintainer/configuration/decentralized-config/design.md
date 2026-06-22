@@ -169,6 +169,13 @@ STATE `/update` meta also carries the per-identity **installed-commit** (relocat
 ADR-0022 D1) that `cco update --check` diffs against; and the pack-scoped `base/` ancestor for
 sync-before-publish (ADR-0022 D5), mirroring the project `base/`. Both are **machine-local, never-sync**.
 
+> **Identity key `<id>` (pinned at P2).** `<id>` is the project's **`name:`** (the `project.yml` `name`,
+> which is also the `projects:` key in the index, §3) — **not** the repo-directory basename. A
+> `_cco_project_id()` helper maps a resolved project dir → its `name`; `name` is already enforced unique
+> (`cmd-project-create.sh`). Every per-project STATE path (`projects/<id>/update/{meta,base}`,
+> `projects/<id>/{session,memory}`) is keyed by this `<id>`. Packs key by pack `name`; global is the fixed
+> `global/` scope. (Maintainer-confirmed 2026-06-22; consistent with ADR-0022 D2 global-flat-by-name index.)
+
 The `/session` (opt-in) vs `/update` (never) split is the **allowlist boundary** protecting the
 future P8 state-sync from ever sweeping base/hashes/tokens.
 

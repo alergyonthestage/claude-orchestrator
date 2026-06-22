@@ -144,6 +144,49 @@ Full list + rationale: `implementation-review-handoff.md` §4 / `reviews/21-06-2
 **End-of-P2 delta-green target = 8 failures** (the 5 P3 + 3 P4–5). A *new* red outside the owned set = a
 regression.
 
+## 4a. Preliminary-analysis findings & decisions (done 2026-06-22)
+
+The mandatory preliminary analysis (§3) was run at session start. Outcome — **Phase 2 is ready to
+build; no blockers**. Recorded here so the build incorporates it.
+
+- **Baseline confirmed**: `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test` → **1043 passed / 16 failed**; the 16
+  FAIL set matches the owned/registry list **exactly** (8 P2 + 5 P3 + 3 P4-5). No reconciliation needed.
+- **P1 adherence audit: clean** — `reviews/22-06-2026-p1-adherence-review.md`. P1 fully conformant
+  (0 🔴, 0 HITL); the 5 transitional hybrids match the §4 registry with retiring phases ahead; no
+  registry update at this boundary. **Phase 2 may proceed.**
+- **DECISION — project identity `<id>` = the `project.yml` `name:`** (maintainer-confirmed). Not the repo
+  basename. Add a `_cco_project_id(project_dir)` helper; the 4 merge-engine helpers (`_cco_project_meta`/
+  `_cco_project_base_dir` + global/pack) re-point to `<state>/cco/projects/<id>/update/{meta,base}` using
+  it. Pinned in `design.md` §2.2. `name` is already enforced unique.
+- **Test surface correction (§4)**: of the 8 owned tests, **6 live in `test_update.sh`** and **2 in
+  `tests/test_merge.sh`** (`test_update_refreshes_cco_base:134`, `test_update_automerge_non_overlapping:153`);
+  `test_migration_005_*` is in `test_update.sh:436`. Plan the H6 path-remap rewrite across **both** files
+  (+ `test_init.sh`, + `test_publish_install_sync.sh` spot-fix per §11).
+- **H6 confirmed low-risk**: `update-merge.sh` is **path-agnostic** (only comments name `.cco/base|meta`;
+  `_merge_file`/`_resolve_with_merge` take base/meta as args). Re-pointing the 4 `paths.sh` helpers
+  relocates everything; the ~12 consumers (mostly `update.sh:89/93/165/166/397/400/438/439`) are
+  unchanged. **Pack helpers `_cco_pack_base_dir`/`_cco_pack_meta` do not exist yet → create them**
+  (target `<state>/cco/packs/<name>/update/base/`; used in P4 but build-once here).
+- **OPEN (resolve in Design) — `manifest:` block ambiguity.** Design §9 P2 says "`manifest:` marker
+  dropped (ADR-0012)", but the `manifest:` block **inside `.cco/meta`** is the per-file **hash manifest**
+  (load-bearing for base-tracking/merge), distinct from the `manifest.yml` sharing manifest ADR-0012
+  removes. Verify against **ADR-0013 D4** before relocating: the hash-manifest almost certainly **travels
+  into the STATE `/update` meta** (so "logic unchanged" holds); only the separate `manifest.yml` is dropped.
+- **OPEN (resolve in Design) — legacy global config / packs / templates migration into `~/.cco`.** §9 P2
+  details per-project migrate + the `.cco/meta` decompose, but is light on how the legacy
+  `global/.claude` (authored agents/rules/skills/settings) + authored packs + templates move into the
+  fresh `~/.cco`. A clean `cco init` copies framework **defaults**, not the user's customizations. Define
+  the mechanism (candidate: a global mode of `cco init --migrate`). See `P2-dogfooding-validation.md` §1.
+- **Legacy-vault fate & developer dogfooding — `P2-dogfooding-validation.md`** (new). Confirms (ADR-0006):
+  no git-history transplant, `~/.cco` fresh git-init, legacy `user-config/` + its remote kept as fallback,
+  removal opt-in-after-verified-backup only; the **remote is not transplanted** (`~/.cco` remote = opt-in
+  P3 via `cco config push/pull`). Adds the **sandbox e2e recipe** (`CCO_USER_CONFIG_DIR` + `CCO_*_HOME` +
+  HOME-flip on a vault copy) and the pre-release validation sequence (rule: **never accept offer-to-remove
+  until merged + validated**).
+- **UX copy to maintainer-confirm during build** (P10 lesson b): exact wording of the F49 unresolved
+  prompt, the divergence notice, the `started <project> from <repo> [source: …]` line, and the
+  profile→tag prompt.
+
 ## 5. P2 — scope (confirm against the code you just read)
 
 Write the complete final decentralized config once. Final form, build-once, breaking cutover (new layout
