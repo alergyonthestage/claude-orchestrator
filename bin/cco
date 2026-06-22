@@ -50,6 +50,7 @@ fi
 source "$LIB_DIR/colors.sh"
 source "$LIB_DIR/utils.sh"
 source "$LIB_DIR/paths.sh"
+source "$LIB_DIR/migrate.sh"
 source "$LIB_DIR/index.sh"
 source "$LIB_DIR/sync-meta.sh"
 source "$LIB_DIR/reminders.sh"
@@ -150,6 +151,11 @@ EOF
 cmd="${1:-}"
 [[ -z "$cmd" ]] && { usage; exit 0; }
 shift
+
+# J0 first-run bootstrap of the four decentralized-config roots + the legacy-
+# vault safety-net backup, before any command runs (ADR-0017 D3 / ADR-0006 /
+# ADR-0025). Host-side only (H4); idempotent (M6/F43); never fatal.
+_cco_first_run "$cmd"
 
 # Dispatch command — capture return code so expected errors (die, return 1)
 # don't trigger the "exited unexpectedly" trap. Only true crashes (set -e/set -u
