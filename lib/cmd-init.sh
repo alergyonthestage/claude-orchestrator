@@ -8,21 +8,33 @@
 cmd_init() {
     local force=false
     local lang_arg=""
+    local migrate_project=""
+    local do_sync=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --force) force=true; shift ;;
+            --migrate)
+                [[ -z "${2:-}" ]] && die "--migrate requires a project name (cco init --migrate <project>)"
+                migrate_project="$2"; shift 2 ;;
+            --sync) do_sync=true; shift ;;
             --lang)
                 [[ -z "${2:-}" ]] && die "--lang requires a value (e.g. --lang Italian)"
                 lang_arg="$2"; shift 2 ;;
             --help)
                 cat <<'EOF'
 Usage: cco init [--force] [--lang <language>]
+       cco init --migrate <project> [--sync]   (run inside a cloned repo)
 
-Initialize user configuration by copying defaults.
+Initialize user configuration by copying defaults, OR migrate one legacy-vault
+project into the decentralized <repo>/.cco/ layout.
 
 Options:
   --force                Overwrite existing global/ config with defaults
+  --migrate <project>    Migrate <project> from the legacy vault into this repo's
+                         .cco/ (machine-agnostic; index + memory relocated)
+  --sync                 With --migrate: propagate the .cco/ to the project's
+                         other member repos
   --lang <lang>          Set languages non-interactively.
                          Single value: cco init --lang Italian
                          Three values:  cco init --lang "Italian:Italian:English"
@@ -33,6 +45,13 @@ EOF
             *) die "Unknown option: $1" ;;
         esac
     done
+
+    # Lazy per-project migration mode (ADR-0006/0021): an alternative to a clean
+    # init — hydrate this repo's .cco/ from the legacy-vault backup.
+    if [[ -n "$migrate_project" ]]; then
+        _cco_migrate_project "$migrate_project" "$do_sync"
+        return $?
+    fi
 
     # Language selection
     local comm_lang docs_lang code_lang

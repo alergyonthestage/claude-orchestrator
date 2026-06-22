@@ -163,6 +163,7 @@ _cco_first_run "$cmd"
 _cco_rc=0
 case "$cmd" in
     init)    cmd_init "$@"  || _cco_rc=$? ;;
+    join)    cmd_join "$@"  || _cco_rc=$? ;;
     build)   cmd_build "$@" || _cco_rc=$? ;;
     start)   cmd_start "$@" || _cco_rc=$? ;;
     new)     cmd_new "$@"   || _cco_rc=$? ;;

@@ -293,3 +293,162 @@ test_migrate_global_dry_run_skips() {
     run_cco update --dry-run || true
     [[ ! -d "$HOME/.cco/global/.claude" ]] || fail "--dry-run must not populate ~/.cco"
 }
+
+# ── Lazy per-project migration: cco init --migrate (ADR-0006/0021) ──
+
+# Build a legacy vault with project 'myapp' (sanitized repos + url + local-paths,
+# an llms ref, a pack ref, project .claude + memory). Optionally a profile
+# branch 'work' hosting 'work-app'. Leaves $tmpdir/clones/api as a fresh repo.
+_setup_legacy_vault_project() {
+    local tmpdir="$1"
+    setup_cco_env "$tmpdir"
+    local vault="$CCO_USER_CONFIG_DIR"
+    mkdir -p "$vault/global/.claude" \
+             "$vault/projects/myapp/.claude/rules" "$vault/projects/myapp/.cco" \
+             "$vault/projects/myapp/memory" \
+             "$vault/packs/team-pack/.cco" "$vault/llms/react/.cco"
+    echo "# g" > "$vault/global/.claude/CLAUDE.md"
+    cat > "$vault/projects/myapp/project.yml" <<'YML'
+name: myapp
+description: "My app"
+repos:
+  - path: "@local"
+    name: api
+    url: git@github.com:org/api.git
+    ref: main
+  - path: "@local"
+    name: web
+    url: git@github.com:org/web.git
+llms:
+  - react
+packs:
+  - team-pack
+YML
+    echo "# project claude" > "$vault/projects/myapp/.claude/CLAUDE.md"
+    echo "remember this"    > "$vault/projects/myapp/memory/note.md"
+    cat > "$vault/projects/myapp/.cco/local-paths.yml" <<'YML'
+repos:
+  api: "/home/dev/api"
+  web: "/home/dev/web"
+YML
+    echo "source: https://github.com/org/cco-sharing.git" > "$vault/packs/team-pack/.cco/source"
+    echo "name: team-pack" > "$vault/packs/team-pack/pack.yml"
+    printf 'url: https://react.dev/llms-full.txt\nvariant: full\n' > "$vault/llms/react/.cco/source"
+    git -C "$vault" init -q
+    git -C "$vault" symbolic-ref HEAD refs/heads/main 2>/dev/null
+    git -C "$vault" add -A 2>/dev/null
+    git -C "$vault" commit -q -m "main" 2>/dev/null
+    mkdir -p "$tmpdir/clones/api"
+}
+
+test_migrate_project_writes_final_yml() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_legacy_vault_project "$tmpdir"
+    ( cd "$tmpdir/clones/api" && CCO_ASSUME_YES=1 run_cco init --migrate myapp )
+    local yml="$tmpdir/clones/api/.cco/project.yml"
+    assert_file_exists "$yml" "the migrated project.yml should be written into <repo>/.cco/"
+    assert_file_contains "$yml" "name: api"
+    assert_file_contains "$yml" "url: git@github.com:org/api.git"
+    assert_file_contains "$yml" "url: https://react.dev/llms-full.txt"
+    assert_file_contains "$yml" "variant: full"
+    # pack list→map with the url backfilled from the recorded source (read in place)
+    assert_file_contains "$yml" "url: https://github.com/org/cco-sharing.git"
+    # AD3/G8: no real path ever lands in the committed config.
+    assert_file_not_contains "$yml" "/home/dev"
+    assert_file_not_contains "$yml" "@local"
+}
+
+test_migrate_project_registers_index() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_legacy_vault_project "$tmpdir"
+    ( cd "$tmpdir/clones/api" && CCO_ASSUME_YES=1 run_cco init --migrate myapp )
+    assert_file_contains "$CCO_STATE_HOME/index" 'api: "/home/dev/api"'
+    assert_file_contains "$CCO_STATE_HOME/index" 'web: "/home/dev/web"'
+    assert_file_contains "$CCO_STATE_HOME/index" "myapp:"
+}
+
+test_migrate_project_relocates_memory() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_legacy_vault_project "$tmpdir"
+    ( cd "$tmpdir/clones/api" && CCO_ASSUME_YES=1 run_cco init --migrate myapp )
+    assert_file_exists "$CCO_STATE_HOME/projects/myapp/memory/note.md" \
+        "memory should relocate to STATE (machine-local; ADR-0009)"
+    # And NOT into the committed config.
+    [[ ! -d "$tmpdir/clones/api/.cco/memory" ]] || fail "memory must not live in committed .cco/"
+}
+
+test_migrate_project_memory_non_clobber() {
+    # Pre-existing newer STATE memory must not be overwritten (F11).
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_legacy_vault_project "$tmpdir"
+    mkdir -p "$CCO_STATE_HOME/projects/myapp/memory"
+    echo "newer local note" > "$CCO_STATE_HOME/projects/myapp/memory/note.md"
+    ( cd "$tmpdir/clones/api" && CCO_ASSUME_YES=1 run_cco init --migrate myapp )
+    assert_file_contains "$CCO_STATE_HOME/projects/myapp/memory/note.md" "newer local note" \
+        "migration must not clobber newer local memory (F11)"
+}
+
+test_migrate_project_name_uniqueness() {
+    # F12: a name already bound in the index blocks a second migrate.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_legacy_vault_project "$tmpdir"
+    ( cd "$tmpdir/clones/api" && CCO_ASSUME_YES=1 run_cco init --migrate myapp )
+    mkdir -p "$tmpdir/clones/api2"
+    ( cd "$tmpdir/clones/api2" && CCO_ASSUME_YES=1 run_cco init --migrate myapp ) \
+        && fail "a duplicate project name must be rejected (F12)" || true
+}
+
+test_migrate_project_backup_required() {
+    # M8: no verified backup → refuse to read.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"   # no git-vault → no backup is ever taken
+    mkdir -p "$tmpdir/repo"
+    ( cd "$tmpdir/repo" && run_cco init --migrate myapp ) \
+        && fail "migrate must fail without a verified backup (M8)" || true
+}
+
+test_migrate_project_unknown_project() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_legacy_vault_project "$tmpdir"
+    mkdir -p "$tmpdir/repo"
+    ( cd "$tmpdir/repo" && run_cco init --migrate nonexistent ) \
+        && fail "migrating an unknown project must fail" || true
+    [[ ! -d "$tmpdir/repo/.cco" ]] || fail "a failed migrate must leave no partial .cco/ (F44)"
+}
+
+test_migrate_project_profile_tag() {
+    # A project hosted on a non-default profile branch → tagged with its origin.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_legacy_vault_project "$tmpdir"
+    local vault="$CCO_USER_CONFIG_DIR"
+    # Add a 'work' profile hosting 'work-app'.
+    git -C "$vault" checkout -q -b work 2>/dev/null
+    mkdir -p "$vault/projects/work-app/.cco"
+    printf 'name: work-app\nrepos: []\n' > "$vault/projects/work-app/project.yml"
+    printf 'profile: work\nsync:\n  projects:\n    - work-app\n  packs:\n    []\n' > "$vault/.vault-profile"
+    git -C "$vault" add -A 2>/dev/null
+    git -C "$vault" commit -q -m "work profile" 2>/dev/null
+    git -C "$vault" checkout -q main 2>/dev/null
+    mkdir -p "$tmpdir/clones/workrepo"
+    ( cd "$tmpdir/clones/workrepo" && CCO_ASSUME_YES=1 run_cco init --migrate work-app )
+    assert_file_contains "$CCO_DATA_HOME/tags.yml" "work-app: [work]" \
+        "a profile-hosted project should be tagged with its origin profile (ADR-0010 §5)"
+}
+
+test_join_registers_index() {
+    # cco join in a cloned repo registers project membership for this machine.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local repo="$tmpdir/cloned"
+    mkdir -p "$repo/.cco"
+    cat > "$repo/.cco/project.yml" <<'YML'
+name: joined
+repos:
+  - name: api
+    url: git@github.com:org/api.git
+  - name: web
+    url: git@github.com:org/web.git
+YML
+    ( cd "$repo" && run_cco join )
+    assert_file_contains "$CCO_STATE_HOME/index" "joined:"
+}

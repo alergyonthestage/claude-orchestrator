@@ -306,3 +306,282 @@ _cco_migrate_global() {
     echo "  cco will never delete it for you." >&2
     return 0
 }
+
+# ── Lazy per-project migration (ADR-0006/0021 / design §9 P2) ───────
+# `cco init --migrate <project> [--sync]` — run inside an already-cloned repo.
+# Reads that project's config from the verified backup, writes the COMPLETE
+# FINAL machine-agnostic <repo>/.cco/ in ONE pass (repos+llms+packs coordinates),
+# relocates memory to STATE, prompts profile→tag, and registers the index LAST.
+# Atomic & staged (F44); name-uniqueness asserted (F12); non-clobbering (F11).
+
+# Parse legacy `repos:` (sanitized path:@local + name + url[+ref], or raw path)
+# → one TSV line "name<TAB>url<TAB>ref<TAB>path" per repo.
+_migrate_legacy_repos() {
+    awk '
+        function flush(){ if(name!="") print name "\t" url "\t" ref "\t" path; name=url=ref=path="" }
+        function val(l,  v){ v=l; sub(/^[a-z_]+: */,"",v); gsub(/["\047]/,"",v); sub(/ *#.*$/,"",v); gsub(/^ +| +$/,"",v); return v }
+        function field(l,  k){ k=l; sub(/:.*/,"",k); gsub(/^ +/,"",k);
+            if(k=="path")path=val(l); else if(k=="name")name=val(l);
+            else if(k=="url")url=val(l); else if(k=="ref")ref=val(l) }
+        /^repos:/{r=1;next}
+        r&&/^[^ #]/{flush();r=0}
+        r&&/^  - /{ flush(); line=$0; sub(/^  - /,"",line); field(line); next }
+        r&&/^    [a-z]/{ line=$0; sub(/^    /,"",line); field(line) }
+        END{flush()}
+    ' "$1"
+}
+
+# Parse a simple legacy list section (`packs:` / `llms:` as `- name`) → names.
+_migrate_legacy_list() {
+    awk -v sec="$2" '
+        $0 ~ "^" sec ":" {s=1;next}
+        s&&/^[^ #]/{exit}
+        s&&/^  - name:/{v=$0;sub(/^  - name: */,"",v);gsub(/["\047]/,"",v);gsub(/^ +| +$/,"",v);print v;next}
+        s&&/^  - /{v=$0;sub(/^  - */,"",v);gsub(/["\047]/,"",v);sub(/ *#.*$/,"",v);gsub(/^ +| +$/,"",v);if(v!="")print v}
+    ' "$1"
+}
+
+# Read a single top-level YAML scalar (e.g. `source:`/`url:`/`variant:`) from a file.
+_migrate_yml_scalar() {
+    awk -v k="$2" '$0 ~ "^" k ":" {sub(/^[a-z_]+: */,"");gsub(/["\047]/,"");gsub(/^ +| +$/,"");print;exit}' "$1" 2>/dev/null
+}
+
+# The project's origin profile (the non-default branch whose .vault-profile lists
+# it under sync.projects), or empty if shared/on the default branch.
+_cco_project_origin_profile() {
+    local src="$1" project="$2" default_branch branch
+    [[ -d "$src/.git" ]] || return 0
+    default_branch=$(git -C "$src" rev-parse --verify main >/dev/null 2>&1 && echo main \
+        || (git -C "$src" rev-parse --verify master >/dev/null 2>&1 && echo master \
+        || git -C "$src" rev-parse --abbrev-ref HEAD 2>/dev/null))
+    while IFS= read -r branch; do
+        branch="${branch#"${branch%%[![:space:]]*}"}"
+        [[ -z "$branch" || "$branch" == "$default_branch" ]] && continue
+        local vp
+        vp=$(git -C "$src" show "$branch:.vault-profile" 2>/dev/null || true)
+        [[ -z "$vp" ]] && continue
+        if printf '%s\n' "$vp" | awk -v p="$project" '
+            /^  projects:/{s=1;next} /^  [a-z]/&&!/^  projects:/{s=0} /^[^ ]/{s=0}
+            s&&/^    - /{sub(/^    - */,"");gsub(/[ \t\r]/,"");if($0==p)f=1} END{exit f?0:1}'; then
+            printf '%s' "$(printf '%s\n' "$vp" | awk '/^profile:/{sub(/.*: */,"");gsub(/[ \t\r]/,"");print;exit}')"
+            return 0
+        fi
+    done < <(git -C "$src" for-each-ref --format='%(refname:short)' refs/heads 2>/dev/null)
+}
+
+# Build the final project.yml at $out from the legacy project at $leg. Emits
+# index entries (name<TAB>path) for repos+mounts to the file at $idx_out.
+_cco_build_project_yml() {
+    local leg="$1" out="$2" idx_out="$3" src="$4"
+    local leg_yml="$leg/project.yml" lpaths="$leg/.cco/local-paths.yml"
+    local name desc
+    name=$(_migrate_yml_scalar "$leg_yml" name)
+    desc=$(awk '/^description:/{sub(/^description: */,"");print;exit}' "$leg_yml" 2>/dev/null)
+    : > "$idx_out"
+    {
+        printf 'name: %s\n' "$name"
+        [[ -n "$desc" ]] && printf 'description: %s\n' "$desc"
+        printf '\n'
+        # repos — final coordinates (name + url? + ref?); paths → index.
+        # Tab-PEEL each field: `IFS=$'\t' read` collapses empty middle fields
+        # (a repo with no ref would shift @local into the ref slot).
+        printf 'repos:'
+        local any_repo=false rname rurl rref rpath _rline
+        while IFS= read -r _rline; do
+            [[ -z "$_rline" ]] && continue
+            rname="${_rline%%$'\t'*}"; _rline="${_rline#*$'\t'}"
+            rurl="${_rline%%$'\t'*}";  _rline="${_rline#*$'\t'}"
+            rref="${_rline%%$'\t'*}";  rpath="${_rline#*$'\t'}"
+            [[ -z "$rname" ]] && continue
+            any_repo=true
+            printf '\n  - name: %s' "$rname"
+            [[ -n "$rurl" ]] && printf '\n    url: %s' "$rurl"
+            [[ -n "$rref" ]] && printf '\n    ref: %s' "$rref"
+            # Resolve the machine-local path for the index.
+            local real="$rpath"
+            [[ "$real" == "@local" || -z "$real" ]] && real=$(_local_paths_get "$lpaths" repos "$rname")
+            [[ -n "$real" ]] && printf '%s\t%s\n' "$rname" "$real" >> "$idx_out"
+        done < <(_migrate_legacy_repos "$leg_yml")
+        $any_repo || printf ' []'
+        printf '\n'
+        # llms — coordinate from the installed entry's .cco/source (url/variant)
+        local lname lsrc lurl lvar first=true
+        while IFS= read -r lname; do
+            [[ -z "$lname" ]] && continue
+            $first && { printf '\nllms:'; first=false; }
+            lsrc="$src/llms/$lname/.cco/source"
+            lurl=$(_migrate_yml_scalar "$lsrc" url)
+            lvar=$(_migrate_yml_scalar "$lsrc" variant)
+            printf '\n  - name: %s' "$lname"
+            [[ -n "$lurl" ]] && printf '\n    url: %s' "$lurl"
+            [[ -n "$lvar" && "$lvar" != "index" ]] && printf '\n    variant: %s' "$lvar"
+        done < <(_migrate_legacy_list "$leg_yml" llms)
+        $first || printf '\n'
+        # packs — list → map; url backfilled from the pack's recorded source
+        # (read IN PLACE; the source→DATA relocation is P4). Absent → authored.
+        local pname psrc purl pref pfirst=true
+        while IFS= read -r pname; do
+            [[ -z "$pname" ]] && continue
+            $pfirst && { printf '\npacks:'; pfirst=false; }
+            psrc="$src/packs/$pname/.cco/source"
+            purl=$(_migrate_yml_scalar "$psrc" source); [[ "$purl" == "local" ]] && purl=""
+            pref=$(_migrate_yml_scalar "$psrc" ref)
+            printf '\n  - name: %s' "$pname"
+            [[ -n "$purl" ]] && printf '\n    url: %s' "$purl"
+            [[ -n "$pref" ]] && printf '\n    ref: %s' "$pref"
+        done < <(_migrate_legacy_list "$leg_yml" packs)
+        $pfirst || printf '\n'
+    } > "$out"
+}
+
+# The committed .cco/ secret-exclusion gitignore (design §2.1).
+_cco_write_project_gitignore() {
+    cat > "$1" <<'GI'
+secrets.env
+*.env
+*.key
+*.pem
+.credentials.json
+!secrets.env.example
+GI
+}
+
+_cco_migrate_project() {
+    _cco_host_side_ok || return 0
+    local project="$1" do_sync="${2:-false}"
+    [[ -n "$project" ]] || die "cco init --migrate requires a project name."
+
+    local state backups backup
+    state="$(_cco_state_dir)"
+    backups="$state/backups"
+    # M8: a verified backup must exist and be readable before any migrate read.
+    _cco_have_backup "$backups" || die "No legacy-vault backup found — run any cco command first to create one."
+    backup=$(ls "$backups"/vault-*.tar.gz 2>/dev/null | head -1)
+    tar -tzf "$backup" >/dev/null 2>&1 || die "Legacy-vault backup is unreadable; aborting migration."
+
+    local target="$PWD"
+    [[ -d "$target/.cco" ]] && die "$target/.cco already exists — refusing to clobber (remove it or migrate elsewhere)."
+
+    local tmp
+    tmp=$(mktemp -d "${TMPDIR:-/tmp}/cco-pmigrate.XXXXXX") || die "Could not create a temp dir."
+    # shellcheck disable=SC2064
+    trap "rm -rf '$tmp'" RETURN
+    tar -xzf "$backup" -C "$tmp" 2>/dev/null || die "Could not extract the legacy-vault backup."
+
+    # Locate the legacy project (working-tree first; else from its profile branch).
+    local leg="$tmp/projects/$project"
+    if [[ ! -f "$leg/project.yml" ]]; then
+        local b
+        for b in $(git -C "$tmp" for-each-ref --format='%(refname:short)' refs/heads 2>/dev/null); do
+            if git -C "$tmp" cat-file -e "$b:projects/$project/project.yml" 2>/dev/null; then
+                git -C "$tmp" archive "$b" "projects/$project" 2>/dev/null | tar -x -C "$tmp" 2>/dev/null && break
+            fi
+        done
+    fi
+    [[ -f "$leg/project.yml" ]] || die "Project '$project' not found in the legacy vault backup."
+
+    # F12: name-uniqueness — the project name must not already bind elsewhere.
+    local mig_name; mig_name=$(_migrate_yml_scalar "$leg/project.yml" name)
+    [[ -n "$mig_name" ]] || mig_name="$project"
+    local existing; existing=$(_index_get_project_repos "$mig_name" 2>/dev/null || true)
+    if [[ -n "$existing" ]]; then
+        die "A project named '$mig_name' is already registered. Migrate under a different name or 'cco forget' it first."
+    fi
+
+    # Stage the final .cco/ under temp, then atomic-move into place (F44).
+    local stage="$tmp/.cco-stage" idx="$tmp/index-entries"
+    mkdir -p "$stage/claude"
+    _cco_build_project_yml "$leg" "$stage/project.yml" "$idx" "$tmp"
+    # Authored config tree: legacy projects/<p>/.claude → .cco/claude.
+    [[ -d "$leg/.claude" ]] && cp -r "$leg/.claude/." "$stage/claude/" 2>/dev/null || true
+    # H5 project config + secrets (gitignored) + skeleton.
+    local f
+    for f in mcp.json setup.sh mcp-packages.txt secrets.env secrets.env.example; do
+        [[ -f "$leg/$f" ]] && cp "$leg/$f" "$stage/$f"
+    done
+    [[ -f "$stage/secrets.env" && ! -f "$stage/secrets.env.example" ]] && \
+        sed 's/=.*/=/' "$stage/secrets.env" > "$stage/secrets.env.example" 2>/dev/null || true
+    # Authored (no-coordinate) packs travel with the project (P15).
+    if [[ -d "$leg/.cco/packs" ]]; then
+        mkdir -p "$stage/packs"; cp -r "$leg/.cco/packs/." "$stage/packs/" 2>/dev/null || true
+    fi
+    _cco_write_project_gitignore "$stage/.gitignore"
+
+    # Secret-scan committed files (secrets.env is gitignored; *.example exempt, FR-S3).
+    local cf hit
+    while IFS= read -r cf; do
+        [[ "$cf" == *"/secrets.env" || "$cf" == *.example ]] && continue
+        if hit=$(_secret_match_filename "$cf" 2>/dev/null) && [[ -n "$hit" ]]; then
+            die "Refusing to migrate: a secret-like file would be committed: ${cf#$stage/}"
+        fi
+    done < <(find "$stage" -type f ! -path '*/secrets.env')
+
+    # Atomic move into the repo (F44): a partial .cco/ never survives a failure.
+    mv "$stage" "$target/.cco" || die "Failed to install the migrated .cco/ into $target."
+
+    # Memory → STATE, machine-local, non-clobber (F11 / ADR-0009).
+    local mem_dst; mem_dst="$state/projects/$mig_name/memory"
+    if [[ -d "$leg/memory" ]]; then
+        mkdir -p "$mem_dst"
+        cp -rn "$leg/memory/." "$mem_dst/" 2>/dev/null || true
+    fi
+
+    # Register the index LAST (so a failed migrate leaves no dangling binding).
+    local rname rpath repos_csv=""
+    while IFS=$'\t' read -r rname rpath; do
+        [[ -z "$rname" ]] && continue
+        _index_set_path "$rname" "$rpath"
+        repos_csv="${repos_csv:+$repos_csv,}$rname"
+    done < "$idx"
+    [[ -n "$repos_csv" ]] && _index_set_project_repos "$mig_name" "$repos_csv"
+
+    ok "Migrated project '$mig_name' into $target/.cco/ (Case A)."
+
+    # Profile→tag prompt (ADR-0010 §5 / F42) — only for a non-default origin profile.
+    local origin; origin=$(_cco_project_origin_profile "$tmp" "$project")
+    if [[ -n "$origin" ]]; then
+        echo "This project came from vault profile '$origin'." >&2
+        echo "Convert it into a tag? You'll find it with: cco list --tag $origin" >&2
+        local ans=""
+        if [[ "${CCO_ASSUME_YES:-}" == "1" ]]; then ans="y"
+        elif (exec < /dev/tty) 2>/dev/null; then read -rp "  Convert? [Y/n]: " ans < /dev/tty; fi
+        ans="$(printf '%s' "$ans" | tr '[:upper:]' '[:lower:]')"
+        if [[ "$ans" != "n" ]]; then
+            _cco_seed_resource_tag projects "$mig_name" "$origin"
+            ok "Tagged '$mig_name' as '$origin'."
+        fi
+    fi
+
+    if [[ "$do_sync" == "true" ]]; then
+        info "Propagating .cco/ to the project's other member repos…"
+        cmd_sync --auto-approve 2>/dev/null || warn "Run 'cco sync' to propagate to member repos."
+    fi
+    return 0
+}
+
+# `cco join [--sync]` — register a freshly-cloned, already-migrated repo's .cco/
+# into this machine's index (reuses the resolve/index primitives). The repo
+# hosts its own project; member paths are resolved on demand at start/resolve.
+cmd_join() {
+    local do_sync=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --sync) do_sync=true; shift ;;
+            --help) echo "Usage: cco join [--sync]   (run inside a cloned repo with a committed .cco/)"; return 0 ;;
+            *) die "Unknown option: $1" ;;
+        esac
+    done
+    local repo="$PWD"
+    [[ -f "$repo/.cco/project.yml" ]] || die "No .cco/project.yml here — run 'cco join' inside a cloned project repo."
+    local pname; pname=$(_cco_project_id "$repo")
+    # Register member repos by name; unresolved paths are prompted at start/resolve.
+    local rname repos_csv=""
+    while IFS=$'\t' read -r rname _ _; do
+        [[ -z "$rname" ]] && continue
+        repos_csv="${repos_csv:+$repos_csv,}$rname"
+    done < <(yml_get_repo_coords "$repo/.cco/project.yml")
+    [[ -n "$repos_csv" ]] && _index_set_project_repos "$pname" "$repos_csv"
+    ok "Joined project '$pname' on this machine. Run 'cco resolve $pname' to bind local paths."
+    [[ "$do_sync" == "true" ]] && { cmd_sync --auto-approve 2>/dev/null || true; }
+    return 0
+}
