@@ -1066,6 +1066,7 @@ design is persisted.
 | # | Question |
 |---|----------|
 | **RD-triggers** | Future opt-in auto-sync (daemon / native hooks / git hooks / manual-only). Now also owns `~/.cco` background/managed auto-sync (ADR-0008). |
+| **RD-repo-multi-project** | A repo referenced by **multiple projects** (e.g. `cave-auth` in `cave-infrastructure` + `cave-auth`): does `<repo>/.cco` hold **one** project config or **N**? The index already supports multi-membership (§3); the gap is the `project.yml` content + the `cco sync` clobber when a member repo hosts a *different* project (Case B) + the cwd `cco start` ambiguity. **Gates Phase-2** (can change the "final" `project.yml` shape P2 writes build-once) → dedicated analysis **before** P2 implementation. See `RD-repo-multi-project.md`. |
 
 **Resolved:**
 | # | Resolution |
