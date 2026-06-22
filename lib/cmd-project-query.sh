@@ -42,6 +42,44 @@ EOF
     done
 }
 
+# Classify a member repo's role w.r.t. <project> (ADR-0024 D5):
+#   host (its <repo>/.cco/ hosts this project) · synced (.cco present, in sync) ·
+#   divergent (.cco edited since last sync) · code-only (no .cco).
+_project_member_role() {
+    local repo_path="$1" project="$2" repo_name="$3"
+    # Central projects mount via @local/local-paths; fall back to the index path.
+    [[ ! -d "$repo_path" && -n "$repo_name" ]] && repo_path=$(_index_get_path "$repo_name" 2>/dev/null)
+    [[ -n "$repo_path" && -f "$repo_path/.cco/project.yml" ]] || { printf 'code-only'; return 0; }
+    local hosted; hosted=$(_cco_project_id "$repo_path" 2>/dev/null)
+    if [[ "$hosted" == "$project" ]]; then printf 'host'
+    elif _sync_is_divergent "$repo_path" 2>/dev/null; then printf 'divergent'
+    else printf 'synced'; fi
+}
+
+# Repo-centric view (ADR-0024 D5): from a repo dir, report the project it hosts,
+# its members + each member's resolution, and the projects referencing this repo.
+_project_show_repo_centric() {
+    local repo="$1" hosted
+    hosted=$(_cco_project_id "$repo")
+    echo -e "${BOLD}Repo:${NC} $repo"
+    echo "  hosts project: $hosted"
+    echo ""
+    echo -e "${BOLD}Members:${NC}"
+    local _line rn p refby any=false
+    while IFS= read -r _line; do
+        rn="${_line%%$'\t'*}"
+        [[ -z "$rn" ]] && continue
+        any=true
+        p=$(_index_get_path "$rn" 2>/dev/null)
+        refby=$(_index_repos_get_projects "$rn" 2>/dev/null | grep -vxF "$hosted" | paste -sd, - 2>/dev/null)
+        local l="  $rn"
+        [[ -n "$p" ]] && l="$l ($p)" || l="$l (unresolved)"
+        [[ -n "$refby" ]] && l="$l — also in: $refby"
+        echo "$l"
+    done < <(yml_get_repo_coords "$repo/.cco/project.yml")
+    $any || echo "  (none)"
+}
+
 cmd_project_show() {
     local name=""
 
@@ -66,6 +104,12 @@ EOF
         esac
     done
 
+    # Repo-centric view (ADR-0024 D5): invoked from a repo dir that hosts a
+    # project, with no explicit name → summarize this repo's relationships.
+    if [[ -z "$name" && -f "$PWD/.cco/project.yml" ]]; then
+        _project_show_repo_centric "$PWD"
+        return $?
+    fi
     [[ -z "$name" ]] && die "Usage: cco project show <name>"
 
     local project_dir="$PROJECTS_DIR/$name"
@@ -88,14 +132,26 @@ EOF
     repos=$(_effective_repo_mounts "$project_yml")
     if [[ -n "$repos" ]]; then
         local repo_name repo_path
+        local _unresolved=0
         while IFS=$'\t' read -r repo_name repo_path; do
             [[ -z "$repo_name" ]] && continue
+            # D5 (ADR-0024): each member's role + the other projects referencing it.
+            local role refby
+            role=$(_project_member_role "$repo_path" "${yml_name:-$name}" "$repo_name")
+            refby=$(_index_repos_get_projects "$repo_name" 2>/dev/null | grep -vxF "${yml_name:-$name}" | paste -sd, - 2>/dev/null)
+            local suffix="[$role]"
+            [[ -n "$refby" ]] && suffix="$suffix — also referenced by: $refby"
             if [[ -d "$repo_path" ]]; then
-                echo "  $repo_name ($repo_path)"
+                echo "  $repo_name ($repo_path) $suffix"
             else
-                echo -e "  $repo_name ($repo_path) ${YELLOW}[missing]${NC}"
+                echo -e "  $repo_name (${repo_path:-unresolved}) ${YELLOW}[missing]${NC} $suffix"
+                _unresolved=$(( _unresolved + 1 ))
             fi
         done <<< "$repos"
+        # Passive ⚠ badge (F49 / ADR-0019 D2 layer-e) — awareness, never a block.
+        if [[ $_unresolved -gt 0 ]]; then
+            echo -e "  ${YELLOW}⚠${NC} ${yml_name:-$name}: $_unresolved reference(s) unresolved — run 'cco project validate' for details"
+        fi
     else
         echo "  (none)"
     fi

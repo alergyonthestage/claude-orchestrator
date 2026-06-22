@@ -161,3 +161,50 @@ YAML
     run_cco project validate "my-proj"
     assert_output_contains "no repos"
 }
+
+# ── D5 observability: roles + referenced-by + repo-centric view ──────
+
+test_project_show_referenced_by() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    mkdir -p "$tmpdir/shared"
+    seed_index_path shared "$tmpdir/shared"
+    index_set_project_repos projB shared
+    create_project "$tmpdir" projA "name: projA
+repos:
+  - path: \"@local\"
+    name: shared"
+    run_cco project show projA
+    assert_output_contains "also referenced by: projB"
+}
+
+test_project_show_member_role_host() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    # A member repo whose .cco/ hosts projA → role 'host'.
+    local hostrepo="$tmpdir/hostrepo"; mkdir -p "$hostrepo/.cco"
+    printf 'name: projA\n' > "$hostrepo/.cco/project.yml"
+    seed_index_path mainrepo "$hostrepo"
+    create_project "$tmpdir" projA "name: projA
+repos:
+  - path: \"@local\"
+    name: mainrepo"
+    run_cco project show projA
+    assert_output_contains "[host]"
+}
+
+test_project_show_repo_centric_view() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local repo="$tmpdir/myrepo"; mkdir -p "$repo/.cco"
+    cat > "$repo/.cco/project.yml" <<'YML'
+name: myproj
+repos:
+  - name: api
+    url: git@github.com:org/api.git
+YML
+    cd "$repo"
+    run_cco project show
+    assert_output_contains "hosts project: myproj"
+    assert_output_contains "api"
+}

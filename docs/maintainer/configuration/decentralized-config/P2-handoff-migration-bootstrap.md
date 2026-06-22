@@ -319,6 +319,19 @@ UX copy (F49 prompt, divergence notice, `started <project> from <repo> [source: 
 prompt, the `cco update` migration summary + keep/remove note) is **maintainer-confirmed at build time**
 per commit (P10 lesson b) — present options + a spec-grounded recommendation, then persist.
 
+> **P2-5 OUTCOME (2026-06-22).** P2-1…P2-4 built as planned (delta-green per commit; FAIL 16→8 at P2-2,
+> stays 8). **P2-5 split (maintainer-confirmed):** only the **D5 observability** ships in Phase 2 — the
+> `_index_repos_get_projects` reverse helper + `cco project show` roles (host/synced/divergent/code-only)
+> /referenced-by + repo-centric view + passive ⚠ badge (ADR-0024 D5). The **D-start source-selection**
+> (`cco start --from`/cwd-first/F49 prompt/divergence notice/source-transparency line) **re-sequenced to
+> P3** — code-grounded: `cco start` still mounts the **central** layout (`${project_dir}/.claude` +
+> `${project_dir}/project.yml`); the decentralized `<repo>/.cco/` start read-path **is the P3 cutover**,
+> so D-start is built once there on the final decentralized start (build-once; same precedent as the
+> P1→P2 forks). See `design.md` §9 P3. **Phase 2 (migration & bootstrap) CLOSED.** Phase-2 UX copy
+> confirmed: the `cco update` migration summary (detailed, no STATE detail) + the per-project profile→tag
+> prompt (concise). Commits (local): P2-1 `c1e0369` · P2-2 `b0c215e` · P2-3 `c0ddf4b` · P2-4 `182bcff` ·
+> P2-5 (D5).
+
 ## 6. Invariants (never violate)
 
 - **Build-once / no double schema-migration** — the migration writes the complete final `project.yml`

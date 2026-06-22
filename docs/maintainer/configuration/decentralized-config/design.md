@@ -913,6 +913,17 @@ build-once holds. The `packs:`
   profile/switch/shadow machinery, `cco vault *`, `cco project create`, and the
   custom `project.yml` sanitize/virtual-diff/extract-restore/backup-trap (unnecessary
   under AD3). Keep the Phase-0 index-backed path resolution, secret-scan, gitignore-heal.
+  > **D-start source-selection RE-SEQUENCED P2-5 → P3 (maintainer-confirmed 2026-06-22, code-grounded).**
+  > The Phase-2 D-start work (`cco start [project] --from <repo>` precedence; cwd-first → hosted
+  > project; the F49 unresolved prompt; the divergence notice + source-transparency line + passive ⚠
+  > badge, §4.4) **depends on `cco start` reading the decentralized `<repo>/.cco/` layout** — but
+  > `cco start` still mounts the **central** layout (`_start_generate_compose` emits
+  > `${project_dir}/.claude:/workspace/.claude` + `${project_dir}/project.yml`, `project_dir=
+  > $PROJECTS_DIR/$project`). That decentralized-start read-path **is this phase's cutover**, so D-start
+  > is built **here, once, on the final decentralized start** (build-once). Phase 2 delivered the
+  > self-contained **D5 observability** (the `_index_repos_get_projects` reverse helper + `cco project
+  > show` roles/referenced-by + repo-centric view + passive ⚠ badge, ADR-0024 D5) — independent of the
+  > start read-path. This is the same dependency-driven re-sequencing precedent as the P1→P2 forks.
   **Profiles → tags (ADR-0010/0011)**: remove the profile-branch system entirely; **wire**
   `cco tag add/rm` + `cco list --tag` over the Phase-0 `<data>/cco/tags.yml` registry (**no `~/.cco`
   allowlist**, tags are internal not config — ADR-0015). **Authoring (ADR-0010)**:

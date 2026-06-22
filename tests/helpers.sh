@@ -81,6 +81,19 @@ seed_index_path() {
     )
 }
 
+# Seed a project → member-repo-names binding in the STATE index (space-separated,
+# the canonical format). Usage: index_set_project_repos <project> <repo> [<repo>...]
+index_set_project_repos() {
+    local proj="$1"; shift
+    (
+        source "$REPO_ROOT/lib/colors.sh"
+        source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/paths.sh"
+        source "$REPO_ROOT/lib/index.sh"
+        _index_set_project_repos "$proj" "$@"
+    )
+}
+
 # Copy defaults/global/.claude into tmpdir/user-config/global/.claude
 # (simulates cco init — all agents, skills, rules, settings are in global defaults)
 # Usage: setup_global_from_defaults "$tmpdir"

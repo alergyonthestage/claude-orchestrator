@@ -112,3 +112,29 @@ test_index_scaffold_has_version_and_sections() {
     local ghosts; ghosts=$(find "$(dirname "$f")" -name 'index.??????' | wc -l | tr -d ' ')
     [[ "$ghosts" -eq 0 ]] || fail "Atomic write left $ghosts tempfile ghost(s)"
 }
+
+# ── Reverse lookup: repo → referencing projects (ADR-0024 D5) ────────
+
+test_index_repos_get_projects_reverse() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    index_set_project_repos projA shared apionly
+    index_set_project_repos projB shared
+    local out
+    out=$(
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/paths.sh"; source "$REPO_ROOT/lib/index.sh"
+        _index_repos_get_projects shared
+    )
+    printf '%s\n' "$out" | grep -qx projA || fail "projA should reference 'shared'"
+    printf '%s\n' "$out" | grep -qx projB || fail "projB should reference 'shared'"
+    # A repo referenced by only one project is not over-reported.
+    local out2
+    out2=$(
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/paths.sh"; source "$REPO_ROOT/lib/index.sh"
+        _index_repos_get_projects apionly
+    )
+    printf '%s\n' "$out2" | grep -qx projA || fail "projA should reference 'apionly'"
+    printf '%s\n' "$out2" | grep -qx projB && fail "projB must not reference 'apionly'" || true
+}

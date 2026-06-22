@@ -195,3 +195,16 @@ _index_set_project_repos() {
 
 # Remove a <project>'s membership entry.
 _index_remove_project() { _index_section_remove projects "$1"; }
+
+# Reverse lookup (ADR-0024 D5): echo the projects (one per line) that reference
+# <repo> as a member. Complement of _index_get_project_repos; drives repo↔project
+# observability in `cco project show` and the repo-centric view.
+_index_repos_get_projects() {
+    local repo="$1" line proj members m
+    while IFS= read -r line; do
+        proj="${line%%=*}"; members="${line#*=}"
+        for m in $members; do
+            [[ "$m" == "$repo" ]] && { printf '%s\n' "$proj"; break; }
+        done
+    done < <(_index_section_dump projects)
+}

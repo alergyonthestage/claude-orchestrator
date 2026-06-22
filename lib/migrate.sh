@@ -527,13 +527,14 @@ _cco_migrate_project() {
     fi
 
     # Register the index LAST (so a failed migrate leaves no dangling binding).
-    local rname rpath repos_csv=""
+    # Member names are space-separated (the canonical index format, §3).
+    local rname rpath; local -a repo_names=()
     while IFS=$'\t' read -r rname rpath; do
         [[ -z "$rname" ]] && continue
         _index_set_path "$rname" "$rpath"
-        repos_csv="${repos_csv:+$repos_csv,}$rname"
+        repo_names+=("$rname")
     done < "$idx"
-    [[ -n "$repos_csv" ]] && _index_set_project_repos "$mig_name" "$repos_csv"
+    [[ ${#repo_names[@]} -gt 0 ]] && _index_set_project_repos "$mig_name" "${repo_names[@]}"
 
     ok "Migrated project '$mig_name' into $target/.cco/ (Case A)."
 
@@ -574,13 +575,14 @@ cmd_join() {
     local repo="$PWD"
     [[ -f "$repo/.cco/project.yml" ]] || die "No .cco/project.yml here — run 'cco join' inside a cloned project repo."
     local pname; pname=$(_cco_project_id "$repo")
-    # Register member repos by name; unresolved paths are prompted at start/resolve.
-    local rname repos_csv=""
+    # Register member repos by name (space-separated, §3); unresolved paths are
+    # prompted at start/resolve.
+    local rname; local -a repo_names=()
     while IFS=$'\t' read -r rname _ _; do
         [[ -z "$rname" ]] && continue
-        repos_csv="${repos_csv:+$repos_csv,}$rname"
+        repo_names+=("$rname")
     done < <(yml_get_repo_coords "$repo/.cco/project.yml")
-    [[ -n "$repos_csv" ]] && _index_set_project_repos "$pname" "$repos_csv"
+    [[ ${#repo_names[@]} -gt 0 ]] && _index_set_project_repos "$pname" "${repo_names[@]}"
     ok "Joined project '$pname' on this machine. Run 'cco resolve $pname' to bind local paths."
     [[ "$do_sync" == "true" ]] && { cmd_sync --auto-approve 2>/dev/null || true; }
     return 0
