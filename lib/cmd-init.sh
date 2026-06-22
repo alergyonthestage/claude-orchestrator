@@ -87,9 +87,10 @@ EOF
         local now
         now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-        # Build manifest entries for all managed files
-        mkdir -p "$GLOBAL_DIR/.claude/.cco"
-        local meta_file="$GLOBAL_DIR/.claude/.cco/meta"
+        # The merge artifacts (meta/base) live in STATE now (H6); the meta
+        # writer mkdir's its own STATE parent.
+        local meta_file
+        meta_file=$(_cco_global_meta)
         (
             cd "$GLOBAL_DIR/.claude" || exit 1
             find . -type f ! -name 'meta' ! -path './.cco/*' | sed 's|^\./||' | sort | while IFS= read -r rel; do
@@ -101,11 +102,16 @@ EOF
                 $skip && continue
                 printf '%s\t%s\n' "$rel" "$(_file_hash "$GLOBAL_DIR/.claude/$rel")"
             done
-        ) | _generate_cco_meta "$meta_file" "$latest_schema" "$now" \
-            "$comm_lang" "$docs_lang" "$code_lang" "$latest_changelog" "$latest_changelog"
+        ) | _generate_cco_meta "$meta_file" "$latest_schema" "$now"
+
+        # Decomposed config/state datums (ADR-0013 D4): languages → ~/.cco,
+        # changelog markers → STATE top-level.
+        _write_languages "$comm_lang" "$docs_lang" "$code_lang"
+        _write_last_seen_changelog "$latest_changelog"
+        _write_last_read_changelog "$latest_changelog"
 
         # Save base versions for future 3-way merge
-        _save_all_base_versions "$GLOBAL_DIR/.claude/.cco/base" "$DEFAULTS_DIR/global/.claude" "global"
+        _save_all_base_versions "$(_cco_global_base_dir)" "$DEFAULTS_DIR/global/.claude" "global"
 
         # Run all migrations (marks schema as current — fresh install, nothing to migrate)
         if ! _run_migrations "global" "$GLOBAL_DIR/.claude" 0 "$meta_file"; then

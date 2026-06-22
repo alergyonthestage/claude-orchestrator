@@ -195,9 +195,10 @@ test_project_internalize() {
     latest_schema=$(bash -c "source '$REPO_ROOT/lib/colors.sh'; source '$REPO_ROOT/lib/utils.sh'; source '$REPO_ROOT/lib/paths.sh'; source '$REPO_ROOT/lib/yaml.sh'; source '$REPO_ROOT/lib/update-hash-io.sh'; source '$REPO_ROOT/lib/update-merge.sh'; source '$REPO_ROOT/lib/update-meta.sh'; source '$REPO_ROOT/lib/update-discovery.sh'; source '$REPO_ROOT/lib/update-sync.sh'; source '$REPO_ROOT/lib/update-changelog.sh'; source '$REPO_ROOT/lib/update-remote.sh'; source '$REPO_ROOT/lib/update.sh'; _latest_schema_version project")
     printf 'source: https://github.com/team/config.git\nref: main\ncommit: abc123\n' \
         > "$CCO_PROJECTS_DIR/remote-app/.cco/source"
+    mkdir -p "$(dirname "$(state_project_meta remote-app)")"   # → STATE (H6)
     printf 'schema_version: %s\nremote_cache:\n  commit: abc123\n  checked: 2026-03-17\n' \
         "$latest_schema" \
-        > "$CCO_PROJECTS_DIR/remote-app/.cco/meta"
+        > "$(state_project_meta remote-app)"
 
     cp -r "$REPO_ROOT/templates/project/base/.claude/"* "$CCO_PROJECTS_DIR/remote-app/.claude/" 2>/dev/null || true
 
@@ -207,7 +208,7 @@ test_project_internalize() {
         "Should report project is now local"
 
     assert_file_contains "$CCO_PROJECTS_DIR/remote-app/.cco/source" "source: local"
-    assert_file_not_contains "$CCO_PROJECTS_DIR/remote-app/.cco/meta" "remote_cache:"
+    assert_file_not_contains "$(state_project_meta remote-app)" "remote_cache:"
 }
 
 test_project_internalize_already_local() {
@@ -428,8 +429,12 @@ YAML
         ".cco/source should contain install date"
     assert_file_contains "$CCO_PROJECTS_DIR/test-proj/.cco/source" "commit:" \
         ".cco/source should contain commit hash"
-    assert_dir_exists "$CCO_PROJECTS_DIR/test-proj/.cco/base" \
-        ".cco/base should be created for future 3-way merge"
+    # STATE base is keyed by the project <id> = project.yml `name:` (H6). This
+    # fixture's template uses a literal name (test-tmpl), so `--as test-proj`
+    # leaves the name unchanged; real templates use {{PROJECT_NAME}} (reconciled
+    # in the P4 sharing rewrite).
+    assert_dir_exists "$(state_project_base test-tmpl)" \
+        "project STATE base should be created for future 3-way merge (H6)"
 }
 
 # ── publish safety: .cco/publish-ignore ──────────────────────────────
@@ -483,8 +488,9 @@ test_internalize_source_local_first_line() {
     mkdir -p "$CCO_PROJECTS_DIR/remote-app/.cco"
     printf 'source: https://github.com/team/config.git\nref: main\n' \
         > "$CCO_PROJECTS_DIR/remote-app/.cco/source"
+    mkdir -p "$(dirname "$(state_project_meta remote-app)")"   # → STATE (H6)
     printf 'schema_version: 10\nlocal_framework_override: true\n' \
-        > "$CCO_PROJECTS_DIR/remote-app/.cco/meta"
+        > "$(state_project_meta remote-app)"
     cp -r "$REPO_ROOT/templates/project/base/.claude/"* "$CCO_PROJECTS_DIR/remote-app/.claude/" 2>/dev/null || true
 
     run_cco project internalize remote-app --yes
@@ -496,7 +502,7 @@ test_internalize_source_local_first_line() {
         "First line of .cco/source should be 'source: local'"
 
     # local_framework_override should be cleared
-    assert_file_not_contains "$CCO_PROJECTS_DIR/remote-app/.cco/meta" "local_framework_override"
+    assert_file_not_contains "$(state_project_meta remote-app)" "local_framework_override"
 }
 
 # ── Publish detects secrets at project root ──────────────────────────
@@ -576,8 +582,9 @@ test_publish_blocks_on_pending_migrations() {
     run_cco init --lang "English"
     run_cco project create migration-app
 
-    # Set schema_version to something behind latest (overwrite entire meta)
-    local meta_file="$CCO_PROJECTS_DIR/migration-app/.cco/meta"
+    # Set schema_version to something behind latest (overwrite entire meta → STATE)
+    local meta_file; meta_file="$(state_project_meta migration-app)"
+    mkdir -p "$(dirname "$meta_file")"
     printf 'schema_version: 1\n' > "$meta_file"
 
     local bare_dir
@@ -688,8 +695,8 @@ test_project_update_clean_apply() {
     # Verify: CLAUDE.md was updated (clean apply, no local changes)
     assert_file_contains "$CCO_PROJECTS_DIR/svc-app/.claude/CLAUDE.md" "Updated CLAUDE.md v2 by publisher"
 
-    # Verify: .cco/base/ was refreshed to new publisher version
-    assert_file_contains "$CCO_PROJECTS_DIR/svc-app/.cco/base/CLAUDE.md" "Updated CLAUDE.md v2 by publisher"
+    # Verify: STATE base/ was refreshed to new publisher version (H6)
+    assert_file_contains "$(state_project_base svc-tmpl)/CLAUDE.md" "Updated CLAUDE.md v2 by publisher"
 
     # Verify: .cco/source commit was updated
     local new_commit
@@ -736,8 +743,8 @@ test_project_update_consumer_changes_force() {
         "Consumer local addition" \
         ".bak should contain consumer's previous version"
 
-    # .cco/base/ should be updated to publisher's new version (for future merges)
-    assert_file_contains "$CCO_PROJECTS_DIR/merge-app/.cco/base/CLAUDE.md" \
+    # STATE base/ should be updated to publisher's new version (for future merges, H6)
+    assert_file_contains "$(state_project_base merge-tmpl)/CLAUDE.md" \
         "Updated CLAUDE.md by publisher v2" \
         ".cco/base/ should have the new publisher version"
 }

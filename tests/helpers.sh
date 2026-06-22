@@ -52,6 +52,20 @@ GITCFG
     seed_index_path "dummy-repo" "$CCO_DUMMY_REPO"
 }
 
+# Decentralized STATE/CONFIG homes for the update-engine artifacts (H6 / the
+# global .cco/meta decompose, ADR-0013 D4). The test env pins CCO_STATE_HOME
+# and HOME, so these resolve deterministically without sourcing paths.sh.
+# Project <id> = the project.yml `name:` (the dir basename in these fixtures).
+state_global_meta()  { printf '%s' "$CCO_STATE_HOME/global/update/meta"; }
+state_global_base()  { printf '%s' "$CCO_STATE_HOME/global/update/base"; }
+state_project_meta() { printf '%s' "$CCO_STATE_HOME/projects/$1/update/meta"; }
+state_project_base() { printf '%s' "$CCO_STATE_HOME/projects/$1/update/base"; }
+state_pack_meta()    { printf '%s' "$CCO_STATE_HOME/packs/$1/update/meta"; }
+state_pack_base()    { printf '%s' "$CCO_STATE_HOME/packs/$1/update/base"; }
+cco_languages_file() { printf '%s' "$HOME/.cco/languages"; }
+cco_last_seen_file() { printf '%s' "$CCO_STATE_HOME/last_seen"; }
+cco_last_read_file() { printf '%s' "$CCO_STATE_HOME/last_read"; }
+
 # Seed a logical name → absolute path binding in the STATE index (the
 # decentralized-config materialization of a repo/mount coordinate). Uses the
 # real index API so the on-disk format matches production exactly.

@@ -51,24 +51,68 @@ _cco_remotes_token_file() {
     printf '%s\n' "$(_cco_state_dir)/remotes-token"
 }
 
+# ── Global .cco/meta decompose homes (ADR-0013 D4 / ADR-0025) ───────
+# The legacy global `.cco/meta` grab-bag splits by sync-profile:
+#  - languages → CONFIG `~/.cco/languages` (the one config datum; regenerates
+#    language.md). User-authored, versioned.
+#  - changelog markers → STATE top-level `last_seen`/`last_read` (machine-local).
+#  - schema/policies/flags + the hash `manifest:` block → the global STATE
+#    `/update/meta` (the helpers above) — NOT dropped (the hash manifest is the
+#    load-bearing 3-way-merge change manifest; only the separate `manifest.yml`
+#    and the legacy `pack-manifest` are removed).
+_cco_languages_file() {
+    printf '%s\n' "$(_cco_config_dir)/languages"
+}
+
+_cco_last_seen_file() {
+    printf '%s\n' "$(_cco_state_dir)/last_seen"
+}
+
+_cco_last_read_file() {
+    printf '%s\n' "$(_cco_state_dir)/last_read"
+}
+
+# ── Update-engine artifact homes → STATE (H6 / ADR-0016 D5) ─────────
+# The 3-way-merge ancestors (`base/`) and the per-file hash manifest + schema
+# meta (`meta`) are machine-local INTERNAL state — never config (P6). They live
+# under STATE keyed by identity, NOT inside the committed/published config
+# buckets: <state>/cco/{global,projects/<id>,packs/<name>}/update/{meta,base}.
+# Only the PATHS move here (P2); the merge LOGIC (update-merge.sh) is unchanged.
+
+# Project identity <id> = the project.yml `name:` (the index `projects:` key),
+# NOT the repo-directory basename (ADR-0024 D1 / design §2.2 pin). `name` is
+# enforced unique. Reads the hosted project.yml (new `.cco/` layout or legacy
+# root); falls back to the dir basename when no name is recorded.
+_cco_project_id() {
+    local dir="$1" yml name=""
+    for yml in "$dir/.cco/project.yml" "$dir/project.yml"; do
+        if [[ -f "$yml" ]]; then
+            name=$(awk -F': *' '/^name:/{v=$2; gsub(/["'\''"]/,"",v); gsub(/[ \t\r]+$/,"",v); print v; exit}' "$yml")
+            [[ -n "$name" ]] && break
+        fi
+    done
+    [[ -z "$name" ]] && name=$(basename "$dir")
+    printf '%s' "$name"
+}
+
 # ── Global scope ─────────────────────────────────────────────────────
 
 _cco_global_meta() {
-    _cco_resolve_path f "$GLOBAL_DIR/.claude/.cco/meta" "$GLOBAL_DIR/.claude/.cco-meta"
+    printf '%s\n' "$(_cco_state_dir)/global/update/meta"
 }
 
 _cco_global_base_dir() {
-    _cco_resolve_path d "$GLOBAL_DIR/.claude/.cco/base" "$GLOBAL_DIR/.claude/.cco-base"
+    printf '%s\n' "$(_cco_state_dir)/global/update/base"
 }
 
 # ── Project scope ($1 = project_dir) ────────────────────────────────
 
 _cco_project_meta() {
-    _cco_resolve_path f "$1/.cco/meta" "$1/.cco-meta"
+    printf '%s\n' "$(_cco_state_dir)/projects/$(_cco_project_id "$1")/update/meta"
 }
 
 _cco_project_base_dir() {
-    _cco_resolve_path d "$1/.cco/base" "$1/.cco-base"
+    printf '%s\n' "$(_cco_state_dir)/projects/$(_cco_project_id "$1")/update/base"
 }
 
 _cco_project_managed() {
@@ -92,6 +136,17 @@ _cco_project_pack_manifest() {
 
 _cco_pack_source() {
     _cco_resolve_path f "$1/.cco/source" "$1/.cco-source"
+}
+
+# Pack-scoped merge artifacts → STATE, keyed by pack name (= the flat-store dir
+# basename). Created here for build-once; the pack writers/readers flip onto
+# them in P4 (pack behavior). <state>/cco/packs/<name>/update/{meta,base}.
+_cco_pack_meta() {
+    printf '%s\n' "$(_cco_state_dir)/packs/$(basename "$1")/update/meta"
+}
+
+_cco_pack_base_dir() {
+    printf '%s\n' "$(_cco_state_dir)/packs/$(basename "$1")/update/base"
 }
 
 _cco_project_source() {

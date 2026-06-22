@@ -262,7 +262,7 @@ test_project_create_base_claude_md_is_interpolated() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco project create "test-proj"
-    local base="$CCO_PROJECTS_DIR/test-proj/.cco/base/CLAUDE.md"
+    local base="$(state_project_base test-proj)/CLAUDE.md"   # → STATE (H6)
     assert_file_exists "$base"
     assert_file_contains "$base" "# Project: test-proj"
     assert_no_placeholder "$base" "{{PROJECT_NAME}}"
@@ -275,7 +275,7 @@ test_project_create_base_claude_md_with_description() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco project create "test-proj" --description "A test project"
-    local base="$CCO_PROJECTS_DIR/test-proj/.cco/base/CLAUDE.md"
+    local base="$(state_project_base test-proj)/CLAUDE.md"   # → STATE (H6)
     assert_file_exists "$base"
     assert_file_contains "$base" "A test project"
 }

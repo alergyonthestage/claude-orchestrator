@@ -28,10 +28,10 @@ test_update_first_run_no_meta() {
     sed -i "s/{{CODE_LANG}}/English/g" "$CCO_GLOBAL_DIR/.claude/rules/language.md"
 
     run_cco update
-    assert_file_exists "$CCO_GLOBAL_DIR/.claude/.cco/meta" \
+    assert_file_exists "$(state_global_meta)" \
         "update should generate .cco/meta"
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco/meta" "schema_version:"
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco/meta" "manifest:"
+    assert_file_contains "$(state_global_meta)" "schema_version:"
+    assert_file_contains "$(state_global_meta)" "manifest:"
 }
 
 test_update_no_changes() {
@@ -176,7 +176,8 @@ test_update_dry_run() {
 
     run_cco update --dry-run
     assert_output_contains "Dry run complete"
-    assert_output_contains "dry-test.md"
+    # Dry-run/discovery reports a count summary; the filename is shown by --diff.
+    assert_output_contains "new file"
     # File should NOT actually exist
     assert_file_not_exists "$CCO_GLOBAL_DIR/.claude/rules/dry-test.md"
 }
@@ -193,7 +194,7 @@ test_update_migrations_run_in_order() {
     sed -i "s/{{CODE_LANG}}/English/g" "$CCO_GLOBAL_DIR/.claude/rules/language.md"
 
     # Create .cco/meta with schema_version 0
-    create_cco_meta "$CCO_GLOBAL_DIR/.claude/.cco/meta" "schema_version: 0
+    create_cco_meta "$(state_global_meta)" "schema_version: 0
 created_at: 2026-01-01T00:00:00Z
 updated_at: 2026-01-01T00:00:00Z
 
@@ -205,8 +206,8 @@ languages:
 manifest:"
 
     run_cco update
-    # Schema version should be updated to latest (currently 11: migration 001-011)
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco/meta" "schema_version: 11"
+    # Schema version should be updated to the latest global migration id.
+    assert_file_contains "$(state_global_meta)" "schema_version: 14"
 }
 
 test_update_migration_failure_stops() {
@@ -230,7 +231,7 @@ migrate() { return 1; }
 MIGEOF
 
     # Create .cco/meta with schema_version 0
-    create_cco_meta "$CCO_GLOBAL_DIR/.claude/.cco/meta" "schema_version: 0
+    create_cco_meta "$(state_global_meta)" "schema_version: 0
 created_at: 2026-01-01T00:00:00Z
 updated_at: 2026-01-01T00:00:00Z
 
@@ -255,17 +256,19 @@ test_update_init_creates_cco_meta() {
     setup_cco_env "$tmpdir"
     run_cco init --lang "Italian:Italian:English"
 
-    local meta="$CCO_GLOBAL_DIR/.claude/.cco/meta"
-    assert_file_exists "$meta" ".cco/meta should be created by init"
+    local meta="$(state_global_meta)"
+    assert_file_exists "$meta" "global STATE meta should be created by init"
     assert_file_contains "$meta" "schema_version:"
-    assert_file_contains "$meta" "communication: Italian"
-    assert_file_contains "$meta" "documentation: Italian"
-    assert_file_contains "$meta" "code_comments: English"
     assert_file_contains "$meta" "manifest:"
     # Manifest should list managed files
     assert_file_contains "$meta" "CLAUDE.md:"
     assert_file_contains "$meta" "settings.json:"
     assert_file_contains "$meta" "rules/workflow.md:"
+    # Languages are decomposed to ~/.cco/languages (ADR-0013 D4), not the meta.
+    local lf="$(cco_languages_file)"
+    assert_file_contains "$lf" "communication: Italian"
+    assert_file_contains "$lf" "documentation: Italian"
+    assert_file_contains "$lf" "code_comments: English"
 }
 
 test_update_language_preserved() {
@@ -282,8 +285,8 @@ test_update_language_preserved() {
 
     # Language should still be Italian
     assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/language.md" "Italian"
-    # .cco/meta should still have Italian
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco/meta" "communication: Italian"
+    # The decomposed languages datum (~/.cco/languages) should still have Italian
+    assert_file_contains "$(cco_languages_file)" "communication: Italian"
 }
 
 test_update_help() {
@@ -443,7 +446,7 @@ test_migration_005_renames_setup_with_build_content() {
     printf '#!/bin/bash\napt-get update && apt-get install -y vim\n' > "$CCO_GLOBAL_DIR/setup.sh"
 
     # Set schema_version to 4 (before migration 005)
-    create_cco_meta "$CCO_GLOBAL_DIR/.claude/.cco/meta" "schema_version: 4
+    create_cco_meta "$(state_global_meta)" "schema_version: 4
 created_at: 2026-01-01T00:00:00Z
 updated_at: 2026-01-01T00:00:00Z
 
@@ -455,11 +458,12 @@ languages:
 manifest:"
 
     run_cco update
-    # setup-build.sh should contain the old content
-    assert_file_contains "$CCO_GLOBAL_DIR/setup-build.sh" "apt-get install"
-    # setup.sh should be the new runtime template (old content replaced)
+    # setup-build.sh should contain the moved user build command
+    assert_file_contains "$CCO_GLOBAL_DIR/setup-build.sh" "apt-get install -y vim"
+    # setup.sh should be the new runtime template (old build command replaced).
+    # Match the exact user command, not the template's "apt-get install" comment.
     assert_file_contains "$CCO_GLOBAL_DIR/setup.sh" "runtime"
-    assert_file_not_contains "$CCO_GLOBAL_DIR/setup.sh" "apt-get install"
+    assert_file_not_contains "$CCO_GLOBAL_DIR/setup.sh" "apt-get install -y vim"
     # Backup should exist
     [[ -f "$CCO_GLOBAL_DIR/setup.sh.bak" ]] || fail "setup.sh.bak backup not created"
 }
@@ -473,7 +477,7 @@ test_migration_005_empty_setup_creates_templates() {
     # Simulate pre-migration: setup.sh with only comments
     printf '#!/bin/bash\n# Global setup\n' > "$CCO_GLOBAL_DIR/setup.sh"
 
-    create_cco_meta "$CCO_GLOBAL_DIR/.claude/.cco/meta" "schema_version: 4
+    create_cco_meta "$(state_global_meta)" "schema_version: 4
 created_at: 2026-01-01T00:00:00Z
 updated_at: 2026-01-01T00:00:00Z
 
@@ -501,7 +505,7 @@ test_migration_005_both_files_exist_warns() {
     printf '#!/bin/bash\napt-get install -y vim\n' > "$CCO_GLOBAL_DIR/setup-build.sh"
     printf '#!/bin/bash\napt-get install -y curl\n' > "$CCO_GLOBAL_DIR/setup.sh"
 
-    create_cco_meta "$CCO_GLOBAL_DIR/.claude/.cco/meta" "schema_version: 4
+    create_cco_meta "$(state_global_meta)" "schema_version: 4
 created_at: 2026-01-01T00:00:00Z
 updated_at: 2026-01-01T00:00:00Z
 
@@ -527,7 +531,7 @@ test_migration_005_idempotent() {
 
     printf '#!/bin/bash\napt-get install -y vim\n' > "$CCO_GLOBAL_DIR/setup.sh"
 
-    create_cco_meta "$CCO_GLOBAL_DIR/.claude/.cco/meta" "schema_version: 4
+    create_cco_meta "$(state_global_meta)" "schema_version: 4
 created_at: 2026-01-01T00:00:00Z
 updated_at: 2026-01-01T00:00:00Z
 
@@ -659,8 +663,8 @@ test_update_discovery_mode_no_file_changes() {
     # Save user file content before update
     local before_hash; before_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" | cut -d' ' -f1)
     local before_base_hash=""
-    [[ -f "$CCO_GLOBAL_DIR/.claude/.cco/base/rules/workflow.md" ]] && \
-        before_base_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/.cco/base/rules/workflow.md" | cut -d' ' -f1)
+    [[ -f "$(state_global_base)/rules/workflow.md" ]] && \
+        before_base_hash=$(sha256sum "$(state_global_base)/rules/workflow.md" | cut -d' ' -f1)
 
     run_cco update
     assert_output_contains "update"
@@ -671,8 +675,8 @@ test_update_discovery_mode_no_file_changes() {
 
     # .cco/base/ must NOT be updated
     local after_base_hash=""
-    [[ -f "$CCO_GLOBAL_DIR/.claude/.cco/base/rules/workflow.md" ]] && \
-        after_base_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/.cco/base/rules/workflow.md" | cut -d' ' -f1)
+    [[ -f "$(state_global_base)/rules/workflow.md" ]] && \
+        after_base_hash=$(sha256sum "$(state_global_base)/rules/workflow.md" | cut -d' ' -f1)
     [[ "$before_base_hash" == "$after_base_hash" ]] || fail "Discovery mode updated .cco/base/"
 }
 
@@ -718,22 +722,16 @@ entries:
 YML
 
     # Set both trackers to 0 in .cco/meta
-    local meta="$CCO_GLOBAL_DIR/.claude/.cco/meta"
-    if grep -q '^last_seen_changelog:' "$meta"; then
-        sed -i "s/^last_seen_changelog: .*/last_seen_changelog: 0/" "$meta"
-    fi
-    if grep -q '^last_read_changelog:' "$meta"; then
-        sed -i "s/^last_read_changelog: .*/last_read_changelog: 0/" "$meta"
-    else
-        sed -i '/^last_seen_changelog:/a last_read_changelog: 0' "$meta"
-    fi
+    local meta="$(state_global_meta)"
+    printf '0\n' > "$(cco_last_seen_file)"
+    printf '0\n' > "$(cco_last_read_file)"
 
     run_cco update --news
     assert_output_contains "Test feature for news"
 
     # Both trackers should be updated to 1
-    assert_file_contains "$meta" "last_seen_changelog: 1"
-    assert_file_contains "$meta" "last_read_changelog: 1"
+    assert_file_contains "$(cco_last_seen_file)" "1"
+    assert_file_contains "$(cco_last_read_file)" "1"
 }
 
 test_update_news_no_new_entries() {
@@ -757,16 +755,10 @@ entries:
 YML
 
     # Set both trackers to 1 (already seen and read)
-    local meta="$CCO_GLOBAL_DIR/.claude/.cco/meta"
-    if grep -q '^last_seen_changelog:' "$meta"; then
-        sed -i "s/^last_seen_changelog: .*/last_seen_changelog: 1/" "$meta"
-    fi
+    local meta="$(state_global_meta)"
+    printf '1\n' > "$(cco_last_seen_file)"
     # Append last_read_changelog if missing
-    if grep -q '^last_read_changelog:' "$meta"; then
-        sed -i "s/^last_read_changelog: .*/last_read_changelog: 1/" "$meta"
-    else
-        sed -i '/^last_seen_changelog:/a last_read_changelog: 1' "$meta"
-    fi
+    printf '1\n' > "$(cco_last_read_file)"
 
     run_cco update --news
     assert_output_contains "No new features"
@@ -791,20 +783,21 @@ entries:
     description: "Details about the feature"
 YML
 
-    local meta="$CCO_GLOBAL_DIR/.claude/.cco/meta"
-    sed -i "s/^last_seen_changelog: .*/last_seen_changelog: 0/" "$meta"
+    local meta="$(state_global_meta)"
+    printf '0\n' > "$(cco_last_seen_file)"
+    printf '0\n' > "$(cco_last_read_file)"
 
     # Step 1: Discovery — shows summary, updates last_seen only
     run_cco update
     assert_output_contains "Dual tracker test feature"
     assert_output_contains "Run 'cco update --news'"
-    assert_file_contains "$meta" "last_seen_changelog: 1"
+    assert_file_contains "$(cco_last_seen_file)" "1"
 
     # Step 2: News — still shows details (last_read was 0)
     run_cco update --news
     assert_output_contains "Dual tracker test feature"
     assert_output_contains "Details about the feature"
-    assert_file_contains "$meta" "last_read_changelog: 1"
+    assert_file_contains "$(cco_last_read_file)" "1"
 
     # Step 3: Discovery again — nothing to show, no hint
     run_cco update
@@ -831,14 +824,15 @@ entries:
     description: "Detailed description"
 YML
 
-    local meta="$CCO_GLOBAL_DIR/.claude/.cco/meta"
-    sed -i "s/^last_seen_changelog: .*/last_seen_changelog: 0/" "$meta"
+    local meta="$(state_global_meta)"
+    printf '0\n' > "$(cco_last_seen_file)"
+    printf '0\n' > "$(cco_last_read_file)"
 
     # Step 1: News first — shows details, updates both trackers
     run_cco update --news
     assert_output_contains "News first test"
-    assert_file_contains "$meta" "last_seen_changelog: 1"
-    assert_file_contains "$meta" "last_read_changelog: 1"
+    assert_file_contains "$(cco_last_seen_file)" "1"
+    assert_file_contains "$(cco_last_read_file)" "1"
 
     # Step 2: Discovery — nothing to show, no hint (both at latest)
     run_cco update
@@ -903,7 +897,7 @@ test_update_dry_run_shows_migrations() {
     run_cco init --lang "English"
 
     # Lower schema_version to simulate pending migrations
-    local meta="$CCO_GLOBAL_DIR/.claude/.cco/meta"
+    local meta="$(state_global_meta)"
     sed -i "s/^schema_version: .*/schema_version: 0/" "$meta"
 
     run_cco update --dry-run
@@ -943,7 +937,7 @@ test_update_keep_preserves_user_file() {
     # User file must be preserved
     assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "User edit for keep test"
     # .cco/base/ IS updated to current default (so next update won't re-trigger)
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco/base/rules/workflow.md" "Framework edit for keep test"
+    assert_file_contains "$(state_global_base)/rules/workflow.md" "Framework edit for keep test"
 }
 
 # ── Project Create Bootstrap ─────────────────────────────────────────
@@ -955,10 +949,11 @@ test_project_create_initializes_cco_meta() {
     run_cco init --lang "English"
     run_cco project create "test-bootstrap" --repo "$CCO_DUMMY_REPO"
 
-    local proj_dir="$CCO_PROJECTS_DIR/test-bootstrap"
-    assert_file_exists "$proj_dir/.cco/meta" ".cco/meta should exist after project create"
-    assert_file_contains "$proj_dir/.cco/meta" "schema_version:"
-    assert_dir_exists "$proj_dir/.cco/base" ".cco/base/ should exist after project create"
+    # Merge artifacts live in STATE keyed by the project name (H6).
+    local meta; meta="$(state_project_meta test-bootstrap)"
+    assert_file_exists "$meta" "project STATE meta should exist after project create"
+    assert_file_contains "$meta" "schema_version:"
+    assert_dir_exists "$(state_project_base test-bootstrap)" "project STATE base/ should exist after project create"
 }
 
 test_project_create_cco_source_not_for_base() {
@@ -2121,15 +2116,15 @@ entries:
 YML
 
     # Manually set last_seen but remove last_read (simulate pre-upgrade meta)
-    local meta="$CCO_GLOBAL_DIR/.claude/.cco/meta"
-    sed -i "s/^last_seen_changelog: .*/last_seen_changelog: 0/" "$meta"
+    local meta="$(state_global_meta)"
+    printf '0\n' > "$(cco_last_seen_file)"
     # Remove last_read_changelog line if present
-    sed -i '/^last_read_changelog:/d' "$meta"
+    rm -f "$(cco_last_read_file)"
 
     # --news should show entry (last_read defaults to 0)
     run_cco update --news
     assert_output_contains "Missing last_read test"
-    assert_file_contains "$meta" "last_read_changelog: 1"
+    assert_file_contains "$(cco_last_read_file)" "1"
 }
 
 # ── Changelog scenario 3 fix: hint absent after news-first ────────────
@@ -2153,13 +2148,14 @@ entries:
     description: "Details"
 YML
 
-    local meta="$CCO_GLOBAL_DIR/.claude/.cco/meta"
-    sed -i "s/^last_seen_changelog: .*/last_seen_changelog: 0/" "$meta"
+    local meta="$(state_global_meta)"
+    printf '0\n' > "$(cco_last_seen_file)"
+    printf '0\n' > "$(cco_last_read_file)"
 
     # Step 1: News first — updates both trackers
     run_cco update --news
-    assert_file_contains "$meta" "last_seen_changelog: 1"
-    assert_file_contains "$meta" "last_read_changelog: 1"
+    assert_file_contains "$(cco_last_seen_file)" "1"
+    assert_file_contains "$(cco_last_read_file)" "1"
 
     # Step 2: Discovery — nothing to show AND no --news hint
     run_cco update
@@ -2189,13 +2185,9 @@ entries:
     description: "First details"
 YML
 
-    local meta="$CCO_GLOBAL_DIR/.claude/.cco/meta"
-    sed -i "s/^last_seen_changelog: .*/last_seen_changelog: 1/" "$meta"
-    if grep -q '^last_read_changelog:' "$meta"; then
-        sed -i "s/^last_read_changelog: .*/last_read_changelog: 1/" "$meta"
-    else
-        sed -i '/^last_seen_changelog:/a last_read_changelog: 1' "$meta"
-    fi
+    local meta="$(state_global_meta)"
+    printf '1\n' > "$(cco_last_seen_file)"
+    printf '1\n' > "$(cco_last_read_file)"
 
     # Add new entry
     cat > "$REPO_ROOT/changelog.yml" <<'YML'
@@ -2216,13 +2208,13 @@ YML
     run_cco update
     assert_output_contains "Second feature"
     assert_output_contains "Run 'cco update --news'"
-    assert_file_contains "$meta" "last_seen_changelog: 2"
+    assert_file_contains "$(cco_last_seen_file)" "2"
 
     # Step 2: News — shows new entry details
     run_cco update --news
     assert_output_contains "Second feature"
     assert_output_contains "Second details"
-    assert_file_contains "$meta" "last_read_changelog: 2"
+    assert_file_contains "$(cco_last_read_file)" "2"
 
     # Step 3: Both at 2, nothing more to show
     run_cco update
@@ -2366,23 +2358,19 @@ entries:
     description: "Should not update trackers"
 YML
 
-    local meta="$CCO_GLOBAL_DIR/.claude/.cco/meta"
-    sed -i "s/^last_seen_changelog: .*/last_seen_changelog: 0/" "$meta"
-    if grep -q '^last_read_changelog:' "$meta"; then
-        sed -i "s/^last_read_changelog: .*/last_read_changelog: 0/" "$meta"
-    else
-        sed -i '/^last_seen_changelog:/a last_read_changelog: 0' "$meta"
-    fi
+    local meta="$(state_global_meta)"
+    printf '0\n' > "$(cco_last_seen_file)"
+    printf '0\n' > "$(cco_last_read_file)"
 
     # Dry-run discovery — should show changelog but NOT update trackers
     run_cco update --dry-run
-    assert_file_contains "$meta" "last_seen_changelog: 0"
-    assert_file_contains "$meta" "last_read_changelog: 0"
+    assert_file_contains "$(cco_last_seen_file)" "0"
+    assert_file_contains "$(cco_last_read_file)" "0"
 
     # Dry-run news — should also NOT update trackers
     run_cco update --news --dry-run
-    assert_file_contains "$meta" "last_seen_changelog: 0"
-    assert_file_contains "$meta" "last_read_changelog: 0"
+    assert_file_contains "$(cco_last_seen_file)" "0"
+    assert_file_contains "$(cco_last_read_file)" "0"
 }
 
 # ── Migration 009: warns on running Docker session ─────────────────

@@ -209,7 +209,8 @@ EOF
     # Save base versions for future 3-way merge.
     # Use the installed directory (after placeholder interpolation) so the base
     # reflects what was actually delivered, not the raw template with {{PLACEHOLDER}}.
-    local project_base_dir="$target_dir/.cco/base"
+    local project_base_dir
+    project_base_dir=$(_cco_project_base_dir "$target_dir")   # → STATE (H6)
     mkdir -p "$project_base_dir"
     if [[ -d "$target_dir/.claude" ]]; then
         _save_all_base_versions "$project_base_dir" "$target_dir/.claude" "project"

@@ -156,22 +156,25 @@ _update_changelog_notifications() {
     meta_file=$(_cco_global_meta)
 
     local last_seen last_read latest_id
-    last_seen=$(_read_last_seen_changelog "$meta_file")
-    last_read=$(_read_last_read_changelog "$meta_file")
+    last_seen=$(_read_last_seen_changelog)
+    last_read=$(_read_last_read_changelog)
     latest_id=$(_latest_changelog_id)
 
+    # Markers now live in STATE top-level files (decompose). The `-f "$meta_file"`
+    # guard is kept as the "global config initialized" proxy (STATE meta exists
+    # after init/update).
     if [[ "$cmd_mode" == "news" ]]; then
         _show_changelog_news "$last_read"
         # News updates both trackers
         if [[ "$dry_run" != "true" && -f "$meta_file" && "$latest_id" -gt "$last_read" ]]; then
-            _sed_i_or_append "$meta_file" "last_read_changelog" "$latest_id"
-            _sed_i_or_append "$meta_file" "last_seen_changelog" "$latest_id"
+            _write_last_read_changelog "$latest_id"
+            _write_last_seen_changelog "$latest_id"
         fi
     else
         _show_changelog_summary "$last_seen" "$last_read"
         # Discovery updates only last_seen
         if [[ "$dry_run" != "true" && -f "$meta_file" && "$latest_id" -gt "$last_seen" ]]; then
-            _sed_i_or_append "$meta_file" "last_seen_changelog" "$latest_id"
+            _write_last_seen_changelog "$latest_id"
         fi
     fi
 }
@@ -190,24 +193,10 @@ _max_changelog_id() {
     _latest_changelog_id
 }
 
-# Update last_seen_changelog in .cco/meta file.
-# Standalone helper for callers that need to update the field directly.
+# Update last_seen marker (decomposed to STATE). The legacy meta_file arg is
+# accepted but ignored — the marker no longer lives in the meta.
 _update_last_seen_changelog() {
-    local meta_file="$1"
     local new_id="$2"
-
-    [[ ! -f "$meta_file" ]] && return 0
-
-    if grep -q '^last_seen_changelog:' "$meta_file" 2>/dev/null; then
-        _sed_i "$meta_file" "^last_seen_changelog: .*" "last_seen_changelog: $new_id"
-    else
-        # Field doesn't exist yet — append after updated_at
-        local tmpfile
-        tmpfile=$(mktemp)
-        awk -v new_id="$new_id" '
-            { print }
-            /^updated_at:/ { print ""; print "last_seen_changelog: " new_id }
-        ' "$meta_file" > "$tmpfile"
-        mv "$tmpfile" "$meta_file"
-    fi
+    [[ -z "$new_id" ]] && new_id="$1"
+    _write_last_seen_changelog "$new_id"
 }

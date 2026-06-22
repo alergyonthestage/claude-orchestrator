@@ -193,7 +193,8 @@ print(', '.join(['$'+k for k in ['dev','build','test','start','lint'] if k in s]
     latest_schema=$(_latest_schema_version "project")
     local now
     now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    local meta_file="$project_dir/.cco/meta"
+    local meta_file
+    meta_file=$(_cco_project_meta "$project_dir")   # → STATE (H6)
 
     # Build manifest entries from tracked project files
     # Use actual template source (not always base) for .cco/base/ seeding
@@ -220,7 +221,7 @@ print(', '.join(['$'+k for k in ['dev','build','test','start','lint'] if k in s]
     # Save base versions for future 3-way merge.
     # Use the interpolated project directory (not the raw template) so the base
     # reflects what was actually delivered to the user (placeholders resolved).
-    _save_all_base_versions "$project_dir/.cco/base" "$project_dir/.claude" "project"
+    _save_all_base_versions "$(_cco_project_base_dir "$project_dir")" "$project_dir/.claude" "project"
 
     ok "Project created at projects/$name/"
 

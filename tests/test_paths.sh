@@ -1,47 +1,50 @@
 #!/usr/bin/env bash
-# tests/test_paths.sh — path helper dual-read fallback tests
+# tests/test_paths.sh — update-engine artifact path helpers (STATE-relocated, H6)
 #
-# Verifies that lib/paths.sh helpers correctly resolve new (.cco/) paths,
-# fall back to old paths, and default to new paths for writes.
+# After P2, the merge artifacts (meta/base) live in STATE keyed by identity:
+# <state>/cco/{global,projects/<id>,packs/<name>}/update/{meta,base}, where the
+# project <id> is the project.yml `name:` (ADR-0024 D1 / design §2.2).
 
-# ── Project Meta ─────────────────────────────────────────────────────
+# ── Project Meta — keyed by identity in STATE (H6) ───────────────────
 
 test_paths_project_meta_new_path() {
+    # <id> comes from the hosted .cco/project.yml `name:`, NOT the dir basename.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    export USER_CONFIG_DIR="$tmpdir/uc"
-    export GLOBAL_DIR="$tmpdir/uc/global"
+    export CCO_STATE_HOME="$tmpdir/state"
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/lib/paths.sh"
 
-    local proj="$tmpdir/project"
+    local proj="$tmpdir/repo-dir"
     mkdir -p "$proj/.cco"
-    echo "test" > "$proj/.cco/meta"
+    printf 'name: myproj\n' > "$proj/.cco/project.yml"
 
     local result; result=$(_cco_project_meta "$proj")
-    [[ "$result" == "$proj/.cco/meta" ]] || fail "Expected new path, got: $result"
+    [[ "$result" == "$tmpdir/state/projects/myproj/update/meta" ]] \
+        || fail "Expected STATE meta keyed by project name, got: $result"
 }
 
 test_paths_project_meta_old_fallback() {
+    # Legacy root-level project.yml (central layout) still yields the name.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    export USER_CONFIG_DIR="$tmpdir/uc"
-    export GLOBAL_DIR="$tmpdir/uc/global"
+    export CCO_STATE_HOME="$tmpdir/state"
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/lib/paths.sh"
 
     local proj="$tmpdir/project"
     mkdir -p "$proj"
-    echo "old" > "$proj/.cco-meta"
+    printf 'name: rootproj\n' > "$proj/project.yml"
 
     local result; result=$(_cco_project_meta "$proj")
-    [[ "$result" == "$proj/.cco-meta" ]] || fail "Expected old path fallback, got: $result"
+    [[ "$result" == "$tmpdir/state/projects/rootproj/update/meta" ]] \
+        || fail "Expected STATE meta from legacy root project.yml name, got: $result"
 }
 
 test_paths_project_meta_default_new() {
+    # No project.yml → fall back to the dir basename as the identity.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    export USER_CONFIG_DIR="$tmpdir/uc"
-    export GLOBAL_DIR="$tmpdir/uc/global"
+    export CCO_STATE_HOME="$tmpdir/state"
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/lib/paths.sh"
@@ -50,7 +53,8 @@ test_paths_project_meta_default_new() {
     mkdir -p "$proj"
 
     local result; result=$(_cco_project_meta "$proj")
-    [[ "$result" == "$proj/.cco/meta" ]] || fail "Expected new path default for writes, got: $result"
+    [[ "$result" == "$tmpdir/state/projects/project/update/meta" ]] \
+        || fail "Expected STATE meta from dir-basename fallback, got: $result"
 }
 
 # ── Project Managed (directory type, uses -d) ────────────────────────

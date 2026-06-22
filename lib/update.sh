@@ -98,11 +98,11 @@ _update_global() {
     local latest_schema
     latest_schema=$(_latest_schema_version "global")
 
-    # Read or detect languages
+    # Read or detect languages (datum decomposed to ~/.cco/languages — ADR-0013 D4)
     local comm_lang docs_lang code_lang
-    if [[ -f "$meta_file" ]]; then
+    if [[ -f "$(_cco_languages_file)" ]]; then
         local lang_lines
-        lang_lines=$(_read_languages "$meta_file")
+        lang_lines=$(_read_languages)
         comm_lang=$(echo "$lang_lines" | sed -n '1p')
         docs_lang=$(echo "$lang_lines" | sed -n '2p')
         code_lang=$(echo "$lang_lines" | sed -n '3p')
@@ -276,19 +276,14 @@ _update_global() {
             fi
         done
 
-        # Preserve changelog trackers from existing meta
-        local last_seen last_read
-        last_seen=$(_read_last_seen_changelog "$meta_file")
-        last_read=$(_read_last_read_changelog "$meta_file")
-
+        # Changelog markers + languages are decomposed to their own STATE/CONFIG
+        # files (ADR-0013 D4); the meta regen no longer carries them.
         if [[ "$cmd_mode" == "sync" ]]; then
             # Use manifest entries from _interactive_sync
             {
                 echo "$_UPDATE_MANIFEST_ENTRIES"
                 echo "$special_entries"
-            } | _generate_cco_meta \
-                "$meta_file" "$new_schema" "$created" \
-                "$comm_lang" "$docs_lang" "$code_lang" "$last_seen" "$last_read"
+            } | _generate_cco_meta "$meta_file" "$new_schema" "$created"
 
             # Note: .cco/base/ is saved per-file inside _interactive_sync
             # (only for Apply/Keep/Merge/Replace, not Skip)
@@ -311,9 +306,7 @@ _update_global() {
                 {
                     echo "$current_manifest"
                     echo "$special_entries"
-                } | _generate_cco_meta \
-                    "$meta_file" "$new_schema" "$created" \
-                    "$comm_lang" "$docs_lang" "$code_lang" "$last_seen" "$last_read"
+                } | _generate_cco_meta "$meta_file" "$new_schema" "$created"
             fi
         fi
     fi
