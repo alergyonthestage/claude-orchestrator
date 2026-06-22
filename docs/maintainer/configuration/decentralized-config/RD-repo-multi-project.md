@@ -100,3 +100,23 @@ handoff `P2-handoff-migration-bootstrap.md` (so the resolution feeds the migrati
 An **ADR** (next free = 0024) resolving the one-vs-N question + the `cco sync` clobber-guard
 + the `cco start` cwd rule, with **maintainer confirmation** on the UX/model choice; then
 propagate to living `design.md` (§2.4/§3/§4) + the P2 handoff before P2 implementation.
+
+## 8. After resolution — re-coherence sweep, then resume Phase 2
+
+The resolution is **upstream of work already done** (P0 schema/index, P1 sync/resolve) and of
+the not-yet-started P2. Before resuming the Phase-2 build:
+
+1. **Propagate** ADR-0024 to the living `design.md` (§2.4 symmetric model · §3 index · §4 sync ·
+   §9 P2) and to `P2-handoff-migration-bootstrap.md`.
+2. **Re-coherence sweep — verify + correct (not just P2).** Re-check the **already-built P0/P1
+   implementation** against the resolution: it may touch the **P0 frozen `project.yml` schema**,
+   the **P0 index `projects:` membership** (`lib/index.sh`), and **P1 `cco sync`/`cco resolve`**
+   (`lib/cmd-sync.sh`/`lib/cmd-resolve.sh`). Run the recurring `implementation-review-handoff.md`
+   playbook scoped to ADR-0024 coherence; if the resolution changes the schema/layout it **re-opens
+   the build-once contract for P0/P1**, not only P2 — correct the divergences and keep the suite
+   delta-green.
+3. **Resume P2** from the **pre-design analysis already captured in
+   `P2-handoff-migration-bootstrap.md` §4a** (baseline 1043/16, P1 audit clean
+   `reviews/22-06-2026-p1-adherence-review.md`, locked `<id>=name`, the 2 smaller open items, the
+   H6 relocation map, `P2-dogfooding-validation.md`). That state is **still valid** — layer the
+   RD-repo-multi-project decision on top, finish P2 design, then implement.

@@ -9,6 +9,25 @@ method, source-of-truth, mandatory preliminary analysis, scope with exact symbol
 contracts, and what comes after. Produced 2026-06-22 on `feat/vault/decentralized-config` (commits
 **local** — the maintainer pushes from the Mac).
 
+> **⚠ BLOCKED (added 2026-06-22) — do NOT start P2 design/implementation yet.** A foundational
+> gap surfaced *after* this handoff was written: **`RD-repo-multi-project`** — a repo referenced by
+> **multiple projects** (`RD-repo-multi-project.md`, design §13). It **gates Phase 2** because it can
+> change the "final" `project.yml` shape this phase writes **build-once** (a wrong shape now = a double
+> schema-migration later). **Resume order:**
+> 1. Resolve **`RD-repo-multi-project`** in a dedicated clean session → **ADR-0024** + maintainer-confirm,
+>    then propagate to the living `design.md` (§2.4/§3/§4/§9 P2) and this handoff.
+> 2. **Re-coherence sweep (verify + correct)** — re-check the **full living design AND the already-built
+>    P0/P1 implementation** against the resolution (it may touch the P0 frozen `project.yml` schema, the
+>    P0 index `projects:` membership, and P1 `cco sync`/`cco resolve`). Use the
+>    `implementation-review-handoff.md` playbook scoped to ADR-0024; correct any divergence.
+> 3. **Resume P2 design** from the **pre-design analysis already captured in §4a below** (baseline
+>    1043/16, P1 audit clean, locked `<id>=name`, the 2 smaller open items, the H6 map, the dogfooding
+>    plan) — that state stays valid; layer the RD-repo-multi-project decision on top, then implement.
+>
+> The §4a findings, the `<id>=name` decision (design §2.2), and `P2-dogfooding-validation.md` remain
+> valid inputs **regardless** of how the blocker resolves — this session's pre-design analysis is **not**
+> thrown away; it is the resume baseline.
+
 > **Phase 1 recap.** 6 atomic commits, every one full-suite delta-green = the re-baselined 16. Built
 > `cco resolve`/`cco path` (index-backed, `--scan` non-destructive upsert, clone-from-`url`), the
 > sync-meta fingerprint (§4.6/F39), the non-blocking reminder aggregator (ADR-0008, H1), `cco sync`
