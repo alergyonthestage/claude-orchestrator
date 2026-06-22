@@ -1,11 +1,20 @@
 # RD-repo-multi-project — a repo referenced by multiple projects (dedicated analysis)
 
-**Status**: **OPEN — analysis not started.** Surfaced 2026-06-22 during the Phase-2
-preliminary analysis (it had not emerged in any prior analysis/review). **Gates Phase-2
-implementation** (it can change the "final" `project.yml` shape/layout that P2 writes
-build-once). Run in its **own clean session** before P2 design is finalized; open by
-reading `guiding-principles.md` (P1–P17) + this file. Decision affects **how the toolkit
-is used** → **maintainer confirmation required** (P10 method-lesson b).
+**Status**: **✅ RESOLVED 2026-06-22 → [ADR-0024](decisions/0024-repo-multi-project-and-config-home.md)**
+(maintainer-confirmed). **Option 1**: a repo hosts **one** project config (`<repo>/.cco/`, by
+`project.yml` `name`) = one development scope; referenced by N via the index + embedded coordinate
+(Case A). **No schema change → P2 build-once preserved.** ADR-0024 also resolved the adjacent fronts
+surfaced during the analysis: `cco sync` clobber-guard (skip+warn, no override — D2), `cco start` cwd
+rule (D3), `.claude` scope hierarchy + no cross-project leak (D4), repo↔project observability (D5),
+**sync-set completeness** (D6 — whole committed `.cco/` minus `secrets.env`, authored packs only; refines
+ADR-0003), Axis-1/2 distributed sharing + future `~/.cco/projects` opt-in compatibility (D7), and
+principle **P18**. Propagated to `design.md` §2.1/§2.4/§3/§4/§9, `guiding-principles.md`, `requirements.md`,
+ADR-0002/0003 forward-annotations. **Next: the re-coherence sweep** (§8) scoped to ADR-0024, then resume
+P2. The problem framing below is kept as **history** (analysis record — see ADR-0024 for the decision +
+fronts A–E analysis).
+
+> Surfaced 2026-06-22 during the Phase-2 preliminary analysis (it had not emerged in any prior
+> analysis/review). Was a Phase-2 gate; resolved in its own session as planned.
 
 ---
 

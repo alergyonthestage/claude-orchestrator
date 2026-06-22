@@ -9,24 +9,29 @@ method, source-of-truth, mandatory preliminary analysis, scope with exact symbol
 contracts, and what comes after. Produced 2026-06-22 on `feat/vault/decentralized-config` (commits
 **local** — the maintainer pushes from the Mac).
 
-> **⚠ BLOCKED (added 2026-06-22) — do NOT start P2 design/implementation yet.** A foundational
-> gap surfaced *after* this handoff was written: **`RD-repo-multi-project`** — a repo referenced by
-> **multiple projects** (`RD-repo-multi-project.md`, design §13). It **gates Phase 2** because it can
-> change the "final" `project.yml` shape this phase writes **build-once** (a wrong shape now = a double
-> schema-migration later). **Resume order:**
-> 1. Resolve **`RD-repo-multi-project`** in a dedicated clean session → **ADR-0024** + maintainer-confirm,
->    then propagate to the living `design.md` (§2.4/§3/§4/§9 P2) and this handoff.
-> 2. **Re-coherence sweep (verify + correct)** — re-check the **full living design AND the already-built
->    P0/P1 implementation** against the resolution (it may touch the P0 frozen `project.yml` schema, the
->    P0 index `projects:` membership, and P1 `cco sync`/`cco resolve`). Use the
->    `implementation-review-handoff.md` playbook scoped to ADR-0024; correct any divergence.
-> 3. **Resume P2 design** from the **pre-design analysis already captured in §4a below** (baseline
->    1043/16, P1 audit clean, locked `<id>=name`, the 2 smaller open items, the H6 map, the dogfooding
->    plan) — that state stays valid; layer the RD-repo-multi-project decision on top, then implement.
+> **✅ BLOCKER RESOLVED (2026-06-22) — RD-repo-multi-project → ADR-0024.** The foundational gap (a repo
+> referenced by **multiple projects**) is decided: **Option 1** — a repo hosts **one** project config
+> (`<repo>/.cco/`, by `project.yml` `name`) = one dev scope; referenced by N via the index + coordinate
+> (Case A). **No schema change → this phase's single-project `project.yml` writer is final; build-once
+> intact.** ADR-0024 also fixed: `cco sync` clobber-guard (skip+warn, **no override** — D2), `cco start`
+> cwd → hosted project (D3), `.claude` scope clarity + no cross-project leak (D4), repo↔project
+> observability (D5), **sync-set = whole committed `.cco/` minus `secrets.env`, authored packs only**
+> (D6 — refines ADR-0003), Axis-1/2 distributed sharing + future `~/.cco/projects` opt-in compatible (D7),
+> + P18. Propagated to living `design.md` (§2.1/§2.4/§3/§4/§9), ADR-0002/0003 forward-annotations,
+> `guiding-principles.md`, `requirements.md`. **Resume order:**
+> 1. ✅ **ADR-0024 + propagation** — done (`decisions/0024-repo-multi-project-and-config-home.md`).
+> 2. **Re-coherence sweep (verify + correct) — NEXT.** Re-check the already-built **P0/P1** impl against
+>    ADR-0024. It does **not** touch the P0 `project.yml` schema or the global-flat index, but it **does**
+>    touch P1 `lib/cmd-sync.sh` (D2 guard + D6 expanded set), `lib/sync-meta.sh` (D6 fingerprint),
+>    `lib/index.sh` (D5 reverse-lookup helper — additive), and the D5 observability UX. Use the
+>    `implementation-review-handoff.md` playbook scoped to ADR-0024; keep the suite delta-green.
+> 3. **Resume P2 design** from §4a below (baseline 1043/16, P1 audit clean, locked `<id>=name`, the 2
+>    smaller open items, the H6 map, the dogfooding plan) — still valid; the ADR-0024 decision layers on top.
 >
 > The §4a findings, the `<id>=name` decision (design §2.2), and `P2-dogfooding-validation.md` remain
-> valid inputs **regardless** of how the blocker resolves — this session's pre-design analysis is **not**
-> thrown away; it is the resume baseline.
+> valid inputs. **Front A/E note:** the user-guide rewrites (the `.claude` hierarchy; "how to share a
+> project") are **shipped-behavior** docs → Phase-3 cutover sweep, tracked in
+> `resource-coherence-inventory.md`.
 
 > **Phase 1 recap.** 6 atomic commits, every one full-suite delta-green = the re-baselined 16. Built
 > `cco resolve`/`cco path` (index-backed, `--scan` non-destructive upsert, clone-from-`url`), the

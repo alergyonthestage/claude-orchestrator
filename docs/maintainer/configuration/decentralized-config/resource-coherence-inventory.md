@@ -194,6 +194,17 @@ Discovery entry points still advertise removed sections; not previously inventor
 | `docs/maintainer/configuration/README.md` (14,15,34) | names vault/sharing/resource-lifecycle as canonical | Redirect canonical pointers to `decentralized-config/` (see Section D); drop manifest |
 | `docs/user-guides/README.md` (18) | "Config Repos, manifest … vault profiles" | sharing repo; drop manifest/profiles |
 
+### C.7 ADR-0024 additions (multi-project / `.cco`-vs-`.claude` scopes / sharing) — ride cutover
+
+New **shipped-behavior** content the guides must gain when the decentralized model ships (Phase-3
+sweep, never ahead of code; doc-lifecycle). Source: ADR-0024 (fronts A & E).
+
+| Target doc | Add |
+|---|---|
+| `docs/reference/context-hierarchy.md` + `docs/user-guides/project-setup.md` | **Front A** — the 4 `.claude` scopes and their reach: repo-native `<repo>/.claude/` (**cross-cutting**: every project mounting the repo + native Claude) vs the invoking repo's `<repo>/.cco/claude/` (**this project, cross-repo**, no cross-project leak) vs `~/.cco/global/.claude/` (all my projects) vs managed (own path, top priority). Placement-by-intended-reach table (ADR-0024 D4). |
+| `docs/user-guides/configuration-management.md` + `project-setup.md` | **Front E** — "how to share a project": config is **distributed per host-repo** (Axis-1+2 by construction via each repo's remote); a repo = **one** project (1 dev scope), referenced by N; the legitimate cross-project case (two projects, each its own host repo, mounting the other). Axis-1-only / "don't ship `.cco/`" = post-v1 (`~/.cco/projects/` opt-in). |
+| `docs/user-guides/configuration-management.md` + CLI ref | **`cco sync` guard** (D2: skip+warn a repo hosting a different project; re-home = de-init / re-init `--sync`); **repo↔project introspection** (D5: `cco project show` role + referenced-by; repo-centric view). |
+
 ---
 
 ## D. Maintainer-design history subtrees (archive at cutover)

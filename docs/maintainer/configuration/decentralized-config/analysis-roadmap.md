@@ -280,9 +280,14 @@ per-unit/`package.json` model; DATA byte-level; STATE index subsumes @local; C1�
 working-copy lifecycle P16, permissions delegated-to-git P17; manifest-removal realized; solo-adopter
 A+B)** → **V ✅ (DONE & FULLY RESOLVED — all 5 clusters; Cluster 5 → ADR-0023; design READY)** →
 **impl IN PROGRESS — dependency-layered phases P0–P5, design.md §9; **Phase 0 + Phase 1 ✅ CLOSED**
-(suite 1043/16), next = Phase 2 (`P2-handoff-migration-bootstrap.md`; optional read-only adherence audit
-via `implementation-review-handoff.md` first); see `Y-handoff-implementation.md`** → (T future).
-**Config + sharing design CLOSED; V fully resolved (all 5 clusters); implementation Phase 0 closed.**
+(suite 1043/16); **RD-repo-multi-project ✅ RESOLVED 2026-06-22 → ADR-0024** (Option 1: one config home
+per repo, referenced by N; no schema change → P2 build-once intact; + D2 sync-guard, D3 cwd-start, D4
+`.claude`-scope, D5 observability, D6 sync-set=whole-`.cco`-minus-`secrets.env`, D7 Axis-1/2, P18); next =
+**re-coherence sweep scoped to ADR-0024** (`implementation-review-handoff.md` — touches P1 `cmd-sync.sh`/
+`sync-meta.sh`/`index.sh` + observability UX, NOT the P0 schema/index) → **Phase 2**
+(`P2-handoff-migration-bootstrap.md`); see `Y-handoff-implementation.md`** → (T future).
+**Config + sharing design CLOSED; V fully resolved (all 5 clusters); implementation Phase 0 + Phase 1
+closed; RD-repo-multi-project resolved (ADR-0024).**
 
 ## Notes
 - R1 is **resolved-partial** (ADR-0011): tag *nature* fixed (CLI-canonical → internal); the
