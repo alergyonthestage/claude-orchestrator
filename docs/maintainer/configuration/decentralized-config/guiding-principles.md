@@ -292,6 +292,21 @@ distinction (who may edit `.cco/`) is delegated to **CODEOWNERS + host rulesets*
 **never enforcement**. **Bias to avoid:** "team needs granular permissions → cco should implement them"
 — the intersection with plain-git sync makes a cco-native enforcer self-defeating. *(ADR-0020.)*
 
+## P18 — One repo, one config home; referenced by many
+
+A repo hosts **at most one** project's config (`<repo>/.cco/`, identified by `project.yml` `name`) =
+**one development scope**; it may be **referenced** by N projects via the index + embedded coordinate
+(Case A). The symmetric "identical `.cco/` across a project's repos" (ADR-0002) is scoped to that
+project's **config-bearing** members; cco **never** replicates one project's `.cco/` into a repo that
+hosts a *different* project — the `cco sync` guard **skips + warns**, with **no override** (re-home =
+de-init or re-init `--sync`). Multi-**host** in one repo is unsupported (bad practice); multi-**reference**
+is first-class — the legitimate case is two projects each in *its own* host repo mounting the other. Config
+is **distributed per host-repo**, so the audience/sharing boundary coincides with each host repo's remote
+(Axis-1+2 by construction, P5); the Axis-1-only / solo-adopter centralization (`~/.cco/projects/`) stays a
+post-v1 opt-in, compatible by construction. The whole committed `<repo>/.cco/` is the unit of sync (minus
+`secrets.env`); the four `.claude` scopes have distinct reach (repo-native cross-cutting · per-hosted-project
+cross-repo · global · managed) — choose placement by intended reach. *(ADR-0024.)*
+
 ---
 
 ## How to use this document

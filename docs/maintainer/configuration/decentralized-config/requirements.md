@@ -166,8 +166,10 @@ State/cache/index live in system directories (AD9; exact paths = RD-paths):
 
 ### 5.2 Sync = copy (FR-Y-S)
 Sync keeps a project's committed `.cco/` set identical across its repos by
-**copying** from a chosen source. The synced set is `project.yml` + `claude/**`
-(+ `secrets.env.example`). **Never**: `secrets.env`, the repo-root `.claude/`, or
+**copying** from a chosen source. The synced set is **the whole committed, machine-agnostic
+`<repo>/.cco/` tree minus the gitignored `secrets.env`** (`project.yml` + `claude/**` + `mcp.json` +
+`setup.sh` + `mcp-packages.txt` + **authored** `packs/` + `secrets.env.example`; `url`-cached packs are
+re-fetched, not synced — ADR-0024 D6). **Never**: `secrets.env`, the repo-root `.claude/`, or
 anything in system dirs.
 
 Command forms (positional arg = **target**, `--from` = **source**; default source =
@@ -189,7 +191,10 @@ current repo):
   `--auto-approve` (or equivalent) skips the prompt. `--dry-run` previews without
   writing. *(Snapshot/rollback and user-vs-sync change detection — see FR-Y-S6 / design §4.6.)*
 - **FR-Y-S4** — A repo without `.cco/` is a code-only member (Case A): it is a valid
-  target of sync (gains a copy) but cannot be a start source.
+  target of sync (gains a copy) but cannot be a start source. A repo that **hosts a different
+  project** (its `project.yml` `name` ≠ the source) is **not** a valid sync target — sync **skips it
+  with a warning**, never clobbering, with **no override** (re-home = de-init or re-init `--sync`;
+  ADR-0024 D2). A repo hosts **at most one** project (ADR-0024 D1); it may be **referenced** by N.
 - **FR-Y-S5 (membership / `cco join`)** — A repo becomes a **member** of a project
   either by listing its name in `project.yml` `repos[]`, or by running
   `cco join <project>` from that repo (registers it in the index and adds it to

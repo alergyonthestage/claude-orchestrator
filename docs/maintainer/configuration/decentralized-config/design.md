@@ -129,6 +129,22 @@ secrets.env
 A pre-commit/pre-push scan (reused from `lib/secrets.sh`) refuses real secrets and
 **exempts `*.example` from the content scan** (FR-S3).
 
+**The whole committed `<repo>/.cco/` is the per-(hosted-)project config and the unit of sync**
+(ADR-0024 D6): `cco sync` copies the entire committed tree (`project.yml`, `claude/**`, `mcp.json`,
+`setup.sh`, `mcp-packages.txt`, **authored** `packs/`, `secrets.env.example`) — **minus** the gitignored
+`secrets.env` — so a project's config-bearing repos stay byte-identical (§4.1). `<repo>/.cco/` holds
+**one** project's config (the one the repo hosts, §2.4); it is **never** mixed with another project's.
+
+**`.claude` scope placement (ADR-0024 D4).** Three user-managed `.claude` trees + one framework-managed
+compose in a session, each with a distinct reach: `<repo>/.claude/` (repo-native, **cross-cutting** —
+loaded for every project that mounts the repo *and* native Claude use; cco never touches/syncs it) →
+`/workspace/<repo>/.claude`; the **invoking** repo's `<repo>/.cco/claude/` (this repo's hosted project,
+cross-repo) → `/workspace/.claude`; `~/.cco/global/.claude/` (all the user's projects) → `~/.claude`;
+managed `defaults/managed/` (non-overridable policy, **own path, highest priority**) →
+`/etc/claude-code/`. Only the **invoking** repo's `.cco/claude/` becomes the session project scope
+(ADR-0005) — a referenced repo's `.cco/claude/` is **not** mounted, so a project's cross-repo config
+**never leaks** into another project's session.
+
 ### 2.2 Internal buckets (per machine, hidden, never committed) — DATA / STATE / CACHE
 The three internal buckets are **centralized keyed-by-identity** (ADR-0013 corollary: config
 decentralizes, internal centralizes). Byte-level layout fixed by ADR-0016 (D5/D6/D7):
@@ -287,6 +303,19 @@ packs:                   # referenced by name + OPTIONAL coordinate (ADR-0019 D1
   - name: project-local-pack                       # no url, lives in <repo>/.cco/packs/ — it IS the source (P15)
 ```
 The host repo is **not** written in the file — it is the invoking repo at runtime (AD6).
+
+**One config home per repo; referenced by N (ADR-0024 D1).** A `<repo>/.cco/` holds the config of
+**exactly one** project — the one the repo *hosts* (the `name:` above) = **one development scope**. A
+repo may be a **reference-member** of N *other* projects (Case A, §4.5): they list it by logical name +
+coordinate in *their* manifests and resolve it via the index (§3), with **none** of their `.cco/` copied
+into it. The symmetric "identical across repos" above is therefore scoped to a project's
+**config-bearing** repos (host + synced same-name members); cco never replicates one project's `.cco/`
+into a repo that hosts a *different* project (the `cco sync` guard, §4.3). Hosting **two** projects in one
+repo is **unsupported** (bad practice — a repo is one development scope); the legitimate interdependency
+case is two projects each in *its own* host repo mounting the other (e.g. `cave-auth` hosts `cave-auth` +
+mounts `cave-infrastructure`, and symmetrically). Repo↔project relationships are introspectable (§3,
+ADR-0024 D5).
+
 **Absolute paths** for every `repos[]`/`extra_mounts[]` name come from the machine-local index (§3);
 the **url** coordinates persist here. Cross-unit coordinate consistency is enforced by CLI tooling
 (`cco project add repo/llms`, `cco project coords --diff/--sync`), not by storage (ADR-0016 D3); an
@@ -385,6 +414,12 @@ projects:                    # subsumes the old registry — paths/repos only, N
   by scanning for `.cco/project.yml` (the empty-index case of the same upsert path); first
   `cco start` resolves any missing name via prompt/clone. So a fresh clone is not stranded by an
   empty index (closes the old registry-bootstrap gap).
+- **Repo↔project introspection (ADR-0024 D5)**: the `projects:` map answers **both** directions —
+  forward (`project → member repos`, today's helper) and a **reverse lookup** (`repo → referencing
+  projects`, a new internal helper). Combined with the per-repo sync-meta (§4.6), cco reports, for any
+  repo: the project it **hosts** (its `project.yml` `name`), the projects that **reference** it, and each
+  member's **sync state** (host/synced/divergent/code-only). Surfaced by extending `cco project show` + a
+  repo-centric view + the passive ⚠ at `cco start`/`cco list` (no new top-level verb — ADR-0023).
 - **`@local` markers are gone** (ADR-0016 D4): `project.yml` carries logical names +
   machine-agnostic `url` coordinates only, with absolute paths resolved from the index. The
   resolution logic is reused but now reads the **unified index** instead of a per-repo
@@ -397,8 +432,15 @@ projects:                    # subsumes the old registry — paths/repos only, N
 
 ### 4.1 Model
 `cco sync` copies a **source** repo's committed `.cco/` set into **target** repos on
-the same machine (filesystem copy). Synced set: `project.yml` + `claude/**`
-(+ `secrets.env.example`). Never: `secrets.env`, repo-root `.claude/`, system dirs.
+the same machine (filesystem copy). **Synced set = the entire committed, machine-agnostic
+`<repo>/.cco/` tree** (config-only by construction — all internal data is evicted to DATA/STATE/CACHE,
+§2.1), **minus** the gitignored `secrets.env`: `project.yml` + `claude/**` + `mcp.json` + `setup.sh` +
+`mcp-packages.txt` + **authored** `packs/` (entries **without** `url` — sources, P15; `url`-bearing
+entries are caches, re-fetched, **not** synced — ADR-0019/0022 D4) + `secrets.env.example`. Never:
+`secrets.env`, the repo-root `.claude/` (repo-native, §2.1/ADR-0005), system dirs. Tying the set to the
+§2.1 bucket (not an ad-hoc list) keeps a project's repos truly identical and is self-maintaining
+(ADR-0024 D6, refines ADR-0003 — the earlier `project.yml`+`claude/**` enumeration omitted the
+`mcp.json`/`setup.sh`/`mcp-packages.txt` that §2.1 H5 places in `.cco/`, which would break Case-B parity).
 
 No merge engine, no `sync-base`, no commit-time, no peer/root modes, no
 confirm/last-commit-wins policies. Divergence is allowed and visible; the user picks
@@ -422,8 +464,12 @@ Flags: `--dry-run` (preview), `--auto-approve` (skip the confirm), `--check`
 2. Compute a **truthful diff** (plain diff; machine-agnostic content) source↔each target.
 3. If no differences → no-op (exit 0).
 4. Otherwise show the diff and **ask for confirmation** (unless `--auto-approve`).
-5. On confirm, copy the source set into each target. A target without `.cco/`
-   (code-only member, Case A) simply receives a copy.
+5. On confirm, copy the source set into each target, **with the clobber-guard** (ADR-0024 D2):
+   a target without `.cco/project.yml` (code-only member, Case A) simply **receives a copy**; a target
+   whose `project.yml` `name` == the source project **converges** (normal sync); a target whose
+   `project.yml` `name` ≠ the source (it **hosts a different project**) is **skipped with a warning** —
+   never clobbered, **no `--force`/prompt override** (to re-home a repo: de-init its `.cco/` then sync,
+   or re-init with `--sync`). Syncing a subset of same-name members stays valid.
 6. Targets that are non-git or on any branch are irrelevant — sync is a filesystem
    copy, not a git operation. The user commits each repo with their normal git flow
    (`git log -- .cco/` isolates config history). `cco sync` prints a reminder of
@@ -442,7 +488,10 @@ sequenceDiagram
 ```
 
 ### 4.4 `cco start` source selection & divergence
-- **From a repo dir**: use the invoking repo's `.cco/` (AD6). Unambiguous.
+- **From a repo dir**: use the invoking repo's `.cco/` (AD6) → the project that repo **hosts** (its
+  `project.yml` `name`). **Unambiguous under ADR-0024 D1** (a repo hosts ≤1 project). To start a project
+  the repo only **references**, pass the name explicitly or `--from <repo>`; a repo that hosts nothing
+  (pure code-only member) requires an explicit project name.
 - **By name `cco start <project>`**: if repos are aligned (Case A/B), any copy works; if they
   diverge (Case C), the **source precedence is `--from <repo>` > the optional `entry` repo > prompt**
   (ADR-0017 D2). `cco start [project] --from <repo>` explicitly selects which member's `<repo>/.cco`
@@ -484,8 +533,12 @@ computed before resolution. The defined order is therefore:
 
 ### 4.5 Cases (see requirements §5.3)
 - **A** code-only members (no `.cco/`), single config in the host repo.
-- **B** synced copies kept identical via `cco sync`.
+- **B** synced copies kept identical via `cco sync` (the whole committed `.cco/`, §4.1).
 - **C** intentional divergence (sync off); `cco sync` converges to B anytime.
+- **Reference-membership (ADR-0024 D1)** — orthogonal to A/B/C: a repo that **hosts its own** project
+  participates in *other* projects only **by reference** (index + coordinate), never as a config-bearing
+  copy. `cco sync` of another project **skips** it (D2). The legitimate cross-project case (two projects,
+  each in its own host repo, mounting the other) is fully supported.
 
 ### 4.6 Sync-state tracking (internal, per-machine)
 cco keeps lightweight **per-machine** sync metadata in the system state dir (§2.2, never
@@ -505,9 +558,9 @@ This tracking drives:
 - optional **fast rollback** of the last sync.
 
 **Fingerprint contract (ADR-0022/F39 — the load-bearing semantic, format still deferred).** The
-fingerprint is a hash over the **exact synced set of §4.1** (`project.yml` + `claude/**`
-[+ `secrets.env.example`]; never `secrets.env`/repo-root `.claude/`/system dirs), so one definition feeds
-both write and compare. It is **written/updated** (a) after a repo **successfully receives** a sync
+fingerprint is a hash over the **exact synced set of §4.1** (the whole committed `<repo>/.cco/` minus the
+gitignored `secrets.env`; authored `packs/` included, `url`-cached packs excluded — ADR-0024 D6), so one
+definition feeds both write and compare. It is **written/updated** (a) after a repo **successfully receives** a sync
 (target side) and (b) for the **source** repo at the same `cco sync` — so immediately after a sync every
 touched repo's fingerprint equals its on-disk synced-set hash. **Divergence is lazy, read-time**: a repo
 is "edited locally since the last sync" iff its *current* synced-set hash ≠ its stored fingerprint
@@ -807,7 +860,10 @@ is in §11.
   from the installed pack's recorded `source` (read **in place** — the `source`→DATA relocation is
   Phase 4, §9 P4; absent → authored-in-repo, P15/F37; the migrator **never fabricates** a `url` it
   cannot read from a recorded source) — so **no migrated file is ever
-  schema-migrated again** (open-closed; the Phase-0 parser already reads the map shape). The `packs:`
+  schema-migrated again** (open-closed; the Phase-0 parser already reads the map shape). **The
+single-project `project.yml` shape is final (ADR-0024 D1)** — the writer is unchanged: a repo hosts one
+project, referenced by N via the index; there is **no** multi-project schema (Option 2 rejected), so
+build-once holds. The `packs:`
   list→map transform is a **project-scope** migration; the declared-but-missing `migrations/pack/` +
   `migrations/template/` scope dirs are also created so the scopes named in `CLAUDE.md`/
   `.claude/rules/update-system.md` are real (F37).
@@ -1066,11 +1122,11 @@ design is persisted.
 | # | Question |
 |---|----------|
 | **RD-triggers** | Future opt-in auto-sync (daemon / native hooks / git hooks / manual-only). Now also owns `~/.cco` background/managed auto-sync (ADR-0008). |
-| **RD-repo-multi-project** | A repo referenced by **multiple projects** (e.g. `cave-auth` in `cave-infrastructure` + `cave-auth`): does `<repo>/.cco` hold **one** project config or **N**? The index already supports multi-membership (§3); the gap is the `project.yml` content + the `cco sync` clobber when a member repo hosts a *different* project (Case B) + the cwd `cco start` ambiguity. **Gates Phase-2** (can change the "final" `project.yml` shape P2 writes build-once) → dedicated analysis **before** P2 implementation. See `RD-repo-multi-project.md`. |
 
 **Resolved:**
 | # | Resolution |
 |---|----------|
+| **RD-repo-multi-project** | ✅ 2026-06-22 (ADR-0024). **Option 1**: a repo hosts **one** project config (`<repo>/.cco/`, by `project.yml` `name`) = one dev scope; referenced by N via the index + coordinate (Case A). `cco sync` **skips+warns** a target hosting a different project (no override — D2); `cco start` cwd → hosted project (D3). **No schema change → P2 build-once intact.** Also: `.claude` scope clarity + no cross-project leak (D4), repo↔project observability (D5), **sync-set = whole committed `.cco/` minus `secrets.env`, authored packs only** (D6, refines ADR-0003), Axis-1/2 distributed sharing + future `~/.cco/projects` opt-in compatible (D7). Distilled into P18. |
 | **RD-claude-mount** | ✅ 2026-06-16 (ADR-0005). Nested-overlay composition is source-agnostic → no bind-mount shadowing. Surfaced F1 (generate `packs.md`/`workspace.yml` into cache + `:ro` overlay, not into committed `.cco/claude/`), F2 (reserve `packs/`/`llms/`, warn on cross-tree collisions), F3 (parent rw, overlays `:ro`). |
 | **RD-paths** | ✅ 2026-06-16 (ADR-0007). XDG on both OSes: STATE `$CCO_STATE_HOME`→`$XDG_STATE_HOME/cco`→`~/.local/state/cco`, CACHE `$CCO_CACHE_HOME`→`$XDG_CACHE_HOME/cco`→`~/.cache/cco`; index in STATE; CONFIG keeps `~/.cco` dotdir; host-side resolution, `0700`, XDG-validation. |
 | **RD-home** | ✅ 2026-06-16 (ADR-0008). Unified **explicit manual commit** model for `~/.cco` + `<repo>/.cco` (semantic user-named snapshots; **no auto-commit** in v1 — deferred for atomic config-mutating commands). Non-blocking **reminders** (old clean-tree gate, now advisory) flag uncommitted `~/.cco`, uncommitted involved `<repo>/.cco`, cross-repo divergence. Allowlist double-barrier (whitelist `.gitignore` + explicit staging, never `git add -A`); 2-pass secret scan + `.example` exemption; explicit `cco config push/pull` (sync transports commits, never fabricates them); auto-sync → RD-triggers. |

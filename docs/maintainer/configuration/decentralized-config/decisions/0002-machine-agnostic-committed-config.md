@@ -40,6 +40,11 @@ Make committed config **100% machine-agnostic**:
    always truthful, and the custom diff/save/sanitize/virtual-diff layer is **removed**.
 
 > **Refined since (forward-annotation; the decision above is kept as written):**
+> - **Decision 1 — symmetry scoped (ADR-0024).** *"byte-identical across a project's repos"* is scoped
+>   to a project's **config-bearing** repos (host + synced same-name members); **a repo hosts at most one
+>   project** (= one development scope) and may be **referenced** by N others via the index + coordinate
+>   (Case A). cco never replicates one project's `.cco/` into a repo hosting a *different* project (the
+>   `cco sync` guard, ADR-0024 D2). The whole committed `<repo>/.cco/` is the unit of sync (ADR-0024 D6).
 > - **Decision 2 — tags removed from the index.** Tags no longer live in the index;
 >   they are per-user, internal/CLI-canonical, in the **DATA** bucket
 >   `<data>/cco/tags.yml` (**ADR-0010 §4, ADR-0015, ADR-0016 D4**). The index records

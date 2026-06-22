@@ -54,6 +54,14 @@ Replace reconciliation with a **plain copy**:
    `cco start`, and distinguish dev-local edits from received syncs (FR-Y-S6, design
    §4.6).
 
+> **Refined since (forward-annotation; the decision above is kept as written).**
+> **Synced set expanded (ADR-0024 D6).** Decision #1's enumerated set
+> (`project.yml` + `claude/**` + `secrets.env.example`) is superseded by **the whole committed,
+> machine-agnostic `<repo>/.cco/` tree minus the gitignored `secrets.env`** (authored `packs/` included;
+> `url`-cached packs excluded). The original list omitted `mcp.json`/`setup.sh`/`mcp-packages.txt`, which
+> §2.1 H5 places in `<repo>/.cco/` as project config — leaving them unsynced would break Case-B parity in
+> the target model (different MCP/setup/tools across a project's repos). The copy model itself is unchanged.
+
 ## Alternatives Considered
 
 | Alternative | Pros | Cons | Verdict |
