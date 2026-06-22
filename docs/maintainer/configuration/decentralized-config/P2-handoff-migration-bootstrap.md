@@ -20,13 +20,16 @@ contracts, and what comes after. Produced 2026-06-22 on `feat/vault/decentralize
 > + P18. Propagated to living `design.md` (§2.1/§2.4/§3/§4/§9), ADR-0002/0003 forward-annotations,
 > `guiding-principles.md`, `requirements.md`. **Resume order:**
 > 1. ✅ **ADR-0024 + propagation** — done (`decisions/0024-repo-multi-project-and-config-home.md`).
-> 2. **Re-coherence sweep (verify + correct) — NEXT.** Re-check the already-built **P0/P1** impl against
->    ADR-0024. It does **not** touch the P0 `project.yml` schema or the global-flat index, but it **does**
->    touch P1 `lib/cmd-sync.sh` (D2 guard + D6 expanded set), `lib/sync-meta.sh` (D6 fingerprint),
->    `lib/index.sh` (D5 reverse-lookup helper — additive), and the D5 observability UX. Use the
->    `implementation-review-handoff.md` playbook scoped to ADR-0024; keep the suite delta-green.
-> 3. **Resume P2 design** from §4a below (baseline 1043/16, P1 audit clean, locked `<id>=name`, the 2
->    smaller open items, the H6 map, the dogfooding plan) — still valid; the ADR-0024 decision layers on top.
+> 2. ✅ **Re-coherence sweep (verify + correct) — DONE** (`reviews/22-06-2026-adr-0024-re-coherence-sweep.md`,
+>    commit `8e7cc9a`). Design validated (adherent to P1–P18, internally coherent, cross-consistent;
+>    4 minor doc-clarity fixes). Code: found+fixed the **D2 clobber-guard** blocker (`cco sync` no longer
+>    overwrites a repo hosting a different project) and the **D6 sync-set** completeness
+>    (`mcp.json`/`setup.sh`/`mcp-packages.txt` file-checks, forward-compat). **Suite 1044/16 delta-green**
+>    (the +1 vs 1043 is the new clobber-guard test; the 16 known failures are unchanged). P0 schema and
+>    the global-flat index were **NOT** touched. **Deferred ADR-0024 items → built in P2/P4** (see §5a below).
+> 3. **Resume P2 design — NEXT** from §4a below (now baseline **1044/16**, P1 audit clean, locked
+>    `<id>=name`, the 2 smaller open items, the H6 map, the dogfooding plan) — still valid; layer the
+>    ADR-0024 deferred items (§5a) on top.
 >
 > The §4a findings, the `<id>=name` decision (design §2.2), and `P2-dogfooding-validation.md` remain
 > valid inputs. **Front A/E note:** the user-guide rewrites (the `.claude` hierarchy; "how to share a
@@ -215,6 +218,23 @@ build; no blockers**. Recorded here so the build incorporates it.
 
 Write the complete final decentralized config once. Final form, build-once, breaking cutover (new layout
 only — no dual-read).
+
+### 5a. ADR-0024 deferred items (build here, in final form — re-coherence sweep)
+
+The ADR-0024 re-coherence sweep (`reviews/22-06-2026-adr-0024-re-coherence-sweep.md`, commit `8e7cc9a`)
+applied the P1-final corrections (**D2** clobber-guard, **D6** sync-set file-checks) and **deferred** the
+following to build **here in P2** (D3/D5) and **P4** (packs), in final form (build-once):
+- **D3 — `cco start` cwd → hosted project.** Started from a repo dir, resolve the project the repo
+  **hosts** (its `<repo>/.cco/project.yml` `name`); for a project the repo only **references**, require an
+  explicit name or `--from <repo>`; a repo that hosts nothing → require a name. This couples to the
+  central→decentralized project-finding P2 introduces (the P1 scope-fork that re-seq'd `cco start
+  --from`/Case-C/divergence/source-transparency here).
+- **D5 — repo↔project observability.** Add the additive index helper `_index_repos_get_projects <repo>`
+  (reverse of `_index_get_project_repos`); extend `cco project show <P>` with each member's **role**
+  (host/synced/divergent/code-only) + **referenced-by**; add a **repo-centric view** when invoked from a
+  repo dir; reuse the passive ⚠ badge (F49). **Exact wording is HITL** (maintainer-confirm — P10 lesson b).
+- **D6 (packs) → P4.** Authored-pack (`no-url`) sync joins `_sync_synced_files` when project-local
+  `<repo>/.cco/packs/` authored packs exist (P4 sharing); `url`-bearing cache entries are never synced.
 
 - **J0 first-run bootstrap (ADR-0017 D3).** On **any** `cco` command (incl. `cco start` and `cco init`),
   create the four roots when missing: `~/.cco` (git-init'd, D4) + DATA/STATE/CACHE

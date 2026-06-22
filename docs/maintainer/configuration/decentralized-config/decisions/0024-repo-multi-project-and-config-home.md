@@ -107,6 +107,12 @@ overwrites a different project's config. Syncing a **subset** of same-name membe
 valid. The guard keys on the `project.yml` `name:` (D1's discriminator), so the whole
 synced set (D6) is skipped for a foreign-hosting target — not just `project.yml`.
 
+This guard protects sync-set **mutation safety** (a git-level concern, cf. P17) — **not**
+referenced-resource **reachability**. A foreign-hosting repo is still a first-class reference,
+resolved normally via the index + coordinate; P14's "never hard-block" governs *reachability*
+(a missing coordinate is warned, never blocked), whereas this guard refuses to *overwrite* a
+different project's config (like git refusing a non-fast-forward push). The two are orthogonal.
+
 ### D3 — `cco start` cwd rule
 
 From a repo dir, `cco start` (no name) resolves to the project the repo **hosts** (its
