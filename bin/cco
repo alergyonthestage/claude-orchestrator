@@ -81,6 +81,7 @@ source "$LIB_DIR/cmd-project-delete.sh"
 source "$LIB_DIR/cmd-project-query.sh"
 source "$LIB_DIR/cmd-project-install.sh"
 source "$LIB_DIR/cmd-project-pack-ops.sh"
+source "$LIB_DIR/cmd-project-add.sh"
 source "$LIB_DIR/cmd-project-publish.sh"
 source "$LIB_DIR/cmd-project-update.sh"
 source "$LIB_DIR/cmd-pack.sh"
@@ -175,6 +176,7 @@ Commands:
   update <name>          Update an installed project from its remote source
   publish <name> <remote> Publish project as template to a Config Repo
   internalize <name>     Disconnect from remote source, convert to local
+  add <res> <name>       Embed a repo|mount|llms|pack coordinate (cwd-first)
   add-pack <proj> <pack> Add a knowledge pack to a project
   remove-pack <p> <pack> Remove a knowledge pack from a project
   resolve <name>         Configure local paths for repos and mounts
@@ -194,6 +196,7 @@ EOF
             update)      cmd_project_update "$@" ;;
             publish)     cmd_project_publish "$@" ;;
             internalize) cmd_project_internalize "$@" ;;
+            add)         cmd_project_add "$@" ;;
             add-pack)    cmd_project_add_pack "$@" ;;
             remove-pack) cmd_project_remove_pack "$@" ;;
             resolve)     cmd_project_resolve "$@" ;;
