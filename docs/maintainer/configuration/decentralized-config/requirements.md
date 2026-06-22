@@ -283,8 +283,10 @@ flowchart TD
 - **FR-M1 (first-run backup)** — On first run of the new version with a legacy vault
   present, cco archives it to **`<state>/cco/backups/vault-<date>.tar.gz`** (STATE —
   machine-local, never synced, `0600`; ADR-0016 D6, **not** the authored-config-only
-  `~/.cco`), informs the user, prints migration instructions, and offers to remove the old
-  vault. No project is migrated automatically. **The backup MUST be all-profiles-complete
+  `~/.cco`), informs the user, prints migration instructions. No project is migrated automatically.
+  The backup runs on **any** command (the universal safety net); the legacy-vault **removal is
+  surfaced only at `cco update`, default keep** — never automatic, with manual fs-delete instructions
+  in the warn (ADR-0025). **The backup MUST be all-profiles-complete
   (refined by V — F1/F9, see design §9):** it is a **raw `tar` of the whole vault dir as-is**,
   **including `.git` and the `.cco/profile-state/<branch>/` stash shadows**. Because the vault
   keeps every profile's gitignored secrets/local-paths on disk (active in the working tree,
@@ -302,6 +304,16 @@ flowchart TD
   control; would default to B). **Breaking cutover**: no dual-read; the legacy vault is read
   only from the backup, only by the migrate mode. **Removal/deregistration** (`cco forget`) +
   orphan cleanup (`cco config validate`) → ADR-0021.
+- **FR-M3 (eager global migration via `cco update`)** — The **global / non-project** cutover is
+  **eager**, owned by the existing migration runner **`cco update`** (ADR-0025): populate `~/.cco`
+  from the backup (`global/.claude` + authored `packs/` + `templates/` + `setup.sh`/`setup-build.sh`/
+  `mcp-packages.txt`/`languages`/`secrets.env`), build the global internal dirs, decompose the global
+  `.cco/meta` (hash `manifest:`→STATE meta, **not** dropped; `languages`→`~/.cco`; markers→STATE
+  top-level — ADR-0013 D3/D4), relocate the global-scope `base/`/`meta` to STATE (H6), and seed the
+  **atomic** shared-resource profile→tag set (ADR-0010 §5). **No new verb** (`cco migrate` does not
+  exist — ADR-0021); per-project migration stays **lazy** (FR-M2). The recommended order is backup →
+  `cco update` → `cco init --migrate`, but a per-project migrate is not hard-blocked by it (universal
+  backup ⇒ M8 holds).
 - **C1** — bash 3.2 compatibility (macOS default) — no bash-4 constructs.
 - **C2** — `.claude/` must remain at the repo root (Claude Code native).
 - **C3** — Repos may be plain directories (not git). The model must not assume git

@@ -194,16 +194,21 @@ build; no blockers**. Recorded here so the build incorporates it.
   relocates everything; the ~12 consumers (mostly `update.sh:89/93/165/166/397/400/438/439`) are
   unchanged. **Pack helpers `_cco_pack_base_dir`/`_cco_pack_meta` do not exist yet → create them**
   (target `<state>/cco/packs/<name>/update/base/`; used in P4 but build-once here).
-- **OPEN (resolve in Design) — `manifest:` block ambiguity.** Design §9 P2 says "`manifest:` marker
-  dropped (ADR-0012)", but the `manifest:` block **inside `.cco/meta`** is the per-file **hash manifest**
-  (load-bearing for base-tracking/merge), distinct from the `manifest.yml` sharing manifest ADR-0012
-  removes. Verify against **ADR-0013 D4** before relocating: the hash-manifest almost certainly **travels
-  into the STATE `/update` meta** (so "logic unchanged" holds); only the separate `manifest.yml` is dropped.
-- **OPEN (resolve in Design) — legacy global config / packs / templates migration into `~/.cco`.** §9 P2
-  details per-project migrate + the `.cco/meta` decompose, but is light on how the legacy
-  `global/.claude` (authored agents/rules/skills/settings) + authored packs + templates move into the
-  fresh `~/.cco`. A clean `cco init` copies framework **defaults**, not the user's customizations. Define
-  the mechanism (candidate: a global mode of `cco init --migrate`). See `P2-dogfooding-validation.md` §1.
+- **✅ RESOLVED (ADR-0025) — `manifest:` block ambiguity.** Code-confirmed (`_read_manifest` +
+  `_generate_{global,project}_cco_meta` in `lib/update-meta.sh`): the `.cco/meta` `manifest:` block is
+  the load-bearing per-file **hash manifest** (both global and project scopes write it). Per ADR-0013
+  D3, it **travels whole into the STATE `/update` meta** (logic unchanged, H6) — **NOT dropped**. What
+  the cutover removes is the **separate `manifest.yml`** (ADR-0012) + the legacy `pack-manifest`
+  (ADR-0013 D6). Design §2.2/§9 P2/§11 corrected; §2.2 global-meta listing gains `hashes`.
+- **✅ RESOLVED (ADR-0025) — legacy global config / packs / templates migration into `~/.cco`.** The
+  prior written candidate ("a global mode of `cco init --migrate`") is **rejected**. **Decision
+  (maintainer-confirmed 2026-06-22):** the **global / non-project cutover is EAGER, owned by
+  `cco update`** (the existing migration runner — populate `~/.cco` from backup + global internal dirs
+  + `.cco/meta` decompose + global base/meta relocate + atomic shared-resource profile→tag seed);
+  **per-project stays LAZY** via `cco init --migrate <project>`; **`cco migrate` stays dropped**
+  (ADR-0021). **Backup on any command** (universal net) before `cco update`; legacy-vault **removal
+  offered only at `cco update`, default keep** (manual fs-delete in the warn). See ADR-0025 +
+  `P2-dogfooding-validation.md` §1.
 - **Legacy-vault fate & developer dogfooding — `P2-dogfooding-validation.md`** (new). Confirms (ADR-0006):
   no git-history transplant, `~/.cco` fresh git-init, legacy `user-config/` + its remote kept as fallback,
   removal opt-in-after-verified-backup only; the **remote is not transplanted** (`~/.cco` remote = opt-in

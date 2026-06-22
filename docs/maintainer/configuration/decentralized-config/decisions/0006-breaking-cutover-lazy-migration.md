@@ -4,7 +4,10 @@
 **Deciders**: maintainer
 **Context docs**: `../requirements.md` (AD12, FR-S5, FR-M1, FR-M2), `../design.md` §7-§9
 **Related ADRs**: 0001 (decentralization), 0002 (machine-agnostic config), 0009 (memory/secrets in backup), 0010 (profile→tag lazy/optional), 0015/0016 (backup→STATE, id-keyed state), 0021 (entry verbs / forget / cleanup)
-**Refined by**: ADR-0021 + impl-readiness review V (Cluster 1: F1/F9/F10/F11/F12/F42/F43/F44)
+**Refined by**: ADR-0021 + impl-readiness review V (Cluster 1: F1/F9/F10/F11/F12/F42/F43/F44);
+**ADR-0025** (migration ownership — global cutover EAGER via `cco update`, per-project LAZY via
+`cco init --migrate`; backup on any command; vault **removal offered only at `cco update`, default
+keep**, refining D2's generic "offers to remove")
 
 ---
 

@@ -350,4 +350,4 @@ closed; RD-repo-multi-project resolved (ADR-0024).**
   (**P17**); S8 no-token-leak confirmed. Manifest-removal (ADR-0012) is realized via structure-based
   discovery. Opinionated-defaults-as-sharing-repo (F-opin) designed, migrated post-impl. New principles
   **P13–P17** added. Impl → **E**; solo-adopter Case C → dedicated post-v1 analysis.
-- ADR numbers are assigned when each session runs (next free number; last used = **0023**; next free = **0024**).
+- ADR numbers are assigned when each session runs (next free number; last used = **0025**; next free = **0026**).

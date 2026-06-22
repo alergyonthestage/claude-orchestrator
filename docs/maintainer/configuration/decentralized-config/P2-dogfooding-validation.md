@@ -38,14 +38,15 @@ which is **Phase 3**, not Phase 2. So during P2 alone, `~/.cco` is **locally ver
 no remote**; the old remote stays attached to the old `user-config/` (extra remote
 backup) and is not auto-migrated.
 
-### Open item for Design — global/packs/templates migration into `~/.cco`
-`design.md` §9 P2 details the **per-project** migrate and the `.cco/meta` decompose, but
-is light on **how the legacy global config (`global/.claude`: agents/rules/skills/
-settings) + authored packs + templates** move into `~/.cco`. A fresh `cco init` copies
-the framework **defaults**, not the maintainer's customizations. P2 Design must define
-this (candidate: a global mode of `cco init --migrate` that copies `global/.claude` +
-`packs/` + `templates/` from the backup into `~/.cco`, profile→tag at read time per
-ADR-0010). Tracked so the maintainer's personal global config is **not lost** in cutover.
+### ✅ RESOLVED (ADR-0025) — global/packs/templates migration into `~/.cco`
+The legacy global config (`global/.claude`: agents/rules/skills/settings) + authored
+packs + templates + `setup*.sh`/`mcp-packages.txt`/`languages`/`secrets.env` migrate into
+`~/.cco` **eagerly, owned by `cco update`** (the existing migration runner) — **not** a
+fresh `cco init` (which copies framework *defaults*), and **not** the earlier candidate
+("a global mode of `cco init --migrate`", rejected). Per-project config stays **lazy**
+via `cco init --migrate <project>`. Profile→tag for shared resources is the **atomic**
+seed at populate time (ADR-0010 §5). So the maintainer's personal global config is **not
+lost**: it is restored from the backup by the first `cco update`.
 
 ---
 

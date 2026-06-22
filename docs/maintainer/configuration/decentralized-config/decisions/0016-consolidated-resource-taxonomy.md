@@ -256,7 +256,9 @@ state bases** — the `cco update` merge *logic* is unchanged, its *paths* are r
 >    scope's update artifacts live at **`<state>/cco/global/update/{meta,base}`** (parallel to the
 >    project entry). The global `.cco/meta` is **decomposed** (ADR-0013 D4): `languages`→`~/.cco`,
 >    `last_seen`/`last_read`→STATE top-level (already shown), `schema_version`/policies/flags/
->    `local_framework_override`→this global update meta; `manifest:` marker dropped (ADR-0012).
+>    `local_framework_override`→this global update meta. *(Correction — ADR-0025: only the separate
+>    `manifest.yml` is dropped, ADR-0012; the per-file hash `manifest:` block **travels into this
+>    global update meta**, ADR-0013 D3 — not dropped.)*
 > 2. **H6 build phase = Phase 2** (not P0). The "→ E" tag predates the Cluster-2 phase map; E is dissolved.
 >    The relocation co-locates with the P2 migration (which *creates* base/meta in final form, build-once)
 >    and `test_update`'s P2 rewrite — relocating in P0 would break delta-green against the hardcoded
