@@ -72,6 +72,27 @@ test_sync_never_copies_repo_root_claude() {
     assert_dir_not_exists "$tmp/dev/repo2/.claude" || return 1
 }
 
+# D2 clobber-guard (ADR-0024): syncing project 'alice' from repo1 must SKIP repo2,
+# which hosts a DIFFERENT project ('bob') — never overwriting its config.
+test_sync_skips_target_hosting_different_project() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    _syt_unit "$tmp/dev" repo1 "# alice NEW" 'name: alice
+repos:
+  - name: repo1
+  - name: repo2'
+    _syt_unit "$tmp/dev" repo2 "# bob original" 'name: bob
+repos:
+  - name: repo2'
+    run_cco resolve --scan "$tmp/dev" || return 1
+
+    _syt_cco_in "$tmp/dev/repo1" sync --auto-approve || return 1
+    assert_output_contains "skipping repo2" || return 1
+    # repo2's own config is untouched (hosts 'bob', not overwritten by 'alice')
+    assert_file_contains "$tmp/dev/repo2/.cco/project.yml" "name: bob" || return 1
+    assert_file_contains "$tmp/dev/repo2/.cco/claude/CLAUDE.md" "# bob original" || return 1
+}
+
 test_sync_no_diff_is_noop() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     setup_cco_env "$tmp"

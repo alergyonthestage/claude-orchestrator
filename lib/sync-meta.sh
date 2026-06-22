@@ -56,16 +56,26 @@ _sync_hash_file() {
     printf '%s %s\n' "$label" "$h"
 }
 
-# Echo the synced set of a <cco_dir> as .cco-relative paths (§4.1): project.yml,
-# secrets.env.example (if present), and every file under claude/. NEVER
-# secrets.env, the repo-root .claude/, or system dirs. This is the SINGLE
-# definition of the synced set — both the fingerprint (below) and `cco sync`'s
-# diff/copy consume it, so write and compare can never drift apart.
+# Echo the synced set of a <cco_dir> as .cco-relative paths (§4.1, ADR-0024 D6):
+# the whole committed, machine-agnostic .cco/ tree MINUS the gitignored
+# secrets.env — project.yml, secrets.env.example, mcp.json, setup.sh,
+# mcp-packages.txt, and every file under claude/. NEVER secrets.env, the
+# repo-root .claude/, or system dirs. This is the SINGLE definition of the synced
+# set — both the fingerprint (below) and `cco sync`'s diff/copy consume it, so
+# write and compare can never drift apart.
+# NOTE: mcp.json/setup.sh/mcp-packages.txt live under <repo>/.cco/ only after the
+# P2 migration (today they sit in the legacy central layout) — the file-existence
+# guards make their inclusion a forward-compatible no-op until then. Authored
+# packs/ (no-url entries = sources, P15) join the set in P4, when project-local
+# packs exist in <repo>/.cco/packs/ (url-bearing entries are caches, never synced).
 # Usage: _sync_synced_files <cco_dir>
 _sync_synced_files() {
     local cco="$1"
     [[ -f "$cco/project.yml" ]]         && echo "project.yml"
     [[ -f "$cco/secrets.env.example" ]] && echo "secrets.env.example"
+    [[ -f "$cco/mcp.json" ]]            && echo "mcp.json"
+    [[ -f "$cco/setup.sh" ]]            && echo "setup.sh"
+    [[ -f "$cco/mcp-packages.txt" ]]    && echo "mcp-packages.txt"
     if [[ -d "$cco/claude" ]]; then
         ( cd "$cco" && find claude -type f 2>/dev/null | LC_ALL=C sort )
     fi

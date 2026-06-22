@@ -6,9 +6,16 @@
 # engine, no 3-way sync-base, no commit-time, no network — just a filesystem
 # copy (AD7). Divergence is allowed and visible; the user picks the source.
 #
-# Synced set (§4.1): project.yml + claude/** [+ secrets.env.example]. NEVER
-# secrets.env, the repo-root .claude/, or system dirs. The set is single-sourced
-# in _sync_synced_files (lib/sync-meta.sh), shared with the fingerprint.
+# Synced set (§4.1, ADR-0024 D6): the whole committed .cco/ minus the gitignored
+# secrets.env (project.yml, claude/**, mcp.json, setup.sh, mcp-packages.txt,
+# secrets.env.example; authored packs/ join in P4). NEVER secrets.env, the
+# repo-root .claude/, or system dirs. Single-sourced in _sync_synced_files
+# (lib/sync-meta.sh), shared with the fingerprint.
+#
+# D2 clobber-guard (ADR-0024): a target repo that HOSTS a different project
+# (its .cco/project.yml `name` != the source project) is skipped with a warning,
+# never overwritten — no override. A repo hosts at most one project (= one dev
+# scope); it may be REFERENCED by N others (resolved via the index, never synced).
 #
 # Command forms (§4.2; positional = TARGET, --from = SOURCE, default source = cwd):
 #   cco sync                      source = cwd repo,  targets = all other members
@@ -126,6 +133,9 @@ EOF
     [[ -f "$project_yml" ]] || die "source repo has no .cco/project.yml: $src_root"
     [[ -d "$src_root/.cco" ]] || die "source repo has no .cco/: $src_root"
 
+    # Source project identity — the discriminator for the D2 clobber-guard (ADR-0024).
+    local src_proj; src_proj=$(yml_get "$project_yml" name 2>/dev/null) || src_proj=""
+
     # Best-effort source logical name (to exclude it from the all-members set).
     [[ -z "$src_name" ]] && { src_name=$(_resolve_scan_match_name "$src_root" "$project_yml") || src_name=""; }
     local src_canon; src_canon=$(_sync_canon "$src_root")
@@ -163,10 +173,23 @@ EOF
     local src_cco="$src_root/.cco"
     local -a copied=()
     local any_out_of_sync=false
-    local tgt tgt_cco diff_out rc reply
+    local tgt tgt_cco tgt_proj diff_out rc reply
 
     for tgt in "${targets[@]}"; do
         tgt_cco="$tgt/.cco"
+
+        # D2 clobber-guard (ADR-0024): NEVER overwrite a repo that HOSTS a
+        # different project. Skip + warn; no override (to re-home a repo, de-init
+        # its .cco/ then sync, or re-init with --sync). A code-only target (no
+        # project.yml) or a same-name member proceeds normally.
+        if [[ -f "$tgt_cco/project.yml" ]]; then
+            tgt_proj=$(yml_get "$tgt_cco/project.yml" name 2>/dev/null) || tgt_proj=""
+            if [[ -n "$tgt_proj" && -n "$src_proj" && "$tgt_proj" != "$src_proj" ]]; then
+                $check || warn "skipping $(basename "$tgt"): hosts project '$tgt_proj' (source is '$src_proj') — not overwriting (ADR-0024 D2)"
+                continue
+            fi
+        fi
+
         diff_out=$(_sync_compute_diff "$src_cco" "$tgt_cco"); rc=$?
 
         if [[ $rc -ne 0 ]]; then
