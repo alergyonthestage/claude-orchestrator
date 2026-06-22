@@ -10,7 +10,7 @@ from the maintainer's Mac).
 > The per-cycle design/cluster scaffold handoffs (M/R3/S/V/W/X/Z*) were **consumed and removed** — their
 > decisions live in the ADRs (`decisions/`) and the reviews (`reviews/`); their history is in git. **This
 > file is the master implementation handoff.** Two companions: per-phase **launch** handoffs (e.g.
-> `P1-handoff-core-local.md`) and the recurring **`implementation-review-handoff.md`** (an adherence/gap
+> `P2-handoff-migration-bootstrap.md`) and the recurring **`implementation-review-handoff.md`** (an adherence/gap
 > audit to run at phase boundaries, before the next phase).
 
 ---
@@ -174,13 +174,17 @@ state-sync (DATA/STATE cross-PC, R-state-sync) · local-file llms (F1) · Case-C
 
 ## 8. Current position & how to start a phase
 
-**Phase 0 (substrate) is ✅ CLOSED** (`feat/vault/decentralized-config`, local): T1 resolver+H4+L5 ·
-T2a index API · T3 coordinate parsers · T4-remotes M3 split · Commit A (repos/mount → STATE index) ·
-Commit B (session-mount bucket re-point + harness HOME flip) · T8 (`.claude` overlays → CACHE `:ro`,
-ADR-0005 F1/F2/F3). Suite 995/2 delta-green. **Next = Phase 1** (core local commands).
+**Phase 0 (substrate) + Phase 1 (core local) are ✅ CLOSED** (`feat/vault/decentralized-config`, local).
+P0: T1 resolver+H4+L5 · T2a index API · T3 coordinate parsers · T4-remotes M3 split · Commit A
+(repos/mount → STATE index) · Commit B (session-mount bucket re-point + harness HOME flip) · T8 (`.claude`
+overlays → CACHE `:ro`, ADR-0005 F1/F2/F3). P1: 6 commits `56ca45c`→`e48abdd` (cco resolve/path ·
+sync-meta fingerprint · reminder aggregator · cco sync · cco start aggregator+H1 · cco project add), with
+3 maintainer scope-forks (legacy resolve/validate/add-pack → P3; D-start source-selection → P2;
+cco project validate → P5 / coords → P4-5). Suite **1043/16** delta-green. **Next = Phase 2** (migration &
+bootstrap).
 
 To start any phase: (1) run **`implementation-review-handoff.md`** (read-only adherence/gap audit) at the
-phase boundary; (2) open that phase's **launch handoff** (`P1-handoff-core-local.md` for Phase 1) for the
-preliminary analysis + exact scope; (3) build on the substrate, keep the suite green (delta-based), commit
-atomically. The live cursor is in `decentralized-config-impl-progress.md` + the roadmaps. Pause and discuss
+phase boundary; (2) open that phase's **launch handoff** (`P2-handoff-migration-bootstrap.md` for Phase 2)
+for the preliminary analysis + exact scope; (3) build on the substrate, keep the suite green (delta-based;
+in P2 the FAIL set shrinks from 16 toward 8 as the owned update tests are rewritten), commit atomically. The live cursor is in `decentralized-config-impl-progress.md` + the roadmaps. Pause and discuss
 if a real design gap surfaces; otherwise the ADRs/design are the spec.
