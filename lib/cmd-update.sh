@@ -122,6 +122,13 @@ EOF
         fi
     fi
 
+    # Eager global migration (ADR-0025 §1): on first run against a legacy install,
+    # populate ~/.cco from the verified backup + seed profile→tag. Idempotent
+    # (~/.cco/global presence); skipped in preview (--dry-run).
+    if ! $dry_run; then
+        _cco_migrate_global || true
+    fi
+
     # Validate scope: "global" is a keyword (see RESERVED_PROJECT_NAMES),
     # anything else must be an existing project
     if [[ -n "$scope" && "$scope" != "global" ]]; then

@@ -192,3 +192,104 @@ test_migrate_backup_skipped_on_vault_command() {
     local archive; archive=$(_backup_archive)
     [[ -z "$archive" ]] || fail "a vault command must not trigger the backup net: $archive"
 }
+
+# ── Eager global migration via `cco update` (ADR-0025 §1) ────────────
+
+# Build a legacy vault with global config + a shared pack + a profile-exclusive
+# pack ('work-pack' on the 'work' profile branch only) + a template + setup +
+# secrets + legacy languages. git default branch pinned to 'main'.
+_setup_legacy_vault_global() {
+    local tmpdir="$1"
+    setup_cco_env "$tmpdir"
+    local vault="$CCO_USER_CONFIG_DIR"
+    mkdir -p "$vault/global/.claude/.cco" "$vault/packs/shared-pack" \
+             "$vault/packs/work-pack" "$vault/templates/my-tmpl"
+    echo "# global cfg" > "$vault/global/.claude/CLAUDE.md"
+    printf 'schema_version: 5\nlanguages:\n  communication: Italian\n  documentation: Italian\n  code_comments: English\n' \
+        > "$vault/global/.claude/.cco/meta"
+    echo "apt-get x" > "$vault/global/setup.sh"
+    echo "SECRET=1"  > "$vault/global/secrets.env"
+    echo "name: shared-pack" > "$vault/packs/shared-pack/pack.yml"
+    echo "name: work-pack"   > "$vault/packs/work-pack/pack.yml"
+    echo "name: my-tmpl"     > "$vault/templates/my-tmpl/template.yml"
+    git -C "$vault" init -q
+    git -C "$vault" symbolic-ref HEAD refs/heads/main 2>/dev/null
+    git -C "$vault" add -A 2>/dev/null
+    git -C "$vault" commit -q -m "main: shared" 2>/dev/null
+    # 'work' profile: work-pack is exclusive (recorded in .vault-profile)
+    git -C "$vault" checkout -q -b work 2>/dev/null
+    printf 'profile: work\nresources:\n  packs:\n    - work-pack\n' > "$vault/.vault-profile"
+    git -C "$vault" add -A 2>/dev/null
+    git -C "$vault" commit -q -m "work profile" 2>/dev/null
+    git -C "$vault" checkout -q main 2>/dev/null
+    git -C "$vault" rm -rq packs/work-pack 2>/dev/null
+    rm -rf "$vault/packs/work-pack"
+    git -C "$vault" commit -q -m "main without work-pack" 2>/dev/null
+}
+
+test_migrate_global_populates_cco() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_legacy_vault_global "$tmpdir"
+    run_cco update || true
+    assert_file_exists "$HOME/.cco/global/.claude/CLAUDE.md" "global/.claude should be populated into ~/.cco"
+    assert_file_exists "$HOME/.cco/setup.sh"      "setup.sh should be migrated to ~/.cco"
+    assert_file_exists "$HOME/.cco/secrets.env"   "secrets.env should be migrated to ~/.cco"
+    assert_dir_exists  "$HOME/.cco/templates/my-tmpl"  "templates should be migrated to ~/.cco"
+    assert_dir_exists  "$HOME/.cco/packs/shared-pack"  "shared pack should be migrated to ~/.cco"
+}
+
+test_migrate_global_languages_decomposed() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_legacy_vault_global "$tmpdir"
+    run_cco update || true
+    assert_file_contains "$(cco_languages_file)" "communication: Italian" \
+        "languages should be decomposed from the legacy meta into ~/.cco/languages"
+}
+
+test_migrate_global_profile_exclusive_pack_tagged() {
+    # work-pack lives only on the 'work' branch → populated from the branch + tagged.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_legacy_vault_global "$tmpdir"
+    run_cco update || true
+    assert_dir_exists "$HOME/.cco/packs/work-pack" "profile-exclusive pack should be populated from its branch"
+    assert_file_contains "$CCO_DATA_HOME/tags.yml" "work-pack: [work]" \
+        "profile-exclusive pack should be tagged with its origin profile (ADR-0010 §5)"
+}
+
+test_migrate_global_idempotent() {
+    # A second `cco update` must not re-migrate or clobber edited ~/.cco config.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_legacy_vault_global "$tmpdir"
+    run_cco update || true
+    echo "# user edit" >> "$HOME/.cco/global/.claude/CLAUDE.md"
+    run_cco update || true
+    assert_file_contains "$HOME/.cco/global/.claude/CLAUDE.md" "user edit" \
+        "re-running migration must not clobber user-edited ~/.cco config"
+}
+
+test_migrate_global_offer_to_remove() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_legacy_vault_global "$tmpdir"
+    run_cco update || true
+    assert_output_contains "Migration complete"
+    assert_output_contains "never delete it for you"
+    # The legacy vault must remain intact (default keep).
+    assert_dir_exists "$CCO_USER_CONFIG_DIR/.git" "the legacy vault must be preserved (default keep)"
+}
+
+test_migrate_global_skipped_without_legacy_vault() {
+    # A fresh install (no legacy vault → no backup) must not run the migration.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco update || true
+    # ~/.cco/global came from setup_global_from_defaults, not the migration; no tags seeded.
+    [[ ! -f "$CCO_DATA_HOME/tags.yml" ]] || fail "no profile→tag seed should occur without a legacy vault"
+}
+
+test_migrate_global_dry_run_skips() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_legacy_vault_global "$tmpdir"
+    run_cco update --dry-run || true
+    [[ ! -d "$HOME/.cco/global/.claude" ]] || fail "--dry-run must not populate ~/.cco"
+}

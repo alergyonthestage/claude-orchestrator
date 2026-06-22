@@ -156,3 +156,153 @@ _cco_first_run() {
         *) _cco_backup_legacy_vault || true ;;
     esac
 }
+
+# ── Eager global migration (ADR-0025 §1 / design §9 P2) ──────────────
+# The global/non-project cutover is EAGER, owned by `cco update`. On first run
+# against a legacy install it populates ~/.cco from the verified backup
+# (global/.claude + authored packs/ + templates/ + setup scripts + mcp-packages
+# + secrets.env + languages), and seeds the atomic profile→tag set for
+# profile-exclusive packs (ADR-0010 §5). Idempotent: ~/.cco/global/.claude
+# presence is the "already migrated" signal. Reads from the backup (immutable
+# snapshot), never the live user-config/ (which it leaves intact).
+
+# Seed one resource→tag binding into the DATA tags registry (<data>/cco/tags.yml).
+# Minimal writer for the one-shot migration seed; the full `cco tag` API is P3.
+# Format (design §2.2): typed keys {packs,projects,templates} → name → [tags].
+_cco_seed_resource_tag() {
+    local kind="$1" name="$2" tag="$3"   # kind: packs|projects|templates
+    local f; f="$(_cco_data_dir)/tags.yml"
+    mkdir -p "$(dirname "$f")"
+    [[ -f "$f" ]] || printf '# Per-user tag registry — seeded by cco migration\n' > "$f"
+    # Ensure the typed section exists.
+    grep -q "^${kind}:" "$f" 2>/dev/null || printf '%s:\n' "$kind" >> "$f"
+    # Append/extend the resource entry (one-shot seed: a name appears once here).
+    if grep -qE "^  ${name}:" "$f" 2>/dev/null; then
+        # Already present — add the tag if missing (append inside the [] list).
+        awk -v n="  ${name}:" -v t="$tag" '
+            $0 ~ "^" n {
+                if (index($0, t) == 0) { sub(/\]\s*$/, ", " t "]") }
+            }
+            { print }
+        ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+    else
+        # Insert under the typed section header.
+        awk -v sec="^${kind}:" -v line="  ${name}: [${tag}]" '
+            { print }
+            $0 ~ sec && !done { print line; done=1 }
+        ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+    fi
+}
+
+# Populate ~/.cco from an extracted backup tree, run profile→tag seeding.
+# $1 = extracted vault dir (has global/, packs/, templates/, .git, .vault-profile).
+_cco_populate_global_from() {
+    local src="$1" cfg
+    cfg="$(_cco_config_dir)"
+
+    # Global Claude config (shared across all profiles).
+    if [[ -d "$src/global/.claude" ]]; then
+        mkdir -p "$cfg/global"
+        cp -r "$src/global/.claude" "$cfg/global/.claude"
+    fi
+    # Global setup scripts / mcp list (legacy: under global/).
+    local f
+    for f in setup.sh setup-build.sh mcp-packages.txt; do
+        [[ -f "$src/global/$f" ]] && cp "$src/global/$f" "$cfg/$f"
+    done
+    # Secrets (gitignored; legacy under global/ or vault root) → ~/.cco top-level.
+    for f in "$src/global/secrets.env" "$src/secrets.env"; do
+        [[ -f "$f" ]] && { cp "$f" "$cfg/secrets.env"; break; }
+    done
+    for f in "$src/global/secrets.env.example" "$src/secrets.env.example"; do
+        [[ -f "$f" ]] && { cp "$f" "$cfg/secrets.env.example"; break; }
+    done
+    # Authored templates (always shared → no origin tag).
+    [[ -d "$src/templates" ]] && { mkdir -p "$cfg/templates"; cp -r "$src/templates/." "$cfg/templates/" 2>/dev/null || true; }
+    # Working-tree packs (shared + the active profile's view).
+    [[ -d "$src/packs" ]] && { mkdir -p "$cfg/packs"; cp -r "$src/packs/." "$cfg/packs/" 2>/dev/null || true; }
+
+    # Languages: decompose the legacy global .cco/meta (old location) → ~/.cco/languages.
+    local legacy_meta="$src/global/.claude/.cco/meta"
+    if [[ -f "$legacy_meta" ]]; then
+        local comm docs code
+        comm=$(awk '/^languages:/{l=1;next} /^[a-z]/&&!/^  /{l=0} l&&/communication:/{sub(/.*: /,"");print;exit}' "$legacy_meta")
+        docs=$(awk '/^languages:/{l=1;next} /^[a-z]/&&!/^  /{l=0} l&&/documentation:/{sub(/.*: /,"");print;exit}' "$legacy_meta")
+        code=$(awk '/^languages:/{l=1;next} /^[a-z]/&&!/^  /{l=0} l&&/code_comments:/{sub(/.*: /,"");print;exit}' "$legacy_meta")
+        [[ -n "$comm$docs$code" ]] && _write_languages "${comm:-English}" "${docs:-English}" "${code:-English}"
+    fi
+
+    # Atomic profile→tag seed: each non-default branch's .vault-profile packs are
+    # profile-exclusive → populate (if missing) + tag with the origin profile.
+    if [[ -d "$src/.git" ]]; then
+        local default_branch branch
+        default_branch=$(git -C "$src" rev-parse --verify main >/dev/null 2>&1 && echo main \
+            || (git -C "$src" rev-parse --verify master >/dev/null 2>&1 && echo master \
+            || git -C "$src" rev-parse --abbrev-ref HEAD 2>/dev/null))
+        while IFS= read -r branch; do
+            branch="${branch#"${branch%%[![:space:]]*}"}"   # ltrim
+            [[ -z "$branch" || "$branch" == "$default_branch" ]] && continue
+            local vp profile packs_list pack
+            vp=$(git -C "$src" show "$branch:.vault-profile" 2>/dev/null || true)
+            [[ -z "$vp" ]] && continue
+            profile=$(printf '%s\n' "$vp" | awk '/^profile:/{sub(/.*: */,"");print;exit}')
+            [[ -z "$profile" ]] && profile="$branch"
+            packs_list=$(printf '%s\n' "$vp" | awk '
+                /^  packs:/{p=1;next} /^[^ ]/{p=0} /^  [^ ]/&&!/^  packs:/{p=0}
+                p&&/^    - /{sub(/^    - */,"");print}')
+            while IFS= read -r pack; do
+                [[ -z "$pack" ]] && continue
+                # Populate the exclusive pack from its branch if not already present.
+                if [[ ! -d "$cfg/packs/$pack" ]]; then
+                    git -C "$src" archive "$branch" "packs/$pack" 2>/dev/null | tar -x -C "$cfg" 2>/dev/null || true
+                fi
+                _cco_seed_resource_tag packs "$pack" "$profile"
+            done <<< "$packs_list"
+        done < <(git -C "$src" for-each-ref --format='%(refname:short)' refs/heads 2>/dev/null)
+    fi
+}
+
+_cco_migrate_global() {
+    _cco_host_side_ok || return 0
+
+    local cfg state backups
+    cfg="$(_cco_config_dir)"
+    state="$(_cco_state_dir)"
+    backups="$state/backups"
+
+    # Already migrated (idempotent) → nothing to do.
+    [[ -d "$cfg/global/.claude" ]] && return 0
+    # No verified backup ⇒ no legacy install to migrate from (fresh install).
+    _cco_have_backup "$backups" || return 0
+
+    local backup
+    backup=$(ls "$backups"/vault-*.tar.gz 2>/dev/null | head -1)
+    [[ -n "$backup" ]] || return 0
+
+    info "Migrating global config to the decentralized layout (~/.cco)…"
+    local tmp
+    tmp=$(mktemp -d "${TMPDIR:-/tmp}/cco-migrate.XXXXXX") || { warn "Could not create a temp dir for migration."; return 1; }
+    if ! tar -xzf "$backup" -C "$tmp" 2>/dev/null; then
+        rm -rf "$tmp"
+        warn "Could not read the legacy-vault backup — global migration skipped; retry on the next 'cco update'."
+        return 1
+    fi
+
+    _cco_populate_global_from "$tmp"
+    rm -rf "$tmp"
+
+    # Migration summary + legacy-vault keep/remove note (maintainer-confirmed copy).
+    ok "Migration complete — your global config now lives in ~/.cco:"
+    echo "    • global/.claude   (agents, rules, skills, settings)" >&2
+    echo "    • packs/, templates/   (authored resources)" >&2
+    echo "    • setup.sh, setup-build.sh, mcp-packages.txt" >&2
+    echo "    • secrets.env, languages" >&2
+    echo "  Per-project config is migrated separately:" >&2
+    echo "    cco init --migrate <project>   (run inside each repo)" >&2
+    echo "" >&2
+    info "Legacy vault preserved as a fallback at $USER_CONFIG_DIR (incl. its git history)."
+    echo "  Remove the vault manually once you've confirmed the new layout works:" >&2
+    echo "    rm -rf $USER_CONFIG_DIR" >&2
+    echo "  cco will never delete it for you." >&2
+    return 0
+}
