@@ -127,7 +127,7 @@ test_init_creates_user_config_structure() {
     setup_cco_env "$tmpdir"
     run_cco init --lang "English"
     assert_dir_exists "$CCO_USER_CONFIG_DIR"
-    assert_dir_exists "$CCO_USER_CONFIG_DIR/global/.claude"
+    assert_dir_exists "$CCO_GLOBAL_DIR/.claude"
     assert_dir_exists "$CCO_USER_CONFIG_DIR/projects"
     assert_dir_exists "$CCO_USER_CONFIG_DIR/packs"
     assert_dir_exists "$CCO_USER_CONFIG_DIR/templates"

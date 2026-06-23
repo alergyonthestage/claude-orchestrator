@@ -179,13 +179,14 @@ test_migration_to_managed() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
 
-    # Simulate pre-managed layout: global/ with system-manifest and old settings
-    mkdir -p "$tmpdir/user-config/global/.claude/rules"
-    mkdir -p "$tmpdir/user-config/global/.claude/agents"
-    mkdir -p "$tmpdir/user-config/global/.claude/skills/analyze"
-    printf '.claude/settings.json\n.claude/agents/analyst.md\n' > "$tmpdir/user-config/global/.claude/.system-manifest"
-    printf '{"hooks": {"SessionStart": []}, "attribution": {}}' > "$tmpdir/user-config/global/.claude/settings.json"
-    printf 'placeholder' > "$tmpdir/user-config/global/.claude/rules/language.md"
+    # Simulate pre-managed layout in the global home (~/.cco/global, cut over from
+    # the legacy central user-config/global) with system-manifest and old settings.
+    mkdir -p "$CCO_GLOBAL_DIR/.claude/rules"
+    mkdir -p "$CCO_GLOBAL_DIR/.claude/agents"
+    mkdir -p "$CCO_GLOBAL_DIR/.claude/skills/analyze"
+    printf '.claude/settings.json\n.claude/agents/analyst.md\n' > "$CCO_GLOBAL_DIR/.claude/.system-manifest"
+    printf '{"hooks": {"SessionStart": []}, "attribution": {}}' > "$CCO_GLOBAL_DIR/.claude/settings.json"
+    printf 'placeholder' > "$CCO_GLOBAL_DIR/.claude/rules/language.md"
     mkdir -p "$tmpdir/user-config/packs"
 
     # Run init — should trigger migration via migration runner

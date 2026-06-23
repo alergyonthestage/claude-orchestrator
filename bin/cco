@@ -39,7 +39,10 @@ if [[ -z "${CCO_USER_CONFIG_DIR:-}" && ! -d "$USER_CONFIG_DIR/global" && -d "$RE
     LLMS_DIR="${CCO_LLMS_DIR:-$USER_CONFIG_DIR/llms}"
     TEMPLATES_DIR="${CCO_TEMPLATES_DIR:-$USER_CONFIG_DIR/templates}"
 else
-    GLOBAL_DIR="${CCO_GLOBAL_DIR:-$USER_CONFIG_DIR/global}"
+    # Global config home is the decentralized personal store ~/.cco/global
+    # (design §2.3; cut over from the legacy central $USER_CONFIG_DIR/global).
+    # CONFIG is always $HOME/.cco (no XDG override; matches _cco_config_dir).
+    GLOBAL_DIR="${CCO_GLOBAL_DIR:-$HOME/.cco/global}"
     PROJECTS_DIR="${CCO_PROJECTS_DIR:-$USER_CONFIG_DIR/projects}"
     PACKS_DIR="${CCO_PACKS_DIR:-$USER_CONFIG_DIR/packs}"
     LLMS_DIR="${CCO_LLMS_DIR:-$USER_CONFIG_DIR/llms}"

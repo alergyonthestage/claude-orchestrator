@@ -31,7 +31,11 @@ GITCFG
     # commands (init/update/build/clean/project-create/vault) and their tests,
     # which ride later phases. Kept until those phases cut over.
     export CCO_USER_CONFIG_DIR="$tmpdir/user-config"
-    export CCO_GLOBAL_DIR="$tmpdir/user-config/global"
+    # Global config home is now the decentralized ~/.cco/global (= $HOME/.cco/global,
+    # since HOME is redirected into $tmpdir above) — cut over from the legacy central
+    # $tmpdir/user-config/global. bin/cco, the update/clean/manifest engines, and
+    # check_global all resolve GLOBAL_DIR from CCO_GLOBAL_DIR.
+    export CCO_GLOBAL_DIR="$tmpdir/home/.cco/global"
     export CCO_PROJECTS_DIR="$tmpdir/user-config/projects"
     export CCO_PACKS_DIR="$tmpdir/user-config/packs"
     export CCO_TEMPLATES_DIR="$tmpdir/user-config/templates"
@@ -155,6 +159,26 @@ create_pack() {
     local pack_dir="$tmpdir/user-config/packs/$name"
     mkdir -p "$pack_dir"
     printf '%s\n' "$yml_content" > "$pack_dir/pack.yml"
+}
+
+# Run `cco init` for GLOBAL setup only, isolating the per-repo scaffold.
+#
+# ADR-0026 makes `cco init` do TWO things: ensure the global config AND scaffold
+# the current repo's <repo>/.cco/. Tests that only need global config must not
+# scaffold into the cco repo root (where the suite runs). This helper runs
+# `cco init` inside a throwaway per-test repo so the scaffold lands harmlessly,
+# while ~/.cco/global is ensured. Forwards args (e.g. --lang) and sets CCO_OUTPUT
+# exactly like run_cco. Usage: init_global "$tmpdir" [init-args...]
+init_global() {
+    local tmpdir="$1"; shift
+    local d="$tmpdir/.init-global-repo"
+    mkdir -p "$d"
+    local _prev="$PWD"
+    cd "$d" || return 1
+    run_cco init "$@"
+    local rc=$?
+    cd "$_prev" 2>/dev/null || true
+    return $rc
 }
 
 # Run bin/cco with CCO env vars set.
