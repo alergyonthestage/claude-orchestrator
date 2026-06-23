@@ -65,6 +65,23 @@ _cco_have_backup() {
     return 1
 }
 
+# The migration-state marker (<state>/cco/migration-state) is a newline-separated
+# flag set. The FILE's presence means "legacy vault backed up" (F43); a
+# `global-migrated` line means the eager global migration ran. The flag — not
+# ~/.cco/global presence — is the idempotency gate (ADR-0026): `cco init` may
+# populate ~/.cco/global from defaults, so presence is no longer a "migrated"
+# signal. Writes are append-only so the backup step never wipes the flag.
+_cco_marker_has() {
+    local marker="$1" flag="$2"
+    [[ -f "$marker" ]] || return 1
+    grep -qxF "$flag" "$marker" 2>/dev/null
+}
+_cco_marker_add() {
+    local marker="$1" flag="$2"
+    _cco_marker_has "$marker" "$flag" && return 0
+    printf '%s\n' "$flag" >> "$marker" 2>/dev/null || true
+}
+
 # ── Legacy-vault backup (ADR-0006 Decision 2 / ADR-0025 §2) ──────────
 # On first run with a legacy vault present, archive the WHOLE vault as a raw tar
 # — including .git and the .cco/profile-state/<branch>/ stash shadows — so the
@@ -103,9 +120,10 @@ _cco_backup_legacy_vault() {
     fi
     # Authoritative guard (F43), decoupled from the marker: a wiped/relocated
     # marker must never trigger a destructive re-archive when a good archive
-    # already exists — heal the marker and stop.
+    # already exists — heal the marker and stop. Create only if absent (never
+    # truncate: an existing marker may carry the global-migrated flag).
     if _cco_have_backup "$backups"; then
-        : > "$marker" 2>/dev/null || true
+        [[ -f "$marker" ]] || : > "$marker" 2>/dev/null || true
         return 0
     fi
 
@@ -131,8 +149,9 @@ _cco_backup_legacy_vault() {
     fi
     chmod 0600 "$tmp" 2>/dev/null || true
     # … then atomically move into place (F44) and record the fast-path marker.
+    # Create only if absent (never truncate a marker that may carry global-migrated).
     mv -f "$tmp" "$final"
-    : > "$marker" 2>/dev/null || true
+    [[ -f "$marker" ]] || : > "$marker" 2>/dev/null || true
 
     ok "Legacy vault archived: $final"
     info "Your user-config/ is preserved as-is — nothing was moved or deleted."
@@ -242,18 +261,58 @@ _cco_populate_global_from() {
     fi
 }
 
+# Back up the current ~/.cco before a non-destructive migration overwrite, then
+# ask explicit confirmation. Returns 0 to proceed (backup written + confirmed,
+# and ~/.cco/global removed so the populate writes fresh), 1 to skip. The archive
+# mirrors the raw-tar legacy backup; it lands in STATE (machine-local, 0600).
+_cco_confirm_overwrite_global() {
+    local cfg="$1" backups="$2"
+    _cco_ensure_dir "$backups"
+    local ts archive tmp
+    ts=$(date -u +%Y%m%d-%H%M%S)
+    archive="$backups/cco-config-$ts.tar.gz"
+    tmp="$backups/.cco-config-$ts.tar.gz.tmp"
+    if tar -czf "$tmp" -C "$cfg" . 2>/dev/null && tar -tzf "$tmp" >/dev/null 2>&1; then
+        chmod 0600 "$tmp" 2>/dev/null || true
+        mv -f "$tmp" "$archive"
+    else
+        rm -f "$tmp"
+        warn "Could not back up the current ~/.cco — aborting the global migration to stay safe."
+        return 1
+    fi
+    warn "~/.cco/global already exists (populated by 'cco init' or a previous run)."
+    info "Migrating the legacy vault will overwrite it. A restorable backup was saved:"
+    echo "    $archive" >&2
+    local ans=""
+    if [[ "${CCO_ASSUME_YES:-}" == "1" ]]; then ans="y"
+    elif (exec < /dev/tty) 2>/dev/null; then read -rp "  Proceed with the migration? [y/N]: " ans < /dev/tty; fi
+    ans="$(printf '%s' "$ans" | tr '[:upper:]' '[:lower:]')"
+    [[ "$ans" == "y" || "$ans" == "yes" ]] || return 1
+    rm -rf "$cfg/global"
+    return 0
+}
+
 _cco_migrate_global() {
     _cco_host_side_ok || return 0
 
-    local cfg state backups
+    local cfg state backups marker
     cfg="$(_cco_config_dir)"
     state="$(_cco_state_dir)"
     backups="$state/backups"
+    marker="$state/migration-state"
 
-    # Already migrated (idempotent) → nothing to do.
-    [[ -d "$cfg/global/.claude" ]] && return 0
+    # Idempotent (ADR-0026): the gate is the `global-migrated` marker flag, NOT
+    # ~/.cco/global presence (which `cco init` may have created from defaults).
+    _cco_marker_has "$marker" global-migrated && return 0
     # No verified backup ⇒ no legacy install to migrate from (fresh install).
     _cco_have_backup "$backups" || return 0
+
+    # If ~/.cco/global already exists (e.g. `cco init` ran before `cco update`),
+    # migration is NON-DESTRUCTIVE: back up the current ~/.cco (restorable) and
+    # ask explicit confirmation before overwriting it from the vault.
+    if [[ -d "$cfg/global/.claude" ]]; then
+        _cco_confirm_overwrite_global "$cfg" "$backups" || { info "Global migration skipped (declined). Re-run 'cco update' to retry."; return 0; }
+    fi
 
     local backup
     backup=$(ls "$backups"/vault-*.tar.gz 2>/dev/null | head -1)
@@ -270,6 +329,8 @@ _cco_migrate_global() {
 
     _cco_populate_global_from "$tmp"
     rm -rf "$tmp"
+    # Record the gate: the eager global migration ran (ADR-0026).
+    _cco_marker_add "$marker" global-migrated
 
     # Migration summary + legacy-vault keep/remove note (maintainer-confirmed copy).
     ok "Migration complete — your global config now lives in ~/.cco:"

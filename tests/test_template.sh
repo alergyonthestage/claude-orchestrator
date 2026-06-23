@@ -147,7 +147,7 @@ test_template_show_not_found() {
 test_template_create_project() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
     run_cco template create my-tmpl --project
     assert_dir_exists "$CCO_TEMPLATES_DIR/project/my-tmpl"
     assert_file_exists "$CCO_TEMPLATES_DIR/project/my-tmpl/project.yml"
@@ -156,7 +156,7 @@ test_template_create_project() {
 test_template_create_pack() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
     run_cco template create my-pack-tmpl --pack
     assert_dir_exists "$CCO_TEMPLATES_DIR/pack/my-pack-tmpl"
     assert_file_exists "$CCO_TEMPLATES_DIR/pack/my-pack-tmpl/pack.yml"
@@ -165,7 +165,7 @@ test_template_create_pack() {
 test_template_create_duplicate_fails() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
     run_cco template create dup-test --project
     run_cco template create dup-test --project && {
         echo "ASSERTION FAILED: expected duplicate create to fail"
@@ -177,7 +177,7 @@ test_template_create_duplicate_fails() {
 test_template_create_invalid_name_fails() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
     run_cco template create "Bad_Name" --project && {
         echo "ASSERTION FAILED: expected invalid name to fail"
         return 1
@@ -188,7 +188,7 @@ test_template_create_invalid_name_fails() {
 test_template_create_requires_kind() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
     run_cco template create my-test && {
         echo "ASSERTION FAILED: expected missing --project/--pack to fail"
         return 1
@@ -201,7 +201,7 @@ test_template_create_requires_kind() {
 test_template_remove_user() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
     run_cco template create removable --project
     assert_dir_exists "$CCO_TEMPLATES_DIR/project/removable"
     run_cco template remove removable
@@ -220,28 +220,9 @@ test_template_remove_native_fails() {
 }
 
 # ── project create --template ────────────────────────────────────────
-
-test_project_create_with_template() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-
-    # Create a user template with a marker
-    mkdir -p "$CCO_TEMPLATES_DIR/project/custom/.claude"
-    cat > "$CCO_TEMPLATES_DIR/project/custom/project.yml" <<'YAML'
-name: {{PROJECT_NAME}}
-description: Custom template project
-repos: []
-YAML
-    cat > "$CCO_TEMPLATES_DIR/project/custom/.claude/CLAUDE.md" <<'MD'
-# {{PROJECT_NAME}} - Custom
-MD
-
-    run_cco project create my-proj --template custom
-    assert_dir_exists "$CCO_PROJECTS_DIR/my-proj"
-    assert_file_contains "$CCO_PROJECTS_DIR/my-proj/project.yml" "Custom template project"
-    assert_file_contains "$CCO_PROJECTS_DIR/my-proj/project.yml" "name: my-proj"
-}
+# Removed in P3-3b: template-based project instantiation (`cco project create
+# --template`) is gone with `cco project create`. The clean `cco init` scaffolds
+# from templates/project/base only; template distribution (the 2x2) is P4/P5.
 
 # ── pack create --template ───────────────────────────────────────────
 
@@ -249,7 +230,7 @@ test_pack_create_with_default_template() {
     # Default pack create uses templates/pack/base
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
     run_cco pack create my-test-pack
     assert_dir_exists "$CCO_PACKS_DIR/my-test-pack"
     assert_file_exists "$CCO_PACKS_DIR/my-test-pack/pack.yml"
@@ -262,7 +243,7 @@ test_pack_create_with_default_template() {
 test_pack_create_with_named_template() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create a custom pack template
     mkdir -p "$CCO_TEMPLATES_DIR/pack/special/knowledge"
@@ -294,7 +275,7 @@ test_template_help() {
 test_template_create_from_project_strips_cco() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create a project with .cco/ runtime state
     local project_dir="$CCO_PROJECTS_DIR/src-proj"

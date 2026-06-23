@@ -17,7 +17,7 @@ test_invariant_1_defaults_not_modified_by_init() {
     before_hash=$(find "$REPO_ROOT/defaults" -type f | LC_ALL=C sort | xargs sha1sum 2>/dev/null || \
                   find "$REPO_ROOT/defaults" -type f | LC_ALL=C sort | xargs md5 2>/dev/null)
 
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Hash after init — must be identical
     after_hash=$(find "$REPO_ROOT/defaults" -type f | LC_ALL=C sort | xargs sha1sum 2>/dev/null || \
@@ -31,7 +31,7 @@ test_invariant_1_init_creates_in_global_not_defaults() {
     # cco init writes to global/, never to defaults/
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
     # global/.claude must exist (user copy)
     assert_dir_exists "$CCO_GLOBAL_DIR/.claude"
     # defaults/ must not have been touched (no new timestamp marker)
@@ -178,16 +178,16 @@ test_invariant_5_all_global_config_mounts_are_readonly() {
 
 # ── Invariant 8: Placeholder Substitution ────────────────────────────
 
-test_invariant_8_no_placeholders_after_project_create() {
+test_invariant_8_no_placeholders_after_init() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    run_cco project create "test-project" --description "A real description"
-    local project_dir="$CCO_PROJECTS_DIR/test-project"
+    local repo="$tmpdir/test-project"; mkdir -p "$repo"
+    ( cd "$repo" && run_cco init --name "test-project" --lang "English" )
     local found
-    found=$(grep -rE '\{\{[^}]+\}\}' "$project_dir" 2>/dev/null || true)
+    found=$(grep -rE '\{\{[^}]+\}\}' "$repo/.cco" 2>/dev/null || true)
     if [[ -n "$found" ]]; then
-        echo "ASSERTION FAILED: unreplaced placeholders found after project create"
+        echo "ASSERTION FAILED: unreplaced placeholders found after cco init scaffold"
         echo "$found" | sed 's/^/  /'
         return 1
     fi
@@ -221,7 +221,8 @@ test_invariant_10_rejects_name_with_spaces() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    if run_cco project create "my project" 2>/dev/null; then
+    local repo="$tmpdir/repo"; mkdir -p "$repo"
+    if ( cd "$repo" && run_cco init --name "my project" ) 2>/dev/null; then
         echo "ASSERTION FAILED: should reject name with spaces (Design Invariant 10)"
         return 1
     fi
@@ -231,7 +232,8 @@ test_invariant_10_rejects_name_with_uppercase() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    if run_cco project create "MyProject" 2>/dev/null; then
+    local repo="$tmpdir/repo"; mkdir -p "$repo"
+    if ( cd "$repo" && run_cco init --name "MyProject" ) 2>/dev/null; then
         echo "ASSERTION FAILED: should reject uppercase name (Design Invariant 10)"
         return 1
     fi
@@ -241,7 +243,8 @@ test_invariant_10_rejects_name_with_underscore() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    if run_cco project create "my_project" 2>/dev/null; then
+    local repo="$tmpdir/repo"; mkdir -p "$repo"
+    if ( cd "$repo" && run_cco init --name "my_project" ) 2>/dev/null; then
         echo "ASSERTION FAILED: should reject underscore in name (Design Invariant 10)"
         return 1
     fi
@@ -252,6 +255,7 @@ test_invariant_10_accepts_lowercase_hyphens_numbers() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    run_cco project create "valid-proj-123"
-    assert_dir_exists "$CCO_PROJECTS_DIR/valid-proj-123"
+    local repo="$tmpdir/repo"; mkdir -p "$repo"
+    ( cd "$repo" && run_cco init --name "valid-proj-123" --lang "English" )
+    assert_file_contains "$repo/.cco/project.yml" "name: valid-proj-123"
 }

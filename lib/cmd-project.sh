@@ -2,7 +2,8 @@
 # lib/cmd-project.sh — STUB (split into separate files)
 #
 # This file has been split into:
-#   cmd-project-create.sh   — cmd_project_create(), _resolve_template_vars()
+#   (cmd-project-create.sh removed in P3-3b — replaced by `cco init`, ADR-0026;
+#    _resolve_template_vars() relocated to cmd-template.sh)
 #   cmd-project-delete.sh   — cmd_project_delete()
 #   cmd-project-query.sh    — cmd_project_list(), cmd_project_show(), cmd_project_validate()
 #   cmd-project-install.sh  — cmd_project_install()

@@ -212,7 +212,7 @@ test_pack_install_updates_manifest_yml() {
     setup_global_from_defaults "$tmpdir"
 
     # Create manifest.yml via init
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     local remote
     remote=$(_create_mock_config_repo "$tmpdir" "shared-pack")

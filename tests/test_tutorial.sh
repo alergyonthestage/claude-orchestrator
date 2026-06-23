@@ -11,16 +11,12 @@
 test_init_does_not_create_tutorial_project() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
     assert_dir_not_exists "$CCO_PROJECTS_DIR/tutorial"
 }
 
-test_init_output_mentions_tutorial_start() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    assert_output_contains "cco start tutorial"
-}
+# Removed in P3-3b: the clean `cco init` output focuses on the global-ensure +
+# per-repo scaffold (ADR-0026 approved copy); it no longer advertises the tutorial.
 
 # ── _setup_internal_tutorial ──────────────────────────────────────────
 
@@ -142,17 +138,17 @@ test_start_tutorial_blocks_on_name_conflict() {
     assert_output_contains "reserved name"
 }
 
-# ── cco project create tutorial: blocked ──────────────────────────────
+# ── cco init --name tutorial: blocked (reserved name) ─────────────────
 
-test_project_create_tutorial_blocked() {
+test_init_tutorial_name_blocked() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
+    local repo="$tmpdir/some-repo"; mkdir -p "$repo"
 
-    # cco project create tutorial should fail (reserved name)
-    if run_cco project create tutorial 2>/dev/null; then
-        fail "Expected cco project create tutorial to fail (reserved name)"
-    fi
+    # cd in the parent so run_cco's CCO_OUTPUT propagates to the assertion.
+    cd "$repo"; run_cco init --name tutorial 2>/dev/null && \
+        fail "Expected cco init --name tutorial to fail (reserved name)"
     assert_output_contains "reserved"
 }
 

@@ -122,7 +122,7 @@ test_init_creates_cco_base() {
     # cco init should create .cco/base/ with base versions of all managed files
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     assert_dir_exists "$CCO_GLOBAL_DIR/.claude/.cco/base" \
         ".cco/base/ should be created during init"
@@ -135,7 +135,7 @@ test_update_refreshes_cco_base() {
     # After cco update, .cco/base/ should reflect the latest defaults
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Modify a tracked default file
     printf '\n# New framework line\n' >> "$REPO_ROOT/defaults/global/.claude/rules/workflow.md"
@@ -183,7 +183,7 @@ test_update_automerge_non_overlapping() {
 test_update_no_backup_skips_bak() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create conflict
     printf '\n# My custom rule\n' >> "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"

@@ -1,56 +1,51 @@
 #!/usr/bin/env bash
-# tests/test_init.sh — cco init command tests
+# tests/test_init.sh — cco init command tests (ADR-0026)
 #
-# Verifies that cco init correctly copies default config, substitutes language
-# placeholders, respects --force, and creates expected directories.
+# The clean `cco init` does two things, run inside a repo:
+#   1. ensures the global config (~/.cco/global = $CCO_GLOBAL_DIR) idempotently;
+#   2. scaffolds the committed <repo>/.cco/ and registers it in the STATE index.
+# Global-only setup elsewhere goes through the init_global helper (a throwaway
+# repo); here we exercise the real scaffold by cd-ing into a per-test repo.
 #
-# Note: cmd_init tries to build Docker at the end, but gracefully warns and
-# continues if Docker isn't running — no mock needed.
+# Note: the Docker build is skipped (bin/test exports CCO_SKIP_BUILD=1).
 
-test_init_creates_global_claude_dir() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    assert_dir_exists "$CCO_GLOBAL_DIR/.claude"
+# Create a fresh per-test repo dir and echo its path.
+_init_repo() {
+    local tmpdir="$1" name="${2:-myrepo}"
+    local repo="$tmpdir/$name"
+    mkdir -p "$repo"
+    printf '%s' "$repo"
 }
 
-test_init_copies_settings_json() {
+# ── Global-config ensure ─────────────────────────────────────────────
+
+test_init_seeds_global_when_absent() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    local repo; repo=$(_init_repo "$tmpdir" myrepo)
+    ( cd "$repo" && run_cco init --name myrepo --lang "English" )
+    assert_dir_exists  "$CCO_GLOBAL_DIR/.claude"
     assert_file_exists "$CCO_GLOBAL_DIR/.claude/settings.json"
-}
-
-test_init_copies_global_claude_md() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
     assert_file_exists "$CCO_GLOBAL_DIR/.claude/CLAUDE.md"
-}
-
-test_init_copies_rules_directory() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    assert_dir_exists "$CCO_GLOBAL_DIR/.claude/rules"
-    assert_file_exists "$CCO_GLOBAL_DIR/.claude/rules/language.md"
-    assert_file_exists "$CCO_GLOBAL_DIR/.claude/rules/git-practices.md"
-}
-
-test_init_copies_agents_directory() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    assert_dir_exists "$CCO_GLOBAL_DIR/.claude/agents"
     assert_file_exists "$CCO_GLOBAL_DIR/.claude/agents/analyst.md"
-    assert_file_exists "$CCO_GLOBAL_DIR/.claude/agents/reviewer.md"
+    assert_file_exists "$CCO_GLOBAL_DIR/.claude/rules/language.md"
+}
+
+test_init_global_setup_scripts_to_cco_root() {
+    # setup.sh / setup-build.sh / mcp-packages.txt land at the ~/.cco top level.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local repo; repo=$(_init_repo "$tmpdir" myrepo)
+    ( cd "$repo" && run_cco init --name myrepo --lang "English" )
+    assert_file_exists "$HOME/.cco/setup-build.sh"
+    assert_file_exists "$HOME/.cco/setup.sh"
 }
 
 test_init_substitutes_comm_lang_single_value() {
-    # --lang "Italian" → COMM_LANG=Italian, DOCS_LANG=Italian, CODE_LANG=English
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "Italian"
+    local repo; repo=$(_init_repo "$tmpdir" myrepo)
+    ( cd "$repo" && run_cco init --name myrepo --lang "Italian" )
     local lang_file="$CCO_GLOBAL_DIR/.claude/rules/language.md"
     assert_file_contains "$lang_file" "Italian"
     assert_no_placeholder "$lang_file" "{{COMM_LANG}}"
@@ -59,85 +54,190 @@ test_init_substitutes_comm_lang_single_value() {
 }
 
 test_init_substitutes_three_lang_format() {
-    # --lang "Italian:Italian:English" → each placeholder replaced independently
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "Italian:Italian:English"
+    local repo; repo=$(_init_repo "$tmpdir" myrepo)
+    ( cd "$repo" && run_cco init --name myrepo --lang "Italian:Italian:English" )
     local lang_file="$CCO_GLOBAL_DIR/.claude/rules/language.md"
     assert_no_placeholder "$lang_file" "{{COMM_LANG}}"
     assert_no_placeholder "$lang_file" "{{DOCS_LANG}}"
     assert_no_placeholder "$lang_file" "{{CODE_LANG}}"
 }
 
-test_init_no_overwrite_without_force() {
-    # Design Invariant: init never overwrites existing user defaults without --force
+test_init_global_idempotent_skips_second() {
+    # A second init (different repo) must NOT re-seed or clobber edited global config.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-
-    # First init
-    run_cco init --lang "English"
-
-    # Plant a canary string in a user-owned file (not a system file)
+    local repo1; repo1=$(_init_repo "$tmpdir" repo-one)
+    ( cd "$repo1" && run_cco init --name repo-one --lang "English" )
+    # Plant a canary in a user-owned global file
     printf '\n# CANARY\n' >> "$CCO_GLOBAL_DIR/.claude/mcp.json"
-
-    # Second init without --force — should skip user defaults
-    run_cco init --lang "Italian"
-
-    # Canary must still be there (user file was NOT overwritten)
+    local repo2; repo2=$(_init_repo "$tmpdir" repo-two)
+    ( cd "$repo2" && run_cco init --name repo-two --lang "Italian" )
+    # Global was left untouched (ensure is a one-time no-op)
     assert_file_contains "$CCO_GLOBAL_DIR/.claude/mcp.json" "# CANARY"
 }
 
-test_init_force_overwrites_existing() {
-    # --force causes overwrite of existing user defaults
+test_init_force_reseeds_global() {
+    # --force re-seeds the global from defaults (documented reset escape hatch).
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-
-    run_cco init --lang "English"
+    local repo; repo=$(_init_repo "$tmpdir" myrepo)
+    ( cd "$repo" && run_cco init --name myrepo --lang "English" )
     printf '\n# CANARY\n' >> "$CCO_GLOBAL_DIR/.claude/mcp.json"
-
-    run_cco init --force --lang "English"
-
-    # Canary should be gone (user file was replaced by --force)
+    local repo2; repo2=$(_init_repo "$tmpdir" myrepo2)
+    ( cd "$repo2" && run_cco init --name myrepo2 --force --lang "English" )
     assert_file_not_contains "$CCO_GLOBAL_DIR/.claude/mcp.json" "# CANARY"
 }
 
-test_init_creates_projects_directory() {
+test_init_emits_no_manifest() {
+    # ADR-0012: the new cco init emits no manifest.yml anywhere.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    assert_dir_exists "$CCO_PROJECTS_DIR"
+    local repo; repo=$(_init_repo "$tmpdir" myrepo)
+    ( cd "$repo" && run_cco init --name myrepo --lang "English" )
+    assert_file_not_exists "$HOME/.cco/manifest.yml"
+    assert_file_not_exists "$CCO_USER_CONFIG_DIR/manifest.yml"
 }
 
-test_init_creates_packs_directory() {
+# ── Per-repo scaffold ────────────────────────────────────────────────
+
+test_init_scaffolds_committed_tree() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    assert_dir_exists "$CCO_PACKS_DIR"
+    local repo; repo=$(_init_repo "$tmpdir" myrepo)
+    ( cd "$repo" && run_cco init --name myrepo --lang "English" )
+    assert_file_exists "$repo/.cco/project.yml"
+    assert_file_exists "$repo/.cco/claude/CLAUDE.md"
+    assert_file_exists "$repo/.cco/claude/settings.json"
+    assert_file_exists "$repo/.cco/secrets.env.example"
+    assert_file_exists "$repo/.cco/.gitignore"
 }
 
-test_init_creates_templates_directory() {
+test_init_project_yml_substituted() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    assert_dir_exists "$CCO_TEMPLATES_DIR"
+    local repo; repo=$(_init_repo "$tmpdir" myrepo)
+    ( cd "$repo" && run_cco init --name acme-app --lang "English" )
+    local yml="$repo/.cco/project.yml"
+    assert_file_contains "$yml" "name: acme-app"
+    assert_no_placeholder "$yml" "{{PROJECT_NAME}}"
+    assert_no_placeholder "$yml" "{{DESCRIPTION}}"
 }
 
-test_init_creates_user_config_structure() {
+test_init_claude_md_substituted() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    assert_dir_exists "$CCO_USER_CONFIG_DIR"
-    assert_dir_exists "$CCO_GLOBAL_DIR/.claude"
-    assert_dir_exists "$CCO_USER_CONFIG_DIR/projects"
-    assert_dir_exists "$CCO_USER_CONFIG_DIR/packs"
-    assert_dir_exists "$CCO_USER_CONFIG_DIR/templates"
+    local repo; repo=$(_init_repo "$tmpdir" myrepo)
+    ( cd "$repo" && run_cco init --name acme-app --lang "English" )
+    local md="$repo/.cco/claude/CLAUDE.md"
+    assert_file_contains "$md" "# Project: acme-app"
+    assert_no_placeholder "$md" "{{PROJECT_NAME}}"
 }
 
-test_init_creates_manifest_yml() {
+test_init_no_remaining_placeholders() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    assert_file_exists "$CCO_USER_CONFIG_DIR/manifest.yml"
-    assert_file_contains "$CCO_USER_CONFIG_DIR/manifest.yml" "packs:"
-    assert_file_contains "$CCO_USER_CONFIG_DIR/manifest.yml" "templates:"
+    local repo; repo=$(_init_repo "$tmpdir" myrepo)
+    ( cd "$repo" && run_cco init --name acme-app --lang "English" )
+    local found
+    found=$(grep -rE '\{\{[^}]+\}\}' "$repo/.cco" 2>/dev/null || true)
+    if [[ -n "$found" ]]; then
+        echo "ASSERTION FAILED: unreplaced placeholders in scaffolded .cco/"
+        echo "$found" | sed 's/^/  /'
+        return 1
+    fi
+}
+
+test_init_gitignore_excludes_secrets() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local repo; repo=$(_init_repo "$tmpdir" myrepo)
+    ( cd "$repo" && run_cco init --name myrepo --lang "English" )
+    assert_file_contains "$repo/.cco/.gitignore" "secrets.env"
+    assert_file_contains "$repo/.cco/.gitignore" "!secrets.env.example"
+}
+
+test_init_no_internal_files_in_committed_tree() {
+    # Internal data (meta/base/source/claude-state/memory) is STATE, never committed.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local repo; repo=$(_init_repo "$tmpdir" myrepo)
+    ( cd "$repo" && run_cco init --name myrepo --lang "English" )
+    assert_file_not_exists "$repo/.cco/meta"
+    assert_file_not_exists "$repo/.cco/source"
+    [[ ! -d "$repo/.cco/base" ]]         || fail ".cco/base/ must not be committed (it is STATE)"
+    [[ ! -d "$repo/.cco/claude-state" ]] || fail ".cco/claude-state/ must not be committed (it is STATE)"
+    [[ ! -d "$repo/.cco/memory" ]]       || fail "memory/ must not be committed (it is STATE)"
+}
+
+test_init_registers_index() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local repo; repo=$(_init_repo "$tmpdir" myrepo)
+    ( cd "$repo" && run_cco init --name acme-app --lang "English" )
+    local index="$CCO_STATE_HOME/index"
+    assert_file_exists "$index"
+    assert_file_contains "$index" "acme-app"
+    assert_file_contains "$index" "$repo"
+}
+
+test_init_refuses_existing_cco() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local repo; repo=$(_init_repo "$tmpdir" myrepo)
+    ( cd "$repo" && run_cco init --name myrepo --lang "English" )
+    if ( cd "$repo" && run_cco init --name myrepo --lang "English" ) 2>/dev/null; then
+        echo "ASSERTION FAILED: second init in the same repo should refuse the existing .cco/"
+        return 1
+    fi
+}
+
+test_init_force_overwrites_scaffold() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local repo; repo=$(_init_repo "$tmpdir" myrepo)
+    ( cd "$repo" && run_cco init --name myrepo --lang "English" )
+    printf '\n# SCAFFOLD_CANARY\n' >> "$repo/.cco/project.yml"
+    ( cd "$repo" && run_cco init --name myrepo --force --lang "English" )
+    assert_file_not_contains "$repo/.cco/project.yml" "# SCAFFOLD_CANARY"
+}
+
+# ── Name validation (moved from the removed test_project_create.sh) ──
+
+test_init_rejects_uppercase_name() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local repo; repo=$(_init_repo "$tmpdir" myrepo)
+    if ( cd "$repo" && run_cco init --name "MyProject" --lang "English" ) 2>/dev/null; then
+        echo "ASSERTION FAILED: should reject an uppercase project name"
+        return 1
+    fi
+}
+
+test_init_rejects_underscore_name() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local repo; repo=$(_init_repo "$tmpdir" myrepo)
+    if ( cd "$repo" && run_cco init --name "my_project" --lang "English" ) 2>/dev/null; then
+        echo "ASSERTION FAILED: should reject a name with an underscore"
+        return 1
+    fi
+}
+
+test_init_rejects_reserved_name() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local repo; repo=$(_init_repo "$tmpdir" myrepo)
+    # cd in the parent (this test's own subshell) so run_cco's CCO_OUTPUT propagates.
+    cd "$repo"; run_cco init --name "tutorial" --lang "English" || true
+    assert_output_contains "reserved"
+}
+
+test_init_accepts_valid_name_with_hyphens() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local repo; repo=$(_init_repo "$tmpdir" myrepo)
+    ( cd "$repo" && run_cco init --name "my-valid-project-123" --lang "English" )
+    assert_file_contains "$repo/.cco/project.yml" "name: my-valid-project-123"
 }

@@ -146,7 +146,7 @@ test_is_installed_project_no_source() {
 test_update_installed_project_skips_sync() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create a project with remote .cco/source
     create_project "$tmpdir" "remote-app" "name: remote-app"
@@ -173,9 +173,9 @@ test_update_installed_project_skips_sync() {
 test_update_local_project_applies_sync() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
-    run_cco project create local-app
+    create_project "$tmpdir" "local-app" "$(minimal_project_yml local-app)"
     run_cco update --sync local-app --keep
     # Should process local project normally (no "installed from" message)
     assert_output_contains "Update complete"
@@ -186,7 +186,7 @@ test_update_local_project_applies_sync() {
 test_project_internalize() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create a project with remote source
     create_project "$tmpdir" "remote-app" "name: remote-app"
@@ -214,9 +214,9 @@ test_project_internalize() {
 test_project_internalize_already_local() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
-    run_cco project create local-app
+    create_project "$tmpdir" "local-app" "$(minimal_project_yml local-app)"
     run_cco project internalize local-app
     assert_output_contains "already local"
 }
@@ -226,7 +226,7 @@ test_project_internalize_already_local() {
 test_update_discovery_offline() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create installed project
     create_project "$tmpdir" "team-svc" "name: team-svc"
@@ -248,8 +248,8 @@ test_update_discovery_offline() {
 test_project_update_local_fails() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    run_cco project create my-app
+    init_global "$tmpdir" --lang "English"
+    create_project "$tmpdir" "my-app" "$(minimal_project_yml my-app)"
 
     ! run_cco project update my-app || \
         fail "project update on local project should fail"
@@ -334,7 +334,7 @@ test_cache_fresh_empty() {
 test_update_sync_installed_with_local() {
     local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create installed project with a modified file to trigger sync
     create_project "$tmpdir" "remote-app" "name: remote-app"
@@ -379,7 +379,7 @@ test_update_sync_installed_with_local() {
 test_project_internalize_non_tty_requires_yes() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     create_project "$tmpdir" "remote-app" "name: remote-app"
     mkdir -p "$CCO_PROJECTS_DIR/remote-app/.cco"
@@ -399,7 +399,7 @@ test_project_install_writes_source_metadata() {
     # This test requires a real Config Repo — we create one locally
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create a bare Config Repo with a template
     local repo_dir="$tmpdir/config-repo"
@@ -442,10 +442,10 @@ YAML
 test_publish_ignore_excludes_files() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create project with publish-ignore
-    run_cco project create pub-test
+    create_project "$tmpdir" "pub-test" "$(minimal_project_yml pub-test)"
     mkdir -p "$CCO_PROJECTS_DIR/pub-test/.cco"
     printf 'local-*.md\n*.draft\n' > "$CCO_PROJECTS_DIR/pub-test/.cco/publish-ignore"
     echo "local notes" > "$CCO_PROJECTS_DIR/pub-test/.claude/rules/local-notes.md"
@@ -482,7 +482,7 @@ test_internalize_source_local_first_line() {
     _source_libs
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     create_project "$tmpdir" "remote-app" "name: remote-app"
     mkdir -p "$CCO_PROJECTS_DIR/remote-app/.cco"
@@ -510,8 +510,8 @@ test_internalize_source_local_first_line() {
 test_publish_detects_root_secrets() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    run_cco project create secret-root-app
+    init_global "$tmpdir" --lang "English"
+    create_project "$tmpdir" "secret-root-app" "$(minimal_project_yml secret-root-app)"
 
     # Create a .key file at the project root (not inside .claude/)
     touch "$CCO_PROJECTS_DIR/secret-root-app/server.key"
@@ -544,10 +544,11 @@ test_is_installed_project_after_internalize() {
 test_publish_blocks_on_content_secrets() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    run_cco project create secret-content-app
+    init_global "$tmpdir" --lang "English"
+    create_project "$tmpdir" "secret-content-app" "$(minimal_project_yml secret-content-app)"
 
     # Create a file with secret content (not a secret filename)
+    mkdir -p "$CCO_PROJECTS_DIR/secret-content-app/.claude/rules"
     printf '# Config\nAPI_KEY = sk-abc123def456\n' \
         > "$CCO_PROJECTS_DIR/secret-content-app/.claude/rules/config.md"
 
@@ -563,8 +564,8 @@ test_publish_blocks_on_content_secrets() {
 test_publish_passes_clean_project() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    run_cco project create clean-app
+    init_global "$tmpdir" --lang "English"
+    create_project "$tmpdir" "clean-app" "$(minimal_project_yml clean-app)"
 
     local bare_dir
     bare_dir=$(_create_bare_remote_for_test "$tmpdir")
@@ -579,8 +580,8 @@ test_publish_blocks_on_pending_migrations() {
     _source_libs
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    run_cco project create migration-app
+    init_global "$tmpdir" --lang "English"
+    create_project "$tmpdir" "migration-app" "$(minimal_project_yml migration-app)"
 
     # Set schema_version to something behind latest (overwrite entire meta → STATE)
     local meta_file; meta_file="$(state_project_meta migration-app)"
@@ -600,8 +601,8 @@ test_publish_blocks_on_pending_migrations() {
 test_publish_dry_run_shows_diff() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    run_cco project create diff-app
+    init_global "$tmpdir" --lang "English"
+    create_project "$tmpdir" "diff-app" "$(minimal_project_yml diff-app)"
 
     local bare_dir
     bare_dir=$(_create_bare_remote_for_test "$tmpdir")
@@ -615,8 +616,8 @@ test_publish_dry_run_shows_diff() {
 test_publish_writes_metadata() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    run_cco project create meta-app
+    init_global "$tmpdir" --lang "English"
+    create_project "$tmpdir" "meta-app" "$(minimal_project_yml meta-app)"
 
     local bare_dir
     bare_dir=$(_create_bare_remote_for_test "$tmpdir")
@@ -638,8 +639,8 @@ test_publish_writes_metadata() {
 test_publish_ignore_path_patterns() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    run_cco project create path-test
+    init_global "$tmpdir" --lang "English"
+    create_project "$tmpdir" "path-test" "$(minimal_project_yml path-test)"
 
     # Create files and publish-ignore with path-based patterns
     mkdir -p "$CCO_PROJECTS_DIR/path-test/.claude/rules/local"
@@ -668,7 +669,7 @@ test_publish_ignore_path_patterns() {
 test_project_update_clean_apply() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create a Config Repo with a project template (CLAUDE.md is a tracked policy file)
     local bare_dir
@@ -712,7 +713,7 @@ test_project_update_clean_apply() {
 test_project_update_consumer_changes_force() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create a Config Repo with a project template (use CLAUDE.md, a tracked policy file)
     local bare_dir
@@ -753,7 +754,7 @@ test_project_update_consumer_changes_force() {
 test_project_update_after_local_override() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create a Config Repo with a project template
     local bare_dir
@@ -790,7 +791,7 @@ test_project_update_after_local_override() {
 test_project_update_all() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create a Config Repo with two templates
     local work_dir="$tmpdir/all-work"
@@ -826,7 +827,7 @@ YAML
     run_cco project install "$bare_dir" --pick tmpl-b --as app-b
 
     # Create a local project (should be skipped by --all)
-    run_cco project create local-app
+    create_project "$tmpdir" "local-app" "$(minimal_project_yml local-app)"
 
     # Push updates to both templates
     _update_config_repo "$bare_dir" "templates/tmpl-a/.claude/rules/team.md" "# Rule A v2"
@@ -851,7 +852,7 @@ YAML
 test_update_discovery_offline_no_cache_update() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create installed project with pre-set remote_cache timestamp
     create_project "$tmpdir" "offline-svc" "name: offline-svc"
@@ -880,9 +881,9 @@ test_update_discovery_offline_no_cache_update() {
 test_update_local_project_sync_with_divergence() {
     local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
-    run_cco project create sync-test-app
+    create_project "$tmpdir" "sync-test-app" "$(minimal_project_yml sync-test-app)"
 
     # Create actual framework divergence in CLAUDE.md (tracked by PROJECT_FILE_POLICIES)
     # The project template base is templates/project/base/.claude/CLAUDE.md
@@ -965,7 +966,7 @@ test_check_remote_cache_stale_unreachable() {
 test_pack_update_full_replace() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create a Config Repo with a pack
     local work_dir="$tmpdir/pack-work"
@@ -1022,7 +1023,7 @@ YAML
 test_project_internalize_updates_base() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create a Config Repo with a project template
     local bare_dir

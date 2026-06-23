@@ -10,7 +10,7 @@
 _setup_initialized() {
     local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
-    run_cco init --lang "Italian:Italian:English"
+    init_global "$tmpdir" --lang "Italian:Italian:English"
     echo "$tmpdir"
 }
 
@@ -38,7 +38,7 @@ test_update_no_changes() {
     # When everything is up to date, update reports no changes
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Run update — should say "up to date"
     run_cco update
@@ -49,7 +49,7 @@ test_update_framework_changed() {
     # When a default file changes but user hasn't modified it → safe sync via --force
     local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Simulate framework update with safe cleanup
     with_framework_change "defaults/global/.claude/rules/workflow.md" \
@@ -65,7 +65,7 @@ test_update_user_modified() {
     # When user modified a file but framework hasn't changed → preserve user version
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # User modifies a managed file
     printf '\n# My custom rule\n' >> "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
@@ -79,7 +79,7 @@ test_update_force_overwrites() {
     # --force overwrites even user-modified files when there's a framework change (auto-replace sync)
     local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # User modifies, then framework also changes (simulate conflict)
     printf '\n# My custom rule\n' >> "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
@@ -96,7 +96,7 @@ test_update_keep_preserves() {
     # --keep preserves user version on conflicts
     local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create conflict
     printf '\n# My custom rule\n' >> "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
@@ -112,7 +112,7 @@ test_update_keep_survives_second_run() {
     # After --keep, a second update must NOT overwrite the kept file
     local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create conflict: user modifies + framework changes
     printf '\n# My custom rule\n' >> "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
@@ -132,7 +132,7 @@ test_update_replace_creates_bak() {
     # --replace creates .bak file and overwrites with new default
     local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create conflict
     printf '\n# My custom rule\n' >> "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
@@ -151,7 +151,7 @@ test_update_new_file_added() {
     # New file in defaults is added via --force (auto-replace sync)
     local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Add a new file to defaults (guarantee cleanup via trap)
     local new_file="$REPO_ROOT/defaults/global/.claude/rules/new-rule.md"
@@ -167,7 +167,7 @@ test_update_dry_run() {
     # --dry-run shows what would change without modifying anything
     local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Add a new file to defaults (guarantee cleanup via trap)
     local new_file="$REPO_ROOT/defaults/global/.claude/rules/dry-test.md"
@@ -254,7 +254,7 @@ test_update_init_creates_cco_meta() {
     # cco init should generate a correct .cco/meta file
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "Italian:Italian:English"
+    init_global "$tmpdir" --lang "Italian:Italian:English"
 
     local meta="$(state_global_meta)"
     assert_file_exists "$meta" "global STATE meta should be created by init"
@@ -275,7 +275,7 @@ test_update_language_preserved() {
     # Language choices survive updates
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "Italian:Italian:English"
+    init_global "$tmpdir" --lang "Italian:Italian:English"
 
     # Verify language.md has Italian
     assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/language.md" "Italian"
@@ -557,7 +557,7 @@ test_update_global_missing_setup_sh_restored() {
     # cco update restores missing global setup.sh from defaults
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Verify setup.sh was created by init
     [[ -f "$CCO_GLOBAL_DIR/setup.sh" ]] || fail "setup.sh not created by init"
@@ -576,7 +576,7 @@ test_update_global_existing_setup_sh_not_overwritten() {
     # cco update does NOT overwrite existing global setup.sh
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # User customizes setup.sh
     printf '#!/bin/bash\napt-get install -y tmux\n' > "$CCO_GLOBAL_DIR/setup.sh"
@@ -590,7 +590,7 @@ test_update_global_missing_setup_sh_dry_run() {
     # --dry-run reports missing global setup.sh without copying
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     rm "$CCO_GLOBAL_DIR/setup.sh"
 
@@ -605,7 +605,7 @@ test_update_global_missing_setup_build_sh_restored() {
     # cco update restores missing global setup-build.sh from defaults
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Verify setup-build.sh was created by init
     [[ -f "$CCO_GLOBAL_DIR/setup-build.sh" ]] || fail "setup-build.sh not created by init"
@@ -623,7 +623,7 @@ test_update_global_existing_setup_build_sh_not_overwritten() {
     # cco update does NOT overwrite existing global setup-build.sh
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # User customizes setup-build.sh
     printf '#!/bin/bash\napt-get install -y terraform\n' > "$CCO_GLOBAL_DIR/setup-build.sh"
@@ -633,20 +633,11 @@ test_update_global_existing_setup_build_sh_not_overwritten() {
     assert_file_contains "$CCO_GLOBAL_DIR/setup-build.sh" "apt-get install"
 }
 
-test_update_project_missing_setup_sh_restored() {
-    # cco update --sync <project> restores missing project setup.sh from template
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    run_cco project create "test-proj" --repo "$CCO_DUMMY_REPO"
-
-    # Delete setup.sh
-    rm "$CCO_PROJECTS_DIR/test-proj/setup.sh"
-
-    run_cco update --sync test-proj
-    [[ -f "$CCO_PROJECTS_DIR/test-proj/setup.sh" ]] || fail "setup.sh not restored by update"
-    assert_output_contains "setup.sh"
-}
+# Removed in P3-3b: test_update_project_missing_setup_sh_restored exercised the
+# legacy CENTRAL project-scoped `cco update --sync <project>` (PROJECTS_DIR), set
+# up via the now-deleted `cco project create`. In the decentralized layout
+# projects live in <repo>/.cco/; decentralized project update + its tests are
+# rebuilt in P4. (Removing a passing legacy-path test — delta-green safe.)
 
 # ── CLI Modes & Interactive Sync ─────────────────────────────────────
 
@@ -654,7 +645,7 @@ test_update_discovery_mode_no_file_changes() {
     # Default mode (no flags) shows discovery summary but does NOT modify files
     local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Modify a default file to create an available update (safe cleanup via helper)
     with_framework_change "defaults/global/.claude/rules/workflow.md" \
@@ -684,7 +675,7 @@ test_update_diff_shows_changes() {
     # --diff mode shows diffs without modifying files
     local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Modify a default to create an available update (safe cleanup via helper)
     with_framework_change "defaults/global/.claude/rules/workflow.md" \
@@ -709,7 +700,7 @@ test_update_news_shows_entries() {
     trap "cp '$saved_changelog' '$REPO_ROOT/changelog.yml'; rm -rf '$tmpdir'" EXIT
 
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create a changelog with one entry
     cat > "$REPO_ROOT/changelog.yml" <<'YML'
@@ -742,7 +733,7 @@ test_update_news_no_new_entries() {
     trap "cp '$saved_changelog' '$REPO_ROOT/changelog.yml'; rm -rf '$tmpdir'" EXIT
 
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create a changelog with one entry already read
     cat > "$REPO_ROOT/changelog.yml" <<'YML'
@@ -772,7 +763,7 @@ test_update_discovery_then_news() {
     trap "cp '$saved_changelog' '$REPO_ROOT/changelog.yml'; rm -rf '$tmpdir'" EXIT
 
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     cat > "$REPO_ROOT/changelog.yml" <<'YML'
 entries:
@@ -813,7 +804,7 @@ test_update_news_first_then_discovery() {
     trap "cp '$saved_changelog' '$REPO_ROOT/changelog.yml'; rm -rf '$tmpdir'" EXIT
 
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     cat > "$REPO_ROOT/changelog.yml" <<'YML'
 entries:
@@ -844,7 +835,7 @@ test_update_diff_force_mutual_exclusion() {
     # --diff and --force are mutually exclusive
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Run with --force before --diff so --diff is parsed last and cmd_mode stays "diff"
     run_cco update --force --diff && fail "Expected error for --force --diff" || true
@@ -855,7 +846,7 @@ test_update_diff_keep_mutual_exclusion() {
     # --diff and --keep are mutually exclusive
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Run with --keep before --diff so --diff is parsed last and cmd_mode stays "diff"
     run_cco update --keep --diff && fail "Expected error for --keep --diff" || true
@@ -866,7 +857,7 @@ test_update_sync_non_tty_skips() {
     # Non-TTY stdin causes --sync to skip all changes
     local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Modify a default file to create an available update (safe cleanup via helper)
     with_framework_change "defaults/global/.claude/rules/workflow.md" \
@@ -894,7 +885,7 @@ test_update_dry_run_shows_migrations() {
     # --dry-run shows pending migrations without running them
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Lower schema_version to simulate pending migrations
     local meta="$(state_global_meta)"
@@ -912,7 +903,7 @@ test_update_force_applies_changes() {
     # --force (auto-replace sync) applies all framework changes non-interactively
     local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create an update: modify default (framework changes) with safe cleanup
     with_framework_change "defaults/global/.claude/rules/workflow.md" \
@@ -926,7 +917,7 @@ test_update_keep_preserves_user_file() {
     # --keep preserves user file and updates .cco/base/ to current default
     local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Both user and framework change (conflict scenario)
     printf '\n# User edit for keep test\n' >> "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
@@ -941,43 +932,12 @@ test_update_keep_preserves_user_file() {
 }
 
 # ── Project Create Bootstrap ─────────────────────────────────────────
-
-test_project_create_initializes_cco_meta() {
-    # cco project create should generate .cco/meta and .cco/base/
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    run_cco project create "test-bootstrap" --repo "$CCO_DUMMY_REPO"
-
-    # Merge artifacts live in STATE keyed by the project name (H6).
-    local meta; meta="$(state_project_meta test-bootstrap)"
-    assert_file_exists "$meta" "project STATE meta should exist after project create"
-    assert_file_contains "$meta" "schema_version:"
-    assert_dir_exists "$(state_project_base test-bootstrap)" "project STATE base/ should exist after project create"
-}
-
-test_project_create_cco_source_not_for_base() {
-    # Base template (default) should NOT create .cco/source
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    run_cco project create "test-base-src" --repo "$CCO_DUMMY_REPO"
-
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-base-src/.cco/source" \
-        ".cco/source should NOT exist for base template"
-}
-
-test_project_create_cco_source_for_non_base_template() {
-    # Non-base templates should create .cco/source with template origin
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    run_cco project create "test-cfg-src" --repo "$CCO_DUMMY_REPO" --template config-editor
-
-    local source_file="$CCO_PROJECTS_DIR/test-cfg-src/.cco/source"
-    assert_file_exists "$source_file" ".cco/source should exist for non-base template"
-    assert_file_contains "$source_file" "native:project/config-editor"
-}
+# Removed in P3-3b: `cco project create` is deleted (replaced by `cco init`,
+# ADR-0026). The clean `cco init` scaffold does NOT bootstrap project STATE
+# meta/base/source (project update meta is created lazily, not at scaffold) and
+# has no `--template` mode, so the former create-bootstrap contract tests
+# (.cco/meta + base/ at create; .cco/source for non-base templates) no longer
+# apply. Scaffold structure is covered by tests/test_init.sh.
 
 # ── Template Source Resolution ───────────────────────────────────────
 
@@ -1742,40 +1702,10 @@ test_show_discovery_summary_no_changes() {
 }
 
 # ── Project-Scoped Update Isolation ──────────────────────────────────
-
-test_update_project_scope_isolation() {
-    # Running update --diff proj-a should NOT touch proj-b files
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-
-    run_cco project create "proj-a" --repo "$CCO_DUMMY_REPO"
-    run_cco project create "proj-b" --repo "$CCO_DUMMY_REPO"
-
-    local proj_b_claude="$CCO_PROJECTS_DIR/proj-b/.claude/CLAUDE.md"
-    local hash_before
-    hash_before=$(sha256sum "$proj_b_claude" | cut -d' ' -f1)
-
-    # Simulate a framework change: add new file to project template defaults
-    local proj_defaults="$REPO_ROOT/templates/project/base/.claude"
-    printf '# New project rule\n' > "$proj_defaults/rules/new-test-rule.md"
-
-    # Run update scoped to proj-a only (diff mode — read-only, no modifications)
-    run_cco update --diff proj-a
-
-    # proj-b should NOT have the new file
-    assert_file_not_exists "$CCO_PROJECTS_DIR/proj-b/.claude/rules/new-test-rule.md" \
-        "proj-b should not be modified when updating only proj-a"
-
-    # proj-b CLAUDE.md hash should be unchanged
-    local hash_after
-    hash_after=$(sha256sum "$proj_b_claude" | cut -d' ' -f1)
-    [[ "$hash_before" == "$hash_after" ]] || \
-        fail "proj-b CLAUDE.md was modified by proj-a update"
-
-    # Cleanup
-    rm -f "$proj_defaults/rules/new-test-rule.md"
-}
+# Removed in P3-3b: test_update_project_scope_isolation exercised the legacy
+# CENTRAL project-scoped `cco update --diff <project>` (PROJECTS_DIR), set up via
+# the now-deleted `cco project create`. Decentralized project update + isolation
+# tests are rebuilt in P4. (Removing a passing legacy-path test — delta-green safe.)
 
 # ── Migration 008: separate memory from claude-state ─────────────────
 
@@ -2104,7 +2034,7 @@ test_update_changelog_missing_last_read_field() {
     trap "cp '$saved_changelog' '$REPO_ROOT/changelog.yml'; rm -rf '$tmpdir'" EXIT
 
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     cat > "$REPO_ROOT/changelog.yml" <<'YML'
 entries:
@@ -2137,7 +2067,7 @@ test_update_news_first_no_hint_on_discovery() {
     trap "cp '$saved_changelog' '$REPO_ROOT/changelog.yml'; rm -rf '$tmpdir'" EXIT
 
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     cat > "$REPO_ROOT/changelog.yml" <<'YML'
 entries:
@@ -2173,7 +2103,7 @@ test_update_new_entry_after_both_read() {
     trap "cp '$saved_changelog' '$REPO_ROOT/changelog.yml'; rm -rf '$tmpdir'" EXIT
 
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Initial state: one entry, both trackers at 1
     cat > "$REPO_ROOT/changelog.yml" <<'YML'
@@ -2347,7 +2277,7 @@ test_update_dry_run_no_tracker_update() {
     trap "cp '$saved_changelog' '$REPO_ROOT/changelog.yml'; rm -rf '$tmpdir'" EXIT
 
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     cat > "$REPO_ROOT/changelog.yml" <<'YML'
 entries:

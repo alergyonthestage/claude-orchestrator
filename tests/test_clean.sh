@@ -4,7 +4,7 @@
 test_clean_removes_global_bak() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create some .bak files
     echo "backup" > "$CCO_GLOBAL_DIR/.claude/settings.json.bak"
@@ -19,7 +19,7 @@ test_clean_removes_global_bak() {
 test_clean_dry_run() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     echo "backup" > "$CCO_GLOBAL_DIR/.claude/settings.json.bak"
 
@@ -32,7 +32,7 @@ test_clean_dry_run() {
 test_clean_no_bak_files() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     run_cco clean
     assert_output_contains "Nothing to clean"
@@ -41,7 +41,7 @@ test_clean_no_bak_files() {
 test_clean_project_specific() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create a project with .bak files
     local proj_dir="$CCO_PROJECTS_DIR/test-proj"
@@ -62,7 +62,7 @@ test_clean_project_specific() {
 test_clean_all_bak() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create .bak in global
     echo "backup" > "$CCO_GLOBAL_DIR/.claude/settings.json.bak"
@@ -81,7 +81,7 @@ test_clean_all_bak() {
 test_clean_nonexistent_project_warns() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     run_cco clean --project nonexistent && {
         echo "ASSERTION FAILED: expected clean nonexistent project to fail"
@@ -106,7 +106,7 @@ test_clean_help() {
 test_clean_tmp_removes_dot_tmp_dirs() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create a project with .tmp/ dir
     local proj_dir="$CCO_PROJECTS_DIR/test-proj"
@@ -121,7 +121,7 @@ test_clean_tmp_removes_dot_tmp_dirs() {
 test_clean_tmp_dry_run() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     local proj_dir="$CCO_PROJECTS_DIR/test-proj"
     mkdir -p "$proj_dir/.tmp"
@@ -137,7 +137,7 @@ test_clean_tmp_dry_run() {
 test_clean_tmp_project_scoped() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create two projects with .tmp/
     local proj1="$CCO_PROJECTS_DIR/proj1"
@@ -153,7 +153,7 @@ test_clean_tmp_project_scoped() {
 test_clean_tmp_no_dirs() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     run_cco clean --tmp
     assert_output_contains "Nothing to clean"
@@ -164,7 +164,7 @@ test_clean_tmp_no_dirs() {
 test_clean_generated_removes_docker_compose() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     local proj_dir="$CCO_PROJECTS_DIR/test-proj"
     mkdir -p "$proj_dir/.cco"
@@ -178,7 +178,7 @@ test_clean_generated_removes_docker_compose() {
 test_clean_generated_dry_run() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     local proj_dir="$CCO_PROJECTS_DIR/test-proj"
     mkdir -p "$proj_dir/.cco"
@@ -193,7 +193,7 @@ test_clean_generated_dry_run() {
 test_clean_generated_project_scoped() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     local proj1="$CCO_PROJECTS_DIR/proj1"
     local proj2="$CCO_PROJECTS_DIR/proj2"
@@ -209,7 +209,7 @@ test_clean_generated_project_scoped() {
 test_clean_generated_no_files() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     run_cco clean --generated
     assert_output_contains "Nothing to clean"
@@ -220,7 +220,7 @@ test_clean_generated_no_files() {
 test_clean_all_categories() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     local proj_dir="$CCO_PROJECTS_DIR/test-proj"
     mkdir -p "$proj_dir/.claude" "$proj_dir/.tmp" "$proj_dir/.cco"
@@ -249,7 +249,7 @@ test_clean_all_categories() {
 test_clean_all_categories_dry_run() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     local proj_dir="$CCO_PROJECTS_DIR/test-proj"
     mkdir -p "$proj_dir/.claude" "$proj_dir/.tmp" "$proj_dir/.cco"
@@ -273,7 +273,7 @@ test_clean_all_categories_dry_run() {
 test_clean_explicit_bak_flag() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     echo "backup" > "$CCO_GLOBAL_DIR/.claude/settings.json.bak"
 
@@ -287,7 +287,7 @@ test_clean_explicit_bak_flag() {
 test_clean_default_cleans_global_and_projects() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create .bak in global
     echo "backup" > "$CCO_GLOBAL_DIR/.claude/settings.json.bak"
@@ -309,7 +309,7 @@ test_clean_all_categories_combined() {
     # All three artifact types (.bak, .tmp/, docker-compose.yml) are removed together
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     local proj_dir="$CCO_PROJECTS_DIR/test-proj"
     mkdir -p "$proj_dir/.claude" "$proj_dir/.tmp" "$proj_dir/.cco"
@@ -331,7 +331,7 @@ test_clean_dry_run_no_deletion() {
     # --dry-run reports but does NOT delete any files
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create .bak files
     echo "backup1" > "$CCO_GLOBAL_DIR/.claude/settings.json.bak"
@@ -348,7 +348,7 @@ test_clean_nonexistent_project_error() {
     # Cleaning a non-existent project should fail with an error message
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     run_cco clean --project nonexistent && {
         fail "Expected clean --project nonexistent to fail"

@@ -6,11 +6,13 @@
 
 # ── manifest_init ────────────────────────────────────────────────────
 
+# P3-3b: `cco init` no longer emits manifest.yml (ADR-0012). The manifest is
+# created explicitly via `cco manifest refresh` (still live until its P4 removal).
 test_manifest_init_creates_manifest_yml() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    run_cco init --lang "English"
+    run_cco manifest refresh
     assert_file_exists "$CCO_USER_CONFIG_DIR/manifest.yml"
 }
 
@@ -18,7 +20,7 @@ test_manifest_init_contains_packs_section() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    run_cco init --lang "English"
+    run_cco manifest refresh
     assert_file_contains "$CCO_USER_CONFIG_DIR/manifest.yml" "packs:"
 }
 
@@ -26,7 +28,7 @@ test_manifest_init_contains_templates_section() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    run_cco init --lang "English"
+    run_cco manifest refresh
     assert_file_contains "$CCO_USER_CONFIG_DIR/manifest.yml" "templates:"
 }
 
@@ -34,13 +36,13 @@ test_manifest_init_idempotent() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Modify manifest.yml
     printf '\n# USER_CANARY\n' >> "$CCO_USER_CONFIG_DIR/manifest.yml"
 
     # Second init should NOT overwrite
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
     assert_file_contains "$CCO_USER_CONFIG_DIR/manifest.yml" "USER_CANARY"
 }
 
@@ -48,7 +50,7 @@ test_cco_share_command_errors() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
     # cco share should error with migration hint
     if run_cco share refresh 2>/dev/null; then
         echo "ASSERTION FAILED: 'cco share' should error, not succeed"
@@ -90,7 +92,7 @@ test_manifest_refresh_preserves_name_and_description() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Set repo name and description
     cat > "$CCO_USER_CONFIG_DIR/manifest.yml" <<'YAML'
@@ -115,7 +117,7 @@ test_manifest_refresh_includes_templates() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create a template directory manually
     mkdir -p "$CCO_TEMPLATES_DIR/my-template"
@@ -128,7 +130,7 @@ test_manifest_refresh_empty_when_no_packs_or_templates() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
     run_cco manifest refresh
     assert_file_contains "$CCO_USER_CONFIG_DIR/manifest.yml" "packs: []"
     assert_file_contains "$CCO_USER_CONFIG_DIR/manifest.yml" "templates: []"
@@ -165,7 +167,7 @@ test_manifest_validate_warns_missing_entry() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create a pack dir manually (no manifest_refresh)
     mkdir -p "$CCO_PACKS_DIR/orphan-pack"
@@ -194,7 +196,7 @@ test_manifest_show_displays_config_repo() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    run_cco init --lang "English"
+    run_cco manifest refresh
     run_cco manifest show
     assert_output_contains "Config Repo"
     assert_output_contains "Packs:"
@@ -226,7 +228,7 @@ test_manifest_refresh_command_works() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
     run_cco manifest refresh
     assert_output_contains "refreshed"
 }
@@ -237,7 +239,7 @@ test_manifest_refresh_includes_template_packs() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create a template with packs and repos
     mkdir -p "$CCO_USER_CONFIG_DIR/templates/my-tmpl"
@@ -261,7 +263,7 @@ test_manifest_refresh_template_without_packs_or_repos() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     mkdir -p "$CCO_USER_CONFIG_DIR/templates/simple"
     cat > "$CCO_USER_CONFIG_DIR/templates/simple/project.yml" <<'YAML'
@@ -280,7 +282,7 @@ test_migration_renames_share_to_manifest() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Simulate legacy state: rename manifest.yml back to share.yml
     mv "$CCO_USER_CONFIG_DIR/manifest.yml" "$CCO_USER_CONFIG_DIR/share.yml"
@@ -299,7 +301,7 @@ test_migration_idempotent_when_already_migrated() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    run_cco init --lang "English"
+    run_cco manifest refresh
 
     # Already has manifest.yml, no share.yml — migration should be a no-op
     source "$REPO_ROOT/migrations/global/004_rename_share_to_manifest.sh"

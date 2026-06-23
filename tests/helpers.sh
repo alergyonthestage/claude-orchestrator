@@ -171,11 +171,17 @@ create_pack() {
 # exactly like run_cco. Usage: init_global "$tmpdir" [init-args...]
 init_global() {
     local tmpdir="$1"; shift
-    local d="$tmpdir/.init-global-repo"
+    # Fresh throwaway repo with a unique valid name per call, so repeated
+    # init_global invocations in one test never collide on the scaffold-exists
+    # refusal or the index name-uniqueness guard (the scaffold side-effect is
+    # irrelevant to global-setup tests; only ~/.cco/global matters).
+    _CCO_IG_N=$(( ${_CCO_IG_N:-0} + 1 ))
+    local name="ig-$_CCO_IG_N"
+    local d="$tmpdir/.ig/$name"
     mkdir -p "$d"
     local _prev="$PWD"
     cd "$d" || return 1
-    run_cco init "$@"
+    run_cco init --name "$name" "$@"
     local rc=$?
     cd "$_prev" 2>/dev/null || true
     return $rc

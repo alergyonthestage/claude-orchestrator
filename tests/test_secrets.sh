@@ -4,14 +4,8 @@
 # Verifies global and per-project secrets handling, including
 # load_secrets_file() behavior for various input formats.
 
-test_project_create_creates_secrets_template() {
-    # cco project create should copy secrets.env template
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    setup_global_from_defaults "$tmpdir"
-    run_cco project create "my-project"
-    assert_file_exists "$CCO_PROJECTS_DIR/my-project/secrets.env"
-}
+# Removed in P3-3b: the create-time secrets-template check moved to test_init.sh
+# (the scaffold writes <repo>/.cco/secrets.env.example); `cco project create` is gone.
 
 test_project_secrets_not_in_compose() {
     # Per-project secrets must NOT appear in docker-compose.yml (runtime -e only)

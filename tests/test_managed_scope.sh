@@ -68,7 +68,7 @@ test_init_copies_global_defaults() {
     # cco init must copy agents, skills, rules, settings.json from defaults/global/
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Agents
     assert_file_exists "$CCO_GLOBAL_DIR/.claude/agents/analyst.md"
@@ -97,8 +97,8 @@ test_init_idempotent() {
     # Running init twice should not report any migration on second run
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # The output should NOT contain migration messages on second run
     if echo "$CCO_OUTPUT" | grep -qF "Managed scope migration"; then
@@ -112,7 +112,7 @@ test_init_preserves_user_customizations() {
     # User-added skills/agents/rules must survive re-init
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Add user custom skill, agent, and rule
     mkdir -p "$CCO_GLOBAL_DIR/.claude/skills/my-custom"
@@ -124,7 +124,7 @@ test_init_preserves_user_customizations() {
     printf '# My custom workflow rules\n' > "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
 
     # Run init again (without --force)
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # User files must still be there
     assert_file_exists "$CCO_GLOBAL_DIR/.claude/skills/my-custom/SKILL.md"
@@ -140,7 +140,7 @@ test_reinit_does_not_overwrite_existing() {
     # Second init (without --force) must not overwrite any existing files
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Plant canaries in user default files
     printf '\n# MCP_CANARY\n' >> "$CCO_GLOBAL_DIR/.claude/mcp.json"
@@ -148,7 +148,7 @@ test_reinit_does_not_overwrite_existing() {
     printf '\n# SETTINGS_CANARY\n' >> "$CCO_GLOBAL_DIR/.claude/settings.json"
 
     # Run init again (without --force)
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # All canaries must survive
     assert_file_contains "$CCO_GLOBAL_DIR/.claude/mcp.json" "# MCP_CANARY"
@@ -160,13 +160,13 @@ test_init_with_force_recopies_globals() {
     # --force must recopy all defaults from defaults/global/
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Corrupt settings.json
     printf '{"corrupted": true}' > "$CCO_GLOBAL_DIR/.claude/settings.json"
 
     # Run init with --force
-    run_cco init --force --lang "English"
+    init_global "$tmpdir" --force --lang "English"
 
     # Settings should be restored from defaults
     assert_file_not_contains "$CCO_GLOBAL_DIR/.claude/settings.json" '"corrupted"'
@@ -189,8 +189,9 @@ test_migration_to_managed() {
     printf 'placeholder' > "$CCO_GLOBAL_DIR/.claude/rules/language.md"
     mkdir -p "$tmpdir/user-config/packs"
 
-    # Run init — should trigger migration via migration runner
-    run_cco init --lang "English"
+    # Migration of an EXISTING global is now owned by `cco update` (ADR-0025/0026);
+    # `cco init` only seeds a fresh global and never migrates in place.
+    run_cco update
 
     # .system-manifest should be gone (removed by migration 001)
     assert_file_not_exists "$CCO_GLOBAL_DIR/.claude/.system-manifest" \
@@ -214,15 +215,15 @@ test_migration_removes_old_init_skill() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
 
-    # Simulate old layout with skills/init/
-    mkdir -p "$tmpdir/user-config/global/.claude/skills/init"
-    printf 'old init skill' > "$tmpdir/user-config/global/.claude/skills/init/SKILL.md"
-    mkdir -p "$tmpdir/user-config/global/.claude/rules"
-    printf 'placeholder' > "$tmpdir/user-config/global/.claude/rules/language.md"
+    # Simulate old layout with skills/init/ in the global home (~/.cco/global).
+    mkdir -p "$CCO_GLOBAL_DIR/.claude/skills/init"
+    printf 'old init skill' > "$CCO_GLOBAL_DIR/.claude/skills/init/SKILL.md"
+    mkdir -p "$CCO_GLOBAL_DIR/.claude/rules"
+    printf 'placeholder' > "$CCO_GLOBAL_DIR/.claude/rules/language.md"
     mkdir -p "$tmpdir/user-config/packs"
 
-    # Run init
-    run_cco init --lang "English"
+    # Migration of an existing global is owned by `cco update` (ADR-0025/0026).
+    run_cco update
 
     # Old init/ should be gone
     assert_file_not_exists "$CCO_GLOBAL_DIR/.claude/skills/init/SKILL.md" \
@@ -243,7 +244,7 @@ test_migration_moves_init_workspace_to_managed() {
     mkdir -p "$tmpdir/user-config/packs"
 
     # Run init (triggers migrations)
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # init-workspace should be gone from user global
     assert_file_not_exists "$CCO_GLOBAL_DIR/.claude/skills/init-workspace/SKILL.md" \

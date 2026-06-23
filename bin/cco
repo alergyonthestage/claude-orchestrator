@@ -82,7 +82,6 @@ source "$LIB_DIR/tags.sh"
 source "$LIB_DIR/cmd-config.sh"
 source "$LIB_DIR/cmd-stop.sh"
 source "$LIB_DIR/cmd-chrome.sh"
-source "$LIB_DIR/cmd-project-create.sh"
 source "$LIB_DIR/cmd-project-delete.sh"
 source "$LIB_DIR/cmd-project-query.sh"
 source "$LIB_DIR/cmd-project-install.sh"
@@ -188,7 +187,6 @@ case "$cmd" in
 Usage: cco project <command> [options]
 
 Commands:
-  create <name>          Create a new project from template
   delete <name> [--yes]  Delete a project from all locations
   install <url>          Install project template from a remote Config Repo
   update <name>          Update an installed project from its remote source
@@ -208,7 +206,6 @@ EOF
         fi
         shift
         case "$subcmd" in
-            create)      cmd_project_create "$@" ;;
             delete)      cmd_project_delete "$@" ;;
             install)     cmd_project_install "$@" ;;
             update)      cmd_project_update "$@" ;;

@@ -286,6 +286,33 @@ test_migrate_global_dry_run_skips() {
     [[ ! -d "$HOME/.cco/global/.claude" ]] || fail "--dry-run must not populate ~/.cco"
 }
 
+test_migrate_global_after_init_nondestructive() {
+    # ADR-0026 hinge: a legacy user who ran `cco init` first (populating
+    # ~/.cco/global from defaults) must STILL be migrated by `cco update`, not
+    # silently skipped. The idempotency gate is the global-migrated marker flag,
+    # not ~/.cco/global presence; the overwrite is non-destructive (backup + confirm).
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_legacy_vault_global "$tmpdir"
+    # Simulate `cco init` having seeded ~/.cco/global from defaults first.
+    mkdir -p "$HOME/.cco/global/.claude"
+    echo "# from cco init defaults" > "$HOME/.cco/global/.claude/CLAUDE.md"
+
+    # `cco update` backs up the vault (dispatch), then migrates: no global-migrated
+    # flag + backup + ~/.cco/global present → non-destructive overwrite (confirmed).
+    CCO_ASSUME_YES=1 run_cco update || true
+
+    # The vault content replaced the init-seeded defaults (migration ran).
+    assert_file_contains "$HOME/.cco/global/.claude/CLAUDE.md" "global cfg" \
+        "the legacy vault must overwrite the init-seeded defaults (non-destructive migration)"
+    assert_file_not_contains "$HOME/.cco/global/.claude/CLAUDE.md" "from cco init defaults"
+    # A restorable backup of the pre-migration ~/.cco was written.
+    local had_backup=false f
+    for f in "$CCO_STATE_HOME"/backups/cco-config-*.tar.gz; do [[ -e "$f" ]] && had_backup=true; done
+    [[ "$had_backup" == true ]] || fail "a restorable ~/.cco backup must be written before overwrite"
+    # The gate flag was recorded (a second update is then idempotent).
+    assert_file_contains "$CCO_STATE_HOME/migration-state" "global-migrated"
+}
+
 # ── Lazy per-project migration: cco init --migrate (ADR-0006/0021) ──
 
 # Build a legacy vault with project 'myapp' (sanitized repos + url + local-paths,

@@ -336,3 +336,84 @@ EOF
     rm -rf "$found_dir"
     ok "Template '$name' removed."
 }
+
+# Resolve {{VARIABLE}} patterns in project template files (relocated here from the
+# removed cmd-project-create.sh; consumed by `cco project install`/`update`).
+# Scans project.yml and .claude/CLAUDE.md for placeholders.
+# Pre-set values via vars array; prompts interactively for remaining.
+# Usage: _resolve_template_vars <project_dir> <project_name> [vars...]
+_resolve_template_vars() {
+    local project_dir="$1"
+    local project_name="$2"
+    shift 2
+
+    # Build lookup of preset vars as newline-separated "KEY=VALUE" entries
+    # (bash 3.2 compatible — no associative arrays)
+    local preset_list=""
+    while [[ $# -gt 0 ]]; do
+        preset_list+="$1"$'\n'
+        shift
+    done
+
+    # Always preset PROJECT_NAME (unless already in list)
+    if ! echo "$preset_list" | grep -q "^PROJECT_NAME="; then
+        preset_list+="PROJECT_NAME=$project_name"$'\n'
+    fi
+
+    # Find all template files to process
+    local -a template_files=()
+    [[ -f "$project_dir/project.yml" ]] && template_files+=("$project_dir/project.yml")
+    [[ -f "$project_dir/.claude/CLAUDE.md" ]] && template_files+=("$project_dir/.claude/CLAUDE.md")
+
+    # Collect all variables from all files
+    local all_vars=""
+    for file in "${template_files[@]+"${template_files[@]}"}"; do
+        local file_vars
+        file_vars=$(grep -oE '\{\{[A-Z_]+\}\}' "$file" 2>/dev/null | sort -u || true)
+        all_vars+="$file_vars"$'\n'
+    done
+    all_vars=$(echo "$all_vars" | sort -u | grep -v '^$' || true)
+
+    [[ -z "$all_vars" ]] && return 0
+
+    # Build sed substitution args
+    local -a sed_args=()
+    local var name value
+    for var in $all_vars; do
+        name="${var//[\{\}]/}"
+
+        # Lookup in preset list
+        local preset_match
+        preset_match=$(echo "$preset_list" | grep "^${name}=" | head -1 || true)
+
+        if [[ -n "$preset_match" ]]; then
+            value="${preset_match#*=}"
+        elif [[ -t 0 ]]; then
+            # Interactive prompt
+            local default=""
+            case "$name" in
+                DESCRIPTION) default="TODO: Add project description" ;;
+            esac
+            if [[ -n "$default" ]]; then
+                read -rp "  $name [$default]: " value < /dev/tty
+                value="${value:-$default}"
+            else
+                read -rp "  $name: " value < /dev/tty
+            fi
+            [[ -z "$value" ]] && die "Value required for $name"
+        else
+            # Non-interactive: use sensible defaults or fail for required vars
+            case "$name" in
+                DESCRIPTION) value="TODO: Add project description" ;;
+                *)  value="$name" ;;
+            esac
+        fi
+
+        sed_args+=("-e" "s|{{$name}}|$value|g")
+    done
+
+    # Apply substitutions to all template files
+    for file in "${template_files[@]+"${template_files[@]}"}"; do
+        _sed_i_raw "$file" "${sed_args[@]}"
+    done
+}

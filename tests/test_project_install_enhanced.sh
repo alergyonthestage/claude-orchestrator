@@ -356,7 +356,7 @@ test_install_with_packs_updates_manifest() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     local bare_dir
     bare_dir=$(_create_config_repo_with_packs "$tmpdir" "my-template" "auto-pack")

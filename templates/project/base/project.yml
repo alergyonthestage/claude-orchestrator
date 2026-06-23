@@ -2,23 +2,32 @@ name: {{PROJECT_NAME}}
 description: "{{DESCRIPTION}}"
 
 # ── Repositories ─────────────────────────────────────────────────────
+# Each repo is referenced by a logical name + an optional machine-agnostic
+# coordinate (url/ref). Local paths live in the machine-local index — set them
+# with `cco resolve`, never here (keeps `git diff` truthful, AD3/G8).
 repos: []
-  # - path: ~/projects/my-repo        # Absolute path on host
-  #   name: my-repo                    # Mount name in /workspace/
+  # - name: my-repo
+  #   url: git@github.com:org/my-repo.git   # optional bootstrap pointer for `cco resolve`
+  #   ref: main                             # optional git ref (default: remote default branch)
 
 # ── Extra mounts (optional) ─────────────────────────────────────────
+# Auxiliary mounts by logical name; they join the same coordinate model.
 # extra_mounts:
-#   - source: ~/documents/api-specs
-#     target: /workspace/docs/api-specs
+#   - name: api-specs
+#     url: git@github.com:org/api-specs.git   # optional (git-backed mount); absent → local-only via the index
+#     target: /workspace/docs/api-specs       # optional container path (default /workspace/<name>)
 #     readonly: true
 
 # ── Knowledge Packs (optional) ───────────────────────────────────────
-# Reference packs from user-config/packs/<name>/pack.yml.
-# Each pack can bundle: knowledge files, skills, agents, and rules.
+# Reference packs by logical name + an OPTIONAL coordinate (url/ref). A pack with
+# a url resolves from ~/.cco/packs (or its sharing repo); a pack with no url is a
+# project-local authored pack in <repo>/.cco/packs/.
 # See: docs/reference/project-yaml.md § Knowledge Packs for schema and examples.
 #
 # packs:
-#   - my-pack
+#   - name: shared-pack
+#     url: https://github.com/org/cco-sharing.git   # optional → the pack's sharing repo
+#   - name: project-local-pack                       # no url → authored in <repo>/.cco/packs/
 
 # ── LLMs.txt Framework Docs (optional) ─────────────────────────────
 # Reference official framework documentation installed via 'cco llms install'.
