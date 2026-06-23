@@ -468,6 +468,87 @@ YAML
     assert_file_not_contains "$compose" "${rw_dir}:/workspace/rw:ro"
 }
 
+# ── Reference mounts (--mount, ADR-0027 D2) ──────────────────────────
+
+test_dry_run_user_mount_readonly_default() {
+    # --mount <src> defaults to read-only, target /workspace/<basename>
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local refdir="$tmpdir/refmat"
+    mkdir -p "$refdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --mount "$refdir" --dry-run --dump
+    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
+        "${refdir}:/workspace/refmat:ro"
+}
+
+test_dry_run_user_mount_rw_optin() {
+    # --mount <src>:rw makes the mount writable (no :ro suffix)
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local refdir="$tmpdir/scratch"
+    mkdir -p "$refdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --mount "${refdir}:rw" --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_contains "$compose" "${refdir}:/workspace/scratch"
+    assert_file_not_contains "$compose" "${refdir}:/workspace/scratch:ro"
+}
+
+test_dry_run_user_mount_custom_target() {
+    # --mount <src>:<target> mounts at the explicit target (ro default)
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local refdir="$tmpdir/docs-src"
+    mkdir -p "$refdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --mount "${refdir}:/workspace/reference" --dry-run --dump
+    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
+        "${refdir}:/workspace/reference:ro"
+}
+
+test_dry_run_user_mount_custom_target_rw() {
+    # --mount <src>:<target>:rw mounts at the target, writable
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local refdir="$tmpdir/work-src"
+    mkdir -p "$refdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --mount "${refdir}:/workspace/work:rw" --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_contains "$compose" "${refdir}:/workspace/work"
+    assert_file_not_contains "$compose" "${refdir}:/workspace/work:ro"
+}
+
+test_dry_run_user_mount_repeatable() {
+    # --mount is repeatable — all mounts appear
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local a="$tmpdir/ref-a" b="$tmpdir/ref-b"
+    mkdir -p "$a" "$b"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --mount "$a" --mount "${b}:rw" --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_contains "$compose" "${a}:/workspace/ref-a:ro" || return 1
+    assert_file_contains "$compose" "${b}:/workspace/ref-b" || return 1
+    assert_file_not_contains "$compose" "${b}:/workspace/ref-b:ro" || return 1
+}
+
+test_dry_run_user_mount_missing_source_dies() {
+    # --mount with a non-existent source fails before generating compose
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --mount "$tmpdir/does-not-exist" --dry-run --dump || true
+    assert_output_contains "does not exist"
+}
+
 # ── Custom ports and env vars ─────────────────────────────────────────
 
 test_dry_run_custom_ports_in_compose() {

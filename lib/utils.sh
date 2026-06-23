@@ -28,6 +28,32 @@ _path_exists() {
     [[ -e "$path" ]]
 }
 
+# Parse a CLI --mount spec into an "<abs_source>\t<target>\t<ro>" line
+# (the same TSV shape _effective_extra_mounts emits, so the compose-gen
+# consumes both uniformly). Spec: "src[:target][:ro|:rw]".
+#   - Read-only is the DEFAULT (ADR-0027 D2 — the common reference-mount case);
+#     a trailing ":rw" opts into writable.
+#   - target defaults to /workspace/<basename src>.
+#   - src is expanded (~) and made absolute against $PWD for a truthful bind.
+# Dies on an empty or non-existent source. Usage: _parse_user_mount_spec <spec>
+_parse_user_mount_spec() {
+    local spec="$1"
+    local mode="ro" src target
+    case "$spec" in
+        *:ro) mode="ro"; spec="${spec%:ro}" ;;
+        *:rw) mode="rw"; spec="${spec%:rw}" ;;
+    esac
+    src="${spec%%:*}"
+    if [[ "$spec" == *:* ]]; then target="${spec#*:}"; else target=""; fi
+    [[ -z "$src" ]] && die "Invalid --mount spec (empty source): $1"
+    src=$(expand_path "$src")
+    [[ "$src" != /* ]] && src="$PWD/$src"
+    _path_exists "$src" || die "--mount source does not exist: $src"
+    [[ -z "$target" ]] && target="/workspace/$(basename "$src")"
+    local ro="true"; [[ "$mode" == "rw" ]] && ro="false"
+    printf '%s\t%s\t%s\n' "$src" "$target" "$ro"
+}
+
 # Check Docker is running
 check_docker() {
     if ! docker info >/dev/null 2>&1; then

@@ -12,6 +12,7 @@ cmd_new() {
     local session_name=""
     local teammate_mode="tmux"
     local extra_ports=()
+    local user_mounts=()        # --mount specs (ADR-0027 D2), :ro by default
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -19,6 +20,7 @@ cmd_new() {
             --name) session_name="$2"; shift 2 ;;
             --teammate-mode) teammate_mode="$2"; shift 2 ;;
             --port) extra_ports+=("$2"); shift 2 ;;
+            --mount) [[ $# -lt 2 ]] && die "--mount requires <src>[:<target>][:ro|:rw]."; user_mounts+=("$2"); shift 2 ;;
             --help)
                 cat <<'EOF'
 Usage: cco new [OPTIONS]
@@ -28,6 +30,9 @@ Options:
   --name <name>        Temporary session name (default: "tmp-<timestamp>")
   --teammate-mode <m>  Override display mode: tmux | auto
   --port <p>           Port mapping (repeatable)
+  --mount <s>[:<t>][:ro|:rw]  Mount reference material (repeatable; read-only by
+                       default, :rw to make writable; target defaults to
+                       /workspace/<basename>)
 EOF
                 return 0
                 ;;
@@ -36,6 +41,14 @@ EOF
     done
 
     [[ ${#repos[@]} -eq 0 ]] && die "At least one --repo is required."
+
+    # Resolve --mount specs eagerly (ADR-0027 D2) so a bad source fails before
+    # any compose is generated. Each becomes abs_src<TAB>target<TAB>ro.
+    local user_mount_lines=()
+    local _mspec
+    for _mspec in ${user_mounts[@]+"${user_mounts[@]}"}; do
+        user_mount_lines+=("$(_parse_user_mount_spec "$_mspec")")
+    done
 
     check_docker
     check_image
@@ -122,6 +135,19 @@ YAML
         for mount in "${repo_mounts[@]}"; do
             echo "      - ${mount}"
         done
+
+        # Session reference mounts (--mount, ADR-0027 D2): read-only by default,
+        # :rw opt-in. Pre-resolved to abs_src<TAB>target<TAB>ro above.
+        if [[ ${#user_mount_lines[@]} -gt 0 ]]; then
+            echo "      # Reference mounts (--mount)"
+            local _uline _us _ut _uro _usuffix
+            for _uline in "${user_mount_lines[@]}"; do
+                IFS=$'\t' read -r _us _ut _uro <<< "$_uline"
+                _usuffix=""
+                [[ "$_uro" == "true" ]] && _usuffix=":ro"
+                echo "      - ${_us}:${_ut}${_usuffix}"
+            done
+        fi
 
         # Git identity (commit author — read-only, no SSH keys)
         echo "      # Git identity"

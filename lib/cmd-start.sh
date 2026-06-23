@@ -613,6 +613,19 @@ YAML
             done <<< "$extra_mounts"
         fi
 
+        # Session reference mounts (--mount, ADR-0027 D2): read-only by default,
+        # :rw opt-in. Pre-resolved to abs_src<TAB>target<TAB>ro above.
+        if [[ ${#user_mount_lines[@]} -gt 0 ]]; then
+            echo "      # Reference mounts (--mount)"
+            local _uline _us _ut _uro _usuffix
+            for _uline in "${user_mount_lines[@]}"; do
+                IFS=$'\t' read -r _us _ut _uro <<< "$_uline"
+                _usuffix=""
+                [[ "$_uro" == "true" ]] && _usuffix=":ro"
+                echo "      - ${_us}:${_ut}${_usuffix}"
+            done
+        fi
+
         # Pack resources: read-only mounts from central pack registry (ADR-14)
         _generate_pack_mounts "$pack_names"
 
@@ -868,10 +881,14 @@ cmd_start() {
     local opt_docker=""      # "off" | "" (unset = read from project.yml)
     local extra_ports=()
     local extra_envs=()
+    local user_mounts=()        # --mount specs (ADR-0027 D2), :ro by default
+    local enable_config_edit=false  # --enable-config-edit escape hatch (ADR-0027 D3)
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --from) [[ $# -lt 2 ]] && die "--from requires a <repo> name."; from_repo="$2"; shift 2 ;;
+            --mount) [[ $# -lt 2 ]] && die "--mount requires <src>[:<target>][:ro|:rw]."; user_mounts+=("$2"); shift 2 ;;
+            --enable-config-edit) enable_config_edit=true; shift ;;
             --teammate-mode) teammate_mode="$2"; shift 2 ;;
             --api-key) use_api_key=true; shift ;;
             --dry-run) dry_run=true; shift ;;
@@ -900,6 +917,12 @@ Options:
   --github             Enable GitHub MCP for this session only
   --no-github          Disable GitHub MCP for this session only
   --no-docker          Disable Docker socket mount for this session only
+  --mount <s>[:<t>][:ro|:rw]  Mount reference material (repeatable; read-only by
+                       default, :rw to make writable; target defaults to
+                       /workspace/<basename>)
+  --enable-config-edit Allow the agent to edit this repo's committed .cco/ config
+                       in this session (off by default — see 'cco start
+                       config-editor' for the sanctioned config-editing session)
   --dry-run            Show the generated docker-compose without running
   --dump               With --dry-run: persist artifacts to .tmp/ for inspection
   --port <p>           Add extra port mapping (repeatable)
@@ -923,6 +946,14 @@ EOF
 
     # No project name is valid: cwd-first resolution (the repo this dir hosts).
     # _start_resolve_project dies with guidance when cwd is not a configured repo.
+
+    # Resolve --mount specs eagerly (ADR-0027 D2): a bad source must fail before
+    # any compose is generated, not mid-file. Each becomes abs_src<TAB>tgt<TAB>ro.
+    local user_mount_lines=()
+    local _mspec
+    for _mspec in ${user_mounts[@]+"${user_mounts[@]}"}; do
+        user_mount_lines+=("$(_parse_user_mount_spec "$_mspec")")
+    done
 
     # Variables set by helper functions (declared here for shared scope)
     local project_dir project_yml is_internal claude_src source_repo source_kind
