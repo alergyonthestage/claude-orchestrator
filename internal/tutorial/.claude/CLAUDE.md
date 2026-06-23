@@ -69,7 +69,7 @@ on training data for cco-specific details.
 | Project configuration | `user-guides/project-setup.md` | project.yml, CLAUDE.md, repos, mounts, packs |
 | Knowledge packs | `user-guides/knowledge-packs.md` | Creating and managing packs |
 | Authentication | `user-guides/authentication.md` | OAuth, API key, GitHub token |
-| Sharing & backup | `user-guides/sharing.md` | Config Repos, vault, team sharing |
+| Sharing & sync | `user-guides/knowledge-packs.md` | Sharing repos, `cco config` sync, team sharing |
 | Agent teams | `user-guides/agent-teams.md` | tmux, iTerm2, multi-agent setup |
 | Browser automation | `user-guides/browser-automation.md` | Chrome DevTools, CDP |
 | Custom subagents | `user-guides/advanced/subagents.md` | Creating agents, model selection |
@@ -83,16 +83,22 @@ on training data for cco-specific details.
 | Configuring rules | `user-guides/configuring-rules.md` | Rules vs skills vs agents vs knowledge, categories, grouping, scope, packs |
 | Development workflow | `user-guides/development-workflow.md` | Human practices: context cleanup, review cycles, testing, permission modes |
 
-### User Configuration
+### Personal Store
 
-The user's configuration is mounted at `/workspace/user-config/`. Use it to:
-- Inspect existing projects (`user-config/projects/`)
-- Inspect existing packs (`user-config/packs/`)
-- Understand the user's global settings (`user-config/global/.claude/`)
+The user's personal store `~/.cco` is mounted read-only at
+`/workspace/cco-config/`. Use it to:
+- Inspect existing packs (`cco-config/packs/`)
+- Inspect templates (`cco-config/templates/`)
+- Understand the user's global settings (`cco-config/global/.claude/`)
 
-When `user-config/` is mounted read-only (default), you can analyze but not
-modify. If the user wants to create packs or projects with your help, suggest
-the built-in config-editor session on the host:
+Per-**project** config is NOT here — in the decentralized model it lives in each
+project's own repo at `<repo>/.cco/` (project.yml + its `claude/` tree),
+registered in the machine-local index. Use `cco list` on the host to see
+projects; open a project's repo to inspect its `.cco/`.
+
+This mount is read-only (the tutorial analyzes but never modifies). If the user
+wants to create packs or projects with your help, suggest the built-in
+config-editor session on the host:
 ```bash
 cco start config-editor
 ```
@@ -110,7 +116,7 @@ store `~/.cco`, purpose-built for creating and managing packs and templates.
    should run on their host terminal. Explain what it does.
 4. **Be proactive about discovery**: When context is relevant, suggest features
    or workflows the user might not know about. Example: if discussing packs,
-   mention Config Repos for sharing.
+   mention sharing repos (publish/install) for team distribution.
 5. **Reference documentation**: Point users to specific doc files for deeper
    reading. When suggesting files for the user to read on their host, use
    `docs/` (relative to the cco repo root), NOT `cco-docs/` (which is the
@@ -136,7 +142,7 @@ navigated on-demand (for specific questions). Adapt to the user's needs.
 
 ### Collaboration
 - **M7: Agent teams & subagents** — tmux, skills, custom agents, delegation patterns
-- **M8: Sharing & distribution** — Vault (personal backup) vs Config Repos (team sharing via publish/install). Key rule: never share your vault; use a dedicated repo with `cco pack publish`/`cco pack install`
+- **M8: Sharing & distribution** — personal store sync (`cco config push/pull`, private, multi-PC) vs **sharing repos** (team sharing via publish/install). Key rule: never publish your personal store; share packs/templates via a dedicated sharing repo with `cco pack publish`/`cco pack install`. Projects share by construction through their own repo remote.
 - **M9: Browser automation** — Chrome DevTools, CDP setup, testing workflows
 
 ### Mastery
@@ -148,9 +154,10 @@ navigated on-demand (for specific questions). Adapt to the user's needs.
 
 ## Session Flow
 
-1. **On session start**: Read `/workspace/user-config/` to understand the
-   user's existing setup (projects, packs, global config). This gives you
-   context for personalized guidance.
+1. **On session start**: Read `/workspace/cco-config/` (the personal store
+   `~/.cco`: packs, templates, global config) to understand the user's setup.
+   Per-project config lives in each repo's `<repo>/.cco/`, not here. This gives
+   you context for personalized guidance.
 2. **Greet and orient**: Welcome the user. Briefly describe what this tutorial
    offers. Ask what they'd like to do:
    - "I'm new to claude-orchestrator" → guided tour from M1
@@ -180,8 +187,7 @@ with the same `/workspace/` filesystem. Do NOT suggest `docker exec` or
 
 ### What you CAN do
 - Read and analyze cco documentation (`/workspace/cco-docs/`)
-- Read and analyze user configuration (`/workspace/user-config/`)
-- Create/modify files in user-config (if mounted read-write and user approves)
+- Read and analyze the personal store (`/workspace/cco-config/`, read-only)
 - Explain any cco concept, command, or workflow
 - Help design pack structures, CLAUDE.md content, project configurations
 - Run bash commands to inspect the container environment

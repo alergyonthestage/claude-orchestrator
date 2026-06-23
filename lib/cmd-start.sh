@@ -24,8 +24,10 @@ _setup_internal_tutorial() {
     cp -r "$source_dir/.claude" "$runtime_dir/.claude" \
         || die "Failed to refresh tutorial content from $source_dir. Check permissions and disk space."
 
-    # Refresh project.yml with path substitution
+    # Refresh project.yml with path substitution. CCO_CONFIG_DIR = the personal
+    # store ~/.cco (read-only mount); CCO_USER_CONFIG_DIR kept for back-compat.
     sed -e "s|{{CCO_REPO_ROOT}}|$REPO_ROOT|g" \
+        -e "s|{{CCO_CONFIG_DIR}}|$(_cco_config_dir)|g" \
         -e "s|{{CCO_USER_CONFIG_DIR}}|$USER_CONFIG_DIR|g" \
         "$source_dir/project.yml" > "$runtime_dir/project.yml" \
         || die "Failed to generate tutorial project.yml"

@@ -210,3 +210,28 @@ entries:
       (not directories) are also accepted throughout. No user action
       needed — every new fix is self-applied the next time a relevant
       vault command runs.
+
+  - id: 14
+    date: "2026-06-23"
+    type: breaking
+    title: "Decentralized config cutover: vault removed, config moves in-repo"
+    description: >
+      BREAKING — the central user-config/ + vault world is replaced by the
+      decentralized in-repo config model. Project config now lives in each
+      repo at <repo>/.cco/ (project.yml with logical names + machine-agnostic
+      url/ref coordinates; its claude/ tree; secrets.env stays gitignored).
+      The global personal store moves to ~/.cco (global/.claude, packs/,
+      templates/) and is versioned + multi-PC synced with
+      `cco config save / push / pull` (the `cco vault *` surface is REMOVED).
+      Profiles are replaced by per-user tags (`cco tag add/rm`, `cco list
+      --tag`). Memory and transcripts are now machine-local STATE with NO
+      sync in v1 (cross-PC/cross-team sync is a future opt-in) — they are no
+      longer vault-tracked. `cco project create` is removed; the single entry
+      verb is `cco init` (scaffold a repo's .cco/ + ensure ~/.cco/global),
+      with `cco join` and `cco init --migrate <project>`. Sharing is via a
+      sharing repo (`cco pack/template publish|install`); the central
+      manifest.yml is removed (structure-based discovery). The config-editor
+      is now a built-in session: `cco start config-editor`. Migration is
+      offered by `cco update` (eager global, backs up your legacy vault first,
+      never destructive) and `cco init --migrate` (per project, lazy). Run
+      `cco update` to migrate; your legacy vault is preserved as a fallback.

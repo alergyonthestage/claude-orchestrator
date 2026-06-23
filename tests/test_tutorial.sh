@@ -45,6 +45,7 @@ test_setup_internal_tutorial_substitutes_placeholders() {
     export USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR"
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
     source "$REPO_ROOT/lib/cmd-start.sh"
 
     _setup_internal_tutorial
@@ -52,9 +53,12 @@ test_setup_internal_tutorial_substitutes_placeholders() {
     local runtime_yml="$CCO_USER_CONFIG_DIR/.cco/internal/tutorial/project.yml"
     assert_file_exists "$runtime_yml"
     assert_no_placeholder "$runtime_yml" "{{CCO_REPO_ROOT}}"
-    assert_no_placeholder "$runtime_yml" "{{CCO_USER_CONFIG_DIR}}"
+    assert_no_placeholder "$runtime_yml" "{{CCO_CONFIG_DIR}}"
     assert_file_contains "$runtime_yml" "$REPO_ROOT/docs"
-    assert_file_contains "$runtime_yml" "$CCO_USER_CONFIG_DIR"
+    # A.4 cutover: the tutorial now mounts the personal store ~/.cco (read-only)
+    # at /workspace/cco-config, not the legacy central user-config.
+    assert_file_contains "$runtime_yml" "$(_cco_config_dir)"
+    assert_file_contains "$runtime_yml" "/workspace/cco-config"
 }
 
 test_setup_internal_tutorial_has_skills() {

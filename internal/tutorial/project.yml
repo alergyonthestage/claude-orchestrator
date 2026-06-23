@@ -4,19 +4,20 @@ description: "Interactive tutorial and onboarding assistant for claude-orchestra
 # No repositories — tutorial is about cco itself, not code projects
 repos: []
 
-# ── Documentation & User Config ──────────────────────────────────────
-# The tutorial agent reads cco documentation and your configuration
+# ── Documentation & Personal Store ───────────────────────────────────
+# The tutorial agent reads cco documentation and your personal config store
 # to provide accurate, up-to-date guidance.
 extra_mounts:
   # claude-orchestrator documentation (always up to date with your installation)
   - source: {{CCO_REPO_ROOT}}/docs
     target: /workspace/cco-docs
     readonly: true
-  # Your user configuration (projects, packs, global settings)
-  # Default: read-only (agent can analyze but not modify)
-  # Read-only: use `cco start config-editor` (built-in) for config editing
-  - source: {{CCO_USER_CONFIG_DIR}}
-    target: /workspace/user-config
+  # Your personal store ~/.cco (global config, packs, templates), read-only.
+  # The tutorial inspects but never modifies — use `cco start config-editor`
+  # (built-in) for hands-on config editing. Per-project config lives in each
+  # repo's own <repo>/.cco/, not here.
+  - source: {{CCO_CONFIG_DIR}}
+    target: /workspace/cco-config
     readonly: true
 
 # ── Docker options ───────────────────────────────────────────────────
