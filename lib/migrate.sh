@@ -167,31 +167,11 @@ _cco_first_run() {
 # snapshot), never the live user-config/ (which it leaves intact).
 
 # Seed one resource→tag binding into the DATA tags registry (<data>/cco/tags.yml).
-# Minimal writer for the one-shot migration seed; the full `cco tag` API is P3.
-# Format (design §2.2): typed keys {packs,projects,templates} → name → [tags].
+# Delegates to the canonical writer `_tags_add` (lib/tags.sh) — single writer of
+# the registry (P12 DRY). Format (design §2.2): typed keys {packs,projects,
+# templates} → name → [tags]. kind: packs|projects|templates.
 _cco_seed_resource_tag() {
-    local kind="$1" name="$2" tag="$3"   # kind: packs|projects|templates
-    local f; f="$(_cco_data_dir)/tags.yml"
-    mkdir -p "$(dirname "$f")"
-    [[ -f "$f" ]] || printf '# Per-user tag registry — seeded by cco migration\n' > "$f"
-    # Ensure the typed section exists.
-    grep -q "^${kind}:" "$f" 2>/dev/null || printf '%s:\n' "$kind" >> "$f"
-    # Append/extend the resource entry (one-shot seed: a name appears once here).
-    if grep -qE "^  ${name}:" "$f" 2>/dev/null; then
-        # Already present — add the tag if missing (append inside the [] list).
-        awk -v n="  ${name}:" -v t="$tag" '
-            $0 ~ "^" n {
-                if (index($0, t) == 0) { sub(/\]\s*$/, ", " t "]") }
-            }
-            { print }
-        ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
-    else
-        # Insert under the typed section header.
-        awk -v sec="^${kind}:" -v line="  ${name}: [${tag}]" '
-            { print }
-            $0 ~ sec && !done { print line; done=1 }
-        ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
-    fi
+    _tags_add "$1" "$2" "$3"
 }
 
 # Populate ~/.cco from an extracted backup tree, run profile→tag seeding.

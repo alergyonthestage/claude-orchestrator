@@ -75,6 +75,7 @@ source "$LIB_DIR/cmd-start.sh"
 source "$LIB_DIR/cmd-new.sh"
 source "$LIB_DIR/cmd-resolve.sh"
 source "$LIB_DIR/cmd-sync.sh"
+source "$LIB_DIR/tags.sh"
 source "$LIB_DIR/cmd-stop.sh"
 source "$LIB_DIR/cmd-chrome.sh"
 source "$LIB_DIR/cmd-project-create.sh"
@@ -119,7 +120,7 @@ Getting Started:
   clean                  Clean up .bak, .tmp/, docker-compose.yml
 
 Sessions:
-  start <project>        Start a session for a configured project
+  start [project]        Start a session (cwd-first, or a named project)
   new                    Start a temporary session with specific repos
   stop [project]         Stop running session(s)
 
@@ -127,6 +128,10 @@ Local paths & sync:
   resolve [project]      Resolve repos/mounts into the machine-local index
   path <set|list>        Low-level path index editor
   sync [repo] [--from r] Copy .cco config between a project's repos (copy, no merge)
+
+Discovery:
+  list [--tag <t>]       List your packs/projects/templates and their tags
+  tag <add|rm>           Tag a pack/project/template (per-user, never team-shared)
 
 Projects & Packs:
   project <cmd>          Manage projects (create, install, delete, list, show, validate)
@@ -170,6 +175,8 @@ case "$cmd" in
     resolve) cmd_resolve "$@" || _cco_rc=$? ;;
     path)    cmd_path "$@"     || _cco_rc=$? ;;
     sync)    cmd_sync "$@"     || _cco_rc=$? ;;
+    tag)     cmd_tag "$@"      || _cco_rc=$? ;;
+    list)    cmd_list "$@"     || _cco_rc=$? ;;
     project)
         subcmd="${1:-}"
         if [[ -z "$subcmd" || "$subcmd" == "--help" ]]; then
