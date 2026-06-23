@@ -279,10 +279,11 @@ test_dry_run_memory_mount_after_claude_state() {
 # ── Volume mounts: project config (Design Invariant 2 - read-write) ──
 
 test_dry_run_project_claude_mounted_readwrite() {
-    # Design Invariant 2 / ADR-0005 F3: the parent project .claude must be rw
-    # (the generated overlays layered on top are :ro — see the F1 test below).
-    # Host mount sources are absolute (Commit B), so match the container side at
-    # end-of-line rather than a literal "./.claude" prefix.
+    # ADR-0005 F3 / P17: the parent project .claude stays rw so /init and normal
+    # project-config authoring work (the generated overlays layered on top are
+    # :ro — see the F1 test below). Edit-protection (ADR-0027 D3) is narrow: it
+    # protects only the structural <repo>/.cco via a separate :ro overlay, not
+    # this Claude config tree. Host mount sources are absolute (Commit B).
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -547,6 +548,50 @@ test_dry_run_user_mount_missing_source_dies() {
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --mount "$tmpdir/does-not-exist" --dry-run --dump || true
     assert_output_contains "does not exist"
+}
+
+# ── Agentic config edit-protection (ADR-0027 D3) ─────────────────────
+
+_edit_protect_project_yml() {
+    # A project mounting a host repo that carries a committed .cco/.
+    local repo="$1"
+    cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+repos:
+  - path: $repo
+    name: host-repo
+YAML
+}
+
+test_dry_run_committed_cco_readonly_by_default() {
+    # A normal session overlays each mounted repo's committed .cco as :ro.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local repo="$tmpdir/host-repo"
+    mkdir -p "$repo/.cco"
+    create_project "$tmpdir" "test-proj" "$(_edit_protect_project_yml "$repo")"
+    run_cco start "test-proj" --dry-run --dump
+    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
+        "${repo}/.cco:/workspace/host-repo/.cco:ro"
+}
+
+test_dry_run_committed_cco_no_overlay_with_enable_config_edit() {
+    # --enable-config-edit keeps the repo (incl. .cco) fully rw — no :ro overlay.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local repo="$tmpdir/host-repo"
+    mkdir -p "$repo/.cco"
+    create_project "$tmpdir" "test-proj" "$(_edit_protect_project_yml "$repo")"
+    run_cco start "test-proj" --enable-config-edit --dry-run --dump
+    assert_file_not_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
+        "${repo}/.cco:/workspace/host-repo/.cco:ro"
 }
 
 # ── Custom ports and env vars ─────────────────────────────────────────

@@ -88,29 +88,45 @@ It reuses the existing extra-mount compose machinery (the `abs_source<TAB>target
 A **persistent per-session config file** (e.g. `~/.cco/config-editor.yml` / `~/.cco/tutorial.yml` with
 standing `extra_mounts:`) is a **post-v1 evolution** — recorded, not built now.
 
-### D3 — agentic config edit-protection: guardrail `:ro` by default, with an escape hatch
+### D3 — agentic config edit-protection: narrow `:ro` guardrail on the structural framework config
 
-In a **normal** `cco start` session (not a built-in, no escape hatch), the launcher makes the project's
-committed cco config **read-only inside the container**:
+In a **normal** `cco start` session (not a built-in, no escape hatch), the launcher makes the
+**structural framework config read-only inside the container** — the new exposure the decentralized
+model introduced (`<repo>/.cco/` now lives inside the rw-mounted code repo):
 
 - For each repo mount whose `<repo>/.cco` exists, add a child **`:ro`** overlay
   `${repo_path}/.cco:/workspace/<name>/.cco:ro` (Docker applies child mounts after the rw parent — the
-  proven `packs.md`/`workspace.yml` overlay pattern, here `:ro`-on-rw).
-- Mount the claude overlay `/workspace/.claude` **`:ro`** (was rw), with a small **rw child overlay** for
-  `settings.local.json` backed by CACHE so Claude Code can still persist runtime-local settings without
-  touching committed config.
+  proven `packs.md`/`workspace.yml` overlay pattern, here `:ro`-on-rw). This makes `project.yml`,
+  `secrets.env`, and the internal `.cco/` metadata read-only to the agent.
+
+The project's **Claude config tree** (`<repo>/.cco/claude` = CLAUDE.md/rules/agents/skills, surfaced at
+the `/workspace/.claude` overlay) **stays read-write** — it is the project's native Claude Code config,
+authored normally by `/init` and ongoing work (P17, co-authored with the code). So edit-protection
+**splits** the committed `.cco/`: **structural framework config (read-only)** vs **project Claude config
+(read-write)**.
 
 This is a **filesystem** guardrail: **container-only** (the host IDE edits `~/.cco` and `<repo>/.cco`
 freely — P1), **not overridable** by in-session settings, **per-session** (no managed image change, no
-`cco build`). It makes the **config-editor the sanctioned agentic path** for config edits.
+`cco build`). The **config-editor is the sanctioned agentic path** for editing `project.yml`/`secrets`
+and the global store.
 
-**Escape hatch**: `cco start --enable-config-edit` re-enables rw on `<repo>/.cco` + the claude overlay
-for one normal session, for a user who consciously wants to edit config inline without launching
-config-editor. The built-ins (config-editor, and config-editor's `--project` target) are exempt by
-construction (they set the same rw toggle internally).
+**Escape hatch**: `cco start --enable-config-edit` re-enables rw on `<repo>/.cco` for one normal session,
+for a user who consciously wants to edit `project.yml`/`secrets` inline without launching config-editor.
+The built-ins (config-editor, tutorial) are exempt by construction (`is_internal`).
 
 Not applied to `cco new` (ephemeral scratch, out of the decentralized config model — ADR-0023 D5);
 revisit if a need appears.
+
+> **Decision refinement (2026-06-23, during implementation — maintainer-confirmed).** The first cut
+> made the `/workspace/.claude` overlay `:ro` too (so config-editor would be the *only* agentic path for
+> **any** config). Code-grounding surfaced a hard conflict: the **managed `init-workspace` skill** (the
+> `/init` onboarding flow, baked into the image) **writes `/workspace/.claude/CLAUDE.md`** — a `:ro`
+> overlay would break `/init` and all normal project-config authoring for every project. The hooks only
+> *read* `/workspace/.claude`; `init-workspace` is the sole baked writer. The maintainer chose the
+> **narrow** guardrail above (protect only the structural framework config; keep the Claude config tree
+> rw), which closes the genuinely-new exposure (`project.yml`/`secrets` via the repo mount), preserves
+> `/init`, and aligns with P17. The `settings.local.json` rw-escape from the first cut is therefore
+> unnecessary and dropped.
 
 ## Consequences
 

@@ -516,6 +516,17 @@ YAML
 
         echo "    volumes:"
 
+        # Agentic config edit-protection (ADR-0027 D3, narrow scope). A normal
+        # session overlays the committed structural framework config
+        # (<repo>/.cco: project.yml, secrets.env, internal metadata) READ-ONLY
+        # so the in-container agent cannot involuntarily mutate it while working
+        # on code. The project's Claude config tree (/workspace/.claude) stays rw
+        # (P17, /init authoring). The host IDE is unaffected (container-only).
+        # Built-in sessions (tutorial, config-editor) and the explicit
+        # --enable-config-edit escape hatch keep <repo>/.cco read-write.
+        local _committed_ro=":ro"
+        if $is_internal || $enable_config_edit; then _committed_ro=""; fi
+
         # ~/.claude.json — preferences, MCP servers, session metadata (machine-local STATE)
         echo "      - ${state_root}/claude.json:/home/claude/.claude.json"
         # ~/.claude/.credentials.json — OAuth tokens (machine-local STATE, never synced)
@@ -529,7 +540,10 @@ YAML
       - ${config_global}/.claude/rules:/home/claude/.claude/rules:ro
       - ${config_global}/.claude/agents:/home/claude/.claude/agents:ro
       - ${config_global}/.claude/skills:/home/claude/.claude/skills:ro
-      # Project config
+      # Project config. The Claude config tree (CLAUDE.md/rules/agents/skills)
+      # stays rw so /init + normal project-config authoring work (P17); the
+      # structural framework config (project.yml/secrets/.cco metadata) is
+      # protected separately by the <repo>/.cco :ro overlay below (ADR-0027 D3).
       - ${claude_src}:/workspace/.claude
       - ${project_dir}/project.yml:/workspace/project.yml:ro
       # Claude state: session transcripts (machine-local STATE; enables /resume across rebuilds)
@@ -597,6 +611,21 @@ YAML
             [[ -z "$repo_name" ]] && continue
             echo "      - ${repo_path}:/workspace/${repo_name}"
         done < <(_effective_repo_mounts "$project_yml")
+
+        # Edit-protection (ADR-0027 D3): overlay each repo's committed .cco as
+        # :ro on top of the rw repo mount (Docker applies child mounts after the
+        # parent), so the agent cannot mutate the structural framework config
+        # (project.yml, secrets.env, internal metadata) via the code repo. The
+        # project's Claude config (.cco/claude) is still authored normally
+        # through the rw /workspace/.claude overlay (P17). Skipped under
+        # --enable-config-edit and for built-ins.
+        if [[ -n "$_committed_ro" ]]; then
+            while IFS=$'\t' read -r repo_name repo_path; do
+                [[ -z "$repo_name" ]] && continue
+                [[ -d "$repo_path/.cco" ]] && \
+                    echo "      - ${repo_path}/.cco:/workspace/${repo_name}/.cco:ro"
+            done < <(_effective_repo_mounts "$project_yml")
+        fi
 
         # Extra mounts (same invariant as repos — resolved + existence
         # asserted upstream). The bridge emits abs_source<TAB>target<TAB>ro.

@@ -64,10 +64,13 @@ test_invariant_2_project_config_at_workspace_claude_readwrite() {
     # Decentralized source is <repo>/.cco/claude (no dot); the container target
     # /workspace/.claude is the fixed contract (P3 read-path flip).
     assert_file_contains "$compose" "/claude:/workspace/.claude"
-    # MUST be read-write
+    # Design Invariant 2: the project Claude config stays read-write so /init and
+    # normal project-config authoring work (P17). Edit-protection (ADR-0027 D3)
+    # is narrow — it protects only the structural <repo>/.cco (project.yml,
+    # secrets, metadata) via a separate :ro overlay, NOT this Claude config tree.
     if grep -qE "/claude:/workspace/\.claude:ro" "$compose"; then
         echo "ASSERTION FAILED: project .claude must be mounted rw, not :ro"
-        echo "  (Design Invariant 2: project config is read-write so Claude can update it)"
+        echo "  (Design Invariant 2: project Claude config is read-write for authoring)"
         return 1
     fi
 }
