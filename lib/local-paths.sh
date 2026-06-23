@@ -900,7 +900,7 @@ _resolve_project_paths_impl() {
 
     [[ ! -f "$project_yml" ]] && return 0
 
-    local unresolved_msg="Unresolved @local paths — run 'cco project resolve' to configure"
+    local unresolved_msg="Unresolved reference(s) on this machine — run 'cco resolve' to configure"
     local abort_msg="Aborted."
     [[ "$mode" == "install" ]] && abort_msg="Installation aborted."
 
@@ -972,16 +972,17 @@ _resolve_project_paths_impl() {
                 if [[ $rc -eq 0 && -n "$resolved" ]]; then
                     resolved_repos+=("$name")
                 elif [[ $rc -eq 2 ]]; then
+                    # rc==2: non-TTY (no prompt possible) OR a TTY user chose [q]uit.
                     if [[ ! -t 0 ]]; then
-                        if [[ "$mode" == "start" ]]; then
-                            die "$unresolved_msg"
-                        else
-                            warn "Repository '$name' path does not exist — run 'cco resolve' to configure"
-                        fi
+                        # non-TTY: warn + proceed without it (P14 conscious-skip
+                        # equivalent — start excludes it + ⚠-badges it, never silent;
+                        # design §4.4). install likewise warns and defers.
+                        warn "Repository '$name' unresolved on this machine — run 'cco resolve' to configure"
                     else
-                        die "$abort_msg"
+                        die "$abort_msg"   # TTY: user chose [q]uit
                     fi
                 else
+                    # rc==1: user consciously [s]kipped at the F49 prompt.
                     if [[ "$mode" == "start" ]]; then
                         warn "Repository '$name' skipped — it will not be available in this session"
                     fi
@@ -1042,13 +1043,10 @@ _resolve_project_paths_impl() {
                     :
                 elif [[ $rc -eq 2 ]]; then
                     if [[ ! -t 0 ]]; then
-                        if [[ "$mode" == "start" ]]; then
-                            die "$unresolved_msg"
-                        else
-                            warn "Mount '$name' path does not exist — run 'cco resolve' to configure"
-                        fi
+                        # non-TTY: warn + proceed without it (P14; design §4.4).
+                        warn "Mount '$name' unresolved on this machine — run 'cco resolve' to configure"
                     else
-                        die "$abort_msg"
+                        die "$abort_msg"   # TTY: user chose [q]uit
                     fi
                 else
                     if [[ "$mode" == "start" ]]; then
@@ -1071,8 +1069,10 @@ _resolve_installed_paths() {
     _resolve_project_paths_impl "$1" "install"
 }
 
-# Resolve @local entries before session start (cco start flow).
-# Non-TTY unresolved is fatal: the session cannot launch without paths.
+# Resolve referenced paths before session start (cco start flow). TTY: the F49
+# prompt offers clone/path/skip per unresolved member. Non-TTY or [s]kip: warn +
+# proceed without it (conscious-skip, P14 — never a silent empty mount; design
+# §4.4). The residue is counted + ⚠-badged by _start_resolve_paths.
 # Usage: _resolve_start_paths <project_dir>
 _resolve_start_paths() {
     _resolve_project_paths_impl "$1" "start"
@@ -1110,12 +1110,17 @@ _effective_repo_mounts() {
         done <<< "$legacy"
     else
         # Peel fields by tab (IFS=$'\t' read collapses empty middle fields).
-        local _ln name
+        local _ln name _p
         while IFS= read -r _ln; do
             [[ -z "$_ln" ]] && continue
             name="${_ln%%$'\t'*}"
             [[ -z "$name" ]] && continue
-            printf '%s\t%s\n' "$name" "$(_index_get_path "$name")"
+            # Conscious-skip (design §4.4 / P14): a member still unresolved after
+            # the F49 prompt has no index path — exclude it (never emit a silent
+            # empty mount, #B17); _start_resolve_paths already warned + ⚠-badged it.
+            _p=$(_index_get_path "$name")
+            [[ -z "$_p" ]] && continue
+            printf '%s\t%s\n' "$name" "$_p"
         done < <(yml_get_repo_coords "$project_yml" 2>/dev/null)
     fi
 }
@@ -1153,9 +1158,13 @@ _effective_extra_mounts() {
             target="${rest%%$'\t'*}"
             ro_raw="${rest#*$'\t'}"
             [[ -z "$name" ]] && continue
+            # Conscious-skip: exclude an unresolved mount (no index path) rather
+            # than emit a silent empty mount (#B17; design §4.4 / P14).
+            local _ms; _ms=$(_index_get_path "$name")
+            [[ -z "$_ms" ]] && continue
             [[ -z "$target" ]] && target="/workspace/$name"
             ro=$(_parse_bool "$ro_raw" "true")
-            printf '%s\t%s\t%s\n' "$(_index_get_path "$name")" "$target" "$ro"
+            printf '%s\t%s\t%s\n' "$_ms" "$target" "$ro"
         done < <(yml_get_mount_coords "$project_yml" 2>/dev/null)
     fi
 }

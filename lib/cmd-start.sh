@@ -405,12 +405,20 @@ _start_generate_integrations() {
 # the only start-specific concern is skipping the tutorial/internal
 # project (which uses template-baked paths, nothing to resolve).
 _start_resolve_paths() {
+    unresolved_refs=0
     $is_internal && return 0
     _resolve_start_paths "$project_dir"
-    # Hard guard: after resolution every entry must be resolvable and
-    # exist on disk — otherwise docker-compose would get @local or a
-    # missing source and silently create empty bind mounts (#B17).
-    _assert_resolved_paths "$project_dir" "$project_name"
+    # Conscious-skip model (design §4.4 / P14, ADR-0017 D2): _resolve_start_paths
+    # offered [c]lone / [p]ath / [s]kip per unresolved member (TTY) and already
+    # warned each member it could not resolve (skip / non-TTY). Here we only COUNT
+    # the residue for the passive ⚠ badge — the mount-gen excludes empty-path
+    # entries, so a skipped member is never a silent empty mount (#B17).
+    local kind key effective status
+    while IFS=$'\t' read -r kind key effective status; do
+        [[ -z "$kind" ]] && continue
+        [[ "$status" == "exists" ]] && continue
+        unresolved_refs=$((unresolved_refs + 1))
+    done < <(_project_effective_paths "$project_dir")
 }
 
 # Emit the non-blocking config reminder aggregator (ADR-0008) for this project's
@@ -918,6 +926,7 @@ EOF
 
     # Variables set by helper functions (declared here for shared scope)
     local project_dir project_yml is_internal claude_src source_repo source_kind
+    local unresolved_refs=0
     local project_name auth_method docker_image mount_socket network
     local browser_enabled browser_mode browser_cdp_port browser_effective_port browser_mcp_args
     local github_enabled github_token_env pack_names
@@ -941,6 +950,16 @@ EOF
 
     _start_resolve_paths
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] resolve_paths done" >&2
+
+    # Source transparency + passive ⚠ badge (design §4.4 / ADR-0019 D2 layer-e /
+    # P14), AFTER member resolution (H1). Always print which <repo>/.cco config
+    # source was used, so the precedence (--from > cwd/by-name) is never opaque;
+    # the badge names the next step (cco resolve) but never blocks the launch.
+    if ! $is_internal; then
+        info "started ${project_name} from $(basename "$source_repo") [source: ${source_kind}]"
+        [[ "${unresolved_refs:-0}" -gt 0 ]] && \
+            warn "⚠ ${project_name}: ${unresolved_refs} reference(s) unresolved — run 'cco resolve'"
+    fi
 
     # H1: config reminders fire AFTER member resolution, never against an empty
     # index (ADR-0008). Silent on the pre-P2 central layout (no per-repo .cco/).
