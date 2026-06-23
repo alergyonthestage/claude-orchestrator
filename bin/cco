@@ -76,6 +76,7 @@ source "$LIB_DIR/cmd-new.sh"
 source "$LIB_DIR/cmd-resolve.sh"
 source "$LIB_DIR/cmd-sync.sh"
 source "$LIB_DIR/tags.sh"
+source "$LIB_DIR/cmd-config.sh"
 source "$LIB_DIR/cmd-stop.sh"
 source "$LIB_DIR/cmd-chrome.sh"
 source "$LIB_DIR/cmd-project-create.sh"
@@ -143,6 +144,7 @@ Templates:
   template <cmd>         Manage project/pack templates (list, show, create, remove)
 
 Sharing & Versioning:
+  config <save|push|pull> Version + sync your personal ~/.cco store
   remote <cmd>           Manage Config Repo remotes
   manifest <cmd>         Manage manifest.yml for Config Repos
   vault <cmd>            Git-backed config versioning
@@ -177,6 +179,7 @@ case "$cmd" in
     sync)    cmd_sync "$@"     || _cco_rc=$? ;;
     tag)     cmd_tag "$@"      || _cco_rc=$? ;;
     list)    cmd_list "$@"     || _cco_rc=$? ;;
+    config)  cmd_config "$@"   || _cco_rc=$? ;;
     project)
         subcmd="${1:-}"
         if [[ -z "$subcmd" || "$subcmd" == "--help" ]]; then
