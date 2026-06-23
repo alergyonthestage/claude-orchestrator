@@ -55,6 +55,15 @@ Doc/resource updates ride the phase that makes them **true**, with one rule of t
 Its `project.yml`, `CLAUDE.md`, `config-safety` rule, and both skills are built end-to-end around
 `user-config/projects|packs/`, vault, `@local`, and removed commands.
 
+> **P3-4 resolution (ADR-0027).** config-editor becomes a **built-in** (the tutorial model): the tree
+> **moves** `templates/project/config-editor/` → `internal/config-editor/`; `cco start config-editor`
+> launches it (reserved name). **Global mode** mounts `~/.cco` rw; **project mode**
+> (`--project <name>` / cwd) also mounts the target `<repo>/.cco` rw. The `~/.cco` host path is injected
+> by the launcher (never committed → AD3/G8 by construction). The rows below still drive the **content**
+> rewrite (CLAUDE.md / config-safety / skills → `~/.cco` + `cco config save/push/pull` + sharing repo,
+> drop vault/`user-config`/manifest); `project.yml` no longer carries `path:`/`source:` (the mounts are
+> launcher-injected). The near-duplicate `internal/tutorial/` skills (A.4) ride the P3-5 sweep.
+
 | Resource (file:line) | Old-model reference | Required change | Phase |
 |---|---|---|---|
 | `templates/project/config-editor/project.yml:7` | `- path: {{CCO_USER_CONFIG_DIR}}` | Mount `~/.cco/` via the new global-dir placeholder/var (`CCO_USER_CONFIG_DIR` removed) | **0/3** (coordinate with the `bin/cco`/`lib/paths.sh` rename) |
