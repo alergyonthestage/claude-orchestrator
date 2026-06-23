@@ -928,8 +928,8 @@ test_cross_tree_pack_file_collision_warns() {
     echo "pack rule" > "$CCO_PACKS_DIR/r-pack/rules/foo.md"
     create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nrepos:\n  - name: dummy-repo\npacks:\n  - r-pack\n')"
     # Committed config authors the same relative path the pack mounts to.
-    mkdir -p "$CCO_PROJECTS_DIR/test-proj/.claude/rules"
-    echo "user rule" > "$CCO_PROJECTS_DIR/test-proj/.claude/rules/foo.md"
+    mkdir -p "$(host_cco_dir "$tmpdir" test-proj)/claude/rules"
+    echo "user rule" > "$(host_cco_dir "$tmpdir" test-proj)/claude/rules/foo.md"
     run_cco start "test-proj" --dry-run --dump
     assert_output_contains ".claude/rules/foo.md collides with pack 'r-pack'"
 }
@@ -957,8 +957,8 @@ test_cross_tree_reserved_namespace_warns() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nrepos:\n  - name: dummy-repo\n')"
-    mkdir -p "$CCO_PROJECTS_DIR/test-proj/.claude/packs/stale"
-    echo "x" > "$CCO_PROJECTS_DIR/test-proj/.claude/packs/stale/x.md"
+    mkdir -p "$(host_cco_dir "$tmpdir" test-proj)/claude/packs/stale"
+    echo "x" > "$(host_cco_dir "$tmpdir" test-proj)/claude/packs/stale/x.md"
     run_cco start "test-proj" --dry-run --dump
     assert_output_contains ".claude/packs/ is framework-reserved"
 }

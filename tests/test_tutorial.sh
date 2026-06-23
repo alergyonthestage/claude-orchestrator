@@ -132,13 +132,12 @@ test_start_tutorial_blocks_on_name_conflict() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
 
-    # Create a user project named "tutorial"
-    mkdir -p "$CCO_PROJECTS_DIR/tutorial/.claude"
-    echo "name: tutorial" > "$CCO_PROJECTS_DIR/tutorial/project.yml"
+    # Create a user project named "tutorial" (decentralized host + index seed)
+    create_project "$tmpdir" "tutorial" "$(minimal_project_yml tutorial)"
 
     # cco start tutorial should fail with reserved name error
     if run_cco start tutorial --dry-run 2>/dev/null; then
-        fail "Expected cco start tutorial to fail when projects/tutorial exists"
+        fail "Expected cco start tutorial to fail when a 'tutorial' project exists"
     fi
     assert_output_contains "reserved name"
 }

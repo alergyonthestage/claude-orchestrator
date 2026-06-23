@@ -2217,26 +2217,12 @@ test_user_changes_still_block_even_with_memory() {
 # ══════════════════════════════════════════════════════════════════════
 # Cross-Profile UX
 # ══════════════════════════════════════════════════════════════════════
-
-test_start_shows_profile_hint_when_project_on_other_branch() {
-    # When cco start fails because project is on another profile, hint which one
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    _setup_vault_for_profiles "$tmpdir"
-    local default_branch
-    default_branch=$(_vault_default_branch)
-
-    # Move test-proj to "work" profile
-    run_cco vault profile create "work"
-    run_cco vault switch "$default_branch"
-    run_cco vault move project "test-proj" "work" --yes
-
-    # Now on main, test-proj is gone. Try to start it.
-    if run_cco start test-proj --dry-run 2>/dev/null; then
-        fail "Expected start to fail when project is on another profile"
-    fi
-    assert_output_contains "profile 'work'"
-    assert_output_contains "vault switch work"
-}
+#
+# test_start_shows_profile_hint_when_project_on_other_branch — REMOVED (P3-1a).
+# The vault-profile-branch hint in `cco start` is gone: the decentralized read-path
+# (_start_resolve_project) resolves via the STATE index, not vault profile branches.
+# Profiles are removed entirely in P3 (ADR-0010); the rest of this file retires in
+# P3-3 with the vault cutover.
 
 # ══════════════════════════════════════════════════════════════════════
 # Additional Coverage — Review Findings (2026-03-26)

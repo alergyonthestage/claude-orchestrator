@@ -41,55 +41,64 @@ _setup_internal_tutorial() {
 # variable scope. They must NOT redeclare variables — they read/write
 # cmd_start()'s locals directly.
 
-# Resolves project name to directory and project.yml path.
-# Sets: project_dir, project_yml, is_internal
+# Resolves the project to its decentralized config source (design §4.4, ADR-0024
+# D3): cco start reads <repo>/.cco/ — cwd-first when no name is given (the project
+# the repo HOSTS, by its project.yml `name`), or by-name via the STATE index
+# (projects: membership -> the first member hosting .cco/project.yml). The central
+# $PROJECTS_DIR layout is gone (P3 breaking cutover, AD12 — no dual-read).
+# Sets: project_dir (the .cco config dir), project_yml, claude_src (committed
+#   claude config tree), source_repo (the host repo), source_kind, is_internal,
+#   and fills `project` when resolved cwd-first.
 _start_resolve_project() {
     is_internal=false
+    source_kind="cwd"
 
     if [[ "$project" == "tutorial" ]]; then
-        # "tutorial" is a reserved name — always launches the built-in tutorial.
-        # Block if user has a project named "tutorial" in user-config.
-        if [[ -d "$PROJECTS_DIR/tutorial" ]]; then
+        # "tutorial" is a reserved name — always launches the built-in tutorial
+        # (an internal project, not part of the decentralized <repo>/.cco/ model).
+        # Block if the user has a real project named "tutorial" in the index.
+        if _resolve_unit_dir_for_project "tutorial" >/dev/null 2>&1; then
             echo ""
             error "'tutorial' is a reserved name for the built-in tutorial."
             echo ""
-            echo "  You have a project named 'tutorial' in your user-config."
-            echo "  Please rename or remove it to use 'cco start tutorial':"
+            echo "  You have a project named 'tutorial'. Rename it to use the built-in"
+            echo "  tutorial (edit its .cco/project.yml 'name:' and run 'cco resolve')."
             echo ""
-            echo "    Rename:  mv $PROJECTS_DIR/tutorial $PROJECTS_DIR/<new-name>"
-            echo "    Remove:  rm -rf $PROJECTS_DIR/tutorial"
-            echo ""
-            echo "  After renaming, update any references to the old project name."
             die "Resolve the conflict and try again."
         fi
         is_internal=true
         _setup_internal_tutorial
         project_dir="$USER_CONFIG_DIR/.cco/internal/tutorial"
         project_yml="$project_dir/project.yml"
+        claude_src="$project_dir/.claude"
+        source_repo="$project_dir"
     else
-        project_dir="$PROJECTS_DIR/$project"
-        project_yml="$project_dir/project.yml"
-        if [[ ! -d "$project_dir" ]]; then
-            # Check if project exists on another vault profile branch
-            local _other_branch=""
-            if [[ -d "$USER_CONFIG_DIR/.git" ]]; then
-                local _branch
-                while IFS= read -r _branch; do
-                    _branch=$(echo "$_branch" | sed 's/^[ *]*//')
-                    [[ -z "$_branch" ]] && continue
-                    if [[ -n "$(git -C "$USER_CONFIG_DIR" ls-tree "$_branch" -- "projects/$project/" 2>/dev/null)" ]]; then
-                        _other_branch="$_branch"
-                        break
-                    fi
-                done < <(git -C "$USER_CONFIG_DIR" branch 2>/dev/null)
-            fi
-            if [[ -n "$_other_branch" ]]; then
-                die "Project '$project' is on profile '$_other_branch'. Run 'cco vault switch $_other_branch' first."
-            else
-                die "Project '$project' not found. Run 'cco project list' to see available projects."
-            fi
+        local unit_dir=""
+        if [[ -n "$from_repo" ]]; then
+            # --from <repo>: explicit Case-C source (mirrors `cco sync --from`).
+            unit_dir=$(_index_get_path "$from_repo") \
+                || die "source repo '$from_repo' is unresolved on this machine — run 'cco resolve' first."
+            [[ -n "$unit_dir" ]] || die "source repo '$from_repo' is unresolved on this machine — run 'cco resolve' first."
+            [[ -f "$unit_dir/.cco/project.yml" ]] \
+                || die "source repo '$from_repo' has no .cco/project.yml — not a config-bearing member."
+            source_kind="--from"
+        elif [[ -n "$project" ]]; then
+            # By-name: resolve the project's host via the index membership.
+            unit_dir=$(_resolve_unit_dir_for_project "$project") \
+                || die "Project '$project' is not resolvable on this machine. Run 'cco resolve --scan <dir>' to discover it, or start from its repo."
+            source_kind="name"
+        else
+            # cwd-first: the project THIS repo hosts (AD6 / ADR-0024 D3).
+            unit_dir=$(_resolve_find_unit_dir) \
+                || die "No .cco/project.yml in the current directory or its parents. Name a project ('cco start <project>') or run from a configured repo."
+            project=$(yml_get "$unit_dir/.cco/project.yml" name 2>/dev/null)
+            source_kind="cwd"
         fi
-        [[ ! -f "$project_yml" ]] && die "No project.yml found in projects/$project/"
+        project_dir="$unit_dir/.cco"
+        project_yml="$project_dir/project.yml"
+        claude_src="$project_dir/claude"
+        source_repo="$unit_dir"
+        [[ -f "$project_yml" ]] || die "No .cco/project.yml found for '${project:-cwd}' (host repo: $unit_dir)."
     fi
 
     if ! $dry_run; then
@@ -214,7 +223,7 @@ _start_check_health() {
     # Check for unresolved merge conflicts in config files
     local _conflict_files=()
     local _check_dir _check_label
-    for _check_dir in "$config_dir/global/.claude" "$project_dir/.claude"; do
+    for _check_dir in "$config_dir/global/.claude" "$claude_src"; do
         [[ ! -d "$_check_dir" ]] && continue
         if [[ "$_check_dir" == "$config_dir/global/.claude" ]]; then
             _check_label="global"
@@ -388,7 +397,7 @@ _start_generate_integrations() {
     # Warn on cross-tree collisions between committed .claude config and the
     # framework-reserved overlay tree (ADR-0005 F2). Unconditional — reserved
     # packs//llms/ violations apply even with no packs configured.
-    _detect_cross_tree_conflicts "$project_yml" "$pack_names" "$project_dir"
+    _detect_cross_tree_conflicts "$project_yml" "$pack_names" "$claude_src"
 }
 
 # Resolves @local markers and legacy {{REPO_*}} in project.yml before
@@ -513,7 +522,7 @@ YAML
       - ${config_global}/.claude/agents:/home/claude/.claude/agents:ro
       - ${config_global}/.claude/skills:/home/claude/.claude/skills:ro
       # Project config
-      - ${project_dir}/.claude:/workspace/.claude
+      - ${claude_src}:/workspace/.claude
       - ${project_dir}/project.yml:/workspace/project.yml:ro
       # Claude state: session transcripts (machine-local STATE; enables /resume across rebuilds)
       - ${session_state_dir}/session/claude-state:/home/claude/.claude/projects/-workspace
@@ -841,6 +850,7 @@ cmd_start() {
     check_global
 
     local project=""
+    local from_repo=""
     local teammate_mode=""
     local use_api_key=false
     local dry_run=false
@@ -853,6 +863,7 @@ cmd_start() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            --from) [[ $# -lt 2 ]] && die "--from requires a <repo> name."; from_repo="$2"; shift 2 ;;
             --teammate-mode) teammate_mode="$2"; shift 2 ;;
             --api-key) use_api_key=true; shift ;;
             --dry-run) dry_run=true; shift ;;
@@ -866,9 +877,14 @@ cmd_start() {
             --env) extra_envs+=("$2"); shift 2 ;;
             --help)
                 cat <<'EOF'
-Usage: cco start <project> [OPTIONS]
+Usage: cco start [project] [OPTIONS]
+
+Reads the decentralized <repo>/.cco/ config. With no project name, starts the
+project the current repo HOSTS (cwd-first); name a project to resolve it via the
+machine-local index.
 
 Options:
+  --from <repo>        Use <repo>/.cco as the config source (Case-C divergence)
   --teammate-mode <m>  Override display mode: tmux | auto
   --api-key            Use ANTHROPIC_API_KEY instead of OAuth
   --chrome             Enable browser automation for this session only
@@ -897,10 +913,11 @@ EOF
         esac
     done
 
-    [[ -z "$project" ]] && die "Usage: cco start <project>. Run 'cco project list' to see available projects."
+    # No project name is valid: cwd-first resolution (the repo this dir hosts).
+    # _start_resolve_project dies with guidance when cwd is not a configured repo.
 
     # Variables set by helper functions (declared here for shared scope)
-    local project_dir project_yml is_internal
+    local project_dir project_yml is_internal claude_src source_repo source_kind
     local project_name auth_method docker_image mount_socket network
     local browser_enabled browser_mode browser_cdp_port browser_effective_port browser_mcp_args
     local github_enabled github_token_env pack_names

@@ -647,7 +647,7 @@ test_dry_run_volume_order_global_before_project() {
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     local settings_line project_line
     settings_line=$(grep -n "settings.json:/home/claude" "$compose" | head -1 | cut -d: -f1)
-    project_line=$(grep -n "./.claude:/workspace/.claude" "$compose" | head -1 | cut -d: -f1)
+    project_line=$(grep -nE ":/workspace/\.claude$" "$compose" | head -1 | cut -d: -f1)
     if [[ -z "$settings_line" || -z "$project_line" ]]; then
         echo "ASSERTION FAILED: could not find settings or project config line"
         return 1
@@ -818,7 +818,7 @@ test_dry_run_setup_sh_mounted_when_exists() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
-    echo '#!/bin/bash' > "$CCO_PROJECTS_DIR/test-proj/setup.sh"
+    echo '#!/bin/bash' > "$(host_cco_dir "$tmpdir" test-proj)/setup.sh"
     run_cco start "test-proj" --dry-run --dump
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
         "/setup.sh:/workspace/setup.sh:ro"
@@ -866,7 +866,7 @@ test_dry_run_mcp_packages_mounted_when_exists() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
-    echo '# packages' > "$CCO_PROJECTS_DIR/test-proj/mcp-packages.txt"
+    echo '# packages' > "$(host_cco_dir "$tmpdir" test-proj)/mcp-packages.txt"
     run_cco start "test-proj" --dry-run --dump
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
         "/mcp-packages.txt:/workspace/mcp-packages.txt:ro"
@@ -1532,8 +1532,8 @@ test_start_blocked_by_project_conflict_markers() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
-    # Inject conflict markers into a project config file
-    cat >> "$CCO_PROJECTS_DIR/test-proj/.claude/settings.json" <<'MARKERS'
+    # Inject conflict markers into a project config file (decentralized claude/)
+    cat >> "$(host_cco_dir "$tmpdir" test-proj)/claude/settings.json" <<'MARKERS'
 <<<<<<< your version
 =======
 >>>>>>> new default
@@ -1565,7 +1565,7 @@ test_start_auto_cleans_stale_tmp() {
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
 
     # Create a stale .tmp/ directory (as if from --dry-run --dump)
-    local project_dir="$CCO_PROJECTS_DIR/test-proj"
+    local project_dir; project_dir="$(host_cco_dir "$tmpdir" test-proj)"
     mkdir -p "$project_dir/.tmp"
     echo "stale dump" > "$project_dir/.tmp/docker-compose.yml"
 

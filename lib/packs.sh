@@ -78,10 +78,10 @@ _detect_pack_conflicts() {
 # a committed file at the same container path is shadowed (Docker applies the
 # child :ro mount on top of the rw parent, so the overlay wins). This is
 # detect-and-warn only — never a hard block (layered reachability, P14).
-# Args: project_yml, pack_names, project_dir.
+# Args: project_yml, pack_names, claude_dir (the committed project .claude tree —
+# <repo>/.cco/claude in the decentralized layout, or the internal/tutorial .claude).
 _detect_cross_tree_conflicts() {
-    local project_yml="$1" pack_names="$2" project_dir="$3"
-    local claude_dir="$project_dir/.claude"
+    local project_yml="$1" pack_names="$2" claude_dir="$3"
     [[ ! -d "$claude_dir" ]] && return 0
 
     # Reserved namespaces: packs/ and llms/ are framework-owned subtrees (pack

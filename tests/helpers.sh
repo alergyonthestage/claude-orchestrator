@@ -112,17 +112,39 @@ setup_global_from_defaults() {
 }
 
 # Create a minimal project directory with the given project.yml content.
-# Also creates .claude/ and memory/ directories.
+#
+# Writes BOTH layouts during the P3 cutover (the established dual-seed harness
+# pattern, like setup_global_from_defaults):
+#   - Legacy central: tmpdir/user-config/projects/<name>/ — kept for the
+#     not-yet-cutover callers (project-create/vault tests) and the assertions
+#     that still reference $CCO_PROJECTS_DIR.
+#   - Decentralized host repo: tmpdir/repos/<name>/.cco/ (project.yml + claude/)
+#     + STATE index seed (paths: <name> -> host, projects: <name> -> <name>) —
+#     what `cco start` now reads (design §4.4 / ADR-0024 D3). `cco start <name>`
+#     resolves the host via the index; cwd-first resolves it via .cco/project.yml.
 # Usage: create_project "$tmpdir" "my-project" "$yml_content"
 create_project() {
     local tmpdir="$1"
     local name="$2"
     local yml_content="$3"
+    # Legacy central layout.
     local project_dir="$tmpdir/user-config/projects/$name"
     mkdir -p "$project_dir/.claude"
     mkdir -p "$project_dir/memory"
     printf '%s\n' "$yml_content" > "$project_dir/project.yml"
+    # Decentralized host repo (committed <repo>/.cco/, machine-agnostic).
+    local host="$tmpdir/repos/$name"
+    mkdir -p "$host/.cco/claude"
+    printf '%s\n' "$yml_content" > "$host/.cco/project.yml"
+    seed_index_path "$name" "$host"
+    index_set_project_repos "$name" "$name"
 }
+
+# Absolute path to a project's decentralized host .cco/ dir — what `cco start`
+# reads (project.yml, claude/, mcp.json, setup.sh, mcp-packages.txt, secrets.env).
+# Tests that pre-create config files for cco to read must target this dir, not
+# the legacy central $CCO_PROJECTS_DIR/<name>/. Usage: host_cco_dir "$tmpdir" "<name>"
+host_cco_dir() { printf '%s' "$1/repos/$2/.cco"; }
 
 # Create a pack definition in packs/<name>/pack.yml
 # Usage: create_pack "$tmpdir" "pack-name" "$yml_content"

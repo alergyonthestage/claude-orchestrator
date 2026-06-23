@@ -61,11 +61,11 @@ test_invariant_2_project_config_at_workspace_claude_readwrite() {
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
-    # Mount source is now host-absolute (Phase-0 BL3: relative ./ -> abs path);
-    # the container target /workspace/.claude is the fixed contract.
-    assert_file_contains "$compose" "/.claude:/workspace/.claude"
+    # Decentralized source is <repo>/.cco/claude (no dot); the container target
+    # /workspace/.claude is the fixed contract (P3 read-path flip).
+    assert_file_contains "$compose" "/claude:/workspace/.claude"
     # MUST be read-write
-    if grep -qE "/\.claude:/workspace/\.claude:ro" "$compose"; then
+    if grep -qE "/claude:/workspace/\.claude:ro" "$compose"; then
         echo "ASSERTION FAILED: project .claude must be mounted rw, not :ro"
         echo "  (Design Invariant 2: project config is read-write so Claude can update it)"
         return 1
