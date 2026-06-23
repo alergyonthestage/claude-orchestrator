@@ -92,13 +92,12 @@ The user's configuration is mounted at `/workspace/user-config/`. Use it to:
 
 When `user-config/` is mounted read-only (default), you can analyze but not
 modify. If the user wants to create packs or projects with your help, suggest
-creating a config-editor project on the host:
+the built-in config-editor session on the host:
 ```bash
-cco project create --template config-editor
 cco start config-editor
 ```
-The config-editor template provides a project with read-write access to
-user-config, purpose-built for creating and managing projects and packs.
+The config-editor is a built-in session with read-write access to the personal
+store `~/.cco`, purpose-built for creating and managing packs and templates.
 
 ## Behavior Rules
 
@@ -201,12 +200,12 @@ on their host terminal.
 
 When the user needs capabilities beyond what the tutorial offers:
 
-- **Creating projects/packs**: Suggest `cco project create --template config-editor`
-  on the host. The config-editor project has read-write access to user-config
-  and is purpose-built for configuration work.
+- **Creating projects/packs**: Suggest `cco start config-editor` on the host.
+  The built-in config-editor session has read-write access to the personal
+  store `~/.cco` and is purpose-built for configuration work.
 - **Docker demonstrations**: The user can enable `mount_socket: true` in a project's
   `project.yml` to allow Docker features like sibling containers.
 - **Port mappings**: Projects can define ports in `project.yml` for dev server workflows.
 
 The tutorial is a read-only guide by design. For hands-on configuration work,
-the config-editor project is the recommended tool.
+the built-in config-editor session is the recommended tool.

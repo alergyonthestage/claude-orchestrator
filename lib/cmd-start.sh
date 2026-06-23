@@ -36,6 +36,63 @@ _setup_internal_tutorial() {
     fi
 }
 
+# ── Internal config-editor setup (ADR-0027 D1) ───────────────────────
+# Prepares the runtime dir for the config-editor built-in. Like the tutorial,
+# its .claude/ content is refreshed from internal/config-editor/ every start.
+# The project.yml is GENERATED here (not committed): it mounts the personal
+# store ~/.cco rw (global mode) and, in project mode, the target project's
+# <repo>/.cco rw. Host paths are injected here — a runtime artifact, never
+# committed, so AD3/G8 hold by construction.
+# Args: <target_cco_path> <target_name>  (both empty in global mode)
+_setup_internal_config_editor() {
+    local target_cco="$1" target_name="$2"
+    local source_dir="$REPO_ROOT/internal/config-editor"
+    local runtime_dir="$USER_CONFIG_DIR/.cco/internal/config-editor"
+
+    [[ ! -d "$source_dir" ]] && die "Internal config-editor not found at $source_dir"
+
+    mkdir -p "$runtime_dir/.cco/claude-state" "$runtime_dir/memory"
+
+    # Always refresh content from framework source (ensures it is current).
+    rm -rf "$runtime_dir/.claude"
+    cp -r "$source_dir/.claude" "$runtime_dir/.claude" \
+        || die "Failed to refresh config-editor content from $source_dir."
+    [[ -f "$source_dir/setup.sh" ]] && cp "$source_dir/setup.sh" "$runtime_dir/setup.sh"
+
+    # Generate project.yml: ~/.cco rw + docs ro (+ the target's .cco rw in
+    # project mode). The personal store is mounted read-write — editing it is
+    # the whole purpose of this session.
+    local cfg; cfg="$(_cco_config_dir)"
+    {
+        cat <<YAML
+name: config-editor
+description: "Configuration editor for claude-orchestrator"
+extra_mounts:
+  - source: $cfg
+    target: /workspace/cco-config
+    readonly: false
+  - source: $REPO_ROOT/docs
+    target: /workspace/cco-docs
+    readonly: true
+YAML
+        if [[ -n "$target_cco" ]]; then
+            cat <<YAML
+  - source: $target_cco
+    target: /workspace/${target_name}-config
+    readonly: false
+YAML
+        fi
+        cat <<YAML
+docker:
+  mount_socket: false
+  ports: []
+  env: {}
+auth:
+  method: oauth
+YAML
+    } > "$runtime_dir/project.yml" || die "Failed to generate config-editor project.yml"
+}
+
 # ── cmd_start() helper functions ─────────────────────────────────────
 # These functions are called from within cmd_start() and share its local
 # variable scope. They must NOT redeclare variables — they read/write
@@ -69,6 +126,35 @@ _start_resolve_project() {
         is_internal=true
         _setup_internal_tutorial
         project_dir="$USER_CONFIG_DIR/.cco/internal/tutorial"
+        project_yml="$project_dir/project.yml"
+        claude_src="$project_dir/.claude"
+        source_repo="$project_dir"
+    elif [[ "$project" == "config-editor" ]]; then
+        # "config-editor" is a reserved name — launches the built-in config
+        # editor (ADR-0027 D1). Block a real project claiming the name.
+        if _resolve_unit_dir_for_project "config-editor" >/dev/null 2>&1; then
+            echo ""
+            error "'config-editor' is a reserved name for the built-in config editor."
+            echo ""
+            echo "  You have a project named 'config-editor'. Rename it (edit its"
+            echo "  .cco/project.yml 'name:' and run 'cco resolve')."
+            echo ""
+            die "Resolve the conflict and try again."
+        fi
+        is_internal=true
+        # Project mode: --project <name> wins; else a cwd that hosts a configured
+        # repo. Resolve the target's <repo>/.cco for an additional rw mount.
+        local _ce_path="" _ce_name="" _ce_cco=""
+        if [[ -n "$config_editor_target" ]]; then
+            _ce_path=$(_resolve_unit_dir_for_project "$config_editor_target") \
+                || die "config-editor --project '$config_editor_target' is not resolvable on this machine. Run 'cco resolve' first."
+            _ce_name="$config_editor_target"
+        elif _ce_path=$(_resolve_find_unit_dir 2>/dev/null); then
+            _ce_name=$(yml_get "$_ce_path/.cco/project.yml" name 2>/dev/null)
+        fi
+        [[ -n "$_ce_path" && -d "$_ce_path/.cco" ]] && _ce_cco="$_ce_path/.cco"
+        _setup_internal_config_editor "$_ce_cco" "$_ce_name"
+        project_dir="$USER_CONFIG_DIR/.cco/internal/config-editor"
         project_yml="$project_dir/project.yml"
         claude_src="$project_dir/.claude"
         source_repo="$project_dir"
@@ -912,12 +998,14 @@ cmd_start() {
     local extra_envs=()
     local user_mounts=()        # --mount specs (ADR-0027 D2), :ro by default
     local enable_config_edit=false  # --enable-config-edit escape hatch (ADR-0027 D3)
+    local config_editor_target=""   # --project <name> for the config-editor built-in (ADR-0027 D1)
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --from) [[ $# -lt 2 ]] && die "--from requires a <repo> name."; from_repo="$2"; shift 2 ;;
             --mount) [[ $# -lt 2 ]] && die "--mount requires <src>[:<target>][:ro|:rw]."; user_mounts+=("$2"); shift 2 ;;
             --enable-config-edit) enable_config_edit=true; shift ;;
+            --project) [[ $# -lt 2 ]] && die "--project requires a <name> (config-editor project mode)."; config_editor_target="$2"; shift 2 ;;
             --teammate-mode) teammate_mode="$2"; shift 2 ;;
             --api-key) use_api_key=true; shift ;;
             --dry-run) dry_run=true; shift ;;
@@ -937,8 +1025,13 @@ Reads the decentralized <repo>/.cco/ config. With no project name, starts the
 project the current repo HOSTS (cwd-first); name a project to resolve it via the
 machine-local index.
 
+Built-in sessions: 'cco start config-editor' opens the config-editor (edit your
+~/.cco store); add --project <name> (or run from a configured repo) to also
+mount that project's .cco/ for editing. 'cco start tutorial' opens the tutorial.
+
 Options:
   --from <repo>        Use <repo>/.cco as the config source (Case-C divergence)
+  --project <name>     config-editor only: also mount <name>'s .cco/ (rw)
   --teammate-mode <m>  Override display mode: tmux | auto
   --api-key            Use ANTHROPIC_API_KEY instead of OAuth
   --chrome             Enable browser automation for this session only

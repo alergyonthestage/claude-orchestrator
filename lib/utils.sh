@@ -76,7 +76,7 @@ check_global() {
 }
 
 # Reserved project names (used as keywords by CLI commands)
-RESERVED_PROJECT_NAMES=("global" "all" "tutorial")
+RESERVED_PROJECT_NAMES=("global" "all" "tutorial" "config-editor")
 
 # Check if a project name is reserved
 _check_reserved_project_name() {

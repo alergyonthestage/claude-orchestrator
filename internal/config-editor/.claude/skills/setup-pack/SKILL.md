@@ -47,8 +47,9 @@ Present the proposed structure and get approval.
 
 ## Step 3: Create Pack
 
-After user approves:
-1. Create directory: `/workspace/user-config/packs/<name>/`
+After user approves (packs live in the personal store `~/.cco/packs/`, mounted
+here at `/workspace/cco-config/packs/`):
+1. Create directory: `/workspace/cco-config/packs/<name>/`
 2. Create subdirectories: `knowledge/`, `rules/`, `agents/`, `skills/`
 3. Write `pack.yml` with the agreed structure and file descriptions
 4. Create placeholder knowledge files with section templates
@@ -60,10 +61,11 @@ After creation:
 - Show how to activate the pack: add to `packs:` in project.yml
 - Show `cco pack validate <name>` to verify structure
 - Explain the knowledge file descriptions and how Claude uses them
-- If the pack should be shared, mention Config Repos and `cco pack publish`
+- If the pack should be shared, mention the **sharing repo** flow and
+  `cco pack publish <name> [remote]` (no central manifest)
 - Suggest writing knowledge file content (the actual conventions, guidelines, etc.)
 - Reference: `cco-docs/user-guides/knowledge-packs.md`
-- Remind the user to run `cco vault save` after creation if vault is active
+- Remind the user to run `cco config save` on host to version the new pack
 
 ## Important
 

@@ -40,10 +40,9 @@ Present the suggested configuration and get approval.
 Before creating any files, verify:
 1. Is `/workspace/user-config` mounted read-write?
    - If yes → proceed to creation
-   - If no → suggest the user create a config-editor project on the host:
-     `cco project create --template config-editor && cco start config-editor`.
-     Alternatively, show the `cco project create` command with all flags
-     they can run on their host to create the project manually.
+   - If no → suggest the user open the built-in config-editor on the host:
+     `cco start config-editor`. Alternatively, show the `cco init` command
+     they run on their host inside the target repo to scaffold the project.
 
 ## Step 4: Create Project
 
