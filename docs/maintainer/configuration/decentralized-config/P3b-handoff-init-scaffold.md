@@ -1,5 +1,15 @@
 # P3-3b — `cco init` scaffold + delete `cco project create` (launch handoff)
 
+> **BUILD RE-SEQUENCE (2026-06-23, maintainer-confirmed — Option B; order only, scope/UX unchanged).**
+> The §1.5 coherence review **confirmed ADR-0026**, but code-grounding showed §3a's global retarget is
+> **not isolable** from the still-central `cco update`/`clean`/`manifest` engines + `check_global` + the
+> ~150 `run_cco init` global-only test calls (§3d only counted the six `project create` fixtures). So the
+> work ships as **two coordinated, delta-green commits**: **(1) global-home cutover** —
+> `GLOBAL_DIR`→`~/.cco/global` (`bin/cco` + engines via the shared var + `check_global` + harness
+> `CCO_GLOBAL_DIR`) + an `init_global` test helper running `cco init` in a throwaway per-test repo; **(2)
+> this handoff's §3** — scaffold + index + §3b marker-gate + delete `cco project create` + §3d fixtures +
+> `test_init.sh` rewrite. §3a/§3b are unchanged and land in commit 2. See ADR-0026 Implementation note.
+
 **Purpose.** Launch **commit P3-3b** in a fresh session, after **P3-1/P3-2/P3-3 are DONE** (the
 decentralized `cco start` runtime, `cco tag`/`cco config`, and the **vault/profile world removed** —
 baseline **949 passed / 3 failed**). P3-3b transforms `cco init` into the decentralized project entry

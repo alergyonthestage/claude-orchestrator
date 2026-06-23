@@ -103,3 +103,20 @@ move the migration-idempotency gate to the `migration-state` marker + non-destru
 confirm; delete `cco project create` (`lib/cmd-project-create.sh` + the `create)` arm) and migrate the
 six fixture-using test files to the harness `create_project` helper; remove `test_project_create.sh`,
 extend `test_init.sh`. Delta-green stays at the P3-3 end-state (3 P4–5 failures).
+
+> **Implementation note (2026-06-23, build re-sequence — order only, decision unchanged).**
+> Code-grounding the build surfaced that retargeting `cco init`'s global write to `~/.cco/global` is
+> **not isolable**: the `cco update`/`clean`/`manifest`/managed-scope engines and `check_global` still
+> read the central `$GLOBAL_DIR` (only `cco start`/`cco new` were flipped in P3-1), and ~150 `run_cco init`
+> calls across six legacy-style test files use `cco init` purely for **global setup** (asserting
+> `$CCO_GLOBAL_DIR`, run in the repo root with no `cd`) — so both the global retarget **and** the new
+> scaffold-in-cwd would break them. The handoff §3d only scoped the six `project create` fixture files.
+> Per maintainer decision (Option B) the build is split into **two coordinated commits, same end-state**:
+> **(1) global-home cutover** — redefine `GLOBAL_DIR`→`~/.cco/global` (`bin/cco` default + the engines via
+> the shared var + `check_global` + the harness `CCO_GLOBAL_DIR`), and route global-only test setup through
+> a new `init_global` helper that runs `cco init` in a throwaway per-test repo (the scaffold lands
+> harmlessly); **(2) init transform** — the per-repo scaffold + index register + the §3b marker-gate +
+> delete `cco project create` + the §3d fixture migration + `test_init.sh` rewrite. §3a/§3b are unchanged;
+> they land in commit 2 on top of the cutover. The §1.5 coherence review otherwise **confirmed** ADR-0026
+> (P1/P6/P18, the J0/init/update ownership split, and the migration-safety hinge: the marker-flag gate
+> closes the init-before-update hole — `migrate.sh:254` presence gate → `global-migrated` flag).
