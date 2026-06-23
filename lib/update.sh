@@ -126,25 +126,14 @@ _update_global() {
     # Phase 1: Run migrations (always, unless --dry-run or --news)
     local pending_migrations=$(( latest_schema - current_schema ))
     [[ $pending_migrations -lt 0 ]] && pending_migrations=0
-    local vault_synced_pre_migration=false
 
     if [[ $pending_migrations -gt 0 && "$cmd_mode" != "news" ]]; then
         if [[ "$dry_run" == "true" ]]; then
             info "$pending_migrations global migration(s) pending"
         else
-            # Vault pre-migration snapshot (prompt before any file modifications)
-            if [[ -d "$USER_CONFIG_DIR/.git" ]]; then
-                local do_vault="y"
-                if (exec < /dev/tty) 2>/dev/null; then
-                    read -rp "  Vault detected. Commit current state before running $pending_migrations migration(s)? [Y/n] " do_vault < /dev/tty
-                    do_vault="${do_vault:-y}"
-                fi
-                if [[ "$do_vault" =~ ^[Yy] ]]; then
-                    cmd_vault_save "pre-migration snapshot" </dev/tty >/dev/tty 2>/dev/tty || warn "Vault snapshot failed, continuing..."
-                    vault_synced_pre_migration=true
-                fi
-            fi
-
+            # No pre-migration vault snapshot (the vault is removed, P3): the
+            # universal raw-tar backup (J0) already protects the legacy config, and
+            # ~/.cco is versioned via explicit `cco config save` (ADR-0008).
             if ! _run_migrations "global" "$installed_dir" "$current_schema" "$meta_file"; then
                 error "Global migrations failed. Run 'cco update' again after resolving the issue."
                 return 1
@@ -210,21 +199,8 @@ _update_global() {
             fi
             ;;
         sync)
-            # Vault pre-update snapshot (optional, skip if already done pre-migration)
-            if [[ "$dry_run" != "true" && -z "$auto_action" && "$vault_synced_pre_migration" != "true" ]]; then
-                if [[ -d "$USER_CONFIG_DIR/.git" ]]; then
-                    local do_vault="y"
-                    if (exec < /dev/tty) 2>/dev/null; then
-                        read -rp "  Vault detected. Commit current state before updating? [Y/n] " do_vault < /dev/tty
-                        do_vault="${do_vault:-y}"
-                    fi
-                    if [[ "$do_vault" =~ ^[Yy] ]]; then
-                        cmd_vault_save "pre-update snapshot" </dev/tty >/dev/tty 2>/dev/tty || warn "Vault snapshot failed, continuing..."
-                        [[ "$no_backup" != "true" ]] && info "Vault snapshot created. You can use --no-backup to skip .bak files."
-                    fi
-                fi
-            fi
-
+            # No pre-update vault snapshot (vault removed, P3) — version ~/.cco
+            # explicitly with `cco config save` (ADR-0008).
             if [[ "$dry_run" == "true" ]]; then
                 # In dry-run + sync, show what would be available
                 _show_discovery_summary "$changes" "Global"

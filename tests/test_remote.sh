@@ -115,51 +115,8 @@ test_remote_list_empty() {
     assert_output_contains "No remotes"
 }
 
-# ── vault integration (transitional — vault-git coupling removed in P3) ──
-
-test_remote_add_syncs_with_vault() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    setup_global_from_defaults "$tmpdir"
-    run_cco init --lang "English"
-    run_cco vault init
-    run_cco remote add acme git@github.com:acme/config.git
-    # url registry now lives in DATA; the vault-git mirror persists until P3
-    assert_file_contains "$CCO_DATA_HOME/remotes" "acme="
-    local git_remotes
-    git_remotes=$(git -C "$CCO_USER_CONFIG_DIR" remote 2>/dev/null)
-    echo "$git_remotes" | grep -q "acme" || {
-        echo "ASSERTION FAILED: expected 'acme' in git remotes"
-        return 1
-    }
-}
-
-test_remote_remove_syncs_with_vault() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    setup_global_from_defaults "$tmpdir"
-    run_cco init --lang "English"
-    run_cco vault init
-    run_cco remote add acme git@github.com:acme/config.git
-    run_cco remote remove acme
-    local git_remotes
-    git_remotes=$(git -C "$CCO_USER_CONFIG_DIR" remote 2>/dev/null)
-    if echo "$git_remotes" | grep -q "acme"; then
-        echo "ASSERTION FAILED: 'acme' should be removed from git remotes"
-        return 1
-    fi
-}
-
-test_vault_remote_delegates_to_cco_remote() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    setup_global_from_defaults "$tmpdir"
-    run_cco init --lang "English"
-    run_cco vault init
-    run_cco vault remote add team git@github.com:team/config.git
-    # Should appear in the DATA url registry (delegation worked)
-    assert_file_contains "$CCO_DATA_HOME/remotes" "team="
-}
+# Note: the legacy vault-git mirror integration tests (transitional, P3) were
+# removed with the vault — `cco remote` now writes only the DATA registry (M3).
 
 # ── edge cases ─────────────────────────────────────────────────────
 

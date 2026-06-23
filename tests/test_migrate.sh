@@ -183,15 +183,7 @@ test_migrate_backup_skipped_without_vault() {
     [[ -z "$archive" ]] || fail "no backup should be made without a legacy vault: $archive"
 }
 
-test_migrate_backup_skipped_on_vault_command() {
-    # Pure-legacy `cco vault` ops act on the old vault under the old expectation;
-    # they are outside the decentralized safety net, so they do not trigger it.
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    _setup_legacy_vault "$tmpdir"
-    run_cco vault status || true
-    local archive; archive=$(_backup_archive)
-    [[ -z "$archive" ]] || fail "a vault command must not trigger the backup net: $archive"
-}
+# Note: the legacy `cco vault` backup-skip test was removed with the vault (P3).
 
 # ── Eager global migration via `cco update` (ADR-0025 §1) ────────────
 

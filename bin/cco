@@ -95,7 +95,6 @@ source "$LIB_DIR/cmd-clean.sh"
 source "$LIB_DIR/manifest.sh"
 source "$LIB_DIR/cmd-remote.sh"
 source "$LIB_DIR/remote.sh"
-source "$LIB_DIR/cmd-vault.sh"
 
 # ── Deprecation warnings ──────────────────────────────────────────────
 # Only warn when legacy vars are set WITHOUT CCO_USER_CONFIG_DIR
@@ -147,7 +146,6 @@ Sharing & Versioning:
   config <save|push|pull> Version + sync your personal ~/.cco store
   remote <cmd>           Manage Config Repo remotes
   manifest <cmd>         Manage manifest.yml for Config Repos
-  vault <cmd>            Git-backed config versioning
 
 Run 'cco <command> --help' for detailed help on any command.
 EOF
@@ -266,7 +264,6 @@ EOF
     remote)   cmd_remote "$@"   || _cco_rc=$? ;;
     manifest) cmd_manifest "$@" || _cco_rc=$? ;;
     share)    die "'cco share' has been renamed to 'cco manifest'. Run 'cco update' to migrate." ;;
-    vault)    cmd_vault "$@"    || _cco_rc=$? ;;
     update)   cmd_update "$@"   || _cco_rc=$? ;;
     clean)    cmd_clean "$@"    || _cco_rc=$? ;;
     stop)     cmd_stop "$@"     || _cco_rc=$? ;;
