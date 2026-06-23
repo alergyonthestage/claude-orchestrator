@@ -174,17 +174,21 @@ state-sync (DATA/STATE cross-PC, R-state-sync) · local-file llms (F1) · Case-C
 
 ## 8. Current position & how to start a phase
 
-**Phase 0 (substrate) + Phase 1 (core local) are ✅ CLOSED** (`feat/vault/decentralized-config`, local).
-P0: T1 resolver+H4+L5 · T2a index API · T3 coordinate parsers · T4-remotes M3 split · Commit A
-(repos/mount → STATE index) · Commit B (session-mount bucket re-point + harness HOME flip) · T8 (`.claude`
-overlays → CACHE `:ro`, ADR-0005 F1/F2/F3). P1: 6 commits `56ca45c`→`e48abdd` (cco resolve/path ·
-sync-meta fingerprint · reminder aggregator · cco sync · cco start aggregator+H1 · cco project add), with
-3 maintainer scope-forks (legacy resolve/validate/add-pack → P3; D-start source-selection → P2;
-cco project validate → P5 / coords → P4-5). Suite **1043/16** delta-green. **Next = Phase 2** (migration &
-bootstrap).
+**Phase 0 (substrate) + Phase 1 (core local) + Phase 2 (migration & bootstrap) are ✅ CLOSED**
+(`feat/vault/decentralized-config`, local). P0: T1 resolver+H4+L5 · T2a index API · T3 coordinate parsers ·
+T4-remotes M3 split · Commit A (repos/mount → STATE index) · Commit B (session-mount bucket re-point +
+harness HOME flip) · T8 (`.claude` overlays → CACHE `:ro`, ADR-0005 F1/F2/F3). P1: 6 commits
+`56ca45c`→`e48abdd` (cco resolve/path · sync-meta fingerprint · reminder aggregator · cco sync · cco start
+aggregator+H1 · cco project add). P2: 5 commits `c1e0369`→`767de86` (P2-1 J0 bootstrap + raw-tar backup ·
+P2-2 H6 base/meta→STATE keyed-by-`name` + global-meta decompose [16→8] · P2-3 eager global migration via
+`cco update` · P2-4 `cco init --migrate` lazy + `cco join` + migration 013 + `migrations/{pack,template}/` ·
+P2-5 D5 observability; **D-start re-sequenced P2-5 → P3**). Suite **1087/8** delta-green. **P2→P3 adherence
+audit ✅ DONE** (`reviews/23-06-2026-impl-adherence-review.md`: P2 conformant, 0 🔴; T5 retired; baseline
+16→8). **Next = Phase 3** (legacy cutover) — launch handoff **`P3-handoff-legacy-cutover.md`**.
 
 To start any phase: (1) run **`implementation-review-handoff.md`** (read-only adherence/gap audit) at the
-phase boundary; (2) open that phase's **launch handoff** (`P2-handoff-migration-bootstrap.md` for Phase 2)
-for the preliminary analysis + exact scope; (3) build on the substrate, keep the suite green (delta-based;
-in P2 the FAIL set shrinks from 16 toward 8 as the owned update tests are rewritten), commit atomically. The live cursor is in `decentralized-config-impl-progress.md` + the roadmaps. Pause and discuss
-if a real design gap surfaces; otherwise the ADRs/design are the spec.
+phase boundary; (2) open that phase's **launch handoff** (`P3-handoff-legacy-cutover.md` for Phase 3) for
+the methodology + preliminary analysis + exact scope; (3) build on the substrate, keep the suite green
+(delta-based; in P3 the FAIL set shrinks 8 → 3 as the vault/profile tests are removed), commit atomically.
+The live cursor is in `decentralized-config-impl-progress.md` + the roadmaps. Pause and discuss if a real
+design gap surfaces; otherwise the ADRs/design are the spec.

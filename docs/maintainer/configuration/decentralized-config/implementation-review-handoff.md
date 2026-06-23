@@ -91,21 +91,28 @@ present, that flips to 🔴 (the cleanup was missed). Keep this registry **curre
   - **T4-source → P4**: `source` provenance stays at `<repo|pack>/.cco/source` (read **in place**); the
     →DATA relocation + `url`/`ref`/`resource` rename + `publish_target` re-derivation (F4, ADR-0022 D1)
     lands in P4.
-  - **T5 → P2**: merge-engine artifacts `.cco/base/` + `.cco/meta` stay in `.cco/`; the →STATE relocation
-    (H6) + global-`.cco/meta` decompose (ADR-0013 D4/0016 D6) lands in P2.
+  - **~~T5 → P2~~ — ✅ RETIRED 2026-06-23 (landed in P2-2 `b0c215e`).** Merge-engine artifacts `.cco/base/`
+    + `.cco/meta` relocated to STATE keyed by identity (`_cco_{global,project,pack}_{meta,base_dir}` →
+    `<state>/cco/.../update/{meta,base}`, `<id>`=`name`); global `.cco/meta` decomposed (languages→`~/.cco`,
+    markers→STATE top-level, schema/policies/flags/hash-`manifest:`→global STATE meta); merge **logic**
+    (`update-merge.sh`) untouched. **No production code writes base/meta to the old `.cco/` location.**
+    Residual `.cco/meta`/`.cco/source` *reads* belong only to legacy machinery separately registered
+    (legacy vault → P3; pack source/provenance → P4). Verified `reviews/23-06-2026-impl-adherence-review.md`.
   - **T4-tags → P3**: DATA `tags.yml` has no consumer until `cco tag add/rm` + `cco list --tag` (P3).
-- **Known baseline test failures — 16 (NOT regressions — do not re-investigate). Re-baselined
-  2026-06-21** after the adherence audit applied the runner mask-guard (HITL-1) and **un-masked 14 that
-  the `( set -e; fn )` runner had been hiding** (`reviews/21-06-2026-impl-adherence-review.md` §9). The
-  suite is now **982/16** (incl. the HITL-2 `test_remote_token_file_is_0600` 0600 check); delta-green is
-  measured against these 16, **not** the old masked 2. All are
-  stale-assertion / legacy test-drift in the §11 rewrite/remove buckets — each ❌→✅ (or removed) when its
-  phase lands:
-  - **P2 — update/migration rewrite (8):** `test_update_migrations_run_in_order` (stale
-    `schema_version: 11`) · `test_update_refreshes_cco_base` · `test_update_automerge_non_overlapping` ·
-    `test_update_dry_run` · `test_update_discovery_then_news` · `test_update_news_first_then_discovery` ·
-    `test_update_news_first_no_hint_on_discovery` · `test_migration_005_renames_setup_with_build_content`
-    (assert `.cco/base`/`.cco/meta`/changelog at pre-cutover locations; H6 relocation lands P2).
+- **Known baseline test failures — 8 (NOT regressions — do not re-investigate). Re-baselined
+  2026-06-23 (P2→P3 boundary)** — the 8 P2-owned update/merge/migration failures flipped ❌→✅ at P2-2
+  (`b0c215e`, H6 paths→STATE + global-meta decompose), shrinking the FAIL set **16 → 8** exactly as the
+  P2-handoff §5b predicted. The suite is now **1087/8** (`reviews/23-06-2026-impl-adherence-review.md`);
+  delta-green is measured against these 8. **Run with the host-resolve hatch:
+  `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test`** — without it, 3–4 pure path-resolver unit tests
+  (`test_paths_project_meta_*`, `test_update_no_backup_skips_bak`) fail on the H4 guard *by design* (not
+  regressions). The remaining 8 are stale-assertion / legacy test-drift in the §11 remove/rewrite buckets,
+  each ❌→✅ (or removed) when its phase lands:
+  - **~~P2 — update/migration rewrite (8)~~ — ✅ RESOLVED 2026-06-23 (P2-2 `b0c215e`).**
+    `test_update_migrations_run_in_order` · `test_update_refreshes_cco_base` ·
+    `test_update_automerge_non_overlapping` · `test_update_dry_run` · `test_update_discovery_then_news` ·
+    `test_update_news_first_then_discovery` · `test_update_news_first_no_hint_on_discovery` ·
+    `test_migration_005_renames_setup_with_build_content` — all green after the H6 STATE relocation.
   - **P3 — vault/profiles removed (5):** `test_vault_switch_to_main_shared_only` ·
     `test_profile_show_active_profile` · `test_vault_move_preserves_unaccounted_files` ·
     `test_vault_push_with_profile_syncs_shared` · `test_profile_create_preserves_unaccounted_files`
