@@ -686,7 +686,7 @@ ADR-0018/0019/0020/0023.
 
 | Area | Command | Status |
 |------|---------|--------|
-| Entry: clean | `cco init` (scaffold a clean `<repo>/.cco/` in the current repo) | NEW/transform |
+| Entry: clean | `cco init` (the single project entry verb; ADR-0026): **idempotently ensures the global config** (`~/.cco/global` seeded from the framework defaults **only if absent**, no `manifest.yml`) **and scaffolds a clean `<repo>/.cco/`** in the current repo + registers it in the index. Global-content for a fresh user lives here; vault migration stays `cco update` (ADR-0025); J0 still owns the empty roots (ADR-0017 D3). No `cco setup` verb. | NEW/transform |
 | Entry: join | `cco join <project>` (add the current repo to `<project>` as a **member**: register it in the index + add it to `repos[]` in the project's `project.yml`). The new member's `repos[]` edit propagates to **every repo that carries a synced copy** (Case B); in a divergent project (Case C) join **prompts** which repo's `project.yml` to update, or all. The joining repo gets **no `.cco/`** (code-only member) **unless** `--sync` / interactive confirm, which copies the project's `.cco/` into it (source prompted if divergent) — **alternative to `cco init`** | NEW |
 | Entry: migrate | `cco init --migrate <project> [--sync]` (current repo, from the legacy vault backup: hydrate `.cco/` with the migrated project config; `--sync` propagates to all member repos, symmetric to `cco join --sync`) — a **mode of `cco init`**, NOT a top-level `cco migrate` (ADR-0021, resolves the `migrate`↔`update` clash) | NEW |
 | Lifecycle: forget | `cco forget <project>` (deregister: remove cco's internal id-keyed state — index/tags/source/STATE/CACHE — **without** touching the repo or its committed `.cco/`; ADR-0021) | NEW |
@@ -913,6 +913,19 @@ build-once holds. The `packs:`
   profile/switch/shadow machinery, `cco vault *`, `cco project create`, and the
   custom `project.yml` sanitize/virtual-diff/extract-restore/backup-trap (unnecessary
   under AD3). Keep the Phase-0 index-backed path resolution, secret-scan, gitignore-heal.
+  > **Implementation sequencing (2026-06-23).** P3 built **out of design chronology** as: **P3-1**
+  > decentralized `cco start` read-path + D-start (`36660fd`/`365d16f`); **P3-2** `cco tag`/`cco list`
+  > + `cco config save/push/pull` (`548f2e5`/`f7f41c1`); **P3-3** the vault/profile deletion above
+  > (`a76e1f6`, delta-green 8→3); **P3-3b** transforms `cco init` into the project entry verb (idempotent
+  > global-ensure + per-repo scaffold; **ADR-0026**) and **deletes `cco project create`** then — its
+  > decentralized replacement (the `cco init` scaffold) was not built in P2, so create is removed once
+  > init replaces it. The P3-3b refinement moves the eager-migration idempotency gate
+  > (`_cco_migrate_global`) from `~/.cco/global` presence to a **`migration-state` marker** so a fresh
+  > `cco init` cannot make a later `cco update` silently skip the vault migration (non-destructive: backup
+  > + confirm; ADR-0026 / ADR-0025). **Tier-2 legacy verbs** (`cco project resolve`/`validate <name>`/
+  > `add-pack`/`remove-pack`/`delete`) and the **`@local` sanitize block** are **deferred to P4** (their
+  > consumers are publish/install/query + P0-transitional `test_local_paths` — build-once). P3-4 rehomes
+  > `config-editor`; P3-5 is the shipped-behavior doc cutover sweep.
   > **D-start source-selection RE-SEQUENCED P2-5 → P3 (maintainer-confirmed 2026-06-22, code-grounded).**
   > The Phase-2 D-start work (`cco start [project] --from <repo>` precedence; cwd-first → hosted
   > project; the F49 unresolved prompt; the divergence notice + source-transparency line + passive ⚠

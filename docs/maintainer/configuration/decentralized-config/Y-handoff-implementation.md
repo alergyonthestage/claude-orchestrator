@@ -184,7 +184,14 @@ P2-2 H6 base/meta→STATE keyed-by-`name` + global-meta decompose [16→8] · P2
 `cco update` · P2-4 `cco init --migrate` lazy + `cco join` + migration 013 + `migrations/{pack,template}/` ·
 P2-5 D5 observability; **D-start re-sequenced P2-5 → P3**). Suite **1087/8** delta-green. **P2→P3 adherence
 audit ✅ DONE** (`reviews/23-06-2026-impl-adherence-review.md`: P2 conformant, 0 🔴; T5 retired; baseline
-16→8). **Next = Phase 3** (legacy cutover) — launch handoff **`P3-handoff-legacy-cutover.md`**.
+16→8). **Phase 3 IN PROGRESS (2026-06-23) — P3-1/P3-2/P3-3 ✅ DONE, the vault/profile world REMOVED,
+suite 949/3 (FAIL 8→3):** P3-1a `36660fd` (decentralized `cco start` read-path) · P3-1b `365d16f` (D-start
+UX) · P3-2a `548f2e5` (`cco tag`/`cco list`) · P3-2b `f7f41c1` (`cco config save/push/pull`) · P3-3
+`a76e1f6` (delete `cmd-vault.sh` + D33/D32; remove `test_vault*.sh`). Tier-2 verbs + `@local` block
+deferred → P4. **Next = P3-3b** (`cco init` scaffold + delete `cco project create`; **ADR-0026**) — launch
+handoff **`P3b-handoff-init-scaffold.md`** (first action: a clean-context **coherence review** of ADR-0026
+vs design + guiding-principles, then implement). Then P3-4 (config-editor rehome) + P3-5 (doc cutover
+sweep). The parent **`P3-handoff-legacy-cutover.md`** remains the P3 methodology reference.
 
 To start any phase: (1) run **`implementation-review-handoff.md`** (read-only adherence/gap audit) at the
 phase boundary; (2) open that phase's **launch handoff** (`P3-handoff-legacy-cutover.md` for Phase 3) for

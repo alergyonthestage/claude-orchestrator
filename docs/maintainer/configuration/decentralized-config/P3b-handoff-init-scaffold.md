@@ -31,6 +31,37 @@ then (2) **scaffolds the per-repo `<repo>/.cco/`** and registers it in the STATE
 migration-idempotency gate moves from `~/.cco/global` presence to a **`migration-state` marker**, so
 `cco update` stays runnable + **non-destructive** (backup + explicit confirm) after a fresh `cco init`.
 
+## 1.5 First action (MANDATORY) — coherence review of ADR-0026, then proceed
+
+> **The architecture is already approved (this is NOT a re-analysis).** ADR-0026 was proposed by the
+> maintainer and validated by the implementer in the producing session. The next session's **first
+> action**, with **clean, relevant context**, is a focused **coherence review** of ADR-0026 against the
+> **design + guiding principles** — to confirm nothing was missed in that session's analysis. **Do not
+> re-derive the decision; check it.** Scope the review tightly:
+>
+> 1. **`guiding-principles.md` (P1–P18)** — does ADR-0026 clash with any principle? Spot-check the
+>    load-bearing ones: **P1** (config vs internal — `~/.cco/global` is config the user authors; the
+>    `migration-state` marker is internal STATE), **P6** (hide internal — the marker lives in STATE, not
+>    a config bucket), **P18** (one repo = one config home — `cco init` refuses a second host), **P10**
+>    (classify by role, maintainer-confirm UX).
+> 2. **`design.md`** — is the ownership split (J0 roots / `cco init` global-content + scaffold /
+>    `cco update` vault-migration) coherent with **§7** (entry verbs), **§8** (J0 = empty roots, ADR-0017
+>    D3), **§9 P2/P3**, **§2.1/2.3** (committed `<repo>/.cco/` + `~/.cco` layouts)? Is "no `cco setup`
+>    verb" still consistent with §8's "optional future"?
+> 3. **The ADRs** — ADR-0017 D3 (J0), **0025** (migration ownership — the gate change is the only
+>    refinement; confirm it does not contradict the eager/lazy split), 0021 (`--migrate` mode), 0012
+>    (no manifest), 0024 D1.
+> 4. **The migration-safety hinge** — re-confirm the §3b interaction concretely: a legacy user who runs
+>    `cco init` **before** `cco update` must still be migrated, non-destructively (backup + explicit
+>    confirm), because `cco init` populated `~/.cco/global` from defaults. This is the one place a missed
+>    detail would bite — read `migrate.sh:245-256` + the `migration-state` marker (`migrate.sh:54-106`)
+>    and verify the marker-based gate closes the hole.
+>
+> **Outcome:** if coherent → record a one-line confirmation (in the progress note / a short review line)
+> and **proceed to §3**. If the review surfaces a **genuine** clash or missed detail → **PAUSE and
+> discuss** with the maintainer (do not silently adjust ADR-0026) — annotate the ADR with the
+> reconciliation first. This review is **read-only**; it writes no production code.
+
 ## 2. Baseline & context to load
 
 1. ADR-0026 (above). 2. `guiding-principles.md` P1–P18 (esp. P1 config-vs-internal, P6 hide-internal, P18
