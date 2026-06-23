@@ -258,13 +258,14 @@ delta-green before+after. Read the actual current code at the start of each comm
 **This sequence is a recommendation — the maintainer approves/edits it before P3 starts** (as was done
 for P2-1…P2-5).
 
-| # | Commit | Scope (from §5) | Delta-green |
-|---|--------|-----------------|-------------|
-| **P3-1** | decentralized `cco start` + D-start | 5a — flip the read-path to `<repo>/.cco/`, cwd→hosted, `--from`/`entry`/prompt precedence, F49 unresolved prompt, divergence notice + source-transparency + ⚠, H1 order; new `test_start_*` | 8 (no new red) |
-| **P3-2** | tags + `cco config` | 5c + 5d — `cco tag add/rm` + `cco list --tag`; `cco config save/push/pull` (+ validate scope TBD); new `test_tag.sh`/`test_config.sh` | 8 |
-| **P3-3** | legacy deletion *(large, coordinated)* | 5b — delete vault/profiles/`project create`/sanitize/legacy-verbs + memory auto-commit; remove `bin/cco` arms; retire dual-seed/`CCO_*_DIR` surgically; **remove** `test_vault_profiles.sh`, shrink `test_vault.sh`; new multi-project-coexistence + truthful-diff + memory-as-STATE tests | **8 → 3** |
-| **P3-4** | config-editor rehome | 5e — template + skills + `config-safety` rule | 3 |
-| **P3-5** | doc cutover sweep | 5f — inventory A–D end-to-end (incl. managed `memory-policy.md` → needs `cco build`); "Config Repo"→"sharing repo"; archive removed-feature design subtrees | 3 |
+| # | Commit | Scope (from §5) | Delta-green | Status |
+|---|--------|-----------------|-------------|--------|
+| **P3-1** | decentralized `cco start` + D-start | 5a — flip the read-path to `<repo>/.cco/`, cwd→hosted, `--from`/`entry`/prompt precedence, F49 unresolved prompt, divergence notice + source-transparency + ⚠, H1 order; new `test_start_*` | 8 (no new red) | ✅ `36660fd`+`365d16f` |
+| **P3-2** | tags + `cco config` | 5c + 5d — `cco tag add/rm` + `cco list --tag`; `cco config save/push/pull` (validate → P5); new `test_tag.sh`/`test_config.sh` | 8 | ✅ `548f2e5`+`f7f41c1` |
+| **P3-3** | legacy deletion *(large, coordinated)* | 5b — delete vault/profiles/sanitize/memory auto-commit; remove `bin/cco` arms; **remove** `test_vault_profiles.sh`+`test_vault.sh`; new coexistence/truthful-diff/memory-as-STATE tests. **Tier-2 verbs + `@local` block + `cco project create` SPLIT OUT** (tier-2/@local → P4; create → P3-3b) | **8 → 3** | ✅ `a76e1f6` |
+| **P3-3b** | `cco init` scaffold + delete `cco project create` | ADR-0026 — `cco init` = idempotent global-ensure (`~/.cco/global`) + per-repo `<repo>/.cco/` scaffold + index-register; §3b marker-gate non-destructive `cco update`; delete `cco project create`. **Build re-sequenced (Option B): c1 global-home cutover `GLOBAL_DIR`→`~/.cco/global` + `init_global` helper · c2 init transform** (see `P3b-handoff-init-scaffold.md`) | 3 | ✅ `9e15924`+`35f5797`+`d9e44a2` |
+| **P3-4** | config-editor rehome | 5e — template + skills + `config-safety` rule | 3 | ⏳ next (`P3cd-handoff-config-editor-and-docs.md`) |
+| **P3-5** | doc cutover sweep | 5f — inventory A–D end-to-end (incl. managed `memory-policy.md` → needs `cco build`); "Config Repo"→"sharing repo"; archive removed-feature design subtrees | 3 | ⏳ |
 
 UX copy (F49 prompt, divergence notice, source-transparency line, `cco config` messages, public-remote
 warning, profile→tag already done in P2) is **maintainer-confirmed at build time per commit** (P10
