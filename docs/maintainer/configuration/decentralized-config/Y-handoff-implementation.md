@@ -195,15 +195,16 @@ into `9e15924` (docs) + `35f5797` (global-home cutover `GLOBAL_DIR`→`~/.cco/gl
 `d9e44a2` (init transform + §3b marker-gate). Tier-2 verbs + `@local` block + manifest code deferred → P4.
 **P3-4 ✅** config-editor built-in + `--mount` + edit-protection → ADR-0027 (`531a0f8`/`2783ce5`/`f590efe`/
 `871993e`). **P3-5 ✅** shipped-behavior doc cutover sweep A/B+C + Section D archive (`5c6ad29`/`141e24e`/
-`56967cf`/`a3e0618`/`c3cb598`). Suite **936/3**. **Phase 3 CLOSED.** **Next = Phase 4 (sharing core)** —
-launch handoff **`P4-handoff-sharing-core.md`** (first action: a P3→P4 adherence audit, then build along
-`design.md §9 P4` + `§11 row 4`: source→DATA + manifest removal + sync-before-publish + 2×2 wiring + the
-tier-2/`@local`/manifest legacy teardown). The retired per-cycle P3 handoffs
-(`P3-handoff-legacy-cutover.md`, `P3cd-…`, `P3b-…`, `P3-5-…`) remain as P3 methodology history.
+`56967cf`/`a3e0618`/`c3cb598`). Suite **936/3**. **Phase 3 CLOSED.** **Phase 4 (sharing core) + P4-doc ✅ COMPLETE (2026-06-24)** — P4-1…P4-5c
+(source→DATA · structure discovery + manifest removal · sync-before-publish · 2×2 verbs · legacy verb/`@local`
+teardown · schema-bridge collapse to index-only · legacy-parser removal) + P4-doc; suite **827/1**. **P4-5d
+(central `$PROJECTS_DIR`/`CCO_*_DIR` teardown) deferred → P5.** **Next = the P4→P5 adherence audit, then
+Phase 5** — launch handoff **`P5-handoff-sharing-ext.md`**.
 
 To start any phase: (1) run **`implementation-review-handoff.md`** (read-only adherence/gap audit) at the
-phase boundary; (2) open that phase's **launch handoff** (`P3-handoff-legacy-cutover.md` for Phase 3) for
-the methodology + preliminary analysis + exact scope; (3) build on the substrate, keep the suite green
-(delta-based; in P3 the FAIL set shrinks 8 → 3 as the vault/profile tests are removed), commit atomically.
-The live cursor is in `decentralized-config-impl-progress.md` + the roadmaps. Pause and discuss if a real
-design gap surfaces; otherwise the ADRs/design are the spec.
+phase boundary; (2) open the current phase's **launch handoff** (`P5-handoff-sharing-ext.md` for Phase 5)
+for the methodology + scope; (3) build on the substrate, keep the suite green (delta-based against the 1
+P5 straddler), commit atomically. The live cursor is in `decentralized-config-impl-progress.md` + the
+roadmaps. Pause and discuss if a real design gap surfaces; otherwise the ADRs/design are the spec. The
+per-cycle scaffold handoffs (P2/P3/P3b/P3cd/P3-5/P4/P4-5) were consumed and removed — their methodology
+history lives in the progress note + git history.
