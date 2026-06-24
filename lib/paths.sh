@@ -128,6 +128,19 @@ _cco_project_claude_state() {
     _cco_resolve_path d "$1/.cco/claude-state" "$1/claude-state"
 }
 
+# Managed runtime overlays (browser.json / .browser-port / github.json /
+# policy.json) are GENERATED per session into CACHE and overlaid :ro (ADR-0005,
+# Commit B/T8). They are regenerable machine-local state — never committed config
+# (AD3/G8) — and the committed <repo>/.cco is mounted :ro in the container
+# (ADR-0027 D3), so runtime state cannot live there. cmd-start writes them to
+# `<cache>/cco/projects/<name>/managed/`; the readers (stop/chrome/start
+# port-collection) resolve the same path through this helper.
+# NOTE: $1 is the project NAME (the `<id>` = project.yml `name:` = index key),
+# NOT a repo directory — unlike the resolve-path helpers above.
+_cco_project_cache_managed() {
+    printf '%s\n' "$(_cco_cache_dir)/projects/$1/managed"
+}
+
 # Note: pack-manifest lives inside .claude/, not project root
 _cco_project_pack_manifest() {
     _cco_resolve_path f "$1/.claude/.cco/pack-manifest" "$1/.claude/.pack-manifest"

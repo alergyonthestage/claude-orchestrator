@@ -1147,33 +1147,37 @@ EOF
 # ── Browser support helpers ──────────────────────────────────────────
 
 # Returns CDP ports claimed by running cco sessions (one per line).
-# Iterates project directories (not container names) to avoid mismatch
-# when project.yml `name:` differs from the directory name.
+# Enumerates projects via the STATE index (decentralized layout): each project's
+# committed config is read from its repo `.cco/project.yml`, and its browser
+# runtime file from CACHE (keyed by project name).
 _collect_claimed_browser_ports() {
     local current_project="$1"
     local claimed=()
-    for proj_dir in "$PROJECTS_DIR"/*/; do
-        [[ ! -d "$proj_dir" ]] && continue
-        local proj; proj=$(basename "$proj_dir")
+    local proj repo
+    while IFS='=' read -r proj _; do
+        [[ -z "$proj" ]] && continue
         [[ "$proj" == "$current_project" ]] && continue
-        local yml="$proj_dir/project.yml"
+        repo=$(_index_get_path "$proj")
+        [[ -z "$repo" ]] && continue
+        local yml="$repo/.cco/project.yml"
         [[ ! -f "$yml" ]] && continue
         local enabled; enabled=$(yml_get "$yml" "browser.enabled")
         [[ "$enabled" != "true" ]] && continue
-        # Verify container is actually running (use yml name, fallback to dir name)
+        # Verify container is actually running (use yml name, fallback to index name)
         local yml_name; yml_name=$(yml_get "$yml" "name")
         [[ -z "$yml_name" ]] && yml_name="$proj"
         local container="cc-${yml_name}"
         docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${container}$" || continue
         # Read effective port (runtime file > project.yml > default)
-        if [[ -f "$proj_dir/.cco/managed/.browser-port" ]]; then
-            claimed+=("$(cat "$proj_dir/.cco/managed/.browser-port")")
+        local managed; managed=$(_cco_project_cache_managed "$proj")
+        if [[ -f "$managed/.browser-port" ]]; then
+            claimed+=("$(cat "$managed/.browser-port")")
         else
             local port; port=$(yml_get "$yml" "browser.cdp_port")
             [[ -z "$port" ]] && port="9222"
             claimed+=("$port")
         fi
-    done
+    done < <(_index_list_projects)
     # Guard: bash 3.2 + set -u treats empty arrays as unbound
     [[ ${#claimed[@]} -gt 0 ]] && printf '%s\n' "${claimed[@]}"
 }

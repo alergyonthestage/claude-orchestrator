@@ -66,6 +66,9 @@ state_project_meta() { printf '%s' "$CCO_STATE_HOME/projects/$1/update/meta"; }
 state_project_base() { printf '%s' "$CCO_STATE_HOME/projects/$1/update/base"; }
 state_pack_meta()    { printf '%s' "$CCO_STATE_HOME/packs/$1/update/meta"; }
 state_pack_base()    { printf '%s' "$CCO_STATE_HOME/packs/$1/update/base"; }
+# Managed runtime overlays → CACHE, keyed by project name (mirrors the production
+# helper _cco_project_cache_managed; ADR-0005 / Commit B/T8). $1 = project name.
+cache_project_managed() { printf '%s' "$CCO_CACHE_HOME/projects/$1/managed"; }
 # Install-provenance `source` → DATA, identity-keyed (ADR-0022 D1). The file
 # holds the machine-agnostic upstream coordinate only (url/ref/resource); the
 # install commit + dates live in the STATE /update meta above.

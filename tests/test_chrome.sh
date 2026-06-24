@@ -18,6 +18,8 @@ test_chrome_resolve_port_explicit() {
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/lib/yaml.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/index.sh"
     source "$REPO_ROOT/lib/cmd-chrome.sh"
 
     local result
@@ -26,27 +28,26 @@ test_chrome_resolve_port_explicit() {
 }
 
 test_chrome_resolve_port_from_project() {
-    # --project foo reads projects/foo/.cco/managed/.browser-port if present
+    # --project foo reads the CACHE browser runtime file if present
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "foo" "$(minimal_project_yml foo)"
 
-    # Create runtime .cco/managed/.browser-port file
-    mkdir -p "$CCO_PROJECTS_DIR/foo/.cco/managed"
-    echo "9224" > "$CCO_PROJECTS_DIR/foo/.cco/managed/.browser-port"
+    # Create the CACHE browser runtime file
+    mkdir -p "$(cache_project_managed foo)"
+    echo "9224" > "$(cache_project_managed foo)/.browser-port"
 
     # Mock docker so it doesn't fail on ps
     local mock_bin="$tmpdir/bin"
     _mock_docker_no_containers "$mock_bin"
     setup_mocks "$mock_bin"
 
-    # Set PROJECTS_DIR (normally set by bin/cco)
-    PROJECTS_DIR="$CCO_PROJECTS_DIR"
-
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/lib/yaml.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/index.sh"
     source "$REPO_ROOT/lib/cmd-chrome.sh"
 
     local result
@@ -80,12 +81,11 @@ YAML
     _mock_docker_no_containers "$mock_bin"
     setup_mocks "$mock_bin"
 
-    # Set PROJECTS_DIR (normally set by bin/cco)
-    PROJECTS_DIR="$CCO_PROJECTS_DIR"
-
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/lib/yaml.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/index.sh"
     source "$REPO_ROOT/lib/cmd-chrome.sh"
 
     local result
@@ -101,6 +101,8 @@ test_chrome_resolve_port_default() {
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/lib/yaml.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/index.sh"
     source "$REPO_ROOT/lib/cmd-chrome.sh"
 
     local result
@@ -114,12 +116,14 @@ test_chrome_resolve_port_explicit_overrides_project() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "foo" "$(minimal_project_yml foo)"
-    mkdir -p "$CCO_PROJECTS_DIR/foo/.cco/managed"
-    echo "9224" > "$CCO_PROJECTS_DIR/foo/.cco/managed/.browser-port"
+    mkdir -p "$(cache_project_managed foo)"
+    echo "9224" > "$(cache_project_managed foo)/.browser-port"
 
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/lib/yaml.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/index.sh"
     source "$REPO_ROOT/lib/cmd-chrome.sh"
 
     local result
