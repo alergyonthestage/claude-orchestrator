@@ -5,31 +5,33 @@
 ---
 
 ```yaml
-# user-config/projects/<name>/project.yml
+# <repo>/.cco/project.yml
 
 name: my-saas-platform
 description: "Main SaaS platform with API, frontend, and shared libraries"
 
 # ── Repositories ─────────────────────────────────────────────────────
+# Repos are referenced by logical name + an optional machine-agnostic
+# coordinate (url/ref). Local paths live in the machine-local STATE index —
+# set them with `cco resolve`, never here (keeps `git diff` truthful).
 repos:
-  - path: ~/projects/backend-api        # Absolute path on host
-    name: backend-api                    # Mount name in /workspace/
+  - name: backend-api                    # Mount name in /workspace/
+    url: git@github.com:org/backend-api.git   # optional bootstrap pointer for `cco resolve`
+    ref: main                            # optional git ref
 
-  - path: ~/projects/frontend-app
-    name: frontend-app
+  - name: frontend-app
 
-  - path: ~/projects/shared-libs
-    name: shared-libs
+  - name: shared-libs
 
 # ── Extra mounts (optional) ─────────────────────────────────────────
 extra_mounts:
-  - source: ~/documents/api-specs
+  - name: api-specs                      # logical name; absolute path resolved from the index
     target: /workspace/docs/api-specs
     readonly: true
 
 # ── Knowledge Packs (optional) ───────────────────────────────────────
 packs:
-  - my-client-knowledge   # References user-config/packs/my-client-knowledge/pack.yml
+  - my-client-knowledge   # References ~/.cco/packs/my-client-knowledge/pack.yml
 
 # ── Docker options ───────────────────────────────────────────────────
 docker:
@@ -101,12 +103,13 @@ browser:
 | `name` | ✅ | string | — | Project identifier |
 | `description` | ❌ | string | `""` | Human-readable description |
 | `repos` | ❌ | list | `[]` | Repositories to mount (empty allowed; a warning is shown at start) |
-| `repos[].path` | ✅ | string | — | Absolute path on host (~ expanded). In portable copies (vault remote, published templates), this is `@local` — resolved from `.cco/local-paths.yml` at start time. See [local path resolution](../maintainer/configuration/vault/local-path-resolution-design.md) |
-| `repos[].name` | ✅ | string | — | Directory name in /workspace/ (also serves as portable identifier for cross-PC path resolution) |
-| `repos[].url` | ❌ | string | — | Git remote URL (auto-injected by vault save and publish). Portable metadata — committed/published. Used by `cco start` to offer auto-clone when path is missing |
+| `repos[].name` | ✅ | string | — | Logical repo name (directory name in /workspace/). Machine-agnostic identifier; the absolute host path is resolved per machine from the STATE index, never stored in `project.yml`. See [the local path index](../maintainer/configuration/decentralized-config/design.md#3-machine-agnostic-config--the-local-path-index) |
+| `repos[].url` | ❌ | string | — | Git remote URL — machine-agnostic coordinate committed in the repo. Used by `cco resolve`/`cco start` to offer auto-clone when no local path is registered for the name |
+| `repos[].ref` | ❌ | string | — | Git ref (branch/tag/commit) coordinate, paired with `url` |
 | `extra_mounts` | ❌ | list | `[]` | Additional volume mounts |
-| `extra_mounts[].source` | ✅ | string | — | Host path (may be `@local` in portable copies). See [local path resolution](../maintainer/configuration/vault/local-path-resolution-design.md) |
-| `extra_mounts[].target` | ✅ | string | — | Container path (also serves as identifier for cross-PC path resolution) |
+| `extra_mounts[].name` | ✅ | string | — | Logical mount name; the absolute host path is resolved per machine from the STATE index. See [the local path index](../maintainer/configuration/decentralized-config/design.md#3-machine-agnostic-config--the-local-path-index) |
+| `extra_mounts[].url` | ❌ | string | — | Git remote URL coordinate for a git-backed mount (optional); absent → local-only via the index |
+| `extra_mounts[].target` | ❌ | string | `/workspace/<name>` | Container path |
 | `extra_mounts[].readonly` | ❌ | bool | `true` | Mount as read-only (secure default; set `false` explicitly for writable mounts) |
 | `packs` | ❌ | list | `[]` | Knowledge packs to activate (see Knowledge Packs section below) |
 | `llms` | ❌ | list | `[]` | LLMs.txt framework docs to include (see LLMs.txt section below) |
@@ -168,8 +171,8 @@ When a security-relevant field is **omitted**, the default is always the most re
 | Field | Format | Validated |
 |-------|--------|-----------|
 | `name` | `^[a-zA-Z0-9][a-zA-Z0-9_-]*$`, max 63 chars | At parse time |
-| `repos[].path` | Valid path, `~` expanded, must exist on host | At start time |
-| `repos[].name` | Required when `path` is present (no silent drops) | At parse time |
+| `repos[].name` | Required logical name (no silent drops); resolved to an absolute host path via the STATE index | Index lookup at start time |
+| `repos[].url` | Git remote URL coordinate (optional); used for clone-from-`url` resolution | At resolve/start time |
 | `docker.ports[]` | `^[0-9]+:[0-9]+(/tcp\|/udp)?$` | At parse time |
 | `docker.env` | `KEY: value` format, KEY matches `^[A-Za-z_][A-Za-z0-9_]*$` | At parse time |
 | `browser.cdp_port` | Numeric, range 1–65535 | At parse time |
@@ -188,7 +191,7 @@ All parsed values have leading and trailing whitespace trimmed. Indentation erro
 
 Knowledge packs bundle reusable documentation, skills, agents, and rules that can be shared across multiple projects without copying files.
 
-**Pack definition** — `user-config/packs/<name>/pack.yml`:
+**Pack definition** — `~/.cco/packs/<name>/pack.yml`:
 ```yaml
 name: my-client
 
@@ -233,9 +236,9 @@ All sections are optional. A knowledge-only pack needs only the `knowledge:` sec
 
 **Name conflicts**: If two packs define the same agent, rule, or skill name, the last pack listed in `project.yml` wins. A warning is emitted. See [ADR-14](../maintainer/architecture/architecture.md) for the design rationale.
 
-**Pack directory** — `user-config/packs/` (gitignored from orchestrator repo, created by `cco init`):
+**Pack directory** — `~/.cco/packs/` (in the personal store, created by `cco init`):
 ```
-user-config/
+~/.cco/
   packs/
     my-client/
       pack.yml
@@ -271,13 +274,13 @@ llms:
 
 | Field | Required | Type | Default | Description |
 |-------|----------|------|---------|-------------|
-| `llms[].name` | ✅ | string | — | Name matching `user-config/llms/<name>/` directory |
+| `llms[].name` | ✅ | string | — | Name matching the cached `~/.cache/cco/llms/<name>/` directory |
 | `llms[].description` | ❌ | string | Auto from H1 | Override description shown to the agent |
 | `llms[].variant` | ❌ | string | Auto (full > medium > small > index) | Force a specific file variant |
 
 ### How It Works
 
-1. Install llms files with `cco llms install <url>` (stored in `user-config/llms/`)
+1. Install llms files with `cco llms install <url>` (content cached per-machine in `~/.cache/cco/llms/`)
 2. Reference them in `project.yml` or `pack.yml` via `llms:` section
 3. At `cco start`, directories are mounted read-only at `/workspace/.claude/llms/<name>/`
 4. The file list is appended to `.claude/packs.md` and injected into the agent's context

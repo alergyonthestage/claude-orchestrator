@@ -11,24 +11,33 @@
 ```mermaid
 graph TB
     subgraph HOST ["HOST (macOS + Docker Desktop)"]
-        subgraph CCO ["claude-orchestrator/"]
+        subgraph CCO ["claude-orchestrator/ (the tool)"]
             CLI["bin/cco (CLI)"]
-            DEFAULTS["defaults/<br/>├── global/.claude/<br/>templates/<br/>├── project/base/<br/>├── project/tutorial/<br/>└── pack/base/"]
-            USERCONF["user-config/<br/>├── global/.claude/ (user)<br/>└── projects/my-saas/<br/>    ├── project.yml<br/>    └── .claude/"]
+            DEFAULTS["defaults/<br/>├── managed/ (baked in image)<br/>└── global/.claude/<br/>templates/ · internal/"]
             DOCKERFILE[Dockerfile]
         end
 
-        subgraph REPOS ["~/projects/"]
-            BACKEND["backend-api/<br/>└── .claude/"]
-            FRONTEND["frontend-app/<br/>└── .claude/"]
-            SHARED["shared-libs/"]
+        subgraph GLOBALSTORE ["~/.cco/ (personal git store)"]
+            GLOBAL["global/.claude/ (user config)<br/>packs/ · templates/<br/>secrets.env (gitignored)"]
+        end
+
+        subgraph SYS ["per-machine hidden buckets (XDG)"]
+            STATE["STATE ~/.local/state/cco<br/>index · compose · transcripts · memory · base/meta"]
+            CACHE["CACHE ~/.cache/cco<br/>generated overlays · llms · clones"]
+            DATA["DATA ~/.local/share/cco<br/>tags · remotes · source"]
+        end
+
+        subgraph REPOS ["~/projects/ (each repo carries its own config)"]
+            BACKEND["backend-api/<br/>├── .claude/ (repo-native)<br/>└── .cco/ (hosts this project:<br/>    project.yml · claude/ · secrets.env)"]
+            FRONTEND["frontend-app/<br/>├── .claude/<br/>└── .cco/ (synced copy)"]
+            SHARED["shared-libs/<br/>└── .claude/"]
         end
 
         SOCKET["/var/run/docker.sock"]
 
         subgraph CONTAINER ["Claude Code Container"]
-            DOTCLAUDE["~/.claude/ ← user-config/global/.claude/"]
-            WORKSPACE["/workspace/ (WORKDIR)<br/>├── .claude/ ← project mount<br/>├── backend-api/ ← repo mount<br/>├── frontend-app/ ← repo mount<br/>└── shared-libs/ ← repo mount"]
+            DOTCLAUDE["~/.claude/ ← ~/.cco/global/.claude/"]
+            WORKSPACE["/workspace/ (WORKDIR)<br/>├── .claude/ ← invoking repo's .cco/claude + CACHE :ro overlays<br/>├── backend-api/ ← repo mount<br/>├── frontend-app/ ← repo mount<br/>└── shared-libs/ ← repo mount"]
             DOCKSOCK["/var/run/docker.sock ← host socket"]
             CLAUDE["$ claude --dangerously-skip-permissions<br/>Can run: npm run dev, docker compose up, git commit/push"]
         end
@@ -41,9 +50,11 @@ graph TB
     end
 
     SOCKET --> DOCKSOCK
-    USERCONF -->|mount| DOTCLAUDE
-    USERCONF -->|mount| WORKSPACE
-    REPOS -->|mount| WORKSPACE
+    GLOBALSTORE -->|mount| DOTCLAUDE
+    REPOS -->|"invoking repo .cco/claude → /workspace/.claude"| WORKSPACE
+    CACHE -->|":ro overlays (packs.md, workspace.yml)"| WORKSPACE
+    STATE -->|"compose, transcripts, memory"| WORKSPACE
+    REPOS -->|"repo mount"| WORKSPACE
     CLAUDE -->|"docker compose up"| SIBLINGS
 ```
 
@@ -106,9 +117,9 @@ graph TB
 | Orchestrator Layer | Container Path | Claude Code Scope | Loaded | Overridable? |
 |---|---|---|---|---|
 | `defaults/managed/` | `/etc/claude-code/` | Managed | Always at launch | No |
-| `user-config/global/.claude/` | `~/.claude/` | User-level | Always at launch | Yes |
-| `user-config/projects/<n>/.claude/` | `/workspace/.claude/` | Project-level | Always at launch | Yes |
-| (repo's own `.claude/`) | `/workspace/<repo>/.claude/` | Nested | On-demand | Yes |
+| `~/.cco/global/.claude/` | `~/.claude/` | User-level | Always at launch | Yes |
+| invoking repo's `<repo>/.cco/claude/` | `/workspace/.claude/` | Project-level | Always at launch | Yes |
+| (repo's own `<repo>/.claude/`) | `/workspace/<repo>/.claude/` | Nested | On-demand | Yes |
 
 **Rationale**:
 - Exact match with Claude Code's resolution order: managed → user → project → nested
@@ -120,7 +131,7 @@ graph TB
 - Framework infrastructure (hooks, env, deny rules) is in managed — always active, non-overridable
 - User preferences (agents, skills, rules, settings) are in user level — fully customizable
 - Repo-level `.claude/` files stay in the actual repos (not duplicated in orchestrator)
-- The `user-config/global/.claude/` directory must NOT contain project-specific data
+- The `~/.cco/global/.claude/` directory must NOT contain project-specific data
 
 ---
 
@@ -176,53 +187,52 @@ volumes:
 
 | Method | Mechanism | Use Case |
 |--------|-----------|----------|
-| OAuth (default) | Credentials seeded from macOS Keychain to `global/claude-state/.credentials.json` | Pro/Team/Enterprise subscriptions |
+| OAuth (default) | Credentials seeded from macOS Keychain to STATE (`<state>/cco/.credentials.json`) | Pro/Team/Enterprise subscriptions |
 | API Key | `ANTHROPIC_API_KEY` env var | Direct API access, CI/CD |
 | GitHub auth | `GITHUB_TOKEN` env var → `gh auth login --with-token` + `gh auth setup-git` | git push (HTTPS), `gh pr create`, MCP GitHub server |
 | Per-project secrets | `secrets.env` at global and project level, loaded as runtime `-e` flags | Service tokens (never written to docker-compose.yml) |
 
 **Implementation**:
-- **OAuth**: On macOS, the CLI extracts credentials from macOS Keychain (`Claude Code-credentials`) and seeds them to `user-config/global/claude-state/.credentials.json`. Inside the container, Claude Code reads from `~/.claude/.credentials.json` (the Linux plaintext location). The `~/.claude.json` file (mounted from `global/claude-state/claude.json`) stores preferences and MCP servers — NOT auth tokens.
+- **OAuth**: On macOS, the CLI extracts credentials from macOS Keychain (`Claude Code-credentials`) and seeds them to STATE (`<state>/cco/.credentials.json`). Inside the container, Claude Code reads from `~/.claude/.credentials.json` (the Linux plaintext location). The `~/.claude.json` file (seeded from STATE `<state>/cco/claude.json`) stores preferences and MCP servers — NOT auth tokens.
 - **API Key**: `ANTHROPIC_API_KEY` env var passed to container via `--env` or `.env` file.
 - **GitHub**: `GITHUB_TOKEN` env var triggers `gh auth login --with-token` + `gh auth setup-git` in the entrypoint. This enables git push (HTTPS), `gh pr create`, and MCP GitHub server — all with a single token.
 - **Secrets**: `secrets.env` at both global and project level, loaded as runtime `-e` flags (never written to `docker-compose.yml`).
 
 **Why not just mount `~/.claude.json` read-write?**
-The current model uses a shared writable `user-config/global/claude-state/claude.json` that is synced from host when host has more recent data (by comparing `numStartups`). This avoids race conditions from concurrent writes by host and container Claude Code instances (which previously caused JSON corruption — "control characters are not allowed" errors). The `claude.json` file stores only preferences and MCP server config; OAuth credentials are handled separately via `.credentials.json`.
+The current model uses a shared writable `<state>/cco/claude.json` (machine-local STATE) that is synced from host when host has more recent data (by comparing `numStartups`). This avoids race conditions from concurrent writes by host and container Claude Code instances (which previously caused JSON corruption — "control characters are not allowed" errors). The `claude.json` file stores only preferences and MCP server config; OAuth credentials are handled separately via `.credentials.json`.
 
 ---
 
-### ADR-6: Claude State Isolation and Persistence (Updated — Sprint 7-Vault)
+### ADR-6: Claude State Isolation and Persistence (Updated — ADR-0009, decentralized config)
 
-**Context**: Claude Code stores auto memory and session transcripts at `~/.claude/projects/<project>/`. Since we mount `user-config/global/.claude/` to `~/.claude/`, all projects would share the same state location. Additionally, the ephemeral container (`--rm`) loses all in-container data on exit, including session transcripts needed for `/resume`.
+**Context**: Claude Code stores auto memory and session transcripts at `~/.claude/projects/<project>/`. Since we mount `~/.cco/global/.claude/` to `~/.claude/`, all projects would share the same state location. Additionally, the ephemeral container (`--rm`) loses all in-container data on exit, including session transcripts needed for `/resume`.
 
-**Decision**: Each project gets a dedicated `.cco/claude-state/` directory for session transcripts, and a separate `memory/` directory for auto memory. Both are mounted to the appropriate paths inside the container.
+**Decision**: Auto memory and session transcripts are **machine-local STATE** (ADR-0009), not config. They are **never** committed to a repo and **not synced across machines in v1**. Both live in the per-machine STATE bucket, keyed by the project identity `<id>` (the `project.yml` `name`), and are mounted to the appropriate paths inside the container.
 
 ```yaml
 volumes:
-  # Session transcripts (gitignored — large, transient)
-  - ./.cco/claude-state:/home/claude/.claude/projects/-workspace
-  # Auto memory (vault-tracked — small, valuable)
-  - ./memory:/home/claude/.claude/projects/-workspace/memory
+  # Session transcripts (STATE — large, transient)
+  - <state>/cco/projects/<id>/claude-state:/home/claude/.claude/projects/-workspace
+  # Auto memory (STATE — small, valuable, machine-local)
+  - <state>/cco/projects/<id>/session/memory:/home/claude/.claude/projects/-workspace/memory
 ```
 
-The identifier `-workspace` comes from Claude Code encoding the absolute working directory path by replacing each `/` with `-`. Since WORKDIR is `/workspace`, the encoded identifier is `-workspace`.
+Host sources are **host-absolute**, resolved by `cco start` from the STATE bucket (`$CCO_STATE_HOME` → `$XDG_STATE_HOME/cco` → `~/.local/state/cco`). The identifier `-workspace` comes from Claude Code encoding the absolute working directory path by replacing each `/` with `-`. Since WORKDIR is `/workspace`, the encoded identifier is `-workspace`.
 
-The child bind mount (`memory`) shadows the `memory/` subdirectory within the parent mount (`.cco/claude-state`). Docker's mount precedence guarantees the child mount takes priority at runtime. This means any files at `.cco/claude-state/memory/` (from pre-Sprint 7 installations) are invisible to the container — the new `memory/` directory is used instead.
+The child bind mount (`memory`) shadows the `memory/` subdirectory within the parent mount (`claude-state`). Docker's mount precedence guarantees the child mount takes priority at runtime.
 
 **Rationale**:
 - Auto memory is useful and should not be disabled
-- Project-specific insights should not leak across projects
+- Project-specific insights should not leak across projects (separate STATE per `<id>`)
 - Session transcripts (needed for `/resume`) must survive container restarts and image rebuilds
-- Memory files are small and valuable — they should be vault-tracked for multi-PC sync
-- Transcripts are large and transient — they should remain gitignored
-- Separating the two allows the vault to version memory without pulling in transcripts
+- Memory and transcripts are session/runtime **state**, not authored config — so they live in machine-local STATE, never in the committed `<repo>/.cco/` or `~/.cco/` trees (ADR-0008/0009)
+- They are **not versioned and not synced cross-PC in v1**: the old vault auto-commit of `memory/` is removed. Cross-PC / cross-team state sync is a deferred opt-in feature (R-state-sync)
 
 **Consequences**:
-- Each project directory has two state directories: `.cco/claude-state/` (gitignored) and `memory/` (vault-tracked)
-- Two Docker mounts per project: one for `.cco/claude-state/` (transcripts) and one for `memory/` (auto memory)
+- Each project's state lives under `<state>/cco/projects/<id>/`: `claude-state/` (transcripts) and `session/memory/` (auto memory)
+- Two Docker mounts per project, both with host-absolute STATE sources
 - The mount target path depends on how Claude Code derives the project identifier
-- Migration 008 (`migrations/project/008_separate_memory.sh`) copies `.cco/claude-state/memory/` to `memory/` for existing projects; the old directory is kept as fallback but shadowed by the child mount at runtime
+- The `/session` (opt-in future sync) vs `/update` (never-sync base/meta) split inside STATE is the allowlist boundary protecting any future state-sync from sweeping base/hashes/tokens
 
 ---
 
@@ -244,7 +254,7 @@ The child bind mount (`memory`) shadows the `memory/` subdirectory within the pa
 
 **Configuration**:
 ```json
-// user-config/global/.claude/settings.json
+// ~/.cco/global/.claude/settings.json
 {
   "teammateMode": "tmux"   // or "auto" for iTerm2 detection
 }
@@ -276,8 +286,8 @@ See [CLI.md](../../reference/cli.md) for full specification.
 
 **Key aspects**:
 - Single bash script, no external dependencies
-- Reads `project.yml`, generates docker-compose, runs container
-- Supports: start, new, project create/list, build, stop
+- Reads the invoking repo's `<repo>/.cco/project.yml`, generates docker-compose in STATE, runs container
+- Supports: `start`, `new`, `init` / `join` / `init --migrate` (project entry points), `list`, `sync`, `resolve` / `path`, `config save/push/pull`, `tag` / `list --tag`, `build`, `stop`
 
 ### 3.3 Context & Settings
 
@@ -294,8 +304,8 @@ See [SUBAGENTS.md](../../user-guides/advanced/subagents.md) for full specificati
 
 **Key aspects**:
 - Two default subagents: analyst (haiku, read-only) and reviewer (sonnet, read-only)
-- Defined in `user-config/global/.claude/agents/`
-- Projects can add their own in `user-config/projects/<n>/.claude/agents/`
+- Defined in `~/.cco/global/.claude/agents/`
+- Projects can add their own in `<repo>/.cco/claude/agents/`
 - Documentation for creating new subagents
 
 ---
@@ -390,12 +400,12 @@ graph LR
 
 **Decision**: Three-tier defaults leveraging Claude Code's native Managed level:
 - `defaults/managed/` — framework infrastructure (hooks, env, deny rules, framework CLAUDE.md), baked into Docker image at `/etc/claude-code/` (Managed level — non-overridable)
-- `defaults/global/` — user defaults (agents, skills, rules, settings.json, CLAUDE.md, mcp.json), copied once by `cco init` (User level — fully customizable)
-- `templates/project/base/` — default project template, scaffolded by `cco project create`
-- `user-config/` — gitignored, owned by the user (contains `global/`, `projects/`, `packs/`, `templates/`)
+- `defaults/global/` — user defaults (agents, skills, rules, settings.json, CLAUDE.md, mcp.json), copied once by `cco init` to the personal store `~/.cco/global/` (User level — fully customizable)
+- `templates/project/base/` — default project template, scaffolded by `cco init` / `cco join` when setting up a repo's `.cco/`
+- Personal store `~/.cco/` (git-versioned, gitignored secrets) holds `global/`, `packs/`, `templates/`; per-project config lives in each `<repo>/.cco/`; machine-local data is in the hidden XDG buckets (STATE/CACHE/DATA)
 
 **Mechanism**:
-- `cco init` copies user defaults to `user-config/global/` on first setup; `--force` resets user defaults
+- `cco init` copies user defaults to `~/.cco/global/` on first setup; `--force` resets user defaults
 - Managed files are baked into the Docker image via `COPY defaults/managed/ /etc/claude-code/` in the Dockerfile — updated only via `cco build`
 - `_migrate_to_managed()` handles one-time migration from the old `_sync_system_files()` layout: removes `.system-manifest`, splits old unified settings.json into managed + user
 - No more `_sync_system_files()` — agents, skills, rules, and settings are user-owned after initial copy
@@ -411,8 +421,8 @@ graph LR
 - First-time setup requires `cco init` before `cco start`
 - Managed settings updates require `cco build` (baked in image)
 - User defaults (agents, skills, rules, settings, CLAUDE.md) are user-owned and never overwritten
-- `cco init --force` resets user defaults to defaults/global/ templates
-- Migration from old layout is automatic on first `cco init` after update
+- `cco init --force` resets user defaults in `~/.cco/global/` to defaults/global/ templates
+- Migration from the old centralized `user-config/` layout is automatic (eager global via `cco update`; lazy per-project via `cco init --migrate`)
 
 ### ADR-9: Knowledge Packs — Copy vs Mount for Resources
 
@@ -422,7 +432,7 @@ graph LR
 
 **Original Decision**: Use two different strategies for the two resource types:
 - **Knowledge files** → mounted read-only as Docker volumes at `/workspace/.claude/packs/<name>/`
-- **Skills, agents, rules** → copied into `projects/<name>/.claude/` at `cco start` time
+- **Skills, agents, rules** → copied into the project's `.claude/` at `cco start` time
 
 **Why Superseded**: ADR-14 eliminates the copy mechanism entirely. All pack resources (including skills, agents, and rules) are now delivered via read-only Docker volume mounts. Individual file mounts (one per rule/agent, one directory per skill) solve the Docker mount-shadowing problem without physical copying. This eliminates `.pack-manifest`, stale copy risk, and host filesystem pollution. See ADR-14 for the current design.
 
@@ -484,10 +494,10 @@ graph LR
 **Context**: The Docker image is built once and shared across all projects. Some projects need additional system packages, npm packages, or runtime configuration. The only extension mechanism is `--mcp-packages` for global npm packages. Users have no way to customize the environment per project without editing the Dockerfile.
 
 **Decision**: Provide five complementary extension mechanisms:
-1. `user-config/global/setup-build.sh` — executed during `cco build` for system-level packages (all projects, root)
-2. `user-config/global/setup.sh` — executed at container start for global runtime config (all projects, user `claude`)
-3. `user-config/projects/<name>/setup.sh` — executed at container start for per-project runtime setup
-4. `user-config/projects/<name>/mcp-packages.txt` — per-project npm MCP packages (runtime install)
+1. `~/.cco/setup-build.sh` — executed during `cco build` for system-level packages (all projects, root)
+2. `~/.cco/setup.sh` — executed at container start for global runtime config (all projects, user `claude`)
+3. `<repo>/.cco/setup.sh` — executed at container start for per-project runtime setup
+4. `<repo>/.cco/mcp-packages.txt` — per-project npm MCP packages (runtime install)
 5. `docker.image` in project.yml — use a completely custom Docker image per project
 
 **Rationale**:
@@ -498,11 +508,11 @@ graph LR
 - All four are opt-in with no impact on default behavior
 
 **Consequences**:
-- `user-config/global/setup-build.sh` requires `cco build` after changes
-- `user-config/global/setup.sh` runs at every `cco start` as user `claude` (not root)
+- `~/.cco/setup-build.sh` requires `cco build` after changes
+- `~/.cco/setup.sh` runs at every `cco start` as user `claude` (not root)
 - Runtime setup scripts (2, 3, 4) increase container startup time proportionally to install size
 - Custom images must be maintained by the user, but can extend the base image
-- Template files are created by `cco init` and `cco project create`
+- Template files are created by `cco init` (and seeded into a repo's `.cco/` on `cco init` / `cco join`)
 
 **Design doc**: [environment-design.md](../configuration/environment/design.md) | **Analysis**: [environment-extensibility.md](../configuration/environment/analysis.md)
 
@@ -519,23 +529,23 @@ runtime and were previously mixed into the project root alongside user files
 (`browser-mcp.json`, `.browser-port`). This created ambiguity about what is
 user-owned vs framework-managed.
 
-**Decision**: Framework-generated integration files are written to
-`user-config/projects/<name>/.cco/managed/` and mounted read-only at `/workspace/.managed/` in the
-container. User files (`mcp.json`, `.claude/`, `project.yml`) remain at the project
-root. The entrypoint merges all `*.json` files in `/workspace/.managed/` into
+**Decision**: Framework-generated integration files are written to the machine-local CACHE
+(`<cache>/cco/projects/<id>/managed/`) and mounted read-only at `/workspace/.managed/` in the
+container. User config files (`mcp.json`, `claude/`, `project.yml`) live in the committed
+`<repo>/.cco/`. The entrypoint merges all `*.json` files in `/workspace/.managed/` into
 `~/.claude.json` via a generic loop — adding a new integration requires no entrypoint
 change.
 
 **Rationale**:
-- Clear visual separation: everything in `.cco/managed/` is framework-owned
-- Users cannot accidentally edit managed config (`.cco/managed/` is gitignored, mounted `:ro`)
+- Clear separation: generated managed files are framework-owned and live in CACHE, never in the committed `<repo>/.cco/` tree (so they never pollute the truthful `git diff` or the sync)
+- Users cannot accidentally edit managed config (CACHE is hidden, mounted `:ro`)
 - New integrations follow a documented 8-step protocol without modifying existing code
 - The generic entrypoint loop means zero entrypoint changes per new integration
 
 **Consequences**:
-- `.cco/managed/` is always gitignored (migration 003 adds it automatically)
-- `cco stop <project>` cleans up files in `.cco/managed/` (not the directory itself)
-- `cco chrome` reads the effective port from `.cco/managed/.browser-port`
+- Generated managed files are regenerable CACHE (never committed)
+- `cco stop <project>` cleans up the generated managed files (not the directory itself)
+- `cco chrome` reads the effective port from `<cache>/cco/projects/<id>/managed/.browser-port`
 - Conflict warning in entrypoint if a managed server key overrides a user-configured one
 
 **See also**: [managed-integrations.md](../decisions/managed-integrations.md)
@@ -621,7 +631,7 @@ This is a class of bugs where **config parsing errors silently weaken security**
 **Date**: 2026-03-11
 **Status**: Accepted
 
-**Context**: Pack resources (knowledge, rules, agents, skills) were physically copied from `user-config/packs/` into each project's `.claude/` directory at `cco start` time. This caused file duplication across projects, risk of stale/divergent copies, and host filesystem pollution. The fundamental value proposition of packs is reuse without copy-paste.
+**Context**: Pack resources (knowledge, rules, agents, skills) were physically copied from the packs store into each project's `.claude/` directory at `cco start` time. This caused file duplication across projects, risk of stale/divergent copies, and host filesystem pollution. The fundamental value proposition of packs is reuse without copy-paste.
 
 **Decision**: Pack resources are delivered to containers via read-only Docker volume mounts in the generated `docker-compose.yml`, never copied to project directories. Each resource type maps to the appropriate mount strategy:
 - Knowledge dirs: one directory mount per pack → `/workspace/.claude/packs/<name>:ro`
@@ -632,7 +642,7 @@ This is a class of bugs where **config parsing errors silently weaken security**
 The `packs.md` index file remains generated into the project's `.claude/` as it is project-specific (lists only packs referenced in that project's `project.yml`).
 
 **Consequences**:
-- Zero file duplication: pack source in `user-config/packs/` is the single source of truth
+- Zero file duplication: the pack source in `~/.cco/packs/` (or the optional project-local `<repo>/.cco/packs/`) is the single source of truth
 - Pack updates are immediately visible on next `cco start` (no stale copies)
 - Project `.claude/` directories contain only project-owned files
 - `.pack-manifest` tracking mechanism is eliminated
@@ -661,7 +671,7 @@ bin/cco
   trap '...' EXIT              ← fires only when _cco_completed != true
   ...
   _cco_rc=0
-  cmd_vault "$@" || _cco_rc=$?  ← captures expected errors
+  cmd_sync "$@" || _cco_rc=$?   ← captures expected errors
   _cco_completed=true           ← suppresses EXIT trap
   exit $_cco_rc                 ← propagates original exit code
 ```
@@ -708,5 +718,5 @@ of bugs so the same drift does not recur.
 | Docker Desktop Mac networking | No true `host` networking; port mapping required | Explicit port ranges in project config |
 | Auto memory path derivation | Depends on Claude Code internal logic | May need testing; mount path may need adjustment |
 | tmux inside Docker | No native clipboard integration with macOS | Use iTerm2 mode or manual copy |
-| Container ephemeral by default | Session transcripts lost on container removal | `.cco/claude-state/` mount persists transcripts; `/resume` works across rebuilds |
+| Container ephemeral by default | Session transcripts lost on container removal | STATE `<state>/cco/projects/<id>/claude-state/` mount persists transcripts; `/resume` works across rebuilds |
 | Single Docker daemon | All projects share the daemon | Use distinct network names per project |

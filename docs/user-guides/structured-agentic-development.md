@@ -67,7 +67,7 @@ impose any specific workflow, conventions, or development practices.
 
 | Layer | Customizable? | Examples |
 |-------|:------------:|---------|
-| **Framework mechanisms** | Configurable, not removable | Docker isolation, context hierarchy, packs, vault |
+| **Framework mechanisms** | Configurable, not removable | Docker isolation, context hierarchy, packs, in-repo config |
 | **Default rules & skills** | Fully customizable | `workflow.md`, `git-practices.md`, `/analyze`, `/review` |
 | **Recommended practices** | Advice only (in guides) | Review cycles, context cleanup, docs structure, maintenance |
 
@@ -105,9 +105,10 @@ not exist for the next session.
   `project.yml` and `.claude/` directories, all tracked in git. Analysis and design
   documents go in `docs/` within your repo. The agent's context comes from the repo,
   not from chat history.
-- **Auto memory is project-scoped.** Each project's `.cco/claude-state/` directory is mounted
-  to `~/.claude/projects/-workspace/`, isolating session transcripts and memory per project.
-  Memory persists across sessions within the project but never leaks between projects.
+- **Auto memory is project-scoped.** Each project's machine-local STATE store
+  (`~/.local/state/cco/projects/<id>/session/`) is mounted to `~/.claude/projects/-workspace/`,
+  isolating session transcripts and memory per project. Memory persists across sessions within
+  the project but never leaks between projects.
 
 ### 1.2 Commit Discipline
 
@@ -244,7 +245,7 @@ They should be explicit, versioned, and periodically reviewed.
   `documentation.md` (Mermaid in docs, plain text in terminal, documentation structure), `language.md` (communication
   and documentation language preferences).
 - **Scoped rules**: Global rules apply everywhere. Project-level rules in
-  `projects/<name>/.claude/rules/` override or extend for specific projects.
+  `<repo>/.cco/claude/rules/` override or extend for specific projects.
 - **Rules are short and focused.** Each default rule file addresses one concern in
   ~20-40 lines. Users can expand, split, or reorganize rules as their project evolves.
   This avoids rule fatigue (the tendency for rules to accumulate into an unmanageable mass).
@@ -259,12 +260,12 @@ work correctly.
 
 **How cco implements this:**
 
-- **Knowledge packs** (`user-config/packs/`) are curated bundles of documentation,
+- **Knowledge packs** (`~/.cco/packs/`) are curated bundles of documentation,
   rules, and configuration for specific domains — a web development pack, a homeserver
   pack, an AI development pack, etc.
 - **Packs are composable.** A project can use multiple packs via `packs:` in `project.yml`.
   Each pack's knowledge is merged into the project context.
-- **Packs are shareable.** The Config Repo system (`cco pack publish`, `cco pack install`)
+- **Packs are shareable.** The sharing-repo system (`cco pack publish`, `cco pack install`)
   allows sharing packs across machines, teams, and organizations.
 - **Knowledge is catalogued at start, loaded on demand.** At session start, `cco start`
   generates a `packs.md` index listing available pack documents with descriptions. The
@@ -370,8 +371,8 @@ Analysis → [Human Review] → Design → [Human Review] → Implementation →
 - **Project-scoped sessions.** One project per container. No accidental cross-project
   modifications.
 - **Ephemeral by default.** The container is `--rm` — it is destroyed when the session ends.
-  Only repos (mounted from host) and auto memory (mounted to `.cco/claude-state/`) persist.
-  Everything else starts clean next session.
+  Only repos (mounted from host) and auto memory (persisted in the machine-local STATE store)
+  persist. Everything else starts clean next session.
 
 ### 3.3 Session Handoff Through Artifacts
 
@@ -383,7 +384,7 @@ that capture the state at the boundary.
 - **Analysis and design docs serve as handoff documents.** The `/analyze` skill produces
   a structured analysis summary; `/design` produces a design specification. Both are
   versioned files in the repo that the next session can read.
-- **Auto memory** (`.cco/claude-state/`) provides continuity for context that does not belong
+- **Auto memory** (machine-local STATE store) provides continuity for context that does not belong
   in committed files — current task state, debugging notes, session-specific context.
 - **CLAUDE.md as living state.** The project CLAUDE.md should reflect the current state
   of the project. Updating it at the end of significant phases ensures the next session
@@ -453,7 +454,7 @@ reused. cco implements this through the **skills system**:
 - Default skills (`defaults/global/.claude/skills/`) provide recommended workflows
   available in every project — analysis, design, review, commit. Users can modify
   these or create their own.
-- Project-level skills (`projects/<name>/.claude/skills/`) provide project-specific
+- Project-level skills (`<repo>/.cco/claude/skills/`) provide project-specific
   workflows that extend or override the defaults.
 - Skills are markdown files with structured instructions. They evolve with the project.
 

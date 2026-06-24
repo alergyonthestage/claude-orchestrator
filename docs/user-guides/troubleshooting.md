@@ -78,7 +78,7 @@ Error: Docker image 'claude-orchestrator:latest' not found. Run 'cco build' firs
 1. Verify that you've logged in on the host: run `claude` outside the container
 2. Force credential re-seeding:
    ```bash
-   rm user-config/global/claude-state/.credentials.json
+   rm ~/.local/state/cco/projects/<id>/session/.credentials.json
    cco start my-project
    ```
 3. Check the macOS Keychain:
@@ -102,8 +102,8 @@ Error: Docker image 'claude-orchestrator:latest' not found. Run 'cco build' firs
 
 **Solution**: the CLI automatically fixes this value. If the problem persists:
 ```bash
-jq '.hasCompletedOnboarding = true' user-config/global/claude-state/claude.json > /tmp/fix.json \
-  && mv /tmp/fix.json user-config/global/claude-state/claude.json
+jq '.hasCompletedOnboarding = true' ~/.local/state/cco/projects/<id>/session/claude.json > /tmp/fix.json \
+  && mv /tmp/fix.json ~/.local/state/cco/projects/<id>/session/claude.json
 ```
 
 ### API Error: 403 Cloudflare Challenge (subagent)
@@ -129,7 +129,7 @@ implement automatic retry for subagent API calls (upstream issue).
 
 **Solutions**:
 - Check `auth.method: api_key` in `project.yml`
-- Verify that `ANTHROPIC_API_KEY` is in `user-config/global/secrets.env` or passed with `--env`
+- Verify that `ANTHROPIC_API_KEY` is in `~/.cco/secrets.env` or passed with `--env`
 - Check the key format (must start with `sk-ant-api`)
 
 ### GitHub token doesn't work
@@ -137,7 +137,7 @@ implement automatic retry for subagent API calls (upstream issue).
 **Symptoms**: `git push` fails, `gh` is not authenticated.
 
 **Solutions**:
-- Verify that `GITHUB_TOKEN` is in `user-config/global/secrets.env` or `projects/<name>/secrets.env`
+- Verify that `GITHUB_TOKEN` is in `~/.cco/secrets.env` or `<repo>/.cco/secrets.env`
 - Check PAT permissions: Contents (read/write) and Pull requests (read/write)
 - Check the entrypoint logs for messages like:
   ```
@@ -201,7 +201,7 @@ If you already use tmux on the host, the container creates a nested session. The
 1. Verify that the pack is listed in `packs:` in `project.yml`
 2. Check the output of `cco start` for the message "Generated .claude/packs.md"
 3. Verify that `pack.yml` has the `knowledge.files:` section populated
-4. Check the contents of `projects/<name>/.claude/packs.md` — it must list the files
+4. Check the contents of the generated `.claude/packs.md` (a CACHE overlay) — it must list the files
 
 ### Pack conflicts
 
@@ -234,20 +234,20 @@ Common problems:
 **Solutions**:
 1. Verify that `mcp.json` is valid JSON:
    ```bash
-   jq . projects/my-project/mcp.json
+   jq . <repo>/.cco/claude/mcp.json
    ```
 2. Verify that referenced environment variables (`${VAR}`) are available in the container via `secrets.env` or `--env`
 3. If a `${VAR}` variable is not resolved, Claude Code ignores the entire `mcp.json` file
-4. For global servers, check `global/.claude/mcp.json`
+4. For global servers, check `~/.cco/global/.claude/mcp.json`
 5. Check the entrypoint logs for merge errors
 
 ### Unresolved environment variables
 
 **Cause**: `${GITHUB_TOKEN}` in `mcp.json` is not expanded because the variable is not in the container's environment.
 
-**Solution**: add the variable to `user-config/global/secrets.env`:
+**Solution**: add the variable to `~/.cco/secrets.env`:
 ```bash
-echo "GITHUB_TOKEN=ghp_..." >> user-config/global/secrets.env
+echo "GITHUB_TOKEN=ghp_..." >> ~/.cco/secrets.env
 ```
 
 Or pass it with `--env`:
@@ -262,14 +262,14 @@ cco start my-project --env GITHUB_TOKEN=ghp_...
 **Solution**: pre-install packages in the Docker image:
 ```bash
 # Via mcp-packages.txt (persistent)
-echo "@modelcontextprotocol/server-github" >> global/mcp-packages.txt
+echo "@modelcontextprotocol/server-github" >> ~/.cco/global/mcp-packages.txt
 cco build
 
 # Via CLI flag (one-time)
 cco build --mcp-packages "@modelcontextprotocol/server-github"
 ```
 
-For project-specific packages, use `projects/<name>/mcp-packages.txt`.
+For project-specific packages, use `<repo>/.cco/mcp-packages.txt`.
 
 ---
 
@@ -293,7 +293,7 @@ For project-specific packages, use `projects/<name>/mcp-packages.txt`.
 2. If not running, start it: `cco chrome start`
 3. Verify the port matches:
    ```bash
-   cat projects/my-project/.cco/managed/.browser-port
+   cco chrome status --project my-project   # shows the effective runtime port
    cco chrome start --project my-project
    ```
 4. On Linux, verify that `host.docker.internal` resolves inside the container
@@ -355,15 +355,15 @@ cco stop
 ### Project not found
 
 ```
-Error: Project 'foo' not found. Run 'cco project list' to see available projects.
+Error: Project 'foo' not found. Run 'cco list' to see available projects.
 ```
 
 **Solutions**:
-- Check the name with `cco project list`
-- Verify that `projects/<name>/project.yml` exists
+- Check the name with `cco list`
+- Verify that `<repo>/.cco/project.yml` exists
 - If the project doesn't exist yet, create it:
   ```bash
-  cco project create my-project --repo ~/projects/my-repo
+  cco init my-project --repo ~/projects/my-repo
   ```
 
 ### Context too large

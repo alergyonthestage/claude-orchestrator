@@ -8,7 +8,7 @@
 
 Knowledge packs are reusable collections of documentation — client overviews, architecture specs, coding conventions, runbooks — that can be activated across multiple projects without copying files.
 
-A pack is defined in `user-config/packs/<name>/pack.yml` with a reference to a documentation directory on the host. At session startup, `cco start` mounts the directory read-only and generates a list of available files. Claude reads them on-demand when relevant to the current task. Packs can also contribute skills, agents, and rules at the project level.
+A pack is defined in a `pack.yml` with a reference to a documentation directory on the host. Packs are resolved from your personal store (`~/.cco/packs/<name>/`) or a sharing repo; a pack with no `url` coordinate is a project-local pack authored in `<repo>/.cco/packs/`. At session startup, `cco start` mounts the directory read-only and generates a list of available files. Claude reads them on-demand when relevant to the current task. Packs can also contribute skills, agents, and rules at the project level.
 
 Activation in `project.yml`:
 
@@ -32,7 +32,7 @@ Learn more: [project-setup.md](../user-guides/project-setup.md) (Configure a Pac
 
 The [llms.txt standard](https://llmstxt.org/) provides a way for frameworks to expose their documentation in LLM-friendly format. claude-orchestrator can install these files and serve them to Claude during sessions, ensuring code is written against current APIs.
 
-Install with `cco llms install <url>`, reference in `project.yml` or `pack.yml` via `llms:`, and keep updated with `cco llms update --all`.
+Install with `cco llms install <url>` (the downloaded content is cached per machine under `~/.cache/cco/llms/`), reference it by coordinate in `project.yml` or `pack.yml` via `llms:`, and keep updated with `cco llms update --all`.
 
 ---
 
@@ -57,13 +57,15 @@ For the complete reference, see [context-hierarchy.md](../reference/context-hier
 
 claude-orchestrator makes Claude Code environments reproducible and shareable across a team.
 
-A project is a directory (`projects/<name>/`) containing:
+A project's config lives **inside the repo it serves**, in `<repo>/.cco/`, containing:
 - `project.yml` — repos, ports, environment, packs to activate
-- `.claude/CLAUDE.md` — instructions, conventions, workflow
-- `.claude/rules/`, `.claude/agents/`, `.claude/skills/` — project-level tooling
+- `claude/CLAUDE.md` — instructions, conventions, workflow
+- `claude/rules/`, `claude/agents/`, `claude/skills/` — project-level tooling
 - `setup.sh`, `mcp-packages.txt` — runtime setup
 
-Commit this directory to a shared repository and every teammate runs `cco start <project>` to get the same environment: same repos mounted, same instructions, same rules and agents.
+Commit `<repo>/.cco/` with the repo. Every teammate clones the repo, runs
+`cco join <project>` once to register it, then `cco start <project>` to get the
+same environment: same repos mounted, same instructions, same rules and agents.
 
 **What's shared (committable today):**
 - Project repositories and mount paths
@@ -72,19 +74,25 @@ Commit this directory to a shared repository and every teammate runs `cco start 
 - Port mappings and environment variables
 
 **What stays local (never commit):**
-- `secrets.env` — credentials and tokens, per user
-- `.cco/claude-state/` — session transcripts, per user
+- `secrets.env` — credentials and tokens, per user (gitignored in `<repo>/.cco/`)
+- Session transcripts and memory — kept machine-local under `~/.local/state/cco/`
 
-**Sharing packs and project templates (Config Repos):**
-- Knowledge packs and project templates can be shared via git using Config Repos
-- `cco pack install <url>` imports packs from any Config Repo
-- `cco project install <url>` imports project templates
-- `cco manifest refresh` generates a `manifest.yml` manifest to export your own packs and templates
-- Push your `user-config/` to a remote with `cco vault push` to share your full configuration
+**Sharing packs and project templates (sharing repo):**
+- Knowledge packs and project templates are shared via a **sharing repo** — a
+  dedicated git remote whose structure (`packs/`, `templates/`) is discovered
+  directly, with no manifest file
+- `cco pack publish <name>` publishes a pack to a sharing repo; `cco pack install <url>` installs packs from one
+- Templates use the same `publish`/`install` channel
+- Projects are **not** published — a project's `<repo>/.cco/` travels with its
+  own code repo (clone it and `cco join`)
+
+**Versioning your personal store:**
+- `cco config save/push/pull` versions your `~/.cco/` (global config, packs,
+  templates) with git and syncs it to a remote for backup across machines
 
 **What stays local (user preferences):**
 - Claude authentication (OAuth or API key)
-- `~/.claude/settings.json` — user-level preferences
+- `~/.cco/global/.claude/settings.json` — user-level preferences
 
 This makes claude-orchestrator useful not just as a personal productivity tool, but as a team-wide standard for how Claude interacts with your codebase.
 
@@ -94,9 +102,9 @@ Learn more: [Configuration Management guide](../user-guides/configuration-manage
 
 ## Auto memory
 
-Each project has its own isolated memory directory (`projects/<name>/memory/`). Claude Code automatically saves notes and insights during sessions and reloads them in subsequent sessions.
+Each project has its own isolated memory directory, kept machine-local under `~/.local/state/cco/projects/<id>/memory/`. Claude Code automatically saves notes and insights during sessions and reloads them in subsequent sessions.
 
-The isolation ensures that information from one project doesn't "leak" into another. The `.cco/claude-state/` directory also contains session transcripts, necessary for the `/resume` command that allows you to resume a previous session even after a Docker image rebuild.
+The isolation ensures that information from one project doesn't "leak" into another. The same STATE directory also contains session transcripts, necessary for the `/resume` command that allows you to resume a previous session even after a Docker image rebuild. Memory and transcripts are machine-local and are **not synced across machines** in v1.
 
 Learn more: [context-hierarchy.md](../reference/context-hierarchy.md) (Auto Memory section).
 
@@ -111,7 +119,7 @@ claude-orchestrator supports two display modes:
 - **tmux** (default) — each teammate appears as a tmux pane inside the container. Works with any terminal, no host configuration needed.
 - **iTerm2** (`--teammate-mode auto`) — uses native iTerm2 panes on macOS. Better UX but requires additional setup (Python API enabled, `it2` CLI on host).
 
-The mode is configured in `user-config/global/.claude/settings.json` (`"teammateMode": "tmux"`) or via CLI flag (`--teammate-mode`).
+The mode is configured in `~/.cco/global/.claude/settings.json` (`"teammateMode": "tmux"`) or via CLI flag (`--teammate-mode`).
 
 Learn more: [agent-teams.md](../user-guides/agent-teams.md).
 

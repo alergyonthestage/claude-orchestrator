@@ -11,9 +11,9 @@ Documentation is organized into six macro-areas by domain:
 ```
 maintainer/
 ├── architecture/       Core system design, ADRs, requirements, security
-├── configuration/      Config hierarchy, packs, sharing, update system, vault, environment
+├── configuration/      Config hierarchy, packs, decentralized in-repo config, update system, environment
 ├── integration/        Docker, auth, browser MCP, agent teams, worktree
-├── internal/          Internal resources (tutorial, future cco-develop)
+├── internal/          Internal resources (tutorial, config-editor, future cco-develop)
 ├── decisions/          Roadmap, protocols, historical reviews
 └── README.md           This file
 ```
@@ -33,17 +33,15 @@ Foundation documents and architectural decisions.
 
 ## Configuration — Config Lifecycle & Distribution
 
-Everything related to the four-tier configuration model, knowledge packs, update system, vault, and sharing.
+Everything related to the four-tier configuration model, knowledge packs, the update system, and the decentralized in-repo config (which subsumes the former sharing, vault, and resource-lifecycle designs).
 
 | Area | Design | Analysis | Status |
 |------|--------|----------|--------|
 | Scope & Context Hierarchy | [design](configuration/scope-hierarchy/design.md) | [analysis](configuration/scope-hierarchy/analysis.md) | Completed |
 | Knowledge Packs | [design](configuration/packs/design.md) | — | Completed |
 | Environment Extensibility | [design](configuration/environment/design.md) | [analysis](configuration/environment/analysis.md) | Completed |
-| Sharing & Config Repo | [design](configuration/sharing/design.md) | [analysis](configuration/sharing/analysis.md) | Completed |
+| Decentralized In-Repo Config (in-repo `.cco/`, `~/.cco` store, sharing repos, multi-PC sync, resource lifecycle) | [design](configuration/decentralized-config/) | — | Source of truth |
 | Update System & Templates | [design](configuration/update-system/design.md) | [analysis](configuration/update-system/analysis.md) | Completed |
-| Vault & Multi-PC Sync | [design](configuration/vault/design.md) | [analysis](configuration/vault/analysis.md) | Completed |
-| Resource Lifecycle | [design](configuration/resource-lifecycle/design.md) | [analysis](configuration/resource-lifecycle/analysis.md) | Completed |
 | Rules & Guidelines | — | [analysis](configuration/rules-and-guidelines/analysis.md) | Completed |
 
 ---

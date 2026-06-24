@@ -21,7 +21,7 @@ Both are managed automatically by the framework. In most cases, you just need to
 
 Claude Code uses OAuth to authenticate with the Claude API. On macOS, credentials are saved in the system Keychain. The flow is as follows:
 
-1. **At the first `cco start`**: the CLI reads credentials from the macOS Keychain and copies them to `user-config/global/claude-state/.credentials.json`
+1. **At the first `cco start`**: the CLI reads credentials from the macOS Keychain and copies them to the machine-local STATE store at `~/.local/state/cco/projects/<id>/session/.credentials.json`
 2. **In subsequent sessions**: the container uses the saved credentials. If the access token has expired, Claude automatically renews it with the refresh token
 3. **If you log in on the host** (e.g., after ~90 days of expiry): `cco start` detects the new credentials in the Keychain and automatically updates the file
 
@@ -29,8 +29,8 @@ Credentials are saved in two files (both gitignored):
 
 | File | Contents |
 |------|-----------|
-| `user-config/global/claude-state/claude.json` | Preferences, onboarding state, MCP |
-| `user-config/global/claude-state/.credentials.json` | OAuth tokens (access + refresh) |
+| `~/.local/state/cco/projects/<id>/session/claude.json` | Preferences, onboarding state, MCP |
+| `~/.local/state/cco/projects/<id>/session/.credentials.json` | OAuth tokens (access + refresh) |
 
 Both files are mounted read-write in the container, so renewed credentials are automatically saved.
 
@@ -55,7 +55,7 @@ If you prefer to use an API key instead of OAuth (e.g., for CI environments, or 
 ### Via secrets.env
 
 ```bash
-# user-config/global/secrets.env
+# ~/.cco/secrets.env
 ANTHROPIC_API_KEY=sk-ant-api03-...
 ```
 
@@ -97,7 +97,7 @@ Recommended permissions:
 **2. Save the token in secrets.env:**
 
 ```bash
-echo "GITHUB_TOKEN=github_pat_..." >> ~/claude-orchestrator/user-config/global/secrets.env
+echo "GITHUB_TOKEN=github_pat_..." >> ~/.cco/secrets.env
 ```
 
 **3. Start the session:**
@@ -115,7 +115,7 @@ The container entrypoint automatically configures `gh auth login` and `gh auth s
 If you want to use different tokens for different projects (e.g., PATs with different scopes), create a `secrets.env` per project:
 
 ```bash
-# projects/my-project/secrets.env
+# <repo>/.cco/secrets.env
 GITHUB_TOKEN=github_pat_project_specific...
 ```
 
@@ -130,7 +130,7 @@ Secrets are managed via `.env` files at two levels, both gitignored:
 ### Global level
 
 ```bash
-# user-config/global/secrets.env — available in all projects
+# ~/.cco/secrets.env — available in all projects
 GITHUB_TOKEN=ghp_...
 LINEAR_API_KEY=lin_api_...
 SLACK_BOT_TOKEN=xoxb_...
@@ -139,7 +139,7 @@ SLACK_BOT_TOKEN=xoxb_...
 ### Project level
 
 ```bash
-# projects/my-project/secrets.env — only for this project
+# <repo>/.cco/secrets.env — only for this project
 GITHUB_TOKEN=github_pat_project_specific...   # overrides the global one
 STRIPE_KEY=sk_test_...                        # only for this project
 ```
@@ -157,8 +157,8 @@ cco start my-project --env DEBUG=true --env API_URL=http://localhost:8080
 Secrets are passed as `-e` flags to `docker compose run` at startup time. They are never written to `docker-compose.yml` or other generated files.
 
 Precedence order (last one wins):
-1. `user-config/global/secrets.env`
-2. `projects/<name>/secrets.env`
+1. `~/.cco/secrets.env`
+2. `<repo>/.cco/secrets.env`
 3. `--env` from CLI
 
 ### Format
@@ -178,10 +178,10 @@ Warning: secrets.env:3: skipping malformed line (expected KEY=VALUE)
 
 ---
 
-## Config Repo Authentication
+## Sharing Repo Authentication
 
-When using `cco pack install`, `cco pack publish`, or `cco project install` with
-remote Config Repos, authentication depends on the URL scheme and repository
+When using `cco pack install`, `cco pack publish`, or `cco template install` with
+remote sharing repos, authentication depends on the URL scheme and repository
 visibility.
 
 ### SSH (recommended for private repos)
@@ -228,8 +228,8 @@ Token management commands:
 | `cco remote remove-token <name>` | Remove saved token |
 | `cco remote list` | Show remotes with `[token]` indicator |
 
-Tokens are stored in `$USER_CONFIG_DIR/.cco/remotes`, which is gitignored
-(machine-specific, never committed to vault).
+Tokens are stored in the machine-local STATE store (never committed; the
+de-tokenized remote registry lives in DATA at `~/.local/share/cco/remotes`).
 
 ### HTTPS with --token flag
 
@@ -285,7 +285,7 @@ permissions). Everyone uses a PAT with `contents:write` scope.
 
 ### Multiple organizations
 
-When working with Config Repos from different GitHub organizations or accounts,
+When working with sharing repos from different GitHub organizations or accounts,
 each remote can have its own token:
 
 ```bash
@@ -296,7 +296,7 @@ cco remote add team-b https://github.com/org-b/cco-config.git --token ghp_bbb
 Each token can have different scopes and permissions. Operations automatically
 use the correct token based on the remote.
 
-### Creating a GitHub fine-grained PAT for Config Repos
+### Creating a GitHub fine-grained PAT for sharing repos
 
 1. Go to GitHub > Settings > Developer Settings > Fine-grained personal access tokens
 2. Select the target organization
@@ -316,7 +316,7 @@ If you don't have credentials in the macOS Keychain (e.g., first installation, o
 2. Claude Code displays a URL for OAuth login
 3. Copy the URL from the terminal (see the copy-paste section in the [Agent Teams guide](agent-teams.md))
 4. Open the URL in your browser and complete authentication
-5. Credentials are saved in `user-config/global/claude-state/.credentials.json`
+5. Credentials are saved in `~/.local/state/cco/projects/<id>/session/.credentials.json`
 6. Subsequent sessions use the saved credentials automatically
 
 ---
@@ -333,18 +333,18 @@ If you don't have credentials in the macOS Keychain (e.g., first installation, o
 
 2. **Check the credentials file**:
    ```bash
-   jq '.claudeAiOauth | keys' user-config/global/claude-state/.credentials.json
+   jq '.claudeAiOauth | keys' ~/.local/state/cco/projects/<id>/session/.credentials.json
    ```
 
 3. **Check permissions**:
    ```bash
-   ls -la user-config/global/claude-state/.credentials.json
+   ls -la ~/.local/state/cco/projects/<id>/session/.credentials.json
    # Must be 600 (-rw-------)
    ```
 
 4. **Force re-seeding**:
    ```bash
-   rm user-config/global/claude-state/.credentials.json
+   rm ~/.local/state/cco/projects/<id>/session/.credentials.json
    cco start my-project
    ```
 
@@ -353,8 +353,8 @@ If you don't have credentials in the macOS Keychain (e.g., first installation, o
 This happens when `claude.json` has `hasCompletedOnboarding: false`, typically after logout+login on the host. The CLI automatically forces this value to `true` before starting the container. If the problem persists:
 
 ```bash
-jq '.hasCompletedOnboarding = true' user-config/global/claude-state/claude.json > /tmp/fix.json \
-  && mv /tmp/fix.json user-config/global/claude-state/claude.json
+jq '.hasCompletedOnboarding = true' ~/.local/state/cco/projects/<id>/session/claude.json > /tmp/fix.json \
+  && mv /tmp/fix.json ~/.local/state/cco/projects/<id>/session/claude.json
 ```
 
 ### Expired token (after ~90 days)

@@ -6,7 +6,7 @@
 |---|---|
 | **New user** | [Getting Started](getting-started/) — overview → install → first project → concepts. Then run `cco start tutorial` for interactive guidance |
 | **Configure a project** | [Project Setup](user-guides/project-setup.md) — repos, ports, packs, CLAUDE.md |
-| **Share packs with my team** | [Configuration Management](user-guides/configuration-management.md) — vault, Config Repos, sharing, updates |
+| **Share packs with my team** | [Configuration Management](user-guides/configuration-management.md) — git on `.cco/`, `cco config` sync, sharing repos, per-user tags, updates |
 | **Something isn't working** | [Troubleshooting](user-guides/troubleshooting.md) — Docker, auth, tmux, MCP, packs |
 | **Looking for a command** | [CLI Reference](reference/cli.md) — all `cco` commands and flags |
 | **Contribute to the project** | [Maintainer Guide](maintainer/README.md) — architecture, design docs, roadmap |
@@ -32,10 +32,10 @@ Operational guides for everyday use. Each guide covers one topic in depth.
 |---|---|
 | [project-setup.md](user-guides/project-setup.md) | Configure a project: repos, extra mounts, packs, CLAUDE.md, environment |
 | [knowledge-packs.md](user-guides/knowledge-packs.md) | Create, configure, and manage reusable knowledge packs |
-| [authentication.md](user-guides/authentication.md) | OAuth, API key, GitHub token, secrets management, Config Repo auth |
+| [authentication.md](user-guides/authentication.md) | OAuth, API key, GitHub token, secrets management, sharing-repo auth |
 | [agent-teams.md](user-guides/agent-teams.md) | Agent teams: tmux mode, iTerm2 mode, copy-paste |
 | [browser-automation.md](user-guides/browser-automation.md) | Browser automation via Chrome DevTools Protocol |
-| [configuration-management.md](user-guides/configuration-management.md) | Vault, profiles, Config Repos, sharing, publishing, installing, updates |
+| [configuration-management.md](user-guides/configuration-management.md) | Git on `.cco/`, `cco config` multi-PC sync, sharing repos, per-user tags, publishing, installing, updates |
 | [troubleshooting.md](user-guides/troubleshooting.md) | Common issues and solutions by category |
 | [configuring-rules.md](user-guides/configuring-rules.md) | Writing and organizing Claude rules across scopes |
 | [development-workflow.md](user-guides/development-workflow.md) | Structured development workflow with cco |
@@ -82,9 +82,8 @@ Design docs and analysis by area:
 | Scope hierarchy | [analysis](maintainer/configuration/scope-hierarchy/analysis.md), [design](maintainer/configuration/scope-hierarchy/design.md) |
 | Knowledge packs | [design](maintainer/configuration/packs/design.md) |
 | Environment | [analysis](maintainer/configuration/environment/analysis.md), [design](maintainer/configuration/environment/design.md) |
-| Sharing & Config Repo | [analysis](maintainer/configuration/sharing/analysis.md), [design](maintainer/configuration/sharing/design.md) |
+| Decentralized in-repo config (incl. sharing repos & multi-PC sync) | [design](maintainer/configuration/decentralized-config/) |
 | Update System & Templates | [analysis](maintainer/configuration/update-system/analysis.md), [design](maintainer/configuration/update-system/design.md) |
-| Vault & Multi-PC Sync | [analysis](maintainer/configuration/vault/analysis.md), [design](maintainer/configuration/vault/design.md) |
 | **Integration** | |
 | Docker | [design](maintainer/integration/docker/design.md) |
 | Docker Security | [analysis](maintainer/integration/docker-security/analysis.md), [design](maintainer/integration/docker-security/design.md) |

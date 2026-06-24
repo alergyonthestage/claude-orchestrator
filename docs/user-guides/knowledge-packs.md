@@ -8,7 +8,7 @@
 
 Knowledge packs are reusable packages that group documentation, conventions, skills, agents, and rules. They can be shared across multiple projects without duplicating files. A pack can contain, for example, a client's coding conventions, team guidelines, or documentation for a specific domain.
 
-Packs live in `user-config/packs/` and are activated per project via `project.yml`.
+Packs live in your personal store at `~/.cco/packs/` (or, for a project-local authored pack with no `url` coordinate, in `<repo>/.cco/packs/`) and are activated per project via `project.yml`.
 
 ---
 
@@ -20,12 +20,12 @@ Packs live in `user-config/packs/` and are activated per project via `project.ym
 cco pack create my-client-knowledge
 ```
 
-This creates the complete directory structure in `user-config/packs/my-client-knowledge/` with a template `pack.yml`.
+This creates the complete directory structure in `~/.cco/packs/my-client-knowledge/` with a template `pack.yml`.
 
 ### Directory structure
 
 ```
-user-config/packs/my-client-knowledge/
+~/.cco/packs/my-client-knowledge/
   pack.yml              # Pack definition (required)
   knowledge/            # Documentation files (optional)
     overview.md
@@ -87,7 +87,7 @@ knowledge:
 If `source` is omitted, the pack uses its own internal `knowledge/` directory:
 
 ```yaml
-# Without source: files go in user-config/packs/<name>/knowledge/
+# Without source: files go in ~/.cco/packs/<name>/knowledge/
 knowledge:
   files:
     - path: overview.md
@@ -124,7 +124,7 @@ Skills are directories containing a `SKILL.md` file. They are mounted read-only 
 
 ```yaml
 skills:
-  - deploy          # Reference to user-config/packs/<name>/skills/deploy/SKILL.md
+  - deploy          # Reference to ~/.cco/packs/<name>/skills/deploy/SKILL.md
 ```
 
 ### Agents
@@ -133,7 +133,7 @@ Agents are Markdown files that define specialized subagents. They are mounted re
 
 ```yaml
 agents:
-  - devops-specialist.md   # Reference to user-config/packs/<name>/agents/devops-specialist.md
+  - devops-specialist.md   # Reference to ~/.cco/packs/<name>/agents/devops-specialist.md
 ```
 
 ### Rules
@@ -142,7 +142,7 @@ Rules are Markdown files with additional instructions. They are mounted read-onl
 
 ```yaml
 rules:
-  - api-conventions.md     # Reference to user-config/packs/<name>/rules/api-conventions.md
+  - api-conventions.md     # Reference to ~/.cco/packs/<name>/rules/api-conventions.md
 ```
 
 ---
@@ -281,19 +281,25 @@ Read the relevant files BEFORE starting any implementation, review, or design ta
 
 ## Sharing packs
 
-Packs can be shared across machines and teams via Config Repos.
+Packs are shared across machines and teams via a **sharing repo** — a dedicated git
+remote whose structure (`packs/`, `templates/`) is discovered directly. There is no
+manifest file; the repo is enumerated to find available packs.
 
 ```bash
-# Install a pack from a remote Config Repo
+# Publish a pack to a sharing repo (creates/updates it on the remote)
+cco pack publish <name> [remote]
+
+# Install a pack from a sharing repo
 cco pack install <git-url>
 
-# Update a pack from its remote source
+# Update an installed pack from its remote source
 cco pack update <name>
-
-# Export your packs for sharing
-cco manifest refresh     # Generate manifest.yml manifest
-cco vault push           # Push to remote
 ```
+
+A pack referenced by `url` coordinate is a **cache** of its upstream (re-fetchable,
+updated via `cco pack update`); a pack with no `url` is authored project-local in
+`<repo>/.cco/packs/`. To back up your whole personal store (`~/.cco/`, including
+packs), use `cco config push`.
 
 For the complete sharing workflow (multi-machine sync, team distribution, project templates), see the [Configuration Management guide](configuration-management.md).
 
@@ -301,6 +307,6 @@ For the complete sharing workflow (multi-machine sync, team distribution, projec
 
 ## Related: Framework Documentation (llms.txt)
 
-While knowledge packs bundle user-written conventions and guidelines, official framework documentation can be installed separately via `cco llms install`. LLMs.txt files are stored centrally in `user-config/llms/` and referenced from packs or projects.
+While knowledge packs bundle user-written conventions and guidelines, official framework documentation can be installed separately via `cco llms install`. The downloaded LLMs.txt **content** is cached per machine under `~/.cache/cco/llms/`, while the **coordinate** (`url` + variant) that references it is embedded per-unit in the `project.yml`/`pack.yml` that uses it.
 
 See [project-yaml.md § LLMs.txt](../reference/project-yaml.md#llmstxt--framework-documentation) and `cco llms --help`.

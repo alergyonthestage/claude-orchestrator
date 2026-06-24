@@ -25,8 +25,8 @@ Feedback, bug reports, and contributions are welcome! See [CONTRIBUTING.md](CONT
 
 - **Multi-repo workspaces** — Group multiple repos (frontend, backend, infra, docs) into a single project. Claude gets a cross-repo `CLAUDE.md` that understands how everything fits together — built on Claude Code's native features, not replacing them.
 - **Shareable environments** — Commit the project directory (`project.yml`, `CLAUDE.md`, rules, agents). Everyone on your team gets the same repos, instructions, and conventions.
-- **Reusable knowledge packs** — Client docs, architecture overviews, coding conventions, agents, skills, rules: define once, activate across projects. Install packs from remote Config Repos with `cco pack install`, share your own with `cco manifest`.
-- **Config versioning & backup** — `cco vault` versions your entire configuration with git, with built-in secret detection. Push to a remote to sync across machines or share with your team.
+- **Reusable knowledge packs** — Client docs, architecture overviews, coding conventions, agents, skills, rules: define once, activate across projects. Install packs from a remote sharing repo with `cco pack install`, share your own with `cco pack publish`.
+- **Config versioning & backup** — `cco config save/push/pull` versions your personal store `~/.cco` with git and built-in secret detection, syncing it across machines; project config lives in each repo at `<repo>/.cco/` and rides your normal git workflow.
 - **Isolated memory** — Each project has its own memory. Insights from one client don't leak into another. Sessions are fully independent.
 - **Safe by default** — Docker isolates Claude from the rest of your system. `--dangerously-skip-permissions` is safe inside the container.
 
@@ -44,8 +44,8 @@ Feedback, bug reports, and contributions are welcome! See [CONTRIBUTING.md](CONT
 graph LR
     subgraph Host
         CLI["cco CLI"]
-        CFG["Configuration<br/>(global + project)"]
-        REPOS["Your repos"]
+        GLOBAL["~/.cco<br/>(personal store)"]
+        REPOS["Your repos<br/>(each with .cco/)"]
     end
 
     subgraph DC["Docker Container"]
@@ -55,7 +55,7 @@ graph LR
     end
 
     CLI -->|generate & start| DC
-    CFG -->|mount| CC
+    GLOBAL -->|mount| CC
     REPOS -->|mount read-write| DC
     CC --- TMUX
     CC --- DOCK
@@ -103,18 +103,23 @@ and helps you build a configuration that reflects your actual development workfl
 If you prefer to skip the tutorial:
 
 ```bash
-cco project create my-app --repo ~/projects/my-repo
-cco start my-app
+cd ~/projects/my-repo         # a repo you want Claude to work in
+cco init                      # scaffold <repo>/.cco/ and ensure ~/.cco/global
+cco start my-repo
 ```
+
+Other entry points: `cco join <project>` to join a project whose `<repo>/.cco/`
+already exists, and `cco init --migrate <project>` to migrate a legacy project
+into the in-repo layout.
 
 ## Key features
 
 | Feature | Description |
 |---|---|
-| **Knowledge packs** | Reusable documents (conventions, overviews, guidelines) defined in `packs/` and activated per project in `project.yml` |
+| **Knowledge packs** | Reusable documents (conventions, overviews, guidelines) stored in `~/.cco/packs/` (or project-local `<repo>/.cco/packs/`) and activated per project in `project.yml` |
 | **Four-tier hierarchy** | Managed → Global → Project → Repo, mapped natively onto Claude Code's settings resolution |
-| **Config Repo sharing** | Share packs and project templates via git. `cco pack install <url>` / `cco project install <url>` to import, `cco manifest` to export |
-| **Vault versioning** | `cco vault` versions your `user-config/` with git and automatic secret detection. Push to a remote for backup and multi-machine sync |
+| **Sharing repo** | Share packs and templates through a git **sharing repo** (structure-based discovery, no manifest): `cco pack publish` / `cco pack install`, `cco template publish` / `cco template install`, plus `export`/`import` for offline transfer. Projects share by construction through their own code-repo remote (`cco project export`/`import`) |
+| **Config versioning** | `cco config save/push/pull` versions your personal store `~/.cco` with git and automatic secret detection, for backup and multi-machine sync. Project config in `<repo>/.cco/` versions with your repo's normal git |
 | **Shareable project config** | `project.yml` defines repos, ports, packs, and environment — commit it to share the exact setup with your team |
 | **Monolithic CLI** | A single Bash script (`bin/cco`) — no dependencies beyond Bash 3.2+, Docker, and standard Unix tools |
 | **Docker-from-Docker** | The Docker socket is mounted into the container. Claude can run `docker compose` to create sibling containers (databases, services) |

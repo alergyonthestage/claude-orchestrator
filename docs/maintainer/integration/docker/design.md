@@ -157,7 +157,7 @@ if [ -f "$MCP_GLOBAL" ]; then
     fi
 fi
 
-# Merge project MCP servers (from projects/<name>/mcp.json mounted at /workspace/.mcp.json)
+# Merge project MCP servers (from <repo>/.cco/mcp.json mounted at /workspace/.mcp.json)
 # This provides a reliable fallback: servers are in both .mcp.json (project scope)
 # AND ~/.claude.json (user scope), so at least one mechanism will work.
 if [ -f "$MCP_PROJECT" ]; then
@@ -292,10 +292,10 @@ See [agent-teams guide](../../../user-guides/agent-teams.md) §2.4 for copy-past
 
 ### 2.1 Base Template
 
-Each project gets a `docker-compose.yml` generated from `project.yml`. Here is the annotated structure:
+Each project gets a `docker-compose.yml` generated from the invoking repo's `<repo>/.cco/project.yml`, written to machine-local STATE (never committed). Here is the annotated structure:
 
 ```yaml
-# projects/<project-name>/.cco/docker-compose.yml
+# <state>/cco/projects/<id>/docker-compose.yml
 # AUTO-GENERATED from project.yml — edits will be overwritten on next `cco start`
 
 services:
@@ -319,29 +319,35 @@ services:
       # - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 
     # ── Volumes ──────────────────────────────────────────────────────
+    # All host sources are ABSOLUTE, resolved by cco start:
+    #   GLOBAL = ~/.cco/global   STATE = ~/.local/state/cco   CACHE = ~/.cache/cco
+    #   REPO   = invoking repo's path (from the STATE index)   ID = project.yml name
     volumes:
-      # --- Auth & credentials ---
-      - ${GLOBAL_DIR}/claude-state/claude.json:/home/claude/.claude.json
-      - ${GLOBAL_DIR}/claude-state/.credentials.json:/home/claude/.claude/.credentials.json
+      # --- Auth & credentials (seeded into STATE) ---
+      - ${STATE}/cco/claude.json:/home/claude/.claude.json
+      - ${STATE}/cco/.credentials.json:/home/claude/.claude/.credentials.json
 
       # --- Global config → user-level (~/.claude/) ---
-      # Paths are absolute, resolved by cco CLI from GLOBAL_DIR
-      - ${GLOBAL_DIR}/.claude/settings.json:/home/claude/.claude/settings.json:ro
-      - ${GLOBAL_DIR}/.claude/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
-      - ${GLOBAL_DIR}/.claude/rules:/home/claude/.claude/rules:ro
-      - ${GLOBAL_DIR}/.claude/agents:/home/claude/.claude/agents:ro
-      - ${GLOBAL_DIR}/.claude/skills:/home/claude/.claude/skills:ro
-      - ${GLOBAL_DIR}/.claude/mcp.json:/home/claude/.claude/mcp-global.json:ro
+      - ${GLOBAL}/.claude/settings.json:/home/claude/.claude/settings.json:ro
+      - ${GLOBAL}/.claude/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
+      - ${GLOBAL}/.claude/rules:/home/claude/.claude/rules:ro
+      - ${GLOBAL}/.claude/agents:/home/claude/.claude/agents:ro
+      - ${GLOBAL}/.claude/skills:/home/claude/.claude/skills:ro
+      - ${GLOBAL}/.claude/mcp.json:/home/claude/.claude/mcp-global.json:ro
 
-      # --- Project config ---
-      - ./.claude:/workspace/.claude
-      - ./project.yml:/workspace/project.yml:ro
+      # --- Project config (invoking repo's .cco/) ---
+      - ${REPO}/.cco/claude:/workspace/.claude
+      - ${REPO}/.cco/project.yml:/workspace/.claude/project.yml
+      # Generated overlays from CACHE, layered :ro onto /workspace/.claude
+      - ${CACHE}/cco/projects/${ID}/.claude/packs.md:/workspace/.claude/packs.md:ro
+      - ${CACHE}/cco/projects/${ID}/.claude/workspace.yml:/workspace/.claude/workspace.yml:ro
 
-      # --- Claude state: auto memory + session transcripts ---
-      - ./.cco/claude-state:/home/claude/.claude/projects/-workspace
+      # --- Claude state: session transcripts + auto memory (STATE) ---
+      - ${STATE}/cco/projects/${ID}/claude-state:/home/claude/.claude/projects/-workspace
+      - ${STATE}/cco/projects/${ID}/session/memory:/home/claude/.claude/projects/-workspace/memory
 
       # --- Repositories ---
-      # (generated from project.yml repos list)
+      # (generated from project.yml repos list, resolved via the STATE index)
       # - /Users/user/projects/backend-api:/workspace/backend-api
       # - /Users/user/projects/frontend-app:/workspace/frontend-app
 
@@ -349,8 +355,8 @@ services:
       - ${HOME}/.gitconfig:/home/claude/.gitconfig:ro
 
       # --- Conditional mounts (added by cco start when files exist) ---
-      # - ./setup.sh:/workspace/setup.sh:ro
-      # - ./mcp-packages.txt:/workspace/mcp-packages.txt:ro
+      # - ${REPO}/.cco/setup.sh:/workspace/setup.sh:ro
+      # - ${REPO}/.cco/mcp-packages.txt:/workspace/mcp-packages.txt:ro
 
       # --- (conditional) Docker socket (Docker-from-Docker) ---
       # Omitted when docker.mount_socket: false in project.yml
@@ -383,31 +389,43 @@ networks:
 
 ### 2.2 Volume Mount Strategy
 
+All host SOURCES are **host-absolute** (resolved by `cco start`). `<repo>` is the invoking
+repo's path (from the STATE index); `<state>`/`<cache>` are the XDG buckets
+(`~/.local/state/cco`, `~/.cache/cco`); `<id>` is the project identity (`project.yml` `name`).
+Container (target) paths are the fixed entrypoint contract and are **unchanged**.
+
 ```
-HOST                                    CONTAINER                       PURPOSE
-──────────────────────────────────────────────────────────────────────────────────
-user-config/global/claude-state/claude.json      → ~/.claude.json                   Auth state (rw)
-user-config/global/claude-state/.credentials.json→ ~/.claude/.credentials.json      OAuth credentials (rw)
-$GLOBAL_DIR/.claude/settings.json    → ~/.claude/settings.json          Global settings (ro)
-$GLOBAL_DIR/.claude/CLAUDE.md        → ~/.claude/CLAUDE.md              Global instructions (ro)
-$GLOBAL_DIR/.claude/rules/           → ~/.claude/rules/                 Global rules (ro)
-$GLOBAL_DIR/.claude/agents/          → ~/.claude/agents/                Global subagents (ro)
-$GLOBAL_DIR/.claude/skills/          → ~/.claude/skills/                Global skills (ro)
-$GLOBAL_DIR/.claude/mcp.json         → ~/.claude/mcp-global.json        Global MCP config (ro)
-user-config/projects/<n>/.claude/                → /workspace/.claude/              Project context (rw)
-user-config/projects/<n>/project.yml             → /workspace/project.yml           Project config (ro)
-user-config/projects/<n>/.cco/claude-state/      → ~/.claude/projects/-workspace/   Memory + transcripts (rw)
-~/projects/repo-x/                   → /workspace/repo-x/               Repository (rw)
-~/.gitconfig                         → ~/.gitconfig                      Git config (ro)
-user-config/projects/<n>/setup.sh                → /workspace/setup.sh              Project setup (conditional, ro)
-user-config/projects/<n>/mcp-packages.txt        → /workspace/mcp-packages.txt      MCP packages (conditional, ro)
-/var/run/docker.sock                 → /var/run/docker.sock              Docker socket (conditional)
+HOST (host-absolute source)                          CONTAINER (fixed)                 PURPOSE
+─────────────────────────────────────────────────────────────────────────────────────────────────
+<state>/cco/claude.json                  → ~/.claude.json                   Auth state (rw)
+<state>/cco/.credentials.json            → ~/.claude/.credentials.json      OAuth credentials (rw)
+~/.cco/global/.claude/settings.json      → ~/.claude/settings.json          Global settings (ro)
+~/.cco/global/.claude/CLAUDE.md          → ~/.claude/CLAUDE.md              Global instructions (ro)
+~/.cco/global/.claude/rules/             → ~/.claude/rules/                 Global rules (ro)
+~/.cco/global/.claude/agents/            → ~/.claude/agents/                Global subagents (ro)
+~/.cco/global/.claude/skills/            → ~/.claude/skills/                Global skills (ro)
+~/.cco/global/.claude/mcp.json           → ~/.claude/mcp-global.json        Global MCP config (ro)
+<repo>/.cco/claude/                       → /workspace/.claude/              Project context (rw)
+<cache>/cco/projects/<id>/.claude/packs.md     → /workspace/.claude/packs.md      Generated overlay (ro)
+<cache>/cco/projects/<id>/.claude/workspace.yml → /workspace/.claude/workspace.yml Generated overlay (ro)
+<repo>/.cco/project.yml                   → /workspace/.claude/project.yml   Project config (rw, /init-workspace)
+<state>/cco/projects/<id>/claude-state/   → ~/.claude/projects/-workspace/   Session transcripts (rw)
+<state>/cco/projects/<id>/session/memory/ → ~/.claude/projects/-workspace/memory/  Auto memory (rw)
+~/projects/repo-x/                        → /workspace/repo-x/               Repository (rw)
+~/.gitconfig                              → ~/.gitconfig                     Git config (ro)
+<repo>/.cco/setup.sh                      → /workspace/setup.sh              Project setup (conditional, ro)
+<repo>/.cco/mcp-packages.txt              → /workspace/mcp-packages.txt      MCP packages (conditional, ro)
+/var/run/docker.sock                      → /var/run/docker.sock             Docker socket (conditional)
 ```
 
+Pack and llms resources are mounted `:ro` from `~/.cco/packs/<name>/` (or the optional
+project-local `<repo>/.cco/packs/<name>/`) and from CACHE (`<cache>/cco/llms/<name>/`) as
+individual file/dir overlays into `/workspace/.claude/` — see §6.3 and ADR-0005.
+
 **Read-only vs Read-write**:
-- `ro`: Config that should not be modified by the agent (global settings, git config)
-- `rw` (default): Repos (Claude writes code), project .claude/ (Claude may update), memory (Claude writes)
-- **`~/.claude.json`**: Mounted read-write from `user-config/global/claude-state/claude.json`. Shared across all projects. On macOS, OAuth tokens live in Keychain — this file holds other Claude state.
+- `ro`: Config that should not be modified by the agent (global settings, git config, generated overlays)
+- `rw` (default): Repos (Claude writes code), the invoking repo's `.cco/claude/` (Claude may update), memory + transcripts in STATE (Claude writes)
+- **`~/.claude.json`**: Seeded read-write from STATE (`<state>/cco/claude.json`). Shared across all projects. On macOS, OAuth tokens live in Keychain — this file holds other Claude state.
 
 ---
 
@@ -553,8 +571,8 @@ The `--service-ports` flag ensures port mappings are active.
 - User exits Claude Code (Ctrl+C, `/exit`, or closing terminal)
 - Container is removed (`--rm`)
 - All file changes persist via volume mounts
-- Auto memory persists in `user-config/projects/<n>/memory/`
-- Session transcripts persist in `user-config/projects/<n>/.cco/claude-state/`
+- Auto memory persists in STATE (`<state>/cco/projects/<id>/session/memory/`)
+- Session transcripts persist in STATE (`<state>/cco/projects/<id>/claude-state/`)
 - Git commits persist in the repos
 
 ### 5.4 Cleanup
@@ -646,63 +664,71 @@ claude-orchestrator/
 │
 ├── templates/                              # ── NATIVE TEMPLATES (tracked) ──
 │   ├── project/
-│   │   ├── base/                           # Default project template (used by cco project create)
-│   │   │   ├── project.yml                 # Project metadata & config (with comments)
-│   │   │   ├── .claude/
-│   │   │   │   ├── CLAUDE.md               # Project instructions template ({{PLACEHOLDERS}})
-│   │   │   │   ├── settings.json           # Project settings template (empty, overrides go here)
-│   │   │   │   ├── rules/
-│   │   │   │   │   └── language.md         # Language override (commented out by default)
-│   │   │   │   ├── agents/.gitkeep         # Project-specific agents
-│   │   │   │   └── skills/.gitkeep         # Project-specific skills
-│   │   │   ├── memory/.gitkeep              # Auto memory placeholder (vault-tracked, separate from claude-state)
-│   │   │   └── .cco/
-│   │   │       └── claude-state/.gitkeep   # Claude state dir placeholder (session transcripts)
-│   │   └── tutorial/                       # Interactive tutorial template (used by cco init)
+│   │   └── base/                           # Default project template (scaffolds a repo's .cco/)
+│   │       ├── project.yml                 # Project metadata & config (logical names + coordinates)
+│   │       └── claude/
+│   │           ├── CLAUDE.md               # Project instructions template ({{PLACEHOLDERS}})
+│   │           ├── settings.json           # Project settings template (empty, overrides go here)
+│   │           ├── rules/
+│   │           │   └── language.md         # Language override (commented out by default)
+│   │           ├── agents/.gitkeep         # Project-specific agents
+│   │           └── skills/.gitkeep         # Project-specific skills
 │   └── pack/
 │       └── base/                           # Default pack template (used by cco pack create)
 │
-└── user-config/                            # ── USER CONFIG (gitignored) ───
-    ├── global/                             # Global Claude config
-    │   └── .claude/                        # User defaults from defaults/global/ (copied once on cco init)
-    │       ├── settings.json               # Customized by user
-    │       ├── CLAUDE.md                   # Customized by user
-    │       ├── mcp.json                    # Global MCP servers
-    │       ├── rules/                      # User rule files
-    │       ├── agents/                     # User global agents
-    │       └── skills/                     # User global skills
-    │
-    │   (optional, in global/)
-    │   ├── secrets.env                     # Sensitive env vars (loaded at runtime)
-    │   └── mcp-packages.txt               # MCP npm packages to pre-install in image
-    │
-    ├── projects/                           # Per-project configurations
-    │   └── <project-name>/                 # Created by `cco project create`
-    │       ├── project.yml                 # Source of truth for the project
-    │       ├── .claude/
-    │       │   ├── CLAUDE.md               # Project-specific instructions
-    │       │   ├── settings.json           # Project-specific settings overrides
-    │       │   ├── packs.md                # Auto-generated instructional file list (by cco start)
-    │       │   ├── workspace.yml           # Auto-generated project structure summary (by cco start)
-    │       │   ├── rules/                  # Project-specific rules
-    │       │   ├── agents/                 # Project-specific agents
-    │       │   └── skills/                 # Project-specific skills
-    │       ├── memory/                      # Auto memory (vault-tracked, mounted to ~/.claude/projects/-workspace/memory/)
-    │       ├── .cco/
-    │       │   ├── claude-state/           # Session transcripts (mounted to ~/.claude/projects/-workspace/)
-    │       │   └── docker-compose.yml      # Auto-generated by `cco start` (not committed)
-    │       └── mcp.json                    # Optional project-level MCP servers
-    │
-    ├── packs/                              # Knowledge packs
-    │   └── <pack-name>/
-    │       ├── pack.yml                    # Pack manifest (knowledge, skills, agents, rules)
-    │       ├── knowledge/                  # Optional: pack's own knowledge files (no source:)
-    │       ├── skills/                     # Optional: skills mounted read-only into projects
-    │       ├── agents/                     # Optional: agents mounted read-only into projects
-    │       └── rules/                      # Optional: rules mounted read-only into projects
-    │
-    ├── templates/                          # Project templates
-    └── manifest.yml                        # Manifest for sharing via Config Repos
+├── internal/                               # ── FRAMEWORK-INTERNAL (tracked) ──
+│   ├── tutorial/                           # Interactive tutorial (cco start tutorial)
+│   └── config-editor/                      # Built-in config editor (cco start config-editor)
+│
+│   ════════════════════════════════════════════════════════════════════════
+│   The blocks below are NOT in the tool repo — they live in the user's
+│   environment (host home + each repo + hidden XDG buckets):
+│   ════════════════════════════════════════════════════════════════════════
+│
+├── <each repo>/                            # ── PER-PROJECT CONFIG (committed in-repo) ──
+│   ├── .claude/                            # Repo-native Claude config (cross-cutting)
+│   └── .cco/                               # Hosts ONE project's config (machine-agnostic only)
+│       ├── .gitignore                      # ignores secrets.env (+ secret patterns); !secrets.env.example
+│       ├── project.yml                     # Source of truth: logical names + url/ref coordinates (no paths)
+│       ├── secrets.env.example             # Committed skeleton
+│       ├── secrets.env                     # GITIGNORED — real values (only in-repo exception)
+│       ├── mcp.json                        # Optional project-level MCP servers
+│       ├── setup.sh / mcp-packages.txt     # Optional project runtime setup
+│       ├── claude/                         # COMMITTED + (copy-)synced → /workspace/.claude
+│       │   ├── CLAUDE.md, settings.json
+│       │   ├── rules/ · agents/ · skills/
+│       └── packs/<name>/                   # OPTIONAL project-local pack (authored OR cache of a referenced pack)
+│
+├── ~/.cco/                                 # ── PERSONAL STORE (git-versioned, ~/.cco/.git) ──
+│   ├── global/.claude/                     # Global Claude config (copied once on cco init from defaults/global/)
+│   │   ├── settings.json · CLAUDE.md · mcp.json
+│   │   └── rules/ · agents/ · skills/
+│   ├── packs/<name>/                       # Authored knowledge packs (pack.yml + .md; embeds llms coordinates)
+│   ├── templates/<name>/                   # Authored project/pack templates
+│   ├── secrets.env                         # GITIGNORED global secrets · secrets.env.example committed
+│   ├── languages                           # Language preference datum (regenerates language.md)
+│   └── setup.sh / setup-build.sh / mcp-packages.txt   # Global setup scripts
+│                                           # NO manifest.yml (removed, ADR-0012)
+│
+└── (hidden XDG buckets — per machine, never committed, never hand-edited)
+    ├── STATE  ~/.local/state/cco           # index (name→abs-path + project→members), seeded auth,
+    │   ├── index                           #   remotes-token (0600), changelog markers
+    │   ├── projects/<id>/                   #   keyed by project identity <id> = project.yml name
+    │   │   ├── claude-state/                #   session transcripts
+    │   │   ├── session/memory/              #   auto memory (machine-local, no sync v1 — ADR-0009)
+    │   │   ├── update/{meta,base/}          #   3-way merge ancestor + hashes/schema_version
+    │   │   └── docker-compose.yml           #   generated by cco start (not committed)
+    │   └── global/update/{meta,base/}       #   global-scope update artifacts
+    ├── CACHE  ~/.cache/cco                  # regenerable: generated overlays + downloads
+    │   ├── llms/<name>/                     #   llms content downloads (re-fetchable)
+    │   ├── installed/                       #   sharing-repo clones for install/update
+    │   └── projects/<id>/                    #   generated overlays → :ro into /workspace/.claude
+    │       ├── .claude/{packs.md,workspace.yml}
+    │       └── managed/{browser,github,policy}.json
+    └── DATA   ~/.local/share/cco            # internal-but-synced (required, never team)
+        ├── tags.yml                         #   per-user tag registry (packs/projects/templates → tags)
+        ├── remotes                          #   de-tokenized sharing-repo endpoint registry (name→url)
+        └── {projects,packs,templates}/<id>/source   # upstream coordinate (url/ref) only
 ```
 
 ### 6.2 File Descriptions
@@ -712,8 +738,8 @@ claude-orchestrator/
 | File | Purpose | Notes |
 |------|---------|-------|
 | `Dockerfile` | Docker image definition | See §1.1 |
-| `.dockerignore` | Exclude files from Docker build context | Excludes: `docs/`, `.git/`, `projects/*/.cco/claude-state/` |
-| `.gitignore` | Git ignore patterns | Ignores: `user-config/` (user data), `.env` |
+| `.dockerignore` | Exclude files from Docker build context | Excludes: `docs/`, `.git/` |
+| `.gitignore` | Git ignore patterns | Ignores `.env`; per-repo `<repo>/.cco/.gitignore` ignores `secrets.env`. User config (`~/.cco`, STATE/CACHE/DATA) lives outside the tool repo |
 | `README.md` | Project overview and documentation index | What it is, how it works, requirements |
 | `docs/getting-started/installation.md` | Setup and usage guide | Clone, init, create project, start session |
 | `CLAUDE.md` | Guidance for Claude Code when working on this repo | Commands, architecture, conventions |
@@ -747,7 +773,7 @@ Framework infrastructure files, baked into the Docker image at `/etc/claude-code
 
 #### defaults/global/.claude/
 
-User defaults, copied to `user-config/global/.claude/` once by `cco init`. User owns these files after the initial copy. Not overwritten unless `cco init --force` is used. This includes agents, skills, rules, and settings that users can freely customize.
+User defaults, copied to `~/.cco/global/.claude/` once by `cco init`. User owns these files after the initial copy. Not overwritten unless `cco init --force` is used. This includes agents, skills, rules, and settings that users can freely customize.
 
 | File | Purpose | Notes |
 |------|---------|-------|
@@ -767,31 +793,35 @@ User defaults, copied to `user-config/global/.claude/` once by `cco init`. User 
 
 #### templates/project/base/
 
-Default project template, used by `cco project create` to scaffold new projects. User templates in `user-config/templates/project/` take priority over native templates with the same name.
+Default project template, used by `cco init` / `cco join` to scaffold a repo's `.cco/` config. User templates in `~/.cco/templates/` take priority over native templates with the same name.
+
+Scaffolds into the target repo's `<repo>/.cco/`. The template's `claude/` tree becomes the project scope (`<repo>/.cco/claude/` → `/workspace/.claude/`). Session state (transcripts, memory) is not scaffolded here — it lives machine-local in STATE.
 
 | File | Purpose | Notes |
 |------|---------|-------|
-| `project.yml` | Project config template | Repos, ports, auth, packs. See [cli.md](../../../reference/cli.md) §4 |
-| `.claude/CLAUDE.md` | Project instructions template | `{{PROJECT_NAME}}` and `{{DESCRIPTION}}` placeholders |
-| `.claude/settings.json` | Project settings template | Empty; project-specific overrides go here |
-| `.claude/rules/language.md` | Language override template | Commented out by default; uncomment to override global |
-| `.claude/agents/.gitkeep` | Placeholder | Project-specific agents |
-| `.claude/skills/.gitkeep` | Placeholder | Project-specific skills |
-| `.cco/claude-state/.gitkeep` | Claude state dir | Mounted to `~/.claude/projects/-workspace/`; persists session transcripts |
+| `project.yml` | Project config template | Logical names + url/ref coordinates, ports, auth, packs. See [cli.md](../../../reference/cli.md) §4 |
+| `claude/CLAUDE.md` | Project instructions template | `{{PROJECT_NAME}}` and `{{DESCRIPTION}}` placeholders |
+| `claude/settings.json` | Project settings template | Empty; project-specific overrides go here |
+| `claude/rules/language.md` | Language override template | Commented out by default; uncomment to override global |
+| `claude/agents/.gitkeep` | Placeholder | Project-specific agents |
+| `claude/skills/.gitkeep` | Placeholder | Project-specific skills |
+| `secrets.env.example` | Secrets skeleton | Committed; real `secrets.env` is gitignored (only in-repo exception) |
 
 ### 6.3 Generated Files (Not in Git)
 
 These files are generated by the CLI or Claude Code and must not be committed:
 
+All generated files live in the hidden machine-local buckets (STATE/CACHE), never in the committed `<repo>/.cco/` tree — so they never pollute the truthful `git diff` or the sync.
+
 | File | Generated By | Purpose |
 |------|-------------|---------|
-| `user-config/projects/<n>/.cco/docker-compose.yml` | `cco start` | Docker Compose config for the project session |
-| `user-config/projects/<n>/.claude/packs.md` | `cco start` | Instructional file list for activated knowledge packs; injected via hook |
+| `<state>/cco/projects/<id>/docker-compose.yml` | `cco start` | Docker Compose config for the project session (STATE) |
+| `<cache>/cco/projects/<id>/.claude/packs.md` | `cco start` | Instructional file list for activated knowledge packs; `:ro` overlay, injected via hook (CACHE) |
 | ~~`.pack-manifest`~~ | ~~`cco start`~~ | Eliminated by ADR-14 — pack resources are now delivered via read-only Docker volume mounts, not copied |
-| `user-config/projects/<n>/.claude/workspace.yml` | `cco start` | Structured project summary (repos, packs); read by `/init-workspace` skill |
-| `user-config/global/.claude/.managed-migration-done` | `_migrate_to_managed()` | Marker indicating managed scope migration has been completed |
-| `user-config/projects/<n>/memory/*.md` | Claude Code | Auto memory files (project insights, patterns, vault-tracked) |
-| `user-config/projects/<n>/.cco/claude-state/*.json` | Claude Code | Session transcripts (enables `/resume` across rebuilds) |
+| `<cache>/cco/projects/<id>/.claude/workspace.yml` | `cco start` | Structured project summary (repos, packs); `:ro` overlay read by `/init-workspace` skill (CACHE) |
+| `<cache>/cco/projects/<id>/managed/*.json` | `cco start` | Framework-generated integration config (browser/github/policy), `:ro` overlay (CACHE) |
+| `<state>/cco/projects/<id>/session/memory/*.md` | Claude Code | Auto memory files (project insights, patterns; machine-local, no sync v1) (STATE) |
+| `<state>/cco/projects/<id>/claude-state/*.json` | Claude Code | Session transcripts (enables `/resume` across rebuilds) (STATE) |
 | `.env` | User / secrets.env | Runtime secrets (not committed) |
 
 ### 6.4 Implementation Order
@@ -805,16 +835,16 @@ Recommended order for building the repo from scratch:
 | 3. Project Template | `templates/project/base/*` (all files) | Nothing |
 | 4. CLI | `bin/cco` | Phases 1–3 (needs files to reference) |
 | 5. Root Files | `README.md`, `CLAUDE.md`, `.gitignore` | Phases 1–4 |
-| 6. Testing | Manual: create project, start session, verify | Phases 1–5 |
+| 6. Testing | Manual: `cco init` in a repo, start session, verify | Phases 1–5 |
 
 ### 6.5 Validation Checklist
 
 After implementation (or after significant changes), verify:
 
 - [ ] `cco build` creates the Docker image successfully
-- [ ] `cco init` copies user defaults (agents, skills, rules, settings) to user-config/global/ and creates user-config/projects/
-- [ ] `cco project create test-project --repo <any-repo>` creates correct project structure
-- [ ] `cco start test-project` launches interactive Claude Code session
+- [ ] `cco init` copies user defaults (agents, skills, rules, settings) to `~/.cco/global/` and initializes the personal store
+- [ ] `cco init` (in a repo) scaffolds `<repo>/.cco/` and registers it in the STATE index
+- [ ] `cco start` (from the repo) launches an interactive Claude Code session
 - [ ] Claude sees global CLAUDE.md (ask: "What are your global instructions?")
 - [ ] Claude sees project CLAUDE.md (ask: "What project are you working on?")
 - [ ] Claude sees repo `.claude/` when reading repo files (if repo has one)
@@ -822,13 +852,13 @@ After implementation (or after significant changes), verify:
 - [ ] Docker commands work inside container (`docker ps`, `docker compose up`)
 - [ ] Port mapping works (run `npx serve` on port 3000, access from host browser)
 - [ ] Agent teams create panes (visible in tmux or iTerm2)
-- [ ] Auto memory persists across sessions (check `user-config/projects/<n>/.cco/claude-state/memory/`)
-- [ ] `/resume` works after `cco build --no-cache` (session transcripts in `user-config/projects/<n>/.cco/claude-state/`)
+- [ ] Auto memory persists across sessions (check `<state>/cco/projects/<id>/session/memory/`)
+- [ ] `/resume` works after `cco build --no-cache` (session transcripts in `<state>/cco/projects/<id>/claude-state/`)
 - [ ] Knowledge packs: `packs.md` is generated with correct instructional list on `cco start`
 - [ ] Knowledge packs: `additionalContext` contains pack file list (check Claude's initial context)
-- [ ] `workspace.yml` is generated at `user-config/projects/<n>/.claude/workspace.yml` on `cco start`
+- [ ] `workspace.yml` is generated at `<cache>/cco/projects/<id>/.claude/workspace.yml` on `cco start`
 - [ ] SessionStart hook fires and injects context (visible in Claude's initial context)
 - [ ] StatusLine shows project/model/context info
 - [ ] `cco new --repo <path>` works for temporary sessions
 - [ ] `cco stop` stops running sessions cleanly
-- [ ] `cco project list` lists available projects with status
+- [ ] `cco list` lists available projects with status

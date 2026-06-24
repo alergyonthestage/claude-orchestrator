@@ -8,7 +8,7 @@
 
 ## 1. Overview
 
-The orchestrator provides two default subagents (analyst and reviewer) as user-level defaults (source: `defaults/global/.claude/agents/`, copied to `user-config/global/.claude/agents/` on `cco init`). Projects can add their own subagents in `user-config/projects/<n>/.claude/agents/`.
+The orchestrator provides two default subagents (analyst and reviewer) as user-level defaults (source: `defaults/global/.claude/agents/`, copied to `~/.cco/global/.claude/agents/` on `cco init`). Projects can add their own subagents in `<repo>/.cco/claude/agents/`.
 
 Subagents run in their own context window with custom prompts, tool restrictions, and optionally different models. Claude delegates to them automatically based on the task, or you can invoke them explicitly.
 
@@ -16,7 +16,7 @@ Subagents run in their own context window with custom prompts, tool restrictions
 
 ## 2. Default Subagents
 
-### 2.1 Analyst (`global/.claude/agents/analyst.md`)
+### 2.1 Analyst (`~/.cco/global/.claude/agents/analyst.md`)
 
 ```markdown
 ---
@@ -76,7 +76,7 @@ Update your agent memory with:
 - Debugging insights and gotchas
 ```
 
-### 2.2 Reviewer (`global/.claude/agents/reviewer.md`)
+### 2.2 Reviewer (`~/.cco/global/.claude/agents/reviewer.md`)
 
 ```markdown
 ---
@@ -209,8 +209,8 @@ This becomes the agent's instructions.
 
 | Scope | Location | Effect |
 |-------|----------|--------|
-| Global | `global/.claude/agents/` | Available in ALL projects |
-| Project | `projects/<n>/.claude/agents/` | Available in that project only |
+| Global | `~/.cco/global/.claude/agents/` | Available in ALL projects |
+| Project | `<repo>/.cco/claude/agents/` | Available in that project only |
 
 Project agents override global agents with the same name.
 

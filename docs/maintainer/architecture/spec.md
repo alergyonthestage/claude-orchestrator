@@ -12,8 +12,8 @@
 ### 1.1 Goals
 
 - **One command to start**: `cco start <project>` launches an isolated, fully configured Claude Code session
-- **Multi-repo projects**: Each project template can mount multiple repositories with their own context
-- **Centralized context management**: Global, project, and repo-level CLAUDE.md and settings managed in one place
+- **Multi-repo projects**: Each project can mount multiple repositories with their own context
+- **Decentralized context management**: Project config lives in each repo (`<repo>/.cco/`), global config in the personal `~/.cco` store, repo-native config in the repo itself — each at the scope it serves
 - **Agent teams ready**: Every session supports agent teams with configurable display (tmux or iTerm2)
 - **Safe autonomy**: `--dangerously-skip-permissions` inside Docker isolation eliminates repetitive prompts
 - **Development workflow support**: Structured phases (analysis → design → implementation → docs) guided by CLAUDE.md instructions
@@ -41,24 +41,24 @@
 | FR-1.6 | Container can run dev servers (e.g., `npm run dev`) with ports accessible from host | Must |
 | FR-1.7 | Container can orchestrate other Docker services via docker-compose on the host daemon | Must |
 
-### FR-2: Project Templates
+### FR-2: Project Configuration
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| FR-2.1 | Projects are defined as directories under `projects/` with a `project.yml` config | Must |
-| FR-2.2 | Each project specifies which repositories to mount and where | Must |
-| FR-2.3 | `templates/project/base/` provides scaffolding for new projects (`cco project create`). Additional templates available via `cco template list` | Must |
+| FR-2.1 | A project is defined by a `<repo>/.cco/project.yml` config committed **inside the repo that hosts it**. `project.yml` carries logical names + machine-agnostic `url`/`ref` coordinates — no host paths. There is no central `projects/` directory | Must |
+| FR-2.2 | Each project specifies which repositories to mount (by logical name + coordinate); the machine-local STATE index resolves names to absolute host paths | Must |
+| FR-2.3 | `cco init` scaffolds a repo's `.cco/` from `templates/project/base/` and registers it in the index; `cco join` adds a co-located repo to an existing project; `cco init --migrate` lazily converts a legacy centralized project. Additional templates available via `cco template list` | Must |
 | FR-2.4 | Projects can define extra volume mounts (docs, specs, etc.) | Should |
-| FR-2.5 | Temporary sessions (`cco new`) work without a project template | Must |
-| FR-2.6 | `docker-compose.yml` is auto-generated from `project.yml` by the CLI | Must |
+| FR-2.5 | Temporary sessions (`cco new`) work without a project config | Must |
+| FR-2.6 | `docker-compose.yml` is auto-generated from `project.yml` (into machine-local STATE) by the CLI | Must |
 
 ### FR-3: Context Management
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
 | FR-3.1 | Three-tier context: global → project → repo (matching Claude Code's user → project → nested hierarchy) | Must |
-| FR-3.2 | `global/.claude/` is mounted to `~/.claude/` in the container | Must |
-| FR-3.3 | `projects/<name>/.claude/` is mounted to `/workspace/.claude/` | Must |
+| FR-3.2 | `~/.cco/global/.claude/` is mounted to `~/.claude/` in the container | Must |
+| FR-3.3 | The invoking repo's `<repo>/.cco/claude/` is mounted to `/workspace/.claude/`; generated overlays (packs.md, workspace.yml) are layered `:ro` from CACHE | Must |
 | FR-3.4 | Repository `.claude/` directories are included automatically via repo volume mounts | Must |
 | FR-3.5 | Global settings include agent teams enabled, always thinking, and bypass permissions | Must |
 | FR-3.6 | Project settings can override global settings following Claude Code precedence | Must |
@@ -86,10 +86,10 @@
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| FR-6.1 | `cco start <project>` — start a session for a configured project | Must |
+| FR-6.1 | `cco start <project>` — start a session for a configured project (also discoverable from the cwd repo) | Must |
 | FR-6.2 | `cco new [--repo <path>]...` — start a temporary session with specified repos | Must |
-| FR-6.3 | `cco project create <name>` — create a new project from template | Must |
-| FR-6.4 | `cco project list` — list available projects | Must |
+| FR-6.3 | `cco init` — scaffold a repo's `.cco/` config (with `cco join` to add a co-located repo, `cco init --migrate` to convert a legacy project) | Must |
+| FR-6.4 | `cco list` — list available projects | Must |
 | FR-6.5 | `cco build` — build/rebuild the Docker image | Must |
 | FR-6.6 | `cco stop [project]` — stop running session(s) | Should |
 | FR-6.7 | CLI is a single bash script at `bin/cco` | Must |
@@ -99,8 +99,8 @@
 | ID | Requirement | Priority |
 |----|-------------|----------|
 | FR-7.1 | Two default subagents: `analyst` (read-only, haiku) and `reviewer` (read-only, sonnet) | Must |
-| FR-7.2 | Subagents defined as markdown files in `global/.claude/agents/` | Must |
-| FR-7.3 | Projects can add project-specific subagents in `projects/<n>/.claude/agents/` | Should |
+| FR-7.2 | Subagents defined as markdown files in `~/.cco/global/.claude/agents/` | Must |
+| FR-7.3 | Projects can add project-specific subagents in `<repo>/.cco/claude/agents/` | Should |
 | FR-7.4 | Documentation explains how to create new subagents | Must |
 
 ### FR-8: Development Workflow
@@ -138,7 +138,7 @@
 |----|-------------|
 | NFR-3.1 | CLI is a single bash script with no external dependencies beyond docker/docker-compose. Requires bash 3.2+ (compatible with macOS default `/bin/bash`) |
 | NFR-3.2 | All configuration is in YAML, JSON, or Markdown — no custom formats |
-| NFR-3.3 | Adding a new project requires only creating a directory with project.yml |
+| NFR-3.3 | Adding a new project requires only running `cco init` in a repo (scaffolds `<repo>/.cco/` with project.yml and registers it in the index) |
 
 ### NFR-4: Input Validation
 
@@ -183,7 +183,7 @@
 > As a developer, I want to run `cco new --repo ~/projects/experiment` to quickly spin up a Claude session with a single repo, without creating a project template first.
 
 ### US-3: Add a new project
-> As a developer, I want to run `cco project create my-new-project` and get a pre-configured project directory I can customize with my repos and context.
+> As a developer, I want to run `cco init` inside a repo and get a pre-configured `<repo>/.cco/` (committed with the code) that I can customize with my repos and context — so my project config travels with the repo and is shared via its normal git remote.
 
 ### US-4: Run dev servers from Claude
 > As a developer, I want Claude to be able to run `npm run dev` inside the container and have me access the running app at localhost:3000 on my Mac.

@@ -21,8 +21,9 @@ The CLI is a single bash script at `bin/cco` that orchestrates Docker sessions. 
 git clone <repo-url> ~/claude-orchestrator
 cd ~/claude-orchestrator
 
-# Initialize user config and build Docker image
-cco init
+# Build the Docker image, then seed the personal ~/.cco store + init a repo
+cco build
+cd ~/dev/my-repo && cco init
 
 # Add to PATH (if not done automatically)
 # bash:
@@ -37,24 +38,46 @@ echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.bashrc && source 
 
 ### 3.0 `cco init`
 
-Initialize user configuration by copying defaults. Required before first use.
+`cco init` is the **single project entry verb**. It is idempotent: it ensures the
+personal global config store (`~/.cco/`) exists, then scaffolds a clean `<repo>/.cco/`
+in the current repo and registers it in the machine-local index.
 
 ```
-Usage: cco init [--force] [--lang <language>]
+Usage: cco init [--migrate <project> [--sync]] [--sync] [--lang <language>]
 
 Options:
-  --force            Overwrite existing user-config/global/ config with defaults
-  --lang <language>  Set communication language for Claude (default: English)
+  --migrate <project>  Hydrate this repo's .cco/ from the legacy vault backup for
+                       <project> (lazy, per-project migration). A mode of cco init.
+  --sync               Propagate the new member's project.yml repos[] edit / config
+                       to the project's other config-bearing repos
+  --lang <language>    Set communication language for Claude (default: English),
+                       used when seeding ~/.cco/global on a fresh machine
 
 Examples:
-  cco init                    # First-time setup (English)
-  cco init --lang Italian     # First-time setup with Italian communication
-  cco init --force            # Reset global config to defaults
+  cco init                          # Scaffold <repo>/.cco/ in the current repo
+  cco init --lang Italian           # Seed ~/.cco/global with Italian communication
+  cco init --migrate my-saas        # Hydrate this repo from the legacy backup
 ```
+
+**What `cco init` does**
+
+1. **Ensure the global config** — seed `~/.cco/global/` from the framework defaults
+   **only if absent** (no `manifest.yml` is created). Global content for a fresh user
+   lives in `~/.cco/`. This step is idempotent — an existing `~/.cco/` is left untouched.
+2. **Scaffold `<repo>/.cco/`** — write a clean `project.yml` (logical names + coordinates),
+   `secrets.env.example`, `.gitignore`, and the `claude/` config tree in the current repo.
+3. **Register in the index** — record the repo's logical name → absolute path in the
+   machine-local STATE index (`<state>/cco/index`).
+
+`cco init`, `cco init --migrate`, and `cco join` are **mutually exclusive** entry points
+for a repo: `cco init` = clean config; `cco init --migrate <old>` = bring a legacy vault
+project's config into this repo; `cco join` = become a member of a project already defined
+in another repo. The inverse (deregister) is `cco forget`.
 
 **`--lang` and language templates**
 
-The file `defaults/global/.claude/rules/language.md` contains three placeholders that `cco init` substitutes:
+The file `defaults/global/.claude/rules/language.md` contains three placeholders that the
+global seed substitutes:
 
 | Placeholder | Controls | Example value |
 |-------------|----------|---------------|
@@ -62,33 +85,17 @@ The file `defaults/global/.claude/rules/language.md` contains three placeholders
 | `{{DOCS_LANG}}` | Language for docs (README, guides) | `English` |
 | `{{CODE_LANG}}` | Language for code comments/docstrings | `English` |
 
-When `--lang` is provided, `{{COMM_LANG}}` is set to that language. `{{DOCS_LANG}}` and `{{CODE_LANG}}` always default to `English` (code is universal). To customize further, edit `user-config/global/.claude/rules/language.md` directly after `cco init`.
+When `--lang` is provided, `{{COMM_LANG}}` is set to that language. `{{DOCS_LANG}}` and
+`{{CODE_LANG}}` always default to `English` (code is universal). To customize further, edit
+`~/.cco/global/.claude/rules/language.md` directly.
 
-**Flow**:
-
-```
-1. COPY user defaults: defaults/global/.claude/ → user-config/global/.claude/
-   - If user-config/global/ exists: skip (warn user, suggest --force)
-   - If --force: overwrite
-
-2. SUBSTITUTE language placeholders in user-config/global/.claude/rules/language.md
-   - Replace {{COMM_LANG}} with --lang value (default: English)
-   - Replace {{DOCS_LANG}} with English
-   - Replace {{CODE_LANG}} with English
-
-3. INITIALIZE update metadata
-   - Generate .cco/meta (schema_version, language choices, manifest hashes)
-   - Save .cco/base/ (copies of opinionated files for future diff/merge)
-
-4. CREATE user-config/projects/ directory (if needed)
-
-5. PATH HINT
-   - If cco is not in PATH, show the export command
-
-6. BUILD Docker image
-   - If Docker is running, run `cco build`
-   - Otherwise, warn to run it later
-```
+**First-run bootstrap (J0)**: on a fresh machine, **any** `cco` command (including `cco init`,
+`cco start`, `cco new`) first creates the four config roots when missing — `~/.cco/`
+(git-init'd) plus the three internal XDG bases DATA (`~/.local/share/cco`),
+STATE (`~/.local/state/cco`), and CACHE (`~/.cache/cco`). This is per-root and idempotent.
+If a legacy vault is present, the first run **backs it up** (into STATE) and prints migration
+instructions. The eager global config migration is owned by `cco update`; per-project
+migration is lazy via `cco init --migrate`.
 
 ---
 
@@ -111,7 +118,7 @@ Examples:
   cco build --mcp-packages "@modelcontextprotocol/server-github"
 ```
 
-MCP packages can also be listed in `user-config/global/mcp-packages.txt` (one per line) for automatic loading on every build.
+MCP packages can also be listed in `~/.cco/mcp-packages.txt` (one per line) for automatic loading on every build.
 
 ---
 
@@ -120,12 +127,14 @@ MCP packages can also be listed in `user-config/global/mcp-packages.txt` (one pe
 Start an interactive Claude Code session for a configured project.
 
 ```
-Usage: cco start <project> [OPTIONS]
+Usage: cco start [project] [OPTIONS]
 
 Arguments:
-  project              Name of the project (directory under user-config/projects/)
+  project              Name of the project. Optional when run from a repo dir:
+                       the invoking repo's <repo>/.cco/ selects the project it hosts.
 
 Options:
+  --from <repo>        Pick which member's <repo>/.cco to use (Case-C divergence source)
   --teammate-mode <m>  Override display mode: tmux | auto
   --api-key            Use ANTHROPIC_API_KEY instead of OAuth
   --chrome             Enable browser automation for this session only
@@ -141,59 +150,68 @@ Session flags override project.yml for one session only.
 To change the default, edit project.yml instead.
 
 Examples:
+  cco start                          # From a repo dir: start the project it hosts
   cco start my-saas
-  cco start my-saas --chrome        # enable browser for this session
-  cco start my-saas --no-chrome     # disable browser for this session
-  cco start my-saas --no-docker     # disable Docker socket for this session
+  cco start my-saas --from frontend  # Use frontend's <repo>/.cco when repos diverge
+  cco start my-saas --chrome         # enable browser for this session
+  cco start my-saas --no-chrome      # disable browser for this session
+  cco start my-saas --no-docker      # disable Docker socket for this session
   cco start my-saas --teammate-mode auto
   cco start my-saas --port 9090:9090
   cco start my-saas --dry-run
   cco start tutorial                 # built-in tutorial (see below)
+  cco start config-editor            # built-in config editor (mounts ~/.cco rw)
 ```
 
-**Reserved name: `tutorial`**
+**Source selection & resolution**: from a repo dir, `cco start` uses the invoking repo's
+`.cco/` → the project that repo **hosts** (unambiguous: a repo hosts at most one project).
+By name, if the project's config-bearing repos diverge, the source precedence is
+`--from <repo>` > the optional `entry` repo > prompt. Absolute paths for every repo/mount
+come from the machine-local index (`<state>/cco/index`); if any repo/mount is unresolved,
+`cco start` prompts to **[r]esolve** (`cco resolve`), **[c]lone from `<url>`** (when the
+coordinate carries a `url`), or **[s]kip** — it never launches with a silent empty mount.
+`cco start` always prints which `<repo>/.cco` source it used.
+
+**Reserved names: `tutorial`, `config-editor`**
 
 `cco start tutorial` launches the built-in interactive tutorial directly from
-`internal/tutorial/`. It is not a user project — it always reflects the current
-framework version. If a project named `tutorial` exists in `user-config/projects/`,
-`cco start tutorial` will block with an error asking to rename or remove the
-conflicting project. The name `tutorial` is reserved and cannot be used with
-`cco project create`.
+`internal/tutorial/`; `cco start config-editor` launches the built-in config editor
+(mounts `~/.cco` rw in global mode; `--project <name>` or a cwd hosting a configured repo
+also mounts that project's `<repo>/.cco` rw). They are not user projects — they always
+reflect the current framework version. These names are reserved.
 
 **Flow**:
 
 ```
-1. VALIDATE
-   - Check user-config/projects/<project>/project.yml exists
-   - Parse project.yml
+1. RESOLVE source + members (H1: resolution before notices)
+   - From a repo dir: use the invoking repo's <repo>/.cco/ (the project it hosts);
+     by name: resolve via the index (--from > entry > prompt on divergence)
+   - Resolve each member repo/mount via the index; unresolved → prompt resolve|clone|skip
    - Check no existing running session for this project (die if container cc-<name> is running)
-   - Verify each repo path exists on host
    - Check Docker image exists (suggest `cco build` if not)
 
-2. GENERATE docker-compose.yml
-   - Read project.yml repos → generate volume mounts
+2. GENERATE docker-compose.yml (into CACHE, host-absolute mount sources)
+   - Read project.yml repos → generate volume mounts (paths from the index)
    - Read project.yml ports → generate port mappings
    - Read project.yml auth → set auth volumes/env vars
    - If mcp.json exists → mount as /workspace/.mcp.json (Claude Code expands ${VAR} natively)
    - Mount global MCP config for entrypoint merge
    - Apply CLI overrides (--port, --env, --teammate-mode)
-   - Write to user-config/projects/<project>/.cco/docker-compose.yml
+   - Write to <cache>/cco/projects/<id>/docker-compose.yml
 
-3. GENERATE pack resources
+3. GENERATE pack + framework resources (into CACHE, overlaid :ro)
    - Detect name conflicts across packs (warn if same agent/rule/skill in multiple packs)
-   - Add pack resource mounts to docker-compose.yml (knowledge dirs, per-file rules/agents, per-dir skills — all :ro)
-   - Generate .claude/packs.md (instructional list of knowledge files)
-   - Generate .claude/workspace.yml (structured project summary for /init)
+   - Add pack resource mounts (knowledge dirs, per-file rules/agents, per-dir skills — all :ro)
+   - Generate packs.md (instructional list of knowledge files) + workspace.yml (project summary)
+     into <cache>/cco/projects/<id>/.claude/ and overlay :ro onto /workspace/.claude
 
-4. CREATE directories (if needed)
-   - user-config/projects/<project>/.cco/claude-state/  (session transcripts; enables /resume across rebuilds)
-   - user-config/projects/<project>/memory/  (auto memory; vault-tracked, separate from transcripts)
+4. CREATE state dirs (if needed)
+   - <state>/cco/projects/<id>/claude-state/  (session transcripts; enables /resume across rebuilds)
+   - <state>/cco/projects/<id>/session/memory/  (auto memory; machine-local STATE, no sync in v1)
 
 5. LAUNCH
-   - Load user-config/global/secrets.env as runtime env vars (validates KEY=VALUE format, skips malformed lines with warning)
-   - docker compose -f user-config/projects/<project>/.cco/docker-compose.yml \
-       --project-directory user-config/projects/<project> \
-       run --rm --service-ports claude
+   - Load ~/.cco/secrets.env as runtime env vars (validates KEY=VALUE format, skips malformed lines with warning)
+   - docker compose -f <cache>/cco/projects/<id>/docker-compose.yml run --rm --service-ports claude
 
 6. CLEANUP (after exit)
    - Container auto-removed (--rm)
@@ -231,10 +249,10 @@ Examples:
 
 2. GENERATE temporary docker-compose
    - Create temp dir: /tmp/cc-<name>/
-   - Generate .cco/docker-compose.yml with:
-     - Global config mounted (same as user-config/projects)
+   - Generate docker-compose.yml with:
+     - Global config mounted from ~/.cco (same as `cco start`)
      - No project .claude/ (empty /workspace/.claude/)
-     - Specified repos mounted as subdirectories
+     - Specified repos mounted as subdirectories (literal paths, no index read/write)
      - Auto memory in temp dir
 
 3. LAUNCH
@@ -248,62 +266,83 @@ Examples:
 
 ---
 
-### 3.4 `cco project create <name>`
+### 3.4 `cco join` / `cco init --migrate`
 
-Create a new project from the template.
+Project entry has a single clean path — `cco init` (§3.0). The two alternative entry
+modes are `cco join` (add the current repo to an existing project) and `cco init --migrate`
+(hydrate a repo from a legacy vault backup). All three are **mutually exclusive** per repo.
+
+#### `cco join <project>`
+
+Add the current repo to `<project>` as a **member**: register it in the index and add it to
+`repos[]` in the project's `project.yml`. The new member's `repos[]` edit propagates to every
+repo that carries a synced copy (Case B); in a divergent project (Case C) `cco join` **prompts**
+which repo's `project.yml` to update, or all.
 
 ```
-Usage: cco project create [<name>] [OPTIONS]
+Usage: cco join <project> [--sync]
 
 Arguments:
-  name                 Project name (lowercase, hyphens, no spaces).
-                       Optional when --template is provided (defaults to template name)
+  project              Name of an existing project (defined in another repo)
 
 Options:
-  --repo <path>        Add a repo to the project (repeatable)
-  --description <d>    Project description
-  --template <name>    Template to use (default: base). See `cco template list --project`
+  --sync               Copy the project's <repo>/.cco/ into this repo (source prompted
+                       if divergent). Without it, the repo stays a code-only member (Case A).
 
 Examples:
-  cco project create my-saas --repo ~/projects/api --repo ~/projects/web
-  cco project create experiment --description "Testing new auth flow"
-  cco project create guided --template config-editor
-  cco project create --template config-editor    # name defaults to "config-editor"
+  cco join my-saas             # Join as a code-only member (Case A)
+  cco join my-saas --sync      # Join and receive a config copy (Case B)
 ```
 
-**Flow**:
+The joining repo gets **no `.cco/`** (code-only member) unless `--sync` / interactive confirm,
+which copies the project's `.cco/` into it. cco knows which repos are synced vs divergent from
+its internal sync-state tracking.
+
+#### `cco init --migrate <project> [--sync]`
+
+Hydrate the current repo's `.cco/` with a project's config migrated from the **legacy vault
+backup** (lazy, per-project). This is a **mode of `cco init`**, not a top-level `cco migrate`.
 
 ```
-1. VALIDATE
-   - Name is valid (lowercase, hyphens, no spaces)
-   - user-config/projects/<name>/ does not already exist
+Usage: cco init --migrate <project> [--sync]
 
-2. RESOLVE template
-   - --template <name> or default "base"
-   - Resolution order: user-config/templates/project/<name>/ → templates/project/<name>/
+Arguments:
+  project              Legacy project name to migrate from the vault backup
 
-3. COPY template
-   - Copy resolved template → user-config/projects/<name>/
+Options:
+  --sync               Propagate the migrated config to all member repos
+                       (symmetric to `cco join --sync`)
 
-4. CONFIGURE
-   - If --repo flags provided: write repos to project.yml
-   - If --description provided: update project.yml and CLAUDE.md
-   - Replace {{PROJECT_NAME}} and {{DESCRIPTION}} placeholders
-
-5. CREATE directories
-   - user-config/projects/<name>/.cco/claude-state/  (session transcripts)
-   - user-config/projects/<name>/memory/  (auto memory; vault-tracked)
-
-6. INITIALIZE update metadata
-   - Generate .cco/meta (schema_version, template name, manifest hashes)
-   - Save .cco/base/ (copies of opinionated files for future diff/merge)
-   - If native template (not base): create .cco/source with native:<template-path>
-
-7. PRINT
-   - "Project created at user-config/projects/<name>/"
-   - "Edit project.yml to configure repos and settings"
-   - "Run: cco start <name>"
+Examples:
+  cco init --migrate my-saas           # Migrate one project into this repo (Case A)
+  cco init --migrate my-saas --sync    # Migrate and propagate to member repos (Case B)
 ```
+
+The first run on a machine **backs up** the legacy vault (into STATE) and prints migration
+instructions on any command. The eager global config migration is owned by `cco update`;
+this per-project path reads from that backup. A profile→tag prompt is offered per project
+during migrate.
+
+---
+
+### 3.4b `cco forget <project>`
+
+Deregister a project: remove cco's internal id-keyed state — index entry, tags, install
+provenance, and the project's STATE/CACHE — **without** touching the repo or its committed
+`<repo>/.cco/`. The inverse of `cco init`/`cco join`.
+
+```
+Usage: cco forget <project>
+
+Arguments:
+  project              Name of the project to deregister
+
+Examples:
+  cco forget old-service
+```
+
+`cco forget` only removes machine-local bookkeeping. The repo and its committed config are
+untouched, so a later `cco resolve --scan` (or `cco start` from the repo) re-registers it.
 
 ---
 
@@ -321,9 +360,47 @@ Output:
 ```
 
 **Implementation**:
-- List directories under `user-config/projects/`
-- Parse each `project.yml` for repo count
+- List projects registered in the machine-local index (`<state>/cco/index` `projects:` map)
+- Parse each repo's `<repo>/.cco/project.yml` for repo count
 - Check Docker for running containers (`cc-<name>`)
+
+---
+
+### 3.5b `cco list` / `cco tag`
+
+Per-user tags replace the removed vault profiles. Tags are **multi-valued per resource** and
+**per-user** — they live in a machine-local-but-synced registry (`<data>/cco/tags.yml`, the
+DATA bucket) and are never written into `project.yml`/`pack.yml` or shared with third parties.
+
+#### `cco list [--tag <t>]`
+
+List resources, optionally filtered by tag. Reads the per-user tag registry.
+
+```
+Usage: cco list [--tag <t>]
+
+Options:
+  --tag <t>            Show only resources carrying tag <t>
+
+Examples:
+  cco list                     # All resources
+  cco list --tag work          # Only resources tagged "work"
+```
+
+#### `cco tag add` / `cco tag rm`
+
+Add or remove a per-user tag on a resource (writes the DATA tag registry).
+
+```
+Usage: cco tag add <tag> <resource>
+       cco tag rm  <tag> <resource>
+
+Examples:
+  cco tag add work my-saas
+  cco tag rm  work my-saas
+```
+
+Tags are organizational only; they carry no privilege and never affect resolution or sharing.
 
 ---
 
@@ -378,8 +455,9 @@ Examples:
 
 **Port resolution priority**:
 1. `--port <n>` — explicit flag
-2. `--project <name>` → reads `user-config/projects/<name>/.cco/managed/.browser-port` (effective runtime port)
-3. `--project <name>` → falls back to `user-config/projects/<name>/project.yml` `browser.cdp_port`
+2. `--project <name>` → reads the project's generated `managed/.browser-port` in CACHE
+   (`<cache>/cco/projects/<id>/managed/.browser-port`, the effective runtime port)
+3. `--project <name>` → falls back to the project's `<repo>/.cco/project.yml` `browser.cdp_port`
 4. Default: `9222`
 
 **Notes**:
@@ -415,21 +493,21 @@ Examples:
 1. VALIDATE
    - Global config exists (check_global)
    - Name matches pattern: ^[a-z0-9][a-z0-9-]*$
-   - user-config/packs/<name>/ does not already exist
+   - ~/.cco/packs/<name>/ does not already exist
 
 2. CREATE directory structure
-   - user-config/packs/<name>/
-   - user-config/packs/<name>/knowledge/
-   - user-config/packs/<name>/skills/
-   - user-config/packs/<name>/agents/
-   - user-config/packs/<name>/rules/
+   - ~/.cco/packs/<name>/
+   - ~/.cco/packs/<name>/knowledge/
+   - ~/.cco/packs/<name>/skills/
+   - ~/.cco/packs/<name>/agents/
+   - ~/.cco/packs/<name>/rules/
 
 3. GENERATE pack.yml
    - Scaffold with name field and commented-out sections
      for knowledge, skills, agents, rules
 
 4. PRINT
-   - "Pack created at user-config/packs/<name>/"
+   - "Pack created at ~/.cco/packs/<name>/"
    - Hint: subdirectory purposes and how to declare resources
 ```
 
@@ -449,7 +527,7 @@ Output:
 ```
 
 **Implementation**:
-- Iterates directories under `user-config/packs/`
+- Iterates directories under `~/.cco/packs/`
 - Parses each `pack.yml` for knowledge files, skills, agents, and rules counts
 - Displays a formatted table with resource counts (shows `0` when a category is empty)
 
@@ -473,7 +551,7 @@ Examples:
 
 ```
 1. VALIDATE
-   - user-config/packs/<name>/ exists
+   - ~/.cco/packs/<name>/ exists
    - pack.yml exists (warns if missing)
 
 2. DISPLAY
@@ -509,7 +587,7 @@ Examples:
 
 ```
 1. VALIDATE
-   - user-config/packs/<name>/ exists
+   - ~/.cco/packs/<name>/ exists
 
 2. CHECK usage
    - Scan all projects for references to this pack
@@ -519,7 +597,7 @@ Examples:
      - Non-interactive terminal without --force: error and abort
 
 3. REMOVE
-   - rm -rf user-config/packs/<name>/
+   - rm -rf ~/.cco/packs/<name>/
    - "Pack '<name>' removed"
 ```
 
@@ -578,92 +656,126 @@ Examples:
 
 ```
 1. VALIDATE
-   - user-config/projects/<name>/project.yml exists
+   - The project is resolvable (its host repo's <repo>/.cco/project.yml exists)
 
 2. DISPLAY
    - Name and description (from project.yml)
-   - Repos: list with path existence check ([missing] marker for absent paths)
+   - Repos: list with path existence check ([missing] marker for absent paths),
+     and each member's role: host / synced copy / divergent / code-only member
+   - Referenced-by: other projects that reference this repo (reverse index lookup)
    - Packs: list with existence check ([not found] marker for absent packs)
    - Docker config: auth method, ports, network name
    - Status: checks Docker for running container (cc-<name>)
+   - ⚠ passive badge: unresolved/unreachable references, if any
 ```
+
+**Repo↔project introspection (ADR-0024 D5)**: `cco project show` reports, for the project's
+repos, the project each repo **hosts**, the projects that **reference** it, and each member's
+sync state (host / synced / divergent / code-only) — derived from the index `projects:` map
+(forward + reverse lookup) and the per-machine sync-meta. There is no separate top-level verb.
 
 ---
 
-### 3.14 `cco project validate <name>`
+### 3.14 `cco project validate [name]`
 
-Validate project structure and configuration.
+**Share-readiness validation**: check that a project's config is safe to share via its repo
+remote — every referenced id (repo/llms/pack) has a **reachable, machine-agnostic coordinate**,
+no real paths leak, and no pack-name collision. Detect-only: it never blocks a `git push`.
 
 ```
-Usage: cco project validate <name>
+Usage: cco project validate [name] [--all] [--reachable]
 
 Arguments:
-  name                 Project name to validate
+  name                 Project to validate (defaults to the cwd's hosted project)
+
+Options:
+  --all                Validate every project in the index
+  --reachable          Also probe that each coordinate is currently reachable
 
 Examples:
+  cco project validate                 # cwd-first: validate the project this repo hosts
   cco project validate my-saas
+  cco project validate --all
 ```
 
 **Flow**:
 
 ```
-1. VALIDATE
-   - project.yml exists (fatal if missing)
-   - 'name' field is present in project.yml
-   - .claude/ directory exists (warns if missing)
-   - Each configured repo path exists on the filesystem
-   - Each referenced pack exists in user-config/packs/
+1. VALIDATE (cwd-first)
+   - project.yml exists and 'name' is present (fatal if missing)
+   - Every referenced repo/llms/pack has a coordinate (url/ref) — machine-agnostic, no real paths
+   - --reachable: probe each coordinate (ls-remote / fetch)
+   - Pack collision: a no-coordinate authored pack shadowed by an unrelated same-name
+     global pack is an ERROR (silent-wrong-build); every reachability gap stays a WARN
 
 2. RESULT
-   - Errors for missing project.yml, missing name field, missing repo paths,
-     missing packs
-   - Warnings for missing .claude/ directory, no repos configured
-   - Returns exit code 1 if any errors found
-   - "Project '<name>' is valid" on success
+   - exit 0 = share-ready; exit 1 = WARN (degraded/unreachable); exit 2 = ERROR (collision)
+   - Detect-only — never blocks the git push path
+   - "Project '<name>' is share-ready" on success
 ```
+
+> This is the **share-readiness** validate. The **orphan-sanitization** of global internal
+> state lives in `cco config validate` (§3.21).
 
 ---
 
-### 3.15 `cco project resolve <project>`
+### 3.15 `cco resolve` / `cco path`
 
-Configure local paths for a project's repos and mounts. Each machine stores
-its own path mappings in `.cco/local-paths.yml` (gitignored). This command
-lets you set paths explicitly or interactively before `cco start` prompts.
+Map a project's **logical names** (repos and extra mounts, declared in `project.yml` with
+machine-agnostic coordinates) to **absolute paths on this machine**. Paths live in the
+machine-local STATE **index** (`<state>/cco/index`), never in `project.yml` and never committed.
+`project.yml` carries logical names + `url`/`ref` coordinates only — there are no `@local`
+markers and no per-repo `local-paths.yml`.
+
+#### `cco resolve [project]`
+
+Resolve each unresolved repo/mount of a project: specify a local path, clone from the
+coordinate `url`, or skip.
 
 ```
-Usage: cco project resolve <project> [OPTIONS]
+Usage: cco resolve [project]
+       cco resolve --all
+       cco resolve --scan <dir>
 
 Arguments:
-  project              Project name
+  project              Project to resolve (defaults to the cwd's hosted project)
 
 Options:
-  --repo <name> <path>      Set local path for a repository
-  --mount <target> <path>   Set local path for an extra mount
-  --show                    Show current path mappings (no changes)
-  --reset                   Remove all local overrides (re-prompt on next start)
+  --all                Resolve every project in the index
+  --scan <dir>         Auto-discover by scanning <dir> for .cco/project.yml and
+                       reconcile (upsert) the index — non-destructive
 
 Examples:
-  cco project resolve myapp                          # Interactive mode
-  cco project resolve myapp --repo backend ~/dev/be  # Direct set
-  cco project resolve myapp --mount /workspace/docs ~/docs  # Direct set mount
-  cco project resolve myapp --show                   # Show status
-  cco project resolve myapp --reset                  # Clear all mappings
+  cco resolve                  # Interactively resolve the cwd's project
+  cco resolve my-saas
+  cco resolve --all
+  cco resolve --scan ~/dev     # Discover + register all projects under ~/dev
 ```
 
-**Flow (interactive mode)**:
+For each unresolved repo/mount, `cco resolve` offers: **specify a local path** · **clone from
+`<url>`** (only when the coordinate carries a `url`) · **skip**. `--scan` is **non-destructive**:
+it upserts each discovered `name → path` + `repos[]`, never deletes out-of-`<dir>` mappings or
+manual `cco path set` overrides, and on a name-already-bound-to-a-different-path conflict it
+warns and keeps the existing mapping (uniqueness invariant). There is no `--prune` in v1.
+`cco resolve --scan` also bootstraps a fresh machine (populates an empty index).
+
+#### `cco path set` / `cco path list`
+
+The low-level index editor — fix divergence, point to a moved directory, register an external
+install.
 
 ```
-1. LOAD project.yml and .cco/local-paths.yml
-2. For each repo and extra_mount:
-   - Show status (✓ resolved / ✗ needs path)
-   - If @local and no stored path → prompt for path or clone
-3. Updated paths saved to .cco/local-paths.yml
+Usage: cco path set <name> <path>
+       cco path list
+
+Examples:
+  cco path set backend ~/dev/backend     # Bind logical name → absolute path
+  cco path list                          # Show all name → path mappings
 ```
 
-**Context**: When `project.yml` is synced via vault or installed from a
-Config Repo, repo paths are replaced with `@local` markers. `cco start`
-resolves these interactively, but `project resolve` lets you configure
-paths ahead of time (useful for non-TTY environments or scripted setup).
+Manual index edits are allowed but discouraged — prefer `cco resolve`. A logical name maps to
+exactly one absolute path per machine (`cco init`/`cco join` refuse a name already bound to a
+different path).
 
 ---
 
@@ -674,13 +786,19 @@ Run pending migrations, discover available updates, and notify of new features.
 `cco update` performs three categories of operations:
 
 1. **Migrations** (automatic): run pending migration scripts from `migrations/`
-   for structural/breaking changes. Always run on global + all projects.
-2. **Config discovery**: compare framework sources against `.cco/base/` to detect
+   for structural/breaking changes. Always run on global + all projects. `cco update`
+   also owns the **eager global migration** from a legacy vault: it populates `~/.cco`
+   from the first-run vault backup (after backing it up non-destructively). Per-project
+   migration is lazy via `cco init --migrate`.
+2. **Config discovery**: compare framework sources against the saved base to detect
    available updates to opinionated files (rules, agents, skills).
 3. **Changelog**: report additive changes (new features) from `changelog.yml`.
 
 Migrations and discovery are read-only by default — opinionated file changes
-require explicit `--sync` to apply interactively.
+require explicit `--sync` to apply interactively. The merge ancestors (`base/`) and
+update metadata (`meta`) are kept in machine-local STATE
+(`<state>/cco/projects/<id>/update/`, global at `<state>/cco/global/update/`), never in
+the committed `<repo>/.cco/`.
 
 ```
 Usage: cco update [OPTIONS]
@@ -690,6 +808,7 @@ Checks both framework defaults and remote sources for installed projects/packs.
 
 Modes:
   (default)           Run migrations + show available config updates + changelog
+  --check             List installed resources (packs/templates) with an upstream update
   --sync [scope]      Run migrations + interactively sync config from framework defaults
   --diff [scope]      Run migrations + show config update summary (or full diffs if scoped)
   --diff --all        Run migrations + show full diffs for all scopes
@@ -701,12 +820,10 @@ Scope (for --sync and --diff):
   <project-name>      One specific project only (no global)
 
 Options:
-  --local             Apply framework defaults directly on installed projects
-                      (bypasses publisher update chain; use with --sync)
   --offline           Skip remote source checks (framework-only discovery)
   --no-cache          Force fresh remote version check (ignore cache)
   --force             Non-interactive sync: overwrite all files with framework version
-  --keep              Non-interactive sync: keep all user files, update .cco/base/ only
+  --keep              Non-interactive sync: keep all user files, update base only
   --no-backup         Skip .bak file creation (with --sync)
   --dry-run           Preview pending migrations without running
   --help              Show this help message
@@ -718,12 +835,9 @@ Migrations run automatically in all modes (except --news and --dry-run).
 Config sync (--sync) covers opinionated files: rules, agents, skills,
 and other framework defaults that you may have customized.
 
-For installed projects (from Config Repos), framework updates are managed
-by the publisher. Use 'cco project update <name>' to get publisher updates.
-Use --local with --sync to apply framework defaults directly (escape hatch).
-
 Examples:
-  cco update                  # Run migrations + show available updates
+  cco update                  # Run migrations + eager vault migration + available updates
+  cco update --check          # List packs/templates with an upstream update
   cco update --diff           # Summary: file names + status per scope
   cco update --diff global    # Full diffs for global config only
   cco update --diff myapp     # Full diffs for one project
@@ -731,32 +845,33 @@ Examples:
   cco update --sync           # Interactively sync all config from defaults
   cco update --sync global    # Sync global config only
   cco update --sync myapp     # Sync one project only (no global)
-  cco update --sync myapp --local  # Force framework sync on installed project
   cco update --news           # Show new features and examples
   cco update --dry-run        # Preview pending migrations
   cco update --offline        # Skip remote checks
 ```
 
-**Unified discovery**: `cco update` shows a complete picture of all available
-updates: pending migrations, framework file changes, remote publisher updates
-for installed projects/packs, and changelog notifications. Each project is
-labeled with its type (`(local)` or `(from <remote>)`).
+**Discovery-flag division of labor**: four surfaces answer different "what would change?"
+questions — `--check` (is a newer **upstream** available for an installed pack/template?,
+DATA `source`-driven, read-only, exit 0), `--diff`/`--news` (what would the **framework
+defaults** change?), and `--dry-run` (what migrations would run?). `--check` and `--diff`
+do not overlap in source.
 
-**Source-aware sync**: for installed projects (from Config Repos), `--sync`
-skips opinionated file changes and delegates to the publisher chain. The update
-chain is Framework → Publisher → Consumer. Use `--local` to override this and
-apply framework defaults directly.
+**`--check`**: lists installed packs/templates with an available upstream update, driven by
+the install provenance in DATA (`<data>/cco/{packs,templates}/<name>/source`) and gated on
+local-install presence. Three-state output (*not installed here* / comparable / indeterminate),
+one greppable line per resource, always exit 0. Note: **projects do not install/update** —
+a project's config travels with its code repo's own git remote, so projects are not part of
+the upstream-update surface.
 
-**Remote checks**: by default, `cco update` checks remote sources for installed
-resources using `git ls-remote` (lightweight, no clone). Results are cached for
-1 hour. Use `--offline` to skip, `--no-cache` to force a fresh check.
+**Remote checks**: by default, `cco update --check` checks sharing-repo upstreams using
+`git ls-remote` (lightweight, no clone). Results are cached for 1 hour. Use `--offline` to
+skip, `--no-cache` to force a fresh check.
 
 **Update sources**: `cco update` uses native framework sources: `defaults/global/`
 for global config, `templates/project/base/` for base project files, and
-`templates/project/<name>/` for native template-specific files (resolved via
-`.cco/source`). User templates are not touched. `project.yml` is fully user-managed
-and not tracked by the update system (new fields are additive with code defaults; schema changes
-use migrations).
+`templates/project/<name>/` for native template-specific files. User templates are not
+touched. `project.yml` is fully user-managed and not tracked by the update system (new fields
+are additive with code defaults; schema changes use migrations).
 
 **Migration scopes**: `global`, `project`, `pack`, `template`. Migrations always
 run on all scopes — they are not filtered by `--sync`/`--diff` scope.
@@ -764,11 +879,17 @@ run on all scopes — they are not filtered by `--sync`/`--diff` scope.
 **Flow**:
 
 ```
+0. FIRST-RUN VAULT MIGRATION (eager, global scope)
+   - The first run on a machine backs up any legacy vault (into STATE), non-destructive
+   - `cco update` then populates ~/.cco from the backup (global/.claude, packs/, templates/,
+     setup scripts, languages, secrets.env) and decomposes the global metadata into STATE
+   - Vault removal is offered only here, default keep (manual fs-delete instructions printed)
+
 1. RUN MIGRATIONS (always global + all projects)
-   - Global: migrations/global/ → user-config/global/
-   - Pack: migrations/pack/ → each user-config/packs/*/ with .cco/meta
-   - Template: migrations/template/ → each user-config/templates/*/ with .cco/meta
-   - Project: migrations/project/ → all projects
+   - Global: migrations/global/ → ~/.cco/global/
+   - Pack: migrations/pack/ → each ~/.cco/packs/*/ (meta in STATE)
+   - Template: migrations/template/ → each ~/.cco/templates/*/ (meta in STATE)
+   - Project: migrations/project/ → all projects (per-repo <repo>/.cco/, meta in STATE)
    - --dry-run: list pending migrations without running
 
 2. NOTIFY additive changes (dual-tracker)
@@ -778,7 +899,7 @@ run on all scopes — they are not filtered by `--sync`/`--diff` scope.
      updates BOTH last_read_changelog AND last_seen_changelog
 
 3. DISCOVER opinionated file updates
-   - For each opinionated file, compare .cco/base/ vs framework source
+   - For each opinionated file, compare the saved STATE base vs framework source
    - Report available updates (read-only, no file changes)
    - Scope: default mode always checks global + all projects
 
@@ -796,10 +917,10 @@ run on all scopes — they are not filtered by `--sync`/`--diff` scope.
      - (R)eplace: overwrite with framework version + .bak
      - (K)eep: keep user version unchanged
      - (S)kip: defer to next run
-   - If conflict markers remain after M/E: .cco/base is updated (no re-merge
+   - If conflict markers remain after M/E: the STATE base is updated (no re-merge
      loop), but `cco start` blocks until markers are resolved
    - .bak created for each modified file (unless --no-backup)
-   - .cco/base/ updated to reflect the applied framework version
+   - The STATE base is updated to reflect the applied framework version
    - Non-interactive fallback: defaults to Skip (no silent changes)
    - Use `cco clean` to remove .bak files after reviewing
 
@@ -813,13 +934,15 @@ run on all scopes — they are not filtered by `--sync`/`--diff` scope.
 
 ### 3.17 `cco pack install <url>`
 
-Install packs from a remote Config Repo.
+Install packs from a remote **sharing repo** (a git repo whose layout holds `packs/` +
+`templates/`, discovered structure-based — there is no `manifest.yml`). Installed packs land
+in `~/.cco/packs/`.
 
 ```
 Usage: cco pack install <url> [OPTIONS]
 
 Arguments:
-  url                  URL of the Config Repo (git repository)
+  url                  URL of the sharing repo (git repository)
 
 Options:
   --pick <name>        Install only a specific pack from the repo
@@ -827,16 +950,20 @@ Options:
   --force              Overwrite existing pack with the same name
 
 Examples:
-  cco pack install https://github.com/team/config-repo
-  cco pack install https://github.com/team/config-repo --pick react-guidelines
-  cco pack install https://github.com/team/config-repo --token ghp_... --force
+  cco pack install https://github.com/team/cco-sharing
+  cco pack install https://github.com/team/cco-sharing --pick react-guidelines
+  cco pack install https://github.com/team/cco-sharing --token ghp_... --force
 ```
+
+**Install provenance**: the upstream coordinate is recorded in DATA
+(`<data>/cco/packs/<name>/source` — `url`/`ref`), and the installed tree is recorded as the
+STATE merge base (`<state>/cco/packs/<name>/update/base/`) for the next `cco pack update`.
 
 ---
 
 ### 3.18 `cco pack update`
 
-Update pack(s) from their remote source.
+Update pack(s) from their upstream sharing repo (3-way merge against the recorded STATE base).
 
 ```
 Usage: cco pack update <name> [--force]
@@ -846,7 +973,7 @@ Arguments:
   name                 Pack name to update
 
 Options:
-  --all                Update all packs that have a remote source
+  --all                Update all packs that have a recorded upstream source
   --force              Overwrite local modifications
 
 Examples:
@@ -857,518 +984,278 @@ Examples:
 
 ---
 
-### 3.19 `cco pack export <name>`
+### 3.19 `cco pack export` / `cco pack import`
 
-Export a pack as a `.tar.gz` archive.
+The tar-snapshot half of the pack sharing 2×2 (`publish`/`install` is the live-source half).
 
 ```
-Usage: cco pack export <name>
+Usage: cco pack export <name>          # Write ~/.cco/packs/<name>/ to a .tar.gz archive
+       cco pack import <archive>       # Install a pack from a .tar.gz archive into ~/.cco/packs/
 
 Arguments:
   name                 Pack name to export
+  archive              Path to a .tar.gz pack archive
 
 Examples:
   cco pack export react-guidelines
+  cco pack import ./react-guidelines.tar.gz
 ```
 
 ---
 
-### 3.20 `cco project install <url>`
+### 3.20 `cco project export` / `cco project import`
 
-Install a project template from a Config Repo.
+Projects are **not** published/installed — a project's `<repo>/.cco/` is shared **by
+construction** through its code repo's own git remote (clone the repo and you have the config).
+Projects therefore get only the **tar-snapshot** half of the 2×2: `export`/`import`.
 
 ```
-Usage: cco project install <url> [OPTIONS]
+Usage: cco project export <name>       # Snapshot the project's <repo>/.cco/ to a .tar.gz
+       cco project import <archive>    # Bootstrap a repo's .cco/ from a .tar.gz snapshot
 
 Arguments:
-  url                  URL of the Config Repo (git repository)
-
-Options:
-  --pick <n>           Install only a specific project template from the repo
-  --as <n>             Use a custom name for the installed project
-  --var K=V            Set a template variable (repeatable)
-  --token <t>          Authentication token for private repos
-  --force              Overwrite existing project with the same name
+  name                 Project to export
+  archive              Path to a .tar.gz project-config archive
 
 Examples:
-  cco project install https://github.com/team/config-repo
-  cco project install https://github.com/team/config-repo --pick saas-template --as my-saas
-  cco project install https://github.com/team/config-repo --var DB_HOST=localhost --var DB_PORT=5432
-  cco project install https://github.com/team/config-repo --token ghp_... --force
+  cco project export my-saas
+  cco project import ./my-saas.tar.gz
 ```
 
-**Auto-install packs**: if the template declares packs in its `packs:` list,
-they are automatically installed from the same Config Repo if available.
-Already-installed packs are skipped. Missing packs produce a warning.
-
-**Source tracking**: after install, `.cco/source` records the remote origin
-(URL, path, ref, commit hash, install date). This enables future updates via
-`cco project update <name>`. The `.cco/base/` directory stores the publisher's
-version at install time for 3-way merge during updates.
+> **Removed**: `cco project install` and `cco project publish` no longer exist. To share a
+> project, push its repo (the `<repo>/.cco/` rides the remote); to bootstrap a repo without a
+> committed `.cco/`, use `cco init`, `cco init --migrate`, or `cco project import`. To version
+> and multi-PC-sync your **personal** `~/.cco` store, use `cco config save/push/pull` (§3.21).
 
 ---
 
-### 3.21 `cco vault`
+### 3.21 `cco config` (personal `~/.cco` store)
 
-Git-backed configuration versioning for `user-config/`.
+Version and multi-PC-sync your **personal** global store (`~/.cco/` — `global/.claude/`,
+`packs/`, `templates/`). `~/.cco` is **always** a git-init'd working tree; only the remote is
+opt-in. This replaces the removed `cco vault` surface. (Project config in `<repo>/.cco/` rides
+each repo's **own** git remote with your normal git flow — `cco config` does not touch it.)
 
-#### `cco vault init [<path>]`
+#### `cco config save [-m <msg>]`
 
-Initialize git-backed config versioning.
-
-```
-Usage: cco vault init [<path>]
-
-Arguments:
-  path                 Path to initialize (default: user-config/)
-
-Examples:
-  cco vault init
-  cco vault init ~/my-config
-```
-
-#### `cco vault save [msg]`
-
-Commit config state with pre-commit summary and secret detection.
-
-> **Note**: `vault sync` is a deprecated alias for `vault save`.
+Stage and commit the `~/.cco` store with an allowlist + secret scan. Versioning is **explicit
+and manual** (no auto-commit). The allowlist commits only `packs/`, `templates/`,
+`global/.claude/` and the global `setup*.sh` / `mcp-packages.txt` / `languages` (never
+`git add -A`); the 2-pass secret scan refuses real secrets and exempts `*.example`.
 
 ```
-Usage: cco vault save [msg] [OPTIONS]
-
-Arguments:
-  msg                  Optional commit message (auto-generated if omitted)
+Usage: cco config save [-m <msg>] [--dry-run]
 
 Options:
-  --yes                Skip confirmation prompt
+  -m <msg>             Commit message (auto-generated if omitted)
   --dry-run            Show what would be committed without committing
 
 Examples:
-  cco vault save
-  cco vault save "Added react-guidelines pack"
-  cco vault save --dry-run
-  cco vault save --yes
+  cco config save
+  cco config save -m "Add react-guidelines pack"
+  cco config save --dry-run
 ```
 
-#### `cco vault diff`
+#### `cco config push` / `cco config pull`
 
-Show uncommitted changes by category.
-
-```
-Usage: cco vault diff
-```
-
-#### `cco vault log`
-
-Show commit history.
+Sync the `~/.cco` store to/from its opt-in personal remote (private by default; a public remote
+is allowed with a warning). Remote sync is explicit — never per-command. A non-fast-forward
+pull aborts and notifies (resolve in your IDE, as ordinary git).
 
 ```
-Usage: cco vault log [OPTIONS]
+Usage: cco config push
+       cco config pull
+
+Examples:
+  cco config push
+  cco config pull
+```
+
+> Team-sharing does **not** go through `~/.cco` (which holds your personal global config).
+> Share packs/templates via a **sharing repo** (`cco pack/template publish|install`), and share
+> a project via its own code repo remote. See [configuration-management.md](../user-guides/configuration-management.md).
+
+#### `cco config validate [--dry-run|--fix]`
+
+**Orphan-sanitization** of the global id-keyed internal state after a manual deletion: detect
+and report orphaned entries; with `--fix`, prune them (preview-first / confirmed). Warn, never
+hide; never automatic. STATE/CACHE are freely rebuildable (`cco resolve --scan`); DATA is pruned
+only on confirm.
+
+```
+Usage: cco config validate [--dry-run|--fix]
 
 Options:
-  --limit N            Show only the last N commits (default: 20)
+  --dry-run            Report orphans only (no changes)
+  --fix                Prune orphaned internal state (confirmed)
 
 Examples:
-  cco vault log
-  cco vault log --limit 5
+  cco config validate
+  cco config validate --fix
 ```
 
-#### `cco vault restore <ref>`
-
-Restore config to a previous state.
-
-```
-Usage: cco vault restore <ref>
-
-Arguments:
-  ref                  Git ref to restore (commit hash, tag, etc.)
-
-Examples:
-  cco vault restore abc1234
-  cco vault restore HEAD~3
-```
-
-#### `cco vault remote add <name> <url>`
-
-Add a remote to the vault.
-
-```
-Usage: cco vault remote add <name> <url>
-
-Examples:
-  cco vault remote add origin https://github.com/user/my-config.git
-```
-
-#### `cco vault push [<remote>]` / `cco vault pull [<remote>]`
-
-Push or pull vault to/from a remote.
-
-```
-Usage: cco vault push [<remote>]
-       cco vault pull [<remote>]
-
-Arguments:
-  remote               Remote name (default: origin)
-
-Examples:
-  cco vault push
-  cco vault pull
-  cco vault push backup
-```
-
-#### `cco vault status`
-
-Show vault state. With an active profile, also shows profile info, exclusive resources, and sync state with main.
-
-```
-Usage: cco vault status
-```
-
-#### `cco vault switch <name>`
-
-Switch to another profile. This is a top-level shortcut for `cco vault profile switch`.
-
-Requires a clean working tree (run `cco vault save` first) and no active Docker sessions.
-Each project exists on exactly one branch; switching profiles changes which projects are visible.
-
-```
-Usage: cco vault switch <name>
-
-Arguments:
-  name                 Profile name or 'main' to return to the shared branch
-
-Examples:
-  cco vault switch work
-  cco vault switch main
-```
-
-#### `cco vault move <project|pack> <name> <target>`
-
-Move a project or pack between profiles. Projects exist on exactly one branch — moving
-physically relocates the files via git. This is a top-level shortcut for the profile move operation.
-
-```
-Usage: cco vault move <project|pack> <name> <target> [--yes]
-
-Arguments:
-  project|pack         Resource type to move
-  name                 Resource name
-  target               Target profile name or 'main'
-
-Options:
-  --yes                Skip confirmation prompt
-
-Examples:
-  cco vault move project my-api work
-  cco vault move project my-api main
-  cco vault move pack corp-rules work
-```
-
-#### `cco vault remove <project|pack> <name>`
-
-Remove a resource from the current profile's branch. Deletes the resource files from the
-current branch only.
-
-```
-Usage: cco vault remove <project|pack> <name> [--yes]
-
-Arguments:
-  project|pack         Resource type to remove
-  name                 Resource name
-
-Options:
-  --yes                Skip confirmation prompt
-
-Examples:
-  cco vault remove project old-api
-  cco vault remove pack legacy-rules
-```
-
-#### `cco project delete <name>`
-
-Delete a project from disk entirely. When a vault is active, removes the project from ALL
-branches (profiles and main). This action is irreversible.
-
-```
-Usage: cco project delete <name> [--yes]
-
-Options:
-  --yes, -y            Skip confirmation prompt
-
-Examples:
-  cco project delete old-service
-  cco project delete old-service --yes
-```
-
-#### `cco vault profile create <name>`
-
-Create a new vault profile. Creates a git branch from main with an empty `.vault-profile` file.
-New profiles start empty — use `cco vault move` to assign projects to the new profile.
-
-```
-Usage: cco vault profile create <name>
-
-Arguments:
-  name                 Profile name (lowercase, hyphens allowed)
-
-Examples:
-  cco vault profile create work
-  cco vault profile create personal
-```
-
-#### `cco vault profile list`
-
-List all vault profiles with resource counts.
-
-```
-Usage: cco vault profile list
-```
-
-#### `cco vault profile show`
-
-Show current profile details including exclusive resources and sync state.
-
-```
-Usage: cco vault profile show
-
-Example output:
-  Profile: work
-  Branch: work
-  Sync state: up-to-date with main
-
-  Exclusive projects:
-    - work-api
-    - work-frontend
-
-  Exclusive packs:
-    - corporate-rules
-
-  Shared (from main):
-    - global/
-    - templates/ (2 template(s))
-    - packs/ (5 shared pack(s))
-
-  Uncommitted changes: 3 file(s)
-```
-
-#### `cco vault profile switch <name>`
-
-Switch to another profile. Alias for `cco vault switch`.
-
-Requires a clean working tree (run `cco vault save` first) and no active Docker sessions.
-Use `main` to switch back to the shared branch.
-
-```
-Usage: cco vault profile switch <name>
-
-Examples:
-  cco vault profile switch personal
-  cco vault profile switch main
-```
-
-#### `cco vault profile rename <new-name>`
-
-Rename the current profile (renames branch and updates `.vault-profile`).
-
-```
-Usage: cco vault profile rename <new-name>
-
-Examples:
-  cco vault profile rename work-2024
-```
-
-#### `cco vault profile delete <name>`
-
-Delete a profile. Requires the profile to be **empty** (no exclusive projects or packs).
-Use `--force` to delete a non-empty profile — this moves all exclusive resources to main first.
-
-```
-Usage: cco vault profile delete <name> [--yes] [--force]
-
-Options:
-  --yes                Skip confirmation prompt
-  --force, -f          Allow deleting non-empty profiles (moves resources to main)
-
-Examples:
-  cco vault profile delete old-profile
-  cco vault profile delete old-profile --yes --force
-```
-
-#### `cco vault profile move project|pack <name> <target>`
-
-Alias for `cco vault move`. Move a project or pack between profiles.
-
-```
-Usage: cco vault profile move project <name> <target>
-       cco vault profile move pack <name> <target>
-
-Examples:
-  cco vault profile move project my-api work
-  cco vault profile move pack corp-rules main
-```
-
-#### `cco vault profile add project|pack <name>` (deprecated)
-
-> **Deprecated**: Use `cco vault move` instead.
-
-```
-Usage: cco vault profile add project <name>
-       cco vault profile add pack <name>
-```
-
-#### `cco vault profile remove project|pack <name>`
-
-Alias for `cco vault remove`. Remove a resource from the current profile's branch.
-
-```
-Usage: cco vault profile remove project <name>
-       cco vault profile remove pack <name>
-```
+> This is the **orphan-sanitization** validate. **Share-readiness** validation of a project is
+> `cco project validate` (§3.14).
 
 ---
 
-### 3.22 `cco project update`
+### 3.21b `cco sync`
 
-Check for and apply updates from the remote source of an installed project.
-Uses 3-way merge to preserve your local customizations.
+Keep a project's config-bearing repos byte-identical by copying the committed `<repo>/.cco/`
+tree from a **source** repo to **target** repos on the same machine. This is a plain filesystem
+copy — **no merge engine, no profiles, no vault**. The synced set is the entire committed
+`<repo>/.cco/` (`project.yml`, `claude/**`, `mcp.json`, `setup.sh`, `mcp-packages.txt`, authored
+`packs/`, `secrets.env.example`) **minus** the gitignored `secrets.env`.
 
 ```
-Usage: cco project update <name> [--force] [--dry-run]
-       cco project update --all [--dry-run]
+Usage: cco sync [target] [--from <src>] [--dry-run|--auto-approve|--check]
+
+Positional = target; --from = source; default source = the current repo (cwd).
+
+| Command                          | Source       | Targets                     |
+|----------------------------------|--------------|-----------------------------|
+| cco sync                         | current repo | all repos in project.yml    |
+| cco sync <repo>                  | current repo | only <repo>                 |
+| cco sync --from <repo>           | <repo>       | all repos                   |
+| cco sync <repoA> --from <repoB>  | <repoB>      | only <repoA>                |
 
 Options:
-  --all       Update all installed projects
-  --force     Replace all files without interactive merge (.bak saved)
-  --dry-run   Show what would change without modifying files
+  --dry-run            Preview the diff, copy nothing
+  --auto-approve       Skip the confirmation prompt
+  --check              Exit-code only (for your own CI/hooks)
 
 Examples:
-  cco project update team-service          # Update one project from publisher
-  cco project update --all                 # Update all installed projects
-  cco project update team-service --dry-run  # Preview without applying
+  cco sync                      # Copy the cwd's .cco/ to all member repos
+  cco sync frontend             # Only the frontend repo
+  cco sync --from backend       # Use backend's .cco/ as the source
+  cco sync --dry-run
 ```
 
-**How it works**: fetches the latest version from the remote Config Repo,
-compares with the installed version via 3-way merge (base = publisher's version
-at install time, theirs = new publisher version, ours = your customizations).
-Offers interactive merge per file: (A)pply, (M)erge, (R)eplace+.bak, (K)eep,
-(S)kip, (D)iff, (N)ew-file.
+**Behavior**: resolve source + targets via the index, compute a truthful diff, and (unless
+`--auto-approve`) show it and ask to confirm. On confirm, copy the source set into each target
+**with the clobber-guard**: a target without `.cco/project.yml` (code-only member) simply
+receives a copy; a target whose `project.yml` `name` matches the source converges; a target
+that **hosts a different project** is **skipped with a warning** — never clobbered, with no
+`--force` override. To re-home such a repo, de-init its `.cco/` then sync, or re-init with
+`--sync`. Targets' git branches are irrelevant — sync is a filesystem copy; commit each repo
+with your normal git flow.
 
-After update, `.cco/source` is updated with the new commit hash and date,
-and `.cco/base/` is refreshed with the new publisher version for future merges.
-
-Only works on projects installed from a Config Repo (with remote `.cco/source`).
-For local projects, use `cco update --sync <name>` instead.
+Divergence is allowed and visible: `cco start` uses the chosen source and prints a non-blocking
+notice ("project repos have divergent .cco; started from <repo>; run `cco sync` to converge").
 
 ---
 
-### 3.23 `cco project internalize`
+### 3.22 Project sharing — by construction (no publish/install/update)
 
-Disconnect a project from its remote source, converting it to a local project.
+A project's config is **not** published or installed. The committed `<repo>/.cco/` rides each
+repo's own git remote (Axis 1+2 by construction): clone the repo and you have the project's
+config. There is therefore **no `cco project publish`, no `cco project install`, and no
+`cco project update`**.
+
+- **Get a shared project**: `git clone` the repo, then `cco start` (the `.cco/` is already
+  present), or `cco init --migrate` / `cco project import` to bootstrap a repo that lacks one.
+- **Update a shared project**: `git pull` the repo — the `.cco/` changes arrive as ordinary
+  commits (`git log -- .cco/` isolates config history). To converge a project's
+  config-bearing repos on this machine, run `cco sync` (§3.21b).
+- **Framework defaults** still flow into projects via `cco update --sync` (§3.16); upstream
+  pack/template updates via `cco update --check` + `cco pack/template update`.
+
+---
+
+### 3.23 `cco <res> internalize`
+
+Sever a **referenced resource's** external coupling — one intent, per-resource mechanism. For a
+**pack** or **template**, it cuts the upstream `url` so the resource becomes an authored local
+source. (A **project** Case-C disconnect — `<repo>/.cco` → `~/.cco/projects` — is post-v1.)
 
 ```
-Usage: cco project internalize <name> [--yes]
+Usage: cco <res> internalize <name> [--as <name>]
+
+Arguments:
+  res                  pack | template
+  name                 Resource to internalize
 
 Options:
-  --yes     Skip confirmation prompt (required in non-interactive mode)
+  --as <name>          Fork under a new name (keeps the original tracked)
 
 Examples:
-  cco project internalize team-service
-  cco project internalize team-service --yes
+  cco pack internalize my-docs-pack
+  cco pack internalize team-rules --as team-rules-local
 ```
 
-After internalizing:
-- The project becomes fully local
-- Framework updates apply directly via `cco update --sync`
-- Publisher updates are no longer checked or available
+After internalizing a pack/template:
+- The resource becomes a fully local authored **source** (no upstream `url`)
+- Upstream updates (`cco pack/template update`) are no longer checked or available
 - Your customizations are preserved
 
-Use this when the publisher is inactive, you want to diverge permanently,
-or you installed the project as a starting point (not for ongoing sync).
+The inverse is `cco project add … --url` (adopt a coordinate) or `cco pack publish` (publish
+yours). Caching a referenced pack (keeping its coordinate) is separate — the opt-in resolve
+prompt or `export --bundle-packs`; there is no `vendor` verb in v1.
 
 ---
 
-### 3.24 `cco project publish`
+### 3.25 `cco project add` / `cco project coords`
 
-Publish a project as a shareable template to a remote Config Repo.
-Includes a safety pipeline: migration check, secret scan, framework alignment
-warning, diff review, and per-file confirmation.
+Edit a project's referenced ids (repos/mounts/llms/packs) and keep their coordinates
+consistent across the project's units. Operates on the cwd's `<repo>/.cco/project.yml`.
 
-```
-Usage: cco project publish <name> [<remote>] [OPTIONS]
+#### `cco project add <type> <name> [OPTIONS]`
 
-Arguments:
-  name                 Project to publish
-  remote               Remote name or direct URL
-
-Options:
-  --message <msg>      Commit message (default: "publish project <name>")
-  --dry-run            Show what would be published with diff stat
-  --force              Overwrite remote version without confirmation
-  --yes                Skip interactive prompts (safety checks still apply)
-  --no-packs           Don't bundle the project's packs
-  --token <token>      Auth token for HTTPS remotes
-
-Examples:
-  cco project publish my-project alberghi
-  cco project publish my-project alberghi --no-packs
-  cco project publish my-project --dry-run
-  cco project publish my-project alberghi --yes  # Non-interactive
-```
-
-**Safety pipeline** (runs before push):
-
-1. **Migration check** (blocking): project must be on latest schema version
-2. **Framework alignment** (warning): reports pending framework updates
-3. **Secret scan** (blocking): checks filenames (`*.env`, `*.key`, `*.pem`) AND
-   file content (`API_KEY=`, `SECRET=`, `PASSWORD=`, token prefixes)
-4. **Publish-ignore**: excludes files matching `.cco/publish-ignore` patterns
-   (gitignore syntax — supports `**`, directory patterns, path-based patterns)
-5. **Diff review**: shows per-file changes vs last published version
-6. **Per-file confirmation**: (P)ublish/(S)kip/(D)iff/(A)bort per file
-
-Repo paths are automatically reverse-templated (`~/projects/api` becomes
-`{{REPO_API}}`). Runtime files (`.cco/`, `memory/`, `secrets.env`) are excluded.
-
-By default, packs listed in `project.yml` are bundled into the remote repo.
-Use `--no-packs` to skip this.
-
-**`.cco/publish-ignore`**: optional file in the project directory (gitignore
-syntax) that excludes matching files from every publish:
+Add a reference and, in one call, **embed its coordinate** in `project.yml` and optionally
+register its local path in the index (`--path`). `add-pack` is kept as an alias of `add pack`.
 
 ```
-# Don't publish local notes
-.claude/rules/local-*.md
-memory/
-*.draft
-```
-
----
-
-### 3.25 `cco project add-pack` / `cco project remove-pack`
-
-Add or remove a knowledge pack from a project's `packs:` list.
-
-```
-Usage: cco project add-pack <project> <pack>
+Usage: cco project add repo|mount|llms|pack <name> [OPTIONS]
+       cco project add-pack <project> <pack>          # alias of `add pack`
        cco project remove-pack <project> <pack>
 
+Options:
+  --url <url>          Coordinate URL (auto-derived from `origin` when --path is a clone)
+  --ref <ref>          Git ref / branch for repos and packs
+  --variant <v>        llms variant (e.g. full)
+  --readonly           Mark an extra mount read-only
+  --path <path>        Also register this name → local path in the index
+
 Examples:
-  cco project add-pack my-saas react-guidelines
+  cco project add repo backend --url git@github.com:org/backend.git --path ~/dev/backend
+  cco project add llms react --url https://react.dev/llms-full.txt --variant full
+  cco project add pack shared-pack --url https://github.com/org/cco-sharing.git --ref v1.0
+  cco project add-pack my-saas react-guidelines      # project-local authored pack (no url)
   cco project remove-pack my-saas react-guidelines
 ```
 
+#### `cco project coords --diff [--sync --from <unit>]`
+
+Check (and optionally reconcile) coordinate consistency across a project's units. `--sync`
+requires an explicit `--from` (never auto-elects a source).
+
+```
+Usage: cco project coords --diff [--sync --from <unit>]
+
+Examples:
+  cco project coords --diff
+  cco project coords --diff --sync --from backend
+```
+
+> Share-readiness (every referenced id has a reachable, machine-agnostic coordinate) is
+> verified by `cco project validate` (§3.14).
+
 ---
 
-### 3.26 `cco pack publish`
+### 3.26 `cco pack publish` / `cco template publish`
 
-Publish a pack to a remote Config Repo.
+Publish a pack (or template) to a remote **sharing repo** (a git repo holding `packs/` +
+`templates/`, discovered structure-based — no `manifest.yml`). Publishing is
+**sync-before-publish**: a subsequent publish does a 3-way merge against the recorded STATE
+base (aborts on conflict — "run `cco pack update` first"), never a blind overwrite.
 
 ```
 Usage: cco pack publish <name> [<remote>] [OPTIONS]
+       cco template publish <name> [<remote>] [OPTIONS]
 
 Arguments:
-  name                 Pack to publish
-  remote               Remote name or direct URL (default: from .cco/source publish_target)
+  name                 Pack/template to publish
+  remote               Remote name or direct URL (default: re-derived from the DATA remotes registry)
 
 Options:
   --message <msg>      Commit message (default: "publish pack <name>")
@@ -1378,19 +1265,24 @@ Options:
 
 Examples:
   cco pack publish react-guidelines alberghi
-  cco pack publish react-guidelines                  # uses remembered target
+  cco pack publish react-guidelines                  # re-derives the target from the registry
   cco pack publish react-guidelines --dry-run
 ```
 
-The remote argument is resolved in order: registered remote name, direct URL,
-or `publish_target` from `.cco/source`. Source-referencing packs are
-automatically internalized during publish (local pack unchanged).
+The remote argument is resolved in order: registered remote name, direct URL, or the publish
+target re-derived on demand by reverse-looking-up the resource's `url` in the DATA `remotes`
+registry. On publish, the pushed tree is recorded as the new STATE merge base.
+
+> **Templates**: `cco template publish|install|export|import` mirror the pack path and govern
+> the **template artifact's** distribution (a reusable library). The **scaffolded output** of a
+> template stays one-shot — no coordinate back, no auto-update.
 
 ---
 
 ### 3.27 `cco pack internalize`
 
-Convert a pack to fully self-contained and locally owned.
+Convert a pack to fully self-contained and locally owned (see also the unified
+`cco <res> internalize`, §3.23).
 
 ```
 Usage: cco pack internalize <name>
@@ -1406,11 +1298,10 @@ Performs two independent operations as needed:
    pack's own `knowledge/` directory and removes the `source:` field from
    `pack.yml`. The original source path is not preserved.
 
-2. **Config Repo disconnection**: If the pack was installed from a remote Config
-   Repo (i.e., `.cco/source` tracks a remote URL), sets the source to `local`
-   and records the previous origin as a comment. After disconnection, the pack
-   will no longer receive updates via `cco pack update` — it becomes a fully
-   local pack.
+2. **Sharing-repo disconnection**: If the pack was installed from a remote sharing
+   repo (its DATA `source` records an upstream `url`), cuts the upstream coordinate so the
+   pack becomes a local authored source. After disconnection, the pack will no longer receive
+   updates via `cco pack update` — it becomes a fully local pack.
 
 If neither condition applies, the command reports that the pack is already
 self-contained.
@@ -1419,12 +1310,13 @@ self-contained.
 
 ### 3.28 `cco remote`
 
-Manage named Config Repo remotes for publishing and installing.
+Manage named **sharing-repo** endpoints for publishing and installing packs/templates. The
+de-tokenized registry lives in DATA (`<data>/cco/remotes`); the token is isolated in STATE
+(`<state>/cco/remotes-token`, 0600, never synced).
 
 #### `cco remote add <name> <url> [--token <token>]`
 
-Register a named remote. Names must be lowercase alphanumeric with hyphens.
-If vault is initialized, the remote is also synced to the vault's git config.
+Register a named sharing-repo endpoint. Names must be lowercase alphanumeric with hyphens.
 Use `--token` to save an auth token for HTTPS repos.
 
 ```
@@ -1456,8 +1348,8 @@ Usage: cco remote list
 
 #### `cco remote set-token <name> <token>`
 
-Save or update an auth token for a registered remote. The token is stored
-in `.cco/remotes` (gitignored) and used automatically for HTTPS operations.
+Save or update an auth token for a registered remote. The token is stored in STATE
+(`<state>/cco/remotes-token`, 0600, never synced) and used automatically for HTTPS operations.
 
 ```
 Usage: cco remote set-token <name> <token>
@@ -1479,39 +1371,12 @@ Examples:
 
 ---
 
-### 3.29 `cco manifest`
-
-Manage the `manifest.yml` manifest for sharing packs and templates via Config Repos.
-
-#### `cco manifest refresh`
-
-Regenerate `manifest.yml` from `user-config/packs/` and `user-config/templates/`.
-
-```
-Usage: cco manifest refresh
-```
-
-#### `cco manifest validate`
-
-Cross-check `manifest.yml` against the actual files on disk.
-
-```
-Usage: cco manifest validate
-```
-
-#### `cco manifest show`
-
-Display `manifest.yml` contents.
-
-```
-Usage: cco manifest show
-```
-
----
-
 ### 3.30 `cco template`
 
-Manage project and pack templates. Native templates ship with the tool in `templates/`; user templates are stored in `user-config/templates/` and take priority over native ones with the same name.
+Manage project and pack templates. Native templates ship with the tool in `templates/`; user templates are stored in `~/.cco/templates/` and take priority over native ones with the same name. Templates can also be shared via a sharing repo (`cco template publish|install|export|import`, §3.26 — the full 2×2 mirrors packs).
+
+> **Removed**: there is no `cco manifest` / `manifest.yml`. Sharing-repo discovery is
+> structure-based (a sharing repo holds `packs/` + `templates/`, discovered via `git ls-tree`).
 
 #### `cco template list [--project|--pack]`
 
@@ -1543,7 +1408,7 @@ Examples:
 
 #### `cco template create <name> --project|--pack`
 
-Create a new user template by copying a base template. User templates are stored in `user-config/templates/` and take priority over native templates with the same name.
+Create a new user template by copying a base template. User templates are stored in `~/.cco/templates/` and take priority over native templates with the same name.
 
 ```
 Usage: cco template create <name> --project|--pack
@@ -1578,8 +1443,8 @@ Categories (combinable):
   (default)          Remove .bak backup files created by cco update
   --new              Remove .new files created by cco update --sync (New-file option)
   --tmp              Remove .tmp/ directories (left by cco start --dry-run --dump)
-  --generated        Remove .cco/docker-compose.yml (regenerated by cco start)
-  --all              All categories: .bak + .new + .tmp + .cco/docker-compose.yml
+  --generated        Remove the generated docker-compose.yml (regenerated by cco start)
+  --all              All categories: .bak + .new + .tmp + generated compose
 
 Scope options:
   --project <name>   Scope to a specific project only
@@ -1588,7 +1453,7 @@ Scope options:
 Examples:
   cco clean                         # Remove .bak files (global + all projects)
   cco clean --tmp                   # Remove .tmp/ dirs from all projects
-  cco clean --generated             # Remove .cco/docker-compose.yml from all projects
+  cco clean --generated             # Remove the generated docker-compose.yml from all projects
   cco clean --all                   # Remove all generated/temporary files
   cco clean --dry-run               # Preview everything that would be removed
   cco clean --project myapp         # Clean .bak files from a specific project
@@ -1596,16 +1461,19 @@ Examples:
   cco clean --tmp --dry-run         # Preview .tmp removal
 ```
 
-**Note:** `.cco/base/` directories are never removed by `cco clean`. They store the
+**Note:** the merge ancestors (`base/` in STATE) are never removed by `cco clean`. They store the
 diff/merge ancestors required for `cco update` discovery and `--sync` to function correctly.
+The generated compose and overlays live in CACHE (`<cache>/cco/projects/<id>/`), regenerated by `cco start`.
 
 ### 3.32 `cco llms`
 
 Manage llms.txt framework documentation. Downloads, stores, and serves official
 framework docs to coding agents during sessions.
 
-Files are stored centrally in `user-config/llms/<name>/` and referenced from
-packs (`pack.yml`) and projects (`project.yml`) via the `llms:` section.
+The downloaded **content** is cached per machine in CACHE (`~/.cache/cco/llms/<name>/`,
+re-fetchable). The llms **coordinate** (`url` + `variant`) is config and is embedded per-unit
+in the versioned manifest — referenced from packs (`pack.yml`) and projects (`project.yml`)
+via the `llms:` section.
 
 #### `cco llms install <url>`
 
@@ -1626,7 +1494,8 @@ Examples:
 
 Auto-detects available variants (`llms-full.txt`, `llms-medium.txt`, etc.) and
 downloads the best one (default: `full`). Always downloads the index `llms.txt`
-if available. Source metadata is stored in `.cco/source` for future updates.
+if available. The cache-state (etag, resolved URL, download timestamp) is kept alongside the
+content in CACHE; the `url`/`variant` coordinate is written into the referencing manifest.
 
 #### `cco llms list`
 
@@ -1680,13 +1549,49 @@ Removes an llms entry. Warns if referenced by packs or projects unless `--force`
 
 ## 4. Project Configuration Format (project.yml)
 
-See [project-yaml.md](project-yaml.md) for the complete project.yml field reference and knowledge pack format.
+`project.yml` lives in `<repo>/.cco/project.yml` and is **machine-agnostic**: it carries
+**logical names + coordinates** only — never real local paths. Each `repos:`/`llms:`/`packs:`/
+`extra_mounts:` entry carries its coordinate inline (`url`/`ref`/`variant`), identical across
+the project's config-bearing repos. Absolute paths come from the machine-local index
+(`<state>/cco/index`, set with `cco resolve`/`cco path`); there are no `@local` markers and no
+per-repo `local-paths.yml`.
+
+```yaml
+name: projectA
+repos:                   # all members by logical name + machine-agnostic coordinate
+  - name: backend
+    url: git@github.com:org/backend.git   # OPTIONAL bootstrap pointer (clone source for other PCs)
+    ref: main                             # OPTIONAL ref to check out on auto-clone (default: remote default branch)
+  - name: frontend
+    url: git@github.com:org/frontend.git
+llms:                    # referenced docs by name + coordinate (content → CACHE, re-fetched)
+  - name: react
+    url: https://react.dev/llms-full.txt  # MANDATORY for llms
+    variant: full
+extra_mounts:            # auxiliary mounts by logical name (coordinate OPTIONAL)
+  - name: shared-assets
+    url: git@github.com:org/assets.git
+    target: /workspace/assets             # OPTIONAL; default /workspace/<name>
+    readonly: true
+entry: backend           # OPTIONAL tie-breaker for `cco start projectA`; not a privilege
+packs:                   # referenced by name + OPTIONAL coordinate
+  - name: shared-pack
+    url: https://github.com/org/cco-sharing.git   # coordinate → the pack's sharing repo
+    ref: v1.0                                      #   url absent → project-local authored pack in <repo>/.cco/packs/
+```
+
+The host repo is **not** written in the file — it is the invoking repo at runtime. Per-user
+tags are **not** here either (they live in the DATA registry, never published). See
+[project-yaml.md](project-yaml.md) for the complete field reference and knowledge pack format.
 
 ---
 
-## 5. Generated .cco/docker-compose.yml
+## 5. Generated docker-compose.yml
 
-The CLI generates `.cco/docker-compose.yml` from `project.yml`. The generated file includes a header comment:
+The CLI generates the docker-compose file from `project.yml` into CACHE
+(`<cache>/cco/projects/<id>/docker-compose.yml`), never into the committed `<repo>/.cco/`. Mount
+sources are **host-absolute** (config, state, and cache live under three roots, so a single
+`--project-directory` anchor no longer suffices). The generated file includes a header comment:
 
 ```yaml
 # AUTO-GENERATED by cco CLI from project.yml
@@ -1707,38 +1612,38 @@ services:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/myapp
     volumes:
       # Auth: preferences + MCP servers (writable, synced from host)
-      - ../../user-config/global/claude-state/claude.json:/home/claude/.claude.json
+      - /home/me/.local/state/cco/claude.json:/home/claude/.claude.json
       # Auth: OAuth credentials (seeded from macOS Keychain, auto-refreshed by Claude)
-      - ../../user-config/global/claude-state/.credentials.json:/home/claude/.claude/.credentials.json
-      # Global config
-      - ../../user-config/global/.claude/settings.json:/home/claude/.claude/settings.json:ro
-      - ../../user-config/global/.claude/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
-      - ../../user-config/global/.claude/rules:/home/claude/.claude/rules:ro
-      - ../../user-config/global/.claude/agents:/home/claude/.claude/agents:ro
-      - ../../user-config/global/.claude/skills:/home/claude/.claude/skills:ro
-      # Project config
-      - ./.claude:/workspace/.claude
-      - ./project.yml:/workspace/project.yml:ro
-      # Session transcripts (enables /resume across rebuilds)
-      - ./.cco/claude-state:/home/claude/.claude/projects/-workspace
-      # Memory (vault-tracked, separate from transcripts)
-      - ./memory:/home/claude/.claude/projects/-workspace/memory
+      - /home/me/.local/state/cco/.credentials.json:/home/claude/.claude/.credentials.json
+      # Global config (~/.cco/global)
+      - /home/me/.cco/global/.claude/settings.json:/home/claude/.claude/settings.json:ro
+      - /home/me/.cco/global/.claude/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
+      - /home/me/.cco/global/.claude/rules:/home/claude/.claude/rules:ro
+      - /home/me/.cco/global/.claude/agents:/home/claude/.claude/agents:ro
+      - /home/me/.cco/global/.claude/skills:/home/claude/.claude/skills:ro
+      # Project config (the invoking repo's <repo>/.cco/claude/) + generated overlays (CACHE, :ro)
+      - /home/me/dev/backend/.cco/claude:/workspace/.claude
+      - /home/me/.cache/cco/projects/projectA/.claude/packs.md:/workspace/.claude/packs.md:ro
+      # Session transcripts (STATE; enables /resume across rebuilds)
+      - /home/me/.local/state/cco/projects/projectA/claude-state:/home/claude/.claude/projects/-workspace
+      # Memory (STATE; machine-local, no sync in v1; separate from transcripts)
+      - /home/me/.local/state/cco/projects/projectA/session/memory:/home/claude/.claude/projects/-workspace/memory
       # Global MCP servers (optional, merged into ~/.claude.json by entrypoint)
-      # - ../../user-config/global/.claude/mcp.json:/home/claude/.claude/mcp-global.json:ro
+      # - /home/me/.cco/global/.claude/mcp.json:/home/claude/.claude/mcp-global.json:ro
       # Project MCP servers (optional, Claude Code expands ${VAR} natively)
-      # - ./mcp.json:/workspace/.mcp.json:ro
+      # - /home/me/dev/backend/.cco/mcp.json:/workspace/.mcp.json:ro
       # Project setup script (optional, executed by entrypoint at runtime)
-      # - ./setup.sh:/workspace/setup.sh:ro
+      # - /home/me/dev/backend/.cco/setup.sh:/workspace/setup.sh:ro
       # Project MCP packages (optional, installed by entrypoint at runtime)
-      # - ./mcp-packages.txt:/workspace/mcp-packages.txt:ro
-      # Repositories
-      - ~/projects/backend-api:/workspace/backend-api
-      - ~/projects/frontend-app:/workspace/frontend-app
-      - ~/projects/shared-libs:/workspace/shared-libs
+      # - /home/me/dev/backend/.cco/mcp-packages.txt:/workspace/mcp-packages.txt:ro
+      # Repositories (paths from the machine-local index)
+      - /home/me/dev/backend:/workspace/backend
+      - /home/me/dev/frontend:/workspace/frontend
+      - /home/me/dev/shared-libs:/workspace/shared-libs
       # Extra mounts
-      - ~/documents/api-specs:/workspace/docs/api-specs:ro
+      - /home/me/documents/api-specs:/workspace/docs/api-specs:ro
       # Git identity
-      - ~/.gitconfig:/home/claude/.gitconfig:ro
+      - /home/me/.gitconfig:/home/claude/.gitconfig:ro
       # Docker socket
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
@@ -1756,7 +1661,10 @@ networks:
     driver: bridge
 ```
 
-> **Note**: Conditional mounts (Global MCP, Project MCP, setup.sh, mcp-packages.txt) are only included when the corresponding file exists. They are shown commented out above for reference.
+> **Note**: Container paths are unchanged — only the host-side mount **sources** move to the
+> `~/.cco` / STATE / CACHE roots. Conditional mounts (Global MCP, Project MCP, setup.sh,
+> mcp-packages.txt) are only included when the corresponding file exists. They are shown
+> commented out above for reference.
 
 ---
 
@@ -1766,7 +1674,7 @@ When `docker.mount_socket: true` is set in `project.yml`, the orchestrator deplo
 
 ### How it works
 
-1. `cco start` generates `.cco/managed/policy.json` from `project.yml` docker settings
+1. `cco start` generates the proxy `policy.json` from `project.yml` docker settings into CACHE (`<cache>/cco/projects/<id>/managed/policy.json`, overlaid `:ro`)
 2. The entrypoint starts `cco-docker-proxy` as root, listening on `/var/run/docker-proxy.sock`
 3. The real socket (`/var/run/docker.sock`) is locked to `chmod 600` (root-only)
 4. `DOCKER_HOST` is set to the proxy socket — all Docker CLI commands go through the proxy
@@ -1808,7 +1716,7 @@ If the proxy fails to start, the real socket remains locked (`chmod 600`). Docke
 | Docker image not built | `Error: Docker image 'claude-orchestrator:latest' not found. Run 'cco build' first.` |
 | Docker not running | `Error: Docker daemon is not running. Start Docker Desktop.` |
 | Port conflict | `Error: Port 3000 is already in use. Stop the conflicting service or use --port to remap.` |
-| Project already exists | `Error: Project 'foo' already exists at user-config/projects/foo/` |
+| Repo already initialized | `Error: this repo already has a .cco/ (run 'cco start' or 'cco join'/'cco forget' to change it)` |
 | Malformed secrets.env | `Warning: secrets.env:3: skipping malformed line (expected KEY=VALUE)` |
 
 ---
@@ -1834,18 +1742,18 @@ Each project can include a `mcp.json` file using Claude Code's native `.mcp.json
 }
 ```
 
-The `${VAR}` placeholders are expanded **natively by Claude Code** inside the container. The env vars must be available in the container environment via `user-config/global/secrets.env`, `project.yml` `docker.env`, or `--env` CLI flags.
+The `${VAR}` placeholders are expanded **natively by Claude Code** inside the container. The env vars must be available in the container environment via `~/.cco/secrets.env` (global), the project's `<repo>/.cco/secrets.env`, `project.yml` `docker.env`, or `--env` CLI flags.
 
 **Important**: If a `${VAR}` reference in `mcp.json` cannot be resolved (env var not set), Claude Code will fail to parse the entire file and show "No MCP servers configured".
 
-### 8.2 Global MCP (`user-config/global/.claude/mcp.json`)
+### 8.2 Global MCP (`~/.cco/global/.claude/mcp.json`)
 
 MCP servers defined here are available in all projects. The entrypoint merges global and project MCP servers into `~/.claude.json` at container startup using `jq`. This ensures MCP servers are available via the user-scope mechanism (most reliable).
 
-### 8.3 Secrets (`user-config/global/secrets.env`)
+### 8.3 Secrets (`~/.cco/secrets.env`)
 
 ```bash
-# user-config/global/secrets.env — gitignored
+# ~/.cco/secrets.env — global secrets, gitignored
 GITHUB_TOKEN=ghp_...
 LINEAR_API_KEY=lin_api_...
 ```
@@ -1858,7 +1766,7 @@ Loaded by `cco start` and `cco new` as runtime `-e` flags. Never written to `doc
 
 Bash/Zsh completion for:
 - `cco start <TAB>` → list project names
-- `cco project create <TAB>` → suggest name patterns
+- `cco join <TAB>` → list projects available to join
 - `cco stop <TAB>` → list running sessions
 
 Not in v1 scope but trivial to add later.

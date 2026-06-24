@@ -37,31 +37,31 @@ source ~/.zshrc
 # or add this line to ~/.bash_profile to load .bashrc:
 #   [[ -f ~/.bashrc ]] && source ~/.bashrc
 
-# 3. Initialize user configuration and build Docker image
-cco init
+# 3. Build the Docker image
+cco build
 ```
-
-`cco init` performs four operations:
-1. Copies user defaults to `user-config/global/.claude/` (agents, skills, rules, settings)
-2. Creates the `user-config/projects/` directory
-3. Creates the **tutorial project** — an interactive guide to learn and configure cco
-4. Runs `cco build` to build the Docker image
 
 > **Tip**: Run `cco start tutorial` to start the interactive tutorial. It helps you
 > learn cco concepts, set up your first project, create knowledge packs, and
 > customize your default rules and workflow — all through guided conversation.
+
+`cco init` is the entry point for a project (see below). The first time you run
+it inside a repo, it also seeds your **personal store** at `~/.cco/` from the
+framework defaults (agents, skills, rules, settings → `~/.cco/global/.claude/`).
+This global-ensure is idempotent — it runs once and is a no-op afterwards.
 
 ---
 
 ## Quick use
 
 ```bash
-# Create a project
-cco project create my-app --repo ~/projects/my-app
+# Initialize a project — run inside the repo it serves
+cd ~/projects/my-app
+cco init                                  # scaffolds <repo>/.cco/ + registers the project
 
-# Configure the project
-vim user-config/projects/my-app/project.yml         # repos, ports, auth
-vim user-config/projects/my-app/.claude/CLAUDE.md   # instructions for Claude
+# Configure the project (config lives inside the repo, under .cco/)
+vim ~/projects/my-app/.cco/project.yml        # repos, ports, auth
+vim ~/projects/my-app/.cco/claude/CLAUDE.md   # instructions for Claude
 
 # Start a session
 cco start my-app
@@ -69,6 +69,19 @@ cco start my-app
 # Tip: in the first session, use /init-workspace to automatically
 # generate a detailed CLAUDE.md based on the codebase
 ```
+
+To work on a project someone has already shared (its `<repo>/.cco/` is committed
+in the repo), clone the repo and register it:
+
+```bash
+git clone <repo-url> ~/projects/my-app
+cd ~/projects/my-app
+cco join my-app                           # register an existing <repo>/.cco/
+cco start my-app
+```
+
+To migrate a project from a legacy central installation into its repo, use
+`cco init --migrate <project>`.
 
 For temporary sessions without creating a project:
 
@@ -83,13 +96,14 @@ cco new --repo ~/projects/api --repo ~/projects/frontend --port 3000:3000
 
 | Command | Description |
 |---------|-------------|
-| `cco init` | Initialize user configuration and build image |
 | `cco build` | Build the Docker image |
 | `cco build --no-cache` | Full rebuild (updates Claude Code) |
+| `cco init` | Scaffold `<repo>/.cco/` in the current repo (+ ensures `~/.cco/global` on first use) |
+| `cco join <project>` | Register an existing `<repo>/.cco/` (shared by a teammate) |
+| `cco init --migrate <project>` | Migrate a project from a legacy central install into its repo |
 | `cco start <project>` | Start session for a configured project |
 | `cco new --repo <path>` | Temporary session with specific repositories |
-| `cco project create <name>` | Create a new project from template |
-| `cco project list` | List available projects |
+| `cco list` | List available projects |
 | `cco update` | Run migrations + discover available config updates |
 | `cco update --sync` | Interactively sync config from framework defaults |
 | `cco clean` | Remove .bak files from update |
@@ -101,12 +115,19 @@ For the complete CLI reference, see [cli.md](../reference/cli.md).
 
 ## Project configuration
 
-Each project lives in `user-config/projects/<name>/` and contains:
+Each project's config lives **inside the repo it serves**, under `<repo>/.cco/`,
+and is committed with the code so teammates get the same setup. It contains:
 
 - **`project.yml`** — repositories to mount, ports, environment variables, authentication method
-- **`.claude/CLAUDE.md`** — Claude-specific instructions
-- **`.claude/settings.json`** — override global settings (optional)
-- **`.claude/agents/`** — project-specific subagents (optional)
+- **`claude/CLAUDE.md`** — Claude-specific instructions
+- **`claude/settings.json`** — override global settings (optional)
+- **`claude/agents/`** — project-specific subagents (optional)
+- **`secrets.env`** — credentials and tokens (gitignored, per user)
+
+Personal, cross-project resources live in your store at `~/.cco/`
+(`global/.claude/`, `packs/`, `templates/`). Machine-local state (the
+name→path index, transcripts, memory, caches) lives in hidden XDG directories
+(`~/.local/state/cco`, `~/.cache/cco`, `~/.local/share/cco`) and is never hand-edited.
 
 For the complete `project.yml` format, see [project-yaml.md](../reference/project-yaml.md).
 
@@ -119,7 +140,7 @@ For the complete `project.yml` format, see [project-yaml.md](../reference/projec
 | Docker daemon not running | Start Docker Desktop (macOS) or `sudo systemctl start docker` (Linux) |
 | Image build fails | `cco build --no-cache` — check internet connection and Docker disk space |
 | Port conflict | `cco start my-app --port 3001:3000` to remap |
-| Image not found | Run `cco build` (should happen automatically during `cco init`) |
+| Image not found | Run `cco build` |
 
 For more troubleshooting, see [troubleshooting.md](../user-guides/troubleshooting.md).
 
@@ -130,4 +151,4 @@ For more troubleshooting, see [troubleshooting.md](../user-guides/troubleshootin
 - [Your first project](first-project.md) — step-by-step tutorial
 - [Key concepts](concepts.md) — context hierarchy, knowledge packs, agent teams
 - [Knowledge packs](../user-guides/knowledge-packs.md) — reusable cross-project documentation
-- [Configuration management](../user-guides/configuration-management.md) — vault, sharing, updates
+- [Configuration management](../user-guides/configuration-management.md) — git on `.cco/`, `cco config`, sharing, updates
