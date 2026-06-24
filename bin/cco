@@ -88,6 +88,7 @@ source "$LIB_DIR/cmd-project-install.sh"
 source "$LIB_DIR/cmd-project-pack-ops.sh"
 source "$LIB_DIR/cmd-project-add.sh"
 source "$LIB_DIR/cmd-project-publish.sh"
+source "$LIB_DIR/cmd-project-export-import.sh"
 source "$LIB_DIR/cmd-project-update.sh"
 source "$LIB_DIR/cmd-pack.sh"
 source "$LIB_DIR/cmd-llms.sh"
@@ -189,6 +190,8 @@ Commands:
   install <url>          Install project template from a remote Config Repo
   update <name>          Update an installed project from its remote source
   publish <name> <remote> Publish project as template to a Config Repo
+  export [name]          Export a project's config as a .tar.gz snapshot
+  import <archive>       Import a project from a .tar.gz snapshot
   internalize <name>     Disconnect from remote source, convert to local
   add <res> <name>       Embed a repo|mount|llms|pack coordinate (cwd-first)
   add-pack <proj> <pack> Add a knowledge pack to a project
@@ -208,6 +211,8 @@ EOF
             install)     cmd_project_install "$@" ;;
             update)      cmd_project_update "$@" ;;
             publish)     cmd_project_publish "$@" ;;
+            export)      cmd_project_export "$@" ;;
+            import)      cmd_project_import "$@" ;;
             internalize) cmd_project_internalize "$@" ;;
             add)         cmd_project_add "$@" ;;
             add-pack)    cmd_project_add_pack "$@" ;;
