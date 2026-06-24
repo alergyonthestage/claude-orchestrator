@@ -12,26 +12,28 @@ Branch `feat/vault/decentralized-config`, commits **LOCAL** (the maintainer push
 
 ## ⏩ RESUME STATUS (read this FIRST)
 
-> **✅ P4→P5 ADHERENCE AUDIT DONE 2026-06-24 → PHASE 4 CLOSED.** The §1 first-action audit has run
-> (`reviews/24-06-2026-p4-p5-adherence-review.md`, 4 parallel read-only lenses + adversarial verify):
-> Phase-4 code **fully conformant — 0 code 🔴 / 0 blockers / 0 design gaps**. One **doc-only** cluster
-> (shipped-behavior docs documented P5-not-built verbs as shipped) → maintainer Option A, **FIXED** (🚧
-> markers, suite 827/1). Transitional Registry refreshed (P0–P4 retired; live = P4-5d + the 1 straddler).
-> **§1 is satisfied — a fresh session can skip it and go to P5 build (§3); propose the build order +
-> sub-commit decomposition to the maintainer BEFORE coding (§0/§3).** First P5 unit likely = **P4-5d**.
+> **✅ PHASE 4 CLOSED + P5 BUILD STARTED (2026-06-24).** The §1 audit ran
+> (`reviews/24-06-2026-p4-p5-adherence-review.md`): Phase-4 code **fully conformant — 0 code 🔴**; one
+> doc-only forward-written-marks cluster FIXED. **§1 is satisfied — skip it.** P5 build order is
+> maintainer-confirmed (see §3 below): P5-0 → P5-1(a/b/c) → P5-2 → P5-3 → P5-4 → P5-5 → P5-6 → P5-doc →
+> dogfooding; **index namespacing = POST-V1**. **Done:** **P5-0 ✅** `2f93de8` (llms name-derivation —
+> path segment wins over domain; resolved the last straddler → **baseline 828/0**); **P5-1a ✅** `95b7767`
+> (managed runtime browser/github → CACHE via new `_cco_project_cache_managed`; the 3 readers
+> stop/chrome/start-port migrated central→index+CACHE — fixes a latent read-where-start-no-longer-writes bug).
+> **▶ RESUME AT P5-1b** (project.yml readers → index), then **P5-1c** (harness/bin teardown). The full
+> P5-1b/c call-site map + method is in the live progress note `decentralized-config-impl-progress.md`.
 
-**Phases 0–4 ✅ CLOSED. Phase 4 build (P4-1…P4-5c) + P4-doc + P4→P5 audit ✅ COMPLETE. Suite 827/1.** The
-**1** = `test_resolve_name_from_full_variant_url` (P5 llms straddler — resolved in P5). Delta-green is
-measured against this 1; a 2nd failure is a regression. Run tests with the hatch:
+**Phases 0–4 ✅ CLOSED. P5 in progress (P5-0 ✅ + P5-1a ✅). Suite 828/0** — delta-green is now measured
+against **ZERO** failures (any failure = regression). Run tests with the hatch:
 `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test` (`--file <name>` / `--filter <substr>` to scope).
 
 **The `decentralized-config` design is the single SOURCE OF TRUTH**, precedence:
 `guiding-principles.md` (P1–P18) → ADRs (0005–0027) → living `design.md` → `requirements.md`. The more
 specific/authoritative wins; **record any reconciliation**; a genuine design gap ⇒ **PAUSE and discuss**.
 
-**First actions:** (1) `git log --oneline -15` + read the live progress note
-`decentralized-config-impl-progress.md` (the cursor + full P4 detail); (2) re-confirm the baseline 827/1;
-(3) **run the P4→P5 adherence audit (§1) before building.**
+**First actions (resume):** (1) `git log --oneline -15` + read the live progress note
+`decentralized-config-impl-progress.md` (cursor: P5-0/P5-1a done, P5-1b/c call-site map); (2) re-confirm
+baseline **828/0**; (3) **skip §1 (audit done) — resume the P5 build at P5-1b** (§3 grouping below).
 
 ---
 
@@ -56,7 +58,12 @@ specific/authoritative wins; **record any reconciliation**; a genuine design gap
 
 ---
 
-## 1. FIRST ACTION — the P4→P5 adherence audit (the boundary check)
+## 1. FIRST ACTION — the P4→P5 adherence audit (the boundary check) — ✅ DONE 2026-06-24
+
+> **✅ COMPLETE — `reviews/24-06-2026-p4-p5-adherence-review.md`.** Phase-4 code fully conformant (0 code
+> 🔴); doc-only forward-written-marks cluster fixed; registry refreshed; roadmaps reconciled. **A resuming
+> session SKIPS this section** and goes to §3 (P5 build, resume at P5-1b). The playbook below is retained
+> as the recurring boundary-check reference. The baseline is now **828/0** (P5-0 resolved the straddler).
 
 Run the recurring **`implementation-review-handoff.md`** playbook (read-only, code-grounded, 4-state
 classify ✅conformant/❌missing/🟡hybrid-intentional/🔴hybrid-error; the V multi-agent methodology, scaled to
@@ -88,6 +95,15 @@ Transitional Registry + roadmaps. **If 0 🔴 / 0 blockers → Phase 4 CLOSED; p
 7. The code (re-grep — line numbers drift).
 
 ## 3. Scope — Phase 5 (the §6 deferred list, on the P4 substrate)
+
+> **✅ BUILD ORDER CONFIRMED (maintainer, 2026-06-24):** P5-0 llms-fix → **P5-1** P4-5d teardown
+> (a managed→CACHE ✅ · b project.yml-readers→index · c harness/bin teardown) → **P5-2** `cco forget` +
+> `cco config validate` → **P5-3** three-layer pack resolution + `internalize` + `export --bundle-packs` →
+> **P5-4** `cco project validate` + `cco project coords` → **P5-5** `cco update --check` → **P5-6**
+> `cco config protect` → **P5-doc** (remove the 🚧 markers as each ships) → **pre-merge dogfooding**.
+> **Index per-project namespacing = POST-V1** (confirmed; global-flat stays, ADR-0022 D2).
+> **Done:** P5-0 `2f93de8`, P5-1a `95b7767` (managed→CACHE + the 3 readers). **▶ RESUME AT P5-1b.**
+> Per-unit: code-ground fresh (line numbers drift), decompose into sub-commits, confirm micro-UX, delta-green.
 
 Each item is its own dependency-ordered unit; **propose the build order + sub-commit decomposition to the
 maintainer before coding** (per §0). Suggested grouping (confirm):
