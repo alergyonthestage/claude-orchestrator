@@ -174,7 +174,7 @@ state-sync (DATA/STATE cross-PC, R-state-sync) · local-file llms (F1) · Case-C
 
 ## 8. Current position & how to start a phase
 
-**Phase 0 (substrate) + Phase 1 (core local) + Phase 2 (migration & bootstrap) are ✅ CLOSED**
+**Phases 0–3 are ✅ CLOSED**
 (`feat/vault/decentralized-config`, local). P0: T1 resolver+H4+L5 · T2a index API · T3 coordinate parsers ·
 T4-remotes M3 split · Commit A (repos/mount → STATE index) · Commit B (session-mount bucket re-point +
 harness HOME flip) · T8 (`.claude` overlays → CACHE `:ro`, ADR-0005 F1/F2/F3). P1: 6 commits
@@ -184,18 +184,22 @@ P2-2 H6 base/meta→STATE keyed-by-`name` + global-meta decompose [16→8] · P2
 `cco update` · P2-4 `cco init --migrate` lazy + `cco join` + migration 013 + `migrations/{pack,template}/` ·
 P2-5 D5 observability; **D-start re-sequenced P2-5 → P3**). Suite **1087/8** delta-green. **P2→P3 adherence
 audit ✅ DONE** (`reviews/23-06-2026-impl-adherence-review.md`: P2 conformant, 0 🔴; T5 retired; baseline
-16→8). **Phase 3 IN PROGRESS (2026-06-23) — P3-1/P3-2/P3-3/P3-3b ✅ DONE, the vault/profile world REMOVED +
-`cco init` is the single decentralized project entry verb, suite 921/3:** P3-1a `36660fd` (decentralized
+16→8). **Phase 3 ✅ CLOSED (2026-06-24) — P3-1…P3-5 ✅ DONE, the vault/profile world REMOVED,
+`cco init` is the single decentralized project entry verb, the config-editor is a built-in (ADR-0027), and
+the shipped-behavior doc cutover sweep + `_archive/` are done, suite 936/3:** P3-1a `36660fd` (decentralized
 `cco start` read-path) · P3-1b `365d16f` (D-start UX) · P3-2a `548f2e5` (`cco tag`/`cco list`) · P3-2b
 `f7f41c1` (`cco config save/push/pull`) · P3-3 `a76e1f6` (delete `cmd-vault.sh` + D33/D32; remove
 `test_vault*.sh`) · **P3-3b** (ADR-0026) `cco init` = idempotent global-ensure (`~/.cco/global`) + per-repo
 `<repo>/.cco/` scaffold + index-register; `cco project create` deleted — build **re-sequenced (Option B)**
 into `9e15924` (docs) + `35f5797` (global-home cutover `GLOBAL_DIR`→`~/.cco/global` + `init_global` helper) +
 `d9e44a2` (init transform + §3b marker-gate). Tier-2 verbs + `@local` block + manifest code deferred → P4.
-**Next = P3-4 (config-editor rehome) + P3-5 (shipped-behavior doc cutover sweep)** — launch handoff
-**`P3cd-handoff-config-editor-and-docs.md`** (first action: a P3-3b→P3-4 adherence audit, then implement;
-P3-5 is inventory-driven via `resource-coherence-inventory.md`). The parent
-**`P3-handoff-legacy-cutover.md`** remains the P3 methodology reference. After P3-5 → Phase 4 (sharing core).
+**P3-4 ✅** config-editor built-in + `--mount` + edit-protection → ADR-0027 (`531a0f8`/`2783ce5`/`f590efe`/
+`871993e`). **P3-5 ✅** shipped-behavior doc cutover sweep A/B+C + Section D archive (`5c6ad29`/`141e24e`/
+`56967cf`/`a3e0618`/`c3cb598`). Suite **936/3**. **Phase 3 CLOSED.** **Next = Phase 4 (sharing core)** —
+launch handoff **`P4-handoff-sharing-core.md`** (first action: a P3→P4 adherence audit, then build along
+`design.md §9 P4` + `§11 row 4`: source→DATA + manifest removal + sync-before-publish + 2×2 wiring + the
+tier-2/`@local`/manifest legacy teardown). The retired per-cycle P3 handoffs
+(`P3-handoff-legacy-cutover.md`, `P3cd-…`, `P3b-…`, `P3-5-…`) remain as P3 methodology history.
 
 To start any phase: (1) run **`implementation-review-handoff.md`** (read-only adherence/gap audit) at the
 phase boundary; (2) open that phase's **launch handoff** (`P3-handoff-legacy-cutover.md` for Phase 3) for
