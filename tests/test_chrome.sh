@@ -71,8 +71,7 @@ browser:
   enabled: true
   cdp_port: 9300
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
 

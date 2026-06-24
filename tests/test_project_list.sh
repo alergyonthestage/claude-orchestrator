@@ -42,6 +42,8 @@ test_project_list_shows_repo_count() {
     setup_mocks "$mock_bin"
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
+    seed_index_path "repo-a" "/some/repo-a"
+    seed_index_path "repo-b" "/some/repo-b"
     create_project "$tmpdir" "multi-repo" "$(cat <<YAML
 name: multi-repo
 description: "Test"
@@ -51,10 +53,8 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: /some/repo-a
-    name: repo-a
-  - path: /some/repo-b
-    name: repo-b
+  - name: repo-a
+  - name: repo-b
 YAML
 )"
     run_cco project list

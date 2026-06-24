@@ -356,7 +356,7 @@ test_dry_run_includes_llms_mounts() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_llms_entry "$tmpdir" "svelte"
-    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nllms:\n  - svelte\nrepos:\n  - path: %s\n    name: dummy\n' "$CCO_DUMMY_REPO")"
+    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nllms:\n  - svelte\nrepos:\n  - name: dummy-repo\n')"
     git -C "$CCO_DUMMY_REPO" init -q 2>/dev/null || true
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
@@ -369,7 +369,7 @@ test_dry_run_includes_llms_in_packs_md() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_llms_entry "$tmpdir" "svelte" "llms-full.txt"
-    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nllms:\n  - svelte\nrepos:\n  - path: %s\n    name: dummy\n' "$CCO_DUMMY_REPO")"
+    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nllms:\n  - svelte\nrepos:\n  - name: dummy-repo\n')"
     git -C "$CCO_DUMMY_REPO" init -q 2>/dev/null || true
     run_cco start "test-proj" --dry-run --dump
     local packs_md="$DRY_RUN_DIR/.claude/packs.md"

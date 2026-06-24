@@ -51,11 +51,11 @@ _generate_workspace_yml() {
                     desc=$(awk -v name="$repo_name" '
                         /^repos:/ { in_repos=1; next }
                         in_repos && /^[^ #]/ { exit }
-                        in_repos && /^  - / { in_repo=0 }
-                        in_repos && /^    name:/ {
-                            sub(/^    name: */, ""); gsub(/["\047]/, "")
-                            if ($0 == name) in_repo=1
+                        in_repos && /^  - name:/ {
+                            sub(/^  - name: */, ""); gsub(/["\047]/, "")
+                            in_repo = ($0 == name); next
                         }
+                        in_repos && /^  - / { in_repo=0 }
                         in_repos && in_repo && /^    description:/ {
                             sub(/^    description: */, ""); gsub(/["\047]/, ""); print; exit
                         }

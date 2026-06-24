@@ -27,8 +27,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - $pack_name
 YAML
@@ -95,8 +94,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - multi-file-pack
 YAML
@@ -140,8 +138,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - pack-a
   - pack-b
@@ -187,8 +184,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - nonexistent-pack
 YAML
@@ -223,8 +219,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - desc-pack
 YAML
@@ -257,8 +252,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - nodesc-pack
 YAML
@@ -301,6 +295,8 @@ test_workspace_yml_contains_repo_names() {
     local repo_a="$tmpdir/repo-a"
     local repo_b="$tmpdir/repo-b"
     mkdir -p "$repo_a" "$repo_b"
+    seed_index_path "repo-a" "$repo_a"
+    seed_index_path "repo-b" "$repo_b"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -309,10 +305,8 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $repo_a
-    name: repo-a
-  - path: $repo_b
-    name: repo-b
+  - name: repo-a
+  - name: repo-b
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -343,8 +337,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - my-pack
 YAML
@@ -360,6 +353,7 @@ test_workspace_yml_generated_with_repos() {
     setup_global_from_defaults "$tmpdir"
     local repo_dir="$tmpdir/my-repo"
     mkdir -p "$repo_dir"
+    seed_index_path "my-repo" "$repo_dir"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -368,8 +362,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $repo_dir
-    name: my-repo
+  - name: my-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -387,6 +380,7 @@ test_workspace_yml_seeds_description_from_project_yml() {
     setup_global_from_defaults "$tmpdir"
     local repo_dir="$tmpdir/my-repo"
     mkdir -p "$repo_dir"
+    seed_index_path "my-repo" "$repo_dir"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -395,8 +389,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $repo_dir
-    name: my-repo
+  - name: my-repo
     description: "Seeded from project.yml"
 YAML
 )"
@@ -413,6 +406,7 @@ test_workspace_yml_idempotent() {
     setup_global_from_defaults "$tmpdir"
     local repo_dir="$tmpdir/my-repo"
     mkdir -p "$repo_dir"
+    seed_index_path "my-repo" "$repo_dir"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -421,8 +415,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $repo_dir
-    name: my-repo
+  - name: my-repo
 YAML
 )"
     # First run
@@ -495,8 +488,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - skill-pack
 YAML
@@ -523,8 +515,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - agent-pack
 YAML
@@ -551,8 +542,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - rules-pack
 YAML
@@ -586,8 +576,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - k-pack
 YAML
@@ -618,8 +607,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - ro-pack
 YAML
@@ -662,8 +650,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - no-copy-pack
 YAML
@@ -725,8 +712,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - pack-a
   - pack-b
@@ -756,8 +742,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - pack-a
   - pack-b
@@ -787,8 +772,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - pack-a
   - pack-b
@@ -827,8 +811,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - bad-indent
 YAML
@@ -858,8 +841,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - bad-indent
 YAML
@@ -898,8 +880,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - bad-k
 YAML

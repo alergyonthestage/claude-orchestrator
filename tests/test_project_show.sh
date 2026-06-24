@@ -25,11 +25,11 @@ test_project_show_lists_repos() {
     setup_global_from_defaults "$tmpdir"
     local repo_dir="$tmpdir/my-repo"
     mkdir -p "$repo_dir"
+    seed_index_path "my-repo" "$repo_dir"
     create_project "$tmpdir" "my-proj" "$(cat <<YAML
 name: my-proj
 repos:
-  - path: $repo_dir
-    name: my-repo
+  - name: my-repo
 YAML
 )"
     run_cco project show "my-proj"
@@ -95,8 +95,7 @@ test_project_show_referenced_by() {
     index_set_project_repos projB shared
     create_project "$tmpdir" projA "name: projA
 repos:
-  - path: \"@local\"
-    name: shared"
+  - name: shared"
     run_cco project show projA
     assert_output_contains "also referenced by: projB"
 }
@@ -110,8 +109,7 @@ test_project_show_member_role_host() {
     seed_index_path mainrepo "$hostrepo"
     create_project "$tmpdir" projA "name: projA
 repos:
-  - path: \"@local\"
-    name: mainrepo"
+  - name: mainrepo"
     run_cco project show projA
     assert_output_contains "[host]"
 }
