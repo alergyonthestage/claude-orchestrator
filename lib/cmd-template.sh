@@ -44,6 +44,10 @@ Commands:
   show <name>                Show template details
   create <name>              Create a new user template
   remove <name>              Remove a user template
+  publish <name> [remote]    Publish a template to a sharing repo
+  install <url>              Install a template from a sharing repo
+  export <name>              Export a template as a .tar.gz archive
+  import <archive>           Import a template from a .tar.gz archive
 
 Run 'cco template <command> --help' for command-specific options.
 EOF
@@ -52,11 +56,15 @@ EOF
     shift
 
     case "$subcmd" in
-        list)   cmd_template_list "$@" ;;
-        show)   cmd_template_show "$@" ;;
-        create) cmd_template_create "$@" ;;
-        remove) cmd_template_remove "$@" ;;
-        *)      die "Unknown template command: $subcmd. Run 'cco template --help'." ;;
+        list)    cmd_template_list "$@" ;;
+        show)    cmd_template_show "$@" ;;
+        create)  cmd_template_create "$@" ;;
+        remove)  cmd_template_remove "$@" ;;
+        publish) cmd_template_publish "$@" ;;
+        install) cmd_template_install "$@" ;;
+        export)  cmd_template_export "$@" ;;
+        import)  cmd_template_import "$@" ;;
+        *)       die "Unknown template command: $subcmd. Run 'cco template --help'." ;;
     esac
 }
 
@@ -335,6 +343,364 @@ EOF
 
     rm -rf "$found_dir"
     ok "Template '$name' removed."
+}
+
+# ── Template sharing (2×2; ADR-0018 D2, reuses the pack sharing path) ──────
+# Templates carry a kind (project|pack), detected by the marker file inside the
+# template dir (project.yml → project, pack.yml → pack). The sharing-repo layout
+# is flat — templates/<name>/ — so the kind travels via that marker, never the
+# path (ADR-0023 D4b; maintainer-confirmed both-kinds-by-marker).
+
+# Echo a template's kind from its marker file, or return 1.
+_template_kind_of() {
+    local dir="$1"
+    if [[ -f "$dir/project.yml" ]]; then printf 'project\n'
+    elif [[ -f "$dir/pack.yml" ]]; then printf 'pack\n'
+    else return 1; fi
+}
+
+# Locate a template dir + kind (user store first, then native). With an explicit
+# kind, only that kind is searched. Echoes "<dir>\t<kind>", or returns 1.
+_find_template() {
+    local name="$1" want_kind="${2:-}" k d
+    local kinds=(project pack)
+    [[ -n "$want_kind" ]] && kinds=("$want_kind")
+    for k in "${kinds[@]}"; do
+        for d in "$TEMPLATES_DIR/$k/$name" "$NATIVE_TEMPLATES_DIR/$k/$name"; do
+            [[ -d "$d" ]] && { printf '%s\t%s\n' "$d" "$k"; return 0; }
+        done
+    done
+    return 1
+}
+
+# Install a template from a local directory into the user store, recording the
+# DATA source coordinate + the STATE base/ merge ancestor (mirrors the pack form;
+# no STATE meta — install-commit tracking is a P5 `--check` concern).
+# Usage: _install_template_from_dir <source_dir> <name> <kind> <url> <ref> <path> <force>
+_install_template_from_dir() {
+    local source_dir="$1" name="$2" kind="$3" url="$4" ref="$5" path="$6" force="$7"
+    local target_dir="$TEMPLATES_DIR/$kind/$name"
+
+    if [[ -d "$target_dir" ]]; then
+        if [[ "$force" == true ]]; then
+            rm -rf "$target_dir"
+        else
+            local existing="" sf
+            sf=$(_cco_template_source "$target_dir")
+            [[ -f "$sf" ]] && existing=$(yml_get "$sf" "url")
+            if [[ "$existing" == "$url" ]]; then
+                info "Template '$name' already installed from same source — updating"
+                rm -rf "$target_dir"
+            else
+                die "Template '$name' already exists (source: ${existing:-unknown}). Use --force to overwrite."
+            fi
+        fi
+    fi
+
+    mkdir -p "$TEMPLATES_DIR/$kind"
+    cp -r "$source_dir" "$target_dir"
+    rm -rf "$target_dir/.git"
+
+    local sf
+    sf=$(_cco_template_source "$target_dir")
+    mkdir -p "$(dirname "$sf")"
+    cat > "$sf" <<YAML
+url: $url
+resource: ${path:-}
+ref: ${ref:-}
+YAML
+    _record_tree_as_base "$(_cco_template_base_dir "$target_dir")" "$target_dir"
+    ok "Installed $kind template '$name'"
+}
+
+cmd_template_export() {
+    local name="" kind="" output=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project) kind="project"; shift ;;
+            --pack)    kind="pack"; shift ;;
+            --output|-o)
+                [[ -z "${2:-}" ]] && die "--output requires a path"
+                output="$2"; shift 2 ;;
+            --help)
+                cat <<'EOF'
+Usage: cco template export <name> [--project|--pack] [--output <path>]
+
+Export a template as a .tar.gz archive (its kind travels via the project.yml /
+pack.yml marker inside). With no --project/--pack, the kind is auto-detected.
+EOF
+                return 0 ;;
+            -*)  die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$name" ]]; then name="$1"; shift
+                else die "Unexpected argument: $1"; fi ;;
+        esac
+    done
+
+    [[ -z "$name" ]] && die "Usage: cco template export <name> [--project|--pack]"
+    local found dir tk
+    found=$(_find_template "$name" "$kind") || die "Template '$name' not found${kind:+ for $kind}."
+    dir="${found%%$'\t'*}"; tk="${found##*$'\t'}"
+
+    local archive="${output:-${name}.tar.gz}"
+    tar czf "$archive" -C "$(dirname "$dir")" "$name"
+    ok "Exported $tk template '$name' to $archive"
+}
+
+cmd_template_import() {
+    local archive="" force=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --force) force=true; shift ;;
+            --help)
+                cat <<'EOF'
+Usage: cco template import <archive> [--force]
+
+Import a template from a .tar.gz archive. The kind is detected from the
+project.yml / pack.yml marker inside. Use --force to overwrite an existing one.
+EOF
+                return 0 ;;
+            -*)  die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$archive" ]]; then archive="$1"; shift
+                else die "Unexpected argument: $1"; fi ;;
+        esac
+    done
+
+    [[ -z "$archive" ]] && die "Usage: cco template import <archive>"
+    [[ -f "$archive" ]] || die "Archive not found: $archive"
+
+    local tmpdir; tmpdir=$(mktemp -d)
+    tar xzf "$archive" -C "$tmpdir" 2>/dev/null \
+        || { rm -rf "$tmpdir"; die "Failed to extract archive: $archive"; }
+
+    # Locate the template root: its <name>/ dir (export wraps it), or markers at
+    # the archive root (defensive).
+    local root="" d
+    if [[ -f "$tmpdir/project.yml" || -f "$tmpdir/pack.yml" ]]; then
+        root="$tmpdir"
+    else
+        for d in "$tmpdir"/*/; do
+            [[ -f "${d}project.yml" || -f "${d}pack.yml" ]] && { root="${d%/}"; break; }
+        done
+    fi
+    [[ -z "$root" ]] && { rm -rf "$tmpdir"; die "No template found in archive (missing project.yml/pack.yml)"; }
+
+    local kind; kind=$(_template_kind_of "$root") \
+        || { rm -rf "$tmpdir"; die "Cannot determine template kind"; }
+    local name
+    if [[ "$root" != "$tmpdir" ]]; then
+        name=$(basename "$root")
+    else
+        name="${archive##*/}"; name="${name%.tar.gz}"
+    fi
+
+    local target="$TEMPLATES_DIR/$kind/$name"
+    [[ -d "$target" && "$force" != true ]] \
+        && { rm -rf "$tmpdir"; die "Template '$name' already exists at templates/$kind/$name/. Use --force."; }
+
+    rm -rf "$target"
+    mkdir -p "$(dirname "$target")"
+    cp -R "$root" "$target"
+    rm -rf "$target/.git" "$tmpdir"
+    ok "Imported $kind template '$name'"
+}
+
+cmd_template_install() {
+    local url="" pick="" kind="" token="" force=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --pick)  [[ -z "${2:-}" ]] && die "--pick requires a template name"; pick="$2"; shift 2 ;;
+            --project) kind="project"; shift ;;
+            --pack)    kind="pack"; shift ;;
+            --token) [[ -z "${2:-}" ]] && die "--token requires a value"; token="$2"; shift 2 ;;
+            --force) force=true; shift ;;
+            --help)
+                cat <<'EOF'
+Usage: cco template install <url>[@ref] [--pick <name>] [--token <t>] [--force]
+
+Install a template from a sharing repo (templates/<name>/, structure-discovered).
+The kind is detected from the marker inside. With multiple templates, use --pick.
+EOF
+                return 0 ;;
+            -*)  die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$url" ]]; then url="$1"; shift
+                else die "Unexpected argument: $1"; fi ;;
+        esac
+    done
+
+    [[ -z "$url" ]] && die "Usage: cco template install <url> [--pick <name>]"
+
+    # Split a trailing @ref (only when it is in the last path segment, so
+    # scp-style git@host:org/repo is left intact).
+    local ref="" last="${url##*/}"
+    if [[ "$last" == *@* ]]; then ref="${last##*@}"; url="${url%@*}"; fi
+
+    [[ -z "$token" ]] && token=$(remote_resolve_token_for_url "$url" 2>/dev/null) || true
+
+    info "Fetching templates from $url${ref:+ (ref: $ref)}..."
+    local tmpdir; tmpdir=$(_clone_config_repo "$url" "$ref" "$token")
+
+    local names; names=$(_discover_resources "$tmpdir" templates)
+    [[ -z "$names" ]] && { _cleanup_clone "$tmpdir"; die "No templates found in $url (expected templates/<name>/)."; }
+
+    local chosen=""
+    if [[ -n "$pick" ]]; then
+        if printf '%s\n' "$names" | grep -qx "$pick"; then chosen="$pick"
+        else _cleanup_clone "$tmpdir"; die "Template '$pick' not found. Available: $(printf '%s ' $names)"; fi
+    elif [[ $(printf '%s\n' "$names" | grep -c .) -eq 1 ]]; then
+        chosen="$names"
+    else
+        _cleanup_clone "$tmpdir"
+        die "Multiple templates available — pick one with --pick: $(printf '%s ' $names)"
+    fi
+
+    local src_dir="$tmpdir/templates/$chosen"
+    local tk; tk=$(_template_kind_of "$src_dir") \
+        || { _cleanup_clone "$tmpdir"; die "Template '$chosen' has no project.yml/pack.yml marker."; }
+
+    _install_template_from_dir "$src_dir" "$chosen" "$tk" "$url" "$ref" "templates/$chosen" "$force"
+    _cleanup_clone "$tmpdir"
+}
+
+cmd_template_publish() {
+    local name="" remote_arg="" kind="" message="" dry_run=false force=false token=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project) kind="project"; shift ;;
+            --pack)    kind="pack"; shift ;;
+            --message) [[ -z "${2:-}" ]] && die "--message requires a value"; message="$2"; shift 2 ;;
+            --dry-run) dry_run=true; shift ;;
+            --force)   force=true; shift ;;
+            --token)   [[ -z "${2:-}" ]] && die "--token requires a value"; token="$2"; shift 2 ;;
+            --help)
+                cat <<'EOF'
+Usage: cco template publish <name> [<remote>] [--project|--pack] [OPTIONS]
+
+Publish a template to a sharing repo (templates/<name>/). Sync-before-publish:
+pulls + 3-way merges against the template-scoped STATE base/, aborting on a
+conflict (never clobbers a co-maintainer — P16). --force overwrites the remote.
+
+Options:
+  --message <msg>    Commit message (default: "publish template <name>")
+  --dry-run          Show what would be published, don't push
+  --force            Overwrite the remote with your local version (opt-in)
+  --token <token>    Auth token for HTTPS remotes
+EOF
+                return 0 ;;
+            -*)  die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$name" ]]; then name="$1"
+                elif [[ -z "$remote_arg" ]]; then remote_arg="$1"
+                else die "Unexpected argument: $1"; fi
+                shift ;;
+        esac
+    done
+
+    [[ -z "$name" ]] && die "Usage: cco template publish <name> [<remote>]"
+    local found tmpl_dir tk
+    found=$(_find_template "$name" "$kind") || die "Template '$name' not found${kind:+ for $kind}."
+    tmpl_dir="${found%%$'\t'*}"; tk="${found##*$'\t'}"
+
+    # Resolve remote: explicit arg, else re-derive from the recorded source url.
+    local remote_url="" remote_name=""
+    if [[ -n "$remote_arg" ]]; then
+        local resolved
+        if resolved=$(remote_get_url "$remote_arg"); then
+            remote_url="$resolved"; remote_name="$remote_arg"
+        elif [[ "$remote_arg" == *:* || "$remote_arg" == */* ]]; then
+            remote_url="$remote_arg"
+        else
+            die "Remote '$remote_arg' not found. Register with 'cco remote add $remote_arg <url>'."
+        fi
+    else
+        local sf rec
+        sf=$(_cco_template_source "$tmpl_dir")
+        [[ -f "$sf" ]] && rec=$(yml_get "$sf" "url")
+        if [[ -n "${rec:-}" && "$rec" != "local" ]]; then
+            remote_url="$rec"
+            remote_name=$(remote_get_name_for_url "$rec" 2>/dev/null) || true
+        else
+            die "No remote given and none recorded. Usage: cco template publish $name <remote>"
+        fi
+    fi
+
+    if [[ -z "$token" ]]; then
+        if [[ -n "$remote_name" ]]; then token=$(remote_get_token "$remote_name" 2>/dev/null) || true
+        else token=$(remote_resolve_token_for_url "$remote_url" 2>/dev/null) || true; fi
+    fi
+    [[ -z "$message" ]] && message="publish template $name"
+
+    info "Publishing $tk template '$name' to $remote_url..."
+    local tmpdir; tmpdir=$(_clone_for_publish "$remote_url" "$token")
+    trap "_cleanup_clone '$tmpdir'" EXIT
+
+    # OURS = the publishable template tree (defensively drop any local-only .cco).
+    local ours_dir="$tmpdir/.cco-ours"
+    cp -R "$tmpl_dir" "$ours_dir"
+    rm -rf "$ours_dir/.cco"
+
+    # Sync-before-publish: 3-way merge vs the template-scoped STATE base/ and the
+    # remote tree (ADR-0022 D5 / P16), reusing the pack merge engine.
+    local theirs_dir="$tmpdir/templates/$name"
+    local merged_dir="$tmpdir/.cco-merged" base_dir
+    base_dir=$(_cco_template_base_dir "$tmpl_dir")
+
+    if $force; then
+        [[ -d "$theirs_dir" ]] && \
+            warn "--force: overwriting the remote copy of '$name' with your local version."
+        rm -rf "$merged_dir"; cp -R "$ours_dir" "$merged_dir"
+    else
+        local merge_rc=0
+        _pack_sync_merge "$base_dir" "$ours_dir" "$theirs_dir" "$merged_dir" || merge_rc=$?
+        if [[ $merge_rc -ne 0 ]]; then
+            _cleanup_clone "$tmpdir"; trap - EXIT
+            if $dry_run; then
+                warn "Would conflict with co-maintainer changes on the remote (files above)."
+                info "Run 'cco template install $remote_url --pick $name' first, or republish with --force."
+                return 0
+            fi
+            die "Publish would clobber co-maintainer changes on the remote (conflicting files above).
+  Re-install the remote template first, then republish, or use --force to overwrite."
+        fi
+    fi
+
+    rm -rf "$theirs_dir"; mkdir -p "$tmpdir/templates"
+    cp -R "$merged_dir" "$theirs_dir"
+    rm -rf "$merged_dir" "$ours_dir"
+
+    if $dry_run; then
+        echo ""
+        echo -e "${BOLD}Would publish:${NC}"
+        echo "  Template: $name ($tk)"
+        echo "  Remote: $remote_url"
+        echo "  Files:"
+        find "$theirs_dir" -type f | sed "s|$tmpdir/||; s/^/    /"
+        _cleanup_clone "$tmpdir"; trap - EXIT
+        ok "Dry run complete — nothing pushed"
+        return 0
+    fi
+
+    git -C "$tmpdir" add -A
+    if git -C "$tmpdir" diff --cached --quiet; then
+        info "Remote already up to date — nothing to publish."
+    else
+        git -C "$tmpdir" commit -q -m "$message"
+        git -C "$tmpdir" push origin HEAD >/dev/null 2>&1 \
+            || { _cleanup_clone "$tmpdir"; trap - EXIT; die "Failed to push to $remote_url"; }
+    fi
+
+    _record_tree_as_base "$base_dir" "$theirs_dir"
+    # Record the published url as the template's upstream coordinate (F4-style).
+    local sf
+    sf=$(_cco_template_source "$tmpl_dir")
+    mkdir -p "$(dirname "$sf")"
+    if [[ -f "$sf" ]]; then _sed_i_or_append "$sf" "url" "$remote_url"
+    else printf 'url: %s\nresource: templates/%s\nref:\n' "$remote_url" "$name" > "$sf"; fi
+
+    _cleanup_clone "$tmpdir"; trap - EXIT
+    ok "Published $tk template '$name' to $remote_url"
 }
 
 # Resolve {{VARIABLE}} patterns in project template files (relocated here from the

@@ -319,3 +319,123 @@ YAML
         }
     fi
 }
+
+# ── Template sharing 2×2 (ADR-0018 D2; both kinds by marker) ───────────
+
+# Minimal empty bare remote (structure-based discovery; no manifest.yml).
+_tmpl_empty_bare_remote() {
+    local tmpdir="$1" bare_dir="$tmpdir/tmpl-remote.git"
+    local work="$tmpdir/tmpl-init-work"
+    mkdir -p "$work"
+    git -C "$work" init -q
+    : > "$work/.gitkeep"
+    git -C "$work" add -A
+    git -C "$work" commit -q -m "init"
+    git init --bare -q "$bare_dir"
+    git -C "$work" remote add origin "$bare_dir"
+    git -C "$work" push -q origin main 2>/dev/null || \
+        git -C "$work" push -q origin master 2>/dev/null
+    rm -rf "$work"
+    echo "$bare_dir"
+}
+
+test_template_export_import_round_trip() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco template create myt --project
+    cd "$tmpdir"
+    run_cco template export myt
+    assert_file_exists "$tmpdir/myt.tar.gz"
+
+    run_cco template remove myt
+    run_cco template import "$tmpdir/myt.tar.gz"
+    assert_output_contains "Imported project template"
+    assert_file_exists "$CCO_TEMPLATES_DIR/project/myt/project.yml"
+}
+
+test_template_export_import_pack_kind() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco template create packt --pack
+    cd "$tmpdir"
+    run_cco template export packt
+    run_cco template remove packt
+    run_cco template import "$tmpdir/packt.tar.gz"
+    # Kind is detected from the pack.yml marker inside the archive.
+    assert_output_contains "Imported pack template"
+    assert_file_exists "$CCO_TEMPLATES_DIR/pack/packt/pack.yml"
+}
+
+test_template_publish_install_round_trip() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco template create sharet --project
+    local bare; bare=$(_tmpl_empty_bare_remote "$tmpdir")
+
+    run_cco remote add treg "$bare"
+    run_cco template publish sharet treg
+    assert_output_contains "Published"
+
+    run_cco template remove sharet
+    run_cco template install "$bare" --pick sharet
+    assert_file_exists "$CCO_TEMPLATES_DIR/project/sharet/project.yml"
+}
+
+test_template_publish_preserves_remote_only_changes() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco template create sync --project
+    local bare; bare=$(_tmpl_empty_bare_remote "$tmpdir")
+    run_cco remote add r "$bare"
+    run_cco template publish sync r            # first publish → base recorded
+
+    # Co-maintainer adds a remote-only file.
+    local co="$tmpdir/co"; git clone -q "$bare" "$co"
+    echo "# remote only" > "$co/templates/sync/extra.md"
+    git -C "$co" add -A; git -C "$co" commit -q -m "co adds extra"
+    git -C "$co" push -q origin HEAD
+
+    # We change a different local file and republish (no --force).
+    echo "# local note" >> "$CCO_TEMPLATES_DIR/project/sync/project.yml"
+    run_cco template publish sync r
+    assert_output_contains "Published"
+
+    local verify="$tmpdir/verify"; git clone -q "$bare" "$verify"
+    assert_file_contains "$verify/templates/sync/extra.md" "remote only" || return 1
+    assert_file_contains "$verify/templates/sync/project.yml" "local note" || return 1
+}
+
+test_template_publish_aborts_on_conflict() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco template create cft --project
+    local bare; bare=$(_tmpl_empty_bare_remote "$tmpdir")
+    run_cco remote add r "$bare"
+    run_cco template publish cft r
+
+    local co="$tmpdir/co"; git clone -q "$bare" "$co"
+    echo "# remote change" >> "$co/templates/cft/project.yml"
+    git -C "$co" add -A; git -C "$co" commit -q -m "co edits"
+    git -C "$co" push -q origin HEAD
+
+    echo "# local change" >> "$CCO_TEMPLATES_DIR/project/cft/project.yml"
+    if run_cco template publish cft r 2>/dev/null; then
+        echo "ASSERTION FAILED: template publish should abort on conflict"
+        return 1
+    fi
+    assert_output_contains "clobber" || return 1
+}
+
+test_template_sharing_help() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco template publish --help; assert_output_contains "Publish a template" || return 1
+    run_cco template install --help; assert_output_contains "Install a template" || return 1
+    run_cco template export --help;  assert_output_contains "Export a template"  || return 1
+    run_cco template import --help;  assert_output_contains "Import a template"  || return 1
+}

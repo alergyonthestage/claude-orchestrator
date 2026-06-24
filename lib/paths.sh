@@ -166,6 +166,13 @@ _cco_template_source() {
     printf '%s\n' "$(_cco_data_dir)/templates/$(basename "$1")/source"
 }
 
+# Template-scoped merge artifacts → STATE, keyed by template name (the flat-store
+# basename, matching the flat sharing-repo templates/<name>/). Mirrors the pack
+# form; the sync-before-publish merge ancestor (ADR-0022 D5). Never-sync.
+_cco_template_base_dir() {
+    printf '%s\n' "$(_cco_state_dir)/templates/$(basename "$1")/update/base"
+}
+
 _cco_pack_install_tmp() {
     _cco_resolve_path d "$1/.cco/install-tmp" "$1/.cco-install-tmp"
 }

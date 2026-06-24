@@ -123,17 +123,18 @@ _clone_for_publish() {
 # templates → project.yml). <root> is a checked-out clone. One name per line.
 _discover_resources() {
     local root="$1" section="$2"
-    local marker
-    case "$section" in
-        packs)     marker="pack.yml" ;;
-        templates) marker="project.yml" ;;
-        *) return 1 ;;
-    esac
     [[ -d "$root/$section" ]] || return 0
     local dir name
     for dir in "$root/$section"/*/; do
         [[ -d "$dir" ]] || continue
-        [[ -f "$dir$marker" ]] || continue
+        case "$section" in
+            # A pack carries pack.yml. A template carries EITHER marker — a
+            # project-template (project.yml) or a pack-template (pack.yml); the
+            # flat sharing-repo templates/<name>/ encodes the kind by its marker.
+            packs)     [[ -f "${dir}pack.yml" ]] || continue ;;
+            templates) [[ -f "${dir}project.yml" || -f "${dir}pack.yml" ]] || continue ;;
+            *) return 1 ;;
+        esac
         name=$(basename "$dir")
         printf '%s\n' "$name"
     done

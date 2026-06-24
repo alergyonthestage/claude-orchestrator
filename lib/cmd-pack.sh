@@ -981,18 +981,23 @@ _pack_sync_merge() {
     return $conflict
 }
 
-# Record a published/installed pack tree as the pack-scoped STATE base/ — the
-# local, never-sync merge ancestor for the next sync-before-publish (ADR-0022
-# D5 / ADR-0013 D2). <tree_dir> is copied verbatim minus any local-only .cco.
-# Usage: _record_pack_base <pack_dir> <tree_dir>
-_record_pack_base() {
-    local pack_dir="$1" tree_dir="$2"
-    local base_dir
-    base_dir=$(_cco_pack_base_dir "$pack_dir")
+# Record a tree at an explicit STATE base/ location — the local, never-sync merge
+# ancestor for the next sync-before-publish (ADR-0022 D5 / ADR-0013 D2). Generic
+# (reused by pack and template publish/install). <tree_dir> is copied verbatim
+# minus any local-only .cco.
+# Usage: _record_tree_as_base <base_dir> <tree_dir>
+_record_tree_as_base() {
+    local base_dir="$1" tree_dir="$2"
     rm -rf "$base_dir"
     mkdir -p "$(dirname "$base_dir")"
     cp -R "$tree_dir" "$base_dir"
     rm -rf "$base_dir/.cco"
+}
+
+# Record a published/installed pack tree as the pack-scoped STATE base/.
+# Usage: _record_pack_base <pack_dir> <tree_dir>
+_record_pack_base() {
+    _record_tree_as_base "$(_cco_pack_base_dir "$1")" "$2"
 }
 
 # Bake a pack's knowledge.source into <dir> (publish-time internalization): copy
