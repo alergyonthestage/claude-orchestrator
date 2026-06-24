@@ -387,6 +387,55 @@ _migrate_yml_scalar() {
     awk -v k="$2" '$0 ~ "^" k ":" {sub(/^[a-z_]+: */,"");gsub(/["\047]/,"");gsub(/^ +| +$/,"");print;exit}' "$1" 2>/dev/null
 }
 
+# ── P4 source→DATA relocation (ADR-0022 D1) ──────────────────────────
+# Relocate a single resource's LEGACY in-tree .cco/source (old keys
+# source:/path: + machine-local commit:/installed:/updated: + the dropped
+# publish_target:) to the DATA coordinate file (url:/resource:/ref:) plus the
+# STATE /update meta bookkeeping. Idempotent: a no-op when there is no legacy
+# source. publish_target is dropped — the default remote is re-derived on demand
+# from the url (F4).
+_relocate_legacy_source() {
+    local legacy="$1" new_src="$2" meta="$3"
+    [[ -f "$legacy" ]] || return 0
+    local url ref resource commit installed updated
+    url=$(_migrate_yml_scalar "$legacy" source)
+    ref=$(_migrate_yml_scalar "$legacy" ref)
+    resource=$(_migrate_yml_scalar "$legacy" path)
+    commit=$(_migrate_yml_scalar "$legacy" commit)
+    installed=$(_migrate_yml_scalar "$legacy" installed)
+    updated=$(_migrate_yml_scalar "$legacy" updated)
+    # A bare-url first line (pre-FI-7 format) carries no `source:` key.
+    if [[ -z "$url" ]]; then
+        local first; first=$(head -1 "$legacy" 2>/dev/null)
+        case "$first" in http://*|https://*) url="$first" ;; esac
+    fi
+    mkdir -p "$(dirname "$new_src")"
+    {
+        printf 'url: %s\n' "${url:-local}"
+        [[ -n "$resource" ]] && printf 'resource: %s\n' "$resource"
+        [[ -n "$ref" ]] && printf 'ref: %s\n' "$ref"
+    } > "$new_src"
+    _meta_record_provenance "$meta" "$commit" "$installed" "$updated"
+    rm -f "$legacy"
+    # Drop the now-empty .cco dir if nothing else remains (best-effort).
+    rmdir "$(dirname "$legacy")" 2>/dev/null || true
+}
+
+# Relocate every installed pack's legacy in-tree source into DATA. Run early in
+# `cco update` (idempotent; usually a no-op). Projects keep no DATA source under
+# the decentralized model, and llms source is CACHE-split (ADR-0016 D2) — packs
+# are the only resource whose provenance moves here.
+_relocate_legacy_pack_sources() {
+    [[ -d "${PACKS_DIR:-}" ]] || return 0
+    local pack_dir
+    for pack_dir in "$PACKS_DIR"/*/; do
+        [[ -d "$pack_dir" ]] || continue
+        [[ -f "$pack_dir/.cco/source" ]] || continue
+        _relocate_legacy_source "$pack_dir/.cco/source" \
+            "$(_cco_pack_source "$pack_dir")" "$(_cco_pack_meta "$pack_dir")"
+    done
+}
+
 # The project's origin profile (the non-default branch whose .vault-profile lists
 # it under sync.projects), or empty if shared/on the default branch.
 _cco_project_origin_profile() {

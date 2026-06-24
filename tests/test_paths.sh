@@ -126,51 +126,42 @@ test_paths_remotes_token_file_in_state() {
 
 # ── Pack Source ──────────────────────────────────────────────────────
 
-test_paths_pack_source_new_path() {
+# Install-provenance `source` → DATA, identity-keyed (ADR-0022 D1). The helper
+# resolves unconditionally to <data>/cco/packs/<name>/source — no in-tree
+# fallback (the source no longer lives in the config/pack bucket).
+test_paths_pack_source_data_keyed() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     export USER_CONFIG_DIR="$tmpdir/uc"
     export GLOBAL_DIR="$tmpdir/uc/global"
+    export CCO_DATA_HOME="$tmpdir/data"
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/lib/paths.sh"
 
-    local pack="$tmpdir/pack-a"
-    mkdir -p "$pack/.cco"
-    echo "git@example.com:pack.git" > "$pack/.cco/source"
+    local pack="$tmpdir/packs/pack-a"
+    mkdir -p "$pack"
+    # Even with a stale in-tree .cco/source, the helper resolves to DATA.
+    mkdir -p "$pack/.cco"; echo "url: git@example.com:pack.git" > "$pack/.cco/source"
 
     local result; result=$(_cco_pack_source "$pack")
-    [[ "$result" == "$pack/.cco/source" ]] || fail "Expected new pack source path, got: $result"
+    [[ "$result" == "$tmpdir/data/packs/pack-a/source" ]] \
+        || fail "Expected DATA-keyed pack source, got: $result"
 }
 
-test_paths_pack_source_old_fallback() {
+test_paths_template_source_data_keyed() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     export USER_CONFIG_DIR="$tmpdir/uc"
     export GLOBAL_DIR="$tmpdir/uc/global"
+    export CCO_DATA_HOME="$tmpdir/data"
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/lib/paths.sh"
 
-    local pack="$tmpdir/pack-a"
-    mkdir -p "$pack"
-    echo "git@example.com:pack.git" > "$pack/.cco-source"
-
-    local result; result=$(_cco_pack_source "$pack")
-    [[ "$result" == "$pack/.cco-source" ]] || fail "Expected old .cco-source fallback, got: $result"
-}
-
-test_paths_pack_source_default_new() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    export USER_CONFIG_DIR="$tmpdir/uc"
-    export GLOBAL_DIR="$tmpdir/uc/global"
-    source "$REPO_ROOT/lib/colors.sh"
-    source "$REPO_ROOT/lib/utils.sh"
-    source "$REPO_ROOT/lib/paths.sh"
-
-    local pack="$tmpdir/pack-a"
-    mkdir -p "$pack"
-
-    local result; result=$(_cco_pack_source "$pack")
-    [[ "$result" == "$pack/.cco/source" ]] || fail "Expected new pack source default, got: $result"
+    local tmpl="$tmpdir/templates/tmpl-a"
+    mkdir -p "$tmpl"
+    local result; result=$(_cco_template_source "$tmpl")
+    [[ "$result" == "$tmpdir/data/templates/tmpl-a/source" ]] \
+        || fail "Expected DATA-keyed template source, got: $result"
 }
 
 # ── Pack Install Tmp ─────────────────────────────────────────────────

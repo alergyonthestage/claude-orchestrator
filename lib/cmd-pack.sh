@@ -565,7 +565,7 @@ EOF
             source_file=$(_cco_pack_source "$dir")
             [[ ! -f "$source_file" ]] && continue
             local source_url
-            source_url=$(yml_get "$source_file" "source")
+            source_url=$(yml_get "$source_file" "url")
             [[ "$source_url" == "local" || -z "$source_url" ]] && continue
             info "Updating $pack_name..."
             # Isolate errors: run in subshell so die() does not abort the loop
@@ -647,9 +647,10 @@ _install_pack_from_dir() {
         if [[ "$force" == true ]]; then
             rm -rf "$target_dir"
         else
-            local existing_source=""
-            if [[ -f "$target_dir/.cco/source" ]]; then
-                existing_source=$(yml_get "$target_dir/.cco/source" "source")
+            local existing_source="" existing_src_file
+            existing_src_file=$(_cco_pack_source "$target_dir")
+            if [[ -f "$existing_src_file" ]]; then
+                existing_source=$(yml_get "$existing_src_file" "url")
             fi
 
             if [[ "$existing_source" == "$url" ]]; then
@@ -669,18 +670,18 @@ _install_pack_from_dir() {
     # Remove .git if present (from single-pack repos)
     rm -rf "$target_dir/.git"
 
-    # Write .cco/source metadata
-    local now
+    # Write the DATA source provenance (machine-agnostic upstream coordinate
+    # only) + the STATE meta bookkeeping (install commit + dates), ADR-0022 D1.
+    local now src_file
     now=$(date +%Y-%m-%d)
-    mkdir -p "$target_dir/.cco"
-    cat > "$target_dir/.cco/source" <<YAML
-source: $url
-path: ${path:-}
+    src_file=$(_cco_pack_source "$target_dir")
+    mkdir -p "$(dirname "$src_file")"
+    cat > "$src_file" <<YAML
+url: $url
+resource: ${path:-}
 ref: ${ref:-}
-commit: ${commit:-}
-installed: $now
-updated: $now
 YAML
+    _meta_record_provenance "$(_cco_pack_meta "$target_dir")" "${commit:-}" "$now" "$now"
 
     ok "Installed pack '$name'"
 }
@@ -690,16 +691,17 @@ YAML
 _update_single_pack() {
     local name="$1"
     local force="${2:-false}"
-    local source_file="$PACKS_DIR/$name/.cco/source"
+    local source_file
+    source_file=$(_cco_pack_source "$PACKS_DIR/$name")
 
     if [[ ! -f "$source_file" ]]; then
-        die "Pack '$name' has no .cco/source — cannot determine remote source"
+        die "Pack '$name' has no recorded source — cannot determine remote source"
     fi
 
     local source_url source_ref source_path
-    source_url=$(yml_get "$source_file" "source")
+    source_url=$(yml_get "$source_file" "url")
     source_ref=$(yml_get "$source_file" "ref")
-    source_path=$(yml_get "$source_file" "path")
+    source_path=$(yml_get "$source_file" "resource")
 
     if [[ "$source_url" == "local" || -z "$source_url" ]]; then
         die "Pack '$name' was created locally — no remote source to update from"
@@ -728,15 +730,10 @@ _update_single_pack() {
     local update_commit=""
     update_commit=$(git -C "$tmpdir" rev-parse HEAD 2>/dev/null) || true
 
-    # Install (force=true since we're explicitly updating)
+    # Install (force=true since we're explicitly updating). This rewrites the
+    # DATA source coordinate and records the new commit + updated date in the
+    # STATE meta (_meta_record_provenance) — no separate date bump needed.
     _install_pack_from_dir "$remote_dir" "$name" "$source_url" "$source_ref" "$source_path" true "$update_commit"
-
-    # Update the 'updated' date in .cco/source
-    local now
-    now=$(date +%Y-%m-%d)
-    if [[ -f "$PACKS_DIR/$name/.cco/source" ]]; then
-        _sed_i "$PACKS_DIR/$name/.cco/source" "^updated: .*" "updated: $now"
-    fi
 
     # Update manifest.yml
     manifest_refresh "$USER_CONFIG_DIR"
@@ -759,8 +756,8 @@ Usage: cco pack internalize <name>
 Convert a pack to fully self-contained and locally owned:
   - If pack.yml has knowledge.source, copies referenced files into
     the pack's own knowledge/ directory and removes the source: field.
-  - If .cco/source tracks a remote Config Repo, disconnects by setting
-    source: local (the pack will no longer receive remote updates).
+  - If the pack tracks a remote sharing repo, disconnects by setting its
+    recorded url to local (the pack will no longer receive remote updates).
 EOF
                 return 0
                 ;;
@@ -831,20 +828,23 @@ EOF
         did_something=true
     fi
 
-    # ── 2. Config Repo source disconnection ───────────────────────────
-    local source_file="$pack_dir/.cco/source"
+    # ── 2. Sharing-repo source disconnection ──────────────────────────
+    local source_file
+    source_file=$(_cco_pack_source "$pack_dir")
     if [[ -f "$source_file" ]]; then
         local source_url
-        source_url=$(yml_get "$source_file" "source")
+        source_url=$(yml_get "$source_file" "url")
         if [[ -n "$source_url" && "$source_url" != "local" ]]; then
-            # Overwrite .cco/source — set to local, preserve install history as comment
+            # Overwrite the DATA source — set url to local, preserve install
+            # history as a comment.
             {
-                printf 'source: local\n'
+                printf 'url: local\n'
                 printf '# previously installed from: %s\n' "$source_url"
             } > "$source_file"
 
-            # Clear remote_cache from .cco/meta if present
-            local meta_file="$pack_dir/.cco/meta"
+            # Clear the cached remote HEAD from the STATE meta if present
+            local meta_file
+            meta_file=$(_cco_pack_meta "$pack_dir")
             if [[ -f "$meta_file" ]]; then
                 yml_remove "$meta_file" "remote_cache"
             fi
@@ -883,7 +883,8 @@ Publish a pack to a remote Config Repo.
 
 Arguments:
   <name>             Pack to publish
-  <remote>           Remote name or URL (default: from .cco/source publish_target)
+  <remote>           Remote name or URL (default: re-derived from the pack's
+                     recorded upstream against your registered remotes)
 
 Options:
   --message <msg>    Commit message (default: "publish pack <name>")
@@ -962,8 +963,8 @@ EOF
     mkdir -p "$tmpdir/packs"
     cp -R "$pack_dir" "$tmpdir/packs/$name"
 
-    # Remove local-only files
-    rm -rf "$tmpdir/packs/$name/.cco/source"
+    # Strip any local-only framework dir from the published copy (the source
+    # provenance now lives in DATA, never inside the pack tree — ADR-0022 D1)
     rm -rf "$tmpdir/packs/$name/.cco"
 
     # Internalize if pack has knowledge.source
@@ -1024,20 +1025,23 @@ EOF
     git -C "$tmpdir" push origin HEAD >/dev/null 2>&1 \
         || { _cleanup_clone "$tmpdir"; die "Failed to push to $remote_url"; }
 
-    # Update local .cco/source with publish_target
-    if [[ -n "$remote_name" ]]; then
-        _update_publish_target "$pack_dir" "$remote_name"
-    fi
+    # Record the published url as the pack's upstream coordinate (working-copy
+    # model, P16): the sharing repo is now the source-of-truth, so a subsequent
+    # `cco pack publish <name>` re-derives this remote on demand (F4) without a
+    # stored publish_target.
+    _record_pack_publish_url "$pack_dir" "$remote_url"
 
     _cleanup_clone "$tmpdir"
     trap - EXIT
     ok "Published pack '$name' to $remote_url"
 }
 
-# Resolve remote for publish: name → URL, with fallback to .cco/source
+# Resolve remote for publish: name → URL. With no explicit arg, re-derive the
+# default remote (F4 / ADR-0022 D1) by reverse-looking-up the pack's recorded
+# upstream `url` against the DATA remotes registry — no stored publish_target.
 _resolve_publish_remote() {
     local remote_arg="$1" pack_dir="$2"
-    # Output: sets _pub_remote_url and _pub_remote_name in caller scope
+    # Output: sets the url var ($3) and the remote-name var ($4) in caller scope
 
     if [[ -n "$remote_arg" ]]; then
         # Try as registered remote name first
@@ -1056,37 +1060,42 @@ _resolve_publish_remote() {
         die "Remote '$remote_arg' not found. Register with 'cco remote add $remote_arg <url>'."
     fi
 
-    # Try .cco/source publish_target
-    if [[ -f "$pack_dir/.cco/source" ]]; then
-        local target
-        target=$(grep '^publish_target:' "$pack_dir/.cco/source" 2>/dev/null \
-            | sed 's/^publish_target: *//' | tr -d '"'"'")
-        if [[ -n "$target" ]]; then
-            local resolved
-            if resolved=$(remote_get_url "$target"); then
-                eval "$3=\$resolved"
-                eval "$4=\$target"
+    # Re-derive from the recorded upstream coordinate: reverse-lookup its url
+    # in the remotes registry (F4). The url is itself a usable push target even
+    # when not registered (the name is then empty; token auto-resolve may fail).
+    local src_file recorded_url
+    src_file=$(_cco_pack_source "$pack_dir")
+    if [[ -f "$src_file" ]]; then
+        recorded_url=$(yml_get "$src_file" "url")
+        if [[ -n "$recorded_url" && "$recorded_url" != "local" ]]; then
+            local rname
+            if rname=$(remote_get_name_for_url "$recorded_url"); then
+                eval "$3=\$recorded_url"
+                eval "$4=\$rname"
                 return 0
             fi
-            die "publish_target '$target' in .cco/source is not a registered remote."
+            # Reachable url but not a registered remote — push to it directly.
+            eval "$3=\$recorded_url"
+            eval "$4="
+            return 0
         fi
     fi
 
-    die "No remote specified and no publish_target in .cco/source. Usage: cco pack publish <name> <remote>"
+    die "No remote specified and the pack has no registered upstream. Usage: cco pack publish <name> <remote>"
 }
 
-# Update .cco/source with publish_target
-_update_publish_target() {
-    local pack_dir="$1" target="$2"
-    local source_file="$pack_dir/.cco/source"
-
+# Record the upstream url the pack was published to in its DATA source (so the
+# default remote can be re-derived on the next publish — F4). Replaces the old
+# stored publish_target.
+_record_pack_publish_url() {
+    local pack_dir="$1" url="$2"
+    [[ -z "$url" ]] && return 0
+    local source_file
+    source_file=$(_cco_pack_source "$pack_dir")
+    mkdir -p "$(dirname "$source_file")"
     if [[ -f "$source_file" ]]; then
-        _sed_i_or_append "$source_file" "publish_target" "$target"
+        _sed_i_or_append "$source_file" "url" "$url"
     else
-        mkdir -p "$(dirname "$source_file")"
-        cat > "$source_file" <<YAML
-source: local
-publish_target: $target
-YAML
+        printf 'url: %s\n' "$url" > "$source_file"
     fi
 }

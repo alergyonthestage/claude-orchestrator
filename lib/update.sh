@@ -330,8 +330,8 @@ _resolve_project_defaults_dir() {
                 echo "$fallback"
             fi
             ;;
-        source:*)
-            # YAML format (FI-7+): "source: https://..." or "source: local"
+        url:*)
+            # YAML coordinate format (ADR-0022 D1): "url: https://..." or "url: local"
             # Remote-installed or internalized project: use base template
             echo "$fallback"
             ;;

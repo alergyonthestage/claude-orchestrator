@@ -78,6 +78,26 @@ remote_resolve_token_for_url() {
     return 1
 }
 
+# Reverse-lookup a registered remote NAME for a given URL (F4 / ADR-0022 D1).
+# This is how `cco pack publish` re-derives its default remote on demand, in
+# place of a stored `publish_target`. Returns the name on stdout, or 1 if no
+# registered remote matches the url.
+remote_get_name_for_url() {
+    local url="$1"
+    local rf; rf=$(_remotes_file)
+    [[ ! -f "$rf" ]] && return 1
+    local norm_url="${url%.git}"; norm_url="${norm_url%/}"
+    while IFS='=' read -r rname rurl; do
+        [[ -z "$rname" || "$rname" == \#* ]] && continue
+        local norm_rurl="${rurl%.git}"; norm_rurl="${norm_rurl%/}"
+        if [[ "$norm_rurl" == "$norm_url" ]]; then
+            printf '%s\n' "$rname"
+            return 0
+        fi
+    done < "$rf"
+    return 1
+}
+
 # List all remote names (one per line) from the url registry.
 remote_list_names() {
     local rf; rf=$(_remotes_file)
@@ -167,22 +187,26 @@ _cmd_remote_remove() {
         die "Remote '$name' not found."
     fi
 
-    # Warn about packs with publish_target pointing to this remote
+    # Warn about packs whose recorded upstream resolves to this remote (F4: the
+    # default publish target is re-derived from the pack url, not stored —
+    # ADR-0022 D1).
     if [[ -d "${PACKS_DIR:-}" ]]; then
         local -a affected=()
+        local pack_dir
         for pack_dir in "$PACKS_DIR"/*/; do
             [[ ! -d "$pack_dir" ]] && continue
-            local source_file="$pack_dir/.cco/source"
+            local source_file
+            source_file=$(_cco_pack_source "$pack_dir")
             [[ ! -f "$source_file" ]] && continue
-            local target
-            target=$(grep '^publish_target:' "$source_file" 2>/dev/null \
-                | sed 's/^publish_target: *//' | tr -d '"'"'")
-            if [[ "$target" == "$name" ]]; then
+            local purl rname
+            purl=$(yml_get "$source_file" "url")
+            [[ -z "$purl" || "$purl" == "local" ]] && continue
+            if rname=$(remote_get_name_for_url "$purl") && [[ "$rname" == "$name" ]]; then
                 affected+=("$(basename "$pack_dir")")
             fi
         done
         if [[ ${#affected[@]} -gt 0 ]]; then
-            warn "Packs with publish_target '$name': ${affected[*]}"
+            warn "Packs that publish to '$name': ${affected[*]}"
         fi
     fi
 

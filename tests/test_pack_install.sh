@@ -123,16 +123,19 @@ test_pack_install_pick_nonexistent_fails() {
     fi
 }
 
-test_pack_install_creates_cco_source() {
+test_pack_install_creates_data_source() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     local remote
     remote=$(_create_mock_config_repo "$tmpdir" "tracked")
     run_cco pack install "$remote" --pick "tracked"
-    assert_file_exists "$CCO_PACKS_DIR/tracked/.cco/source"
-    assert_file_contains "$CCO_PACKS_DIR/tracked/.cco/source" "source:"
-    assert_file_contains "$CCO_PACKS_DIR/tracked/.cco/source" "installed:"
+    # Provenance source → DATA (coordinate only); the pack tree carries none.
+    assert_file_exists "$(data_pack_source tracked)" || return 1
+    assert_file_contains "$(data_pack_source tracked)" "url:" || return 1
+    assert_file_not_exists "$CCO_PACKS_DIR/tracked/.cco/source" || return 1
+    # Install commit + dates → STATE /update meta (ADR-0022 D1).
+    assert_file_contains "$(state_pack_meta tracked)" "src_installed:" || return 1
 }
 
 test_pack_install_single_pack_repo() {
@@ -231,7 +234,7 @@ test_pack_update_from_source() {
     local remote
     remote=$(_create_mock_config_repo "$tmpdir" "updatable")
     run_cco pack install "$remote" --pick "updatable"
-    assert_file_exists "$CCO_PACKS_DIR/updatable/.cco/source"
+    assert_file_exists "$(data_pack_source updatable)"
 
     # Modify the remote (add new file)
     local work_dir="$tmpdir/mock-work"
@@ -287,11 +290,11 @@ test_pack_export_excludes_cco_source() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
 
-    # Install a remote pack (has .cco/source)
+    # Install a remote pack (records provenance in DATA, never in the pack tree)
     local remote
     remote=$(_create_mock_config_repo "$tmpdir" "source-pack")
     run_cco pack install "$remote" --pick "source-pack"
-    assert_file_exists "$CCO_PACKS_DIR/source-pack/.cco/source"
+    assert_file_exists "$(data_pack_source source-pack)"
 
     # Export
     cd "$tmpdir"

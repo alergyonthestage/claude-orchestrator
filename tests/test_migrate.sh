@@ -471,3 +471,60 @@ YML
     ( cd "$repo" && run_cco join )
     assert_file_contains "$CCO_STATE_HOME/index" "joined:"
 }
+
+# ── P4 source→DATA relocation (ADR-0022 D1) ──────────────────────────
+
+test_relocate_legacy_pack_source_to_data() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/yaml.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/update-meta.sh"
+    source "$REPO_ROOT/lib/migrate.sh"
+    PACKS_DIR="$CCO_PACKS_DIR"
+
+    # A pack carrying a LEGACY in-tree .cco/source (old keys).
+    mkdir -p "$CCO_PACKS_DIR/legacy-pack/.cco"
+    printf 'source: git@example.com:team/cfg.git\npath: packs/legacy-pack\nref: main\ncommit: deadbeef\ninstalled: 2026-01-01\nupdated: 2026-01-02\n' \
+        > "$CCO_PACKS_DIR/legacy-pack/.cco/source"
+
+    _relocate_legacy_pack_sources
+
+    # Coordinate (renamed keys) → DATA; bookkeeping → STATE meta; legacy gone.
+    local new_src; new_src=$(data_pack_source legacy-pack)
+    assert_file_exists "$new_src" || return 1
+    assert_file_contains "$new_src" "url: git@example.com:team/cfg.git" || return 1
+    assert_file_contains "$new_src" "resource: packs/legacy-pack" || return 1
+    assert_file_contains "$new_src" "ref: main" || return 1
+    # The legacy `source:` key is renamed (anchored: avoid matching `resource:`).
+    grep -q '^source:' "$new_src" && { echo "ASSERTION FAILED: legacy 'source:' key not renamed to 'url:'"; return 1; }
+    assert_file_not_exists "$CCO_PACKS_DIR/legacy-pack/.cco/source" || return 1
+    assert_file_contains "$(state_pack_meta legacy-pack)" "installed_commit: deadbeef" || return 1
+
+    # Idempotent: a second pass is a clean no-op.
+    _relocate_legacy_pack_sources || return 1
+    assert_file_exists "$new_src" || return 1
+}
+
+test_relocate_legacy_pack_source_bare_url() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/yaml.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/update-meta.sh"
+    source "$REPO_ROOT/lib/migrate.sh"
+    PACKS_DIR="$CCO_PACKS_DIR"
+
+    # Pre-FI-7 bare-url first line (no `source:` key).
+    mkdir -p "$CCO_PACKS_DIR/bare-pack/.cco"
+    printf 'https://github.com/team/cfg.git\n' > "$CCO_PACKS_DIR/bare-pack/.cco/source"
+
+    _relocate_legacy_pack_sources
+
+    assert_file_contains "$(data_pack_source bare-pack)" "url: https://github.com/team/cfg.git" || return 1
+    assert_file_not_exists "$CCO_PACKS_DIR/bare-pack/.cco/source" || return 1
+}

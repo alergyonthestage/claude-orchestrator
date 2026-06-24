@@ -21,7 +21,7 @@ _is_installed_project() {
 
     [[ ! -f "$source_file" ]] && return 1
 
-    # Check format: old format is single line (native:project/...), new format is YAML
+    # Check format: legacy single-line (native:/bare-url), new YAML coordinate.
     local first_line
     first_line=$(head -1 "$source_file")
     case "$first_line" in
@@ -30,25 +30,26 @@ _is_installed_project() {
             # Don't call yml_get: bare URL is not key: value YAML
             _INSTALLED_SOURCE_URL="$first_line"
             ;;
-        source:*)
-            # YAML format
-            _INSTALLED_SOURCE_URL=$(yml_get "$source_file" "source")
+        url:*)
+            # New coordinate format (ADR-0022 D1)
+            _INSTALLED_SOURCE_URL=$(yml_get "$source_file" "url")
             ;;
         native:*|user:*|local)
             # Local/native source — not a remote install
             return 1
             ;;
         *)
-            # Unknown — try YAML
-            _INSTALLED_SOURCE_URL=$(yml_get "$source_file" "source")
+            # Unknown — try YAML coordinate
+            _INSTALLED_SOURCE_URL=$(yml_get "$source_file" "url")
             ;;
     esac
 
     [[ -z "$_INSTALLED_SOURCE_URL" || "$_INSTALLED_SOURCE_URL" == "local" ]] && return 1
 
     _INSTALLED_SOURCE_REF=$(yml_get "$source_file" "ref")
-    _INSTALLED_SOURCE_PATH=$(yml_get "$source_file" "path")
-    _INSTALLED_SOURCE_COMMIT=$(yml_get "$source_file" "commit")
+    _INSTALLED_SOURCE_PATH=$(yml_get "$source_file" "resource")
+    # The install commit lives in the STATE /update meta now (ADR-0022 D1).
+    _INSTALLED_SOURCE_COMMIT=$(_meta_installed_commit "$(_cco_project_meta "$project_dir")")
     return 0
 }
 
@@ -83,9 +84,10 @@ _check_remote_update() {
     local cache_mode="${3:-default}"  # default | force
 
     local source_url source_ref installed_commit
-    source_url=$(yml_get "$source_file" "source")
+    source_url=$(yml_get "$source_file" "url")
     source_ref=$(yml_get "$source_file" "ref")
-    installed_commit=$(yml_get "$source_file" "commit")
+    # Install commit comes from the STATE /update meta now (ADR-0022 D1).
+    installed_commit=$(_meta_installed_commit "$meta_file")
 
     # If no installed commit recorded, we can't compare — report as update available
     if [[ -z "$installed_commit" ]]; then

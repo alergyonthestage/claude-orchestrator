@@ -195,16 +195,19 @@ EOF
     mkdir -p "$target_dir/.cco/claude-state"
     mkdir -p "$target_dir/memory"
 
-    # Write .cco/source with remote origin metadata
+    # Write the DATA source coordinate (machine-agnostic) + STATE meta
+    # bookkeeping (install commit + date), ADR-0022 D1.
     local install_commit=""
     install_commit=$(git -C "$tmpdir" rev-parse HEAD 2>/dev/null) || true
+    local src_file
+    src_file=$(_cco_project_source "$target_dir")
+    mkdir -p "$(dirname "$src_file")"
     {
-        printf 'source: %s\n' "$url"
-        printf 'path: templates/%s\n' "$pick"
+        printf 'url: %s\n' "$url"
+        printf 'resource: templates/%s\n' "$pick"
         [[ -n "$ref" ]] && printf 'ref: %s\n' "$ref"
-        printf 'installed: %s\n' "$(date +%Y-%m-%d)"
-        [[ -n "$install_commit" ]] && printf 'commit: %s\n' "$install_commit"
-    } > "$target_dir/.cco/source"
+    } > "$src_file"
+    _meta_record_provenance "$(_cco_project_meta "$target_dir")" "$install_commit" "$(date +%Y-%m-%d)" ""
 
     # Save base versions for future 3-way merge.
     # Use the installed directory (after placeholder interpolation) so the base

@@ -127,6 +127,10 @@ EOF
     # (~/.cco/global presence); skipped in preview (--dry-run).
     if ! $dry_run; then
         _cco_migrate_global || true
+        # Relocate any legacy in-tree pack provenance into DATA (ADR-0022 D1).
+        # Idempotent + not marker-gated, so packs migrated by a pre-P4 cco are
+        # caught on the next update too.
+        _relocate_legacy_pack_sources || true
     fi
 
     # Validate scope: "global" is a keyword (see RESERVED_PROJECT_NAMES),
@@ -235,11 +239,12 @@ EOF
             pack_source_file=$(_cco_pack_source "$pack_dir")
             [[ ! -f "$pack_source_file" ]] && continue
             local pack_source_url
-            pack_source_url=$(yml_get "$pack_source_file" "source")
+            pack_source_url=$(yml_get "$pack_source_file" "url")
             [[ -z "$pack_source_url" || "$pack_source_url" == "local" ]] && continue
             local pack_name
             pack_name="$(basename "$pack_dir")"
-            local pack_meta_file="$pack_dir/.cco/meta"
+            local pack_meta_file
+            pack_meta_file=$(_cco_pack_meta "$pack_dir")
             local pack_remote_status
             pack_remote_status=$(_check_remote_update "$pack_source_file" "$pack_meta_file" "$cache_mode")
             # Format display URL

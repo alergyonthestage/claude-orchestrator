@@ -391,16 +391,22 @@ EOF
     _cleanup_clone "$tmpdir"
     trap - EXIT
 
-    # Update publish metadata in .cco/source
+    # Record publish provenance: the DATA source stays a pure coordinate
+    # (url only); the machine-local publish bookkeeping goes to STATE meta
+    # (ADR-0022 D1).
     local source_file
     source_file=$(_cco_project_source "$project_dir")
     if [[ ! -f "$source_file" ]]; then
-        # Create .cco/source for locally-created projects (track publish history)
+        # Mark a locally-created project as authored (no upstream coordinate)
         mkdir -p "$(dirname "$source_file")"
-        printf 'source: local\n' > "$source_file"
+        printf 'url: local\n' > "$source_file"
     fi
-    yml_set "$source_file" "published" "$(date +%Y-%m-%d)"
-    [[ -n "$publish_commit" ]] && yml_set "$source_file" "publish_commit" "$publish_commit"
+    local proj_meta
+    proj_meta=$(_cco_project_meta "$project_dir")
+    mkdir -p "$(dirname "$proj_meta")"
+    [[ -f "$proj_meta" ]] || : > "$proj_meta"
+    yml_set "$proj_meta" "published" "$(date +%Y-%m-%d)"
+    [[ -n "$publish_commit" ]] && yml_set "$proj_meta" "publish_commit" "$publish_commit"
 
     local summary="Published project '$name'"
     if [[ ${#published_packs[@]} -gt 0 ]]; then

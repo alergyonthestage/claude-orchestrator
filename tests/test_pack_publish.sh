@@ -100,7 +100,7 @@ test_pack_publish_updates_manifest_on_remote() {
     }
 }
 
-test_pack_publish_creates_cco_source() {
+test_pack_publish_records_upstream_url() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -112,8 +112,12 @@ test_pack_publish_creates_cco_source() {
     run_cco remote add target "$bare_dir"
     run_cco pack publish my-pack target
 
-    assert_file_exists "$CCO_PACKS_DIR/my-pack/.cco/source"
-    assert_file_contains "$CCO_PACKS_DIR/my-pack/.cco/source" "publish_target: target"
+    # The published upstream url is recorded in the DATA source (coordinate
+    # only) so the default remote is re-derived on the next publish (F4) — no
+    # stored publish_target (ADR-0022 D1).
+    assert_file_exists "$(data_pack_source my-pack)" || return 1
+    assert_file_contains "$(data_pack_source my-pack)" "url: $bare_dir" || return 1
+    assert_file_not_contains "$(data_pack_source my-pack)" "publish_target" || return 1
 }
 
 test_pack_publish_excludes_cco_source() {

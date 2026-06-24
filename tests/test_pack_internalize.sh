@@ -261,26 +261,28 @@ YAML
 }
 
 test_pack_internalize_remote_pack_no_knowledge_source() {
-    # A pack with .cco/source (from Config Repo) but no knowledge.source
-    # field should be reported as "already self-contained" by the current
-    # implementation (which only checks knowledge.source).
+    # A pack with a recorded remote upstream (DATA source) but no
+    # knowledge.source field should still get its upstream disconnected.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
 
-    mkdir -p "$CCO_PACKS_DIR/remote-only-pack"/{knowledge,.cco}
+    mkdir -p "$CCO_PACKS_DIR/remote-only-pack/knowledge"
     cat > "$CCO_PACKS_DIR/remote-only-pack/pack.yml" <<YAML
 name: remote-only-pack
-description: "Pack from Config Repo, no knowledge.source"
+description: "Pack from a sharing repo, no knowledge.source"
 knowledge:
   files:
     - path: doc.md
 YAML
     echo "# Doc" > "$CCO_PACKS_DIR/remote-only-pack/knowledge/doc.md"
-    printf 'source: https://github.com/team/config.git\npath: packs/remote-only-pack\nref: main\n' \
-        > "$CCO_PACKS_DIR/remote-only-pack/.cco/source"
+    # Provenance source → DATA, coordinate-only (ADR-0022 D1).
+    mkdir -p "$(dirname "$(data_pack_source remote-only-pack)")"
+    printf 'url: https://github.com/team/config.git\nresource: packs/remote-only-pack\nref: main\n' \
+        > "$(data_pack_source remote-only-pack)"
 
     run_cco pack internalize remote-only-pack
-    # .cco/source with remote URL is disconnected (set to local)
-    assert_output_contains "Disconnected from remote source"
+    # The recorded upstream is disconnected (url set to local)
+    assert_output_contains "Disconnected from remote source" || return 1
+    assert_file_contains "$(data_pack_source remote-only-pack)" "url: local" || return 1
 }

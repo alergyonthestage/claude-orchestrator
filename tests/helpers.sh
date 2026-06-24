@@ -66,6 +66,12 @@ state_project_meta() { printf '%s' "$CCO_STATE_HOME/projects/$1/update/meta"; }
 state_project_base() { printf '%s' "$CCO_STATE_HOME/projects/$1/update/base"; }
 state_pack_meta()    { printf '%s' "$CCO_STATE_HOME/packs/$1/update/meta"; }
 state_pack_base()    { printf '%s' "$CCO_STATE_HOME/packs/$1/update/base"; }
+# Install-provenance `source` → DATA, identity-keyed (ADR-0022 D1). The file
+# holds the machine-agnostic upstream coordinate only (url/ref/resource); the
+# install commit + dates live in the STATE /update meta above.
+data_pack_source()     { printf '%s' "$CCO_DATA_HOME/packs/$1/source"; }
+data_project_source()  { printf '%s' "$CCO_DATA_HOME/projects/$1/source"; }
+data_template_source() { printf '%s' "$CCO_DATA_HOME/templates/$1/source"; }
 cco_languages_file() { printf '%s' "$HOME/.cco/languages"; }
 cco_last_seen_file() { printf '%s' "$CCO_STATE_HOME/last_seen"; }
 cco_last_read_file() { printf '%s' "$CCO_STATE_HOME/last_read"; }

@@ -190,20 +190,20 @@ _update_single_project() {
     if [[ "$dry_run" != "true" && $sync_applied -gt 0 ]]; then
         _save_all_base_versions "$base_dir" "$remote_claude_dir" "project"
 
-        # Update .cco/source metadata
-        yml_set "$source_file" "commit" "$remote_head"
-        yml_set "$source_file" "updated" "$(date +%Y-%m-%d)"
+        # Record install bookkeeping in the STATE meta — the DATA source stays a
+        # pure upstream coordinate (ADR-0022 D1).
+        local meta_file
+        meta_file=$(_cco_project_meta "$project_dir")
+        _meta_record_provenance "$meta_file" "$remote_head" "" "$(date +%Y-%m-%d)"
 
-        # Read version field if publisher provides one
+        # Read the publisher's version field, if any, into the meta
         if [[ -f "$remote_dir/.cco/source" ]]; then
             local new_version
             new_version=$(yml_get "$remote_dir/.cco/source" "version" 2>/dev/null)
-            [[ -n "$new_version" ]] && yml_set "$source_file" "version" "$new_version"
+            [[ -n "$new_version" ]] && yml_set "$meta_file" "version" "$new_version"
         fi
 
-        # Update remote cache in .cco/meta
-        local meta_file
-        meta_file=$(_cco_project_meta "$project_dir")
+        # Update remote cache in the STATE meta
         yml_set "$meta_file" "remote_cache.commit" "$remote_head"
         yml_set "$meta_file" "remote_cache.checked" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
@@ -286,9 +286,10 @@ EOF
     local source_file
     source_file=$(_cco_project_source "$project_dir")
 
-    # Update .cco/source — source: local must be first line for format detection
+    # Disconnect: the DATA source url becomes local (authored); keep the prior
+    # upstream as a comment for history (ADR-0022 D1).
     {
-        printf 'source: local\n'
+        printf 'url: local\n'
         printf '# previously installed from: %s\n' "$source_url"
     } > "$source_file"
 

@@ -8,7 +8,8 @@
 #           _cco_global_base_dir(), _cco_project_meta(), _cco_project_base_dir(),
 #           _cco_project_managed(), _cco_project_compose(),
 #           _cco_project_claude_state(), _cco_project_pack_manifest(),
-#           _cco_project_source(), _cco_pack_source(), _cco_pack_install_tmp()
+#           _cco_project_source(), _cco_pack_source(), _cco_template_source(),
+#           _cco_pack_install_tmp()
 # Dependencies: colors.sh (die)
 # Globals: USER_CONFIG_DIR, GLOBAL_DIR
 
@@ -134,13 +135,17 @@ _cco_project_pack_manifest() {
 
 # ── Pack scope ($1 = pack_dir) ──────────────────────────────────────
 
+# Install-provenance `source` → DATA, identity-keyed (ADR-0022 D1 / ADR-0016 D5).
+# The file holds the machine-agnostic upstream coordinate only (`url`/`ref`/
+# `resource`); machine-local bookkeeping (`commit`/`installed`/`updated`) lives in
+# the STATE `/update` meta. llms `source` is NOT relocated (already CACHE-split,
+# ADR-0016 D2/D7). Pack identity <name> = the flat-store dir basename.
 _cco_pack_source() {
-    _cco_resolve_path f "$1/.cco/source" "$1/.cco-source"
+    printf '%s\n' "$(_cco_data_dir)/packs/$(basename "$1")/source"
 }
 
 # Pack-scoped merge artifacts → STATE, keyed by pack name (= the flat-store dir
-# basename). Created here for build-once; the pack writers/readers flip onto
-# them in P4 (pack behavior). <state>/cco/packs/<name>/update/{meta,base}.
+# basename). <state>/cco/packs/<name>/update/{meta,base}.
 _cco_pack_meta() {
     printf '%s\n' "$(_cco_state_dir)/packs/$(basename "$1")/update/meta"
 }
@@ -149,8 +154,16 @@ _cco_pack_base_dir() {
     printf '%s\n' "$(_cco_state_dir)/packs/$(basename "$1")/update/base"
 }
 
+# Project install-provenance `source` → DATA, keyed by project identity (the
+# project.yml `name:`, ADR-0024 D1). Same coordinate-only contract as packs.
 _cco_project_source() {
-    _cco_resolve_path f "$1/.cco/source" "$1/.cco-source"
+    printf '%s\n' "$(_cco_data_dir)/projects/$(_cco_project_id "$1")/source"
+}
+
+# Template install-provenance `source` → DATA, keyed by template dir basename.
+# (New in P4 — templates join the coordinate model; ADR-0022 D1.)
+_cco_template_source() {
+    printf '%s\n' "$(_cco_data_dir)/templates/$(basename "$1")/source"
 }
 
 _cco_pack_install_tmp() {

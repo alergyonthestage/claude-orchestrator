@@ -989,9 +989,11 @@ test_resolve_project_defaults_dir_tutorial() {
     source "$REPO_ROOT/lib/update-remote.sh"
     source "$REPO_ROOT/lib/update.sh"
 
+    # Provenance source → DATA, keyed by project id (= dir basename here).
     local proj_dir="$tmpdir/test-proj"
-    mkdir -p "$proj_dir/.cco"
-    printf 'native:project/tutorial\n' > "$proj_dir/.cco/source"
+    mkdir -p "$proj_dir"
+    mkdir -p "$(dirname "$(data_project_source test-proj)")"
+    printf 'native:project/tutorial\n' > "$(data_project_source test-proj)"
 
     local result
     result=$(_resolve_project_defaults_dir "$proj_dir")

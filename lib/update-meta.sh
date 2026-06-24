@@ -1,5 +1,27 @@
 # lib/update-meta.sh — .cco/meta I/O, schema versioning, and migration runner
 
+# ── Install-provenance bookkeeping (STATE /update meta — ADR-0022 D1) ─
+# The DATA `source` file holds only the machine-agnostic upstream coordinate
+# (`url`/`ref`/`resource`). The machine-local install state — the upstream
+# commit and the install/update dates — lives here in the STATE `/update` meta,
+# keyed by identity (where version-tied state belongs, ADR-0013 D2 / ADR-0016 D6).
+_meta_record_provenance() {
+    local meta_file="$1" commit="${2:-}" installed="${3:-}" updated="${4:-}"
+    mkdir -p "$(dirname "$meta_file")"
+    [[ -f "$meta_file" ]] || : > "$meta_file"
+    [[ -n "$commit" ]]    && yml_set "$meta_file" "installed_commit" "$commit"
+    [[ -n "$installed" ]] && yml_set "$meta_file" "src_installed" "$installed"
+    [[ -n "$updated" ]]   && yml_set "$meta_file" "src_updated" "$updated"
+    return 0
+}
+
+# Read the recorded install commit from a STATE /update meta (empty if none).
+_meta_installed_commit() {
+    local meta_file="$1"
+    [[ -f "$meta_file" ]] || return 0
+    yml_get "$meta_file" "installed_commit" 2>/dev/null
+}
+
 # ── .cco/meta I/O ────────────────────────────────────────────────────
 
 # Read schema_version from .cco/meta. Returns 0 if file missing.
@@ -119,15 +141,21 @@ _generate_project_cco_meta() {
     local created="$3"
     local template="${4:-base}"
 
-    # Preserve FI-7 fields (local_framework_override, remote_cache) from
-    # the existing meta file before overwriting.  These are set by other
-    # parts of the update flow (_check_remote_update, --local sync) and
+    # Preserve FI-7 fields (local_framework_override, remote_cache) and the
+    # install-provenance bookkeeping (installed_commit, src_installed,
+    # src_updated — relocated here from .cco/source, ADR-0022 D1) from the
+    # existing meta file before overwriting.  These are set by other parts of
+    # the update flow (_check_remote_update, --local sync, install/update) and
     # must survive meta regeneration.
     local prev_local_override="" prev_rc_commit="" prev_rc_checked=""
+    local prev_inst_commit="" prev_src_installed="" prev_src_updated=""
     if [[ -f "$meta_file" ]]; then
         prev_local_override=$(yml_get "$meta_file" "local_framework_override" 2>/dev/null) || true
         prev_rc_commit=$(yml_get "$meta_file" "remote_cache.commit" 2>/dev/null) || true
         prev_rc_checked=$(yml_get "$meta_file" "remote_cache.checked" 2>/dev/null) || true
+        prev_inst_commit=$(yml_get "$meta_file" "installed_commit" 2>/dev/null) || true
+        prev_src_installed=$(yml_get "$meta_file" "src_installed" 2>/dev/null) || true
+        prev_src_updated=$(yml_get "$meta_file" "src_updated" 2>/dev/null) || true
     fi
 
     mkdir -p "$(dirname "$meta_file")"
@@ -153,7 +181,7 @@ _generate_project_cco_meta() {
         done
     } > "$meta_file"
 
-    # Restore preserved FI-7 fields
+    # Restore preserved FI-7 fields + install-provenance bookkeeping
     if [[ -n "$prev_local_override" ]]; then
         yml_set "$meta_file" "local_framework_override" "$prev_local_override"
     fi
@@ -162,6 +190,15 @@ _generate_project_cco_meta() {
     fi
     if [[ -n "$prev_rc_checked" ]]; then
         yml_set "$meta_file" "remote_cache.checked" "$prev_rc_checked"
+    fi
+    if [[ -n "$prev_inst_commit" ]]; then
+        yml_set "$meta_file" "installed_commit" "$prev_inst_commit"
+    fi
+    if [[ -n "$prev_src_installed" ]]; then
+        yml_set "$meta_file" "src_installed" "$prev_src_installed"
+    fi
+    if [[ -n "$prev_src_updated" ]]; then
+        yml_set "$meta_file" "src_updated" "$prev_src_updated"
     fi
 }
 
