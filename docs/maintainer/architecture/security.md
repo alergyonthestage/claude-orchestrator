@@ -5,7 +5,8 @@ It is fact-based: every finding references specific files and line numbers.
 It is intended to guide future hardening work, not to block shipping.
 
 **Scope:** CLI (`bin/cco`, `lib/`), Docker entrypoint (`config/entrypoint.sh`),
-Dockerfile, and vault subsystem (`lib/cmd-vault.sh`).
+Dockerfile, personal-store versioning (`lib/cmd-config.sh`), and sharing-repo
+remotes (`lib/cmd-remote.sh` / `lib/remote.sh`).
 
 **Threat model:** Single-developer or small-team tool, running on the developer's
 own machine. The primary risks are accidental secret exposure (via git, logs, or
@@ -224,33 +225,28 @@ so a failure there would propagate correctly.
 
 ---
 
-### [MEDIUM-3] Vault secret scan does not cover all secret file patterns
+### [MEDIUM-3] Personal-store secret scan — single canonical pattern set
 
-**File:** `lib/cmd-vault.sh:37-42`
+**File:** `lib/cmd-config.sh` (the `cco config save` scan), `lib/secrets.sh`
 
-```bash
-_VAULT_SECRET_PATTERNS=(
-    'secrets.env'
-    '*.key'
-    '*.pem'
-    '.credentials.json'
-)
-```
+`cco config save` versions the personal `~/.cco` store. Before committing it
+runs a two-pass secret scan via `_secret_match_filename` + `_secret_match_content`
+(`lib/secrets.sh`) — the **same** `_SECRET_FILENAME_PATTERNS` used by
+`cco pack publish` and `cco project export`. This closes the historical gap (a
+separate, shorter vault-only pattern list that could drift from the canonical
+set): adding a pattern to `_SECRET_FILENAME_PATTERNS` now hardens every gate at
+once (see Coding Conventions §"Secret-like files").
 
-The vault `.gitignore` correctly excludes `*.env`, `.cco/remotes`, and
-`*.credentials.json`. However, the pre-commit secret scan only checks the four
-patterns above.
+Defense-in-depth still holds: a double-barrier allowlist staging
+(`cco config save` never `git add -A`; only the explicit synced set) is the
+primary barrier and the content scan is the secondary one. Auth tokens for
+sharing-repo remotes never ride a synced file — they live in the machine-local
+STATE `remotes-token` store (0600), not the DATA `remotes` registry.
 
-**Gap:** If the vault `.gitignore` is manually edited or deleted, and the user
-runs `cco vault save`, the scan would not catch:
-- `*.env` files (only `secrets.env` is matched, not e.g. `production.env`)
-- `.cco/remotes`
-
-This is defense-in-depth: `.gitignore` is the primary barrier, the scan is the
-secondary one. The cost of adding the missing patterns is zero.
-
-**Mitigation options (not implemented):**
-- Add `'*.env'` and `'.cco/remotes'` to `_VAULT_SECRET_PATTERNS`.
+**Residual:** the scan is best-effort, not a guarantee — a novel secret format
+not matched by `_SECRET_FILENAME_PATTERNS`/`_secret_match_content` can still be
+committed if the user explicitly stages it. Mitigation: extend the canonical
+pattern set as new credential shapes appear.
 
 ---
 
@@ -341,21 +337,27 @@ are mounted read-write intentionally.
 
 ---
 
-### [LOW-4] Vault push does not use the token stored in `.cco/remotes`
+### [LOW-4] `cco config push` does not inject a stored token
 
-**File:** `lib/cmd-vault.sh:419`
+**File:** `lib/cmd-config.sh` (`_config_push`)
 
-`cco vault push` calls `git push` without injecting the stored token. For
-private repos, the user must configure git credentials separately (SSH key,
-credential helper, etc.). This is a **functional gap**, not a security issue.
+`cco config push` versions the personal `~/.cco` store to its own git remote and
+calls `git push` without injecting any token — for a private remote the user
+configures git credentials separately (SSH key, credential helper, etc.). This is
+a **functional gap**, not a security issue (and is intentional: keeping the
+`~/.cco` remote out of the token store means no personal-store secret is implied
+by config). Sharing-repo remotes are different: `lib/remote.sh` *does* inject the
+STATE `remotes-token` when cloning/fetching a token-protected sharing repo.
 
 ---
 
 ## Secret storage strategy: current design vs alternatives
 
-The current approach stores tokens in plaintext in `user-config/.cco/remotes`
-with `chmod 600`. This is consistent with how virtually all developer tools
-handle credentials:
+The current approach stores sharing-repo auth tokens in plaintext in the
+machine-local STATE store `<state>/cco/remotes-token` with `chmod 600` (the DATA
+`remotes` registry holds only the de-tokenized url, so no secret rides a synced
+file). This is consistent with how virtually all developer tools handle
+credentials:
 
 | Tool | Storage | Permissions |
 |---|---|---|
@@ -427,7 +429,7 @@ Ordered by a combination of effort required and risk addressed.
 
 | # | Finding | What was done | Status |
 |---|---|---|---|
-| 1 | **[MEDIUM-3]** Vault secret scan gaps | Added `'*.env'` and `'.cco/remotes'` to `_VAULT_SECRET_PATTERNS` | DONE |
+| 1 | **[MEDIUM-3]** Secret scan pattern drift | Resolved by the decentralized-config refactor: `cco config save` scans via the canonical `_SECRET_FILENAME_PATTERNS` (`lib/secrets.sh`), so there is no separate vault-only list to drift | DONE |
 | 2 | **[MEDIUM-2]** Silent chmod failure | Replaced `\|\| true` with `warn` on failure | DONE |
 
 ### Short-term — low effort, meaningful hardening (DONE)

@@ -1030,7 +1030,7 @@ documented and defaulted.
 
 **Depends on**: nothing.
 
-**Verify**: `cco project create test-browser` and check the generated `project.yml`.
+**Verify**: `cco init` in a `test-browser` repo and check the generated `<repo>/.cco/project.yml`.
 
 ### Step 9 — Tests
 
