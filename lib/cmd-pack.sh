@@ -614,6 +614,71 @@ EOF
     ok "Exported pack to $archive"
 }
 
+# Import a pack from a .tar.gz archive — the local-transport counterpart of
+# `cco pack export` (the 2×2 "consume" cell; ADR-0018 D2). An exported tar
+# carries no upstream coordinate (export omits `source`, which lives in DATA),
+# so the import is an **internalized snapshot** recorded as locally-authored
+# (`url: local`); `cco pack update` does not apply.
+cmd_pack_import() {
+    local archive="" force=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --force) force=true; shift ;;
+            --help)
+                cat <<'EOF'
+Usage: cco pack import <archive> [--force]
+
+Import a pack from a .tar.gz archive (the counterpart of `cco pack export`).
+The imported pack is an internalized snapshot (source: local) — `cco pack
+update` does not apply. Use --force to overwrite an existing pack.
+EOF
+                return 0
+                ;;
+            -*)  die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$archive" ]]; then
+                    archive="$1"; shift
+                else
+                    die "Unexpected argument: $1"
+                fi
+                ;;
+        esac
+    done
+
+    [[ -z "$archive" ]] && die "Usage: cco pack import <archive>"
+    [[ -f "$archive" ]] || die "Archive not found: $archive"
+
+    local tmpdir; tmpdir=$(mktemp -d)
+    tar xzf "$archive" -C "$tmpdir" 2>/dev/null \
+        || { rm -rf "$tmpdir"; die "Failed to extract archive: $archive"; }
+
+    # Locate the pack root: a top-level dir carrying pack.yml (`export` wraps the
+    # pack in its <name>/ dir), or pack.yml at the archive root (defensive).
+    local pack_root="" d
+    if [[ -f "$tmpdir/pack.yml" ]]; then
+        pack_root="$tmpdir"
+    else
+        for d in "$tmpdir"/*/; do
+            [[ -f "${d}pack.yml" ]] && { pack_root="${d%/}"; break; }
+        done
+    fi
+    [[ -z "$pack_root" ]] && { rm -rf "$tmpdir"; die "No pack found in archive (missing pack.yml)"; }
+
+    # Identity = the archived dir name, else the pack.yml `name:`.
+    local name
+    if [[ "$pack_root" != "$tmpdir" ]]; then
+        name=$(basename "$pack_root")
+    else
+        name=$(yml_get "$pack_root/pack.yml" "name")
+    fi
+    [[ -z "$name" ]] && { rm -rf "$tmpdir"; die "Could not determine pack name from archive"; }
+
+    _install_pack_from_dir "$pack_root" "$name" "local" "" "" "$force"
+
+    rm -rf "$tmpdir"
+}
+
 # ── Internal helpers for install/update ────────────────────────────────
 
 # Install a pack from a local directory (clone temp or single-pack root).

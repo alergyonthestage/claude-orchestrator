@@ -285,6 +285,58 @@ test_pack_export_creates_archive() {
     assert_file_exists "$tmpdir/exportable.tar.gz"
 }
 
+# ── pack import (2×2 local-consume cell; ADR-0018 D2) ──────────────────
+
+test_pack_import_round_trip() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco pack create "roundtrip"
+
+    cd "$tmpdir"
+    run_cco pack export "roundtrip"
+    assert_file_exists "$tmpdir/roundtrip.tar.gz"
+
+    # Remove the local pack, then import it back from the archive.
+    rm -rf "$CCO_PACKS_DIR/roundtrip"
+    run_cco pack import "$tmpdir/roundtrip.tar.gz"
+    assert_dir_exists "$CCO_PACKS_DIR/roundtrip"
+    assert_file_exists "$CCO_PACKS_DIR/roundtrip/pack.yml"
+}
+
+test_pack_import_records_snapshot_source() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco pack create "snap"
+    cd "$tmpdir"
+    run_cco pack export "snap"
+    rm -rf "$CCO_PACKS_DIR/snap"
+    run_cco pack import "$tmpdir/snap.tar.gz"
+
+    # Snapshot import: no upstream coordinate → locally-authored (ADR-0018 D2);
+    # the imported tree is recorded as the pack-scoped STATE base/ (ADR-0022 D5).
+    assert_file_contains "$(data_pack_source snap)" "url: local" || return 1
+    assert_file_exists "$(state_pack_base snap)/pack.yml" || return 1
+}
+
+test_pack_import_nonexistent_fails() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    if run_cco pack import "$tmpdir/missing.tar.gz" 2>/dev/null; then
+        echo "ASSERTION FAILED: import should fail for a missing archive"
+        return 1
+    fi
+}
+
+test_pack_import_help() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco pack import --help
+    assert_output_contains "Import a pack"
+}
+
 test_pack_export_excludes_cco_source() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
