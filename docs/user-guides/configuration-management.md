@@ -103,8 +103,8 @@ cco config pull                        # pull on another machine
 (no auto-commit). A non-fast-forward `cco config pull` aborts and tells you to resolve
 in your IDE, as ordinary git.
 
-`cco config validate [--fix]` sanitizes orphaned internal state after a manual deletion
-(detect/report, prune only on confirm) — never automatic.
+`cco config validate [--fix]` (🚧 planned) sanitizes orphaned internal state after a manual
+deletion (detect/report, prune only on confirm) — never automatic.
 
 ### 3.3 Path portability — the machine-local index
 
@@ -305,7 +305,7 @@ CCO has two update sources:
 
 ```bash
 cco update              # migrations + eager vault migration + available framework updates
-cco update --check      # list installed packs/templates with an upstream update
+cco update --check      # list installed packs/templates with an upstream update [planned]
 cco update --news       # show changelog (new features)
 ```
 
@@ -340,7 +340,7 @@ committed `<repo>/.cco/`. **Tip**: if you've heavily restructured a file, use
 ### 7.3 Upstream pack/template updates
 
 ```bash
-cco update --check                     # which installed resources have an update?
+cco update --check                     # which installed resources have an update? [planned]
 cco pack update acme-conventions       # 3-way merge against the recorded STATE base
 cco pack update --all
 cco template update acme-service
@@ -455,7 +455,7 @@ cco pack publish team-rules team           # sync-before-publish (3-way merge)
 
 # Consumer
 cco pack install https://github.com/company/team-sharing.git --pick team-rules
-cco update --check                          # see when an update is available
+cco update --check                          # see when an update is available [planned]
 cco pack update team-rules
 ```
 
@@ -481,7 +481,7 @@ versioned and **not** synced in v1:
 | `git add .cco && git commit && git push` | Version + share project config (the repo's own git) |
 | `cco config save [-m <msg>] [--dry-run]` | Commit the personal `~/.cco` store (allowlist + secret scan) |
 | `cco config push` / `cco config pull` | Sync `~/.cco` to/from its opt-in remote |
-| `cco config validate [--dry-run\|--fix]` | Sanitize orphaned internal state |
+| `cco config validate [--dry-run\|--fix]` | Sanitize orphaned internal state — 🚧 planned, ships in a later release |
 | `cco sync [target] [--from <src>] [--dry-run\|--auto-approve\|--check]` | Copy `<repo>/.cco/` across a project's repos (clobber-guarded) |
 | `cco resolve [project] [--all] [--scan <dir>]` | Map logical names → absolute paths (index) |
 | `cco path set <name> <path>` / `cco path list` | Low-level index editor |
@@ -499,12 +499,12 @@ versioned and **not** synced in v1:
 | Command | Purpose |
 |---------|---------|
 | `cco update` | Migrations + eager vault migration + available framework updates + changelog |
-| `cco update --check` | List installed packs/templates with an upstream update |
+| `cco update --check` | List installed packs/templates with an upstream update — 🚧 planned, ships in a later release |
 | `cco update --sync [scope]` | Interactive framework file merge |
 | `cco update --diff [scope]` | Preview framework changes |
 | `cco update --news` | Show changelog details |
 | `cco pack update <name>` / `--all` | Update pack(s) from upstream (3-way merge) |
-| `cco template update <name>` / `--all` | Update template(s) from upstream |
+| `cco template update <name>` / `--all` | Update template(s) from upstream — 🚧 planned, ships in a later release |
 
 ### Sharing & remotes
 
@@ -517,7 +517,7 @@ versioned and **not** synced in v1:
 | `cco pack install <url>` / `cco template install <url>` | Install from a sharing repo |
 | `cco pack export\|import` / `cco template export\|import` | Tar-snapshot share |
 | `cco project export\|import` | Snapshot/bootstrap a project's `<repo>/.cco/` |
-| `cco pack internalize <name>` / `cco template internalize <name>` | Cut the upstream coordinate |
+| `cco pack internalize <name>` | Cut the upstream coordinate (`cco template internalize` — 🚧 planned) |
 
 ### Entry & introspection
 

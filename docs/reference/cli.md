@@ -327,6 +327,11 @@ during migrate.
 
 ### 3.4b `cco forget <project>`
 
+> 🚧 **Planned — ships in a later release.** Today `cco forget` is not available — the command
+> reports that a dedicated deregistration ships later (ADR-0021). To drop a project now, remove
+> the repo (or its `<repo>/.cco/`) with normal git/filesystem ops; the index self-heals on the
+> next `cco resolve --scan`. The contract below is the target surface.
+
 Deregister a project: remove cco's internal id-keyed state — index entry, tags, install
 provenance, and the project's STATE/CACHE — **without** touching the repo or its committed
 `<repo>/.cco/`. The inverse of `cco init`/`cco join`.
@@ -813,7 +818,7 @@ Checks both framework defaults and remote sources for installed projects/packs.
 
 Modes:
   (default)           Run migrations + show available config updates + changelog
-  --check             List installed resources (packs/templates) with an upstream update
+  --check             List installed resources (packs/templates) with an upstream update [planned]
   --sync [scope]      Run migrations + interactively sync config from framework defaults
   --diff [scope]      Run migrations + show config update summary (or full diffs if scoped)
   --diff --all        Run migrations + show full diffs for all scopes
@@ -842,7 +847,7 @@ and other framework defaults that you may have customized.
 
 Examples:
   cco update                  # Run migrations + eager vault migration + available updates
-  cco update --check          # List packs/templates with an upstream update
+  cco update --check          # List packs/templates with an upstream update [planned]
   cco update --diff           # Summary: file names + status per scope
   cco update --diff global    # Full diffs for global config only
   cco update --diff myapp     # Full diffs for one project
@@ -854,6 +859,11 @@ Examples:
   cco update --dry-run        # Preview pending migrations
   cco update --offline        # Skip remote checks
 ```
+
+> 🚧 **`cco update --check` is planned — ships in a later release.** The flag is documented here
+> for completeness; today `cco update` runs without it (ADR-0022 D6). The rest of `cco update`
+> (migrations, `--sync`, `--diff`, `--news`, `--dry-run`) is current. The `--check` contract below
+> is the target surface.
 
 **Discovery-flag division of labor**: four surfaces answer different "what would change?"
 questions — `--check` (is a newer **upstream** available for an installed pack/template?,
@@ -1082,6 +1092,10 @@ Examples:
 
 #### `cco config validate [--dry-run|--fix]`
 
+> 🚧 **Planned — ships in a later release.** Today `cco config validate` is not available — the
+> command reports that orphan cleanup ships later (ADR-0021 §5). STATE/CACHE rebuild freely via
+> `cco resolve --scan`. The contract below is the target surface.
+
 **Orphan-sanitization** of the global id-keyed internal state after a manual deletion: detect
 and report orphaned entries; with `--fix`, prune them (preview-first / confirmed). Warn, never
 hide; never automatic. STATE/CACHE are freely rebuildable (`cco resolve --scan`); DATA is pruned
@@ -1228,6 +1242,9 @@ Examples:
 ```
 
 #### `cco project coords --diff [--sync --from <unit>]`
+
+> 🚧 **Planned — ships in a later release.** `cco project coords` is not yet available (ADR-0016
+> D3). `cco project add` (above) is current. The contract below is the target surface.
 
 Check (and optionally reconcile) coordinate consistency across a project's units. `--sync`
 requires an explicit `--from` (never auto-elects a source).
