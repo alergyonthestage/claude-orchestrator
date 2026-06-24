@@ -17,13 +17,19 @@ tree is the NEW design (source of truth) and is excluded.
 > changelog id 14), and **C ✅** (24 user-facing + contract docs: README, cli.md, configuration-management,
 > context-hierarchy, architecture, docker/design, spec, getting-started, project-setup, knowledge-packs,
 > mechanical subs, index READMEs, repo CLAUDE.md) are **DONE** (commits `5c6ad29` A/B, `141e24e` C;
-> suite 936/3 delta-green). **Section D (archive vault/sharing/resource-lifecycle → `_archive/`) is NOT
-> done — it is the resume point** (see the P3-5 resume handoff). **NOTE:** the C.6 index-README rewrite
-> ALREADY redirected canonical pointers to `decentralized-config/` and references `_archive/` + the
-> `update-system/` re-home as if present — Section D must MAKE those true (create `_archive/`, move the
-> dead subtrees, re-home the surviving file-policy/changelog-dual-tracker concepts into `update-system/`).
-> Deferred-not-edited (user-owned rule, propose to maintainer): `.claude/rules/update-system.md:20`
-> "vault capabilities" example.
+> suite 936/3 delta-green). **Section D ✅ DONE (2026-06-24)** — two delta-green commits: D-rehome
+> `56967cf` (file-policy taxonomy + changelog dual-tracker made canonical in `update-system/`; the 2
+> `rules-and-guidelines/` refs re-homed there) + D-archive `a3e0618` (`git mv` vault/sharing/
+> resource-lifecycle → `_archive/`, 15 files history-preserved; live refs re-pointed into `_archive/`;
+> the C.6 index assertions are now TRUE). The whole `resource-lifecycle/` subtree was archived (not just
+> design.md) because its surviving concepts already live in `update-system/` (maintainer-confirmed).
+> **→ Phase 3 CLOSED.** Accepted-dangling per doc-lifecycle: ADR back-ref `decentralized-config/
+> decisions/0001 → ../../vault/…` (ADRs are history, not rewritten). Deferred-not-edited (user-owned
+> rule, propose to maintainer): `.claude/rules/update-system.md:20` "vault capabilities" example.
+> **Deferred to P4** (logged): full rewrite of `docs/maintainer/architecture/{coding-conventions,security}.md`
+> + `integration/{browser-mcp,auth}/design.md` (they document the now-deleted `cmd-vault.sh` + still-present
+> `@local`/tier-2 code — rewrite rides the P4 code teardown that makes them true; only their `vault/` path
+> tokens were re-pointed to `_archive/` now).
 
 > **Purpose**: when the vault/profile/`user-config/` model is removed, dozens of peripheral
 > resources (skills, templates, rules, docs, the managed `CLAUDE.md` baked into the image) still
@@ -230,6 +236,10 @@ sweep, never ahead of code; doc-lifecycle). Source: ADR-0024 (fronts A & E).
 ---
 
 ## D. Maintainer-design history subtrees (archive at cutover)
+
+> **✅ DONE (2026-06-24)** — D-rehome `56967cf` + D-archive `a3e0618`. `_archive/{vault,sharing,
+> resource-lifecycle}/` created (15 files via `git mv`); surviving file-policy + changelog-dual-tracker
+> concepts canonical in `update-system/`; live refs re-pointed into `_archive/`; index pointers TRUE.
 
 The old maintainer-design subtrees under `docs/maintainer/configuration/{vault,sharing,
 resource-lifecycle}/` (~15 files) describe the **removed** mechanism (vault profiles, Config Repos +
