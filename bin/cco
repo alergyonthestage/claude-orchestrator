@@ -84,12 +84,9 @@ source "$LIB_DIR/cmd-stop.sh"
 source "$LIB_DIR/cmd-chrome.sh"
 source "$LIB_DIR/cmd-project-delete.sh"
 source "$LIB_DIR/cmd-project-query.sh"
-source "$LIB_DIR/cmd-project-install.sh"
 source "$LIB_DIR/cmd-project-pack-ops.sh"
 source "$LIB_DIR/cmd-project-add.sh"
-source "$LIB_DIR/cmd-project-publish.sh"
 source "$LIB_DIR/cmd-project-export-import.sh"
-source "$LIB_DIR/cmd-project-update.sh"
 source "$LIB_DIR/cmd-pack.sh"
 source "$LIB_DIR/cmd-llms.sh"
 source "$LIB_DIR/cmd-template.sh"
@@ -136,7 +133,7 @@ Discovery:
   tag <add|rm>           Tag a pack/project/template (per-user, never team-shared)
 
 Projects & Packs:
-  project <cmd>          Manage projects (create, install, delete, list, show, validate)
+  project <cmd>          Manage projects (export, import, add, delete, list, show, validate)
   pack <cmd>             Manage knowledge packs (create, install, update, ...)
   llms <cmd>             Manage llms.txt framework docs (install, update, ...)
   chrome <cmd>           Manage Chrome debug session on host
@@ -187,12 +184,8 @@ Usage: cco project <command> [options]
 
 Commands:
   delete <name> [--yes]  Delete a project from all locations
-  install <url>          Install project template from a remote Config Repo
-  update <name>          Update an installed project from its remote source
-  publish <name> <remote> Publish project as template to a Config Repo
   export [name]          Export a project's config as a .tar.gz snapshot
   import <archive>       Import a project from a .tar.gz snapshot
-  internalize <name>     Disconnect from remote source, convert to local
   add <res> <name>       Embed a repo|mount|llms|pack coordinate (cwd-first)
   add-pack <proj> <pack> Add a knowledge pack to a project
   remove-pack <p> <pack> Remove a knowledge pack from a project
@@ -208,12 +201,10 @@ EOF
         shift
         case "$subcmd" in
             delete)      cmd_project_delete "$@" ;;
-            install)     cmd_project_install "$@" ;;
-            update)      cmd_project_update "$@" ;;
-            publish)     cmd_project_publish "$@" ;;
+            publish|install|update|internalize)
+                die "'cco project $subcmd' was removed — a project rides its code-repo remote, not a sharing repo (ADR-0018 D2). Use 'cco project export|import' to move a project's config as a tar, or 'cco init --template <name>' to start from a template." ;;
             export)      cmd_project_export "$@" ;;
             import)      cmd_project_import "$@" ;;
-            internalize) cmd_project_internalize "$@" ;;
             add)         cmd_project_add "$@" ;;
             add-pack)    cmd_project_add_pack "$@" ;;
             remove-pack) cmd_project_remove_pack "$@" ;;
@@ -232,9 +223,9 @@ Usage: cco pack <command> [options]
 
 Commands:
   create <name>          Create a new knowledge pack
-  install <url>          Install packs from a remote Config Repo
+  install <url>          Install packs from a remote sharing repo
   update <name>          Update a pack from its remote source
-  publish <name> [remote] Publish a pack to a remote Config Repo
+  publish <name> [remote] Publish a pack to a remote sharing repo
   export <name>          Export a pack as .tar.gz archive
   import <archive>       Import a pack from a .tar.gz archive
   internalize <name>     Convert source-referencing pack to self-contained

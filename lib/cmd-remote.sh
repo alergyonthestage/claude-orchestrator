@@ -257,7 +257,7 @@ _cmd_remote_list() {
 
     if [[ ! -f "$rf" ]]; then
         echo "No remotes configured."
-        info "Run 'cco remote add <name> <url>' to register a Config Repo."
+        info "Run 'cco remote add <name> <url>' to register a sharing repo."
         return 0
     fi
 
@@ -276,7 +276,7 @@ _cmd_remote_list() {
 
     if ! $found; then
         echo "  (none)"
-        info "Run 'cco remote add <name> <url>' to register a Config Repo."
+        info "Run 'cco remote add <name> <url>' to register a sharing repo."
     fi
 }
 
@@ -288,10 +288,10 @@ cmd_remote() {
         cat <<'EOF'
 Usage: cco remote <command>
 
-Manage named Config Repo remotes for publishing and installing.
+Manage named sharing repo remotes for publishing and installing.
 
 Commands:
-  add <name> <url>     Register a remote Config Repo
+  add <name> <url>     Register a remote sharing repo
   remove <name>        Unregister a remote
   list                 Show all registered remotes
   set-token <n> <tok>  Save auth token for a remote
@@ -347,7 +347,7 @@ EOF
                         cat <<'EOF'
 Usage: cco remote list
 
-Show all registered Config Repo remotes.
+Show all registered sharing repo remotes.
 EOF
                         return 0
                         ;;

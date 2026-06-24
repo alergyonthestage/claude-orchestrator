@@ -82,7 +82,7 @@ Migrations run automatically in all modes (except --news and --dry-run).
 Config sync (--sync) covers opinionated files: rules, agents, skills,
 and other framework defaults that you may have customized.
 
-For installed projects (from Config Repos), framework updates are managed
+For installed projects (from sharing repos), framework updates are managed
 by the publisher. Use 'cco project update <name>' to get publisher updates.
 Use --local with --sync to apply framework defaults directly (escape hatch).
 

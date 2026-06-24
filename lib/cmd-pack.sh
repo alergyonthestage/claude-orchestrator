@@ -390,7 +390,7 @@ cmd_pack_install() {
                 cat <<'EOF'
 Usage: cco pack install <source> [options]
 
-Install packs from a remote Config Repo.
+Install packs from a remote sharing repo.
 
 Arguments:
   <source>          Git URL or registered remote name
@@ -1059,7 +1059,7 @@ cmd_pack_publish() {
                 cat <<'EOF'
 Usage: cco pack publish <name> [<remote>] [OPTIONS]
 
-Publish a pack to a remote Config Repo.
+Publish a pack to a remote sharing repo.
 
 Arguments:
   <name>             Pack to publish

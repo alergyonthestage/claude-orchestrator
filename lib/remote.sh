@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lib/remote.sh — Remote clone helper for Config Repo operations
+# lib/remote.sh — Remote clone helper for sharing repo operations
 #
 # Provides: _supports_sparse_checkout(), _clone_config_repo(), _cleanup_clone()
 # Dependencies: colors.sh
@@ -44,7 +44,7 @@ _build_git_auth() {
     fi
 }
 
-# Clone a config repo to a temporary directory.
+# Clone a sharing repo to a temporary directory.
 # Usage: _clone_config_repo <url> [<ref>] [<token>]
 # Outputs: path to the cloned directory
 _clone_config_repo() {
@@ -79,7 +79,7 @@ _clone_config_repo() {
     echo "$tmpdir"
 }
 
-# Clone a config repo for publishing (full clone, push-ready).
+# Clone a sharing repo for publishing (full clone, push-ready).
 # Handles empty repos (first publish) by initializing with manifest.yml.
 # Usage: _clone_for_publish <url> [<token>]
 # Outputs: path to the cloned directory

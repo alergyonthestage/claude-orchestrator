@@ -95,6 +95,21 @@ test_project_import_refuses_existing() {
     fi
 }
 
+test_project_sharing_verbs_removed() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    # Projects are not published/installed/updated from a sharing repo (ADR-0018
+    # D2); the current project-internalize is retired with them (ADR-0023 D4c).
+    local verb
+    for verb in publish install update internalize; do
+        if run_cco project "$verb" foo bar 2>/dev/null; then
+            echo "ASSERTION FAILED: 'cco project $verb' should be rejected (removed in P4-4)"
+            return 1
+        fi
+        assert_output_contains "was removed" || return 1
+    done
+}
+
 test_project_export_help() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
