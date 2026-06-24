@@ -114,6 +114,37 @@ test_init_scaffolds_committed_tree() {
     assert_file_exists "$repo/.cco/.gitignore"
 }
 
+# ── cco init --template (instantiate from a named project template) ────
+
+test_init_template_scaffolds_from_named_template() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+
+    # A user project-template carrying a distinctive marker.
+    run_cco template create custom --project
+    echo "# CUSTOM-TEMPLATE-MARKER" >> "$CCO_TEMPLATES_DIR/project/custom/project.yml"
+
+    local repo; repo=$(_init_repo "$tmpdir" app)
+    ( cd "$repo" && run_cco init --name app --template custom )
+
+    assert_file_exists "$repo/.cco/project.yml"
+    # Scaffolded from the named template (marker survives) with PROJECT_NAME applied.
+    assert_file_contains "$repo/.cco/project.yml" "CUSTOM-TEMPLATE-MARKER"
+    assert_file_contains "$repo/.cco/project.yml" "name: app"
+}
+
+test_init_template_nonexistent_fails() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local repo; repo=$(_init_repo "$tmpdir" app)
+    if ( cd "$repo" && run_cco init --name app --template ghost ) 2>/dev/null; then
+        echo "ASSERTION FAILED: init --template should fail for a nonexistent template"
+        return 1
+    fi
+}
+
 test_init_project_yml_substituted() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"

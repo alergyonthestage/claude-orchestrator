@@ -23,6 +23,7 @@ cmd_init() {
     local migrate_project=""
     local do_sync=false
     local name_arg=""
+    local tmpl_name=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -34,21 +35,27 @@ cmd_init() {
             --name)
                 [[ -z "${2:-}" ]] && die "--name requires a value (cco init --name <project>)"
                 name_arg="$2"; shift 2 ;;
+            --template)
+                [[ -z "${2:-}" ]] && die "--template requires a template name (cco init --template <name>)"
+                tmpl_name="$2"; shift 2 ;;
             --lang)
                 [[ -z "${2:-}" ]] && die "--lang requires a value (e.g. --lang Italian)"
                 lang_arg="$2"; shift 2 ;;
             --help)
                 cat <<'EOF'
-Usage: cco init [--name <project>] [--force] [--lang <language>]
+Usage: cco init [--name <project>] [--template <name>] [--force] [--lang <language>]
        cco init --migrate <project> [--sync]   (run inside a cloned repo)
 
 Run inside a repo, `cco init` ensures your global config (~/.cco/global, only the
 first time) and scaffolds this repo's committed .cco/ project config, registering
-it on this machine. `--migrate` instead brings one legacy-vault project into this
+it on this machine. `--template` scaffolds from a named project template instead
+of the base. `--migrate` instead brings one legacy-vault project into this
 repo's .cco/.
 
 Options:
   --name <project>       Project name (default: prompt with the repo basename)
+  --template <name>      Scaffold from project template <name> (user store first,
+                         then native; default: base)
   --force                Overwrite an existing <repo>/.cco/ scaffold
   --migrate <project>    Migrate <project> from the legacy vault into this repo's
                          .cco/ (machine-agnostic; index + memory relocated)
@@ -69,6 +76,7 @@ EOF
     # Lazy per-project migration mode (ADR-0021): an alternative to a clean init —
     # hydrate this repo's .cco/ from the legacy-vault backup.
     if [[ -n "$migrate_project" ]]; then
+        [[ -n "$tmpl_name" ]] && die "--template and --migrate are mutually exclusive."
         _cco_migrate_project "$migrate_project" "$do_sync"
         return $?
     fi
@@ -82,7 +90,7 @@ EOF
     fi
 
     # 2. Scaffold the committed <repo>/.cco/ in the current repo + register it.
-    _cco_init_scaffold_repo "$name_arg" "$force"
+    _cco_init_scaffold_repo "$name_arg" "$force" "$tmpl_name"
 
     # 3. Build the Docker image only on a fresh global seed (first run); a
     #    project-only re-init does not rebuild. Skipped under CCO_SKIP_BUILD=1.
@@ -204,7 +212,7 @@ _cco_init_ensure_global() {
 # Write the committed <repo>/.cco/ in the current repo from templates/project/base
 # and register it in the STATE index. Refuses an existing .cco/ unless --force.
 _cco_init_scaffold_repo() {
-    local name_arg="$1" force="$2"
+    local name_arg="$1" force="$2" tmpl_name="${3:-}"
     local target="$PWD"
     local ccodir="$target/.cco"
 
@@ -225,8 +233,17 @@ _cco_init_scaffold_repo() {
         die "A project named '$name' is already registered to $existing_path. Choose another name (--name) or 'cco forget' it first."
     fi
 
-    local tmpl="$NATIVE_TEMPLATES_DIR/project/base"
-    [[ -d "$tmpl" ]] || die "Base project template not found at $tmpl"
+    # Resolve the source project-template: --template <name> (user store first,
+    # then native — _resolve_template), else the native base. Every project
+    # template shares the base structure (project.yml + .claude/ + H5 files +
+    # secrets.env skeleton), so the copy logic below is template-agnostic.
+    local tmpl
+    if [[ -n "$tmpl_name" ]]; then
+        tmpl=$(_resolve_template "project" "$tmpl_name")
+    else
+        tmpl="$NATIVE_TEMPLATES_DIR/project/base"
+    fi
+    [[ -d "$tmpl" ]] || die "Project template '${tmpl_name:-base}' not found."
 
     # Stage under a temp sibling, then atomic-move into place (mirrors migrate F44).
     local stage; stage=$(mktemp -d "${TMPDIR:-/tmp}/cco-scaffold.XXXXXX") || die "Could not create a temp dir."
