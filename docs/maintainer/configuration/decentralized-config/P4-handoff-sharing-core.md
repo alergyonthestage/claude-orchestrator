@@ -14,8 +14,9 @@ Produced 2026-06-24. Baseline **936 passed / 3 failed** on `feat/vault/decentral
 ## ⏩ RESUME STATUS (updated 2026-06-24 — read this FIRST)
 
 **Phase 4 is IN PROGRESS. The §1 P3→P4 audit is DONE and P4-1 + P4-2 + P4-3 + P4-4 have landed.** Start
-the next session at **P4-5 (legacy teardown)** — do NOT re-run the §1 boundary audit (it was the P3→P4
-audit; a light re-baseline check is enough). **P4-3 ✅ (`cf8d03b`): sync-before-publish (ADR-0022 D5).**
+the next session from the dedicated, self-contained handoff **`P4-5-handoff-legacy-teardown.md`** (P4-5
+legacy teardown + P4-doc) — do NOT re-run the §1 boundary audit (it was the P3→P4 audit; a light re-baseline
+check is enough). **P4-3 ✅ (`cf8d03b`): sync-before-publish (ADR-0022 D5).**
 **P4-4 ✅ (5 sub-commits `3f85de7`/`56ac61c`/`ef2ad01`/`fc8f2ee`/`a5d6cca`, 2026-06-24): 2×2 verb wiring —
 pack `import`; project `export`/`import` (new `cmd-project-export-import.sh`); template 2×2 (both kinds by
 marker + sync-before-publish parity); `cco init --template`; **REMOVED project publish/install/update/
