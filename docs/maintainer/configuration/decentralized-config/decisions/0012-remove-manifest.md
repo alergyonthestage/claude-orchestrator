@@ -119,3 +119,18 @@ need emerges; docs and CLI help referencing `cco manifest` must be updated.
   need emerges).
 - Cleanup of inert `manifest.yml` files in existing installs rides the **Phase-3 breaking
   cutover** (ADR-0006) alongside the vault/store migration — no standalone migration.
+
+## Implementation (forward-annotation, 2026-06-24 — decision unchanged)
+
+Landed in **Phase 4, commit `6b2673f` (P4-2)**. Structure-based discovery is the new
+`_discover_resources <root> packs|templates` (in `lib/remote.sh`) — a `<section>/<name>/`
+carrying its `pack.yml`/`project.yml`; the empty-repo init replacement is a `git commit
+--allow-empty` (no `.gitkeep` needed). The `cco pack|project install` discovery readers were
+rewritten onto it and every `manifest_refresh`/`manifest_init` writer call was dropped; then
+`lib/manifest.sh`, the `cco manifest` command (now a removed-stub `die`), and `tests/test_manifest.sh`
+were deleted. **Code-grounded confirmation of the "no consumer" finding (R2):** the local
+`~/.cco/manifest.yml` had no reader — `cco pack list` already scanned `$PACKS_DIR/*/` by structure.
+**Build-phase note:** the §9 plan placed the manifest delete in P4-3 (bundled with sync-before-publish);
+because the subsystem is fully dead once discovery exists ("delete LAST" = right after discovery),
+the deletion was **folded into P4-2** to avoid carrying dead code, leaving P4-3 as sync-before-publish
+only. End state unchanged.

@@ -90,9 +90,12 @@ present, that flips to 🔴 (the cleanup was missed). Keep this registry **curre
     with the vault (P3-3)**. The dual-seed + legacy `CCO_*_DIR` stay until their last consumer cuts over
     (init transforms P3-3b; update/build/clean → P3-3b/P4).
 - **Re-sequenced OUT of P0 (built later, in final form — `source`/base stay in place until then):**
-  - **T4-source → P4**: `source` provenance stays at `<repo|pack>/.cco/source` (read **in place**); the
-    →DATA relocation + `url`/`ref`/`resource` rename + `publish_target` re-derivation (F4, ADR-0022 D1)
-    lands in P4.
+  - **~~T4-source → P4~~ — ✅ RETIRED 2026-06-24 (landed in P4-1 `82b6956`).** `source` provenance
+    relocated `<repo|pack>/.cco/source` → `<data>/cco/{packs/<name>,projects/<id>}/source` (+ new
+    `_cco_template_source`); keys `source→url`/`path→resource` (`ref` kept); `commit/installed/updated`
+    → STATE `/update` meta; **F4** `publish_target` re-derived via `remote_get_name_for_url` (ADR-0022 D1).
+    Idempotent `_relocate_legacy_pack_sources` in `cco update` migrates existing in-place source. llms
+    source excluded (already CACHE-split). Verified `reviews/24-06-2026-impl-adherence-review.md`.
   - **~~T5 → P2~~ — ✅ RETIRED 2026-06-23 (landed in P2-2 `b0c215e`).** Merge-engine artifacts `.cco/base/`
     + `.cco/meta` relocated to STATE keyed by identity (`_cco_{global,project,pack}_{meta,base_dir}` →
     `<state>/cco/.../update/{meta,base}`, `<id>`=`name`); global `.cco/meta` decomposed (languages→`~/.cco`,
@@ -117,16 +120,22 @@ present, that flips to 🔴 (the cleanup was missed). Keep this registry **curre
     `test_vault_move_preserves_unaccounted_files`, `test_vault_push_with_profile_syncs_shared`,
     `test_profile_create_preserves_unaccounted_files`) **deleted with the vault**; 3 vault-git-mirror
     tests trimmed from `test_remote.sh` + 1 vault-cmd backup-skip from `test_migrate.sh`.
-  - **P4–P5 — sharing rewrite (3, still red):** `test_resolve_name_from_full_variant_url` (stale llms
-    name-derivation) · `test_publish_ignore_path_patterns` · `test_project_internalize_updates_base`.
+  - **P4–P5 — sharing rewrite — ✅ 2 of 3 RESOLVED 2026-06-24 (P4-1 `82b6956`):**
+    `test_publish_ignore_path_patterns` + `test_project_internalize_updates_base` went green with the
+    source→DATA rewrite (both were stale/wrong fixtures, adversarially verified faithful). **1 still red
+    (P5 llms straddler):** `test_resolve_name_from_full_variant_url` (stale llms name-derivation; llms source
+    untouched until P5). **Current baseline after P4-2 = 915/1** (delta-green measured against this 1; the
+    total dropped 940→916 when `test_manifest.sh` was removed in P4-2).
   > The 3 P0-scope `test_invariants` failures the mask-guard surfaced were **spot-fixed** at the P0 audit
   > and are **green**. The `bin/test:_run_test` `ASSERTION FAILED`-sentinel fix — keep it.
 - **Legacy commands — status:** `cco vault *` + the profile/switch/shadow machinery + memory auto-commit
-  (D33/D32) **✅ REMOVED at P3-3 (`a76e1f6`)**. **Still live (deferred):** `cco project create` (dies
-  **P3-3b** when `cco init` scaffold replaces it — ADR-0026), `cco manifest` + the tier-2 legacy
-  `cco project resolve`/`validate <name>`/`add-pack`/`remove-pack`/`delete` + the `@local` sanitize block
-  (die **P4** with their publish/install/query consumers — build-once). Present-but-legacy is **expected**
-  until their phase.
+  (D33/D32) **✅ REMOVED at P3-3 (`a76e1f6`)**; `cco project create` **✅ REMOVED at P3-3b (`d9e44a2`)**;
+  **`cco manifest` + `lib/manifest.sh` + the manifest_refresh/init writers ✅ REMOVED at P4-2 (`6b2673f`)**
+  (structure-based discovery `_discover_resources`; manifest-delete folded P4-3→P4-2, ADR-0012/0018 D3).
+  **Still live (deferred → P4-4/P4-5):** the tier-2 legacy `cco project resolve`/`validate <name>`/
+  `add-pack`/`remove-pack`/`delete` + `cco project publish`/`install` (REMOVED P4-4) + the `@local` sanitize
+  block + per-section schema bridge + dual-seed/`CCO_*_DIR` (die **P4-5** with their consumers — build-once).
+  Present-but-legacy is **expected** until their phase.
 
 > **Update rule:** when a phase lands, move its retired items out of this registry (they should now be
 > ❌→✅ or simply gone). A registry entry whose retiring phase is in the past is itself a finding.

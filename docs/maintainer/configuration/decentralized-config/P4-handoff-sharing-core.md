@@ -9,6 +9,81 @@ verbs, `lib/manifest.sh`, dual-seed/`CCO_*_DIR`) is **deleted build-once with it
 Produced 2026-06-24. Baseline **936 passed / 3 failed** on `feat/vault/decentralized-config` (commits
 **local** — the maintainer pushes from the Mac). Next free ADR = **0028**.
 
+---
+
+## ⏩ RESUME STATUS (updated 2026-06-24 — read this FIRST)
+
+**Phase 4 is IN PROGRESS. The §1 P3→P4 adherence audit is DONE and P4-1 + P4-2 have landed.** Start the
+next session at **P4-3 (sync-before-publish)** — do NOT re-run the §1 boundary audit (it was the P3→P4
+audit; a light re-baseline check is enough). The **`decentralized-config` design (`guiding-principles.md`
+P1–P18 → ADRs → `design.md` → `requirements.md`) remains the single SOURCE OF TRUTH**; this status only
+records where the build is.
+
+**Done this cycle (commits LOCAL):**
+- **Audit ✅** `reviews/24-06-2026-impl-adherence-review.md` — READY FOR P4, 0 blockers / 0 HITL. 4 parallel
+  read-only lenses + adversarial verify. Baseline confirmed **936/3** (the 3 = exact P4–P5 set).
+- **P4-1 ✅** `82b6956` — **source → DATA** (ADR-0022 D1): `_cco_{pack,project}_source` →
+  `<data>/cco/{packs/<name>,projects/<id>}/source`, new `_cco_template_source`; key rename
+  `source→url` / `path→resource` (`ref` kept); bookkeeping `commit/installed/updated` → STATE
+  `/update` meta (new `_meta_record_provenance` / `_meta_installed_commit`; project-meta generator
+  preserve-list extended); **F4** `publish_target` dropped → re-derived via new
+  `remote_get_name_for_url` (url→name reverse-lookup), `_update_publish_target` deleted, post-publish
+  records `url` (working-copy P16); ALL read/write sites flipped per `design §9`; idempotent
+  `_relocate_legacy_pack_sources` in `cco update`; **llms source NOT relocated** (already CACHE-split).
+  Suite **939/1** (resolved the 2 P4 baseline failures).
+- **P4-2 ✅** `6b2673f` — **structure-based discovery + manifest subsystem REMOVED** (ADR-0012/0018 D3):
+  new `_discover_resources <root> packs|templates` (`lib/remote.sh`; a `<section>/<name>/` carrying
+  `pack.yml`/`project.yml`); `_clone_for_publish` empty-seed → `--allow-empty` commit; rewrote pack +
+  project install discovery readers; dropped every `manifest_refresh`/`manifest_init` writer; **deleted**
+  `lib/manifest.sh` + the `cco manifest` arm/source/usage + `tests/test_manifest.sh`. Suite **915/1**.
+  > **Build-boundary reconciliation:** the manifest subsystem is **fully dead** once structure-discovery
+  > exists (no reader — `cco pack list` already scans `$PACKS_DIR/*/`), so its deletion was **folded from
+  > P4-3 into P4-2** ("delete LAST" = right after discovery). **⇒ P4-3 below is now sync-before-publish
+  > ONLY.** (Forward-annotated in ADR-0012.) End state unchanged.
+
+**Baseline now = 915/1.** The 1 = `test_resolve_name_from_full_variant_url` (P5 llms straddler — out of
+scope until P5). Delta-green is measured against this 1; a 2nd failure is a regression. Run with the hatch:
+`CCO_ALLOW_HOST_RESOLVE=1 ./bin/test`.
+
+**Remaining P4 tasks (build order — each a delta-green commit; §3 has the full scope):**
+1. **P4-3 — sync-before-publish** (ADR-0022 D5 / §6.2). Corrects the **clone-then-overwrite** data-loss
+   defect in `cmd_pack_publish` (`rm -rf "$tmpdir/packs/$name"; cp -R "$pack_dir" …` blindly discards a
+   co-maintainer's remote-only changes). Build: (a) record the published/installed pack tree as the
+   **pack-scoped STATE `base/`** (`_cco_pack_base_dir` `paths.sh:148` — already exists) on **both**
+   `_install_pack_from_dir` and publish (the §6.2.5 "Record" step); (b) a **file-level 3-way tree merge**
+   `_pack_sync_merge <base> <ours> <theirs> <out>` (union of files; only-ours→ours · only-theirs→theirs ·
+   both-equal→ours · both-differ → **CONFLICT → abort** "run `cco pack update` first", P16; handle
+   adds/deletes) — whole-file, NOT line-level (`update-merge.sh` `_merge_file` is available if line-level
+   is wanted, but D5 says abort-on-conflict); (c) rewrite publish: first-publish (no base) → init/add,
+   push if FF; subsequent (base exists) → merge → write to publish temp → commit → push → record the
+   merged tree as the new base; if the remote already carries the pack on first publish → divergence →
+   merge path (never blind-overwrite). **Tests (§11 row 4):** new no-clobber tests in `test_pack_publish.sh`
+   (co-maintainer remote-only change survives a republish; first-publish init vs subsequent merge;
+   abort-on-conflict). The full P4-3 design is captured in the progress note (`decentralized-config-impl-progress.md`).
+2. **P4-4 — 2×2 verb wiring + nomenclature** (ADR-0018 D2 / ADR-0023 D4). packs/templates:
+   `publish|install|export|import`; projects: `export|import` **only** (projects-don't-publish guard, P13).
+   REMOVE `cmd-project-{publish,install}.sh` + arms; REFACTOR pack publish/remote; BUILD-NEW pack `import`,
+   project `export`/`import`, template `publish/install/export/import` (today `cmd-template.sh` has only
+   list/show/create/remove). "config repo" → "sharing repo" in code (~32 occurrences, **most absorbed by
+   the cmd-project-{publish,install} deletions**; residue in `cmd-update.sh`/`cmd-remote.sh`/`remote.sh`).
+3. **P4-5 — legacy teardown** (Transitional Registry §4): `@local` sanitize/extract/restore + `local-paths.yml`
+   plumbing → index-only; per-section schema bridge (`_effective_repo_mounts`/`_effective_extra_mounts`)
+   → collapses to index-only; tier-2 legacy verbs (`cco project resolve`/`validate <name>`/`add-pack`/
+   `remove-pack`/`delete`) deleted with consumers; harness dual-seed + legacy `CCO_*_DIR` removed. **KEEP**
+   `_project_effective_paths` (the one `@local`-adjacent helper, consumed by `cmd-start` — re-grep callers).
+4. **P4-doc** — full rewrite of `architecture/{coding-conventions,security}.md` +
+   `integration/{browser-mcp,auth}/design.md` (they document the deleted `cmd-vault.sh` + the `@local`/tier-2
+   code P4-5 removes; logged in `resource-coherence-inventory.md`).
+
+**Methodology (unchanged — see §0):** design+principles+ADRs govern every decision (more specific wins;
+record reconciliations; a genuine gap ⇒ PAUSE + discuss). Build method = **dependency + reuse + open-closed**,
+**build-once-in-final-form**, **breaking cutover**; each commit leaves cco runnable + the suite delta-green;
+**maintainer-confirm** any UX/interface/placement/sequencing choice (AskUserQuestion); **code-ground every
+claim** (re-read — line numbers drift); bash 3.2 / macOS. **Live cursor + full P4-1/P4-2 detail + the P4-3
+design** = the progress note `decentralized-config-impl-progress.md`.
+
+---
+
 ## 0. Authoritative methodology (unchanged — the law)
 
 The **`decentralized-config` design IS the source of truth**, in precedence order:
