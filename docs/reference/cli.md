@@ -678,6 +678,11 @@ sync state (host / synced / divergent / code-only) — derived from the index `p
 
 ### 3.14 `cco project validate [name]`
 
+> 🚧 **Planned — ships in a later release.** Today `cco project validate` reports that the
+> share-readiness validator is not yet available (ADR-0023 D2); the legacy structure check was
+> removed with the tier-2 verbs. To configure unresolved references now, use `cco resolve`. The
+> contract below is the target surface.
+
 **Share-readiness validation**: check that a project's config is safe to share via its repo
 remote — every referenced id (repo/llms/pack) has a **reachable, machine-agnostic coordinate**,
 no real paths leak, and no pack-name collision. Detect-only: it never blocks a `git push`.
@@ -1202,12 +1207,11 @@ consistent across the project's units. Operates on the cwd's `<repo>/.cco/projec
 #### `cco project add <type> <name> [OPTIONS]`
 
 Add a reference and, in one call, **embed its coordinate** in `project.yml` and optionally
-register its local path in the index (`--path`). `add-pack` is kept as an alias of `add pack`.
+register its local path in the index (`--path`). Packs are embedded with
+`cco project add pack` — the legacy `add-pack` / `remove-pack` verbs were removed (no alias).
 
 ```
 Usage: cco project add repo|mount|llms|pack <name> [OPTIONS]
-       cco project add-pack <project> <pack>          # alias of `add pack`
-       cco project remove-pack <project> <pack>
 
 Options:
   --url <url>          Coordinate URL (auto-derived from `origin` when --path is a clone)
@@ -1220,8 +1224,7 @@ Examples:
   cco project add repo backend --url git@github.com:org/backend.git --path ~/dev/backend
   cco project add llms react --url https://react.dev/llms-full.txt --variant full
   cco project add pack shared-pack --url https://github.com/org/cco-sharing.git --ref v1.0
-  cco project add-pack my-saas react-guidelines      # project-local authored pack (no url)
-  cco project remove-pack my-saas react-guidelines
+  cco project add pack react-guidelines              # project-local authored pack (no url)
 ```
 
 #### `cco project coords --diff [--sync --from <unit>]`
