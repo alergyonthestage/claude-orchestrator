@@ -351,8 +351,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -368,6 +367,7 @@ test_dry_run_single_repo_mounted() {
     setup_global_from_defaults "$tmpdir"
     local fake_repo="$tmpdir/my-repo"
     mkdir -p "$fake_repo"
+    seed_index_path "my-repo" "$fake_repo"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -376,8 +376,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $fake_repo
-    name: my-repo
+  - name: my-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -392,6 +391,8 @@ test_dry_run_multi_repo_all_mounted() {
     local repo_a="$tmpdir/repo-a"
     local repo_b="$tmpdir/repo-b"
     mkdir -p "$repo_a" "$repo_b"
+    seed_index_path "repo-a" "$repo_a"
+    seed_index_path "repo-b" "$repo_b"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -400,10 +401,8 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $repo_a
-    name: repo-a
-  - path: $repo_b
-    name: repo-b
+  - name: repo-a
+  - name: repo-b
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -420,6 +419,7 @@ test_dry_run_extra_mount_readonly() {
     setup_global_from_defaults "$tmpdir"
     local docs="$tmpdir/docs"
     mkdir -p "$docs"
+    seed_index_path "docs" "$docs"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -428,10 +428,9 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 extra_mounts:
-  - source: $docs
+  - name: docs
     target: /workspace/docs
     readonly: true
 YAML
@@ -447,6 +446,7 @@ test_dry_run_extra_mount_readwrite() {
     setup_global_from_defaults "$tmpdir"
     local rw_dir="$tmpdir/rw"
     mkdir -p "$rw_dir"
+    seed_index_path "rw" "$rw_dir"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -455,10 +455,9 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 extra_mounts:
-  - source: $rw_dir
+  - name: rw
     target: /workspace/rw
     readonly: false
 YAML
@@ -563,8 +562,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $repo
-    name: host-repo
+  - name: host-repo
 YAML
 }
 
@@ -575,6 +573,7 @@ test_dry_run_committed_cco_readonly_by_default() {
     setup_global_from_defaults "$tmpdir"
     local repo="$tmpdir/host-repo"
     mkdir -p "$repo/.cco"
+    seed_index_path "host-repo" "$repo"
     create_project "$tmpdir" "test-proj" "$(_edit_protect_project_yml "$repo")"
     run_cco start "test-proj" --dry-run --dump
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
@@ -588,6 +587,7 @@ test_dry_run_committed_cco_no_overlay_with_enable_config_edit() {
     setup_global_from_defaults "$tmpdir"
     local repo="$tmpdir/host-repo"
     mkdir -p "$repo/.cco"
+    seed_index_path "host-repo" "$repo"
     create_project "$tmpdir" "test-proj" "$(_edit_protect_project_yml "$repo")"
     run_cco start "test-proj" --enable-config-edit --dry-run --dump
     assert_file_not_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
@@ -610,8 +610,7 @@ docker:
     - "9090:9090"
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -634,8 +633,7 @@ docker:
     NODE_ENV: production
     DATABASE_URL: postgres://localhost/mydb
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -669,8 +667,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -703,8 +700,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - my-pack
 YAML
@@ -824,8 +820,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -861,8 +856,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -905,8 +899,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -928,8 +921,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1038,8 +1030,7 @@ docker:
 browser:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1061,8 +1052,7 @@ docker:
 browser:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1087,8 +1077,7 @@ docker:
 browser:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1112,8 +1101,7 @@ browser:
   enabled: true
   cdp_port: 9223
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1148,8 +1136,7 @@ docker:
 browser:
   enabled: false
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1171,8 +1158,7 @@ docker:
 browser:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1198,8 +1184,7 @@ browser:
   mcp_args:
     - "--slim"
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1222,8 +1207,7 @@ docker:
 browser:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     echo '{"mcpServers":{"github":{}}}' > "$CCO_PROJECTS_DIR/test-proj/mcp.json"
@@ -1248,8 +1232,7 @@ browser:
   enabled: true
   cdp_port: 9225
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1273,8 +1256,7 @@ docker:
 browser:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1298,8 +1280,7 @@ browser:
   enabled: true
   cdp_port: 9225
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1333,8 +1314,7 @@ docker:
 browser:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --no-chrome --dry-run --dump
@@ -1360,8 +1340,7 @@ docker:
 browser:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump   # NO --chrome flag
@@ -1386,8 +1365,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --no-docker --dry-run --dump
@@ -1408,8 +1386,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --no-docker --dry-run --dump
@@ -1431,8 +1408,7 @@ docker:
 browser:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --no-chrome --no-docker --dry-run --dump
@@ -1459,8 +1435,7 @@ docker:
 github:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1483,8 +1458,7 @@ docker:
 github:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1508,8 +1482,7 @@ github:
   enabled: true
   token_env: GH_TOKEN
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1566,8 +1539,7 @@ docker:
 github:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --no-github --dry-run --dump
@@ -1589,8 +1561,7 @@ docker:
 github:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1614,8 +1585,7 @@ browser:
 github:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
