@@ -169,6 +169,11 @@ Decided (review F16 — Option A); the detailed sequence lives in `design.md` §
   ours = local `~/.cco/packs/<name>`, theirs = remote HEAD's `packs/<name>/`; **reuse** the existing
   `_collect_file_changes` / 3-way engine (the same one `cco project update` uses); **abort on conflict**
   with a "run `cco pack update` first" reminder (P7 non-FF → abort+notify).
+  > *Impl annotation (P4-3, 2026-06-24): the abort-on-conflict contract is honored via a dedicated
+  > **whole-file** 3-way tree merge `_pack_sync_merge` (per-file ours/theirs/base comparison, adds/deletes
+  > as "absent-as-state") rather than literally calling `_collect_file_changes` — whole-file abort is the
+  > faithful shape for D5 (no conflict markers). `update-merge.sh:_merge_file` remains available if
+  > line-level is ever wanted. Decision unchanged; see design.md §6.2.*
 - **Correct** ADR-0019 D4's "fast-forward push that can silently clobber" wording to describe the actual
   **clone-then-overwrite** behavior. Depends on D1 (the base lookup is keyed by the same identity the
   relocated `source` uses). Home: **P4**.

@@ -203,6 +203,122 @@ test_pack_publish_force_overwrites() {
     }
 }
 
+# ── Sync-before-publish (ADR-0022 D5 / design §6.2) ──────────────────
+
+test_pack_publish_records_state_base() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    _create_local_pack "my-pack"
+
+    local bare_dir
+    bare_dir=$(_create_empty_bare_remote "$tmpdir")
+
+    run_cco remote add target "$bare_dir"
+    run_cco pack publish my-pack target
+
+    # The published tree is recorded as the pack-scoped STATE base/ — the merge
+    # ancestor for the next sync-before-publish (ADR-0022 D5).
+    assert_file_exists "$(state_pack_base my-pack)/pack.yml" || return 1
+    assert_file_exists "$(state_pack_base my-pack)/knowledge/guide.md" || return 1
+}
+
+test_pack_publish_preserves_remote_only_changes() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    _create_local_pack "my-pack"
+
+    local bare_dir
+    bare_dir=$(_create_empty_bare_remote "$tmpdir")
+
+    run_cco remote add target "$bare_dir"
+    run_cco pack publish my-pack target            # first publish → base recorded
+
+    # A co-maintainer adds a remote-only file directly on the sharing repo.
+    local co="$tmpdir/comaint"
+    git clone -q "$bare_dir" "$co"
+    echo "# remote only" > "$co/packs/my-pack/knowledge/remote-only.md"
+    git -C "$co" add -A
+    git -C "$co" commit -q -m "co-maintainer adds a file"
+    git -C "$co" push -q origin HEAD
+
+    # We change a DIFFERENT local file and republish (no --force).
+    echo "# local v2" > "$CCO_PACKS_DIR/my-pack/agents/helper.md"
+    run_cco pack publish my-pack target
+    assert_output_contains "Published"
+
+    # The 3-way merge keeps BOTH: the co-maintainer's remote-only file survives
+    # (never clobbered, P16) and our change lands.
+    local verify="$tmpdir/verify"
+    git clone -q "$bare_dir" "$verify"
+    assert_file_contains "$verify/packs/my-pack/knowledge/remote-only.md" "remote only" || return 1
+    assert_file_contains "$verify/packs/my-pack/agents/helper.md" "local v2" || return 1
+}
+
+test_pack_publish_aborts_on_conflict() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    _create_local_pack "my-pack"
+
+    local bare_dir
+    bare_dir=$(_create_empty_bare_remote "$tmpdir")
+
+    run_cco remote add target "$bare_dir"
+    run_cco pack publish my-pack target            # base recorded
+
+    # Co-maintainer changes guide.md on the remote …
+    local co="$tmpdir/comaint"
+    git clone -q "$bare_dir" "$co"
+    echo "# remote change" > "$co/packs/my-pack/knowledge/guide.md"
+    git -C "$co" add -A
+    git -C "$co" commit -q -m "co-maintainer edits guide"
+    git -C "$co" push -q origin HEAD
+
+    # … we change the SAME file differently → real conflict, publish must abort.
+    echo "# local change" > "$CCO_PACKS_DIR/my-pack/knowledge/guide.md"
+    if run_cco pack publish my-pack target 2>/dev/null; then
+        echo "ASSERTION FAILED: publish should abort on conflict"
+        return 1
+    fi
+    assert_output_contains "cco pack update" || return 1
+
+    # The remote still carries the co-maintainer's version (never clobbered).
+    local verify="$tmpdir/verify"
+    git clone -q "$bare_dir" "$verify"
+    assert_file_contains "$verify/packs/my-pack/knowledge/guide.md" "remote change" || return 1
+}
+
+test_pack_publish_force_overwrites_conflict() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    _create_local_pack "my-pack"
+
+    local bare_dir
+    bare_dir=$(_create_empty_bare_remote "$tmpdir")
+
+    run_cco remote add target "$bare_dir"
+    run_cco pack publish my-pack target
+
+    local co="$tmpdir/comaint"
+    git clone -q "$bare_dir" "$co"
+    echo "# remote change" > "$co/packs/my-pack/knowledge/guide.md"
+    git -C "$co" add -A
+    git -C "$co" commit -q -m "co-maintainer edits guide"
+    git -C "$co" push -q origin HEAD
+
+    echo "# local change" > "$CCO_PACKS_DIR/my-pack/knowledge/guide.md"
+    # --force is the explicit escape hatch: overwrite the remote with our version.
+    run_cco pack publish my-pack target --force
+    assert_output_contains "Published"
+
+    local verify="$tmpdir/verify"
+    git clone -q "$bare_dir" "$verify"
+    assert_file_contains "$verify/packs/my-pack/knowledge/guide.md" "local change" || return 1
+}
+
 test_pack_publish_internalizes_source_pack() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"

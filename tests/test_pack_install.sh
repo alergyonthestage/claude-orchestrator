@@ -150,6 +150,20 @@ test_pack_install_single_pack_repo() {
     assert_file_exists "$CCO_PACKS_DIR/solo-pack/agents/helper.md"
 }
 
+test_pack_install_records_state_base() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local remote
+    remote=$(_create_mock_single_pack_repo "$tmpdir" "solo-pack")
+    run_cco pack install "$remote"
+
+    # The installed tree is recorded as the pack-scoped STATE base/ — the merge
+    # ancestor a future sync-before-publish reuses (ADR-0022 D5).
+    assert_file_exists "$(state_pack_base solo-pack)/pack.yml" || return 1
+    assert_file_exists "$(state_pack_base solo-pack)/agents/helper.md" || return 1
+}
+
 test_pack_install_rejects_invalid_repo() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"

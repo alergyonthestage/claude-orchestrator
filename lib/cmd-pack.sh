@@ -670,6 +670,10 @@ ref: ${ref:-}
 YAML
     _meta_record_provenance "$(_cco_pack_meta "$target_dir")" "${commit:-}" "$now" "$now"
 
+    # Record the installed tree as the pack-scoped STATE base/ — the merge
+    # ancestor a future sync-before-publish reuses (ADR-0022 D5).
+    _record_pack_base "$target_dir" "$target_dir"
+
     ok "Installed pack '$name'"
 }
 
@@ -846,6 +850,128 @@ EOF
 
 # ── Pack publish ─────────────────────────────────────────────────────
 
+# ── Sync-before-publish helpers (ADR-0022 D5 / design §6.2) ──────────────
+
+# Whole-file equality treating "absent" as a content state: both-absent → equal,
+# one-absent → not equal, else byte-compare. Used by the 3-way tree merge so that
+# adds/deletes resolve naturally.
+_pack_merge_eq() {
+    local a="$1" b="$2"
+    if [[ ! -e "$a" && ! -e "$b" ]]; then return 0; fi
+    if [[ ! -e "$a" || ! -e "$b" ]]; then return 1; fi
+    cmp -s "$a" "$b"
+}
+
+# Copy a file, creating its parent directory.
+_pack_merge_put() {
+    mkdir -p "$(dirname "$2")"
+    cp "$1" "$2"
+}
+
+# Whole-file 3-way tree merge for sync-before-publish (ADR-0022 D5 — NOT
+# line-level: D5 mandates abort-on-conflict, so update-merge.sh's _merge_file
+# conflict-marker path is deliberately not used here).
+# Usage: _pack_sync_merge <base_dir> <ours_dir> <theirs_dir> <out_dir>
+# Any input dir may be absent/empty (treated as "no files"). Per relative file,
+# over the union of the three trees:
+#   ours == theirs            → take ours   (no divergence either way)
+#   ours == base (unchanged)  → take theirs (theirs holds the change/delete)
+#   theirs == base (unchanged)→ take ours    (ours holds the change/delete)
+#   else (both diverged)      → CONFLICT
+# Writes the merged tree into <out_dir> (recreated). Returns 0 = clean,
+# 1 = conflict (conflicting paths printed to stderr; out_dir is then discarded
+# by the caller). Never blind-overwrites a co-maintainer's remote-only work (P16).
+_pack_sync_merge() {
+    local base_dir="$1" ours_dir="$2" theirs_dir="$3" out_dir="$4"
+    rm -rf "$out_dir"
+    mkdir -p "$out_dir"
+
+    # Union of relative file paths across the three trees (sorted, de-duped).
+    local rels d
+    rels=$(
+        {
+            for d in "$base_dir" "$ours_dir" "$theirs_dir"; do
+                [[ -d "$d" ]] && ( cd "$d" && find . -type f 2>/dev/null )
+            done
+            true
+        } | sed 's|^\./||' | sort -u
+    )
+
+    local conflict=0 rel b o t
+    while IFS= read -r rel; do
+        [[ -z "$rel" ]] && continue
+        b="$base_dir/$rel"; o="$ours_dir/$rel"; t="$theirs_dir/$rel"
+        if _pack_merge_eq "$o" "$t"; then
+            [[ -f "$o" ]] && _pack_merge_put "$o" "$out_dir/$rel"
+        elif _pack_merge_eq "$o" "$b"; then
+            [[ -f "$t" ]] && _pack_merge_put "$t" "$out_dir/$rel"
+        elif _pack_merge_eq "$t" "$b"; then
+            [[ -f "$o" ]] && _pack_merge_put "$o" "$out_dir/$rel"
+        else
+            conflict=1
+            printf '  conflict: %s\n' "$rel" >&2
+        fi
+    done <<< "$rels"
+
+    return $conflict
+}
+
+# Record a published/installed pack tree as the pack-scoped STATE base/ — the
+# local, never-sync merge ancestor for the next sync-before-publish (ADR-0022
+# D5 / ADR-0013 D2). <tree_dir> is copied verbatim minus any local-only .cco.
+# Usage: _record_pack_base <pack_dir> <tree_dir>
+_record_pack_base() {
+    local pack_dir="$1" tree_dir="$2"
+    local base_dir
+    base_dir=$(_cco_pack_base_dir "$pack_dir")
+    rm -rf "$base_dir"
+    mkdir -p "$(dirname "$base_dir")"
+    cp -R "$tree_dir" "$base_dir"
+    rm -rf "$base_dir/.cco"
+}
+
+# Bake a pack's knowledge.source into <dir> (publish-time internalization): copy
+# the referenced knowledge files into <dir>/knowledge/ and strip knowledge.source
+# from <dir>/pack.yml. No-op when the pack declares no knowledge.source.
+_pack_internalize_knowledge() {
+    local dir="$1"
+    local k_source
+    k_source=$(yml_get_pack_knowledge_source "$dir/pack.yml")
+    [[ -z "$k_source" ]] && return 0
+
+    info "Internalizing knowledge from $k_source..."
+    local expanded_source
+    expanded_source=$(expand_path "$k_source")
+    if [[ ! -d "$expanded_source" ]]; then
+        warn "Knowledge source not found: $k_source — publishing without internalization"
+        return 0
+    fi
+
+    local k_files
+    k_files=$(yml_get_pack_knowledge_files "$dir/pack.yml")
+    mkdir -p "$dir/knowledge"
+    while IFS=$'\t' read -r fname desc; do
+        [[ -z "$fname" ]] && continue
+        local src="$expanded_source/$fname"
+        if [[ -f "$src" ]]; then
+            mkdir -p "$(dirname "$dir/knowledge/$fname")"
+            cp "$src" "$dir/knowledge/$fname"
+        else
+            warn "Knowledge file not found: $src"
+        fi
+    done <<< "$k_files"
+
+    # Remove source: from the published pack.yml
+    local tmpf; tmpf=$(mktemp)
+    awk '
+        /^knowledge:/ { in_k=1; print; next }
+        in_k && /^  source:/ { next }
+        in_k && /^[^ #]/ { in_k=0 }
+        { print }
+    ' "$dir/pack.yml" > "$tmpf"
+    mv "$tmpf" "$dir/pack.yml"
+}
+
 cmd_pack_publish() {
     local name="" remote_arg="" message="" dry_run=false force=false token=""
 
@@ -873,7 +999,8 @@ Arguments:
 Options:
   --message <msg>    Commit message (default: "publish pack <name>")
   --dry-run          Show what would be published, don't push
-  --force            Overwrite remote version without confirmation
+  --force            Overwrite the remote pack with your local version,
+                     skipping the sync-before-publish merge (opt-in clobber)
   --token <token>    Auth token for HTTPS remotes
 EOF
                 return 0
@@ -919,73 +1046,55 @@ EOF
     tmpdir=$(_clone_for_publish "$remote_url" "$token")
     trap "_cleanup_clone '$tmpdir'" EXIT
 
-    # Check for existing pack on remote
-    if [[ -d "$tmpdir/packs/$name" ]]; then
-        if $dry_run; then
-            info "Pack '$name' already exists on remote — would overwrite"
-        elif ! $force; then
-            local diff_summary
-            diff_summary=$(diff -rq "$pack_dir" "$tmpdir/packs/$name" 2>/dev/null \
-                | grep -v '.cco/source' | grep -v '.cco/install-tmp' | head -10)
-            if [[ -n "$diff_summary" ]]; then
-                warn "Pack '$name' already exists on remote. Differences:"
-                echo "$diff_summary" | sed 's/^/  /'
-                if [[ -t 0 ]]; then
-                    printf "\nOverwrite? [y/N] " >&2
-                    local reply; read -r reply
-                    [[ ! "$reply" =~ ^[Yy]$ ]] && { _cleanup_clone "$tmpdir"; die "Aborted."; }
-                else
-                    _cleanup_clone "$tmpdir"
-                    die "Pack exists on remote. Use --force to overwrite."
-                fi
+    # ── Prepare OURS: the publishable form of the local pack ────────────
+    # Copy the local pack, drop the local-only framework dir (provenance lives
+    # in DATA since ADR-0022 D1), and bake any knowledge.source. Staged outside
+    # the published tree so it is never committed.
+    local ours_dir="$tmpdir/.cco-ours"
+    cp -R "$pack_dir" "$ours_dir"
+    rm -rf "$ours_dir/.cco"
+    _pack_internalize_knowledge "$ours_dir"
+
+    # ── Sync-before-publish (ADR-0022 D5 / design §6.2) ─────────────────
+    # theirs = the co-maintainer's current remote tree (absent on a first
+    # publish to an empty repo); base = the pack-scoped STATE merge ancestor
+    # (the tree we last published/installed; absent before any). The 3-way merge
+    # auto-applies non-conflicting divergence and aborts on a real conflict —
+    # it never blind-overwrites a co-maintainer's remote-only work (P16). With
+    # base+theirs empty the merge degenerates to "publish ours" (first publish).
+    local theirs_dir="$tmpdir/packs/$name"
+    local merged_dir="$tmpdir/.cco-merged" base_dir
+    base_dir=$(_cco_pack_base_dir "$pack_dir")
+
+    if $force; then
+        # Explicit, opt-in escape hatch: replace the remote pack with our local
+        # version, skipping the merge (deliberate clobber of any divergence).
+        [[ -d "$theirs_dir" ]] && \
+            warn "--force: overwriting the remote copy of '$name' with your local version."
+        rm -rf "$merged_dir"
+        cp -R "$ours_dir" "$merged_dir"
+    else
+        local merge_rc=0
+        _pack_sync_merge "$base_dir" "$ours_dir" "$theirs_dir" "$merged_dir" || merge_rc=$?
+        if [[ $merge_rc -ne 0 ]]; then
+            _cleanup_clone "$tmpdir"; trap - EXIT
+            if $dry_run; then
+                warn "Would conflict with co-maintainer changes on the remote (files above)."
+                info "Run 'cco pack update $name' first, or republish with --force to overwrite."
+                return 0
             fi
+            die "Publish would clobber co-maintainer changes on the remote (conflicting files above).
+  Run 'cco pack update $name' to merge the remote changes locally, then republish.
+  Or 'cco pack publish $name --force' to overwrite the remote with your version."
         fi
-        rm -rf "$tmpdir/packs/$name"
     fi
 
-    # Copy pack to temp dir
+    # Place the merged (publishable) tree into the clone, then drop the staging
+    # dirs so they never reach the commit.
+    rm -rf "$theirs_dir"
     mkdir -p "$tmpdir/packs"
-    cp -R "$pack_dir" "$tmpdir/packs/$name"
-
-    # Strip any local-only framework dir from the published copy (the source
-    # provenance now lives in DATA, never inside the pack tree — ADR-0022 D1)
-    rm -rf "$tmpdir/packs/$name/.cco"
-
-    # Internalize if pack has knowledge.source
-    local k_source
-    k_source=$(yml_get_pack_knowledge_source "$tmpdir/packs/$name/pack.yml")
-    if [[ -n "$k_source" ]]; then
-        info "Internalizing knowledge from $k_source..."
-        local expanded_source
-        expanded_source=$(expand_path "$k_source")
-        if [[ -d "$expanded_source" ]]; then
-            local k_files
-            k_files=$(yml_get_pack_knowledge_files "$tmpdir/packs/$name/pack.yml")
-            mkdir -p "$tmpdir/packs/$name/knowledge"
-            while IFS=$'\t' read -r fname desc; do
-                [[ -z "$fname" ]] && continue
-                local src="$expanded_source/$fname"
-                if [[ -f "$src" ]]; then
-                    mkdir -p "$(dirname "$tmpdir/packs/$name/knowledge/$fname")"
-                    cp "$src" "$tmpdir/packs/$name/knowledge/$fname"
-                else
-                    warn "Knowledge file not found: $src"
-                fi
-            done <<< "$k_files"
-
-            # Remove source: from published pack.yml
-            local tmpf; tmpf=$(mktemp)
-            awk '
-                /^knowledge:/ { in_k=1; print; next }
-                in_k && /^  source:/ { next }
-                in_k && /^[^ #]/ { in_k=0 }
-                { print }
-            ' "$tmpdir/packs/$name/pack.yml" > "$tmpf"
-            mv "$tmpf" "$tmpdir/packs/$name/pack.yml"
-        else
-            warn "Knowledge source not found: $k_source — publishing without internalization"
-        fi
-    fi
+    cp -R "$merged_dir" "$theirs_dir"
+    rm -rf "$merged_dir" "$ours_dir"
 
     if $dry_run; then
         echo ""
@@ -993,18 +1102,26 @@ EOF
         echo "  Pack: $name"
         echo "  Remote: $remote_url"
         echo "  Files:"
-        find "$tmpdir/packs/$name" -type f | sed "s|$tmpdir/||; s/^/    /"
+        find "$theirs_dir" -type f | sed "s|$tmpdir/||; s/^/    /"
         _cleanup_clone "$tmpdir"
         trap - EXIT
         ok "Dry run complete — nothing pushed"
         return 0
     fi
 
-    # Commit and push
+    # Commit and push (skip cleanly when the remote already matches our version).
     git -C "$tmpdir" add -A
-    git -C "$tmpdir" commit -q -m "$message"
-    git -C "$tmpdir" push origin HEAD >/dev/null 2>&1 \
-        || { _cleanup_clone "$tmpdir"; die "Failed to push to $remote_url"; }
+    if git -C "$tmpdir" diff --cached --quiet; then
+        info "Remote already up to date — nothing to publish."
+    else
+        git -C "$tmpdir" commit -q -m "$message"
+        git -C "$tmpdir" push origin HEAD >/dev/null 2>&1 \
+            || { _cleanup_clone "$tmpdir"; trap - EXIT; die "Failed to push to $remote_url"; }
+    fi
+
+    # Record the published tree as the new pack-scoped STATE base/ — the merge
+    # ancestor for the next sync-before-publish (ADR-0022 D5).
+    _record_pack_base "$pack_dir" "$theirs_dir"
 
     # Record the published url as the pack's upstream coordinate (working-copy
     # model, P16): the sharing repo is now the source-of-truth, so a subsequent

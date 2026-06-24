@@ -662,8 +662,11 @@ ADR-0018 D3 structure-discovery/init-or-merge + ADR-0013 H6 `base/`→STATE):
    (ADR-0018 D3), reusing `remote.sh` minus the deleted `manifest_init` (init-or-merge by structure).
 3. **Sync-before-publish.** *Subsequent publish* (a STATE `base/` exists for `<name>` at
    `<state>/cco/packs/<name>/update/base/`) → **3-way merge**: base = last-published tree, ours =
-   `~/.cco/packs/<name>`, theirs = remote `packs/<name>/`, reusing `_collect_file_changes` / the
-   project-update 3-way engine; **abort on conflict** ("run `cco pack update` first", P7). *First publish*
+   `~/.cco/packs/<name>`, theirs = remote `packs/<name>/`, via a **whole-file** 3-way tree merge
+   (`_pack_sync_merge`: per-file `ours`/`theirs`/`base` comparison, adds/deletes via "absent-as-state");
+   **abort on conflict** ("run `cco pack update` first", P7) — deliberately not line-level, since D5
+   mandates abort over conflict markers (`update-merge.sh`'s `_merge_file` stays available for line-level
+   if ever wanted). *First publish*
    (no recorded base) → init/add into the (possibly empty) structure, push if fast-forward; if the remote
    already carries the pack, treat as divergence → merge path (**never blind-overwrite**).
 4. **Commit** (init-on-empty or merge-on-existing) and **push**.
