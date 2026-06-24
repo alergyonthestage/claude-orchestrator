@@ -82,9 +82,7 @@ source "$LIB_DIR/tags.sh"
 source "$LIB_DIR/cmd-config.sh"
 source "$LIB_DIR/cmd-stop.sh"
 source "$LIB_DIR/cmd-chrome.sh"
-source "$LIB_DIR/cmd-project-delete.sh"
 source "$LIB_DIR/cmd-project-query.sh"
-source "$LIB_DIR/cmd-project-pack-ops.sh"
 source "$LIB_DIR/cmd-project-add.sh"
 source "$LIB_DIR/cmd-project-export-import.sh"
 source "$LIB_DIR/cmd-pack.sh"
@@ -133,7 +131,7 @@ Discovery:
   tag <add|rm>           Tag a pack/project/template (per-user, never team-shared)
 
 Projects & Packs:
-  project <cmd>          Manage projects (export, import, add, delete, list, show, validate)
+  project <cmd>          Manage projects (export, import, add, list, show)
   pack <cmd>             Manage knowledge packs (create, install, update, ...)
   llms <cmd>             Manage llms.txt framework docs (install, update, ...)
   chrome <cmd>           Manage Chrome debug session on host
@@ -183,16 +181,11 @@ case "$cmd" in
 Usage: cco project <command> [options]
 
 Commands:
-  delete <name> [--yes]  Delete a project from all locations
   export [name]          Export a project's config as a .tar.gz snapshot
   import <archive>       Import a project from a .tar.gz snapshot
   add <res> <name>       Embed a repo|mount|llms|pack coordinate (cwd-first)
-  add-pack <proj> <pack> Add a knowledge pack to a project
-  remove-pack <p> <pack> Remove a knowledge pack from a project
-  resolve <name>         Configure local paths for repos and mounts
   list                   List available projects with status
   show <name>            Show project details (repos, packs, config)
-  validate [name]        Validate project structure and configuration
 
 Run 'cco project <command> --help' for command-specific options.
 EOF
@@ -200,18 +193,21 @@ EOF
         fi
         shift
         case "$subcmd" in
-            delete)      cmd_project_delete "$@" ;;
             publish|install|update|internalize)
                 die "'cco project $subcmd' was removed — a project rides its code-repo remote, not a sharing repo (ADR-0018 D2). Use 'cco project export|import' to move a project's config as a tar, or 'cco init --template <name>' to start from a template." ;;
+            resolve)
+                die "'cco project resolve' was removed — use the top-level 'cco resolve <name>' (decentralized, cwd-first; ADR-0017 D2)." ;;
+            add-pack|remove-pack)
+                die "'cco project $subcmd' was removed — use 'cco project add pack <name>' to embed a pack coordinate (ADR-0023 D3 / AD12 no-alias)." ;;
+            delete)
+                die "'cco project delete' was removed — a project's config lives in its repo at <repo>/.cco/; remove it with normal git/filesystem ops and the index self-heals on the next 'cco resolve --scan'. (A dedicated 'cco forget' deregistration ships in a later release.)" ;;
+            validate)
+                die "'cco project validate' was removed — a share-readiness validator ships in a later release (ADR-0023 D2). For now, 'cco resolve <name>' reports unresolved references." ;;
             export)      cmd_project_export "$@" ;;
             import)      cmd_project_import "$@" ;;
             add)         cmd_project_add "$@" ;;
-            add-pack)    cmd_project_add_pack "$@" ;;
-            remove-pack) cmd_project_remove_pack "$@" ;;
-            resolve)     cmd_project_resolve "$@" ;;
             list)        cmd_project_list "$@" ;;
             show)        cmd_project_show "$@" ;;
-            validate)    cmd_project_validate "$@" ;;
             *)        die "Unknown project command: $subcmd. Run 'cco project --help'." ;;
         esac || _cco_rc=$?
         ;;

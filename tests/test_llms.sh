@@ -349,29 +349,6 @@ test_install_accepts_valid_name() {
         fail "Should accept valid name (error should be network-related, not name validation)" || true
 }
 
-# ── Project validate includes llms ───────────────────────────────────
-
-test_project_validate_catches_missing_llms() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    setup_global_from_defaults "$tmpdir"
-    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nllms:\n  - nonexistent\nrepos:\n  - path: %s\n    name: dummy\n' "$CCO_DUMMY_REPO")"
-    git -C "$CCO_DUMMY_REPO" init -q 2>/dev/null || true
-    local exit_code=0
-    run_cco project validate "test-proj" || exit_code=$?
-    [[ $exit_code -ne 0 ]] || fail "Project validate should catch missing llms refs"
-}
-
-test_project_validate_passes_with_valid_llms() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    setup_global_from_defaults "$tmpdir"
-    create_llms_entry "$tmpdir" "svelte"
-    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nllms:\n  - svelte\nrepos:\n  - path: %s\n    name: dummy\n' "$CCO_DUMMY_REPO")"
-    git -C "$CCO_DUMMY_REPO" init -q 2>/dev/null || true
-    run_cco project validate "test-proj" || fail "Project validate should pass with valid llms"
-}
-
 # ── Start dry-run with llms ──────────────────────────────────────────
 
 test_dry_run_includes_llms_mounts() {

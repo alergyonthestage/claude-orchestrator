@@ -110,6 +110,22 @@ test_project_sharing_verbs_removed() {
     done
 }
 
+test_project_tier2_verbs_removed() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    # Legacy tier-2 project verbs are retired with no alias (P4-5 / AD12):
+    # resolve → `cco resolve`; add-pack/remove-pack → `cco project add pack`;
+    # delete → `cco forget` (later); validate → share-readiness validator (later).
+    local verb
+    for verb in resolve add-pack remove-pack delete validate; do
+        if run_cco project "$verb" foo bar 2>/dev/null; then
+            echo "ASSERTION FAILED: 'cco project $verb' should be rejected (removed in P4-5)"
+            return 1
+        fi
+        assert_output_contains "was removed" || return 1
+    done
+}
+
 test_project_export_help() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"

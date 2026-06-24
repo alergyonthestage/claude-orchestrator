@@ -8,9 +8,12 @@
 #    published/installed/updated from a sharing repo; they ride the code-repo
 #    remote, ADR-0018 D2. The current project-internalize semantic is retired
 #    with them, ADR-0023 D4c. Sharing a project = cmd-project-export-import.sh.)
-#   cmd-project-delete.sh        — cmd_project_delete()
-#   cmd-project-query.sh         — cmd_project_list(), cmd_project_show(), cmd_project_validate()
-#   cmd-project-pack-ops.sh      — cmd_project_add_pack(), cmd_project_remove_pack(), _project_has_pack(), _project_yml_add_pack(), _project_yml_remove_pack()
+#   (cmd-project-delete.sh + cmd-project-pack-ops.sh removed in P4-5 — the tier-2
+#    legacy verbs project delete/resolve/validate<name>/add-pack/remove-pack are
+#    retired with no alias, AD12. Deregistration returns via `cco forget` and
+#    share-readiness validation via `cco project validate` in a later release;
+#    pack coordinates are embedded with `cco project add pack`, ADR-0023 D3.)
+#   cmd-project-query.sh         — cmd_project_list(), cmd_project_show()
 #   cmd-project-add.sh           — cmd_project_add()
 #   cmd-project-export-import.sh — cmd_project_export(), cmd_project_import()
 #
