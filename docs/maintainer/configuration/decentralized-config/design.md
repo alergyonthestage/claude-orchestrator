@@ -676,11 +676,14 @@ ADR-0018 D3 structure-discovery/init-or-merge + ADR-0013 H6 `base/`→STATE):
    push) that silently discarded co-maintainers' remote-only changes.
 
 Implementation by **verdict** (→ **Phases 4–5**, §9, built on the Phase-0 substrate; ADR-0023 D4):
-**REMOVED** = `cmd-project-publish.sh` + `cmd-project-install.sh` + their `bin/cco` arms (project
-publish/install deleted — ADR-0018 D2); **REFACTORED** = `cmd-pack.sh` (sync-before-publish, ADR-0022
-D5), `cmd-remote.sh`/`remote.sh` (sharing-repo endpoints, structure-based discovery); **DROPPED** =
-`lib/manifest.sh`; **BUILD-NEW** = pack `import`, project `export`/`import`, template
-`publish`/`install`/`export`/`import` (reuse the pack sharing path), `cco update --check`. See
+**REMOVED** = `cmd-project-{publish,install,update}.sh` + their `bin/cco` arms — the whole project-sharing
+world: project publish/install deleted (projects ride the code remote, ADR-0018 D2), and the current
+project-`internalize` (disconnect-from-central-source) is **retired with the install model** (ADR-0023
+D4c; the name is reserved for the post-v1 Case-C disconnect); **REFACTORED** = `cmd-pack.sh`
+(sync-before-publish, ADR-0022 D5), `cmd-remote.sh`/`remote.sh` (sharing-repo endpoints, structure-based
+discovery); **DROPPED** = `lib/manifest.sh`; **BUILD-NEW** = pack `import`, project `export`/`import`,
+template `publish`/`install`/`export`/`import` (reuse the pack sharing path), `cco init --template`
+(instantiation, replacing the removed project-install template path), `cco update --check`. See
 ADR-0018/0019/0020/0023.
 
 ---

@@ -148,6 +148,10 @@ D2); **REFACTORED** = `cmd-pack.sh` (sync-before-publish, ADR-0022 D5), `cmd-rem
 (b), `cco update --check`, sync-before-publish, structure-based discovery. Split the single §7 Sharing
 "transform" row into Refactor / Build-new / Removed. §11 asserts both **presence** of the new verbs and
 **absence** (clear rejection) of the removed ones (`project publish/install`).
+> *Impl annotation (P4-4e, 2026-06-24): the REMOVED set also includes `cmd-project-update.sh`
+> (`cco project update` — meaningless without the install model) and the current `cco project internalize`
+> (retired per D4c, name reserved post-v1). `cco init --template` is the BUILD-NEW instantiation path
+> replacing the removed project-install `--pick` template flow. See design §6.2.*
 
 **(b) Templates keep the full 2×2 (F47 — Option A).** Templates retain `publish`/`install` +
 `export`/`import` (ADR-0018 D2/D3 **as written**). The apparent contradiction with ADR-0019 D7

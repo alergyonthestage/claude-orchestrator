@@ -13,12 +13,16 @@ Produced 2026-06-24. Baseline **936 passed / 3 failed** on `feat/vault/decentral
 
 ## ⏩ RESUME STATUS (updated 2026-06-24 — read this FIRST)
 
-**Phase 4 is IN PROGRESS. The §1 P3→P4 adherence audit is DONE and P4-1 + P4-2 + P4-3 have landed.** Start
-the next session at **P4-4 (2×2 verb wiring + nomenclature)** — do NOT re-run the §1 boundary audit (it was
-the P3→P4 audit; a light re-baseline check is enough). **P4-3 ✅ (`cf8d03b`, 2026-06-24): sync-before-publish
-(ADR-0022 D5) — pack-scoped STATE `base/` recorded on install+publish; new whole-file 3-way `_pack_sync_merge`
-abort-on-conflict; `--force` = opt-in clobber escape hatch; corrects clone-then-overwrite (P16); +5 tests;
-suite 915/1 → 920/1.** The **`decentralized-config` design (`guiding-principles.md`
+**Phase 4 is IN PROGRESS. The §1 P3→P4 audit is DONE and P4-1 + P4-2 + P4-3 + P4-4 have landed.** Start
+the next session at **P4-5 (legacy teardown)** — do NOT re-run the §1 boundary audit (it was the P3→P4
+audit; a light re-baseline check is enough). **P4-3 ✅ (`cf8d03b`): sync-before-publish (ADR-0022 D5).**
+**P4-4 ✅ (5 sub-commits `3f85de7`/`56ac61c`/`ef2ad01`/`fc8f2ee`/`a5d6cca`, 2026-06-24): 2×2 verb wiring —
+pack `import`; project `export`/`import` (new `cmd-project-export-import.sh`); template 2×2 (both kinds by
+marker + sync-before-publish parity); `cco init --template`; **REMOVED project publish/install/update/
+internalize** (ADR-0018 D2 / ADR-0023 D4c — current internalize-semantic retired, name reserved post-v1;
+maintainer-confirmed beyond handoff-literal); nomenclature config→sharing repo; AD12 no-alias rejections.
+Suite 920/1 → 883/1 (pass-count dropped only from intentionally-removed tests; 0 new fails).** The
+**`decentralized-config` design (`guiding-principles.md`
 P1–P18 → ADRs → `design.md` → `requirements.md`) remains the single SOURCE OF TRUTH**; this status only
 records where the build is.
 
@@ -44,7 +48,8 @@ records where the build is.
   > P4-3 into P4-2** ("delete LAST" = right after discovery). **⇒ P4-3 below is now sync-before-publish
   > ONLY.** (Forward-annotated in ADR-0012.) End state unchanged.
 
-**Baseline now = 920/1** (after P4-3; was 915/1). The 1 = `test_resolve_name_from_full_variant_url` (P5 llms
+**Baseline now = 883/1** (after P4-4; was 920/1 — the drop is INTENTIONALLY-removed tests for the deleted
+project-sharing commands, NOT regressions). The 1 = `test_resolve_name_from_full_variant_url` (P5 llms
 straddler — out of scope until P5). Delta-green is measured against this 1; a 2nd failure is a regression. Run
 with the hatch: `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test`.
 
@@ -63,7 +68,9 @@ with the hatch: `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test`.
    merge path (never blind-overwrite). **Tests (§11 row 4):** new no-clobber tests in `test_pack_publish.sh`
    (co-maintainer remote-only change survives a republish; first-publish init vs subsequent merge;
    abort-on-conflict). The full P4-3 design is captured in the progress note (`decentralized-config-impl-progress.md`).
-2. **P4-4 — 2×2 verb wiring + nomenclature** (ADR-0018 D2 / ADR-0023 D4). packs/templates:
+2. **P4-4 — 2×2 verb wiring + nomenclature** ✅ **DONE** (5 sub-commits a–e; see progress note + the RESUME
+   STATUS summary above). Built pack `import`, project `export`/`import`, template 2×2; `cco init --template`;
+   removed project publish/install/**update/internalize**; nomenclature sweep. (ADR-0018 D2 / ADR-0023 D4). packs/templates:
    `publish|install|export|import`; projects: `export|import` **only** (projects-don't-publish guard, P13).
    REMOVE `cmd-project-{publish,install}.sh` + arms; REFACTOR pack publish/remote; BUILD-NEW pack `import`,
    project `export`/`import`, template `publish/install/export/import` (today `cmd-template.sh` has only
