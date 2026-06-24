@@ -94,7 +94,6 @@ source "$LIB_DIR/cmd-llms.sh"
 source "$LIB_DIR/cmd-template.sh"
 source "$LIB_DIR/cmd-update.sh"
 source "$LIB_DIR/cmd-clean.sh"
-source "$LIB_DIR/manifest.sh"
 source "$LIB_DIR/cmd-remote.sh"
 source "$LIB_DIR/remote.sh"
 
@@ -146,8 +145,7 @@ Templates:
 
 Sharing & Versioning:
   config <save|push|pull> Version + sync your personal ~/.cco store
-  remote <cmd>           Manage Config Repo remotes
-  manifest <cmd>         Manage manifest.yml for Config Repos
+  remote <cmd>           Manage sharing-repo remotes
 
 Run 'cco <command> --help' for detailed help on any command.
 EOF
@@ -262,8 +260,7 @@ EOF
     template) cmd_template "$@" || _cco_rc=$? ;;
     chrome)   cmd_chrome "$@"   || _cco_rc=$? ;;
     remote)   cmd_remote "$@"   || _cco_rc=$? ;;
-    manifest) cmd_manifest "$@" || _cco_rc=$? ;;
-    share)    die "'cco share' has been renamed to 'cco manifest'. Run 'cco update' to migrate." ;;
+    share|manifest) die "'cco $cmd' has been removed. Sharing repos are discovered by structure (no manifest.yml); use 'cco pack|template publish|install' (ADR-0012/0018)." ;;
     update)   cmd_update "$@"   || _cco_rc=$? ;;
     clean)    cmd_clean "$@"    || _cco_rc=$? ;;
     stop)     cmd_stop "$@"     || _cco_rc=$? ;;

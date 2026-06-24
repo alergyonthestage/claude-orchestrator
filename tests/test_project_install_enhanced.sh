@@ -352,7 +352,7 @@ YAML
     }
 }
 
-test_install_with_packs_updates_manifest() {
+test_install_with_packs_installs_pack_locally() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -362,5 +362,7 @@ test_install_with_packs_updates_manifest() {
     bare_dir=$(_create_config_repo_with_packs "$tmpdir" "my-template" "auto-pack")
 
     run_cco project install "$bare_dir" --var "DESCRIPTION=test"
-    assert_file_contains "$CCO_USER_CONFIG_DIR/manifest.yml" "auto-pack"
+    # The referenced pack is auto-installed into the local store (discovered by
+    # structure — no manifest.yml; ADR-0012/0018 D3).
+    assert_dir_exists "$CCO_PACKS_DIR/auto-pack" || return 1
 }

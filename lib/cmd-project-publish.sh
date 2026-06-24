@@ -9,7 +9,7 @@
 #           _publish_check_migrations()
 #           _publish_check_framework_alignment()
 #           _publish_scan_secrets()
-# Dependencies: colors.sh, utils.sh, yaml.sh, remote.sh, manifest.sh, paths.sh, update.sh, secrets.sh
+# Dependencies: colors.sh, utils.sh, yaml.sh, remote.sh, paths.sh, update.sh, secrets.sh
 # Globals: PROJECTS_DIR, PACKS_DIR
 
 # Read .cco/publish-ignore patterns from <file>.
@@ -295,9 +295,6 @@ EOF
             fi
         done <<< "$project_packs"
     fi
-
-    # Refresh manifest in temp dir
-    manifest_refresh "$tmpdir"
 
     if $dry_run; then
         echo ""

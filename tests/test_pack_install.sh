@@ -209,20 +209,6 @@ test_pack_install_force_overwrites() {
     assert_file_exists "$CCO_PACKS_DIR/overwrite-pack/agents/bot.md"
 }
 
-test_pack_install_updates_manifest_yml() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    setup_global_from_defaults "$tmpdir"
-
-    # Create manifest.yml via init
-    init_global "$tmpdir" --lang "English"
-
-    local remote
-    remote=$(_create_mock_config_repo "$tmpdir" "shared-pack")
-    run_cco pack install "$remote" --pick "shared-pack"
-    assert_file_contains "$CCO_USER_CONFIG_DIR/manifest.yml" "shared-pack"
-}
-
 # ── update tests ──────────────────────────────────────────────────────
 
 test_pack_update_from_source() {

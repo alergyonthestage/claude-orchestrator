@@ -105,16 +105,38 @@ _clone_for_publish() {
 
     # Test if remote is accessible
     if git "${_GIT_AUTH_OPTS[@]+"${_GIT_AUTH_OPTS[@]}"}" -C "$tmpdir" ls-remote origin >/dev/null 2>&1; then
-        # Remote exists but is empty — initialize
-        manifest_init "$tmpdir"
-        git -C "$tmpdir" add -A
-        git -C "$tmpdir" commit -q -m "init: empty Config Repo"
+        # Remote exists but is empty — establish the default branch with an empty
+        # initial commit. A sharing repo carries no manifest.yml (structure-based
+        # discovery; ADR-0012/0018 D3); its content is the packs/ + templates/ trees.
+        git -C "$tmpdir" commit -q --allow-empty -m "init: empty sharing repo"
         echo "$tmpdir"
         return 0
     fi
 
     rm -rf "$tmpdir"
     die "Failed to clone or access $url"
+}
+
+# Structure-based discovery (ADR-0018 D3): list the resource names a sharing repo
+# holds under <section>/, replacing the removed manifest.yml index. A valid entry
+# is a direct subdir of <section>/ carrying its manifest (packs → pack.yml,
+# templates → project.yml). <root> is a checked-out clone. One name per line.
+_discover_resources() {
+    local root="$1" section="$2"
+    local marker
+    case "$section" in
+        packs)     marker="pack.yml" ;;
+        templates) marker="project.yml" ;;
+        *) return 1 ;;
+    esac
+    [[ -d "$root/$section" ]] || return 0
+    local dir name
+    for dir in "$root/$section"/*/; do
+        [[ -d "$dir" ]] || continue
+        [[ -f "$dir$marker" ]] || continue
+        name=$(basename "$dir")
+        printf '%s\n' "$name"
+    done
 }
 
 # Cleanup a temporary clone directory.

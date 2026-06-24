@@ -78,9 +78,6 @@ EOF
         _sed_i "$pack_dir/pack.yml" "^name: base$" "name: $name"
     fi
 
-    # Update manifest.yml
-    manifest_refresh "$USER_CONFIG_DIR"
-
     ok "Pack created at packs/$name/"
     info "Add resources to the subdirectories:"
     info "  knowledge/ — documentation files"
@@ -325,9 +322,6 @@ EOF
 
     rm -rf "$pack_dir"
 
-    # Update manifest.yml
-    manifest_refresh "$USER_CONFIG_DIR"
-
     ok "Pack '$name' removed"
 }
 
@@ -463,16 +457,16 @@ EOF
     local clone_commit=""
     clone_commit=$(git -C "$tmpdir" rev-parse HEAD 2>/dev/null) || true
 
-    # Detect repo type
+    # Detect repo type by structure (ADR-0018 D3 — no manifest.yml): a single-pack
+    # repo carries pack.yml at the root; a multi-pack sharing repo carries packs/.
     local single_pack=false
-    local manifest_file=""
-    if [[ -f "$tmpdir/manifest.yml" ]]; then
-        manifest_file="$tmpdir/manifest.yml"
-    elif [[ -f "$tmpdir/pack.yml" ]]; then
+    if [[ -f "$tmpdir/pack.yml" ]]; then
         single_pack=true
+    elif [[ -d "$tmpdir/packs" ]]; then
+        :  # multi-pack sharing repo
     else
         _cleanup_clone "$tmpdir"
-        die "Not a valid CCO Config Repo: no manifest.yml or pack.yml found"
+        die "Not a valid sharing repo: no pack.yml (single pack) or packs/ directory found"
     fi
 
     if $single_pack; then
@@ -482,20 +476,20 @@ EOF
         [[ -z "$name" ]] && die "pack.yml has no 'name' field"
         _install_pack_from_dir "$tmpdir" "$name" "$url" "$ref" "" "$force" "$clone_commit"
     else
-        # Multi-pack repo: read available packs from manifest
+        # Multi-pack repo: discover available packs by structure
         local available
-        available=$(_manifest_get_names "$manifest_file" "packs")
+        available=$(_discover_resources "$tmpdir" packs)
 
         if [[ -z "$available" ]]; then
             _cleanup_clone "$tmpdir"
-            die "No packs listed in manifest"
+            die "No packs found in the sharing repo (packs/<name>/pack.yml)"
         fi
 
         if [[ -n "$pick" ]]; then
             # Install specific pack
             if ! echo "$available" | grep -qxF "$pick"; then
                 _cleanup_clone "$tmpdir"
-                die "Pack '$pick' not found in manifest. Available: $(echo "$available" | tr '\n' ' ')"
+                die "Pack '$pick' not found in the sharing repo. Available: $(echo "$available" | tr '\n' ' ')"
             fi
             _install_pack_from_dir "$tmpdir/packs/$pick" "$pick" "$url" "$ref" "packs/$pick" "$force" "$clone_commit"
         else
@@ -503,19 +497,12 @@ EOF
             local count=0
             while IFS= read -r name; do
                 [[ -z "$name" ]] && continue
-                if [[ -d "$tmpdir/packs/$name" ]]; then
-                    _install_pack_from_dir "$tmpdir/packs/$name" "$name" "$url" "$ref" "packs/$name" "$force" "$clone_commit"
-                    count=$((count + 1))
-                else
-                    warn "Pack '$name' listed in manifest but not found on disk — skipping"
-                fi
+                _install_pack_from_dir "$tmpdir/packs/$name" "$name" "$url" "$ref" "packs/$name" "$force" "$clone_commit"
+                count=$((count + 1))
             done <<< "$available"
             ok "Installed $count pack(s) from $url"
         fi
     fi
-
-    # Update manifest.yml
-    manifest_refresh "$USER_CONFIG_DIR"
 
     _cleanup_clone "$tmpdir"
     trap - EXIT
@@ -734,9 +721,6 @@ _update_single_pack() {
     # DATA source coordinate and records the new commit + updated date in the
     # STATE meta (_meta_record_provenance) — no separate date bump needed.
     _install_pack_from_dir "$remote_dir" "$name" "$source_url" "$source_ref" "$source_path" true "$update_commit"
-
-    # Update manifest.yml
-    manifest_refresh "$USER_CONFIG_DIR"
 
     _cleanup_clone "$tmpdir"
     ok "Updated pack '$name'"
@@ -1002,9 +986,6 @@ EOF
             warn "Knowledge source not found: $k_source — publishing without internalization"
         fi
     fi
-
-    # Refresh manifest in temp dir
-    manifest_refresh "$tmpdir"
 
     if $dry_run; then
         echo ""

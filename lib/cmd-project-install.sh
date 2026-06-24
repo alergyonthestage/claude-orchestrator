@@ -2,7 +2,7 @@
 # lib/cmd-project-install.sh — Install projects from remote Config Repos
 #
 # Provides: cmd_project_install()
-# Dependencies: colors.sh, utils.sh, yaml.sh, remote.sh, manifest.sh, paths.sh
+# Dependencies: colors.sh, utils.sh, yaml.sh, remote.sh, paths.sh
 # NOTE: _resolve_template_vars() is defined in cmd-project-create.sh
 # Globals: PROJECTS_DIR, PACKS_DIR, USER_CONFIG_DIR
 
@@ -101,28 +101,19 @@ EOF
     local clone_commit=""
     clone_commit=$(git -C "$tmpdir" rev-parse HEAD 2>/dev/null) || true
 
-    # Detect repo type
-    local manifest_file=""
-    if [[ -f "$tmpdir/manifest.yml" ]]; then
-        manifest_file="$tmpdir/manifest.yml"
-    else
-        _cleanup_clone "$tmpdir"
-        die "Not a valid CCO Config Repo: no manifest.yml found"
-    fi
-
-    # Read available templates from manifest
+    # Discover available templates by structure (ADR-0018 D3 — no manifest.yml)
     local available
-    available=$(_manifest_get_names "$manifest_file" "templates")
+    available=$(_discover_resources "$tmpdir" templates)
 
     if [[ -z "$available" ]]; then
         _cleanup_clone "$tmpdir"
-        die "No templates listed in manifest"
+        die "No templates found in the sharing repo (templates/<name>/project.yml)"
     fi
 
     if [[ -n "$pick" ]]; then
         if ! echo "$available" | grep -qxF "$pick"; then
             _cleanup_clone "$tmpdir"
-            die "Template '$pick' not found in manifest. Available: $(echo "$available" | tr '\n' ' ')"
+            die "Template '$pick' not found in the sharing repo. Available: $(echo "$available" | tr '\n' ' ')"
         fi
     else
         # If only one template, auto-select
@@ -221,9 +212,6 @@ EOF
 
     _cleanup_clone "$tmpdir"
     trap - EXIT
-
-    # Update manifest
-    manifest_refresh "$USER_CONFIG_DIR"
 
     ok "Project '$project_name' installed from $url"
     if [[ ${#installed_packs[@]} -gt 0 ]]; then
