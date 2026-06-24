@@ -65,21 +65,27 @@ _setup_internal_config_editor() {
     # project mode). The personal store is mounted read-write — editing it is
     # the whole purpose of this session.
     local cfg; cfg="$(_cco_config_dir)"
+    # The mount bridge resolves names via the STATE index (name → host path).
+    # Seed the config-editor's mount names here — a runtime artifact, never
+    # committed, so AD3/G8 hold by construction (no host path enters project.yml).
+    _index_set_path "cco-config" "$cfg"
+    _index_set_path "cco-docs" "$REPO_ROOT/docs"
+    [[ -n "$target_cco" ]] && _index_set_path "${target_name}-config" "$target_cco"
     {
         cat <<YAML
 name: config-editor
 description: "Configuration editor for claude-orchestrator"
 extra_mounts:
-  - source: $cfg
+  - name: cco-config
     target: /workspace/cco-config
     readonly: false
-  - source: $REPO_ROOT/docs
+  - name: cco-docs
     target: /workspace/cco-docs
     readonly: true
 YAML
         if [[ -n "$target_cco" ]]; then
             cat <<YAML
-  - source: $target_cco
+  - name: ${target_name}-config
     target: /workspace/${target_name}-config
     readonly: false
 YAML

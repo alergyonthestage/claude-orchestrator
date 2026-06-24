@@ -34,8 +34,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -56,8 +55,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -76,8 +74,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -95,6 +92,7 @@ test_yaml_parser_single_repo_mounted() {
     setup_global_from_defaults "$tmpdir"
     local fake_repo="$tmpdir/my-repo"
     mkdir -p "$fake_repo"
+    seed_index_path "my-repo" "$fake_repo"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -103,8 +101,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $fake_repo
-    name: my-repo
+  - name: my-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -120,6 +117,8 @@ test_yaml_parser_multiple_repos_all_mounted() {
     local repo_a="$tmpdir/repo-a"
     local repo_b="$tmpdir/repo-b"
     mkdir -p "$repo_a" "$repo_b"
+    seed_index_path "repo-a" "$repo_a"
+    seed_index_path "repo-b" "$repo_b"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -128,10 +127,8 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $repo_a
-    name: repo-a
-  - path: $repo_b
-    name: repo-b
+  - name: repo-a
+  - name: repo-b
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -160,13 +157,13 @@ test_yaml_parser_repos_do_not_bleed_into_docker_section() {
     setup_global_from_defaults "$tmpdir"
     local fake_repo="$tmpdir/repo-a"
     mkdir -p "$fake_repo"
+    seed_index_path "repo-a" "$fake_repo"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
   method: oauth
 repos:
-  - path: $fake_repo
-    name: repo-a
+  - name: repo-a
 docker:
   ports:
     - "9999:9999"
@@ -197,8 +194,7 @@ docker:
     - "5000:5000"
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -222,8 +218,7 @@ docker:
     - "5432:5432"
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -249,8 +244,7 @@ docker:
   env:
     NODE_ENV: production
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -274,8 +268,7 @@ docker:
     LOG_LEVEL: debug
     APP_PORT: "8080"
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -307,6 +300,7 @@ test_yaml_parser_extra_mount_readonly_true() {
     setup_global_from_defaults "$tmpdir"
     local docs_dir="$tmpdir/docs"
     mkdir -p "$docs_dir"
+    seed_index_path "docs" "$docs_dir"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -315,10 +309,9 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 extra_mounts:
-  - source: $docs_dir
+  - name: docs
     target: /workspace/docs
     readonly: true
 YAML
@@ -335,6 +328,7 @@ test_yaml_parser_extra_mount_readonly_false() {
     setup_global_from_defaults "$tmpdir"
     local rw_dir="$tmpdir/rw-mount"
     mkdir -p "$rw_dir"
+    seed_index_path "rw" "$rw_dir"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -343,10 +337,9 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 extra_mounts:
-  - source: $rw_dir
+  - name: rw
     target: /workspace/rw
     readonly: false
 YAML
@@ -365,6 +358,8 @@ test_yaml_parser_multiple_extra_mounts() {
     local dir_a="$tmpdir/dir-a"
     local dir_b="$tmpdir/dir-b"
     mkdir -p "$dir_a" "$dir_b"
+    seed_index_path "a" "$dir_a"
+    seed_index_path "b" "$dir_b"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -373,13 +368,12 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 extra_mounts:
-  - source: $dir_a
+  - name: a
     target: /workspace/a
     readonly: true
-  - source: $dir_b
+  - name: b
     target: /workspace/b
     readonly: false
 YAML
@@ -416,8 +410,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - my-pack
 YAML
@@ -514,16 +507,16 @@ test_yaml_parser_extra_mount_readonly_omitted_defaults_to_ro() {
     setup_global_from_defaults "$tmpdir"
     local docs_dir="$tmpdir/docs"
     mkdir -p "$docs_dir"
+    seed_index_path "docs" "$docs_dir"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 extra_mounts:
-  - source: $docs_dir
+  - name: docs
     target: /workspace/docs
 YAML
 )"
@@ -539,19 +532,19 @@ test_yaml_parser_extra_mount_readonly_with_trailing_spaces() {
     setup_global_from_defaults "$tmpdir"
     local docs_dir="$tmpdir/docs"
     mkdir -p "$docs_dir"
+    seed_index_path "docs" "$docs_dir"
     # Use printf to preserve trailing spaces exactly
     create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj
 docker:
   ports: []
   env: {}
 repos:
-  - path: %s
-    name: dummy-repo
+  - name: dummy-repo
 extra_mounts:
-  - source: %s
+  - name: docs
     target: /workspace/docs
     readonly: true
-' "$CCO_DUMMY_REPO" "$docs_dir")"
+')"
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "${docs_dir}:/workspace/docs:ro"
@@ -564,16 +557,16 @@ test_yaml_parser_extra_mount_readonly_yes_variant() {
     setup_global_from_defaults "$tmpdir"
     local docs_dir="$tmpdir/docs"
     mkdir -p "$docs_dir"
+    seed_index_path "docs" "$docs_dir"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 extra_mounts:
-  - source: $docs_dir
+  - name: docs
     target: /workspace/docs
     readonly: yes
 YAML
@@ -590,16 +583,16 @@ test_yaml_parser_extra_mount_readonly_false_explicit_rw() {
     setup_global_from_defaults "$tmpdir"
     local rw_dir="$tmpdir/rw-mount"
     mkdir -p "$rw_dir"
+    seed_index_path "rw" "$rw_dir"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 extra_mounts:
-  - source: $rw_dir
+  - name: rw
     target: /workspace/rw
     readonly: false
 YAML
@@ -623,8 +616,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     if run_cco start "test-proj" --dry-run --dump 2>/dev/null; then
@@ -646,8 +638,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 browser:
   enabled: true
   cdp_port: abc
@@ -674,8 +665,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -695,14 +685,14 @@ test_yaml_parser_repo_path_with_inline_comment() {
     setup_global_from_defaults "$tmpdir"
     local fake_repo="$tmpdir/my-repo"
     mkdir -p "$fake_repo"
+    seed_index_path "my-repo" "$fake_repo"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 docker:
   ports: []
   env: {}
 repos:
-  - path: $fake_repo # This is a comment
-    name: my-repo
+  - name: my-repo # This is a comment
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -718,14 +708,14 @@ test_yaml_parser_repo_name_with_inline_comment() {
     setup_global_from_defaults "$tmpdir"
     local fake_repo="$tmpdir/my-repo"
     mkdir -p "$fake_repo"
+    seed_index_path "my-repo" "$fake_repo"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 docker:
   ports: []
   env: {}
 repos:
-  - path: $fake_repo
-    name: my-repo # main repository
+  - name: my-repo # main repository
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -746,8 +736,7 @@ docker:
     - "3000:3000" # web server
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -768,8 +757,7 @@ docker:
   env:
     NODE_ENV: production # deploy target
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -785,16 +773,16 @@ test_yaml_parser_extra_mount_with_inline_comments() {
     setup_global_from_defaults "$tmpdir"
     local docs_dir="$tmpdir/docs"
     mkdir -p "$docs_dir"
+    seed_index_path "docs" "$docs_dir"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 extra_mounts:
-  - source: $docs_dir # shared docs
+  - name: docs # shared docs
     target: /workspace/docs # mount point
     readonly: true # keep safe
 YAML
