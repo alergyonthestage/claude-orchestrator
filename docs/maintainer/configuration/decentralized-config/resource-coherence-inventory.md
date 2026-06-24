@@ -12,6 +12,19 @@ phased teardown in `design.md §9`) that references the **old** config model and
 to the decentralized model (ADRs 0001–0021). The `docs/maintainer/configuration/decentralized-config/`
 tree is the NEW design (source of truth) and is excluded.
 
+> **P3-5 EXECUTION STATUS (2026-06-24).** Sections **A ✅** (config-editor=P3-4; tutorial A.4 + base
+> template), **B ✅** (managed `memory-policy.md` [needs `cco build`], `.gitignore`/`.dockerignore`,
+> changelog id 14), and **C ✅** (24 user-facing + contract docs: README, cli.md, configuration-management,
+> context-hierarchy, architecture, docker/design, spec, getting-started, project-setup, knowledge-packs,
+> mechanical subs, index READMEs, repo CLAUDE.md) are **DONE** (commits `5c6ad29` A/B, `141e24e` C;
+> suite 936/3 delta-green). **Section D (archive vault/sharing/resource-lifecycle → `_archive/`) is NOT
+> done — it is the resume point** (see the P3-5 resume handoff). **NOTE:** the C.6 index-README rewrite
+> ALREADY redirected canonical pointers to `decentralized-config/` and references `_archive/` + the
+> `update-system/` re-home as if present — Section D must MAKE those true (create `_archive/`, move the
+> dead subtrees, re-home the surviving file-policy/changelog-dual-tracker concepts into `update-system/`).
+> Deferred-not-edited (user-owned rule, propose to maintainer): `.claude/rules/update-system.md:20`
+> "vault capabilities" example.
+
 > **Purpose**: when the vault/profile/`user-config/` model is removed, dozens of peripheral
 > resources (skills, templates, rules, docs, the managed `CLAUDE.md` baked into the image) still
 > describe the old world. Several become **actively wrong** (not merely stale) at cutover —
