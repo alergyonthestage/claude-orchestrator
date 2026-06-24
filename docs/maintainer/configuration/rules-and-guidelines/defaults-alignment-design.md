@@ -9,7 +9,7 @@
 >
 > **Predecessors**:
 > - [`analysis.md`](analysis.md) — rules categories, scope mapping, file grouping
-> - [`../resource-lifecycle/analysis.md`](../resource-lifecycle/analysis.md) — update policies
+> - [`../update-system/design.md`](../update-system/design.md) — update policies (file-policy taxonomy §4.4)
 > - [FI-2](../../decisions/framework-improvements.md#fi-2-init-workspace-on-empty-projects)
 > - [FI-5](../../decisions/framework-improvements.md#fi-5-human-workflow-guide-and-review-best-practices)
 >

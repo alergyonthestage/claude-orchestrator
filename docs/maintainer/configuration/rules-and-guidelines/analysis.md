@@ -7,7 +7,7 @@
 > Date: 2026-03-15
 >
 > **Related**: For file update policies (tracked/untracked/generated) and resource
-> lifecycle mechanics, see [`resource-lifecycle/analysis.md`](../resource-lifecycle/analysis.md).
+> lifecycle mechanics, see [`update-system/design.md`](../update-system/design.md) §3–§4.
 > This document focuses on **content organization** (which rules go in which files),
 > not on update mechanics.
 

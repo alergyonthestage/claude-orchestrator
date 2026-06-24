@@ -9,6 +9,12 @@
 > (session 2026-03-14), and policy/taxonomy revisions (2026-03-16).
 > See `resource-lifecycle/analysis.md` for the full resource lifecycle analysis.
 
+> **Canonical home (decentralized-config cutover re-home).** The surviving file-policy
+> taxonomy (`tracked`/`untracked`/`generated` — §3 and §4.4) and the changelog
+> dual-tracker (`last_seen`/`last_read` — §4.11) were consolidated here from the former
+> `resource-lifecycle/` analysis (now archived under `../_archive/`). This design is their
+> single canonical source.
+
 ---
 
 ## 1. Business Model — Resource Taxonomy
