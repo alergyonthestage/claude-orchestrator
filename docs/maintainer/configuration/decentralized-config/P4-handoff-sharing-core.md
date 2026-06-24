@@ -13,9 +13,12 @@ Produced 2026-06-24. Baseline **936 passed / 3 failed** on `feat/vault/decentral
 
 ## ⏩ RESUME STATUS (updated 2026-06-24 — read this FIRST)
 
-**Phase 4 is IN PROGRESS. The §1 P3→P4 adherence audit is DONE and P4-1 + P4-2 have landed.** Start the
-next session at **P4-3 (sync-before-publish)** — do NOT re-run the §1 boundary audit (it was the P3→P4
-audit; a light re-baseline check is enough). The **`decentralized-config` design (`guiding-principles.md`
+**Phase 4 is IN PROGRESS. The §1 P3→P4 adherence audit is DONE and P4-1 + P4-2 + P4-3 have landed.** Start
+the next session at **P4-4 (2×2 verb wiring + nomenclature)** — do NOT re-run the §1 boundary audit (it was
+the P3→P4 audit; a light re-baseline check is enough). **P4-3 ✅ (`cf8d03b`, 2026-06-24): sync-before-publish
+(ADR-0022 D5) — pack-scoped STATE `base/` recorded on install+publish; new whole-file 3-way `_pack_sync_merge`
+abort-on-conflict; `--force` = opt-in clobber escape hatch; corrects clone-then-overwrite (P16); +5 tests;
+suite 915/1 → 920/1.** The **`decentralized-config` design (`guiding-principles.md`
 P1–P18 → ADRs → `design.md` → `requirements.md`) remains the single SOURCE OF TRUTH**; this status only
 records where the build is.
 
@@ -41,12 +44,12 @@ records where the build is.
   > P4-3 into P4-2** ("delete LAST" = right after discovery). **⇒ P4-3 below is now sync-before-publish
   > ONLY.** (Forward-annotated in ADR-0012.) End state unchanged.
 
-**Baseline now = 915/1.** The 1 = `test_resolve_name_from_full_variant_url` (P5 llms straddler — out of
-scope until P5). Delta-green is measured against this 1; a 2nd failure is a regression. Run with the hatch:
-`CCO_ALLOW_HOST_RESOLVE=1 ./bin/test`.
+**Baseline now = 920/1** (after P4-3; was 915/1). The 1 = `test_resolve_name_from_full_variant_url` (P5 llms
+straddler — out of scope until P5). Delta-green is measured against this 1; a 2nd failure is a regression. Run
+with the hatch: `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test`.
 
 **Remaining P4 tasks (build order — each a delta-green commit; §3 has the full scope):**
-1. **P4-3 — sync-before-publish** (ADR-0022 D5 / §6.2). Corrects the **clone-then-overwrite** data-loss
+1. **P4-3 — sync-before-publish** ✅ **DONE `cf8d03b`** (ADR-0022 D5 / §6.2). Corrects the **clone-then-overwrite** data-loss
    defect in `cmd_pack_publish` (`rm -rf "$tmpdir/packs/$name"; cp -R "$pack_dir" …` blindly discards a
    co-maintainer's remote-only changes). Build: (a) record the published/installed pack tree as the
    **pack-scoped STATE `base/`** (`_cco_pack_base_dir` `paths.sh:148` — already exists) on **both**
