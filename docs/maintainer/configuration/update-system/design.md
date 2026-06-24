@@ -7,7 +7,7 @@
 > This document is the single authoritative reference for the update system design.
 > It incorporates decisions from Sprint 5b implementation, post-sprint analysis
 > (session 2026-03-14), and policy/taxonomy revisions (2026-03-16).
-> See `resource-lifecycle/analysis.md` for the full resource lifecycle analysis.
+> See `../_archive/resource-lifecycle/analysis.md` for the full resource lifecycle analysis.
 
 > **Canonical home (decentralized-config cutover re-home).** The surviving file-policy
 > taxonomy (`tracked`/`untracked`/`generated` — §3 and §4.4) and the changelog
@@ -105,7 +105,7 @@ templates/                             # Scaffolding blueprints (read-only sourc
 
 ## 3. Complete File Classification Map
 
-> **See also**: `../vault/file-classification.md` for the unified vault-wide
+> **See also**: `../_archive/vault/file-classification.md` for the unified vault-wide
 > classification (gitignore, profile sharing, publish/install, UX visibility).
 > This section focuses on the **update system** perspective (policies and discovery).
 
@@ -559,7 +559,7 @@ for user reference and future `cco template sync` (not yet implemented).
 - Discovers: `.claude/settings.json` only
 
 **For native template projects** (`.cco/source` with `native:project/<name>`):
-- Source: `templates/project/<name>/` (e.g., `templates/project/config-editor/`; note: tutorial is now internal, see resource-lifecycle/analysis.md §4)
+- Source: `templates/project/<name>/` (e.g., `templates/project/config-editor/`; note: tutorial is now internal, see ../_archive/resource-lifecycle/analysis.md §4)
 - Discovers: template-specific opinionated files (skills, rules) + base files (settings.json)
 - Base files are compared against `templates/project/base/` (schema source)
 - Template files are compared against `templates/project/<name>/` (content source)

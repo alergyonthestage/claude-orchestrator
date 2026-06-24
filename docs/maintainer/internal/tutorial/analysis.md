@@ -176,11 +176,11 @@ The agent creates the files; the user runs `cco` commands to activate them.
 
 **Config editing use case**: Separated into a `config-editor` template
 (`templates/project/config-editor/`) that the user installs as a normal
-project. See `docs/maintainer/configuration/resource-lifecycle/analysis.md` §4.3.
+project. See `docs/maintainer/configuration/_archive/resource-lifecycle/analysis.md` §4.3.
 
 **Migration**: Users with existing `user-config/projects/tutorial/` are
 informed that the tutorial is now built-in. Their project can be removed.
-See `docs/maintainer/configuration/resource-lifecycle/analysis.md` §4.4.
+See `docs/maintainer/configuration/_archive/resource-lifecycle/analysis.md` §4.4.
 
 ### 3.5 Agent Behavior: Explain, Instruct, Get Approval
 

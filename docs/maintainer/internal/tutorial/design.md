@@ -29,7 +29,7 @@ The lead agent IS the guide — no dedicated guide subagent. The project CLAUDE.
 | Skills context | B) Inline (not fork) | Interactive dialogue — user needs continuous context. Lead can delegate to subagents in specific cases |
 | Docker socket | `false` by default | Safer. Agent explains how to enable if needed, with user approval |
 | Knowledge packs | None | Self-contained. Docs mounted live, no duplication |
-| Distribution | **Internal** (`cco start tutorial`, 2026-03-16) | Always current. No install, no update tracking. See docs/maintainer/configuration/resource-lifecycle/analysis.md §4 |
+| Distribution | **Internal** (`cco start tutorial`, 2026-03-16) | Always current. No install, no update tracking. See docs/maintainer/configuration/_archive/resource-lifecycle/analysis.md §4 |
 | Progress tracking | Not in v1 | MEMORY.md tracking deferred. Noted as future enhancement |
 | Best practices guide | cco-specific version in `docs/guides/` | General-purpose guide transformed to explain why cco exists and how it implements structured agentic development patterns. Mounted live via `docs/` extra_mount, always fresh |
 | Per-project knowledge | Not in v1 | Knowledge section currently only available in packs. Per-project knowledge (same `knowledge:` schema in project.yml) noted as future enhancement in roadmap |

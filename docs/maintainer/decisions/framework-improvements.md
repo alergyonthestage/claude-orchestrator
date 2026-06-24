@@ -161,7 +161,7 @@
 
 ## FI-7: Publish-Install Sync and Resource Versioning
 
-**Status**: Implemented. See [FI-7 design](../configuration/sharing/publish-install-sync-design.md).
+**Status**: Implemented. See [FI-7 design](../configuration/_archive/sharing/publish-install-sync-design.md).
 
 **Question**: After `cco project install`, the installed project has no connection to the source Config Repo. If the publisher pushes updates, how does the consumer know? Should there be a `cco project update` flow? What about versioning?
 
@@ -179,7 +179,7 @@
 
 6. **Version metadata** — optional `version:` field in `.cco/source` for human-readable labels; `commit:` field for precise comparison via `git ls-remote`.
 
-**Docs**: [analysis](../configuration/sharing/publish-install-sync-analysis.md) | [design](../configuration/sharing/publish-install-sync-design.md) | [user guide](../../user-guides/configuration-management.md)
+**Docs**: [analysis](../configuration/_archive/sharing/publish-install-sync-analysis.md) | [design](../configuration/_archive/sharing/publish-install-sync-design.md) | [user guide](../../user-guides/configuration-management.md)
 
 **Effort**: Medium-High (6 implementation phases defined in design doc).
 

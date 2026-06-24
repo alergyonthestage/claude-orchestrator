@@ -7,8 +7,8 @@ post-2026-06-15 (tag nature/placement, referenced-resource coordinates, manifest
 removal, sharing-model unification, resource lifecycle).
 **Date**: 2026-06-15
 **Supersedes**: the central git-backed vault (`user-config/` projects + branch
-profiles) and `../vault/profile-isolation-design.md`. Reuses the `@local` path
-contract from `../vault/local-path-resolution-design.md`.
+profiles) and `../_archive/vault/profile-isolation-design.md`. Reuses the `@local` path
+contract from `../_archive/vault/local-path-resolution-design.md`.
 **Decision history (historical, do not edit)**:
 `reviews/15-06-2026-sync-adversarial-review.md` (adversarial review refuting the custom
 sync/merge engine) and `reviews/15-06-2026-simplification-analysis.md` (diff
@@ -355,8 +355,8 @@ flowchart TD
 
 ## 9. Impact / Supersession & Future Workstreams
 
-- Supersedes the central-vault project store and `../vault/profile-isolation-design.md`;
-  reuses `../vault/local-path-resolution-design.md` (`@local`).
+- Supersedes the central-vault project store and `../_archive/vault/profile-isolation-design.md`;
+  reuses `../_archive/vault/local-path-resolution-design.md` (`@local`).
 - Roadmap: update the "Vault Simplification" entry to **decentralized in-repo config
   (sync-as-copy)**; mark vault profile/switch and custom-diff items removed.
 

@@ -117,7 +117,7 @@ that every entry point calls — over a migration that cannot reach the
 branches it needs to.
 
 Examples: `_ensure_vault_gitignore`, `_untrack_stale_pre_save`,
-`_clean_branch_ghost_projects`. See vault/file-classification.md §8.
+`_clean_branch_ghost_projects`. See docs/maintainer/configuration/_archive/vault/file-classification.md §8.
 
 ### Paths that may be files: use `_path_exists`, not `-d`
 
@@ -179,9 +179,9 @@ duplication, not the fifth.
 
 ## References
 
-- `docs/maintainer/configuration/vault/file-classification.md` — the
+- `docs/maintainer/configuration/_archive/vault/file-classification.md` — the
   data model for how vault-relative files are categorized.
-- `docs/maintainer/configuration/vault/local-path-resolution-design.md`
+- `docs/maintainer/configuration/_archive/vault/local-path-resolution-design.md`
   — how `@local` markers and `.cco/local-paths.yml` interact during
   save, pull, switch, and start.
 - `docs/maintainer/decisions/roadmap.md` — `#B10` and the

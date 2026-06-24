@@ -577,7 +577,7 @@ scope as FR-Y-S6 — requirements §8).
 
 ## 5. `@local` Path Resolution (reused, index-backed)
 
-Retained from `../vault/local-path-resolution-design.md`; now resolves against the
+Retained from `../_archive/vault/local-path-resolution-design.md`; now resolves against the
 machine-local index (§3) rather than a per-repo file. `project.yml` carries only
 logical names; the index provides absolute paths; bootstrap on a fresh machine via
 `cco resolve --scan` + on-demand prompt/clone at `cco start`.

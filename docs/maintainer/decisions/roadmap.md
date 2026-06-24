@@ -140,7 +140,7 @@ writing the complete final project.yml in one pass, T5/H6 `.cco/base`+`meta`→S
 decompose, memory relocation, profile→tag prompt; **plus the deferred D-start source-selection**).
 Method/phase-map = `Y-handoff-implementation.md`. T (state-sync) is future.
 **Priority**: 0 (next major work). **Supersedes**: branch-switch real-isolation
-model in `../../configuration/vault/profile-isolation-design.md` (v2) **and** the
+model in `../../configuration/_archive/vault/profile-isolation-design.md` (v2) **and** the
 central-vault project store.
 
 > Evolved 2026-06-12 from "single filesystem + tags" to a full **decentralized
@@ -933,7 +933,7 @@ whose branch no longer exists get pruned. Wired into
 `cmd_vault_profile_switch` as Step 8 (post-checkout, before the
 `@local` resolver).
 
-**See also**: `lib/cmd-vault.sh`, `docs/maintainer/configuration/vault/profile-isolation-design.md` §5.3.
+**See also**: `lib/cmd-vault.sh`, `docs/maintainer/configuration/_archive/vault/profile-isolation-design.md` §5.3.
 
 ---
 
@@ -967,7 +967,7 @@ pattern is auto-added and a silent commit is recorded. No migration
 would have to either cycle every branch proactively, which is
 invasive, or only cover `main`, which would not help).
 
-**See also**: `lib/cmd-vault.sh`, `docs/maintainer/configuration/vault/file-classification.md` §8.
+**See also**: `lib/cmd-vault.sh`, `docs/maintainer/configuration/_archive/vault/file-classification.md` §8.
 
 ---
 
@@ -1039,8 +1039,8 @@ its stdout for the display. Also extracted `_vault_categorize_file` helper
 `cmd_vault_save` and `cmd_vault_diff`. Regression test added in
 `tests/test_vault.sh`.
 
-**See also**: `docs/maintainer/configuration/vault/file-classification.md`,
-`docs/maintainer/configuration/vault/local-path-resolution-design.md`.
+**See also**: `docs/maintainer/configuration/_archive/vault/file-classification.md`,
+`docs/maintainer/configuration/_archive/vault/local-path-resolution-design.md`.
 
 ---
 
@@ -1240,7 +1240,7 @@ Post-release review fixed: migration 012 path calculation, AWK getline fragility
 (entry buffering), path quoting for spaces, AWK -v backslash expansion, ERR trap
 ordering, and vault save profile sync skipping when Docker sessions are active.
 
-**Docs**: [design](../configuration/vault/local-path-resolution-design.md) | changelog entry 12
+**Docs**: [design](../configuration/_archive/vault/local-path-resolution-design.md) | changelog entry 12
 
 ---
 
@@ -1343,7 +1343,7 @@ Completes the user-config lifecycle with update notification and merge for publi
 
 **New commands**: `cco project update`, `cco project internalize`, `cco update --offline/--no-cache`, `cco update --sync <project> --local`, `cco project publish` (enhanced).
 
-**Docs**: [analysis](../configuration/sharing/publish-install-sync-analysis.md) | [design](../configuration/sharing/publish-install-sync-design.md) | [FI-7](framework-improvements.md#fi-7-publish-install-sync-and-resource-versioning)
+**Docs**: [analysis](../configuration/_archive/sharing/publish-install-sync-analysis.md) | [design](../configuration/_archive/sharing/publish-install-sync-design.md) | [FI-7](framework-improvements.md#fi-7-publish-install-sync-and-resource-versioning)
 
 ---
 
@@ -1353,7 +1353,7 @@ Redesign of resource lifecycle policies and tutorial separation. Resolved: proje
 
 **Key changes**: `user-owned` → `untracked` rename for clarity. Project CLAUDE.md changed from `untracked` to `tracked` (3-way merge preserves user content). Tutorial moved to `internal/tutorial/` (always current, `cco start tutorial` launches directly). Config-editor separated as its own template. Skip+.new option added to `_interactive_sync()`. File policies formalized (untracked, tracked, generated).
 
-**Analysis**: [`docs/maintainer/configuration/resource-lifecycle/analysis.md`](../configuration/resource-lifecycle/analysis.md)
+**Analysis**: [`docs/maintainer/configuration/_archive/resource-lifecycle/analysis.md`](../configuration/_archive/resource-lifecycle/analysis.md)
 
 ---
 
@@ -1409,7 +1409,7 @@ Vault profiles with branch-based isolation for multi-PC scenarios, memory separa
 - Test coverage: 115 profile tests + 42 vault tests (regression suite for all fixes)
 - CCO_DEBUG=1 mode for crash diagnostics (improved crash trap, debug-gated entrypoint logs)
 
-**Docs**: [analysis](../configuration/vault/analysis.md) | [design](../configuration/vault/design.md) | [profile-isolation-design](../configuration/vault/profile-isolation-design.md)
+**Docs**: [analysis](../configuration/_archive/vault/analysis.md) | [design](../configuration/_archive/vault/design.md) | [profile-isolation-design](../configuration/_archive/vault/profile-isolation-design.md)
 
 ---
 
@@ -1504,7 +1504,7 @@ Unified design implementing both sharing/import and personal vault under the Con
 - Vault `.gitignore` template (excludes secrets, runtime files, session state)
 - Test coverage: 102 tests (pack install 26, project install 17, share 19, vault 40)
 
-**Docs**: [analysis](../configuration/sharing/analysis.md) | [design](../configuration/sharing/design.md)
+**Docs**: [analysis](../configuration/_archive/sharing/analysis.md) | [design](../configuration/_archive/sharing/design.md)
 
 ---
 
@@ -1520,7 +1520,7 @@ Enhancements to the Config Repo sharing system. Addresses naming issues, portabi
 - `cco pack internalize` — convert source-referencing packs to self-contained
 - Enhanced `cco project install` — auto-install pack dependencies, template variable resolution
 
-**Docs**: [analysis](../configuration/sharing/analysis.md) §8–§14 | [design](../configuration/sharing/design.md) §15–§22
+**Docs**: [analysis](../configuration/_archive/sharing/analysis.md) §8–§14 | [design](../configuration/_archive/sharing/design.md) §15–§22
 
 ---
 
