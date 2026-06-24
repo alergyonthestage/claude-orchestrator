@@ -5,8 +5,8 @@
 # creating project.yml files with specific values and asserting that the
 # generated docker-compose.yml (via --dry-run --dump) correctly reflects the parsing.
 #
-# This catches regressions in: yml_get, yml_get_repos, yml_get_ports,
-# yml_get_env, yml_get_extra_mounts, yml_get_packs, yml_get_pack_files.
+# This catches regressions in: yml_get, yml_get_repo_coords, yml_get_ports,
+# yml_get_env, yml_get_mount_coords, yml_get_packs, yml_get_pack_files.
 
 # ── yml_get: top-level and nested key parsing ─────────────────────────
 
@@ -83,7 +83,7 @@ YAML
     assert_file_not_contains "$compose" "ANTHROPIC_API_KEY"
 }
 
-# ── yml_get_repos: repo list parsing ─────────────────────────────────
+# ── yml_get_repo_coords: repo list parsing → mounts ──────────────────
 
 test_yaml_parser_single_repo_mounted() {
     # yml_get_repos: single repo → mounted at /workspace/<name>
@@ -291,7 +291,7 @@ test_yaml_parser_empty_env_no_extra_vars() {
     assert_file_not_contains "$compose" "NODE_ENV"
 }
 
-# ── yml_get_extra_mounts: extra_mounts parsing ───────────────────────
+# ── yml_get_mount_coords: extra_mounts parsing → mounts ──────────────
 
 test_yaml_parser_extra_mount_readonly_true() {
     # yml_get_extra_mounts: readonly:true → :ro suffix
