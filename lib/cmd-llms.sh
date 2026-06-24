@@ -675,8 +675,11 @@ _llms_resolve_name_from_url() {
         done
     fi
 
-    if [[ -n "$segments" && "$segments" != "$domain" ]]; then
-        echo "${domain}-${segments}"
+    # A meaningful path segment identifies the framework (e.g. .../react/llms-full.txt
+    # → "react"); the domain is only the fallback when the path carries no segment
+    # (e.g. shadcn-svelte.com/llms.txt → "shadcn-svelte").
+    if [[ -n "$segments" ]]; then
+        echo "$segments"
     else
         echo "$domain"
     fi
