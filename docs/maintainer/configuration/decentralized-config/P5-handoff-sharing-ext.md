@@ -12,9 +12,17 @@ Branch `feat/vault/decentralized-config`, commits **LOCAL** (the maintainer push
 
 ## ⏩ RESUME STATUS (read this FIRST)
 
-**Phases 0–3 ✅ CLOSED. Phase 4 build (P4-1…P4-5c) + P4-doc ✅ COMPLETE. Suite 827/1.** The **1** =
-`test_resolve_name_from_full_variant_url` (P5 llms straddler — resolved in P5). Delta-green is measured
-against this 1; a 2nd failure is a regression. Run tests with the hatch:
+> **✅ P4→P5 ADHERENCE AUDIT DONE 2026-06-24 → PHASE 4 CLOSED.** The §1 first-action audit has run
+> (`reviews/24-06-2026-p4-p5-adherence-review.md`, 4 parallel read-only lenses + adversarial verify):
+> Phase-4 code **fully conformant — 0 code 🔴 / 0 blockers / 0 design gaps**. One **doc-only** cluster
+> (shipped-behavior docs documented P5-not-built verbs as shipped) → maintainer Option A, **FIXED** (🚧
+> markers, suite 827/1). Transitional Registry refreshed (P0–P4 retired; live = P4-5d + the 1 straddler).
+> **§1 is satisfied — a fresh session can skip it and go to P5 build (§3); propose the build order +
+> sub-commit decomposition to the maintainer BEFORE coding (§0/§3).** First P5 unit likely = **P4-5d**.
+
+**Phases 0–4 ✅ CLOSED. Phase 4 build (P4-1…P4-5c) + P4-doc + P4→P5 audit ✅ COMPLETE. Suite 827/1.** The
+**1** = `test_resolve_name_from_full_variant_url` (P5 llms straddler — resolved in P5). Delta-green is
+measured against this 1; a 2nd failure is a regression. Run tests with the hatch:
 `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test` (`--file <name>` / `--filter <substr>` to scope).
 
 **The `decentralized-config` design is the single SOURCE OF TRUTH**, precedence:

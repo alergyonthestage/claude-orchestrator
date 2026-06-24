@@ -76,66 +76,43 @@ state sanctioned by the design/handoffs; flag it 🟡 (intentional) only if it s
 and **its retiring phase has not yet passed**. If a retiring phase **has** passed and the legacy is still
 present, that flips to 🔴 (the cleanup was missed). Keep this registry **current** at each audit.
 
-- **Commit A (`c8ae080`) — kept-transitional, dies P3/P4:**
-  - `@local`/sanitize/extract/restore + `local-paths.yml` plumbing in `lib/local-paths.sh` — **NOT
-    deleted** (still consumed by vault/publish, which ride P3/P4). Final state: index-only.
-  - **Per-section schema bridge** — resolver/mount-gen detect schema per section (`yml_get_repos`/
-    `yml_get_extra_mounts` non-empty ⇒ legacy chain; empty ⇒ coordinate parsers + STATE index). Collapses
-    to index-only when legacy dies (P3/P4). Emitters `_effective_repo_mounts`/`_effective_extra_mounts`.
-- **Commit B (`848cf63`) — kept-transitional, dies P3/P4:**
-  - **Dual-seed** in the harness (`setup_global_from_defaults` seeds legacy `GLOBAL_DIR` **and**
-    `~/.cco/global`); **legacy `CCO_*_DIR` KEPT** (consumed by not-yet-cutover init/update/build/clean/
-    project-create/vault commands + ~20 vault-profile tests); `check_global` not re-pointed (satisfied by
-    dual-seed); ~~**vault-git mirror kept** until the vault is removed (P3)~~ — **vault-git mirror ✅ GONE
-    with the vault (P3-3)**. The dual-seed + legacy `CCO_*_DIR` stay until their last consumer cuts over
-    (init transforms P3-3b; update/build/clean → P3-3b/P4).
-- **Re-sequenced OUT of P0 (built later, in final form — `source`/base stay in place until then):**
-  - **~~T4-source → P4~~ — ✅ RETIRED 2026-06-24 (landed in P4-1 `82b6956`).** `source` provenance
-    relocated `<repo|pack>/.cco/source` → `<data>/cco/{packs/<name>,projects/<id>}/source` (+ new
-    `_cco_template_source`); keys `source→url`/`path→resource` (`ref` kept); `commit/installed/updated`
-    → STATE `/update` meta; **F4** `publish_target` re-derived via `remote_get_name_for_url` (ADR-0022 D1).
-    Idempotent `_relocate_legacy_pack_sources` in `cco update` migrates existing in-place source. llms
-    source excluded (already CACHE-split). Verified `reviews/24-06-2026-impl-adherence-review.md`.
-  - **~~T5 → P2~~ — ✅ RETIRED 2026-06-23 (landed in P2-2 `b0c215e`).** Merge-engine artifacts `.cco/base/`
-    + `.cco/meta` relocated to STATE keyed by identity (`_cco_{global,project,pack}_{meta,base_dir}` →
-    `<state>/cco/.../update/{meta,base}`, `<id>`=`name`); global `.cco/meta` decomposed (languages→`~/.cco`,
-    markers→STATE top-level, schema/policies/flags/hash-`manifest:`→global STATE meta); merge **logic**
-    (`update-merge.sh`) untouched. **No production code writes base/meta to the old `.cco/` location.**
-    Residual `.cco/meta`/`.cco/source` *reads* belong only to legacy machinery separately registered
-    (legacy vault → P3; pack source/provenance → P4). Verified `reviews/23-06-2026-impl-adherence-review.md`.
-  - **~~T4-tags → P3~~ — ✅ RETIRED 2026-06-23 (P3-2a `548f2e5`).** `cco tag add/rm` + `cco list [--tag]`
-    now consume the DATA `tags.yml` (new `lib/tags.sh`; the P2 migration seed delegates to `_tags_add`,
-    single writer / P12 DRY).
-- **Known baseline test failures — 3 (NOT regressions — do not re-investigate). Re-baselined
-  2026-06-23 (P3-3 vault cutover)** — the 5 P3 vault/profile failures vanished with their files at P3-3
-  (`a76e1f6`), shrinking the FAIL set **8 → 3** exactly as the P3 handoff §4 predicted. The suite is now
-  **949/3**; delta-green is measured against these 3. **Run with the host-resolve hatch:
-  `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test`** — without it, 3–4 pure path-resolver unit tests
-  (`test_paths_project_meta_*`, `test_update_no_backup_skips_bak`) fail on the H4 guard *by design* (not
-  regressions). The remaining 3 are stale-assertion / legacy test-drift in the §11 rewrite buckets:
-  - **~~P2 — update/migration rewrite (8)~~ — ✅ RESOLVED 2026-06-23 (P2-2 `b0c215e`).**
-  - **~~P3 — vault/profiles removed (5)~~ — ✅ RETIRED 2026-06-23 (P3-3 `a76e1f6`).**
-    `test_vault.sh` (54) + `test_vault_profiles.sh` (incl. the 5 failures
-    `test_vault_switch_to_main_shared_only`, `test_profile_show_active_profile`,
-    `test_vault_move_preserves_unaccounted_files`, `test_vault_push_with_profile_syncs_shared`,
-    `test_profile_create_preserves_unaccounted_files`) **deleted with the vault**; 3 vault-git-mirror
-    tests trimmed from `test_remote.sh` + 1 vault-cmd backup-skip from `test_migrate.sh`.
-  - **P4–P5 — sharing rewrite — ✅ 2 of 3 RESOLVED 2026-06-24 (P4-1 `82b6956`):**
-    `test_publish_ignore_path_patterns` + `test_project_internalize_updates_base` went green with the
-    source→DATA rewrite (both were stale/wrong fixtures, adversarially verified faithful). **1 still red
-    (P5 llms straddler):** `test_resolve_name_from_full_variant_url` (stale llms name-derivation; llms source
-    untouched until P5). **Current baseline after P4-2 = 915/1** (delta-green measured against this 1; the
-    total dropped 940→916 when `test_manifest.sh` was removed in P4-2).
-  > The 3 P0-scope `test_invariants` failures the mask-guard surfaced were **spot-fixed** at the P0 audit
-  > and are **green**. The `bin/test:_run_test` `ASSERTION FAILED`-sentinel fix — keep it.
-- **Legacy commands — status:** `cco vault *` + the profile/switch/shadow machinery + memory auto-commit
-  (D33/D32) **✅ REMOVED at P3-3 (`a76e1f6`)**; `cco project create` **✅ REMOVED at P3-3b (`d9e44a2`)**;
-  **`cco manifest` + `lib/manifest.sh` + the manifest_refresh/init writers ✅ REMOVED at P4-2 (`6b2673f`)**
-  (structure-based discovery `_discover_resources`; manifest-delete folded P4-3→P4-2, ADR-0012/0018 D3).
-  **Still live (deferred → P4-4/P4-5):** the tier-2 legacy `cco project resolve`/`validate <name>`/
-  `add-pack`/`remove-pack`/`delete` + `cco project publish`/`install` (REMOVED P4-4) + the `@local` sanitize
-  block + per-section schema bridge + dual-seed/`CCO_*_DIR` (die **P4-5** with their consumers — build-once).
-  Present-but-legacy is **expected** until their phase.
+### ✅ RETIRED through Phase 4 (do NOT re-investigate; gone — verified `reviews/24-06-2026-p4-p5-adherence-review.md`)
+
+The whole P0–P4 transitional set has landed and been removed in final form:
+- **Commit A** (`c8ae080`): `@local`/sanitize/extract/restore + `local-paths.yml` plumbing → **REMOVED P4-5b**
+  (`34b3429`); the per-section schema bridge legacy `- path:`/`- source:` arm → **COLLAPSED index-only P4-5c**
+  (`105bd9c`); legacy parsers `yml_get_repos`/`yml_get_extra_mounts` → **REMOVED P4-5c-3** (`bdc90a0`).
+- **T4-source** → **RETIRED P4-1** (`82b6956`): `source`→DATA + key rename (`source→url`/`path→resource`) +
+  bookkeeping→STATE meta + `publish_target` re-derived (`remote_get_name_for_url`); `_relocate_legacy_pack_sources`
+  migrates in-place source. **T5** (base/meta→STATE) → RETIRED P2-2 (`b0c215e`). **T4-tags** → RETIRED P3-2a (`548f2e5`).
+- **Legacy commands:** `cco vault *` + profile/switch/shadow + memory-auto-commit (D33/D32) → REMOVED P3-3
+  (`a76e1f6`); `cco project create` → REMOVED P3-3b (`d9e44a2`); `cco manifest` + `lib/manifest.sh` + writers
+  → REMOVED P4-2 (`6b2673f`, structure-based `_discover_resources`); tier-2 `cco project resolve`/`validate
+  <name>`/`add-pack`/`remove-pack`/`delete` → REMOVED P4-5a (`3b0859b`); `cco project publish`/`install`/
+  `update`/`internalize` → REMOVED P4-4e (`a5d6cca`). Removed verbs give AD12 explicit "was removed" rejections.
+
+### 🟡 LIVE transitional set — the **P4-5d** group (retires in **P5**; do NOT flag as error)
+
+The central-layout → STATE-index teardown is the carried-forward P5 unit. Present-but-legacy is **expected** here.
+- **Harness dual-seed** — `tests/helpers.sh` `setup_global_from_defaults` seeds legacy `GLOBAL_DIR` + `~/.cco/global`;
+  `create_project` also seeds the central layout. Drops when the last central consumer cuts over.
+- **Legacy `CCO_*_DIR` / `$GLOBAL_DIR`-default** resolution in `bin/cco` (+ harness export). `$GLOBAL_DIR` already
+  `~/.cco/global` (P3-3b); the `CCO_*_DIR` fallback remains.
+- **Central `$PROJECTS_DIR/*/` enumeration — 11 call-sites** (the P4-5d work-list): `cmd-update.sh:139,209,225` ·
+  `cmd-llms.sh:539,734,770` · `cmd-pack.sh:232-290` · `cmd-clean.sh:87,115` · `cmd-project-query.sh:20,114` ·
+  `cmd-start.sh:1155` (`_collect_claimed_browser_ports`) · `cmd-stop.sh:26,58` · `cmd-chrome.sh:65,76` ·
+  `cmd-template.sh:273-274`. Migrate to `_index_list_projects` + `_index_get_path`.
+- **KEEP-forever (NOT to be flagged/removed):** `_project_effective_paths` (cmd-start), `_local_paths_get`/
+  `_get_section` (migrate reads legacy `local-paths.yml` from BACKUP, `migrate.sh:492`), `_resolve_entry_index`,
+  `_prompt_for_path`.
+
+### Known baseline — **827 passed / 1 failed** (run `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test`)
+
+The **1** = `test_resolve_name_from_full_variant_url` (P5 llms straddler — expects `react`, derives
+`example-react`; llms name-derivation rewrite owned by P5). Delta-green is measured against this 1; a 2nd
+failure is a regression. (Without the host-resolve hatch, 3–4 pure path-resolver unit tests
+`test_paths_project_meta_*`/`test_update_no_backup_skips_bak` fail the H4 guard *by design* — not regressions.)
+Keep the `bin/test:_run_test` `ASSERTION FAILED`-sentinel fix.
 
 > **Update rule:** when a phase lands, move its retired items out of this registry (they should now be
 > ❌→✅ or simply gone). A registry entry whose retiring phase is in the past is itself a finding.
