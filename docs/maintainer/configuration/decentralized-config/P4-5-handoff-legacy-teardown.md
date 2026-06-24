@@ -11,7 +11,13 @@ Branch `feat/vault/decentralized-config`, commits **LOCAL** (the maintainer push
 
 ## ⏩ RESUME STATUS (read this FIRST)
 
-> **UPDATE 2026-06-24 — P4-5 (a/b/c) COMPLETE. RESUME AT P4-doc (closes Phase 4).**
+> **UPDATE 2026-06-24 — P4-5 (a/b/c) + P4-doc COMPLETE. Phase 4 build+doc done; RESUME AT the P4→P5 adherence
+> audit, then P5.** P4-doc (2 commits `91433c5` + `5c7fc96`): living-rewrote `architecture/coding-conventions.md`
+> (full) + `security.md` to surviving helpers / `cco config`+`remotes-token`; `browser-mcp` `cco project create`→
+> `cco init` (auth/design.md needed no change — its "profile" refs are OAuth/Chrome, not vault); cli.md/config-
+> management shipped-behavior (add-pack alias dropped; validate/forget marked 🚧 planned/P5). Suite 827/1. **NEXT =
+> P4→P5 adherence audit** (boundary) → Phase 4 CLOSED → P5 (incl. the deferred **P4-5d** central-`$PROJECTS_DIR`→
+> index migration + `CCO_*_DIR` drop). Roadmaps reconcile at the close. Full detail in the live progress note.
 > The 4 reconciliations were RESOLVED (AskUserQuestion): `add-pack` alias DROPPED · `cco project delete` REMOVED
 > · schema-bridge FULL collapse · **P4-5d DEFERRED to P5** (central `$PROJECTS_DIR` still load-bearing in ~10
 > commands not yet on the index). **8 commits:** P4-5a `3b0859b` (tier-2 verbs) · P4-5b `34b3429` (@local
