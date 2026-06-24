@@ -11,20 +11,20 @@ Branch `feat/vault/decentralized-config`, commits **LOCAL** (the maintainer push
 
 ## ⏩ RESUME STATUS (read this FIRST)
 
-> **UPDATE 2026-06-24 — P4-5a + P4-5b DONE, paused mid-P4-5 for maintainer travel. RESUME AT P4-5c.**
-> The 4 open reconciliations are RESOLVED (maintainer, AskUserQuestion): (1) `add-pack` alias **DROPPED now**
-> (no alias, AD12 — deviates from ADR-0023 D3, reconciliation recorded); (2) `cco project delete` **REMOVED now**
-> (deregister gap until `cco forget`/P5 accepted); (3) schema-bridge → **FULL collapse in P4-5c**; (4) **P4-5d
-> DEFERRED to P5** — code-grounded: central `$PROJECTS_DIR` is still load-bearing in ~10 commands not yet on the
-> index (`$GLOBAL_DIR` already `~/.cco/global`). **P4-5a `3b0859b`** (tier-2 verbs removed + rejections;
-> `cmd-project-delete.sh`/`cmd-project-pack-ops.sh` deleted; suite 862/1). **P4-5b `34b3429`** (orphan @local
-> vault/publish family deleted from `local-paths.sh`, −468 lines; KEPT the bridge + `_resolve_project_paths_impl`/
-> `_resolve_start_paths`/`_get_repo_url`/`_resolve_entry`/`_update_yml_path` for P4-5c; `test_local_paths.sh`
-> 40→18; suite **840/1**). **NEXT = P4-5c** (bridge FULL collapse → index-only; KEEP `_project_effective_paths`
-> the function, drop its legacy branch). **Maintainer asked to PROPOSE the P4-5c sub-commit decomposition BEFORE
-> coding** (it is gated by migrating the old-schema `- path:`/`- source:` fixtures — current map + the dies-with-
-> legacy-branch function list are in the live progress note `decentralized-config-impl-progress.md`). Then P4-doc.
-> Delta-green now measured vs **840/1**. Full detail in the progress note.
+> **UPDATE 2026-06-24 — P4-5 (a/b/c) COMPLETE. RESUME AT P4-doc (closes Phase 4).**
+> The 4 reconciliations were RESOLVED (AskUserQuestion): `add-pack` alias DROPPED · `cco project delete` REMOVED
+> · schema-bridge FULL collapse · **P4-5d DEFERRED to P5** (central `$PROJECTS_DIR` still load-bearing in ~10
+> commands not yet on the index). **8 commits:** P4-5a `3b0859b` (tier-2 verbs) · P4-5b `34b3429` (@local
+> plumbing) · P4-5c-1a `89d18e0` + 1b `9e167db` + 1b+ `5fc7a54` (fixture migration → logical-name+index seed;
+> +production fixes `workspace.sh` description-seed-awk and `cmd-start.sh` config-editor generator, both old-schema
+> consumers the collapse exposed) · P4-5c-2 `105bd9c` (THE COLLAPSE — legacy branch removed from the 4 bridge fns;
+> deleted `_get_repo_url`/`_resolve_entry`/`_update_yml_path`/`_local_paths_set`; KEPT `_local_paths_get` for
+> `cco init --migrate`) · P4-5c-3 `bdc90a0` (removed legacy `yml_get_repos`/`yml_get_extra_mounts` parsers).
+> **Suite 827/1** (the 1 = P5 straddler). **NEXT = P4-doc:** living-rewrite `architecture/{coding-conventions,
+> security}.md` + `integration/{browser-mcp,auth}/design.md` (still document deleted `cmd-vault.sh`/@local/tier-2),
+> + shipped-behavior fixes now true (`cli.md` add-pack/remove-pack alias gone; `cli.md §3.14`/`configuration-
+> management.md:530` `cco project validate` now ships P5). After P4-doc → P4→P5 adherence audit → Phase 4 CLOSED.
+> Full detail in the live progress note `decentralized-config-impl-progress.md`.
 
 **Phase 4 is IN PROGRESS. P4-1 + P4-2 + P4-3 + P4-4 have landed; start here at P4-5.** Do NOT re-run the §1
 P3→P4 boundary audit (it is done); a **light re-baseline check** is enough. The **`decentralized-config`
