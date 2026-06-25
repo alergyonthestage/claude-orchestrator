@@ -413,6 +413,27 @@ test_template_publish_install_round_trip() {
     assert_file_exists "$CCO_TEMPLATES_DIR/project/sharet/project.yml"
 }
 
+# P5-5a: install pins the upstream HEAD as installed_commit in the STATE meta,
+# so `cco update --check` has a baseline to compare against (ADR-0022 D1/D6).
+test_template_install_records_installed_commit() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco template create cmt --project
+    local bare; bare=$(_tmpl_empty_bare_remote "$tmpdir")
+    run_cco remote add r "$bare"
+    run_cco template publish cmt r
+    run_cco template remove cmt
+    run_cco template install "$bare" --pick cmt
+
+    local meta="$CCO_STATE_HOME/templates/cmt/update/meta"
+    assert_file_exists "$meta"
+    assert_file_contains "$meta" "installed_commit:"
+    # the recorded commit matches the remote HEAD
+    local head; head=$(git ls-remote "$bare" HEAD | head -1 | cut -f1)
+    assert_file_contains "$meta" "$head"
+}
+
 test_template_publish_preserves_remote_only_changes() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"

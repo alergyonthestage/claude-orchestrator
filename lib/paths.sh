@@ -179,6 +179,13 @@ _cco_template_source() {
     printf '%s\n' "$(_cco_data_dir)/templates/$(basename "$1")/source"
 }
 
+# Template-scoped install meta → STATE, keyed by template dir basename. Mirrors
+# `_cco_pack_meta`: holds the machine-local `installed_commit` (+ install/update
+# dates) the `cco update --check` advancement test reads (ADR-0022 D1/D6, P5-5).
+_cco_template_meta() {
+    printf '%s\n' "$(_cco_state_dir)/templates/$(basename "$1")/update/meta"
+}
+
 # Template-scoped merge artifacts → STATE, keyed by template name (the flat-store
 # basename, matching the flat sharing-repo templates/<name>/). Mirrors the pack
 # form; the sync-before-publish merge ancestor (ADR-0022 D5). Never-sync.

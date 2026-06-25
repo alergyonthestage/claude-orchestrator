@@ -469,11 +469,13 @@ _find_template() {
 }
 
 # Install a template from a local directory into the user store, recording the
-# DATA source coordinate + the STATE base/ merge ancestor (mirrors the pack form;
-# no STATE meta — install-commit tracking is a P5 `--check` concern).
-# Usage: _install_template_from_dir <source_dir> <name> <kind> <url> <ref> <path> <force>
+# DATA source coordinate, the STATE install meta (installed_commit), and the
+# STATE base/ merge ancestor (mirrors the pack form). The optional <commit> is
+# the upstream HEAD the install pinned — empty for a local/import snapshot, which
+# leaves the template `indeterminate` under `cco update --check` (ADR-0022 D6).
+# Usage: _install_template_from_dir <source_dir> <name> <kind> <url> <ref> <path> <force> [commit]
 _install_template_from_dir() {
-    local source_dir="$1" name="$2" kind="$3" url="$4" ref="$5" path="$6" force="$7"
+    local source_dir="$1" name="$2" kind="$3" url="$4" ref="$5" path="$6" force="$7" commit="${8:-}"
     local target_dir="$TEMPLATES_DIR/$kind/$name"
 
     if [[ -d "$target_dir" ]]; then
@@ -504,6 +506,8 @@ url: $url
 resource: ${path:-}
 ref: ${ref:-}
 YAML
+    local now; now=$(date +%Y-%m-%d)
+    _meta_record_provenance "$(_cco_template_meta "$target_dir")" "$commit" "$now" "$now"
     _record_tree_as_base "$(_cco_template_base_dir "$target_dir")" "$target_dir"
     ok "Installed $kind template '$name'"
 }
@@ -637,6 +641,11 @@ EOF
     info "Fetching templates from $url${ref:+ (ref: $ref)}..."
     local tmpdir; tmpdir=$(_clone_config_repo "$url" "$ref" "$token")
 
+    # The cloned upstream HEAD — pinned as the template's installed_commit so
+    # `cco update --check` can tell whether the source has since advanced (D6).
+    local clone_commit=""
+    clone_commit=$(git -C "$tmpdir" rev-parse HEAD 2>/dev/null) || true
+
     local names; names=$(_discover_resources "$tmpdir" templates)
     [[ -z "$names" ]] && { _cleanup_clone "$tmpdir"; die "No templates found in $url (expected templates/<name>/)."; }
 
@@ -655,7 +664,7 @@ EOF
     local tk; tk=$(_template_kind_of "$src_dir") \
         || { _cleanup_clone "$tmpdir"; die "Template '$chosen' has no project.yml/pack.yml marker."; }
 
-    _install_template_from_dir "$src_dir" "$chosen" "$tk" "$url" "$ref" "templates/$chosen" "$force"
+    _install_template_from_dir "$src_dir" "$chosen" "$tk" "$url" "$ref" "templates/$chosen" "$force" "$clone_commit"
     _cleanup_clone "$tmpdir"
 }
 
