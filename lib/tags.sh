@@ -21,7 +21,8 @@
 # ambiguous. `cco list [--tag <t>]` is the unified discovery surface.
 #
 # Provides: cmd_tag(), cmd_list(), _tags_file(), _tags_get(), _tags_add(),
-#   _tags_remove(), _tags_resources_with(), _tags_all(), _tags_detect_kind()
+#   _tags_remove(), _tags_forget(), _tags_resources_with(), _tags_all(),
+#   _tags_detect_kind()
 # Dependencies: colors.sh, paths.sh (_cco_data_dir/_cco_config_dir),
 #   index.sh (_index_get_project_repos/_index_list_projects)
 
@@ -94,6 +95,25 @@ _tags_remove() {
     cur=$(_tags_get "$kind" "$name")
     for t in $cur; do [[ "$t" == "$tag" ]] || out="$out $t"; done
     _tags_set "$kind" "$name" "$out"
+}
+
+# Remove the ENTIRE <kind>/<name> entry from the registry (no-op if absent;
+# atomic). The lifecycle delete-cascade primitive (ADR-0021 Dec.2/4): used by
+# `cco pack/template remove` and `cco forget` to drop a resource's tag binding
+# when the resource itself is gone — distinct from _tags_remove, which drops a
+# single tag while keeping the entry. Usage: _tags_forget <kind> <name>
+_tags_forget() {
+    local kind="$1" name="$2" f
+    f=$(_tags_file)
+    [[ -f "$f" ]] || return 0
+
+    local tmpf; tmpf=$(mktemp "${f}.XXXXXX")
+    awk -v sec="${kind}:" -v key="  ${name}:" '
+        $0 == sec { print; in_sec = 1; next }
+        in_sec && /^[^ #]/ { in_sec = 0 }
+        in_sec && index($0, key) == 1 { next }
+        { print }
+    ' "$f" > "$tmpf" && mv "$tmpf" "$f"
 }
 
 # Emit "<kind>\t<name>\t<space-separated-tags>" for every tagged resource.

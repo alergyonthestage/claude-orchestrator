@@ -208,6 +208,33 @@ test_template_remove_user() {
     assert_dir_not_exists "$CCO_TEMPLATES_DIR/project/removable"
 }
 
+test_template_remove_cascades_internal_state() {
+    # ADR-0021 Dec.4: removing an (installed) template cleans the id-keyed
+    # internal state it created — DATA install-provenance, STATE merge base, and
+    # the tags.yml binding.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    init_global "$tmpdir" --lang "English"
+    run_cco template create cascade-tmpl --project
+    assert_dir_exists "$CCO_TEMPLATES_DIR/project/cascade-tmpl"
+
+    # Simulate an installed, tagged template with merge bookkeeping.
+    local src; src=$(data_template_source "cascade-tmpl")
+    mkdir -p "$(dirname "$src")"; printf 'url: https://example.com/repo\n' > "$src"
+    mkdir -p "$CCO_STATE_HOME/templates/cascade-tmpl/update/base"
+    run_cco tag add cascade-tmpl scaffold
+
+    run_cco template remove cascade-tmpl
+
+    assert_dir_not_exists "$CCO_TEMPLATES_DIR/project/cascade-tmpl"
+    assert_dir_not_exists "$CCO_DATA_HOME/templates/cascade-tmpl"
+    assert_dir_not_exists "$CCO_STATE_HOME/templates/cascade-tmpl"
+    run_cco list --tag scaffold
+    if echo "${CCO_OUTPUT:-}" | grep -qF "cascade-tmpl"; then
+        fail "tag binding for cascade-tmpl should be gone after remove"
+    fi
+}
+
 test_template_remove_native_fails() {
     # Native templates can't be removed (they're not in user templates dir)
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT

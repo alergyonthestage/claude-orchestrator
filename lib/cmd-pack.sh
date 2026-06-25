@@ -316,6 +316,15 @@ EOF
 
     rm -rf "$pack_dir"
 
+    # Delete-cascade (ADR-0021 Dec.4): clean the id-keyed internal state this
+    # pack created, not just the CONFIG copy — DATA install-provenance (`source`),
+    # STATE merge base+meta (`<state>/cco/packs/<name>/update/`), and the tags.yml
+    # binding. Otherwise removal orphans bookkeeping that `cco config validate`
+    # would later have to sweep.
+    rm -rf "$(_cco_data_dir)/packs/$name"
+    rm -rf "$(_cco_state_dir)/packs/$name"
+    _tags_forget packs "$name"
+
     ok "Pack '$name' removed"
 }
 

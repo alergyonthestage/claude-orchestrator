@@ -117,3 +117,39 @@ test_tags_not_in_project_yml() {
         fail "tag leaked into the committed project.yml"
     fi
 }
+
+# ── _tags_forget (lifecycle delete-cascade primitive; ADR-0021 Dec.2/4) ──────
+
+test_tags_forget_removes_whole_entry() {
+    # _tags_forget drops the ENTIRE <kind>/<name> entry — unlike _tags_remove,
+    # which drops a single tag — and must not touch sibling entries (incl. names
+    # that share a prefix).
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/tags.sh"
+
+    _tags_set packs "my-api"    "work infra"
+    _tags_set packs "my-api-v2" "infra"
+    _tags_set projects "my-api" "prod"   # same name, different kind — must survive
+
+    _tags_forget packs "my-api"
+
+    [[ -z "$(_tags_get packs my-api)" ]]            || fail "packs/my-api entry should be gone"
+    [[ "$(_tags_get packs my-api-v2)" == "infra" ]] || fail "prefix-sharing sibling packs/my-api-v2 must survive"
+    [[ "$(_tags_get projects my-api)" == "prod" ]]  || fail "same-name-different-kind projects/my-api must survive"
+    # Gone entirely, not merely emptied to "[]": no packs-section line survives.
+    local n; n=$(awk '/^packs:/{p=1;next} p&&/^[^ #]/{p=0} p&&/^  my-api:/{c++} END{print c+0}' "$CCO_DATA_HOME/tags.yml")
+    [[ "$n" -eq 0 ]] || fail "the packs/my-api line should be removed entirely, not emptied"
+}
+
+test_tags_forget_noop_when_absent() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/tags.sh"
+    # No registry file yet — must not error.
+    _tags_forget packs "never-existed" || fail "_tags_forget must be a no-op when the registry is absent"
+}

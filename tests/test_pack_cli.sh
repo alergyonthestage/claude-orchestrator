@@ -245,6 +245,34 @@ test_pack_remove_deletes_directory() {
     fi
 }
 
+test_pack_remove_cascades_internal_state() {
+    # ADR-0021 Dec.4: removing a pack cleans the id-keyed internal state it
+    # created — DATA install-provenance, STATE merge base+meta, tags.yml — not
+    # just the CONFIG copy.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco pack create "cascade-pack"
+
+    # Simulate an installed, tagged pack with merge bookkeeping.
+    local src; src=$(data_pack_source "cascade-pack")
+    mkdir -p "$(dirname "$src")"; printf 'url: https://example.com/repo\n' > "$src"
+    local base; base=$(state_pack_base "cascade-pack"); mkdir -p "$base"; touch "$base/.keep"
+    local meta; meta=$(state_pack_meta "cascade-pack")
+    mkdir -p "$(dirname "$meta")"; printf 'schema_version: 1\n' > "$meta"
+    run_cco tag add "cascade-pack" work
+
+    run_cco pack remove "cascade-pack"
+
+    assert_dir_not_exists "$CCO_PACKS_DIR/cascade-pack"
+    assert_dir_not_exists "$CCO_DATA_HOME/packs/cascade-pack"
+    assert_dir_not_exists "$CCO_STATE_HOME/packs/cascade-pack"
+    run_cco list --tag work
+    if echo "${CCO_OUTPUT:-}" | grep -qF "cascade-pack"; then
+        fail "tag binding for cascade-pack should be gone after remove"
+    fi
+}
+
 test_pack_remove_fails_if_not_found() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"

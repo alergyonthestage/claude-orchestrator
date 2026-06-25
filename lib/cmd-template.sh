@@ -360,6 +360,15 @@ EOF
     [[ -z "$found_dir" ]] && die "User template '$name' not found. Only user templates can be removed."
 
     rm -rf "$found_dir"
+
+    # Delete-cascade (ADR-0021 Dec.4): clean the id-keyed internal state an
+    # installed template created — DATA install-provenance (`source`), STATE merge
+    # base (`<state>/cco/templates/<name>/update/`), and the tags.yml binding.
+    # No-ops for create-from templates that never recorded provenance.
+    rm -rf "$(_cco_data_dir)/templates/$name"
+    rm -rf "$(_cco_state_dir)/templates/$name"
+    _tags_forget templates "$name"
+
     ok "Template '$name' removed."
 }
 
