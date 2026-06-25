@@ -82,6 +82,7 @@ source "$LIB_DIR/cmd-update.sh"
 source "$LIB_DIR/cmd-clean.sh"
 source "$LIB_DIR/cmd-remote.sh"
 source "$LIB_DIR/remote.sh"
+source "$LIB_DIR/cmd-forget.sh"
 
 usage() {
     cat <<'EOF'
@@ -109,6 +110,7 @@ Discovery:
 
 Projects & Packs:
   project <cmd>          Manage projects (export, import, add, list, show)
+  forget <project>       Deregister a project on this machine (repo untouched)
   pack <cmd>             Manage knowledge packs (create, install, update, ...)
   llms <cmd>             Manage llms.txt framework docs (install, update, ...)
   chrome <cmd>           Manage Chrome debug session on host
@@ -142,6 +144,7 @@ _cco_rc=0
 case "$cmd" in
     init)    cmd_init "$@"  || _cco_rc=$? ;;
     join)    cmd_join "$@"  || _cco_rc=$? ;;
+    forget)  cmd_forget "$@" || _cco_rc=$? ;;
     build)   cmd_build "$@" || _cco_rc=$? ;;
     start)   cmd_start "$@" || _cco_rc=$? ;;
     new)     cmd_new "$@"   || _cco_rc=$? ;;
@@ -177,7 +180,7 @@ EOF
             add-pack|remove-pack)
                 die "'cco project $subcmd' was removed — use 'cco project add pack <name>' to embed a pack coordinate (ADR-0023 D3 / AD12 no-alias)." ;;
             delete)
-                die "'cco project delete' was removed — a project's config lives in its repo at <repo>/.cco/; remove it with normal git/filesystem ops and the index self-heals on the next 'cco resolve --scan'. (A dedicated 'cco forget' deregistration ships in a later release.)" ;;
+                die "'cco project delete' was removed — a project's config lives in its repo at <repo>/.cco/; remove it with normal git/filesystem ops. To deregister cco's machine-local bookkeeping for a project, use 'cco forget <project>' (the repo is untouched; ADR-0021)." ;;
             validate)
                 die "'cco project validate' was removed — a share-readiness validator ships in a later release (ADR-0023 D2). For now, 'cco resolve <name>' reports unresolved references." ;;
             export)      cmd_project_export "$@" ;;

@@ -327,27 +327,33 @@ during migrate.
 
 ### 3.4b `cco forget <project>`
 
-> 🚧 **Planned — ships in a later release.** Today `cco forget` is not available — the command
-> reports that a dedicated deregistration ships later (ADR-0021). To drop a project now, remove
-> the repo (or its `<repo>/.cco/`) with normal git/filesystem ops; the index self-heals on the
-> next `cco resolve --scan`. The contract below is the target surface.
-
-Deregister a project: remove cco's internal id-keyed state — index entry, tags, install
-provenance, and the project's STATE/CACHE — **without** touching the repo or its committed
-`<repo>/.cco/`. The inverse of `cco init`/`cco join`.
+Deregister a project on this machine: remove cco's internal id-keyed state — the STATE index
+entry (membership + path), the per-user tags, install provenance (DATA), and the project's
+STATE/CACHE — **without** touching the repo or its committed `<repo>/.cco/`. The inverse of
+`cco init`/`cco join` (ADR-0021).
 
 ```
-Usage: cco forget <project>
+Usage: cco forget <project> [-y]
 
 Arguments:
   project              Name of the project to deregister
 
+Options:
+  -y, --force          Skip the confirmation prompt
+
 Examples:
   cco forget old-service
+  cco forget old-service -y
 ```
+
+`cco forget` previews what it will remove, then asks for confirmation (skip with `-y`; in a
+non-interactive shell `-y` is required). A member repo shared with another project keeps its
+path entry — only entries unique to the forgotten project are dropped.
 
 `cco forget` only removes machine-local bookkeeping. The repo and its committed config are
 untouched, so a later `cco resolve --scan` (or `cco start` from the repo) re-registers it.
+The one thing that does not auto-return is the project's user-authored tags — re-tag if you
+resume the project.
 
 ---
 

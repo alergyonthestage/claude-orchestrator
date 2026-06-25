@@ -525,6 +525,6 @@ versioned and **not** synced in v1:
 |---------|---------|
 | `cco init [--migrate <project> [--sync]]` | Scaffold/hydrate a repo's `.cco/` (single entry verb) |
 | `cco join <project> [--sync]` | Add the current repo to a project as a member |
-| `cco forget <project>` | Deregister a project (index/tags/state only; repo untouched) — 🚧 planned, ships in a later release |
+| `cco forget <project> [-y]` | Deregister a project (index/tags/state only; repo untouched) |
 | `cco project show <name>` | Project + repo↔project roles, referenced-by, sync state |
 | `cco project validate [name] [--all] [--reachable]` | Share-readiness validation — 🚧 planned, ships in a later release |
