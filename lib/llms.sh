@@ -4,7 +4,8 @@
 # Provides: _llms_resolve_primary_file(), _generate_llms_mounts(),
 #           _generate_llms_packs_md(), _validate_llms_refs(),
 #           _collect_llms_names()
-# Dependencies: colors.sh, utils.sh, yaml.sh
+# Dependencies: colors.sh, utils.sh, yaml.sh, packs.sh (_pack_resolve_dir — the
+#   three-layer pack resolver, for pack-provided llms entries; ADR-0019 D5)
 # Globals: LLMS_DIR, PACKS_DIR
 
 # Resolve the primary documentation file for an llms entry.
@@ -40,6 +41,7 @@ _llms_resolve_primary_file() {
 _collect_llms_names() {
     local project_yml="$1"
     local pack_names="$2"  # newline-separated pack names
+    local project_cco_dir="${3:-}"  # for three-layer pack resolution (ADR-0019 D5)
 
     # Use arrays for deduplication (project wins over pack)
     # Note: empty array access requires guards for bash 3.2 + set -u
@@ -50,7 +52,9 @@ _collect_llms_names() {
     if [[ -n "$pack_names" ]]; then
         while IFS= read -r pack_name; do
             [[ -z "$pack_name" ]] && continue
-            local pack_yml="$PACKS_DIR/${pack_name}/pack.yml"
+            local _proot; _proot=$(_pack_resolve_dir "$pack_name" "$project_cco_dir")
+            [[ -z "$_proot" ]] && continue
+            local pack_yml="$_proot/pack.yml"
             [[ ! -f "$pack_yml" ]] && continue
             local pack_llms
             pack_llms=$(yml_get_llms "$pack_yml")
@@ -105,9 +109,10 @@ _collect_llms_names() {
 _generate_llms_mounts() {
     local project_yml="$1"
     local pack_names="$2"
+    local project_cco_dir="${3:-}"
 
     local entries
-    entries=$(_collect_llms_names "$project_yml" "$pack_names")
+    entries=$(_collect_llms_names "$project_yml" "$pack_names" "$project_cco_dir")
     [[ -z "$entries" ]] && return 0
 
     echo "      # LLMs.txt documentation (read-only mounts from central llms registry)"
@@ -127,9 +132,10 @@ _generate_llms_mounts() {
 _generate_llms_packs_md() {
     local project_yml="$1"
     local pack_names="$2"
+    local project_cco_dir="${3:-}"
 
     local entries
-    entries=$(_collect_llms_names "$project_yml" "$pack_names")
+    entries=$(_collect_llms_names "$project_yml" "$pack_names" "$project_cco_dir")
     if [[ -z "$entries" ]]; then return 0; fi
 
     # Buffer entries first to avoid orphaned header when all dirs are missing

@@ -10,6 +10,7 @@ source "$REPO_ROOT/lib/colors.sh"
 source "$REPO_ROOT/lib/utils.sh"
 source "$REPO_ROOT/lib/paths.sh"
 source "$REPO_ROOT/lib/yaml.sh"
+source "$REPO_ROOT/lib/packs.sh"   # llms.sh's pack-llms collection uses _pack_resolve_dir
 source "$REPO_ROOT/lib/llms.sh"
 source "$REPO_ROOT/lib/cmd-llms.sh"
 

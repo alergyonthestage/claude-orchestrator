@@ -485,13 +485,13 @@ _start_generate_integrations() {
 
     # Detect pack resource name conflicts (warning only, before compose generation)
     if [[ -n "$pack_names" ]]; then
-        _detect_pack_conflicts "$pack_names"
+        _detect_pack_conflicts "$pack_names" "$project_dir"
     fi
 
     # Warn on cross-tree collisions between committed .claude config and the
     # framework-reserved overlay tree (ADR-0005 F2). Unconditional — reserved
     # packs//llms/ violations apply even with no packs configured.
-    _detect_cross_tree_conflicts "$project_yml" "$pack_names" "$claude_src"
+    _detect_cross_tree_conflicts "$project_yml" "$pack_names" "$claude_src" "$project_dir"
 }
 
 # Resolves @local markers and legacy {{REPO_*}} in project.yml before
@@ -750,10 +750,10 @@ YAML
         fi
 
         # Pack resources: read-only mounts from central pack registry (ADR-14)
-        _generate_pack_mounts "$pack_names"
+        _generate_pack_mounts "$pack_names" "$project_dir"
 
         # LLMs.txt documentation: read-only mounts from central llms registry
-        _generate_llms_mounts "$project_yml" "$pack_names"
+        _generate_llms_mounts "$project_yml" "$pack_names" "$project_dir"
 
         # Git identity (commit author — read-only, no SSH keys)
         echo "      # Git identity"
@@ -819,12 +819,14 @@ _start_generate_metadata() {
     if [[ -n "$pack_names" ]]; then
         while IFS= read -r _pn; do
             [[ -z "$_pn" ]] && continue
-            local _pyml="$PACKS_DIR/${_pn}/pack.yml"
+            local _proot; _proot=$(_pack_resolve_dir "$_pn" "$project_dir")
+            [[ -z "$_proot" ]] && continue
+            local _pyml="$_proot/pack.yml"
             [[ -f "$_pyml" ]] && [[ -n "$(yml_get_pack_knowledge_files "$_pyml")" ]] && has_knowledge=true
         done <<< "$pack_names"
     fi
     local _llms_entries
-    _llms_entries=$(_collect_llms_names "$project_yml" "$pack_names")
+    _llms_entries=$(_collect_llms_names "$project_yml" "$pack_names" "$project_dir")
     if [[ -n "$_llms_entries" ]]; then has_llms=true; fi
 
     if [[ "$has_knowledge" == "true" || "$has_llms" == "true" ]]; then
@@ -838,7 +840,9 @@ _start_generate_metadata() {
             echo "" >> "$packs_md"
             while IFS= read -r pack_name; do
                 [[ -z "$pack_name" ]] && continue
-                local pack_yml="$PACKS_DIR/${pack_name}/pack.yml"
+                local _pmroot; _pmroot=$(_pack_resolve_dir "$pack_name" "$project_dir")
+                [[ -z "$_pmroot" ]] && continue
+                local pack_yml="$_pmroot/pack.yml"
                 [[ ! -f "$pack_yml" ]] && continue
                 if ! grep -qE '^(name|knowledge|llms|skills|agents|rules):' "$pack_yml"; then
                     warn "Pack '$pack_name': pack.yml has no valid top-level keys — check for extra indentation."
@@ -861,7 +865,7 @@ _start_generate_metadata() {
         # LLMs section — use subshell capture to avoid bash 3.2 return-in-redirect bug
         if [[ "$has_llms" == "true" ]]; then
             local _llms_md
-            _llms_md=$(_generate_llms_packs_md "$project_yml" "$pack_names")
+            _llms_md=$(_generate_llms_packs_md "$project_yml" "$pack_names" "$project_dir")
             if [[ -n "$_llms_md" ]]; then
                 echo "$_llms_md" >> "$packs_md"
             fi
