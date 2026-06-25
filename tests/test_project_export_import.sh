@@ -115,9 +115,10 @@ test_project_tier2_verbs_removed() {
     setup_cco_env "$tmpdir"
     # Legacy tier-2 project verbs are retired with no alias (P4-5 / AD12):
     # resolve → `cco resolve`; add-pack/remove-pack → `cco project add pack`;
-    # delete → `cco forget` (later); validate → share-readiness validator (later).
+    # delete → `cco forget` (now shipped). NOTE: `validate` is NO LONGER here —
+    # the share-readiness validator ships in P5-4 (see test_project_validate.sh).
     local verb
-    for verb in resolve add-pack remove-pack delete validate; do
+    for verb in resolve add-pack remove-pack delete; do
         if run_cco project "$verb" foo bar 2>/dev/null; then
             echo "ASSERTION FAILED: 'cco project $verb' should be rejected (removed in P4-5)"
             return 1

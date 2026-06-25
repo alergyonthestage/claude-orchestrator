@@ -74,6 +74,7 @@ source "$LIB_DIR/cmd-stop.sh"
 source "$LIB_DIR/cmd-chrome.sh"
 source "$LIB_DIR/cmd-project-query.sh"
 source "$LIB_DIR/cmd-project-add.sh"
+source "$LIB_DIR/cmd-project-validate.sh"
 source "$LIB_DIR/cmd-project-export-import.sh"
 source "$LIB_DIR/cmd-pack.sh"
 source "$LIB_DIR/cmd-llms.sh"
@@ -164,6 +165,7 @@ Commands:
   export [name]          Export a project's config as a .tar.gz snapshot
   import <archive>       Import a project from a .tar.gz snapshot
   add <res> <name>       Embed a repo|mount|llms|pack coordinate (cwd-first)
+  validate [name]        Check share-readiness (coordinates, no path leaks)
   list                   List available projects with status
   show <name>            Show project details (repos, packs, config)
 
@@ -181,8 +183,7 @@ EOF
                 die "'cco project $subcmd' was removed — use 'cco project add pack <name>' to embed a pack coordinate (ADR-0023 D3 / AD12 no-alias)." ;;
             delete)
                 die "'cco project delete' was removed — a project's config lives in its repo at <repo>/.cco/; remove it with normal git/filesystem ops. To deregister cco's machine-local bookkeeping for a project, use 'cco forget <project>' (the repo is untouched; ADR-0021)." ;;
-            validate)
-                die "'cco project validate' was removed — a share-readiness validator ships in a later release (ADR-0023 D2). For now, 'cco resolve <name>' reports unresolved references." ;;
+            validate)    cmd_project_validate "$@" ;;
             export)      cmd_project_export "$@" ;;
             import)      cmd_project_import "$@" ;;
             add)         cmd_project_add "$@" ;;
