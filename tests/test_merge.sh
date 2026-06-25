@@ -137,16 +137,14 @@ test_update_refreshes_cco_base() {
     setup_cco_env "$tmpdir"
     init_global "$tmpdir" --lang "English"
 
-    # Modify a tracked default file
-    printf '\n# New framework line\n' >> "$REPO_ROOT/defaults/global/.claude/rules/workflow.md"
+    # Modify a default file in the framework sandbox (tracked tree untouched)
+    sandbox_framework
+    printf '\n# New framework line\n' >> "$CCO_FRAMEWORK_ROOT/defaults/global/.claude/rules/workflow.md"
 
     # Applying (here: --keep, non-interactive) refreshes the base; plain
     # `cco update` only DISCOVERS (opinionated split). Base lives in STATE (H6).
     run_cco update --keep
     assert_file_contains "$(state_global_base)/rules/workflow.md" "New framework line"
-
-    # Restore
-    cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
 }
 
 # ── 3-way merge integration ─────────────────────────────────────────
@@ -185,16 +183,15 @@ test_update_no_backup_skips_bak() {
     setup_cco_env "$tmpdir"
     init_global "$tmpdir" --lang "English"
 
-    # Create conflict
+    # Create conflict — user edit hits the sandbox installed tree ($tmpdir);
+    # the framework change hits the framework sandbox (no tracked-file mutation).
     printf '\n# My custom rule\n' >> "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
-    printf '\n# Framework update\n' >> "$REPO_ROOT/defaults/global/.claude/rules/workflow.md"
+    sandbox_framework
+    printf '\n# Framework update\n' >> "$CCO_FRAMEWORK_ROOT/defaults/global/.claude/rules/workflow.md"
 
     run_cco update --force --no-backup
     # No .bak should be created
     assert_file_not_exists "$CCO_GLOBAL_DIR/.claude/rules/workflow.md.bak"
     # Framework update should be applied
     assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "Framework update"
-
-    # Restore
-    cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
 }

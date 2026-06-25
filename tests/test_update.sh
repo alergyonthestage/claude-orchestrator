@@ -51,14 +51,13 @@ test_update_framework_changed() {
     setup_cco_env "$tmpdir"
     init_global "$tmpdir" --lang "English"
 
-    # Simulate framework update with safe cleanup
+    # Simulate framework update in the framework sandbox (no tracked-file mutation)
     with_framework_change "defaults/global/.claude/rules/workflow.md" \
         $'# Updated workflow rules\n- New rule added\n'
 
     run_cco update --force
     # The installed file should now contain the new content
     assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "New rule added"
-    # with_framework_change trap restores the default file automatically
 }
 
 test_update_user_modified() {
@@ -221,9 +220,11 @@ test_update_migration_failure_stops() {
     sed -i "s/{{DOCS_LANG}}/English/g" "$CCO_GLOBAL_DIR/.claude/rules/language.md"
     sed -i "s/{{CODE_LANG}}/English/g" "$CCO_GLOBAL_DIR/.claude/rules/language.md"
 
-    # Create a failing migration with higher ID
-    mkdir -p "$REPO_ROOT/migrations/global"
-    cat > "$REPO_ROOT/migrations/global/999_test_fail.sh" <<'MIGEOF'
+    # Create a failing migration with higher ID (in the framework sandbox — the
+    # tracked migrations/ tree is never touched).
+    sandbox_framework
+    mkdir -p "$CCO_FRAMEWORK_ROOT/migrations/global"
+    cat > "$CCO_FRAMEWORK_ROOT/migrations/global/999_test_fail.sh" <<'MIGEOF'
 #!/usr/bin/env bash
 MIGRATION_ID=999
 MIGRATION_DESC="Test failure migration"
@@ -245,9 +246,6 @@ manifest:"
     # Update should fail (migration 999 fails)
     run_cco update || true
     assert_output_contains "failed"
-
-    # Cleanup test migration
-    rm -f "$REPO_ROOT/migrations/global/999_test_fail.sh"
 }
 
 test_update_init_creates_cco_meta() {
@@ -695,15 +693,14 @@ test_update_diff_shows_changes() {
 test_update_news_shows_entries() {
     # --news mode shows changelog entries and updates both trackers
     local tmpdir; tmpdir=$(mktemp -d)
-    local saved_changelog="$tmpdir/changelog.bak"
-    cp "$REPO_ROOT/changelog.yml" "$saved_changelog"
-    trap "cp '$saved_changelog' '$REPO_ROOT/changelog.yml'; rm -rf '$tmpdir'" EXIT
+    trap "rm -rf '$tmpdir'" EXIT
 
     setup_cco_env "$tmpdir"
     init_global "$tmpdir" --lang "English"
 
     # Create a changelog with one entry
-    cat > "$REPO_ROOT/changelog.yml" <<'YML'
+    sandbox_framework
+    cat > "$CCO_FRAMEWORK_ROOT/changelog.yml" <<'YML'
 entries:
   - id: 1
     date: "2026-03-01"
@@ -728,15 +725,14 @@ YML
 test_update_news_no_new_entries() {
     # --news with no new entries shows "No new features"
     local tmpdir; tmpdir=$(mktemp -d)
-    local saved_changelog="$tmpdir/changelog.bak"
-    cp "$REPO_ROOT/changelog.yml" "$saved_changelog"
-    trap "cp '$saved_changelog' '$REPO_ROOT/changelog.yml'; rm -rf '$tmpdir'" EXIT
+    trap "rm -rf '$tmpdir'" EXIT
 
     setup_cco_env "$tmpdir"
     init_global "$tmpdir" --lang "English"
 
     # Create a changelog with one entry already read
-    cat > "$REPO_ROOT/changelog.yml" <<'YML'
+    sandbox_framework
+    cat > "$CCO_FRAMEWORK_ROOT/changelog.yml" <<'YML'
 entries:
   - id: 1
     date: "2026-03-01"
@@ -758,14 +754,13 @@ YML
 test_update_discovery_then_news() {
     # Discovery updates last_seen only; subsequent --news still shows details
     local tmpdir; tmpdir=$(mktemp -d)
-    local saved_changelog="$tmpdir/changelog.bak"
-    cp "$REPO_ROOT/changelog.yml" "$saved_changelog"
-    trap "cp '$saved_changelog' '$REPO_ROOT/changelog.yml'; rm -rf '$tmpdir'" EXIT
+    trap "rm -rf '$tmpdir'" EXIT
 
     setup_cco_env "$tmpdir"
     init_global "$tmpdir" --lang "English"
 
-    cat > "$REPO_ROOT/changelog.yml" <<'YML'
+    sandbox_framework
+    cat > "$CCO_FRAMEWORK_ROOT/changelog.yml" <<'YML'
 entries:
   - id: 1
     date: "2026-03-01"
@@ -799,14 +794,13 @@ YML
 test_update_news_first_then_discovery() {
     # --news first updates both trackers; subsequent discovery shows nothing
     local tmpdir; tmpdir=$(mktemp -d)
-    local saved_changelog="$tmpdir/changelog.bak"
-    cp "$REPO_ROOT/changelog.yml" "$saved_changelog"
-    trap "cp '$saved_changelog' '$REPO_ROOT/changelog.yml'; rm -rf '$tmpdir'" EXIT
+    trap "rm -rf '$tmpdir'" EXIT
 
     setup_cco_env "$tmpdir"
     init_global "$tmpdir" --lang "English"
 
-    cat > "$REPO_ROOT/changelog.yml" <<'YML'
+    sandbox_framework
+    cat > "$CCO_FRAMEWORK_ROOT/changelog.yml" <<'YML'
 entries:
   - id: 1
     date: "2026-03-01"
@@ -2030,14 +2024,13 @@ GI
 test_update_changelog_missing_last_read_field() {
     # Scenario 7: .cco/meta has last_seen but no last_read -> defaults to 0
     local tmpdir; tmpdir=$(mktemp -d)
-    local saved_changelog="$tmpdir/changelog.bak"
-    cp "$REPO_ROOT/changelog.yml" "$saved_changelog"
-    trap "cp '$saved_changelog' '$REPO_ROOT/changelog.yml'; rm -rf '$tmpdir'" EXIT
+    trap "rm -rf '$tmpdir'" EXIT
 
     setup_cco_env "$tmpdir"
     init_global "$tmpdir" --lang "English"
 
-    cat > "$REPO_ROOT/changelog.yml" <<'YML'
+    sandbox_framework
+    cat > "$CCO_FRAMEWORK_ROOT/changelog.yml" <<'YML'
 entries:
   - id: 1
     date: "2026-03-01"
@@ -2063,14 +2056,13 @@ YML
 test_update_news_first_no_hint_on_discovery() {
     # After --news updates both trackers, discovery must NOT show the --news hint
     local tmpdir; tmpdir=$(mktemp -d)
-    local saved_changelog="$tmpdir/changelog.bak"
-    cp "$REPO_ROOT/changelog.yml" "$saved_changelog"
-    trap "cp '$saved_changelog' '$REPO_ROOT/changelog.yml'; rm -rf '$tmpdir'" EXIT
+    trap "rm -rf '$tmpdir'" EXIT
 
     setup_cco_env "$tmpdir"
     init_global "$tmpdir" --lang "English"
 
-    cat > "$REPO_ROOT/changelog.yml" <<'YML'
+    sandbox_framework
+    cat > "$CCO_FRAMEWORK_ROOT/changelog.yml" <<'YML'
 entries:
   - id: 1
     date: "2026-03-01"
@@ -2099,15 +2091,14 @@ YML
 test_update_new_entry_after_both_read() {
     # Both trackers at N, new entry N+1 arrives — discovery shows it, news shows it
     local tmpdir; tmpdir=$(mktemp -d)
-    local saved_changelog="$tmpdir/changelog.bak"
-    cp "$REPO_ROOT/changelog.yml" "$saved_changelog"
-    trap "cp '$saved_changelog' '$REPO_ROOT/changelog.yml'; rm -rf '$tmpdir'" EXIT
+    trap "rm -rf '$tmpdir'" EXIT
 
     setup_cco_env "$tmpdir"
     init_global "$tmpdir" --lang "English"
 
     # Initial state: one entry, both trackers at 1
-    cat > "$REPO_ROOT/changelog.yml" <<'YML'
+    sandbox_framework
+    cat > "$CCO_FRAMEWORK_ROOT/changelog.yml" <<'YML'
 entries:
   - id: 1
     date: "2026-03-01"
@@ -2121,7 +2112,8 @@ YML
     printf '1\n' > "$(cco_last_read_file)"
 
     # Add new entry
-    cat > "$REPO_ROOT/changelog.yml" <<'YML'
+    sandbox_framework
+    cat > "$CCO_FRAMEWORK_ROOT/changelog.yml" <<'YML'
 entries:
   - id: 1
     date: "2026-03-01"
@@ -2273,14 +2265,13 @@ GI
 test_update_dry_run_no_tracker_update() {
     # Dry-run must show changelog output but NOT update last_seen or last_read
     local tmpdir; tmpdir=$(mktemp -d)
-    local saved_changelog="$tmpdir/changelog.bak"
-    cp "$REPO_ROOT/changelog.yml" "$saved_changelog"
-    trap "cp '$saved_changelog' '$REPO_ROOT/changelog.yml'; rm -rf '$tmpdir'" EXIT
+    trap "rm -rf '$tmpdir'" EXIT
 
     setup_cco_env "$tmpdir"
     init_global "$tmpdir" --lang "English"
 
-    cat > "$REPO_ROOT/changelog.yml" <<'YML'
+    sandbox_framework
+    cat > "$CCO_FRAMEWORK_ROOT/changelog.yml" <<'YML'
 entries:
   - id: 1
     date: "2026-03-01"

@@ -20,8 +20,14 @@ done
 SCRIPT_DIR="$(cd -P "$(dirname "$_cco_src")" >/dev/null 2>&1 && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 unset _cco_src _cco_dir
-DEFAULTS_DIR="$REPO_ROOT/defaults"
-NATIVE_TEMPLATES_DIR="$REPO_ROOT/templates"
+# Framework asset root — the shipped, read-only trees: defaults/, templates/,
+# migrations/, and changelog.yml. Overridable via CCO_FRAMEWORK_ROOT so tests can
+# point cco at a throwaway copy and mutate it hermetically (no in-place writes to
+# the tracked tree; concurrency/abort-safe). Defaults to the repo root. REPO_ROOT
+# alone still locates lib/, bin/, docs/, and internal/ (never relocated).
+FRAMEWORK_ROOT="${CCO_FRAMEWORK_ROOT:-$REPO_ROOT}"
+DEFAULTS_DIR="$FRAMEWORK_ROOT/defaults"
+NATIVE_TEMPLATES_DIR="$FRAMEWORK_ROOT/templates"
 IMAGE_NAME="claude-orchestrator:latest"
 LIB_DIR="$REPO_ROOT/lib"
 

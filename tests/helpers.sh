@@ -415,43 +415,46 @@ extract_dry_run_dir() {
 
 # ── Framework Change Helpers ──────────────────────────────────────────
 
-# Safely modify a tracked repo file for testing and guarantee restoration.
-# Uses a trap to restore the file even if the test fails mid-execution.
-# Usage: with_framework_change <file_relative_to_REPO_ROOT> <content_to_append>
-# The file is restored automatically on EXIT via trap.
-# NOTE: each call overwrites the previous trap; for multiple files use
-# with_framework_changes (plural) instead.
+# Copy the framework asset roots (defaults/ templates/ migrations/ changelog.yml)
+# into a throwaway sandbox and point cco at it via CCO_FRAMEWORK_ROOT. Tests that
+# simulate a framework update (a new default rule, a changed base template, a new
+# migration, a changelog entry) mutate the SANDBOX copy — never the tracked repo
+# tree. This is hermetic and concurrency/abort-safe: a trap- or git-checkout-based
+# restore of a tracked file races under concurrent runs and is skipped on Ctrl-C,
+# corrupting changelog.yml / the base template (F5). Idempotent and per-test
+# (each test runs in its own subshell, so the export never leaks).
+sandbox_framework() {
+    [[ -n "${CCO_FRAMEWORK_ROOT:-}" && -d "${CCO_FRAMEWORK_ROOT:-}" ]] && return 0
+    local fw; fw=$(mktemp -d)
+    cp -r "$REPO_ROOT/defaults"      "$fw/defaults"
+    cp -r "$REPO_ROOT/templates"     "$fw/templates"
+    cp -r "$REPO_ROOT/migrations"    "$fw/migrations"
+    cp    "$REPO_ROOT/changelog.yml" "$fw/changelog.yml"
+    export CCO_FRAMEWORK_ROOT="$fw"
+}
+
+# Append to a "shipped" framework file for testing, hermetically. The change
+# lands in the CCO_FRAMEWORK_ROOT sandbox (created on first use) — the tracked
+# repo file is never touched, so no restore is needed.
+# Usage: with_framework_change <file_relative_to_framework_root> <content_to_append>
 with_framework_change() {
     local rel_path="$1"
     local content="$2"
-    local full_path="$REPO_ROOT/$rel_path"
-    # Save original content
-    local backup_file
-    backup_file=$(mktemp)
-    cp "$full_path" "$backup_file"
-    # Set trap to restore (preserves any previous EXIT trap by chaining)
-    trap "cp '$backup_file' '$full_path'; rm -f '$backup_file'" EXIT
-    # Apply change
-    printf '%s' "$content" >> "$full_path"
+    sandbox_framework
+    printf '%s' "$content" >> "$CCO_FRAMEWORK_ROOT/$rel_path"
 }
 
-# Safely modify multiple tracked repo files with guaranteed restoration.
-# Usage: with_framework_changes <tmpdir_for_backups> <file1> <content1> [<file2> <content2> ...]
-# All files are restored on EXIT.
+# Append to several framework files in one call (same hermetic sandbox model).
+# The legacy first argument (a backup dir) is accepted for signature compatibility
+# but ignored — no backups are taken because nothing tracked is mutated.
+# Usage: with_framework_changes <ignored> <file1> <content1> [<file2> <content2> ...]
 with_framework_changes() {
-    local backup_dir="$1"; shift
-    mkdir -p "$backup_dir/__fw_backups"
-    local restore_cmd=""
+    shift  # discard the legacy backup-dir argument
+    sandbox_framework
     while [[ $# -ge 2 ]]; do
         local rel_path="$1" content="$2"; shift 2
-        local full_path="$REPO_ROOT/$rel_path"
-        local safe_name
-        safe_name=$(echo "$rel_path" | tr '/' '_')
-        cp "$full_path" "$backup_dir/__fw_backups/$safe_name"
-        restore_cmd+="cp '$backup_dir/__fw_backups/$safe_name' '$full_path'; "
-        printf '%s' "$content" >> "$full_path"
+        printf '%s' "$content" >> "$CCO_FRAMEWORK_ROOT/$rel_path"
     done
-    trap "${restore_cmd} rm -rf '$backup_dir'" EXIT
 }
 
 # Create a local bare Config Repo with a project template for testing.

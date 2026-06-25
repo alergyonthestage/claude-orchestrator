@@ -207,7 +207,7 @@ _generate_project_cco_meta() {
 # Scan migrations directory, return the highest MIGRATION_ID found.
 _latest_schema_version() {
     local scope="$1"
-    local migrations_dir="$REPO_ROOT/migrations/$scope"
+    local migrations_dir="${FRAMEWORK_ROOT:-$REPO_ROOT}/migrations/$scope"
     local max_id=0
 
     [[ ! -d "$migrations_dir" ]] && echo "0" && return 0
@@ -229,7 +229,7 @@ _run_migrations() {
     local target_dir="$2"
     local current_version="$3"
     local meta_file="${4:-}"
-    local migrations_dir="$REPO_ROOT/migrations/$scope"
+    local migrations_dir="${FRAMEWORK_ROOT:-$REPO_ROOT}/migrations/$scope"
     local ran=0
 
     [[ ! -d "$migrations_dir" ]] && return 0

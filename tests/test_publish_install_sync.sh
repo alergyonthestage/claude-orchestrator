@@ -346,7 +346,7 @@ test_update_sync_installed_with_local() {
     # .cco/meta file without preserving it. This is a known implementation gap.
     # The marker IS written (line 1960 in update.sh) but lost during meta
     # regeneration (line 2012). Documenting here for future fix.
-    # with_framework_change trap restores the template file automatically
+    # with_framework_change mutates a sandboxed framework copy — nothing tracked
 }
 
 # ── project internalize non-TTY requires --yes ───────────────────────
@@ -475,7 +475,7 @@ test_update_local_project_sync_with_divergence() {
     assert_file_contains "$cco/claude/CLAUDE.md" \
         "Sync divergence test change" \
         "Framework divergence should be applied to the project"
-    # with_framework_change trap restores the template file
+    # with_framework_change mutates a sandboxed framework copy — nothing tracked
 }
 
 # ── Priority 2: _check_remote_update cache behavior ──────────────────

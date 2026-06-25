@@ -6,7 +6,7 @@
 # Output: one line per entry as "id\tdate\ttitle\tdescription"
 # Supports YAML folded (>) and literal (|) block scalars for description.
 _read_changelog_entries() {
-    local changelog="$REPO_ROOT/changelog.yml"
+    local changelog="${FRAMEWORK_ROOT:-$REPO_ROOT}/changelog.yml"
     [[ ! -f "$changelog" ]] && return 0
 
     # Parse YAML entries — simple line-based parser
