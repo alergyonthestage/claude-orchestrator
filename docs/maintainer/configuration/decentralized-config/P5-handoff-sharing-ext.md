@@ -12,18 +12,20 @@ Branch `feat/vault/decentralized-config`, commits **LOCAL** (the maintainer push
 
 ## ⏩ RESUME STATUS (read this FIRST)
 
-> **✅ PHASES 0–4 CLOSED + P5-0/P5-1/P5-2/P5-3/P5-4 DONE (2026-06-25). ▶ RESUME AT P5-5.** The §1 boundary audit ran
+> **✅ PHASES 0–4 CLOSED + P5-0…P5-5 DONE (2026-06-25). ▶ RESUME AT P5-6.** The §1 boundary audit ran
 > (`reviews/24-06-2026-p4-p5-adherence-review.md`, Phase-4 fully conformant, 0 code 🔴) — **§1 is consumed,
-> skip it.** P5 build order is maintainer-confirmed: P5-0 → P5-1 → P5-2 → P5-3 → P5-4 → **P5-5** → P5-6 →
+> skip it.** P5 build order is maintainer-confirmed: P5-0 → P5-1 → P5-2 → P5-3 → P5-4 → P5-5 → **P5-6** →
 > P5-doc → dogfooding; **index namespacing = POST-V1**.
 >
-> **P5-4 ✅ (`cco project validate` + `cco project coords`, 3 delta-green commits, suite 859→885/0):** P5-4a
-> `48a44b0` (`cco project validate` share-readiness, ADR-0023 D2 + ADR-0022 D4 pack-collision ERROR;
-> `lib/cmd-project-validate.sh`; cwd-first/by-name/`--all`; exit 0/1/2 max-severity; mounts included in the
-> gap; `--reachable` opt-in offline-tolerant) · P5-4b `5f6c506` (`cco project coords` cross-unit consistency,
-> ADR-0016 D3/F45/F48; `lib/cmd-project-coords.sh`; on-demand derive, `--diff` read-only, `--sync --from`
-> in-place writer) · P5-4c `75c1377` (de-🚧 cli.md §3.14/§3.25 + config-mgmt + ADR impl-notes). **Live detail
-> at the tail of `decentralized-config-impl-progress.md`.**
+> **P5-5 ✅ (`cco update --check` 3-state, 3 delta-green commits, suite 885→894/0):** P5-5a `5753513`
+> (template installed_commit prereq — NEW `_cco_template_meta`, `cmd_template_install` captures clone HEAD;
+> closes the cmd-template.sh:473 gap) · P5-5b `13b7573` (`cco update --check` — `_update_check` iterates DATA
+> packs/templates, STATE-base-gated 3-state not-installed-here/comparable/indeterminate, `url:local` skip,
+> exit-0; **packs+templates only**, projects excluded per P13/cli.md §3.16) · P5-5c `b5080fc` (de-🚧 cli.md
+> §3.16 + config-mgmt + ADR-0022 D6 impl-note: "projects" entry superseded by P4-4e).
+>
+> **P5-4 ✅ (`cco project validate` + `cco project coords`, 3 commits, 859→885/0):** P5-4a `48a44b0` ·
+> P5-4b `5f6c506` · P5-4c `75c1377`. **Live detail at the tail of `decentralized-config-impl-progress.md`.**
 >
 > **P5-3 ✅ (three-layer pack resolution + internalize + export --bundle-packs + template-vars, 4 delta-green
 > commits, suite 843→859/0):** P5-3a `9c5986d` (`_pack_resolve_dir` mount order `~/.cco/packs`→`<repo>/.cco/packs`
@@ -45,7 +47,7 @@ Branch `feat/vault/decentralized-config`, commits **LOCAL** (the maintainer push
 > sweep — full predicate set, exit-0 report, STATE/CACHE main-confirm + synced-DATA second-confirm).
 > The ADR-0021 §Open predicate-set item is RESOLVED + forward-annotated.
 
-**Suite 885/0** — delta-green is measured against **ZERO** failures (any failure = regression). Run with
+**Suite 894/0** — delta-green is measured against **ZERO** failures (any failure = regression). Run with
 the hatch: `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test` (`--file <name>` / `--filter <substr>` to scope).
 
 **The `decentralized-config` design is the single SOURCE OF TRUTH**, precedence:
@@ -53,8 +55,8 @@ the hatch: `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test` (`--file <name>` / `--filter <s
 specific/authoritative wins; **record any reconciliation**; a genuine design gap ⇒ **PAUSE and discuss**.
 
 **First actions (resume):** (1) `git log --oneline -15` + read the live progress note
-`decentralized-config-impl-progress.md` (cursor: P5-4 done; **P5-5 scope** at the tail);
-(2) re-confirm baseline **885/0**; (3) **skip §1 (audit consumed) — start P5-5** (`cco update --check`,
+`decentralized-config-impl-progress.md` (cursor: P5-5 done; **P5-6 scope** at the tail);
+(2) re-confirm baseline **894/0**; (3) **skip §1 (audit consumed) — start P5-6** (`cco config protect`,
 §3 below); per §0, **propose the sub-commit decomposition to the maintainer before coding.**
 
 ---
@@ -109,7 +111,7 @@ Transitional Registry + roadmaps. **If 0 🔴 / 0 blockers → Phase 4 CLOSED; p
 
 1. `guiding-principles.md` (**P1–P18**).
 2. **This file.**
-3. The live progress note **`decentralized-config-impl-progress.md`** (cursor: P5-4 done; **P5-5 scope** at the tail) + `git log`.
+3. The live progress note **`decentralized-config-impl-progress.md`** (cursor: P5-5 done; **P5-6 scope** at the tail) + `git log`.
 4. `design.md` **§9** (the P0–P5 phase map + per-phase test contracts; §11) and **§12** (deferred-post-v1: state-sync / local-llms / Case-C / namespacing) + the ADRs per item below.
 5. `implementation-review-handoff.md` — the recurring audit playbook + the **Transitional Registry** (P0–P4 + P4-5d now retired).
 6. The code (re-grep — line numbers drift).
@@ -118,8 +120,8 @@ Transitional Registry + roadmaps. **If 0 🔴 / 0 blockers → Phase 4 CLOSED; p
 
 > **✅ BUILD ORDER CONFIRMED (maintainer):** P5-0 llms-fix ✅ → **P5-1** P4-5d teardown ✅ → **P5-2**
 > `cco forget` + `cco config validate` ✅ → **P5-3** three-layer pack resolution + `internalize` +
-> `export --bundle-packs` ✅ → **P5-4** `cco project validate` + `cco project coords` ✅ → **▶ P5-5**
-> `cco update --check` → **P5-6** `cco config protect` → **P5-doc** (remove the 🚧 markers as each ships) →
+> `export --bundle-packs` ✅ → **P5-4** `cco project validate` + `cco project coords` ✅ → **P5-5**
+> `cco update --check` ✅ → **▶ P5-6** `cco config protect` → **P5-doc** (remove the 🚧 markers as each ships) →
 > **pre-merge dogfooding**. **Index per-project namespacing = POST-V1** (confirmed; global-flat stays,
 > ADR-0022 D2). Per-unit: code-ground fresh (line numbers drift), decompose into sub-commits, confirm
 > micro-UX with the maintainer, delta-green each commit.
@@ -141,6 +143,8 @@ before coding** (per §0). Remaining units:
   machine-agnostic, presence-only + `--reachable`, detect-only/never-block, carries the ADR-0022 D4 pack
   no-coord ERROR row. **✅ DONE (P5-4a `48a44b0`).** `lib/cmd-project-validate.sh`; cli.md §3.14 de-🚧.
 - **`cco update --check`** (DATA-source-driven + install-presence-gated 3-state, exit-0; ADR-0022 D6).
+  **✅ DONE (P5-5 `5753513`/`13b7573`/`b5080fc`):** `_update_check` (cmd-update.sh); packs+templates only
+  (projects excluded, P13); template installed_commit added (P5-5a); cli.md §3.16 de-🚧.
 - **Three-layer pack resolution + `internalize` ✅ DONE (P5-3, 2026-06-25):** `_pack_resolve_dir` mount
   order `~/.cco/packs` → `<repo>/.cco/packs` cache (start = warn+conscious-skip, NO layer-2 auto-fetch —
   maintainer-confirmed); `pack internalize --as` fork + build-new `cco template internalize`;
