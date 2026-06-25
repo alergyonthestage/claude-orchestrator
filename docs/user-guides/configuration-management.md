@@ -398,7 +398,76 @@ flowchart TB
 
 ---
 
-## 9. Recommended Workflows
+## 9. Governance & Protecting Config
+
+cco **delegates enforcement to git**, exactly as it does for authentication: it is
+never in the push path, so it cannot — and must not — act as a permission gatekeeper.
+What protects shared config is the **git host** (branch protection, rulesets, review
+routing); cco's job is to *surface* problems and *assist* setup, never to block. Two
+governance models follow the resource's home.
+
+```mermaid
+flowchart TD
+  Q{Which repo holds the config?}
+  Q -- "sharing repo (packs/templates)" --> S["Whole-repo read/write split<br/>(host branch protection);<br/>read granularity via repo-splitting"]
+  Q -- "project repo (&lt;repo&gt;/.cco/)" --> P["Code repo's own governance:<br/>.cco/ is co-writable by anyone with<br/>code-write → protect .cco/** with<br/>host CODEOWNERS + ruleset"]
+```
+
+### 9.1 Two models
+
+- **Sharing repo.** A pack/template sharing repo is its own clean read/write split:
+  whoever has push rights publishes; everyone else installs read-only. Need finer read
+  granularity (some packs visible to a sub-team only)? **Split into multiple sharing
+  repos** — one read scope per repo. cco discovers each by structure.
+- **Project repo.** A project's `<repo>/.cco/` rides the **code repo's existing
+  governance**. By default anyone with code-write can also edit `.cco/` — convenient, but
+  it means a config change lands like any other commit. To restrict who may change the
+  shared config, protect `.cco/**` with the host's path-scoped rules + CODEOWNERS (below).
+
+### 9.2 The footgun and the safety net
+
+A developer with code-write can silently alter `<repo>/.cco/`, changing how the project's
+cco sessions behave for **every** teammate. cco surfaces this; it does not block it:
+
+- **`cco project validate`** (share-readiness) flags broken coordinates / path leaks /
+  pack collisions before they reach teammates.
+- The change is a **truthful `git diff` in the PR** — no real host path ever enters
+  committed config, so the diff shows exactly what changed.
+- The recommended **CODEOWNERS** convention routes `.cco/**` edits to the right reviewers.
+
+### 9.3 Protecting `<repo>/.cco/**` (manual setup)
+
+Put the CODEOWNERS rule at a **host-recognized path** — the repo-root `CODEOWNERS`, or
+`.github/CODEOWNERS` when the repo has a `.github/` directory. **Never** at
+`<repo>/.cco/CODEOWNERS`: GitHub honors CODEOWNERS only at the repo root, `.github/`, or
+`docs/`, so a file under `.cco/` is silently ignored.
+
+```
+# CODEOWNERS (repo root or .github/)
+/.cco/**   @org/cco-maintainers
+```
+
+Then enable a **path-scoped write rule** on the protected branch — the mechanism differs
+by host:
+
+| Host | Path-scoped write protection for `.cco/**` |
+|---|---|
+| **GitHub** | Branch **Ruleset** with an fnmatch path condition `/.cco/**` + "Require review from Code Owners" on the protected branch |
+| **Gitea** | Protected-branch **file-pattern** glob on `.cco/**` |
+| **GitLab** | Push rules match the **filename only** (regex) → a true path-scoped block needs a **pre-receive hook**; Code Owners here is *advisory* (bypassable) |
+| **generic git** | Server-side **`pre-receive`** hook |
+
+> **Key fact:** CODEOWNERS is **review routing**, not a hard write gate on its own. Hard
+> per-path enforcement comes from the host's Rulesets / protected-path patterns /
+> pre-receive hooks — branch protection is what makes the CODEOWNERS review *required*.
+
+> 🚧 **Planned:** `cco config protect` will scaffold the host-recognized CODEOWNERS entry
+> (host detected from the repo's `origin`) and print these per-host instructions for you.
+> Until it ships (post-v1), set protection up manually as above.
+
+---
+
+## 10. Recommended Workflows
 
 ### Solo developer — single machine
 
@@ -472,7 +541,7 @@ versioned and **not** synced in v1:
 
 ---
 
-## 10. Command Reference
+## 11. Command Reference
 
 ### Versioning & sync
 

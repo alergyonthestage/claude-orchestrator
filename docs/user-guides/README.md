@@ -15,7 +15,7 @@ Recommended order for new users. Each guide builds on concepts from the previous
 | # | Guide | What you'll learn |
 |---|-------|-------------------|
 | 4 | [configuring-rules.md](configuring-rules.md) | Rules, skills, agents — writing and organizing across scopes |
-| 5 | [configuration-management.md](configuration-management.md) | Git on `.cco/`, `cco config` multi-PC sync, sharing repos, per-user tags, publishing, installing, updates |
+| 5 | [configuration-management.md](configuration-management.md) | Git on `.cco/`, `cco config` multi-PC sync, sharing repos, per-user tags, publishing, installing, updates, config governance |
 | 6 | [knowledge-packs.md](knowledge-packs.md) | Reusable knowledge packs — create, share, and compose |
 
 ## Features
