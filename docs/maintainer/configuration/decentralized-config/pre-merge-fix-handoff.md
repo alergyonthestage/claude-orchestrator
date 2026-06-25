@@ -1,5 +1,16 @@
 # Pre-merge Fix Session — Handoff (decentralized-config v1)
 
+> **✅ RESOLVED 2026-06-25.** All five fixes applied in this dedicated session, each delta-green;
+> new baseline **897/0** (+3 pinning tests), the F1 merge-gate is cleared. Commits LOCAL:
+> **F5** `72a6253` · **F3** `d641528` · **F2+F4** `ab64f1b` · **F1** `392f12e`. Notable, maintainer-
+> confirmed deviations from the literal plan: **F5 scope broadened** to ALL tracked-file mutations via one
+> `CCO_FRAMEWORK_ROOT` seam (not just the 2 enumerated sites) so the suite is genuinely
+> concurrency/abort-safe; **F1 needed no relocation migration** (unmerged branch, migration already targets
+> `~/.cco`, llms re-fetchable) and additionally removed a dead `cmd-pack` cross-branch check; **F4/F2 tests
+> re-homed** to `test_project_validate.sh` / `test_start_reminders.sh` for coherence. Roadmap "Pre-merge
+> fix backlog" flipped to RESOLVED. **Next (pending maintainer go-ahead): documentation review.** The body
+> below is the original launcher, kept as the record.
+
 **Status**: Self-contained launcher for the **dedicated pre-merge fix session**. It actions the 🔴/❌
 findings of the **whole-scope pre-merge implementation-adherence review** (2026-06-25,
 `reviews/25-06-2026-impl-adherence-review.md`) so the decentralized-config v1 branch becomes
