@@ -37,6 +37,7 @@ cmd_update() {
                 done
                 shift ;;
             --news)       cmd_mode="news"; shift ;;
+            --check)      cmd_mode="check"; shift ;;
             --dry-run)    dry_run=true; shift ;;
             --no-backup)  no_backup=true; shift ;;
             --force)      cmd_mode="sync"; auto_action="replace"; shift ;;
@@ -58,6 +59,8 @@ Modes:
   --diff [scope]      Run migrations + show summary of available config updates
   --diff [scope] --all  Show full diffs (not just summary)
   --news              Show details of new features and additive changes
+  --check             List installed packs/templates with an upstream update
+                      (read-only, DATA source-driven, 3-state, exit 0)
 
 Scope (for --sync and --diff):
   (omitted)           Global + all projects
@@ -82,12 +85,13 @@ Migrations run automatically in all modes (except --news and --dry-run).
 Config sync (--sync) covers opinionated files: rules, agents, skills,
 and other framework defaults that you may have customized.
 
-For installed projects (from sharing repos), framework updates are managed
-by the publisher. Use 'cco project update <name>' to get publisher updates.
 Use --local with --sync to apply framework defaults directly (escape hatch).
+'--check' covers sharing-repo upstreams for installed packs/templates only —
+a project rides its own code-repo git remote, not a sharing repo (P13).
 
 Examples:
   cco update                  # Run migrations + show available updates
+  cco update --check          # List packs/templates with an upstream update
   cco update --diff           # Show diffs for all available config updates
   cco update --diff global    # Show diffs for global config only
   cco update --sync           # Interactively sync all config from defaults
@@ -120,6 +124,15 @@ EOF
             warn "Non-interactive mode: skipping all file changes. Use a terminal for interactive merge."
             auto_action="skip"
         fi
+    fi
+
+    # --check is a read-only upstream-update discovery (ADR-0022 D6): DATA
+    # `source`-driven, install-presence-gated, exit 0 always. It runs no
+    # migrations and touches no files — branch out before the eager-migration
+    # and the framework-defaults discovery flow.
+    if [[ "$cmd_mode" == "check" ]]; then
+        _update_check "$offline_mode" "$cache_mode"
+        return 0
     fi
 
     # Eager global migration (ADR-0025 §1): on first run against a legacy install,
@@ -299,4 +312,71 @@ EOF
         echo ""
         ok "Update complete."
     fi
+}
+
+# `cco update --check` — list installed packs/templates whose sharing-repo
+# upstream advanced (ADR-0022 D6, design §6.2/§7). Read-only discovery: exit 0
+# always, never a gate (ADR-0008). Projects are NOT in scope — a project rides
+# its code-repo's own git remote, not a sharing repo (P13 / cli.md §3.16); the
+# ADR-0022 D6 "projects" iteration entry is superseded by the P4-4e removal of
+# project install/update.
+#
+#   Iteration set = DATA <data>/cco/{packs,templates}/<id>/source — the bucket
+#   guaranteed present after a private multi-PC sync. Each row is gated on local
+#   install presence (the STATE base/ ancestor) into one of three states:
+#     not installed here  — DATA source synced but no local install (advisory)
+#     comparable          — installed; compare the advertised ref via ls-remote
+#     indeterminate       — no recorded commit / unreachable / --offline
+#   A `url: local` source (internalized/import snapshot) has no upstream → skip.
+# Usage: _update_check <offline_mode> <cache_mode>
+_update_check() {
+    local offline_mode="${1:-false}" cache_mode="${2:-default}"
+    local n_update=0 n_uptodate=0 n_nothere=0 n_indeterminate=0 n_total=0
+    local kind label data_base d id source_file url base_dir meta_file state result
+
+    for kind in packs templates; do
+        label="pack"; [[ "$kind" == templates ]] && label="template"
+        data_base="$(_cco_data_dir)/$kind"
+        [[ -d "$data_base" ]] || continue
+        for d in "$data_base"/*/; do
+            [[ -d "$d" ]] || continue
+            id=$(basename "$d")
+            source_file="$d/source"
+            [[ -f "$source_file" ]] || continue
+            url=$(yml_get "$source_file" "url")
+            # No real upstream (authored-local or an internalized/import snapshot).
+            [[ -z "$url" || "$url" == "local" ]] && continue
+
+            n_total=$(( n_total + 1 ))
+            if [[ "$kind" == packs ]]; then
+                base_dir=$(_cco_pack_base_dir "$id");     meta_file=$(_cco_pack_meta "$id")
+            else
+                base_dir=$(_cco_template_base_dir "$id");  meta_file=$(_cco_template_meta "$id")
+            fi
+
+            if [[ ! -d "$base_dir" ]]; then
+                # DATA source synced here but the resource was never installed.
+                state="not installed here"; n_nothere=$(( n_nothere + 1 ))
+            elif [[ "$offline_mode" == "true" ]]; then
+                state="indeterminate (offline)"; n_indeterminate=$(( n_indeterminate + 1 ))
+            else
+                result=$(_check_remote_update "$source_file" "$meta_file" "$cache_mode")
+                case "$result" in
+                    update_available) state="update available"; n_update=$(( n_update + 1 )) ;;
+                    up_to_date)       state="up to date";       n_uptodate=$(( n_uptodate + 1 )) ;;
+                    unknown)          state="indeterminate (no recorded commit)"; n_indeterminate=$(( n_indeterminate + 1 )) ;;
+                    unreachable|*)    state="indeterminate (unreachable)";        n_indeterminate=$(( n_indeterminate + 1 )) ;;
+                esac
+            fi
+            printf '%s.%s: %s\n' "$label" "$id" "$state"
+        done
+    done
+
+    if [[ $n_total -eq 0 ]]; then
+        info "No installed packs/templates with a sharing-repo upstream."
+        return 0
+    fi
+    printf 'check: %d resource(s) — %d update(s), %d up-to-date, %d not-installed-here, %d indeterminate\n' \
+        "$n_total" "$n_update" "$n_uptodate" "$n_nothere" "$n_indeterminate"
+    return 0
 }
