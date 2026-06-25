@@ -105,6 +105,14 @@ backfill path is `cco resolve` heal-at-resolve (ADR-0019 D2 layer-b).
   `~/.cco/packs/X`); every other reachability/cache-degrades case is **WARN**. Exit-code only, never the
   git push path (P17).
 
+> **Shipped P5-4a (2026-06-25; decision unchanged).** Built faithfully in `lib/cmd-project-validate.sh`.
+> Two impl notes: (1) the one-line tally carries a fourth bucket — `[reachability=X agnostic=Y
+> uniqueness=Z collision=W]` — because the ADR-0022 D4 pack collision is a distinct ERROR class the body
+> already lists; the three pinned buckets are unchanged. (2) Severity→exit map: coordinate gaps →
+> reachability/exit-1; absolute-path leaks (incl. a forbidden `path:`/`source:` key) and duplicate ids →
+> exit-2; the pack collision → exit-2. `extra_mounts` are validated for the coordinate gap like repos
+> (maintainer-confirmed), with the container-side `target` exempt from the machine-agnostic scan.
+
 ### D3 — `cco project add <res>`: embed-at-add with one-shot `--path` (review F19 — Shape A + maintainer's note)
 
 Fold all coordinate-embed verbs under `cco project add`, the namespace D1 establishes for the cwd

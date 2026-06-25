@@ -147,6 +147,14 @@ invariant — and crucially this introduces **no** global source of truth:
 > consistency tooling `cco config coords --diff/--sync` is relocated to **`cco project coords`**
 > (project-scoped, ADR-0023 D1). The illustrative naming above was deferred to S/E and is refined, not reversed.
 
+> **Shipped P5-4b (2026-06-25; decision unchanged).** `cco project coords` in `lib/cmd-project-coords.sh`
+> derives the name→url lookup on demand by scanning the indexed projects' `project.yml` (repos/mounts/
+> llms/packs) with **no persisted artifact** (F45). `--diff` is read-only; `--sync --from <unit>` adopts
+> the named unit's url across the divergent ids and **never auto-elects** (F48). Two impl notes:
+> bare `cco project coords` (no flag) prints the full lookup (a convenience on top of the pinned
+> `--diff`/`--sync` surface); a **url-less entry carries no coordinate and is excluded from divergence**
+> (a missing coordinate is `cco project validate`'s concern, ADR-0023 D2 — not coords').
+
 ### D4 — STATE **index** subsumes `@local` + per-repo `local-paths.yml` (byte-level; resolves the flagged ambiguity)
 
 There is **one** unified, machine-local **STATE index** `<state>/cco/index` — **not** a per-project file. It is

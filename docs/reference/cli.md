@@ -689,17 +689,13 @@ sync state (host / synced / divergent / code-only) — derived from the index `p
 
 ### 3.14 `cco project validate [name]`
 
-> 🚧 **Planned — ships in a later release.** Today `cco project validate` reports that the
-> share-readiness validator is not yet available (ADR-0023 D2); the legacy structure check was
-> removed with the tier-2 verbs. To configure unresolved references now, use `cco resolve`. The
-> contract below is the target surface.
-
 **Share-readiness validation**: check that a project's config is safe to share via its repo
-remote — every referenced id (repo/llms/pack) has a **reachable, machine-agnostic coordinate**,
-no real paths leak, and no pack-name collision. Detect-only: it never blocks a `git push`.
+remote — every referenced id (repo/mount/llms/pack) has a **reachable, machine-agnostic
+coordinate**, no real paths leak, and no pack-name collision. Detect-only: it never blocks a
+`git push` (ADR-0023 D2).
 
 ```
-Usage: cco project validate [name] [--all] [--reachable]
+Usage: cco project validate [name] [--all] [--reachable] [-v]
 
 Arguments:
   name                 Project to validate (defaults to the cwd's hosted project)
@@ -707,6 +703,7 @@ Arguments:
 Options:
   --all                Validate every project in the index
   --reachable          Also probe that each coordinate is currently reachable
+  -v, --verbose        Print a line on success too
 
 Examples:
   cco project validate                 # cwd-first: validate the project this repo hosts
@@ -717,17 +714,23 @@ Examples:
 **Flow**:
 
 ```
-1. VALIDATE (cwd-first)
-   - project.yml exists and 'name' is present (fatal if missing)
-   - Every referenced repo/llms/pack has a coordinate (url/ref) — machine-agnostic, no real paths
-   - --reachable: probe each coordinate (ls-remote / fetch)
-   - Pack collision: a no-coordinate authored pack shadowed by an unrelated same-name
-     global pack is an ERROR (silent-wrong-build); every reachability gap stays a WARN
+1. VALIDATE (cwd-first; else resolve [name] via the index; --all = every project)
+   - project.yml exists and 'name' is present
+   - Coordinate gap: a referenced repo / extra_mount / llms with no url (a pack url is
+     OPTIONAL — a url-less pack is an authored-in-repo source, never a gap)
+   - Machine-agnostic: a url/resource that is a real/absolute host path, plus any forbidden
+     path:/source: key (the rejected inline-path flow) — reported, never stripped
+   - Uniqueness: a duplicate id within a section
+   - Pack collision: a no-url authored pack shadowed by an unrelated same-name global pack
+     is an ERROR (silent-wrong-build)
+   - --reachable: also probe each coordinate (git ls-remote / HTTP HEAD), offline-tolerant
 
-2. RESULT
-   - exit 0 = share-ready; exit 1 = WARN (degraded/unreachable); exit 2 = ERROR (collision)
-   - Detect-only — never blocks the git push path
-   - "Project '<name>' is share-ready" on success
+2. RESULT (exit = numeric max severity, grep-style)
+   - exit 0 = share-ready · exit 1 = reachability/coordinate gap (WARN)
+     · exit 2 = path leak, duplicate id, or pack collision (ERROR)
+   - One greppable "<section>.<id>: <reason>" line per finding + a one-line tally
+     [reachability=X agnostic=Y uniqueness=Z collision=W]
+   - Detect-only — never blocks the git push path; quiet on success unless -v
 ```
 
 > This is the **share-readiness** validate. The **orphan-sanitization** of global internal
@@ -1257,20 +1260,26 @@ Examples:
   cco project add pack react-guidelines              # project-local authored pack (no url)
 ```
 
-#### `cco project coords --diff [--sync --from <unit>]`
+#### `cco project coords [--diff] [--sync --from <unit>]`
 
-> 🚧 **Planned — ships in a later release.** `cco project coords` is not yet available (ADR-0016
-> D3). `cco project add` (above) is current. The contract below is the target surface.
-
-Check (and optionally reconcile) coordinate consistency across a project's units. `--sync`
-requires an explicit `--from` (never auto-elects a source).
+Check (and optionally reconcile) coordinate consistency across your projects (ADR-0016 D3).
+The STATE index is global-flat (one logical name → one path), so a name's `url` coordinate
+should match in every manifest. The lookup is derived on demand by scanning the indexed
+projects' `project.yml` — nothing is persisted. `--sync` requires an explicit `--from` (it
+never auto-elects a source) and edits the committed `project.yml` files (preview + confirm).
 
 ```
-Usage: cco project coords --diff [--sync --from <unit>]
+Usage: cco project coords [--diff] [--sync --from <unit>] [-y]
+
+  (none)               Print the full derived name → url lookup
+  --diff               Print only the names whose url diverges across units (read-only)
+  --sync --from <unit> Adopt <unit>'s url for each divergent name across all units
+  -y, --yes            Confirm --sync non-interactively
 
 Examples:
+  cco project coords
   cco project coords --diff
-  cco project coords --diff --sync --from backend
+  cco project coords --sync --from backend
 ```
 
 > Share-readiness (every referenced id has a reachable, machine-agnostic coordinate) is
