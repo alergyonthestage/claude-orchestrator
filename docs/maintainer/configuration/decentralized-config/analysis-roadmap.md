@@ -299,7 +299,15 @@ internalize + `export --bundle-packs` + `init --template` · `cco project valida
 (`48a44b0`/`5f6c506`) · `cco update --check` 3-state (packs+templates only, projects excluded P13;
 `5753513`/`13b7573`) · `cco config protect` GOVERNANCE DOCS (helper deferred post-v1, ADR-0023 D6) ·
 P5-doc close-out (changelog #15 + migration-check=NONE + browser-mcp reader sweep).
-**▶ next = pre-merge gate: review cycle (impl/docs/refactoring/UX) → dogfooding e2e (Mac) → merge/release v1.**
+**▶ pre-merge gate IN PROGRESS — review-cycle step 1 (implementation-adherence review) ✅ DONE 2026-06-25**
+(`reviews/25-06-2026-impl-adherence-review.md`; multi-agent whole-scope: 9 lenses → adversarial verify →
+critic → synthesis; baseline 894/0). Verdict = **not yet merge-ready**: **1 HIGH 🔴 (F1) + 3 MEDIUM 🔴
+(F3 doc · F4/F5 test) + 1 MEDIUM ❌ (F2 test) + 13 optimization flags**; 0 blockers; §4 LIVE set stays
+empty (F1 = missed cutover to fix, not a sanctioned hybrid). **F1 = personal flat store (packs/templates/
+llms) still under `$CCO_USER_CONFIG_DIR`, not `~/.cco`/CACHE — maintainer chose Relocate.** Fixes F1–F5
+scheduled for a dedicated pre-merge implementation session (global roadmap "Pre-merge fix backlog");
+review stayed read-only. **Then: docs → refactoring (consumes the 13 flags) → UX → dogfooding e2e (Mac) →
+merge/release v1.**
 Post-v1 backlog (deferred, decided): `cco template update` · `cco pack update` 3-way · `cco config protect`
 helper · internalize-as-cache prompt · **T state-sync** · `cco project internalize` (Case-C) + `~/.cco/projects/` ·
 index namespacing — see the global `decisions/roadmap.md` §"Post-v1 backlog" for priorities.

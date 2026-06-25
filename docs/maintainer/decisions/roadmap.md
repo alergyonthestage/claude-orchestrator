@@ -266,6 +266,36 @@ deletion + structure-based discovery, sync-before-publish fix, 2×2 wiring, `sou
 **solo-adopter Case C** are post-v1. The vault/`@local`/profile **bug class #B13–#B23 is mooted** by the
 removal.
 
+#### Pre-merge fix backlog (decentralized-config) — gates the v1 merge
+
+The **pre-merge whole-scope implementation-adherence review** (review-cycle step 1) ran **2026-06-25**
+(`../configuration/decentralized-config/reviews/25-06-2026-impl-adherence-review.md`; multi-agent
+workflow: 9 lenses → adversarial verify → critic → synthesis; baseline 894/0). Verdict: **not yet
+merge-ready — 1 HIGH + 3 MEDIUM 🔴 + 1 MEDIUM ❌; 0 blockers; 13 optimization flags (flag-only).** The
+rest of the v1 surface is code-grounded conformant; the §4 Transitional Registry LIVE set stays empty.
+**To apply in a dedicated implementation session before merge** (maintainer decided 2026-06-25 to close
+the review loop read-only and action the fixes separately):
+- **F1 (HIGH, gate)** — relocate the personal flat store: `packs`/`templates` → `~/.cco/{packs,templates}`
+  (CONFIG) and **llms content + cache-state → CACHE**; today all three resolve under `$CCO_USER_CONFIG_DIR`
+  (default `$REPO_ROOT/user-config`) — a missed cutover (`global` was relocated in P3-3b, the flat stores
+  weren't). **Maintainer decision: Relocate (Option 1).** Fix `bin/cco:32,38-40`, `lib/packs.sh` layer-1,
+  `lib/cmd-llms.sh:110,717`, the false comment `lib/paths.sh:154`, the legacy fallback `lib/update.sh:143-146`,
+  `tests/helpers.sh`; add a one-time `user-config/* → ~/.cco`/CACHE migration in `lib/migrate.sh` that must
+  not collide with migrate's use of `$CCO_USER_CONFIG_DIR` as the legacy-vault pointer.
+- **F3 (MEDIUM, doc)** — `configuration-management.md:346` shows `cco template update` as a working
+  example while the table (line 576) marks it 🚧; remove the example.
+- **F4 (MEDIUM, test)** — add an explicit test for the P15 coordinate-presence discriminator (cache vs
+  authored, incl. the §2.4 ERROR collision row) in `test_pack_resolution.sh`.
+- **F5 (MEDIUM, test-isolation)** — `test_update.sh` / `test_publish_install_sync.sh` mutate tracked repo
+  files (`changelog.yml`, the base template) in place; corrupts the tree under concurrent/interrupted runs.
+  Redirect to sandbox copies; until fixed, do not run the suite concurrently.
+- **F2 (MEDIUM, missing test)** — add an explicit H1 ordering test (resolution-before-notices) in
+  `test_start_*`.
+
+After these land → continue the review cycle (documentation → refactoring/optimization [consumes the 13
+flags] → UX-UI) → dogfooding e2e on Mac (`../configuration/decentralized-config/P2-dogfooding-validation.md`)
+→ merge/release v1.
+
 #### Post-v1 backlog (decentralized-config)
 
 Deferred during the refactor (decided, not unresolved); each rides on the shipped v1 substrate.

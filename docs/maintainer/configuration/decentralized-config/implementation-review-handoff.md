@@ -137,6 +137,15 @@ list above (migrate-from-BACKUP readers) — those stay. One documented, separat
 CACHE `managed/` / `/workspace/.managed`) below a current-layout note — a logged doc-coherence item, not a
 code finding.
 
+> **RUN COMPLETED — 2026-06-25 whole-scope pre-merge review** → `reviews/25-06-2026-impl-adherence-review.md`
+> (multi-agent: 9 lenses → adversarial verify → critic → synthesis; 102 surviving / 5 refuted; baseline
+> 894/0). Outcome: **1 HIGH 🔴 (F1) + 3 MEDIUM 🔴 (F3 doc / F4 + F5 test) + 1 MEDIUM ❌ (F2 H1 test) + 13
+> optimization flags**; 0 blockers. The **LIVE set stays empty** — F1 (personal flat store still under
+> `$CCO_USER_CONFIG_DIR`, not `~/.cco`/CACHE) is a *missed cutover to fix* (maintainer chose **Relocate**),
+> **not** a sanctioned hybrid, so it adds **no** registry entry. RETIRED list re-verified accurate;
+> KEEP-forever readers correctly isolated. Fixes F1–F5 are scheduled for a dedicated pre-merge
+> implementation session (global roadmap "Pre-merge fix backlog"); the review itself stayed read-only.
+
 ### Known baseline — **894 passed / 0 failed** (run `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test`)
 
 The suite is at **ZERO failures** — any failure is a regression. (Without the `CCO_ALLOW_HOST_RESOLVE=1`
