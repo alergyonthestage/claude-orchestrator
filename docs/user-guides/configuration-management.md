@@ -343,8 +343,10 @@ committed `<repo>/.cco/`. **Tip**: if you've heavily restructured a file, use
 cco update --check                     # which installed resources have an update?
 cco pack update acme-conventions       # 3-way merge against the recorded STATE base
 cco pack update --all
-cco template update acme-service
 ```
+
+> 🚧 `cco template update` is planned for a later release (see the command
+> reference table below) — packs support `update` today, templates do not yet.
 
 ### 7.4 Internalizing resources
 
