@@ -4,8 +4,14 @@
 **before** launching the next phase) to verify that the *implementation* still adheres to and is coherent
 with the frozen **design + ADRs** (the single source of truth). Read-only audit: it produces a **gap
 report** + updates the roadmap/handoffs; it does **not** write production code and does **not** re-open
-settled design. Runs in its **own clean session**, opening by reading `guiding-principles.md` (P1–P17) **and
+settled design. Runs in its **own clean session**, opening by reading `guiding-principles.md` (P1–P18) **and
 this file**.
+
+> **Current run = the whole-scope pre-merge implementation review (v1 BUILD COMPLETE, P0–P5 closed,
+> 2026-06-25).** No "next phase" remains — the loop (§7) feeds **merge-readiness + the maintainer's review
+> cycle** (docs → refactoring → UX-UI → dogfooding), not a further build phase. The §4 LIVE transitional set
+> is **empty**, so the audit's job shifts from "is this hybrid sanctioned?" to "**is anything still hybrid
+> at all?**" — any remaining legacy/dual-read is now 🔴. Scope = the entire decentralized-config surface.
 
 > **Why this exists.** The decentralized-config refactor is a **breaking, multi-phase cutover** (design §9
 > P0–P5) executed *out of design chronology* (dependency + reuse + open-closed). At any moment the codebase
@@ -36,20 +42,25 @@ decentralized-config scope**, classifies the implementation state and is **direc
   (intentional-or-error?), a design/ADR contradiction the implementation surfaced, or a decision affecting
   how the toolkit is used (UX/interface/placement/sync). Per the autonomy-vs-HITL settings, these are
   **surfaced for the maintainer**, never silently resolved.
-- **Roadmap/handoff updates** (§7): refresh the implementation-state in the roadmaps + memory, and produce
-  or correct the **next phase's handoff** so the gap findings feed the next build cycle.
+- **Roadmap/handoff + forward-feed** (§7): refresh the implementation-state in the roadmaps + memory, and
+  feed the gap findings forward — during the build, into the **next phase's handoff**; at v1 build-complete,
+  into **merge-readiness + the maintainer's pre-merge review cycle** (no next build phase remains).
 
 ## 2. Scope — the whole body to audit (code ⇄ spec)
 
-- **Spec side (source of truth)**: `guiding-principles.md` (P1–P17); ADRs `decisions/0001`–`0023` (mind the
+- **Spec side (source of truth)**: `guiding-principles.md` (P1–P18); ADRs `decisions/0005`–`0027` (mind the
   refinement chains — later ADRs refine earlier ones; the **forward-annotations** mark what supersedes
   what); living `design.md` (§2 layout/buckets/schema, §3 index, §4 sync, §6 domains, §7 commands, §9
   phases, §11 tests, §12 futures), `requirements.md` (AD*/FR*), `resource-coherence-inventory.md`
   (the P3 cutover-sweep driver), `analysis-roadmap.md`.
 - **Code side (the real surface)**: `bin/cco` dispatcher; `lib/*.sh` (esp. `paths.sh`, `index.sh`,
-  `yaml.sh`, `local-paths.sh`, `cmd-start.sh`/`cmd-new.sh`, `packs.sh`/`llms.sh`, `cmd-remote.sh`/
-  `remote.sh`, `update*.sh`, `cmd-vault.sh`, `cmd-project-*.sh`, `manifest.sh`); `tests/*.sh` +
-  `tests/helpers.sh`/`mocks.sh`; `config/entrypoint.sh` (container side — **read-only invariant**).
+  `yaml.sh`, `local-paths.sh` [migrate-from-BACKUP readers only], `cmd-start.sh`/`cmd-new.sh`,
+  `cmd-pack.sh`/`cmd-llms.sh`/`cmd-template.sh`, `cmd-remote.sh`/`remote.sh`, `update*.sh`, `tags.sh`,
+  `cmd-config.sh`/`cmd-resolve.sh`/`cmd-sync.sh`, `cmd-forget.sh`, `cmd-project-*.sh` [query / export-import /
+  add / validate / coords]); `migrate.sh`. **NOTE — gone (do not look for them):** `cmd-vault.sh`,
+  `manifest.sh`, `cco project create`/`publish`/`install`/`update`, tier-2 `cco project resolve`/`validate
+  <name>`/`add-pack`. `tests/*.sh` + `tests/helpers.sh`/`mocks.sh`; `config/entrypoint.sh` (container side —
+  **read-only invariant**).
 - **The diff since the last audit**: `git log --oneline` on `feat/vault/decentralized-config` since the
   previous review date narrows where new drift can have entered.
 
@@ -76,9 +87,9 @@ state sanctioned by the design/handoffs; flag it 🟡 (intentional) only if it s
 and **its retiring phase has not yet passed**. If a retiring phase **has** passed and the legacy is still
 present, that flips to 🔴 (the cleanup was missed). Keep this registry **current** at each audit.
 
-### ✅ RETIRED through Phase 4 (do NOT re-investigate; gone — verified `reviews/24-06-2026-p4-p5-adherence-review.md`)
+### ✅ RETIRED through Phase 5 (do NOT re-investigate; gone)
 
-The whole P0–P4 transitional set has landed and been removed in final form:
+The whole P0–P5 transitional set has landed and been removed in final form:
 - **Commit A** (`c8ae080`): `@local`/sanitize/extract/restore + `local-paths.yml` plumbing → **REMOVED P4-5b**
   (`34b3429`); the per-section schema bridge legacy `- path:`/`- source:` arm → **COLLAPSED index-only P4-5c**
   (`105bd9c`); legacy parsers `yml_get_repos`/`yml_get_extra_mounts` → **REMOVED P4-5c-3** (`bdc90a0`).
@@ -91,31 +102,37 @@ The whole P0–P4 transitional set has landed and been removed in final form:
   <name>`/`add-pack`/`remove-pack`/`delete` → REMOVED P4-5a (`3b0859b`); `cco project publish`/`install`/
   `update`/`internalize` → REMOVED P4-4e (`a5d6cca`). Removed verbs give AD12 explicit "was removed" rejections.
 
-### 🟡 LIVE transitional set — the **P4-5d** group (retires in **P5**; do NOT flag as error)
-
-The central-layout → STATE-index teardown is the carried-forward P5 unit. Present-but-legacy is **expected** here.
-- **Harness dual-seed** — `tests/helpers.sh` `setup_global_from_defaults` seeds legacy `GLOBAL_DIR` + `~/.cco/global`;
-  `create_project` also seeds the central layout. Drops when the last central consumer cuts over.
-- **Legacy `CCO_*_DIR` / `$GLOBAL_DIR`-default** resolution in `bin/cco` (+ harness export). `$GLOBAL_DIR` already
-  `~/.cco/global` (P3-3b); the `CCO_*_DIR` fallback remains.
-- **Central `$PROJECTS_DIR/*/` enumeration — 11 call-sites** (the P4-5d work-list): `cmd-update.sh:139,209,225` ·
-  `cmd-llms.sh:539,734,770` · `cmd-pack.sh:232-290` · `cmd-clean.sh:87,115` · `cmd-project-query.sh:20,114` ·
-  `cmd-start.sh:1155` (`_collect_claimed_browser_ports`) · `cmd-stop.sh:26,58` · `cmd-chrome.sh:65,76` ·
-  `cmd-template.sh:273-274`. Migrate to `_index_list_projects` + `_index_get_path`.
+- **P4-5d central-layout teardown** → **RETIRED in P5-1** (`0da6153`/`6209bae`/`7e9d458`/`0116679`): the
+  legacy `$PROJECTS_DIR`/`CCO_*_DIR` central enumeration is **gone** — every command enumerates via
+  `_index_list_projects` + `_index_get_path`; managed runtime → CACHE (`_cco_project_cache_managed`); harness
+  dual-seed removed (host `.cco/` + index only). Verified: zero `$PROJECTS_DIR`/`CCO_PROJECTS_DIR` in `lib/bin/tests`.
+- **P5-0 llms straddler** → **FIXED P5-0** (`2f93de8`): `_llms_resolve_name_from_url` now prefers a meaningful
+  path segment over the domain → resolved `test_resolve_name_from_full_variant_url` (the last baseline failure).
 - **KEEP-forever (NOT to be flagged/removed):** `_project_effective_paths` (cmd-start), `_local_paths_get`/
   `_get_section` (migrate reads legacy `local-paths.yml` from BACKUP, `migrate.sh:492`), `_resolve_entry_index`,
   `_prompt_for_path`.
 
-### Known baseline — **827 passed / 1 failed** (run `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test`)
+### 🟡 LIVE transitional set — **EMPTY at v1 build-complete (P5 DONE, 2026-06-25)**
 
-The **1** = `test_resolve_name_from_full_variant_url` (P5 llms straddler — expects `react`, derives
-`example-react`; llms name-derivation rewrite owned by P5). Delta-green is measured against this 1; a 2nd
-failure is a regression. (Without the host-resolve hatch, 3–4 pure path-resolver unit tests
-`test_paths_project_meta_*`/`test_update_no_backup_skips_bak` fail the H4 guard *by design* — not regressions.)
-Keep the `bin/test:_run_test` `ASSERTION FAILED`-sentinel fix.
+There is **no live sanctioned hybrid left**: P0–P5 are all closed and every transitional item has been
+retired. **Consequence for this (pre-merge, whole-scope) review:** there is no longer a "next phase" to
+retire anything, so **any** hybrid / dual-read / legacy-bridge / central-layout remnant found in the code is
+**🔴 (a missed cleanup or a divergence), not 🟡**. The only deliberately-kept legacy is the **KEEP-forever**
+list above (migrate-from-BACKUP readers) — those stay. One documented, separately-tracked doc gap:
+`integration/browser-mcp/design.md` still describes the pre-refactor file layout/mount (`browser.json` /
+CACHE `managed/` / `/workspace/.managed`) below a current-layout note — a logged doc-coherence item, not a
+code finding.
 
-> **Update rule:** when a phase lands, move its retired items out of this registry (they should now be
-> ❌→✅ or simply gone). A registry entry whose retiring phase is in the past is itself a finding.
+### Known baseline — **894 passed / 0 failed** (run `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test`)
+
+The suite is at **ZERO failures** — any failure is a regression. (Without the `CCO_ALLOW_HOST_RESOLVE=1`
+hatch, 3–4 pure path-resolver unit tests `test_paths_project_meta_*`/`test_update_no_backup_skips_bak` fail
+the H4 guard *by design* — not regressions; always run with the hatch.) Keep the `bin/test:_run_test`
+`ASSERTION FAILED`-sentinel fix (un-masks mid-test assertion failures).
+
+> **Update rule:** when a phase lands, move its retired items out of the LIVE set (they become ✅ or gone).
+> A LIVE entry whose retiring phase is in the past is itself a finding. At v1 build-complete the LIVE set is
+> empty — keep it that way; a new hybrid would need an explicit post-v1 sanction.
 
 ## 5. Review lenses (run in parallel — adapt/compose as fits the cycle)
 
@@ -166,8 +183,11 @@ roadmap) before it is acted on.
 2. **Update the implementation-state** in `docs/maintainer/decisions/roadmap.md` (global) +
    `analysis-roadmap.md` + the personal memory (`decentralized-config-impl-progress.md`) — what is ✅/❌/🟡/🔴.
 3. **Refresh the §4 Transitional Registry** (retire landed items; add any new sanctioned hybrids).
-4. **Produce/correct the next phase's handoff** so its preliminary analysis incorporates the gap findings.
-5. Resolve HITL flags with the maintainer; fixes for 🔴 errors are scheduled (now, or into the owning phase).
+4. **Feed the findings forward.** At v1 build-complete there is no next *build* phase: 🔴 fixes feed
+   **merge-readiness** and the maintainer's **pre-merge review cycle** (this review → documentation review →
+   refactoring review → UX-UI review → dogfooding). (During the build this step instead produced/corrected
+   the *next phase's* handoff.)
+5. Resolve HITL flags with the maintainer; fixes for 🔴 errors are scheduled (now, or pre-merge).
 
 ## 8. What this review must NOT do
 
