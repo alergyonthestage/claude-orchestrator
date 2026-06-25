@@ -869,7 +869,6 @@ test_update_sync_non_tty_skips() {
     CCO_OUTPUT=$(
         CCO_USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR" \
         CCO_GLOBAL_DIR="$CCO_GLOBAL_DIR" \
-        CCO_PROJECTS_DIR="$CCO_PROJECTS_DIR" \
         CCO_PACKS_DIR="$CCO_PACKS_DIR" \
         CCO_TEMPLATES_DIR="$CCO_TEMPLATES_DIR" \
         bash "$REPO_ROOT/bin/cco" update --sync < /dev/null 2>&1

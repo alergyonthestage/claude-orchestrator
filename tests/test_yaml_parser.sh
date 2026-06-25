@@ -420,7 +420,7 @@ YAML
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "${pack_src}:/workspace/.claude/packs/my-pack:ro"
     # Knowledge should NOT be copied to project directory
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/packs/my-pack/doc.md"
+    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/packs/my-pack/doc.md"
 }
 
 test_yaml_parser_no_packs_section_no_pack_mounts() {

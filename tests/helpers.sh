@@ -27,16 +27,14 @@ setup_cco_env() {
 	allow = always
 GITCFG
 
-    # Legacy central-layout dirs — still consumed by the not-yet-cutover
-    # commands (init/update/build/clean/project-create/vault) and their tests,
-    # which ride later phases. Kept until those phases cut over.
+    # User-data root for the flat stores (packs/templates/llms). Projects are
+    # decentralized (each repo's <repo>/.cco/, resolved via the STATE index) —
+    # there is no central projects dir (P5).
     export CCO_USER_CONFIG_DIR="$tmpdir/user-config"
-    # Global config home is now the decentralized ~/.cco/global (= $HOME/.cco/global,
-    # since HOME is redirected into $tmpdir above) — cut over from the legacy central
-    # $tmpdir/user-config/global. bin/cco, the update/clean/manifest engines, and
-    # check_global all resolve GLOBAL_DIR from CCO_GLOBAL_DIR.
+    # Global config home is the decentralized ~/.cco/global (= $HOME/.cco/global,
+    # since HOME is redirected into $tmpdir above). bin/cco, the update/clean
+    # engines, and check_global all resolve GLOBAL_DIR from CCO_GLOBAL_DIR.
     export CCO_GLOBAL_DIR="$tmpdir/home/.cco/global"
-    export CCO_PROJECTS_DIR="$tmpdir/user-config/projects"
     export CCO_PACKS_DIR="$tmpdir/user-config/packs"
     export CCO_TEMPLATES_DIR="$tmpdir/user-config/templates"
     export CCO_LLMS_DIR="$tmpdir/user-config/llms"
@@ -47,7 +45,7 @@ GITCFG
     export CCO_STATE_HOME="$tmpdir/state"
     export CCO_CACHE_HOME="$tmpdir/cache"
     export CCO_ALLOW_HOST_RESOLVE=1
-    mkdir -p "$CCO_USER_CONFIG_DIR" "$CCO_GLOBAL_DIR" "$CCO_PROJECTS_DIR" \
+    mkdir -p "$CCO_USER_CONFIG_DIR" "$CCO_GLOBAL_DIR" \
              "$CCO_PACKS_DIR" "$CCO_TEMPLATES_DIR" "$CCO_LLMS_DIR" "$CCO_DUMMY_REPO"
     # Seed the STATE index for the new-schema fixture (minimal_project_yml uses
     # the logical name "dummy-repo"). Legacy-schema fixtures (inline `- path:`)
@@ -110,45 +108,28 @@ index_set_project_repos() {
     )
 }
 
-# Copy defaults/global/.claude into tmpdir/user-config/global/.claude
-# (simulates cco init — all agents, skills, rules, settings are in global defaults)
-# Usage: setup_global_from_defaults "$tmpdir"
+# Seed the decentralized global config (~/.cco/global/.claude) from the framework
+# defaults — simulates `cco init`'s global-ensure. CCO_GLOBAL_DIR resolves to
+# $HOME/.cco/global in the test env, which is what check_global, cco start/new,
+# and the update/clean engines read (design §2.3). Usage: <tmpdir>
 setup_global_from_defaults() {
     local tmpdir="$1"
-    # Legacy central global — what check_global and the not-yet-cutover
-    # commands (init/update/build/clean/vault) still read via GLOBAL_DIR.
     mkdir -p "$CCO_GLOBAL_DIR"
     cp -r "$REPO_ROOT/defaults/global/.claude" "$CCO_GLOBAL_DIR/.claude"
     mkdir -p "$CCO_PACKS_DIR"
-    # Decentralized CONFIG bucket global — what cco start/new now mount
-    # (_cco_config_dir/global == ~/.cco/global; design §2.3). Seeded in
-    # parallel during the P0 cutover so both worlds resolve.
-    mkdir -p "$HOME/.cco/global"
-    cp -r "$REPO_ROOT/defaults/global/.claude" "$HOME/.cco/global/.claude"
 }
 
-# Create a minimal project directory with the given project.yml content.
-#
-# Writes BOTH layouts during the P3 cutover (the established dual-seed harness
-# pattern, like setup_global_from_defaults):
-#   - Legacy central: tmpdir/user-config/projects/<name>/ — kept for the
-#     not-yet-cutover callers (project-create/vault tests) and the assertions
-#     that still reference $CCO_PROJECTS_DIR.
-#   - Decentralized host repo: tmpdir/repos/<name>/.cco/ (project.yml + claude/)
-#     + STATE index seed (paths: <name> -> host, projects: <name> -> <name>) —
-#     what `cco start` now reads (design §4.4 / ADR-0024 D3). `cco start <name>`
-#     resolves the host via the index; cwd-first resolves it via .cco/project.yml.
+# Create a minimal decentralized project: a host repo with a committed
+# <repo>/.cco/ (project.yml + claude/) + STATE index seed (paths: <name> -> host,
+# projects: <name> -> <name>). This is the only layout cco reads (P5 — the central
+# $PROJECTS_DIR layout is gone). `cco start <name>` resolves the host via the
+# index; cwd-first resolves it via .cco/project.yml. Use host_cco_dir to target
+# the committed config from a test.
 # Usage: create_project "$tmpdir" "my-project" "$yml_content"
 create_project() {
     local tmpdir="$1"
     local name="$2"
     local yml_content="$3"
-    # Legacy central layout.
-    local project_dir="$tmpdir/user-config/projects/$name"
-    mkdir -p "$project_dir/.claude"
-    mkdir -p "$project_dir/memory"
-    printf '%s\n' "$yml_content" > "$project_dir/project.yml"
-    # Decentralized host repo (committed <repo>/.cco/, machine-agnostic).
     local host="$tmpdir/repos/$name"
     mkdir -p "$host/.cco/claude"
     printf '%s\n' "$yml_content" > "$host/.cco/project.yml"
@@ -156,10 +137,10 @@ create_project() {
     index_set_project_repos "$name" "$name"
 }
 
-# Absolute path to a project's decentralized host .cco/ dir — what `cco start`
-# reads (project.yml, claude/, mcp.json, setup.sh, mcp-packages.txt, secrets.env).
-# Tests that pre-create config files for cco to read must target this dir, not
-# the legacy central $CCO_PROJECTS_DIR/<name>/. Usage: host_cco_dir "$tmpdir" "<name>"
+# Absolute path to a project's decentralized host .cco/ dir — the only layout
+# cco reads (P5). Holds project.yml, claude/, mcp.json, setup.sh,
+# mcp-packages.txt, secrets.env. Tests that pre-create config files for cco to
+# read must target this dir. Usage: host_cco_dir "$tmpdir" "<name>"
 host_cco_dir() { printf '%s' "$1/repos/$2/.cco"; }
 
 # Create a pack definition in packs/<name>/pack.yml
@@ -208,7 +189,6 @@ run_cco() {
     CCO_OUTPUT=$(
         CCO_USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR" \
         CCO_GLOBAL_DIR="$CCO_GLOBAL_DIR" \
-        CCO_PROJECTS_DIR="$CCO_PROJECTS_DIR" \
         CCO_PACKS_DIR="$CCO_PACKS_DIR" \
         CCO_TEMPLATES_DIR="$CCO_TEMPLATES_DIR" \
         CCO_LLMS_DIR="$CCO_LLMS_DIR" \

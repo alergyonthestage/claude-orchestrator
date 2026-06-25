@@ -3,7 +3,7 @@
 #
 # Provides: _setup_internal_tutorial(), cmd_start()
 # Dependencies: colors.sh, utils.sh, yaml.sh, secrets.sh, workspace.sh, packs.sh
-# Globals: PROJECTS_DIR, GLOBAL_DIR, IMAGE_NAME, REPO_ROOT, USER_CONFIG_DIR
+# Globals: GLOBAL_DIR, IMAGE_NAME, REPO_ROOT, USER_CONFIG_DIR (projects via the STATE index, P5)
 
 # ── Internal Tutorial Setup ──────────────────────────────────────────
 # Prepares the runtime directory for the internal tutorial project.

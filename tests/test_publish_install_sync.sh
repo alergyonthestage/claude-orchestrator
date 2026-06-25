@@ -168,23 +168,19 @@ test_update_installed_project_skips_sync() {
     setup_cco_env "$tmpdir"
     init_global "$tmpdir" --lang "English"
 
-    # Create a project with remote coordinate (DATA source) + STATE meta (ADR-0022 D1)
+    # Installed-from-remote project (P5): DATA source coordinate + STATE meta
+    # (schema + installed commit) + the committed <repo>/.cco/claude tree.
     create_project "$tmpdir" "remote-app" "name: remote-app"
-    mkdir -p "$CCO_PROJECTS_DIR/remote-app/.cco"
+    local latest_schema
+    latest_schema=$(bash -c "source '$REPO_ROOT/lib/colors.sh'; source '$REPO_ROOT/lib/utils.sh'; source '$REPO_ROOT/lib/paths.sh'; source '$REPO_ROOT/lib/yaml.sh'; source '$REPO_ROOT/lib/update-hash-io.sh'; source '$REPO_ROOT/lib/update-merge.sh'; source '$REPO_ROOT/lib/update-meta.sh'; source '$REPO_ROOT/lib/update-discovery.sh'; source '$REPO_ROOT/lib/update-sync.sh'; source '$REPO_ROOT/lib/update-changelog.sh'; source '$REPO_ROOT/lib/update-remote.sh'; source '$REPO_ROOT/lib/update.sh'; _latest_schema_version project")
     mkdir -p "$(dirname "$(data_project_source remote-app)")"
     printf 'url: https://github.com/team/config.git\nref: main\n' \
         > "$(data_project_source remote-app)"
     mkdir -p "$(dirname "$(state_project_meta remote-app)")"
-    printf 'installed_commit: abc123\n' > "$(state_project_meta remote-app)"
-
-    # Bootstrap .cco/meta with current schema
-    local latest_schema
-    latest_schema=$(bash -c "source '$REPO_ROOT/lib/colors.sh'; source '$REPO_ROOT/lib/utils.sh'; source '$REPO_ROOT/lib/paths.sh'; source '$REPO_ROOT/lib/yaml.sh'; source '$REPO_ROOT/lib/update-hash-io.sh'; source '$REPO_ROOT/lib/update-merge.sh'; source '$REPO_ROOT/lib/update-meta.sh'; source '$REPO_ROOT/lib/update-discovery.sh'; source '$REPO_ROOT/lib/update-sync.sh'; source '$REPO_ROOT/lib/update-changelog.sh'; source '$REPO_ROOT/lib/update-remote.sh'; source '$REPO_ROOT/lib/update.sh'; _latest_schema_version project")
-    printf 'schema_version: %s\n' "$latest_schema" \
-        > "$CCO_PROJECTS_DIR/remote-app/.cco/meta"
-
-    # Copy base template files
-    cp -r "$REPO_ROOT/templates/project/base/.claude/"* "$CCO_PROJECTS_DIR/remote-app/.claude/" 2>/dev/null || true
+    printf 'schema_version: %s\ninstalled_commit: abc123\n' "$latest_schema" \
+        > "$(state_project_meta remote-app)"
+    cp -r "$REPO_ROOT/templates/project/base/.claude/"* \
+        "$(host_cco_dir "$tmpdir" remote-app)/claude/" 2>/dev/null || true
 
     run_cco update --sync remote-app
     assert_output_contains "installed from" \
@@ -215,16 +211,18 @@ test_update_discovery_offline() {
     setup_cco_env "$tmpdir"
     init_global "$tmpdir" --lang "English"
 
-    # Create installed project
+    # Installed project (P5): DATA source + STATE meta + committed claude tree.
     create_project "$tmpdir" "team-svc" "name: team-svc"
-    mkdir -p "$CCO_PROJECTS_DIR/team-svc/.cco"
     local latest_schema
     latest_schema=$(bash -c "source '$REPO_ROOT/lib/colors.sh'; source '$REPO_ROOT/lib/utils.sh'; source '$REPO_ROOT/lib/paths.sh'; source '$REPO_ROOT/lib/yaml.sh'; source '$REPO_ROOT/lib/update-hash-io.sh'; source '$REPO_ROOT/lib/update-merge.sh'; source '$REPO_ROOT/lib/update-meta.sh'; source '$REPO_ROOT/lib/update-discovery.sh'; source '$REPO_ROOT/lib/update-sync.sh'; source '$REPO_ROOT/lib/update-changelog.sh'; source '$REPO_ROOT/lib/update-remote.sh'; source '$REPO_ROOT/lib/update.sh'; _latest_schema_version project")
-    printf 'source: https://github.com/team/config.git\nref: main\ncommit: abc123\n' \
-        > "$CCO_PROJECTS_DIR/team-svc/.cco/source"
-    printf 'schema_version: %s\n' "$latest_schema" \
-        > "$CCO_PROJECTS_DIR/team-svc/.cco/meta"
-    cp -r "$REPO_ROOT/templates/project/base/.claude/"* "$CCO_PROJECTS_DIR/team-svc/.claude/" 2>/dev/null || true
+    mkdir -p "$(dirname "$(data_project_source team-svc)")"
+    printf 'url: https://github.com/team/config.git\nref: main\n' \
+        > "$(data_project_source team-svc)"
+    mkdir -p "$(dirname "$(state_project_meta team-svc)")"
+    printf 'schema_version: %s\ninstalled_commit: abc123\n' "$latest_schema" \
+        > "$(state_project_meta team-svc)"
+    cp -r "$REPO_ROOT/templates/project/base/.claude/"* \
+        "$(host_cco_dir "$tmpdir" team-svc)/claude/" 2>/dev/null || true
 
     run_cco update --offline
     assert_output_contains "team-svc"
@@ -428,24 +426,27 @@ test_update_discovery_offline_no_cache_update() {
     setup_cco_env "$tmpdir"
     init_global "$tmpdir" --lang "English"
 
-    # Create installed project with pre-set remote_cache timestamp
+    # Installed project with a pre-set remote_cache timestamp (P5): DATA source +
+    # STATE meta (schema + remote_cache) + committed claude tree.
     create_project "$tmpdir" "offline-svc" "name: offline-svc"
-    mkdir -p "$CCO_PROJECTS_DIR/offline-svc/.cco"
     local latest_schema
     latest_schema=$(bash -c "source '$REPO_ROOT/lib/colors.sh'; source '$REPO_ROOT/lib/utils.sh'; source '$REPO_ROOT/lib/paths.sh'; source '$REPO_ROOT/lib/yaml.sh'; source '$REPO_ROOT/lib/update-hash-io.sh'; source '$REPO_ROOT/lib/update-merge.sh'; source '$REPO_ROOT/lib/update-meta.sh'; source '$REPO_ROOT/lib/update-discovery.sh'; source '$REPO_ROOT/lib/update-sync.sh'; source '$REPO_ROOT/lib/update-changelog.sh'; source '$REPO_ROOT/lib/update-remote.sh'; source '$REPO_ROOT/lib/update.sh'; _latest_schema_version project")
-    printf 'source: https://github.com/team/config.git\nref: main\ncommit: abc123\n' \
-        > "$CCO_PROJECTS_DIR/offline-svc/.cco/source"
-    printf 'schema_version: %s\nremote_cache:\n  commit: abc123\n  checked: 2026-03-17T10:00:00Z\n' \
+    mkdir -p "$(dirname "$(data_project_source offline-svc)")"
+    printf 'url: https://github.com/team/config.git\nref: main\n' \
+        > "$(data_project_source offline-svc)"
+    mkdir -p "$(dirname "$(state_project_meta offline-svc)")"
+    printf 'schema_version: %s\ninstalled_commit: abc123\nremote_cache:\n  commit: abc123\n  checked: 2026-03-17T10:00:00Z\n' \
         "$latest_schema" \
-        > "$CCO_PROJECTS_DIR/offline-svc/.cco/meta"
-    cp -r "$REPO_ROOT/templates/project/base/.claude/"* "$CCO_PROJECTS_DIR/offline-svc/.claude/" 2>/dev/null || true
+        > "$(state_project_meta offline-svc)"
+    cp -r "$REPO_ROOT/templates/project/base/.claude/"* \
+        "$(host_cco_dir "$tmpdir" offline-svc)/claude/" 2>/dev/null || true
 
     # Run with --offline
     run_cco update --offline
     assert_output_contains "offline-svc"
 
     # Verify remote_cache.checked was NOT updated (no network call happened)
-    assert_file_contains "$CCO_PROJECTS_DIR/offline-svc/.cco/meta" \
+    assert_file_contains "$(state_project_meta offline-svc)" \
         "checked: 2026-03-17T10:00:00Z" \
         "--offline should not update remote_cache.checked timestamp"
 }

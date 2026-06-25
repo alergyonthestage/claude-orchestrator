@@ -12,7 +12,7 @@ test_init_does_not_create_tutorial_project() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     init_global "$tmpdir" --lang "English"
-    assert_dir_not_exists "$CCO_PROJECTS_DIR/tutorial"
+    assert_dir_not_exists "$tmpdir/repos/tutorial"
 }
 
 # Removed in P3-3b: the clean `cco init` output focuses on the global-ensure +

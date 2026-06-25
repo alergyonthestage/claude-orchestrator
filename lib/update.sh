@@ -142,7 +142,6 @@ _update_global() {
             # Refresh paths if migration moved the directory (e.g. 003_user-config-dir)
             if [[ ! -d "$installed_dir" && -d "$USER_CONFIG_DIR/global/.claude" ]]; then
                 GLOBAL_DIR="$USER_CONFIG_DIR/global"
-                PROJECTS_DIR="$USER_CONFIG_DIR/projects"
                 PACKS_DIR="$USER_CONFIG_DIR/packs"
                 TEMPLATES_DIR="$USER_CONFIG_DIR/templates"
                 installed_dir="$GLOBAL_DIR/.claude"

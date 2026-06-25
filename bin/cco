@@ -26,28 +26,18 @@ IMAGE_NAME="claude-orchestrator:latest"
 LIB_DIR="$REPO_ROOT/lib"
 
 # ── User config directory resolution ─────────────────────────────────
-# Primary: CCO_USER_CONFIG_DIR controls the unified user data root.
-# Auto-detect: if user-config/ doesn't exist but old global/ does,
-# fall back to legacy paths so cco update can run the migration.
+# CCO_USER_CONFIG_DIR is the unified user-data root for the flat stores
+# (packs/templates/llms). Projects are NOT central anymore — they live in each
+# repo's <repo>/.cco/ and resolve through the STATE index (P5; no $PROJECTS_DIR).
 USER_CONFIG_DIR="${CCO_USER_CONFIG_DIR:-$REPO_ROOT/user-config}"
 
-if [[ -z "${CCO_USER_CONFIG_DIR:-}" && ! -d "$USER_CONFIG_DIR/global" && -d "$REPO_ROOT/global/.claude" ]]; then
-    # Legacy layout — migration not yet run
-    GLOBAL_DIR="${CCO_GLOBAL_DIR:-$REPO_ROOT/global}"
-    PROJECTS_DIR="${CCO_PROJECTS_DIR:-$REPO_ROOT/projects}"
-    PACKS_DIR="${CCO_PACKS_DIR:-$REPO_ROOT/global/packs}"
-    LLMS_DIR="${CCO_LLMS_DIR:-$USER_CONFIG_DIR/llms}"
-    TEMPLATES_DIR="${CCO_TEMPLATES_DIR:-$USER_CONFIG_DIR/templates}"
-else
-    # Global config home is the decentralized personal store ~/.cco/global
-    # (design §2.3; cut over from the legacy central $USER_CONFIG_DIR/global).
-    # CONFIG is always $HOME/.cco (no XDG override; matches _cco_config_dir).
-    GLOBAL_DIR="${CCO_GLOBAL_DIR:-$HOME/.cco/global}"
-    PROJECTS_DIR="${CCO_PROJECTS_DIR:-$USER_CONFIG_DIR/projects}"
-    PACKS_DIR="${CCO_PACKS_DIR:-$USER_CONFIG_DIR/packs}"
-    LLMS_DIR="${CCO_LLMS_DIR:-$USER_CONFIG_DIR/llms}"
-    TEMPLATES_DIR="${CCO_TEMPLATES_DIR:-$USER_CONFIG_DIR/templates}"
-fi
+# Global config home is the decentralized personal store ~/.cco/global
+# (design §2.3). CONFIG is always $HOME/.cco (no XDG override; matches
+# _cco_config_dir). packs/templates/llms are flat stores under the user-data root.
+GLOBAL_DIR="${CCO_GLOBAL_DIR:-$HOME/.cco/global}"
+PACKS_DIR="${CCO_PACKS_DIR:-$USER_CONFIG_DIR/packs}"
+LLMS_DIR="${CCO_LLMS_DIR:-$USER_CONFIG_DIR/llms}"
+TEMPLATES_DIR="${CCO_TEMPLATES_DIR:-$USER_CONFIG_DIR/templates}"
 
 # ── Load modules ─────────────────────────────────────────────────────
 source "$LIB_DIR/colors.sh"
@@ -92,19 +82,6 @@ source "$LIB_DIR/cmd-update.sh"
 source "$LIB_DIR/cmd-clean.sh"
 source "$LIB_DIR/cmd-remote.sh"
 source "$LIB_DIR/remote.sh"
-
-# ── Deprecation warnings ──────────────────────────────────────────────
-# Only warn when legacy vars are set WITHOUT CCO_USER_CONFIG_DIR
-if [[ -z "${CCO_USER_CONFIG_DIR:-}" ]]; then
-    if [[ -n "${CCO_GLOBAL_DIR:-}" ]]; then
-        echo "⚠ CCO_GLOBAL_DIR is deprecated. Use CCO_USER_CONFIG_DIR instead." >&2
-        echo "  Current: CCO_GLOBAL_DIR=$CCO_GLOBAL_DIR" >&2
-        echo "  Suggested: export CCO_USER_CONFIG_DIR=$(dirname "$CCO_GLOBAL_DIR")" >&2
-    fi
-    if [[ -n "${CCO_PROJECTS_DIR:-}" ]]; then
-        echo "⚠ CCO_PROJECTS_DIR is deprecated. Use CCO_USER_CONFIG_DIR instead." >&2
-    fi
-fi
 
 usage() {
     cat <<'EOF'

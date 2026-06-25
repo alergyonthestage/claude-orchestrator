@@ -21,7 +21,6 @@ _setup_llms_env() {
     setup_cco_env "$tmpdir"
     LLMS_DIR="$CCO_LLMS_DIR"
     PACKS_DIR="$CCO_PACKS_DIR"
-    PROJECTS_DIR="$CCO_PROJECTS_DIR"
 }
 
 # Usage: create_llms_entry <tmpdir> <name> [variant_files...]

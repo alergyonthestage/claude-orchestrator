@@ -25,7 +25,7 @@ test_project_list_skips_template_dir() {
     setup_mocks "$mock_bin"
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    mkdir -p "$CCO_PROJECTS_DIR/_template"
+    index_set_project_repos "_template" "_template"
     create_project "$tmpdir" "real-proj" "$(minimal_project_yml real-proj)"
     run_cco project list
     assert_output_contains "real-proj"

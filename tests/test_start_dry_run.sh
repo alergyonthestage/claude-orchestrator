@@ -24,9 +24,9 @@ test_dry_run_no_persistent_artifacts() {
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run --dump
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.cco/docker-compose.yml"
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/workspace.yml"
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/packs.md"
+    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/docker-compose.yml"
+    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/workspace.yml"
+    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/packs.md"
 }
 
 test_dry_run_outputs_temp_dir_path() {
@@ -48,10 +48,10 @@ test_dry_run_ephemeral_no_persistent_files() {
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
     # No .tmp/ directory should exist
-    [[ ! -d "$CCO_PROJECTS_DIR/test-proj/.tmp" ]] || \
+    [[ ! -d "$(host_cco_dir "$tmpdir" test-proj)/.tmp" ]] || \
         fail ".tmp/ should not exist after ephemeral dry-run"
     # No compose in project dir
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.cco/docker-compose.yml"
+    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/docker-compose.yml"
     # Output should suggest --dump
     assert_output_contains "Use --dump to persist"
 }
@@ -327,8 +327,8 @@ test_dry_run_claude_overlays_cache_readonly() {
     assert_file_contains "$compose" \
         "$CCO_CACHE_HOME/projects/test-proj/.claude/packs.md:/workspace/.claude/packs.md:ro" || return 1
     # The committed project .claude/ never receives the generated files.
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/packs.md" || return 1
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/workspace.yml" || return 1
+    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/packs.md" || return 1
+    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/workspace.yml" || return 1
     # The --dump inspection copy still lands under the dump .claude/ (unchanged).
     assert_file_exists "$DRY_RUN_DIR/.claude/packs.md" || return 1
     assert_file_exists "$DRY_RUN_DIR/.claude/workspace.yml" || return 1
@@ -709,7 +709,7 @@ YAML
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "${pack_src}:/workspace/.claude/packs/my-pack:ro"
     # Knowledge must NOT be copied to project directory
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/packs/my-pack/doc.md"
+    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/packs/my-pack/doc.md"
 }
 
 # ── MCP server config ─────────────────────────────────────────────────
@@ -1210,10 +1210,11 @@ repos:
   - name: dummy-repo
 YAML
 )"
-    echo '{"mcpServers":{"github":{}}}' > "$CCO_PROJECTS_DIR/test-proj/mcp.json"
+    local cco; cco=$(host_cco_dir "$tmpdir" "test-proj")
+    echo '{"mcpServers":{"github":{}}}' > "$cco/mcp.json"
     run_cco start "test-proj" --dry-run --dump
-    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/mcp.json" '"github"'
-    assert_file_not_contains "$CCO_PROJECTS_DIR/test-proj/mcp.json" "chrome-devtools"
+    assert_file_contains "$cco/mcp.json" '"github"'
+    assert_file_not_contains "$cco/mcp.json" "chrome-devtools"
 }
 
 test_browser_port_written_to_file() {
@@ -1505,11 +1506,12 @@ test_github_disabled_no_stale_cleanup_in_dry_run() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
-    mkdir -p "$CCO_PROJECTS_DIR/test-proj/.cco/managed"
-    echo '{"mcpServers":{}}' > "$CCO_PROJECTS_DIR/test-proj/.cco/managed/github.json"
+    # Managed runtime overlays live in CACHE keyed by name (P5/Commit B).
+    mkdir -p "$(cache_project_managed test-proj)"
+    echo '{"mcpServers":{}}' > "$(cache_project_managed test-proj)/github.json"
     run_cco start "test-proj" --dry-run --dump
-    # Stale file in project dir is preserved (dry-run is side-effect free)
-    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.cco/managed/github.json"
+    # Stale file is preserved (dry-run is side-effect free)
+    assert_file_exists "$(cache_project_managed test-proj)/github.json"
     # Dry-run output does NOT contain github.json (disabled)
     assert_file_not_exists "$DRY_RUN_DIR/.cco/managed/github.json"
 }

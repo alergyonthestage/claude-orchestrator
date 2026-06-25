@@ -158,16 +158,18 @@ test_packs_md_removed_when_no_packs() {
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
 
-    # Pre-create a stale packs.md in the project dir (left from a previous run)
+    # Pre-create a stale packs.md in the committed project tree (left from a
+    # previous run). The committed <repo>/.cco/ is the :ro source (P5).
+    local cco; cco=$(host_cco_dir "$tmpdir" "test-proj")
     printf '<!-- stale -->\n@/workspace/.claude/packs/old/file.md\n' \
-        > "$CCO_PROJECTS_DIR/test-proj/.claude/packs.md"
+        > "$cco/claude/packs.md"
 
     run_cco start "test-proj" --dry-run --dump
 
     # Dry-run does not produce packs.md when project has no packs
     assert_file_not_exists "$DRY_RUN_DIR/.claude/packs.md"
-    # Stale file in project dir is preserved (dry-run is side-effect free)
-    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.claude/packs.md"
+    # Stale file in the committed tree is preserved (dry-run is side-effect free)
+    assert_file_exists "$cco/claude/packs.md"
 }
 
 test_packs_md_missing_pack_silently_skipped() {
@@ -424,7 +426,7 @@ YAML
     local first_content
     first_content=$(cat "$first_ws")
     # Copy the generated workspace.yml to the project dir (as cco start would normally do)
-    local project_ws="$CCO_PROJECTS_DIR/test-proj/.claude/workspace.yml"
+    local project_ws="$(host_cco_dir "$tmpdir" test-proj)/claude/workspace.yml"
     mkdir -p "$(dirname "$project_ws")"
     cp "$first_ws" "$project_ws"
     # Second run
@@ -657,12 +659,12 @@ YAML
 )"
     run_cco start "test-proj" --dry-run --dump
     # No pack files should exist in the project directory
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/rules/style.md"
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/agents/bot.md"
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/skills/deploy/SKILL.md"
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/packs/no-copy-pack/guide.md"
+    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/rules/style.md"
+    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/agents/bot.md"
+    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/skills/deploy/SKILL.md"
+    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/packs/no-copy-pack/guide.md"
     # No .cco/pack-manifest should be created
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/.cco/pack-manifest"
+    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/.cco/pack-manifest"
 }
 
 # ── legacy manifest cleanup ──────────────────────────────────────────
@@ -676,7 +678,7 @@ test_legacy_manifest_cleaned_on_start() {
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
 
     # Simulate legacy state: manifest + copied files
-    local proj_claude="$CCO_PROJECTS_DIR/test-proj/.claude"
+    local proj_claude="$(host_cco_dir "$tmpdir" test-proj)/claude"
     mkdir -p "$proj_claude/rules" "$proj_claude/agents" "$proj_claude/.cco"
     echo "old rule" > "$proj_claude/rules/legacy-rule.md"
     echo "old agent" > "$proj_claude/agents/legacy-agent.md"
