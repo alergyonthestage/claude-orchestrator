@@ -213,6 +213,16 @@ Decided (review F40 — Option A); output format detail in `design.md` §7/§6.2
   a gate — ADR-0008). `--offline`/`--no-cache` reuse the `cmd-update.sh` conventions verbatim
   (`--offline` wins when combined). Home: **P4/P5**.
 
+> **Shipped P5-5 (2026-06-25; decision unchanged except one superseded scope item).** `_update_check` in
+> `lib/cmd-update.sh`, branched from `cmd_update` before the migration/discovery flow. Two impl notes:
+> (1) **Iteration set = packs + templates only — the "projects" entry above is SUPERSEDED.** P4-4e/ADR-0023
+> D4c removed project publish/install/update; a project rides its code-repo's own git remote, not a sharing
+> repo (P13), so it has no "upstream-update surface" (cli.md §3.16 states this). The legacy installed-project
+> remote check in `update.sh` is untouched and separate from `--check`. (2) Templates are comparable because
+> **P5-5a** (`5753513`) added template `installed_commit` recording (new `_cco_template_meta`); the install-
+> presence gate is the STATE `base/` ancestor, and a `url: local` snapshot is skipped. `--offline` maps
+> comparable rows to `indeterminate (offline)`.
+
 ## Alternatives Considered
 
 | Decision | Chosen | Rejected alternative(s) | Why |

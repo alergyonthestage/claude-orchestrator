@@ -305,7 +305,7 @@ CCO has two update sources:
 
 ```bash
 cco update              # migrations + eager vault migration + available framework updates
-cco update --check      # list installed packs/templates with an upstream update [planned]
+cco update --check      # list installed packs/templates with an upstream update
 cco update --news       # show changelog (new features)
 ```
 
@@ -340,7 +340,7 @@ committed `<repo>/.cco/`. **Tip**: if you've heavily restructured a file, use
 ### 7.3 Upstream pack/template updates
 
 ```bash
-cco update --check                     # which installed resources have an update? [planned]
+cco update --check                     # which installed resources have an update?
 cco pack update acme-conventions       # 3-way merge against the recorded STATE base
 cco pack update --all
 cco template update acme-service
@@ -455,7 +455,7 @@ cco pack publish team-rules team           # sync-before-publish (3-way merge)
 
 # Consumer
 cco pack install https://github.com/company/team-sharing.git --pick team-rules
-cco update --check                          # see when an update is available [planned]
+cco update --check                          # see when an update is available
 cco pack update team-rules
 ```
 
@@ -499,7 +499,7 @@ versioned and **not** synced in v1:
 | Command | Purpose |
 |---------|---------|
 | `cco update` | Migrations + eager vault migration + available framework updates + changelog |
-| `cco update --check` | List installed packs/templates with an upstream update — 🚧 planned, ships in a later release |
+| `cco update --check` | List installed packs/templates with an upstream update (read-only, 3-state, exit 0) |
 | `cco update --sync [scope]` | Interactive framework file merge |
 | `cco update --diff [scope]` | Preview framework changes |
 | `cco update --news` | Show changelog details |
