@@ -10,8 +10,8 @@ Branch `feat/vault/decentralized-config`, commits **LOCAL** (the maintainer push
 
 ## ⏩ RESUME STATUS (read this FIRST)
 
-> **✅ PHASES 0–4 CLOSED + P5-0…P5-5 DONE (2026-06-25). ▶ RESUME AT P5-6.** Build order (maintainer-confirmed):
-> P5-0 → P5-1 → P5-2 → P5-3 → P5-4 → P5-5 → **P5-6 (config-protect docs)** → **P5-doc** → **pre-merge dogfooding**.
+> **✅ PHASES 0–4 CLOSED + P5-0…P5-6 DONE (2026-06-25). ▶ RESUME AT P5-doc.** Build order (maintainer-confirmed):
+> P5-0 → P5-1 → P5-2 → P5-3 → P5-4 → P5-5 → P5-6 (config-protect docs ✅) → **P5-doc** → **pre-merge dogfooding**.
 > The P4→P5 boundary audit is consumed (`reviews/24-06-2026-p4-p5-adherence-review.md`, 0 code 🔴). **Index
 > per-project namespacing = POST-V1** (ADR-0022 D2). **`cco config protect` helper = POST-V1** (ADR-0023 D6).
 
@@ -27,6 +27,10 @@ Branch `feat/vault/decentralized-config`, commits **LOCAL** (the maintainer push
   pack-collision ERROR) + `cco project coords` (cross-unit ADR-0016 D3, `--sync --from` in-place writer).
 - **P5-5** `5753513`/`13b7573`/`b5080fc` — `cco update --check` (DATA-source-driven, install-presence-gated
   3-state, exit-0; **packs+templates only**, projects excluded P13) + template `installed_commit` prereq.
+- **P5-6** `c96fcda`/`6e03502` — config-protect **governance docs** (no code): configuration-management.md
+  §9 "Governance & Protecting Config" (P17 delegate-to-git, two governance models, per-host CODEOWNERS +
+  ruleset setup, 🚧 helper note) + design.md §11/§7 living-doc reconciliation to docs-only (ADR-0020 D4 +
+  ADR-0023 D6). Suite **894/0** (docs-only, no delta).
 
 **Suite 894/0** — delta-green is measured against **ZERO** failures (any failure = regression). Run with the
 hatch: `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test` (`--file <name>` / `--filter <substr>` to scope).
@@ -36,8 +40,8 @@ hatch: `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test` (`--file <name>` / `--filter <subst
 **record any reconciliation**; a genuine design gap ⇒ **PAUSE and discuss**.
 
 **First actions (resume):** (1) `git log --oneline -12` + read the live progress note
-`decentralized-config-impl-progress.md` (cursor: P5-5 done; P5-6 scope at the tail); (2) re-confirm baseline
-**894/0**; (3) start **P5-6** (§2); per §0, **propose the decomposition to the maintainer before writing.**
+`decentralized-config-impl-progress.md` (cursor: P5-6 done; P5-doc scope at the tail); (2) re-confirm baseline
+**894/0**; (3) start **P5-doc** (§2); per §0, **propose the decomposition to the maintainer before writing.**
 
 ---
 
@@ -69,7 +73,7 @@ just before merging to `develop`. It is NOT needed to start P5-6.
 
 > Each unit: code-ground fresh, confirm micro-UX with the maintainer, delta-green each commit (vs **894/0**).
 
-- **▶ P5-6 — `cco config protect`: DOCUMENTATION ONLY (no code).** ADR-0020 D4 + **ADR-0023 D6** pin this:
+- **P5-6 ✅ DONE — `cco config protect`: DOCUMENTATION ONLY (no code).** ADR-0020 D4 + **ADR-0023 D6** pin this:
   v1 ships **a guide section**, the **helper command is deferred post-v1**. Write the guidance for protecting
   `<repo>/.cco/**` via the **host**, delegated-to-git (P17, like auth P7) — cco never gatekeeps:
   - CODEOWNERS goes to a **host-recognized** path — repo-root `CODEOWNERS` or `.github/CODEOWNERS`,
@@ -81,7 +85,7 @@ just before merging to `develop`. It is NOT needed to start P5-6.
   - There is currently **no** `cco config protect` doc section to de-🚧 — this is a NEW guide subsection
     (likely in `configuration-management.md` §Sharing/permissions or a short `permissions` guide).
   - Likely **no suite delta** (docs-only). Confirm placement + scope with the maintainer first.
-- **P5-doc — close-out docs + changelog + migration.** The refactor practice deferred the changelog/migration
+- **▶ P5-doc — close-out docs + changelog + migration.** The refactor practice deferred the changelog/migration
   for all new P5 verbs to here (unmerged branch, no users yet). Tasks:
   - One coherent **`changelog.yml`** entry (or a few) covering the P5 user-visible additions: `cco forget`,
     `cco config validate`, `cco project validate`, `cco project coords`, `cco update --check`,
