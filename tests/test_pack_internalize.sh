@@ -286,3 +286,40 @@ YAML
     assert_output_contains "Disconnected from remote source" || return 1
     assert_file_contains "$(data_pack_source remote-only-pack)" "url: local" || return 1
 }
+
+# ── --as fork (ADR-0023 D4) ───────────────────────────────────────────────
+
+test_pack_internalize_as_forks_leaving_original() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    _setup_source_pack "$tmpdir" "orig-pack" "$tmpdir/docs"
+    # The original tracks an upstream; the fork must NOT inherit it.
+    mkdir -p "$(dirname "$(data_pack_source orig-pack)")"
+    printf 'url: https://example.com/sharing.git\n' > "$(data_pack_source orig-pack)"
+
+    run_cco pack internalize orig-pack --as fork-pack
+    assert_output_contains "Forked pack 'orig-pack'"
+
+    # Fork is self-contained: knowledge internalized, retitled, no source: field.
+    assert_file_exists "$CCO_PACKS_DIR/fork-pack/knowledge/guide.md"
+    assert_file_contains "$CCO_PACKS_DIR/fork-pack/pack.yml" "name: fork-pack"
+    assert_file_not_contains "$CCO_PACKS_DIR/fork-pack/pack.yml" "source:"
+    assert_file_not_exists "$(data_pack_source fork-pack)"   # locally-authored, no upstream
+
+    # Original is untouched: still named orig-pack, still source-linked.
+    assert_file_contains "$CCO_PACKS_DIR/orig-pack/pack.yml" "name: orig-pack"
+    assert_file_contains "$CCO_PACKS_DIR/orig-pack/pack.yml" "source:"
+    assert_file_contains "$(data_pack_source orig-pack)" "example.com"
+}
+
+test_pack_internalize_as_rejects_existing_name() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    _setup_source_pack "$tmpdir" "p1" "$tmpdir/docs"
+    mkdir -p "$CCO_PACKS_DIR/taken"
+    if run_cco pack internalize p1 --as taken 2>/dev/null; then
+        fail "internalize --as must refuse an already-existing target name"
+    fi
+}

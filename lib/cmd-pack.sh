@@ -801,19 +801,24 @@ _update_single_pack() {
 # ── Pack internalize ─────────────────────────────────────────────────
 
 cmd_pack_internalize() {
-    local name=""
+    local name="" newname=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            --as) [[ -z "${2:-}" ]] && die "--as requires a new pack name"; newname="$2"; shift 2 ;;
             --help)
                 cat <<'EOF'
-Usage: cco pack internalize <name>
+Usage: cco pack internalize <name> [--as <new-name>]
 
-Convert a pack to fully self-contained and locally owned:
+Convert a pack to fully self-contained and locally owned (sever its one external
+coupling — the upstream url; ADR-0019 D3/D4, ADR-0023 D4):
   - If pack.yml has knowledge.source, copies referenced files into
     the pack's own knowledge/ directory and removes the source: field.
   - If the pack tracks a remote sharing repo, disconnects by setting its
     recorded url to local (the pack will no longer receive remote updates).
+
+  --as <new-name>   Fork instead of in-place: copy <name> to a new self-contained
+                    pack <new-name>; the original stays linked to its source.
 EOF
                 return 0
                 ;;
@@ -828,13 +833,31 @@ EOF
         esac
     done
 
-    [[ -z "$name" ]] && die "Usage: cco pack internalize <name>"
+    [[ -z "$name" ]] && die "Usage: cco pack internalize <name> [--as <new-name>]"
     check_global
 
     local pack_dir="$PACKS_DIR/$name"
     local pack_yml="$pack_dir/pack.yml"
     [[ ! -d "$pack_dir" ]] && die "Pack '$name' not found in packs/."
     [[ ! -f "$pack_yml" ]] && die "Pack '$name': pack.yml not found."
+
+    # --as: fork to a new self-contained pack, leaving the original linked. The
+    # copy carries no DATA source, so it is locally-authored by construction; the
+    # internalize below then folds in any knowledge.source. (ADR-0023 D4 fork.)
+    if [[ -n "$newname" ]]; then
+        [[ "$newname" == "$name" ]] && die "--as name must differ from '$name'."
+        [[ ! "$newname" =~ ^[a-z0-9][a-z0-9-]*$ ]] && die "Invalid pack name '$newname' (use lowercase letters, digits, hyphens)."
+        [[ -d "$PACKS_DIR/$newname" ]] && die "Pack '$newname' already exists."
+        cp -R "$pack_dir" "$PACKS_DIR/$newname"
+        # Retitle the forked pack.yml (top-level name:).
+        local _tmpn; _tmpn=$(mktemp)
+        awk -v n="$newname" '!done && /^name:/ { print "name: " n; done=1; next } { print }' \
+            "$PACKS_DIR/$newname/pack.yml" > "$_tmpn" && mv "$_tmpn" "$PACKS_DIR/$newname/pack.yml"
+        ok "Forked pack '$name' → '$newname' (original stays linked to its source)."
+        name="$newname"
+        pack_dir="$PACKS_DIR/$newname"
+        pack_yml="$pack_dir/pack.yml"
+    fi
 
     local did_something=false
 

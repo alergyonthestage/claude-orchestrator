@@ -517,7 +517,7 @@ versioned and **not** synced in v1:
 | `cco pack install <url>` / `cco template install <url>` | Install from a sharing repo |
 | `cco pack export\|import` / `cco template export\|import` | Tar-snapshot share |
 | `cco project export\|import` | Snapshot/bootstrap a project's `<repo>/.cco/` |
-| `cco pack internalize <name>` | Cut the upstream coordinate (`cco template internalize` — 🚧 planned) |
+| `cco pack internalize <name> [--as <new>]` | Cut the upstream coordinate (`cco template internalize` too; `--as` forks) |
 
 ### Entry & introspection
 

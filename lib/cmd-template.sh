@@ -48,6 +48,7 @@ Commands:
   install <url>              Install a template from a sharing repo
   export <name>              Export a template as a .tar.gz archive
   import <archive>           Import a template from a .tar.gz archive
+  internalize <name>         Disconnect a template from its remote source
 
 Run 'cco template <command> --help' for command-specific options.
 EOF
@@ -56,15 +57,16 @@ EOF
     shift
 
     case "$subcmd" in
-        list)    cmd_template_list "$@" ;;
-        show)    cmd_template_show "$@" ;;
-        create)  cmd_template_create "$@" ;;
-        remove)  cmd_template_remove "$@" ;;
-        publish) cmd_template_publish "$@" ;;
-        install) cmd_template_install "$@" ;;
-        export)  cmd_template_export "$@" ;;
-        import)  cmd_template_import "$@" ;;
-        *)       die "Unknown template command: $subcmd. Run 'cco template --help'." ;;
+        list)        cmd_template_list "$@" ;;
+        show)        cmd_template_show "$@" ;;
+        create)      cmd_template_create "$@" ;;
+        remove)      cmd_template_remove "$@" ;;
+        publish)     cmd_template_publish "$@" ;;
+        install)     cmd_template_install "$@" ;;
+        export)      cmd_template_export "$@" ;;
+        import)      cmd_template_import "$@" ;;
+        internalize) cmd_template_internalize "$@" ;;
+        *)           die "Unknown template command: $subcmd. Run 'cco template --help'." ;;
     esac
 }
 
@@ -370,6 +372,72 @@ EOF
     _tags_forget templates "$name"
 
     ok "Template '$name' removed."
+}
+
+# ── cco template internalize ──────────────────────────────────────────────
+# Sever a template's one external coupling — the upstream url (ADR-0019 D3/D4,
+# ADR-0023 D4): set its recorded DATA source to local so it stops receiving
+# updates. With --as, fork to a new self-contained template instead, leaving the
+# original linked. Templates have no knowledge.source, so this is the
+# source-disconnect only (the template analog of `cco pack internalize`).
+cmd_template_internalize() {
+    local name="" newname=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --as) [[ -z "${2:-}" ]] && die "--as requires a new template name"; newname="$2"; shift 2 ;;
+            --help)
+                cat <<'EOF'
+Usage: cco template internalize <name> [--as <new-name>]
+
+Disconnect a template from its remote sharing repo (set its recorded source to
+local — it will no longer receive updates).
+
+  --as <new-name>   Fork instead of in-place: copy <name> to a new self-contained
+                    template <new-name>; the original stays linked to its source.
+EOF
+                return 0
+                ;;
+            -*) die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$name" ]]; then name="$1"; shift
+                else die "Unexpected argument: $1"; fi
+                ;;
+        esac
+    done
+
+    [[ -z "$name" ]] && die "Usage: cco template internalize <name> [--as <new-name>]"
+    check_global
+
+    # Locate the user template (project or pack kind). Native templates have no
+    # source to disconnect and are not user-owned.
+    local kind="" found_dir="" k
+    for k in project pack; do
+        if [[ -d "$TEMPLATES_DIR/$k/$name" ]]; then kind="$k"; found_dir="$TEMPLATES_DIR/$k/$name"; break; fi
+    done
+    [[ -z "$found_dir" ]] && die "User template '$name' not found."
+
+    # --as: fork to a new self-contained template (the copy carries no DATA source).
+    if [[ -n "$newname" ]]; then
+        [[ "$newname" == "$name" ]] && die "--as name must differ from '$name'."
+        [[ ! "$newname" =~ ^[a-z0-9][a-z0-9-]*$ ]] && die "Invalid template name '$newname' (use lowercase letters, digits, hyphens)."
+        [[ -d "$TEMPLATES_DIR/$kind/$newname" ]] && die "Template '$newname' already exists."
+        cp -R "$found_dir" "$TEMPLATES_DIR/$kind/$newname"
+        ok "Forked template '$name' → '$newname' (original stays linked to its source)."
+        name="$newname"
+        found_dir="$TEMPLATES_DIR/$kind/$newname"
+    fi
+
+    # Disconnect: rewrite the DATA source to local, preserving install history.
+    local sf; sf=$(_cco_template_source "$found_dir")
+    if [[ -f "$sf" ]]; then
+        local src_url; src_url=$(yml_get "$sf" "url")
+        if [[ -n "$src_url" && "$src_url" != "local" ]]; then
+            { printf 'url: local\n'; printf '# previously installed from: %s\n' "$src_url"; } > "$sf"
+            ok "Template '$name' disconnected from remote source: $src_url"
+            return 0
+        fi
+    fi
+    ok "Template '$name' is already self-contained (no remote tracking)."
 }
 
 # ── Template sharing (2×2; ADR-0018 D2, reuses the pack sharing path) ──────
