@@ -6,7 +6,7 @@
 #           cmd_pack_install(), cmd_pack_update(), cmd_pack_export(),
 #           cmd_pack_internalize()
 # Dependencies: colors.sh, utils.sh, yaml.sh, packs.sh, manifest.sh, remote.sh
-# Globals: PACKS_DIR, USER_CONFIG_DIR (projects enumerated via the STATE index, P5)
+# Globals: PACKS_DIR (projects enumerated via the STATE index, P5)
 
 # ── Pack commands ─────────────────────────────────────────────────────
 
@@ -53,17 +53,7 @@ EOF
     local pack_dir="$PACKS_DIR/$name"
     [[ -d "$pack_dir" ]] && die "Pack '$name' already exists at packs/$name/"
 
-    # Cross-branch uniqueness check (if vault exists)
-    if [[ -d "$USER_CONFIG_DIR/.git" ]]; then
-        local current_branch
-        current_branch=$(git -C "$USER_CONFIG_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)
-        local conflict_branch
-        if conflict_branch=$(_name_exists_on_other_branch "$USER_CONFIG_DIR" "pack" "$name" "$current_branch"); then
-            die "Pack '$name' already exists on branch '$conflict_branch'. Pack names must be unique across all profiles."
-        fi
-    fi
-
-    # Ensure packs directory exists (may have been removed by vault move)
+    # Ensure the packs store exists (CONFIG bucket, ~/.cco/packs).
     mkdir -p "$PACKS_DIR"
 
     # Resolve and copy template

@@ -32,18 +32,21 @@ IMAGE_NAME="claude-orchestrator:latest"
 LIB_DIR="$REPO_ROOT/lib"
 
 # ── User config directory resolution ─────────────────────────────────
-# CCO_USER_CONFIG_DIR is the unified user-data root for the flat stores
-# (packs/templates/llms). Projects are NOT central anymore — they live in each
-# repo's <repo>/.cco/ and resolve through the STATE index (P5; no $PROJECTS_DIR).
+# CCO_USER_CONFIG_DIR is the LEGACY-vault pointer: the pre-decentralized
+# user-config store that `cco init --migrate` reads from (and offers to remove),
+# and the runtime root for the internal tutorial/config-editor sessions. It is
+# NOT the home of the personal flat stores anymore — packs/templates live in the
+# CONFIG bucket (~/.cco) and llms content+cache-state in CACHE (F1; design
+# §2.2/§2.3, ADR-0016 D7/D8). Projects are decentralized in each repo's
+# <repo>/.cco/ and resolve through the STATE index (P5; no $PROJECTS_DIR).
 USER_CONFIG_DIR="${CCO_USER_CONFIG_DIR:-$REPO_ROOT/user-config}"
 
 # Global config home is the decentralized personal store ~/.cco/global
 # (design §2.3). CONFIG is always $HOME/.cco (no XDG override; matches
-# _cco_config_dir). packs/templates/llms are flat stores under the user-data root.
+# _cco_config_dir). PACKS_DIR/TEMPLATES_DIR/LLMS_DIR are assigned AFTER the
+# module load below, since their decentralized homes derive from the bucket
+# resolvers in paths.sh (_cco_config_dir / _cco_cache_dir).
 GLOBAL_DIR="${CCO_GLOBAL_DIR:-$HOME/.cco/global}"
-PACKS_DIR="${CCO_PACKS_DIR:-$USER_CONFIG_DIR/packs}"
-LLMS_DIR="${CCO_LLMS_DIR:-$USER_CONFIG_DIR/llms}"
-TEMPLATES_DIR="${CCO_TEMPLATES_DIR:-$USER_CONFIG_DIR/templates}"
 
 # ── Load modules ─────────────────────────────────────────────────────
 source "$LIB_DIR/colors.sh"
@@ -91,6 +94,16 @@ source "$LIB_DIR/cmd-clean.sh"
 source "$LIB_DIR/cmd-remote.sh"
 source "$LIB_DIR/remote.sh"
 source "$LIB_DIR/cmd-forget.sh"
+
+# Personal flat stores in their decentralized homes (F1; design §2.2/§2.3,
+# ADR-0016 D7/D8): packs/templates → CONFIG (~/.cco), llms content+cache-state →
+# CACHE. CONFIG has no XDG override, so the plain $HOME form matches
+# _cco_config_dir without an eager resolver call at startup (as GLOBAL_DIR does);
+# CACHE is XDG-overridable, so llms derives from the resolver. A CCO_* override
+# always wins (tests/dev seams). Grouped here (post-paths.sh) for the resolver.
+PACKS_DIR="${CCO_PACKS_DIR:-$HOME/.cco/packs}"
+TEMPLATES_DIR="${CCO_TEMPLATES_DIR:-$HOME/.cco/templates}"
+LLMS_DIR="${CCO_LLMS_DIR:-$(_cco_llms_dir)}"
 
 usage() {
     cat <<'EOF'

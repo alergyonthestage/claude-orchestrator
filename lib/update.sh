@@ -139,14 +139,6 @@ _update_global() {
                 return 1
             fi
 
-            # Refresh paths if migration moved the directory (e.g. 003_user-config-dir)
-            if [[ ! -d "$installed_dir" && -d "$USER_CONFIG_DIR/global/.claude" ]]; then
-                GLOBAL_DIR="$USER_CONFIG_DIR/global"
-                PACKS_DIR="$USER_CONFIG_DIR/packs"
-                TEMPLATES_DIR="$USER_CONFIG_DIR/templates"
-                installed_dir="$GLOBAL_DIR/.claude"
-            fi
-
             # Always refresh meta/base paths after migrations — migration 009
             # moves .cco-meta → .cco/meta within the same directory, so the
             # directory-level check above won't catch it.

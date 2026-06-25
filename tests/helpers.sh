@@ -27,17 +27,22 @@ setup_cco_env() {
 	allow = always
 GITCFG
 
-    # User-data root for the flat stores (packs/templates/llms). Projects are
-    # decentralized (each repo's <repo>/.cco/, resolved via the STATE index) —
-    # there is no central projects dir (P5).
+    # Legacy-vault pointer: the pre-decentralized user-config store that
+    # `cco init --migrate` reads from, and the runtime root for the internal
+    # tutorial/config-editor sessions. It is NOT the flat-store home anymore (F1).
     export CCO_USER_CONFIG_DIR="$tmpdir/user-config"
     # Global config home is the decentralized ~/.cco/global (= $HOME/.cco/global,
     # since HOME is redirected into $tmpdir above). bin/cco, the update/clean
     # engines, and check_global all resolve GLOBAL_DIR from CCO_GLOBAL_DIR.
     export CCO_GLOBAL_DIR="$tmpdir/home/.cco/global"
-    export CCO_PACKS_DIR="$tmpdir/user-config/packs"
-    export CCO_TEMPLATES_DIR="$tmpdir/user-config/templates"
-    export CCO_LLMS_DIR="$tmpdir/user-config/llms"
+    # Personal flat stores in their decentralized homes (F1; ADR-0016 D7/D8):
+    # packs/templates in the CONFIG bucket (~/.cco), llms content+cache-state in
+    # CACHE ($tmpdir/cache = CCO_CACHE_HOME below). These match what bin/cco
+    # derives from the bucket resolvers, so migration writes and runtime reads
+    # land in the same place (the F1 split-brain is closed).
+    export CCO_PACKS_DIR="$tmpdir/home/.cco/packs"
+    export CCO_TEMPLATES_DIR="$tmpdir/home/.cco/templates"
+    export CCO_LLMS_DIR="$tmpdir/cache/llms"
     export CCO_DUMMY_REPO="$tmpdir/dummy-repo"
     # XDG 4-bucket overrides (decentralized config). CCO_ALLOW_HOST_RESOLVE
     # bypasses the in-container guard so the host-side resolver runs in test/dev.
@@ -146,10 +151,10 @@ host_cco_dir() { printf '%s' "$1/repos/$2/.cco"; }
 # Create a pack definition in packs/<name>/pack.yml
 # Usage: create_pack "$tmpdir" "pack-name" "$yml_content"
 create_pack() {
-    local tmpdir="$1"
+    local tmpdir="$1"   # kept for signature compatibility; PACKS_DIR is now CONFIG
     local name="$2"
     local yml_content="$3"
-    local pack_dir="$tmpdir/user-config/packs/$name"
+    local pack_dir="$CCO_PACKS_DIR/$name"   # ~/.cco/packs (F1), not user-config
     mkdir -p "$pack_dir"
     printf '%s\n' "$yml_content" > "$pack_dir/pack.yml"
 }

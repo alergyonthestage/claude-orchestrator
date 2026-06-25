@@ -4,7 +4,7 @@
 # Provides: cmd_remote(), remote_get_url(), remote_get_token(),
 #           remote_resolve_token_for_url(), remote_list_names()
 # Dependencies: colors.sh, utils.sh
-# Globals: USER_CONFIG_DIR
+# Globals: PACKS_DIR (remotes registry → DATA/STATE via paths.sh helpers)
 
 # M3 split (ADR-0016 D7): the url registry (name=url) lives in DATA, synced
 # across the user's machines but de-tokenized; auth tokens (name=token) live in
@@ -161,15 +161,6 @@ _cmd_remote_add() {
     # Store token (STATE token store, 0600) if provided
     [[ -n "$token" ]] && _remote_token_set "$name" "$token"
 
-    # Sync with vault git if initialized. Transitional: the vault (and this
-    # coupling) is removed in Phase 3 — M3 here only splits the registry storage
-    # into DATA (url) + STATE (token).
-    if [[ -d "$USER_CONFIG_DIR/.git" ]]; then
-        if ! git -C "$USER_CONFIG_DIR" remote get-url "$name" >/dev/null 2>&1; then
-            git -C "$USER_CONFIG_DIR" remote add "$name" "$url" 2>/dev/null || true
-        fi
-    fi
-
     if [[ -n "$token" ]]; then
         ok "Added remote '$name' -> $url [token saved]"
     else
@@ -216,11 +207,6 @@ _cmd_remote_remove() {
     grep -v "^${name}=" "$rf" > "$tmpfile"
     mv "$tmpfile" "$rf"
     _remote_token_remove "$name" || true
-
-    # Sync with vault git if initialized (transitional — removed in Phase 3).
-    if [[ -d "$USER_CONFIG_DIR/.git" ]]; then
-        git -C "$USER_CONFIG_DIR" remote remove "$name" 2>/dev/null || true
-    fi
 
     ok "Removed remote '$name'"
 }

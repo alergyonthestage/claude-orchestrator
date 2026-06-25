@@ -11,7 +11,7 @@
 #           _cco_project_source(), _cco_pack_source(), _cco_template_source(),
 #           _cco_pack_install_tmp()
 # Dependencies: colors.sh (die)
-# Globals: USER_CONFIG_DIR, GLOBAL_DIR
+# Globals: none — the resolvers read $HOME and the CCO_*_HOME / XDG_*_HOME env
 
 # All framework-managed files live inside per-scope .cco/ directories.
 # During rollout (migration 009), helpers check the new path first and
@@ -50,6 +50,15 @@ _cco_remotes_file() {
 # the M3 split that keeps secrets off the synced DATA registry).
 _cco_remotes_token_file() {
     printf '%s\n' "$(_cco_state_dir)/remotes-token"
+}
+
+# Personal llms store — content + its cache-state sidecar (<name>/.cco/source:
+# url/variant/resolved_url/etag/downloaded) → CACHE: re-fetchable from the
+# coordinate, deduped per machine by name, never synced (F1; design §2.2 line
+# 201, ADR-0016 D2/D7). NOT in the `cco config` allowlist — it must not be
+# versioned config. bin/cco sets LLMS_DIR from this (CCO_LLMS_DIR override wins).
+_cco_llms_dir() {
+    printf '%s\n' "$(_cco_cache_dir)/llms"
 }
 
 # ── Global .cco/meta decompose homes (ADR-0013 D4 / ADR-0025) ───────
@@ -151,8 +160,9 @@ _cco_project_pack_manifest() {
 # Install-provenance `source` → DATA, identity-keyed (ADR-0022 D1 / ADR-0016 D5).
 # The file holds the machine-agnostic upstream coordinate only (`url`/`ref`/
 # `resource`); machine-local bookkeeping (`commit`/`installed`/`updated`) lives in
-# the STATE `/update` meta. llms `source` is NOT relocated (already CACHE-split,
-# ADR-0016 D2/D7). Pack identity <name> = the flat-store dir basename.
+# the STATE `/update` meta. (llms content + its cache-state sidecar live in CACHE
+# via _cco_llms_dir — F1 / ADR-0016 D2/D7.) Pack identity <name> = the flat-store
+# dir basename.
 _cco_pack_source() {
     printf '%s\n' "$(_cco_data_dir)/packs/$(basename "$1")/source"
 }
