@@ -91,6 +91,52 @@ test_start_no_divergence_when_members_identical() {
     assert_output_not_contains "divergent .cco" || return 1
 }
 
+test_start_resolution_before_notices() {
+    # H1 (design §4.4 / §11 P1, ADR-0008): member resolution runs BEFORE the
+    # non-blocking config reminders, so a divergence/reminder is never computed
+    # against an unresolved/empty index. Pin the observable ORDER in the output
+    # stream: the unresolved-ref notice ("run 'cco resolve'") must PRECEDE the
+    # divergence notice ("divergent .cco"). A refactor that reversed the order
+    # would silently compute reminders against an unresolved index — and slip
+    # past delta-green without this assertion.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_global_from_defaults "$tmp"
+
+    # Two resolved repos with divergent .cco → the divergence notice fires.
+    _str_git_repo "$tmp/repoA" "# config A"
+    _str_git_repo "$tmp/repoB" "# config B (different)"
+    seed_index_path repoA "$tmp/repoA"
+    seed_index_path repoB "$tmp/repoB"
+
+    # A url-bearing repo absent from the index → unresolved (conscious-skip),
+    # which emits the "run 'cco resolve'" notice after resolution.
+    create_project "$tmp" "proj" "$(cat <<'YAML'
+name: proj
+description: "Test"
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+repos:
+  - name: repoA
+  - name: repoB
+  - name: ghost
+    url: https://example.com/ghost.git
+YAML
+)"
+    run_cco start proj --dry-run || return 1
+    assert_output_contains "cco resolve" || return 1
+    assert_output_contains "divergent .cco" || return 1
+
+    local resolve_ln notice_ln
+    resolve_ln=$(printf '%s\n' "$CCO_OUTPUT" | grep -n "cco resolve" | head -1 | cut -d: -f1)
+    notice_ln=$(printf '%s\n' "$CCO_OUTPUT" | grep -n "divergent .cco" | head -1 | cut -d: -f1)
+    [[ -n "$resolve_ln" && -n "$notice_ln" && "$resolve_ln" -lt "$notice_ln" ]] \
+        || fail "H1: resolution notice (line ${resolve_ln:-none}) must precede divergence notice (line ${notice_ln:-none})"
+}
+
 test_start_succeeds_with_reminders() {
     # The reminder hook must not break the start flow (P14 non-blocking): a dirty
     # member still produces a successful dry-run compose.

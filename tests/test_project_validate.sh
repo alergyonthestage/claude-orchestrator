@@ -218,6 +218,63 @@ YAML
     assert_equals 0 "$rc"
 }
 
+# ── P15 discriminator: coordinate presence = cache vs authored source ─────
+# These pin the load-bearing P15 rule (ADR-0019 D3 / design §2.4): the PRESENCE
+# of a coordinate (url) marks a pack as a cache of an upstream; its ABSENCE marks
+# an authored-in-repo source. The discriminator lives in `cco project validate`,
+# not the url-agnostic mount resolver (_pack_resolve_dir). A delta-green run could
+# otherwise mask a regression that treated a url-bearing pack as a source (or
+# vice-versa) — a silent-wrong-build.
+
+test_pack_with_coordinate_is_cache_not_source() {
+    # SAME physical layout as the collision ERROR test (pack in BOTH the repo and
+    # ~/.cco/packs) but the entry carries a url → it is a CACHE, so the D4
+    # silent-wrong-build collision must NOT fire. The url flips ERROR → clean.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    create_project "$tmpdir" "cachepack" "$(cat <<'YAML'
+name: cachepack
+repos:
+  - name: backend
+    url: git@github.com:org/backend.git
+packs:
+  - name: shared
+    url: https://example.com/sharing.git
+YAML
+)"
+    mkdir -p "$(host_cco_dir "$tmpdir" cachepack)/packs/shared"
+    mkdir -p "$CCO_PACKS_DIR/shared"
+    local rc=0
+    _pv_in "$(_pv_repo "$tmpdir" cachepack)" project validate || rc=$?
+    assert_equals 0 "$rc"
+    assert_output_not_contains "collision"
+    assert_output_not_contains "packs.shared"
+}
+
+test_pack_without_coordinate_is_authored_source() {
+    # A url-less pack is an authored-in-repo source: it MUST exist at
+    # <repo>/.cco/packs/<name>. With no source anywhere, validate flags a
+    # reachability gap (sev 1) — the authored half of the discriminator.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    create_project "$tmpdir" "authsrc" "$(cat <<'YAML'
+name: authsrc
+repos:
+  - name: backend
+    url: git@github.com:org/backend.git
+packs:
+  - orphan-pack
+YAML
+)"
+    # orphan-pack created NOWHERE (neither repo nor ~/.cco/packs).
+    local rc=0
+    _pv_in "$(_pv_repo "$tmpdir" authsrc)" project validate || rc=$?
+    assert_equals 1 "$rc"
+    assert_output_contains "packs.orphan-pack:"
+    assert_output_contains "no source"
+    assert_output_contains "reachability=1"
+}
+
 # ── severity is the numeric max ──────────────────────────────────────────
 
 test_project_validate_exit_is_max_severity() {
