@@ -75,6 +75,7 @@ source "$LIB_DIR/cmd-chrome.sh"
 source "$LIB_DIR/cmd-project-query.sh"
 source "$LIB_DIR/cmd-project-add.sh"
 source "$LIB_DIR/cmd-project-validate.sh"
+source "$LIB_DIR/cmd-project-coords.sh"
 source "$LIB_DIR/cmd-project-export-import.sh"
 source "$LIB_DIR/cmd-pack.sh"
 source "$LIB_DIR/cmd-llms.sh"
@@ -166,6 +167,7 @@ Commands:
   import <archive>       Import a project from a .tar.gz snapshot
   add <res> <name>       Embed a repo|mount|llms|pack coordinate (cwd-first)
   validate [name]        Check share-readiness (coordinates, no path leaks)
+  coords                 Show/reconcile coordinate consistency across units
   list                   List available projects with status
   show <name>            Show project details (repos, packs, config)
 
@@ -184,6 +186,7 @@ EOF
             delete)
                 die "'cco project delete' was removed — a project's config lives in its repo at <repo>/.cco/; remove it with normal git/filesystem ops. To deregister cco's machine-local bookkeeping for a project, use 'cco forget <project>' (the repo is untouched; ADR-0021)." ;;
             validate)    cmd_project_validate "$@" ;;
+            coords)      cmd_project_coords "$@" ;;
             export)      cmd_project_export "$@" ;;
             import)      cmd_project_import "$@" ;;
             add)         cmd_project_add "$@" ;;
