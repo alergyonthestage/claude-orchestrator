@@ -12,18 +12,21 @@ Branch `feat/vault/decentralized-config`, commits **LOCAL** (the maintainer push
 
 ## ⏩ RESUME STATUS (read this FIRST)
 
-> **✅ PHASES 0–4 CLOSED + P5-0/P5-1 DONE (2026-06-25). ▶ RESUME AT P5-2.** The §1 boundary audit ran
+> **✅ PHASES 0–4 CLOSED + P5-0/P5-1/P5-2 DONE (2026-06-25). ▶ RESUME AT P5-3.** The §1 boundary audit ran
 > (`reviews/24-06-2026-p4-p5-adherence-review.md`, Phase-4 fully conformant, 0 code 🔴) — **§1 is consumed,
-> skip it.** P5 build order is maintainer-confirmed: P5-0 → P5-1 → **P5-2** → P5-3 → P5-4 → P5-5 → P5-6 →
+> skip it.** P5 build order is maintainer-confirmed: P5-0 → P5-1 → P5-2 → **P5-3** → P5-4 → P5-5 → P5-6 →
 > P5-doc → dogfooding; **index namespacing = POST-V1**.
 >
 > **Done so far:** **P5-0 ✅** `2f93de8` (llms name-derivation, baseline → 828/0). **P5-1 ✅ (P4-5d
-> central-layout teardown, 4 delta-green commits):** P5-1a `95b7767` (managed runtime → CACHE) · P5-1b-1
-> `0da6153` (pure project.yml readers → STATE index) · P5-1b-2 `6209bae` (`cco clean` → index + artifacts
-> re-homed) · P5-1b-3 `7e9d458` (`cco update` project loop → `<repo>/.cco/claude`; new
-> `_cco_project_seed_update_state` born-at-latest in init+migrate) · P5-1c `0116679` (drop
-> `$PROJECTS_DIR`/`CCO_PROJECTS_DIR` + harness dual-seed + bin/cco legacy branch). **The central project
-> layout is fully gone; every project resolves via the STATE index.**
+> central-layout teardown, 4 delta-green commits):** P5-1a `95b7767` · P5-1b-1 `0da6153` · P5-1b-2
+> `6209bae` · P5-1b-3 `7e9d458` · P5-1c `0116679` (central project layout fully gone; every project
+> resolves via the STATE index). **P5-2 ✅ (`cco forget` + `cco config validate`, ADR-0021, 3 delta-green
+> commits, suite 828→843/0):** P5-2a `ed2b7ee` (delete-cascade in pack/template `remove` + new
+> `_tags_forget` primitive; remote already split, llms needs none) · P5-2b `d706226` (`cco forget
+> <project>` — index/STATE/DATA/CACHE/tags deregister, shared-repo guard, preview+confirm/`-y`, repo
+> untouched, scan self-heal) · P5-2c `93542cd` (`cco config validate [--dry-run|--fix [-y]]` orphan
+> sweep — full predicate set, exit-0 report, STATE/CACHE main-confirm + synced-DATA second-confirm).
+> The ADR-0021 §Open predicate-set item is RESOLVED + forward-annotated.
 
 **Suite 828/0** — delta-green is measured against **ZERO** failures (any failure = regression). Run with
 the hatch: `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test` (`--file <name>` / `--filter <substr>` to scope).
@@ -96,8 +99,8 @@ Transitional Registry + roadmaps. **If 0 🔴 / 0 blockers → Phase 4 CLOSED; p
 
 ## 3. Scope — Phase 5 (the §6 deferred list, on the P4 substrate)
 
-> **✅ BUILD ORDER CONFIRMED (maintainer):** P5-0 llms-fix ✅ → **P5-1** P4-5d teardown ✅ → **▶ P5-2**
-> `cco forget` + `cco config validate` → **P5-3** three-layer pack resolution + `internalize` +
+> **✅ BUILD ORDER CONFIRMED (maintainer):** P5-0 llms-fix ✅ → **P5-1** P4-5d teardown ✅ → **P5-2**
+> `cco forget` + `cco config validate` ✅ → **▶ P5-3** three-layer pack resolution + `internalize` +
 > `export --bundle-packs` → **P5-4** `cco project validate` + `cco project coords` → **P5-5**
 > `cco update --check` → **P5-6** `cco config protect` → **P5-doc** (remove the 🚧 markers as each ships) →
 > **pre-merge dogfooding**. **Index per-project namespacing = POST-V1** (confirmed; global-flat stays,
@@ -110,14 +113,13 @@ before coding** (per §0). Remaining units:
 - **P4-5d — central-layout → index teardown. ✅ DONE (P5-1, 2026-06-25).** Every command enumerates via the
   STATE index; `$PROJECTS_DIR`/`CCO_PROJECTS_DIR` + the bin/cco legacy branch + the harness dual-seed are
   gone; `cco update`'s project loop reads `<repo>/.cco/claude` and new projects are born-at-latest. Suite 828/0.
-- **▶ P5-2 — `cco forget` + `cco config validate`** (ADR-0021). `cco forget <project>` deregisters a project's
-  id-keyed internal state (index paths+projects entry · `tags.yml` · STATE `projects/<id>/` · DATA
-  `projects/<id>/`) — **repo untouched**; index self-heals via cwd-first + `resolve --scan`. Today
-  `bin/cco:~203` `die`s "ships in a later release" (replace). `cco config validate [--fix]` = orphan-prune
-  (EXPLICIT/preview-first/**NEVER** automatic; F59 delete-cascade pack/template/llms/remote); today
-  `cmd-config.sh:~172` `die`s (replace). Both marked 🚧 planned in cli.md §3.4b/§3.21 + configuration-management.md
-  — remove the 🚧 as each ships (P5-doc-style, shipped-behavior). **The detailed P5-2 scope is at the tail of
-  the live progress note.**
+- **P5-2 — `cco forget` + `cco config validate` ✅ DONE (2026-06-25).** ADR-0021 Dec.2/3/4/5, 3 delta-green
+  commits (`ed2b7ee`/`d706226`/`93542cd`), suite 828→843/0. `cco forget <project>` deregisters id-keyed
+  internal state (index `projects:`+member `paths:` with shared-repo guard · STATE/DATA/CACHE `projects/<id>/`
+  · `tags.yml`) — **repo untouched**, preview+confirm/`-y`, scan self-heal. Delete-cascade wired into
+  `pack`/`template` `remove` (new `_tags_forget` primitive); `remote` already split, `llms` needs none.
+  `cco config validate [--dry-run|--fix [-y]]` = full-bucket orphan sweep, exit-0 report, STATE/CACHE
+  main-confirm + synced-DATA second-confirm. cli.md §3.4b/§3.21 + configuration-management.md de-🚧.
 - **`cco project validate`** full share-readiness contract (ADR-0023 D2): cwd-first, exit 0/1/2, ERE
   machine-agnostic, presence-only + `--reachable`, detect-only/never-block, carries the ADR-0022 D4 pack
   no-coord ERROR row. (cli.md §3.14 holds the target surface, currently marked 🚧 planned.)

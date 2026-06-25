@@ -151,5 +151,18 @@ deliberate asymmetry — both are first-step entry points but `--migrate` is a *
 
 - Exact `cco config validate` predicate set + output format, and the `--fix` vs `cco resolve --scan
   --prune` surface naming → **Cluster 5** (command/UX; F26). Not blocking.
+  > **RESOLVED in P5-2c implementation (2026-06-25, maintainer-confirmed).** Predicate set =
+  > the full bucket sweep: STATE index path entries (missing target dir) + project memberships
+  > (no resolvable member); STATE/CACHE per-id dirs (projects/packs/templates) for a gone
+  > resource; STATE remote token with no DATA registry entry; DATA `tags.yml` + install-provenance
+  > dirs for a gone resource. Surface = **`cco config validate [--dry-run | --fix [-y]]`** (the
+  > read-only report exits 0, reminder-style; `--fix` prunes STATE/CACHE under the main confirm and
+  > synced DATA under a second confirm; `-y` confirms non-interactively). `cco resolve --scan` has
+  > **no** `--prune` (Decision-5's prune lives solely in `cco config validate --fix`; consistent
+  > with ADR-0022 D3 / F38 scan = upsert-only).
 - llms internal bucket placement (CONFIG vs CACHE) for cleanup is to be confirmed against ADR-0016 D7
   during E (the review flagged uncertainty in `cmd-llms.sh`). Not blocking.
+  > **NOTE (P5-2a, 2026-06-25):** `cco llms remove` needs no delete-cascade — llms entries live
+  > wholly in CONFIG (`~/.cco/llms/<name>`, with `source` in-dir) and are not a tag kind, so the
+  > existing `rm -rf "$llms_dir"` already removes all of llms's id-keyed state. A future llms→CACHE
+  > relocation (ADR-0016 D2/D7) would revisit this; it is out of P5-2 scope.
