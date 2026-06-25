@@ -1096,27 +1096,29 @@ Examples:
 > Share packs/templates via a **sharing repo** (`cco pack/template publish|install`), and share
 > a project via its own code repo remote. See [configuration-management.md](../user-guides/configuration-management.md).
 
-#### `cco config validate [--dry-run|--fix]`
-
-> 🚧 **Planned — ships in a later release.** Today `cco config validate` is not available — the
-> command reports that orphan cleanup ships later (ADR-0021 §5). STATE/CACHE rebuild freely via
-> `cco resolve --scan`. The contract below is the target surface.
+#### `cco config validate [--dry-run | --fix [-y]]`
 
 **Orphan-sanitization** of the global id-keyed internal state after a manual deletion: detect
-and report orphaned entries; with `--fix`, prune them (preview-first / confirmed). Warn, never
-hide; never automatic. STATE/CACHE are freely rebuildable (`cco resolve --scan`); DATA is pruned
-only on confirm.
+and report orphaned entries (index paths/memberships, tags, install provenance, STATE/CACHE
+per-id dirs, remote tokens) whose backing resource no longer resolves; with `--fix`, prune them
+(preview-first / confirmed). Warn, never hide; never automatic. STATE/CACHE are freely
+rebuildable (`cco resolve --scan`) and pruned under the main confirmation; synced DATA
+(tags/source) is pruned under a **second** confirmation, since a wrong prune propagates across
+your machines — a non-resolving DATA resource may simply live on another machine. The read-only
+report exits 0 (reminder-style).
 
 ```
-Usage: cco config validate [--dry-run|--fix]
+Usage: cco config validate [--dry-run | --fix [-y]]
 
 Options:
-  --dry-run            Report orphans only (no changes)
-  --fix                Prune orphaned internal state (confirmed)
+  --dry-run            Report orphans only, no changes (the default)
+  --fix                Prune orphaned internal state (preview-first, confirmed)
+  -y, --yes            With --fix: confirm non-interactively (both phases)
 
 Examples:
   cco config validate
   cco config validate --fix
+  cco config validate --fix -y
 ```
 
 > This is the **orphan-sanitization** validate. **Share-readiness** validation of a project is

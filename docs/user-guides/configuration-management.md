@@ -103,7 +103,7 @@ cco config pull                        # pull on another machine
 (no auto-commit). A non-fast-forward `cco config pull` aborts and tells you to resolve
 in your IDE, as ordinary git.
 
-`cco config validate [--fix]` (🚧 planned) sanitizes orphaned internal state after a manual
+`cco config validate [--fix]` sanitizes orphaned internal state after a manual
 deletion (detect/report, prune only on confirm) — never automatic.
 
 ### 3.3 Path portability — the machine-local index
@@ -481,7 +481,7 @@ versioned and **not** synced in v1:
 | `git add .cco && git commit && git push` | Version + share project config (the repo's own git) |
 | `cco config save [-m <msg>] [--dry-run]` | Commit the personal `~/.cco` store (allowlist + secret scan) |
 | `cco config push` / `cco config pull` | Sync `~/.cco` to/from its opt-in remote |
-| `cco config validate [--dry-run\|--fix]` | Sanitize orphaned internal state — 🚧 planned, ships in a later release |
+| `cco config validate [--dry-run\|--fix [-y]]` | Sanitize orphaned internal state (detect/report; --fix prunes, confirmed) |
 | `cco sync [target] [--from <src>] [--dry-run\|--auto-approve\|--check]` | Copy `<repo>/.cco/` across a project's repos (clobber-guarded) |
 | `cco resolve [project] [--all] [--scan <dir>]` | Map logical names → absolute paths (index) |
 | `cco path set <name> <path>` / `cco path list` | Low-level index editor |
