@@ -179,7 +179,9 @@ conformance and readiness.
 ## 9. Reading order for the review session
 
 1. `guiding-principles.md` (**P1–P18**). 2. **This file** (esp. §4 registry + §1 four-state classification).
-3. The active phase handoff (`P5-final-stretch-handoff.md` §0 build method + §3 invariants) + `design.md`
+3. The build method + cross-cutting invariants — `guiding-principles.md` (P1–P18) + the live
+`decentralized-config-impl-progress.md` progress note (the P5-final-stretch handoff was consumed at
+P5 build-complete and removed) + `design.md`
 **§9** (P0–P5 phase map + §11 test contracts) / **§12** (deferred-post-v1). 4. `design.md` **§2/§3/§4/§9/§11** + the load-bearing ADRs (**0007/0015/0016** buckets,
 **0017** CLI, **0019** reachability, **0022** coordinate/resolution, **0023** command surface). 5. The
 personal progress note (`decentralized-config-impl-progress.md`) for the latest cursor. 6. The code (§2)
