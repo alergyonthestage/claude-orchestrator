@@ -798,11 +798,13 @@ EOF
     ok "Published $tk template '$name' to $remote_url"
 }
 
-# Resolve {{VARIABLE}} patterns in project template files (relocated here from the
-# removed cmd-project-create.sh; consumed by `cco project install`/`update`).
-# Scans project.yml and .claude/CLAUDE.md for placeholders.
-# Pre-set values via vars array; prompts interactively for remaining.
-# Usage: _resolve_template_vars <project_dir> <project_name> [vars...]
+# Resolve {{VARIABLE}} patterns across a staged project template (ADR-0019 D7 —
+# scaffold-time substitution; wired into `cco init --template`). Scans project.yml
+# plus the whole claude/ tree (the new <repo>/.cco/ layout; legacy .claude/ is also
+# picked up if present). PROJECT_NAME is always preset; other vars are taken from
+# the preset list, prompted on a TTY (DESCRIPTION defaults to a TODO), or
+# substituted name-as-value non-interactively.
+# Usage: _resolve_template_vars <project_dir> <project_name> [KEY=VALUE ...]
 _resolve_template_vars() {
     local project_dir="$1"
     local project_name="$2"
@@ -821,10 +823,17 @@ _resolve_template_vars() {
         preset_list+="PROJECT_NAME=$project_name"$'\n'
     fi
 
-    # Find all template files to process
+    # Find all template files to process: project.yml + the whole claude/ tree
+    # (new layout), or the legacy .claude/ tree.
     local -a template_files=()
     [[ -f "$project_dir/project.yml" ]] && template_files+=("$project_dir/project.yml")
-    [[ -f "$project_dir/.claude/CLAUDE.md" ]] && template_files+=("$project_dir/.claude/CLAUDE.md")
+    local _ctree _tf
+    for _ctree in "$project_dir/claude" "$project_dir/.claude"; do
+        [[ -d "$_ctree" ]] || continue
+        while IFS= read -r _tf; do
+            [[ -n "$_tf" ]] && template_files+=("$_tf")
+        done < <(find "$_ctree" -type f 2>/dev/null)
+    done
 
     # Collect all variables from all files
     local all_vars=""

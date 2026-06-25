@@ -145,6 +145,30 @@ test_init_template_nonexistent_fails() {
     fi
 }
 
+test_init_template_resolves_custom_vars() {
+    # P5-3d: cco init --template resolves arbitrary {{VAR}} placeholders across
+    # project.yml AND the whole claude/ tree (not just CLAUDE.md). Non-interactive,
+    # an unknown var substitutes its own name.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+
+    run_cco template create custom --project
+    printf '\n# region: {{DEPLOY_REGION}}\n' >> "$CCO_TEMPLATES_DIR/project/custom/project.yml"
+    mkdir -p "$CCO_TEMPLATES_DIR/project/custom/.claude/rules"
+    printf 'team {{TEAM_NAME}} owns this\n' > "$CCO_TEMPLATES_DIR/project/custom/.claude/rules/ownership.md"
+
+    local repo; repo=$(_init_repo "$tmpdir" app)
+    ( cd "$repo" && run_cco init --name app --template custom )
+
+    # Custom var in project.yml resolved (no leftover braces).
+    assert_no_placeholder "$repo/.cco/project.yml" "{{DEPLOY_REGION}}"
+    assert_file_contains "$repo/.cco/project.yml" "region: DEPLOY_REGION"
+    # A var in a non-CLAUDE.md file under claude/ is resolved too (new tree scan).
+    assert_no_placeholder "$repo/.cco/claude/rules/ownership.md" "{{TEAM_NAME}}"
+    assert_file_contains "$repo/.cco/claude/rules/ownership.md" "team TEAM_NAME owns"
+}
+
 test_init_project_yml_substituted() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"

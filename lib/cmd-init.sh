@@ -253,15 +253,16 @@ _cco_init_scaffold_repo() {
 
     # project.yml — base template with logical names only (no real paths; AD3/G8).
     cp "$tmpl/project.yml" "$stage/project.yml"
-    _substitute "$stage/project.yml" "PROJECT_NAME" "$name"
-    _substitute "$stage/project.yml" "DESCRIPTION" "TODO: Add project description"
 
     # claude/ — authored project config (CLAUDE.md, settings.json, agents/rules/skills).
     cp -r "$tmpl/.claude/." "$stage/claude/" 2>/dev/null || true
-    if [[ -f "$stage/claude/CLAUDE.md" ]]; then
-        _substitute "$stage/claude/CLAUDE.md" "PROJECT_NAME" "$name"
-        _substitute "$stage/claude/CLAUDE.md" "DESCRIPTION" "TODO: Add project description"
-    fi
+
+    # Resolve {{VAR}} placeholders across project.yml + the claude/ tree (ADR-0019
+    # D7 scaffold-time; P4-4d follow-up): PROJECT_NAME is preset; on a TTY the
+    # remaining vars (DESCRIPTION, any template-author custom vars) are prompted,
+    # non-interactively DESCRIPTION defaults to a TODO and others substitute their
+    # own name. Replaces the prior PROJECT_NAME/DESCRIPTION-only substitution.
+    _resolve_template_vars "$stage" "$name"
 
     # H5 optional project config carried by the base template.
     local f
