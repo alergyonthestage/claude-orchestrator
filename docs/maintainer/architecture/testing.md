@@ -42,9 +42,9 @@ YAML
 
 ### Tier 2 — Integration Tests
 
-Test CLI commands end-to-end via `run_cco`, with filesystem isolation per test. These never start real Docker containers — they either use `--dry-run` or test commands that operate purely on config files (`init`, `project create`, `pack install`, etc.).
+Test CLI commands end-to-end via `run_cco`, with filesystem isolation per test. These never start real Docker containers — they either use `--dry-run` or test commands that operate purely on config files (`init`, `pack install`, etc.).
 
-**Pattern**: `setup_cco_env` + `create_project` + `run_cco` + assertions on generated files.
+**Pattern**: `setup_cco_env` + `create_project` + `run_cco` + assertions on generated files. `create_project` writes a decentralized host repo (`<tmpdir>/repos/<name>/.cco/`) and seeds the STATE index; use `host_cco_dir`/`state_*`/`cache_*` helpers to target where cco reads/writes. Generated artifacts land in STATE/CACHE (or the `--dump` dir under `--dry-run`), never in the committed tree.
 
 ```bash
 test_start_generates_compose() {
@@ -52,12 +52,12 @@ test_start_generates_compose() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "myapp" "$(minimal_project_yml myapp)"
-    run_cco start "myapp" --dry-run
-    assert_file_contains "$CCO_PROJECTS_DIR/myapp/docker-compose.yml" "PROJECT_NAME=myapp"
+    run_cco start "myapp" --dry-run --dump
+    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "PROJECT_NAME=myapp"
 }
 ```
 
-**Files**: `test_start_dry_run.sh`, `test_docker_security.sh`, `test_init.sh`, `test_project_*.sh`, `test_pack_*.sh`, `test_vault.sh`, `test_update.sh`, `test_manifest.sh`, etc.
+**Files**: `test_start_dry_run.sh`, `test_docker_security.sh`, `test_init.sh`, `test_project_*.sh`, `test_pack_*.sh`, `test_update.sh`, `test_clean.sh`, etc.
 
 **Typical time**: 30-200ms per test (fast), 500-1000ms for tests involving `cco init` or git operations.
 

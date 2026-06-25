@@ -1,10 +1,10 @@
-# P5 handoff — Sharing-ext + the deferred verbs (+ P4→P5 audit) — opens the final v1 phase
+# P5 handoff — Sharing-ext + the deferred verbs — the final v1 phase
 
-Self-contained launcher for a **clean session** (open after `/clear`) to run the **P4→P5 adherence
-audit** at the Phase-4 boundary, then build **Phase 5** — the deferred-to-v1 command surface on the
-Phase-4 substrate. The build (P0–P4) + P4-doc are done; the schema bridge is collapsed to index-only;
-the vault is gone. What remains is the §6 deferred list, including the **P4-5d** central-layout→index
-teardown that P4-5 carried forward.
+Self-contained launcher for a **clean session** (open after `/clear`) to build the rest of **Phase 5** —
+the deferred-to-v1 command surface (lifecycle verbs, three-layer pack resolution, validation, protect)
+on the Phase-4 substrate. The build P0–P4 + P4-doc are done; the schema bridge is collapsed to
+index-only; the vault is gone; **the central `$PROJECTS_DIR`/`CCO_*_DIR` layout is gone too (P5-1)**. What
+remains is the §3 lifecycle/sharing-ext command surface.
 
 Branch `feat/vault/decentralized-config`, commits **LOCAL** (the maintainer pushes from the Mac).
 
@@ -12,28 +12,30 @@ Branch `feat/vault/decentralized-config`, commits **LOCAL** (the maintainer push
 
 ## ⏩ RESUME STATUS (read this FIRST)
 
-> **✅ PHASE 4 CLOSED + P5 BUILD STARTED (2026-06-24).** The §1 audit ran
-> (`reviews/24-06-2026-p4-p5-adherence-review.md`): Phase-4 code **fully conformant — 0 code 🔴**; one
-> doc-only forward-written-marks cluster FIXED. **§1 is satisfied — skip it.** P5 build order is
-> maintainer-confirmed (see §3 below): P5-0 → P5-1(a/b/c) → P5-2 → P5-3 → P5-4 → P5-5 → P5-6 → P5-doc →
-> dogfooding; **index namespacing = POST-V1**. **Done:** **P5-0 ✅** `2f93de8` (llms name-derivation —
-> path segment wins over domain; resolved the last straddler → **baseline 828/0**); **P5-1a ✅** `95b7767`
-> (managed runtime browser/github → CACHE via new `_cco_project_cache_managed`; the 3 readers
-> stop/chrome/start-port migrated central→index+CACHE — fixes a latent read-where-start-no-longer-writes bug).
-> **▶ RESUME AT P5-1b** (project.yml readers → index), then **P5-1c** (harness/bin teardown). The full
-> P5-1b/c call-site map + method is in the live progress note `decentralized-config-impl-progress.md`.
+> **✅ PHASES 0–4 CLOSED + P5-0/P5-1 DONE (2026-06-25). ▶ RESUME AT P5-2.** The §1 boundary audit ran
+> (`reviews/24-06-2026-p4-p5-adherence-review.md`, Phase-4 fully conformant, 0 code 🔴) — **§1 is consumed,
+> skip it.** P5 build order is maintainer-confirmed: P5-0 → P5-1 → **P5-2** → P5-3 → P5-4 → P5-5 → P5-6 →
+> P5-doc → dogfooding; **index namespacing = POST-V1**.
+>
+> **Done so far:** **P5-0 ✅** `2f93de8` (llms name-derivation, baseline → 828/0). **P5-1 ✅ (P4-5d
+> central-layout teardown, 4 delta-green commits):** P5-1a `95b7767` (managed runtime → CACHE) · P5-1b-1
+> `0da6153` (pure project.yml readers → STATE index) · P5-1b-2 `6209bae` (`cco clean` → index + artifacts
+> re-homed) · P5-1b-3 `7e9d458` (`cco update` project loop → `<repo>/.cco/claude`; new
+> `_cco_project_seed_update_state` born-at-latest in init+migrate) · P5-1c `0116679` (drop
+> `$PROJECTS_DIR`/`CCO_PROJECTS_DIR` + harness dual-seed + bin/cco legacy branch). **The central project
+> layout is fully gone; every project resolves via the STATE index.**
 
-**Phases 0–4 ✅ CLOSED. P5 in progress (P5-0 ✅ + P5-1a ✅). Suite 828/0** — delta-green is now measured
-against **ZERO** failures (any failure = regression). Run tests with the hatch:
-`CCO_ALLOW_HOST_RESOLVE=1 ./bin/test` (`--file <name>` / `--filter <substr>` to scope).
+**Suite 828/0** — delta-green is measured against **ZERO** failures (any failure = regression). Run with
+the hatch: `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test` (`--file <name>` / `--filter <substr>` to scope).
 
 **The `decentralized-config` design is the single SOURCE OF TRUTH**, precedence:
 `guiding-principles.md` (P1–P18) → ADRs (0005–0027) → living `design.md` → `requirements.md`. The more
 specific/authoritative wins; **record any reconciliation**; a genuine design gap ⇒ **PAUSE and discuss**.
 
 **First actions (resume):** (1) `git log --oneline -15` + read the live progress note
-`decentralized-config-impl-progress.md` (cursor: P5-0/P5-1a done, P5-1b/c call-site map); (2) re-confirm
-baseline **828/0**; (3) **skip §1 (audit done) — resume the P5 build at P5-1b** (§3 grouping below).
+`decentralized-config-impl-progress.md` (cursor: P5-1 done; **P5-2 scope + call-sites** at the tail);
+(2) re-confirm baseline **828/0**; (3) **skip §1 (audit consumed) — start P5-2** (§3 below); per §0,
+**propose the sub-commit decomposition to the maintainer before coding.**
 
 ---
 
@@ -58,12 +60,11 @@ baseline **828/0**; (3) **skip §1 (audit done) — resume the P5 build at P5-1b
 
 ---
 
-## 1. FIRST ACTION — the P4→P5 adherence audit (the boundary check) — ✅ DONE 2026-06-24
+## 1. The adherence-audit playbook (boundary check) — P4→P5 audit ✅ CONSUMED
 
-> **✅ COMPLETE — `reviews/24-06-2026-p4-p5-adherence-review.md`.** Phase-4 code fully conformant (0 code
-> 🔴); doc-only forward-written-marks cluster fixed; registry refreshed; roadmaps reconciled. **A resuming
-> session SKIPS this section** and goes to §3 (P5 build, resume at P5-1b). The playbook below is retained
-> as the recurring boundary-check reference. The baseline is now **828/0** (P5-0 resolved the straddler).
+> **✅ The P4→P5 boundary audit is DONE — `reviews/24-06-2026-p4-p5-adherence-review.md`** (Phase-4 fully
+> conformant, 0 code 🔴). **A resuming session SKIPS this section and starts P5-2 (§3).** The playbook below
+> is retained as the recurring reference for the **next** boundary (the P5→merge audit, §5). Baseline **828/0**.
 
 Run the recurring **`implementation-review-handoff.md`** playbook (read-only, code-grounded, 4-state
 classify ✅conformant/❌missing/🟡hybrid-intentional/🔴hybrid-error; the V multi-agent methodology, scaled to
@@ -88,35 +89,35 @@ Transitional Registry + roadmaps. **If 0 🔴 / 0 blockers → Phase 4 CLOSED; p
 
 1. `guiding-principles.md` (**P1–P18**).
 2. **This file.**
-3. The live progress note **`decentralized-config-impl-progress.md`** (cursor + full P4 detail) + `git log`.
-4. `Y-handoff-implementation.md` — the master build method + the P0–P5 phase map + the deferred-post-v1 list.
-5. `implementation-review-handoff.md` — the audit playbook + the **Transitional Registry** (what P4-5d retires).
-6. `design.md` **§9-P5** + the ADRs per item below.
-7. The code (re-grep — line numbers drift).
+3. The live progress note **`decentralized-config-impl-progress.md`** (cursor: P5-1 done; **P5-2 scope + call-sites** at the tail) + `git log`.
+4. `design.md` **§9** (the P0–P5 phase map + per-phase test contracts; §11) and **§12** (deferred-post-v1: state-sync / local-llms / Case-C / namespacing) + the ADRs per item below.
+5. `implementation-review-handoff.md` — the recurring audit playbook + the **Transitional Registry** (P0–P4 + P4-5d now retired).
+6. The code (re-grep — line numbers drift).
 
 ## 3. Scope — Phase 5 (the §6 deferred list, on the P4 substrate)
 
-> **✅ BUILD ORDER CONFIRMED (maintainer, 2026-06-24):** P5-0 llms-fix → **P5-1** P4-5d teardown
-> (a managed→CACHE ✅ · b project.yml-readers→index · c harness/bin teardown) → **P5-2** `cco forget` +
-> `cco config validate` → **P5-3** three-layer pack resolution + `internalize` + `export --bundle-packs` →
-> **P5-4** `cco project validate` + `cco project coords` → **P5-5** `cco update --check` → **P5-6**
-> `cco config protect` → **P5-doc** (remove the 🚧 markers as each ships) → **pre-merge dogfooding**.
-> **Index per-project namespacing = POST-V1** (confirmed; global-flat stays, ADR-0022 D2).
-> **Done:** P5-0 `2f93de8`, P5-1a `95b7767` (managed→CACHE + the 3 readers). **▶ RESUME AT P5-1b.**
-> Per-unit: code-ground fresh (line numbers drift), decompose into sub-commits, confirm micro-UX, delta-green.
+> **✅ BUILD ORDER CONFIRMED (maintainer):** P5-0 llms-fix ✅ → **P5-1** P4-5d teardown ✅ → **▶ P5-2**
+> `cco forget` + `cco config validate` → **P5-3** three-layer pack resolution + `internalize` +
+> `export --bundle-packs` → **P5-4** `cco project validate` + `cco project coords` → **P5-5**
+> `cco update --check` → **P5-6** `cco config protect` → **P5-doc** (remove the 🚧 markers as each ships) →
+> **pre-merge dogfooding**. **Index per-project namespacing = POST-V1** (confirmed; global-flat stays,
+> ADR-0022 D2). Per-unit: code-ground fresh (line numbers drift), decompose into sub-commits, confirm
+> micro-UX with the maintainer, delta-green each commit.
 
-Each item is its own dependency-ordered unit; **propose the build order + sub-commit decomposition to the
-maintainer before coding** (per §0). Suggested grouping (confirm):
+Each item is its own dependency-ordered unit; **propose the sub-commit decomposition to the maintainer
+before coding** (per §0). Remaining units:
 
-- **P4-5d — central-layout → index teardown (the carried-forward teardown).** Migrate the ~10 commands that
-  iterate `$PROJECTS_DIR/*/` to enumerate via the STATE index (`_index_list_projects` + `_index_get_path`);
-  then drop the harness dual-seed (`tests/helpers.sh` `create_project` legacy central layout) + the legacy
-  `CCO_*_DIR`/`$PROJECTS_DIR`/`$GLOBAL_DIR`-default resolution + deprecation warnings in `bin/cco`. This is
-  substantial (touches update/llms/pack/template/clean/chrome/stop/list/show + ~all fixtures' central seed).
-  Likely the **first** P5 unit — several items below assume index-only enumeration.
-- **`cco forget`** + delete-cascade (ADR-0021): deregister a project (id-keyed internal state — index/tags/
-  STATE/DATA — repo untouched; index self-heals via cwd-first + `resolve --scan`) + `cco config validate
-  [--fix]` orphan-prune (EXPLICIT/preview-first/NEVER-automatic; F59 delete-cascade pack/template/llms/remote).
+- **P4-5d — central-layout → index teardown. ✅ DONE (P5-1, 2026-06-25).** Every command enumerates via the
+  STATE index; `$PROJECTS_DIR`/`CCO_PROJECTS_DIR` + the bin/cco legacy branch + the harness dual-seed are
+  gone; `cco update`'s project loop reads `<repo>/.cco/claude` and new projects are born-at-latest. Suite 828/0.
+- **▶ P5-2 — `cco forget` + `cco config validate`** (ADR-0021). `cco forget <project>` deregisters a project's
+  id-keyed internal state (index paths+projects entry · `tags.yml` · STATE `projects/<id>/` · DATA
+  `projects/<id>/`) — **repo untouched**; index self-heals via cwd-first + `resolve --scan`. Today
+  `bin/cco:~203` `die`s "ships in a later release" (replace). `cco config validate [--fix]` = orphan-prune
+  (EXPLICIT/preview-first/**NEVER** automatic; F59 delete-cascade pack/template/llms/remote); today
+  `cmd-config.sh:~172` `die`s (replace). Both marked 🚧 planned in cli.md §3.4b/§3.21 + configuration-management.md
+  — remove the 🚧 as each ships (P5-doc-style, shipped-behavior). **The detailed P5-2 scope is at the tail of
+  the live progress note.**
 - **`cco project validate`** full share-readiness contract (ADR-0023 D2): cwd-first, exit 0/1/2, ERE
   machine-agnostic, presence-only + `--reachable`, detect-only/never-block, carries the ADR-0022 D4 pack
   no-coord ERROR row. (cli.md §3.14 holds the target surface, currently marked 🚧 planned.)
@@ -149,6 +150,7 @@ offer-to-remove until merged + validated.** After P5, the refactor is v1-complet
 (global `docs/maintainer/decisions/roadmap.md` + `analysis-roadmap.md`) and mark the ADRs.
 
 > Next free ADR = **0028**. Live cursor = `decentralized-config-impl-progress.md`. The per-phase scaffold
-> handoffs (P2/P3/P3b/P3cd/P3-5/P4/P4-5) were consumed and removed — their content lives in the progress note
-> + git history. Master method/phase-map = `Y-handoff-implementation.md`; recurring audit playbook =
-> `implementation-review-handoff.md`; pre-release validation = `P2-dogfooding-validation.md`.
+> handoffs (P1/P2/P3/P3b/P3cd/P3-5/P4/P4-5) **and `Y-handoff-implementation.md`** (its launch purpose is
+> consumed; the build method lives in §0 here, the P0–P5 phase map in `design.md` §9, the deferred-post-v1
+> list in `design.md` §12) were consumed and removed — content in the progress note + git history. Recurring
+> audit playbook = `implementation-review-handoff.md`; pre-release validation = `P2-dogfooding-validation.md`.
