@@ -274,7 +274,9 @@ workflow: 9 lenses → adversarial verify → critic → synthesis; baseline 894
 merge-ready — 1 HIGH + 3 MEDIUM 🔴 + 1 MEDIUM ❌; 0 blockers; 13 optimization flags (flag-only).** The
 rest of the v1 surface is code-grounded conformant; the §4 Transitional Registry LIVE set stays empty.
 **To apply in a dedicated implementation session before merge** (maintainer decided 2026-06-25 to close
-the review loop read-only and action the fixes separately):
+the review loop read-only and action the fixes separately) — **launcher = the self-contained
+`../configuration/decentralized-config/pre-merge-fix-handoff.md`** (reading order · method · F1
+code-grounded relocation plan · F2–F5 specs · proposed build sequence · invariants):
 - **F1 (HIGH, gate)** — relocate the personal flat store: `packs`/`templates` → `~/.cco/{packs,templates}`
   (CONFIG) and **llms content + cache-state → CACHE**; today all three resolve under `$CCO_USER_CONFIG_DIR`
   (default `$REPO_ROOT/user-config`) — a missed cutover (`global` was relocated in P3-3b, the flat stores
