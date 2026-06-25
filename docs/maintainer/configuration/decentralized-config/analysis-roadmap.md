@@ -279,8 +279,8 @@ per-unit/`package.json` model; DATA byte-level; STATE index subsumes @local; C1�
 (ADR-0018/0019/0020 — sharing unification: 2×2 matrix, pack coordinates + reachability P14, DRY P15,
 working-copy lifecycle P16, permissions delegated-to-git P17; manifest-removal realized; solo-adopter
 A+B)** → **V ✅ (DONE & FULLY RESOLVED — all 5 clusters; Cluster 5 → ADR-0023; design READY)** →
-**impl IN PROGRESS — dependency-layered phases P0–P5, design.md §9; Phases 0–3 ✅ CLOSED**
-(P0 substrate · P1 core-local 1043/16 · P2 migration 1087/8 · P3 legacy-cutover 936/3). RD-repo-multi-project
+**impl ✅ BUILD COMPLETE — dependency-layered phases P0–P5, design.md §9; Phases 0–5 ✅ CLOSED**
+(P0 substrate · P1 core-local 1043/16 · P2 migration 1087/8 · P3 legacy-cutover 936/3 · P4 sharing-core 827/1 · P5 sharing-ext 894/0). RD-repo-multi-project
 ✅ RESOLVED → ADR-0024 (Option 1: one config home per repo, referenced by N; no schema change). ADRs
 **0005–0027** (P2 → 0025, P3-3b → 0026, P3-4 → 0027). The vault/profile world is removed, the decentralized
 runtime is live (`cco init` scaffold + `<repo>/.cco/` `cco start` + `cco tag`/`cco config` + config-editor
@@ -292,15 +292,19 @@ legacy parsers removed) + P4-doc; **P4-5d (central `$PROJECTS_DIR`/`CCO_*_DIR` t
 **fully conformant — 0 code 🔴 / 0 blockers / 0 design gaps**; Transitional Registry refreshed (P0–P4 retired;
 live set = P4-5d + the 1 P5 straddler); one doc-only forward-written-marks cluster (`cco forget`/`update
 --check`/`config validate`/`project coords`/`template update`/`template internalize`) **FIXED** (🚧 markers,
-docs-only, suite 827/1). **⇒ PHASE 4 CLOSED. Next = P5.** Resume handoff = `P5-final-stretch-handoff.md`;
-method/phase-map = `design.md` §9 → (T future). **Phase 5 IN PROGRESS: P5-0…P5-5 ✅ DONE
-(2026-06-25, suite 894/0)** — P5-4 `cco project validate`+`coords` (`48a44b0`/`5f6c506`); P5-5
-`cco update --check` 3-state (packs+templates only, projects excluded P13; `5753513`/`13b7573`).
-**Next = P5-6** (`cco config protect` documentation only — helper deferred post-v1, ADR-0023 D6) →
-P5-doc → pre-merge dogfooding.
-**Config + sharing design CLOSED; V fully resolved (all 5 clusters); implementation Phases 0–4 closed +
-Phase 5 in progress (P5-0/1/2/3 done — teardown + lifecycle verbs + three-layer pack resolution); next =
-P5-4 (`cco project validate` share-readiness + `cco project coords`).**
+docs-only, suite 827/1). **⇒ PHASE 4 CLOSED.** method/phase-map = `design.md` §9 → (T future). **Phase 5 (sharing-ext +
+lifecycle) ✅ BUILD COMPLETE (2026-06-25, suite 894/0)** — P5-0…P5-6 + P5-doc all DONE: P4-5d
+central-layout teardown · `cco forget`/`config validate`/delete-cascade · three-layer pack resolution +
+internalize + `export --bundle-packs` + `init --template` · `cco project validate`+`coords`
+(`48a44b0`/`5f6c506`) · `cco update --check` 3-state (packs+templates only, projects excluded P13;
+`5753513`/`13b7573`) · `cco config protect` GOVERNANCE DOCS (helper deferred post-v1, ADR-0023 D6) ·
+P5-doc close-out (changelog #15 + migration-check=NONE + browser-mcp reader sweep).
+**▶ next = pre-merge gate: review cycle (impl/docs/refactoring/UX) → dogfooding e2e (Mac) → merge/release v1.**
+Post-v1 backlog (deferred, decided): `cco template update` · `cco pack update` 3-way · `cco config protect`
+helper · internalize-as-cache prompt · **T state-sync** · `cco project internalize` (Case-C) + `~/.cco/projects/` ·
+index namespacing — see the global `decisions/roadmap.md` §"Post-v1 backlog" for priorities.
+**Config + sharing design CLOSED; V fully resolved (all 5 clusters); implementation Phases 0–5 ✅ CLOSED =
+v1 build complete; next = the pre-merge review/dogfooding gate before merge & release.**
 
 ## Notes
 - R1 is **resolved-partial** (ADR-0011): tag *nature* fixed (CLI-canonical → internal); the
