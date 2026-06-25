@@ -271,4 +271,14 @@ net-new.
   the `cco config validate` reachability contract + layered embed/heal/warn; the **sync-before-publish**
   fix (defect); internalize-as-cache prompt + `cco update` cache refresh; `export --bundle-packs`
   dependency-closure; `cco project internalize`.
+  > **IMPLEMENTED across the build (2026; the decisions above are unchanged):** schema+parsers (P0),
+  > migration (P2), sync-before-publish (P4-3, ADR-0022 D5). **P5-3 (2026-06-25):** the **three-layer
+  > mount resolver** `_pack_resolve_dir` (D5: `~/.cco/packs` → `<repo>/.cco/packs` cache; the layer-2
+  > url-fetch is NOT done at `cco start` — a url-bearing pack missing from both local layers is a
+  > **conscious-skip + warn**, maintainer-confirmed, mirroring repo resolution P14); `internalize`
+  > **`--as` fork** for packs + the build-new **`cco template internalize`** (D3/D4, ADR-0023 D4);
+  > **`cco project export --bundle-packs`** dependency-closure + import-installs (D6). **Still deferred
+  > (not built in P5-3):** the D6 *interactive* internalize-as-cache prompt at `cco resolve` (offer
+  > specify-url / cache / proceed) + `cco update` cache refresh, and `cco project internalize`
+  > (Case-C, post-v1). The `cco project validate` reachability contract is **P5-4**.
 - **Companion ADRs** — sharing surface (0018); permissions (0020).

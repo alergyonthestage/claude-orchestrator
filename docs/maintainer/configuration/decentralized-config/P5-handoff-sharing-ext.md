@@ -12,10 +12,19 @@ Branch `feat/vault/decentralized-config`, commits **LOCAL** (the maintainer push
 
 ## ⏩ RESUME STATUS (read this FIRST)
 
-> **✅ PHASES 0–4 CLOSED + P5-0/P5-1/P5-2 DONE (2026-06-25). ▶ RESUME AT P5-3.** The §1 boundary audit ran
+> **✅ PHASES 0–4 CLOSED + P5-0/P5-1/P5-2/P5-3 DONE (2026-06-25). ▶ RESUME AT P5-4.** The §1 boundary audit ran
 > (`reviews/24-06-2026-p4-p5-adherence-review.md`, Phase-4 fully conformant, 0 code 🔴) — **§1 is consumed,
-> skip it.** P5 build order is maintainer-confirmed: P5-0 → P5-1 → P5-2 → **P5-3** → P5-4 → P5-5 → P5-6 →
+> skip it.** P5 build order is maintainer-confirmed: P5-0 → P5-1 → P5-2 → P5-3 → **P5-4** → P5-5 → P5-6 →
 > P5-doc → dogfooding; **index namespacing = POST-V1**.
+>
+> **P5-3 ✅ (three-layer pack resolution + internalize + export --bundle-packs + template-vars, 4 delta-green
+> commits, suite 843→859/0):** P5-3a `9c5986d` (`_pack_resolve_dir` mount order `~/.cco/packs`→`<repo>/.cco/packs`
+> cache; start = warn+conscious-skip, NO layer-2 auto-fetch; rewired mount/packs.md/conflict/llms consumers) ·
+> P5-3b `4961d87` (`pack internalize --as` fork + build-new `cco template internalize`) · P5-3c `b88bc18`
+> (`project export --bundle-packs` closure + import-installs) · P5-3d `44199f9` (`init --template` full
+> `{{VAR}}` over project.yml + whole `claude/` tree). **Deferred (not P5-3):** D6 interactive
+> internalize-as-cache prompt at `cco resolve` + `cco update` cache refresh; `cco project internalize`
+> (Case-C post-v1). ADR-0019 §Open forward-annotated.
 >
 > **Done so far:** **P5-0 ✅** `2f93de8` (llms name-derivation, baseline → 828/0). **P5-1 ✅ (P4-5d
 > central-layout teardown, 4 delta-green commits):** P5-1a `95b7767` · P5-1b-1 `0da6153` · P5-1b-2
@@ -100,8 +109,8 @@ Transitional Registry + roadmaps. **If 0 🔴 / 0 blockers → Phase 4 CLOSED; p
 ## 3. Scope — Phase 5 (the §6 deferred list, on the P4 substrate)
 
 > **✅ BUILD ORDER CONFIRMED (maintainer):** P5-0 llms-fix ✅ → **P5-1** P4-5d teardown ✅ → **P5-2**
-> `cco forget` + `cco config validate` ✅ → **▶ P5-3** three-layer pack resolution + `internalize` +
-> `export --bundle-packs` → **P5-4** `cco project validate` + `cco project coords` → **P5-5**
+> `cco forget` + `cco config validate` ✅ → **P5-3** three-layer pack resolution + `internalize` +
+> `export --bundle-packs` ✅ → **▶ P5-4** `cco project validate` + `cco project coords` → **P5-5**
 > `cco update --check` → **P5-6** `cco config protect` → **P5-doc** (remove the 🚧 markers as each ships) →
 > **pre-merge dogfooding**. **Index per-project namespacing = POST-V1** (confirmed; global-flat stays,
 > ADR-0022 D2). Per-unit: code-ground fresh (line numbers drift), decompose into sub-commits, confirm
@@ -124,10 +133,12 @@ before coding** (per §0). Remaining units:
   machine-agnostic, presence-only + `--reachable`, detect-only/never-block, carries the ADR-0022 D4 pack
   no-coord ERROR row. (cli.md §3.14 holds the target surface, currently marked 🚧 planned.)
 - **`cco update --check`** (DATA-source-driven + install-presence-gated 3-state, exit-0; ADR-0022 D6).
-- **Three-layer pack resolution + `internalize`** (ADR-0019 D3/D7, ADR-0023 D4): mount local-first
-  `~/.cco/packs` → url → `<repo>/.cco/packs` cache; `internalize` = pack/template cut-url v1 + `--as` fork
-  (project Case-C is name-reserved post-v1); `export --bundle-packs`. Plus the orphaned `_resolve_template_vars`
-  full `{{VAR}}` resolution for `cco init --template` adapted to the new `claude/` layout.
+- **Three-layer pack resolution + `internalize` ✅ DONE (P5-3, 2026-06-25):** `_pack_resolve_dir` mount
+  order `~/.cco/packs` → `<repo>/.cco/packs` cache (start = warn+conscious-skip, NO layer-2 auto-fetch —
+  maintainer-confirmed); `pack internalize --as` fork + build-new `cco template internalize`;
+  `project export --bundle-packs` closure + import-installs; `cco init --template` full `{{VAR}}` over
+  project.yml + the whole `claude/` tree. **Deferred:** D6 interactive internalize-as-cache prompt at
+  `cco resolve` + `cco update` cache refresh; `cco project internalize` (Case-C post-v1).
 - **`cco project coords`** (cross-unit ADR-0016 D3, on-demand coords-lookup) + **`cco config protect`** helper
   (docs-only v1 today; ADR-0020 D4 / F27 pinned contract).
 - **index per-project namespacing** (ADR-0022 D2 — global-flat ratified for v1; namespacing post-v1) — confirm
