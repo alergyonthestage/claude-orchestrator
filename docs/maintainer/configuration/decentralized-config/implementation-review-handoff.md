@@ -12,6 +12,15 @@ this file**.
 > cycle** (docs → refactoring → UX-UI → dogfooding), not a further build phase. The §4 LIVE transitional set
 > is **empty**, so the audit's job shifts from "is this hybrid sanctioned?" to "**is anything still hybrid
 > at all?**" — any remaining legacy/dual-read is now 🔴. Scope = the entire decentralized-config surface.
+>
+> **Approved reference = `decentralized-config/design.md` (living) + the ADRs `decisions/0005`–`0027`**
+> (precedence: `guiding-principles.md` P1–P18 → ADRs → design → `requirements.md`); **verified against the
+> written code.** The four maintainer-stated ambits map onto this playbook:
+> 1. **No issues/bugs** → 🔴 conformance-bug findings (lenses 4 invariants, 6 test-contract).
+> 2. **No implementation gaps** → ❌ *Missing* state + lens 3 phase-completeness (at build-complete, any ❌ is a real gap).
+> 3. **Adherence to design + ADRs** → the **core**: the §1 four-state classification, code-grounded (`file:line`).
+> 4. **Optimization / duplication** → lens 9 + the §1 optimization backlog — **flag-only**, anticipating the
+>    dedicated refactoring review (do not refactor here).
 
 > **Why this exists.** The decentralized-config refactor is a **breaking, multi-phase cutover** (design §9
 > P0–P5) executed *out of design chronology* (dependency + reuse + open-closed). At any moment the codebase
@@ -45,6 +54,11 @@ decentralized-config scope**, classifies the implementation state and is **direc
 - **Roadmap/handoff + forward-feed** (§7): refresh the implementation-state in the roadmaps + memory, and
   feed the gap findings forward — during the build, into the **next phase's handoff**; at v1 build-complete,
   into **merge-readiness + the maintainer's pre-merge review cycle** (no next build phase remains).
+- **Optimization & duplication backlog (flag-only)** — a **separate, non-blocking** list of code-quality
+  opportunities (duplicated logic, dead code, a function doing too much, an over-complex path) that the
+  audit notices while verifying conformance. **It anticipates the dedicated refactoring review** — so
+  *surface and locate* each (`file:line` + one-line why), but **do NOT refactor here** and do NOT let it
+  dilute the adherence focus. These are not 🔴 conformance findings; they are inputs to the next review.
 
 ## 2. Scope — the whole body to audit (code ⇄ spec)
 
@@ -159,9 +173,16 @@ the H4 guard *by design* — not regressions; always run with the hatch.) Keep t
 7. **Doc coherence** — living design/ADR/requirements match the code; **shipped-behavior docs (README,
    guides, tutorial, FRs, index pages) are NOT rewritten ahead of the code** (doc-lifecycle: they ride the
    P3 cutover sweep). `resource-coherence-inventory.md` still accurate as the cutover driver?
-8. **Next-phase migration/cutover safety** — for the phase about to start, are the prerequisites in place,
-   the call-site inventories current, the breaking deletions guarded (discovery-before-delete, backup
-   ordering, idempotency)? Surface blockers before the build starts.
+8. **Cutover / merge safety** — breaking deletions guarded (discovery-before-delete, backup ordering,
+   idempotency)? Any half-migrated path? At v1 build-complete this lens checks **merge-readiness** (nothing
+   left half-cut over) rather than a next build phase's prerequisites.
+9. **Optimization & duplication (flag-only — feeds the refactoring review)** — while doing the conformance
+   passes, note code-quality opportunities: **duplicated logic** (the same parse/resolve/merge written twice
+   — a DRY violation), **dead code** (an unreferenced helper after a verb was removed), a function with
+   **mixed responsibilities**, or an **over-complex path** a shared helper would simplify. Record each as a
+   *flag* (`file:line` + one-line why) on the §1 optimization backlog — **do not refactor**, do not raise as
+   🔴. This is a deliberately light pass that *anticipates* the dedicated refactoring review (SOLID/DRY/KISS/
+   YAGNI); the adherence audit stays primary.
 
 ## 6. HITL — what to surface for human decision
 
@@ -194,7 +215,9 @@ roadmap) before it is acted on.
 Write production code; re-open settled design without a principle-level reason; expand scope (new
 features); rewrite shipped-behavior docs ahead of the code; or "fix" a §4 intentional-transitional state
 early (that re-breaks delta-green — flag it, don't touch it). It audits the *existing* implementation for
-conformance and readiness.
+conformance and readiness. **On optimization/duplication (lens 9): you may *flag* opportunities (location +
+why) as a non-blocking backlog, but you must NOT perform the refactor here** — that is the separate
+refactoring review. Flagging anticipates it; doing it would expand scope and risk the adherence focus.
 
 ## 9. Reading order for the review session
 
