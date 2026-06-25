@@ -1031,15 +1031,23 @@ construction** through its code repo's own git remote (clone the repo and you ha
 Projects therefore get only the **tar-snapshot** half of the 2×2: `export`/`import`.
 
 ```
-Usage: cco project export <name>       # Snapshot the project's <repo>/.cco/ to a .tar.gz
-       cco project import <archive>    # Bootstrap a repo's .cco/ from a .tar.gz snapshot
+Usage: cco project export [<name>] [--output <path>] [--bundle-packs]
+       cco project import <archive> [--force]
 
 Arguments:
-  name                 Project to export
+  name                 Project to export (default: the cwd-first project)
   archive              Path to a .tar.gz project-config archive
+
+Options:
+  --bundle-packs       Dependency-closure: also bundle the project's referenced
+                       global packs (~/.cco/packs) so the import is self-contained
+                       without their sharing repos (ADR-0019 D6). Packs authored
+                       in <repo>/.cco/packs already travel inside .cco. `import`
+                       installs bundled packs (existing copies are kept).
 
 Examples:
   cco project export my-saas
+  cco project export my-saas --bundle-packs
   cco project import ./my-saas.tar.gz
 ```
 

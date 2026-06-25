@@ -139,3 +139,93 @@ test_project_import_help() {
     run_cco project import --help
     assert_output_contains "Import a project"
 }
+
+# ── --bundle-packs dependency-closure (ADR-0019 D6) ──────────────────────
+
+_mk_global_pack() {
+    local name="$1"
+    mkdir -p "$CCO_PACKS_DIR/$name/knowledge"
+    printf 'name: %s\nknowledge:\n  files:\n    - g.md\n' "$name" > "$CCO_PACKS_DIR/$name/pack.yml"
+    printf '# %s\n' "$name" > "$CCO_PACKS_DIR/$name/knowledge/g.md"
+}
+
+_scaffold_pack_project() {
+    local repo="$1" name="$2" pack="$3"
+    mkdir -p "$repo/.cco/claude"
+    cat > "$repo/.cco/project.yml" <<YAML
+name: $name
+repos: []
+packs:
+  - $pack
+YAML
+    echo "# $name" > "$repo/.cco/claude/CLAUDE.md"
+}
+
+test_export_bundle_packs_includes_global_pack() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"; setup_global_from_defaults "$tmpdir"
+    _mk_global_pack "gp"
+    local src="$tmpdir/repos/bp"; _scaffold_pack_project "$src" "bp" "gp"
+    cd "$src"
+    run_cco project export --bundle-packs
+    assert_output_contains "bundled packs: gp"
+    tar tzf "$src/bp.tar.gz" | grep -q "bundled-packs/gp/pack.yml" \
+        || fail "global pack should be bundled into the archive"
+}
+
+test_export_without_bundle_omits_packs() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"; setup_global_from_defaults "$tmpdir"
+    _mk_global_pack "gp"
+    local src="$tmpdir/repos/bp"; _scaffold_pack_project "$src" "bp" "gp"
+    cd "$src"
+    run_cco project export
+    if tar tzf "$src/bp.tar.gz" | grep -q "bundled-packs/"; then
+        fail "packs must not be bundled without --bundle-packs"
+    fi
+}
+
+test_export_bundle_skips_repo_local_pack() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"; setup_global_from_defaults "$tmpdir"
+    local src="$tmpdir/repos/lp"; _scaffold_pack_project "$src" "lp" "localpack"
+    # An authored pack inside <repo>/.cco/packs already travels in .cco.
+    mkdir -p "$src/.cco/packs/localpack/knowledge"
+    printf 'name: localpack\nknowledge:\n  files:\n    - l.md\n' > "$src/.cco/packs/localpack/pack.yml"
+    printf '# local\n' > "$src/.cco/packs/localpack/knowledge/l.md"
+    cd "$src"
+    run_cco project export --bundle-packs
+    if tar tzf "$src/lp.tar.gz" | grep -q "bundled-packs/localpack"; then
+        fail "repo-local pack must not be double-bundled"
+    fi
+    tar tzf "$src/lp.tar.gz" | grep -q ".cco/packs/localpack/pack.yml" \
+        || fail "repo-local pack should travel inside .cco"
+}
+
+test_import_installs_bundled_pack() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"; setup_global_from_defaults "$tmpdir"
+    _mk_global_pack "gp"
+    local src="$tmpdir/repos/bp"; _scaffold_pack_project "$src" "bp" "gp"
+    cd "$src"; run_cco project export --bundle-packs
+
+    # Simulate a machine that lacks the pack.
+    rm -rf "$CCO_PACKS_DIR/gp"
+    local dest="$tmpdir/repos/dest"; mkdir -p "$dest"; cd "$dest"
+    run_cco project import "$src/bp.tar.gz"
+    assert_output_contains "Installed bundled pack 'gp'"
+    assert_file_exists "$CCO_PACKS_DIR/gp/pack.yml"
+}
+
+test_import_keeps_existing_bundled_pack() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"; setup_global_from_defaults "$tmpdir"
+    _mk_global_pack "gp"
+    local src="$tmpdir/repos/bp"; _scaffold_pack_project "$src" "bp" "gp"
+    cd "$src"; run_cco project export --bundle-packs
+
+    # gp is still present at import time → kept, not clobbered.
+    local dest="$tmpdir/repos/dest"; mkdir -p "$dest"; cd "$dest"
+    run_cco project import "$src/bp.tar.gz"
+    assert_output_contains "already present"
+}
