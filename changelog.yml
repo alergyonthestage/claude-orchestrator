@@ -235,3 +235,32 @@ entries:
       offered by `cco update` (eager global, backs up your legacy vault first,
       never destructive) and `cco init --migrate` (per project, lazy). Run
       `cco update` to migrate; your legacy vault is preserved as a fallback.
+
+  - id: 15
+    date: "2026-06-25"
+    type: additive
+    title: "Decentralized config — lifecycle, validation & sharing commands"
+    description: >
+      The decentralized config model (#14) gains its lifecycle, validation and
+      sharing surface — all additive; existing commands and config are unchanged.
+      Project lifecycle: `cco forget <project>` deregisters a project (clears its
+      machine-local index/tags/state; the repo and its committed .cco/ are left
+      untouched — the index self-heals via `cco resolve --scan`).
+      `cco project add repo|mount|llms|pack <name>` adds a referenced resource to
+      the current project, embedding its machine-agnostic coordinate in
+      project.yml and recording the local path in the index in one step (`--path`,
+      url-from-origin). `cco init --template <name>` scaffolds a project from a
+      template with {{VAR}} substitution across project.yml and the whole claude/
+      tree. Validation: `cco config validate [--fix]` detects and (with --fix,
+      confirmed) prunes orphaned internal state in STATE/CACHE/DATA;
+      `cco project validate [name] [--all] [--reachable]` checks a project's
+      share-readiness (coordinates present, no real host paths in committed
+      config, no authored-vs-installed pack collision) with a per-severity exit
+      code (0/1/2); `cco project coords [--diff | --sync --from <repo>]` reports
+      and converges cross-unit coordinate divergence. Sharing & updates:
+      `cco update --check` lists installed packs/templates that have an upstream
+      update (read-only, 3-state, never writes, exit 0); `cco pack internalize`
+      and `cco template internalize [--as <new>]` sever a referenced resource's
+      upstream coordinate so it becomes a local authored source (`--as` forks
+      under a new name); `cco project export --bundle-packs` carries the project's
+      referenced packs in the export closure (installed on import).
