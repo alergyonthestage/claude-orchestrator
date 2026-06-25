@@ -64,6 +64,9 @@ state_global_meta()  { printf '%s' "$CCO_STATE_HOME/global/update/meta"; }
 state_global_base()  { printf '%s' "$CCO_STATE_HOME/global/update/base"; }
 state_project_meta() { printf '%s' "$CCO_STATE_HOME/projects/$1/update/meta"; }
 state_project_base() { printf '%s' "$CCO_STATE_HOME/projects/$1/update/base"; }
+# Generated docker-compose.yml → STATE, keyed by project name (mirrors cmd-start's
+# session_state_dir; what `cco clean --generated` removes). $1 = project name.
+state_project_compose() { printf '%s' "$CCO_STATE_HOME/projects/$1/docker-compose.yml"; }
 state_pack_meta()    { printf '%s' "$CCO_STATE_HOME/packs/$1/update/meta"; }
 state_pack_base()    { printf '%s' "$CCO_STATE_HOME/packs/$1/update/base"; }
 # Managed runtime overlays → CACHE, keyed by project name (mirrors the production
