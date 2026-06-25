@@ -3,7 +3,7 @@
 #
 # Provides: cmd_llms()
 # Dependencies: colors.sh, utils.sh, paths.sh, yaml.sh, llms.sh
-# Globals: LLMS_DIR, PACKS_DIR, PROJECTS_DIR
+# Globals: LLMS_DIR, PACKS_DIR (projects enumerated via the STATE index, P5)
 
 cmd_llms() {
     local subcmd="${1:-}"
@@ -534,20 +534,30 @@ EOF
 
     mv "$old_dir" "$new_dir"
 
-    # Update references in packs and projects (only in llms: sections)
+    # Update references in packs and projects (only in llms: sections).
     local updated_refs=0
-    for search_dir in "$PACKS_DIR" "$PROJECTS_DIR"; do
-        [[ ! -d "$search_dir" ]] && continue
-        for pdir in "$search_dir"/*/; do
+    # Packs: flat store under PACKS_DIR.
+    if [[ -d "$PACKS_DIR" ]]; then
+        local pdir
+        for pdir in "$PACKS_DIR"/*/; do
             [[ ! -d "$pdir" ]] && continue
-            for yml in "$pdir"pack.yml "$pdir"project.yml; do
-                [[ ! -f "$yml" ]] && continue
-                if _llms_rename_in_yaml "$yml" "$old_name" "$new_name"; then
-                    ((updated_refs++))
-                fi
-            done
+            [[ ! -f "${pdir}pack.yml" ]] && continue
+            if _llms_rename_in_yaml "${pdir}pack.yml" "$old_name" "$new_name"; then
+                ((updated_refs++))
+            fi
         done
-    done
+    fi
+    # Projects: decentralized, enumerated via the STATE index (P5).
+    local proj unit_dir pyml
+    while IFS='=' read -r proj _; do
+        [[ -z "$proj" ]] && continue
+        unit_dir=$(_resolve_unit_dir_for_project "$proj" 2>/dev/null) || continue
+        pyml="$unit_dir/.cco/project.yml"
+        [[ -f "$pyml" ]] || continue
+        if _llms_rename_in_yaml "$pyml" "$old_name" "$new_name"; then
+            ((updated_refs++))
+        fi
+    done < <(_index_list_projects)
 
     ok "Renamed llms '$old_name' → '$new_name'"
     [[ $updated_refs -gt 0 ]] && ok "Updated $updated_refs YAML reference(s)"
@@ -733,19 +743,19 @@ _llms_find_users() {
         done
     fi
 
-    # Check projects
-    if [[ -d "$PROJECTS_DIR" ]]; then
-        for pdir in "$PROJECTS_DIR"/*/; do
-            [[ ! -d "$pdir" ]] && continue
-            local pyml="$pdir/project.yml"
-            [[ ! -f "$pyml" ]] && continue
-            local names
-            names=$(yml_get_llms_names "$pyml" 2>/dev/null)
-            if echo "$names" | grep -qxF "$name"; then
-                users+=("$(basename "$pdir") (project)")
-            fi
-        done
-    fi
+    # Check projects — enumerate via the STATE index (P5).
+    local proj unit_dir
+    while IFS='=' read -r proj _; do
+        [[ -z "$proj" ]] && continue
+        unit_dir=$(_resolve_unit_dir_for_project "$proj" 2>/dev/null) || continue
+        local pyml="$unit_dir/.cco/project.yml"
+        [[ ! -f "$pyml" ]] && continue
+        local names
+        names=$(yml_get_llms_names "$pyml" 2>/dev/null)
+        if echo "$names" | grep -qxF "$name"; then
+            users+=("$proj (project)")
+        fi
+    done < <(_index_list_projects)
 
     if [[ ${#users[@]} -gt 0 ]]; then
         local IFS=", "
@@ -770,8 +780,9 @@ _llms_add_to_yaml() {
     fi
 
     if [[ -n "$project" ]]; then
-        local proj_yml="$PROJECTS_DIR/$project/project.yml"
-        [[ ! -f "$proj_yml" ]] && { warn "Project '$project' not found — skipping YAML update."; return; }
+        local _ud proj_yml=""
+        _ud=$(_resolve_unit_dir_for_project "$project" 2>/dev/null) && proj_yml="$_ud/.cco/project.yml"
+        [[ -n "$proj_yml" && -f "$proj_yml" ]] || { warn "Project '$project' not found — skipping YAML update."; return; }
         if yml_get_llms_names "$proj_yml" | grep -qxF "$name"; then
             info "LLMs '$name' already in project '$project'"
         else

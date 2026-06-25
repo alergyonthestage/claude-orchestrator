@@ -6,7 +6,7 @@
 #           cmd_pack_install(), cmd_pack_update(), cmd_pack_export(),
 #           cmd_pack_internalize()
 # Dependencies: colors.sh, utils.sh, yaml.sh, packs.sh, manifest.sh, remote.sh
-# Globals: PACKS_DIR, PROJECTS_DIR, USER_CONFIG_DIR
+# Globals: PACKS_DIR, USER_CONFIG_DIR (projects enumerated via the STATE index, P5)
 
 # ── Pack commands ─────────────────────────────────────────────────────
 
@@ -226,25 +226,22 @@ EOF
     fi
     echo ""
 
-    # Used by projects
+    # Used by projects — enumerate via the STATE index ($PROJECTS_DIR is gone, P5).
     echo -e "${BOLD}Used by projects:${NC}"
     local found_any=false
-    if [[ -d "$PROJECTS_DIR" ]]; then
-        for proj_dir in "$PROJECTS_DIR"/*/; do
-            [[ ! -d "$proj_dir" ]] && continue
-            local proj_name
-            proj_name=$(basename "$proj_dir")
-            [[ "$proj_name" == "_template" ]] && continue
-            local proj_yml="$proj_dir/project.yml"
-            [[ ! -f "$proj_yml" ]] && continue
-            local proj_packs
-            proj_packs=$(yml_get_packs "$proj_yml")
-            if echo "$proj_packs" | grep -qxF "$name"; then
-                echo "  - $proj_name"
-                found_any=true
-            fi
-        done
-    fi
+    local proj_name unit_dir proj_yml proj_packs
+    while IFS='=' read -r proj_name _; do
+        [[ -z "$proj_name" ]] && continue
+        [[ "$proj_name" == "_template" ]] && continue
+        unit_dir=$(_resolve_unit_dir_for_project "$proj_name" 2>/dev/null) || continue
+        proj_yml="$unit_dir/.cco/project.yml"
+        [[ -f "$proj_yml" ]] || continue
+        proj_packs=$(yml_get_packs "$proj_yml")
+        if echo "$proj_packs" | grep -qxF "$name"; then
+            echo "  - $proj_name"
+            found_any=true
+        fi
+    done < <(_index_list_projects)
     if [[ "$found_any" == false ]]; then
         echo "  (none)"
     fi
@@ -284,23 +281,20 @@ EOF
     local pack_dir="$PACKS_DIR/$name"
     [[ ! -d "$pack_dir" ]] && die "Pack '$name' not found at packs/$name/"
 
-    # Check if used by any projects
+    # Check if used by any projects — enumerate via the STATE index (P5).
     local used_by=()
-    if [[ -d "$PROJECTS_DIR" ]]; then
-        for proj_dir in "$PROJECTS_DIR"/*/; do
-            [[ ! -d "$proj_dir" ]] && continue
-            local proj_name
-            proj_name=$(basename "$proj_dir")
-            [[ "$proj_name" == "_template" ]] && continue
-            local proj_yml="$proj_dir/project.yml"
-            [[ ! -f "$proj_yml" ]] && continue
-            local proj_packs
-            proj_packs=$(yml_get_packs "$proj_yml")
-            if echo "$proj_packs" | grep -qxF "$name"; then
-                used_by+=("$proj_name")
-            fi
-        done
-    fi
+    local proj_name unit_dir proj_yml proj_packs
+    while IFS='=' read -r proj_name _; do
+        [[ -z "$proj_name" ]] && continue
+        [[ "$proj_name" == "_template" ]] && continue
+        unit_dir=$(_resolve_unit_dir_for_project "$proj_name" 2>/dev/null) || continue
+        proj_yml="$unit_dir/.cco/project.yml"
+        [[ -f "$proj_yml" ]] || continue
+        proj_packs=$(yml_get_packs "$proj_yml")
+        if echo "$proj_packs" | grep -qxF "$name"; then
+            used_by+=("$proj_name")
+        fi
+    done < <(_index_list_projects)
 
     if [[ ${#used_by[@]} -gt 0 ]]; then
         warn "Pack '$name' is used by: ${used_by[*]}"

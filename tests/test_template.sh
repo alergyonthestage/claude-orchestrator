@@ -277,31 +277,30 @@ test_template_create_from_project_strips_cco() {
     setup_cco_env "$tmpdir"
     init_global "$tmpdir" --lang "English"
 
-    # Create a project with .cco/ runtime state
-    local project_dir="$CCO_PROJECTS_DIR/src-proj"
-    mkdir -p "$project_dir/.claude" "$project_dir/.cco/managed" "$project_dir/.cco/claude-state"
-    cat > "$project_dir/project.yml" <<'YAML'
+    # A decentralized project: committed config lives in <repo>/.cco/ (the
+    # claude/ tree + project.yml + secrets.env.example). create_project seeds the
+    # STATE index + the host repo, so `--from src-proj` resolves via the index (P5).
+    create_project "$tmpdir" "src-proj" "$(cat <<YAML
 name: src-proj
 repos: []
 YAML
-    echo "schema_version: 9" > "$project_dir/.cco/meta"
-    echo "generated" > "$project_dir/.cco/docker-compose.yml"
-    echo "{}" > "$project_dir/.cco/managed/browser.json"
-    echo "session" > "$project_dir/.cco/claude-state/session.jsonl"
-    mkdir -p "$project_dir/.cco/base"
-    echo "base" > "$project_dir/.cco/base/settings.json"
-    echo "SECRET=pass" > "$project_dir/secrets.env"
-    mkdir -p "$project_dir/.tmp"
-    echo "dump" > "$project_dir/.tmp/output"
+)"
+    local cco; cco=$(host_cco_dir "$tmpdir" "src-proj")
+    echo "# project CLAUDE" > "$cco/claude/CLAUDE.md"
+    echo "SECRET=" > "$cco/secrets.env.example"
+    # Defensive: a stray runtime dir the template must strip.
+    mkdir -p "$cco/.tmp"; echo "dump" > "$cco/.tmp/output"
 
     run_cco template create my-tmpl --project --from src-proj
 
     local tmpl_dir="$CCO_TEMPLATES_DIR/project/my-tmpl"
     assert_dir_exists "$tmpl_dir"
     assert_file_exists "$tmpl_dir/project.yml"
-    # .cco/ should be completely stripped
-    [[ ! -d "$tmpl_dir/.cco" ]] || {
-        echo "ASSERTION FAILED: .cco/ should be stripped from template"
+    # claude/ → .claude/ : templates use the native .claude/ layout.
+    assert_dir_exists "$tmpl_dir/.claude"
+    assert_file_exists "$tmpl_dir/.claude/CLAUDE.md"
+    [[ ! -d "$tmpl_dir/claude" ]] || {
+        echo "ASSERTION FAILED: claude/ should be renamed to .claude/ in the template"
         return 1
     }
     # .tmp/ should be stripped
@@ -309,15 +308,18 @@ YAML
         echo "ASSERTION FAILED: .tmp/ should be stripped from template"
         return 1
     }
-    # secrets.env should exist but be empty
-    if [[ -f "$tmpl_dir/secrets.env" ]]; then
-        local size
-        size=$(wc -c < "$tmpl_dir/secrets.env")
-        [[ "$size" -eq 0 ]] || {
-            echo "ASSERTION FAILED: secrets.env should be emptied, not removed"
-            return 1
-        }
-    fi
+    # secrets.env.example → emptied secrets.env (the template's secret skeleton)
+    assert_file_exists "$tmpl_dir/secrets.env"
+    [[ ! -f "$tmpl_dir/secrets.env.example" ]] || {
+        echo "ASSERTION FAILED: secrets.env.example should be normalized to secrets.env"
+        return 1
+    }
+    local size
+    size=$(wc -c < "$tmpl_dir/secrets.env")
+    [[ "$size" -eq 0 ]] || {
+        echo "ASSERTION FAILED: secrets.env should be emptied, not removed"
+        return 1
+    }
 }
 
 # ── Template sharing 2×2 (ADR-0018 D2; both kinds by marker) ───────────

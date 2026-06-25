@@ -3,7 +3,7 @@
 #
 # Provides: cmd_project_list(), cmd_project_show()
 # Dependencies: colors.sh, utils.sh, yaml.sh, local-paths.sh
-# Globals: PROJECTS_DIR, PACKS_DIR
+# Globals: PACKS_DIR (projects enumerated via the STATE index, P5)
 
 cmd_project_list() {
     if [[ "${1:-}" == "--help" ]]; then
@@ -17,28 +17,39 @@ EOF
 
     echo -e "${BOLD}NAME              REPOS    STATUS${NC}"
 
-    for dir in "$PROJECTS_DIR"/*/; do
-        [[ ! -d "$dir" ]] && continue
-        local name
-        name=$(basename "$dir")
+    # Enumerate via the STATE index (the sole name→path map; the central
+    # $PROJECTS_DIR layout is gone, P5/AD3). Each project's committed config
+    # lives in its host repo's <repo>/.cco/; degrade gracefully when the repo
+    # is unresolved on this machine (still list the project, repo_count "-").
+    local name unit_dir project_yml repo_count status project_name _yn
+    while IFS='=' read -r name _; do
+        [[ -z "$name" ]] && continue
         [[ "$name" == "_template" ]] && continue
 
-        local project_yml="$dir/project.yml"
-        local repo_count="-"
-        if [[ -f "$project_yml" ]]; then
+        project_yml=""
+        unit_dir=$(_resolve_unit_dir_for_project "$name" 2>/dev/null) \
+            && project_yml="$unit_dir/.cco/project.yml"
+
+        repo_count="-"
+        if [[ -n "$project_yml" && -f "$project_yml" ]]; then
             repo_count=$(_effective_repo_mounts "$project_yml" | grep -c . 2>/dev/null || echo "0")
         fi
 
-        local status="stopped"
-        local project_name
-        project_name=$(yml_get "$project_yml" "name" 2>/dev/null)
-        [[ -z "$project_name" ]] && project_name="$name"
+        # The index key is the project identity (== the cc-<name> container);
+        # confirm against project.yml name: when the repo is resolvable.
+        project_name="$name"
+        if [[ -n "$project_yml" && -f "$project_yml" ]]; then
+            _yn=$(yml_get "$project_yml" "name" 2>/dev/null)
+            [[ -n "$_yn" ]] && project_name="$_yn"
+        fi
+
+        status="stopped"
         if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^cc-${project_name}$"; then
             status="${GREEN}running${NC}"
         fi
 
         printf "%-18s %-8s %b\n" "$name" "$repo_count" "$status"
-    done
+    done < <(_index_list_projects)
 }
 
 # Classify a member repo's role w.r.t. <project> (ADR-0024 D5):
@@ -111,9 +122,13 @@ EOF
     fi
     [[ -z "$name" ]] && die "Usage: cco project show <name>"
 
-    local project_dir="$PROJECTS_DIR/$name"
-    local project_yml="$project_dir/project.yml"
-    [[ ! -f "$project_yml" ]] && die "Project '$name' not found at projects/$name/"
+    # Resolve the project's host repo via the index, then read its committed
+    # <repo>/.cco/project.yml (the central $PROJECTS_DIR layout is gone, P5).
+    local unit_dir project_yml
+    unit_dir=$(_resolve_unit_dir_for_project "$name" 2>/dev/null) \
+        || die "Project '$name' not found (unknown, or its repo is unresolved here — run 'cco resolve $name')."
+    project_yml="$unit_dir/.cco/project.yml"
+    [[ ! -f "$project_yml" ]] && die "Project '$name' has no .cco/project.yml at $unit_dir."
 
     # Name and description
     local yml_name

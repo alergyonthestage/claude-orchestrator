@@ -3,7 +3,7 @@
 #
 # Provides: cmd_template(), _resolve_template()
 # Dependencies: colors.sh, utils.sh, yaml.sh
-# Globals: TEMPLATES_DIR, NATIVE_TEMPLATES_DIR, PROJECTS_DIR, PACKS_DIR
+# Globals: TEMPLATES_DIR, NATIVE_TEMPLATES_DIR, PACKS_DIR (projects via the STATE index, P5)
 
 # ── Template Resolution ──────────────────────────────────────────────
 
@@ -269,9 +269,13 @@ EOF
 
     if [[ -n "$from" ]]; then
         # Create from existing resource
-        local source_dir=""
-        if [[ -d "$PROJECTS_DIR/$from" ]]; then
-            source_dir="$PROJECTS_DIR/$from"
+        local source_dir="" from_project=false _ud
+        # A configured project (resolved via the STATE index): its committed
+        # config lives in <repo>/.cco/ — the claude/ tree + project.yml + root
+        # files. The central $PROJECTS_DIR layout is gone (P5).
+        if _ud=$(_resolve_unit_dir_for_project "$from" 2>/dev/null); then
+            source_dir="$_ud/.cco"
+            from_project=true
         elif [[ -d "$PACKS_DIR/$from" ]]; then
             source_dir="$PACKS_DIR/$from"
         elif [[ -d "$from" ]]; then
@@ -282,9 +286,23 @@ EOF
 
         cp -r "$source_dir" "$target_dir"
 
-        # Strip runtime state and generated artifacts
+        # A project's authored config tree is committed as claude/; templates use
+        # the native .claude/ layout (what `cco init --template` / the scaffold
+        # reads). Rename when sourcing from a project's .cco/.
+        if [[ "$from_project" == true && -d "$target_dir/claude" ]]; then
+            mv "$target_dir/claude" "$target_dir/.claude"
+        fi
+
+        # Strip runtime state and generated artifacts (defensive — the committed
+        # .cco/ holds none, but a pack/dir source might).
         rm -rf "$target_dir/.cco" "$target_dir/.tmp"
-        # Clear secrets content but keep the file
+        # Templates carry an (emptied) secrets.env skeleton; the committed project
+        # form is secrets.env.example. Normalize to a single emptied secrets.env.
+        if [[ -f "$target_dir/secrets.env.example" && ! -f "$target_dir/secrets.env" ]]; then
+            mv "$target_dir/secrets.env.example" "$target_dir/secrets.env"
+        else
+            rm -f "$target_dir/secrets.env.example"
+        fi
         if [[ -f "$target_dir/secrets.env" ]]; then
             > "$target_dir/secrets.env"
         fi
