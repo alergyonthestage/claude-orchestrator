@@ -10,10 +10,13 @@ Branch `feat/vault/decentralized-config`, commits **LOCAL** (the maintainer push
 
 ## ⏩ RESUME STATUS (read this FIRST)
 
-> **✅ PHASES 0–4 CLOSED + P5-0…P5-6 DONE (2026-06-25). ▶ RESUME AT P5-doc.** Build order (maintainer-confirmed):
-> P5-0 → P5-1 → P5-2 → P5-3 → P5-4 → P5-5 → P5-6 (config-protect docs ✅) → **P5-doc** → **pre-merge dogfooding**.
+> **✅ PHASES 0–4 CLOSED + P5-0…P5-doc DONE (2026-06-25) = P5 BUILD COMPLETE. ▶ RESUME AT pre-merge
+> dogfooding (§3/§4).** Build order (maintainer-confirmed): P5-0 → P5-1 → P5-2 → P5-3 → P5-4 → P5-5 →
+> P5-6 (config-protect docs ✅) → P5-doc (changelog #15 + sweep ✅) → **pre-merge dogfooding**.
 > The P4→P5 boundary audit is consumed (`reviews/24-06-2026-p4-p5-adherence-review.md`, 0 code 🔴). **Index
 > per-project namespacing = POST-V1** (ADR-0022 D2). **`cco config protect` helper = POST-V1** (ADR-0023 D6).
+> **Deferred doc-coherence item:** browser-mcp/design.md deep layout rewrite (file `browser.json`, CACHE
+> `managed/`, `/workspace/.managed` mount — pre-P5 Commit-B/T8 staleness; current-layout note at doc top).
 
 **P5 commits so far** (each delta-green; full detail at the tail of `decentralized-config-impl-progress.md`):
 
@@ -31,6 +34,10 @@ Branch `feat/vault/decentralized-config`, commits **LOCAL** (the maintainer push
   §9 "Governance & Protecting Config" (P17 delegate-to-git, two governance models, per-host CODEOWNERS +
   ruleset setup, 🚧 helper note) + design.md §11/§7 living-doc reconciliation to docs-only (ADR-0020 D4 +
   ADR-0023 D6). Suite **894/0** (docs-only, no delta).
+- **P5-doc** `ec696f5`/`c0ec64c` — Phase-5 close-out: browser-mcp/design.md reader-snippet sweep
+  (`$PROJECTS_DIR/*/`→index+CACHE; deep layout rewrite deferred + current-layout note) + changelog.yml
+  **additive #15** (all 9 P5 verbs, dispatch-verified). Migration check = **none needed** (no P5
+  `migrations/` change; whole-refactor migration rides changelog #14). Suite **894/0** (docs-only).
 
 **Suite 894/0** — delta-green is measured against **ZERO** failures (any failure = regression). Run with the
 hatch: `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test` (`--file <name>` / `--filter <substr>` to scope).
@@ -40,8 +47,9 @@ hatch: `CCO_ALLOW_HOST_RESOLVE=1 ./bin/test` (`--file <name>` / `--filter <subst
 **record any reconciliation**; a genuine design gap ⇒ **PAUSE and discuss**.
 
 **First actions (resume):** (1) `git log --oneline -12` + read the live progress note
-`decentralized-config-impl-progress.md` (cursor: P5-6 done; P5-doc scope at the tail); (2) re-confirm baseline
-**894/0**; (3) start **P5-doc** (§2); per §0, **propose the decomposition to the maintainer before writing.**
+`decentralized-config-impl-progress.md` (cursor: P5-doc done = P5 BUILD COMPLETE; next = pre-merge dogfooding);
+(2) re-confirm baseline **894/0**; (3) run **pre-merge dogfooding** (§3/§4) on the Mac — the v1 gate; per §0,
+the build is frozen, no further feature code planned for v1.
 
 ---
 
@@ -85,16 +93,21 @@ just before merging to `develop`. It is NOT needed to start P5-6.
   - There is currently **no** `cco config protect` doc section to de-🚧 — this is a NEW guide subsection
     (likely in `configuration-management.md` §Sharing/permissions or a short `permissions` guide).
   - Likely **no suite delta** (docs-only). Confirm placement + scope with the maintainer first.
-- **▶ P5-doc — close-out docs + changelog + migration.** The refactor practice deferred the changelog/migration
-  for all new P5 verbs to here (unmerged branch, no users yet). Tasks:
-  - One coherent **`changelog.yml`** entry (or a few) covering the P5 user-visible additions: `cco forget`,
-    `cco config validate`, `cco project validate`, `cco project coords`, `cco update --check`,
-    `pack/template internalize`, `project export --bundle-packs`, `init --template`.
-  - Any **migration** needed for the new STATE/DATA layouts introduced this phase (re-check: P5 mostly added
-    readers/new dirs, not schema-breaking moves — verify no migration is actually required before writing one).
-  - **Shipped-behavior doc sweep:** grep for residual stale tokens — `CCO_PROJECTS_DIR` env mentions left from
-    P5-1, the removed `cco project update` verb, any remaining 🚧 markers whose feature now ships.
-- **pre-merge dogfooding** — §3 below. After it passes, the refactor is **v1-complete**.
+- **P5-doc ✅ DONE (`ec696f5`/`c0ec64c`) — close-out docs + changelog + migration.** Delivered:
+  - **`changelog.yml` additive entry #15** "Decentralized config — lifecycle, validation & sharing commands"
+    covering all P5 user-visible verbs (`cco forget`, `cco project add`, `init --template`, `cco config
+    validate`, `cco project validate`, `cco project coords`, `cco update --check`, `pack/template
+    internalize`, `project export --bundle-packs`) — every verb dispatch-verified before listing.
+  - **Migration = none needed** (code-grounded: `git log <P5-start>..HEAD -- migrations/` empty; max schema
+    project=013/global=014 both pre-P5; whole-refactor migration rides changelog #14 `cco update`/`init
+    --migrate`; no users on the branch).
+  - **Shipped-behavior sweep = mostly already clean** (per-phase de-🚧 kept docs current): `CCO_PROJECTS_DIR`
+    env var absent from user docs; `cco project update` correctly documented as non-existent (cli.md §3.22);
+    the 2 residual 🚧 (config-protect helper, `cco template update`) are correct and kept. **One discovered
+    item:** browser-mcp/design.md reader snippets aligned to index+CACHE; its deeper pre-P5 layout staleness
+    (`browser.json`, CACHE `managed/`, `/workspace/.managed` mount) deferred to a dedicated pass + flagged
+    via a current-layout note at the doc top.
+- **▶ pre-merge dogfooding** — §3/§4 below. After it passes, the refactor is **v1-complete**.
 
 **Out of scope for v1** (do NOT build unless the maintainer pulls them in): the `cco config protect` **helper**
 command; index per-project **namespacing** (ADR-0022 D2, global-flat stays); **T** = DATA/STATE cross-PC
