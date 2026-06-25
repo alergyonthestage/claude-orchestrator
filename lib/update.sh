@@ -315,7 +315,7 @@ _resolve_project_defaults_dir() {
             elif [[ -d "$tmpl_dir" ]]; then
                 echo "$tmpl_dir"
             else
-                warn "Template '$tmpl_name' referenced by project '$(basename "$project_dir")' not found."
+                warn "Template '$tmpl_name' referenced by project '$(_cco_project_id "$project_dir")' not found."
                 warn "  Falling back to base template for discovery."
                 echo "$fallback"
             fi
@@ -342,11 +342,47 @@ _resolve_project_defaults_dir() {
             ;;
         *)
             # Unknown format — warn and fall back to base
-            warn "Unknown .cco/source format in project '$(basename "$project_dir")': $source_line"
+            warn "Unknown .cco/source format in project '$(_cco_project_id "$project_dir")': $source_line"
             warn "  Falling back to base template for discovery."
             echo "$fallback"
             ;;
     esac
+}
+
+# Stamp a freshly-created decentralized project (cco init scaffold / cco init
+# --migrate) as born at the latest project schema, and seed its 3-way-merge base
+# from the just-installed claude tree. Decentralized projects are written in
+# final form, so a later `cco update` must run ZERO migrations against them — the
+# legacy .claude-layout project migrations never apply (P5; maintainer-confirmed
+# "meta-at-latest" approach). Idempotent: re-runs overwrite meta + base.
+# Usage: _cco_project_seed_update_state <repo>/.cco [<template-name>]
+_cco_project_seed_update_state() {
+    local project_cco="$1"
+    local tmpl="${2:-base}"
+    local installed_dir="$project_cco/claude"
+    local meta_file base_dir latest created
+    meta_file=$(_cco_project_meta "$project_cco")
+    base_dir=$(_cco_project_base_dir "$project_cco")
+    latest=$(_latest_schema_version "project")
+    created=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    # Manifest = hashes of the tracked files in the installed claude tree
+    # (same shape _update_project builds; update.sh project-meta regeneration).
+    local manifest="" entry rel policy h
+    for entry in "${PROJECT_FILE_POLICIES[@]}"; do
+        rel="${entry%:*}"; policy="${entry##*:}"
+        [[ "$policy" == "untracked" ]] && continue
+        rel="${rel#.claude/}"
+        if [[ -f "$installed_dir/$rel" ]]; then
+            h=$(_file_hash "$installed_dir/$rel")
+            manifest+="${rel}	${h}"$'\n'
+        fi
+    done
+    printf '%s' "$manifest" | _generate_project_cco_meta "$meta_file" "$latest" "$created" "$tmpl"
+
+    # Seed the 3-way-merge base from the installed tree (base == installed, so a
+    # first `cco update` sees no spurious diffs).
+    _save_all_base_versions "$base_dir" "$installed_dir" "project"
 }
 
 # Update a project's config
@@ -360,11 +396,14 @@ _update_project() {
     local cache_mode="${7:-default}"
     local local_override="${8:-false}"
     local diff_mode="${9:-full}"  # summary | full (for --diff mode)
+    # project_dir is the committed <repo>/.cco/ (decentralized layout, P5); the
+    # project identity is its project.yml name:, and the installed claude tree is
+    # <repo>/.cco/claude (not a dotted .claude/ as in the gone central layout).
     local pname
-    pname="$(basename "$project_dir")"
+    pname=$(_cco_project_id "$project_dir")
     local meta_file
     meta_file=$(_cco_project_meta "$project_dir")
-    local installed_dir="$project_dir/.claude"
+    local installed_dir="$project_dir/claude"
     local base_dir
     base_dir=$(_cco_project_base_dir "$project_dir")
 

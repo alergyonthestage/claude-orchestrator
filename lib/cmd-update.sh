@@ -3,7 +3,7 @@
 #
 # Provides: cmd_update()
 # Dependencies: colors.sh, utils.sh, update.sh
-# Globals: GLOBAL_DIR, DEFAULTS_DIR, PROJECTS_DIR, REPO_ROOT
+# Globals: GLOBAL_DIR, DEFAULTS_DIR, REPO_ROOT (projects via the STATE index, P5)
 
 cmd_update() {
     local cmd_mode="discovery"   # discovery | diff | sync | news
@@ -136,9 +136,10 @@ EOF
     # Validate scope: "global" is a keyword (see RESERVED_PROJECT_NAMES),
     # anything else must be an existing project
     if [[ -n "$scope" && "$scope" != "global" ]]; then
-        local scoped_dir="$PROJECTS_DIR/$scope"
-        [[ ! -d "$scoped_dir" ]] && die "Project '$scope' not found. Run 'cco project list'."
-        [[ ! -f "$scoped_dir/project.yml" ]] && die "No project.yml in projects/$scope/"
+        local scoped_unit
+        scoped_unit=$(_resolve_unit_dir_for_project "$scope" 2>/dev/null) \
+            || die "Project '$scope' not found (unknown, or its repo is unresolved here — run 'cco resolve $scope')."
+        [[ ! -f "$scoped_unit/.cco/project.yml" ]] && die "No .cco/project.yml for project '$scope'."
     fi
 
     # Determine diff display mode: summary (file list only) or full (with diff content)
@@ -205,24 +206,27 @@ EOF
         # When migrations/pack/ or migrations/template/ exist, iterate
         # user-config/packs/*/ and user-config/templates/*/ here.
 
-        local project_dir project_errors=0
-        for project_dir in "$PROJECTS_DIR"/*/; do
-            [[ ! -d "$project_dir" ]] && continue
-            [[ ! -f "$project_dir/project.yml" ]] && continue
-            local pname
-            pname="$(basename "$project_dir")"
+        local pname unit_dir project_dir project_errors=0
+        while IFS='=' read -r pname _; do
+            [[ -z "$pname" ]] && continue
+            unit_dir=$(_resolve_unit_dir_for_project "$pname" 2>/dev/null) || continue
+            project_dir="$unit_dir/.cco"
+            [[ -f "$project_dir/project.yml" ]] || continue
             info "$verb project '$pname'..."
             if ! _update_project "$project_dir" "$cmd_mode" "$dry_run" "$no_backup" "$auto_action" "$offline_mode" "$cache_mode" "$local_override" "$diff_mode"; then
                 warn "Project '$pname' update encountered errors."
                 project_errors=$(( project_errors + 1 ))
             fi
-        done
+        done < <(_index_list_projects)
         if [[ $project_errors -gt 0 ]]; then
             warn "$project_errors project(s) had update errors. Run 'cco update' again after resolving."
             project_failed=true
         fi
     elif [[ "$do_projects" != "none" && "$do_projects" != "all" && "$cmd_mode" != "news" ]]; then
-        local project_dir="$PROJECTS_DIR/$do_projects"
+        local unit_dir project_dir
+        unit_dir=$(_resolve_unit_dir_for_project "$do_projects" 2>/dev/null) \
+            || die "Project '$do_projects' not found (unknown, or its repo is unresolved here — run 'cco resolve $do_projects')."
+        project_dir="$unit_dir/.cco"
         info "$verb project '$do_projects'..."
         if ! _update_project "$project_dir" "$cmd_mode" "$dry_run" "$no_backup" "$auto_action" "$offline_mode" "$cache_mode" "$local_override" "$diff_mode"; then
             warn "Project '$do_projects' update encountered errors. Run 'cco update --sync $do_projects' again."

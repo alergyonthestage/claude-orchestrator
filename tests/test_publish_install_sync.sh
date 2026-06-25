@@ -307,9 +307,11 @@ test_update_sync_installed_with_local() {
     setup_cco_env "$tmpdir"
     init_global "$tmpdir" --lang "English"
 
-    # Create installed project with a modified file to trigger sync
+    # Create installed project with a modified file to trigger sync. The
+    # installed claude tree lives in the committed <repo>/.cco/claude (P5).
     create_project "$tmpdir" "remote-app" "name: remote-app"
-    mkdir -p "$CCO_PROJECTS_DIR/remote-app/.claude"
+    local cco; cco=$(host_cco_dir "$tmpdir" "remote-app")
+    mkdir -p "$cco/claude"
     local latest_schema
     latest_schema=$(bash -c "source '$REPO_ROOT/lib/colors.sh'; source '$REPO_ROOT/lib/utils.sh'; source '$REPO_ROOT/lib/paths.sh'; source '$REPO_ROOT/lib/yaml.sh'; source '$REPO_ROOT/lib/update-hash-io.sh'; source '$REPO_ROOT/lib/update-merge.sh'; source '$REPO_ROOT/lib/update-meta.sh'; source '$REPO_ROOT/lib/update-discovery.sh'; source '$REPO_ROOT/lib/update-sync.sh'; source '$REPO_ROOT/lib/update-changelog.sh'; source '$REPO_ROOT/lib/update-remote.sh'; source '$REPO_ROOT/lib/update.sh'; _latest_schema_version project")
     # Coordinate → DATA source; schema + install commit → STATE meta (ADR-0022 D1).
@@ -320,7 +322,7 @@ test_update_sync_installed_with_local() {
     printf 'schema_version: %s\ninstalled_commit: abc123\n' "$latest_schema" \
         > "$(state_project_meta remote-app)"
     # Copy base template files (project base template has CLAUDE.md, settings.json, etc.)
-    cp -r "$REPO_ROOT/templates/project/base/.claude/"* "$CCO_PROJECTS_DIR/remote-app/.claude/" 2>/dev/null || true
+    cp -r "$REPO_ROOT/templates/project/base/.claude/"* "$cco/claude/" 2>/dev/null || true
     # Save base versions (matching installed) → STATE base (H6)
     mkdir -p "$(state_project_base remote-app)"
     cp -r "$REPO_ROOT/templates/project/base/.claude/"* "$(state_project_base remote-app)/" 2>/dev/null || true
@@ -337,7 +339,7 @@ test_update_sync_installed_with_local() {
 
     # Verify framework file content was actually applied to the project directory
     # With --force on UPDATE_AVAILABLE, the file IS replaced with the new default
-    assert_file_contains "$CCO_PROJECTS_DIR/remote-app/.claude/CLAUDE.md" \
+    assert_file_contains "$cco/claude/CLAUDE.md" \
         "Framework improvement for projects" \
         "--local --force should apply framework file content to installed project"
 
@@ -456,6 +458,7 @@ test_update_local_project_sync_with_divergence() {
     init_global "$tmpdir" --lang "English"
 
     create_project "$tmpdir" "sync-test-app" "$(minimal_project_yml sync-test-app)"
+    local cco; cco=$(host_cco_dir "$tmpdir" "sync-test-app")
 
     # Create actual framework divergence in CLAUDE.md (tracked by PROJECT_FILE_POLICIES)
     # The project template base is templates/project/base/.claude/CLAUDE.md
@@ -467,8 +470,8 @@ test_update_local_project_sync_with_divergence() {
     assert_output_contains "Update complete" \
         "Sync should complete successfully"
 
-    # Verify the divergent content was actually applied to the project
-    assert_file_contains "$CCO_PROJECTS_DIR/sync-test-app/.claude/CLAUDE.md" \
+    # Verify the divergent content was actually applied to the project's claude tree
+    assert_file_contains "$cco/claude/CLAUDE.md" \
         "Sync divergence test change" \
         "Framework divergence should be applied to the project"
     # with_framework_change trap restores the template file

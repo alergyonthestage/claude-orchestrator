@@ -296,6 +296,11 @@ _cco_init_scaffold_repo() {
     _index_set_path "$name" "$target"
     _index_set_project_repos "$name" "$name"
 
+    # Born at the latest schema (decentralized projects are scaffolded in final
+    # form) + seed the 3-way-merge base, so `cco update` runs zero migrations and
+    # sees no spurious diffs (P5).
+    _cco_project_seed_update_state "$ccodir" "${tmpl_name:-base}"
+
     ok "Scaffolded project '$name' in $ccodir/"
     echo "  Registered in the index (1 repo)." >&2
     echo "  Next: edit .cco/project.yml, then  cco start $name" >&2

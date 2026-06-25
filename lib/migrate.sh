@@ -626,6 +626,11 @@ _cco_migrate_project() {
     done < "$idx"
     [[ ${#repo_names[@]} -gt 0 ]] && _index_set_project_repos "$mig_name" "${repo_names[@]}"
 
+    # Born at the latest schema + seed the 3-way-merge base (P5): the migration
+    # wrote the complete final project.yml/claude tree in one pass, so `cco update`
+    # must run zero (legacy .claude-layout) migrations against it.
+    _cco_project_seed_update_state "$target/.cco" "base"
+
     ok "Migrated project '$mig_name' into $target/.cco/ (Case A)."
 
     # Profile→tag prompt (ADR-0010 §5 / F42) — only for a non-default origin profile.
