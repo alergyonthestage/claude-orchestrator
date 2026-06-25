@@ -23,6 +23,18 @@
 > **Revision note (2026-03-02)**: Added port conflict resolution (D8, D9): auto-assign
 > with warning, `.browser-port` runtime file, `cco chrome --project` flag.
 > Added D10: Chrome 145+ Host header fix via socat CDP proxy.
+>
+> **Current-layout note (2026-06-25, decentralized-config refactor)**: the generated
+> browser files and their mount moved with the managed-runtime → CACHE consolidation.
+> The **canonical current layout** is: the file is named **`browser.json`** (not
+> `browser-mcp.json`) and is written, together with `.browser-port`, under
+> **`<cache>/cco/projects/<name>/managed/`** (resolved by `_cco_project_cache_managed`);
+> the whole `managed/` dir is mounted **`:ro` to `/workspace/.managed`** (not the single
+> file to `/workspace/browser-mcp.json`). Project enumeration is via the **STATE index**
+> (`_index_list_projects` / `_index_get_path`), not a central `projects/` dir. The port
+> resolution functions in §4/§7 reflect this; the §3/§6 file-layout, §4 compose-mount,
+> and §5.5 stop-cleanup prose still show the **pre-refactor** central `projects/<name>/`
+> + `browser-mcp.json` model and are pending a dedicated coherence pass.
 
 ---
 
@@ -327,34 +339,39 @@ fi
 
 ```bash
 # Returns CDP ports claimed by running cco sessions (one per line).
-# Iterates project directories (not container names) to avoid mismatch
-# when project.yml `name:` differs from the directory name.
+# Enumerates the STATE index (logical name -> repo) rather than a central
+# project directory; each project's committed config is read from its repo
+# (`<repo>/.cco/project.yml`) and its runtime port from CACHE, keyed by name.
 _collect_claimed_browser_ports() {
     local current_project="$1"
     local claimed=()
-    for proj_dir in "$PROJECTS_DIR"/*/; do
-        [[ ! -d "$proj_dir" ]] && continue
-        local proj; proj=$(basename "$proj_dir")
+    local proj repo
+    while IFS='=' read -r proj _; do
+        [[ -z "$proj" ]] && continue
         [[ "$proj" == "$current_project" ]] && continue
-        local yml="$proj_dir/project.yml"
+        repo=$(_index_get_path "$proj")
+        [[ -z "$repo" ]] && continue
+        local yml="$repo/.cco/project.yml"
         [[ ! -f "$yml" ]] && continue
         local enabled; enabled=$(yml_get "$yml" "browser.enabled")
         [[ "$enabled" != "true" ]] && continue
-        # Verify container is actually running (use yml name, fallback to dir name)
+        # Verify container is actually running (use yml name, fallback to index name)
         local yml_name; yml_name=$(yml_get "$yml" "name")
         [[ -z "$yml_name" ]] && yml_name="$proj"
         local container="cc-${yml_name}"
         docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${container}$" || continue
-        # Read effective port (runtime file > project.yml > default)
-        if [[ -f "$proj_dir/.browser-port" ]]; then
-            claimed+=("$(cat "$proj_dir/.browser-port")")
+        # Read effective port (CACHE runtime file > project.yml > default)
+        local managed; managed=$(_cco_project_cache_managed "$proj")
+        if [[ -f "$managed/.browser-port" ]]; then
+            claimed+=("$(cat "$managed/.browser-port")")
         else
             local port; port=$(yml_get "$yml" "browser.cdp_port")
             [[ -z "$port" ]] && port="9222"
             claimed+=("$port")
         fi
-    done
-    printf '%s\n' "${claimed[@]}"
+    done < <(_index_list_projects)
+    # bash 3.2 + set -u: guard the empty array before printf
+    [[ ${#claimed[@]} -gt 0 ]] && printf '%s\n' "${claimed[@]}"
 }
 
 # Finds the lowest free port starting from preferred, skipping claimed ports
@@ -680,21 +697,26 @@ _chrome_resolve_port() {
     fi
 
     if [[ -n "$opt_project" ]]; then
+        # Resolve the project's committed config via the STATE index (decentralized
+        # layout); the browser runtime file lives in CACHE, keyed by project name.
+        local yml_name container_name repo proj_yml=""
+        repo=$(_index_get_path "$opt_project")
+        [[ -n "$repo" ]] && proj_yml="$repo/.cco/project.yml"
         # Warn if container is not running (stale runtime file)
-        local yml_name container_name
-        yml_name=$(yml_get "$PROJECTS_DIR/$opt_project/project.yml" "name" 2>/dev/null)
-        [[ -z "$yml_name" ]] && yml_name="$opt_project"
+        if [[ -n "$proj_yml" && -f "$proj_yml" ]]; then
+            yml_name=$(yml_get "$proj_yml" "name")
+        fi
+        [[ -z "${yml_name:-}" ]] && yml_name="$opt_project"
         container_name="cc-${yml_name}"
         if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${container_name}$"; then
             warn "Container ${container_name} is not running. Port may be stale."
         fi
-        local runtime_file="$PROJECTS_DIR/$opt_project/.browser-port"
+        local runtime_file; runtime_file="$(_cco_project_cache_managed "$opt_project")/.browser-port"
         if [[ -f "$runtime_file" ]]; then
             cat "$runtime_file"; return
         fi
-        local yml="$PROJECTS_DIR/$opt_project/project.yml"
-        if [[ -f "$yml" ]]; then
-            local p; p=$(yml_get "$yml" "browser.cdp_port")
+        if [[ -n "$proj_yml" && -f "$proj_yml" ]]; then
+            local p; p=$(yml_get "$proj_yml" "browser.cdp_port")
             [[ -n "$p" ]] && echo "$p" && return
         fi
     fi
@@ -971,7 +993,7 @@ The largest change. Add in order:
 
 1. **Flag parsing**: `--chrome) opt_chrome="true" ;;`
 2. **Browser config parsing**: read `browser.enabled`, `browser.mode`, `browser.cdp_port`, `browser.mcp_args` from `project.yml`; apply `--chrome` override after parsing
-3. **Port resolution functions**: `_collect_claimed_browser_ports` (iterates `$PROJECTS_DIR`, validates running containers) and `_resolve_browser_port` (while-read loop, no `mapfile`)
+3. **Port resolution functions**: `_collect_claimed_browser_ports` (enumerates the STATE index, validates running containers) and `_resolve_browser_port` (while-read loop, no `mapfile`)
 4. **`_generate_browser_mcp`**: generates `browser-mcp.json` with privacy flags and optional `mcp_args`
 5. **Compose injection**: `browser-mcp.json` volume mount + `extra_hosts` (between `ports:` and `networks:`)
 6. **Dry-run output**: summary line with effective port
