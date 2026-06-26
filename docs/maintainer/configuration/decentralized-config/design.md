@@ -378,13 +378,15 @@ The single source of machine-specific truth is the **index** (`<state>/cco/index
 never committed, never synced:
 ```yaml
 version: 1
-paths:                       # logical name -> absolute path (repos AND extra mounts)
-  repo1:          /Users/me/dev/repo1
-  repo2:          /Users/me/dev/repo2
-  shared-assets:  /Users/me/assets
-projects:                    # subsumes the old registry — paths/repos only, NO tags
-  projectA: { repos: [repo1, repo2, repo3] }
+paths:                       # logical name -> absolute path (repos AND extra mounts), quoted
+  repo1: "/Users/me/dev/repo1"
+  repo2: "/Users/me/dev/repo2"
+  shared-assets: "/Users/me/assets"
+projects:                    # subsumes the old registry — member repo names, space-separated
+  projectA: "repo1 repo2 repo3"
 ```
+> Format note: values are stored double-quoted; `projects:` holds a space-separated
+> member-name string (not a nested mapping) — this matches `lib/index.sh`.
 > The index **subsumes** both `@local` markers and the per-repo `<repo>/.cco/local-paths.yml`
 > (ADR-0016 D4): the per-repo file is removed (it was internal data inside a config bucket — a P6
 > violation, C4-class). The index is the **local-path materialization** of the repo coordinate
