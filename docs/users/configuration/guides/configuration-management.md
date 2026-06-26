@@ -53,7 +53,7 @@ transports**. Keeping them separate is the whole model.
 | **Axis-1 — private, multi-PC** | Get *your* config onto *your* other machines | `git pull` on each repo (for `<repo>/.cco/`) · `cco config push/pull` (for `~/.cco`) |
 | **Axis-2 — team sharing** | Get config to *other people* | a project rides its **code repo remote** (by construction) · packs/templates ride a **sharing repo** |
 
-The key fact (ADR-0024 "Front E"): because a project's config is **committed inside
+The key fact: because a project's config is **committed inside
 the repo it serves**, both axes are satisfied **by construction** through that repo's
 own remote — clone the repo on a second machine *or* hand it to a teammate, and the
 `<repo>/.cco/` config comes with it. There is no separate "publish a project" step.

@@ -15,6 +15,10 @@
 > `resource-lifecycle/` analysis (now archived under `../_archive/`). This design is their
 > single canonical source.
 
+> **Related designs in this domain:**
+> - [`design-base-tracking-fix.md`](design-base-tracking-fix.md) — shipped fix
+> - [`design-ux-improvements.md`](design-ux-improvements.md) — planned
+
 ---
 
 ## 1. Business Model — Resource Taxonomy

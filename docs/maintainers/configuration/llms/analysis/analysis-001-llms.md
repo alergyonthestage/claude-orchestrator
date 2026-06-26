@@ -1,7 +1,7 @@
 # Analysis: llms.txt Integration
 
+> **Status**: superseded (design choices refined by decentralized-config ADR-0014). Kept as history.
 > Date: 2026-03-24
-> Status: Complete
 > Next: [design.md](design.md)
 
 ---

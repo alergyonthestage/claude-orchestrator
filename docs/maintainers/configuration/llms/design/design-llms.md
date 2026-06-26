@@ -16,7 +16,7 @@ code against up-to-date APIs and patterns.
 
 ```mermaid
 graph TB
-    subgraph "user-config/"
+    subgraph "CACHE (~/.cache/cco/)"
         LLMS["llms/<br/>svelte/<br/>shadcn-svelte/<br/>..."]
     end
     subgraph "project A"
@@ -49,7 +49,7 @@ graph TB
 ### 2.1 Storage Layout
 
 ```
-user-config/llms/
+~/.cache/cco/llms/
 ├── svelte/
 │   ├── llms-full.txt           # Primary doc file (downloaded)
 │   ├── llms.txt                # Index file (optional, if available)
@@ -118,7 +118,7 @@ rules:
   - frontend-rules.md
 ```
 
-**Short form**: `- svelte` — references `user-config/llms/svelte/`, uses default
+**Short form**: `- svelte` — references `~/.cache/cco/llms/svelte/`, uses default
 variant resolution and auto-generated description.
 
 **Long form**: `- name: shadcn-svelte` with optional `description:` and
@@ -150,7 +150,7 @@ overrides).
 
 ```yaml
 llms:
-  - name: svelte              # Required: matches directory in user-config/llms/
+  - name: svelte              # Required: matches directory in ~/.cache/cco/llms/
     description: "..."        # Optional: override for packs.md (default: auto from file H1)
     variant: full             # Optional: force specific variant (default: auto-resolve)
 ```
@@ -161,7 +161,7 @@ llms:
 
 ### 4.1 `cco llms install <url> [--name <name>] [--variant <v>] [--pack <pack>] [--project <project>]`
 
-Downloads an llms.txt file and saves it to `user-config/llms/<name>/`.
+Downloads an llms.txt file and saves it to `~/.cache/cco/llms/<name>/`.
 
 **Behavior**:
 
@@ -180,7 +180,7 @@ Downloads an llms.txt file and saves it to `user-config/llms/<name>/`.
    provided URL). Always download the index `llms.txt` too if available
    (lightweight, useful as catalog).
 
-4. Save to `user-config/llms/<name>/` with source metadata in `.cco/source`.
+4. Save to `~/.cache/cco/llms/<name>/` with source metadata in `.cco/source`.
 
 5. If `--pack <pack>` is specified, add the name to `pack.yml`'s `llms:` list.
    If `--project <project>` is specified, add to `project.yml`'s `llms:` list.
@@ -189,10 +189,10 @@ Downloads an llms.txt file and saves it to `user-config/llms/<name>/`.
 
 ```bash
 cco llms install https://svelte.dev/docs/svelte/llms.txt
-# → Downloads llms-full.txt (detected), saves to user-config/llms/svelte/
+# → Downloads llms-full.txt (detected), saves to ~/.cache/cco/llms/svelte/
 
 cco llms install https://shadcn-svelte.com/llms.txt --name shadcn-svelte
-# → Downloads llms.txt (no full variant), saves to user-config/llms/shadcn-svelte/
+# → Downloads llms.txt (no full variant), saves to ~/.cache/cco/llms/shadcn-svelte/
 
 cco llms install https://svelte.dev/docs/svelte/llms.txt --variant medium --pack frontend-stack
 # → Downloads llms-medium.txt, adds "svelte" to frontend-stack pack.yml llms: list
@@ -207,7 +207,7 @@ Detecting variants for svelte...
   llms-medium.txt ✓ (8420 lines)
   llms-small.txt  ✓ (3210 lines)
 Downloading llms-full.txt (default)...
-Saved to user-config/llms/svelte/
+Saved to ~/.cache/cco/llms/svelte/
   llms.txt      (index)
   llms-full.txt (primary — 17140 lines)
 ```
@@ -331,7 +331,7 @@ _resolve_llms_mounts():
   3. Deduplicate (project overrides take precedence for variant)
   4. For each unique name:
      a. Resolve primary file (variant priority: full > medium > small > index)
-     b. Verify directory exists in user-config/llms/<name>/
+     b. Verify directory exists in ~/.cache/cco/llms/<name>/
      c. Generate mount line
 ```
 
@@ -456,7 +456,7 @@ yml_get_llms_names()
 ### 8.2 Updated Validation
 
 `_validate_single_pack()` in `lib/packs.sh` gains llms validation:
-- Each referenced llms name must exist in `user-config/llms/<name>/`
+- Each referenced llms name must exist in `~/.cache/cco/llms/<name>/`
 - At least one doc file must be present (llms-full.txt or llms.txt)
 
 New `_validate_project_llms()` for project.yml validation (same checks).
@@ -480,7 +480,7 @@ Following the existing pattern (`lib/cmd-pack.sh`), a new module handles all
 #
 # Provides: cmd_llms()
 # Dependencies: colors.sh, utils.sh, paths.sh
-# Globals: LLMS_DIR (user-config/llms)
+# Globals: LLMS_DIR (CACHE: ~/.cache/cco/llms)
 
 cmd_llms() {
     local subcmd="${1:-}"
@@ -550,7 +550,7 @@ This is informational only — `cco update` does not auto-download. It suggests
 
 llms.txt is a purely additive feature:
 - New `llms:` key in pack.yml/project.yml — ignored by existing parsers
-- New `user-config/llms/` directory — does not affect existing installations
+- New `~/.cache/cco/llms/` directory — does not affect existing installations
 - New managed rule — added on next `cco build`
 - Existing packs and projects continue to work unchanged
 
@@ -610,13 +610,15 @@ need for full-file reads. The llms directory structure is already RAG-friendly
 
 ### Config Repos (Sharing)
 
+> Superseded by [ADR-0014](../../decentralized-config/decisions/0014-llms-and-referenced-resource-coordinates.md): the coordinate/registry model below (by-name reference + `.cco/source` URL + manifest-based sharing) is generalized by the unified "referenced-resource coordinate" model — the coordinate (name → url[+variant]) now lives in config (project.yml / pack.yml) while downloaded content stays re-fetchable in CACHE.
+
 llms entries are user-config resources. They can be shared via Config Repos
 using the existing manifest system. The `.cco/source` metadata enables
 consumers to re-fetch from the original URL if needed.
 
 ### Vault
 
-`user-config/llms/` is tracked by the vault like any other user-config
+`~/.cache/cco/llms/` is tracked by the vault like any other user-config
 resource. The `.cco/source` files are committed; the actual llms.txt content
 files can be gitignored (regenerable from source URL) or committed (for
 offline use). Default: committed (offline-first philosophy).
@@ -630,7 +632,7 @@ offline use). Default: committed (offline-first philosophy).
 | Question | Decision |
 |----------|----------|
 | Separate concept from knowledge? | Yes — different lifecycle, ownership, semantics |
-| Where to store files? | `user-config/llms/<name>/` (shared) |
+| Where to store files? | `~/.cache/cco/llms/<name>/` (shared) |
 | Default variant? | `full` (self-contained, no runtime network) |
 | Referenced from packs or projects? | Both |
 | Dedicated CLI or extend pack CLI? | Dedicated `cco llms` subcommand |

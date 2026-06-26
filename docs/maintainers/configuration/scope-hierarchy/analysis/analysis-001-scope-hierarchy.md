@@ -1,6 +1,6 @@
 # Analysis: Scope Hierarchy and Configuration
 
-> **Status**: Analysis — exploration and requirements documentation phase
+> **Status**: superseded (pre-managed-split taxonomy; current model in ../design/design-scope-hierarchy.md). Kept as history.
 > **Date**: 2026-02-27
 > **Scope**: Architecture — reorganization of system/global/project tiers
 

@@ -387,6 +387,12 @@ networks:
     driver: bridge
 ```
 
+> **Note — template vs. runtime compose:** The `build:` block above documents the
+> Dockerfile build context for reference. The runtime `docker-compose.yml` that
+> `cco start` actually generates references a **pre-built `image:`** (no inline
+> `build:` section): the image is built once via `cco build` (or
+> `docker build -t claude-orchestrator:latest .`) and reused across sessions.
+
 ### 2.2 Volume Mount Strategy
 
 All host SOURCES are **host-absolute** (resolved by `cco start`). `<repo>` is the invoking

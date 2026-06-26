@@ -1,5 +1,7 @@
 # Update System — Architecture Analysis v2
 
+> **Status**: living (canonical change taxonomy).
+
 **Date**: 2026-03-17 (Revised)
 **Scope**: Architecture-level — cross-cutting analysis
 **Related**: `design.md` (definitive design, updated in parallel), `ux-improvements-design.md` (Phase 2: `--diff` summary + scope filtering, Phase 3: `USER_RESTRUCTURED` divergence detection)

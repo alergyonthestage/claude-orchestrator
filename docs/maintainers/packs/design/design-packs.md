@@ -17,16 +17,16 @@ A pack is a self-contained bundle that groups:
 - **Agents** — definitions of specialized subagents
 - **Rules** — additional rules for session context
 
-A pack is defined once in `user-config/packs/<name>/` and activated in any project by adding its name to the `packs:` list in `project.yml`. All sections are optional: a pack can contain only knowledge, only skills, or any combination.
+A pack is defined once in `~/.cco/packs/<name>/` and activated in any project by adding its name to the `packs:` list in `project.yml`. All sections are optional: a pack can contain only knowledge, only skills, or any combination.
 
 ---
 
 ## 2. Pack Format — `pack.yml`
 
-Each pack is defined by a `pack.yml` file in its own directory under `user-config/packs/`:
+Each pack is defined by a `pack.yml` file in its own directory under `~/.cco/packs/`:
 
 ```yaml
-# user-config/packs/my-client/pack.yml
+# ~/.cco/packs/my-client/pack.yml
 
 name: my-client
 
@@ -40,7 +40,7 @@ knowledge:
       description: "Read for business context and product understanding"
     - testing-guidelines.md              # short form: without description
 
-# LLMs.txt references — framework docs from user-config/llms/ (mounted :ro at cco start)
+# LLMs.txt references — framework docs from CACHE (~/.cache/cco/llms/, mounted :ro at cco start)
 llms:
   - svelte
   - name: shadcn-svelte
@@ -66,7 +66,7 @@ The `name` field must match the pack's directory name. `cco pack validate` emits
 ### Pack directory structure
 
 ```
-user-config/packs/<name>/
+~/.cco/packs/<name>/
 ├── pack.yml              # Pack manifest
 ├── knowledge/            # Fallback if knowledge.source is not specified
 │   ├── overview.md
@@ -110,7 +110,7 @@ Additional rules `.md` files. They are mounted read-only to `/workspace/.claude/
 
 ### 3.5 LLMs.txt
 
-Official framework documentation files following the [llms.txt standard](https://llmstxt.org/). Unlike knowledge files (which are pack-owned), llms files are stored centrally in `user-config/llms/` and shared across packs and projects.
+Official framework documentation files following the [llms.txt standard](https://llmstxt.org/). Unlike knowledge files (which are pack-owned), llms content is re-fetchable and stored in CACHE (`~/.cache/cco/llms/`), shared across packs and projects.
 
 - **Referenced** by name in `pack.yml` and `project.yml` (`llms:` section)
 - **Mounted** read-only at `/workspace/.claude/llms/<name>/` at `cco start`
@@ -235,9 +235,9 @@ Here's what happens, step by step, when `cco start` processes packs:
    ```
 
 4. **Resource mounts** — skills, agents, and rules from each pack are added to the generated `docker-compose.yml` as read-only volume mounts:
-   - `user-config/packs/<name>/skills/<skill>/` → `/workspace/.claude/skills/<skill>/:ro` (directory mount)
-   - `user-config/packs/<name>/agents/<agent>.md` → `/workspace/.claude/agents/<agent>.md:ro` (file mount)
-   - `user-config/packs/<name>/rules/<rule>.md` → `/workspace/.claude/rules/<rule>.md:ro` (file mount)
+   - `~/.cco/packs/<name>/skills/<skill>/` → `/workspace/.claude/skills/<skill>/:ro` (directory mount)
+   - `~/.cco/packs/<name>/agents/<agent>.md` → `/workspace/.claude/agents/<agent>.md:ro` (file mount)
+   - `~/.cco/packs/<name>/rules/<rule>.md` → `/workspace/.claude/rules/<rule>.md:ro` (file mount)
 
 5. **Generation of `packs.md`** — `.claude/packs.md` is generated with the instructional list of knowledge files and their descriptions.
 
