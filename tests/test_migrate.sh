@@ -454,6 +454,58 @@ test_migrate_project_profile_tag() {
         "a profile-hosted project should be tagged with its origin profile (ADR-0010 §5)"
 }
 
+# BL1/BL2 (26-06-2026 migration review): a project living ONLY on a non-active
+# profile branch must recover its gitignored secrets, memory, and local-paths from
+# the vault's profile-state shadow — git archive serializes committed files only.
+test_migrate_project_inactive_profile_gitignored_from_shadow() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local vault="$CCO_USER_CONFIG_DIR"
+    mkdir -p "$vault/global/.claude"
+    echo "# g" > "$vault/global/.claude/CLAUDE.md"
+    git -C "$vault" init -q
+    git -C "$vault" symbolic-ref HEAD refs/heads/main 2>/dev/null
+    git -C "$vault" add -A 2>/dev/null
+    git -C "$vault" commit -q -m "main" 2>/dev/null
+    # 'work' profile hosting 'work-app' (committed only on this branch).
+    git -C "$vault" checkout -q -b work 2>/dev/null
+    mkdir -p "$vault/projects/work-app/.claude"
+    cat > "$vault/projects/work-app/project.yml" <<'YML'
+name: work-app
+repos:
+  - path: "@local"
+    name: workrepo
+    url: git@github.com:org/workrepo.git
+YML
+    echo "# work-app" > "$vault/projects/work-app/.claude/CLAUDE.md"
+    printf 'profile: work\nsync:\n  projects:\n    - work-app\n  packs:\n    []\n' > "$vault/.vault-profile"
+    git -C "$vault" add -A 2>/dev/null
+    git -C "$vault" commit -q -m "work profile" 2>/dev/null
+    git -C "$vault" checkout -q main 2>/dev/null
+    # The inactive profile's gitignored files live in the on-disk profile-state
+    # shadow (untracked → captured by the raw-tar backup, not by git archive).
+    local sh="$vault/.cco/profile-state/work/projects/work-app"
+    mkdir -p "$sh/.cco" "$sh/memory"
+    echo "WORKAPP_SECRET=xyz789" > "$sh/secrets.env"
+    echo "remember work-app" > "$sh/memory/note.md"
+    printf 'repos:\n  workrepo: "/home/dev/workrepo"\n' > "$sh/.cco/local-paths.yml"
+    mkdir -p "$tmpdir/clones/workrepo"
+
+    ( cd "$tmpdir/clones/workrepo" && CCO_ASSUME_YES=1 run_cco init --migrate work-app )
+
+    # BL1 — secrets recovered from the shadow into the committed (gitignored) .cco/secrets.env
+    assert_file_contains "$tmpdir/clones/workrepo/.cco/secrets.env" "WORKAPP_SECRET=xyz789" \
+        "inactive-profile project secrets must be migrated from the profile-state shadow (BL1)"
+    # BL2 — memory recovered from the shadow into STATE
+    assert_file_exists "$CCO_STATE_HOME/projects/work-app/memory/note.md" \
+        "inactive-profile project memory must be migrated from the shadow (BL2)"
+    # local-paths from the shadow → index (repo path still registered)
+    assert_file_contains "$CCO_STATE_HOME/index" 'workrepo: "/home/dev/workrepo"' \
+        "inactive-profile repo path (from shadow local-paths.yml) must register in the index"
+    # machine-agnostic project.yml — no host path leaks even via the shadow
+    assert_file_not_contains "$tmpdir/clones/workrepo/.cco/project.yml" "/home/dev"
+}
+
 test_join_registers_index() {
     # cco join in a cloned repo registers project membership for this machine.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT

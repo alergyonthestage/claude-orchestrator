@@ -559,16 +559,39 @@ _cco_migrate_project() {
     tar -xzf "$backup" -C "$tmp" 2>/dev/null || die "Could not extract the legacy-vault backup."
 
     # Locate the legacy project (working-tree first; else from its profile branch).
+    # Track the hosting branch + profile so the gitignored files (secrets.env,
+    # memory/, local-paths.yml) of a NON-ACTIVE profile can be recovered from the
+    # vault's profile-state shadow (BL1/BL2 — design §9 "secrets from the working
+    # tree / the matching profile-state/<branch>/ shadow").
     local leg="$tmp/projects/$project"
+    local found_on_branch="" found_profile="" shadow_base=""
     if [[ ! -f "$leg/project.yml" ]]; then
         local b
-        for b in $(git -C "$tmp" for-each-ref --format='%(refname:short)' refs/heads 2>/dev/null); do
+        while IFS= read -r b; do
+            [[ -z "$b" ]] && continue
             if git -C "$tmp" cat-file -e "$b:projects/$project/project.yml" 2>/dev/null; then
-                git -C "$tmp" archive "$b" "projects/$project" 2>/dev/null | tar -x -C "$tmp" 2>/dev/null && break
+                git -C "$tmp" archive "$b" "projects/$project" 2>/dev/null | tar -x -C "$tmp" 2>/dev/null \
+                    && { found_on_branch="$b"; break; }
             fi
-        done
+        done < <(git -C "$tmp" for-each-ref --format='%(refname:short)' refs/heads 2>/dev/null)
     fi
     [[ -f "$leg/project.yml" ]] || die "Project '$project' not found in the legacy vault backup."
+
+    # Resolve the profile-state shadow base for a non-active profile. The shadow is
+    # keyed by PROFILE name (from .vault-profile), not the branch name
+    # (_archive/vault/profile-isolation-design.md §2.4). Stage the shadowed,
+    # gitignored local-paths.yml into $leg so the project.yml builder still registers
+    # the repos' machine-local paths in the index.
+    if [[ -n "$found_on_branch" ]]; then
+        found_profile=$(git -C "$tmp" show "$found_on_branch:.vault-profile" 2>/dev/null \
+            | awk '/^profile:/{sub(/.*: */,"");gsub(/[ \t\r]/,"");print;exit}')
+        [[ -z "$found_profile" ]] && found_profile="$found_on_branch"
+        shadow_base="$tmp/.cco/profile-state/$found_profile/projects/$project"
+        if [[ ! -f "$leg/.cco/local-paths.yml" && -f "$shadow_base/.cco/local-paths.yml" ]]; then
+            mkdir -p "$leg/.cco"
+            cp "$shadow_base/.cco/local-paths.yml" "$leg/.cco/local-paths.yml" 2>/dev/null || true
+        fi
+    fi
 
     # F12: name-uniqueness — the project name must not already bind elsewhere.
     local mig_name; mig_name=$(_migrate_yml_scalar "$leg/project.yml" name)
@@ -584,10 +607,16 @@ _cco_migrate_project() {
     _cco_build_project_yml "$leg" "$stage/project.yml" "$idx" "$tmp"
     # Authored config tree: legacy projects/<p>/.claude → .cco/claude.
     [[ -d "$leg/.claude" ]] && cp -r "$leg/.claude/." "$stage/claude/" 2>/dev/null || true
-    # H5 project config + secrets (gitignored) + skeleton.
+    # H5 project config + secrets (gitignored) + skeleton. The gitignored secrets.env
+    # comes from the working tree for an active-profile project, or from the
+    # profile-state shadow for a non-active profile (BL1).
     local f
     for f in mcp.json setup.sh mcp-packages.txt secrets.env secrets.env.example; do
-        [[ -f "$leg/$f" ]] && cp "$leg/$f" "$stage/$f"
+        if [[ -f "$leg/$f" ]]; then
+            cp "$leg/$f" "$stage/$f"
+        elif [[ -n "$shadow_base" && -f "$shadow_base/$f" ]]; then
+            cp "$shadow_base/$f" "$stage/$f"
+        fi
     done
     [[ -f "$stage/secrets.env" && ! -f "$stage/secrets.env.example" ]] && \
         sed 's/=.*/=/' "$stage/secrets.env" > "$stage/secrets.env.example" 2>/dev/null || true
@@ -609,12 +638,14 @@ _cco_migrate_project() {
     # Atomic move into the repo (F44): a partial .cco/ never survives a failure.
     mv "$stage" "$target/.cco" || die "Failed to install the migrated .cco/ into $target."
 
-    # Memory → STATE, machine-local, non-clobber (F11 / ADR-0009).
-    local mem_dst; mem_dst="$state/projects/$mig_name/memory"
-    if [[ -d "$leg/memory" ]]; then
+    # Memory → STATE, machine-local, non-clobber (F11 / ADR-0009). For a non-active
+    # profile the memory lives in the profile-state shadow, not the archived tree (BL2).
+    local mem_dst src_mem; mem_dst="$state/projects/$mig_name/memory"
+    for src_mem in "$leg/memory" ${shadow_base:+"$shadow_base/memory"}; do
+        [[ -d "$src_mem" ]] || continue
         mkdir -p "$mem_dst"
-        cp -rn "$leg/memory/." "$mem_dst/" 2>/dev/null || true
-    fi
+        cp -rn "$src_mem/." "$mem_dst/" 2>/dev/null || true
+    done
 
     # Register the index LAST (so a failed migrate leaves no dangling binding).
     # Member names are space-separated (the canonical index format, §3).
