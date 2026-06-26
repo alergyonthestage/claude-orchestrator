@@ -3,7 +3,7 @@
 > Versioning, per-user tags, the two sync axes, sharing, installing, and updates —
 > a unified guide.
 >
-> Related: [project-setup.md](./project-setup.md) | [knowledge-packs.md](./knowledge-packs.md) | [cli.md](../reference/cli.md)
+> Related: [project-setup.md](./project-setup.md) | [knowledge-packs.md](../../packs/guides/knowledge-packs.md) | [cli.md](../../reference/cli.md)
 
 ---
 
@@ -252,7 +252,7 @@ cco pack install https://github.com/acme/cco-sharing@v2.0
 
 Sharing-repo endpoints are managed with `cco remote add/remove/list`. The de-tokenized
 registry lives in DATA; the token is isolated in STATE (0600, never synced). See
-[Authentication](./authentication.md) for full details.
+[Authentication](../../integration/guides/authentication.md) for full details.
 
 ### 6.3 Publishing
 

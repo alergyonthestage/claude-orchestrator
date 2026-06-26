@@ -169,7 +169,7 @@ code-repo remote (ADR-0018 D2), and `cco project publish|install|update|internal
 removed (`bin/cco` now returns a removal notice). **Needs triage**: confirm which sub-decisions
 survive under the new model (e.g. the 3-way merge path lives on in `cco update`; `cco project
 internalize` / Case-C is reserved post-v1, ADR-0023 D4). The original FI-7 design doc
-([link](../configuration/_archive/sharing/publish-install-sync-design.md)) appears to have
+([link](../archive/sharing/publish-install-sync-design.md)) appears to have
 been removed/archived in a docs reorg (dead link — needs triage alongside the doc review).
 
 **Question**: After `cco project install`, the installed project has no connection to the source Config Repo. If the publisher pushes updates, how does the consumer know? Should there be a `cco project update` flow? What about versioning?
@@ -188,13 +188,13 @@ been removed/archived in a docs reorg (dead link — needs triage alongside the 
 
 6. **Version metadata** — optional `version:` field in `.cco/source` for human-readable labels; `commit:` field for precise comparison via `git ls-remote`.
 
-**Docs**: [analysis](../configuration/_archive/sharing/publish-install-sync-analysis.md) | [design](../configuration/_archive/sharing/publish-install-sync-design.md) | [user guide](../../user-guides/configuration-management.md)
+**Docs**: [analysis](../archive/sharing/publish-install-sync-analysis.md) | [design](../archive/sharing/publish-install-sync-design.md) | [user guide](../users/configuration/guides/configuration-management.md)
 
 **Effort**: Medium-High (6 implementation phases defined in design doc).
 
 ## FI-8: PromptSubmit Hook + Documentation-First Rule
 
-**Status**: Implemented. See [defaults-alignment-design.md](../configuration/rules-and-guidelines/defaults-alignment-design.md) §2.2, §2.3.
+**Status**: Implemented. See [defaults-alignment-design.md](configuration/rules-and-guidelines/design/design-defaults-alignment.md) §2.2, §2.3.
 
 **Problem**: Rules loaded at session start lose effective weight as conversation grows or after compaction. The agent frequently forgets key behavioral rules — particularly git practices and commit discipline.
 

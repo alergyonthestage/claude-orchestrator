@@ -4,7 +4,7 @@
 **Version**: 2.1
 **Scope**: Sprint 5 — Interactive Tutorial Project
 **Status**: Current — tutorial is an internal framework resource
-**Prerequisite**: [analysis.md](./analysis.md)
+**Prerequisite**: [analysis.md](../analysis/analysis-001-tutorial.md)
 
 ---
 

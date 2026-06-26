@@ -1,6 +1,6 @@
 # Project Configuration Format (project.yml)
 
-> Related: [cli.md](cli.md) | [context-hierarchy.md](context-hierarchy.md)
+> Related: [cli.md](../../reference/cli.md) | [context-hierarchy.md](../../foundation/reference/context-hierarchy.md)
 
 ---
 
@@ -103,11 +103,11 @@ browser:
 | `name` | ✅ | string | — | Project identifier |
 | `description` | ❌ | string | `""` | Human-readable description |
 | `repos` | ❌ | list | `[]` | Repositories to mount (empty allowed; a warning is shown at start) |
-| `repos[].name` | ✅ | string | — | Logical repo name (directory name in /workspace/). Machine-agnostic identifier; the absolute host path is resolved per machine from the STATE index, never stored in `project.yml`. See [the local path index](../maintainer/configuration/decentralized-config/design.md#3-machine-agnostic-config--the-local-path-index) |
+| `repos[].name` | ✅ | string | — | Logical repo name (directory name in /workspace/). Machine-agnostic identifier; the absolute host path is resolved per machine from the STATE index, never stored in `project.yml`. See [the local path index](../../../maintainers/configuration/decentralized-config/design.md#3-machine-agnostic-config--the-local-path-index) |
 | `repos[].url` | ❌ | string | — | Git remote URL — machine-agnostic coordinate committed in the repo. Used by `cco resolve`/`cco start` to offer auto-clone when no local path is registered for the name |
 | `repos[].ref` | ❌ | string | — | Git ref (branch/tag/commit) coordinate, paired with `url` |
 | `extra_mounts` | ❌ | list | `[]` | Additional volume mounts |
-| `extra_mounts[].name` | ✅ | string | — | Logical mount name; the absolute host path is resolved per machine from the STATE index. See [the local path index](../maintainer/configuration/decentralized-config/design.md#3-machine-agnostic-config--the-local-path-index) |
+| `extra_mounts[].name` | ✅ | string | — | Logical mount name; the absolute host path is resolved per machine from the STATE index. See [the local path index](../../../maintainers/configuration/decentralized-config/design.md#3-machine-agnostic-config--the-local-path-index) |
 | `extra_mounts[].url` | ❌ | string | — | Git remote URL coordinate for a git-backed mount (optional); absent → local-only via the index |
 | `extra_mounts[].target` | ❌ | string | `/workspace/<name>` | Container path |
 | `extra_mounts[].readonly` | ❌ | bool | `true` | Mount as read-only (secure default; set `false` explicitly for writable mounts) |
@@ -136,7 +136,7 @@ browser:
 | `docker.security.resources.cpus` | ❌ | string | `"4"` | Max CPUs per container |
 | `docker.security.resources.max_containers` | ❌ | int | `10` | Max simultaneous containers |
 | `auth.method` | ❌ | string | `oauth` | Authentication method |
-| `browser.enabled` | ❌ | bool | `false` | Activate browser automation ([guide](../user-guides/browser-automation.md)) |
+| `browser.enabled` | ❌ | bool | `false` | Activate browser automation ([guide](../../integration/guides/browser-automation.md)) |
 | `browser.mode` | ❌ | string | `host` | Where Chrome runs (`host` only in v1) |
 | `browser.cdp_port` | ❌ | int | `9222` | Chrome remote debugging port |
 | `browser.mcp_args` | ❌ | list | `[]` | Extra CLI flags for chrome-devtools-mcp |
@@ -145,7 +145,7 @@ browser:
 
 ## Validation Rules
 
-> **Policy**: Secure-by-default. See [ADR-13](../maintainer/architecture/architecture.md) and [NFR-4/NFR-5](../maintainer/architecture/spec.md).
+> **Policy**: Secure-by-default. See [ADR-13](../../../maintainers/foundation/design/architecture.md) and [NFR-4/NFR-5](../../../maintainers/foundation/analysis/spec.md).
 
 ### Booleans
 
@@ -164,7 +164,7 @@ When a security-relevant field is **omitted**, the default is always the most re
 | `extra_mounts[].readonly` | `true` (read-only) | Extra mounts are reference material; writes require explicit opt-in |
 | `browser.enabled` | `false` | Browser automation is an additional attack surface |
 | `github.enabled` | `false` | GitHub access requires explicit opt-in |
-| `docker.mount_socket` | `false` | Opt-in: Docker socket grants full host Docker API access (see [security analysis](../maintainer/integration/docker-security/analysis.md)) |
+| `docker.mount_socket` | `false` | Opt-in: Docker socket grants full host Docker API access (see [security analysis](../../../maintainers/security/analysis/analysis-001-socket-security.md)) |
 
 ### Field Validation
 
@@ -234,7 +234,7 @@ All sections are optional. A knowledge-only pack needs only the `knowledge:` sec
    ```
 5. `session-context.sh` (SessionStart hook) injects `packs.md` into `additionalContext` automatically — **no CLAUDE.md edit needed**
 
-**Name conflicts**: If two packs define the same agent, rule, or skill name, the last pack listed in `project.yml` wins. A warning is emitted. See [ADR-14](../maintainer/architecture/architecture.md) for the design rationale.
+**Name conflicts**: If two packs define the same agent, rule, or skill name, the last pack listed in `project.yml` wins. A warning is emitted. See [ADR-14](../../../maintainers/foundation/design/architecture.md) for the design rationale.
 
 **Pack directory** — `~/.cco/packs/` (in the personal store, created by `cco init`):
 ```

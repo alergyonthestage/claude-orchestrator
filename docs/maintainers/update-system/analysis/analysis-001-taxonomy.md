@@ -8,7 +8,7 @@
 
 > This document establishes the change categories, update semantics, and `cco update`
 > behavior for claude-orchestrator. For the complete resource taxonomy and file
-> policies, see [resource-lifecycle/analysis.md](../_archive/resource-lifecycle/analysis.md).
+> policies, see [resource-lifecycle/analysis.md](../../../archive/resource-lifecycle/analysis.md).
 
 ---
 
@@ -36,8 +36,8 @@ after `cco project create`), and **Pack** (independent lifecycle).
 
 > For the complete resource classification matrix, file policy definitions, and
 > directory structure details, see
-> [resource-lifecycle/analysis.md §5.2](../_archive/resource-lifecycle/analysis.md#52-resource-classification-matrix)
-> and [resource-lifecycle/analysis.md §7](../_archive/resource-lifecycle/analysis.md#7-file-by-file-policy-review).
+> [resource-lifecycle/analysis.md §5.2](../../../archive/resource-lifecycle/analysis.md#52-resource-classification-matrix)
+> and [resource-lifecycle/analysis.md §7](../../../archive/resource-lifecycle/analysis.md#7-file-by-file-policy-review).
 
 **Key principle**: Global and Project files are **user-owned after installation**.
 The framework provides defaults at creation time and offers discovery and merge
@@ -135,8 +135,8 @@ Is this change backward-compatible?
 
 > For detailed file-by-file policy definitions (tracked, untracked, generated)
 > and the rationale behind each policy assignment, see
-> [resource-lifecycle/analysis.md §3](../_archive/resource-lifecycle/analysis.md#3-file-policy-redesign)
-> and [resource-lifecycle/analysis.md §7](../_archive/resource-lifecycle/analysis.md#7-file-by-file-policy-review).
+> [resource-lifecycle/analysis.md §3](../../../archive/resource-lifecycle/analysis.md#3-file-policy-redesign)
+> and [resource-lifecycle/analysis.md §7](../../../archive/resource-lifecycle/analysis.md#7-file-by-file-policy-review).
 
 This section focuses on the **update flow** — how `cco update` discovers and
 applies changes at each scope.
@@ -296,8 +296,8 @@ for improvements.
 > For the complete resource classification matrix, source tracking format
 > (`.cco/source`), update policies by resource type, and the FI-7
 > publish/install sync mechanism, see
-> [resource-lifecycle/analysis.md §5](../_archive/resource-lifecycle/analysis.md#5-resource-lifecycle--unified-model)
-> and [resource-lifecycle/analysis.md §6](../_archive/resource-lifecycle/analysis.md#6-fi-7-publishinstall-sync--implemented).
+> [resource-lifecycle/analysis.md §5](../../../archive/resource-lifecycle/analysis.md#5-resource-lifecycle--unified-model)
+> and [resource-lifecycle/analysis.md §6](../../../archive/resource-lifecycle/analysis.md#6-fi-7-publishinstall-sync--implemented).
 
 This section summarizes the aspects most relevant to `cco update` behavior.
 
@@ -712,7 +712,7 @@ This would enable semantic merge instead of text-based merge. Deferred because:
 
 Projects from native templates now discover template-specific opinionated file
 updates via `.cco/source` + `.cco/base/`. See
-[resource-lifecycle/analysis.md §5.2](../_archive/resource-lifecycle/analysis.md#52-resource-classification-matrix).
+[resource-lifecycle/analysis.md §5.2](../../../archive/resource-lifecycle/analysis.md#52-resource-classification-matrix).
 
 ### Q2: Pack version pinning
 
@@ -727,7 +727,7 @@ diff/merge engine. Deferred — requires template-to-project file mapping design
 
 `cco project install <url>` now saves `.cco/source` with the remote URL.
 `cco update` can notify when the remote has newer commits. See
-[resource-lifecycle/analysis.md §5.3](../_archive/resource-lifecycle/analysis.md#53-update-flow-by-source-type).
+[resource-lifecycle/analysis.md §5.3](../../../archive/resource-lifecycle/analysis.md#53-update-flow-by-source-type).
 
 ### Q5: `cco update --news` detail command
 

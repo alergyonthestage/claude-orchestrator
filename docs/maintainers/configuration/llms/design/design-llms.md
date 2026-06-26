@@ -2,8 +2,8 @@
 
 > Status: Draft
 > Date: 2026-03-24
-> Analysis: [analysis.md](analysis.md)
-> Related: [Packs design](../packs/design.md) | [project-yaml.md](../../../reference/project-yaml.md)
+> Analysis: [analysis.md](../analysis/analysis-001-llms.md)
+> Related: [Packs design](../../../packs/design/design-packs.md) | [project-yaml.md](../../../../users/configuration/reference/project-yaml.md)
 
 ---
 

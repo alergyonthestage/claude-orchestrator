@@ -2,7 +2,7 @@
 
 > **Status**: superseded (design choices refined by decentralized-config ADR-0014). Kept as history.
 > Date: 2026-03-24
-> Next: [design.md](design.md)
+> Next: [design.md](../design/design-llms.md)
 
 ---
 

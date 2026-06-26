@@ -2,7 +2,7 @@
 
 > Version: 1.0.0
 > Status: v1.0 — Current
-> Related: [architecture.md](../../architecture/architecture.md) | [spec.md](../../architecture/spec.md)
+> Related: [architecture.md](../../foundation/design/architecture.md) | [spec.md](../../foundation/analysis/spec.md)
 
 ---
 
@@ -284,7 +284,7 @@ Key settings for clipboard:
 - `terminal-features clipboard` — explicit clipboard capability (works even when outer TERM is not `xterm*`)
 - `MouseDragEnd1Pane copy-pipe-and-cancel` — auto-copies selection on mouse release (no manual `y` press needed)
 
-See [agent-teams guide](../../../user-guides/agent-teams.md) §2.4 for copy-paste usage and host terminal compatibility.
+See [agent-teams guide](../../../users/integration/guides/agent-teams.md) §2.4 for copy-paste usage and host terminal compatibility.
 
 ---
 
@@ -765,7 +765,7 @@ claude-orchestrator/
 
 | File | Purpose | Notes |
 |------|---------|-------|
-| `cco` | CLI entrypoint | Dispatcher (~100 lines) that sources `lib/*.sh` modules. See [cli.md](../../../reference/cli.md) |
+| `cco` | CLI entrypoint | Dispatcher (~100 lines) that sources `lib/*.sh` modules. See [cli.md](../../../users/reference/cli.md) |
 
 #### defaults/managed/
 
@@ -785,13 +785,13 @@ User defaults, copied to `~/.cco/global/.claude/` once by `cco init`. User owns 
 |------|---------|-------|
 | `CLAUDE.md` | User-level instructions | Workflow, git practices, communication style |
 | `settings.json` | User preferences | Allow rules, attribution, teammateMode, cleanup, MCP settings |
-| `mcp.json` | Global MCP server list | Empty by default; user populates. See [context-hierarchy.md](../../../reference/context-hierarchy.md) §8 |
+| `mcp.json` | Global MCP server list | Empty by default; user populates. See [context-hierarchy.md](../../../users/foundation/reference/context-hierarchy.md) §8 |
 | `rules/workflow.md` | Workflow phase rules | Analysis, Design, Implementation, Documentation phases |
 | `rules/git-practices.md` | Git conventions | Branch naming, conventional commits |
 | `rules/documentation.md` | Documentation conventions | Mermaid diagrams, docs structure, project tracking |
 | `rules/language.md` | Language preferences | Has `{{COMM_LANG}}`, `{{DOCS_LANG}}`, `{{CODE_LANG}}` placeholders, substituted by `cco init --lang` |
-| `agents/analyst.md` | Analyst subagent | Haiku, read-only tools, user memory. See [subagents.md](../../../user-guides/advanced/subagents.md) §2.1 |
-| `agents/reviewer.md` | Reviewer subagent | Sonnet, read-only tools, user memory. See [subagents.md](../../../user-guides/advanced/subagents.md) §2.2 |
+| `agents/analyst.md` | Analyst subagent | Haiku, read-only tools, user memory. See [subagents.md](../../../users/integration/guides/subagents.md) §2.1 |
+| `agents/reviewer.md` | Reviewer subagent | Sonnet, read-only tools, user memory. See [subagents.md](../../../users/integration/guides/subagents.md) §2.2 |
 | `skills/analyze/SKILL.md` | `/analyze` skill | Structured codebase exploration mode |
 | `skills/commit/SKILL.md` | `/commit` skill | Conventional commit creation with confirmation |
 | `skills/design/SKILL.md` | `/design` skill | Implementation planning mode |
@@ -805,7 +805,7 @@ Scaffolds into the target repo's `<repo>/.cco/`. The template's `claude/` tree b
 
 | File | Purpose | Notes |
 |------|---------|-------|
-| `project.yml` | Project config template | Logical names + url/ref coordinates, ports, auth, packs. See [cli.md](../../../reference/cli.md) §4 |
+| `project.yml` | Project config template | Logical names + url/ref coordinates, ports, auth, packs. See [cli.md](../../../users/reference/cli.md) §4 |
 | `claude/CLAUDE.md` | Project instructions template | `{{PROJECT_NAME}}` and `{{DESCRIPTION}}` placeholders |
 | `claude/settings.json` | Project settings template | Empty; project-specific overrides go here |
 | `claude/rules/language.md` | Language override template | Commented out by default; uncomment to override global |

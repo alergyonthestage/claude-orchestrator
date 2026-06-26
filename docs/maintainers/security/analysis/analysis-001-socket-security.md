@@ -3,7 +3,7 @@
 > **Status**: Analysis — Sprint 6-Security
 > **Date**: 2026-03-11
 > **Scope**: Architecture — Docker socket filtering, mount restrictions, network isolation
-> **Related**: [design.md](./design.md) | [security.md](../../architecture/security.md) (HIGH-2) | [architecture.md](../../architecture/architecture.md) (ADR-4) | [roadmap.md](../../decisions/roadmap.md) (Sprint 6-Security)
+> **Related**: [design.md](../design/design-socket-proxy.md) | [security.md](../design/design-security-model.md) (HIGH-2) | [architecture.md](../../foundation/design/architecture.md) (ADR-4) | [roadmap.md](../../roadmap.md) (Sprint 6-Security)
 
 ---
 

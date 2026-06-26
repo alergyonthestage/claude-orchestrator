@@ -2,7 +2,7 @@
 
 > Date: 2026-02-24
 > Status: Analysis complete — pending design phase
-> Related: [config/tmux.conf](../../../../config/tmux.conf) | [architecture.md](../../architecture/architecture.md)
+> Related: [config/tmux.conf](../../../../../config/tmux.conf) | [architecture.md](../../../foundation/design/architecture.md)
 
 ---
 

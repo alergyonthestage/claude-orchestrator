@@ -2,7 +2,7 @@
 
 > Version: 1.0.0
 > Status: v1.0 — Current
-> Related: [spec.md](../maintainer/architecture/spec.md) | [docker.md](../maintainer/integration/docker/design.md)
+> Related: [spec.md](../../maintainers/foundation/analysis/spec.md) | [docker.md](../../maintainers/environment/design/design-docker.md)
 
 ---
 
@@ -1100,7 +1100,7 @@ Examples:
 
 > Team-sharing does **not** go through `~/.cco` (which holds your personal global config).
 > Share packs/templates via a **sharing repo** (`cco pack/template publish|install`), and share
-> a project via its own code repo remote. See [configuration-management.md](../user-guides/configuration-management.md).
+> a project via its own code repo remote. See [configuration-management.md](../configuration/guides/configuration-management.md).
 
 #### `cco config validate [--dry-run | --fix [-y]]`
 
@@ -1622,7 +1622,7 @@ packs:                   # referenced by name + OPTIONAL coordinate
 
 The host repo is **not** written in the file — it is the invoking repo at runtime. Per-user
 tags are **not** here either (they live in the DATA registry, never published). See
-[project-yaml.md](project-yaml.md) for the complete field reference and knowledge pack format.
+[project-yaml.md](../configuration/reference/project-yaml.md) for the complete field reference and knowledge pack format.
 
 ---
 
@@ -1721,7 +1721,7 @@ When `docker.mount_socket: true` is set in `project.yml`, the orchestrator deplo
 
 ### Configuration
 
-All settings are in `project.yml` under the `docker` key. See [project-yaml.md](project-yaml.md) for the full field reference.
+All settings are in `project.yml` under the `docker` key. See [project-yaml.md](../configuration/reference/project-yaml.md) for the full field reference.
 
 | Section | Controls |
 |---------|----------|

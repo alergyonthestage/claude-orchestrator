@@ -1,9 +1,9 @@
 # Design: Knowledge Packs System
 
 > Status: Implemented (v1)
-> Reference ADR: [ADR-14](../../architecture/architecture.md) (Zero-Duplication Pack Resource Delivery) — supersedes [ADR-9](../../architecture/architecture.md)
-> CLI Specifications: [cli.md](../../../reference/cli.md) §3.7–3.11
-> project.yml format: [project-yaml.md](../../../reference/project-yaml.md) §Knowledge Packs
+> Reference ADR: [ADR-14](../../foundation/design/architecture.md) (Zero-Duplication Pack Resource Delivery) — supersedes [ADR-9](../../foundation/design/architecture.md)
+> CLI Specifications: [cli.md](../../../users/reference/cli.md) §3.7–3.11
+> project.yml format: [project-yaml.md](../../../users/configuration/reference/project-yaml.md) §Knowledge Packs
 
 ---
 
@@ -117,7 +117,7 @@ Official framework documentation files following the [llms.txt standard](https:/
 - **Listed** in `.claude/packs.md` under "Official Framework Documentation"
 - **Managed** via `cco llms install|update|remove` CLI commands
 
-See [llms design doc](../llms/design.md) for full architecture.
+See [llms design doc](../../configuration/llms/design/design-llms.md) for full architecture.
 
 ---
 
@@ -259,4 +259,4 @@ The CLI provides five commands for pack management:
 | `cco pack validate [name]` | Validates structure and references (all packs if name omitted) |
 | `cco pack remove <name>` | Removes a pack (with usage check and confirmation) |
 
-For details of each command, see [cli.md](../../../reference/cli.md) §3.7–3.11.
+For details of each command, see [cli.md](../../../users/reference/cli.md) §3.7–3.11.

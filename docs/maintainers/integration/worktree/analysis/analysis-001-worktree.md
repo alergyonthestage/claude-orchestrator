@@ -2,7 +2,7 @@
 
 > Date: 2026-02-24
 > Status: Approved — proceed to implementation
-> Related: [worktree-design.md](./design.md) | [architecture.md](../../architecture/architecture.md) (ADR-10) | [authentication](../../integration/auth/analysis.md)
+> Related: [worktree-design.md](../design/design-worktree.md) | [architecture.md](../../../foundation/design/architecture.md) (ADR-10) | [authentication](../../auth/analysis/analysis-001-auth.md)
 
 ---
 

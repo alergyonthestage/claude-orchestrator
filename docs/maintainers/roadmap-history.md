@@ -472,7 +472,7 @@ Add an (I) AI-merge option for `.md` files during `cco update --sync` when statu
 
 **Scope**: new `lib/ai-merge.sh` module. Only for `MERGE_AVAILABLE` (not `USER_RESTRUCTURED`). Only `.md` files. User reviews result before acceptance.
 
-**Docs**: [design](../configuration/update-system/ux-improvements-design.md) §5
+**Docs**: [design](update-system/design/design-ux-improvements.md) §5
 
 ---
 
@@ -490,7 +490,7 @@ Layered defense for internet access control:
 
 Configuration: `network.internet: full | restricted | none` with `allowed_domains` / `blocked_domains`. Squid sidecar bridges internal (project) and external (internet) networks. Created containers inherit the same restriction or can be overridden.
 
-**Docs**: [analysis](../integration/docker-security/analysis.md) | [design](../integration/docker-security/design.md)
+**Docs**: [analysis](security/analysis/analysis-001-socket-security.md) | [design](security/design/design-socket-proxy.md)
 **Effort**: Medium-High.
 
 ---
@@ -565,7 +565,7 @@ Opt-in git isolation for container sessions. When enabled, repos are mounted at 
 - Multiple merge/PR cycles during a single session via standard `gh pr create`
 - Branch `cco/<project>` persists across sessions; next `--worktree` start reuses it
 
-**Docs**: [analysis](../integration/worktree/analysis.md) | [design](../integration/worktree/design.md) | [ADR-10](../architecture/architecture.md)
+**Docs**: [analysis](integration/worktree/analysis/analysis-001-worktree.md) | [design](integration/worktree/design/design-worktree.md) | [ADR-10](foundation/design/architecture.md)
 
 #### #6b Worktree-Based Vault Profile Sync — ⚠️ SUPERSEDED (2026-06-11)
 
@@ -1029,7 +1029,7 @@ on a legacy branch, a single normalization commit appears in the log
 and every subsequent op works against the `@local` contract.
 
 **See also**: `lib/cmd-vault.sh:_normalize_committed_paths`,
-[coding-conventions](../architecture/coding-conventions.md)
+[coding-conventions](engineering/guides/coding-conventions.md)
 §"Prefer runtime invariants to migrations for cross-branch state".
 
 ---
@@ -1061,7 +1061,7 @@ migrated to `_path_exists` so file mounts are accepted.
 
 **See also**: `lib/local-paths.sh`, `lib/cmd-project-query.sh`,
 `lib/utils.sh:_path_exists`,
-[coding-conventions](../architecture/coding-conventions.md)
+[coding-conventions](engineering/guides/coding-conventions.md)
 §"Two sources of truth → single helper".
 
 ---
@@ -1192,7 +1192,7 @@ restoring local paths from the source-branch backup would be wrong
 post-checkout). Documented the invariant in the module header of
 `lib/cmd-vault.sh`.
 
-**See also**: [coding-conventions](../architecture/coding-conventions.md)
+**See also**: [coding-conventions](engineering/guides/coding-conventions.md)
 §"Protect atomicity with traps, not discipline".
 
 ---
@@ -1240,7 +1240,7 @@ and showed the error message.
 **Fix**: Corrected env var to `DISABLE_AUTOUPDATER=1`. Originally added `companyAnnouncements`
 in managed-settings.json with update instructions — later removed (2026-03-20) because it
 exposed the user's org email via Claude Code's "Message from" UI. Update reminder remains
-in managed CLAUDE.md. See [MF-1](minor-fixes-20-03-2026.md#mf-1-remove-companyannouncements-from-managed-settings).
+in managed CLAUDE.md. See [MF-1](../archive/decisions/minor-fixes-20-03-2026.md#mf-1-remove-companyannouncements-from-managed-settings).
 
 **Long-term**: Migrate from deprecated npm install to native installer with persistent
 volume for auto-update support. See roadmap item below.
@@ -1398,7 +1398,7 @@ one parsing fragility, and several DRY/SRP drifts. All resolved on
 
 **Docs**
 
-New [coding-conventions](../architecture/coding-conventions.md) doc
+New [coding-conventions](engineering/guides/coding-conventions.md) doc
 lists canonical shared services and encodes the rules future code must
 follow to avoid re-introducing the drift class that caused `#B10` /
 `#B13` / `#D1`. Module header in `lib/cmd-vault.sh` documents the
@@ -1420,7 +1420,7 @@ Post-release review fixed: migration 012 path calculation, AWK getline fragility
 (entry buffering), path quoting for spaces, AWK -v backslash expansion, ERR trap
 ordering, and vault save profile sync skipping when Docker sessions are active.
 
-**Docs**: [design](../configuration/_archive/vault/local-path-resolution-design.md) | changelog entry 12
+**Docs**: [design](../archive/vault/local-path-resolution-design.md) | changelog entry 12
 
 ---
 
@@ -1453,7 +1453,7 @@ Full lifecycle management for official framework documentation following the llm
 
 Four minor fixes: removed `companyAnnouncements` from managed-settings.json (exposed org email, not controllable), added design-driven testing approach to workflow rules, added CLAUDE.md hierarchy explanation (project-level vs repo-level scope), added ADR practice to documentation rules.
 
-**Docs**: [decisions](minor-fixes-20-03-2026.md)
+**Docs**: [decisions](../archive/decisions/minor-fixes-20-03-2026.md)
 
 ---
 
@@ -1463,7 +1463,7 @@ Three improvements to the update system UX: (P1) interpolated base in sync — f
 
 Phase 4 (AI-assisted merge) designed but deferred to a separate cycle.
 
-**Docs**: [analysis](../configuration/update-system/ux-improvements-analysis.md) | [design](../configuration/update-system/ux-improvements-design.md)
+**Docs**: [analysis](update-system/analysis/analysis-002-ux.md) | [design](update-system/design/design-ux-improvements.md)
 
 ---
 
@@ -1474,7 +1474,7 @@ Phase 4 (AI-assisted merge) designed but deferred to a separate cycle.
 **FI-5**: Defaults aligned with user guides — managed CLAUDE.md expanded (+context hierarchy, +workspace safety), global CLAUDE.md rewritten (no duplications, points to rules), `workflow.md` expanded with approval gates and task decomposition, `diagrams.md` → `documentation.md` (+ docs structure, project tracking, stale review), template cleaned up (removed non-functional language.md override), migrations 011 (global rename) and 012 (project cleanup).
 
 **Ref**: [FI-2](roadmap-backlog.md#fi-2-init-workspace-on-empty-projects) | [FI-5](roadmap-backlog.md#fi-5-human-workflow-guide-and-review-best-practices)
-**Design**: [`defaults-alignment-design.md`](../configuration/rules-and-guidelines/defaults-alignment-design.md)
+**Design**: [`defaults-alignment-design.md`](configuration/rules-and-guidelines/design/design-defaults-alignment.md)
 
 ---
 
@@ -1497,7 +1497,7 @@ design decisions.
 reviewed against user guides — no changes needed beyond FI-5 alignment (already completed).
 
 **Ref**: [FI-8](roadmap-backlog.md)
-**Design**: [`defaults-alignment-design.md`](../configuration/rules-and-guidelines/defaults-alignment-design.md) §2.2, §2.3
+**Design**: [`defaults-alignment-design.md`](configuration/rules-and-guidelines/design/design-defaults-alignment.md) §2.2, §2.3
 
 ---
 
@@ -1523,7 +1523,7 @@ Completes the user-config lifecycle with update notification and merge for publi
 
 **New commands**: `cco project update`, `cco project internalize`, `cco update --offline/--no-cache`, `cco update --sync <project> --local`, `cco project publish` (enhanced).
 
-**Docs**: [analysis](../configuration/_archive/sharing/publish-install-sync-analysis.md) | [design](../configuration/_archive/sharing/publish-install-sync-design.md) | [FI-7](roadmap-backlog.md#fi-7-publish-install-sync-and-resource-versioning)
+**Docs**: [analysis](../archive/sharing/publish-install-sync-analysis.md) | [design](../archive/sharing/publish-install-sync-design.md) | [FI-7](roadmap-backlog.md#fi-7-publish-install-sync-and-resource-versioning)
 
 ---
 
@@ -1533,7 +1533,7 @@ Redesign of resource lifecycle policies and tutorial separation. Resolved: proje
 
 **Key changes**: `user-owned` → `untracked` rename for clarity. Project CLAUDE.md changed from `untracked` to `tracked` (3-way merge preserves user content). Tutorial moved to `internal/tutorial/` (always current, `cco start tutorial` launches directly). Config-editor separated as its own template. Skip+.new option added to `_interactive_sync()`. File policies formalized (untracked, tracked, generated).
 
-**Analysis**: [`docs/maintainer/configuration/_archive/resource-lifecycle/analysis.md`](../configuration/_archive/resource-lifecycle/analysis.md)
+**Analysis**: [`docs/maintainer/configuration/_archive/resource-lifecycle/analysis.md`](../archive/resource-lifecycle/analysis.md)
 
 ---
 
@@ -1543,7 +1543,7 @@ Redesign of resource lifecycle policies and tutorial separation. Resolved: proje
 
 **Phase B**: Custom Go HTTP proxy (`cco-docker-proxy`) between Claude and Docker socket. Filters by container policy (project_only/allowlist/denylist/unrestricted), mount restrictions (none/project_only/allowlist/any with implicit deny for sensitive paths), security constraints (block --privileged, drop capabilities, resource limits, max containers), and network filtering. Proxy listens on `/var/run/docker-proxy.sock`, Claude's `DOCKER_HOST` points to proxy.
 
-**Docs**: [analysis](../integration/docker-security/analysis.md) | [design](../integration/docker-security/design.md)
+**Docs**: [analysis](security/analysis/analysis-001-socket-security.md) | [design](security/design/design-socket-proxy.md)
 
 ---
 
@@ -1589,7 +1589,7 @@ Vault profiles with branch-based isolation for multi-PC scenarios, memory separa
 - Test coverage: 115 profile tests + 42 vault tests (regression suite for all fixes)
 - CCO_DEBUG=1 mode for crash diagnostics (improved crash trap, debug-gated entrypoint logs)
 
-**Docs**: [analysis](../configuration/_archive/vault/analysis.md) | [design](../configuration/_archive/vault/design.md) | [profile-isolation-design](../configuration/_archive/vault/profile-isolation-design.md)
+**Docs**: [analysis](../archive/vault/analysis.md) | [design](../archive/vault/design.md) | [profile-isolation-design](../archive/vault/profile-isolation-design.md)
 
 ---
 
@@ -1619,7 +1619,7 @@ Refactoring of `defaults/` layout, full template system with CLI management, and
 - `cco clean` extended: `--tmp` (dry-run artifacts), `--generated` (docker-compose.yml), `--all`
 - Vault I/O redirect fix: `/dev/tty` redirection with non-fatal fallback
 
-**Docs**: [analysis](../configuration/update-system/analysis.md) | [design](../configuration/update-system/design.md)
+**Docs**: [analysis](update-system/analysis/analysis-001-taxonomy.md) | [design](update-system/design/design-update-system.md)
 
 ---
 
@@ -1641,7 +1641,7 @@ Built-in interactive tutorial. Users launch it with `cco start tutorial` for AI-
 - Migration 010 handles legacy `user-config/projects/tutorial/`
 - See Sprint 5c-Lifecycle section for full details
 
-**Docs**: [analysis](../internal/tutorial/analysis.md) | [design](../internal/tutorial/design.md)
+**Docs**: [analysis](internal-projects/tutorial/analysis/analysis-001-tutorial.md) | [design](internal-projects/tutorial/design/design-tutorial.md)
 
 ---
 
@@ -1662,7 +1662,7 @@ Required for frontend testing and debugging. Requires stable scope hierarchy (Sp
 
 **Deferred to future sprint**: container mode (`mode: container` — sibling Chrome + noVNC)
 
-**Docs**: [analysis](../integration/browser-mcp/analysis.md) | [design](../integration/browser-mcp/design.md)
+**Docs**: [analysis](integration/browser-mcp/analysis/analysis-001-browser.md) | [design](integration/browser-mcp/design/design-browser.md)
 
 ---
 
@@ -1684,7 +1684,7 @@ Unified design implementing both sharing/import and personal vault under the Con
 - Vault `.gitignore` template (excludes secrets, runtime files, session state)
 - Test coverage: 102 tests (pack install 26, project install 17, share 19, vault 40)
 
-**Docs**: [analysis](../configuration/_archive/sharing/analysis.md) | [design](../configuration/_archive/sharing/design.md)
+**Docs**: [analysis](../archive/sharing/analysis.md) | [design](../archive/sharing/design.md)
 
 ---
 
@@ -1700,7 +1700,7 @@ Enhancements to the Config Repo sharing system. Addresses naming issues, portabi
 - `cco pack internalize` — convert source-referencing packs to self-contained
 - Enhanced `cco project install` — auto-install pack dependencies, template variable resolution
 
-**Docs**: [analysis](../configuration/_archive/sharing/analysis.md) §8–§14 | [design](../configuration/_archive/sharing/design.md) §15–§22
+**Docs**: [analysis](../archive/sharing/analysis.md) §8–§14 | [design](../archive/sharing/design.md) §15–§22
 
 ---
 
@@ -1734,7 +1734,7 @@ Reorganization of the configuration hierarchy to leverage Claude Code's native *
 - Dockerfile updated: `COPY defaults/managed/ /etc/claude-code/`
 - Test suite updated: `test_system_sync.sh` → `test_managed_scope.sh` (15 tests)
 
-**Docs**: [analysis](../configuration/scope-hierarchy/analysis.md) | [ADR-3](../architecture/architecture.md) | [ADR-8](../architecture/architecture.md)
+**Docs**: [analysis](configuration/scope-hierarchy/analysis/analysis-001-scope-hierarchy.md) | [ADR-3](foundation/design/architecture.md) | [ADR-8](foundation/design/architecture.md)
 
 ---
 
@@ -1751,7 +1751,7 @@ Improved tmux configuration for clipboard and selection:
 - In-container OAuth login section with copy-paste instructions
 - Cross-reference from project-setup.md Authentication section
 
-**Analysis**: [terminal-clipboard-and-mouse.md](../integration/agent-teams/analysis.md)
+**Analysis**: [terminal-clipboard-and-mouse.md](integration/agent-teams/analysis/analysis-001-agent-teams.md)
 
 ---
 
@@ -1769,7 +1769,7 @@ Intelligent config merge system to update `projects/` and `global/` without losi
 - `cco start` updated: shows hint if schema_version < latest
 - Test suite: `tests/test_update.sh` (14 scenarios)
 
-**Docs**: [design](../configuration/update-system/design.md)
+**Docs**: [design](update-system/design/design-update-system.md)
 
 ---
 

@@ -109,7 +109,7 @@ cco new --repo ~/projects/api --repo ~/projects/frontend --port 3000:3000
 | `cco clean` | Remove .bak files from update |
 | `cco stop [project]` | Stop running session(s) |
 
-For the complete CLI reference, see [cli.md](../reference/cli.md).
+For the complete CLI reference, see [cli.md](../../reference/cli.md).
 
 ---
 
@@ -129,7 +129,7 @@ Personal, cross-project resources live in your store at `~/.cco/`
 name→path index, transcripts, memory, caches) lives in hidden XDG directories
 (`~/.local/state/cco`, `~/.cache/cco`, `~/.local/share/cco`) and is never hand-edited.
 
-For the complete `project.yml` format, see [project-yaml.md](../reference/project-yaml.md).
+For the complete `project.yml` format, see [project-yaml.md](../../configuration/reference/project-yaml.md).
 
 ---
 
@@ -142,7 +142,7 @@ For the complete `project.yml` format, see [project-yaml.md](../reference/projec
 | Port conflict | `cco start my-app --port 3001:3000` to remap |
 | Image not found | Run `cco build` |
 
-For more troubleshooting, see [troubleshooting.md](../user-guides/troubleshooting.md).
+For more troubleshooting, see [troubleshooting.md](../../troubleshooting.md).
 
 ---
 
@@ -150,5 +150,5 @@ For more troubleshooting, see [troubleshooting.md](../user-guides/troubleshootin
 
 - [Your first project](first-project.md) — step-by-step tutorial
 - [Key concepts](concepts.md) — context hierarchy, knowledge packs, agent teams
-- [Knowledge packs](../user-guides/knowledge-packs.md) — reusable cross-project documentation
-- [Configuration management](../user-guides/configuration-management.md) — git on `.cco/`, `cco config`, sharing, updates
+- [Knowledge packs](../../packs/guides/knowledge-packs.md) — reusable cross-project documentation
+- [Configuration management](../../configuration/guides/configuration-management.md) — git on `.cco/`, `cco config`, sharing, updates

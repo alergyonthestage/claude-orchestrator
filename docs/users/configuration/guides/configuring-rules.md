@@ -4,8 +4,8 @@
 > to get the most out of claude-orchestrator. Covers categories, grouping strategy,
 > scope decisions, and concrete examples.
 >
-> Related: [structured-agentic-development.md](structured-agentic-development.md) |
-> [context-hierarchy.md](../reference/context-hierarchy.md) |
+> Related: [structured-agentic-development.md](../../foundation/guides/structured-agentic-development.md) |
+> [context-hierarchy.md](../../foundation/reference/context-hierarchy.md) |
 > [project-setup.md](project-setup.md)
 
 ---
@@ -563,7 +563,7 @@ for your projects:
 1. Identify which categories above you already have opinions about
 2. Create or modify rule files following the [grouping principle](#grouping-principle)
 3. Start with global rules, then specialize per-project as needed
-4. Review the [Development Workflow Guide](development-workflow.md) for operational
+4. Review the [Development Workflow Guide](../../foundation/guides/development-workflow.md) for operational
    best practices
 
 ### Periodic review

@@ -24,7 +24,7 @@ Knowledge packs are most valuable when:
 
 A typical pack might include: API overview, data model, coding conventions, deployment runbook — all mounted read-only, available to Claude on demand.
 
-Learn more: [project-setup.md](../user-guides/project-setup.md) (Configure a Pack section).
+Learn more: [project-setup.md](../../configuration/guides/project-setup.md) (Configure a Pack section).
 
 ---
 
@@ -96,7 +96,7 @@ same environment: same repos mounted, same instructions, same rules and agents.
 
 This makes claude-orchestrator useful not just as a personal productivity tool, but as a team-wide standard for how Claude interacts with your codebase.
 
-Learn more: [Configuration Management guide](../user-guides/configuration-management.md).
+Learn more: [Configuration Management guide](../../configuration/guides/configuration-management.md).
 
 ---
 
@@ -121,7 +121,7 @@ claude-orchestrator supports two display modes:
 
 The mode is configured in `~/.cco/global/.claude/settings.json` (`"teammateMode": "tmux"`) or via CLI flag (`--teammate-mode`).
 
-Learn more: [agent-teams.md](../user-guides/agent-teams.md).
+Learn more: [agent-teams.md](../../integration/guides/agent-teams.md).
 
 ---
 
@@ -136,7 +136,7 @@ The Docker container is claude-orchestrator's isolation mechanism. Claude Code i
 
 The only privileged access point is the Docker socket mounted from the host, which allows Claude to create sibling containers (e.g., postgres, redis) on the host Docker daemon.
 
-Learn more: [architecture.md](../maintainer/architecture/architecture.md) (ADR-1: Docker as the Only Sandbox).
+Learn more: [architecture.md](../../../maintainers/foundation/design/architecture.md) (ADR-1: Docker as the Only Sandbox).
 
 ---
 
@@ -153,7 +153,7 @@ browser:
 
 Then launch Chrome with `cco chrome start` and start your session. Claude gains access to browser tools (navigate, click, fill, screenshot, and more) via the Chrome DevTools Protocol.
 
-Learn more: [browser-automation.md](../user-guides/browser-automation.md).
+Learn more: [browser-automation.md](../../integration/guides/browser-automation.md).
 
 ---
 
@@ -180,5 +180,5 @@ Learn more: [context-hierarchy.md](../reference/context-hierarchy.md) (Skills an
 ## Next steps
 
 - [Your first project](first-project.md) — step-by-step tutorial
-- [Project setup](../user-guides/project-setup.md) — advanced configuration guide
-- [CLI reference](../reference/cli.md) — all available commands
+- [Project setup](../../configuration/guides/project-setup.md) — advanced configuration guide
+- [CLI reference](../../reference/cli.md) — all available commands

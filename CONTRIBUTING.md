@@ -7,7 +7,7 @@ Thank you for your interest in contributing! This guide will help you get starte
 1. **Fork** the repository
 2. **Clone** your fork locally
 3. **Run** `cco init` to set up the development environment
-4. **Read** the [architecture docs](docs/maintainer/architecture/architecture.md) to understand the system design
+4. **Read** the [architecture docs](docs/maintainers/foundation/design/architecture.md) to understand the system design
 
 ## Reporting Bugs
 
@@ -86,7 +86,7 @@ chore: update dependencies
 | `tests/` | Bash test suite |
 | `docs/` | Documentation (user guides, reference, maintainer) |
 
-For detailed architecture, see [docs/maintainer/architecture/architecture.md](docs/maintainer/architecture/architecture.md).
+For detailed architecture, see [docs/maintainer/architecture/architecture.md](docs/maintainers/foundation/design/architecture.md).
 
 ## Code of Conduct
 

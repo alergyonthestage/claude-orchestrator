@@ -8,7 +8,7 @@
 >
 > Source of these definitions: maintainer brief (2026-06-25). The decentralized-config
 > **implementation review** already has a fuller, project-specific playbook at
-> [`configuration/decentralized-config/implementation-review-handoff.md`](./configuration/decentralized-config/implementation-review-handoff.md);
+> [`configuration/decentralized-config/implementation-review-handoff.md`](../../configuration/decentralized-config/implementation-review-handoff.md);
 > this file generalises it and adds the other three types.
 
 Each review is run in its **own clean session** (different scope ⇒ different context), is

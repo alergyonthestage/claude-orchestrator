@@ -2,7 +2,7 @@
 
 > Version: 0.1.0
 > Status: Design — pending implementation
-> Related: [analysis](./analysis.md) | [architecture.md](../../architecture/architecture.md) (ADR-10) | [auth-design.md](../../integration/auth/design.md) | [cli.md](../../../reference/cli.md)
+> Related: [analysis](../analysis/analysis-001-worktree.md) | [architecture.md](../../../foundation/design/architecture.md) (ADR-10) | [auth-design.md](../../auth/design/design-auth.md) | [cli.md](../../../../users/reference/cli.md)
 
 ---
 
@@ -349,11 +349,11 @@ When implementing, update the following docs:
 
 | Document | Change |
 |----------|--------|
-| [cli.md](../../../reference/cli.md) | Add `--worktree` flag to `cco start`, add `worktree` and `worktree_branch` to project.yml field reference |
-| [architecture.md](../../architecture/architecture.md) | ADR-10 added (done) |
-| [roadmap.md](../../decisions/roadmap.md) | Move worktree to near-term with link to this doc (done) |
-| [project-setup.md](../../../user-guides/project-setup.md) | Add section on worktree usage and bind mount behavior |
-| [docker.md](../../integration/docker/design.md) | Update compose template to show worktree volume variant |
+| [cli.md](../../../../users/reference/cli.md) | Add `--worktree` flag to `cco start`, add `worktree` and `worktree_branch` to project.yml field reference |
+| [architecture.md](../../../foundation/design/architecture.md) | ADR-10 added (done) |
+| [roadmap.md](../../../roadmap.md) | Move worktree to near-term with link to this doc (done) |
+| [project-setup.md](../../../../users/configuration/guides/project-setup.md) | Add section on worktree usage and bind mount behavior |
+| [docker.md](../../../environment/design/design-docker.md) | Update compose template to show worktree volume variant |
 
 ---
 

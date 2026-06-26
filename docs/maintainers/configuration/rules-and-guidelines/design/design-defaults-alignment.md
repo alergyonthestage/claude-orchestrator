@@ -8,16 +8,16 @@
 > **Status**: Implemented (2026-03-19).
 >
 > **Predecessors**:
-> - [`analysis.md`](analysis.md) — rules categories, scope mapping, file grouping
-> - [`../update-system/design.md`](../update-system/design.md) — update policies (file-policy taxonomy §4.4)
-> - [FI-2](../../decisions/framework-improvements.md#fi-2-init-workspace-on-empty-projects)
-> - [FI-5](../../decisions/framework-improvements.md#fi-5-human-workflow-guide-and-review-best-practices)
+> - [`analysis.md`](../analysis/analysis-001-rules-and-guidelines.md) — rules categories, scope mapping, file grouping
+> - [`../update-system/design.md`](../../../update-system/design/design-update-system.md) — update policies (file-policy taxonomy §4.4)
+> - [FI-2](../../../roadmap-backlog.md#fi-2-init-workspace-on-empty-projects)
+> - [FI-5](../../../roadmap-backlog.md#fi-5-human-workflow-guide-and-review-best-practices)
 >
 > **User guides** (the reference for what "good practice" means):
-> - [`development-workflow.md`](../../../user-guides/development-workflow.md)
-> - [`configuring-rules.md`](../../../user-guides/configuring-rules.md)
-> - [`structured-agentic-development.md`](../../../user-guides/structured-agentic-development.md)
-> - [`project-setup.md`](../../../user-guides/project-setup.md)
+> - [`development-workflow.md`](../../../../users/foundation/guides/development-workflow.md)
+> - [`configuring-rules.md`](../../../../users/configuration/guides/configuring-rules.md)
+> - [`structured-agentic-development.md`](../../../../users/foundation/guides/structured-agentic-development.md)
+> - [`project-setup.md`](../../../../users/configuration/guides/project-setup.md)
 
 ---
 

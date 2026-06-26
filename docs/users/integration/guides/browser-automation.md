@@ -2,7 +2,7 @@
 
 > Version: 1.0.0
 > Status: v1.0 — Sprint 4
-> Related: [project-setup.md](./project-setup.md) | [cli.md](../reference/cli.md) | [project-yaml.md](../reference/project-yaml.md)
+> Related: [project-setup.md](../../configuration/guides/project-setup.md) | [cli.md](../../reference/cli.md) | [project-yaml.md](../../configuration/reference/project-yaml.md)
 
 ---
 
@@ -260,7 +260,7 @@ Options:
 3. `--project <name>` → `project.yml` `browser.cdp_port`
 4. Default: `9222`
 
-Full CLI reference: [cli.md](../reference/cli.md#37-cco-chrome-startstopstatus)
+Full CLI reference: [cli.md](../../reference/cli.md#37-cco-chrome-startstopstatus)
 
 ---
 

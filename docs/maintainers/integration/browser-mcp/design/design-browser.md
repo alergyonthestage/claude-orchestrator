@@ -52,8 +52,8 @@ runs on the host OS and is visible to the user in real time.
 - Playwright MCP as alternative
 
 **References:**
-- [analysis.md](./analysis.md) — options evaluation, requirements, open questions resolved
-- [roadmap.md](../../decisions/roadmap.md) — Sprint 4 position
+- [analysis.md](../analysis/analysis-001-browser.md) — options evaluation, requirements, open questions resolved
+- [roadmap.md](../../../roadmap.md) — Sprint 4 position
 
 ---
 

@@ -3,7 +3,7 @@
 > Operational best practices for developers using claude-orchestrator. This guide covers
 > human behavior and habits — how to drive cco effectively, not how to configure it.
 >
-> For configuration: [configuring-rules.md](configuring-rules.md)
+> For configuration: [configuring-rules.md](../../configuration/guides/configuring-rules.md)
 > For principles: [structured-agentic-development.md](structured-agentic-development.md)
 
 ---
@@ -357,7 +357,7 @@ Patterns that consistently lead to poor results:
 | Skipping reviews | Accumulated bugs and design drift | Always run at least 2 review passes |
 | Not cleaning context | Later phases carry noise from earlier ones | Fresh session per phase. If mid-session drift occurs, `/clear` and re-state the objective with explicit document references |
 | No testing mechanism | Silent error accumulation | Set up tests before implementation |
-| Rules in too many small files | Contradictions emerge unnoticed | Group correlated rules (see [configuring-rules.md](configuring-rules.md)) |
+| Rules in too many small files | Contradictions emerge unnoticed | Group correlated rules (see [configuring-rules.md](../../configuration/guides/configuring-rules.md)) |
 | Not verifying intermediate artifacts | Errors compound across phases | Review every phase output before proceeding |
 | No explicit maintenance policy | Agent wastes effort on legacy compat during MVP | Define breaking changes policy per project |
 | Never reviewing docs structure | Agent finds stale/contradictory docs, acts on wrong info | Periodic docs review every few cycles |

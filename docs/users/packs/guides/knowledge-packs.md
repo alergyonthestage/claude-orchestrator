@@ -301,7 +301,7 @@ updated via `cco pack update`); a pack with no `url` is authored project-local i
 `<repo>/.cco/packs/`. To back up your whole personal store (`~/.cco/`, including
 packs), use `cco config push`.
 
-For the complete sharing workflow (multi-machine sync, team distribution, project templates), see the [Configuration Management guide](configuration-management.md).
+For the complete sharing workflow (multi-machine sync, team distribution, project templates), see the [Configuration Management guide](../../configuration/guides/configuration-management.md).
 
 ---
 
@@ -309,4 +309,4 @@ For the complete sharing workflow (multi-machine sync, team distribution, projec
 
 While knowledge packs bundle user-written conventions and guidelines, official framework documentation can be installed separately via `cco llms install`. The downloaded LLMs.txt **content** is cached per machine under `~/.cache/cco/llms/`, while the **coordinate** (`url` + variant) that references it is embedded per-unit in the `project.yml`/`pack.yml` that uses it.
 
-See [project-yaml.md § LLMs.txt](../reference/project-yaml.md#llmstxt--framework-documentation) and `cco llms --help`.
+See [project-yaml.md § LLMs.txt](../../configuration/reference/project-yaml.md#llmstxt--framework-documentation) and `cco llms --help`.

@@ -4,7 +4,7 @@
 > **Status**: Phase A & B implemented. Phase C pending.
 > **Date**: 2026-03-11
 > **Scope**: Sprint 6-Security
-> **Related**: [analysis.md](./analysis.md) | [security.md](../../architecture/security.md) | [architecture.md](../../architecture/architecture.md) | [docker/design.md](../docker/design.md)
+> **Related**: [analysis.md](../analysis/analysis-001-socket-security.md) | [security.md](design-security-model.md) | [architecture.md](../../foundation/design/architecture.md) | [docker/design.md](../../environment/design/design-docker.md)
 
 ---
 
@@ -490,7 +490,7 @@ Note: these deny rules are generated per-session (written to a session-specific 
 
 ### 6.1 New Fields
 
-Added to the `docker:` section and new `network:` section. See [analysis.md §8](./analysis.md#8-projectyml-schema--full-proposal) for the complete schema.
+Added to the `docker:` section and new `network:` section. See [analysis.md §8](../analysis/analysis-001-socket-security.md#8-projectyml-schema--full-proposal) for the complete schema.
 
 ### 6.2 Field Validation
 

@@ -314,7 +314,7 @@ cco chrome start --project my-project
 - **Linux**: verify `google-chrome`, `chromium`, or `chromium-browser` is in PATH
 - Check if already running: `cco chrome status`
 
-For the full browser automation guide, see [browser-automation.md](./browser-automation.md).
+For the full browser automation guide, see [browser-automation.md](integration/guides/browser-automation.md).
 
 ---
 

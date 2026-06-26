@@ -2,7 +2,7 @@
 
 > Version: 0.1.0
 > Status: Implemented (Sprint 4b, 2026-02-26)
-> Related: [analysis](./analysis.md) | [architecture.md](../../architecture/architecture.md) (ADR-12) | [auth-design.md](../../integration/auth/design.md)
+> Related: [analysis](../analysis/analysis-001-environment.md) | [architecture.md](../../foundation/design/architecture.md) (ADR-12) | [auth-design.md](../../integration/auth/design/design-auth.md)
 
 ---
 
@@ -245,4 +245,4 @@ projects/<name>/               ← user copy (gitignored)
 - [ ] `templates/project/base/project.yml`: Add `docker.image` and `docker.mount_ssh_keys` (commented)
 - [ ] `bin/test`: Tests for custom image in dry-run compose
 - [ ] `bin/test`: Tests for setup.sh and mcp-packages.txt mount presence
-- [ ] Documentation: Update [cli.md](../../../reference/cli.md), [project-setup.md](../../../user-guides/project-setup.md), [docker.md](../../integration/docker/design.md)
+- [ ] Documentation: Update [cli.md](../../../users/reference/cli.md), [project-setup.md](../../../users/configuration/guides/project-setup.md), [docker.md](design-docker.md)

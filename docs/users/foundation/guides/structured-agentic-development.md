@@ -250,7 +250,7 @@ They should be explicit, versioned, and periodically reviewed.
   ~20-40 lines. Users can expand, split, or reorganize rules as their project evolves.
   This avoids rule fatigue (the tendency for rules to accumulate into an unmanageable mass).
 - **Rules are versioned.** Tracked in git, updated via `cco update`, with migrations
-  when structure changes. See the [Configuring Rules](configuring-rules.md) guide for
+  when structure changes. See the [Configuring Rules](../../configuration/guides/configuring-rules.md) guide for
   how to organize and customize rules effectively.
 
 ### 2.4 Knowledge Packs — Curated Domain Context

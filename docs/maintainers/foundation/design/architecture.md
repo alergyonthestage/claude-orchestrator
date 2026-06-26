@@ -2,7 +2,7 @@
 
 > Version: 1.0.0
 > Status: v1.0 — Current
-> Related: [spec.md](./spec.md) | [docker.md](../integration/docker/design.md) | [context.md](../../reference/context-hierarchy.md)
+> Related: [spec.md](../analysis/spec.md) | [docker.md](../../environment/design/design-docker.md) | [context.md](../../../users/foundation/reference/context-hierarchy.md)
 
 ---
 
@@ -146,7 +146,7 @@ iTerm2 (opt-in, native panes, more setup), selectable via global settings
 
 ### 3.1 Docker Image
 
-See [DOCKER.md](../integration/docker/design.md) for full specification.
+See [DOCKER.md](../../environment/design/design-docker.md) for full specification.
 
 **Key aspects**:
 - Base: `node:22-bookworm`
@@ -156,7 +156,7 @@ See [DOCKER.md](../integration/docker/design.md) for full specification.
 
 ### 3.2 CLI (`bin/cco`)
 
-See [CLI.md](../../reference/cli.md) for full specification.
+See [CLI.md](../../../users/reference/cli.md) for full specification.
 
 **Key aspects**:
 - Single bash script, no external dependencies
@@ -165,7 +165,7 @@ See [CLI.md](../../reference/cli.md) for full specification.
 
 ### 3.3 Context & Settings
 
-See [CONTEXT.md](../../reference/context-hierarchy.md) for full specification.
+See [CONTEXT.md](../../../users/foundation/reference/context-hierarchy.md) for full specification.
 
 **Key aspects**:
 - Three-tier hierarchy matching Claude Code native scopes
@@ -174,7 +174,7 @@ See [CONTEXT.md](../../reference/context-hierarchy.md) for full specification.
 
 ### 3.4 Subagents
 
-See [SUBAGENTS.md](../../user-guides/advanced/subagents.md) for full specification.
+See [SUBAGENTS.md](../../../users/integration/guides/subagents.md) for full specification.
 
 **Key aspects**:
 - Two default subagents: analyst (haiku, read-only) and reviewer (sonnet, read-only)
@@ -390,7 +390,7 @@ completion, and exits cleanly.
 
 ## 7.6 Coding Conventions
 
-See [coding-conventions.md](coding-conventions.md) for the canonical
+See [coding-conventions.md](../../engineering/guides/coding-conventions.md) for the canonical
 list of shared services (categorizers, path resolvers, secret scanners)
 and the DRY / SRP / atomicity rules that new code must follow. The
 document codifies the lessons from the `#B10` / `#B13` / `#D1` class

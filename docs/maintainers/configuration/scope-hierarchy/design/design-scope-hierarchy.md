@@ -2,7 +2,7 @@
 
 > Version: 1.0.0
 > Status: Current (Sprint 3)
-> Related: [architecture.md](../../architecture/architecture.md) (ADR-3, ADR-8) | [context.md](../../../reference/context-hierarchy.md) | [analysis](./analysis.md)
+> Related: [architecture.md](../../../foundation/design/architecture.md) (ADR-3, ADR-8) | [context.md](../../../../users/foundation/reference/context-hierarchy.md) | [analysis](../analysis/analysis-001-scope-hierarchy.md)
 
 ---
 
@@ -347,8 +347,8 @@ This is Claude Code's native behavior, not our design choice. The practical impa
 
 ## 8. References
 
-- [ADR-3: Four-Tier Context Hierarchy](../../architecture/architecture.md) — Architecture decision record
-- [ADR-8: Tool vs User Config Separation](../../architecture/architecture.md) — Managed scope update
-- [ADR-14: Zero-Duplication Pack Resource Delivery](../../architecture/architecture.md) — Pack resources via read-only mounts
-- [Analysis: Scope Hierarchy](./analysis.md) — Detailed investigation and comparison of approaches
-- [Context & Settings Reference](../../../reference/context-hierarchy.md) — Runtime context loading, hooks, MCP
+- [ADR-3: Four-Tier Context Hierarchy](../../../foundation/design/architecture.md) — Architecture decision record
+- [ADR-8: Tool vs User Config Separation](../../../foundation/design/architecture.md) — Managed scope update
+- [ADR-14: Zero-Duplication Pack Resource Delivery](../../../foundation/design/architecture.md) — Pack resources via read-only mounts
+- [Analysis: Scope Hierarchy](../analysis/analysis-001-scope-hierarchy.md) — Detailed investigation and comparison of approaches
+- [Context & Settings Reference](../../../../users/foundation/reference/context-hierarchy.md) — Runtime context loading, hooks, MCP

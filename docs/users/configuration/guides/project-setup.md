@@ -1,6 +1,6 @@
 # Project Setup Guide
 
-> Related: [cli.md](../reference/cli.md) | [context.md](../reference/context-hierarchy.md) | [architecture.md](../maintainer/architecture/architecture.md)
+> Related: [cli.md](../../reference/cli.md) | [context.md](../../foundation/reference/context-hierarchy.md) | [architecture.md](../../../maintainers/foundation/design/architecture.md)
 
 ---
 
@@ -163,7 +163,7 @@ auth:
 
 With `oauth` (default), credentials are seeded from the macOS Keychain into the container automatically. If seeding is not available (first-time setup, Linux host, or expired credentials), Claude Code prompts for authentication directly inside the container by displaying a URL to open in a browser.
 
-**Important**: Copying the authentication URL from a tmux session requires specific copy-paste steps. See [Copy & Paste in tmux Mode](./agent-teams.md#24-copy--paste-in-tmux-mode) for how to copy text from the container, including the [in-container login](#in-container-login-without-credential-seeding) section for this specific scenario.
+**Important**: Copying the authentication URL from a tmux session requires specific copy-paste steps. See [Copy & Paste in tmux Mode](../../integration/guides/agent-teams.md#24-copy--paste-in-tmux-mode) for how to copy text from the container, including the [in-container login](#in-container-login-without-credential-seeding) section for this specific scenario.
 
 ### Browser Automation (optional)
 
@@ -184,7 +184,7 @@ browser:
 
 Claude can now use browser tools (navigate, click, fill forms, read pages, take screenshots) via the `chrome-devtools-mcp` server.
 
-For the complete guide — including multi-project setup, security, troubleshooting, and all available browser tools — see [browser-automation.md](./browser-automation.md).
+For the complete guide — including multi-project setup, security, troubleshooting, and all available browser tools — see [browser-automation.md](../../integration/guides/browser-automation.md).
 
 ---
 
@@ -276,7 +276,7 @@ Project settings (level 2) override global settings (level 1). Repository instru
 
 **Knowledge packs** are injected by the `session-context.sh` hook into `additionalContext` at startup — Claude sees what files are available and reads them on-demand. No `@.claude/packs.md` import in CLAUDE.md is required or needed.
 
-For more details on the hierarchy see [context.md](../reference/context-hierarchy.md).
+For more details on the hierarchy see [context.md](../../foundation/reference/context-hierarchy.md).
 
 ### The four `.claude` scopes and their reach
 
@@ -406,7 +406,7 @@ reuses it on every subsequent session.
 
 ## 8. Post-Creation Checklist
 
-> See also: [Knowledge Packs guide](knowledge-packs.md) for creating and managing packs, [Authentication guide](authentication.md) for OAuth and API key setup.
+> See also: [Knowledge Packs guide](../../packs/guides/knowledge-packs.md) for creating and managing packs, [Authentication guide](../../integration/guides/authentication.md) for OAuth and API key setup.
 
 After `cco init`:
 

@@ -82,7 +82,7 @@ Main sections:
 - **`docker.env`** — environment variables available in the container
 - **`packs`** — knowledge packs to activate (optional)
 
-For the complete reference, see [project-yaml.md](../reference/project-yaml.md).
+For the complete reference, see [project-yaml.md](../../configuration/reference/project-yaml.md).
 
 ---
 
@@ -176,7 +176,7 @@ tmux intercepts mouse events, so copy-paste works differently. The easiest metho
 | **Alacritty, WezTerm, Kitty, Ghostty** | Click and drag to select → release to auto-copy → `Cmd+V` / `Ctrl+Shift+V` to paste |
 | **GNOME Terminal** | Hold `Shift` while dragging → `Ctrl+Shift+C` to copy |
 
-For precise selections (scrollback, column mode) or troubleshooting, see the [full copy-paste guide](../user-guides/agent-teams.md#24-copy--paste-in-tmux-mode).
+For precise selections (scrollback, column mode) or troubleshooting, see the [full copy-paste guide](../../integration/guides/agent-teams.md#24-copy--paste-in-tmux-mode).
 
 ---
 
@@ -207,5 +207,5 @@ to the repo and are **not synced across machines** in v1.
 ## Next steps
 
 - [Key concepts](concepts.md) — understand context hierarchy, knowledge packs, agent teams
-- [Project setup](../user-guides/project-setup.md) — advanced guide on repos, extra_mounts, packs, CLAUDE.md
-- [CLI reference](../reference/cli.md) — all commands and `project.yml` format
+- [Project setup](../../configuration/guides/project-setup.md) — advanced guide on repos, extra_mounts, packs, CLAUDE.md
+- [CLI reference](../../reference/cli.md) — all commands and `project.yml` format

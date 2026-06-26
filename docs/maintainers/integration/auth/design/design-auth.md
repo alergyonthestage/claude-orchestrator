@@ -2,7 +2,7 @@
 
 > Version: 1.1.0
 > Status: Partially implemented (OAuth implemented, GitHub token design pending)
-> Related: [analysis](./analysis.md) | [architecture](../../architecture/architecture.md) (ADR-11)
+> Related: [analysis](../analysis/analysis-001-auth.md) | [architecture](../../../foundation/design/architecture.md) (ADR-11)
 
 ---
 
@@ -460,4 +460,4 @@ jq '.hasCompletedOnboarding = true' global/claude-state/claude.json > /tmp/fix.j
 - [ ] `templates/project/base/project.yml`: Add `docker.mount_ssh_keys` (commented)
 - [ ] `bin/test`: Tests for per-project secrets loading
 - [ ] `bin/test`: Tests for SSH mount opt-in in dry-run compose
-- [ ] Documentation: Update [cli.md](../../../reference/cli.md), [project-setup.md](../../../user-guides/project-setup.md)
+- [ ] Documentation: Update [cli.md](../../../../users/reference/cli.md), [project-setup.md](../../../../users/configuration/guides/project-setup.md)

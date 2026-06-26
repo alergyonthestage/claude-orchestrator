@@ -94,7 +94,7 @@ It can be disabled per-session (`--no-docker`) or per-project
 
 **Mitigation (Sprint 6-Security):**
 - **Default changed to `false`** — Docker socket is now opt-in, not opt-out. Projects that need Docker access must explicitly declare `docker.mount_socket: true`. Migration 006 adds explicit `true` to existing projects to preserve behavior.
-- **Implemented: Docker socket proxy** — Go binary (`proxy/`) filtering Docker API calls by container name/label, mount restrictions, and security constraints. The proxy (`cco-docker-proxy`) runs between Claude and the real socket, enforcing `policy.json` rules generated from `project.yml`. See [docker-security design](../integration/docker-security/design.md).
+- **Implemented: Docker socket proxy** — Go binary (`proxy/`) filtering Docker API calls by container name/label, mount restrictions, and security constraints. The proxy (`cco-docker-proxy`) runs between Claude and the real socket, enforcing `policy.json` rules generated from `project.yml`. See [docker-security design](design-socket-proxy.md).
 
 **Proxy internal structure** (4 packages, stdlib-only, no external dependencies):
 
@@ -114,7 +114,7 @@ It can be disabled per-session (`--no-docker`) or per-project
 | `filter` | `containers_test.go`, `mounts_test.go`, `security_test.go` | 44 | 1,127 | All filter policies, DfD path translation, caps normalization |
 | `proxy` | `proxy_test.go`, `routes_test.go` | 23 | 758 | HTTP handler integration, route matching, label injection |
 
-**Totals**: 92 test functions, 2,565 lines of test code covering 1,688 lines of production code. All four packages have test coverage (cache and proxy handler tests added in RF-4, resolving PROXY-1 and PROXY-2 from the [comprehensive review](../decisions/reviews/18-03-2026-comprehensive-review.md)).
+**Totals**: 92 test functions, 2,565 lines of test code covering 1,688 lines of production code. All four packages have test coverage (cache and proxy handler tests added in RF-4, resolving PROXY-1 and PROXY-2 from the [comprehensive review](../../reviews/18-03-2026-comprehensive-review.md)).
 
 ---
 

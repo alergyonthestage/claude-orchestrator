@@ -1,7 +1,7 @@
 # Managed Integrations — Protocol & Guide
 
 > Audience: claude-orchestrator maintainers adding new built-in integrations.
-> Related: [architecture.md](../architecture/architecture.md) (ADR section 6)
+> Related: [architecture.md](../../foundation/design/architecture.md) (ADR section 6)
 
 ---
 

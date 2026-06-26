@@ -2,7 +2,7 @@
 
 > Version: 1.0.0
 > Status: v1.0 — Current
-> Related: [architecture.md](../../maintainer/architecture/architecture.md) | [context.md](../../reference/context-hierarchy.md)
+> Related: [architecture.md](../../../maintainers/foundation/design/architecture.md) | [context.md](../../foundation/reference/context-hierarchy.md)
 
 ---
 
