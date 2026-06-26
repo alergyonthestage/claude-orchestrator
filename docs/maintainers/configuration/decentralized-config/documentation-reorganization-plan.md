@@ -1,7 +1,8 @@
 # Documentation Reorganization Plan — claude-orchestrator
 
-**Status**: Design / execution contract — produced 2026-06-26. Awaiting per-phase
-maintainer go-ahead before any file moves (`.claude/rules/workflow.md`).
+**Status**: EXECUTED 2026-06-26 (maintainer go-ahead given). Phases D0–D6 applied as
+atomic commits; the execution log is in §11. A few large/sensitive sub-tasks were
+deliberately deferred (see §11) — they remain on this contract.
 **Supersedes scope of**: `documentation-review-handoff.md` (the pre-merge doc-coherence
 sweep is folded into this reorg as the staleness pass).
 **Governing policy**: `.claude/rules/documentation-lifecycle.md` (3 doc classes) +
@@ -313,6 +314,40 @@ Current state: functional but dry. Target improvements:
   pointing at a superseded stream doc is stale).
 - Language: docs in English; comments/identifiers in English (per global rules).
 - Diagrams: Mermaid only, in fenced blocks.
+
+---
+
+## 11. Execution log (2026-06-26)
+
+Executed with parallel sub-agents on disjoint file-sets; structural `git mv` done
+serially first. Commits (LOCAL, branch `feat/vault/decentralized-config`):
+
+| Commit | Phase | What |
+|---|---|---|
+| `1af6e77` | — | this plan |
+| `431d9d1` | D0+D2+D3 | structural reorg (129 renames → maintainers/users/archive, doc-type leaves) |
+| `e58ecb9` | D1 | staleness S1–S6 (browser-mcp layout, llms/packs paths, docker note, update-system organize, scope/llms status headers, ADR-0024 leak) |
+| `28d8121` | D2 | extract 15 foundation ADRs (0001–0015) from architecture.md; trim to living design |
+| `e16beb3` | D5 | gap docs: file-destinations design, config-editor analysis+design, tutorial/config-editor user guides, docker-and-networking + socket-security user guides |
+| `fe166fa` | D4 | roadmap split → live (132 lines) + roadmap-history.md; backlog triaged |
+| `850b28d` | D6 | indices (docs/users/maintainers/configuration README) + repo README landing pass |
+| `eac63e5` | D6 | cross-reference repair: 220 links recomputed via rename map (link-integrity 456→19, residue intentional) |
+| `0fa2432` | D6 | test-comment doc-path refresh (comment-only) |
+
+**Link integrity**: 899 relative links scanned; 19 residual broken are intentional —
+GitHub-relative URLs (`CONTRIBUTING.md`/`SECURITY.md`), frozen `archive/` history
+back-refs (already broken pre-reorg), and one `[name](url)` format placeholder.
+
+### Deferred (still on this contract)
+- **D3b — `cli.md` per-domain split** (1812 lines): kept whole at `users/reference/cli.md`
+  for now. HITL #4 (boundaries) unresolved → do as a focused follow-up.
+- **`context-hierarchy.md` split**: kept whole at `users/foundation/reference/`.
+- **`configuration-management.md` split** into config/sharing/update guides: kept whole
+  (DRY — it already covers all three, cross-linked) instead of duplicating.
+- **update-system 5→1 deep consolidation**: files organized + cross-linked, bodies not merged.
+- **decentralized-config by-domain redistribution**: deferred to **post-merge** (D-2).
+- **HITL #2** — `user-config/` working-tree dev artifacts: not touched (repo, not docs).
+- **HITL #1** — llms design: kept-with-forward-annotation (recommended default applied).
 
 ---
 
