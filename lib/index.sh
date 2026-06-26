@@ -38,13 +38,17 @@ _index_file() {
 _index_ensure_file() {
     local f; f=$(_index_file)
     [[ -f "$f" ]] && return 0
+    # Atomic create (mktemp + mv), the same convention as every other index write
+    # (H7 / ADR-0022 D2) — a direct multi-line redirect is the one non-atomic site,
+    # which two concurrent first-runs could interleave.
+    local tmpf; tmpf=$(mktemp "${f}.XXXXXX")
     {
         echo "# cco machine-local index — logical name → absolute path + project membership."
         echo "# Regenerable via 'cco resolve --scan'; never committed, never synced."
         echo "version: 1"
         echo "paths:"
         echo "projects:"
-    } > "$f"
+    } > "$tmpf" && mv "$tmpf" "$f"
 }
 
 # ── Generic section accessors (paths: and projects: share the shape) ──
