@@ -248,7 +248,8 @@ _cco_init_scaffold_repo() {
     # Stage under a temp sibling, then atomic-move into place (mirrors migrate F44).
     local stage; stage=$(mktemp -d "${TMPDIR:-/tmp}/cco-scaffold.XXXXXX") || die "Could not create a temp dir."
     # shellcheck disable=SC2064
-    trap "rm -rf '$stage'" RETURN
+    # EXIT (not RETURN): die() exits, bypassing a RETURN trap and leaking the stage (H2).
+    trap "rm -rf '$stage'" EXIT
     mkdir -p "$stage/claude"
 
     # project.yml — base template with logical names only (no real paths; AD3/G8).

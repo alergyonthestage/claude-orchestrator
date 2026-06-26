@@ -555,7 +555,9 @@ _cco_migrate_project() {
     local tmp
     tmp=$(mktemp -d "${TMPDIR:-/tmp}/cco-pmigrate.XXXXXX") || die "Could not create a temp dir."
     # shellcheck disable=SC2064
-    trap "rm -rf '$tmp'" RETURN
+    # EXIT (not RETURN): die() calls exit, which bypasses a RETURN trap and would
+    # leave the extracted vault — including secrets.env — behind in /tmp (H2).
+    trap "rm -rf '$tmp'" EXIT
     tar -xzf "$backup" -C "$tmp" 2>/dev/null || die "Could not extract the legacy-vault backup."
 
     # Locate the legacy project (working-tree first; else from its profile branch).
