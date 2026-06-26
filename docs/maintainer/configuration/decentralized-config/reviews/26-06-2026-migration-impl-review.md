@@ -383,3 +383,51 @@ subagent stalled on a Claude Code "Try the new fullscreen renderer?" UI prompt a
 and never ran its task. The lead had already read `_cco_migrate_global` /
 `_cco_populate_global_from` directly, and corroborated with E (E7) and F, so B's area is
 fully covered.
+
+---
+
+## Resolution log (2026-06-26)
+
+All findings resolved on `feat/vault/decentralized-config` (commits local). Suite
+**904/0** after the batch. Each fix shipped with a regression test unless noted.
+
+| Finding | Status | Commit |
+|---|---|---|
+| BL1 inactive-profile project **secrets** from shadow | ✅ fixed | `d136344` |
+| BL2 inactive-profile project **memory** from shadow | ✅ fixed | `d136344` |
+| H1 atomic + non-silent + leak-free global populate | ✅ fixed | `08c9ce1` |
+| H2 RETURN→EXIT trap (no extracted secrets left in /tmp) | ✅ fixed | `a5ced02` |
+| H3 index AD5 in migrate + symmetric F12 | ✅ fixed | `29124e0` |
+| H4 config-editor mounts via session override, not the index | ✅ fixed | `9db9bcf` |
+| H5 check_global → `cco update` for legacy users | ✅ fixed | `c325985` |
+| H6 cco join post-join guidance + Journey-E gap documented | ✅ fixed | `ec2f53a` |
+| H7 migrated memory → `session/memory` (real latent bug) + paths.sh helpers | ✅ fixed | `c39ebd6` |
+| M1 stage as target sibling → atomic move | ✅ fixed | `a5b2d7b` |
+| M4 non-TTY profile→tag defaults to skip | ✅ fixed | `622632a` |
+| M5 memory after index + validate annotates memory orphans | ✅ fixed | `81fc4e8` |
+| M6 `cco new --name` injection guard | ✅ fixed | `6e1ba15` |
+| M7 `_prompt_for_path` absolutizes before storing | ✅ fixed | `ea76f99` |
+| M8 select newest backup, not oldest | ✅ fixed | `3c5a19f` |
+| M9 `_index_ensure_file` atomic | ✅ fixed | `3dd49d0` |
+| M10 remove dead `_cco_project_managed`/`_cco_project_compose` | ✅ fixed | `af9814f` |
+| **M2** pack profile-state secrets | ✅ **no-op (premise verified false)** | — |
+| **M3** global secrets merge across profiles | ✅ **no-op (premise verified false)** | — |
+
+**M2/M3 verdict** (verified against the legacy vault's canonical
+`_archive/vault/file-classification.md` + `profile-isolation-design.md §2.2/§2.4`):
+- `global/` is **"Always shared"** — there is a single top-level `secrets.env`
+  (gitignored, synced across all branches), **not** per-profile secrets. The global
+  populate already copies it. Nothing to merge (M3).
+- Packs have **no gitignored secrets** — the only pack gitignored path is
+  `packs/*/.cco/install-tmp/` (runtime, skipped); `packs/*/.cco/meta` is committed.
+  Any pack-local gitignored file also persists in the working tree (git never removes
+  gitignored files), so `cp -r $src/packs` already captures it (M2).
+- The profile-state shadow holds **only per-project** gitignored files, already
+  recovered for every profile by BL1.
+- Net: "all profiles' secrets must migrate" is fully satisfied by BL1 (per-project,
+  incl. inactive profiles) + the existing single global `secrets.env` copy. No code.
+
+Also fixed on `main` (legacy app would not start): hardened the `numStartups`
+comparison in `_start_prepare_state` against non-numeric `jq` output (`71de5b2`).
+
+**Remaining**: a few LOW/NIT polish items from the review, then the documentation review.
