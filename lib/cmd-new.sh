@@ -40,6 +40,14 @@ EOF
         esac
     done
 
+    # M6 (security): a user-supplied name flows into an EXIT-trap `rm -rf`, the temp
+    # dir path, and the generated docker-compose (container/network names, env) —
+    # validate it early (like cco start validates project names) to block shell /
+    # path-traversal / YAML injection via `--name`. The auto default (tmp-<ts>) below
+    # is always valid.
+    [[ -n "$session_name" && ! "$session_name" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]] \
+        && die "Invalid session name '$session_name' — use letters, numbers, '-' and '_' only (must start alphanumeric)."
+
     [[ ${#repos[@]} -eq 0 ]] && die "At least one --repo is required."
 
     # Resolve --mount specs eagerly (ADR-0027 D2) so a bad source fails before
