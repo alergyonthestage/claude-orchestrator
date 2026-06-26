@@ -107,7 +107,9 @@ _prompt_for_path() {
                 read -r reply < /dev/tty
                 [[ -z "$reply" ]] && return 1
                 local expanded
-                expanded=$(expand_path "$reply")
+                # M7: absolutize (not just ~-expand) before storing in the index —
+                # a relative path would resolve wrong from another cwd.
+                expanded=$(_resolve_to_abs "$reply")
                 # Use _path_exists (not `-d`) — extra_mounts may be files
                 if ! _path_exists "$expanded"; then
                     warn "Path '$expanded' does not exist"
@@ -136,7 +138,9 @@ _prompt_for_path() {
             read -r reply < /dev/tty
             [[ -z "$reply" ]] && return 1
             local expanded
-            expanded=$(expand_path "$reply")
+            # M7: absolutize (not just ~-expand) before storing in the index —
+            # a relative path would resolve wrong from another cwd.
+            expanded=$(_resolve_to_abs "$reply")
             # Use _path_exists (not `-d`) — extra_mounts may be files
             if ! _path_exists "$expanded"; then
                 warn "Path '$expanded' does not exist"
