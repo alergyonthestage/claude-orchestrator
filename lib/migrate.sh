@@ -669,7 +669,14 @@ _cco_migrate_project() {
     local rname rpath; local -a repo_names=()
     while IFS=$'\t' read -r rname rpath; do
         [[ -z "$rname" ]] && continue
-        _index_set_path "$rname" "$rpath"
+        # AD5 (ADR-0002): never silently re-point a logical name already bound to a
+        # different path (mirrors cco init / resolve --scan). Keep the project
+        # membership but warn so the user can rebind deliberately (H3).
+        if _index_path_conflicts "$rname" "$rpath"; then
+            warn "Repo '$rname' is already bound to $(_index_get_path "$rname") — keeping the existing binding (AD5). Run 'cco resolve' to rebind."
+        else
+            _index_set_path "$rname" "$rpath"
+        fi
         repo_names+=("$rname")
     done < "$idx"
     [[ ${#repo_names[@]} -gt 0 ]] && _index_set_project_repos "$mig_name" "${repo_names[@]}"

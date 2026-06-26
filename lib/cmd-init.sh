@@ -232,6 +232,13 @@ _cco_init_scaffold_repo() {
     if [[ -n "$existing_path" && "$existing_path" != "$target" ]]; then
         die "A project named '$name' is already registered to $existing_path. Choose another name (--name) or 'cco forget' it first."
     fi
+    # A migrated/joined project records its name in the projects: registry but its
+    # host repo path under the member repo names, not under the project name — so the
+    # paths: check above can miss it. Reject a name already taken there too (H3).
+    local existing_repos; existing_repos=$(_index_get_project_repos "$name" 2>/dev/null || true)
+    if [[ -n "$existing_repos" && "$existing_path" != "$target" ]]; then
+        die "A project named '$name' is already registered. Choose another name (--name) or 'cco forget' it first."
+    fi
 
     # Resolve the source project-template: --template <name> (user store first,
     # then native — _resolve_template), else the native base. Every project

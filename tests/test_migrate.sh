@@ -428,6 +428,19 @@ test_migrate_project_name_uniqueness() {
         && fail "a duplicate project name must be rejected (F12)" || true
 }
 
+# H3 (26-06-2026 migration review): F12 must be symmetric — a name registered by a
+# prior migrate (in the projects: registry, not paths:) must also block a clean
+# `cco init --name`, which previously checked only the paths: section.
+test_init_rejects_name_taken_by_migrated_project() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_legacy_vault_project "$tmpdir"
+    ( cd "$tmpdir/clones/api" && CCO_ASSUME_YES=1 run_cco init --migrate myapp )
+    mkdir -p "$tmpdir/other"
+    ( cd "$tmpdir/other" && CCO_SKIP_BUILD=1 run_cco init --name myapp ) \
+        && fail "clean init must reject a name already registered by a migrated project (H3)" || true
+    [[ ! -d "$tmpdir/other/.cco" ]] || fail "the rejected init must leave no .cco/ in the new repo"
+}
+
 test_migrate_project_backup_required() {
     # M8: no verified backup → refuse to read.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
