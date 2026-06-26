@@ -73,6 +73,33 @@ flowchart LR
 6. **Merge / release v1** — merge `feat/vault/decentralized-config`, reconcile both roadmaps,
    mark ADRs.
 
+### Pre-merge to-do — flatten `~/.cco/global/.claude/` → `~/.cco/.claude/`
+
+**Must land before the v1 merge** (decided 2026-06-26; not done in the docs session).
+**Why pre-merge**: fold it into the **single** decentralized-config migration so every user
+gets the flat layout in ONE coherent migration — avoid shipping `~/.cco/global/.claude`
+now and a *second* `mv … → ~/.cco/.claude` later. The `global/` wrapper is a vault-era
+vestige: `~/.cco` is already the global (user) config scope, and `.claude/` is the **only**
+thing under `global/` (setup.sh / setup-build.sh / mcp-packages.txt / languages / packs/ /
+templates/ are already top-level; update base/meta live in STATE). After the flatten the
+future per-project centralization becomes `~/.cco/projects/<name>/` (P18), a clean sibling
+of `~/.cco/.claude/`. Work items:
+
+- **Superseding ADR-0028** — supersede the `~/.cco/global/.claude` layout from ADR-0024 /
+  design §2 (forward-annotate ADR-0024; the `global/` vs future `projects/` contrast is
+  preserved as root-`.claude` vs `projects/<name>/`).
+- **Design** — update `decentralized-config/design.md` §2 layout, the mount
+  (`~/.cco/.claude/ → ~/.claude`), and the `~/.cco/.gitignore` allowlist
+  (`global/.claude` → `.claude`).
+- **Implementation** — retire/redefine `GLOBAL_DIR` (`bin/cco:49`) and update **every**
+  `~/.cco/global/.claude` reference: `cmd-start.sh`, `utils.sh`, `update*.sh`, `secrets.sh`,
+  `cmd-clean.sh`, `cmd-init.sh`, `cmd-new.sh` (the `$GLOBAL_DIR/.claude` readers).
+- **Migration** — the decentralized-config migration must place global config directly at
+  `~/.cco/.claude` for fresh AND migrating users (single move, idempotent), so legacy-vault
+  restore lands at the new location with no second relocation.
+- **Tests + docs** — update fixtures/helpers (`CCO_GLOBAL_DIR`) and any doc referencing
+  `~/.cco/global/`.
+
 ### Post-v1 (decentralized-config backlog)
 
 Decided-but-deferred; each rides the shipped v1 substrate. Priorities are a recommendation —
