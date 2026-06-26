@@ -15,8 +15,10 @@ The **decentralized in-repo config** refactor is **build-complete**: design clos
 maintainer's Mac). Project config now lives in `<repo>/.cco/`; the central vault and
 the profile/`@local` machinery are gone; personal config lives in `~/.cco`; machine-local
 state/cache/data live in hidden XDG buckets. The work is now in the **pre-merge review
-cycle**: the implementation review is done, and the **documentation review (this step)**
-is in progress before refactoring/UX review, dogfooding, and the v1 merge/release.
+cycle**: the implementation review is done; the **documentation review (this step)** has
+reorganized `docs/` to the audience→domain→doc-type structure and run a shipped-behavior
+coherence sweep (which surfaced and fixed one writer/reader path bug — see step 3). Next:
+refactoring/UX review, dogfooding, and the v1 merge/release.
 
 ## Decentralized-config v1 — phase index
 
@@ -48,11 +50,23 @@ flowchart LR
 
 1. **Implementation review** — ✅ done (2026-06-25 adherence review + 2026-06-26 deep
    migration review; all findings resolved, baseline 905/0).
-2. **Documentation review** — ▶ **in progress** (this step). Launcher:
-   `configuration/decentralized-config/documentation-review-handoff.md` (shipped-behavior
-   cutover sweep, terminology, cross-refs; pending maintainer go-ahead).
+2. **Documentation review** — ▶ **largely done** (this step). Reorganized `docs/` to the
+   Cave structure (`maintainers/` + `users/` + `archive/`, audience→domain→doc-type leaf;
+   `guiding-principles` promoted to `foundation/`); ran the shipped-behavior coherence
+   sweep (browser-mcp/llms/packs/update-system/environment/security designs aligned to the
+   4-bucket model; ~220 cross-refs repaired; `users/` verified clean). Plan + execution
+   log: `configuration/decentralized-config/documentation-reorganization-plan.md`.
+   **Deferred to post-merge** (see backlog): per-domain split of `cli.md` /
+   `context-hierarchy.md` / the `configuration-management.md` guide, and the by-domain
+   redistribution of the `decentralized-config/` sprint folder.
 3. **Refactoring / optimization review** — consumes the 13 optimization flags from the
-   pre-merge adherence review.
+   pre-merge adherence review, plus the **global build-extension reader bug** found during
+   the docs sweep: `cco init` / `init --migrate` write `setup-build.sh` / `setup.sh` /
+   `mcp-packages.txt` to `~/.cco` **top level** (design §2.3) but `cco build` read them from
+   `~/.cco/global` (legacy-vault remnant), so global build-time customization was silently
+   inert. **Verified + fixed 2026-06-26** in `lib/cmd-build.sh` (regression test
+   `tests/test_build.sh`); the broader stale-path sweep found no other active mismatch
+   (secrets/runtime readers already correct). **Re-validate in dogfooding** on a real build.
 4. **UX-UI review**.
 5. **Dogfooding e2e on Mac** — `configuration/decentralized-config/P2-dogfooding-validation.md`
    (sandboxed roots + HOME-flip; legacy-vault removal accepted only after merge + validation).
@@ -77,7 +91,13 @@ confirm before scheduling. None blocks the v1 merge.
 - **Distribution / packaging (R-pkg)** — distribute as npm/npx + publish the image to a
   registry so users need not clone the source. Also: an opinionated official sharing repo
   (F-opin, ADR-0020).
-- **`browser-mcp/design.md` deep layout rewrite** (doc-coherence, not a feature).
+- **Deferred documentation operations (post-merge)** — split the monolithic references
+  `cli.md` and `context-hierarchy.md` (and the `configuration-management.md` user guide)
+  into per-domain pages; **redistribute the `decentralized-config/` sprint folder** into the
+  by-domain `design/` + `adr/` homes (deferral decided during the docs reorg; the 27 ADRs
+  keep their numbers, the living design splits into the config/sharing/packs/update domains).
+  Tracked in `configuration/decentralized-config/documentation-reorganization-plan.md` §11.
+  (The `browser-mcp/design.md` deep layout rewrite was already applied in the docs review.)
 
 ## Broader planned work (beyond decentralized-config v1)
 
