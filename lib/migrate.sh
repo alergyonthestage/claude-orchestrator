@@ -713,12 +713,17 @@ _cco_migrate_project() {
 # `cco join [--sync]` — register a freshly-cloned, already-migrated repo's .cco/
 # into this machine's index (reuses the resolve/index primitives). The repo
 # hosts its own project; member paths are resolved on demand at start/resolve.
+# Scope (review H6): this is Journey C — registering a repo that ALREADY has a
+# committed .cco/project.yml. Journey E (`cco join <project>` adding the current
+# repo as a NEW member to an existing project's repos[]) is NOT implemented here
+# and needs a maintainer design decision (it changes join's signature + edits a
+# holder repo's project.yml). Until then `cco join` takes no project argument.
 cmd_join() {
     local do_sync=false
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --sync) do_sync=true; shift ;;
-            --help) echo "Usage: cco join [--sync]   (run inside a cloned repo with a committed .cco/)"; return 0 ;;
+            --help) echo "Usage: cco join [--sync]   (run inside a cloned repo that already has a committed .cco/; registers its project + members on this machine)"; return 0 ;;
             *) die "Unknown option: $1" ;;
         esac
     done
@@ -733,7 +738,10 @@ cmd_join() {
         repo_names+=("$rname")
     done < <(yml_get_repo_coords "$repo/.cco/project.yml")
     [[ ${#repo_names[@]} -gt 0 ]] && _index_set_project_repos "$pname" "${repo_names[@]}"
-    ok "Joined project '$pname' on this machine. Run 'cco resolve $pname' to bind local paths."
+    # Guidance (H6): join binds no member paths, so by-name `cco resolve <pname>`
+    # cannot find the unit yet. Point at the cwd-based resolve, which walks up from
+    # this repo and works without a prior binding.
+    ok "Joined project '$pname' on this machine. Run 'cco resolve' from inside this repo to bind its member paths."
     [[ "$do_sync" == "true" ]] && { cmd_sync --auto-approve 2>/dev/null || true; }
     return 0
 }
