@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # tests/test_invariants.sh — design invariant tests
 #
-# These tests directly encode the design invariants from docs/maintainer/spec.md
-# and docs/maintainer/architecture.md. They MUST pass; failure means the
+# These tests directly encode the design invariants from
+# docs/maintainers/foundation/analysis/spec.md and
+# docs/maintainers/foundation/design/architecture.md. They MUST pass; failure means the
 # implementation does not respect the architectural design.
 
 # ── Invariant 1: Tool vs User Config Separation ───────────────────────
