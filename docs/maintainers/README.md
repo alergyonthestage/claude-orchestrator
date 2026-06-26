@@ -1,103 +1,58 @@
-# Contributor Guide
+# Maintainer Documentation
 
-This section contains the internal technical documentation of claude-orchestrator, intended for those developing or maintaining the project. Here you find design docs, technical analyses, architectural reviews, and implementation specifications.
+Internal technical documentation for people developing or maintaining
+claude-orchestrator: architecture, decision records, design docs, analyses,
+reviews, and the roadmap.
 
----
+> Building or contributing? Start with [foundation/design/architecture.md](foundation/design/architecture.md)
+> and the [roadmap](roadmap.md).
 
-## Directory Structure
+## Domains
 
-Documentation is organized into six macro-areas by domain:
+Each domain owns a slice of the system. Domains contain doc-type leaf
+directories (see the convention below).
 
-```
-maintainer/
-├── architecture/       Core system design, ADRs, requirements, security
-├── configuration/      Config hierarchy, packs, decentralized in-repo config, update system, environment
-├── integration/        Docker, auth, browser MCP, agent teams, worktree
-├── internal/          Internal resources (tutorial, config-editor, future cco-develop)
-├── decisions/          Roadmap, protocols, historical reviews
-└── README.md           This file
-```
+| Domain | Scope | Index / entry point |
+|--------|-------|---------------------|
+| **foundation** | Core system design: the four-tier context hierarchy, Docker-as-sandbox, workspace layout, plus the foundational ADRs (0001–0015) and the requirements spec. | [design/architecture.md](foundation/design/architecture.md) · [analysis/spec.md](foundation/analysis/spec.md) · [adr/](foundation/adr/) |
+| **configuration** | The config lifecycle and distribution: scope hierarchy, rules & guidelines, llms.txt integration, file destinations, and the decentralized in-repo config model. | [configuration/README.md](configuration/README.md) |
+| **packs** | Knowledge pack format, `pack.yml` schema, and zero-duplication resource delivery. | [packs/design/](packs/design/) |
+| **update-system** | Migration runner, discovery engine, opinionated-file sync, and the additive/opinionated/breaking change taxonomy. | [update-system/design/](update-system/design/) · [update-system/analysis/](update-system/analysis/) |
+| **environment** | Build-time and runtime container extensibility (setup scripts, packages, custom images, Docker). | [environment/design/](environment/design/) · [environment/analysis/](environment/analysis/) |
+| **integration** | Infrastructure and external services: authentication, browser MCP, agent teams, git-worktree isolation, and the managed-integrations protocol. | [integration/auth/](integration/auth/) · [integration/browser-mcp/](integration/browser-mcp/) · [integration/agent-teams/](integration/agent-teams/) · [integration/worktree/](integration/worktree/) · [integration/guides/managed-integrations.md](integration/guides/managed-integrations.md) |
+| **security** | Threat model, the security design, and the Docker socket proxy design. | [security/design/](security/design/) · [security/analysis/](security/analysis/) |
+| **internal-projects** | The framework-internal sessions shipped with cco: the tutorial and the config-editor. | [internal-projects/tutorial/](internal-projects/tutorial/) · [internal-projects/config-editor/](internal-projects/config-editor/) |
+| **engineering** | How we build cco: coding conventions, testing, and review playbooks. | [engineering/guides/coding-conventions.md](engineering/guides/coding-conventions.md) · [engineering/guides/testing.md](engineering/guides/testing.md) · [engineering/guides/review-playbooks.md](engineering/guides/review-playbooks.md) |
+| **reviews** | Cross-cutting historical architecture and progress reviews. | [reviews/](reviews/) |
 
----
+## Doc-type leaf convention
 
-## Architecture — Core System Design
+Within each domain, documents live in leaf directories named by type. The type
+determines the document's lifecycle (see the project rule
+[`.claude/rules/documentation-lifecycle.md`](../../.claude/rules/documentation-lifecycle.md)):
 
-Foundation documents and architectural decisions.
+| Leaf | Lifecycle |
+|------|-----------|
+| `analysis/`, `adr/` (also `decisions/`) | **Append-only history.** Decision and investigation records. Never rewritten in place — when superseded, the original is kept and forward-annotated with a pointer to the refining record. They preserve *why*. |
+| `design/`, `guides/` | **Living docs.** Always rewritten to reflect the current/target truth; their history lives in git. They describe *how the system is / will be*. |
 
-- [architecture.md](architecture/architecture.md) — ADRs, system diagrams, data flows
-- [spec.md](architecture/spec.md) — functional and non-functional requirements
-- [security.md](architecture/security.md) — security review, threat model, hardening
-- [testing.md](architecture/testing.md) — test strategy and coverage
+## Decision records (ADRs)
 
----
+There are two ADR streams:
 
-## Configuration — Config Lifecycle & Distribution
+- **foundation/adr/** — the foundational architecture decisions, numbered
+  **0001–0015** (Docker-as-sandbox, context hierarchy, auth, packs, worktree,
+  managed integrations, …).
+- **configuration/decentralized-config/decisions/** — the **deferred config +
+  sharing design**, which is the **source of truth** for the in-repo config
+  model. It carries its own ADR stream, **0001–0027** (the substantive
+  config+sharing decisions run 0005–0027), plus its `design.md`,
+  `guiding-principles.md`, and supporting analyses. See
+  [configuration/README.md](configuration/README.md).
 
-Everything related to the four-tier configuration model, knowledge packs, the update system, and the decentralized in-repo config (which subsumes the former sharing, vault, and resource-lifecycle designs).
+## Roadmap
 
-| Area | Design | Analysis | Status |
-|------|--------|----------|--------|
-| Scope & Context Hierarchy | [design](configuration/scope-hierarchy/design.md) | [analysis](configuration/scope-hierarchy/analysis.md) | Completed |
-| Knowledge Packs | [design](configuration/packs/design.md) | — | Completed |
-| Environment Extensibility | [design](configuration/environment/design.md) | [analysis](configuration/environment/analysis.md) | Completed |
-| Decentralized In-Repo Config (in-repo `.cco/`, `~/.cco` store, sharing repos, multi-PC sync, resource lifecycle) | [design](configuration/decentralized-config/) | — | Source of truth |
-| Update System & Templates | [design](configuration/update-system/design.md) | [analysis](configuration/update-system/analysis.md) | Completed |
-| Rules & Guidelines | — | [analysis](configuration/rules-and-guidelines/analysis.md) | Completed |
-
----
-
-## Integration — Infrastructure & External Services
-
-Docker setup, authentication, browser automation, agent teams, and git worktree isolation.
-
-| Area | Design | Analysis | Status |
-|------|--------|----------|--------|
-| Docker Infrastructure | [design](integration/docker/design.md) | — | Completed |
-| Docker Security (Proxy) | [design](integration/docker-security/design.md) | [analysis](integration/docker-security/analysis.md) | Phase A+B done |
-| Authentication & Secrets | [design](integration/auth/design.md) | [analysis](integration/auth/analysis.md) | Completed |
-| Browser MCP | [design](integration/browser-mcp/design.md) | [analysis](integration/browser-mcp/analysis.md) | Completed |
-| Agent Teams | — | [analysis](integration/agent-teams/analysis.md) | Completed |
-| Git Worktree Isolation | [design](integration/worktree/design.md) | [analysis](integration/worktree/analysis.md) | Planned (Sprint 10) |
-
----
-
-## Internal — Framework-Internal Resources
-
-Design and analysis documents for internal resources distributed with claude-orchestrator (learning, onboarding, development).
-
-| Resource | Design | Analysis | Status |
-|----------|--------|----------|--------|
-| Tutorial Project | [design](internal/tutorial/design.md) | [analysis](internal/tutorial/analysis.md) | Completed (Sprint 5) |
-
-Future: `cco-develop` template for framework maintainers.
-
----
-
-## Decisions — Roadmap, Protocols & Reviews
-
-Project-level decisions, planning, and historical snapshots.
-
-- [roadmap.md](decisions/roadmap.md) — development plan, priorities, and feature progress
-- [framework-improvements.md](decisions/framework-improvements.md) — framework improvement proposals and tracking
-- [managed-integrations.md](decisions/managed-integrations.md) — 9-step protocol for adding new managed MCP servers
-
-### Reviews
-
-The [reviews/](decisions/reviews/) directory contains architectural and progress reviews:
-
-- [24-02-2026](decisions/reviews/24-02-2026-architecture-review.md) — Architecture review
-- [26-02-2026](decisions/reviews/26-02-2026-progress-review.md) — Progress review
-- [Sprint 2-3 plan](decisions/reviews/sprint-2-3-implementation-plan.md) — Implementation plan
-- [18-03-2026 comprehensive](decisions/reviews/18-03-2026-comprehensive-review.md) — Comprehensive review
-- [18-03-2026 UX findings](decisions/reviews/18-03-2026-update-ux-findings.md) — Update UX findings
-- [18-03-2026 messages audit](decisions/reviews/18-03-2026-update-ux-messages-audit.md) — Update UX messages audit
-
----
-
-## Documentation Conventions
-
-Maintainer documentation follows two conventions:
-
-1. **Design doc** (`<area>/design.md`) — describes how something is built or will be built: overview, architecture, flows, implementation decisions, interfaces, edge cases. Primary reference for implementers.
-
-2. **Analysis doc** (`<area>/analysis.md`) — documents technical investigations: problem analyzed, options considered with pros/cons, identified constraints, final recommendation. Reference for understanding *why* a certain direction was chosen.
+- [roadmap.md](roadmap.md) — the single source of truth for planned work,
+  priorities, and feature status.
+- [roadmap-backlog.md](roadmap-backlog.md) — backlog of deferred and candidate
+  items.

@@ -1,36 +1,27 @@
-# Configuration Documentation — Index
+# Configuration — Domain Index
 
-This directory contains analysis and design documents for cco's configuration,
-update, and resource management systems. Each subdirectory covers a distinct
-feature or architectural concern.
+This domain covers cco's configuration model, distribution, and resource
+management. Each subdomain owns a distinct concern and follows the doc-type leaf
+convention (`analysis/` and `decisions/` are append-only history; `design/` is
+living). See the [maintainer index](../README.md) for the convention.
 
-## Document Map
+## Subdomains
 
-| Subdirectory | Scope | Key File |
-|-------------|-------|----------|
-| **decentralized-config/** | The current config model: in-repo `<repo>/.cco/`, the `~/.cco` personal store, STATE/CACHE/DATA buckets, the machine-local index, sharing repos (structure-based discovery), multi-PC sync via `cco config`, per-user tags, and resource lifecycle. **Source of truth.** | `design.md` + supporting analyses |
-| **update-system/** | Migration runner, discovery engine, opinionated file sync, change categories (additive/opinionated/breaking) | `design.md` — canonical for update mechanics; `base-tracking-fix-design.md` — base version tracking fix |
-| **scope-hierarchy/** | Four-tier context hierarchy (managed/user/project/repo), override semantics | `design.md` — canonical for scope model |
-| **packs/** | Pack format, pack.yml schema, knowledge management | `design.md` |
-| **environment/** | Build-time and runtime extensibility (setup.sh, MCP, Docker) | `design.md` |
-| **rules-and-guidelines/** | Rule content organization (which rules in which files) | `analysis.md`, `defaults-alignment-design.md` |
-| **llms/** | LLMs.txt integration: storage, variant management, CLI commands | `analysis.md`, `design.md` |
+| Subdomain | Scope | Links |
+|-----------|-------|-------|
+| **decentralized-config/** | **Source of truth.** The deferred config + sharing design: in-repo `<repo>/.cco/`, the `~/.cco` personal store, the STATE/CACHE/DATA buckets, the machine-local index, sharing repos (structure-based discovery), multi-PC sync via `cco config`, per-user tags, and the resource lifecycle. Carries its own ADR stream (0001–0027). | [design.md](decentralized-config/design.md) · [guiding-principles.md](decentralized-config/guiding-principles.md) · [decisions/](decentralized-config/decisions/) |
+| **scope-hierarchy/** | The four-tier context hierarchy (managed → user → project → repo) and its override semantics. | [design](scope-hierarchy/design/design-scope-hierarchy.md) · [analysis](scope-hierarchy/analysis/analysis-001-scope-hierarchy.md) |
+| **rules-and-guidelines/** | How rule content is organized — which rules live in which files, and aligning the shipped defaults. | [analysis](rules-and-guidelines/analysis/analysis-001-rules-and-guidelines.md) · [design](rules-and-guidelines/design/design-defaults-alignment.md) |
+| **llms/** | llms.txt framework-documentation integration: storage, variant management, and the `cco llms` CLI surface. | [analysis](llms/analysis/analysis-001-llms.md) · [design](llms/design/design-llms.md) |
+| **file-destinations/** | Where each managed file is written (config vs STATE/CACHE/DATA) and why. | [design](file-destinations/design/design-file-destinations.md) |
 
-> The former **sharing/**, **vault/**, and the `.cco/`-layout parts of **resource-lifecycle/** describe the removed central `user-config/` + vault model. Their successor is **decentralized-config/** (the surviving file-policy and changelog-dual-tracker concepts were re-homed into **update-system/**). The old subtrees are archived under `_archive/`.
+## Notes
 
-## Concept Ownership
-
-To avoid duplication, each concept has a single canonical source:
-
-| Concept | Canonical Source |
-|---------|-----------------|
-| File policies (tracked, untracked, generated) | `update-system/` (re-homed from the former `resource-lifecycle/`) |
-| Four-tier scope hierarchy | `scope-hierarchy/design.md` §1-3 |
-| Change categories (additive, opinionated, breaking) | `update-system/design.md` §3-4 |
-| Discovery + sync mechanics | `update-system/design.md` §4-5 |
-| Tutorial as internal resource | `decentralized-config/` |
-| Config-editor as a built-in session (`cco start config-editor`) | `decentralized-config/` |
-| Sharing repos + publish/install flow (structure-based discovery, no manifest) | `decentralized-config/` |
-| Multi-PC sync via `cco config` + per-user tags | `decentralized-config/` |
-| In-repo `<repo>/.cco/` + `~/.cco` store layout, STATE/CACHE/DATA buckets, the machine-local index | `decentralized-config/` |
-| Changelog dual-tracker (last_seen + last_read) | `update-system/` (re-homed from the former `resource-lifecycle/`) |
+- The **update system** (migrations, discovery, file policies, the additive/
+  opinionated/breaking taxonomy) and **knowledge packs** are sibling maintainer
+  domains, not subdomains here — see [update-system/](../update-system/) and
+  [packs/](../packs/).
+- The former **sharing/**, **vault/**, and `resource-lifecycle/` designs
+  described the removed central `user-config/` + vault model. They are
+  superseded by **decentralized-config/** and archived under
+  [docs/archive/](../../archive/).
