@@ -252,8 +252,11 @@ _cco_init_scaffold_repo() {
     fi
     [[ -d "$tmpl" ]] || die "Project template '${tmpl_name:-base}' not found."
 
-    # Stage under a temp sibling, then atomic-move into place (mirrors migrate F44).
-    local stage; stage=$(mktemp -d "${TMPDIR:-/tmp}/cco-scaffold.XXXXXX") || die "Could not create a temp dir."
+    # Stage as a SIBLING of the target .cco (M1): same filesystem, so the move into
+    # place is an atomic rename — a stage under $TMPDIR (often a separate tmpfs) makes
+    # `mv` a non-atomic cross-device copy that can leave a partial .cco/ (breaks F44).
+    local stage; stage=$(mktemp -d "$target/.cco-scaffold.XXXXXX") \
+        || die "Could not create a staging dir in $target (is it writable?)."
     # shellcheck disable=SC2064
     # EXIT (not RETURN): die() exits, bypassing a RETURN trap and leaking the stage (H2).
     trap "rm -rf '$stage'" EXIT

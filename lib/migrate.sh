@@ -618,8 +618,16 @@ _cco_migrate_project() {
         die "A project named '$mig_name' is already registered. Migrate under a different name or 'cco forget' it first."
     fi
 
-    # Stage the final .cco/ under temp, then atomic-move into place (F44).
-    local stage="$tmp/.cco-stage" idx="$tmp/index-entries"
+    # Stage the final .cco/ as a SIBLING of the target (M1): same filesystem as
+    # $target/.cco, so the move below is an atomic rename — a stage built under
+    # $TMPDIR (often a separate tmpfs) makes `mv` a non-atomic cross-device copy
+    # that can leave a partial .cco/ on failure (breaks F44). Re-arm the cleanup
+    # trap to also remove the sibling stage on any exit/die.
+    local idx="$tmp/index-entries"
+    local stage; stage=$(mktemp -d "$target/.cco-stage.XXXXXX") \
+        || die "Could not create a staging dir in $target (is it writable?)."
+    # shellcheck disable=SC2064
+    trap "rm -rf '$tmp' '$stage'" EXIT
     mkdir -p "$stage/claude"
     _cco_build_project_yml "$leg" "$stage/project.yml" "$idx" "$tmp"
     # Authored config tree: legacy projects/<p>/.claude → .cco/claude.

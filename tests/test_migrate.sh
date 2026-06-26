@@ -399,6 +399,9 @@ test_migrate_project_writes_final_yml() {
     # AD3/G8: no real path ever lands in the committed config.
     assert_file_not_contains "$yml" "/home/dev"
     assert_file_not_contains "$yml" "@local"
+    # M1: the sibling staging dir is consumed by the atomic rename — none left behind.
+    local _leftover; _leftover=$(ls -d "$tmpdir/clones/api"/.cco-stage.* 2>/dev/null | head -1)
+    [[ -z "$_leftover" ]] || fail "the sibling staging dir must not survive a successful migrate (M1): $_leftover"
 }
 
 test_migrate_project_registers_index() {
