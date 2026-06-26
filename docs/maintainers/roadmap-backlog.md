@@ -1,5 +1,7 @@
 # Framework Improvements — Analysis & Decisions
 
+> Backlog of framework improvements; see [roadmap.md](roadmap.md) for the live plan.
+>
 > Raised: 2026-03-14. Collected from field usage observations.
 > These items will be revisited individually at design/analysis time before implementation.
 
@@ -161,7 +163,14 @@
 
 ## FI-7: Publish-Install Sync and Resource Versioning
 
-**Status**: Implemented. See [FI-7 design](../configuration/_archive/sharing/publish-install-sync-design.md).
+**Status**: Implemented (2026-03-17) — **but later superseded** by the decentralized-config
+refactor. Projects no longer publish/install/update/internalize: a project rides its own
+code-repo remote (ADR-0018 D2), and `cco project publish|install|update|internalize` were
+removed (`bin/cco` now returns a removal notice). **Needs triage**: confirm which sub-decisions
+survive under the new model (e.g. the 3-way merge path lives on in `cco update`; `cco project
+internalize` / Case-C is reserved post-v1, ADR-0023 D4). The original FI-7 design doc
+([link](../configuration/_archive/sharing/publish-install-sync-design.md)) appears to have
+been removed/archived in a docs reorg (dead link — needs triage alongside the doc review).
 
 **Question**: After `cco project install`, the installed project has no connection to the source Config Repo. If the publisher pushes updates, how does the consumer know? Should there be a `cco project update` flow? What about versioning?
 
