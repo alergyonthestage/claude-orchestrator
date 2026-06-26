@@ -57,52 +57,10 @@ test_paths_project_meta_default_new() {
         || fail "Expected STATE meta from dir-basename fallback, got: $result"
 }
 
-# ── Project Managed (directory type, uses -d) ────────────────────────
-
-test_paths_project_managed_dir_new_path() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    export USER_CONFIG_DIR="$tmpdir/uc"
-    export GLOBAL_DIR="$tmpdir/uc/global"
-    source "$REPO_ROOT/lib/colors.sh"
-    source "$REPO_ROOT/lib/utils.sh"
-    source "$REPO_ROOT/lib/paths.sh"
-
-    local proj="$tmpdir/project"
-    mkdir -p "$proj/.cco/managed"
-
-    local result; result=$(_cco_project_managed "$proj")
-    [[ "$result" == "$proj/.cco/managed" ]] || fail "Expected new managed dir, got: $result"
-}
-
-test_paths_project_managed_dir_old_fallback() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    export USER_CONFIG_DIR="$tmpdir/uc"
-    export GLOBAL_DIR="$tmpdir/uc/global"
-    source "$REPO_ROOT/lib/colors.sh"
-    source "$REPO_ROOT/lib/utils.sh"
-    source "$REPO_ROOT/lib/paths.sh"
-
-    local proj="$tmpdir/project"
-    mkdir -p "$proj/.managed"
-
-    local result; result=$(_cco_project_managed "$proj")
-    [[ "$result" == "$proj/.managed" ]] || fail "Expected old .managed/ fallback, got: $result"
-}
-
-test_paths_project_managed_dir_default_new() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    export USER_CONFIG_DIR="$tmpdir/uc"
-    export GLOBAL_DIR="$tmpdir/uc/global"
-    source "$REPO_ROOT/lib/colors.sh"
-    source "$REPO_ROOT/lib/utils.sh"
-    source "$REPO_ROOT/lib/paths.sh"
-
-    local proj="$tmpdir/project"
-    mkdir -p "$proj"
-
-    local result; result=$(_cco_project_managed "$proj")
-    [[ "$result" == "$proj/.cco/managed" ]] || fail "Expected new managed dir default, got: $result"
-}
+# ── Project Managed ──────────────────────────────────────────────────
+# The _cco_project_managed / _cco_project_compose dual-read helpers were removed as
+# dead code (M10 — no production callers; managed→CACHE, compose→STATE now). Their
+# tests went with them.
 
 # ── Remotes registry (M3 split: url->DATA, token->STATE) ─────────────
 

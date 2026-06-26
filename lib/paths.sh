@@ -125,14 +125,11 @@ _cco_project_base_dir() {
     printf '%s\n' "$(_cco_state_dir)/projects/$(_cco_project_id "$1")/update/base"
 }
 
-_cco_project_managed() {
-    _cco_resolve_path d "$1/.cco/managed" "$1/.managed"
-}
-
-_cco_project_compose() {
-    _cco_resolve_path f "$1/.cco/docker-compose.yml" "$1/docker-compose.yml"
-}
-
+# M10: _cco_project_managed and _cco_project_compose were removed — dead helpers
+# with no callers that returned repo-local paths no current code writes (compose →
+# STATE, managed → CACHE via _cco_project_cache_managed). _cco_project_claude_state
+# below is kept: it is still read by the legacy memory→claude-state internal
+# migration (secrets.sh) which operates on the OLD repo-local layout.
 _cco_project_claude_state() {
     _cco_resolve_path d "$1/.cco/claude-state" "$1/claude-state"
 }
