@@ -199,10 +199,20 @@ _cco_populate_global_from() {
     local src="$1" cfg
     cfg="$(_cco_config_dir)"
 
-    # Global Claude config (shared across all profiles).
+    # Global Claude config (shared across all profiles). Stage into a same-dir
+    # sibling then atomic-rename, so a partial/failed copy never leaves an
+    # incomplete ~/.cco/global/.claude that check_global would wrongly accept (H1).
     if [[ -d "$src/global/.claude" ]]; then
         mkdir -p "$cfg/global"
-        cp -r "$src/global/.claude" "$cfg/global/.claude"
+        rm -rf "$cfg/global/.claude.tmp"
+        if cp -r "$src/global/.claude" "$cfg/global/.claude.tmp"; then
+            rm -rf "$cfg/global/.claude"
+            mv "$cfg/global/.claude.tmp" "$cfg/global/.claude"
+        else
+            rm -rf "$cfg/global/.claude.tmp"
+            warn "Failed to populate ~/.cco/global/.claude from the legacy vault."
+            return 1
+        fi
     fi
     # Global setup scripts / mcp list (legacy: under global/).
     local f
@@ -327,9 +337,14 @@ _cco_migrate_global() {
         return 1
     fi
 
-    _cco_populate_global_from "$tmp"
+    if ! _cco_populate_global_from "$tmp"; then
+        rm -rf "$tmp"
+        warn "Global migration did not complete — your legacy vault is untouched; retry on the next 'cco update'."
+        return 1
+    fi
     rm -rf "$tmp"
-    # Record the gate: the eager global migration ran (ADR-0026).
+    # Record the gate only after a successful populate (ADR-0026): a failed populate
+    # must stay retryable on the next 'cco update', and must not leak its temp (H1).
     _cco_marker_add "$marker" global-migrated
 
     # Migration summary + legacy-vault keep/remove note (maintainer-confirmed copy).

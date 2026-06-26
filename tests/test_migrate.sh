@@ -230,6 +230,17 @@ test_migrate_global_populates_cco() {
     assert_dir_exists  "$HOME/.cco/packs/shared-pack"  "shared pack should be migrated to ~/.cco"
 }
 
+# H1 (26-06-2026 migration review): global/.claude is staged then atomic-renamed,
+# so a partial copy never passes check_global and no staging dir is left behind.
+test_migrate_global_atomic_no_stage_leftover() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_legacy_vault_global "$tmpdir"
+    run_cco update || true
+    assert_dir_exists "$HOME/.cco/global/.claude" "global/.claude must be present after migration"
+    [[ ! -e "$HOME/.cco/global/.claude.tmp" ]] \
+        || fail "the atomic global/.claude staging dir must not be left behind (H1)"
+}
+
 test_migrate_global_languages_decomposed() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_legacy_vault_global "$tmpdir"
