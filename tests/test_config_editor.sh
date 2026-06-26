@@ -28,6 +28,22 @@ test_config_editor_mounts_docs_readonly() {
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" ":/workspace/cco-docs:ro"
 }
 
+# H4 (26-06-2026 migration review): the config-editor's internal mount names go
+# through the in-process session override, not the persistent user-facing index.
+test_config_editor_does_not_pollute_index() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco start config-editor --dry-run --dump
+    local index="$CCO_STATE_HOME/index"
+    if [[ -f "$index" ]]; then
+        grep -qE '^[[:space:]]*cco-config:' "$index" \
+            && fail "config-editor must not write 'cco-config' into the persistent index (H4)" || true
+        grep -qE '^[[:space:]]*cco-docs:' "$index" \
+            && fail "config-editor must not write 'cco-docs' into the persistent index (H4)" || true
+    fi
+}
+
 test_config_editor_project_name_in_compose() {
     # The generated runtime project.yml names the session config-editor.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT

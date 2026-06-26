@@ -65,12 +65,14 @@ _setup_internal_config_editor() {
     # project mode). The personal store is mounted read-write — editing it is
     # the whole purpose of this session.
     local cfg; cfg="$(_cco_config_dir)"
-    # The mount bridge resolves names via the STATE index (name → host path).
-    # Seed the config-editor's mount names here — a runtime artifact, never
-    # committed, so AD3/G8 hold by construction (no host path enters project.yml).
-    _index_set_path "cco-config" "$cfg"
-    _index_set_path "cco-docs" "$REPO_ROOT/docs"
-    [[ -n "$target_cco" ]] && _index_set_path "${target_name}-config" "$target_cco"
+    # The mount bridge resolves names via the STATE index (name → host path), but
+    # these are EPHEMERAL internal names — writing them into the persistent,
+    # user-facing index pollutes it permanently and clobbers any user binding of the
+    # same name (review H4). Publish them instead via the in-process session override
+    # (_mount_override_get), which _effective_extra_mounts consults before the index.
+    # The generated project.yml stays index-driven; no host path is committed (AD3/G8).
+    _CCO_MOUNT_OVERRIDE=$(printf 'cco-config\t%s\ncco-docs\t%s' "$cfg" "$REPO_ROOT/docs")
+    [[ -n "$target_cco" ]] && _CCO_MOUNT_OVERRIDE+=$(printf '\n%s-config\t%s' "$target_name" "$target_cco")
     {
         cat <<YAML
 name: config-editor

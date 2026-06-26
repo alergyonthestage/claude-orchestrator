@@ -295,6 +295,20 @@ _effective_repo_mounts() {
 # mount (ro = "true"|"false"). LEGACY: source/target/ro from project.yml
 # (source already resolved + expanded). NEW: source from the index by name,
 # target defaults to /workspace/<name>, readonly defaults to true.
+# Session-local mount override (set by the internal config-editor only): maps a few
+# fixed internal mount names to host paths WITHOUT writing the persistent STATE index
+# (review H4 — the index is user-facing config, not an ephemeral routing table; raw
+# _index_set_path there clobbered user bindings like a repo named `cco-docs`).
+# Newline-delimited "name<TAB>path" lines in the in-process global $_CCO_MOUNT_OVERRIDE.
+_mount_override_get() {
+    local name="$1" oname opath
+    [[ -n "${_CCO_MOUNT_OVERRIDE:-}" ]] || return 1
+    while IFS=$'\t' read -r oname opath; do
+        [[ "$oname" == "$name" ]] && { printf '%s' "$opath"; return 0; }
+    done <<< "$_CCO_MOUNT_OVERRIDE"
+    return 1
+}
+
 _effective_extra_mounts() {
     local project_yml="$1"
     # Peel fields by tab (IFS=$'\t' read collapses empty middle fields, so
@@ -309,8 +323,9 @@ _effective_extra_mounts() {
         ro_raw="${rest#*$'\t'}"
         [[ -z "$name" ]] && continue
         # Conscious-skip: exclude an unresolved mount (no index path) rather
-        # than emit a silent empty mount (#B17; design §4.4 / P14).
-        local _ms; _ms=$(_index_get_path "$name")
+        # than emit a silent empty mount (#B17; design §4.4 / P14). A session-local
+        # internal override (config-editor, H4) wins over the persistent index.
+        local _ms; _ms=$(_mount_override_get "$name" || _index_get_path "$name")
         [[ -z "$_ms" ]] && continue
         [[ -z "$target" ]] && target="/workspace/$name"
         ro=$(_parse_bool "$ro_raw" "true")
