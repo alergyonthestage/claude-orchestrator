@@ -91,6 +91,19 @@ test_config_validate_fix_prunes_with_yes() {
     assert_output_contains "No orphaned internal state"
 }
 
+# M5 (26-06-2026 migration review): a half-migrated project (memory present but not
+# yet index-registered) is detected as an orphan whose label warns it holds migrated
+# memory, so the user does not blindly prune it.
+test_config_validate_warns_on_orphan_with_memory() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    mkdir -p "$CCO_STATE_HOME/projects/halfmig/session/memory"
+    echo "important note" > "$CCO_STATE_HOME/projects/halfmig/session/memory/note.md"
+    run_cco config validate
+    assert_output_contains "STATE project 'halfmig'"
+    assert_output_contains "contains migrated memory"
+}
+
 test_config_validate_fix_skips_without_confirmation() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"

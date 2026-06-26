@@ -663,19 +663,7 @@ _cco_migrate_project() {
     # Atomic move into the repo (F44): a partial .cco/ never survives a failure.
     mv "$stage" "$target/.cco" || die "Failed to install the migrated .cco/ into $target."
 
-    # Memory → STATE, machine-local, non-clobber (F11 / ADR-0009). For a non-active
-    # profile the memory lives in the profile-state shadow, not the archived tree (BL2).
-    # Canonical session-memory home (H7): must equal where cmd-start mounts it
-    # (<state>/projects/<id>/session/memory), not <state>/projects/<id>/memory.
-    local mem_dst src_mem; mem_dst="$(_cco_project_session_memory "$mig_name")"
-    for src_mem in "$leg/memory" ${shadow_base:+"$shadow_base/memory"}; do
-        [[ -d "$src_mem" ]] || continue
-        mkdir -p "$mem_dst"
-        cp -rn "$src_mem/." "$mem_dst/" 2>/dev/null || true
-    done
-
-    # Register the index LAST (so a failed migrate leaves no dangling binding).
-    # Member names are space-separated (the canonical index format, §3).
+    # Register the index (member names space-separated, the canonical format §3).
     local rname rpath; local -a repo_names=()
     while IFS=$'\t' read -r rname rpath; do
         [[ -z "$rname" ]] && continue
@@ -690,6 +678,21 @@ _cco_migrate_project() {
         repo_names+=("$rname")
     done < "$idx"
     [[ ${#repo_names[@]} -gt 0 ]] && _index_set_project_repos "$mig_name" "${repo_names[@]}"
+
+    # Memory → STATE, AFTER index registration (M5): copying it before the index left
+    # a window where an interrupted migrate produced a STATE memory dir with NO index
+    # entry — which `cco config validate --fix` flags as an orphan and prunes
+    # (deleting migrated memory). With the index written first, an interruption leaves
+    # a registered project whose memory simply isn't copied yet (still in the backup),
+    # never a prune-able with-memory orphan. Non-clobber (F11 / ADR-0009); for a
+    # non-active profile memory lives in the profile-state shadow (BL2); canonical
+    # session-memory home (H7) = where cmd-start mounts it.
+    local mem_dst src_mem; mem_dst="$(_cco_project_session_memory "$mig_name")"
+    for src_mem in "$leg/memory" ${shadow_base:+"$shadow_base/memory"}; do
+        [[ -d "$src_mem" ]] || continue
+        mkdir -p "$mem_dst"
+        cp -rn "$src_mem/." "$mem_dst/" 2>/dev/null || true
+    done
 
     # Born at the latest schema + seed the 3-way-merge base (P5): the migration
     # wrote the complete final project.yml/claude tree in one pass, so `cco update`

@@ -186,13 +186,21 @@ _cv_add() { _CV_RECS+=( "$1"$'\t'"$2"$'\t'"$3"$'\t'"$4"$'\t'"$5" ); }
 
 # Flag each per-id dir under <parent> whose <rtype> resource no longer resolves.
 _cv_scan_dirs() {
-    local parent="$1" rtype="$2" class="$3" blabel="$4" d nm
+    local parent="$1" rtype="$2" class="$3" blabel="$4" d nm note
     [[ -d "$parent" ]] || return 0
     for d in "$parent"/*/; do
         [[ -d "$d" ]] || continue
         nm=$(basename "$d")
-        _cv_type_resolves "$rtype" "$nm" || \
-            _cv_add "$class" rmdir "${d%/}" "" "$blabel $rtype '$nm'"
+        _cv_type_resolves "$rtype" "$nm" && continue
+        note=""
+        # M5: a half-migrated project (memory copied but index not yet registered)
+        # looks like an orphan — make the prune label warn that real session memory
+        # would be deleted, so the user can confirm informed (warn-never-hide §9 P5).
+        if [[ "$rtype" == "project" ]] \
+            && [[ -n "$(find "$d" -path '*/memory/*' -type f -print -quit 2>/dev/null)" ]]; then
+            note=" (contains migrated memory — confirm 'cco init --migrate $nm' is not mid-run before pruning)"
+        fi
+        _cv_add "$class" rmdir "${d%/}" "" "$blabel $rtype '$nm'$note"
     done
 }
 
