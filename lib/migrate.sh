@@ -136,9 +136,12 @@ _cco_backup_legacy_vault() {
     info "Legacy vault detected — archiving before migration…"
     # Raw tar of the whole vault as-is; exclude only the old in-vault backups dir
     # (avoid self-nesting). --exclude before the file args for GNU+BSD tar.
-    if ! tar --exclude='./.cco/backups' -czf "$tmp" -C "$vault" . 2>/dev/null; then
+    # Capture tar's stderr so a failure carries a root cause (A4), not a generic warning.
+    local _tar_err
+    if ! _tar_err=$(tar --exclude='./.cco/backups' -czf "$tmp" -C "$vault" . 2>&1); then
         rm -f "$tmp"
-        warn "Could not archive the legacy vault at $vault — leaving it untouched; retry on the next command."
+        warn "Could not archive the legacy vault at $vault: ${_tar_err:-unknown error}"
+        warn "The vault is untouched — retry on the next command."
         return 1
     fi
     # Verify archive integrity BEFORE exposing it (M8 ordering) …
@@ -147,7 +150,13 @@ _cco_backup_legacy_vault() {
         warn "Legacy-vault backup failed its integrity check — discarded; retry on the next command."
         return 1
     fi
-    chmod 0600 "$tmp" 2>/dev/null || true
+    # The archive holds plaintext secrets (ADR-0006 D2) — 0600 is a hard requirement,
+    # not best-effort (L4): discard rather than expose a world-readable secrets archive.
+    chmod 0600 "$tmp" || {
+        rm -f "$tmp"
+        warn "Could not set 0600 on the vault archive — discarded to avoid leaving secrets world-readable; retry on the next command."
+        return 1
+    }
     # … then atomically move into place (F44) and record the fast-path marker.
     # Create only if absent (never truncate a marker that may carry global-migrated).
     mv -f "$tmp" "$final"
@@ -163,15 +172,14 @@ _cco_backup_legacy_vault() {
 
 # ── Dispatch-time orchestrator ───────────────────────────────────────
 # Run before every command (bin/cco). Bootstrap is universal; the backup net is
-# skipped for pure-legacy `vault` operations (they act on the old vault under
-# the old expectation — they neither engage the decentralized layer nor migrate,
-# so they need no net) and for `help`. Ordering (M8): roots BEFORE the backup,
-# which needs the STATE root.
+# skipped only for `help` (prints usage, reads no config). Ordering (M8): roots
+# BEFORE the backup, which needs the STATE root. (The legacy `vault` verb is gone;
+# its skip arm was dead code — L3.)
 _cco_first_run() {
     local cmd="$1"
     _cco_bootstrap_roots
     case "$cmd" in
-        vault|help) : ;;
+        help) : ;;
         *) _cco_backup_legacy_vault || true ;;
     esac
 }
@@ -376,7 +384,9 @@ _cco_migrate_global() {
 # → one TSV line "name<TAB>url<TAB>ref<TAB>path" per repo.
 _migrate_legacy_repos() {
     awk '
-        function flush(){ if(name!="") print name "\t" url "\t" ref "\t" path; name=url=ref=path="" }
+        function flush(){ if(name!="") print name "\t" url "\t" ref "\t" path;
+            else if(path!="" || url!="") printf "warn: skipping a legacy repo entry with no name (path=%s url=%s)\n", path, url > "/dev/stderr";
+            name=url=ref=path="" }
         function val(l,  v){ v=l; sub(/^[a-z_]+: */,"",v); gsub(/["\047]/,"",v); sub(/ *#.*$/,"",v); gsub(/^ +| +$/,"",v); return v }
         function field(l,  k){ k=l; sub(/:.*/,"",k); gsub(/^ +/,"",k);
             if(k=="path")path=val(l); else if(k=="name")name=val(l);
@@ -569,7 +579,7 @@ _cco_migrate_project() {
     tar -tzf "$backup" >/dev/null 2>&1 || die "Legacy-vault backup is unreadable; aborting migration."
 
     local target="$PWD"
-    [[ -d "$target/.cco" ]] && die "$target/.cco already exists — refusing to clobber (remove it or migrate elsewhere)."
+    [[ -d "$target/.cco" ]] && die "$target/.cco already exists — refusing to clobber. If it is already correct, run 'cco join' to register it as-is; otherwise remove it to re-migrate from the backup."
 
     local tmp
     tmp=$(mktemp -d "${TMPDIR:-/tmp}/cco-pmigrate.XXXXXX") || die "Could not create a temp dir."
@@ -658,7 +668,7 @@ _cco_migrate_project() {
     # Secret-scan committed files (secrets.env is gitignored; *.example exempt, FR-S3).
     local cf hit
     while IFS= read -r cf; do
-        [[ "$cf" == *"/secrets.env" || "$cf" == *.example ]] && continue
+        [[ "$cf" == *.example ]] && continue   # secrets.env already excluded by find (C8)
         if hit=$(_secret_match_filename "$cf" 2>/dev/null) && [[ -n "$hit" ]]; then
             die "Refusing to migrate: a secret-like file would be committed: ${cf#$stage/}"
         fi

@@ -155,7 +155,9 @@ shift
 
 # J0 first-run bootstrap of the four decentralized-config roots + the legacy-
 # vault safety-net backup, before any command runs (ADR-0017 D3 / ADR-0006 /
-# ADR-0025). Host-side only (H4); idempotent (M6/F43); never fatal.
+# ADR-0025). Host-side only (H4); idempotent (M6/F43). The BACKUP step is non-fatal
+# (|| true); root bootstrap CAN abort under set -e if the dirs can't be created —
+# that is intentional, cco cannot run without its roots (A5).
 _cco_first_run "$cmd"
 
 # Dispatch command — capture return code so expected errors (die, return 1)
