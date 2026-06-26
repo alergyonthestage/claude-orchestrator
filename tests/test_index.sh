@@ -24,6 +24,17 @@ test_index_set_get_roundtrip() {
     [[ "$got" == "/Users/me/dev/repo1" ]] || fail "Roundtrip failed, got: $got"
 }
 
+# L7 (26-06-2026 migration review): a path containing a single quote must round-trip
+# intact — the reader strips only the "..." storage delimiters, not path characters.
+test_index_preserves_single_quote_in_path() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+
+    _index_set_path repoq "/Users/me/O'Brien/repo"
+    local got; got=$(_index_get_path repoq)
+    [[ "$got" == "/Users/me/O'Brien/repo" ]] || fail "single quote was stripped, got: $got"
+}
+
 test_index_upsert_overwrites() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"

@@ -136,8 +136,9 @@ EOF
     fi
 
     # Eager global migration (ADR-0025 §1): on first run against a legacy install,
-    # populate ~/.cco from the verified backup + seed profile→tag. Idempotent
-    # (~/.cco/global presence); skipped in preview (--dry-run).
+    # populate ~/.cco from the verified backup + seed profile→tag. Idempotent — gated
+    # by the `global-migrated` marker flag, NOT ~/.cco/global presence (ADR-0026, since
+    # cco init may seed global from defaults). Skipped in preview (--dry-run).
     if ! $dry_run; then
         _cco_migrate_global || true
         # Relocate any legacy in-tree pack provenance into DATA (ADR-0022 D1).
@@ -216,8 +217,9 @@ EOF
     # Project updates
     if [[ "$do_projects" == "all" && "$cmd_mode" != "news" ]]; then
         # TODO: pack and template migration scopes (design §4.15)
-        # When migrations/pack/ or migrations/template/ exist, iterate
-        # user-config/packs/*/ and user-config/templates/*/ here.
+        # When migrations/pack/ or migrations/template/ exist, iterate the personal
+        # store ~/.cco/packs/*/ and ~/.cco/templates/*/ here (the legacy user-config/
+        # store is gone — L9).
 
         local pname unit_dir project_dir project_errors=0
         while IFS='=' read -r pname _; do

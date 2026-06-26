@@ -236,6 +236,11 @@ _cco_pack_install_tmp() {
 # override that is unset, empty, or non-absolute is treated as absent.
 
 # True (0) when running inside a session container — see the guard below.
+# NOTE (L6): the HOME heuristic false-positives for a real HOST user named `claude`
+# (HOME=/home/claude) — all resolvers would then refuse. The documented escape hatch
+# is CCO_ALLOW_HOST_RESOLVE=1 (used by the guard and the test suite). The /.dockerenv
+# check is the reliable container signal; the HOME check is a fallback for stripped
+# container images that lack it.
 _cco_in_container() {
     [[ "${HOME:-}" == "/home/claude" ]] && return 0
     [[ -f /.dockerenv ]] && return 0

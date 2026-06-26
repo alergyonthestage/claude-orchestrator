@@ -69,7 +69,7 @@ _index_section_get() {
                 k = substr(line, 1, colon - 1)
                 v = substr(line, colon + 1)
                 sub(/^ +/, "", v)
-                gsub(/["\047]/, "", v)
+                sub(/^"/, "", v); sub(/"$/, "", v)   # strip only the quoting delimiters, not path chars (L7)
                 if (k == key) { print v; exit }
             }
         }
@@ -153,7 +153,7 @@ _index_section_dump() {
                 k = substr(line, 1, colon - 1)
                 v = substr(line, colon + 1)
                 sub(/^ +/, "", v)
-                gsub(/["\047]/, "", v)
+                sub(/^"/, "", v); sub(/"$/, "", v)   # strip only the quoting delimiters, not path chars (L7)
                 if (k != "" && v != "") print k "=" v
             }
         }
