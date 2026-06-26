@@ -349,6 +349,37 @@ back-refs (already broken pre-reorg), and one `[name](url)` format placeholder.
 - **HITL #2** — `user-config/` working-tree dev artifacts: not touched (repo, not docs).
 - **HITL #1** — llms design: kept-with-forward-annotation (recommended default applied).
 
+### Round 2 — source-of-truth re-scope + deep content-coherence sweep (2026-06-26)
+
+Triggered by the maintainer: (a) promote genuinely cross-cutting source-of-truth
+artifacts to a discoverable scope; (b) verify ALL docs reflect the shipped model + ADRs.
+
+| Commit | What |
+|---|---|
+| `b9f497e` | **Promote `guiding-principles.md` → `foundation/design/`** (project-wide governing law; was buried in the deferred sprint folder). Inbound link fixed; history text refs unaffected. |
+| (cross-refs) | `architecture.md` gains **"Governing Law & Architectural Contracts"** section linking guiding-principles + scope-hierarchy + file-destinations + decentralized-config design; guiding-principles See-also relinked; maintainers/README links the promoted file. |
+| (coherence) | LIVING-doc content fixes vs shipped model: **update-system design** (~27 `user-config/` central-vault paths → 4 buckets; removed "Vault Integration" → personal-store `cco config`), **llms design** §11 (Config-Repos/manifest → coordinate model + sharing repo), rules-and-guidelines, managed-integrations + socket-proxy (repo `.cco/managed/` → CACHE `managed/`), environment (`setup.sh` container path `/workspace/.claude` → `/workspace`, host `<repo>/.cco/`). |
+
+**Re-scope verdict**: `guiding-principles` = PROMOTED (foundation). `requirements.md`,
+`design.md`, RD/analysis-roadmap/inventory = KEEP in decentralized-config (domain-specific
+/ history). `scope-hierarchy` + `file-destinations` = KEEP in configuration, now
+cross-referenced from foundation's Governing-Law section.
+
+**Coherence result**: `users/` tree verified CLEAN. Maintainer LIVING docs corrected
+(above). Final link integrity: 928 links, residual broken = intentional only (GitHub
+URLs, frozen `archive/` history, `[name](url)` format placeholders).
+
+**HITL #2 RESOLVED**: `user-config/` working-tree artifact is **already `.gitignore`d +
+untracked** (local dev store) — no action needed.
+
+### ⚠ HITL — suspected CODE bug surfaced (not fixed; docs pass)
+`cco init` seeds `setup-build.sh` / `mcp-packages.txt` into `~/.cco/` **top-level**
+(`cmd-init.sh:169-173`), but `cco build` reads them from `~/.cco/global/`
+(`bin/cco:49`, `cmd-build.sh:56`) → global **build-time** customization is inert until the
+file is moved by hand. Runtime `setup.sh` is consistent. A "verify" maintainer-note is in
+`environment/design/design-environment.md §2.1`. **Hand to the refactoring/UX review** (do
+not fix in a docs pass).
+
 ---
 
 *Generated with Claude Code*
