@@ -8,8 +8,13 @@ clean session**, opening by reading `guiding-principles.md` (P1–P18) **and thi
 
 > **State at hand-off (2026-06-26):** decentralized-config **v1 BUILD COMPLETE** (P0–P5 closed) ·
 > **step-1 implementation review DONE** (`reviews/25-06-2026-impl-adherence-review.md`) · **pre-merge fix
-> backlog F1–F5 ✅ RESOLVED** (`pre-merge-fix-handoff.md`; 6 commits LOCAL, merge-gate cleared). Baseline
-> **897/0** (`CCO_ALLOW_HOST_RESOLVE=1 ./bin/test`). Branch `feat/vault/decentralized-config`, commits
+> backlog F1–F5 ✅ RESOLVED** (`pre-merge-fix-handoff.md`; 6 commits LOCAL, merge-gate cleared) ·
+> **deep migration/decentralized-config implementation review DONE + ALL FINDINGS RESOLVED 2026-06-26**
+> (`reviews/26-06-2026-migration-impl-review.md` + its Resolution log; 2 BLOCKER + 7 HIGH + 10 MEDIUM +
+> all LOW/NIT, 19 commits `d136344`→`738973e`; notably H7 fixed a latent bug where migrated memory landed
+> off the session mount, and M2/M3 were closed as verified no-op). The CODE is now believed correct &
+> complete for the migration flow — so the shipped-behavior the docs must match is stable. Baseline
+> **905/0** (`CCO_ALLOW_HOST_RESOLVE=1 ./bin/test`). Branch `feat/vault/decentralized-config`, commits
 > **LOCAL** (maintainer pushes from Mac). ADRs **0005–0027**; next free ADR **0028**.
 
 > **This session is read-mostly.** Like the impl review it produces a **findings report** and then applies
