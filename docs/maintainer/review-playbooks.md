@@ -38,7 +38,10 @@ by reading the project's source-of-truth (design/ADRs/principles + `.claude/rule
   resources and docs: user guides, guidelines, designs of other modules that reference this one.
   Surface the docs to **update, correct, modify, or remove/archive**.
 - **Project reference**: the doc-lifecycle policy `.claude/rules/documentation-lifecycle.md`
-  (history vs living vs archived doc classes; design-intent-now vs shipped-behavior-at-cutover timing).
+  (history vs living vs archived doc classes; design-intent-now vs shipped-behavior-at-cutover timing), and
+  the decentralized-config v1 pre-merge instance
+  `configuration/decentralized-config/documentation-review-handoff.md` (whole-doc-landscape scope, the
+  now-due shipped-behavior cutover sweep, doc-coherence lenses, candidate work-list).
 
 ## 3. Refactoring review
 
