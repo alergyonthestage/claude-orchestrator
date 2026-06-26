@@ -5,8 +5,14 @@ whole "decentralized in-repo config" refactor. **Every domain analysis must vali
 decisions against this document**; a decision that clashes with a principle is a defect to
 correct (in the decision or, deliberately, in the principle).
 **Grounded in**: ADRs 0001–0010 (P1–P12 distil their *cross-cutting* rules) and **0018–0020 (P13–P17,
-S cycle)**; this document does not restate each ADR. See also `requirements.md`, `design.md`,
-`resource-coherence-inventory.md`, `analysis-roadmap.md`.
+S cycle)**; this document does not restate each ADR. See also
+[requirements.md](../../configuration/decentralized-config/requirements.md),
+[design.md](../../configuration/decentralized-config/design.md),
+[resource-coherence-inventory.md](../../configuration/decentralized-config/resource-coherence-inventory.md),
+[analysis-roadmap.md](../../configuration/decentralized-config/analysis-roadmap.md).
+
+> **Location note**: this document now lives in `foundation/` as project-wide
+> **governing law** (P1–P18), not only the decentralized-config refactor.
 
 > **Why this exists**: the resource→location mapping and the sharing/sync model were scattered
 > across several ADRs and design sections, and destination was being conflated with sync. This

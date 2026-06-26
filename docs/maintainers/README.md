@@ -14,7 +14,7 @@ directories (see the convention below).
 
 | Domain | Scope | Index / entry point |
 |--------|-------|---------------------|
-| **foundation** | Core system design: the four-tier context hierarchy, Docker-as-sandbox, workspace layout, plus the foundational ADRs (0001–0015) and the requirements spec. | [design/architecture.md](foundation/design/architecture.md) · [analysis/spec.md](foundation/analysis/spec.md) · [adr/](foundation/adr/) |
+| **foundation** | Core system design: the project-wide **governing law** ([guiding-principles.md](foundation/design/guiding-principles.md), P1–P18), the four-tier context hierarchy, Docker-as-sandbox, workspace layout, plus the foundational ADRs (0001–0015) and the requirements spec. | [design/guiding-principles.md](foundation/design/guiding-principles.md) · [design/architecture.md](foundation/design/architecture.md) · [analysis/spec.md](foundation/analysis/spec.md) · [adr/](foundation/adr/) |
 | **configuration** | The config lifecycle and distribution: scope hierarchy, rules & guidelines, llms.txt integration, file destinations, and the decentralized in-repo config model. | [configuration/README.md](configuration/README.md) |
 | **packs** | Knowledge pack format, `pack.yml` schema, and zero-duplication resource delivery. | [packs/design/](packs/design/) |
 | **update-system** | Migration runner, discovery engine, opinionated-file sync, and the additive/opinionated/breaking change taxonomy. | [update-system/design/](update-system/design/) · [update-system/analysis/](update-system/analysis/) |
@@ -46,9 +46,10 @@ There are two ADR streams:
 - **configuration/decentralized-config/decisions/** — the **deferred config +
   sharing design**, which is the **source of truth** for the in-repo config
   model. It carries its own ADR stream, **0001–0027** (the substantive
-  config+sharing decisions run 0005–0027), plus its `design.md`,
-  `guiding-principles.md`, and supporting analyses. See
-  [configuration/README.md](configuration/README.md).
+  config+sharing decisions run 0005–0027), plus its `design.md` and supporting
+  analyses. See [configuration/README.md](configuration/README.md). Its
+  [`guiding-principles.md`](foundation/design/guiding-principles.md) was promoted
+  to **foundation** as project-wide **governing law** (P1–P18).
 
 ## Roadmap
 

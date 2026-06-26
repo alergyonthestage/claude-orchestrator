@@ -60,6 +60,18 @@ graph TB
 
 ---
 
+## Governing Law & Architectural Contracts
+
+The single discoverable entry point to the project's governing law. Every analysis
+and design must validate against these foundational contracts:
+
+- [guiding-principles.md](./guiding-principles.md) — the P1–P18 foundational principles every analysis/design must validate against.
+- [design-scope-hierarchy.md](../../configuration/scope-hierarchy/design/design-scope-hierarchy.md) — the four-tier context hierarchy contract.
+- [design-file-destinations.md](../../configuration/file-destinations/design/design-file-destinations.md) — the XDG bucket model (where every file lives & its sync class).
+- [decentralized-config/design.md](../../configuration/decentralized-config/design.md) — the config + sharing design source of truth (deferred sprint folder; ADR stream 0001–0027).
+
+---
+
 ## 2. Key Architecture Decisions
 
 The rationale behind every architectural decision now lives in the append-only
