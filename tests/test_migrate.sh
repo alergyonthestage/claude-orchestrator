@@ -495,6 +495,27 @@ test_migrate_project_profile_tag() {
         "a profile-hosted project should be tagged with its origin profile (ADR-0010 §5)"
 }
 
+# M4 (26-06-2026 migration review): profile→tag is opt-in — without a TTY and
+# without CCO_ASSUME_YES it must be SKIPPED, never seeded silently.
+test_migrate_project_profile_tag_skipped_non_interactive() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_legacy_vault_project "$tmpdir"
+    local vault="$CCO_USER_CONFIG_DIR"
+    git -C "$vault" checkout -q -b work 2>/dev/null
+    mkdir -p "$vault/projects/work-app/.cco"
+    printf 'name: work-app\nrepos: []\n' > "$vault/projects/work-app/project.yml"
+    printf 'profile: work\nsync:\n  projects:\n    - work-app\n  packs:\n    []\n' > "$vault/.vault-profile"
+    git -C "$vault" add -A 2>/dev/null
+    git -C "$vault" commit -q -m "work profile" 2>/dev/null
+    git -C "$vault" checkout -q main 2>/dev/null
+    mkdir -p "$tmpdir/clones/workrepo"
+    # No CCO_ASSUME_YES, no TTY → the opt-in tag must NOT be seeded.
+    ( cd "$tmpdir/clones/workrepo" && run_cco init --migrate work-app )
+    if [[ -f "$CCO_DATA_HOME/tags.yml" ]] && grep -q "work-app" "$CCO_DATA_HOME/tags.yml"; then
+        fail "non-interactive migrate must not seed the profile tag without consent (M4)"
+    fi
+}
+
 # BL1/BL2 (26-06-2026 migration review): a project living ONLY on a non-active
 # profile branch must recover its gitignored secrets, memory, and local-paths from
 # the vault's profile-state shadow — git archive serializes committed files only.

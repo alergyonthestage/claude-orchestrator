@@ -706,9 +706,13 @@ _cco_migrate_project() {
     if [[ -n "$origin" ]]; then
         echo "This project came from vault profile '$origin'." >&2
         echo "Convert it into a tag? You'll find it with: cco list --tag $origin" >&2
+        # The profile→tag conversion is opt-in (ADR-0010 §5). On a TTY default-yes
+        # ([Y/n]); non-interactively require explicit consent via CCO_ASSUME_YES and
+        # otherwise SKIP — never seed a tag silently without a user choice (M4).
         local ans=""
         if [[ "${CCO_ASSUME_YES:-}" == "1" ]]; then ans="y"
-        elif (exec < /dev/tty) 2>/dev/null; then read -rp "  Convert? [Y/n]: " ans < /dev/tty; fi
+        elif (exec < /dev/tty) 2>/dev/null; then read -rp "  Convert? [Y/n]: " ans < /dev/tty
+        else ans="n"; info "Non-interactive: skipping profile→tag conversion (re-run interactively or set CCO_ASSUME_YES=1)."; fi
         ans="$(printf '%s' "$ans" | tr '[:upper:]' '[:lower:]')"
         if [[ "$ans" != "n" ]]; then
             _cco_seed_resource_tag projects "$mig_name" "$origin"
