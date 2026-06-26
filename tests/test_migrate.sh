@@ -183,6 +183,19 @@ test_migrate_backup_skipped_without_vault() {
     [[ -z "$archive" ]] || fail "no backup should be made without a legacy vault: $archive"
 }
 
+# H5 (26-06-2026 migration review): a legacy user (vault backup present, ~/.cco/global
+# not yet populated) hitting check_global must be pointed at 'cco update', not 'cco init'.
+test_check_global_points_legacy_user_to_update() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_legacy_vault "$tmpdir"
+    run_cco path list || true   # first-run backup of the legacy vault → STATE
+    run_cco new --repo "$tmpdir" || true
+    assert_output_contains "cco update" \
+        "check_global must point a legacy user (backup present) to 'cco update' (H5)"
+    echo "${CCO_OUTPUT:-}" | grep -qF "Run 'cco init' first" \
+        && fail "check_global must NOT tell a legacy user to run 'cco init' (H5)" || true
+}
+
 # Note: the legacy `cco vault` backup-skip test was removed with the vault (P3).
 
 # ── Eager global migration via `cco update` (ADR-0025 §1) ────────────
