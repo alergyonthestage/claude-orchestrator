@@ -325,7 +325,9 @@ _cco_migrate_global() {
     fi
 
     local backup
-    backup=$(ls "$backups"/vault-*.tar.gz 2>/dev/null | head -1)
+    # Newest archive wins (M8): names are vault-YYYYMMDD-HHMMSS so a lexicographic
+    # sort is chronological; head -1 picked the OLDEST (stale) if more than one exists.
+    backup=$(ls "$backups"/vault-*.tar.gz 2>/dev/null | sort | tail -1)
     [[ -n "$backup" ]] || return 0
 
     info "Migrating global config to the decentralized layout (~/.cco)…"
@@ -561,7 +563,9 @@ _cco_migrate_project() {
     backups="$state/backups"
     # M8: a verified backup must exist and be readable before any migrate read.
     _cco_have_backup "$backups" || die "No legacy-vault backup found — run any cco command first to create one."
-    backup=$(ls "$backups"/vault-*.tar.gz 2>/dev/null | head -1)
+    # Newest archive wins (M8): names are vault-YYYYMMDD-HHMMSS so a lexicographic
+    # sort is chronological; head -1 picked the OLDEST (stale) if more than one exists.
+    backup=$(ls "$backups"/vault-*.tar.gz 2>/dev/null | sort | tail -1)
     tar -tzf "$backup" >/dev/null 2>&1 || die "Legacy-vault backup is unreadable; aborting migration."
 
     local target="$PWD"
