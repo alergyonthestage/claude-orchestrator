@@ -10,54 +10,69 @@
 
 Four complementary extension mechanisms that let users customize the container environment without modifying claude-orchestrator itself:
 
-| Mechanism | Scope | When | What |
-|-----------|-------|------|------|
-| `global/setup.sh` | All projects | `cco build` | System packages, heavy deps |
-| `projects/<name>/setup.sh` | Per project | `cco start` (entrypoint) | Lightweight runtime setup |
-| `projects/<name>/mcp-packages.txt` | Per project | `cco start` (entrypoint) | npm MCP servers |
-| `docker.image` in project.yml | Per project | `cco start` | Entirely custom Docker image |
+| Mechanism | Host source | When | What |
+|-----------|-------------|------|------|
+| Global setup — `setup-build.sh` (build) / `setup.sh` (runtime) | `~/.cco/` | `cco build` (root) / `cco start` entrypoint (as `claude`) | All-project system deps at build; lightweight runtime config at start |
+| Per-project setup — `setup.sh` | `<repo>/.cco/setup.sh` → `/workspace/setup.sh` | `cco start` entrypoint (as `claude`) | Lightweight per-project runtime setup |
+| Per-project MCP — `mcp-packages.txt` | `<repo>/.cco/mcp-packages.txt` → `/workspace/mcp-packages.txt` | `cco start` entrypoint (as `claude`) | npm MCP servers, per project |
+| `docker.image` in `project.yml` | image reference | `cco start` | Entirely custom Docker image |
+
+> The host source for per-project extension files is `<repo>/.cco/` (the
+> committed per-repo config dir of the decentralized model), **not** a central
+> `projects/<name>/` directory. The container execution paths are
+> `/workspace/setup.sh` and `/workspace/mcp-packages.txt` (workspace root),
+> **not** under `/workspace/.claude/`.
 
 ---
 
 ## 2. Mechanism Details
 
-### 2.1 Global Setup Script (build time)
+### 2.1 Global Setup Scripts (all projects)
 
-**File**: `global/setup.sh`
+The global mechanism has two execution phases, kept in two separate files in
+the personal store `~/.cco/`:
 
-Executed during `cco build` as a `RUN` step in the Dockerfile. Runs as root. Can install system packages, configure system settings, add repositories.
+- **`setup-build.sh`** — runs **once at `cco build`, as root**. For heavy,
+  system-level setup (apt packages, compilers, binary tools). Baked into the
+  image, so it adds no per-start cost.
+- **`setup.sh`** — runs **at every `cco start`, as user `claude`** (via the
+  entrypoint). For lightweight runtime config that must apply to all projects
+  (dotfiles, shell aliases, tmux keybindings, `git config --global`).
 
-**Dockerfile change**:
+Both default templates ship in `defaults/global/` and are seeded into `~/.cco/`
+by `cco init`.
+
+#### Build-time (`setup-build.sh`)
+
+Executed during `cco build` as a `RUN` step in the Dockerfile, as root.
+
+**Dockerfile** (`Dockerfile`):
 ```dockerfile
-# ── User setup script (global) ────────────────────────────────────
-# Optional user-provided script for system-level customizations.
-# Runs as root during build. Install apt packages, system tools, etc.
-ARG SETUP_SCRIPT_CONTENT=""
-RUN if [ -n "$SETUP_SCRIPT_CONTENT" ]; then \
-        echo "$SETUP_SCRIPT_CONTENT" | bash; \
+# ── User setup script (global, build time) ─────────────────────────
+# Heavy system-level setup (apt packages, compilers). Runs once during
+# `cco build` as root. Lightweight runtime config belongs in setup.sh.
+ARG SETUP_BUILD_SCRIPT_CONTENT=""
+RUN if [ -n "$SETUP_BUILD_SCRIPT_CONTENT" ]; then \
+        printf '%s' "$SETUP_BUILD_SCRIPT_CONTENT" > /tmp/setup-build.sh \
+        && bash /tmp/setup-build.sh \
+        && rm -f /tmp/setup-build.sh; \
     fi
 ```
 
-**`bin/cco` change** — `cmd_build()`:
+**`cco build`** (`lib/cmd-build.sh`) reads the script and passes its content as
+a build arg (it also accepts a pre-migration `setup.sh` for backward compat,
+with a warning):
 ```bash
-local build_args=()
-if [[ -f "$GLOBAL_DIR/setup.sh" ]]; then
-    local setup_content
-    setup_content=$(cat "$GLOBAL_DIR/setup.sh")
-    build_args+=(--build-arg "SETUP_SCRIPT_CONTENT=$setup_content")
-    info "Including global/setup.sh in build"
+if [[ -f "$GLOBAL_DIR/setup-build.sh" ]]; then
+    setup_build_file="$GLOBAL_DIR/setup-build.sh"
+fi
+if [[ -n "$setup_build_file" ]]; then
+    setup_content=$(cat "$setup_build_file")
+    build_args+=(--build-arg "SETUP_BUILD_SCRIPT_CONTENT=$setup_content")
 fi
 ```
 
-**Alternative approach** (simpler, uses COPY):
-```dockerfile
-COPY global/setup.sh /tmp/setup.sh
-RUN if [ -f /tmp/setup.sh ] && [ -s /tmp/setup.sh ]; then bash /tmp/setup.sh; fi && rm -f /tmp/setup.sh
-```
-
-This requires that `global/setup.sh` is in the Docker build context. Since `cco build` runs from the orchestrator root, this works if we add `global/setup.sh` to the context. The COPY approach is simpler and more readable.
-
-**Example** — `global/setup.sh`:
+**Example** — `setup-build.sh`:
 ```bash
 #!/bin/bash
 # Install Chromium for Playwright MCP
@@ -68,79 +83,125 @@ curl -fsSL https://releases.hashicorp.com/terraform/1.7.0/terraform_1.7.0_linux_
     -o /tmp/terraform.zip && unzip /tmp/terraform.zip -d /usr/local/bin/ && rm /tmp/terraform.zip
 ```
 
-**Default**: `defaults/global/setup.sh` is an empty file with a header comment. Created by `cco init`.
+#### Runtime (`setup.sh`)
+
+Mounted into the container and executed by the entrypoint at every start, as
+the `claude` user, before the per-project setup script.
+
+**Compose mount** (`lib/cmd-start.sh`) — host source `~/.cco/setup.sh`:
+```yaml
+volumes:
+  - ~/.cco/setup.sh:/home/claude/global-setup.sh:ro   # if file exists
+```
+
+**Entrypoint** (`config/entrypoint.sh`):
+```bash
+# ── Global runtime setup script ──────────────────────────────────
+GLOBAL_SETUP="/home/claude/global-setup.sh"
+if [ -f "$GLOBAL_SETUP" ]; then
+    gosu claude bash "$GLOBAL_SETUP" 2>&1 >&2
+fi
+```
+
+**Defaults**: `defaults/global/setup.sh` and `defaults/global/setup-build.sh`
+are empty templates with header comments, seeded into `~/.cco/` by `cco init`.
+
+> **Maintainer note (verify):** there is a host-path mismatch between where the
+> global scripts are *seeded* and where the build *reads* them.
+> `cco init` copies `setup.sh`, `setup-build.sh`, and `mcp-packages.txt` into
+> the personal store at the **top level** `~/.cco/` (`lib/cmd-init.sh:169-173`,
+> `cfg="$(_cco_config_dir)"` = `~/.cco`). The **runtime** path is consistent:
+> `cco start` mounts the global `setup.sh` from `~/.cco/setup.sh`
+> (`config_dir`, `lib/cmd-start.sh:676`). But the **build-time** path is not:
+> `cco build` reads `setup-build.sh` (and the global `mcp-packages.txt`) from
+> `$GLOBAL_DIR`, which defaults to `~/.cco/global/` (`bin/cco:49`;
+> `lib/cmd-build.sh:35,56`). As shipped, a `setup-build.sh` seeded by
+> `cco init` lands at `~/.cco/setup-build.sh` and is **not** found by
+> `cco build` (which looks under `~/.cco/global/`), so the global build-time
+> customization is effectively inert unless the user moves the file manually.
+> Reconcile init and build on a single location — do not patch from this doc.
 
 ### 2.2 Per-Project Setup Script (runtime)
 
-**File**: `projects/<name>/setup.sh`
+**Host source**: `<repo>/.cco/setup.sh` (the committed per-repo config dir).
+**Container path**: `/workspace/setup.sh`.
 
-Executed by the entrypoint at container start, before Claude launches. Runs as root (entrypoint runs as root, drops to claude via gosu later).
+Executed by the entrypoint at container start, before Claude launches. The
+entrypoint runs as root but invokes the script via `gosu claude`, so it runs as
+the **`claude`** user (not root).
 
-**Compose mount**:
+**Compose mount** (`lib/cmd-start.sh`) — `project_dir` is `<repo>/.cco`:
 ```yaml
 volumes:
-  - ./setup.sh:/workspace/.claude/setup.sh:ro   # if file exists
+  - <repo>/.cco/setup.sh:/workspace/setup.sh:ro   # if file exists
 ```
 
-**Entrypoint change**:
+**Entrypoint** (`config/entrypoint.sh`):
 ```bash
 # ── Project setup script (runtime) ───────────────────────────────
-PROJECT_SETUP="/workspace/.claude/setup.sh"
+PROJECT_SETUP="/workspace/setup.sh"
 if [ -f "$PROJECT_SETUP" ]; then
-    echo "[entrypoint] Running project setup script..." >&2
-    bash "$PROJECT_SETUP" 2>&1 >&2
-    echo "[entrypoint] Project setup complete" >&2
+    _log "Running project setup script..."
+    gosu claude bash "$PROJECT_SETUP" 2>&1 >&2
+    _log "Project setup complete"
 fi
 ```
 
 **Constraints**:
 - Runs every `cco start` — should be idempotent
-- Runs as root — can install packages, but increases startup time
-- Should be fast — heavy installs belong in `global/setup.sh` or custom image
+- Runs as `claude` (not root) — for system packages use `setup-build.sh` or a custom image
+- Should be fast — heavy installs belong in `setup-build.sh` or a custom image
 
-**Example** — `projects/ml-project/setup.sh`:
+**Example** — `<repo>/.cco/setup.sh`:
 ```bash
 #!/bin/bash
 # Install Python ML dependencies (lightweight, runtime-only)
 pip3 install --quiet pandas numpy scikit-learn 2>/dev/null
 ```
 
-**Default**: `templates/project/base/setup.sh` is an empty file with a header comment.
+**Default**: `templates/project/base/setup.sh` is an empty file with a header
+comment; `cco init` scaffolds it into `<repo>/.cco/setup.sh` (the template
+`base/` root maps to `<repo>/.cco/`, `lib/cmd-init.sh:280`).
 
 ### 2.3 Per-Project MCP Packages (runtime)
 
-**File**: `projects/<name>/mcp-packages.txt`
+**Host source**: `<repo>/.cco/mcp-packages.txt`.
+**Container path**: `/workspace/mcp-packages.txt`.
 
-npm packages installed globally at container start. Extends the existing `global/mcp-packages.txt` mechanism to per-project scope.
+npm packages installed globally at container start. Extends the global
+`mcp-packages.txt` mechanism (pre-installed at `cco build`) to per-project,
+runtime scope.
 
-**Compose mount**:
+**Compose mount** (`lib/cmd-start.sh`) — `project_dir` is `<repo>/.cco`:
 ```yaml
 volumes:
-  - ./mcp-packages.txt:/workspace/.claude/mcp-packages.txt:ro   # if file exists
+  - <repo>/.cco/mcp-packages.txt:/workspace/mcp-packages.txt:ro   # if file exists
 ```
 
-**Entrypoint change**:
+**Entrypoint** (`config/entrypoint.sh`):
 ```bash
 # ── Per-project MCP packages (runtime) ───────────────────────────
-PROJECT_MCP_PACKAGES="/workspace/.claude/mcp-packages.txt"
+PROJECT_MCP_PACKAGES="/workspace/mcp-packages.txt"
 if [ -f "$PROJECT_MCP_PACKAGES" ]; then
-    pkg_count=$(grep -cv '^\s*$\|^\s*#' "$PROJECT_MCP_PACKAGES" 2>/dev/null || echo "0")
+    pkg_count=$(grep -cv '^\s*$\|^\s*#' "$PROJECT_MCP_PACKAGES" 2>/dev/null || true)
+    pkg_count=${pkg_count:-0}
     if [ "$pkg_count" -gt 0 ]; then
-        echo "[entrypoint] Installing $pkg_count project MCP package(s)..." >&2
+        _log "Installing $pkg_count project MCP package(s)..."
         grep -v '^\s*$\|^\s*#' "$PROJECT_MCP_PACKAGES" | \
             xargs gosu claude npm install -g 2>&1 >&2
-        echo "[entrypoint] Project MCP packages installed" >&2
+        _log "Project MCP packages installed"
     fi
 fi
 ```
 
-**Example** — `projects/devops-toolkit/mcp-packages.txt`:
+**Example** — `<repo>/.cco/mcp-packages.txt`:
 ```
 @anthropic/mcp-server-playwright
 @modelcontextprotocol/server-postgres
 ```
 
-**Default**: `templates/project/base/mcp-packages.txt` is an empty file with a header comment.
+**Default**: `templates/project/base/mcp-packages.txt` is an empty file with a
+header comment; `cco init` scaffolds it into `<repo>/.cco/mcp-packages.txt`.
 
 ### 2.4 Custom Docker Image (per project)
 
@@ -181,7 +242,7 @@ RUN npm install -g @anthropic/mcp-server-playwright
 ```
 
 ```bash
-docker build -t claude-orchestrator-devops:latest -f projects/devops-toolkit/Dockerfile .
+docker build -t claude-orchestrator-devops:latest -f <repo>/.cco/Dockerfile .
 ```
 
 This is the most powerful option — full control, zero startup penalty.
@@ -194,55 +255,69 @@ When to use which mechanism:
 
 | Need | Use | Why |
 |------|-----|-----|
-| apt package for all projects | `global/setup.sh` | One rebuild, fast startup |
-| apt package for one project | Custom image OR `projects/<name>/setup.sh` | Custom image if heavy; setup.sh if lightweight |
-| npm MCP server for all projects | `global/mcp-packages.txt` (existing) | Pre-installed at build |
-| npm MCP server for one project | `projects/<name>/mcp-packages.txt` | Runtime install, no rebuild |
-| pip/gem for one project | `projects/<name>/setup.sh` | Runtime install |
-| Completely different toolchain | `docker.image` in project.yml | Full control |
+| apt package for all projects | `setup-build.sh` (global) | One rebuild, fast startup |
+| dotfiles/aliases for all projects | `setup.sh` (global, runtime) | Applied each start, as `claude` |
+| apt package for one project | Custom image OR `<repo>/.cco/setup.sh` | Custom image if heavy; setup.sh if lightweight |
+| npm MCP server for all projects | global `mcp-packages.txt` | Pre-installed at build |
+| npm MCP server for one project | `<repo>/.cco/mcp-packages.txt` | Runtime install, no rebuild |
+| pip/gem for one project | `<repo>/.cco/setup.sh` | Runtime install |
+| Completely different toolchain | `docker.image` in `project.yml` | Full control |
 
 ---
 
 ## 4. File Layout
 
+Framework defaults and templates (in the orchestrator repo):
+
 ```
 defaults/
-├── global/
-│   ├── setup.sh              ← NEW (empty template)
-│   └── mcp-packages.txt      ← EXISTS
+└── global/
+    ├── setup.sh              ← runtime template (empty, header only)
+    ├── setup-build.sh        ← build-time template (empty, header only)
+    └── mcp-packages.txt      ← global MCP list template
 templates/
 └── project/
-    └── base/
-        ├── setup.sh              ← NEW (empty template)
-        ├── mcp-packages.txt      ← NEW (empty template)
-        └── secrets.env           ← NEW (empty template, see auth-design.md)
+    └── base/                 ← base/ root maps to <repo>/.cco/ at scaffold time
+        ├── project.yml
+        ├── setup.sh          ← per-project runtime setup template
+        ├── mcp-packages.txt  ← per-project MCP list template
+        ├── secrets.env       ← scaffolded as secrets.env.example (see auth-design.md)
+        └── .claude/          ← becomes <repo>/.cco/claude/
+```
 
-global/                        ← user copy (gitignored)
-├── setup.sh
-├── mcp-packages.txt
-└── secrets.env
+User copies on the host:
 
-projects/<name>/               ← user copy (gitignored)
-├── setup.sh
-├── mcp-packages.txt
-├── secrets.env
-└── project.yml               ← docker.image field (optional)
+```
+~/.cco/                        ← personal store (cco init seeds these here)
+├── setup.sh                   ← global runtime  → /home/claude/global-setup.sh
+├── setup-build.sh             ← global build-time (see Maintainer note in §2.1)
+├── mcp-packages.txt           ← global MCP list (build-time pre-install)
+└── global/.claude/            ← global Claude config
+
+<repo>/.cco/                    ← committed per-project config (in each repo)
+├── project.yml                ← docker.image field (optional)
+├── setup.sh                   ← per-project runtime → /workspace/setup.sh
+├── mcp-packages.txt           ← per-project MCP    → /workspace/mcp-packages.txt
+├── secrets.env                ← gitignored
+└── claude/                    ← project Claude config
 ```
 
 ---
 
 ## 5. Implementation Checklist
 
-- [ ] `Dockerfile`: Add `COPY` + `RUN` for `global/setup.sh`
-- [ ] `config/entrypoint.sh`: Add project setup.sh execution
-- [ ] `config/entrypoint.sh`: Add project mcp-packages.txt installation
-- [ ] `bin/cco`: Parse `docker.image` from project.yml, use in compose generation
-- [ ] `bin/cco`: Mount `setup.sh` and `mcp-packages.txt` if they exist
-- [ ] `defaults/global/setup.sh`: Create empty template with comments
-- [ ] `templates/project/base/setup.sh`: Create empty template with comments
-- [ ] `templates/project/base/mcp-packages.txt`: Create empty template with comments
-- [ ] `templates/project/base/secrets.env`: Create empty template with comments
-- [ ] `templates/project/base/project.yml`: Add `docker.image` and `docker.mount_ssh_keys` (commented)
+- [x] `Dockerfile`: `ARG SETUP_BUILD_SCRIPT_CONTENT` + `RUN` for the global build-time script
+- [x] `config/entrypoint.sh`: Run global runtime `setup.sh` (`/home/claude/global-setup.sh`, via `gosu claude`)
+- [x] `config/entrypoint.sh`: Run per-project `setup.sh` (`/workspace/setup.sh`, via `gosu claude`)
+- [x] `config/entrypoint.sh`: Install per-project `mcp-packages.txt` (`/workspace/mcp-packages.txt`)
+- [x] `lib/cmd-build.sh`: Pass `setup-build.sh` content as `SETUP_BUILD_SCRIPT_CONTENT` build arg
+- [x] `lib/cmd-start.sh`: Parse `docker.image` from `project.yml`, use in compose generation
+- [x] `lib/cmd-start.sh`: Mount `<repo>/.cco/setup.sh` and `<repo>/.cco/mcp-packages.txt` if they exist
+- [x] `defaults/global/setup.sh` and `defaults/global/setup-build.sh`: empty templates with comments
+- [x] `templates/project/base/setup.sh`: empty template with comments
+- [x] `templates/project/base/mcp-packages.txt`: empty template with comments
+- [x] `templates/project/base/secrets.env`: empty template (scaffolded as `secrets.env.example`)
+- [x] `templates/project/base/project.yml`: `docker.image` field (optional)
 - [ ] `bin/test`: Tests for custom image in dry-run compose
 - [ ] `bin/test`: Tests for setup.sh and mcp-packages.txt mount presence
 - [ ] Documentation: Update [cli.md](../../../users/reference/cli.md), [project-setup.md](../../../users/configuration/guides/project-setup.md), [docker.md](design-docker.md)

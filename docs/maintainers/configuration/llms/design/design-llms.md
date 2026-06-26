@@ -608,20 +608,31 @@ The RAG system could index llms.txt files for semantic search, reducing the
 need for full-file reads. The llms directory structure is already RAG-friendly
 (one directory per framework, clear file naming).
 
-### Config Repos (Sharing)
+### Sharing
 
-> Superseded by [ADR-0014](../../decentralized-config/decisions/0014-llms-and-referenced-resource-coordinates.md): the coordinate/registry model below (by-name reference + `.cco/source` URL + manifest-based sharing) is generalized by the unified "referenced-resource coordinate" model — the coordinate (name → url[+variant]) now lives in config (project.yml / pack.yml) while downloaded content stays re-fetchable in CACHE.
+An llms entry is referenced by **coordinate** — a logical `name` → `url` (plus
+optional `variant`/`ref`) — embedded per-unit in `project.yml` / `pack.yml`
+([ADR-0014](../../decentralized-config/decisions/0014-llms-and-referenced-resource-coordinates.md),
+[ADR-0016](../../decentralized-config/decisions/0016-consolidated-resource-taxonomy.md)).
+The coordinate is the machine-agnostic, team-shareable part; the downloaded
+llms.txt content lives in **CACHE** (`~/.cache/cco/llms/<name>/`) and is
+re-fetchable from the coordinate's `url` at any time. Only the coordinate is
+shared — never the cached content, which is a machine-local, regenerable copy
+that each machine and teammate rebuilds on demand.
 
-llms entries are user-config resources. They can be shared via Config Repos
-using the existing manifest system. The `.cco/source` metadata enables
-consumers to re-fetch from the original URL if needed.
+Because the reference rides the unit's manifest, team-sharing of llms references
+follows the same two paths as every other resource
+([ADR-0018](../../decentralized-config/decisions/0018-sharing-model-unification.md)):
 
-### Vault
-
-`~/.cache/cco/llms/` is tracked by the vault like any other user-config
-resource. The `.cco/source` files are committed; the actual llms.txt content
-files can be gitignored (regenerable from source URL) or committed (for
-offline use). Default: committed (offline-first philosophy).
+- **Project-referenced llms** ride the project's own **code-repo remote**: the
+  `llms:` coordinates are committed in `<repo>/.cco/project.yml`, so anyone who
+  clones the repo resolves them and re-fetches the content into their own CACHE.
+  (Projects do not publish/install.)
+- **Pack-referenced llms** ride the **sharing repo** via `cco pack publish` /
+  `cco pack install`: the `llms:` coordinates travel inside `pack.yml`, and the
+  consumer re-fetches content on resolve. Sharing-repo discovery is
+  **structure-based** (a `packs/` + `templates/` layout) — there is **no
+  `manifest.yml`**.
 
 ---
 
