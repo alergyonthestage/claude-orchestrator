@@ -657,7 +657,9 @@ _cco_migrate_project() {
 
     # Memory → STATE, machine-local, non-clobber (F11 / ADR-0009). For a non-active
     # profile the memory lives in the profile-state shadow, not the archived tree (BL2).
-    local mem_dst src_mem; mem_dst="$state/projects/$mig_name/memory"
+    # Canonical session-memory home (H7): must equal where cmd-start mounts it
+    # (<state>/projects/<id>/session/memory), not <state>/projects/<id>/memory.
+    local mem_dst src_mem; mem_dst="$(_cco_project_session_memory "$mig_name")"
     for src_mem in "$leg/memory" ${shadow_base:+"$shadow_base/memory"}; do
         [[ -d "$src_mem" ]] || continue
         mkdir -p "$mem_dst"

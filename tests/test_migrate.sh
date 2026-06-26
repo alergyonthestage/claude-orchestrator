@@ -414,8 +414,9 @@ test_migrate_project_relocates_memory() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_legacy_vault_project "$tmpdir"
     ( cd "$tmpdir/clones/api" && CCO_ASSUME_YES=1 run_cco init --migrate myapp )
-    assert_file_exists "$CCO_STATE_HOME/projects/myapp/memory/note.md" \
-        "memory should relocate to STATE (machine-local; ADR-0009)"
+    # H7: memory lands where cmd-start mounts it — projects/<id>/session/memory.
+    assert_file_exists "$CCO_STATE_HOME/projects/myapp/session/memory/note.md" \
+        "memory should relocate to STATE session/memory (machine-local; ADR-0009)"
     # And NOT into the committed config.
     [[ ! -d "$tmpdir/clones/api/.cco/memory" ]] || fail "memory must not live in committed .cco/"
 }
@@ -424,10 +425,10 @@ test_migrate_project_memory_non_clobber() {
     # Pre-existing newer STATE memory must not be overwritten (F11).
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_legacy_vault_project "$tmpdir"
-    mkdir -p "$CCO_STATE_HOME/projects/myapp/memory"
-    echo "newer local note" > "$CCO_STATE_HOME/projects/myapp/memory/note.md"
+    mkdir -p "$CCO_STATE_HOME/projects/myapp/session/memory"
+    echo "newer local note" > "$CCO_STATE_HOME/projects/myapp/session/memory/note.md"
     ( cd "$tmpdir/clones/api" && CCO_ASSUME_YES=1 run_cco init --migrate myapp )
-    assert_file_contains "$CCO_STATE_HOME/projects/myapp/memory/note.md" "newer local note" \
+    assert_file_contains "$CCO_STATE_HOME/projects/myapp/session/memory/note.md" "newer local note" \
         "migration must not clobber newer local memory (F11)"
 }
 
@@ -533,8 +534,8 @@ YML
     # BL1 — secrets recovered from the shadow into the committed (gitignored) .cco/secrets.env
     assert_file_contains "$tmpdir/clones/workrepo/.cco/secrets.env" "WORKAPP_SECRET=xyz789" \
         "inactive-profile project secrets must be migrated from the profile-state shadow (BL1)"
-    # BL2 — memory recovered from the shadow into STATE
-    assert_file_exists "$CCO_STATE_HOME/projects/work-app/memory/note.md" \
+    # BL2 — memory recovered from the shadow into STATE (session/memory; H7)
+    assert_file_exists "$CCO_STATE_HOME/projects/work-app/session/memory/note.md" \
         "inactive-profile project memory must be migrated from the shadow (BL2)"
     # local-paths from the shadow → index (repo path still registered)
     assert_file_contains "$CCO_STATE_HOME/index" 'workrepo: "/home/dev/workrepo"' \

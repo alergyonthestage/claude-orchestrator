@@ -150,6 +150,23 @@ _cco_project_cache_managed() {
     printf '%s\n' "$(_cco_cache_dir)/projects/$1/managed"
 }
 
+# Session-scoped machine-local state for a project (ADR-0009 / design §2.2):
+# auto-memory + session transcripts, mounted into the container by cmd-start and
+# hydrated by `cco init --migrate`. Canonical home so the runtime mount and the
+# migrate destination cannot drift (review H7 — they did: migrate wrote
+# projects/<id>/memory while cmd-start mounts projects/<id>/session/memory).
+# $1 = project NAME (the <id> = project.yml name: = index key), NOT a repo dir —
+# matching _cco_project_cache_managed.
+_cco_project_session_dir() {
+    printf '%s\n' "$(_cco_state_dir)/projects/$1/session"
+}
+_cco_project_session_memory() {
+    printf '%s\n' "$(_cco_state_dir)/projects/$1/session/memory"
+}
+_cco_project_session_transcripts() {
+    printf '%s\n' "$(_cco_state_dir)/projects/$1/session/claude-state"
+}
+
 # Note: pack-manifest lives inside .claude/, not project root
 _cco_project_pack_manifest() {
     _cco_resolve_path f "$1/.claude/.cco/pack-manifest" "$1/.claude/.pack-manifest"

@@ -390,8 +390,8 @@ _start_prepare_state() {
         # Session transcripts + auto-memory are machine-local STATE, keyed by
         # project identity (ADR-0009): never committed, never in ~/.cco. The
         # /session partition is the future state-sync opt-in boundary (§2.2).
-        mkdir -p "$session_state_dir/session/claude-state" \
-                 "$session_state_dir/session/memory" \
+        mkdir -p "$(_cco_project_session_transcripts "$project_name")" \
+                 "$(_cco_project_session_memory "$project_name")" \
                  "$managed_gen_dir" \
                  "$claude_gen_dir"
 
@@ -643,9 +643,9 @@ YAML
       - ${claude_src}:/workspace/.claude
       - ${project_dir}/project.yml:/workspace/project.yml:ro
       # Claude state: session transcripts (machine-local STATE; enables /resume across rebuilds)
-      - ${session_state_dir}/session/claude-state:/home/claude/.claude/projects/-workspace
+      - $(_cco_project_session_transcripts "$project_name"):/home/claude/.claude/projects/-workspace
       # Memory: auto memory files (machine-local STATE, separate from transcripts)
-      - ${session_state_dir}/session/memory:/home/claude/.claude/projects/-workspace/memory
+      - $(_cco_project_session_memory "$project_name"):/home/claude/.claude/projects/-workspace/memory
 YAML
 
         # Generated .claude overlays (packs.md, workspace.yml) → CACHE, layered
