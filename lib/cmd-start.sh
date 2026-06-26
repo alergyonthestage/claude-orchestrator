@@ -278,8 +278,10 @@ _start_prepare_state() {
                 cp "$HOME/.claude.json" "$global_claude_json"
             else
                 local host_startups global_startups
-                host_startups=$(jq -r '.numStartups // 0' "$HOME/.claude.json" 2>/dev/null || echo 0)
-                global_startups=$(jq -r '.numStartups // 0' "$global_claude_json" 2>/dev/null || echo 0)
+                host_startups=$(jq -r '.numStartups // 0' "$HOME/.claude.json" 2>/dev/null | head -n 1)
+                [[ ! "$host_startups" =~ ^[0-9]+$ ]] && host_startups=0
+                global_startups=$(jq -r '.numStartups // 0' "$global_claude_json" 2>/dev/null | head -n 1)
+                [[ ! "$global_startups" =~ ^[0-9]+$ ]] && global_startups=0
                 if [[ "$host_startups" -gt "$global_startups" ]]; then
                     cp "$HOME/.claude.json" "$global_claude_json"
                 fi
