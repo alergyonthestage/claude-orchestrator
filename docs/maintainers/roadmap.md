@@ -11,14 +11,14 @@
 
 The **decentralized in-repo config** refactor is **build-complete**: design closed
 (ADRs 0005–0028, principles P1–P18), and Phases 0–5 are all shipped on
-`feat/vault/decentralized-config` (suite **914/0**; commits local, pushed from the
+`feat/vault/decentralized-config` (suite **921/0**; commits local, pushed from the
 maintainer's Mac). Project config now lives in `<repo>/.cco/`; the central vault and
 the profile/`@local` machinery are gone; personal config lives in `~/.cco` (global Claude
 config flattened to `~/.cco/.claude/`, ADR-0028); machine-local state/cache/data live in
 hidden XDG buckets. The work is now in the **pre-merge review cycle**: the implementation
-review and the documentation review (reorg + coherence sweep) are done, and the pre-merge
-**flatten** (`~/.cco/global/.claude` → `~/.cco/.claude`, ADR-0028) shipped 2026-06-27.
-**Next: the refactoring/optimization review (step 3)**, then UX review, dogfooding, and the
+review, the documentation review (reorg + coherence sweep), the pre-merge **flatten**
+(`~/.cco/global/.claude` → `~/.cco/.claude`, ADR-0028), and the **refactoring/optimization
+review** (step 3) are all done. **Next: the UX-UI review (step 4)**, then dogfooding, and the
 v1 merge/release.
 
 ## Decentralized-config v1 — phase index
@@ -44,8 +44,8 @@ All phases closed; Phase 5 build-complete. Full per-phase commit/baseline log:
 flowchart LR
   A["1. Impl review<br/>✅ done"] --> B["2. Docs review<br/>✅ done"]
   B --> X["Pre-merge flatten<br/>✅ done (914/0)"]
-  X --> C["3. Refactoring /<br/>optimization review<br/>▶ next"]
-  C --> D["4. UX-UI review"]
+  X --> C["3. Refactoring /<br/>optimization review<br/>✅ done (921/0)"]
+  C --> D["4. UX-UI review<br/>▶ next"]
   D --> E["5. Dogfooding<br/>e2e (Mac)"]
   E --> F["6. Merge /<br/>release v1"]
 ```
@@ -61,18 +61,20 @@ flowchart LR
    **Deferred to post-merge** (see backlog): per-domain split of `cli.md` /
    `context-hierarchy.md` / the `configuration-management.md` guide, and the by-domain
    redistribution of the `decentralized-config/` sprint folder.
-3. **Refactoring / optimization review** — ▶ **next.** Launcher:
-   `configuration/decentralized-config/refactoring-review-handoff.md` (self-contained;
-   method = `engineering/guides/review-playbooks.md` §3). Consumes the **13 optimization
-   flags** from the 25-06 adherence review (`reviews/25-06-2026-impl-adherence-review.md`
-   §"Optimization & duplication backlog") plus the residual **LOW/NIT** from the migration
-   review (`reviews/26-06-2026-migration-impl-review.md`). Behaviour-preserving (SOLID/DRY/
-   OCP/KISS/YAGNI); baseline 914/0. The **global build-extension reader bug** found during
-   the docs sweep (`cco build` read setup scripts from `~/.cco/global`, now `~/.cco` top
-   level) was **fixed 2026-06-26** (`a92effc`, regression in `tests/test_build.sh`); the
-   related update.sh reseed mismatch was fixed in the flatten cycle. **Re-validate both in
-   dogfooding** (step 5) on a real build.
-4. **UX-UI review**.
+3. **Refactoring / optimization review** — ✅ **done (2026-06-27).** Record:
+   [`reviews/27-06-2026-refactoring-review.md`](configuration/decentralized-config/reviews/27-06-2026-refactoring-review.md).
+   8 atomic LOCAL commits `e65aa2f`→`0c3c822`, behaviour-preserving, suite **914/0 → 921/0**.
+   Applied: `_peel_tab` TSV splitter (#1) + `_coords_scan_section` (#5) + per-section split of
+   `_pv_validate_unit` (#4) + `_project_foreach` (#2, honest 6-of-13 scope) + `cmd_update`
+   307→212 via `_update_usage`/`_update_discover_pack_remotes` (#7/#11) + `cmd-build` secret
+   scan routed through `lib/secrets.sh` (#10, "route-as-is" — non-blocking warn) + L4/NIT
+   backup-diagnostics polish. Skipped as moot/forced (KISS/YAGNI): #3, #6, #8, #9, #12, #13.
+   **L6** (container-detection false-positive) **deferred** → post-v1 backlog. The **global
+   build-extension reader bug** (`cco build` read setup scripts from `~/.cco/global`, now
+   `~/.cco` top level) was fixed 2026-06-26 (`a92effc`); **re-validate in dogfooding** (step 5).
+4. **UX-UI review** — ▶ **next** (`engineering/guides/review-playbooks.md` §4): command
+   symmetry/learnability, no-multiple-paths, reachability of implemented features,
+   destructive-action confirmation, onboarding scope. Includes L8 (`cco forget` recovery hint).
 5. **Dogfooding e2e on Mac** — `configuration/decentralized-config/P2-dogfooding-validation.md`
    (sandboxed roots + HOME-flip; legacy-vault removal accepted only after merge + validation).
 6. **Merge / release v1** — merge `feat/vault/decentralized-config`, reconcile both roadmaps,
@@ -109,6 +111,12 @@ confirm before scheduling. None blocks the v1 merge.
 - **Governance & resolution UX** — `cco config protect` helper (CODEOWNERS + ruleset
   scaffold; contract ADR-0020 D4 / ADR-0023 D6; docs already shipped);
   internalize-as-cache interactive prompt (ADR-0019 D6).
+- **Container detection (L6, refactoring review B)** — replace the `_cco_in_container`
+  `HOME=/home/claude` heuristic with a **positive `CCO_IN_CONTAINER=1` marker** set by
+  `config/entrypoint.sh` + the compose-gen env (keep `/.dockerenv` as a secondary fallback).
+  Removes both the host-user-`claude` false-positive and the podman/non-Docker false-negative.
+  Small, but image-touching (needs `cco build && cco start` to validate) — fold into any
+  session that rebuilds the image. See `reviews/27-06-2026-refactoring-review.md` §4.
 - **State-sync (T / R-state-sync)** — opt-in cross-PC/cross-team sync of STATE + DATA
   (memory, transcripts, tags, provenance). Largest deferred item; needs its own design.
 - **`cco project internalize` (Case-C)** + `~/.cco/projects/` config home — sever a

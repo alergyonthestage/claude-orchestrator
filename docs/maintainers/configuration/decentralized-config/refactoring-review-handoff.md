@@ -1,7 +1,13 @@
 # Handoff — Refactoring / Optimization Review (PRE-MERGE step 3)
 
+> **✅ COMPLETED 2026-06-27.** This review ran and is done. Outcome + per-flag dispositions:
+> [`reviews/27-06-2026-refactoring-review.md`](reviews/27-06-2026-refactoring-review.md).
+> 8 commits `e65aa2f`→`0c3c822`, suite 914/0 → 921/0, behaviour-preserving. L6 deferred to the
+> post-v1 backlog (positive `CCO_IN_CONTAINER` marker). Next cycle step = **UX-UI review**.
+> This file is kept as the launcher's reference value; do not re-run it.
+
 **Status**: Self-contained launcher for the **pre-merge refactoring/optimization review**
-(roadmap "Pre-merge review cycle" step 3). NOT started. Runs in its **own clean session**
+(roadmap "Pre-merge review cycle" step 3). Runs in its **own clean session**
 after maintainer go-ahead. Branch `feat/vault/decentralized-config`, commits **LOCAL**
 (push from the maintainer's Mac). Written 2026-06-27.
 
