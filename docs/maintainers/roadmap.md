@@ -76,6 +76,8 @@ flowchart LR
 ### Pre-merge to-do — flatten `~/.cco/global/.claude/` → `~/.cco/.claude/`
 
 **Must land before the v1 merge** (decided 2026-06-26; not done in the docs session).
+**Launcher**: `configuration/decentralized-config/flatten-global-claude-handoff.md`
+(self-contained, code-grounded checklist: ADR-0028 + design + impl + migration + docs + tests).
 **Why pre-merge**: fold it into the **single** decentralized-config migration so every user
 gets the flat layout in ONE coherent migration — avoid shipping `~/.cco/global/.claude`
 now and a *second* `mv … → ~/.cco/.claude` later. The `global/` wrapper is a vault-era
