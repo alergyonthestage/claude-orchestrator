@@ -115,13 +115,14 @@ pull is fast-forward-only with abort + reconcile instructions — `cmd-config.sh
    --dry-run`; llms family-help cleanup; regroup) + UX-8 forget message; `-h` alias everywhere.
 3. **Ph.3 ✅** `9a5565a` — `cco list [<kind>] [--tag] [--sort]` unified index; removed `cco <noun>
    list` (stubs); suite call-sites migrated; `changelog.yml` #16; new `tests/test_list.sh`.
-4. **Ph.4 ▶ handed off** — uniform destructive-confirm + `-y/--yes` canonical + `--force` override,
-   across forget/pack/llms/template/remote (non-TTY without `-y` → die, maintainer-confirmed).
-5. **Ph.5 ▶ handed off** — `cco tag remove` (alias `rm`) + `cco template update` + `cco template
-   validate` (pack parity).
-6. **Ph.6 ▶ handed off** — `cco path` demote (out of `usage()`, into `cco resolve --help`).
-7. **Ph.7 ▶ handed off** — `docs/users/reference/cli.md` + `CLAUDE.md` + design.md §7 re-sync;
-   roadmap step 4 → done; banner the handoffs.
+4. **Ph.4 ✅** `f61cb39` — uniform destructive-confirm + `-y/--yes` canonical + `--force` override,
+   across forget/pack/llms/template/remote (non-TTY without `-y` → die); shared
+   `_confirm_destructive` helper in `lib/utils.sh`; changelog #17.
+5. **Ph.5 ✅** `0eec1e4` — `cco tag remove` (alias `rm`) + `cco template update` + `cco template
+   validate` (pack parity); intentional asymmetries documented in family help; changelog #18.
+6. **Ph.6 ✅** `4c0430f` — `cco path` demote (out of `usage()`, into `cco resolve --help`).
+7. **Ph.7 ✅** (the doc-resync commit) — `docs/users/reference/cli.md` + `CLAUDE.md` + design.md §7
+   re-sync; roadmap step 4 → done; handoffs bannered.
 
 Ph.4–Ph.7 launcher: [`../ux-ui-fixes-handoff.md`](../ux-ui-fixes-handoff.md).
 
@@ -137,3 +138,11 @@ Ph.4–Ph.7 launcher: [`../ux-ui-fixes-handoff.md`](../ux-ui-fixes-handoff.md).
 - *2026-06-27* — **Ph.4–Ph.7 handed off** to a fresh session via
   [`../ux-ui-fixes-handoff.md`](../ux-ui-fixes-handoff.md); non-TTY-without-`-y` → **die** confirmed.
   Baseline for the continuation = **928/0**; next free ADR = 0030 (none expected).
+- *2026-06-27* — **Ph.4–Ph.7 implemented & committed** (`f61cb39`/`0eec1e4`/`4c0430f` + the Ph.7
+  doc commit), suite **928/0 → 943/0** (green per step; +6 confirm-contract tests, +7 symmetry
+  tests, +2 path-demote tests). No new ADR was needed (ADR-0029 covered every phase). Ph.4
+  introduced the shared `_confirm_destructive` helper (a refactoring win folded into the fix);
+  Ph.5 added `changelog.yml` #17 (confirm contract) + #18 (tag remove · template update/validate);
+  Ph.6 had no changelog/migration (usage-only); Ph.7 re-synced the shipped-behavior docs and
+  flipped this review's §5 + the roadmap step-4 status. **UX-UI review (step 4) COMPLETE → next =
+  dogfooding e2e (step 5).**

@@ -11,15 +11,15 @@
 
 The **decentralized in-repo config** refactor is **build-complete**: design closed
 (ADRs 0005–0028, principles P1–P18), and Phases 0–5 are all shipped on
-`feat/vault/decentralized-config` (suite **921/0**; commits local, pushed from the
+`feat/vault/decentralized-config` (suite **943/0**; commits local, pushed from the
 maintainer's Mac). Project config now lives in `<repo>/.cco/`; the central vault and
 the profile/`@local` machinery are gone; personal config lives in `~/.cco` (global Claude
 config flattened to `~/.cco/.claude/`, ADR-0028); machine-local state/cache/data live in
 hidden XDG buckets. The work is now in the **pre-merge review cycle**: the implementation
 review, the documentation review (reorg + coherence sweep), the pre-merge **flatten**
-(`~/.cco/global/.claude` → `~/.cco/.claude`, ADR-0028), and the **refactoring/optimization
-review** (step 3) are all done. **Next: the UX-UI review (step 4)**, then dogfooding, and the
-v1 merge/release.
+(`~/.cco/global/.claude` → `~/.cco/.claude`, ADR-0028), the **refactoring/optimization
+review** (step 3), and the **UX-UI review** (step 4, ADR-0029) are all done. **Next:
+dogfooding e2e on the Mac (step 5)**, then the v1 merge/release.
 
 ## Decentralized-config v1 — phase index
 
@@ -45,8 +45,8 @@ flowchart LR
   A["1. Impl review<br/>✅ done"] --> B["2. Docs review<br/>✅ done"]
   B --> X["Pre-merge flatten<br/>✅ done (914/0)"]
   X --> C["3. Refactoring /<br/>optimization review<br/>✅ done (921/0)"]
-  C --> D["4. UX-UI review<br/>▶ next"]
-  D --> E["5. Dogfooding<br/>e2e (Mac)"]
+  C --> D["4. UX-UI review<br/>✅ done (943/0)"]
+  D --> E["5. Dogfooding<br/>e2e (Mac)<br/>▶ next"]
   E --> F["6. Merge /<br/>release v1"]
 ```
 
@@ -75,11 +75,17 @@ flowchart LR
    so no entrypoint/image change was needed. The **global build-extension reader bug**
    (`cco build` read setup scripts from `~/.cco/global`, now `~/.cco` top level) was fixed
    2026-06-26 (`a92effc`); **re-validate in dogfooding** (step 5).
-4. **UX-UI review** — ▶ **next** (`engineering/guides/review-playbooks.md` §4): command
-   symmetry/learnability, no-multiple-paths, reachability of implemented features,
-   destructive-action confirmation, onboarding scope. Includes L8 (`cco forget` recovery hint).
-   Launcher: [`configuration/decentralized-config/ux-ui-review-handoff.md`](configuration/decentralized-config/ux-ui-review-handoff.md).
-5. **Dogfooding e2e on Mac** — `configuration/decentralized-config/P2-dogfooding-validation.md`
+4. **UX-UI review** — ✅ **done (2026-06-27).** Record:
+   [`reviews/27-06-2026-ux-ui-review.md`](configuration/decentralized-config/reviews/27-06-2026-ux-ui-review.md);
+   design in **[ADR-0029](configuration/decentralized-config/decisions/0029-ux-ui-review-unified-list-confirm-symmetry.md)**
+   (refines ADR-0023 D1). A reachability sweep came back clean; the fixes were coherence
+   defects, implemented in 7 phases (Ph.1–7) across atomic LOCAL commits, suite **921/0 → 943/0**:
+   unified `cco list [<kind>] [--tag] [--sort]` + redirect stubs (D1); uniform
+   destructive-confirm contract `-y`/`--yes`/`--force`-override (D2); `cco tag remove` +
+   `cco template update`/`validate` (D3); `cco path` demoted out of `cco help` (D4); the help
+   sweep + `-h` alias + `cco forget` L8 recovery hint (D5). Shipped-behavior docs re-synced
+   (`cli.md`, repo `CLAUDE.md`, design §7).
+5. **Dogfooding e2e on Mac** — ▶ **next** — `configuration/decentralized-config/P2-dogfooding-validation.md`
    (sandboxed roots + HOME-flip; legacy-vault removal accepted only after merge + validation).
 6. **Merge / release v1** — merge `feat/vault/decentralized-config`, reconcile both roadmaps,
    mark ADRs.

@@ -710,8 +710,8 @@ ADR-0018/0019/0020/0023.
 | Run | `cco start [project] [--from <repo>] [--mount <src>[:<tgt>][:ro\|:rw]]… [--enable-config-edit]` (cwd-aware source; `--from` picks the Case-C source `<repo>/.cco`, ADR-0017 D2; index-resolve names; on unresolved → prompt resolve\|proceed-without). **`--mount`** = repeatable reference mount, **`:ro` default** (ADR-0027 D2). **`--enable-config-edit`** = escape hatch re-enabling rw on `<repo>/.cco` for one session; by default a normal session overlays the committed `<repo>/.cco` (structural framework config: `project.yml`/`secrets`/metadata) **`:ro`** while the project Claude config (`/workspace/.claude`) stays rw for `/init`/authoring (agentic edit-protection, ADR-0027 D3 — narrow; container-only; the host IDE is unaffected) | transform |
 | Run: ad-hoc | `cco new [--repo <path>]… [--name\|--port\|--teammate-mode]` (ephemeral scratch session: **literal** paths, no `project.yml`, **no index** read/write, no coordinates; shares the Phase-0 compose/mount primitives with `cco start` but **skips H1 resolution**; J0 still bootstraps the four roots but writes nothing to the index — ADR-0023 D5) | transform |
 | Sync | `cco sync [target] [--from <src>] [--dry-run\|--auto-approve\|--check]` | NEW |
-| Paths/resolve | `cco resolve [project]` (resolve each unresolved repo/mount: specify local path · clone-from-`url` · skip), `cco resolve --all` (all projects), `cco resolve --scan <dir>` (auto-discover + **reconcile/upsert** index, non-destructive, AD5-conflict; no `--prune` in v1 — ADR-0022 D3; **absorbs** `cco index refresh`), `cco path set/list` (low-level index editor) — ADR-0017 D2 | NEW |
-| Discovery | `cco list [--tag <t>]`, `cco tag add/rm` (reads/writes the per-user `<data>/cco/tags.yml`, DATA bucket — ADR-0011/0015) | transform |
+| Paths/resolve | `cco resolve [project]` (resolve each unresolved repo/mount: specify local path · clone-from-`url` · skip), `cco resolve --all` (all projects), `cco resolve --scan <dir>` (auto-discover + **reconcile/upsert** index, non-destructive, AD5-conflict; no `--prune` in v1 — ADR-0022 D3; **absorbs** `cco index refresh`), `cco path set/list` (low-level index editor — **internal/demoted**: kept but removed from `cco help`, documented under `cco resolve --help`, ADR-0029 D4) — ADR-0017 D2 | NEW |
+| Discovery | `cco list [<kind>] [--tag <t>] [--sort name]` (**one listing surface** — ADR-0029 D1: bare = compact cross-resource index KIND·NAME·TAGS; `<kind>` = the rich per-kind view; `--tag` filters globally or within a kind; **subsumes** the old tags-only `cco list`; the per-noun `cco <noun> list` verbs are removed → redirect stubs), `cco tag add/remove` (canonical `remove`, `rm` kept as alias — ADR-0029 D3; reads/writes the per-user `<data>/cco/tags.yml`, DATA bucket — ADR-0011/0015) | transform |
 | Project config / coordinates (cwd `<repo>/.cco`) | `cco project add repo\|mount\|llms\|pack <name> [--url --ref --variant --readonly] [--path]` (**embed-at-add**, P14 layer-a: coordinate → manifest **and** optional `--path` → index, in one call; `url` auto-derived from `origin` when `--path` is a clone — ADR-0023 D3; `add-pack` kept as alias of `add pack`), `cco project coords --diff [--sync --from <unit>]` (cross-unit coordinate consistency; `--sync` explicit-`--from`, never auto-elect — ADR-0016 D3 / ADR-0022 F48), `cco project validate [--all] [--reachable]` (**share-readiness**: every referenced id has a reachable coordinate + machine-agnostic + the pack-collision ERROR; cwd-first, exit 0/1/2, detect-only, never blocks — ADR-0023 D2) | NEW |
 | Authoring | Direct `~/.cco` edit (IDE or the `config-editor` **built-in** session); cco only **scaffolds**: `cco pack create`, `cco template create` (ADR-0008/0010). The **config-editor** is a framework built-in (the tutorial model, not scaffolded): `cco start config-editor` mounts `~/.cco` rw (**global mode**); `cco start config-editor --project <name>` (or a cwd hosting a configured repo) also mounts that project's `<repo>/.cco` rw (**project mode**) — ADR-0027 D1 | transform |
 | Global store (`~/.cco` + internal) | `cco config save [-m] / push / pull` (version + sync the personal `~/.cco` store; ADR-0008) + **`cco config validate [--dry-run\|--fix]`** (**orphan-sanitization** of global id-keyed internal state after manual deletion: detect/report, optionally prune preview-first/confirmed; warn-never-hide, never automatic; ADR-0021. STATE/CACHE freely rebuildable via `cco resolve --scan`; DATA pruned only on confirm). *Share-readiness* validate is `cco project validate` (below), **not** this verb — ADR-0023 D1 | transform |
@@ -747,6 +747,23 @@ it; else resolve `<project>` via the index.
 > per-root** (a missing single root is created without disturbing the others; review M6). Under the
 > future npx/npm packaging (R-pkg, no source clone for users), J0-on-first-use stays the system-dir
 > init point; an explicit `cco setup` is an optional future convenience.
+
+**Uniform operation across the surface (ADR-0029, pre-merge UX-UI review).** Two cross-cutting
+properties hold over the table above, not just individual rows:
+- **Destructive-confirmation contract (D2).** Every destructive/irreversible verb —
+  `pack remove`, `llms remove`, `template remove`, `remote remove`, `forget`,
+  `config validate --fix`, `project coords --sync` — previews what it will remove (incl. the
+  id-keyed cascade), confirms `[y/N]`, accepts `-y`/`--yes` to skip, and **dies** when
+  non-interactive without `-y`. `--force` is reserved for *override-a-block* (remove an in-use
+  resource / overwrite a target) and implies `-y` — it is **not** a second spelling of "assume
+  yes". Fully-regenerable cleanups (`cco clean`) and fast-forward-only `config pull` need no
+  confirm.
+- **Verb symmetry (D3).** Resource families share verb names where the operation exists:
+  `template` mirrors `pack` (create · install · **update** · publish · export · import ·
+  internalize · show · remove · **validate**). The remaining asymmetries are intentional and
+  documented in each family's `--help`: a **project** has no install/publish/remove (it rides its
+  code-repo remote; deregister with `cco forget`, P13/ADR-0018 D2), and only **llms** has
+  `rename` (its entries are auto-named from the URL).
 
 ---
 

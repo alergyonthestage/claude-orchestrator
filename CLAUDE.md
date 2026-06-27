@@ -36,12 +36,13 @@ cco start <project>          # Start session for a project
 cco start config-editor      # Launch the built-in config-editor session
 cco new --repo <path>        # Start temporary session with repos
 cco resolve <name>           # Resolve a logical name to an absolute path (clone-from-url if needed)
-cco path <name>              # Print the resolved absolute path for a logical name
+cco path set|list            # Advanced: low-level index override (see 'cco resolve --help')
 cco sync                     # Copy/refresh resolved config into place
-cco list                     # List projects
-cco list --tag <tag>         # List projects filtered by a per-user tag
-cco tag add <project> <tag>  # Tag a project (per-user, in the DATA registry)
-cco tag rm <project> <tag>   # Remove a tag from a project
+cco list                     # Unified index of all resources (grouped by kind, with tags)
+cco list <kind>              # One kind: projects|packs|templates|llms|remotes
+cco list [<kind>] --tag <t>  # Filter by a per-user tag (globally or within a kind)
+cco tag add <name> <tag>     # Tag a project/pack/template (per-user, DATA registry)
+cco tag remove <name> <tag>  # Remove a tag (alias: cco tag rm)
 cco pack install <url>       # Install a pack from a sharing repo
 cco pack publish <n> [remote] # Publish a pack to a sharing repo
 cco pack export <name>       # Export a pack as a .tar.gz archive
@@ -49,11 +50,12 @@ cco pack import <archive>    # Import a pack from a .tar.gz archive
 cco pack update <name>       # Update a pack from its source
 cco template install <url>   # Install a template from a sharing repo
 cco template publish <n> [remote] # Publish a template to a sharing repo
+cco template update <name>   # Update a template from its source (--all for all)
+cco template validate [name] # Validate a template's structure (--all for all)
 cco template export <name>   # Export a template as an archive
 cco template import <archive> # Import a template from an archive
-cco template list            # List available templates (native + user)
-cco template show <name>     # Show template details
-cco template remove <name>   # Remove a user template
+cco template show <name>     # Show template details (list via 'cco list templates')
+cco template remove <name>   # Remove a user template (previews + confirms; -y to skip)
 cco project export <name>    # Export a project (projects share via their own code-repo remote)
 cco project import <archive> # Import an exported project
 cco project show <name>      # Show project roles, referenced-by, repo-centric view

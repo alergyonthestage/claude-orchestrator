@@ -1,8 +1,16 @@
 # Handoff — UX-UI fixes Ph.4 → Ph.7 (PRE-MERGE step 4, continuation)
 
+> **✅ COMPLETE (2026-06-27).** Ph.4–Ph.7 are all implemented & committed:
+> Ph.4 `f61cb39` (uniform destructive-confirm + `_confirm_destructive` helper, changelog #17) ·
+> Ph.5 `0eec1e4` (`cco tag remove` + `cco template update`/`validate`, changelog #18) ·
+> Ph.6 `4c0430f` (`cco path` demote) · Ph.7 (shipped-behavior doc re-sync + banners, this commit).
+> Suite **928/0 → 943/0**, green per step; no new ADR (ADR-0029 covered all). Review §5 +
+> Resolution log + roadmap step 4 flipped to done. **Next = dogfooding e2e (step 5).** This
+> launcher is kept as history.
+
 **Status**: Self-contained launcher for the **remaining UX-UI fix phases** of the pre-merge
 UX-UI review (review cycle step 4). Ph.1–Ph.3 are **done and committed** (see below); this handoff
-drives **Ph.4 → Ph.7**. Runs in its **own clean session**. Branch `feat/vault/decentralized-config`,
+drives **Ph.4 → Ph.7**. **DONE** (see banner). Branch `feat/vault/decentralized-config`,
 commits **LOCAL** (pushed from the maintainer's Mac). Written 2026-06-27.
 
 > **One-line goal.** Finish operationalising [ADR-0029](decisions/0029-ux-ui-review-unified-list-confirm-symmetry.md):

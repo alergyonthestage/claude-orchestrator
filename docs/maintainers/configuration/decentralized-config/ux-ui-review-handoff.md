@@ -1,7 +1,14 @@
 # Handoff — UX-UI Review (PRE-MERGE step 4)
 
+> **✅ COMPLETE (2026-06-27).** The UX-UI review ran, produced
+> [`reviews/27-06-2026-ux-ui-review.md`](reviews/27-06-2026-ux-ui-review.md) + **ADR-0029**, and
+> its fixes (Ph.1–7) are all implemented & committed (`e872312`…`4c0430f` + the Ph.7 doc commit),
+> suite **943/0**. Step 4 of the pre-merge review cycle is done — next = dogfooding e2e (step 5).
+> This launcher is kept as history; the Ph.4–7 continuation launcher
+> [`ux-ui-fixes-handoff.md`](ux-ui-fixes-handoff.md) is also complete.
+
 **Status**: Self-contained launcher for the **pre-merge UX-UI review** (roadmap "Pre-merge
-review cycle" step 4). **NOT started.** Runs in its **own clean session** after maintainer
+review cycle" step 4). **DONE** (see banner). Ran in its **own clean session** after maintainer
 go-ahead. Branch `feat/vault/decentralized-config`, commits **LOCAL** (push from the
 maintainer's Mac). Written 2026-06-27, after the refactoring review (step 3) shipped.
 

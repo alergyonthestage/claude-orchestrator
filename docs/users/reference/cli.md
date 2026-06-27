@@ -339,7 +339,7 @@ Arguments:
   project              Name of the project to deregister
 
 Options:
-  -y, --force          Skip the confirmation prompt
+  -y, --yes, --force   Skip the confirmation prompt
 
 Examples:
   cco forget old-service
@@ -357,20 +357,18 @@ resume the project.
 
 ---
 
-### 3.5 `cco project list`
+### 3.5 Listing projects → `cco list project`
 
-List available projects with their status.
+The per-noun `cco project list` verb was **removed** (ADR-0029 D1): listing is now
+unified under `cco list` (§3.5b). Running the old verb prints a one-line redirect.
 
 ```
-Usage: cco project list
-
-Output:
-  NAME           REPOS    STATUS
-  my-saas        3        stopped
-  experiment     1        running
+cco list project             # projects only (NAME · REPOS · STATUS · TAGS)
+cco list                     # all resources, grouped by kind
+cco list project --tag work  # projects carrying the "work" tag
 ```
 
-**Implementation**:
+**Implementation** (under `cco list project`):
 - List projects registered in the machine-local index (`<state>/cco/index` `projects:` map)
 - Parse each repo's `<repo>/.cco/project.yml` for repo count
 - Check Docker for running containers (`cc-<name>`)
@@ -383,32 +381,48 @@ Per-user tags replace the removed vault profiles. Tags are **multi-valued per re
 **per-user** — they live in a machine-local-but-synced registry (`<data>/cco/tags.yml`, the
 DATA bucket) and are never written into `project.yml`/`pack.yml` or shared with third parties.
 
-#### `cco list [--tag <t>]`
+#### `cco list [<kind>] [--tag <t>] [--sort name]`
 
-List resources, optionally filtered by tag. Reads the per-user tag registry.
+The single listing surface (ADR-0029 D1). With no argument it prints a compact
+cross-resource index — every project, pack, template, llms entry and remote,
+grouped by kind, with a **TAGS** column. `cco list <kind>` narrows to one kind
+(with its richer per-kind view); `--tag` filters by tag, globally or within a kind.
 
 ```
-Usage: cco list [--tag <t>]
+Usage: cco list [<kind>] [--tag <t>] [--sort name]
+
+Arguments:
+  <kind>               One of: project | pack | template | llms | remote
+                       (plural forms accepted, e.g. `packs`)
 
 Options:
   --tag <t>            Show only resources carrying tag <t>
+  --sort name          Order by name
 
 Examples:
-  cco list                     # All resources
-  cco list --tag work          # Only resources tagged "work"
+  cco list                     # All resources, grouped by kind (KIND · NAME · TAGS)
+  cco list packs               # Packs only, with resource counts
+  cco list --tag work          # Every resource tagged "work"
+  cco list project --tag work  # Projects tagged "work"
 ```
 
-#### `cco tag add` / `cco tag rm`
+> The per-noun `cco project|pack|template|llms|remote list` verbs were removed;
+> each prints a one-line redirect to `cco list <kind>`. Full detail for one
+> resource stays on `cco <kind> show <name>`.
 
-Add or remove a per-user tag on a resource (writes the DATA tag registry).
+#### `cco tag add` / `cco tag remove`
+
+Add or remove a per-user tag on a resource (writes the DATA tag registry). The
+kind is auto-detected; pass `--pack`/`--project`/`--template` to disambiguate.
 
 ```
-Usage: cco tag add <tag> <resource>
-       cco tag rm  <tag> <resource>
+Usage: cco tag add    <name> <tag> [--pack|--project|--template]
+       cco tag remove <name> <tag> [--pack|--project|--template]   (alias: rm)
 
 Examples:
-  cco tag add work my-saas
-  cco tag rm  work my-saas
+  cco tag add    my-saas work
+  cco tag remove my-saas work
+  cco tag rm     my-saas work        # `rm` is a kept alias of `remove`
 ```
 
 Tags are organizational only; they carry no privilege and never affect resolution or sharing.
@@ -490,7 +504,7 @@ Arguments:
   name                 Pack name (lowercase letters, numbers, and hyphens only)
 
 Options:
-  --template <name>    Template to use (default: base). See `cco template list --pack`
+  --template <name>    Template to use (default: base). See `cco list templates`
 
 Examples:
   cco pack create react-guidelines
@@ -524,20 +538,18 @@ Examples:
 
 ---
 
-### 3.9 `cco pack list`
+### 3.9 Listing packs → `cco list packs`
 
-List all knowledge packs with resource counts.
+The per-noun `cco pack list` verb was **removed** (ADR-0029 D1) → use `cco list
+packs` (resource counts) or `cco list` for all kinds. The old verb prints a
+one-line redirect.
 
 ```
-Usage: cco pack list
-
-Output:
-  NAME              KNOWLEDGE  SKILLS  AGENTS  RULES
-  devops-tools      3          1       0       2
-  react-guidelines  5          2       1       3
+cco list packs               # NAME · KNOWLEDGE · SKILLS · AGENTS · RULES · TAGS
+cco list packs --tag infra   # packs carrying the "infra" tag
 ```
 
-**Implementation**:
+**Implementation** (under `cco list packs`):
 - Iterates directories under `~/.cco/packs/`
 - Parses each `pack.yml` for knowledge files, skills, agents, and rules counts
 - Displays a formatted table with resource counts (shows `0` when a category is empty)
@@ -576,22 +588,27 @@ Examples:
 
 ---
 
-### 3.11 `cco pack remove <name> [--force]`
+### 3.11 `cco pack remove <name> [-y] [--force]`
 
-Remove a knowledge pack.
+Remove a knowledge pack and its id-keyed internal state. Follows the uniform
+destructive-confirmation contract (ADR-0029 D2): it previews the cascade, then
+confirms.
 
 ```
-Usage: cco pack remove <name> [--force]
+Usage: cco pack remove <name> [-y] [--force]
 
 Arguments:
   name                 Pack name to remove
 
 Options:
-  --force              Skip confirmation prompt
+  -y, --yes            Skip the confirmation prompt
+  --force              Remove even if the pack is still used by a project
+                       (overrides the in-use block; implies -y)
 
 Examples:
-  cco pack remove old-pack
-  cco pack remove old-pack --force
+  cco pack remove old-pack            # preview + confirm
+  cco pack remove old-pack -y         # skip the prompt
+  cco pack remove shared-pack --force # remove an in-use pack
 ```
 
 **Flow**:
@@ -600,17 +617,24 @@ Examples:
 1. VALIDATE
    - ~/.cco/packs/<name>/ exists
 
-2. CHECK usage
-   - Scan all projects for references to this pack
-   - If used by projects:
-     - Display warning: "Pack '<name>' is used by: <project-list>"
-     - Without --force: prompt for confirmation (y/N)
-     - Non-interactive terminal without --force: error and abort
+2. PREVIEW the cascade
+   - packs/<name>/ + DATA install-provenance + STATE merge base/meta + tag binding
 
-3. REMOVE
-   - rm -rf ~/.cco/packs/<name>/
+3. CHECK usage (the in-use block)
+   - Scan all projects for references to this pack
+   - If used by projects: warn, and require --force to remove anyway
+
+4. CONFIRM (ADR-0029 D2)
+   - Interactive [y/N] (default No); -y/--yes (or --force) skips
+   - Non-interactive without -y → die ("re-run with -y"); never a silent rm
+
+5. REMOVE
+   - rm -rf the pack + its DATA/STATE state + tag binding
    - "Pack '<name>' removed"
 ```
+
+The same contract governs `cco llms remove`, `cco template remove` and
+`cco remote remove`; `cco forget` was already its reference model.
 
 ---
 
@@ -778,10 +802,12 @@ manual `cco path set` overrides, and on a name-already-bound-to-a-different-path
 warns and keeps the existing mapping (uniqueness invariant). There is no `--prune` in v1.
 `cco resolve --scan` also bootstraps a fresh machine (populates an empty index).
 
-#### `cco path set` / `cco path list`
+#### `cco path set` / `cco path list` (advanced)
 
 The low-level index editor — fix divergence, point to a moved directory, register an external
-install.
+install. The index is **internal** (P1/P6), so `cco path` is **demoted** (ADR-0029 D4): it is
+**not listed in `cco help`** and is documented under `cco resolve --help` as an advanced
+override. The command itself is unchanged — normal users meet only `cco resolve`.
 
 ```
 Usage: cco path set <name> <path>
@@ -1367,23 +1393,30 @@ Examples:
   cco remote add team https://github.com/my-org/cco-config.git --token ghp_xxx
 ```
 
-#### `cco remote remove <name>`
+#### `cco remote remove <name> [-y]`
 
-Unregister a remote and its saved token (if any).
+Unregister a remote and its saved token (if any). Previews and confirms first
+(ADR-0029 D2).
 
 ```
-Usage: cco remote remove <name>
+Usage: cco remote remove <name> [-y]
+
+Options:
+  -y, --yes            Skip the confirmation prompt
 
 Examples:
   cco remote remove team
+  cco remote remove team -y
 ```
 
-#### `cco remote list`
+#### Listing remotes → `cco list remotes`
 
-Show all registered remotes. Remotes with a saved token show `[token]`.
+The per-noun `cco remote list` verb was **removed** (ADR-0029 D1) → use
+`cco list remotes` (remotes with a saved token show `[token]`). The old verb
+prints a one-line redirect.
 
 ```
-Usage: cco remote list
+cco list remotes
 ```
 
 #### `cco remote set-token <name> <token>`
@@ -1418,20 +1451,45 @@ Manage project and pack templates. Native templates ship with the tool in `templ
 > **Removed**: there is no `cco manifest` / `manifest.yml`. Sharing-repo discovery is
 > structure-based (a sharing repo holds `packs/` + `templates/`, discovered via `git ls-tree`).
 
-#### `cco template list [--project|--pack]`
+Templates mirror packs: **create · install · update · publish · export · import ·
+internalize · show · remove · validate** (ADR-0029 D3). Listing is unified under
+`cco list templates` (the per-noun `cco template list` was removed).
 
-List available templates (both native and user).
+#### Listing templates → `cco list templates`
 
 ```
-Usage: cco template list [--project|--pack]
+cco list templates           # native + user templates (KIND · NAME · TAGS)
+```
 
-Options:
-  --project    Show only project templates
-  --pack       Show only pack templates
+The old `cco template list [--project|--pack]` verb prints a one-line redirect.
+
+#### `cco template update <name> [--all] [--force]`
+
+Update an installed template from its recorded remote source (the pack-`update`
+analogue; supersedes the never-built "future `cco template sync`" idea). Re-clones
+the source coordinate, re-installs, and refreshes the STATE `installed_commit`.
+
+```
+Usage: cco template update <name> [--force]
+       cco template update --all [--force]
 
 Examples:
-  cco template list
-  cco template list --project
+  cco template update my-stack          # update one template
+  cco template update --all             # every template with a remote source
+```
+
+#### `cco template validate [name] [--all]`
+
+Structural validation of a template tree (kind marker + expected config tree) —
+the pack-`validate` analogue. With no name (or `--all`), validates every user
+template.
+
+```
+Usage: cco template validate [name] [--all]
+
+Examples:
+  cco template validate my-stack
+  cco template validate --all
 ```
 
 #### `cco template show <name>`
@@ -1458,15 +1516,21 @@ Examples:
   cco template create my-pack-layout --pack
 ```
 
-#### `cco template remove <name>`
+#### `cco template remove <name> [-y]`
 
-Remove a user template.
+Remove a user template and its id-keyed internal state (DATA provenance, STATE
+merge base, tag binding). Previews the cascade and confirms first (ADR-0029 D2);
+native templates cannot be removed.
 
 ```
-Usage: cco template remove <name>
+Usage: cco template remove <name> [-y]
+
+Options:
+  -y, --yes            Skip the confirmation prompt
 
 Examples:
-  cco template remove my-stack
+  cco template remove my-stack          # preview + confirm
+  cco template remove my-stack -y       # skip the prompt
 ```
 
 ---
@@ -1537,14 +1601,15 @@ downloads the best one (default: `full`). Always downloads the index `llms.txt`
 if available. The cache-state (etag, resolved URL, download timestamp) is kept alongside the
 content in CACHE; the `url`/`variant` coordinate is written into the referencing manifest.
 
-#### `cco llms list`
+#### Listing llms entries → `cco list llms`
+
+The per-noun `cco llms list` verb was **removed** (ADR-0029 D1) → use `cco list
+llms` (variant, line count, download date, source URL, and which packs/projects
+reference each entry). The old verb prints a one-line redirect.
 
 ```
-Usage: cco llms list
+cco list llms
 ```
-
-Lists all installed llms entries with variant, line count, download date, source
-URL, and which packs/projects reference them.
 
 #### `cco llms show <name>`
 
@@ -1577,13 +1642,19 @@ Usage: cco llms rename <old-name> <new-name>
 
 Renames an installed llms entry (directory and YAML references in packs/projects).
 
-#### `cco llms remove <name> [--force]`
+#### `cco llms remove <name> [-y] [--force]`
 
 ```
-Usage: cco llms remove <name> [--force]
+Usage: cco llms remove <name> [-y] [--force]
+
+Options:
+  -y, --yes            Skip the confirmation prompt
+  --force              Remove even if still referenced by a pack/project
+                       (overrides the referenced block; implies -y)
 ```
 
-Removes an llms entry. Warns if referenced by packs or projects unless `--force`.
+Removes an llms entry. Previews and confirms first (ADR-0029 D2); a still-referenced
+entry needs `--force`. Non-interactive without `-y` → die.
 
 ---
 
@@ -1750,7 +1821,7 @@ If the proxy fails to start, the real socket remains locked (`chmod 600`). Docke
 
 | Scenario | Behavior |
 |----------|----------|
-| Project not found | `Error: Project 'foo' not found. Run 'cco project list' to see available projects.` |
+| Project not found | `Error: Project 'foo' not found. Run 'cco list project' to see available projects.` |
 | Session already running | `Error: Project 'foo' already has a running session (container cc-foo). Run 'cco stop foo' first.` |
 | Repo path doesn't exist | `Error: Repository path ~/projects/foo does not exist.` |
 | Docker image not built | `Error: Docker image 'claude-orchestrator:latest' not found. Run 'cco build' first.` |
