@@ -42,12 +42,18 @@ Usage: cco template <command> [options]
 Commands:
   show <name>                Show template details
   create <name>              Create a new user template
+  update <name> [--all]      Update a template from its remote source
+  validate [name] [--all]    Validate a template's structure
   remove <name>              Remove a user template
   publish <name> [remote]    Publish a template to a sharing repo
   install <url>              Install a template from a sharing repo
   export <name>              Export a template as a .tar.gz archive
   import <archive>           Import a template from a .tar.gz archive
   internalize <name>         Disconnect a template from its remote source
+
+List templates with 'cco list template'. Templates mirror packs (create ·
+install · update · publish · export · import · internalize · show · remove ·
+validate). Note: native templates cannot be updated/removed (no recorded source).
 
 Run 'cco template <command> --help' for command-specific options.
 EOF
@@ -59,6 +65,8 @@ EOF
         list)        die "'cco template list' was removed — use 'cco list template' (ADR-0029)." ;;
         show)        cmd_template_show "$@" ;;
         create)      cmd_template_create "$@" ;;
+        update)      cmd_template_update "$@" ;;
+        validate)    cmd_template_validate "$@" ;;
         remove)      cmd_template_remove "$@" ;;
         publish)     cmd_template_publish "$@" ;;
         install)     cmd_template_install "$@" ;;
@@ -525,6 +533,195 @@ YAML
     _meta_record_provenance "$(_cco_template_meta "$target_dir")" "$commit" "$now" "$now"
     _record_tree_as_base "$(_cco_template_base_dir "$target_dir")" "$target_dir"
     ok "Installed $kind template '$name'"
+}
+
+# ── cco template update ───────────────────────────────────────────────
+# The pack-`update` analogue (ADR-0029 D3): re-clone an installed template from
+# its recorded DATA source coordinate, re-install it (overwriting), and bump the
+# STATE installed_commit. Supersedes the "future cco template sync" placeholder.
+
+cmd_template_update() {
+    local name="" force=false update_all=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --all)   update_all=true; shift ;;
+            --force) force=true; shift ;;
+            --help|-h)
+                cat <<'EOF'
+Usage: cco template update <name> [--force]
+       cco template update --all [--force]
+
+Update a template from its recorded remote source (the pack-update analogue).
+
+Options:
+  --all     Update every template that has a remote source
+  --force   Overwrite local modifications
+EOF
+                return 0 ;;
+            -*)  die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$name" ]]; then name="$1"; shift
+                else die "Unexpected argument: $1"; fi ;;
+        esac
+    done
+
+    check_global
+
+    if $update_all; then
+        local updated=0
+        local -a failed=()
+        local d
+        for d in "$TEMPLATES_DIR"/project/*/ "$TEMPLATES_DIR"/pack/*/; do
+            [[ ! -d "$d" ]] && continue
+            local sf; sf=$(_cco_template_source "$d")
+            [[ ! -f "$sf" ]] && continue
+            local u; u=$(yml_get "$sf" "url")
+            [[ "$u" == "local" || -z "$u" ]] && continue
+            local tn; tn=$(basename "$d")
+            info "Updating $tn..."
+            # Isolate errors: run in a subshell so die() does not abort the loop.
+            if ( _update_single_template "$d" "$force" ); then
+                updated=$((updated + 1))
+            else
+                warn "Failed to update '$tn'"
+                failed+=("$tn")
+            fi
+        done
+        if [[ $updated -eq 0 && ${#failed[@]} -eq 0 ]]; then
+            info "No templates with remote sources found"
+        elif [[ $updated -gt 0 && ${#failed[@]} -eq 0 ]]; then
+            ok "Updated $updated template(s)"
+        fi
+        if [[ ${#failed[@]} -gt 0 ]]; then
+            error "Failed to update ${#failed[@]} template(s): ${failed[*]}"
+            return 1
+        fi
+        return 0
+    fi
+
+    [[ -z "$name" ]] && die "Usage: cco template update <name> [--force]"
+    local found dir
+    found=$(_find_template "$name") || die "Template '$name' not found."
+    dir="${found%%$'\t'*}"
+    _update_single_template "$dir" "$force"
+}
+
+# Update one installed template in place from its recorded DATA source. Mirrors
+# _update_single_pack: re-clone the coordinate, re-install (force), refreshing
+# the STATE installed_commit + base. Usage: _update_single_template <dir> [force]
+_update_single_template() {
+    local dir="$1"
+    local force="${2:-false}"
+    local name kind
+    name=$(basename "$dir")
+    kind=$(_template_kind_of "$dir") || die "Template '$name': no project.yml/pack.yml marker."
+
+    local sf; sf=$(_cco_template_source "$dir")
+    [[ ! -f "$sf" ]] && die "Template '$name' has no recorded source — cannot determine remote source"
+
+    local url ref path
+    url=$(yml_get "$sf" "url")
+    ref=$(yml_get "$sf" "ref")
+    path=$(yml_get "$sf" "resource")
+    if [[ "$url" == "local" || -z "$url" ]]; then
+        die "Template '$name' was created locally — no remote source to update from"
+    fi
+
+    local token=""
+    token=$(remote_resolve_token_for_url "$url" 2>/dev/null) || true
+
+    info "Fetching $url${ref:+ (ref: $ref)}..."
+    local tmpdir
+    tmpdir=$(_clone_config_repo "$url" "$ref" "$token")
+
+    local remote_dir="$tmpdir"
+    [[ -n "$path" ]] && remote_dir="$tmpdir/$path"
+    if [[ ! -d "$remote_dir" ]]; then
+        _cleanup_clone "$tmpdir"
+        die "Remote path '${path:-/}' not found in cloned repo"
+    fi
+
+    local commit=""
+    commit=$(git -C "$tmpdir" rev-parse HEAD 2>/dev/null) || true
+
+    # Re-install (force=true: explicit update). This rewrites the DATA source
+    # coordinate and records the new commit in the STATE meta.
+    _install_template_from_dir "$remote_dir" "$name" "$kind" "$url" "$ref" "$path" true "$commit"
+
+    _cleanup_clone "$tmpdir"
+    ok "Updated template '$name'"
+}
+
+# ── cco template validate ─────────────────────────────────────────────
+# The pack-`validate` analogue (ADR-0029 D3): structural validation of a
+# template tree. Validates one named template, or every user template.
+
+cmd_template_validate() {
+    check_global
+    local name="" validate_all=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --all)   validate_all=true; shift ;;
+            --help|-h)
+                cat <<'EOF'
+Usage: cco template validate [name] [--all]
+
+Validate a template's structure (kind marker + expected tree). With no name (or
+--all), validates every user template.
+EOF
+                return 0 ;;
+            -*)  die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$name" ]]; then name="$1"; shift
+                else die "Unexpected argument: $1"; fi ;;
+        esac
+    done
+
+    if [[ -n "$name" && "$validate_all" == false ]]; then
+        local found dir
+        found=$(_find_template "$name") || die "Template '$name' not found."
+        dir="${found%%$'\t'*}"
+        _validate_single_template "$dir"
+        return $?
+    fi
+
+    local has_errors=false found_any=false d
+    for d in "$TEMPLATES_DIR"/project/*/ "$TEMPLATES_DIR"/pack/*/; do
+        [[ ! -d "$d" ]] && continue
+        found_any=true
+        if ! _validate_single_template "$d"; then
+            has_errors=true
+        fi
+    done
+    if [[ "$found_any" == false ]]; then
+        info "No user templates to validate."
+        return 0
+    fi
+    [[ "$has_errors" == true ]] && return 1
+    return 0
+}
+
+# Validate a single template directory's structure. Returns 0 if valid, 1 if a
+# structural error is found (warnings do not fail). Usage:
+# _validate_single_template <template_dir>
+_validate_single_template() {
+    local dir="$1"
+    local name; name=$(basename "$dir")
+
+    local kind
+    if ! kind=$(_template_kind_of "$dir"); then
+        error "Template '$name': no project.yml or pack.yml marker (cannot determine kind)"
+        return 1
+    fi
+
+    # A project template scaffolds a config tree; warn (not fail) if it is absent
+    # so a hand-authored skeleton still validates.
+    if [[ "$kind" == project && ! -d "$dir/.claude" && ! -d "$dir/claude" ]]; then
+        warn "Template '$name' (project): no .claude/ or claude/ config tree to scaffold"
+    fi
+
+    ok "Template '$name' ($kind) is valid"
+    return 0
 }
 
 cmd_template_export() {

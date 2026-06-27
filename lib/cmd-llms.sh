@@ -18,6 +18,9 @@ Commands:
   rename <old> <new>   Rename an installed llms entry
   remove <name>        Remove an installed llms entry
 
+Only llms has 'rename' (entries are auto-named from their URL, so renaming is a
+genuine llms-only need).
+
 Run 'cco llms <command> --help' for command-specific options.
 EOF
         return 0

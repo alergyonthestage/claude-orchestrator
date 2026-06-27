@@ -165,8 +165,8 @@ cmd_tag() {
     case "$action" in
         ""|--help|-h|help)
             cat <<'EOF'
-Usage: cco tag add <name> <tag> [--pack|--project|--template]
-       cco tag rm  <name> <tag> [--pack|--project|--template]
+Usage: cco tag add    <name> <tag> [--pack|--project|--template]
+       cco tag remove <name> <tag> [--pack|--project|--template]   (alias: rm)
 
 Manage the per-user tags of a pack, project, or template. The kind is detected
 automatically (project via the index, pack/template via ~/.cco); pass --pack,
@@ -177,8 +177,8 @@ List by tag with: cco list --tag <tag>
 EOF
             return 0
             ;;
-        add|rm) ;;
-        *) die "Unknown 'cco tag' command: $action. Use 'cco tag add' or 'cco tag rm'." ;;
+        add|rm|remove) ;;
+        *) die "Unknown 'cco tag' command: $action. Use 'cco tag add' or 'cco tag remove'." ;;
     esac
 
     local name="" tag="" forced_kind=""

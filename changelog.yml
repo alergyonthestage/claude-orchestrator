@@ -297,3 +297,20 @@ entries:
       of acting blindly. `cco forget`, `cco config validate --fix` and
       `cco project coords --sync` already followed this contract; `cco clean` and
       `cco config pull` are non-destructive and keep their existing behaviour.
+
+  - id: 18
+    date: "2026-06-27"
+    type: additive
+    title: "Verb symmetry: `cco tag remove`, `cco template update`/`validate`"
+    description: >
+      Resource families gain symmetric verbs (ADR-0029 D3). `cco tag remove` is
+      the canonical removal verb (the old `cco tag rm` keeps working as an alias).
+      `cco template` reaches parity with `cco pack`: `cco template update <name>`
+      (also `--all`) re-clones an installed template from its recorded source —
+      superseding the old "future `cco template sync`" placeholder — and
+      `cco template validate [name]` (also `--all`) checks a template's structure.
+      Templates now mirror packs: create · install · update · publish · export ·
+      import · internalize · show · remove · validate. The remaining family
+      asymmetries are intentional and documented in each family's `--help`: a
+      project has no install/publish/remove (it rides its code-repo remote;
+      deregister with `cco forget`), and only `llms` has `rename`.

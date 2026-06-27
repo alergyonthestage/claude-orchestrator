@@ -130,7 +130,7 @@ Local paths & sync:
 
 Discovery:
   list [<kind>] [--tag]  Unified index of your resources (all, or one <kind>)
-  tag <add|rm>           Tag a pack/project/template (per-user, never team-shared)
+  tag <add|remove>       Tag a pack/project/template (per-user, never team-shared)
 
 Resources:
   project <cmd>          Manage projects (add, validate, coords, show, export, import)
@@ -192,6 +192,8 @@ Commands:
   show <name>            Show project details (repos, packs, config)
 
 List projects with 'cco list project' (or 'cco list' for all resources).
+A project has no install/publish/remove — it rides its code-repo remote;
+deregister cco's machine-local bookkeeping with 'cco forget' (ADR-0018 D2).
 
 Run 'cco project <command> --help' for command-specific options.
 EOF

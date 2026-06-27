@@ -49,6 +49,30 @@ test_tag_remove() {
     fi
 }
 
+test_tag_remove_canonical_verb() {
+    # ADR-0029 D3: `cco tag remove` is the canonical verb; `rm` is an alias.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    _mk_pack "my-api"
+    run_cco tag add my-api work
+    run_cco tag remove my-api work
+    assert_output_contains "removed tag 'work'"
+    run_cco list --tag work
+    if echo "${CCO_OUTPUT:-}" | grep -qF "my-api"; then
+        fail "my-api should no longer carry tag 'work' after 'tag remove'"
+    fi
+}
+
+test_tag_remove_rm_alias_still_works() {
+    # The `rm` short alias keeps working alongside the canonical `remove`.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    _mk_pack "my-api"
+    run_cco tag add my-api work
+    run_cco tag rm my-api work
+    assert_output_contains "removed tag 'work'"
+}
+
 test_tag_idempotent_no_duplicate() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"

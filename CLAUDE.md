@@ -197,7 +197,8 @@ Migration scopes: `global`, `project`, `pack`, `template`. All run automatically
 - New sections/fields in global config (breaking) → create `migrations/global/NNN_description.sh`
 - Improvements to opinionated files → update `defaults/global/`; `cco update` discovers them
 - Native template-specific files (tutorial skills/rules) → discoverable via `.cco/source`
-- User template-specific files → not auto-updated; future `cco template sync`
+- User template-specific files → not auto-updated by `cco update`; refresh a
+  template from its recorded source on demand with `cco template update <name>`
 - Every migration must be **idempotent** (safe to run multiple times) and return 0 on success
 - Migration files define `MIGRATION_ID=N` and `MIGRATION_DESC="..."`, plus a `migrate()` function receiving the target directory
 - IDs must be sequential (check `migrations/{scope}/` for the current max)

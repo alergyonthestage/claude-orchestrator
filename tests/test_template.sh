@@ -504,3 +504,70 @@ test_template_remove_non_tty_without_yes_dies() {
     assert_output_contains "re-run with -y"
     assert_dir_exists "$CCO_TEMPLATES_DIR/project/guarded"
 }
+
+# ── cco template update (ADR-0029 D3) ─────────────────────────────────
+
+test_template_update_provenance_round_trip() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco template create upd --project
+    local bare; bare=$(_tmpl_empty_bare_remote "$tmpdir")
+    run_cco remote add ureg "$bare"
+    run_cco template publish upd ureg
+    run_cco template remove upd -y
+    run_cco template install "$bare" --pick upd
+    assert_file_exists "$CCO_TEMPLATES_DIR/project/upd/project.yml"
+
+    # update re-clones from the recorded DATA source coordinate (provenance).
+    run_cco template update upd
+    assert_output_contains "Updated template 'upd'"
+    assert_file_exists "$CCO_TEMPLATES_DIR/project/upd/project.yml"
+}
+
+test_template_update_local_only_fails() {
+    # A locally-created template has no remote source → update must refuse.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco template create localt --project
+    if run_cco template update localt 2>/dev/null; then
+        fail "update of a local-only template should fail"
+    fi
+    assert_output_contains "no recorded source"
+}
+
+# ── cco template validate (ADR-0029 D3) ───────────────────────────────
+
+test_template_validate_good() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    init_global "$tmpdir" --lang "English"
+    run_cco template create goodt --project
+    run_cco template validate goodt
+    assert_output_contains "is valid"
+}
+
+test_template_validate_malformed_fails() {
+    # A user-template dir with no project.yml/pack.yml marker is a structural error.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    init_global "$tmpdir" --lang "English"
+    mkdir -p "$CCO_TEMPLATES_DIR/project/brokent"
+    : > "$CCO_TEMPLATES_DIR/project/brokent/random.txt"
+    if run_cco template validate brokent 2>/dev/null; then
+        fail "validate should fail for a template with no kind marker"
+    fi
+    assert_output_contains "no project.yml or pack.yml marker"
+}
+
+test_template_validate_all_user_templates() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    init_global "$tmpdir" --lang "English"
+    run_cco template create one --project
+    run_cco template create two --pack
+    run_cco template validate --all
+    assert_output_contains "Template 'one' (project) is valid"
+    assert_output_contains "Template 'two' (pack) is valid"
+}
