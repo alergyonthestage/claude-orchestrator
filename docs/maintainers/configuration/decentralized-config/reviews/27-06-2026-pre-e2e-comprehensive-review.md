@@ -335,8 +335,12 @@ already omitted it).
 
 Completeness sweep caught two extra `config save --dry-run` stragglers (config-mgmt §3/§11) — fixed.
 The cli.md redirect-documentation lines (`the per-noun verb was removed → use cco list <kind>`) are
-correct and intentionally kept. Pure doc/coherence + one CLI string: no changelog, no migration, no
-ADR. Suite **945/0**.
+correct and intentionally kept. **Post-resolution follow-up (C6 in cli.md):** the D3 lens had only
+flagged `CLAUDE.md`; a sweep found `cli.md` §3.4b still listed `-y, --yes, --force` for `cco forget`
+and the §3.11 confirm-contract text implied `--force` on `template remove`/`remote remove`. Fixed:
+forget help drops `--force`; the contract now scopes `--force` to the in-use **override** (only
+`pack`/`llms remove`). Pure doc/coherence + one CLI string: no changelog, no migration, no ADR.
+Suite **945/0**.
 
 ### Cluster 5 — Code cleanup nits — ✅ DONE (2026-06-27)
 

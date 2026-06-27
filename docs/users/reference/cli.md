@@ -339,7 +339,7 @@ Arguments:
   project              Name of the project to deregister
 
 Options:
-  -y, --yes, --force   Skip the confirmation prompt
+  -y, --yes            Skip the confirmation prompt
 
 Examples:
   cco forget old-service
@@ -625,7 +625,7 @@ Examples:
    - If used by projects: warn, and require --force to remove anyway
 
 4. CONFIRM (ADR-0029 D2)
-   - Interactive [y/N] (default No); -y/--yes (or --force) skips
+   - Interactive [y/N] (default No); -y/--yes skips (--force, the in-use override, implies -y)
    - Non-interactive without -y → die ("re-run with -y"); never a silent rm
 
 5. REMOVE
@@ -633,8 +633,13 @@ Examples:
    - "Pack '<name>' removed"
 ```
 
-The same contract governs `cco llms remove`, `cco template remove` and
-`cco remote remove`; `cco forget` was already its reference model.
+The same confirm contract (preview → `[y/N]` → `-y/--yes` to skip → die when
+non-interactive without `-y`) governs `cco llms remove`, `cco template remove`,
+`cco remote remove`, and `cco forget` (its reference model). `--force` is the
+**in-use override** (step 3) and exists only where a removal can actually be
+blocked — `cco pack remove` and `cco llms remove`; `cco forget`,
+`cco template remove` and `cco remote remove` have no such block and accept only
+`-y/--yes` (ADR-0029 D2).
 
 ---
 
