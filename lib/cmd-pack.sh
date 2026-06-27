@@ -219,19 +219,14 @@ EOF
     # Used by projects — enumerate via the STATE index ($PROJECTS_DIR is gone, P5).
     echo -e "${BOLD}Used by projects:${NC}"
     local found_any=false
-    local proj_name unit_dir proj_yml proj_packs
-    while IFS='=' read -r proj_name _; do
-        [[ -z "$proj_name" ]] && continue
-        [[ "$proj_name" == "_template" ]] && continue
-        unit_dir=$(_resolve_unit_dir_for_project "$proj_name" 2>/dev/null) || continue
-        proj_yml="$unit_dir/.cco/project.yml"
-        [[ -f "$proj_yml" ]] || continue
+    local proj_name proj_yml proj_packs
+    while IFS=$'\t' read -r proj_name _ proj_yml; do
         proj_packs=$(yml_get_packs "$proj_yml")
         if echo "$proj_packs" | grep -qxF "$name"; then
             echo "  - $proj_name"
             found_any=true
         fi
-    done < <(_index_list_projects)
+    done < <(_project_foreach)
     if [[ "$found_any" == false ]]; then
         echo "  (none)"
     fi
@@ -273,18 +268,13 @@ EOF
 
     # Check if used by any projects — enumerate via the STATE index (P5).
     local used_by=()
-    local proj_name unit_dir proj_yml proj_packs
-    while IFS='=' read -r proj_name _; do
-        [[ -z "$proj_name" ]] && continue
-        [[ "$proj_name" == "_template" ]] && continue
-        unit_dir=$(_resolve_unit_dir_for_project "$proj_name" 2>/dev/null) || continue
-        proj_yml="$unit_dir/.cco/project.yml"
-        [[ -f "$proj_yml" ]] || continue
+    local proj_name proj_yml proj_packs
+    while IFS=$'\t' read -r proj_name _ proj_yml; do
         proj_packs=$(yml_get_packs "$proj_yml")
         if echo "$proj_packs" | grep -qxF "$name"; then
             used_by+=("$proj_name")
         fi
-    done < <(_index_list_projects)
+    done < <(_project_foreach)
 
     if [[ ${#used_by[@]} -gt 0 ]]; then
         warn "Pack '$name' is used by: ${used_by[*]}"

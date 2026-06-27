@@ -42,17 +42,13 @@ _coords_scan_section() {
 # projects. A url-less entry (authored pack, local-only repo/mount) carries no
 # coordinate and is skipped — it cannot diverge.
 _coords_scan() {
-    local unit dir yml
-    while IFS='=' read -r unit _; do
-        [[ -z "$unit" ]] && continue
-        dir=$(_resolve_unit_dir_for_project "$unit" 2>/dev/null) || continue
-        yml="$dir/.cco/project.yml"
-        [[ -f "$yml" ]] || continue
+    local unit yml
+    while IFS=$'\t' read -r unit _ yml; do
         _coords_scan_section "$unit" "$yml" repos        yml_get_repo_coords  2
         _coords_scan_section "$unit" "$yml" extra_mounts yml_get_mount_coords 2
         _coords_scan_section "$unit" "$yml" llms         yml_get_llms         4
         _coords_scan_section "$unit" "$yml" packs        yml_get_pack_coords  2
-    done < <(_index_list_projects)
+    done < <(_project_foreach)
 }
 
 # Names that carry >1 distinct url across units (one per line).

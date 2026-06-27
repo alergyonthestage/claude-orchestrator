@@ -548,16 +548,12 @@ EOF
         done
     fi
     # Projects: decentralized, enumerated via the STATE index (P5).
-    local proj unit_dir pyml
-    while IFS='=' read -r proj _; do
-        [[ -z "$proj" ]] && continue
-        unit_dir=$(_resolve_unit_dir_for_project "$proj" 2>/dev/null) || continue
-        pyml="$unit_dir/.cco/project.yml"
-        [[ -f "$pyml" ]] || continue
+    local pyml
+    while IFS=$'\t' read -r _ _ pyml; do
         if _llms_rename_in_yaml "$pyml" "$old_name" "$new_name"; then
             ((updated_refs++))
         fi
-    done < <(_index_list_projects)
+    done < <(_project_foreach)
 
     ok "Renamed llms '$old_name' → '$new_name'"
     [[ $updated_refs -gt 0 ]] && ok "Updated $updated_refs YAML reference(s)"
@@ -744,18 +740,14 @@ _llms_find_users() {
     fi
 
     # Check projects — enumerate via the STATE index (P5).
-    local proj unit_dir
-    while IFS='=' read -r proj _; do
-        [[ -z "$proj" ]] && continue
-        unit_dir=$(_resolve_unit_dir_for_project "$proj" 2>/dev/null) || continue
-        local pyml="$unit_dir/.cco/project.yml"
-        [[ ! -f "$pyml" ]] && continue
+    local proj pyml
+    while IFS=$'\t' read -r proj _ pyml; do
         local names
         names=$(yml_get_llms_names "$pyml" 2>/dev/null)
         if echo "$names" | grep -qxF "$name"; then
             users+=("$proj (project)")
         fi
-    done < <(_index_list_projects)
+    done < <(_project_foreach)
 
     if [[ ${#users[@]} -gt 0 ]]; then
         local IFS=", "

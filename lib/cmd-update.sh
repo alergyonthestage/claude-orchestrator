@@ -222,17 +222,14 @@ EOF
         # store is gone — L9).
 
         local pname unit_dir project_dir project_errors=0
-        while IFS='=' read -r pname _; do
-            [[ -z "$pname" ]] && continue
-            unit_dir=$(_resolve_unit_dir_for_project "$pname" 2>/dev/null) || continue
+        while IFS=$'\t' read -r pname unit_dir _; do
             project_dir="$unit_dir/.cco"
-            [[ -f "$project_dir/project.yml" ]] || continue
             info "$verb project '$pname'..."
             if ! _update_project "$project_dir" "$cmd_mode" "$dry_run" "$no_backup" "$auto_action" "$offline_mode" "$cache_mode" "$local_override" "$diff_mode"; then
                 warn "Project '$pname' update encountered errors."
                 project_errors=$(( project_errors + 1 ))
             fi
-        done < <(_index_list_projects)
+        done < <(_project_foreach)
         if [[ $project_errors -gt 0 ]]; then
             warn "$project_errors project(s) had update errors. Run 'cco update' again after resolving."
             project_failed=true

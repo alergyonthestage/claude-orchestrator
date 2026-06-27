@@ -76,6 +76,26 @@ _resolve_unit_dir_for_project() {
     return 1
 }
 
+# Iterate the indexed projects, emitting one TAB line "<proj>\t<unit_dir>\t<yml>"
+# for each whose host repo RESOLVES on this machine and has a project.yml. The
+# reserved "_template" pseudo-entry and any unresolved / manifest-less project are
+# skipped silently. This centralizes the common "do X for every resolvable
+# project" loop. Callers that must instead act on UNresolved projects (warn,
+# show a placeholder, or read only the index membership) iterate
+# _index_list_projects directly — they are deliberately not collapsed here.
+# Usage: while IFS=$'\t' read -r proj unit_dir yml; do …; done < <(_project_foreach)
+_project_foreach() {
+    local proj unit_dir yml
+    while IFS='=' read -r proj _; do
+        [[ -z "$proj" ]] && continue
+        [[ "$proj" == "_template" ]] && continue
+        unit_dir=$(_resolve_unit_dir_for_project "$proj" 2>/dev/null) || continue
+        yml="$unit_dir/.cco/project.yml"
+        [[ -f "$yml" ]] || continue
+        printf '%s\t%s\t%s\n' "$proj" "$unit_dir" "$yml"
+    done < <(_index_list_projects)
+}
+
 # Resolve every unresolved repo/mount of one project unit into the index,
 # recording the project's repo membership. Reuses _resolve_entry_index (the
 # index-materialization primitive: lookup -> prompt/clone -> store). Non-TTY
