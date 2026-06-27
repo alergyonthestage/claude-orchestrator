@@ -253,8 +253,9 @@ test_paths_resolver_guard_blocks_in_container() {
     source "$REPO_ROOT/lib/paths.sh"
 
     local out rc=0
-    # Force the container condition deterministically (valid on host too).
-    out=$( export HOME=/home/claude; unset CCO_ALLOW_HOST_RESOLVE; _cco_data_dir 2>&1 ) || rc=$?
+    # Force the container condition deterministically via the explicit marker
+    # (valid on host too, where /.dockerenv is absent).
+    out=$( export CCO_IN_CONTAINER=1; unset CCO_ALLOW_HOST_RESOLVE; _cco_data_dir 2>&1 ) || rc=$?
     [[ $rc -ne 0 ]] || fail "Expected anti-in-container guard to abort, got rc=0 (out: $out)"
     [[ "$out" == *"anti-in-container"* ]] || fail "Expected guard message, got: $out"
 }
@@ -267,7 +268,7 @@ test_paths_resolver_guard_hatch_allows() {
     source "$REPO_ROOT/lib/paths.sh"
 
     local val
-    val=$( export HOME=/home/claude CCO_ALLOW_HOST_RESOLVE=1 CCO_DATA_HOME="$tmp/d"; _cco_data_dir )
+    val=$( export CCO_IN_CONTAINER=1 CCO_ALLOW_HOST_RESOLVE=1 CCO_DATA_HOME="$tmp/d"; _cco_data_dir )
     [[ "$val" == "$tmp/d" ]] || fail "Expected hatch to bypass guard, got: $val"
 }
 

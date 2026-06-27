@@ -236,13 +236,15 @@ _cco_pack_install_tmp() {
 # override that is unset, empty, or non-absolute is treated as absent.
 
 # True (0) when running inside a session container — see the guard below.
-# NOTE (L6): the HOME heuristic false-positives for a real HOST user named `claude`
-# (HOME=/home/claude) — all resolvers would then refuse. The documented escape hatch
-# is CCO_ALLOW_HOST_RESOLVE=1 (used by the guard and the test suite). The /.dockerenv
-# check is the reliable container signal; the HOME check is a fallback for stripped
-# container images that lack it.
+# cco is Docker-native (it drives `docker compose`), so /.dockerenv — injected by
+# the Docker daemon into every container regardless of image — is the authoritative
+# signal. CCO_IN_CONTAINER is an explicit override for deterministic tests/dev (and a
+# forward seam: a future non-Docker runtime could export it from its entrypoint).
+# The old HOME=/home/claude heuristic was DROPPED (L6): it false-positived for a real
+# HOST user named `claude`, and its "stripped image" rationale was wrong — /.dockerenv
+# is daemon-injected, not part of the image, so it cannot be stripped.
 _cco_in_container() {
-    [[ "${HOME:-}" == "/home/claude" ]] && return 0
+    [[ "${CCO_IN_CONTAINER:-}" == "1" ]] && return 0
     [[ -f /.dockerenv ]] && return 0
     return 1
 }
