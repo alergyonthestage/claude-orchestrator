@@ -18,8 +18,10 @@ config flattened to `~/.cco/.claude/`, ADR-0028); machine-local state/cache/data
 hidden XDG buckets. The work is now in the **pre-merge review cycle**: the implementation
 review, the documentation review (reorg + coherence sweep), the pre-merge **flatten**
 (`~/.cco/global/.claude` → `~/.cco/.claude`, ADR-0028), the **refactoring/optimization
-review** (step 3), and the **UX-UI review** (step 4, ADR-0029) are all done. **Next:
-dogfooding e2e on the Mac (step 5)**, then the v1 merge/release.
+review** (step 3), and the **UX-UI review** (step 4, ADR-0029) are all done. **Next: a
+comprehensive pre-e2e review (step 5)** — a final whole-system gate over v1 (bug-free,
+design adherence, user-guide/CLI coherence, migration completeness) — then dogfooding e2e
+on the Mac (step 6) and the v1 merge/release.
 
 ## Decentralized-config v1 — phase index
 
@@ -46,8 +48,9 @@ flowchart LR
   B --> X["Pre-merge flatten<br/>✅ done (914/0)"]
   X --> C["3. Refactoring /<br/>optimization review<br/>✅ done (921/0)"]
   C --> D["4. UX-UI review<br/>✅ done (943/0)"]
-  D --> E["5. Dogfooding<br/>e2e (Mac)<br/>▶ next"]
-  E --> F["6. Merge /<br/>release v1"]
+  D --> R["5. Comprehensive<br/>pre-e2e review<br/>▶ next"]
+  R --> E["6. Dogfooding<br/>e2e (Mac)"]
+  E --> F["7. Merge /<br/>release v1"]
 ```
 
 1. **Implementation review** — ✅ done (2026-06-25 adherence review + 2026-06-26 deep
@@ -74,7 +77,7 @@ flowchart LR
    `/.dockerenv` signal + an explicit `CCO_IN_CONTAINER` test/dev seam — cco is Docker-only,
    so no entrypoint/image change was needed. The **global build-extension reader bug**
    (`cco build` read setup scripts from `~/.cco/global`, now `~/.cco` top level) was fixed
-   2026-06-26 (`a92effc`); **re-validate in dogfooding** (step 5).
+   2026-06-26 (`a92effc`); **re-validate in dogfooding** (step 6).
 4. **UX-UI review** — ✅ **done (2026-06-27).** Record:
    [`reviews/27-06-2026-ux-ui-review.md`](configuration/decentralized-config/reviews/27-06-2026-ux-ui-review.md);
    design in **[ADR-0029](configuration/decentralized-config/decisions/0029-ux-ui-review-unified-list-confirm-symmetry.md)**
@@ -85,9 +88,21 @@ flowchart LR
    `cco template update`/`validate` (D3); `cco path` demoted out of `cco help` (D4); the help
    sweep + `-h` alias + `cco forget` L8 recovery hint (D5). Shipped-behavior docs re-synced
    (`cli.md`, repo `CLAUDE.md`, design §7).
-5. **Dogfooding e2e on Mac** — ▶ **next** — `configuration/decentralized-config/P2-dogfooding-validation.md`
+5. **Comprehensive pre-e2e review** — ▶ **next** — a final whole-system gate over
+   decentralized-config v1 before dogfooding, in its own clean session. Four dimensions:
+   (a) **bug-free** — no latent issues/regressions across `bin/cco` + `lib/` + `migrations/`;
+   (b) **design adherence** — code matches the ADRs/principles; for every mismatch decide
+   *stale doc* vs *deviation from ADR* and route the fix accordingly;
+   (c) **user-guide & CLI-reference coherence** — `docs/users/` (guides + `reference/cli.md`)
+   reflect exactly what ships and the decentralized model;
+   (d) **migration completeness** — the update path works for **new users pulling from `main`**
+   (eager global migration via `cco update`, the `migrations/{global,project,pack,template}/`
+   chain incl. the 015 flatten, changelog) **and** for the **maintainer-dev testing the feature
+   branch** (legacy-vault backup + `cco init --migrate`), with idempotency + no data loss.
+   Launcher: [`configuration/decentralized-config/pre-e2e-comprehensive-review-handoff.md`](configuration/decentralized-config/pre-e2e-comprehensive-review-handoff.md).
+6. **Dogfooding e2e on Mac** — `configuration/decentralized-config/P2-dogfooding-validation.md`
    (sandboxed roots + HOME-flip; legacy-vault removal accepted only after merge + validation).
-6. **Merge / release v1** — merge `feat/vault/decentralized-config`, reconcile both roadmaps,
+7. **Merge / release v1** — merge `feat/vault/decentralized-config`, reconcile both roadmaps,
    mark ADRs.
 
 ### Pre-merge: flatten `~/.cco/global/.claude/` → `~/.cco/.claude/` ✅ DONE (2026-06-27)
