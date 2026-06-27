@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # lib/utils.sh — General utility functions
 #
-# Provides: expand_path(), _path_exists(), check_docker(), check_image(),
-#           check_global(), _check_reserved_project_name(), _sed_i(),
-#           _sed_i_or_append(), _substitute()
+# Provides: expand_path(), _path_exists(), _peel_tab(), check_docker(),
+#           check_image(), check_global(), _check_reserved_project_name(),
+#           _sed_i(), _sed_i_or_append(), _substitute()
 # Dependencies: colors.sh
 # Globals: IMAGE_NAME
 
@@ -52,6 +52,30 @@ _parse_user_mount_spec() {
     [[ -z "$target" ]] && target="/workspace/$(basename "$src")"
     local ro="true"; [[ "$mode" == "rw" ]] && ro="false"
     printf '%s\t%s\t%s\n' "$src" "$target" "$ro"
+}
+
+# Split a TAB-separated record into the named variables, one field each.
+# This centralizes the "peel by hand" idiom repeated across the coordinate
+# readers (resolve / project-validate / project-coords): it MUST be a manual
+# peel, never `IFS=$'\t' read`, because tab is whitespace to `read`, which
+# collapses adjacent delimiters and so silently drops empty MIDDLE fields —
+# exactly the fields the coordinate emitters (yaml.sh *_coords) can produce
+# (e.g. a repo with a name but no url → "name\t\tref"). Here each named var
+# receives exactly one field, empty fields are preserved, trailing fields
+# beyond the last named var are ignored, and missing fields yield empty vars.
+# Usage: _peel_tab <record> <var1> [<var2> ...]
+_peel_tab() {
+    local _rec="$1"; shift
+    local _name
+    for _name in "$@"; do
+        if [[ "$_rec" == *$'\t'* ]]; then
+            printf -v "$_name" '%s' "${_rec%%$'\t'*}"
+            _rec="${_rec#*$'\t'}"
+        else
+            printf -v "$_name" '%s' "$_rec"
+            _rec=""
+        fi
+    done
 }
 
 # Check Docker is running
