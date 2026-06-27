@@ -70,7 +70,9 @@ _setup_internal_config_editor() {
     # user-facing index pollutes it permanently and clobbers any user binding of the
     # same name (review H4). Publish them instead via the in-process session override
     # (_mount_override_get), which _effective_extra_mounts consults before the index.
-    # The generated project.yml stays index-driven; no host path is committed (AD3/G8).
+    # The generated project.yml only references these names; they resolve via the
+    # session override at start (never the persistent index), so no host path is
+    # committed (AD3/G8).
     _CCO_MOUNT_OVERRIDE=$(printf 'cco-config\t%s\ncco-docs\t%s' "$cfg" "$REPO_ROOT/docs")
     [[ -n "$target_cco" ]] && _CCO_MOUNT_OVERRIDE+=$(printf '\n%s-config\t%s' "$target_name" "$target_cco")
     {

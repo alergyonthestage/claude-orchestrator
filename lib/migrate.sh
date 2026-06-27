@@ -334,12 +334,16 @@ _cco_confirm_overwrite_global() {
     ts=$(date -u +%Y%m%d-%H%M%S)
     archive="$backups/cco-config-$ts.tar.gz"
     tmp="$backups/.cco-config-$ts.tar.gz.tmp"
-    if tar -czf "$tmp" -C "$cfg" . 2>/dev/null && tar -tzf "$tmp" >/dev/null 2>&1; then
-        chmod 0600 "$tmp" 2>/dev/null || true
+    local tar_err; tar_err=$(mktemp)
+    if tar -czf "$tmp" -C "$cfg" . 2>"$tar_err" && tar -tzf "$tmp" >/dev/null 2>&1; then
+        # The backups dir is 0700 (umask 077), so a chmod failure is not a leak;
+        # surface it rather than swallow it (L4).
+        chmod 0600 "$tmp" 2>/dev/null || warn "Could not set 0600 on backup '$tmp' (kept; backups dir is 0700)."
         mv -f "$tmp" "$archive"
+        rm -f "$tar_err"
     else
-        rm -f "$tmp"
-        warn "Could not back up the current ~/.cco — aborting the global migration to stay safe."
+        local cause; cause=$(tr '\n' ' ' < "$tar_err" 2>/dev/null); rm -f "$tmp" "$tar_err"
+        warn "Could not back up the current ~/.cco — aborting the global migration to stay safe.${cause:+ Cause: $cause}"
         return 1
     fi
     warn "~/.cco/.claude already exists (populated by 'cco init' or a previous run)."
