@@ -287,7 +287,7 @@ sees the config you put there.
 | Scope | Host source | Container path | Reach |
 |---|---|---|---|
 | **Managed** | `defaults/managed/` (baked in image) | `/etc/claude-code/` | Non-overridable framework policy; own path, highest priority |
-| **Global user** | `~/.cco/global/.claude/` | `~/.claude` | All of my projects on this machine |
+| **Global user** | `~/.cco/.claude/` | `~/.claude` | All of my projects on this machine |
 | **Project / cross-repo** | the host repo's `<repo>/.cco/claude/` | `/workspace/.claude` | This project, across all its repos (no cross-project leak) |
 | **Repo-native** | `<repo>/.claude/` | `/workspace/<repo>/.claude` | Cross-cutting: every project that mounts this repo, **and** native (non-cco) Claude use |
 
@@ -306,7 +306,7 @@ Two consequences:
 |---|---|
 | cross-cutting whenever this repo is mounted (+ native Claude) | `<repo>/.claude/` (repo-native) |
 | this project, across all its repos | the host repo's `<repo>/.cco/claude/` (project scope) |
-| all of my projects on this machine | `~/.cco/global/.claude/` |
+| all of my projects on this machine | `~/.cco/.claude/` |
 | non-overridable framework policy | `defaults/managed/` (managed) |
 
 ---
@@ -412,7 +412,7 @@ After `cco init`:
 
 - [ ] Verify `.cco/project.yml`: repos, ports, environment variables
 - [ ] Customize `.cco/claude/CLAUDE.md` (or use `/init-workspace` on the first session)
-- [ ] **Define your git branching model** in `~/.cco/global/.claude/rules/git-practices.md` — specify which branches exist, what work is allowed on each, and the merge flow direction. See [Configuring Rules — Git Practices](configuring-rules.md#3-git-practices) for guidance and examples
+- [ ] **Define your git branching model** in `~/.cco/.claude/rules/git-practices.md` — specify which branches exist, what work is allowed on each, and the merge flow direction. See [Configuring Rules — Git Practices](configuring-rules.md#3-git-practices) for guidance and examples
 - [ ] Add custom settings in `.cco/claude/settings.json` if needed
 - [ ] Configure `packs:` in `.cco/project.yml` if you have cross-project knowledge or shared skills to include
 - [ ] (Packs no longer require any CLAUDE.md edit — they're injected automatically)

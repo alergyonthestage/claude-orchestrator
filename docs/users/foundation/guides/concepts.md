@@ -92,7 +92,7 @@ same environment: same repos mounted, same instructions, same rules and agents.
 
 **What stays local (user preferences):**
 - Claude authentication (OAuth or API key)
-- `~/.cco/global/.claude/settings.json` — user-level preferences
+- `~/.cco/.claude/settings.json` — user-level preferences
 
 This makes claude-orchestrator useful not just as a personal productivity tool, but as a team-wide standard for how Claude interacts with your codebase.
 
@@ -119,7 +119,7 @@ claude-orchestrator supports two display modes:
 - **tmux** (default) — each teammate appears as a tmux pane inside the container. Works with any terminal, no host configuration needed.
 - **iTerm2** (`--teammate-mode auto`) — uses native iTerm2 panes on macOS. Better UX but requires additional setup (Python API enabled, `it2` CLI on host).
 
-The mode is configured in `~/.cco/global/.claude/settings.json` (`"teammateMode": "tmux"`) or via CLI flag (`--teammate-mode`).
+The mode is configured in `~/.cco/.claude/settings.json` (`"teammateMode": "tmux"`) or via CLI flag (`--teammate-mode`).
 
 Learn more: [agent-teams.md](../../integration/guides/agent-teams.md).
 

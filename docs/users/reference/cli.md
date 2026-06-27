@@ -51,17 +51,17 @@ Options:
   --sync               Propagate the new member's project.yml repos[] edit / config
                        to the project's other config-bearing repos
   --lang <language>    Set communication language for Claude (default: English),
-                       used when seeding ~/.cco/global on a fresh machine
+                       used when seeding ~/.cco on a fresh machine
 
 Examples:
   cco init                          # Scaffold <repo>/.cco/ in the current repo
-  cco init --lang Italian           # Seed ~/.cco/global with Italian communication
+  cco init --lang Italian           # Seed ~/.cco with Italian communication
   cco init --migrate my-saas        # Hydrate this repo from the legacy backup
 ```
 
 **What `cco init` does**
 
-1. **Ensure the global config** — seed `~/.cco/global/` from the framework defaults
+1. **Ensure the global config** — seed `~/.cco/` from the framework defaults
    **only if absent** (no `manifest.yml` is created). Global content for a fresh user
    lives in `~/.cco/`. This step is idempotent — an existing `~/.cco/` is left untouched.
 2. **Scaffold `<repo>/.cco/`** — write a clean `project.yml` (logical names + coordinates),
@@ -87,7 +87,7 @@ global seed substitutes:
 
 When `--lang` is provided, `{{COMM_LANG}}` is set to that language. `{{DOCS_LANG}}` and
 `{{CODE_LANG}}` always default to `English` (code is universal). To customize further, edit
-`~/.cco/global/.claude/rules/language.md` directly.
+`~/.cco/.claude/rules/language.md` directly.
 
 **First-run bootstrap (J0)**: on a fresh machine, **any** `cco` command (including `cco init`,
 `cco start`, `cco new`) first creates the four config roots when missing — `~/.cco/`
@@ -900,12 +900,12 @@ run on all scopes — they are not filtered by `--sync`/`--diff` scope.
 ```
 0. FIRST-RUN VAULT MIGRATION (eager, global scope)
    - The first run on a machine backs up any legacy vault (into STATE), non-destructive
-   - `cco update` then populates ~/.cco from the backup (global/.claude, packs/, templates/,
+   - `cco update` then populates ~/.cco from the backup (.claude, packs/, templates/,
      setup scripts, languages, secrets.env) and decomposes the global metadata into STATE
    - Vault removal is offered only here, default keep (manual fs-delete instructions printed)
 
 1. RUN MIGRATIONS (always global + all projects)
-   - Global: migrations/global/ → ~/.cco/global/
+   - Global: migrations/global/ → ~/.cco/
    - Pack: migrations/pack/ → each ~/.cco/packs/*/ (meta in STATE)
    - Template: migrations/template/ → each ~/.cco/templates/*/ (meta in STATE)
    - Project: migrations/project/ → all projects (per-repo <repo>/.cco/, meta in STATE)
@@ -1058,7 +1058,7 @@ Examples:
 
 ### 3.21 `cco config` (personal `~/.cco` store)
 
-Version and multi-PC-sync your **personal** global store (`~/.cco/` — `global/.claude/`,
+Version and multi-PC-sync your **personal** global store (`~/.cco/` — `.claude/`,
 `packs/`, `templates/`). `~/.cco` is **always** a git-init'd working tree; only the remote is
 opt-in. This replaces the removed `cco vault` surface. (Project config in `<repo>/.cco/` rides
 each repo's **own** git remote with your normal git flow — `cco config` does not touch it.)
@@ -1067,7 +1067,7 @@ each repo's **own** git remote with your normal git flow — `cco config` does n
 
 Stage and commit the `~/.cco` store with an allowlist + secret scan. Versioning is **explicit
 and manual** (no auto-commit). The allowlist commits only `packs/`, `templates/`,
-`global/.claude/` and the global `setup*.sh` / `mcp-packages.txt` / `languages` (never
+`.claude/` and the global `setup*.sh` / `mcp-packages.txt` / `languages` (never
 `git add -A`); the 2-pass secret scan refuses real secrets and exempts `*.example`.
 
 ```
@@ -1655,12 +1655,12 @@ services:
       - /home/me/.local/state/cco/claude.json:/home/claude/.claude.json
       # Auth: OAuth credentials (seeded from macOS Keychain, auto-refreshed by Claude)
       - /home/me/.local/state/cco/.credentials.json:/home/claude/.claude/.credentials.json
-      # Global config (~/.cco/global)
-      - /home/me/.cco/global/.claude/settings.json:/home/claude/.claude/settings.json:ro
-      - /home/me/.cco/global/.claude/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
-      - /home/me/.cco/global/.claude/rules:/home/claude/.claude/rules:ro
-      - /home/me/.cco/global/.claude/agents:/home/claude/.claude/agents:ro
-      - /home/me/.cco/global/.claude/skills:/home/claude/.claude/skills:ro
+      # Global config (~/.cco)
+      - /home/me/.cco/.claude/settings.json:/home/claude/.claude/settings.json:ro
+      - /home/me/.cco/.claude/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
+      - /home/me/.cco/.claude/rules:/home/claude/.claude/rules:ro
+      - /home/me/.cco/.claude/agents:/home/claude/.claude/agents:ro
+      - /home/me/.cco/.claude/skills:/home/claude/.claude/skills:ro
       # Project config (the invoking repo's <repo>/.cco/claude/) + generated overlays (CACHE, :ro)
       - /home/me/dev/backend/.cco/claude:/workspace/.claude
       - /home/me/.cache/cco/projects/projectA/.claude/packs.md:/workspace/.claude/packs.md:ro
@@ -1669,7 +1669,7 @@ services:
       # Memory (STATE; machine-local, no sync in v1; separate from transcripts)
       - /home/me/.local/state/cco/projects/projectA/session/memory:/home/claude/.claude/projects/-workspace/memory
       # Global MCP servers (optional, merged into ~/.claude.json by entrypoint)
-      # - /home/me/.cco/global/.claude/mcp.json:/home/claude/.claude/mcp-global.json:ro
+      # - /home/me/.cco/.claude/mcp.json:/home/claude/.claude/mcp-global.json:ro
       # Project MCP servers (optional, Claude Code expands ${VAR} natively)
       # - /home/me/dev/backend/.cco/mcp.json:/workspace/.mcp.json:ro
       # Project setup script (optional, executed by entrypoint at runtime)
@@ -1786,7 +1786,7 @@ The `${VAR}` placeholders are expanded **natively by Claude Code** inside the co
 
 **Important**: If a `${VAR}` reference in `mcp.json` cannot be resolved (env var not set), Claude Code will fail to parse the entire file and show "No MCP servers configured".
 
-### 8.2 Global MCP (`~/.cco/global/.claude/mcp.json`)
+### 8.2 Global MCP (`~/.cco/.claude/mcp.json`)
 
 MCP servers defined here are available in all projects. The entrypoint merges global and project MCP servers into `~/.claude.json` at container startup using `jq`. This ensures MCP servers are available via the user-scope mechanism (most reliable).
 

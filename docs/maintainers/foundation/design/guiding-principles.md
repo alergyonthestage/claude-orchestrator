@@ -41,7 +41,7 @@ it → internal.*
 | Bucket | Holds | Visibility |
 |---|---|---|
 | **`<repo>/.cco/`** | project config, machine-agnostic, authored (`project.yml`, `claude/`, `secrets.env` gitignored) | user-facing, in the code repo |
-| **`~/.cco/`** | global resources the user **curates/authors** (`packs/`, `templates/`, `global/.claude/`, `tags.yml`) | user-facing personal store |
+| **`~/.cco/`** | global resources the user **curates/authors** (`packs/`, `templates/`, `.claude/`, `tags.yml`) | user-facing personal store |
 | **DATA** (`$XDG_DATA_HOME/cco` → `~/.local/share/cco`) | **internal-but-synced, never-team** — cco-managed (CLI-updated, hidden, **not** IDE-edited), worth **private multi-PC** sync (Axis-1), **never** team: `tags.yml` (ADR-0011), de-tokenized remotes registry, install-provenance `source` (ADR-0013/0015) | **hidden** (internal) — *the 4th bucket, **RESOLVED** by the Cat-4 synthesis (ADR-0015)* |
 | **STATE** (`$XDG_STATE_HOME/cco` → `~/.local/state/cco`) | machine-local persistent **state**, **non-portable** (index, generated compose, transcripts, memory, meta, base, hashes, tokens, seeds, sync-meta) | **hidden** (internal) |
 | **CACHE** (`$XDG_CACHE_HOME/cco` → `~/.cache/cco`) | regenerable / re-fetchable / transient (generated overlays, Config-Repo clones, llms content, `.bak`) | **hidden** (internal) |

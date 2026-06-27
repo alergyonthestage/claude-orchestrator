@@ -475,7 +475,7 @@ No migration needed.
 Migration ID: next sequential in migrations/global/
 Scope: global
 Action:
-  1. If ~/.cco/global/.claude/rules/diagrams.md exists:
+  1. If ~/.cco/.claude/rules/diagrams.md exists:
      a. Rename to documentation.md
      b. Update .cco/base/ entry (rename diagrams.md → documentation.md)
   2. If diagrams.md doesn't exist, no-op

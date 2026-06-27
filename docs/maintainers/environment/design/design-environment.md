@@ -63,8 +63,9 @@ RUN if [ -n "$SETUP_BUILD_SCRIPT_CONTENT" ]; then \
 a build arg (it also accepts a pre-migration `setup.sh` for backward compat,
 with a warning):
 ```bash
-if [[ -f "$GLOBAL_DIR/setup-build.sh" ]]; then
-    setup_build_file="$GLOBAL_DIR/setup-build.sh"
+cfg_dir="$(_cco_config_dir)"   # ~/.cco
+if [[ -f "$cfg_dir/setup-build.sh" ]]; then
+    setup_build_file="$cfg_dir/setup-build.sh"
 fi
 if [[ -n "$setup_build_file" ]]; then
     setup_content=$(cat "$setup_build_file")
@@ -106,20 +107,14 @@ fi
 **Defaults**: `defaults/global/setup.sh` and `defaults/global/setup-build.sh`
 are empty templates with header comments, seeded into `~/.cco/` by `cco init`.
 
-> **Maintainer note (verify):** there is a host-path mismatch between where the
-> global scripts are *seeded* and where the build *reads* them.
-> `cco init` copies `setup.sh`, `setup-build.sh`, and `mcp-packages.txt` into
-> the personal store at the **top level** `~/.cco/` (`lib/cmd-init.sh:169-173`,
-> `cfg="$(_cco_config_dir)"` = `~/.cco`). The **runtime** path is consistent:
-> `cco start` mounts the global `setup.sh` from `~/.cco/setup.sh`
-> (`config_dir`, `lib/cmd-start.sh:676`). But the **build-time** path is not:
-> `cco build` reads `setup-build.sh` (and the global `mcp-packages.txt`) from
-> `$GLOBAL_DIR`, which defaults to `~/.cco/global/` (`bin/cco:49`;
-> `lib/cmd-build.sh:35,56`). As shipped, a `setup-build.sh` seeded by
-> `cco init` lands at `~/.cco/setup-build.sh` and is **not** found by
-> `cco build` (which looks under `~/.cco/global/`), so the global build-time
-> customization is effectively inert unless the user moves the file manually.
-> Reconcile init and build on a single location — do not patch from this doc.
+The global scripts are **seeded and read at the same location** — the personal
+store top level `~/.cco/`. `cco init` copies `setup.sh`, `setup-build.sh`, and
+`mcp-packages.txt` into `~/.cco/` (`lib/cmd-init.sh`, `cfg="$(_cco_config_dir)"`);
+`cco start` mounts the runtime `setup.sh` from `~/.cco/setup.sh`, and `cco build`
+reads `setup-build.sh` and `mcp-packages.txt` from `~/.cco/` as well. (An earlier
+build-time mismatch — `cco build` reading from the old `~/.cco/global/` — was
+fixed; the `global/` wrapper is gone entirely after the ADR-0028 flatten, and the
+global `.claude/` itself now lives at `~/.cco/.claude/`.)
 
 ### 2.2 Per-Project Setup Script (runtime)
 
@@ -290,9 +285,9 @@ User copies on the host:
 ```
 ~/.cco/                        ← personal store (cco init seeds these here)
 ├── setup.sh                   ← global runtime  → /home/claude/global-setup.sh
-├── setup-build.sh             ← global build-time (see Maintainer note in §2.1)
+├── setup-build.sh             ← global build-time (see §2.1)
 ├── mcp-packages.txt           ← global MCP list (build-time pre-install)
-└── global/.claude/            ← global Claude config
+└── .claude/                   ← global Claude config
 
 <repo>/.cco/                    ← committed per-project config (in each repo)
 ├── project.yml                ← docker.image field (optional)

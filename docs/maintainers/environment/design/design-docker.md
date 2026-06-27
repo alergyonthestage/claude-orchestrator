@@ -147,7 +147,7 @@ chown claude:claude "$CLAUDE_JSON"
 # We merge both global MCP (mounted as mcp-global.json) and project MCP
 # (mounted as /workspace/.mcp.json) into ~/.claude.json.
 
-# Merge global MCP servers (from global/.claude/mcp.json)
+# Merge global MCP servers (from ~/.cco/.claude/mcp.json)
 if [ -f "$MCP_GLOBAL" ]; then
     server_count=$(jq '.mcpServers | length' "$MCP_GLOBAL" 2>/dev/null || echo "0")
     if [ "$server_count" -gt 0 ]; then
@@ -320,7 +320,7 @@ services:
 
     # ── Volumes ──────────────────────────────────────────────────────
     # All host sources are ABSOLUTE, resolved by cco start:
-    #   GLOBAL = ~/.cco/global   STATE = ~/.local/state/cco   CACHE = ~/.cache/cco
+    #   GLOBAL = ~/.cco   STATE = ~/.local/state/cco   CACHE = ~/.cache/cco
     #   REPO   = invoking repo's path (from the STATE index)   ID = project.yml name
     volumes:
       # --- Auth & credentials (seeded into STATE) ---
@@ -405,12 +405,12 @@ HOST (host-absolute source)                          CONTAINER (fixed)          
 ─────────────────────────────────────────────────────────────────────────────────────────────────
 <state>/cco/claude.json                  → ~/.claude.json                   Auth state (rw)
 <state>/cco/.credentials.json            → ~/.claude/.credentials.json      OAuth credentials (rw)
-~/.cco/global/.claude/settings.json      → ~/.claude/settings.json          Global settings (ro)
-~/.cco/global/.claude/CLAUDE.md          → ~/.claude/CLAUDE.md              Global instructions (ro)
-~/.cco/global/.claude/rules/             → ~/.claude/rules/                 Global rules (ro)
-~/.cco/global/.claude/agents/            → ~/.claude/agents/                Global subagents (ro)
-~/.cco/global/.claude/skills/            → ~/.claude/skills/                Global skills (ro)
-~/.cco/global/.claude/mcp.json           → ~/.claude/mcp-global.json        Global MCP config (ro)
+~/.cco/.claude/settings.json      → ~/.claude/settings.json          Global settings (ro)
+~/.cco/.claude/CLAUDE.md          → ~/.claude/CLAUDE.md              Global instructions (ro)
+~/.cco/.claude/rules/             → ~/.claude/rules/                 Global rules (ro)
+~/.cco/.claude/agents/            → ~/.claude/agents/                Global subagents (ro)
+~/.cco/.claude/skills/            → ~/.claude/skills/                Global skills (ro)
+~/.cco/.claude/mcp.json           → ~/.claude/mcp-global.json        Global MCP config (ro)
 <repo>/.cco/claude/                       → /workspace/.claude/              Project context (rw)
 <cache>/cco/projects/<id>/.claude/packs.md     → /workspace/.claude/packs.md      Generated overlay (ro)
 <cache>/cco/projects/<id>/.claude/workspace.yml → /workspace/.claude/workspace.yml Generated overlay (ro)
@@ -706,7 +706,7 @@ claude-orchestrator/
 │       └── packs/<name>/                   # OPTIONAL project-local pack (authored OR cache of a referenced pack)
 │
 ├── ~/.cco/                                 # ── PERSONAL STORE (git-versioned, ~/.cco/.git) ──
-│   ├── global/.claude/                     # Global Claude config (copied once on cco init from defaults/global/)
+│   ├── .claude/                            # Global Claude config (copied once on cco init from defaults/global/)
 │   │   ├── settings.json · CLAUDE.md · mcp.json
 │   │   └── rules/ · agents/ · skills/
 │   ├── packs/<name>/                       # Authored knowledge packs (pack.yml + .md; embeds llms coordinates)
@@ -779,7 +779,7 @@ Framework infrastructure files, baked into the Docker image at `/etc/claude-code
 
 #### defaults/global/.claude/
 
-User defaults, copied to `~/.cco/global/.claude/` once by `cco init`. User owns these files after the initial copy. Not overwritten unless `cco init --force` is used. This includes agents, skills, rules, and settings that users can freely customize.
+User defaults, copied to `~/.cco/.claude/` once by `cco init`. User owns these files after the initial copy. Not overwritten unless `cco init --force` is used. This includes agents, skills, rules, and settings that users can freely customize.
 
 | File | Purpose | Notes |
 |------|---------|-------|
@@ -848,7 +848,7 @@ Recommended order for building the repo from scratch:
 After implementation (or after significant changes), verify:
 
 - [ ] `cco build` creates the Docker image successfully
-- [ ] `cco init` copies user defaults (agents, skills, rules, settings) to `~/.cco/global/` and initializes the personal store
+- [ ] `cco init` copies user defaults (agents, skills, rules, settings) to `~/.cco/` and initializes the personal store
 - [ ] `cco init` (in a repo) scaffolds `<repo>/.cco/` and registers it in the STATE index
 - [ ] `cco start` (from the repo) launches an interactive Claude Code session
 - [ ] Claude sees global CLAUDE.md (ask: "What are your global instructions?")

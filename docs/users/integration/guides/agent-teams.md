@@ -30,7 +30,7 @@ When using agent teams, Claude Code can display teammates in three modes:
 
 **No host-side setup required.** tmux runs entirely inside the container.
 
-**Configuration** (`~/.cco/global/.claude/settings.json`):
+**Configuration** (`~/.cco/.claude/settings.json`):
 ```json
 {
   "teammateMode": "tmux"
@@ -308,7 +308,7 @@ You can switch modes at any time:
 
 3. **Globally** — change global settings:
    ```json
-   // ~/.cco/global/.claude/settings.json
+   // ~/.cco/.claude/settings.json
    { "teammateMode": "tmux" }
    ```
 

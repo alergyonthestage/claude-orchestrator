@@ -63,7 +63,7 @@ graph LR
     subgraph Host
         CLI["cco CLI"]
         PROJ["project.yml"]
-        GLOBAL["global/.claude/"]
+        GLOBAL[".claude/"]
         REPOS["~/projects/repos/"]
     end
 

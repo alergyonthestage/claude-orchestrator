@@ -40,8 +40,8 @@ These files are loaded into Claude's context when the session starts:
 | File | Container Path | Source | Tier |
 |------|---------------|--------|------|
 | Managed CLAUDE.md | `/etc/claude-code/CLAUDE.md` | `defaults/managed/CLAUDE.md` (in image) | Managed |
-| User CLAUDE.md | `~/.claude/CLAUDE.md` | `~/.cco/global/.claude/CLAUDE.md` | User |
-| User rules | `~/.claude/rules/*.md` | `~/.cco/global/.claude/rules/*.md` | User |
+| User CLAUDE.md | `~/.claude/CLAUDE.md` | `~/.cco/.claude/CLAUDE.md` | User |
+| User rules | `~/.claude/rules/*.md` | `~/.cco/.claude/rules/*.md` | User |
 | Project CLAUDE.md | `/workspace/.claude/CLAUDE.md` | `<repo>/.cco/claude/CLAUDE.md` | Project |
 | Project rules | `/workspace/.claude/rules/*.md` | `<repo>/.cco/claude/rules/*.md` | Project |
 
@@ -63,13 +63,13 @@ In the decentralized model a session sees **four distinct `.claude` trees**, eac
 |---|---|---|---|
 | **Repo-native** | `<repo>/.claude/` | `/workspace/<repo>/.claude/` | **Cross-cutting** — every project that mounts this repo, *and* native Claude Code use in the repo. cco never touches or syncs it. |
 | **Project (invoking repo's)** | `<repo>/.cco/claude/` | `/workspace/.claude/` | **This project only, across all its repos.** Belongs to the project the invoking repo hosts; does **not** leak into another project's session. |
-| **Global** | `~/.cco/global/.claude/` | `~/.claude/` | **All of the user's projects** on this machine. |
+| **Global** | `~/.cco/.claude/` | `~/.claude/` | **All of the user's projects** on this machine. |
 | **Managed** | `defaults/managed/` (baked in image) | `/etc/claude-code/` | All sessions, **non-overridable, highest priority** — framework policy. |
 
 **Placement by intended reach:**
 - Convention that belongs to one codebase regardless of which project mounts it → **repo-native** `<repo>/.claude/`.
 - Convention for *this* project that may span several of its repos → **project** `<repo>/.cco/claude/`.
-- Personal convention you want in every project → **global** `~/.cco/global/.claude/`.
+- Personal convention you want in every project → **global** `~/.cco/.claude/`.
 - Framework-enforced, non-overridable policy → **managed** (maintainers only; updated via `cco build`).
 
 Only the **invoking** repo's `.cco/claude/` becomes the session's project scope (ADR-0005). A *referenced* repo's `.cco/claude/` is **not** mounted as project scope — so one project's cross-repo config never leaks into another project's session. Its repo-native `<repo>/.claude/`, however, is still loaded on-demand because the repo is mounted at `/workspace/<repo>/`.
@@ -160,7 +160,7 @@ Framework infrastructure — baked into the Docker image, non-overridable.
 - SessionStart hook uses a catch-all (no matcher) to fire on all session events (startup, clear, etc.)
 - Updated only via `cco build` (baked in Docker image)
 
-### 4.1b User Settings (`~/.cco/global/.claude/settings.json`)
+### 4.1b User Settings (`~/.cco/.claude/settings.json`)
 
 User preferences — copied once by `cco init`, fully customizable.
 
@@ -197,7 +197,7 @@ User preferences — copied once by `cco init`, fully customizable.
 - `alwaysThinkingEnabled` enables extended thinking for better reasoning on complex tasks
 - User can freely modify this file — changes persist across sessions
 
-### 4.2 Global CLAUDE.md (`~/.cco/global/.claude/CLAUDE.md`)
+### 4.2 Global CLAUDE.md (`~/.cco/.claude/CLAUDE.md`)
 
 ```markdown
 # Global Instructions
@@ -264,7 +264,7 @@ Always clarify the current scope level before starting work.
 
 ### 4.3 Global Rules
 
-Modular rule files in `~/.cco/global/.claude/rules/`:
+Modular rule files in `~/.cco/.claude/rules/`:
 
 **`workflow.md`** — Detailed workflow phase behaviors:
 ```markdown
@@ -439,7 +439,7 @@ The transcripts mount captures session history; the child `memory/` mount captur
 Claude Code loads subagents from (highest to lowest priority):
 1. `/etc/claude-code/.claude/agents/` — Managed-level (not used — agents belong in User tier)
 2. `/workspace/.claude/agents/` — Project-level (our `<repo>/.cco/claude/agents/` + pack agents)
-3. `~/.claude/agents/` — User-level (our `~/.cco/global/.claude/agents/`)
+3. `~/.claude/agents/` — User-level (our `~/.cco/.claude/agents/`)
 
 Project agents take precedence over user agents with the same name. See [scope-design.md §3.4](../../../maintainers/configuration/scope-hierarchy/design/design-scope-hierarchy.md) for details.
 
@@ -455,7 +455,7 @@ See [SUBAGENTS.md](../../integration/guides/subagents.md) for full specification
 
 Claude Code discovers skills from (highest priority first):
 1. `/etc/claude-code/.claude/skills/` — Managed/Enterprise (our `defaults/managed/.claude/skills/`, baked in image)
-2. `~/.claude/skills/` — User-level (our `~/.cco/global/.claude/skills/`)
+2. `~/.claude/skills/` — User-level (our `~/.cco/.claude/skills/`)
 3. `/workspace/.claude/skills/` — Project-level
 4. `/workspace/<repo>/.claude/skills/` — Repo-level (on-demand)
 
@@ -498,7 +498,7 @@ Managed skills live in `defaults/managed/.claude/skills/`, baked into the Docker
 
 ### 7.4 User Skills
 
-User skills live in `defaults/global/.claude/skills/`, copied once to `~/.cco/global/.claude/skills/` by `cco init`. They are user-owned — freely customizable and never overwritten. They are mounted read-only at `~/.claude/skills/` inside the container, available in all projects.
+User skills live in `defaults/global/.claude/skills/`, copied once to `~/.cco/.claude/skills/` by `cco init`. They are user-owned — freely customizable and never overwritten. They are mounted read-only at `~/.claude/skills/` inside the container, available in all projects.
 
 | Skill | Command | Context | Purpose |
 |-------|---------|---------|---------|
@@ -519,7 +519,7 @@ Projects can add custom skills in `<repo>/.cco/claude/skills/`. These are mounte
 
 MCP (Model Context Protocol) servers extend Claude Code with external tool access (GitHub, databases, etc.). The orchestrator supports MCP at two levels:
 
-- **Global MCP** — Available in all projects, configured in `~/.cco/global/.claude/mcp.json`
+- **Global MCP** — Available in all projects, configured in `~/.cco/.claude/mcp.json`
 - **Project MCP** — Specific to a project, configured in `<repo>/.cco/mcp.json`
 
 ### 8.2 Configuration
@@ -553,7 +553,7 @@ The CLI mounts `mcp.json` directly at `/workspace/.mcp.json` (read-only). No int
 
 #### Global-Level MCP
 
-`~/.cco/global/.claude/mcp.json` defines MCP servers available in all projects. The entrypoint copies the host's `~/.claude.json` from the read-only seed mount, then merges MCP servers into the writable copy at container startup using `jq`. Defaults ship in `defaults/global/.claude/mcp.json` (empty, user-owned after init).
+`~/.cco/.claude/mcp.json` defines MCP servers available in all projects. The entrypoint copies the host's `~/.claude.json` from the read-only seed mount, then merges MCP servers into the writable copy at container startup using `jq`. Defaults ship in `defaults/global/.claude/mcp.json` (empty, user-owned after init).
 
 ### 8.3 Authentication / Secrets
 
@@ -794,15 +794,15 @@ graph TD
 Complete map of every context component: where it lives on the host, where it
 appears in the container, when it activates, and what loads it.
 
-Host origins are **host-absolute** sources resolved by `cco start`: project config from the invoking `<repo>/.cco/`, global config from `~/.cco/global/`, generated overlays from CACHE (`<cache>/cco/projects/<id>/`), and session state from STATE (`<state>/cco/projects/<id>/`).
+Host origins are **host-absolute** sources resolved by `cco start`: project config from the invoking `<repo>/.cco/`, global config from `~/.cco/`, generated overlays from CACHE (`<cache>/cco/projects/<id>/`), and session state from STATE (`<state>/cco/projects/<id>/`).
 
 | Component | Container path | Host origin | When active | Loader |
 |-----------|---------------|-------------|-------------|--------|
-| Global settings | `~/.claude/settings.json` | `~/.cco/global/.claude/settings.json` | Claude launch | Claude Code (user scope) |
-| Global CLAUDE.md | `~/.claude/CLAUDE.md` | `~/.cco/global/.claude/CLAUDE.md` | Claude launch | Claude Code |
-| Global rules | `~/.claude/rules/*.md` | `~/.cco/global/.claude/rules/` | Claude launch | Claude Code |
-| Global agents | `~/.claude/agents/*.md` | `~/.cco/global/.claude/agents/` | Claude launch | Claude Code |
-| Global skills | `~/.claude/skills/*/` | `~/.cco/global/.claude/skills/` | User invocation `/skill` | Claude Code |
+| Global settings | `~/.claude/settings.json` | `~/.cco/.claude/settings.json` | Claude launch | Claude Code (user scope) |
+| Global CLAUDE.md | `~/.claude/CLAUDE.md` | `~/.cco/.claude/CLAUDE.md` | Claude launch | Claude Code |
+| Global rules | `~/.claude/rules/*.md` | `~/.cco/.claude/rules/` | Claude launch | Claude Code |
+| Global agents | `~/.claude/agents/*.md` | `~/.cco/.claude/agents/` | Claude launch | Claude Code |
+| Global skills | `~/.claude/skills/*/` | `~/.cco/.claude/skills/` | User invocation `/skill` | Claude Code |
 | Project settings | `/workspace/.claude/settings.json` | `<repo>/.cco/claude/settings.json` | Claude launch | Claude Code (project scope) |
 | Project CLAUDE.md | `/workspace/.claude/CLAUDE.md` | `<repo>/.cco/claude/CLAUDE.md` | Claude launch | Claude Code |
 | Project rules | `/workspace/.claude/rules/*.md` | `<repo>/.cco/claude/rules/` | Claude launch | Claude Code |
@@ -817,7 +817,7 @@ Host origins are **host-absolute** sources resolved by `cco start`: project conf
 | project.yml | `/workspace/.claude/project.yml` | `<repo>/.cco/project.yml` (`:rw` mount) | On-demand (written by `/init-workspace`) | Claude Code (via skill) |
 | Repo CLAUDE.md | `/workspace/<repo>/.claude/CLAUDE.md` | Repo itself (`<repo>/.claude/`) | On-demand (nested project) | Claude Code |
 | SessionStart hook | `/usr/local/bin/cco-hooks/session-context.sh` | `config/hooks/session-context.sh` (baked at build) | Immediately after launch | Claude Code hooks |
-| MCP servers | `~/.claude.json` (merged) | `~/.cco/global/.claude/mcp.json` + `<repo>/.cco/mcp.json` | MCP init (Claude launch) | `entrypoint.sh` (jq merge) |
+| MCP servers | `~/.claude.json` (merged) | `~/.cco/.claude/mcp.json` + `<repo>/.cco/mcp.json` | MCP init (Claude launch) | `entrypoint.sh` (jq merge) |
 | Auth state | `~/.claude.json` | `~/.claude.json` on host (mounted as `.seed:ro`, copied at startup) | Claude launch | `entrypoint.sh` (copy seed) |
 | Auto memory | `~/.claude/projects/-workspace/memory/` | `<state>/cco/projects/<id>/session/memory/` | Claude launch (prime 200 lines) | Claude Code |
 | Session transcripts | `~/.claude/projects/-workspace/` | `<state>/cco/projects/<id>/claude-state/` | `/resume` command | Claude Code |
@@ -837,7 +837,7 @@ Claude Code has two configuration scopes:
 - **Project scope** (`/workspace/.claude/`): loaded for the current workspace, overrides user scope
 
 The orchestrator maps these to:
-- `~/.cco/global/.claude/` → user scope (same for every project)
+- `~/.cco/.claude/` → user scope (same for every project)
 - `<repo>/.cco/claude/` → project scope (per-project, committed in the repo that hosts the project)
 
 ### packs.md injection
@@ -911,6 +911,6 @@ context but is not part of the conversation history.
 | Pack files not in context | `packs.md` missing or empty | Check `cco start` output for "Generated .claude/packs.md"; verify pack.yml has `knowledge.files:` |
 | `/init-workspace` skill not found | Docker image outdated | Run `cco build` to rebuild the image; the skill is baked in at `/etc/claude-code/.claude/skills/init-workspace/SKILL.md` |
 | Repo not visible at `/workspace/<name>/` | Path doesn't exist on host | Check `repos.path:` in project.yml; ensure directory exists |
-| MCP server not loaded | mcp.json missing or bad JSON | Check `~/.cco/global/.claude/mcp.json`; run `cco start` and look for merge errors |
+| MCP server not loaded | mcp.json missing or bad JSON | Check `~/.cco/.claude/mcp.json`; run `cco start` and look for merge errors |
 | Auto memory not persisting | `memory/` dir not created or not mounted | Run `cco start`; check that `<state>/cco/projects/<id>/session/memory/` exists and is mounted |
 | Context too large | Too many repos or large knowledge files | Reduce pack files; use `/compress` periodically |

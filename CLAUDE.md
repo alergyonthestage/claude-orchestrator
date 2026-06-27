@@ -10,13 +10,13 @@ claude-orchestrator manages isolated Claude Code sessions in Docker containers f
 
 **Config separation**: Three-tier managed scope hierarchy leveraging Claude Code's native resolution:
 - `defaults/managed/` → baked into Docker image at `/etc/claude-code/` (Managed level — hooks, env, deny rules, framework instructions). Non-overridable.
-- `defaults/global/.claude/` → copied once to `~/.cco/global/.claude/` on `cco init` (User level — agents, skills, rules, settings, preferences). User-owned, never overwritten.
+- `defaults/global/.claude/` → copied once to `~/.cco/.claude/` on `cco init` (User level — agents, skills, rules, settings, preferences). User-owned, never overwritten.
 - `templates/` → native templates for projects (`templates/project/base/`) and packs (`templates/pack/base/`). User templates in `~/.cco/templates/` take priority.
 - `internal/` → framework-internal resources used directly at runtime (e.g., `internal/tutorial/`, `internal/config-editor/`). Not installed into the user's store.
 
 **Config homes**: project config lives **in each repo**; everything personal lives in the **`~/.cco` store**; machine-local index/state/cache live in hidden XDG buckets (never hand-edited):
 - `<repo>/.cco/` — per-project config committed inside the repo it serves: `project.yml` (logical names + machine-agnostic `url`/`ref` coordinates), its `claude/` tree, and `secrets.env` (gitignored).
-- `~/.cco/` — the personal store: `global/.claude/` (global Claude config), `packs/` (knowledge packs), `templates/` (project templates). **No `manifest.yml`** — sharing discovery is structure-based.
+- `~/.cco/` — the personal store: `.claude/` (global Claude config), `packs/` (knowledge packs), `templates/` (project templates). **No `manifest.yml`** — sharing discovery is structure-based.
 - `~/.local/state/cco` (STATE) — machine-local index (logical name → absolute path), session transcripts, memory, update base/meta.
 - `~/.cache/cco` (CACHE) — re-fetchable content (llms downloads) and generated overlays (`packs.md`, `workspace.yml`, `docker-compose.yml`).
 - `~/.local/share/cco` (DATA) — internal-but-synced state: per-user tags registry, de-tokenized remotes registry, install provenance.
@@ -26,7 +26,7 @@ claude-orchestrator manages isolated Claude Code sessions in Docker containers f
 ## Build & Run Commands
 
 ```bash
-cco init                     # First-time setup: ensure ~/.cco/global, scaffold <repo>/.cco/, build image
+cco init                     # First-time setup: ensure ~/.cco, scaffold <repo>/.cco/, build image
 cco init --migrate <project> # Migrate a legacy project into the in-repo layout
 cco join <project>           # Join a project whose <repo>/.cco/ already exists
 cco build                    # Build Docker image
@@ -100,11 +100,11 @@ The orchestrator maps onto Claude Code's native settings resolution:
 | Orchestrator Layer | Host Source | Container Path | Claude Code Scope | Overridable? |
 |---|---|---|---|---|
 | `defaults/managed/` | baked in image | `/etc/claude-code/` | Managed (highest priority) | No — baked in image |
-| Global `.claude/` | `~/.cco/global/.claude/` | `~/.claude/` | User-level (always loaded) | Yes — user-owned |
+| Global `.claude/` | `~/.cco/.claude/` | `~/.claude/` | User-level (always loaded) | Yes — user-owned |
 | Project `.claude/` | `<repo>/.cco/claude/` | `/workspace/.claude/` | Project-level (always loaded) | Yes — per-project |
 | Repo's own `.claude/` | `<repo>/.claude/` | `/workspace/<repo>/.claude/` | Nested (on-demand) | Yes — from repo |
 
-The four `.claude` scopes differ by **reach** (ADR-0024): a repo's native `<repo>/.claude/` is cross-cutting (every project that mounts the repo, plus native Claude); the invoking repo's `<repo>/.cco/claude/` applies to **this** project across its repos with no cross-project leak; `~/.cco/global/.claude/` applies to all my projects; managed (`/etc/claude-code/`) sits on top. Managed settings (hooks, env vars, deny rules) have the highest priority and cannot be overridden. User and project settings are fully customizable.
+The four `.claude` scopes differ by **reach** (ADR-0024): a repo's native `<repo>/.claude/` is cross-cutting (every project that mounts the repo, plus native Claude); the invoking repo's `<repo>/.cco/claude/` applies to **this** project across its repos with no cross-project leak; `~/.cco/.claude/` applies to all my projects; managed (`/etc/claude-code/`) sits on top. Managed settings (hooks, env vars, deny rules) have the highest priority and cannot be overridden. User and project settings are fully customizable.
 
 ### Docker-from-Docker
 
@@ -171,7 +171,7 @@ Per `docs/maintainer/integration/docker/design.md` (sezione directory structure)
 ## Conventions
 
 - `<repo>/.cco/project.yml` is the source of truth for each project; `docker-compose.yml` is generated into CACHE and overlaid `:ro`, never committed.
-- Project config lives in each repo at `<repo>/.cco/` (versioned with the repo). The personal store `~/.cco/` and the machine-local STATE/CACHE/DATA buckets hold user/internal data and are out-of-repo. `defaults/` is tracked (tool code). Managed files are baked in the Docker image; global defaults are copied once into `~/.cco/global/.claude/` on `cco init` and never overwritten.
+- Project config lives in each repo at `<repo>/.cco/` (versioned with the repo). The personal store `~/.cco/` and the machine-local STATE/CACHE/DATA buckets hold user/internal data and are out-of-repo. `defaults/` is tracked (tool code). Managed files are baked in the Docker image; global defaults are copied once into `~/.cco/.claude/` on `cco init` and never overwritten.
 - Generated files (`docker-compose.yml`, `packs.md`, `workspace.yml`) go to CACHE/STATE and are overlaid `:ro` — never written into the committed tree. `<repo>/.cco/secrets.env` is gitignored; memory/transcripts live in STATE.
 - Container user is `claude` (non-root), with docker group for socket access.
 - Entrypoint must handle Docker socket GID mismatch between host and container.

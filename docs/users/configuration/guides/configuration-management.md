@@ -15,7 +15,7 @@ Configuration in CCO is **distributed per host-repo**. There is no central
 | Store | What it holds | Versioned how |
 |-------|---------------|---------------|
 | **`<repo>/.cco/`** | One project's config: `project.yml` (logical names + coordinates), the `claude/` tree, `secrets.env` (gitignored) | The repo's **own git** (your normal commit/push) |
-| **`~/.cco/`** | Your **personal** global store: `global/.claude/`, `packs/`, `templates/` | `cco config save` / `push` / `pull` |
+| **`~/.cco/`** | Your **personal** global store: `.claude/`, `packs/`, `templates/` | `cco config save` / `push` / `pull` |
 
 Machine-local plumbing never lives in those stores: the **index** (logical name →
 absolute path), session state, and memory live in hidden XDG buckets
@@ -98,7 +98,7 @@ cco config pull                        # pull on another machine
 ```
 
 `cco config save` stages **only** the allowlisted content (`packs/`, `templates/`,
-`global/.claude/`, the global `setup*.sh`/`mcp-packages.txt`/`languages`) — never
+`.claude/`, the global `setup*.sh`/`mcp-packages.txt`/`languages`) — never
 `git add -A` — and runs a 2-pass secret scan. Commits are **explicit and semantic**
 (no auto-commit). A non-fast-forward `cco config pull` aborts and tells you to resolve
 in your IDE, as ordinary git.
@@ -183,7 +183,7 @@ tar-snapshot half (`export`/`import`), used to bootstrap a repo that has no comm
 |---|---|---|
 | **Purpose** | Your private global config, multi-PC | Team/community distribution of packs & templates |
 | **Visibility** | Private (you) | Team, org, or public |
-| **Content** | `global/.claude/`, your `packs/`, `templates/` | `packs/` + `templates/` only |
+| **Content** | `.claude/`, your `packs/`, `templates/` | `packs/` + `templates/` only |
 | **Flow** | `cco config push/pull` (bidirectional) | `publish` → `install` (one-way) |
 
 > Never publish your personal `~/.cco` to teammates. Use a dedicated sharing repo with

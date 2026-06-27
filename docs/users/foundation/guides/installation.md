@@ -47,7 +47,7 @@ cco build
 
 `cco init` is the entry point for a project (see below). The first time you run
 it inside a repo, it also seeds your **personal store** at `~/.cco/` from the
-framework defaults (agents, skills, rules, settings → `~/.cco/global/.claude/`).
+framework defaults (agents, skills, rules, settings → `~/.cco/.claude/`).
 This global-ensure is idempotent — it runs once and is a no-op afterwards.
 
 ---
@@ -98,7 +98,7 @@ cco new --repo ~/projects/api --repo ~/projects/frontend --port 3000:3000
 |---------|-------------|
 | `cco build` | Build the Docker image |
 | `cco build --no-cache` | Full rebuild (updates Claude Code) |
-| `cco init` | Scaffold `<repo>/.cco/` in the current repo (+ ensures `~/.cco/global` on first use) |
+| `cco init` | Scaffold `<repo>/.cco/` in the current repo (+ ensures `~/.cco` on first use) |
 | `cco join <project>` | Register an existing `<repo>/.cco/` (shared by a teammate) |
 | `cco init --migrate <project>` | Migrate a project from a legacy central install into its repo |
 | `cco start <project>` | Start session for a configured project |
@@ -125,7 +125,7 @@ and is committed with the code so teammates get the same setup. It contains:
 - **`secrets.env`** — credentials and tokens (gitignored, per user)
 
 Personal, cross-project resources live in your store at `~/.cco/`
-(`global/.claude/`, `packs/`, `templates/`). Machine-local state (the
+(`.claude/`, `packs/`, `templates/`). Machine-local state (the
 name→path index, transcripts, memory, caches) lives in hidden XDG directories
 (`~/.local/state/cco`, `~/.cache/cco`, `~/.local/share/cco`) and is never hand-edited.
 

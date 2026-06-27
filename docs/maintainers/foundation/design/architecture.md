@@ -18,7 +18,7 @@ graph TB
         end
 
         subgraph GLOBALSTORE ["~/.cco/ (personal git store)"]
-            GLOBAL["global/.claude/ (user config)<br/>packs/ · templates/<br/>secrets.env (gitignored)"]
+            GLOBAL[".claude/ (user config)<br/>packs/ · templates/<br/>secrets.env (gitignored)"]
         end
 
         subgraph SYS ["per-machine hidden buckets (XDG)"]
@@ -36,7 +36,7 @@ graph TB
         SOCKET["/var/run/docker.sock"]
 
         subgraph CONTAINER ["Claude Code Container"]
-            DOTCLAUDE["~/.claude/ ← ~/.cco/global/.claude/"]
+            DOTCLAUDE["~/.claude/ ← ~/.cco/.claude/"]
             WORKSPACE["/workspace/ (WORKDIR)<br/>├── .claude/ ← invoking repo's .cco/claude + CACHE :ro overlays<br/>├── backend-api/ ← repo mount<br/>├── frontend-app/ ← repo mount<br/>└── shared-libs/ ← repo mount"]
             DOCKSOCK["/var/run/docker.sock ← host socket"]
             CLAUDE["$ claude --dangerously-skip-permissions<br/>Can run: npm run dev, docker compose up, git commit/push"]
@@ -119,7 +119,7 @@ on-demand. → [ADR-0002](../adr/adr-0002-workspace-layout-flat-subdirectories.m
 
 Orchestrator config maps onto Claude Code's native managed → user → project →
 nested resolution: `defaults/managed/` (baked, non-overridable) →
-`~/.cco/global/.claude/` (user) → invoking repo's `<repo>/.cco/claude/` (project) →
+`~/.cco/.claude/` (user) → invoking repo's `<repo>/.cco/claude/` (project) →
 each repo's own `<repo>/.claude/` (nested, on-demand).
 → [ADR-0003](../adr/adr-0003-four-tier-context-hierarchy.md)
 
@@ -190,7 +190,7 @@ See [SUBAGENTS.md](../../../users/integration/guides/subagents.md) for full spec
 
 **Key aspects**:
 - Two default subagents: analyst (haiku, read-only) and reviewer (sonnet, read-only)
-- Defined in `~/.cco/global/.claude/agents/`
+- Defined in `~/.cco/.claude/agents/`
 - Projects can add their own in `<repo>/.cco/claude/agents/`
 - Documentation for creating new subagents
 
@@ -288,7 +288,7 @@ As above, the full rationale lives in the [`../adr/`](../adr/) stream.
 ### ADR-0008: Tool vs User Config Separation
 
 Three-tier defaults — `defaults/managed/` (baked into the image), `defaults/global/`
-(copied once to `~/.cco/global/` by `cco init`), and `templates/project/base/` — so
+(copied once to `~/.cco/` by `cco init`), and `templates/project/base/` — so
 `git pull` never conflicts with user customizations while framework infrastructure
 stays active via Claude Code's managed level. The old `_sync_system_files()`
 overwrite mechanism is removed.

@@ -89,7 +89,7 @@ The user's personal store `~/.cco` is mounted read-only at
 `/workspace/cco-config/`. Use it to:
 - Inspect existing packs (`cco-config/packs/`)
 - Inspect templates (`cco-config/templates/`)
-- Understand the user's global settings (`cco-config/global/.claude/`)
+- Understand the user's global settings (`cco-config/.claude/`)
 
 Per-**project** config is NOT here — in the decentralized model it lives in each
 project's own repo at `<repo>/.cco/` (project.yml + its `claude/` tree),

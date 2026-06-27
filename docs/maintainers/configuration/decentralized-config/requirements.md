@@ -130,7 +130,7 @@ State/cache/index live in system directories (AD9; exact paths = RD-paths):
 <state-dir>/cco/projects/<id>/   # generated docker-compose, claude-state, memory (ADR-0009), .tmp, meta
 <state-dir>/cco/index            # machine-local name→abs-path + project→repos index (AD5)
 <cache-dir>/cco/                 # llms, installed resources
-~/.cco/                          # personal git store: packs/, templates/, global/.claude/  (AD10)
+~/.cco/                          # personal git store: packs/, templates/, .claude/  (AD10)
 ```
 
 - **FR-S1** — All committed cco config is under `<repo>/.cco/` (plus the repo-root
@@ -244,7 +244,7 @@ flowchart TD
 ## 6. Central Store `~/.cco` & Domains (FR-C) — versioning model = ADR-0008; auto-sync deferred (RD-triggers)
 
 - **FR-C1** — `~/.cco/` holds the user's **global resources**: authored `packs/`,
-  `templates/`, and `global/.claude/`. It is a personal git store (Domain A).
+  `templates/`, and `.claude/`. It is a personal git store (Domain A).
 - **FR-C2** — The machine-local index (AD5) is the source for `cco list` and tag
   filtering; it lives in a system dir, is per-machine, and is rebuildable by scanning
   known directories (`cco resolve --scan`; `cco path set/list` is the low-level editor —
@@ -256,7 +256,7 @@ flowchart TD
   hand-authored; cco only scaffolds via `cco pack create`). `~/.cco` committed via git
   or `cco config save [-m]`; remote sync explicit (`cco config push/pull`), never
   per-command; pull non-fast-forward → abort + notify (resolve in IDE), no auto-merge.
-  Commit via an **explicit allowlist** (`packs/ templates/ global/.claude/`) + a
+  Commit via an **explicit allowlist** (`packs/ templates/ .claude/`) + a
   committed whitelist `.gitignore`, **never `git add -A`**; a 2-pass secret scan (with
   `.example` exemption) blocks on hit. **Non-blocking reminders** at config-sensitive
   commands flag uncommitted `~/.cco`, uncommitted involved `<repo>/.cco`, and cross-repo
@@ -306,7 +306,7 @@ flowchart TD
   orphan cleanup (`cco config validate`) → ADR-0021.
 - **FR-M3 (eager global migration via `cco update`)** — The **global / non-project** cutover is
   **eager**, owned by the existing migration runner **`cco update`** (ADR-0025): populate `~/.cco`
-  from the backup (`global/.claude` + authored `packs/` + `templates/` + `setup.sh`/`setup-build.sh`/
+  from the backup (`.claude` + authored `packs/` + `templates/` + `setup.sh`/`setup-build.sh`/
   `mcp-packages.txt`/`languages`/`secrets.env`), build the global internal dirs, decompose the global
   `.cco/meta` (hash `manifest:`→STATE meta, **not** dropped; `languages`→`~/.cco`; markers→STATE
   top-level — ADR-0013 D3/D4), relocate the global-scope `base/`/`meta` to STATE (H6), and seed the

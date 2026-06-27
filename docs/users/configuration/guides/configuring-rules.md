@@ -151,7 +151,7 @@ Rules and skills can live at different levels. Choose the right scope for each:
 
 | Scope | Location | When to use |
 |-------|----------|-------------|
-| **Global** | `global/.claude/rules/`, `global/.claude/skills/` | Conventions that apply to ALL your projects (language, commit style, general workflow) |
+| **Global** | `.claude/rules/`, `.claude/skills/` | Conventions that apply to ALL your projects (language, commit style, general workflow) |
 | **Project** | `projects/<name>/.claude/rules/`, `projects/<name>/.claude/skills/` | Project-specific conventions (architecture patterns, testing strategy, deployment rules) |
 | **Pack** | `packs/<name>/rules/`, `packs/<name>/skills/` | Reusable conventions shared across projects (e.g., a "React" pack with frontend rules) |
 | **Repo** | `<repo>/.claude/rules/` | Repo-specific rules committed to the repository itself (shared with all repo contributors) |
@@ -433,10 +433,10 @@ cco ships with workflow-phase skills as defaults: `/analyze`, `/design`, `/revie
 
 ### Customizing existing skills
 
-Each skill is a folder with a `SKILL.md` file in `global/.claude/skills/` or
+Each skill is a folder with a `SKILL.md` file in `.claude/skills/` or
 `projects/<name>/.claude/skills/`. To customize:
 
-1. Open the skill file (e.g., `global/.claude/skills/analyze/SKILL.md`)
+1. Open the skill file (e.g., `.claude/skills/analyze/SKILL.md`)
 2. Modify the instructions, checklist, or output format
 3. The changes apply to all future sessions
 
@@ -554,7 +554,7 @@ The defaults work out of the box. Start with them and customize as you learn wha
 for your projects:
 
 1. Run `cco start tutorial` — the tutorial guides you through initial configuration
-2. Set your **language** preferences (edit `global/.claude/rules/language.md`)
+2. Set your **language** preferences (edit `.claude/rules/language.md`)
 3. Use the default workflow for a few sessions — note what works and what doesn't
 4. Gradually customize rules based on your experience
 

@@ -238,7 +238,7 @@ Common problems:
    ```
 2. Verify that referenced environment variables (`${VAR}`) are available in the container via `secrets.env` or `--env`
 3. If a `${VAR}` variable is not resolved, Claude Code ignores the entire `mcp.json` file
-4. For global servers, check `~/.cco/global/.claude/mcp.json`
+4. For global servers, check `~/.cco/.claude/mcp.json`
 5. Check the entrypoint logs for merge errors
 
 ### Unresolved environment variables
@@ -262,7 +262,7 @@ cco start my-project --env GITHUB_TOKEN=ghp_...
 **Solution**: pre-install packages in the Docker image:
 ```bash
 # Via mcp-packages.txt (persistent)
-echo "@modelcontextprotocol/server-github" >> ~/.cco/global/mcp-packages.txt
+echo "@modelcontextprotocol/server-github" >> ~/.cco/mcp-packages.txt
 cco build
 
 # Via CLI flag (one-time)

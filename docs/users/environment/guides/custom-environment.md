@@ -10,8 +10,8 @@ claude-orchestrator offers five complementary mechanisms to customize the contai
 
 | Mechanism | Scope | When | What |
 |-----------|-------|------|------|
-| `~/.cco/global/setup-build.sh` | All projects | `cco build` (build time) | System packages, heavy dependencies |
-| `~/.cco/global/setup.sh` | All projects | `cco start` (runtime) | Dotfiles, aliases, tmux config, light tools |
+| `~/.cco/setup-build.sh` | All projects | `cco build` (build time) | System packages, heavy dependencies |
+| `~/.cco/setup.sh` | All projects | `cco start` (runtime) | Dotfiles, aliases, tmux config, light tools |
 | `<repo>/.cco/setup.sh` | Single project | `cco start` (runtime) | Light setup, per-project dependencies |
 | `<repo>/.cco/mcp-packages.txt` | Single project | `cco start` (runtime) | npm packages for MCP servers |
 | `docker.image` in project.yml | Single project | `cco start` | Fully custom Docker image |
@@ -20,7 +20,7 @@ claude-orchestrator offers five complementary mechanisms to customize the contai
 
 ## Global Build-Time Setup
 
-**File**: `~/.cco/global/setup-build.sh`
+**File**: `~/.cco/setup-build.sh`
 
 Executed once during `cco build` as a step in the Dockerfile. Runs as **root**. Changes are baked into the Docker image and available in all projects with zero startup cost.
 
@@ -47,7 +47,7 @@ Executed once during `cco build` as a step in the Dockerfile. Runs as **root**. 
 
 ```bash
 #!/bin/bash
-# ~/.cco/global/setup-build.sh
+# ~/.cco/setup-build.sh
 
 # Install Chromium for Playwright MCP
 apt-get update && apt-get install -y chromium && rm -rf /var/lib/apt/lists/*
@@ -68,7 +68,7 @@ curl -fsSL https://releases.hashicorp.com/terraform/1.7.0/terraform_1.7.0_linux_
 
 ## Global Runtime Setup
 
-**File**: `~/.cco/global/setup.sh`
+**File**: `~/.cco/setup.sh`
 
 Executed at every `cco start`, **before** the project setup script. Runs as user `claude` inside the container.
 
@@ -98,7 +98,7 @@ Executed at every `cco start`, **before** the project setup script. Runs as user
 
 ```bash
 #!/bin/bash
-# ~/.cco/global/setup.sh
+# ~/.cco/setup.sh
 
 # Add tmux keybinding for all projects
 tmux bind-key C-a send-prefix 2>/dev/null || true
@@ -148,7 +148,7 @@ ln -sf /workspace/shared-libs/bin/lint /usr/local/bin/project-lint
 
 - Executed **at every `cco start`** — must be idempotent
 - Runs as user `claude` — can install user-level packages, but not system packages
-- For heavy dependencies, prefer `~/.cco/global/setup-build.sh` or a custom image
+- For heavy dependencies, prefer `~/.cco/setup-build.sh` or a custom image
 - If the file doesn't exist, it is simply ignored
 
 ---
@@ -176,13 +176,13 @@ npm packages installed globally at container startup. Useful for MCP servers spe
 
 - One package per line; empty lines and comments (`#`) are ignored
 - Installed at every `cco start` (slows startup if many packages)
-- For packages used in all projects, prefer `~/.cco/global/mcp-packages.txt` (installed at build time with `cco build`)
+- For packages used in all projects, prefer `~/.cco/mcp-packages.txt` (installed at build time with `cco build`)
 
 ### Comparison with Global mcp-packages.txt
 
 | File | Installed When | Available In |
 |------|---|---|
-| `~/.cco/global/mcp-packages.txt` | `cco build` (build time) | All projects |
+| `~/.cco/mcp-packages.txt` | `cco build` (build time) | All projects |
 | `<repo>/.cco/mcp-packages.txt` | `cco start` (runtime) | That project only |
 
 ---
@@ -248,7 +248,7 @@ Setup mechanisms execute in this order at `cco start`:
 1. Docker socket GID fix (entrypoint)
 2. MCP server injection (entrypoint)
 3. GitHub authentication (entrypoint)
-4. **Global runtime setup** (`~/.cco/global/setup.sh`) — as user `claude`
+4. **Global runtime setup** (`~/.cco/setup.sh`) — as user `claude`
 5. **Project setup** (`<repo>/.cco/setup.sh`) — as user `claude`
 6. **Project MCP packages** (`<repo>/.cco/mcp-packages.txt`)
 7. Launch Claude
@@ -263,19 +263,19 @@ Which mechanism to use based on your needs:
 
 | Need | Recommended Mechanism | Rationale |
 |---|---|---|
-| apt package for all projects | `~/.cco/global/setup-build.sh` | Single rebuild, fast startup |
-| tmux config / dotfiles for all projects | `~/.cco/global/setup.sh` | Applies at every start, no rebuild |
-| Shell aliases for all projects | `~/.cco/global/setup.sh` | Runtime, user-level |
+| apt package for all projects | `~/.cco/setup-build.sh` | Single rebuild, fast startup |
+| tmux config / dotfiles for all projects | `~/.cco/setup.sh` | Applies at every start, no rebuild |
+| Shell aliases for all projects | `~/.cco/setup.sh` | Runtime, user-level |
 | apt package for one project (light) | `<repo>/.cco/setup.sh` | No rebuild needed |
 | apt package for one project (heavy) | Custom image | Zero startup penalty |
-| npm MCP server for all projects | `~/.cco/global/mcp-packages.txt` | Pre-installed at build |
+| npm MCP server for all projects | `~/.cco/mcp-packages.txt` | Pre-installed at build |
 | npm MCP server for one project | `<repo>/.cco/mcp-packages.txt` | Runtime, no rebuild |
 | pip/gem dependencies for one project | `<repo>/.cco/setup.sh` | Runtime installation |
 | Completely different toolchain | `docker.image` in project.yml | Full control |
 
 ### General Rule
 
-- **Build time** (`setup-build.sh`, custom image, `~/.cco/global/mcp-packages.txt`): for heavy or system-level dependencies — upfront cost, instant startup
+- **Build time** (`setup-build.sh`, custom image, `~/.cco/mcp-packages.txt`): for heavy or system-level dependencies — upfront cost, instant startup
 - **Runtime** (`setup.sh`, per-project setup, per-project mcp-packages): for lightweight or user-level config — no rebuild, but runs each session
 
 ---
@@ -283,7 +283,7 @@ Which mechanism to use based on your needs:
 ## File Layout
 
 ```
-~/.cco/global/
+~/.cco/
   setup-build.sh             # Global script (build time, root)
   setup.sh                   # Global script (runtime, user claude)
   mcp-packages.txt           # Global MCP packages (build time)

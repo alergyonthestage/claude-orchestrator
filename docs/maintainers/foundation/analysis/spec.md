@@ -57,7 +57,7 @@
 | ID | Requirement | Priority |
 |----|-------------|----------|
 | FR-3.1 | Three-tier context: global → project → repo (matching Claude Code's user → project → nested hierarchy) | Must |
-| FR-3.2 | `~/.cco/global/.claude/` is mounted to `~/.claude/` in the container | Must |
+| FR-3.2 | `~/.cco/.claude/` is mounted to `~/.claude/` in the container | Must |
 | FR-3.3 | The invoking repo's `<repo>/.cco/claude/` is mounted to `/workspace/.claude/`; generated overlays (packs.md, workspace.yml) are layered `:ro` from CACHE | Must |
 | FR-3.4 | Repository `.claude/` directories are included automatically via repo volume mounts | Must |
 | FR-3.5 | Global settings include agent teams enabled, always thinking, and bypass permissions | Must |
@@ -99,7 +99,7 @@
 | ID | Requirement | Priority |
 |----|-------------|----------|
 | FR-7.1 | Two default subagents: `analyst` (read-only, haiku) and `reviewer` (read-only, sonnet) | Must |
-| FR-7.2 | Subagents defined as markdown files in `~/.cco/global/.claude/agents/` | Must |
+| FR-7.2 | Subagents defined as markdown files in `~/.cco/.claude/agents/` | Must |
 | FR-7.3 | Projects can add project-specific subagents in `<repo>/.cco/claude/agents/` | Should |
 | FR-7.4 | Documentation explains how to create new subagents | Must |
 

@@ -94,7 +94,7 @@ way so you finish with a config that reflects how you actually work.
 
 ```bash
 cd ~/projects/my-repo         # a repo you want Claude to work in
-cco init                      # scaffold <repo>/.cco/ and ensure ~/.cco/global
+cco init                      # scaffold <repo>/.cco/ and ensure ~/.cco
 cco start my-repo
 ```
 
@@ -166,7 +166,7 @@ settings:
 | Orchestrator Layer | Host Source | Container Path | Claude Code Scope | Overridable? |
 |---|---|---|---|---|
 | `defaults/managed/` | baked in image | `/etc/claude-code/` | Managed (highest priority) | No — baked in image |
-| Global `.claude/` | `~/.cco/global/.claude/` | `~/.claude/` | User-level (always loaded) | Yes — user-owned |
+| Global `.claude/` | `~/.cco/.claude/` | `~/.claude/` | User-level (always loaded) | Yes — user-owned |
 | Project `.claude/` | `<repo>/.cco/claude/` | `/workspace/.claude/` | Project-level (always loaded) | Yes — per-project |
 | Repo's own `.claude/` | `<repo>/.claude/` | `/workspace/<repo>/.claude/` | Nested (on-demand) | Yes — from repo |
 

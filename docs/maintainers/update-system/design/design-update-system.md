@@ -54,7 +54,7 @@ defaults/                              # Framework-managed configuration sources
 │   ├── CLAUDE.md                      #   Framework-level instructions (immutable)
 │   └── .claude/skills/init-workspace/ #   Managed skill (immutable)
 │
-└── global/                            # Copied to ~/.cco/global/ at cco init
+└── global/                            # Copied to ~/.cco/ at cco init
     ├── setup.sh                       #   Host dotfiles bootstrap
     ├── setup-build.sh                 #   Build dependencies
     └── .claude/
@@ -138,7 +138,7 @@ This is the definitive reference for every file managed by the update system.
 
 ### 3.2 Global Scope — `cco update`
 
-> Source: `defaults/global/` → Installed: `~/.cco/global/` (personal store)
+> Source: `defaults/global/` → Installed: `~/.cco/` (personal store)
 
 | File | Policy | Discoverable? | Notes |
 |------|--------|---------------|-------|
@@ -234,7 +234,7 @@ chooses what to integrate.
 
 | Version | Source | Storage |
 |---------|--------|---------|
-| **Current** (ours) | User's installed file | `~/.cco/global/.claude/<file>` (global) or `<repo>/.cco/<file>` (project) |
+| **Current** (ours) | User's installed file | `~/.cco/.claude/<file>` (global) or `<repo>/.cco/<file>` (project) |
 | **Base** (ancestor) | Framework version at last install/apply | STATE: `<state>/cco/.../update/base/<file>` |
 | **New** (theirs) | Current framework version | `defaults/global/.../<file>` or `templates/project/base/` |
 
@@ -266,7 +266,7 @@ the `~/.cco/` personal store. It sits alongside the per-resource `meta` manifest
     └── .claude/settings.json
 ```
 
-The user's *current* version lives where they edit it — `~/.cco/global/.claude/`
+The user's *current* version lives where they edit it — `~/.cco/.claude/`
 for global, `<repo>/.cco/` for projects — never in the STATE base store
 (`project.yml` is user-owned and is not tracked in `base/` at all).
 
@@ -677,7 +677,7 @@ migrations/
 ```
 
 **Execution order in `cco update`:**
-1. Global migrations — always (affect `~/.cco/global/`)
+1. Global migrations — always (affect `~/.cco/`)
 2. Pack migrations — always (iterate `~/.cco/packs/*/`, tracked via STATE `<state>/cco/packs/<name>/update/meta`)
 3. User template migrations — always (iterate `~/.cco/templates/*/`, tracked via STATE `<state>/cco/templates/<name>/update/meta`)
 4. Project migrations — per project in scope (controlled by `--project`/`--all`)
@@ -898,7 +898,7 @@ sed substitution (backward compatible).
 
 ```
 ~/.cco/                             # Personal store (git-versioned via cco config save/push/pull)
-├── global/.claude/                 # Global defaults
+├── .claude/                        # Global Claude config
 ├── packs/                          # Authored / installed knowledge packs
 └── templates/                      # User-defined templates
     ├── project/
@@ -930,7 +930,7 @@ cco clean --dry-run                # Preview any combination without deleting
 
 | Flag | Target | Location |
 |------|--------|----------|
-| (default) | `*.bak` files | `~/.cco/global/.claude/` + each `<repo>/.cco/` |
+| (default) | `*.bak` files | `~/.cco/.claude/` + each `<repo>/.cco/` |
 | `--tmp` | `.tmp/` directories | `<repo>/.cco/.tmp/` |
 | `--generated` | `docker-compose.yml` | STATE: `<state>/cco/projects/<name>/docker-compose.yml` |
 
@@ -999,7 +999,7 @@ SOURCES
     Additive changes        changelog.yml                    (structured notifications)
 
 MIGRATION SCOPES
-    global                  Run on ~/.cco/global/
+    global                  Run on ~/.cco/
     project                 Run on each project in scope (<repo>/.cco/)
     pack                    Run on each pack with STATE update/meta
     template                Run on each user template with STATE update/meta
