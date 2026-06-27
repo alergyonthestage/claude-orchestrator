@@ -91,12 +91,12 @@ _resolve_unit() {
 
     local resolved=0 unresolved=0
     local -a member_repos=()
-    local _ln name rest url path rc
+    local _ln name url path rc
 
     # Repos
     while IFS= read -r _ln; do
         [[ -z "$_ln" ]] && continue
-        name="${_ln%%$'\t'*}"; rest="${_ln#*$'\t'}"; url="${rest%%$'\t'*}"
+        _peel_tab "$_ln" name url
         [[ -z "$name" ]] && continue
         member_repos+=("$name")
         path=$(_index_get_path "$name")
@@ -120,7 +120,7 @@ _resolve_unit() {
     # Extra mounts
     while IFS= read -r _ln; do
         [[ -z "$_ln" ]] && continue
-        name="${_ln%%$'\t'*}"; rest="${_ln#*$'\t'}"; url="${rest%%$'\t'*}"
+        _peel_tab "$_ln" name url
         [[ -z "$name" ]] && continue
         path=$(_index_get_path "$name")
         if [[ -n "$path" ]] && _path_exists "$path"; then
@@ -157,7 +157,7 @@ _resolve_unit() {
 # coordinate name. Echoes the name, or returns 1 if no coordinate matches.
 _resolve_scan_match_name() {
     local repo_dir="$1" project_yml="$2"
-    local origin="" _ln name rest url base
+    local origin="" _ln name url base
 
     if git -C "$repo_dir" rev-parse --git-dir >/dev/null 2>&1; then
         origin=$(git -C "$repo_dir" remote get-url origin 2>/dev/null || true)
@@ -165,7 +165,7 @@ _resolve_scan_match_name() {
     if [[ -n "$origin" ]]; then
         while IFS= read -r _ln; do
             [[ -z "$_ln" ]] && continue
-            name="${_ln%%$'\t'*}"; rest="${_ln#*$'\t'}"; url="${rest%%$'\t'*}"
+            _peel_tab "$_ln" name url
             if [[ -n "$url" && "$url" == "$origin" ]]; then
                 printf '%s\n' "$name"
                 return 0
