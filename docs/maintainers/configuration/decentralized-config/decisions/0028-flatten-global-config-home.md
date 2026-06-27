@@ -85,11 +85,21 @@ per-project contrast (`~/.cco/.claude` = global, `~/.cco/projects/<name>/` = a c
 ## Consequences
 
 - **Breaking layout change**, absorbed by **one idempotent migration** (`migrations/global/015`) that
-  rides the existing eager-global update path (ADR-0025). Three entry points converge on
-  `~/.cco/.claude` so no user ever needs a second move:
+  rides the existing eager-global update path (ADR-0025). Entry points converge on `~/.cco/.claude`
+  so no user ever needs a second move:
   - **Fresh** (`cco init`): writes straight to `~/.cco/.claude`.
   - **Legacy vault** (`cco init --migrate`): restores legacy `global/.claude` straight to `~/.cco/.claude`.
   - **Eager global** (`cco update`): migration 015 moves a pre-flatten dev build's `~/.cco/global/.claude`.
+  - **Dispatch-time bootstrap** (any command): `_cco_first_run` self-heals a pre-flatten layout
+    before `check_global` and any global-config reader runs.
+- **Bootstrap self-heal (added after dogfooding; resolves a gate-ordering bug).** `check_global` now
+  tests the *flat* `~/.cco/.claude`, but a pre-flatten user only has `~/.cco/global/.claude` — so the
+  pre-condition check would die ("run `cco init`") **before** migration 015 (or any reader) could see
+  the config, locking pre-flatten users out of the very command (`cco update`) meant to migrate them.
+  The move is therefore a **single shared helper** (`_cco_flatten_global_claude`, `lib/migrate.sh`)
+  invoked from **both** migration 015 (the schema-version record, 14 → 15) **and** the dispatch-time
+  bootstrap `_cco_first_run` (host-side, idempotent, runs on every command after the four-root
+  bootstrap). Migration 015 stays as the formal breaking-change record per the update-system rule.
 - All readers and writers of the destination are repointed; `defaults/global/.claude` (the source) is
   left untouched.
 - **No `changelog.yml` entry** — this is a structural move handled by a migration, not an additive

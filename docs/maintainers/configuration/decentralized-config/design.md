@@ -241,10 +241,13 @@ resolves RD-memory and satisfies the Phase-3 gate (review BL2).
 └── mcp-packages.txt     # global MCP package list (C3)
 ```
 > **Flat global home (ADR-0028).** `.claude/` sits **directly** under `~/.cco` — there is no
-> `global/` wrapper (a vault-era vestige flattened pre-v1; migration 015). `~/.cco` *is* the global
-> scope, so its global Claude config is `~/.cco/.claude/`. The future solo-adopter per-project
-> centralization (Case-C, ADR-0023 D4) lands at **`~/.cco/projects/<name>/`** — a clean sibling of
-> `~/.cco/.claude/`, keeping the global-vs-per-project contrast without a redundant `global/` level.
+> `global/` wrapper (a vault-era vestige flattened pre-v1). `~/.cco` *is* the global scope, so its
+> global Claude config is `~/.cco/.claude/`. A pre-flatten layout self-heals via a shared helper
+> (`_cco_flatten_global_claude`) called from **both** migration 015 (schema record) **and** the
+> dispatch-time bootstrap `_cco_first_run` (idempotent, on any command, before `check_global`). The
+> future solo-adopter per-project centralization (Case-C, ADR-0023 D4) lands at
+> **`~/.cco/projects/<name>/`** — a clean sibling of `~/.cco/.claude/`, keeping the global-vs-
+> per-project contrast without a redundant `global/` level.
 > **Moved OUT (ADR-0016 D8, fixes C1/C3):** `tags.yml` → **DATA** (ADR-0015, not `~/.cco`);
 > `manifest.yml` → **removed** (ADR-0012, must not appear); `backups/` → **STATE** (C1); the
 > `!tags.yml` allowlist line → **dropped**; llms **content** → **CACHE** (C2); **no** central
