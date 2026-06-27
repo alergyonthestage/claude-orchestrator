@@ -13,6 +13,11 @@ remote opt-in), and the env-var root resolution in `bin/cco:32–46`.
 > Audience: the maintainer (and any future cco developer dogfooding a breaking phase).
 > This is **dev process**, not a shipped feature.
 
+> **Runnable checklist:** this doc is the *plan* (sandbox recipe + legacy-vault fate). The
+> step-by-step **legacy → backup → migration → functional test → failure-path** checklist that
+> exercises it — including the pre-migration safety nets — lives in
+> [`e2e-validation-checklist.md`](e2e-validation-checklist.md).
+
 ---
 
 ## 1. Legacy-vault fate (confirmed, no design change)

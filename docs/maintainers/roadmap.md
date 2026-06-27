@@ -101,8 +101,10 @@ flowchart LR
    decision, and a spot-check of the §6 coverage gaps (`cmd-update.sh`, `cmd-resolve.sh`,
    `index.sh` atomicity).
    Launcher: [`configuration/decentralized-config/pre-e2e-comprehensive-review-handoff.md`](configuration/decentralized-config/pre-e2e-comprehensive-review-handoff.md).
-6. **Dogfooding e2e on Mac** — `configuration/decentralized-config/P2-dogfooding-validation.md`
-   (sandboxed roots + HOME-flip; legacy-vault removal accepted only after merge + validation).
+6. **Dogfooding e2e on Mac** — plan: `configuration/decentralized-config/P2-dogfooding-validation.md`
+   (sandboxed roots + HOME-flip; legacy-vault removal accepted only after merge + validation);
+   runnable checklist (legacy → backup → migration → functional test → failure-path, with the
+   pre-migration safety nets): [`configuration/decentralized-config/e2e-validation-checklist.md`](configuration/decentralized-config/e2e-validation-checklist.md).
 7. **Merge / release v1** — merge `feat/vault/decentralized-config`, reconcile both roadmaps,
    mark ADRs.
 
