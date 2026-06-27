@@ -57,11 +57,11 @@ test_migrate_bootstrap_idempotent_no_clobber() {
     # M6: re-running must not disturb an existing root's contents.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    mkdir -p "$HOME/.cco/global"
-    echo "keep me" > "$HOME/.cco/global/marker"
+    mkdir -p "$HOME/.cco"
+    echo "keep me" > "$HOME/.cco/marker"
     run_cco path list || true
     run_cco path list || true
-    assert_file_contains "$HOME/.cco/global/marker" "keep me" "bootstrap must not clobber existing CONFIG content"
+    assert_file_contains "$HOME/.cco/marker" "keep me" "bootstrap must not clobber existing CONFIG content"
 }
 
 # ── Legacy-vault backup (ADR-0006 / ADR-0025) ────────────────────────
@@ -183,7 +183,7 @@ test_migrate_backup_skipped_without_vault() {
     [[ -z "$archive" ]] || fail "no backup should be made without a legacy vault: $archive"
 }
 
-# H5 (26-06-2026 migration review): a legacy user (vault backup present, ~/.cco/global
+# H5 (26-06-2026 migration review): a legacy user (vault backup present, ~/.cco/.claude
 # not yet populated) hitting check_global must be pointed at 'cco update', not 'cco init'.
 test_check_global_points_legacy_user_to_update() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
@@ -236,7 +236,7 @@ test_migrate_global_populates_cco() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_legacy_vault_global "$tmpdir"
     run_cco update || true
-    assert_file_exists "$HOME/.cco/global/.claude/CLAUDE.md" "global/.claude should be populated into ~/.cco"
+    assert_file_exists "$HOME/.cco/.claude/CLAUDE.md" "global/.claude should be populated into ~/.cco"
     assert_file_exists "$HOME/.cco/setup.sh"      "setup.sh should be migrated to ~/.cco"
     assert_file_exists "$HOME/.cco/secrets.env"   "secrets.env should be migrated to ~/.cco"
     assert_dir_exists  "$HOME/.cco/templates/my-tmpl"  "templates should be migrated to ~/.cco"
@@ -249,8 +249,8 @@ test_migrate_global_atomic_no_stage_leftover() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_legacy_vault_global "$tmpdir"
     run_cco update || true
-    assert_dir_exists "$HOME/.cco/global/.claude" "global/.claude must be present after migration"
-    [[ ! -e "$HOME/.cco/global/.claude.tmp" ]] \
+    assert_dir_exists "$HOME/.cco/.claude" "global/.claude must be present after migration"
+    [[ ! -e "$HOME/.cco/.claude.tmp" ]] \
         || fail "the atomic global/.claude staging dir must not be left behind (H1)"
 }
 
@@ -277,9 +277,9 @@ test_migrate_global_idempotent() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_legacy_vault_global "$tmpdir"
     run_cco update || true
-    echo "# user edit" >> "$HOME/.cco/global/.claude/CLAUDE.md"
+    echo "# user edit" >> "$HOME/.cco/.claude/CLAUDE.md"
     run_cco update || true
-    assert_file_contains "$HOME/.cco/global/.claude/CLAUDE.md" "user edit" \
+    assert_file_contains "$HOME/.cco/.claude/CLAUDE.md" "user edit" \
         "re-running migration must not clobber user-edited ~/.cco config"
 }
 
@@ -299,7 +299,7 @@ test_migrate_global_skipped_without_legacy_vault() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco update || true
-    # ~/.cco/global came from setup_global_from_defaults, not the migration; no tags seeded.
+    # ~/.cco/.claude came from setup_global_from_defaults, not the migration; no tags seeded.
     [[ ! -f "$CCO_DATA_HOME/tags.yml" ]] || fail "no profile→tag seed should occur without a legacy vault"
 }
 
@@ -307,28 +307,28 @@ test_migrate_global_dry_run_skips() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_legacy_vault_global "$tmpdir"
     run_cco update --dry-run || true
-    [[ ! -d "$HOME/.cco/global/.claude" ]] || fail "--dry-run must not populate ~/.cco"
+    [[ ! -d "$HOME/.cco/.claude" ]] || fail "--dry-run must not populate ~/.cco"
 }
 
 test_migrate_global_after_init_nondestructive() {
     # ADR-0026 hinge: a legacy user who ran `cco init` first (populating
-    # ~/.cco/global from defaults) must STILL be migrated by `cco update`, not
+    # ~/.cco/.claude from defaults) must STILL be migrated by `cco update`, not
     # silently skipped. The idempotency gate is the global-migrated marker flag,
-    # not ~/.cco/global presence; the overwrite is non-destructive (backup + confirm).
+    # not ~/.cco/.claude presence; the overwrite is non-destructive (backup + confirm).
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_legacy_vault_global "$tmpdir"
-    # Simulate `cco init` having seeded ~/.cco/global from defaults first.
-    mkdir -p "$HOME/.cco/global/.claude"
-    echo "# from cco init defaults" > "$HOME/.cco/global/.claude/CLAUDE.md"
+    # Simulate `cco init` having seeded ~/.cco/.claude from defaults first.
+    mkdir -p "$HOME/.cco/.claude"
+    echo "# from cco init defaults" > "$HOME/.cco/.claude/CLAUDE.md"
 
     # `cco update` backs up the vault (dispatch), then migrates: no global-migrated
-    # flag + backup + ~/.cco/global present → non-destructive overwrite (confirmed).
+    # flag + backup + ~/.cco/.claude present → non-destructive overwrite (confirmed).
     CCO_ASSUME_YES=1 run_cco update || true
 
     # The vault content replaced the init-seeded defaults (migration ran).
-    assert_file_contains "$HOME/.cco/global/.claude/CLAUDE.md" "global cfg" \
+    assert_file_contains "$HOME/.cco/.claude/CLAUDE.md" "global cfg" \
         "the legacy vault must overwrite the init-seeded defaults (non-destructive migration)"
-    assert_file_not_contains "$HOME/.cco/global/.claude/CLAUDE.md" "from cco init defaults"
+    assert_file_not_contains "$HOME/.cco/.claude/CLAUDE.md" "from cco init defaults"
     # A restorable backup of the pre-migration ~/.cco was written.
     local had_backup=false f
     for f in "$CCO_STATE_HOME"/backups/cco-config-*.tar.gz; do [[ -e "$f" ]] && had_backup=true; done

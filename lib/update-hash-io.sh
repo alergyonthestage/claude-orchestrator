@@ -220,7 +220,7 @@ _handle_policy_transitions() {
                 if [[ "$scope" == "project" ]]; then
                     _installed_dir="$project_dir/.claude"
                 else
-                    _installed_dir="$GLOBAL_DIR/.claude"
+                    _installed_dir="$(_cco_global_claude_dir)"
                 fi
                 if [[ -f "$_installed_dir/$rel" ]]; then
                     _save_base_version "$base_dir" "$rel" "$_installed_dir/$rel"

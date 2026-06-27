@@ -728,7 +728,7 @@ test_dry_run_global_mcp_not_mounted_when_absent() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    rm -f "$HOME/.cco/global/.claude/mcp.json"
+    rm -f "$HOME/.cco/.claude/mcp.json"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run --dump
     assert_file_not_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "mcp-global.json"
@@ -1608,7 +1608,7 @@ test_start_blocked_by_global_conflict_markers() {
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     # Inject conflict markers into a global config file
-    cat >> "$HOME/.cco/global/.claude/agents/analyst.md" <<'MARKERS'
+    cat >> "$HOME/.cco/.claude/agents/analyst.md" <<'MARKERS'
 
 <<<<<<< your version
 # My custom section

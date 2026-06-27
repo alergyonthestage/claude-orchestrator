@@ -2,7 +2,7 @@
 # lib/cmd-init.sh — the single project entry verb (ADR-0026)
 #
 # `cco init` (clean) does TWO things, run inside a repo:
-#   1. ensures the global config (~/.cco/global) from the framework defaults,
+#   1. ensures the global config (~/.cco/.claude) from the framework defaults,
 #      idempotently — only when absent (fresh user); a one-time no-op afterwards.
 #   2. scaffolds the per-repo committed <repo>/.cco/ (design §2.1) and registers
 #      it in the STATE index.
@@ -46,7 +46,7 @@ cmd_init() {
 Usage: cco init [--name <project>] [--template <name>] [--force] [--lang <language>]
        cco init --migrate <project> [--sync]   (run inside a cloned repo)
 
-Run inside a repo, `cco init` ensures your global config (~/.cco/global, only the
+Run inside a repo, `cco init` ensures your global config (~/.cco/.claude, only the
 first time) and scaffolds this repo's committed .cco/ project config, registering
 it on this machine. `--template` scaffolds from a named project template instead
 of the base. `--migrate` instead brings one legacy-vault project into this
@@ -116,22 +116,22 @@ EOF
 }
 
 # ── Global-config ensure (ADR-0026 step 1) ───────────────────────────
-# Seed ~/.cco/global from the framework defaults ONLY when absent. Idempotent:
+# Seed ~/.cco/.claude from the framework defaults ONLY when absent. Idempotent:
 # returns 0 (and seeds) on a fresh user, 1 (no-op) when the global already exists.
-# Retargeted from the legacy central $GLOBAL_DIR to $(_cco_config_dir)/global.
-# Emits NO manifest.yml (ADR-0012) and touches NO central PROJECTS_DIR.
+# Targets $(_cco_global_claude_dir) = ~/.cco/.claude (flat, ADR-0028 — no `global/`
+# wrapper). Emits NO manifest.yml (ADR-0012) and touches NO central PROJECTS_DIR.
 _cco_init_ensure_global() {
     local lang_arg="$1" force="${2:-false}"
-    local cfg gdir
+    local cfg gclaude
     cfg="$(_cco_config_dir)"          # ~/.cco
-    gdir="$cfg/global"
+    gclaude="$(_cco_global_claude_dir)"   # ~/.cco/.claude
 
     # Already set up → one-time no-op (fresh users get it here; migrating users
     # get it from `cco update`, ADR-0025). An explicit --force re-seeds from the
     # framework defaults (the documented reset escape hatch; clobbers local edits).
-    if [[ -d "$gdir/.claude" ]]; then
+    if [[ -d "$gclaude" ]]; then
         [[ "$force" == "true" ]] || return 1
-        rm -rf "$gdir"
+        rm -rf "$gclaude"
     fi
 
     # Language selection (prompt unless --lang given) — only on a fresh seed.
@@ -155,13 +155,13 @@ _cco_init_ensure_global() {
         comm_lang="English"; docs_lang="English"; code_lang="English"
     fi
 
-    info "Initializing global config at $gdir ..."
-    mkdir -p "$gdir" || die "Failed to create global directory: $gdir"
-    cp -r "$DEFAULTS_DIR/global/.claude" "$gdir/.claude" \
+    info "Initializing global config at $gclaude ..."
+    mkdir -p "$cfg" || die "Failed to create config directory: $cfg"
+    cp -r "$DEFAULTS_DIR/global/.claude" "$gclaude" \
         || die "Failed to copy default config from $DEFAULTS_DIR/global/.claude"
 
     # Replace language placeholders.
-    local lang_file="$gdir/.claude/rules/language.md"
+    local lang_file="$gclaude/rules/language.md"
     _substitute "$lang_file" "COMM_LANG" "$comm_lang"
     _substitute "$lang_file" "DOCS_LANG" "$docs_lang"
     _substitute "$lang_file" "CODE_LANG" "$code_lang"
@@ -179,14 +179,14 @@ _cco_init_ensure_global() {
     now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     meta_file=$(_cco_global_meta)
     (
-        cd "$gdir/.claude" || exit 1
+        cd "$gclaude" || exit 1
         find . -type f ! -name 'meta' ! -path './.cco/*' | sed 's|^\./||' | sort | while IFS= read -r rel; do
             local skip=false uf
             for uf in ${GLOBAL_UNTRACKED_FILES[@]+"${GLOBAL_UNTRACKED_FILES[@]}"}; do
                 [[ "$rel" == "$uf" ]] && skip=true && break
             done
             $skip && continue
-            printf '%s\t%s\n' "$rel" "$(_file_hash "$gdir/.claude/$rel")"
+            printf '%s\t%s\n' "$rel" "$(_file_hash "$gclaude/$rel")"
         done
     ) | _generate_cco_meta "$meta_file" "$latest_schema" "$now"
 
@@ -200,11 +200,11 @@ _cco_init_ensure_global() {
     _save_all_base_versions "$(_cco_global_base_dir)" "$DEFAULTS_DIR/global/.claude" "global"
 
     # Fresh install — nothing to migrate, just marks the schema current.
-    if ! _run_migrations "global" "$gdir/.claude" 0 "$meta_file"; then
+    if ! _run_migrations "global" "$gclaude" 0 "$meta_file"; then
         error "Migrations failed during init. Run 'cco update' to retry."
     fi
 
-    ok "Global config initialized at $gdir (languages: $comm_lang / $docs_lang / $code_lang)"
+    ok "Global config initialized at $gclaude (languages: $comm_lang / $docs_lang / $code_lang)"
     return 0
 }
 

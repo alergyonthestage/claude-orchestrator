@@ -124,10 +124,10 @@ test_init_creates_cco_base() {
     setup_cco_env "$tmpdir"
     init_global "$tmpdir" --lang "English"
 
-    assert_dir_exists "$CCO_GLOBAL_DIR/.claude/.cco/base" \
+    assert_dir_exists "$HOME/.cco/.claude/.cco/base" \
         ".cco/base/ should be created during init"
     # Should have copies of tracked files
-    assert_file_exists "$CCO_GLOBAL_DIR/.claude/.cco/base/settings.json" \
+    assert_file_exists "$HOME/.cco/.claude/.cco/base/settings.json" \
         ".cco/base/ should contain settings.json"
 }
 
@@ -185,13 +185,13 @@ test_update_no_backup_skips_bak() {
 
     # Create conflict — user edit hits the sandbox installed tree ($tmpdir);
     # the framework change hits the framework sandbox (no tracked-file mutation).
-    printf '\n# My custom rule\n' >> "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
+    printf '\n# My custom rule\n' >> "$HOME/.cco/.claude/rules/workflow.md"
     sandbox_framework
     printf '\n# Framework update\n' >> "$CCO_FRAMEWORK_ROOT/defaults/global/.claude/rules/workflow.md"
 
     run_cco update --force --no-backup
     # No .bak should be created
-    assert_file_not_exists "$CCO_GLOBAL_DIR/.claude/rules/workflow.md.bak"
+    assert_file_not_exists "$HOME/.cco/.claude/rules/workflow.md.bak"
     # Framework update should be applied
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "Framework update"
+    assert_file_contains "$HOME/.cco/.claude/rules/workflow.md" "Framework update"
 }

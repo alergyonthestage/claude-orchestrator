@@ -3,7 +3,7 @@
 #
 # Provides: cmd_update()
 # Dependencies: colors.sh, utils.sh, update.sh
-# Globals: GLOBAL_DIR, DEFAULTS_DIR, REPO_ROOT (projects via the STATE index, P5)
+# Globals: DEFAULTS_DIR, REPO_ROOT (projects via the STATE index, P5)
 
 cmd_update() {
     local cmd_mode="discovery"   # discovery | diff | sync | news
@@ -137,7 +137,7 @@ EOF
 
     # Eager global migration (ADR-0025 §1): on first run against a legacy install,
     # populate ~/.cco from the verified backup + seed profile→tag. Idempotent — gated
-    # by the `global-migrated` marker flag, NOT ~/.cco/global presence (ADR-0026, since
+    # by the `global-migrated` marker flag, NOT ~/.cco/.claude presence (ADR-0026, since
     # cco init may seed global from defaults). Skipped in preview (--dry-run).
     if ! $dry_run; then
         _cco_migrate_global || true

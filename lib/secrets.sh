@@ -8,7 +8,7 @@
 #   Deprecated: migrate_memory_to_claude_state() [use migrations/project/001],
 #               _migrate_to_managed() [use migrations/global/001]
 # Dependencies: colors.sh, utils.sh
-# Globals: GLOBAL_DIR, DEFAULTS_DIR
+# Globals: DEFAULTS_DIR
 #
 # Scanning rationale: vault save (pre-commit) and project publish
 # (pre-push) both need to block known-secret files. Keeping the pattern
@@ -133,7 +133,7 @@ migrate_memory_to_claude_state() {
 # Kept for backward compatibility with existing installs that call cmd-init
 # before running cco update for the first time.
 _migrate_to_managed() {
-    local global_dir="$GLOBAL_DIR"
+    local global_dir; global_dir="$(_cco_config_dir)"
     local marker="$global_dir/.claude/.managed-migration-done"
 
     [[ -f "$marker" ]] && return 0

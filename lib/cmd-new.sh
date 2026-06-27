@@ -3,7 +3,7 @@
 #
 # Provides: cmd_new()
 # Dependencies: colors.sh, utils.sh, auth.sh, secrets.sh
-# Globals: GLOBAL_DIR, IMAGE_NAME
+# Globals: IMAGE_NAME
 
 cmd_new() {
     check_global
@@ -72,10 +72,10 @@ EOF
     mkdir -p "$tmp_dir/claude-state/memory" "$tmp_dir/.claude" || die "Failed to create temp directory: $tmp_dir"
     trap 'rm -rf "'"$tmp_dir"'"' EXIT
 
-    # Global config lives in the CONFIG bucket (~/.cco/global; design §2.3).
-    # cco new is an ephemeral session: its transcripts/memory stay in tmp_dir
-    # (no persistent project identity to key STATE by).
-    local config_global; config_global="$(_cco_config_dir)/global"
+    # Global config lives in the CONFIG bucket (~/.cco/.claude, flat — ADR-0028;
+    # design §2.3). cco new is an ephemeral session: its transcripts/memory stay
+    # in tmp_dir (no persistent project identity to key STATE by).
+    local global_claude; global_claude="$(_cco_global_claude_dir)"
 
     # Create minimal project CLAUDE.md
     cat > "$tmp_dir/.claude/CLAUDE.md" <<EOF
@@ -121,11 +121,11 @@ YAML
     volumes:
       - \${HOME}/.claude.json:/home/claude/.claude.json.seed:ro
       # Global config
-      - ${config_global}/.claude/settings.json:/home/claude/.claude/settings.json:ro
-      - ${config_global}/.claude/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
-      - ${config_global}/.claude/rules:/home/claude/.claude/rules:ro
-      - ${config_global}/.claude/agents:/home/claude/.claude/agents:ro
-      - ${config_global}/.claude/skills:/home/claude/.claude/skills:ro
+      - ${global_claude}/settings.json:/home/claude/.claude/settings.json:ro
+      - ${global_claude}/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
+      - ${global_claude}/rules:/home/claude/.claude/rules:ro
+      - ${global_claude}/agents:/home/claude/.claude/agents:ro
+      - ${global_claude}/skills:/home/claude/.claude/skills:ro
       # Session config
       - ${tmp_dir}/.claude:/workspace/.claude
       # Claude state: auto memory + session transcripts (enables /resume across rebuilds)
@@ -133,9 +133,9 @@ YAML
 YAML
 
         # Global MCP config
-        if [[ -f "$config_global/.claude/mcp.json" ]]; then
+        if [[ -f "$global_claude/mcp.json" ]]; then
             echo "      # Global MCP servers"
-            echo "      - ${config_global}/.claude/mcp.json:/home/claude/.claude/mcp-global.json:ro"
+            echo "      - ${global_claude}/mcp.json:/home/claude/.claude/mcp-global.json:ro"
         fi
 
         echo "      # Repositories"

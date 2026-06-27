@@ -5,7 +5,7 @@
 #           check_global(), _check_reserved_project_name(), _sed_i(),
 #           _sed_i_or_append(), _substitute()
 # Dependencies: colors.sh
-# Globals: IMAGE_NAME, GLOBAL_DIR
+# Globals: IMAGE_NAME
 
 # Expand ~ in paths
 expand_path() {
@@ -69,11 +69,11 @@ check_image() {
 }
 
 # Check global config exists (created by cco init, or migrated by cco update).
-# A legacy user (vault backup present, ~/.cco/global not yet populated) must be
+# A legacy user (vault backup present, ~/.cco/.claude not yet populated) must be
 # pointed at 'cco update' — the eager global migration — not 'cco init', which would
 # seed defaults and force an unexpected overwrite-confirm on the next update (H5).
 check_global() {
-    if [[ ! -d "$GLOBAL_DIR/.claude" ]]; then
+    if [[ ! -d "$(_cco_global_claude_dir)" ]]; then
         if _cco_have_backup "$(_cco_state_dir)/backups" 2>/dev/null; then
             die "Global config not found, but a legacy vault backup exists. Run 'cco update' to migrate your global config from the vault."
         fi

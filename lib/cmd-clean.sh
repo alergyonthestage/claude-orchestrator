@@ -3,7 +3,7 @@
 #
 # Provides: cmd_clean()
 # Dependencies: colors.sh, utils.sh
-# Globals: GLOBAL_DIR (projects enumerated via the STATE index, P5)
+# Globals: (none — global .claude resolved via _cco_global_claude_dir; projects via the STATE index, P5)
 
 cmd_clean() {
     local dry_run=false
@@ -107,11 +107,12 @@ EOF
         fi
     else
         # Global + all projects (enumerated via the STATE index)
+        local global_claude; global_claude="$(_cco_global_claude_dir)"
         if $cat_bak; then
-            total_bak=$(_clean_bak "$GLOBAL_DIR" "$dry_run" "global")
+            total_bak=$(_clean_bak "$global_claude" "$dry_run" "global")
         fi
         if $cat_new; then
-            total_new=$(( total_new + $(_clean_new "$GLOBAL_DIR" "$dry_run" "global") ))
+            total_new=$(( total_new + $(_clean_new "$global_claude" "$dry_run" "global") ))
         fi
 
         local pname unit_dir project_cco count

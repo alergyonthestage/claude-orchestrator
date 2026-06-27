@@ -23,9 +23,9 @@ test_update_first_run_no_meta() {
     # Simulate pre-update install (no .cco/meta)
     setup_global_from_defaults "$tmpdir"
     # Substitute language placeholders manually (as old init would)
-    sed -i "s/{{COMM_LANG}}/English/g" "$CCO_GLOBAL_DIR/.claude/rules/language.md"
-    sed -i "s/{{DOCS_LANG}}/English/g" "$CCO_GLOBAL_DIR/.claude/rules/language.md"
-    sed -i "s/{{CODE_LANG}}/English/g" "$CCO_GLOBAL_DIR/.claude/rules/language.md"
+    sed -i "s/{{COMM_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
+    sed -i "s/{{DOCS_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
+    sed -i "s/{{CODE_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
 
     run_cco update
     assert_file_exists "$(state_global_meta)" \
@@ -57,7 +57,7 @@ test_update_framework_changed() {
 
     run_cco update --force
     # The installed file should now contain the new content
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "New rule added"
+    assert_file_contains "$HOME/.cco/.claude/rules/workflow.md" "New rule added"
 }
 
 test_update_user_modified() {
@@ -67,11 +67,11 @@ test_update_user_modified() {
     init_global "$tmpdir" --lang "English"
 
     # User modifies a managed file
-    printf '\n# My custom rule\n' >> "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
+    printf '\n# My custom rule\n' >> "$HOME/.cco/.claude/rules/workflow.md"
 
     run_cco update
     # User modification should be preserved
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "My custom rule"
+    assert_file_contains "$HOME/.cco/.claude/rules/workflow.md" "My custom rule"
 }
 
 test_update_force_overwrites() {
@@ -81,14 +81,14 @@ test_update_force_overwrites() {
     init_global "$tmpdir" --lang "English"
 
     # User modifies, then framework also changes (simulate conflict)
-    printf '\n# My custom rule\n' >> "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
+    printf '\n# My custom rule\n' >> "$HOME/.cco/.claude/rules/workflow.md"
     with_framework_change "defaults/global/.claude/rules/workflow.md" \
         $'\n# Framework update\n'
 
     run_cco update --force
     # User modification should be gone, framework update present
-    assert_file_not_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "My custom rule"
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "Framework update"
+    assert_file_not_contains "$HOME/.cco/.claude/rules/workflow.md" "My custom rule"
+    assert_file_contains "$HOME/.cco/.claude/rules/workflow.md" "Framework update"
 }
 
 test_update_keep_preserves() {
@@ -98,13 +98,13 @@ test_update_keep_preserves() {
     init_global "$tmpdir" --lang "English"
 
     # Create conflict
-    printf '\n# My custom rule\n' >> "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
+    printf '\n# My custom rule\n' >> "$HOME/.cco/.claude/rules/workflow.md"
     with_framework_change "defaults/global/.claude/rules/workflow.md" \
         $'\n# Framework update\n'
 
     run_cco update --keep
     # User version should be preserved
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "My custom rule"
+    assert_file_contains "$HOME/.cco/.claude/rules/workflow.md" "My custom rule"
 }
 
 test_update_keep_survives_second_run() {
@@ -114,7 +114,7 @@ test_update_keep_survives_second_run() {
     init_global "$tmpdir" --lang "English"
 
     # Create conflict: user modifies + framework changes
-    printf '\n# My custom rule\n' >> "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
+    printf '\n# My custom rule\n' >> "$HOME/.cco/.claude/rules/workflow.md"
     with_framework_change "defaults/global/.claude/rules/workflow.md" \
         $'\n# Framework update\n'
 
@@ -123,7 +123,7 @@ test_update_keep_survives_second_run() {
 
     # Second run: no flags (default replace mode) — should see NO_UPDATE
     run_cco update
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "My custom rule" \
+    assert_file_contains "$HOME/.cco/.claude/rules/workflow.md" "My custom rule" \
         "Kept file must survive a second update"
 }
 
@@ -134,16 +134,16 @@ test_update_replace_creates_bak() {
     init_global "$tmpdir" --lang "English"
 
     # Create conflict
-    printf '\n# My custom rule\n' >> "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
+    printf '\n# My custom rule\n' >> "$HOME/.cco/.claude/rules/workflow.md"
     with_framework_change "defaults/global/.claude/rules/workflow.md" \
         $'\n# Framework update\n'
 
     run_cco update --replace
     # Backup should exist with user's version
-    assert_file_exists "$CCO_GLOBAL_DIR/.claude/rules/workflow.md.bak"
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md.bak" "My custom rule"
+    assert_file_exists "$HOME/.cco/.claude/rules/workflow.md.bak"
+    assert_file_contains "$HOME/.cco/.claude/rules/workflow.md.bak" "My custom rule"
     # Updated file should have framework changes
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "Framework update"
+    assert_file_contains "$HOME/.cco/.claude/rules/workflow.md" "Framework update"
 }
 
 test_update_new_file_added() {
@@ -158,8 +158,8 @@ test_update_new_file_added() {
     trap "rm -f '$new_file'; rm -rf '$tmpdir'" EXIT
 
     run_cco update --force
-    assert_file_exists "$CCO_GLOBAL_DIR/.claude/rules/new-rule.md"
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/new-rule.md" "New Rule"
+    assert_file_exists "$HOME/.cco/.claude/rules/new-rule.md"
+    assert_file_contains "$HOME/.cco/.claude/rules/new-rule.md" "New Rule"
 }
 
 test_update_dry_run() {
@@ -178,7 +178,7 @@ test_update_dry_run() {
     # Dry-run/discovery reports a count summary; the filename is shown by --diff.
     assert_output_contains "new file"
     # File should NOT actually exist
-    assert_file_not_exists "$CCO_GLOBAL_DIR/.claude/rules/dry-test.md"
+    assert_file_not_exists "$HOME/.cco/.claude/rules/dry-test.md"
 }
 
 test_update_migrations_run_in_order() {
@@ -188,9 +188,9 @@ test_update_migrations_run_in_order() {
     setup_global_from_defaults "$tmpdir"
 
     # Substitute language placeholders
-    sed -i "s/{{COMM_LANG}}/English/g" "$CCO_GLOBAL_DIR/.claude/rules/language.md"
-    sed -i "s/{{DOCS_LANG}}/English/g" "$CCO_GLOBAL_DIR/.claude/rules/language.md"
-    sed -i "s/{{CODE_LANG}}/English/g" "$CCO_GLOBAL_DIR/.claude/rules/language.md"
+    sed -i "s/{{COMM_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
+    sed -i "s/{{DOCS_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
+    sed -i "s/{{CODE_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
 
     # Create .cco/meta with schema_version 0
     create_cco_meta "$(state_global_meta)" "schema_version: 0
@@ -206,7 +206,7 @@ manifest:"
 
     run_cco update
     # Schema version should be updated to the latest global migration id.
-    assert_file_contains "$(state_global_meta)" "schema_version: 14"
+    assert_file_contains "$(state_global_meta)" "schema_version: 15"
 }
 
 test_update_migration_failure_stops() {
@@ -216,9 +216,9 @@ test_update_migration_failure_stops() {
     setup_global_from_defaults "$tmpdir"
 
     # Substitute language placeholders
-    sed -i "s/{{COMM_LANG}}/English/g" "$CCO_GLOBAL_DIR/.claude/rules/language.md"
-    sed -i "s/{{DOCS_LANG}}/English/g" "$CCO_GLOBAL_DIR/.claude/rules/language.md"
-    sed -i "s/{{CODE_LANG}}/English/g" "$CCO_GLOBAL_DIR/.claude/rules/language.md"
+    sed -i "s/{{COMM_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
+    sed -i "s/{{DOCS_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
+    sed -i "s/{{CODE_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
 
     # Create a failing migration with higher ID (in the framework sandbox — the
     # tracked migrations/ tree is never touched).
@@ -276,13 +276,13 @@ test_update_language_preserved() {
     init_global "$tmpdir" --lang "Italian:Italian:English"
 
     # Verify language.md has Italian
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/language.md" "Italian"
+    assert_file_contains "$HOME/.cco/.claude/rules/language.md" "Italian"
 
     # Run update
     run_cco update
 
     # Language should still be Italian
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/language.md" "Italian"
+    assert_file_contains "$HOME/.cco/.claude/rules/language.md" "Italian"
     # The decomposed languages datum (~/.cco/languages) should still have Italian
     assert_file_contains "$(cco_languages_file)" "communication: Italian"
 }
@@ -432,6 +432,75 @@ test_migration_003_no_projects_dir() {
     assert_dir_exists "$tmpdir/user-config/templates"
 }
 
+# ── Migration 015: flatten global config home (ADR-0028) ──────────────
+# migrate() receives the (new) flat global .claude dir; it derives the config
+# home from its parent and moves the legacy ~/.cco/global/.claude into place.
+
+test_migration_015_flattens_global_claude() {
+    # Legacy ~/.cco/global/.claude → flat ~/.cco/.claude; the global/ wrapper is removed.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_migration_deps
+    local cfg="$tmpdir/cco"
+    mkdir -p "$cfg/global/.claude/rules"
+    echo "# CLAUDE.md" > "$cfg/global/.claude/CLAUDE.md"
+    echo "# rule"      > "$cfg/global/.claude/rules/workflow.md"
+
+    source "$REPO_ROOT/migrations/global/015_flatten_global_claude.sh"
+    migrate "$cfg/.claude"
+
+    assert_dir_exists  "$cfg/.claude"               "flat global .claude must exist after migration"
+    assert_file_exists "$cfg/.claude/CLAUDE.md"     "CLAUDE.md must move to the flat home"
+    assert_file_exists "$cfg/.claude/rules/workflow.md"
+    assert_dir_not_exists "$cfg/global"             "the legacy global/ wrapper must be removed"
+}
+
+test_migration_015_idempotent_when_flat() {
+    # Already flat (no legacy) → no-op; never clobbers the populated flat dir.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_migration_deps
+    local cfg="$tmpdir/cco"
+    mkdir -p "$cfg/.claude"
+    echo "# already flat" > "$cfg/.claude/CLAUDE.md"
+
+    source "$REPO_ROOT/migrations/global/015_flatten_global_claude.sh"
+    migrate "$cfg/.claude"
+    migrate "$cfg/.claude"   # second run must also be a clean no-op
+
+    assert_file_contains "$cfg/.claude/CLAUDE.md" "already flat" \
+        "an already-flat home must be preserved untouched"
+    assert_dir_not_exists "$cfg/global"
+}
+
+test_migration_015_noop_without_legacy() {
+    # Fresh install (no legacy, no flat) → returns 0, creates nothing.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_migration_deps
+    local cfg="$tmpdir/cco"
+    mkdir -p "$cfg"
+
+    source "$REPO_ROOT/migrations/global/015_flatten_global_claude.sh"
+    migrate "$cfg/.claude" || fail "migration 015 must succeed (no-op) on a fresh install"
+
+    assert_dir_not_exists "$cfg/.claude" "no flat dir should be fabricated when there is nothing to migrate"
+}
+
+test_migration_015_both_present_keeps_flat() {
+    # Half-migrated dev state: flat populated + stale legacy. Flat is authoritative;
+    # the redundant legacy tree + wrapper are dropped, flat untouched.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_migration_deps
+    local cfg="$tmpdir/cco"
+    mkdir -p "$cfg/.claude" "$cfg/global/.claude"
+    echo "# flat wins"  > "$cfg/.claude/CLAUDE.md"
+    echo "# stale copy" > "$cfg/global/.claude/CLAUDE.md"
+
+    source "$REPO_ROOT/migrations/global/015_flatten_global_claude.sh"
+    migrate "$cfg/.claude"
+
+    assert_file_contains "$cfg/.claude/CLAUDE.md" "flat wins" "the populated flat home must never be clobbered"
+    assert_dir_not_exists "$cfg/global" "the redundant legacy wrapper must be removed"
+}
+
 # ── Migration 005: split global setup ─────────────────────────────────
 
 test_migration_005_renames_setup_with_build_content() {
@@ -441,7 +510,7 @@ test_migration_005_renames_setup_with_build_content() {
     setup_global_from_defaults "$tmpdir"
 
     # Simulate pre-migration state: only setup.sh with build content
-    printf '#!/bin/bash\napt-get update && apt-get install -y vim\n' > "$CCO_GLOBAL_DIR/setup.sh"
+    printf '#!/bin/bash\napt-get update && apt-get install -y vim\n' > "$HOME/.cco/setup.sh"
 
     # Set schema_version to 4 (before migration 005)
     create_cco_meta "$(state_global_meta)" "schema_version: 4
@@ -457,13 +526,13 @@ manifest:"
 
     run_cco update
     # setup-build.sh should contain the moved user build command
-    assert_file_contains "$CCO_GLOBAL_DIR/setup-build.sh" "apt-get install -y vim"
+    assert_file_contains "$HOME/.cco/setup-build.sh" "apt-get install -y vim"
     # setup.sh should be the new runtime template (old build command replaced).
     # Match the exact user command, not the template's "apt-get install" comment.
-    assert_file_contains "$CCO_GLOBAL_DIR/setup.sh" "runtime"
-    assert_file_not_contains "$CCO_GLOBAL_DIR/setup.sh" "apt-get install -y vim"
+    assert_file_contains "$HOME/.cco/setup.sh" "runtime"
+    assert_file_not_contains "$HOME/.cco/setup.sh" "apt-get install -y vim"
     # Backup should exist
-    [[ -f "$CCO_GLOBAL_DIR/setup.sh.bak" ]] || fail "setup.sh.bak backup not created"
+    [[ -f "$HOME/.cco/setup.sh.bak" ]] || fail "setup.sh.bak backup not created"
 }
 
 test_migration_005_empty_setup_creates_templates() {
@@ -473,7 +542,7 @@ test_migration_005_empty_setup_creates_templates() {
     setup_global_from_defaults "$tmpdir"
 
     # Simulate pre-migration: setup.sh with only comments
-    printf '#!/bin/bash\n# Global setup\n' > "$CCO_GLOBAL_DIR/setup.sh"
+    printf '#!/bin/bash\n# Global setup\n' > "$HOME/.cco/setup.sh"
 
     create_cco_meta "$(state_global_meta)" "schema_version: 4
 created_at: 2026-01-01T00:00:00Z
@@ -487,10 +556,10 @@ languages:
 manifest:"
 
     run_cco update
-    [[ -f "$CCO_GLOBAL_DIR/setup-build.sh" ]] || fail "setup-build.sh not created"
-    [[ -f "$CCO_GLOBAL_DIR/setup.sh" ]] || fail "setup.sh not created"
-    assert_file_contains "$CCO_GLOBAL_DIR/setup-build.sh" "build-time"
-    assert_file_contains "$CCO_GLOBAL_DIR/setup.sh" "runtime"
+    [[ -f "$HOME/.cco/setup-build.sh" ]] || fail "setup-build.sh not created"
+    [[ -f "$HOME/.cco/setup.sh" ]] || fail "setup.sh not created"
+    assert_file_contains "$HOME/.cco/setup-build.sh" "build-time"
+    assert_file_contains "$HOME/.cco/setup.sh" "runtime"
 }
 
 test_migration_005_both_files_exist_warns() {
@@ -500,8 +569,8 @@ test_migration_005_both_files_exist_warns() {
     setup_global_from_defaults "$tmpdir"
 
     # Both files exist: setup-build.sh (user-created) and setup.sh (with build commands)
-    printf '#!/bin/bash\napt-get install -y vim\n' > "$CCO_GLOBAL_DIR/setup-build.sh"
-    printf '#!/bin/bash\napt-get install -y curl\n' > "$CCO_GLOBAL_DIR/setup.sh"
+    printf '#!/bin/bash\napt-get install -y vim\n' > "$HOME/.cco/setup-build.sh"
+    printf '#!/bin/bash\napt-get install -y curl\n' > "$HOME/.cco/setup.sh"
 
     create_cco_meta "$(state_global_meta)" "schema_version: 4
 created_at: 2026-01-01T00:00:00Z
@@ -518,7 +587,7 @@ manifest:"
     # Migration should warn about build-time commands in setup.sh
     assert_output_contains "WARNING"
     # setup-build.sh should be preserved (not overwritten)
-    assert_file_contains "$CCO_GLOBAL_DIR/setup-build.sh" "vim"
+    assert_file_contains "$HOME/.cco/setup-build.sh" "vim"
 }
 
 test_migration_005_idempotent() {
@@ -527,7 +596,7 @@ test_migration_005_idempotent() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
 
-    printf '#!/bin/bash\napt-get install -y vim\n' > "$CCO_GLOBAL_DIR/setup.sh"
+    printf '#!/bin/bash\napt-get install -y vim\n' > "$HOME/.cco/setup.sh"
 
     create_cco_meta "$(state_global_meta)" "schema_version: 4
 created_at: 2026-01-01T00:00:00Z
@@ -541,11 +610,11 @@ languages:
 manifest:"
 
     run_cco update
-    local build_hash; build_hash=$(sha256sum "$CCO_GLOBAL_DIR/setup-build.sh" | cut -d' ' -f1)
+    local build_hash; build_hash=$(sha256sum "$HOME/.cco/setup-build.sh" | cut -d' ' -f1)
 
     # Run update again (schema is now 5, no migrations should run)
     run_cco update
-    local build_hash2; build_hash2=$(sha256sum "$CCO_GLOBAL_DIR/setup-build.sh" | cut -d' ' -f1)
+    local build_hash2; build_hash2=$(sha256sum "$HOME/.cco/setup-build.sh" | cut -d' ' -f1)
     [[ "$build_hash" == "$build_hash2" ]] || fail "setup-build.sh changed on second update"
 }
 
@@ -558,15 +627,15 @@ test_update_global_missing_setup_sh_restored() {
     init_global "$tmpdir" --lang "English"
 
     # Verify setup.sh was created by init
-    [[ -f "$CCO_GLOBAL_DIR/setup.sh" ]] || fail "setup.sh not created by init"
+    [[ -f "$HOME/.cco/setup.sh" ]] || fail "setup.sh not created by init"
 
     # Delete it to simulate missing file
-    rm "$CCO_GLOBAL_DIR/setup.sh"
-    [[ ! -f "$CCO_GLOBAL_DIR/setup.sh" ]] || fail "setup.sh should be deleted"
+    rm "$HOME/.cco/setup.sh"
+    [[ ! -f "$HOME/.cco/setup.sh" ]] || fail "setup.sh should be deleted"
 
     # Run update — should restore it
     run_cco update
-    [[ -f "$CCO_GLOBAL_DIR/setup.sh" ]] || fail "setup.sh not restored by update"
+    [[ -f "$HOME/.cco/setup.sh" ]] || fail "setup.sh not restored by update"
     assert_output_contains "setup.sh"
 }
 
@@ -577,11 +646,11 @@ test_update_global_existing_setup_sh_not_overwritten() {
     init_global "$tmpdir" --lang "English"
 
     # User customizes setup.sh
-    printf '#!/bin/bash\napt-get install -y tmux\n' > "$CCO_GLOBAL_DIR/setup.sh"
+    printf '#!/bin/bash\napt-get install -y tmux\n' > "$HOME/.cco/setup.sh"
 
     run_cco update
     # User content preserved
-    assert_file_contains "$CCO_GLOBAL_DIR/setup.sh" "apt-get install"
+    assert_file_contains "$HOME/.cco/setup.sh" "apt-get install"
 }
 
 test_update_global_missing_setup_sh_dry_run() {
@@ -590,13 +659,13 @@ test_update_global_missing_setup_sh_dry_run() {
     setup_cco_env "$tmpdir"
     init_global "$tmpdir" --lang "English"
 
-    rm "$CCO_GLOBAL_DIR/setup.sh"
+    rm "$HOME/.cco/setup.sh"
 
     run_cco update --dry-run
     assert_output_contains "setup.sh"
     assert_output_contains "missing"
     # File should NOT be created in dry-run
-    [[ ! -f "$CCO_GLOBAL_DIR/setup.sh" ]] || fail "setup.sh should not be created in dry-run"
+    [[ ! -f "$HOME/.cco/setup.sh" ]] || fail "setup.sh should not be created in dry-run"
 }
 
 test_update_global_missing_setup_build_sh_restored() {
@@ -606,14 +675,14 @@ test_update_global_missing_setup_build_sh_restored() {
     init_global "$tmpdir" --lang "English"
 
     # Verify setup-build.sh was created by init
-    [[ -f "$CCO_GLOBAL_DIR/setup-build.sh" ]] || fail "setup-build.sh not created by init"
+    [[ -f "$HOME/.cco/setup-build.sh" ]] || fail "setup-build.sh not created by init"
 
     # Delete it to simulate missing file
-    rm "$CCO_GLOBAL_DIR/setup-build.sh"
+    rm "$HOME/.cco/setup-build.sh"
 
     # Run update — should restore it
     run_cco update
-    [[ -f "$CCO_GLOBAL_DIR/setup-build.sh" ]] || fail "setup-build.sh not restored by update"
+    [[ -f "$HOME/.cco/setup-build.sh" ]] || fail "setup-build.sh not restored by update"
     assert_output_contains "setup-build.sh"
 }
 
@@ -624,11 +693,11 @@ test_update_global_existing_setup_build_sh_not_overwritten() {
     init_global "$tmpdir" --lang "English"
 
     # User customizes setup-build.sh
-    printf '#!/bin/bash\napt-get install -y terraform\n' > "$CCO_GLOBAL_DIR/setup-build.sh"
+    printf '#!/bin/bash\napt-get install -y terraform\n' > "$HOME/.cco/setup-build.sh"
 
     run_cco update
     # User content preserved
-    assert_file_contains "$CCO_GLOBAL_DIR/setup-build.sh" "apt-get install"
+    assert_file_contains "$HOME/.cco/setup-build.sh" "apt-get install"
 }
 
 # Removed in P3-3b: test_update_project_missing_setup_sh_restored exercised the
@@ -650,7 +719,7 @@ test_update_discovery_mode_no_file_changes() {
         $'\n# Framework improvement\n'
 
     # Save user file content before update
-    local before_hash; before_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" | cut -d' ' -f1)
+    local before_hash; before_hash=$(sha256sum "$HOME/.cco/.claude/rules/workflow.md" | cut -d' ' -f1)
     local before_base_hash=""
     [[ -f "$(state_global_base)/rules/workflow.md" ]] && \
         before_base_hash=$(sha256sum "$(state_global_base)/rules/workflow.md" | cut -d' ' -f1)
@@ -659,7 +728,7 @@ test_update_discovery_mode_no_file_changes() {
     assert_output_contains "update"
 
     # File must NOT be modified
-    local after_hash; after_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" | cut -d' ' -f1)
+    local after_hash; after_hash=$(sha256sum "$HOME/.cco/.claude/rules/workflow.md" | cut -d' ' -f1)
     [[ "$before_hash" == "$after_hash" ]] || fail "Discovery mode modified installed file"
 
     # .cco/base/ must NOT be updated
@@ -679,14 +748,14 @@ test_update_diff_shows_changes() {
     with_framework_change "defaults/global/.claude/rules/workflow.md" \
         $'\n# Diff test change\n'
 
-    local before_hash; before_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" | cut -d' ' -f1)
+    local before_hash; before_hash=$(sha256sum "$HOME/.cco/.claude/rules/workflow.md" | cut -d' ' -f1)
 
     run_cco update --diff
     # Output should contain either diff markers or the file path
     assert_output_contains "workflow.md"
 
     # File must NOT be modified
-    local after_hash; after_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" | cut -d' ' -f1)
+    local after_hash; after_hash=$(sha256sum "$HOME/.cco/.claude/rules/workflow.md" | cut -d' ' -f1)
     [[ "$before_hash" == "$after_hash" ]] || fail "--diff mode modified installed file"
 }
 
@@ -857,12 +926,11 @@ test_update_sync_non_tty_skips() {
     with_framework_change "defaults/global/.claude/rules/workflow.md" \
         $'\n# Non-TTY test change\n'
 
-    local before_hash; before_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" | cut -d' ' -f1)
+    local before_hash; before_hash=$(sha256sum "$HOME/.cco/.claude/rules/workflow.md" | cut -d' ' -f1)
 
     # Run --sync with stdin from /dev/null (non-TTY)
     CCO_OUTPUT=$(
         CCO_USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR" \
-        CCO_GLOBAL_DIR="$CCO_GLOBAL_DIR" \
         CCO_PACKS_DIR="$CCO_PACKS_DIR" \
         CCO_TEMPLATES_DIR="$CCO_TEMPLATES_DIR" \
         bash "$REPO_ROOT/bin/cco" update --sync < /dev/null 2>&1
@@ -870,7 +938,7 @@ test_update_sync_non_tty_skips() {
     assert_output_contains "Non-interactive"
 
     # File must NOT be modified (auto-skip)
-    local after_hash; after_hash=$(sha256sum "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" | cut -d' ' -f1)
+    local after_hash; after_hash=$(sha256sum "$HOME/.cco/.claude/rules/workflow.md" | cut -d' ' -f1)
     [[ "$before_hash" == "$after_hash" ]] || fail "Non-TTY sync modified installed file"
 }
 
@@ -903,7 +971,7 @@ test_update_force_applies_changes() {
         $'\n# Force-applied change\n'
 
     run_cco update --force
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "Force-applied change"
+    assert_file_contains "$HOME/.cco/.claude/rules/workflow.md" "Force-applied change"
 }
 
 test_update_keep_preserves_user_file() {
@@ -913,13 +981,13 @@ test_update_keep_preserves_user_file() {
     init_global "$tmpdir" --lang "English"
 
     # Both user and framework change (conflict scenario)
-    printf '\n# User edit for keep test\n' >> "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
+    printf '\n# User edit for keep test\n' >> "$HOME/.cco/.claude/rules/workflow.md"
     with_framework_change "defaults/global/.claude/rules/workflow.md" \
         $'\n# Framework edit for keep test\n'
 
     run_cco update --keep
     # User file must be preserved
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "User edit for keep test"
+    assert_file_contains "$HOME/.cco/.claude/rules/workflow.md" "User edit for keep test"
     # .cco/base/ IS updated to current default (so next update won't re-trigger)
     assert_file_contains "$(state_global_base)/rules/workflow.md" "Framework edit for keep test"
 }

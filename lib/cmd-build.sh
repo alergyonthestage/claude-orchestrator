@@ -5,8 +5,8 @@
 # Dependencies: colors.sh, utils.sh, paths.sh (_cco_config_dir)
 # Globals: IMAGE_NAME, REPO_ROOT
 # Note: global setup scripts / MCP list live at the personal-store TOP LEVEL
-# (~/.cco, design §2.3), written there by `cco init` / `cco init --migrate`.
-# They are NOT under ~/.cco/global (that subdir holds only the global .claude/).
+# (~/.cco, design §2.3), written there by `cco init` / `cco init --migrate`,
+# alongside the global `.claude/` (flat, ADR-0028 — no `global/` wrapper).
 
 cmd_build() {
     local no_cache=""

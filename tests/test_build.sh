@@ -22,10 +22,11 @@ test_build_reads_global_extensions_from_cco_toplevel() {
     # Correct (shipped/design) location: ~/.cco top level.
     printf 'echo TOPLEVEL_BUILD_MARKER\n' > "$HOME/.cco/setup-build.sh"
     printf '@test/mcp-toplevel\n'         > "$HOME/.cco/mcp-packages.txt"
-    # Legacy decoy under ~/.cco/global — must NOT be read by the build.
-    mkdir -p "$CCO_GLOBAL_DIR"
-    printf 'echo GLOBAL_DECOY_MARKER\n'   > "$CCO_GLOBAL_DIR/setup-build.sh"
-    printf '@test/mcp-global-decoy\n'      > "$CCO_GLOBAL_DIR/mcp-packages.txt"
+    # Legacy decoy under the defunct ~/.cco/global/ — must NOT be read by the build
+    # (it reads the flat ~/.cco top level; ADR-0028 removed the global/ wrapper).
+    mkdir -p "$HOME/.cco/global"
+    printf 'echo GLOBAL_DECOY_MARKER\n'   > "$HOME/.cco/global/setup-build.sh"
+    printf '@test/mcp-global-decoy\n'      > "$HOME/.cco/global/mcp-packages.txt"
 
     run_cco build
 

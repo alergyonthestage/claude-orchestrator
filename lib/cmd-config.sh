@@ -29,7 +29,7 @@
 
 # The allowlisted top-level entries committed from ~/.cco (design §2.3/§6.1).
 # secrets.env is deliberately ABSENT (gitignored); secrets.env.example is present.
-_CONFIG_ALLOWLIST=( .gitignore packs templates global/.claude \
+_CONFIG_ALLOWLIST=( .gitignore packs templates .claude \
                     setup.sh setup-build.sh mcp-packages.txt languages \
                     secrets.env.example )
 
@@ -48,9 +48,8 @@ _config_ensure_gitignore() {
 !packs/**
 !templates/
 !templates/**
-!global/
-!global/.claude/
-!global/.claude/**
+!.claude/
+!.claude/**
 !setup.sh
 !setup-build.sh
 !mcp-packages.txt

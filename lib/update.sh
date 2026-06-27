@@ -87,7 +87,8 @@ _update_global() {
     local diff_mode="${5:-full}"  # summary | full (for --diff mode)
     local meta_file
     meta_file=$(_cco_global_meta)
-    local installed_dir="$GLOBAL_DIR/.claude"
+    local installed_dir; installed_dir="$(_cco_global_claude_dir)"
+    local config_root; config_root="$(_cco_config_dir)"
     local defaults_dir="$DEFAULTS_DIR/global/.claude"
     local base_dir
     base_dir=$(_cco_global_base_dir)
@@ -152,7 +153,7 @@ _update_global() {
 
     # Phase 1.5: Handle policy transitions for global scope.
     # In dry-run mode, detects transitions but skips disk writes.
-    _handle_policy_transitions "$GLOBAL_DIR" "$meta_file" "$base_dir" "$defaults_dir" "global" "$dry_run"
+    _handle_policy_transitions "$installed_dir" "$meta_file" "$base_dir" "$defaults_dir" "global" "$dry_run"
 
     # Phase 2: COLLECT — detect file changes
     local changes
@@ -167,7 +168,7 @@ _update_global() {
     local root_missing=()
     local rf
     for rf in "${GLOBAL_ROOT_COPY_IF_MISSING[@]}"; do
-        if [[ -f "$global_defaults_root/$rf" && ! -f "$GLOBAL_DIR/$rf" ]]; then
+        if [[ -f "$global_defaults_root/$rf" && ! -f "$config_root/$rf" ]]; then
             root_missing+=("$rf")
         fi
     done
@@ -205,7 +206,7 @@ _update_global() {
     # Re-check what's actually missing now (migrations may have created files)
     root_missing=()
     for rf in "${GLOBAL_ROOT_COPY_IF_MISSING[@]}"; do
-        if [[ -f "$global_defaults_root/$rf" && ! -f "$GLOBAL_DIR/$rf" ]]; then
+        if [[ -f "$global_defaults_root/$rf" && ! -f "$config_root/$rf" ]]; then
             root_missing+=("$rf")
         fi
     done
@@ -214,7 +215,7 @@ _update_global() {
             if [[ "$dry_run" == "true" ]]; then
                 info "  + $rf (missing, will copy from defaults)"
             else
-                cp "$global_defaults_root/$rf" "$GLOBAL_DIR/$rf"
+                cp "$global_defaults_root/$rf" "$config_root/$rf"
                 ok "  + $rf (copied from defaults)"
             fi
         done

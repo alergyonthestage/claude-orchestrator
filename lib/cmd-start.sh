@@ -3,7 +3,7 @@
 #
 # Provides: _setup_internal_tutorial(), cmd_start()
 # Dependencies: colors.sh, utils.sh, yaml.sh, secrets.sh, workspace.sh, packs.sh
-# Globals: GLOBAL_DIR, IMAGE_NAME, REPO_ROOT, USER_CONFIG_DIR (projects via the STATE index, P5)
+# Globals: IMAGE_NAME, REPO_ROOT, USER_CONFIG_DIR (projects via the STATE index, P5)
 
 # ── Internal Tutorial Setup ──────────────────────────────────────────
 # Prepares the runtime directory for the internal tutorial project.
@@ -312,16 +312,16 @@ _start_check_health() {
         if [[ "$_current_schema" -lt "$_latest_schema" ]]; then
             info "Updates available. Run 'cco update' to apply."
         fi
-    elif [[ -d "$GLOBAL_DIR/.claude" ]]; then
+    elif [[ -d "$config_dir/.claude" ]]; then
         info "Run 'cco update' to initialize the update system."
     fi
 
     # Check for unresolved merge conflicts in config files
     local _conflict_files=()
     local _check_dir _check_label
-    for _check_dir in "$config_dir/global/.claude" "$claude_src"; do
+    for _check_dir in "$config_dir/.claude" "$claude_src"; do
         [[ ! -d "$_check_dir" ]] && continue
-        if [[ "$_check_dir" == "$config_dir/global/.claude" ]]; then
+        if [[ "$_check_dir" == "$config_dir/.claude" ]]; then
             _check_label="global"
         else
             _check_label="project/$project"
@@ -342,10 +342,10 @@ _start_check_health() {
     fi
 
     # Warn about managed skills that shadow user-level copies
-    if [[ -d "$config_dir/global/.claude/skills/init-workspace" ]]; then
-        warn "init-workspace skill found in user global (global/.claude/skills/init-workspace)."
+    if [[ -d "$config_dir/.claude/skills/init-workspace" ]]; then
+        warn "init-workspace skill found in user global (~/.cco/.claude/skills/init-workspace)."
         warn "This skill is now managed (enterprise-level) and the managed version takes precedence."
-        warn "You can safely remove the user copy: rm -rf global/.claude/skills/init-workspace"
+        warn "You can safely remove the user copy: rm -rf ~/.cco/.claude/skills/init-workspace"
     fi
 }
 
@@ -546,9 +546,9 @@ _start_generate_compose() {
     # design §2.2 BL3). Dry-run dumps it under the inspection dir. Every
     # framework mount source below is host-absolute (config/state/cache roots
     # now diverge, so a single --project-directory can no longer anchor them).
-    local state_root config_global
+    local state_root global_claude
     state_root=$(_cco_state_dir)
-    config_global="$config_dir/global"
+    global_claude="$config_dir/.claude"   # flat global home (ADR-0028)
     if $dry_run; then
         mkdir -p "$output_dir/.cco"
         compose_file="$output_dir/.cco/docker-compose.yml"
@@ -631,11 +631,11 @@ YAML
         # Global config
         cat <<YAML
       # Global config (settings.json is rw — Claude Code writes runtime preferences like /effort)
-      - ${config_global}/.claude/settings.json:/home/claude/.claude/settings.json
-      - ${config_global}/.claude/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
-      - ${config_global}/.claude/rules:/home/claude/.claude/rules:ro
-      - ${config_global}/.claude/agents:/home/claude/.claude/agents:ro
-      - ${config_global}/.claude/skills:/home/claude/.claude/skills:ro
+      - ${global_claude}/settings.json:/home/claude/.claude/settings.json
+      - ${global_claude}/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
+      - ${global_claude}/rules:/home/claude/.claude/rules:ro
+      - ${global_claude}/agents:/home/claude/.claude/agents:ro
+      - ${global_claude}/skills:/home/claude/.claude/skills:ro
       # Project config. The Claude config tree (CLAUDE.md/rules/agents/skills)
       # stays rw so /init + normal project-config authoring work (P17); the
       # structural framework config (project.yml/secrets/.cco metadata) is
@@ -661,9 +661,9 @@ YAML
         fi
 
         # Global MCP config (merged into ~/.claude.json by entrypoint)
-        if [[ -f "$config_global/.claude/mcp.json" ]]; then
+        if [[ -f "$global_claude/mcp.json" ]]; then
             echo "      # Global MCP servers"
-            echo "      - ${config_global}/.claude/mcp.json:/home/claude/.claude/mcp-global.json:ro"
+            echo "      - ${global_claude}/mcp.json:/home/claude/.claude/mcp-global.json:ro"
         fi
 
         # Project MCP config (Claude Code expands ${VAR} natively)

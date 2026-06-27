@@ -34,7 +34,7 @@ test_invariant_1_init_creates_in_global_not_defaults() {
     setup_cco_env "$tmpdir"
     init_global "$tmpdir" --lang "English"
     # global/.claude must exist (user copy)
-    assert_dir_exists "$CCO_GLOBAL_DIR/.claude"
+    assert_dir_exists "$HOME/.cco/.claude"
     # defaults/ must not have been touched (no new timestamp marker)
     assert_dir_exists "$REPO_ROOT/defaults/global/.claude"
 }
@@ -169,8 +169,8 @@ test_invariant_5_all_global_config_mounts_are_readonly() {
 
     # Every line mounting from the global config dir must end with :ro
     # Exception: settings.json is rw (Claude Code writes runtime preferences)
-    # Global config now lives in the CONFIG bucket (~/.cco/global; design §2.3)
-    local global_path="$HOME/.cco/global/.claude"
+    # Global config now lives in the CONFIG bucket (~/.cco/.claude; design §2.3)
+    local global_path="$HOME/.cco/.claude"
     local violations
     violations=$(grep -F "$global_path" "$compose" | grep -v ":ro" | grep -v "settings.json:" || true)
     if [[ -n "$violations" ]]; then

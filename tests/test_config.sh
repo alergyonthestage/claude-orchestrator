@@ -6,8 +6,8 @@
 
 # Seed ~/.cco with authored config + a real secret (gitignored) + a skeleton.
 _seed_config_store() {
-    mkdir -p "$HOME/.cco/global/.claude" "$HOME/.cco/packs/p1" "$HOME/.cco/templates/t1"
-    echo "# global"         > "$HOME/.cco/global/.claude/CLAUDE.md"
+    mkdir -p "$HOME/.cco/.claude" "$HOME/.cco/packs/p1" "$HOME/.cco/templates/t1"
+    echo "# global"         > "$HOME/.cco/.claude/CLAUDE.md"
     echo "name: p1"         > "$HOME/.cco/packs/p1/pack.yml"
     echo "name: t1"         > "$HOME/.cco/templates/t1/template.yml"
     echo "TOKEN=realvalue"  > "$HOME/.cco/secrets.env"
@@ -21,7 +21,7 @@ test_config_save_commits_allowlist_only() {
     run_cco config save -m "initial"
     assert_output_contains "saved ~/.cco"
     local files; files=$(git -C "$HOME/.cco" ls-files)
-    echo "$files" | grep -qF "global/.claude/CLAUDE.md" || fail "global config not committed"
+    echo "$files" | grep -qF ".claude/CLAUDE.md" || fail "global config not committed"
     echo "$files" | grep -qF "packs/p1/pack.yml"        || fail "pack not committed"
     echo "$files" | grep -qF "secrets.env.example"      || fail "skeleton not committed"
     # The real secret must NEVER be committed.
@@ -57,7 +57,7 @@ test_config_save_blocks_secret_content() {
     _seed_config_store
     run_cco config save -m "initial"
     # A leaked credential inside a tracked config file must block the save.
-    echo "api_key=sk-ant-0123456789abcdef0123" >> "$HOME/.cco/global/.claude/CLAUDE.md"
+    echo "api_key=sk-ant-0123456789abcdef0123" >> "$HOME/.cco/.claude/CLAUDE.md"
     if run_cco config save -m "leak" 2>/dev/null; then
         fail "save must abort when a secret is staged"
     fi
@@ -67,8 +67,8 @@ test_config_save_blocks_secret_content() {
 test_config_save_example_exempt() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    mkdir -p "$HOME/.cco/global/.claude"
-    echo "# global" > "$HOME/.cco/global/.claude/CLAUDE.md"
+    mkdir -p "$HOME/.cco/.claude"
+    echo "# global" > "$HOME/.cco/.claude/CLAUDE.md"
     # A secret-like value in a *.example skeleton is EXEMPT (FR-S3) — must commit.
     printf 'TOKEN=sk-ant-0123456789abcdef0123\n' > "$HOME/.cco/secrets.env.example"
     run_cco config save -m "with skeleton"
@@ -110,10 +110,10 @@ test_config_pull_non_ff_aborts() {
     # Diverge: a different commit lands on the remote while local also moves on.
     local clone="$tmpdir/clone"
     git clone -q "$tmpdir/remote.git" "$clone"
-    echo "remote change" >> "$clone/global/.claude/CLAUDE.md"
+    echo "remote change" >> "$clone/.claude/CLAUDE.md"
     git -C "$clone" add -A && git -C "$clone" commit -q -m "remote edit"
     git -C "$clone" push -q origin HEAD:master 2>/dev/null || git -C "$clone" push -q origin HEAD 2>/dev/null
-    echo "local change" >> "$HOME/.cco/global/.claude/CLAUDE.md"
+    echo "local change" >> "$HOME/.cco/.claude/CLAUDE.md"
     run_cco config save -m "local edit"
     if run_cco config pull 2>/dev/null; then
         fail "non-fast-forward pull must abort"

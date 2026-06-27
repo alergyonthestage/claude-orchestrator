@@ -68,8 +68,8 @@ _cco_have_backup() {
 # The migration-state marker (<state>/cco/migration-state) is a newline-separated
 # flag set. The FILE's presence means "legacy vault backed up" (F43); a
 # `global-migrated` line means the eager global migration ran. The flag — not
-# ~/.cco/global presence — is the idempotency gate (ADR-0026): `cco init` may
-# populate ~/.cco/global from defaults, so presence is no longer a "migrated"
+# ~/.cco/.claude presence — is the idempotency gate (ADR-0026): `cco init` may
+# populate ~/.cco/.claude from defaults, so presence is no longer a "migrated"
 # signal. Writes are append-only so the backup step never wipes the flag.
 _cco_marker_has() {
     local marker="$1" flag="$2"
@@ -189,8 +189,8 @@ _cco_first_run() {
 # against a legacy install it populates ~/.cco from the verified backup
 # (global/.claude + authored packs/ + templates/ + setup scripts + mcp-packages
 # + secrets.env + languages), and seeds the atomic profile→tag set for
-# profile-exclusive packs (ADR-0010 §5). Idempotent: ~/.cco/global/.claude
-# presence is the "already migrated" signal. Reads from the backup (immutable
+# profile-exclusive packs (ADR-0010 §5). Idempotent: gated by the `global-migrated`
+# marker flag. Reads from the backup (immutable
 # snapshot), never the live user-config/ (which it leaves intact).
 
 # Seed one resource→tag binding into the DATA tags registry (<data>/cco/tags.yml).
@@ -209,16 +209,18 @@ _cco_populate_global_from() {
 
     # Global Claude config (shared across all profiles). Stage into a same-dir
     # sibling then atomic-rename, so a partial/failed copy never leaves an
-    # incomplete ~/.cco/global/.claude that check_global would wrongly accept (H1).
+    # incomplete ~/.cco/.claude that check_global would wrongly accept (H1).
+    # The legacy backup keeps its `global/.claude` layout (source); the dest is
+    # the flat ~/.cco/.claude (ADR-0028).
     if [[ -d "$src/global/.claude" ]]; then
-        mkdir -p "$cfg/global"
-        rm -rf "$cfg/global/.claude.tmp"
-        if cp -r "$src/global/.claude" "$cfg/global/.claude.tmp"; then
-            rm -rf "$cfg/global/.claude"
-            mv "$cfg/global/.claude.tmp" "$cfg/global/.claude"
+        local gclaude; gclaude="$(_cco_global_claude_dir)"   # ~/.cco/.claude
+        rm -rf "$gclaude.tmp"
+        if cp -r "$src/global/.claude" "$gclaude.tmp"; then
+            rm -rf "$gclaude"
+            mv "$gclaude.tmp" "$gclaude"
         else
-            rm -rf "$cfg/global/.claude.tmp"
-            warn "Failed to populate ~/.cco/global/.claude from the legacy vault."
+            rm -rf "$gclaude.tmp"
+            warn "Failed to populate ~/.cco/.claude from the legacy vault."
             return 1
         fi
     fi
@@ -281,7 +283,7 @@ _cco_populate_global_from() {
 
 # Back up the current ~/.cco before a non-destructive migration overwrite, then
 # ask explicit confirmation. Returns 0 to proceed (backup written + confirmed,
-# and ~/.cco/global removed so the populate writes fresh), 1 to skip. The archive
+# and ~/.cco/.claude removed so the populate writes fresh), 1 to skip. The archive
 # mirrors the raw-tar legacy backup; it lands in STATE (machine-local, 0600).
 _cco_confirm_overwrite_global() {
     local cfg="$1" backups="$2"
@@ -298,7 +300,7 @@ _cco_confirm_overwrite_global() {
         warn "Could not back up the current ~/.cco — aborting the global migration to stay safe."
         return 1
     fi
-    warn "~/.cco/global already exists (populated by 'cco init' or a previous run)."
+    warn "~/.cco/.claude already exists (populated by 'cco init' or a previous run)."
     info "Migrating the legacy vault will overwrite it. A restorable backup was saved:"
     echo "    $archive" >&2
     local ans=""
@@ -306,7 +308,7 @@ _cco_confirm_overwrite_global() {
     elif (exec < /dev/tty) 2>/dev/null; then read -rp "  Proceed with the migration? [y/N]: " ans < /dev/tty; fi
     ans="$(printf '%s' "$ans" | tr '[:upper:]' '[:lower:]')"
     [[ "$ans" == "y" || "$ans" == "yes" ]] || return 1
-    rm -rf "$cfg/global"
+    rm -rf "$(_cco_global_claude_dir)"
     return 0
 }
 
@@ -320,15 +322,15 @@ _cco_migrate_global() {
     marker="$state/migration-state"
 
     # Idempotent (ADR-0026): the gate is the `global-migrated` marker flag, NOT
-    # ~/.cco/global presence (which `cco init` may have created from defaults).
+    # ~/.cco/.claude presence (which `cco init` may have created from defaults).
     _cco_marker_has "$marker" global-migrated && return 0
     # No verified backup ⇒ no legacy install to migrate from (fresh install).
     _cco_have_backup "$backups" || return 0
 
-    # If ~/.cco/global already exists (e.g. `cco init` ran before `cco update`),
+    # If ~/.cco/.claude already exists (e.g. `cco init` ran before `cco update`),
     # migration is NON-DESTRUCTIVE: back up the current ~/.cco (restorable) and
     # ask explicit confirmation before overwriting it from the vault.
-    if [[ -d "$cfg/global/.claude" ]]; then
+    if [[ -d "$(_cco_global_claude_dir)" ]]; then
         _cco_confirm_overwrite_global "$cfg" "$backups" || { info "Global migration skipped (declined). Re-run 'cco update' to retry."; return 0; }
     fi
 
@@ -359,7 +361,7 @@ _cco_migrate_global() {
 
     # Migration summary + legacy-vault keep/remove note (maintainer-confirmed copy).
     ok "Migration complete — your global config now lives in ~/.cco:"
-    echo "    • global/.claude   (agents, rules, skills, settings)" >&2
+    echo "    • .claude   (agents, rules, skills, settings)" >&2
     echo "    • packs/, templates/   (authored resources)" >&2
     echo "    • setup.sh, setup-build.sh, mcp-packages.txt" >&2
     echo "    • secrets.env, languages" >&2

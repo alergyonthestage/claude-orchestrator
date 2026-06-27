@@ -31,10 +31,10 @@ GITCFG
     # `cco init --migrate` reads from, and the runtime root for the internal
     # tutorial/config-editor sessions. It is NOT the flat-store home anymore (F1).
     export CCO_USER_CONFIG_DIR="$tmpdir/user-config"
-    # Global config home is the decentralized ~/.cco/global (= $HOME/.cco/global,
-    # since HOME is redirected into $tmpdir above). bin/cco, the update/clean
-    # engines, and check_global all resolve GLOBAL_DIR from CCO_GLOBAL_DIR.
-    export CCO_GLOBAL_DIR="$tmpdir/home/.cco/global"
+    # Global config home is the flat ~/.cco/.claude (ADR-0028; = $HOME/.cco/.claude,
+    # since HOME is redirected into $tmpdir above). bin/cco, the update/clean engines,
+    # and check_global resolve it via _cco_global_claude_dir() from $HOME — there is
+    # no CCO_GLOBAL_DIR override anymore (retired). Fixtures use $HOME/.cco/.claude.
     # Personal flat stores in their decentralized homes (F1; ADR-0016 D7/D8):
     # packs/templates in the CONFIG bucket (~/.cco), llms content+cache-state in
     # CACHE ($tmpdir/cache = CCO_CACHE_HOME below). These match what bin/cco
@@ -50,7 +50,7 @@ GITCFG
     export CCO_STATE_HOME="$tmpdir/state"
     export CCO_CACHE_HOME="$tmpdir/cache"
     export CCO_ALLOW_HOST_RESOLVE=1
-    mkdir -p "$CCO_USER_CONFIG_DIR" "$CCO_GLOBAL_DIR" \
+    mkdir -p "$CCO_USER_CONFIG_DIR" \
              "$CCO_PACKS_DIR" "$CCO_TEMPLATES_DIR" "$CCO_LLMS_DIR" "$CCO_DUMMY_REPO"
     # Seed the STATE index for the new-schema fixture (minimal_project_yml uses
     # the logical name "dummy-repo"). Legacy-schema fixtures (inline `- path:`)
@@ -113,14 +113,14 @@ index_set_project_repos() {
     )
 }
 
-# Seed the decentralized global config (~/.cco/global/.claude) from the framework
-# defaults — simulates `cco init`'s global-ensure. CCO_GLOBAL_DIR resolves to
-# $HOME/.cco/global in the test env, which is what check_global, cco start/new,
-# and the update/clean engines read (design §2.3). Usage: <tmpdir>
+# Seed the decentralized global config (~/.cco/.claude) from the framework
+# defaults — simulates `cco init`'s global-ensure. Resolves to $HOME/.cco/.claude
+# in the test env (flat, ADR-0028), which is what check_global, cco start/new, and
+# the update/clean engines read (design §2.3). Usage: <tmpdir>
 setup_global_from_defaults() {
     local tmpdir="$1"
-    mkdir -p "$CCO_GLOBAL_DIR"
-    cp -r "$REPO_ROOT/defaults/global/.claude" "$CCO_GLOBAL_DIR/.claude"
+    mkdir -p "$HOME/.cco"
+    cp -r "$REPO_ROOT/defaults/global/.claude" "$HOME/.cco/.claude"
     mkdir -p "$CCO_PACKS_DIR"
 }
 
@@ -165,14 +165,14 @@ create_pack() {
 # the current repo's <repo>/.cco/. Tests that only need global config must not
 # scaffold into the cco repo root (where the suite runs). This helper runs
 # `cco init` inside a throwaway per-test repo so the scaffold lands harmlessly,
-# while ~/.cco/global is ensured. Forwards args (e.g. --lang) and sets CCO_OUTPUT
+# while ~/.cco/.claude is ensured. Forwards args (e.g. --lang) and sets CCO_OUTPUT
 # exactly like run_cco. Usage: init_global "$tmpdir" [init-args...]
 init_global() {
     local tmpdir="$1"; shift
     # Fresh throwaway repo with a unique valid name per call, so repeated
     # init_global invocations in one test never collide on the scaffold-exists
     # refusal or the index name-uniqueness guard (the scaffold side-effect is
-    # irrelevant to global-setup tests; only ~/.cco/global matters).
+    # irrelevant to global-setup tests; only ~/.cco/.claude matters).
     _CCO_IG_N=$(( ${_CCO_IG_N:-0} + 1 ))
     local name="ig-$_CCO_IG_N"
     local d="$tmpdir/.ig/$name"
@@ -193,7 +193,6 @@ run_cco() {
     DRY_RUN_DIR=""
     CCO_OUTPUT=$(
         CCO_USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR" \
-        CCO_GLOBAL_DIR="$CCO_GLOBAL_DIR" \
         CCO_PACKS_DIR="$CCO_PACKS_DIR" \
         CCO_TEMPLATES_DIR="$CCO_TEMPLATES_DIR" \
         CCO_LLMS_DIR="$CCO_LLMS_DIR" \

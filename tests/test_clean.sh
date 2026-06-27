@@ -12,12 +12,12 @@ test_clean_removes_global_bak() {
     init_global "$tmpdir" --lang "English"
 
     # Create some .bak files
-    echo "backup" > "$CCO_GLOBAL_DIR/.claude/settings.json.bak"
-    echo "backup" > "$CCO_GLOBAL_DIR/.claude/rules/workflow.md.bak"
+    echo "backup" > "$HOME/.cco/.claude/settings.json.bak"
+    echo "backup" > "$HOME/.cco/.claude/rules/workflow.md.bak"
 
     run_cco clean
-    assert_file_not_exists "$CCO_GLOBAL_DIR/.claude/settings.json.bak"
-    assert_file_not_exists "$CCO_GLOBAL_DIR/.claude/rules/workflow.md.bak"
+    assert_file_not_exists "$HOME/.cco/.claude/settings.json.bak"
+    assert_file_not_exists "$HOME/.cco/.claude/rules/workflow.md.bak"
     assert_output_contains "Removed 2"
 }
 
@@ -26,11 +26,11 @@ test_clean_dry_run() {
     setup_cco_env "$tmpdir"
     init_global "$tmpdir" --lang "English"
 
-    echo "backup" > "$CCO_GLOBAL_DIR/.claude/settings.json.bak"
+    echo "backup" > "$HOME/.cco/.claude/settings.json.bak"
 
     run_cco clean --dry-run
     # File should still exist
-    assert_file_exists "$CCO_GLOBAL_DIR/.claude/settings.json.bak"
+    assert_file_exists "$HOME/.cco/.claude/settings.json.bak"
     assert_output_contains "Would remove 1"
 }
 
@@ -57,13 +57,13 @@ repos: []"
     echo "backup" > "$cco/claude/rules/test.md.bak"
 
     # Also create global .bak (should NOT be cleaned in project scope)
-    echo "global-bak" > "$CCO_GLOBAL_DIR/.claude/settings.json.bak"
+    echo "global-bak" > "$HOME/.cco/.claude/settings.json.bak"
 
     run_cco clean --project test-proj
     assert_file_not_exists "$cco/claude/settings.json.bak"
     assert_file_not_exists "$cco/claude/rules/test.md.bak"
     # Global .bak should still exist
-    assert_file_exists "$CCO_GLOBAL_DIR/.claude/settings.json.bak"
+    assert_file_exists "$HOME/.cco/.claude/settings.json.bak"
 }
 
 test_clean_all_bak() {
@@ -72,7 +72,7 @@ test_clean_all_bak() {
     init_global "$tmpdir" --lang "English"
 
     # Create .bak in global
-    echo "backup" > "$CCO_GLOBAL_DIR/.claude/settings.json.bak"
+    echo "backup" > "$HOME/.cco/.claude/settings.json.bak"
 
     # Create project with .bak
     create_project "$tmpdir" "test-proj" "name: test-proj
@@ -81,7 +81,7 @@ repos: []"
     echo "backup" > "$cco/claude/test.md.bak"
 
     run_cco clean --all
-    assert_file_not_exists "$CCO_GLOBAL_DIR/.claude/settings.json.bak"
+    assert_file_not_exists "$HOME/.cco/.claude/settings.json.bak"
     assert_file_not_exists "$cco/claude/test.md.bak"
     assert_output_contains "Removed 2"
 }
@@ -252,7 +252,7 @@ repos: []"
 
     # .bak files
     echo "backup" > "$cco/claude/test.md.bak"
-    echo "backup" > "$CCO_GLOBAL_DIR/.claude/settings.json.bak"
+    echo "backup" > "$HOME/.cco/.claude/settings.json.bak"
     # .tmp directory
     echo "dry-run" > "$cco/.tmp/compose.yml"
     # docker-compose.yml (generated, in STATE)
@@ -260,7 +260,7 @@ repos: []"
 
     run_cco clean --all
     assert_file_not_exists "$cco/claude/test.md.bak"
-    assert_file_not_exists "$CCO_GLOBAL_DIR/.claude/settings.json.bak"
+    assert_file_not_exists "$HOME/.cco/.claude/settings.json.bak"
     assert_dir_not_exists "$cco/.tmp"
     assert_file_not_exists "$compose"
 
@@ -301,10 +301,10 @@ test_clean_explicit_bak_flag() {
     setup_cco_env "$tmpdir"
     init_global "$tmpdir" --lang "English"
 
-    echo "backup" > "$CCO_GLOBAL_DIR/.claude/settings.json.bak"
+    echo "backup" > "$HOME/.cco/.claude/settings.json.bak"
 
     run_cco clean --bak
-    assert_file_not_exists "$CCO_GLOBAL_DIR/.claude/settings.json.bak"
+    assert_file_not_exists "$HOME/.cco/.claude/settings.json.bak"
     assert_output_contains "Removed 1 .bak"
 }
 
@@ -316,7 +316,7 @@ test_clean_default_cleans_global_and_projects() {
     init_global "$tmpdir" --lang "English"
 
     # Create .bak in global
-    echo "backup" > "$CCO_GLOBAL_DIR/.claude/settings.json.bak"
+    echo "backup" > "$HOME/.cco/.claude/settings.json.bak"
 
     # Create .bak in a project
     create_project "$tmpdir" "test-proj" "name: test-proj
@@ -325,7 +325,7 @@ repos: []"
     echo "backup" > "$cco/claude/test.md.bak"
 
     run_cco clean
-    assert_file_not_exists "$CCO_GLOBAL_DIR/.claude/settings.json.bak"
+    assert_file_not_exists "$HOME/.cco/.claude/settings.json.bak"
     assert_file_not_exists "$cco/claude/test.md.bak"
     assert_output_contains "Removed 2 .bak"
 }
@@ -364,14 +364,14 @@ test_clean_dry_run_no_deletion() {
     init_global "$tmpdir" --lang "English"
 
     # Create .bak files
-    echo "backup1" > "$CCO_GLOBAL_DIR/.claude/settings.json.bak"
-    echo "backup2" > "$CCO_GLOBAL_DIR/.claude/rules/workflow.md.bak"
+    echo "backup1" > "$HOME/.cco/.claude/settings.json.bak"
+    echo "backup2" > "$HOME/.cco/.claude/rules/workflow.md.bak"
 
     run_cco clean --dry-run
     assert_output_contains "[dry-run]"
     # Files must still exist after dry-run
-    assert_file_exists "$CCO_GLOBAL_DIR/.claude/settings.json.bak"
-    assert_file_exists "$CCO_GLOBAL_DIR/.claude/rules/workflow.md.bak"
+    assert_file_exists "$HOME/.cco/.claude/settings.json.bak"
+    assert_file_exists "$HOME/.cco/.claude/rules/workflow.md.bak"
 }
 
 test_clean_nonexistent_project_error() {

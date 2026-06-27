@@ -41,12 +41,11 @@ LIB_DIR="$REPO_ROOT/lib"
 # <repo>/.cco/ and resolve through the STATE index (P5; no $PROJECTS_DIR).
 USER_CONFIG_DIR="${CCO_USER_CONFIG_DIR:-$REPO_ROOT/user-config}"
 
-# Global config home is the decentralized personal store ~/.cco/global
-# (design §2.3). CONFIG is always $HOME/.cco (no XDG override; matches
-# _cco_config_dir). PACKS_DIR/TEMPLATES_DIR/LLMS_DIR are assigned AFTER the
-# module load below, since their decentralized homes derive from the bucket
-# resolvers in paths.sh (_cco_config_dir / _cco_cache_dir).
-GLOBAL_DIR="${CCO_GLOBAL_DIR:-$HOME/.cco/global}"
+# Global (user) Claude config home is ~/.cco/.claude (ADR-0028, flat — no
+# `global/` wrapper). Resolved on demand via _cco_global_claude_dir() (paths.sh);
+# there is no eager GLOBAL_DIR / CCO_GLOBAL_DIR variable. PACKS_DIR/TEMPLATES_DIR/
+# LLMS_DIR are assigned AFTER the module load below, since their decentralized
+# homes derive from the bucket resolvers in paths.sh (_cco_config_dir / _cco_cache_dir).
 
 # ── Load modules ─────────────────────────────────────────────────────
 source "$LIB_DIR/colors.sh"
@@ -98,7 +97,7 @@ source "$LIB_DIR/cmd-forget.sh"
 # Personal flat stores in their decentralized homes (F1; design §2.2/§2.3,
 # ADR-0016 D7/D8): packs/templates → CONFIG (~/.cco), llms content+cache-state →
 # CACHE. CONFIG has no XDG override, so the plain $HOME form matches
-# _cco_config_dir without an eager resolver call at startup (as GLOBAL_DIR does);
+# _cco_config_dir without an eager resolver call at startup;
 # CACHE is XDG-overridable, so llms derives from the resolver. A CCO_* override
 # always wins (tests/dev seams). Grouped here (post-paths.sh) for the resolver.
 PACKS_DIR="${CCO_PACKS_DIR:-$HOME/.cco/packs}"

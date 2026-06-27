@@ -111,7 +111,7 @@ chown claude:claude "$CLAUDE_JSON"
 merged=$(jq '.mcpServers = {}' "$CLAUDE_JSON" 2>/dev/null) \
     && echo "$merged" > "$CLAUDE_JSON"
 
-# Merge global MCP servers (from global/.claude/mcp.json)
+# Merge global MCP servers (from ~/.cco/.claude/mcp.json, mounted as mcp-global.json)
 if [ -f "$MCP_GLOBAL" ]; then
     server_count=$(jq '.mcpServers | length' "$MCP_GLOBAL" 2>/dev/null || echo "0")
     if [ "$server_count" -gt 0 ]; then

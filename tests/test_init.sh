@@ -2,7 +2,7 @@
 # tests/test_init.sh — cco init command tests (ADR-0026)
 #
 # The clean `cco init` does two things, run inside a repo:
-#   1. ensures the global config (~/.cco/global = $CCO_GLOBAL_DIR) idempotently;
+#   1. ensures the global config (~/.cco/.claude = $HOME/.cco) idempotently;
 #   2. scaffolds the committed <repo>/.cco/ and registers it in the STATE index.
 # Global-only setup elsewhere goes through the init_global helper (a throwaway
 # repo); here we exercise the real scaffold by cd-ing into a per-test repo.
@@ -24,11 +24,11 @@ test_init_seeds_global_when_absent() {
     setup_cco_env "$tmpdir"
     local repo; repo=$(_init_repo "$tmpdir" myrepo)
     ( cd "$repo" && run_cco init --name myrepo --lang "English" )
-    assert_dir_exists  "$CCO_GLOBAL_DIR/.claude"
-    assert_file_exists "$CCO_GLOBAL_DIR/.claude/settings.json"
-    assert_file_exists "$CCO_GLOBAL_DIR/.claude/CLAUDE.md"
-    assert_file_exists "$CCO_GLOBAL_DIR/.claude/agents/analyst.md"
-    assert_file_exists "$CCO_GLOBAL_DIR/.claude/rules/language.md"
+    assert_dir_exists  "$HOME/.cco/.claude"
+    assert_file_exists "$HOME/.cco/.claude/settings.json"
+    assert_file_exists "$HOME/.cco/.claude/CLAUDE.md"
+    assert_file_exists "$HOME/.cco/.claude/agents/analyst.md"
+    assert_file_exists "$HOME/.cco/.claude/rules/language.md"
 }
 
 test_init_global_setup_scripts_to_cco_root() {
@@ -46,7 +46,7 @@ test_init_substitutes_comm_lang_single_value() {
     setup_cco_env "$tmpdir"
     local repo; repo=$(_init_repo "$tmpdir" myrepo)
     ( cd "$repo" && run_cco init --name myrepo --lang "Italian" )
-    local lang_file="$CCO_GLOBAL_DIR/.claude/rules/language.md"
+    local lang_file="$HOME/.cco/.claude/rules/language.md"
     assert_file_contains "$lang_file" "Italian"
     assert_no_placeholder "$lang_file" "{{COMM_LANG}}"
     assert_no_placeholder "$lang_file" "{{DOCS_LANG}}"
@@ -58,7 +58,7 @@ test_init_substitutes_three_lang_format() {
     setup_cco_env "$tmpdir"
     local repo; repo=$(_init_repo "$tmpdir" myrepo)
     ( cd "$repo" && run_cco init --name myrepo --lang "Italian:Italian:English" )
-    local lang_file="$CCO_GLOBAL_DIR/.claude/rules/language.md"
+    local lang_file="$HOME/.cco/.claude/rules/language.md"
     assert_no_placeholder "$lang_file" "{{COMM_LANG}}"
     assert_no_placeholder "$lang_file" "{{DOCS_LANG}}"
     assert_no_placeholder "$lang_file" "{{CODE_LANG}}"
@@ -71,11 +71,11 @@ test_init_global_idempotent_skips_second() {
     local repo1; repo1=$(_init_repo "$tmpdir" repo-one)
     ( cd "$repo1" && run_cco init --name repo-one --lang "English" )
     # Plant a canary in a user-owned global file
-    printf '\n# CANARY\n' >> "$CCO_GLOBAL_DIR/.claude/mcp.json"
+    printf '\n# CANARY\n' >> "$HOME/.cco/.claude/mcp.json"
     local repo2; repo2=$(_init_repo "$tmpdir" repo-two)
     ( cd "$repo2" && run_cco init --name repo-two --lang "Italian" )
     # Global was left untouched (ensure is a one-time no-op)
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/mcp.json" "# CANARY"
+    assert_file_contains "$HOME/.cco/.claude/mcp.json" "# CANARY"
 }
 
 test_init_force_reseeds_global() {
@@ -84,10 +84,10 @@ test_init_force_reseeds_global() {
     setup_cco_env "$tmpdir"
     local repo; repo=$(_init_repo "$tmpdir" myrepo)
     ( cd "$repo" && run_cco init --name myrepo --lang "English" )
-    printf '\n# CANARY\n' >> "$CCO_GLOBAL_DIR/.claude/mcp.json"
+    printf '\n# CANARY\n' >> "$HOME/.cco/.claude/mcp.json"
     local repo2; repo2=$(_init_repo "$tmpdir" myrepo2)
     ( cd "$repo2" && run_cco init --name myrepo2 --force --lang "English" )
-    assert_file_not_contains "$CCO_GLOBAL_DIR/.claude/mcp.json" "# CANARY"
+    assert_file_not_contains "$HOME/.cco/.claude/mcp.json" "# CANARY"
 }
 
 test_init_emits_no_manifest() {

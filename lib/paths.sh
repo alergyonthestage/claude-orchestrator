@@ -285,6 +285,15 @@ _cco_config_dir() {
     printf '%s\n' "$base"
 }
 
+# Global (user) Claude config home — ~/.cco/.claude (ADR-0028: flat under the
+# config home, no `global/` wrapper). Single source of truth for the global
+# `.claude` destination; replaces the retired GLOBAL_DIR / CCO_GLOBAL_DIR. Does
+# NOT create `.claude` itself (only ~/.cco via _cco_config_dir), so callers and
+# migration 015 can test its presence to decide fresh-seed vs migrate.
+_cco_global_claude_dir() {
+    printf '%s\n' "$(_cco_config_dir)/.claude"
+}
+
 # DATA — internal-but-synced (required, never-team).
 _cco_data_dir() {
     _cco_resolver_guard
