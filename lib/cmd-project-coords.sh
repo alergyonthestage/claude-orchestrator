@@ -20,45 +20,38 @@
 #           (_resolve_unit_dir_for_project), yaml.sh (*_coords parsers),
 #           colors.sh.
 
-# Emit "<name>\t<unit>\t<section>\t<url>\t<ymlpath>" for every url-bearing
-# coordinate across all indexed projects. A url-less entry (authored pack,
-# local-only repo/mount) carries no coordinate and is skipped — it cannot
-# diverge. Peels tab fields by hand so empty middles survive.
+# Emit "<name>\t<unit>\t<section>\t<url>\t<yml>" for every url-bearing entry of
+# ONE section. <emitter> is the yaml.sh parser; <urlpos> is the 1-based index of
+# the url field in its TSV output (repos/mounts/packs = 2; llms = 4, since it
+# emits name\tdesc\tvariant\turl). _peel_tab preserves empty middle fields.
+_coords_scan_section() {
+    local unit="$1" yml="$2" section="$3" emitter="$4" urlpos="$5"
+    local _ln name url _d _v
+    while IFS= read -r _ln; do
+        [[ -z "$_ln" ]] && continue
+        if [[ "$urlpos" == 4 ]]; then
+            _peel_tab "$_ln" name _d _v url
+        else
+            _peel_tab "$_ln" name url
+        fi
+        [[ -n "$name" && -n "$url" ]] && printf '%s\t%s\t%s\t%s\t%s\n' "$name" "$unit" "$section" "$url" "$yml"
+    done < <("$emitter" "$yml")
+}
+
+# Emit the coordinate records for every url-bearing entry across all indexed
+# projects. A url-less entry (authored pack, local-only repo/mount) carries no
+# coordinate and is skipped — it cannot diverge.
 _coords_scan() {
-    local unit dir yml _ln rest name url
+    local unit dir yml
     while IFS='=' read -r unit _; do
         [[ -z "$unit" ]] && continue
         dir=$(_resolve_unit_dir_for_project "$unit" 2>/dev/null) || continue
         yml="$dir/.cco/project.yml"
         [[ -f "$yml" ]] || continue
-
-        while IFS= read -r _ln; do
-            [[ -z "$_ln" ]] && continue
-            name="${_ln%%$'\t'*}"; rest="${_ln#*$'\t'}"
-            url="${rest%%$'\t'*}"
-            [[ -n "$name" && -n "$url" ]] && printf '%s\t%s\trepos\t%s\t%s\n' "$name" "$unit" "$url" "$yml"
-        done < <(yml_get_repo_coords "$yml")
-
-        while IFS= read -r _ln; do
-            [[ -z "$_ln" ]] && continue
-            name="${_ln%%$'\t'*}"; rest="${_ln#*$'\t'}"
-            url="${rest%%$'\t'*}"
-            [[ -n "$name" && -n "$url" ]] && printf '%s\t%s\textra_mounts\t%s\t%s\n' "$name" "$unit" "$url" "$yml"
-        done < <(yml_get_mount_coords "$yml")
-
-        while IFS= read -r _ln; do
-            [[ -z "$_ln" ]] && continue
-            name="${_ln%%$'\t'*}"; rest="${_ln#*$'\t'}"
-            rest="${rest#*$'\t'}"; url="${rest#*$'\t'}"   # llms: name desc variant url
-            [[ -n "$name" && -n "$url" ]] && printf '%s\t%s\tllms\t%s\t%s\n' "$name" "$unit" "$url" "$yml"
-        done < <(yml_get_llms "$yml")
-
-        while IFS= read -r _ln; do
-            [[ -z "$_ln" ]] && continue
-            name="${_ln%%$'\t'*}"; rest="${_ln#*$'\t'}"
-            url="${rest%%$'\t'*}"
-            [[ -n "$name" && -n "$url" ]] && printf '%s\t%s\tpacks\t%s\t%s\n' "$name" "$unit" "$url" "$yml"
-        done < <(yml_get_pack_coords "$yml")
+        _coords_scan_section "$unit" "$yml" repos        yml_get_repo_coords  2
+        _coords_scan_section "$unit" "$yml" extra_mounts yml_get_mount_coords 2
+        _coords_scan_section "$unit" "$yml" llms         yml_get_llms         4
+        _coords_scan_section "$unit" "$yml" packs        yml_get_pack_coords  2
     done < <(_index_list_projects)
 }
 
@@ -190,10 +183,7 @@ EOF
         fi
         while IFS= read -r rec; do
             [[ -z "$rec" ]] && continue
-            rn="${rec%%$'\t'*}"; rest="${rec#*$'\t'}"
-            ru="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"
-            rs="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"
-            rurl="${rest%%$'\t'*}"; ryml="${rest#*$'\t'}"
+            _peel_tab "$rec" rn ru rs rurl ryml
             [[ "$ru" == "$from" ]] && continue            # don't rewrite the source
             [[ "$rurl" == "$from_url" ]] && continue      # already agrees
             plan+=("$ryml"$'\t'"$rs"$'\t'"$rn"$'\t'"$rurl"$'\t'"$from_url"$'\t'"$ru")
@@ -208,11 +198,7 @@ EOF
     info "Planned coordinate sync (authoritative unit: $from):"
     local p pyml psec pname pold pnew punit
     for p in "${plan[@]}"; do
-        pyml="${p%%$'\t'*}"; rest="${p#*$'\t'}"
-        psec="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"
-        pname="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"
-        pold="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"
-        pnew="${rest%%$'\t'*}"; punit="${rest#*$'\t'}"
+        _peel_tab "$p" pyml psec pname pold pnew punit
         info "  [$punit] $psec.$pname: $pold -> $pnew"
     done
 
@@ -228,11 +214,7 @@ EOF
 
     local applied=0
     for p in "${plan[@]}"; do
-        pyml="${p%%$'\t'*}"; rest="${p#*$'\t'}"
-        psec="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"
-        pname="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"
-        rest="${rest#*$'\t'}"          # drop oldurl
-        pnew="${rest%%$'\t'*}"         # newurl
+        _peel_tab "$p" pyml psec pname pold pnew   # pold (oldurl) unused here
         if _coords_set_url "$pyml" "$psec" "$pname" "$pnew"; then
             applied=$(( applied + 1 ))
         else
