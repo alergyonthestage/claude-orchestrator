@@ -108,22 +108,32 @@ pull is fast-forward-only with abort + reconcile instructions — `cmd-config.sh
 - **`changelog.yml`**: additive entries for the `cco list` dashboard, the uniform confirm + `-y`,
   `cco tag remove`, and `cco template update`/`validate`.
 
-## 5. Implementation plan (atomic LOCAL commits, green per step, baseline 921/0)
+## 5. Implementation plan (atomic LOCAL commits, green per step)
 
-1. **Ph.1** — ADR-0029 + this review doc. *(this commit)*
-2. **Ph.2 (safe, no behaviour)** — help sweep (join in `usage()`; missing flags; llms help split;
-   `-h` alias; format alignment; regroup) + UX-8 forget message. Tests/docs updated.
-3. **Ph.3** — `cco list [<kind>] [--tag]` dashboard + per-kind; remove `cco <noun> list` (stubs);
-   migrate suite call-sites; changelog.
-4. **Ph.4** — uniform destructive-confirm + `-y/--yes` canonical + `--force` override, across
-   forget/pack/llms/template/remote (verify config/coords conform).
-5. **Ph.5** — `cco template update` + `cco template validate` (pack parity).
-6. **Ph.6** — `cco path` demote (out of `usage()`, into `cco resolve --help`).
-7. **Final** — `docs/users/reference/cli.md` + `CLAUDE.md` command-list re-sync; roadmap step 4 →
-   done; banner the handoff.
+1. **Ph.1 ✅** `e872312` — ADR-0029 + this review doc.
+2. **Ph.2 ✅** `c08a87d` (2a) + `227d2c7` (2b) — help sweep (join in `usage()`; `config validate
+   --dry-run`; llms family-help cleanup; regroup) + UX-8 forget message; `-h` alias everywhere.
+3. **Ph.3 ✅** `9a5565a` — `cco list [<kind>] [--tag] [--sort]` unified index; removed `cco <noun>
+   list` (stubs); suite call-sites migrated; `changelog.yml` #16; new `tests/test_list.sh`.
+4. **Ph.4 ▶ handed off** — uniform destructive-confirm + `-y/--yes` canonical + `--force` override,
+   across forget/pack/llms/template/remote (non-TTY without `-y` → die, maintainer-confirmed).
+5. **Ph.5 ▶ handed off** — `cco tag remove` (alias `rm`) + `cco template update` + `cco template
+   validate` (pack parity).
+6. **Ph.6 ▶ handed off** — `cco path` demote (out of `usage()`, into `cco resolve --help`).
+7. **Ph.7 ▶ handed off** — `docs/users/reference/cli.md` + `CLAUDE.md` + design.md §7 re-sync;
+   roadmap step 4 → done; banner the handoffs.
+
+Ph.4–Ph.7 launcher: [`../ux-ui-fixes-handoff.md`](../ux-ui-fixes-handoff.md).
 
 ## Resolution log
 
 - *2026-06-27* — Findings raised; maintainer expanded scope to the listing redesign + uniform
   confirm + template parity; chose **Option A** (single `cco list`, redirect stubs) and **demote**
-  for `cco path`. Recorded in ADR-0029. Implementation begins at Ph.2 (entries appended as phases land).
+  for `cco path`. Recorded in ADR-0029.
+- *2026-06-27* — **Ph.1–Ph.3 implemented & committed** (`e872312`/`c08a87d`/`227d2c7`/`9a5565a`),
+  suite **921/0 → 928/0** (green per step). Help audit re-grounded: `cco update --help` and `cco
+  resolve --help` were **already complete** (audit 1a/1b were false positives — not changed). The
+  keystone breaking change (`cco list`) is in.
+- *2026-06-27* — **Ph.4–Ph.7 handed off** to a fresh session via
+  [`../ux-ui-fixes-handoff.md`](../ux-ui-fixes-handoff.md); non-TTY-without-`-y` → **die** confirmed.
+  Baseline for the continuation = **928/0**; next free ADR = 0030 (none expected).
