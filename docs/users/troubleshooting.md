@@ -340,15 +340,16 @@ cco stop
 **Symptoms**: the `/workspace/<repo>/` directory doesn't exist in the container.
 
 **Solutions**:
-1. Verify that the path in `project.yml` exists on the host:
+1. Verify the repo's host path (registered in the machine-local index via
+   `cco resolve`, not in `project.yml`) exists:
    ```bash
    ls -la ~/projects/my-repo
    ```
-2. Check the configuration in `project.yml`:
+2. Check the configuration in `project.yml` (logical name only — the host path
+   lives in the index):
    ```yaml
    repos:
-     - path: ~/projects/my-repo    # must exist on host
-       name: my-repo               # name in /workspace/
+     - name: my-repo               # name in /workspace/ (resolve the host path with `cco resolve`)
    ```
 3. Use `cco start my-project --dry-run` to see the generated volumes in `docker-compose.yml`
 
@@ -361,9 +362,9 @@ Error: Project 'foo' not found. Run 'cco list' to see available projects.
 **Solutions**:
 - Check the name with `cco list`
 - Verify that `<repo>/.cco/project.yml` exists
-- If the project doesn't exist yet, create it:
+- If the project doesn't exist yet, create it from inside the repo:
   ```bash
-  cco init my-project --repo ~/projects/my-repo
+  cd ~/projects/my-repo && cco init
   ```
 
 ### Context too large

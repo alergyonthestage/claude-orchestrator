@@ -1097,16 +1097,14 @@ and manual** (no auto-commit). The allowlist commits only `packs/`, `templates/`
 `git add -A`); the 2-pass secret scan refuses real secrets and exempts `*.example`.
 
 ```
-Usage: cco config save [-m <msg>] [--dry-run]
+Usage: cco config save [-m <msg>]
 
 Options:
   -m <msg>             Commit message (auto-generated if omitted)
-  --dry-run            Show what would be committed without committing
 
 Examples:
   cco config save
   cco config save -m "Add react-guidelines pack"
-  cco config save --dry-run
 ```
 
 #### `cco config push` / `cco config pull`

@@ -131,7 +131,7 @@ launch with anything unresolved — it never starts with a silent empty mount.
 ```bash
 git status -- .cco/                  # project config: ordinary git
 git log -- .cco/
-cco config save --dry-run            # personal store: preview what would be committed
+cco config save                      # personal store: commit (allowlist + secret scan)
 ```
 
 ---
@@ -143,9 +143,9 @@ resource** and **transversal** — a resource can carry any number of tags, and 
 never force single membership the way a profile branch did.
 
 ```bash
-cco tag add work my-saas             # tag a resource
-cco tag add review my-saas
-cco tag rm  work my-saas             # untag
+cco tag add my-saas work             # tag a resource (name first, then tag)
+cco tag add my-saas review
+cco tag rm  my-saas work             # untag
 cco list --tag work                  # list resources carrying a tag
 cco list                             # list everything
 ```
@@ -343,10 +343,9 @@ committed `<repo>/.cco/`. **Tip**: if you've heavily restructured a file, use
 cco update --check                     # which installed resources have an update?
 cco pack update acme-conventions       # 3-way merge against the recorded STATE base
 cco pack update --all
+cco template update my-template        # templates mirror packs: update + validate
+cco template update --all
 ```
-
-> 🚧 `cco template update` is planned for a later release (see the command
-> reference table below) — packs support `update` today, templates do not yet.
 
 ### 7.4 Internalizing resources
 
@@ -499,7 +498,7 @@ cco resolve --scan ~/dev            # map logical names → local paths on this 
 Use tags for different project sets per machine/context:
 
 ```bash
-cco tag add work work-api
+cco tag add work-api work
 cco list --tag work
 ```
 
@@ -550,7 +549,7 @@ versioned and **not** synced in v1:
 | Command | Purpose |
 |---------|---------|
 | `git add .cco && git commit && git push` | Version + share project config (the repo's own git) |
-| `cco config save [-m <msg>] [--dry-run]` | Commit the personal `~/.cco` store (allowlist + secret scan) |
+| `cco config save [-m <msg>]` | Commit the personal `~/.cco` store (allowlist + secret scan) |
 | `cco config push` / `cco config pull` | Sync `~/.cco` to/from its opt-in remote |
 | `cco config validate [--dry-run\|--fix [-y]]` | Sanitize orphaned internal state (detect/report; --fix prunes, confirmed) |
 | `cco sync [target] [--from <src>] [--dry-run\|--auto-approve\|--check]` | Copy `<repo>/.cco/` across a project's repos (clobber-guarded) |
@@ -561,8 +560,8 @@ versioned and **not** synced in v1:
 
 | Command | Purpose |
 |---------|---------|
-| `cco tag add <tag> <resource>` | Add a per-user tag |
-| `cco tag rm <tag> <resource>` | Remove a per-user tag |
+| `cco tag add <name> <tag>` | Add a per-user tag |
+| `cco tag rm <name> <tag>` | Remove a per-user tag |
 | `cco list [--tag <t>]` | List resources, optionally filtered by tag |
 
 ### Updates
@@ -575,14 +574,14 @@ versioned and **not** synced in v1:
 | `cco update --diff [scope]` | Preview framework changes |
 | `cco update --news` | Show changelog details |
 | `cco pack update <name>` / `--all` | Update pack(s) from upstream (3-way merge) |
-| `cco template update <name>` / `--all` | Update template(s) from upstream — 🚧 planned, ships in a later release |
+| `cco template update <name>` / `--all` | Update template(s) from upstream (3-way merge) |
 
 ### Sharing & remotes
 
 | Command | Purpose |
 |---------|---------|
 | `cco remote add <n> <url> [--token]` | Register a sharing-repo endpoint |
-| `cco remote remove <name>` / `cco remote list` | Manage endpoints |
+| `cco remote remove <name>` / `cco list remotes` | Manage endpoints |
 | `cco pack publish <name> [remote]` | Publish a pack (sync-before-publish) |
 | `cco template publish <name> [remote]` | Publish a template |
 | `cco pack install <url>` / `cco template install <url>` | Install from a sharing repo |

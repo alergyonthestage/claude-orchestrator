@@ -103,7 +103,7 @@ cco new --repo ~/projects/api --repo ~/projects/frontend --port 3000:3000
 | `cco init --migrate <project>` | Migrate a project from a legacy central install into its repo |
 | `cco start <project>` | Start session for a configured project |
 | `cco new --repo <path>` | Temporary session with specific repositories |
-| `cco list` | List available projects |
+| `cco list [<kind>]` | List all resources (projects, packs, templates, llms, remotes); narrow with a kind |
 | `cco update` | Run migrations + discover available config updates |
 | `cco update --sync` | Interactively sync config from framework defaults |
 | `cco clean` | Remove .bak files from update |

@@ -80,13 +80,11 @@ packs, and configuration files for you interactively.
 
 ```yaml
 repos:
-  - path: ~/projects/backend-api
-    name: backend-api
-  - path: ~/projects/frontend-app
-    name: frontend-app
+  - name: backend-api
+  - name: frontend-app
 
 extra_mounts:
-  - source: ~/projects/shared-framework
+  - name: shared-framework
     target: /workspace/shared-framework
     readonly: true
 

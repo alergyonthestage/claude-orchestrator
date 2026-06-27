@@ -307,4 +307,35 @@ These two were the only sites still using the low-level helper directly.
 
 No changelog / no new ADR. Suite **945/0**.
 
-### Clusters 4–5 — pending.
+### Cluster 4 — User-facing docs coherence (D3) — ✅ DONE (2026-06-27)
+
+All doc-coherence findings fixed to match the shipped ADR-0029 surface + the decentralized
+`project.yml` schema. **C14 decision (maintainer's "follow my recommendation")**: *removed*
+`--dry-run` from the `cco config save` docs rather than implementing it (the dispatch-level help
+already omitted it).
+
+- **C12** `configuration-management.md` — `cco tag add/rm` argument order corrected to `<name> <tag>`
+  in §4 examples (×3 + line 502) and the §11 reference table.
+- **C13** `CLAUDE.md` — `cco remote list`→`cco list remotes`, `cco llms list`→`cco list llms`,
+  `cco config save [msg] [--yes]`→`cco config save [-m <msg>]`.
+- **C14** `cli.md` §3.21 + `configuration-management.md` (§3 bash block line 134 + §11 table) —
+  dropped the unimplemented `--dry-run` from `cco config save` (usage, option line, example, table).
+- **C15** `knowledge-packs.md` — `cco pack list`→`cco list packs`; repos example `path:`→`name:`.
+  (The pack `files:` `path:` entries elsewhere in the guide are legitimate and left intact.)
+- **C16** `first-project.md`, `project-setup.md`, `troubleshooting.md` — repos `path:` / extra_mounts
+  `source:` removed from `project.yml` examples (host paths live in the index via `cco resolve`),
+  matching the canonical `project-yaml.md`.
+- **C17** `troubleshooting.md` — `cco init <project> --repo …` → `cd <repo> && cco init`.
+- **C18** `configuration-management.md` + `authentication.md` — `cco remote list`→`cco list remotes`;
+  removed the 🚧 "planned" labels on the shipped `cco template update` (callout + table row). The
+  `cco config protect` 🚧 (post-v1 deferral) was left as-is.
+- **C19** `installation.md` — `cco list` re-described as listing every resource kind.
+- **C20** `lib/cmd-remote.sh` — redirect message `cco list remote`→`cco list remotes` (plural, matches
+  cli.md). No test asserts this string.
+
+Completeness sweep caught two extra `config save --dry-run` stragglers (config-mgmt §3/§11) — fixed.
+The cli.md redirect-documentation lines (`the per-noun verb was removed → use cco list <kind>`) are
+correct and intentionally kept. Pure doc/coherence + one CLI string: no changelog, no migration, no
+ADR. Suite **945/0**.
+
+### Cluster 5 — pending.

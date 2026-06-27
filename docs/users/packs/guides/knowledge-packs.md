@@ -156,8 +156,7 @@ To activate a pack, add its name to the `packs:` list in the project's `project.
 name: my-saas
 
 repos:
-  - path: ~/projects/backend-api
-    name: backend-api
+  - name: backend-api
 
 packs:
   - my-client-knowledge
@@ -177,7 +176,7 @@ If two packs define the same agent, rule, or skill, the last pack in the `packs:
 ### List available packs
 
 ```bash
-cco pack list
+cco list packs
 ```
 
 Output:

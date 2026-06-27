@@ -344,7 +344,7 @@ EOF
             _cmd_remote_remove "$@"
             ;;
         list)
-            die "'cco remote list' was removed — use 'cco list remote' (ADR-0029)." ;;
+            die "'cco remote list' was removed — use 'cco list remotes' (ADR-0029)." ;;
         set-token)
             while [[ $# -gt 0 ]]; do
                 case "$1" in

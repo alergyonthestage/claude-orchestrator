@@ -65,8 +65,7 @@ Open `~/projects/my-app/.cco/project.yml` and verify the configuration:
 
 ```yaml
 repos:
-  - path: ~/projects/my-app
-    name: my-app
+  - name: my-app
 
 docker:
   ports:

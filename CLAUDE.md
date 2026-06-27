@@ -62,16 +62,16 @@ cco project show <name>      # Show project roles, referenced-by, repo-centric v
 cco remote add <n> <url>     # Register a sharing-repo remote
 cco remote add <n> <url> --token <t>  # Register with auth token
 cco remote remove <name>     # Unregister a remote
-cco remote list              # Show all registered remotes
+cco list remotes             # Show all registered remotes
 cco remote set-token <n> <t> # Save auth token for a remote
 cco remote remove-token <n>  # Remove saved token
 cco llms install <url>       # Install framework documentation (llms.txt)
-cco llms list                # List installed llms entries
+cco list llms                # List installed llms entries
 cco llms show <name>         # Show llms entry details
 cco llms update [name]       # Re-download from source (--all for all)
 cco llms rename <old> <new>  # Rename an llms entry (updates YAML refs)
 cco llms remove <name>       # Remove an llms entry
-cco config save [msg] [--yes] # Commit ~/.cco changes with secret detection
+cco config save [-m <msg>]   # Commit ~/.cco changes with secret detection
 cco config push              # Push ~/.cco to its remote (multi-PC sync)
 cco config pull              # Pull ~/.cco from its remote
 cco update                   # Migrations + discovery (framework + remote) + changelog

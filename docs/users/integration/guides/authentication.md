@@ -226,7 +226,7 @@ Token management commands:
 | `cco remote add <n> <url> --token <t>` | Register remote with token |
 | `cco remote set-token <name> <token>` | Save or update token |
 | `cco remote remove-token <name>` | Remove saved token |
-| `cco remote list` | Show remotes with `[token]` indicator |
+| `cco list remotes` | Show remotes with `[token]` indicator |
 
 Tokens are stored in the machine-local STATE store (never committed; the
 de-tokenized remote registry lives in DATA at `~/.local/share/cco/remotes`).
