@@ -172,7 +172,7 @@ _cmd_remote_remove() {
     local name="" yes=false
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            -y|--yes|--force) yes=true; shift ;;   # no in-use block for remotes; --force == -y here
+            -y|--yes) yes=true; shift ;;
             -*) die "Unknown option: $1" ;;
             *)
                 if [[ -z "$name" ]]; then name="$1"; shift

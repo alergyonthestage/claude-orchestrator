@@ -158,9 +158,11 @@ test_project_coords_sync_non_interactive_without_yes_aborts() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     _pc_two_divergent "$tmpdir"
-    # No -y, piped stdin (non-TTY) → must not edit anything.
-    CCO_OUTPUT=$(cd "$tmpdir" && bash "$REPO_ROOT/bin/cco" project coords --sync --from backend </dev/null 2>&1) || true
-    echo "$CCO_OUTPUT" | grep -qF "Non-interactive" || fail "expected non-interactive guard"
+    # No -y, piped stdin (non-TTY) → ADR-0029 D2: DIE (non-zero exit), edit nothing.
+    local rc=0
+    CCO_OUTPUT=$(cd "$tmpdir" && bash "$REPO_ROOT/bin/cco" project coords --sync --from backend </dev/null 2>&1) || rc=$?
+    [[ "$rc" -ne 0 ]] || fail "expected non-interactive --sync without -y to exit non-zero"
+    echo "$CCO_OUTPUT" | grep -qF "re-run with -y" || fail "expected the ADR-0029 D2 die message"
     assert_file_contains "$(host_cco_dir "$tmpdir" frontend)/project.yml" "shared-OLD"
 }
 

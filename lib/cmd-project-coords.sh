@@ -198,15 +198,9 @@ EOF
         info "  [$punit] $psec.$pname: $pold -> $pnew"
     done
 
-    if [[ "$force" != true ]]; then
-        if [[ ! -t 0 ]]; then
-            warn "Non-interactive — re-run with -y to apply, or use --diff to inspect."
-            return 0
-        fi
-        printf 'Apply %d coordinate edit(s) to committed project.yml file(s)? [y/N] ' "${#plan[@]}" >&2
-        local ans; read -r ans
-        case "$ans" in [yY]|[yY][eE][sS]) ;; *) info "Aborted — nothing changed."; return 0 ;; esac
-    fi
+    # ADR-0029 D2: confirm, and DIE (not skip) when non-interactive without -y.
+    _confirm_destructive "$force" "Apply ${#plan[@]} coordinate edit(s) to committed project.yml file(s)?" \
+        || { info "Aborted — nothing changed."; return 0; }
 
     local applied=0
     for p in "${plan[@]}"; do

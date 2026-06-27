@@ -42,7 +42,7 @@ cmd_forget() {
     local name="" force=false
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            -y|--yes|--force) force=true; shift ;;
+            -y|--yes) force=true; shift ;;
             --help|-h)
                 cat <<'EOF'
 Usage: cco forget <project> [-y]
@@ -56,7 +56,7 @@ is kept, the project re-registers automatically on the next `cco start` from
 that repo (or `cco resolve --scan`); only user-authored tags do not auto-return.
 
 Options:
-  -y, --yes, --force   Skip the confirmation prompt
+  -y, --yes            Skip the confirmation prompt
 EOF
                 return 0
                 ;;

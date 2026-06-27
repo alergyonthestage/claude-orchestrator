@@ -274,20 +274,6 @@ _cv_prune_record() {
     esac
 }
 
-# Confirm a prune phase. --yes/-y (force=true) is an explicit confirmation;
-# otherwise prompt on a TTY, and refuse (skip) when non-interactive.
-_cv_confirm() {
-    local force="$1" prompt="$2" reply
-    [[ "$force" == true ]] && return 0
-    if [[ ! -t 0 ]]; then
-        warn "Non-interactive — skipping ($prompt). Re-run interactively or pass -y."
-        return 1
-    fi
-    printf '%s [y/N] ' "$prompt" >&2
-    read -r reply
-    [[ "$reply" =~ ^[Yy]$ ]]
-}
-
 _config_validate() {
     local mode=report force=false
     while [[ $# -gt 0 ]]; do
@@ -353,7 +339,7 @@ EOF
     fi
 
     if [[ ${#local_recs[@]} -gt 0 ]]; then
-        if _cv_confirm "$force" "Prune ${#local_recs[@]} machine-local orphan(s)?"; then
+        if _confirm_destructive "$force" "Prune ${#local_recs[@]} machine-local orphan(s)?"; then
             for rec in "${local_recs[@]}"; do _cv_prune_record "$rec"; done
             ok "Pruned ${#local_recs[@]} machine-local orphan(s)."
         else
@@ -362,7 +348,7 @@ EOF
     fi
     if [[ ${#data_recs[@]} -gt 0 ]]; then
         warn "The next prune touches SYNCED DATA — it propagates to your other machines."
-        if _cv_confirm "$force" "Prune ${#data_recs[@]} synced (DATA) orphan(s)?"; then
+        if _confirm_destructive "$force" "Prune ${#data_recs[@]} synced (DATA) orphan(s)?"; then
             for rec in "${data_recs[@]}"; do _cv_prune_record "$rec"; done
             ok "Pruned ${#data_recs[@]} synced (DATA) orphan(s)."
         else

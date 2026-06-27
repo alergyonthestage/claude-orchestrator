@@ -336,7 +336,7 @@ cmd_template_remove() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            -y|--yes|--force) yes=true; shift ;;   # no in-use block for templates; --force == -y here
+            -y|--yes) yes=true; shift ;;
             --help|-h)
                 cat <<'EOF'
 Usage: cco template remove <name> [-y]

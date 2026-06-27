@@ -104,14 +104,17 @@ test_config_validate_warns_on_orphan_with_memory() {
     assert_output_contains "contains migrated memory"
 }
 
-test_config_validate_fix_skips_without_confirmation() {
+test_config_validate_fix_dies_without_confirmation() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     _cv_seed_orphans "$tmpdir"
 
-    # --fix without -y, non-interactive stdin → refuse, preserve everything.
-    run_cco config validate --fix </dev/null || true
-    assert_output_contains "Non-interactive"
+    # --fix without -y, non-interactive stdin → ADR-0029 D2: DIE (non-zero exit),
+    # preserve everything.
+    local rc=0
+    run_cco config validate --fix </dev/null || rc=$?
+    [[ "$rc" -ne 0 ]] || fail "expected non-interactive --fix without -y to exit non-zero"
+    assert_output_contains "re-run with -y"
     assert_dir_exists "$CCO_STATE_HOME/packs/ghost-spack"
     assert_dir_exists "$CCO_DATA_HOME/packs/ghost-dpack"
 }

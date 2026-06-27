@@ -258,4 +258,31 @@ Idempotent; legacy vault users unaffected.
 - No changelog / no new migration (idempotent bug-fix to an existing migration).
 - Suite: **944/0** (943 baseline + 1 regression test).
 
-### Clusters 2–5 — pending.
+### Cluster 2 — ADR-0029 D2 confirm-contract — ✅ DONE (2026-06-27)
+
+Maintainer directive: **fix the code to the ADR** (no ADR-0030).
+
+**C6** — dropped `--force` as a `-y` synonym from the three verbs with no in-use/overwrite block
+to override: `cco forget` (`cmd-forget.sh`), `cco remote remove` (`cmd-remote.sh`), `cco template
+remove` (`cmd-template.sh`). They now accept only `-y/--yes`; help text updated. The legitimate
+override `--force` on `cco template update`/`import` and `cco pack/llms remove` (real in-use/overwrite
+blocks) is untouched. `cmd_forget`'s confirm already dies on non-TTY, so it was already D2-compliant
+apart from the alias.
+
+**C7** — routed the two stragglers through the canonical `_confirm_destructive` (utils.sh), which
+**dies** on non-TTY without `-y` instead of warn+skip:
+- `cco project coords --sync` (`cmd-project-coords.sh`) — the `return 0` warn+skip that masked a
+  skipped sync in CI now dies.
+- `cco config validate --fix` (`cmd-config.sh`) — the local `_cv_confirm` helper (warn+skip,
+  `return 1`) was **deleted** and both call sites now use `_confirm_destructive`.
+- Tests updated to assert the die contract (non-zero exit + "re-run with -y", data preserved):
+  `test_project_coords_sync_non_interactive_without_yes_aborts`,
+  `test_config_validate_fix_dies_without_confirmation` (renamed from `…_skips_…`).
+
+**Side effect on C5**: deleting `_cv_confirm` removes the exact target of C5 (its `[[ -t 0 ]]` vs
+`(exec < /dev/tty)` idiom). The residual question — whether the canonical `_confirm_destructive`
+itself should adopt the `/dev/tty` idiom — is re-scoped into Cluster 5 as a maintainer nit.
+
+No changelog / no new ADR (contract corrections to just-shipped ADR-0029 behavior). Suite **944/0**.
+
+### Clusters 3–5 — pending.
