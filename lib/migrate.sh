@@ -170,6 +170,45 @@ _cco_backup_legacy_vault() {
     return 0
 }
 
+# ── Flatten the global config home (ADR-0028) ────────────────────────
+# Move the vault-era legacy <cfg>/global/.claude → the flat <cfg>/.claude.
+# $1 = config home (default ~/.cco). Idempotent; never clobbers a populated flat
+# dir. The SINGLE implementation, shared by migration 015 (schema record) and the
+# dispatch-time bootstrap (self-heal on any command, before check_global). With an
+# explicit $1 it touches no resolver, so it is callable from a migration's subshell.
+_cco_flatten_global_claude() {
+    local cfg="${1:-$(_cco_config_dir)}"
+    local new_dir="$cfg/.claude" legacy_wrap="$cfg/global" legacy_dir="$cfg/global/.claude"
+
+    # Already flat. Drop a stale legacy copy (half-migrated dev state) + empty
+    # wrapper, but never touch the populated flat dir.
+    if [[ -d "$new_dir" ]]; then
+        [[ -d "$legacy_dir" ]] && { rm -rf "$legacy_dir" 2>/dev/null || true; }
+        rmdir "$legacy_wrap" 2>/dev/null || true
+        return 0
+    fi
+    # Nothing to migrate (fresh / already-flat install).
+    [[ -d "$legacy_dir" ]] || return 0
+
+    info "Flattening global config: ~/.cco/global/.claude → ~/.cco/.claude (ADR-0028)"
+    # Same-filesystem rename (both under ~/.cco) — atomic and cheap.
+    if mv "$legacy_dir" "$new_dir" 2>/dev/null; then
+        rmdir "$legacy_wrap" 2>/dev/null || true
+        return 0
+    fi
+    # Fallback: stage a same-dir sibling, swap, remove legacy. Never a partial flat.
+    rm -rf "$new_dir.tmp" 2>/dev/null || true
+    if cp -r "$legacy_dir" "$new_dir.tmp" 2>/dev/null; then
+        mv "$new_dir.tmp" "$new_dir"
+        rm -rf "$legacy_dir" 2>/dev/null || true
+        rmdir "$legacy_wrap" 2>/dev/null || true
+        return 0
+    fi
+    rm -rf "$new_dir.tmp" 2>/dev/null || true
+    warn "Could not flatten ~/.cco/global/.claude — left in place; retry on the next 'cco update'."
+    return 1
+}
+
 # ── Dispatch-time orchestrator ───────────────────────────────────────
 # Run before every command (bin/cco). Bootstrap is universal; the backup net is
 # skipped only for `help` (prints usage, reads no config). Ordering (M8): roots
@@ -178,6 +217,9 @@ _cco_backup_legacy_vault() {
 _cco_first_run() {
     local cmd="$1"
     _cco_bootstrap_roots
+    # Self-heal a pre-flatten layout (ADR-0028) on ANY command, before check_global
+    # and any global-config reader run. Host-side only; idempotent no-op otherwise.
+    _cco_host_side_ok && { _cco_flatten_global_claude || true; }
     case "$cmd" in
         help) : ;;
         *) _cco_backup_legacy_vault || true ;;

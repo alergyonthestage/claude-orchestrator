@@ -300,9 +300,13 @@ test_update_help() {
 
 # ── Migration 003: user-config-dir restructure ──────────────────────
 
-# Helper: source colors for direct migration tests
+# Helper: source deps for direct migration tests. Includes migrate.sh so migrations
+# that delegate to shared helpers (e.g. 015 → _cco_flatten_global_claude) resolve.
 _source_migration_deps() {
     source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/migrate.sh"
 }
 
 test_migration_003_moves_directories() {

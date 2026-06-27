@@ -64,6 +64,37 @@ test_migrate_bootstrap_idempotent_no_clobber() {
     assert_file_contains "$HOME/.cco/marker" "keep me" "bootstrap must not clobber existing CONFIG content"
 }
 
+# ── Pre-flatten self-heal (ADR-0028) ─────────────────────────────────
+
+test_migrate_bootstrap_flattens_legacy_global_claude() {
+    # A pre-flatten layout (~/.cco/global/.claude) must self-heal to the flat
+    # ~/.cco/.claude on ANY command — before check_global / global-config readers
+    # run. Regression: check_global looks at the flat dir, so without the bootstrap
+    # flatten a pre-flatten user is locked out of `cco update` (the eager owner).
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    mkdir -p "$HOME/.cco/global/.claude/rules"
+    echo "# legacy global" > "$HOME/.cco/global/.claude/CLAUDE.md"
+    echo "# legacy rule"   > "$HOME/.cco/global/.claude/rules/workflow.md"
+
+    run_cco path list || true
+
+    assert_dir_exists    "$HOME/.cco/.claude" "bootstrap must flatten legacy global/.claude"
+    assert_file_contains "$HOME/.cco/.claude/CLAUDE.md" "legacy global" "content must move to the flat home"
+    assert_file_contains "$HOME/.cco/.claude/rules/workflow.md" "legacy rule"
+    [[ ! -e "$HOME/.cco/global" ]] || fail "the legacy global/ wrapper must be removed after flatten"
+}
+
+test_migrate_bootstrap_flatten_noop_when_flat() {
+    # Already-flat install: bootstrap flatten is a clean no-op (never clobbers).
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    mkdir -p "$HOME/.cco/.claude"
+    echo "# flat" > "$HOME/.cco/.claude/CLAUDE.md"
+    run_cco path list || true
+    assert_file_contains "$HOME/.cco/.claude/CLAUDE.md" "flat" "an already-flat home must be untouched"
+}
+
 # ── Legacy-vault backup (ADR-0006 / ADR-0025) ────────────────────────
 
 test_migrate_backup_created_on_any_command() {
