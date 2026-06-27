@@ -5,49 +5,8 @@
 # Dependencies: colors.sh, utils.sh, update.sh
 # Globals: DEFAULTS_DIR, REPO_ROOT (projects via the STATE index, P5)
 
-cmd_update() {
-    local cmd_mode="discovery"   # discovery | diff | sync | news
-    local dry_run=false
-    local no_backup=false
-    local scope=""               # "" = all, "global" = global only, "<name>" = project
-    local auto_action=""         # "" = interactive, "replace" = overwrite, "keep" = preserve
-    local offline_mode=false
-    local cache_mode="default"   # default | force
-    local local_override=false
-    local diff_all=false
-
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --sync)
-                cmd_mode="sync"
-                # Optional scope argument (global | project-name)
-                if [[ -n "${2:-}" && "${2:0:1}" != "-" ]]; then
-                    scope="$2"; shift
-                fi
-                shift ;;
-            --diff)
-                cmd_mode="diff"
-                # Optional scope argument (global | project-name) and --all flag
-                while [[ -n "${2:-}" ]]; do
-                    case "$2" in
-                        --all) diff_all=true; shift ;;
-                        -*) break ;;
-                        *)  scope="$2"; shift ;;
-                    esac
-                done
-                shift ;;
-            --news)       cmd_mode="news"; shift ;;
-            --check)      cmd_mode="check"; shift ;;
-            --dry-run)    dry_run=true; shift ;;
-            --no-backup)  no_backup=true; shift ;;
-            --force)      cmd_mode="sync"; auto_action="replace"; shift ;;
-            --keep)       cmd_mode="sync"; auto_action="keep"; shift ;;
-            --replace)    cmd_mode="sync"; auto_action="replace"; shift ;;
-            --offline)    offline_mode=true; shift ;;
-            --no-cache)   cache_mode="force"; shift ;;
-            --local)      local_override=true; shift ;;
-            --help)
-                cat <<'EOF'
+_update_usage() {
+    cat <<'EOF'
 Usage: cco update [OPTIONS]
 
 Runs pending migrations (global + all projects) and shows available updates.
@@ -104,8 +63,50 @@ Examples:
   cco update --dry-run        # Preview pending migrations
   cco update --offline        # Skip remote checks
 EOF
-                return 0
-                ;;
+}
+
+cmd_update() {
+    local cmd_mode="discovery"   # discovery | diff | sync | news
+    local dry_run=false
+    local no_backup=false
+    local scope=""               # "" = all, "global" = global only, "<name>" = project
+    local auto_action=""         # "" = interactive, "replace" = overwrite, "keep" = preserve
+    local offline_mode=false
+    local cache_mode="default"   # default | force
+    local local_override=false
+    local diff_all=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --sync)
+                cmd_mode="sync"
+                # Optional scope argument (global | project-name)
+                if [[ -n "${2:-}" && "${2:0:1}" != "-" ]]; then
+                    scope="$2"; shift
+                fi
+                shift ;;
+            --diff)
+                cmd_mode="diff"
+                # Optional scope argument (global | project-name) and --all flag
+                while [[ -n "${2:-}" ]]; do
+                    case "$2" in
+                        --all) diff_all=true; shift ;;
+                        -*) break ;;
+                        *)  scope="$2"; shift ;;
+                    esac
+                done
+                shift ;;
+            --news)       cmd_mode="news"; shift ;;
+            --check)      cmd_mode="check"; shift ;;
+            --dry-run)    dry_run=true; shift ;;
+            --no-backup)  no_backup=true; shift ;;
+            --force)      cmd_mode="sync"; auto_action="replace"; shift ;;
+            --keep)       cmd_mode="sync"; auto_action="keep"; shift ;;
+            --replace)    cmd_mode="sync"; auto_action="replace"; shift ;;
+            --offline)    offline_mode=true; shift ;;
+            --no-cache)   cache_mode="force"; shift ;;
+            --local)      local_override=true; shift ;;
+            --help) _update_usage; return 0 ;;
             *) die "Unknown option: $1. Run 'cco update --help' for usage." ;;
         esac
     done
@@ -248,43 +249,7 @@ EOF
 
     # Pack remote discovery (discovery mode only, respect --offline)
     if [[ "$do_projects" == "all" && "$cmd_mode" == "discovery" && "$offline_mode" != "true" ]]; then
-        local pack_dir
-        for pack_dir in "$PACKS_DIR"/*/; do
-            [[ ! -d "$pack_dir" ]] && continue
-            local pack_source_file
-            pack_source_file=$(_cco_pack_source "$pack_dir")
-            [[ ! -f "$pack_source_file" ]] && continue
-            local pack_source_url
-            pack_source_url=$(yml_get "$pack_source_file" "url")
-            [[ -z "$pack_source_url" || "$pack_source_url" == "local" ]] && continue
-            local pack_name
-            pack_name="$(basename "$pack_dir")"
-            local pack_meta_file
-            pack_meta_file=$(_cco_pack_meta "$pack_dir")
-            local pack_remote_status
-            pack_remote_status=$(_check_remote_update "$pack_source_file" "$pack_meta_file" "$cache_mode")
-            # Format display URL
-            local pack_source_display="$pack_source_url"
-            pack_source_display="${pack_source_display#https://}"
-            pack_source_display="${pack_source_display#http://}"
-            pack_source_display="${pack_source_display%.git}"
-            case "$pack_remote_status" in
-                update_available)
-                    info "Pack '$pack_name' (from $pack_source_display): Update available"
-                    info "  -> run 'cco pack update $pack_name'"
-                    ;;
-                unknown)
-                    info "Pack '$pack_name' (from $pack_source_display): Version tracking not initialized"
-                    info "  -> run 'cco pack update $pack_name' to check"
-                    ;;
-                unreachable)
-                    warn "Pack '$pack_name' (from $pack_source_display): Remote unreachable"
-                    ;;
-                up_to_date)
-                    # Silent — no output for up-to-date packs
-                    ;;
-            esac
-        done
+        _update_discover_pack_remotes "$cache_mode"
     fi
 
     # LLMs.txt freshness check (discovery mode only)
@@ -311,6 +276,49 @@ EOF
         echo ""
         ok "Update complete."
     fi
+}
+
+# Discovery-mode pack upstream check: for every personal-store pack with a real
+# (non-local) source url, probe its sharing-repo remote and report status. Read-
+# only and offline-gated by the caller. Usage: _update_discover_pack_remotes <cache_mode>
+_update_discover_pack_remotes() {
+    local cache_mode="$1" pack_dir
+    for pack_dir in "$PACKS_DIR"/*/; do
+        [[ ! -d "$pack_dir" ]] && continue
+        local pack_source_file
+        pack_source_file=$(_cco_pack_source "$pack_dir")
+        [[ ! -f "$pack_source_file" ]] && continue
+        local pack_source_url
+        pack_source_url=$(yml_get "$pack_source_file" "url")
+        [[ -z "$pack_source_url" || "$pack_source_url" == "local" ]] && continue
+        local pack_name
+        pack_name="$(basename "$pack_dir")"
+        local pack_meta_file
+        pack_meta_file=$(_cco_pack_meta "$pack_dir")
+        local pack_remote_status
+        pack_remote_status=$(_check_remote_update "$pack_source_file" "$pack_meta_file" "$cache_mode")
+        # Format display URL
+        local pack_source_display="$pack_source_url"
+        pack_source_display="${pack_source_display#https://}"
+        pack_source_display="${pack_source_display#http://}"
+        pack_source_display="${pack_source_display%.git}"
+        case "$pack_remote_status" in
+            update_available)
+                info "Pack '$pack_name' (from $pack_source_display): Update available"
+                info "  -> run 'cco pack update $pack_name'"
+                ;;
+            unknown)
+                info "Pack '$pack_name' (from $pack_source_display): Version tracking not initialized"
+                info "  -> run 'cco pack update $pack_name' to check"
+                ;;
+            unreachable)
+                warn "Pack '$pack_name' (from $pack_source_display): Remote unreachable"
+                ;;
+            up_to_date)
+                # Silent — no output for up-to-date packs
+                ;;
+        esac
+    done
 }
 
 # `cco update --check` — list installed packs/templates whose sharing-repo
