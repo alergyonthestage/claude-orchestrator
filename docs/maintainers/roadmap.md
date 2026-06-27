@@ -5,20 +5,21 @@
 > [roadmap-history.md](roadmap-history.md). The framework-improvements backlog
 > lives in [roadmap-backlog.md](roadmap-backlog.md).
 >
-> Last updated: 2026-06-26.
+> Last updated: 2026-06-27.
 
 ## Current status
 
 The **decentralized in-repo config** refactor is **build-complete**: design closed
-(ADRs 0005–0027, principles P1–P18), and Phases 0–5 are all shipped on
-`feat/vault/decentralized-config` (suite **905/0**; commits local, pushed from the
+(ADRs 0005–0028, principles P1–P18), and Phases 0–5 are all shipped on
+`feat/vault/decentralized-config` (suite **914/0**; commits local, pushed from the
 maintainer's Mac). Project config now lives in `<repo>/.cco/`; the central vault and
-the profile/`@local` machinery are gone; personal config lives in `~/.cco`; machine-local
-state/cache/data live in hidden XDG buckets. The work is now in the **pre-merge review
-cycle**: the implementation review is done; the **documentation review (this step)** has
-reorganized `docs/` to the audience→domain→doc-type structure and run a shipped-behavior
-coherence sweep (which surfaced and fixed one writer/reader path bug — see step 3). Next:
-refactoring/UX review, dogfooding, and the v1 merge/release.
+the profile/`@local` machinery are gone; personal config lives in `~/.cco` (global Claude
+config flattened to `~/.cco/.claude/`, ADR-0028); machine-local state/cache/data live in
+hidden XDG buckets. The work is now in the **pre-merge review cycle**: the implementation
+review and the documentation review (reorg + coherence sweep) are done, and the pre-merge
+**flatten** (`~/.cco/global/.claude` → `~/.cco/.claude`, ADR-0028) shipped 2026-06-27.
+**Next: the refactoring/optimization review (step 3)**, then UX review, dogfooding, and the
+v1 merge/release.
 
 ## Decentralized-config v1 — phase index
 
@@ -41,8 +42,9 @@ All phases closed; Phase 5 build-complete. Full per-phase commit/baseline log:
 
 ```mermaid
 flowchart LR
-  A["1. Impl review<br/>✅ done (905/0)"] --> B["2. Docs review<br/>▶ in progress"]
-  B --> C["3. Refactoring /<br/>optimization review"]
+  A["1. Impl review<br/>✅ done"] --> B["2. Docs review<br/>✅ done"]
+  B --> X["Pre-merge flatten<br/>✅ done (914/0)"]
+  X --> C["3. Refactoring /<br/>optimization review<br/>▶ next"]
   C --> D["4. UX-UI review"]
   D --> E["5. Dogfooding<br/>e2e (Mac)"]
   E --> F["6. Merge /<br/>release v1"]
@@ -59,14 +61,17 @@ flowchart LR
    **Deferred to post-merge** (see backlog): per-domain split of `cli.md` /
    `context-hierarchy.md` / the `configuration-management.md` guide, and the by-domain
    redistribution of the `decentralized-config/` sprint folder.
-3. **Refactoring / optimization review** — consumes the 13 optimization flags from the
-   pre-merge adherence review, plus the **global build-extension reader bug** found during
-   the docs sweep: `cco init` / `init --migrate` write `setup-build.sh` / `setup.sh` /
-   `mcp-packages.txt` to `~/.cco` **top level** (design §2.3) but `cco build` read them from
-   `~/.cco/global` (legacy-vault remnant), so global build-time customization was silently
-   inert. **Verified + fixed 2026-06-26** in `lib/cmd-build.sh` (regression test
-   `tests/test_build.sh`); the broader stale-path sweep found no other active mismatch
-   (secrets/runtime readers already correct). **Re-validate in dogfooding** on a real build.
+3. **Refactoring / optimization review** — ▶ **next.** Launcher:
+   `configuration/decentralized-config/refactoring-review-handoff.md` (self-contained;
+   method = `engineering/guides/review-playbooks.md` §3). Consumes the **13 optimization
+   flags** from the 25-06 adherence review (`reviews/25-06-2026-impl-adherence-review.md`
+   §"Optimization & duplication backlog") plus the residual **LOW/NIT** from the migration
+   review (`reviews/26-06-2026-migration-impl-review.md`). Behaviour-preserving (SOLID/DRY/
+   OCP/KISS/YAGNI); baseline 914/0. The **global build-extension reader bug** found during
+   the docs sweep (`cco build` read setup scripts from `~/.cco/global`, now `~/.cco` top
+   level) was **fixed 2026-06-26** (`a92effc`, regression in `tests/test_build.sh`); the
+   related update.sh reseed mismatch was fixed in the flatten cycle. **Re-validate both in
+   dogfooding** (step 5) on a real build.
 4. **UX-UI review**.
 5. **Dogfooding e2e on Mac** — `configuration/decentralized-config/P2-dogfooding-validation.md`
    (sandboxed roots + HOME-flip; legacy-vault removal accepted only after merge + validation).
