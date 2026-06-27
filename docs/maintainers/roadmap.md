@@ -69,12 +69,16 @@ flowchart LR
    307→212 via `_update_usage`/`_update_discover_pack_remotes` (#7/#11) + `cmd-build` secret
    scan routed through `lib/secrets.sh` (#10, "route-as-is" — non-blocking warn) + L4/NIT
    backup-diagnostics polish. Skipped as moot/forced (KISS/YAGNI): #3, #6, #8, #9, #12, #13.
-   **L6** (container-detection false-positive) **deferred** → post-v1 backlog. The **global
-   build-extension reader bug** (`cco build` read setup scripts from `~/.cco/global`, now
-   `~/.cco` top level) was fixed 2026-06-26 (`a92effc`); **re-validate in dogfooding** (step 5).
+   **L6** (container-detection false-positive for a host user named `claude`) **fixed**
+   (`a216c8b`): dropped the `HOME=/home/claude` heuristic, kept the daemon-injected
+   `/.dockerenv` signal + an explicit `CCO_IN_CONTAINER` test/dev seam — cco is Docker-only,
+   so no entrypoint/image change was needed. The **global build-extension reader bug**
+   (`cco build` read setup scripts from `~/.cco/global`, now `~/.cco` top level) was fixed
+   2026-06-26 (`a92effc`); **re-validate in dogfooding** (step 5).
 4. **UX-UI review** — ▶ **next** (`engineering/guides/review-playbooks.md` §4): command
    symmetry/learnability, no-multiple-paths, reachability of implemented features,
    destructive-action confirmation, onboarding scope. Includes L8 (`cco forget` recovery hint).
+   Launcher: [`configuration/decentralized-config/ux-ui-review-handoff.md`](configuration/decentralized-config/ux-ui-review-handoff.md).
 5. **Dogfooding e2e on Mac** — `configuration/decentralized-config/P2-dogfooding-validation.md`
    (sandboxed roots + HOME-flip; legacy-vault removal accepted only after merge + validation).
 6. **Merge / release v1** — merge `feat/vault/decentralized-config`, reconcile both roadmaps,
@@ -111,12 +115,6 @@ confirm before scheduling. None blocks the v1 merge.
 - **Governance & resolution UX** — `cco config protect` helper (CODEOWNERS + ruleset
   scaffold; contract ADR-0020 D4 / ADR-0023 D6; docs already shipped);
   internalize-as-cache interactive prompt (ADR-0019 D6).
-- **Container detection (L6, refactoring review B)** — replace the `_cco_in_container`
-  `HOME=/home/claude` heuristic with a **positive `CCO_IN_CONTAINER=1` marker** set by
-  `config/entrypoint.sh` + the compose-gen env (keep `/.dockerenv` as a secondary fallback).
-  Removes both the host-user-`claude` false-positive and the podman/non-Docker false-negative.
-  Small, but image-touching (needs `cco build && cco start` to validate) — fold into any
-  session that rebuilds the image. See `reviews/27-06-2026-refactoring-review.md` §4.
 - **State-sync (T / R-state-sync)** — opt-in cross-PC/cross-team sync of STATE + DATA
   (memory, transcripts, tags, provenance). Largest deferred item; needs its own design.
 - **`cco project internalize` (Case-C)** + `~/.cco/projects/` config home — sever a

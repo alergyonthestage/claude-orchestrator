@@ -5,12 +5,13 @@ pushed from the maintainer's Mac) · **Method**: `engineering/guides/review-play
 (S.O.L.I.D., DRY, Open/Closed, KISS, YAGNI) · **Launcher**:
 [`refactoring-review-handoff.md`](../refactoring-review-handoff.md).
 
-**Outcome**: 8 atomic LOCAL commits `e65aa2f`→`0c3c822`. Test suite **914/0 → 921/0**
-(green per step; +7 `_peel_tab` unit tests). **Behaviour-preserving** — no CLI surface,
-exit-code, or written-file change; no migration needed (no tracked-file move, no
-`*_FILE_POLICIES` change); no ADR reopened. The single non-pure-refactor item (#10) was a
-maintainer-approved, scoped change to a non-blocking warning; one item (L6) was deferred by
-decision (see §4).
+**Outcome**: 8 atomic LOCAL refactor commits `e65aa2f`→`0c3c822` + the L6 correctness fix
+`a216c8b`. Test suite **914/0 → 921/0** (green per step; +7 `_peel_tab` unit tests).
+**Behaviour-preserving** — no CLI surface, exit-code, or written-file change; no migration
+needed (no tracked-file move, no `*_FILE_POLICIES` change); no ADR reopened. The single
+non-pure-refactor item (#10) was a maintainer-approved, scoped change to a non-blocking
+warning; **L6** was fixed as a small correctness change after a maintainer YAGNI challenge
+clarified the right scope (see §4).
 
 This is a **decision-history record** (immutable; documentation-lifecycle.md). It exists so a
 future session does not re-litigate which flags were applied, skipped (and why), or moot.
@@ -70,33 +71,39 @@ flowchart TD
 
 ---
 
-## 4. Deferred by decision — L6 (container detection)
+## 4. Resolved — L6 (container detection) — `a216c8b`
 
-**Flag**: `_cco_in_container` (`lib/paths.sh`) false-positives for a HOST user literally
-named `claude` (`HOME=/home/claude`), so all resolvers refuse with the anti-in-container
-guard. Already documented in-code with the `CCO_ALLOW_HOST_RESOLVE=1` escape hatch.
+**Flag**: `_cco_in_container` (`lib/paths.sh`) false-positived for a HOST user literally
+named `claude` (`HOME=/home/claude`), so all resolvers refused with the anti-in-container
+guard.
 
-**Technical finding**:
-- `/.dockerenv` is created by the Docker **daemon** in every container regardless of image →
-  **reliable for the native Docker distribution** (`docker compose run`).
-- It is **absent** under non-Docker OCI runtimes (**podman** uses `/run/.containerenv`;
-  containerd/CRI-O/k8s create nothing) — which is exactly why the `HOME=/home/claude`
-  fallback exists today: it catches "in container" when `/.dockerenv` is missing but the
-  entrypoint's `claude` user makes `HOME=/home/claude`.
+**Investigation (corrected after a maintainer YAGNI challenge):**
+- cco is **Docker-native by construction** — it drives `docker compose`/`docker` directly with
+  **no runtime abstraction** (no `CCO_DOCKER`/podman support). So `/.dockerenv` (injected by
+  the Docker **daemon** into every container, regardless of image) is the **authoritative**
+  signal, and provisioning for non-Docker runtimes (podman/containerd) is **YAGNI**.
+- The `HOME=/home/claude` heuristic's stated rationale ("fallback for stripped images lacking
+  `/.dockerenv`") was a **misconception**: `/.dockerenv` is daemon-injected at container
+  creation, not part of the image, so it cannot be stripped.
+- But it could not be *deleted* outright: two guard tests
+  (`test_paths_resolver_guard_{blocks_in_container,hatch_allows}`) **relied on it as the
+  deterministic, host-runnable way to simulate "in container"** (no `/.dockerenv` on a host).
 
-**Decision (maintainer, 2026-06-27): keep A now, do B in the next image-touching session.**
-- **A (now)**: status quo — the dual heuristic is adequate; the false-positive is rare and has
-  the documented escape hatch.
-- **B (next session)**: the entrypoint/compose exports a **positive** `CCO_IN_CONTAINER=1`
-  marker; `_cco_in_container` checks it as the primary signal (keeping `/.dockerenv` as a
-  secondary fallback) and **drops** the `HOME=/home/claude` heuristic. Authoritative and
-  runtime-independent — removes **both** the host-`claude` false-positive **and** the podman
-  false-negative.
-- **Why not now**: B touches `config/entrypoint.sh` + the compose-gen env, which are **not
-  active in this self-dev session** (require `cco build && cco start` to validate). A
-  behaviour-preserving refactor pass must not ship an unvalidated container-detection change.
-
-Tracked in `roadmap.md` → post-v1 backlog.
+**Fix (simpler than the originally-floated entrypoint marker; no image change):**
+```bash
+_cco_in_container() {
+    [[ "${CCO_IN_CONTAINER:-}" == "1" ]] && return 0   # explicit test/dev seam + forward hook
+    [[ -f /.dockerenv ]] && return 0                     # Docker daemon-injected (the native runtime)
+    return 1
+}
+```
+- Drops the `HOME=/home/claude` heuristic → **false-positive fixed**.
+- Keeps `/.dockerenv` → production detection unchanged (cco is Docker-only).
+- Adds an explicit `CCO_IN_CONTAINER` override → the two guard tests now simulate via the
+  marker (host-runnable); also a forward seam if a non-Docker runtime is ever supported.
+- **No `config/entrypoint.sh` / compose change needed** — `/.dockerenv` already covers
+  production, so an entrypoint-exported marker would be speculative (YAGNI). Fully testable in
+  this session; suite 921/0.
 
 ---
 
@@ -112,5 +119,6 @@ Tracked in `roadmap.md` → post-v1 backlog.
 | `9e093c5` | `_update_usage` + `_update_discover_pack_remotes` (#7/#11) |
 | `d01ea93` | backup diagnostics (L4/NIT) + stale comment polish |
 | `0c3c822` | route `cmd-build` secret scan through `secrets.sh` (#10) |
+| `a216c8b` | drop HOME container heuristic; `/.dockerenv` + `CCO_IN_CONTAINER` (L6 fix) |
 
 *Generated with Claude Code*
