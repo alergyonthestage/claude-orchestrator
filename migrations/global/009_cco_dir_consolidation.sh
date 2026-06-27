@@ -15,41 +15,52 @@ migrate() {
     mkdir -p "$target_dir/.cco"
 
     # Move .cco-meta → .cco/meta (guarded: skip if target exists)
+    # Relative to target_dir — needed in both the legacy vault and the flat layouts.
     if [[ -f "$target_dir/.cco-meta" && ! -f "$target_dir/.cco/meta" ]]; then
         mv "$target_dir/.cco-meta" "$target_dir/.cco/meta"
     fi
 
     # Move .cco-base/ → .cco/base/ (guarded: skip if target exists)
+    # Relative to target_dir — also needed under the flat layout (migration 007 seeds
+    # .cco-base/ at the global config home, which this step consolidates into .cco/base/).
     if [[ -d "$target_dir/.cco-base" && ! -d "$target_dir/.cco/base" ]]; then
         mv "$target_dir/.cco-base" "$target_dir/.cco/base"
     fi
 
-    # Top-level: .cco-remotes → .cco/remotes
+    # The operations below are relative to the user-config ROOT (one level above
+    # global/.claude). They are meaningful ONLY in the legacy vault layout, where
+    # target_dir == <vault>/global/.claude. Under the ADR-0028 flat/decentralized layout
+    # (target_dir == ~/.cco/.claude) dirname(dirname(target_dir)) resolves to $HOME, so they
+    # must be skipped — otherwise this would iterate ~/packs and rewrite the user's
+    # ~/.gitignore with stale vault patterns.
     local user_config_dir
-    user_config_dir=$(dirname "$(dirname "$target_dir")")  # up from global/.claude/
-    if [[ -f "$user_config_dir/.cco-remotes" && ! -f "$user_config_dir/.cco/remotes" ]]; then
-        mkdir -p "$user_config_dir/.cco"
-        mv "$user_config_dir/.cco-remotes" "$user_config_dir/.cco/remotes"
-    fi
+    user_config_dir=$(dirname "$(dirname "$target_dir")")  # vault root in the legacy layout
+    if [[ "$target_dir" == "$user_config_dir/global/.claude" ]]; then
+        # Top-level: .cco-remotes → .cco/remotes
+        if [[ -f "$user_config_dir/.cco-remotes" && ! -f "$user_config_dir/.cco/remotes" ]]; then
+            mkdir -p "$user_config_dir/.cco"
+            mv "$user_config_dir/.cco-remotes" "$user_config_dir/.cco/remotes"
+        fi
 
-    # Pack consolidation (iterate packs/ from user-config root)
-    local packs_dir="$user_config_dir/packs"
-    if [[ -d "$packs_dir" ]]; then
-        for pack_dir in "$packs_dir"/*/; do
-            [[ -d "$pack_dir" ]] || continue
-            mkdir -p "$pack_dir/.cco"
-            if [[ -f "$pack_dir/.cco-source" && ! -f "$pack_dir/.cco/source" ]]; then
-                mv "$pack_dir/.cco-source" "$pack_dir/.cco/source"
-            fi
-            if [[ -d "$pack_dir/.cco-install-tmp" && ! -d "$pack_dir/.cco/install-tmp" ]]; then
-                mv "$pack_dir/.cco-install-tmp" "$pack_dir/.cco/install-tmp"
-            fi
-        done
-    fi
+        # Pack consolidation (iterate packs/ from user-config root)
+        local packs_dir="$user_config_dir/packs"
+        if [[ -d "$packs_dir" ]]; then
+            for pack_dir in "$packs_dir"/*/; do
+                [[ -d "$pack_dir" ]] || continue
+                mkdir -p "$pack_dir/.cco"
+                if [[ -f "$pack_dir/.cco-source" && ! -f "$pack_dir/.cco/source" ]]; then
+                    mv "$pack_dir/.cco-source" "$pack_dir/.cco/source"
+                fi
+                if [[ -d "$pack_dir/.cco-install-tmp" && ! -d "$pack_dir/.cco/install-tmp" ]]; then
+                    mv "$pack_dir/.cco-install-tmp" "$pack_dir/.cco/install-tmp"
+                fi
+            done
+        fi
 
-    # Update vault .gitignore if vault is initialized
-    if [[ -f "$user_config_dir/.gitignore" ]]; then
-        _migrate_vault_gitignore_009 "$user_config_dir/.gitignore"
+        # Update vault .gitignore if vault is initialized
+        if [[ -f "$user_config_dir/.gitignore" ]]; then
+            _migrate_vault_gitignore_009 "$user_config_dir/.gitignore"
+        fi
     fi
 
     # Warn if sessions are running

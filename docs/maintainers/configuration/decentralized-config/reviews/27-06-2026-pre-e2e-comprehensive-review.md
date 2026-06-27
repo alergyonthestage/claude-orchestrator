@@ -236,4 +236,26 @@ expected). On completion: flip roadmap step 5 → done, hand to step 6 dogfoodin
 
 ## 8. Resolution log
 
-_(appended as clusters are resolved with the maintainer)_
+### Cluster 1 — Migration safety — ✅ DONE (2026-06-27)
+
+**C1** resolved. Root cause confirmed by the lead: migration 009's vault-relocation block was
+authored for the legacy layout where `target_dir == <vault>/global/.claude`, so
+`dirname(dirname(target_dir))` was the vault root. Under ADR-0028's flat layout
+`target_dir == ~/.cco/.claude`, so it resolves to `$HOME` — and the block iterated `~/packs` and
+rewrote `~/.gitignore` with stale vault patterns on every fresh `cco init`.
+
+Fix scoped **narrowly** (a first, broader guard over the whole `migrate()` body wrongly skipped the
+**target_dir-relative** `.cco-base/ → .cco/base/` consolidation that migration 007 + the base-tracking
+rely on under the flat layout too — caught by `test_init_creates_cco_base`). Final fix: the
+`target_dir`-relative moves (`.cco-meta`, `.cco-base`) run unconditionally; only the **user-root**
+operations (`.cco-remotes`, `packs/`, vault `.gitignore`) are gated behind
+`[[ "$target_dir" == "$user_config_dir/global/.claude" ]]` (true only for the real vault layout).
+Idempotent; legacy vault users unaffected.
+
+- `migrations/global/009_cco_dir_consolidation.sh` — narrower vault-root guard.
+- `tests/test_update.sh` — new `test_migration_009_global_skips_flat_layout` pins both halves of the
+  contract (flat layout still consolidates `.cco-base/`, but never touches `$HOME/.gitignore`).
+- No changelog / no new migration (idempotent bug-fix to an existing migration).
+- Suite: **944/0** (943 baseline + 1 regression test).
+
+### Clusters 2–5 — pending.

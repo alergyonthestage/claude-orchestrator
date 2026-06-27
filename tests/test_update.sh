@@ -2091,6 +2091,43 @@ GI
     assert_file_not_contains "$tmpdir/.gitignore" "packs/*/.cco-install-tmp/"
 }
 
+test_migration_009_global_skips_flat_layout() {
+    # Regression: under the ADR-0028 flat/decentralized layout the global config home is
+    # <home>/.cco/.claude, so dirname(dirname(target)) resolves to $HOME. Migration 009 must
+    # still run its target-relative consolidation (.cco-base/ → .cco/base/) but must NOT run
+    # the user-root vault operations — in particular it must not rewrite the user's $HOME
+    # .gitignore with vault-era patterns.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+
+    local target="$tmpdir/.cco/.claude"   # decentralized global config home
+    mkdir -p "$target/.cco-base"
+    echo "base content" > "$target/.cco-base/settings.json"
+
+    # Pre-existing user $HOME .gitignore (user_config_dir resolves to $tmpdir here).
+    cat > "$tmpdir/.gitignore" <<'GI'
+.DS_Store
+node_modules/
+GI
+    local before; before=$(cat "$tmpdir/.gitignore")
+
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/migrations/global/009_cco_dir_consolidation.sh"
+
+    migrate "$target"
+
+    # Target-relative consolidation still runs under the flat layout.
+    assert_file_exists "$target/.cco/base/settings.json"
+    [[ ! -d "$target/.cco-base" ]] || fail ".cco-base/ should be consolidated under the flat layout too"
+
+    # But the user-root .gitignore must be byte-for-byte intact (no vault-era patterns added).
+    local after; after=$(cat "$tmpdir/.gitignore")
+    [[ "$before" == "$after" ]] || fail "migration 009 must not rewrite the user's \$HOME .gitignore under the flat layout"
+    assert_file_not_contains "$tmpdir/.gitignore" ".cco/remotes"
+    assert_file_not_contains "$tmpdir/.gitignore" "global/.claude/.cco/meta"
+}
+
 # ── Changelog: missing last_read field backward compat ───────────────
 
 test_update_changelog_missing_last_read_field() {
