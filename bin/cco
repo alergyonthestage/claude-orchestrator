@@ -129,14 +129,14 @@ Local paths & sync:
   sync [repo] [--from r] Copy .cco config between a project's repos (copy, no merge)
 
 Discovery:
-  list [--tag <t>]       List your packs/projects/templates and their tags
+  list [<kind>] [--tag]  Unified index of your resources (all, or one <kind>)
   tag <add|rm>           Tag a pack/project/template (per-user, never team-shared)
 
 Resources:
-  project <cmd>          Manage projects (export, import, add, list, show)
+  project <cmd>          Manage projects (add, validate, coords, show, export, import)
   pack <cmd>             Manage knowledge packs (create, install, update, ...)
   llms <cmd>             Manage llms.txt framework docs (install, update, ...)
-  template <cmd>         Manage project/pack templates (list, show, create, remove)
+  template <cmd>         Manage project/pack templates (create, show, install, ...)
 
 Tools & Sharing:
   chrome <cmd>           Manage Chrome debug session on host
@@ -189,8 +189,9 @@ Commands:
   add <res> <name>       Embed a repo|mount|llms|pack coordinate (cwd-first)
   validate [name]        Check share-readiness (coordinates, no path leaks)
   coords                 Show/reconcile coordinate consistency across units
-  list                   List available projects with status
   show <name>            Show project details (repos, packs, config)
+
+List projects with 'cco list project' (or 'cco list' for all resources).
 
 Run 'cco project <command> --help' for command-specific options.
 EOF
@@ -211,7 +212,7 @@ EOF
             export)      cmd_project_export "$@" ;;
             import)      cmd_project_import "$@" ;;
             add)         cmd_project_add "$@" ;;
-            list)        cmd_project_list "$@" ;;
+            list)        die "'cco project list' was removed — use 'cco list project' (ADR-0029)." ;;
             show)        cmd_project_show "$@" ;;
             *)        die "Unknown project command: $subcmd. Run 'cco project --help'." ;;
         esac || _cco_rc=$?
@@ -230,10 +231,11 @@ Commands:
   export <name>          Export a pack as .tar.gz archive
   import <archive>       Import a pack from a .tar.gz archive
   internalize <name>     Convert source-referencing pack to self-contained
-  list                   List available packs with resource counts
   show <name>            Show pack details (knowledge, agents, rules)
   remove <name>          Remove a pack
   validate [name]        Validate pack structure (all if no name)
+
+List packs with 'cco list pack' (or 'cco list' for all resources).
 
 Run 'cco pack <command> --help' for command-specific options.
 EOF
@@ -248,7 +250,7 @@ EOF
             export)       cmd_pack_export "$@" ;;
             import)       cmd_pack_import "$@" ;;
             internalize)  cmd_pack_internalize "$@" ;;
-            list)         cmd_pack_list "$@" ;;
+            list)         die "'cco pack list' was removed — use 'cco list pack' (ADR-0029)." ;;
             show)     cmd_pack_show "$@" ;;
             remove)   cmd_pack_remove "$@" ;;
             validate) cmd_pack_validate "$@" ;;

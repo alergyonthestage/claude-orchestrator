@@ -40,7 +40,6 @@ cmd_template() {
 Usage: cco template <command> [options]
 
 Commands:
-  list [--project|--pack]    List available templates
   show <name>                Show template details
   create <name>              Create a new user template
   remove <name>              Remove a user template
@@ -57,7 +56,7 @@ EOF
     shift
 
     case "$subcmd" in
-        list)        cmd_template_list "$@" ;;
+        list)        die "'cco template list' was removed — use 'cco list template' (ADR-0029)." ;;
         show)        cmd_template_show "$@" ;;
         create)      cmd_template_create "$@" ;;
         remove)      cmd_template_remove "$@" ;;

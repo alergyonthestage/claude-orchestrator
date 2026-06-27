@@ -89,7 +89,7 @@ test_pack_list_shows_header() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    run_cco pack list
+    run_cco list pack
     assert_output_contains "NAME"
 }
 
@@ -98,7 +98,7 @@ test_pack_list_shows_pack_names() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco pack create "alpha-pack"
-    run_cco pack list
+    run_cco list pack
     assert_output_contains "alpha-pack"
 }
 
@@ -112,7 +112,7 @@ test_pack_list_shows_resource_counts() {
     echo "Agent" > "$pack_dir/agents/bot.md"
     echo "Rule" > "$pack_dir/rules/style.md"
     printf 'name: counted-pack\nagents:\n  - bot.md\nrules:\n  - style.md\n' > "$pack_dir/pack.yml"
-    run_cco pack list
+    run_cco list pack
     assert_output_contains "counted-pack"
 }
 
@@ -123,7 +123,7 @@ test_pack_list_header_only_when_empty() {
     # Remove default packs dir content
     rm -rf "$CCO_PACKS_DIR"
     mkdir -p "$CCO_PACKS_DIR"
-    run_cco pack list
+    run_cco list pack
     assert_output_contains "NAME"
     # Output should only be the header line
     local line_count

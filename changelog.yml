@@ -264,3 +264,18 @@ entries:
       upstream coordinate so it becomes a local authored source (`--as` forks
       under a new name); `cco project export --bundle-packs` carries the project's
       referenced packs in the export closure (installed on import).
+
+  - id: 16
+    date: "2026-06-27"
+    type: additive
+    title: "Unified `cco list` resource index"
+    description: >
+      Listing is consolidated under one command. `cco list` now prints a compact
+      cross-resource index (KIND · NAME · TAGS) of your projects, packs,
+      templates, llms docs and remotes, ordered by kind then name. `cco list
+      <kind>` shows the detailed per-kind view (repo counts/status, resource
+      counts, variants, …); `cco list [<kind>] --tag <t>` filters by tag and
+      `--sort name` orders by name. Full detail for one resource stays on
+      `cco <kind> show <name>`. The per-noun `cco project|pack|template|llms|remote
+      list` verbs were removed — each prints a one-line redirect to
+      `cco list <kind>` (ADR-0029). Tags and all other behaviour are unchanged.

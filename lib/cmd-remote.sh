@@ -279,7 +279,6 @@ Manage named sharing repo remotes for publishing and installing.
 Commands:
   add <name> <url>     Register a remote sharing repo
   remove <name>        Unregister a remote
-  list                 Show all registered remotes
   set-token <n> <tok>  Save auth token for a remote
   remove-token <name>  Remove saved token for a remote
 
@@ -327,21 +326,7 @@ EOF
             _cmd_remote_remove "$@"
             ;;
         list)
-            while [[ $# -gt 0 ]]; do
-                case "$1" in
-                    --help|-h)
-                        cat <<'EOF'
-Usage: cco remote list
-
-Show all registered sharing repo remotes.
-EOF
-                        return 0
-                        ;;
-                    *) die "Unknown option: $1" ;;
-                esac
-            done
-            _cmd_remote_list
-            ;;
+            die "'cco remote list' was removed — use 'cco list remote' (ADR-0029)." ;;
         set-token)
             while [[ $# -gt 0 ]]; do
                 case "$1" in

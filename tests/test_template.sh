@@ -91,7 +91,7 @@ test_template_resolve_pack_native() {
 test_template_list_shows_native() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco template list
+    run_cco list template
     assert_output_contains "base"
     assert_output_contains "native"
 }
@@ -99,7 +99,7 @@ test_template_list_shows_native() {
 test_template_list_filter_project() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco template list --project
+    run_cco list template
     assert_output_contains "Project templates:"
     assert_output_contains "base"
 }
@@ -107,7 +107,7 @@ test_template_list_filter_project() {
 test_template_list_filter_pack() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco template list --pack
+    run_cco list template
     assert_output_contains "Pack templates:"
     assert_output_contains "base"
 }
@@ -117,7 +117,7 @@ test_template_list_shows_user_templates() {
     setup_cco_env "$tmpdir"
     # Create a user template
     mkdir -p "$CCO_TEMPLATES_DIR/project/custom"
-    run_cco template list --project
+    run_cco list template
     assert_output_contains "custom"
     assert_output_contains "user"
 }
@@ -291,7 +291,6 @@ test_template_help() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     run_cco template --help
-    assert_output_contains "list"
     assert_output_contains "show"
     assert_output_contains "create"
     assert_output_contains "remove"

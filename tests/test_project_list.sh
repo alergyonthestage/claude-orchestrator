@@ -13,7 +13,7 @@ test_project_list_shows_project_names() {
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "alpha" "$(minimal_project_yml alpha)"
     create_project "$tmpdir" "beta"  "$(minimal_project_yml beta)"
-    run_cco project list
+    run_cco list project
     assert_output_contains "alpha"
     assert_output_contains "beta"
 }
@@ -27,7 +27,7 @@ test_project_list_skips_template_dir() {
     setup_global_from_defaults "$tmpdir"
     index_set_project_repos "_template" "_template"
     create_project "$tmpdir" "real-proj" "$(minimal_project_yml real-proj)"
-    run_cco project list
+    run_cco list project
     assert_output_contains "real-proj"
     if echo "${CCO_OUTPUT:-}" | grep -qF "_template"; then
         echo "ASSERTION FAILED: _template should not appear in project list"
@@ -57,7 +57,7 @@ repos:
   - name: repo-b
 YAML
 )"
-    run_cco project list
+    run_cco list project
     # Output line should show repo count of 2
     assert_output_contains "2"
 }
@@ -70,7 +70,7 @@ test_project_list_empty_repos_shows_zero() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "no-repos" "$(minimal_project_yml no-repos)"
-    run_cco project list
+    run_cco list project
     assert_output_contains "0"
 }
 
@@ -82,7 +82,7 @@ test_project_list_stopped_status() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "my-proj" "$(minimal_project_yml my-proj)"
-    run_cco project list
+    run_cco list project
     assert_output_contains "stopped"
 }
 
@@ -94,7 +94,7 @@ test_project_list_running_status() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "my-proj" "$(minimal_project_yml my-proj)"
-    run_cco project list
+    run_cco list project
     assert_output_contains "running"
 }
 
@@ -106,6 +106,6 @@ test_project_list_header_always_present() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     # No projects — header should still appear
-    run_cco project list
+    run_cco list project
     assert_output_contains "NAME"
 }

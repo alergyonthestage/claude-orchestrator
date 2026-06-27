@@ -102,7 +102,7 @@ test_remote_list_shows_entries() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco remote add acme git@github.com:acme/config.git
-    run_cco remote list
+    run_cco list remote
     assert_output_contains "acme"
     assert_output_contains "git@github.com:acme/config.git"
 }
@@ -111,7 +111,7 @@ test_remote_list_empty() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    run_cco remote list
+    run_cco list remote
     assert_output_contains "No remotes"
 }
 
@@ -192,8 +192,8 @@ test_remote_remove_help() {
 test_remote_list_help() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco remote list --help
-    assert_output_contains "registered"
+    run_cco remote list
+    assert_output_contains "removed"
 }
 
 # ── cco remote token management ───────────────────────────────────
@@ -292,7 +292,7 @@ test_remote_list_shows_token_tag() {
     setup_global_from_defaults "$tmpdir"
     run_cco remote add acme https://github.com/acme/config.git --token ghp_test
     run_cco remote add team git@github.com:team/config.git
-    run_cco remote list
+    run_cco list remote
     assert_output_contains "[token]"
 }
 
@@ -302,7 +302,7 @@ test_remote_list_hides_token_lines() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco remote add acme https://github.com/acme/config.git --token ghp_test
-    run_cco remote list
+    run_cco list remote
     # Output should contain "acme" but not "acme.token"
     assert_output_contains "acme"
     assert_output_not_contains "acme.token"

@@ -218,44 +218,143 @@ EOF
 
 # ── cco list ──────────────────────────────────────────────────────────
 
+# ── cco list — the unified resource index (ADR-0029 D1) ────────────────
+# `cco list` is the single listing surface: a compact cross-resource index
+# (KIND/NAME/TAGS) by default, the rich per-kind view for a bare `cco list
+# <kind>`, and a sortable/filterable index whenever --tag/--sort is given. The
+# per-noun `cco <noun> list` verbs were removed (stubs redirect here).
+
+# Canonical kind order for the compact index (lower = first).
+_list_kind_rank() {
+    case "$1" in
+        project) echo 0 ;; pack) echo 1 ;; template) echo 2 ;;
+        llms)    echo 3 ;; remote) echo 4 ;; *) echo 9 ;;
+    esac
+}
+
+# Map a singular row-kind to its tags.yml section. Only project/pack/template
+# are taggable (ADR-0011); llms/remote have no tags.
+_list_tag_kind() {
+    case "$1" in
+        project) echo projects ;; pack) echo packs ;; template) echo templates ;;
+        *)       echo "" ;;
+    esac
+}
+
+# Emit "<kind>\t<name>" for the requested kind ("" = every kind). Enumerates
+# the same sources the per-kind listers use (STATE index, ~/.cco stores, the
+# remotes registry); guards empty globs under `set -u`.
+_list_collect() {
+    local want="$1" d b k rn rf
+    if [[ -z "$want" || "$want" == project ]]; then
+        while IFS='=' read -r b _; do
+            [[ -z "$b" || "$b" == _template ]] && continue
+            printf 'project\t%s\n' "$b"
+        done < <(_index_list_projects)
+    fi
+    if [[ -z "$want" || "$want" == pack ]]; then
+        for d in "$PACKS_DIR"/*/; do [[ -d "$d" ]] || continue; printf 'pack\t%s\n' "$(basename "$d")"; done
+    fi
+    if [[ -z "$want" || "$want" == template ]]; then
+        # native + user, project + pack kinds; dedup by name.
+        { for k in project pack; do
+            for d in "$TEMPLATES_DIR/$k"/*/ "$NATIVE_TEMPLATES_DIR/$k"/*/; do
+                [[ -d "$d" ]] || continue; basename "$d"
+            done
+          done; } | LC_ALL=C sort -u | while IFS= read -r b; do
+            [[ -n "$b" ]] && printf 'template\t%s\n' "$b"
+        done
+    fi
+    if [[ -z "$want" || "$want" == llms ]]; then
+        for d in "$LLMS_DIR"/*/; do
+            [[ -d "$d" ]] || continue; b=$(basename "$d"); [[ "$b" == .cco ]] && continue
+            printf 'llms\t%s\n' "$b"
+        done
+    fi
+    if [[ -z "$want" || "$want" == remote ]]; then
+        rf=$(_remotes_file)
+        if [[ -f "$rf" ]]; then
+            while IFS='=' read -r rn _; do
+                [[ -z "$rn" || "$rn" == \#* ]] && continue
+                printf 'remote\t%s\n' "$rn"
+            done < "$rf"
+        fi
+    fi
+}
+
 cmd_list() {
-    local filter=""
+    local filter="" sort_by="" kind=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --help|-h|help)
                 cat <<'EOF'
-Usage: cco list [--tag <tag>]
+Usage: cco list [<kind>] [--tag <tag>] [--sort kind|name]
 
-List your packs, projects, and templates with their tags. With --tag, show only
-resources carrying that tag.
+Unified index of your resources. <kind> is one of:
+  project | pack | template | llms | remote   (plural forms accepted)
+
+  cco list                       Compact index of every resource (KIND NAME
+                                 TAGS), ordered by kind then name.
+  cco list <kind>                Detailed view for one kind (repos/status,
+                                 resource counts, variants, …).
+  cco list [<kind>] --tag <t>    Filter to resources carrying tag <t>.
+  cco list [<kind>] --sort name  Sort by name (default: by kind, then name).
+
+Full detail for one resource: cco <kind> show <name>.
+Tags are per-user (project/pack/template only); manage them with 'cco tag'.
 EOF
                 return 0
                 ;;
-            --tag) [[ $# -lt 2 ]] && die "--tag requires a value."; filter="$2"; shift 2 ;;
+            --tag)  [[ $# -lt 2 ]] && die "--tag requires a value."; filter="$2"; shift 2 ;;
+            --sort) [[ $# -lt 2 ]] && die "--sort requires 'kind' or 'name'."; sort_by="$2"
+                    [[ "$sort_by" == kind || "$sort_by" == name ]] || die "--sort must be 'kind' or 'name'."
+                    shift 2 ;;
+            project|projects)   kind="project";  shift ;;
+            pack|packs)         kind="pack";      shift ;;
+            template|templates) kind="template";  shift ;;
+            llms)               kind="llms";      shift ;;
+            remote|remotes)     kind="remote";    shift ;;
             -*) die "Unknown option: $1. Run 'cco list --help'." ;;
-            *)  die "Unexpected argument: $1. Run 'cco list --help'." ;;
+            *)  die "Unknown resource kind: $1. Use project|pack|template|llms|remote. Run 'cco list --help'." ;;
         esac
     done
 
-    if [[ -n "$filter" ]]; then
-        local kind name any=false
-        echo -e "${BOLD}KIND        NAME${NC}"
-        while IFS=$'\t' read -r kind name; do
-            [[ -z "$kind" ]] && continue
-            any=true
-            printf '%-11s %s\n' "${kind%s}" "$name"
-        done < <(_tags_resources_with "$filter")
-        $any || info "no resources tagged '$filter'"
+    # A bare kind (no filter, no sort) shows the rich per-kind view.
+    if [[ -n "$kind" && -z "$filter" && -z "$sort_by" ]]; then
+        case "$kind" in
+            project)  cmd_project_list ;;
+            pack)     cmd_pack_list ;;
+            template) cmd_template_list ;;
+            llms)     _llms_list ;;
+            remote)   _cmd_remote_list ;;
+        esac
+        return $?
+    fi
+
+    # Compact unified index (default, or whenever --tag/--sort/scoped-with-filter).
+    [[ -z "$sort_by" ]] && sort_by="kind"
+    local rows="" rk rn tags tkind sortkey t found
+    while IFS=$'\t' read -r rk rn; do
+        [[ -z "$rk" ]] && continue
+        tkind=$(_list_tag_kind "$rk"); tags=""
+        [[ -n "$tkind" ]] && tags=$(_tags_get "$tkind" "$rn")
+        if [[ -n "$filter" ]]; then
+            found=false
+            for t in $tags; do [[ "$t" == "$filter" ]] && { found=true; break; }; done
+            [[ "$found" == true ]] || continue
+        fi
+        if [[ "$sort_by" == name ]]; then sortkey="${rn}	${rk}"; else sortkey="$(_list_kind_rank "$rk")	${rn}"; fi
+        rows+="${sortkey}	${rk}	${rn}	${tags:-—}"$'\n'
+    done < <(_list_collect "$kind")
+
+    if [[ -z "$rows" ]]; then
+        [[ -n "$filter" ]] && { info "No resources tagged '$filter'."; return 0; }
+        info "Nothing to list yet."
         return 0
     fi
 
-    # Full listing: every tagged resource (the registry is the discovery surface).
-    local kind name tags any=false
-    echo -e "${BOLD}KIND        NAME                      TAGS${NC}"
-    while IFS=$'\t' read -r kind name tags; do
-        [[ -z "$kind" ]] && continue
-        any=true
-        printf '%-11s %-25s %s\n' "${kind%s}" "$name" "${tags:-—}"
-    done < <(_tags_all)
-    $any || info "no tagged resources yet — add one with 'cco tag add <name> <tag>'"
+    printf "${BOLD}%-10s %-26s %s${NC}\n" "KIND" "NAME" "TAGS"
+    printf '%s' "$rows" | LC_ALL=C sort -t'	' -k1,2 | while IFS=$'\t' read -r _k1 _k2 rk rn tags; do
+        printf '%-10s %-26s %s\n' "$rk" "$rn" "$tags"
+    done
 }

@@ -13,7 +13,6 @@ Usage: cco llms <command> [options]
 
 Commands:
   install <url>        Download and install an llms.txt file
-  list                 List installed llms documentation
   show <name>          Show details for an installed llms entry
   update [name]        Re-download llms files from source URLs
   rename <old> <new>   Rename an installed llms entry
@@ -26,7 +25,7 @@ EOF
     shift
     case "$subcmd" in
         install) _llms_install "$@" ;;
-        list)    _llms_list "$@" ;;
+        list)    die "'cco llms list' was removed — use 'cco list llms' (ADR-0029)." ;;
         show)    _llms_show "$@" ;;
         update)  _llms_update "$@" ;;
         rename)  _llms_rename "$@" ;;
