@@ -2,7 +2,8 @@
 # lib/cmd-build.sh — Build Docker image command
 #
 # Provides: cmd_build()
-# Dependencies: colors.sh, utils.sh, paths.sh (_cco_config_dir)
+# Dependencies: colors.sh, utils.sh, paths.sh (_cco_config_dir),
+#               secrets.sh (_secret_match_content)
 # Globals: IMAGE_NAME, REPO_ROOT
 # Note: global setup scripts / MCP list live at the personal-store TOP LEVEL
 # (~/.cco, design §2.3), written there by `cco init` / `cco init --migrate`,
@@ -77,9 +78,11 @@ EOF
         local setup_content
         setup_content=$(cat "$setup_build_file")
         if [[ -n "$setup_content" ]]; then
-            # Warn if script appears to contain secrets (build args are visible in docker history)
-            if grep -qEi '(API_KEY|TOKEN|PASSWORD|SECRET)=' "$setup_build_file" 2>/dev/null; then
-                warn "$(basename "$setup_build_file") may contain secrets (KEY=, TOKEN=, PASSWORD=, SECRET=)."
+            # Warn if script appears to contain secrets (build args are visible in
+            # docker history). Use the canonical content matcher (lib/secrets.sh) so
+            # this gate never drifts from vault-save / project-export (#10).
+            if _secret_match_content "$setup_build_file" >/dev/null 2>&1; then
+                warn "$(basename "$setup_build_file") may contain secrets (matched a known secret pattern)."
                 warn "Build args are visible in 'docker history'. Move secrets to secrets.env instead."
             fi
             build_args+=(--build-arg "SETUP_BUILD_SCRIPT_CONTENT=$setup_content")
