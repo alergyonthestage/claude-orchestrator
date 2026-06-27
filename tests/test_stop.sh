@@ -53,6 +53,41 @@ YAML
     assert_file_contains "$DOCKER_CALL_LOG" "stop cc-custom-name"
 }
 
+test_stop_multirepo_project_resolves_yml_name_via_membership() {
+    # C3 regression: a joined multi-repo project's key lives in the index `projects:`
+    # section, NOT `paths:` (only its member repos are there). cmd_stop must resolve the
+    # host repo via membership (_resolve_unit_dir_for_project), not _index_get_path on the
+    # project key — otherwise project.yml is never read and the `name:` container override
+    # is silently inert.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local mock_bin="$tmpdir/bin"
+    _mock_docker_with_containers "$mock_bin" "cc-custom-name"
+    setup_mocks "$mock_bin"
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+
+    # A member repo hosts the project.yml; its `name:` differs from the project key.
+    local host="$tmpdir/repos/frontend"
+    mkdir -p "$host/.cco/claude"
+    printf '%s\n' "$(cat <<YAML
+name: custom-name
+description: "Test"
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+repos: []
+YAML
+)" > "$host/.cco/project.yml"
+    seed_index_path "frontend" "$host"
+    index_set_project_repos "myapp" "frontend"   # project key 'myapp' is NOT in paths:
+
+    export DOCKER_CALL_LOG="$tmpdir/docker.log"
+    run_cco stop "myapp"
+    assert_file_contains "$DOCKER_CALL_LOG" "stop cc-custom-name"
+}
+
 # ── Stop all sessions ─────────────────────────────────────────────────
 
 test_stop_all_stops_each_cc_container() {

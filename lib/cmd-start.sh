@@ -1165,7 +1165,10 @@ _collect_claimed_browser_ports() {
     while IFS='=' read -r proj _; do
         [[ -z "$proj" ]] && continue
         [[ "$proj" == "$current_project" ]] && continue
-        repo=$(_index_get_path "$proj")
+        # Resolve the host repo via index membership: a joined multi-repo project's
+        # key lives in `projects:`, not `paths:`, so _index_get_path on the project
+        # name would silently miss it (dropping it from the port-conflict scan).
+        repo=$(_resolve_unit_dir_for_project "$proj" 2>/dev/null)
         [[ -z "$repo" ]] && continue
         local yml="$repo/.cco/project.yml"
         [[ ! -f "$yml" ]] && continue

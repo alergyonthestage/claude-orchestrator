@@ -285,4 +285,26 @@ itself should adopt the `/dev/tty` idiom — is re-scoped into Cluster 5 as a ma
 
 No changelog / no new ADR (contract corrections to just-shipped ADR-0029 behavior). Suite **944/0**.
 
-### Clusters 3–5 — pending.
+### Cluster 3 — Multi-repo index-key latent bugs — ✅ DONE (2026-06-27)
+
+**C2 + C3** shared one root cause: both call sites passed a **project** name to `_index_get_path`,
+which queries the `paths:` section (keyed by **repo** names). A joined multi-repo project's key
+lives in `projects:` (membership), not `paths:`, so the lookup silently returned empty. The codebase
+already has the canonical resolver `_resolve_unit_dir_for_project` (cmd-resolve.sh) — used by ~15
+other call sites — which walks membership and returns the first member hosting `.cco/project.yml`.
+These two were the only sites still using the low-level helper directly.
+
+- **C2** `cmd-start.sh` `_collect_claimed_browser_ports`: joined multi-repo projects were dropped
+  from the CDP-port conflict scan → silent port collision. Now resolves via membership.
+- **C3** `cmd-stop.sh` `cmd_stop`: the `name:` container override was inert for joined projects.
+  Now resolves via membership; dependency header updated to note cmd-resolve.sh.
+- `tests/test_stop.sh` — new `test_stop_multirepo_project_resolves_yml_name_via_membership`: a
+  project whose key is in `projects:` but not `paths:`, with a member-hosted `project.yml name:`
+  that differs from the key; asserts `cco stop <key>` stops the `name:`-derived container (fails
+  without the fix).
+- C2's fix is identical; a full collector test needs docker + `cco start` browser mocking and is
+  left to the e2e (the resolver path is exercised by the C3 test).
+
+No changelog / no new ADR. Suite **945/0**.
+
+### Clusters 4–5 — pending.

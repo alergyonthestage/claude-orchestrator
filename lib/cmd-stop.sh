@@ -2,7 +2,7 @@
 # lib/cmd-stop.sh — Stop running sessions command
 #
 # Provides: cmd_stop()
-# Dependencies: colors.sh, utils.sh, yaml.sh, index.sh, paths.sh
+# Dependencies: colors.sh, utils.sh, yaml.sh, index.sh, paths.sh, cmd-resolve.sh
 
 cmd_stop() {
     if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
@@ -23,10 +23,13 @@ EOF
 
     if [[ -n "$project" ]]; then
         # Resolve the project's committed config via the STATE index; runtime
-        # state lives in CACHE, keyed by project name.
+        # state lives in CACHE, keyed by project name. Use the membership resolver
+        # (not _index_get_path on the project key) so a joined multi-repo project —
+        # whose key is in `projects:` but not `paths:` — still finds its project.yml
+        # and the `name:` container override.
         local container_name="cc-${project}"
         local repo proj_yml=""
-        repo=$(_index_get_path "$project")
+        repo=$(_resolve_unit_dir_for_project "$project" 2>/dev/null)
         [[ -n "$repo" ]] && proj_yml="$repo/.cco/project.yml"
 
         if [[ -n "$proj_yml" && -f "$proj_yml" ]]; then
