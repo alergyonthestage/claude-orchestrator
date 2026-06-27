@@ -183,6 +183,30 @@ test_path_set_resolves_relative_to_absolute() {
     assert_file_contains "$idx" "rel: \"$expected\"" || return 1
 }
 
+# ── cco path demoted (ADR-0029 D4) ────────────────────────────────────
+
+test_resolve_help_documents_path_advanced() {
+    # `cco path` is documented under `cco resolve --help` as an advanced override.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    run_cco resolve --help
+    assert_output_contains "Advanced"
+    assert_output_contains "cco path list"
+    assert_output_contains "cco path set"
+}
+
+test_usage_omits_internal_path_command() {
+    # The internal index editor is no longer surfaced in the top-level usage.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    run_cco help
+    assert_output_contains "resolve"
+    if echo "${CCO_OUTPUT:-}" | grep -qE "^  path "; then
+        fail "usage() should no longer list the internal 'cco path' command"
+    fi
+    # …but the command itself still works (covered by test_path_set_and_list_roundtrip).
+}
+
 test_resolve_cwd_first_resolves_and_records_membership() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     setup_cco_env "$tmp"

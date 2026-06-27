@@ -300,6 +300,13 @@ Examples:
   cco resolve                      # resolve the project owning the cwd
   cco resolve myapp                # resolve a named project
   cco resolve --scan ~/dev         # bootstrap/refresh the index from a dir tree
+
+Advanced:
+  The path index is internal and normally maintained for you by resolve. To
+  override a binding by hand — move a directory, fix a divergence, or register
+  an externally-cloned repo — use the low-level escape hatch:
+    cco path list                  # show the current logical-name → path index
+    cco path set <name> <abs-path> # pin a logical name to an absolute path
 EOF
                 return 0
                 ;;

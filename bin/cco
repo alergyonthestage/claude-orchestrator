@@ -125,7 +125,6 @@ Sessions:
 
 Local paths & sync:
   resolve [project]      Resolve repos/mounts into the machine-local index
-  path <set|list>        Low-level path index editor
   sync [repo] [--from r] Copy .cco config between a project's repos (copy, no merge)
 
 Discovery:
