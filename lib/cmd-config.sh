@@ -386,7 +386,8 @@ Commands:
   save [-m <msg>]         Stage the allowlisted config + secret-scan + commit
   push                    Push to your (private) remote
   pull                    Fast-forward pull from your remote (non-FF aborts)
-  validate [--fix [-y]]   Detect (and optionally prune) orphaned internal state
+  validate [--dry-run | --fix [-y]]
+                          Detect (and optionally prune) orphaned internal state
 
 ~/.cco is always git-versioned; only the remote is opt-in. Add one with:
   git -C ~/.cco remote add origin <your-private-repo-url>

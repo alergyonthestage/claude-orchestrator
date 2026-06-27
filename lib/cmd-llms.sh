@@ -19,12 +19,6 @@ Commands:
   rename <old> <new>   Rename an installed llms entry
   remove <name>        Remove an installed llms entry
 
-Options (for install):
-  --name <name>        Override the auto-detected framework name
-  --variant <v>        Force variant: full, medium, small, index (default: auto)
-  --pack <pack>        Add reference to this pack's pack.yml
-  --project <project>  Add reference to this project's project.yml
-
 Run 'cco llms <command> --help' for command-specific options.
 EOF
         return 0

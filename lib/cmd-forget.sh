@@ -93,7 +93,10 @@ EOF
     # Nothing tracked at all → surface the typo rather than silently succeeding.
     if [[ -z "$member_repos" && ! -d "$state_dir" && ! -d "$data_dir" \
           && ! -d "$cache_dir" && -z "$cur_tags" ]]; then
-        die "Project '$name' is not tracked on this machine — nothing to forget."
+        local _ftip="Re-discover it with 'cco resolve --scan <dir>'."
+        [[ -f "$PWD/.cco/project.yml" ]] && \
+            _ftip="This directory has a .cco/ — register it with 'cco join', or re-discover with 'cco resolve --scan <dir>'."
+        die "Project '$name' is not tracked on this machine — nothing to forget. $_ftip"
     fi
 
     # ── Preview ───────────────────────────────────────────────────────────

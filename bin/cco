@@ -108,8 +108,12 @@ usage() {
     cat <<'EOF'
 Usage: cco <command> [options]
 
-Getting Started:
-  init                   Initialize user config from defaults
+Project lifecycle:
+  init                   Scaffold this repo's .cco/ project config (+ global on first run)
+  join                   Register an already-configured cloned repo on this machine
+  forget <project>       Deregister a project on this machine (repo untouched)
+
+Setup & maintenance:
   build                  Build/rebuild the Docker image
   update                 Run migrations + discover updates (--sync, --diff, --news)
   clean                  Clean up .bak, .tmp/, docker-compose.yml
@@ -128,21 +132,18 @@ Discovery:
   list [--tag <t>]       List your packs/projects/templates and their tags
   tag <add|rm>           Tag a pack/project/template (per-user, never team-shared)
 
-Projects & Packs:
+Resources:
   project <cmd>          Manage projects (export, import, add, list, show)
-  forget <project>       Deregister a project on this machine (repo untouched)
   pack <cmd>             Manage knowledge packs (create, install, update, ...)
   llms <cmd>             Manage llms.txt framework docs (install, update, ...)
-  chrome <cmd>           Manage Chrome debug session on host
-
-Templates:
   template <cmd>         Manage project/pack templates (list, show, create, remove)
 
-Sharing & Versioning:
+Tools & Sharing:
+  chrome <cmd>           Manage Chrome debug session on host
   config <save|push|pull> Version + sync your personal ~/.cco store
   remote <cmd>           Manage sharing-repo remotes
 
-Run 'cco <command> --help' for detailed help on any command.
+Run 'cco help' for this message, or 'cco <command> --help' for command-specific help.
 EOF
 }
 
