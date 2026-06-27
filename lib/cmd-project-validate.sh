@@ -106,30 +106,17 @@ _pv_flag() {
     return 0
 }
 
-# Validate one unit. Args: <project_yml> <unit_cco_dir> <label> <reachable> <verbose> <prefix>
-# Prints findings + a tally; returns the unit's max severity (0/1/2).
-_pv_validate_unit() {
-    local yml="$1" cco_dir="$2" label="$3" reachable="$4" verbose="$5" prefix="$6"
-    local -a _PV_FIND=()
-    local _PV_SEV=0 _PV_NREACH=0 _PV_NAGN=0 _PV_NUNIQ=0 _PV_NCOLL=0
+# Per-section validators. Each peels its coordinate records (empty MIDDLE fields
+# survive via _peel_tab — `IFS=$'\t' read` would collapse them) and records
+# findings via _pv_flag. The accumulators live in _pv_validate_unit and are
+# reached through bash dynamic scoping, so these run only as its callees.
 
-    # project.yml 'name' must be present (a content error).
-    local pname; pname=$(yml_get "$yml" name)
-    [[ -z "$pname" ]] && _pv_flag agnostic 2 "project.yml: missing required field 'name'"
-
-    # Records are tab-separated with fixed field counts and may carry empty
-    # MIDDLE fields (e.g. a mount with only a target). `IFS=$'\t' read` would
-    # collapse them (tab is IFS-whitespace), so peel field-by-field instead —
-    # the same idiom the resolver uses (cmd-resolve.sh:121).
-    local _ln rest name url ref target ro resource desc variant
-    local seen=""
-
-    # ---- repos: url is the coordinate; no url = gap; dup name = uniqueness ----
-    seen=""
+# repos: url is the coordinate; no url = gap; dup name = uniqueness.
+_pv_validate_repos() {
+    local yml="$1" reachable="$2" _ln name url seen=""
     while IFS= read -r _ln; do
         [[ -z "$_ln" ]] && continue
-        name="${_ln%%$'\t'*}"; rest="${_ln#*$'\t'}"
-        url="${rest%%$'\t'*}"; ref="${rest#*$'\t'}"
+        _peel_tab "$_ln" name url
         [[ -z "$name" ]] && continue
         if _pv_is_dup "$seen" "$name"; then _pv_flag unique 2 "repos.$name: duplicate id within 'repos'"; fi
         seen="$seen $name"
@@ -141,16 +128,15 @@ _pv_validate_unit() {
             [[ "$(_pv_probe repo "$url")" == unreachable ]] && _pv_flag reach 1 "repos.$name: url not reachable '$url'"
         fi
     done < <(yml_get_repo_coords "$yml")
+}
 
-    # ---- extra_mounts: same coordinate gap rule as repos (Q3 — include mounts);
-    #      the container-side `target` path is exempt from the agnostic scan ----
-    seen=""
+# extra_mounts: same coordinate gap rule as repos (Q3); the container-side
+# `target` path is exempt from the agnostic scan (not read here).
+_pv_validate_mounts() {
+    local yml="$1" reachable="$2" _ln name url seen=""
     while IFS= read -r _ln; do
         [[ -z "$_ln" ]] && continue
-        name="${_ln%%$'\t'*}"; rest="${_ln#*$'\t'}"
-        url="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"
-        ref="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"
-        target="${rest%%$'\t'*}"; ro="${rest#*$'\t'}"
+        _peel_tab "$_ln" name url
         [[ -z "$name" ]] && continue
         if _pv_is_dup "$seen" "$name"; then _pv_flag unique 2 "extra_mounts.$name: duplicate id within 'extra_mounts'"; fi
         seen="$seen $name"
@@ -162,14 +148,15 @@ _pv_validate_unit() {
             [[ "$(_pv_probe mount "$url")" == unreachable ]] && _pv_flag reach 1 "extra_mounts.$name: url not reachable '$url'"
         fi
     done < <(yml_get_mount_coords "$yml")
+}
 
-    # ---- llms: url is MANDATORY (ADR-0017) — no url = gap ----
-    seen=""
+# llms: url is MANDATORY (ADR-0017) — no url = gap. Record shape is
+# name\tdesc\tvariant\turl, so url is the 4th field.
+_pv_validate_llms() {
+    local yml="$1" reachable="$2" _ln name url _d _v seen=""
     while IFS= read -r _ln; do
         [[ -z "$_ln" ]] && continue
-        name="${_ln%%$'\t'*}"; rest="${_ln#*$'\t'}"
-        desc="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"
-        variant="${rest%%$'\t'*}"; url="${rest#*$'\t'}"
+        _peel_tab "$_ln" name _d _v url
         [[ -z "$name" ]] && continue
         if _pv_is_dup "$seen" "$name"; then _pv_flag unique 2 "llms.$name: duplicate id within 'llms'"; fi
         seen="$seen $name"
@@ -181,18 +168,17 @@ _pv_validate_unit() {
             [[ "$(_pv_probe llms "$url")" == unreachable ]] && _pv_flag reach 1 "llms.$name: url not reachable '$url'"
         fi
     done < <(yml_get_llms "$yml")
+}
 
-    # ---- packs: a url-less entry is an AUTHORED-in-repo source (LEGAL, P15) —
-    #      NOT a gap. The D4 ERROR is a no-url authored pack that ALSO exists as
-    #      a same-named global ~/.cco/packs/X (mount precedence then runs the
-    #      WRONG pack — a silent-wrong-build). A url-carrying entry follows the
-    #      normal coordinate rules. ----
-    seen=""
+# packs: a url-less entry is an AUTHORED-in-repo source (LEGAL, P15) — NOT a gap.
+# The D4 ERROR is a no-url authored pack that ALSO exists as a same-named global
+# ~/.cco/packs/X (mount precedence then runs the WRONG pack — a silent-wrong-
+# build). A url-carrying entry follows the normal coordinate rules.
+_pv_validate_packs() {
+    local yml="$1" reachable="$2" cco_dir="$3" _ln name url ref resource seen=""
     while IFS= read -r _ln; do
         [[ -z "$_ln" ]] && continue
-        name="${_ln%%$'\t'*}"; rest="${_ln#*$'\t'}"
-        url="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"
-        ref="${rest%%$'\t'*}"; resource="${rest#*$'\t'}"
+        _peel_tab "$_ln" name url ref resource
         [[ -z "$name" ]] && continue
         if _pv_is_dup "$seen" "$name"; then _pv_flag unique 2 "packs.$name: duplicate id within 'packs'"; fi
         seen="$seen $name"
@@ -211,13 +197,33 @@ _pv_validate_unit() {
             _pv_abspath "$resource" && _pv_flag agnostic 2 "packs.$name: resource is a real/absolute path '$resource'"
         fi
     done < <(yml_get_pack_coords "$yml")
+}
 
-    # ---- stray forbidden path keys (the rejected inline-path flow, D3) ----
-    local skey sval
+# stray forbidden path keys (the rejected inline-path flow, D3).
+_pv_validate_stray_paths() {
+    local yml="$1" skey sval
     while IFS=$'\t' read -r skey sval; do
         [[ -z "$skey" ]] && continue
         _pv_flag agnostic 2 "project.yml: forbidden '$skey: $sval' — host paths live in the index, not in committed config (run 'cco resolve' / 'cco project add ... --path')"
     done < <(_pv_scan_stray_paths "$yml")
+}
+
+# Validate one unit. Args: <project_yml> <unit_cco_dir> <label> <reachable> <verbose> <prefix>
+# Prints findings + a tally; returns the unit's max severity (0/1/2).
+_pv_validate_unit() {
+    local yml="$1" cco_dir="$2" label="$3" reachable="$4" verbose="$5" prefix="$6"
+    local -a _PV_FIND=()
+    local _PV_SEV=0 _PV_NREACH=0 _PV_NAGN=0 _PV_NUNIQ=0 _PV_NCOLL=0
+
+    # project.yml 'name' must be present (a content error).
+    local pname; pname=$(yml_get "$yml" name)
+    [[ -z "$pname" ]] && _pv_flag agnostic 2 "project.yml: missing required field 'name'"
+
+    _pv_validate_repos       "$yml" "$reachable"
+    _pv_validate_mounts      "$yml" "$reachable"
+    _pv_validate_llms        "$yml" "$reachable"
+    _pv_validate_packs       "$yml" "$reachable" "$cco_dir"
+    _pv_validate_stray_paths "$yml"
 
     # ---- emit ----
     local f
