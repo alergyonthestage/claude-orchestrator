@@ -108,13 +108,13 @@ precedent). Opt-in remote, private by default.
 
 | Member | Notes |
 |---|---|
-| `global/.claude/` | Global Claude config: `CLAUDE.md`, `rules/`, `agents/`, `skills/`, `settings.json`, `mcp.json`. Copied once on `cco init`, user-owned thereafter. |
+| `.claude/` | Global Claude config: `CLAUDE.md`, `rules/`, `agents/`, `skills/`, `settings.json`, `mcp.json`. Copied once on `cco init`, user-owned thereafter. |
 | `packs/<name>/` | Authored knowledge packs (flat by name): `pack.yml` + content. |
 | `templates/<name>/` | Authored project/pack templates. |
 | `languages` | The single config datum split out of the legacy `.cco/meta`; regenerates `language.md`. |
 | `secrets.env` / `secrets.env.example` | Global secrets (gitignored) + committed skeleton. |
 | `setup.sh`, `setup-build.sh`, `mcp-packages.txt` | Global runtime/build setup + MCP package list. |
-| `.git/`, `.gitignore` | The store's own git + an allowlist `.gitignore` (only `packs/`, `templates/`, `global/.claude/` and the few config files are committed). |
+| `.git/`, `.gitignore` | The store's own git + an allowlist `.gitignore` (only `packs/`, `templates/`, `.claude/` and the few config files are committed). |
 
 **Why here.** These resources are personal and cross-project but **not** tied to
 any one code repo, so they cannot ride a repo remote. They are also genuine

@@ -2,6 +2,9 @@
 
 > **Status**: accepted
 
+> **Forward note (decentralized-config ADR-0028, 2026-06-27):** the global config home is now
+> **`~/.cco/.claude/`** — read the `~/.cco/global/.claude/` mount source below as `~/.cco/.claude/`.
+
 > Updated by the decentralized-config model (decentralized-config ADR-0009). See
 > the decentralized-config decisions tree for the cross-machine state-sync design.
 

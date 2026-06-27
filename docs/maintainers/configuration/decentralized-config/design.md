@@ -53,7 +53,7 @@ flowchart TB
   subgraph home["~/.cco (personal git store)"]
     P["packs/ (authored)"]
     T["templates/"]
-    G["global/.claude"]
+    G[".claude (global)"]
   end
   A1 -- "cco sync = copy (filesystem)" --> B1
   IDX --> CCO[cco]
@@ -139,7 +139,7 @@ A pre-commit/pre-push scan (reused from `lib/secrets.sh`) refuses real secrets a
 compose in a session, each with a distinct reach: `<repo>/.claude/` (repo-native, **cross-cutting** —
 loaded for every project that mounts the repo *and* native Claude use; cco never touches/syncs it) →
 `/workspace/<repo>/.claude`; the **invoking** repo's `<repo>/.cco/claude/` (this repo's hosted project,
-cross-repo) → `/workspace/.claude`; `~/.cco/global/.claude/` (all the user's projects) → `~/.claude`;
+cross-repo) → `/workspace/.claude`; `~/.cco/.claude/` (all the user's projects) → `~/.claude`;
 managed `defaults/managed/` (non-overridable policy, **own path, highest priority**) →
 `/etc/claude-code/`. Only the **invoking** repo's `.cco/claude/` becomes the session project scope
 (ADR-0005) — a referenced repo's `.cco/claude/` is **not** mounted, so a project's cross-repo config
@@ -229,10 +229,10 @@ resolves RD-memory and satisfies the Phase-3 gate (review BL2).
 ```
 ~/.cco/
 ├── .git/                # personal store, opt-in remote
-├── .gitignore           # allowlist whitelist: only packs/ templates/ global/.claude (+ setup/mcp/languages) committed
+├── .gitignore           # allowlist whitelist: only packs/ templates/ .claude (+ setup/mcp/languages) committed
 ├── packs/<name>/        # authored packs (flat): pack.yml (incl. embedded llms coordinates) + .md
 ├── templates/<name>/    # authored project/pack templates
-├── global/.claude/      # global Claude config (CLAUDE.md, rules, agents, skills, settings.json, mcp.json)
+├── .claude/             # global Claude config (CLAUDE.md, rules, agents, skills, settings.json, mcp.json)
 ├── secrets.env          # global secrets, GITIGNORED
 ├── secrets.env.example  # committed skeleton (C3)
 ├── languages            # the ONE config datum split from .cco/meta (ADR-0013 D4); regenerates language.md
@@ -240,6 +240,11 @@ resolves RD-memory and satisfies the Phase-3 gate (review BL2).
 ├── setup-build.sh       # global build-time setup (C3)
 └── mcp-packages.txt     # global MCP package list (C3)
 ```
+> **Flat global home (ADR-0028).** `.claude/` sits **directly** under `~/.cco` — there is no
+> `global/` wrapper (a vault-era vestige flattened pre-v1; migration 015). `~/.cco` *is* the global
+> scope, so its global Claude config is `~/.cco/.claude/`. The future solo-adopter per-project
+> centralization (Case-C, ADR-0023 D4) lands at **`~/.cco/projects/<name>/`** — a clean sibling of
+> `~/.cco/.claude/`, keeping the global-vs-per-project contrast without a redundant `global/` level.
 > **Moved OUT (ADR-0016 D8, fixes C1/C3):** `tags.yml` → **DATA** (ADR-0015, not `~/.cco`);
 > `manifest.yml` → **removed** (ADR-0012, must not appear); `backups/` → **STATE** (C1); the
 > `!tags.yml` allowlist line → **dropped**; llms **content** → **CACHE** (C2); **no** central
@@ -604,7 +609,7 @@ logical names; the index provides absolute paths; bootstrap on a fresh machine v
   (allowlist staging + secret scan); remote sync **explicit** (`cco config push/pull`),
   never per-command; pull non-FF → abort + notify. `<repo>/.cco/` is committed with the
   user's normal git flow (rides the repo remote). **Allowlist = double barrier**
-  (whitelist `.gitignore` `*`→`!packs/ !templates/ !global/.claude/` + the global
+  (whitelist `.gitignore` `*`→`!packs/ !templates/ !.claude/` + the global
   `setup*.sh`/`mcp-packages.txt`/`languages` + explicit-path staging, never `git add -A`;
   **`tags.yml` is NOT here** — it lives in the DATA bucket, ADR-0015/0016);
   2-pass secret scan + `.example` exemption.
@@ -695,7 +700,7 @@ ADR-0018/0019/0020/0023.
 
 | Area | Command | Status |
 |------|---------|--------|
-| Entry: clean | `cco init` (the single project entry verb; ADR-0026): **idempotently ensures the global config** (`~/.cco/global` seeded from the framework defaults **only if absent**, no `manifest.yml`) **and scaffolds a clean `<repo>/.cco/`** in the current repo + registers it in the index. Global-content for a fresh user lives here; vault migration stays `cco update` (ADR-0025); J0 still owns the empty roots (ADR-0017 D3). No `cco setup` verb. | NEW/transform |
+| Entry: clean | `cco init` (the single project entry verb; ADR-0026): **idempotently ensures the global config** (`~/.cco/.claude` seeded from the framework defaults **only if absent**, no `manifest.yml`) **and scaffolds a clean `<repo>/.cco/`** in the current repo + registers it in the index. Global-content for a fresh user lives here; vault migration stays `cco update` (ADR-0025); J0 still owns the empty roots (ADR-0017 D3). No `cco setup` verb. | NEW/transform |
 | Entry: join | `cco join <project>` (add the current repo to `<project>` as a **member**: register it in the index + add it to `repos[]` in the project's `project.yml`). The new member's `repos[]` edit propagates to **every repo that carries a synced copy** (Case B); in a divergent project (Case C) join **prompts** which repo's `project.yml` to update, or all. The joining repo gets **no `.cco/`** (code-only member) **unless** `--sync` / interactive confirm, which copies the project's `.cco/` into it (source prompted if divergent) — **alternative to `cco init`** | NEW |
 | Entry: migrate | `cco init --migrate <project> [--sync]` (current repo, from the legacy vault backup: hydrate `.cco/` with the migrated project config; `--sync` propagates to all member repos, symmetric to `cco join --sync`) — a **mode of `cco init`**, NOT a top-level `cco migrate` (ADR-0021, resolves the `migrate`↔`update` clash) | NEW |
 | Lifecycle: forget | `cco forget <project>` (deregister: remove cco's internal id-keyed state — index/tags/source/STATE/CACHE — **without** touching the repo or its committed `.cco/`; ADR-0021) | NEW |
@@ -849,7 +854,9 @@ is in §11.
     relative `./…` (anchored to one `project_dir`, `cmd-start.sh:441-543`) to a **host-absolute** path
     and pick the compose base dir (STATE), since config/state/cache now live under three roots and
     `--project-directory` anchors only one. **Global-secrets/OAuth env-injection re-point**
-    `GLOBAL_DIR`→`~/.cco` for **both** `cco start` and `cco new` (`secrets.sh:load_global_secrets`).
+    to `~/.cco` for **both** `cco start` and `cco new` (`secrets.sh:load_global_secrets`); the global
+    Claude dir resolves via `_cco_global_claude_dir()` → `~/.cco/.claude` (the `GLOBAL_DIR` var is
+    retired by ADR-0028).
     The **container side of `entrypoint.sh` is unchanged** (it consumes fixed container paths); the
     compose↔entrypoint container-path contract is an **invariant** the host-source re-point preserves.
   - **Test-harness migration**: `tests/helpers.sh` (`minimal_project_yml` → name+url/ref schema) and
@@ -872,7 +879,7 @@ is in §11.
   inside the migrate mode.
   > **Migration ownership (ADR-0025).** Two paths, split by scope-locality. The **global /
   > non-project cutover is EAGER, owned by `cco update`** (the existing migration runner): populate
-  > `~/.cco` from the backup (`global/.claude` + authored `packs/` + `templates/` +
+  > `~/.cco` from the backup (the global `.claude` tree → `~/.cco/.claude` + authored `packs/` + `templates/` +
   > `setup.sh`/`setup-build.sh`/`mcp-packages.txt`/`languages`/`secrets.env`), build the global
   > internal dirs, the global `.cco/meta` decompose + the global-scope base/meta relocation (below),
   > and the **atomic** shared-resource profile→tag seed (ADR-0010 §5). The **per-project** migration
@@ -929,7 +936,7 @@ build-once holds. The `packs:`
   > global-ensure + per-repo scaffold; **ADR-0026**) and **deletes `cco project create`** then — its
   > decentralized replacement (the `cco init` scaffold) was not built in P2, so create is removed once
   > init replaces it. The P3-3b refinement moves the eager-migration idempotency gate
-  > (`_cco_migrate_global`) from `~/.cco/global` presence to a **`migration-state` marker** so a fresh
+  > (`_cco_migrate_global`) from `~/.cco/.claude` presence to a **`migration-state` marker** so a fresh
   > `cco init` cannot make a later `cco update` silently skip the vault migration (non-destructive: backup
   > + confirm; ADR-0026 / ADR-0025). **Tier-2 legacy verbs** (`cco project resolve`/`validate <name>`/
   > `add-pack`/`remove-pack`/`delete`) and the **`@local` sanitize block** are **deferred to P4** (their
@@ -1081,7 +1088,7 @@ categorized disposition immediately below the table.
 
 | Phase | New | Rewrite | Remove |
 |-------|-----|---------|--------|
-| 0 (substrate) | machine-agnostic layout + index tests (new layout only, no dual-read); **XDG resolver matrix** (unset/empty/relative + `CCO_*_HOME` override, `0700`, host-side/anti-in-container guard); **schema+parser round-trip** (repos/llms/**packs map** `name`+`url?`+`ref?`+`resource?`, bash-3.2 clean, F5); **compose mount bucket map (BL3)** (`claude-state`/`memory`→STATE, `.cco/managed`→CACHE, global/`secrets.env`/`mcp.json`→`~/.cco`, host-absolute); **secrets/OAuth env-injection re-point** (`GLOBAL_DIR`→`~/.cco`, `cco start`+`cco new`); **registries**: `tags.yml` (DATA), **remotes split** (DATA `url` + STATE `token` `0600`, no-leak, M3); **index atomicity** (`mktemp`+`mv`, single-writer, no-lock) + **global-flat ratified**, namespacing reserved post-v1 (H7/ADR-0022 D2); **F2 cross-tree collision warning** (committed `rules/foo.md` vs pack `rules/foo.md`, pack `:ro` wins); symlink-safe tool root | harness `helpers.sh` (`minimal_project_yml`→name+url/ref schema) + `mocks.sh`; `test_yaml_parser.sh`; `test_paths.sh`; `test_local_paths.sh`; `test_remote.sh` (M3 split) | — |
+| 0 (substrate) | machine-agnostic layout + index tests (new layout only, no dual-read); **XDG resolver matrix** (unset/empty/relative + `CCO_*_HOME` override, `0700`, host-side/anti-in-container guard); **schema+parser round-trip** (repos/llms/**packs map** `name`+`url?`+`ref?`+`resource?`, bash-3.2 clean, F5); **compose mount bucket map (BL3)** (`claude-state`/`memory`→STATE, `.cco/managed`→CACHE, global config/`secrets.env`/`mcp.json`→`~/.cco`, host-absolute); **secrets/OAuth env-injection re-point** (`_cco_global_claude_dir()`→`~/.cco/.claude`; `GLOBAL_DIR` retired by ADR-0028; `cco start`+`cco new`); **registries**: `tags.yml` (DATA), **remotes split** (DATA `url` + STATE `token` `0600`, no-leak, M3); **index atomicity** (`mktemp`+`mv`, single-writer, no-lock) + **global-flat ratified**, namespacing reserved post-v1 (H7/ADR-0022 D2); **F2 cross-tree collision warning** (committed `rules/foo.md` vs pack `rules/foo.md`, pack `:ro` wins); symlink-safe tool root | harness `helpers.sh` (`minimal_project_yml`→name+url/ref schema) + `mocks.sh`; `test_yaml_parser.sh`; `test_paths.sh`; `test_local_paths.sh`; `test_remote.sh` (M3 split) | — |
 | 1 (core local) | `test_sync.sh` (copy semantics, 4 forms, confirm, **clobber-guard: skip+warn a target hosting a different project, no override — ADR-0024 D2**); resolve incl. clone-from-`url` + **`--scan` non-destructive upsert** (preserves out-of-`<dir>` + `cco path set`; AD5 conflict keep-existing; no `--prune`; ADR-0022 D3); **sync-meta fingerprint** (write post-receive + source-side, lazy compare, no-fingerprint=pristine; ADR-0022/F39); **reminder aggregator** (a/b/c) + **H1 ordering** (resolve before notices) | — | — |
 | 2 (migration) | `test_migrate.sh` (`cco init --migrate` lazy per-project from backup; backup-verified-before-read, M8; **raw-tar backup captures all profiles' secrets** — active in working tree + inactive in `profile-state/<branch>/` shadows, F1/F9; **memory relocation backup→`<state>/cco/projects/<id>/memory/`** + **re-run non-clobber**, F11/ADR-0009; **profile→tag prompt** both branches, ADR-0010; **interrupted-migrate atomicity** — partial `.cco/` cleaned, re-run safe, F44; **defensive name-uniqueness assert**, F12; **complete-final-`project.yml`-in-one-pass** — repos+llms+**packs** coordinates written together, pack backfill from recorded `source` read **in place** (the `source`→DATA relocation is P4), **no second schema-migration**, F37); **merge-engine path remap → STATE** (`.cco/base`/`meta`→`<state>/cco/{projects/<id>,packs/<name>,global}/update/`, H6/ADR-0016 D5 — re-sequenced from P0; merge *logic* unchanged) + **global `.cco/meta` decompose** (`languages`→`~/.cco`, `last_seen`/`last_read`→STATE top-level, `schema_version`/policies→global STATE update meta, hash `manifest:` block→STATE meta (NOT dropped — only the separate `manifest.yml` is removed); ADR-0013 D4/D3/0025); **eager global migration owned by `cco update`** vs lazy per-project `cco init --migrate` (ADR-0025); first-run bootstrap (per-root idempotent) + `<state>/cco/migration-state` marker idempotency (F43) | `test_init.sh`; `test_update.sh` (H6 paths + `--check`); **`test_publish_install_sync.sh` meta/base refs spot-fixed to STATE** (full rewrite still P4) | — |
 | 3 (legacy cutover) | multi-project coexistence; truthful-diff (no sanitize) tests; `test_config.sh` (Domain A: allowlist staging never `git add -A`, **secret-scan `.example` exemption** — skeleton passes, real `secrets.env` blocked); **memory-as-STATE** (ADR-0009: `memory/` in STATE persists across starts, no auto-commit, no `.gitkeep`); **tag wiring** (ADR-0011/0015: `cco tag add/rm` + `cco list --tag` over the DATA `tags.yml`, tags NOT in `pack.yml`/`project.yml`/manifest/index) | `test_vault.sh` (shrink to migrate-reader) | `test_vault_profiles.sh`; `test_project_create.sh`; custom-diff/sanitize tests; **D33 memory auto-commit / D32 `.gitkeep` tests** |

@@ -2,6 +2,10 @@
 
 > **Status**: accepted
 
+> **Forward note (decentralized-config ADR-0028, 2026-06-27):** the user-defaults home is now
+> **`~/.cco/.claude/`** (the `global/` wrapper was flattened away) — read every `~/.cco/global/`
+> below as `~/.cco/.claude/`. The `defaults/global/` source path is unchanged.
+
 ## Context
 
 `global/` and `projects/_template/` were tracked in git. When users customized

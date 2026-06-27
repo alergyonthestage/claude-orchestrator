@@ -2,6 +2,9 @@
 
 > **Status**: accepted
 
+> **Forward note (decentralized-config ADR-0028, 2026-06-27):** the global-user host source is now
+> **`~/.cco/.claude/`** — read every `~/.cco/global/.claude/` below as `~/.cco/.claude/`.
+
 ## Context
 
 Claude Code has a fixed precedence for settings and memory. We need to map our

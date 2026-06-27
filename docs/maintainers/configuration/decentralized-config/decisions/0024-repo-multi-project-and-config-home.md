@@ -124,6 +124,10 @@ requires an explicit name. (Source-precedence for by-name start is unchanged: `-
 
 ### D4 — `.claude` scope hierarchy made explicit (front A)
 
+> **Forward note (ADR-0028, 2026-06-27):** the global-user host source below is now
+> **`~/.cco/.claude/`** — the `global/` wrapper was flattened away. Read every
+> `~/.cco/global/.claude/` in this ADR as `~/.cco/.claude/`. Body kept as history.
+
 Four `.claude` scopes compose in a session — **three user-managed + one framework-managed**:
 
 | Scope | Host source | Container path | Claude Code scope | Synced by cco? |

@@ -1,6 +1,9 @@
 # ADR 0027 — config-editor as a built-in, agentic config edit-protection, and reference mounts
 
 **Status**: Accepted (2026-06-23)
+
+> **Forward note (ADR-0028, 2026-06-27):** the global config home is now **`~/.cco/.claude/`** —
+> read every `~/.cco/global/.claude/` below (incl. the `:ro` edit-protection mount) as `~/.cco/.claude/`.
 **Deciders**: maintainer (set the direction + the refinements), implementer (analysis + recommendations)
 **Context docs**: `../design.md` §7 (command surface, Authoring row), §9 P3 (P3-4),
 `../resource-coherence-inventory.md` A.1/A.4, `../P3cd-handoff-config-editor-and-docs.md` §3

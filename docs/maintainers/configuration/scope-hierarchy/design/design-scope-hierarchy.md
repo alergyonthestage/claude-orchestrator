@@ -296,11 +296,11 @@ defaults/
 | Container Path | Source | Tier | Mount |
 |---|---|---|---|
 | `/etc/claude-code/` | `defaults/managed/` (in image) | Managed | Baked in image |
-| `~/.claude/settings.json` | `global/.claude/settings.json` | User | `:ro` volume |
-| `~/.claude/CLAUDE.md` | `global/.claude/CLAUDE.md` | User | `:ro` volume |
-| `~/.claude/rules/` | `global/.claude/rules/` | User | `:ro` volume |
-| `~/.claude/agents/` | `global/.claude/agents/` | User | `:ro` volume |
-| `~/.claude/skills/` | `global/.claude/skills/` | User | `:ro` volume |
+| `~/.claude/settings.json` | `~/.cco/.claude/settings.json` | User | `:ro` volume |
+| `~/.claude/CLAUDE.md` | `~/.cco/.claude/CLAUDE.md` | User | `:ro` volume |
+| `~/.claude/rules/` | `~/.cco/.claude/rules/` | User | `:ro` volume |
+| `~/.claude/agents/` | `~/.cco/.claude/agents/` | User | `:ro` volume |
+| `~/.claude/skills/` | `~/.cco/.claude/skills/` | User | `:ro` volume |
 | `/workspace/.claude/` | `projects/<name>/.claude/` | Project | `:rw` volume |
 | `/workspace/.claude/packs/` | Knowledge files | Pack data | `:ro` volume |
 | `/workspace/<repo>/` | Host repos | Repo | `:rw` volume |
@@ -316,7 +316,7 @@ The `_migrate_to_managed()` function in `bin/cco` handles one-time migration fro
 3. **Splits `settings.json`** — if the user's settings.json contains `"hooks"` (old unified format), it's backed up as `settings.json.pre-managed` and replaced with the user-only version
 4. **Creates `.managed-migration-done`** marker — prevents re-running on subsequent `cco init`
 
-After migration, agents, skills, rules, and settings.json in `global/.claude/` become fully user-owned and are never overwritten by the framework.
+After migration, agents, skills, rules, and settings.json in `~/.cco/.claude/` become fully user-owned and are never overwritten by the framework.
 
 ---
 

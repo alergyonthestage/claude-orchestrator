@@ -2,6 +2,9 @@
 
 > **Status**: accepted
 
+> **Forward note (decentralized-config ADR-0028, 2026-06-27):** the settings.json path is now
+> **`~/.cco/.claude/settings.json`** — read the `~/.cco/global/.claude/` path below as `~/.cco/.claude/`.
+
 ## Context
 
 Agent teams need to display multiple concurrent panes. Different developers use

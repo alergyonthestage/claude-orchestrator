@@ -1,6 +1,10 @@
 # ADR 0023 — Command Surface & UX: `cco config`/`cco project` namespace, validate contract, coordinate-add verbs
 
 **Status**: Accepted (2026-06-19) — Cluster 5 **complete** (Groups A–E, D1–D6)
+
+> **Forward note (ADR-0028, 2026-06-27):** the `GLOBAL_DIR→~/.cco/global/.claude` reference below
+> is superseded — the global Claude home is now **`~/.cco/.claude/`** and `GLOBAL_DIR` is retired.
+> The future solo-adopter Case-C centralization (D4) now lands at `~/.cco/projects/<name>/`.
 **Deciders**: maintainer + impl-readiness review (V), Cluster 5
 **Context docs**: `../design.md` §7 (command table — centre of gravity), §2.4/§3/§4.4/§6.2; `../requirements.md`; `../reviews/18-06-2026-impl-readiness-review.md` (F46/F26/F19 + the Cluster-4 carry-ins F48/F45/F29-D4)
 **Related ADRs**: 0008 (`~/.cco` versioning — `config save/push/pull`), 0016 (taxonomy — D3 coords tooling, D9 validity contract), 0017 (CLI lifecycle — D1 coordinate fields, D2 `cco resolve`/`--from`), 0019 (reachability — D2 layered embed/heal/validate), 0020 (permissions — D4 `cco config protect`), 0021 (lifecycle — §5 orphan sanitization), 0022 (D4 pack-collision ERROR row carried by validate)

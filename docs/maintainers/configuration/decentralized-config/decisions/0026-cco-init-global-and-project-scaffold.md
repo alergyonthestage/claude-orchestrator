@@ -12,6 +12,13 @@ migration-state marker), 0021 (entry verbs; `cco init --migrate` mode), 0008 (`~
 
 ---
 
+> **Forward note (ADR-0028, 2026-06-27):** the global config home `cco init` ensures is now
+> **`~/.cco/.claude/`** — the `global/` wrapper was flattened away (and `GLOBAL_DIR`/`CCO_GLOBAL_DIR`
+> retired). Read every `~/.cco/global/.claude/` and `$GLOBAL_DIR` in this ADR as the flat
+> `~/.cco/.claude/`. The init-ensure flow is otherwise unchanged. Body kept as history.
+
+---
+
 ## Context
 
 Design §7 says `cco init` (clean) **scaffolds a clean `<repo>/.cco/` in the current repo**. But Phase 2
