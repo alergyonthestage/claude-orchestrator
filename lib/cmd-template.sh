@@ -324,15 +324,21 @@ EOF
 }
 
 cmd_template_remove() {
-    local name=""
+    local name="" yes=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            -y|--yes|--force) yes=true; shift ;;   # no in-use block for templates; --force == -y here
             --help|-h)
                 cat <<'EOF'
-Usage: cco template remove <name>
+Usage: cco template remove <name> [-y]
 
-Remove a user-defined template. Native templates cannot be removed.
+Remove a user-defined template and its id-keyed internal state (DATA install-
+provenance, STATE merge base, the per-user tag binding). Native templates cannot
+be removed. Previews the cascade and confirms first (ADR-0029 D2).
+
+Options:
+  -y, --yes   Skip the confirmation prompt
 EOF
                 return 0
                 ;;
@@ -359,6 +365,16 @@ EOF
     done
 
     [[ -z "$found_dir" ]] && die "User template '$name' not found. Only user templates can be removed."
+
+    # ── Preview the cascade (ADR-0029 D2) ──────────────────────────────────
+    info "cco template remove '$name' will delete:"
+    info "  • $found_dir (the template)"
+    [[ -d "$(_cco_data_dir)/templates/$name"  ]] && info "  • DATA:  install-provenance"
+    [[ -d "$(_cco_state_dir)/templates/$name" ]] && info "  • STATE: merge base"
+    local _ttags; _ttags=$(_tags_get templates "$name")
+    [[ -n "$_ttags" ]] && info "  • tags:  [$_ttags]"
+
+    _confirm_destructive "$yes" "Remove template '$name'?" || { info "Aborted"; return 0; }
 
     rm -rf "$found_dir"
 

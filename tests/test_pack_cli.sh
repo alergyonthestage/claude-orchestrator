@@ -238,7 +238,7 @@ test_pack_remove_deletes_directory() {
     setup_global_from_defaults "$tmpdir"
     run_cco pack create "doomed-pack"
     assert_dir_exists "$CCO_PACKS_DIR/doomed-pack"
-    run_cco pack remove "doomed-pack"
+    run_cco pack remove "doomed-pack" -y
     if [[ -d "$CCO_PACKS_DIR/doomed-pack" ]]; then
         echo "ASSERTION FAILED: pack directory should have been removed"
         return 1
@@ -262,7 +262,7 @@ test_pack_remove_cascades_internal_state() {
     mkdir -p "$(dirname "$meta")"; printf 'schema_version: 1\n' > "$meta"
     run_cco tag add "cascade-pack" work
 
-    run_cco pack remove "cascade-pack"
+    run_cco pack remove "cascade-pack" -y
 
     assert_dir_not_exists "$CCO_PACKS_DIR/cascade-pack"
     assert_dir_not_exists "$CCO_DATA_HOME/packs/cascade-pack"
@@ -324,6 +324,22 @@ YAML
         echo "ASSERTION FAILED: pack should have been removed with --force"
         return 1
     fi
+}
+
+test_pack_remove_persists_without_tty_no_yes() {
+    # ADR-0029 D2: even a pack that is NOT in use must not be removed without -y
+    # when there is no TTY — the confirm contract dies instead of acting blindly.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco pack create "unused-pack"
+    assert_dir_exists "$CCO_PACKS_DIR/unused-pack"
+
+    if run_cco pack remove "unused-pack" </dev/null 2>/dev/null; then
+        fail "pack remove without -y in a non-TTY should die"
+    fi
+    assert_output_contains "re-run with -y"
+    assert_dir_exists "$CCO_PACKS_DIR/unused-pack"
 }
 
 # ── validate ──────────────────────────────────────────────────────────

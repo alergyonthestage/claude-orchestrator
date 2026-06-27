@@ -119,6 +119,31 @@ _check_reserved_project_name() {
     done
 }
 
+# ── Destructive-action confirmation (ADR-0029 D2) ────────────────────
+# The uniform contract for every destructive / irreversible action. The CALLER
+# prints the preview (what will be removed, incl. any id-keyed cascade) and
+# performs any "--force overrides an in-use/overwrite block" check BEFORE calling
+# this; the helper owns only the remaining three steps:
+#   1. skip == true  → proceed silently (set by -y/--yes, or --force which
+#                      implies -y).
+#   2. otherwise, on a TTY → ask "<prompt> [y/N]" (default No) and read the reply.
+#   3. otherwise (no TTY, no skip) → die with a "re-run with -y" message, so a
+#      destructive action is never performed unattended by accident.
+# Returns 0 to proceed, non-zero when the user answers No (caller prints an
+# "Aborted" line and returns 0). Models cmd_forget / _cv_confirm, but DIES (never
+# silently skips) when non-interactive — the ADR-0029 D2 maintainer ruling.
+# Usage: _confirm_destructive <skip-bool> <prompt>
+_confirm_destructive() {
+    local skip="$1" prompt="$2" reply
+    [[ "$skip" == true ]] && return 0
+    if [[ ! -t 0 ]]; then
+        die "Refusing to proceed without confirmation ($prompt) — re-run with -y."
+    fi
+    printf '%s [y/N] ' "$prompt" >&2
+    read -r reply
+    [[ "$reply" =~ ^[Yy]$ ]]
+}
+
 # ── Portable sed -i ──────────────────────────────────────────────────
 # macOS sed requires -i '' while GNU sed requires -i without argument.
 

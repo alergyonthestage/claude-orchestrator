@@ -136,7 +136,7 @@ test_update_check_template_comparable() {
     local bare="$tmpdir/tbare.git"; git init --bare -q "$bare"
     run_cco remote add tr "$bare"
     run_cco template publish tcheck tr
-    run_cco template remove tcheck
+    run_cco template remove tcheck -y
     run_cco template install "$bare" --pick tcheck
     local rc=0
     _uc_cco update --check --no-cache || rc=$?

@@ -234,19 +234,23 @@ EOF
 
 cmd_pack_remove() {
     local name=""
-    local force=false
+    local yes=false force=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --force) force=true; shift ;;
+            -y|--yes) yes=true; shift ;;
+            --force)  force=true; yes=true; shift ;;   # override the in-use block + imply -y
             --help|-h)
                 cat <<'EOF'
-Usage: cco pack remove <name> [--force]
+Usage: cco pack remove <name> [-y] [--force]
 
-Remove a knowledge pack.
+Remove a knowledge pack and its id-keyed internal state (DATA install-
+provenance, STATE merge base/meta, the per-user tag binding). Previews the
+cascade and confirms first (ADR-0029 D2).
 
 Options:
-  --force   Skip confirmation prompt
+  -y, --yes   Skip the confirmation prompt
+  --force     Remove even if the pack is still used by a project (implies -y)
 EOF
                 return 0
                 ;;
@@ -276,23 +280,23 @@ EOF
         fi
     done < <(_project_foreach)
 
+    # ── Preview the cascade (ADR-0029 D2) ──────────────────────────────────
+    info "cco pack remove '$name' will delete:"
+    info "  • packs/$name/ (the pack)"
+    [[ -d "$(_cco_data_dir)/packs/$name"  ]] && info "  • DATA:  install-provenance"
+    [[ -d "$(_cco_state_dir)/packs/$name" ]] && info "  • STATE: merge base/meta"
+    local _ptags; _ptags=$(_tags_get packs "$name")
+    [[ -n "$_ptags" ]] && info "  • tags:  [$_ptags]"
+
+    # In-use is a --force block (not a confirm): a still-referenced pack is only
+    # removable with --force, which overrides the block and implies -y.
     if [[ ${#used_by[@]} -gt 0 ]]; then
         warn "Pack '$name' is used by: ${used_by[*]}"
-        if [[ "$force" != true ]]; then
-            if [[ -t 0 ]]; then
-                printf "Remove anyway? [y/N] " >&2
-                local reply
-                read -r reply
-                if [[ ! "$reply" =~ ^[Yy]$ ]]; then
-                    info "Aborted"
-                    return 0
-                fi
-            else
-                error "Pack is in use. Use --force to remove anyway."
-                return 1
-            fi
-        fi
+        [[ "$force" != true ]] && \
+            die "Refusing to remove a pack still in use — re-run with --force to remove anyway."
     fi
+
+    _confirm_destructive "$yes" "Remove pack '$name'?" || { info "Aborted"; return 0; }
 
     rm -rf "$pack_dir"
 

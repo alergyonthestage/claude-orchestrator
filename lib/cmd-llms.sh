@@ -555,19 +555,21 @@ EOF
 # ── remove ───────────────────────────────────────────────────────────
 
 _llms_remove() {
-    local name="" force=false
+    local name="" yes=false force=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --force) force=true; shift ;;
+            -y|--yes) yes=true; shift ;;
+            --force)  force=true; yes=true; shift ;;   # override the referenced block + imply -y
             --help|-h)
                 cat <<'EOF'
-Usage: cco llms remove <name> [--force]
+Usage: cco llms remove <name> [-y] [--force]
 
-Remove an installed llms entry.
+Remove an installed llms entry. Previews and confirms first (ADR-0029 D2).
 
 Options:
-  --force   Skip confirmation prompt
+  -y, --yes   Skip the confirmation prompt
+  --force     Remove even if the entry is still referenced (implies -y)
 EOF
                 return 0
                 ;;
@@ -587,15 +589,17 @@ EOF
     local llms_dir="$LLMS_DIR/$name"
     [[ ! -d "$llms_dir" ]] && die "LLMs '$name' not found."
 
-    # Check usage
+    # ── Preview + referenced block (ADR-0029 D2) ───────────────────────────
+    info "cco llms remove '$name' will delete the entry at $llms_dir."
     local users
     users=$(_llms_find_users "$name")
-    if [[ -n "$users" && "$force" == "false" ]]; then
+    if [[ -n "$users" ]]; then
         warn "LLMs '$name' is referenced by: $users"
-        printf "Remove anyway? [y/N] "
-        read -r confirm
-        [[ "$confirm" != "y" && "$confirm" != "Y" ]] && { info "Cancelled."; return 0; }
+        [[ "$force" != true ]] && \
+            die "Refusing to remove a referenced llms entry — re-run with --force to remove anyway."
     fi
+
+    _confirm_destructive "$yes" "Remove llms '$name'?" || { info "Cancelled."; return 0; }
 
     rm -rf "$llms_dir"
     ok "Removed llms '$name'"

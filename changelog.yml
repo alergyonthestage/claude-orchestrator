@@ -279,3 +279,21 @@ entries:
       `cco <kind> show <name>`. The per-noun `cco project|pack|template|llms|remote
       list` verbs were removed — each prints a one-line redirect to
       `cco list <kind>` (ADR-0029). Tags and all other behaviour are unchanged.
+
+  - id: 17
+    date: "2026-06-27"
+    type: additive
+    title: "Uniform destructive-confirmation contract (-y / --yes)"
+    description: >
+      Every destructive command now follows one contract (ADR-0029 D2): it
+      previews what will be removed (including the id-keyed cascade), then asks
+      for confirmation. `-y`/`--yes` is the canonical skip-confirmation flag,
+      accepted everywhere. `--force` keeps a distinct meaning — override a block,
+      e.g. removing a pack/llms entry that is still in use — and implies `-y`.
+      `cco pack remove` and `cco llms remove` now confirm unconditionally (no more
+      silent removal of an unused resource), and `cco template remove` and
+      `cco remote remove` gained a confirmation. Running a destructive command
+      with no TTY and no `-y` now refuses with a "re-run with -y" message instead
+      of acting blindly. `cco forget`, `cco config validate --fix` and
+      `cco project coords --sync` already followed this contract; `cco clean` and
+      `cco config pull` are non-destructive and keep their existing behaviour.

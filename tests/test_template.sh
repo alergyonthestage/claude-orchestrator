@@ -204,7 +204,7 @@ test_template_remove_user() {
     init_global "$tmpdir" --lang "English"
     run_cco template create removable --project
     assert_dir_exists "$CCO_TEMPLATES_DIR/project/removable"
-    run_cco template remove removable
+    run_cco template remove removable -y
     assert_dir_not_exists "$CCO_TEMPLATES_DIR/project/removable"
 }
 
@@ -224,7 +224,7 @@ test_template_remove_cascades_internal_state() {
     mkdir -p "$CCO_STATE_HOME/templates/cascade-tmpl/update/base"
     run_cco tag add cascade-tmpl scaffold
 
-    run_cco template remove cascade-tmpl
+    run_cco template remove cascade-tmpl -y
 
     assert_dir_not_exists "$CCO_TEMPLATES_DIR/project/cascade-tmpl"
     assert_dir_not_exists "$CCO_DATA_HOME/templates/cascade-tmpl"
@@ -376,7 +376,7 @@ test_template_export_import_round_trip() {
     run_cco template export myt
     assert_file_exists "$tmpdir/myt.tar.gz"
 
-    run_cco template remove myt
+    run_cco template remove myt -y
     run_cco template import "$tmpdir/myt.tar.gz"
     assert_output_contains "Imported project template"
     assert_file_exists "$CCO_TEMPLATES_DIR/project/myt/project.yml"
@@ -389,7 +389,7 @@ test_template_export_import_pack_kind() {
     run_cco template create packt --pack
     cd "$tmpdir"
     run_cco template export packt
-    run_cco template remove packt
+    run_cco template remove packt -y
     run_cco template import "$tmpdir/packt.tar.gz"
     # Kind is detected from the pack.yml marker inside the archive.
     assert_output_contains "Imported pack template"
@@ -407,7 +407,7 @@ test_template_publish_install_round_trip() {
     run_cco template publish sharet treg
     assert_output_contains "Published"
 
-    run_cco template remove sharet
+    run_cco template remove sharet -y
     run_cco template install "$bare" --pick sharet
     assert_file_exists "$CCO_TEMPLATES_DIR/project/sharet/project.yml"
 }
@@ -422,7 +422,7 @@ test_template_install_records_installed_commit() {
     local bare; bare=$(_tmpl_empty_bare_remote "$tmpdir")
     run_cco remote add r "$bare"
     run_cco template publish cmt r
-    run_cco template remove cmt
+    run_cco template remove cmt -y
     run_cco template install "$bare" --pick cmt
 
     local meta="$CCO_STATE_HOME/templates/cmt/update/meta"
@@ -487,4 +487,20 @@ test_template_sharing_help() {
     run_cco template install --help; assert_output_contains "Install a template" || return 1
     run_cco template export --help;  assert_output_contains "Export a template"  || return 1
     run_cco template import --help;  assert_output_contains "Import a template"  || return 1
+}
+
+# ── cco template remove — non-TTY confirm guard (ADR-0029 D2) ─────────
+
+test_template_remove_non_tty_without_yes_dies() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    init_global "$tmpdir" --lang "English"
+    run_cco template create guarded --project
+    assert_dir_exists "$CCO_TEMPLATES_DIR/project/guarded"
+
+    if run_cco template remove guarded </dev/null 2>/dev/null; then
+        fail "template remove without -y in a non-TTY should die"
+    fi
+    assert_output_contains "re-run with -y"
+    assert_dir_exists "$CCO_TEMPLATES_DIR/project/guarded"
 }

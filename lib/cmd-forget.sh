@@ -56,7 +56,7 @@ is kept, the project re-registers automatically on the next `cco start` from
 that repo (or `cco resolve --scan`); only user-authored tags do not auto-return.
 
 Options:
-  -y, --force   Skip the confirmation prompt
+  -y, --yes, --force   Skip the confirmation prompt
 EOF
                 return 0
                 ;;

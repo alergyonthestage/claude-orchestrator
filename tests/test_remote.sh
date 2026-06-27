@@ -70,7 +70,7 @@ test_remote_remove() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco remote add acme git@github.com:acme/config.git
-    run_cco remote remove acme
+    run_cco remote remove acme -y
     assert_file_not_contains "$CCO_DATA_HOME/remotes" "acme="
 }
 
@@ -80,7 +80,7 @@ test_remote_remove_preserves_others() {
     setup_global_from_defaults "$tmpdir"
     run_cco remote add alpha git@github.com:alpha/config.git
     run_cco remote add beta git@github.com:beta/config.git
-    run_cco remote remove alpha
+    run_cco remote remove alpha -y
     assert_file_not_contains "$CCO_DATA_HOME/remotes" "alpha="
     assert_file_contains "$CCO_DATA_HOME/remotes" "beta="
 }
@@ -145,7 +145,7 @@ test_remote_prefix_names_independent() {
     setup_global_from_defaults "$tmpdir"
     run_cco remote add acme git@github.com:acme/config.git
     run_cco remote add acme-team git@github.com:acme-team/config.git
-    run_cco remote remove acme
+    run_cco remote remove acme -y
     assert_file_not_contains "$CCO_DATA_HOME/remotes" "acme=git@github.com:acme/config.git"
     assert_file_contains "$CCO_DATA_HOME/remotes" "acme-team="
 }
@@ -281,7 +281,7 @@ test_remote_remove_also_removes_token() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco remote add acme https://github.com/acme/config.git --token ghp_test123
-    run_cco remote remove acme
+    run_cco remote remove acme -y
     assert_file_not_contains "$CCO_DATA_HOME/remotes" "acme="
     assert_file_not_contains "$CCO_STATE_HOME/remotes-token" "acme="
 }
@@ -466,7 +466,22 @@ test_remote_remove_warns_affected_packs() {
     printf 'url: git@github.com:acme/config.git\n' > "$(data_pack_source my-pack)"
 
     run_cco remote add acme "git@github.com:acme/config.git"
-    run_cco remote remove acme
+    run_cco remote remove acme -y
     assert_output_contains "publish to 'acme'" || return 1
     assert_output_contains "my-pack" || return 1
+}
+
+# ── cco remote remove — non-TTY confirm guard (ADR-0029 D2) ──────────
+
+test_remote_remove_non_tty_without_yes_dies() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco remote add acme git@github.com:acme/config.git
+
+    if run_cco remote remove acme </dev/null 2>/dev/null; then
+        fail "remote remove without -y in a non-TTY should die"
+    fi
+    assert_output_contains "re-run with -y"
+    assert_file_contains "$CCO_DATA_HOME/remotes" "acme="
 }

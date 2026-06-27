@@ -169,7 +169,16 @@ _cmd_remote_add() {
 }
 
 _cmd_remote_remove() {
-    local name="${1:-}"
+    local name="" yes=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -y|--yes|--force) yes=true; shift ;;   # no in-use block for remotes; --force == -y here
+            -*) die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$name" ]]; then name="$1"; shift
+                else die "Unexpected argument: $1"; fi ;;
+        esac
+    done
     [[ -z "$name" ]] && die "Usage: cco remote remove <name>"
 
     local rf; rf=$(_remotes_file)
@@ -177,6 +186,9 @@ _cmd_remote_remove() {
     if [[ ! -f "$rf" ]] || ! grep -q "^${name}=" "$rf" 2>/dev/null; then
         die "Remote '$name' not found."
     fi
+
+    # ── Preview (ADR-0029 D2): the url registry entry + any saved token ────
+    info "cco remote remove '$name' will delete its url registry entry and any saved token."
 
     # Warn about packs whose recorded upstream resolves to this remote (F4: the
     # default publish target is re-derived from the pack url, not stored —
@@ -200,6 +212,8 @@ _cmd_remote_remove() {
             warn "Packs that publish to '$name': ${affected[*]}"
         fi
     fi
+
+    _confirm_destructive "$yes" "Remove remote '$name'?" || { info "Aborted"; return 0; }
 
     # Remove from the url registry (DATA) and the token store (STATE)
     local tmpfile
@@ -314,9 +328,13 @@ EOF
                 case "$1" in
                     --help|-h)
                         cat <<'EOF'
-Usage: cco remote remove <name>
+Usage: cco remote remove <name> [-y]
 
-Unregister a remote (removes its url entry and any saved token).
+Unregister a remote (removes its url entry and any saved token). Previews and
+confirms first (ADR-0029 D2).
+
+Options:
+  -y, --yes   Skip the confirmation prompt
 EOF
                         return 0
                         ;;

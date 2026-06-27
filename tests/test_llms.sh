@@ -377,3 +377,51 @@ test_dry_run_includes_llms_in_packs_md() {
     assert_file_contains "$packs_md" "Official Framework Documentation"
     assert_file_contains "$packs_md" "/workspace/.claude/llms/svelte"
 }
+
+# ── cco llms remove — uniform destructive-confirm contract (ADR-0029 D2) ──
+
+test_llms_remove_with_yes_skips_confirm() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_llms_entry "$tmpdir" "svelte" "llms-full.txt"
+    assert_dir_exists "$CCO_LLMS_DIR/svelte"
+
+    run_cco llms remove svelte -y
+    assert_output_contains "Removed llms 'svelte'"
+    assert_dir_not_exists "$CCO_LLMS_DIR/svelte"
+}
+
+test_llms_remove_non_tty_without_yes_dies() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_llms_entry "$tmpdir" "svelte" "llms-full.txt"
+
+    if run_cco llms remove svelte </dev/null 2>/dev/null; then
+        fail "llms remove without -y in a non-TTY should die"
+    fi
+    assert_output_contains "re-run with -y"
+    assert_dir_exists "$CCO_LLMS_DIR/svelte"
+}
+
+test_llms_remove_referenced_needs_force() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_llms_entry "$tmpdir" "svelte" "llms-full.txt"
+    # A pack that references the entry is the in-use block (resolved via PACKS_DIR).
+    create_pack "$tmpdir" "ref-pack" "$(printf 'name: ref-pack\nllms:\n  - svelte\n')"
+
+    # Referenced + no --force → die, entry preserved (even with -y, which only
+    # skips the confirm, never overrides the block).
+    if run_cco llms remove svelte -y 2>/dev/null; then
+        fail "referenced llms remove should require --force"
+    fi
+    assert_output_contains "referenced"
+    assert_dir_exists "$CCO_LLMS_DIR/svelte"
+
+    # --force overrides the block (and implies -y).
+    run_cco llms remove svelte --force
+    assert_dir_not_exists "$CCO_LLMS_DIR/svelte"
+}
