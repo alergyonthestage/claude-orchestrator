@@ -10,7 +10,7 @@
 #
 # Provides: _local_paths_get(), _prompt_for_path(), _resolve_project_paths_impl(),
 #   _resolve_start_paths(), _effective_repo_mounts(), _effective_extra_mounts(),
-#   _resolve_entry_index(), _project_effective_paths(), _assert_resolved_paths()
+#   _resolve_entry_index(), _project_effective_paths()
 # Dependencies: colors.sh, utils.sh, yaml.sh
 
 # ── local-paths.yml read/write helpers ───────────────────────────────
@@ -272,7 +272,7 @@ _resolve_start_paths() {
 # project.yml carries logical names only (coordinates via yml_get_repo_coords /
 # yml_get_mount_coords); the absolute path comes from the STATE index
 # (lib/index.sh). Post-resolution consumers (mount-gen, proxy, workspace,
-# summaries) call these after _resolve_*_paths + _assert_resolved_paths, so a
+# summaries) call these after _resolve_*_paths, so a
 # resolved name binds to a real path and an unresolved one is consciously
 # skipped (P14, #B17 — never a silent empty mount).
 
@@ -380,8 +380,8 @@ _resolve_entry_index() {
 # ── Effective paths — single source of truth for consumers ───────────
 
 # Emit the effective (post-resolution) source path for every entry in a
-# project.yml. Single read path behind `_assert_resolved_paths` (the cco start
-# guard) — display and runtime agree because both derive from this one function.
+# project.yml. Single read path for the post-resolution consumers (mount-gen and
+# the proxy policy) — display and runtime agree because both derive from it.
 #
 # Output format (tab-separated lines on stdout):
 #   <kind>\t<key>\t<effective_path>\t<status>
@@ -438,38 +438,7 @@ _project_effective_paths() {
     done < <(yml_get_mount_coords "$project_yml" 2>/dev/null)
 }
 
-# Guard: assert every entry in project.yml is resolved AND its path
-# exists on disk. Dies with a clear, actionable message otherwise.
-# Called by `cco start` immediately after _resolve_start_paths, as the
-# last line of defense against silently generating a docker-compose
-# with unresolved references (Docker would then create empty bind-mount
-# directories — finding #B17).
-#
-# Usage: _assert_resolved_paths <project_dir> <project_name>
-_assert_resolved_paths() {
-    local project_dir="$1" project_name="$2"
-    local -a problems=()
-
-    local kind key effective status
-    while IFS=$'\t' read -r kind key effective status; do
-        [[ -z "$kind" ]] && continue
-        case "$status" in
-            exists) ;;
-            unresolved)
-                problems+=("$kind/$key: unresolved reference (no STATE index entry)")
-                ;;
-            missing)
-                problems+=("$kind/$key: path '$effective' does not exist on this machine")
-                ;;
-        esac
-    done < <(_project_effective_paths "$project_dir")
-
-    if [[ ${#problems[@]} -gt 0 ]]; then
-        error "Cannot start '$project_name' — unresolved paths:"
-        local p
-        for p in "${problems[@]}"; do
-            error "  - $p"
-        done
-        die "Fix with 'cco resolve $project_name'."
-    fi
-}
+# NOTE: the old `_assert_resolved_paths` blocking guard was removed — the P14
+# conscious-skip in _effective_repo_mounts / _effective_extra_mounts (warn +
+# exclude an unresolved reference, never a silent empty bind-mount, #B17) is the
+# live mechanism. `_project_effective_paths` above remains the single read path.

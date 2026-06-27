@@ -90,7 +90,6 @@ test_paths_remotes_token_file_in_state() {
 test_paths_pack_source_data_keyed() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     export USER_CONFIG_DIR="$tmpdir/uc"
-    export GLOBAL_DIR="$tmpdir/uc/global"
     export CCO_DATA_HOME="$tmpdir/data"
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
@@ -109,7 +108,6 @@ test_paths_pack_source_data_keyed() {
 test_paths_template_source_data_keyed() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     export USER_CONFIG_DIR="$tmpdir/uc"
-    export GLOBAL_DIR="$tmpdir/uc/global"
     export CCO_DATA_HOME="$tmpdir/data"
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
@@ -127,7 +125,6 @@ test_paths_template_source_data_keyed() {
 test_paths_pack_install_tmp_new_path() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     export USER_CONFIG_DIR="$tmpdir/uc"
-    export GLOBAL_DIR="$tmpdir/uc/global"
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/lib/paths.sh"
@@ -142,7 +139,6 @@ test_paths_pack_install_tmp_new_path() {
 test_paths_pack_install_tmp_old_fallback() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     export USER_CONFIG_DIR="$tmpdir/uc"
-    export GLOBAL_DIR="$tmpdir/uc/global"
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/lib/paths.sh"
@@ -157,7 +153,6 @@ test_paths_pack_install_tmp_old_fallback() {
 test_paths_pack_install_tmp_default_new() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     export USER_CONFIG_DIR="$tmpdir/uc"
-    export GLOBAL_DIR="$tmpdir/uc/global"
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/lib/paths.sh"

@@ -338,4 +338,52 @@ The cli.md redirect-documentation lines (`the per-noun verb was removed → use 
 correct and intentionally kept. Pure doc/coherence + one CLI string: no changelog, no migration, no
 ADR. Suite **945/0**.
 
-### Cluster 5 — pending.
+### Cluster 5 — Code cleanup nits — ✅ DONE (2026-06-27)
+
+- **C4** — pending-migration count: replaced `latest_schema - current_schema` (which overstated by
+  one across the missing global 008) with a new `_count_pending_migrations` helper
+  (`update-meta.sh`) that counts files with `id > current`. Applied at both `update.sh` call sites
+  (global + project). `latest_schema` is kept (still used to stamp the post-migration schema). The
+  existing dry-run test asserts the substring, not the number — still green.
+- **C5** — **mooted** by Cluster 2 (the flagged `_cv_confirm` was deleted). Updated the stale
+  `_cv_confirm` reference in the `_confirm_destructive` doc comment (`utils.sh`). The residual design
+  question — whether the canonical `_confirm_destructive` should adopt the `(exec < /dev/tty)` idiom
+  used by the merge/migrate prompts instead of `[[ -t 0 ]]` — is left as an **open maintainer
+  decision** (it changes the just-ruled ADR-0029 D2 TTY semantics; not changed here).
+- **C8** — removed the stale `manifest.sh` (ADR-0012) from the `cmd-pack.sh` dependency comment.
+- **C9** — removed the dead `mkdir`s of `runtime_dir/.cco/claude-state` + `runtime_dir/memory` in the
+  tutorial/config-editor setup (`cmd-start.sh`), replaced with `mkdir -p "$runtime_dir"`, and fixed
+  the misleading header comment. **Verified dead three ways**: the tutorial `project.yml` mounts only
+  cco-docs/cco-config; session transcripts/memory always mount from STATE via
+  `_cco_project_session_*` (cmd-start.sh:395/648-650); no code reads those runtime-dir paths. Two
+  tutorial tests asserted the **obsolete pre-decentralized** behavior (one even simulated user memory
+  in `runtime_dir/memory` and expected it preserved) — rewritten to assert the corrected contract
+  (`assert_dir_not_exists` on the dead dirs; `.claude/` refresh still verified).
+- **C10** — removed the dead `_assert_resolved_paths` function (`local-paths.sh`) and corrected its
+  five stale references (Provides header + two comments there; three call-site comments in
+  `cmd-start.sh`) to describe the **live** mechanism — the P14 conscious-skip in
+  `_effective_repo_mounts`/`_effective_extra_mounts`. `_project_effective_paths` is kept (live caller
+  at `cmd-start.sh:519`).
+- **C11** — removed the five no-op `export GLOBAL_DIR` (ADR-0028-retired) seams in `test_paths.sh`.
+
+No changelog, no migration, no ADR. Suite **945/0**.
+
+---
+
+## 9. Final status
+
+All five clusters resolved (2026-06-27). **6 commits** on `feat/vault/decentralized-config` (LOCAL,
+not pushed): review record + one per cluster. Baseline moved **943/0 → 945/0** (two regression tests
+added: migration-009 flat-layout guard, multi-repo stop membership resolution). No blocker surfaced;
+the D4 migration dimension was clean. **Merge nothing** — this gate precedes the Mac dogfooding e2e
+(step 6); the legacy vault is removed only after merge + validation.
+
+**Open items handed forward (not fixed here):**
+- C5 residual — `_confirm_destructive` `[[ -t 0 ]]` vs `(exec < /dev/tty)` idiom: maintainer decision.
+- §6 coverage gaps — `cmd-update.sh`, `cmd-resolve.sh`, `index.sh` atomicity were not deeply
+  inspected; recommend a focused spot-check or rely on the e2e (no known defect).
+- Pre-existing test-isolation fragility: `test_migration_010_user_project_named_tutorial` calls
+  `warn` without sourcing `colors.sh`, so it fails under `--file test_tutorial` but passes in the
+  full suite. Out of this review's scope; noted for a future test-hygiene pass.
+
+Roadmap: flip **step 5 → done**, hand off to **step 6 dogfooding** (`P2-dogfooding-validation.md`).

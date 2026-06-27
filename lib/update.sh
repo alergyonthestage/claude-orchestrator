@@ -125,8 +125,8 @@ _update_global() {
     fi
 
     # Phase 1: Run migrations (always, unless --dry-run or --news)
-    local pending_migrations=$(( latest_schema - current_schema ))
-    [[ $pending_migrations -lt 0 ]] && pending_migrations=0
+    local pending_migrations
+    pending_migrations=$(_count_pending_migrations "global" "$current_schema")
 
     if [[ $pending_migrations -gt 0 && "$cmd_mode" != "news" ]]; then
         if [[ "$dry_run" == "true" ]]; then
@@ -422,8 +422,8 @@ _update_project() {
     latest_schema=$(_latest_schema_version "project")
 
     # Phase 1: Run migrations (always, unless --dry-run or --news)
-    local pending_migrations=$(( latest_schema - current_schema ))
-    [[ $pending_migrations -lt 0 ]] && pending_migrations=0
+    local pending_migrations
+    pending_migrations=$(_count_pending_migrations "project" "$current_schema")
 
     if [[ $pending_migrations -gt 0 && "$cmd_mode" != "news" ]]; then
         if [[ "$dry_run" == "true" ]]; then

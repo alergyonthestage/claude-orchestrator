@@ -8,16 +8,17 @@
 # ── Internal Tutorial Setup ──────────────────────────────────────────
 # Prepares the runtime directory for the internal tutorial project.
 # Content (.claude/, project.yml) is refreshed from internal/tutorial/ every start.
-# Session state (.cco/claude-state/, memory/) persists across starts.
+# Session transcripts/memory live in machine-local STATE (keyed by the internal
+# project name, mounted via _cco_project_session_*), not in the runtime dir.
 _setup_internal_tutorial() {
     local source_dir="$REPO_ROOT/internal/tutorial"
     local runtime_dir="$USER_CONFIG_DIR/.cco/internal/tutorial"
 
     [[ ! -d "$source_dir" ]] && die "Internal tutorial not found at $source_dir"
 
-    # Create runtime dir structure (first time only for state dirs)
-    mkdir -p "$runtime_dir/.cco/claude-state"
-    mkdir -p "$runtime_dir/memory"
+    # Ensure the runtime dir exists (content is refreshed below; session
+    # transcripts/memory live in STATE, mounted via _cco_project_session_*).
+    mkdir -p "$runtime_dir"
 
     # Always refresh content from framework source (ensures tutorial is current)
     rm -rf "$runtime_dir/.claude"
@@ -53,7 +54,7 @@ _setup_internal_config_editor() {
 
     [[ ! -d "$source_dir" ]] && die "Internal config-editor not found at $source_dir"
 
-    mkdir -p "$runtime_dir/.cco/claude-state" "$runtime_dir/memory"
+    mkdir -p "$runtime_dir"
 
     # Always refresh content from framework source (ensures it is current).
     rm -rf "$runtime_dir/.claude"
@@ -698,12 +699,10 @@ YAML
             echo "      - ${session_cache_dir}/managed:/workspace/.managed:ro"
         fi
 
-        # Repository mounts.
-        # By design, _start_resolve_paths + _assert_resolved_paths run
-        # BEFORE this point, so every repo path is guaranteed to be a
-        # real, existing filesystem path — no @local markers, no missing
-        # sources. Any inconsistency here would be an internal bug, not
-        # a user-facing error, so we do not silently skip (fix #B17).
+        # Repository mounts. Unresolved references were already dropped upstream
+        # by the P14 conscious-skip in _effective_repo_mounts (warn + exclude,
+        # never a silent empty bind-mount, #B17), so every path here is a real,
+        # existing filesystem path.
         echo "      # Repositories"
         while IFS=$'\t' read -r repo_name repo_path; do
             [[ -z "$repo_name" ]] && continue
@@ -1289,9 +1288,8 @@ _generate_github_mcp() {
 # Build the mounts.allowed_paths JSON array for the proxy policy.
 # For policy=project_only, uses each repo's resolved host path; for other
 # policies, uses the explicit docker.mounts.allow list.
-# By design, _start_resolve_paths + _assert_resolved_paths ran before
-# this — every repo path is guaranteed resolved and existing. No @local
-# skip needed.
+# Repo paths come post-resolution: unresolved references were dropped upstream by
+# the P14 conscious-skip, so every path here is resolved and existing.
 # Usage: _proxy_collect_allowed_paths <project_yml> <mt_policy>
 # Output: JSON array on stdout (e.g. `[]` or `["/path/a","/path/b"]`)
 _proxy_collect_allowed_paths() {
@@ -1328,8 +1326,8 @@ _proxy_collect_pathmap() {
     local _pathmap_lines=""
 
     # /workspace/<repo_name> → expanded host path per repo
-    # (post-_assert_resolved_paths so no @local remains; see same comment
-    # in _proxy_collect_allowed_paths)
+    # (post-resolution: unresolved references were dropped by the P14
+    # conscious-skip; see _proxy_collect_allowed_paths)
     local _repo_lines
     _repo_lines=$(_effective_repo_mounts "$project_yml")
     if [[ -n "$_repo_lines" ]]; then

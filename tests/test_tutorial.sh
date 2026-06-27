@@ -34,8 +34,11 @@ test_setup_internal_tutorial_creates_runtime_dir() {
     local runtime_dir="$CCO_USER_CONFIG_DIR/.cco/internal/tutorial"
     assert_dir_exists "$runtime_dir"
     assert_dir_exists "$runtime_dir/.claude"
-    assert_dir_exists "$runtime_dir/.cco/claude-state"
-    assert_dir_exists "$runtime_dir/memory"
+    # Session transcripts/memory live in machine-local STATE (ADR-0009), mounted via
+    # _cco_project_session_*, NOT in the runtime dir. Setup must not create dead
+    # claude-state/memory dirs here (C9, pre-e2e review).
+    assert_dir_not_exists "$runtime_dir/.cco/claude-state"
+    assert_dir_not_exists "$runtime_dir/memory"
 }
 
 test_setup_internal_tutorial_substitutes_placeholders() {
@@ -110,19 +113,14 @@ test_setup_internal_tutorial_refreshes_on_rerun() {
     # Add a marker to CLAUDE.md (simulating stale content)
     echo "STALE MARKER" >> "$runtime_dir/.claude/CLAUDE.md"
 
-    # Also add a file to memory/ (should survive refresh)
-    echo "user memory" > "$runtime_dir/memory/MEMORY.md"
-
-    # Re-run: should refresh .claude/ but preserve state dirs
+    # Re-run: should refresh .claude/ from the framework source.
     _setup_internal_tutorial
 
     # CLAUDE.md should be refreshed (no stale marker)
     assert_file_not_contains "$runtime_dir/.claude/CLAUDE.md" "STALE MARKER"
-    # Memory should be preserved
-    assert_file_exists "$runtime_dir/memory/MEMORY.md"
-    assert_file_contains "$runtime_dir/memory/MEMORY.md" "user memory"
-    # claude-state should be preserved
-    assert_dir_exists "$runtime_dir/.cco/claude-state"
+    # Session memory lives in STATE (ADR-0009), not the runtime dir — setup never
+    # creates a runtime-dir memory/ to "preserve" (C9, pre-e2e review).
+    assert_dir_not_exists "$runtime_dir/memory"
 }
 
 # ── cco start tutorial: reserved name conflict ────────────────────────

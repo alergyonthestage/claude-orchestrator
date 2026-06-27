@@ -5,7 +5,7 @@
 #           cmd_pack_remove(), cmd_pack_validate(),
 #           cmd_pack_install(), cmd_pack_update(), cmd_pack_export(),
 #           cmd_pack_internalize()
-# Dependencies: colors.sh, utils.sh, yaml.sh, packs.sh, manifest.sh, remote.sh
+# Dependencies: colors.sh, utils.sh, yaml.sh, packs.sh, remote.sh
 # Globals: PACKS_DIR (projects enumerated via the STATE index, P5)
 
 # ── Pack commands ─────────────────────────────────────────────────────

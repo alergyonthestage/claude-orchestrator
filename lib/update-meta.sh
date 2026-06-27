@@ -223,6 +223,27 @@ _latest_schema_version() {
     echo "$max_id"
 }
 
+# Count migration files whose MIGRATION_ID exceeds current_version — i.e. the
+# migrations that will actually run. Counting files (not latest - current) keeps
+# the displayed total correct across gaps in the ID sequence (e.g. the missing
+# global 008).
+_count_pending_migrations() {
+    local scope="$1" current="$2"
+    local migrations_dir="${FRAMEWORK_ROOT:-$REPO_ROOT}/migrations/$scope"
+    local count=0
+
+    [[ ! -d "$migrations_dir" ]] && echo "0" && return 0
+
+    local migration_file mid
+    for migration_file in "$migrations_dir"/*.sh; do
+        [[ ! -f "$migration_file" ]] && continue
+        mid=$(awk '/^MIGRATION_ID=/ {split($0,a,"="); print a[2]}' "$migration_file")
+        [[ -n "$mid" && "$mid" -gt "$current" ]] && count=$(( count + 1 ))
+    done
+
+    echo "$count"
+}
+
 # Run pending migrations for a scope. Returns 0 on success, 1 on failure.
 _run_migrations() {
     local scope="$1"

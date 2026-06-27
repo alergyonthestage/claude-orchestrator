@@ -130,7 +130,7 @@ _check_reserved_project_name() {
 #   3. otherwise (no TTY, no skip) → die with a "re-run with -y" message, so a
 #      destructive action is never performed unattended by accident.
 # Returns 0 to proceed, non-zero when the user answers No (caller prints an
-# "Aborted" line and returns 0). Models cmd_forget / _cv_confirm, but DIES (never
+# "Aborted" line and returns 0). Models cmd_forget's confirm, but DIES (never
 # silently skips) when non-interactive — the ADR-0029 D2 maintainer ruling.
 # Usage: _confirm_destructive <skip-bool> <prompt>
 _confirm_destructive() {
