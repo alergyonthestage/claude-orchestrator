@@ -802,7 +802,7 @@ cmd_join() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --sync) do_sync=true; shift ;;
-            --help) echo "Usage: cco join [--sync]   (run inside a cloned repo that already has a committed .cco/; registers its project + members on this machine)"; return 0 ;;
+            --help|-h) echo "Usage: cco join [--sync]   (run inside a cloned repo that already has a committed .cco/; registers its project + members on this machine)"; return 0 ;;
             *) die "Unknown option: $1" ;;
         esac
     done

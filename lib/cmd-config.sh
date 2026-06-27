@@ -375,7 +375,7 @@ EOF
 cmd_config() {
     local sub="${1:-}"; shift || true
     case "$sub" in
-        ""|--help|help)
+        ""|--help|-h|help)
             cat <<'EOF'
 Usage: cco config <save|push|pull|validate> [options]
 

@@ -1033,7 +1033,7 @@ cmd_start() {
             --no-docker)  opt_docker="off"; shift ;;
             --port) extra_ports+=("$2"); shift 2 ;;
             --env) extra_envs+=("$2"); shift 2 ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco start [project] [OPTIONS]
 

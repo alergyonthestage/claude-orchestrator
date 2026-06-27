@@ -21,7 +21,7 @@ cmd_new() {
             --teammate-mode) teammate_mode="$2"; shift 2 ;;
             --port) extra_ports+=("$2"); shift 2 ;;
             --mount) [[ $# -lt 2 ]] && die "--mount requires <src>[:<target>][:ro|:rw]."; user_mounts+=("$2"); shift 2 ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco new [OPTIONS]
 

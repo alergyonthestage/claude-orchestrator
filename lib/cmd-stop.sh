@@ -5,7 +5,7 @@
 # Dependencies: colors.sh, utils.sh, yaml.sh, index.sh, paths.sh
 
 cmd_stop() {
-    if [[ "${1:-}" == "--help" ]]; then
+    if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
         cat <<'EOF'
 Usage: cco stop [<project>]
 

@@ -25,7 +25,7 @@ cmd_clean() {
             --generated)  cat_generated=true; shift ;;
             --all)        clean_all=true; shift ;;
             --dry-run)    dry_run=true; shift ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco clean [OPTIONS]
 

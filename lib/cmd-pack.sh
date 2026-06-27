@@ -21,7 +21,7 @@ cmd_pack_create() {
             --template)
                 [[ -z "${2:-}" ]] && die "--template requires a template name"
                 template_name="$2"; shift 2 ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco pack create <name> [--template <name>]
 
@@ -78,7 +78,7 @@ EOF
 }
 
 cmd_pack_list() {
-    if [[ "${1:-}" == "--help" ]]; then
+    if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
         cat <<'EOF'
 Usage: cco pack list
 
@@ -114,7 +114,7 @@ cmd_pack_show() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco pack show <name>
 
@@ -239,7 +239,7 @@ cmd_pack_remove() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --force) force=true; shift ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco pack remove <name> [--force]
 
@@ -315,7 +315,7 @@ cmd_pack_validate() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco pack validate [name]
 
@@ -369,7 +369,7 @@ cmd_pack_install() {
                 token="$2"; shift 2
                 ;;
             --force) force=true; shift ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco pack install <source> [options]
 
@@ -498,7 +498,7 @@ cmd_pack_update() {
         case "$1" in
             --all)   update_all=true; shift ;;
             --force) force=true; shift ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco pack update <name> [--force]
        cco pack update --all [--force]
@@ -569,7 +569,7 @@ cmd_pack_export() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco pack export <name>
 
@@ -608,7 +608,7 @@ cmd_pack_import() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --force) force=true; shift ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco pack import <archive> [--force]
 
@@ -786,7 +786,7 @@ cmd_pack_internalize() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --as) [[ -z "${2:-}" ]] && die "--as requires a new pack name"; newname="$2"; shift 2 ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco pack internalize <name> [--as <new-name>]
 
@@ -1061,7 +1061,7 @@ cmd_pack_publish() {
             --token)
                 [[ -z "${2:-}" ]] && die "--token requires a value"
                 token="$2"; shift 2 ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco pack publish <name> [<remote>] [OPTIONS]
 

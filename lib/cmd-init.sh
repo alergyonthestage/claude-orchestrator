@@ -41,7 +41,7 @@ cmd_init() {
             --lang)
                 [[ -z "${2:-}" ]] && die "--lang requires a value (e.g. --lang Italian)"
                 lang_arg="$2"; shift 2 ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco init [--name <project>] [--template <name>] [--force] [--lang <language>]
        cco init --migrate <project> [--sync]   (run inside a cloned repo)

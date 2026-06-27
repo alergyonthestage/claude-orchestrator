@@ -19,7 +19,7 @@ cmd_build() {
             --no-cache) no_cache="--no-cache"; shift ;;
             --mcp-packages) mcp_packages="$2"; shift 2 ;;
             --claude-version) cc_version="$2"; shift 2 ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco build [--no-cache] [--mcp-packages "pkg1 pkg2"] [--claude-version "x.y.z"]
 

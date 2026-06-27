@@ -179,7 +179,7 @@ case "$cmd" in
     config)  cmd_config "$@"   || _cco_rc=$? ;;
     project)
         subcmd="${1:-}"
-        if [[ -z "$subcmd" || "$subcmd" == "--help" ]]; then
+        if [[ -z "$subcmd" || "$subcmd" == "--help" || "$subcmd" == "-h" ]]; then
             cat <<'EOF'
 Usage: cco project <command> [options]
 
@@ -218,7 +218,7 @@ EOF
         ;;
     pack)
         subcmd="${1:-}"
-        if [[ -z "$subcmd" || "$subcmd" == "--help" ]]; then
+        if [[ -z "$subcmd" || "$subcmd" == "--help" || "$subcmd" == "-h" ]]; then
             cat <<'EOF'
 Usage: cco pack <command> [options]
 

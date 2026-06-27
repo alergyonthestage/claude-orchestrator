@@ -106,7 +106,7 @@ cmd_update() {
             --offline)    offline_mode=true; shift ;;
             --no-cache)   cache_mode="force"; shift ;;
             --local)      local_override=true; shift ;;
-            --help) _update_usage; return 0 ;;
+            --help|-h) _update_usage; return 0 ;;
             *) die "Unknown option: $1. Run 'cco update --help' for usage." ;;
         esac
     done

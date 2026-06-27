@@ -7,7 +7,7 @@
 
 cmd_llms() {
     local subcmd="${1:-}"
-    if [[ -z "$subcmd" || "$subcmd" == "--help" ]]; then
+    if [[ -z "$subcmd" || "$subcmd" == "--help" || "$subcmd" == "-h" ]]; then
         cat <<'EOF'
 Usage: cco llms <command> [options]
 
@@ -47,7 +47,7 @@ _llms_install() {
             --pack)    pack="$2"; shift 2 ;;
             --project) project="$2"; shift 2 ;;
             --force)   force=true; shift ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco llms install <url> [options]
 
@@ -215,7 +215,7 @@ EOF
 # ── list ─────────────────────────────────────────────────────────────
 
 _llms_list() {
-    if [[ "${1:-}" == "--help" ]]; then
+    if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
         cat <<'EOF'
 Usage: cco llms list
 
@@ -298,7 +298,7 @@ _llms_show() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco llms show <name>
 
@@ -367,7 +367,7 @@ _llms_update() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --all)  update_all=true; shift ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco llms update [<name>] [--all]
 
@@ -488,7 +488,7 @@ _llms_rename() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco llms rename <old-name> <new-name>
 
@@ -561,7 +561,7 @@ _llms_remove() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --force) force=true; shift ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco llms remove <name> [--force]
 

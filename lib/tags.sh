@@ -163,7 +163,7 @@ _tags_detect_kind() {
 cmd_tag() {
     local action="${1:-}"; shift || true
     case "$action" in
-        ""|--help|help)
+        ""|--help|-h|help)
             cat <<'EOF'
 Usage: cco tag add <name> <tag> [--pack|--project|--template]
        cco tag rm  <name> <tag> [--pack|--project|--template]
@@ -222,7 +222,7 @@ cmd_list() {
     local filter=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --help|help)
+            --help|-h|help)
                 cat <<'EOF'
 Usage: cco list [--tag <tag>]
 

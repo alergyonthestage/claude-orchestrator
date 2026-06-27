@@ -35,7 +35,7 @@ _resolve_template() {
 
 cmd_template() {
     local subcmd="${1:-}"
-    if [[ -z "$subcmd" || "$subcmd" == "--help" ]]; then
+    if [[ -z "$subcmd" || "$subcmd" == "--help" || "$subcmd" == "-h" ]]; then
         cat <<'EOF'
 Usage: cco template <command> [options]
 
@@ -77,7 +77,7 @@ cmd_template_list() {
         case "$1" in
             --project) filter="project"; shift ;;
             --pack)    filter="pack"; shift ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco template list [--project|--pack]
 
@@ -165,7 +165,7 @@ cmd_template_show() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco template show <name>
 
@@ -231,7 +231,7 @@ cmd_template_create() {
             --from)
                 [[ -z "${2:-}" ]] && die "--from requires a resource path"
                 from="$2"; shift 2 ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco template create <name> --project|--pack [--from <resource>]
 
@@ -329,7 +329,7 @@ cmd_template_remove() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco template remove <name>
 
@@ -385,7 +385,7 @@ cmd_template_internalize() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --as) [[ -z "${2:-}" ]] && die "--as requires a new template name"; newname="$2"; shift 2 ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco template internalize <name> [--as <new-name>]
 
@@ -521,7 +521,7 @@ cmd_template_export() {
             --output|-o)
                 [[ -z "${2:-}" ]] && die "--output requires a path"
                 output="$2"; shift 2 ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco template export <name> [--project|--pack] [--output <path>]
 
@@ -551,7 +551,7 @@ cmd_template_import() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --force) force=true; shift ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco template import <archive> [--force]
 
@@ -614,7 +614,7 @@ cmd_template_install() {
             --pack)    kind="pack"; shift ;;
             --token) [[ -z "${2:-}" ]] && die "--token requires a value"; token="$2"; shift 2 ;;
             --force) force=true; shift ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco template install <url>[@ref] [--pick <name>] [--token <t>] [--force]
 
@@ -678,7 +678,7 @@ cmd_template_publish() {
             --dry-run) dry_run=true; shift ;;
             --force)   force=true; shift ;;
             --token)   [[ -z "${2:-}" ]] && die "--token requires a value"; token="$2"; shift 2 ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco template publish <name> [<remote>] [--project|--pack] [OPTIONS]
 

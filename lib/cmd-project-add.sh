@@ -81,7 +81,7 @@ _yml_append_coord() {
 cmd_project_add() {
     local restype="${1:-}"
     case "$restype" in
-        ""|--help)
+        ""|--help|-h)
             cat <<'EOF'
 Usage: cco project add <repo|mount|llms|pack> <name> [options]
 
@@ -121,7 +121,7 @@ EOF
             --path)     [[ $# -lt 2 ]] && die "--path requires a value";    path="$2";    shift 2 ;;
             --project)  [[ $# -lt 2 ]] && die "--project requires a value"; project="$2"; shift 2 ;;
             --readonly) ro="true"; shift ;;
-            --help)     cmd_project_add --help; return 0 ;;
+            --help|-h)     cmd_project_add --help; return 0 ;;
             -*) die "Unknown option: $1. Run 'cco project add --help'." ;;
             *)
                 if [[ -z "$name" ]]; then name="$1"; shift; else die "Unexpected argument: $1"; fi

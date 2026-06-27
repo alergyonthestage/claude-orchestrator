@@ -280,7 +280,7 @@ cmd_resolve() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco resolve [project] [options]
 
@@ -342,7 +342,7 @@ EOF
 cmd_path() {
     local sub="${1:-}"
     case "$sub" in
-        ""|--help)
+        ""|--help|-h)
             cat <<'EOF'
 Usage: cco path <set|list>
 

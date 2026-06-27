@@ -270,7 +270,7 @@ _cmd_remote_list() {
 
 cmd_remote() {
     local subcmd="${1:-}"
-    if [[ -z "$subcmd" || "$subcmd" == "--help" ]]; then
+    if [[ -z "$subcmd" || "$subcmd" == "--help" || "$subcmd" == "-h" ]]; then
         cat <<'EOF'
 Usage: cco remote <command>
 
@@ -293,7 +293,7 @@ EOF
         add)
             while [[ $# -gt 0 ]]; do
                 case "$1" in
-                    --help)
+                    --help|-h)
                         cat <<'EOF'
 Usage: cco remote add <name> <url> [--token <token>]
 
@@ -313,7 +313,7 @@ EOF
         remove)
             while [[ $# -gt 0 ]]; do
                 case "$1" in
-                    --help)
+                    --help|-h)
                         cat <<'EOF'
 Usage: cco remote remove <name>
 
@@ -329,7 +329,7 @@ EOF
         list)
             while [[ $# -gt 0 ]]; do
                 case "$1" in
-                    --help)
+                    --help|-h)
                         cat <<'EOF'
 Usage: cco remote list
 
@@ -345,7 +345,7 @@ EOF
         set-token)
             while [[ $# -gt 0 ]]; do
                 case "$1" in
-                    --help)
+                    --help|-h)
                         cat <<'EOF'
 Usage: cco remote set-token <name> <token>
 
@@ -363,7 +363,7 @@ EOF
         remove-token)
             while [[ $# -gt 0 ]]; do
                 case "$1" in
-                    --help)
+                    --help|-h)
                         cat <<'EOF'
 Usage: cco remote remove-token <name>
 

@@ -6,7 +6,7 @@
 # Globals: PACKS_DIR (projects enumerated via the STATE index, P5)
 
 cmd_project_list() {
-    if [[ "${1:-}" == "--help" ]]; then
+    if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
         cat <<'EOF'
 Usage: cco project list
 
@@ -95,7 +95,7 @@ cmd_project_show() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco project show <name>
 

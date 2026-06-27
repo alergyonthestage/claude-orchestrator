@@ -79,7 +79,7 @@ cmd_sync() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco sync [target-repo] [--from <source-repo>] [options]
 

@@ -43,7 +43,7 @@ cmd_project_export() {
                 [[ -z "${2:-}" ]] && die "--output requires a path"
                 output="$2"; shift 2 ;;
             --bundle-packs) bundle_packs=true; shift ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco project export [<name>] [--output <path>] [--bundle-packs]
 
@@ -143,7 +143,7 @@ cmd_project_import() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --force) force=true; shift ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco project import <archive> [--force]
 
