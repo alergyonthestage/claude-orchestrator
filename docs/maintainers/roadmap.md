@@ -18,10 +18,9 @@ config flattened to `~/.cco/.claude/`, ADR-0028); machine-local state/cache/data
 hidden XDG buckets. The work is now in the **pre-merge review cycle**: the implementation
 review, the documentation review (reorg + coherence sweep), the pre-merge **flatten**
 (`~/.cco/global/.claude` → `~/.cco/.claude`, ADR-0028), the **refactoring/optimization
-review** (step 3), and the **UX-UI review** (step 4, ADR-0029) are all done. **Next: a
-comprehensive pre-e2e review (step 5)** — a final whole-system gate over v1 (bug-free,
-design adherence, user-guide/CLI coherence, migration completeness) — then dogfooding e2e
-on the Mac (step 6) and the v1 merge/release.
+review** (step 3), the **UX-UI review** (step 4, ADR-0029), and the **comprehensive pre-e2e
+review** (step 5, suite 943/0 → **945/0**) are all done. **Next: dogfooding e2e on the Mac
+(step 6)** — then the v1 merge/release (step 7).
 
 ## Decentralized-config v1 — phase index
 
@@ -48,8 +47,8 @@ flowchart LR
   B --> X["Pre-merge flatten<br/>✅ done (914/0)"]
   X --> C["3. Refactoring /<br/>optimization review<br/>✅ done (921/0)"]
   C --> D["4. UX-UI review<br/>✅ done (943/0)"]
-  D --> R["5. Comprehensive<br/>pre-e2e review<br/>▶ next"]
-  R --> E["6. Dogfooding<br/>e2e (Mac)"]
+  D --> R["5. Comprehensive<br/>pre-e2e review<br/>✅ done (945/0)"]
+  R --> E["6. Dogfooding<br/>e2e (Mac)<br/>▶ next"]
   E --> F["7. Merge /<br/>release v1"]
 ```
 
@@ -88,17 +87,19 @@ flowchart LR
    `cco template update`/`validate` (D3); `cco path` demoted out of `cco help` (D4); the help
    sweep + `-h` alias + `cco forget` L8 recovery hint (D5). Shipped-behavior docs re-synced
    (`cli.md`, repo `CLAUDE.md`, design §7).
-5. **Comprehensive pre-e2e review** — ▶ **next** — a final whole-system gate over
-   decentralized-config v1 before dogfooding, in its own clean session. Four dimensions:
-   (a) **bug-free** — no latent issues/regressions across `bin/cco` + `lib/` + `migrations/`;
-   (b) **design adherence** — code matches the ADRs/principles; for every mismatch decide
-   *stale doc* vs *deviation from ADR* and route the fix accordingly;
-   (c) **user-guide & CLI-reference coherence** — `docs/users/` (guides + `reference/cli.md`)
-   reflect exactly what ships and the decentralized model;
-   (d) **migration completeness** — the update path works for **new users pulling from `main`**
-   (eager global migration via `cco update`, the `migrations/{global,project,pack,template}/`
-   chain incl. the 015 flatten, changelog) **and** for the **maintainer-dev testing the feature
-   branch** (legacy-vault backup + `cco init --migrate`), with idempotency + no data loss.
+5. **Comprehensive pre-e2e review** — ✅ **done (2026-06-27).** Record:
+   [`reviews/27-06-2026-pre-e2e-comprehensive-review.md`](configuration/decentralized-config/reviews/27-06-2026-pre-e2e-comprehensive-review.md).
+   Multi-agent, read-only, adversarial whole-system pass over v1 across four dimensions
+   (bug-free · design adherence · user-guide/CLI coherence · migration completeness). **No
+   blocker**; the D4 migration dimension came back clean. 20 verified findings (6 high / 5 med /
+   9 nit) resolved in 5 atomic LOCAL commits (one per cluster), suite **943/0 → 945/0** (+2
+   regression tests). Headline fixes: migration 009 no longer rewrites `~/.gitignore` on fresh
+   installs (C1); the ADR-0029 D2 destructive-confirm contract is enforced in code (C6/C7);
+   `start`/`stop` resolve multi-repo projects via index membership (C2/C3); `docs/users/` +
+   `CLAUDE.md` re-synced to the shipped surface (C12–C20); dead-code/comment cleanup
+   (C4/C8/C9/C10/C11). Open items handed to step 6: the `_confirm_destructive` `/dev/tty` idiom
+   decision, and a spot-check of the §6 coverage gaps (`cmd-update.sh`, `cmd-resolve.sh`,
+   `index.sh` atomicity).
    Launcher: [`configuration/decentralized-config/pre-e2e-comprehensive-review-handoff.md`](configuration/decentralized-config/pre-e2e-comprehensive-review-handoff.md).
 6. **Dogfooding e2e on Mac** — `configuration/decentralized-config/P2-dogfooding-validation.md`
    (sandboxed roots + HOME-flip; legacy-vault removal accepted only after merge + validation).
