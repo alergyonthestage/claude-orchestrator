@@ -108,6 +108,36 @@ flowchart LR
 7. **Merge / release v1** — merge `feat/vault/decentralized-config`, reconcile both roadmaps,
    mark ADRs.
 
+### Dogfooding findings (step 6 — in progress, host e2e on Mac)
+
+Real-host migration of `cave-flow` surfaced a sequence of defects; fixing them all
+**pre-merge**. Commits are LOCAL (push from Mac). Suite baseline 945 → **950/0**.
+
+- **Migration completeness** ✅ — `cco init --migrate` dropped most of `project.yml`
+  (extra_mounts/docker/auth/github/browser). Fixed (passthrough-by-default + extra_mounts
+  name-synth, **ADR-0030**); GAP-1 remotes de-tokenize split; GAP-2 template provenance.
+  See [`migration-completeness-fix-handoff.md`](configuration/decentralized-config/migration-completeness-fix-handoff.md).
+- **A — `cco resolve` never prompted** ✅ (`c558568`) — the interactivity guard used
+  `[[ -t 0 ]]` inside `while read … done < <(yml_…)` loops (fd 0 = the process-substitution
+  pipe), so it always took the non-interactive branch; local-only `extra_mounts` were
+  permanently unresolvable. Fixed with `_cco_have_tty()` (the `/dev/tty`-reachability idiom),
+  replacing 5 broken guards.
+- **B — `cco start` crashed `yaml: line 52`** ✅ (`7f65268` + `c558568`) — migrated
+  `extra_mounts` whose legacy source was `@local` stored the marker in the index → reached the
+  generated compose as `- @local:/…:ro`, whose leading `@` is a reserved YAML char that breaks
+  `docker compose`. Fixed at the root (migration resolves `@local`→real path via
+  `local-paths.yml`) + defense (bridges skip non-absolute index values, so a dirty index can't
+  crash start before re-migration).
+- **B-robustness — quote compose volume paths** ⏳ — cco emits volume paths UNQUOTED, so any
+  resolved path with a space / YAML-special char (e.g. the host has `…/Cave gif/…`) breaks the
+  compose. Quote all volume entries (`cmd-start.sh` + `packs.sh`). *Separate session.*
+- **C — `cco list` packs UX** ⏳ — the packs table wraps / mis-paginates; add tag sort +
+  ascending/descending choice. *Separate session.*
+- **D — `cco project rename`** ⏳ — no supported rename flow exists. A correct rename must
+  atomically update `project.yml` in every member repo, the STATE index membership, the DATA
+  tags (keyed by project name), and the STATE/CACHE/DATA identity-keyed dirs (memory/session,
+  source, meta). New verb (+ ADR). *Separate session.*
+
 ### Pre-merge: flatten `~/.cco/global/.claude/` → `~/.cco/.claude/` ✅ DONE (2026-06-27)
 
 The global Claude config now lives at the flat `~/.cco/.claude/` (the vault-era `global/`
