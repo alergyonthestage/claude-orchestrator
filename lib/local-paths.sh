@@ -69,8 +69,8 @@ _local_paths_get() {
 _prompt_for_path() {
     local name="$1" url="$2" suggested="$3" label="${4:-Repository}"
 
-    if [[ ! -t 0 ]]; then
-        # Non-TTY: cannot prompt
+    if ! _cco_have_tty; then
+        # No controlling terminal: cannot prompt
         return 2
     fi
 
@@ -207,7 +207,7 @@ _resolve_project_paths_impl() {
                 resolved_repos+=("$name")
             elif [[ $rc -eq 2 ]]; then
                 # rc==2: non-TTY (no prompt possible) OR a TTY user chose [q]uit.
-                if [[ ! -t 0 ]]; then
+                if ! _cco_have_tty; then
                     # non-TTY: warn + proceed without it (P14 conscious-skip —
                     # start excludes + ⚠-badges it, never silent; design §4.4).
                     warn "Repository '$name' unresolved on this machine — run 'cco resolve' to configure"
@@ -240,7 +240,7 @@ _resolve_project_paths_impl() {
             if [[ $mrc -eq 0 && -n "$mresolved" ]]; then
                 :
             elif [[ $mrc -eq 2 ]]; then
-                if [[ ! -t 0 ]]; then
+                if ! _cco_have_tty; then
                     warn "Mount '$mname' unresolved on this machine — run 'cco resolve' to configure"
                 else
                     die "$abort_msg"   # TTY: user chose [q]uit
@@ -290,7 +290,11 @@ _effective_repo_mounts() {
         # the F49 prompt has no index path — exclude it (never emit a silent
         # empty mount, #B17); _start_resolve_paths already warned + ⚠-badged it.
         _p=$(_index_get_path "$name")
-        [[ -z "$_p" ]] && continue
+        # Skip empty AND any NON-ABSOLUTE index value. A bogus marker like the
+        # legacy `@local` must never reach the compose as a mount source — its
+        # leading `@` is a reserved YAML char that breaks `docker compose`
+        # (#B17 / conscious-skip; the index always stores absolute paths).
+        [[ "$_p" != /* ]] && continue
         printf '%s\t%s\n' "$name" "$_p"
     done < <(yml_get_repo_coords "$project_yml" 2>/dev/null)
 }
@@ -330,7 +334,9 @@ _effective_extra_mounts() {
         # than emit a silent empty mount (#B17; design §4.4 / P14). A session-local
         # internal override (config-editor, H4) wins over the persistent index.
         local _ms; _ms=$(_mount_override_get "$name" || _index_get_path "$name")
-        [[ -z "$_ms" ]] && continue
+        # Skip empty AND any NON-ABSOLUTE value (e.g. a stale `@local` marker —
+        # leading `@` is a reserved YAML char that would break the compose).
+        [[ "$_ms" != /* ]] && continue
         [[ -z "$target" ]] && target="/workspace/$name"
         ro=$(_parse_bool "$ro_raw" "true")
         printf '%s\t%s\t%s\n' "$_ms" "$target" "$ro"

@@ -259,3 +259,42 @@ test_resolve_unknown_project_errors() {
     [[ $rc -ne 0 ]] || { echo "ASSERTION FAILED: expected resolve to fail for unknown project"; return 1; }
     assert_output_contains "not resolvable yet" || return 1
 }
+
+test_resolve_prompts_unresolved_mount_with_tty() {
+    # A (TTY-guard fix): the interactivity gate must use /dev/tty reachability,
+    # NOT `[[ -t 0 ]]` — which is always false inside the `while read < <(yml_…)`
+    # resolve loop, so the old guard never prompted (the mount stayed unresolved
+    # forever). With a terminal reachable, an unresolved local-only mount must
+    # reach the prompt and bind into the index. Stub the TTY probe + the prompt
+    # (the real prompt reads /dev/tty, unavailable headless) and assert the bind.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    _rsv_unit "$tmpdir" myrepo 'name: demo
+repos:
+  - name: myrepo
+extra_mounts:
+  - name: mymount
+    target: /workspace/mymount'
+    seed_index_path myrepo "$tmpdir/myrepo"     # repo already resolved (exists)
+
+    (
+        source "$REPO_ROOT/lib/colors.sh"
+        source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/yaml.sh"
+        source "$REPO_ROOT/lib/paths.sh"
+        source "$REPO_ROOT/lib/index.sh"
+        source "$REPO_ROOT/lib/local-paths.sh"
+        source "$REPO_ROOT/lib/cmd-resolve.sh"
+        _cco_have_tty()    { return 0; }                    # stub: terminal reachable
+        _prompt_for_path() { printf '%s\n' "/resolved/$1"; return 0; }  # stub: user picks a path
+        _resolve_unit "$tmpdir/myrepo" >/dev/null 2>&1
+    )
+
+    local got
+    got=$(
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/paths.sh"; source "$REPO_ROOT/lib/index.sh"
+        _index_get_path mymount
+    )
+    [[ "$got" == "/resolved/mymount" ]] \
+        || { echo "ASSERTION FAILED: resolve must prompt + bind an unresolved mount on a TTY (got: '$got')"; return 1; }
+}

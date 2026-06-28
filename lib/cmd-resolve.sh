@@ -123,7 +123,7 @@ _resolve_unit() {
         if [[ -n "$path" ]] && _path_exists "$path"; then
             continue
         fi
-        if [[ ! -t 0 ]]; then
+        if ! _cco_have_tty; then
             unresolved=$((unresolved + 1))
             warn "repo '$name' unresolved on this machine — run 'cco resolve' on a terminal${url:+ (or clone $url)}"
             continue
@@ -146,7 +146,7 @@ _resolve_unit() {
         if [[ -n "$path" ]] && _path_exists "$path"; then
             continue
         fi
-        if [[ ! -t 0 ]]; then
+        if ! _cco_have_tty; then
             unresolved=$((unresolved + 1))
             warn "mount '$name' unresolved on this machine — run 'cco resolve' on a terminal${url:+ (or clone $url)}"
             continue

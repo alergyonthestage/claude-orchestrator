@@ -28,6 +28,17 @@ _path_exists() {
     [[ -e "$path" ]]
 }
 
+# True (0) when an interactive controlling terminal is reachable. Use this — NOT
+# `[[ -t 0 ]]` — to gate interactive prompts. Resolve/start drive their prompts
+# from `while read … done < <(yml_…)` loops, where fd 0 IS the process-
+# substitution pipe, so `[[ -t 0 ]]` is ALWAYS false inside them even on a real
+# terminal (this silently broke `cco resolve`, which then never prompted). The
+# prompts themselves read from /dev/tty, so /dev/tty reachability is the correct
+# interactivity test. The subshell keeps the probe from consuming the parent fd 0.
+_cco_have_tty() {
+    (exec < /dev/tty) 2>/dev/null
+}
+
 # Parse a CLI --mount spec into an "<abs_source>\t<target>\t<ro>" line
 # (the same TSV shape _effective_extra_mounts emits, so the compose-gen
 # consumes both uniformly). Spec: "src[:target][:ro|:rw]".

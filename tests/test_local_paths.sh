@@ -125,3 +125,24 @@ test_resolve_entry_index_returns_existing_without_prompt() {
     assert_equals 0 "$rc" "should succeed for already-resolved entry"
     assert_equals "$repo_dir" "$got" "should return the index path"
 }
+
+test_effective_extra_mounts_skips_non_absolute_index_value() {
+    # B defense: a non-absolute index value (e.g. a stale legacy `@local`
+    # marker) must NEVER reach the compose — its leading `@` is a reserved YAML
+    # char that breaks `docker compose`. The bridge conscious-skips it.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_local_paths_index "$tmpdir/state"
+
+    _index_set_path "badmount" "@local"       # bogus marker, not a path
+
+    local proj="$tmpdir/proj"; mkdir -p "$proj"
+    cat > "$proj/project.yml" <<'YAML'
+name: demo
+extra_mounts:
+  - name: badmount
+    target: /workspace/badmount
+YAML
+
+    local out; out=$(_effective_extra_mounts "$proj/project.yml")
+    assert_equals "" "$out" "a non-absolute (@local) index value must be skipped, never emitted"
+}
