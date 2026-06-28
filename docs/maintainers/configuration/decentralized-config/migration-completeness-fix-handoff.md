@@ -1,5 +1,14 @@
 # Handoff — Migration completeness fix (project.yml drops most config)
 
+> **✅ RESOLVED (2026-06-28) — code-complete, suite 948/0.** Phases A–D done.
+> Fix commits (LOCAL, push from Mac): `00f4a43` project.yml passthrough + extra_mounts
+> (D1/D2), `6777da6` GAP-1 remotes de-tokenize split, `0a7d856` GAP-2 template
+> provenance, `6721c87` **ADR-0030**, `ca7d118` design §9/§11 living-doc sync. Three
+> new regression tests fail on the pre-fix builder and pass on the fix.
+> **Residual gate:** host re-validation per `e2e-validation-checklist.md` Phase 2B
+> (migrate the real `cave-flow` on the Mac, diff against its legacy `project.yml`) —
+> can only run on the host, NOT from the dev container.
+
 **Status:** 🔴 OPEN BLOCKER. Found during e2e dogfooding on the real host (2026-06-28),
 branch `feat/vault/decentralized-config`. Must be fixed (and re-validated) **before merge**.
 **Audience:** the maintainer-dev resuming the fix in a fresh session.
