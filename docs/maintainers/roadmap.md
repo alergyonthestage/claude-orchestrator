@@ -128,9 +128,11 @@ Real-host migration of `cave-flow` surfaced a sequence of defects; fixing them a
   `docker compose`. Fixed at the root (migration resolves `@local`→real path via
   `local-paths.yml`) + defense (bridges skip non-absolute index values, so a dirty index can't
   crash start before re-migration).
-- **B-robustness — quote compose volume paths** ⏳ — cco emits volume paths UNQUOTED, so any
-  resolved path with a space / YAML-special char (e.g. the host has `…/Cave gif/…`) breaks the
-  compose. Quote all volume entries (`cmd-start.sh` + `packs.sh`). *Separate session.*
+- **B-robustness — quote compose volume paths** ✅ (`02c17f4`) — cco emitted volume paths
+  UNQUOTED, so a resolved path with a space / YAML-special char (the host has `…/Cave gif/…`)
+  broke the compose. Added a DRY `_compose_vol()` emitter (double-quoted) routed through every
+  bind-mount site (`cmd-start.sh`/`packs.sh`/`llms.sh`); verified with `docker compose config`
+  on space-bearing paths. Suite 950 → 953/0.
 - **C — `cco list` packs UX** ⏳ — the packs table wraps / mis-paginates; add tag sort +
   ascending/descending choice. *Separate session.*
 - **D — `cco project rename`** ⏳ — no supported rename flow exists. A correct rename must
