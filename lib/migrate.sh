@@ -479,6 +479,52 @@ _migrate_yml_scalar() {
     awk -v k="$2" '$0 ~ "^" k ":" {sub(/^[a-z_]+: */,"");gsub(/["\047]/,"");gsub(/^ +| +$/,"");print;exit}' "$1" 2>/dev/null
 }
 
+# Parse legacy `extra_mounts:` (host path in `source:`, no logical name) → one TSV
+# line "name<TAB>source<TAB>target<TAB>readonly" per mount. `name` is normally
+# empty (legacy schema had none — the builder synthesizes it; ADR-0030); a legacy
+# `name:` is honoured if present.
+_migrate_legacy_mounts() {
+    awk '
+        function val(l,  v){ v=l; sub(/^[a-z_]+: */,"",v); gsub(/["\047]/,"",v); sub(/ *#.*$/,"",v); gsub(/^ +| +$/,"",v); return v }
+        function field(l,  k){ k=l; sub(/:.*/,"",k); gsub(/^ +/,"",k);
+            if(k=="source")source=val(l); else if(k=="name")name=val(l);
+            else if(k=="target")target=val(l); else if(k=="readonly")ro=val(l) }
+        function flush(){ if(source!="" || name!="" || target!="") print name "\t" source "\t" target "\t" ro;
+            name=source=target=ro="" }
+        /^extra_mounts:/{m=1;next}
+        m&&/^[^ #]/{flush();m=0}
+        m&&/^  - /{ flush(); line=$0; sub(/^  - /,"",line); field(line); next }
+        m&&/^    [a-z]/{ line=$0; sub(/^    /,"",line); field(line) }
+        END{flush()}
+    ' "$1"
+}
+
+# Emit a YAML file with the given top-level blocks REMOVED and every other block
+# kept verbatim. A top-level block starts at `^<key>:` (column 0) and runs until
+# the next top-level key or EOF. This is the migration's passthrough engine
+# (ADR-0030): `_cco_build_project_yml` re-emits the coordinate sections
+# (name/description/repos/extra_mounts/llms/packs) transformed, and this carries
+# through EVERY other section — docker/auth/github/browser AND any future
+# top-level section — verbatim, so a config section can never be silently
+# dropped again. Column-0 comments and blank lines head the FOLLOWING key, so
+# they are buffered and flushed (kept block) or dropped (stripped block) with it.
+# $2 = space-separated key list to strip.
+_migrate_yml_strip_blocks() {
+    local yml="$1" keys="$2"
+    awk -v keys=" $keys " '
+        function flushbuf(){ for(i=1;i<=nb;i++) print buf[i]; nb=0 }
+        /^#/        { buf[++nb]=$0; next }
+        /^[ \t]*$/  { buf[++nb]=$0; next }
+        /^[A-Za-z_][A-Za-z0-9_-]*:/ {
+            k=$0; sub(/:.*/,"",k)
+            if (index(keys, " " k " ") > 0) { skip=1; nb=0; next }   # strip: drop the block + its buffered header
+            skip=0; flushbuf(); print; next                          # keep: emit buffered header + the key
+        }
+        { if (!skip) print }                                         # block body (indented / inline)
+        END { if (!skip) flushbuf() }                                # trailing comments after a kept block
+    ' "$yml"
+}
+
 # ── P4 source→DATA relocation (ADR-0022 D1) ──────────────────────────
 # Relocate a single resource's LEGACY in-tree .cco/source (old keys
 # source:/path: + machine-local commit:/installed:/updated: + the dropped
@@ -552,7 +598,12 @@ _cco_project_origin_profile() {
 }
 
 # Build the final project.yml at $out from the legacy project at $leg. Emits
-# index entries (name<TAB>path) for repos+mounts to the file at $idx_out.
+# index entries "name<TAB>path<TAB>kind" (kind = repo|mount) to the file at
+# $idx_out — repos become project members, mounts get an index path only.
+# The coordinate sections (repos/extra_mounts/llms/packs) are rewritten to the
+# final schema with host paths peeled into the index; EVERY other top-level
+# section (docker/auth/github/browser/…) is carried through verbatim by the
+# passthrough at the end (ADR-0030) — completeness by construction, no allowlist.
 _cco_build_project_yml() {
     local leg="$1" out="$2" idx_out="$3" src="$4"
     local leg_yml="$leg/project.yml" lpaths="$leg/.cco/local-paths.yml"
@@ -564,7 +615,7 @@ _cco_build_project_yml() {
         printf 'name: %s\n' "$name"
         [[ -n "$desc" ]] && printf 'description: %s\n' "$desc"
         printf '\n'
-        # repos — final coordinates (name + url? + ref?); paths → index.
+        # repos — final coordinates (name + url? + ref?); paths → index (kind=repo).
         # Tab-PEEL each field: `IFS=$'\t' read` collapses empty middle fields
         # (a repo with no ref would shift @local into the ref slot).
         printf 'repos:'
@@ -582,10 +633,47 @@ _cco_build_project_yml() {
             # Resolve the machine-local path for the index.
             local real="$rpath"
             [[ "$real" == "@local" || -z "$real" ]] && real=$(_local_paths_get "$lpaths" repos "$rname")
-            [[ -n "$real" ]] && printf '%s\t%s\n' "$rname" "$real" >> "$idx_out"
+            [[ -n "$real" ]] && printf '%s\t%s\trepo\n' "$rname" "$real" >> "$idx_out"
         done < <(_migrate_legacy_repos "$leg_yml")
         $any_repo || printf ' []'
         printf '\n'
+        # extra_mounts — legacy had a host `source:` and NO logical name. Synthesize
+        # one (ADR-0030): legacy name → basename(target) → basename(source); the
+        # host source goes to the index (kind=mount, never the committed yml; AD3/G8).
+        local mfirst=true mname msrc mtgt mro _mline _used=" "
+        while IFS= read -r _mline; do
+            [[ -z "$_mline" ]] && continue
+            mname="${_mline%%$'\t'*}"; _mline="${_mline#*$'\t'}"
+            msrc="${_mline%%$'\t'*}";  _mline="${_mline#*$'\t'}"
+            mtgt="${_mline%%$'\t'*}";  mro="${_mline#*$'\t'}"
+            if [[ -z "$mname" ]]; then
+                if   [[ -n "$mtgt" ]]; then mname="${mtgt%/}"; mname="${mname##*/}"
+                elif [[ -n "$msrc" ]]; then mname="${msrc%/}"; mname="${mname##*/}"; fi
+            fi
+            # Sanitize to the logical-name charset; squeeze + trim separators.
+            mname=$(printf '%s' "$mname" | tr -cs 'a-zA-Z0-9_-' '-' | sed 's/^-*//; s/-*$//')
+            [[ -z "$mname" ]] && continue
+            # Disambiguate collisions within this migration (api-specs, api-specs-2…).
+            if [[ "$_used" == *" $mname "* ]]; then
+                local _n=2; while [[ "$_used" == *" ${mname}-${_n} "* ]]; do _n=$((_n+1)); done
+                mname="${mname}-${_n}"
+            fi
+            _used+="$mname "
+            $mfirst && { printf '\nextra_mounts:'; mfirst=false; }
+            printf '\n  - name: %s' "$mname"
+            [[ -n "$mtgt" ]] && printf '\n    target: %s' "$mtgt"
+            [[ -n "$mro"  ]] && printf '\n    readonly: %s' "$mro"
+            # Expand ~ / $HOME so the index holds an absolute host path.
+            local _ms="$msrc"
+            case "$_ms" in
+                "~")        _ms="$HOME" ;;
+                "~/"*)      _ms="$HOME/${_ms#\~/}" ;;
+                '$HOME')    _ms="$HOME" ;;
+                '$HOME/'*)  _ms="$HOME/${_ms#\$HOME/}" ;;
+            esac
+            [[ -n "$_ms" ]] && printf '%s\t%s\tmount\n' "$mname" "$_ms" >> "$idx_out"
+        done < <(_migrate_legacy_mounts "$leg_yml")
+        $mfirst || printf '\n'
         # llms — coordinate from the installed entry's .cco/source (url/variant)
         local lname lsrc lurl lvar first=true
         while IFS= read -r lname; do
@@ -613,6 +701,17 @@ _cco_build_project_yml() {
             [[ -n "$pref" ]] && printf '\n    ref: %s' "$pref"
         done < <(_migrate_legacy_list "$leg_yml" packs)
         $pfirst || printf '\n'
+        # Passthrough — carry EVERY other top-level section verbatim (docker, auth,
+        # github, browser, + anything added later). The strip-set is exactly the
+        # coordinate sections rewritten above; everything else is machine-agnostic
+        # by construction, so this never leaks a host path (AD3/G8). Open-closed:
+        # a future config section is migrated for free (ADR-0030).
+        local _rest
+        _rest=$(_migrate_yml_strip_blocks "$leg_yml" "name description repos extra_mounts llms packs")
+        if [[ -n "${_rest//[$' \t\n']/}" ]]; then
+            printf '\n'
+            printf '%s\n' "$_rest"
+        fi
     } > "$out"
 }
 
@@ -743,17 +842,20 @@ _cco_migrate_project() {
     mv "$stage" "$target/.cco" || die "Failed to install the migrated .cco/ into $target."
 
     # Register the index (member names space-separated, the canonical format §3).
-    local rname rpath; local -a repo_names=()
-    while IFS=$'\t' read -r rname rpath; do
+    # Every entry gets an index PATH; only repos (kind=repo) become project
+    # members — mounts (kind=mount) are resolved by name at start, not membership.
+    local rname rpath rkind; local -a repo_names=()
+    while IFS=$'\t' read -r rname rpath rkind; do
         [[ -z "$rname" ]] && continue
         # AD5 (ADR-0002): never silently re-point a logical name already bound to a
         # different path (mirrors cco init / resolve --scan). Keep the project
         # membership but warn so the user can rebind deliberately (H3).
         if _index_path_conflicts "$rname" "$rpath"; then
-            warn "Repo '$rname' is already bound to $(_index_get_path "$rname") — keeping the existing binding (AD5). Run 'cco resolve' to rebind."
+            warn "Name '$rname' is already bound to $(_index_get_path "$rname") — keeping the existing binding (AD5). Run 'cco resolve' to rebind."
         else
             _index_set_path "$rname" "$rpath"
         fi
+        [[ "$rkind" == "mount" ]] && continue
         repo_names+=("$rname")
     done < "$idx"
     [[ ${#repo_names[@]} -gt 0 ]] && _index_set_project_repos "$mig_name" "${repo_names[@]}"

@@ -393,10 +393,40 @@ repos:
   - path: "@local"
     name: web
     url: git@github.com:org/web.git
+extra_mounts:
+  - source: ~/extra-docs
+    target: /workspace/extra-docs
+    readonly: true
 llms:
   - react
 packs:
   - team-pack
+
+# ── Docker options ───────────────────────────────────────────────────
+docker:
+  image: custom-image:latest
+  mount_socket: true
+  network: cc-myapp-custom
+  ports:
+    - "5000:5000"
+  env:
+    FOO: bar
+  containers:
+    policy: allowlist
+    allow:
+      - "cc-myapp-*"
+auth:
+  method: api_key
+github:
+  enabled: true
+  token_env: MY_GH_TOKEN
+browser:
+  enabled: true
+  cdp_port: 9333
+
+# ── A section the migration has never heard of ───────────────────────
+customfoo:
+  hello: world
 YML
     echo "# project claude" > "$vault/projects/myapp/.claude/CLAUDE.md"
     echo "remember this"    > "$vault/projects/myapp/memory/note.md"
@@ -433,6 +463,46 @@ test_migrate_project_writes_final_yml() {
     # M1: the sibling staging dir is consumed by the atomic rename — none left behind.
     local _leftover; _leftover=$(ls -d "$tmpdir/clones/api"/.cco-stage.* 2>/dev/null | head -1)
     [[ -z "$_leftover" ]] || fail "the sibling staging dir must not survive a successful migrate (M1): $_leftover"
+}
+
+test_migrate_project_preserves_all_config() {
+    # Completeness (migration-completeness fix / ADR-0030): docker/auth/github/
+    # browser pass through verbatim, an UNKNOWN section survives too, and
+    # extra_mounts get a synthesized name with the host source in the index (not
+    # the committed yml). These assertions FAIL on the pre-fix builder (which
+    # emitted only name/description/repos/llms/packs).
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_legacy_vault_project "$tmpdir"
+    ( cd "$tmpdir/clones/api" && CCO_ASSUME_YES=1 run_cco init --migrate myapp )
+    local yml="$tmpdir/clones/api/.cco/project.yml"
+
+    # docker block (passthrough verbatim, incl. ports/env + a policy sub-block)
+    assert_file_contains "$yml" "image: custom-image:latest"
+    assert_file_contains "$yml" "mount_socket: true"
+    assert_file_contains "$yml" "network: cc-myapp-custom"
+    assert_file_contains "$yml" "5000:5000"
+    assert_file_contains "$yml" "FOO: bar"
+    assert_file_contains "$yml" "policy: allowlist"
+    # auth / github / browser (passthrough)
+    assert_file_contains "$yml" "method: api_key"
+    assert_file_contains "$yml" "token_env: MY_GH_TOKEN"
+    assert_file_contains "$yml" "cdp_port: 9333"
+    # An unknown future section survives verbatim → passthrough-by-default, no allowlist.
+    assert_file_contains "$yml" "customfoo:"
+    assert_file_contains "$yml" "hello: world"
+
+    # extra_mounts: name synthesized from the target basename; target + readonly kept.
+    assert_file_contains "$yml" "name: extra-docs"
+    assert_file_contains "$yml" "target: /workspace/extra-docs"
+    assert_file_contains "$yml" "readonly: true"
+    # AD3/G8: the legacy host `source:` is transformed away — never the committed yml.
+    assert_file_not_contains "$yml" "source:"
+    # The host source lands in the machine-local index, keyed by the synth name.
+    assert_file_contains "$CCO_STATE_HOME/index" "extra-docs:"
+    # kind=mount: an extra_mount gets an index path but does NOT join project membership.
+    if grep '^myapp:' "$CCO_STATE_HOME/index" 2>/dev/null | grep -q 'extra-docs'; then
+        fail "extra_mounts must not join project membership (kind=mount), only the index path"
+    fi
 }
 
 test_migrate_project_registers_index() {
