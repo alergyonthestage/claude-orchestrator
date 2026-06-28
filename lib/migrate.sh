@@ -300,6 +300,32 @@ _cco_populate_global_from() {
     # Working-tree packs (shared + the active profile's view).
     [[ -d "$src/packs" ]] && { mkdir -p "$cfg/packs"; cp -r "$src/packs/." "$cfg/packs/" 2>/dev/null || true; }
 
+    # Remotes registry (M3 de-tokenize split, ADR-0016 D7 / GAP-1). The legacy
+    # CENTRAL registry stored `name=url` AND `name.token=token` inline in ONE file.
+    # Split it: url lines → DATA remotes (synced, de-tokenized), token lines → STATE
+    # remotes-token (0600, never-sync) as `name=token`. A plain copy would leak the
+    # tokens into the synced DATA file. Dual-path: post-009 .cco/remotes, else the
+    # pre-009 top-level .cco-remotes. Merge-idempotent (skip lines already present).
+    local legacy_remotes="" rline
+    for rline in "$src/.cco/remotes" "$src/.cco-remotes"; do
+        [[ -f "$rline" ]] && { legacy_remotes="$rline"; break; }
+    done
+    if [[ -n "$legacy_remotes" ]]; then
+        local rf tf
+        rf="$(_cco_remotes_file)"; tf="$(_cco_remotes_token_file)"
+        mkdir -p "$(dirname "$rf")" "$(dirname "$tf")"
+        while IFS= read -r rline; do
+            case "$rline" in ''|'#'*) continue ;; esac
+            if [[ "$rline" == *.token=* ]]; then
+                local tline="${rline/.token=/=}"        # name.token=tok → name=tok
+                grep -qxF "$tline" "$tf" 2>/dev/null || printf '%s\n' "$tline" >> "$tf"
+            else
+                grep -qxF "$rline" "$rf" 2>/dev/null || printf '%s\n' "$rline" >> "$rf"
+            fi
+        done < "$legacy_remotes"
+        [[ -f "$tf" ]] && chmod 600 "$tf" 2>/dev/null || true   # token store: 0600 hard requirement
+    fi
+
     # Languages: decompose the legacy global .cco/meta (old location) → ~/.cco/languages.
     local legacy_meta="$src/global/.claude/.cco/meta"
     if [[ -f "$legacy_meta" ]]; then

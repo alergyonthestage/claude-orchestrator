@@ -245,6 +245,10 @@ _setup_legacy_vault_global() {
         > "$vault/global/.claude/.cco/meta"
     echo "apt-get x" > "$vault/global/setup.sh"
     echo "SECRET=1"  > "$vault/global/secrets.env"
+    # Legacy CENTRAL remotes registry: url + inline name.token=token in one file.
+    mkdir -p "$vault/.cco"
+    printf '# CCO Config Repo remotes\n# Format: name=url\nteam-remote=https://github.com/org/cco-sharing.git\nteam-remote.token=ghp_secrettoken123\n' \
+        > "$vault/.cco/remotes"
     echo "name: shared-pack" > "$vault/packs/shared-pack/pack.yml"
     echo "name: work-pack"   > "$vault/packs/work-pack/pack.yml"
     echo "name: my-tmpl"     > "$vault/templates/my-tmpl/template.yml"
@@ -272,6 +276,24 @@ test_migrate_global_populates_cco() {
     assert_file_exists "$HOME/.cco/secrets.env"   "secrets.env should be migrated to ~/.cco"
     assert_dir_exists  "$HOME/.cco/templates/my-tmpl"  "templates should be migrated to ~/.cco"
     assert_dir_exists  "$HOME/.cco/packs/shared-pack"  "shared pack should be migrated to ~/.cco"
+}
+
+test_migrate_global_relocates_remotes_split() {
+    # GAP-1: the legacy central .cco/remotes (url + inline name.token=token) splits
+    # into DATA remotes (de-tokenized, synced) + STATE remotes-token (0600,
+    # never-sync). No token may ride the synced DATA file.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_legacy_vault_global "$tmpdir"
+    run_cco update || true
+    local rf="$CCO_DATA_HOME/remotes" tf="$CCO_STATE_HOME/remotes-token"
+    assert_file_exists "$rf" "the remotes url registry should be migrated to DATA"
+    assert_file_contains "$rf" "team-remote=https://github.com/org/cco-sharing.git"
+    # The token must NOT ride the synced DATA file (de-tokenize invariant, M3).
+    assert_file_not_contains "$rf" "ghp_secrettoken123"
+    assert_file_not_contains "$rf" ".token="
+    # The token lives de-tokenized in the STATE token store.
+    assert_file_exists "$tf" "the remotes token store should be in STATE"
+    assert_file_contains "$tf" "team-remote=ghp_secrettoken123"
 }
 
 # H1 (26-06-2026 migration review): global/.claude is staged then atomic-renamed,
