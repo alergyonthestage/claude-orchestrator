@@ -1,0 +1,239 @@
+#!/usr/bin/env bash
+# scripts/cco-sandbox-e2e.sh
+#
+# ⚠️  TESTING / DOGFOODING UTILITY — NOT a shipped cco command, NOT for end users.
+#
+# Purpose
+#   One-command sandbox for the decentralized-config e2e validation
+#   (docs/maintainers/configuration/decentralized-config/e2e-validation-checklist.md
+#   §1 / P2-dogfooding-validation.md §3). It redirects ALL cco roots into a
+#   throwaway directory and seeds it with a COPY of your real legacy vault, so the
+#   whole migration flow runs without touching your real install. When you are
+#   done, it tears the sandbox down.
+#
+#   This replaces the manual checklist §1 steps and fixes their sharp edge: the
+#   `cp -a <vault> $CCO_USER_CONFIG_DIR` fails unless the sandbox root exists
+#   first — `setup` creates the root before copying.
+#
+# How the environment reaches your shell
+#   `export`s set by a subprocess do NOT survive into your shell, so `setup`
+#   WRITES an `activate.sh` into the sandbox root and you `source` it:
+#       scripts/cco-sandbox-e2e.sh setup --vault ~/path/to/user-config
+#       source /tmp/cco-dogfood/activate.sh           # enter the sandbox (redirects HOME + roots)
+#       …run the e2e checklist Phase 0 → 5…
+#       source /tmp/cco-dogfood/activate.sh deactivate # restore HOME/env (or open a new shell)
+#       scripts/cco-sandbox-e2e.sh teardown            # delete the sandbox dir
+#
+# What it isolates (every cco root → under the sandbox; nothing real is touched):
+#   HOME                 <root>/home        (so ~/.cco lands inside the sandbox)
+#   CCO_USER_CONFIG_DIR  <root>/user-config (a COPY of your real legacy vault)
+#   CCO_DATA_HOME        <root>/data
+#   CCO_STATE_HOME       <root>/state       (J0 backup lands here)
+#   CCO_CACHE_HOME       <root>/cache
+#
+# Your REAL vault is only ever read (by `cp -a`) — never modified or deleted.
+#
+# Usage
+#   cco-sandbox-e2e.sh setup [--vault <path>] [--root <dir>] [--force]
+#   cco-sandbox-e2e.sh teardown [--root <dir>] [-y]
+#   cco-sandbox-e2e.sh status   [--root <dir>]
+#   cco-sandbox-e2e.sh -h
+#
+# Options
+#   --vault <path>   Real legacy vault to copy (default: $CCO_USER_CONFIG_DIR or <repo>/user-config)
+#   --root  <dir>    Sandbox root (default: $CCO_SANDBOX_ROOT or /tmp/cco-dogfood)
+#   --force          (setup) Replace an existing sandbox root
+#   -y, --yes        (teardown) Skip the confirmation prompt (required when non-interactive)
+#   -h, --help       This help
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if [[ -t 1 ]]; then
+    GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'
+    CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
+else
+    GREEN=''; RED=''; YELLOW=''; CYAN=''; BOLD=''; RESET=''
+fi
+info() { printf "${CYAN}•${RESET} %s\n" "$*" >&2; }
+ok()   { printf "${GREEN}✓${RESET} %s\n" "$*" >&2; }
+warn() { printf "${YELLOW}!${RESET} %s\n" "$*" >&2; }
+die()  { printf "${RED}✗ %s${RESET}\n" "$*" >&2; exit 1; }
+
+ROOT="${CCO_SANDBOX_ROOT:-/tmp/cco-dogfood}"
+VAULT="${CCO_USER_CONFIG_DIR:-$REPO_ROOT/user-config}"
+FORCE=false
+ASSUME_YES=false
+ROOT_EXPLICIT=false
+
+# Drop trailing slash(es) so '/path/' and '/path' compare equal and we never bake
+# '//' into generated paths. Keeps a bare '/' intact (it is rejected elsewhere).
+_strip_slash() {
+    local p="$1"
+    while [[ "$p" == */ && "$p" != "/" ]]; do p="${p%/}"; done
+    printf '%s' "$p"
+}
+
+# A sandbox root must be absolute, not "/", at least two path segments deep
+# (never nukes /tmp, /home, /Users …), and never a real home directory.
+_assert_safe_root() {
+    local r="$1"
+    [[ -n "$r" && "$r" == /* ]] || die "Sandbox root must be an absolute path: '$r'"
+    [[ "$r" != "/" ]]           || die "Refusing root '/'."
+    local trimmed="${r#/}"; trimmed="${trimmed%/}"
+    case "$trimmed" in
+        */*) : ;;
+        *)   die "Refusing a shallow root '$r' (needs ≥2 path segments, e.g. /tmp/cco-dogfood)." ;;
+    esac
+    [[ "$r" != "$HOME" ]] || die "Refusing: sandbox root equals \$HOME ('$r')."
+    [[ -z "${CCO_SANDBOX_OLD_HOME:-}" || "$r" != "$CCO_SANDBOX_OLD_HOME" ]] \
+        || die "Refusing: sandbox root equals your real HOME ('$r')."
+}
+
+_confirm() {
+    local prompt="$1"
+    $ASSUME_YES && return 0
+    if [[ ! -t 0 || ! -t 1 ]]; then
+        die "Refusing a destructive action without a TTY. Re-run with -y/--yes to proceed non-interactively."
+    fi
+    local ans=""
+    read -rp "$(printf "${BOLD}%s [y/N]: ${RESET}" "$prompt")" ans
+    ans="$(printf '%s' "$ans" | tr '[:upper:]' '[:lower:]')"
+    [[ "$ans" == "y" || "$ans" == "yes" ]]
+}
+
+_dir_size() { [[ -d "$1" ]] && du -sh "$1" 2>/dev/null | cut -f1 || printf '—'; }
+
+# Write <root>/activate.sh. $root is baked in as an absolute literal; runtime
+# variables ($HOME, $CCO_SANDBOX_OLD_HOME) stay literal (escaped) so they expand
+# when the file is sourced, not now.
+_write_activate() {
+    local root="$1"
+    cat > "$root/activate.sh" <<EOF
+#!/usr/bin/env bash
+# Generated by cco-sandbox-e2e.sh — \`source\` me to enter the cco e2e sandbox,
+# \`source … deactivate\` to leave it. Editing by hand is unnecessary.
+if [ "\${1:-}" = "deactivate" ]; then
+    [ -n "\${CCO_SANDBOX_OLD_HOME:-}" ] && export HOME="\$CCO_SANDBOX_OLD_HOME"
+    unset CCO_USER_CONFIG_DIR CCO_DATA_HOME CCO_STATE_HOME CCO_CACHE_HOME \\
+          CCO_SANDBOX_OLD_HOME CCO_SANDBOX_ROOT
+    echo "cco sandbox DEACTIVATED — HOME restored to \$HOME"
+    return 0 2>/dev/null || exit 0
+fi
+export CCO_SANDBOX_OLD_HOME="\${CCO_SANDBOX_OLD_HOME:-\$HOME}"
+export CCO_SANDBOX_ROOT="$root"
+export CCO_USER_CONFIG_DIR="$root/user-config"
+export CCO_DATA_HOME="$root/data"
+export CCO_STATE_HOME="$root/state"
+export CCO_CACHE_HOME="$root/cache"
+export HOME="$root/home"
+mkdir -p "\$HOME"
+echo "cco sandbox ACTIVE — root=$root"
+echo "  HOME        → \$HOME"
+echo "  vault copy  → \$CCO_USER_CONFIG_DIR"
+echo "  leave with  : source $root/activate.sh deactivate   (or open a new shell)"
+EOF
+}
+
+cmd_setup() {
+    _assert_safe_root "$ROOT"
+    [[ -d "$VAULT" ]] || die "Vault not found: '$VAULT'. Pass --vault <path-to-your-real-user-config>."
+    [[ -d "$VAULT/.git" ]] || warn "Vault '$VAULT' has no .git — a realistic legacy vault is git-versioned; the J0 backup only archives a git vault."
+
+    if [[ -e "$ROOT" ]]; then
+        if ! $FORCE; then
+            die "Sandbox root already exists: '$ROOT'. Re-run with --force to replace it, or 'teardown' first."
+        fi
+        _assert_safe_root "$ROOT"
+        warn "Replacing existing sandbox root: $ROOT"
+        rm -rf "$ROOT"
+    fi
+
+    info "Creating sandbox root: $ROOT"
+    mkdir -p "$ROOT/home"                      # create the root BEFORE cp (the §1 gotcha)
+    info "Copying vault → $ROOT/user-config (real vault is only read)…"
+    cp -a "$VAULT" "$ROOT/user-config"         # full fidelity: .git + profile-state shadows + gitignored secrets
+    _write_activate "$ROOT"
+
+    ok "Sandbox ready at $ROOT (vault copy: $(_dir_size "$ROOT/user-config"))."
+    printf "${BOLD}Next:${RESET}\n" >&2
+    echo "  source $ROOT/activate.sh         # enter the sandbox in THIS shell" >&2
+    echo "  cco list                          # first command → bootstraps roots + J0 backup" >&2
+    echo "  ls \"\$CCO_STATE_HOME/cco/backups\"  # verify the J0 vault-*.tar.gz (Phase 0)" >&2
+    echo "  # …run the e2e checklist Phase 0 → 5…" >&2
+    echo "  source $ROOT/activate.sh deactivate   # restore HOME/env when done" >&2
+    echo "  $(basename "$0") teardown          # delete the sandbox dir" >&2
+}
+
+cmd_teardown() {
+    _assert_safe_root "$ROOT"
+    [[ -d "$ROOT" ]] || { info "No sandbox at $ROOT — nothing to tear down."; return 0; }
+
+    if [[ -n "${CCO_SANDBOX_ROOT:-}" && "$(_strip_slash "$CCO_SANDBOX_ROOT")" == "$ROOT" ]]; then
+        warn "This sandbox is currently ACTIVE (HOME is inside it). After teardown, run"
+        warn "  export HOME=\"\${CCO_SANDBOX_OLD_HOME:-\$HOME}\"   or open a new shell."
+    fi
+
+    info "Sandbox root: $ROOT  ($(_dir_size "$ROOT"))"
+    _confirm "Delete the sandbox root and everything in it?" \
+        || { info "Aborted — nothing changed."; return 0; }
+    rm -rf "$ROOT"
+    ok "Removed sandbox: $ROOT"
+}
+
+cmd_status() {
+    info "Sandbox root: $ROOT"
+    if [[ -d "$ROOT" ]]; then
+        ok "Present ($(_dir_size "$ROOT")). Vault copy: $([[ -d "$ROOT/user-config" ]] && _dir_size "$ROOT/user-config" || echo missing)"
+    else
+        warn "Absent — run 'setup' to create it."
+    fi
+    if [[ -n "${CCO_SANDBOX_ROOT:-}" && "$(_strip_slash "$CCO_SANDBOX_ROOT")" == "$ROOT" ]]; then
+        ok "This shell is ACTIVE in the sandbox (HOME=$HOME)."
+    else
+        info "This shell is NOT active in the sandbox (source $ROOT/activate.sh to enter)."
+    fi
+}
+
+usage() { sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed '/^set -euo/d; s/^# \{0,1\}//'; }
+
+main() {
+    local cmd="${1:-}"
+    case "$cmd" in
+        setup|teardown|status) shift ;;
+        -h|--help) usage; exit 0 ;;
+        "") usage; exit 0 ;;
+        *) die "Unknown command: $cmd (use setup | teardown | status)." ;;
+    esac
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --vault) VAULT="$2"; shift 2 ;;
+            --root)  ROOT="$2"; ROOT_EXPLICIT=true; shift 2 ;;
+            --force) FORCE=true; shift ;;
+            -y|--yes) ASSUME_YES=true; shift ;;
+            -h|--help) usage; exit 0 ;;
+            *) die "Unknown option: $1" ;;
+        esac
+    done
+
+    # Normalize and reconcile with the active sandbox (if any). When this shell is
+    # active, CCO_SANDBOX_ROOT is the source of truth — a bare `status`/`teardown`
+    # targets it. A passed --root that diverges is almost always a `~` that got
+    # re-expanded against the redirected HOME — warn instead of acting on garbage.
+    ROOT="$(_strip_slash "$ROOT")"
+    local active_root; active_root="$(_strip_slash "${CCO_SANDBOX_ROOT:-}")"
+    if [[ -n "$active_root" ]] && $ROOT_EXPLICIT && [[ "$active_root" != "$ROOT" ]]; then
+        warn "This shell is ACTIVE in sandbox '$active_root', but --root resolved to '$ROOT'."
+        warn "While active, omit --root (commands target the active sandbox). Note: '~' now expands INSIDE the sandbox HOME."
+    fi
+
+    case "$cmd" in
+        setup)    cmd_setup ;;
+        teardown) cmd_teardown ;;
+        status)   cmd_status ;;
+    esac
+}
+
+main "$@"
