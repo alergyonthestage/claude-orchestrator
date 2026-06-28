@@ -600,6 +600,23 @@ _relocate_legacy_pack_sources() {
     done
 }
 
+# Relocate every installed template's legacy in-tree source into DATA — the
+# template twin of _relocate_legacy_pack_sources (GAP-2). The global migration
+# copies templates wholesale (with their .cco/source); without this the
+# provenance stays in-tree and `cco template update` can no longer find the
+# template's source. Idempotent (the generic relocator removes the legacy file);
+# usually a no-op.
+_relocate_legacy_template_sources() {
+    [[ -d "${TEMPLATES_DIR:-}" ]] || return 0
+    local t_dir
+    for t_dir in "$TEMPLATES_DIR"/*/; do
+        [[ -d "$t_dir" ]] || continue
+        [[ -f "$t_dir/.cco/source" ]] || continue
+        _relocate_legacy_source "$t_dir/.cco/source" \
+            "$(_cco_template_source "$t_dir")" "$(_cco_template_meta "$t_dir")"
+    done
+}
+
 # The project's origin profile (the non-default branch whose .vault-profile lists
 # it under sync.projects), or empty if shared/on the default branch.
 _cco_project_origin_profile() {

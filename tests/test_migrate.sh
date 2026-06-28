@@ -765,3 +765,37 @@ test_relocate_legacy_pack_source_bare_url() {
     assert_file_contains "$(data_pack_source bare-pack)" "url: https://github.com/team/cfg.git" || return 1
     assert_file_not_exists "$CCO_PACKS_DIR/bare-pack/.cco/source" || return 1
 }
+
+test_relocate_legacy_template_source_to_data() {
+    # GAP-2: an installed template's legacy in-tree .cco/source must relocate to
+    # DATA (coordinate) + STATE (provenance) — the template twin of the pack
+    # relocation, so `cco template update` keeps finding its source.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/yaml.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/update-meta.sh"
+    source "$REPO_ROOT/lib/migrate.sh"
+    TEMPLATES_DIR="$CCO_TEMPLATES_DIR"
+
+    mkdir -p "$CCO_TEMPLATES_DIR/legacy-tmpl/.cco"
+    printf 'source: git@example.com:team/tmpls.git\npath: templates/legacy-tmpl\nref: main\ncommit: cafebabe\ninstalled: 2026-01-01\nupdated: 2026-01-02\n' \
+        > "$CCO_TEMPLATES_DIR/legacy-tmpl/.cco/source"
+
+    _relocate_legacy_template_sources
+
+    local new_src; new_src=$(data_template_source legacy-tmpl)
+    assert_file_exists "$new_src" || return 1
+    assert_file_contains "$new_src" "url: git@example.com:team/tmpls.git" || return 1
+    assert_file_contains "$new_src" "resource: templates/legacy-tmpl" || return 1
+    assert_file_contains "$new_src" "ref: main" || return 1
+    grep -q '^source:' "$new_src" && { echo "ASSERTION FAILED: legacy 'source:' key not renamed to 'url:'"; return 1; }
+    assert_file_not_exists "$CCO_TEMPLATES_DIR/legacy-tmpl/.cco/source" || return 1
+    assert_file_contains "$CCO_STATE_HOME/templates/legacy-tmpl/update/meta" "installed_commit: cafebabe" || return 1
+
+    # Idempotent: a second pass is a clean no-op.
+    _relocate_legacy_template_sources || return 1
+    assert_file_exists "$new_src" || return 1
+}

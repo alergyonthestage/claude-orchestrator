@@ -142,10 +142,11 @@ cmd_update() {
     # cco init may seed global from defaults). Skipped in preview (--dry-run).
     if ! $dry_run; then
         _cco_migrate_global || true
-        # Relocate any legacy in-tree pack provenance into DATA (ADR-0022 D1).
-        # Idempotent + not marker-gated, so packs migrated by a pre-P4 cco are
-        # caught on the next update too.
+        # Relocate any legacy in-tree pack/template provenance into DATA (ADR-0022
+        # D1). Idempotent + not marker-gated, so resources migrated by a pre-P4 cco
+        # are caught on the next update too.
         _relocate_legacy_pack_sources || true
+        _relocate_legacy_template_sources || true
     fi
 
     # Validate scope: "global" is a keyword (see RESERVED_PROJECT_NAMES),
