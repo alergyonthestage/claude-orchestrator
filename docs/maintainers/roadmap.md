@@ -133,12 +133,17 @@ Real-host migration of `cave-flow` surfaced a sequence of defects; fixing them a
   broke the compose. Added a DRY `_compose_vol()` emitter (double-quoted) routed through every
   bind-mount site (`cmd-start.sh`/`packs.sh`/`llms.sh`); verified with `docker compose config`
   on space-bearing paths. Suite 950 → 953/0.
-- **C — `cco list` packs UX** ⏳ — the packs table wraps / mis-paginates; add tag sort +
-  ascending/descending choice. *Separate session.*
+- **C — `cco list` packs UX** ⏳ — the packs table wraps / mis-paginates (hardcoded column
+  widths in `cmd_list`/`cmd_pack_list`); add tag sort + ascending/descending choice (additive
+  flags refining ADR-0029 D1, no new ADR). *Separate session.*
 - **D — `cco project rename`** ⏳ — no supported rename flow exists. A correct rename must
-  atomically update `project.yml` in every member repo, the STATE index membership, the DATA
-  tags (keyed by project name), and the STATE/CACHE/DATA identity-keyed dirs (memory/session,
-  source, meta). New verb (+ ADR). *Separate session.*
+  atomically re-key the project identity across: `project.yml` `name:` in every member repo, the
+  STATE index membership, the DATA tags (keyed by project name), and the STATE/CACHE/DATA
+  identity-keyed dirs (memory/session, source, meta). New verb + **ADR-0031**. *Separate session.*
+
+  Both C and D are scoped in the handoff:
+  [`configuration/decentralized-config/cd-list-rename-handoff.md`](configuration/decentralized-config/cd-list-rename-handoff.md)
+  (symptoms, code map, suggested approach, decisions, test plan).
 
 ### Pre-merge: flatten `~/.cco/global/.claude/` → `~/.cco/.claude/` ✅ DONE (2026-06-27)
 
