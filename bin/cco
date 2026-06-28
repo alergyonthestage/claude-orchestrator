@@ -149,7 +149,9 @@ EOF
 # ── Main ─────────────────────────────────────────────────────────────
 
 cmd="${1:-}"
-[[ -z "$cmd" ]] && { usage; exit 0; }
+# No command → print usage and exit cleanly. Mark completion so the EXIT trap
+# does not misreport this normal exit-0 path as an unexpected crash.
+[[ -z "$cmd" ]] && { usage; _cco_completed=true; exit 0; }
 shift
 
 # J0 first-run bootstrap of the four decentralized-config roots + the legacy-
