@@ -175,7 +175,7 @@ _generate_pack_mounts() {
             _k_source=$(yml_get_pack_knowledge_source "$_pyml")
             _k_dir="${_k_source:-$_proot/knowledge}"
             _k_dir=$(expand_path "$_k_dir")
-            [[ -d "$_k_dir" ]] && echo "      - ${_k_dir}:/workspace/.claude/packs/${_pname}:ro"
+            [[ -d "$_k_dir" ]] && _compose_vol "${_k_dir}" "/workspace/.claude/packs/${_pname}" "ro"
         fi
 
         # Rules: individual file mounts (Claude Code reads flat *.md in rules/)
@@ -185,7 +185,7 @@ _generate_pack_mounts() {
             while IFS= read -r _rf; do
                 [[ -z "$_rf" ]] && continue
                 local _rsrc="$_proot/rules/${_rf}"
-                [[ -f "$_rsrc" ]] && echo "      - ${_rsrc}:/workspace/.claude/rules/${_rf}:ro"
+                [[ -f "$_rsrc" ]] && _compose_vol "${_rsrc}" "/workspace/.claude/rules/${_rf}" "ro"
             done <<< "$_rules"
         fi
 
@@ -196,7 +196,7 @@ _generate_pack_mounts() {
             while IFS= read -r _af; do
                 [[ -z "$_af" ]] && continue
                 local _asrc="$_proot/agents/${_af}"
-                [[ -f "$_asrc" ]] && echo "      - ${_asrc}:/workspace/.claude/agents/${_af}:ro"
+                [[ -f "$_asrc" ]] && _compose_vol "${_asrc}" "/workspace/.claude/agents/${_af}" "ro"
             done <<< "$_agents"
         fi
 
@@ -207,7 +207,7 @@ _generate_pack_mounts() {
             while IFS= read -r _sf; do
                 [[ -z "$_sf" ]] && continue
                 local _ssrc="$_proot/skills/${_sf}"
-                [[ -d "$_ssrc" ]] && echo "      - ${_ssrc}:/workspace/.claude/skills/${_sf}:ro"
+                [[ -d "$_ssrc" ]] && _compose_vol "${_ssrc}" "/workspace/.claude/skills/${_sf}" "ro"
             done <<< "$_skills"
         fi
     done <<< "$pack_names"

@@ -120,7 +120,7 @@ _generate_llms_mounts() {
         [[ -z "$lname" ]] && continue
         local llms_dir="$LLMS_DIR/$lname"
         if [[ -d "$llms_dir" ]]; then
-            echo "      - ${llms_dir}:/workspace/.claude/llms/${lname}:ro"
+            _compose_vol "${llms_dir}" "/workspace/.claude/llms/${lname}" "ro"
         else
             warn "LLMs '$lname': directory not found at $llms_dir (run 'cco llms install' first)"
         fi

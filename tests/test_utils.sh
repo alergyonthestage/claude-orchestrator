@@ -82,3 +82,27 @@ test_peel_tab_preserves_spaces_in_field() {
     _peel_tab "$(printf 'n\ta b  c')" name desc
     [[ "$desc" == "a b  c" ]] || fail "spaces must be preserved, got: $desc"
 }
+
+# _compose_vol — bind-mount volume lines must be YAML-double-quoted so a host
+# path with a space (e.g. `Cave gif`) or a leading reserved char (`@`) cannot
+# break `docker compose` parsing ('found character that cannot start any token').
+test_compose_vol_quotes_space_path() {
+    _utils_test_env
+    local out; out=$(_compose_vol "/home/Cave gif" "/workspace/ref" "ro")
+    assert_equals '      - "/home/Cave gif:/workspace/ref:ro"' "$out" \
+        "a space-bearing host path must be double-quoted, with the mode suffix"
+}
+
+test_compose_vol_no_mode_omits_suffix() {
+    _utils_test_env
+    local out; out=$(_compose_vol "/a b" "/c")
+    assert_equals '      - "/a b:/c"' "$out" "no mode → quoted host:container, no trailing :mode"
+}
+
+test_compose_vol_quotes_reserved_leading_char() {
+    _utils_test_env
+    # An '@'-leading source (reserved YAML indicator) must be quoted so it stays
+    # a plain scalar instead of an alias/tag token that aborts the parser.
+    local out; out=$(_compose_vol "@local" "/workspace/x" "ro")
+    assert_equals '      - "@local:/workspace/x:ro"' "$out" "a reserved leading char must be quoted"
+}

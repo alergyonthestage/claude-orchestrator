@@ -39,6 +39,22 @@ _cco_have_tty() {
     (exec < /dev/tty) 2>/dev/null
 }
 
+# Emit one docker-compose short-syntax bind-mount line, YAML-DOUBLE-QUOTED so a
+# host path containing a space or a YAML-special char (e.g. a folder like
+# `Cave gif`, or a leading `@`/`#`) cannot break `docker compose` parsing
+# ('found character that cannot start any token'). Compose's own ':' volume
+# splitting and `${VAR}` interpolation still apply to the quoted value (both run
+# after YAML parsing). $1=host source, $2=container target, $3=mode (ro|rw|"").
+# (Paths containing a literal '"' are not supported — not a real bind-mount case.)
+_compose_vol() {
+    local src="$1" tgt="$2" mode="${3:-}"
+    if [[ -n "$mode" ]]; then
+        printf '      - "%s:%s:%s"\n' "$src" "$tgt" "$mode"
+    else
+        printf '      - "%s:%s"\n' "$src" "$tgt"
+    fi
+}
+
 # Parse a CLI --mount spec into an "<abs_source>\t<target>\t<ro>" line
 # (the same TSV shape _effective_extra_mounts emits, so the compose-gen
 # consumes both uniformly). Spec: "src[:target][:ro|:rw]".

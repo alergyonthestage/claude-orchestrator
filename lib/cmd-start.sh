@@ -627,29 +627,30 @@ YAML
         if $is_internal || $enable_config_edit; then _committed_ro=""; fi
 
         # ~/.claude.json — preferences, MCP servers, session metadata (machine-local STATE)
-        echo "      - ${state_root}/claude.json:/home/claude/.claude.json"
+        _compose_vol "${state_root}/claude.json" "/home/claude/.claude.json"
         # ~/.claude/.credentials.json — OAuth tokens (machine-local STATE, never synced)
-        echo "      - ${state_root}/.credentials.json:/home/claude/.claude/.credentials.json"
+        _compose_vol "${state_root}/.credentials.json" "/home/claude/.claude/.credentials.json"
 
-        # Global config
-        cat <<YAML
-      # Global config (settings.json is rw — Claude Code writes runtime preferences like /effort)
-      - ${global_claude}/settings.json:/home/claude/.claude/settings.json
-      - ${global_claude}/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
-      - ${global_claude}/rules:/home/claude/.claude/rules:ro
-      - ${global_claude}/agents:/home/claude/.claude/agents:ro
-      - ${global_claude}/skills:/home/claude/.claude/skills:ro
-      # Project config. The Claude config tree (CLAUDE.md/rules/agents/skills)
-      # stays rw so /init + normal project-config authoring work (P17); the
-      # structural framework config (project.yml/secrets/.cco metadata) is
-      # protected separately by the <repo>/.cco :ro overlay below (ADR-0027 D3).
-      - ${claude_src}:/workspace/.claude
-      - ${project_dir}/project.yml:/workspace/project.yml:ro
-      # Claude state: session transcripts (machine-local STATE; enables /resume across rebuilds)
-      - $(_cco_project_session_transcripts "$project_name"):/home/claude/.claude/projects/-workspace
-      # Memory: auto memory files (machine-local STATE, separate from transcripts)
-      - $(_cco_project_session_memory "$project_name"):/home/claude/.claude/projects/-workspace/memory
-YAML
+        # Global config (settings.json is rw — Claude Code writes runtime preferences like /effort)
+        echo "      # Global config (settings.json is rw — Claude Code writes runtime preferences like /effort)"
+        _compose_vol "${global_claude}/settings.json" "/home/claude/.claude/settings.json"
+        _compose_vol "${global_claude}/CLAUDE.md" "/home/claude/.claude/CLAUDE.md" "ro"
+        _compose_vol "${global_claude}/rules" "/home/claude/.claude/rules" "ro"
+        _compose_vol "${global_claude}/agents" "/home/claude/.claude/agents" "ro"
+        _compose_vol "${global_claude}/skills" "/home/claude/.claude/skills" "ro"
+        # Project config. The Claude config tree (CLAUDE.md/rules/agents/skills)
+        # stays rw so /init + normal project-config authoring work (P17); the
+        # structural framework config (project.yml/secrets/.cco metadata) is
+        # protected separately by the <repo>/.cco :ro overlay below (ADR-0027 D3).
+        echo "      # Project config (.cco/claude is rw for /init authoring; .cco metadata is :ro below, ADR-0027 D3)"
+        _compose_vol "${claude_src}" "/workspace/.claude"
+        _compose_vol "${project_dir}/project.yml" "/workspace/project.yml" "ro"
+        # Claude state: session transcripts (machine-local STATE; enables /resume across rebuilds)
+        echo "      # Claude state: session transcripts (machine-local STATE; /resume across rebuilds)"
+        _compose_vol "$(_cco_project_session_transcripts "$project_name")" "/home/claude/.claude/projects/-workspace"
+        # Memory: auto memory files (machine-local STATE, separate from transcripts)
+        echo "      # Memory: auto memory files (machine-local STATE, separate from transcripts)"
+        _compose_vol "$(_cco_project_session_memory "$project_name")" "/home/claude/.claude/projects/-workspace/memory"
 
         # Generated .claude overlays (packs.md, workspace.yml) → CACHE, layered
         # :ro on top of the rw project .claude mount above (ADR-0005 F1/F3).
@@ -657,46 +658,46 @@ YAML
         # the parent stays rw while these stay read-only; the committed project
         # .claude/ is never written by cco start.
         if [[ -f "$claude_gen_dir/packs.md" ]]; then
-            echo "      - ${session_cache_dir}/.claude/packs.md:/workspace/.claude/packs.md:ro"
+            _compose_vol "${session_cache_dir}/.claude/packs.md" "/workspace/.claude/packs.md" "ro"
         fi
         if [[ -f "$claude_gen_dir/workspace.yml" ]]; then
-            echo "      - ${session_cache_dir}/.claude/workspace.yml:/workspace/.claude/workspace.yml:ro"
+            _compose_vol "${session_cache_dir}/.claude/workspace.yml" "/workspace/.claude/workspace.yml" "ro"
         fi
 
         # Global MCP config (merged into ~/.claude.json by entrypoint)
         if [[ -f "$global_claude/mcp.json" ]]; then
             echo "      # Global MCP servers"
-            echo "      - ${global_claude}/mcp.json:/home/claude/.claude/mcp-global.json:ro"
+            _compose_vol "${global_claude}/mcp.json" "/home/claude/.claude/mcp-global.json" "ro"
         fi
 
         # Project MCP config (Claude Code expands ${VAR} natively)
         if [[ -f "$project_dir/mcp.json" ]]; then
             echo "      # Project MCP servers"
-            echo "      - ${project_dir}/mcp.json:/workspace/.mcp.json:ro"
+            _compose_vol "${project_dir}/mcp.json" "/workspace/.mcp.json" "ro"
         fi
 
         # Global runtime setup script (executed by entrypoint before project setup)
         if [[ -f "$config_dir/setup.sh" ]]; then
             echo "      # Global runtime setup"
-            echo "      - ${config_dir}/setup.sh:/home/claude/global-setup.sh:ro"
+            _compose_vol "${config_dir}/setup.sh" "/home/claude/global-setup.sh" "ro"
         fi
 
         # Project setup script (runtime, executed by entrypoint)
         if [[ -f "$project_dir/setup.sh" ]]; then
             echo "      # Project setup script"
-            echo "      - ${project_dir}/setup.sh:/workspace/setup.sh:ro"
+            _compose_vol "${project_dir}/setup.sh" "/workspace/setup.sh" "ro"
         fi
 
         # Project MCP packages (runtime, installed by entrypoint)
         if [[ -f "$project_dir/mcp-packages.txt" ]]; then
             echo "      # Project MCP packages"
-            echo "      - ${project_dir}/mcp-packages.txt:/workspace/mcp-packages.txt:ro"
+            _compose_vol "${project_dir}/mcp-packages.txt" "/workspace/mcp-packages.txt" "ro"
         fi
 
         # Managed integrations (framework-generated overlays → CACHE, :ro)
         if [[ -d "$managed_gen_dir" ]] && [[ -n "$(ls -A "$managed_gen_dir" 2>/dev/null)" ]]; then
             echo "      # Managed integrations"
-            echo "      - ${session_cache_dir}/managed:/workspace/.managed:ro"
+            _compose_vol "${session_cache_dir}/managed" "/workspace/.managed" "ro"
         fi
 
         # Repository mounts. Unresolved references were already dropped upstream
@@ -706,7 +707,7 @@ YAML
         echo "      # Repositories"
         while IFS=$'\t' read -r repo_name repo_path; do
             [[ -z "$repo_name" ]] && continue
-            echo "      - ${repo_path}:/workspace/${repo_name}"
+            _compose_vol "${repo_path}" "/workspace/${repo_name}"
         done < <(_effective_repo_mounts "$project_yml")
 
         # Edit-protection (ADR-0027 D3): overlay each repo's committed .cco as
@@ -720,7 +721,7 @@ YAML
             while IFS=$'\t' read -r repo_name repo_path; do
                 [[ -z "$repo_name" ]] && continue
                 [[ -d "$repo_path/.cco" ]] && \
-                    echo "      - ${repo_path}/.cco:/workspace/${repo_name}/.cco:ro"
+                    _compose_vol "${repo_path}/.cco" "/workspace/${repo_name}/.cco" "ro"
             done < <(_effective_repo_mounts "$project_yml")
         fi
 
@@ -734,8 +735,8 @@ YAML
             while IFS=$'\t' read -r _ms _mt _mro; do
                 [[ -z "$_ms" ]] && continue
                 _suffix=""
-                [[ "$_mro" == "true" ]] && _suffix=":ro"
-                echo "      - ${_ms}:${_mt}${_suffix}"
+                [[ "$_mro" == "true" ]] && _suffix="ro"
+                _compose_vol "$_ms" "$_mt" "$_suffix"
             done <<< "$extra_mounts"
         fi
 
@@ -747,8 +748,8 @@ YAML
             for _uline in "${user_mount_lines[@]}"; do
                 IFS=$'\t' read -r _us _ut _uro <<< "$_uline"
                 _usuffix=""
-                [[ "$_uro" == "true" ]] && _usuffix=":ro"
-                echo "      - ${_us}:${_ut}${_usuffix}"
+                [[ "$_uro" == "true" ]] && _usuffix="ro"
+                _compose_vol "$_us" "$_ut" "$_usuffix"
             done
         fi
 
@@ -760,15 +761,15 @@ YAML
 
         # Git identity (commit author — read-only, no SSH keys)
         echo "      # Git identity"
-        echo "      - \${HOME}/.gitconfig:/home/claude/.gitconfig:ro"
+        _compose_vol "\${HOME}/.gitconfig" "/home/claude/.gitconfig" "ro"
 
         # Docker socket (opt-in via docker.mount_socket: true)
         if [[ "$mount_socket" == "true" ]]; then
             echo "      # Docker socket"
-            echo "      - /var/run/docker.sock:/var/run/docker.sock"
+            _compose_vol "/var/run/docker.sock" "/var/run/docker.sock"
             # Policy file for socket proxy (if generated)
             if [[ -f "$managed_gen_dir/policy.json" ]]; then
-                echo "      - ${session_cache_dir}/managed/policy.json:/etc/cco/policy.json:ro"
+                _compose_vol "${session_cache_dir}/managed/policy.json" "/etc/cco/policy.json" "ro"
             fi
         fi
 

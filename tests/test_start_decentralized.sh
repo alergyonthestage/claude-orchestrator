@@ -90,7 +90,7 @@ test_start_unresolved_member_excluded_and_badged() {
     if grep -qE ":/workspace/ghost-repo" "$compose"; then
         fail "Unresolved member ghost-repo must not be mounted"
     fi
-    if grep -qE "^\s*- :/workspace/" "$compose"; then
+    if grep -qE "^\s*- \"?:/workspace/" "$compose"; then
         fail "No silent empty mount (#B17) may be emitted"
     fi
 }

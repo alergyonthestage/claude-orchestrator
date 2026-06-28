@@ -262,7 +262,7 @@ test_dry_run_memory_mount_after_claude_state() {
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     local state_line memory_line
-    state_line=$(grep -n "session/claude-state.*-workspace$" "$compose" | head -1 | cut -d: -f1)
+    state_line=$(grep -n "session/claude-state.*-workspace\"\?$" "$compose" | head -1 | cut -d: -f1)
     memory_line=$(grep -n "memory.*-workspace/memory" "$compose" | head -1 | cut -d: -f1)
     if [[ -z "$state_line" || -z "$memory_line" ]]; then
         echo "ASSERTION FAILED: could not find claude-state or memory mount line"
@@ -292,13 +292,13 @@ test_dry_run_project_claude_mounted_readwrite() {
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     # Parent mount present: a volume line whose container side is exactly
     # /workspace/.claude (the child overlays carry a deeper path).
-    if ! grep -qE ':/workspace/\.claude$' "$compose"; then
+    if ! grep -qE ':/workspace/\.claude"?$' "$compose"; then
         echo "ASSERTION FAILED: project .claude parent mount not found"
         cat "$compose"
         return 1
     fi
     # The parent must NOT be read-only (it stays rw so in-session edits persist).
-    if grep -qE ':/workspace/\.claude:ro$' "$compose"; then
+    if grep -qE ':/workspace/\.claude:ro"?$' "$compose"; then
         echo "ASSERTION FAILED: project .claude must be rw, not :ro"
         return 1
     fi
@@ -769,7 +769,7 @@ test_dry_run_volume_order_global_before_project() {
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     local settings_line project_line
     settings_line=$(grep -n "settings.json:/home/claude" "$compose" | head -1 | cut -d: -f1)
-    project_line=$(grep -nE ":/workspace/\.claude$" "$compose" | head -1 | cut -d: -f1)
+    project_line=$(grep -nE ":/workspace/\.claude\"?$" "$compose" | head -1 | cut -d: -f1)
     if [[ -z "$settings_line" || -z "$project_line" ]]; then
         echo "ASSERTION FAILED: could not find settings or project config line"
         return 1
