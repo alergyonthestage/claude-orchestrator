@@ -513,7 +513,7 @@ _migrate_legacy_mounts() {
     awk '
         function val(l,  v){ v=l; sub(/^[a-z_]+: */,"",v); gsub(/["\047]/,"",v); sub(/ *#.*$/,"",v); gsub(/^ +| +$/,"",v); return v }
         function field(l,  k){ k=l; sub(/:.*/,"",k); gsub(/^ +/,"",k);
-            if(k=="source")source=val(l); else if(k=="name")name=val(l);
+            if(k=="source"||k=="path")source=val(l); else if(k=="name")name=val(l);
             else if(k=="target")target=val(l); else if(k=="readonly")ro=val(l) }
         function flush(){ if(source!="" || name!="" || target!="") print name "\t" source "\t" target "\t" ro;
             name=source=target=ro="" }
@@ -706,15 +706,27 @@ _cco_build_project_yml() {
             printf '\n  - name: %s' "$mname"
             [[ -n "$mtgt" ]] && printf '\n    target: %s' "$mtgt"
             [[ -n "$mro"  ]] && printf '\n    readonly: %s' "$mro"
-            # Expand ~ / $HOME so the index holds an absolute host path.
+            # Resolve the host source to an ABSOLUTE path for the index. A real
+            # path (expand ~/$HOME) wins; the legacy `@local` marker / empty /
+            # any non-absolute value resolves via local-paths.yml (extra_mounts,
+            # then mounts) exactly like repos. NEVER write `@local` — it is not a
+            # path; leaked into the index it reaches the compose as a bogus mount
+            # source whose leading `@` is a reserved YAML char that breaks
+            # `docker compose`. Unresolvable → no index entry (conscious-skip at
+            # start; the user binds it later with `cco resolve`).
             local _ms="$msrc"
             case "$_ms" in
+                /*) ;;                                       # already absolute
                 "~")        _ms="$HOME" ;;
                 "~/"*)      _ms="$HOME/${_ms#\~/}" ;;
                 '$HOME')    _ms="$HOME" ;;
                 '$HOME/'*)  _ms="$HOME/${_ms#\$HOME/}" ;;
+                *)  # @local / relative / empty → recover the real path from local-paths.yml
+                    _ms=$(_local_paths_get "$lpaths" extra_mounts "$mname")
+                    [[ -z "$_ms" ]] && _ms=$(_local_paths_get "$lpaths" mounts "$mname")
+                    ;;
             esac
-            [[ -n "$_ms" ]] && printf '%s\t%s\tmount\n' "$mname" "$_ms" >> "$idx_out"
+            [[ "$_ms" == /* ]] && printf '%s\t%s\tmount\n' "$mname" "$_ms" >> "$idx_out"
         done < <(_migrate_legacy_mounts "$leg_yml")
         $mfirst || printf '\n'
         # llms — coordinate from the installed entry's .cco/source (url/variant)

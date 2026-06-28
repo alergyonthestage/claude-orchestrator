@@ -419,6 +419,10 @@ extra_mounts:
   - source: ~/extra-docs
     target: /workspace/extra-docs
     readonly: true
+  - source: "@local"
+    name: shared-data
+    target: /workspace/shared-data
+    readonly: false
 llms:
   - react
 packs:
@@ -456,6 +460,8 @@ YML
 repos:
   api: "/home/dev/api"
   web: "/home/dev/web"
+extra_mounts:
+  shared-data: "/home/dev/shared-data"
 YML
     echo "source: https://github.com/org/cco-sharing.git" > "$vault/packs/team-pack/.cco/source"
     echo "name: team-pack" > "$vault/packs/team-pack/pack.yml"
@@ -525,6 +531,13 @@ test_migrate_project_preserves_all_config() {
     if grep '^myapp:' "$CCO_STATE_HOME/index" 2>/dev/null | grep -q 'extra-docs'; then
         fail "extra_mounts must not join project membership (kind=mount), only the index path"
     fi
+
+    # B fix: a legacy `@local` mount source must resolve to the REAL path via
+    # local-paths.yml — never `@local` (its leading `@` is a reserved YAML char
+    # that breaks the generated docker-compose).
+    assert_file_contains "$yml" "name: shared-data"
+    assert_file_not_contains "$yml" "@local"
+    assert_file_contains "$CCO_STATE_HOME/index" 'shared-data: "/home/dev/shared-data"'
 }
 
 test_migrate_project_registers_index() {
