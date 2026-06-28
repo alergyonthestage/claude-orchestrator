@@ -141,6 +141,19 @@ confirm before scheduling. None blocks the v1 merge.
   internalize-as-cache interactive prompt (ADR-0019 D6).
 - **State-sync (T / R-state-sync)** — opt-in cross-PC/cross-team sync of STATE + DATA
   (memory, transcripts, tags, provenance). Largest deferred item; needs its own design.
+  - *Idea to analyze & expand — background sync daemon (user-local cross-PC STATE).* A native
+    daemon started at login that keeps a single user's STATE (sessions, history, memory) in
+    sync across their own machines — precisely the data where git is a poor fit (append-heavy,
+    high-frequency, machine-local), which is why STATE is never-sync in v1. Three scopes to
+    evaluate separately: **(a)** user-local cross-PC STATE sync = the real new value the daemon
+    unlocks; **(b)** frictionless `~/.cco` vault sync = automation *over git* (daemon as a
+    scheduler/watcher for `cco config push/pull`), not a new engine; **(c)** peer/team
+    transport = a separate, larger bet. **Boundary to preserve:** git stays the one engine for
+    vault sync (project `.cco` + `~/.cco`) and resource sharing — the daemon owns only what git
+    can't carry well. Open questions: conflict model for concurrent sessions (per-device
+    namespacing / last-writer-wins / CRDT), secret exposure of synced sessions+memory, daemon
+    lifecycle (launchd/systemd) vs the dependency-light bash CLI, and reconciling identity/trust
+    without re-introducing the gatekeeping that P7/P8/P17 deliberately delegated to git.
 - **`cco project internalize` (Case-C)** + `~/.cco/projects/` config home — sever a
   project's config from its code repo (solo-adopter case). Name reserved (ADR-0023 D4).
 - **Index per-project namespacing** (ADR-0022 D2) — only when real name collisions appear.
