@@ -30,6 +30,23 @@ _cco_host_side_ok() {
     return 0
 }
 
+# Remove a migration temp/stage dir quietly and completely. The extracted vault
+# can carry read-only or macOS-immutable trees (e.g. installed llms docs) that
+# block a plain `rm -rf` — clear the immutable flag + force write first, and never
+# leak the internal `rm:` chatter to the user (UX: elegant output, no raw tool
+# noise). At most one clean warning if something genuinely cannot be removed.
+_cco_rm_temp() {
+    local d="$1"
+    [[ -n "$d" && -e "$d" ]] || return 0
+    chflags -R nouchg "$d" 2>/dev/null || true   # macOS user-immutable flag (no-op elsewhere)
+    chmod -R -N "$d" 2>/dev/null || true         # strip macOS ACLs (e.g. a deny-delete ACL that
+                                                 # bsdtar round-trips from the vault's llms dirs)
+    chmod -R u+rwx "$d" 2>/dev/null || true
+    rm -rf "$d" 2>/dev/null || true
+    [[ -e "$d" ]] && warn "A temporary working directory could not be fully removed: $d"
+    return 0
+}
+
 # ── J0 four-root bootstrap (ADR-0017 D3) ─────────────────────────────
 # Create the four decentralized-config roots when missing, on ANY command.
 # Per-root idempotent (M6): each XDG resolver mkdir -p's only its own root, so a
@@ -390,17 +407,17 @@ _cco_migrate_global() {
     local tmp
     tmp=$(mktemp -d "${TMPDIR:-/tmp}/cco-migrate.XXXXXX") || { warn "Could not create a temp dir for migration."; return 1; }
     if ! tar -xzf "$backup" -C "$tmp" 2>/dev/null; then
-        rm -rf "$tmp"
+        _cco_rm_temp "$tmp"
         warn "Could not read the legacy-vault backup — global migration skipped; retry on the next 'cco update'."
         return 1
     fi
 
     if ! _cco_populate_global_from "$tmp"; then
-        rm -rf "$tmp"
+        _cco_rm_temp "$tmp"
         warn "Global migration did not complete — your legacy vault is untouched; retry on the next 'cco update'."
         return 1
     fi
-    rm -rf "$tmp"
+    _cco_rm_temp "$tmp"
     # Record the gate only after a successful populate (ADR-0026): a failed populate
     # must stay retryable on the next 'cco update', and must not leak its temp (H1).
     _cco_marker_add "$marker" global-migrated
@@ -634,7 +651,7 @@ _cco_migrate_project() {
     # shellcheck disable=SC2064
     # EXIT (not RETURN): die() calls exit, which bypasses a RETURN trap and would
     # leave the extracted vault — including secrets.env — behind in /tmp (H2).
-    trap "rm -rf '$tmp'" EXIT
+    trap "_cco_rm_temp '$tmp'" EXIT
     tar -xzf "$backup" -C "$tmp" 2>/dev/null || die "Could not extract the legacy-vault backup."
 
     # Locate the legacy project (working-tree first; else from its profile branch).
@@ -689,7 +706,7 @@ _cco_migrate_project() {
     local stage; stage=$(mktemp -d "$target/.cco-stage.XXXXXX") \
         || die "Could not create a staging dir in $target (is it writable?)."
     # shellcheck disable=SC2064
-    trap "rm -rf '$tmp' '$stage'" EXIT
+    trap "_cco_rm_temp '$tmp'; _cco_rm_temp '$stage'" EXIT
     mkdir -p "$stage/claude"
     _cco_build_project_yml "$leg" "$stage/project.yml" "$idx" "$tmp"
     # Authored config tree: legacy projects/<p>/.claude → .cco/claude.
