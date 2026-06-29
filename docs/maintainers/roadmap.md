@@ -19,8 +19,12 @@ hidden XDG buckets. The work is now in the **pre-merge review cycle**: the imple
 review, the documentation review (reorg + coherence sweep), the pre-merge **flatten**
 (`~/.cco/global/.claude` → `~/.cco/.claude`, ADR-0028), the **refactoring/optimization
 review** (step 3), the **UX-UI review** (step 4, ADR-0029), and the **comprehensive pre-e2e
-review** (step 5, suite 943/0 → **945/0**) are all done. **Next: dogfooding e2e on the Mac
-(step 6)** — then the v1 merge/release (step 7).
+review** (step 5, suite 943/0 → **945/0**) are all done. **Dogfooding e2e on the Mac (step 6) is
+now in progress** — host runs of real projects surfaced fix rounds (round 2 = ADR-0032 pack/llms
+coordinate coherence; **round 3** = first `cco start` of claude-orchestrator itself). **Round 3
+S1 (resolution surface + index normalization) is shipped** — ADR-0033 + cleanup migration `016` +
+changelog #21, suite **989/0**; **S2 (migration completeness, merge-blocker) is next**, then S3,
+then the v1 merge/release (step 7).
 
 ## Decentralized-config v1 — phase index
 
@@ -190,7 +194,7 @@ in-container. changelog **#19** + **#20**.
 
 Residual gate: Mac host re-validation (`e2e-validation-checklist.md`) before merge.
 
-#### Round 3 (first real `cco start` of `claude-orchestrator` itself via decentralized-config, 2026-06-29) — ▶ PLANNED
+#### Round 3 (first real `cco start` of `claude-orchestrator` itself via decentralized-config, 2026-06-29) — ▶ IN PROGRESS (S1 ✅ done · S2 next · S3 queued)
 
 The project's own first migration + start on the Mac surfaced four scopes of defects.
 Each was **verified against the shipped code** (read-only multi-agent analysis, file:line
