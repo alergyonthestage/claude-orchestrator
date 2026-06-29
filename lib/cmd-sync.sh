@@ -17,13 +17,21 @@
 # never overwritten — no override. A repo hosts at most one project (= one dev
 # scope); it may be REFERENCED by N others (resolved via the index, never synced).
 #
-# Command forms (§4.2; positional = TARGET, --from = SOURCE, default source = cwd):
-#   cco sync                      source = cwd repo,  targets = all other members
-#   cco sync <repo>               source = cwd repo,  target  = <repo>
-#   cco sync --from <repo>        source = <repo>,    targets = all other members
-#   cco sync <repoA> --from <repoB>  source = <repoB>, target = <repoA>
-# Flags: --dry-run (preview), --auto-approve (skip confirm), --check (exit-code
-# only — 0 in sync, 1 if any target differs; for the user's own CI/hooks).
+# Command forms (§4.2, ADR-0035; positional = TARGET, --from = SOURCE, and the
+# cwd repo is the OTHER endpoint by default — cwd-anchored like the rest of the CLI):
+#   cco sync                      cwd repo -> all other members  (broadcast from here)
+#   cco sync <repo>               cwd repo -> <repo>             (push here -> one)
+#   cco sync --from <repo>        <repo>   -> cwd repo           (pull one -> here)
+#   cco sync <repoA> --from <repoB>  <repoB> -> <repoA>          (explicit one -> one)
+#   cco sync --from <repo> --all  <repo>   -> all other members  (broadcast from elsewhere)
+# Without an explicit target, --from targets the member repo the cwd sits in (the
+# natural "pull into here", incl. a not-yet-initialised repo resolved in the index);
+# --all overrides that to broadcast. Bare `cco sync` broadcasts from the cwd. A
+# non-member cwd combined with --from (and no --all) is an error — nothing to target.
+# Flags: --dry-run (preview), --dump (with --dry-run: write the full per-target
+# diff to <target>/.cco/.tmp/sync-<source>.diff for inspection; clean with
+# `cco clean --tmp`), --auto-approve (skip confirm), --check (exit-code only —
+# 0 in sync, 1 if any target differs; for the user's own CI/hooks).
 #
 # After a real sync cco records the §4.6 fingerprint on every touched repo
 # (target + source), prints which repos changed, and runs the non-blocking
@@ -63,6 +71,30 @@ _sync_compute_diff() {
     return $changed
 }
 
+# Emit a compact per-file change summary (incoming = source over current =
+# target): one line per file that WOULD change — "+ <rel>  (new, N lines)" for an
+# addition, "~ <rel>  (mod, +A -D)" for a content change. Returns 0 if anything
+# would change, 1 if the target already matches. The default `cco sync` view: the
+# full diff stays one `--dry-run --dump` away, so the confirm prompt is readable.
+# Usage: _sync_summary <src_cco> <tgt_cco>
+_sync_summary() {
+    local src_cco="$1" tgt_cco="$2" rel changed=1 n adds dels
+    while IFS= read -r rel; do
+        [[ -z "$rel" ]] && continue
+        if [[ ! -e "$tgt_cco/$rel" ]]; then
+            changed=0
+            n=$(wc -l < "$src_cco/$rel" 2>/dev/null | tr -d ' '); n=${n:-0}
+            printf '   + %s  (new, %s lines)\n' "$rel" "$n"
+        elif ! diff -q "$src_cco/$rel" "$tgt_cco/$rel" >/dev/null 2>&1; then
+            changed=0
+            adds=$(diff "$tgt_cco/$rel" "$src_cco/$rel" 2>/dev/null | grep -c '^>')
+            dels=$(diff "$tgt_cco/$rel" "$src_cco/$rel" 2>/dev/null | grep -c '^<')
+            printf '   ~ %s  (mod, +%s -%s)\n' "$rel" "$adds" "$dels"
+        fi
+    done < <(_sync_synced_files "$src_cco")
+    return $changed
+}
+
 # Copy the source synced set into the target .cco/ (add/overwrite; never delete
 # target-only files). Usage: _sync_copy <src_cco> <tgt_cco>
 _sync_copy() {
@@ -75,7 +107,7 @@ _sync_copy() {
 }
 
 cmd_sync() {
-    local from="" target_name="" dry_run=false auto=false check=false
+    local from="" target_name="" dry_run=false auto=false check=false all=false dump=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -87,15 +119,23 @@ Copy a source repo's committed .cco/ config (project.yml + claude/**
 [+ secrets.env.example]) into target repos on this machine. Filesystem copy —
 no merge, no network. Commit each changed repo with your normal git flow.
 
-Forms (positional = target, --from = source, default source = the cwd repo):
+Forms (positional = target, --from = source; the cwd repo is the other endpoint):
   cco sync                        cwd repo -> all other project members
   cco sync <repo>                 cwd repo -> only <repo>
-  cco sync --from <repo>          <repo>   -> all other project members
+  cco sync --from <repo>          <repo>   -> cwd repo
   cco sync <repoA> --from <repoB> <repoB>  -> only <repoA>
+  cco sync --from <repo> --all    <repo>   -> all other project members
+
+Without an explicit target, --from syncs into the member repo you are standing
+in (a "pull into here"); --all overrides that to broadcast to every member.
 
 Options:
   --from <repo>     Use <repo> as the source instead of the cwd repo
+  --all             Broadcast to all other members (use with --from from a
+                    non-member cwd, or to broadcast from an explicit source)
   --dry-run         Show what would change; copy nothing
+  --dump            With --dry-run: write each target's full diff to
+                    <target>/.cco/.tmp/sync-<source>.diff (clean: cco clean --tmp)
   --auto-approve    Apply without the per-target confirmation prompt
   --check           Exit-code only: 0 if every target is in sync, 1 otherwise
 EOF
@@ -105,7 +145,9 @@ EOF
                 [[ $# -lt 2 ]] && die "--from requires a <repo> name."
                 from="$2"; shift 2
                 ;;
+            --all)         all=true; shift ;;
             --dry-run)     dry_run=true; shift ;;
+            --dump)        dump=true; shift ;;
             --auto-approve) auto=true; shift ;;
             --check)       check=true; shift ;;
             -*) die "Unknown option: $1. Run 'cco sync --help'." ;;
@@ -118,6 +160,9 @@ EOF
                 ;;
         esac
     done
+
+    $dump && ! $dry_run && die "--dump only applies with --dry-run."
+    [[ -n "$target_name" ]] && $all && die "--all cannot be combined with a target repo."
 
     # ── Resolve the source repo ──────────────────────────────────────
     local src_root src_name=""
@@ -143,10 +188,34 @@ EOF
     # ── Collect targets (resolved paths via the index) ───────────────
     local -a targets=()
     if [[ -n "$target_name" ]]; then
+        # Explicit positional target.
         local tp; tp=$(_index_get_path "$target_name")
         [[ -n "$tp" ]] || die "target repo '$target_name' is unresolved on this machine — run 'cco resolve' first."
         targets+=("$tp")
+    elif [[ -n "$from" && "$all" == false ]]; then
+        # `cco sync --from <repo>` with no explicit target: pull into the member
+        # repo the cwd sits in (ADR-0035) — cwd-anchored like the rest of the CLI.
+        # Match the cwd against the project's resolved member paths; a member that
+        # is not yet initialised still matches (its path is in the index).
+        local cwd_canon; cwd_canon=$(_sync_canon "$(pwd -P)")
+        local _ln name path canon found=""
+        while IFS= read -r _ln; do
+            [[ -z "$_ln" ]] && continue
+            name="${_ln%%$'\t'*}"
+            [[ -z "$name" ]] && continue
+            path=$(_index_get_path "$name") || path=""
+            [[ -z "$path" ]] && continue
+            canon=$(_sync_canon "$path")
+            if [[ "$cwd_canon" == "$canon" || "$cwd_canon" == "$canon/"* ]]; then
+                found="$path"; break
+            fi
+        done < <(yml_get_repo_coords "$project_yml" 2>/dev/null)
+        [[ -n "$found" ]] || die "the current directory is not a member of '${src_proj:-the source project}' — cd into the target repo, pass a target name, or use --all to broadcast to all members."
+        canon=$(_sync_canon "$found")
+        [[ "$canon" == "$src_canon" ]] && die "source and target are the same repo ($(basename "$found")) — nothing to sync."
+        targets+=("$found")
     else
+        # Broadcast: all other members (bare `cco sync`, or `--from <repo> --all`).
         local _ln name path canon
         while IFS= read -r _ln; do
             [[ -z "$_ln" ]] && continue
@@ -173,7 +242,7 @@ EOF
     local src_cco="$src_root/.cco"
     local -a copied=()
     local any_out_of_sync=false
-    local tgt tgt_cco tgt_proj diff_out rc reply
+    local tgt tgt_cco tgt_proj summary rc reply nfiles
 
     for tgt in "${targets[@]}"; do
         tgt_cco="$tgt/.cco"
@@ -190,7 +259,7 @@ EOF
             fi
         fi
 
-        diff_out=$(_sync_compute_diff "$src_cco" "$tgt_cco"); rc=$?
+        summary=$(_sync_summary "$src_cco" "$tgt_cco"); rc=$?
 
         if [[ $rc -ne 0 ]]; then
             $check || info "$(basename "$tgt"): already in sync"
@@ -203,14 +272,28 @@ EOF
             continue
         fi
 
+        # Compact summary (not the full diff) so the confirm prompt stays readable.
+        nfiles=$(printf '%s\n' "$summary" | grep -c '.')
         echo ""
-        echo "── $(basename "$tgt") ── changes to apply (incoming = $(basename "$src_root")):"
-        printf '%s\n' "$diff_out"
-        echo ""
+        echo "── $(basename "$tgt") ── $nfiles file(s) would change (incoming = $(basename "$src_root")):"
+        printf '%s\n' "$summary"
+
+        # --dump (dry-run only): persist the full per-target diff to <target>/.cco/.tmp/
+        # for inspection — same idiom as `cco start --dry-run --dump`; clean via
+        # `cco clean --tmp`.
+        if $dry_run && $dump; then
+            local tmpdir="$tgt_cco/.tmp" difffile
+            mkdir -p "$tmpdir"
+            difffile="$tmpdir/sync-$(basename "$src_root").diff"
+            _sync_compute_diff "$src_cco" "$tgt_cco" > "$difffile"
+            info "full diff: $difffile"
+        fi
 
         if $dry_run; then
             continue
         fi
+
+        echo ""
 
         if ! $auto; then
             if [[ ! -t 0 ]]; then

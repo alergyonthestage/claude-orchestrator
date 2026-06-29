@@ -147,16 +147,49 @@ test_sync_form_positional_target_only() {
     assert_file_contains "$tmp/dev/repo3/.cco/claude/CLAUDE.md" "# r3 old" || return 1   # untouched
 }
 
-test_sync_form_from_source() {
+# `--from <repo> --all` from a neutral cwd broadcasts to every other member
+# (ADR-0035: --all restores the broadcast that --from alone no longer implies).
+test_sync_form_from_source_all() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     setup_cco_env "$tmp"
     _syt_unit "$tmp/dev" repo1 "# r1 NEW" "$_SYT_YML2"
     _syt_unit "$tmp/dev" repo2 "# r2 old" "$_SYT_YML2"
     run_cco resolve --scan "$tmp/dev" || return 1
 
-    # Run from a neutral cwd; --from selects the source explicitly.
-    _syt_cco_in "$tmp" sync --from repo1 --auto-approve || return 1
+    # Run from a neutral cwd; --from selects the source, --all broadcasts.
+    _syt_cco_in "$tmp" sync --from repo1 --all --auto-approve || return 1
     assert_file_contains "$tmp/dev/repo2/.cco/claude/CLAUDE.md" "# r1 NEW" || return 1
+}
+
+# `cco sync --from <repo>` (no target, no --all) syncs into the member repo the
+# cwd sits in — not all members (ADR-0035). Standing in repo2, only repo2 changes.
+test_sync_from_targets_cwd_member() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    _syt_unit "$tmp/dev" repo1 "# r1 NEW" "$_SYT_YML3"
+    _syt_unit "$tmp/dev" repo2 "# r2 old" "$_SYT_YML3"
+    _syt_unit "$tmp/dev" repo3 "# r3 old" "$_SYT_YML3"
+    run_cco resolve --scan "$tmp/dev" || return 1
+
+    _syt_cco_in "$tmp/dev/repo2" sync --from repo1 --auto-approve || return 1
+    assert_file_contains "$tmp/dev/repo2/.cco/claude/CLAUDE.md" "# r1 NEW" || return 1
+    assert_file_contains "$tmp/dev/repo3/.cco/claude/CLAUDE.md" "# r3 old" || return 1   # untouched
+}
+
+# `cco sync --from <repo>` from a cwd that is NOT a member is an error — there is
+# no implicit target. The message points to cd / a target name / --all.
+test_sync_from_nonmember_cwd_dies() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    _syt_unit "$tmp/dev" repo1 "# r1 NEW" "$_SYT_YML2"
+    _syt_unit "$tmp/dev" repo2 "# r2 KEEP" "$_SYT_YML2"
+    run_cco resolve --scan "$tmp/dev" || return 1
+
+    local rc=0
+    _syt_cco_in "$tmp" sync --from repo1 --auto-approve || rc=$?
+    [[ $rc -ne 0 ]] || { echo "ASSERTION FAILED: --from from a non-member cwd should exit non-zero"; return 1; }
+    assert_output_contains "not a member" || return 1
+    assert_file_contains "$tmp/dev/repo2/.cco/claude/CLAUDE.md" "# r2 KEEP" || return 1   # not modified
 }
 
 test_sync_form_target_and_from() {
@@ -213,4 +246,51 @@ test_sync_unresolved_target_is_skipped_with_warning() {
     assert_output_contains "repo3" || return 1
     assert_output_contains "unresolved" || return 1
     assert_file_contains "$tmp/dev/repo2/.cco/claude/CLAUDE.md" "# r1 NEW" || return 1   # repo2 still synced
+}
+
+# The default view is a compact per-file summary, not the full diff — the header
+# announces the change count and each changed file is listed once.
+test_sync_shows_summary_not_full_diff() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    _syt_unit "$tmp/dev" repo1 "# r1 NEW LINE" "$_SYT_YML2"
+    _syt_unit "$tmp/dev" repo2 "# r2 old" "$_SYT_YML2"
+    run_cco resolve --scan "$tmp/dev" || return 1
+
+    _syt_cco_in "$tmp/dev/repo1" sync --dry-run || return 1
+    assert_output_contains "would change" || return 1            # summary header
+    assert_output_contains "claude/CLAUDE.md" || return 1        # file listed
+}
+
+# `--dry-run --dump` writes the full per-target diff to <target>/.cco/.tmp/ and
+# copies nothing. `--dump` without `--dry-run` is rejected.
+test_sync_dump_writes_tmp_diff() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    _syt_unit "$tmp/dev" repo1 "# r1 NEW" "$_SYT_YML2"
+    _syt_unit "$tmp/dev" repo2 "# r2 OLD-KEPT" "$_SYT_YML2"
+    run_cco resolve --scan "$tmp/dev" || return 1
+
+    _syt_cco_in "$tmp/dev/repo1" sync --dry-run --dump || return 1
+    assert_file_exists "$tmp/dev/repo2/.cco/.tmp/sync-repo1.diff" || return 1
+    assert_file_contains "$tmp/dev/repo2/.cco/.tmp/sync-repo1.diff" "# r1 NEW" || return 1
+    assert_file_contains "$tmp/dev/repo2/.cco/claude/CLAUDE.md" "# r2 OLD-KEPT" || return 1   # not copied
+
+    # --dump requires --dry-run.
+    local rc=0
+    _syt_cco_in "$tmp/dev/repo1" sync --dump --auto-approve || rc=$?
+    [[ $rc -ne 0 ]] || { echo "ASSERTION FAILED: --dump without --dry-run should error"; return 1; }
+}
+
+# `--all` cannot be combined with an explicit positional target.
+test_sync_all_with_target_errors() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    _syt_unit "$tmp/dev" repo1 "# r1 NEW" "$_SYT_YML2"
+    _syt_unit "$tmp/dev" repo2 "# r2 old" "$_SYT_YML2"
+    run_cco resolve --scan "$tmp/dev" || return 1
+
+    local rc=0
+    _syt_cco_in "$tmp/dev/repo1" sync repo2 --all --auto-approve || rc=$?
+    [[ $rc -ne 0 ]] || { echo "ASSERTION FAILED: --all + target should error"; return 1; }
 }
