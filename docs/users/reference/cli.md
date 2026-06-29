@@ -728,6 +728,41 @@ sync state (host / synced / divergent / code-only) — derived from the index `p
 
 ---
 
+### 3.13b `cco project rename [<old>] <new>`
+
+Rename a project. A project's identity is its `project.yml` `name:` — the same string keys the
+machine-local index, the per-user tags, and the internal STATE/CACHE/DATA directories — so a
+rename is a multi-store **identity re-key**, not a single-file edit (ADR-0031).
+
+```
+Usage: cco project rename [<old>] <new>
+
+Arguments:
+  old    Project to rename (omit to rename the cwd's project)
+  new    New project name (lowercase letters, numbers, hyphens; not reserved, not in use)
+
+Options:
+  -y, --yes    Skip the confirmation prompt
+
+Examples:
+  cco project rename old-name new-name   # explicit
+  cco project rename new-name            # rename the project hosting the cwd
+```
+
+**What it re-keys**: the `project.yml` `name:` in **every** member repo's `.cco/`, the index
+`projects:` membership (members preserved), the DATA tags, and the
+`<state|cache|data>/cco/projects/<name>/` directories.
+
+**Strict member resolution**: the rename **refuses** unless every member repo is resolved on this
+machine (run `cco resolve` first). A partial `name:` rewrite would leave the project's repos
+disagreeing on identity, and `cco sync`'s clobber-guard would then permanently skip the
+un-rewritten members. For a single-repo project this is always satisfiable from within the repo.
+
+**After renaming**, commit + push the updated `.cco/project.yml` in each member repo and run
+`cco sync` — the cross-repo edits live in your git working trees (cco delegates them to git, P17).
+
+---
+
 ### 3.14 `cco project validate [name]`
 
 **Share-readiness validation**: check that a project's config is safe to share via its repo

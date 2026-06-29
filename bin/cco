@@ -85,6 +85,7 @@ source "$LIB_DIR/cmd-project-add.sh"
 source "$LIB_DIR/cmd-project-validate.sh"
 source "$LIB_DIR/cmd-project-coords.sh"
 source "$LIB_DIR/cmd-project-export-import.sh"
+source "$LIB_DIR/cmd-project-rename.sh"
 source "$LIB_DIR/cmd-pack.sh"
 source "$LIB_DIR/cmd-llms.sh"
 source "$LIB_DIR/cmd-template.sh"
@@ -132,7 +133,7 @@ Discovery:
   tag <add|remove>       Tag a pack/project/template (per-user, never team-shared)
 
 Resources:
-  project <cmd>          Manage projects (add, validate, coords, show, export, import)
+  project <cmd>          Manage projects (add, validate, coords, rename, show, export, import)
   pack <cmd>             Manage knowledge packs (create, install, update, ...)
   llms <cmd>             Manage llms.txt framework docs (install, update, ...)
   template <cmd>         Manage project/pack templates (create, show, install, ...)
@@ -190,6 +191,7 @@ Commands:
   add <res> <name>       Embed a repo|mount|llms|pack coordinate (cwd-first)
   validate [name]        Check share-readiness (coordinates, no path leaks)
   coords                 Show/reconcile coordinate consistency across units
+  rename [<old>] <new>   Rename a project, re-keying its identity across stores
   show <name>            Show project details (repos, packs, config)
 
 List projects with 'cco list project' (or 'cco list' for all resources).
@@ -212,6 +214,7 @@ EOF
                 die "'cco project delete' was removed — a project's config lives in its repo at <repo>/.cco/; remove it with normal git/filesystem ops. To deregister cco's machine-local bookkeeping for a project, use 'cco forget <project>' (the repo is untouched; ADR-0021)." ;;
             validate)    cmd_project_validate "$@" ;;
             coords)      cmd_project_coords "$@" ;;
+            rename)      cmd_project_rename "$@" ;;
             export)      cmd_project_export "$@" ;;
             import)      cmd_project_import "$@" ;;
             add)         cmd_project_add "$@" ;;

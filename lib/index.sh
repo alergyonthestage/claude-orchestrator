@@ -200,6 +200,17 @@ _index_set_project_repos() {
 # Remove a <project>'s membership entry.
 _index_remove_project() { _index_section_remove projects "$1"; }
 
+# Re-key a project's membership from <old> to <new>, preserving its member repo
+# names (the identity re-key primitive for `cco project rename`, ADR-0031 D2).
+# No-op-safe: an absent <old> just creates <new> with empty members — callers
+# validate <old> exists and <new> is free first. Usage: _index_rename_project <old> <new>
+_index_rename_project() {
+    local old="$1" new="$2" members
+    members=$(_index_get_project_repos "$old")
+    _index_set_project_repos "$new" $members
+    _index_remove_project "$old"
+}
+
 # Reverse lookup (ADR-0024 D5): echo the projects (one per line) that reference
 # <repo> as a member. Complement of _index_get_project_repos; drives repo↔project
 # observability in `cco project show` and the repo-centric view.

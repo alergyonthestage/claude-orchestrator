@@ -116,6 +116,17 @@ _tags_forget() {
     ' "$f" > "$tmpf" && mv "$tmpf" "$f"
 }
 
+# Re-key a resource's tag entry from <old> to <new> within <kind>, carrying the
+# tag set over (the identity re-key primitive for `cco project rename`, ADR-0031
+# D2). No-op when <old> has no tags (nothing to carry). Usage: _tags_rename <kind> <old> <new>
+_tags_rename() {
+    local kind="$1" old="$2" new="$3" cur
+    cur=$(_tags_get "$kind" "$old")
+    [[ -z "$cur" ]] && return 0
+    _tags_set "$kind" "$new" "$cur"
+    _tags_forget "$kind" "$old"
+}
+
 # Emit "<kind>\t<name>\t<space-separated-tags>" for every tagged resource.
 _tags_all() {
     local f; f=$(_tags_file)
