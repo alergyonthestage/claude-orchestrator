@@ -197,14 +197,16 @@ current repo):
   ADR-0024 D2). A repo hosts **at most one** project (ADR-0024 D1); it may be **referenced** by N.
 - **FR-Y-S5 (membership / `cco join`)** — A repo becomes a **member** of a project
   either by listing its name in `project.yml` `repos[]`, or by running
-  `cco join <project>` from that repo (registers it in the index and adds it to
-  `repos[]`). Since `project.yml` is a synced file, the `repos[]` edit must reach every
+  `cco join <project> [--name <n>]` from that repo (registers it in the index and adds its
+  coordinate — `name` + `url` derived from `git remote get-url origin` — to `repos[]`;
+  ADR-0034). Since `project.yml` is a synced file, the `repos[]` edit must reach every
   repo that holds a copy: in **Case B** (repos in sync) join updates `project.yml` in
   **all synced repos**; in **Case C** (divergent, no sync) join **prompts** which
-  repo's `project.yml` to update, or all (membership only, no content sync). The
-  joining repo gets **no `.cco/`** (code-only member) unless `cco join --sync` (or
-  interactive confirm), which copies the project's `.cco/` into it (source prompted if
-  divergent).
+  repo's `project.yml` to update, or all, and refuses non-interactively (membership only,
+  no content sync). Because `repos[]` is not the `name:` sync discriminator, a partial edit
+  converges via `cco sync` — so join is **not** strict (unlike rename, ADR-0031). The
+  joining repo gets **no `.cco/`** (code-only member) unless `cco join --sync`, which copies
+  the project's `.cco/` into it under the ADR-0024 D2 clobber-guard.
 - **FR-Y-S6 (sync-state tracking)** — cco keeps lightweight **per-machine** sync
   metadata (in the system state dir, never committed; not a merge `sync-base`):
   which member repos carry a synced copy vs are divergent, and a **last-synced
@@ -302,8 +304,9 @@ flowchart TD
   F44): never overwrites an existing `.cco/` or the STATE `memory/` without confirm. A
   `cco init --migrate --all` convenience is **optional and discouraged** (no per-project A/B/C
   control; would default to B). **Breaking cutover**: no dual-read; the legacy vault is read
-  only from the backup, only by the migrate mode. **Removal/deregistration** (`cco forget`) +
-  orphan cleanup (`cco config validate`) → ADR-0021.
+  only from the backup, only by the migrate mode. **Removal/deregistration** (`cco forget`,
+  optionally `--purge` to also delete the owned `<repo>/.cco/` with a backup + consent — ADR-0034
+  fwd-annot) + orphan cleanup (`cco config validate`) → ADR-0021.
 - **FR-M3 (eager global migration via `cco update`)** — The **global / non-project** cutover is
   **eager**, owned by the existing migration runner **`cco update`** (ADR-0025): populate `~/.cco`
   from the backup (`.claude` + authored `packs/` + `templates/` + `setup.sh`/`setup-build.sh`/
