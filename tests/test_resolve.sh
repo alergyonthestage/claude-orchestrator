@@ -372,3 +372,29 @@ test_resolve_llms_tty_invokes_heal() {
     )
     [[ "$out" == *HEALED* ]] || fail "TTY resolve must route a missing llms to the heal path"
 }
+
+# S1 finding #4: `cco path list` must normalize values for display and flag any
+# non-absolute entry as malformed instead of printing it as if it were valid.
+# The boundary refuses dirty writes now, so seed a pre-fix entry directly via the
+# low-level section setter.
+test_path_list_normalizes_and_flags_malformed() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/real"
+    run_cco path set good "$tmp/real" || return 1
+    (
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/paths.sh"; source "$REPO_ROOT/lib/index.sh"
+        _index_section_set paths legacy "@local"
+        _index_section_set paths tildey "~/somewhere"
+    ) || return 1
+
+    run_cco path list || return 1
+    assert_output_contains "good" || return 1
+    assert_output_contains "$tmp/real" || return 1
+    # tilde entry rendered absolute (HOME-expanded), never raw ~.
+    assert_output_contains "$HOME/somewhere" || return 1
+    # @local entry flagged, not printed as a valid path.
+    assert_output_contains "malformed" || return 1
+    assert_output_contains "1 malformed index entr" || return 1
+}

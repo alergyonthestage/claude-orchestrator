@@ -435,15 +435,26 @@ EOF
         list)
             shift
             [[ $# -gt 0 ]] && die "Usage: cco path list (takes no arguments)"
-            local line name path count=0
+            local line name path norm count=0 malformed=0
             while IFS= read -r line; do
                 [[ -z "$line" ]] && continue
                 name="${line%%=*}"; path="${line#*=}"
-                printf '%s\t%s\n' "$name" "$path"
+                # The index stores absolute paths only (boundary normalization).
+                # Normalize for display, and flag any value that is still
+                # non-absolute (a stale ~/@local entry written before the fix or
+                # hand-edited) instead of printing it as if it were valid.
+                if norm=$(_index_normalize_path "$path"); then
+                    printf '%s\t%s\n' "$name" "$norm"
+                else
+                    printf '%s\t%s  ⚠ malformed (non-absolute)\n' "$name" "$path"
+                    malformed=$((malformed + 1))
+                fi
                 count=$((count + 1))
             done < <(_index_list_paths)
             if [[ $count -eq 0 ]]; then
                 info "the path index is empty — run 'cco resolve' or 'cco resolve --scan <dir>'"
+            elif [[ $malformed -gt 0 ]]; then
+                warn "$malformed malformed index entr$([[ $malformed -eq 1 ]] && printf y || printf ies) — run 'cco update' to normalize, or 'cco resolve --scan <dir>' to rebind"
             fi
             ;;
         *)
