@@ -202,15 +202,30 @@ _validate_llms_refs() {
     local context="$2"  # e.g., "Pack 'frontend-stack'" or "Project 'my-app'"
     local errors=0
 
-    local llms_names
-    llms_names=$(yml_get_llms_names "$yaml_file")
-    [[ -z "$llms_names" ]] && return 0
+    # Read the full coordinate tuples (name \t description \t variant \t url),
+    # not just names: the url lets us emit an executable remedy and flag a
+    # missing coordinate as a share-readiness gap (ADR-0032 D2; the manifest is
+    # already in hand as $yaml_file — no extra plumbing needed).
+    local llms_entries
+    llms_entries=$(yml_get_llms "$yaml_file")
+    [[ -z "$llms_entries" ]] && return 0
 
-    while IFS= read -r lname; do
+    local _line lname ldesc lvariant lurl
+    while IFS= read -r _line; do
+        [[ -z "$_line" ]] && continue
+        # _peel_tab preserves empty fields (an empty description must not shift
+        # the variant/url columns — IFS=$'\t' read would collapse them).
+        _peel_tab "$_line" lname ldesc lvariant lurl
         [[ -z "$lname" ]] && continue
         local llms_dir="$LLMS_DIR/$lname"
         if [[ ! -d "$llms_dir" ]]; then
-            error "$context: llms '$lname' not found (run 'cco llms install' first)"
+            if [[ -n "$lurl" ]]; then
+                # url present → the remedy is runnable verbatim.
+                error "$context: llms '$lname' not installed — run: cco llms install $lurl --name $lname${lvariant:+ --variant $lvariant}"
+            else
+                # url absent → share-readiness gap (llms url is mandatory, ADR-0017 D1).
+                error "$context: llms '$lname' has no url coordinate — required to share/re-fetch (add a url to the llms entry, or run 'cco resolve')"
+            fi
             ((errors++))
             continue
         fi
@@ -218,7 +233,7 @@ _validate_llms_refs() {
             error "$context: llms '$lname' has no documentation files"
             ((errors++))
         fi
-    done <<< "$llms_names"
+    done <<< "$llms_entries"
 
     [[ $errors -gt 0 ]] && return 1 || return 0
 }
