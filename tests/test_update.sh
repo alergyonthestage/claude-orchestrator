@@ -206,7 +206,7 @@ manifest:"
 
     run_cco update
     # Schema version should be updated to the latest global migration id.
-    assert_file_contains "$(state_global_meta)" "schema_version: 15"
+    assert_file_contains "$(state_global_meta)" "schema_version: 16"
 }
 
 test_update_migration_failure_stops() {
@@ -2470,4 +2470,42 @@ test_migration_009_no_warn_when_no_sessions() {
 
     echo "$output" | grep -q "Running sessions detected" && \
         fail "Migration should NOT warn when no sessions running" || true
+}
+
+# S1 (migration 016): the cleanup pass normalizes a dirty STATE index written by a
+# pre-fix `cco init --migrate` — expanding ~/$HOME and dropping an unrecoverable
+# @local — and is idempotent on an already-clean index.
+test_migration_016_normalizes_index() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"; source "$REPO_ROOT/lib/index.sh"
+
+    # Seed a dirty index (pre-fix values) via the low-level setter, bypassing the
+    # normalizing boundary: a tilde repo, a $HOME repo, an @local mount, a clean
+    # absolute entry, plus a project membership row that must survive untouched.
+    _index_section_set paths repotilde "~/dev/api"
+    _index_section_set paths repohome  '$HOME/dev/web'
+    _index_section_set paths mountbad  "@local"
+    _index_section_set paths clean     "/abs/clean"
+    _index_set_project_repos myapp repotilde repohome
+
+    source "$REPO_ROOT/migrations/global/016_normalize-index.sh"
+    migrate "$tmpdir/home/.cco/.claude" || return 1
+
+    local idx="$CCO_STATE_HOME/index"
+    assert_file_contains "$idx" "repotilde: \"$HOME/dev/api\"" || return 1
+    assert_file_contains "$idx" "repohome: \"$HOME/dev/web\"" || return 1
+    assert_file_contains "$idx" "clean: \"/abs/clean\"" || return 1
+    assert_file_not_contains "$idx" "@local" || return 1
+    assert_file_not_contains "$idx" "mountbad" || return 1
+    # projects: membership untouched.
+    assert_file_contains "$idx" "myapp:" || return 1
+
+    # Idempotent: a second run on the now-clean index produces identical content.
+    local before after
+    before=$(cat "$idx")
+    migrate "$tmpdir/home/.cco/.claude" || return 1
+    after=$(cat "$idx")
+    [[ "$before" == "$after" ]] || fail "migration 016 must be idempotent (content drifted)"
 }
