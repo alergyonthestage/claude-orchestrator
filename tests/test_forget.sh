@@ -110,3 +110,58 @@ test_forget_non_tty_requires_confirmation() {
     run_cco forget proj-x </dev/null || true
     assert_file_contains "$CCO_STATE_HOME/index" "proj-x:"
 }
+
+# ── --purge: ownership-guarded .cco/ deletion (ADR-0021 D2 fwd-annot) ────
+
+test_forget_purge_deletes_owned_cco_with_backup() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    create_project "$tmpdir" "doomed" "$(minimal_project_yml doomed)"
+    local host; host="$(host_cco_dir "$tmpdir" doomed)"   # …/repos/doomed/.cco
+    assert_dir_exists "$host"
+
+    run_cco forget doomed --purge -y
+    assert_output_contains "Deleted"
+
+    # Owned .cco/ is gone, a backup tar was written into STATE, index deregistered.
+    assert_dir_not_exists "$host"
+    local backups; backups=$(find "$CCO_STATE_HOME/backups" -name 'forget-doomed-*.tar.gz' 2>/dev/null | wc -l | tr -d ' ')
+    [[ "$backups" -ge 1 ]] || fail "expected a backup tar for the purged .cco/, found none"
+    assert_file_not_contains "$CCO_STATE_HOME/index" "doomed:"
+}
+
+test_forget_purge_preserves_foreign_member() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    # Project alpha owns alpha-repo and references shared-repo, which HOSTS a
+    # different project (beta) → foreign for alpha → must never be purged.
+    create_project "$tmpdir" "alpha" "$(minimal_project_yml alpha)"
+    local shared="$tmpdir/repos/shared-repo"
+    mkdir -p "$shared/.cco/claude"
+    printf 'name: beta\nrepos:\n  - name: shared-repo\n' > "$shared/.cco/project.yml"
+    seed_index_path "shared-repo" "$shared"
+    index_set_project_repos "alpha" "alpha" "shared-repo"
+
+    run_cco forget alpha --purge -y
+
+    # alpha's own .cco/ deleted; the foreign repo's .cco/ untouched.
+    assert_dir_not_exists "$(host_cco_dir "$tmpdir" alpha)"
+    assert_file_exists "$shared/.cco/project.yml"
+}
+
+test_forget_purge_non_tty_without_flag_skips_deletion() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    create_project "$tmpdir" "keepcfg" "$(minimal_project_yml keepcfg)"
+    local host; host="$(host_cco_dir "$tmpdir" keepcfg)"
+
+    # Non-interactive, base consent via -y but NO --purge → deregister but never
+    # delete the committed .cco/ (the opt-in purge stage stays unattended-safe).
+    run_cco forget keepcfg -y </dev/null
+    assert_dir_exists "$host"
+    assert_file_not_contains "$CCO_STATE_HOME/index" "keepcfg:"
+    [[ ! -d "$CCO_STATE_HOME/backups" ]] || {
+        local n; n=$(find "$CCO_STATE_HOME/backups" -name 'forget-keepcfg-*' 2>/dev/null | wc -l | tr -d ' ')
+        [[ "$n" -eq 0 ]] || fail "no backup should be written when purge is skipped"
+    }
+}
