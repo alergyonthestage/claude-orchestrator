@@ -264,27 +264,35 @@ that are served to coding agents during sessions.
 ### Schema
 
 ```yaml
-# In project.yml or pack.yml
+# In project.yml or pack.yml — each entry carries a coordinate (url is the
+# re-fetch source, like a repo's url). url is MANDATORY (ADR-0017 D1).
 llms:
-  - svelte                          # Short form: name only
-  - name: shadcn-svelte             # Long form: with overrides
-    description: "Component index — WebFetch for details"
-    variant: index                  # full | medium | small | index
+  - name: svelte
+    url: https://svelte.dev/llms.txt          # MANDATORY — the re-fetch coordinate
+  - name: shadcn-svelte
+    url: https://shadcn-svelte.com/llms.txt
+    description: "Component index — WebFetch for details"   # optional override
+    variant: index                            # optional: full | medium | small | index
 ```
 
 | Field | Required | Type | Default | Description |
 |-------|----------|------|---------|-------------|
 | `llms[].name` | ✅ | string | — | Name matching the cached `~/.cache/cco/llms/<name>/` directory |
+| `llms[].url` | ✅ | string | — | Source URL — the machine-agnostic coordinate that keeps the doc re-fetchable when the project/pack is shared or moved to another machine (ADR-0017 D1). A url-less entry is a share-readiness gap flagged by `cco pack`/`project validate` |
 | `llms[].description` | ❌ | string | Auto from H1 | Override description shown to the agent |
 | `llms[].variant` | ❌ | string | Auto (full > medium > small > index) | Force a specific file variant |
+
+> A bare short-form entry (`- svelte`, name only) is **legacy/incomplete**: it carries no coordinate, so a teammate (or you on a fresh machine) cannot re-fetch it. `cco update` backfills the url into installed packs from a previously-installed source where possible; otherwise `validate` flags the gap and you add the url.
 
 ### How It Works
 
 1. Install llms files with `cco llms install <url>` (content cached per-machine in `~/.cache/cco/llms/`)
-2. Reference them in `project.yml` or `pack.yml` via `llms:` section
-3. At `cco start`, directories are mounted read-only at `/workspace/.claude/llms/<name>/`
-4. The file list is appended to `.claude/packs.md` and injected into the agent's context
-5. A managed rule (`use-official-docs.md`) guides the agent to consult docs before writing code
+2. Reference them in `project.yml` or `pack.yml` via the `llms:` section (with the `url` coordinate)
+3. On a machine where a referenced llms is not installed, `cco resolve` fetches it from the `url`
+   (and `cco start` warns if it is still missing); the content is re-fetchable, never committed
+4. At `cco start`, directories are mounted read-only at `/workspace/.claude/llms/<name>/`
+5. The file list is appended to `.claude/packs.md` and injected into the agent's context
+6. A managed rule (`use-official-docs.md`) guides the agent to consult docs before writing code
 
 ### Resolution
 

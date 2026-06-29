@@ -158,29 +158,37 @@ Real-host migration of `cave-flow` surfaced a sequence of defects; fixing them a
   [`configuration/decentralized-config/cd-list-rename-handoff.md`](configuration/decentralized-config/cd-list-rename-handoff.md)
   (symptoms, code map, suggested approach, decisions, test plan).
 
-#### Round 2 (host e2e of `cave-web`/`cave-flow`, 2026-06-29) — design done, implementing pre-merge
+#### Round 2 (host e2e of `cave-web`/`cave-flow`, 2026-06-29) — ✅ DONE pre-merge
 
-Five findings from a second e2e pass, multi-agent analysis → design. **All resolved pre-merge.**
+Five findings from a second e2e pass: multi-agent analysis → design → implementation. **All resolved
+pre-merge** (commits LOCAL on `feat/vault/decentralized-config`, push from Mac). Suite **966 → 978/0**
+in-container. changelog **#19** + **#20**.
 
-- **F2 — pack llms not re-fetchable (coordinate drift)** — `cco pack validate` flagged missing llms with
-  a **non-executable** remedy (`cco llms install` needs a url it never supplied). Root cause: `pack.yml`
-  allows url-less (short-form) llms, pack migration relocates wholesale without url backfill, and pack
-  validate checks only local presence — drifting from the ADR-0017 D1 / ADR-0019 D6 invariant (llms url
-  mandatory → always re-fetchable). Closed by **ADR-0032** (validate parity + executable remedy;
-  `migrations/pack/001` url backfill; long-form authoring/template; `cco resolve` heals llms — hybrid
-  install-from-url / update-url / skip).
-- **F1 — `validate` output inconsistency** — `project validate` is greppable/no-symbols (ADR-0023 D2)
-  while `pack`/`template`/`config validate` use inline `✓/✗/⚠`, non-greppable. Unify all to the greppable
-  contract (refines ADR-0023 D2 / ADR-0029; no new ADR).
-- **F3 — `cco project coords` wording** — not a bug (validate = per-unit reachability; coords = cross-unit
-  consistency), but the empty-result message reads as a contradiction. Reword + help note distinguishing
-  the two.
-- **F4 — `cco clean` default friction** — no path/scope bug; default cleans only `.bak`, so `.tmp` needs
-  explicit `--tmp`. Pre-merge: conservative-default + discoverability hint + clearer help/scope docs.
-  Deeper redesign deferred to the Post-v1 backlog.
-- **F5 — 6 in-container test failures** — not regressions; the anti-resolve guard (ADR-0007, keyed on
-  `/.dockerenv` since `a216c8b`) fires in-container while 6 tests omit `CCO_ALLOW_HOST_RESOLVE=1`. Add the
-  flag so the suite is green in-container **and** on host.
+- **F2 — pack llms not re-fetchable (coordinate drift)** ✅ (**ADR-0032**; `cc182dd`, `57ad53b`, `2d2a718`)
+  — `cco pack validate` flagged missing llms with a **non-executable** remedy (`cco llms install` needs a
+  url it never supplied). Root cause: `pack.yml` allowed url-less (short-form) llms, pack migration
+  relocated wholesale without url backfill, and pack validate checked only local presence — drifting from
+  the ADR-0017 D1 / ADR-0019 D6 invariant (llms url mandatory → always re-fetchable). Closed: D2 validate
+  parity + executable remedy / url-gap flag; D3 `_backfill_pack_llms_urls` run from `cco update` (an
+  update-flow step, **not** a `migrations/pack/NNN` — pack-scope migrations are unwired); D4 long-form
+  template with required url; D5 `cco resolve` heals missing llms (hybrid install-from-url / different-url
+  / skip), unified under one heal verb (P14), **not** a separate `cco llms resolve`.
+- **F1 — `validate` output inconsistency** ✅ (`9797386`) — `project validate` is greppable/no-symbols
+  (ADR-0023 D2) while `pack`/`template validate` used inline `✓/✗/⚠`. Unified `pack` + `template validate`
+  to the greppable contract (`<name>: <reason>` lines + `validate: N issue(s)` summary; success still
+  prints "… is valid"). `config validate` left unchanged (orphan-sanitization, ADR-0021; outside the
+  user-stated `{project,pack,template}` scope). Refines ADR-0023 D2 / ADR-0029; no new ADR.
+- **F3 — `cco project coords` wording** ✅ (`5aab14c`) — not a bug (validate = per-unit reachability;
+  coords = cross-unit consistency), but the empty-result message read as a contradiction. Reworded +
+  help note distinguishing the two.
+- **F4 — `cco clean` default friction** ✅ (`cfb105e`) — no path/scope bug; default cleans only `.bak`, so
+  `.tmp` needs explicit `--tmp`. Shipped: conservative default + discoverability hint + clearer help/scope
+  docs. Deeper redesign deferred to the Post-v1 backlog.
+- **F5 — 6 in-container test failures** ✅ (`6fcd185`) — not regressions; the anti-resolve guard
+  (ADR-0007, keyed on `/.dockerenv` since `a216c8b`) fires in-container while 6 tests omitted
+  `CCO_ALLOW_HOST_RESOLVE=1`. Added the flag so the suite is green in-container **and** on host.
+
+Residual gate: Mac host re-validation (`e2e-validation-checklist.md`) before merge.
 
 ### Pre-merge: flatten `~/.cco/global/.claude/` → `~/.cco/.claude/` ✅ DONE (2026-06-27)
 

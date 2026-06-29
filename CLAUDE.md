@@ -35,7 +35,7 @@ cco build --claude-version x.y.z  # Pin Claude Code version
 cco start <project>          # Start session for a project
 cco start config-editor      # Launch the built-in config-editor session
 cco new --repo <path>        # Start temporary session with repos
-cco resolve <name>           # Resolve a logical name to an absolute path (clone-from-url if needed)
+cco resolve <name>           # Resolve repos/mounts to local paths (clone-from-url) + fetch missing referenced llms
 cco path set|list            # Advanced: low-level index override (see 'cco resolve --help')
 cco sync                     # Copy/refresh resolved config into place
 cco list                     # Unified index of all resources (grouped by kind, with tags)

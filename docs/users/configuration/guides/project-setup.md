@@ -131,7 +131,8 @@ Reference in `project.yml`:
 
 ```yaml
 llms:
-  - svelte
+  - name: svelte
+    url: https://svelte.dev/llms.txt   # required — the re-fetch coordinate
 ```
 
 See [project-yaml.md § LLMs.txt](../reference/project-yaml.md#llmstxt--framework-documentation) for all options.

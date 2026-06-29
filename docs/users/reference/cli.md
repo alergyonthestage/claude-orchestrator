@@ -675,17 +675,21 @@ Examples:
 ```
 1. VALIDATE (per pack)
    - pack.yml exists
-   - pack.yml has valid top-level keys (name, knowledge, skills, agents, rules)
+   - pack.yml has valid top-level keys (name, knowledge, llms, skills, agents, rules)
    - 'name' field is present and matches directory name (warns on mismatch)
    - Knowledge source directory exists (if specified)
    - Skill directories exist under skills/ for each declared skill
    - Agent files exist under agents/ for each declared agent
    - Rule files exist under rules/ for each declared rule
+   - Each referenced llms is installed; if missing it prints an executable
+     remedy ('cco llms install <url> --name <n>') when the entry carries a url,
+     or flags a share-readiness gap ('has no url coordinate') when it does not
 
-2. RESULT
-   - Errors for missing/invalid resources
-   - Warnings for non-critical issues (e.g., name mismatch)
-   - Returns exit code 1 if any pack has errors
+2. RESULT (greppable, matching `cco project validate`, ADR-0023 D2)
+   - One "<name>: <reason>" line per finding — no inline ✗/⚠ symbols
+   - A summary line: "validate: N issue(s) [error=E warning=W]"
+   - A name/dir mismatch is a warning (non-fatal); everything else is an error
+   - A valid pack prints "Pack '<name>' is valid"; exit 1 if any pack has errors
 ```
 
 ---
@@ -848,7 +852,11 @@ Examples:
 ```
 
 For each unresolved repo/mount, `cco resolve` offers: **specify a local path** · **clone from
-`<url>`** (only when the coordinate carries a `url`) · **skip**. `--scan` is **non-destructive**:
+`<url>`** (only when the coordinate carries a `url`) · **skip**. It also **heals referenced llms**
+that are not installed on this machine (one heal verb for repos, mounts, and llms — there is no
+separate `cco llms resolve`): for a url-bearing llms it offers **install from `<url>`** · **use a
+different url** · **skip**; the content lands in CACHE and the committed `project.yml` url is left
+untouched. `--scan` is **non-destructive**:
 it upserts each discovered `name → path` + `repos[]`, never deletes out-of-`<dir>` mappings or
 manual `cco path set` overrides, and on a name-already-bound-to-a-different-path conflict it
 warns and keeps the existing mapping (uniqueness invariant). There is no `--prune` in v1.
@@ -1532,7 +1540,9 @@ Examples:
 
 Structural validation of a template tree (kind marker + expected config tree) —
 the pack-`validate` analogue. With no name (or `--all`), validates every user
-template.
+template. Output is greppable like `cco project`/`pack validate` (a
+"<name>: <reason>" line per finding + a `validate: N issue(s)` summary, no inline
+symbols; a missing config tree is a warning, a missing kind marker an error).
 
 ```
 Usage: cco template validate [name] [--all]
@@ -1614,6 +1624,16 @@ Examples:
   cco clean --all --project myapp   # All categories, single project
   cco clean --tmp --dry-run         # Preview .tmp removal
 ```
+
+**Default is conservative:** with no category flag, `cco clean` removes only `.bak` files (recoverable
+merge fall-backs). Dry-run artifacts (`--tmp`) and the generated compose (`--generated`) are left in
+place — select them explicitly or use `--all`. When the default finds nothing, `cco clean` prints a
+discoverability hint pointing at the other categories.
+
+**Scope is index-based, not cwd-based:** without `--project`, `cco clean` cleans the global config plus
+**every project in the machine-local index** — the same regardless of which directory you run it from.
+`--project <name>` scopes to one project. A project not yet in the index (created without `cco resolve`)
+is silently skipped by the global scope; run `cco resolve` to register it.
 
 **Note:** the merge ancestors (`base/` in STATE) are never removed by `cco clean`. They store the
 diff/merge ancestors required for `cco update` discovery and `--sync` to function correctly.
