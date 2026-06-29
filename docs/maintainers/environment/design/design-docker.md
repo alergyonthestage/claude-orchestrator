@@ -57,11 +57,16 @@ RUN arch="$(dpkg --print-architecture)" \
     && chmod +x /usr/local/bin/gosu \
     && gosu nobody true
 
-# ── Claude Code ──────────────────────────────────────────────────────
-# Pin version for reproducible builds: cco build --claude-version 1.0.x
+# ── Claude Code (native installer — ADR-0039) ────────────────────────
+# The binary is NOT baked into the image. The entrypoint installs it at first
+# start (curl install.sh) into the persistent bind-mounted ~/.local, so it
+# auto-updates in place — no root-owned npm global dir, no DISABLE_AUTOUPDATER.
+# CLAUDE_CODE_VERSION is the baked channel/version default the entrypoint
+# forwards to install.sh; the persistent preference is the ~/.cco/claude-version
+# config knob (default latest), and `cco build --claude-version` is a one-off.
 ARG CLAUDE_CODE_VERSION=latest
-RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
-ENV DISABLE_AUTOUPDATER=1
+ENV CLAUDE_CODE_VERSION=${CLAUDE_CODE_VERSION}
+ENV PATH="/home/claude/.local/bin:${PATH}"
 
 # ── MCP Server packages (optional pre-installation) ──────────────────
 ARG MCP_PACKAGES=""
@@ -201,6 +206,25 @@ if [ -f "$PROJECT_MCP_PACKAGES" ]; then
     fi
 fi
 
+# ── Claude Code native install / re-pin (ADR-0039) ───────────────────
+# Install (or re-pin) the binary as the claude user into the persistent
+# bind-mounted ~/.local. Reinstall when the binary is absent OR the requested
+# channel/version (CLAUDE_CODE_VERSION) differs from the marker recorded at the
+# last install — so the config knob / --claude-version actually switch versions
+# without reinstalling on every start (a bare channel like `latest` isn't
+# comparable to `claude --version`, hence the marker compare). Fails loud (exit 1).
+CLAUDE_REQ="${CLAUDE_CODE_VERSION:-latest}"
+mkdir -p /home/claude/.local/bin /home/claude/.local/share/claude
+chown claude:claude /home/claude/.local /home/claude/.local/bin \
+    /home/claude/.local/share/claude 2>/dev/null || true
+if [ ! -x /home/claude/.local/bin/claude ] || \
+   [ "$(cat /home/claude/.local/bin/.cco-claude-channel 2>/dev/null)" != "$CLAUDE_REQ" ]; then
+    gosu claude env CLAUDE_REQ="$CLAUDE_REQ" bash -c \
+        'curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_REQ"' \
+        || { echo "[entrypoint] FATAL: Claude Code install failed" >&2; exit 1; }
+    echo "$CLAUDE_REQ" | gosu claude tee /home/claude/.local/bin/.cco-claude-channel >/dev/null
+fi
+
 # ── Debug: log env vars and auth state ────────────────────────────────
 echo "[entrypoint] TEAMMATE_MODE=${TEAMMATE_MODE:-unset}" >&2
 echo "[entrypoint] ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:+SET}" >&2
@@ -226,6 +250,50 @@ fi
 - **GitHub auth** — `GITHUB_TOKEN` env var drives `gh auth login --with-token` + `gh auth setup-git`, enabling HTTPS push and `gh` CLI commands.
 - **Project setup** — optional `setup.sh` and `mcp-packages.txt` run at container startup for per-project customization.
 - **Error handling** — tmux path captures exit code explicitly (tmux doesn't propagate it via `exec`).
+- **Native Claude Code install** — the binary is installed at first start and bind-mounted from a persistent host CACHE dir, so it auto-updates in place (see §1.2.1).
+
+### 1.2.1 Claude Code native install (ADR-0039)
+
+`cco` does not bake the Claude Code binary into the image. The image only sets a
+channel/version default (`CLAUDE_CODE_VERSION`) and puts `~/.local/bin` on `PATH`.
+The **entrypoint installs the binary at first start** via the official installer
+(`curl -fsSL https://claude.ai/install.sh | bash -s <channel|version>`) into
+`/home/claude/.local/{bin,share/claude}`, which is **bind-mounted from a persistent
+host CACHE dir** (`$(_cco_cache_dir)/claude-install/{bin,share}`). The binary and
+its state therefore survive container restarts and **auto-update in place** — no
+`cco build` needed for upgrades, and no root-owned npm global dir, so the
+auto-updater stays enabled (no `DISABLE_AUTOUPDATER`).
+
+```mermaid
+flowchart TD
+  S["cco start → entrypoint"] --> Q{".local/bin/claude present?"}
+  Q -- no --> I["install: curl install.sh | bash -s $REQ"]
+  Q -- yes --> C{"channel marker == requested?"}
+  C -- no --> I
+  C -- yes --> R["run claude (auto-updater keeps latest/stable current in place)"]
+  I --> M["write channel marker (.local/bin/.cco-claude-channel)"] --> R
+```
+
+**Channel/version selection** (decision 1):
+
+- Default channel is `latest`. The persistent preference is the CONFIG knob
+  `~/.cco/claude-version` (a single value: `latest` | `stable` | `x.y.z`), read by
+  `_cco_claude_version_pref` and forwarded by `cco start` as `CLAUDE_CODE_VERSION`
+  **only when the knob is set**. When the knob is absent the container falls back
+  to the image's baked default, so `cco build --claude-version X` re-pins a
+  knob-less install while an explicit knob outranks the build default.
+- **Re-pin** (decision 2): the entrypoint persists a marker
+  (`.local/bin/.cco-claude-channel`) of the last-installed request and reinstalls
+  when the binary is absent **or** the marker differs from `CLAUDE_CODE_VERSION`.
+  A bare channel string (`latest`) is not comparable to `claude --version`, so the
+  marker compare avoids reinstalling on every start.
+
+**Cache lifecycle**:
+
+- `cco build --no-cache` wipes `$(_cco_claude_install_dir)` so the next start does
+  a clean install (decision 4).
+- `cco clean` (incl. `--all`) **never** touches the install cache — it only removes
+  `.bak`/`.tmp`/generated artifacts and does not scan the CACHE bucket (decision 3).
 
 ### 1.3 tmux Configuration
 

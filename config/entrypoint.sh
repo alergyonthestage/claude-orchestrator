@@ -206,6 +206,48 @@ if [ -f "$PROJECT_MCP_PACKAGES" ]; then
     fi
 fi
 
+# ── Claude Code native install / re-pin (ADR-0039) ───────────────────
+# The image no longer bakes the binary (npm + DISABLE_AUTOUPDATER retired).
+# Install it here, as the claude user, into the persistent bind-mounted
+# ~/.local/{bin,share/claude} (host CACHE) so it survives restarts and
+# auto-updates IN PLACE. Reinstall when the binary is absent OR the requested
+# channel/version (CLAUDE_CODE_VERSION) differs from the installed one recorded
+# in the marker — this makes `cco build --claude-version X` / the config knob
+# actually switch versions, while NOT reinstalling on every start (a bare channel
+# string like `latest` is not comparable to `claude --version`, so we compare the
+# stored request marker instead of the binary's version).
+CLAUDE_BIN="/home/claude/.local/bin/claude"
+CLAUDE_MARKER="/home/claude/.local/bin/.cco-claude-channel"
+CLAUDE_REQ="${CLAUDE_CODE_VERSION:-latest}"
+
+# The bind-mounted dirs may be owned by the host uid — ensure claude owns them
+# before installing/writing (macOS Docker Desktop: chown is a no-op, hence || true).
+mkdir -p /home/claude/.local/bin /home/claude/.local/share/claude
+chown claude:claude \
+    /home/claude/.local \
+    /home/claude/.local/bin \
+    /home/claude/.local/share/claude 2>/dev/null || true
+
+_installed_req=""
+if [ -f "$CLAUDE_MARKER" ]; then
+    _installed_req="$(cat "$CLAUDE_MARKER" 2>/dev/null || true)"
+fi
+
+if [ ! -x "$CLAUDE_BIN" ] || [ "$_installed_req" != "$CLAUDE_REQ" ]; then
+    echo "[entrypoint] Installing Claude Code ('$CLAUDE_REQ') via native installer (one-time per cache)..." >&2
+    if gosu claude env CLAUDE_REQ="$CLAUDE_REQ" bash -c \
+        'curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_REQ"'; then
+        echo "$CLAUDE_REQ" | gosu claude tee "$CLAUDE_MARKER" >/dev/null
+        _log "Claude Code installed: $CLAUDE_REQ"
+    else
+        echo "[entrypoint] FATAL: Claude Code install failed (channel/version='$CLAUDE_REQ')." >&2
+        echo "[entrypoint] Network access is required at first start (installer fetch)." >&2
+        exit 1
+    fi
+else
+    _log "Claude Code present ('$_installed_req'); auto-updater keeps it current"
+fi
+
 # ── Debug: log env vars and auth state ────────────────────────────────
 _log "TEAMMATE_MODE=${TEAMMATE_MODE:-unset}"
 _log "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:+SET}"

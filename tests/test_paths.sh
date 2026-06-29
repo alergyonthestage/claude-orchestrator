@@ -279,3 +279,47 @@ test_paths_symlink_safe_tool_root() {
     [[ $rc -eq 0 ]] || fail "Symlinked cco help failed (rc=$rc): $out"
     [[ "$out" == *"Usage:"* ]] || fail "Symlinked cco did not locate libs (no Usage): $out"
 }
+
+# ── Claude Code native install (ADR-0039) ───────────────────────────
+# The binary lives in a re-fetchable CACHE dir, bind-mounted into the container;
+# the channel/version preference is a CONFIG knob defaulting to `latest`.
+
+test_paths_claude_install_dir_in_cache() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    export CCO_CACHE_HOME="$tmpdir/cache" CCO_ALLOW_HOST_RESOLVE=1
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+
+    local result; result=$(_cco_claude_install_dir)
+    [[ "$result" == "$tmpdir/cache/claude-install" ]] \
+        || fail "Expected claude-install under CACHE, got: $result"
+}
+
+test_paths_claude_version_pref_defaults_latest() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    export HOME="$tmpdir/home" CCO_ALLOW_HOST_RESOLVE=1
+    mkdir -p "$HOME"
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+
+    local result; result=$(_cco_claude_version_pref)
+    [[ "$result" == "latest" ]] \
+        || fail "Expected default 'latest' with no knob, got: $result"
+}
+
+test_paths_claude_version_pref_reads_knob() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    export HOME="$tmpdir/home" CCO_ALLOW_HOST_RESOLVE=1
+    mkdir -p "$HOME"
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+
+    # Comment + blank lines are ignored; first real value wins, whitespace trimmed.
+    printf '# pinned channel\n\n  stable  \n' > "$(_cco_claude_version_file)"
+    local result; result=$(_cco_claude_version_pref)
+    [[ "$result" == "stable" ]] \
+        || fail "Expected 'stable' from knob, got: $result"
+}

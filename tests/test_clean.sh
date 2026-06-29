@@ -424,3 +424,22 @@ test_clean_explicit_category_suppresses_hint() {
     assert_output_contains "Nothing to clean"
     assert_output_not_contains "Tip:"
 }
+
+# ── Regression: clean must never touch the Claude install cache (ADR-0039) ──
+# The native-install binary lives in CACHE (claude-install/). `cco clean` only
+# removes .bak/.tmp/generated artifacts and never scans the CACHE bucket, so a
+# `cco clean --all` must leave the install untouched (decision 3).
+test_clean_all_preserves_claude_install_cache() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    init_global "$tmpdir" --lang "English"
+
+    local install_dir="$CCO_CACHE_HOME/claude-install"
+    mkdir -p "$install_dir/bin" "$install_dir/share"
+    printf 'fake-binary\n' > "$install_dir/bin/claude"
+    printf 'latest\n'      > "$install_dir/bin/.cco-claude-channel"
+
+    run_cco clean --all
+    assert_file_exists "$install_dir/bin/claude"
+    assert_file_exists "$install_dir/bin/.cco-claude-channel"
+}

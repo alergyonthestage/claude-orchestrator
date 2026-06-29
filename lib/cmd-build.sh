@@ -2,7 +2,8 @@
 # lib/cmd-build.sh — Build Docker image command
 #
 # Provides: cmd_build()
-# Dependencies: colors.sh, utils.sh, paths.sh (_cco_config_dir),
+# Dependencies: colors.sh, utils.sh, paths.sh (_cco_config_dir,
+#               _cco_claude_install_dir, _cco_claude_version_pref),
 #               secrets.sh (_secret_match_content)
 # Globals: IMAGE_NAME, REPO_ROOT
 # Note: global setup scripts / MCP list live at the personal-store TOP LEVEL
@@ -24,10 +25,15 @@ cmd_build() {
 Usage: cco build [--no-cache] [--mcp-packages "pkg1 pkg2"] [--claude-version "x.y.z"]
 
 Options:
-  --no-cache               Rebuild without Docker cache
+  --no-cache               Rebuild without Docker cache AND reset the Claude Code
+                           install cache (next `cco start` does a fresh install)
   --mcp-packages "pkgs"    Pre-install MCP server npm packages in the image
                            Also reads from ~/.cco/mcp-packages.txt if it exists
-  --claude-version "x.y.z" Pin Claude Code to a specific version (default: latest)
+  --claude-version "x.y.z" One-off override of the Claude Code channel/version for
+                           this build (latest|stable|x.y.z). The persistent
+                           preference is the ~/.cco/claude-version config knob
+                           (default: latest); Claude Code is installed at first
+                           `cco start` and auto-updates in place.
 EOF
                 return 0
                 ;;
@@ -46,13 +52,34 @@ EOF
         mcp_packages="${mcp_packages% }"  # trim trailing space
     fi
 
+    # On --no-cache, reset the Claude Code native-install cache (ADR-0039,
+    # decision 4) so the next `cco start` performs a clean install. The binary is
+    # no longer baked into the image — it lives in this CACHE dir, bind-mounted
+    # into the container — so a pure image rebuild would otherwise reuse the old
+    # install. `cco clean` never touches this dir (CACHE is out of its scope).
+    if [[ -n "$no_cache" ]]; then
+        local install_dir; install_dir="$(_cco_claude_install_dir)"
+        if [[ -d "$install_dir" ]]; then
+            rm -rf "$install_dir"
+            info "Reset Claude Code install cache (fresh install on next start)"
+        fi
+    fi
+
     check_docker
     info "Building Docker image '$IMAGE_NAME'..."
 
+    # Bake the Claude Code channel/version default into the image. Precedence:
+    # the one-off --claude-version flag, else the ~/.cco/claude-version config
+    # knob (default `latest`). `cco start` re-forwards the knob when set; the
+    # baked value is the fallback for a knob-less install (ADR-0039 decision 1).
     local build_args=()
     if [[ -n "$cc_version" ]]; then
         build_args+=(--build-arg "CLAUDE_CODE_VERSION=$cc_version")
-        info "Pinning Claude Code version: $cc_version"
+        info "Pinning Claude Code channel/version (this build): $cc_version"
+    else
+        local cc_pref; cc_pref="$(_cco_claude_version_pref)"
+        build_args+=(--build-arg "CLAUDE_CODE_VERSION=$cc_pref")
+        [[ "$cc_pref" != "latest" ]] && info "Claude Code channel/version (config knob): $cc_pref"
     fi
     if [[ -n "$mcp_packages" ]]; then
         build_args+=(--build-arg "MCP_PACKAGES=$mcp_packages")

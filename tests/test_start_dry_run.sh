@@ -1679,3 +1679,42 @@ test_start_auto_cleans_stale_tmp() {
         fail "Old .tmp/docker-compose.yml should be cleaned before fresh dump"
     assert_file_exists "$DRY_RUN_DIR/.cco/docker-compose.yml"
 }
+
+# ── Claude Code native install mounts + version env (ADR-0039) ──────
+
+test_dry_run_mounts_claude_install_dirs() {
+    # The binary + its state are bind-mounted (rw) into ~/.local so they persist
+    # across restarts and auto-update in place. bin → ~/.local/bin,
+    # share → ~/.local/share/claude.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --dry-run --dump
+    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
+        "$tmpdir/cache/claude-install/bin:/home/claude/.local/bin"
+    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
+        "$tmpdir/cache/claude-install/share:/home/claude/.local/share/claude"
+}
+
+test_dry_run_claude_version_env_absent_without_knob() {
+    # No config knob → the env line is omitted so the container falls back to the
+    # image's baked CLAUDE_CODE_VERSION default.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --dry-run --dump
+    assert_file_not_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "CLAUDE_CODE_VERSION="
+}
+
+test_dry_run_claude_version_env_present_with_knob() {
+    # Config knob set → forwarded to the entrypoint installer via the env.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    printf 'stable\n' > "$HOME/.cco/claude-version"
+    run_cco start "test-proj" --dry-run --dump
+    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "CLAUDE_CODE_VERSION=stable"
+}

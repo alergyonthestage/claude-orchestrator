@@ -401,6 +401,13 @@ _start_prepare_state() {
                  "$managed_gen_dir" \
                  "$claude_gen_dir"
 
+        # Claude Code native-install cache dirs (ADR-0039): pre-create so the
+        # bind-mounts attach to directories (not auto-created files) and the
+        # first-start installer has a writable target. CACHE bucket — re-fetchable
+        # and untouched by `cco clean`; shared across all projects/sessions.
+        local claude_install_dir; claude_install_dir=$(_cco_claude_install_dir)
+        mkdir -p "$claude_install_dir/bin" "$claude_install_dir/share"
+
         # Global auth/session state, shared across all projects → STATE
         # top-level (machine-local, never synced; design §2.2 / ADR-0016).
         local state_root; state_root=$(_cco_state_dir)
@@ -587,6 +594,17 @@ services:
       - CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
 YAML
 
+        # Claude Code channel/version (native install — ADR-0039). Forward the
+        # `~/.cco/claude-version` config-knob preference WHEN SET. When the knob is
+        # absent we deliberately do NOT emit this, so the container falls back to
+        # the image's baked CLAUDE_CODE_VERSION default (`latest`, or whatever
+        # `cco build --claude-version X` pinned). This lets the build flag re-pin a
+        # knob-less install, while an explicit knob (stable / a pinned x.y.z)
+        # outranks the build default. The entrypoint forwards it to install.sh.
+        if [[ -f "$(_cco_claude_version_file)" ]]; then
+            echo "      - CLAUDE_CODE_VERSION=$(_cco_claude_version_pref)"
+        fi
+
         # Extra env from project.yml
         while IFS= read -r env_line; do
             [[ -z "$env_line" ]] && continue
@@ -637,6 +655,15 @@ YAML
         _compose_vol "${state_root}/claude.json" "/home/claude/.claude.json"
         # ~/.claude/.credentials.json — OAuth tokens (machine-local STATE, never synced)
         _compose_vol "${state_root}/.credentials.json" "/home/claude/.claude/.credentials.json"
+
+        # Claude Code native install (ADR-0039): persistent bind-mount of the
+        # binary + its state (host CACHE) into ~/.local. rw — the entrypoint's
+        # first-start installer and the in-place auto-updater both write here, so
+        # the binary survives restarts and updates without a `cco build`.
+        local claude_install; claude_install=$(_cco_claude_install_dir)
+        echo "      # Claude Code native install (binary + state, auto-updates in place — ADR-0039)"
+        _compose_vol "${claude_install}/bin" "/home/claude/.local/bin"
+        _compose_vol "${claude_install}/share" "/home/claude/.local/share/claude"
 
         # Global config (settings.json is rw — Claude Code writes runtime preferences like /effort)
         echo "      # Global config (settings.json is rw — Claude Code writes runtime preferences like /effort)"

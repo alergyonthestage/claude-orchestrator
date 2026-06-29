@@ -30,8 +30,8 @@ cco init                     # First-time setup: ensure ~/.cco, scaffold <repo>/
 cco init --migrate <project> # Migrate a legacy project into the in-repo layout
 cco join <project>           # Add the current repo to <project> as a member (Journey E)
 cco build                    # Build Docker image
-cco build --no-cache         # Rebuild (updates Claude Code)
-cco build --claude-version x.y.z  # Pin Claude Code version
+cco build --no-cache         # Rebuild + reset Claude Code install cache (fresh install next start)
+cco build --claude-version x.y.z  # One-off channel/version override (latest|stable|x.y.z) for this build
 cco start <project>          # Start session for a project
 cco start config-editor      # Launch the built-in config-editor session
 cco new --repo <path>        # Start temporary session with repos
@@ -151,7 +151,7 @@ Per `docs/maintainers/environment/design/design-docker.md` (sezione directory st
 - `lib/cmd-config.sh` / `lib/cmd-sync.sh` — Personal-store versioning (`cco config save/push/pull` on `~/.cco`) and `cco sync` (copy resolved config into place)
 - `lib/cmd-remote.sh` — Remote management: add, remove, list sharing-repo remotes
 - `lib/remote.sh` — Remote clone helper: sparse-checkout, shallow fallback, token auth
-- `Dockerfile` — Docker image (node:22-bookworm, Claude Code, gosu, tmux, docker CLI, cco-docker-proxy)
+- `Dockerfile` — Docker image (node:22-bookworm, gosu, tmux, docker CLI, cco-docker-proxy). Claude Code is NOT baked in — the entrypoint installs it natively at first start into a persistent CACHE mount that auto-updates in place (ADR-0039)
 - `proxy/` — Go Docker socket proxy: filters API calls by container name/label, mount paths, security constraints
 - `config/entrypoint.sh` — Container entrypoint: socket GID fix, Docker proxy startup, MCP merge, gosu, tmux/claude launch
 - `config/tmux.conf` — tmux config for agent teams (colors, navigation, history)

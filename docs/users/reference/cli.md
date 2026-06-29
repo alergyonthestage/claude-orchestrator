@@ -114,9 +114,11 @@ Build or rebuild the Docker image.
 Usage: cco build [--no-cache] [--mcp-packages "pkg1 pkg2"] [--claude-version "x.y.z"]
 
 Options:
-  --no-cache               Force rebuild without Docker cache (updates Claude Code)
+  --no-cache               Rebuild without Docker cache AND reset the Claude Code
+                           install cache (next `cco start` does a fresh install)
   --mcp-packages "pkgs"    Pre-install MCP server npm packages in the image
-  --claude-version "x.y.z" Pin Claude Code to a specific version (default: latest)
+  --claude-version "x.y.z" One-off override of the Claude Code channel/version for
+                           this build (latest|stable|x.y.z)
 
 Examples:
   cco build
@@ -126,6 +128,14 @@ Examples:
 ```
 
 MCP packages can also be listed in `~/.cco/mcp-packages.txt` (one per line) for automatic loading on every build.
+
+**Claude Code is installed by the native installer, not baked into the image.** On the
+first `cco start` the entrypoint installs Claude Code into a persistent cache
+(bind-mounted into `~/.local`), so it **auto-updates in place** — you do not need to
+rebuild to get new versions. The channel/version preference is the config knob
+`~/.cco/claude-version` (a single line: `latest` (default) | `stable` | `x.y.z`);
+`cco build --claude-version` is a one-off override for a single build, and
+`cco build --no-cache` resets the install cache so the next start reinstalls fresh.
 
 ---
 

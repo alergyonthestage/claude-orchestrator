@@ -388,3 +388,21 @@ entries:
       "repo untouched"; --purge is the explicit consent (works non-interactively,
       like -y), an interactive run without it asks before deleting, and a
       non-interactive run without it skips the deletion (ADR-0021 / ADR-0029 D2).
+
+  - id: 24
+    date: "2026-06-29"
+    type: additive
+    title: "Claude Code installed via the native installer (auto-updates in place)"
+    description: >
+      Claude Code is no longer baked into the Docker image via npm (an officially
+      deprecated method). It is now installed at first `cco start` by the official
+      native installer into a persistent host CACHE dir bind-mounted into the
+      container (~/.local), so the binary and its auth grant survive restarts and
+      AUTO-UPDATE in place — no `cco build` needed for upgrades, and no more
+      DISABLE_AUTOUPDATER (ADR-0039). The channel/version is a new config knob
+      `~/.cco/claude-version` (default `latest`; set `stable` or a pinned `x.y.z`
+      to opt out). `cco build --claude-version X` remains a one-off override and
+      re-pins an existing install; `cco build --no-cache` now also resets the
+      install cache so the next start reinstalls fresh. `cco clean` never touches
+      the install cache. First start on a fresh machine adds a one-time ~30s
+      install and requires network access.

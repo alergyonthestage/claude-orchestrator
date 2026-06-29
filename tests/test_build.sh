@@ -69,3 +69,78 @@ test_build_no_global_extensions_is_clean() {
     assert_file_contains     "$DOCKER_CALL_LOG" "build"
     assert_file_not_contains "$DOCKER_CALL_LOG" "SETUP_BUILD_SCRIPT_CONTENT"
 }
+
+# ── Claude Code native install: build-arg + cache reset (ADR-0039) ──
+
+test_build_bakes_claude_version_latest_by_default() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local mock_bin="$tmpdir/mockbin"
+    setup_mocks "$mock_bin"
+    _mock_docker_with_containers "$mock_bin"
+    export DOCKER_CALL_LOG="$tmpdir/docker.log"; : > "$DOCKER_CALL_LOG"
+
+    run_cco build
+    assert_file_contains "$DOCKER_CALL_LOG" "CLAUDE_CODE_VERSION=latest"
+}
+
+test_build_bakes_claude_version_from_config_knob() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local mock_bin="$tmpdir/mockbin"
+    setup_mocks "$mock_bin"
+    _mock_docker_with_containers "$mock_bin"
+    export DOCKER_CALL_LOG="$tmpdir/docker.log"; : > "$DOCKER_CALL_LOG"
+
+    printf 'stable\n' > "$HOME/.cco/claude-version"
+    run_cco build
+    assert_file_contains "$DOCKER_CALL_LOG" "CLAUDE_CODE_VERSION=stable"
+}
+
+test_build_claude_version_flag_overrides_knob() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local mock_bin="$tmpdir/mockbin"
+    setup_mocks "$mock_bin"
+    _mock_docker_with_containers "$mock_bin"
+    export DOCKER_CALL_LOG="$tmpdir/docker.log"; : > "$DOCKER_CALL_LOG"
+
+    printf 'stable\n' > "$HOME/.cco/claude-version"
+    run_cco build --claude-version 1.2.3
+    assert_file_contains     "$DOCKER_CALL_LOG" "CLAUDE_CODE_VERSION=1.2.3"
+    assert_file_not_contains "$DOCKER_CALL_LOG" "CLAUDE_CODE_VERSION=stable"
+}
+
+test_build_no_cache_resets_install_cache() {
+    # --no-cache wipes the native-install cache so the next start reinstalls.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local mock_bin="$tmpdir/mockbin"
+    setup_mocks "$mock_bin"
+    _mock_docker_with_containers "$mock_bin"
+    export DOCKER_CALL_LOG="$tmpdir/docker.log"; : > "$DOCKER_CALL_LOG"
+
+    local install_dir="$CCO_CACHE_HOME/claude-install"
+    mkdir -p "$install_dir/bin"
+    printf 'fake-binary\n' > "$install_dir/bin/claude"
+
+    run_cco build --no-cache
+    assert_dir_not_exists "$install_dir"
+}
+
+test_build_without_no_cache_keeps_install_cache() {
+    # A plain build must NOT touch an existing install cache.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local mock_bin="$tmpdir/mockbin"
+    setup_mocks "$mock_bin"
+    _mock_docker_with_containers "$mock_bin"
+    export DOCKER_CALL_LOG="$tmpdir/docker.log"; : > "$DOCKER_CALL_LOG"
+
+    local install_dir="$CCO_CACHE_HOME/claude-install"
+    mkdir -p "$install_dir/bin"
+    printf 'fake-binary\n' > "$install_dir/bin/claude"
+
+    run_cco build
+    assert_file_exists "$install_dir/bin/claude"
+}

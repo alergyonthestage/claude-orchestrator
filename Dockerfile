@@ -64,13 +64,20 @@ RUN arch="$(dpkg --print-architecture)" \
     && chmod +x /usr/local/bin/gosu \
     && gosu nobody true
 
-# ── Claude Code ──────────────────────────────────────────────────────
-# Pin version for reproducible builds: cco build --build-arg CLAUDE_CODE_VERSION=1.0.x
+# ── Claude Code (native installer — ADR-0039) ────────────────────────
+# The binary is NO LONGER baked into the image. The entrypoint installs it at
+# first start (curl install.sh) into /home/claude/.local/{bin,share/claude},
+# which is bind-mounted from a persistent host CACHE dir so it survives restarts
+# and AUTO-UPDATES in place — no `cco build --no-cache` needed for upgrades, and
+# no root-owned npm global dir, so the auto-updater is left ENABLED (no
+# DISABLE_AUTOUPDATER). The default channel/version is `latest`; a user can pin
+# it via the `~/.cco/claude-version` config knob or `cco build --claude-version`.
+# CLAUDE_CODE_VERSION is the baked default the entrypoint forwards to install.sh
+# when `cco start` does not override it.
 ARG CLAUDE_CODE_VERSION=latest
-RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
-# Disable auto-updater: npm global dir is root-owned, claude user can't write.
-# Update via: cco build --no-cache (see roadmap for native installer migration).
-ENV DISABLE_AUTOUPDATER=1
+ENV CLAUDE_CODE_VERSION=${CLAUDE_CODE_VERSION}
+# The native installer lives in ~/.local/bin; put it on PATH for all users.
+ENV PATH="/home/claude/.local/bin:${PATH}"
 
 # ── Framework MCP servers (pre-installed for instant startup) ─────────
 # chrome-devtools-mcp: browser automation via CDP (used by browser.enabled feature)
