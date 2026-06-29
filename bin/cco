@@ -112,8 +112,8 @@ Usage: cco <command> [options]
 
 Project lifecycle:
   init                   Scaffold this repo's .cco/ project config (+ global on first run)
-  join                   Register an already-configured cloned repo on this machine
-  forget <project>       Deregister a project on this machine (repo untouched)
+  join <project>         Add the current repo to <project> as a member (--sync to receive config)
+  forget <project>       Deregister a project on this machine (--purge to also delete owned .cco/)
 
 Setup & maintenance:
   build                  Build/rebuild the Docker image

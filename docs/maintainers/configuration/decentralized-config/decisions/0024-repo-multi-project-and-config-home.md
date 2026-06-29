@@ -158,6 +158,16 @@ Two consequences are now explicit:
 D1 keeps this map unambiguous: one hosted project per repo ⇒ `<repo>/.cco/claude/` has a
 single meaning.
 
+> **Forward note (ADR-0034, 2026-06-29):** the role classification below is consolidated into a
+> single canonical helper `_project_member_status` (in `index.sh`), reused by `cco project show`,
+> `cco join`, and `cco forget --purge`. It returns a 5-way taxonomy — `unresolved | code-only |
+> foreign | divergent | synced` — joining the index (resolved here?), the committed `name:` (whom
+> does it host?, D1/D2), and the sync fingerprint (edited since last sync?, §4.6). Retrofitting
+> `cco project show` onto it also **fixes two latent bugs in the original `_project_member_role`**: a
+> same-name *divergent* member used to report `host` (the `name==` check preceded the divergence
+> check), and a *foreign* repo (hosts a **different** project) was mislabeled `synced`/`divergent` —
+> the **foreign** state was missing from the taxonomy. Body kept as the original D5 statement.
+
 ### D5 — Repo↔project observability (front C)
 
 cco must let the user determine, at any time: **(a)** which project a repo **hosts**

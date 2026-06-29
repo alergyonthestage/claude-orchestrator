@@ -274,29 +274,37 @@ modes are `cco join` (add the current repo to an existing project) and `cco init
 
 #### `cco join <project>`
 
-Add the current repo to `<project>` as a **member**: register it in the index and add it to
-`repos[]` in the project's `project.yml`. The new member's `repos[]` edit propagates to every
-repo that carries a synced copy (Case B); in a divergent project (Case C) `cco join` **prompts**
-which repo's `project.yml` to update, or all.
+Add the current repo to `<project>` as a **member** (ADR-0034): embed its coordinate
+(`name` + `url`, derived from `git remote get-url origin`) into the project's `repos[]` and
+register its name→path binding in the index. The `repos[]` edit is applied to every member repo
+that carries a synced copy (Case B); in a divergent project (Case C) `cco join` **prompts** which
+member's `project.yml` to update, or all, and refuses non-interactively. Because `repos[]` is not
+the sync discriminator (`cco sync` keys on `name:`), a partial edit converges to the other members
+on the next `cco sync` — so join is **not** strict.
 
 ```
-Usage: cco join <project> [--sync]
+Usage: cco join <project> [--sync] [--name <name>]
 
 Arguments:
   project              Name of an existing project (defined in another repo)
 
 Options:
-  --sync               Copy the project's <repo>/.cco/ into this repo (source prompted
-                       if divergent). Without it, the repo stays a code-only member (Case A).
+  --name <name>        Logical member name for this repo (default: the dir basename; prompted
+                       interactively, falls back to the basename non-interactively)
+  --sync               Copy the project's <repo>/.cco/ into this repo (Case B). Skipped + warned
+                       if this repo already hosts a different project (ADR-0024 D2). Without it,
+                       the repo stays a code-only member (Case A).
 
 Examples:
-  cco join my-saas             # Join as a code-only member (Case A)
-  cco join my-saas --sync      # Join and receive a config copy (Case B)
+  cco join my-saas                  # Join as a code-only member (Case A)
+  cco join my-saas --name api       # Join under an explicit member name
+  cco join my-saas --sync           # Join and receive a config copy (Case B)
 ```
 
-The joining repo gets **no `.cco/`** (code-only member) unless `--sync` / interactive confirm,
-which copies the project's `.cco/` into it. cco knows which repos are synced vs divergent from
-its internal sync-state tracking.
+The joining repo gets **no `.cco/`** (code-only member) unless `--sync`, which copies the
+project's `.cco/` into it (respecting the D2 clobber-guard). After joining, commit + push the
+updated `project.yml` in each changed member repo, then run `cco sync`. cco knows which members
+are synced vs divergent from its per-machine sync-state tracking.
 
 #### `cco init --migrate <project> [--sync]`
 
@@ -329,31 +337,41 @@ during migrate.
 
 Deregister a project on this machine: remove cco's internal id-keyed state — the STATE index
 entry (membership + path), the per-user tags, install provenance (DATA), and the project's
-STATE/CACHE — **without** touching the repo or its committed `<repo>/.cco/`. The inverse of
-`cco init`/`cco join` (ADR-0021).
+STATE/CACHE — **without** touching the repo or its committed `<repo>/.cco/` by default. The
+inverse of `cco init`/`cco join` (ADR-0021).
 
 ```
-Usage: cco forget <project> [-y]
+Usage: cco forget <project> [-y] [--purge]
 
 Arguments:
   project              Name of the project to deregister
 
 Options:
-  -y, --yes            Skip the confirmation prompt
+  -y, --yes            Skip the deregistration confirmation prompt
+  --purge              Also delete the committed <repo>/.cco/ of every member repo this project
+                       OWNS (with a backup first); the explicit consent for that deletion
 
 Examples:
   cco forget old-service
   cco forget old-service -y
+  cco forget old-service --purge      # also delete owned .cco/ dirs (backed up first)
 ```
 
 `cco forget` previews what it will remove, then asks for confirmation (skip with `-y`; in a
 non-interactive shell `-y` is required). A member repo shared with another project keeps its
 path entry — only entries unique to the forgotten project are dropped.
 
-`cco forget` only removes machine-local bookkeeping. The repo and its committed config are
-untouched, so a later `cco resolve --scan` (or `cco start` from the repo) re-registers it.
-The one thing that does not auto-return is the project's user-authored tags — re-tag if you
-resume the project.
+By default the repo and its committed config are untouched, so a later `cco resolve --scan` (or
+`cco start` from the repo) re-registers it. The one thing that does not auto-return is the
+project's user-authored tags — re-tag if you resume the project.
+
+**`--purge`** additionally deletes the committed `<repo>/.cco/` of every member repo the project
+**owns** (its `project.yml` `name:` == this project) — a repo that hosts a **different** project,
+is **shared** with another project, or is **unresolved** here is left untouched. Each deletion is
+preceded by a **backup tar** into STATE and a warning if the `.cco/` has uncommitted changes;
+`--purge` is the explicit consent (no extra prompt; works non-interactively, like `-y`), while an
+interactive run without it asks before deleting and a non-interactive run without it skips the
+deletion.
 
 ---
 

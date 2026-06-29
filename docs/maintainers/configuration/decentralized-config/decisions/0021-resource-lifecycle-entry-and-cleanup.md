@@ -56,6 +56,16 @@ legacy-vault signal (a git `~/.cco`/`user-config` with profile branches / `.vaul
 
 ### 2. Deregister verb — `cco forget <project>`
 
+> **Forward note (ADR-0034, 2026-06-29):** `cco forget` gains an **opt-in `--purge`** that
+> *additionally* deletes the committed `<repo>/.cco/` of every member repo the project **OWNS**
+> (status synced/divergent via the shared `_project_member_status` classifier) — never a
+> foreign/shared/code-only/unresolved repo. Each deletion is **backed up** first (ADR-0006) and
+> warned if dirty; `--purge` is the explicit consent (also non-interactive, like `-y`), an
+> interactive run without it asks, and a non-interactive run without it **skips** the deletion. The
+> **default below is unchanged** — without `--purge`, the repo and its `.cco/` are NOT touched and
+> the project self-heals (Decision 3). This is the optional, ownership-guarded extension to the
+> "does NOT touch the repo" rule, with active consent (ADR-0029 D2).
+
 `cco forget <project>` removes cco's internal, id-keyed bookkeeping for that project — the STATE
 `index` entry, STATE `memory/`/session, DATA `source`, the `tags.yml` entry, and CACHE entries — and
 **does NOT touch** the user's repo or its committed `<repo>/.cco/`. It is the explicit inverse of the

@@ -356,3 +356,35 @@ entries:
       for. `cco start` now invokes this same resolve surface before launch
       instead of a parallel resolution loop — a single entry point that heals all
       kinds and never hard-blocks on unresolved members.
+
+  - id: 22
+    date: "2026-06-29"
+    type: additive
+    title: "cco join adds the current repo as a project member (Journey E)"
+    description: >
+      `cco join <project> [--sync] [--name <name>]` now adds the CURRENT repo as a
+      new member of an existing project (ADR-0034): it embeds the repo's
+      coordinate (name + url derived from `git remote get-url origin`) into the
+      project's repos[] and binds its name->path in the index. The repos[] edit is
+      applied to every in-sync member; a divergent project (Case C) prompts which
+      member's project.yml to update, or all. With --sync the joining repo also
+      receives the project's .cco/ (Case B, respecting the ADR-0024 D2 clobber-
+      guard); without it it stays a code-only member (Case A). After joining,
+      commit + push the changed project.yml in each member and run `cco sync`. The
+      former no-argument form (register an already-committed .cco/) is removed —
+      `cco start` cwd-first and `cco resolve --scan` cover it.
+
+  - id: 23
+    date: "2026-06-29"
+    type: additive
+    title: "cco forget --purge deletes owned <repo>/.cco/ with backup"
+    description: >
+      `cco forget <project> --purge` extends deregistration with an optional,
+      ownership-guarded deletion of the committed <repo>/.cco/ of every member
+      repo the project OWNS (its project.yml `name:` == the project) — a repo that
+      hosts a different project, is shared with another project, or is unresolved
+      here is left untouched. Each deletion is preceded by a backup tar into STATE
+      and a warning if the .cco/ has uncommitted changes. The default remains
+      "repo untouched"; --purge is the explicit consent (works non-interactively,
+      like -y), an interactive run without it asks before deleting, and a
+      non-interactive run without it skips the deletion (ADR-0021 / ADR-0029 D2).

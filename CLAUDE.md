@@ -28,7 +28,7 @@ claude-orchestrator manages isolated Claude Code sessions in Docker containers f
 ```bash
 cco init                     # First-time setup: ensure ~/.cco, scaffold <repo>/.cco/, build image
 cco init --migrate <project> # Migrate a legacy project into the in-repo layout
-cco join <project>           # Join a project whose <repo>/.cco/ already exists
+cco join <project>           # Add the current repo to <project> as a member (Journey E)
 cco build                    # Build Docker image
 cco build --no-cache         # Rebuild (updates Claude Code)
 cco build --claude-version x.y.z  # Pin Claude Code version
