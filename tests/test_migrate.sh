@@ -867,3 +867,33 @@ test_backfill_pack_llms_idempotent_and_preserves_existing() {
     [[ "$got" == "svelte||full|https://svelte.dev/llms.txt;tailwind|||https://custom/t.txt;" ]] \
         || fail "Existing url must be preserved, recoverable backfilled, got: $got"
 }
+
+# S1 finding #1: a repo recovered as ~/… or $HOME/… and an @local mount must land
+# in the index as ABSOLUTE paths — never a tilde / $HOME / @local (which poison
+# by-name resolve, produce false AD5 conflicts, and break the generated compose).
+# Pre-fix the repos branch wrote the recovered value raw; only mounts normalized.
+test_migrate_normalizes_tilde_and_atlocal_into_index() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_legacy_vault_project "$tmpdir"
+    local vault="$CCO_USER_CONFIG_DIR"
+    # Recover api via a tilde spelling, web via a $HOME spelling, the @local mount
+    # via a tilde spelling — every one must normalize to an absolute path.
+    cat > "$vault/projects/myapp/.cco/local-paths.yml" <<'YML'
+repos:
+  api: "~/dev/api"
+  web: "$HOME/dev/web"
+extra_mounts:
+  shared-data: "~/dev/shared-data"
+YML
+    git -C "$vault" add -A 2>/dev/null
+    git -C "$vault" commit -q -m "tilde paths" 2>/dev/null
+    ( cd "$tmpdir/clones/api" && CCO_ASSUME_YES=1 run_cco init --migrate myapp )
+    local idx="$CCO_STATE_HOME/index"
+    assert_file_contains "$idx" "api: \"$HOME/dev/api\""
+    assert_file_contains "$idx" "web: \"$HOME/dev/web\""
+    assert_file_contains "$idx" "shared-data: \"$HOME/dev/shared-data\""
+    # No raw tilde / literal $HOME / @local ever stored in the index.
+    assert_file_not_contains "$idx" '@local'
+    grep -q '~'      "$idx" && fail "index must not store a tilde path" || true
+    grep -qF '$HOME' "$idx" && fail "index must not store a literal \$HOME" || true
+}

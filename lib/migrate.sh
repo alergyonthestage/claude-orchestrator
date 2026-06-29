@@ -724,6 +724,29 @@ _cco_project_origin_profile() {
     done < <(git -C "$src" for-each-ref --format='%(refname:short)' refs/heads 2>/dev/null)
 }
 
+# Resolve a legacy path value to an ABSOLUTE path for the index staging file,
+# shared by the repos and extra_mounts branches below (the divergence between
+# them was S1 finding #1: repos wrote the value raw, leaking ~/… and @local into
+# the index). Expands ~/$HOME via the index boundary normalizer; an @local /
+# relative / empty value is recovered from local-paths.yml (each given <section>
+# tried in order) and the recovered value normalized too. Echoes the absolute
+# path (return 0) or nothing (return 1) when it cannot be made absolute — the
+# caller then writes no index entry (conscious-skip; the user binds it later with
+# `cco resolve`). NEVER emit a non-absolute value: a leaked `@local` reaches the
+# compose as a bogus mount source whose `@` is a reserved YAML char.
+# Usage: _migrate_index_abs <raw> <lpaths> <name> <section…>
+_migrate_index_abs() {
+    local raw="$1" lpaths="$2" name="$3"; shift 3
+    local p sect
+    p=$(_index_normalize_path "$raw") && { printf '%s\n' "$p"; return 0; }
+    for sect in "$@"; do
+        p=$(_local_paths_get "$lpaths" "$sect" "$name")
+        [[ -n "$p" ]] && break
+    done
+    p=$(_index_normalize_path "$p") && { printf '%s\n' "$p"; return 0; }
+    return 1
+}
+
 # Build the final project.yml at $out from the legacy project at $leg. Emits
 # index entries "name<TAB>path<TAB>kind" (kind = repo|mount) to the file at
 # $idx_out — repos become project members, mounts get an index path only.
@@ -757,10 +780,12 @@ _cco_build_project_yml() {
             printf '\n  - name: %s' "$rname"
             [[ -n "$rurl" ]] && printf '\n    url: %s' "$rurl"
             [[ -n "$rref" ]] && printf '\n    ref: %s' "$rref"
-            # Resolve the machine-local path for the index.
-            local real="$rpath"
-            [[ "$real" == "@local" || -z "$real" ]] && real=$(_local_paths_get "$lpaths" repos "$rname")
-            [[ -n "$real" ]] && printf '%s\t%s\trepo\n' "$rname" "$real" >> "$idx_out"
+            # Resolve the machine-local path for the index (absolute only;
+            # ~/$HOME/@local recovered via local-paths.yml — unified with the
+            # extra_mounts branch through _migrate_index_abs, S1 finding #1).
+            local real
+            real=$(_migrate_index_abs "$rpath" "$lpaths" "$rname" repos) \
+                && printf '%s\t%s\trepo\n' "$rname" "$real" >> "$idx_out"
         done < <(_migrate_legacy_repos "$leg_yml")
         $any_repo || printf ' []'
         printf '\n'
@@ -790,27 +815,16 @@ _cco_build_project_yml() {
             printf '\n  - name: %s' "$mname"
             [[ -n "$mtgt" ]] && printf '\n    target: %s' "$mtgt"
             [[ -n "$mro"  ]] && printf '\n    readonly: %s' "$mro"
-            # Resolve the host source to an ABSOLUTE path for the index. A real
-            # path (expand ~/$HOME) wins; the legacy `@local` marker / empty /
-            # any non-absolute value resolves via local-paths.yml (extra_mounts,
-            # then mounts) exactly like repos. NEVER write `@local` — it is not a
-            # path; leaked into the index it reaches the compose as a bogus mount
-            # source whose leading `@` is a reserved YAML char that breaks
+            # Resolve the host source to an ABSOLUTE path for the index via the
+            # shared helper (expand ~/$HOME; recover @local/relative/empty from
+            # local-paths.yml — extra_mounts then mounts). NEVER write a
+            # non-absolute value: a leaked `@local` reaches the compose as a
+            # bogus mount source whose `@` is a reserved YAML char that breaks
             # `docker compose`. Unresolvable → no index entry (conscious-skip at
             # start; the user binds it later with `cco resolve`).
-            local _ms="$msrc"
-            case "$_ms" in
-                /*) ;;                                       # already absolute
-                "~")        _ms="$HOME" ;;
-                "~/"*)      _ms="$HOME/${_ms#\~/}" ;;
-                '$HOME')    _ms="$HOME" ;;
-                '$HOME/'*)  _ms="$HOME/${_ms#\$HOME/}" ;;
-                *)  # @local / relative / empty → recover the real path from local-paths.yml
-                    _ms=$(_local_paths_get "$lpaths" extra_mounts "$mname")
-                    [[ -z "$_ms" ]] && _ms=$(_local_paths_get "$lpaths" mounts "$mname")
-                    ;;
-            esac
-            [[ "$_ms" == /* ]] && printf '%s\t%s\tmount\n' "$mname" "$_ms" >> "$idx_out"
+            local _ms
+            _ms=$(_migrate_index_abs "$msrc" "$lpaths" "$mname" extra_mounts mounts) \
+                && printf '%s\t%s\tmount\n' "$mname" "$_ms" >> "$idx_out"
         done < <(_migrate_legacy_mounts "$leg_yml")
         $mfirst || printf '\n'
         # llms — coordinate from the installed entry's .cco/source (url/variant)
