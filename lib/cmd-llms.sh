@@ -3,27 +3,23 @@
 #
 # Provides: cmd_llms()
 # Dependencies: colors.sh, utils.sh, paths.sh, yaml.sh, llms.sh
-# Globals: LLMS_DIR, PACKS_DIR, PROJECTS_DIR
+# Globals: LLMS_DIR, PACKS_DIR (projects enumerated via the STATE index, P5)
 
 cmd_llms() {
     local subcmd="${1:-}"
-    if [[ -z "$subcmd" || "$subcmd" == "--help" ]]; then
+    if [[ -z "$subcmd" || "$subcmd" == "--help" || "$subcmd" == "-h" ]]; then
         cat <<'EOF'
 Usage: cco llms <command> [options]
 
 Commands:
   install <url>        Download and install an llms.txt file
-  list                 List installed llms documentation
   show <name>          Show details for an installed llms entry
   update [name]        Re-download llms files from source URLs
   rename <old> <new>   Rename an installed llms entry
   remove <name>        Remove an installed llms entry
 
-Options (for install):
-  --name <name>        Override the auto-detected framework name
-  --variant <v>        Force variant: full, medium, small, index (default: auto)
-  --pack <pack>        Add reference to this pack's pack.yml
-  --project <project>  Add reference to this project's project.yml
+Only llms has 'rename' (entries are auto-named from their URL, so renaming is a
+genuine llms-only need).
 
 Run 'cco llms <command> --help' for command-specific options.
 EOF
@@ -32,7 +28,7 @@ EOF
     shift
     case "$subcmd" in
         install) _llms_install "$@" ;;
-        list)    _llms_list "$@" ;;
+        list)    die "'cco llms list' was removed — use 'cco list llms' (ADR-0029)." ;;
         show)    _llms_show "$@" ;;
         update)  _llms_update "$@" ;;
         rename)  _llms_rename "$@" ;;
@@ -53,7 +49,7 @@ _llms_install() {
             --pack)    pack="$2"; shift 2 ;;
             --project) project="$2"; shift 2 ;;
             --force)   force=true; shift ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco llms install <url> [options]
 
@@ -221,7 +217,7 @@ EOF
 # ── list ─────────────────────────────────────────────────────────────
 
 _llms_list() {
-    if [[ "${1:-}" == "--help" ]]; then
+    if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
         cat <<'EOF'
 Usage: cco llms list
 
@@ -304,7 +300,7 @@ _llms_show() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco llms show <name>
 
@@ -373,7 +369,7 @@ _llms_update() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --all)  update_all=true; shift ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco llms update [<name>] [--all]
 
@@ -494,7 +490,7 @@ _llms_rename() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --help)
+            --help|-h)
                 cat <<'EOF'
 Usage: cco llms rename <old-name> <new-name>
 
@@ -534,20 +530,26 @@ EOF
 
     mv "$old_dir" "$new_dir"
 
-    # Update references in packs and projects (only in llms: sections)
+    # Update references in packs and projects (only in llms: sections).
     local updated_refs=0
-    for search_dir in "$PACKS_DIR" "$PROJECTS_DIR"; do
-        [[ ! -d "$search_dir" ]] && continue
-        for pdir in "$search_dir"/*/; do
+    # Packs: flat store under PACKS_DIR.
+    if [[ -d "$PACKS_DIR" ]]; then
+        local pdir
+        for pdir in "$PACKS_DIR"/*/; do
             [[ ! -d "$pdir" ]] && continue
-            for yml in "$pdir"pack.yml "$pdir"project.yml; do
-                [[ ! -f "$yml" ]] && continue
-                if _llms_rename_in_yaml "$yml" "$old_name" "$new_name"; then
-                    ((updated_refs++))
-                fi
-            done
+            [[ ! -f "${pdir}pack.yml" ]] && continue
+            if _llms_rename_in_yaml "${pdir}pack.yml" "$old_name" "$new_name"; then
+                ((updated_refs++))
+            fi
         done
-    done
+    fi
+    # Projects: decentralized, enumerated via the STATE index (P5).
+    local pyml
+    while IFS=$'\t' read -r _ _ pyml; do
+        if _llms_rename_in_yaml "$pyml" "$old_name" "$new_name"; then
+            ((updated_refs++))
+        fi
+    done < <(_project_foreach)
 
     ok "Renamed llms '$old_name' → '$new_name'"
     [[ $updated_refs -gt 0 ]] && ok "Updated $updated_refs YAML reference(s)"
@@ -556,19 +558,21 @@ EOF
 # ── remove ───────────────────────────────────────────────────────────
 
 _llms_remove() {
-    local name="" force=false
+    local name="" yes=false force=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --force) force=true; shift ;;
-            --help)
+            -y|--yes) yes=true; shift ;;
+            --force)  force=true; yes=true; shift ;;   # override the referenced block + imply -y
+            --help|-h)
                 cat <<'EOF'
-Usage: cco llms remove <name> [--force]
+Usage: cco llms remove <name> [-y] [--force]
 
-Remove an installed llms entry.
+Remove an installed llms entry. Previews and confirms first (ADR-0029 D2).
 
 Options:
-  --force   Skip confirmation prompt
+  -y, --yes   Skip the confirmation prompt
+  --force     Remove even if the entry is still referenced (implies -y)
 EOF
                 return 0
                 ;;
@@ -588,15 +592,17 @@ EOF
     local llms_dir="$LLMS_DIR/$name"
     [[ ! -d "$llms_dir" ]] && die "LLMs '$name' not found."
 
-    # Check usage
+    # ── Preview + referenced block (ADR-0029 D2) ───────────────────────────
+    info "cco llms remove '$name' will delete the entry at $llms_dir."
     local users
     users=$(_llms_find_users "$name")
-    if [[ -n "$users" && "$force" == "false" ]]; then
+    if [[ -n "$users" ]]; then
         warn "LLMs '$name' is referenced by: $users"
-        printf "Remove anyway? [y/N] "
-        read -r confirm
-        [[ "$confirm" != "y" && "$confirm" != "Y" ]] && { info "Cancelled."; return 0; }
+        [[ "$force" != true ]] && \
+            die "Refusing to remove a referenced llms entry — re-run with --force to remove anyway."
     fi
+
+    _confirm_destructive "$yes" "Remove llms '$name'?" || { info "Cancelled."; return 0; }
 
     rm -rf "$llms_dir"
     ok "Removed llms '$name'"
@@ -675,8 +681,11 @@ _llms_resolve_name_from_url() {
         done
     fi
 
-    if [[ -n "$segments" && "$segments" != "$domain" ]]; then
-        echo "${domain}-${segments}"
+    # A meaningful path segment identifies the framework (e.g. .../react/llms-full.txt
+    # → "react"); the domain is only the fallback when the path carries no segment
+    # (e.g. shadcn-svelte.com/llms.txt → "shadcn-svelte").
+    if [[ -n "$segments" ]]; then
+        echo "$segments"
     else
         echo "$domain"
     fi
@@ -730,19 +739,15 @@ _llms_find_users() {
         done
     fi
 
-    # Check projects
-    if [[ -d "$PROJECTS_DIR" ]]; then
-        for pdir in "$PROJECTS_DIR"/*/; do
-            [[ ! -d "$pdir" ]] && continue
-            local pyml="$pdir/project.yml"
-            [[ ! -f "$pyml" ]] && continue
-            local names
-            names=$(yml_get_llms_names "$pyml" 2>/dev/null)
-            if echo "$names" | grep -qxF "$name"; then
-                users+=("$(basename "$pdir") (project)")
-            fi
-        done
-    fi
+    # Check projects — enumerate via the STATE index (P5).
+    local proj pyml
+    while IFS=$'\t' read -r proj _ pyml; do
+        local names
+        names=$(yml_get_llms_names "$pyml" 2>/dev/null)
+        if echo "$names" | grep -qxF "$name"; then
+            users+=("$proj (project)")
+        fi
+    done < <(_project_foreach)
 
     if [[ ${#users[@]} -gt 0 ]]; then
         local IFS=", "
@@ -767,8 +772,9 @@ _llms_add_to_yaml() {
     fi
 
     if [[ -n "$project" ]]; then
-        local proj_yml="$PROJECTS_DIR/$project/project.yml"
-        [[ ! -f "$proj_yml" ]] && { warn "Project '$project' not found — skipping YAML update."; return; }
+        local _ud proj_yml=""
+        _ud=$(_resolve_unit_dir_for_project "$project" 2>/dev/null) && proj_yml="$_ud/.cco/project.yml"
+        [[ -n "$proj_yml" && -f "$proj_yml" ]] || { warn "Project '$project' not found — skipping YAML update."; return; }
         if yml_get_llms_names "$proj_yml" | grep -qxF "$name"; then
             info "LLMs '$name' already in project '$project'"
         else

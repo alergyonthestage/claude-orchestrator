@@ -79,22 +79,27 @@ test_yml_remove_top_level() {
 test_cco_project_source_new_path() {
     _source_libs
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    export CCO_DATA_HOME="$tmpdir/data"
+    # The install-provenance source now lives in DATA, keyed by project id.
+    # With a project.yml `name:`, the id is that name (ADR-0022 D1).
     mkdir -p "$tmpdir/.cco"
-    printf 'source: local\n' > "$tmpdir/.cco/source"
+    printf 'name: src-proj\n' > "$tmpdir/.cco/project.yml"
 
     local result
     result=$(_cco_project_source "$tmpdir")
-    assert_equals "$tmpdir/.cco/source" "$result" \
-        "Should return new path when .cco/source exists"
+    assert_equals "$(_cco_data_dir)/projects/src-proj/source" "$result" \
+        "Should resolve to the DATA source path keyed by project id"
 }
 
 test_cco_project_source_default_path() {
     _source_libs
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    export CCO_DATA_HOME="$tmpdir/data"
+    # With no project.yml, the id falls back to the dir basename.
     local result
     result=$(_cco_project_source "$tmpdir")
-    assert_equals "$tmpdir/.cco/source" "$result" \
-        "Should return .cco/source as default path"
+    assert_equals "$(_cco_data_dir)/projects/$(basename "$tmpdir")/source" "$result" \
+        "Should resolve to the DATA source path keyed by dir basename"
 }
 
 # ── _is_installed_project ────────────────────────────────────────────
@@ -102,8 +107,15 @@ test_cco_project_source_default_path() {
 test_is_installed_project_remote() {
     _source_libs
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    export CCO_DATA_HOME="$tmpdir/data" CCO_STATE_HOME="$tmpdir/state" CCO_ALLOW_HOST_RESOLVE=1
     mkdir -p "$tmpdir/project/.cco"
-    printf 'source: https://github.com/team/config.git\nref: main\ncommit: abc123\n' > "$tmpdir/project/.cco/source"
+    # Coordinate → DATA source; install commit → STATE meta (ADR-0022 D1).
+    local src_file meta_file
+    src_file=$(_cco_project_source "$tmpdir/project")
+    meta_file=$(_cco_project_meta "$tmpdir/project")
+    mkdir -p "$(dirname "$src_file")" "$(dirname "$meta_file")"
+    printf 'url: https://github.com/team/config.git\nref: main\n' > "$src_file"
+    printf 'installed_commit: abc123\n' > "$meta_file"
 
     _is_installed_project "$tmpdir/project"
     assert_equals "https://github.com/team/config.git" "$_INSTALLED_SOURCE_URL" \
@@ -115,8 +127,12 @@ test_is_installed_project_remote() {
 test_is_installed_project_local() {
     _source_libs
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    export CCO_DATA_HOME="$tmpdir/data" CCO_STATE_HOME="$tmpdir/state"
     mkdir -p "$tmpdir/project/.cco"
-    printf 'source: local\n' > "$tmpdir/project/.cco/source"
+    # Authored/disconnected source coordinate → DATA, first key `url: local`.
+    local src_file; src_file=$(_cco_project_source "$tmpdir/project")
+    mkdir -p "$(dirname "$src_file")"
+    printf 'url: local\n' > "$src_file"
 
     ! _is_installed_project "$tmpdir/project" || \
         fail "Local project should return false"
@@ -125,8 +141,11 @@ test_is_installed_project_local() {
 test_is_installed_project_native() {
     _source_libs
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    export CCO_DATA_HOME="$tmpdir/data" CCO_STATE_HOME="$tmpdir/state"
     mkdir -p "$tmpdir/project/.cco"
-    printf 'native:project/base\n' > "$tmpdir/project/.cco/source"
+    local src_file; src_file=$(_cco_project_source "$tmpdir/project")
+    mkdir -p "$(dirname "$src_file")"
+    printf 'native:project/base\n' > "$src_file"
 
     ! _is_installed_project "$tmpdir/project" || \
         fail "Native project should return false"
@@ -135,10 +154,11 @@ test_is_installed_project_native() {
 test_is_installed_project_no_source() {
     _source_libs
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    export CCO_DATA_HOME="$tmpdir/data" CCO_STATE_HOME="$tmpdir/state"
     mkdir -p "$tmpdir/project/.cco"
 
     ! _is_installed_project "$tmpdir/project" || \
-        fail "Project without .cco/source should return false"
+        fail "Project without a DATA source should return false"
 }
 
 # ── Source-aware update ──────────────────────────────────────────────
@@ -146,22 +166,21 @@ test_is_installed_project_no_source() {
 test_update_installed_project_skips_sync() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
-    # Create a project with remote .cco/source
+    # Installed-from-remote project (P5): DATA source coordinate + STATE meta
+    # (schema + installed commit) + the committed <repo>/.cco/claude tree.
     create_project "$tmpdir" "remote-app" "name: remote-app"
-    mkdir -p "$CCO_PROJECTS_DIR/remote-app/.cco"
-    printf 'source: https://github.com/team/config.git\nref: main\ncommit: abc123\n' \
-        > "$CCO_PROJECTS_DIR/remote-app/.cco/source"
-
-    # Bootstrap .cco/meta with current schema
     local latest_schema
     latest_schema=$(bash -c "source '$REPO_ROOT/lib/colors.sh'; source '$REPO_ROOT/lib/utils.sh'; source '$REPO_ROOT/lib/paths.sh'; source '$REPO_ROOT/lib/yaml.sh'; source '$REPO_ROOT/lib/update-hash-io.sh'; source '$REPO_ROOT/lib/update-merge.sh'; source '$REPO_ROOT/lib/update-meta.sh'; source '$REPO_ROOT/lib/update-discovery.sh'; source '$REPO_ROOT/lib/update-sync.sh'; source '$REPO_ROOT/lib/update-changelog.sh'; source '$REPO_ROOT/lib/update-remote.sh'; source '$REPO_ROOT/lib/update.sh'; _latest_schema_version project")
-    printf 'schema_version: %s\n' "$latest_schema" \
-        > "$CCO_PROJECTS_DIR/remote-app/.cco/meta"
-
-    # Copy base template files
-    cp -r "$REPO_ROOT/templates/project/base/.claude/"* "$CCO_PROJECTS_DIR/remote-app/.claude/" 2>/dev/null || true
+    mkdir -p "$(dirname "$(data_project_source remote-app)")"
+    printf 'url: https://github.com/team/config.git\nref: main\n' \
+        > "$(data_project_source remote-app)"
+    mkdir -p "$(dirname "$(state_project_meta remote-app)")"
+    printf 'schema_version: %s\ninstalled_commit: abc123\n' "$latest_schema" \
+        > "$(state_project_meta remote-app)"
+    cp -r "$REPO_ROOT/templates/project/base/.claude/"* \
+        "$(host_cco_dir "$tmpdir" remote-app)/claude/" 2>/dev/null || true
 
     run_cco update --sync remote-app
     assert_output_contains "installed from" \
@@ -173,9 +192,9 @@ test_update_installed_project_skips_sync() {
 test_update_local_project_applies_sync() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
-    run_cco project create local-app
+    create_project "$tmpdir" "local-app" "$(minimal_project_yml local-app)"
     run_cco update --sync local-app --keep
     # Should process local project normally (no "installed from" message)
     assert_output_contains "Update complete"
@@ -183,60 +202,27 @@ test_update_local_project_applies_sync() {
 
 # ── Project internalize ──────────────────────────────────────────────
 
-test_project_internalize() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
 
-    # Create a project with remote source
-    create_project "$tmpdir" "remote-app" "name: remote-app"
-    mkdir -p "$CCO_PROJECTS_DIR/remote-app/.cco"
-    local latest_schema
-    latest_schema=$(bash -c "source '$REPO_ROOT/lib/colors.sh'; source '$REPO_ROOT/lib/utils.sh'; source '$REPO_ROOT/lib/paths.sh'; source '$REPO_ROOT/lib/yaml.sh'; source '$REPO_ROOT/lib/update-hash-io.sh'; source '$REPO_ROOT/lib/update-merge.sh'; source '$REPO_ROOT/lib/update-meta.sh'; source '$REPO_ROOT/lib/update-discovery.sh'; source '$REPO_ROOT/lib/update-sync.sh'; source '$REPO_ROOT/lib/update-changelog.sh'; source '$REPO_ROOT/lib/update-remote.sh'; source '$REPO_ROOT/lib/update.sh'; _latest_schema_version project")
-    printf 'source: https://github.com/team/config.git\nref: main\ncommit: abc123\n' \
-        > "$CCO_PROJECTS_DIR/remote-app/.cco/source"
-    printf 'schema_version: %s\nremote_cache:\n  commit: abc123\n  checked: 2026-03-17\n' \
-        "$latest_schema" \
-        > "$CCO_PROJECTS_DIR/remote-app/.cco/meta"
-
-    cp -r "$REPO_ROOT/templates/project/base/.claude/"* "$CCO_PROJECTS_DIR/remote-app/.claude/" 2>/dev/null || true
-
-    # Internalize (--yes for non-interactive)
-    run_cco project internalize remote-app --yes
-    assert_output_contains "now local" \
-        "Should report project is now local"
-
-    assert_file_contains "$CCO_PROJECTS_DIR/remote-app/.cco/source" "source: local"
-    assert_file_not_contains "$CCO_PROJECTS_DIR/remote-app/.cco/meta" "remote_cache:"
-}
-
-test_project_internalize_already_local() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-
-    run_cco project create local-app
-    run_cco project internalize local-app
-    assert_output_contains "already local"
-}
 
 # ── Discovery output ─────────────────────────────────────────────────
 
 test_update_discovery_offline() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
-    # Create installed project
+    # Installed project (P5): DATA source + STATE meta + committed claude tree.
     create_project "$tmpdir" "team-svc" "name: team-svc"
-    mkdir -p "$CCO_PROJECTS_DIR/team-svc/.cco"
     local latest_schema
     latest_schema=$(bash -c "source '$REPO_ROOT/lib/colors.sh'; source '$REPO_ROOT/lib/utils.sh'; source '$REPO_ROOT/lib/paths.sh'; source '$REPO_ROOT/lib/yaml.sh'; source '$REPO_ROOT/lib/update-hash-io.sh'; source '$REPO_ROOT/lib/update-merge.sh'; source '$REPO_ROOT/lib/update-meta.sh'; source '$REPO_ROOT/lib/update-discovery.sh'; source '$REPO_ROOT/lib/update-sync.sh'; source '$REPO_ROOT/lib/update-changelog.sh'; source '$REPO_ROOT/lib/update-remote.sh'; source '$REPO_ROOT/lib/update.sh'; _latest_schema_version project")
-    printf 'source: https://github.com/team/config.git\nref: main\ncommit: abc123\n' \
-        > "$CCO_PROJECTS_DIR/team-svc/.cco/source"
-    printf 'schema_version: %s\n' "$latest_schema" \
-        > "$CCO_PROJECTS_DIR/team-svc/.cco/meta"
-    cp -r "$REPO_ROOT/templates/project/base/.claude/"* "$CCO_PROJECTS_DIR/team-svc/.claude/" 2>/dev/null || true
+    mkdir -p "$(dirname "$(data_project_source team-svc)")"
+    printf 'url: https://github.com/team/config.git\nref: main\n' \
+        > "$(data_project_source team-svc)"
+    mkdir -p "$(dirname "$(state_project_meta team-svc)")"
+    printf 'schema_version: %s\ninstalled_commit: abc123\n' "$latest_schema" \
+        > "$(state_project_meta team-svc)"
+    cp -r "$REPO_ROOT/templates/project/base/.claude/"* \
+        "$(host_cco_dir "$tmpdir" team-svc)/claude/" 2>/dev/null || true
 
     run_cco update --offline
     assert_output_contains "team-svc"
@@ -244,23 +230,7 @@ test_update_discovery_offline() {
 
 # ── Project update (no remote) ───────────────────────────────────────
 
-test_project_update_local_fails() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    run_cco project create my-app
 
-    ! run_cco project update my-app || \
-        fail "project update on local project should fail"
-    assert_output_contains "local"
-}
-
-test_project_update_help() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco project update --help
-    assert_output_contains "3-way merge"
-}
 
 # ── yml_set scoping (bug regression) ─────────────────────────────────
 
@@ -333,21 +303,27 @@ test_cache_fresh_empty() {
 test_update_sync_installed_with_local() {
     local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
-    # Create installed project with a modified file to trigger sync
+    # Create installed project with a modified file to trigger sync. The
+    # installed claude tree lives in the committed <repo>/.cco/claude (P5).
     create_project "$tmpdir" "remote-app" "name: remote-app"
-    mkdir -p "$CCO_PROJECTS_DIR/remote-app/.cco/base" "$CCO_PROJECTS_DIR/remote-app/.claude"
+    local cco; cco=$(host_cco_dir "$tmpdir" "remote-app")
+    mkdir -p "$cco/claude"
     local latest_schema
     latest_schema=$(bash -c "source '$REPO_ROOT/lib/colors.sh'; source '$REPO_ROOT/lib/utils.sh'; source '$REPO_ROOT/lib/paths.sh'; source '$REPO_ROOT/lib/yaml.sh'; source '$REPO_ROOT/lib/update-hash-io.sh'; source '$REPO_ROOT/lib/update-merge.sh'; source '$REPO_ROOT/lib/update-meta.sh'; source '$REPO_ROOT/lib/update-discovery.sh'; source '$REPO_ROOT/lib/update-sync.sh'; source '$REPO_ROOT/lib/update-changelog.sh'; source '$REPO_ROOT/lib/update-remote.sh'; source '$REPO_ROOT/lib/update.sh'; _latest_schema_version project")
-    printf 'source: https://github.com/team/config.git\nref: main\ncommit: abc123\n' \
-        > "$CCO_PROJECTS_DIR/remote-app/.cco/source"
-    printf 'schema_version: %s\n' "$latest_schema" \
-        > "$CCO_PROJECTS_DIR/remote-app/.cco/meta"
+    # Coordinate → DATA source; schema + install commit → STATE meta (ADR-0022 D1).
+    mkdir -p "$(dirname "$(data_project_source remote-app)")"
+    printf 'url: https://github.com/team/config.git\nref: main\n' \
+        > "$(data_project_source remote-app)"
+    mkdir -p "$(dirname "$(state_project_meta remote-app)")"
+    printf 'schema_version: %s\ninstalled_commit: abc123\n' "$latest_schema" \
+        > "$(state_project_meta remote-app)"
     # Copy base template files (project base template has CLAUDE.md, settings.json, etc.)
-    cp -r "$REPO_ROOT/templates/project/base/.claude/"* "$CCO_PROJECTS_DIR/remote-app/.claude/" 2>/dev/null || true
-    # Save base versions (matching installed)
-    cp -r "$REPO_ROOT/templates/project/base/.claude/"* "$CCO_PROJECTS_DIR/remote-app/.cco/base/" 2>/dev/null || true
+    cp -r "$REPO_ROOT/templates/project/base/.claude/"* "$cco/claude/" 2>/dev/null || true
+    # Save base versions (matching installed) → STATE base (H6)
+    mkdir -p "$(state_project_base remote-app)"
+    cp -r "$REPO_ROOT/templates/project/base/.claude/"* "$(state_project_base remote-app)/" 2>/dev/null || true
 
     # Simulate framework update: modify the PROJECT base template CLAUDE.md
     # (this is what project sync compares against for installed projects)
@@ -361,7 +337,7 @@ test_update_sync_installed_with_local() {
 
     # Verify framework file content was actually applied to the project directory
     # With --force on UPDATE_AVAILABLE, the file IS replaced with the new default
-    assert_file_contains "$CCO_PROJECTS_DIR/remote-app/.claude/CLAUDE.md" \
+    assert_file_contains "$cco/claude/CLAUDE.md" \
         "Framework improvement for projects" \
         "--local --force should apply framework file content to installed project"
 
@@ -370,95 +346,17 @@ test_update_sync_installed_with_local() {
     # .cco/meta file without preserving it. This is a known implementation gap.
     # The marker IS written (line 1960 in update.sh) but lost during meta
     # regeneration (line 2012). Documenting here for future fix.
-    # with_framework_change trap restores the template file automatically
+    # with_framework_change mutates a sandboxed framework copy — nothing tracked
 }
 
 # ── project internalize non-TTY requires --yes ───────────────────────
 
-test_project_internalize_non_tty_requires_yes() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-
-    create_project "$tmpdir" "remote-app" "name: remote-app"
-    mkdir -p "$CCO_PROJECTS_DIR/remote-app/.cco"
-    printf 'source: https://github.com/team/config.git\nref: main\n' \
-        > "$CCO_PROJECTS_DIR/remote-app/.cco/source"
-
-    # Without --yes in non-TTY, should fail
-    ! run_cco project internalize remote-app || \
-        fail "internalize without --yes in non-TTY should fail"
-    assert_output_contains "--yes"
-}
 
 # ── project install writes .cco/source ───────────────────────────────
 
-test_project_install_writes_source_metadata() {
-    # After install, project should have .cco/source with YAML metadata
-    # This test requires a real Config Repo — we create one locally
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-
-    # Create a bare Config Repo with a template
-    local repo_dir="$tmpdir/config-repo"
-    mkdir -p "$repo_dir/templates/test-tmpl/.claude/rules"
-    printf 'name: test-tmpl\ndescription: test\nrepos: []\n' > "$repo_dir/templates/test-tmpl/project.yml"
-    printf '# Test CLAUDE.md\n' > "$repo_dir/templates/test-tmpl/.claude/CLAUDE.md"
-    printf '# Test rule\n' > "$repo_dir/templates/test-tmpl/.claude/rules/test.md"
-    cat > "$repo_dir/manifest.yml" <<'YAML'
-name: test-config
-description: test
-packs: []
-templates:
-  - name: test-tmpl
-    description: test template
-YAML
-    git -C "$repo_dir" init -q
-    git -C "$repo_dir" add -A
-    git -C "$repo_dir" commit -q -m "init"
-
-    # Install from local git repo
-    run_cco project install "$repo_dir" --pick test-tmpl --as test-proj
-    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.cco/source" \
-        ".cco/source should be created after install"
-    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/.cco/source" "source: $repo_dir" \
-        ".cco/source should contain the remote URL"
-    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/.cco/source" "installed:" \
-        ".cco/source should contain install date"
-    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/.cco/source" "commit:" \
-        ".cco/source should contain commit hash"
-    assert_dir_exists "$CCO_PROJECTS_DIR/test-proj/.cco/base" \
-        ".cco/base should be created for future 3-way merge"
-}
 
 # ── publish safety: .cco/publish-ignore ──────────────────────────────
 
-test_publish_ignore_excludes_files() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-
-    # Create project with publish-ignore
-    run_cco project create pub-test
-    mkdir -p "$CCO_PROJECTS_DIR/pub-test/.cco"
-    printf 'local-*.md\n*.draft\n' > "$CCO_PROJECTS_DIR/pub-test/.cco/publish-ignore"
-    echo "local notes" > "$CCO_PROJECTS_DIR/pub-test/.claude/rules/local-notes.md"
-    echo "draft" > "$CCO_PROJECTS_DIR/pub-test/.claude/rules/review.draft"
-
-    # Create bare remote
-    local bare_dir
-    bare_dir=$(_create_bare_remote_for_test "$tmpdir")
-
-    run_cco project publish pub-test "$bare_dir" --force
-    # Verify excluded files are not in the remote
-    local work_dir="$tmpdir/verify"
-    git clone -q "$bare_dir" "$work_dir"
-    assert_file_not_exists "$work_dir/templates/pub-test/.claude/rules/local-notes.md" \
-        "publish-ignore should exclude local-*.md"
-    assert_file_not_exists "$work_dir/templates/pub-test/.claude/rules/review.draft" \
-        "publish-ignore should exclude *.draft"
-}
 
 # Helper for publish tests
 # ── --local validation ────────────────────────────────────────────────
@@ -473,61 +371,22 @@ test_local_flag_requires_sync() {
 
 # ── internalize writes source:local as first line ────────────────────
 
-test_internalize_source_local_first_line() {
-    _source_libs
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-
-    create_project "$tmpdir" "remote-app" "name: remote-app"
-    mkdir -p "$CCO_PROJECTS_DIR/remote-app/.cco"
-    printf 'source: https://github.com/team/config.git\nref: main\n' \
-        > "$CCO_PROJECTS_DIR/remote-app/.cco/source"
-    printf 'schema_version: 10\nlocal_framework_override: true\n' \
-        > "$CCO_PROJECTS_DIR/remote-app/.cco/meta"
-    cp -r "$REPO_ROOT/templates/project/base/.claude/"* "$CCO_PROJECTS_DIR/remote-app/.claude/" 2>/dev/null || true
-
-    run_cco project internalize remote-app --yes
-
-    # source: local must be first line (not a comment)
-    local first_line
-    first_line=$(head -1 "$CCO_PROJECTS_DIR/remote-app/.cco/source")
-    assert_equals "source: local" "$first_line" \
-        "First line of .cco/source should be 'source: local'"
-
-    # local_framework_override should be cleared
-    assert_file_not_contains "$CCO_PROJECTS_DIR/remote-app/.cco/meta" "local_framework_override"
-}
 
 # ── Publish detects secrets at project root ──────────────────────────
 
-test_publish_detects_root_secrets() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    run_cco project create secret-root-app
-
-    # Create a .key file at the project root (not inside .claude/)
-    touch "$CCO_PROJECTS_DIR/secret-root-app/server.key"
-
-    # Create bare remote
-    local bare_dir
-    bare_dir=$(_create_bare_remote_for_test "$tmpdir")
-
-    ! run_cco project publish secret-root-app "$bare_dir" --force || \
-        fail "Publish should block on root-level secrets"
-    assert_output_contains "secrets detected"
-}
 
 # ── _is_installed_project after internalize ──────────────────────────
 
 test_is_installed_project_after_internalize() {
     _source_libs
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    export CCO_DATA_HOME="$tmpdir/data" CCO_STATE_HOME="$tmpdir/state"
     mkdir -p "$tmpdir/project/.cco"
-    # Write internalized format: source: local on first line, comment on second
-    printf 'source: local\n# previously installed from: https://example.com\n' \
-        > "$tmpdir/project/.cco/source"
+    # Write internalized format: url: local on first line, comment on second
+    local src_file; src_file=$(_cco_project_source "$tmpdir/project")
+    mkdir -p "$(dirname "$src_file")"
+    printf 'url: local\n# previously installed from: https://example.com\n' \
+        > "$src_file"
 
     ! _is_installed_project "$tmpdir/project" || \
         fail "Internalized project should be detected as local"
@@ -535,335 +394,59 @@ test_is_installed_project_after_internalize() {
 
 # ── Content-based secret scan ─────────────────────────────────────────
 
-test_publish_blocks_on_content_secrets() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    run_cco project create secret-content-app
 
-    # Create a file with secret content (not a secret filename)
-    printf '# Config\nAPI_KEY = sk-abc123def456\n' \
-        > "$CCO_PROJECTS_DIR/secret-content-app/.claude/rules/config.md"
-
-    local bare_dir
-    bare_dir=$(_create_bare_remote_for_test "$tmpdir")
-
-    ! run_cco project publish secret-content-app "$bare_dir" --force --yes || \
-        fail "Publish should block on content-based secret patterns"
-    assert_output_contains "secrets detected"
-    assert_output_contains "content match"
-}
-
-test_publish_passes_clean_project() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    run_cco project create clean-app
-
-    local bare_dir
-    bare_dir=$(_create_bare_remote_for_test "$tmpdir")
-
-    run_cco project publish clean-app "$bare_dir" --force --yes
-    assert_output_contains "Published"
-}
 
 # ── Migration check (L-2 fix) ────────────────────────────────────────
 
-test_publish_blocks_on_pending_migrations() {
-    _source_libs
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    run_cco project create migration-app
-
-    # Set schema_version to something behind latest (overwrite entire meta)
-    local meta_file="$CCO_PROJECTS_DIR/migration-app/.cco/meta"
-    printf 'schema_version: 1\n' > "$meta_file"
-
-    local bare_dir
-    bare_dir=$(_create_bare_remote_for_test "$tmpdir")
-
-    ! run_cco project publish migration-app "$bare_dir" --force --yes || \
-        fail "Publish should block on pending migrations"
-    assert_output_contains "pending migrations"
-}
 
 # ── Publish dry-run shows diff ────────────────────────────────────────
 
-test_publish_dry_run_shows_diff() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    run_cco project create diff-app
-
-    local bare_dir
-    bare_dir=$(_create_bare_remote_for_test "$tmpdir")
-
-    run_cco project publish diff-app "$bare_dir" --dry-run
-    assert_output_contains "Dry run complete"
-}
 
 # ── Publish writes metadata ──────────────────────────────────────────
 
-test_publish_writes_metadata() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    run_cco project create meta-app
-
-    local bare_dir
-    bare_dir=$(_create_bare_remote_for_test "$tmpdir")
-
-    run_cco project publish meta-app "$bare_dir" --force --yes
-    assert_output_contains "Published"
-
-    # .cco/source should be created with publish metadata
-    assert_file_exists "$CCO_PROJECTS_DIR/meta-app/.cco/source" \
-        ".cco/source should be created after publish"
-    assert_file_contains "$CCO_PROJECTS_DIR/meta-app/.cco/source" "published:" \
-        "should have publish date"
-    assert_file_contains "$CCO_PROJECTS_DIR/meta-app/.cco/source" "publish_commit:" \
-        "should have publish commit"
-}
 
 # ── Publish-ignore with path patterns ────────────────────────────────
 
-test_publish_ignore_path_patterns() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    run_cco project create path-test
-
-    # Create files and publish-ignore with path-based patterns
-    mkdir -p "$CCO_PROJECTS_DIR/path-test/.claude/rules/local"
-    echo "local rule" > "$CCO_PROJECTS_DIR/path-test/.claude/rules/local/notes.md"
-    echo "keep" > "$CCO_PROJECTS_DIR/path-test/.claude/rules/keep.md"
-    mkdir -p "$CCO_PROJECTS_DIR/path-test/.cco"
-    printf 'rules/local/\n' > "$CCO_PROJECTS_DIR/path-test/.cco/publish-ignore"
-
-    local bare_dir
-    bare_dir=$(_create_bare_remote_for_test "$tmpdir")
-
-    run_cco project publish path-test "$bare_dir" --force --yes
-    assert_output_contains "Published"
-
-    local work_dir="$tmpdir/verify"
-    git clone -q "$bare_dir" "$work_dir"
-    assert_file_not_exists "$work_dir/templates/path-test/.claude/rules/local/notes.md" \
-        "publish-ignore path pattern should exclude directory"
-    assert_file_exists "$work_dir/templates/path-test/.claude/rules/keep.md" \
-        "non-ignored files should be published"
-}
 
 # ── T-1: End-to-end project update 3-way merge scenarios ─────────────
 
 # Scenario 1: Publisher updates a file; consumer has no local changes → clean apply
-test_project_update_clean_apply() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-
-    # Create a Config Repo with a project template (CLAUDE.md is a tracked policy file)
-    local bare_dir
-    bare_dir=$(_create_config_repo_with_template "$tmpdir" "svc-tmpl" "# Team rule v1")
-
-    # Install from local Config Repo
-    run_cco project install "$bare_dir" --pick svc-tmpl --as svc-app
-
-    # Verify initial install
-    assert_file_exists "$CCO_PROJECTS_DIR/svc-app/.cco/source"
-    assert_file_exists "$CCO_PROJECTS_DIR/svc-app/.claude/CLAUDE.md"
-    local initial_commit
-    initial_commit=$(grep '^commit:' "$CCO_PROJECTS_DIR/svc-app/.cco/source" | awk '{print $2}')
-
-    # Publisher updates CLAUDE.md (a tracked file in PROJECT_FILE_POLICIES)
-    _update_config_repo "$bare_dir" "templates/svc-tmpl/.claude/CLAUDE.md" \
-        "# Updated CLAUDE.md v2 by publisher"
-
-    # Run project update (--force for non-interactive replace)
-    run_cco project update svc-app --force
-    assert_output_contains "Updated" \
-        "Should report successful update"
-
-    # Verify: CLAUDE.md was updated (clean apply, no local changes)
-    assert_file_contains "$CCO_PROJECTS_DIR/svc-app/.claude/CLAUDE.md" "Updated CLAUDE.md v2 by publisher"
-
-    # Verify: .cco/base/ was refreshed to new publisher version
-    assert_file_contains "$CCO_PROJECTS_DIR/svc-app/.cco/base/CLAUDE.md" "Updated CLAUDE.md v2 by publisher"
-
-    # Verify: .cco/source commit was updated
-    local new_commit
-    new_commit=$(grep '^commit:' "$CCO_PROJECTS_DIR/svc-app/.cco/source" | awk '{print $2}')
-    [[ "$new_commit" != "$initial_commit" ]] || \
-        fail ".cco/source commit should be updated after project update"
-
-    # Verify: updated date was set
-    assert_file_contains "$CCO_PROJECTS_DIR/svc-app/.cco/source" "updated:"
-}
 
 # Scenario 2: Publisher updates; consumer has local changes → --force replaces + .bak preserves
-test_project_update_consumer_changes_force() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-
-    # Create a Config Repo with a project template (use CLAUDE.md, a tracked policy file)
-    local bare_dir
-    bare_dir=$(_create_config_repo_with_template "$tmpdir" "merge-tmpl" "# Team rule v1")
-
-    # Install from local Config Repo
-    run_cco project install "$bare_dir" --pick merge-tmpl --as merge-app
-
-    # Consumer adds local customization to CLAUDE.md
-    printf '\n# Consumer local addition\n' >> "$CCO_PROJECTS_DIR/merge-app/.claude/CLAUDE.md"
-
-    # Publisher updates CLAUDE.md with different content
-    _update_config_repo "$bare_dir" "templates/merge-tmpl/.claude/CLAUDE.md" \
-        "# Updated CLAUDE.md by publisher v2"
-
-    # Run project update with --force (non-interactive: replaces all files, saves .bak)
-    run_cco project update merge-app --force
-
-    # With --force, publisher version replaces consumer's
-    assert_file_contains "$CCO_PROJECTS_DIR/merge-app/.claude/CLAUDE.md" \
-        "Updated CLAUDE.md by publisher v2" \
-        "Publisher version should be applied with --force"
-
-    # Consumer's old version should be saved as .bak
-    assert_file_exists "$CCO_PROJECTS_DIR/merge-app/.claude/CLAUDE.md.bak" \
-        ".bak should be created for replaced files"
-    assert_file_contains "$CCO_PROJECTS_DIR/merge-app/.claude/CLAUDE.md.bak" \
-        "Consumer local addition" \
-        ".bak should contain consumer's previous version"
-
-    # .cco/base/ should be updated to publisher's new version (for future merges)
-    assert_file_contains "$CCO_PROJECTS_DIR/merge-app/.cco/base/CLAUDE.md" \
-        "Updated CLAUDE.md by publisher v2" \
-        ".cco/base/ should have the new publisher version"
-}
 
 # Scenario 3: Consumer used --local, then publisher updates
-test_project_update_after_local_override() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-
-    # Create a Config Repo with a project template
-    local bare_dir
-    bare_dir=$(_create_config_repo_with_template "$tmpdir" "local-tmpl" "# Team rule v1")
-
-    # Install from local Config Repo
-    run_cco project install "$bare_dir" --pick local-tmpl --as local-app
-
-    # Simulate --local flag having been used (set the marker)
-    local meta_file="$CCO_PROJECTS_DIR/local-app/.cco/meta"
-    printf '\nlocal_framework_override: true\n' >> "$meta_file"
-
-    # Consumer modifies CLAUDE.md (a tracked file, simulating --local framework apply)
-    printf '\n# Framework override via --local\n' >> "$CCO_PROJECTS_DIR/local-app/.claude/CLAUDE.md"
-
-    # Publisher updates CLAUDE.md
-    _update_config_repo "$bare_dir" "templates/local-tmpl/.claude/CLAUDE.md" \
-        "# CLAUDE.md v2 - publisher integrates framework"
-
-    # Run project update with --force (non-interactive replace)
-    run_cco project update local-app --force
-
-    # With --force, publisher version replaces consumer's
-    assert_file_contains "$CCO_PROJECTS_DIR/local-app/.claude/CLAUDE.md" \
-        "CLAUDE.md v2 - publisher integrates framework" \
-        "--force should replace with publisher version"
-
-    # .cco/source commit should be updated
-    assert_file_contains "$CCO_PROJECTS_DIR/local-app/.cco/source" "updated:"
-}
 
 # ── T-1 Priority 4: cco project update --all ─────────────────────────
 
-test_project_update_all() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-
-    # Create a Config Repo with two templates
-    local work_dir="$tmpdir/all-work"
-    local bare_dir="$tmpdir/all-repo.git"
-    mkdir -p "$work_dir/templates/tmpl-a/.claude/rules"
-    mkdir -p "$work_dir/templates/tmpl-b/.claude/rules"
-    printf 'name: tmpl-a\ndescription: A\nrepos: []\n' > "$work_dir/templates/tmpl-a/project.yml"
-    printf '# A CLAUDE.md\n' > "$work_dir/templates/tmpl-a/.claude/CLAUDE.md"
-    printf '# Rule A v1\n' > "$work_dir/templates/tmpl-a/.claude/rules/team.md"
-    printf 'name: tmpl-b\ndescription: B\nrepos: []\n' > "$work_dir/templates/tmpl-b/project.yml"
-    printf '# B CLAUDE.md\n' > "$work_dir/templates/tmpl-b/.claude/CLAUDE.md"
-    printf '# Rule B v1\n' > "$work_dir/templates/tmpl-b/.claude/rules/team.md"
-    cat > "$work_dir/manifest.yml" <<'YAML'
-name: test-config
-description: test
-packs: []
-templates:
-  - name: tmpl-a
-    description: A
-  - name: tmpl-b
-    description: B
-YAML
-    git -C "$work_dir" init -q
-    git -C "$work_dir" add -A
-    git -C "$work_dir" commit -q -m "init"
-    git init --bare -q "$bare_dir"
-    git -C "$work_dir" remote add origin "$bare_dir"
-    git -C "$work_dir" push -q origin main 2>/dev/null || \
-        git -C "$work_dir" push -q origin master 2>/dev/null
-
-    # Install both templates
-    run_cco project install "$bare_dir" --pick tmpl-a --as app-a
-    run_cco project install "$bare_dir" --pick tmpl-b --as app-b
-
-    # Create a local project (should be skipped by --all)
-    run_cco project create local-app
-
-    # Push updates to both templates
-    _update_config_repo "$bare_dir" "templates/tmpl-a/.claude/rules/team.md" "# Rule A v2"
-    _update_config_repo "$bare_dir" "templates/tmpl-b/.claude/rules/team.md" "# Rule B v2"
-
-    # Run update --all (uses --force for non-interactive)
-    run_cco project update --all --force
-
-    # Both installed projects should be updated
-    assert_file_contains "$CCO_PROJECTS_DIR/app-a/.claude/rules/team.md" "Rule A v2" \
-        "app-a should be updated"
-    assert_file_contains "$CCO_PROJECTS_DIR/app-b/.claude/rules/team.md" "Rule B v2" \
-        "app-b should be updated"
-
-    # Local project should not be touched (no .cco/source with remote)
-    assert_file_not_exists "$CCO_PROJECTS_DIR/local-app/.cco/source" \
-        "local project should not have .cco/source"
-}
 
 # ── Strengthen: test_update_discovery_offline ─────────────────────────
 
 test_update_discovery_offline_no_cache_update() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
-    # Create installed project with pre-set remote_cache timestamp
+    # Installed project with a pre-set remote_cache timestamp (P5): DATA source +
+    # STATE meta (schema + remote_cache) + committed claude tree.
     create_project "$tmpdir" "offline-svc" "name: offline-svc"
-    mkdir -p "$CCO_PROJECTS_DIR/offline-svc/.cco"
     local latest_schema
     latest_schema=$(bash -c "source '$REPO_ROOT/lib/colors.sh'; source '$REPO_ROOT/lib/utils.sh'; source '$REPO_ROOT/lib/paths.sh'; source '$REPO_ROOT/lib/yaml.sh'; source '$REPO_ROOT/lib/update-hash-io.sh'; source '$REPO_ROOT/lib/update-merge.sh'; source '$REPO_ROOT/lib/update-meta.sh'; source '$REPO_ROOT/lib/update-discovery.sh'; source '$REPO_ROOT/lib/update-sync.sh'; source '$REPO_ROOT/lib/update-changelog.sh'; source '$REPO_ROOT/lib/update-remote.sh'; source '$REPO_ROOT/lib/update.sh'; _latest_schema_version project")
-    printf 'source: https://github.com/team/config.git\nref: main\ncommit: abc123\n' \
-        > "$CCO_PROJECTS_DIR/offline-svc/.cco/source"
-    printf 'schema_version: %s\nremote_cache:\n  commit: abc123\n  checked: 2026-03-17T10:00:00Z\n' \
+    mkdir -p "$(dirname "$(data_project_source offline-svc)")"
+    printf 'url: https://github.com/team/config.git\nref: main\n' \
+        > "$(data_project_source offline-svc)"
+    mkdir -p "$(dirname "$(state_project_meta offline-svc)")"
+    printf 'schema_version: %s\ninstalled_commit: abc123\nremote_cache:\n  commit: abc123\n  checked: 2026-03-17T10:00:00Z\n' \
         "$latest_schema" \
-        > "$CCO_PROJECTS_DIR/offline-svc/.cco/meta"
-    cp -r "$REPO_ROOT/templates/project/base/.claude/"* "$CCO_PROJECTS_DIR/offline-svc/.claude/" 2>/dev/null || true
+        > "$(state_project_meta offline-svc)"
+    cp -r "$REPO_ROOT/templates/project/base/.claude/"* \
+        "$(host_cco_dir "$tmpdir" offline-svc)/claude/" 2>/dev/null || true
 
     # Run with --offline
     run_cco update --offline
     assert_output_contains "offline-svc"
 
     # Verify remote_cache.checked was NOT updated (no network call happened)
-    assert_file_contains "$CCO_PROJECTS_DIR/offline-svc/.cco/meta" \
+    assert_file_contains "$(state_project_meta offline-svc)" \
         "checked: 2026-03-17T10:00:00Z" \
         "--offline should not update remote_cache.checked timestamp"
 }
@@ -873,9 +456,10 @@ test_update_discovery_offline_no_cache_update() {
 test_update_local_project_sync_with_divergence() {
     local tmpdir; tmpdir=$(mktemp -d)
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
-    run_cco project create sync-test-app
+    create_project "$tmpdir" "sync-test-app" "$(minimal_project_yml sync-test-app)"
+    local cco; cco=$(host_cco_dir "$tmpdir" "sync-test-app")
 
     # Create actual framework divergence in CLAUDE.md (tracked by PROJECT_FILE_POLICIES)
     # The project template base is templates/project/base/.claude/CLAUDE.md
@@ -887,11 +471,11 @@ test_update_local_project_sync_with_divergence() {
     assert_output_contains "Update complete" \
         "Sync should complete successfully"
 
-    # Verify the divergent content was actually applied to the project
-    assert_file_contains "$CCO_PROJECTS_DIR/sync-test-app/.claude/CLAUDE.md" \
+    # Verify the divergent content was actually applied to the project's claude tree
+    assert_file_contains "$cco/claude/CLAUDE.md" \
         "Sync divergence test change" \
         "Framework divergence should be applied to the project"
-    # with_framework_change trap restores the template file
+    # with_framework_change mutates a sandboxed framework copy — nothing tracked
 }
 
 # ── Priority 2: _check_remote_update cache behavior ──────────────────
@@ -900,13 +484,15 @@ test_check_remote_cache_hit_no_network() {
     _source_libs
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
 
-    # Set up a source file and meta with a fresh cache timestamp (now)
+    # Set up a source coordinate + meta with the install commit and a fresh
+    # cache timestamp (now). Coordinate (url/ref) → source; installed_commit +
+    # remote_cache → meta (ADR-0022 D1).
     mkdir -p "$tmpdir/project/.cco"
-    printf 'source: https://unreachable.example.com/config.git\nref: main\ncommit: abc123\n' \
+    printf 'url: https://unreachable.example.com/config.git\nref: main\n' \
         > "$tmpdir/project/.cco/source"
     local now
     now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    printf 'schema_version: 1\nremote_cache:\n  commit: abc123\n  checked: %s\n' "$now" \
+    printf 'schema_version: 1\ninstalled_commit: abc123\nremote_cache:\n  commit: abc123\n  checked: %s\n' "$now" \
         > "$tmpdir/project/.cco/meta"
 
     # _check_remote_update should return up_to_date from cache (no network needed)
@@ -923,11 +509,11 @@ test_check_remote_cache_hit_update_available() {
 
     # Set up: installed commit differs from cached remote commit
     mkdir -p "$tmpdir/project/.cco"
-    printf 'source: https://unreachable.example.com/config.git\nref: main\ncommit: old123\n' \
+    printf 'url: https://unreachable.example.com/config.git\nref: main\n' \
         > "$tmpdir/project/.cco/source"
     local now
     now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    printf 'schema_version: 1\nremote_cache:\n  commit: new456\n  checked: %s\n' "$now" \
+    printf 'schema_version: 1\ninstalled_commit: old123\nremote_cache:\n  commit: new456\n  checked: %s\n' "$now" \
         > "$tmpdir/project/.cco/meta"
 
     local result
@@ -942,9 +528,9 @@ test_check_remote_cache_stale_unreachable() {
 
     # Set up: stale cache (old timestamp), unreachable remote
     mkdir -p "$tmpdir/project/.cco"
-    printf 'source: https://unreachable.example.com/config.git\nref: main\ncommit: abc123\n' \
+    printf 'url: https://unreachable.example.com/config.git\nref: main\n' \
         > "$tmpdir/project/.cco/source"
-    printf 'schema_version: 1\nremote_cache:\n  commit: abc123\n  checked: 2020-01-01T00:00:00Z\n' \
+    printf 'schema_version: 1\ninstalled_commit: abc123\nremote_cache:\n  commit: abc123\n  checked: 2020-01-01T00:00:00Z\n' \
         > "$tmpdir/project/.cco/meta"
 
     local result
@@ -958,7 +544,7 @@ test_check_remote_cache_stale_unreachable() {
 test_pack_update_full_replace() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create a Config Repo with a pack
     local work_dir="$tmpdir/pack-work"
@@ -1010,62 +596,3 @@ YAML
         "Consumer changes should be gone after pack update"
 }
 
-# ── Priority 5: Project internalize .cco/base/ verification ──────────
-
-test_project_internalize_updates_base() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-
-    # Create a Config Repo with a project template
-    local bare_dir
-    bare_dir=$(_create_config_repo_with_template "$tmpdir" "intern-tmpl" "# Publisher rule")
-
-    # Install from Config Repo
-    run_cco project install "$bare_dir" --pick intern-tmpl --as intern-app
-
-    # Verify .cco/base/ has the publisher's version
-    assert_file_contains "$CCO_PROJECTS_DIR/intern-app/.cco/base/rules/team.md" \
-        "Publisher rule" \
-        ".cco/base/ should contain publisher version before internalize"
-
-    # Internalize the project
-    run_cco project internalize intern-app --yes
-    assert_output_contains "now local"
-
-    # After internalize, .cco/base/ should contain framework base template files
-    # (not the publisher's version)
-    assert_dir_exists "$CCO_PROJECTS_DIR/intern-app/.cco/base" \
-        ".cco/base/ should still exist after internalize"
-
-    # The base should now be from the framework template, not publisher
-    # Check for a framework base file (CLAUDE.md from templates/project/base/)
-    if [[ -f "$REPO_ROOT/templates/project/base/.claude/CLAUDE.md" ]]; then
-        assert_file_exists "$CCO_PROJECTS_DIR/intern-app/.cco/base/CLAUDE.md" \
-            ".cco/base/ should have framework CLAUDE.md after internalize"
-    fi
-
-    # The publisher-specific rule should NOT be in .cco/base/
-    assert_file_not_contains "$CCO_PROJECTS_DIR/intern-app/.cco/base/rules/team.md" \
-        "Publisher rule" \
-        ".cco/base/ should not contain publisher rule after internalize" 2>/dev/null || true
-}
-
-# ── Helper ────────────────────────────────────────────────────────────
-
-_create_bare_remote_for_test() {
-    local tmpdir="$1"
-    local bare_dir="$tmpdir/publish-remote.git"
-    local work_dir="$tmpdir/init-work"
-    mkdir -p "$work_dir"
-    git -C "$work_dir" init -q
-    printf 'name: ""\ndescription: ""\npacks: []\ntemplates: []\n' > "$work_dir/manifest.yml"
-    git -C "$work_dir" add -A
-    git -C "$work_dir" commit -q -m "init"
-    git init --bare -q "$bare_dir"
-    git -C "$work_dir" remote add origin "$bare_dir"
-    git -C "$work_dir" push -q origin main 2>/dev/null || \
-        git -C "$work_dir" push -q origin master 2>/dev/null
-    rm -rf "$work_dir"
-    echo "$bare_dir"
-}

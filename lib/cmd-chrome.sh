@@ -2,8 +2,7 @@
 # lib/cmd-chrome.sh — Host-side Chrome debug session management
 #
 # Provides: cmd_chrome(), _chrome_resolve_port(), _chrome_is_running()
-# Dependencies: colors.sh, utils.sh, yaml.sh
-# Globals: PROJECTS_DIR
+# Dependencies: colors.sh, utils.sh, yaml.sh, index.sh, paths.sh
 #
 # NOTE: These commands run on the HOST, not inside the container.
 # They manage Chrome's remote debugging session that the container
@@ -38,13 +37,13 @@ Options:
 
 Port resolution priority:
   1. --port flag (explicit)
-  2. --project → .cco/managed/.browser-port file (effective runtime port)
+  2. --project → the session's browser runtime port file (effective runtime port)
   3. --project → project.yml browser.cdp_port
   4. Default: 9222
 EOF
 }
 
-# Resolve port: --port flag > .cco/managed/.browser-port file > project.yml > default 9222
+# Resolve port: --port flag > browser runtime port file (CACHE) > project.yml > default 9222
 _chrome_resolve_port() {
     local opt_port="" opt_project=""
     while [[ $# -gt 0 ]]; do
@@ -60,10 +59,13 @@ _chrome_resolve_port() {
     fi
 
     if [[ -n "$opt_project" ]]; then
+        # Resolve the project's committed config via the STATE index (decentralized
+        # layout); the browser runtime file lives in CACHE, keyed by project name.
+        local yml_name container_name repo proj_yml=""
+        repo=$(_index_get_path "$opt_project")
+        [[ -n "$repo" ]] && proj_yml="$repo/.cco/project.yml"
         # Warn if container is not running (stale runtime file)
-        local yml_name container_name
-        local proj_yml="$PROJECTS_DIR/$opt_project/project.yml"
-        if [[ -f "$proj_yml" ]]; then
+        if [[ -n "$proj_yml" && -f "$proj_yml" ]]; then
             yml_name=$(yml_get "$proj_yml" "name")
         fi
         [[ -z "${yml_name:-}" ]] && yml_name="$opt_project"
@@ -73,11 +75,11 @@ _chrome_resolve_port() {
                 warn "Container ${container_name} is not running. Port may be stale."
             fi
         fi
-        local runtime_file="$PROJECTS_DIR/$opt_project/.cco/managed/.browser-port"
+        local runtime_file; runtime_file="$(_cco_project_cache_managed "$opt_project")/.browser-port"
         if [[ -f "$runtime_file" ]]; then
             cat "$runtime_file"; return
         fi
-        if [[ -f "$proj_yml" ]]; then
+        if [[ -n "$proj_yml" && -f "$proj_yml" ]]; then
             local p; p=$(yml_get "$proj_yml" "browser.cdp_port")
             [[ -n "$p" ]] && echo "$p" && return
         fi

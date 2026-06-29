@@ -123,16 +123,19 @@ test_pack_install_pick_nonexistent_fails() {
     fi
 }
 
-test_pack_install_creates_cco_source() {
+test_pack_install_creates_data_source() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     local remote
     remote=$(_create_mock_config_repo "$tmpdir" "tracked")
     run_cco pack install "$remote" --pick "tracked"
-    assert_file_exists "$CCO_PACKS_DIR/tracked/.cco/source"
-    assert_file_contains "$CCO_PACKS_DIR/tracked/.cco/source" "source:"
-    assert_file_contains "$CCO_PACKS_DIR/tracked/.cco/source" "installed:"
+    # Provenance source → DATA (coordinate only); the pack tree carries none.
+    assert_file_exists "$(data_pack_source tracked)" || return 1
+    assert_file_contains "$(data_pack_source tracked)" "url:" || return 1
+    assert_file_not_exists "$CCO_PACKS_DIR/tracked/.cco/source" || return 1
+    # Install commit + dates → STATE /update meta (ADR-0022 D1).
+    assert_file_contains "$(state_pack_meta tracked)" "src_installed:" || return 1
 }
 
 test_pack_install_single_pack_repo() {
@@ -145,6 +148,20 @@ test_pack_install_single_pack_repo() {
     assert_dir_exists "$CCO_PACKS_DIR/solo-pack"
     assert_file_exists "$CCO_PACKS_DIR/solo-pack/pack.yml"
     assert_file_exists "$CCO_PACKS_DIR/solo-pack/agents/helper.md"
+}
+
+test_pack_install_records_state_base() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local remote
+    remote=$(_create_mock_single_pack_repo "$tmpdir" "solo-pack")
+    run_cco pack install "$remote"
+
+    # The installed tree is recorded as the pack-scoped STATE base/ — the merge
+    # ancestor a future sync-before-publish reuses (ADR-0022 D5).
+    assert_file_exists "$(state_pack_base solo-pack)/pack.yml" || return 1
+    assert_file_exists "$(state_pack_base solo-pack)/agents/helper.md" || return 1
 }
 
 test_pack_install_rejects_invalid_repo() {
@@ -206,20 +223,6 @@ test_pack_install_force_overwrites() {
     assert_file_exists "$CCO_PACKS_DIR/overwrite-pack/agents/bot.md"
 }
 
-test_pack_install_updates_manifest_yml() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    setup_global_from_defaults "$tmpdir"
-
-    # Create manifest.yml via init
-    run_cco init --lang "English"
-
-    local remote
-    remote=$(_create_mock_config_repo "$tmpdir" "shared-pack")
-    run_cco pack install "$remote" --pick "shared-pack"
-    assert_file_contains "$CCO_USER_CONFIG_DIR/manifest.yml" "shared-pack"
-}
-
 # ── update tests ──────────────────────────────────────────────────────
 
 test_pack_update_from_source() {
@@ -231,7 +234,7 @@ test_pack_update_from_source() {
     local remote
     remote=$(_create_mock_config_repo "$tmpdir" "updatable")
     run_cco pack install "$remote" --pick "updatable"
-    assert_file_exists "$CCO_PACKS_DIR/updatable/.cco/source"
+    assert_file_exists "$(data_pack_source updatable)"
 
     # Modify the remote (add new file)
     local work_dir="$tmpdir/mock-work"
@@ -282,16 +285,68 @@ test_pack_export_creates_archive() {
     assert_file_exists "$tmpdir/exportable.tar.gz"
 }
 
+# ── pack import (2×2 local-consume cell; ADR-0018 D2) ──────────────────
+
+test_pack_import_round_trip() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco pack create "roundtrip"
+
+    cd "$tmpdir"
+    run_cco pack export "roundtrip"
+    assert_file_exists "$tmpdir/roundtrip.tar.gz"
+
+    # Remove the local pack, then import it back from the archive.
+    rm -rf "$CCO_PACKS_DIR/roundtrip"
+    run_cco pack import "$tmpdir/roundtrip.tar.gz"
+    assert_dir_exists "$CCO_PACKS_DIR/roundtrip"
+    assert_file_exists "$CCO_PACKS_DIR/roundtrip/pack.yml"
+}
+
+test_pack_import_records_snapshot_source() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco pack create "snap"
+    cd "$tmpdir"
+    run_cco pack export "snap"
+    rm -rf "$CCO_PACKS_DIR/snap"
+    run_cco pack import "$tmpdir/snap.tar.gz"
+
+    # Snapshot import: no upstream coordinate → locally-authored (ADR-0018 D2);
+    # the imported tree is recorded as the pack-scoped STATE base/ (ADR-0022 D5).
+    assert_file_contains "$(data_pack_source snap)" "url: local" || return 1
+    assert_file_exists "$(state_pack_base snap)/pack.yml" || return 1
+}
+
+test_pack_import_nonexistent_fails() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    if run_cco pack import "$tmpdir/missing.tar.gz" 2>/dev/null; then
+        echo "ASSERTION FAILED: import should fail for a missing archive"
+        return 1
+    fi
+}
+
+test_pack_import_help() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco pack import --help
+    assert_output_contains "Import a pack"
+}
+
 test_pack_export_excludes_cco_source() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
 
-    # Install a remote pack (has .cco/source)
+    # Install a remote pack (records provenance in DATA, never in the pack tree)
     local remote
     remote=$(_create_mock_config_repo "$tmpdir" "source-pack")
     run_cco pack install "$remote" --pick "source-pack"
-    assert_file_exists "$CCO_PACKS_DIR/source-pack/.cco/source"
+    assert_file_exists "$(data_pack_source source-pack)"
 
     # Export
     cd "$tmpdir"

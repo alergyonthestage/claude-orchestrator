@@ -8,38 +8,53 @@ _cco_completed=false
 trap '_ec=$?; if [[ "$_cco_completed" != "true" ]]; then echo "✗ cco exited unexpectedly (exit $_ec). Run with CCO_DEBUG=1 for details." >&2; [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[cco] last command: ${BASH_COMMAND}" >&2; fi' EXIT
 
 # ── Constants ────────────────────────────────────────────────────────
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve this script's real path, following symlinks (L5): a PATH symlink
+# like /usr/local/bin/cco -> .../bin/cco must still locate the tool root.
+# Uses a readlink loop rather than `readlink -f`, which is absent on macOS.
+_cco_src="${BASH_SOURCE[0]}"
+while [[ -h "$_cco_src" ]]; do
+    _cco_dir="$(cd -P "$(dirname "$_cco_src")" >/dev/null 2>&1 && pwd)"
+    _cco_src="$(readlink "$_cco_src")"
+    [[ "$_cco_src" == /* ]] || _cco_src="$_cco_dir/$_cco_src"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$_cco_src")" >/dev/null 2>&1 && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-DEFAULTS_DIR="$REPO_ROOT/defaults"
-NATIVE_TEMPLATES_DIR="$REPO_ROOT/templates"
+unset _cco_src _cco_dir
+# Framework asset root — the shipped, read-only trees: defaults/, templates/,
+# migrations/, and changelog.yml. Overridable via CCO_FRAMEWORK_ROOT so tests can
+# point cco at a throwaway copy and mutate it hermetically (no in-place writes to
+# the tracked tree; concurrency/abort-safe). Defaults to the repo root. REPO_ROOT
+# alone still locates lib/, bin/, docs/, and internal/ (never relocated).
+FRAMEWORK_ROOT="${CCO_FRAMEWORK_ROOT:-$REPO_ROOT}"
+DEFAULTS_DIR="$FRAMEWORK_ROOT/defaults"
+NATIVE_TEMPLATES_DIR="$FRAMEWORK_ROOT/templates"
 IMAGE_NAME="claude-orchestrator:latest"
 LIB_DIR="$REPO_ROOT/lib"
 
 # ── User config directory resolution ─────────────────────────────────
-# Primary: CCO_USER_CONFIG_DIR controls the unified user data root.
-# Auto-detect: if user-config/ doesn't exist but old global/ does,
-# fall back to legacy paths so cco update can run the migration.
+# CCO_USER_CONFIG_DIR is the LEGACY-vault pointer: the pre-decentralized
+# user-config store that `cco init --migrate` reads from (and offers to remove),
+# and the runtime root for the internal tutorial/config-editor sessions. It is
+# NOT the home of the personal flat stores anymore — packs/templates live in the
+# CONFIG bucket (~/.cco) and llms content+cache-state in CACHE (F1; design
+# §2.2/§2.3, ADR-0016 D7/D8). Projects are decentralized in each repo's
+# <repo>/.cco/ and resolve through the STATE index (P5; no $PROJECTS_DIR).
 USER_CONFIG_DIR="${CCO_USER_CONFIG_DIR:-$REPO_ROOT/user-config}"
 
-if [[ -z "${CCO_USER_CONFIG_DIR:-}" && ! -d "$USER_CONFIG_DIR/global" && -d "$REPO_ROOT/global/.claude" ]]; then
-    # Legacy layout — migration not yet run
-    GLOBAL_DIR="${CCO_GLOBAL_DIR:-$REPO_ROOT/global}"
-    PROJECTS_DIR="${CCO_PROJECTS_DIR:-$REPO_ROOT/projects}"
-    PACKS_DIR="${CCO_PACKS_DIR:-$REPO_ROOT/global/packs}"
-    LLMS_DIR="${CCO_LLMS_DIR:-$USER_CONFIG_DIR/llms}"
-    TEMPLATES_DIR="${CCO_TEMPLATES_DIR:-$USER_CONFIG_DIR/templates}"
-else
-    GLOBAL_DIR="${CCO_GLOBAL_DIR:-$USER_CONFIG_DIR/global}"
-    PROJECTS_DIR="${CCO_PROJECTS_DIR:-$USER_CONFIG_DIR/projects}"
-    PACKS_DIR="${CCO_PACKS_DIR:-$USER_CONFIG_DIR/packs}"
-    LLMS_DIR="${CCO_LLMS_DIR:-$USER_CONFIG_DIR/llms}"
-    TEMPLATES_DIR="${CCO_TEMPLATES_DIR:-$USER_CONFIG_DIR/templates}"
-fi
+# Global (user) Claude config home is ~/.cco/.claude (ADR-0028, flat — no
+# `global/` wrapper). Resolved on demand via _cco_global_claude_dir() (paths.sh);
+# there is no eager GLOBAL_DIR / CCO_GLOBAL_DIR variable. PACKS_DIR/TEMPLATES_DIR/
+# LLMS_DIR are assigned AFTER the module load below, since their decentralized
+# homes derive from the bucket resolvers in paths.sh (_cco_config_dir / _cco_cache_dir).
 
 # ── Load modules ─────────────────────────────────────────────────────
 source "$LIB_DIR/colors.sh"
 source "$LIB_DIR/utils.sh"
 source "$LIB_DIR/paths.sh"
+source "$LIB_DIR/migrate.sh"
+source "$LIB_DIR/index.sh"
+source "$LIB_DIR/sync-meta.sh"
+source "$LIB_DIR/reminders.sh"
 source "$LIB_DIR/auth.sh"
 source "$LIB_DIR/yaml.sh"
 source "$LIB_DIR/secrets.sh"
@@ -59,76 +74,94 @@ source "$LIB_DIR/cmd-build.sh"
 source "$LIB_DIR/cmd-init.sh"
 source "$LIB_DIR/cmd-start.sh"
 source "$LIB_DIR/cmd-new.sh"
+source "$LIB_DIR/cmd-resolve.sh"
+source "$LIB_DIR/cmd-sync.sh"
+source "$LIB_DIR/tags.sh"
+source "$LIB_DIR/cmd-config.sh"
 source "$LIB_DIR/cmd-stop.sh"
 source "$LIB_DIR/cmd-chrome.sh"
-source "$LIB_DIR/cmd-project-create.sh"
-source "$LIB_DIR/cmd-project-delete.sh"
 source "$LIB_DIR/cmd-project-query.sh"
-source "$LIB_DIR/cmd-project-install.sh"
-source "$LIB_DIR/cmd-project-pack-ops.sh"
-source "$LIB_DIR/cmd-project-publish.sh"
-source "$LIB_DIR/cmd-project-update.sh"
+source "$LIB_DIR/cmd-project-add.sh"
+source "$LIB_DIR/cmd-project-validate.sh"
+source "$LIB_DIR/cmd-project-coords.sh"
+source "$LIB_DIR/cmd-project-export-import.sh"
+source "$LIB_DIR/cmd-project-rename.sh"
 source "$LIB_DIR/cmd-pack.sh"
 source "$LIB_DIR/cmd-llms.sh"
 source "$LIB_DIR/cmd-template.sh"
 source "$LIB_DIR/cmd-update.sh"
 source "$LIB_DIR/cmd-clean.sh"
-source "$LIB_DIR/manifest.sh"
 source "$LIB_DIR/cmd-remote.sh"
 source "$LIB_DIR/remote.sh"
-source "$LIB_DIR/cmd-vault.sh"
+source "$LIB_DIR/cmd-forget.sh"
+source "$LIB_DIR/cmd-join.sh"
 
-# ── Deprecation warnings ──────────────────────────────────────────────
-# Only warn when legacy vars are set WITHOUT CCO_USER_CONFIG_DIR
-if [[ -z "${CCO_USER_CONFIG_DIR:-}" ]]; then
-    if [[ -n "${CCO_GLOBAL_DIR:-}" ]]; then
-        echo "⚠ CCO_GLOBAL_DIR is deprecated. Use CCO_USER_CONFIG_DIR instead." >&2
-        echo "  Current: CCO_GLOBAL_DIR=$CCO_GLOBAL_DIR" >&2
-        echo "  Suggested: export CCO_USER_CONFIG_DIR=$(dirname "$CCO_GLOBAL_DIR")" >&2
-    fi
-    if [[ -n "${CCO_PROJECTS_DIR:-}" ]]; then
-        echo "⚠ CCO_PROJECTS_DIR is deprecated. Use CCO_USER_CONFIG_DIR instead." >&2
-    fi
-fi
+# Personal flat stores in their decentralized homes (F1; design §2.2/§2.3,
+# ADR-0016 D7/D8): packs/templates → CONFIG (~/.cco), llms content+cache-state →
+# CACHE. CONFIG has no XDG override, so the plain $HOME form matches
+# _cco_config_dir without an eager resolver call at startup;
+# CACHE is XDG-overridable, so llms derives from the resolver. A CCO_* override
+# always wins (tests/dev seams). Grouped here (post-paths.sh) for the resolver.
+PACKS_DIR="${CCO_PACKS_DIR:-$HOME/.cco/packs}"
+TEMPLATES_DIR="${CCO_TEMPLATES_DIR:-$HOME/.cco/templates}"
+LLMS_DIR="${CCO_LLMS_DIR:-$(_cco_llms_dir)}"
 
 usage() {
     cat <<'EOF'
 Usage: cco <command> [options]
 
-Getting Started:
-  init                   Initialize user config from defaults
+Project lifecycle:
+  init                   Scaffold this repo's .cco/ project config (+ global on first run)
+  join <project>         Add the current repo to <project> as a member (--sync to receive config)
+  forget <project>       Deregister a project on this machine (--purge to also delete owned .cco/)
+
+Setup & maintenance:
   build                  Build/rebuild the Docker image
   update                 Run migrations + discover updates (--sync, --diff, --news)
   clean                  Clean up .bak, .tmp/, docker-compose.yml
 
 Sessions:
-  start <project>        Start a session for a configured project
+  start [project]        Start a session (cwd-first, or a named project)
   new                    Start a temporary session with specific repos
   stop [project]         Stop running session(s)
 
-Projects & Packs:
-  project <cmd>          Manage projects (create, install, delete, list, show, validate)
+Local paths & sync:
+  resolve [project]      Resolve repos/mounts into the machine-local index
+  sync [repo] [--from r] Copy .cco config between a project's repos (copy, no merge)
+
+Discovery:
+  list [<kind>] [--tag]  Unified index of your resources (all, or one <kind>)
+  tag <add|remove>       Tag a pack/project/template (per-user, never team-shared)
+
+Resources:
+  project <cmd>          Manage projects (add, validate, coords, rename, show, export, import)
   pack <cmd>             Manage knowledge packs (create, install, update, ...)
   llms <cmd>             Manage llms.txt framework docs (install, update, ...)
+  template <cmd>         Manage project/pack templates (create, show, install, ...)
+
+Tools & Sharing:
   chrome <cmd>           Manage Chrome debug session on host
+  config <save|push|pull> Version + sync your personal ~/.cco store
+  remote <cmd>           Manage sharing-repo remotes
 
-Templates:
-  template <cmd>         Manage project/pack templates (list, show, create, remove)
-
-Sharing & Versioning:
-  remote <cmd>           Manage Config Repo remotes
-  manifest <cmd>         Manage manifest.yml for Config Repos
-  vault <cmd>            Git-backed config versioning
-
-Run 'cco <command> --help' for detailed help on any command.
+Run 'cco help' for this message, or 'cco <command> --help' for command-specific help.
 EOF
 }
 
 # ── Main ─────────────────────────────────────────────────────────────
 
 cmd="${1:-}"
-[[ -z "$cmd" ]] && { usage; exit 0; }
+# No command → print usage and exit cleanly. Mark completion so the EXIT trap
+# does not misreport this normal exit-0 path as an unexpected crash.
+[[ -z "$cmd" ]] && { usage; _cco_completed=true; exit 0; }
 shift
+
+# J0 first-run bootstrap of the four decentralized-config roots + the legacy-
+# vault safety-net backup, before any command runs (ADR-0017 D3 / ADR-0006 /
+# ADR-0025). Host-side only (H4); idempotent (M6/F43). The BACKUP step is non-fatal
+# (|| true); root bootstrap CAN abort under set -e if the dirs can't be created —
+# that is intentional, cco cannot run without its roots (A5).
+_cco_first_run "$cmd"
 
 # Dispatch command — capture return code so expected errors (die, return 1)
 # don't trigger the "exited unexpectedly" trap. Only true crashes (set -e/set -u
@@ -136,28 +169,35 @@ shift
 _cco_rc=0
 case "$cmd" in
     init)    cmd_init "$@"  || _cco_rc=$? ;;
+    join)    cmd_join "$@"  || _cco_rc=$? ;;
+    forget)  cmd_forget "$@" || _cco_rc=$? ;;
     build)   cmd_build "$@" || _cco_rc=$? ;;
     start)   cmd_start "$@" || _cco_rc=$? ;;
     new)     cmd_new "$@"   || _cco_rc=$? ;;
+    resolve) cmd_resolve "$@" || _cco_rc=$? ;;
+    path)    cmd_path "$@"     || _cco_rc=$? ;;
+    sync)    cmd_sync "$@"     || _cco_rc=$? ;;
+    tag)     cmd_tag "$@"      || _cco_rc=$? ;;
+    list)    cmd_list "$@"     || _cco_rc=$? ;;
+    config)  cmd_config "$@"   || _cco_rc=$? ;;
     project)
         subcmd="${1:-}"
-        if [[ -z "$subcmd" || "$subcmd" == "--help" ]]; then
+        if [[ -z "$subcmd" || "$subcmd" == "--help" || "$subcmd" == "-h" ]]; then
             cat <<'EOF'
 Usage: cco project <command> [options]
 
 Commands:
-  create <name>          Create a new project from template
-  delete <name> [--yes]  Delete a project from all locations
-  install <url>          Install project template from a remote Config Repo
-  update <name>          Update an installed project from its remote source
-  publish <name> <remote> Publish project as template to a Config Repo
-  internalize <name>     Disconnect from remote source, convert to local
-  add-pack <proj> <pack> Add a knowledge pack to a project
-  remove-pack <p> <pack> Remove a knowledge pack from a project
-  resolve <name>         Configure local paths for repos and mounts
-  list                   List available projects with status
+  export [name]          Export a project's config as a .tar.gz snapshot
+  import <archive>       Import a project from a .tar.gz snapshot
+  add <res> <name>       Embed a repo|mount|llms|pack coordinate (cwd-first)
+  validate [name]        Check share-readiness (coordinates, no path leaks)
+  coords                 Show/reconcile coordinate consistency across units
+  rename [<old>] <new>   Rename a project, re-keying its identity across stores
   show <name>            Show project details (repos, packs, config)
-  validate [name]        Validate project structure and configuration
+
+List projects with 'cco list project' (or 'cco list' for all resources).
+A project has no install/publish/remove — it rides its code-repo remote;
+deregister cco's machine-local bookkeeping with 'cco forget' (ADR-0018 D2).
 
 Run 'cco project <command> --help' for command-specific options.
 EOF
@@ -165,38 +205,44 @@ EOF
         fi
         shift
         case "$subcmd" in
-            create)      cmd_project_create "$@" ;;
-            delete)      cmd_project_delete "$@" ;;
-            install)     cmd_project_install "$@" ;;
-            update)      cmd_project_update "$@" ;;
-            publish)     cmd_project_publish "$@" ;;
-            internalize) cmd_project_internalize "$@" ;;
-            add-pack)    cmd_project_add_pack "$@" ;;
-            remove-pack) cmd_project_remove_pack "$@" ;;
-            resolve)     cmd_project_resolve "$@" ;;
-            list)        cmd_project_list "$@" ;;
-            show)        cmd_project_show "$@" ;;
+            publish|install|update|internalize)
+                die "'cco project $subcmd' was removed — a project rides its code-repo remote, not a sharing repo (ADR-0018 D2). Use 'cco project export|import' to move a project's config as a tar, or 'cco init --template <name>' to start from a template." ;;
+            resolve)
+                die "'cco project resolve' was removed — use the top-level 'cco resolve <name>' (decentralized, cwd-first; ADR-0017 D2)." ;;
+            add-pack|remove-pack)
+                die "'cco project $subcmd' was removed — use 'cco project add pack <name>' to embed a pack coordinate (ADR-0023 D3 / AD12 no-alias)." ;;
+            delete)
+                die "'cco project delete' was removed — a project's config lives in its repo at <repo>/.cco/; remove it with normal git/filesystem ops. To deregister cco's machine-local bookkeeping for a project, use 'cco forget <project>' (the repo is untouched; ADR-0021)." ;;
             validate)    cmd_project_validate "$@" ;;
+            coords)      cmd_project_coords "$@" ;;
+            rename)      cmd_project_rename "$@" ;;
+            export)      cmd_project_export "$@" ;;
+            import)      cmd_project_import "$@" ;;
+            add)         cmd_project_add "$@" ;;
+            list)        die "'cco project list' was removed — use 'cco list project' (ADR-0029)." ;;
+            show)        cmd_project_show "$@" ;;
             *)        die "Unknown project command: $subcmd. Run 'cco project --help'." ;;
         esac || _cco_rc=$?
         ;;
     pack)
         subcmd="${1:-}"
-        if [[ -z "$subcmd" || "$subcmd" == "--help" ]]; then
+        if [[ -z "$subcmd" || "$subcmd" == "--help" || "$subcmd" == "-h" ]]; then
             cat <<'EOF'
 Usage: cco pack <command> [options]
 
 Commands:
   create <name>          Create a new knowledge pack
-  install <url>          Install packs from a remote Config Repo
+  install <url>          Install packs from a remote sharing repo
   update <name>          Update a pack from its remote source
-  publish <name> [remote] Publish a pack to a remote Config Repo
+  publish <name> [remote] Publish a pack to a remote sharing repo
   export <name>          Export a pack as .tar.gz archive
+  import <archive>       Import a pack from a .tar.gz archive
   internalize <name>     Convert source-referencing pack to self-contained
-  list                   List available packs with resource counts
   show <name>            Show pack details (knowledge, agents, rules)
   remove <name>          Remove a pack
   validate [name]        Validate pack structure (all if no name)
+
+List packs with 'cco list pack' (or 'cco list' for all resources).
 
 Run 'cco pack <command> --help' for command-specific options.
 EOF
@@ -209,8 +255,9 @@ EOF
             update)   cmd_pack_update "$@" ;;
             publish)      cmd_pack_publish "$@" ;;
             export)       cmd_pack_export "$@" ;;
+            import)       cmd_pack_import "$@" ;;
             internalize)  cmd_pack_internalize "$@" ;;
-            list)         cmd_pack_list "$@" ;;
+            list)         die "'cco pack list' was removed — use 'cco list pack' (ADR-0029)." ;;
             show)     cmd_pack_show "$@" ;;
             remove)   cmd_pack_remove "$@" ;;
             validate) cmd_pack_validate "$@" ;;
@@ -221,9 +268,7 @@ EOF
     template) cmd_template "$@" || _cco_rc=$? ;;
     chrome)   cmd_chrome "$@"   || _cco_rc=$? ;;
     remote)   cmd_remote "$@"   || _cco_rc=$? ;;
-    manifest) cmd_manifest "$@" || _cco_rc=$? ;;
-    share)    die "'cco share' has been renamed to 'cco manifest'. Run 'cco update' to migrate." ;;
-    vault)    cmd_vault "$@"    || _cco_rc=$? ;;
+    share|manifest) die "'cco $cmd' has been removed. Sharing repos are discovered by structure (no manifest.yml); use 'cco pack|template publish|install' (ADR-0012/0018)." ;;
     update)   cmd_update "$@"   || _cco_rc=$? ;;
     clean)    cmd_clean "$@"    || _cco_rc=$? ;;
     stop)     cmd_stop "$@"     || _cco_rc=$? ;;

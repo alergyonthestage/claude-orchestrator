@@ -2,7 +2,8 @@
 
 ## When to use MEMORY.md
 
-Write to memory (`~/.claude/projects/-workspace/memory/`) for:
+Write to memory (`~/.claude/projects/-workspace/memory/` in the container; the
+host home is machine-local STATE at `<state>/cco/projects/<id>/memory/`) for:
 - Session-specific working notes and scratch pad
 - Sprint or task progress tracking (e.g., "Sprint 7: #A done, #B in progress")
 - Personal interaction preferences for this project
@@ -10,8 +11,9 @@ Write to memory (`~/.claude/projects/-workspace/memory/`) for:
 - Short-lived context (e.g., "mid-refactor, skip module X for now")
 - Observations about tools or model behavior
 
-Memory is personal, machine-synced via vault, and NOT shared when projects
-are published. Treat it as a private notebook.
+Memory is personal, machine-local STATE (not synced in v1; cross-PC / cross-team
+sync is a future opt-in — ADR-0009), and NOT shared when projects are published.
+Treat it as a private notebook.
 
 ## When to use project documentation
 
@@ -28,7 +30,7 @@ published. Treat it as the project's permanent knowledge base.
 
 ## Key distinction
 
-- **Memory** = per-user, transient, vault-synced, never published
+- **Memory** = per-user, transient, machine-local STATE (cross-PC sync = future opt-in), never published
 - **Docs** = per-project, persistent, repo-committed, shareable
 
 ## Documentation file precedence

@@ -1,0 +1,498 @@
+# Structured Agentic Development with claude-orchestrator
+
+> How claude-orchestrator turns proven agentic development principles into
+> a ready-to-use framework — so you can focus on building, not on configuring.
+>
+> For operational practices: [development-workflow.md](development-workflow.md)
+
+---
+
+## Introduction
+
+"Vibe coding" — using AI to rapidly generate code from natural language — is a powerful
+catalyst for exploration and prototyping. But it does not scale. The moment a project
+needs to be maintained, extended, or worked on by more than one person (human or agent),
+an unstructured approach collapses under its own weight: context is lost between sessions,
+regressions slip in unnoticed, and the codebase diverges from any coherent design.
+
+The core thesis of structured agentic development is simple: **the same practices that
+make human teams effective — clear communication, version control discipline, documented
+decisions, defined workflows, and quality gates — make human-agent teams effective too.**
+The difference is that agents require these practices to be *more explicit*, because they
+cannot infer organizational context the way a human colleague can.
+
+**claude-orchestrator (cco) exists to make structured development accessible.** Rather
+than asking every developer to manually configure context hierarchies, write rules files,
+set up Docker isolation, and coordinate agent teams from scratch, cco provides a **fully
+customizable framework** with the environment, tools, and configuration mechanisms needed
+for structured agentic development.
+
+Out of the box, cco ships with a set of **recommended practices** — default rules, skills,
+agents, and guides that reflect patterns tested and refined through real-world agentic
+development. These recommendations are starting points, not mandates. Every rule, skill,
+agent, and default can be modified, replaced, or removed entirely. The built-in tutorial
+helps users build their own configuration informed by these practices, adapting them to
+their specific needs and workflow.
+
+This guide explains *why* each practice matters and *how* cco supports it. If you are
+new to cco, this is the conceptual foundation. If you are experienced, it serves as a
+reference for the design rationale behind the tool.
+
+### Who This Guide Is For
+
+Developers working on structured, long-lived projects with Claude Code — whether personal
+with growth ambitions or professional/enterprise. It assumes familiarity with git, basic
+software architecture concepts, and at least some experience with AI coding agents.
+
+### How This Guide Is Organized
+
+Three pillars, mirroring the concerns every agentic project must address:
+
+1. **Team Discipline** — Git workflow, review practices, and architectural decisions
+2. **Context Engineering** — How cco structures what the agent knows and when
+3. **Workflow Orchestration** — The development cycle, quality gates, and session management
+
+Each section states the principle, explains the reasoning, and shows how cco supports it.
+
+---
+
+## Framework Philosophy
+
+claude-orchestrator is a **fully customizable framework**. It provides the environment
+(Docker isolation, multi-repo workspaces), the mechanisms (four-tier context hierarchy,
+knowledge packs, agent teams), and the tools (CLI, skills, hooks) — but it does not
+impose any specific workflow, conventions, or development practices.
+
+**What cco provides vs. what cco recommends:**
+
+| Layer | Customizable? | Examples |
+|-------|:------------:|---------|
+| **Framework mechanisms** | Configurable, not removable | Docker isolation, context hierarchy, packs, in-repo config |
+| **Default rules & skills** | Fully customizable | `workflow.md`, `git-practices.md`, `/analyze`, `/review` |
+| **Recommended practices** | Advice only (in guides) | Review cycles, context cleanup, docs structure, maintenance |
+
+The default rules and skills shipped with cco reflect practices that have been tested and
+refined through extensive real-world use of agentic development. They are a **proven
+starting point** — but they remain starting points. Users are encouraged to:
+
+- **Modify** any default to match their preferred workflow
+- **Remove** defaults that don't apply to their context
+- **Add** new rules, skills, and agents for their specific needs
+- **Use the guides** as reference material, not as prescriptions
+
+The built-in tutorial helps users build their own configuration progressively, informed
+by these recommended practices. The guides in this section document the reasoning behind
+each recommendation, so users can make informed decisions about what to adopt.
+
+---
+
+## Pillar 1 — Team Discipline
+
+### 1.1 Git as the Source of Truth
+
+**Principle**: Every meaningful artifact — code, documentation, analysis, design specs,
+roadmap, rules — lives in the repository under version control.
+
+The repository is the only persistent state that survives across sessions, tool changes,
+and team member turnover (human or agent). If it is not in the repo, it effectively does
+not exist for the next session.
+
+**How cco implements this:**
+
+- **Repos are the workspace.** `cco start` mounts your repositories at `/workspace/<repo>/`.
+  The workspace *is* your repos — nothing exists outside them except ephemeral container state.
+- **Docs, rules, and context are versioned files.** Project configuration lives in
+  `project.yml` and `.claude/` directories, all tracked in git. Analysis and design
+  documents go in `docs/` within your repo. The agent's context comes from the repo,
+  not from chat history.
+- **Auto memory is project-scoped.** Each project's machine-local STATE store
+  (`~/.local/state/cco/projects/<id>/session/`) is mounted to `~/.claude/projects/-workspace/`,
+  isolating session transcripts and memory per project. Memory persists across sessions within
+  the project but never leaks between projects.
+
+### 1.2 Commit Discipline
+
+**Principle**: Commits should be atomic, conventional, and frequent. Each commit represents
+one logical unit of change that leaves the codebase in a working state.
+
+Well-written commit history is not just collaboration hygiene — it is context for the agent.
+A navigable record of what changed, why, and when helps the agent understand the evolution
+of any module.
+
+**How cco implements this:**
+
+- **Conventional commits rule** (`defaults/global/.claude/rules/git-practices.md`) is
+  shipped as a default, instructing the agent to use `feat:`, `fix:`, `docs:`,
+  `refactor:`, `test:`, `chore:` prefixes with scope when it adds clarity.
+  Users can modify or replace this with their own commit convention.
+- **Branch strategy rule** defines `<type>/<scope>/<description>` naming and discourages
+  direct commits to main/master.
+- **Workflow phases** (see Pillar 3) create natural commit boundaries — each completed
+  sub-task within a phase is a commit point.
+
+### 1.3 Branch Strategy
+
+**Principle**: Never commit directly to the main branch. Every implementation starts on
+a feature branch and is integrated through review.
+
+**How cco implements this:**
+
+- The **git-practices rule** defines the branching convention and is loaded as a default.
+- The **workflow rule** recommends that implementation happens on feature branches created
+  at the start of the implementation phase.
+- The **`/review` skill** provides a structured code review checklist before merge.
+
+### 1.4 Architecture Decision Records
+
+**Principle**: Significant architectural or design decisions should be captured in ADRs,
+versioned in the repository, and organized so the agent can find them.
+
+ADRs are among the highest-value artifacts for agent-assisted development. When an agent
+needs to work on a module, it needs to understand not just *what* the architecture is but
+*why* it is that way and *what alternatives were considered*. Without recorded decisions,
+the agent may propose changes that contradict prior choices or re-analyze problems that
+were already resolved — wasting effort and introducing inconsistencies.
+
+**How cco implements this:**
+
+- cco's own architecture uses ADRs extensively (`docs/maintainers/foundation/design/architecture.md`),
+  providing a working example.
+- The **`/design` skill** produces design documents that capture context, decisions,
+  alternatives, and consequences — the same structure as ADRs.
+- The **`/analyze` skill** identifies constraints and risks that inform architectural
+  decisions, producing the input that ADRs formalize.
+
+### 1.5 Review as a Two-Layer Process
+
+**Principle**: Agent review for mechanical quality, human review for intent alignment
+and domain correctness.
+
+**How cco implements this:**
+
+- The **`reviewer` agent** (available globally as a teammate) examines diffs for code
+  quality, convention adherence, potential bugs, test coverage gaps, and documentation
+  completeness. It runs as a specialized subagent that does not modify code.
+- The **`/review` skill** provides a structured checklist the lead agent follows.
+- The **workflow phases** establish human approval gates between analysis, design,
+  implementation, and documentation — the human is always the final quality gate.
+
+---
+
+## Pillar 2 — Context Engineering
+
+Context is the single most important factor in agent performance. A powerful model with
+poor context produces poor results. A well-contextualized agent with clear, focused
+information produces work that is consistently useful.
+
+### 2.1 The Minimum Necessary Context Principle
+
+**Principle**: Provide the agent with the minimum context necessary to perform the current
+task well — but ensure that minimum is complete.
+
+The "lost in the middle" problem is well-documented: models pay more attention to the
+beginning and end of their context, and lose track of information in the center.
+Long, bloated contexts make this worse.
+
+**How cco implements this:**
+
+- **Stratified context loading.** Not everything is loaded upfront. The four-tier hierarchy
+  (see 2.2) ensures invariant rules are always present while task-specific knowledge is
+  loaded on demand.
+- **Knowledge packs** curate domain-specific context into focused packages. A pack provides
+  exactly the knowledge needed for its domain — no more, no less. The agent reads pack
+  documents when relevant, not at session start.
+- **Short, focused sessions.** cco's project isolation encourages one project per session.
+  The workflow phases encourage one phase per session. Fresh context beats accumulated noise.
+
+### 2.2 Context Stratification — The Four-Tier Hierarchy
+
+**Principle**: Not all context has the same lifespan or relevance. Organize it into layers
+with different loading strategies.
+
+This is the central architectural decision of claude-orchestrator. The four tiers map
+directly onto Claude Code's native settings resolution:
+
+| Tier | Container Path | What It Contains | Loading |
+|------|---------------|-------------------|---------|
+| **Managed** | `/etc/claude-code/` | Framework hooks, env vars, deny rules, base instructions | Always loaded, not overridable |
+| **Global** | `~/.claude/` | User rules, agents, skills, settings, preferences | Always loaded, user-owned |
+| **Project** | `/workspace/.claude/` | Project CLAUDE.md, project-specific rules and skills | Always loaded per project |
+| **Nested** | `/workspace/<repo>/.claude/` | Repo-specific context from the repo's own `.claude/` | On-demand, from repo |
+
+**Why this matters:**
+
+- **Managed tier** ensures framework invariants (hooks, security constraints) cannot be
+  overridden. This is the "guardrails" layer.
+- **Global tier** captures user preferences that apply to all projects — communication
+  language, coding conventions, workflow rules. Set once, applied everywhere.
+- **Project tier** carries project-specific context — architecture, current state,
+  key commands, infrastructure details. Different for each project.
+- **Nested tier** allows repos to carry their own agent context without conflicting
+  with the project-level configuration.
+
+This stratification solves the core problem of context engineering: providing the right
+information at the right time without overwhelming the agent.
+
+### 2.3 Rules as the Primary Enforcement Mechanism
+
+**Principle**: Rules are the most reliable way to guide consistent agent behavior.
+They should be explicit, versioned, and periodically reviewed.
+
+**How cco implements this:**
+
+- **Rules directory** (`defaults/global/.claude/rules/`) ships with focused rule files:
+  `workflow.md` (phase constraints), `git-practices.md` (commit/branch conventions),
+  `documentation.md` (Mermaid in docs, plain text in terminal, documentation structure), `language.md` (communication
+  and documentation language preferences).
+- **Scoped rules**: Global rules apply everywhere. Project-level rules in
+  `<repo>/.cco/claude/rules/` override or extend for specific projects.
+- **Rules are short and focused.** Each default rule file addresses one concern in
+  ~20-40 lines. Users can expand, split, or reorganize rules as their project evolves.
+  This avoids rule fatigue (the tendency for rules to accumulate into an unmanageable mass).
+- **Rules are versioned.** Tracked in git, updated via `cco update`, with migrations
+  when structure changes. See the [Configuring Rules](../../configuration/guides/configuring-rules.md) guide for
+  how to organize and customize rules effectively.
+
+### 2.4 Knowledge Packs — Curated Domain Context
+
+**Principle**: Documentation is context infrastructure that the agent depends on to
+work correctly.
+
+**How cco implements this:**
+
+- **Knowledge packs** (`~/.cco/packs/`) are curated bundles of documentation,
+  rules, and configuration for specific domains — a web development pack, a homeserver
+  pack, an AI development pack, etc.
+- **Packs are composable.** A project can use multiple packs via `packs:` in `project.yml`.
+  Each pack's knowledge is merged into the project context.
+- **Packs are shareable.** The sharing-repo system (`cco pack publish`, `cco pack install`)
+  allows sharing packs across machines, teams, and organizations.
+- **Knowledge is catalogued at start, loaded on demand.** At session start, `cco start`
+  generates a `packs.md` index listing available pack documents with descriptions. The
+  agent reads individual pack files when relevant, keeping the active context lean.
+
+### 2.5 Separation of Knowledge and Instructions
+
+**Principle**: Clearly distinguish between background knowledge (what the system is) and
+operational instructions (what the agent should do now).
+
+**How cco implements this:**
+
+- **CLAUDE.md files** contain project knowledge: overview, architecture, key commands,
+  infrastructure. They describe *what is*.
+- **Rules files** contain behavioral instructions: workflow phases, coding conventions,
+  commit practices. They prescribe *what to do*.
+- **Skills** provide operational instructions for specific tasks: `/analyze` enters
+  analysis mode, `/design` enters design mode, `/review` runs a structured review.
+  They define *how to act now*.
+- The three-way separation (CLAUDE.md for knowledge, rules for invariant behavior,
+  skills for task-specific action) keeps each concern clean and maintainable.
+
+### 2.6 Documentation Organization for Agent Discoverability
+
+**Principle**: Documentation must be organized so the agent can find the right information
+before acting — not just for human readability, but for agent effectiveness.
+
+A well-structured agent checks existing documentation, design decisions, and prior analysis
+before starting new work on any topic. This is a fundamental behavior: it prevents the
+agent from proposing solutions that contradict established decisions, duplicating existing
+analysis, or ignoring constraints that were already identified. cco enforces this behavior
+through a managed rule (`documentation-first.md`).
+
+But this behavior is only as effective as the documentation it reads. If the documentation
+is disorganized, duplicated, or scattered across many files, the agent either:
+
+- **Does not find it** → starts from scratch, produces work inconsistent with prior decisions
+- **Finds contradictory versions** → makes arbitrary choices between conflicting sources
+- **Finds too much** → buries the relevant information in noise, reducing its effective weight
+
+This makes documentation organization a **prerequisite for agent quality**, not just a
+nice-to-have:
+
+| Practice | Why it matters for agents |
+|----------|--------------------------|
+| **Organize by domain/topic, not by type** | When the agent investigates authentication, it finds everything about auth in one place — decisions, analysis, design, implementation notes — rather than searching across `decisions/`, `analysis/`, `designs/` |
+| **Single source of truth per concept** | If business logic is described in both a design doc and a README, the agent may read only one. When they diverge (and they will), the agent acts on stale information |
+| **One roadmap, one place** | A single roadmap file lets the agent check what is planned, in progress, or completed before starting work. Multiple tracking files lead to contradictory status |
+| **ADRs close to the code they govern** | Design decisions in `docs/<domain>/design.md` are found when the agent explores that domain. Decisions buried in a generic `decisions/` folder may be missed |
+| **Merge overlapping documents** | Two files covering the same topic are worse than one comprehensive file. The agent may read only one, or read both and face contradictions |
+| **Delete superseded documents** | Outdated docs are actively harmful — the agent may find and follow them. If a design was replaced, remove or clearly mark the old version |
+
+**How cco supports this:**
+
+- The **documentation-first rule** (managed) instructs the agent to search for existing
+  docs before proposing new analysis or design. This creates the demand for organized docs.
+- The **documentation rule** (global default) establishes conventions: organize by domain,
+  review stale docs after development cycles, periodically evaluate structure.
+- The **`/analyze` and `/design` skills** produce documents in structured locations,
+  building an organized documentation base from the start.
+- **Knowledge packs** keep cross-project knowledge in curated, single-source-of-truth
+  bundles rather than duplicating it across projects.
+
+---
+
+## Pillar 3 — Workflow Orchestration
+
+### 3.1 The Phased Development Cycle
+
+**Principle**: A structured development cycle follows a defined sequence of phases with
+explicit transitions. Phase transitions benefit from human approval.
+
+```
+Analysis → [Human Review] → Design → [Human Review] → Implementation → [Human Review] → Documentation → Closure
+```
+
+**How cco implements this:**
+
+- The **default workflow rule** (`defaults/global/.claude/rules/workflow.md`) defines
+  recommended phase-specific behavioral constraints:
+  - Analysis: read and understand, DO NOT modify files
+  - Design: propose interfaces and models, DO NOT write implementation code
+  - Implementation: follow the approved design, commit after each logical unit
+  - Documentation: update docs, DO NOT add new features
+  Users can adjust, add, or remove phases to match their preferred workflow.
+- **Skills as phase entry points**: `/analyze` provides structured analysis templates,
+  `/design` provides design templates, `/review` provides review checklists. Additional
+  skills can be created for custom phases.
+- **Human gates are recommended.** The default CLAUDE.md instruction states: "Phase
+  transitions are MANUAL — never skip ahead or auto-advance without explicit user approval."
+  Users can relax this for phases where autonomous progression is appropriate.
+
+### 3.2 Docker Isolation — The Session Sandbox
+
+**Principle**: Each session should be independent and isolated to prevent cross-contamination.
+
+**How cco implements this:**
+
+- **Docker is the sandbox.** Each `cco start` launches a fresh container with only the
+  configured repos mounted. The agent cannot access host files outside its workspace.
+  `--dangerously-skip-permissions` is safe inside the container because the container
+  *is* the permission boundary.
+- **Project-scoped sessions.** One project per container. No accidental cross-project
+  modifications.
+- **Ephemeral by default.** The container is `--rm` — it is destroyed when the session ends.
+  Only repos (mounted from host) and auto memory (persisted in the machine-local STATE store)
+  persist. Everything else starts clean next session.
+
+### 3.3 Session Handoff Through Artifacts
+
+**Principle**: When transitioning between sessions, produce explicit handoff documents
+that capture the state at the boundary.
+
+**How cco implements this:**
+
+- **Analysis and design docs serve as handoff documents.** The `/analyze` skill produces
+  a structured analysis summary; `/design` produces a design specification. Both are
+  versioned files in the repo that the next session can read.
+- **Auto memory** (machine-local STATE store) provides continuity for context that does not belong
+  in committed files — current task state, debugging notes, session-specific context.
+- **CLAUDE.md as living state.** The project CLAUDE.md should reflect the current state
+  of the project. Updating it at the end of significant phases ensures the next session
+  starts with accurate context.
+
+### 3.4 Agent Teams — Coordinated Multi-Agent Work
+
+**Principle**: When working with multiple agents, define clear task boundaries, share
+context, and coordinate through artifacts.
+
+**How cco implements this:**
+
+- **Lead-and-teammates model.** The lead agent coordinates, delegates, and synthesizes.
+  Teammates (`analyst`, `reviewer`) focus on specialized tasks. The human remains the
+  final decision-maker.
+- **tmux-based teams.** `cco start --teammate-mode tmux` launches agents in
+  tmux panes (tmux is the default mode). The lead can spawn teammates for parallel work.
+- **Communication through artifacts.** Agents coordinate through the shared task list,
+  versioned documents, and code — not through direct message passing. All coordination
+  is visible and auditable.
+- **Shared context, separate focus.** All agents in a team share the same project
+  context (CLAUDE.md, rules, knowledge packs) but each focuses on its defined scope.
+
+### 3.5 Testing as Design Verification
+
+**Principle**: Tests verify that the implementation matches the design. An implementation
+without tests is not complete.
+
+In agent-assisted development, tests serve an additional critical function: they catch
+**silent regressions**. An agent working on feature B may inadvertently break feature A
+if feature A is not in its current context.
+
+**How cco implements this:**
+
+- The **workflow rule** specifies: "Write tests alongside implementation. Run existing
+  tests to verify no regressions."
+- The **reviewer agent** checks for test coverage gaps during code review.
+- cco's own test suite (`bin/test`) validates the framework itself — a working example
+  of the practice.
+
+### 3.6 Scope-Aware Workflow
+
+**Principle**: The development cycle applies recursively at different scope levels.
+
+The same analysis-design-implementation cycle applies whether you are working at project,
+service, module, or feature scope. The depth scales with scope — a project-level analysis
+might span multiple sessions, while a feature-level analysis might be a few paragraphs.
+
+**How cco implements this:**
+
+- The **default workflow instruction** suggests clarifying the scope and current phase
+  with the user before starting work. Defining which scope levels exist (project,
+  service, module, feature) is part of project-level configuration — you decide the
+  granularity that fits your workflow.
+- **Skills adapt to scope.** `/analyze` and `/design` produce proportional output
+  based on the scope of the task.
+
+---
+
+## Cross-Cutting Concerns
+
+### Skills as a Prompt Library
+
+Effective prompts and instructions should be treated as code: versioned, refined, and
+reused. cco implements this through the **skills system**:
+
+- Default skills (`defaults/global/.claude/skills/`) provide recommended workflows
+  available in every project — analysis, design, review, commit. Users can modify
+  these or create their own.
+- Project-level skills (`<repo>/.cco/claude/skills/`) provide project-specific
+  workflows that extend or override the defaults.
+- Skills are markdown files with structured instructions. They evolve with the project.
+
+### Maintenance, Drift, and Scope Creep
+
+cco addresses common failure modes — stale docs, agent drift, scope creep — through
+short isolated sessions, explicit phase constraints, frequent commits, and review gates.
+
+For detailed operational practices (periodic maintenance checklists, review cycles,
+common pitfalls), see the [Development Workflow guide](development-workflow.md).
+
+---
+
+## Summary of Principles and cco Features
+
+| # | Principle | cco Feature |
+|---|-----------|-------------|
+| 1 | Repository as source of truth | Repos mounted at `/workspace/`, all context in versioned files |
+| 2 | Atomic, conventional commits | `git-practices.md` rule loaded in every session |
+| 3 | Branch-review-merge | Branch naming convention + `/review` skill |
+| 4 | ADRs for decisions | `/design` skill produces ADR-structured documents |
+| 5 | Two-layer review | `reviewer` agent (mechanical quality) + human review (intent and domain) |
+| 6 | Minimum necessary context | Four-tier hierarchy, on-demand knowledge loading |
+| 7 | Stratified context | Managed → Global → Project → Nested tiers |
+| 8 | Living documentation | CLAUDE.md updated per phase, docs in repos |
+| 9 | Domain-organized docs | `docs/<domain>/analysis.md`, `docs/<domain>/design.md` |
+| 10 | Knowledge vs. instructions | CLAUDE.md (knowledge) / rules (behavior) / skills (actions) |
+| 11 | Phased workflow with human gates | `workflow.md` rule + skills as phase entry points |
+| 12 | Session independence | Docker containers, ephemeral by default |
+| 13 | Handoff documents | Analysis/design docs + auto memory persistence |
+| 14 | Exit criteria | Workflow phases with explicit completion checks |
+| 15 | Tests as design verification | Workflow rule + reviewer agent coverage checks |
+| 16 | Scope discipline | Phase constraints + review gates |
+| 17 | Periodic health checks | `cco update` for framework + manual project review |
+| 18 | Retrospectives | Post-feature review, rules refinement cycle |
+
+---
+
+*This guide is a living document maintained alongside claude-orchestrator. As the
+framework evolves, so does this guide. It is mounted live via the `docs/` extra_mount
+in the tutorial project, ensuring you always read the latest version.*

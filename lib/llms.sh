@@ -4,7 +4,8 @@
 # Provides: _llms_resolve_primary_file(), _generate_llms_mounts(),
 #           _generate_llms_packs_md(), _validate_llms_refs(),
 #           _collect_llms_names()
-# Dependencies: colors.sh, utils.sh, yaml.sh
+# Dependencies: colors.sh, utils.sh, yaml.sh, packs.sh (_pack_resolve_dir — the
+#   three-layer pack resolver, for pack-provided llms entries; ADR-0019 D5)
 # Globals: LLMS_DIR, PACKS_DIR
 
 # Resolve the primary documentation file for an llms entry.
@@ -40,6 +41,7 @@ _llms_resolve_primary_file() {
 _collect_llms_names() {
     local project_yml="$1"
     local pack_names="$2"  # newline-separated pack names
+    local project_cco_dir="${3:-}"  # for three-layer pack resolution (ADR-0019 D5)
 
     # Use arrays for deduplication (project wins over pack)
     # Note: empty array access requires guards for bash 3.2 + set -u
@@ -50,12 +52,14 @@ _collect_llms_names() {
     if [[ -n "$pack_names" ]]; then
         while IFS= read -r pack_name; do
             [[ -z "$pack_name" ]] && continue
-            local pack_yml="$PACKS_DIR/${pack_name}/pack.yml"
+            local _proot; _proot=$(_pack_resolve_dir "$pack_name" "$project_cco_dir")
+            [[ -z "$_proot" ]] && continue
+            local pack_yml="$_proot/pack.yml"
             [[ ! -f "$pack_yml" ]] && continue
             local pack_llms
             pack_llms=$(yml_get_llms "$pack_yml")
             [[ -z "$pack_llms" ]] && continue
-            while IFS=$'\t' read -r lname ldesc lvariant; do
+            while IFS=$'\t' read -r lname ldesc lvariant lurl; do
                 [[ -z "$lname" ]] && continue
                 local found=false
                 for ((i=0; i<_seen_count; i++)); do
@@ -75,7 +79,7 @@ _collect_llms_names() {
         local proj_llms
         proj_llms=$(yml_get_llms "$project_yml")
         if [[ -n "$proj_llms" ]]; then
-            while IFS=$'\t' read -r lname ldesc lvariant; do
+            while IFS=$'\t' read -r lname ldesc lvariant lurl; do
                 [[ -z "$lname" ]] && continue
                 local found=false
                 for ((i=0; i<_seen_count; i++)); do
@@ -105,9 +109,10 @@ _collect_llms_names() {
 _generate_llms_mounts() {
     local project_yml="$1"
     local pack_names="$2"
+    local project_cco_dir="${3:-}"
 
     local entries
-    entries=$(_collect_llms_names "$project_yml" "$pack_names")
+    entries=$(_collect_llms_names "$project_yml" "$pack_names" "$project_cco_dir")
     [[ -z "$entries" ]] && return 0
 
     echo "      # LLMs.txt documentation (read-only mounts from central llms registry)"
@@ -115,7 +120,7 @@ _generate_llms_mounts() {
         [[ -z "$lname" ]] && continue
         local llms_dir="$LLMS_DIR/$lname"
         if [[ -d "$llms_dir" ]]; then
-            echo "      - ${llms_dir}:/workspace/.claude/llms/${lname}:ro"
+            _compose_vol "${llms_dir}" "/workspace/.claude/llms/${lname}" "ro"
         else
             warn "LLMs '$lname': directory not found at $llms_dir (run 'cco llms install' first)"
         fi
@@ -127,9 +132,10 @@ _generate_llms_mounts() {
 _generate_llms_packs_md() {
     local project_yml="$1"
     local pack_names="$2"
+    local project_cco_dir="${3:-}"
 
     local entries
-    entries=$(_collect_llms_names "$project_yml" "$pack_names")
+    entries=$(_collect_llms_names "$project_yml" "$pack_names" "$project_cco_dir")
     if [[ -z "$entries" ]]; then return 0; fi
 
     # Buffer entries first to avoid orphaned header when all dirs are missing
@@ -196,23 +202,43 @@ _validate_llms_refs() {
     local context="$2"  # e.g., "Pack 'frontend-stack'" or "Project 'my-app'"
     local errors=0
 
-    local llms_names
-    llms_names=$(yml_get_llms_names "$yaml_file")
-    [[ -z "$llms_names" ]] && return 0
+    # Read the full coordinate tuples (name \t description \t variant \t url),
+    # not just names: the url lets us emit an executable remedy and flag a
+    # missing coordinate as a share-readiness gap (ADR-0032 D2; the manifest is
+    # already in hand as $yaml_file — no extra plumbing needed).
+    local llms_entries
+    llms_entries=$(yml_get_llms "$yaml_file")
+    [[ -z "$llms_entries" ]] && return 0
 
-    while IFS= read -r lname; do
+    local _line lname ldesc lvariant lurl
+    while IFS= read -r _line; do
+        [[ -z "$_line" ]] && continue
+        # _peel_tab preserves empty fields (an empty description must not shift
+        # the variant/url columns — IFS=$'\t' read would collapse them).
+        _peel_tab "$_line" lname ldesc lvariant lurl
         [[ -z "$lname" ]] && continue
         local llms_dir="$LLMS_DIR/$lname"
+        # Emit greppable "<context>: <reason>" findings on stdout (no inline
+        # symbol) so the caller collects them into its unified validate output
+        # (ADR-0023 D2 / finding F1). Severity is the function's return code.
         if [[ ! -d "$llms_dir" ]]; then
-            error "$context: llms '$lname' not found (run 'cco llms install' first)"
+            if [[ -n "$lurl" ]]; then
+                # url present → the remedy is runnable verbatim.
+                printf '%s: llms '\''%s'\'' not installed — run: cco llms install %s --name %s%s\n' \
+                    "$context" "$lname" "$lurl" "$lname" "${lvariant:+ --variant $lvariant}"
+            else
+                # url absent → share-readiness gap (llms url is mandatory, ADR-0017 D1).
+                printf '%s: llms '\''%s'\'' has no url coordinate — required to share/re-fetch (add a url to the llms entry, or run '\''cco resolve'\'')\n' \
+                    "$context" "$lname"
+            fi
             ((errors++))
             continue
         fi
         if ! _llms_resolve_primary_file "$llms_dir" "" > /dev/null 2>&1; then
-            error "$context: llms '$lname' has no documentation files"
+            printf '%s: llms '\''%s'\'' has no documentation files\n' "$context" "$lname"
             ((errors++))
         fi
-    done <<< "$llms_names"
+    done <<< "$llms_entries"
 
     [[ $errors -gt 0 ]] && return 1 || return 0
 }

@@ -1,6 +1,9 @@
 docs/
 .git/
-projects/*/claude-state/
+# Local/user config never belongs in the image build context (the decentralized
+# layout keeps it in <repo>/.cco/ + ~/.cco/; state/cache are out of the repo).
+user-config/
+**/.cco/
 *.md
 !config/*.md
 .gitignore

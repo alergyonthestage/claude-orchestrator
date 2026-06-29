@@ -3,29 +3,32 @@
 #
 # Provides: _setup_internal_tutorial(), cmd_start()
 # Dependencies: colors.sh, utils.sh, yaml.sh, secrets.sh, workspace.sh, packs.sh
-# Globals: PROJECTS_DIR, GLOBAL_DIR, IMAGE_NAME, REPO_ROOT, USER_CONFIG_DIR
+# Globals: IMAGE_NAME, REPO_ROOT, USER_CONFIG_DIR (projects via the STATE index, P5)
 
 # ── Internal Tutorial Setup ──────────────────────────────────────────
 # Prepares the runtime directory for the internal tutorial project.
 # Content (.claude/, project.yml) is refreshed from internal/tutorial/ every start.
-# Session state (.cco/claude-state/, memory/) persists across starts.
+# Session transcripts/memory live in machine-local STATE (keyed by the internal
+# project name, mounted via _cco_project_session_*), not in the runtime dir.
 _setup_internal_tutorial() {
     local source_dir="$REPO_ROOT/internal/tutorial"
     local runtime_dir="$USER_CONFIG_DIR/.cco/internal/tutorial"
 
     [[ ! -d "$source_dir" ]] && die "Internal tutorial not found at $source_dir"
 
-    # Create runtime dir structure (first time only for state dirs)
-    mkdir -p "$runtime_dir/.cco/claude-state"
-    mkdir -p "$runtime_dir/memory"
+    # Ensure the runtime dir exists (content is refreshed below; session
+    # transcripts/memory live in STATE, mounted via _cco_project_session_*).
+    mkdir -p "$runtime_dir"
 
     # Always refresh content from framework source (ensures tutorial is current)
     rm -rf "$runtime_dir/.claude"
     cp -r "$source_dir/.claude" "$runtime_dir/.claude" \
         || die "Failed to refresh tutorial content from $source_dir. Check permissions and disk space."
 
-    # Refresh project.yml with path substitution
+    # Refresh project.yml with path substitution. CCO_CONFIG_DIR = the personal
+    # store ~/.cco (read-only mount); CCO_USER_CONFIG_DIR kept for back-compat.
     sed -e "s|{{CCO_REPO_ROOT}}|$REPO_ROOT|g" \
+        -e "s|{{CCO_CONFIG_DIR}}|$(_cco_config_dir)|g" \
         -e "s|{{CCO_USER_CONFIG_DIR}}|$USER_CONFIG_DIR|g" \
         "$source_dir/project.yml" > "$runtime_dir/project.yml" \
         || die "Failed to generate tutorial project.yml"
@@ -36,60 +39,165 @@ _setup_internal_tutorial() {
     fi
 }
 
+# ── Internal config-editor setup (ADR-0027 D1) ───────────────────────
+# Prepares the runtime dir for the config-editor built-in. Like the tutorial,
+# its .claude/ content is refreshed from internal/config-editor/ every start.
+# The project.yml is GENERATED here (not committed): it mounts the personal
+# store ~/.cco rw (global mode) and, in project mode, the target project's
+# <repo>/.cco rw. Host paths are injected here — a runtime artifact, never
+# committed, so AD3/G8 hold by construction.
+# Args: <target_cco_path> <target_name>  (both empty in global mode)
+_setup_internal_config_editor() {
+    local target_cco="$1" target_name="$2"
+    local source_dir="$REPO_ROOT/internal/config-editor"
+    local runtime_dir="$USER_CONFIG_DIR/.cco/internal/config-editor"
+
+    [[ ! -d "$source_dir" ]] && die "Internal config-editor not found at $source_dir"
+
+    mkdir -p "$runtime_dir"
+
+    # Always refresh content from framework source (ensures it is current).
+    rm -rf "$runtime_dir/.claude"
+    cp -r "$source_dir/.claude" "$runtime_dir/.claude" \
+        || die "Failed to refresh config-editor content from $source_dir."
+    [[ -f "$source_dir/setup.sh" ]] && cp "$source_dir/setup.sh" "$runtime_dir/setup.sh"
+
+    # Generate project.yml: ~/.cco rw + docs ro (+ the target's .cco rw in
+    # project mode). The personal store is mounted read-write — editing it is
+    # the whole purpose of this session.
+    local cfg; cfg="$(_cco_config_dir)"
+    # The mount bridge resolves names via the STATE index (name → host path), but
+    # these are EPHEMERAL internal names — writing them into the persistent,
+    # user-facing index pollutes it permanently and clobbers any user binding of the
+    # same name (review H4). Publish them instead via the in-process session override
+    # (_mount_override_get), which _effective_extra_mounts consults before the index.
+    # The generated project.yml only references these names; they resolve via the
+    # session override at start (never the persistent index), so no host path is
+    # committed (AD3/G8).
+    _CCO_MOUNT_OVERRIDE=$(printf 'cco-config\t%s\ncco-docs\t%s' "$cfg" "$REPO_ROOT/docs")
+    [[ -n "$target_cco" ]] && _CCO_MOUNT_OVERRIDE+=$(printf '\n%s-config\t%s' "$target_name" "$target_cco")
+    {
+        cat <<YAML
+name: config-editor
+description: "Configuration editor for claude-orchestrator"
+extra_mounts:
+  - name: cco-config
+    target: /workspace/cco-config
+    readonly: false
+  - name: cco-docs
+    target: /workspace/cco-docs
+    readonly: true
+YAML
+        if [[ -n "$target_cco" ]]; then
+            cat <<YAML
+  - name: ${target_name}-config
+    target: /workspace/${target_name}-config
+    readonly: false
+YAML
+        fi
+        cat <<YAML
+docker:
+  mount_socket: false
+  ports: []
+  env: {}
+auth:
+  method: oauth
+YAML
+    } > "$runtime_dir/project.yml" || die "Failed to generate config-editor project.yml"
+}
+
 # ── cmd_start() helper functions ─────────────────────────────────────
 # These functions are called from within cmd_start() and share its local
 # variable scope. They must NOT redeclare variables — they read/write
 # cmd_start()'s locals directly.
 
-# Resolves project name to directory and project.yml path.
-# Sets: project_dir, project_yml, is_internal
+# Resolves the project to its decentralized config source (design §4.4, ADR-0024
+# D3): cco start reads <repo>/.cco/ — cwd-first when no name is given (the project
+# the repo HOSTS, by its project.yml `name`), or by-name via the STATE index
+# (projects: membership -> the first member hosting .cco/project.yml). The central
+# $PROJECTS_DIR layout is gone (P3 breaking cutover, AD12 — no dual-read).
+# Sets: project_dir (the .cco config dir), project_yml, claude_src (committed
+#   claude config tree), source_repo (the host repo), source_kind, is_internal,
+#   and fills `project` when resolved cwd-first.
 _start_resolve_project() {
     is_internal=false
+    source_kind="cwd"
 
     if [[ "$project" == "tutorial" ]]; then
-        # "tutorial" is a reserved name — always launches the built-in tutorial.
-        # Block if user has a project named "tutorial" in user-config.
-        if [[ -d "$PROJECTS_DIR/tutorial" ]]; then
+        # "tutorial" is a reserved name — always launches the built-in tutorial
+        # (an internal project, not part of the decentralized <repo>/.cco/ model).
+        # Block if the user has a real project named "tutorial" in the index.
+        if _resolve_unit_dir_for_project "tutorial" >/dev/null 2>&1; then
             echo ""
             error "'tutorial' is a reserved name for the built-in tutorial."
             echo ""
-            echo "  You have a project named 'tutorial' in your user-config."
-            echo "  Please rename or remove it to use 'cco start tutorial':"
+            echo "  You have a project named 'tutorial'. Rename it to use the built-in"
+            echo "  tutorial (edit its .cco/project.yml 'name:' and run 'cco resolve')."
             echo ""
-            echo "    Rename:  mv $PROJECTS_DIR/tutorial $PROJECTS_DIR/<new-name>"
-            echo "    Remove:  rm -rf $PROJECTS_DIR/tutorial"
-            echo ""
-            echo "  After renaming, update any references to the old project name."
             die "Resolve the conflict and try again."
         fi
         is_internal=true
         _setup_internal_tutorial
         project_dir="$USER_CONFIG_DIR/.cco/internal/tutorial"
         project_yml="$project_dir/project.yml"
-    else
-        project_dir="$PROJECTS_DIR/$project"
-        project_yml="$project_dir/project.yml"
-        if [[ ! -d "$project_dir" ]]; then
-            # Check if project exists on another vault profile branch
-            local _other_branch=""
-            if [[ -d "$USER_CONFIG_DIR/.git" ]]; then
-                local _branch
-                while IFS= read -r _branch; do
-                    _branch=$(echo "$_branch" | sed 's/^[ *]*//')
-                    [[ -z "$_branch" ]] && continue
-                    if [[ -n "$(git -C "$USER_CONFIG_DIR" ls-tree "$_branch" -- "projects/$project/" 2>/dev/null)" ]]; then
-                        _other_branch="$_branch"
-                        break
-                    fi
-                done < <(git -C "$USER_CONFIG_DIR" branch 2>/dev/null)
-            fi
-            if [[ -n "$_other_branch" ]]; then
-                die "Project '$project' is on profile '$_other_branch'. Run 'cco vault switch $_other_branch' first."
-            else
-                die "Project '$project' not found. Run 'cco project list' to see available projects."
-            fi
+        claude_src="$project_dir/.claude"
+        source_repo="$project_dir"
+    elif [[ "$project" == "config-editor" ]]; then
+        # "config-editor" is a reserved name — launches the built-in config
+        # editor (ADR-0027 D1). Block a real project claiming the name.
+        if _resolve_unit_dir_for_project "config-editor" >/dev/null 2>&1; then
+            echo ""
+            error "'config-editor' is a reserved name for the built-in config editor."
+            echo ""
+            echo "  You have a project named 'config-editor'. Rename it (edit its"
+            echo "  .cco/project.yml 'name:' and run 'cco resolve')."
+            echo ""
+            die "Resolve the conflict and try again."
         fi
-        [[ ! -f "$project_yml" ]] && die "No project.yml found in projects/$project/"
+        is_internal=true
+        # Project mode: --project <name> wins; else a cwd that hosts a configured
+        # repo. Resolve the target's <repo>/.cco for an additional rw mount.
+        local _ce_path="" _ce_name="" _ce_cco=""
+        if [[ -n "$config_editor_target" ]]; then
+            _ce_path=$(_resolve_unit_dir_for_project "$config_editor_target") \
+                || die "config-editor --project '$config_editor_target' is not resolvable on this machine. Run 'cco resolve' first."
+            _ce_name="$config_editor_target"
+        elif _ce_path=$(_resolve_find_unit_dir 2>/dev/null); then
+            _ce_name=$(yml_get "$_ce_path/.cco/project.yml" name 2>/dev/null)
+        fi
+        [[ -n "$_ce_path" && -d "$_ce_path/.cco" ]] && _ce_cco="$_ce_path/.cco"
+        _setup_internal_config_editor "$_ce_cco" "$_ce_name"
+        project_dir="$USER_CONFIG_DIR/.cco/internal/config-editor"
+        project_yml="$project_dir/project.yml"
+        claude_src="$project_dir/.claude"
+        source_repo="$project_dir"
+    else
+        local unit_dir=""
+        if [[ -n "$from_repo" ]]; then
+            # --from <repo>: explicit Case-C source (mirrors `cco sync --from`).
+            unit_dir=$(_index_get_path "$from_repo") \
+                || die "source repo '$from_repo' is unresolved on this machine — run 'cco resolve' first."
+            [[ -n "$unit_dir" ]] || die "source repo '$from_repo' is unresolved on this machine — run 'cco resolve' first."
+            [[ -f "$unit_dir/.cco/project.yml" ]] \
+                || die "source repo '$from_repo' has no .cco/project.yml — not a config-bearing member."
+            source_kind="--from"
+        elif [[ -n "$project" ]]; then
+            # By-name: resolve the project's host via the index membership.
+            unit_dir=$(_resolve_unit_dir_for_project "$project") \
+                || die "Project '$project' is not in the index on this machine yet — its config can't be located. Run 'cco resolve --scan <dir>' to discover it, or start from inside its repo."
+            source_kind="name"
+        else
+            # cwd-first: the project THIS repo hosts (AD6 / ADR-0024 D3).
+            unit_dir=$(_resolve_find_unit_dir) \
+                || die "No .cco/project.yml in the current directory or its parents. Name a project ('cco start <project>') or run from a configured repo."
+            project=$(yml_get "$unit_dir/.cco/project.yml" name 2>/dev/null)
+            source_kind="cwd"
+        fi
+        project_dir="$unit_dir/.cco"
+        project_yml="$project_dir/project.yml"
+        claude_src="$project_dir/claude"
+        source_repo="$unit_dir"
+        [[ -f "$project_yml" ]] || die "No .cco/project.yml found for '${project:-cwd}' (host repo: $unit_dir)."
     fi
 
     if ! $dry_run; then
@@ -108,9 +216,12 @@ _start_load_config() {
     project_name=$(yml_get "$project_yml" "name")
     [[ -z "$project_name" ]] && project_name="$project"
 
-    # Validate project name (ADR-13: secure-by-default config parsing)
-    if [[ ! "$project_name" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]]; then
-        die "Invalid project name '${project_name}': must match [a-zA-Z0-9][a-zA-Z0-9_-]* (no spaces or special characters)"
+    # Validate project name (ADR-13: secure-by-default config parsing; the shared
+    # single definition = Design Invariant 10, ADR-0031 D5). Previously start used
+    # a looser [a-zA-Z0-9_-] regex than init's canonical lowercase-hyphen form —
+    # unifying here also closes that latent inconsistency.
+    if ! _cco_valid_project_name "$project_name"; then
+        die "Invalid project name '${project_name}': must be lowercase letters, numbers, and hyphens, starting alphanumeric (no spaces or special characters)"
     fi
     if [[ ${#project_name} -gt 63 ]]; then
         die "Project name '${project_name}' is too long (${#project_name} chars, max 63)"
@@ -180,10 +291,19 @@ _start_load_config() {
     # Parse packs early (needed both for compose and packs.md generation)
     pack_names=$(yml_get_packs "$project_yml")
 
-    # Warn if no repos defined (some projects like tutorial work without repos)
+    # Warn if no repos defined (some projects like tutorial work without repos).
+    # Schema-agnostic via the bridge (legacy path:name or new logical names).
     local repos_check
-    repos_check=$(yml_get_repos "$project_yml")
+    repos_check=$(_effective_repo_mounts "$project_yml")
     [[ -z "$repos_check" ]] && warn "No repositories defined in project.yml. Work inside the container will not persist unless saved via extra_mounts."
+
+    # ── Per-machine bucket homes (decentralized config; design §2.2) ─────
+    # CONFIG (~/.cco) = user-authored global config; STATE/CACHE = this
+    # project's machine-local session state and regenerable overlays, keyed
+    # by project identity (ADR-0005/0007/0015/0016). Resolved host-side only.
+    config_dir=$(_cco_config_dir)
+    session_state_dir="$(_cco_state_dir)/projects/$project_name"
+    session_cache_dir="$(_cco_cache_dir)/projects/$project_name"
     return 0
 }
 
@@ -198,16 +318,16 @@ _start_check_health() {
         if [[ "$_current_schema" -lt "$_latest_schema" ]]; then
             info "Updates available. Run 'cco update' to apply."
         fi
-    elif [[ -d "$GLOBAL_DIR/.claude" ]]; then
+    elif [[ -d "$config_dir/.claude" ]]; then
         info "Run 'cco update' to initialize the update system."
     fi
 
     # Check for unresolved merge conflicts in config files
     local _conflict_files=()
     local _check_dir _check_label
-    for _check_dir in "$GLOBAL_DIR/.claude" "$project_dir/.claude"; do
+    for _check_dir in "$config_dir/.claude" "$claude_src"; do
         [[ ! -d "$_check_dir" ]] && continue
-        if [[ "$_check_dir" == "$GLOBAL_DIR/.claude" ]]; then
+        if [[ "$_check_dir" == "$config_dir/.claude" ]]; then
             _check_label="global"
         else
             _check_label="project/$project"
@@ -228,10 +348,10 @@ _start_check_health() {
     fi
 
     # Warn about managed skills that shadow user-level copies
-    if [[ -d "$GLOBAL_DIR/.claude/skills/init-workspace" ]]; then
-        warn "init-workspace skill found in user global (global/.claude/skills/init-workspace)."
+    if [[ -d "$config_dir/.claude/skills/init-workspace" ]]; then
+        warn "init-workspace skill found in user global (~/.cco/.claude/skills/init-workspace)."
         warn "This skill is now managed (enterprise-level) and the managed version takes precedence."
-        warn "You can safely remove the user copy: rm -rf global/.claude/skills/init-workspace"
+        warn "You can safely remove the user copy: rm -rf ~/.cco/.claude/skills/init-workspace"
     fi
 }
 
@@ -248,10 +368,24 @@ _start_prepare_state() {
             rm -rf "$output_dir"
         else
             output_dir=$(mktemp -d)
-            _cleanup_dry_run_dir() { rm -rf "$output_dir"; }
-            trap _cleanup_dry_run_dir EXIT
+            # Embed the path in the trap body rather than referencing $output_dir:
+            # the EXIT trap fires after cmd_start returns, when the function-local
+            # output_dir is out of scope — under set -u a bare "$output_dir" there
+            # is an unbound variable, so the trap both errors (cco start --dry-run
+            # exits non-zero) AND skips cleanup (the temp dir leaks). Substituting
+            # the value at registration makes cleanup robust and the exit clean.
+            trap "rm -rf '$output_dir'" EXIT
         fi
         mkdir -p "$output_dir/.claude" "$output_dir/.cco/managed"
+        # Dry-run inspects generated overlays under the dump dir.
+        managed_gen_dir="$output_dir/.cco/managed"
+        claude_gen_dir="$output_dir/.claude"
+    else
+        # Real start: generated overlays are regenerable → CACHE (keyed by id).
+        # packs.md/workspace.yml are produced here and mounted :ro on top of the
+        # rw project .claude (ADR-0005 F1), never written into the committed tree.
+        managed_gen_dir="$session_cache_dir/managed"
+        claude_gen_dir="$session_cache_dir/.claude"
     fi
 
     # ── Persistent side effects: skip in dry-run ─────────────────────────
@@ -259,20 +393,21 @@ _start_prepare_state() {
         # Auto-clean stale dry-run dump (starting implies approval)
         [[ -d "$project_dir/.tmp" ]] && rm -rf "$project_dir/.tmp"
 
-        # Ensure claude-state directory exists (migrates legacy memory/ if needed)
-        migrate_memory_to_claude_state "$project_dir"
+        # Session transcripts + auto-memory are machine-local STATE, keyed by
+        # project identity (ADR-0009): never committed, never in ~/.cco. The
+        # /session partition is the future state-sync opt-in boundary (§2.2).
+        mkdir -p "$(_cco_project_session_transcripts "$project_name")" \
+                 "$(_cco_project_session_memory "$project_name")" \
+                 "$managed_gen_dir" \
+                 "$claude_gen_dir"
 
-        # Ensure memory directory exists (vault-tracked, separate from claude-state)
-        mkdir -p "$project_dir/memory"
-        # Restore .gitkeep if missing — keeps directory tracked in vault (D32)
-        [[ ! -f "$project_dir/memory/.gitkeep" ]] && touch "$project_dir/memory/.gitkeep"
-
-        # Ensure global state files exist (shared across all projects — must exist before Docker bind mount)
-        mkdir -p "$GLOBAL_DIR/claude-state"
+        # Global auth/session state, shared across all projects → STATE
+        # top-level (machine-local, never synced; design §2.2 / ADR-0016).
+        local state_root; state_root=$(_cco_state_dir)
 
         # ~/.claude.json — preferences, MCP servers, session metadata (NOT auth tokens)
         # Re-sync from host when host has been updated (higher numStartups = more recent).
-        local global_claude_json="$GLOBAL_DIR/claude-state/claude.json"
+        local global_claude_json="$state_root/claude.json"
         if [[ -f "$HOME/.claude.json" ]]; then
             if [[ ! -f "$global_claude_json" ]]; then
                 cp "$HOME/.claude.json" "$global_claude_json"
@@ -300,7 +435,7 @@ _start_prepare_state() {
         # On macOS, Claude stores tokens in Keychain. On Linux (container), it reads from
         # ~/.claude/.credentials.json in plaintext. We seed this file from the macOS Keychain
         # so the container can authenticate without manual login.
-        local global_creds="$GLOBAL_DIR/claude-state/.credentials.json"
+        local global_creds="$state_root/.credentials.json"
         if [[ "$(uname)" == "Darwin" ]] && [[ "$auth_method" == "oauth" ]]; then
             local keychain_json
             keychain_json=$(security find-generic-password -s "Claude Code-credentials" -a "$(whoami)" -w 2>/dev/null) || true
@@ -327,39 +462,44 @@ _start_prepare_state() {
 _start_generate_integrations() {
     # ── Docker socket policy ──────────────────────────────────────────────
     if [[ "$mount_socket" == "true" ]]; then
-        _generate_socket_policy "$project_yml" "$project_name" "$output_dir"
+        _generate_socket_policy "$project_yml" "$project_name" "$managed_gen_dir"
     else
         if ! $dry_run; then
-            rm -f "$project_dir/.cco/managed/policy.json"
+            rm -f "$managed_gen_dir/policy.json"
         fi
     fi
 
-    # ── Generate .managed/ integrations ──────────────────────────────────
+    # ── Generate .managed/ integrations (regenerable overlays → CACHE) ────
     if [[ "$browser_enabled" == "true" ]]; then
-        mkdir -p "$output_dir/.cco/managed"
-        _generate_browser_mcp "$output_dir/.cco/managed/browser.json" \
+        mkdir -p "$managed_gen_dir"
+        _generate_browser_mcp "$managed_gen_dir/browser.json" \
             "$browser_mode" "$browser_effective_port" "$browser_mcp_args"
-        echo "$browser_effective_port" > "$output_dir/.cco/managed/.browser-port"
+        echo "$browser_effective_port" > "$managed_gen_dir/.browser-port"
     else
         if ! $dry_run; then
             # Clean up stale managed files from a previous session
-            rm -f "$project_dir/.cco/managed/browser.json" "$project_dir/.cco/managed/.browser-port"
+            rm -f "$managed_gen_dir/browser.json" "$managed_gen_dir/.browser-port"
         fi
     fi
 
     if [[ "$github_enabled" == "true" ]]; then
-        mkdir -p "$output_dir/.cco/managed"
-        _generate_github_mcp "$output_dir/.cco/managed/github.json" "$github_token_env"
+        mkdir -p "$managed_gen_dir"
+        _generate_github_mcp "$managed_gen_dir/github.json" "$github_token_env"
     else
         if ! $dry_run; then
-            rm -f "$project_dir/.cco/managed/github.json"
+            rm -f "$managed_gen_dir/github.json"
         fi
     fi
 
     # Detect pack resource name conflicts (warning only, before compose generation)
     if [[ -n "$pack_names" ]]; then
-        _detect_pack_conflicts "$pack_names"
+        _detect_pack_conflicts "$pack_names" "$project_dir"
     fi
+
+    # Warn on cross-tree collisions between committed .claude config and the
+    # framework-reserved overlay tree (ADR-0005 F2). Unconditional — reserved
+    # packs//llms/ violations apply even with no packs configured.
+    _detect_cross_tree_conflicts "$project_yml" "$pack_names" "$claude_src" "$project_dir"
 }
 
 # Resolves @local markers and legacy {{REPO_*}} in project.yml before
@@ -367,20 +507,65 @@ _start_generate_integrations() {
 # the only start-specific concern is skipping the tutorial/internal
 # project (which uses template-baked paths, nothing to resolve).
 _start_resolve_paths() {
+    unresolved_refs=0
     $is_internal && return 0
-    _resolve_start_paths "$project_dir"
-    # Hard guard: after resolution every entry must be resolvable and
-    # exist on disk — otherwise docker-compose would get @local or a
-    # missing source and silently create empty bind mounts (#B17).
-    _assert_resolved_paths "$project_dir" "$project_name"
+    # Single resolution entry point (ADR-0033 / S1 finding #7): start invokes the
+    # SAME resolve surface as `cco resolve` — interactive heal of every referenced
+    # repo/mount/llms/pack, never blocking (P14) — instead of a parallel inlined
+    # loop. _resolve_unit takes the repo dir (parent of the .cco config dir).
+    _resolve_unit "$(dirname "$project_dir")"
+    # Conscious-skip model (design §4.4 / P14, ADR-0017 D2): _resolve_unit offered
+    # [c]lone / [p]ath / [s]kip per unresolved member (TTY) and already warned each
+    # member it could not resolve (skip / non-TTY). Here we only COUNT the residue
+    # for the passive ⚠ badge — the mount-gen excludes empty-path entries, so a
+    # skipped member is never a silent empty mount (#B17).
+    local kind key effective status
+    while IFS=$'\t' read -r kind key effective status; do
+        [[ -z "$kind" ]] && continue
+        [[ "$status" == "exists" ]] && continue
+        unresolved_refs=$((unresolved_refs + 1))
+    done < <(_project_effective_paths "$project_dir")
+}
+
+# Emit the non-blocking config reminder aggregator (ADR-0008) for this project's
+# RESOLVED member repos. Invariant H1: this runs ONLY after _start_resolve_paths,
+# so the index is populated — reminders are never computed against an empty/
+# unresolved index. Silent when members carry no <repo>/.cco/ (the pre-P2
+# central layout). The remaining cco start source-selection wiring (§4.4:
+# --from, Case-C precedence, the divergence notice, the source-transparency
+# line + passive ⚠ badge) lands in P2, built once against the decentralized
+# layout. Always non-blocking (P14).
+_start_emit_reminders() {
+    $is_internal && return 0
+    local -a roots=()
+    local _name _path
+    while IFS=$'\t' read -r _name _path; do
+        [[ -z "$_path" ]] && continue
+        roots+=("$_path")
+    done < <(_effective_repo_mounts "$project_yml" 2>/dev/null)
+    [[ ${#roots[@]} -eq 0 ]] && return 0
+    _emit_config_reminders "${roots[@]}"
+    return 0
 }
 
 # Generates the docker-compose.yml file from project configuration.
 # Sets: compose_file
 _start_generate_compose() {
     # ── Generate docker-compose.yml ──────────────────────────────────
-    mkdir -p "$output_dir/.cco"
-    compose_file=$(_cco_project_compose "$output_dir")
+    # Real start writes the compose into STATE (machine-local, keyed by id;
+    # design §2.2 BL3). Dry-run dumps it under the inspection dir. Every
+    # framework mount source below is host-absolute (config/state/cache roots
+    # now diverge, so a single --project-directory can no longer anchor them).
+    local state_root global_claude
+    state_root=$(_cco_state_dir)
+    global_claude="$config_dir/.claude"   # flat global home (ADR-0028)
+    if $dry_run; then
+        mkdir -p "$output_dir/.cco"
+        compose_file="$output_dir/.cco/docker-compose.yml"
+    else
+        mkdir -p "$session_state_dir"
+        compose_file="$session_state_dir/docker-compose.yml"
+    fi
 
     {
         cat <<YAML
@@ -437,109 +622,161 @@ YAML
 
         echo "    volumes:"
 
-        # ~/.claude.json — preferences, MCP servers, session metadata (persisted globally)
-        echo "      - ${GLOBAL_DIR}/claude-state/claude.json:/home/claude/.claude.json"
-        # ~/.claude/.credentials.json — OAuth tokens (seeded from macOS Keychain, auto-refreshed by Claude)
-        echo "      - ${GLOBAL_DIR}/claude-state/.credentials.json:/home/claude/.claude/.credentials.json"
+        # Agentic config edit-protection (ADR-0027 D3, narrow scope). A normal
+        # session overlays the committed structural framework config
+        # (<repo>/.cco: project.yml, secrets.env, internal metadata) READ-ONLY
+        # so the in-container agent cannot involuntarily mutate it while working
+        # on code. The project's Claude config tree (/workspace/.claude) stays rw
+        # (P17, /init authoring). The host IDE is unaffected (container-only).
+        # Built-in sessions (tutorial, config-editor) and the explicit
+        # --enable-config-edit escape hatch keep <repo>/.cco read-write.
+        local _committed_ro=":ro"
+        if $is_internal || $enable_config_edit; then _committed_ro=""; fi
 
-        # Global config
-        cat <<YAML
-      # Global config (settings.json is rw — Claude Code writes runtime preferences like /effort)
-      - ${GLOBAL_DIR}/.claude/settings.json:/home/claude/.claude/settings.json
-      - ${GLOBAL_DIR}/.claude/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
-      - ${GLOBAL_DIR}/.claude/rules:/home/claude/.claude/rules:ro
-      - ${GLOBAL_DIR}/.claude/agents:/home/claude/.claude/agents:ro
-      - ${GLOBAL_DIR}/.claude/skills:/home/claude/.claude/skills:ro
-      # Project config
-      - ./.claude:/workspace/.claude
-      - ./project.yml:/workspace/project.yml:ro
-      # Claude state: session transcripts (enables /resume across rebuilds)
-      - ./.cco/claude-state:/home/claude/.claude/projects/-workspace
-      # Memory: auto memory files (vault-tracked, separate from transcripts)
-      - ./memory:/home/claude/.claude/projects/-workspace/memory
-YAML
+        # ~/.claude.json — preferences, MCP servers, session metadata (machine-local STATE)
+        _compose_vol "${state_root}/claude.json" "/home/claude/.claude.json"
+        # ~/.claude/.credentials.json — OAuth tokens (machine-local STATE, never synced)
+        _compose_vol "${state_root}/.credentials.json" "/home/claude/.claude/.credentials.json"
+
+        # Global config (settings.json is rw — Claude Code writes runtime preferences like /effort)
+        echo "      # Global config (settings.json is rw — Claude Code writes runtime preferences like /effort)"
+        _compose_vol "${global_claude}/settings.json" "/home/claude/.claude/settings.json"
+        _compose_vol "${global_claude}/CLAUDE.md" "/home/claude/.claude/CLAUDE.md" "ro"
+        _compose_vol "${global_claude}/rules" "/home/claude/.claude/rules" "ro"
+        _compose_vol "${global_claude}/agents" "/home/claude/.claude/agents" "ro"
+        _compose_vol "${global_claude}/skills" "/home/claude/.claude/skills" "ro"
+        # Project config. The Claude config tree (CLAUDE.md/rules/agents/skills)
+        # stays rw so /init + normal project-config authoring work (P17); the
+        # structural framework config (project.yml/secrets/.cco metadata) is
+        # protected separately by the <repo>/.cco :ro overlay below (ADR-0027 D3).
+        echo "      # Project config (.cco/claude is rw for /init authoring; .cco metadata is :ro below, ADR-0027 D3)"
+        _compose_vol "${claude_src}" "/workspace/.claude"
+        _compose_vol "${project_dir}/project.yml" "/workspace/project.yml" "ro"
+        # Claude state: session transcripts (machine-local STATE; enables /resume across rebuilds)
+        echo "      # Claude state: session transcripts (machine-local STATE; /resume across rebuilds)"
+        _compose_vol "$(_cco_project_session_transcripts "$project_name")" "/home/claude/.claude/projects/-workspace"
+        # Memory: auto memory files (machine-local STATE, separate from transcripts)
+        echo "      # Memory: auto memory files (machine-local STATE, separate from transcripts)"
+        _compose_vol "$(_cco_project_session_memory "$project_name")" "/home/claude/.claude/projects/-workspace/memory"
+
+        # Generated .claude overlays (packs.md, workspace.yml) → CACHE, layered
+        # :ro on top of the rw project .claude mount above (ADR-0005 F1/F3).
+        # Docker applies child mounts after their parent regardless of order, so
+        # the parent stays rw while these stay read-only; the committed project
+        # .claude/ is never written by cco start.
+        if [[ -f "$claude_gen_dir/packs.md" ]]; then
+            _compose_vol "${session_cache_dir}/.claude/packs.md" "/workspace/.claude/packs.md" "ro"
+        fi
+        if [[ -f "$claude_gen_dir/workspace.yml" ]]; then
+            _compose_vol "${session_cache_dir}/.claude/workspace.yml" "/workspace/.claude/workspace.yml" "ro"
+        fi
 
         # Global MCP config (merged into ~/.claude.json by entrypoint)
-        if [[ -f "$GLOBAL_DIR/.claude/mcp.json" ]]; then
+        if [[ -f "$global_claude/mcp.json" ]]; then
             echo "      # Global MCP servers"
-            echo "      - ${GLOBAL_DIR}/.claude/mcp.json:/home/claude/.claude/mcp-global.json:ro"
+            _compose_vol "${global_claude}/mcp.json" "/home/claude/.claude/mcp-global.json" "ro"
         fi
 
         # Project MCP config (Claude Code expands ${VAR} natively)
         if [[ -f "$project_dir/mcp.json" ]]; then
             echo "      # Project MCP servers"
-            echo "      - ./mcp.json:/workspace/.mcp.json:ro"
+            _compose_vol "${project_dir}/mcp.json" "/workspace/.mcp.json" "ro"
         fi
 
         # Global runtime setup script (executed by entrypoint before project setup)
-        if [[ -f "$GLOBAL_DIR/setup.sh" ]]; then
+        if [[ -f "$config_dir/setup.sh" ]]; then
             echo "      # Global runtime setup"
-            echo "      - ${GLOBAL_DIR}/setup.sh:/home/claude/global-setup.sh:ro"
+            _compose_vol "${config_dir}/setup.sh" "/home/claude/global-setup.sh" "ro"
         fi
 
         # Project setup script (runtime, executed by entrypoint)
         if [[ -f "$project_dir/setup.sh" ]]; then
             echo "      # Project setup script"
-            echo "      - ./setup.sh:/workspace/setup.sh:ro"
+            _compose_vol "${project_dir}/setup.sh" "/workspace/setup.sh" "ro"
         fi
 
         # Project MCP packages (runtime, installed by entrypoint)
         if [[ -f "$project_dir/mcp-packages.txt" ]]; then
             echo "      # Project MCP packages"
-            echo "      - ./mcp-packages.txt:/workspace/mcp-packages.txt:ro"
+            _compose_vol "${project_dir}/mcp-packages.txt" "/workspace/mcp-packages.txt" "ro"
         fi
 
-        # Managed integrations directory (framework-generated, never edit manually)
-        if [[ -d "$output_dir/.cco/managed" ]] && [[ -n "$(ls -A "$output_dir/.cco/managed" 2>/dev/null)" ]]; then
+        # Managed integrations (framework-generated overlays → CACHE, :ro)
+        if [[ -d "$managed_gen_dir" ]] && [[ -n "$(ls -A "$managed_gen_dir" 2>/dev/null)" ]]; then
             echo "      # Managed integrations"
-            echo "      - ./.cco/managed:/workspace/.managed:ro"
+            _compose_vol "${session_cache_dir}/managed" "/workspace/.managed" "ro"
         fi
 
-        # Repository mounts.
-        # By design, _start_resolve_paths + _assert_resolved_paths run
-        # BEFORE this point, so every repo path is guaranteed to be a
-        # real, existing filesystem path — no @local markers, no missing
-        # sources. Any inconsistency here would be an internal bug, not
-        # a user-facing error, so we do not silently skip (fix #B17).
+        # Repository mounts. Unresolved references were already dropped upstream
+        # by the P14 conscious-skip in _effective_repo_mounts (warn + exclude,
+        # never a silent empty bind-mount, #B17), so every path here is a real,
+        # existing filesystem path.
         echo "      # Repositories"
-        while IFS=: read -r repo_path repo_name; do
-            [[ -z "$repo_path" ]] && continue
-            repo_path=$(expand_path "$repo_path")
-            echo "      - ${repo_path}:/workspace/${repo_name}"
-        done <<< "$(yml_get_repos "$project_yml")"
+        while IFS=$'\t' read -r repo_name repo_path; do
+            [[ -z "$repo_name" ]] && continue
+            _compose_vol "${repo_path}" "/workspace/${repo_name}"
+        done < <(_effective_repo_mounts "$project_yml")
+
+        # Edit-protection (ADR-0027 D3): overlay each repo's committed .cco as
+        # :ro on top of the rw repo mount (Docker applies child mounts after the
+        # parent), so the agent cannot mutate the structural framework config
+        # (project.yml, secrets.env, internal metadata) via the code repo. The
+        # project's Claude config (.cco/claude) is still authored normally
+        # through the rw /workspace/.claude overlay (P17). Skipped under
+        # --enable-config-edit and for built-ins.
+        if [[ -n "$_committed_ro" ]]; then
+            while IFS=$'\t' read -r repo_name repo_path; do
+                [[ -z "$repo_name" ]] && continue
+                [[ -d "$repo_path/.cco" ]] && \
+                    _compose_vol "${repo_path}/.cco" "/workspace/${repo_name}/.cco" "ro"
+            done < <(_effective_repo_mounts "$project_yml")
+        fi
 
         # Extra mounts (same invariant as repos — resolved + existence
-        # asserted upstream, so we only need to expand ~ and emit).
+        # asserted upstream). The bridge emits abs_source<TAB>target<TAB>ro.
         local extra_mounts
-        extra_mounts=$(yml_get_extra_mounts "$project_yml")
+        extra_mounts=$(_effective_extra_mounts "$project_yml")
         if [[ -n "$extra_mounts" ]]; then
             echo "      # Extra mounts"
-            while IFS= read -r mount_line; do
-                [[ -z "$mount_line" ]] && continue
-                local source="${mount_line%%:*}"
-                local rest="${mount_line#*:}"
-                source=$(expand_path "$source")
-                echo "      - ${source}:${rest}"
+            local _ms _mt _mro _suffix
+            while IFS=$'\t' read -r _ms _mt _mro; do
+                [[ -z "$_ms" ]] && continue
+                _suffix=""
+                [[ "$_mro" == "true" ]] && _suffix="ro"
+                _compose_vol "$_ms" "$_mt" "$_suffix"
             done <<< "$extra_mounts"
         fi
 
+        # Session reference mounts (--mount, ADR-0027 D2): read-only by default,
+        # :rw opt-in. Pre-resolved to abs_src<TAB>target<TAB>ro above.
+        if [[ ${#user_mount_lines[@]} -gt 0 ]]; then
+            echo "      # Reference mounts (--mount)"
+            local _uline _us _ut _uro _usuffix
+            for _uline in "${user_mount_lines[@]}"; do
+                IFS=$'\t' read -r _us _ut _uro <<< "$_uline"
+                _usuffix=""
+                [[ "$_uro" == "true" ]] && _usuffix="ro"
+                _compose_vol "$_us" "$_ut" "$_usuffix"
+            done
+        fi
+
         # Pack resources: read-only mounts from central pack registry (ADR-14)
-        _generate_pack_mounts "$pack_names"
+        _generate_pack_mounts "$pack_names" "$project_dir"
 
         # LLMs.txt documentation: read-only mounts from central llms registry
-        _generate_llms_mounts "$project_yml" "$pack_names"
+        _generate_llms_mounts "$project_yml" "$pack_names" "$project_dir"
 
         # Git identity (commit author — read-only, no SSH keys)
         echo "      # Git identity"
-        echo "      - \${HOME}/.gitconfig:/home/claude/.gitconfig:ro"
+        _compose_vol "\${HOME}/.gitconfig" "/home/claude/.gitconfig" "ro"
 
         # Docker socket (opt-in via docker.mount_socket: true)
         if [[ "$mount_socket" == "true" ]]; then
             echo "      # Docker socket"
-            echo "      - /var/run/docker.sock:/var/run/docker.sock"
+            _compose_vol "/var/run/docker.sock" "/var/run/docker.sock"
             # Policy file for socket proxy (if generated)
-            if [[ -f "$output_dir/.cco/managed/policy.json" ]]; then
-                echo "      - ./.cco/managed/policy.json:/etc/cco/policy.json:ro"
+            if [[ -f "$managed_gen_dir/policy.json" ]]; then
+                _compose_vol "${session_cache_dir}/managed/policy.json" "/etc/cco/policy.json" "ro"
             fi
         fi
 
@@ -581,21 +818,26 @@ YAML
 }
 
 # Generates pack metadata (packs.md, workspace.yml) and cleans legacy files.
+# The two files are regenerable framework overlays (ADR-0005 F1): produced into
+# claude_gen_dir (CACHE on a real start, the dump dir under --dry-run --dump) and
+# mounted :ro by _start_generate_compose, never written into the committed tree.
 _start_generate_metadata() {
-    # Generate .claude/packs.md — instructional list of knowledge + llms files
-    packs_md="$output_dir/.claude/packs.md"
+    # Generate packs.md — instructional list of knowledge + llms files
+    packs_md="$claude_gen_dir/packs.md"
     local has_knowledge=false has_llms=false
 
     # Check if there's any content to generate
     if [[ -n "$pack_names" ]]; then
         while IFS= read -r _pn; do
             [[ -z "$_pn" ]] && continue
-            local _pyml="$PACKS_DIR/${_pn}/pack.yml"
+            local _proot; _proot=$(_pack_resolve_dir "$_pn" "$project_dir")
+            [[ -z "$_proot" ]] && continue
+            local _pyml="$_proot/pack.yml"
             [[ -f "$_pyml" ]] && [[ -n "$(yml_get_pack_knowledge_files "$_pyml")" ]] && has_knowledge=true
         done <<< "$pack_names"
     fi
     local _llms_entries
-    _llms_entries=$(_collect_llms_names "$project_yml" "$pack_names")
+    _llms_entries=$(_collect_llms_names "$project_yml" "$pack_names" "$project_dir")
     if [[ -n "$_llms_entries" ]]; then has_llms=true; fi
 
     if [[ "$has_knowledge" == "true" || "$has_llms" == "true" ]]; then
@@ -609,7 +851,9 @@ _start_generate_metadata() {
             echo "" >> "$packs_md"
             while IFS= read -r pack_name; do
                 [[ -z "$pack_name" ]] && continue
-                local pack_yml="$PACKS_DIR/${pack_name}/pack.yml"
+                local _pmroot; _pmroot=$(_pack_resolve_dir "$pack_name" "$project_dir")
+                [[ -z "$_pmroot" ]] && continue
+                local pack_yml="$_pmroot/pack.yml"
                 [[ ! -f "$pack_yml" ]] && continue
                 if ! grep -qE '^(name|knowledge|llms|skills|agents|rules):' "$pack_yml"; then
                     warn "Pack '$pack_name': pack.yml has no valid top-level keys — check for extra indentation."
@@ -632,7 +876,7 @@ _start_generate_metadata() {
         # LLMs section — use subshell capture to avoid bash 3.2 return-in-redirect bug
         if [[ "$has_llms" == "true" ]]; then
             local _llms_md
-            _llms_md=$(_generate_llms_packs_md "$project_yml" "$pack_names")
+            _llms_md=$(_generate_llms_packs_md "$project_yml" "$pack_names" "$project_dir")
             if [[ -n "$_llms_md" ]]; then
                 echo "$_llms_md" >> "$packs_md"
             fi
@@ -645,8 +889,8 @@ _start_generate_metadata() {
         rm -f "$packs_md"
     fi
 
-    # Generate .claude/workspace.yml — structured project context for /init
-    _generate_workspace_yml "$output_dir" "$project_name" "$project_yml" "$pack_names"
+    # Generate workspace.yml — structured project context for /init
+    _generate_workspace_yml "$claude_gen_dir" "$project_name" "$project_yml" "$pack_names"
 
     # One-shot cleanup of legacy copied pack files (pre-ADR-14) — skip in dry-run
     if ! $dry_run; then
@@ -699,11 +943,11 @@ _start_show_summary() {
 
     # Repos
     local _repos
-    _repos=$(yml_get_repos "$project_yml")
+    _repos=$(_effective_repo_mounts "$project_yml")
     if [[ -n "$_repos" ]]; then
         info "  Repos:"
-        while IFS=: read -r _rp _rn; do
-            [[ -z "$_rp" ]] && continue
+        while IFS=$'\t' read -r _rn _rp; do
+            [[ -z "$_rn" ]] && continue
             info "    - ${_rn} (${_rp})"
         done <<< "$_repos"
     fi
@@ -726,7 +970,7 @@ _start_show_summary() {
         [[ -f "$output_dir/.cco/managed/browser.json" ]]  && info "  .cco/managed/browser.json"
         [[ -f "$output_dir/.cco/managed/github.json" ]]   && info "  .cco/managed/github.json"
         [[ -f "$packs_md" ]]                          && info "  .claude/packs.md"
-        [[ -f "$output_dir/.claude/workspace.yml" ]]  && info "  .claude/workspace.yml"
+        [[ -f "$claude_gen_dir/workspace.yml" ]]      && info "  .claude/workspace.yml"
         echo ""
         info "Inspect with: cat ${output_dir}/.cco/docker-compose.yml"
     else
@@ -756,7 +1000,7 @@ _start_launch() {
     load_secrets_file run_env "$project_dir/secrets.env"
 
     info "Starting session for project '${project_name}'..."
-    docker compose -f "$compose_file" --project-directory "$project_dir" run --rm --service-ports "${run_env[@]+"${run_env[@]}"}" claude
+    docker compose -f "$compose_file" --project-directory "$session_state_dir" run --rm --service-ports "${run_env[@]+"${run_env[@]}"}" claude
 
     ok "Session ended. Changes are in your repos."
 }
@@ -765,6 +1009,7 @@ cmd_start() {
     check_global
 
     local project=""
+    local from_repo=""
     local teammate_mode=""
     local use_api_key=false
     local dry_run=false
@@ -774,9 +1019,16 @@ cmd_start() {
     local opt_docker=""      # "off" | "" (unset = read from project.yml)
     local extra_ports=()
     local extra_envs=()
+    local user_mounts=()        # --mount specs (ADR-0027 D2), :ro by default
+    local enable_config_edit=false  # --enable-config-edit escape hatch (ADR-0027 D3)
+    local config_editor_target=""   # --project <name> for the config-editor built-in (ADR-0027 D1)
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            --from) [[ $# -lt 2 ]] && die "--from requires a <repo> name."; from_repo="$2"; shift 2 ;;
+            --mount) [[ $# -lt 2 ]] && die "--mount requires <src>[:<target>][:ro|:rw]."; user_mounts+=("$2"); shift 2 ;;
+            --enable-config-edit) enable_config_edit=true; shift ;;
+            --project) [[ $# -lt 2 ]] && die "--project requires a <name> (config-editor project mode)."; config_editor_target="$2"; shift 2 ;;
             --teammate-mode) teammate_mode="$2"; shift 2 ;;
             --api-key) use_api_key=true; shift ;;
             --dry-run) dry_run=true; shift ;;
@@ -788,11 +1040,21 @@ cmd_start() {
             --no-docker)  opt_docker="off"; shift ;;
             --port) extra_ports+=("$2"); shift 2 ;;
             --env) extra_envs+=("$2"); shift 2 ;;
-            --help)
+            --help|-h)
                 cat <<'EOF'
-Usage: cco start <project> [OPTIONS]
+Usage: cco start [project] [OPTIONS]
+
+Reads the decentralized <repo>/.cco/ config. With no project name, starts the
+project the current repo HOSTS (cwd-first); name a project to resolve it via the
+machine-local index.
+
+Built-in sessions: 'cco start config-editor' opens the config-editor (edit your
+~/.cco store); add --project <name> (or run from a configured repo) to also
+mount that project's .cco/ for editing. 'cco start tutorial' opens the tutorial.
 
 Options:
+  --from <repo>        Use <repo>/.cco as the config source (Case-C divergence)
+  --project <name>     config-editor only: also mount <name>'s .cco/ (rw)
   --teammate-mode <m>  Override display mode: tmux | auto
   --api-key            Use ANTHROPIC_API_KEY instead of OAuth
   --chrome             Enable browser automation for this session only
@@ -800,6 +1062,12 @@ Options:
   --github             Enable GitHub MCP for this session only
   --no-github          Disable GitHub MCP for this session only
   --no-docker          Disable Docker socket mount for this session only
+  --mount <s>[:<t>][:ro|:rw]  Mount reference material (repeatable; read-only by
+                       default, :rw to make writable; target defaults to
+                       /workspace/<basename>)
+  --enable-config-edit Allow the agent to edit this repo's committed .cco/ config
+                       in this session (off by default — see 'cco start
+                       config-editor' for the sanctioned config-editing session)
   --dry-run            Show the generated docker-compose without running
   --dump               With --dry-run: persist artifacts to .tmp/ for inspection
   --port <p>           Add extra port mapping (repeatable)
@@ -821,14 +1089,25 @@ EOF
         esac
     done
 
-    [[ -z "$project" ]] && die "Usage: cco start <project>. Run 'cco project list' to see available projects."
+    # No project name is valid: cwd-first resolution (the repo this dir hosts).
+    # _start_resolve_project dies with guidance when cwd is not a configured repo.
+
+    # Resolve --mount specs eagerly (ADR-0027 D2): a bad source must fail before
+    # any compose is generated, not mid-file. Each becomes abs_src<TAB>tgt<TAB>ro.
+    local user_mount_lines=()
+    local _mspec
+    for _mspec in ${user_mounts[@]+"${user_mounts[@]}"}; do
+        user_mount_lines+=("$(_parse_user_mount_spec "$_mspec")")
+    done
 
     # Variables set by helper functions (declared here for shared scope)
-    local project_dir project_yml is_internal
+    local project_dir project_yml is_internal claude_src source_repo source_kind
+    local unresolved_refs=0
     local project_name auth_method docker_image mount_socket network
     local browser_enabled browser_mode browser_cdp_port browser_effective_port browser_mcp_args
     local github_enabled github_token_env pack_names
     local output_dir compose_file packs_md
+    local config_dir session_state_dir session_cache_dir managed_gen_dir claude_gen_dir
 
     _start_resolve_project
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] resolve_project done" >&2
@@ -848,11 +1127,29 @@ EOF
     _start_resolve_paths
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] resolve_paths done" >&2
 
-    _start_generate_compose
-    [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] generate_compose done" >&2
+    # Source transparency + passive ⚠ badge (design §4.4 / ADR-0019 D2 layer-e /
+    # P14), AFTER member resolution (H1). Always print which <repo>/.cco config
+    # source was used, so the precedence (--from > cwd/by-name) is never opaque;
+    # the badge names the next step (cco resolve) but never blocks the launch.
+    if ! $is_internal; then
+        info "started ${project_name} from $(basename "$source_repo") [source: ${source_kind}]"
+        [[ "${unresolved_refs:-0}" -gt 0 ]] && \
+            warn "⚠ ${project_name}: ${unresolved_refs} reference(s) unresolved — run 'cco resolve'"
+    fi
 
+    # H1: config reminders fire AFTER member resolution, never against an empty
+    # index (ADR-0008). Silent on the pre-P2 central layout (no per-repo .cco/).
+    _start_emit_reminders
+    [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] emit_reminders done" >&2
+
+    # Generate the .claude overlays (packs.md, workspace.yml) BEFORE compose so
+    # compose can mount them :ro by existence — the same generate-then-mount
+    # ordering used for the managed/ overlays (ADR-0005 F1).
     _start_generate_metadata
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] generate_metadata done" >&2
+
+    _start_generate_compose
+    [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] generate_compose done" >&2
 
     if $dry_run; then
         _start_show_summary
@@ -865,33 +1162,40 @@ EOF
 # ── Browser support helpers ──────────────────────────────────────────
 
 # Returns CDP ports claimed by running cco sessions (one per line).
-# Iterates project directories (not container names) to avoid mismatch
-# when project.yml `name:` differs from the directory name.
+# Enumerates projects via the STATE index (decentralized layout): each project's
+# committed config is read from its repo `.cco/project.yml`, and its browser
+# runtime file from CACHE (keyed by project name).
 _collect_claimed_browser_ports() {
     local current_project="$1"
     local claimed=()
-    for proj_dir in "$PROJECTS_DIR"/*/; do
-        [[ ! -d "$proj_dir" ]] && continue
-        local proj; proj=$(basename "$proj_dir")
+    local proj repo
+    while IFS='=' read -r proj _; do
+        [[ -z "$proj" ]] && continue
         [[ "$proj" == "$current_project" ]] && continue
-        local yml="$proj_dir/project.yml"
+        # Resolve the host repo via index membership: a joined multi-repo project's
+        # key lives in `projects:`, not `paths:`, so _index_get_path on the project
+        # name would silently miss it (dropping it from the port-conflict scan).
+        repo=$(_resolve_unit_dir_for_project "$proj" 2>/dev/null)
+        [[ -z "$repo" ]] && continue
+        local yml="$repo/.cco/project.yml"
         [[ ! -f "$yml" ]] && continue
         local enabled; enabled=$(yml_get "$yml" "browser.enabled")
         [[ "$enabled" != "true" ]] && continue
-        # Verify container is actually running (use yml name, fallback to dir name)
+        # Verify container is actually running (use yml name, fallback to index name)
         local yml_name; yml_name=$(yml_get "$yml" "name")
         [[ -z "$yml_name" ]] && yml_name="$proj"
         local container="cc-${yml_name}"
         docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${container}$" || continue
         # Read effective port (runtime file > project.yml > default)
-        if [[ -f "$proj_dir/.cco/managed/.browser-port" ]]; then
-            claimed+=("$(cat "$proj_dir/.cco/managed/.browser-port")")
+        local managed; managed=$(_cco_project_cache_managed "$proj")
+        if [[ -f "$managed/.browser-port" ]]; then
+            claimed+=("$(cat "$managed/.browser-port")")
         else
             local port; port=$(yml_get "$yml" "browser.cdp_port")
             [[ -z "$port" ]] && port="9222"
             claimed+=("$port")
         fi
-    done
+    done < <(_index_list_projects)
     # Guard: bash 3.2 + set -u treats empty arrays as unbound
     [[ ${#claimed[@]} -gt 0 ]] && printf '%s\n' "${claimed[@]}"
 }
@@ -992,20 +1296,19 @@ _generate_github_mcp() {
 # Build the mounts.allowed_paths JSON array for the proxy policy.
 # For policy=project_only, uses each repo's resolved host path; for other
 # policies, uses the explicit docker.mounts.allow list.
-# By design, _start_resolve_paths + _assert_resolved_paths ran before
-# this — every repo path is guaranteed resolved and existing. No @local
-# skip needed.
+# Repo paths come post-resolution: unresolved references were dropped upstream by
+# the P14 conscious-skip, so every path here is resolved and existing.
 # Usage: _proxy_collect_allowed_paths <project_yml> <mt_policy>
 # Output: JSON array on stdout (e.g. `[]` or `["/path/a","/path/b"]`)
 _proxy_collect_allowed_paths() {
     local project_yml="$1" mt_policy="$2"
     if [[ "$mt_policy" == "project_only" ]]; then
         local repos
-        repos=$(yml_get_repos "$project_yml")
+        repos=$(_effective_repo_mounts "$project_yml")
         [[ -z "$repos" ]] && { echo "[]"; return 0; }
-        while IFS=: read -r _p _n; do
+        while IFS=$'\t' read -r _n _p; do
             [[ -z "$_p" ]] && continue
-            expand_path "$_p"
+            printf '%s\n' "$_p"
         done <<< "$repos" | jq -R . | jq -s .
     else
         local mt_allow
@@ -1031,29 +1334,23 @@ _proxy_collect_pathmap() {
     local _pathmap_lines=""
 
     # /workspace/<repo_name> → expanded host path per repo
-    # (post-_assert_resolved_paths so no @local remains; see same comment
-    # in _proxy_collect_allowed_paths)
+    # (post-resolution: unresolved references were dropped by the P14
+    # conscious-skip; see _proxy_collect_allowed_paths)
     local _repo_lines
-    _repo_lines=$(yml_get_repos "$project_yml")
+    _repo_lines=$(_effective_repo_mounts "$project_yml")
     if [[ -n "$_repo_lines" ]]; then
-        while IFS=: read -r _rp _rn; do
-            [[ -z "$_rp" ]] && continue
-            local _host_p
-            _host_p=$(expand_path "$_rp")
+        while IFS=$'\t' read -r _rn _host_p; do
+            [[ -z "$_rn" ]] && continue
             _pathmap_lines="${_pathmap_lines}/workspace/${_rn}"$'\t'"${_host_p}"$'\n'
         done <<< "$_repo_lines"
     fi
 
     # extra_mounts: container target → expanded host source
     local _extra_mounts
-    _extra_mounts=$(yml_get_extra_mounts "$project_yml" 2>/dev/null || true)
+    _extra_mounts=$(_effective_extra_mounts "$project_yml" 2>/dev/null || true)
     if [[ -n "$_extra_mounts" ]]; then
-        while IFS= read -r _em; do
-            [[ -z "$_em" ]] && continue
-            local _src="${_em%%:*}"
-            local _rest="${_em#*:}"
-            local _tgt="${_rest%%:*}"
-            _src=$(expand_path "$_src")
+        while IFS=$'\t' read -r _src _tgt _ro; do
+            [[ -z "$_src" ]] && continue
             _pathmap_lines="${_pathmap_lines}${_tgt}"$'\t'"${_src}"$'\n'
         done <<< "$_extra_mounts"
     fi
@@ -1070,10 +1367,10 @@ _proxy_collect_pathmap() {
 }
 
 _generate_socket_policy() {
-    local project_yml="$1" project_name="$2" project_dir="$3"
+    local project_yml="$1" project_name="$2" managed_dir="$3"
 
-    mkdir -p "$project_dir/.cco/managed"
-    local out_file="$project_dir/.cco/managed/policy.json"
+    mkdir -p "$managed_dir"
+    local out_file="$managed_dir/policy.json"
 
     # Container policy
     local ct_policy ct_create ct_prefix

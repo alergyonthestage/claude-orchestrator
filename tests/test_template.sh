@@ -91,7 +91,7 @@ test_template_resolve_pack_native() {
 test_template_list_shows_native() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco template list
+    run_cco list template
     assert_output_contains "base"
     assert_output_contains "native"
 }
@@ -99,7 +99,7 @@ test_template_list_shows_native() {
 test_template_list_filter_project() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco template list --project
+    run_cco list template
     assert_output_contains "Project templates:"
     assert_output_contains "base"
 }
@@ -107,7 +107,7 @@ test_template_list_filter_project() {
 test_template_list_filter_pack() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco template list --pack
+    run_cco list template
     assert_output_contains "Pack templates:"
     assert_output_contains "base"
 }
@@ -117,7 +117,7 @@ test_template_list_shows_user_templates() {
     setup_cco_env "$tmpdir"
     # Create a user template
     mkdir -p "$CCO_TEMPLATES_DIR/project/custom"
-    run_cco template list --project
+    run_cco list template
     assert_output_contains "custom"
     assert_output_contains "user"
 }
@@ -147,7 +147,7 @@ test_template_show_not_found() {
 test_template_create_project() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
     run_cco template create my-tmpl --project
     assert_dir_exists "$CCO_TEMPLATES_DIR/project/my-tmpl"
     assert_file_exists "$CCO_TEMPLATES_DIR/project/my-tmpl/project.yml"
@@ -156,7 +156,7 @@ test_template_create_project() {
 test_template_create_pack() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
     run_cco template create my-pack-tmpl --pack
     assert_dir_exists "$CCO_TEMPLATES_DIR/pack/my-pack-tmpl"
     assert_file_exists "$CCO_TEMPLATES_DIR/pack/my-pack-tmpl/pack.yml"
@@ -165,7 +165,7 @@ test_template_create_pack() {
 test_template_create_duplicate_fails() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
     run_cco template create dup-test --project
     run_cco template create dup-test --project && {
         echo "ASSERTION FAILED: expected duplicate create to fail"
@@ -177,7 +177,7 @@ test_template_create_duplicate_fails() {
 test_template_create_invalid_name_fails() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
     run_cco template create "Bad_Name" --project && {
         echo "ASSERTION FAILED: expected invalid name to fail"
         return 1
@@ -188,7 +188,7 @@ test_template_create_invalid_name_fails() {
 test_template_create_requires_kind() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
     run_cco template create my-test && {
         echo "ASSERTION FAILED: expected missing --project/--pack to fail"
         return 1
@@ -201,11 +201,38 @@ test_template_create_requires_kind() {
 test_template_remove_user() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
     run_cco template create removable --project
     assert_dir_exists "$CCO_TEMPLATES_DIR/project/removable"
-    run_cco template remove removable
+    run_cco template remove removable -y
     assert_dir_not_exists "$CCO_TEMPLATES_DIR/project/removable"
+}
+
+test_template_remove_cascades_internal_state() {
+    # ADR-0021 Dec.4: removing an (installed) template cleans the id-keyed
+    # internal state it created — DATA install-provenance, STATE merge base, and
+    # the tags.yml binding.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    init_global "$tmpdir" --lang "English"
+    run_cco template create cascade-tmpl --project
+    assert_dir_exists "$CCO_TEMPLATES_DIR/project/cascade-tmpl"
+
+    # Simulate an installed, tagged template with merge bookkeeping.
+    local src; src=$(data_template_source "cascade-tmpl")
+    mkdir -p "$(dirname "$src")"; printf 'url: https://example.com/repo\n' > "$src"
+    mkdir -p "$CCO_STATE_HOME/templates/cascade-tmpl/update/base"
+    run_cco tag add cascade-tmpl scaffold
+
+    run_cco template remove cascade-tmpl -y
+
+    assert_dir_not_exists "$CCO_TEMPLATES_DIR/project/cascade-tmpl"
+    assert_dir_not_exists "$CCO_DATA_HOME/templates/cascade-tmpl"
+    assert_dir_not_exists "$CCO_STATE_HOME/templates/cascade-tmpl"
+    run_cco list --tag scaffold
+    if echo "${CCO_OUTPUT:-}" | grep -qF "cascade-tmpl"; then
+        fail "tag binding for cascade-tmpl should be gone after remove"
+    fi
 }
 
 test_template_remove_native_fails() {
@@ -220,28 +247,9 @@ test_template_remove_native_fails() {
 }
 
 # ── project create --template ────────────────────────────────────────
-
-test_project_create_with_template() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-
-    # Create a user template with a marker
-    mkdir -p "$CCO_TEMPLATES_DIR/project/custom/.claude"
-    cat > "$CCO_TEMPLATES_DIR/project/custom/project.yml" <<'YAML'
-name: {{PROJECT_NAME}}
-description: Custom template project
-repos: []
-YAML
-    cat > "$CCO_TEMPLATES_DIR/project/custom/.claude/CLAUDE.md" <<'MD'
-# {{PROJECT_NAME}} - Custom
-MD
-
-    run_cco project create my-proj --template custom
-    assert_dir_exists "$CCO_PROJECTS_DIR/my-proj"
-    assert_file_contains "$CCO_PROJECTS_DIR/my-proj/project.yml" "Custom template project"
-    assert_file_contains "$CCO_PROJECTS_DIR/my-proj/project.yml" "name: my-proj"
-}
+# Removed in P3-3b: template-based project instantiation (`cco project create
+# --template`) is gone with `cco project create`. The clean `cco init` scaffolds
+# from templates/project/base only; template distribution (the 2x2) is P4/P5.
 
 # ── pack create --template ───────────────────────────────────────────
 
@@ -249,7 +257,7 @@ test_pack_create_with_default_template() {
     # Default pack create uses templates/pack/base
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
     run_cco pack create my-test-pack
     assert_dir_exists "$CCO_PACKS_DIR/my-test-pack"
     assert_file_exists "$CCO_PACKS_DIR/my-test-pack/pack.yml"
@@ -262,7 +270,7 @@ test_pack_create_with_default_template() {
 test_pack_create_with_named_template() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
     # Create a custom pack template
     mkdir -p "$CCO_TEMPLATES_DIR/pack/special/knowledge"
@@ -283,7 +291,6 @@ test_template_help() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     run_cco template --help
-    assert_output_contains "list"
     assert_output_contains "show"
     assert_output_contains "create"
     assert_output_contains "remove"
@@ -294,33 +301,32 @@ test_template_help() {
 test_template_create_from_project_strips_cco() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
-    # Create a project with .cco/ runtime state
-    local project_dir="$CCO_PROJECTS_DIR/src-proj"
-    mkdir -p "$project_dir/.claude" "$project_dir/.cco/managed" "$project_dir/.cco/claude-state"
-    cat > "$project_dir/project.yml" <<'YAML'
+    # A decentralized project: committed config lives in <repo>/.cco/ (the
+    # claude/ tree + project.yml + secrets.env.example). create_project seeds the
+    # STATE index + the host repo, so `--from src-proj` resolves via the index (P5).
+    create_project "$tmpdir" "src-proj" "$(cat <<YAML
 name: src-proj
 repos: []
 YAML
-    echo "schema_version: 9" > "$project_dir/.cco/meta"
-    echo "generated" > "$project_dir/.cco/docker-compose.yml"
-    echo "{}" > "$project_dir/.cco/managed/browser.json"
-    echo "session" > "$project_dir/.cco/claude-state/session.jsonl"
-    mkdir -p "$project_dir/.cco/base"
-    echo "base" > "$project_dir/.cco/base/settings.json"
-    echo "SECRET=pass" > "$project_dir/secrets.env"
-    mkdir -p "$project_dir/.tmp"
-    echo "dump" > "$project_dir/.tmp/output"
+)"
+    local cco; cco=$(host_cco_dir "$tmpdir" "src-proj")
+    echo "# project CLAUDE" > "$cco/claude/CLAUDE.md"
+    echo "SECRET=" > "$cco/secrets.env.example"
+    # Defensive: a stray runtime dir the template must strip.
+    mkdir -p "$cco/.tmp"; echo "dump" > "$cco/.tmp/output"
 
     run_cco template create my-tmpl --project --from src-proj
 
     local tmpl_dir="$CCO_TEMPLATES_DIR/project/my-tmpl"
     assert_dir_exists "$tmpl_dir"
     assert_file_exists "$tmpl_dir/project.yml"
-    # .cco/ should be completely stripped
-    [[ ! -d "$tmpl_dir/.cco" ]] || {
-        echo "ASSERTION FAILED: .cco/ should be stripped from template"
+    # claude/ → .claude/ : templates use the native .claude/ layout.
+    assert_dir_exists "$tmpl_dir/.claude"
+    assert_file_exists "$tmpl_dir/.claude/CLAUDE.md"
+    [[ ! -d "$tmpl_dir/claude" ]] || {
+        echo "ASSERTION FAILED: claude/ should be renamed to .claude/ in the template"
         return 1
     }
     # .tmp/ should be stripped
@@ -328,13 +334,243 @@ YAML
         echo "ASSERTION FAILED: .tmp/ should be stripped from template"
         return 1
     }
-    # secrets.env should exist but be empty
-    if [[ -f "$tmpl_dir/secrets.env" ]]; then
-        local size
-        size=$(wc -c < "$tmpl_dir/secrets.env")
-        [[ "$size" -eq 0 ]] || {
-            echo "ASSERTION FAILED: secrets.env should be emptied, not removed"
-            return 1
-        }
+    # secrets.env.example → emptied secrets.env (the template's secret skeleton)
+    assert_file_exists "$tmpl_dir/secrets.env"
+    [[ ! -f "$tmpl_dir/secrets.env.example" ]] || {
+        echo "ASSERTION FAILED: secrets.env.example should be normalized to secrets.env"
+        return 1
+    }
+    local size
+    size=$(wc -c < "$tmpl_dir/secrets.env")
+    [[ "$size" -eq 0 ]] || {
+        echo "ASSERTION FAILED: secrets.env should be emptied, not removed"
+        return 1
+    }
+}
+
+# ── Template sharing 2×2 (ADR-0018 D2; both kinds by marker) ───────────
+
+# Minimal empty bare remote (structure-based discovery; no manifest.yml).
+_tmpl_empty_bare_remote() {
+    local tmpdir="$1" bare_dir="$tmpdir/tmpl-remote.git"
+    local work="$tmpdir/tmpl-init-work"
+    mkdir -p "$work"
+    git -C "$work" init -q
+    : > "$work/.gitkeep"
+    git -C "$work" add -A
+    git -C "$work" commit -q -m "init"
+    git init --bare -q "$bare_dir"
+    git -C "$work" remote add origin "$bare_dir"
+    git -C "$work" push -q origin main 2>/dev/null || \
+        git -C "$work" push -q origin master 2>/dev/null
+    rm -rf "$work"
+    echo "$bare_dir"
+}
+
+test_template_export_import_round_trip() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco template create myt --project
+    cd "$tmpdir"
+    run_cco template export myt
+    assert_file_exists "$tmpdir/myt.tar.gz"
+
+    run_cco template remove myt -y
+    run_cco template import "$tmpdir/myt.tar.gz"
+    assert_output_contains "Imported project template"
+    assert_file_exists "$CCO_TEMPLATES_DIR/project/myt/project.yml"
+}
+
+test_template_export_import_pack_kind() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco template create packt --pack
+    cd "$tmpdir"
+    run_cco template export packt
+    run_cco template remove packt -y
+    run_cco template import "$tmpdir/packt.tar.gz"
+    # Kind is detected from the pack.yml marker inside the archive.
+    assert_output_contains "Imported pack template"
+    assert_file_exists "$CCO_TEMPLATES_DIR/pack/packt/pack.yml"
+}
+
+test_template_publish_install_round_trip() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco template create sharet --project
+    local bare; bare=$(_tmpl_empty_bare_remote "$tmpdir")
+
+    run_cco remote add treg "$bare"
+    run_cco template publish sharet treg
+    assert_output_contains "Published"
+
+    run_cco template remove sharet -y
+    run_cco template install "$bare" --pick sharet
+    assert_file_exists "$CCO_TEMPLATES_DIR/project/sharet/project.yml"
+}
+
+# P5-5a: install pins the upstream HEAD as installed_commit in the STATE meta,
+# so `cco update --check` has a baseline to compare against (ADR-0022 D1/D6).
+test_template_install_records_installed_commit() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco template create cmt --project
+    local bare; bare=$(_tmpl_empty_bare_remote "$tmpdir")
+    run_cco remote add r "$bare"
+    run_cco template publish cmt r
+    run_cco template remove cmt -y
+    run_cco template install "$bare" --pick cmt
+
+    local meta="$CCO_STATE_HOME/templates/cmt/update/meta"
+    assert_file_exists "$meta"
+    assert_file_contains "$meta" "installed_commit:"
+    # the recorded commit matches the remote HEAD
+    local head; head=$(git ls-remote "$bare" HEAD | head -1 | cut -f1)
+    assert_file_contains "$meta" "$head"
+}
+
+test_template_publish_preserves_remote_only_changes() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco template create sync --project
+    local bare; bare=$(_tmpl_empty_bare_remote "$tmpdir")
+    run_cco remote add r "$bare"
+    run_cco template publish sync r            # first publish → base recorded
+
+    # Co-maintainer adds a remote-only file.
+    local co="$tmpdir/co"; git clone -q "$bare" "$co"
+    echo "# remote only" > "$co/templates/sync/extra.md"
+    git -C "$co" add -A; git -C "$co" commit -q -m "co adds extra"
+    git -C "$co" push -q origin HEAD
+
+    # We change a different local file and republish (no --force).
+    echo "# local note" >> "$CCO_TEMPLATES_DIR/project/sync/project.yml"
+    run_cco template publish sync r
+    assert_output_contains "Published"
+
+    local verify="$tmpdir/verify"; git clone -q "$bare" "$verify"
+    assert_file_contains "$verify/templates/sync/extra.md" "remote only" || return 1
+    assert_file_contains "$verify/templates/sync/project.yml" "local note" || return 1
+}
+
+test_template_publish_aborts_on_conflict() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco template create cft --project
+    local bare; bare=$(_tmpl_empty_bare_remote "$tmpdir")
+    run_cco remote add r "$bare"
+    run_cco template publish cft r
+
+    local co="$tmpdir/co"; git clone -q "$bare" "$co"
+    echo "# remote change" >> "$co/templates/cft/project.yml"
+    git -C "$co" add -A; git -C "$co" commit -q -m "co edits"
+    git -C "$co" push -q origin HEAD
+
+    echo "# local change" >> "$CCO_TEMPLATES_DIR/project/cft/project.yml"
+    if run_cco template publish cft r 2>/dev/null; then
+        echo "ASSERTION FAILED: template publish should abort on conflict"
+        return 1
     fi
+    assert_output_contains "clobber" || return 1
+}
+
+test_template_sharing_help() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco template publish --help; assert_output_contains "Publish a template" || return 1
+    run_cco template install --help; assert_output_contains "Install a template" || return 1
+    run_cco template export --help;  assert_output_contains "Export a template"  || return 1
+    run_cco template import --help;  assert_output_contains "Import a template"  || return 1
+}
+
+# ── cco template remove — non-TTY confirm guard (ADR-0029 D2) ─────────
+
+test_template_remove_non_tty_without_yes_dies() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    init_global "$tmpdir" --lang "English"
+    run_cco template create guarded --project
+    assert_dir_exists "$CCO_TEMPLATES_DIR/project/guarded"
+
+    if run_cco template remove guarded </dev/null 2>/dev/null; then
+        fail "template remove without -y in a non-TTY should die"
+    fi
+    assert_output_contains "re-run with -y"
+    assert_dir_exists "$CCO_TEMPLATES_DIR/project/guarded"
+}
+
+# ── cco template update (ADR-0029 D3) ─────────────────────────────────
+
+test_template_update_provenance_round_trip() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco template create upd --project
+    local bare; bare=$(_tmpl_empty_bare_remote "$tmpdir")
+    run_cco remote add ureg "$bare"
+    run_cco template publish upd ureg
+    run_cco template remove upd -y
+    run_cco template install "$bare" --pick upd
+    assert_file_exists "$CCO_TEMPLATES_DIR/project/upd/project.yml"
+
+    # update re-clones from the recorded DATA source coordinate (provenance).
+    run_cco template update upd
+    assert_output_contains "Updated template 'upd'"
+    assert_file_exists "$CCO_TEMPLATES_DIR/project/upd/project.yml"
+}
+
+test_template_update_local_only_fails() {
+    # A locally-created template has no remote source → update must refuse.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco template create localt --project
+    if run_cco template update localt 2>/dev/null; then
+        fail "update of a local-only template should fail"
+    fi
+    assert_output_contains "no recorded source"
+}
+
+# ── cco template validate (ADR-0029 D3) ───────────────────────────────
+
+test_template_validate_good() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    init_global "$tmpdir" --lang "English"
+    run_cco template create goodt --project
+    run_cco template validate goodt
+    assert_output_contains "is valid"
+}
+
+test_template_validate_malformed_fails() {
+    # A user-template dir with no project.yml/pack.yml marker is a structural error.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    init_global "$tmpdir" --lang "English"
+    mkdir -p "$CCO_TEMPLATES_DIR/project/brokent"
+    : > "$CCO_TEMPLATES_DIR/project/brokent/random.txt"
+    if run_cco template validate brokent 2>/dev/null; then
+        fail "validate should fail for a template with no kind marker"
+    fi
+    # Greppable output (finding F1): "<name>: <reason>" + summary, no ✗ symbol.
+    assert_output_contains "brokent: no project.yml or pack.yml marker"
+    assert_output_contains "validate: 1 issue(s)"
+    assert_output_not_contains "✗"
+}
+
+test_template_validate_all_user_templates() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    init_global "$tmpdir" --lang "English"
+    run_cco template create one --project
+    run_cco template create two --pack
+    run_cco template validate --all
+    assert_output_contains "Template 'one' (project) is valid"
+    assert_output_contains "Template 'two' (pack) is valid"
 }

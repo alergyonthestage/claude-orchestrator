@@ -1,0 +1,210 @@
+# Your first project
+
+> Complete walkthrough: from project creation to your first Claude Code session.
+
+> **New to cco?** Run `cco start tutorial` for an interactive guide that walks you
+> through project creation, knowledge packs, and best practices. It can also help
+> you customize your default rules and workflow to match your preferences.
+
+---
+
+## 1. Initialize the project
+
+A project's config lives **inside the repo it serves**. Run `cco init` from
+within the repo:
+
+```bash
+cd ~/projects/my-app
+cco init
+```
+
+This scaffolds `<repo>/.cco/` inside the repo and registers the project:
+
+```
+~/projects/my-app/
+└── .cco/
+    ├── project.yml              # Main configuration
+    ├── claude/
+    │   ├── CLAUDE.md            # Instructions for Claude (project level)
+    │   ├── settings.json        # Settings override (optional)
+    │   ├── agents/              # Custom subagents (optional)
+    │   └── rules/               # Custom rules (optional)
+    ├── secrets.env.example      # Template for credentials/tokens
+    └── .gitignore               # Ignores secrets.env
+```
+
+Commit `.cco/` with the repo to share the project setup with teammates. Session
+transcripts and auto memory do **not** live in the repo — they are kept
+machine-local under `~/.local/state/cco/` (see *What persists*, below).
+
+> **Tip**: Want Claude to help you create and configure projects? The
+> config-editor is built in:
+> ```bash
+> cco start config-editor
+> ```
+> This gives Claude read-write access to your configuration (`~/.cco` and, in
+> project mode, the target `<repo>/.cco`), so it can create projects and packs
+> for you interactively.
+
+For multi-repo projects, add the other repos as members of the project. From the
+host repo, after `cco init`:
+
+```bash
+cco project add repo frontend-app --path ~/projects/frontend-app
+```
+
+The host repo's `.cco/project.yml` carries the logical names + machine-agnostic
+coordinates; each member repo's real path on this machine is recorded in the
+machine-local index.
+
+---
+
+## 2. Configure project.yml
+
+Open `~/projects/my-app/.cco/project.yml` and verify the configuration:
+
+```yaml
+repos:
+  - name: my-app
+
+docker:
+  ports:
+    - "3000:3000"        # Dev server
+  env:
+    NODE_ENV: development
+```
+
+Main sections:
+
+- **`repos`** — repositories to mount in `/workspace/` (read-write)
+- **`docker.ports`** — ports exposed to `localhost` on the host
+- **`docker.env`** — environment variables available in the container
+- **`packs`** — knowledge packs to activate (optional)
+
+For the complete reference, see [project-yaml.md](../../configuration/reference/project-yaml.md).
+
+---
+
+## 3. Customize CLAUDE.md
+
+The file `~/projects/my-app/.cco/claude/CLAUDE.md` contains the instructions Claude receives at startup. You have two options:
+
+### Option A: Use /init-workspace (recommended)
+
+In the first session, Claude can analyze the codebase and automatically generate a detailed CLAUDE.md:
+
+```
+> /init-workspace
+```
+
+The skill explores each repository, detects the stack and commands, and generates a structured CLAUDE.md with: overview, layout, commands, architecture.
+
+### Option B: Write manually
+
+Include at least: project overview, architecture, main commands (build, test, dev server), and specific conventions.
+
+---
+
+## 4. Start the session
+
+```bash
+cco start my-app
+```
+
+### What happens during startup
+
+```mermaid
+graph TD
+    A["cco start my-app"] --> B["Reads &lt;repo&gt;/.cco/project.yml"]
+    B --> C["Resolves repo paths via the index"]
+    C --> D["Generates docker-compose.yml in CACHE"]
+    D --> E["docker compose run"]
+    E --> F["Entrypoint"]
+    F --> G["Fix Docker socket permissions"]
+    G --> H["Merge MCP servers"]
+    H --> I["Start tmux + Claude Code"]
+```
+
+1. The CLI reads the host repo's `.cco/project.yml` and resolves each member repo's path from the machine-local index
+2. Generates `docker-compose.yml` (under `~/.cache/cco/`) with volume mounts, ports, and variables
+3. Launches the container with `docker compose run --rm --service-ports`
+4. The entrypoint configures Docker socket permissions and starts tmux
+5. Claude Code starts with `--dangerously-skip-permissions` (safe in the container)
+6. The `SessionStart` hook injects the project context (repos, MCP, packs)
+
+---
+
+## 5. Using the session
+
+### What Claude knows
+
+At startup, Claude has already loaded:
+
+- **Global instructions** (`~/.claude/CLAUDE.md`) — workflow, git practices, general rules
+- **Project instructions** (`/workspace/.claude/CLAUDE.md`) — project-specific context
+- **Session context** — list of repositories, available MCP servers, knowledge packs
+- **Memory** — notes from previous sessions (if any)
+
+### Agent teams
+
+Claude can create agent teams to work in parallel. In tmux mode (default), each teammate appears as a separate tmux pane. Navigation:
+
+| Shortcut | Action |
+|----------|--------|
+| `Alt` + arrow keys | Navigate between panes |
+| `Ctrl-b` + `z` | Zoom/unzoom current pane |
+
+### Docker-from-Docker
+
+Claude can launch infrastructure directly:
+
+```
+> Start postgres and redis for the project
+```
+
+Claude will run `docker compose up` creating sibling containers on the host, reachable via the shared network `cc-my-app`.
+
+### Copy text from tmux
+
+tmux intercepts mouse events, so copy-paste works differently. The easiest method depends on your terminal:
+
+| Terminal | How to copy |
+|----------|-------------|
+| **iTerm2** | Click and drag to select → release to auto-copy → `Cmd+V` to paste. Requires one-time setup: Settings → General → Selection → "Applications in terminal may access clipboard" |
+| **Terminal.app** | Hold `fn` while dragging to select → right-click while holding `fn` → Copy |
+| **Alacritty, WezTerm, Kitty, Ghostty** | Click and drag to select → release to auto-copy → `Cmd+V` / `Ctrl+Shift+V` to paste |
+| **GNOME Terminal** | Hold `Shift` while dragging → `Ctrl+Shift+C` to copy |
+
+For precise selections (scrollback, column mode) or troubleshooting, see the [full copy-paste guide](../../integration/guides/agent-teams.md#24-copy--paste-in-tmux-mode).
+
+---
+
+## 6. Stop the session
+
+Type `/exit` in the Claude session, or from another terminal:
+
+```bash
+cco stop my-app
+```
+
+### What persists
+
+| Element | Persists? | Where |
+|----------|-----------|------|
+| Git commits | Yes | In repositories mounted from the host |
+| Claude memory | Yes | `~/.local/state/cco/projects/<id>/memory/` (machine-local) |
+| Session transcript | Yes | `~/.local/state/cco/projects/<id>/` (machine-local) |
+| Container files | No | Lost at exit (container `--rm`) |
+| Sibling containers | Yes | Remain active until stopped |
+
+Memory and transcripts allow you to resume work with `/resume` even after a
+Docker image rebuild. Both are **machine-local STATE** — they are not committed
+to the repo and are **not synced across machines** in v1.
+
+---
+
+## Next steps
+
+- [Key concepts](concepts.md) — understand context hierarchy, knowledge packs, agent teams
+- [Project setup](../../configuration/guides/project-setup.md) — advanced guide on repos, extra_mounts, packs, CLAUDE.md
+- [CLI reference](../../reference/cli.md) — all commands and `project.yml` format

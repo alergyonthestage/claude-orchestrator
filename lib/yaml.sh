@@ -2,12 +2,17 @@
 # lib/yaml.sh — Simple YAML parsers for project.yml and pack.yml
 #
 # Provides: yml_set(), yml_remove(), _parse_bool(),
-#           yml_get(), yml_get_list(), yml_get_repos(),
-#           yml_get_ports(), yml_get_env(), yml_get_extra_mounts(),
+#           yml_get(), yml_get_list(),
+#           yml_get_ports(), yml_get_env(),
 #           yml_get_packs(), yml_get_pack_knowledge_source(),
 #           yml_get_pack_knowledge_files(), yml_get_pack_skills(),
 #           yml_get_pack_agents(), yml_get_pack_rules(),
 #           yml_get_llms(), yml_get_llms_names()
+#   Coordinate (decentralized-config) parsers — final schema, ADR-0016 D2 /
+#   ADR-0019 / ADR-0023 D5: yml_get_repo_coords() (name url ref),
+#   yml_get_mount_coords() (name url ref target readonly),
+#   yml_get_pack_coords() (name url ref resource). yml_get_llms() now also
+#   emits url (name desc variant url).
 # Dependencies: colors.sh (warn)
 # Globals: none
 
@@ -280,34 +285,25 @@ yml_validate_enum() {
     fi
 }
 
-# Parse repos from project.yml
-# Outputs lines of "host_path:mount_name"
-#
-# Parsing contract: consumers MUST split on the LAST `:` (use `IFS=: read
-# -r path name` only when path is guaranteed colon-free). Paths that
-# embed a literal `:` are not supported by this flat format. If that
-# becomes necessary in the future, switch the emitter to a tab
-# separator and update every IFS=: consumer (finding m1 from review).
-yml_get_repos() {
+# Parse repo coordinates from the final project.yml schema (ADR-0016 D2 /
+# ADR-0017 D1). Each repo is name + OPTIONAL url + OPTIONAL ref; the absolute
+# path is NOT here (it lives in the machine-local index, §3). Outputs one entry
+# per line as: "<name>\t<url>\t<ref>".
+yml_get_repo_coords() {
     local file="$1"
     awk '
-        /^repos:/ { in_repos=1; next }
-        in_repos && /^[^ #]/ { exit }
-        in_repos && /^  - path:/ {
-            sub(/^  - path: */, "")
-            gsub(/["\047]/, "")
-            sub(/ *#.*$/, "")
-            gsub(/^ +| +$/, "")
-            path=$0
+        /^repos:/ { in_r=1; next }
+        in_r && /^[^ #]/ { exit }
+        in_r && /^  - / {
+            if (name != "") print name "\t" url "\t" ref
+            name=""; url=""; ref=""
+            if (/^  - name:/) { sub(/^  - name: */, "") } else { sub(/^  - */, "") }
+            gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, ""); name=$0
+            next
         }
-        in_repos && /^    name:/ {
-            sub(/^    name: */, "")
-            gsub(/["\047]/, "")
-            sub(/ *#.*$/, "")
-            gsub(/^ +| +$/, "")
-            if (path != "" && $0 != "") print path":"$0
-            path=""
-        }
+        in_r && /^    url:/ { sub(/^    url: */, ""); gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, ""); url=$0 }
+        in_r && /^    ref:/ { sub(/^    ref: */, ""); gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, ""); ref=$0 }
+        END { if (name != "") print name "\t" url "\t" ref }
     ' "$file"
 }
 
@@ -343,86 +339,77 @@ yml_get_env() {
     ' "$file"
 }
 
-# Parse extra_mounts from project.yml
-# Output format: source:target[:ro] (one per line)
-# The raw readonly value is output as a 4th colon-separated field for the caller
-# to normalize via _parse_bool. Format: source:target:ro_raw
-yml_get_extra_mounts() {
+# Parse extra_mount coordinates from the final project.yml schema (ADR-0023 D5).
+# Each mount is name + OPTIONAL url + OPTIONAL ref + OPTIONAL target + OPTIONAL
+# readonly; the host source path is NOT here (it lives in the machine-local
+# index, §3). Outputs one entry per line as:
+#   "<name>\t<url>\t<ref>\t<target>\t<readonly_raw>"
+# readonly is emitted RAW (empty if absent) — the caller normalizes the default
+# (true) via _parse_bool.
+yml_get_mount_coords() {
     local file="$1"
-
-    # AWK extracts raw values; bash normalizes booleans via _parse_bool
-    local raw_mounts
-    raw_mounts=$(awk '
-        function emit() {
-            if (source != "" && target != "") {
-                # Output raw: source:target:ro_raw (ro_raw may be empty)
-                print source ":" target ":" ro
-            }
+    awk '
+        /^extra_mounts:/ { in_m=1; next }
+        in_m && /^[^ #]/ { exit }
+        in_m && /^  - / {
+            if (name != "") print name "\t" url "\t" ref "\t" target "\t" ro
+            name=""; url=""; ref=""; target=""; ro=""
+            if (/^  - name:/) { sub(/^  - name: */, "") } else { sub(/^  - */, "") }
+            gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, ""); name=$0
+            next
         }
-        /^extra_mounts:/ { in_mounts=1; next }
-        in_mounts && /^[^ #]/ { emit(); done=1; exit }
-        in_mounts && /^  - source:/ {
-            emit()
-            sub(/^  - source: */, "")
-            gsub(/["\047]/, "")
-            sub(/ *#.*$/, "")
-            gsub(/^ +| +$/, "")
-            source = $0
-            target = ""
-            ro = ""
-        }
-        in_mounts && /^    target:/ {
-            sub(/^    target: */, "")
-            gsub(/["\047]/, "")
-            sub(/ *#.*$/, "")
-            gsub(/^ +| +$/, "")
-            target = $0
-        }
-        in_mounts && /^    readonly:/ {
-            sub(/^    readonly: */, "")
-            gsub(/["\047]/, "")
-            sub(/ *#.*$/, "")
-            gsub(/^ +| +$/, "")
-            ro = $0
-        }
-        END { if (!done && in_mounts) emit() }
-    ' "$file")
-
-    # Normalize boolean values and produce final output
-    while IFS= read -r line; do
-        [[ -z "$line" ]] && continue
-        local mount_source mount_target ro_raw
-        # Split on colons: source:target:ro_raw
-        # source may contain colons (unlikely but safe), so we split from the right
-        ro_raw="${line##*:}"
-        local without_ro="${line%:*}"
-        mount_target="${without_ro##*:}"
-        mount_source="${without_ro%:*}"
-
-        # Secure default: readonly=true when field is omitted (empty ro_raw)
-        local ro_val
-        ro_val=$(_parse_bool "$ro_raw" "true")
-
-        local suffix=""
-        [[ "$ro_val" == "true" ]] && suffix=":ro"
-        echo "${mount_source}:${mount_target}${suffix}"
-    done <<< "$raw_mounts"
+        in_m && /^    url:/      { sub(/^    url: */, "");      gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, ""); url=$0 }
+        in_m && /^    ref:/      { sub(/^    ref: */, "");      gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, ""); ref=$0 }
+        in_m && /^    target:/   { sub(/^    target: */, "");   gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, ""); target=$0 }
+        in_m && /^    readonly:/ { sub(/^    readonly: */, ""); gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, ""); ro=$0 }
+        END { if (name != "") print name "\t" url "\t" ref "\t" target "\t" ro }
+    ' "$file"
 }
 
 # Parse packs list from project.yml
-# Outputs one pack name per line
+# Outputs one pack name per line. Handles BOTH the legacy string list
+# ("  - packname") and the final coordinate map ("  - name: packname" with
+# url/ref/resource sub-keys; ADR-0019). Sub-keys (4-space) are ignored here —
+# use yml_get_pack_coords() for the full coordinate.
 yml_get_packs() {
     local file="$1"
     awk '
         /^packs:/ { in_packs=1; next }
         in_packs && /^[^ #]/ { exit }
+        in_packs && /^  - name:/ {
+            sub(/^  - name: */, "")
+            gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, "")
+            if ($0 != "") print
+            next
+        }
         in_packs && /^  - / {
             sub(/^  - */, "")
-            gsub(/["\047]/, "")
-            sub(/ *#.*$/, "")
-            gsub(/^ +| +$/, "")
+            gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, "")
             if ($0 != "") print
         }
+    ' "$file"
+}
+
+# Parse pack coordinates (final schema, ADR-0019 / ADR-0022 D4).
+# Outputs one entry per line as: "<name>\t<url>\t<ref>\t<resource>".
+# A bare string entry ("  - packname") yields the name with empty coordinates
+# (a project-local AUTHORED pack — url absent = it IS the source, P15).
+yml_get_pack_coords() {
+    local file="$1"
+    awk '
+        /^packs:/ { in_p=1; next }
+        in_p && /^[^ #]/ { exit }
+        in_p && /^  - / {
+            if (name != "") print name "\t" url "\t" ref "\t" resource
+            name=""; url=""; ref=""; resource=""
+            if (/^  - name:/) { sub(/^  - name: */, "") } else { sub(/^  - */, "") }
+            gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, ""); name=$0
+            next
+        }
+        in_p && /^    url:/      { sub(/^    url: */, "");      gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, ""); url=$0 }
+        in_p && /^    ref:/      { sub(/^    ref: */, "");      gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, ""); ref=$0 }
+        in_p && /^    resource:/ { sub(/^    resource: */, ""); gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, ""); resource=$0 }
+        END { if (name != "") print name "\t" url "\t" ref "\t" resource }
     ' "$file"
 }
 
@@ -510,7 +497,9 @@ yml_get_pack_rules() {
 }
 
 # Parse llms list from project.yml or pack.yml (llms:)
-# Outputs one entry per line as: "<name>\t<description>\t<variant>"
+# Outputs one entry per line as: "<name>\t<description>\t<variant>\t<url>"
+# (url added for the final coordinate schema — llms url is MANDATORY in
+# project.yml, ADR-0017 D1; empty for short form / pack legacy entries).
 # Supports short form ("- svelte") and long form ("- name: svelte").
 yml_get_llms() {
     local file="$1"
@@ -519,14 +508,14 @@ yml_get_llms() {
         in_l && /^[^ #]/ { exit }
         in_l && /^  - / {
             if (/^  - name:/) {
-                if (name != "") print name "\t" desc "\t" variant
+                if (name != "") print name "\t" desc "\t" variant "\t" url
                 sub(/^  - name: */, ""); gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, "")
-                name=$0; desc=""; variant=""
+                name=$0; desc=""; variant=""; url=""
             } else {
-                if (name != "") print name "\t" desc "\t" variant
-                name=""; desc=""; variant=""
+                if (name != "") print name "\t" desc "\t" variant "\t" url
+                name=""; desc=""; variant=""; url=""
                 sub(/^  - */, ""); gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, "")
-                if ($0 != "") print $0 "\t\t"
+                if ($0 != "") print $0 "\t\t\t"
             }
         }
         in_l && /^    description:/ {
@@ -535,7 +524,10 @@ yml_get_llms() {
         in_l && /^    variant:/ {
             sub(/^    variant: */, ""); gsub(/["\047]/, ""); sub(/ *#.*$/, ""); variant=$0
         }
-        END { if (name != "") print name "\t" desc "\t" variant }
+        in_l && /^    url:/ {
+            sub(/^    url: */, ""); gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, ""); url=$0
+        }
+        END { if (name != "") print name "\t" desc "\t" variant "\t" url }
     ' "$file"
 }
 

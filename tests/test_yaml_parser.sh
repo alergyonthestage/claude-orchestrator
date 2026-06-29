@@ -5,8 +5,8 @@
 # creating project.yml files with specific values and asserting that the
 # generated docker-compose.yml (via --dry-run --dump) correctly reflects the parsing.
 #
-# This catches regressions in: yml_get, yml_get_repos, yml_get_ports,
-# yml_get_env, yml_get_extra_mounts, yml_get_packs, yml_get_pack_files.
+# This catches regressions in: yml_get, yml_get_repo_coords, yml_get_ports,
+# yml_get_env, yml_get_mount_coords, yml_get_packs, yml_get_pack_files.
 
 # ── yml_get: top-level and nested key parsing ─────────────────────────
 
@@ -34,8 +34,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -56,8 +55,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -76,8 +74,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -86,7 +83,7 @@ YAML
     assert_file_not_contains "$compose" "ANTHROPIC_API_KEY"
 }
 
-# ── yml_get_repos: repo list parsing ─────────────────────────────────
+# ── yml_get_repo_coords: repo list parsing → mounts ──────────────────
 
 test_yaml_parser_single_repo_mounted() {
     # yml_get_repos: single repo → mounted at /workspace/<name>
@@ -95,6 +92,7 @@ test_yaml_parser_single_repo_mounted() {
     setup_global_from_defaults "$tmpdir"
     local fake_repo="$tmpdir/my-repo"
     mkdir -p "$fake_repo"
+    seed_index_path "my-repo" "$fake_repo"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -103,8 +101,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $fake_repo
-    name: my-repo
+  - name: my-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -120,6 +117,8 @@ test_yaml_parser_multiple_repos_all_mounted() {
     local repo_a="$tmpdir/repo-a"
     local repo_b="$tmpdir/repo-b"
     mkdir -p "$repo_a" "$repo_b"
+    seed_index_path "repo-a" "$repo_a"
+    seed_index_path "repo-b" "$repo_b"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -128,10 +127,8 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $repo_a
-    name: repo-a
-  - path: $repo_b
-    name: repo-b
+  - name: repo-a
+  - name: repo-b
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -160,13 +157,13 @@ test_yaml_parser_repos_do_not_bleed_into_docker_section() {
     setup_global_from_defaults "$tmpdir"
     local fake_repo="$tmpdir/repo-a"
     mkdir -p "$fake_repo"
+    seed_index_path "repo-a" "$fake_repo"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
   method: oauth
 repos:
-  - path: $fake_repo
-    name: repo-a
+  - name: repo-a
 docker:
   ports:
     - "9999:9999"
@@ -197,8 +194,7 @@ docker:
     - "5000:5000"
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -222,8 +218,7 @@ docker:
     - "5432:5432"
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -249,8 +244,7 @@ docker:
   env:
     NODE_ENV: production
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -274,8 +268,7 @@ docker:
     LOG_LEVEL: debug
     APP_PORT: "8080"
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -298,7 +291,7 @@ test_yaml_parser_empty_env_no_extra_vars() {
     assert_file_not_contains "$compose" "NODE_ENV"
 }
 
-# ── yml_get_extra_mounts: extra_mounts parsing ───────────────────────
+# ── yml_get_mount_coords: extra_mounts parsing → mounts ──────────────
 
 test_yaml_parser_extra_mount_readonly_true() {
     # yml_get_extra_mounts: readonly:true → :ro suffix
@@ -307,6 +300,7 @@ test_yaml_parser_extra_mount_readonly_true() {
     setup_global_from_defaults "$tmpdir"
     local docs_dir="$tmpdir/docs"
     mkdir -p "$docs_dir"
+    seed_index_path "docs" "$docs_dir"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -315,10 +309,9 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 extra_mounts:
-  - source: $docs_dir
+  - name: docs
     target: /workspace/docs
     readonly: true
 YAML
@@ -335,6 +328,7 @@ test_yaml_parser_extra_mount_readonly_false() {
     setup_global_from_defaults "$tmpdir"
     local rw_dir="$tmpdir/rw-mount"
     mkdir -p "$rw_dir"
+    seed_index_path "rw" "$rw_dir"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -343,10 +337,9 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 extra_mounts:
-  - source: $rw_dir
+  - name: rw
     target: /workspace/rw
     readonly: false
 YAML
@@ -365,6 +358,8 @@ test_yaml_parser_multiple_extra_mounts() {
     local dir_a="$tmpdir/dir-a"
     local dir_b="$tmpdir/dir-b"
     mkdir -p "$dir_a" "$dir_b"
+    seed_index_path "a" "$dir_a"
+    seed_index_path "b" "$dir_b"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -373,13 +368,12 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 extra_mounts:
-  - source: $dir_a
+  - name: a
     target: /workspace/a
     readonly: true
-  - source: $dir_b
+  - name: b
     target: /workspace/b
     readonly: false
 YAML
@@ -416,8 +410,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - my-pack
 YAML
@@ -427,7 +420,7 @@ YAML
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "${pack_src}:/workspace/.claude/packs/my-pack:ro"
     # Knowledge should NOT be copied to project directory
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/packs/my-pack/doc.md"
+    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/packs/my-pack/doc.md"
 }
 
 test_yaml_parser_no_packs_section_no_pack_mounts() {
@@ -514,16 +507,16 @@ test_yaml_parser_extra_mount_readonly_omitted_defaults_to_ro() {
     setup_global_from_defaults "$tmpdir"
     local docs_dir="$tmpdir/docs"
     mkdir -p "$docs_dir"
+    seed_index_path "docs" "$docs_dir"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 extra_mounts:
-  - source: $docs_dir
+  - name: docs
     target: /workspace/docs
 YAML
 )"
@@ -539,19 +532,19 @@ test_yaml_parser_extra_mount_readonly_with_trailing_spaces() {
     setup_global_from_defaults "$tmpdir"
     local docs_dir="$tmpdir/docs"
     mkdir -p "$docs_dir"
+    seed_index_path "docs" "$docs_dir"
     # Use printf to preserve trailing spaces exactly
     create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj
 docker:
   ports: []
   env: {}
 repos:
-  - path: %s
-    name: dummy-repo
+  - name: dummy-repo
 extra_mounts:
-  - source: %s
+  - name: docs
     target: /workspace/docs
     readonly: true
-' "$CCO_DUMMY_REPO" "$docs_dir")"
+')"
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "${docs_dir}:/workspace/docs:ro"
@@ -564,16 +557,16 @@ test_yaml_parser_extra_mount_readonly_yes_variant() {
     setup_global_from_defaults "$tmpdir"
     local docs_dir="$tmpdir/docs"
     mkdir -p "$docs_dir"
+    seed_index_path "docs" "$docs_dir"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 extra_mounts:
-  - source: $docs_dir
+  - name: docs
     target: /workspace/docs
     readonly: yes
 YAML
@@ -590,16 +583,16 @@ test_yaml_parser_extra_mount_readonly_false_explicit_rw() {
     setup_global_from_defaults "$tmpdir"
     local rw_dir="$tmpdir/rw-mount"
     mkdir -p "$rw_dir"
+    seed_index_path "rw" "$rw_dir"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 extra_mounts:
-  - source: $rw_dir
+  - name: rw
     target: /workspace/rw
     readonly: false
 YAML
@@ -623,8 +616,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     if run_cco start "test-proj" --dry-run --dump 2>/dev/null; then
@@ -646,8 +638,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 browser:
   enabled: true
   cdp_port: abc
@@ -674,8 +665,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -695,14 +685,14 @@ test_yaml_parser_repo_path_with_inline_comment() {
     setup_global_from_defaults "$tmpdir"
     local fake_repo="$tmpdir/my-repo"
     mkdir -p "$fake_repo"
+    seed_index_path "my-repo" "$fake_repo"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 docker:
   ports: []
   env: {}
 repos:
-  - path: $fake_repo # This is a comment
-    name: my-repo
+  - name: my-repo # This is a comment
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -718,14 +708,14 @@ test_yaml_parser_repo_name_with_inline_comment() {
     setup_global_from_defaults "$tmpdir"
     local fake_repo="$tmpdir/my-repo"
     mkdir -p "$fake_repo"
+    seed_index_path "my-repo" "$fake_repo"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 docker:
   ports: []
   env: {}
 repos:
-  - path: $fake_repo
-    name: my-repo # main repository
+  - name: my-repo # main repository
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -746,8 +736,7 @@ docker:
     - "3000:3000" # web server
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -768,8 +757,7 @@ docker:
   env:
     NODE_ENV: production # deploy target
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -785,16 +773,16 @@ test_yaml_parser_extra_mount_with_inline_comments() {
     setup_global_from_defaults "$tmpdir"
     local docs_dir="$tmpdir/docs"
     mkdir -p "$docs_dir"
+    seed_index_path "docs" "$docs_dir"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 extra_mounts:
-  - source: $docs_dir # shared docs
+  - name: docs # shared docs
     target: /workspace/docs # mount point
     readonly: true # keep safe
 YAML
@@ -1010,4 +998,108 @@ YAML
     assert_equals "untracked" "$result"
     result=$(yml_get "$tmpfile" "policies.agents/analyst.md")
     assert_equals "tracked" "$result"
+}
+
+# ── Coordinate parsers (T3: final decentralized-config schema) ───────
+# Direct-source unit tests for the final name+coordinate readers (ADR-0016 D2 /
+# ADR-0019 / ADR-0023 D5). Output is tab-separated; absent fields are empty.
+
+test_yaml_repo_coords_name_url_ref() {
+    source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/yaml.sh"
+    local f; f=$(mktemp); trap "rm -f '$f'" EXIT
+    cat > "$f" <<'YAML'
+name: projectA
+repos:
+  - name: repo1
+    url: git@github.com:org/repo1.git
+    ref: main
+  - name: repo2
+    url: git@github.com:org/repo2.git
+llms:
+  - name: react
+    url: https://react.dev/llms-full.txt
+YAML
+    # path is NOT emitted (it lives in the index); stops at the llms: section.
+    assert_equals $'repo1\tgit@github.com:org/repo1.git\tmain\nrepo2\tgit@github.com:org/repo2.git\t' "$(yml_get_repo_coords "$f")"
+}
+
+test_yaml_repo_coords_url_optional() {
+    source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/yaml.sh"
+    local f; f=$(mktemp); trap "rm -f '$f'" EXIT
+    cat > "$f" <<'YAML'
+repos:
+  - name: solo
+YAML
+    assert_equals $'solo\t\t' "$(yml_get_repo_coords "$f")"
+}
+
+test_yaml_mount_coords_full_and_minimal() {
+    source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/yaml.sh"
+    local f; f=$(mktemp); trap "rm -f '$f'" EXIT
+    cat > "$f" <<'YAML'
+extra_mounts:
+  - name: shared-assets
+    url: git@github.com:org/assets.git
+    ref: v2
+    target: /workspace/assets
+    readonly: false
+  - name: local-only
+YAML
+    # readonly is emitted RAW (the consumer applies the true default).
+    assert_equals $'shared-assets\tgit@github.com:org/assets.git\tv2\t/workspace/assets\tfalse\nlocal-only\t\t\t\t' "$(yml_get_mount_coords "$f")"
+}
+
+test_yaml_pack_coords_map_and_authored() {
+    source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/yaml.sh"
+    local f; f=$(mktemp); trap "rm -f '$f'" EXIT
+    cat > "$f" <<'YAML'
+packs:
+  - name: shared-pack
+    url: https://github.com/org/cco-sharing.git
+    ref: v1.0
+    resource: packs/shared-pack
+  - project-local-pack
+YAML
+    # bare entry = authored-in-repo pack (empty coordinate, P15).
+    assert_equals $'shared-pack\thttps://github.com/org/cco-sharing.git\tv1.0\tpacks/shared-pack\nproject-local-pack\t\t\t' "$(yml_get_pack_coords "$f")"
+}
+
+test_yaml_packs_names_from_map() {
+    source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/yaml.sh"
+    local f; f=$(mktemp); trap "rm -f '$f'" EXIT
+    cat > "$f" <<'YAML'
+packs:
+  - name: shared-pack
+    url: https://github.com/org/cco-sharing.git
+  - project-local-pack
+YAML
+    # yml_get_packs stays name-only across both forms (stable consumer contract).
+    assert_equals $'shared-pack\nproject-local-pack' "$(yml_get_packs "$f")"
+}
+
+test_yaml_packs_names_from_string_list_regression() {
+    source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/yaml.sh"
+    local f; f=$(mktemp); trap "rm -f '$f'" EXIT
+    cat > "$f" <<'YAML'
+packs:
+  - pack-a
+  - pack-b
+YAML
+    assert_equals $'pack-a\npack-b' "$(yml_get_packs "$f")"
+}
+
+test_yaml_llms_emits_url() {
+    source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/yaml.sh"
+    local f; f=$(mktemp); trap "rm -f '$f'" EXIT
+    cat > "$f" <<'YAML'
+llms:
+  - name: react
+    url: https://react.dev/llms-full.txt
+    variant: full
+  - svelte
+YAML
+    # final field is url; short form yields empty desc/variant/url.
+    assert_equals $'react\t\tfull\thttps://react.dev/llms-full.txt\nsvelte\t\t\t' "$(yml_get_llms "$f")"
+    # names-only accessor unaffected (regression).
+    assert_equals $'react\nsvelte' "$(yml_get_llms_names "$f")"
 }

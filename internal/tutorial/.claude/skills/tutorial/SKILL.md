@@ -19,10 +19,10 @@ Parse `$ARGUMENTS`:
 - `advanced` → Start from Module 10 (Configuring rules & workflow)
 - Any other text → Treat as a topic query, find the most relevant module
 
-Also check `/workspace/user-config/`:
-- If no projects exist beyond `tutorial/` → likely a new user, suggest beginner path
-- If projects and packs exist → likely intermediate+, suggest advanced topics or
-  offer to review their setup
+Also check `/workspace/cco-config/` (the personal store `~/.cco`):
+- If it has no packs/templates yet → likely a new user, suggest the beginner path
+- If packs/templates exist → likely intermediate+, suggest advanced topics or
+  offer to review their setup (projects live in their own repos' `.cco/`)
 
 ## Guided Flow
 
@@ -37,7 +37,7 @@ For each module:
 
 While presenting modules, watch for opportunities to suggest related features:
 - Discussing projects → mention packs if they don't use any
-- Discussing packs → mention Config Repos for sharing, and llms.txt for framework docs
+- Discussing packs → mention sharing repos (publish/install) for sharing, and llms.txt for framework docs
 - Discussing technology stacks → suggest `cco llms install` for official framework
   documentation (e.g., Svelte, Tailwind, Drizzle). Explain that llms.txt files keep
   agents up-to-date with latest APIs without relying on training data.
@@ -48,9 +48,9 @@ While presenting modules, watch for opportunities to suggest related features:
   rules (short, always loaded) vs knowledge docs (detailed, on-demand)
 - Discussing workflow → reference `development-workflow.md` guide for review cycles,
   permission modes per phase, and testing strategy
-- Discussing configuration → help the user progressively build their user-config
-  using the recommended practices from the guides as a foundation, adapted to
-  their specific needs and workflow preferences
+- Discussing configuration → help the user progressively build their config
+  (per-repo `<repo>/.cco/` + the personal store `~/.cco`) using the recommended
+  practices from the guides as a foundation, adapted to their needs and workflow
 
 ## Important
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lib/remote.sh — Remote clone helper for Config Repo operations
+# lib/remote.sh — Remote clone helper for sharing repo operations
 #
 # Provides: _supports_sparse_checkout(), _clone_config_repo(), _cleanup_clone()
 # Dependencies: colors.sh
@@ -44,7 +44,7 @@ _build_git_auth() {
     fi
 }
 
-# Clone a config repo to a temporary directory.
+# Clone a sharing repo to a temporary directory.
 # Usage: _clone_config_repo <url> [<ref>] [<token>]
 # Outputs: path to the cloned directory
 _clone_config_repo() {
@@ -79,7 +79,7 @@ _clone_config_repo() {
     echo "$tmpdir"
 }
 
-# Clone a config repo for publishing (full clone, push-ready).
+# Clone a sharing repo for publishing (full clone, push-ready).
 # Handles empty repos (first publish) by initializing with manifest.yml.
 # Usage: _clone_for_publish <url> [<token>]
 # Outputs: path to the cloned directory
@@ -105,16 +105,39 @@ _clone_for_publish() {
 
     # Test if remote is accessible
     if git "${_GIT_AUTH_OPTS[@]+"${_GIT_AUTH_OPTS[@]}"}" -C "$tmpdir" ls-remote origin >/dev/null 2>&1; then
-        # Remote exists but is empty — initialize
-        manifest_init "$tmpdir"
-        git -C "$tmpdir" add -A
-        git -C "$tmpdir" commit -q -m "init: empty Config Repo"
+        # Remote exists but is empty — establish the default branch with an empty
+        # initial commit. A sharing repo carries no manifest.yml (structure-based
+        # discovery; ADR-0012/0018 D3); its content is the packs/ + templates/ trees.
+        git -C "$tmpdir" commit -q --allow-empty -m "init: empty sharing repo"
         echo "$tmpdir"
         return 0
     fi
 
     rm -rf "$tmpdir"
     die "Failed to clone or access $url"
+}
+
+# Structure-based discovery (ADR-0018 D3): list the resource names a sharing repo
+# holds under <section>/, replacing the removed manifest.yml index. A valid entry
+# is a direct subdir of <section>/ carrying its manifest (packs → pack.yml,
+# templates → project.yml). <root> is a checked-out clone. One name per line.
+_discover_resources() {
+    local root="$1" section="$2"
+    [[ -d "$root/$section" ]] || return 0
+    local dir name
+    for dir in "$root/$section"/*/; do
+        [[ -d "$dir" ]] || continue
+        case "$section" in
+            # A pack carries pack.yml. A template carries EITHER marker — a
+            # project-template (project.yml) or a pack-template (pack.yml); the
+            # flat sharing-repo templates/<name>/ encodes the kind by its marker.
+            packs)     [[ -f "${dir}pack.yml" ]] || continue ;;
+            templates) [[ -f "${dir}project.yml" || -f "${dir}pack.yml" ]] || continue ;;
+            *) return 1 ;;
+        esac
+        name=$(basename "$dir")
+        printf '%s\n' "$name"
+    done
 }
 
 # Cleanup a temporary clone directory.

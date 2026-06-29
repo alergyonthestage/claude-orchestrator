@@ -2,28 +2,38 @@ name: {{PROJECT_NAME}}
 description: "{{DESCRIPTION}}"
 
 # ── Repositories ─────────────────────────────────────────────────────
+# Each repo is referenced by a logical name + an optional machine-agnostic
+# coordinate (url/ref). Local paths live in the machine-local index — set them
+# with `cco resolve`, never here (keeps `git diff` truthful, AD3/G8).
 repos: []
-  # - path: ~/projects/my-repo        # Absolute path on host
-  #   name: my-repo                    # Mount name in /workspace/
+  # - name: my-repo
+  #   url: git@github.com:org/my-repo.git   # optional bootstrap pointer for `cco resolve`
+  #   ref: main                             # optional git ref (default: remote default branch)
 
 # ── Extra mounts (optional) ─────────────────────────────────────────
+# Auxiliary mounts by logical name; they join the same coordinate model.
 # extra_mounts:
-#   - source: ~/documents/api-specs
-#     target: /workspace/docs/api-specs
+#   - name: api-specs
+#     url: git@github.com:org/api-specs.git   # optional (git-backed mount); absent → local-only via the index
+#     target: /workspace/docs/api-specs       # optional container path (default /workspace/<name>)
 #     readonly: true
 
 # ── Knowledge Packs (optional) ───────────────────────────────────────
-# Reference packs from user-config/packs/<name>/pack.yml.
-# Each pack can bundle: knowledge files, skills, agents, and rules.
-# See: docs/reference/project-yaml.md § Knowledge Packs for schema and examples.
+# Reference packs by logical name + an OPTIONAL coordinate (url/ref). A pack with
+# a url resolves from ~/.cco/packs (or its sharing repo); a pack with no url is a
+# project-local authored pack in <repo>/.cco/packs/.
+# See: docs/users/configuration/reference/project-yaml.md § Knowledge Packs for schema and examples.
 #
 # packs:
-#   - my-pack
+#   - name: shared-pack
+#     url: https://github.com/org/cco-sharing.git   # optional → the pack's sharing repo
+#   - name: project-local-pack                       # no url → authored in <repo>/.cco/packs/
 
 # ── LLMs.txt Framework Docs (optional) ─────────────────────────────
 # Reference official framework documentation installed via 'cco llms install'.
-# Files are stored in user-config/llms/ and mounted read-only at session start.
-# See: docs/reference/project-yaml.md § LLMs.txt for schema and examples.
+# Content is cached per-machine in ~/.cache/cco/llms/ and mounted read-only at
+# session start (re-fetchable from the coordinate; ADR-0007/0014).
+# See: docs/users/configuration/reference/project-yaml.md § LLMs.txt for schema and examples.
 #
 # llms:
 #   - svelte
@@ -33,7 +43,8 @@ repos: []
 # ── GitHub Integration (optional) ────────────────────────────────────
 # Enable Claude to interact with GitHub via MCP (issues, PRs, code search).
 # Requires a GitHub token with appropriate scopes (repo, read:org, etc.).
-# Set GITHUB_TOKEN in global/secrets.env or project secrets.env before use.
+# Set GITHUB_TOKEN in ~/.cco/secrets.env (global) or <repo>/.cco/secrets.env
+# (project, gitignored) before use.
 #
 # github:
 #   enabled: false            # true to activate github MCP server
@@ -109,7 +120,7 @@ auth:
 # ── MCP Servers (optional) ──────────────────────────────────────────
 # Create mcp.json in this directory using Claude Code's native .mcp.json format.
 # ${VAR} syntax is expanded natively by Claude Code inside the container.
-# Env vars must be set in global/secrets.env, docker.env above, or --env flag.
+# Env vars must be set in ~/.cco/secrets.env, docker.env above, or --env flag.
 # IMPORTANT: Unresolvable ${VAR} will cause Claude Code to ignore the entire file.
 # Example mcp.json:
 #   {
