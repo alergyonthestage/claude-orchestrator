@@ -805,9 +805,9 @@ flowchart TD
     b2 --> b3["optional: cco sync (-> Case B)"] --> b4["cco start"]
   end
   subgraph JE["Join an existing project (E) — alternative to init"]
-    e1["enter repo3 (new member)"] --> e2["cco join projectA"]
-    e2 --> e3["register repo3 + add it to project.yml repos[] (in the holder repo)"]
-    e3 --> e4{"--sync / confirm?"}
+    e1["enter repo3 (new member)"] --> e2["cco join projectA [--name]"]
+    e2 --> e3["index repo3 + add it to repos[] in every in-sync member (prompt if divergent); url from origin"]
+    e3 --> e4{"--sync?"}
     e4 -->|yes| e5["repo3 gets a .cco copy (-> Case B)"]
     e4 -->|no| e6["repo3 stays code-only member (Case A)"]
   end

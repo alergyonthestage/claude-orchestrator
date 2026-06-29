@@ -98,9 +98,11 @@ cco init                      # scaffold <repo>/.cco/ and ensure ~/.cco
 cco start my-repo
 ```
 
-Other entry points: `cco join <project>` to join a project whose `<repo>/.cco/`
-already exists, and `cco init --migrate <project>` to migrate a legacy project
-into the in-repo layout.
+To work on a project a teammate shared, clone its repo and run `cco start
+<project>` from inside it — cwd-first resolution registers it automatically.
+Other entry points: `cco join <project>` to add the current repo to an existing
+project as a member, and `cco init --migrate <project>` to migrate a legacy
+project into the in-repo layout.
 
 ## Feature highlights
 

@@ -63,9 +63,11 @@ A project's config lives **inside the repo it serves**, in `<repo>/.cco/`, conta
 - `claude/rules/`, `claude/agents/`, `claude/skills/` — project-level tooling
 - `setup.sh`, `mcp-packages.txt` — runtime setup
 
-Commit `<repo>/.cco/` with the repo. Every teammate clones the repo, runs
-`cco join <project>` once to register it, then `cco start <project>` to get the
-same environment: same repos mounted, same instructions, same rules and agents.
+Commit `<repo>/.cco/` with the repo. Every teammate clones the repo and runs
+`cco start <project>` from inside it — cwd-first resolution registers the project
+automatically (no separate "register" step; run `cco resolve --scan <dir>` first
+to bind member paths ahead of time). They get the same environment: same repos
+mounted, same instructions, same rules and agents.
 
 **What's shared (committable today):**
 - Project repositories and mount paths
@@ -84,7 +86,8 @@ same environment: same repos mounted, same instructions, same rules and agents.
 - `cco pack publish <name>` publishes a pack to a sharing repo; `cco pack install <url>` installs packs from one
 - Templates use the same `publish`/`install` channel
 - Projects are **not** published — a project's `<repo>/.cco/` travels with its
-  own code repo (clone it and `cco join`)
+  own code repo (clone it and `cco start <project>`; cwd-first resolution
+  registers it). Use `cco join <project>` to add **another** repo as a member.
 
 **Versioning your personal store:**
 - `cco config save/push/pull` versions your `~/.cco/` (global config, packs,

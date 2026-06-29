@@ -71,14 +71,18 @@ cco start my-app
 ```
 
 To work on a project someone has already shared (its `<repo>/.cco/` is committed
-in the repo), clone the repo and register it:
+in the repo), clone the repo and start it — cwd-first resolution registers it,
+no separate step:
 
 ```bash
 git clone <repo-url> ~/projects/my-app
 cd ~/projects/my-app
-cco join my-app                           # register an existing <repo>/.cco/
-cco start my-app
+cco start my-app                          # cwd-first resolution registers it automatically
 ```
+
+(For a multi-repo project, run `cco resolve --scan <dir>` once to bind every
+member's path first.) Use `cco join <project>` only to add the **current** repo as
+a new member of an existing project.
 
 To migrate a project from a legacy central installation into its repo, use
 `cco init --migrate <project>`.
@@ -99,9 +103,10 @@ cco new --repo ~/projects/api --repo ~/projects/frontend --port 3000:3000
 | `cco build` | Build the Docker image |
 | `cco build --no-cache` | Full rebuild (updates Claude Code) |
 | `cco init` | Scaffold `<repo>/.cco/` in the current repo (+ ensures `~/.cco` on first use) |
-| `cco join <project>` | Register an existing `<repo>/.cco/` (shared by a teammate) |
+| `cco join <project>` | Add the current repo to `<project>` as a member (Journey E) |
 | `cco init --migrate <project>` | Migrate a project from a legacy central install into its repo |
-| `cco start <project>` | Start session for a configured project |
+| `cco start <project>` | Start a project (cwd-first: registers a freshly-cloned repo automatically) |
+| `cco resolve --scan <dir>` | Discover/bind projects under `<dir>` into the index |
 | `cco new --repo <path>` | Temporary session with specific repositories |
 | `cco list [<kind>]` | List all resources (projects, packs, templates, llms, remotes); narrow with a kind |
 | `cco update` | Run migrations + discover available config updates |

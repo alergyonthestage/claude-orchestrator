@@ -43,9 +43,12 @@ The host repo's `.cco/project.yml` carries logical names + machine-agnostic
 coordinates; each member repo's real path on this machine is stored in the index
 (never committed).
 
-To work on a project a teammate has already shared, clone its host repo and
-register it with `cco join <project>`. To migrate a project from a legacy
-central install into its repo, use `cco init --migrate <project>`.
+To work on a project a teammate has already shared, clone its host repo and run
+`cco start <project>` from inside it — cwd-first resolution registers it
+automatically (run `cco resolve --scan <dir>` first to bind member paths). Use
+`cco join <project>` to add the **current** repo as a new member of an existing
+project. To migrate a project from a legacy central install into its repo, use
+`cco init --migrate <project>`.
 
 ### Configuration Assistant
 
@@ -355,7 +358,7 @@ For the full workflow (`cco config` commands, multi-machine sync, team sharing, 
 Project config is **distributed per host repo**: each project is shared by riding
 **its own host repo's git remote**. There is no central project store and no
 `cco project publish` — you commit `<repo>/.cco/` and push the repo; a teammate
-clones it and runs `cco join <project>`.
+clones it and runs `cco start <project>` (cwd-first resolution registers it).
 
 - **A repo hosts exactly one project** (its `project.yml` `name`) — one development
   scope. The same repo may be **referenced** by N other projects as a member.

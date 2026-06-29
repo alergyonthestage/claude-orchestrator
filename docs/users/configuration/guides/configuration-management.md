@@ -594,8 +594,8 @@ versioned and **not** synced in v1:
 | Command | Purpose |
 |---------|---------|
 | `cco init [--migrate <project> [--sync]]` | Scaffold/hydrate a repo's `.cco/` (single entry verb) |
-| `cco join <project> [--sync]` | Add the current repo to a project as a member |
-| `cco forget <project> [-y]` | Deregister a project (index/tags/state only; repo untouched) |
+| `cco join <project> [--sync] [--name <n>]` | Add the current repo to a project as a member (Journey E) |
+| `cco forget <project> [-y] [--purge]` | Deregister a project (repo untouched; `--purge` also deletes owned `.cco/`) |
 | `cco project show <name>` | Project + repo↔project roles, referenced-by, sync state |
 | `cco project validate [name] [--all] [--reachable]` | Share-readiness validation (coordinates, no path leaks, no pack collision) |
 | `cco project coords [--diff] [--sync --from <unit>]` | Show/reconcile coordinate consistency across your projects |
