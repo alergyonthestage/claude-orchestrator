@@ -155,7 +155,7 @@ were already resolved — wasting effort and introducing inconsistencies.
 
 **How cco implements this:**
 
-- cco's own architecture uses ADRs extensively (`docs/maintainer/architecture/architecture.md`),
+- cco's own architecture uses ADRs extensively (`docs/maintainers/foundation/design/architecture.md`),
   providing a working example.
 - The **`/design` skill** produces design documents that capture context, decisions,
   alternatives, and consequences — the same structure as ADRs.

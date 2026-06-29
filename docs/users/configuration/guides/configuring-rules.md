@@ -213,7 +213,7 @@ agent may read only one — acting on stale or incomplete information. A clear s
 ensures every document has an unambiguous home and every concept has a single source of truth.
 
 **What to define**:
-- Directory structure (e.g., `/docs/user-guides/`, `/docs/maintainer/`, `/docs/reference/`)
+- Directory structure (e.g., `/docs/guides/`, `/docs/reference/`, `/docs/architecture/`)
 - File naming conventions (e.g., `analysis.md`, `design.md`, `adr-NNN.md`)
 - Organization principle (e.g., by domain/module, not by document type — so all information
   about a topic is discoverable in one place)
