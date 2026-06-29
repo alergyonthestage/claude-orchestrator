@@ -617,6 +617,90 @@ _relocate_legacy_template_sources() {
     done
 }
 
+# Backfill a missing llms `url` into every installed pack's pack.yml (ADR-0032 D3).
+# Packs were migrated wholesale (no pack.yml rewrite), so a legacy short-form
+# (`- name`) llms reference carries no coordinate — yet ADR-0017 D1 requires one,
+# and ADR-0019 D6 leans on it (llms are the always-re-fetchable resource). Where
+# the named llms is installed globally, its `.cco/source` already records the url:
+# adopt it, exactly as project migration does (_cco_build_project_yml). Pack-scope
+# migrations are not wired into `cco update` (only global/project are), so this
+# rides the same update step as the pack-source relocation. Idempotent: a no-op
+# once every entry has a url (or none is recoverable). Names with no installed
+# source stay url-less — `cco pack validate` (ADR-0032 D2) surfaces those.
+_backfill_pack_llms_urls() {
+    [[ -d "${PACKS_DIR:-}" ]] || return 0
+    local pack_dir
+    for pack_dir in "$PACKS_DIR"/*/; do
+        [[ -f "$pack_dir/pack.yml" ]] || continue
+        _backfill_one_pack_llms "$pack_dir/pack.yml"
+    done
+}
+
+# Backfill recoverable llms urls into a single pack.yml in place. Rewrites the
+# `llms:` block (normalizing to long form) ONLY when at least one url-less entry
+# is recoverable from a global llms `.cco/source`; otherwise leaves the file
+# untouched. Preserves the block's position; per-entry description/variant are
+# carried through.
+_backfill_one_pack_llms() {
+    local yml="$1"
+    local mapf; mapf=$(mktemp)
+    local _line name _desc _variant url need=0
+    while IFS= read -r _line; do
+        [[ -z "$_line" ]] && continue
+        _peel_tab "$_line" name _desc _variant url
+        [[ -z "$name" || -n "$url" ]] && continue   # only url-less entries
+        local src="$LLMS_DIR/$name/.cco/source"
+        [[ -f "$src" ]] || continue
+        local surl svar
+        surl=$(_migrate_yml_scalar "$src" url)
+        [[ -z "$surl" ]] && continue                # nothing recoverable
+        svar=$(_migrate_yml_scalar "$src" variant)
+        [[ "$svar" == "index" ]] && svar=""
+        printf '%s\t%s\t%s\n' "$name" "$surl" "$svar" >> "$mapf"
+        need=1
+    done < <(yml_get_llms "$yml")
+    if [[ "$need" -eq 0 ]]; then rm -f "$mapf"; return 0; fi
+
+    local tmp; tmp=$(mktemp)
+    awk -v mapf="$mapf" '
+        function flush(   nm) {
+            if (!buffering) return
+            nm=ename
+            print "  - name: " nm
+            if (eurl != "")            print "    url: " eurl
+            else if (nm in burl)       print "    url: " burl[nm]
+            if (edesc != "")           print "    description: " edesc
+            if (evar != "")            print "    variant: " evar
+            else if (nm in bvar && bvar[nm] != "") print "    variant: " bvar[nm]
+            buffering=0; ename=""; eurl=""; evar=""; edesc=""
+        }
+        BEGIN {
+            FS="\t"
+            while ((getline ml < mapf) > 0) {
+                split(ml, a, "\t"); burl[a[1]]=a[2]; bvar[a[1]]=a[3]
+            }
+        }
+        /^llms:/ { print; inblk=1; next }
+        inblk && /^[^ #]/ { flush(); inblk=0; print; next }
+        inblk && /^  - / {
+            flush()
+            buffering=1
+            line=$0
+            if (line ~ /^  - name:/) sub(/^  - name: */, "", line)
+            else                     sub(/^  - */, "", line)
+            gsub(/["\047]/, "", line); sub(/ *#.*$/, "", line); gsub(/^ +| +$/, "", line)
+            ename=line; next
+        }
+        inblk && /^    url:/         { v=$0; sub(/^    url: */,"",v);         gsub(/["\047]/,"",v); sub(/ *#.*$/,"",v); gsub(/^ +| +$/,"",v); eurl=v; next }
+        inblk && /^    variant:/     { v=$0; sub(/^    variant: */,"",v);     gsub(/["\047]/,"",v); sub(/ *#.*$/,"",v); gsub(/^ +| +$/,"",v); evar=v; next }
+        inblk && /^    description:/ { v=$0; sub(/^    description: */,"",v); sub(/ *#.*$/,"",v); gsub(/^ +| +$/,"",v); edesc=v; next }
+        inblk { next }
+        { print }
+        END { flush() }
+    ' "$yml" > "$tmp" && mv "$tmp" "$yml"
+    rm -f "$mapf"
+}
+
 # The project's origin profile (the non-default branch whose .vault-profile lists
 # it under sync.projects), or empty if shared/on the default branch.
 _cco_project_origin_profile() {

@@ -75,13 +75,20 @@ share-readiness check (ADR-0019 D2). It also fixes the broken remedy hint for pr
 mutates** (the heal action belongs to `cco resolve`, D5). This preserves the validate/resolve split
 (advisor vs actor) established by ADR-0023 D2 / ADR-0017 D2.
 
-### D3 — Pack migration backfills the llms url where recoverable (idempotent)
-Add `migrations/pack/001_llms_url_backfill.sh` (`MIGRATION_ID=1`, idempotent): for each short-form /
-url-less `pack.yml` llms entry, backfill `url` (+ `variant`) from the **global llms `.cco/source`**
-(`$LLMS_DIR/<name>/.cco/source`) when present — the exact source project migration already uses
-(`migrate.sh:732-743`). When the llms was never installed (no recorded source), the entry is left
-url-less and **D2 validate surfaces it** for the user to add the url manually. This is honest about the
-genuinely irrecoverable case (no migration can invent a url that was never recorded).
+### D3 — Backfill the llms url where recoverable (idempotent)
+For each short-form / url-less `pack.yml` llms entry, backfill `url` (+ `variant`) from the **global
+llms `.cco/source`** (`$LLMS_DIR/<name>/.cco/source`) when present — the exact source project migration
+already uses (`migrate.sh:732-743`). When the llms was never installed (no recorded source), the entry
+is left url-less and **D2 validate surfaces it** for the user to add the url manually. This is honest
+about the genuinely irrecoverable case (no backfill can invent a url that was never recorded).
+
+**Mechanism:** implemented as `_backfill_pack_llms_urls` (`lib/migrate.sh`), run from the existing
+pack-maintenance step in `cco update` (`lib/cmd-update.sh`, next to `_relocate_legacy_pack_sources`) —
+**not** a numbered `migrations/pack/NNN`. Rationale: pack-scope migrations are not wired into `cco
+update` today (only `global`/`project` call `_run_migrations`; `migrations/pack/` is unused), so the
+backfill rides the same idempotent update step that already relocates pack provenance, rather than
+introducing untested pack-migration-runner infrastructure pre-merge. Wiring pack-scope migrations
+generally is a separate concern (noted for the post-merge `cco update` re-analysis).
 
 ### D4 — Authoring embeds the url uniformly
 The pack-authoring add-llms path and the `pack.yml` base template adopt the **long form with `url`**,

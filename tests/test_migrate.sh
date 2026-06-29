@@ -812,3 +812,58 @@ test_relocate_legacy_template_source_to_data() {
     _relocate_legacy_template_sources || return 1
     assert_file_exists "$new_src" || return 1
 }
+
+# ── Pack llms url backfill (ADR-0032 D3) ─────────────────────────────
+# _backfill_pack_llms_urls adopts a missing llms `url` from the global llms
+# `.cco/source` so a migrated pack stays re-fetchable. Idempotent; leaves
+# genuinely unrecoverable (never-installed) refs url-less for validate to flag.
+
+# Source the libs + a global llms source dir for a given name/url/variant.
+_setup_backfill_env() {
+    local tmpdir="$1" name="$2" url="$3" variant="${4:-}"
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/yaml.sh"
+    source "$REPO_ROOT/lib/migrate.sh"
+    export LLMS_DIR="$tmpdir/llms"
+    mkdir -p "$LLMS_DIR/$name/.cco"
+    { printf 'url: %s\n' "$url"; [[ -n "$variant" ]] && printf 'variant: %s\n' "$variant"; } \
+        > "$LLMS_DIR/$name/.cco/source"
+}
+
+test_backfill_pack_llms_recovers_url_from_global_source() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_backfill_env "$tmpdir" "svelte" "https://svelte.dev/llms.txt" "full"
+    local yml="$tmpdir/pack.yml"
+    printf 'name: p\nllms:\n  - svelte\n' > "$yml"
+    _backfill_one_pack_llms "$yml"
+    local got; got=$(yml_get_llms "$yml" | sed 's/\t/|/g')
+    [[ "$got" == "svelte||full|https://svelte.dev/llms.txt" ]] \
+        || fail "Expected url+variant backfilled, got: $got"
+}
+
+test_backfill_pack_llms_skips_unrecoverable() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_backfill_env "$tmpdir" "svelte" "https://svelte.dev/llms.txt" "full"
+    local yml="$tmpdir/pack.yml"
+    # 'mystery' has no global source → must stay untouched.
+    printf 'name: p\nllms:\n  - mystery\n' > "$yml"
+    local before; before=$(cat "$yml")
+    _backfill_one_pack_llms "$yml"
+    [[ "$(cat "$yml")" == "$before" ]] || fail "Unrecoverable ref should be left untouched"
+}
+
+test_backfill_pack_llms_idempotent_and_preserves_existing() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_backfill_env "$tmpdir" "svelte" "https://svelte.dev/llms.txt" "full"
+    local yml="$tmpdir/pack.yml"
+    # An entry that already has a (custom) url must not be overwritten.
+    printf 'name: p\nllms:\n  - svelte\n  - name: tailwind\n    url: https://custom/t.txt\n' > "$yml"
+    _backfill_one_pack_llms "$yml"
+    local first; first=$(cat "$yml")
+    _backfill_one_pack_llms "$yml"
+    [[ "$(cat "$yml")" == "$first" ]] || fail "Second pass must be a no-op (idempotent)"
+    local got; got=$(yml_get_llms "$yml" | sed 's/\t/|/g' | tr '\n' ';')
+    [[ "$got" == "svelte||full|https://svelte.dev/llms.txt;tailwind|||https://custom/t.txt;" ]] \
+        || fail "Existing url must be preserved, recoverable backfilled, got: $got"
+}

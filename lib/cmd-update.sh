@@ -147,6 +147,9 @@ cmd_update() {
         # are caught on the next update too.
         _relocate_legacy_pack_sources || true
         _relocate_legacy_template_sources || true
+        # Backfill missing llms urls into installed packs from the global llms
+        # source (ADR-0032 D3). Idempotent; no-op once coordinates are present.
+        _backfill_pack_llms_urls || true
     fi
 
     # Validate scope: "global" is a keyword (see RESERVED_PROJECT_NAMES),
