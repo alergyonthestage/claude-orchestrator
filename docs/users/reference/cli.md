@@ -1258,30 +1258,50 @@ copy — **no merge engine, no profiles, no vault**. The synced set is the entir
 `packs/`, `secrets.env.example`) **minus** the gitignored `secrets.env`.
 
 ```
-Usage: cco sync [target] [--from <src>] [--dry-run|--auto-approve|--check]
+Usage: cco sync [target] [--from <src>] [--all] [--dry-run [--dump]]
+                [--auto-approve|--check]
 
-Positional = target; --from = source; default source = the current repo (cwd).
+Positional = target; --from = source. The **current repo (cwd)** is the other
+endpoint by default — cwd-anchored, like the rest of the CLI.
 
 | Command                          | Source       | Targets                     |
 |----------------------------------|--------------|-----------------------------|
-| cco sync                         | current repo | all repos in project.yml    |
+| cco sync                         | current repo | all other member repos      |
 | cco sync <repo>                  | current repo | only <repo>                 |
-| cco sync --from <repo>           | <repo>       | all repos                   |
+| cco sync --from <repo>           | <repo>       | the current repo (cwd)      |
 | cco sync <repoA> --from <repoB>  | <repoB>      | only <repoA>                |
+| cco sync --from <repo> --all     | <repo>       | all other member repos      |
+
+Without an explicit target, `--from` syncs into the member repo you are standing
+in (a "pull into here" — including a not-yet-initialised repo already known to the
+index). `--all` overrides that to broadcast. Bare `cco sync` broadcasts from the
+cwd. Running `--from` from a cwd that is not a member (and without `--all`) is an
+error — there is no implicit target.
 
 Options:
-  --dry-run            Preview the diff, copy nothing
+  --all                Broadcast to all other members (with --from, or to
+                       broadcast from an explicit source)
+  --dry-run            Preview the change summary, copy nothing
+  --dump               With --dry-run: write each target's full diff to
+                       <target>/.cco/.tmp/sync-<source>.diff (clean: cco clean --tmp)
   --auto-approve       Skip the confirmation prompt
   --check              Exit-code only (for your own CI/hooks)
 
 Examples:
   cco sync                      # Copy the cwd's .cco/ to all member repos
   cco sync frontend             # Only the frontend repo
-  cco sync --from backend       # Use backend's .cco/ as the source
-  cco sync --dry-run
+  cd frontend && cco sync --from backend   # Pull backend's .cco/ into frontend
+  cco sync --from backend --all            # Broadcast backend's .cco/ to all
+  cco sync --dry-run --dump     # Write full per-target diffs to .cco/.tmp/
 ```
 
-**Behavior**: resolve source + targets via the index, compute a truthful diff, and (unless
+**Output**: by default `cco sync` shows a **compact per-file change summary** (each
+file listed once as `+ new` or `~ modified` with line counts), not the full diff —
+so the confirm prompt stays readable. The complete unified diff is one
+`cco sync --dry-run --dump` away, written per target under `<target>/.cco/.tmp/`
+and removable with `cco clean --tmp`.
+
+**Behavior**: resolve source + targets via the index, compute a truthful summary, and (unless
 `--auto-approve`) show it and ask to confirm. On confirm, copy the source set into each target
 **with the clobber-guard**: a target without `.cco/project.yml` (code-only member) simply
 receives a copy; a target whose `project.yml` `name` matches the source converges; a target

@@ -476,22 +476,33 @@ the source. (This is the deliberate replacement for the old vault's opaque
 merge/diff failures — the review's C1/C2/C3 and H1/H3/H4/H5/H6 dissolve because there
 is no reconciliation algorithm, only a copy.)
 
-### 4.2 Command surface (positional = target, `--from` = source; default source = cwd)
+### 4.2 Command surface (positional = target, `--from` = source; the cwd repo is the other endpoint — ADR-0035)
 | Command | Source | Targets |
 |---------|--------|---------|
-| `cco sync` | current repo | all repos in `project.yml` |
+| `cco sync` | current repo | all other member repos |
 | `cco sync <repo>` | current repo | only `<repo>` |
-| `cco sync --from <repo>` | `<repo>` | all repos |
+| `cco sync --from <repo>` | `<repo>` | **the current repo (cwd)** |
 | `cco sync <repoA> --from <repoB>` | `<repoB>` | only `<repoA>` |
+| `cco sync --from <repo> --all` | `<repo>` | all other member repos |
 
-Flags: `--dry-run` (preview), `--auto-approve` (skip the confirm), `--check`
-(exit-code only, for the user's own CI/hooks).
+Cwd-anchored like the rest of the CLI: `--from` says where config comes *from*; without it, it comes
+*from here*. With no explicit target, `--from` syncs into the member repo the cwd sits in (matched against
+the project's resolved member paths in the index, so a not-yet-initialised member still matches); `--all`
+overrides that to broadcast. A non-member cwd with `--from` and no `--all` is an error (no implicit target).
+
+Flags: `--all` (broadcast to all other members), `--dry-run` (preview the change summary),
+`--dump` (with `--dry-run`: write each target's full diff to `<target>/.cco/.tmp/sync-<source>.diff`,
+clean with `cco clean --tmp`), `--auto-approve` (skip the confirm), `--check` (exit-code only, for the
+user's own CI/hooks).
 
 ### 4.3 Behavior
-1. Resolve source and targets (names → paths via the index).
+1. Resolve source and targets (names → paths via the index; with no target, `--from` resolves the cwd
+   member, bare `cco sync`/`--all` enumerates all other members).
 2. Compute a **truthful diff** (plain diff; machine-agnostic content) source↔each target.
 3. If no differences → no-op (exit 0).
-4. Otherwise show the diff and **ask for confirmation** (unless `--auto-approve`).
+4. Otherwise show a **compact per-file change summary** (not the full diff — that is one
+   `--dry-run --dump` away, written under `<target>/.cco/.tmp/`) and **ask for confirmation** (unless
+   `--auto-approve`).
 5. On confirm, copy the source set into each target, **with the clobber-guard** (ADR-0024 D2):
    a target without `.cco/project.yml` (code-only member, Case A) simply **receives a copy**; a target
    whose `project.yml` `name` == the source project **converges** (normal sync); a target whose

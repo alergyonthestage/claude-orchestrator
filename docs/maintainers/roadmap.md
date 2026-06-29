@@ -24,7 +24,9 @@ now in progress** — host runs of real projects surfaced fix rounds (round 2 = 
 coordinate coherence; **round 3** = first `cco start` of claude-orchestrator itself). **Round 3 is
 complete** — S1 (resolution surface + index normalization, ADR-0033 + migration `016` + changelog
 #21), S2 (migration completeness, ADR-0009 fwd-annot), and S3 (`join` Journey E + `forget --purge`,
-ADR-0034 + changelog #22/#23) all shipped, suite **1005/0**; next = the v1 merge/release (step 7).
+ADR-0034 + changelog #22/#23) all shipped, suite **1005/0**. A follow-on pre-merge **`cco sync` UX
+refinement** (ADR-0035: cwd-anchored `--from` target + `--all`; summary-first diff with
+`--dry-run --dump → .cco/.tmp/`) landed next, suite **1010/0**; next = the v1 merge/release (step 7).
 
 ## Decentralized-config v1 — phase index
 
