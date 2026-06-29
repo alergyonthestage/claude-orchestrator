@@ -12,7 +12,7 @@
 #   → Use setup.sh instead (runs at every `cco start`)
 #
 # Changes require `cco build` to take effect.
-# See: docs/user-guides/advanced/custom-environment.md
+# See: docs/users/environment/guides/custom-environment.md
 #
 # Example:
 # Install tree command

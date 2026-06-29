@@ -22,7 +22,7 @@ repos: []
 # Reference packs by logical name + an OPTIONAL coordinate (url/ref). A pack with
 # a url resolves from ~/.cco/packs (or its sharing repo); a pack with no url is a
 # project-local authored pack in <repo>/.cco/packs/.
-# See: docs/reference/project-yaml.md § Knowledge Packs for schema and examples.
+# See: docs/users/configuration/reference/project-yaml.md § Knowledge Packs for schema and examples.
 #
 # packs:
 #   - name: shared-pack
@@ -33,7 +33,7 @@ repos: []
 # Reference official framework documentation installed via 'cco llms install'.
 # Content is cached per-machine in ~/.cache/cco/llms/ and mounted read-only at
 # session start (re-fetchable from the coordinate; ADR-0007/0014).
-# See: docs/reference/project-yaml.md § LLMs.txt for schema and examples.
+# See: docs/users/configuration/reference/project-yaml.md § LLMs.txt for schema and examples.
 #
 # llms:
 #   - svelte

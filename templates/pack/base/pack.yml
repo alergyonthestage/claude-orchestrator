@@ -22,7 +22,7 @@ name: {{PACK_NAME}}
 
 # ── LLMs.txt Framework Docs (optional) ────────────────────────────
 # Reference official framework documentation installed via 'cco llms install'.
-# See: docs/reference/project-yaml.md (§ LLMs.txt) for schema.
+# See: docs/users/configuration/reference/project-yaml.md (§ LLMs.txt) for schema.
 # Each entry carries a coordinate: 'url' is REQUIRED (ADR-0017 D1) so the doc
 # stays re-fetchable when the pack is shared or moved to another machine —
 # 'cco pack validate' flags a url-less entry, and 'cco resolve' fetches it.
