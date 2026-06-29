@@ -204,6 +204,17 @@ with approval gates (per `.claude/rules/workflow.md`). Order is dictated by data
 flow: correct the index data → unify the resolution surface → multi-repo membership ops that
 depend on clean resolution. Commits will be LOCAL (push from Mac). Baseline **978/0**.
 
+> **Pre-merge migration principle (applies to S1–S3 and the whole decentralized-config
+> branch).** This branch is **unreleased** — there are **zero external installs**, so no user has
+> received any of these bugs or the decentralized migration at all. Therefore: **fix the *live*
+> legacy→new migration path** (`_cco_migrate_project` / `_cco_populate_global_from`) so the one
+> migration real users run post-merge is correct in a single pass (**born-at-latest**). Do **not**
+> author fix-up `migrations/{scope}/NNN` scripts to repair an install already on the new layout from
+> an intermediate branch state — the only such install is the developer's own e2e test, rebuilt from
+> backup via `cco forget` + `cco init --migrate` (or a fresh `cco update`). **Keep** the legacy-vault
+> chains `migrations/{global,project}/001-015`: real legacy vaults still migrate exactly once. This
+> avoids designing redundant migration scripts in S2/S3.
+
 Verified findings (read-only analysis, 2026-06-29):
 
 - **Scope 1 — resolve/path** (all confirmed): tilde/`@local` written raw into the STATE index
