@@ -101,7 +101,7 @@ cco new --repo ~/projects/api --repo ~/projects/frontend --port 3000:3000
 | Command | Description |
 |---------|-------------|
 | `cco build` | Build the Docker image |
-| `cco build --no-cache` | Full rebuild (updates Claude Code) |
+| `cco build --no-cache` | Full rebuild + reset the Claude Code install cache (fresh install next start; Claude Code otherwise auto-updates in place) |
 | `cco init` | Scaffold `<repo>/.cco/` in the current repo (+ ensures `~/.cco` on first use) |
 | `cco join <project>` | Add the current repo to `<project>` as a member (Journey E) |
 | `cco init --migrate <project>` | Migrate a project from a legacy central install into its repo |
