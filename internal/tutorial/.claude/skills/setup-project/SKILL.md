@@ -24,7 +24,7 @@ Ask the user about:
 
 Based on requirements, suggest:
 - **Packs**: Do existing packs apply? Should new ones be created?
-  Check `/workspace/user-config/packs/` for available packs.
+  Check `/workspace/cco-config/packs/` (`~/.cco/packs/`) for available packs.
 - **Auth**: OAuth (default) vs API key based on their setup
 - **Ports**: What ports their dev servers use
 - **MCP servers**: Do they need GitHub integration, browser automation, etc.?
@@ -35,39 +35,30 @@ Based on requirements, suggest:
 
 Present the suggested configuration and get approval.
 
-## Step 3: Check Permissions
+## Step 3: Scaffold the Project (on the host)
 
-Before creating any files, verify:
-1. Is `/workspace/user-config` mounted read-write?
-   - If yes → proceed to creation
-   - If no → suggest the user create a config-editor project on the host:
-     `cco project create --template config-editor && cco start config-editor`.
-     Alternatively, show the `cco project create` command with all flags
-     they can run on their host to create the project manually.
+The tutorial is read-only, so it cannot create the project here. A project's
+committed `.cco/` is scaffolded **in its repo on the host** with `cco init`.
 
-## Step 4: Create Project
+Guide the user to run, on the host, inside the target repo:
+1. `cco init` — scaffolds `<repo>/.cco/{project.yml, claude/, secrets.env.example,
+   .gitignore}` and registers the project in the machine-local index.
+   - `cco join <project>` to add this repo to an existing project.
+   - `cco init --migrate <old>` to bring a legacy project into the repo.
+2. Edit `<repo>/.cco/project.yml` with the agreed repos (logical names +
+   coordinates), packs, and docker config.
+3. Edit `<repo>/.cco/claude/CLAUDE.md` with project context.
 
-If rw access is available and user approves:
-1. Create directory structure in `/workspace/user-config/projects/<name>/`
-2. Write `project.yml` with the agreed configuration
-3. Write `.claude/CLAUDE.md` with project overview and repo descriptions
-4. Create empty directories: `.claude/agents/`, `.claude/rules/`, `.claude/skills/`
-5. Create `.cco/claude-state/` directory
-6. Create `memory/.gitkeep`
+For hands-on assistance editing config, suggest `cco start config-editor`.
 
-If rw access is NOT available:
-1. Show the complete `project.yml` content the user should create
-2. Show the `cco project create` command with appropriate flags
-3. Explain what each section does
+## Step 4: Post-Scaffold Guidance
 
-## Step 5: Post-Creation Guidance
-
-After creation:
-- Show the `cco start <name>` command to launch the new project
-- Suggest running `/init-workspace` on the first session to auto-generate
-  detailed CLAUDE.md from the repositories
-- If packs were suggested but not created, mention `/setup-pack`
-- Reference: `cco-docs/user-guides/project-setup.md`
+After scaffolding:
+- Show the `cco start <name>` command to launch the new project.
+- Suggest running `/init` on the first session to auto-generate a detailed
+  CLAUDE.md from the repositories.
+- If packs were suggested but not created, mention `/setup-pack`.
+- Reference: `cco-docs/users/configuration/guides/project-setup.md`.
 
 ## Important
 

@@ -2,11 +2,10 @@
 # lib/cmd-stop.sh — Stop running sessions command
 #
 # Provides: cmd_stop()
-# Dependencies: colors.sh, utils.sh, yaml.sh
-# Globals: PROJECTS_DIR
+# Dependencies: colors.sh, utils.sh, yaml.sh, index.sh, paths.sh, cmd-resolve.sh
 
 cmd_stop() {
-    if [[ "${1:-}" == "--help" ]]; then
+    if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
         cat <<'EOF'
 Usage: cco stop [<project>]
 
@@ -23,13 +22,19 @@ EOF
     check_docker
 
     if [[ -n "$project" ]]; then
-        local project_dir="$PROJECTS_DIR/$project"
-        local project_yml="$project_dir/project.yml"
+        # Resolve the project's committed config via the STATE index; runtime
+        # state lives in CACHE, keyed by project name. Use the membership resolver
+        # (not _index_get_path on the project key) so a joined multi-repo project —
+        # whose key is in `projects:` but not `paths:` — still finds its project.yml
+        # and the `name:` container override.
         local container_name="cc-${project}"
+        local repo proj_yml=""
+        repo=$(_resolve_unit_dir_for_project "$project" 2>/dev/null)
+        [[ -n "$repo" ]] && proj_yml="$repo/.cco/project.yml"
 
-        if [[ -f "$project_yml" ]]; then
+        if [[ -n "$proj_yml" && -f "$proj_yml" ]]; then
             local yml_name
-            yml_name=$(yml_get "$project_yml" "name")
+            yml_name=$(yml_get "$proj_yml" "name")
             [[ -n "$yml_name" ]] && container_name="cc-${yml_name}"
         fi
 
@@ -40,9 +45,9 @@ EOF
             warn "No running session for '$project'"
         fi
 
-        # Clean up managed integration runtime state
-        rm -f "$project_dir/.cco/managed/browser.json" "$project_dir/.cco/managed/.browser-port"
-        rm -f "$project_dir/.cco/managed/github.json"
+        # Clean up managed integration runtime state (CACHE, keyed by project name)
+        local managed; managed=$(_cco_project_cache_managed "$project")
+        rm -f "$managed/browser.json" "$managed/.browser-port" "$managed/github.json"
     else
         local containers
         containers=$(docker ps --filter "name=cc-" --format '{{.Names}}' 2>/dev/null)
@@ -55,9 +60,11 @@ EOF
             ok "Stopped $name"
         done
         # Clean managed runtime state for all projects (all sessions stopped)
-        for proj_dir in "$PROJECTS_DIR"/*/; do
-            rm -f "$proj_dir/.cco/managed/browser.json" "$proj_dir/.cco/managed/.browser-port"
-            rm -f "$proj_dir/.cco/managed/github.json"
-        done
+        local proj managed
+        while IFS='=' read -r proj _; do
+            [[ -z "$proj" ]] && continue
+            managed=$(_cco_project_cache_managed "$proj")
+            rm -f "$managed/browser.json" "$managed/.browser-port" "$managed/github.json"
+        done < <(_index_list_projects)
     fi
 }

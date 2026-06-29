@@ -89,7 +89,7 @@ test_pack_list_shows_header() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    run_cco pack list
+    run_cco list pack
     assert_output_contains "NAME"
 }
 
@@ -98,7 +98,7 @@ test_pack_list_shows_pack_names() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco pack create "alpha-pack"
-    run_cco pack list
+    run_cco list pack
     assert_output_contains "alpha-pack"
 }
 
@@ -112,7 +112,7 @@ test_pack_list_shows_resource_counts() {
     echo "Agent" > "$pack_dir/agents/bot.md"
     echo "Rule" > "$pack_dir/rules/style.md"
     printf 'name: counted-pack\nagents:\n  - bot.md\nrules:\n  - style.md\n' > "$pack_dir/pack.yml"
-    run_cco pack list
+    run_cco list pack
     assert_output_contains "counted-pack"
 }
 
@@ -123,7 +123,7 @@ test_pack_list_header_only_when_empty() {
     # Remove default packs dir content
     rm -rf "$CCO_PACKS_DIR"
     mkdir -p "$CCO_PACKS_DIR"
-    run_cco pack list
+    run_cco list pack
     assert_output_contains "NAME"
     # Output should only be the header line
     local line_count
@@ -133,6 +133,55 @@ test_pack_list_header_only_when_empty() {
         echo "$CCO_OUTPUT"
         return 1
     fi
+}
+
+test_pack_list_shows_tags_column() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local pack_dir="$CCO_PACKS_DIR/tagged-pack"
+    mkdir -p "$pack_dir"
+    printf 'name: tagged-pack\n' > "$pack_dir/pack.yml"
+    run_cco tag add tagged-pack infra
+    run_cco list pack
+    assert_output_contains "TAGS"
+    assert_output_contains "infra"
+}
+
+test_pack_list_long_name_aligns() {
+    # A pack name wider than the NAME column is ellipsized, not wrapped/shifted.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local longname="this-is-a-really-long-pack-name-beyond-cap"
+    local pack_dir="$CCO_PACKS_DIR/$longname"
+    mkdir -p "$pack_dir"
+    printf 'name: %s\n' "$longname" > "$pack_dir/pack.yml"
+    run_cco list pack
+    assert_output_contains "…"
+    assert_output_not_contains "$longname"
+}
+
+test_pack_list_empty_counts_single_line_per_pack() {
+    # Regression: zero-resource categories must render as a single "0", not the
+    # "0\n0" that grep -c (exit 1) + a fallback echo produced — which broke each
+    # row onto extra lines (the reported "table wraps" symptom).
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    rm -rf "$CCO_PACKS_DIR"; mkdir -p "$CCO_PACKS_DIR"
+    local p
+    for p in pack-a pack-b; do
+        mkdir -p "$CCO_PACKS_DIR/$p"
+        printf 'name: %s\n' "$p" > "$CCO_PACKS_DIR/$p/pack.yml"
+    done
+    run_cco list pack
+    # Exactly one header line + one line per pack (no row split across lines).
+    local line_count
+    line_count=$(printf '%s\n' "$CCO_OUTPUT" | wc -l | tr -d ' ')
+    [[ "$line_count" -eq 3 ]] \
+        || fail "expected 3 lines (header + 2 packs), got $line_count:
+$CCO_OUTPUT"
 }
 
 # ── show ──────────────────────────────────────────────────────────────
@@ -238,10 +287,38 @@ test_pack_remove_deletes_directory() {
     setup_global_from_defaults "$tmpdir"
     run_cco pack create "doomed-pack"
     assert_dir_exists "$CCO_PACKS_DIR/doomed-pack"
-    run_cco pack remove "doomed-pack"
+    run_cco pack remove "doomed-pack" -y
     if [[ -d "$CCO_PACKS_DIR/doomed-pack" ]]; then
         echo "ASSERTION FAILED: pack directory should have been removed"
         return 1
+    fi
+}
+
+test_pack_remove_cascades_internal_state() {
+    # ADR-0021 Dec.4: removing a pack cleans the id-keyed internal state it
+    # created — DATA install-provenance, STATE merge base+meta, tags.yml — not
+    # just the CONFIG copy.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco pack create "cascade-pack"
+
+    # Simulate an installed, tagged pack with merge bookkeeping.
+    local src; src=$(data_pack_source "cascade-pack")
+    mkdir -p "$(dirname "$src")"; printf 'url: https://example.com/repo\n' > "$src"
+    local base; base=$(state_pack_base "cascade-pack"); mkdir -p "$base"; touch "$base/.keep"
+    local meta; meta=$(state_pack_meta "cascade-pack")
+    mkdir -p "$(dirname "$meta")"; printf 'schema_version: 1\n' > "$meta"
+    run_cco tag add "cascade-pack" work
+
+    run_cco pack remove "cascade-pack" -y
+
+    assert_dir_not_exists "$CCO_PACKS_DIR/cascade-pack"
+    assert_dir_not_exists "$CCO_DATA_HOME/packs/cascade-pack"
+    assert_dir_not_exists "$CCO_STATE_HOME/packs/cascade-pack"
+    run_cco list --tag work
+    if echo "${CCO_OUTPUT:-}" | grep -qF "cascade-pack"; then
+        fail "tag binding for cascade-pack should be gone after remove"
     fi
 }
 
@@ -296,6 +373,22 @@ YAML
         echo "ASSERTION FAILED: pack should have been removed with --force"
         return 1
     fi
+}
+
+test_pack_remove_persists_without_tty_no_yes() {
+    # ADR-0029 D2: even a pack that is NOT in use must not be removed without -y
+    # when there is no TTY — the confirm contract dies instead of acting blindly.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco pack create "unused-pack"
+    assert_dir_exists "$CCO_PACKS_DIR/unused-pack"
+
+    if run_cco pack remove "unused-pack" </dev/null 2>/dev/null; then
+        fail "pack remove without -y in a non-TTY should die"
+    fi
+    assert_output_contains "re-run with -y"
+    assert_dir_exists "$CCO_PACKS_DIR/unused-pack"
 }
 
 # ── validate ──────────────────────────────────────────────────────────
@@ -377,4 +470,20 @@ test_pack_validate_warns_name_mismatch() {
     printf 'name: wrong-name\n' > "$pack_dir/pack.yml"
     run_cco pack validate "actual-name"
     assert_output_contains "does not match"
+}
+
+# Finding F1: pack validate output is greppable — one "<name>: <reason>" line
+# per finding plus a "validate: N issue(s)" summary, with NO inline ✗/⚠ symbols
+# (parity with cco project validate, ADR-0023 D2).
+test_pack_validate_output_is_greppable() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local pack_dir="$CCO_PACKS_DIR/grep-pack"
+    mkdir -p "$pack_dir/agents"
+    printf 'name: grep-pack\nagents:\n  - nonexistent.md\n' > "$pack_dir/pack.yml"
+    run_cco pack validate "grep-pack" || true
+    assert_output_contains "grep-pack: agent file not found: agents/nonexistent.md"
+    assert_output_contains "validate: 1 issue(s)"
+    assert_output_not_contains "✗"
 }

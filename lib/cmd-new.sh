@@ -3,7 +3,7 @@
 #
 # Provides: cmd_new()
 # Dependencies: colors.sh, utils.sh, auth.sh, secrets.sh
-# Globals: GLOBAL_DIR, IMAGE_NAME
+# Globals: IMAGE_NAME
 
 cmd_new() {
     check_global
@@ -12,6 +12,7 @@ cmd_new() {
     local session_name=""
     local teammate_mode="tmux"
     local extra_ports=()
+    local user_mounts=()        # --mount specs (ADR-0027 D2), :ro by default
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -19,7 +20,8 @@ cmd_new() {
             --name) session_name="$2"; shift 2 ;;
             --teammate-mode) teammate_mode="$2"; shift 2 ;;
             --port) extra_ports+=("$2"); shift 2 ;;
-            --help)
+            --mount) [[ $# -lt 2 ]] && die "--mount requires <src>[:<target>][:ro|:rw]."; user_mounts+=("$2"); shift 2 ;;
+            --help|-h)
                 cat <<'EOF'
 Usage: cco new [OPTIONS]
 
@@ -28,6 +30,9 @@ Options:
   --name <name>        Temporary session name (default: "tmp-<timestamp>")
   --teammate-mode <m>  Override display mode: tmux | auto
   --port <p>           Port mapping (repeatable)
+  --mount <s>[:<t>][:ro|:rw]  Mount reference material (repeatable; read-only by
+                       default, :rw to make writable; target defaults to
+                       /workspace/<basename>)
 EOF
                 return 0
                 ;;
@@ -35,7 +40,23 @@ EOF
         esac
     done
 
+    # M6 (security): a user-supplied name flows into an EXIT-trap `rm -rf`, the temp
+    # dir path, and the generated docker-compose (container/network names, env) —
+    # validate it early (like cco start validates project names) to block shell /
+    # path-traversal / YAML injection via `--name`. The auto default (tmp-<ts>) below
+    # is always valid.
+    [[ -n "$session_name" && ! "$session_name" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]] \
+        && die "Invalid session name '$session_name' — use letters, numbers, '-' and '_' only (must start alphanumeric)."
+
     [[ ${#repos[@]} -eq 0 ]] && die "At least one --repo is required."
+
+    # Resolve --mount specs eagerly (ADR-0027 D2) so a bad source fails before
+    # any compose is generated. Each becomes abs_src<TAB>target<TAB>ro.
+    local user_mount_lines=()
+    local _mspec
+    for _mspec in ${user_mounts[@]+"${user_mounts[@]}"}; do
+        user_mount_lines+=("$(_parse_user_mount_spec "$_mspec")")
+    done
 
     check_docker
     check_image
@@ -50,6 +71,11 @@ EOF
     local tmp_dir="/tmp/cc-${session_name}"
     mkdir -p "$tmp_dir/claude-state/memory" "$tmp_dir/.claude" || die "Failed to create temp directory: $tmp_dir"
     trap 'rm -rf "'"$tmp_dir"'"' EXIT
+
+    # Global config lives in the CONFIG bucket (~/.cco/.claude, flat — ADR-0028;
+    # design §2.3). cco new is an ephemeral session: its transcripts/memory stay
+    # in tmp_dir (no persistent project identity to key STATE by).
+    local global_claude; global_claude="$(_cco_global_claude_dir)"
 
     # Create minimal project CLAUDE.md
     cat > "$tmp_dir/.claude/CLAUDE.md" <<EOF
@@ -95,11 +121,11 @@ YAML
     volumes:
       - \${HOME}/.claude.json:/home/claude/.claude.json.seed:ro
       # Global config
-      - ${GLOBAL_DIR}/.claude/settings.json:/home/claude/.claude/settings.json:ro
-      - ${GLOBAL_DIR}/.claude/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
-      - ${GLOBAL_DIR}/.claude/rules:/home/claude/.claude/rules:ro
-      - ${GLOBAL_DIR}/.claude/agents:/home/claude/.claude/agents:ro
-      - ${GLOBAL_DIR}/.claude/skills:/home/claude/.claude/skills:ro
+      - ${global_claude}/settings.json:/home/claude/.claude/settings.json:ro
+      - ${global_claude}/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro
+      - ${global_claude}/rules:/home/claude/.claude/rules:ro
+      - ${global_claude}/agents:/home/claude/.claude/agents:ro
+      - ${global_claude}/skills:/home/claude/.claude/skills:ro
       # Session config
       - ${tmp_dir}/.claude:/workspace/.claude
       # Claude state: auto memory + session transcripts (enables /resume across rebuilds)
@@ -107,9 +133,9 @@ YAML
 YAML
 
         # Global MCP config
-        if [[ -f "$GLOBAL_DIR/.claude/mcp.json" ]]; then
+        if [[ -f "$global_claude/mcp.json" ]]; then
             echo "      # Global MCP servers"
-            echo "      - ${GLOBAL_DIR}/.claude/mcp.json:/home/claude/.claude/mcp-global.json:ro"
+            echo "      - ${global_claude}/mcp.json:/home/claude/.claude/mcp-global.json:ro"
         fi
 
         echo "      # Repositories"
@@ -117,6 +143,19 @@ YAML
         for mount in "${repo_mounts[@]}"; do
             echo "      - ${mount}"
         done
+
+        # Session reference mounts (--mount, ADR-0027 D2): read-only by default,
+        # :rw opt-in. Pre-resolved to abs_src<TAB>target<TAB>ro above.
+        if [[ ${#user_mount_lines[@]} -gt 0 ]]; then
+            echo "      # Reference mounts (--mount)"
+            local _uline _us _ut _uro _usuffix
+            for _uline in "${user_mount_lines[@]}"; do
+                IFS=$'\t' read -r _us _ut _uro <<< "$_uline"
+                _usuffix=""
+                [[ "$_uro" == "true" ]] && _usuffix=":ro"
+                echo "      - ${_us}:${_ut}${_usuffix}"
+            done
+        fi
 
         # Git identity (commit author — read-only, no SSH keys)
         echo "      # Git identity"

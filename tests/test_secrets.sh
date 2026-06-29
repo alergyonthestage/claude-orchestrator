@@ -4,14 +4,8 @@
 # Verifies global and per-project secrets handling, including
 # load_secrets_file() behavior for various input formats.
 
-test_project_create_creates_secrets_template() {
-    # cco project create should copy secrets.env template
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    setup_global_from_defaults "$tmpdir"
-    run_cco project create "my-project"
-    assert_file_exists "$CCO_PROJECTS_DIR/my-project/secrets.env"
-}
+# Removed in P3-3b: the create-time secrets-template check moved to test_init.sh
+# (the scaffold writes <repo>/.cco/secrets.env.example); `cco project create` is gone.
 
 test_project_secrets_not_in_compose() {
     # Per-project secrets must NOT appear in docker-compose.yml (runtime -e only)
@@ -19,7 +13,7 @@ test_project_secrets_not_in_compose() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
-    printf 'PROJECT_SECRET=top_secret_value\n' > "$CCO_PROJECTS_DIR/test-proj/secrets.env"
+    printf 'PROJECT_SECRET=top_secret_value\n' > "$(host_cco_dir "$tmpdir" test-proj)/secrets.env"
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_not_contains "$compose" "top_secret_value"
@@ -32,6 +26,7 @@ test_project_secrets_not_in_compose() {
 _source_secrets_lib() {
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
     source "$REPO_ROOT/lib/secrets.sh"
 }
 
@@ -163,13 +158,15 @@ test_secrets_inline_comment_stripped() {
     fi
 }
 
-test_secrets_global_secrets_uses_global_dir() {
-    # load_global_secrets reads from GLOBAL_DIR/secrets.env
+test_secrets_global_secrets_uses_config_bucket() {
+    # load_global_secrets reads from the CONFIG bucket (~/.cco/secrets.env;
+    # design §2.3 — top-level, not under global/)
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _source_secrets_lib
-    export GLOBAL_DIR="$tmpdir/global"
-    mkdir -p "$GLOBAL_DIR"
-    printf 'GLOBAL_SECRET=top_secret\n' > "$GLOBAL_DIR/secrets.env"
+    export HOME="$tmpdir/home"
+    export CCO_ALLOW_HOST_RESOLVE=1
+    mkdir -p "$HOME/.cco"
+    printf 'GLOBAL_SECRET=top_secret\n' > "$HOME/.cco/secrets.env"
     local result=()
     load_global_secrets result
     local joined="${result[*]}"

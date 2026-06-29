@@ -37,7 +37,7 @@ Apply pack design best practices:
   knowledge (200-500 lines, on-demand) for detailed reference
 - **Descriptions**: Action-oriented ("Read when writing backend code...")
 - **Start minimal**: Include only what's needed now, expand incrementally
-- Read `cco-docs/user-guides/knowledge-packs.md` for reference
+- Read `cco-docs/users/packs/guides/knowledge-packs.md` for reference
 
 If the user has multiple domains, suggest multiple packs with clear boundaries.
 Explain the "extract at 2+ consumers" principle — don't create a shared pack
@@ -45,33 +45,31 @@ for a single project.
 
 Present the proposed structure and get approval.
 
-## Step 3: Check Permissions
+## Step 3: Create the Pack (on the host)
 
-Same as /setup-project Step 3 — verify rw access to user-config.
+The tutorial is read-only, so it cannot create the pack here. Packs live in the
+personal store at `~/.cco/packs/<name>/`. Guide the user to either:
+- run `cco pack create <name>` on the host, or
+- open `cco start config-editor` for hands-on assistance (it has rw access to
+  `~/.cco/packs/`).
 
-## Step 4: Create Pack
+Either way, the structure is:
+1. `~/.cco/packs/<name>/` with `knowledge/`, `rules/`, `agents/`, `skills/`
+2. `pack.yml` with the agreed structure and file descriptions
+3. placeholder knowledge files with section templates; rule files if agreed
 
-If rw access is available and user approves:
-1. Create directory: `/workspace/user-config/packs/<name>/`
-2. Create subdirectories: `knowledge/`, `rules/`, `agents/`, `skills/`
-3. Write `pack.yml` with the agreed structure and file descriptions
-4. Create placeholder knowledge files with section templates
-5. Create rule files if agreed
-
-If rw access is NOT available:
-1. Show the complete `pack.yml` and file structure
-2. Show the `cco pack create <name>` command
-3. Explain what to write in each file
-
-## Step 5: Post-Creation Guidance
+## Step 4: Post-Creation Guidance
 
 After creation:
-- Show how to activate the pack: add to `packs:` in project.yml
-- Show `cco pack validate <name>` to verify structure
-- Explain the knowledge file descriptions and how Claude uses them
-- If the pack should be shared, mention Config Repos and `cco pack publish`
-- Suggest writing knowledge file content (the actual conventions, guidelines, etc.)
-- Reference: `cco-docs/user-guides/knowledge-packs.md`
+- Show how to activate the pack: add to `packs:` in project.yml (by name, with
+  an optional `url` coordinate if shared).
+- Show `cco pack validate <name>` to verify structure.
+- Explain the knowledge file descriptions and how Claude uses them.
+- If the pack should be shared, mention the **sharing repo** flow and
+  `cco pack publish <name> [remote]` (no central manifest).
+- Suggest writing knowledge file content (the actual conventions, guidelines).
+- Reference: `cco-docs/users/packs/guides/knowledge-packs.md`.
+- Remind the user to run `cco config save` on host to version the new pack.
 
 ## Important
 

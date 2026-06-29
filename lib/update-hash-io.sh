@@ -67,7 +67,7 @@ _seed_base_from_interpolated_template() {
     [[ -f "$template_file" ]] || return 0
 
     local project_name
-    project_name=$(basename "$project_dir")
+    project_name=$(_cco_project_id "$project_dir")
 
     # Read description from project.yml via yml_get (handles quotes, comments)
     local description="TODO: Add project description"
@@ -116,7 +116,7 @@ _interpolate_template_tmp() {
     local project_dir="$2"     # project root directory
 
     local project_name
-    project_name=$(basename "$project_dir")
+    project_name=$(_cco_project_id "$project_dir")
 
     local description="TODO: Add project description"
     local project_yml="$project_dir/project.yml"
@@ -220,7 +220,7 @@ _handle_policy_transitions() {
                 if [[ "$scope" == "project" ]]; then
                     _installed_dir="$project_dir/.claude"
                 else
-                    _installed_dir="$GLOBAL_DIR/.claude"
+                    _installed_dir="$(_cco_global_claude_dir)"
                 fi
                 if [[ -f "$_installed_dir/$rel" ]]; then
                     _save_base_version "$base_dir" "$rel" "$_installed_dir/$rel"

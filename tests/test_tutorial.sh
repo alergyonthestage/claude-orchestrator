@@ -11,16 +11,12 @@
 test_init_does_not_create_tutorial_project() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    assert_dir_not_exists "$CCO_PROJECTS_DIR/tutorial"
+    init_global "$tmpdir" --lang "English"
+    assert_dir_not_exists "$tmpdir/repos/tutorial"
 }
 
-test_init_output_mentions_tutorial_start() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
-    assert_output_contains "cco start tutorial"
-}
+# Removed in P3-3b: the clean `cco init` output focuses on the global-ensure +
+# per-repo scaffold (ADR-0026 approved copy); it no longer advertises the tutorial.
 
 # ── _setup_internal_tutorial ──────────────────────────────────────────
 
@@ -38,8 +34,11 @@ test_setup_internal_tutorial_creates_runtime_dir() {
     local runtime_dir="$CCO_USER_CONFIG_DIR/.cco/internal/tutorial"
     assert_dir_exists "$runtime_dir"
     assert_dir_exists "$runtime_dir/.claude"
-    assert_dir_exists "$runtime_dir/.cco/claude-state"
-    assert_dir_exists "$runtime_dir/memory"
+    # Session transcripts/memory live in machine-local STATE (ADR-0009), mounted via
+    # _cco_project_session_*, NOT in the runtime dir. Setup must not create dead
+    # claude-state/memory dirs here (C9, pre-e2e review).
+    assert_dir_not_exists "$runtime_dir/.cco/claude-state"
+    assert_dir_not_exists "$runtime_dir/memory"
 }
 
 test_setup_internal_tutorial_substitutes_placeholders() {
@@ -49,6 +48,7 @@ test_setup_internal_tutorial_substitutes_placeholders() {
     export USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR"
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
     source "$REPO_ROOT/lib/cmd-start.sh"
 
     _setup_internal_tutorial
@@ -56,9 +56,12 @@ test_setup_internal_tutorial_substitutes_placeholders() {
     local runtime_yml="$CCO_USER_CONFIG_DIR/.cco/internal/tutorial/project.yml"
     assert_file_exists "$runtime_yml"
     assert_no_placeholder "$runtime_yml" "{{CCO_REPO_ROOT}}"
-    assert_no_placeholder "$runtime_yml" "{{CCO_USER_CONFIG_DIR}}"
+    assert_no_placeholder "$runtime_yml" "{{CCO_CONFIG_DIR}}"
     assert_file_contains "$runtime_yml" "$REPO_ROOT/docs"
-    assert_file_contains "$runtime_yml" "$CCO_USER_CONFIG_DIR"
+    # A.4 cutover: the tutorial now mounts the personal store ~/.cco (read-only)
+    # at /workspace/cco-config, not the legacy central user-config.
+    assert_file_contains "$runtime_yml" "$(_cco_config_dir)"
+    assert_file_contains "$runtime_yml" "/workspace/cco-config"
 }
 
 test_setup_internal_tutorial_has_skills() {
@@ -110,19 +113,14 @@ test_setup_internal_tutorial_refreshes_on_rerun() {
     # Add a marker to CLAUDE.md (simulating stale content)
     echo "STALE MARKER" >> "$runtime_dir/.claude/CLAUDE.md"
 
-    # Also add a file to memory/ (should survive refresh)
-    echo "user memory" > "$runtime_dir/memory/MEMORY.md"
-
-    # Re-run: should refresh .claude/ but preserve state dirs
+    # Re-run: should refresh .claude/ from the framework source.
     _setup_internal_tutorial
 
     # CLAUDE.md should be refreshed (no stale marker)
     assert_file_not_contains "$runtime_dir/.claude/CLAUDE.md" "STALE MARKER"
-    # Memory should be preserved
-    assert_file_exists "$runtime_dir/memory/MEMORY.md"
-    assert_file_contains "$runtime_dir/memory/MEMORY.md" "user memory"
-    # claude-state should be preserved
-    assert_dir_exists "$runtime_dir/.cco/claude-state"
+    # Session memory lives in STATE (ADR-0009), not the runtime dir — setup never
+    # creates a runtime-dir memory/ to "preserve" (C9, pre-e2e review).
+    assert_dir_not_exists "$runtime_dir/memory"
 }
 
 # ── cco start tutorial: reserved name conflict ────────────────────────
@@ -132,28 +130,27 @@ test_start_tutorial_blocks_on_name_conflict() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
 
-    # Create a user project named "tutorial"
-    mkdir -p "$CCO_PROJECTS_DIR/tutorial/.claude"
-    echo "name: tutorial" > "$CCO_PROJECTS_DIR/tutorial/project.yml"
+    # Create a user project named "tutorial" (decentralized host + index seed)
+    create_project "$tmpdir" "tutorial" "$(minimal_project_yml tutorial)"
 
     # cco start tutorial should fail with reserved name error
     if run_cco start tutorial --dry-run 2>/dev/null; then
-        fail "Expected cco start tutorial to fail when projects/tutorial exists"
+        fail "Expected cco start tutorial to fail when a 'tutorial' project exists"
     fi
     assert_output_contains "reserved name"
 }
 
-# ── cco project create tutorial: blocked ──────────────────────────────
+# ── cco init --name tutorial: blocked (reserved name) ─────────────────
 
-test_project_create_tutorial_blocked() {
+test_init_tutorial_name_blocked() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
+    local repo="$tmpdir/some-repo"; mkdir -p "$repo"
 
-    # cco project create tutorial should fail (reserved name)
-    if run_cco project create tutorial 2>/dev/null; then
-        fail "Expected cco project create tutorial to fail (reserved name)"
-    fi
+    # cd in the parent so run_cco's CCO_OUTPUT propagates to the assertion.
+    cd "$repo"; run_cco init --name tutorial 2>/dev/null && \
+        fail "Expected cco init --name tutorial to fail (reserved name)"
     assert_output_contains "reserved"
 }
 

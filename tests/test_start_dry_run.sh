@@ -24,9 +24,9 @@ test_dry_run_no_persistent_artifacts() {
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run --dump
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.cco/docker-compose.yml"
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/workspace.yml"
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/packs.md"
+    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/docker-compose.yml"
+    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/workspace.yml"
+    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/packs.md"
 }
 
 test_dry_run_outputs_temp_dir_path() {
@@ -48,10 +48,10 @@ test_dry_run_ephemeral_no_persistent_files() {
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run
     # No .tmp/ directory should exist
-    [[ ! -d "$CCO_PROJECTS_DIR/test-proj/.tmp" ]] || \
+    [[ ! -d "$(host_cco_dir "$tmpdir" test-proj)/.tmp" ]] || \
         fail ".tmp/ should not exist after ephemeral dry-run"
     # No compose in project dir
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.cco/docker-compose.yml"
+    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/docker-compose.yml"
     # Output should suggest --dump
     assert_output_contains "Use --dump to persist"
 }
@@ -237,7 +237,7 @@ test_dry_run_auto_memory_exact_path() {
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run --dump
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
-        ".cco/claude-state:/home/claude/.claude/projects/-workspace"
+        "session/claude-state:/home/claude/.claude/projects/-workspace"
 }
 
 test_dry_run_memory_child_mount() {
@@ -249,7 +249,7 @@ test_dry_run_memory_child_mount() {
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run --dump
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
-        "./memory:/home/claude/.claude/projects/-workspace/memory"
+        "session/memory:/home/claude/.claude/projects/-workspace/memory"
 }
 
 test_dry_run_memory_mount_after_claude_state() {
@@ -262,7 +262,7 @@ test_dry_run_memory_mount_after_claude_state() {
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     local state_line memory_line
-    state_line=$(grep -n ".cco/claude-state.*-workspace$" "$compose" | head -1 | cut -d: -f1)
+    state_line=$(grep -n "session/claude-state.*-workspace\"\?$" "$compose" | head -1 | cut -d: -f1)
     memory_line=$(grep -n "memory.*-workspace/memory" "$compose" | head -1 | cut -d: -f1)
     if [[ -z "$state_line" || -z "$memory_line" ]]; then
         echo "ASSERTION FAILED: could not find claude-state or memory mount line"
@@ -279,19 +279,59 @@ test_dry_run_memory_mount_after_claude_state() {
 # ── Volume mounts: project config (Design Invariant 2 - read-write) ──
 
 test_dry_run_project_claude_mounted_readwrite() {
-    # Design Invariant 2: project .claude must be rw (no :ro)
+    # ADR-0005 F3 / P17: the parent project .claude stays rw so /init and normal
+    # project-config authoring work (the generated overlays layered on top are
+    # :ro — see the F1 test below). Edit-protection (ADR-0027 D3) is narrow: it
+    # protects only the structural <repo>/.cco via a separate :ro overlay, not
+    # this Claude config tree. Host mount sources are absolute (Commit B).
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
-    assert_file_contains "$compose" "./.claude:/workspace/.claude"
-    # Must NOT have :ro suffix on project config
-    if grep -qF "./.claude:/workspace/.claude:ro" "$compose"; then
+    # Parent mount present: a volume line whose container side is exactly
+    # /workspace/.claude (the child overlays carry a deeper path).
+    if ! grep -qE ':/workspace/\.claude"?$' "$compose"; then
+        echo "ASSERTION FAILED: project .claude parent mount not found"
+        cat "$compose"
+        return 1
+    fi
+    # The parent must NOT be read-only (it stays rw so in-session edits persist).
+    if grep -qE ':/workspace/\.claude:ro"?$' "$compose"; then
         echo "ASSERTION FAILED: project .claude must be rw, not :ro"
         return 1
     fi
+}
+
+test_dry_run_claude_overlays_cache_readonly() {
+    # ADR-0005 F1: packs.md and workspace.yml are generated into the CACHE bucket
+    # and overlaid :ro onto /workspace/.claude — never written into the committed
+    # project .claude/ (keeps the repo's git diff truthful, P6/G8).
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    # A pack with a knowledge file makes packs.md non-empty (it is otherwise
+    # omitted); workspace.yml is always generated.
+    local pack_src="$CCO_PACKS_DIR/k-pack/knowledge"
+    mkdir -p "$pack_src"
+    create_pack "$tmpdir" "k-pack" "$(printf 'name: k-pack\nknowledge:\n  source: %s\n  files:\n    - overview.md\n' "$pack_src")"
+    echo "# Overview" > "$pack_src/overview.md"
+    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nrepos:\n  - name: dummy-repo\npacks:\n  - k-pack\n')"
+    run_cco start "test-proj" --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    # Both overlays mounted :ro from the CACHE bucket (host-absolute, exact).
+    # (|| return 1 — bare asserts are masked under the runner's set -e.)
+    assert_file_contains "$compose" \
+        "$CCO_CACHE_HOME/projects/test-proj/.claude/workspace.yml:/workspace/.claude/workspace.yml:ro" || return 1
+    assert_file_contains "$compose" \
+        "$CCO_CACHE_HOME/projects/test-proj/.claude/packs.md:/workspace/.claude/packs.md:ro" || return 1
+    # The committed project .claude/ never receives the generated files.
+    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/packs.md" || return 1
+    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/workspace.yml" || return 1
+    # The --dump inspection copy still lands under the dump .claude/ (unchanged).
+    assert_file_exists "$DRY_RUN_DIR/.claude/packs.md" || return 1
+    assert_file_exists "$DRY_RUN_DIR/.claude/workspace.yml" || return 1
 }
 
 # ── Docker socket (Docker-from-Docker) ───────────────────────────────
@@ -311,8 +351,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -328,6 +367,7 @@ test_dry_run_single_repo_mounted() {
     setup_global_from_defaults "$tmpdir"
     local fake_repo="$tmpdir/my-repo"
     mkdir -p "$fake_repo"
+    seed_index_path "my-repo" "$fake_repo"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -336,8 +376,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $fake_repo
-    name: my-repo
+  - name: my-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -352,6 +391,8 @@ test_dry_run_multi_repo_all_mounted() {
     local repo_a="$tmpdir/repo-a"
     local repo_b="$tmpdir/repo-b"
     mkdir -p "$repo_a" "$repo_b"
+    seed_index_path "repo-a" "$repo_a"
+    seed_index_path "repo-b" "$repo_b"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -360,10 +401,8 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $repo_a
-    name: repo-a
-  - path: $repo_b
-    name: repo-b
+  - name: repo-a
+  - name: repo-b
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -380,6 +419,7 @@ test_dry_run_extra_mount_readonly() {
     setup_global_from_defaults "$tmpdir"
     local docs="$tmpdir/docs"
     mkdir -p "$docs"
+    seed_index_path "docs" "$docs"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -388,10 +428,9 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 extra_mounts:
-  - source: $docs
+  - name: docs
     target: /workspace/docs
     readonly: true
 YAML
@@ -407,6 +446,7 @@ test_dry_run_extra_mount_readwrite() {
     setup_global_from_defaults "$tmpdir"
     local rw_dir="$tmpdir/rw"
     mkdir -p "$rw_dir"
+    seed_index_path "rw" "$rw_dir"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -415,10 +455,9 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 extra_mounts:
-  - source: $rw_dir
+  - name: rw
     target: /workspace/rw
     readonly: false
 YAML
@@ -427,6 +466,132 @@ YAML
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "${rw_dir}:/workspace/rw"
     assert_file_not_contains "$compose" "${rw_dir}:/workspace/rw:ro"
+}
+
+# ── Reference mounts (--mount, ADR-0027 D2) ──────────────────────────
+
+test_dry_run_user_mount_readonly_default() {
+    # --mount <src> defaults to read-only, target /workspace/<basename>
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local refdir="$tmpdir/refmat"
+    mkdir -p "$refdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --mount "$refdir" --dry-run --dump
+    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
+        "${refdir}:/workspace/refmat:ro"
+}
+
+test_dry_run_user_mount_rw_optin() {
+    # --mount <src>:rw makes the mount writable (no :ro suffix)
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local refdir="$tmpdir/scratch"
+    mkdir -p "$refdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --mount "${refdir}:rw" --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_contains "$compose" "${refdir}:/workspace/scratch"
+    assert_file_not_contains "$compose" "${refdir}:/workspace/scratch:ro"
+}
+
+test_dry_run_user_mount_custom_target() {
+    # --mount <src>:<target> mounts at the explicit target (ro default)
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local refdir="$tmpdir/docs-src"
+    mkdir -p "$refdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --mount "${refdir}:/workspace/reference" --dry-run --dump
+    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
+        "${refdir}:/workspace/reference:ro"
+}
+
+test_dry_run_user_mount_custom_target_rw() {
+    # --mount <src>:<target>:rw mounts at the target, writable
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local refdir="$tmpdir/work-src"
+    mkdir -p "$refdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --mount "${refdir}:/workspace/work:rw" --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_contains "$compose" "${refdir}:/workspace/work"
+    assert_file_not_contains "$compose" "${refdir}:/workspace/work:ro"
+}
+
+test_dry_run_user_mount_repeatable() {
+    # --mount is repeatable — all mounts appear
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local a="$tmpdir/ref-a" b="$tmpdir/ref-b"
+    mkdir -p "$a" "$b"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --mount "$a" --mount "${b}:rw" --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_contains "$compose" "${a}:/workspace/ref-a:ro" || return 1
+    assert_file_contains "$compose" "${b}:/workspace/ref-b" || return 1
+    assert_file_not_contains "$compose" "${b}:/workspace/ref-b:ro" || return 1
+}
+
+test_dry_run_user_mount_missing_source_dies() {
+    # --mount with a non-existent source fails before generating compose
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --mount "$tmpdir/does-not-exist" --dry-run --dump || true
+    assert_output_contains "does not exist"
+}
+
+# ── Agentic config edit-protection (ADR-0027 D3) ─────────────────────
+
+_edit_protect_project_yml() {
+    # A project mounting a host repo that carries a committed .cco/.
+    local repo="$1"
+    cat <<YAML
+name: test-proj
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+repos:
+  - name: host-repo
+YAML
+}
+
+test_dry_run_committed_cco_readonly_by_default() {
+    # A normal session overlays each mounted repo's committed .cco as :ro.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local repo="$tmpdir/host-repo"
+    mkdir -p "$repo/.cco"
+    seed_index_path "host-repo" "$repo"
+    create_project "$tmpdir" "test-proj" "$(_edit_protect_project_yml "$repo")"
+    run_cco start "test-proj" --dry-run --dump
+    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
+        "${repo}/.cco:/workspace/host-repo/.cco:ro"
+}
+
+test_dry_run_committed_cco_no_overlay_with_enable_config_edit() {
+    # --enable-config-edit keeps the repo (incl. .cco) fully rw — no :ro overlay.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local repo="$tmpdir/host-repo"
+    mkdir -p "$repo/.cco"
+    seed_index_path "host-repo" "$repo"
+    create_project "$tmpdir" "test-proj" "$(_edit_protect_project_yml "$repo")"
+    run_cco start "test-proj" --enable-config-edit --dry-run --dump
+    assert_file_not_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
+        "${repo}/.cco:/workspace/host-repo/.cco:ro"
 }
 
 # ── Custom ports and env vars ─────────────────────────────────────────
@@ -445,8 +610,7 @@ docker:
     - "9090:9090"
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -469,8 +633,7 @@ docker:
     NODE_ENV: production
     DATABASE_URL: postgres://localhost/mydb
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -504,8 +667,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -538,8 +700,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - my-pack
 YAML
@@ -548,7 +709,7 @@ YAML
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "${pack_src}:/workspace/.claude/packs/my-pack:ro"
     # Knowledge must NOT be copied to project directory
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/packs/my-pack/doc.md"
+    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/packs/my-pack/doc.md"
 }
 
 # ── MCP server config ─────────────────────────────────────────────────
@@ -567,7 +728,7 @@ test_dry_run_global_mcp_not_mounted_when_absent() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    rm -f "$CCO_GLOBAL_DIR/.claude/mcp.json"
+    rm -f "$HOME/.cco/.claude/mcp.json"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run --dump
     assert_file_not_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "mcp-global.json"
@@ -608,7 +769,7 @@ test_dry_run_volume_order_global_before_project() {
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     local settings_line project_line
     settings_line=$(grep -n "settings.json:/home/claude" "$compose" | head -1 | cut -d: -f1)
-    project_line=$(grep -n "./.claude:/workspace/.claude" "$compose" | head -1 | cut -d: -f1)
+    project_line=$(grep -nE ":/workspace/\.claude\"?$" "$compose" | head -1 | cut -d: -f1)
     if [[ -z "$settings_line" || -z "$project_line" ]]; then
         echo "ASSERTION FAILED: could not find settings or project config line"
         return 1
@@ -630,7 +791,7 @@ test_dry_run_volume_order_memory_before_git() {
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     local memory_line git_line
-    memory_line=$(grep -n ".cco/claude-state.*-workspace" "$compose" | head -1 | cut -d: -f1)
+    memory_line=$(grep -n "session/claude-state.*-workspace" "$compose" | head -1 | cut -d: -f1)
     git_line=$(grep -n ".gitconfig:ro" "$compose" | head -1 | cut -d: -f1)
     if [[ -z "$memory_line" || -z "$git_line" ]]; then
         echo "ASSERTION FAILED: could not find memory or git line"
@@ -659,8 +820,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -696,8 +856,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -740,8 +899,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -763,8 +921,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -779,10 +936,10 @@ test_dry_run_setup_sh_mounted_when_exists() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
-    echo '#!/bin/bash' > "$CCO_PROJECTS_DIR/test-proj/setup.sh"
+    echo '#!/bin/bash' > "$(host_cco_dir "$tmpdir" test-proj)/setup.sh"
     run_cco start "test-proj" --dry-run --dump
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
-        "./setup.sh:/workspace/setup.sh:ro"
+        "/setup.sh:/workspace/setup.sh:ro"
 }
 
 test_dry_run_setup_sh_not_mounted_when_missing() {
@@ -803,7 +960,7 @@ test_dry_run_global_setup_mounted_when_exists() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
-    echo '#!/bin/bash' > "$CCO_GLOBAL_DIR/setup.sh"
+    echo '#!/bin/bash' > "$HOME/.cco/setup.sh"
     run_cco start "test-proj" --dry-run --dump
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
         "global-setup.sh:ro"
@@ -827,10 +984,10 @@ test_dry_run_mcp_packages_mounted_when_exists() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
-    echo '# packages' > "$CCO_PROJECTS_DIR/test-proj/mcp-packages.txt"
+    echo '# packages' > "$(host_cco_dir "$tmpdir" test-proj)/mcp-packages.txt"
     run_cco start "test-proj" --dry-run --dump
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
-        "./mcp-packages.txt:/workspace/mcp-packages.txt:ro"
+        "/mcp-packages.txt:/workspace/mcp-packages.txt:ro"
 }
 
 test_dry_run_mcp_packages_not_mounted_when_missing() {
@@ -854,7 +1011,7 @@ test_browser_disabled_by_default() {
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_not_contains "$compose" "extra_hosts"
-    assert_file_not_contains "$compose" ".cco/managed"
+    assert_file_not_contains "$compose" "/managed:/workspace/.managed"
     assert_file_not_exists "$DRY_RUN_DIR/.cco/managed/browser.json"
 }
 
@@ -873,8 +1030,7 @@ docker:
 browser:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -896,8 +1052,7 @@ docker:
 browser:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -922,13 +1077,12 @@ docker:
 browser:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
-        "./.cco/managed:/workspace/.managed:ro"
+        "/managed:/workspace/.managed:ro"
 }
 
 test_browser_custom_cdp_port() {
@@ -947,8 +1101,7 @@ browser:
   enabled: true
   cdp_port: 9223
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -964,7 +1117,7 @@ test_browser_chrome_flag_override() {
     run_cco start "test-proj" --chrome --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "host.docker.internal:host-gateway"
-    assert_file_contains "$compose" "./.cco/managed:/workspace/.managed:ro"
+    assert_file_contains "$compose" "/managed:/workspace/.managed:ro"
     assert_file_exists "$DRY_RUN_DIR/.cco/managed/browser.json"
 }
 
@@ -983,8 +1136,7 @@ docker:
 browser:
   enabled: false
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1006,8 +1158,7 @@ docker:
 browser:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1033,8 +1184,7 @@ browser:
   mcp_args:
     - "--slim"
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1057,14 +1207,14 @@ docker:
 browser:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
-    echo '{"mcpServers":{"github":{}}}' > "$CCO_PROJECTS_DIR/test-proj/mcp.json"
+    local cco; cco=$(host_cco_dir "$tmpdir" "test-proj")
+    echo '{"mcpServers":{"github":{}}}' > "$cco/mcp.json"
     run_cco start "test-proj" --dry-run --dump
-    assert_file_contains "$CCO_PROJECTS_DIR/test-proj/mcp.json" '"github"'
-    assert_file_not_contains "$CCO_PROJECTS_DIR/test-proj/mcp.json" "chrome-devtools"
+    assert_file_contains "$cco/mcp.json" '"github"'
+    assert_file_not_contains "$cco/mcp.json" "chrome-devtools"
 }
 
 test_browser_port_written_to_file() {
@@ -1083,8 +1233,7 @@ browser:
   enabled: true
   cdp_port: 9225
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1108,8 +1257,7 @@ docker:
 browser:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1133,8 +1281,7 @@ browser:
   enabled: true
   cdp_port: 9225
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1168,14 +1315,13 @@ docker:
 browser:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --no-chrome --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_not_contains "$compose" "extra_hosts"
-    assert_file_not_contains "$compose" ".cco/managed"
+    assert_file_not_contains "$compose" "/managed:/workspace/.managed"
     assert_file_not_contains "$compose" "CDP_PORT"
     assert_file_not_exists "$DRY_RUN_DIR/.cco/managed/browser.json"
 }
@@ -1195,14 +1341,13 @@ docker:
 browser:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump   # NO --chrome flag
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "host.docker.internal:host-gateway"
-    assert_file_contains "$compose" "./.cco/managed:/workspace/.managed:ro"
+    assert_file_contains "$compose" "/managed:/workspace/.managed:ro"
     assert_file_exists "$DRY_RUN_DIR/.cco/managed/browser.json"
 }
 
@@ -1221,8 +1366,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --no-docker --dry-run --dump
@@ -1243,8 +1387,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --no-docker --dry-run --dump
@@ -1266,8 +1409,7 @@ docker:
 browser:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --no-chrome --no-docker --dry-run --dump
@@ -1294,8 +1436,7 @@ docker:
 github:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1318,8 +1459,7 @@ docker:
 github:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1343,8 +1483,7 @@ github:
   enabled: true
   token_env: GH_TOKEN
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1367,11 +1506,12 @@ test_github_disabled_no_stale_cleanup_in_dry_run() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
-    mkdir -p "$CCO_PROJECTS_DIR/test-proj/.cco/managed"
-    echo '{"mcpServers":{}}' > "$CCO_PROJECTS_DIR/test-proj/.cco/managed/github.json"
+    # Managed runtime overlays live in CACHE keyed by name (P5/Commit B).
+    mkdir -p "$(cache_project_managed test-proj)"
+    echo '{"mcpServers":{}}' > "$(cache_project_managed test-proj)/github.json"
     run_cco start "test-proj" --dry-run --dump
-    # Stale file in project dir is preserved (dry-run is side-effect free)
-    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.cco/managed/github.json"
+    # Stale file is preserved (dry-run is side-effect free)
+    assert_file_exists "$(cache_project_managed test-proj)/github.json"
     # Dry-run output does NOT contain github.json (disabled)
     assert_file_not_exists "$DRY_RUN_DIR/.cco/managed/github.json"
 }
@@ -1401,8 +1541,7 @@ docker:
 github:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --no-github --dry-run --dump
@@ -1424,12 +1563,11 @@ docker:
 github:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
-    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "./.cco/managed:/workspace/.managed:ro"
+    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "/managed:/workspace/.managed:ro"
 }
 
 test_browser_and_github_both_enabled_single_managed_mount() {
@@ -1449,14 +1587,13 @@ browser:
 github:
   enabled: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     local mount_count
-    mount_count=$(grep -c ".cco/managed:/workspace/.managed:ro" "$compose" || true)
+    mount_count=$(grep -c "/managed:/workspace/.managed:ro" "$compose" || true)
     assert_equals "1" "$mount_count" ".cco/managed mount must appear exactly once"
     assert_file_exists "$DRY_RUN_DIR/.cco/managed/browser.json"
     assert_file_exists "$DRY_RUN_DIR/.cco/managed/github.json"
@@ -1471,7 +1608,7 @@ test_start_blocked_by_global_conflict_markers() {
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     # Inject conflict markers into a global config file
-    cat >> "$CCO_GLOBAL_DIR/.claude/agents/analyst.md" <<'MARKERS'
+    cat >> "$HOME/.cco/.claude/agents/analyst.md" <<'MARKERS'
 
 <<<<<<< your version
 # My custom section
@@ -1493,8 +1630,8 @@ test_start_blocked_by_project_conflict_markers() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
-    # Inject conflict markers into a project config file
-    cat >> "$CCO_PROJECTS_DIR/test-proj/.claude/settings.json" <<'MARKERS'
+    # Inject conflict markers into a project config file (decentralized claude/)
+    cat >> "$(host_cco_dir "$tmpdir" test-proj)/claude/settings.json" <<'MARKERS'
 <<<<<<< your version
 =======
 >>>>>>> new default
@@ -1526,7 +1663,7 @@ test_start_auto_cleans_stale_tmp() {
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
 
     # Create a stale .tmp/ directory (as if from --dry-run --dump)
-    local project_dir="$CCO_PROJECTS_DIR/test-proj"
+    local project_dir; project_dir="$(host_cco_dir "$tmpdir" test-proj)"
     mkdir -p "$project_dir/.tmp"
     echo "stale dump" > "$project_dir/.tmp/docker-compose.yml"
 
@@ -1541,4 +1678,43 @@ test_start_auto_cleans_stale_tmp() {
     [[ ! -f "$project_dir/.tmp/docker-compose.yml" ]] || \
         fail "Old .tmp/docker-compose.yml should be cleaned before fresh dump"
     assert_file_exists "$DRY_RUN_DIR/.cco/docker-compose.yml"
+}
+
+# ── Claude Code native install mounts + version env (ADR-0039) ──────
+
+test_dry_run_mounts_claude_install_dirs() {
+    # The binary + its state are bind-mounted (rw) into ~/.local so they persist
+    # across restarts and auto-update in place. bin → ~/.local/bin,
+    # share → ~/.local/share/claude.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --dry-run --dump
+    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
+        "$tmpdir/cache/claude-install/bin:/home/claude/.local/bin"
+    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
+        "$tmpdir/cache/claude-install/share:/home/claude/.local/share/claude"
+}
+
+test_dry_run_claude_version_env_absent_without_knob() {
+    # No config knob → the env line is omitted so the container falls back to the
+    # image's baked CLAUDE_CODE_VERSION default.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --dry-run --dump
+    assert_file_not_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "CLAUDE_CODE_VERSION="
+}
+
+test_dry_run_claude_version_env_present_with_knob() {
+    # Config knob set → forwarded to the entrypoint installer via the env.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    printf 'stable\n' > "$HOME/.cco/claude-version"
+    run_cco start "test-proj" --dry-run --dump
+    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "CLAUDE_CODE_VERSION=stable"
 }

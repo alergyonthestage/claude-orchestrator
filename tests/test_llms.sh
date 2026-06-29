@@ -10,6 +10,7 @@ source "$REPO_ROOT/lib/colors.sh"
 source "$REPO_ROOT/lib/utils.sh"
 source "$REPO_ROOT/lib/paths.sh"
 source "$REPO_ROOT/lib/yaml.sh"
+source "$REPO_ROOT/lib/packs.sh"   # llms.sh's pack-llms collection uses _pack_resolve_dir
 source "$REPO_ROOT/lib/llms.sh"
 source "$REPO_ROOT/lib/cmd-llms.sh"
 
@@ -21,7 +22,6 @@ _setup_llms_env() {
     setup_cco_env "$tmpdir"
     LLMS_DIR="$CCO_LLMS_DIR"
     PACKS_DIR="$CCO_PACKS_DIR"
-    PROJECTS_DIR="$CCO_PROJECTS_DIR"
 }
 
 # Usage: create_llms_entry <tmpdir> <name> [variant_files...]
@@ -299,6 +299,31 @@ test_validate_refs_no_llms_key_passes() {
     _validate_llms_refs "$yml" "Test" || fail "Should pass when no llms key"
 }
 
+# ADR-0032 D2: a missing llms WITH a url coordinate yields an executable remedy.
+test_validate_refs_missing_with_url_suggests_install() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_llms_env "$tmpdir"
+    local yml="$tmpdir/test.yml"
+    printf 'llms:\n  - name: svelte\n    url: https://svelte.dev/llms.txt\n    variant: full\n' > "$yml"
+    local result
+    result=$(_validate_llms_refs "$yml" "Test" 2>&1) && fail "Should fail when ref missing" || true
+    [[ "$result" == *"cco llms install https://svelte.dev/llms.txt --name svelte"* ]] \
+        || fail "Should suggest an executable install with the url, got: $result"
+    [[ "$result" == *"--variant full"* ]] || fail "Should include the variant, got: $result"
+}
+
+# ADR-0032 D2: a missing llms WITHOUT a url is flagged as a share-readiness gap.
+test_validate_refs_missing_without_url_flags_gap() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_llms_env "$tmpdir"
+    local yml="$tmpdir/test.yml"
+    printf 'llms:\n  - nonexistent\n' > "$yml"
+    local result
+    result=$(_validate_llms_refs "$yml" "Test" 2>&1) && fail "Should fail when ref missing" || true
+    [[ "$result" == *"has no url coordinate"* ]] \
+        || fail "Should flag the missing url coordinate, got: $result"
+}
+
 # ── _llms_append_to_yaml_list ────────────────────────────────────────
 
 test_append_to_existing_key() {
@@ -349,29 +374,6 @@ test_install_accepts_valid_name() {
         fail "Should accept valid name (error should be network-related, not name validation)" || true
 }
 
-# ── Project validate includes llms ───────────────────────────────────
-
-test_project_validate_catches_missing_llms() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    setup_global_from_defaults "$tmpdir"
-    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nllms:\n  - nonexistent\nrepos:\n  - path: %s\n    name: dummy\n' "$CCO_DUMMY_REPO")"
-    git -C "$CCO_DUMMY_REPO" init -q 2>/dev/null || true
-    local exit_code=0
-    run_cco project validate "test-proj" || exit_code=$?
-    [[ $exit_code -ne 0 ]] || fail "Project validate should catch missing llms refs"
-}
-
-test_project_validate_passes_with_valid_llms() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    setup_global_from_defaults "$tmpdir"
-    create_llms_entry "$tmpdir" "svelte"
-    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nllms:\n  - svelte\nrepos:\n  - path: %s\n    name: dummy\n' "$CCO_DUMMY_REPO")"
-    git -C "$CCO_DUMMY_REPO" init -q 2>/dev/null || true
-    run_cco project validate "test-proj" || fail "Project validate should pass with valid llms"
-}
-
 # ── Start dry-run with llms ──────────────────────────────────────────
 
 test_dry_run_includes_llms_mounts() {
@@ -379,7 +381,7 @@ test_dry_run_includes_llms_mounts() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_llms_entry "$tmpdir" "svelte"
-    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nllms:\n  - svelte\nrepos:\n  - path: %s\n    name: dummy\n' "$CCO_DUMMY_REPO")"
+    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nllms:\n  - svelte\nrepos:\n  - name: dummy-repo\n')"
     git -C "$CCO_DUMMY_REPO" init -q 2>/dev/null || true
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
@@ -392,11 +394,59 @@ test_dry_run_includes_llms_in_packs_md() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_llms_entry "$tmpdir" "svelte" "llms-full.txt"
-    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nllms:\n  - svelte\nrepos:\n  - path: %s\n    name: dummy\n' "$CCO_DUMMY_REPO")"
+    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nllms:\n  - svelte\nrepos:\n  - name: dummy-repo\n')"
     git -C "$CCO_DUMMY_REPO" init -q 2>/dev/null || true
     run_cco start "test-proj" --dry-run --dump
     local packs_md="$DRY_RUN_DIR/.claude/packs.md"
     assert_file_exists "$packs_md"
     assert_file_contains "$packs_md" "Official Framework Documentation"
     assert_file_contains "$packs_md" "/workspace/.claude/llms/svelte"
+}
+
+# ── cco llms remove — uniform destructive-confirm contract (ADR-0029 D2) ──
+
+test_llms_remove_with_yes_skips_confirm() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_llms_entry "$tmpdir" "svelte" "llms-full.txt"
+    assert_dir_exists "$CCO_LLMS_DIR/svelte"
+
+    run_cco llms remove svelte -y
+    assert_output_contains "Removed llms 'svelte'"
+    assert_dir_not_exists "$CCO_LLMS_DIR/svelte"
+}
+
+test_llms_remove_non_tty_without_yes_dies() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_llms_entry "$tmpdir" "svelte" "llms-full.txt"
+
+    if run_cco llms remove svelte </dev/null 2>/dev/null; then
+        fail "llms remove without -y in a non-TTY should die"
+    fi
+    assert_output_contains "re-run with -y"
+    assert_dir_exists "$CCO_LLMS_DIR/svelte"
+}
+
+test_llms_remove_referenced_needs_force() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_llms_entry "$tmpdir" "svelte" "llms-full.txt"
+    # A pack that references the entry is the in-use block (resolved via PACKS_DIR).
+    create_pack "$tmpdir" "ref-pack" "$(printf 'name: ref-pack\nllms:\n  - svelte\n')"
+
+    # Referenced + no --force → die, entry preserved (even with -y, which only
+    # skips the confirm, never overrides the block).
+    if run_cco llms remove svelte -y 2>/dev/null; then
+        fail "referenced llms remove should require --force"
+    fi
+    assert_output_contains "referenced"
+    assert_dir_exists "$CCO_LLMS_DIR/svelte"
+
+    # --force overrides the block (and implies -y).
+    run_cco llms remove svelte --force
+    assert_dir_not_exists "$CCO_LLMS_DIR/svelte"
 }

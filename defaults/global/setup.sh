@@ -14,7 +14,7 @@
 #   → Use setup-build.sh instead (runs once at `cco build`)
 #
 # This script must be idempotent (safe to run multiple times).
-# See: docs/user-guides/advanced/custom-environment.md
+# See: docs/users/environment/guides/custom-environment.md
 #
 # Example:
 #   # Add tmux keybinding

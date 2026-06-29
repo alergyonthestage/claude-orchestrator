@@ -73,8 +73,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump

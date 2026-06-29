@@ -53,6 +53,41 @@ YAML
     assert_file_contains "$DOCKER_CALL_LOG" "stop cc-custom-name"
 }
 
+test_stop_multirepo_project_resolves_yml_name_via_membership() {
+    # C3 regression: a joined multi-repo project's key lives in the index `projects:`
+    # section, NOT `paths:` (only its member repos are there). cmd_stop must resolve the
+    # host repo via membership (_resolve_unit_dir_for_project), not _index_get_path on the
+    # project key — otherwise project.yml is never read and the `name:` container override
+    # is silently inert.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local mock_bin="$tmpdir/bin"
+    _mock_docker_with_containers "$mock_bin" "cc-custom-name"
+    setup_mocks "$mock_bin"
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+
+    # A member repo hosts the project.yml; its `name:` differs from the project key.
+    local host="$tmpdir/repos/frontend"
+    mkdir -p "$host/.cco/claude"
+    printf '%s\n' "$(cat <<YAML
+name: custom-name
+description: "Test"
+auth:
+  method: oauth
+docker:
+  ports: []
+  env: {}
+repos: []
+YAML
+)" > "$host/.cco/project.yml"
+    seed_index_path "frontend" "$host"
+    index_set_project_repos "myapp" "frontend"   # project key 'myapp' is NOT in paths:
+
+    export DOCKER_CALL_LOG="$tmpdir/docker.log"
+    run_cco stop "myapp"
+    assert_file_contains "$DOCKER_CALL_LOG" "stop cc-custom-name"
+}
+
 # ── Stop all sessions ─────────────────────────────────────────────────
 
 test_stop_all_stops_each_cc_container() {
@@ -80,18 +115,18 @@ test_stop_all_removes_managed_files_for_all_projects() {
     create_project "$tmpdir" "proj-b" "$(minimal_project_yml proj-b)"
 
     # Plant stale managed files in both projects
-    mkdir -p "$CCO_PROJECTS_DIR/proj-a/.cco/managed" "$CCO_PROJECTS_DIR/proj-b/.cco/managed"
-    echo '{}' > "$CCO_PROJECTS_DIR/proj-a/.cco/managed/browser.json"
-    echo "9222" > "$CCO_PROJECTS_DIR/proj-a/.cco/managed/.browser-port"
-    echo '{}' > "$CCO_PROJECTS_DIR/proj-b/.cco/managed/browser.json"
-    echo "9223" > "$CCO_PROJECTS_DIR/proj-b/.cco/managed/.browser-port"
+    mkdir -p "$(cache_project_managed proj-a)" "$(cache_project_managed proj-b)"
+    echo '{}' > "$(cache_project_managed proj-a)/browser.json"
+    echo "9222" > "$(cache_project_managed proj-a)/.browser-port"
+    echo '{}' > "$(cache_project_managed proj-b)/browser.json"
+    echo "9223" > "$(cache_project_managed proj-b)/.browser-port"
 
     run_cco stop
 
-    assert_file_not_exists "$CCO_PROJECTS_DIR/proj-a/.cco/managed/browser.json"
-    assert_file_not_exists "$CCO_PROJECTS_DIR/proj-a/.cco/managed/.browser-port"
-    assert_file_not_exists "$CCO_PROJECTS_DIR/proj-b/.cco/managed/browser.json"
-    assert_file_not_exists "$CCO_PROJECTS_DIR/proj-b/.cco/managed/.browser-port"
+    assert_file_not_exists "$(cache_project_managed proj-a)/browser.json"
+    assert_file_not_exists "$(cache_project_managed proj-a)/.browser-port"
+    assert_file_not_exists "$(cache_project_managed proj-b)/browser.json"
+    assert_file_not_exists "$(cache_project_managed proj-b)/.browser-port"
 }
 
 test_stop_all_no_containers_reports_none() {
@@ -118,14 +153,14 @@ test_browser_stop_removes_managed_files() {
     create_project "$tmpdir" "my-proj" "$(minimal_project_yml my-proj)"
 
     # Create stale managed files as if a browser session ended without cleanup
-    mkdir -p "$CCO_PROJECTS_DIR/my-proj/.cco/managed"
-    echo '{"mcpServers":{}}' > "$CCO_PROJECTS_DIR/my-proj/.cco/managed/browser.json"
-    echo "9222" > "$CCO_PROJECTS_DIR/my-proj/.cco/managed/.browser-port"
+    mkdir -p "$(cache_project_managed my-proj)"
+    echo '{"mcpServers":{}}' > "$(cache_project_managed my-proj)/browser.json"
+    echo "9222" > "$(cache_project_managed my-proj)/.browser-port"
 
     run_cco stop "my-proj"
 
-    assert_file_not_exists "$CCO_PROJECTS_DIR/my-proj/.cco/managed/browser.json"
-    assert_file_not_exists "$CCO_PROJECTS_DIR/my-proj/.cco/managed/.browser-port"
+    assert_file_not_exists "$(cache_project_managed my-proj)/browser.json"
+    assert_file_not_exists "$(cache_project_managed my-proj)/.browser-port"
 }
 
 test_github_stop_removes_managed_json() {
@@ -138,12 +173,12 @@ test_github_stop_removes_managed_json() {
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "my-proj" "$(minimal_project_yml my-proj)"
 
-    mkdir -p "$CCO_PROJECTS_DIR/my-proj/.cco/managed"
-    echo '{"mcpServers":{}}' > "$CCO_PROJECTS_DIR/my-proj/.cco/managed/github.json"
+    mkdir -p "$(cache_project_managed my-proj)"
+    echo '{"mcpServers":{}}' > "$(cache_project_managed my-proj)/github.json"
 
     run_cco stop "my-proj"
 
-    assert_file_not_exists "$CCO_PROJECTS_DIR/my-proj/.cco/managed/github.json"
+    assert_file_not_exists "$(cache_project_managed my-proj)/github.json"
 }
 
 test_stop_all_removes_github_managed_files() {
@@ -157,12 +192,12 @@ test_stop_all_removes_github_managed_files() {
     create_project "$tmpdir" "proj-a" "$(minimal_project_yml proj-a)"
     create_project "$tmpdir" "proj-b" "$(minimal_project_yml proj-b)"
 
-    mkdir -p "$CCO_PROJECTS_DIR/proj-a/.cco/managed" "$CCO_PROJECTS_DIR/proj-b/.cco/managed"
-    echo '{"mcpServers":{}}' > "$CCO_PROJECTS_DIR/proj-a/.cco/managed/github.json"
-    echo '{"mcpServers":{}}' > "$CCO_PROJECTS_DIR/proj-b/.cco/managed/github.json"
+    mkdir -p "$(cache_project_managed proj-a)" "$(cache_project_managed proj-b)"
+    echo '{"mcpServers":{}}' > "$(cache_project_managed proj-a)/github.json"
+    echo '{"mcpServers":{}}' > "$(cache_project_managed proj-b)/github.json"
 
     run_cco stop
 
-    assert_file_not_exists "$CCO_PROJECTS_DIR/proj-a/.cco/managed/github.json"
-    assert_file_not_exists "$CCO_PROJECTS_DIR/proj-b/.cco/managed/github.json"
+    assert_file_not_exists "$(cache_project_managed proj-a)/github.json"
+    assert_file_not_exists "$(cache_project_managed proj-b)/github.json"
 }

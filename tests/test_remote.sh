@@ -8,8 +8,8 @@ test_remote_add_creates_entry() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco remote add acme git@github.com:acme/config.git
-    assert_file_exists "$CCO_USER_CONFIG_DIR/.cco/remotes"
-    assert_file_contains "$CCO_USER_CONFIG_DIR/.cco/remotes" "acme=git@github.com:acme/config.git"
+    assert_file_exists "$CCO_DATA_HOME/remotes"
+    assert_file_contains "$CCO_DATA_HOME/remotes" "acme=git@github.com:acme/config.git"
 }
 
 test_remote_add_multiple() {
@@ -18,8 +18,8 @@ test_remote_add_multiple() {
     setup_global_from_defaults "$tmpdir"
     run_cco remote add alpha git@github.com:alpha/config.git
     run_cco remote add beta https://github.com/beta/config.git
-    assert_file_contains "$CCO_USER_CONFIG_DIR/.cco/remotes" "alpha="
-    assert_file_contains "$CCO_USER_CONFIG_DIR/.cco/remotes" "beta="
+    assert_file_contains "$CCO_DATA_HOME/remotes" "alpha="
+    assert_file_contains "$CCO_DATA_HOME/remotes" "beta="
 }
 
 test_remote_add_duplicate_fails() {
@@ -70,8 +70,8 @@ test_remote_remove() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco remote add acme git@github.com:acme/config.git
-    run_cco remote remove acme
-    assert_file_not_contains "$CCO_USER_CONFIG_DIR/.cco/remotes" "acme="
+    run_cco remote remove acme -y
+    assert_file_not_contains "$CCO_DATA_HOME/remotes" "acme="
 }
 
 test_remote_remove_preserves_others() {
@@ -80,9 +80,9 @@ test_remote_remove_preserves_others() {
     setup_global_from_defaults "$tmpdir"
     run_cco remote add alpha git@github.com:alpha/config.git
     run_cco remote add beta git@github.com:beta/config.git
-    run_cco remote remove alpha
-    assert_file_not_contains "$CCO_USER_CONFIG_DIR/.cco/remotes" "alpha="
-    assert_file_contains "$CCO_USER_CONFIG_DIR/.cco/remotes" "beta="
+    run_cco remote remove alpha -y
+    assert_file_not_contains "$CCO_DATA_HOME/remotes" "alpha="
+    assert_file_contains "$CCO_DATA_HOME/remotes" "beta="
 }
 
 test_remote_remove_nonexistent_fails() {
@@ -102,7 +102,7 @@ test_remote_list_shows_entries() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco remote add acme git@github.com:acme/config.git
-    run_cco remote list
+    run_cco list remote
     assert_output_contains "acme"
     assert_output_contains "git@github.com:acme/config.git"
 }
@@ -111,55 +111,12 @@ test_remote_list_empty() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    run_cco remote list
+    run_cco list remote
     assert_output_contains "No remotes"
 }
 
-# ── vault integration ──────────────────────────────────────────────
-
-test_remote_add_syncs_with_vault() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    setup_global_from_defaults "$tmpdir"
-    run_cco init --lang "English"
-    run_cco vault init
-    run_cco remote add acme git@github.com:acme/config.git
-    # Should be in both .cco/remotes and git remotes
-    assert_file_contains "$CCO_USER_CONFIG_DIR/.cco/remotes" "acme="
-    local git_remotes
-    git_remotes=$(git -C "$CCO_USER_CONFIG_DIR" remote 2>/dev/null)
-    echo "$git_remotes" | grep -q "acme" || {
-        echo "ASSERTION FAILED: expected 'acme' in git remotes"
-        return 1
-    }
-}
-
-test_remote_remove_syncs_with_vault() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    setup_global_from_defaults "$tmpdir"
-    run_cco init --lang "English"
-    run_cco vault init
-    run_cco remote add acme git@github.com:acme/config.git
-    run_cco remote remove acme
-    local git_remotes
-    git_remotes=$(git -C "$CCO_USER_CONFIG_DIR" remote 2>/dev/null)
-    if echo "$git_remotes" | grep -q "acme"; then
-        echo "ASSERTION FAILED: 'acme' should be removed from git remotes"
-        return 1
-    fi
-}
-
-test_vault_remote_delegates_to_cco_remote() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    setup_global_from_defaults "$tmpdir"
-    run_cco init --lang "English"
-    run_cco vault init
-    run_cco vault remote add team git@github.com:team/config.git
-    # Should appear in .cco/remotes (delegation worked)
-    assert_file_contains "$CCO_USER_CONFIG_DIR/.cco/remotes" "team="
-}
+# Note: the legacy vault-git mirror integration tests (transitional, P3) were
+# removed with the vault — `cco remote` now writes only the DATA registry (M3).
 
 # ── edge cases ─────────────────────────────────────────────────────
 
@@ -168,7 +125,7 @@ test_remote_add_name_with_numbers() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco remote add team42 git@github.com:team/config.git
-    assert_file_contains "$CCO_USER_CONFIG_DIR/.cco/remotes" "team42="
+    assert_file_contains "$CCO_DATA_HOME/remotes" "team42="
 }
 
 test_remote_add_name_with_leading_hyphen_fails() {
@@ -188,9 +145,9 @@ test_remote_prefix_names_independent() {
     setup_global_from_defaults "$tmpdir"
     run_cco remote add acme git@github.com:acme/config.git
     run_cco remote add acme-team git@github.com:acme-team/config.git
-    run_cco remote remove acme
-    assert_file_not_contains "$CCO_USER_CONFIG_DIR/.cco/remotes" "acme=git@github.com:acme/config.git"
-    assert_file_contains "$CCO_USER_CONFIG_DIR/.cco/remotes" "acme-team="
+    run_cco remote remove acme -y
+    assert_file_not_contains "$CCO_DATA_HOME/remotes" "acme=git@github.com:acme/config.git"
+    assert_file_contains "$CCO_DATA_HOME/remotes" "acme-team="
 }
 
 test_remote_add_without_vault_no_git_sync() {
@@ -199,7 +156,7 @@ test_remote_add_without_vault_no_git_sync() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco remote add acme git@github.com:acme/config.git
-    assert_file_contains "$CCO_USER_CONFIG_DIR/.cco/remotes" "acme="
+    assert_file_contains "$CCO_DATA_HOME/remotes" "acme="
     # No .git dir should exist
     [[ ! -d "$CCO_USER_CONFIG_DIR/.git" ]] || {
         echo "ASSERTION FAILED: vault should not have been initialized"
@@ -235,8 +192,8 @@ test_remote_remove_help() {
 test_remote_list_help() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco remote list --help
-    assert_output_contains "registered"
+    run_cco remote list
+    assert_output_contains "removed"
 }
 
 # ── cco remote token management ───────────────────────────────────
@@ -246,9 +203,26 @@ test_remote_add_with_token() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco remote add acme https://github.com/acme/config.git --token ghp_test123
-    assert_file_contains "$CCO_USER_CONFIG_DIR/.cco/remotes" "acme=https://github.com/acme/config.git"
-    assert_file_contains "$CCO_USER_CONFIG_DIR/.cco/remotes" "acme.token=ghp_test123"
+    assert_file_contains "$CCO_DATA_HOME/remotes" "acme=https://github.com/acme/config.git"
+    assert_file_contains "$CCO_STATE_HOME/remotes-token" "acme=ghp_test123"
     assert_output_contains "[token saved]"
+}
+
+# Portable file-mode reader (GNU stat vs BSD/macOS stat).
+_remote_stat_mode() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
+
+# HITL-2 (adherence audit 2026-06-21): the STATE remotes-token file holds a
+# secret and must be 0600 — the M3 no-token-leak invariant (S8). cmd-remote.sh
+# `chmod 600`s it; this guards that the mode actually lands.
+test_remote_token_file_is_0600() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco remote add acme https://github.com/acme/config.git --token ghp_test123
+    local tf="$CCO_STATE_HOME/remotes-token"
+    assert_file_exists "$tf"
+    local mode; mode=$(_remote_stat_mode "$tf")
+    [[ "$mode" == "600" ]] || fail "remotes-token must be mode 0600 (S8 no-token-leak), got: $mode"
 }
 
 test_remote_set_token() {
@@ -257,7 +231,7 @@ test_remote_set_token() {
     setup_global_from_defaults "$tmpdir"
     run_cco remote add acme https://github.com/acme/config.git
     run_cco remote set-token acme ghp_test456
-    assert_file_contains "$CCO_USER_CONFIG_DIR/.cco/remotes" "acme.token=ghp_test456"
+    assert_file_contains "$CCO_STATE_HOME/remotes-token" "acme=ghp_test456"
 }
 
 test_remote_set_token_overwrites_existing() {
@@ -266,8 +240,8 @@ test_remote_set_token_overwrites_existing() {
     setup_global_from_defaults "$tmpdir"
     run_cco remote add acme https://github.com/acme/config.git --token ghp_old
     run_cco remote set-token acme ghp_new
-    assert_file_contains "$CCO_USER_CONFIG_DIR/.cco/remotes" "acme.token=ghp_new"
-    assert_file_not_contains "$CCO_USER_CONFIG_DIR/.cco/remotes" "acme.token=ghp_old"
+    assert_file_contains "$CCO_STATE_HOME/remotes-token" "acme=ghp_new"
+    assert_file_not_contains "$CCO_STATE_HOME/remotes-token" "acme=ghp_old"
 }
 
 test_remote_set_token_nonexistent_fails() {
@@ -286,9 +260,9 @@ test_remote_remove_token() {
     setup_global_from_defaults "$tmpdir"
     run_cco remote add acme https://github.com/acme/config.git --token ghp_test123
     run_cco remote remove-token acme
-    assert_file_not_contains "$CCO_USER_CONFIG_DIR/.cco/remotes" "acme.token="
+    assert_file_not_contains "$CCO_STATE_HOME/remotes-token" "acme="
     # URL should still be there
-    assert_file_contains "$CCO_USER_CONFIG_DIR/.cco/remotes" "acme=https://github.com/acme/config.git"
+    assert_file_contains "$CCO_DATA_HOME/remotes" "acme=https://github.com/acme/config.git"
 }
 
 test_remote_remove_token_nonexistent_fails() {
@@ -307,9 +281,9 @@ test_remote_remove_also_removes_token() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco remote add acme https://github.com/acme/config.git --token ghp_test123
-    run_cco remote remove acme
-    assert_file_not_contains "$CCO_USER_CONFIG_DIR/.cco/remotes" "acme="
-    assert_file_not_contains "$CCO_USER_CONFIG_DIR/.cco/remotes" "acme.token="
+    run_cco remote remove acme -y
+    assert_file_not_contains "$CCO_DATA_HOME/remotes" "acme="
+    assert_file_not_contains "$CCO_STATE_HOME/remotes-token" "acme="
 }
 
 test_remote_list_shows_token_tag() {
@@ -318,7 +292,7 @@ test_remote_list_shows_token_tag() {
     setup_global_from_defaults "$tmpdir"
     run_cco remote add acme https://github.com/acme/config.git --token ghp_test
     run_cco remote add team git@github.com:team/config.git
-    run_cco remote list
+    run_cco list remote
     assert_output_contains "[token]"
 }
 
@@ -328,7 +302,7 @@ test_remote_list_hides_token_lines() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco remote add acme https://github.com/acme/config.git --token ghp_test
-    run_cco remote list
+    run_cco list remote
     # Output should contain "acme" but not "acme.token"
     assert_output_contains "acme"
     assert_output_not_contains "acme.token"
@@ -457,24 +431,8 @@ test_remote_resolve_token_url_normalization() {
     }
 }
 
-test_remote_backward_compat_no_token_lines() {
-    # Old-format .cco/remotes (no .token= lines) should work correctly
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    setup_global_from_defaults "$tmpdir"
-    # Write old-style .cco/remotes directly
-    mkdir -p "$CCO_USER_CONFIG_DIR/.cco"
-    cat > "$CCO_USER_CONFIG_DIR/.cco/remotes" <<'REMOTES'
-# CCO Config Repo remotes
-# Format: name=url
-acme=git@github.com:acme/config.git
-team=https://github.com/team/config.git
-REMOTES
-    run_cco remote list
-    assert_output_contains "acme"
-    assert_output_contains "team"
-    assert_output_not_contains "[token]"
-}
+# Note: no backward-compat test for the old ~/.cco/.cco/remotes location —
+# the M3 cutover moves the registry to DATA with no dual-read (breaking).
 
 # ── help for new commands ─────────────────────────────────────────
 
@@ -494,21 +452,36 @@ test_remote_remove_token_help() {
 
 # ── existing tests ────────────────────────────────────────────────
 
-test_remote_remove_warns_publish_target() {
+test_remote_remove_warns_affected_packs() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
 
-    # Create a pack with publish_target pointing to the remote
-    mkdir -p "$CCO_PACKS_DIR/my-pack/.cco"
+    # A pack whose recorded upstream url resolves to the remote being removed
+    # (F4: the publish target is re-derived from the pack url, not stored —
+    # ADR-0022 D1).
+    mkdir -p "$CCO_PACKS_DIR/my-pack"
     echo "name: my-pack" > "$CCO_PACKS_DIR/my-pack/pack.yml"
-    cat > "$CCO_PACKS_DIR/my-pack/.cco/source" <<'YAML'
-source: local
-publish_target: acme
-YAML
+    mkdir -p "$(dirname "$(data_pack_source my-pack)")"
+    printf 'url: git@github.com:acme/config.git\n' > "$(data_pack_source my-pack)"
 
     run_cco remote add acme "git@github.com:acme/config.git"
-    run_cco remote remove acme
-    assert_output_contains "publish_target"
-    assert_output_contains "my-pack"
+    run_cco remote remove acme -y
+    assert_output_contains "publish to 'acme'" || return 1
+    assert_output_contains "my-pack" || return 1
+}
+
+# ── cco remote remove — non-TTY confirm guard (ADR-0029 D2) ──────────
+
+test_remote_remove_non_tty_without_yes_dies() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco remote add acme git@github.com:acme/config.git
+
+    if run_cco remote remove acme </dev/null 2>/dev/null; then
+        fail "remote remove without -y in a non-TTY should die"
+    fi
+    assert_output_contains "re-run with -y"
+    assert_file_contains "$CCO_DATA_HOME/remotes" "acme="
 }

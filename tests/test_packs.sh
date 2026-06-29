@@ -27,8 +27,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - $pack_name
 YAML
@@ -95,8 +94,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - multi-file-pack
 YAML
@@ -140,8 +138,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - pack-a
   - pack-b
@@ -161,16 +158,18 @@ test_packs_md_removed_when_no_packs() {
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
 
-    # Pre-create a stale packs.md in the project dir (left from a previous run)
+    # Pre-create a stale packs.md in the committed project tree (left from a
+    # previous run). The committed <repo>/.cco/ is the :ro source (P5).
+    local cco; cco=$(host_cco_dir "$tmpdir" "test-proj")
     printf '<!-- stale -->\n@/workspace/.claude/packs/old/file.md\n' \
-        > "$CCO_PROJECTS_DIR/test-proj/.claude/packs.md"
+        > "$cco/claude/packs.md"
 
     run_cco start "test-proj" --dry-run --dump
 
     # Dry-run does not produce packs.md when project has no packs
     assert_file_not_exists "$DRY_RUN_DIR/.claude/packs.md"
-    # Stale file in project dir is preserved (dry-run is side-effect free)
-    assert_file_exists "$CCO_PROJECTS_DIR/test-proj/.claude/packs.md"
+    # Stale file in the committed tree is preserved (dry-run is side-effect free)
+    assert_file_exists "$cco/claude/packs.md"
 }
 
 test_packs_md_missing_pack_silently_skipped() {
@@ -187,8 +186,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - nonexistent-pack
 YAML
@@ -223,8 +221,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - desc-pack
 YAML
@@ -257,8 +254,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - nodesc-pack
 YAML
@@ -301,6 +297,8 @@ test_workspace_yml_contains_repo_names() {
     local repo_a="$tmpdir/repo-a"
     local repo_b="$tmpdir/repo-b"
     mkdir -p "$repo_a" "$repo_b"
+    seed_index_path "repo-a" "$repo_a"
+    seed_index_path "repo-b" "$repo_b"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -309,10 +307,8 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $repo_a
-    name: repo-a
-  - path: $repo_b
-    name: repo-b
+  - name: repo-a
+  - name: repo-b
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -343,8 +339,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - my-pack
 YAML
@@ -360,6 +355,7 @@ test_workspace_yml_generated_with_repos() {
     setup_global_from_defaults "$tmpdir"
     local repo_dir="$tmpdir/my-repo"
     mkdir -p "$repo_dir"
+    seed_index_path "my-repo" "$repo_dir"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -368,8 +364,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $repo_dir
-    name: my-repo
+  - name: my-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -387,6 +382,7 @@ test_workspace_yml_seeds_description_from_project_yml() {
     setup_global_from_defaults "$tmpdir"
     local repo_dir="$tmpdir/my-repo"
     mkdir -p "$repo_dir"
+    seed_index_path "my-repo" "$repo_dir"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -395,8 +391,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $repo_dir
-    name: my-repo
+  - name: my-repo
     description: "Seeded from project.yml"
 YAML
 )"
@@ -413,6 +408,7 @@ test_workspace_yml_idempotent() {
     setup_global_from_defaults "$tmpdir"
     local repo_dir="$tmpdir/my-repo"
     mkdir -p "$repo_dir"
+    seed_index_path "my-repo" "$repo_dir"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -421,8 +417,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $repo_dir
-    name: my-repo
+  - name: my-repo
 YAML
 )"
     # First run
@@ -431,7 +426,7 @@ YAML
     local first_content
     first_content=$(cat "$first_ws")
     # Copy the generated workspace.yml to the project dir (as cco start would normally do)
-    local project_ws="$CCO_PROJECTS_DIR/test-proj/.claude/workspace.yml"
+    local project_ws="$(host_cco_dir "$tmpdir" test-proj)/claude/workspace.yml"
     mkdir -p "$(dirname "$project_ws")"
     cp "$first_ws" "$project_ws"
     # Second run
@@ -473,7 +468,7 @@ test_project_yml_mounted_in_compose() {
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run --dump
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
-        "./project.yml:/workspace/project.yml:ro"
+        "/project.yml:/workspace/project.yml:ro"
 }
 
 # ── pack resource mounts in compose (ADR-14) ─────────────────────────
@@ -483,7 +478,7 @@ test_pack_skills_mounted_in_compose() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_dir="$tmpdir/user-config/packs/skill-pack"
+    local pack_dir="$CCO_PACKS_DIR/skill-pack"
     mkdir -p "$pack_dir/skills/deploy"
     echo "Deploy skill" > "$pack_dir/skills/deploy/SKILL.md"
     printf 'name: skill-pack\nskills:\n  - deploy\n' > "$pack_dir/pack.yml"
@@ -495,8 +490,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - skill-pack
 YAML
@@ -511,7 +505,7 @@ test_pack_agents_mounted_in_compose() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_dir="$tmpdir/user-config/packs/agent-pack"
+    local pack_dir="$CCO_PACKS_DIR/agent-pack"
     mkdir -p "$pack_dir/agents"
     echo "Agent spec" > "$pack_dir/agents/devops.md"
     printf 'name: agent-pack\nagents:\n  - devops.md\n' > "$pack_dir/pack.yml"
@@ -523,8 +517,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - agent-pack
 YAML
@@ -539,7 +532,7 @@ test_pack_rules_mounted_in_compose() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_dir="$tmpdir/user-config/packs/rules-pack"
+    local pack_dir="$CCO_PACKS_DIR/rules-pack"
     mkdir -p "$pack_dir/rules"
     echo "API rules" > "$pack_dir/rules/api-conventions.md"
     printf 'name: rules-pack\nrules:\n  - api-conventions.md\n' > "$pack_dir/pack.yml"
@@ -551,8 +544,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - rules-pack
 YAML
@@ -586,8 +578,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - k-pack
 YAML
@@ -602,7 +593,7 @@ test_pack_mounts_are_readonly() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_dir="$tmpdir/user-config/packs/ro-pack"
+    local pack_dir="$CCO_PACKS_DIR/ro-pack"
     mkdir -p "$pack_dir/rules" "$pack_dir/agents" "$pack_dir/skills/my-skill"
     echo "Rule" > "$pack_dir/rules/style.md"
     echo "Agent" > "$pack_dir/agents/bot.md"
@@ -618,8 +609,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - ro-pack
 YAML
@@ -647,7 +637,7 @@ test_pack_no_files_copied_to_project() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_dir="$tmpdir/user-config/packs/no-copy-pack"
+    local pack_dir="$CCO_PACKS_DIR/no-copy-pack"
     mkdir -p "$pack_dir/rules" "$pack_dir/agents" "$pack_dir/skills/deploy" "$pack_dir/knowledge"
     echo "Rule" > "$pack_dir/rules/style.md"
     echo "Agent" > "$pack_dir/agents/bot.md"
@@ -662,20 +652,19 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - no-copy-pack
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
     # No pack files should exist in the project directory
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/rules/style.md"
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/agents/bot.md"
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/skills/deploy/SKILL.md"
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/packs/no-copy-pack/guide.md"
+    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/rules/style.md"
+    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/agents/bot.md"
+    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/skills/deploy/SKILL.md"
+    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/packs/no-copy-pack/guide.md"
     # No .cco/pack-manifest should be created
-    assert_file_not_exists "$CCO_PROJECTS_DIR/test-proj/.claude/.cco/pack-manifest"
+    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/.cco/pack-manifest"
 }
 
 # ── legacy manifest cleanup ──────────────────────────────────────────
@@ -689,7 +678,7 @@ test_legacy_manifest_cleaned_on_start() {
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
 
     # Simulate legacy state: manifest + copied files
-    local proj_claude="$CCO_PROJECTS_DIR/test-proj/.claude"
+    local proj_claude="$(host_cco_dir "$tmpdir" test-proj)/claude"
     mkdir -p "$proj_claude/rules" "$proj_claude/agents" "$proj_claude/.cco"
     echo "old rule" > "$proj_claude/rules/legacy-rule.md"
     echo "old agent" > "$proj_claude/agents/legacy-agent.md"
@@ -710,8 +699,8 @@ test_pack_conflict_warns_duplicate_agent() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_a="$tmpdir/user-config/packs/pack-a"
-    local pack_b="$tmpdir/user-config/packs/pack-b"
+    local pack_a="$CCO_PACKS_DIR/pack-a"
+    local pack_b="$CCO_PACKS_DIR/pack-b"
     mkdir -p "$pack_a/agents" "$pack_b/agents"
     echo "Agent from A" > "$pack_a/agents/reviewer.md"
     echo "Agent from B" > "$pack_b/agents/reviewer.md"
@@ -725,8 +714,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - pack-a
   - pack-b
@@ -741,8 +729,8 @@ test_pack_conflict_warns_duplicate_rule() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_a="$tmpdir/user-config/packs/pack-a"
-    local pack_b="$tmpdir/user-config/packs/pack-b"
+    local pack_a="$CCO_PACKS_DIR/pack-a"
+    local pack_b="$CCO_PACKS_DIR/pack-b"
     mkdir -p "$pack_a/rules" "$pack_b/rules"
     echo "Rule from A" > "$pack_a/rules/style.md"
     echo "Rule from B" > "$pack_b/rules/style.md"
@@ -756,8 +744,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - pack-a
   - pack-b
@@ -772,8 +759,8 @@ test_pack_no_conflict_unique_names() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_a="$tmpdir/user-config/packs/pack-a"
-    local pack_b="$tmpdir/user-config/packs/pack-b"
+    local pack_a="$CCO_PACKS_DIR/pack-a"
+    local pack_b="$CCO_PACKS_DIR/pack-b"
     mkdir -p "$pack_a/agents" "$pack_b/agents"
     echo "Agent A" > "$pack_a/agents/analyst.md"
     echo "Agent B" > "$pack_b/agents/reviewer.md"
@@ -787,8 +774,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - pack-a
   - pack-b
@@ -810,7 +796,7 @@ test_pack_yml_bad_indentation_warns() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_dir="$tmpdir/user-config/packs/bad-indent"
+    local pack_dir="$CCO_PACKS_DIR/bad-indent"
     mkdir -p "$pack_dir/rules"
     echo "Some rule" > "$pack_dir/rules/style.md"
     # Deliberately indented pack.yml — all keys shifted by 2 spaces
@@ -827,8 +813,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - bad-indent
 YAML
@@ -842,7 +827,7 @@ test_pack_yml_bad_indentation_skips_mounts() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    local pack_dir="$tmpdir/user-config/packs/bad-indent"
+    local pack_dir="$CCO_PACKS_DIR/bad-indent"
     mkdir -p "$pack_dir/rules"
     echo "Some rule" > "$pack_dir/rules/style.md"
     cat > "$pack_dir/pack.yml" <<'YAML'
@@ -858,8 +843,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - bad-indent
 YAML
@@ -881,7 +865,7 @@ test_pack_yml_bad_indentation_skips_knowledge() {
     local pack_src="$tmpdir/pack-src"
     mkdir -p "$pack_src"
     echo "docs" > "$pack_src/guide.md"
-    local pack_dir="$tmpdir/user-config/packs/bad-k"
+    local pack_dir="$CCO_PACKS_DIR/bad-k"
     mkdir -p "$pack_dir"
     cat > "$pack_dir/pack.yml" <<YAML
   name: bad-k
@@ -898,8 +882,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 packs:
   - bad-k
 YAML
@@ -912,4 +895,53 @@ YAML
         echo "ASSERTION FAILED: packs.md should not contain entries from bad-indentation pack"
         return 1
     fi
+}
+
+# ── F2: cross-tree collision detection (ADR-0005) ─────────────────────
+# A committed .claude file that maps to the same container path as a pack/llms
+# overlay is shadowed (the :ro child mount wins over the rw parent). cco start
+# warns; it never hard-blocks (layered reachability philosophy, P14).
+
+test_cross_tree_pack_file_collision_warns() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    mkdir -p "$CCO_PACKS_DIR/r-pack/rules"
+    create_pack "$tmpdir" "r-pack" "$(printf 'name: r-pack\nrules:\n  - foo.md\n')"
+    echo "pack rule" > "$CCO_PACKS_DIR/r-pack/rules/foo.md"
+    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nrepos:\n  - name: dummy-repo\npacks:\n  - r-pack\n')"
+    # Committed config authors the same relative path the pack mounts to.
+    mkdir -p "$(host_cco_dir "$tmpdir" test-proj)/claude/rules"
+    echo "user rule" > "$(host_cco_dir "$tmpdir" test-proj)/claude/rules/foo.md"
+    run_cco start "test-proj" --dry-run --dump
+    assert_output_contains ".claude/rules/foo.md collides with pack 'r-pack'"
+}
+
+test_cross_tree_no_collision_no_warn() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    mkdir -p "$CCO_PACKS_DIR/r-pack/rules"
+    create_pack "$tmpdir" "r-pack" "$(printf 'name: r-pack\nrules:\n  - foo.md\n')"
+    echo "pack rule" > "$CCO_PACKS_DIR/r-pack/rules/foo.md"
+    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nrepos:\n  - name: dummy-repo\npacks:\n  - r-pack\n')"
+    # No committed .claude/rules/foo.md → nothing collides.
+    run_cco start "test-proj" --dry-run --dump
+    if echo "${CCO_OUTPUT:-}" | grep -qFe "collides with pack"; then
+        echo "ASSERTION FAILED: no collision expected when committed config is clean"
+        return 1
+    fi
+}
+
+test_cross_tree_reserved_namespace_warns() {
+    # packs/ and llms/ are framework-reserved subtrees; committed content there
+    # is shadowed by pack/llms overlays — warn even with no packs configured.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nrepos:\n  - name: dummy-repo\n')"
+    mkdir -p "$(host_cco_dir "$tmpdir" test-proj)/claude/packs/stale"
+    echo "x" > "$(host_cco_dir "$tmpdir" test-proj)/claude/packs/stale/x.md"
+    run_cco start "test-proj" --dry-run --dump
+    assert_output_contains ".claude/packs/ is framework-reserved"
 }

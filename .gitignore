@@ -1,17 +1,22 @@
-# User configuration — unified structure (created by cco init)
+# Legacy central layout — REMOVED by the decentralized cutover, but kept ignored
+# as a safety net (a migrating user's old vault may still linger here as a
+# fallback; never commit it). New config lives in <repo>/.cco/ + ~/.cco/.
 /user-config/
-
-# Legacy layout (pre-migration) — keep during transition
 /global/
 /projects/
 
 # Secrets
 .env
 .env.*
+secrets.env
+# Decentralized committed project config: <repo>/.cco/ is tracked, but its
+# secrets.env (real secret values) is always gitignored — only the
+# secrets.env.example skeleton is committed.
+**/.cco/secrets.env
+# Legacy secret paths (pre-cutover)
 user-config/global/secrets.env
 global/secrets.env
-secrets.env
-# Allow template secrets.env (tracked tool code)
+# Allow template secrets.env (tracked tool code — the scaffold skeleton)
 !templates/project/base/secrets.env
 
 # Claude Code local settings (generated per-session)

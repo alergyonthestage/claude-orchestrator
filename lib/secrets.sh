@@ -8,7 +8,7 @@
 #   Deprecated: migrate_memory_to_claude_state() [use migrations/project/001],
 #               _migrate_to_managed() [use migrations/global/001]
 # Dependencies: colors.sh, utils.sh
-# Globals: GLOBAL_DIR, DEFAULTS_DIR
+# Globals: DEFAULTS_DIR
 #
 # Scanning rationale: vault save (pre-commit) and project publish
 # (pre-push) both need to block known-secret files. Keeping the pattern
@@ -106,10 +106,12 @@ load_secrets_file() {
     done < "$secrets_file"
 }
 
-# Load global secrets from global/secrets.env into an array of -e flags
+# Load global secrets from the CONFIG bucket (~/.cco/secrets.env) into an array
+# of -e flags. The secrets file is gitignored config, top-level in ~/.cco
+# (design §2.3 / ADR-0016), NOT under global/.
 # Usage: load_global_secrets array_name
 load_global_secrets() {
-    load_secrets_file "$1" "$GLOBAL_DIR/secrets.env"
+    load_secrets_file "$1" "$(_cco_config_dir)/secrets.env"
 }
 
 # DEPRECATED: Use migrations/project/001_memory_to_claude_state.sh instead.
@@ -131,7 +133,7 @@ migrate_memory_to_claude_state() {
 # Kept for backward compatibility with existing installs that call cmd-init
 # before running cco update for the first time.
 _migrate_to_managed() {
-    local global_dir="$GLOBAL_DIR"
+    local global_dir; global_dir="$(_cco_config_dir)"
     local marker="$global_dir/.claude/.managed-migration-done"
 
     [[ -f "$marker" ]] && return 0

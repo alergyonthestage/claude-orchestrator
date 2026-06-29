@@ -87,7 +87,8 @@ _update_global() {
     local diff_mode="${5:-full}"  # summary | full (for --diff mode)
     local meta_file
     meta_file=$(_cco_global_meta)
-    local installed_dir="$GLOBAL_DIR/.claude"
+    local installed_dir; installed_dir="$(_cco_global_claude_dir)"
+    local config_root; config_root="$(_cco_config_dir)"
     local defaults_dir="$DEFAULTS_DIR/global/.claude"
     local base_dir
     base_dir=$(_cco_global_base_dir)
@@ -98,11 +99,11 @@ _update_global() {
     local latest_schema
     latest_schema=$(_latest_schema_version "global")
 
-    # Read or detect languages
+    # Read or detect languages (datum decomposed to ~/.cco/languages — ADR-0013 D4)
     local comm_lang docs_lang code_lang
-    if [[ -f "$meta_file" ]]; then
+    if [[ -f "$(_cco_languages_file)" ]]; then
         local lang_lines
-        lang_lines=$(_read_languages "$meta_file")
+        lang_lines=$(_read_languages)
         comm_lang=$(echo "$lang_lines" | sed -n '1p')
         docs_lang=$(echo "$lang_lines" | sed -n '2p')
         code_lang=$(echo "$lang_lines" | sed -n '3p')
@@ -124,39 +125,19 @@ _update_global() {
     fi
 
     # Phase 1: Run migrations (always, unless --dry-run or --news)
-    local pending_migrations=$(( latest_schema - current_schema ))
-    [[ $pending_migrations -lt 0 ]] && pending_migrations=0
-    local vault_synced_pre_migration=false
+    local pending_migrations
+    pending_migrations=$(_count_pending_migrations "global" "$current_schema")
 
     if [[ $pending_migrations -gt 0 && "$cmd_mode" != "news" ]]; then
         if [[ "$dry_run" == "true" ]]; then
             info "$pending_migrations global migration(s) pending"
         else
-            # Vault pre-migration snapshot (prompt before any file modifications)
-            if [[ -d "$USER_CONFIG_DIR/.git" ]]; then
-                local do_vault="y"
-                if (exec < /dev/tty) 2>/dev/null; then
-                    read -rp "  Vault detected. Commit current state before running $pending_migrations migration(s)? [Y/n] " do_vault < /dev/tty
-                    do_vault="${do_vault:-y}"
-                fi
-                if [[ "$do_vault" =~ ^[Yy] ]]; then
-                    cmd_vault_save "pre-migration snapshot" </dev/tty >/dev/tty 2>/dev/tty || warn "Vault snapshot failed, continuing..."
-                    vault_synced_pre_migration=true
-                fi
-            fi
-
+            # No pre-migration vault snapshot (the vault is removed, P3): the
+            # universal raw-tar backup (J0) already protects the legacy config, and
+            # ~/.cco is versioned via explicit `cco config save` (ADR-0008).
             if ! _run_migrations "global" "$installed_dir" "$current_schema" "$meta_file"; then
                 error "Global migrations failed. Run 'cco update' again after resolving the issue."
                 return 1
-            fi
-
-            # Refresh paths if migration moved the directory (e.g. 003_user-config-dir)
-            if [[ ! -d "$installed_dir" && -d "$USER_CONFIG_DIR/global/.claude" ]]; then
-                GLOBAL_DIR="$USER_CONFIG_DIR/global"
-                PROJECTS_DIR="$USER_CONFIG_DIR/projects"
-                PACKS_DIR="$USER_CONFIG_DIR/packs"
-                TEMPLATES_DIR="$USER_CONFIG_DIR/templates"
-                installed_dir="$GLOBAL_DIR/.claude"
             fi
 
             # Always refresh meta/base paths after migrations — migration 009
@@ -172,7 +153,7 @@ _update_global() {
 
     # Phase 1.5: Handle policy transitions for global scope.
     # In dry-run mode, detects transitions but skips disk writes.
-    _handle_policy_transitions "$GLOBAL_DIR" "$meta_file" "$base_dir" "$defaults_dir" "global" "$dry_run"
+    _handle_policy_transitions "$installed_dir" "$meta_file" "$base_dir" "$defaults_dir" "global" "$dry_run"
 
     # Phase 2: COLLECT — detect file changes
     local changes
@@ -187,7 +168,7 @@ _update_global() {
     local root_missing=()
     local rf
     for rf in "${GLOBAL_ROOT_COPY_IF_MISSING[@]}"; do
-        if [[ -f "$global_defaults_root/$rf" && ! -f "$GLOBAL_DIR/$rf" ]]; then
+        if [[ -f "$global_defaults_root/$rf" && ! -f "$config_root/$rf" ]]; then
             root_missing+=("$rf")
         fi
     done
@@ -210,21 +191,8 @@ _update_global() {
             fi
             ;;
         sync)
-            # Vault pre-update snapshot (optional, skip if already done pre-migration)
-            if [[ "$dry_run" != "true" && -z "$auto_action" && "$vault_synced_pre_migration" != "true" ]]; then
-                if [[ -d "$USER_CONFIG_DIR/.git" ]]; then
-                    local do_vault="y"
-                    if (exec < /dev/tty) 2>/dev/null; then
-                        read -rp "  Vault detected. Commit current state before updating? [Y/n] " do_vault < /dev/tty
-                        do_vault="${do_vault:-y}"
-                    fi
-                    if [[ "$do_vault" =~ ^[Yy] ]]; then
-                        cmd_vault_save "pre-update snapshot" </dev/tty >/dev/tty 2>/dev/tty || warn "Vault snapshot failed, continuing..."
-                        [[ "$no_backup" != "true" ]] && info "Vault snapshot created. You can use --no-backup to skip .bak files."
-                    fi
-                fi
-            fi
-
+            # No pre-update vault snapshot (vault removed, P3) — version ~/.cco
+            # explicitly with `cco config save` (ADR-0008).
             if [[ "$dry_run" == "true" ]]; then
                 # In dry-run + sync, show what would be available
                 _show_discovery_summary "$changes" "Global"
@@ -238,7 +206,7 @@ _update_global() {
     # Re-check what's actually missing now (migrations may have created files)
     root_missing=()
     for rf in "${GLOBAL_ROOT_COPY_IF_MISSING[@]}"; do
-        if [[ -f "$global_defaults_root/$rf" && ! -f "$GLOBAL_DIR/$rf" ]]; then
+        if [[ -f "$global_defaults_root/$rf" && ! -f "$config_root/$rf" ]]; then
             root_missing+=("$rf")
         fi
     done
@@ -247,7 +215,7 @@ _update_global() {
             if [[ "$dry_run" == "true" ]]; then
                 info "  + $rf (missing, will copy from defaults)"
             else
-                cp "$global_defaults_root/$rf" "$GLOBAL_DIR/$rf"
+                cp "$global_defaults_root/$rf" "$config_root/$rf"
                 ok "  + $rf (copied from defaults)"
             fi
         done
@@ -276,19 +244,14 @@ _update_global() {
             fi
         done
 
-        # Preserve changelog trackers from existing meta
-        local last_seen last_read
-        last_seen=$(_read_last_seen_changelog "$meta_file")
-        last_read=$(_read_last_read_changelog "$meta_file")
-
+        # Changelog markers + languages are decomposed to their own STATE/CONFIG
+        # files (ADR-0013 D4); the meta regen no longer carries them.
         if [[ "$cmd_mode" == "sync" ]]; then
             # Use manifest entries from _interactive_sync
             {
                 echo "$_UPDATE_MANIFEST_ENTRIES"
                 echo "$special_entries"
-            } | _generate_cco_meta \
-                "$meta_file" "$new_schema" "$created" \
-                "$comm_lang" "$docs_lang" "$code_lang" "$last_seen" "$last_read"
+            } | _generate_cco_meta "$meta_file" "$new_schema" "$created"
 
             # Note: .cco/base/ is saved per-file inside _interactive_sync
             # (only for Apply/Keep/Merge/Replace, not Skip)
@@ -311,9 +274,7 @@ _update_global() {
                 {
                     echo "$current_manifest"
                     echo "$special_entries"
-                } | _generate_cco_meta \
-                    "$meta_file" "$new_schema" "$created" \
-                    "$comm_lang" "$docs_lang" "$code_lang" "$last_seen" "$last_read"
+                } | _generate_cco_meta "$meta_file" "$new_schema" "$created"
             fi
         fi
     fi
@@ -346,7 +307,7 @@ _resolve_project_defaults_dir() {
             elif [[ -d "$tmpl_dir" ]]; then
                 echo "$tmpl_dir"
             else
-                warn "Template '$tmpl_name' referenced by project '$(basename "$project_dir")' not found."
+                warn "Template '$tmpl_name' referenced by project '$(_cco_project_id "$project_dir")' not found."
                 warn "  Falling back to base template for discovery."
                 echo "$fallback"
             fi
@@ -361,8 +322,8 @@ _resolve_project_defaults_dir() {
                 echo "$fallback"
             fi
             ;;
-        source:*)
-            # YAML format (FI-7+): "source: https://..." or "source: local"
+        url:*)
+            # YAML coordinate format (ADR-0022 D1): "url: https://..." or "url: local"
             # Remote-installed or internalized project: use base template
             echo "$fallback"
             ;;
@@ -373,11 +334,47 @@ _resolve_project_defaults_dir() {
             ;;
         *)
             # Unknown format — warn and fall back to base
-            warn "Unknown .cco/source format in project '$(basename "$project_dir")': $source_line"
+            warn "Unknown .cco/source format in project '$(_cco_project_id "$project_dir")': $source_line"
             warn "  Falling back to base template for discovery."
             echo "$fallback"
             ;;
     esac
+}
+
+# Stamp a freshly-created decentralized project (cco init scaffold / cco init
+# --migrate) as born at the latest project schema, and seed its 3-way-merge base
+# from the just-installed claude tree. Decentralized projects are written in
+# final form, so a later `cco update` must run ZERO migrations against them — the
+# legacy .claude-layout project migrations never apply (P5; maintainer-confirmed
+# "meta-at-latest" approach). Idempotent: re-runs overwrite meta + base.
+# Usage: _cco_project_seed_update_state <repo>/.cco [<template-name>]
+_cco_project_seed_update_state() {
+    local project_cco="$1"
+    local tmpl="${2:-base}"
+    local installed_dir="$project_cco/claude"
+    local meta_file base_dir latest created
+    meta_file=$(_cco_project_meta "$project_cco")
+    base_dir=$(_cco_project_base_dir "$project_cco")
+    latest=$(_latest_schema_version "project")
+    created=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    # Manifest = hashes of the tracked files in the installed claude tree
+    # (same shape _update_project builds; update.sh project-meta regeneration).
+    local manifest="" entry rel policy h
+    for entry in "${PROJECT_FILE_POLICIES[@]}"; do
+        rel="${entry%:*}"; policy="${entry##*:}"
+        [[ "$policy" == "untracked" ]] && continue
+        rel="${rel#.claude/}"
+        if [[ -f "$installed_dir/$rel" ]]; then
+            h=$(_file_hash "$installed_dir/$rel")
+            manifest+="${rel}	${h}"$'\n'
+        fi
+    done
+    printf '%s' "$manifest" | _generate_project_cco_meta "$meta_file" "$latest" "$created" "$tmpl"
+
+    # Seed the 3-way-merge base from the installed tree (base == installed, so a
+    # first `cco update` sees no spurious diffs).
+    _save_all_base_versions "$base_dir" "$installed_dir" "project"
 }
 
 # Update a project's config
@@ -391,11 +388,14 @@ _update_project() {
     local cache_mode="${7:-default}"
     local local_override="${8:-false}"
     local diff_mode="${9:-full}"  # summary | full (for --diff mode)
+    # project_dir is the committed <repo>/.cco/ (decentralized layout, P5); the
+    # project identity is its project.yml name:, and the installed claude tree is
+    # <repo>/.cco/claude (not a dotted .claude/ as in the gone central layout).
     local pname
-    pname="$(basename "$project_dir")"
+    pname=$(_cco_project_id "$project_dir")
     local meta_file
     meta_file=$(_cco_project_meta "$project_dir")
-    local installed_dir="$project_dir/.claude"
+    local installed_dir="$project_dir/claude"
     local base_dir
     base_dir=$(_cco_project_base_dir "$project_dir")
 
@@ -422,8 +422,8 @@ _update_project() {
     latest_schema=$(_latest_schema_version "project")
 
     # Phase 1: Run migrations (always, unless --dry-run or --news)
-    local pending_migrations=$(( latest_schema - current_schema ))
-    [[ $pending_migrations -lt 0 ]] && pending_migrations=0
+    local pending_migrations
+    pending_migrations=$(_count_pending_migrations "project" "$current_schema")
 
     if [[ $pending_migrations -gt 0 && "$cmd_mode" != "news" ]]; then
         if [[ "$dry_run" == "true" ]]; then

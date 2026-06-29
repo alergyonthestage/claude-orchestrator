@@ -18,8 +18,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 }
 
@@ -58,8 +57,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "myapp" --dry-run --dump
@@ -99,6 +97,7 @@ test_policy_mount_project_only_includes_repo_paths() {
     setup_global_from_defaults "$tmpdir"
     local fake_repo="$tmpdir/my-repo"
     mkdir -p "$fake_repo"
+    seed_index_path "my-repo" "$fake_repo"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -108,8 +107,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $fake_repo
-    name: my-repo
+  - name: my-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -160,8 +158,7 @@ docker:
       - "cc-test-*"
       - "redis-dev"
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -194,8 +191,7 @@ docker:
   mounts:
     policy: none
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -225,8 +221,7 @@ docker:
       - "/secrets"
       - "/home/user/.ssh"
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -264,8 +259,7 @@ docker:
       cpus: "2"
       max_containers: 5
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -330,8 +324,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "myapp" --dry-run --dump
@@ -357,8 +350,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "myapp" --dry-run --dump
@@ -390,8 +382,7 @@ docker:
       - "prod-*"
       - "staging-db"
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -425,8 +416,7 @@ docker:
     resources:
       cpus: "0.5"
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -456,8 +446,7 @@ docker:
     policy: any
     force_readonly: true
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -486,8 +475,7 @@ docker:
   containers:
     name_prefix: "custom-prefix-"
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -508,6 +496,8 @@ test_policy_multiple_repos_allowed_paths() {
     local repo1="$tmpdir/repo-one"
     local repo2="$tmpdir/repo-two"
     mkdir -p "$repo1" "$repo2"
+    seed_index_path "repo-one" "$repo1"
+    seed_index_path "repo-two" "$repo2"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -517,10 +507,8 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $repo1
-    name: repo-one
-  - path: $repo2
-    name: repo-two
+  - name: repo-one
+  - name: repo-two
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -575,8 +563,7 @@ docker:
   containers:
     policy: unrestricted
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -603,8 +590,7 @@ docker:
   containers:
     policy: project_only
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -633,8 +619,7 @@ docker:
   mounts:
     policy: project_only
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -664,8 +649,7 @@ docker:
       - "/opt/data"
       - "/tmp/builds"
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -700,8 +684,7 @@ docker:
   mounts:
     policy: any
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -723,6 +706,9 @@ test_policy_multiple_repos_paths_content() {
     local repo2="$tmpdir/beta-repo"
     local repo3="$tmpdir/gamma-repo"
     mkdir -p "$repo1" "$repo2" "$repo3"
+    seed_index_path "alpha-repo" "$repo1"
+    seed_index_path "beta-repo" "$repo2"
+    seed_index_path "gamma-repo" "$repo3"
     create_project "$tmpdir" "test-proj" "$(cat <<YAML
 name: test-proj
 auth:
@@ -732,12 +718,9 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $repo1
-    name: alpha-repo
-  - path: $repo2
-    name: beta-repo
-  - path: $repo3
-    name: gamma-repo
+  - name: alpha-repo
+  - name: beta-repo
+  - name: gamma-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -769,8 +752,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -826,8 +808,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -875,8 +856,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -902,8 +882,7 @@ docker:
     policy: allowlist
     allow: []
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -935,8 +914,7 @@ docker:
     policy: denylist
     deny: []
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -968,8 +946,7 @@ docker:
     policy: any
     deny: []
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1033,8 +1010,7 @@ docker:
     resources:
       memory: "512m"
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1064,8 +1040,7 @@ docker:
     resources:
       memory: "1073741824"
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1095,8 +1070,7 @@ docker:
     resources:
       cpus: "8"
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "test-proj" --dry-run --dump
@@ -1167,8 +1141,7 @@ docker:
   ports: []
   env: {}
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
+  - name: dummy-repo
 YAML
 )"
     run_cco start "my-special-proj" --dry-run --dump

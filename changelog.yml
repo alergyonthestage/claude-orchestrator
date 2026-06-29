@@ -210,3 +210,199 @@ entries:
       (not directories) are also accepted throughout. No user action
       needed — every new fix is self-applied the next time a relevant
       vault command runs.
+
+  - id: 14
+    date: "2026-06-23"
+    type: breaking
+    title: "Decentralized config cutover: vault removed, config moves in-repo"
+    description: >
+      BREAKING — the central user-config/ + vault world is replaced by the
+      decentralized in-repo config model. Project config now lives in each
+      repo at <repo>/.cco/ (project.yml with logical names + machine-agnostic
+      url/ref coordinates; its claude/ tree; secrets.env stays gitignored).
+      The global personal store moves to ~/.cco (global/.claude, packs/,
+      templates/) and is versioned + multi-PC synced with
+      `cco config save / push / pull` (the `cco vault *` surface is REMOVED).
+      Profiles are replaced by per-user tags (`cco tag add/rm`, `cco list
+      --tag`). Memory and transcripts are now machine-local STATE with NO
+      sync in v1 (cross-PC/cross-team sync is a future opt-in) — they are no
+      longer vault-tracked. `cco project create` is removed; the single entry
+      verb is `cco init` (scaffold a repo's .cco/ + ensure ~/.cco/global),
+      with `cco join` and `cco init --migrate <project>`. Sharing is via a
+      sharing repo (`cco pack/template publish|install`); the central
+      manifest.yml is removed (structure-based discovery). The config-editor
+      is now a built-in session: `cco start config-editor`. Migration is
+      offered by `cco update` (eager global, backs up your legacy vault first,
+      never destructive) and `cco init --migrate` (per project, lazy). Run
+      `cco update` to migrate; your legacy vault is preserved as a fallback.
+
+  - id: 15
+    date: "2026-06-25"
+    type: additive
+    title: "Decentralized config — lifecycle, validation & sharing commands"
+    description: >
+      The decentralized config model (#14) gains its lifecycle, validation and
+      sharing surface — all additive; existing commands and config are unchanged.
+      Project lifecycle: `cco forget <project>` deregisters a project (clears its
+      machine-local index/tags/state; the repo and its committed .cco/ are left
+      untouched — the index self-heals via `cco resolve --scan`).
+      `cco project add repo|mount|llms|pack <name>` adds a referenced resource to
+      the current project, embedding its machine-agnostic coordinate in
+      project.yml and recording the local path in the index in one step (`--path`,
+      url-from-origin). `cco init --template <name>` scaffolds a project from a
+      template with {{VAR}} substitution across project.yml and the whole claude/
+      tree. Validation: `cco config validate [--fix]` detects and (with --fix,
+      confirmed) prunes orphaned internal state in STATE/CACHE/DATA;
+      `cco project validate [name] [--all] [--reachable]` checks a project's
+      share-readiness (coordinates present, no real host paths in committed
+      config, no authored-vs-installed pack collision) with a per-severity exit
+      code (0/1/2); `cco project coords [--diff | --sync --from <repo>]` reports
+      and converges cross-unit coordinate divergence. Sharing & updates:
+      `cco update --check` lists installed packs/templates that have an upstream
+      update (read-only, 3-state, never writes, exit 0); `cco pack internalize`
+      and `cco template internalize [--as <new>]` sever a referenced resource's
+      upstream coordinate so it becomes a local authored source (`--as` forks
+      under a new name); `cco project export --bundle-packs` carries the project's
+      referenced packs in the export closure (installed on import).
+
+  - id: 16
+    date: "2026-06-27"
+    type: additive
+    title: "Unified `cco list` resource index"
+    description: >
+      Listing is consolidated under one command. `cco list` now prints a compact
+      cross-resource index (KIND · NAME · TAGS) of your projects, packs,
+      templates, llms docs and remotes, ordered by kind then name. `cco list
+      <kind>` shows the detailed per-kind view (repo counts/status, resource
+      counts, variants, …); `cco list [<kind>] --tag <t>` filters by tag and
+      `--sort name` orders by name. Full detail for one resource stays on
+      `cco <kind> show <name>`. The per-noun `cco project|pack|template|llms|remote
+      list` verbs were removed — each prints a one-line redirect to
+      `cco list <kind>` (ADR-0029). Tags and all other behaviour are unchanged.
+
+  - id: 17
+    date: "2026-06-27"
+    type: additive
+    title: "Uniform destructive-confirmation contract (-y / --yes)"
+    description: >
+      Every destructive command now follows one contract (ADR-0029 D2): it
+      previews what will be removed (including the id-keyed cascade), then asks
+      for confirmation. `-y`/`--yes` is the canonical skip-confirmation flag,
+      accepted everywhere. `--force` keeps a distinct meaning — override a block,
+      e.g. removing a pack/llms entry that is still in use — and implies `-y`.
+      `cco pack remove` and `cco llms remove` now confirm unconditionally (no more
+      silent removal of an unused resource), and `cco template remove` and
+      `cco remote remove` gained a confirmation. Running a destructive command
+      with no TTY and no `-y` now refuses with a "re-run with -y" message instead
+      of acting blindly. `cco forget`, `cco config validate --fix` and
+      `cco project coords --sync` already followed this contract; `cco clean` and
+      `cco config pull` are non-destructive and keep their existing behaviour.
+
+  - id: 18
+    date: "2026-06-27"
+    type: additive
+    title: "Verb symmetry: `cco tag remove`, `cco template update`/`validate`"
+    description: >
+      Resource families gain symmetric verbs (ADR-0029 D3). `cco tag remove` is
+      the canonical removal verb (the old `cco tag rm` keeps working as an alias).
+      `cco template` reaches parity with `cco pack`: `cco template update <name>`
+      (also `--all`) re-clones an installed template from its recorded source —
+      superseding the old "future `cco template sync`" placeholder — and
+      `cco template validate [name]` (also `--all`) checks a template's structure.
+      Templates now mirror packs: create · install · update · publish · export ·
+      import · internalize · show · remove · validate. The remaining family
+      asymmetries are intentional and documented in each family's `--help`: a
+      project has no install/publish/remove (it rides its code-repo remote;
+      deregister with `cco forget`), and only `llms` has `rename`.
+  - id: 19
+    date: "2026-06-29"
+    type: additive
+    title: "Pack llms references stay re-fetchable (ADR-0032)"
+    description: >
+      Packs now carry their llms coordinate like projects do, closing a drift
+      from the mandatory-llms-url invariant (ADR-0017 D1 / ADR-0019 D6).
+      `cco pack validate` is now url-aware: a referenced-but-uninstalled llms
+      prints an executable remedy ('cco llms install <url> --name <n>') when the
+      manifest carries a url, or flags a share-readiness gap ('has no url
+      coordinate') when it does not — at parity with `cco project validate`.
+      `cco update` backfills a missing llms url into each installed pack from the
+      global llms source where recoverable (idempotent). `cco resolve` now also
+      heals missing url-bearing llms (interactive install/different-url/skip) —
+      one heal verb for repos, mounts, and llms (P14), no separate command. New
+      packs' base template documents the long form with a required url.
+  - id: 20
+    date: "2026-06-29"
+    type: additive
+    title: "Unified, greppable validate output (finding F1)"
+    description: >
+      `cco pack validate` and `cco template validate` now print like
+      `cco project validate` (ADR-0023 D2): one "<name>: <reason>" line per
+      finding plus a "validate: N issue(s) [error=E warning=W]" summary, with no
+      inline ✗/⚠ symbols — severity is the exit code, and the output is
+      script/grep-friendly. A valid resource still prints a "… is valid"
+      confirmation. (`cco config validate` keeps its orphan-sanitization layout,
+      ADR-0021.)
+  - id: 21
+    date: "2026-06-29"
+    type: additive
+    title: "cco resolve heals packs + shows every referenced resource; start reuses it"
+    description: >
+      `cco resolve` now heals a missing pack from its sharing-repo url
+      (interactive install / use-a-different-url / skip, via `cco pack install
+      --pick`) — extending the one heal verb to all four referenced-resource
+      kinds: repos, extra mounts, llms, and packs (P14, ADR-0033). After healing
+      it prints a status row per referenced resource (✓ resolved / ⚠ unresolved
+      [+url]), so it always shows the complete picture, not only what it prompted
+      for. `cco start` now invokes this same resolve surface before launch
+      instead of a parallel resolution loop — a single entry point that heals all
+      kinds and never hard-blocks on unresolved members.
+
+  - id: 22
+    date: "2026-06-29"
+    type: additive
+    title: "cco join adds the current repo as a project member (Journey E)"
+    description: >
+      `cco join <project> [--sync] [--name <name>]` now adds the CURRENT repo as a
+      new member of an existing project (ADR-0034): it embeds the repo's
+      coordinate (name + url derived from `git remote get-url origin`) into the
+      project's repos[] and binds its name->path in the index. The repos[] edit is
+      applied to every in-sync member; a divergent project (Case C) prompts which
+      member's project.yml to update, or all. With --sync the joining repo also
+      receives the project's .cco/ (Case B, respecting the ADR-0024 D2 clobber-
+      guard); without it it stays a code-only member (Case A). After joining,
+      commit + push the changed project.yml in each member and run `cco sync`. The
+      former no-argument form (register an already-committed .cco/) is removed —
+      `cco start` cwd-first and `cco resolve --scan` cover it.
+
+  - id: 23
+    date: "2026-06-29"
+    type: additive
+    title: "cco forget --purge deletes owned <repo>/.cco/ with backup"
+    description: >
+      `cco forget <project> --purge` extends deregistration with an optional,
+      ownership-guarded deletion of the committed <repo>/.cco/ of every member
+      repo the project OWNS (its project.yml `name:` == the project) — a repo that
+      hosts a different project, is shared with another project, or is unresolved
+      here is left untouched. Each deletion is preceded by a backup tar into STATE
+      and a warning if the .cco/ has uncommitted changes. The default remains
+      "repo untouched"; --purge is the explicit consent (works non-interactively,
+      like -y), an interactive run without it asks before deleting, and a
+      non-interactive run without it skips the deletion (ADR-0021 / ADR-0029 D2).
+
+  - id: 24
+    date: "2026-06-29"
+    type: additive
+    title: "Claude Code installed via the native installer (auto-updates in place)"
+    description: >
+      Claude Code is no longer baked into the Docker image via npm (an officially
+      deprecated method). It is now installed at first `cco start` by the official
+      native installer into a persistent host CACHE dir bind-mounted into the
+      container (~/.local), so the binary and its auth grant survive restarts and
+      AUTO-UPDATE in place — no `cco build` needed for upgrades, and no more
+      DISABLE_AUTOUPDATER (ADR-0039). The channel/version is a new config knob
+      `~/.cco/claude-version` (default `latest`; set `stable` or a pinned `x.y.z`
+      to opt out). `cco build --claude-version X` remains a one-off override and
+      re-pins an existing install; `cco build --no-cache` now also resets the
+      install cache so the next start reinstalls fresh. `cco clean` never touches
+      the install cache. First start on a fresh machine adds a one-time ~30s
+      install and requires network access.

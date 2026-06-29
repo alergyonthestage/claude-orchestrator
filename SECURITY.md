@@ -23,11 +23,11 @@ claude-orchestrator runs Claude Code inside Docker containers with `--dangerousl
 
 ### Known Limitations
 
-- **Network access**: containers currently have full internet access. Network hardening (restricted/none modes with domain filtering) is planned but not yet implemented. See the [roadmap](docs/maintainer/decisions/roadmap.md) for details.
+- **Network access**: containers currently have full internet access. Network hardening (restricted/none modes with domain filtering) is planned but not yet implemented. See the [roadmap](docs/maintainers/roadmap.md) for details.
 - **Docker socket**: even with the proxy, mounting the Docker socket grants significant capabilities. Use `mount_socket: false` in `project.yml` if your workflow does not require Docker-from-Docker.
 - **Mounted repositories**: Claude has read-write access to all mounted repos. This is by design — it needs to edit code.
 
-For a detailed security analysis, see [docs/maintainer/architecture/security.md](docs/maintainer/architecture/security.md).
+For a detailed security analysis, see [docs/maintainer/architecture/security.md](docs/maintainers/security/design/design-security-model.md).
 
 ## Supported Versions
 

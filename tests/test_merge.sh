@@ -122,12 +122,12 @@ test_init_creates_cco_base() {
     # cco init should create .cco/base/ with base versions of all managed files
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
-    assert_dir_exists "$CCO_GLOBAL_DIR/.claude/.cco/base" \
+    assert_dir_exists "$HOME/.cco/.claude/.cco/base" \
         ".cco/base/ should be created during init"
     # Should have copies of tracked files
-    assert_file_exists "$CCO_GLOBAL_DIR/.claude/.cco/base/settings.json" \
+    assert_file_exists "$HOME/.cco/.claude/.cco/base/settings.json" \
         ".cco/base/ should contain settings.json"
 }
 
@@ -135,44 +135,45 @@ test_update_refreshes_cco_base() {
     # After cco update, .cco/base/ should reflect the latest defaults
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
-    # Modify a tracked default file
-    printf '\n# New framework line\n' >> "$REPO_ROOT/defaults/global/.claude/rules/workflow.md"
+    # Modify a default file in the framework sandbox (tracked tree untouched)
+    sandbox_framework
+    printf '\n# New framework line\n' >> "$CCO_FRAMEWORK_ROOT/defaults/global/.claude/rules/workflow.md"
 
-    run_cco update
-    # .cco/base should be updated to match the new default
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/.cco/base/rules/workflow.md" "New framework line"
-
-    # Restore
-    cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
+    # Applying (here: --keep, non-interactive) refreshes the base; plain
+    # `cco update` only DISCOVERS (opinionated split). Base lives in STATE (H6).
+    run_cco update --keep
+    assert_file_contains "$(state_global_base)/rules/workflow.md" "New framework line"
 }
 
 # ── 3-way merge integration ─────────────────────────────────────────
 
 test_update_automerge_non_overlapping() {
-    # When user and framework change different parts, auto-merge applies
+    # When user and framework change different parts, the 3-way merge that
+    # `cco update --sync` runs (`_resolve_with_merge`) auto-applies both. Driven
+    # directly here: end-to-end `cco update` auto-merge needs a TTY (non-TTY
+    # --sync skips by design), so we exercise the exact function it calls. The
+    # base lives in STATE now (H6) but is passed in as an argument — relocation
+    # is transparent to the merge engine.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/update-hash-io.sh"
+    source "$REPO_ROOT/lib/update-merge.sh"
 
-    # User adds content at the END of a tracked file
-    printf '\n# My custom addition\n' >> "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
+    mkdir -p "$tmpdir/base/rules" "$tmpdir/installed/rules" "$tmpdir/defaults/rules"
+    printf 'line A\nline B\nline C\n' > "$tmpdir/base/rules/workflow.md"
+    # User adds at the END
+    printf 'line A\nline B\nline C\n# My custom addition\n' > "$tmpdir/installed/rules/workflow.md"
+    # Framework adds at the BEGINNING
+    printf '# Framework header\nline A\nline B\nline C\n' > "$tmpdir/defaults/rules/workflow.md"
 
-    # Framework adds content at the BEGINNING of the same file
-    local default_file="$REPO_ROOT/defaults/global/.claude/rules/workflow.md"
-    local original
-    original=$(cat "$default_file")
-    printf '# Framework header\n\n%s' "$original" > "$default_file"
-
-    run_cco update
-    # Both changes should be present (auto-merged)
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "My custom addition"
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "Framework header"
-    assert_output_contains "auto-merged"
-
-    # Restore
-    cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
+    local out
+    out=$(_resolve_with_merge "rules/workflow.md" "$tmpdir/defaults" "$tmpdir/installed" "$tmpdir/base" "true" "" 2>&1)
+    assert_file_contains "$tmpdir/installed/rules/workflow.md" "My custom addition"
+    assert_file_contains "$tmpdir/installed/rules/workflow.md" "Framework header"
+    printf '%s\n' "$out" | grep -q "auto-merged" || fail "expected auto-merged output, got: $out"
 }
 
 # ── --no-backup flag ─────────────────────────────────────────────────
@@ -180,18 +181,17 @@ test_update_automerge_non_overlapping() {
 test_update_no_backup_skips_bak() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    run_cco init --lang "English"
+    init_global "$tmpdir" --lang "English"
 
-    # Create conflict
-    printf '\n# My custom rule\n' >> "$CCO_GLOBAL_DIR/.claude/rules/workflow.md"
-    printf '\n# Framework update\n' >> "$REPO_ROOT/defaults/global/.claude/rules/workflow.md"
+    # Create conflict — user edit hits the sandbox installed tree ($tmpdir);
+    # the framework change hits the framework sandbox (no tracked-file mutation).
+    printf '\n# My custom rule\n' >> "$HOME/.cco/.claude/rules/workflow.md"
+    sandbox_framework
+    printf '\n# Framework update\n' >> "$CCO_FRAMEWORK_ROOT/defaults/global/.claude/rules/workflow.md"
 
     run_cco update --force --no-backup
     # No .bak should be created
-    assert_file_not_exists "$CCO_GLOBAL_DIR/.claude/rules/workflow.md.bak"
+    assert_file_not_exists "$HOME/.cco/.claude/rules/workflow.md.bak"
     # Framework update should be applied
-    assert_file_contains "$CCO_GLOBAL_DIR/.claude/rules/workflow.md" "Framework update"
-
-    # Restore
-    cd "$REPO_ROOT" && git checkout -- defaults/global/.claude/rules/workflow.md
+    assert_file_contains "$HOME/.cco/.claude/rules/workflow.md" "Framework update"
 }

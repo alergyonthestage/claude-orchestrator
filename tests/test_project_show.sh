@@ -25,11 +25,11 @@ test_project_show_lists_repos() {
     setup_global_from_defaults "$tmpdir"
     local repo_dir="$tmpdir/my-repo"
     mkdir -p "$repo_dir"
+    seed_index_path "my-repo" "$repo_dir"
     create_project "$tmpdir" "my-proj" "$(cat <<YAML
 name: my-proj
 repos:
-  - path: $repo_dir
-    name: my-repo
+  - name: my-repo
 YAML
 )"
     run_cco project show "my-proj"
@@ -85,79 +85,47 @@ test_project_show_fails_if_not_found() {
     fi
 }
 
-# ── validate ──────────────────────────────────────────────────────────
+# ── D5 observability: roles + referenced-by + repo-centric view ──────
 
-test_project_validate_ok_for_valid_project() {
+test_project_show_referenced_by() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    setup_global_from_defaults "$tmpdir"
-    create_project "$tmpdir" "my-proj" "$(cat <<YAML
-name: my-proj
+    mkdir -p "$tmpdir/shared"
+    seed_index_path shared "$tmpdir/shared"
+    index_set_project_repos projB shared
+    create_project "$tmpdir" projA "name: projA
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
-YAML
-)"
-    run_cco project validate "my-proj"
-    assert_output_contains "valid"
+  - name: shared"
+    run_cco project show projA
+    assert_output_contains "also referenced by: projB"
 }
 
-test_project_validate_error_without_project_yml() {
+test_project_show_member_role_host() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    setup_global_from_defaults "$tmpdir"
-    mkdir -p "$CCO_PROJECTS_DIR/broken-proj"
-    if run_cco project validate "broken-proj" 2>/dev/null; then
-        echo "ASSERTION FAILED: should fail without project.yml"
-        return 1
-    fi
-}
-
-test_project_validate_error_for_missing_repo_path() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    setup_global_from_defaults "$tmpdir"
-    create_project "$tmpdir" "my-proj" "$(cat <<YAML
-name: my-proj
+    # A member repo whose .cco/ hosts projA → role 'host'.
+    local hostrepo="$tmpdir/hostrepo"; mkdir -p "$hostrepo/.cco"
+    printf 'name: projA\n' > "$hostrepo/.cco/project.yml"
+    seed_index_path mainrepo "$hostrepo"
+    create_project "$tmpdir" projA "name: projA
 repos:
-  - path: /nonexistent/repo
-    name: ghost-repo
-YAML
-)"
-    if run_cco project validate "my-proj" 2>/dev/null; then
-        echo "ASSERTION FAILED: should fail for missing repo path"
-        return 1
-    fi
+  - name: mainrepo"
+    run_cco project show projA
+    assert_output_contains "[host]"
 }
 
-test_project_validate_error_for_missing_pack() {
+test_project_show_repo_centric_view() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    setup_global_from_defaults "$tmpdir"
-    create_project "$tmpdir" "my-proj" "$(cat <<YAML
-name: my-proj
+    local repo="$tmpdir/myrepo"; mkdir -p "$repo/.cco"
+    cat > "$repo/.cco/project.yml" <<'YML'
+name: myproj
 repos:
-  - path: $CCO_DUMMY_REPO
-    name: dummy-repo
-packs:
-  - nonexistent-pack
-YAML
-)"
-    if run_cco project validate "my-proj" 2>/dev/null; then
-        echo "ASSERTION FAILED: should fail for missing pack"
-        return 1
-    fi
-}
-
-test_project_validate_warns_no_repos() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    setup_global_from_defaults "$tmpdir"
-    create_project "$tmpdir" "my-proj" "$(cat <<YAML
-name: my-proj
-repos: []
-YAML
-)"
-    run_cco project validate "my-proj"
-    assert_output_contains "no repos"
+  - name: api
+    url: git@github.com:org/api.git
+YML
+    cd "$repo"
+    run_cco project show
+    assert_output_contains "hosts project: myproj"
+    assert_output_contains "api"
 }
