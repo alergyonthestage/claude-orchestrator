@@ -128,6 +128,11 @@ Check (and optionally reconcile) coordinate consistency across your projects.
 The index is global-flat (one logical name → one path), so a name's url should
 match in every manifest. The lookup is derived on demand — nothing is persisted.
 
+Note: 'cco project validate' checks per-resource share-readiness (does each
+resource HAVE a url?); 'cco project coords' checks cross-project consistency
+(do same-name resources share the SAME url?). url-less resources carry no
+coordinate and are simply skipped here — they cannot diverge.
+
 Modes:
   (none)               Print the full derived name → url lookup
   --diff               Print only the names whose url diverges across units
@@ -146,7 +151,8 @@ EOF
 
     local recs; recs=$(_coords_scan)
     if [[ -z "$recs" ]]; then
-        info "No coordinates found — no projects reference a url-bearing repo/mount/llms/pack."
+        info "No url coordinates to check — none of your projects reference a url-bearing repo/mount/llms/pack."
+        info "(Distinct from 'cco project validate', which flags resources missing a url; 'coords' only checks url-bearing resources for cross-project consistency.)"
         return 0
     fi
 

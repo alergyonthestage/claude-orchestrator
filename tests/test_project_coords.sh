@@ -41,6 +41,26 @@ YAML
 
 # ── lookup / diff (read-only) ────────────────────────────────────────────
 
+# No url-bearing resource anywhere → nothing to check for consistency. This is
+# NOT an error; the message must say so and distinguish coords from validate
+# (F3: validate = per-resource reachability; coords = cross-project consistency).
+test_project_coords_empty_reports_nothing_to_check() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    create_project "$tmpdir" "solo" "$(cat <<'YAML'
+name: solo
+repos:
+  - name: localrepo
+YAML
+)"
+    local rc=0
+    _pc_in "$tmpdir" project coords || rc=$?
+    assert_equals 0 "$rc"
+    assert_output_contains "No url coordinates to check"
+    # framed as not-an-error, with the validate-vs-coords distinction spelled out
+    assert_output_contains "cco project validate"
+}
+
 test_project_coords_table_lists_lookup() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
