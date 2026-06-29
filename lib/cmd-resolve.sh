@@ -185,6 +185,32 @@ _resolve_unit() {
         esac
     done < <(yml_get_llms "$project_yml" 2>/dev/null)
 
+    # Packs (ADR-0033): heal a referenced-but-uninstalled pack from its sharing-
+    # repo url, unified with repos/mounts/llms under this one heal verb (P14). A
+    # pack present in a local layer (~/.cco/packs or <repo>/.cco/packs) is already
+    # resolved; a url-bearing one missing from both layers is offered for install
+    # (reusing the `cco pack install --pick` backend, mirroring llms). No url and
+    # not embedded → conscious-skip. Non-TTY: warn + count, never block.
+    local pref presource
+    while IFS= read -r _ln; do
+        [[ -z "$_ln" ]] && continue
+        _peel_tab "$_ln" name url pref presource
+        [[ -z "$name" ]] && continue
+        [[ -n "$(_pack_resolve_dir "$name" "$unit_dir/.cco")" ]] && continue   # already in a local layer
+        if ! _cco_have_tty; then
+            unresolved=$((unresolved + 1))
+            warn "pack '$name' not installed — run 'cco resolve' on a terminal${url:+ (or: cco pack install $url --pick $name)}"
+            continue
+        fi
+        rc=0
+        _resolve_pack_entry "$name" "$url" || rc=$?
+        case $rc in
+            0) resolved=$((resolved + 1)) ;;
+            2) return 0 ;;                          # user quit
+            *) unresolved=$((unresolved + 1)) ;;    # skipped
+        esac
+    done < <(yml_get_pack_coords "$project_yml" 2>/dev/null)
+
     # Record project -> member repos membership (index projects: section).
     if [[ -n "$proj_name" && ${#member_repos[@]} -gt 0 ]]; then
         _index_set_project_repos "$proj_name" "${member_repos[@]}"
@@ -229,6 +255,105 @@ _resolve_llms_entry() {
     ( _llms_install "$url" --name "$name" ${variant:+--variant "$variant"} ) \
         || { warn "llms '$name' install failed — left unresolved"; return 1; }
     return 0
+}
+
+# Interactively heal one missing pack reference (ADR-0033). Mirrors
+# _resolve_llms_entry: install-from-url / use-a-different-url / skip (or
+# specify-a-url / skip when no url is recorded). Installs via the `cco pack
+# install` backend in a subshell (so a download `die` cannot abort the whole
+# resolve). Returns 0 = installed, 2 = user quit, 1 = skipped. Callers gate this
+# on _cco_have_tty. A pack already present in a local layer (~/.cco/packs or
+# <repo>/.cco/packs) never reaches here — the caller skips it as resolved.
+_resolve_pack_entry() {
+    local name="$1" url="$2" reply
+    if [[ -n "$url" ]]; then
+        printf "pack '%s' not installed (url: %s)\n  [i] install from url · [d] use a different url · [s] skip · [q] quit: " "$name" "$url" >&2
+        read -r reply </dev/tty || return 1
+        case "$reply" in
+            ""|[Ii]) ;;                                              # install from the recorded url
+            [Dd]) printf "  url: " >&2; read -r url </dev/tty || return 1
+                  [[ -z "$url" ]] && { warn "no url given — skipped"; return 1; } ;;
+            [Qq]) return 2 ;;
+            *)    return 1 ;;                                        # skip
+        esac
+    else
+        printf "pack '%s' has no url coordinate and is not embedded locally.\n  [u] specify a url to install · [s] skip · [q] quit: " "$name" >&2
+        read -r reply </dev/tty || return 1
+        case "$reply" in
+            [Uu]) printf "  url: " >&2; read -r url </dev/tty || return 1
+                  [[ -z "$url" ]] && { warn "no url given — skipped"; return 1; } ;;
+            [Qq]) return 2 ;;
+            *)    return 1 ;;
+        esac
+    fi
+    info "Installing pack '$name' from $url ..."
+    ( cmd_pack_install "$url" --pick "$name" ) \
+        || { warn "pack '$name' install failed — left unresolved"; return 1; }
+    return 0
+}
+
+# Render a one-line status row per referenced resource of a unit (ADR-0033) —
+# the "always show the status of every referenced resource" surface of
+# `cco resolve`. Read-only; reports the post-heal state uniformly across repos,
+# extra_mounts, llms and packs (✓ resolved / ⚠ unresolved [+url]). Healing has
+# already run in _resolve_unit; this only reports. Goes to stderr like the rest
+# of the resolve surface.
+# Usage: _resolve_render_status <unit_dir>
+_resolve_render_status() {
+    local unit_dir="$1"
+    local project_yml="$unit_dir/.cco/project.yml"
+    [[ -f "$project_yml" ]] || return 0
+    local _ln name url desc variant pref presource p pdir
+    printf '\n  Referenced resources:\n' >&2
+
+    # repos / extra_mounts — resolved iff the index path exists on disk.
+    while IFS= read -r _ln; do
+        [[ -z "$_ln" ]] && continue
+        _peel_tab "$_ln" name url
+        [[ -z "$name" ]] && continue
+        p=$(_index_get_path "$name")
+        if [[ -n "$p" ]] && _path_exists "$p"; then
+            printf '    %-5s %-22s ✓ %s\n' "repo" "$name" "$p" >&2
+        else
+            printf '    %-5s %-22s ⚠ unresolved%s\n' "repo" "$name" "${url:+ (url: $url)}" >&2
+        fi
+    done < <(yml_get_repo_coords "$project_yml" 2>/dev/null)
+    while IFS= read -r _ln; do
+        [[ -z "$_ln" ]] && continue
+        _peel_tab "$_ln" name url
+        [[ -z "$name" ]] && continue
+        p=$(_index_get_path "$name")
+        if [[ -n "$p" ]] && _path_exists "$p"; then
+            printf '    %-5s %-22s ✓ %s\n' "mount" "$name" "$p" >&2
+        else
+            printf '    %-5s %-22s ⚠ unresolved%s\n' "mount" "$name" "${url:+ (url: $url)}" >&2
+        fi
+    done < <(yml_get_mount_coords "$project_yml" 2>/dev/null)
+
+    # llms — resolved iff installed in LLMS_DIR (content lives in CACHE).
+    while IFS= read -r _ln; do
+        [[ -z "$_ln" ]] && continue
+        _peel_tab "$_ln" name desc variant url
+        [[ -z "$name" ]] && continue
+        if [[ -d "${LLMS_DIR:-}/$name" ]]; then
+            printf '    %-5s %-22s ✓ installed\n' "llms" "$name" >&2
+        else
+            printf '    %-5s %-22s ⚠ unresolved%s\n' "llms" "$name" "${url:+ (url: $url)}" >&2
+        fi
+    done < <(yml_get_llms "$project_yml" 2>/dev/null)
+
+    # packs — resolved iff present in a local layer (~/.cco/packs or <repo>/.cco/packs).
+    while IFS= read -r _ln; do
+        [[ -z "$_ln" ]] && continue
+        _peel_tab "$_ln" name url pref presource
+        [[ -z "$name" ]] && continue
+        pdir=$(_pack_resolve_dir "$name" "$unit_dir/.cco")
+        if [[ -n "$pdir" ]]; then
+            printf '    %-5s %-22s ✓ %s\n' "pack" "$name" "$pdir" >&2
+        else
+            printf '    %-5s %-22s ⚠ unresolved%s\n' "pack" "$name" "${url:+ (url: $url)}" >&2
+        fi
+    done < <(yml_get_pack_coords "$project_yml" 2>/dev/null)
 }
 
 # Determine the logical name a discovered repo dir maps to: prefer a git origin
@@ -403,6 +528,8 @@ EOF
             || die "No .cco/project.yml found in the current directory or its parents. Run from a configured repo, name a project, or use 'cco resolve --scan <dir>'."
     fi
     _resolve_unit "$unit_dir"
+    # Always show the post-heal status of every referenced resource (ADR-0033).
+    _resolve_render_status "$unit_dir"
 }
 
 cmd_path() {

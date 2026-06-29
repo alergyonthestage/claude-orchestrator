@@ -398,3 +398,86 @@ test_path_list_normalizes_and_flags_malformed() {
     assert_output_contains "malformed" || return 1
     assert_output_contains "1 malformed index entr" || return 1
 }
+
+# ── pack heal + unified status render (ADR-0033) ─────────────────────
+# cco resolve heals referenced-but-uninstalled packs from their sharing-repo url
+# (P14: one heal verb for repos/mounts/llms/packs) and always renders a status
+# row per referenced resource. Non-TTY warns + counts (never blocks); TTY routes
+# to the interactive install; a pack present in a local layer is a clean skip.
+
+_RSV_MIXED_YML='name: demo
+repos:
+  - name: myrepo
+llms:
+  - name: svelte
+    url: https://svelte.dev/llms.txt
+packs:
+  - name: team-pack
+    url: https://github.com/org/sharing.git'
+
+test_resolve_pack_missing_warns_non_tty() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/myrepo"
+    _rsv_unit "$tmp" myrepo "$_RSV_MIXED_YML"
+    seed_index_path myrepo "$tmp/myrepo"
+    local out
+    out=$(
+        export LLMS_DIR="$tmp/llms"; mkdir -p "$LLMS_DIR/svelte"     # llms installed → only pack unresolved
+        export PACKS_DIR="$tmp/packs"; mkdir -p "$PACKS_DIR"
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/yaml.sh"; source "$REPO_ROOT/lib/paths.sh"
+        source "$REPO_ROOT/lib/index.sh"; source "$REPO_ROOT/lib/local-paths.sh"
+        source "$REPO_ROOT/lib/packs.sh"; source "$REPO_ROOT/lib/cmd-resolve.sh"
+        _cco_have_tty() { return 1; }                               # headless
+        _resolve_unit "$tmp/myrepo" 2>&1
+    )
+    [[ "$out" == *"pack 'team-pack' not installed"* ]] \
+        || fail "Expected non-TTY warn for missing pack, got: $out"
+    [[ "$out" == *"cco pack install https://github.com/org/sharing.git --pick team-pack"* ]] \
+        || fail "Expected an executable install hint, got: $out"
+}
+
+test_resolve_pack_tty_invokes_heal() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/myrepo"
+    _rsv_unit "$tmp" myrepo "$_RSV_MIXED_YML"
+    seed_index_path myrepo "$tmp/myrepo"
+    local out
+    out=$(
+        export LLMS_DIR="$tmp/llms"; mkdir -p "$LLMS_DIR/svelte"     # llms installed → skip
+        export PACKS_DIR="$tmp/packs"; mkdir -p "$PACKS_DIR"
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/yaml.sh"; source "$REPO_ROOT/lib/paths.sh"
+        source "$REPO_ROOT/lib/index.sh"; source "$REPO_ROOT/lib/local-paths.sh"
+        source "$REPO_ROOT/lib/packs.sh"; source "$REPO_ROOT/lib/cmd-resolve.sh"
+        _cco_have_tty() { return 0; }                               # terminal reachable
+        _resolve_pack_entry() { mkdir -p "$PACKS_DIR/$1"; return 0; }   # stub a successful install
+        _resolve_unit "$tmp/myrepo" >/dev/null 2>&1
+        [[ -d "$PACKS_DIR/team-pack" ]] && echo HEALED
+    )
+    [[ "$out" == *HEALED* ]] || fail "TTY resolve must route a missing pack to the heal path"
+}
+
+test_resolve_status_render_lists_all_kinds() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/myrepo"
+    _rsv_unit "$tmp" myrepo "$_RSV_MIXED_YML"
+    seed_index_path myrepo "$tmp/myrepo"
+    local out
+    out=$(
+        export LLMS_DIR="$tmp/llms"; mkdir -p "$LLMS_DIR"            # svelte NOT installed
+        export PACKS_DIR="$tmp/packs"; mkdir -p "$PACKS_DIR"          # team-pack NOT present
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/yaml.sh"; source "$REPO_ROOT/lib/paths.sh"
+        source "$REPO_ROOT/lib/index.sh"; source "$REPO_ROOT/lib/local-paths.sh"
+        source "$REPO_ROOT/lib/packs.sh"; source "$REPO_ROOT/lib/cmd-resolve.sh"
+        _resolve_render_status "$tmp/myrepo" 2>&1
+    )
+    [[ "$out" == *"Referenced resources:"* ]] || fail "status header missing: $out"
+    [[ "$out" == *"myrepo"*"✓"* ]]            || fail "resolved repo must show ✓: $out"
+    [[ "$out" == *"svelte"*"unresolved"* ]]   || fail "unresolved llms must show: $out"
+    [[ "$out" == *"team-pack"*"unresolved"* ]] || fail "unresolved pack must show: $out"
+}
