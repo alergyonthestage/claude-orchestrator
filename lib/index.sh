@@ -160,14 +160,44 @@ _index_section_dump() {
     ' "$f"
 }
 
+# ── Boundary normalization (the index stores absolute paths only) ─────
+#
+# The single normalizer for every value written to the paths: section. It
+# expands the legacy local-paths.yml spellings (~, ~/…, $HOME, $HOME/…) — more
+# than expand_path(), which only handles ~ — and REJECTS anything still
+# non-absolute (relative / empty / a bare `@local` marker with no recovery).
+# Rejecting at the write boundary keeps every reader (resolve, path list,
+# conflict check, compose mount-gen) free of the tilde/@local poisoning that
+# broke by-name resolve and produced false AD5 conflicts (design §3).
+# Usage: _index_normalize_path <value>  → stdout abs path, return 0
+#                                       → (non-absolute) no output, return 1
+_index_normalize_path() {
+    local p="$1"
+    case "$p" in
+        "~")        p="$HOME" ;;
+        "~/"*)      p="$HOME/${p#\~/}" ;;
+        '$HOME')    p="$HOME" ;;
+        '$HOME/'*)  p="$HOME/${p#\$HOME/}" ;;
+    esac
+    [[ "$p" == /* ]] || return 1
+    printf '%s\n' "$p"
+}
+
 # ── Public API ───────────────────────────────────────────────────────
 
 # Echo the absolute path bound to a logical <name>, or empty if unresolved.
 _index_get_path() { _index_section_get paths "$1"; }
 
-# Bind a logical <name> to an absolute <path> (unconditional upsert).
-# AD5 conflict policy lives in the caller — see _index_path_conflicts().
-_index_set_path() { _index_section_set paths "$1" "$2"; }
+# Bind a logical <name> to an absolute <path> (upsert). The value is normalized
+# at this boundary (_index_normalize_path); a non-absolute value that cannot be
+# recovered is SKIPPED (no write) and the call returns 1 — the user-facing warn
+# lives at the caller (resolve/migrate) where there is context. AD5 conflict
+# policy lives in the caller — see _index_path_conflicts().
+_index_set_path() {
+    local norm
+    norm=$(_index_normalize_path "$2") || return 1
+    _index_section_set paths "$1" "$norm"
+}
 
 # Remove a logical <name> from the index.
 _index_remove_path() { _index_section_remove paths "$1"; }
@@ -184,7 +214,15 @@ _index_list_projects() { _index_section_dump projects; }
 _index_path_conflicts() {
     local name="$1" path="$2" existing
     existing=$(_index_get_path "$name")
-    [[ -n "$existing" && "$existing" != "$path" ]]
+    [[ -z "$existing" ]] && return 1
+    # Normalize both sides before comparing so two spellings of the SAME dir
+    # (~/x vs /home/me/x, a $HOME prefix) are not a false AD5 conflict. Fall
+    # back to the raw value if a side is not normalizable (defense-in-depth
+    # against an already-dirty entry written before the boundary fix).
+    local en pn
+    en=$(_index_normalize_path "$existing") || en="$existing"
+    pn=$(_index_normalize_path "$path") || pn="$path"
+    [[ "$en" != "$pn" ]]
 }
 
 # Echo the space-separated member repo names of a <project>, or empty.

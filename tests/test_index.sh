@@ -149,3 +149,41 @@ test_index_repos_get_projects_reverse() {
     printf '%s\n' "$out2" | grep -qx projA || fail "projA should reference 'apionly'"
     printf '%s\n' "$out2" | grep -qx projB && fail "projB must not reference 'apionly'" || true
 }
+
+# ── Boundary normalization (S1: the index stores absolute paths only) ──
+
+test_index_set_path_expands_tilde() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_set_path r1 "~/dev/x"
+    local got; got=$(_index_get_path r1)
+    [[ "$got" == "$HOME/dev/x" ]] || fail "tilde not expanded, got: $got"
+}
+
+test_index_set_path_expands_home_var() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_set_path r2 '$HOME/dev/y'
+    local got; got=$(_index_get_path r2)
+    [[ "$got" == "$HOME/dev/y" ]] || fail "\$HOME not expanded, got: $got"
+}
+
+test_index_set_path_rejects_non_absolute() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    # @local and relative values must never reach the index (return 1, no entry).
+    if _index_set_path bad1 "@local";        then fail "@local should be rejected"; fi
+    if _index_set_path bad2 "relative/path"; then fail "relative path should be rejected"; fi
+    [[ -z "$(_index_get_path bad1)" ]] || fail "bad1 must not be in the index"
+    [[ -z "$(_index_get_path bad2)" ]] || fail "bad2 must not be in the index"
+}
+
+test_index_path_conflicts_ignores_spelling() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_set_path r3 "$HOME/dev/z"
+    # Same dir, tilde spelling → NOT a conflict (false AD5 regression, finding #2).
+    if _index_path_conflicts r3 "~/dev/z"; then fail "same dir, two spellings must not conflict"; fi
+    # A genuinely different dir → conflict.
+    _index_path_conflicts r3 "/other/place" || fail "different dir must conflict"
+}
