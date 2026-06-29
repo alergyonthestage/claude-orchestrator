@@ -976,20 +976,47 @@ _cco_migrate_project() {
     done
     [[ -f "$stage/secrets.env" && ! -f "$stage/secrets.env.example" ]] && \
         sed 's/=.*/=/' "$stage/secrets.env" > "$stage/secrets.env.example" 2>/dev/null || true
+    # Arbitrary gitignored secret files (legacy _PORTABLE_FILE_PATTERNS: *.env / *.key
+    # / *.pem — already ignored by the project .gitignore). The fixed list above
+    # covers secrets.env; this glob carries any OTHER secret file the legacy project
+    # root held, so it is migrated (gitignored) instead of silently dropped. Source:
+    # working tree (active profile) overrides the profile-state shadow (non-active,
+    # BL1) — copy the shadow first, then the working tree. NOT .credentials.json:
+    # OAuth creds are seeded per-machine, never portable (absent from the legacy set).
+    local sdir spath sbn
+    for sdir in ${shadow_base:+"$shadow_base"} "$leg"; do
+        [[ -d "$sdir" ]] || continue
+        for spath in "$sdir"/*.env "$sdir"/*.key "$sdir"/*.pem; do
+            [[ -f "$spath" ]] || continue
+            sbn=$(basename "$spath")
+            # secrets.env(.example) already handled (with the .example derivation).
+            [[ "$sbn" == secrets.env || "$sbn" == secrets.env.example ]] && continue
+            cp "$spath" "$stage/$sbn"
+        done
+    done
     # Authored (no-coordinate) packs travel with the project (P15).
     if [[ -d "$leg/.cco/packs" ]]; then
         mkdir -p "$stage/packs"; cp -r "$leg/.cco/packs/." "$stage/packs/" 2>/dev/null || true
     fi
     _cco_write_project_gitignore "$stage/.gitignore"
 
-    # Secret-scan committed files (secrets.env is gitignored; *.example exempt, FR-S3).
-    local cf hit
+    # Secret-scan files that WOULD be committed (FR-S3). Files matching the project
+    # .gitignore secret patterns (secrets.env, *.env, *.key, *.pem, .credentials.json —
+    # the set written by _cco_write_project_gitignore) are gitignored-by-design and
+    # migrated as such, so they are never committed: skip them (the scan must mirror
+    # the gitignore, else it would refuse the GAP#1 secret files we deliberately
+    # carry). Anything else matching a secret filename (e.g. .netrc, .cco/remotes) WOULD
+    # be committed and still blocks the migrate.
+    local cf hit cbn
     while IFS= read -r cf; do
-        [[ "$cf" == *.example ]] && continue   # secrets.env already excluded by find (C8)
+        cbn=$(basename "$cf")
+        case "$cbn" in
+            *.example|secrets.env|*.env|*.key|*.pem|.credentials.json) continue ;;
+        esac
         if hit=$(_secret_match_filename "$cf" 2>/dev/null) && [[ -n "$hit" ]]; then
             die "Refusing to migrate: a secret-like file would be committed: ${cf#$stage/}"
         fi
-    done < <(find "$stage" -type f ! -path '*/secrets.env')
+    done < <(find "$stage" -type f)
 
     # Atomic move into the repo (F44): a partial .cco/ never survives a failure.
     mv "$stage" "$target/.cco" || die "Failed to install the migrated .cco/ into $target."
@@ -1026,6 +1053,23 @@ _cco_migrate_project() {
         [[ -d "$src_mem" ]] || continue
         mkdir -p "$mem_dst"
         cp -rn "$src_mem/." "$mem_dst/" 2>/dev/null || true
+    done
+
+    # Transcripts (session /resume history) → STATE, same contract as memory: STATE
+    # is machine-local, NOT cross-PC synced (ADR-0009), but the *local* legacy→new
+    # migration MUST copy them — discarding them here is silent data loss. The legacy
+    # source dual-resolves $leg/.cco/claude-state else $leg/claude-state via
+    # _cco_project_claude_state (post- and pre-consolidation layouts); for a non-active
+    # profile they live in the profile-state shadow (BL2). Destination == where
+    # cmd-start mounts them (_cco_project_session_transcripts), so a migrated project's
+    # history shows up on next `cco start`. Non-clobber (cp -rn / F11): a second
+    # migrate never overwrites newer machine-local transcripts.
+    local tx_dst src_tx; tx_dst="$(_cco_project_session_transcripts "$mig_name")"
+    for src_tx in "$(_cco_project_claude_state "$leg")" \
+                  ${shadow_base:+"$(_cco_project_claude_state "$shadow_base")"}; do
+        [[ -d "$src_tx" ]] || continue
+        mkdir -p "$tx_dst"
+        cp -rn "$src_tx/." "$tx_dst/" 2>/dev/null || true
     done
 
     # Born at the latest schema + seed the 3-way-merge base (P5): the migration

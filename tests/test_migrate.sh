@@ -466,6 +466,15 @@ YML
     echo "source: https://github.com/org/cco-sharing.git" > "$vault/packs/team-pack/.cco/source"
     echo "name: team-pack" > "$vault/packs/team-pack/pack.yml"
     printf 'url: https://react.dev/llms-full.txt\nvariant: full\n' > "$vault/llms/react/.cco/source"
+    # Portable session state + arbitrary gitignored secret files that MUST migrate
+    # (no data loss): transcripts (GAP#2) and *.env/*.key/*.pem (GAP#1, legacy
+    # _PORTABLE_FILE_PATTERNS). The shared fixture carries them so every migrate test
+    # also proves the secret-scan does not refuse the gitignored-by-design files.
+    mkdir -p "$vault/projects/myapp/.cco/claude-state"
+    printf '{"type":"summary"}\n' > "$vault/projects/myapp/.cco/claude-state/session1.jsonl"
+    printf 'API_KEY=legacy-secret\n' > "$vault/projects/myapp/api.env"
+    printf 'PRIVATE-KEY-BYTES\n'      > "$vault/projects/myapp/id_rsa.key"
+    printf 'CERT-BYTES\n'             > "$vault/projects/myapp/cert.pem"
     git -C "$vault" init -q
     git -C "$vault" symbolic-ref HEAD refs/heads/main 2>/dev/null
     git -C "$vault" add -A 2>/dev/null
@@ -569,6 +578,46 @@ test_migrate_project_memory_non_clobber() {
     ( cd "$tmpdir/clones/api" && CCO_ASSUME_YES=1 run_cco init --migrate myapp )
     assert_file_contains "$CCO_STATE_HOME/projects/myapp/session/memory/note.md" "newer local note" \
         "migration must not clobber newer local memory (F11)"
+}
+
+test_migrate_project_relocates_transcripts() {
+    # GAP#2: session transcripts (/resume history) must migrate to STATE
+    # session/claude-state — machine-local (ADR-0009: local migration ≠ cross-PC
+    # sync). Destination == where cmd-start mounts them, so history reappears on
+    # the next `cco start`.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_legacy_vault_project "$tmpdir"
+    ( cd "$tmpdir/clones/api" && CCO_ASSUME_YES=1 run_cco init --migrate myapp )
+    assert_file_exists "$CCO_STATE_HOME/projects/myapp/session/claude-state/session1.jsonl" \
+        "transcripts should relocate to STATE session/claude-state (GAP#2; ADR-0009)"
+    # And NOT into the committed config.
+    [[ ! -d "$tmpdir/clones/api/.cco/claude-state" ]] || fail "transcripts must not live in committed .cco/"
+}
+
+test_migrate_project_transcripts_non_clobber() {
+    # Pre-existing newer STATE transcripts must not be overwritten on re-migrate (F11).
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_legacy_vault_project "$tmpdir"
+    mkdir -p "$CCO_STATE_HOME/projects/myapp/session/claude-state"
+    echo "newer transcript" > "$CCO_STATE_HOME/projects/myapp/session/claude-state/session1.jsonl"
+    ( cd "$tmpdir/clones/api" && CCO_ASSUME_YES=1 run_cco init --migrate myapp )
+    assert_file_contains "$CCO_STATE_HOME/projects/myapp/session/claude-state/session1.jsonl" "newer transcript" \
+        "migration must not clobber newer local transcripts (F11)"
+}
+
+test_migrate_project_relocates_arbitrary_secret_files() {
+    # GAP#1: legacy portable secret files (*.env/*.key/*.pem — _PORTABLE_FILE_PATTERNS)
+    # must migrate into <repo>/.cco/ (gitignored-by-design, never silently dropped),
+    # and the secret-scan must NOT refuse them (they are not committed).
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_legacy_vault_project "$tmpdir"
+    ( cd "$tmpdir/clones/api" && CCO_ASSUME_YES=1 run_cco init --migrate myapp )
+    local cco="$tmpdir/clones/api/.cco"
+    assert_file_exists "$cco/api.env"    "*.env secret file must migrate (GAP#1)"
+    assert_file_exists "$cco/id_rsa.key" "*.key secret file must migrate (GAP#1)"
+    assert_file_exists "$cco/cert.pem"   "*.pem secret file must migrate (GAP#1)"
+    # Gitignored-by-design so they are never committed.
+    assert_file_contains "$cco/.gitignore" "*.key"
 }
 
 test_migrate_project_name_uniqueness() {
@@ -683,9 +732,11 @@ YML
     # The inactive profile's gitignored files live in the on-disk profile-state
     # shadow (untracked → captured by the raw-tar backup, not by git archive).
     local sh="$vault/.cco/profile-state/work/projects/work-app"
-    mkdir -p "$sh/.cco" "$sh/memory"
+    mkdir -p "$sh/.cco" "$sh/.cco/claude-state" "$sh/memory"
     echo "WORKAPP_SECRET=xyz789" > "$sh/secrets.env"
     echo "remember work-app" > "$sh/memory/note.md"
+    printf '{"type":"summary"}\n' > "$sh/.cco/claude-state/session1.jsonl"
+    echo "WORKAPP_KEY=abc" > "$sh/extra.key"
     printf 'repos:\n  workrepo: "/home/dev/workrepo"\n' > "$sh/.cco/local-paths.yml"
     mkdir -p "$tmpdir/clones/workrepo"
 
@@ -697,6 +748,12 @@ YML
     # BL2 — memory recovered from the shadow into STATE (session/memory; H7)
     assert_file_exists "$CCO_STATE_HOME/projects/work-app/session/memory/note.md" \
         "inactive-profile project memory must be migrated from the shadow (BL2)"
+    # GAP#2 — transcripts recovered from the shadow into STATE (session/claude-state)
+    assert_file_exists "$CCO_STATE_HOME/projects/work-app/session/claude-state/session1.jsonl" \
+        "inactive-profile transcripts must be migrated from the shadow (GAP#2)"
+    # GAP#1 — arbitrary secret file recovered from the shadow into <repo>/.cco/
+    assert_file_exists "$tmpdir/clones/workrepo/.cco/extra.key" \
+        "inactive-profile *.key secret file must be migrated from the shadow (GAP#1)"
     # local-paths from the shadow → index (repo path still registered)
     assert_file_contains "$CCO_STATE_HOME/index" 'workrepo: "/home/dev/workrepo"' \
         "inactive-profile repo path (from shadow local-paths.yml) must register in the index"

@@ -149,9 +149,12 @@ _cco_project_cache_managed() {
 
 # Session-scoped machine-local state for a project (ADR-0009 / design §2.2):
 # auto-memory + session transcripts, mounted into the container by cmd-start and
-# hydrated by `cco init --migrate`. Canonical home so the runtime mount and the
-# migrate destination cannot drift (review H7 — they did: migrate wrote
-# projects/<id>/memory while cmd-start mounts projects/<id>/session/memory).
+# hydrated by `cco init --migrate`. Both memory and transcripts live under the
+# `session/` subtree in STATE, so the runtime mount source and the migrate
+# destination stay in sync — the canonical home that fixes the H7 drift (migrate
+# had written projects/<id>/memory while cmd-start mounts projects/<id>/session/*).
+# Migration wires both: memory via _cco_project_session_memory, transcripts via
+# _cco_project_session_transcripts (migrate.sh, after index registration / M5).
 # $1 = project NAME (the <id> = project.yml name: = index key), NOT a repo dir —
 # matching _cco_project_cache_managed.
 _cco_project_session_dir() {
