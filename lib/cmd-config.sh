@@ -17,8 +17,9 @@
 # `!`-re-include only authored config) AND explicit-path staging — NEVER `git add
 # -A`. secrets.env stays gitignored; secrets.env.example is committed. A 2-pass
 # secret scan (filename + content, *.example exempt) refuses a leak in any staged
-# file. `cco config validate` (orphan-sanitization) is deferred to Phase 5 (the
-# lifecycle/delete-cascade work, ADR-0021 §5 / design §9 P5).
+# file. `cco config validate` (orphan-sanitization of id-keyed internal state;
+# preview-first `--fix`) is implemented here (_config_validate, ADR-0021 §5 /
+# design §9 P5 — the lifecycle/delete-cascade work).
 #
 # Provides: cmd_config(), _config_validate()
 # Dependencies: colors.sh, utils.sh, secrets.sh (_secret_match_*),

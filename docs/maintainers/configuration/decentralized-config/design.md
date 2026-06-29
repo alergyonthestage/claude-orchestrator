@@ -5,6 +5,11 @@ taxonomy by ADR-0016 (M, 2026-06-17)**; **Domain-B sharing realigned by the S cy
 (pack coordinates + project-local packs), §6.2, §7, §12 (ADR-0018/0019/0020, 2026-06-18)**;
 **§1 overview realigned to ADR-0008 (`~/.cco` management) + sharing-repo nomenclature
 (Cluster 3 doc-resync, 2026-06-19)**.
+**Implementation status (2026-06-29): fully realized — Phases 0–5 (§9) plus the impl-readiness
+review (ADRs 0021–0023), the pre-merge review cycle (flatten ADR-0028, UX-UI ADR-0029), and Mac
+dogfooding rounds 2–3 + the `cco sync` UX refinement (ADRs 0030–0035) are all shipped on
+`feat/vault/decentralized-config` (suite 1010/0). Host e2e validated; v1 ready to merge. The full
+decision trail is in `decisions/` (ADR-0001…0035); live status in `../../roadmap.md`.**
 Authoritative design; drives the phased implementation (§9).
 **Requirements**: `requirements.md` (AD1-AD12, FR-*).
 **Decision records**: `decisions/` — ADR-0001 (decentralization), 0002

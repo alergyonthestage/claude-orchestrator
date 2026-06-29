@@ -138,6 +138,14 @@ Options:
                     <target>/.cco/.tmp/sync-<source>.diff (clean: cco clean --tmp)
   --auto-approve    Apply without the per-target confirmation prompt
   --check           Exit-code only: 0 if every target is in sync, 1 otherwise
+
+Examples:
+  cco sync                            # From the cwd repo, converge all members
+  cco sync frontend                   # Only the frontend repo
+  cd frontend && cco sync --from backend     # Pull backend's .cco/ into frontend
+  cco sync --from backend --all       # Broadcast backend's .cco/ to all members
+  cco sync --dry-run                  # Preview the change summary, copy nothing
+  cco sync --dry-run --dump           # Also write full diffs to .cco/.tmp/
 EOF
                 return 0
                 ;;
