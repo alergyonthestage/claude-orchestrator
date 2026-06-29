@@ -61,6 +61,18 @@ _cco_llms_dir() {
     printf '%s\n' "$(_cco_cache_dir)/llms"
 }
 
+# Claude Code native-install home → CACHE (ADR-0039). The image no longer bakes
+# the binary (npm + DISABLE_AUTOUPDATER retired); the entrypoint installs it at
+# first start via the official `install.sh`. `bin/` and `share/` are bind-mounted
+# into the container at /home/claude/.local/{bin,share/claude}, so the binary and
+# its state survive restarts and auto-update IN PLACE (no rebuild). CACHE because
+# it is fully re-fetchable from install.sh — and `cco clean` never scans CACHE, so
+# the install survives `cco clean --all` (decision 3). `cco build --no-cache` wipes
+# this dir to force a fresh install on next start (decision 4).
+_cco_claude_install_dir() {
+    printf '%s\n' "$(_cco_cache_dir)/claude-install"
+}
+
 # ── Global .cco/meta decompose homes (ADR-0013 D4 / ADR-0025) ───────
 # The legacy global `.cco/meta` grab-bag splits by sync-profile:
 #  - languages → CONFIG `~/.cco/languages` (the one config datum; regenerates
@@ -72,6 +84,26 @@ _cco_llms_dir() {
 #    and the legacy `pack-manifest` are removed).
 _cco_languages_file() {
     printf '%s\n' "$(_cco_config_dir)/languages"
+}
+
+# Claude Code channel/version preference → CONFIG `~/.cco/claude-version`
+# (ADR-0039 / decision 1). A single user-authored, git-versioned datum holding a
+# release channel (`latest` — the default — or `stable`) or a pinned `x.y.z`. Read
+# at `cco start`/`cco build` and forwarded to the entrypoint installer as
+# CLAUDE_CODE_VERSION. `cco build --claude-version` remains the one-off override.
+_cco_claude_version_file() {
+    printf '%s\n' "$(_cco_config_dir)/claude-version"
+}
+
+# Echo the effective channel/version preference, defaulting to `latest` when the
+# file is absent or blank. First non-comment, non-empty line wins.
+_cco_claude_version_pref() {
+    local f; f=$(_cco_claude_version_file)
+    local val=""
+    if [[ -f "$f" ]]; then
+        val=$(grep -vE '^\s*(#|$)' "$f" 2>/dev/null | head -n1 | tr -d '[:space:]')
+    fi
+    printf '%s\n' "${val:-latest}"
 }
 
 _cco_last_seen_file() {
