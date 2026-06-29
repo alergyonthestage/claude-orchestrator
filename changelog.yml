@@ -342,3 +342,17 @@ entries:
       script/grep-friendly. A valid resource still prints a "… is valid"
       confirmation. (`cco config validate` keeps its orphan-sanitization layout,
       ADR-0021.)
+  - id: 21
+    date: "2026-06-29"
+    type: additive
+    title: "cco resolve heals packs + shows every referenced resource; start reuses it"
+    description: >
+      `cco resolve` now heals a missing pack from its sharing-repo url
+      (interactive install / use-a-different-url / skip, via `cco pack install
+      --pick`) — extending the one heal verb to all four referenced-resource
+      kinds: repos, extra mounts, llms, and packs (P14, ADR-0033). After healing
+      it prints a status row per referenced resource (✓ resolved / ⚠ unresolved
+      [+url]), so it always shows the complete picture, not only what it prompted
+      for. `cco start` now invokes this same resolve surface before launch
+      instead of a parallel resolution loop — a single entry point that heals all
+      kinds and never hard-blocks on unresolved members.

@@ -407,8 +407,15 @@ projects:                    # subsumes the old registry — member repo names, 
   one entry); per-project namespacing is **reserved post-v1** (ADR-0022 D2). Writes are **atomic**
   (`mktemp` + `mv`, the existing `local-paths.sh` convention), single-writer, **no file lock** in v1 —
   writes are user-serial; a rare race is last-writer-wins and self-heals via `cco resolve --scan`.
-- **Absolute paths only**; CLI commands accept paths relative to the cwd and resolve
-  to absolute before storing.
+- **Absolute paths only — enforced at the write boundary.** Every write goes through
+  `_index_set_path`, which normalizes the value (expands `~`/`$HOME`) and **refuses** anything still
+  non-absolute (relative / empty / a bare `@local` marker), returning non-zero so the caller skips it.
+  CLI commands additionally absolutize cwd-relative paths before storing. `_index_path_conflicts`
+  normalizes **both** sides before comparing, so two spellings of the *same* dir (`~/x` vs
+  `/home/me/x`) are never a false AD5 conflict. `cco path list` normalizes for display and flags any
+  stale non-absolute entry as `⚠ malformed`; the one-shot migration `016_normalize-index` cleans
+  entries written before this boundary existed (idempotent; unrecoverable values dropped, self-heal
+  via `cco resolve --scan`).
 - **Resolution CLI — consolidated on `cco resolve` (ADR-0017 D2)**: `cco resolve [project]`
   (interactively resolve each unresolved repo/mount: *specify local path* · *clone-from-`url`* ·
   *skip*), `cco resolve --all` (all projects), and `cco resolve --scan <dir>` (auto-discover by
@@ -420,6 +427,14 @@ projects:                    # subsumes the old registry — member repo names, 
   a reserved future). `cco path set <name> <path>` / `cco path list` remain the
   **low-level** index editor (move dirs, fix divergence, external installs). Manual edit allowed but
   discouraged. (`cco resolve` is today's `cco project resolve`, kept as the familiar verb.)
+- **One heal verb for all four referenced-resource kinds (ADR-0033, extending ADR-0032 D5)**:
+  `cco resolve` heals repos, extra mounts, **llms** (install-from-`url` → CACHE) and **packs**
+  (install-from-`url` via `cco pack install --pick`; a pack already in a local layer is a clean skip) —
+  no separate `cco llms resolve` / `cco pack resolve`. After healing it renders a **status row per
+  referenced resource** (`✓ resolved` / `⚠ unresolved [+url]`), so it always shows the complete
+  picture. `cco start` invokes this **same** surface (`_resolve_unit`) — a **single resolution entry
+  point**, not a parallel inlined loop (the retired `_resolve_project_paths_impl`); nothing hard-blocks
+  (P14).
 - **Bootstrap / fresh machine**: `cco resolve --scan <dir>` populates the index
   by scanning for `.cco/project.yml` (the empty-index case of the same upsert path); first
   `cco start` resolves any missing name via prompt/clone. So a fresh clone is not stranded by an
@@ -509,13 +524,18 @@ sequenceDiagram
   diverge (Case C), the **source precedence is `--from <repo>` > the optional `entry` repo > prompt**
   (ADR-0017 D2). `cco start [project] --from <repo>` explicitly selects which member's `<repo>/.cco`
   to use, mirroring `cco sync --from` — no prompt, no `entry` needed.
-- **Unresolved paths → explicit prompt, never a silent launch (ADR-0017 D2).** If any repo/mount is
+- **Unresolved paths → explicit prompt, never a silent launch (ADR-0017 D2).** If any reference is
   unresolved at start, cco **prompts** with **named affordances**: **[r]esolve now** (`cco resolve`) —
   when the entry carries a `url`, also offer **[c]lone from `<url>`** — or **[s]kip** (proceed without
   mounting the unresolved entry, with a warning). This is a *conscious* skip, surfaced to the user —
   distinct from the silent empty-mount that #B17/#B18 forbade. Sample copy (F49): `repo '<name>' is
   unresolved on this machine — [r]esolve (cco resolve) · [c]lone from <url> · [s]kip (start without it)`
-  (the clone option is omitted when the entry has no `url`).
+  (the clone option is omitted when the entry has no `url`). **`cco start` invokes the single resolve
+  surface `_resolve_unit` (ADR-0033)** — the same one `cco resolve` uses, healing all four kinds
+  (repos/mounts/llms/packs), not a parallel inlined loop. A TTY `[q]uit` mid-resolve **proceeds** with
+  conscious-skip (never aborts the launch, P14). `cco start` still errors only when the project's config
+  **cannot be located at all** (no resolved member to read `project.yml`) — a *discovery* gap whose
+  remedy is `cco resolve --scan <dir>`, distinct from a member being unresolved.
 - **Divergence is never silently reconciled**: if a project's repos have divergent
   `.cco/`, `cco start` uses the chosen source and **prints a non-blocking notice**
   ("project repos have divergent .cco; started from <repo>; run `cco sync` to

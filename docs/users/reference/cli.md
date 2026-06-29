@@ -852,11 +852,23 @@ Examples:
 ```
 
 For each unresolved repo/mount, `cco resolve` offers: **specify a local path** · **clone from
-`<url>`** (only when the coordinate carries a `url`) · **skip**. It also **heals referenced llms**
-that are not installed on this machine (one heal verb for repos, mounts, and llms — there is no
-separate `cco llms resolve`): for a url-bearing llms it offers **install from `<url>`** · **use a
-different url** · **skip**; the content lands in CACHE and the committed `project.yml` url is left
-untouched. `--scan` is **non-destructive**:
+`<url>`** (only when the coordinate carries a `url`) · **skip**. It is **one heal verb for all four
+referenced-resource kinds** — repos, extra mounts, **llms**, and **packs** — there is no separate
+`cco llms resolve` / `cco pack resolve`:
+
+- a not-installed **llms** offers **install from `<url>`** · **use a different url** · **skip**; the
+  content lands in CACHE and the committed `project.yml` url is left untouched.
+- a not-installed **pack** (missing from both local layers `~/.cco/packs` and `<repo>/.cco/packs`)
+  offers **install from `<url>`** (via `cco pack install --pick`) · **use a different url** ·
+  **skip**; a pack already present in a local layer is a clean skip.
+
+After healing, `cco resolve` prints a **status row per referenced resource** (`✓ resolved` /
+`⚠ unresolved [+url]`) across all four kinds, so it always shows the complete picture — not only the
+references it prompted for. Nothing ever hard-blocks: an unresolved reference is a conscious-skip
+(warn), never an abort (P14). `cco start` invokes this **same** surface before launch (one entry
+point — no duplicated resolution loop).
+
+`--scan` is **non-destructive**:
 it upserts each discovered `name → path` + `repos[]`, never deletes out-of-`<dir>` mappings or
 manual `cco path set` overrides, and on a name-already-bound-to-a-different-path conflict it
 warns and keeps the existing mapping (uniqueness invariant). There is no `--prune` in v1.
@@ -880,7 +892,10 @@ Examples:
 
 Manual index edits are allowed but discouraged — prefer `cco resolve`. A logical name maps to
 exactly one absolute path per machine (`cco init`/`cco join` refuse a name already bound to a
-different path).
+different path). The index stores **absolute paths only**: every write is normalized (`~`/`$HOME`
+expanded) and a value that cannot be made absolute is refused. `cco path list` normalizes each value
+for display and flags any stale non-absolute entry (e.g. a legacy `@local`) as `⚠ malformed`; run
+`cco update` (which normalizes the index) or `cco resolve --scan <dir>` to clean it.
 
 ---
 
