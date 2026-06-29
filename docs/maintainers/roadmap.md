@@ -34,8 +34,9 @@ internalize-as-cache prompts, `cco project internalize` (Case-C), and cross-PC m
 
 ### Path to release — sequenced workstreams
 
-**A gated the merge (✅ done); B, C, D run on `develop` after it; the release is
-`develop → main` + npm publish.** B/C/D are additive develop-track work; only C gates the release.
+**A gated the merge (✅ done); E/B/C/D run on `develop` after it; the release is
+`develop → main` + npm publish.** E/B/D are additive develop-track work; only C gates the release.
+**E is sequenced first** (small, self-contained Docker change; removes an active deprecation).
 
 | # | Workstream | When | Gating? | Handoff |
 |---|---|---|---|---|
@@ -43,9 +44,11 @@ internalize-as-cache prompts, `cco project internalize` (Case-C), and cross-PC m
 | **B** | **config-editor/tutorial access scope** — all-projects config edit + read-only "cco info" snapshot; tutorial partial. ADR-0036, additive. | post-merge, on `develop` | No (additive) | [`config-editor-access-design-handoff.md`](../configuration/decentralized-config/config-editor-access-design-handoff.md) |
 | **C** | **npm packaging & distribution** — ship `cco` as an npm package (`package.json` `bin`, framework tree bundled, Docker/proxy at runtime, version coupling). ADR-0037. **Priority.** | post-merge, on `develop` | **Release gate** | [`npm-packaging-distribution-handoff.md`](../engineering/npm-packaging-distribution-handoff.md) |
 | **D** | **`cco project save` — project-config versioning helper** — ergonomic, path-scoped commit of `<repo>/.cco/**` + isolated history. Reintroduces the old `vault save` convenience for the decentralized in-repo model. ADR-0038, additive. Needs its own design session (see below). | post-merge, on `develop` | No (additive) | _design session — see §D below_ |
+| **E** | **Native Claude Code install** — replace the deprecated `npm install -g @anthropic-ai/claude-code` with the official native installer run at first start, into a persistent CACHE-backed mount so Claude auto-updates in-place (no rebuild). Re-implements Rares' `#B2` onto develop's XDG/decentralized architecture. Decisions: default `latest` + config knob for `stable`/pin; re-pin must work; `cco clean` never touches the cache; `cco build --no-cache` resets it. ADR-0039, additive. | **post-merge, FIRST** | No (additive) | [`../environment/native-claude-install-handoff.md`](../environment/native-claude-install-handoff.md) |
 
-Sequence: **A → merge `feat → develop` → {B, C, D on `develop`; C release-gating} → release `develop → main`
-+ `npm publish`.** Next free ADR after 0035 = **0036** (B), **0037** (C), **0038** (D).
+Sequence: **A → merge `feat → develop` → E (first) → {B, C, D on `develop`; C release-gating} → release
+`develop → main` + `npm publish`.** Next free ADR after 0035 = **0036** (B), **0037** (C), **0038** (D),
+**0039** (E).
 
 #### D — `cco project save` (project-config versioning helper) — design notes
 
