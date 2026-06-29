@@ -8,6 +8,16 @@ STATE), 0006 (breaking cutover — vault retired), 0008 (config versioning — `
 `<repo>/.cco` hold authored config only, no state)
 **Resolves**: RD-memory — **satisfies the Phase-3 gate** (coherence review BL2)
 
+> **Forward annotation (2026-06-29, Round 3 / S2 — migration completeness).** Decision points 2
+> and 7 defer **cross-PC *sync*** of state (memory **and** transcripts) to a future opt-in feature;
+> this is unchanged. They do **not** authorize discarding state during a **same-machine
+> legacy→new migration** — §6 already makes this explicit for memory ("migration preserves it,
+> lossless, AD12"), and the **same lossless contract applies to transcripts**
+> (`session/claude-state`): `cco init --migrate` must copy them from the backup, exactly like
+> memory (non-clobber, F11). The S2 audit found transcripts were not being copied (the destination
+> helper existed but had no caller) and wired the missing copy. Read "not synced cross-PC" (still
+> true) as distinct from "migrated locally" (required). See `../s2-migration-completeness-handoff.md`.
+
 ---
 
 ## Context

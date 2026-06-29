@@ -964,9 +964,18 @@ build-once holds. The `packs:`
   `manifest.yml` sharing file (ADR-0012) and the legacy `pack-manifest` mechanism (ADR-0013 D6) —
   different concepts. Both `cco update` and the Phase-4 sync-before-publish 3-way merge reuse the
   relocated helpers.
-  **Memory relocation (ADR-0009)**: `cco init --migrate` copies the project's `memory/` from the
-  backup into `<state>/cco/projects/<id>/memory/` (one-time file copy, machine-local, no versioning)
-  so accumulated auto-memory is not lost in the cutover. **Profile→tag prompt (ADR-0010)**: migration
+  **Session-state relocation (ADR-0009)**: `cco init --migrate` copies the project's machine-local
+  session state from the backup into STATE under `<state>/cco/projects/<id>/session/` — **both**
+  auto-memory (`memory/` → `session/memory/`) **and** session transcripts (`/resume` history:
+  `.cco/claude-state/` → `session/claude-state/`), one-time file copies, machine-local, no versioning,
+  non-clobbering on re-run (F11). The destination matches the `cco start` mount source exactly, so a
+  migrated project's memory and history reappear on the next session. ADR-0009 defers cross-PC *sync*
+  of this state, **not** its local migration: discarding either in the cutover would be silent data
+  loss (S2). For a non-active profile, both come from the profile-state shadow (BL2). **Arbitrary
+  gitignored secret files** the legacy project root held (`*.env`/`*.key`/`*.pem` — the legacy
+  `_PORTABLE_FILE_PATTERNS`, already ignored by the project `.gitignore`) migrate into `<repo>/.cco/`
+  alongside `secrets.env` (gitignored-by-design, never committed; the secret-scan mirrors the gitignore
+  so it does not refuse them). **Profile→tag prompt (ADR-0010)**: migration
   **asks the user (CLI)** whether to convert legacy profiles into tags (seed each resource's origin
   profile as a tag value in `<data>/cco/tags.yml`, DATA bucket — ADR-0015) or start untagged —
   lossless either way.
