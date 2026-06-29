@@ -1,5 +1,14 @@
 # Handover A (PRE-MERGE) — docs & CLI-reference accuracy cutover sweep
 
+> **✅ DONE (2026-06-29)** — merge gate cleared. Agent-facing doc tables (config-editor +
+> tutorial) remapped to the `users/<domain>/<type>/` tree and the store layout flattened to
+> `~/.cco/.claude/`; `cli.md` code-grounded against `bin/cco` + `lib/cmd-*.sh` (0 stale, 0 wrong;
+> 11 undocumented flags added across init/start/new/update/clean); removed-concept token probe
+> over `docs/users/` + `internal/*/.claude/` + README + CLAUDE.md returns only explained hits
+> (migration context / removal affirmations / real `defaults/global/.claude/` source paths);
+> stale doc pointers in shipped scaffolds (`templates/**`, `defaults/global/setup*.sh`) fixed;
+> roadmap status flipped. Suite **1010/0**. **Next: maintainer merges `feat → develop` (from Mac).**
+
 > **Created**: 2026-06-29 · **Branch**: `feat/vault/decentralized-config` (commits local, pushed from Mac)
 > **When**: NOW, before the v1 merge to `develop` (roadmap step 7). This is the **merge gate**.
 > **Status going in**: v1 build-complete, host e2e validated, suite **1010/0**, no code blockers.
