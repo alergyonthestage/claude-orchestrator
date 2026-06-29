@@ -194,7 +194,7 @@ in-container. changelog **#19** + **#20**.
 
 Residual gate: Mac host re-validation (`e2e-validation-checklist.md`) before merge.
 
-#### Round 3 (first real `cco start` of `claude-orchestrator` itself via decentralized-config, 2026-06-29) — ▶ IN PROGRESS (S1 ✅ done · S2 next · S3 queued)
+#### Round 3 (first real `cco start` of `claude-orchestrator` itself via decentralized-config, 2026-06-29) — ▶ IN PROGRESS (S1 ✅ done · S2 ✅ done · S3 next)
 
 The project's own first migration + start on the Mac surfaced four scopes of defects.
 Each was **verified against the shipped code** (read-only multi-agent analysis, file:line
@@ -249,7 +249,7 @@ Verified findings (read-only analysis, 2026-06-29):
 | Session | Scopes | Goal | Decision artifact |
 |---|---|---|---|
 | **S1 — Resolution surface + index normalization** ✅ **DONE (2026-06-29)** | 1 | Fix tilde/AD5/`@local` at the index boundary (`_index_set_path` + `_index_path_conflicts` + expansion in `_resolve_unit_dir_for_project`) + a one-shot index-cleanup migration; `cco path list` expands & flags non-absolute entries. Design the unified `resolve↔start` resolution surface: status of **all** referenced resources (repos/llms/packs/mounts) + per-resource actions (clone/download-to-chosen-path / explicit local path / cached pack), `cco start` on an unresolved project **invokes** resolve (no command duplication, P14 never-block). | new **ADR-0033** |
-| **S2 — Migration completeness (data-loss)** | 2 | Wire transcript migration (`session/claude-state`); rigorous independent re-audit of every resource/data/metadata type (legacy location → destination → migrates? → correct? → sanitization/split → gap severity); reconcile ADR-0009 (sync ≠ local migration). No data loss, no incomplete migration. | forward-annotate **ADR-0009** (+ ADR-0006/0024/0025 as needed); migration script if mapping changes |
+| **S2 — Migration completeness (data-loss)** ✅ **DONE (2026-06-29)** | 2 | Independent re-audit (4 parallel analyst agents: per-project / global / transcript-wiring / backup+chains) → **2 confirmed data-loss gaps, all else SAFE**. **GAP#2 transcripts**: wired the missing `session/claude-state` copy mirroring memory (dual-resolve active+shadow, `cp -rn`, dest == `cco start` mount). **GAP#1 arbitrary secret files**: glob-copy `*.env`/`*.key`/`*.pem` into `<repo>/.cco/` gitignored-by-design, secret-scan aligned to the project `.gitignore`. D2 dissolved (projects are profile-exclusive → no multi-profile divergence). | forward-annotated **ADR-0009** + design §9; **no new ADR, no changelog** (completeness bugfix) |
 | **S3 — Multi-repo same-id ops: `join` + `forget`** | 3 + 4 | Build one reusable ownership-guarded member-repo loop (shared with `rename`); repurpose `cco join`→Journey E (`<project>` arg, edits `repos[]` in all synced same-id members, leaves divergent repos untouched, `--sync` delivers the synced `.cco`, url auto-derived from `git remote origin`); `cco forget` always-on TTY purge prompt + `--purge`. | new **ADR** (join/Journey E); forward-annotate **ADR-0021** (forget) |
 
 Dependencies: S1's index-boundary fix also corrects the migration writer (`migrate.sh:762`
@@ -257,8 +257,13 @@ flows through `_index_set_path`), so S1 precedes S2 (re-test migration on a corr
 and S3 (join/forget rely on clean member resolution). **S1 shipped** as ADR-0033 + changelog #21
 (7 commits `cb99e60`→`dbb1e96`, suite **989/0**); the bug-fix (a) corrected the migration writer +
 added cleanup migration `016`, and (b) unified the resolve surface (one heal verb for
-repos/mounts/llms/packs, `cco start` invokes `_resolve_unit`, never-block). **Next free ADR = 0034;
-next changelog = #22.** ▶ Next session = **S2**.
+repos/mounts/llms/packs, `cco start` invokes `_resolve_unit`, never-block). **S2 shipped** (3 commits
+`784016f`→`ab15880`, suite **989→993/0**): wired the transcript copy (GAP#2) + arbitrary secret-file
+copy (GAP#1) into the live `cco init --migrate` path, forward-annotated ADR-0009, re-synced design §9,
+added `test_migrate_completeness.sh` as the audit-matrix oracle — **no new ADR, no changelog, no
+migration script** (per the pre-merge principle above). Residual gate = **host re-validation on the
+Mac** (`e2e-validation-checklist.md` + `P2-dogfooding-validation.md`). **Next free ADR = 0034;
+next changelog = #22.** ▶ Next session = **S3**.
 
 Per-session handoffs (read after `/clear` to start a session):
 [`s1-resolution-surface-handoff.md`](configuration/decentralized-config/s1-resolution-surface-handoff.md) ·
