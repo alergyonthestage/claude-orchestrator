@@ -2,7 +2,7 @@
 
 > **Created**: 2026-06-29 · **Track**: feature design. Runs on `develop` **after** the v1 merge;
 > ships in v1 or a point release (**additive — does NOT gate the merge or the release**).
-> **Siblings**: Handover A (`pre-merge-docs-cutover-handoff.md`, pre-merge merge-gate) ·
+> **Siblings**: Handover A (docs/CLI cutover sweep — ✅ done, merged into `develop`) ·
 > Handover C (`../../engineering/npm-packaging-distribution-handoff.md`, release-gating). On develop,
 > B and C run in parallel; **C is release-gating, B is additive** — sequence per maintainer priority.
 

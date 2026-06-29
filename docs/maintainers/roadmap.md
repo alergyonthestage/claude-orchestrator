@@ -39,7 +39,7 @@ Each has a dedicated handoff. **A gates the merge; B and C run on `develop` afte
 
 | # | Workstream | When | Gating? | Handoff |
 |---|---|---|---|---|
-| **A** | **Docs/CLI-reference cutover sweep** — bring all user + agent-facing docs to the implemented truth (the built-in tutorial/config-editor mount and consume them). **✅ done**: agent-facing doc tables remapped to the reorg tree + store layout flattened; cli.md code-grounded (0 stale/0 wrong, 11 missing flags added); removed-concept token probe clean (only migration/affirmation hits); shipped scaffold/setup doc pointers fixed; suite **1010/0**. | **PRE-MERGE — ✅ done** | **Merge gate (cleared)** | [`pre-merge-docs-cutover-handoff.md`](../configuration/decentralized-config/pre-merge-docs-cutover-handoff.md) |
+| **A** | **Docs/CLI-reference cutover sweep** — bring all user + agent-facing docs to the implemented truth (the built-in tutorial/config-editor mount and consume them). **✅ done**: agent-facing doc tables remapped to the reorg tree + store layout flattened; cli.md code-grounded (0 stale/0 wrong, 11 missing flags added); removed-concept token probe clean (only migration/affirmation hits); shipped scaffold/setup doc pointers fixed; suite **1010/0**. | **PRE-MERGE — ✅ done** | **Merge gate (cleared)** | — (completed; handoff removed in post-merge cleanup) |
 | **B** | **config-editor/tutorial access scope** — all-projects config edit + read-only "cco info" snapshot; tutorial partial. ADR-0036, additive. | post-merge, on `develop` | No (additive) | [`config-editor-access-design-handoff.md`](../configuration/decentralized-config/config-editor-access-design-handoff.md) |
 | **C** | **npm packaging & distribution** — ship `cco` as an npm package (`package.json` `bin`, framework tree bundled, Docker/proxy at runtime, version coupling). ADR-0037. **Priority.** | post-merge, on `develop` | **Release gate** | [`npm-packaging-distribution-handoff.md`](../engineering/npm-packaging-distribution-handoff.md) |
 
@@ -124,7 +124,6 @@ flowchart LR
    (C4/C8/C9/C10/C11). Open items handed to step 6: the `_confirm_destructive` `/dev/tty` idiom
    decision, and a spot-check of the §6 coverage gaps (`cmd-update.sh`, `cmd-resolve.sh`,
    `index.sh` atomicity).
-   Launcher: [`configuration/decentralized-config/pre-e2e-comprehensive-review-handoff.md`](configuration/decentralized-config/pre-e2e-comprehensive-review-handoff.md).
 6. **Dogfooding e2e on Mac** — plan: `configuration/decentralized-config/P2-dogfooding-validation.md`
    (sandboxed roots + HOME-flip; legacy-vault removal accepted only after merge + validation);
    runnable checklist (legacy → backup → migration → functional test → failure-path, with the
@@ -140,7 +139,6 @@ Real-host migration of `cave-flow` surfaced a sequence of defects; fixing them a
 - **Migration completeness** ✅ — `cco init --migrate` dropped most of `project.yml`
   (extra_mounts/docker/auth/github/browser). Fixed (passthrough-by-default + extra_mounts
   name-synth, **ADR-0030**); GAP-1 remotes de-tokenize split; GAP-2 template provenance.
-  See [`migration-completeness-fix-handoff.md`](configuration/decentralized-config/migration-completeness-fix-handoff.md).
 - **A — `cco resolve` never prompted** ✅ (`c558568`) — the interactivity guard used
   `[[ -t 0 ]]` inside `while read … done < <(yml_…)` loops (fd 0 = the process-substitution
   pipe), so it always took the non-interactive branch; local-only `extra_mounts` were
@@ -177,10 +175,6 @@ Real-host migration of `cave-flow` surfaced a sequence of defects; fixing them a
   id-consumption re-validation deferred to a hardening follow-up (below). +7 tests; suite 959 →
   **966/0** (the 6 in-container `test_paths`/`test_is_installed` failures are the same pre-existing
   XDG-base env quirk).
-
-  Both C and D are scoped in the handoff:
-  [`configuration/decentralized-config/cd-list-rename-handoff.md`](configuration/decentralized-config/cd-list-rename-handoff.md)
-  (symptoms, code map, suggested approach, decisions, test plan).
 
 #### Round 2 (host e2e of `cave-web`/`cave-flow`, 2026-06-29) — ✅ DONE pre-merge
 
@@ -287,11 +281,6 @@ suite **993→1005/0**): shared `_project_member_status` classifier + `cco join`
 `test_join.sh` + extended `test_index.sh`/`test_forget.sh`. Residual gate = **host re-validation on
 the Mac** (`e2e-validation-checklist.md` + `P2-dogfooding-validation.md`). **Next free ADR = 0035;
 next changelog = #24.** ▶ Next session = **v1 merge/release (step 7)** after host e2e.
-
-Per-session handoffs (read after `/clear` to start a session):
-[`s1-resolution-surface-handoff.md`](configuration/decentralized-config/s1-resolution-surface-handoff.md) ·
-[`s2-migration-completeness-handoff.md`](configuration/decentralized-config/s2-migration-completeness-handoff.md) ·
-[`s3-join-forget-handoff.md`](configuration/decentralized-config/s3-join-forget-handoff.md).
 
 ### Pre-merge: flatten `~/.cco/global/.claude/` → `~/.cco/.claude/` ✅ DONE (2026-06-27)
 

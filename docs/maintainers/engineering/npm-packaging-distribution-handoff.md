@@ -3,8 +3,8 @@
 > **Created**: 2026-06-29 · **Track**: release engineering. Runs on `develop` **after** the v1 merge;
 > **gates the public release on `main`** (you cannot distribute v1 without a package).
 > **Priority**: high (maintainer flagged it explicitly).
-> **Siblings**: Handover A (`../configuration/decentralized-config/pre-merge-docs-cutover-handoff.md`,
-> pre-merge) · Handover B (`../configuration/decentralized-config/config-editor-access-design-handoff.md`,
+> **Siblings**: Handover A (docs/CLI cutover sweep — ✅ done, merged into `develop`) ·
+> Handover B (`../configuration/decentralized-config/config-editor-access-design-handoff.md`,
 > develop). B and C are parallel develop-track workstreams; **C is release-gating, B is additive.**
 
 Coordination artifact — the design decisions belong in a new ADR (next free = **0037**, since B takes
