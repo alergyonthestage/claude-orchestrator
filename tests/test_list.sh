@@ -49,6 +49,50 @@ test_list_sort_name_orders() {
         || fail "--sort name should order alpha before zeta (alpha@$pa zeta@$pz)"
 }
 
+test_list_sort_tag_orders() {
+    # --sort tag orders by the first tag; untagged sort last.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    _mk_pack "bravo"; _mk_pack "alpha-pack"; _mk_pack "charlie"
+    run_cco tag add bravo      alpha   # first tag "alpha" → sorts first
+    run_cco tag add alpha-pack zulu    # first tag "zulu"  → sorts after alpha
+    # charlie carries no tag → sorts last
+    run_cco list --sort tag
+    local pb pa pc
+    pb=$(printf '%s\n' "${CCO_OUTPUT:-}" | grep -n 'bravo'      | head -1 | cut -d: -f1)
+    pa=$(printf '%s\n' "${CCO_OUTPUT:-}" | grep -n 'alpha-pack' | head -1 | cut -d: -f1)
+    pc=$(printf '%s\n' "${CCO_OUTPUT:-}" | grep -n 'charlie'    | head -1 | cut -d: -f1)
+    [[ -n "$pb" && -n "$pa" && -n "$pc" && "$pb" -lt "$pa" && "$pa" -lt "$pc" ]] \
+        || fail "--sort tag order wrong (bravo@$pb alpha-pack@$pa charlie@$pc)"
+}
+
+test_list_reverse_inverts() {
+    # --reverse flips the chosen order; -r is an accepted alias.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    _mk_pack "aaa"; _mk_pack "zzz"
+    run_cco list --sort name --reverse
+    local pa pz
+    pz=$(printf '%s\n' "${CCO_OUTPUT:-}" | grep -n 'zzz' | head -1 | cut -d: -f1)
+    pa=$(printf '%s\n' "${CCO_OUTPUT:-}" | grep -n 'aaa' | head -1 | cut -d: -f1)
+    [[ -n "$pa" && -n "$pz" && "$pz" -lt "$pa" ]] \
+        || fail "--sort name --reverse should order zzz before aaa (zzz@$pz aaa@$pa)"
+    # -r alias routes to the compact index even without --sort.
+    run_cco list -r
+    assert_output_contains "KIND"
+}
+
+test_list_long_name_truncated() {
+    # A name wider than the NAME column is ellipsized, never wrapped/shifted.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local longname="this-is-an-extremely-long-pack-name-well-beyond-the-cap"
+    _mk_pack "$longname"
+    run_cco list
+    assert_output_contains "…"
+    assert_output_not_contains "$longname"
+}
+
 test_list_scoped_filter_tag() {
     # Scoped + filtered renders the compact index (no global needed).
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT

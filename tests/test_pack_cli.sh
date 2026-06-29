@@ -135,6 +135,55 @@ test_pack_list_header_only_when_empty() {
     fi
 }
 
+test_pack_list_shows_tags_column() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local pack_dir="$CCO_PACKS_DIR/tagged-pack"
+    mkdir -p "$pack_dir"
+    printf 'name: tagged-pack\n' > "$pack_dir/pack.yml"
+    run_cco tag add tagged-pack infra
+    run_cco list pack
+    assert_output_contains "TAGS"
+    assert_output_contains "infra"
+}
+
+test_pack_list_long_name_aligns() {
+    # A pack name wider than the NAME column is ellipsized, not wrapped/shifted.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local longname="this-is-a-really-long-pack-name-beyond-cap"
+    local pack_dir="$CCO_PACKS_DIR/$longname"
+    mkdir -p "$pack_dir"
+    printf 'name: %s\n' "$longname" > "$pack_dir/pack.yml"
+    run_cco list pack
+    assert_output_contains "…"
+    assert_output_not_contains "$longname"
+}
+
+test_pack_list_empty_counts_single_line_per_pack() {
+    # Regression: zero-resource categories must render as a single "0", not the
+    # "0\n0" that grep -c (exit 1) + a fallback echo produced — which broke each
+    # row onto extra lines (the reported "table wraps" symptom).
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    rm -rf "$CCO_PACKS_DIR"; mkdir -p "$CCO_PACKS_DIR"
+    local p
+    for p in pack-a pack-b; do
+        mkdir -p "$CCO_PACKS_DIR/$p"
+        printf 'name: %s\n' "$p" > "$CCO_PACKS_DIR/$p/pack.yml"
+    done
+    run_cco list pack
+    # Exactly one header line + one line per pack (no row split across lines).
+    local line_count
+    line_count=$(printf '%s\n' "$CCO_OUTPUT" | wc -l | tr -d ' ')
+    [[ "$line_count" -eq 3 ]] \
+        || fail "expected 3 lines (header + 2 packs), got $line_count:
+$CCO_OUTPUT"
+}
+
 # ── show ──────────────────────────────────────────────────────────────
 
 test_pack_show_displays_pack_info() {

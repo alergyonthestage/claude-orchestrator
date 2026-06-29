@@ -82,30 +82,47 @@ cmd_pack_list() {
         cat <<'EOF'
 Usage: cco pack list
 
-List all installed packs with resource counts (knowledge, skills, agents, rules).
+List all installed packs with resource counts (knowledge, skills, agents, rules)
+and their per-user tags. Sort/filter by tag via the compact index, e.g.
+`cco list pack --sort tag` or `cco list pack --tag <t>`.
 EOF
         return 0
     fi
 
     check_global
 
-    echo -e "${BOLD}NAME              KNOWLEDGE  SKILLS  AGENTS  RULES${NC}"
+    # Size the NAME column to the widest pack name (capped), so long names never
+    # shift the count columns out of alignment (truncated with an ellipsis).
+    local dir name namew=4 cap=24
+    for dir in "$PACKS_DIR"/*/; do
+        [[ -d "$dir" ]] || continue
+        name=$(basename "$dir")
+        (( ${#name} > namew )) && namew=${#name}
+    done
+    (( namew > cap )) && namew=$cap
+
+    printf "${BOLD}%s %-11s %-8s %-8s %-8s %s${NC}\n" \
+        "$(_fit_col "NAME" "$namew")" "KNOWLEDGE" "SKILLS" "AGENTS" "RULES" "TAGS"
 
     for dir in "$PACKS_DIR"/*/; do
-        [[ ! -d "$dir" ]] && continue
-        local name
+        [[ -d "$dir" ]] || continue
         name=$(basename "$dir")
 
         local pack_yml="$dir/pack.yml"
         local k_count="-" s_count="-" a_count="-" r_count="-"
         if [[ -f "$pack_yml" ]]; then
-            k_count=$(yml_get_pack_knowledge_files "$pack_yml" | grep -c . 2>/dev/null || echo "0")
-            s_count=$(yml_get_pack_skills "$pack_yml" | grep -c . 2>/dev/null || echo "0")
-            a_count=$(yml_get_pack_agents "$pack_yml" | grep -c . 2>/dev/null || echo "0")
-            r_count=$(yml_get_pack_rules "$pack_yml" | grep -c . 2>/dev/null || echo "0")
+            # grep -c prints "0" but exits 1 on no match: use `|| true` (not a
+            # second `echo 0`, which would emit "0\n0" and break the row layout).
+            k_count=$(yml_get_pack_knowledge_files "$pack_yml" | grep -c . 2>/dev/null || true); k_count=${k_count:-0}
+            s_count=$(yml_get_pack_skills "$pack_yml" | grep -c . 2>/dev/null || true); s_count=${s_count:-0}
+            a_count=$(yml_get_pack_agents "$pack_yml" | grep -c . 2>/dev/null || true); a_count=${a_count:-0}
+            r_count=$(yml_get_pack_rules "$pack_yml" | grep -c . 2>/dev/null || true); r_count=${r_count:-0}
         fi
 
-        printf "%-18s %-11s %-8s %-8s %s\n" "$name" "$k_count" "$s_count" "$a_count" "$r_count"
+        local tags
+        tags=$(_tags_get packs "$name")
+        printf "%s %-11s %-8s %-8s %-8s %s\n" \
+            "$(_fit_col "$name" "$namew")" "$k_count" "$s_count" "$a_count" "$r_count" "${tags:-—}"
     done
 }
 

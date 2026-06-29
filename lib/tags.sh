@@ -283,12 +283,12 @@ _list_collect() {
 }
 
 cmd_list() {
-    local filter="" sort_by="" kind=""
+    local filter="" sort_by="" kind="" reverse=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --help|-h|help)
                 cat <<'EOF'
-Usage: cco list [<kind>] [--tag <tag>] [--sort kind|name]
+Usage: cco list [<kind>] [--tag <tag>] [--sort kind|name|tag] [--reverse|-r]
 
 Unified index of your resources. <kind> is one of:
   project | pack | template | llms | remote   (plural forms accepted)
@@ -299,6 +299,8 @@ Unified index of your resources. <kind> is one of:
                                  resource counts, variants, …).
   cco list [<kind>] --tag <t>    Filter to resources carrying tag <t>.
   cco list [<kind>] --sort name  Sort by name (default: by kind, then name).
+  cco list [<kind>] --sort tag   Sort by first tag (untagged last), then name.
+  cco list [<kind>] --reverse    Reverse the chosen order (alias: -r).
 
 Full detail for one resource: cco <kind> show <name>.
 Tags are per-user (project/pack/template only); manage them with 'cco tag'.
@@ -306,9 +308,11 @@ EOF
                 return 0
                 ;;
             --tag)  [[ $# -lt 2 ]] && die "--tag requires a value."; filter="$2"; shift 2 ;;
-            --sort) [[ $# -lt 2 ]] && die "--sort requires 'kind' or 'name'."; sort_by="$2"
-                    [[ "$sort_by" == kind || "$sort_by" == name ]] || die "--sort must be 'kind' or 'name'."
+            --sort) [[ $# -lt 2 ]] && die "--sort requires 'kind', 'name', or 'tag'."; sort_by="$2"
+                    [[ "$sort_by" == kind || "$sort_by" == name || "$sort_by" == tag ]] \
+                        || die "--sort must be 'kind', 'name', or 'tag'."
                     shift 2 ;;
+            --reverse|-r)       reverse=1;         shift ;;
             project|projects)   kind="project";  shift ;;
             pack|packs)         kind="pack";      shift ;;
             template|templates) kind="template";  shift ;;
@@ -319,8 +323,8 @@ EOF
         esac
     done
 
-    # A bare kind (no filter, no sort) shows the rich per-kind view.
-    if [[ -n "$kind" && -z "$filter" && -z "$sort_by" ]]; then
+    # A bare kind (no filter, no sort, no reverse) shows the rich per-kind view.
+    if [[ -n "$kind" && -z "$filter" && -z "$sort_by" && -z "$reverse" ]]; then
         case "$kind" in
             project)  cmd_project_list ;;
             pack)     cmd_pack_list ;;
@@ -331,9 +335,9 @@ EOF
         return $?
     fi
 
-    # Compact unified index (default, or whenever --tag/--sort/scoped-with-filter).
+    # Compact unified index (default, or whenever --tag/--sort/--reverse/scoped-with-filter).
     [[ -z "$sort_by" ]] && sort_by="kind"
-    local rows="" rk rn tags tkind sortkey t found
+    local rows="" rk rn tags tkind sortkey t found ftag namew=4 cap=30
     while IFS=$'\t' read -r rk rn; do
         [[ -z "$rk" ]] && continue
         tkind=$(_list_tag_kind "$rk"); tags=""
@@ -343,7 +347,14 @@ EOF
             for t in $tags; do [[ "$t" == "$filter" ]] && { found=true; break; }; done
             [[ "$found" == true ]] || continue
         fi
-        if [[ "$sort_by" == name ]]; then sortkey="${rn}	${rk}"; else sortkey="$(_list_kind_rank "$rk")	${rn}"; fi
+        case "$sort_by" in
+            name) sortkey="${rn}	${rk}" ;;
+            tag)  ftag="${tags%% *}"
+                  # tagged sort before untagged (0/1 prefix), then by first tag, then name.
+                  if [[ -n "$tags" ]]; then sortkey="0${ftag}	${rn}"; else sortkey="1	${rn}"; fi ;;
+            *)    sortkey="$(_list_kind_rank "$rk")	${rn}" ;;
+        esac
+        (( ${#rn} > namew )) && namew=${#rn}
         rows+="${sortkey}	${rk}	${rn}	${tags:-—}"$'\n'
     done < <(_list_collect "$kind")
 
@@ -352,9 +363,11 @@ EOF
         info "Nothing to list yet."
         return 0
     fi
+    (( namew > cap )) && namew=$cap
 
-    printf "${BOLD}%-10s %-26s %s${NC}\n" "KIND" "NAME" "TAGS"
-    printf '%s' "$rows" | LC_ALL=C sort -t'	' -k1,2 | while IFS=$'\t' read -r _k1 _k2 rk rn tags; do
-        printf '%-10s %-26s %s\n' "$rk" "$rn" "$tags"
+    local -a sortargs=(-t'	' -k1,2); [[ -n "$reverse" ]] && sortargs+=(-r)
+    printf "${BOLD}%-10s %s %s${NC}\n" "KIND" "$(_fit_col "NAME" "$namew")" "TAGS"
+    printf '%s' "$rows" | LC_ALL=C sort "${sortargs[@]}" | while IFS=$'\t' read -r _k1 _k2 rk rn tags; do
+        printf '%-10s %s %s\n' "$rk" "$(_fit_col "$rn" "$namew")" "$tags"
     done
 }

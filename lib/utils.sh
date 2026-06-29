@@ -105,6 +105,23 @@ _peel_tab() {
     done
 }
 
+# Fit <str> into exactly <width> display columns for a table column: pad short
+# strings with trailing spaces, truncate long ones to <width>-1 chars + a
+# 1-column ellipsis ("…"). Inputs are ASCII (validated names/tags), so character
+# count == display width. We pad manually (not via printf '%-Ns') because the
+# ellipsis is multi-byte: printf would pad by bytes and shift the next column.
+# Print the result with a plain '%s' and join columns with single spaces.
+# Usage: _fit_col <str> <width>
+_fit_col() {
+    local _s="$1" _w="$2" _n
+    _n=${#_s}
+    if (( _n > _w )); then
+        printf '%s…' "${_s:0:$((_w - 1))}"   # truncated → exactly <width> columns
+        return 0
+    fi
+    printf '%s%*s' "$_s" "$((_w - _n))" ''
+}
+
 # Check Docker is running
 check_docker() {
     if ! docker info >/dev/null 2>&1; then
