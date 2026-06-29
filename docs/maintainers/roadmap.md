@@ -5,7 +5,7 @@
 > [roadmap-history.md](roadmap-history.md). The framework-improvements backlog
 > lives in [roadmap-backlog.md](roadmap-backlog.md).
 >
-> Last updated: 2026-06-27.
+> Last updated: 2026-06-29.
 
 ## Current status
 
@@ -189,6 +189,66 @@ in-container. changelog **#19** + **#20**.
   `CCO_ALLOW_HOST_RESOLVE=1`. Added the flag so the suite is green in-container **and** on host.
 
 Residual gate: Mac host re-validation (`e2e-validation-checklist.md`) before merge.
+
+#### Round 3 (first real `cco start` of `claude-orchestrator` itself via decentralized-config, 2026-06-29) — ▶ PLANNED
+
+The project's own first migration + start on the Mac surfaced four scopes of defects.
+Each was **verified against the shipped code** (read-only multi-agent analysis, file:line
+evidence — not trusting any prior resolution-log). They are organized into **three
+sequential fix sessions**, each running the full Analysis → Design → Implementation cycle
+with approval gates (per `.claude/rules/workflow.md`). Order is dictated by data/dependency
+flow: correct the index data → unify the resolution surface → multi-repo membership ops that
+depend on clean resolution. Commits will be LOCAL (push from Mac). Baseline **978/0**.
+
+Verified findings (read-only analysis, 2026-06-29):
+
+- **Scope 1 — resolve/path** (all confirmed): tilde/`@local` written raw into the STATE index
+  by the migration repos branch (`lib/migrate.sh:761-763`; the mounts branch `802-813`
+  already normalizes) → false AD5 conflict in `_index_path_conflicts` (`lib/index.sh:184-188`,
+  exact-string compare) and `cco resolve <name>` "not resolvable" (`lib/cmd-resolve.sh:65-77`);
+  `cco path list` surfaces the resulting `@local` entries. `<name>` vs cwd asymmetry resolves
+  with the tilde fix.
+- **Scope 2 — migration completeness** (MERGE-BLOCKER, data-loss): transcripts are **not
+  migrated** — the helper `_cco_project_session_transcripts` (`lib/paths.sh:163`,
+  dest `<state>/.../session/claude-state`) exists but is **never invoked**; migration copies
+  only memory (`lib/migrate.sh:1010-1015`). Memory migrates correctly; the legacy backup is a
+  complete raw tar (`lib/migrate.sh:158`, incl. `.git` + gitignored + all profiles' shadows),
+  so no data is lost at source — the gap is the missing local backup→destination mapping.
+  **Decision premise (confirmed 2026-06-29):** the local legacy→new-layout migration **must
+  copy transcripts** (no data loss); ADR-0009's deferral applies **only to cross-PC sync**,
+  not to local migration. The session re-audits *every* resource type independently.
+- **Scope 3 — `cco join`** (design↔code gap): current `cco join` (`lib/migrate.sh:1058-1084`)
+  is Journey C (no `<project>` arg, registers a repo that already hosts its own `.cco/`),
+  which is **redundant** — `cco start` (cwd-first, `lib/cmd-start.sh:114-123`) and
+  `cco resolve --scan` (`lib/cmd-resolve.sh:297,308`) already cover it. `design.md:707` +
+  `cli.md:275-295` promise `cco join <project>` = Journey E (add the current repo as a member
+  to an existing project's `repos[]`), **not implemented**. Repurpose `join`→Journey E (drop C),
+  mirroring the multi-repo same-id edit pattern of `cco project rename` (ADR-0031).
+- **Scope 4 — `cco forget`** (cleanup enhancement): current `lib/cmd-forget.sh` removes index
+  membership + per-repo path (shared-guard), STATE/DATA/CACHE dirs (incl. memory, `:132`), and
+  tags, but **never touches `<repo>/.cco`**. Add an always-on TTY final prompt + `--purge` flag
+  to delete `<repo>/.cco` across member repos, **ownership-guarded** (`project.yml` `name:` ==
+  forgotten id, via `_cco_project_id`), with uncommitted-changes warning + backup; default
+  "repo untouched" preserved. Reuses `_confirm_destructive`/`_reminder_git_dirty`.
+
+| Session | Scopes | Goal | Decision artifact |
+|---|---|---|---|
+| **S1 — Resolution surface + index normalization** ✅ **DONE (2026-06-29)** | 1 | Fix tilde/AD5/`@local` at the index boundary (`_index_set_path` + `_index_path_conflicts` + expansion in `_resolve_unit_dir_for_project`) + a one-shot index-cleanup migration; `cco path list` expands & flags non-absolute entries. Design the unified `resolve↔start` resolution surface: status of **all** referenced resources (repos/llms/packs/mounts) + per-resource actions (clone/download-to-chosen-path / explicit local path / cached pack), `cco start` on an unresolved project **invokes** resolve (no command duplication, P14 never-block). | new **ADR-0033** |
+| **S2 — Migration completeness (data-loss)** | 2 | Wire transcript migration (`session/claude-state`); rigorous independent re-audit of every resource/data/metadata type (legacy location → destination → migrates? → correct? → sanitization/split → gap severity); reconcile ADR-0009 (sync ≠ local migration). No data loss, no incomplete migration. | forward-annotate **ADR-0009** (+ ADR-0006/0024/0025 as needed); migration script if mapping changes |
+| **S3 — Multi-repo same-id ops: `join` + `forget`** | 3 + 4 | Build one reusable ownership-guarded member-repo loop (shared with `rename`); repurpose `cco join`→Journey E (`<project>` arg, edits `repos[]` in all synced same-id members, leaves divergent repos untouched, `--sync` delivers the synced `.cco`, url auto-derived from `git remote origin`); `cco forget` always-on TTY purge prompt + `--purge`. | new **ADR** (join/Journey E); forward-annotate **ADR-0021** (forget) |
+
+Dependencies: S1's index-boundary fix also corrects the migration writer (`migrate.sh:762`
+flows through `_index_set_path`), so S1 precedes S2 (re-test migration on a corrected index)
+and S3 (join/forget rely on clean member resolution). **S1 shipped** as ADR-0033 + changelog #21
+(7 commits `cb99e60`→`dbb1e96`, suite **989/0**); the bug-fix (a) corrected the migration writer +
+added cleanup migration `016`, and (b) unified the resolve surface (one heal verb for
+repos/mounts/llms/packs, `cco start` invokes `_resolve_unit`, never-block). **Next free ADR = 0034;
+next changelog = #22.** ▶ Next session = **S2**.
+
+Per-session handoffs (read after `/clear` to start a session):
+[`s1-resolution-surface-handoff.md`](configuration/decentralized-config/s1-resolution-surface-handoff.md) ·
+[`s2-migration-completeness-handoff.md`](configuration/decentralized-config/s2-migration-completeness-handoff.md) ·
+[`s3-join-forget-handoff.md`](configuration/decentralized-config/s3-join-forget-handoff.md).
 
 ### Pre-merge: flatten `~/.cco/global/.claude/` → `~/.cco/.claude/` ✅ DONE (2026-06-27)
 
