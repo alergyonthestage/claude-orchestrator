@@ -58,6 +58,7 @@ cco template show <name>     # Show template details (list via 'cco list templat
 cco template remove <name>   # Remove a user template (previews + confirms; -y to skip)
 cco project export <name>    # Export a project (projects share via their own code-repo remote)
 cco project import <archive> # Import an exported project
+cco project rename [<old>] <new> # Rename a project, re-keying its identity across stores
 cco project show <name>      # Show project roles, referenced-by, repo-centric view
 cco remote add <n> <url>     # Register a sharing-repo remote
 cco remote add <n> <url> --token <t>  # Register with auth token

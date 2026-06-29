@@ -111,7 +111,7 @@ flowchart LR
 ### Dogfooding findings (step 6 — in progress, host e2e on Mac)
 
 Real-host migration of `cave-flow` surfaced a sequence of defects; fixing them all
-**pre-merge**. Commits are LOCAL (push from Mac). Suite baseline 945 → **950/0**.
+**pre-merge**. Commits are LOCAL (push from Mac). Suite baseline 945 → **966/0** (A/B/B-robustness/C/D).
 
 - **Migration completeness** ✅ — `cco init --migrate` dropped most of `project.yml`
   (extra_mounts/docker/auth/github/browser). Fixed (passthrough-by-default + extra_mounts
