@@ -158,6 +158,30 @@ Real-host migration of `cave-flow` surfaced a sequence of defects; fixing them a
   [`configuration/decentralized-config/cd-list-rename-handoff.md`](configuration/decentralized-config/cd-list-rename-handoff.md)
   (symptoms, code map, suggested approach, decisions, test plan).
 
+#### Round 2 (host e2e of `cave-web`/`cave-flow`, 2026-06-29) — design done, implementing pre-merge
+
+Five findings from a second e2e pass, multi-agent analysis → design. **All resolved pre-merge.**
+
+- **F2 — pack llms not re-fetchable (coordinate drift)** — `cco pack validate` flagged missing llms with
+  a **non-executable** remedy (`cco llms install` needs a url it never supplied). Root cause: `pack.yml`
+  allows url-less (short-form) llms, pack migration relocates wholesale without url backfill, and pack
+  validate checks only local presence — drifting from the ADR-0017 D1 / ADR-0019 D6 invariant (llms url
+  mandatory → always re-fetchable). Closed by **ADR-0032** (validate parity + executable remedy;
+  `migrations/pack/001` url backfill; long-form authoring/template; `cco resolve` heals llms — hybrid
+  install-from-url / update-url / skip).
+- **F1 — `validate` output inconsistency** — `project validate` is greppable/no-symbols (ADR-0023 D2)
+  while `pack`/`template`/`config validate` use inline `✓/✗/⚠`, non-greppable. Unify all to the greppable
+  contract (refines ADR-0023 D2 / ADR-0029; no new ADR).
+- **F3 — `cco project coords` wording** — not a bug (validate = per-unit reachability; coords = cross-unit
+  consistency), but the empty-result message reads as a contradiction. Reword + help note distinguishing
+  the two.
+- **F4 — `cco clean` default friction** — no path/scope bug; default cleans only `.bak`, so `.tmp` needs
+  explicit `--tmp`. Pre-merge: conservative-default + discoverability hint + clearer help/scope docs.
+  Deeper redesign deferred to the Post-v1 backlog.
+- **F5 — 6 in-container test failures** — not regressions; the anti-resolve guard (ADR-0007, keyed on
+  `/.dockerenv` since `a216c8b`) fires in-container while 6 tests omit `CCO_ALLOW_HOST_RESOLVE=1`. Add the
+  flag so the suite is green in-container **and** on host.
+
 ### Pre-merge: flatten `~/.cco/global/.claude/` → `~/.cco/.claude/` ✅ DONE (2026-06-27)
 
 The global Claude config now lives at the flat `~/.cco/.claude/` (the vault-era `global/`
@@ -211,6 +235,16 @@ confirm before scheduling. None blocks the v1 merge.
     without re-introducing the gatekeeping that P7/P8/P17 deliberately delegated to git.
 - **`cco project internalize` (Case-C)** + `~/.cco/projects/` config home — sever a
   project's config from its code repo (solo-adopter case). Name reserved (ADR-0023 D4).
+- **`cco clean` redesign for the decentralized model** (surfaced by dogfooding round-2 F4) — a fuller
+  classification of *what* is cleanable in the new architecture (XDG STATE/CACHE + `<repo>/.cco`, plus
+  later-added cached resources), and a use-case-driven choice of defaults / behaviour / subcommands:
+  validate the legacy `.bak`-only-default approach or adapt/expand it for decentralized config. Pre-merge
+  ships only the conservative-default + discoverability hint (ADR-0032 round-2 scope); this is the
+  deferred deeper pass.
+- **`cco update` responsibility re-analysis** (dogfooding round-2) — re-examine how `cco update` mixes
+  native-cco updates, schema migrations, and team-shared resource updates (e.g. llms version bumps) under
+  the new decentralized architecture and newly-added cached resources: evaluate explicit command
+  separation by responsibility vs the maintained unification + subcommands. Needs its own analysis.
 - **Index per-project namespacing** (ADR-0022 D2) — only when real name collisions appear.
 - **Distribution / packaging (R-pkg)** — distribute as npm/npx + publish the image to a
   registry so users need not clone the source. Also: an opinionated official sharing repo
