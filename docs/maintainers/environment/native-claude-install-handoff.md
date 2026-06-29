@@ -1,5 +1,15 @@
 # Handoff E — migrate Claude Code to the native installer (integrate `#B2` onto develop)
 
+> **✅ RESOLVED (2026-06-29)** — implemented on `feat/docker/native-claude-install`
+> (commits `ebe0e1b` impl+tests, `5f6b975` docs). Decisions locked: **no migration**
+> (purely additive), config knob **`~/.cco/claude-version`** (default `latest`).
+> Authoritative design now lives in **ADR-0039** (`decisions/0039-native-claude-install.md`)
+> and **`design/design-docker.md` §1.2.1**; changelog **#24**. Suite **1022/0**.
+> **Pending host e2e**: entrypoint/Dockerfile changes are inert in a running
+> session (self-development) — validate with `cco build && cco start` on the host
+> (first start ~30s install; verify auto-update, re-pin, and `cco clean --all`
+> leaves the cache). The text below is kept as the original coordination record.
+
 > **Created**: 2026-06-29 · **Branch to create**: `feat/docker/native-claude-install` off `develop`.
 > **When**: **do this FIRST — before B and C.** Small, self-contained Docker/runtime change.
 > **Gating**: not release-gating, but removes an active deprecation + fixes the `/doctor` warning.
