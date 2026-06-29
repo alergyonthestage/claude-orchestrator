@@ -381,15 +381,16 @@ Per-user tags replace the removed vault profiles. Tags are **multi-valued per re
 **per-user** — they live in a machine-local-but-synced registry (`<data>/cco/tags.yml`, the
 DATA bucket) and are never written into `project.yml`/`pack.yml` or shared with third parties.
 
-#### `cco list [<kind>] [--tag <t>] [--sort name]`
+#### `cco list [<kind>] [--tag <t>] [--sort kind|name|tag] [--reverse]`
 
 The single listing surface (ADR-0029 D1). With no argument it prints a compact
 cross-resource index — every project, pack, template, llms entry and remote,
 grouped by kind, with a **TAGS** column. `cco list <kind>` narrows to one kind
 (with its richer per-kind view); `--tag` filters by tag, globally or within a kind.
+Long names are ellipsized so columns stay aligned in any terminal width.
 
 ```
-Usage: cco list [<kind>] [--tag <t>] [--sort name]
+Usage: cco list [<kind>] [--tag <t>] [--sort kind|name|tag] [--reverse|-r]
 
 Arguments:
   <kind>               One of: project | pack | template | llms | remote
@@ -397,14 +398,21 @@ Arguments:
 
 Options:
   --tag <t>            Show only resources carrying tag <t>
-  --sort name          Order by name
+  --sort kind|name|tag Order by kind (default), name, or first tag
+                       (--sort tag: untagged resources sort last, then by name)
+  --reverse, -r        Reverse the chosen order
 
 Examples:
   cco list                     # All resources, grouped by kind (KIND · NAME · TAGS)
-  cco list packs               # Packs only, with resource counts
+  cco list packs               # Packs only, with resource counts and tags
   cco list --tag work          # Every resource tagged "work"
   cco list project --tag work  # Projects tagged "work"
+  cco list --sort tag          # Group resources by their first tag
+  cco list packs --sort name -r  # Packs, name descending
 ```
+
+> `--sort`/`--reverse` always render the compact index (KIND · NAME · TAGS), even
+> when a `<kind>` is given — so `cco list packs --sort tag` sorts packs by tag.
 
 > The per-noun `cco project|pack|template|llms|remote list` verbs were removed;
 > each prints a one-line redirect to `cco list <kind>`. Full detail for one
@@ -547,12 +555,16 @@ one-line redirect.
 ```
 cco list packs               # NAME · KNOWLEDGE · SKILLS · AGENTS · RULES · TAGS
 cco list packs --tag infra   # packs carrying the "infra" tag
+cco list packs --sort tag    # packs ordered by tag (via the compact index)
 ```
 
 **Implementation** (under `cco list packs`):
 - Iterates directories under `~/.cco/packs/`
 - Parses each `pack.yml` for knowledge files, skills, agents, and rules counts
-- Displays a formatted table with resource counts (shows `0` when a category is empty)
+- Displays a formatted table with resource counts (shows `0` when a category is empty),
+  a per-user **TAGS** column (`—` when untagged), and a NAME column sized to the
+  widest pack name (long names ellipsized so the count columns stay aligned)
+- Sorting/filtering by tag is served by the compact index (`--sort tag` / `--tag`)
 
 ---
 

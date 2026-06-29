@@ -73,6 +73,19 @@ relocating illustratively-named verbs).
 memory at the cost of exactly the "same operation in two places" the review flagged; the maintainer
 chose the clean single-surface (Option A) with redirecting stubs over the alias.
 
+> **Addendum (2026-06-29, dogfooding follow-up C)** — host e2e surfaced three cosmetic/UX gaps in
+> the listing surface; fixed as additive flags + a rendering fix that *refine* this D1 (no new ADR):
+> - **`--sort tag`** added alongside `kind`/`name`. Tie-break: order by the resource's **first tag**,
+>   **untagged resources sort last**, then by name. (llms/remote, which carry no tags, sort last.)
+> - **Ascending/descending** spelled **`--reverse` / `-r`** (a boolean that flips the chosen order),
+>   chosen over a `--sort <key>:desc` suffix for composability and convention.
+> - **Column stability**: both the compact index and the rich `cco list packs` view now size the
+>   NAME column dynamically and **ellipsize** overlong names (`…`), so a long name never shifts the
+>   following columns (the reported "table wraps" symptom). The rich packs view also gained the
+>   **TAGS** column its sibling kinds already showed (and a latent `grep -c` count-doubling bug that
+>   split rows onto extra lines was fixed). Sorting/filtering packs by tag is served by the compact
+>   index (`cco list packs --sort tag` / `--tag`).
+
 ### D2 — Uniform destructive-confirmation contract
 
 Every **destructive or irreversible** action follows one contract, modelled on `cco forget`:
