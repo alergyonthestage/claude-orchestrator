@@ -761,23 +761,10 @@ YML
     assert_file_not_contains "$tmpdir/clones/workrepo/.cco/project.yml" "/home/dev"
 }
 
-test_join_registers_index() {
-    # cco join in a cloned repo registers project membership for this machine.
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    local repo="$tmpdir/cloned"
-    mkdir -p "$repo/.cco"
-    cat > "$repo/.cco/project.yml" <<'YML'
-name: joined
-repos:
-  - name: api
-    url: git@github.com:org/api.git
-  - name: web
-    url: git@github.com:org/web.git
-YML
-    ( cd "$repo" && run_cco join )
-    assert_file_contains "$CCO_STATE_HOME/index" "joined:"
-}
+# NOTE: `cco join` was repurposed to Journey E (ADR-0034) — adding the current
+# repo as a MEMBER of an existing project. The former Journey-C form (register a
+# cloned repo's own committed .cco/) was removed (covered by cwd-first `cco start`
+# + `cco resolve --scan`). Its behavior is now exercised in tests/test_join.sh.
 
 # ── P4 source→DATA relocation (ADR-0022 D1) ──────────────────────────
 

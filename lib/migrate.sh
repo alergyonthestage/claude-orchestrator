@@ -1105,38 +1105,7 @@ _cco_migrate_project() {
     return 0
 }
 
-# `cco join [--sync]` — register a freshly-cloned, already-migrated repo's .cco/
-# into this machine's index (reuses the resolve/index primitives). The repo
-# hosts its own project; member paths are resolved on demand at start/resolve.
-# Scope (review H6): this is Journey C — registering a repo that ALREADY has a
-# committed .cco/project.yml. Journey E (`cco join <project>` adding the current
-# repo as a NEW member to an existing project's repos[]) is NOT implemented here
-# and needs a maintainer design decision (it changes join's signature + edits a
-# holder repo's project.yml). Until then `cco join` takes no project argument.
-cmd_join() {
-    local do_sync=false
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --sync) do_sync=true; shift ;;
-            --help|-h) echo "Usage: cco join [--sync]   (run inside a cloned repo that already has a committed .cco/; registers its project + members on this machine)"; return 0 ;;
-            *) die "Unknown option: $1" ;;
-        esac
-    done
-    local repo="$PWD"
-    [[ -f "$repo/.cco/project.yml" ]] || die "No .cco/project.yml here — run 'cco join' inside a cloned project repo."
-    local pname; pname=$(_cco_project_id "$repo")
-    # Register member repos by name (space-separated, §3); unresolved paths are
-    # prompted at start/resolve.
-    local rname; local -a repo_names=()
-    while IFS=$'\t' read -r rname _ _; do
-        [[ -z "$rname" ]] && continue
-        repo_names+=("$rname")
-    done < <(yml_get_repo_coords "$repo/.cco/project.yml")
-    [[ ${#repo_names[@]} -gt 0 ]] && _index_set_project_repos "$pname" "${repo_names[@]}"
-    # Guidance (H6): join binds no member paths, so by-name `cco resolve <pname>`
-    # cannot find the unit yet. Point at the cwd-based resolve, which walks up from
-    # this repo and works without a prior binding.
-    ok "Joined project '$pname' on this machine. Run 'cco resolve' from inside this repo to bind its member paths."
-    [[ "$do_sync" == "true" ]] && { cmd_sync --auto-approve 2>/dev/null || true; }
-    return 0
-}
+# `cco join` is Journey E (add the current repo as a MEMBER of an existing
+# project) and lives in lib/cmd-join.sh (ADR-0034). The former Journey-C form
+# (register an already-committed .cco/ on this machine) was REMOVED — `cco start`
+# (cwd-first) and `cco resolve --scan` cover it.
