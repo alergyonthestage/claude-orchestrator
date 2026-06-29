@@ -314,3 +314,19 @@ entries:
       asymmetries are intentional and documented in each family's `--help`: a
       project has no install/publish/remove (it rides its code-repo remote;
       deregister with `cco forget`), and only `llms` has `rename`.
+  - id: 19
+    date: "2026-06-29"
+    type: additive
+    title: "Pack llms references stay re-fetchable (ADR-0032)"
+    description: >
+      Packs now carry their llms coordinate like projects do, closing a drift
+      from the mandatory-llms-url invariant (ADR-0017 D1 / ADR-0019 D6).
+      `cco pack validate` is now url-aware: a referenced-but-uninstalled llms
+      prints an executable remedy ('cco llms install <url> --name <n>') when the
+      manifest carries a url, or flags a share-readiness gap ('has no url
+      coordinate') when it does not — at parity with `cco project validate`.
+      `cco update` backfills a missing llms url into each installed pack from the
+      global llms source where recoverable (idempotent). `cco resolve` now also
+      heals missing url-bearing llms (interactive install/different-url/skip) —
+      one heal verb for repos, mounts, and llms (P14), no separate command. New
+      packs' base template documents the long form with a required url.

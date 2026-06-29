@@ -298,3 +298,77 @@ extra_mounts:
     [[ "$got" == "/resolved/mymount" ]] \
         || { echo "ASSERTION FAILED: resolve must prompt + bind an unresolved mount on a TTY (got: '$got')"; return 1; }
 }
+
+# ── llms heal (ADR-0032 D5) ──────────────────────────────────────────
+# cco resolve heals referenced-but-uninstalled llms (P14: one heal verb for
+# repos/mounts/llms). Non-TTY warns + counts (never blocks); TTY routes to the
+# interactive install; an installed llms is a clean skip.
+
+_RSV_LLMS_YML='name: demo
+repos:
+  - name: myrepo
+llms:
+  - name: svelte
+    url: https://svelte.dev/llms.txt'
+
+test_resolve_llms_missing_warns_non_tty() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/myrepo"
+    _rsv_unit "$tmp" myrepo "$_RSV_LLMS_YML"
+    seed_index_path myrepo "$tmp/myrepo"
+    local out
+    out=$(
+        export LLMS_DIR="$tmp/llms"; mkdir -p "$LLMS_DIR"
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/yaml.sh"; source "$REPO_ROOT/lib/paths.sh"
+        source "$REPO_ROOT/lib/index.sh"; source "$REPO_ROOT/lib/local-paths.sh"
+        source "$REPO_ROOT/lib/cmd-resolve.sh"
+        _cco_have_tty() { return 1; }                 # headless
+        _resolve_unit "$tmp/myrepo" 2>&1
+    )
+    [[ "$out" == *"llms 'svelte' not installed"* ]] \
+        || fail "Expected non-TTY warn for missing llms, got: $out"
+    [[ "$out" == *"cco llms install https://svelte.dev/llms.txt --name svelte"* ]] \
+        || fail "Expected an executable install hint, got: $out"
+}
+
+test_resolve_llms_installed_is_skipped() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/myrepo"
+    _rsv_unit "$tmp" myrepo "$_RSV_LLMS_YML"
+    seed_index_path myrepo "$tmp/myrepo"
+    local out
+    out=$(
+        export LLMS_DIR="$tmp/llms"; mkdir -p "$LLMS_DIR/svelte"   # already installed
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/yaml.sh"; source "$REPO_ROOT/lib/paths.sh"
+        source "$REPO_ROOT/lib/index.sh"; source "$REPO_ROOT/lib/local-paths.sh"
+        source "$REPO_ROOT/lib/cmd-resolve.sh"
+        _cco_have_tty() { return 1; }
+        _resolve_unit "$tmp/myrepo" 2>&1
+    )
+    [[ "$out" != *"svelte"* ]] || fail "An installed llms must not be flagged, got: $out"
+}
+
+test_resolve_llms_tty_invokes_heal() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/myrepo"
+    _rsv_unit "$tmp" myrepo "$_RSV_LLMS_YML"
+    seed_index_path myrepo "$tmp/myrepo"
+    local out
+    out=$(
+        export LLMS_DIR="$tmp/llms"; mkdir -p "$LLMS_DIR"
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/yaml.sh"; source "$REPO_ROOT/lib/paths.sh"
+        source "$REPO_ROOT/lib/index.sh"; source "$REPO_ROOT/lib/local-paths.sh"
+        source "$REPO_ROOT/lib/cmd-resolve.sh"
+        _cco_have_tty() { return 0; }                              # terminal reachable
+        _resolve_llms_entry() { mkdir -p "$LLMS_DIR/$1"; return 0; }  # stub a successful fetch
+        _resolve_unit "$tmp/myrepo" >/dev/null 2>&1
+        [[ -d "$LLMS_DIR/svelte" ]] && echo HEALED
+    )
+    [[ "$out" == *HEALED* ]] || fail "TTY resolve must route a missing llms to the heal path"
+}

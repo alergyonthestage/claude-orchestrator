@@ -160,6 +160,31 @@ _resolve_unit() {
         esac
     done < <(yml_get_mount_coords "$project_yml" 2>/dev/null)
 
+    # LLMs (ADR-0032 D5): heal a referenced-but-uninstalled llms by fetching it
+    # from its coordinate. Unified with repos/mounts under one heal verb (P14) —
+    # not a separate `cco llms resolve`. The content lands in CACHE; the manifest
+    # url stays as-is (a machine-local install, ADR-0017 D1), so this never edits
+    # committed config. Non-TTY: warn + count, never block (mirrors repos).
+    local desc variant
+    while IFS= read -r _ln; do
+        [[ -z "$_ln" ]] && continue
+        _peel_tab "$_ln" name desc variant url
+        [[ -z "$name" ]] && continue
+        [[ -d "${LLMS_DIR:-}/$name" ]] && continue          # already installed
+        if ! _cco_have_tty; then
+            unresolved=$((unresolved + 1))
+            warn "llms '$name' not installed — run 'cco resolve' on a terminal${url:+ (or: cco llms install $url --name $name)}"
+            continue
+        fi
+        rc=0
+        _resolve_llms_entry "$name" "$url" "$variant" || rc=$?
+        case $rc in
+            0) resolved=$((resolved + 1)) ;;
+            2) return 0 ;;                          # user quit
+            *) unresolved=$((unresolved + 1)) ;;    # skipped
+        esac
+    done < <(yml_get_llms "$project_yml" 2>/dev/null)
+
     # Record project -> member repos membership (index projects: section).
     if [[ -n "$proj_name" && ${#member_repos[@]} -gt 0 ]]; then
         _index_set_project_repos "$proj_name" "${member_repos[@]}"
@@ -170,6 +195,40 @@ _resolve_unit() {
     else
         warn "${proj_name:-project}: $unresolved reference(s) still unresolved"
     fi
+}
+
+# Interactively heal one missing llms reference (ADR-0032 D5). Hybrid offer:
+# install-from-url / use-a-different-url / skip (or specify-a-url / skip when no
+# url is recorded). Downloads via the `cco llms install` backend (in a subshell
+# so a download `die` cannot abort the whole resolve). Returns 0 = fetched,
+# 2 = user quit, 1 = skipped. Callers gate this on _cco_have_tty.
+_resolve_llms_entry() {
+    local name="$1" url="$2" variant="$3"
+    local reply
+    if [[ -n "$url" ]]; then
+        printf "llms '%s' not installed (url: %s)\n  [i] install from url · [d] use a different url · [s] skip · [q] quit: " "$name" "$url" >&2
+        read -r reply </dev/tty || return 1
+        case "$reply" in
+            ""|[Ii]) ;;                                              # install from the recorded url
+            [Dd]) printf "  url: " >&2; read -r url </dev/tty || return 1
+                  [[ -z "$url" ]] && { warn "no url given — skipped"; return 1; } ;;
+            [Qq]) return 2 ;;
+            *)    return 1 ;;                                        # skip
+        esac
+    else
+        printf "llms '%s' has no url coordinate.\n  [u] specify a url to install · [s] skip · [q] quit: " "$name" >&2
+        read -r reply </dev/tty || return 1
+        case "$reply" in
+            [Uu]) printf "  url: " >&2; read -r url </dev/tty || return 1
+                  [[ -z "$url" ]] && { warn "no url given — skipped"; return 1; } ;;
+            [Qq]) return 2 ;;
+            *)    return 1 ;;
+        esac
+    fi
+    info "Installing llms '$name' from $url ..."
+    ( _llms_install "$url" --name "$name" ${variant:+--variant "$variant"} ) \
+        || { warn "llms '$name' install failed — left unresolved"; return 1; }
+    return 0
 }
 
 # Determine the logical name a discovered repo dir maps to: prefer a git origin
