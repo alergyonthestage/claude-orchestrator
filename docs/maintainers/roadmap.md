@@ -32,12 +32,19 @@ the merge to `develop`/`main` (step 7).** Intentional post-v1 deferrals (not blo
 (forward-compatible stub — the `migrations/{pack,template}/` dirs are empty), interactive
 internalize-as-cache prompts, `cco project internalize` (Case-C), and cross-PC memory/state sync.
 
-**Next session (pre-merge)** →
-[`pre-merge-docs-and-config-editor-handoff.md`](../configuration/decentralized-config/pre-merge-docs-and-config-editor-handoff.md):
-(A) a shipped-behavior **docs/CLI-reference cutover sweep** (bring all user + agent-facing docs to the
-implemented truth; the built-in tutorial/config-editor consume them), then (B) a design decision on
-**config-editor/tutorial access scope** (all-projects edit + cco-info; likely ADR-0036, additive — does
-not block the merge).
+### Path to release — three sequenced workstreams
+
+Each has a dedicated handoff. **A gates the merge; B and C run on `develop` after it; the release is
+`develop → main` + npm publish.**
+
+| # | Workstream | When | Gating? | Handoff |
+|---|---|---|---|---|
+| **A** | **Docs/CLI-reference cutover sweep** — bring all user + agent-facing docs to the implemented truth (the built-in tutorial/config-editor mount and consume them; the config-editor CLAUDE.md is currently stale). | **PRE-MERGE (now)** | **Merge gate** | [`pre-merge-docs-cutover-handoff.md`](../configuration/decentralized-config/pre-merge-docs-cutover-handoff.md) |
+| **B** | **config-editor/tutorial access scope** — all-projects config edit + read-only "cco info" snapshot; tutorial partial. ADR-0036, additive. | post-merge, on `develop` | No (additive) | [`config-editor-access-design-handoff.md`](../configuration/decentralized-config/config-editor-access-design-handoff.md) |
+| **C** | **npm packaging & distribution** — ship `cco` as an npm package (`package.json` `bin`, framework tree bundled, Docker/proxy at runtime, version coupling). ADR-0037. **Priority.** | post-merge, on `develop` | **Release gate** | [`npm-packaging-distribution-handoff.md`](../engineering/npm-packaging-distribution-handoff.md) |
+
+Sequence: **A → merge `feat → develop` → {B, C in parallel; C release-gating} → release `develop → main`
++ `npm publish`.** Next free ADR after 0035 = **0036** (B), then **0037** (C).
 
 ## Decentralized-config v1 — phase index
 
