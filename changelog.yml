@@ -330,3 +330,15 @@ entries:
       heals missing url-bearing llms (interactive install/different-url/skip) —
       one heal verb for repos, mounts, and llms (P14), no separate command. New
       packs' base template documents the long form with a required url.
+  - id: 20
+    date: "2026-06-29"
+    type: additive
+    title: "Unified, greppable validate output (finding F1)"
+    description: >
+      `cco pack validate` and `cco template validate` now print like
+      `cco project validate` (ADR-0023 D2): one "<name>: <reason>" line per
+      finding plus a "validate: N issue(s) [error=E warning=W]" summary, with no
+      inline ✗/⚠ symbols — severity is the exit code, and the output is
+      script/grep-friendly. A valid resource still prints a "… is valid"
+      confirmation. (`cco config validate` keeps its orphan-sanitization layout,
+      ADR-0021.)

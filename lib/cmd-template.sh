@@ -708,16 +708,21 @@ _validate_single_template() {
     local dir="$1"
     local name; name=$(basename "$dir")
 
+    # Greppable output (one "<name>: <reason>" line + summary, no inline symbol),
+    # matching cco project/pack validate (ADR-0023 D2 / finding F1).
     local kind
     if ! kind=$(_template_kind_of "$dir"); then
-        error "Template '$name': no project.yml or pack.yml marker (cannot determine kind)"
+        printf '%s: no project.yml or pack.yml marker (cannot determine kind)\n' "$name"
+        printf 'validate: 1 issue(s) [error=1 warning=0]\n'
         return 1
     fi
 
-    # A project template scaffolds a config tree; warn (not fail) if it is absent
-    # so a hand-authored skeleton still validates.
+    # A project template scaffolds a config tree; this is a warning (not a
+    # failure) so a hand-authored skeleton still validates.
     if [[ "$kind" == project && ! -d "$dir/.claude" && ! -d "$dir/claude" ]]; then
-        warn "Template '$name' (project): no .claude/ or claude/ config tree to scaffold"
+        printf '%s (%s): no .claude/ or claude/ config tree to scaffold\n' "$name" "$kind"
+        printf 'validate: 1 issue(s) [error=0 warning=1]\n'
+        return 0
     fi
 
     ok "Template '$name' ($kind) is valid"

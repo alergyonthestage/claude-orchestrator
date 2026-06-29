@@ -471,3 +471,19 @@ test_pack_validate_warns_name_mismatch() {
     run_cco pack validate "actual-name"
     assert_output_contains "does not match"
 }
+
+# Finding F1: pack validate output is greppable — one "<name>: <reason>" line
+# per finding plus a "validate: N issue(s)" summary, with NO inline ✗/⚠ symbols
+# (parity with cco project validate, ADR-0023 D2).
+test_pack_validate_output_is_greppable() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local pack_dir="$CCO_PACKS_DIR/grep-pack"
+    mkdir -p "$pack_dir/agents"
+    printf 'name: grep-pack\nagents:\n  - nonexistent.md\n' > "$pack_dir/pack.yml"
+    run_cco pack validate "grep-pack" || true
+    assert_output_contains "grep-pack: agent file not found: agents/nonexistent.md"
+    assert_output_contains "validate: 1 issue(s)"
+    assert_output_not_contains "✗"
+}

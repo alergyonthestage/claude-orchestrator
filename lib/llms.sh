@@ -218,19 +218,24 @@ _validate_llms_refs() {
         _peel_tab "$_line" lname ldesc lvariant lurl
         [[ -z "$lname" ]] && continue
         local llms_dir="$LLMS_DIR/$lname"
+        # Emit greppable "<context>: <reason>" findings on stdout (no inline
+        # symbol) so the caller collects them into its unified validate output
+        # (ADR-0023 D2 / finding F1). Severity is the function's return code.
         if [[ ! -d "$llms_dir" ]]; then
             if [[ -n "$lurl" ]]; then
                 # url present → the remedy is runnable verbatim.
-                error "$context: llms '$lname' not installed — run: cco llms install $lurl --name $lname${lvariant:+ --variant $lvariant}"
+                printf '%s: llms '\''%s'\'' not installed — run: cco llms install %s --name %s%s\n' \
+                    "$context" "$lname" "$lurl" "$lname" "${lvariant:+ --variant $lvariant}"
             else
                 # url absent → share-readiness gap (llms url is mandatory, ADR-0017 D1).
-                error "$context: llms '$lname' has no url coordinate — required to share/re-fetch (add a url to the llms entry, or run 'cco resolve')"
+                printf '%s: llms '\''%s'\'' has no url coordinate — required to share/re-fetch (add a url to the llms entry, or run '\''cco resolve'\'')\n' \
+                    "$context" "$lname"
             fi
             ((errors++))
             continue
         fi
         if ! _llms_resolve_primary_file "$llms_dir" "" > /dev/null 2>&1; then
-            error "$context: llms '$lname' has no documentation files"
+            printf '%s: llms '\''%s'\'' has no documentation files\n' "$context" "$lname"
             ((errors++))
         fi
     done <<< "$llms_entries"

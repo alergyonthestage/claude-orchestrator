@@ -213,34 +213,37 @@ _generate_pack_mounts() {
     done <<< "$pack_names"
 }
 
-# Validate a single pack's structure and references.
-# Returns 0 if valid, 1 if errors found.
+# Validate a single pack's structure and references. Returns 0 if valid, 1 if
+# any error. Output is greppable (one "<name>: <reason>" line per finding + a
+# "validate: N issue(s) [error=E warning=W]" summary, no inline symbols),
+# matching `cco project validate` (ADR-0023 D2 / finding F1). A name/dir
+# mismatch is a warning (non-fatal); everything else is an error. Quiet +
+# "Pack '<name>' is valid" on success.
 _validate_single_pack() {
     local name="$1"
     local pack_dir="$PACKS_DIR/$name"
     local pack_yml="$pack_dir/pack.yml"
-    local errors=0
+    local -a errs=() warns=()
 
-    # pack.yml exists
+    # Structural early-outs (fatal) — still greppable + a summary line.
     if [[ ! -f "$pack_yml" ]]; then
-        error "Pack '$name': pack.yml not found"
+        printf '%s: pack.yml not found\n' "$name"
+        printf 'validate: 1 issue(s) [error=1 warning=0]\n'
         return 1
     fi
-
-    # Valid top-level keys (reuse existing regex)
     if ! grep -qE '^(name|knowledge|llms|skills|agents|rules):' "$pack_yml"; then
-        error "Pack '$name': pack.yml has no valid top-level keys (check indentation)"
+        printf '%s: pack.yml has no valid top-level keys (check indentation)\n' "$name"
+        printf 'validate: 1 issue(s) [error=1 warning=0]\n'
         return 1
     fi
 
-    # Name matches directory
+    # Name matches directory (mismatch is a warning, not a failure).
     local yml_name
     yml_name=$(yml_get "$pack_yml" "name")
     if [[ -z "$yml_name" ]]; then
-        error "Pack '$name': 'name' field missing in pack.yml"
-        ((errors++))
+        errs+=("$name: 'name' field missing in pack.yml")
     elif [[ "$yml_name" != "$name" ]]; then
-        warn "Pack '$name': YAML name '$yml_name' does not match directory name '$name'"
+        warns+=("$name: YAML name '$yml_name' does not match directory name '$name'")
     fi
 
     # Knowledge source exists if specified
@@ -249,10 +252,7 @@ _validate_single_pack() {
     if [[ -n "$k_source" ]]; then
         local expanded
         expanded=$(expand_path "$k_source")
-        if [[ ! -d "$expanded" ]]; then
-            error "Pack '$name': knowledge source not found: $k_source"
-            ((errors++))
-        fi
+        [[ ! -d "$expanded" ]] && errs+=("$name: knowledge source not found: $k_source")
     fi
 
     # Skills directories exist
@@ -261,10 +261,7 @@ _validate_single_pack() {
     if [[ -n "$skills" ]]; then
         while IFS= read -r s; do
             [[ -z "$s" ]] && continue
-            if [[ ! -d "$pack_dir/skills/$s" ]]; then
-                error "Pack '$name': skill directory not found: skills/$s"
-                ((errors++))
-            fi
+            [[ ! -d "$pack_dir/skills/$s" ]] && errs+=("$name: skill directory not found: skills/$s")
         done <<< "$skills"
     fi
 
@@ -274,10 +271,7 @@ _validate_single_pack() {
     if [[ -n "$agents" ]]; then
         while IFS= read -r a; do
             [[ -z "$a" ]] && continue
-            if [[ ! -f "$pack_dir/agents/$a" ]]; then
-                error "Pack '$name': agent file not found: agents/$a"
-                ((errors++))
-            fi
+            [[ ! -f "$pack_dir/agents/$a" ]] && errs+=("$name: agent file not found: agents/$a")
         done <<< "$agents"
     fi
 
@@ -287,20 +281,25 @@ _validate_single_pack() {
     if [[ -n "$rules" ]]; then
         while IFS= read -r r; do
             [[ -z "$r" ]] && continue
-            if [[ ! -f "$pack_dir/rules/$r" ]]; then
-                error "Pack '$name': rule file not found: rules/$r"
-                ((errors++))
-            fi
+            [[ ! -f "$pack_dir/rules/$r" ]] && errs+=("$name: rule file not found: rules/$r")
         done <<< "$rules"
     fi
 
-    # LLMs references exist
-    if ! _validate_llms_refs "$pack_yml" "Pack '$name'"; then
-        ((errors++))
+    # LLMs references — _validate_llms_refs prints greppable "<name>: ..." lines.
+    local _llms_out
+    _llms_out=$(_validate_llms_refs "$pack_yml" "$name")
+    if [[ -n "$_llms_out" ]]; then
+        while IFS= read -r _l; do [[ -n "$_l" ]] && errs+=("$_l"); done <<< "$_llms_out"
     fi
 
-    if [[ $errors -gt 0 ]]; then
-        return 1
+    local total=$(( ${#errs[@]} + ${#warns[@]} ))
+    if [[ $total -gt 0 ]]; then
+        local f
+        for f in ${errs[@]+"${errs[@]}"};  do printf '%s\n' "$f"; done
+        for f in ${warns[@]+"${warns[@]}"}; do printf '%s\n' "$f"; done
+        printf 'validate: %d issue(s) [error=%d warning=%d]\n' "$total" "${#errs[@]}" "${#warns[@]}"
+        [[ ${#errs[@]} -gt 0 ]] && return 1
+        return 0
     fi
     ok "Pack '$name' is valid"
     return 0

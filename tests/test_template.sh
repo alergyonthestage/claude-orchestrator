@@ -558,7 +558,10 @@ test_template_validate_malformed_fails() {
     if run_cco template validate brokent 2>/dev/null; then
         fail "validate should fail for a template with no kind marker"
     fi
-    assert_output_contains "no project.yml or pack.yml marker"
+    # Greppable output (finding F1): "<name>: <reason>" + summary, no ✗ symbol.
+    assert_output_contains "brokent: no project.yml or pack.yml marker"
+    assert_output_contains "validate: 1 issue(s)"
+    assert_output_not_contains "✗"
 }
 
 test_template_validate_all_user_templates() {
