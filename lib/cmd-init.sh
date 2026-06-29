@@ -222,7 +222,7 @@ _cco_init_scaffold_repo() {
 
     # Resolve the project name: --name › prompt(basename) › basename.
     local name; name=$(_cco_init_resolve_name "$name_arg")
-    [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]] \
+    _cco_valid_project_name "$name" \
         || die "Invalid project name '$name' — must be lowercase letters, numbers, and hyphens, starting alphanumeric. Pass --name <name>."
     _check_reserved_project_name "$name"
 

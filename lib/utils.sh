@@ -149,6 +149,19 @@ check_global() {
     fi
 }
 
+# Validate a project name's charset. A project name is an IDENTITY (id == name;
+# the index/tags/dir keys are the raw name), so we VALIDATE-and-reject, never
+# sanitize-and-transform — transforming would desync id from the stored name and
+# corrupt every store keyed by it (ADR-0031 D5). The single definition shared by
+# `cco init`, `cco start`, and `cco project rename`. The charset is the canonical
+# lowercase-hyphen-digit form (Design Invariant 10, matching packs/templates/
+# remotes); it excludes uppercase, '_', ':' '/' space and YAML/shell specials
+# that would break the index/tags parsers or nest the identity directories.
+# Returns 0 when valid. Usage: _cco_valid_project_name <name>
+_cco_valid_project_name() {
+    [[ "$1" =~ ^[a-z0-9][a-z0-9-]*$ ]]
+}
+
 # Reserved project names (used as keywords by CLI commands)
 RESERVED_PROJECT_NAMES=("global" "all" "tutorial" "config-editor")
 

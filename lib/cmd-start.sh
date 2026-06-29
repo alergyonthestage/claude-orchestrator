@@ -216,9 +216,12 @@ _start_load_config() {
     project_name=$(yml_get "$project_yml" "name")
     [[ -z "$project_name" ]] && project_name="$project"
 
-    # Validate project name (ADR-13: secure-by-default config parsing)
-    if [[ ! "$project_name" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]]; then
-        die "Invalid project name '${project_name}': must match [a-zA-Z0-9][a-zA-Z0-9_-]* (no spaces or special characters)"
+    # Validate project name (ADR-13: secure-by-default config parsing; the shared
+    # single definition = Design Invariant 10, ADR-0031 D5). Previously start used
+    # a looser [a-zA-Z0-9_-] regex than init's canonical lowercase-hyphen form —
+    # unifying here also closes that latent inconsistency.
+    if ! _cco_valid_project_name "$project_name"; then
+        die "Invalid project name '${project_name}': must be lowercase letters, numbers, and hyphens, starting alphanumeric (no spaces or special characters)"
     fi
     if [[ ${#project_name} -gt 63 ]]; then
         die "Project name '${project_name}' is too long (${#project_name} chars, max 63)"
