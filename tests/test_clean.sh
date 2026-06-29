@@ -386,3 +386,41 @@ test_clean_nonexistent_project_error() {
     }
     return 0
 }
+
+# ── Discoverability hint (finding F4) ───────────────────────────────
+
+test_clean_default_hints_non_default_categories() {
+    # When the conservative default (.bak) finds nothing but non-default
+    # artifacts (.tmp/) exist, 'cco clean' should report "Nothing to clean"
+    # AND hint that other categories exist — without touching the .tmp/ dir.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    init_global "$tmpdir" --lang "English"
+
+    # A project with a dry-run dump under <repo>/.cco/.tmp/ but NO .bak files
+    # (decentralized layout — there is no central CCO_PROJECTS_DIR).
+    create_project "$tmpdir" "test-proj" "name: test-proj
+repos: []"
+    local cco; cco=$(host_cco_dir "$tmpdir" "test-proj")
+    mkdir -p "$cco/.tmp"
+    echo "dry-run output" > "$cco/.tmp/docker-compose.yml"
+
+    run_cco clean
+    assert_output_contains "Nothing to clean"
+    # Discoverability tip surfaces the non-default categories
+    assert_output_contains "--tmp"
+    # The default (.bak-only) clean must NOT remove the .tmp/ artifact
+    assert_dir_exists "$cco/.tmp"
+}
+
+test_clean_explicit_category_suppresses_hint() {
+    # With an explicit category selected, an empty result must NOT print the
+    # generic discoverability tip — the user knew exactly what they asked for.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco init --lang "English"
+
+    run_cco clean --tmp
+    assert_output_contains "Nothing to clean"
+    assert_output_not_contains "Tip:"
+}
