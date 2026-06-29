@@ -21,10 +21,10 @@ review, the documentation review (reorg + coherence sweep), the pre-merge **flat
 review** (step 3), the **UX-UI review** (step 4, ADR-0029), and the **comprehensive pre-e2e
 review** (step 5, suite 943/0 → **945/0**) are all done. **Dogfooding e2e on the Mac (step 6) is
 now in progress** — host runs of real projects surfaced fix rounds (round 2 = ADR-0032 pack/llms
-coordinate coherence; **round 3** = first `cco start` of claude-orchestrator itself). **Round 3
-S1 (resolution surface + index normalization) is shipped** — ADR-0033 + cleanup migration `016` +
-changelog #21, suite **989/0**; **S2 (migration completeness, merge-blocker) is next**, then S3,
-then the v1 merge/release (step 7).
+coordinate coherence; **round 3** = first `cco start` of claude-orchestrator itself). **Round 3 is
+complete** — S1 (resolution surface + index normalization, ADR-0033 + migration `016` + changelog
+#21), S2 (migration completeness, ADR-0009 fwd-annot), and S3 (`join` Journey E + `forget --purge`,
+ADR-0034 + changelog #22/#23) all shipped, suite **1005/0**; next = the v1 merge/release (step 7).
 
 ## Decentralized-config v1 — phase index
 
@@ -194,7 +194,7 @@ in-container. changelog **#19** + **#20**.
 
 Residual gate: Mac host re-validation (`e2e-validation-checklist.md`) before merge.
 
-#### Round 3 (first real `cco start` of `claude-orchestrator` itself via decentralized-config, 2026-06-29) — ▶ IN PROGRESS (S1 ✅ done · S2 ✅ done · S3 next)
+#### Round 3 (first real `cco start` of `claude-orchestrator` itself via decentralized-config, 2026-06-29) — ✅ S1 · S2 · S3 ALL DONE
 
 The project's own first migration + start on the Mac surfaced four scopes of defects.
 Each was **verified against the shipped code** (read-only multi-agent analysis, file:line
@@ -250,7 +250,7 @@ Verified findings (read-only analysis, 2026-06-29):
 |---|---|---|---|
 | **S1 — Resolution surface + index normalization** ✅ **DONE (2026-06-29)** | 1 | Fix tilde/AD5/`@local` at the index boundary (`_index_set_path` + `_index_path_conflicts` + expansion in `_resolve_unit_dir_for_project`) + a one-shot index-cleanup migration; `cco path list` expands & flags non-absolute entries. Design the unified `resolve↔start` resolution surface: status of **all** referenced resources (repos/llms/packs/mounts) + per-resource actions (clone/download-to-chosen-path / explicit local path / cached pack), `cco start` on an unresolved project **invokes** resolve (no command duplication, P14 never-block). | new **ADR-0033** |
 | **S2 — Migration completeness (data-loss)** ✅ **DONE (2026-06-29)** | 2 | Independent re-audit (4 parallel analyst agents: per-project / global / transcript-wiring / backup+chains) → **2 confirmed data-loss gaps, all else SAFE**. **GAP#2 transcripts**: wired the missing `session/claude-state` copy mirroring memory (dual-resolve active+shadow, `cp -rn`, dest == `cco start` mount). **GAP#1 arbitrary secret files**: glob-copy `*.env`/`*.key`/`*.pem` into `<repo>/.cco/` gitignored-by-design, secret-scan aligned to the project `.gitignore`. D2 dissolved (projects are profile-exclusive → no multi-profile divergence). | forward-annotated **ADR-0009** + design §9; **no new ADR, no changelog** (completeness bugfix) |
-| **S3 — Multi-repo same-id ops: `join` + `forget`** | 3 + 4 | Build one reusable ownership-guarded member-repo loop (shared with `rename`); repurpose `cco join`→Journey E (`<project>` arg, edits `repos[]` in all synced same-id members, leaves divergent repos untouched, `--sync` delivers the synced `.cco`, url auto-derived from `git remote origin`); `cco forget` always-on TTY purge prompt + `--purge`. | new **ADR** (join/Journey E); forward-annotate **ADR-0021** (forget) |
+| **S3 — Multi-repo same-id ops: `join` + `forget`** ✅ **DONE (2026-06-29)** | 3 + 4 | Built one reusable ownership-guarded classifier `_project_member_status` (5-way: unresolved/code-only/foreign/divergent/synced via index + `name:` + sync-meta F39) shared by `join`, `forget --purge`, and `cco project show` (the `_project_member_role` retrofit, which closed two latent ADR-0024 D5 bugs). **`cco join`→Journey E** (`<project>` arg + `--name` + `--sync`; edits `repos[]` in all in-sync same-id members, prompts on divergent Case C — NOT strict since `repos[]` ≠ the `name:` sync discriminator, refuses non-TTY divergent; url auto-derived from `git remote origin`; D2 clobber-guard on `--sync`; Journey C dropped). **`cco forget --purge`** deletes owned `.cco/` with backup + consent (default repo-untouched preserved). 4 commits `6926d35`→`4a176ee`, suite **1005/0**. | new **ADR-0034** (join/Journey E); forward-annotated **ADR-0021** D2 (forget) + **ADR-0024** D5 (classifier); changelog **#22** (join) + **#23** (forget --purge) |
 
 Dependencies: S1's index-boundary fix also corrects the migration writer (`migrate.sh:762`
 flows through `_index_set_path`), so S1 precedes S2 (re-test migration on a corrected index)
@@ -261,9 +261,12 @@ repos/mounts/llms/packs, `cco start` invokes `_resolve_unit`, never-block). **S2
 `784016f`→`ab15880`, suite **989→993/0**): wired the transcript copy (GAP#2) + arbitrary secret-file
 copy (GAP#1) into the live `cco init --migrate` path, forward-annotated ADR-0009, re-synced design §9,
 added `test_migrate_completeness.sh` as the audit-matrix oracle — **no new ADR, no changelog, no
-migration script** (per the pre-merge principle above). Residual gate = **host re-validation on the
-Mac** (`e2e-validation-checklist.md` + `P2-dogfooding-validation.md`). **Next free ADR = 0034;
-next changelog = #22.** ▶ Next session = **S3**.
+migration script** (per the pre-merge principle above). **S3 shipped** (4 commits `6926d35`→`4a176ee`,
+suite **993→1005/0**): shared `_project_member_status` classifier + `cco join` Journey E (new
+`lib/cmd-join.sh`, ADR-0034) + `cco forget --purge` (ADR-0021 D2 fwd-annot), changelog #22/#23,
+`test_join.sh` + extended `test_index.sh`/`test_forget.sh`. Residual gate = **host re-validation on
+the Mac** (`e2e-validation-checklist.md` + `P2-dogfooding-validation.md`). **Next free ADR = 0035;
+next changelog = #24.** ▶ Next session = **v1 merge/release (step 7)** after host e2e.
 
 Per-session handoffs (read after `/clear` to start a session):
 [`s1-resolution-surface-handoff.md`](configuration/decentralized-config/s1-resolution-surface-handoff.md) ·
