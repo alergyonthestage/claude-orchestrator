@@ -32,19 +32,47 @@ the merge to `develop`/`main` (step 7).** Intentional post-v1 deferrals (not blo
 (forward-compatible stub — the `migrations/{pack,template}/` dirs are empty), interactive
 internalize-as-cache prompts, `cco project internalize` (Case-C), and cross-PC memory/state sync.
 
-### Path to release — three sequenced workstreams
+### Path to release — sequenced workstreams
 
-Each has a dedicated handoff. **A gates the merge; B and C run on `develop` after it; the release is
-`develop → main` + npm publish.**
+**A gated the merge (✅ done); B, C, D run on `develop` after it; the release is
+`develop → main` + npm publish.** B/C/D are additive develop-track work; only C gates the release.
 
 | # | Workstream | When | Gating? | Handoff |
 |---|---|---|---|---|
 | **A** | **Docs/CLI-reference cutover sweep** — bring all user + agent-facing docs to the implemented truth (the built-in tutorial/config-editor mount and consume them). **✅ done**: agent-facing doc tables remapped to the reorg tree + store layout flattened; cli.md code-grounded (0 stale/0 wrong, 11 missing flags added); removed-concept token probe clean (only migration/affirmation hits); shipped scaffold/setup doc pointers fixed; suite **1010/0**. | **PRE-MERGE — ✅ done** | **Merge gate (cleared)** | — (completed; handoff removed in post-merge cleanup) |
 | **B** | **config-editor/tutorial access scope** — all-projects config edit + read-only "cco info" snapshot; tutorial partial. ADR-0036, additive. | post-merge, on `develop` | No (additive) | [`config-editor-access-design-handoff.md`](../configuration/decentralized-config/config-editor-access-design-handoff.md) |
 | **C** | **npm packaging & distribution** — ship `cco` as an npm package (`package.json` `bin`, framework tree bundled, Docker/proxy at runtime, version coupling). ADR-0037. **Priority.** | post-merge, on `develop` | **Release gate** | [`npm-packaging-distribution-handoff.md`](../engineering/npm-packaging-distribution-handoff.md) |
+| **D** | **`cco project save` — project-config versioning helper** — ergonomic, path-scoped commit of `<repo>/.cco/**` + isolated history. Reintroduces the old `vault save` convenience for the decentralized in-repo model. ADR-0038, additive. Needs its own design session (see below). | post-merge, on `develop` | No (additive) | _design session — see §D below_ |
 
-Sequence: **A → merge `feat → develop` → {B, C in parallel; C release-gating} → release `develop → main`
-+ `npm publish`.** Next free ADR after 0035 = **0036** (B), then **0037** (C).
+Sequence: **A → merge `feat → develop` → {B, C, D on `develop`; C release-gating} → release `develop → main`
++ `npm publish`.** Next free ADR after 0035 = **0036** (B), **0037** (C), **0038** (D).
+
+#### D — `cco project save` (project-config versioning helper) — design notes
+
+**Problem.** In the decentralized model, project config lives in `<repo>/.cco/` and is versioned by the
+repo's **own git**. To version just the config the user must manually stage only `.cco/**` among unrelated
+repo changes — error-prone and easy to get wrong. The old `cco vault save` gave a one-command,
+secret-checked commit of the personal store; the in-repo model lost that ergonomics for **project** config.
+
+**Proposed scope (v1 of the helper).**
+- A verb that stages **exclusively** `<repo>/.cco/**` (never touches the rest of the repo's working tree)
+  and commits it with a message, in the repo's own git — a path-scoped `git add <repo>/.cco && git commit`.
+- **Secret detection** before commit, reusing the existing scan from `cco config save` (`lib/secrets.sh`);
+  `<repo>/.cco/secrets.env` stays gitignored and is never staged.
+- **Isolated history** view: surface only the commits that touched the project config.
+
+**Naming — open question.** `cco config save` is **taken** (it versions the personal store `~/.cco`).
+Candidates, for symmetry: **`cco project save`** (recommended — mirrors `cco config save`, but for the
+repo's project store) · `cco save` · `cco project commit`. Decide in the design session.
+
+**Isolated history — feasibility: YES.** `git log -- <repo>/.cco/` already path-filters commits that
+touched the project config (works regardless of how the commit was made). For commits made specifically
+via the helper, optionally add a commit **trailer** (e.g. `Cco-Save: true`) and filter with
+`git log --grep`. A companion read verb (`cco project history` / `cco project log`) can wrap either.
+
+**Type & gating.** Additive, non-gating. **Open questions for the session**: exact verb name; path-only
+vs trailer-based history; whether to offer `--amend`/message templating; interaction with a multi-repo
+project (commit `.cco/` in the invoking repo only, or fan out to config-bearing repos like `--sync`?).
 
 ## Decentralized-config v1 — phase index
 
