@@ -184,7 +184,7 @@ _start_resolve_project() {
         elif [[ -n "$project" ]]; then
             # By-name: resolve the project's host via the index membership.
             unit_dir=$(_resolve_unit_dir_for_project "$project") \
-                || die "Project '$project' is not resolvable on this machine. Run 'cco resolve --scan <dir>' to discover it, or start from its repo."
+                || die "Project '$project' is not in the index on this machine yet — its config can't be located. Run 'cco resolve --scan <dir>' to discover it, or start from inside its repo."
             source_kind="name"
         else
             # cwd-first: the project THIS repo hosts (AD6 / ADR-0024 D3).
@@ -509,12 +509,16 @@ _start_generate_integrations() {
 _start_resolve_paths() {
     unresolved_refs=0
     $is_internal && return 0
-    _resolve_start_paths "$project_dir"
-    # Conscious-skip model (design §4.4 / P14, ADR-0017 D2): _resolve_start_paths
-    # offered [c]lone / [p]ath / [s]kip per unresolved member (TTY) and already
-    # warned each member it could not resolve (skip / non-TTY). Here we only COUNT
-    # the residue for the passive ⚠ badge — the mount-gen excludes empty-path
-    # entries, so a skipped member is never a silent empty mount (#B17).
+    # Single resolution entry point (ADR-0033 / S1 finding #7): start invokes the
+    # SAME resolve surface as `cco resolve` — interactive heal of every referenced
+    # repo/mount/llms/pack, never blocking (P14) — instead of a parallel inlined
+    # loop. _resolve_unit takes the repo dir (parent of the .cco config dir).
+    _resolve_unit "$(dirname "$project_dir")"
+    # Conscious-skip model (design §4.4 / P14, ADR-0017 D2): _resolve_unit offered
+    # [c]lone / [p]ath / [s]kip per unresolved member (TTY) and already warned each
+    # member it could not resolve (skip / non-TTY). Here we only COUNT the residue
+    # for the passive ⚠ badge — the mount-gen excludes empty-path entries, so a
+    # skipped member is never a silent empty mount (#B17).
     local kind key effective status
     while IFS=$'\t' read -r kind key effective status; do
         [[ -z "$kind" ]] && continue

@@ -481,3 +481,33 @@ test_resolve_status_render_lists_all_kinds() {
     [[ "$out" == *"svelte"*"unresolved"* ]]   || fail "unresolved llms must show: $out"
     [[ "$out" == *"team-pack"*"unresolved"* ]] || fail "unresolved pack must show: $out"
 }
+
+# Regression (ADR-0033 / B): _resolve_unit must keep the unit locatable by-name
+# after recording membership, even when the host repo (bearing .cco/project.yml)
+# is NOT listed in the manifest repos:. Before the host-inclusion fix, a second
+# resolve overwrote membership with the repos: names only, dropping the sole
+# locatable member and breaking `cco start <name>` on the next run (the
+# workspace.yml-idempotency regression).
+test_resolve_membership_includes_host_repo() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/hostrepo" "$tmp/memberonly"
+    _rsv_unit "$tmp" hostrepo 'name: demo
+repos:
+  - name: memberonly'
+    seed_index_path hostrepo "$tmp/hostrepo"
+    seed_index_path memberonly "$tmp/memberonly"
+    local out
+    out=$(
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/yaml.sh"; source "$REPO_ROOT/lib/paths.sh"
+        source "$REPO_ROOT/lib/index.sh"; source "$REPO_ROOT/lib/local-paths.sh"
+        source "$REPO_ROOT/lib/packs.sh"; source "$REPO_ROOT/lib/cmd-resolve.sh"
+        _cco_have_tty() { return 1; }
+        _resolve_unit "$tmp/hostrepo" >/dev/null 2>&1   # first pass records membership
+        _resolve_unit "$tmp/hostrepo" >/dev/null 2>&1   # second pass must not drop the host
+        _resolve_unit_dir_for_project demo               # must still relocate the unit
+    )
+    [[ "$out" == "$tmp/hostrepo" ]] \
+        || fail "by-name resolution must relocate the unit after repeated resolve, got: $out"
+}

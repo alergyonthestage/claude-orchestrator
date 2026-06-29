@@ -211,6 +211,20 @@ _resolve_unit() {
         esac
     done < <(yml_get_pack_coords "$project_yml" 2>/dev/null)
 
+    # Ensure the HOST repo (the dir bearing .cco/project.yml) is part of the
+    # recorded membership, so by-name resolution (_resolve_unit_dir_for_project)
+    # can always relocate the unit — even when the host repo is not itself listed
+    # in the manifest's repos: (a config-only host). Without this, recording
+    # membership from repos: alone could drop the only locatable member.
+    local _host_name; _host_name=$(_index_name_for_path "$unit_dir")
+    if [[ -n "$_host_name" ]]; then
+        local _has=false _m
+        for _m in ${member_repos[@]+"${member_repos[@]}"}; do
+            [[ "$_m" == "$_host_name" ]] && { _has=true; break; }
+        done
+        $_has || member_repos+=("$_host_name")
+    fi
+
     # Record project -> member repos membership (index projects: section).
     if [[ -n "$proj_name" && ${#member_repos[@]} -gt 0 ]]; then
         _index_set_project_repos "$proj_name" "${member_repos[@]}"

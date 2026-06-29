@@ -188,6 +188,19 @@ _index_normalize_path() {
 # Echo the absolute path bound to a logical <name>, or empty if unresolved.
 _index_get_path() { _index_section_get paths "$1"; }
 
+# Reverse lookup: echo the FIRST logical name bound to <abs-path> in paths:, or
+# empty. Complement of _index_get_path; recovers the host repo's logical name
+# from its directory (membership must include the host so by-name resolution can
+# relocate the unit even when the host is not listed in the manifest's repos:).
+_index_name_for_path() {
+    local target="$1" line name path
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        name="${line%%=*}"; path="${line#*=}"
+        [[ "$path" == "$target" ]] && { printf '%s\n' "$name"; return 0; }
+    done < <(_index_list_paths)
+}
+
 # Bind a logical <name> to an absolute <path> (upsert). The value is normalized
 # at this boundary (_index_normalize_path); a non-absolute value that cannot be
 # recovered is SKIPPED (no write) and the call returns 1 — the user-facing warn

@@ -8,9 +8,13 @@
 # P4-5; only _local_paths_get (read-only) survives, used by `cco init --migrate`
 # to recover real paths from a legacy vault backup.
 #
-# Provides: _local_paths_get(), _prompt_for_path(), _resolve_project_paths_impl(),
-#   _resolve_start_paths(), _effective_repo_mounts(), _effective_extra_mounts(),
-#   _resolve_entry_index(), _project_effective_paths()
+# Provides: _local_paths_get(), _prompt_for_path(), _effective_repo_mounts(),
+#   _effective_extra_mounts(), _resolve_entry_index(), _project_effective_paths()
+#
+# Session-start path resolution is NOT here: `cco start` and `cco resolve` share
+# the SINGLE resolution surface _resolve_unit (lib/cmd-resolve.sh) — ADR-0033 / S1
+# finding #7. The former parallel loop (_resolve_project_paths_impl /
+# _resolve_start_paths) was retired to keep one entry point.
 # Dependencies: colors.sh, utils.sh, yaml.sh
 
 # ── local-paths.yml read/write helpers ───────────────────────────────
@@ -160,111 +164,6 @@ _prompt_for_path() {
             return 1
             ;;
     esac
-}
-
-# ── Project path resolution ──────────────────────────────────────────
-
-# Resolve referenced repos + extra_mounts in a project.yml: look each logical
-# name up in the STATE index and, if unresolved, prompt (TTY) or warn (non-TTY).
-# Shared implementation between install-time and session-start flows.
-#
-# Usage: _resolve_project_paths_impl <project_dir> <mode>
-#   mode=install : non-TTY unresolved → warn & defer; TTY [q]uit → "Installation aborted.";
-#                  summarize resolved repos at end.
-#   mode=start   : non-TTY unresolved → warn & proceed (conscious-skip, P14 — the
-#                  member is excluded from mounts + ⚠-badged, never a silent empty
-#                  mount); TTY [q]uit → "Aborted."; [s]kip surfaces as warn.
-#
-# Design note: a single implementation prevents the class of drift that
-# caused #B10 (status/diff divergence) — when two callsites reimplement
-# the same categorization/resolution loop, they go out of sync silently.
-_resolve_project_paths_impl() {
-    local project_dir="$1" mode="$2"
-    local project_yml="$project_dir/project.yml"
-
-    [[ ! -f "$project_yml" ]] && return 0
-
-    local abort_msg="Aborted."
-    [[ "$mode" == "install" ]] && abort_msg="Installation aborted."
-
-    local -a resolved_repos=()
-
-    # Resolve repos — logical names into the STATE index.
-    local _ln name url rest path needs_resolve
-    while IFS= read -r _ln; do
-        [[ -z "$_ln" ]] && continue
-        name="${_ln%%$'\t'*}"; rest="${_ln#*$'\t'}"; url="${rest%%$'\t'*}"
-        [[ -z "$name" ]] && continue
-        path=$(_index_get_path "$name")
-        needs_resolve=false
-        if [[ -z "$path" ]] || ! _path_exists "$path"; then
-            needs_resolve=true
-        fi
-        if $needs_resolve; then
-            local resolved rc=0
-            resolved=$(_resolve_entry_index "$project_dir" "repos" "$name" "$url") || rc=$?
-            if [[ $rc -eq 0 && -n "$resolved" ]]; then
-                resolved_repos+=("$name")
-            elif [[ $rc -eq 2 ]]; then
-                # rc==2: non-TTY (no prompt possible) OR a TTY user chose [q]uit.
-                if ! _cco_have_tty; then
-                    # non-TTY: warn + proceed without it (P14 conscious-skip —
-                    # start excludes + ⚠-badges it, never silent; design §4.4).
-                    warn "Repository '$name' unresolved on this machine — run 'cco resolve' to configure"
-                else
-                    die "$abort_msg"   # TTY: user chose [q]uit
-                fi
-            else
-                # rc==1: user consciously [s]kipped at the F49 prompt.
-                if [[ "$mode" == "start" ]]; then
-                    warn "Repository '$name' skipped — it will not be available in this session"
-                fi
-            fi
-        fi
-    done < <(yml_get_repo_coords "$project_yml" 2>/dev/null)
-
-    # Resolve extra_mounts — logical names into the STATE index.
-    local _ml mname murl mrest mpath m_needs
-    while IFS= read -r _ml; do
-        [[ -z "$_ml" ]] && continue
-        mname="${_ml%%$'\t'*}"; mrest="${_ml#*$'\t'}"; murl="${mrest%%$'\t'*}"
-        [[ -z "$mname" ]] && continue
-        mpath=$(_index_get_path "$mname")
-        m_needs=false
-        if [[ -z "$mpath" ]] || ! _path_exists "$mpath"; then
-            m_needs=true
-        fi
-        if $m_needs; then
-            local mresolved mrc=0
-            mresolved=$(_resolve_entry_index "$project_dir" "extra_mounts" "$mname" "$murl") || mrc=$?
-            if [[ $mrc -eq 0 && -n "$mresolved" ]]; then
-                :
-            elif [[ $mrc -eq 2 ]]; then
-                if ! _cco_have_tty; then
-                    warn "Mount '$mname' unresolved on this machine — run 'cco resolve' to configure"
-                else
-                    die "$abort_msg"   # TTY: user chose [q]uit
-                fi
-            else
-                if [[ "$mode" == "start" ]]; then
-                    warn "Mount '$mname' skipped — it will not be available in this session"
-                fi
-            fi
-        fi
-    done < <(yml_get_mount_coords "$project_yml" 2>/dev/null)
-
-    if [[ "$mode" == "install" && ${#resolved_repos[@]} -gt 0 ]]; then
-        ok "Resolved paths: ${resolved_repos[*]}"
-    fi
-}
-
-# Resolve referenced paths before session start (cco start flow). TTY: the F49
-# prompt offers clone/path/skip per unresolved member. Non-TTY or [s]kip: warn +
-# proceed without it (conscious-skip, P14 — never a silent empty mount; design
-# §4.4). The residue is counted + ⚠-badged by _start_resolve_paths.
-# Usage: _resolve_start_paths <project_dir>
-_resolve_start_paths() {
-    _resolve_project_paths_impl "$1" "start"
 }
 
 # ── Effective mounts (index-backed) ──────────────────────────────────
