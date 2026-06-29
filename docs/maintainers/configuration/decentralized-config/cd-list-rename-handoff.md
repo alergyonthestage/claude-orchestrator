@@ -1,8 +1,19 @@
 # Handoff — Dogfooding follow-ups C (`cco list` packs UX) + D (`cco project rename`)
 
-**Status:** 🟡 OPEN, pre-merge. Two defects found during host e2e dogfooding of `cave-flow`
+> **✅ RESOLVED (2026-06-29).** Both C and D are implemented, tested, and committed (LOCAL,
+> push from Mac). **C** — `feat/list` column-stable tables (shared `_fit_col` dynamic width +
+> ellipsis), `--sort tag`, `--reverse`/`-r`, packs TAGS column, plus a latent `grep -c`
+> count-doubling fix; refines ADR-0029 D1 (forward-annotated, no new ADR). **D** — `cco project
+> rename [<old>] <new>` multi-store identity re-key (**ADR-0031**), strict member-resolution,
+> preview+confirm; surfaced & fixed a name-validation inconsistency (`_cco_valid_project_name`,
+> Design Invariant 10) and recorded a name/id hardening follow-up (post-v1 backlog). Suite 953 →
+> **966/0** (6 pre-existing in-container `test_paths`/`test_is_installed` env failures aside).
+> The detail below is kept as the design/decision record. **Residual gate = Mac host
+> re-validation** before merge.
+
+**Status:** ✅ RESOLVED, pre-merge. Two defects found during host e2e dogfooding of `cave-flow`
 (2026-06-28), branch `feat/vault/decentralized-config`. Lower severity than the already-fixed
-A/B mount-resolution defects — scheduled for **separate sessions**, both **before merge**.
+A/B mount-resolution defects — done in **separate sessions**, both **before merge**.
 **Audience:** the maintainer-dev picking up C or D in a fresh session.
 
 > Self-contained: read top-to-bottom, then start at the chosen section. Confirm every code
