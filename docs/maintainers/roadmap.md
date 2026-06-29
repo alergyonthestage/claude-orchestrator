@@ -133,9 +133,14 @@ Real-host migration of `cave-flow` surfaced a sequence of defects; fixing them a
   broke the compose. Added a DRY `_compose_vol()` emitter (double-quoted) routed through every
   bind-mount site (`cmd-start.sh`/`packs.sh`/`llms.sh`); verified with `docker compose config`
   on space-bearing paths. Suite 950 → 953/0.
-- **C — `cco list` packs UX** ⏳ — the packs table wraps / mis-paginates (hardcoded column
-  widths in `cmd_list`/`cmd_pack_list`); add tag sort + ascending/descending choice (additive
-  flags refining ADR-0029 D1, no new ADR). *Separate session.*
+- **C — `cco list` packs UX** ✅ (`9434919` + `451c385`) — the packs table wrapped because of
+  hardcoded column widths plus a latent `grep -c` count bug (empty category → `"0\n0"`, an
+  embedded newline that split rows). Fixed with a shared `_fit_col` helper (dynamic NAME width +
+  ellipsis) across `cmd_list`/`cmd_pack_list`, the count bug, `--sort tag` (untagged last,
+  tie-break by name), `--reverse`/`-r`, and a TAGS column on `cco list packs`. Additive flags +
+  a rendering fix refining ADR-0029 D1 (forward-annotated, no new ADR). Suite 953 → **959/0**
+  (+6 tests; the 6 in-container `test_paths`/`test_is_installed` failures are a pre-existing
+  XDG-base env quirk, identical with/without this change — not a regression).
 - **D — `cco project rename`** ⏳ — no supported rename flow exists. A correct rename must
   atomically re-key the project identity across: `project.yml` `name:` in every member repo, the
   STATE index membership, the DATA tags (keyed by project name), and the STATE/CACHE/DATA
