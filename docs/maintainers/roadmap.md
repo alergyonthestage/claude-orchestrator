@@ -141,10 +141,18 @@ Real-host migration of `cave-flow` surfaced a sequence of defects; fixing them a
   a rendering fix refining ADR-0029 D1 (forward-annotated, no new ADR). Suite 953 → **959/0**
   (+6 tests; the 6 in-container `test_paths`/`test_is_installed` failures are a pre-existing
   XDG-base env quirk, identical with/without this change — not a regression).
-- **D — `cco project rename`** ⏳ — no supported rename flow exists. A correct rename must
-  atomically re-key the project identity across: `project.yml` `name:` in every member repo, the
-  STATE index membership, the DATA tags (keyed by project name), and the STATE/CACHE/DATA
-  identity-keyed dirs (memory/session, source, meta). New verb + **ADR-0031**. *Separate session.*
+- **D — `cco project rename [<old>] <new>`** ✅ (**ADR-0031**) — new verb that re-keys the project
+  identity across every store: `project.yml` `name:` in each member repo, the STATE index
+  membership, the DATA tags, and the STATE/CACHE/DATA identity dirs. New `lib/cmd-project-rename.sh`
+  + `_index_rename_project`/`_tags_rename` helpers; cwd-first one-arg + explicit two-arg forms;
+  preview + confirm (`-y`, non-TTY→die). **Strict (D3)**: refuses unless every member resolves on
+  this machine — a partial `name:` rewrite would diverge members permanently under `cco sync`'s D2
+  guard. Surfaced two related findings: (1) `:`/`/` in a name silently corrupts the index/dirs →
+  added the shared `_cco_valid_project_name` validator (Design Invariant 10) used by init/start/
+  rename, closing a latent `cco start` regex inconsistency; (2) cross-resource name policy +
+  id-consumption re-validation deferred to a hardening follow-up (below). +7 tests; suite 959 →
+  **966/0** (the 6 in-container `test_paths`/`test_is_installed` failures are the same pre-existing
+  XDG-base env quirk).
 
   Both C and D are scoped in the handoff:
   [`configuration/decentralized-config/cd-list-rename-handoff.md`](configuration/decentralized-config/cd-list-rename-handoff.md)
@@ -178,6 +186,11 @@ confirm before scheduling. None blocks the v1 merge.
 
 - **Close shipped-surface gaps** — `cco template update` (symmetric twin of `cco pack
   update`); make `cco pack update` a 3-way merge (currently overwrites local edits).
+- **Name/id validation hardening** (surfaced by ADR-0031 D5) — a single cross-resource name
+  policy (packs/templates/remotes/llms still carry their own regexes) and a **defensive
+  re-validation at the id-consumption layer** (`_cco_project_id`) so a hand-edited or shared
+  malformed `name:` (esp. with `:`/`/`, proven to corrupt the index/dirs) cannot silently break
+  the stores. `cco project rename` already validates `<new>`; this generalizes the guard.
 - **Governance & resolution UX** — `cco config protect` helper (CODEOWNERS + ruleset
   scaffold; contract ADR-0020 D4 / ADR-0023 D6; docs already shipped);
   internalize-as-cache interactive prompt (ADR-0019 D6).
