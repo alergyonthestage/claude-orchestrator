@@ -107,7 +107,7 @@ test_cco_project_source_default_path() {
 test_is_installed_project_remote() {
     _source_libs
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    export CCO_DATA_HOME="$tmpdir/data" CCO_STATE_HOME="$tmpdir/state"
+    export CCO_DATA_HOME="$tmpdir/data" CCO_STATE_HOME="$tmpdir/state" CCO_ALLOW_HOST_RESOLVE=1
     mkdir -p "$tmpdir/project/.cco"
     # Coordinate → DATA source; install commit → STATE meta (ADR-0022 D1).
     local src_file meta_file

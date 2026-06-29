@@ -10,7 +10,7 @@
 test_paths_project_meta_new_path() {
     # <id> comes from the hosted .cco/project.yml `name:`, NOT the dir basename.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    export CCO_STATE_HOME="$tmpdir/state"
+    export CCO_STATE_HOME="$tmpdir/state" CCO_ALLOW_HOST_RESOLVE=1
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/lib/paths.sh"
@@ -27,7 +27,7 @@ test_paths_project_meta_new_path() {
 test_paths_project_meta_old_fallback() {
     # Legacy root-level project.yml (central layout) still yields the name.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    export CCO_STATE_HOME="$tmpdir/state"
+    export CCO_STATE_HOME="$tmpdir/state" CCO_ALLOW_HOST_RESOLVE=1
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/lib/paths.sh"
@@ -44,7 +44,7 @@ test_paths_project_meta_old_fallback() {
 test_paths_project_meta_default_new() {
     # No project.yml → fall back to the dir basename as the identity.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    export CCO_STATE_HOME="$tmpdir/state"
+    export CCO_STATE_HOME="$tmpdir/state" CCO_ALLOW_HOST_RESOLVE=1
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/lib/paths.sh"
@@ -90,7 +90,7 @@ test_paths_remotes_token_file_in_state() {
 test_paths_pack_source_data_keyed() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     export USER_CONFIG_DIR="$tmpdir/uc"
-    export CCO_DATA_HOME="$tmpdir/data"
+    export CCO_DATA_HOME="$tmpdir/data" CCO_ALLOW_HOST_RESOLVE=1
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/lib/paths.sh"
@@ -108,7 +108,7 @@ test_paths_pack_source_data_keyed() {
 test_paths_template_source_data_keyed() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     export USER_CONFIG_DIR="$tmpdir/uc"
-    export CCO_DATA_HOME="$tmpdir/data"
+    export CCO_DATA_HOME="$tmpdir/data" CCO_ALLOW_HOST_RESOLVE=1
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/lib/paths.sh"
