@@ -187,3 +187,60 @@ test_index_path_conflicts_ignores_spelling() {
     # A genuinely different dir → conflict.
     _index_path_conflicts r3 "/other/place" || fail "different dir must conflict"
 }
+
+# ── _project_member_status: the shared sync-state classifier (ADR-0024 D5) ──
+# Extends _index_test_env with sync-meta (the divergence signal) and a tiny
+# repo-with-.cco factory, so the 5-way taxonomy can be exercised directly.
+_member_status_env() {
+    _index_test_env "$1"
+    source "$REPO_ROOT/lib/sync-meta.sh"
+}
+# Create <root> with a committed .cco/project.yml whose `name:` == <hosted>.
+_mk_repo() {
+    local root="$1" hosted="$2"
+    mkdir -p "$root/.cco"
+    printf 'name: %s\nrepos:\n  - name: %s\n' "$hosted" "$(basename "$root")" > "$root/.cco/project.yml"
+}
+
+test_member_status_unresolved_and_code_only() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _member_status_env "$tmp/state"
+    # No path on disk → unresolved.
+    [[ "$(_project_member_status proj "")" == "unresolved" ]] || fail "empty path must be unresolved"
+    [[ "$(_project_member_status proj "$tmp/gone")" == "unresolved" ]] || fail "missing dir must be unresolved"
+    # Resolved dir without .cco/project.yml → code-only.
+    mkdir -p "$tmp/code"
+    [[ "$(_project_member_status proj "$tmp/code")" == "code-only" ]] || fail "no .cco must be code-only"
+}
+
+test_member_status_foreign_synced_divergent() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _member_status_env "$tmp/state"
+
+    # Hosts a DIFFERENT project → foreign (the ADR-0024 D2 discriminator).
+    _mk_repo "$tmp/other" "other-proj"
+    [[ "$(_project_member_status proj "$tmp/other")" == "foreign" ]] || fail "name != project must be foreign"
+
+    # Owns the project, no stored fingerprint → pristine → synced (not divergent).
+    _mk_repo "$tmp/owned" "proj"
+    [[ "$(_project_member_status proj "$tmp/owned")" == "synced" ]] || fail "pristine owned member must be synced"
+
+    # Record a sync, then edit the synced set → divergent (same name, drifted).
+    _sync_record "$tmp/owned"
+    [[ "$(_project_member_status proj "$tmp/owned")" == "synced" ]] || fail "just-synced member must be synced"
+    printf '\n# local edit\n' >> "$tmp/owned/.cco/project.yml"
+    [[ "$(_project_member_status proj "$tmp/owned")" == "divergent" ]] || fail "edited-since-sync owned member must be divergent"
+}
+
+test_iter_members_emits_name_path_status() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _member_status_env "$tmp/state"
+    _mk_repo "$tmp/a" "proj"
+    _index_set_path a "$tmp/a"
+    _index_set_path b "$tmp/missing"        # never created → unresolved
+    _index_set_project_repos proj a b
+
+    local out; out=$(_project_iter_members proj)
+    printf '%s\n' "$out" | grep -qE "^a	$tmp/a	synced$" || fail "member a must be synced with its path; got: $out"
+    printf '%s\n' "$out" | grep -qE "^b		unresolved$" || fail "member b must be unresolved with empty path; got: $out"
+}

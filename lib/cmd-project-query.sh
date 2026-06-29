@@ -52,18 +52,29 @@ EOF
     done < <(_index_list_projects)
 }
 
-# Classify a member repo's role w.r.t. <project> (ADR-0024 D5):
-#   host (its <repo>/.cco/ hosts this project) · synced (.cco present, in sync) ·
-#   divergent (.cco edited since last sync) · code-only (no .cco).
+# Display role of a member repo w.r.t. <project> for `cco project show` (ADR-0024
+# D5). Thin wrapper over the canonical _project_member_status (index.sh) so the
+# classification lives in ONE place (shared with `cco join`/`cco forget`). Maps
+# the canonical taxonomy onto the display labels:
+#   synced     -> host       (config-bearing for <project>, in sync)
+#   divergent  -> divergent  (owns <project> but .cco edited since last sync)
+#   foreign    -> foreign    (hosts a DIFFERENT project — NEW: previously this
+#                             case was mislabeled synced/divergent; the latent gap)
+#   code-only  -> code-only  (resolved, no .cco)
+#   unresolved -> code-only  (path missing here; the caller adds a [missing] badge)
+# This also fixes a second latent bug: a same-name DIVERGENT member used to short-
+# circuit to "host" (the name== check preceded the divergence check); it now
+# reports "divergent" correctly.
 _project_member_role() {
-    local repo_path="$1" project="$2" repo_name="$3"
+    local repo_path="$1" project="$2" repo_name="$3" status
     # Central projects mount via @local/local-paths; fall back to the index path.
     [[ ! -d "$repo_path" && -n "$repo_name" ]] && repo_path=$(_index_get_path "$repo_name" 2>/dev/null)
-    [[ -n "$repo_path" && -f "$repo_path/.cco/project.yml" ]] || { printf 'code-only'; return 0; }
-    local hosted; hosted=$(_cco_project_id "$repo_path" 2>/dev/null)
-    if [[ "$hosted" == "$project" ]]; then printf 'host'
-    elif _sync_is_divergent "$repo_path" 2>/dev/null; then printf 'divergent'
-    else printf 'synced'; fi
+    status=$(_project_member_status "$project" "$repo_path")
+    case "$status" in
+        synced)     printf 'host' ;;
+        unresolved) printf 'code-only' ;;
+        *)          printf '%s' "$status" ;;
+    esac
 }
 
 # Repo-centric view (ADR-0024 D5): from a repo dir, report the project it hosts,

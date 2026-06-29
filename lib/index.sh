@@ -25,8 +25,10 @@
 # Provides: _index_file(), _index_get_path(), _index_set_path(),
 #   _index_remove_path(), _index_path_conflicts(), _index_list_paths(),
 #   _index_get_project_repos(), _index_set_project_repos(),
-#   _index_remove_project(), _index_list_projects()
-# Dependencies: colors.sh, paths.sh (_cco_state_dir)
+#   _index_remove_project(), _index_list_projects(), _index_repos_get_projects(),
+#   _project_member_status(), _project_iter_members()
+# Dependencies: colors.sh, paths.sh (_cco_state_dir/_cco_project_id),
+#   sync-meta.sh (_sync_is_divergent) — both resolved at call time.
 
 # Absolute path to the index file (STATE; host-side guard applies via resolver).
 _index_file() {
@@ -273,4 +275,53 @@ _index_repos_get_projects() {
             [[ "$m" == "$repo" ]] && { printf '%s\n' "$proj"; break; }
         done
     done < <(_index_section_dump projects)
+}
+
+# ── Member sync-state classification (ADR-0024 D5 / sync-meta F39) ────
+# The single source of truth for "what is this member repo, w.r.t. <project>".
+# It joins three internal signals — the machine-local index (is it resolved
+# here?), the committed project.yml `name:` (whom does it host?, ADR-0024 D1/D2),
+# and the per-machine sync fingerprint (edited since the last sync?, sync-meta) —
+# into one taxonomy reused by `cco project show`, `cco join`, and `cco forget`.
+#
+# Echoes exactly one of:
+#   unresolved — no resolved path on this machine (the dir is missing). Can't
+#                read its .cco/, can't act on its files; only index/membership.
+#   code-only  — resolved, but NO committed .cco/project.yml (a Case-A reference
+#                member that carries no config).
+#   foreign    — resolved, .cco/project.yml hosts a DIFFERENT project (its
+#                `name:` != <project>; the ADR-0024 D2 clobber-guard discriminator).
+#                Belongs to another project (or a divergent unsynced copy keyed by
+#                a different name) → never touched by same-id operations.
+#   divergent  — resolved, OWNS <project> (`name:` ==) but its synced set was
+#                edited locally since the last sync (_sync_is_divergent). Same
+#                project name, content drifted.
+#   synced     — resolved, owns <project>, in sync (fingerprint matches) or
+#                pristine (never synced; no stored fingerprint => not divergent).
+# Usage: _project_member_status <project> <repo_path>
+_project_member_status() {
+    local project="$1" repo_path="$2" hosted
+    [[ -n "$repo_path" && -d "$repo_path" ]] || { printf 'unresolved'; return 0; }
+    [[ -f "$repo_path/.cco/project.yml" ]]   || { printf 'code-only'; return 0; }
+    hosted=$(_cco_project_id "$repo_path" 2>/dev/null)
+    if   [[ "$hosted" != "$project" ]];        then printf 'foreign'
+    elif _sync_is_divergent "$repo_path" 2>/dev/null; then printf 'divergent'
+    else printf 'synced'; fi
+}
+
+# Iterate <project>'s member repos, emitting one TAB line per member:
+#   "<name>\t<abspath>\t<status>"   (abspath empty when status == unresolved)
+# <status> comes from _project_member_status. This is the ownership-guarded loop
+# shared by `cco join` (which members' project.yml `repos[]` to edit — owned,
+# never foreign) and `cco forget --purge` (which repos' .cco/ are owned and may
+# be deleted). Build-once; callers filter on <status>.
+# Usage: while IFS=$'\t' read -r name path status; do …; done < <(_project_iter_members <project>)
+_project_iter_members() {
+    local project="$1" repo_name path status
+    for repo_name in $(_index_get_project_repos "$project"); do
+        path=$(_index_get_path "$repo_name")
+        [[ -n "$path" && -d "$path" ]] || path=""
+        status=$(_project_member_status "$project" "$path")
+        printf '%s\t%s\t%s\n' "$repo_name" "$path" "$status"
+    done
 }
