@@ -32,6 +32,13 @@ the merge to `develop`/`main` (step 7).** Intentional post-v1 deferrals (not blo
 (forward-compatible stub — the `migrations/{pack,template}/` dirs are empty), interactive
 internalize-as-cache prompts, `cco project internalize` (Case-C), and cross-PC memory/state sync.
 
+**Next session (pre-merge)** →
+[`pre-merge-docs-and-config-editor-handoff.md`](../configuration/decentralized-config/pre-merge-docs-and-config-editor-handoff.md):
+(A) a shipped-behavior **docs/CLI-reference cutover sweep** (bring all user + agent-facing docs to the
+implemented truth; the built-in tutorial/config-editor consume them), then (B) a design decision on
+**config-editor/tutorial access scope** (all-projects edit + cco-info; likely ADR-0036, additive — does
+not block the merge).
+
 ## Decentralized-config v1 — phase index
 
 All phases closed; Phase 5 build-complete. Full per-phase commit/baseline log:
