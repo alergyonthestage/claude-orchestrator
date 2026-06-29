@@ -47,9 +47,11 @@ glue the rest together with shell scripts; cco is that glue, hardened and shared
 
 ## Status
 
-**Alpha (v0.1.0-alpha)** — Under active development and already used daily by the
+**Alpha (v0.4.0)** — Under active development and already used daily by the
 author for real-world agentic development. It works well in practice, but APIs,
-configuration format, and defaults may change between releases.
+configuration format, and defaults may change between releases. This release
+introduces the decentralized in-repo config model (project config lives in each
+repo's `.cco/`) and the native Claude Code installer (auto-updates in place).
 
 **Platform support:**
 - **macOS** — fully tested, primary development environment. OAuth login supported.
@@ -117,6 +119,7 @@ project into the in-repo layout.
 | **Docker-from-Docker** | The Docker socket is mounted, so Claude can run `docker compose` to spin up sibling services (databases, queues). | [Docker & networking](docs/users/environment/guides/docker-and-networking.md) · [Socket security](docs/users/security/guides/socket-security.md) |
 | **Flexible authentication** | OAuth (macOS Keychain), API key via env var, GitHub token for `gh`. | [Authentication](docs/users/integration/guides/authentication.md) |
 | **Extensible environment** | Per-project setup scripts, extra packages, and custom images. | [Custom environment](docs/users/environment/guides/custom-environment.md) |
+| **Always-current Claude Code** | Installed by the official native installer at first start into a persistent cache — it auto-updates in place, so you never rebuild to get a new version. Pin or switch channels via `~/.cco/claude-version`. | [CLI reference](docs/users/reference/cli.md) |
 | **Browser automation** | Drive Chrome via the DevTools Protocol from inside a session. | [Browser automation](docs/users/integration/guides/browser-automation.md) |
 | **Monolithic CLI** | A single Bash script (`bin/cco`) — no dependencies beyond Bash 3.2+, Docker, and standard Unix tools. | [CLI reference](docs/users/reference/cli.md) |
 
