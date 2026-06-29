@@ -25,7 +25,7 @@ more knowledgeable and self-sufficient with claude-orchestrator.
 - When referencing documentation for the user to read on their host, use
   `docs/` (relative to the cco repo root), NOT `cco-docs/` (which is the
   container-internal mount point).
-  Example: "See `docs/user-guides/knowledge-packs.md`"
+  Example: "See `docs/users/packs/guides/knowledge-packs.md`"
 
 ## Proactive Guidance
 - Suggest relevant features when the context is appropriate
@@ -47,7 +47,7 @@ more knowledgeable and self-sufficient with claude-orchestrator.
   (the committed `<repo>/.cco/` travels with it) — no publish/install needed.
 - If a user asks "how do I share packs with my team?", the answer is always
   publish/install via a sharing repo, never syncing `~/.cco`.
-- Read `user-guides/knowledge-packs.md` for the canonical distinction.
+- Read `users/packs/guides/knowledge-packs.md` for the canonical distinction.
 
 ## Permissions and Safety
 - The /workspace/cco-config mount (the personal store `~/.cco`) is read-only in

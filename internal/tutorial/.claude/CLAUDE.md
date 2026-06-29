@@ -63,25 +63,25 @@ on training data for cco-specific details.
 
 | Topic | Path | When to read |
 |-------|------|-------------|
-| Overview & concepts | `getting-started/concepts.md` | Explaining fundamentals |
-| First project walkthrough | `getting-started/first-project.md` | Guiding new users |
-| Installation steps | `getting-started/installation.md` | Setup questions |
-| Project configuration | `user-guides/project-setup.md` | project.yml, CLAUDE.md, repos, mounts, packs |
-| Knowledge packs | `user-guides/knowledge-packs.md` | Creating and managing packs |
-| Authentication | `user-guides/authentication.md` | OAuth, API key, GitHub token |
-| Sharing & sync | `user-guides/knowledge-packs.md` | Sharing repos, `cco config` sync, team sharing |
-| Agent teams | `user-guides/agent-teams.md` | tmux, iTerm2, multi-agent setup |
-| Browser automation | `user-guides/browser-automation.md` | Chrome DevTools, CDP |
-| Custom subagents | `user-guides/advanced/subagents.md` | Creating agents, model selection |
-| Custom environment | `user-guides/advanced/custom-environment.md` | setup.sh, MCP, Docker images |
-| Troubleshooting | `user-guides/troubleshooting.md` | Common issues and solutions |
-| LLMs.txt docs | `reference/cli.md` § 3.31 | `cco llms` commands (install, list, update, remove) |
-| CLI reference | `reference/cli.md` | All cco commands and flags |
-| Context hierarchy | `reference/context-hierarchy.md` | Settings precedence, loading |
-| project.yml reference | `reference/project-yaml.md` | Field reference, validation |
-| Structured development | `user-guides/structured-agentic-development.md` | Framework philosophy, principles, and design rationale |
-| Configuring rules | `user-guides/configuring-rules.md` | Rules vs skills vs agents vs knowledge, categories, grouping, scope, packs |
-| Development workflow | `user-guides/development-workflow.md` | Human practices: context cleanup, review cycles, testing, permission modes |
+| Overview & concepts | `users/foundation/guides/concepts.md` | Explaining fundamentals |
+| First project walkthrough | `users/foundation/guides/first-project.md` | Guiding new users |
+| Installation steps | `users/foundation/guides/installation.md` | Setup questions |
+| Project configuration | `users/configuration/guides/project-setup.md` | project.yml, CLAUDE.md, repos, mounts, packs |
+| Knowledge packs | `users/packs/guides/knowledge-packs.md` | Creating and managing packs |
+| Authentication | `users/integration/guides/authentication.md` | OAuth, API key, GitHub token |
+| Sharing & sync | `users/packs/guides/knowledge-packs.md` | Sharing repos, `cco config` sync, team sharing |
+| Agent teams | `users/integration/guides/agent-teams.md` | tmux, iTerm2, multi-agent setup |
+| Browser automation | `users/integration/guides/browser-automation.md` | Chrome DevTools, CDP |
+| Custom subagents | `users/integration/guides/subagents.md` | Creating agents, model selection |
+| Custom environment | `users/environment/guides/custom-environment.md` | setup.sh, MCP, Docker images |
+| Troubleshooting | `users/troubleshooting.md` | Common issues and solutions |
+| LLMs.txt docs | `users/reference/cli.md` (`cco llms`) | `cco llms` commands (install, list, update, remove) |
+| CLI reference | `users/reference/cli.md` | All cco commands and flags |
+| Context hierarchy | `users/foundation/reference/context-hierarchy.md` | Settings precedence, loading |
+| project.yml reference | `users/configuration/reference/project-yaml.md` | Field reference, validation |
+| Structured development | `users/foundation/guides/structured-agentic-development.md` | Framework philosophy, principles, and design rationale |
+| Configuring rules | `users/configuration/guides/configuring-rules.md` | Rules vs skills vs agents vs knowledge, categories, grouping, scope, packs |
+| Development workflow | `users/foundation/guides/development-workflow.md` | Human practices: context cleanup, review cycles, testing, permission modes |
 
 ### Personal Store
 
@@ -120,7 +120,7 @@ store `~/.cco`, purpose-built for creating and managing packs and templates.
 5. **Reference documentation**: Point users to specific doc files for deeper
    reading. When suggesting files for the user to read on their host, use
    `docs/` (relative to the cco repo root), NOT `cco-docs/` (which is the
-   container mount path). Example: "See `docs/user-guides/knowledge-packs.md`".
+   container mount path). Example: "See `docs/users/packs/guides/knowledge-packs.md`".
 6. **Use real context**: When the user has existing projects or packs, reference
    them in examples rather than using generic placeholders.
 
@@ -146,9 +146,9 @@ navigated on-demand (for specific questions). Adapt to the user's needs.
 - **M9: Browser automation** — Chrome DevTools, CDP setup, testing workflows
 
 ### Mastery
-- **M10: Configuring rules & workflow** — rule categories, grouping principle, rules vs skills vs agents vs knowledge, packs as single source of truth. Core reference: `user-guides/configuring-rules.md`
-- **M11: Development workflow practices** — human workflow: context cleanup, review cycles, permission modes per phase, testing strategy, periodic maintenance. Core reference: `user-guides/development-workflow.md`
-- **M12: Structured development philosophy** — framework philosophy, principles, design rationale. Core reference: `user-guides/structured-agentic-development.md`
+- **M10: Configuring rules & workflow** — rule categories, grouping principle, rules vs skills vs agents vs knowledge, packs as single source of truth. Core reference: `users/configuration/guides/configuring-rules.md`
+- **M11: Development workflow practices** — human workflow: context cleanup, review cycles, permission modes per phase, testing strategy, periodic maintenance. Core reference: `users/foundation/guides/development-workflow.md`
+- **M12: Structured development philosophy** — framework philosophy, principles, design rationale. Core reference: `users/foundation/guides/structured-agentic-development.md`
 - **M13: Pack design patterns** — composability, rules vs knowledge, modularization, when to extract
 - **M14: Advanced topics** — context hierarchy deep-dive, migrations, update system
 

@@ -30,16 +30,16 @@ Always consult it for accurate, up-to-date information.
 
 | Topic | Path | When to read |
 |-------|------|-------------|
-| Project configuration | `user-guides/project-setup.md` | Creating/editing projects |
-| Knowledge packs | `user-guides/knowledge-packs.md` | Creating/editing packs |
-| Sharing & distribution | `user-guides/knowledge-packs.md` | Sharing repos, publish/install |
-| Configuring rules | `user-guides/configuring-rules.md` | Rules vs skills vs agents |
-| CLI reference | `reference/cli.md` | All cco commands |
-| project.yml reference | `reference/project-yaml.md` | Field reference, coordinates |
-| Context hierarchy | `reference/context-hierarchy.md` | Settings precedence, `.claude` scopes |
-| Custom environment | `user-guides/advanced/custom-environment.md` | setup.sh, MCP, Docker |
-| Authentication | `user-guides/authentication.md` | OAuth, API key, GitHub token |
-| Troubleshooting | `user-guides/troubleshooting.md` | Common issues |
+| Project configuration | `users/configuration/guides/project-setup.md` | Creating/editing projects |
+| Knowledge packs | `users/packs/guides/knowledge-packs.md` | Creating/editing packs |
+| Sharing & distribution | `users/packs/guides/knowledge-packs.md` | Sharing repos, publish/install |
+| Configuring rules | `users/configuration/guides/configuring-rules.md` | Rules vs skills vs agents |
+| CLI reference | `users/reference/cli.md` | All cco commands |
+| project.yml reference | `users/configuration/reference/project-yaml.md` | Field reference, coordinates |
+| Context hierarchy | `users/foundation/reference/context-hierarchy.md` | Settings precedence, `.claude` scopes |
+| Custom environment | `users/environment/guides/custom-environment.md` | setup.sh, MCP, Docker |
+| Authentication | `users/integration/guides/authentication.md` | OAuth, API key, GitHub token |
+| Troubleshooting | `users/troubleshooting.md` | Common issues |
 
 ## Layout
 
@@ -47,11 +47,10 @@ Always consult it for accurate, up-to-date information.
 
 ```
 ~/.cco/                         (mounted at /workspace/cco-config)
-├── global/
-│   └── .claude/                # Global Claude config
-│       ├── CLAUDE.md           # Global instructions
-│       ├── settings.json       # Global permissions
-│       ├── agents/  rules/  skills/
+├── .claude/                    # Global Claude config
+│   ├── CLAUDE.md               # Global instructions
+│   ├── settings.json           # Global permissions
+│   ├── agents/  rules/  skills/
 ├── packs/                      # Knowledge packs you author/curate
 │   └── <pack-name>/
 │       ├── pack.yml

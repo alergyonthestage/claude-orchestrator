@@ -44,7 +44,7 @@ Guide the user to run, on the host, inside the target repo:
 1. `cco init` — scaffolds `<repo>/.cco/{project.yml, claude/, secrets.env.example,
    .gitignore}` and registers the project in the machine-local index.
    - `cco join <project>` to add this repo to an existing project.
-   - `cco init --migrate <old>` to bring a legacy-vault project into the repo.
+   - `cco init --migrate <old>` to bring a legacy project into the repo.
 2. Edit `<repo>/.cco/project.yml` with the agreed repos (logical names +
    coordinates), packs, and docker config.
 3. Edit `<repo>/.cco/claude/CLAUDE.md` with project context.
@@ -58,7 +58,7 @@ After scaffolding:
 - Suggest running `/init` on the first session to auto-generate a detailed
   CLAUDE.md from the repositories.
 - If packs were suggested but not created, mention `/setup-pack`.
-- Reference: `cco-docs/user-guides/project-setup.md`.
+- Reference: `cco-docs/users/configuration/guides/project-setup.md`.
 
 ## Important
 

@@ -37,7 +37,7 @@ Apply pack design best practices:
   knowledge (200-500 lines, on-demand) for detailed reference
 - **Descriptions**: Action-oriented ("Read when writing backend code...")
 - **Start minimal**: Include only what's needed now, expand incrementally
-- Read `cco-docs/user-guides/knowledge-packs.md` for reference
+- Read `cco-docs/users/packs/guides/knowledge-packs.md` for reference
 
 If the user has multiple domains, suggest multiple packs with clear boundaries.
 Explain the "extract at 2+ consumers" principle — don't create a shared pack
@@ -64,7 +64,7 @@ After creation:
 - If the pack should be shared, mention the **sharing repo** flow and
   `cco pack publish <name> [remote]` (no central manifest)
 - Suggest writing knowledge file content (the actual conventions, guidelines, etc.)
-- Reference: `cco-docs/user-guides/knowledge-packs.md`
+- Reference: `cco-docs/users/packs/guides/knowledge-packs.md`
 - Remind the user to run `cco config save` on host to version the new pack
 
 ## Important
