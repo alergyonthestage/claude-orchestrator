@@ -9,11 +9,14 @@
 # token lives in CI (the NPM_TOKEN GitHub Actions secret).
 #
 # Usage:
-#   scripts/release.sh <x.y.z> [--dry-run] [--allow-branch]
+#   scripts/release.sh <x.y.z> [--dry-run] [--allow-branch] [--full-tests|--skip-tests]
 #
 #   <x.y.z>          New semantic version (must be > the current package.json one)
 #   --dry-run        Show every step without committing/tagging/pushing
 #   --allow-branch   Skip the "must be on main" guard (use with care)
+#   --full-tests     Run the ENTIRE test suite locally (~2-3 min). Default: only the
+#                    fast read-only publish gate — CI re-runs the full suite on the tag.
+#   --skip-tests     Skip local tests entirely (CI still runs the full suite + gate).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -24,16 +27,19 @@ info() { printf '\033[0;36m• %s\033[0m\n' "$*"; }
 ok()   { printf '\033[0;32m✓ %s\033[0m\n' "$*"; }
 step() { printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
 
-VERSION=""; DRY_RUN=false; ALLOW_BRANCH=false
+VERSION=""; DRY_RUN=false; ALLOW_BRANCH=false; SKIP_TESTS=false; FULL_TESTS=false
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --dry-run)      DRY_RUN=true; shift ;;
         --allow-branch) ALLOW_BRANCH=true; shift ;;
-        -h|--help)      sed -n '2,20p' "$0"; exit 0 ;;
+        --full-tests)   FULL_TESTS=true; shift ;;
+        --skip-tests)   SKIP_TESTS=true; shift ;;
+        -h|--help)      sed -n '2,22p' "$0"; exit 0 ;;
         -*)             die "Unknown option: $1" ;;
         *)              [[ -z "$VERSION" ]] && VERSION="$1" || die "Unexpected argument: $1"; shift ;;
     esac
 done
+$SKIP_TESTS && $FULL_TESTS && die "--skip-tests and --full-tests are mutually exclusive."
 
 command -v jq  >/dev/null || die "jq is required."
 command -v git >/dev/null || die "git is required."
@@ -66,9 +72,20 @@ ok "main / clean tree / $CURRENT → $VERSION / $TAG free"
 if ! grep -q "Browse the bundled user docs offline" changelog.yml 2>/dev/null; then :; fi
 info "Verify changelog.yml has entries for everything user-visible in this release."
 
-# ── Local gate: suite + hygiene ──────────────────────────────────────
-step "Test suite (includes the read-only FRAMEWORK_ROOT gate)"
-run "bin/test"
+# ── Local gate: tests + hygiene ──────────────────────────────────────
+# Nothing is committed/tagged/pushed until AFTER these pass, so Ctrl-C here is
+# always safe. The full suite is slow (~2-3 min) and CI re-runs it authoritatively
+# on the tag, so the default pre-flight is just the fast read-only publish gate.
+step "Release-critical checks"
+if $SKIP_TESTS; then
+    info "Skipping local tests (--skip-tests). CI still runs the full suite + gate on the tag."
+elif $FULL_TESTS; then
+    info "Running the FULL test suite (~2-3 min). Ctrl-C is safe — no tag is created until it passes."
+    run "bin/test"
+else
+    info "Running the read-only FRAMEWORK_ROOT publish gate (fast). Use --full-tests for the whole suite."
+    run "bin/test --file test_readonly_framework"
+fi
 
 step "npm pack hygiene"
 "$REPO_ROOT/scripts/check-pack-hygiene.sh" || die "pack hygiene failed."

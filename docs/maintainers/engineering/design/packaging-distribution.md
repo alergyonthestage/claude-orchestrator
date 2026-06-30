@@ -229,17 +229,20 @@ Pages (free for public repos). One source, separate renderer — no second copy.
 - [x] `cco update` provenance-aware: prints the right engine-update command (D8)
       — `_cco_install_provenance` + `_cco_engine_update_hint`,
       `tests/test_update_provenance.sh`, changelog #26.
-- [x] `release.sh` + CI-on-tag workflow + npm-pack hygiene check (§5, D6) —
-      `scripts/release.sh`, `scripts/check-pack-hygiene.sh`,
-      `.github/workflows/release.yml`. **CI run validated only on push.**
+- [x] `release.sh` + CI workflow (tag push + manual dispatch) + npm-pack hygiene
+      check (§5, D6) — `scripts/release.sh`, `scripts/check-pack-hygiene.sh`,
+      `.github/workflows/release.yml`. **CI OIDC publish validated** — `0.5.1`
+      published via a `workflow_dispatch` run (see the OIDC publish debug handoff).
 - [x] Pages action publishing `docs/users` (§7, D9) —
       `.github/workflows/pages.yml`. **Validated only after enabling Pages + push.**
 - [x] Version coupling **documented** (§4, D7): `package.json` `version` is the
       source of truth; Claude pin independent. **Image-tag-by-version wiring
       deferred** — v1 keeps `claude-orchestrator:latest` (the version lives in
       `package.json`); tagging the image with the version is a later refinement.
-- [ ] Release: `develop → main`, tag, `npm publish` — the v1 public release
-      (maintainer action; needs org/token/Pages set up first).
+- [~] Release: `npm publish` **done** — `@claude-orchestrator/cco@0.5.1` is live on
+      npm via CI OIDC trusted publishing. Remaining: reconcile `main → develop`, and
+      validate `npm i -g @claude-orchestrator/cco` on a Mac (closes the macOS DoD
+      item above).
 
 ## 9. Out of scope / deferred
 

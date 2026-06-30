@@ -8,13 +8,23 @@ name: Release
 # One-time setup before the first CI release:
 #   1) bootstrap the FIRST publish manually from a maintainer machine
 #      (`npm login` + `npm publish --access public`) so the package exists;
-#   2) on npmjs.com → the package → Settings → Trusted Publisher → add this repo
-#      (alergyonthestage/claude-orchestrator) + workflow `release.yml`.
-# After that, every tag push publishes here with no secret.
+#   2) at https://www.npmjs.com/package/@claude-orchestrator/cco/access →
+#      Trusted Publisher → GitHub Actions, with EXACT fields:
+#        Organization or user : alergyonthestage
+#        Repository           : claude-orchestrator
+#        Workflow filename    : release.yml        (filename only, NOT a path)
+#        Environment          : (leave empty — this job uses no GH environment)
+#        Allowed actions      : npm publish
+# A mismatch in any field → the OIDC token exchange returns 404 ("package not
+# found") and the publish fails. After that, every tag push publishes with no secret.
 on:
   push:
     tags:
       - 'v*'
+  # Manual publish path (no tag) — run from the Actions tab to re-publish or recover
+  # a release. Same workflow filename → same trusted-publisher match as a tag run; it
+  # runs the full suite too and publishes the current package.json version.
+  workflow_dispatch: {}
 
 permissions:
   contents: read
@@ -26,17 +36,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # node 24 ships an OIDC-capable npm (>= 11.5.1). We deliberately DO NOT set
+      # registry-url: it makes setup-node write an `_authToken` line into a temp
+      # .npmrc (placeholder when NODE_AUTH_TOKEN is unset, empty when it is ""), and
+      # that auth line suppresses npm's OIDC path → E404 (literal placeholder token
+      # sent) or ENEEDAUTH (empty token). With no .npmrc auth line at all, npm
+      # publishes to the default registry (registry.npmjs.org) via OIDC cleanly.
+      # Ref: community discussion #176761 ("do NOT use registry-url with OIDC").
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
+          node-version: '24'
 
-      # Trusted Publishing (OIDC) requires a recent npm (>= 11.5.1); node 22 ships
-      # npm 10.x, so upgrade first. This also enables build provenance.
-      - name: Use an OIDC-capable npm
-        run: npm install -g npm@latest
+      # Guarantee npm >= 11.5.1 (OIDC is silently skipped on older npm) and FAIL
+      # LOUDLY if it isn't, so a version problem is unambiguous in the log.
+      - name: Ensure an OIDC-capable npm (>= 11.5.1)
+        run: |
+          npm install -g npm@latest
+          ver="$(npm --version)"; echo "npm version: $ver"
+          major="${ver%%.*}"; rest="${ver#*.}"; minor="${rest%%.*}"
+          if [ "$major" -lt 11 ] || { [ "$major" -eq 11 ] && [ "$minor" -lt 5 ]; }; then
+            echo "::error::npm $ver is < 11.5.1 — OIDC trusted publishing unsupported"
+            exit 1
+          fi
 
       - name: Verify tag matches package.json version
+        if: github.event_name == 'push'
         run: |
           tag="${GITHUB_REF_NAME#v}"
           pkg="$(jq -r .version package.json)"
@@ -45,13 +69,24 @@ jobs:
             exit 1
           fi
 
+      # Runs on both a tag push and a manual dispatch: a manual publish must be just
+      # as gated as a tagged one. (The tag↔version check above is push-only since a
+      # dispatch has no tag.)
       - name: Test suite (includes the read-only FRAMEWORK_ROOT gate)
         run: bin/test
 
       - name: npm pack hygiene
         run: scripts/check-pack-hygiene.sh
 
-      # No NODE_AUTH_TOKEN — npm detects the OIDC trusted publisher and mints a
-      # short-lived credential (and attaches provenance) automatically.
+      # OIDC trusted publishing: with npm >= 11.5.1 + id-token: write + a matching
+      # trusted publisher and NO `_authToken` line in any .npmrc, npm mints a
+      # short-lived credential and attaches provenance automatically (no token, no
+      # --provenance flag needed — per the official npm docs). --access public keeps
+      # the scoped package public. There is intentionally NO NODE_AUTH_TOKEN env so
+      # OIDC is the only credential path.
+      # NB: a 404 on the token exchange ("package not found") means the npm Trusted
+      # Publisher does not match this run (Organization/User, Repository, Workflow
+      # filename `release.yml`, Environment empty); ENEEDAUTH = OIDC minted no
+      # credential. Re-run with `--loglevel verbose` to see the token-exchange call.
       - name: Publish to npm (Trusted Publishing / OIDC)
         run: npm publish --access public
