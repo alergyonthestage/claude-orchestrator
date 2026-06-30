@@ -47,10 +47,11 @@ glue the rest together with shell scripts; cco is that glue, hardened and shared
 
 ## Status
 
-**Alpha (v0.4.0)** — Under active development and already used daily by the
+**Alpha (v0.5.1)** — Under active development and already used daily by the
 author for real-world agentic development. It works well in practice, but APIs,
-configuration format, and defaults may change between releases. This release
-introduces the decentralized in-repo config model (project config lives in each
+configuration format, and defaults may change between releases. cco is
+distributed on npm as [`@claude-orchestrator/cco`](https://www.npmjs.com/package/@claude-orchestrator/cco);
+it ships the decentralized in-repo config model (project config lives in each
 repo's `.cco/`) and the native Claude Code installer (auto-updates in place).
 
 **Platform support:**
@@ -67,22 +68,36 @@ Feedback, bug reports, and contributions are welcome! See [CONTRIBUTING.md](CONT
 Each step earns its place — here's what you get from it:
 
 ```bash
-# 1. Clone the repository — this is the CLI and its defaults
-git clone https://github.com/user/claude-orchestrator.git ~/claude-orchestrator
-cd ~/claude-orchestrator
+# 1. Install the CLI from npm — this is the `cco` command and its defaults
+npm install -g @claude-orchestrator/cco
 
-# 2. Add the CLI to PATH — so you can run `cco` from anywhere
-# zsh (macOS default):
-echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.zshrc && source ~/.zshrc
-# bash:
-# echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.bashrc && source ~/.bashrc
-
-# 3. Initialize — copies user defaults into ~/.cco and builds the Docker image
+# 2. Initialize — seeds your personal ~/.cco store from defaults and builds the Docker image
 cco init
 
-# 4. Learn by doing — the interactive tutorial walks you through everything
+# 3. Learn by doing — the interactive tutorial walks you through everything
 cco start tutorial
 ```
+
+> **Prefer to install from source?** Clone the repo and put `bin/` on your PATH
+> instead of installing from npm — see the [maintainer setup](CONTRIBUTING.md#local-development)
+> in CONTRIBUTING.md.
+
+### Keeping cco up to date
+
+cco has **two independent update tracks** — don't confuse them:
+
+```bash
+# Upgrade the cco engine itself (the CLI + framework defaults), then apply migrations:
+npm update -g @claude-orchestrator/cco && cco update
+```
+
+- `npm update -g @claude-orchestrator/cco` upgrades the **engine** (the `cco`
+  command and its shipped defaults).
+- `cco update` runs **migrations + config discovery** for your existing
+  projects; it does *not* upgrade the engine. After an engine upgrade it tells
+  you the exact command to run for your install method (npm / source).
+- Claude Code itself is upgraded separately — the native installer auto-updates
+  it in place (see [Always-current Claude Code](#feature-highlights)).
 
 ### The tutorial is your starting point
 
@@ -185,12 +200,14 @@ full model see the [context hierarchy reference](docs/users/foundation/reference
 |---|---|
 | **User** — running cco, configuring projects | [docs/users/README.md](docs/users/README.md) — learning path + per-domain guides and references |
 | **Maintainer** — developing/contributing to cco | [docs/maintainers/README.md](docs/maintainers/README.md) — architecture, ADRs, design docs, roadmap |
+| **Contributor** — local dev setup & publishing | [CONTRIBUTING.md](CONTRIBUTING.md) — install from source, run the tests, cut a release |
 
 Full index: [docs/README.md](docs/README.md)
 
 ## Requirements
 
 - **OS**: macOS 12+ or Linux — see [compatibility notes](#os-compatibility) below
+- **Node.js**: 18+ (only to install the CLI via `npm install -g`; `cco` itself is Bash and shells out to Docker)
 - **Docker**: Docker Desktop (macOS) or Docker Engine (Linux)
 - **Bash**: 3.2+ (the CLI is compatible with macOS default `/bin/bash`)
 - **Claude Code**: Pro, Team, Enterprise account, or API key

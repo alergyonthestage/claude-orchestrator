@@ -9,6 +9,7 @@
 | Requirement | Notes |
 |-----------|------|
 | **macOS or Linux** | Windows not supported (WSL2 not tested) |
+| **Node.js 18+** | Only to install the CLI via `npm install -g` — `cco` itself is Bash and shells out to Docker |
 | **Docker Desktop** (macOS) or **Docker Engine** (Linux) | Must be running |
 | **Bash 3.2+** | macOS includes bash 3.2 (`/bin/bash`) — sufficient for the CLI |
 | **jq** | `brew install jq` (macOS) / `apt install jq` (Linux) |
@@ -18,32 +19,62 @@
 
 ## Setup
 
+Install the CLI from npm, then build the Docker image:
+
 ```bash
-# 1. Clone the repo
-git clone <repo-url> ~/claude-orchestrator
-cd ~/claude-orchestrator
+# 1. Install the cco CLI globally
+npm install -g @claude-orchestrator/cco
 
-# 2. Add the CLI to PATH
-# zsh (macOS default):
-echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.zshrc
-source ~/.zshrc
-
-# bash:
-# echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.bashrc
-# source ~/.bashrc
-#
-# macOS note: Terminal.app loads ~/.bash_profile, not ~/.bashrc.
-# If using bash on macOS, either add the export to ~/.bash_profile,
-# or add this line to ~/.bash_profile to load .bashrc:
-#   [[ -f ~/.bashrc ]] && source ~/.bashrc
-
-# 3. Build the Docker image
+# 2. Build the Docker image
 cco build
 ```
+
+That's it — `cco` is now on your PATH (npm links it for you). Verify with
+`cco --help` or `cco list`.
 
 > **Tip**: Run `cco start tutorial` to start the interactive tutorial. It helps you
 > learn cco concepts, set up your first project, create knowledge packs, and
 > customize your default rules and workflow — all through guided conversation.
+
+### Install from source (contributors / maintainers)
+
+If you're hacking on cco itself, run it straight from a clone instead of npm:
+
+```bash
+git clone https://github.com/alergyonthestage/claude-orchestrator.git ~/claude-orchestrator
+cd ~/claude-orchestrator
+
+# Put the CLI on your PATH
+# zsh (macOS default):
+echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.zshrc && source ~/.zshrc
+# bash:
+# echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.bashrc && source ~/.bashrc
+# macOS note: Terminal.app loads ~/.bash_profile, not ~/.bashrc — add the export
+# there, or source ~/.bashrc from it: [[ -f ~/.bashrc ]] && source ~/.bashrc
+
+cco build
+```
+
+See [CONTRIBUTING.md](../../../../CONTRIBUTING.md) for the full development and
+release workflow.
+
+### Keeping cco up to date
+
+cco has two independent update tracks:
+
+```bash
+# Upgrade the cco engine (CLI + framework defaults), then apply migrations:
+npm update -g @claude-orchestrator/cco && cco update
+```
+
+- `npm update -g @claude-orchestrator/cco` upgrades the **engine**.
+- `cco update` runs **migrations + config discovery** for your projects — it does
+  *not* upgrade the engine, but after an upgrade it prints the exact command for
+  your install method.
+- Claude Code itself auto-updates in place via the native installer (no rebuild).
+
+> **Browse the docs offline:** `cco docs` lists the bundled user guides for your
+> installed version; `cco docs <topic>` opens one (e.g. `cco docs reference/cli`).
 
 `cco init` is the entry point for a project (see below). The first time you run
 it inside a repo, it also seeds your **personal store** at `~/.cco/` from the
@@ -109,8 +140,9 @@ cco new --repo ~/projects/api --repo ~/projects/frontend --port 3000:3000
 | `cco resolve --scan <dir>` | Discover/bind projects under `<dir>` into the index |
 | `cco new --repo <path>` | Temporary session with specific repositories |
 | `cco list [<kind>]` | List all resources (projects, packs, templates, llms, remotes); narrow with a kind |
-| `cco update` | Run migrations + discover available config updates |
+| `cco update` | Run migrations + discover available config updates (prints how to upgrade the engine) |
 | `cco update --sync` | Interactively sync config from framework defaults |
+| `cco docs [<topic>]` | Browse the bundled user docs offline, matched to your installed version |
 | `cco clean` | Remove .bak files from update |
 | `cco stop [project]` | Stop running session(s) |
 
