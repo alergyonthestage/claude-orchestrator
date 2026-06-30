@@ -2,8 +2,11 @@
 # lib/cmd-start.sh — Start project session command
 #
 # Provides: _setup_internal_tutorial(), cmd_start()
-# Dependencies: colors.sh, utils.sh, yaml.sh, secrets.sh, workspace.sh, packs.sh
-# Globals: IMAGE_NAME, REPO_ROOT, USER_CONFIG_DIR (projects via the STATE index, P5)
+# Dependencies: colors.sh, utils.sh, yaml.sh, secrets.sh, workspace.sh, packs.sh, paths.sh
+# Globals: IMAGE_NAME, REPO_ROOT (projects via the STATE index, P5). The internal
+# tutorial/config-editor runtime lives in machine-local STATE via
+# _cco_internal_runtime_dir() — NOT under the framework tree, which may be
+# read-only on an npm install (ADR-0037 D5).
 
 # ── Internal Tutorial Setup ──────────────────────────────────────────
 # Prepares the runtime directory for the internal tutorial project.
@@ -12,7 +15,7 @@
 # project name, mounted via _cco_project_session_*), not in the runtime dir.
 _setup_internal_tutorial() {
     local source_dir="$REPO_ROOT/internal/tutorial"
-    local runtime_dir="$USER_CONFIG_DIR/.cco/internal/tutorial"
+    local runtime_dir="$(_cco_internal_runtime_dir)/tutorial"
 
     [[ ! -d "$source_dir" ]] && die "Internal tutorial not found at $source_dir"
 
@@ -20,16 +23,23 @@ _setup_internal_tutorial() {
     # transcripts/memory live in STATE, mounted via _cco_project_session_*).
     mkdir -p "$runtime_dir"
 
-    # Always refresh content from framework source (ensures tutorial is current)
+    # Always refresh content from framework source (ensures tutorial is current).
+    # cp preserves the source mode; when cco is installed via npm the framework
+    # tree is read-only, so both the stale copy (must be removable) and the fresh
+    # copy (must stay writable in STATE) need their write bit restored (D5).
+    [[ -e "$runtime_dir/.claude" ]] && chmod -R u+w "$runtime_dir/.claude" 2>/dev/null
     rm -rf "$runtime_dir/.claude"
     cp -r "$source_dir/.claude" "$runtime_dir/.claude" \
         || die "Failed to refresh tutorial content from $source_dir. Check permissions and disk space."
+    chmod -R u+w "$runtime_dir/.claude"
 
     # Refresh project.yml with path substitution. CCO_CONFIG_DIR = the personal
-    # store ~/.cco (read-only mount); CCO_USER_CONFIG_DIR kept for back-compat.
+    # store ~/.cco (read-only mount); CCO_USER_CONFIG_DIR is a back-compat alias
+    # that now expands to the STATE-backed internal runtime root (no longer the
+    # legacy vault — ADR-0037 D5). Unused by the shipped tutorial yml.
     sed -e "s|{{CCO_REPO_ROOT}}|$REPO_ROOT|g" \
         -e "s|{{CCO_CONFIG_DIR}}|$(_cco_config_dir)|g" \
-        -e "s|{{CCO_USER_CONFIG_DIR}}|$USER_CONFIG_DIR|g" \
+        -e "s|{{CCO_USER_CONFIG_DIR}}|$runtime_dir|g" \
         "$source_dir/project.yml" > "$runtime_dir/project.yml" \
         || die "Failed to generate tutorial project.yml"
 
@@ -50,16 +60,21 @@ _setup_internal_tutorial() {
 _setup_internal_config_editor() {
     local target_cco="$1" target_name="$2"
     local source_dir="$REPO_ROOT/internal/config-editor"
-    local runtime_dir="$USER_CONFIG_DIR/.cco/internal/config-editor"
+    local runtime_dir="$(_cco_internal_runtime_dir)/config-editor"
 
     [[ ! -d "$source_dir" ]] && die "Internal config-editor not found at $source_dir"
 
     mkdir -p "$runtime_dir"
 
-    # Always refresh content from framework source (ensures it is current).
+    # Always refresh content from framework source (ensures it is current). cp
+    # preserves the source mode; on an npm install the framework tree is read-only,
+    # so restore the write bit on the stale copy (so it can be removed) and the
+    # fresh copy (so it stays writable in STATE) — D5.
+    [[ -e "$runtime_dir/.claude" ]] && chmod -R u+w "$runtime_dir/.claude" 2>/dev/null
     rm -rf "$runtime_dir/.claude"
     cp -r "$source_dir/.claude" "$runtime_dir/.claude" \
         || die "Failed to refresh config-editor content from $source_dir."
+    chmod -R u+w "$runtime_dir/.claude"
     [[ -f "$source_dir/setup.sh" ]] && cp "$source_dir/setup.sh" "$runtime_dir/setup.sh"
 
     # Generate project.yml: ~/.cco rw + docs ro (+ the target's .cco rw in
@@ -74,6 +89,11 @@ _setup_internal_config_editor() {
     # The generated project.yml only references these names; they resolve via the
     # session override at start (never the persistent index), so no host path is
     # committed (AD3/G8).
+    # cco-docs mounts $REPO_ROOT/docs at /workspace/cco-docs; doc refs read
+    # cco-docs/users/... . The npm package ships ONLY docs/users (ADR-0037 D3
+    # `files` allowlist), so an installed user sees only user docs; a dev clone
+    # additionally exposes maintainer docs (read-only, harmless — agents are
+    # instructed to read cco-docs/users/...).
     _CCO_MOUNT_OVERRIDE=$(printf 'cco-config\t%s\ncco-docs\t%s' "$cfg" "$REPO_ROOT/docs")
     [[ -n "$target_cco" ]] && _CCO_MOUNT_OVERRIDE+=$(printf '\n%s-config\t%s' "$target_name" "$target_cco")
     {
@@ -138,7 +158,7 @@ _start_resolve_project() {
         fi
         is_internal=true
         _setup_internal_tutorial
-        project_dir="$USER_CONFIG_DIR/.cco/internal/tutorial"
+        project_dir="$(_cco_internal_runtime_dir)/tutorial"
         project_yml="$project_dir/project.yml"
         claude_src="$project_dir/.claude"
         source_repo="$project_dir"
@@ -167,7 +187,7 @@ _start_resolve_project() {
         fi
         [[ -n "$_ce_path" && -d "$_ce_path/.cco" ]] && _ce_cco="$_ce_path/.cco"
         _setup_internal_config_editor "$_ce_cco" "$_ce_name"
-        project_dir="$USER_CONFIG_DIR/.cco/internal/config-editor"
+        project_dir="$(_cco_internal_runtime_dir)/config-editor"
         project_yml="$project_dir/project.yml"
         claude_src="$project_dir/.claude"
         source_repo="$project_dir"

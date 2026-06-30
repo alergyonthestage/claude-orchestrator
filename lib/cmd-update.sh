@@ -5,6 +5,31 @@
 # Dependencies: colors.sh, utils.sh, update.sh
 # Globals: DEFAULTS_DIR, REPO_ROOT (projects via the STATE index, P5)
 
+# Print a provenance-aware reminder of how to update the cco ENGINE itself.
+# `cco update` only runs migrations + config discovery — it does NOT upgrade the
+# cco binary/framework tree. A user who runs `cco update` expecting a new framework
+# otherwise gets nothing (ADR-0037 D8). Full orchestration (cco update runs the
+# engine update itself) is deferred to the update-refactor workstream.
+_cco_engine_update_hint() {
+    local prov; prov=$(_cco_install_provenance)
+    case "$prov" in
+        npm)
+            echo ""
+            info "To upgrade cco itself (the engine), run:"
+            echo "    npm update -g @claude-orchestrator/cco && cco update" ;;
+        brew)
+            echo ""
+            info "To upgrade cco itself (the engine), run:"
+            echo "    brew upgrade cco && cco update" ;;
+        clone)
+            echo ""
+            info "To upgrade cco itself (the engine), pull the repo:"
+            echo "    git -C \"$REPO_ROOT\" pull && cco update" ;;
+        *)
+            : ;;  # unknown provenance — stay silent rather than guess
+    esac
+}
+
 _update_usage() {
     cat <<'EOF'
 Usage: cco update [OPTIONS]
@@ -279,6 +304,12 @@ cmd_update() {
     else
         echo ""
         ok "Update complete."
+    fi
+
+    # Provenance-aware engine-update reminder (D8). Only on the real default /
+    # sync flows — not dry-run, and not the informational --diff/--news subcommands.
+    if ! $dry_run && [[ "$cmd_mode" == "discovery" || "$cmd_mode" == "sync" ]]; then
+        _cco_engine_update_hint
     fi
 }
 
