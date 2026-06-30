@@ -127,7 +127,16 @@ pointed appropriately and STATE/CACHE/DATA on a writable tmp, and asserts:
    `find <ro-tree> -newer <marker>` is empty; the `0555` mode itself would also
    reject any write).
 
-This green run is the **mandatory CI pre-publish gate** (§5).
+This green run is the **mandatory CI pre-publish gate** (§5). Implemented as
+`tests/test_readonly_framework.sh` (stages a `chmod -R a-w` copy of the shipped
+trees, runs `cco start tutorial|config-editor --dry-run` from it, asserts success +
+no writes under the read-only root + the runtime landing in STATE).
+
+**Bug the gate caught:** `cp -r` of the internal `.claude/` content preserves the
+source mode, so on a read-only (npm) framework the STATE runtime copy was itself
+read-only — the *next* start's `rm -rf "$runtime_dir/.claude"` refresh then failed.
+Fixed by restoring the write bit on both the stale and fresh copies in
+`_setup_internal_tutorial` / `_setup_internal_config_editor`.
 
 ## 4. Docker build context from an npm install
 

@@ -23,10 +23,15 @@ _setup_internal_tutorial() {
     # transcripts/memory live in STATE, mounted via _cco_project_session_*).
     mkdir -p "$runtime_dir"
 
-    # Always refresh content from framework source (ensures tutorial is current)
+    # Always refresh content from framework source (ensures tutorial is current).
+    # cp preserves the source mode; when cco is installed via npm the framework
+    # tree is read-only, so both the stale copy (must be removable) and the fresh
+    # copy (must stay writable in STATE) need their write bit restored (D5).
+    [[ -e "$runtime_dir/.claude" ]] && chmod -R u+w "$runtime_dir/.claude" 2>/dev/null
     rm -rf "$runtime_dir/.claude"
     cp -r "$source_dir/.claude" "$runtime_dir/.claude" \
         || die "Failed to refresh tutorial content from $source_dir. Check permissions and disk space."
+    chmod -R u+w "$runtime_dir/.claude"
 
     # Refresh project.yml with path substitution. CCO_CONFIG_DIR = the personal
     # store ~/.cco (read-only mount); CCO_USER_CONFIG_DIR is a back-compat alias
@@ -61,10 +66,15 @@ _setup_internal_config_editor() {
 
     mkdir -p "$runtime_dir"
 
-    # Always refresh content from framework source (ensures it is current).
+    # Always refresh content from framework source (ensures it is current). cp
+    # preserves the source mode; on an npm install the framework tree is read-only,
+    # so restore the write bit on the stale copy (so it can be removed) and the
+    # fresh copy (so it stays writable in STATE) — D5.
+    [[ -e "$runtime_dir/.claude" ]] && chmod -R u+w "$runtime_dir/.claude" 2>/dev/null
     rm -rf "$runtime_dir/.claude"
     cp -r "$source_dir/.claude" "$runtime_dir/.claude" \
         || die "Failed to refresh config-editor content from $source_dir."
+    chmod -R u+w "$runtime_dir/.claude"
     [[ -f "$source_dir/setup.sh" ]] && cp "$source_dir/setup.sh" "$runtime_dir/setup.sh"
 
     # Generate project.yml: ~/.cco rw + docs ro (+ the target's .cco rw in
