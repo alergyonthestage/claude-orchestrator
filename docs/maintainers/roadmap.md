@@ -5,7 +5,7 @@
 > [roadmap-history.md](roadmap-history.md). The framework-improvements backlog
 > lives in [roadmap-backlog.md](roadmap-backlog.md).
 >
-> Last updated: 2026-06-29.
+> Last updated: 2026-06-30.
 
 ## Current status
 
@@ -44,13 +44,29 @@ removed the active npm deprecation) — pending merge `feat/docker/native-claude
 |---|---|---|---|---|
 | **A** | **Docs/CLI-reference cutover sweep** — bring all user + agent-facing docs to the implemented truth (the built-in tutorial/config-editor mount and consume them). **✅ done**: agent-facing doc tables remapped to the reorg tree + store layout flattened; cli.md code-grounded (0 stale/0 wrong, 11 missing flags added); removed-concept token probe clean (only migration/affirmation hits); shipped scaffold/setup doc pointers fixed; suite **1010/0**. | **PRE-MERGE — ✅ done** | **Merge gate (cleared)** | — (completed; handoff removed in post-merge cleanup) |
 | **B** | **config-editor/tutorial access scope** — all-projects config edit + read-only "cco info" snapshot; tutorial partial. ADR-0036, additive. | post-merge, on `develop` | No (additive) | [`config-editor-access-design-handoff.md`](../configuration/decentralized-config/config-editor-access-design-handoff.md) |
-| **C** | **npm packaging & distribution** — ship `cco` as an npm package (`package.json` `bin`, framework tree bundled, Docker/proxy at runtime, version coupling). ADR-0037. **Priority.** | post-merge, on `develop` | **Release gate** | [`npm-packaging-distribution-handoff.md`](../engineering/npm-packaging-distribution-handoff.md) |
+| **C** | **npm packaging & distribution** — ship `cco` as an npm package (`package.json` `bin`, framework tree bundled, Docker/proxy at runtime, version coupling). ADR-0037. **Priority.** **Analysis done 2026-06-30** (decisions + audits in handoff §7): build-in-image proxy; `release.sh` + CI-on-tag (npm token in CI); global prefix-free `cco`; `files` allowlist (`docs/users` ships, `config/proxy/Dockerfile` ship, `user-config/` excluded); the one read-only `FRAMEWORK_ROOT` fix (`USER_CONFIG_DIR`) + read-only test gate. | post-merge, on `develop` | **Release gate** | [`npm-packaging-distribution-handoff.md`](../engineering/npm-packaging-distribution-handoff.md) |
 | **D** | **`cco project save` — project-config versioning helper** — ergonomic, path-scoped commit of `<repo>/.cco/**` + isolated history. Reintroduces the old `vault save` convenience for the decentralized in-repo model. ADR-0038, additive. Needs its own design session (see below). | post-merge, on `develop` | No (additive) | _design session — see §D below_ |
 | **E** | **Native Claude Code install** — replace the deprecated `npm install -g @anthropic-ai/claude-code` with the official native installer run at first start, into a persistent CACHE-backed mount so Claude auto-updates in-place (no rebuild). Re-implements Rares' `#B2` onto develop's XDG/decentralized architecture. **✅ done + host e2e validated (2026-06-29)** on `feat/docker/native-claude-install` (commits `ebe0e1b` impl+tests, `5f6b975` docs): install home → CACHE `claude-install/{bin,share}` bind-mounted to `~/.local`; config knob `~/.cco/claude-version` (default `latest`, knob outranks the baked default); re-pin via channel marker; `cco build --no-cache` resets the cache; `cco clean --all` leaves it untouched (regression test). **No migration** (purely additive). ADR-0039, changelog #24. Suite **1022/0**. **▶ ready to merge `feat/docker/native-claude-install → develop`.** | **post-merge, FIRST — ✅ done** | No (additive) | [`../environment/native-claude-install-handoff.md`](../environment/native-claude-install-handoff.md) (resolved) |
 
 Sequence: **A → merge `feat → develop` → E (✅ done) → merge `feat/docker/native-claude-install → develop`
-→ {B, C, D on `develop`; C release-gating} → release `develop → main` + `npm publish`.** ADR map:
-**0036** (B), **0037** (C), **0038** (D), **0039** (E, ✅ written). Next free ADR = **0040**.
+→ {B, C, D on `develop`; C release-gating} → release `develop → main` + `npm publish`
+→ F (opinionated extraction + `cco update` refactor, after C).** ADR map:
+**0036** (B), **0037** (C), **0038** (D), **0039** (E, ✅ written), **0040** (F). Next free ADR = **0041**.
+
+#### F — opinionated-config extraction + `cco update` responsibility refactor (post-C, structural)
+
+Make the cco **core agnostic** of opinionated config: keep `managed/` baked in, move the opinionated
+defaults (workflow/git/documentation rules, agents, skills, global `CLAUDE.md`, parts of `settings.json`)
+into a **separate official axis-2 sharing repo** (working name `cco-config-defaults`), installable like any
+shared resource. Refactor `cco update` to split its two mixed responsibilities — **core engine+migrations**
+vs **external shared-source 3-way merge**. Realizes **F-opin** (`../configuration/decentralized-config/design.md`
+§12). **Decoupled from C** (packaging does not require it); sequenced **after** C. Analysis (2026-06-30):
+axis-2 lacks a global-config install target + per-scope install + single-resource granularity + global
+source/meta tracking (gaps G1–G7); recommended vehicle = a new **`config` resource kind**
+(`cco config install/publish/update [--scope global|project] [--pick]`), pending a **resource-taxonomy
+analysis** first. Full reference:
+[`opinionated-extraction-and-update-refactor-handoff.md`](../engineering/opinionated-extraction-and-update-refactor-handoff.md).
+ADR-0040, additive, **non-gating**.
 
 #### D — `cco project save` (project-config versioning helper) — design notes
 

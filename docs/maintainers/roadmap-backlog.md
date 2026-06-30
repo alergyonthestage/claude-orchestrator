@@ -209,3 +209,30 @@ been removed/archived in a docs reorg (dead link — needs triage alongside the 
 **Design principle**: The hook and rule are managed (framework behavior), not opinionated defaults. They govern *how to use existing artifacts*, not *which artifacts to create*. The hook references user-configured rules rather than encoding specific conventions.
 
 **Effort**: Low.
+
+---
+
+## FI-9: Migration UX gaps surfaced by the v0.4.0 release
+
+**Status**: Open (raised 2026-06-30 during the npm-packaging analysis). To be addressed in the
+`cco update` responsibility refactor — see
+[`engineering/opinionated-extraction-and-update-refactor-handoff.md`](engineering/opinionated-extraction-and-update-refactor-handoff.md) §6.
+
+**Context**: Running cco after the v0.4.0 decentralized-config migration exposed three UX gaps in the
+migration / update flow.
+
+**Items**:
+1. **No rebuild reminder after migration.** When `cco <cmd>` triggers the preventive vault backup and
+   advises `cco update` + `cco init --migrate`, nothing tells the user that a **fresh `cco build`
+   (`--no-cache`?) is required before `cco start`** — a new release needs a new image, but this is
+   surfaced nowhere. Add the hint; evaluate whether the migration should auto-trigger the rebuild.
+2. **`cco update` as first command — backup symmetry.** Clarify whether `cco update` run as the very
+   first command performs the **preventive backup of the old centralized vault** like every other cco
+   command (it should, symmetrically), or intentionally skips it.
+3. **Re-build coupling.** Decide whether the decentralized-config migration **triggers the rebuild**
+   itself, or stays separate with an explicit user hint.
+
+**Analysis**: All three point toward the future **`cco update` orchestrator** (detect install method →
+run engine update + migrations, one command). Keep them together with that refactor.
+
+**Effort**: Low–Medium (hints now; full orchestration with the update refactor).
