@@ -263,9 +263,10 @@ disable bypass mode — and **cco sets neither**.
 
 ## FI-11: Top-level `cco --version` / `-v` (and `--help` / `-h`)
 
-**Status**: Open (raised 2026-06-30 during macOS install validation of the published
-`@claude-orchestrator/cco@0.5.1`). Additive, non-gating. Belongs on `develop` (a feature, not a
-release hotfix) — candidate for a `0.5.2`.
+**Status**: ✅ Done (2026-06-30). Implemented exactly as scoped below: `--version`/`-v`
+prints `package.json` `version` (`_cco_print_version` in `bin/cco`), `--help`/`-h` aliases
+`usage()`, both handled before the dispatch and the J0 bootstrap (no side effects).
+Tests in `tests/test_version.sh`; changelog #27. Ships in the next release (`0.5.2`).
 
 **Context**: now that `cco` ships as an npm CLI, users expect `cco --version` to print the version
 and `cco --help`/`-h` to show usage — both are near-universal CLI conventions. The dispatcher
