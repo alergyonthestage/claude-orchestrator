@@ -146,9 +146,12 @@ dir. Confirm every build/runtime path derives from `FRAMEWORK_ROOT` / `REPO_ROOT
 
 - `Dockerfile`, `config/` (entrypoint, hooks, tmux), `proxy/` (Go source),
   `defaults/managed/` are all in `files` (ADR-0037 D3) → present in context.
-- The image tag encodes the version: `claude-orchestrator:<package.version>` plus a
-  moving `:latest`. The proxy compiles inside the image build (ADR-0037 D4); the
-  host stays Go-free.
+- The proxy compiles inside the image build (ADR-0037 D4); the host stays Go-free.
+- **Version coupling (D7):** `package.json` `version` is the single source of
+  truth; the pinned Claude Code version stays an independent knob (ADR-0039).
+  **v1 keeps the image tag `claude-orchestrator:latest`** (`IMAGE_NAME` in
+  `bin/cco`); tagging the image with `:<package.version>` is a later refinement,
+  not required for the package to install and run.
 
 ## 5. Release pipeline
 
@@ -202,26 +205,34 @@ Pages (free for public repos). One source, separate renderer — no second copy.
 
 ## 8. Definition of done (traceable to ADR-0037)
 
-- [ ] `package.json` + `files`/`.npmignore`; `npm pack --dry-run` clean (§2, D3).
+- [x] `package.json` + `files` allowlist; `npm pack --dry-run` clean — 182 files /
+      ~402 kB; no `.npmignore` needed (§2, D3).
 - [x] `npm i -g ./<tgz>` yields a working `cco` on **Linux** (validated: shim
       `cco → ../lib/node_modules/@claude-orchestrator/cco/bin/cco`, readlink resolves
       REPO_ROOT to the package root, `lib/*.sh` source cleanly from an arbitrary cwd).
       **macOS** still to validate on a Mac / CI (§3.1, D1).
-- [ ] `USER_CONFIG_DIR` split; internal runtime → STATE; nothing writes in
+- [x] `USER_CONFIG_DIR` split; internal runtime → STATE; nothing writes in
       `FRAMEWORK_ROOT` (§3.2, D5).
-- [ ] `docs/users`-only contract met by the `files` allowlist; runtime mount
+- [x] `docs/users`-only contract met by the `files` allowlist; runtime mount
       unchanged (D3).
-- [ ] Read-only-`FRAMEWORK_ROOT` test green (§3.3, D5) — the publish gate.
+- [x] Read-only-`FRAMEWORK_ROOT` test green (§3.3, D5) — the publish gate
+      (`tests/test_readonly_framework.sh`; caught + fixed the cp-mode refresh bug).
 - [x] `cco docs` surfaces `docs/users` locally (§6, D9) — `lib/cmd-docs.sh`,
       `tests/test_docs.sh`, changelog #25.
 - [x] `cco update` provenance-aware: prints the right engine-update command (D8)
       — `_cco_install_provenance` + `_cco_engine_update_hint`,
       `tests/test_update_provenance.sh`, changelog #26.
-- [ ] `release.sh` + CI-on-tag workflow + npm-pack hygiene check (§5, D6).
-- [ ] Pages action publishing `docs/users` (§7, D9).
-- [ ] Version coupling documented: `package.json` → image tag; Claude pin
-      independent (§4, D7).
-- [ ] Release: `develop → main`, tag, `npm publish` — the v1 public release.
+- [x] `release.sh` + CI-on-tag workflow + npm-pack hygiene check (§5, D6) —
+      `scripts/release.sh`, `scripts/check-pack-hygiene.sh`,
+      `.github/workflows/release.yml`. **CI run validated only on push.**
+- [x] Pages action publishing `docs/users` (§7, D9) —
+      `.github/workflows/pages.yml`. **Validated only after enabling Pages + push.**
+- [x] Version coupling **documented** (§4, D7): `package.json` `version` is the
+      source of truth; Claude pin independent. **Image-tag-by-version wiring
+      deferred** — v1 keeps `claude-orchestrator:latest` (the version lives in
+      `package.json`); tagging the image with the version is a later refinement.
+- [ ] Release: `develop → main`, tag, `npm publish` — the v1 public release
+      (maintainer action; needs org/token/Pages set up first).
 
 ## 9. Out of scope / deferred
 

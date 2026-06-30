@@ -1,0 +1,62 @@
+name: Docs (GitHub Pages)
+
+# Publishes the bundled user docs (docs/users) to GitHub Pages — the free public
+# renderer of the SAME tree `cco docs` serves locally (ADR-0037 D9). One source,
+# two consumers; the site shows latest-on-main, `cco docs` shows the installed
+# version. Enable once: repo Settings → Pages → Source = "GitHub Actions".
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/users/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment; let an in-progress run finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare site source (docs/users + minimal Jekyll config)
+        run: |
+          rm -rf _site_src && mkdir -p _site_src
+          cp -r docs/users/. _site_src/
+          # Minimal config + a supported theme so the markdown renders. GitHub
+          # Pages uses README.md as the directory index when no index.* exists.
+          cat > _site_src/_config.yml <<'YML'
+          title: claude-orchestrator
+          description: User documentation for cco (claude-orchestrator)
+          theme: jekyll-theme-cayman
+          YML
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/jekyll-build-pages@v1
+        with:
+          source: _site_src
+          destination: _site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

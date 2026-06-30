@@ -1,0 +1,43 @@
+name: Release
+
+# Triggered by pushing a vX.Y.Z tag (scripts/release.sh does the tag+push).
+# Runs the full suite + the read-only FRAMEWORK_ROOT publish gate + the npm-pack
+# hygiene check, then publishes to the public npm registry. ADR-0037 D6.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Verify tag matches package.json version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(jq -r .version package.json)"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag v$tag does not match package.json version $pkg"
+            exit 1
+          fi
+
+      - name: Test suite (includes the read-only FRAMEWORK_ROOT gate)
+        run: bin/test
+
+      - name: npm pack hygiene
+        run: scripts/check-pack-hygiene.sh
+
+      - name: Publish to npm (public)
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
