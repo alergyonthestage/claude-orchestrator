@@ -36,7 +36,7 @@ flowchart LR
 ```jsonc
 {
   "name": "@claude-orchestrator/cco",
-  "version": "0.4.0",            // single source of truth (ADR-0037 D7)
+  "version": "0.5.1",            // single source of truth (ADR-0037 D7)
   "description": "Isolated, preconfigured Claude Code sessions in Docker — multi-repo orchestration.",
   "bin": { "cco": "bin/cco" },   // global shim → package root via readlink loop
   "keywords": ["claude", "claude-code", "orchestrator", "docker", "cco", "ai", "agents"],
