@@ -1,0 +1,81 @@
+name: claude-orchestrator
+description: "TODO: Add project description"
+
+repos:
+  - name: claude-orchestrator
+    url: git@github.com:alergyonthestage/claude-orchestrator.git
+
+llms:
+  - name: platform-claude
+    url: https://platform.claude.com/llms.txt
+    variant: full
+  - name: code-claude
+    url: https://code.claude.com/docs/llms.txt
+    variant: full
+
+
+# ── Extra mounts (optional) ─────────────────────────────────────────
+# mounts:
+
+
+# ── Knowledge Packs (optional) ───────────────────────────────────────
+# Reference named packs defined in global/packs/<name>/pack.yml.
+# Each pack can provide: knowledge files, skills, agents, and rules.
+# On every `cco start`, knowledge files are listed in .claude/packs.md
+# and injected into the session context automatically (no CLAUDE.md edit needed).
+# Skills, agents, and rules are copied to .claude/ for project-scoped access.
+#
+# Pack schema (global/packs/<name>/pack.yml):
+# name: my-pack
+# knowledge:
+#   source: ~/path/to/docs   # optional; omit to use pack's own knowledge/ dir
+#   files:
+#     - path: guide.md
+#       description: "Read when working on X"
+#     - simple.md
+# skills:
+#   - deploy
+# agents:
+#   - specialist.md
+# rules:
+#   - conventions.md
+#
+# packs:
+#   - my-pack
+
+# ── GitHub Integration (optional) ────────────────────────────────────
+# Enable Claude to interact with GitHub via MCP (issues, PRs, code search).
+# Requires a GitHub token with appropriate scopes (repo, read:org, etc.).
+# Set GITHUB_TOKEN in global/secrets.env or project secrets.env before use.
+#
+# github:
+#   enabled: false            # true to activate github MCP server
+#   token_env: GITHUB_TOKEN   # env var containing the GitHub token (default: GITHUB_TOKEN)
+
+# ── Browser Automation (optional) ───────────────────────────────────
+# Enable Claude to control a browser via chrome-devtools-mcp (CDP).
+# The browser runs on your host OS and is visible while Claude operates it.
+#
+# Prerequisites:
+#   1. Run: cco chrome start   (launches Chrome with remote debugging)
+#   2. Set: browser.enabled: true in this file (or use --chrome flag)
+#
+browser:
+  enabled: true          # true to activate chrome-devtools-mcp
+  mode: host              # "host" = Chrome on host (default and only mode)
+  cdp_port: 9222          # Chrome remote debugging port (default: 9222)
+  mcp_args: []            # extra flags for chrome-devtools-mcp
+
+# ── Docker options ───────────────────────────────────────────────────
+docker:
+  # image: claude-orchestrator:latest  # Custom Docker image for this project
+  mount_socket: true    # Set false to disable Docker socket mount (security hardening)
+  ports:
+    - "3010:3000"
+    - "8081:8080"
+  env: {}
+  # network: cc-claude-orchestrator
+
+# ── Authentication ───────────────────────────────────────────────────
+auth:
+  method: oauth         # "oauth" (default) | "api_key"

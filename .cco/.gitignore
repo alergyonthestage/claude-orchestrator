@@ -1,0 +1,6 @@
+secrets.env
+*.env
+*.key
+*.pem
+.credentials.json
+!secrets.env.example
