@@ -453,7 +453,7 @@ Decisions preserved in
 
 ## Backlog
 
-The framework-improvements tracker (FI-1 … FI-8, with analysis and decisions) is the
+The framework-improvements tracker (FI-1 … FI-11, with analysis and decisions) is the
 detailed backlog: see [roadmap-backlog.md](roadmap-backlog.md).
 
 ## History

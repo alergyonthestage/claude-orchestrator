@@ -260,3 +260,29 @@ disable bypass mode — and **cco sets neither**.
 (attempt a denied `Read` under skip-permissions).
 
 **Effort**: Low (investigation + doc/test); fix scope depends on the finding.
+
+## FI-11: Top-level `cco --version` / `-v` (and `--help` / `-h`)
+
+**Status**: Open (raised 2026-06-30 during macOS install validation of the published
+`@claude-orchestrator/cco@0.5.1`). Additive, non-gating. Belongs on `develop` (a feature, not a
+release hotfix) — candidate for a `0.5.2`.
+
+**Context**: now that `cco` ships as an npm CLI, users expect `cco --version` to print the version
+and `cco --help`/`-h` to show usage — both are near-universal CLI conventions. The dispatcher
+(`bin/cco`) currently has **neither**: bare `cco` and `cco help` print usage (`usage()`, dispatch
+line ~282), and `cco <command> --help`/`-h` work per-subcommand, but a top-level `--version`/`-v` or
+`--help`/`-h` falls through to the `*)` arm → `die "Unknown command: …"` (line ~283). Surfaced when
+`cco --version` errored during the post-release smoke test (the version had to be read from
+`npm ls -g` instead).
+
+**Proposed scope**:
+- `cco --version` / `-v` → print the version. Source of truth = `package.json` `version` (read with
+  the already-required `jq` from the resolved package root). Keeps the single source of truth
+  (ADR-0037 D7) — no hardcoded string to drift.
+- `cco --help` / `-h` (top-level, no subcommand) → call `usage()` (alias of `cco help`).
+- Handle these **before** the command dispatch so they work with no other args.
+
+**Type & tracking**: additive user-visible feature → `changelog.yml` entry; add a small dispatch test
+(`cco --version` matches `package.json`, `cco --help` prints usage). No migration, no template change.
+
+**Effort**: Low.
