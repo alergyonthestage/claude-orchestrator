@@ -3,8 +3,9 @@
 #
 # The tutorial is now a framework-internal resource at internal/tutorial/.
 # It is NOT installed in user-config by cco init. It launches via
-# cco start tutorial, which prepares a runtime dir at
-# user-config/.cco/internal/tutorial/.
+# cco start tutorial, which prepares a runtime dir in machine-local STATE at
+# <state>/cco/internal/tutorial/ (_cco_internal_runtime_dir, ADR-0037 D5) — never
+# inside the (possibly read-only) framework tree.
 
 # ── cco init: tutorial NOT created ────────────────────────────────────
 
@@ -27,11 +28,12 @@ test_setup_internal_tutorial_creates_runtime_dir() {
     export USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR"
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
     source "$REPO_ROOT/lib/cmd-start.sh"
 
     _setup_internal_tutorial
 
-    local runtime_dir="$CCO_USER_CONFIG_DIR/.cco/internal/tutorial"
+    local runtime_dir="$(_cco_internal_runtime_dir)/tutorial"
     assert_dir_exists "$runtime_dir"
     assert_dir_exists "$runtime_dir/.claude"
     # Session transcripts/memory live in machine-local STATE (ADR-0009), mounted via
@@ -53,7 +55,7 @@ test_setup_internal_tutorial_substitutes_placeholders() {
 
     _setup_internal_tutorial
 
-    local runtime_yml="$CCO_USER_CONFIG_DIR/.cco/internal/tutorial/project.yml"
+    local runtime_yml="$(_cco_internal_runtime_dir)/tutorial/project.yml"
     assert_file_exists "$runtime_yml"
     assert_no_placeholder "$runtime_yml" "{{CCO_REPO_ROOT}}"
     assert_no_placeholder "$runtime_yml" "{{CCO_CONFIG_DIR}}"
@@ -71,11 +73,12 @@ test_setup_internal_tutorial_has_skills() {
     export USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR"
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
     source "$REPO_ROOT/lib/cmd-start.sh"
 
     _setup_internal_tutorial
 
-    local runtime_dir="$CCO_USER_CONFIG_DIR/.cco/internal/tutorial"
+    local runtime_dir="$(_cco_internal_runtime_dir)/tutorial"
     assert_file_exists "$runtime_dir/.claude/skills/tutorial/SKILL.md"
     assert_file_exists "$runtime_dir/.claude/skills/setup-project/SKILL.md"
     assert_file_exists "$runtime_dir/.claude/skills/setup-pack/SKILL.md"
@@ -88,11 +91,12 @@ test_setup_internal_tutorial_has_rules() {
     export USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR"
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
     source "$REPO_ROOT/lib/cmd-start.sh"
 
     _setup_internal_tutorial
 
-    local runtime_dir="$CCO_USER_CONFIG_DIR/.cco/internal/tutorial"
+    local runtime_dir="$(_cco_internal_runtime_dir)/tutorial"
     assert_file_exists "$runtime_dir/.claude/rules/tutorial-behavior.md"
     assert_file_contains "$runtime_dir/.claude/rules/tutorial-behavior.md" "teacher, not an autonomous agent"
 }
@@ -104,11 +108,12 @@ test_setup_internal_tutorial_refreshes_on_rerun() {
     export USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR"
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
     source "$REPO_ROOT/lib/cmd-start.sh"
 
     _setup_internal_tutorial
 
-    local runtime_dir="$CCO_USER_CONFIG_DIR/.cco/internal/tutorial"
+    local runtime_dir="$(_cco_internal_runtime_dir)/tutorial"
 
     # Add a marker to CLAUDE.md (simulating stale content)
     echo "STALE MARKER" >> "$runtime_dir/.claude/CLAUDE.md"

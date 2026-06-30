@@ -355,6 +355,16 @@ _cco_state_dir() {
     printf '%s\n' "$base"
 }
 
+# Internal-session runtime root (the built-in tutorial / config-editor).
+# Machine-local STATE, always writable. The framework tree (FRAMEWORK_ROOT /
+# REPO_ROOT) may be read-only when cco is installed via npm (root-owned global
+# node_modules), so internal-session scaffolding must NOT write under it — this
+# is the one write that used to default inside the framework via the legacy
+# USER_CONFIG_DIR vault pointer (ADR-0037 D5). Subdirs: tutorial/, config-editor/.
+_cco_internal_runtime_dir() {
+    printf '%s\n' "$(_cco_state_dir)/internal"
+}
+
 # CACHE — regenerable (never-sync).
 _cco_cache_dir() {
     _cco_resolver_guard

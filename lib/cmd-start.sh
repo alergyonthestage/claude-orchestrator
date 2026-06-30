@@ -2,8 +2,11 @@
 # lib/cmd-start.sh — Start project session command
 #
 # Provides: _setup_internal_tutorial(), cmd_start()
-# Dependencies: colors.sh, utils.sh, yaml.sh, secrets.sh, workspace.sh, packs.sh
-# Globals: IMAGE_NAME, REPO_ROOT, USER_CONFIG_DIR (projects via the STATE index, P5)
+# Dependencies: colors.sh, utils.sh, yaml.sh, secrets.sh, workspace.sh, packs.sh, paths.sh
+# Globals: IMAGE_NAME, REPO_ROOT (projects via the STATE index, P5). The internal
+# tutorial/config-editor runtime lives in machine-local STATE via
+# _cco_internal_runtime_dir() — NOT under the framework tree, which may be
+# read-only on an npm install (ADR-0037 D5).
 
 # ── Internal Tutorial Setup ──────────────────────────────────────────
 # Prepares the runtime directory for the internal tutorial project.
@@ -12,7 +15,7 @@
 # project name, mounted via _cco_project_session_*), not in the runtime dir.
 _setup_internal_tutorial() {
     local source_dir="$REPO_ROOT/internal/tutorial"
-    local runtime_dir="$USER_CONFIG_DIR/.cco/internal/tutorial"
+    local runtime_dir="$(_cco_internal_runtime_dir)/tutorial"
 
     [[ ! -d "$source_dir" ]] && die "Internal tutorial not found at $source_dir"
 
@@ -26,10 +29,12 @@ _setup_internal_tutorial() {
         || die "Failed to refresh tutorial content from $source_dir. Check permissions and disk space."
 
     # Refresh project.yml with path substitution. CCO_CONFIG_DIR = the personal
-    # store ~/.cco (read-only mount); CCO_USER_CONFIG_DIR kept for back-compat.
+    # store ~/.cco (read-only mount); CCO_USER_CONFIG_DIR is a back-compat alias
+    # that now expands to the STATE-backed internal runtime root (no longer the
+    # legacy vault — ADR-0037 D5). Unused by the shipped tutorial yml.
     sed -e "s|{{CCO_REPO_ROOT}}|$REPO_ROOT|g" \
         -e "s|{{CCO_CONFIG_DIR}}|$(_cco_config_dir)|g" \
-        -e "s|{{CCO_USER_CONFIG_DIR}}|$USER_CONFIG_DIR|g" \
+        -e "s|{{CCO_USER_CONFIG_DIR}}|$runtime_dir|g" \
         "$source_dir/project.yml" > "$runtime_dir/project.yml" \
         || die "Failed to generate tutorial project.yml"
 
@@ -50,7 +55,7 @@ _setup_internal_tutorial() {
 _setup_internal_config_editor() {
     local target_cco="$1" target_name="$2"
     local source_dir="$REPO_ROOT/internal/config-editor"
-    local runtime_dir="$USER_CONFIG_DIR/.cco/internal/config-editor"
+    local runtime_dir="$(_cco_internal_runtime_dir)/config-editor"
 
     [[ ! -d "$source_dir" ]] && die "Internal config-editor not found at $source_dir"
 
@@ -138,7 +143,7 @@ _start_resolve_project() {
         fi
         is_internal=true
         _setup_internal_tutorial
-        project_dir="$USER_CONFIG_DIR/.cco/internal/tutorial"
+        project_dir="$(_cco_internal_runtime_dir)/tutorial"
         project_yml="$project_dir/project.yml"
         claude_src="$project_dir/.claude"
         source_repo="$project_dir"
@@ -167,7 +172,7 @@ _start_resolve_project() {
         fi
         [[ -n "$_ce_path" && -d "$_ce_path/.cco" ]] && _ce_cco="$_ce_path/.cco"
         _setup_internal_config_editor "$_ce_cco" "$_ce_name"
-        project_dir="$USER_CONFIG_DIR/.cco/internal/config-editor"
+        project_dir="$(_cco_internal_runtime_dir)/config-editor"
         project_yml="$project_dir/project.yml"
         claude_src="$project_dir/.claude"
         source_repo="$project_dir"
