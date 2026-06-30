@@ -1,6 +1,6 @@
 {
   "name": "@claude-orchestrator/cco",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Isolated, preconfigured Claude Code sessions in Docker — multi-repo orchestration with a managed context hierarchy, knowledge packs, and agent teams.",
   "keywords": [
     "claude",
