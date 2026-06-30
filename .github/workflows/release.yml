@@ -40,12 +40,17 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           package-manager-cache: false
 
-      # Belt-and-suspenders: guarantee npm >= 11.5.1 (OIDC is silently skipped on
-      # older npm → ENEEDAUTH/E404) and surface the version in the log.
+      # Guarantee npm >= 11.5.1 (OIDC is silently skipped on older npm) and FAIL
+      # LOUDLY if it isn't, so a version problem is unambiguous in the log.
       - name: Ensure an OIDC-capable npm (>= 11.5.1)
         run: |
           npm install -g npm@latest
-          npm --version
+          ver="$(npm --version)"; echo "npm version: $ver"
+          major="${ver%%.*}"; rest="${ver#*.}"; minor="${rest%%.*}"
+          if [ "$major" -lt 11 ] || { [ "$major" -eq 11 ] && [ "$minor" -lt 5 ]; }; then
+            echo "::error::npm $ver is < 11.5.1 — OIDC trusted publishing unsupported"
+            exit 1
+          fi
 
       - name: Verify tag matches package.json version
         run: |
@@ -71,3 +76,9 @@ jobs:
       # Environment empty); ENEEDAUTH means OIDC did not run (npm too old).
       - name: Publish to npm (Trusted Publishing / OIDC)
         run: npm publish --access public
+        env:
+          # setup-node's registry-url writes a PLACEHOLDER _authToken into .npmrc;
+          # with it set, npm tries (failed) token auth and never falls through to
+          # OIDC → E404. Emptying it removes the placeholder while keeping the
+          # registry context, so npm uses OIDC (community discussion #176761).
+          NODE_AUTH_TOKEN: ""
