@@ -32,10 +32,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # NB: deliberately NO `registry-url`. setup-node's registry-url writes an
+      # .npmrc with a PLACEHOLDER NODE_AUTH_TOKEN, and npm then tries token auth
+      # (with the fake token) instead of OIDC → E404. Without it, npm defaults to
+      # registry.npmjs.org and uses OIDC trusted publishing.
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
 
       # Trusted Publishing (OIDC) requires npm >= 11.5.1; node 22 ships npm 10.x,
       # so upgrade first, then print the version for diagnostics.
@@ -67,3 +70,6 @@ jobs:
       # (just `release.yml`, no path) must match exactly, with Environment empty.
       - name: Publish to npm (Trusted Publishing / OIDC)
         run: npm publish --access public --provenance
+        env:
+          # Belt-and-suspenders: ensure no placeholder token shadows OIDC.
+          NODE_AUTH_TOKEN: ""
