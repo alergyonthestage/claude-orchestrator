@@ -26,8 +26,13 @@ ADR-0032 pack/llms coordinate coherence; **round 3** = first `cco start` of clau
 changelog #21), S2 (migration completeness, ADR-0009 fwd-annot), and S3 (`join` Journey E +
 `forget --purge`, ADR-0034 + changelog #22/#23) all shipped, suite **1005/0**. A follow-on pre-merge
 **`cco sync` UX refinement** (ADR-0035: cwd-anchored `--from` target + `--all`; summary-first diff with
-`--dry-run --dump → .cco/.tmp/`) landed next, suite **1010/0**. **Step 6 is satisfied; v1 is ready for
-the merge to `develop`/`main` (step 7).** Intentional post-v1 deferrals (not blockers): the
+`--dry-run --dump → .cco/.tmp/`) landed next, suite **1010/0**. **v1 is merged to `develop`/`main`
+and released on npm** as [`@claude-orchestrator/cco`](https://www.npmjs.com/package/@claude-orchestrator/cco)
+(`0.5.0` → `0.5.1` → **`0.5.2`**, 2026-06-30; CI OIDC trusted publishing). Work is now in the
+**post-merge additive phase** — remaining workstreams {B, D, F} (all non-gating). The latest cut,
+**`0.5.2`**, ships the user-facing **npm-install docs cutover** (npm is now the primary install path;
+clone demoted to "from source") and the top-level **`cco --version`/`--help`** flags (FI-11).
+Intentional post-v1 deferrals (not blockers): the
 `cco config protect` helper (docs-only today), pack/template migration-scope iteration in `cco update`
 (forward-compatible stub — the `migrations/{pack,template}/` dirs are empty), interactive
 internalize-as-cache prompts, `cco project internalize` (Case-C), and cross-PC memory/state sync.
@@ -36,18 +41,20 @@ internalize-as-cache prompts, `cco project internalize` (Case-C), and cross-PC m
 
 **A gated the merge (✅ done); E/B/C/D run on `develop` after it; the release is
 `develop → main` + npm publish.** **C (npm packaging) is ✅ RELEASED** —
-`@claude-orchestrator/cco@0.5.1` is live on npm via CI **OIDC trusted publishing**
-(no stored token; 2026-06-30). See the
+`@claude-orchestrator/cco` is live on npm via CI **OIDC trusted publishing**
+(no stored token; `0.5.1` 2026-06-30, then **`0.5.2`** with the user-docs npm cutover +
+`cco --version`/`--help`). See the
 [OIDC publish debug handoff](../engineering/npm-oidc-publish-debug-handoff.md).
 **E** is ✅ done + host-e2e validated. **Remaining workstreams — all additive,
-non-gating: {B, D, F}** (F sequenced after C). Release housekeeping still open:
-reconcile `main → develop`, and validate `npm i -g @claude-orchestrator/cco` on a Mac.
+non-gating: {B, D, F}** (F sequenced after C). Release housekeeping: `main`/`develop`
+reconciled (✅, both at `0.5.2`); still open — validate `npm i -g @claude-orchestrator/cco`
+on a Mac (then `git push --follow-tags` to publish `0.5.2`).
 
 | # | Workstream | When | Gating? | Handoff |
 |---|---|---|---|---|
 | **A** | **Docs/CLI-reference cutover sweep** — bring all user + agent-facing docs to the implemented truth (the built-in tutorial/config-editor mount and consume them). **✅ done**: agent-facing doc tables remapped to the reorg tree + store layout flattened; cli.md code-grounded (0 stale/0 wrong, 11 missing flags added); removed-concept token probe clean (only migration/affirmation hits); shipped scaffold/setup doc pointers fixed; suite **1010/0**. | **PRE-MERGE — ✅ done** | **Merge gate (cleared)** | — (completed; handoff removed in post-merge cleanup) |
 | **B** | **config-editor/tutorial access scope** — all-projects config edit + read-only "cco info" snapshot; tutorial partial. ADR-0036, additive. | post-merge, on `develop` | No (additive) | [`config-editor-access-design-handoff.md`](../configuration/decentralized-config/config-editor-access-design-handoff.md) |
-| **C** | **npm packaging & distribution** — ship `cco` as an npm package. **ADR-0037 + design doc.** **✅ IMPLEMENTED 2026-06-30** on `feat/packaging/npm-distribution` (suite **1036/0**): `package.json` `@claude-orchestrator/cco` + `files` allowlist (`npm pack` clean 182 files; Linux `npm i -g` validated); `USER_CONFIG_DIR` **split** → STATE runtime (read-only `FRAMEWORK_ROOT` fix D5); **read-only publish-gate test** (`tests/test_readonly_framework.sh`, caught+fixed a cp-mode refresh bug); `docs/users`-only via allowlist; **`cco docs`** (D9, changelog #25); **`cco update` provenance-aware** (D8, changelog #26); `scripts/release.sh` + `check-pack-hygiene.sh` + CI `release.yml` (publish on tag **or manual `workflow_dispatch`**, via OIDC) + Pages `pages.yml`. settings.json decomposition resolved (D10). **✅ RELEASED 2026-06-30: `0.5.1` published to npm via CI OIDC trusted publishing — no stored token; the earlier NPM_TOKEN plan was replaced by OIDC trusted publishing ([debug handoff](../engineering/npm-oidc-publish-debug-handoff.md)).** Deferred: image-tag-by-version (v1 keeps `:latest`); macOS `npm i -g` validation (on a Mac); reconcile `main → develop`. | post-merge, on `develop` | **Release gate** | [ADR-0037](../engineering/decisions/0037-npm-packaging-distribution.md) · [design](../engineering/design/packaging-distribution.md) · [handoff](../engineering/npm-packaging-distribution-handoff.md) |
+| **C** | **npm packaging & distribution** — ship `cco` as an npm package. **ADR-0037 + design doc.** **✅ IMPLEMENTED 2026-06-30** on `feat/packaging/npm-distribution` (suite **1036/0**): `package.json` `@claude-orchestrator/cco` + `files` allowlist (`npm pack` clean 182 files; Linux `npm i -g` validated); `USER_CONFIG_DIR` **split** → STATE runtime (read-only `FRAMEWORK_ROOT` fix D5); **read-only publish-gate test** (`tests/test_readonly_framework.sh`, caught+fixed a cp-mode refresh bug); `docs/users`-only via allowlist; **`cco docs`** (D9, changelog #25); **`cco update` provenance-aware** (D8, changelog #26); `scripts/release.sh` + `check-pack-hygiene.sh` + CI `release.yml` (publish on tag **or manual `workflow_dispatch`**, via OIDC) + Pages `pages.yml`. settings.json decomposition resolved (D10). **✅ RELEASED 2026-06-30: `0.5.1` published to npm via CI OIDC trusted publishing — no stored token; the earlier NPM_TOKEN plan was replaced by OIDC trusted publishing ([debug handoff](../engineering/npm-oidc-publish-debug-handoff.md)).** **Follow-on `0.5.2` (2026-06-30)**: user-facing npm-install docs cutover (README/installation/cli/project-setup → `npm i -g` primary, clone demoted to "from source"; CONTRIBUTING gains local-dev + release/publishing) + top-level `cco --version`/`-v` and `--help`/`-h` (FI-11, changelog #27); `main`/`develop` reconciled, tag `v0.5.2` cut locally (push from the Mac publishes). Deferred: image-tag-by-version (v1 keeps `:latest`); macOS `npm i -g` validation (on a Mac). | post-merge, on `develop` | **Release gate** | [ADR-0037](../engineering/decisions/0037-npm-packaging-distribution.md) · [design](../engineering/design/packaging-distribution.md) · [handoff](../engineering/npm-packaging-distribution-handoff.md) |
 | **D** | **`cco project save` — project-config versioning helper** — ergonomic, path-scoped commit of `<repo>/.cco/**` + isolated history. Reintroduces the old `vault save` convenience for the decentralized in-repo model. ADR-0038, additive. Needs its own design session (see below). | post-merge, on `develop` | No (additive) | _design session — see §D below_ |
 | **E** | **Native Claude Code install** — replace the deprecated `npm install -g @anthropic-ai/claude-code` with the official native installer run at first start, into a persistent CACHE-backed mount so Claude auto-updates in-place (no rebuild). Re-implements Rares' `#B2` onto develop's XDG/decentralized architecture. **✅ done + host e2e validated (2026-06-29)** on `feat/docker/native-claude-install` (commits `ebe0e1b` impl+tests, `5f6b975` docs): install home → CACHE `claude-install/{bin,share}` bind-mounted to `~/.local`; config knob `~/.cco/claude-version` (default `latest`, knob outranks the baked default); re-pin via channel marker; `cco build --no-cache` resets the cache; `cco clean --all` leaves it untouched (regression test). **No migration** (purely additive). ADR-0039, changelog #24. Suite **1022/0**. **▶ ready to merge `feat/docker/native-claude-install → develop`.** | **post-merge, FIRST — ✅ done** | No (additive) | [`../environment/native-claude-install-handoff.md`](../environment/native-claude-install-handoff.md) (resolved) |
 
