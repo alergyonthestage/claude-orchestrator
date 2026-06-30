@@ -202,7 +202,9 @@ Pages (free for public repos). One source, separate renderer — no second copy.
 - Homebrew (post-v1).
 - `cco update` engine-update orchestration + responsibility-axis split →
   update-refactor workstream.
-- `defaults/global/.claude/settings.json` opinionated-vs-functional decomposition
-  (ADR-0037 O1, §7.6) → design follow-up, straddles the opinionated-extraction
-  workstream.
-- npm org / GitHub org creation (maintainer action; ADR-0037 O2).
+- `defaults/global/.claude/settings.json` decomposition — **resolved (ADR-0037
+  D10)**: 3-class classification done; the functional layer is already immutable in
+  `managed-settings.json` so **C ships settings unchanged**; Class-O extraction is
+  workstream F.
+- npm org creation (maintainer action; ADR-0037 O2; GitHub org taken → repo stays
+  personal, D2).

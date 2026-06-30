@@ -69,10 +69,18 @@ publish via a CI-on-tag pipeline gated by a read-only-`FRAMEWORK_ROOT` test.
 - Package = **`@claude-orchestrator/cco`**; the command stays the prefix-free
   **`cco`**. The scope carries the full project name (coherent with the repo,
   discoverable); the leaf is the binary name (memorable install).
-- Create a **dedicated npm org `claude-orchestrator`** (free for public packages)
-  to own the scope, and a **dedicated GitHub org `claude-orchestrator`** so the
-  npm scope, the GitHub Pages domain, and the repo home are coherent. The repo
-  (today `github.com/alergyonthestage/claude-orchestrator`) moves under the org.
+- **Ownership** (refined 2026-06-30 — the **GitHub org `claude-orchestrator` is
+  already taken**, so the npm and GitHub namespaces are decoupled):
+  - **Repo stays on the personal GitHub** `github.com/alergyonthestage/claude-orchestrator`
+    (public, MIT). GitHub Pages → `alergyonthestage.github.io/claude-orchestrator`
+    (free for public repos).
+  - **npm scope is independent of GitHub**: create the **npm org
+    `claude-orchestrator`** (verified free on npm — no package/org under it) to own
+    `@claude-orchestrator/*`. npm-scope ≠ GitHub-owner is common and fine.
+  - **Fallback** if managing an npm org is unwanted: **`@alergyonthestage/cco`**
+    (auto-available under the npm username; fully coherent with the personal repo,
+    but a cryptic handle — weaker discoverability). Recommended primary remains
+    `@claude-orchestrator/cco`.
 - Discoverability is recovered via `package.json` `keywords`
   (`claude`, `claude-code`, `orchestrator`, `docker`, `cco`), not via the name.
 
@@ -218,16 +226,51 @@ One home — the repo's **`docs/users/`** tree — serves all readers:
     workflow + `release.sh` (D6), the Pages action (D9), and re-point the
     config-editor mount + tutorial at `docs/users` (D3).
 - **Deferred / out of scope**: Homebrew (post-v1); the `cco update` orchestration
-  + responsibility-axis split (update-refactor workstream); the
-  `defaults/global/.claude/settings.json` decomposition into
-  opinionated-vs-functional (§7.6 — straddles this and the opinionated-extraction
-  workstream, carried to both; needs its own design pass).
+  + responsibility-axis split (update-refactor workstream). The
+  `defaults/global/.claude/settings.json` decomposition (§7.6) is now **resolved in
+  D10** (classification done; Class-O extraction handed to workstream F; no v1
+  settings change).
+
+## D10 — `settings.json` decomposition (resolves O1, §7.6)
+
+Design session 2026-06-30 classified every key across both settings files into
+three classes (code-grounded; cco always launches `claude --dangerously-skip-permissions`,
+`config/entrypoint.sh:261,267`):
+
+| Class | Keys | Home | Lifecycle |
+|---|---|---|---|
+| **F — Functional/immutable** | `hooks` (SessionStart, SubagentStart, PreCompact, UserPromptSubmit) · `statusLine` · `env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` · `permissions.deny` | `defaults/managed/managed-settings.json` (baked, non-overridable) | **Already correct** — this IS cco's operation; a user override would break it. |
+| **D — Functional default** | `teammateMode: tmux` · `enableAllProjectMcpServers: true` | `defaults/global/.claude/settings.json` (copied to `~/.cco`, user-editable) | cco needs a sane value; user may change. Stays in global (decision below). |
+| **O — Opinionated** | `permissions.allow[…]` · `attribution.commit/pr` · `cleanupPeriodDays` · `alwaysThinkingEnabled` | `defaults/global/.claude/settings.json` today | Extraction target for **workstream F** (opinionated-extraction). |
+
+**Decisions:**
+- **The functional/immutable layer is already correctly in `managed`** → **C/packaging
+  changes no settings file for correctness.** This decomposition is design input,
+  not v1 code.
+- **`enableAllProjectMcpServers` stays in global (Class D), not promoted to managed.**
+  The primary MCP path (entrypoint injects into `~/.claude.json`, `config/entrypoint.sh:118`)
+  works regardless; immutability would remove user choice for little gain. The key
+  only supports the `.mcp.json` *fallback*.
+- **`permissions.allow` is left intact in v1** and its extraction/removal is deferred
+  to **workstream F**. Finding: it is **inert inside cco sessions** —
+  `--dangerously-skip-permissions` bypasses the permission prompt gate (official
+  Claude Code docs: managed/user `allow` lists feed the permission system, which
+  bypass mode skips), so the allow-list is vestigial. It is the prime Class-O
+  removal target for F, not a C concern.
+
+**Carried out of this ADR:**
+- **Class O extraction → workstream F** (`../opinionated-extraction-and-update-refactor-handoff.md`,
+  ADR-0040): make the public default *neutral*, opinions become an opt-in layer.
+- **Security finding → backlog** (`../roadmap-backlog.md`): verify whether managed
+  `permissions.deny` is actually enforced under `--dangerously-skip-permissions`
+  (bypassPermissions). If not, the security backstop is decorative and cco would
+  need `allowManagedPermissionRulesOnly` / `permissions.disableBypassPermissionsMode`
+  (official docs) — or accept that Docker-is-the-sandbox is the real boundary and
+  the deny is informational. Investigate separately; does not block packaging.
 
 ## Open items (carried, not blocking the design)
 
-- **O1 — settings.json decomposition (§7.6).** Split
-  `defaults/global/.claude/settings.json` into user-editable-opinionated vs
-  cco-managed-functional. Design follow-up; tracked in both workstreams.
-- **O2 — npm org / GitHub org creation** is a maintainer action (free; requires
-  npm + GitHub accounts). The package name `@claude-orchestrator/cco` is reserved
-  by this decision but must be claimed.
+- **O2 — npm org creation** is a maintainer action (free; requires an npm account).
+  The package name `@claude-orchestrator/cco` is reserved by this decision but must
+  be claimed (the GitHub org is taken → repo stays personal, see D2). Fallback
+  `@alergyonthestage/cco` needs no org.

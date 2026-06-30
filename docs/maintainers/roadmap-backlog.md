@@ -236,3 +236,27 @@ migration / update flow.
 run engine update + migrations, one command). Keep them together with that refactor.
 
 **Effort**: Low–Medium (hints now; full orchestration with the update refactor).
+
+## FI-10: Is managed `permissions.deny` enforced under `--dangerously-skip-permissions`?
+
+**Status**: Open (raised 2026-06-30 during the `settings.json` decomposition for npm packaging —
+ADR-0037 D10). Security investigation; does **not** block packaging.
+
+**Context**: cco always launches `claude --dangerously-skip-permissions` (`config/entrypoint.sh:261,267`),
+which bypasses the permission-prompt gate. The framework relies on managed `permissions.deny`
+(`defaults/managed/managed-settings.json` — `Read(~/.ssh/*)`, `Read(~/.claude.json)`) as a security
+backstop. Official Claude Code docs list `allowManagedPermissionRulesOnly` and
+`permissions.disableBypassPermissionsMode` as the controls that make *only* managed rules apply and
+disable bypass mode — and **cco sets neither**.
+
+**Question**: Under bypassPermissions, are managed `deny` rules still enforced, or are they decorative?
+- If enforced → no action; document the guarantee.
+- If not → either add `allowManagedPermissionRulesOnly` / `disableBypassPermissionsMode` (but that would
+  re-enable prompting, conflicting with the zero-friction model), **or** accept that **Docker-is-the-sandbox**
+  is the real boundary and downgrade the `deny` to informational (the container already isolates host
+  secrets; `~/.ssh` is not mounted).
+
+**Verify**: read the official permissions/bypass docs precisely, then test in a live container
+(attempt a denied `Read` under skip-permissions).
+
+**Effort**: Low (investigation + doc/test); fix scope depends on the finding.
