@@ -32,13 +32,17 @@ IMAGE_NAME="claude-orchestrator:latest"
 LIB_DIR="$REPO_ROOT/lib"
 
 # ── User config directory resolution ─────────────────────────────────
-# CCO_USER_CONFIG_DIR is the LEGACY-vault pointer: the pre-decentralized
-# user-config store that `cco init --migrate` reads from (and offers to remove),
-# and the runtime root for the internal tutorial/config-editor sessions. It is
-# NOT the home of the personal flat stores anymore — packs/templates live in the
-# CONFIG bucket (~/.cco) and llms content+cache-state in CACHE (F1; design
-# §2.2/§2.3, ADR-0016 D7/D8). Projects are decentralized in each repo's
-# <repo>/.cco/ and resolve through the STATE index (P5; no $PROJECTS_DIR).
+# CCO_USER_CONFIG_DIR is the LEGACY-vault pointer ONLY: the pre-decentralized
+# user-config store that `cco init --migrate` reads from (and offers to remove).
+# It is read-only/migration-only and may be absent (an npm install never had a
+# clone-era vault). It is NO LONGER the runtime root for the internal
+# tutorial/config-editor sessions — that moved to machine-local STATE via
+# _cco_internal_runtime_dir() so nothing writes inside a possibly read-only
+# framework tree (ADR-0037 D5). It is also NOT the home of the personal flat
+# stores — packs/templates live in the CONFIG bucket (~/.cco) and llms
+# content+cache-state in CACHE (F1; design §2.2/§2.3, ADR-0016 D7/D8). Projects
+# are decentralized in each repo's <repo>/.cco/ and resolve through the STATE
+# index (P5; no $PROJECTS_DIR).
 USER_CONFIG_DIR="${CCO_USER_CONFIG_DIR:-$REPO_ROOT/user-config}"
 
 # Global (user) Claude config home is ~/.cco/.claude (ADR-0028, flat — no
@@ -95,6 +99,7 @@ source "$LIB_DIR/cmd-remote.sh"
 source "$LIB_DIR/remote.sh"
 source "$LIB_DIR/cmd-forget.sh"
 source "$LIB_DIR/cmd-join.sh"
+source "$LIB_DIR/cmd-docs.sh"
 
 # Personal flat stores in their decentralized homes (F1; design §2.2/§2.3,
 # ADR-0016 D7/D8): packs/templates → CONFIG (~/.cco), llms content+cache-state →
@@ -118,6 +123,7 @@ Project lifecycle:
 Setup & maintenance:
   build                  Build/rebuild the Docker image
   update                 Run migrations + discover updates (--sync, --diff, --news)
+  docs [<topic>]         Browse the bundled user documentation offline
   clean                  Clean up .bak, .tmp/, docker-compose.yml
 
 Sessions:
@@ -270,6 +276,7 @@ EOF
     remote)   cmd_remote "$@"   || _cco_rc=$? ;;
     share|manifest) die "'cco $cmd' has been removed. Sharing repos are discovered by structure (no manifest.yml); use 'cco pack|template publish|install' (ADR-0012/0018)." ;;
     update)   cmd_update "$@"   || _cco_rc=$? ;;
+    docs)     cmd_docs "$@"     || _cco_rc=$? ;;
     clean)    cmd_clean "$@"    || _cco_rc=$? ;;
     stop)     cmd_stop "$@"     || _cco_rc=$? ;;
     help)     usage ;;

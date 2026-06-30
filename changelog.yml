@@ -406,3 +406,30 @@ entries:
       install cache so the next start reinstalls fresh. `cco clean` never touches
       the install cache. First start on a fresh machine adds a one-time ~30s
       install and requires network access.
+
+  - id: 25
+    date: "2026-06-30"
+    type: additive
+    title: "Browse the bundled user docs offline with `cco docs`"
+    description: >
+      New `cco docs` command surfaces the bundled user documentation on the host,
+      always matched to the installed cco version — read-only and offline. Run
+      `cco docs` to list available topics, or `cco docs <topic>` to open one
+      (matches a path or name under docs/users, e.g. `cco docs cli` or
+      `cco docs project-setup`). It uses your `$PAGER` interactively and falls back
+      to plain output in pipes/CI. The same docs are also published to the
+      project's GitHub Pages site (latest); `cco docs` shows your installed
+      version (ADR-0037 D9).
+
+  - id: 26
+    date: "2026-06-30"
+    type: additive
+    title: "`cco update` now reminds you how to upgrade cco itself"
+    description: >
+      `cco update` runs migrations and config discovery but does NOT upgrade the
+      cco engine (the framework tree). It now detects how cco was installed
+      (git clone / npm / Homebrew) and prints the matching engine-upgrade command
+      at the end of a run — e.g. a clone install suggests
+      `git -C <repo> pull && cco update`, an npm install suggests
+      `npm update -g @claude-orchestrator/cco && cco update`. Informational only;
+      nothing is changed automatically (ADR-0037 D8).
