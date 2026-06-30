@@ -21,6 +21,10 @@ on:
   push:
     tags:
       - 'v*'
+  # Manual trigger for fast publish-auth debugging WITHOUT a tag or the full suite.
+  # Same filename → same trusted-publisher match as a real release. A successful
+  # dispatch run publishes the current package.json version for real.
+  workflow_dispatch: {}
 
 permissions:
   contents: read
@@ -52,7 +56,25 @@ jobs:
             exit 1
           fi
 
+      # OIDC auth diagnostics (cheap; helps pin down ENEEDAUTH vs E404). If the
+      # token-request URL is MISSING, GitHub is not issuing an OIDC token (repo/org
+      # Actions setting) — npm then has no credential → ENEEDAUTH.
+      - name: OIDC diagnostics
+        run: |
+          echo "event_name: ${{ github.event_name }}"
+          echo "repository: ${{ github.repository }}"
+          echo "workflow_ref: ${{ github.workflow_ref }}"
+          if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "OIDC request URL: PRESENT"
+          else
+            echo "OIDC request URL: MISSING (id-token not available to the job)"
+          fi
+          [ -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ] && echo "OIDC request token: PRESENT" || echo "OIDC request token: MISSING"
+          echo "--- effective npm userconfig (${NPM_CONFIG_USERCONFIG:-unset}) ---"
+          sed 's/_authToken=.*/_authToken=<redacted>/' "${NPM_CONFIG_USERCONFIG:-/dev/null}" 2>/dev/null || echo "(none)"
+
       - name: Verify tag matches package.json version
+        if: github.event_name == 'push'
         run: |
           tag="${GITHUB_REF_NAME#v}"
           pkg="$(jq -r .version package.json)"
@@ -62,6 +84,7 @@ jobs:
           fi
 
       - name: Test suite (includes the read-only FRAMEWORK_ROOT gate)
+        if: github.event_name == 'push'
         run: bin/test
 
       - name: npm pack hygiene
