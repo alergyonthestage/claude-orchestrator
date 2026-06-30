@@ -32,17 +32,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # NB: deliberately NO `registry-url`. setup-node's registry-url writes an
-      # .npmrc with a PLACEHOLDER NODE_AUTH_TOKEN, and npm then tries token auth
-      # (with the fake token) instead of OIDC → E404. Without it, npm defaults to
-      # registry.npmjs.org and uses OIDC trusted publishing.
+      # Matches the official npm Trusted Publishing workflow: node 24 (ships an
+      # OIDC-capable npm >= 11.5.1), registry-url set, no package-manager cache.
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
 
-      # Trusted Publishing (OIDC) requires npm >= 11.5.1; node 22 ships npm 10.x,
-      # so upgrade first, then print the version for diagnostics.
-      - name: Use an OIDC-capable npm
+      # Belt-and-suspenders: guarantee npm >= 11.5.1 (OIDC is silently skipped on
+      # older npm → ENEEDAUTH/E404) and surface the version in the log.
+      - name: Ensure an OIDC-capable npm (>= 11.5.1)
         run: |
           npm install -g npm@latest
           npm --version
@@ -62,14 +62,12 @@ jobs:
       - name: npm pack hygiene
         run: scripts/check-pack-hygiene.sh
 
-      # No NODE_AUTH_TOKEN — npm detects the OIDC trusted publisher and mints a
-      # short-lived credential. --provenance is explicit (some npm versions don't
-      # enable it automatically) and emits a supply-chain attestation.
-      # NB: an E404 here almost always means the npm Trusted Publisher config does
-      # not match this run — Organization/User, Repository, and Workflow filename
-      # (just `release.yml`, no path) must match exactly, with Environment empty.
+      # OIDC trusted publishing: with npm >= 11.5.1 + id-token: write + a matching
+      # trusted publisher, npm mints a short-lived credential and attaches
+      # provenance automatically (no token, no --provenance flag needed — per the
+      # official npm docs). --access public keeps the scoped package public.
+      # NB: an E404 here means the trusted-publisher config does not match this run
+      # (Organization/User, Repository, Workflow filename `release.yml` exactly,
+      # Environment empty); ENEEDAUTH means OIDC did not run (npm too old).
       - name: Publish to npm (Trusted Publishing / OIDC)
-        run: npm publish --access public --provenance
-        env:
-          # Belt-and-suspenders: ensure no placeholder token shadows OIDC.
-          NODE_AUTH_TOKEN: ""
+        run: npm publish --access public
