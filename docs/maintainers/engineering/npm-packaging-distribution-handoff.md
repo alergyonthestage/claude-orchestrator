@@ -100,9 +100,11 @@ flowchart LR
    → **DECIDED: build-in-image** (no host Go dependency; the binary only runs in the Linux container, so a
    prebuilt darwin binary would be dead weight).
 3. **Publish** — manual `npm publish` from Mac, or CI on a `main` tag?
-   → **DECIDED: `release.sh` + CI-on-tag, with the npm token in CI now.** `release.sh` (run by the
-   maintainer) bumps `package.json` version + changelog + annotated tag + push; the tag triggers a CI
-   workflow that runs the suite + the **read-only `FRAMEWORK_ROOT` gate** + `npm publish`.
+   → **DECIDED & IMPLEMENTED: `release.sh` + CI-on-tag via npm Trusted Publishing (OIDC), no token.**
+   `release.sh` (run by the maintainer) bumps `package.json` version + annotated tag + push; the tag triggers
+   a CI workflow that runs the suite + the **read-only `FRAMEWORK_ROOT` gate** + hygiene + `npm publish`.
+   Auth refined from "token in CI" → **Trusted Publishing/OIDC** (npm deprecated long-lived CI tokens);
+   first publish bootstrapped manually. See ADR-0037 D6.
 4. **Homebrew** — offer later, or npm-only for v1? → **npm-only for v1** (Homebrew deferred post-v1).
 5. **`cco update` vs `npm update -g`** — does framework discovery change when the tree lives in
    `node_modules`? → **DIRECTION SET, full work deferred.** v1: `cco update` becomes **provenance-aware**
@@ -203,10 +205,12 @@ All mutable writes already target `~/.cco` / XDG STATE/CACHE/DATA **except one**
 
 ### 7.4 Release pipeline (decision 3 — DECIDED)
 
-`release.sh` (local, maintainer-run) → bump `package.json` version + update `changelog.yml` + annotated git
-tag + push. **CI-on-tag** workflow → run suite + **read-only `FRAMEWORK_ROOT` gate** + `npm publish`.
-**npm token lives in CI now** (GitHub Actions secret). This is preferred over pure-manual publish because
-the read-only gate runs automatically on every release.
+`release.sh` (local, maintainer-run) → bump `package.json` version + annotated git tag + push. **CI-on-tag**
+workflow → run suite + **read-only `FRAMEWORK_ROOT` gate** + hygiene + `npm publish`. **Auth = npm Trusted
+Publishing (OIDC), no stored token** (refined 2026-06-30 — npm deprecated long-lived CI tokens / removed
+classic automation tokens; the workflow sets `id-token: write` and the first publish is bootstrapped
+manually so the package exists before its trusted publisher is configured). Preferred over pure-manual
+publish because the read-only gate runs automatically on every release. See ADR-0037 D6.
 
 ### 7.5 `cco update` vs `npm update` — preventive evaluation (full work deferred)
 

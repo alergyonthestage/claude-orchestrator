@@ -2,7 +2,15 @@ name: Release
 
 # Triggered by pushing a vX.Y.Z tag (scripts/release.sh does the tag+push).
 # Runs the full suite + the read-only FRAMEWORK_ROOT publish gate + the npm-pack
-# hygiene check, then publishes to the public npm registry. ADR-0037 D6.
+# hygiene check, then publishes to the public npm registry via npm Trusted
+# Publishing (OIDC) — NO stored token. ADR-0037 D6.
+#
+# One-time setup before the first CI release:
+#   1) bootstrap the FIRST publish manually from a maintainer machine
+#      (`npm login` + `npm publish --access public`) so the package exists;
+#   2) on npmjs.com → the package → Settings → Trusted Publisher → add this repo
+#      (alergyonthestage/claude-orchestrator) + workflow `release.yml`.
+# After that, every tag push publishes here with no secret.
 on:
   push:
     tags:
@@ -10,6 +18,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write   # OIDC: lets npm Trusted Publishing mint a short-lived token
 
 jobs:
   publish:
@@ -21,6 +30,11 @@ jobs:
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
+
+      # Trusted Publishing (OIDC) requires a recent npm (>= 11.5.1); node 22 ships
+      # npm 10.x, so upgrade first. This also enables build provenance.
+      - name: Use an OIDC-capable npm
+        run: npm install -g npm@latest
 
       - name: Verify tag matches package.json version
         run: |
@@ -37,7 +51,7 @@ jobs:
       - name: npm pack hygiene
         run: scripts/check-pack-hygiene.sh
 
-      - name: Publish to npm (public)
+      # No NODE_AUTH_TOKEN — npm detects the OIDC trusted publisher and mints a
+      # short-lived credential (and attaches provenance) automatically.
+      - name: Publish to npm (Trusted Publishing / OIDC)
         run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

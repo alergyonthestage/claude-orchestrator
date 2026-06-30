@@ -155,13 +155,22 @@ Everything else is already clean: `cco build` uses the context read-only; genera
 compose / `packs.md` / `workspace.yml` go to CACHE; `defaults/global` is read and
 copied into `~/.cco`; `changelog.yml` is read-only at runtime.
 
-### D6 — Release pipeline: `release.sh` + CI-on-tag (npm token in CI)
+### D6 — Release pipeline: `release.sh` + CI-on-tag (npm **Trusted Publishing / OIDC**)
 
-- **`release.sh`** (local, maintainer-run): bump `package.json` version + update
-  `changelog.yml` + create an annotated git tag + push.
+- **`release.sh`** (local, maintainer-run): bump `package.json` version + create an
+  annotated git tag + push (changelog entries are added per-feature during
+  development, not here).
 - **CI-on-tag** (GitHub Actions, triggered by the tag): run the full suite + the
-  **read-only-`FRAMEWORK_ROOT` gate** (D5) + `npm publish`.
-- The **npm publish token lives in CI** (Actions secret). Preferred over
+  **read-only-`FRAMEWORK_ROOT` gate** (D5) + the npm-pack hygiene check +
+  `npm publish --access public`.
+- **Authentication = npm Trusted Publishing (OIDC), NOT a stored token** (refined
+  2026-06-30: npm now warns against long-lived CI tokens and removed classic
+  automation tokens for new accounts). The workflow declares `id-token: write`;
+  npm mints a short-lived credential from the GitHub OIDC token and attaches build
+  provenance — no secret in the repo. **Bootstrap:** the trusted publisher is
+  configured *on the package*, which must exist first, so the **first** publish is
+  done manually from a maintainer machine (`npm login` + `npm publish --access
+  public`); thereafter every tag push publishes via OIDC. Preferred over
   pure-manual publish because the read-only gate then runs automatically on every
   release.
 
@@ -283,5 +292,8 @@ three classes (code-grounded; cco always launches `claude --dangerously-skip-per
   `claude-orchestrator` created (https://www.npmjs.com/org/claude-orchestrator),
   2FA enabled; repo public at `github.com/alergyonthestage/claude-orchestrator`.
   `package.json` uses `@claude-orchestrator/cco`. Remaining maintainer steps before
-  the first release: generate the npm publish token + add it as the GitHub
-  `NPM_TOKEN` Actions secret, and enable Pages (Settings → Pages → GitHub Actions).
+  the first CI release (D6): **(1)** bootstrap the first publish manually
+  (`npm login` + `npm publish --access public`) so the package exists; **(2)**
+  configure the package's **Trusted Publisher** (npmjs.com → package → Settings) to
+  this repo + workflow `release.yml` — **no `NPM_TOKEN` secret** (OIDC); **(3)**
+  enable Pages (Settings → Pages → GitHub Actions).

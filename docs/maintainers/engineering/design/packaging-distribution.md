@@ -165,17 +165,24 @@ sequenceDiagram
   G->>G: CI on tag v* — full suite
   G->>G: read-only FRAMEWORK_ROOT gate (§3.3)
   G->>G: npm pack hygiene check (§2.1)
-  G->>N: npm publish --access public  (token = Actions secret)
+  G->>N: npm publish --access public  (Trusted Publishing / OIDC — no token)
   G->>G: (optional) GitHub Release notes from changelog
 ```
 
-- **`release.sh`** (local): validates clean tree + on `main`, bumps the version,
-  appends/edits `changelog.yml`, creates the annotated tag, pushes.
-- **CI-on-tag** (`.github/workflows/release.yml`): matrix or at least Linux runner
-  → suite + read-only gate + hygiene check → `npm publish --access public`
-  (scoped packages default to restricted; `--access public` is required).
-- The **npm token** is a GitHub Actions secret. No token on the maintainer's Mac is
-  needed for publish.
+- **`release.sh`** (local): validates clean tree + on `main` + version > current +
+  tag free, runs the suite + hygiene pre-flight, bumps the version, commits the
+  annotated tag, pushes (changelog entries are added per-feature, not here).
+- **CI-on-tag** (`.github/workflows/release.yml`): Linux runner → verify tag ==
+  `package.json` version → suite (incl. read-only gate) → hygiene check →
+  `npm publish --access public` (scoped packages default to restricted;
+  `--access public` is required for a public package).
+- **Auth = npm Trusted Publishing (OIDC), no stored token.** The workflow sets
+  `id-token: write` and upgrades to an OIDC-capable npm; npm mints a short-lived
+  credential from the GitHub OIDC token (and attaches provenance). **Bootstrap:**
+  the trusted publisher is configured on the package (which must exist), so the
+  **first** publish is manual (`npm login` + `npm publish --access public`);
+  afterwards configure the package's Trusted Publisher → this repo + `release.yml`,
+  and every tag push publishes with no secret.
 
 ## 6. `cco docs` (D9 local renderer)
 
