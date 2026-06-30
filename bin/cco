@@ -151,7 +151,20 @@ Tools & Sharing:
   remote <cmd>           Manage sharing-repo remotes
 
 Run 'cco help' for this message, or 'cco <command> --help' for command-specific help.
+Use 'cco --version' to print the version, 'cco --help' for this message.
 EOF
+}
+
+# Print the cco version. Source of truth = package.json `version` at the package
+# root (ADR-0037 D7) — no hardcoded string to drift. jq is already required.
+_cco_print_version() {
+    local pkg="$REPO_ROOT/package.json" v=""
+    [[ -f "$pkg" ]] && command -v jq >/dev/null 2>&1 && v="$(jq -r '.version // empty' "$pkg" 2>/dev/null)"
+    if [[ -n "$v" ]]; then
+        printf 'cco %s\n' "$v"
+    else
+        printf 'cco (version unknown — package.json not found under %s)\n' "$REPO_ROOT"
+    fi
 }
 
 # ── Main ─────────────────────────────────────────────────────────────
@@ -161,6 +174,14 @@ cmd="${1:-}"
 # does not misreport this normal exit-0 path as an unexpected crash.
 [[ -z "$cmd" ]] && { usage; _cco_completed=true; exit 0; }
 shift
+
+# Top-level --version/-v and --help/-h (FI-11): handled before the dispatch (and
+# before the J0 bootstrap below) so they work with no other args and have no side
+# effects — `cco --version` is a pure query. Per-subcommand --help is unaffected.
+case "$cmd" in
+    --version|-v) _cco_print_version; _cco_completed=true; exit 0 ;;
+    --help|-h)    usage;              _cco_completed=true; exit 0 ;;
+esac
 
 # J0 first-run bootstrap of the four decentralized-config roots + the legacy-
 # vault safety-net backup, before any command runs (ADR-0017 D3 / ADR-0006 /
