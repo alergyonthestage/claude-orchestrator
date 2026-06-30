@@ -1,7 +1,10 @@
 # Handover C (POST-MERGE / develop · release-gating) — npm packaging & distribution
 
 > **Created**: 2026-06-29 · **Updated**: 2026-06-30 (analysis session — decisions taken + audit findings,
-> see [§7](#7-analysis-session-2026-06-30--decisions--audit-findings)). · **Track**: release engineering.
+> see [§7](#7-analysis-session-2026-06-30--decisions--audit-findings); **then a design session** that
+> formalized everything into **[ADR-0037](decisions/0037-npm-packaging-distribution.md)** + the living
+> **[release-engineering design doc](design/packaging-distribution.md)** — those are now the source of
+> truth; the OPEN questions in §4.1/§7.1 are resolved there and annotated below). · **Track**: release engineering.
 > Runs on `develop` **after** the v1 merge; **gates the public release on `main`** (you cannot distribute
 > v1 without a package).
 > **Priority**: high (maintainer flagged it explicitly).
@@ -88,8 +91,11 @@ flowchart LR
 > [§7](#7-analysis-session-2026-06-30--decisions--audit-findings) for the full rationale.
 
 1. **Package name** — unscoped `claude-orchestrator` or scoped `@<org>/…`? Keep the command `cco`?
-   → **OPEN.** Tied to the install-mechanism decision (global `npm i -g` recommended; the plain `cco`
-   command must stay prefix-free for the user — see §7). Registry-collision check still required.
+   → **DECIDED (ADR-0037 D2): `@claude-orchestrator/cco`.** Registry checked 2026-06-30 — unscoped
+   `claude-orchestrator` **and** `cco` are both **taken** (an unrelated 2025 `1.0.x`; "color transfer"),
+   so a scope is forced; `@claude-orchestrator/cco` is **free**. Command stays the prefix-free `cco`.
+   Dedicated **npm org + GitHub org `claude-orchestrator`** (both free for public) own the scope/Pages/repo
+   home; discoverability via `keywords`. Org creation is a maintainer action (ADR-0037 O2).
 2. **Proxy** — build-in-image (host Go-free) vs prebuilt-binary-in-package (multi-arch matrix)?
    → **DECIDED: build-in-image** (no host Go dependency; the binary only runs in the Linux container, so a
    prebuilt darwin binary would be dead weight).
@@ -157,13 +163,14 @@ EXCLUDE:  tests/ scripts/ user-config/ docs/maintainers/ docs/archive/
 **Decision — `docs/users/` only** (maintainers clone the repo for the full tree). Requires a small change:
 point the config-editor mount + tutorial references at `docs/users` (they already use `users/…` paths).
 
-**OPEN doubt — docs accessibility & home (decision 1a/1b).** Two unresolved questions feed the design:
-- **(a)** Do the tutorial / config-editor agents ever need **maintainer docs or source** access, or are the
-  user guides sufficient? (Today only `docs/users` is mounted.)
-- **(b)** The user may also want to **read** the user guides on the host. Are they in a user-readable
-  location? Options to weigh: ship `docs/users` in the package **for agent mounts only** and serve the
-  human-readable docs from the project's GitHub pages; or expose the packaged `docs/users` to the user too.
-  Find the correct single home that serves **both** internal-project mounts **and** the human reader.
+**Docs accessibility & home (decision 1a/1b) — DECIDED (ADR-0037 D9):**
+- **(a)** User guides are sufficient for the agents → **`docs/users` only** mounted (unchanged). Maintainer
+  docs/source are **not** mounted into tutorial/config-editor.
+- **(b)** **Single source = `docs/users/`, three consumers**: agent mounts · a local **`cco docs`** (offline,
+  version-matched) · a **GitHub Pages renderer** of the same tree (free for public repos). One source, many
+  renderers → no drift. **Pages v1 = `docs/users/` only**; `docs/maintainers/` stay browsable on the public
+  repo (not rendered as a polished site); a selective "Architecture/Contributing" Pages section is reserved
+  post-v1. See the [design doc §6–§7](design/packaging-distribution.md).
 
 ### 7.2 Install mechanism & the `cco` command (decision 2 — OPEN, leaning global)
 
