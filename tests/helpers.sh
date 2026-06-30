@@ -304,11 +304,15 @@ assert_empty() {
 }
 
 # Assert $CCO_OUTPUT (set by run_cco) contains a literal string
-# Uses -e to safely handle patterns starting with '-'
+# Uses -e to safely handle patterns starting with '-'. Uses a here-string (not
+# `echo | grep`): under `set -o pipefail`, grep exiting early on a match makes the
+# upstream echo take SIGPIPE when the output exceeds the 64KB pipe buffer, which
+# pipefail then reports as a failed pipeline — a false negative for large outputs
+# (e.g. paging an 85KB doc). A here-string has no pipe, so grep's status is direct.
 assert_output_contains() {
     local pattern="$1"
     local msg="${2:-Expected output to contain: $pattern}"
-    if ! echo "${CCO_OUTPUT:-}" | grep -qFe "$pattern"; then
+    if ! grep -qFe "$pattern" <<< "${CCO_OUTPUT:-}"; then
         echo "ASSERTION FAILED: $msg"
         echo "  Pattern not found: $(printf '%q' "$pattern")"
         echo "  Actual output:"
@@ -395,7 +399,8 @@ modify_managed_file() {
 assert_output_not_contains() {
     local pattern="$1"
     local msg="${2:-Expected output NOT to contain: $pattern}"
-    if echo "${CCO_OUTPUT:-}" | grep -qFe "$pattern"; then
+    # Here-string (not `echo | grep`) — see assert_output_contains for why.
+    if grep -qFe "$pattern" <<< "${CCO_OUTPUT:-}"; then
         echo "ASSERTION FAILED: $msg"
         echo "  Found unwanted pattern: $(printf '%q' "$pattern")"
         echo "  Actual output:"
