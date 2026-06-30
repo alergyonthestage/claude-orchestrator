@@ -79,6 +79,11 @@ _setup_internal_config_editor() {
     # The generated project.yml only references these names; they resolve via the
     # session override at start (never the persistent index), so no host path is
     # committed (AD3/G8).
+    # cco-docs mounts $REPO_ROOT/docs at /workspace/cco-docs; doc refs read
+    # cco-docs/users/... . The npm package ships ONLY docs/users (ADR-0037 D3
+    # `files` allowlist), so an installed user sees only user docs; a dev clone
+    # additionally exposes maintainer docs (read-only, harmless — agents are
+    # instructed to read cco-docs/users/...).
     _CCO_MOUNT_OVERRIDE=$(printf 'cco-config\t%s\ncco-docs\t%s' "$cfg" "$REPO_ROOT/docs")
     [[ -n "$target_cco" ]] && _CCO_MOUNT_OVERRIDE+=$(printf '\n%s-config\t%s' "$target_name" "$target_cco")
     {

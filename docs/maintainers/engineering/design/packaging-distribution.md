@@ -55,17 +55,25 @@ flowchart LR
 Notes:
 - `engines.node` only constrains the host that runs `npm`/the shim — `cco` itself
   is bash and shells out to `docker`. Keep the floor low (`>=18`).
-- `files` is an **allowlist**; `.npmignore` is a belt-and-suspenders **denylist**
-  for anything that slips through (`tests/`, `reviews/`, `.git/`, `.cco/`,
-  `scripts/`, `docs/maintainers/`, `docs/archive/`, `user-config/`, `.github/`).
-- Prefer `files` as the primary mechanism (default-deny) and keep `.npmignore`
-  minimal — two overlapping denylists drift.
+- The `files` array is the **single authoritative mechanism** (default-deny). npm
+  does **not** let `.npmignore` subtract from a path listed in `files`, so the few
+  in-tree exclusions are done with `files` **negations**, not a second denylist:
+  - `bin/cco` (not `bin/`) — keeps the `bin/test` runner out.
+  - `!proxy/**/*_test.go`, `!proxy/**/cco-docker-proxy` — Go tests + any built
+    binary stay out (the proxy is compiled in the image build, D4).
+  - `!docs/README.md` — the docs root index lives outside `docs/users`.
+  - `templates/project/base/secrets.env` is an intended scaffold **placeholder**
+    and **must ship** — do not blanket-exclude `secrets.env`.
+  - Junk (`.git`, `.DS_Store`, `node_modules`, `*.swp`) is covered by npm's
+    built-in default ignores; no `.npmignore` is needed (a non-functional one would
+    only mislead).
 
 ### 2.1 Hygiene gate
 
-`npm pack --dry-run` must list **only** the allowlisted tree. A CI check greps the
-pack manifest for forbidden paths (`tests/`, `reviews/`, `secrets`, `.git`,
-`user-config/`, `docs/maintainers/`) and fails on any hit.
+`npm pack --dry-run` must list **only** the allowlisted tree (verified: 182 files,
+~402 kB). A CI check greps the pack manifest for forbidden paths (`tests/`,
+`bin/test`, `_test.go`, `reviews/`, `secrets` other than the template placeholder,
+`.git`, `user-config/`, `docs/maintainers/`, `docs/README.md`) and fails on any hit.
 
 ## 3. Read-only-`FRAMEWORK_ROOT` correctness
 
@@ -167,8 +175,10 @@ A thin command that surfaces the packaged `docs/users` on the host:
 - Read-only, offline, always matched to the installed version. No new dependency
   (use `${PAGER:-less}` / plain `cat` fallback).
 
-The same `docs/users/` tree is the config-editor mount source (re-pointed from
-`docs/` to `docs/users` per ADR-0037 D3) and the Pages source (§7).
+The same `docs/users/` tree feeds three consumers: the internal agent mount (the
+config-editor/tutorial mount stays at `$REPO_ROOT/docs` → `/workspace/cco-docs`, but
+the package ships only `docs/users` so an installed user sees only user docs —
+ADR-0037 D3), local `cco docs`, and the Pages source (§7).
 
 ## 7. GitHub Pages renderer (additive, free)
 
@@ -187,7 +197,8 @@ Pages (free for public repos). One source, separate renderer — no second copy.
 - [ ] `npm i -g ./<tgz>` yields a working `cco` on macOS **and** Linux (§3.1, D1).
 - [ ] `USER_CONFIG_DIR` split; internal runtime → STATE; nothing writes in
       `FRAMEWORK_ROOT` (§3.2, D5).
-- [ ] config-editor mount + tutorial re-pointed at `docs/users` (D3).
+- [ ] `docs/users`-only contract met by the `files` allowlist; runtime mount
+      unchanged (D3).
 - [ ] Read-only-`FRAMEWORK_ROOT` test green (§3.3, D5) — the publish gate.
 - [ ] `cco docs` surfaces `docs/users` locally (§6, D9).
 - [ ] `cco update` provenance-aware: prints the right engine-update command (D8).

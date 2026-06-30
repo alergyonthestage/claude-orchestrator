@@ -103,8 +103,16 @@ EXCLUDE:  tests/ scripts/ user-config/ docs/maintainers/ docs/archive/
   excludable).
 - **`docs/users/` only** ships (config-editor mounts it, the tutorial references
   `docs/users/…`). `docs/maintainers/` and `docs/archive/` are human-only and not
-  referenced at runtime → excluded. This requires pointing the config-editor mount
-  + tutorial references at `docs/users` (they already use `users/…` paths).
+  referenced at runtime → excluded.
+  - **Mechanism (refined in implementation):** the runtime mount is **left at
+    `$REPO_ROOT/docs` → `/workspace/cco-docs`** and the doc refs keep reading
+    `cco-docs/users/…`. The "docs/users only" contract is enforced by the **`files`
+    allowlist**: in the npm package `docs/` contains *only* `users/`, so an
+    installed user's internal agents see only user docs. Re-pointing the mount to
+    `docs/users` was rejected — the tutorial's Documentation Map uses dozens of
+    mount-root-relative `users/…` paths, so moving the root would break them. A dev
+    clone still exposes `docs/maintainers/` to the internal agents (read-only,
+    harmless; they are instructed to read `cco-docs/users/…`).
 - **`user-config/` is excluded** (legacy centralized vault, migration-only;
   decentralized-config replaced it — see D5).
 
@@ -223,8 +231,9 @@ One home — the repo's **`docs/users/`** tree — serves all readers:
 - **Cost / follow-ups**:
   - Implementation must add `package.json` + `files`/`.npmignore`, the
     `USER_CONFIG_DIR` split (D5), `cco docs` (D9), the read-only test (D5), the CI
-    workflow + `release.sh` (D6), the Pages action (D9), and re-point the
-    config-editor mount + tutorial at `docs/users` (D3).
+    workflow + `release.sh` (D6), the Pages action (D9). The `docs/users`-only
+    contract (D3) is met by the `files` allowlist alone — the runtime mount stays
+    at `docs/`.
 - **Deferred / out of scope**: Homebrew (post-v1); the `cco update` orchestration
   + responsibility-axis split (update-refactor workstream). The
   `defaults/global/.claude/settings.json` decomposition (§7.6) is now **resolved in
