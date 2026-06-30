@@ -279,7 +279,9 @@ three classes (code-grounded; cco always launches `claude --dangerously-skip-per
 
 ## Open items (carried, not blocking the design)
 
-- **O2 — npm org creation** is a maintainer action (free; requires an npm account).
-  The package name `@claude-orchestrator/cco` is reserved by this decision but must
-  be claimed (the GitHub org is taken → repo stays personal, see D2). Fallback
-  `@alergyonthestage/cco` needs no org.
+- **O2 — npm org creation** — ✅ **done** (2026-06-30): npm org
+  `claude-orchestrator` created (https://www.npmjs.com/org/claude-orchestrator),
+  2FA enabled; repo public at `github.com/alergyonthestage/claude-orchestrator`.
+  `package.json` uses `@claude-orchestrator/cco`. Remaining maintainer steps before
+  the first release: generate the npm publish token + add it as the GitHub
+  `NPM_TOKEN` Actions secret, and enable Pages (Settings → Pages → GitHub Actions).
