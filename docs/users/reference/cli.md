@@ -1,7 +1,7 @@
 # CLI Specification
 
-> Version: 1.0.0
-> Status: v1.0 — Current
+> The installed cco version is the single source of truth (`package.json`); run
+> `cco docs` to read this reference matched to your version.
 > Related: [spec.md](../../maintainers/foundation/analysis/spec.md) | [docker.md](../../maintainers/environment/design/design-docker.md)
 
 ---
@@ -16,21 +16,31 @@ The CLI is a single bash script at `bin/cco` that orchestrates Docker sessions. 
 
 ## 2. Installation
 
+Install the CLI from npm (Node.js 18+), then build the image and init a repo:
+
 ```bash
-# Clone the repo
-git clone <repo-url> ~/claude-orchestrator
-cd ~/claude-orchestrator
+npm install -g @claude-orchestrator/cco
 
 # Build the Docker image, then seed the personal ~/.cco store + init a repo
 cco build
 cd ~/dev/my-repo && cco init
-
-# Add to PATH (if not done automatically)
-# bash:
-echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.bashrc && source ~/.bashrc
-# zsh:
-# echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.zshrc && source ~/.zshrc
 ```
+
+**Updating the engine.** `npm update -g @claude-orchestrator/cco && cco update`
+upgrades the CLI/framework and then applies migrations. `cco update` alone only
+runs migrations + config discovery (§3.16) — it does not upgrade the engine, but
+it prints the right upgrade command for your install method.
+
+**Install from source (contributors).** Clone the repo and put `bin/` on your
+PATH instead of installing from npm:
+
+```bash
+git clone <repo-url> ~/claude-orchestrator
+echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.bashrc && source ~/.bashrc  # zsh: ~/.zshrc
+cco build
+```
+
+See [CONTRIBUTING.md](../../../CONTRIBUTING.md) for the full dev/release workflow.
 
 ---
 
@@ -962,6 +972,13 @@ Run pending migrations, discover available updates, and notify of new features.
    available updates to opinionated files (rules, agents, skills).
 3. **Changelog**: report additive changes (new features) from `changelog.yml`.
 
+> **`cco update` does not upgrade the engine.** It migrates and discovers config
+> for the cco version you already have; it never replaces the `cco` binary or the
+> framework tree. At the end of a run it detects how cco was installed (npm /
+> Homebrew / source clone) and prints the matching engine-upgrade command — e.g.
+> `npm update -g @claude-orchestrator/cco && cco update` for an npm install, or
+> `git -C <repo> pull && cco update` for a source clone.
+
 Migrations and discovery are read-only by default — opinionated file changes
 require explicit `--sync` to apply interactively. The merge ancestors (`base/`) and
 update metadata (`meta`) are kept in machine-local STATE
@@ -1811,6 +1828,28 @@ Options:
 
 Removes an llms entry. Previews and confirms first (ADR-0029 D2); a still-referenced
 entry needs `--force`. Non-interactive without `-y` → die.
+
+---
+
+### 3.33 `cco docs [<topic>]`
+
+Browse the **bundled user documentation** on the host — read-only, offline, and
+always matched to your **installed** cco version (the npm package ships
+`docs/users/`).
+
+```
+Usage: cco docs [<topic>]
+
+  (no args)     List the available user-doc topics
+  <topic>       Open the matching guide (path or name under docs/users,
+                e.g. `cco docs reference/cli` or `cco docs cli`)
+```
+
+- Uses your `$PAGER` (default `less`) when interactive; falls back to plain
+  output in pipes/CI.
+- The same `docs/users/` tree is published to the project's GitHub Pages site
+  (which tracks latest-on-`main`); `cco docs` shows the version you have
+  installed — web is for discovery, local is version-accurate.
 
 ---
 
