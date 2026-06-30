@@ -203,13 +203,17 @@ Pages (free for public repos). One source, separate renderer — no second copy.
 ## 8. Definition of done (traceable to ADR-0037)
 
 - [ ] `package.json` + `files`/`.npmignore`; `npm pack --dry-run` clean (§2, D3).
-- [ ] `npm i -g ./<tgz>` yields a working `cco` on macOS **and** Linux (§3.1, D1).
+- [x] `npm i -g ./<tgz>` yields a working `cco` on **Linux** (validated: shim
+      `cco → ../lib/node_modules/@claude-orchestrator/cco/bin/cco`, readlink resolves
+      REPO_ROOT to the package root, `lib/*.sh` source cleanly from an arbitrary cwd).
+      **macOS** still to validate on a Mac / CI (§3.1, D1).
 - [ ] `USER_CONFIG_DIR` split; internal runtime → STATE; nothing writes in
       `FRAMEWORK_ROOT` (§3.2, D5).
 - [ ] `docs/users`-only contract met by the `files` allowlist; runtime mount
       unchanged (D3).
 - [ ] Read-only-`FRAMEWORK_ROOT` test green (§3.3, D5) — the publish gate.
-- [ ] `cco docs` surfaces `docs/users` locally (§6, D9).
+- [x] `cco docs` surfaces `docs/users` locally (§6, D9) — `lib/cmd-docs.sh`,
+      `tests/test_docs.sh`, changelog #25.
 - [ ] `cco update` provenance-aware: prints the right engine-update command (D8).
 - [ ] `release.sh` + CI-on-tag workflow + npm-pack hygiene check (§5, D6).
 - [ ] Pages action publishing `docs/users` (§7, D9).
