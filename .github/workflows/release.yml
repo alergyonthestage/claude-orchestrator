@@ -15,15 +15,15 @@ name: Release
 #        Workflow filename    : release.yml        (filename only, NOT a path)
 #        Environment          : (leave empty — this job uses no GH environment)
 #        Allowed actions      : npm publish
-# A mismatch in any field → the OIDC token is rejected → npm publish fails E404.
-# After that, every tag push publishes here with no secret.
+# A mismatch in any field → the OIDC token exchange returns 404 ("package not
+# found") and the publish fails. After that, every tag push publishes with no secret.
 on:
   push:
     tags:
       - 'v*'
-  # Manual trigger for fast publish-auth debugging WITHOUT a tag or the full suite.
-  # Same filename → same trusted-publisher match as a real release. A successful
-  # dispatch run publishes the current package.json version for real.
+  # Manual publish path (no tag) — run from the Actions tab to re-publish or recover
+  # a release. Same workflow filename → same trusted-publisher match as a tag run; it
+  # runs the full suite too and publishes the current package.json version.
   workflow_dispatch: {}
 
 permissions:
@@ -59,23 +59,6 @@ jobs:
             exit 1
           fi
 
-      # OIDC auth diagnostics (cheap; helps pin down ENEEDAUTH vs E404). If the
-      # token-request URL is MISSING, GitHub is not issuing an OIDC token (repo/org
-      # Actions setting) — npm then has no credential → ENEEDAUTH.
-      - name: OIDC diagnostics
-        run: |
-          echo "event_name: ${{ github.event_name }}"
-          echo "repository: ${{ github.repository }}"
-          echo "workflow_ref: ${{ github.workflow_ref }}"
-          if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
-            echo "OIDC request URL: PRESENT"
-          else
-            echo "OIDC request URL: MISSING (id-token not available to the job)"
-          fi
-          [ -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ] && echo "OIDC request token: PRESENT" || echo "OIDC request token: MISSING"
-          echo "--- effective npm userconfig (${NPM_CONFIG_USERCONFIG:-unset}) ---"
-          sed 's/_authToken=.*/_authToken=<redacted>/' "${NPM_CONFIG_USERCONFIG:-/dev/null}" 2>/dev/null || echo "(none)"
-
       - name: Verify tag matches package.json version
         if: github.event_name == 'push'
         run: |
@@ -86,8 +69,10 @@ jobs:
             exit 1
           fi
 
+      # Runs on both a tag push and a manual dispatch: a manual publish must be just
+      # as gated as a tagged one. (The tag↔version check above is push-only since a
+      # dispatch has no tag.)
       - name: Test suite (includes the read-only FRAMEWORK_ROOT gate)
-        if: github.event_name == 'push'
         run: bin/test
 
       - name: npm pack hygiene
@@ -97,14 +82,11 @@ jobs:
       # trusted publisher and NO `_authToken` line in any .npmrc, npm mints a
       # short-lived credential and attaches provenance automatically (no token, no
       # --provenance flag needed — per the official npm docs). --access public keeps
-      # the scoped package public. There is intentionally NO NODE_AUTH_TOKEN env:
-      # nothing should feed an auth line, so OIDC is the only credential path.
-      # --loglevel verbose surfaces the OIDC token-exchange HTTP call (a POST to the
-      # registry's /-/npm/v1/oidc/ endpoint) WITHOUT printing the token itself, so a
-      # failing exchange is visible. Drop the flag for the final release commit.
-      # NB: E404 here = trusted-publisher config does not match this run
-      # (Organization/User, Repository, Workflow filename `release.yml` exactly,
-      # Environment empty); ENEEDAUTH = OIDC produced no credential — cross-check the
-      # "OIDC diagnostics" step (ACTIONS_ID_TOKEN_REQUEST_URL PRESENT vs MISSING).
+      # the scoped package public. There is intentionally NO NODE_AUTH_TOKEN env so
+      # OIDC is the only credential path.
+      # NB: a 404 on the token exchange ("package not found") means the npm Trusted
+      # Publisher does not match this run (Organization/User, Repository, Workflow
+      # filename `release.yml`, Environment empty); ENEEDAUTH = OIDC minted no
+      # credential. Re-run with `--loglevel verbose` to see the token-exchange call.
       - name: Publish to npm (Trusted Publishing / OIDC)
-        run: npm publish --access public --loglevel verbose
+        run: npm publish --access public

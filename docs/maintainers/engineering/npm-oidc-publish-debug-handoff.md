@@ -1,10 +1,17 @@
 # Handoff — debug the CI npm publish (OIDC Trusted Publishing) failure
 
 > **Created**: 2026-06-30 · **Track**: release engineering (continues Handover C).
-> **Status**: BLOCKED on one thing only — the **CI `npm publish` step fails**. Everything
-> else in the npm-packaging workstream (C) is implemented and green.
-> **Goal of the next session**: make `.github/workflows/release.yml` publish
-> `@claude-orchestrator/cco` to npm via OIDC, then finish the v0.5.1 release.
+> **Status**: ✅ **RESOLVED (2026-06-30)** — `@claude-orchestrator/cco@0.5.1` is
+> published to npm via OIDC (verified: `npm view … version → 0.5.1`,
+> `dist-tags.latest = 0.5.1`).
+> **Two-part fix:** (1) workflow — drop `registry-url` + the `NODE_AUTH_TOKEN` env so
+> no `_authToken` line ever reaches npm and OIDC is the only credential path (commit
+> `f5f79b3`); (2) npm side — recreate the package's Trusted Publisher so its fields
+> exactly match the run's claims (org `alergyonthestage`, repo `claude-orchestrator`,
+> workflow `release.yml`, environment empty), which cleared the token-exchange 404.
+> The §0 update records the verified diagnosis; debug affordances were stripped at
+> wrap-up (the `workflow_dispatch` manual-publish path was kept by choice). The
+> sections below are retained as the debugging trail.
 
 This doc deliberately separates **VERIFIED facts** (from CI logs / the repo) from
 **UNVERIFIED hypotheses**. Do not treat hypotheses as settled.
