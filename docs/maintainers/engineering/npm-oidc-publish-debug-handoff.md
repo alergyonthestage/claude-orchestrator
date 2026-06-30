@@ -11,6 +11,53 @@ This doc deliberately separates **VERIFIED facts** (from CI logs / the repo) fro
 
 ---
 
+## 0. UPDATE (2026-06-30, run `76871662358`) — root cause ISOLATED (VERIFIED)
+
+The clean-OIDC workflow fix (commit `f5f79b3`: drop `registry-url` + the
+`NODE_AUTH_TOKEN` env so no `_authToken` line ever reaches npm) moved us decisively
+forward. From a `workflow_dispatch` run (logs in `logs_76871662358/publish/`):
+
+- **OIDC diagnostics step**: `OIDC request URL: PRESENT`, `OIDC request token:
+  PRESENT`, npm userconfig `unset` (no `.npmrc` auth line). → GitHub **IS** issuing
+  the OIDC token to the job. **Hypothesis #1 (GitHub not issuing) is RULED OUT.**
+- **Publish step (`--loglevel verbose`)** — npm now runs the full OIDC handshake:
+  1. `GET …/idtoken/…?audience=npm:registry.npmjs.org → 200` (npm fetched the GH OIDC token)
+  2. `POST https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/@claude-orchestrator%2fcco → 404`
+  3. `npm verbose oidc Failed token exchange request … "OIDC token exchange error - package not found"`
+  4. → falls through to **ENEEDAUTH** (no credential minted).
+
+**Conclusion (VERIFIED):** the failure is now entirely **npm-registry-side**. npm
+presents a valid GitHub OIDC token; the registry's package-scoped exchange endpoint
+returns **404 "package not found"** because **no Trusted Publisher record matches
+this run's OIDC claims** for `@claude-orchestrator/cco` (the package itself exists —
+`0.5.0` is published). **Hypothesis #2 (trusted-publisher mismatch) is CONFIRMED as
+the active cause.** The run's exact claims to match against:
+
+| Claim | Value (from this run) |
+|---|---|
+| Organization or user | `alergyonthestage` |
+| Repository | `claude-orchestrator` |
+| Workflow filename | `release.yml` (from `workflow_ref …/release.yml@refs/heads/main`) |
+| Environment | (none) |
+
+**Next action (npm side, maintainer):** at
+`npmjs.com/package/@claude-orchestrator/cco/access` **delete and recreate** the
+GitHub-Actions Trusted Publisher with those exact values — **Environment empty**,
+workflow filename **`release.yml`** (filename only, never a path), org/repo casing
+exact — then re-run the dispatch. A green run publishes `0.5.1` for real.
+
+**Fallback:** if a re-verified, exactly-matching config still 404s, suspect the
+unresolved npm/cli scoped-package bug **[npm/cli#8678]** (same error class) and
+unblock the v0.5.1 release by publishing manually from a Mac
+(`npm publish --access public`), keeping OIDC for future releases.
+
+> The workflow itself is now correct for OIDC; §3 below describes the pre-fix state.
+> §5 hypotheses #1/#2 are resolved by this update (#1 ruled out, #2 confirmed).
+
+[npm/cli#8678]: https://github.com/npm/cli/issues/8678
+
+---
+
 ## 1. Where we are (VERIFIED)
 
 - **Workstream C (npm packaging) is implemented**, suite **1036/0**. Decisions in
