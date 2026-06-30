@@ -8,8 +8,14 @@ name: Release
 # One-time setup before the first CI release:
 #   1) bootstrap the FIRST publish manually from a maintainer machine
 #      (`npm login` + `npm publish --access public`) so the package exists;
-#   2) on npmjs.com → the package → Settings → Trusted Publisher → add this repo
-#      (alergyonthestage/claude-orchestrator) + workflow `release.yml`.
+#   2) at https://www.npmjs.com/package/@claude-orchestrator/cco/access →
+#      Trusted Publisher → GitHub Actions, with EXACT fields:
+#        Organization or user : alergyonthestage
+#        Repository           : claude-orchestrator
+#        Workflow filename    : release.yml        (filename only, NOT a path)
+#        Environment          : (leave empty — this job uses no GH environment)
+#        Allowed actions      : npm publish
+# A mismatch in any field → the OIDC token is rejected → npm publish fails E404.
 # After that, every tag push publishes here with no secret.
 on:
   push:
@@ -31,10 +37,12 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
-      # Trusted Publishing (OIDC) requires a recent npm (>= 11.5.1); node 22 ships
-      # npm 10.x, so upgrade first. This also enables build provenance.
+      # Trusted Publishing (OIDC) requires npm >= 11.5.1; node 22 ships npm 10.x,
+      # so upgrade first, then print the version for diagnostics.
       - name: Use an OIDC-capable npm
-        run: npm install -g npm@latest
+        run: |
+          npm install -g npm@latest
+          npm --version
 
       - name: Verify tag matches package.json version
         run: |
@@ -52,6 +60,10 @@ jobs:
         run: scripts/check-pack-hygiene.sh
 
       # No NODE_AUTH_TOKEN — npm detects the OIDC trusted publisher and mints a
-      # short-lived credential (and attaches provenance) automatically.
+      # short-lived credential. --provenance is explicit (some npm versions don't
+      # enable it automatically) and emits a supply-chain attestation.
+      # NB: an E404 here almost always means the npm Trusted Publisher config does
+      # not match this run — Organization/User, Repository, and Workflow filename
+      # (just `release.yml`, no path) must match exactly, with Environment empty.
       - name: Publish to npm (Trusted Publishing / OIDC)
-        run: npm publish --access public
+        run: npm publish --access public --provenance
