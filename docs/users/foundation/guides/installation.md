@@ -30,7 +30,7 @@ cco build
 ```
 
 That's it — `cco` is now on your PATH (npm links it for you). Verify with
-`cco --help` or `cco list`.
+`cco --version` (or `cco --help`).
 
 > **Tip**: Run `cco start tutorial` to start the interactive tutorial. It helps you
 > learn cco concepts, set up your first project, create knowledge packs, and
