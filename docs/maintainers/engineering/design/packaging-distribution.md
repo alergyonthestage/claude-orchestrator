@@ -214,7 +214,9 @@ Pages (free for public repos). One source, separate renderer — no second copy.
 - [ ] Read-only-`FRAMEWORK_ROOT` test green (§3.3, D5) — the publish gate.
 - [x] `cco docs` surfaces `docs/users` locally (§6, D9) — `lib/cmd-docs.sh`,
       `tests/test_docs.sh`, changelog #25.
-- [ ] `cco update` provenance-aware: prints the right engine-update command (D8).
+- [x] `cco update` provenance-aware: prints the right engine-update command (D8)
+      — `_cco_install_provenance` + `_cco_engine_update_hint`,
+      `tests/test_update_provenance.sh`, changelog #26.
 - [ ] `release.sh` + CI-on-tag workflow + npm-pack hygiene check (§5, D6).
 - [ ] Pages action publishing `docs/users` (§7, D9).
 - [ ] Version coupling documented: `package.json` → image tag; Claude pin
