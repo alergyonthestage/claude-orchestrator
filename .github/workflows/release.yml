@@ -36,13 +36,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Matches the official npm Trusted Publishing workflow: node 24 (ships an
-      # OIDC-capable npm >= 11.5.1), registry-url set, no package-manager cache.
+      # node 24 ships an OIDC-capable npm (>= 11.5.1). We deliberately DO NOT set
+      # registry-url: it makes setup-node write an `_authToken` line into a temp
+      # .npmrc (placeholder when NODE_AUTH_TOKEN is unset, empty when it is ""), and
+      # that auth line suppresses npm's OIDC path → E404 (literal placeholder token
+      # sent) or ENEEDAUTH (empty token). With no .npmrc auth line at all, npm
+      # publishes to the default registry (registry.npmjs.org) via OIDC cleanly.
+      # Ref: community discussion #176761 ("do NOT use registry-url with OIDC").
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
-          package-manager-cache: false
 
       # Guarantee npm >= 11.5.1 (OIDC is silently skipped on older npm) and FAIL
       # LOUDLY if it isn't, so a version problem is unambiguous in the log.
@@ -91,17 +94,17 @@ jobs:
         run: scripts/check-pack-hygiene.sh
 
       # OIDC trusted publishing: with npm >= 11.5.1 + id-token: write + a matching
-      # trusted publisher, npm mints a short-lived credential and attaches
-      # provenance automatically (no token, no --provenance flag needed — per the
-      # official npm docs). --access public keeps the scoped package public.
-      # NB: an E404 here means the trusted-publisher config does not match this run
+      # trusted publisher and NO `_authToken` line in any .npmrc, npm mints a
+      # short-lived credential and attaches provenance automatically (no token, no
+      # --provenance flag needed — per the official npm docs). --access public keeps
+      # the scoped package public. There is intentionally NO NODE_AUTH_TOKEN env:
+      # nothing should feed an auth line, so OIDC is the only credential path.
+      # --loglevel verbose surfaces the OIDC token-exchange HTTP call (a POST to the
+      # registry's /-/npm/v1/oidc/ endpoint) WITHOUT printing the token itself, so a
+      # failing exchange is visible. Drop the flag for the final release commit.
+      # NB: E404 here = trusted-publisher config does not match this run
       # (Organization/User, Repository, Workflow filename `release.yml` exactly,
-      # Environment empty); ENEEDAUTH means OIDC did not run (npm too old).
+      # Environment empty); ENEEDAUTH = OIDC produced no credential — cross-check the
+      # "OIDC diagnostics" step (ACTIONS_ID_TOKEN_REQUEST_URL PRESENT vs MISSING).
       - name: Publish to npm (Trusted Publishing / OIDC)
-        run: npm publish --access public
-        env:
-          # setup-node's registry-url writes a PLACEHOLDER _authToken into .npmrc;
-          # with it set, npm tries (failed) token auth and never falls through to
-          # OIDC → E404. Emptying it removes the placeholder while keeping the
-          # registry context, so npm uses OIDC (community discussion #176761).
-          NODE_AUTH_TOKEN: ""
+        run: npm publish --access public --loglevel verbose
