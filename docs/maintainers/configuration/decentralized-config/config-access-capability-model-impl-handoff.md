@@ -48,9 +48,27 @@ Design branch with the ADRs + doc rewrites: `feat/config-access/capability-model
   `tests/test_access_resolution.sh` (12 — pure helpers, 4-layer precedence, alias, enum
   validation, CLI-reaches-resolution). Suite **1055 pass / 1 fail** (same pre-existing env-only
   symlink test).
-- **Steps 3–7 — pending.** Next up: **step 3** (Axis-B/Axis-A mount generation driven by the
-  resolved knobs — generalize `_committed_ro`; switch off the legacy `enable_config_edit` bool;
-  add the `changelog.yml` entry + template `access:` block since the knobs become user-visible).
+- **Step 3 — Axis-B/Axis-A mount generation: ✅ done** (2026-07-01, same branch). Mount modes
+  now derive from the resolved knobs (`lib/cmd-start.sh` `_start_generate_compose`):
+  **Axis B** (`claude_access`) — `none` = B1 `<repo>/.claude` overlaid `:ro` + B2 `/workspace/.claude`
+  `:ro` + B3 global authoring `:ro`; `repo` (default) = B1+B2 rw, B3 authoring ro; `all` = + B3
+  authoring rw. `settings.json` is **always rw** (runtime prefs, not authoring). **Axis A**
+  (`cco_access`) — the `<repo>/.cco` `:ro` overlay (generalized `_committed_ro`) is dropped only
+  under `edit-project`/`edit-all` (or `is_internal`, until step 5). `--enable-config-edit` flows
+  through the step-2 alias (`cco_access=edit-project`) so the old hatch still unlocks A1. Resolved
+  access shown in the dry-run summary. **User-visible → update-system obligations landed**:
+  `changelog.yml` **#28** (additive) + optional `access:` block in
+  `templates/project/base/project.yml`. **No migration** (purely-optional block, code defaults on
+  absence). Tests: 4 mount-mode assertions added to `tests/test_access_resolution.sh` (B2 rw
+  default / B3 authoring ro; claude none locks B1+B2; claude all unlocks B3; cco edit-project
+  unlocks A1). Suite **1059 pass / 1 fail** (same pre-existing env-only symlink test).
+  **Not yet done (deferred to step 4/5):** A2 `~/.cco` structural mount + secret filtering + the
+  wrapped-cco shim / A3 / R2 / container-operator; the built-in **presets** (config-editor
+  `edit-all`/`all`, tutorial `read`/`none`) still ride the legacy `is_internal` branch.
+- **Steps 4–7 — pending.** Next up: **step 4** (wrapped-`cco` shim + container-operator mode +
+  bucket mounts + token/secret exclusion + `Dockerfile` bake; ships R2). **Recommended fresh
+  session** — large, distinct surface (see reading order §8; re-ground `bin/cco` + `Dockerfile` +
+  `config/entrypoint.sh`).
 
 ---
 
