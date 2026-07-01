@@ -122,6 +122,21 @@ RUN chown claude:claude /home/claude/.tmux.conf \
     && chmod +x /usr/local/bin/entrypoint.sh \
     && chmod +x /usr/local/bin/cco-hooks/*.sh
 
+# ── cco CLI (wrapped-cco shim — ADR-0036 D4) ─────────────────────────
+# Bake the tool code so `cco` runs in-container behind the whitelist shim under
+# container-operator mode (P9: cco on PATH, never a reimplementation). Only the
+# code the whitelisted verbs need is baked: bin/ + lib/ (the CLI), templates/
+# (pack|template create), changelog.yml + package.json (version/news). defaults/
+# and migrations/ are NOT baked — the verbs that read them (init/update/sync) are
+# host-only and refused by the shim. bin/cco resolves REPO_ROOT via its symlink,
+# so /opt/cco is the framework root; jq is already installed above.
+COPY bin/ /opt/cco/bin/
+COPY lib/ /opt/cco/lib/
+COPY templates/ /opt/cco/templates/
+COPY changelog.yml package.json /opt/cco/
+RUN chmod +x /opt/cco/bin/cco \
+    && ln -sf /opt/cco/bin/cco /usr/local/bin/cco
+
 # ── Managed settings (framework infrastructure — non-overridable) ────
 COPY --chown=root:root defaults/managed/ /etc/claude-code/
 # Directories need 755 (execute bit for traversal); files need 644 (read-only).
