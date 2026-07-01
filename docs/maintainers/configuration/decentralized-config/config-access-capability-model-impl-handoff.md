@@ -18,6 +18,37 @@ Design branch with the ADRs + doc rewrites: `feat/config-access/capability-model
 
 ---
 
+## ▶ NEXT SESSION — step 6 (R1 self-info, ADR-0041). Read this first.
+
+**Where we are (2026-07-01).** Steps **1–5 of 7 done** on branch
+`feat/config-access/capability-model` (**not pushed** — push from the Mac). Last commit `99a58dd`.
+Suite baseline **1088 pass / 1 fail** — the single fail is the **pre-existing, env-only**
+`test_paths_symlink_safe_tool_root` (the DATA bucket is unwritable inside the self-dev container;
+reproduces on the unchanged tree — **not a regression**, do not chase it). Run `./bin/test`.
+
+**Do next — step 6 (R1).** Implement [ADR-0041](decisions/0041-unified-session-info-surface.md):
+fold the `packs.md` generator into `lib/workspace.sh` so **one** `/workspace/.claude/workspace.yml`
+carries `project/repos/packs/knowledge/llms/extra_mounts` + an optional `path_map` section emitted
+**only when `show_host_paths=on`** (this is where the step-4-deferred `show_host_paths` read-output
+toggle finally lands). **Net cut (R1-D4): no dual-emit** — migrate the three consumers
+(`config/hooks/session-context.sh`, `config/hooks/subagent-context.sh`, the managed
+`init-workspace` skill), reconcile the managed `memory-policy.md` `packs.md` reference, **and delete
+`packs.md` in the same change**. Then the **completeness gate on `develop`** (R1-D5): `./bin/test` +
+a real `cco start` dogfood confirm no context regressed, before release. Key files + the R1
+doc-sweep list are in §3; tests in §5. `show_host_paths` is already resolved per session
+(`_start_resolve_access` sets the `show_host_paths` local); `_start_generate_metadata`
+(`lib/cmd-start.sh` ~1000) currently emits `packs.md` + `workspace.yml` separately — that is the
+seam to unify. Reading order: §8. Independent of steps 1–5 except it consumes the resolved
+`show_host_paths` knob.
+
+**Also open (small, from step 5, optional):** granular narrowing of the config-editor *browse*
+mounts (`/workspace/cco-config`, `<name>-config`) by edit level — today they are rw regardless, and
+`--cco-access edit-project` on config-editor only narrows the operator buckets. The generated
+`project.yml` is built in `_setup_internal_config_editor` **before** access is resolved, so wiring
+this needs either a reorder or a compose-time mode adjustment. Not required for step 6.
+
+---
+
 ## 0. Implementation progress (update as steps land)
 
 - **Step 1 — caller-context (D8): ✅ done** (2026-07-01, branch
