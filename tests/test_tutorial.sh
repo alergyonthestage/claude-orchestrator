@@ -59,11 +59,18 @@ test_setup_internal_tutorial_substitutes_placeholders() {
     assert_file_exists "$runtime_yml"
     assert_no_placeholder "$runtime_yml" "{{CCO_REPO_ROOT}}"
     assert_no_placeholder "$runtime_yml" "{{CCO_CONFIG_DIR}}"
-    assert_file_contains "$runtime_yml" "$REPO_ROOT/docs"
-    # A.4 cutover: the tutorial now mounts the personal store ~/.cco (read-only)
-    # at /workspace/cco-config, not the legacy central user-config.
-    assert_file_contains "$runtime_yml" "$(_cco_config_dir)"
+    # The tutorial's mounts are now NAME-based (like config-editor): the yml carries
+    # logical names + container targets, never host paths (AD3/G8), and the host
+    # paths are published via the in-process override (ADR-0036 step 5, 5f).
+    assert_file_contains "$runtime_yml" "name: cco-config"
+    assert_file_contains "$runtime_yml" "name: cco-docs"
     assert_file_contains "$runtime_yml" "/workspace/cco-config"
+    # Host paths live in _CCO_MOUNT_OVERRIDE, not the committed yml.
+    assert_file_not_contains "$runtime_yml" "$(_cco_config_dir)"
+    [[ "$_CCO_MOUNT_OVERRIDE" == *"cco-config"$'\t'"$(_cco_config_dir)"* ]] \
+        || fail "tutorial override should publish cco-config → $(_cco_config_dir)"
+    [[ "$_CCO_MOUNT_OVERRIDE" == *"cco-docs"$'\t'"$REPO_ROOT/docs"* ]] \
+        || fail "tutorial override should publish cco-docs → $REPO_ROOT/docs"
 }
 
 test_setup_internal_tutorial_has_skills() {
@@ -126,6 +133,34 @@ test_setup_internal_tutorial_refreshes_on_rerun() {
     # Session memory lives in STATE (ADR-0009), not the runtime dir — setup never
     # creates a runtime-dir memory/ to "preserve" (C9, pre-e2e review).
     assert_dir_not_exists "$runtime_dir/memory"
+}
+
+# ── Preset + wrapped-cco (ADR-0036 step 5) ────────────────────────────
+
+# Tutorial resolves to the read/none preset → read-only wrapped cco (operator
+# env at cco_access=read), .claude authoring locked (none).
+test_start_tutorial_preset_read_none() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco start tutorial --dry-run
+    assert_output_contains "claude=none cco=read"
+    run_cco start tutorial --dry-run --dump
+    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "CCO_CCO_ACCESS=read"
+}
+
+# The personal store is mounted read-only in the tutorial and its real secrets
+# are masked (the tutorial never sees secret values — ADR-0036 D4).
+test_start_tutorial_masks_secrets_readonly_store() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    printf 'G=1\n' > "$HOME/.cco/secrets.env"
+    run_cco start tutorial --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_contains "$compose" "secret-mask:/workspace/cco-config/secrets.env:ro" || return 1
+    # cco-config stays read-only in the tutorial.
+    assert_file_contains "$compose" "$HOME/.cco:/workspace/cco-config:ro" || return 1
 }
 
 # ── cco start tutorial: reserved name conflict ────────────────────────

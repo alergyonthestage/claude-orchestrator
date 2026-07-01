@@ -43,6 +43,12 @@ _setup_internal_tutorial() {
         "$source_dir/project.yml" > "$runtime_dir/project.yml" \
         || die "Failed to generate tutorial project.yml"
 
+    # The tutorial's cco-docs/cco-config mounts are name-based (like config-editor):
+    # publish the host paths via the in-process session override so they resolve at
+    # start without polluting the persistent user-facing index (review H4), and no
+    # host path is committed (AD3/G8). Read-only mounts (the tutorial never edits).
+    _CCO_MOUNT_OVERRIDE=$(printf 'cco-config\t%s\ncco-docs\t%s' "$(_cco_config_dir)" "$REPO_ROOT/docs")
+
     # Copy setup.sh if present
     if [[ -f "$source_dir/setup.sh" ]]; then
         cp "$source_dir/setup.sh" "$runtime_dir/setup.sh"
@@ -58,7 +64,7 @@ _setup_internal_tutorial() {
 # committed, so AD3/G8 hold by construction.
 # Args: <target_cco_path> <target_name>  (both empty in global mode)
 _setup_internal_config_editor() {
-    local target_cco="$1" target_name="$2"
+    local targets="$1"   # newline-joined "name<TAB><repo>/.cco" pairs (may be empty)
     local source_dir="$REPO_ROOT/internal/config-editor"
     local runtime_dir="$(_cco_internal_runtime_dir)/config-editor"
 
@@ -77,9 +83,9 @@ _setup_internal_config_editor() {
     chmod -R u+w "$runtime_dir/.claude"
     [[ -f "$source_dir/setup.sh" ]] && cp "$source_dir/setup.sh" "$runtime_dir/setup.sh"
 
-    # Generate project.yml: ~/.cco rw + docs ro (+ the target's .cco rw in
-    # project mode). The personal store is mounted read-write — editing it is
-    # the whole purpose of this session.
+    # Generate project.yml: ~/.cco rw + docs ro (+ each target's .cco rw, from the
+    # resolved --all/--project/cwd scope). The personal store is mounted read-write
+    # — editing it is the whole purpose of this session.
     local cfg; cfg="$(_cco_config_dir)"
     # The mount bridge resolves names via the STATE index (name → host path), but
     # these are EPHEMERAL internal names — writing them into the persistent,
@@ -95,7 +101,11 @@ _setup_internal_config_editor() {
     # additionally exposes maintainer docs (read-only, harmless — agents are
     # instructed to read cco-docs/users/...).
     _CCO_MOUNT_OVERRIDE=$(printf 'cco-config\t%s\ncco-docs\t%s' "$cfg" "$REPO_ROOT/docs")
-    [[ -n "$target_cco" ]] && _CCO_MOUNT_OVERRIDE+=$(printf '\n%s-config\t%s' "$target_name" "$target_cco")
+    local _tn _tp
+    while IFS=$'\t' read -r _tn _tp; do
+        [[ -z "$_tn" ]] && continue
+        _CCO_MOUNT_OVERRIDE+=$(printf '\n%s-config\t%s' "$_tn" "$_tp")
+    done <<< "$targets"
     {
         cat <<YAML
 name: config-editor
@@ -108,13 +118,14 @@ extra_mounts:
     target: /workspace/cco-docs
     readonly: true
 YAML
-        if [[ -n "$target_cco" ]]; then
+        while IFS=$'\t' read -r _tn _tp; do
+            [[ -z "$_tn" ]] && continue
             cat <<YAML
-  - name: ${target_name}-config
-    target: /workspace/${target_name}-config
+  - name: ${_tn}-config
+    target: /workspace/${_tn}-config
     readonly: false
 YAML
-        fi
+        done <<< "$targets"
         cat <<YAML
 docker:
   mount_socket: false
@@ -173,28 +184,45 @@ _access_pick() {
 # the normal-session values (repo / none / on); step 5 layers the built-in
 # tutorial/config-editor presets on top.
 _start_resolve_access() {
-    local gfile; gfile=$(_cco_access_file)
-    # access.<key> is a 2-level block (2-space indent) → yml_get auto-depth 2
-    # (NOT yml_get_deep, which forces depth 3 and would miss it).
-    local p_claude p_cco p_shp g_claude="" g_cco="" g_shp=""
-    p_claude=$(yml_get "$project_yml" "access.claude" 2>/dev/null)
-    p_cco=$(yml_get "$project_yml" "access.cco" 2>/dev/null)
-    p_shp=$(yml_get "$project_yml" "access.show_host_paths" 2>/dev/null)
-    if [[ -f "$gfile" ]]; then
-        g_claude=$(yml_get "$gfile" "claude" 2>/dev/null)
-        g_cco=$(yml_get "$gfile" "cco" 2>/dev/null)
-        g_shp=$(yml_get "$gfile" "show_host_paths" 2>/dev/null)
+    # Preset defaults (D6): normal = repo/none/on; the built-ins are presets —
+    # config-editor = all/edit-all/on, tutorial = none/read/on. These become the
+    # level-4 default of the precedence chain.
+    local _preset="${session_preset:-normal}"
+    local d_claude="repo" d_cco="none" d_shp="true"
+    case "$_preset" in
+        config-editor) d_claude="all";  d_cco="edit-all"; d_shp="true" ;;
+        tutorial)      d_claude="none"; d_cco="read";     d_shp="true" ;;
+    esac
+
+    # For a built-in the precedence collapses to CLI > preset: its generated
+    # project.yml has no access: block, and the global ~/.cco/access.yml governs the
+    # USER's own projects, not a framework built-in (so it must not, e.g., neuter
+    # config-editor to none). A user can still narrow with an explicit --cco-access.
+    # A normal session uses the full CLI > project.yml access: > global > preset.
+    local p_claude="" p_cco="" p_shp="" g_claude="" g_cco="" g_shp=""
+    if [[ "$_preset" == "normal" ]]; then
+        # access.<key> is a 2-level block (2-space indent) → yml_get auto-depth 2
+        # (NOT yml_get_deep, which forces depth 3 and would miss it).
+        p_claude=$(yml_get "$project_yml" "access.claude" 2>/dev/null)
+        p_cco=$(yml_get "$project_yml" "access.cco" 2>/dev/null)
+        p_shp=$(yml_get "$project_yml" "access.show_host_paths" 2>/dev/null)
+        local gfile; gfile=$(_cco_access_file)
+        if [[ -f "$gfile" ]]; then
+            g_claude=$(yml_get "$gfile" "claude" 2>/dev/null)
+            g_cco=$(yml_get "$gfile" "cco" 2>/dev/null)
+            g_shp=$(yml_get "$gfile" "show_host_paths" 2>/dev/null)
+        fi
     fi
 
-    claude_access=$(_access_pick "$cli_claude_access" "$p_claude" "$g_claude" "repo")
-    cco_access=$(_access_pick "$cli_cco_access" "$p_cco" "$g_cco" "none")
+    claude_access=$(_access_pick "$cli_claude_access" "$p_claude" "$g_claude" "$d_claude")
+    cco_access=$(_access_pick "$cli_cco_access" "$p_cco" "$g_cco" "$d_cco")
     _access_is_member "$_ACCESS_CLAUDE_VALUES" "$claude_access" \
         || die "Invalid claude_access '$claude_access' (expected one of: $_ACCESS_CLAUDE_VALUES). Set --claude-access, project.yml access.claude, or ~/.cco/access.yml."
     _access_is_member "$_ACCESS_CCO_VALUES" "$cco_access" \
         || die "Invalid cco_access '$cco_access' (expected one of: $_ACCESS_CCO_VALUES). Set --cco-access, project.yml access.cco, or ~/.cco/access.yml."
 
     local shp_raw shp_norm
-    shp_raw=$(_access_pick "$cli_show_host_paths" "$p_shp" "$g_shp" "true")
+    shp_raw=$(_access_pick "$cli_show_host_paths" "$p_shp" "$g_shp" "$d_shp")
     shp_norm=$(_access_norm_bool "$shp_raw") \
         || die "Invalid show_host_paths '$shp_raw' (expected: true|false / on|off)."
     show_host_paths="$shp_norm"
@@ -232,6 +260,38 @@ _emit_secret_overlays() {
 # variable scope. They must NOT redeclare variables — they read/write
 # cmd_start()'s locals directly.
 
+# Collect the config-editor's edit targets (ADR-0036 D-α, D6). Sets the shared
+# _ce_targets to newline-joined "name<TAB><repo>/.cco" pairs from: --all (every
+# resolvable project's <repo>/.cco, unresolved skipped), repeatable --project
+# <name> (each MUST resolve — dies otherwise), else a cwd hosting a configured
+# repo. Only <repo>/.cco is ever surfaced, never a full code repo (P18). Shares
+# cmd_start scope; reads config_editor_all / config_editor_targets.
+_start_collect_config_editor_targets() {
+    _ce_targets=""
+    local name path t
+    if $config_editor_all; then
+        while IFS=$'\t' read -r name path _; do
+            [[ -z "$name" ]] && continue
+            [[ -d "$path/.cco" ]] || continue
+            _ce_targets+="${name}"$'\t'"${path}/.cco"$'\n'
+        done < <(_project_foreach)
+    fi
+    for t in ${config_editor_targets[@]+"${config_editor_targets[@]}"}; do
+        path=$(_resolve_unit_dir_for_project "$t") \
+            || die "config-editor --project '$t' is not resolvable on this machine. Run 'cco resolve' first."
+        [[ -d "$path/.cco" ]] || die "config-editor --project '$t' has no <repo>/.cco to edit."
+        # Skip a duplicate already surfaced by --all.
+        [[ "$_ce_targets" == *"${t}"$'\t'"${path}/.cco"$'\n'* ]] && continue
+        _ce_targets+="${t}"$'\t'"${path}/.cco"$'\n'
+    done
+    if [[ -z "$_ce_targets" ]] && ! $config_editor_all; then
+        if path=$(_resolve_find_unit_dir 2>/dev/null); then
+            name=$(yml_get "$path/.cco/project.yml" name 2>/dev/null)
+            [[ -n "$name" && -d "$path/.cco" ]] && _ce_targets+="${name}"$'\t'"${path}/.cco"$'\n'
+        fi
+    fi
+}
+
 # Resolves the project to its decentralized config source (design §4.4, ADR-0024
 # D3): cco start reads <repo>/.cco/ — cwd-first when no name is given (the project
 # the repo HOSTS, by its project.yml `name`), or by-name via the STATE index
@@ -258,11 +318,14 @@ _start_resolve_project() {
             die "Resolve the conflict and try again."
         fi
         is_internal=true
+        session_preset="tutorial"          # preset: claude_access=none, cco_access=read (D6)
         _setup_internal_tutorial
         project_dir="$(_cco_internal_runtime_dir)/tutorial"
         project_yml="$project_dir/project.yml"
         claude_src="$project_dir/.claude"
         source_repo="$project_dir"
+        # Secret-mask the personal store mounted for reading (~/.cco → cco-config).
+        _op_config_masks+=("$(_cco_config_dir)"$'\t'"/workspace/cco-config")
     elif [[ "$project" == "config-editor" ]]; then
         # "config-editor" is a reserved name — launches the built-in config
         # editor (ADR-0027 D1). Block a real project claiming the name.
@@ -276,22 +339,28 @@ _start_resolve_project() {
             die "Resolve the conflict and try again."
         fi
         is_internal=true
-        # Project mode: --project <name> wins; else a cwd that hosts a configured
-        # repo. Resolve the target's <repo>/.cco for an additional rw mount.
-        local _ce_path="" _ce_name="" _ce_cco=""
-        if [[ -n "$config_editor_target" ]]; then
-            _ce_path=$(_resolve_unit_dir_for_project "$config_editor_target") \
-                || die "config-editor --project '$config_editor_target' is not resolvable on this machine. Run 'cco resolve' first."
-            _ce_name="$config_editor_target"
-        elif _ce_path=$(_resolve_find_unit_dir 2>/dev/null); then
-            _ce_name=$(yml_get "$_ce_path/.cco/project.yml" name 2>/dev/null)
-        fi
-        [[ -n "$_ce_path" && -d "$_ce_path/.cco" ]] && _ce_cco="$_ce_path/.cco"
-        _setup_internal_config_editor "$_ce_cco" "$_ce_name"
+        session_preset="config-editor"     # preset: claude_access=all, cco_access=edit-all (D6)
+        # Target scope (D-α): --all (every resolved member's <repo>/.cco) and/or a
+        # repeatable --project <name>; else a cwd that hosts a configured repo.
+        # Only <repo>/.cco is mounted, never full code repos (P18). Unresolved
+        # --all members are skipped; an explicit unresolvable --project dies. The
+        # collector sets _ce_targets (newline-joined name<TAB>cco_path) directly via
+        # shared scope so its die() propagates (bash 3.2 has no namerefs, and a $()
+        # subshell would swallow the die).
+        local _ce_targets=""
+        _start_collect_config_editor_targets
+        _setup_internal_config_editor "$_ce_targets"
         project_dir="$(_cco_internal_runtime_dir)/config-editor"
         project_yml="$project_dir/project.yml"
         claude_src="$project_dir/.claude"
         source_repo="$project_dir"
+        # Secret-mask the personal store (~/.cco → cco-config) + each target .cco.
+        _op_config_masks+=("$(_cco_config_dir)"$'\t'"/workspace/cco-config")
+        local _ct _ctn _ctp
+        while IFS=$'\t' read -r _ctn _ctp; do
+            [[ -z "$_ctn" ]] && continue
+            _op_config_masks+=("$_ctp"$'\t'"/workspace/${_ctn}-config")
+        done <<< "$_ce_targets"
     else
         local unit_dir=""
         if [[ -n "$from_repo" ]]; then
@@ -805,12 +874,13 @@ YAML
         # Axis A (cco_access): the committed <repo>/.cco structural config
         # (project.yml, secrets.env, .cco metadata) is overlaid READ-ONLY unless the
         # level grants project edit (edit-project / edit-all). edit-global keeps A1
-        # ro — only the personal store (A2, mounted in step 4) is writable there.
-        # Built-in sessions keep the legacy rw via is_internal until step 5 expresses
-        # them as presets. (--enable-config-edit already resolves to cco_access
-        # edit-project via the step-2 alias, so the old escape hatch still works.)
+        # ro — only the personal store (A2) is writable there. Driven purely by the
+        # resolved cco_access now (ADR-0036 D6): the config-editor built-in resolves
+        # to edit-all via its preset, so the old is_internal exemption is gone. (The
+        # built-ins mount their edit targets via generated extra_mounts, not via the
+        # repo loop below, so dropping is_internal here is behavior-preserving.)
         local _committed_ro=":ro"
-        if $is_internal || [[ "$cco_access" == "edit-project" || "$cco_access" == "edit-all" ]]; then
+        if [[ "$cco_access" == "edit-project" || "$cco_access" == "edit-all" ]]; then
             _committed_ro=""
         fi
 
@@ -982,6 +1052,18 @@ YAML
             [[ -z "$repo_name" ]] && continue
             _emit_secret_overlays "$repo_path/.cco" "/workspace/${repo_name}/.cco" "$secret_mask"
         done < <(_effective_repo_mounts "$project_yml")
+
+        # Built-in config-mount secret masking (ADR-0036 D4): the config-editor /
+        # tutorial presets surface config trees (~/.cco → cco-config, each target
+        # <repo>/.cco → <name>-config) via generated extra_mounts, which the repo
+        # loop above does NOT cover. Mask real secret files there too, so neither
+        # the personal store nor any --all/--project target ever exposes real
+        # values — only *.example. Pairs collected by the built-in branches (5b).
+        local _cm _cm_host _cm_tgt
+        for _cm in ${_op_config_masks[@]+"${_op_config_masks[@]}"}; do
+            _cm_host="${_cm%%$'\t'*}"; _cm_tgt="${_cm#*$'\t'}"
+            _emit_secret_overlays "$_cm_host" "$_cm_tgt" "$secret_mask"
+        done
 
         # Extra mounts (same invariant as repos — resolved + existence
         # asserted upstream). The bridge emits abs_source<TAB>target<TAB>ro.
@@ -1273,7 +1355,8 @@ cmd_start() {
     local extra_envs=()
     local user_mounts=()        # --mount specs (ADR-0027 D2), :ro by default
     local enable_config_edit=false  # --enable-config-edit escape hatch (ADR-0027 D3)
-    local config_editor_target=""   # --project <name> for the config-editor built-in (ADR-0027 D1)
+    local config_editor_targets=()  # --project <name> (repeatable) for config-editor (ADR-0036 D-α)
+    local config_editor_all=false   # --all: edit every resolvable project's <repo>/.cco
     local cli_claude_access=""      # --claude-access override (ADR-0036 D2/D3); "" = unset
     local cli_cco_access=""         # --cco-access override; supersedes --enable-config-edit
     local cli_show_host_paths=""    # "" | "true" | "false" (--show-host-paths / --no-…)
@@ -1287,7 +1370,8 @@ cmd_start() {
             --cco-access) [[ $# -lt 2 ]] && die "--cco-access requires a value (none|read|edit-project|edit-global|edit-all)."; cli_cco_access="$2"; shift 2 ;;
             --show-host-paths) cli_show_host_paths="true"; shift ;;
             --no-show-host-paths) cli_show_host_paths="false"; shift ;;
-            --project) [[ $# -lt 2 ]] && die "--project requires a <name> (config-editor project mode)."; config_editor_target="$2"; shift 2 ;;
+            --project) [[ $# -lt 2 ]] && die "--project requires a <name> (config-editor project mode)."; config_editor_targets+=("$2"); shift 2 ;;
+            --all) config_editor_all=true; shift ;;
             --teammate-mode) teammate_mode="$2"; shift 2 ;;
             --api-key) use_api_key=true; shift ;;
             --dry-run) dry_run=true; shift ;;
@@ -1308,12 +1392,14 @@ project the current repo HOSTS (cwd-first); name a project to resolve it via the
 machine-local index.
 
 Built-in sessions: 'cco start config-editor' opens the config-editor (edit your
-~/.cco store); add --project <name> (or run from a configured repo) to also
-mount that project's .cco/ for editing. 'cco start tutorial' opens the tutorial.
+~/.cco store); add --project <name> (repeatable), --all (every resolvable
+project), or run from a configured repo to also mount that project's .cco/ for
+editing. 'cco start tutorial' opens the read-only tutorial.
 
 Options:
   --from <repo>        Use <repo>/.cco as the config source (Case-C divergence)
-  --project <name>     config-editor only: also mount <name>'s .cco/ (rw)
+  --project <name>     config-editor only: also mount <name>'s .cco/ (rw; repeatable)
+  --all                config-editor only: mount every resolvable project's .cco/ (rw)
   --teammate-mode <m>  Override display mode: tmux | auto
   --api-key            Use ANTHROPIC_API_KEY instead of OAuth
   --chrome             Enable browser automation for this session only
@@ -1381,6 +1467,8 @@ EOF
     local output_dir compose_file packs_md
     local config_dir session_state_dir session_cache_dir managed_gen_dir claude_gen_dir
     local claude_access cco_access show_host_paths   # resolved by _start_resolve_access (ADR-0036)
+    local session_preset="normal"    # normal | tutorial | config-editor (built-in presets, D6)
+    local _op_config_masks=()        # host<TAB>target pairs of built-in config mounts to secret-mask (5b)
 
     _start_resolve_project
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] resolve_project done" >&2

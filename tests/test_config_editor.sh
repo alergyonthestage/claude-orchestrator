@@ -99,3 +99,93 @@ test_config_editor_name_reserved_for_init() {
     cd "$prev" || return 1
     assert_output_contains "reserved"
 }
+
+# ── Preset + wrapped-cco (ADR-0036 step 5) ────────────────────────────
+
+# config-editor resolves to the edit-all/all preset and gets the operator env
+# + the ~/.cco operator bucket mount (wrapped-cco).
+test_config_editor_preset_emits_operator() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco start config-editor --dry-run
+    assert_output_contains "claude=all cco=edit-all"
+    run_cco start config-editor --dry-run --dump
+    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "CCO_CONTAINER_OPERATOR=1" || return 1
+    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "CCO_CCO_ACCESS=edit-all" || return 1
+    # ~/.cco also mounted at the operator path for in-container cco resolution.
+    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "$HOME/.cco:/home/claude/.cco" || return 1
+}
+
+# A global ~/.cco/access.yml must NOT neuter the config-editor preset.
+test_config_editor_global_access_does_not_override_preset() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    printf 'cco: none\nclaude: none\n' > "$HOME/.cco/access.yml"
+    run_cco start config-editor --dry-run
+    assert_output_contains "claude=all cco=edit-all"
+}
+
+# An explicit CLI flag CAN narrow the preset.
+test_config_editor_cli_narrows_preset() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco start config-editor --cco-access edit-project --dry-run
+    assert_output_contains "cco=edit-project"
+}
+
+# Real secrets masked on the personal store + target config mounts.
+test_config_editor_masks_secrets_on_config_mounts() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    printf 'G=1\n' > "$HOME/.cco/secrets.env"
+    create_project "$tmpdir" "myproj" "$(minimal_project_yml myproj)"
+    printf 'S=1\n' > "$tmpdir/repos/myproj/.cco/secrets.env"
+    run_cco start config-editor --project myproj --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_contains "$compose" "secret-mask:/workspace/cco-config/secrets.env:ro" || return 1
+    assert_file_contains "$compose" "secret-mask:/workspace/myproj-config/secrets.env:ro" || return 1
+}
+
+# ── --all / repeatable --project scope (ADR-0036 D-α) ─────────────────
+
+test_config_editor_all_mounts_every_project() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "proj-a" "$(minimal_project_yml proj-a)"
+    create_project "$tmpdir" "proj-b" "$(minimal_project_yml proj-b)"
+    run_cco start config-editor --all --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_contains "$compose" ":/workspace/proj-a-config" || return 1
+    assert_file_contains "$compose" ":/workspace/proj-b-config" || return 1
+}
+
+test_config_editor_repeatable_project() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "proj-a" "$(minimal_project_yml proj-a)"
+    create_project "$tmpdir" "proj-b" "$(minimal_project_yml proj-b)"
+    create_project "$tmpdir" "proj-c" "$(minimal_project_yml proj-c)"
+    run_cco start config-editor --project proj-a --project proj-c --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_contains "$compose" ":/workspace/proj-a-config" || return 1
+    assert_file_contains "$compose" ":/workspace/proj-c-config" || return 1
+    assert_file_not_contains "$compose" ":/workspace/proj-b-config" || return 1
+}
+
+# Only <repo>/.cco is mounted, never a full code repo.
+test_config_editor_all_mounts_only_cco() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "proj-a" "$(minimal_project_yml proj-a)"
+    run_cco start config-editor --all --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    # target mounts always end in /.cco (source) → /workspace/<name>-config.
+    assert_file_contains "$compose" "/.cco:/workspace/proj-a-config" || return 1
+}
