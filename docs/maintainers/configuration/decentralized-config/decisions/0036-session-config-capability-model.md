@@ -171,14 +171,12 @@ analysis if a need appears — recorded, not scheduled.
 - **R1 (self-info)** is the intent: **one** cco-generated, read-only surface describing the
   running project's resources **and the host↔container path map**, always on (including normal
   sessions), minimal and about *this* project only so it doesn't bloat non-config projects.
-  **Its unified format is NOT specified here — deferred to a dedicated analysis/design
-  session.** R1 subsumes `packs.md` + `workspace.yml` + `.managed/` (and possibly other
-  context-assembly inputs), which are load-bearing for how Claude Code assembles context and
-  resources. Consolidating them safely requires: an inventory of every current consumer, a
-  check that context/resources stay **complete and correct** (adherent to design + ADRs), and
-  likely updates to some **managed rules**. Until that session lands, the existing surfaces stay
-  in place; R1 is an intent + a placeholder in this ADR, and Implementation step 3 is **gated**
-  on its own design.
+  **Its format is specified in [ADR-0040](0040-unified-session-info-surface.md)** (the dedicated
+  design). Two refinements from that grounding: (a) R1 unifies only the **agent-facing** surfaces
+  (`packs.md` + `workspace.yml`) — **`.managed/` is out** (it is entrypoint infrastructure, not
+  agent-read), correcting this bullet's earlier "+ `.managed/`"; (b) the **host↔container path
+  map is gated by `cco_access ≥ read`** (normal sessions keep host paths hidden — AD3), so the
+  always-on R1 core is host-path-free. Implementation step 6 is gated on ADR-0040.
 - **R2 (global-read)** exposes cross-project listings/tags/remotes/coords via the read-only
   wrapped `cco`, only under `cco_access ≥ read`. (R2 is served by the D4 shim and does not
   depend on the R1 format work.)
@@ -303,9 +301,9 @@ flowchart TD
 
 ## Open items / future
 
-- **R1 unified format** — its own analysis/design session (D5). Substitutes `packs.md` +
-  `workspace.yml` + `.managed/` and other context-assembly inputs; must verify context/resource
-  completeness and correctness, and may update managed rules. **Blocks Implementation step 6.**
+- **R1 unified format** — designed in [ADR-0040](0040-unified-session-info-surface.md)
+  (agent-facing surfaces only; gated path-map; dual-emit → cutover with a completeness gate).
+  Gates Implementation step 6.
 - **MCP** over the wrapped `cco` — deferred; evaluate if the CLI shim proves insufficient.
 - **`--cco-access` in normal sessions** as a routine workflow (beyond R1) — enabled by this
   model; adoption is a UX decision for a follow-up.
