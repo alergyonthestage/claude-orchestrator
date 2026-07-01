@@ -805,4 +805,4 @@ Documented but explicitly NOT in scope for v1:
 | Validation exercises | Agent verifies user's project/pack configs against best practices | After v1 feedback |
 | Multi-language curriculum | Curriculum content adapted per language | If there's demand from non-English communities |
 | Interactive demos | Agent demonstrates features in real time (requires Docker socket) | After socket-enabled tutorial is validated |
-| Per-project knowledge | Add `knowledge:` section to project.yml (same schema as packs). `cco start` generates packs.md from project-level knowledge too. Eliminates the current gap where knowledge is only available via packs | Roadmap: Pack Ecosystem sprint or standalone feature |
+| Per-project knowledge | Add `knowledge:` section to project.yml (same schema as packs). `cco start` adds them to workspace.yml's knowledge section too. Eliminates the current gap where knowledge is only available via packs | Roadmap: Pack Ecosystem sprint or standalone feature |

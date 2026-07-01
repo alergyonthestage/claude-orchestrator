@@ -18,28 +18,27 @@ Design branch with the ADRs + doc rewrites: `feat/config-access/capability-model
 
 ---
 
-## ▶ NEXT SESSION — step 6 (R1 self-info, ADR-0041). Read this first.
+## ▶ NEXT SESSION — step 7 (final docs + completeness gate on `develop`). Read this first.
 
-**Where we are (2026-07-01).** Steps **1–5 of 7 done** on branch
-`feat/config-access/capability-model` (**not pushed** — push from the Mac). Last commit `99a58dd`.
-Suite baseline **1088 pass / 1 fail** — the single fail is the **pre-existing, env-only**
+**Where we are (2026-07-01).** Steps **1–6 of 7 done** on branch
+`feat/config-access/capability-model` (**not pushed** — push from the Mac). Step-6 commit
+`9aed757` (code cut) + the doc-sweep commit that follows it.
+Suite **1095 pass / 1 fail** — the single fail is the **pre-existing, env-only**
 `test_paths_symlink_safe_tool_root` (the DATA bucket is unwritable inside the self-dev container;
 reproduces on the unchanged tree — **not a regression**, do not chase it). Run `./bin/test`.
 
-**Do next — step 6 (R1).** Implement [ADR-0041](decisions/0041-unified-session-info-surface.md):
-fold the `packs.md` generator into `lib/workspace.sh` so **one** `/workspace/.claude/workspace.yml`
-carries `project/repos/packs/knowledge/llms/extra_mounts` + an optional `path_map` section emitted
-**only when `show_host_paths=on`** (this is where the step-4-deferred `show_host_paths` read-output
-toggle finally lands). **Net cut (R1-D4): no dual-emit** — migrate the three consumers
-(`config/hooks/session-context.sh`, `config/hooks/subagent-context.sh`, the managed
-`init-workspace` skill), reconcile the managed `memory-policy.md` `packs.md` reference, **and delete
-`packs.md` in the same change**. Then the **completeness gate on `develop`** (R1-D5): `./bin/test` +
-a real `cco start` dogfood confirm no context regressed, before release. Key files + the R1
-doc-sweep list are in §3; tests in §5. `show_host_paths` is already resolved per session
-(`_start_resolve_access` sets the `show_host_paths` local); `_start_generate_metadata`
-(`lib/cmd-start.sh` ~1000) currently emits `packs.md` + `workspace.yml` separately — that is the
-seam to unify. Reading order: §8. Independent of steps 1–5 except it consumes the resolved
-`show_host_paths` knob.
+**Do next — step 7 + the completeness gate.** Step 6 shipped R1 (see §0 step-6 log). What remains:
+(1) the **pre-release completeness gate on `develop`** (R1-D5) — a **real `cco start` dogfood**
+(cannot be done from inside the self-dev container; do it on the host after `cco build`) to confirm
+the SessionStart/SubagentStart context + `/init` still see every datum the old `packs.md` carried;
+(2) any residual step-7 docs/tests polish. When merging to `develop`, verify no `packs.md` string
+survives in shipped code paths.
+
+**Step 6 done (R1, ADR-0041).** `packs.md` is gone — folded into the single
+`/workspace/.claude/workspace.yml` (`knowledge` + `llms` sections + gated `path_map`). Net cut:
+generator + all three consumers + `packs.md` deletion in one commit; doc-sweep in the next. The
+managed `memory-policy.md` had **no** `packs.md` reference to reconcile (verified); `precompact.sh`
+references the packs **directory** `/workspace/.claude/packs/`, which is correct and stays.
 
 **Also open (small, from step 5, optional):** granular narrowing of the config-editor *browse*
 mounts (`/workspace/cco-config`, `<name>-config`) by edit level — today they are rw regardless, and
@@ -154,10 +153,35 @@ this needs either a reorder or a compose-time mode adjustment. Not required for 
   by level is not wired — the generated `project.yml` mounts them rw regardless; narrowing via
   `--cco-access edit-project` currently only affects the operator buckets, not those browse
   mounts (acceptable: the default preset is `edit-all`; note for a follow-up).
-- **Steps 6–7 — pending.** Next up: **step 6** (R1, ADR-0041 — unified `workspace.yml` absorbing
-  `packs.md`, gated `path_map` + the `show_host_paths` read-output toggle deferred here, net cut,
-  start-time snapshot; validate on `develop` before release). Then step 7 (remaining docs + tests
-  + the R1 doc-sweep listed in §3).
+- **Step 6 — R1 self-info (ADR-0041): ✅ done** (2026-07-01, same branch; code commit `9aed757`
+  + a following doc-sweep commit). **Net cut (R1-D4):** `packs.md` is no longer generated, mounted,
+  or referenced in shipped code — it was folded into the single agent-facing
+  `/workspace/.claude/workspace.yml`. **Generator (`lib/workspace.sh`):** `_generate_workspace_yml`
+  gained a `knowledge` section (`{path, description}` per pack knowledge file — absorbed from the
+  packs.md generator via new `_workspace_collect_knowledge`), an `llms` section (via
+  `lib/llms.sh` `_generate_llms_packs_md` → renamed `_llms_render_entries`, emitting `path\tdesc`
+  tuples), and a **gated `path_map`** (new `_workspace_collect_pathmap`; labelled `host→target`
+  pairs for repos + extra_mounts, emitted **only when `show_host_paths=true`** — this is where the
+  step-4-deferred read-output toggle landed). Two new args: `project_dir` + `show_host_paths`.
+  **Consumers migrated (R1-D2 — preamble now rendered by the consumer):** `session-context.sh`
+  and `subagent-context.sh` parse the `knowledge`/`llms` sections from `workspace.yml` (awk
+  extractor; `CCO_WORKSPACE_YML` env override for tests); the managed `init-workspace` skill reads
+  the `knowledge` section. **`cmd-start.sh`:** `_start_generate_metadata` stops emitting `packs.md`
+  (rm-f stale copy), passes the two new args; dropped the `packs.md` `:ro` compose mount + the
+  dry-run summary line + the `packs_md` local. **memory-policy.md** had no `packs.md` reference to
+  reconcile (verified); `precompact.sh` references the packs **directory** (correct, unchanged).
+  **Tests:** migrated `test_packs.sh` / `test_llms.sh` / `test_pack_resolution.sh` /
+  `test_start_dry_run.sh` off `packs.md`; new `tests/test_workspace_info.sh` (path_map toggle by
+  `show_host_paths`, SessionStart/SubagentStart hook rendering, no-`packs.md`-emitted guarantee).
+  **changelog #31** (additive, "requires `cco build`"). Suite **1095 pass / 1 fail** (same
+  pre-existing env-only symlink test). **Deferred to step 7:** the pre-release completeness gate
+  (R1-D5) needs a **real `cco start` dogfood on the host** (not possible from the self-dev
+  container) + final docs polish. Decision recorded: `path_map` is emitted into `workspace.yml`
+  and read on-demand (init-workspace / agent) — NOT force-injected into the SessionStart context
+  (avoids noise); llms/knowledge entries kept a uniform `{path, description}` shape (ADR's `name`
+  for llms is illustrative — no consumer reads it).
+- **Step 7 — pending.** Final docs polish + the **completeness gate on `develop`** (R1-D5:
+  `./bin/test` + a real `cco start` dogfood on the host) before release.
 
 ---
 
@@ -177,9 +201,9 @@ current) is orthogonal to the level and applies to `read` too.
 
 ## 2. Implementation order (dependency-first — from ADR-0036 §Implementation)
 
-> **Status (2026-07-01): steps 1–5 ✅ done, step 6 (R1) is next.** Per-step detail + test/suite
-> results live in §0 (the progress log). Steps 1–5 landed on `feat/config-access/capability-model`
-> (commits after `e533093`).
+> **Status (2026-07-01): steps 1–6 ✅ done, step 7 (final docs + completeness gate) is next.**
+> Per-step detail + test/suite results live in §0 (the progress log). All landed on
+> `feat/config-access/capability-model` (step 6 = code commit `9aed757` + doc-sweep).
 
 1. **Caller-context (D8)** — ✅ **done** — `_cco_caller_context()` (`host` | `container-agent`) in
    `lib/paths.sh`; re-express `_cco_resolver_guard` on it. Foundational.
@@ -198,11 +222,11 @@ current) is orthogonal to the level and applies to `read` too.
    `<repo>/.cco`); built-in docs rewritten to the wrapped-`cco` model. Also fixed a pre-existing
    tutorial-mount bug (source→name-based). (Granular narrowing of the config-editor *browse*
    mounts by level deferred — see §0.)
-6. **R1 self-info (ADR-0041)** — ◀ **START HERE (fresh session)** — unified `workspace.yml` (+`knowledge`/`llms`, gated `path_map`;
-   **session-start snapshot** per R1-D6). **NET CUT** (R1-D4, maintainer decision): migrate the
-   three consumers **and delete `packs.md` in one change** — no dual-emit, no legacy window.
-   Validate on `develop` (`./bin/test` + real `cco start` dogfood) **before release** (R1-D5).
-7. **Docs + tests** — see §4/§5.
+6. **R1 self-info (ADR-0041)** — ✅ **done** — unified `workspace.yml` (+`knowledge`/`llms`, gated
+   `path_map`; **session-start snapshot** per R1-D6). **NET CUT** (R1-D4): all three consumers
+   migrated **and `packs.md` deleted in one change** — no dual-emit, no legacy window.
+7. **Docs + tests + completeness gate** — ◀ **NEXT** — see §4/§5; the R1-D5 gate needs a real
+   `cco start` dogfood **on the host** (`./bin/test` already green in-container).
 
 Steps 1–5 + 7 are independent of R1's format; step 6 follows ADR-0041. R2 (step 4) is independent
 of R1.

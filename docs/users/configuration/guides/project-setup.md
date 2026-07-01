@@ -120,7 +120,7 @@ knowledge:
 #   - api-conventions.md
 ```
 
-That's it — **no CLAUDE.md edit needed**. Every `cco start` mounts the source directory read-only, generates `.claude/packs.md` with the file list and descriptions, and the `session-context.sh` hook injects it into `additionalContext` automatically. Claude sees which files are available and reads them on-demand when relevant. The original files stay in your knowledge repo — zero duplication.
+That's it — **no CLAUDE.md edit needed**. Every `cco start` mounts the source directory read-only, records the file list and descriptions in the `knowledge` section of `.claude/workspace.yml`, and the `session-context.sh` hook injects it into `additionalContext` automatically. Claude sees which files are available and reads them on-demand when relevant. The original files stay in your knowledge repo — zero duplication.
 
 ### Install and Reference Framework Documentation
 
@@ -268,7 +268,7 @@ Claude Code loads instructions in order of precedence:
 
    + additionalContext (SessionStart hook):
        ├── project name, repos, MCP servers
-       └── packs.md content               ← Knowledge packs (automatic)
+       └── workspace.yml knowledge/llms sections  ← Knowledge packs (automatic)
              /workspace/.claude/packs/<name>/*.md  ← read on-demand by Claude
 
 3. /workspace/<repo>/.claude/CLAUDE.md          ← Repository (on-demand)
@@ -276,7 +276,7 @@ Claude Code loads instructions in order of precedence:
 
 Project settings (level 2) override global settings (level 1). Repository instructions (level 3) are added when Claude reads files in that directory.
 
-**Knowledge packs** are injected by the `session-context.sh` hook into `additionalContext` at startup — Claude sees what files are available and reads them on-demand. No `@.claude/packs.md` import in CLAUDE.md is required or needed.
+**Knowledge packs** are injected by the `session-context.sh` hook into `additionalContext` at startup — Claude sees what files are available and reads them on-demand. No `@.claude/workspace.yml` import in CLAUDE.md is required or needed.
 
 For more details on the hierarchy see [context.md](../../foundation/reference/context-hierarchy.md).
 

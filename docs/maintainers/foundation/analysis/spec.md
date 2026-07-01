@@ -58,7 +58,7 @@
 |----|-------------|----------|
 | FR-3.1 | Three-tier context: global → project → repo (matching Claude Code's user → project → nested hierarchy) | Must |
 | FR-3.2 | `~/.cco/.claude/` is mounted to `~/.claude/` in the container | Must |
-| FR-3.3 | The invoking repo's `<repo>/.cco/claude/` is mounted to `/workspace/.claude/`; generated overlays (packs.md, workspace.yml) are layered `:ro` from CACHE | Must |
+| FR-3.3 | The invoking repo's `<repo>/.cco/claude/` is mounted to `/workspace/.claude/`; the generated overlay (workspace.yml) is layered `:ro` from CACHE | Must |
 | FR-3.4 | Repository `.claude/` directories are included automatically via repo volume mounts | Must |
 | FR-3.5 | Global settings include agent teams enabled, always thinking, and bypass permissions | Must |
 | FR-3.6 | Project settings can override global settings following Claude Code precedence | Must |

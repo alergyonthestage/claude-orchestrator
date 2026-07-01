@@ -238,7 +238,7 @@ reflect the current framework version. These names are reserved.
 3. GENERATE pack + framework resources (into CACHE, overlaid :ro)
    - Detect name conflicts across packs (warn if same agent/rule/skill in multiple packs)
    - Add pack resource mounts (knowledge dirs, per-file rules/agents, per-dir skills — all :ro)
-   - Generate packs.md (instructional list of knowledge files) + workspace.yml (project summary)
+   - Generate workspace.yml (project summary + knowledge/llms instructional file lists)
      into <cache>/cco/projects/<id>/.claude/ and overlay :ro onto /workspace/.claude
 
 4. CREATE state dirs (if needed)
@@ -1929,7 +1929,7 @@ services:
       - /home/me/.cco/.claude/skills:/home/claude/.claude/skills:ro
       # Project config (the invoking repo's <repo>/.cco/claude/) + generated overlays (CACHE, :ro)
       - /home/me/dev/backend/.cco/claude:/workspace/.claude
-      - /home/me/.cache/cco/projects/projectA/.claude/packs.md:/workspace/.claude/packs.md:ro
+      - /home/me/.cache/cco/projects/projectA/.claude/workspace.yml:/workspace/.claude/workspace.yml:ro
       # Session transcripts (STATE; enables /resume across rebuilds)
       - /home/me/.local/state/cco/projects/projectA/claude-state:/home/claude/.claude/projects/-workspace
       # Memory (STATE; machine-local, no sync in v1; separate from transcripts)

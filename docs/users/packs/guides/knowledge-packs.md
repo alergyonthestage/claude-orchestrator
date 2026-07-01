@@ -229,22 +229,22 @@ The process happens in two phases:
 **1. At `cco start` time:**
 - Knowledge directories are mounted read-only at `/workspace/.claude/packs/<name>/`
 - Pack skills, agents, and rules are mounted read-only into `/workspace/.claude/` (per-file for rules/agents, per-directory for skills)
-- The `.claude/packs.md` file is generated with the list of files and their descriptions
+- The `knowledge` section of `.claude/workspace.yml` is generated with the list of files and their descriptions
 
 **2. When the Claude session starts:**
-- The `session-context.sh` hook (SessionStart) injects the contents of `packs.md` into `additionalContext`
+- The `session-context.sh` hook (SessionStart) reads the `knowledge` section of `workspace.yml`, renders an instructional preamble, and injects it into `additionalContext`
 - Claude automatically receives the list of available knowledge files with descriptions
 - Files are read on-demand by Claude when relevant to the current task
 
-Example of generated `packs.md`:
+Example `knowledge` section of the generated `workspace.yml`:
 
-```
-The following knowledge files provide project-specific conventions and context.
-Read the relevant files BEFORE starting any implementation, review, or design task.
-
-- /workspace/.claude/packs/my-client/backend-coding-conventions.md — Read when writing backend code
-- /workspace/.claude/packs/my-client/business-overview.md — Read for business context
-- /workspace/.claude/packs/my-client/testing-guidelines.md
+```yaml
+knowledge:
+  - path: /workspace/.claude/packs/my-client/backend-coding-conventions.md
+    description: Read when writing backend code
+  - path: /workspace/.claude/packs/my-client/business-overview.md
+    description: Read for business context
+  - path: /workspace/.claude/packs/my-client/testing-guidelines.md
 ```
 
 ---

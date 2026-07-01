@@ -199,7 +199,7 @@ User-added skills (not from the template) remain user-owned and undiscovered.
 |------|--------|-------------|------------|
 | `<state>/cco/projects/<name>/docker-compose.yml` | STATE | `cco start` | `cco clean --generated` |
 | `<cache>/cco/projects/<name>/managed/` | CACHE | `cco start` | `cco start` (regenerated each run) |
-| `<cache>/cco/projects/<name>/.claude/` (`packs.md`, `workspace.yml`) | CACHE | `cco start` | `cco start` (regenerated each run) |
+| `<cache>/cco/projects/<name>/.claude/` (`workspace.yml`) | CACHE | `cco start` | `cco start` (regenerated each run) |
 | `<repo>/.cco/.tmp/` | repo | `cco start --dry-run --dump` | `cco clean --tmp` |
 | `<state>/cco/global/update/meta` | STATE | `cco init` / `cco update --sync` | ❌ do not delete |
 | `<state>/cco/global/update/base/` | STATE | `cco init` / `cco update --sync` | ❌ do not delete |

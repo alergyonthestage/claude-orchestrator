@@ -268,8 +268,9 @@ work correctly.
 - **Packs are shareable.** The sharing-repo system (`cco pack publish`, `cco pack install`)
   allows sharing packs across machines, teams, and organizations.
 - **Knowledge is catalogued at start, loaded on demand.** At session start, `cco start`
-  generates a `packs.md` index listing available pack documents with descriptions. The
-  agent reads individual pack files when relevant, keeping the active context lean.
+  records available pack documents with descriptions in the `knowledge` section of
+  `workspace.yml`. The agent reads individual pack files when relevant, keeping the
+  active context lean.
 
 ### 2.5 Separation of Knowledge and Instructions
 

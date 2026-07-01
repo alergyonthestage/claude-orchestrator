@@ -52,7 +52,7 @@ graph TB
     SOCKET --> DOCKSOCK
     GLOBALSTORE -->|mount| DOTCLAUDE
     REPOS -->|"invoking repo .cco/claude → /workspace/.claude"| WORKSPACE
-    CACHE -->|":ro overlays (packs.md, workspace.yml)"| WORKSPACE
+    CACHE -->|":ro overlay (workspace.yml)"| WORKSPACE
     STATE -->|"compose, transcripts, memory"| WORKSPACE
     REPOS -->|"repo mount"| WORKSPACE
     CLAUDE -->|"docker compose up"| SIBLINGS

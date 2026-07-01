@@ -115,7 +115,7 @@ flowchart TB
 This tree holds **authored config only** (ADR-0016 D8). **No internal data lives here**
 (ADR-0013, fixes inventory C4): `source`, `meta`, `base/`, `local-paths.yml`, generated
 `docker-compose.yml`, generated `managed/`, `claude-state/`, and `memory/` are all
-**evicted** to DATA/STATE/CACHE. Framework-generated files (`packs.md`, `workspace.yml`,
+**evicted** to DATA/STATE/CACHE. Framework-generated files (`workspace.yml`,
 `managed/{browser,github,policy}.json`) are NOT written here — they would pollute the
 truthful `git diff` and the sync (ADR-0002/0004). They are produced in the machine-local
 cache (§2.2) and overlaid into `/workspace/.claude` via nested `:ro` mounts, exactly like
@@ -207,7 +207,7 @@ future P8 state-sync from ever sweeping base/hashes/tokens.
   installed/                     # Config-Repo clones for install/update
   remote_cache                   # remote HEAD + ts (avoids network on update checks)
   # coords-lookup                # v1: derived name→url lookup is computed ON DEMAND, NOT persisted (ADR-0022/F45)
-  projects/<id>/.claude/         # generated overlays (packs.md, workspace.yml) → :ro into /workspace/.claude (F1)
+  projects/<id>/.claude/         # generated overlay (workspace.yml) → :ro into /workspace/.claude (F1)
   projects/<id>/managed/         # generated browser.json / github.json / policy.json → :ro overlay (H5)
   *.bak   dry-run/               # update artifacts (cco clean)
 ```
@@ -917,7 +917,7 @@ is in §11.
     compose↔entrypoint container-path contract is an **invariant** the host-source re-point preserves.
   - **Test-harness migration**: `tests/helpers.sh` (`minimal_project_yml` → name+url/ref schema) and
     `tests/mocks.sh` → the new model — the substrate every later test rewrite builds on (§11).
-  - **Carried RD-claude-mount items (ADR-0005)**: (F1) generate `packs.md`/`workspace.yml` into CACHE
+  - **Carried RD-claude-mount items (ADR-0005)**: (F1) generate `workspace.yml` into CACHE
     and overlay `:ro` instead of writing into committed `.cco/claude/`; (F2) treat `packs/`/`llms/` as
     reserved + warn on cross-tree name collisions; (F3) keep the parent mount rw, overlays `:ro`.
 - **Phase 1 — Core local commands (consume the substrate).** `lib/cmd-sync.sh` (the 4 command
@@ -1262,7 +1262,7 @@ design is persisted.
 | # | Resolution |
 |---|----------|
 | **RD-repo-multi-project** | ✅ 2026-06-22 (ADR-0024). **Option 1**: a repo hosts **one** project config (`<repo>/.cco/`, by `project.yml` `name`) = one dev scope; referenced by N via the index + coordinate (Case A). `cco sync` **skips+warns** a target hosting a different project (no override — D2); `cco start` cwd → hosted project (D3). **No schema change → P2 build-once intact.** Also: `.claude` scope clarity + no cross-project leak (D4), repo↔project observability (D5), **sync-set = whole committed `.cco/` minus `secrets.env`, authored packs only** (D6, refines ADR-0003), Axis-1/2 distributed sharing + future `~/.cco/projects` opt-in compatible (D7). Distilled into P18. |
-| **RD-claude-mount** | ✅ 2026-06-16 (ADR-0005). Nested-overlay composition is source-agnostic → no bind-mount shadowing. Surfaced F1 (generate `packs.md`/`workspace.yml` into cache + `:ro` overlay, not into committed `.cco/claude/`), F2 (reserve `packs/`/`llms/`, warn on cross-tree collisions), F3 (parent rw, overlays `:ro`). |
+| **RD-claude-mount** | ✅ 2026-06-16 (ADR-0005). Nested-overlay composition is source-agnostic → no bind-mount shadowing. Surfaced F1 (generate `workspace.yml` into cache + `:ro` overlay, not into committed `.cco/claude/`), F2 (reserve `packs/`/`llms/`, warn on cross-tree collisions), F3 (parent rw, overlays `:ro`). |
 | **RD-paths** | ✅ 2026-06-16 (ADR-0007). XDG on both OSes: STATE `$CCO_STATE_HOME`→`$XDG_STATE_HOME/cco`→`~/.local/state/cco`, CACHE `$CCO_CACHE_HOME`→`$XDG_CACHE_HOME/cco`→`~/.cache/cco`; index in STATE; CONFIG keeps `~/.cco` dotdir; host-side resolution, `0700`, XDG-validation. |
 | **RD-home** | ✅ 2026-06-16 (ADR-0008). Unified **explicit manual commit** model for `~/.cco` + `<repo>/.cco` (semantic user-named snapshots; **no auto-commit** in v1 — deferred for atomic config-mutating commands). Non-blocking **reminders** (old clean-tree gate, now advisory) flag uncommitted `~/.cco`, uncommitted involved `<repo>/.cco`, cross-repo divergence. Allowlist double-barrier (whitelist `.gitignore` + explicit staging, never `git add -A`); 2-pass secret scan + `.example` exemption; explicit `cco config push/pull` (sync transports commits, never fabricates them); auto-sync → RD-triggers. |
 | **RD-memory** | ✅ 2026-06-16 (ADR-0009). Auto-memory is **machine-local STATE** (`<state>/cco/projects/<id>/memory/`), co-located with transcripts — not config, never in `~/.cco`/`<repo>/.cco`. **No versioning/sync in v1**: the vault auto-commit (D33) + `.gitkeep` (D32) machinery is dropped; `cco migrate` relocates memory from the backup (lossless). Team-shared project knowledge stays in committed docs/rules (not memory). **Satisfies the Phase-3 gate (BL2).** Cross-PC/cross-team *state* sync (memory + transcripts) deferred → R-state-sync (§12). |
