@@ -284,16 +284,34 @@ _cco_in_container() {
     return 1
 }
 
+# D8 (ADR-0036) — the canonical caller-context signal. cco reasons about *where*
+# it runs — a user on the host vs an agent inside a session container — in ONE
+# place, so any command body can guard or branch on it without re-detecting the
+# environment. Two contexts: `host` | `container-agent`. Container-agent is
+# detected via the same daemon-injected /.dockerenv marker as _cco_in_container
+# (above); the deliberate container-operator mode (ADR-0036 D4 — mounted buckets
+# + CCO_*_HOME) layers on TOP of this signal and is never inferred here, keeping
+# ADR-0007's invariant intact. The anti-in-container resolver guard below is
+# re-expressed on this one signal rather than duplicating the detection.
+_cco_caller_context() {
+    if _cco_in_container; then
+        printf 'container-agent'
+    else
+        printf 'host'
+    fi
+}
+
 # Anti-in-container guard (H4, ADR-0007 Robustness). cco resolves host paths
 # host-side only; a hook or agent that invokes cco from inside a session
-# container must not create/read state under the container's home. The escape
-# hatch CCO_ALLOW_HOST_RESOLVE=1 is for the test suite / a knowing developer
-# only — real hooks/agents never set it, so the guard still protects them.
+# container must not create/read state under the container's home. Expressed on
+# the D8 caller-context signal (container-agent ⇒ refuse). The escape hatch
+# CCO_ALLOW_HOST_RESOLVE=1 is for the test suite / a knowing developer only —
+# real hooks/agents never set it, so the guard still protects them.
 # NOTE: when a resolver is called via $(...), die() exits only that subshell;
 # in genuine host use the guard never fires, and in tests the hatch bypasses it.
 _cco_resolver_guard() {
     [[ "${CCO_ALLOW_HOST_RESOLVE:-}" == "1" ]] && return 0
-    if _cco_in_container; then
+    if [[ "$(_cco_caller_context)" == "container-agent" ]]; then
         die "cco refuses to resolve host paths inside a container (anti-in-container guard, ADR-0007). cco runs host-side only; set CCO_ALLOW_HOST_RESOLVE=1 only for tests/dev."
     fi
 }

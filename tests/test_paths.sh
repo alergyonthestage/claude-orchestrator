@@ -267,6 +267,52 @@ test_paths_resolver_guard_hatch_allows() {
     [[ "$val" == "$tmp/d" ]] || fail "Expected hatch to bypass guard, got: $val"
 }
 
+# ── D8 (ADR-0036): canonical caller-context signal ──────────────────
+# _cco_caller_context maps the _cco_in_container predicate onto the two
+# framework-wide contexts `host` | `container-agent`. The guard (above) is
+# re-expressed on it, so the signal must be correct for both branches.
+
+# Container branch, via the explicit marker (valid on host too, and inside the
+# self-dev container where /.dockerenv is already present).
+test_paths_caller_context_container_marker() {
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+
+    local ctx; ctx=$( export CCO_IN_CONTAINER=1; _cco_caller_context )
+    [[ "$ctx" == "container-agent" ]] \
+        || fail "Expected 'container-agent' under CCO_IN_CONTAINER=1, got: $ctx"
+}
+
+# Host branch. /.dockerenv cannot be removed inside the self-dev container, so
+# force the predicate hermetically by shadowing _cco_in_container in the subshell
+# — this asserts the label mapping independent of the real environment.
+test_paths_caller_context_host() {
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+
+    local ctx; ctx=$( _cco_in_container() { return 1; }; _cco_caller_context )
+    [[ "$ctx" == "host" ]] \
+        || fail "Expected 'host' when not in a container, got: $ctx"
+}
+
+# The guard is re-expressed on the signal: forcing the host context via the
+# shadowed predicate must let a resolve through even without the hatch.
+test_paths_caller_context_drives_guard() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+
+    local val rc=0
+    val=$( _cco_in_container() { return 1; }
+           unset CCO_ALLOW_HOST_RESOLVE CCO_IN_CONTAINER
+           export CCO_DATA_HOME="$tmp/d"; _cco_data_dir ) || rc=$?
+    [[ $rc -eq 0 && "$val" == "$tmp/d" ]] \
+        || fail "Expected guard to pass in host context, got rc=$rc val=$val"
+}
+
 # ── L5: symlink-safe tool root ───────────────────────────────────────
 # A PATH symlink to bin/cco must still locate the tool root (lib/).
 test_paths_symlink_safe_tool_root() {
