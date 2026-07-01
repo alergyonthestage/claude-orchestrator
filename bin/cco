@@ -167,6 +167,76 @@ _cco_print_version() {
     fi
 }
 
+# ── Container-operator whitelist/blocklist shim (ADR-0036 D4) ─────────
+# When cco runs in-container behind the wrapped-cco shim (container-operator
+# mode — see _cco_container_operator in paths.sh), only a safe, path-free subset
+# of verbs is permitted. Everything else dies early with a "run it on the host"
+# hint, so a session agent can never spawn containers, resolve/rewrite host
+# paths, or touch network/credential state. Classification is DEFAULT-DENY: a
+# verb (or subcommand) reaches the real dispatcher only if it is explicitly
+# whitelisted here. Read verbs are allowed at any operator level (cco_access ≥
+# read); write verbs that mutate CONFIG or the internal XDG registries through
+# the shared cco functions are allowed only under an edit level
+# (CCO_CCO_ACCESS ∈ edit-project|edit-global|edit-all).
+_cco_operator_shim() {
+    local cmd="$1"; shift
+    local sub="${1:-}"
+    local level="${CCO_CCO_ACCESS:-read}"
+    local host_hint="Run it on the host instead (this is a container session; ADR-0036 D4)."
+    local can_write=false
+    case "$level" in edit-project|edit-global|edit-all) can_write=true ;; esac
+    # Helper: a write verb — allowed only under an edit level.
+    _op_write() {
+        $can_write && return 0
+        die "'cco $1' needs an edit access level to run in this session (current cco_access=$level)."
+    }
+
+    case "$cmd" in
+        # Host-only: container-spawning, path-resolving / non-transactional
+        # lifecycle, and host-side tooling.
+        start|stop|build|new|resolve|sync|init|join|forget|update|clean|chrome|path)
+            if [[ "$cmd" == "path" && "$sub" == "list" ]]; then return 0; fi   # read-only listing OK
+            die "'cco $cmd${sub:+ $sub}' is host-only. $host_hint" ;;
+        # Read-only, always available under operator mode.
+        list|docs|help|--version|-v|--help|-h) return 0 ;;
+        tag)
+            case "$sub" in
+                add|remove|rm) _op_write "tag $sub" ;;
+                *) die "'cco tag $sub' is not available in a container session." ;;
+            esac ;;
+        config)
+            case "$sub" in
+                validate) return 0 ;;
+                save) _op_write "config save" ;;
+                push|pull) die "'cco config $sub' is host-only (network + credentials). $host_hint" ;;
+                *) die "'cco config $sub' is not available in a container session." ;;
+            esac ;;
+        remote)
+            case "$sub" in
+                list) return 0 ;;
+                add|remove) _op_write "remote $sub" ;;
+                set-token|remove-token) die "'cco remote $sub' is host-only (secrets stay off the container). $host_hint" ;;
+                *) die "'cco remote $sub' is not available in a container session." ;;
+            esac ;;
+        pack|template|llms)
+            case "$sub" in
+                show|validate|list) return 0 ;;
+                create|update|remove|install|import|internalize|rename) _op_write "$cmd $sub" ;;
+                publish|export) die "'cco $cmd $sub' is host-only. $host_hint" ;;
+                *) die "'cco $cmd $sub' is not available in a container session." ;;
+            esac ;;
+        project)
+            case "$sub" in
+                show|validate|coords) return 0 ;;
+                rename) die "'cco project rename' is host-only (re-keys machine-local state). $host_hint" ;;
+                export|import|add) die "'cco project $sub' is host-only. $host_hint" ;;
+                *) die "'cco project $sub' is not available in a container session." ;;
+            esac ;;
+        share|manifest) die "'cco $cmd' has been removed." ;;
+        *) die "'cco $cmd' is not available in a container session. $host_hint" ;;
+    esac
+}
+
 # ── Main ─────────────────────────────────────────────────────────────
 
 cmd="${1:-}"
@@ -183,12 +253,21 @@ case "$cmd" in
     --help|-h)    usage;              _cco_completed=true; exit 0 ;;
 esac
 
-# J0 first-run bootstrap of the four decentralized-config roots + the legacy-
-# vault safety-net backup, before any command runs (ADR-0017 D3 / ADR-0006 /
-# ADR-0025). Host-side only (H4); idempotent (M6/F43). The BACKUP step is non-fatal
-# (|| true); root bootstrap CAN abort under set -e if the dirs can't be created —
-# that is intentional, cco cannot run without its roots (A5).
-_cco_first_run "$cmd"
+# Container-operator mode (ADR-0036 D4): cco runs in-container behind the
+# whitelist shim. Classify the verb FIRST — host-only ones die with a hint —
+# and SKIP the host first-run bootstrap (the buckets are bind-mounted by
+# `cco start`, never created here). Otherwise fall through to the normal
+# host bootstrap + dispatch.
+if _cco_container_operator; then
+    _cco_operator_shim "$cmd" "$@"
+else
+    # J0 first-run bootstrap of the four decentralized-config roots + the legacy-
+    # vault safety-net backup, before any command runs (ADR-0017 D3 / ADR-0006 /
+    # ADR-0025). Host-side only (H4); idempotent (M6/F43). The BACKUP step is non-fatal
+    # (|| true); root bootstrap CAN abort under set -e if the dirs can't be created —
+    # that is intentional, cco cannot run without its roots (A5).
+    _cco_first_run "$cmd"
+fi
 
 # Dispatch command — capture return code so expected errors (die, return 1)
 # don't trigger the "exited unexpectedly" trap. Only true crashes (set -e/set -u
