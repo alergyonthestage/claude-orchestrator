@@ -463,3 +463,24 @@ entries:
       machine-wide baseline in `~/.cco/access.yml`. Precedence: CLI > project.yml >
       ~/.cco/access.yml > default. `--enable-config-edit` still works as a
       deprecated alias for `--cco-access edit-project`.
+
+  - id: 29
+    date: "2026-07-01"
+    type: additive
+    title: "Wrapped cco in-session: run safe read/edit cco commands inside a container"
+    description: >
+      Under `--cco-access read` (or an edit level), `cco` now runs INSIDE the
+      session container behind a whitelist shim (ADR-0036 D4). Read verbs
+      (`list`, `*show`, `*validate`, `docs`, `path list`, `list remotes`,
+      `project coords`) work in-session; edit levels also allow the path-free
+      write verbs that go through the shared cco functions (`tag`,
+      `remote add|remove`, `pack|template|llms create|update|...`, `config save`).
+      Host-only verbs are refused with a "run it on the host" hint:
+      container-spawning (`start/stop/build/new`), path-resolving lifecycle
+      (`resolve/sync/init/join/forget/update/clean`, `project rename`), and
+      network/credential ops (`config push`/`config pull`, `remote
+      set-token`/`remove-token`). The real buckets are bind-mounted (DATA/CACHE
+      per the edit level, STATE index-only read-only); remote tokens and real
+      secret files (`secrets.env`, `*.env`/`*.key`/`*.pem`) never reach the
+      container — only `*.example` skeletons are visible. Requires a rebuilt image
+      (`cco build`). Default sessions (`cco_access=none`) are unaffected.

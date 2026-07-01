@@ -233,3 +233,114 @@ test_access_mount_cco_edit_project_unlocks_a1() {
         fail "A1 :ro overlay should be absent under cco-access edit-project"
     fi
 }
+
+# ── Container-operator buckets + secret masking (step 4, ADR-0036 D4) ─
+
+# Default (cco_access=none) → no operator mode, no buckets.
+test_operator_none_no_buckets() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    mkdir -p "$CCO_DUMMY_REPO/.cco"
+    run_cco start "test-proj" --dry-run --dump
+    local c; c=$(_access_compose)
+    if echo "$c" | grep -q 'CCO_CONTAINER_OPERATOR'; then fail "no operator env expected by default"; fi
+    if echo "$c" | grep -qE ':/home/claude/\.cco"'; then fail "no ~/.cco bucket mount expected by default"; fi
+}
+
+# --cco-access read → operator env + buckets, all ro; STATE is index-only.
+test_operator_read_mounts_buckets_ro() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    mkdir -p "$CCO_DUMMY_REPO/.cco"
+    run_cco start "test-proj" --cco-access read --dry-run --dump
+    local c; c=$(_access_compose)
+    echo "$c" | grep -q 'CCO_CONTAINER_OPERATOR=1'    || fail "operator env expected under read"
+    echo "$c" | grep -q 'CCO_CCO_ACCESS=read'         || fail "CCO_CCO_ACCESS=read expected"
+    echo "$c" | grep -qE ':/home/claude/\.cco:ro"'    || fail "~/.cco should be ro under read"
+    echo "$c" | grep -qE '/home/claude/\.local/state/cco/index:ro"' || fail "STATE index ro expected"
+    # STATE is index-only: never the whole state dir, and never remotes-token.
+    if echo "$c" | grep -qE ':/home/claude/\.local/state/cco"'; then fail "whole STATE dir must not be mounted"; fi
+    if echo "$c" | grep -q 'remotes-token'; then fail "remotes-token must never be mounted"; fi
+}
+
+# --cco-access edit-global → A2 (~/.cco) + DATA rw.
+test_operator_edit_global_rw_buckets() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    mkdir -p "$CCO_DUMMY_REPO/.cco"
+    run_cco start "test-proj" --cco-access edit-global --dry-run --dump
+    local c; c=$(_access_compose)
+    echo "$c" | grep -qE ':/home/claude/\.cco"'                || fail "~/.cco should be rw under edit-global"
+    echo "$c" | grep -qE ':/home/claude/\.local/share/cco"'    || fail "DATA should be rw under edit-global"
+    # STATE stays index-only ro even under an edit level.
+    echo "$c" | grep -qE '/home/claude/\.local/state/cco/index:ro"' || fail "STATE index stays ro"
+}
+
+# Real secret files masked out of the repo .cco (rw edit mount); *.example survives.
+test_operator_secret_masking_repo() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    mkdir -p "$CCO_DUMMY_REPO/.cco"
+    printf 'S=1\n' > "$CCO_DUMMY_REPO/.cco/secrets.env"
+    printf 'S=\n'  > "$CCO_DUMMY_REPO/.cco/secrets.env.example"
+    printf 'k\n'   > "$CCO_DUMMY_REPO/.cco/tls.key"
+    run_cco start "test-proj" --cco-access edit-all --dry-run --dump
+    local c; c=$(_access_compose)
+    echo "$c" | grep -qE 'secret-mask:/workspace/dummy-repo/\.cco/secrets\.env:ro"' || fail "secrets.env should be masked"
+    echo "$c" | grep -qE 'secret-mask:/workspace/dummy-repo/\.cco/tls\.key:ro"'     || fail "tls.key should be masked"
+    if echo "$c" | grep -qE 'secret-mask:.*secrets\.env\.example'; then fail "*.example must NOT be masked"; fi
+}
+
+# Secret masking applies even to a normal session's :ro .cco overlay.
+test_operator_secret_masking_normal_session() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    mkdir -p "$CCO_DUMMY_REPO/.cco"
+    printf 'S=1\n' > "$CCO_DUMMY_REPO/.cco/secrets.env"
+    run_cco start "test-proj" --dry-run --dump   # cco_access=none (normal)
+    local c; c=$(_access_compose)
+    echo "$c" | grep -qE 'secret-mask:/workspace/dummy-repo/\.cco/secrets\.env:ro"' \
+        || fail "secrets.env masked even in a normal session (capability matrix: filtered in every column)"
+}
+
+# Global secret (~/.cco/secrets.env) masked on the A2 mount.
+test_operator_secret_masking_global_store() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    printf 'G=1\n' > "$HOME/.cco/secrets.env"
+    run_cco start "test-proj" --cco-access edit-global --dry-run --dump
+    local c; c=$(_access_compose)
+    echo "$c" | grep -qE 'secret-mask:/home/claude/\.cco/secrets\.env:ro"' \
+        || fail "~/.cco/secrets.env should be masked on the A2 mount"
+}
+
+# B3 axis stays separate: edit-global with claude_access!=all re-overlays
+# ~/.cco/.claude :ro under the A2 path (global authoring is not unlocked by A2).
+test_operator_b3_guard_ro_under_edit_global() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --cco-access edit-global --dry-run --dump
+    local c; c=$(_access_compose)
+    echo "$c" | grep -qE ':/home/claude/\.cco/\.claude:ro"' \
+        || fail "~/.cco/.claude should be re-overlaid :ro under edit-global (B3 governed by claude_access)"
+    # Under claude_access=all the guard overlay is absent (B3 is rw).
+    run_cco start "test-proj" --cco-access edit-global --claude-access all --dry-run --dump
+    c=$(_access_compose)
+    if echo "$c" | grep -qE ':/home/claude/\.cco/\.claude:ro"'; then
+        fail "B3 guard overlay should be absent under claude-access all"
+    fi
+}
