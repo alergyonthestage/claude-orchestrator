@@ -64,7 +64,7 @@ test_pack_resolves_from_repo_cache() {
     # Mounted from the project-local pack dir, at the standard container path.
     assert_file_contains "$compose" ":/workspace/.claude/packs/repopack:ro"
     assert_file_contains "$compose" "repos/cache-proj/.cco/packs/repopack/knowledge"
-    assert_file_contains "$DRY_RUN_DIR/.claude/packs.md" "/workspace/.claude/packs/repopack/guide.md"
+    assert_file_contains "$DRY_RUN_DIR/.claude/workspace.yml" "- path: /workspace/.claude/packs/repopack/guide.md"
 }
 
 test_pack_global_wins_over_repo_cache() {

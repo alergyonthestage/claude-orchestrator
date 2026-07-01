@@ -2,8 +2,8 @@
 # tests/test_llms.sh — tests for llms.txt feature (lib/llms.sh + lib/cmd-llms.sh)
 #
 # Tests cover: name resolution, primary file resolution, name collection,
-# mount generation, packs.md generation, validation, YAML appending,
-# project validation integration, and name sanitization.
+# mount generation, workspace.yml llms-section rendering, validation, YAML
+# appending, project validation integration, and name sanitization.
 
 # Source llms modules for direct unit tests (run_cco tests don't need this)
 source "$REPO_ROOT/lib/colors.sh"
@@ -210,31 +210,31 @@ test_generate_mounts_empty_when_no_llms() {
     assert_empty "$result" "Should return empty when no llms configured"
 }
 
-# ── _generate_llms_packs_md ─────────────────────────────────────────
+# ── _llms_render_entries (workspace.yml llms section — ADR-0041 R1) ──────
 
-test_packs_md_includes_header_and_entry() {
+test_llms_render_includes_entry() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_llms_env "$tmpdir"
     create_llms_entry "$tmpdir" "svelte" "llms-full.txt"
     local proj_yml="$tmpdir/project.yml"
     printf 'name: test\nllms:\n  - svelte\n' > "$proj_yml"
     local result
-    result=$(_generate_llms_packs_md "$proj_yml" "")
-    echo "$result" | grep -q "Official Framework Documentation" || fail "Should include section header"
+    result=$(_llms_render_entries "$proj_yml" "")
+    # tuple form: "<path>\t<description>" (header now lives in the hook)
     echo "$result" | grep -q "/workspace/.claude/llms/svelte" || fail "Should include file path"
 }
 
-test_packs_md_empty_when_dirs_missing() {
+test_llms_render_empty_when_dirs_missing() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_llms_env "$tmpdir"
     local proj_yml="$tmpdir/project.yml"
     printf 'name: test\nllms:\n  - nonexistent\n' > "$proj_yml"
     local result
-    result=$(_generate_llms_packs_md "$proj_yml" "")
-    assert_empty "$result" "Should return empty when all dirs missing (no orphaned header)"
+    result=$(_llms_render_entries "$proj_yml" "")
+    assert_empty "$result" "Should return empty when all dirs missing"
 }
 
-test_packs_md_count_via_grep() {
+test_llms_render_count() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_llms_env "$tmpdir"
     create_llms_entry "$tmpdir" "svelte" "llms-full.txt"
@@ -242,21 +242,21 @@ test_packs_md_count_via_grep() {
     local proj_yml="$tmpdir/project.yml"
     printf 'name: test\nllms:\n  - svelte\n  - react\n' > "$proj_yml"
     local result
-    result=$(_generate_llms_packs_md "$proj_yml" "")
+    result=$(_llms_render_entries "$proj_yml" "")
     local count
-    count=$(echo "$result" | grep -c '^- ' || echo 0)
+    count=$(echo "$result" | grep -c '/workspace/.claude/llms/' || echo 0)
     assert_equals "2" "$count" "Should have 2 entry lines"
 }
 
-test_packs_md_index_type_hint() {
+test_llms_render_index_type_hint() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_llms_env "$tmpdir"
     create_llms_entry "$tmpdir" "svelte" "llms.txt"
     local proj_yml="$tmpdir/project.yml"
     printf 'name: test\nllms:\n  - svelte\n' > "$proj_yml"
     local result
-    result=$(_generate_llms_packs_md "$proj_yml" "")
-    echo "$result" | grep -q "WebFetch" || fail "Index files should have WebFetch type hint"
+    result=$(_llms_render_entries "$proj_yml" "")
+    echo "$result" | grep -q "WebFetch" || fail "Index files should have WebFetch type hint in description"
 }
 
 # ── _validate_llms_refs ──────────────────────────────────────────────
@@ -389,7 +389,7 @@ test_dry_run_includes_llms_mounts() {
     assert_file_contains "$compose" "/workspace/.claude/llms/svelte:ro"
 }
 
-test_dry_run_includes_llms_in_packs_md() {
+test_dry_run_includes_llms_in_workspace_yml() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -397,10 +397,11 @@ test_dry_run_includes_llms_in_packs_md() {
     create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nllms:\n  - svelte\nrepos:\n  - name: dummy-repo\n')"
     git -C "$CCO_DUMMY_REPO" init -q 2>/dev/null || true
     run_cco start "test-proj" --dry-run --dump
-    local packs_md="$DRY_RUN_DIR/.claude/packs.md"
-    assert_file_exists "$packs_md"
-    assert_file_contains "$packs_md" "Official Framework Documentation"
-    assert_file_contains "$packs_md" "/workspace/.claude/llms/svelte"
+    # No packs.md is ever produced; llms are indexed in workspace.yml
+    assert_file_not_exists "$DRY_RUN_DIR/.claude/packs.md"
+    local ws="$DRY_RUN_DIR/.claude/workspace.yml"
+    assert_file_contains "$ws" "llms:"
+    assert_file_contains "$ws" "- path: /workspace/.claude/llms/svelte"
 }
 
 # ── cco llms remove — uniform destructive-confirm contract (ADR-0029 D2) ──

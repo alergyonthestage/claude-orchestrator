@@ -2,7 +2,7 @@
 # lib/llms.sh — LLMs.txt resource helpers (resolve, mount, validate)
 #
 # Provides: _llms_resolve_primary_file(), _generate_llms_mounts(),
-#           _generate_llms_packs_md(), _validate_llms_refs(),
+#           _llms_render_entries(), _validate_llms_refs(),
 #           _collect_llms_names()
 # Dependencies: colors.sh, utils.sh, yaml.sh, packs.sh (_pack_resolve_dir — the
 #   three-layer pack resolver, for pack-provided llms entries; ADR-0019 D5)
@@ -127,9 +127,12 @@ _generate_llms_mounts() {
     done <<< "$entries"
 }
 
-# Generate the llms section for packs.md.
-# Outputs markdown lines to stdout (empty if no llms configured).
-_generate_llms_packs_md() {
+# Collect resolved llms entries for the unified workspace.yml `llms` section.
+# Outputs one line per valid entry: "<container_path>\t<description>".
+# The description carries the line count + index type-hint (preserved from the
+# former packs.md llms section — R1-D5 completeness). Emits nothing when no
+# llms are configured or none of their directories are installed.
+_llms_render_entries() {
     local project_yml="$1"
     local pack_names="$2"
     local project_cco_dir="${3:-}"
@@ -138,9 +141,6 @@ _generate_llms_packs_md() {
     entries=$(_collect_llms_names "$project_yml" "$pack_names" "$project_cco_dir")
     if [[ -z "$entries" ]]; then return 0; fi
 
-    # Buffer entries first to avoid orphaned header when all dirs are missing
-    local buffered_lines=()
-    local _buf_count=0
     while IFS=$'\t' read -r lname ldesc lvariant; do
         [[ -z "$lname" ]] && continue
         local llms_dir="$LLMS_DIR/$lname"
@@ -175,24 +175,8 @@ _generate_llms_packs_md() {
             type_hint=" (${line_count} lines)"
         fi
 
-        buffered_lines+=("- ${fpath} — ${desc_text}${type_hint}")
-        ((_buf_count++)) || true
+        printf '%s\t%s\n' "$fpath" "${desc_text}${type_hint}"
     done <<< "$entries"
-
-    # Only emit section if at least one valid entry exists
-    if [[ $_buf_count -eq 0 ]]; then
-        return 0
-    fi
-
-    local lines=$_buf_count
-    echo ""
-    echo "## Official Framework Documentation (llms.txt)"
-    echo ""
-    echo "The following official framework documentation files are installed."
-    echo "Consult them BEFORE writing code that uses these frameworks — do not rely solely on training data."
-    echo "For large files, read selectively using offset/limit. For index files, WebFetch specific pages as needed."
-    echo ""
-    printf '%s\n' "${buffered_lines[@]}"
 }
 
 # Validate llms references in a pack or project YAML file.

@@ -18,7 +18,7 @@ claude-orchestrator manages isolated Claude Code sessions in Docker containers f
 - `<repo>/.cco/` — per-project config committed inside the repo it serves: `project.yml` (logical names + machine-agnostic `url`/`ref` coordinates), its `claude/` tree, and `secrets.env` (gitignored).
 - `~/.cco/` — the personal store: `.claude/` (global Claude config), `packs/` (knowledge packs), `templates/` (project templates). **No `manifest.yml`** — sharing discovery is structure-based.
 - `~/.local/state/cco` (STATE) — machine-local index (logical name → absolute path), session transcripts, memory, update base/meta.
-- `~/.cache/cco` (CACHE) — re-fetchable content (llms downloads) and generated overlays (`packs.md`, `workspace.yml`, `docker-compose.yml`).
+- `~/.cache/cco` (CACHE) — re-fetchable content (llms downloads) and generated overlays (`workspace.yml`, `docker-compose.yml`).
 - `~/.local/share/cco` (DATA) — internal-but-synced state: per-user tags registry, de-tokenized remotes registry, install provenance.
 
 **Framework state**: Framework-managed metadata lives in STATE/CACHE/DATA (hidden, never hand-edited), keyed by project identity — never written into the committed `<repo>/.cco/` or `~/.cco/` trees. User-editable files (`project.yml`, the `claude/` tree) stay in the repo. Path resolution is handled by `lib/paths.sh` helpers.
@@ -175,7 +175,7 @@ Per `docs/maintainers/environment/design/design-docker.md` (sezione directory st
 
 - `<repo>/.cco/project.yml` is the source of truth for each project; `docker-compose.yml` is generated into CACHE and overlaid `:ro`, never committed.
 - Project config lives in each repo at `<repo>/.cco/` (versioned with the repo). The personal store `~/.cco/` and the machine-local STATE/CACHE/DATA buckets hold user/internal data and are out-of-repo. `defaults/` is tracked (tool code). Managed files are baked in the Docker image; global defaults are copied once into `~/.cco/.claude/` on `cco init` and never overwritten.
-- Generated files (`docker-compose.yml`, `packs.md`, `workspace.yml`) go to CACHE/STATE and are overlaid `:ro` — never written into the committed tree. `<repo>/.cco/secrets.env` is gitignored; memory/transcripts live in STATE.
+- Generated files (`docker-compose.yml`, `workspace.yml`) go to CACHE/STATE and are overlaid `:ro` — never written into the committed tree. `workspace.yml` is the single agent-facing session-info surface (ADR-0041 R1): it carries repos/packs/knowledge/llms/extra_mounts + an optional `path_map` (when `show_host_paths` is on) — it replaced the former `packs.md`. `<repo>/.cco/secrets.env` is gitignored; memory/transcripts live in STATE.
 - Container user is `claude` (non-root), with docker group for socket access.
 - Entrypoint must handle Docker socket GID mismatch between host and container.
 - macOS Docker Desktop: never use `network_mode: host` (refers to Linux VM, not macOS). Always use port mappings.

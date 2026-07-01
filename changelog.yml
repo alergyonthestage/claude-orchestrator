@@ -500,3 +500,21 @@ entries:
       (only `<repo>/.cco`, never full repos; unresolved projects are skipped). You
       can still narrow a built-in with an explicit `--cco-access` (e.g.
       `--cco-access edit-project`). Requires a rebuilt image (`cco build`).
+
+  - id: 31
+    date: "2026-07-01"
+    type: additive
+    title: "Unified session-info surface: workspace.yml absorbs packs.md, adds path_map"
+    description: >
+      The agent-facing session context is now a single file,
+      `/workspace/.claude/workspace.yml` (ADR-0041 R1). It absorbs the former
+      `packs.md` as new `knowledge` and `llms` sections, so the SessionStart /
+      SubagentStart hooks and the `init-workspace` skill all read one surface —
+      `packs.md` is no longer generated. When `show_host_paths` is on (the
+      default), the file also carries an optional `path_map`: labelled
+      host↔container pairs for the mounted repos and extra mounts, so the agent
+      can hand you copy-pasteable host commands. Set `--no-show-host-paths` (or
+      `access.show_host_paths: false` in `project.yml`, or `show_host_paths: false`
+      in `~/.cco/access.yml`) to omit it. The knowledge files themselves stay at
+      `/workspace/.claude/packs/…`; only the index moved. Requires a rebuilt image
+      (`cco build`).

@@ -22,9 +22,12 @@ Parse `$ARGUMENTS` (default: `all`):
 
 ## Step 1: Read workspace.yml
 
-Read `/workspace/.claude/workspace.yml` to understand the project structure:
-repos (names and container paths at `/workspace/<name>`), packs (referenced pack names),
-and extra_mounts (shared libraries mounted at their `target` paths).
+Read `/workspace/.claude/workspace.yml` — the single session-info surface — to
+understand the project structure: repos (names and container paths at
+`/workspace/<name>`), packs (referenced pack names), knowledge (indexed pack
+knowledge files with `path` + `description`), llms (official framework docs),
+extra_mounts (shared libraries mounted at their `target` paths), and — when
+`show_host_paths` is on — an optional `path_map` (labelled host↔container pairs).
 
 If `workspace.yml` is missing or empty, check `/workspace/project.yml`
 for the project name and repos list as fallback.
@@ -51,8 +54,8 @@ Add them to the "Shared Libraries" section of CLAUDE.md.
 
 ## Step 3: Describe knowledge pack files (scope: packs or all)
 
-For each entry in the packs section of `workspace.yml`, read the referenced
-pack file (available at `/workspace/.claude/packs/<pack-name>/<file>`) and write a
+For each entry in the `knowledge` section of `workspace.yml`, read the referenced
+file at its `path` (e.g. `/workspace/.claude/packs/<pack-name>/<file>`) and write a
 1-sentence description of what it contains and when to consult it.
 
 ## Step 4: Read current CLAUDE.md

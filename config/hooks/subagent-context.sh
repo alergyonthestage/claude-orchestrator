@@ -19,11 +19,15 @@ Repos mounted at /workspace/:${repos}
 Working dir: /workspace
 Teammate mode: ${TMODE}"
 
-# Add packs reference if present (file list only, not full descriptions)
-if [ -f /workspace/.claude/packs.md ]; then
-    pack_files=$(grep -v '^<!--' /workspace/.claude/packs.md \
-        | grep '^-' \
-        | sed 's/ — .*//')
+# Add knowledge + llms references if present (paths only, not full descriptions).
+# Source is the unified workspace.yml (ADR-0041 R1); collect the `path:` lines
+# from the knowledge and llms sections.
+WS_YML="${CCO_WORKSPACE_YML:-/workspace/.claude/workspace.yml}"
+if [ -f "$WS_YML" ]; then
+    pack_files=$(awk '
+        /^[A-Za-z_]+:/ { insec = ($0 ~ /^(knowledge|llms):/); next }
+        insec && /^  - path:/ { p=$0; sub(/^  - path: */,"",p); print "- " p }
+    ' "$WS_YML")
     [ -n "$pack_files" ] && ctx="${ctx}
 Knowledge packs (read before implementation tasks):
 ${pack_files}"

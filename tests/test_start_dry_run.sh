@@ -305,14 +305,15 @@ test_dry_run_project_claude_mounted_readwrite() {
 }
 
 test_dry_run_claude_overlays_cache_readonly() {
-    # ADR-0005 F1: packs.md and workspace.yml are generated into the CACHE bucket
-    # and overlaid :ro onto /workspace/.claude — never written into the committed
-    # project .claude/ (keeps the repo's git diff truthful, P6/G8).
+    # ADR-0005 F1: the unified workspace.yml (ADR-0041 R1 — no packs.md anymore)
+    # is generated into the CACHE bucket and overlaid :ro onto /workspace/.claude
+    # — never written into the committed project .claude/ (keeps the repo's git
+    # diff truthful, P6/G8).
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    # A pack with a knowledge file makes packs.md non-empty (it is otherwise
-    # omitted); workspace.yml is always generated.
+    # A pack with a knowledge file exercises the knowledge section; workspace.yml
+    # is always generated regardless.
     local pack_src="$CCO_PACKS_DIR/k-pack/knowledge"
     mkdir -p "$pack_src"
     create_pack "$tmpdir" "k-pack" "$(printf 'name: k-pack\nknowledge:\n  source: %s\n  files:\n    - overview.md\n' "$pack_src")"
@@ -320,18 +321,20 @@ test_dry_run_claude_overlays_cache_readonly() {
     create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nrepos:\n  - name: dummy-repo\npacks:\n  - k-pack\n')"
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
-    # Both overlays mounted :ro from the CACHE bucket (host-absolute, exact).
+    # The overlay is mounted :ro from the CACHE bucket (host-absolute, exact).
     # (|| return 1 — bare asserts are masked under the runner's set -e.)
     assert_file_contains "$compose" \
         "$CCO_CACHE_HOME/projects/test-proj/.claude/workspace.yml:/workspace/.claude/workspace.yml:ro" || return 1
-    assert_file_contains "$compose" \
-        "$CCO_CACHE_HOME/projects/test-proj/.claude/packs.md:/workspace/.claude/packs.md:ro" || return 1
-    # The committed project .claude/ never receives the generated files.
-    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/packs.md" || return 1
+    # No packs.md is ever mounted (net cut — ADR-0041 R1-D4).
+    if grep -q "/workspace/.claude/packs.md:ro" "$compose"; then
+        echo "ASSERTION FAILED: compose must not mount a packs.md overlay"; return 1
+    fi
+    # The committed project .claude/ never receives the generated file.
     assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/workspace.yml" || return 1
-    # The --dump inspection copy still lands under the dump .claude/ (unchanged).
-    assert_file_exists "$DRY_RUN_DIR/.claude/packs.md" || return 1
+    # The --dump inspection copy still lands under the dump .claude/ (unchanged);
+    # packs.md is never emitted.
     assert_file_exists "$DRY_RUN_DIR/.claude/workspace.yml" || return 1
+    assert_file_not_exists "$DRY_RUN_DIR/.claude/packs.md" || return 1
 }
 
 # ── Docker socket (Docker-from-Docker) ───────────────────────────────
