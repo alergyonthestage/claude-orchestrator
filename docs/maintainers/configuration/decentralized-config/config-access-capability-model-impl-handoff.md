@@ -31,9 +31,26 @@ Design branch with the ADRs + doc rewrites: `feat/config-access/capability-model
   the single fail is the **pre-existing, env-only** `test_paths_symlink_safe_tool_root` (DATA
   bucket unwritable inside the self-dev container — not a regression, reproduced on the unchanged
   tree). No `changelog.yml` / migration (purely-internal helper + guard refactor).
-- **Steps 2–7 — pending.** Next up: **step 2** (three-knob access resolution + precedence
-  `CLI > project.yml access: > global default > preset` + `--enable-config-edit` →
-  `--cco-access edit-project` alias).
+- **Step 2 — access resolution: ✅ done** (2026-07-01, same branch). Three knobs resolved by
+  precedence `CLI > project.yml access: > ~/.cco/access.yml > preset default (repo/none/on)`.
+  **Decided formats** (maintainer): `project.yml` `access:` block uses **short nested keys**
+  (`access.claude` / `access.cco` / `access.show_host_paths`); the global default lives in
+  **`~/.cco/access.yml`** (keys `claude`/`cco`/`show_host_paths`). Added: `_cco_access_file()`
+  (`lib/paths.sh`); pure helpers `_access_is_member` / `_access_norm_bool` / `_access_pick` +
+  `_start_resolve_access` (`lib/cmd-start.sh`, called after `_start_load_config`); CLI flags
+  `--claude-access` / `--cco-access` / `--show-host-paths` / `--no-show-host-paths`;
+  `--enable-config-edit` → `--cco-access edit-project` alias (deprecated). **Note:** `access.<key>`
+  is a 2-level block → read with **`yml_get`** (auto-depth 2), NOT `yml_get_deep` (depth 3). Enum
+  validation dies on bad values. **Scope boundary:** resolution only — mounts still driven by the
+  legacy `enable_config_edit`/`is_internal` path until step 3 switches them over; **no
+  `changelog.yml` / template `access:` block yet** (deferred to step 3, when the knobs become
+  user-visible by driving mounts — per `documentation-lifecycle`). Tests:
+  `tests/test_access_resolution.sh` (12 — pure helpers, 4-layer precedence, alias, enum
+  validation, CLI-reaches-resolution). Suite **1055 pass / 1 fail** (same pre-existing env-only
+  symlink test).
+- **Steps 3–7 — pending.** Next up: **step 3** (Axis-B/Axis-A mount generation driven by the
+  resolved knobs — generalize `_committed_ro`; switch off the legacy `enable_config_edit` bool;
+  add the `changelog.yml` entry + template `access:` block since the knobs become user-visible).
 
 ---
 
