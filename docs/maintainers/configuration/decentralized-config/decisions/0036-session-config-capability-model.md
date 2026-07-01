@@ -93,10 +93,19 @@ each resolved per session:
   - `repo` = **default**: B1+B2 **rw**, B3 **ro**
   - `all`: also B3 (global `.claude`) **rw**
   - `none`: all B **ro** (advanced security — lock authoring too)
-- **`cco_access`** (Axis A + surface R): `none` | `read` | `edit`
+- **`cco_access`** (Axis A + surface R): `none` | `read` | `edit-project` | `edit-global` | `edit-all`
   - `none` = **default**: A1 **ro**, A2 **absent**, **only R1** (self-info) exposed
   - `read`: + R2 + read-only wrapped `cco`
-  - `edit`: A1/A2 **rw** + write-enabled wrapped `cco` (A3 mutated only via `cco` functions)
+  - `edit-project`: A1 **rw** (the target project(s), honoring `--all` / `--project`); A2 **ro**;
+    A3 read-only via `cco`
+  - `edit-global`: A2 **rw** (incl. `packs/`/`templates/`) + A3 **rw via `cco`** (tags/remotes/…
+    are global registries); A1 **ro**
+  - `edit-all`: A1 **rw** + A2 **rw** + A3 **rw via `cco`**
+
+  The edit level is **granular on the config-type axis** (project A1 vs global A2) because a user
+  may want to touch only one — e.g. edit a project's `project.yml` without exposing the whole
+  personal store rw, or curate global packs/templates without a project mounted. A3 (global
+  registries) rw comes with `edit-global`/`edit-all`, since tags/remotes are global by nature.
 
 **The discriminator, made explicit (the symmetry the maintainer asked for):** `.claude` is an
 authoring surface co-authored with code → editable by default in a code session (because it is
@@ -104,24 +113,25 @@ authoring config, *not* because it lives in the repo). `.cco` structural is fram
 protected by default (ADR-0027's edit-protection stands, now justified by *config type*, not
 ownership). Internal XDG is CLI-managed → mutated only via `cco`.
 
-**A3 vs A2 within `cco_access=edit`.** `edit` grants direct rw to the *hand-editable* A1/A2
-files (YAML/text authored by convention) **and** the wrapped-`cco` write verbs for A3 (whose
-files are never hand-edited). Both live under the one knob because both are "editing my cco
-configuration"; the *mechanism* differs (direct file edit vs `cco` call), enforced by the
-wrapper (D4).
+**Direct edit vs `cco` call within the edit levels.** An edit level grants direct rw to the
+*hand-editable* A1/A2 files in its scope (YAML/text authored by convention) **and** the
+wrapped-`cco` write verbs for A3 (whose files are never hand-edited). The two mechanisms
+(direct file edit vs `cco` call) are both "editing my cco configuration"; which one applies to a
+given file is enforced by the wrapper (D4) and the resolved edit level.
 
 ### D3 — Knob placement: global default + per-project override + CLI one-off
 
 Resolution precedence (most specific wins):
 
-1. **CLI flag** `--claude-access <none|repo|all>` / `--cco-access <none|read|edit>` (this
-   session only)
+1. **CLI flag** `--claude-access <none|repo|all>` /
+   `--cco-access <none|read|edit-project|edit-global|edit-all>` (this session only)
 2. **Per-project** `project.yml` (`access:` block) — the project's standing choice
 3. **Global default** in `~/.cco` (a config datum) — the user's baseline
 4. **Built-in defaults**: `claude_access=repo`, `cco_access=none`
 
-This generalizes `--enable-config-edit` (which becomes sugar for `--cco-access edit`, kept as a
-deprecated alias for one release).
+This generalizes `--enable-config-edit` — which re-enabled rw only on the invoking repo's
+`<repo>/.cco` (A1). It becomes sugar for `--cco-access edit-project`, kept as a deprecated
+alias for one release.
 
 ### D4 — Mechanism: a whitelisted, wrapped `cco` in the container
 
@@ -141,9 +151,13 @@ The read/write capability is delivered by making `cco` runnable in the container
   the `CCO_ALLOW_HOST_RESOLVE` test/dev hatch. This addresses ADR-0007's concern
   by-construction: `cco` operates on the *real, deliberately-mounted* buckets, never silently
   under the container's `$HOME`.
-- **Host paths in read output are a feature, not a bug**: `cco list` etc. print host paths;
-  combined with R1's path map, the agent can hand the user exact host commands. Only commands
-  that *act on* those host paths (resolve/sync/start) are blocked.
+- **Host paths in read output are a feature, not a bug** — *but must be labelled*: `cco list`
+  etc. print host paths; combined with R1's path map, the agent can hand the user exact host
+  commands. The output (and the config-editor/tutorial CLAUDE.md + `config-safety.md`) **must
+  state explicitly** that these are the **user's host paths**, bind-mounted into the container
+  at `<target_path>` — otherwise the agent conflates the two namespaces. Read output shows
+  `HOST_PATH → /workspace/<target>` pairs, never a bare host path. Only commands that *act on*
+  those host paths (resolve/sync/start) are blocked.
 - **Secrets stay host-only**: remote **tokens** live in STATE `remotes-token` (0600). That
   file is **not mounted**, and `remote set-token` / `remote remove-token` remain host-only
   (config-safety.md — never expose secrets to the agent). The agent manages remote *urls*,
@@ -154,12 +168,20 @@ analysis if a need appears — recorded, not scheduled.
 
 ### D5 — Read surface R generalized
 
-- **R1 (self-info)** unifies `packs.md` + `workspace.yml` + `.managed/` into one cco-generated,
-  read-only surface describing the running project's resources **and the host↔container path
-  map**. Always on (including normal sessions) — it is minimal and about *this* project only,
-  so it does not bloat the context of projects that don't work on config.
+- **R1 (self-info)** is the intent: **one** cco-generated, read-only surface describing the
+  running project's resources **and the host↔container path map**, always on (including normal
+  sessions), minimal and about *this* project only so it doesn't bloat non-config projects.
+  **Its unified format is NOT specified here — deferred to a dedicated analysis/design
+  session.** R1 subsumes `packs.md` + `workspace.yml` + `.managed/` (and possibly other
+  context-assembly inputs), which are load-bearing for how Claude Code assembles context and
+  resources. Consolidating them safely requires: an inventory of every current consumer, a
+  check that context/resources stay **complete and correct** (adherent to design + ADRs), and
+  likely updates to some **managed rules**. Until that session lands, the existing surfaces stay
+  in place; R1 is an intent + a placeholder in this ADR, and Implementation step 3 is **gated**
+  on its own design.
 - **R2 (global-read)** exposes cross-project listings/tags/remotes/coords via the read-only
-  wrapped `cco`, only under `cco_access ≥ read`.
+  wrapped `cco`, only under `cco_access ≥ read`. (R2 is served by the D4 shim and does not
+  depend on the R1 format work.)
 
 ### D6 — Built-ins become **presets** of the general knobs
 
@@ -168,7 +190,7 @@ The tutorial and config-editor stop being bespoke code paths and become **named 
 | Session | `claude_access` | `cco_access` | Scope |
 |---|---|---|---|
 | **normal** (default) | `repo` | `none` (R1 only) | its own project |
-| **config-editor** | `all` | `edit` | global + `--all` / repeatable `--project` (only `<repo>/.cco`) |
+| **config-editor** | `all` | `edit-all` | global + `--all` / repeatable `--project` (only `<repo>/.cco`); narrow to `edit-project` / `edit-global` on request |
 | **tutorial** | `none` | `read` | read of **all** projects' config + global |
 
 **D-α (all-projects, confirmed):** config-editor's `edit` scope is opt-in via `--all` (mount
@@ -183,9 +205,29 @@ to avoid drift. The generalized mechanisms (R1 self-info; the wrapped-`cco` shim
 container-operator mode) are built **first**; the built-ins then consume them as presets. See
 *Implementation* below.
 
+### D8 — A uniform caller-context signal available to every `cco` command
+
+`cco` gains a canonical, framework-wide **caller-context** signal that every command body can
+read to guard or differ behavior by *who/where* invoked it — **user on host** vs **agent inside
+a session container**. Today this is implicit and scattered (`_cco_in_container` via
+`/.dockerenv`, the ADR-0007 resolver guard, the proposed `CCO_CONTAINER_OPERATOR`). This
+decision makes it a **single default helper** (e.g. `_cco_caller_context` → `host` |
+`container-agent`) resolved once at startup and available to all commands, so:
+
+- the whitelist/blocklist shim (D4) is one consumer, not a bespoke mechanism;
+- any command can add a targeted guard (refuse, warn, or take a container-safe branch) without
+  re-detecting the environment;
+- the anti-in-container resolver guard (ADR-0007) is re-expressed on top of this one signal
+  rather than duplicated.
+
+It is a **default part of the command contract**: adding a new `cco` command inherits the
+signal for free. Container-agent context is established deliberately (the container-operator
+entry of D4 — mounted buckets + `CCO_*_HOME`), never inferred silently, keeping ADR-0007's
+invariant intact.
+
 ## Capability matrix
 
-| Resource | managed floor | normal (default) | `--cco-access read` | config-editor (`edit`/`all`) | tutorial (`read`/`none`) |
+| Resource | managed floor | normal (default) | `--cco-access read` | config-editor (`edit-all`) | tutorial (`read`/`none`) |
 |---|---|---|---|---|---|
 | **M** `/etc/claude-code/` | ro (always) | ro | ro | ro | ro |
 | **B1** `<repo>/.claude` | — | rw | rw | rw | ro |
@@ -198,11 +240,15 @@ container-operator mode) are built **first**; the built-ins then consume them as
 | **R2** global-read | — | none | ro via `cco` | ro/rw via `cco` | ro via `cco` |
 | remote **tokens** (STATE) | — | host-only | host-only | host-only | host-only |
 
+The config-editor column shows `edit-all`. The intermediate edit levels restrict it: under
+`edit-project` only **A1** is rw (A2 drops to ro, A3 to read-only via `cco`); under `edit-global`
+only **A2**+**A3** are rw (A1 drops to ro). `read` and `none` are the two leftmost data columns.
+
 ```mermaid
 flowchart TD
   S["cco start [session]"] --> RES["resolve access:<br/>CLI flag &gt; project.yml &gt; global default &gt; preset"]
   RES --> CA["claude_access<br/>none | repo | all"]
-  RES --> XA["cco_access<br/>none | read | edit"]
+  RES --> XA["cco_access<br/>none | read |<br/>edit-project | edit-global | edit-all"]
   CA --> B["Axis B mounts<br/>B1/B2/B3 .claude ro|rw"]
   XA --> A["Axis A mounts<br/>A1/A2 .cco ro|rw|absent"]
   XA --> W["wrapped cco shim<br/>(read | read+write verbs)"]
@@ -231,26 +277,35 @@ flowchart TD
 
 ## Implementation (dependency-ordered, gradual)
 
-1. **Access resolution** — the two knobs (`claude_access`, `cco_access`), their precedence
-   (CLI > project.yml `access:` > global default > preset), and `--enable-config-edit` alias.
-2. **Axis-B / Axis-A mount generation** — drive the `.claude` and `.cco` mount modes from the
-   resolved knobs in `lib/cmd-start.sh` (generalizes the `_committed_ro` logic).
-3. **R1 self-info** — one cco-generated surface absorbing `packs.md` + `workspace.yml` +
-   `.managed/`, plus the host↔container path map. (Refactor of a working mechanism — keep old
-   outputs until R1 is proven.)
+1. **Caller-context signal (D8)** — the single `_cco_caller_context` helper; re-express the
+   ADR-0007 resolver guard on top of it. Foundational: the shim and later guards depend on it.
+2. **Access resolution** — the two knobs (`claude_access` `none|repo|all`; `cco_access`
+   `none|read|edit-project|edit-global|edit-all`), their precedence (CLI > project.yml
+   `access:` > global default > preset), and the `--enable-config-edit` → `edit-project` alias.
+3. **Axis-B / Axis-A mount generation** — drive the `.claude` and `.cco` mount modes (per the
+   granular edit levels) from the resolved knobs in `lib/cmd-start.sh` (generalizes the
+   `_committed_ro` logic).
 4. **Wrapped-`cco` shim + container-operator mode** — the whitelist/blocklist shim, bucket
-   mounts (DATA rw / STATE index ro / tokens excluded), `CCO_CONTAINER_OPERATOR` env; bake or
-   mount `bin/cco` + `lib/` into the image.
-5. **Built-in presets** — re-express tutorial (`read`/`none`) and config-editor (`edit`/`all`)
-   as presets; add config-editor `--all` / repeatable `--project` (only `<repo>/.cco`).
-6. **Docs + tests** — rewrite `design-config-editor.md` and the tutorial design in place to the
-   preset model; update `config-safety.md`; extend `tests/test_config_editor.sh` (all-projects
-   mounts, wrapped-cco whitelist/blocklist, R1 surface, the two knobs' precedence, token
-   exclusion). Add a `changelog.yml` entry (additive) and, if `project.yml` gains an `access:`
-   block, a project migration.
+   mounts (DATA rw / STATE index ro / **tokens excluded**), `CCO_CONTAINER_OPERATOR` env;
+   host-path labelling in read output; bake or mount `bin/cco` + `lib/` into the image.
+5. **Built-in presets** — re-express tutorial (`read`/`none`) and config-editor (`edit-all`/
+   `all`) as presets; add config-editor `--all` / repeatable `--project` (only `<repo>/.cco`).
+6. **R1 self-info** — **gated on its own analysis/design session (D5)**: the unified surface
+   absorbing `packs.md` + `workspace.yml` + `.managed/` + the host↔container path map. Do not
+   start before that design lands; keep the existing surfaces until R1 is proven complete and
+   correct. (R2 ships with step 4, independent of R1.)
+7. **Docs + tests** — rewrite `design-config-editor.md` and the tutorial design in place to the
+   preset model; update `config-safety.md` (host-path labelling, granular edit levels); extend
+   `tests/test_config_editor.sh` (all-projects mounts, wrapped-cco whitelist/blocklist, the two
+   knobs' precedence + granular edit levels, token exclusion, caller-context guard). Add a
+   `changelog.yml` entry (additive) and, since `project.yml` gains an `access:` block, a project
+   migration.
 
 ## Open items / future
 
+- **R1 unified format** — its own analysis/design session (D5). Substitutes `packs.md` +
+  `workspace.yml` + `.managed/` and other context-assembly inputs; must verify context/resource
+  completeness and correctness, and may update managed rules. **Blocks Implementation step 6.**
 - **MCP** over the wrapped `cco` — deferred; evaluate if the CLI shim proves insufficient.
 - **`--cco-access` in normal sessions** as a routine workflow (beyond R1) — enabled by this
   model; adoption is a UX decision for a follow-up.
