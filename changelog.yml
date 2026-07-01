@@ -444,3 +444,22 @@ entries:
       usage — the same as `cco help`. The version is read from package.json (the
       single source of truth), so it never drifts from the published package.
       Both are handled before any command runs and have no side effects (FI-11).
+
+  - id: 28
+    date: "2026-07-01"
+    type: additive
+    title: "Session access knobs: control .claude / .cco edit access per session"
+    description: >
+      `cco start` now resolves three orthogonal capability knobs that control how
+      much of your config a session can edit (ADR-0036): `claude_access`
+      (none | repo | all) governs the .claude authoring trees, `cco_access`
+      (none | read | edit-project | edit-global | edit-all) governs the .cco
+      framework config, and `show_host_paths` (on by default) toggles the
+      host<->container path map. Defaults are unchanged (repo / none / on), so
+      existing sessions behave exactly as before. Set them per session on the CLI
+      (`--claude-access`, `--cco-access`, `--show-host-paths` / `--no-show-host-paths`),
+      per project via an optional `access:` block in `project.yml`
+      (`access.claude` / `access.cco` / `access.show_host_paths`), or as your
+      machine-wide baseline in `~/.cco/access.yml`. Precedence: CLI > project.yml >
+      ~/.cco/access.yml > default. `--enable-config-edit` still works as a
+      deprecated alias for `--cco-access edit-project`.

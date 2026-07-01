@@ -740,16 +740,34 @@ YAML
 
         echo "    volumes:"
 
-        # Agentic config edit-protection (ADR-0027 D3, narrow scope). A normal
-        # session overlays the committed structural framework config
-        # (<repo>/.cco: project.yml, secrets.env, internal metadata) READ-ONLY
-        # so the in-container agent cannot involuntarily mutate it while working
-        # on code. The project's Claude config tree (/workspace/.claude) stays rw
-        # (P17, /init authoring). The host IDE is unaffected (container-only).
-        # Built-in sessions (tutorial, config-editor) and the explicit
-        # --enable-config-edit escape hatch keep <repo>/.cco read-write.
+        # ── Axis-B (.claude authoring) + Axis-A (.cco wiring) mount modes ──
+        # Driven by the resolved capability knobs (ADR-0036 D2, generalizing
+        # ADR-0027 D3's edit-protection). claude_access governs the .claude trees
+        # (B1 <repo>/.claude cross-cutting, B2 project /workspace/.claude, B3 global
+        # ~/.cco/.claude); cco_access governs the <repo>/.cco structural overlay
+        # (A1). The host IDE is unaffected (container-only).
+        #
+        # Axis B (claude_access): none = all .claude ro (B1 overlaid ro, B2 ro,
+        # B3 authoring ro); repo (default) = B1+B2 rw, B3 authoring ro; all =
+        # B1+B2 rw + B3 authoring rw. settings.json is ALWAYS rw (Claude Code writes
+        # runtime prefs like /effort — a functional need, not authoring).
+        local _b2_mode="" _b3_auth_mode="ro" _b1_ro=""
+        case "$claude_access" in
+            none) _b2_mode="ro"; _b1_ro=":ro" ;;
+            all)  _b3_auth_mode="" ;;
+            repo) : ;;   # defaults: B2 rw, B3 authoring ro, B1 rw (no overlay)
+        esac
+        # Axis A (cco_access): the committed <repo>/.cco structural config
+        # (project.yml, secrets.env, .cco metadata) is overlaid READ-ONLY unless the
+        # level grants project edit (edit-project / edit-all). edit-global keeps A1
+        # ro — only the personal store (A2, mounted in step 4) is writable there.
+        # Built-in sessions keep the legacy rw via is_internal until step 5 expresses
+        # them as presets. (--enable-config-edit already resolves to cco_access
+        # edit-project via the step-2 alias, so the old escape hatch still works.)
         local _committed_ro=":ro"
-        if $is_internal || $enable_config_edit; then _committed_ro=""; fi
+        if $is_internal || [[ "$cco_access" == "edit-project" || "$cco_access" == "edit-all" ]]; then
+            _committed_ro=""
+        fi
 
         # ~/.claude.json — preferences, MCP servers, session metadata (machine-local STATE)
         _compose_vol "${state_root}/claude.json" "/home/claude/.claude.json"
@@ -765,19 +783,21 @@ YAML
         _compose_vol "${claude_install}/bin" "/home/claude/.local/bin"
         _compose_vol "${claude_install}/share" "/home/claude/.local/share/claude"
 
-        # Global config (settings.json is rw — Claude Code writes runtime preferences like /effort)
-        echo "      # Global config (settings.json is rw — Claude Code writes runtime preferences like /effort)"
+        # Global config B3 (~/.cco/.claude). settings.json is always rw (runtime
+        # prefs); the authoring tree (CLAUDE.md/rules/agents/skills) is rw only under
+        # claude_access=all, ro otherwise (_b3_auth_mode, ADR-0036 D2).
+        echo "      # Global config B3 (settings.json always rw; authoring tree mode from claude_access)"
         _compose_vol "${global_claude}/settings.json" "/home/claude/.claude/settings.json"
-        _compose_vol "${global_claude}/CLAUDE.md" "/home/claude/.claude/CLAUDE.md" "ro"
-        _compose_vol "${global_claude}/rules" "/home/claude/.claude/rules" "ro"
-        _compose_vol "${global_claude}/agents" "/home/claude/.claude/agents" "ro"
-        _compose_vol "${global_claude}/skills" "/home/claude/.claude/skills" "ro"
-        # Project config. The Claude config tree (CLAUDE.md/rules/agents/skills)
-        # stays rw so /init + normal project-config authoring work (P17); the
-        # structural framework config (project.yml/secrets/.cco metadata) is
-        # protected separately by the <repo>/.cco :ro overlay below (ADR-0027 D3).
-        echo "      # Project config (.cco/claude is rw for /init authoring; .cco metadata is :ro below, ADR-0027 D3)"
-        _compose_vol "${claude_src}" "/workspace/.claude"
+        _compose_vol "${global_claude}/CLAUDE.md" "/home/claude/.claude/CLAUDE.md" "${_b3_auth_mode}"
+        _compose_vol "${global_claude}/rules" "/home/claude/.claude/rules" "${_b3_auth_mode}"
+        _compose_vol "${global_claude}/agents" "/home/claude/.claude/agents" "${_b3_auth_mode}"
+        _compose_vol "${global_claude}/skills" "/home/claude/.claude/skills" "${_b3_auth_mode}"
+        # Project config B2 (/workspace/.claude). Mode from claude_access
+        # (_b2_mode: rw under repo/all for /init authoring per P17, ro under none);
+        # the structural framework config (project.yml/secrets/.cco metadata) is
+        # protected separately by the <repo>/.cco overlay below (Axis A, cco_access).
+        echo "      # Project config B2 (/workspace/.claude — mode from claude_access; .cco metadata overlay below per cco_access)"
+        _compose_vol "${claude_src}" "/workspace/.claude" "${_b2_mode}"
         _compose_vol "${project_dir}/project.yml" "/workspace/project.yml" "ro"
         # Claude state: session transcripts (machine-local STATE; enables /resume across rebuilds)
         echo "      # Claude state: session transcripts (machine-local STATE; /resume across rebuilds)"
@@ -844,13 +864,25 @@ YAML
             _compose_vol "${repo_path}" "/workspace/${repo_name}"
         done < <(_effective_repo_mounts "$project_yml")
 
-        # Edit-protection (ADR-0027 D3): overlay each repo's committed .cco as
-        # :ro on top of the rw repo mount (Docker applies child mounts after the
-        # parent), so the agent cannot mutate the structural framework config
-        # (project.yml, secrets.env, internal metadata) via the code repo. The
-        # project's Claude config (.cco/claude) is still authored normally
-        # through the rw /workspace/.claude overlay (P17). Skipped under
-        # --enable-config-edit and for built-ins.
+        # Axis-B1 lockdown (claude_access=none): overlay each repo's native
+        # <repo>/.claude :ro on top of the rw repo mount, so cross-cutting authoring
+        # config is read-only too (advanced security — ADR-0036 D2). No overlay under
+        # repo/all, where B1 stays rw as part of the repo mount.
+        if [[ -n "$_b1_ro" ]]; then
+            while IFS=$'\t' read -r repo_name repo_path; do
+                [[ -z "$repo_name" ]] && continue
+                [[ -d "$repo_path/.claude" ]] && \
+                    _compose_vol "${repo_path}/.claude" "/workspace/${repo_name}/.claude" "ro"
+            done < <(_effective_repo_mounts "$project_yml")
+        fi
+
+        # Axis-A1 edit-protection (ADR-0036 D2, generalizing ADR-0027 D3): overlay
+        # each repo's committed .cco :ro on top of the rw repo mount (Docker applies
+        # child mounts after the parent), so the agent cannot mutate the structural
+        # framework config (project.yml, secrets.env, internal metadata) via the code
+        # repo. The project's Claude config (.cco/claude) is still authored through
+        # the B2 overlay above. Skipped when cco_access grants project edit
+        # (edit-project/edit-all) or for built-ins (_committed_ro="").
         if [[ -n "$_committed_ro" ]]; then
             while IFS=$'\t' read -r repo_name repo_path; do
                 [[ -z "$repo_name" ]] && continue
@@ -1033,6 +1065,7 @@ _start_show_summary() {
     echo ""
     info "  Image:          ${docker_image}"
     info "  Auth:           ${auth_method}"
+    info "  Access:         claude=${claude_access} cco=${cco_access} host-paths=${show_host_paths}"
     info "  Teammate mode:  ${teammate_mode}"
     info "  Network:        ${network}"
     info "  Docker socket:  ${mount_socket}"

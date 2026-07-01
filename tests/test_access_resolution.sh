@@ -175,3 +175,61 @@ test_access_invalid_cli_value_dies() {
     [[ $rc -ne 0 ]] || fail "invalid --cco-access should abort, got rc=0"
     assert_output_contains "Invalid cco_access"
 }
+
+# ── Mount modes driven by the knobs (step 3) ─────────────────────────
+# Assert the generated docker-compose reflects the resolved Axis-B/Axis-A modes.
+
+_access_compose() { cat "$DRY_RUN_DIR/.cco/docker-compose.yml"; }
+
+test_access_mount_defaults() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    mkdir -p "$CCO_DUMMY_REPO/.cco"
+    run_cco start "test-proj" --dry-run --dump
+    local c; c=$(_access_compose)
+    # B2 project .claude rw (no :ro right after the target)
+    echo "$c" | grep -qE '/workspace/\.claude"' || fail "B2 should be rw by default"
+    # B3 global authoring ro
+    echo "$c" | grep -qE '/home/claude/\.claude/CLAUDE\.md:ro"' || fail "B3 authoring ro by default"
+    # A1 <repo>/.cco overlaid :ro (cco_access=none default)
+    echo "$c" | grep -qE 'dummy-repo/\.cco:/workspace/dummy-repo/\.cco:ro"' || fail "A1 :ro overlay expected by default"
+}
+
+test_access_mount_claude_none_locks_b2_and_b1() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    mkdir -p "$CCO_DUMMY_REPO/.claude"   # B1 native repo claude tree
+    run_cco start "test-proj" --claude-access none --dry-run --dump
+    local c; c=$(_access_compose)
+    echo "$c" | grep -qE '/workspace/\.claude:ro"' || fail "B2 should be :ro under claude-access none"
+    echo "$c" | grep -qE 'dummy-repo/\.claude:/workspace/dummy-repo/\.claude:ro"' || fail "B1 native .claude should be :ro overlaid under none"
+}
+
+test_access_mount_claude_all_unlocks_b3() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --claude-access all --dry-run --dump
+    local c; c=$(_access_compose)
+    # global authoring now rw (quote right after CLAUDE.md, no :ro)
+    echo "$c" | grep -qE '/home/claude/\.claude/CLAUDE\.md"' || fail "B3 authoring should be rw under claude-access all"
+    if echo "$c" | grep -qE '/home/claude/\.claude/CLAUDE\.md:ro"'; then fail "B3 CLAUDE.md must not be :ro under all"; fi
+}
+
+test_access_mount_cco_edit_project_unlocks_a1() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    mkdir -p "$CCO_DUMMY_REPO/.cco"
+    run_cco start "test-proj" --cco-access edit-project --dry-run --dump
+    local c; c=$(_access_compose)
+    if echo "$c" | grep -qE 'dummy-repo/\.cco:/workspace/dummy-repo/\.cco:ro"'; then
+        fail "A1 :ro overlay should be absent under cco-access edit-project"
+    fi
+}

@@ -1,6 +1,17 @@
 name: {{PROJECT_NAME}}
 description: "{{DESCRIPTION}}"
 
+# ── Session access (optional) ────────────────────────────────────────
+# Control how much of your config a session for this project may edit
+# (ADR-0036). All optional — omit the block to use the defaults shown.
+# Precedence: CLI flags > this block > ~/.cco/access.yml > defaults.
+#
+# access:
+#   claude: repo            # .claude authoring: none | repo (default) | all
+#   cco: none               # .cco framework config: none (default) | read |
+#                           #   edit-project | edit-global | edit-all
+#   show_host_paths: true   # show the host<->container path map (default: true)
+
 # ── Repositories ─────────────────────────────────────────────────────
 # Each repo is referenced by a logical name + an optional machine-agnostic
 # coordinate (url/ref). Local paths live in the machine-local index — set them
