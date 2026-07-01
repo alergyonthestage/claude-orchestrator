@@ -84,10 +84,11 @@ resources into a session, but its **source is `~/.cco/packs/` (A2)**. Editing pa
 therefore an **Axis A** operation gated by `cco_access` — **not** by `claude_access`.
 `claude_access` governs only the B1/B2/B3 `.claude` *trees*, never pack-sourced content.
 
-### D2 — Two orthogonal user knobs
+### D2 — Orthogonal access / visibility knobs
 
-The single `--enable-config-edit` flag (ADR-0027) is generalized into two orthogonal knobs,
-each resolved per session:
+The single `--enable-config-edit` flag (ADR-0027) is generalized into **three** orthogonal
+knobs, each resolved per session — two govern **editing** (axes B and A), one governs
+**host-path visibility**:
 
 - **`claude_access`** (Axis B): `none` | `repo` | `all`
   - `repo` = **default**: B1+B2 **rw**, B3 **ro**
@@ -107,6 +108,18 @@ each resolved per session:
   personal store rw, or curate global packs/templates without a project mounted. A3 (global
   registries) rw comes with `edit-global`/`edit-all`, since tags/remotes are global by nature.
 
+- **`show_host_paths`** (visibility, **not** editing): `on` = **default** | `off`. When `on`,
+  the session is shown the **host↔container path map** (labelled `HOST_PATH → /workspace/<target>`
+  pairs) — in R1's `path_map` section (ADR-0040) and in the wrapped-`cco` read output — so the
+  agent can hand the user copy-pasteable **host** commands. It is a **separate knob**, not folded
+  into `cco_access`, because the utility (host commands) is independent of config editing: a
+  plain code session may want it. It exposes only the user's own machine paths, to the user's own
+  agent, inside the user's own container — no new access is granted (the container cannot reach
+  host paths). **Default `on`** (useful, low-risk); `off` for security-conscious setups. It does
+  **not** violate AD3: AD3 governs *committed* config (machine-agnostic), not a read-only runtime
+  view. `config-safety.md` reminds the agent not to paste host paths into commits / PRs /
+  external calls.
+
 **The discriminator, made explicit (the symmetry the maintainer asked for):** `.claude` is an
 authoring surface co-authored with code → editable by default in a code session (because it is
 authoring config, *not* because it lives in the repo). `.cco` structural is framework wiring →
@@ -124,10 +137,11 @@ given file is enforced by the wrapper (D4) and the resolved edit level.
 Resolution precedence (most specific wins):
 
 1. **CLI flag** `--claude-access <none|repo|all>` /
-   `--cco-access <none|read|edit-project|edit-global|edit-all>` (this session only)
+   `--cco-access <none|read|edit-project|edit-global|edit-all>` /
+   `--show-host-paths` / `--no-show-host-paths` (this session only)
 2. **Per-project** `project.yml` (`access:` block) — the project's standing choice
 3. **Global default** in `~/.cco` (a config datum) — the user's baseline
-4. **Built-in defaults**: `claude_access=repo`, `cco_access=none`
+4. **Built-in defaults**: `claude_access=repo`, `cco_access=none`, `show_host_paths=on`
 
 This generalizes `--enable-config-edit` — which re-enabled rw only on the invoking repo's
 `<repo>/.cco` (A1). It becomes sugar for `--cco-access edit-project`, kept as a deprecated
@@ -156,8 +170,10 @@ The read/write capability is delivered by making `cco` runnable in the container
   commands. The output (and the config-editor/tutorial CLAUDE.md + `config-safety.md`) **must
   state explicitly** that these are the **user's host paths**, bind-mounted into the container
   at `<target_path>` — otherwise the agent conflates the two namespaces. Read output shows
-  `HOST_PATH → /workspace/<target>` pairs, never a bare host path. Only commands that *act on*
-  those host paths (resolve/sync/start) are blocked.
+  `HOST_PATH → /workspace/<target>` pairs, never a bare host path. This exposure is governed by
+  the **`show_host_paths`** knob (default `on`): when `off`, host paths are omitted from read
+  output and the `path_map` section. Only commands that *act on* those host paths
+  (resolve/sync/start) are blocked regardless.
 - **Secrets stay host-only**: remote **tokens** live in STATE `remotes-token` (0600). That
   file is **not mounted**, and `remote set-token` / `remote remove-token` remain host-only
   (config-safety.md — never expose secrets to the agent). The agent manages remote *urls*,
@@ -175,8 +191,9 @@ analysis if a need appears — recorded, not scheduled.
   design). Two refinements from that grounding: (a) R1 unifies only the **agent-facing** surfaces
   (`packs.md` + `workspace.yml`) — **`.managed/` is out** (it is entrypoint infrastructure, not
   agent-read), correcting this bullet's earlier "+ `.managed/`"; (b) the **host↔container path
-  map is gated by `cco_access ≥ read`** (normal sessions keep host paths hidden — AD3), so the
-  always-on R1 core is host-path-free. Implementation step 6 is gated on ADR-0040.
+  map is governed by the dedicated `show_host_paths` knob** (default `on`; a separate visibility
+  axis, not `cco_access`), so R1's structural core (container paths) is always present and the
+  host-path section toggles with the knob. Implementation step 6 is gated on ADR-0040.
 - **R2 (global-read)** exposes cross-project listings/tags/remotes/coords via the read-only
   wrapped `cco`, only under `cco_access ≥ read`. (R2 is served by the D4 shim and does not
   depend on the R1 format work.)
@@ -241,6 +258,8 @@ invariant intact.
 The config-editor column shows `edit-all`. The intermediate edit levels restrict it: under
 `edit-project` only **A1** is rw (A2 drops to ro, A3 to read-only via `cco`); under `edit-global`
 only **A2**+**A3** are rw (A1 drops to ro). `read` and `none` are the two leftmost data columns.
+The **`show_host_paths`** knob (default `on`) is orthogonal to every column: it toggles the R1
+`path_map` section + host-path labelling in read output, independent of `claude_access`/`cco_access`.
 
 ```mermaid
 flowchart TD
@@ -251,7 +270,10 @@ flowchart TD
   XA --> A["Axis A mounts<br/>A1/A2 .cco ro|rw|absent"]
   XA --> W["wrapped cco shim<br/>(read | read+write verbs)"]
   XA --> R2["R2 global-read"]
-  S --> R1["R1 self-info + path map (always)"]
+  RES --> HP["show_host_paths<br/>on (default) | off"]
+  S --> R1["R1 self-info (always)"]
+  HP -. "on" .-> PM2["+ path_map section<br/>host -&gt; target (labelled)"]
+  PM2 --> R1
   MG["/etc/claude-code (managed)"] -. "always ro, no knob" .-> S
   W --> GUARD["blocklist: start/stop/build/new,<br/>resolve/sync/init/join/forget/update/clean/rename;<br/>tokens host-only"]
 ```
@@ -277,9 +299,10 @@ flowchart TD
 
 1. **Caller-context signal (D8)** — the single `_cco_caller_context` helper; re-express the
    ADR-0007 resolver guard on top of it. Foundational: the shim and later guards depend on it.
-2. **Access resolution** — the two knobs (`claude_access` `none|repo|all`; `cco_access`
-   `none|read|edit-project|edit-global|edit-all`), their precedence (CLI > project.yml
-   `access:` > global default > preset), and the `--enable-config-edit` → `edit-project` alias.
+2. **Access resolution** — the three knobs (`claude_access` `none|repo|all`; `cco_access`
+   `none|read|edit-project|edit-global|edit-all`; `show_host_paths` `on|off`, default `on`),
+   their precedence (CLI > project.yml `access:` > global default > preset), and the
+   `--enable-config-edit` → `edit-project` alias.
 3. **Axis-B / Axis-A mount generation** — drive the `.claude` and `.cco` mount modes (per the
    granular edit levels) from the resolved knobs in `lib/cmd-start.sh` (generalizes the
    `_committed_ro` logic).

@@ -57,7 +57,7 @@ knowledge:  [ { path: /workspace/.claude/packs/<...>, description }, ... ]   # w
 llms:       [ { name, path }, ... ]                                          # was packs.md
 extra_mounts:
   - { target: /workspace/<t>, readonly: true|false }
-path_map:   # OPTIONAL — present only when cco_access >= read (see R1-D3)
+path_map:   # OPTIONAL — present only when show_host_paths=on (default on; see R1-D3)
   - { host: <HOST_PATH>, target: /workspace/<t>, readonly }
 ```
 
@@ -65,12 +65,18 @@ path_map:   # OPTIONAL — present only when cco_access >= read (see R1-D3)
 hooks render the slice they inject as markdown; the skill parses the YAML. Centralized data, one
 generator; no duplicated formats.
 
-### R1-D3 — Host↔container `path_map` is gated by `cco_access ≥ read`
+### R1-D3 — Host↔container `path_map` is governed by the `show_host_paths` knob (default on)
 
-The `path_map` section is emitted **only** when `cco_access ≥ read` (config-editor, tutorial, or
-an opt-in normal session — ADR-0036). Normal sessions (`cco_access=none`) keep host paths hidden
-(AD3 invariant intact). Entries are always **labelled pairs** `host → target` (ADR-0036 D4), so
-the agent never mistakes a host path for a container path. Resolution logical→host stays
+The `path_map` section is emitted when **`show_host_paths=on`** — a **dedicated visibility knob**
+(ADR-0036 D2), orthogonal to `claude_access`/`cco_access`, **default `on`** because the utility
+(handing the user copy-pasteable host commands) is independent of config editing and applies even
+to a plain code session. It exposes only the user's own machine paths, to the user's own agent,
+inside the user's own container — no new access. Set `off` for security-conscious setups.
+
+This does **not** violate AD3: AD3 governs *committed* config being machine-agnostic, not a
+read-only runtime view. Entries are always **labelled pairs** `host → target` (ADR-0036 D4), so
+the agent never mistakes a host path for a container path, and `config-safety.md` reminds it not
+to paste host paths into commits / PRs / external calls. Resolution logical→host stays
 **host-side, before compose** — never inside the container (ADR-0007).
 
 ### R1-D4 — Consumer migration: dual-emit then cutover, preserve every datum
@@ -99,7 +105,7 @@ and the logical→absolute resolution order are **out of R1's scope** and unchan
 flowchart TD
   START["cco start"] --> GEN["cco generator (host-side)"]
   GEN --> WS["/workspace/.claude/workspace.yml<br/>project, repos, packs, knowledge, llms, extra_mounts"]
-  GEN -. "cco_access >= read only" .-> PM["path_map: host -> target (labelled)"]
+  GEN -. "show_host_paths=on (default)" .-> PM["path_map: host -> target (labelled)"]
   PM --> WS
   WS --> H1["session-context.sh (SessionStart)"]
   WS --> H2["subagent-context.sh (SubagentStart)"]
@@ -111,9 +117,10 @@ flowchart TD
 ## Consequences
 
 - **Positive**: one agent-facing surface + one generator; `packs.md`/`workspace.yml` split
-  collapses; the path-map feature is delivered without violating the machine-agnostic invariant
-  (gated); `.managed/` correctly stays infrastructure; completeness is enforced by an explicit
-  gate before cutover.
+  collapses; the path-map feature is delivered via the dedicated `show_host_paths` knob
+  (default on) without touching AD3 (which governs committed config, not runtime views);
+  `.managed/` correctly stays infrastructure; completeness is enforced by an explicit gate
+  before cutover.
 - **Negative / accepted**: three consumers + one managed rule must be migrated in lockstep;
   dual-emit adds a transient generation cost until cutover; `workspace.yml` grows a few sections.
 - **Self-development caveat**: touched files are host-side (`lib/workspace.sh`, `lib/cmd-start.sh`,
@@ -123,12 +130,13 @@ flowchart TD
 
 1. Extend the generator (`lib/workspace.sh` + the `packs.md` generator in `lib/cmd-start.sh`) to
    emit the unified `workspace.yml` sections (`knowledge`, `llms`); dual-emit `packs.md`.
-2. Emit `path_map` only when the resolved `cco_access ≥ read` (labelled host→target pairs).
+2. Emit `path_map` when `show_host_paths=on` (default on; labelled host→target pairs).
 3. Migrate `session-context.sh`, `subagent-context.sh`, `init-workspace` to the unified file;
    reconcile `memory-policy.md`.
 4. Completeness gate (R1-D5) → then remove `packs.md` emission.
-5. Tests: unified-file shape, gated `path_map` (absent under `cco_access=none`, present + labelled
-   otherwise), hook rendering, `init-workspace` parse, description-seeding idempotency.
+5. Tests: unified-file shape, `path_map` toggling with `show_host_paths` (absent when `off`,
+   present + labelled when `on`), hook rendering, `init-workspace` parse, description-seeding
+   idempotency.
 
 ## Open items / future
 
