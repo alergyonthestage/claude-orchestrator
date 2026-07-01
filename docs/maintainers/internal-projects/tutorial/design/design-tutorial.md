@@ -5,7 +5,7 @@
 **Scope**: Sprint 5 — Interactive Tutorial Project
 **Status**: Access model = target per
 [ADR-0036](../../../configuration/decentralized-config/decisions/0036-session-config-capability-model.md)
-/ [ADR-0040](../../../configuration/decentralized-config/decisions/0040-unified-session-info-surface.md)
+/ [ADR-0041](../../../configuration/decentralized-config/decisions/0041-unified-session-info-surface.md)
 (see §0). **The body below (§1–§12) predates the decentralized + capability model** (it still
 describes the central `user-config/` layout, `cco project create --template`, old paths); it
 needs a broader refresh as part of the docs sweep — out of the config-access design's scope. Read
@@ -24,7 +24,7 @@ reserved name, preset resolution, wrapped-`cco` shim); it differs only in knob v
 |------|-------|--------|
 | `cco_access` | `read` | read-only wrapped `cco` (`list`, `*show`, `*validate`, `docs`, `list remotes`, `path list`) + R2 global-read over **all** projects' config + global — for context and targeted answers about the user's setup |
 | `claude_access` | `none` | all `.claude` trees **read-only** — the tutorial teaches, never edits (its whole point vs config-editor) |
-| `show_host_paths` | `on` (default) | R1 `path_map` (ADR-0040) so the tutorial can show the user exact host commands |
+| `show_host_paths` | `on` (default) | R1 `path_map` (ADR-0041) so the tutorial can show the user exact host commands |
 
 Implications vs the body below:
 - **Reads all configs + global** (not just its own `user-config/`): the read-only wrapped `cco`
@@ -33,9 +33,9 @@ Implications vs the body below:
   and must not be pasted into external artifacts (`config-safety.md`).
 - **Never edits**: `claude_access=none` + no `edit-*` — the "check for rw / instruct to enable"
   dance in the skills below is replaced by "for edits, launch config-editor".
-- **R1 self-info** (ADR-0040) supersedes the ad-hoc `user-config/` reading described in §4/§5.
+- **R1 self-info** (ADR-0041) supersedes the ad-hoc `user-config/` reading described in §4/§5.
 
-`.managed/`, compose, and resolution order are unchanged (ADR-0040 R1-D1).
+`.managed/`, compose, and resolution order are unchanged (ADR-0041 R1-D1).
 
 ---
 

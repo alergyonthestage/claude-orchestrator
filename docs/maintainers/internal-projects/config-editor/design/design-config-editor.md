@@ -1,7 +1,7 @@
 # Config-Editor Project — Design
 
 > **Status**: Target design per [ADR-0036](../../../configuration/decentralized-config/decisions/0036-session-config-capability-model.md)
-> (session config capability model) + [ADR-0040](../../../configuration/decentralized-config/decisions/0040-unified-session-info-surface.md)
+> (session config capability model) + [ADR-0041](../../../configuration/decentralized-config/decisions/0041-unified-session-info-surface.md)
 > (R1 self-info). **Implementation pending** — this living doc describes the agreed target;
 > the shipped code is the pre-capability-model config-editor (ADR-0027) until the handoff
 > implementation lands.
@@ -9,7 +9,7 @@
 > edit-protection, **generalized** by ADR-0036)
 
 This is a living design doc: it reflects the current/target behavior and is rewritten in place
-(see `.claude/rules/documentation-lifecycle.md`). The general model lives in ADR-0036/0040;
+(see `.claude/rules/documentation-lifecycle.md`). The general model lives in ADR-0036/0041;
 this doc describes config-editor **as a preset/consumer** of that model — it does not duplicate
 the model's rationale.
 
@@ -42,7 +42,7 @@ flowchart LR
   S --> P["preset: claude_access=all,<br/>cco_access=edit-all, show_host_paths=on"]
   P --> M1["A2 ~/.cco rw → /workspace/cco-config"]
   P --> M2["docs ro → /workspace/cco-docs"]
-  P --> M3["R1 self-info + path_map (ADR-0040)"]
+  P --> M3["R1 self-info + path_map (ADR-0041)"]
   P --> M4["wrapped cco (read+write whitelist)"]
   P -. "--project / --all" .-> M5["A1 &lt;repo&gt;/.cco rw (×N) → /workspace/&lt;name&gt;-config"]
 ```
@@ -103,7 +103,7 @@ Internal XDG (A3) is **never** hand-edited — only via these verbs.
 
 ### 3.3 R1 self-info + path map
 
-The R1 surface (ADR-0040) gives config-editor its project structure + knowledge/llms index +,
+The R1 surface (ADR-0041) gives config-editor its project structure + knowledge/llms index +,
 since `show_host_paths=on`, the labelled `host → /workspace/<target>` path map so the agent can
 hand the user exact host commands.
 

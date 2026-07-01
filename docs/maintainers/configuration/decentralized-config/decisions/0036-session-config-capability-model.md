@@ -111,7 +111,7 @@ knobs, each resolved per session — two govern **editing** (axes B and A), one 
 
 - **`show_host_paths`** (visibility, **not** editing): `on` = **default** | `off`. When `on`,
   the session is shown the **host↔container path map** (labelled `HOST_PATH → /workspace/<target>`
-  pairs) — in R1's `path_map` section (ADR-0040) and in the wrapped-`cco` read output — so the
+  pairs) — in R1's `path_map` section (ADR-0041) and in the wrapped-`cco` read output — so the
   agent can hand the user copy-pasteable **host** commands. It is a **separate knob**, not folded
   into `cco_access`, because the utility (host commands) is independent of config editing: a
   plain code session may want it. It exposes only the user's own machine paths, to the user's own
@@ -188,13 +188,13 @@ analysis if a need appears — recorded, not scheduled.
 - **R1 (self-info)** is the intent: **one** cco-generated, read-only surface describing the
   running project's resources **and the host↔container path map**, always on (including normal
   sessions), minimal and about *this* project only so it doesn't bloat non-config projects.
-  **Its format is specified in [ADR-0040](0040-unified-session-info-surface.md)** (the dedicated
+  **Its format is specified in [ADR-0041](0041-unified-session-info-surface.md)** (the dedicated
   design). Two refinements from that grounding: (a) R1 unifies only the **agent-facing** surfaces
   (`packs.md` + `workspace.yml`) — **`.managed/` is out** (it is entrypoint infrastructure, not
   agent-read), correcting this bullet's earlier "+ `.managed/`"; (b) the **host↔container path
   map is governed by the dedicated `show_host_paths` knob** (default `on`; a separate visibility
   axis, not `cco_access`), so R1's structural core (container paths) is always present and the
-  host-path section toggles with the knob. Implementation step 6 is gated on ADR-0040.
+  host-path section toggles with the knob. Implementation step 6 is gated on ADR-0041.
 - **R2 (global-read)** exposes cross-project listings/tags/remotes/coords via the read-only
   wrapped `cco`, only under `cco_access ≥ read`. (R2 is served by the D4 shim and does not
   depend on the R1 format work.)
@@ -325,7 +325,7 @@ flowchart TD
 
 ## Open items / future
 
-- **R1 unified format** — designed in [ADR-0040](0040-unified-session-info-surface.md)
+- **R1 unified format** — designed in [ADR-0041](0041-unified-session-info-surface.md)
   (agent-facing surfaces only; gated path-map; dual-emit → cutover with a completeness gate).
   Gates Implementation step 6.
 - **MCP** over the wrapped `cco` — deferred; evaluate if the CLI shim proves insufficient.
