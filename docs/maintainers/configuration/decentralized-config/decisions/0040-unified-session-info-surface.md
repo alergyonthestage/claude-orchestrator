@@ -1,6 +1,6 @@
 # ADR 0040 — Unified agent-facing session-info surface (R1)
 
-**Status**: Proposed (2026-07-01)
+**Status**: Accepted (2026-07-01) — implementation pending (ADR-0036 step 6). Design-only.
 
 **Deciders**: maintainer (asked for R1 as its own design), implementer (grounding + design)
 

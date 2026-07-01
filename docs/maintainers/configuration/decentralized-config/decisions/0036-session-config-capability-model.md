@@ -1,6 +1,7 @@
 # ADR 0036 — Session config capability model (two axes, wrapped-cco, built-ins as presets)
 
-**Status**: Proposed (2026-07-01)
+**Status**: Accepted (2026-07-01) — implementation pending (see Handover B + the implementation
+handoff). Design-only decision; no code lands in the deciding session.
 
 **Deciders**: maintainer (set the direction + the two-axis reframe + the packs/managed
 refinements), implementer (analysis + code-grounding + recommendations)
