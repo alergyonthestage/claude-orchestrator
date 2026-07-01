@@ -94,9 +94,39 @@ Design branch with the ADRs + doc rewrites: `feat/config-access/capability-model
   (they do **not** get the operator env yet) → **step 5**; `show_host_paths` read-output toggle +
   R1 `path_map` → **step 6**; the built-in CLAUDE.md/`config-safety.md` rewrites (they still say
   "cco is host-only", which is still TRUE for the built-ins until step 5) → **step 5/7**.
-- **Steps 5–7 — pending.** Next up: **step 5** (express tutorial `read`/`none` + config-editor
-  `edit-all`/`all` as presets that emit the operator env; `--all` / repeatable `--project` over
-  `<repo>/.cco` only). Then step 6 (R1, ADR-0041) and step 7 (docs + remaining tests).
+- **Step 5 — Built-in presets: ✅ done** (2026-07-01, same branch; commits after `7333889`).
+  Two commits. **Presets (5a):** `session_preset` (normal|tutorial|config-editor) set in
+  `_start_resolve_project` drives the level-4 default in `_start_resolve_access` — config-editor =
+  `all`/`edit-all`, tutorial = `none`/`read`. For a built-in the precedence collapses to **CLI >
+  preset** (its generated `project.yml` has no `access:` block and the global `~/.cco/access.yml`
+  governs the user's own projects, so it must not neuter config-editor); a user can still narrow
+  with an explicit `--cco-access`. Built-ins now auto-emit the step-4 operator env + wrapped-`cco`
+  + buckets. **Config-mount masking (5b):** secret masking extended to the built-in config
+  extra_mounts (`~/.cco`→`cco-config`, each target `<repo>/.cco`→`<name>-config`) which the
+  repo-mount masking (4e) misses — `_op_config_masks` collected in the built-in branches.
+  **`is_internal` cleanup (5c):** dropped the `is_internal` disjunct from `_committed_ro` (D6);
+  A1 edit-protection is driven purely by resolved `cco_access` (behavior-preserving — built-ins
+  mount edit targets via extra_mounts, not the repo loop). **`--all` / repeatable `--project`
+  (5d):** `_start_collect_config_editor_targets` (newline-joined `name<TAB>.cco` pairs; `--all` =
+  every resolvable project via `_project_foreach`, unresolved skipped; explicit unresolvable
+  `--project` dies); `_setup_internal_config_editor` generates N target mounts. **FIX (5f,
+  pre-existing bug):** the tutorial's `cco-docs`/`cco-config` used `source:` literal paths, which
+  the **name/index-based** `_effective_extra_mounts` silently dropped → the tutorial mounted
+  NOTHING. Converted to name-based mounts + `_CCO_MOUNT_OVERRIDE` (like config-editor), so the
+  read-only preset actually surfaces docs + the store (secrets masked). **Docs (5e):**
+  `config-safety.md` + config-editor CLAUDE.md + tutorial CLAUDE.md/`tutorial-behavior.md`
+  rewritten to the wrapped-`cco` model (allowed vs host-only verbs, secret filtering, host-path
+  labelling); **changelog #30** (additive). Tests: +7 config-editor, +2 tutorial, 1 updated
+  (placeholder→name-based). Suite **1088 pass / 1 fail** (same pre-existing env-only
+  `test_paths_symlink_safe_tool_root`). **Not done in step 5 (deferred):** the granular
+  narrowing of the config-editor's *browsing* mounts (`/workspace/cco-config`, `<name>-config`)
+  by level is not wired — the generated `project.yml` mounts them rw regardless; narrowing via
+  `--cco-access edit-project` currently only affects the operator buckets, not those browse
+  mounts (acceptable: the default preset is `edit-all`; note for a follow-up).
+- **Steps 6–7 — pending.** Next up: **step 6** (R1, ADR-0041 — unified `workspace.yml` absorbing
+  `packs.md`, gated `path_map` + the `show_host_paths` read-output toggle deferred here, net cut,
+  start-time snapshot; validate on `develop` before release). Then step 7 (remaining docs + tests
+  + the R1 doc-sweep listed in §3).
 
 ---
 
@@ -116,8 +146,8 @@ current) is orthogonal to the level and applies to `read` too.
 
 ## 2. Implementation order (dependency-first — from ADR-0036 §Implementation)
 
-> **Status (2026-07-01): steps 1–4 ✅ done, step 5 is next.** Per-step detail + test/suite
-> results live in §0 (the progress log). Steps 1–4 landed on `feat/config-access/capability-model`
+> **Status (2026-07-01): steps 1–5 ✅ done, step 6 (R1) is next.** Per-step detail + test/suite
+> results live in §0 (the progress log). Steps 1–5 landed on `feat/config-access/capability-model`
 > (commits after `e533093`).
 
 1. **Caller-context (D8)** — ✅ **done** — `_cco_caller_context()` (`host` | `container-agent`) in
@@ -132,12 +162,12 @@ current) is orthogonal to the level and applies to `read` too.
    overlay on every `.cco` mount + `~/.cco` (only `*.example` visible); `CCO_CONTAINER_OPERATOR` +
    `CCO_{DATA,STATE,CACHE}_HOME`; `bin/cco`+`lib/` baked into the image. Ships R2. (Host-path
    *labelling in read output* + `path_map` toggle deferred to step 6 per the reading below.)
-5. **Built-in presets** — ◀ **START HERE (fresh session)** — express tutorial (`read`/`none`) +
-   config-editor (`edit-all`/`all`) as presets **that emit the step-4 operator env** (they still
-   ride the legacy `is_internal` branch today); config-editor `--all` / repeatable `--project`
-   (only `<repo>/.cco`); then rewrite the built-in CLAUDE.md + `config-safety.md` to the
-   wrapped-`cco` model (they still say "cco is host-only", true until this step lands).
-6. **R1 self-info (ADR-0041)** — unified `workspace.yml` (+`knowledge`/`llms`, gated `path_map`;
+5. **Built-in presets** — ✅ **done** — tutorial (`read`/`none`) + config-editor (`edit-all`/`all`)
+   as presets emitting the operator env; config-editor `--all` / repeatable `--project` (only
+   `<repo>/.cco`); built-in docs rewritten to the wrapped-`cco` model. Also fixed a pre-existing
+   tutorial-mount bug (source→name-based). (Granular narrowing of the config-editor *browse*
+   mounts by level deferred — see §0.)
+6. **R1 self-info (ADR-0041)** — ◀ **START HERE (fresh session)** — unified `workspace.yml` (+`knowledge`/`llms`, gated `path_map`;
    **session-start snapshot** per R1-D6). **NET CUT** (R1-D4, maintainer decision): migrate the
    three consumers **and delete `packs.md` in one change** — no dual-emit, no legacy window.
    Validate on `develop` (`./bin/test` + real `cco start` dogfood) **before release** (R1-D5).
