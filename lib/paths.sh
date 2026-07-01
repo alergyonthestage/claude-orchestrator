@@ -95,6 +95,15 @@ _cco_claude_version_file() {
     printf '%s\n' "$(_cco_config_dir)/claude-version"
 }
 
+# Session access defaults → CONFIG `~/.cco/access.yml` (ADR-0036 D3, level 3 of the
+# precedence CLI > project.yml `access:` > this global default > built-in preset). A
+# single user-authored, git-versioned datum holding the three capability-model knobs
+# (`claude`, `cco`, `show_host_paths`), read at `cco start`. Absent/partial → the
+# built-in defaults apply per-knob (repo / none / on).
+_cco_access_file() {
+    printf '%s\n' "$(_cco_config_dir)/access.yml"
+}
+
 # Echo the effective channel/version preference, defaulting to `latest` when the
 # file is absent or blank. First non-comment, non-empty line wins.
 _cco_claude_version_pref() {

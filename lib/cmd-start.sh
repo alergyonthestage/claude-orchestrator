@@ -126,6 +126,84 @@ YAML
     } > "$runtime_dir/project.yml" || die "Failed to generate config-editor project.yml"
 }
 
+# ── Access capability model (ADR-0036 D2/D3) ─────────────────────────
+# The three orthogonal session knobs, resolved per session by precedence
+# (most specific wins): CLI flag > project.yml `access:` block > global
+# ~/.cco/access.yml > built-in preset default. Step 2 (this) only RESOLVES +
+# validates; later steps consume the resolved values to drive Axis-B/Axis-A
+# mount modes (step 3) and the wrapped-cco shim (step 4). The pure helpers below
+# are side-effect-free so they can be unit-tested in isolation.
+
+# Allowed enum values per editing knob (space-separated sets).
+_ACCESS_CLAUDE_VALUES="none repo all"
+_ACCESS_CCO_VALUES="none read edit-project edit-global edit-all"
+
+# True (0) when $2 is a member of the space-separated set $1.
+_access_is_member() {
+    local set="$1" v="$2" x
+    for x in $set; do [[ "$x" == "$v" ]] && return 0; done
+    return 1
+}
+
+# Normalize a boolean-ish token to `true`/`false`. Empty stays empty (so the
+# precedence chain keeps falling through); an invalid token returns 1.
+_access_norm_bool() {
+    case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+        "")             printf '' ;;
+        true|on|1|yes)  printf 'true' ;;
+        false|off|0|no) printf 'false' ;;
+        *)              return 1 ;;
+    esac
+}
+
+# Pick the first non-empty of cli/project/global/default (the precedence chain).
+# Args: <cli> <project_val> <global_val> <default>.
+_access_pick() {
+    if   [[ -n "$1" ]]; then printf '%s' "$1"
+    elif [[ -n "$2" ]]; then printf '%s' "$2"
+    elif [[ -n "$3" ]]; then printf '%s' "$3"
+    else                     printf '%s' "$4"
+    fi
+}
+
+# Resolve the three knobs into cmd_start's locals (claude_access, cco_access,
+# show_host_paths) by precedence, validating enums. Reads project.yml `access.*`
+# and the global ~/.cco/access.yml; CLI overrides arrive via cli_claude_access /
+# cli_cco_access / cli_show_host_paths (empty = unset). Step-2 preset defaults are
+# the normal-session values (repo / none / on); step 5 layers the built-in
+# tutorial/config-editor presets on top.
+_start_resolve_access() {
+    local gfile; gfile=$(_cco_access_file)
+    # access.<key> is a 2-level block (2-space indent) → yml_get auto-depth 2
+    # (NOT yml_get_deep, which forces depth 3 and would miss it).
+    local p_claude p_cco p_shp g_claude="" g_cco="" g_shp=""
+    p_claude=$(yml_get "$project_yml" "access.claude" 2>/dev/null)
+    p_cco=$(yml_get "$project_yml" "access.cco" 2>/dev/null)
+    p_shp=$(yml_get "$project_yml" "access.show_host_paths" 2>/dev/null)
+    if [[ -f "$gfile" ]]; then
+        g_claude=$(yml_get "$gfile" "claude" 2>/dev/null)
+        g_cco=$(yml_get "$gfile" "cco" 2>/dev/null)
+        g_shp=$(yml_get "$gfile" "show_host_paths" 2>/dev/null)
+    fi
+
+    claude_access=$(_access_pick "$cli_claude_access" "$p_claude" "$g_claude" "repo")
+    cco_access=$(_access_pick "$cli_cco_access" "$p_cco" "$g_cco" "none")
+    _access_is_member "$_ACCESS_CLAUDE_VALUES" "$claude_access" \
+        || die "Invalid claude_access '$claude_access' (expected one of: $_ACCESS_CLAUDE_VALUES). Set --claude-access, project.yml access.claude, or ~/.cco/access.yml."
+    _access_is_member "$_ACCESS_CCO_VALUES" "$cco_access" \
+        || die "Invalid cco_access '$cco_access' (expected one of: $_ACCESS_CCO_VALUES). Set --cco-access, project.yml access.cco, or ~/.cco/access.yml."
+
+    local shp_raw shp_norm
+    shp_raw=$(_access_pick "$cli_show_host_paths" "$p_shp" "$g_shp" "true")
+    shp_norm=$(_access_norm_bool "$shp_raw") \
+        || die "Invalid show_host_paths '$shp_raw' (expected: true|false / on|off)."
+    show_host_paths="$shp_norm"
+
+    [[ "${CCO_DEBUG:-}" == "1" ]] && \
+        echo "[debug] access: claude=$claude_access cco=$cco_access show_host_paths=$show_host_paths" >&2
+    return 0
+}
+
 # ── cmd_start() helper functions ─────────────────────────────────────
 # These functions are called from within cmd_start() and share its local
 # variable scope. They must NOT redeclare variables — they read/write
@@ -1071,12 +1149,19 @@ cmd_start() {
     local user_mounts=()        # --mount specs (ADR-0027 D2), :ro by default
     local enable_config_edit=false  # --enable-config-edit escape hatch (ADR-0027 D3)
     local config_editor_target=""   # --project <name> for the config-editor built-in (ADR-0027 D1)
+    local cli_claude_access=""      # --claude-access override (ADR-0036 D2/D3); "" = unset
+    local cli_cco_access=""         # --cco-access override; supersedes --enable-config-edit
+    local cli_show_host_paths=""    # "" | "true" | "false" (--show-host-paths / --no-…)
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --from) [[ $# -lt 2 ]] && die "--from requires a <repo> name."; from_repo="$2"; shift 2 ;;
             --mount) [[ $# -lt 2 ]] && die "--mount requires <src>[:<target>][:ro|:rw]."; user_mounts+=("$2"); shift 2 ;;
             --enable-config-edit) enable_config_edit=true; shift ;;
+            --claude-access) [[ $# -lt 2 ]] && die "--claude-access requires a value (none|repo|all)."; cli_claude_access="$2"; shift 2 ;;
+            --cco-access) [[ $# -lt 2 ]] && die "--cco-access requires a value (none|read|edit-project|edit-global|edit-all)."; cli_cco_access="$2"; shift 2 ;;
+            --show-host-paths) cli_show_host_paths="true"; shift ;;
+            --no-show-host-paths) cli_show_host_paths="false"; shift ;;
             --project) [[ $# -lt 2 ]] && die "--project requires a <name> (config-editor project mode)."; config_editor_target="$2"; shift 2 ;;
             --teammate-mode) teammate_mode="$2"; shift 2 ;;
             --api-key) use_api_key=true; shift ;;
@@ -1114,9 +1199,14 @@ Options:
   --mount <s>[:<t>][:ro|:rw]  Mount reference material (repeatable; read-only by
                        default, :rw to make writable; target defaults to
                        /workspace/<basename>)
-  --enable-config-edit Allow the agent to edit this repo's committed .cco/ config
-                       in this session (off by default — see 'cco start
-                       config-editor' for the sanctioned config-editing session)
+  --claude-access <l>  .claude authoring access: none | repo (default) | all
+  --cco-access <l>     .cco/framework access: none (default) | read |
+                       edit-project | edit-global | edit-all (ADR-0036)
+  --show-host-paths    Show the host<->container path map to the session (default)
+  --no-show-host-paths Hide host paths from the session
+  --enable-config-edit Deprecated alias for --cco-access edit-project (see 'cco
+                       start config-editor' for the sanctioned config-editing
+                       session)
   --dry-run            Show the generated docker-compose without running
   --dump               With --dry-run: persist artifacts to .tmp/ for inspection
   --port <p>           Add extra port mapping (repeatable)
@@ -1138,6 +1228,14 @@ EOF
         esac
     done
 
+    # --enable-config-edit (ADR-0027) is now sugar for --cco-access edit-project
+    # (ADR-0036 D3), deprecated for one release. An explicit --cco-access wins; the
+    # legacy bool still drives the current mount path until step 3 switches the
+    # mount logic over to the resolved cco_access knob.
+    if $enable_config_edit && [[ -z "$cli_cco_access" ]]; then
+        cli_cco_access="edit-project"
+    fi
+
     # No project name is valid: cwd-first resolution (the repo this dir hosts).
     # _start_resolve_project dies with guidance when cwd is not a configured repo.
 
@@ -1157,12 +1255,18 @@ EOF
     local github_enabled github_token_env pack_names
     local output_dir compose_file packs_md
     local config_dir session_state_dir session_cache_dir managed_gen_dir claude_gen_dir
+    local claude_access cco_access show_host_paths   # resolved by _start_resolve_access (ADR-0036)
 
     _start_resolve_project
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] resolve_project done" >&2
 
     _start_load_config
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] load_config done" >&2
+
+    # Resolve the capability-model knobs (ADR-0036 D2/D3). project_yml is set by
+    # _start_resolve_project; the resolved values feed mount generation (step 3+).
+    _start_resolve_access
+    [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] resolve_access done" >&2
 
     _start_check_health
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] check_health done" >&2
