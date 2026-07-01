@@ -65,10 +65,38 @@ Design branch with the ADRs + doc rewrites: `feat/config-access/capability-model
   **Not yet done (deferred to step 4/5):** A2 `~/.cco` structural mount + secret filtering + the
   wrapped-cco shim / A3 / R2 / container-operator; the built-in **presets** (config-editor
   `edit-all`/`all`, tutorial `read`/`none`) still ride the legacy `is_internal` branch.
-- **Steps 4–7 — pending.** Next up: **step 4** (wrapped-`cco` shim + container-operator mode +
-  bucket mounts + token/secret exclusion + `Dockerfile` bake; ships R2). **Recommended fresh
-  session** — large, distinct surface (see reading order §8; re-ground `bin/cco` + `Dockerfile` +
-  `config/entrypoint.sh`).
+- **Step 4 — Wrapped-`cco` shim + container-operator mode: ✅ done** (2026-07-01, same branch;
+  commits after `9f60cf1`). Delivered in 4 atomic commits: **(4a)** `_cco_container_operator()` +
+  operator branch in `_cco_resolver_guard` (`lib/paths.sh`) — true only under
+  `CCO_CONTAINER_OPERATOR=1` **and** three absolute `CCO_{DATA,STATE,CACHE}_HOME`, so it can
+  never be inferred; the anti-in-container `die()` still fires for any silent resolve (ADR-0007
+  intact). **(4b)** `_cco_operator_shim` in `bin/cco` — default-deny whitelist/blocklist run
+  before dispatch; host-only verbs (`start/stop/build/new`, `resolve/sync/init/join/forget/
+  update/clean`, `project rename`, `chrome`, `path set`, `publish/export`, `config push/pull`,
+  `remote set-token/remove-token`) die with a host hint; read verbs pass at any operator level,
+  write verbs gated on `CCO_CCO_ACCESS ∈ edit-*`; host first-run bootstrap skipped in operator
+  mode. **(4c)** `Dockerfile` bakes `bin/`+`lib/`+`templates/`+`changelog.yml`+`package.json` to
+  `/opt/cco` + symlink (defaults/migrations NOT baked — their verbs are host-only). **(4d/4e)**
+  `_start_generate_compose` emits the operator env + bucket mounts (`~/.cco` A2 at the natural
+  `$HOME/.cco`; DATA + CACHE/llms follow the edit level; **STATE index-file only, ro** —
+  transcripts/memory/**remotes-token** excluded) and masks real secret files
+  (`secrets.env`/`*.env`/`*.key`/`*.pem`, not `*.example`) with an empty `:ro` overlay on **every**
+  `.cco` mount **and** `~/.cco` (capability-matrix: filtered in every column). **Two mechanism
+  choices, grounded from the ADR (flagged for review):** (i) CONFIG resolved via the natural
+  `$HOME/.cco` mount, **no `CCO_CONFIG_HOME`** (D4 lists only DATA/STATE/CACHE — invariant intact);
+  (ii) a **B3 guard overlay** re-overlays `~/.cco/.claude` `:ro` under the A2 path when
+  `claude_access!=all`, keeping the `.claude`/`.cco` axes separate. `changelog.yml` **#29**
+  (additive, "requires `cco build`"). **No migration** (env/mount/Dockerfile only). Tests: 3
+  (`test_paths.sh` operator guard), 10 (new `test_operator_shim.sh` whitelist/blocklist +
+  write-gating), 8 (`test_access_resolution.sh` operator buckets + secret masking + B3 guard).
+  Suite **1079 pass / 1 fail** (same pre-existing env-only `test_paths_symlink_safe_tool_root`).
+  **Not done in step 4 (deferred):** built-in presets still ride the legacy `is_internal` branch
+  (they do **not** get the operator env yet) → **step 5**; `show_host_paths` read-output toggle +
+  R1 `path_map` → **step 6**; the built-in CLAUDE.md/`config-safety.md` rewrites (they still say
+  "cco is host-only", which is still TRUE for the built-ins until step 5) → **step 5/7**.
+- **Steps 5–7 — pending.** Next up: **step 5** (express tutorial `read`/`none` + config-editor
+  `edit-all`/`all` as presets that emit the operator env; `--all` / repeatable `--project` over
+  `<repo>/.cco` only). Then step 6 (R1, ADR-0041) and step 7 (docs + remaining tests).
 
 ---
 
@@ -88,8 +116,8 @@ current) is orthogonal to the level and applies to `read` too.
 
 ## 2. Implementation order (dependency-first — from ADR-0036 §Implementation)
 
-> **Status (2026-07-01): steps 1–3 ✅ done, step 4 is next.** Per-step detail + test/suite
-> results live in §0 (the progress log). Steps 1–3 landed on `feat/config-access/capability-model`
+> **Status (2026-07-01): steps 1–4 ✅ done, step 5 is next.** Per-step detail + test/suite
+> results live in §0 (the progress log). Steps 1–4 landed on `feat/config-access/capability-model`
 > (commits after `e533093`).
 
 1. **Caller-context (D8)** — ✅ **done** — `_cco_caller_context()` (`host` | `container-agent`) in
@@ -98,14 +126,17 @@ current) is orthogonal to the level and applies to `read` too.
    `--enable-config-edit` → `--cco-access edit-project` alias.
 3. **Axis-B / Axis-A mount generation** — ✅ **done** — drive `.claude` + `.cco` mount modes from
    the resolved knobs (generalizes `_committed_ro`).
-4. **Wrapped-`cco` shim + container-operator mode** — ◀ **START HERE (fresh session)** — whitelist/blocklist shim (`config save` in,
-   `config push`/`pull` host-only); bucket mounts (DATA rw / STATE index ro / **tokens
-   excluded**); **filter real secret files** (`secrets.env`, `*.env`/`*.key`/`*.pem`) out of every
-   `<repo>/.cco` mount (`:ro`-hide/tmpfs/filtered-copy — expose only `*.example`);
-   `CCO_CONTAINER_OPERATOR` + `CCO_*_HOME`; host-path labelling; bake/mount `bin/cco`+`lib/` into
-   the image. Ships R2.
-5. **Built-in presets** — express tutorial (`read`/`none`) + config-editor (`edit-all`/`all`) as
-   presets; config-editor `--all` / repeatable `--project` (only `<repo>/.cco`).
+4. **Wrapped-`cco` shim + container-operator mode** — ✅ **done** — whitelist/blocklist shim
+   (`config save` in, `config push`/`pull` host-only); bucket mounts (DATA/CACHE per edit level /
+   STATE **index-only** ro / **tokens excluded**); real secret files filtered via an empty `:ro`
+   overlay on every `.cco` mount + `~/.cco` (only `*.example` visible); `CCO_CONTAINER_OPERATOR` +
+   `CCO_{DATA,STATE,CACHE}_HOME`; `bin/cco`+`lib/` baked into the image. Ships R2. (Host-path
+   *labelling in read output* + `path_map` toggle deferred to step 6 per the reading below.)
+5. **Built-in presets** — ◀ **START HERE (fresh session)** — express tutorial (`read`/`none`) +
+   config-editor (`edit-all`/`all`) as presets **that emit the step-4 operator env** (they still
+   ride the legacy `is_internal` branch today); config-editor `--all` / repeatable `--project`
+   (only `<repo>/.cco`); then rewrite the built-in CLAUDE.md + `config-safety.md` to the
+   wrapped-`cco` model (they still say "cco is host-only", true until this step lands).
 6. **R1 self-info (ADR-0041)** — unified `workspace.yml` (+`knowledge`/`llms`, gated `path_map`;
    **session-start snapshot** per R1-D6). **NET CUT** (R1-D4, maintainer decision): migrate the
    three consumers **and delete `packs.md` in one change** — no dual-emit, no legacy window.
