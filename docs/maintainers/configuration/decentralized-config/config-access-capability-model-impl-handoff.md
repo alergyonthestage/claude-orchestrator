@@ -26,9 +26,11 @@ floor** (`/etc/claude-code`, always ro) and a **read surface** R (R1 self-info, 
 **Three orthogonal knobs**: `claude_access` (none|repo|all), `cco_access`
 (none|read|edit-project|edit-global|edit-all), `show_host_paths` (on|off, default on), resolved
 **CLI > project.yml `access:` > global default > preset**. Internal XDG is mutated **only via a
-whitelisted wrapped `cco`** in a **container-operator mode** (no logic duplication; tokens
-host-only). Built-ins are **presets**: normal = `repo`/`none`; config-editor = `all`/`edit-all`
-(+`--all`/`--project` over `<repo>/.cco` only); tutorial = `none`/`read`.
+whitelisted wrapped `cco`** in a **container-operator mode** (no logic duplication; tokens +
+real secret files host-only/filtered; `config push`/`pull` host-only). Built-ins are **presets**:
+normal = `repo`/`none`; config-editor = `all`/`edit-all` (+`--all`/`--project` over `<repo>/.cco`
+only); tutorial = `none`/`read` (read-all scope). Project-scope selector (`--all`/`--project`/
+current) is orthogonal to the level and applies to `read` too.
 
 ## 2. Implementation order (dependency-first — from ADR-0036 §Implementation)
 
@@ -38,9 +40,12 @@ host-only). Built-ins are **presets**: normal = `repo`/`none`; config-editor = `
    `--cco-access edit-project` alias.
 3. **Axis-B / Axis-A mount generation** — drive `.claude` + `.cco` mount modes from the resolved
    knobs (generalizes `_committed_ro`).
-4. **Wrapped-`cco` shim + container-operator mode** — whitelist/blocklist shim; bucket mounts
-   (DATA rw / STATE index ro / **tokens excluded**); `CCO_CONTAINER_OPERATOR` + `CCO_*_HOME`;
-   host-path labelling; bake/mount `bin/cco`+`lib/` into the image. Ships R2.
+4. **Wrapped-`cco` shim + container-operator mode** — whitelist/blocklist shim (`config save` in,
+   `config push`/`pull` host-only); bucket mounts (DATA rw / STATE index ro / **tokens
+   excluded**); **filter real secret files** (`secrets.env`, `*.env`/`*.key`/`*.pem`) out of every
+   `<repo>/.cco` mount (`:ro`-hide/tmpfs/filtered-copy — expose only `*.example`);
+   `CCO_CONTAINER_OPERATOR` + `CCO_*_HOME`; host-path labelling; bake/mount `bin/cco`+`lib/` into
+   the image. Ships R2.
 5. **Built-in presets** — express tutorial (`read`/`none`) + config-editor (`edit-all`/`all`) as
    presets; config-editor `--all` / repeatable `--project` (only `<repo>/.cco`).
 6. **R1 self-info (ADR-0041)** — unified `workspace.yml` (+`knowledge`/`llms`, gated `path_map`;
@@ -111,8 +116,10 @@ of R1.
 Extend `tests/test_config_editor.sh` (+ `test_tutorial.sh`): knob precedence
 (CLI>project>global>preset); granular `cco_access` (`edit-project` vs `edit-global` vs `edit-all`
 mount modes); `claude_access` `none|repo|all`; `--all`/`--project` mounts (only `<repo>/.cco`,
-skip unresolved); wrapped-`cco` whitelist allowed + blocklist refused; **token exclusion**
-(`remotes-token` not mounted, `remote set-token` blocked); caller-context guard; R1 unified-file
+skip unresolved); wrapped-`cco` whitelist allowed + blocklist refused (incl. `config push`/`pull`
+host-only); **token + secret-file exclusion** (`remotes-token` not mounted, `remote set-token`
+blocked, `secrets.env`/`*.key`/`*.pem` never in any mount — even under `--all`/tutorial read-all —
+only `*.example` visible); caller-context guard; R1 unified-file
 shape + `path_map` toggling with `show_host_paths`; R1 consumer parity (hooks + init-workspace);
 description-seeding idempotency; completeness gate before `packs.md` removal.
 
@@ -120,8 +127,9 @@ description-seeding idempotency; completeness gate before `packs.md` removal.
 
 - Steps 1–7 implemented; suite green; `./bin/test` clean.
 - The three knobs work end-to-end with correct precedence; built-ins behave as presets.
-- Wrapped-`cco` enforces whitelist/blocklist; internal XDG mutated only via `cco`; tokens never
-  reach the container.
+- Wrapped-`cco` enforces whitelist/blocklist (`config push`/`pull` host-only); internal XDG
+  mutated only via `cco`; **tokens and real secret files never reach the container** (even under
+  `--all`/tutorial read-all — only `*.example` visible).
 - R1 ships per ADR-0041 with the completeness gate satisfied; old surfaces removed only after.
 - Docs (design docs already rewritten) + `config-safety.md` + `changelog.yml` + migration done.
 

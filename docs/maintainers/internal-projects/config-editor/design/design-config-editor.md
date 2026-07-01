@@ -88,8 +88,10 @@ in-process mount override (`_CCO_MOUNT_OVERRIDE`), never persisted (AD3/G8 — r
 | DATA bucket (tags/remotes/source) | (operator paths) | rw | for wrapped-`cco` A3 writes |
 | STATE index | (operator path) | ro | for wrapped-`cco` listings |
 
-**Excluded by design**: STATE `remotes-token` (secrets — host-only), CACHE, transcripts.
-`--all`/`--project` mount **only `<repo>/.cco`**, never full code repos (ADR-0036 D6).
+**Excluded by design**: STATE `remotes-token` (secrets — host-only), CACHE, transcripts, and
+**real secret files** (`<repo>/.cco/secrets.env`, `*.env`/`*.key`/`*.pem`) — filtered out of the
+mounted `<repo>/.cco` so `--all` never exposes real secrets; only `*.example` skeletons surface
+(ADR-0036 D4). `--all`/`--project` mount **only `<repo>/.cco`**, never full code repos (ADR-0036 D6).
 
 ### 3.2 Wrapped `cco` (ADR-0036 D4)
 
@@ -97,8 +99,9 @@ config-editor runs `cco` in-container behind the **whitelist shim** in **contain
 mode** (`CCO_CONTAINER_OPERATOR=1` + `CCO_*_HOME` → mounted buckets). Allowed: the path-free
 read verbs + (under `edit-all`) the path-free write verbs that mutate CONFIG or internal XDG
 **through the shared `cco` functions** (`tag`, `remote add|remove`, `pack|template|llms *`,
-`config save|pull|push`). Blocked: `start/stop/build/new`, `resolve/sync/init/join/forget/
-update/clean/project rename`, and token verbs (`remote set-token|remove-token` — host-only).
+`config save`). Blocked: `start/stop/build/new`, `resolve/sync/init/join/forget/update/clean/
+project rename`, network+credential ops (`config push`/`config pull` — host-only; only local
+`config save` runs in-container), and token verbs (`remote set-token|remove-token` — host-only).
 Internal XDG (A3) is **never** hand-edited — only via these verbs.
 
 ### 3.3 R1 self-info + path map
@@ -122,8 +125,9 @@ using the R1 path map. Plus the documentation map over `/workspace/cco-docs/`.
   `project.yml`; keep committed config machine-agnostic (logical names, never host paths).
 - **Two edit mechanisms**: hand-edit A1/A2 files (YAML/text) by convention; mutate A3
   (tags/remotes/index) **only via `cco`** — never a raw file edit (corruption risk).
-- **Secrets**: never write real secret values into committed files; `remotes-token` is host-only
-  and not mounted; only `*.example` skeletons are committed.
+- **Secrets**: never write real secret values into committed files; `remotes-token` **and real
+  secret files** (`secrets.env`, `*.key`, `*.pem`) are host-only / filtered out of the mounts —
+  the agent only ever sees and writes `*.example` skeletons (ADR-0036 D4).
 - **Host paths**: the path map shows the **user's host paths** mounted at `<target>`; **do not
   paste host paths into commits / PRs / external calls** (ADR-0036 D2/D4).
 - **cco commands**: blocked verbs are host-only — show the exact command (using the path map)

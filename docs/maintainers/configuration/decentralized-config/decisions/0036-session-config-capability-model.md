@@ -158,10 +158,11 @@ The read/write capability is delivered by making `cco` runnable in the container
   `path list`, `config validate`, `project coords --diff`, `list remotes`) and — under
   `cco_access=edit` — the path-free write verbs that mutate CONFIG or internal XDG **through
   the shared functions** (`tag add|remove`, `remote add|remove`, `pack|template|llms
-  create|update|remove|install|import`, `config save|pull|push`).
+  create|update|remove|install|import`, `config save`).
 - **Blocklist (refused with a "run this on the host" hint)**: container-spawning
   (`start/stop/build/new`), path-resolving / non-transactional lifecycle
-  (`init/join/resolve/sync/forget/update/clean/project rename`).
+  (`init/join/resolve/sync/forget/update/clean/project rename`), and **network + credential**
+  ops — `config push` / `config pull` (host-only; only the local `config save` runs in-container).
 - **Container-operator mode**: a **dedicated** entry (e.g. `CCO_CONTAINER_OPERATOR=1` +
   `CCO_DATA_HOME`/`CCO_STATE_HOME`/`CCO_CACHE_HOME` pointing at the mounted buckets) — **not**
   the `CCO_ALLOW_HOST_RESOLVE` test/dev hatch. This addresses ADR-0007's concern
@@ -176,10 +177,15 @@ The read/write capability is delivered by making `cco` runnable in the container
   the **`show_host_paths`** knob (default `on`): when `off`, host paths are omitted from read
   output and the `path_map` section. Only commands that *act on* those host paths
   (resolve/sync/start) are blocked regardless.
-- **Secrets stay host-only**: remote **tokens** live in STATE `remotes-token` (0600). That
-  file is **not mounted**, and `remote set-token` / `remote remove-token` remain host-only
-  (config-safety.md — never expose secrets to the agent). The agent manages remote *urls*,
-  not tokens.
+- **Secrets stay host-only** (extended for the broadened mount surface — maintainer decision
+  2026-07-01): remote **tokens** (STATE `remotes-token`, 0600) are not mounted, and
+  `remote set-token` / `remote remove-token` are host-only. **Real secret files are also excluded
+  from every config mount** — `<repo>/.cco/secrets.env` and common secret patterns (`*.env`,
+  `*.key`, `*.pem`) are **filtered out** of the mounted `<repo>/.cco` (a `:ro`-hide/`tmpfs`
+  overlay, or a filtered copy — implementer's choice), so neither `--all`/config-editor nor the
+  tutorial's read-all ever sees real secret values. Only `*.example` skeletons are surfaced and
+  writable. This does not reduce config-editor's function (it must never touch real secrets —
+  config-safety.md). The agent manages remote *urls* and `*.example`, never secrets.
 
 MCP is **not** built now: it would be a thin wrapper over this same CLI. Deferred to a future
 analysis if a need appears — recorded, not scheduled.
@@ -264,6 +270,7 @@ invariant intact.
 | **R1** self-info + path map | — | ro (always) | ro | ro | ro |
 | **R2** global-read | — | none | ro via `cco` | ro/rw via `cco` | ro via `cco` |
 | remote **tokens** (STATE) | — | host-only | host-only | host-only | host-only |
+| real **secret files** (`secrets.env`/`*.key`/`*.pem`) | — | filtered | filtered | filtered (only `*.example`) | filtered |
 
 The config-editor column shows `edit-all`. The intermediate edit levels restrict it: under
 `edit-project` only **A1** is rw (A2 drops to ro, A3 to read-only via `cco`); under `edit-global`

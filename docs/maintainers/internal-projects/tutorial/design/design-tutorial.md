@@ -29,8 +29,10 @@ reserved name, preset resolution, wrapped-`cco` shim); it differs only in knob v
 Implications vs the body below:
 - **Reads all configs + global** (not just its own `user-config/`): the read-only wrapped `cco`
   + ro mounts give the tutorial visibility into every project's `<repo>/.cco` and `~/.cco`, so
-  guidance is grounded in the user's real setup. Host paths are labelled `host → /workspace/<t>`
-  and must not be pasted into external artifacts (`config-safety.md`).
+  guidance is grounded in the user's real setup. **Real secret files (`secrets.env`, `*.key`,
+  `*.pem`) are filtered out of the mounts** (ADR-0036 D4) — the read-all teacher never sees secret
+  values. Host paths are labelled `host → /workspace/<t>` and must not be pasted into external
+  artifacts (`config-safety.md`).
 - **Never edits**: `claude_access=none` + no `edit-*` — the "check for rw / instruct to enable"
   dance in the skills below is replaced by "for edits, launch config-editor".
 - **R1 self-info** (ADR-0041) supersedes the ad-hoc `user-config/` reading described in §4/§5.
