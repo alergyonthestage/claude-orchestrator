@@ -88,13 +88,17 @@ current) is orthogonal to the level and applies to `read` too.
 
 ## 2. Implementation order (dependency-first — from ADR-0036 §Implementation)
 
-1. **Caller-context (D8)** — `_cco_caller_context()` (`host` | `container-agent`) in `lib/paths.sh`;
-   re-express `_cco_resolver_guard` on it. Foundational.
-2. **Access resolution** — parse/resolve the three knobs + precedence; `--enable-config-edit` →
-   `--cco-access edit-project` alias.
-3. **Axis-B / Axis-A mount generation** — drive `.claude` + `.cco` mount modes from the resolved
-   knobs (generalizes `_committed_ro`).
-4. **Wrapped-`cco` shim + container-operator mode** — whitelist/blocklist shim (`config save` in,
+> **Status (2026-07-01): steps 1–3 ✅ done, step 4 is next.** Per-step detail + test/suite
+> results live in §0 (the progress log). Steps 1–3 landed on `feat/config-access/capability-model`
+> (commits after `e533093`).
+
+1. **Caller-context (D8)** — ✅ **done** — `_cco_caller_context()` (`host` | `container-agent`) in
+   `lib/paths.sh`; re-express `_cco_resolver_guard` on it. Foundational.
+2. **Access resolution** — ✅ **done** — parse/resolve the three knobs + precedence;
+   `--enable-config-edit` → `--cco-access edit-project` alias.
+3. **Axis-B / Axis-A mount generation** — ✅ **done** — drive `.claude` + `.cco` mount modes from
+   the resolved knobs (generalizes `_committed_ro`).
+4. **Wrapped-`cco` shim + container-operator mode** — ◀ **START HERE (fresh session)** — whitelist/blocklist shim (`config save` in,
    `config push`/`pull` host-only); bucket mounts (DATA rw / STATE index ro / **tokens
    excluded**); **filter real secret files** (`secrets.env`, `*.env`/`*.key`/`*.pem`) out of every
    `<repo>/.cco` mount (`:ro`-hide/tmpfs/filtered-copy — expose only `*.example`);
