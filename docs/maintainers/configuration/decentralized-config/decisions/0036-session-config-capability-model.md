@@ -76,7 +76,8 @@ Session resources are classified by *config type*, not by *ownership*:
     file-level**
 - **Surface R — read/info**:
   - **R1** self-info: the running project's resources + the **host↔container path map** —
-    unifies today's `packs.md` + `workspace.yml` + `.managed/` into one cco-generated surface
+    unifies today's **agent-facing** surfaces (`packs.md` + `workspace.yml`) into one
+    cco-generated surface (`.managed/` is entrypoint infra, excluded — ADR-0041 R1-D1)
   - **R2** global-read: listings / tags / remotes / coords across all projects + global, via
     read-only wrapped `cco`
 
@@ -214,6 +215,14 @@ every resolved member's `<repo>/.cco` rw, skip unresolved) and repeatable `--pro
 --project b`. Default stays single/global. **Only `<repo>/.cco`** is mounted — never full code
 repos.
 
+**Project-scope selector is orthogonal to the access *level*.** The `--all` / repeatable
+`--project` / default-current selector chooses **which** projects' `<repo>/.cco` are surfaced;
+the access level chooses **how** (ro under `read`, rw under `edit-project`/`edit-all`). So it
+applies to `read` too: **tutorial = `read` + all-scope** (every resolved `<repo>/.cco` mounted
+**ro** + `~/.cco` ro + R2), giving it read of all configs; a **normal `--cco-access read`**
+defaults to **current-project** scope (its own `<repo>/.cco` ro + R2) unless `--all`/`--project`
+widen it. Unresolved members are skipped in both modes.
+
 ### D7 — Complete design now, gradual implementation by dependency
 
 Per the maintainer: design the whole model first (this ADR), then implement in dependency order
@@ -312,10 +321,11 @@ flowchart TD
    host-path labelling in read output; bake or mount `bin/cco` + `lib/` into the image.
 5. **Built-in presets** — re-express tutorial (`read`/`none`) and config-editor (`edit-all`/
    `all`) as presets; add config-editor `--all` / repeatable `--project` (only `<repo>/.cco`).
-6. **R1 self-info** — **gated on its own analysis/design session (D5)**: the unified surface
-   absorbing `packs.md` + `workspace.yml` + `.managed/` + the host↔container path map. Do not
-   start before that design lands; keep the existing surfaces until R1 is proven complete and
-   correct. (R2 ships with step 4, independent of R1.)
+6. **R1 self-info** — per [ADR-0041](0041-unified-session-info-surface.md): the unified
+   `workspace.yml` absorbing `packs.md` + `workspace.yml` (agent-facing only; `.managed/`
+   excluded) + the gated host↔container path map. **Net cut** (no dual-emit): migrate the three
+   consumers and delete `packs.md` in one change, validated on `develop` before release
+   (R1-D4/D6). (R2 ships with step 4, independent of R1.)
 7. **Docs + tests** — rewrite `design-config-editor.md` and the tutorial design in place to the
    preset model; update `config-safety.md` (host-path labelling, granular edit levels); extend
    `tests/test_config_editor.sh` (all-projects mounts, wrapped-cco whitelist/blocklist, the two
@@ -326,8 +336,8 @@ flowchart TD
 ## Open items / future
 
 - **R1 unified format** — designed in [ADR-0041](0041-unified-session-info-surface.md)
-  (agent-facing surfaces only; gated path-map; dual-emit → cutover with a completeness gate).
-  Gates Implementation step 6.
+  (agent-facing surfaces only; gated path-map; **net cut** validated on `develop`, no dual-emit;
+  start-time snapshot with defined staleness semantics). Gates Implementation step 6.
 - **MCP** over the wrapped `cco` — deferred; evaluate if the CLI shim proves insufficient.
 - **`--cco-access` in normal sessions** as a routine workflow (beyond R1) — enabled by this
   model; adoption is a UX decision for a follow-up.

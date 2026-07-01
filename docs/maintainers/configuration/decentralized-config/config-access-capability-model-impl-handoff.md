@@ -43,12 +43,34 @@ host-only). Built-ins are **presets**: normal = `repo`/`none`; config-editor = `
    host-path labelling; bake/mount `bin/cco`+`lib/` into the image. Ships R2.
 5. **Built-in presets** — express tutorial (`read`/`none`) + config-editor (`edit-all`/`all`) as
    presets; config-editor `--all` / repeatable `--project` (only `<repo>/.cco`).
-6. **R1 self-info (ADR-0041)** — dual-emit unified `workspace.yml` (+`knowledge`/`llms`,
-   gated `path_map`) → migrate consumers → completeness gate → drop `packs.md`.
+6. **R1 self-info (ADR-0041)** — unified `workspace.yml` (+`knowledge`/`llms`, gated `path_map`;
+   **session-start snapshot** per R1-D6). **NET CUT** (R1-D4, maintainer decision): migrate the
+   three consumers **and delete `packs.md` in one change** — no dual-emit, no legacy window.
+   Validate on `develop` (`./bin/test` + real `cco start` dogfood) **before release** (R1-D5).
 7. **Docs + tests** — see §4/§5.
 
 Steps 1–5 + 7 are independent of R1's format; step 6 follows ADR-0041. R2 (step 4) is independent
 of R1.
+
+### Guiding principles & invariants to honor (foundation)
+
+`docs/maintainers/foundation/design/guiding-principles.md` + the machine-agnostic invariant:
+
+- **P1 — config vs internal (edit criterion)**: the two axes rest on this. A `.cco` structural +
+  B `.claude` = user-editable config; A3 (tags/remotes/index) = **internal**, CLI-only.
+- **P6 — hide internal files**: internal XDG is never hand-edited by the agent → mutate **only via
+  wrapped `cco`** (D4). Never mount+free-edit `tags.yml`/`remotes`/index.
+- **P9 — hooks/agents invoke `cco` by PATH; no tool code in data buckets**: the in-container shim
+  is `cco` on PATH (container-operator mode), not a reimplementation.
+- **P17 — delegate enforcement to git; cco assists, never gatekeeps**: the knobs are **runtime
+  guardrails**, not permission gatekeeping (ADR-0027's reconciliation carries over).
+- **P18 — one repo, one config home**: `--all`/`--project` mount `<repo>/.cco` per member; never
+  full code repos.
+- **AD3 — committed config is machine-agnostic**: never write host paths into committed files;
+  `show_host_paths` is a *read-only runtime view*, not committed state (ADR-0041 R1-D3).
+- **ADR-0007 — cco is host-side**: the container-operator mode mounts real buckets + sets
+  `CCO_*_HOME` deliberately; the resolver guard (re-expressed on D8's caller-context) still fires
+  for any *silent* in-container resolve.
 
 ## 3. Key files (code-grounded; line numbers drift — re-read)
 
@@ -63,6 +85,14 @@ of R1.
 - Consumers to migrate for R1: `config/hooks/session-context.sh` (75–80),
   `config/hooks/subagent-context.sh` (23–29), `defaults/managed/.claude/skills/init-workspace`
   (step 1 reads workspace.yml), and reconcile `defaults/managed/.claude/rules/memory-policy.md`.
+- **R1 doc-sweep at impl (shipped-behavior docs, update WHEN the code lands — not before, per
+  `documentation-lifecycle`)**: docs that describe `packs.md` as the current surface —
+  `packs/design/design-packs.md`, `environment/design/design-docker.md`,
+  `configuration/file-destinations/design/design-file-destinations.md`,
+  `configuration/scope-hierarchy/design/design-scope-hierarchy.md`,
+  `configuration/llms/design/design-llms.md`, `update-system/design/design-update-system.md`,
+  `foundation/design/architecture.md`, `foundation/analysis/spec.md`,
+  `configuration/decentralized-config/design.md`. Repoint each to the unified `workspace.yml`.
 - `internal/config-editor/.claude/{CLAUDE.md,rules/config-safety.md}` + `internal/tutorial/.claude/*`
   — preset behaviors, host-path labelling note, wrapped-`cco` usage.
 - `project.yml` schema — new optional `access:` block (`claude_access`/`cco_access`/

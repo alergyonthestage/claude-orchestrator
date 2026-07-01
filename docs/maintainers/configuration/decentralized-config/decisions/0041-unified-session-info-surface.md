@@ -79,27 +79,30 @@ the agent never mistakes a host path for a container path, and `config-safety.md
 to paste host paths into commits / PRs / external calls. Resolution logical→host stays
 **host-side, before compose** — never inside the container (ADR-0007).
 
-### R1-D4 — Consumer migration: dual-emit then cutover, preserve every datum
+### R1-D4 — Net migration: one clean cut, validated on `develop`, no legacy period
 
-Three consumers migrate to the unified file: `config/hooks/session-context.sh`,
-`config/hooks/subagent-context.sh`, and the managed `init-workspace` skill. Plus the managed
-`memory-policy.md` reference to `/workspace/.claude/packs/` is reconciled. Sequence:
+**Maintainer decision (2026-07-01):** a **clean migration** — **no dual-emit, no legacy support
+window, no future cutover**. The unified `workspace.yml` replaces `packs.md` **in a single
+change**: the generator stops emitting `packs.md`, all three consumers switch to the unified
+file, and `packs.md` (plus any other now-unused generated surface) is removed — **together**.
+Three consumers migrate: `config/hooks/session-context.sh`, `config/hooks/subagent-context.sh`,
+the managed `init-workspace` skill; plus the managed `memory-policy.md` reference to
+`/workspace/.claude/packs/` is reconciled.
 
-1. Generator emits the unified `workspace.yml` (with `knowledge`/`llms`) **alongside** the
-   existing `packs.md` (dual-emit) — nothing breaks.
-2. Migrate each consumer to read the unified file; keep `/workspace/.claude/packs/` (the actual
-   knowledge files) exactly where it is.
-3. Once all consumers are cut over and tests are green, **stop emitting `packs.md`**.
-
-Idempotent description seeding (`lib/workspace.sh:37-47`) is preserved.
+Validation happens **on `develop`** (`./bin/test` + a real `cco start` dogfood) **before
+release**; the release ships the unified, integrated system with the legacy surface already gone.
+The actual knowledge files under `/workspace/.claude/packs/` stay where they are — only the
+*index* moves. No `packs.md` compatibility shim ships. Idempotent description seeding
+(`lib/workspace.sh:37-47`) is preserved.
 
 ### R1-D5 — Completeness guarantee
 
-R1 must expose **every datum** the current surfaces expose (else context regresses). The gate
-before removing `packs.md`: a checklist verifying knowledge-file instructions, project structure
-(repos/packs/extra_mounts + seeded descriptions), and the SessionStart/SubagentStart injected
-fields all survive — adherent to ADR-0036 and this ADR. `.managed/`, the compose env/volumes,
-and the logical→absolute resolution order are **out of R1's scope** and unchanged.
+R1 must expose **every datum** the current surfaces expose (else context regresses). Because the
+migration is a single atomic cut (R1-D4), this is the **pre-release gate on `develop`**: a
+checklist verifying knowledge-file instructions, project structure (repos/packs/extra_mounts +
+seeded descriptions), and the SessionStart/SubagentStart injected fields all survive — adherent
+to ADR-0036 and this ADR. `.managed/`, the compose env/volumes, and the logical→absolute
+resolution order are **out of R1's scope** and unchanged.
 
 ```mermaid
 flowchart TD
@@ -114,32 +117,73 @@ flowchart TD
   MAN -. "NOT agent-facing, out of R1" .-> X["(unchanged)"]
 ```
 
+### R1-D6 — Generation timing & staleness semantics (session-start snapshot)
+
+**Question raised (maintainer):** is `workspace.yml` regenerated each `cco start`, and must it be
+updated if the agent edits config mid-session (`cco_access`/`claude_access`)?
+
+**Grounded answer.** `workspace.yml` is generated **host-side at each `cco start`**, before the
+container launches. The decisive fact: **Docker bind-mounts are immutable for a running
+container** — a repo/mount cannot be added or removed without a restart. Therefore R1 is a
+**session-start snapshot of the immutable mounted reality**, with precise staleness semantics:
+
+- **Structure + `path_map`** (repos, extra_mounts, targets, host↔container map) — **never stale
+  within a session**: they describe what is actually mounted, which cannot change until the next
+  `cco start`. Editing `project.yml` in-session changes the **next** session's mounts, not the
+  current ones.
+- **Resource-index sections** (`packs`/`knowledge`/`llms`) — can drift **only** under rw config
+  editing (config-editor `cco_access=edit-*`), when the agent creates/removes resources in an
+  already-mounted rw location (`~/.cco/packs`). This is benign: the editing agent **is** the
+  source of the change and reads the actual files directly — `workspace.yml` is *orientation*,
+  not the source of truth. For normal/tutorial sessions (`cco_access` none/read) nothing drifts.
+
+**Decision (v1):** R1 stays a **start-time snapshot**; config edits apply at the next `cco start`
+(consistent with the immutable-mount model and the "run `cco sync` / restart on host" flow).
+No live-updating of `workspace.yml` during a session. Two escape valves are recorded but **not
+required for v1**:
+
+- an **on-demand refresh** the config-editor agent can call via the wrapped `cco`
+  (regenerate the index sections into the mounted file after edits) — a nicety, deferrable;
+- **hot-reload of live configuration** (mounts + surfaces) — a **separate planned future
+  feature** (roadmap "Exploratory / hot-reload"), explicitly out of scope here.
+
+The generator must be **idempotent** and safe to re-run (it already re-seeds descriptions), so a
+future refresh/hot-reload can reuse it unchanged.
+
 ## Consequences
 
 - **Positive**: one agent-facing surface + one generator; `packs.md`/`workspace.yml` split
   collapses; the path-map feature is delivered via the dedicated `show_host_paths` knob
   (default on) without touching AD3 (which governs committed config, not runtime views);
-  `.managed/` correctly stays infrastructure; completeness is enforced by an explicit gate
-  before cutover.
-- **Negative / accepted**: three consumers + one managed rule must be migrated in lockstep;
-  dual-emit adds a transient generation cost until cutover; `workspace.yml` grows a few sections.
+  `.managed/` correctly stays infrastructure; a clean net migration (no legacy shim) keeps the
+  shipped system simple; staleness semantics are well-defined (start-time snapshot over immutable
+  mounts).
+- **Negative / accepted**: three consumers + one managed rule migrate in **one atomic change**
+  (validated on `develop` before release — higher test burden up front, no legacy window);
+  `workspace.yml` grows a few sections; mid-session config edits are not reflected until the next
+  `cco start` (acceptable — mounts are immutable anyway; refresh/hot-reload deferred).
 - **Self-development caveat**: touched files are host-side (`lib/workspace.sh`, `lib/cmd-start.sh`,
   `config/hooks/*`, managed skill/rule) — live for a fresh `cco start`, testable via `./bin/test`.
 
 ## Implementation (this is ADR-0036 step 6, now unblocked)
 
-1. Extend the generator (`lib/workspace.sh` + the `packs.md` generator in `lib/cmd-start.sh`) to
-   emit the unified `workspace.yml` sections (`knowledge`, `llms`); dual-emit `packs.md`.
+1. Extend the generator (`lib/workspace.sh`, folding in the `packs.md` generator from
+   `lib/cmd-start.sh`) to emit the unified `workspace.yml` (`knowledge`/`llms` sections); keep it
+   idempotent and safe to re-run (R1-D6).
 2. Emit `path_map` when `show_host_paths=on` (default on; labelled host→target pairs).
 3. Migrate `session-context.sh`, `subagent-context.sh`, `init-workspace` to the unified file;
-   reconcile `memory-policy.md`.
-4. Completeness gate (R1-D5) → then remove `packs.md` emission.
+   reconcile `memory-policy.md`. **In the same change, stop emitting `packs.md` and delete it**
+   (net cut — R1-D4; no dual-emit).
+4. Pre-release completeness gate on `develop` (R1-D5): `./bin/test` + a real `cco start` dogfood
+   confirm no context regressed, then release.
 5. Tests: unified-file shape, `path_map` toggling with `show_host_paths` (absent when `off`,
    present + labelled when `on`), hook rendering, `init-workspace` parse, description-seeding
-   idempotency.
+   idempotency, no `packs.md` emitted.
 
 ## Open items / future
 
 - Whether the SessionStart hook should read the unified file directly vs a cco-rendered markdown
   slice — a rendering detail settled in implementation.
+- **On-demand R1 refresh** via wrapped `cco` (config-editor) and **hot-reload of live
+  configuration** — both deferred (R1-D6); hot-reload is a separate planned roadmap feature.
 - A future rename `workspace.yml` → a clearer `session-info.yml` (deferred; would add churn now).
