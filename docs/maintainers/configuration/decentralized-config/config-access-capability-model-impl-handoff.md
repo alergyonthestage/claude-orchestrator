@@ -13,8 +13,27 @@ Authoritative design (do not re-litigate — read, then build):
 `../../internal-projects/tutorial/design/design-tutorial.md` §0.
 
 Design branch with the ADRs + doc rewrites: `feat/config-access/capability-model` (commits
-`d9e312b`, `54fa34c`, `3b1e85c`, `db2d0bc`, `7b67580`). Implementation can continue on it or a
-sibling `feat/config-access/*` branch off `develop`.
+`d9e312b`, `54fa34c`, `3b1e85c`, `db2d0bc`, `7b67580`). Implementation continues on it (chosen
+2026-07-01).
+
+---
+
+## 0. Implementation progress (update as steps land)
+
+- **Step 1 — caller-context (D8): ✅ done** (2026-07-01, branch
+  `feat/config-access/capability-model`). `_cco_caller_context()` (`host` | `container-agent`)
+  added to `lib/paths.sh`; `_cco_resolver_guard` re-expressed on it — **behavior-preserving**
+  (the `CCO_ALLOW_HOST_RESOLVE=1` hatch and the anti-in-container die() are unchanged).
+  Implemented as a **pure function** (re-evaluated like `_cco_in_container`, not memoized) to
+  avoid subshell-inherited staleness in the test harness. Container-operator mode (D4) will layer
+  on top in step 4 — not inferred here (ADR-0007 invariant intact). Tests: 3 in
+  `tests/test_paths.sh` (container-marker / host / guard-linkage). Suite **1043 pass / 1 fail**;
+  the single fail is the **pre-existing, env-only** `test_paths_symlink_safe_tool_root` (DATA
+  bucket unwritable inside the self-dev container — not a regression, reproduced on the unchanged
+  tree). No `changelog.yml` / migration (purely-internal helper + guard refactor).
+- **Steps 2–7 — pending.** Next up: **step 2** (three-knob access resolution + precedence
+  `CLI > project.yml access: > global default > preset` + `--enable-config-edit` →
+  `--cco-access edit-project` alias).
 
 ---
 
