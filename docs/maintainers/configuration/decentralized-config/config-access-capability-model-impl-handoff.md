@@ -18,11 +18,12 @@ Design branch with the ADRs + doc rewrites: `feat/config-access/capability-model
 
 ---
 
-## ▶ NEXT SESSION — step 7 (small: host cleanup + polish). Read this first.
+## ▶ NEXT SESSION — implementation COMPLETE. Merge `develop` + push (from Mac). Read this first.
 
-**Where we are (2026-07-01).** Steps **1–6 of 7 done** + **R1-D5 gate PASSED (live host dogfood)**
+**Where we are (2026-07-01).** **All 7 steps done** + **R1-D5 gate PASSED (live host dogfood)**
 on branch `feat/config-access/capability-model` (**not pushed** — push from the Mac). Step-6 code
-commit `9aed757` + doc-sweep `bd57212`.
+commit `9aed757` + doc-sweep `bd57212`; step-7 cleanup commits on top. **Only release housekeeping
+remains: merge the branch into `develop` and push — both from the Mac.**
 Suite **1095 pass / 1 fail** — the single fail is the **pre-existing, env-only**
 `test_paths_symlink_safe_tool_root` (the DATA bucket is unwritable inside the self-dev container;
 reproduces on the unchanged tree — **not a regression**, do not chase it). Run `./bin/test`.
@@ -37,15 +38,16 @@ live output renders the `llms`/`knowledge` blocks into `additionalContext` — t
 is byte-equivalent to the old `packs.md` injection; (d) bonus — `.cco` is `:ro` in a normal session
 (`cco_access=none` edit-protection confirmed working). Context is not regressed.
 
-**Do next — step 7 (small).** (1) **Host cleanup:** remove one **stale committed**
-`.cco/claude/packs.md` (self-dev repo only — landed accidentally in `2f41cfe "init cco config"`; it
-is a *dead* file now since the R1 hook ignores it, but tracked in git). Must be done **on the host**:
-`git rm .cco/claude/packs.md` — `.cco` is `:ro` in-session so it can't be removed from here. It is
-**not** in any `*_FILE_POLICIES` (packs.md was a CACHE-only overlay by design) and **no other
-project/template** has one, so **no framework migration is needed** — decision recorded; only this
-repo's accidental copy needs the `git rm`. (2) Any residual docs/tests polish. When merging to
-`develop`, confirm no `packs.md` string survives in shipped code (only the intentional `rm -f`
-stale-cleanup in `_start_generate_metadata` remains).
+**Step 7 — ✅ done (2026-07-01).** (1) **Host cleanup:** the stale committed
+`.cco/claude/packs.md` (self-dev repo only — landed accidentally in `2f41cfe "init cco config"`; a
+*dead* file since the R1 hook ignores it) removed via `git rm` on the host (`.cco` is `:ro`
+in-session). It was **not** in any `*_FILE_POLICIES` (packs.md was a CACHE-only overlay by design)
+and **no other project/template** carries one → **no framework migration** (decision recorded).
+(2) **Docs polish:** grep-audit confirmed no `packs.md` string survives in shipped code beyond the
+intentional `rm -f` stale-cleanup in `_start_generate_metadata` (+ historical comments); the one
+missing forward-annotation on `foundation/adr/adr-0014` was added (→ ADR-0041 R1), pure-history docs
+left intact per `documentation-lifecycle`. **Only release housekeeping remains: merge into `develop`
+and push — both from the Mac.**
 
 **Step 6 done (R1, ADR-0041).** `packs.md` is gone — folded into the single
 `/workspace/.claude/workspace.yml` (`knowledge` + `llms` sections + gated `path_map`). Net cut:
@@ -194,8 +196,20 @@ this needs either a reorder or a compose-time mode adjustment. Not required for 
   and read on-demand (init-workspace / agent) — NOT force-injected into the SessionStart context
   (avoids noise); llms/knowledge entries kept a uniform `{path, description}` shape (ADR's `name`
   for llms is illustrative — no consumer reads it).
-- **Step 7 — pending.** Final docs polish + the **completeness gate on `develop`** (R1-D5:
-  `./bin/test` + a real `cco start` dogfood on the host) before release.
+- **Step 7 — ✅ done** (2026-07-01, same branch). **(1) Host cleanup:** the stale committed
+  `.cco/claude/packs.md` (self-dev repo only, from `2f41cfe`) removed via `git rm` on the host
+  (`.cco` is `:ro` in-session) — committed here. No framework migration needed (packs.md was a
+  CACHE-only overlay, in no `*_FILE_POLICIES`, and no other project/template carries one).
+  **(2) Docs polish:** grep-audited `packs.md` across shipped code — only the intentional `rm -f`
+  stale-cleanup in `_start_generate_metadata` and historical comments remain; all live design docs
+  were already repointed in the step-6 doc-sweep (`bd57212`). Added the one missing
+  **forward-annotation** on `foundation/adr/adr-0014` (its "packs.md index remains generated"
+  paragraph → superseded by ADR-0041 R1, mount mechanism unchanged) per `documentation-lifecycle`.
+  Pure-history docs (roadmap-history, reviews, analyses, the completed resource-coherence-inventory
+  checklist) left intact by rule. **Suite 1095 pass / 1 fail** (the pre-existing env-only
+  `test_paths_symlink_safe_tool_root` — DATA bucket unwritable in the self-dev container, not a
+  regression). **Remaining:** merge `feat/config-access/capability-model` → `develop` and push
+  (from the Mac) — release housekeeping, no code work left.
 
 ---
 

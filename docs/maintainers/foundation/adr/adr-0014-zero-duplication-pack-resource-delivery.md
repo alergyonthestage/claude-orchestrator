@@ -30,6 +30,13 @@ resource type maps to the appropriate mount strategy:
 The `packs.md` index file remains generated into the project's `.claude/` as it is
 project-specific (lists only packs referenced in that project's `project.yml`).
 
+> **Update (ADR-0041 R1, 2026-07-01):** the standalone `packs.md` index is no longer
+> generated. Its content was folded into the unified session-info surface
+> `/workspace/.claude/workspace.yml` (as the `knowledge` + `llms` sections). The
+> zero-duplication *mount* mechanism this ADR establishes is unchanged; only the
+> index-delivery detail is superseded. See
+> [ADR-0041](../../configuration/decentralized-config/decisions/0041-unified-session-info-surface.md).
+
 ## Consequences
 
 - Zero file duplication: the pack source in `~/.cco/packs/` (or the optional
