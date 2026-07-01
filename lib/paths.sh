@@ -310,16 +310,38 @@ _cco_caller_context() {
     fi
 }
 
+# Container-operator mode (ADR-0036 D4). The ONE deliberate in-container entry
+# where cco is allowed to resolve buckets: the whitelisted wrapped `cco` shim,
+# launched by `cco start` under `--cco-access ≥ read` with the real DATA/STATE/
+# CACHE buckets bind-mounted and the CCO_*_HOME overrides pointing AT those
+# mounts. True (0) only when the explicit CCO_CONTAINER_OPERATOR=1 flag is set
+# AND all three bucket overrides are absolute paths (the mounts) — so it can
+# NEVER be inferred from a plain agent env; `cco start` establishes the flag and
+# the mounts together. Layered ON TOP of the D8 caller-context signal, never
+# folded into it. CONFIG (~/.cco) needs no override here: `cco start` bind-mounts
+# it at the container's natural $HOME/.cco, so _cco_config_dir resolves to the
+# mount unchanged (that is why D4 lists only DATA/STATE/CACHE).
+_cco_container_operator() {
+    [[ "${CCO_CONTAINER_OPERATOR:-}" == "1" ]] || return 1
+    [[ "${CCO_DATA_HOME:-}"  == /* ]] || return 1
+    [[ "${CCO_STATE_HOME:-}" == /* ]] || return 1
+    [[ "${CCO_CACHE_HOME:-}" == /* ]] || return 1
+    return 0
+}
+
 # Anti-in-container guard (H4, ADR-0007 Robustness). cco resolves host paths
 # host-side only; a hook or agent that invokes cco from inside a session
 # container must not create/read state under the container's home. Expressed on
-# the D8 caller-context signal (container-agent ⇒ refuse). The escape hatch
-# CCO_ALLOW_HOST_RESOLVE=1 is for the test suite / a knowing developer only —
-# real hooks/agents never set it, so the guard still protects them.
+# the D8 caller-context signal (container-agent ⇒ refuse). Two sanctioned
+# bypasses: the container-operator mode above (deliberate, mounted buckets —
+# ADR-0036 D4), and the CCO_ALLOW_HOST_RESOLVE=1 escape hatch for the test suite
+# / a knowing developer only. Real hooks/agents set neither, so the guard still
+# protects them.
 # NOTE: when a resolver is called via $(...), die() exits only that subshell;
 # in genuine host use the guard never fires, and in tests the hatch bypasses it.
 _cco_resolver_guard() {
     [[ "${CCO_ALLOW_HOST_RESOLVE:-}" == "1" ]] && return 0
+    _cco_container_operator && return 0
     if [[ "$(_cco_caller_context)" == "container-agent" ]]; then
         die "cco refuses to resolve host paths inside a container (anti-in-container guard, ADR-0007). cco runs host-side only; set CCO_ALLOW_HOST_RESOLVE=1 only for tests/dev."
     fi

@@ -267,6 +267,63 @@ test_paths_resolver_guard_hatch_allows() {
     [[ "$val" == "$tmp/d" ]] || fail "Expected hatch to bypass guard, got: $val"
 }
 
+# ── Container-operator mode (ADR-0036 D4) ────────────────────────────
+# The deliberate in-container bypass: CCO_CONTAINER_OPERATOR=1 + all three
+# CCO_*_HOME absolute → resolution against the mounted buckets is allowed.
+
+test_paths_container_operator_requires_flag_and_buckets() {
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+
+    # Flag alone (no bucket overrides) → not operator mode.
+    ( export CCO_CONTAINER_OPERATOR=1; unset CCO_DATA_HOME CCO_STATE_HOME CCO_CACHE_HOME
+      _cco_container_operator ) && fail "flag without buckets must not be operator mode"
+    # Buckets without the flag → not operator mode.
+    ( unset CCO_CONTAINER_OPERATOR
+      export CCO_DATA_HOME=/d CCO_STATE_HOME=/s CCO_CACHE_HOME=/c
+      _cco_container_operator ) && fail "buckets without flag must not be operator mode"
+    # A relative (non-absolute) bucket → rejected.
+    ( export CCO_CONTAINER_OPERATOR=1 CCO_DATA_HOME=rel CCO_STATE_HOME=/s CCO_CACHE_HOME=/c
+      _cco_container_operator ) && fail "relative bucket must not be operator mode"
+    # Flag + three absolute buckets → operator mode.
+    ( export CCO_CONTAINER_OPERATOR=1 CCO_DATA_HOME=/d CCO_STATE_HOME=/s CCO_CACHE_HOME=/c
+      _cco_container_operator ) || fail "flag + absolute buckets must be operator mode"
+    return 0
+}
+
+# Operator mode bypasses the anti-in-container guard (distinct from the hatch):
+# a resolve inside a container succeeds against the mounted DATA bucket.
+test_paths_container_operator_bypasses_guard() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+
+    local val rc=0
+    val=$( export CCO_IN_CONTAINER=1 CCO_CONTAINER_OPERATOR=1 \
+                  CCO_DATA_HOME="$tmp/d" CCO_STATE_HOME="$tmp/s" CCO_CACHE_HOME="$tmp/c"
+           unset CCO_ALLOW_HOST_RESOLVE; _cco_data_dir ) || rc=$?
+    [[ $rc -eq 0 && "$val" == "$tmp/d" ]] \
+        || fail "Expected operator mode to bypass guard, got rc=$rc val=$val"
+}
+
+# Without the operator flag, an in-container resolve still dies even if the
+# CCO_*_HOME overrides happen to be set (ADR-0007 invariant intact).
+test_paths_container_operator_flag_required_for_bypass() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+
+    local out rc=0
+    out=$( export CCO_IN_CONTAINER=1 CCO_DATA_HOME="$tmp/d" \
+                  CCO_STATE_HOME="$tmp/s" CCO_CACHE_HOME="$tmp/c"
+           unset CCO_ALLOW_HOST_RESOLVE CCO_CONTAINER_OPERATOR; _cco_data_dir 2>&1 ) || rc=$?
+    [[ $rc -ne 0 && "$out" == *"anti-in-container"* ]] \
+        || fail "Expected guard to fire without operator flag, got rc=$rc out=$out"
+}
+
 # ── D8 (ADR-0036): canonical caller-context signal ──────────────────
 # _cco_caller_context maps the _cco_in_container predicate onto the two
 # framework-wide contexts `host` | `container-agent`. The guard (above) is
