@@ -18,27 +18,41 @@ Design branch with the ADRs + doc rewrites: `feat/config-access/capability-model
 
 ---
 
-## ▶ NEXT SESSION — step 7 (final docs + completeness gate on `develop`). Read this first.
+## ▶ NEXT SESSION — step 7 (small: host cleanup + polish). Read this first.
 
-**Where we are (2026-07-01).** Steps **1–6 of 7 done** on branch
-`feat/config-access/capability-model` (**not pushed** — push from the Mac). Step-6 commit
-`9aed757` (code cut) + the doc-sweep commit that follows it.
+**Where we are (2026-07-01).** Steps **1–6 of 7 done** + **R1-D5 gate PASSED (live host dogfood)**
+on branch `feat/config-access/capability-model` (**not pushed** — push from the Mac). Step-6 code
+commit `9aed757` + doc-sweep `bd57212`.
 Suite **1095 pass / 1 fail** — the single fail is the **pre-existing, env-only**
 `test_paths_symlink_safe_tool_root` (the DATA bucket is unwritable inside the self-dev container;
 reproduces on the unchanged tree — **not a regression**, do not chase it). Run `./bin/test`.
 
-**Do next — step 7 + the completeness gate.** Step 6 shipped R1 (see §0 step-6 log). What remains:
-(1) the **pre-release completeness gate on `develop`** (R1-D5) — a **real `cco start` dogfood**
-(cannot be done from inside the self-dev container; do it on the host after `cco build`) to confirm
-the SessionStart/SubagentStart context + `/init` still see every datum the old `packs.md` carried;
-(2) any residual step-7 docs/tests polish. When merging to `develop`, verify no `packs.md` string
-survives in shipped code paths.
+**R1-D5 completeness gate — ✅ PASSED via live host dogfood (2026-07-01).** After
+`./bin/cco build && ./bin/cco start` from the branch checkout on the host, verified **in the running
+container**: (a) `/workspace/.claude/workspace.yml` is the new format (`llms` + `path_map` sections;
+`path_map` carries the **real host path** `/Users/…/claude-orchestrator`, `show_host_paths` default
+on); (b) **no `packs.md` is generated**; (c) the baked hook `/usr/local/bin/cco-hooks/session-context.sh`
+is the R1 version (reads `workspace.yml` via `_ws_section`, **zero** `packs.md` references) and its
+live output renders the `llms`/`knowledge` blocks into `additionalContext` — the SessionStart context
+is byte-equivalent to the old `packs.md` injection; (d) bonus — `.cco` is `:ro` in a normal session
+(`cco_access=none` edit-protection confirmed working). Context is not regressed.
+
+**Do next — step 7 (small).** (1) **Host cleanup:** remove one **stale committed**
+`.cco/claude/packs.md` (self-dev repo only — landed accidentally in `2f41cfe "init cco config"`; it
+is a *dead* file now since the R1 hook ignores it, but tracked in git). Must be done **on the host**:
+`git rm .cco/claude/packs.md` — `.cco` is `:ro` in-session so it can't be removed from here. It is
+**not** in any `*_FILE_POLICIES` (packs.md was a CACHE-only overlay by design) and **no other
+project/template** has one, so **no framework migration is needed** — decision recorded; only this
+repo's accidental copy needs the `git rm`. (2) Any residual docs/tests polish. When merging to
+`develop`, confirm no `packs.md` string survives in shipped code (only the intentional `rm -f`
+stale-cleanup in `_start_generate_metadata` remains).
 
 **Step 6 done (R1, ADR-0041).** `packs.md` is gone — folded into the single
 `/workspace/.claude/workspace.yml` (`knowledge` + `llms` sections + gated `path_map`). Net cut:
-generator + all three consumers + `packs.md` deletion in one commit; doc-sweep in the next. The
-managed `memory-policy.md` had **no** `packs.md` reference to reconcile (verified); `precompact.sh`
-references the packs **directory** `/workspace/.claude/packs/`, which is correct and stays.
+generator + all three consumers + `packs.md` deletion in one commit (`9aed757`); doc-sweep in the
+next (`bd57212`). The managed `memory-policy.md` had **no** `packs.md` reference to reconcile
+(verified); `precompact.sh` references the packs **directory** `/workspace/.claude/packs/`, which is
+correct and stays.
 
 **Also open (small, from step 5, optional):** granular narrowing of the config-editor *browse*
 mounts (`/workspace/cco-config`, `<name>-config`) by edit level — today they are rw regardless, and
