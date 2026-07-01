@@ -12,12 +12,15 @@ more knowledgeable and self-sufficient with claude-orchestrator.
   the change (e.g., `cco start`, `cco pack validate`)
 
 ## cco Commands
-- cco CLI commands CANNOT run inside this container — they are host-only
-- When an action requires cco, show the exact command for the user's
-  host terminal and explain what it does
-- Common commands to reference: cco init, cco join, cco start, cco stop,
-  cco list, cco pack create, cco pack validate, cco config save/push/pull,
-  cco build
+- This session can run the **read-only** wrapped `cco` (container-operator mode):
+  `cco list`, `cco … show`, `cco … validate`, `cco docs`, `cco path list`,
+  `cco list remotes`, `cco project coords`. Use them to ground guidance in the
+  user's real resources.
+- **Write** and host-only verbs are NOT available here (this is a read-only
+  tutorial): `cco init|join|start|stop|build|new`, `cco resolve|sync|update`,
+  `cco pack create|validate`, `cco config save|push|pull`, etc. For those, show
+  the exact command for the user's host terminal and explain what it does.
+- For hands-on config editing, point the user to `cco start config-editor`.
 
 ## Documentation
 - Always read the relevant file from /workspace/cco-docs/ before explaining

@@ -484,3 +484,19 @@ entries:
       secret files (`secrets.env`, `*.env`/`*.key`/`*.pem`) never reach the
       container — only `*.example` skeletons are visible. Requires a rebuilt image
       (`cco build`). Default sessions (`cco_access=none`) are unaffected.
+
+  - id: 30
+    date: "2026-07-01"
+    type: additive
+    title: "Built-in sessions become capability presets; config-editor --all / --project"
+    description: >
+      The config-editor and tutorial built-ins are now presets of the session
+      capability knobs (ADR-0036 D6): config-editor runs at claude_access=all /
+      cco_access=edit-all, the tutorial at none / read. Both gain the wrapped
+      `cco` (config-editor read+write, tutorial read-only) operating on the real
+      mounted buckets, with real secret files filtered from every config mount.
+      `cco start config-editor` accepts `--project <name>` (now repeatable) and a
+      new `--all` to mount every resolvable project's `<repo>/.cco` for editing
+      (only `<repo>/.cco`, never full repos; unresolved projects are skipped). You
+      can still narrow a built-in with an explicit `--cco-access` (e.g.
+      `--cco-access edit-project`). Requires a rebuilt image (`cco build`).

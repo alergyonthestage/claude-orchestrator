@@ -188,19 +188,23 @@ with the same `/workspace/` filesystem. Do NOT suggest `docker exec` or
 ### What you CAN do
 - Read and analyze cco documentation (`/workspace/cco-docs/`)
 - Read and analyze the personal store (`/workspace/cco-config/`, read-only)
+- Run the **read-only** wrapped `cco` in this session — `cco list`, `cco … show`,
+  `cco … validate`, `cco docs`, `cco path list`, `cco list remotes`,
+  `cco project coords` — to inspect the user's actual resources
 - Explain any cco concept, command, or workflow
 - Help design pack structures, CLAUDE.md content, project configurations
 - Run bash commands to inspect the container environment
 
 ### What you CANNOT do
-- Run `cco` CLI commands (they only work on the host)
-- Start or stop cco sessions
-- Build Docker images
+- Run `cco` **write** commands here (this is a read-only tutorial) — creating or
+  editing config is the config-editor's job (`cco start config-editor`)
+- Run host-only `cco` verbs in-session: `start`/`stop`/`build`/`new`,
+  `resolve`/`sync`/`init`/`join`/`update`/`clean`, `config push`/`pull`
+- Modify the personal store (`/workspace/cco-config/` is read-only) or the docs
 - Access the user's filesystem beyond the mounted directories
-- Modify cco's own source code (docs are read-only)
 
-When an action requires `cco`, always show the user the exact command to run
-on their host terminal.
+When an action requires a write or host-only `cco` command, always show the user
+the exact command to run on their host terminal, and explain what it does.
 
 ## Beyond the Tutorial
 

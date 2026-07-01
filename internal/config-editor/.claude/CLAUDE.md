@@ -5,9 +5,15 @@
 This is the built-in **config-editor** session for claude-orchestrator. It gives
 you read-write access to the user's personal cco store **`~/.cco`** (mounted at
 `/workspace/cco-config`) so you can create and edit global config, packs, and
-templates. In **project mode** (`cco start config-editor --project <name>`, or
-started from inside a configured repo) the target project's committed config
-`<repo>/.cco/` is also mounted (at `/workspace/<name>-config`) for editing.
+templates. In **project mode** (`cco start config-editor --project <name>`,
+repeatable, or `--all` for every resolvable project, or started from inside a
+configured repo) the target project(s)' committed config `<repo>/.cco/` are also
+mounted (at `/workspace/<name>-config`) for editing.
+
+`cco` itself runs **in this session** behind a whitelist shim (read verbs + the
+edit-writes that go through the shared `cco` functions); host-only verbs are
+refused with a hint. See `config-safety.md` (always loaded) for the exact
+allowed/host-only split, secret filtering, and host-path handling.
 
 ## Your Role
 
@@ -85,7 +91,9 @@ live in the machine-local index (`cco resolve` / `cco path`).
 ## Operational Guidelines
 
 ### Versioning the personal store
-- After significant edits to `~/.cco`, remind the user: `cco config save` on host.
+- After significant edits to `~/.cco`, run `cco config save` (available in this
+  session) or remind the user to run it on the host. `cco config push`/`pull` are
+  host-only.
 - To review pending changes: `git -C ~/.cco status` / `git -C ~/.cco diff`
   (a dedicated `cco config diff` may arrive later).
 - To sync across machines: `cco config push` / `cco config pull` (a private
@@ -99,7 +107,7 @@ created in that repo and registered in the machine-local index.
 
 ### Creating packs
 Use the `/setup-pack` skill, or create under `~/.cco/packs/<name>/` directly
-(`/workspace/cco-config/packs/<name>/`), then `cco config save` on host.
+(`/workspace/cco-config/packs/<name>/`), then `cco config save` (in-session or host).
 
 ### Sharing (sharing repo, not a central manifest)
 - Packs: `cco pack publish <name> [remote]` / `cco pack install <url>`.
@@ -117,17 +125,27 @@ Use the `/setup-pack` skill, or create under `~/.cco/packs/<name>/` directly
 3. **Never** delete projects or packs without explicit confirmation.
 4. **Check before overwriting** — if a file exists, show the diff first.
 
-## cco Commands (host-only)
+## cco Commands (wrapped in-session + host-only)
 
-cco CLI commands CANNOT run inside this container — they are host-only. When an
-action requires cco, show the exact command for the user's host terminal.
+`cco` runs **in this session** behind a whitelist shim (container-operator mode).
+The safe subset works here; the rest is host-only. Full detail in
+`config-safety.md`.
 
-Common commands:
+**Available in-session** (operate on the mounted config):
+- `cco list [--tag <t>]` / `cco tag add|rm` — discover + tag projects
+- `cco pack create|validate|update|remove|install|import <name>` — author packs
+- `cco template …` / `cco llms …` (create/validate/update/remove/install/import)
+- `cco remote add|remove <name>` / `cco list remotes` — manage remote *urls*
+- `cco config save [-m]` — commit `~/.cco` (git)
+- `cco … show`, `cco project coords`, `cco docs`, `cco path list`
+
+**Host-only** — show the exact command for the user's host terminal (use the
+path map for the host path):
 - `cco init` — scaffold a project in the current repo (single entry verb)
 - `cco join <project>` / `cco init --migrate <project>` — add a repo / migrate
-- `cco list [--tag <t>]` / `cco tag add|rm` — discover + tag projects
-- `cco pack create <name>` / `cco pack validate <name>` — author/validate a pack
-- `cco config save [-m] / push / pull` — version + sync `~/.cco`
-- `cco resolve <project>` / `cco path …` — bind logical names to local paths
-- `cco start <project>` — launch a project session
+- `cco resolve <project>` / `cco sync` / `cco path set` — bind logical→local paths
+- `cco start|stop|build|new` — session/image lifecycle
+- `cco config push | pull` — sync `~/.cco` (network + credentials)
+- `cco remote set-token | remove-token` — secrets stay off the container
 - `cco update` — framework migrations + discovery
+- `cco project rename` — re-keys machine-local state
