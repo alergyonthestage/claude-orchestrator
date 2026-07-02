@@ -1,8 +1,11 @@
 # claude-orchestrator Framework
 
 ## Context Hierarchy
-- Managed rules (this file, memory-policy.md, documentation-first.md)
-  define framework behavior
+- Managed rules (this file, memory-policy.md, documentation-first.md,
+  use-official-docs.md, cco-config-interaction.md) define framework behavior.
+  `cco-config-interaction.md` is access-conditional: its config-editing rules
+  apply only when `cco_access` is an edit level; its scope-awareness section
+  applies at any read level (see `<CcoSessionInfo>` for the session's level)
 - User rules in `.claude/rules/` define workflow, git, documentation,
   and other conventions — always check and follow them
 - Project-level rules (in `/workspace/.claude/rules/`) take precedence

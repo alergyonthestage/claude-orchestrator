@@ -156,6 +156,17 @@ _build_session_context() {
         echo "A wrapped \`cco\` CLI is available in-container for on-demand detail"
         echo "(access scope: ${cco_access}). Use \`cco list\`, \`cco <kind> show\`,"
         echo "and \`cco docs\` for more than this start-time summary."
+        # ADR-0043 §5 awareness (INV-B pairing): at read-project the wrapped cco
+        # gives a PROJECT-SCOPED view of ~/.cco — read verbs show only this
+        # project + its referenced packs/llms; hidden ≠ absent. Only meaningful at
+        # read-project (read-global/read-all/edit-* see the whole store).
+        if [[ "$cco_access" == "read-project" ]]; then
+            echo "At this scope the \`cco\` read verbs show a PROJECT-SCOPED view of"
+            echo "your \`~/.cco\`: only this project and the packs/llms it references."
+            echo "Templates, other projects, and unreferenced packs are hidden (a"
+            echo "stderr notice says how many). A hidden resource is not missing —"
+            echo "start a read-global session or run cco on your host to see all."
+        fi
     fi
 
     # Project resources: repos (+ optional description), packs, extra_mounts.

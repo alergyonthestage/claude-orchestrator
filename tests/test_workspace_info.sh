@@ -78,11 +78,23 @@ test_session_context_declares_wrapped_cco_scope() {
     local ctx; ctx=$(decode_session_context "$DRY_RUN_DIR/.cco/docker-compose.yml")
     echo "$ctx" | grep -q "access scope: read-project" \
         || fail "context should declare the wrapped-cco access scope, got: $ctx"
+    # ADR-0043 §5: at read-project the context carries the project-scoped-view
+    # awareness (hidden ≠ absent).
+    echo "$ctx" | grep -q "PROJECT-SCOPED view" \
+        || fail "read-project context should carry the project-scoped-view awareness, got: $ctx"
     # With cco_access=none there is no wrapped cco → no declaration.
     run_cco start "test-proj" --cco-access none --dry-run --dump
     ctx=$(decode_session_context "$DRY_RUN_DIR/.cco/docker-compose.yml")
     if echo "$ctx" | grep -q "wrapped \`cco\`"; then
         fail "no wrapped-cco declaration should appear under cco-access none"
+    fi
+    # At read-global the whole store is visible → no project-scoped-view line.
+    run_cco start "test-proj" --cco-access read-global --dry-run --dump
+    ctx=$(decode_session_context "$DRY_RUN_DIR/.cco/docker-compose.yml")
+    echo "$ctx" | grep -q "access scope: read-global" \
+        || fail "context should declare read-global scope, got: $ctx"
+    if echo "$ctx" | grep -q "PROJECT-SCOPED view"; then
+        fail "read-global context must NOT carry the project-scoped-view awareness"
     fi
 }
 

@@ -15,6 +15,11 @@ test_managed_files_exist_in_defaults() {
         "CLAUDE.md missing from defaults/managed/"
     assert_file_exists "$REPO_ROOT/defaults/managed/.claude/skills/init-workspace/SKILL.md" \
         "init-workspace skill missing from defaults/managed/.claude/skills/"
+    # Access-gated cco-config-interaction rule (ADR-0042 §C / ADR-0043 §5).
+    assert_file_exists "$REPO_ROOT/defaults/managed/.claude/rules/cco-config-interaction.md" \
+        "cco-config-interaction rule missing from defaults/managed/.claude/rules/"
+    assert_file_contains "$REPO_ROOT/defaults/managed/.claude/rules/cco-config-interaction.md" \
+        "project-scoped view"
 }
 
 test_managed_settings_has_hooks() {
