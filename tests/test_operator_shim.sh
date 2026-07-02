@@ -125,6 +125,61 @@ test_operator_path_set_blocked_list_allowed() {
     return 0
 }
 
+# ── Read scope gating (ADR-0042) ─────────────────────────────────────
+# read-project cannot browse personal-global management namespaces (template
+# reads, remote list); read-global+ can. Unified `cco list` stays open at any
+# read level (the on-demand discovery cornerstone).
+
+test_operator_read_project_gates_global_namespaces() {
+    _op_cco read-project template show foo
+    [[ $OP_RC -ne 0 && "$OP_OUT" == *"read-global scope"* ]] \
+        || fail "'template show' under read-project must need read-global, got rc=$OP_RC: $OP_OUT"
+    _op_cco read-project remote list
+    [[ $OP_RC -ne 0 && "$OP_OUT" == *"read-global scope"* ]] \
+        || fail "'remote list' under read-project must need read-global, got rc=$OP_RC: $OP_OUT"
+    return 0
+}
+
+test_operator_read_global_allows_global_namespaces() {
+    local v
+    for v in "template show foo" "template list" "remote list"; do
+        # shellcheck disable=SC2086
+        _op_cco read-global $v
+        [[ "$OP_OUT" != *"read-global scope"* && "$OP_OUT" != *"host-only"* ]] \
+            || fail "'cco $v' should pass the shim under read-global, got: $OP_OUT"
+    done
+    return 0
+}
+
+test_operator_read_project_allows_project_verbs() {
+    local v
+    for v in "docs" "list" "list packs" "pack show foo" "llms show foo" "path list" "project show foo"; do
+        # shellcheck disable=SC2086
+        _op_cco read-project $v
+        [[ "$OP_OUT" != *"read-global scope"* && "$OP_OUT" != *"host-only"* \
+           && "$OP_OUT" != *"not available in a container session"* ]] \
+            || fail "'cco $v' should pass the shim under read-project, got: $OP_OUT"
+    done
+    return 0
+}
+
+# ── Scope-aware usage in operator mode (ADR-0042) ────────────────────
+# `cco help` inside operator mode flags host-only top-level verbs and prints the
+# container-session banner; the write-only `tag` verb is marked at a read level.
+test_operator_usage_flags_host_only() {
+    _op_cco read-project help
+    [[ "$OP_OUT" == *"Container session (cco_access=read-project)"* ]] \
+        || fail "operator usage should show the container-session banner, got: $OP_OUT"
+    [[ "$OP_OUT" == *"(host only — run on your host)"* ]] \
+        || fail "operator usage should flag host-only verbs, got: $OP_OUT"
+    # A fully host-only verb carries the flag; a mixed namespace (project) does not.
+    echo "$OP_OUT" | grep -qE '^  build .*host only' \
+        || fail "'build' should be flagged host-only in operator usage, got: $OP_OUT"
+    echo "$OP_OUT" | grep -qE '^  tag .*needs an edit level' \
+        || fail "'tag' should be marked needing an edit level under read-project, got: $OP_OUT"
+    return 0
+}
+
 # ── Non-operator mode leaves the dispatcher untouched ────────────────
 # Without the operator flag, the shim never runs — a host-only verb is NOT
 # intercepted by the shim (it would run its normal host path).

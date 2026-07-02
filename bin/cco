@@ -112,7 +112,8 @@ TEMPLATES_DIR="${CCO_TEMPLATES_DIR:-$HOME/.cco/templates}"
 LLMS_DIR="${CCO_LLMS_DIR:-$(_cco_llms_dir)}"
 
 usage() {
-    cat <<'EOF'
+    local _body
+    _body=$(cat <<'EOF'
 Usage: cco <command> [options]
 
 Project lifecycle:
@@ -153,6 +154,27 @@ Tools & Sharing:
 Run 'cco help' for this message, or 'cco <command> --help' for command-specific help.
 Use 'cco --version' to print the version, 'cco --help' for this message.
 EOF
+)
+    # Host mode: print the usage verbatim. Container-operator mode (ADR-0042):
+    # annotate the surface for the wrapped cco — the full command list stays
+    # visible for discoverability, but host-only top-level verbs are flagged and
+    # the write-only `tag` verb is marked when the session has no edit level.
+    if _cco_container_operator; then
+        local _level="${CCO_CCO_ACCESS:-read-project}"
+        [[ "$_level" == "read" ]] && _level="read-all"
+        local _can_write=false
+        case "$_level" in edit-project|edit-global|edit-all) _can_write=true ;; esac
+        printf 'Container session (cco_access=%s) — wrapped cco. Flagged verbs run on your host;\n' "$_level"
+        printf 'write verbs need an edit level; `template`/`remote list` need read-global or higher.\n\n'
+        # Fully host-only top-level verbs (mirror the shim blocklist).
+        local _hostonly='init|join|forget|build|start|new|stop|resolve|sync|update|clean|chrome'
+        printf '%s\n' "$_body" \
+            | sed -E "/^  ($_hostonly)([[:space:]]|\$)/ s/\$/   (host only — run on your host)/" \
+            | if $_can_write; then cat; else \
+                  sed -E "/^  tag([[:space:]]|\$)/ s/\$/   (needs an edit level)/"; fi
+        return 0
+    fi
+    printf '%s\n' "$_body"
 }
 
 # Print the cco version. Source of truth = package.json `version` at the package
@@ -174,21 +196,40 @@ _cco_print_version() {
 # hint, so a session agent can never spawn containers, resolve/rewrite host
 # paths, or touch network/credential state. Classification is DEFAULT-DENY: a
 # verb (or subcommand) reaches the real dispatcher only if it is explicitly
-# whitelisted here. Read verbs are allowed at any operator level (cco_access ≥
-# read); write verbs that mutate CONFIG or the internal XDG registries through
-# the shared cco functions are allowed only under an edit level
-# (CCO_CCO_ACCESS ∈ edit-project|edit-global|edit-all).
+# whitelisted here. Read verbs are allowed from read-project up, but read scope
+# gates the personal-global MANAGEMENT namespaces (`template …`, `remote list`):
+# they need read-global or higher (ADR-0042). Unified discovery (`cco list …`)
+# stays available at any read level — it is the on-demand model's cornerstone.
+# Write verbs that mutate CONFIG or the internal XDG registries through the shared
+# cco functions are allowed only under an edit level (CCO_CCO_ACCESS ∈
+# edit-project|edit-global|edit-all).
 _cco_operator_shim() {
     local cmd="$1"; shift
     local sub="${1:-}"
-    local level="${CCO_CCO_ACCESS:-read}"
+    local level="${CCO_CCO_ACCESS:-read-project}"
+    # Back-compat: a container launched before ADR-0042 may carry the bare `read`
+    # value — it meant "read everything", so treat it as read-all here too.
+    [[ "$level" == "read" ]] && level="read-all"
     local host_hint="Run it on the host instead (this is a container session; ADR-0036 D4)."
     local can_write=false
     case "$level" in edit-project|edit-global|edit-all) can_write=true ;; esac
+    # Read scope rank, symmetric with the edit axis (project<global<all); edit
+    # levels read everything (rank 3). Drives _op_scope below.
+    local read_rank=1
+    case "$level" in
+        read-global)              read_rank=2 ;;
+        read-all|edit-*)          read_rank=3 ;;
+    esac
     # Helper: a write verb — allowed only under an edit level.
     _op_write() {
         $can_write && return 0
         die "'cco $1' needs an edit access level to run in this session (current cco_access=$level)."
+    }
+    # Helper: a read verb whose minimum read scope exceeds this session's rank is
+    # refused. Args: <required-rank> <verb-label> <scope-name>.
+    _op_scope() {
+        [[ "$read_rank" -ge "$1" ]] && return 0
+        die "'cco $2' needs read-$3 scope or higher in this session (current cco_access=$level). Widen it on the host with --cco-access read-$3."
     }
 
     case "$cmd" in
@@ -213,14 +254,18 @@ _cco_operator_shim() {
             esac ;;
         remote)
             case "$sub" in
-                list) return 0 ;;
+                list) _op_scope 2 "remote list" global; return 0 ;;   # personal-global registry
                 add|remove) _op_write "remote $sub" ;;
                 set-token|remove-token) die "'cco remote $sub' is host-only (secrets stay off the container). $host_hint" ;;
                 *) die "'cco remote $sub' is not available in a container session." ;;
             esac ;;
         pack|template|llms)
             case "$sub" in
-                show|validate|list) return 0 ;;
+                show|validate|list)
+                    # Templates are a personal-global resource (scaffold new
+                    # projects), not a project resource → read-global+ (ADR-0042).
+                    [[ "$cmd" == "template" ]] && _op_scope 2 "template $sub" global
+                    return 0 ;;
                 create|update|remove|install|import|internalize|rename) _op_write "$cmd $sub" ;;
                 publish|export) die "'cco $cmd $sub' is host-only. $host_hint" ;;
                 *) die "'cco $cmd $sub' is not available in a container session." ;;

@@ -66,7 +66,7 @@ test_access_resolve_defaults() {
     local claude_access cco_access show_host_paths
     _start_resolve_access
     [[ "$claude_access" == "repo" ]]  || fail "default claude=repo, got: $claude_access"
-    [[ "$cco_access" == "none" ]]     || fail "default cco=none, got: $cco_access"
+    [[ "$cco_access" == "read-project" ]] || fail "default cco=read-project (ADR-0042), got: $cco_access"
     [[ "$show_host_paths" == "true" ]] || fail "default show_host_paths=true, got: $show_host_paths"
 }
 
@@ -75,13 +75,32 @@ test_access_resolve_project_block() {
     _access_setup_home "$tmp"; _access_src
 
     local project_yml="$tmp/project.yml"
-    printf 'name: p\naccess:\n  claude: all\n  cco: read\n  show_host_paths: false\n' > "$project_yml"
+    printf 'name: p\naccess:\n  claude: all\n  cco: read-global\n  show_host_paths: false\n' > "$project_yml"
     local cli_claude_access="" cli_cco_access="" cli_show_host_paths=""
     local claude_access cco_access show_host_paths
     _start_resolve_access
-    [[ "$claude_access" == "all" ]]     || fail "project claude=all, got: $claude_access"
-    [[ "$cco_access" == "read" ]]       || fail "project cco=read, got: $cco_access"
-    [[ "$show_host_paths" == "false" ]] || fail "project show_host_paths=false, got: $show_host_paths"
+    [[ "$claude_access" == "all" ]]      || fail "project claude=all, got: $claude_access"
+    [[ "$cco_access" == "read-global" ]] || fail "project cco=read-global, got: $cco_access"
+    [[ "$show_host_paths" == "false" ]]  || fail "project show_host_paths=false, got: $show_host_paths"
+}
+
+# ADR-0042 symmetric read scoping: the three read levels validate; bare `read`
+# is accepted as a back-compat alias normalized to read-all.
+test_access_read_scopes_and_legacy_alias() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    local project_yml="$tmp/project.yml"; printf 'name: p\n' > "$project_yml"
+    local cli_claude_access="" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths lvl
+    for lvl in read-project read-global read-all; do
+        local cli_cco_access="$lvl"
+        _start_resolve_access
+        [[ "$cco_access" == "$lvl" ]] || fail "read scope $lvl should validate, got: $cco_access"
+    done
+    # Legacy `read` → read-all.
+    local cli_cco_access="read"
+    _start_resolve_access
+    [[ "$cco_access" == "read-all" ]] || fail "legacy 'read' should normalize to read-all, got: $cco_access"
 }
 
 test_access_resolve_global_default() {
@@ -162,7 +181,8 @@ test_access_cli_flag_reaches_resolution() {
     export CCO_DEBUG=1
     run_cco start "test-proj" --claude-access all --cco-access read --no-show-host-paths --dry-run
     unset CCO_DEBUG
-    assert_output_contains "claude=all cco=read show_host_paths=false"
+    # Legacy `read` normalizes to read-all (ADR-0042) before it reaches the debug line.
+    assert_output_contains "claude=all cco=read-all show_host_paths=false"
 }
 
 test_access_invalid_cli_value_dies() {
@@ -236,8 +256,22 @@ test_access_mount_cco_edit_project_unlocks_a1() {
 
 # ── Container-operator buckets + secret masking (step 4, ADR-0036 D4) ─
 
-# Default (cco_access=none) → no operator mode, no buckets.
+# cco_access=none (explicit — no longer the default under ADR-0042) → no operator
+# mode, no buckets.
 test_operator_none_no_buckets() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    mkdir -p "$CCO_DUMMY_REPO/.cco"
+    run_cco start "test-proj" --cco-access none --dry-run --dump
+    local c; c=$(_access_compose)
+    if echo "$c" | grep -q 'CCO_CONTAINER_OPERATOR'; then fail "no operator env expected under cco-access none"; fi
+    if echo "$c" | grep -qE ':/home/claude/\.cco"'; then fail "no ~/.cco bucket mount expected under cco-access none"; fi
+}
+
+# Normal default is now read-project (ADR-0042) → operator env present, buckets ro.
+test_operator_default_read_project() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -245,11 +279,13 @@ test_operator_none_no_buckets() {
     mkdir -p "$CCO_DUMMY_REPO/.cco"
     run_cco start "test-proj" --dry-run --dump
     local c; c=$(_access_compose)
-    if echo "$c" | grep -q 'CCO_CONTAINER_OPERATOR'; then fail "no operator env expected by default"; fi
-    if echo "$c" | grep -qE ':/home/claude/\.cco"'; then fail "no ~/.cco bucket mount expected by default"; fi
+    echo "$c" | grep -q 'CCO_CONTAINER_OPERATOR=1'      || fail "operator env expected by default (read-project)"
+    echo "$c" | grep -q 'CCO_CCO_ACCESS=read-project'   || fail "CCO_CCO_ACCESS=read-project expected by default"
+    echo "$c" | grep -qE ':/home/claude/\.cco:ro"'      || fail "~/.cco should be ro under read-project"
 }
 
-# --cco-access read → operator env + buckets, all ro; STATE is index-only.
+# --cco-access read (legacy alias → read-all) → operator env + buckets, all ro;
+# STATE is index-only. Exercises the alias flowing through resolution to compose.
 test_operator_read_mounts_buckets_ro() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
@@ -259,7 +295,7 @@ test_operator_read_mounts_buckets_ro() {
     run_cco start "test-proj" --cco-access read --dry-run --dump
     local c; c=$(_access_compose)
     echo "$c" | grep -q 'CCO_CONTAINER_OPERATOR=1'    || fail "operator env expected under read"
-    echo "$c" | grep -q 'CCO_CCO_ACCESS=read'         || fail "CCO_CCO_ACCESS=read expected"
+    echo "$c" | grep -q 'CCO_CCO_ACCESS=read-all'     || fail "legacy read should resolve to CCO_CCO_ACCESS=read-all"
     echo "$c" | grep -qE ':/home/claude/\.cco:ro"'    || fail "~/.cco should be ro under read"
     echo "$c" | grep -qE '/home/claude/\.local/state/cco/index:ro"' || fail "STATE index ro expected"
     # STATE is index-only: never the whole state dir, and never remotes-token.
@@ -307,7 +343,7 @@ test_operator_secret_masking_normal_session() {
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     mkdir -p "$CCO_DUMMY_REPO/.cco"
     printf 'S=1\n' > "$CCO_DUMMY_REPO/.cco/secrets.env"
-    run_cco start "test-proj" --dry-run --dump   # cco_access=none (normal)
+    run_cco start "test-proj" --dry-run --dump   # cco_access=read-project (normal default)
     local c; c=$(_access_compose)
     echo "$c" | grep -qE 'secret-mask:/workspace/dummy-repo/\.cco/secrets\.env:ro"' \
         || fail "secrets.env masked even in a normal session (capability matrix: filtered in every column)"

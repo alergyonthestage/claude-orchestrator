@@ -147,7 +147,12 @@ YAML
 
 # Allowed enum values per editing knob (space-separated sets).
 _ACCESS_CLAUDE_VALUES="none repo all"
-_ACCESS_CCO_VALUES="none read edit-project edit-global edit-all"
+# Symmetric read/edit scoping (ADR-0042): read mirrors edit —
+# none · read-project · read-global · read-all · edit-project · edit-global · edit-all.
+# The bare `read` of ADR-0036 is kept as a back-compat ALIAS (normalized to
+# read-all in _start_resolve_access, since it meant "read everything") but is not
+# a first-class enum value.
+_ACCESS_CCO_VALUES="none read-project read-global read-all edit-project edit-global edit-all"
 
 # True (0) when $2 is a member of the space-separated set $1.
 _access_is_member() {
@@ -184,14 +189,17 @@ _access_pick() {
 # the normal-session values (repo / none / on); step 5 layers the built-in
 # tutorial/config-editor presets on top.
 _start_resolve_access() {
-    # Preset defaults (D6): normal = repo/none/on; the built-ins are presets —
-    # config-editor = all/edit-all/on, tutorial = none/read/on. These become the
-    # level-4 default of the precedence chain.
+    # Preset defaults (D6, revised by ADR-0042): normal = repo/read-project/on
+    # (was cco=none — the read-project default is what makes the on-demand
+    # three-level model work: the agent can query its own environment via wrapped
+    # cco, so Level A stays minimal). Built-ins are presets — config-editor =
+    # all/edit-all/on, tutorial = none/read-project/on (read-only teacher). These
+    # become the level-4 default of the precedence chain.
     local _preset="${session_preset:-normal}"
-    local d_claude="repo" d_cco="none" d_shp="true"
+    local d_claude="repo" d_cco="read-project" d_shp="true"
     case "$_preset" in
-        config-editor) d_claude="all";  d_cco="edit-all"; d_shp="true" ;;
-        tutorial)      d_claude="none"; d_cco="read";     d_shp="true" ;;
+        config-editor) d_claude="all";  d_cco="edit-all";     d_shp="true" ;;
+        tutorial)      d_claude="none"; d_cco="read-project"; d_shp="true" ;;
     esac
 
     # For a built-in the precedence collapses to CLI > preset: its generated
@@ -216,6 +224,10 @@ _start_resolve_access() {
 
     claude_access=$(_access_pick "$cli_claude_access" "$p_claude" "$g_claude" "$d_claude")
     cco_access=$(_access_pick "$cli_cco_access" "$p_cco" "$g_cco" "$d_cco")
+    # Back-compat (ADR-0042): bare `read` predates symmetric read scoping and meant
+    # "read everything" — normalize it to read-all before validation so old
+    # project.yml / access.yml / --cco-access values keep working.
+    [[ "$cco_access" == "read" ]] && cco_access="read-all"
     _access_is_member "$_ACCESS_CLAUDE_VALUES" "$claude_access" \
         || die "Invalid claude_access '$claude_access' (expected one of: $_ACCESS_CLAUDE_VALUES). Set --claude-access, project.yml access.claude, or ~/.cco/access.yml."
     _access_is_member "$_ACCESS_CCO_VALUES" "$cco_access" \
@@ -1304,7 +1316,7 @@ cmd_start() {
             --mount) [[ $# -lt 2 ]] && die "--mount requires <src>[:<target>][:ro|:rw]."; user_mounts+=("$2"); shift 2 ;;
             --enable-config-edit) enable_config_edit=true; shift ;;
             --claude-access) [[ $# -lt 2 ]] && die "--claude-access requires a value (none|repo|all)."; cli_claude_access="$2"; shift 2 ;;
-            --cco-access) [[ $# -lt 2 ]] && die "--cco-access requires a value (none|read|edit-project|edit-global|edit-all)."; cli_cco_access="$2"; shift 2 ;;
+            --cco-access) [[ $# -lt 2 ]] && die "--cco-access requires a value (none|read-project|read-global|read-all|edit-project|edit-global|edit-all)."; cli_cco_access="$2"; shift 2 ;;
             --show-host-paths) cli_show_host_paths="true"; shift ;;
             --no-show-host-paths) cli_show_host_paths="false"; shift ;;
             --project) [[ $# -lt 2 ]] && die "--project requires a <name> (config-editor project mode)."; config_editor_targets+=("$2"); shift 2 ;;
@@ -1348,8 +1360,9 @@ Options:
                        default, :rw to make writable; target defaults to
                        /workspace/<basename>)
   --claude-access <l>  .claude authoring access: none | repo (default) | all
-  --cco-access <l>     .cco/framework access: none (default) | read |
-                       edit-project | edit-global | edit-all (ADR-0036)
+  --cco-access <l>     .cco/framework access: none | read-project (default) |
+                       read-global | read-all | edit-project | edit-global |
+                       edit-all (ADR-0036/0042; `read` = alias for read-all)
   --show-host-paths    Show the host<->container path map to the session (default)
   --no-show-host-paths Hide host paths from the session
   --enable-config-edit Deprecated alias for --cco-access edit-project (see 'cco
