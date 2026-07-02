@@ -1,10 +1,11 @@
 # Config-Editor Project — Design
 
-> **Status**: Target design per [ADR-0036](../../../configuration/decentralized-config/decisions/0036-session-config-capability-model.md)
+> **Status**: **Implemented** (2026-07-01, branch `feat/config-access/capability-model`) per
+> [ADR-0036](../../../configuration/decentralized-config/decisions/0036-session-config-capability-model.md)
 > (session config capability model) + [ADR-0041](../../../configuration/decentralized-config/decisions/0041-unified-session-info-surface.md)
-> (R1 self-info). **Implementation pending** — this living doc describes the agreed target;
-> the shipped code is the pre-capability-model config-editor (ADR-0027) until the handoff
-> implementation lands.
+> (R1 self-info). This living doc reflects the shipped behavior; config-editor now runs as the
+> `all`/`edit-all` preset over the wrapped-`cco` capability model (generalizing ADR-0027). Pending:
+> merge into `develop` + release (additive — no migration).
 > **Prerequisite**: [analysis](../analysis/analysis-001-config-editor.md) · ADR-0027 (built-in +
 > edit-protection, **generalized** by ADR-0036)
 

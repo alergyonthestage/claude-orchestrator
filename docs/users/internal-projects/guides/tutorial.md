@@ -83,10 +83,15 @@ environment to look at files while you chat:
 
 A few things to keep in mind:
 
-- The `cco` CLI itself runs on your **host**, not inside the session. The tutorial
-  shows you the commands to run there.
-- Your personal config store is mounted **read-only** here — perfect for
-  inspection, safe from accidental changes.
+- The tutorial can run **read-only** `cco` commands inside the session (a
+  whitelisted, look-only `cco`) — `cco list`, `cco … show`, `cco … validate`,
+  `cco docs`, `cco path list`, `cco list remotes` — to ground its guidance in your
+  real resources. Anything that **changes** things (creating config, `cco start`,
+  `cco config save/push`, resolving paths) runs on your **host**; the tutorial shows
+  you the exact command to run there.
+- Your personal config store is mounted **read-only** here (`cco_access=read`) —
+  perfect for inspection, safe from accidental changes. Real secret files are
+  filtered out entirely; only `*.example` skeletons are visible.
 
 ---
 

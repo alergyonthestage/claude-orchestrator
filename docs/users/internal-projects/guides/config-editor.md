@@ -16,14 +16,29 @@ cco start config-editor
 
 # Project mode: also edit a specific project's committed config
 cco start config-editor --project <name>
+
+# Project mode, repeatable: edit several projects' committed config
+cco start config-editor --project <a> --project <b>
+
+# All projects: mount every resolvable project's committed config
+cco start config-editor --all
 ```
 
 `config-editor` is a built-in session — nothing to install or scaffold, and it
 never appears in `cco list`. It always reflects your installed version of
 claude-orchestrator.
 
+Under the hood, config-editor runs as the maximal-edit **preset** of the session
+capability model (`claude_access=all`, `cco_access=edit-all`): your personal store
+and any selected project config are mounted read-write, and a whitelisted `cco`
+runs inside the session (see §4). You can narrow it for a session with an explicit
+`--cco-access` (e.g. `--cco-access read` for a look-only pass).
+
 If you run `cco start config-editor` from inside a configured repo, it picks up
-that project automatically (the same as passing `--project`).
+that project automatically (the same as passing `--project`). `--project` is
+repeatable and `--all` selects every resolvable project; only each project's
+committed `<repo>/.cco/` is mounted — never the full code repos, and unresolvable
+projects are skipped.
 
 To exit, end the session as usual (or `cco stop config-editor` from another
 terminal).
@@ -63,22 +78,30 @@ agent grounds its suggestions in the current docs rather than guesswork.
 
 ## 4. Saving and Activating Your Changes
 
-The `cco` CLI runs on your **host**, not inside the session. So the agent edits
-files, and you run the activating commands on your host terminal. The session will
-tell you exactly which ones; typically:
+A **whitelisted `cco`** runs inside the config-editor session (wrapped-`cco`),
+operating on your real, mounted config buckets. So many commands the agent needs
+now run in-session — you don't have to shuttle everything to your host terminal.
+
+**Runs inside the session** (edit level = `edit-all`):
 
 ```bash
-# Version your personal store after edits
-cco config save
+cco list                    # discover projects/packs/templates/llms
+cco pack validate <name>    # validate a pack you just authored
+cco pack create <name>      # author packs/templates/llms (create/update/remove/install/import)
+cco tag add <name> <tag>    # organize with per-user tags
+cco remote add <name> <url> # register a sharing-repo remote (URL only)
+cco config save             # version your personal store ~/.cco (local git commit)
+cco … show                  # inspect any resource
+```
 
-# Sync across your machines (optional)
-cco config push
+**Host-only** — the agent will show you the exact command for your host terminal
+(using the host path map, since `show_host_paths` is on):
 
-# Validate a pack you just authored
-cco pack validate <name>
-
-# Launch a project you configured
-cco start <name>
+```bash
+cco start <name>            # session/image lifecycle (start/stop/build/new)
+cco resolve / sync / init / join / update / clean   # path-resolving lifecycle
+cco config push / pull      # network + credentials — sync ~/.cco across machines
+cco remote set-token <n> <t># tokens never reach the container
 ```
 
 For project config, the committed `<repo>/.cco/` is versioned with the repo's
@@ -113,11 +136,18 @@ editing. A few things to know:
 - **Internal cco state is off-limits.** Machine-local data (the project index,
   tags, remotes, caches, transcripts) is not exposed here — it is managed only
   through `cco …` commands, never hand-edited.
+- **Real secrets and tokens never reach the session.** Real secret files
+  (`secrets.env`, `*.env`, `*.key`, `*.pem`) are filtered out of every config
+  mount — only their `*.example` skeletons are visible — and remote tokens,
+  transcripts, and memory are not mounted at all. Set/remove tokens on your host
+  (`cco remote set-token`).
 - **Normal code sessions can't edit project config by accident.** In an ordinary
   `cco start <project>` session, a project's `project.yml` and secrets are
-  protected (read-only inside the container). config-editor is the session that
-  intentionally lifts that protection so you can edit them. (If you ever want to
-  edit project config inline in a normal session, you can opt in once with
-  `cco start --enable-config-edit`, but config-editor is the cleaner path.)
+  protected (read-only inside the container — `cco_access=none`). config-editor is
+  the preset that intentionally lifts that protection (`cco_access=edit-all`) so
+  you can edit them. If you ever want to edit project config inline in a normal
+  session, opt in for that session with `cco start <project> --cco-access edit-project`
+  (the old `--enable-config-edit` flag still works as a deprecated alias), but
+  config-editor is the cleaner path.
 - **Remember to save.** After editing your personal store, run `cco config save`
   on your host so your changes are versioned.

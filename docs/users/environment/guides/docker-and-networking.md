@@ -56,8 +56,9 @@ host path is resolved per machine from the local index (set it with
 > Each repo's own `.cco/` config directory is overlaid **read-only** inside the
 > container, even though the repo itself is writable. This protects your
 > structural config (`project.yml`, `secrets.env`) from accidental edits during a
-> normal session. Use `cco start config-editor` (or `cco start --enable-config-edit`)
-> when you actually want to change it.
+> normal session (`cco_access=none`). Use `cco start config-editor` (or, per session,
+> `cco start <project> --cco-access edit-project`) when you actually want to change it.
+> See [Session access](../../reference/cli.md#session-access-capability-model).
 
 ---
 
@@ -216,4 +217,4 @@ persists the full `docker-compose.yml` for inspection.
 | `host.docker.internal` not resolving on Linux | Not auto-injected outside browser host mode; publish the host service on a port or use a sibling on the project network instead. |
 | `docker: command not found` / permission denied in session | `docker.mount_socket` is `false` (the default). Set it `true` (and review socket security) to enable Docker-from-Docker. |
 | "Project already has a running session" on start | A `cc-<project>` container is still up. Run `cco stop <project>` first. |
-| Edits to `project.yml` / `secrets.env` rejected inside the session | The committed `<repo>/.cco/` is mounted read-only by design. Use `cco start config-editor` or `cco start --enable-config-edit`. |
+| Edits to `project.yml` / `secrets.env` rejected inside the session | The committed `<repo>/.cco/` is mounted read-only by default (`cco_access=none`). Use `cco start config-editor`, or opt in per session with `cco start <project> --cco-access edit-project`. Note: real `secrets.env` values are filtered out of every session — only `*.example` is visible; edit real secrets on the host. |

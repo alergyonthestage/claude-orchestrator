@@ -172,9 +172,18 @@ Options:
   --mount <s>[:<t>][:ro|:rw]  Mount reference material (repeatable; read-only by
                        default, :rw to make writable; target defaults to
                        /workspace/<basename>)
-  --enable-config-edit Allow the agent to edit this repo's committed .cco/ config
-                       in this session (off by default — see 'cco start
-                       config-editor' for the sanctioned config-editing session)
+  --claude-access <m>  .claude authoring access for this session:
+                       none | repo (default) | all
+  --cco-access <m>     .cco/framework config access for this session:
+                       none (default) | read | edit-project | edit-global | edit-all
+                       (read+ enables the whitelisted in-session 'cco'; ADR-0036)
+  --show-host-paths    Include the host<->container path map in the session
+                       (default on) so the agent can hand you host commands
+  --no-show-host-paths Omit the host path map from the session
+  --enable-config-edit DEPRECATED — alias for '--cco-access edit-project'. Allow
+                       the agent to edit this repo's committed .cco/ config in this
+                       session (see 'cco start config-editor' for the sanctioned
+                       config-editing session)
   --dry-run            Show the generated docker-compose without running
                        (uses ephemeral staging via mktemp, no persistent files)
   --dump               With --dry-run: write output to .tmp/ for inspection
@@ -212,9 +221,16 @@ coordinate carries a `url`), or **[s]kip** — it never launches with a silent e
 
 `cco start tutorial` launches the built-in interactive tutorial directly from
 `internal/tutorial/`; `cco start config-editor` launches the built-in config editor
-(mounts `~/.cco` rw in global mode; `--project <name>` or a cwd hosting a configured repo
-also mounts that project's `<repo>/.cco` rw). They are not user projects — they always
-reflect the current framework version. These names are reserved.
+(mounts `~/.cco` rw in global mode; `--project <name>` — **repeatable** — or a cwd hosting
+a configured repo also mounts that project's `<repo>/.cco` rw; `--all` mounts every
+resolvable project's `<repo>/.cco` for editing, skipping unresolved ones — only `<repo>/.cco`,
+never full code repos). They are not user projects — they always reflect the current framework
+version. These names are reserved.
+
+Built-ins are **presets** of the session capability model (below): tutorial runs read-only
+(`--claude-access none --cco-access read`), config-editor at the maximal edit level
+(`--claude-access all --cco-access edit-all`). You can narrow a built-in for one session with
+an explicit `--cco-access` (e.g. `cco start config-editor --cco-access read`).
 
 **Flow**:
 
@@ -253,6 +269,39 @@ reflect the current framework version. These names are reserved.
    - Container auto-removed (--rm)
    - Print summary: "Session ended. Changes are in your repos."
 ```
+
+---
+
+#### Session access (capability model)
+
+Every session resolves three orthogonal **capability knobs** that decide how much of
+your config it can read or edit (ADR-0036). Defaults are unchanged from earlier
+versions, so a plain `cco start <project>` behaves exactly as before.
+
+| Knob | Values (default **bold**) | Governs |
+|------|---------------------------|---------|
+| `claude_access` | none · **repo** · all | `.claude` authoring trees (repo / project / global). `settings.json` stays rw regardless. |
+| `cco_access` | **none** · read · edit-project · edit-global · edit-all | `.cco` framework config + the whitelisted in-session `cco` (`read` and up enable it). |
+| `show_host_paths` | **true** · false | Whether the session gets the host↔container path map (for copy-pasteable host commands). |
+
+**Where to set them** (precedence, highest first):
+
+1. **CLI** — `--claude-access`, `--cco-access`, `--show-host-paths` / `--no-show-host-paths`
+2. **Per project** — an optional `access:` block in `<repo>/.cco/project.yml`
+   (`access.claude` / `access.cco` / `access.show_host_paths`)
+3. **Machine baseline** — `~/.cco/access.yml` (`claude` / `cco` / `show_host_paths`)
+4. **Preset** — normal = `repo`/`none`; config-editor = `all`/`edit-all`; tutorial = `none`/`read`
+
+**Wrapped `cco` in-session** (when `cco_access` ≥ `read`): read verbs (`cco list`,
+`cco … show`, `cco … validate`, `cco docs`, `cco path list`, `cco list remotes`,
+`cco project coords`) run inside the container; edit levels also allow the path-free
+write verbs (`cco tag`, `cco remote add|remove`, `cco pack|template|llms create|update|…`,
+`cco config save`). **Host-only** verbs are refused in-session with a hint: session/image
+lifecycle (`start|stop|build|new`), path-resolving lifecycle (`resolve|sync|init|join|
+forget|update|clean`, `project rename`), and network/credential ops (`config push`/`pull`,
+`remote set-token`/`remove-token`). Real secret files (`secrets.env`, `*.env`, `*.key`,
+`*.pem`) are filtered from every config mount (only `*.example` is visible); tokens,
+transcripts, and memory are never mounted. Requires a rebuilt image (`cco build`).
 
 ---
 

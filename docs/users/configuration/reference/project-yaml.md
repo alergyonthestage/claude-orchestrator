@@ -33,6 +33,16 @@ extra_mounts:
 packs:
   - my-client-knowledge   # References ~/.cco/packs/my-client-knowledge/pack.yml
 
+# ── Session access (optional; ADR-0036) ──────────────────────────────
+# Per-project defaults for how much of your config a session can edit.
+# Overridden by the CLI flags, overrides ~/.cco/access.yml. Omit to keep
+# the safe defaults (repo / none / on).
+access:
+  claude: repo            # .claude authoring: none | repo (default) | all
+  cco: none               # .cco framework config: none (default) | read |
+                          #   edit-project | edit-global | edit-all
+  show_host_paths: true   # host↔container path map in the session (default)
+
 # ── Docker options ───────────────────────────────────────────────────
 docker:
   mount_socket: true        # Enable Docker-from-Docker (default: false)
@@ -113,6 +123,9 @@ browser:
 | `extra_mounts[].readonly` | ❌ | bool | `true` | Mount as read-only (secure default; set `false` explicitly for writable mounts) |
 | `packs` | ❌ | list | `[]` | Knowledge packs to activate (see Knowledge Packs section below) |
 | `llms` | ❌ | list | `[]` | LLMs.txt framework docs to include (see LLMs.txt section below) |
+| `access.claude` | ❌ | enum | `repo` | Session `.claude` authoring access: `none` \| `repo` \| `all` (ADR-0036; see [Session access](../../reference/cli.md#session-access-capability-model)) |
+| `access.cco` | ❌ | enum | `none` | Session `.cco`/framework config access: `none` \| `read` \| `edit-project` \| `edit-global` \| `edit-all` |
+| `access.show_host_paths` | ❌ | bool | `true` | Include the host↔container path map in the session |
 | `docker.ports` | ❌ | list | see defaults | Port mappings |
 | `docker.env` | ❌ | map | `{}` | Environment variables |
 | `docker.network` | ❌ | string | `cc-<name>` | Docker network name |

@@ -3,10 +3,10 @@
 **Date**: 2026-03-17 (access model updated 2026-07-01)
 **Version**: 2.1
 **Scope**: Sprint 5 — Interactive Tutorial Project
-**Status**: Access model = target per
-[ADR-0036](../../../configuration/decentralized-config/decisions/0036-session-config-capability-model.md)
+**Status**: Access model = **implemented** (2026-07-01, branch `feat/config-access/capability-model`)
+per [ADR-0036](../../../configuration/decentralized-config/decisions/0036-session-config-capability-model.md)
 / [ADR-0041](../../../configuration/decentralized-config/decisions/0041-unified-session-info-surface.md)
-(see §0). **The body below (§1–§12) predates the decentralized + capability model** (it still
+(see §0 — tutorial ships as the `none`/`read` preset). Additive; pending merge into `develop`. **The body below (§1–§12) predates the decentralized + capability model** (it still
 describes the central `user-config/` layout, `cco project create --template`, old paths); it
 needs a broader refresh as part of the docs sweep — out of the config-access design's scope. Read
 §0 for the authoritative access model; treat older mount/permission text below as superseded.
