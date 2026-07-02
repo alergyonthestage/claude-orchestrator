@@ -18,6 +18,7 @@ repos:
   - name: backend-api                    # Mount name in /workspace/
     url: git@github.com:org/backend-api.git   # optional bootstrap pointer for `cco resolve`
     ref: main                            # optional git ref
+    description: "REST API service"      # optional; surfaced to the agent in the session context
 
   - name: frontend-app
 
@@ -28,6 +29,7 @@ extra_mounts:
   - name: api-specs                      # logical name; absolute path resolved from the index
     target: /workspace/docs/api-specs
     readonly: true
+    description: "OpenAPI specs (reference)"   # optional; surfaced to the agent in the session context
 
 # ── Knowledge Packs (optional) ───────────────────────────────────────
 packs:
@@ -116,11 +118,13 @@ browser:
 | `repos[].name` | ✅ | string | — | Logical repo name (directory name in /workspace/). Machine-agnostic identifier; the absolute host path is resolved per machine from the STATE index, never stored in `project.yml`. See [the local path index](../../../maintainers/configuration/decentralized-config/design.md#3-machine-agnostic-config--the-local-path-index) |
 | `repos[].url` | ❌ | string | — | Git remote URL — machine-agnostic coordinate committed in the repo. Used by `cco resolve`/`cco start` to offer auto-clone when no local path is registered for the name |
 | `repos[].ref` | ❌ | string | — | Git ref (branch/tag/commit) coordinate, paired with `url` |
+| `repos[].description` | ❌ | string | — | Human-readable note surfaced to the agent in the session context (INV-3: `project.yml` is the single source for resource descriptions) |
 | `extra_mounts` | ❌ | list | `[]` | Additional volume mounts |
 | `extra_mounts[].name` | ✅ | string | — | Logical mount name; the absolute host path is resolved per machine from the STATE index. See [the local path index](../../../maintainers/configuration/decentralized-config/design.md#3-machine-agnostic-config--the-local-path-index) |
 | `extra_mounts[].url` | ❌ | string | — | Git remote URL coordinate for a git-backed mount (optional); absent → local-only via the index |
 | `extra_mounts[].target` | ❌ | string | `/workspace/<name>` | Container path |
 | `extra_mounts[].readonly` | ❌ | bool | `true` | Mount as read-only (secure default; set `false` explicitly for writable mounts) |
+| `extra_mounts[].description` | ❌ | string | — | Human-readable note surfaced to the agent in the session context (INV-3: `project.yml` is the single source for resource descriptions) |
 | `packs` | ❌ | list | `[]` | Knowledge packs to activate (see Knowledge Packs section below) |
 | `llms` | ❌ | list | `[]` | LLMs.txt framework docs to include (see LLMs.txt section below) |
 | `access.claude` | ❌ | enum | `repo` | Session `.claude` authoring access: `none` \| `repo` \| `all` (ADR-0036; see [Session access](../../reference/cli.md#session-access-capability-model)) |

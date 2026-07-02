@@ -45,6 +45,28 @@ test_session_context_repo_without_description() {
         || fail "repo without description should render path only, got: $ctx"
 }
 
+# extra_mounts[].description (INV-3, project.yml single source) flows into the
+# context keyed by the mount's effective target; an undescribed mount renders
+# target-only.
+test_session_context_extra_mount_description() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local specs="$tmpdir/specs" plain="$tmpdir/plain"
+    mkdir -p "$specs" "$plain"
+    seed_index_path "specs" "$specs"
+    seed_index_path "plain" "$plain"
+    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nrepos:\n  - name: dummy-repo\nextra_mounts:\n  - name: specs\n    target: /workspace/docs/api-specs\n    readonly: true\n    description: OpenAPI specs\n  - name: plain\n')"
+    mkdir -p "$CCO_DUMMY_REPO/.cco"
+    run_cco start "test-proj" --dry-run --dump
+    local ctx; ctx=$(decode_session_context "$DRY_RUN_DIR/.cco/docker-compose.yml")
+    echo "$ctx" | grep -q -- "- mount: /workspace/docs/api-specs (read-only) — OpenAPI specs" \
+        || fail "extra_mount with description should render 'mount: target (read-only) — desc', got: $ctx"
+    # The undescribed mount (default target /workspace/plain) renders target-only.
+    echo "$ctx" | grep -qE -- "- mount: /workspace/plain( \(read-only\))?$" \
+        || fail "extra_mount without description should render target only, got: $ctx"
+}
+
 # The wrapped-cco access declaration reflects the resolved scope (ADR-0042).
 test_session_context_declares_wrapped_cco_scope() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT

@@ -20,6 +20,7 @@ repos: []
   # - name: my-repo
   #   url: git@github.com:org/my-repo.git   # optional bootstrap pointer for `cco resolve`
   #   ref: main                             # optional git ref (default: remote default branch)
+  #   description: "Backend API service"    # optional; shown to the agent in the session context
 
 # ── Extra mounts (optional) ─────────────────────────────────────────
 # Auxiliary mounts by logical name; they join the same coordinate model.
@@ -28,6 +29,7 @@ repos: []
 #     url: git@github.com:org/api-specs.git   # optional (git-backed mount); absent → local-only via the index
 #     target: /workspace/docs/api-specs       # optional container path (default /workspace/<name>)
 #     readonly: true
+#     description: "OpenAPI specs (reference)" # optional; shown to the agent in the session context
 
 # ── Knowledge Packs (optional) ───────────────────────────────────────
 # Reference packs by logical name + an OPTIONAL coordinate (url/ref). A pack with

@@ -97,6 +97,38 @@ _session_repo_description() {
     ' "$project_yml"
 }
 
+# Read an extra-mount's optional description from project.yml (INV-3 single
+# source), keyed by the mount's EFFECTIVE container target — the render loop
+# only carries the target (_effective_extra_mounts drops the logical name), so
+# each entry's effective target (explicit `target:` or the `/workspace/<name>`
+# default) is reconstructed and matched. Fields may appear in any order.
+_session_mount_description() {
+    local project_yml="$1" mount_target="$2"
+    [[ -f "$project_yml" ]] || return 0
+    awk -v want="$mount_target" '
+        function flush() {
+            if (in_entry) {
+                eff = (t != "" ? t : "/workspace/" n)
+                if (eff == want) { print d; exit }
+            }
+        }
+        /^extra_mounts:/ { in_em=1; next }
+        in_em && /^[^ #]/ { flush(); exit }
+        in_em && /^  - name:/ {
+            flush()
+            sub(/^  - name: */, ""); gsub(/["\047]/, "")
+            n=$0; t=""; d=""; in_entry=1; next
+        }
+        in_em && in_entry && /^    target:/ {
+            sub(/^    target: */, ""); gsub(/["\047]/, ""); t=$0
+        }
+        in_em && in_entry && /^    description:/ {
+            sub(/^    description: */, ""); gsub(/["\047]/, ""); d=$0
+        }
+        END { flush() }
+    ' "$project_yml"
+}
+
 # Build the FULL Level-A session-context block (SessionStart). Printed to stdout
 # as plain text; the caller base64-encodes it into CCO_SESSION_CONTEXT. Sections
 # are omitted when empty. Mirrors, in prose form, every section the retired
@@ -153,13 +185,15 @@ _build_session_context() {
             done <<< "$pack_names"
         fi
         if [[ -n "$extra_mounts_output" ]]; then
-            local _ws_src _ws_tgt _ws_ro
+            local _ws_src _ws_tgt _ws_ro _ws_desc _ws_ro_label
             while IFS=$'\t' read -r _ws_src _ws_tgt _ws_ro; do
                 [[ -z "$_ws_tgt" ]] && continue
-                if [[ "$_ws_ro" == "true" ]]; then
-                    echo "- mount: ${_ws_tgt} (read-only)"
+                _ws_desc=$(_session_mount_description "$project_yml" "$_ws_tgt")
+                [[ "$_ws_ro" == "true" ]] && _ws_ro_label=" (read-only)" || _ws_ro_label=""
+                if [[ -n "$_ws_desc" ]]; then
+                    echo "- mount: ${_ws_tgt}${_ws_ro_label} — ${_ws_desc}"
                 else
-                    echo "- mount: ${_ws_tgt}"
+                    echo "- mount: ${_ws_tgt}${_ws_ro_label}"
                 fi
             done <<< "$extra_mounts_output"
         fi

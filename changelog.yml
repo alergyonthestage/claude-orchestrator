@@ -518,3 +518,18 @@ entries:
       in `~/.cco/access.yml`) to omit it. The knowledge files themselves stay at
       `/workspace/.claude/packs/…`; only the index moved. Requires a rebuilt image
       (`cco build`).
+
+  - id: 32
+    date: "2026-07-02"
+    type: additive
+    title: "Optional descriptions for repos and extra_mounts in project.yml"
+    description: >
+      `project.yml` now accepts an optional `description:` on each `repos[]` and
+      `extra_mounts[]` entry. When set, the note is surfaced to the agent in the
+      session context alongside the resource (e.g. "repo: backend-api at
+      /workspace/backend-api — REST API service"), giving it a one-line hint about
+      each mounted resource without opening files. Descriptions live only in
+      `project.yml` — the single structured source (INV-3, ADR-0042) — so there is
+      no generated round-trip. Purely additive: existing projects are unaffected,
+      and the fields can be omitted. Requires a rebuilt image (`cco build`) for the
+      session-context injection to render them.
