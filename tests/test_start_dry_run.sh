@@ -304,16 +304,14 @@ test_dry_run_project_claude_mounted_readwrite() {
     fi
 }
 
-test_dry_run_claude_overlays_cache_readonly() {
-    # ADR-0005 F1: the unified workspace.yml (ADR-0041 R1 — no packs.md anymore)
-    # is generated into the CACHE bucket and overlaid :ro onto /workspace/.claude
-    # — never written into the committed project .claude/ (keeps the repo's git
-    # diff truthful, P6/G8).
+test_dry_run_session_context_injected_no_overlay() {
+    # ADR-0042: the session-info surface is injected as the CCO_SESSION_CONTEXT
+    # env var (base64) — NOT a generated workspace.yml overlay. No file is written
+    # to CACHE or the committed tree (INV-2), and no :ro overlay is mounted.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    # A pack with a knowledge file exercises the knowledge section; workspace.yml
-    # is always generated regardless.
+    # A pack with a knowledge file exercises the knowledge section of the block.
     local pack_src="$CCO_PACKS_DIR/k-pack/knowledge"
     mkdir -p "$pack_src"
     create_pack "$tmpdir" "k-pack" "$(printf 'name: k-pack\nknowledge:\n  source: %s\n  files:\n    - overview.md\n' "$pack_src")"
@@ -321,19 +319,17 @@ test_dry_run_claude_overlays_cache_readonly() {
     create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nrepos:\n  - name: dummy-repo\npacks:\n  - k-pack\n')"
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
-    # The overlay is mounted :ro from the CACHE bucket (host-absolute, exact).
-    # (|| return 1 — bare asserts are masked under the runner's set -e.)
-    assert_file_contains "$compose" \
-        "$CCO_CACHE_HOME/projects/test-proj/.claude/workspace.yml:/workspace/.claude/workspace.yml:ro" || return 1
-    # No packs.md is ever mounted (net cut — ADR-0041 R1-D4).
-    if grep -q "/workspace/.claude/packs.md:ro" "$compose"; then
-        echo "ASSERTION FAILED: compose must not mount a packs.md overlay"; return 1
+    # The context env var is injected and decodes to the knowledge section.
+    grep -q 'CCO_SESSION_CONTEXT=' "$compose" || { echo "ASSERTION FAILED: CCO_SESSION_CONTEXT env expected"; return 1; }
+    local ctx; ctx=$(decode_session_context "$compose")
+    echo "$ctx" | grep -q -- "- /workspace/.claude/packs/k-pack/overview.md" \
+        || { echo "ASSERTION FAILED: injected context should carry the knowledge path"; return 1; }
+    # No workspace.yml / packs.md overlay is mounted, and no file is written.
+    if grep -qE "workspace.yml|/workspace/.claude/packs.md:ro" "$compose"; then
+        echo "ASSERTION FAILED: compose must not mount a workspace.yml/packs.md overlay"; return 1
     fi
-    # The committed project .claude/ never receives the generated file.
     assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/workspace.yml" || return 1
-    # The --dump inspection copy still lands under the dump .claude/ (unchanged);
-    # packs.md is never emitted.
-    assert_file_exists "$DRY_RUN_DIR/.claude/workspace.yml" || return 1
+    assert_file_not_exists "$DRY_RUN_DIR/.claude/workspace.yml" || return 1
     assert_file_not_exists "$DRY_RUN_DIR/.claude/packs.md" || return 1
 }
 

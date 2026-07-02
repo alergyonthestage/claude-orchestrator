@@ -71,66 +71,15 @@ fi
 ctx="${ctx}
 </SessionContext>"
 
-# Inject knowledge + llms indexes from the unified workspace.yml (ADR-0041 R1).
-# The YAML carries the data (path + description); the instructional preamble is
-# rendered here, per-consumer (R1-D2). Extract "<path>\t<description>" per entry
-# from a given list section.
-WS_YML="${CCO_WORKSPACE_YML:-/workspace/.claude/workspace.yml}"
-_ws_section() {  # $1 = section name (knowledge|llms)
-    [ -f "$WS_YML" ] || return 0
-    awk -v sec="$1" '
-        /^[A-Za-z_]+:/ { insec = ($0 ~ "^" sec ":"); next }
-        insec && /^  - path:/ { p=$0; sub(/^  - path: */,"",p); next }
-        insec && /^    description:/ {
-            d=$0; sub(/^    description: *"?/,"",d); sub(/"$/,"",d); print p "\t" d
-        }
-    ' "$WS_YML"
-}
+# Append the host-computed Level-A session context (ADR-0042): resources +
+# descriptions, packs, knowledge/llms indexes, gated path_map, and the wrapped-cco
+# access declaration. cco start injects it (base64) as CCO_SESSION_CONTEXT — no
+# workspace.yml file anymore (INV-2). Decode and append verbatim.
+if [ -n "$CCO_SESSION_CONTEXT" ]; then
+    injected=$(printf '%s' "$CCO_SESSION_CONTEXT" | base64 -d 2>/dev/null)
+    [ -n "$injected" ] && ctx="${ctx}
 
-knowledge=$(_ws_section knowledge)
-if [ -n "$knowledge" ]; then
-    ctx="${ctx}
-
-The following knowledge files provide project-specific conventions and context.
-Read the relevant files BEFORE starting any implementation, review, or design task.
-Do not ask the user for context that is covered by these files.
-"
-    while IFS="$(printf '\t')" read -r kpath kdesc; do
-        [ -z "$kpath" ] && continue
-        if [ -n "$kdesc" ]; then
-            ctx="${ctx}
-- ${kpath} — ${kdesc}"
-        else
-            ctx="${ctx}
-- ${kpath}"
-        fi
-    done <<EOF
-${knowledge}
-EOF
-fi
-
-llms=$(_ws_section llms)
-if [ -n "$llms" ]; then
-    ctx="${ctx}
-
-## Official Framework Documentation (llms.txt)
-
-The following official framework documentation files are installed.
-Consult them BEFORE writing code that uses these frameworks — do not rely solely on training data.
-For large files, read selectively using offset/limit. For index files, WebFetch specific pages as needed.
-"
-    while IFS="$(printf '\t')" read -r lpath ldesc; do
-        [ -z "$lpath" ] && continue
-        if [ -n "$ldesc" ]; then
-            ctx="${ctx}
-- ${lpath} — ${ldesc}"
-        else
-            ctx="${ctx}
-- ${lpath}"
-        fi
-    done <<EOF
-${llms}
-EOF
+${injected}"
 fi
 
 # Persist key session variables for all subsequent Bash tool calls

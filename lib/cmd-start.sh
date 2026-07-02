@@ -2,7 +2,7 @@
 # lib/cmd-start.sh — Start project session command
 #
 # Provides: _setup_internal_tutorial(), cmd_start()
-# Dependencies: colors.sh, utils.sh, yaml.sh, secrets.sh, workspace.sh, packs.sh, paths.sh
+# Dependencies: colors.sh, utils.sh, yaml.sh, secrets.sh, session-context.sh, packs.sh, paths.sh
 # Globals: IMAGE_NAME, REPO_ROOT (projects via the STATE index, P5). The internal
 # tutorial/config-editor runtime lives in machine-local STATE via
 # _cco_internal_runtime_dir() — NOT under the framework tree, which may be
@@ -490,7 +490,7 @@ _start_load_config() {
     [[ "$opt_github" == "on"  ]] && github_enabled="true"
     [[ "$opt_github" == "off" ]] && github_enabled="false"
 
-    # Parse packs early (needed both for compose and workspace.yml generation)
+    # Parse packs early (needed both for compose and session-context generation)
     pack_names=$(yml_get_packs "$project_yml")
 
     # Warn if no repos defined (some projects like tutorial work without repos).
@@ -584,8 +584,8 @@ _start_prepare_state() {
         claude_gen_dir="$output_dir/.claude"
     else
         # Real start: generated overlays are regenerable → CACHE (keyed by id).
-        # workspace.yml is produced here and mounted :ro on top of the rw project
-        # .claude (ADR-0005 F1), never written into the committed tree.
+        # claude_gen_dir holds only the legacy-cleanup target now (ADR-0042: the
+        # session-info surface is injected via env, no workspace.yml file).
         managed_gen_dir="$session_cache_dir/managed"
         claude_gen_dir="$session_cache_dir/.claude"
     fi
@@ -806,6 +806,13 @@ services:
       - CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
 YAML
 
+        # Level-A session context (ADR-0042): the SessionStart / SubagentStart
+        # hooks decode these and emit them as additionalContext. base64 keeps the
+        # multi-line block a single safe compose value (INV-1: session-fixed info,
+        # INV-2: no file). Emitted only when non-empty (subagent block is optional).
+        [[ -n "$session_context_b64" ]]  && echo "      - CCO_SESSION_CONTEXT=${session_context_b64}"
+        [[ -n "$subagent_context_b64" ]] && echo "      - CCO_SUBAGENT_CONTEXT=${subagent_context_b64}"
+
         # Claude Code channel/version (native install — ADR-0039). Forward the
         # `~/.cco/claude-version` config-knob preference WHEN SET. When the knob is
         # absent we deliberately do NOT emit this, so the container falls back to
@@ -969,14 +976,9 @@ YAML
             [[ -d "$_op_llms" ]] && _compose_vol "$_op_llms" "/home/claude/.cache/cco/llms" "$_op_rw"
         fi
 
-        # Generated .claude overlay (workspace.yml) → CACHE, layered :ro on top
-        # of the rw project .claude mount above (ADR-0005 F1/F3). Docker applies
-        # child mounts after their parent regardless of order, so the parent
-        # stays rw while this stays read-only; the committed project .claude/ is
-        # never written by cco start.
-        if [[ -f "$claude_gen_dir/workspace.yml" ]]; then
-            _compose_vol "${session_cache_dir}/.claude/workspace.yml" "/workspace/.claude/workspace.yml" "ro"
-        fi
+        # (ADR-0042) No generated session-info overlay is mounted anymore. The
+        # former workspace.yml :ro overlay is retired — Level A context is injected
+        # via the CCO_SESSION_CONTEXT env var (see the environment block above).
 
         # Global MCP config (merged into ~/.claude.json by entrypoint)
         if [[ -f "$global_claude/mcp.json" ]]; then
@@ -1159,21 +1161,31 @@ YAML
     } > "$compose_file"
 }
 
-# Generates the unified session-info surface (workspace.yml) and cleans legacy
-# files. workspace.yml is a regenerable framework overlay (ADR-0005 F1): produced
-# into claude_gen_dir (CACHE on a real start, the dump dir under --dry-run --dump)
-# and mounted :ro by _start_generate_compose, never written into the committed
-# tree. Since ADR-0041 R1 it is the single agent-facing surface — it absorbs the
-# former packs.md (knowledge + llms sections). No packs.md is emitted anymore.
+# Computes the Level-A session context (ADR-0042) and stashes it, base64-encoded,
+# into session_context_b64 / subagent_context_b64 for _start_generate_compose to
+# inject as CCO_SESSION_CONTEXT / CCO_SUBAGENT_CONTEXT env vars. NO file is
+# written anywhere (INV-2): the retired workspace.yml generator is gone; the
+# context is delivered as injected text the user never sees, edits, or commits.
+# See lib/session-context.sh.
 _start_generate_metadata() {
-    # Generate workspace.yml — the unified session-info surface (repos, packs,
-    # knowledge, llms, extra_mounts + gated path_map). See lib/workspace.sh.
-    _generate_workspace_yml "$claude_gen_dir" "$project_name" "$project_yml" \
-        "$pack_names" "$project_dir" "$show_host_paths"
+    # The project's committed CLAUDE.md drives the init-workspace nudge (design
+    # §7): its absence/emptiness degrades only the rich narrative, never Level A.
+    local _claude_md_present="true"
+    if [[ ! -s "$claude_src/CLAUDE.md" ]]; then _claude_md_present="false"; fi
 
-    # Net cut (ADR-0041 R1-D4): packs.md is gone. Remove any stale copy a prior
-    # session (pre-R1) may have left in the generated overlay dir.
-    rm -f "$claude_gen_dir/packs.md"
+    local _ctx _subctx
+    _ctx=$(_build_session_context "$project_name" "$project_yml" "$pack_names" \
+        "$project_dir" "$show_host_paths" "$cco_access" "$_claude_md_present")
+    _subctx=$(_build_subagent_context "$project_yml" "$pack_names" "$project_dir")
+    # base64 (single line) sidesteps all compose-YAML newline/quoting concerns;
+    # the hooks decode it back to text. tr -d '\n' guards against wrapping.
+    session_context_b64=$(printf '%s' "$_ctx"    | base64 | tr -d '\n')
+    subagent_context_b64=$(printf '%s' "$_subctx" | base64 | tr -d '\n')
+
+    # Net cut: no generated session-info file is emitted anymore. Remove any stale
+    # workspace.yml / packs.md a pre-ADR-0042 session may have left in the overlay
+    # dir (idempotent; the committed-tree cleanup is handled by migration 014).
+    rm -f "$claude_gen_dir/workspace.yml" "$claude_gen_dir/packs.md"
 
     # One-shot cleanup of legacy copied pack files (pre-ADR-14) — skip in dry-run
     if ! $dry_run; then
@@ -1253,7 +1265,6 @@ _start_show_summary() {
         [[ -f "$output_dir/.cco/managed/policy.json" ]]  && info "  .cco/managed/policy.json"
         [[ -f "$output_dir/.cco/managed/browser.json" ]]  && info "  .cco/managed/browser.json"
         [[ -f "$output_dir/.cco/managed/github.json" ]]   && info "  .cco/managed/github.json"
-        [[ -f "$claude_gen_dir/workspace.yml" ]]      && info "  .claude/workspace.yml"
         echo ""
         info "Inspect with: cat ${output_dir}/.cco/docker-compose.yml"
     else
@@ -1417,6 +1428,7 @@ EOF
     local output_dir compose_file
     local config_dir session_state_dir session_cache_dir managed_gen_dir claude_gen_dir
     local claude_access cco_access show_host_paths   # resolved by _start_resolve_access (ADR-0036)
+    local session_context_b64="" subagent_context_b64=""  # Level-A injected context (ADR-0042)
     local session_preset="normal"    # normal | tutorial | config-editor (built-in presets, D6)
     local _op_config_masks=()        # host<TAB>target pairs of built-in config mounts to secret-mask (5b)
 
@@ -1458,9 +1470,9 @@ EOF
     _start_emit_reminders
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] emit_reminders done" >&2
 
-    # Generate the .claude overlay (workspace.yml) BEFORE compose so
-    # compose can mount them :ro by existence — the same generate-then-mount
-    # ordering used for the managed/ overlays (ADR-0005 F1).
+    # Compute the Level-A session context (ADR-0042) BEFORE compose so the
+    # generated compose can inject it as the CCO_SESSION_CONTEXT env var. No file
+    # is written (the workspace.yml overlay is retired).
     _start_generate_metadata
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] generate_metadata done" >&2
 

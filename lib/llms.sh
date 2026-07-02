@@ -127,7 +127,7 @@ _generate_llms_mounts() {
     done <<< "$entries"
 }
 
-# Collect resolved llms entries for the unified workspace.yml `llms` section.
+# Collect resolved llms entries for the injected session context's llms section.
 # Outputs one line per valid entry: "<container_path>\t<description>".
 # The description carries the line count + index type-hint (preserved from the
 # former packs.md llms section — R1-D5 completeness). Emits nothing when no

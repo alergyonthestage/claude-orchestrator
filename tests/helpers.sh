@@ -70,6 +70,13 @@ state_project_base() { printf '%s' "$CCO_STATE_HOME/projects/$1/update/base"; }
 # Generated docker-compose.yml → STATE, keyed by project name (mirrors cmd-start's
 # session_state_dir; what `cco clean --generated` removes). $1 = project name.
 state_project_compose() { printf '%s' "$CCO_STATE_HOME/projects/$1/docker-compose.yml"; }
+
+# Decode the injected Level-A session context (ADR-0042) from a generated
+# docker-compose.yml. Replaces the retired workspace.yml file as the parity
+# surface for tests. $1 = compose file path. Echoes the decoded block (empty if
+# the env var is absent).
+decode_session_context()  { grep -oE 'CCO_SESSION_CONTEXT=[A-Za-z0-9+/=]+'  "$1" 2>/dev/null | head -1 | cut -d= -f2- | base64 -d 2>/dev/null; }
+decode_subagent_context() { grep -oE 'CCO_SUBAGENT_CONTEXT=[A-Za-z0-9+/=]+' "$1" 2>/dev/null | head -1 | cut -d= -f2- | base64 -d 2>/dev/null; }
 state_pack_meta()    { printf '%s' "$CCO_STATE_HOME/packs/$1/update/meta"; }
 state_pack_base()    { printf '%s' "$CCO_STATE_HOME/packs/$1/update/base"; }
 # Managed runtime overlays → CACHE, keyed by project name (mirrors the production

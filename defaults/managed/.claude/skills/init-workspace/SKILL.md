@@ -10,8 +10,9 @@ argument-hint: "[repos | packs | all (default: all)]"
 # Init Workspace: Project Context Initialization
 
 Initialize or refresh the project's CLAUDE.md with accurate, up-to-date context.
-Also updates `/workspace/.claude/workspace.yml` with repository and knowledge file
-descriptions. Descriptions persist on the host via the rw `.claude/` mount.
+The rich project narrative lives in CLAUDE.md (authored here). Structured resource
+descriptions have a single home — `project.yml` — and are optional; you can only
+write them when the session has `cco_access ≥ edit-project` (see the final section).
 
 ## Scope
 
@@ -20,21 +21,23 @@ Parse `$ARGUMENTS` (default: `all`):
 - `packs` — describe knowledge files only
 - `all` — do everything
 
-## Step 1: Read workspace.yml
+## Step 1: Read the session context
 
-Read `/workspace/.claude/workspace.yml` — the single session-info surface — to
-understand the project structure: repos (names and container paths at
-`/workspace/<name>`), packs (referenced pack names), knowledge (indexed pack
-knowledge files with `path` + `description`), llms (official framework docs),
-extra_mounts (shared libraries mounted at their `target` paths), and — when
-`show_host_paths` is on — an optional `path_map` (labelled host↔container pairs).
+Your session already carries an injected **cco session-context block**
+(`<CcoSessionInfo>`, added at startup) describing the project structure: repos
+(container paths at `/workspace/<name>`, with optional descriptions), packs,
+knowledge files (indexed pack knowledge with paths + descriptions), llms
+(official framework docs), extra mounts, and — when `show_host_paths` is on — a
+host↔container path map. Use it as your inventory.
 
-If `workspace.yml` is missing or empty, check `/workspace/project.yml`
-for the project name and repos list as fallback.
+Read `/workspace/project.yml` for the authoritative, structured resource list
+(repos, packs, llms, extra_mounts) and any existing `description:` fields. You can
+also query more on demand with the wrapped `cco` CLI (`cco list`, `cco project
+show`) when the session's access scope allows it.
 
 ## Step 2: Explore repositories and shared libraries (scope: repos or all)
 
-For each repo listed in `workspace.yml`:
+For each repo listed in the session context / `project.yml`:
 
 1. Read `README.md` (or `README`) — get the project description
 2. Read the main manifest: `package.json`, `go.mod`, `pyproject.toml`,
@@ -54,9 +57,9 @@ Add them to the "Shared Libraries" section of CLAUDE.md.
 
 ## Step 3: Describe knowledge pack files (scope: packs or all)
 
-For each entry in the `knowledge` section of `workspace.yml`, read the referenced
-file at its `path` (e.g. `/workspace/.claude/packs/<pack-name>/<file>`) and write a
-1-sentence description of what it contains and when to consult it.
+For each knowledge file listed in the session context (e.g.
+`/workspace/.claude/packs/<pack-name>/<file>`), read it and write a 1-sentence
+description of what it contains and when to consult it.
 
 ## Step 4: Read current CLAUDE.md
 
@@ -70,8 +73,8 @@ and confirm with the user before overwriting.
 
 ## Step 4b: Empty Workspace — User-Guided Initialization
 
-If the workspace is empty (no repos in workspace.yml, no extra mounts, AND
-CLAUDE.md is empty/missing/placeholder-only), guide the user:
+If the workspace is empty (no repos in the session context / project.yml, no
+extra mounts, AND CLAUDE.md is empty/missing/placeholder-only), guide the user:
 
 1. Ask: "This workspace has no repositories yet. How much detail can you
    provide about the project?"
@@ -96,7 +99,8 @@ CLAUDE.md is empty/missing/placeholder-only), guide the user:
 2. In all cases:
    - Keep generated content concise and factual
    - Mark sections needing further work with `<!-- TODO: define after analysis/design -->`
-   - Save descriptions to workspace.yml for persistence
+   - The narrative lives in CLAUDE.md; structured descriptions go into
+     `project.yml` only if this session has `cco_access ≥ edit-project`
 
 If the workspace has repos or existing content, skip this step entirely
 and proceed with automatic discovery (the existing flow).
@@ -141,7 +145,7 @@ content in the project CLAUDE.md.
 - <Any sibling services, databases, caches visible in docker-compose files>
 
 ## Shared Libraries
-<Only include if workspace.yml has extra_mounts entries>
+<Only include if the project has extra_mounts entries>
 | Path | Purpose |
 |------|---------|
 | <target> | <one-line description> |
@@ -153,27 +157,28 @@ content in the project CLAUDE.md.
 Preserve any existing sections not listed above (e.g., custom workflow notes,
 secrets management instructions, team conventions added manually).
 
-## Step 6: Update workspace.yml
+## Step 6: (Optional) Persist structured descriptions to project.yml
 
-After writing CLAUDE.md, update `/workspace/.claude/workspace.yml` with the
-descriptions you wrote for each repo and knowledge file.
+There is no `workspace.yml` write-back anymore — the session context is injected
+fresh at each start and never edited from inside the container (ADR-0042). The one
+structured home for resource descriptions is `project.yml` (`repos[].description`,
+`extra_mounts[].description`), which is machine-agnostic, committed, and shared.
 
-`workspace.yml` is the authoritative store for descriptions. It persists on
-the host via the rw `.claude/` mount — descriptions survive container restarts
-and will be preserved the next time `cco start` regenerates the file.
+Only write them **if this session has `cco_access ≥ edit-project`** (e.g. a
+`cco start config-editor --project <name>` session, which mounts both the project
+config and its repos). In a normal session `project.yml` is mounted read-only —
+do not attempt to edit it; the rich context lives in CLAUDE.md and that is enough.
 
-Use precise awk/sed edits to update only the `description:` fields — do not
-reformat or restructure the file.
-
-`extra_mounts` entries in workspace.yml do not have description fields — they
-are target paths only. No changes needed to that section.
-
-Do **not** modify `/workspace/project.yml` — it is the host-managed
-config file and is not the right place for auto-generated descriptions.
+When you may write: add or update only the `description:` field of the relevant
+`repos[]` / `extra_mounts[]` entry in `/workspace/project.yml` (or `<repo>/.cco/
+project.yml`) with precise edits — do not reformat or restructure the file. These
+descriptions then render into the injected session context on the next start.
 
 ## Notes
 
-- Do not modify any files outside `/workspace/.claude/` and the repos themselves
+- Do not modify files outside `/workspace/.claude/` and the repos themselves —
+  except the optional `project.yml` description write-back of Step 6, and only
+  when `cco_access ≥ edit-project` (otherwise project.yml is mounted read-only)
 - If a repo path does not exist on disk, note it but continue with others
 - Keep CLAUDE.md under ~200 lines — use concise, factual language
 - Use `/init-workspace` to distinguish from the built-in `/init` command

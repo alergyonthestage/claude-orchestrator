@@ -389,7 +389,7 @@ test_dry_run_includes_llms_mounts() {
     assert_file_contains "$compose" "/workspace/.claude/llms/svelte:ro"
 }
 
-test_dry_run_includes_llms_in_workspace_yml() {
+test_dry_run_includes_llms_in_session_context() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -397,11 +397,13 @@ test_dry_run_includes_llms_in_workspace_yml() {
     create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nllms:\n  - svelte\nrepos:\n  - name: dummy-repo\n')"
     git -C "$CCO_DUMMY_REPO" init -q 2>/dev/null || true
     run_cco start "test-proj" --dry-run --dump
-    # No packs.md is ever produced; llms are indexed in workspace.yml
+    # No packs.md/workspace.yml file is produced; llms are indexed in the injected
+    # session context (ADR-0042).
     assert_file_not_exists "$DRY_RUN_DIR/.claude/packs.md"
-    local ws="$DRY_RUN_DIR/.claude/workspace.yml"
-    assert_file_contains "$ws" "llms:"
-    assert_file_contains "$ws" "- path: /workspace/.claude/llms/svelte"
+    assert_file_not_exists "$DRY_RUN_DIR/.claude/workspace.yml"
+    local ctx; ctx=$(decode_session_context "$DRY_RUN_DIR/.cco/docker-compose.yml")
+    echo "$ctx" | grep -q "Official Framework Documentation" || fail "llms preamble expected in context"
+    echo "$ctx" | grep -q -- "- /workspace/.claude/llms/svelte" || fail "llms path expected in context"
 }
 
 # ── cco llms remove — uniform destructive-confirm contract (ADR-0029 D2) ──

@@ -19,18 +19,13 @@ Repos mounted at /workspace/:${repos}
 Working dir: /workspace
 Teammate mode: ${TMODE}"
 
-# Add knowledge + llms references if present (paths only, not full descriptions).
-# Source is the unified workspace.yml (ADR-0041 R1); collect the `path:` lines
-# from the knowledge and llms sections.
-WS_YML="${CCO_WORKSPACE_YML:-/workspace/.claude/workspace.yml}"
-if [ -f "$WS_YML" ]; then
-    pack_files=$(awk '
-        /^[A-Za-z_]+:/ { insec = ($0 ~ /^(knowledge|llms):/); next }
-        insec && /^  - path:/ { p=$0; sub(/^  - path: */,"",p); print "- " p }
-    ' "$WS_YML")
-    [ -n "$pack_files" ] && ctx="${ctx}
-Knowledge packs (read before implementation tasks):
-${pack_files}"
+# Append the host-computed condensed subagent context (ADR-0042): knowledge +
+# llms PATHS only, no descriptions. cco start injects it (base64) as
+# CCO_SUBAGENT_CONTEXT — no workspace.yml file anymore. Decode and append.
+if [ -n "$CCO_SUBAGENT_CONTEXT" ]; then
+    injected=$(printf '%s' "$CCO_SUBAGENT_CONTEXT" | base64 -d 2>/dev/null)
+    [ -n "$injected" ] && ctx="${ctx}
+${injected}"
 fi
 
 ctx="${ctx}
