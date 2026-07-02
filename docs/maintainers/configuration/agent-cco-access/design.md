@@ -1,9 +1,12 @@
 # Agent ↔ cco Access & Context — Design
 
 > **Status**: Design **approved** (2026-07-02) — direction + the four open decisions
-> ratified by the maintainer (see §9); implementation in a following session. Living design
-> doc (see `.claude/rules/documentation-lifecycle.md`): it reflects the target behavior and
-> is rewritten in place.
+> ratified by the maintainer (see §9). **Implementation IN PROGRESS** on
+> `feat/config-access/capability-model`: **Step 1 done** (2026-07-02, `0e6bc87` — symmetric
+> read scoping §4, `read-project` default, scope-aware operator help §4.3); Steps 2–7 pending
+> (tracked in [`impl-handoff.md`](impl-handoff.md)). Living design doc (see
+> `.claude/rules/documentation-lifecycle.md`): it reflects the target behavior and is
+> rewritten in place.
 >
 > **Scope**: how a Claude agent running inside a cco session (a) becomes *aware* of its
 > cco environment and the project's resources, and (b) is granted *read/write* access to

@@ -9,6 +9,29 @@
 > [`design.md`](design.md) + [ADR-0042](decisions/0042-agent-cco-interaction-model.md).
 > Builds on ADR-0036 (capability knobs); retires the `workspace.yml` *file* of ADR-0041.
 
+## Progress
+
+- **✅ Step 1 — DONE** (2026-07-02, `0e6bc87` on `feat/config-access/capability-model`,
+  stacked directly on B). Symmetric read scoping (`read-project/global/all`) + `read`
+  kept as a back-compat alias → `read-all`; normal + tutorial presets default to
+  `read-project`; operator shim gates the personal-global management namespaces
+  (`template …`, `remote list`) behind `read-global+` while `cco list` stays open at any
+  read level; `cco docs` unconditional; scope-aware `usage()` in container-operator mode
+  (host-only verbs flagged, write-only `tag` marked at read levels); inline `--cco-access`
+  help updated. +6 tests; suite `1101/1` (the 1 fail pre-existing, unrelated `migration_010`).
+  **Decisions taken where the handoff had latitude** (open for revisit): (a) `read` is a
+  *deprecated alias*, not removed — zero breakage on existing config/tests; (b) shim
+  scope-gating is deliberately minimal (`template`/`remote list` only) — `list`/`project show`
+  stay open since self-vs-other is indistinguishable in the shim without a current-project
+  signal; (c) **mount footprint unchanged** — `read-project` still bind-mounts the personal
+  store `~/.cco` read-only as before. **Physical mount narrowing for `read-project`
+  (hiding templates/other-projects) is folded into Step 2 (Level A)**, where resource
+  injection is reworked anyway and touches the shipped edit-* mount behavior less. This is
+  the one place `read-project` is currently broader than ADR-0042's stated risk profile —
+  close it in Step 2.
+- **▶ Steps 2–7 — PENDING.** Docs cutover (CLAUDE.md/cli.md enum+default), changelog #32,
+  and the `packs.md`-reappearance investigation remain scheduled for their steps (7 / 6).
+
 ---
 
 ## Prerequisite / branching
@@ -32,7 +55,7 @@ not yet built) — write the rule to reference it; it becomes live when D lands.
 
 ## Implementation order (dependency-first)
 
-1. **Read scoping + scope-aware help (foundational).** Extend `_ACCESS_CCO_VALUES` +
+1. **✅ DONE (`0e6bc87`) — Read scoping + scope-aware help (foundational).** Extend `_ACCESS_CCO_VALUES` +
    `_start_resolve_access` (lib/cmd-start.sh) with `read-project/read-global/read-all`;
    gate the wrapped read verbs by scope in `_cco_operator_shim` (bin/cco). Change the
    **normal preset default** to `read-project`. Ensure `cco docs` passes at any read level.
