@@ -2509,3 +2509,120 @@ test_migration_016_normalizes_index() {
     after=$(cat "$idx")
     [[ "$before" == "$after" ]] || fail "migration 016 must be idempotent (content drifted)"
 }
+
+# ── Migration 014 — remove committed generated artifacts + gitignore them ──────
+# (ADR-0042 / ADR-0005 F1). migrate() receives <repo>/.cco; the generated files
+# live under claude/. Tracked copies are git-rm'd, untracked leftovers rm'd, and
+# .cco/.gitignore gains the exclusions. Idempotent.
+
+# Build a git repo with a project .cco whose claude/ holds the given generated
+# files (all committed). Echoes the .cco dir. $1=tmpdir; rest=relative files.
+_mk014_repo() {
+    local tmpdir="$1"; shift
+    local repo="$tmpdir/repo" cco
+    cco="$repo/.cco"
+    mkdir -p "$cco/claude"
+    git -C "$repo" init -q
+    printf 'name: p\n' > "$cco/project.yml"
+    printf 'secrets.env\n*.env\n!secrets.env.example\n' > "$cco/.gitignore"
+    local f
+    for f in "$@"; do
+        mkdir -p "$(dirname "$cco/$f")"
+        printf 'generated\n' > "$cco/$f"
+    done
+    git -C "$repo" add -A >/dev/null 2>&1
+    git -C "$repo" -c user.email=t@t -c user.name=t commit -qm init >/dev/null 2>&1
+    printf '%s' "$cco"
+}
+
+test_migration_014_removes_tracked_generated() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_migration_deps
+    local cco; cco=$(_mk014_repo "$tmpdir" "claude/workspace.yml" "claude/scheduled_tasks.lock" "claude/CLAUDE.md")
+
+    source "$REPO_ROOT/migrations/project/014_remove_generated_artifacts.sh"
+    migrate "$cco"
+
+    assert_file_not_exists "$cco/claude/workspace.yml"        "workspace.yml must be removed"
+    assert_file_not_exists "$cco/claude/scheduled_tasks.lock" "scheduled_tasks.lock must be removed"
+    # A legit committed file is untouched.
+    assert_file_exists "$cco/claude/CLAUDE.md" "CLAUDE.md must survive"
+    # The removals are staged (no longer tracked).
+    if git -C "$cco" ls-files --error-unmatch "claude/workspace.yml" >/dev/null 2>&1; then
+        fail "workspace.yml should be git-removed (untracked after migrate)"
+    fi
+    # .gitignore now excludes the generated files.
+    assert_file_contains "$cco/.gitignore" "claude/workspace.yml"
+    assert_file_contains "$cco/.gitignore" "claude/packs.md"
+    assert_file_contains "$cco/.gitignore" "claude/scheduled_tasks.lock"
+}
+
+test_migration_014_removes_untracked_packs_md() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_migration_deps
+    local cco; cco=$(_mk014_repo "$tmpdir" "claude/CLAUDE.md")
+    # packs.md present but NEVER committed (the reappearing 0-byte leftover, A7).
+    printf '' > "$cco/claude/packs.md"
+
+    source "$REPO_ROOT/migrations/project/014_remove_generated_artifacts.sh"
+    migrate "$cco"
+
+    assert_file_not_exists "$cco/claude/packs.md" "untracked packs.md must be removed"
+}
+
+test_migration_014_idempotent() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_migration_deps
+    local cco; cco=$(_mk014_repo "$tmpdir" "claude/workspace.yml")
+
+    source "$REPO_ROOT/migrations/project/014_remove_generated_artifacts.sh"
+    migrate "$cco"
+    local first; first=$(cat "$cco/.gitignore")
+    migrate "$cco"   # second run: clean no-op
+    local second; second=$(cat "$cco/.gitignore")
+    [[ "$first" == "$second" ]] || fail "migration 014 must be idempotent (.gitignore drifted)"
+    # No duplicate exclusion lines.
+    local n; n=$(grep -cxF "claude/workspace.yml" "$cco/.gitignore")
+    [[ "$n" -eq 1 ]] || fail "claude/workspace.yml exclusion duplicated ($n times)"
+}
+
+test_migration_014_creates_gitignore_when_missing() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_migration_deps
+    local cco; cco=$(_mk014_repo "$tmpdir" "claude/CLAUDE.md")
+    rm -f "$cco/.gitignore"
+
+    source "$REPO_ROOT/migrations/project/014_remove_generated_artifacts.sh"
+    migrate "$cco"
+
+    assert_file_exists "$cco/.gitignore" "a missing .gitignore must be authored"
+    # Full skeleton: secret + generated exclusions (single-source writer).
+    assert_file_contains "$cco/.gitignore" "secrets.env"
+    assert_file_contains "$cco/.gitignore" "claude/workspace.yml"
+}
+
+test_migration_014_noop_on_clean_project() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_migration_deps
+    local cco; cco=$(_mk014_repo "$tmpdir" "claude/CLAUDE.md")
+    # Bring .gitignore to the post-migration state already.
+    printf 'secrets.env\nclaude/workspace.yml\nclaude/packs.md\nclaude/scheduled_tasks.lock\n' > "$cco/.gitignore"
+    local before; before=$(cat "$cco/.gitignore")
+
+    source "$REPO_ROOT/migrations/project/014_remove_generated_artifacts.sh"
+    migrate "$cco" || fail "clean project must migrate as a no-op (rc 0)"
+
+    assert_file_exists "$cco/claude/CLAUDE.md"
+    [[ "$(cat "$cco/.gitignore")" == "$before" ]] || fail "clean .gitignore must be untouched"
+}
+
+# New projects: the single-source writer now scaffolds the generated exclusions.
+test_project_gitignore_writer_includes_generated() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_migration_deps
+    _cco_write_project_gitignore "$tmpdir/.gitignore"
+    assert_file_contains "$tmpdir/.gitignore" "secrets.env"
+    assert_file_contains "$tmpdir/.gitignore" "claude/workspace.yml"
+    assert_file_contains "$tmpdir/.gitignore" "claude/packs.md"
+    assert_file_contains "$tmpdir/.gitignore" "claude/scheduled_tasks.lock"
+}

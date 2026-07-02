@@ -877,6 +877,12 @@ secrets.env
 *.pem
 .credentials.json
 !secrets.env.example
+
+# Generated session artifacts — never committed (ADR-0005 F1 / ADR-0042):
+# Level-A context is injected via CCO_SESSION_CONTEXT, not a file.
+claude/workspace.yml
+claude/packs.md
+claude/scheduled_tasks.lock
 GI
 }
 
