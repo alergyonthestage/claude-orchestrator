@@ -151,6 +151,16 @@ Full symmetric read scoping is adopted (**decided 2026-07-02**): `read-project` 
 user guides/docs are reachable in **any** session at any read level via the wrapped verb
 `cco docs` — no extra mount is required (config-editor/tutorial still mount them explicitly).
 
+3. **Scope-aware help in-container (decided 2026-07-02).** `cco` is now used both on the
+   host and inside a container (the caller-context signal D8 already distinguishes them).
+   When `cco` runs in container-operator mode, its help/usage (`cco help`, `cco --help`, a
+   command's usage) **reflects the wrapped scope**: host-only verbs are **still listed**
+   (discoverability) but explicitly **flagged `(host only — run on your host)`**, and verbs
+   above the current `cco_access` level are marked unavailable. The agent sees the full
+   command surface yet knows what it can execute here versus what to hand to the user.
+   Grounded: `usage()` (bin/cco) gains an operator-mode annotation pass keyed on the
+   caller-context + resolved access.
+
 Presets (ADR-0036 D6) restated on the new axis: tutorial = `read-project` (read-only
 teacher), config-editor = `edit-all` (see §8 for its mount scope).
 
@@ -244,6 +254,9 @@ on explicit request, for config-that-must-match-repo-content.
    built-ins keep their explicit docs mount.
 4. **Full symmetric read scoping** — `read-project | read-global | read-all` mirror the
    `edit-*` levels.
+5. **Scope-aware in-container help** (§4.3): host-only verbs are shown but flagged
+   `(host only — run on your host)`; verbs above the current access level marked
+   unavailable. Discoverability without misleading the agent about what it can execute.
 
 **Deferred (evaluate separately, future evolution):**
 

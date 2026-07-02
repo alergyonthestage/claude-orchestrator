@@ -32,11 +32,14 @@ not yet built) — write the rule to reference it; it becomes live when D lands.
 
 ## Implementation order (dependency-first)
 
-1. **Read scoping (foundational).** Extend `_ACCESS_CCO_VALUES` +
+1. **Read scoping + scope-aware help (foundational).** Extend `_ACCESS_CCO_VALUES` +
    `_start_resolve_access` (lib/cmd-start.sh) with `read-project/read-global/read-all`;
    gate the wrapped read verbs by scope in `_cco_operator_shim` (bin/cco). Change the
    **normal preset default** to `read-project`. Ensure `cco docs` passes at any read level.
-   Tests: enum validation, scope gating, normal default.
+   Make `usage()` (bin/cco) **scope-aware in container-operator mode**: list host-only verbs
+   flagged `(host only — run on your host)` and mark verbs above the current access level
+   unavailable (keyed on caller-context D8 + resolved `cco_access`). Tests: enum validation,
+   scope gating, normal default, help annotation in operator mode.
 
 2. **Level A — hook injection replaces workspace.yml (the net cut).**
    - **Host-side** (`cco start`): compute the injected context block — resources

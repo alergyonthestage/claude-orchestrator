@@ -47,7 +47,9 @@ Model **all** cco↔agent context and access through **three levels**, and **rem
    edit-global · edit-all` (full symmetric read scoping). **Normal-project default moves
    from `none` to `read-project`**, giving the agent an on-demand, project-scoped read
    channel so Level A stays minimal. `cco docs` is reachable at any read level in every
-   session. Secrets/tokens remain masked/absent in every case (ADR-0036 unchanged).
+   session. **In-container help is scope-aware**: host-only verbs are shown but flagged
+   `(host only — run on your host)`, verbs above the current access level marked
+   unavailable. Secrets/tokens remain masked/absent in every case (ADR-0036 unchanged).
 
 3. **(C) Managed `.claude` resources.** Framework-wide, version-stable enforcement +
    awareness baked at `/etc/claude-code/.claude/` (existing: memory-policy,
