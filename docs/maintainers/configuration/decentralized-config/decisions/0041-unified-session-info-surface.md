@@ -4,6 +4,14 @@
 `feat/config-access/capability-model`; `workspace.yml` absorbs `packs.md`, changelog #31; pending
 merge into `develop`). Design-only decision in the deciding session.
 
+> **Superseded surface (ADR-0042, 2026-07-02):** the **`workspace.yml` file** delivery is
+> retired. This ADR's *goal* — one agent-facing session-info surface, no `packs.md` — stands,
+> but the surface becomes **injected context (a hook env-var block), not a file** (no
+> `workspace.yml` in the committed tree or in CACHE), and resource descriptions single-source
+> to `project.yml`. See
+> [ADR-0042](../../agent-cco-access/decisions/0042-agent-cco-interaction-model.md) +
+> [agent-cco-access design](../../agent-cco-access/design.md).
+
 **Deciders**: maintainer (asked for R1 as its own design), implementer (grounding + design)
 
 **Context docs**: `0036-session-config-capability-model.md` §D5 (defers R1's format here),
