@@ -174,6 +174,12 @@ See [CLI.md](../../../users/reference/cli.md) for full specification.
 - Single bash script, no external dependencies
 - Reads the invoking repo's `<repo>/.cco/project.yml`, generates docker-compose in STATE, runs container
 - Supports: `start`, `new`, `init` / `join` / `init --migrate` (project entry points), `list`, `sync`, `resolve` / `path`, `config save/push/pull`, `tag` / `list --tag`, `build`, `stop`
+- **Dual-context surface** (ADR-0042/0043): the same binary runs on the host **and** inside a
+  session container (wrapped `cco`, container-operator mode). Every verb must be
+  environment-aware — **verb gating** (host-only vs read/write scope) **and output scoping**
+  (what a permitted read verb shows under `cco_access`), via a single shared layer. The
+  normative reference is the **[CLI domain](../../cli/design/design-cli-environment-awareness.md)**
+  (env-awareness principle + [ADR-0043](../../cli/decisions/0043-unified-cli-environment-access-scope.md)).
 
 ### 3.3 Context & Settings
 
