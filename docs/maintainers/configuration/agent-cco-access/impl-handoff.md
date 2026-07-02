@@ -29,8 +29,24 @@
   injection is reworked anyway and touches the shipped edit-* mount behavior less. This is
   the one place `read-project` is currently broader than ADR-0042's stated risk profile —
   close it in Step 2.
-- **▶ Steps 2–7 — PENDING.** Docs cutover (CLAUDE.md/cli.md enum+default), changelog #32,
-  and the `packs.md`-reappearance investigation remain scheduled for their steps (7 / 6).
+- **✅ Step 2 — DONE** (2026-07-02, `8183b4a`). Level-A hook injection replaces `workspace.yml`
+  (the net cut). `cco start` computes the session-info surface host-side and injects it as
+  the `CCO_SESSION_CONTEXT` / `CCO_SUBAGENT_CONTEXT` env vars (**base64**, single-line — sidesteps
+  compose-YAML escaping) via `lib/session-context.sh` (`_build_session_context` /
+  `_build_subagent_context`); `lib/workspace.sh` retired. Hooks decode + append, keeping their
+  in-container discovery (`_ws_section`/`CCO_WORKSPACE_YML`/all workspace.yml reads dropped). The
+  `:ro` overlay + dry-run line are gone; `init-workspace` reads the injected context/`project.yml`
+  and Step 6 is dropped (descriptions single-source in `project.yml` at edit levels, INV-3; nudge
+  when CLAUDE.md absent). Wrapped-cco access scope declared in the block; `path_map` gated by
+  `show_host_paths` (INV-4); **no file written anywhere** (INV-2). Tests rewritten to the injected-
+  context parity surface (new `decode_session_context` helper). Suite `1100/1` (the 1 fail
+  pre-existing + env-only — the sandbox `test_paths_symlink_safe_tool_root`; also `migration_010`
+  fails in isolation, both unrelated to this change). **Decision:** the deferred **read-project
+  mount narrowing** (from Step 1) is **still open** — not folded in here to keep the cut focused;
+  re-evaluate alongside Step 4 (config-editor mounts).
+- **▶ Steps 3–7 — PENDING.** Descriptions in `project.yml` template+docs (3), config-editor UX (4),
+  managed Level-C rule (5), migration 014 + `packs.md`-reappearance investigation (6), docs cutover
+  (CLAUDE.md/cli.md/context-hierarchy enum+default+no-workspace.yml) + changelog #32 (7).
 
 ---
 
@@ -64,7 +80,7 @@ not yet built) — write the rule to reference it; it becomes live when D lands.
    unavailable (keyed on caller-context D8 + resolved `cco_access`). Tests: enum validation,
    scope gating, normal default, help annotation in operator mode.
 
-2. **Level A — hook injection replaces workspace.yml (the net cut).**
+2. **✅ DONE (`8183b4a`) — Level A — hook injection replaces workspace.yml (the net cut).**
    - **Host-side** (`cco start`): compute the injected context block — resources
      (repos/mounts/packs/llms) + optional descriptions (from `project.yml`), knowledge/llms
      index (paths + descriptions from each `pack.yml`), `path_map` (from the STATE index,

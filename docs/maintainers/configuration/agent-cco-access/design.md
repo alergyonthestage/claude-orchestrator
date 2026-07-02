@@ -2,9 +2,10 @@
 
 > **Status**: Design **approved** (2026-07-02) — direction + the four open decisions
 > ratified by the maintainer (see §9). **Implementation IN PROGRESS** on
-> `feat/config-access/capability-model`: **Step 1 done** (2026-07-02, `0e6bc87` — symmetric
-> read scoping §4, `read-project` default, scope-aware operator help §4.3); Steps 2–7 pending
-> (tracked in [`impl-handoff.md`](impl-handoff.md)). Living design doc (see
+> `feat/config-access/capability-model`: **Step 1 done** (`0e6bc87` — symmetric read scoping §4,
+> `read-project` default, scope-aware operator help §4.3); **Step 2 done** (`8183b4a` — Level-A
+> hook injection §3, `workspace.yml` file retired, `CCO_SESSION_CONTEXT` env, INV-2/3/4); Steps
+> 3–7 pending (tracked in [`impl-handoff.md`](impl-handoff.md)). Living design doc (see
 > `.claude/rules/documentation-lifecycle.md`): it reflects the target behavior and is
 > rewritten in place.
 >
