@@ -241,15 +241,12 @@ All sections are optional. A knowledge-only pack needs only the `knowledge:` sec
 1. Name conflicts across packs are detected (warning emitted if same filename in agents/rules/skills)
 2. The `knowledge.source` directory is mounted at `/workspace/.claude/packs/<name>/` (read-only)
 3. Pack rules, agents, and skills are mounted into `/workspace/.claude/` via per-file (rules, agents) or per-directory (skills) read-only Docker volume mounts
-4. The `knowledge` section of `.claude/workspace.yml` is generated with the list of files and their descriptions:
-   ```yaml
-   knowledge:
-     - path: /workspace/.claude/packs/my-client/backend-coding-conventions.md
-       description: Read when writing backend code
-     - path: /workspace/.claude/packs/my-client/business-overview.md
-       description: Read for business context
+4. The `knowledge` section of the injected session context is built with the list of files and their descriptions, e.g.:
    ```
-5. `session-context.sh` (SessionStart hook) reads that section, renders the instructional preamble, and injects it into `additionalContext` automatically — **no CLAUDE.md edit needed**
+   - /workspace/.claude/packs/my-client/backend-coding-conventions.md — Read when writing backend code
+   - /workspace/.claude/packs/my-client/business-overview.md — Read for business context
+   ```
+5. `session-context.sh` (SessionStart hook) decodes `CCO_SESSION_CONTEXT`, renders the instructional preamble, and injects it into `additionalContext` automatically — **no CLAUDE.md edit needed, and no `workspace.yml` file** (ADR-0042)
 
 **Name conflicts**: If two packs define the same agent, rule, or skill name, the last pack listed in `project.yml` wins. A warning is emitted. See [ADR-14](../../../maintainers/foundation/design/architecture.md) for the design rationale.
 
@@ -308,7 +305,7 @@ llms:
 3. On a machine where a referenced llms is not installed, `cco resolve` fetches it from the `url`
    (and `cco start` warns if it is still missing); the content is re-fetchable, never committed
 4. At `cco start`, directories are mounted read-only at `/workspace/.claude/llms/<name>/`
-5. The file list is written to the `llms` section of `.claude/workspace.yml` and injected into the agent's context
+5. The file list is carried in the `llms` section of the injected session context (`CCO_SESSION_CONTEXT`, no file) and surfaced in the agent's context
 6. A managed rule (`use-official-docs.md`) guides the agent to consult docs before writing code
 
 ### Resolution

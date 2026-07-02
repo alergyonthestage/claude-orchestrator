@@ -32,13 +32,16 @@ Under the hood, config-editor runs as the maximal-edit **preset** of the session
 capability model (`claude_access=all`, `cco_access=edit-all`): your personal store
 and any selected project config are mounted read-write, and a whitelisted `cco`
 runs inside the session (see §4). You can narrow it for a session with an explicit
-`--cco-access` (e.g. `--cco-access read` for a look-only pass).
+`--cco-access` (e.g. `--cco-access read-global` for a look-only pass).
 
-If you run `cco start config-editor` from inside a configured repo, it picks up
-that project automatically (the same as passing `--project`). `--project` is
-repeatable and `--all` selects every resolvable project; only each project's
-committed `<repo>/.cco/` is mounted — never the full code repos, and unresolvable
-projects are skipped.
+By default config-editor is **broad**: it mounts `~/.cco` plus every resolvable
+project's committed `<repo>/.cco/` (no code repos; unresolvable projects are
+skipped). `--all` is a back-compat alias for that default. To focus on one project,
+pass `--project <name>` (**repeatable**) — this narrows to that project's
+`<repo>/.cco/` **and also mounts its code repos**, so the agent can author config
+against the real repo layout; running `cco start config-editor` from inside a
+configured repo does the same automatically. `--repo <name>` adds a single
+resolvable repo to the mount set.
 
 To exit, end the session as usual (or `cco stop config-editor` from another
 terminal).
@@ -68,8 +71,9 @@ run on your host to validate and save your work.
 
 | Mode | Command | What's editable |
 |------|---------|-----------------|
-| **Global** | `cco start config-editor` | Your personal store: global config, packs, templates |
-| **Project** | `cco start config-editor --project <name>` (or run from the repo) | The above **plus** that project's committed config |
+| **Broad (default)** | `cco start config-editor` | `~/.cco` (global config, packs, templates) + every resolvable project's committed `<repo>/.cco` (no code repos) |
+| **Focused** | `cco start config-editor --project <name>` (repeatable; or run from the repo) | That project's committed config **plus its code repos** |
+| **Add a repo** | `… --repo <name>` | Adds one resolvable code repo to the mount set |
 
 The official documentation is also available to the session (read-only), so the
 agent grounds its suggestions in the current docs rather than guesswork.
@@ -93,6 +97,11 @@ cco remote add <name> <url> # register a sharing-repo remote (URL only)
 cco config save             # version your personal store ~/.cco (local git commit)
 cco … show                  # inspect any resource
 ```
+
+At the `edit-all` preset every resource is in view. If you narrow the session
+(e.g. `--cco-access read-global` or `read-project`), the read verbs **scope their
+output** to that level (ADR-0043) and print a count-only "hidden by access scope"
+notice on stderr for anything outside it — a hidden resource is not a missing one.
 
 **Host-only** — the agent will show you the exact command for your host terminal
 (using the host path map, since `show_host_paths` is on):
@@ -143,7 +152,8 @@ editing. A few things to know:
   (`cco remote set-token`).
 - **Normal code sessions can't edit project config by accident.** In an ordinary
   `cco start <project>` session, a project's `project.yml` and secrets are
-  protected (read-only inside the container — `cco_access=none`). config-editor is
+  protected (read-only inside the container — the default `cco_access=read-project`
+  can read but not edit `.cco`). config-editor is
   the preset that intentionally lifts that protection (`cco_access=edit-all`) so
   you can edit them. If you ever want to edit project config inline in a normal
   session, opt in for that session with `cco start <project> --cco-access edit-project`

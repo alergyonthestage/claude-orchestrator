@@ -5,10 +5,13 @@
 This is the built-in **config-editor** session for claude-orchestrator. It gives
 you read-write access to the user's personal cco store **`~/.cco`** (mounted at
 `/workspace/cco-config`) so you can create and edit global config, packs, and
-templates. In **project mode** (`cco start config-editor --project <name>`,
-repeatable, or `--all` for every resolvable project, or started from inside a
-configured repo) the target project(s)' committed config `<repo>/.cco/` are also
-mounted (at `/workspace/<name>-config`) for editing.
+templates. **By default it is broad**: `~/.cco` plus every resolvable project's
+committed `<repo>/.cco/` are mounted (no code repos); `--all` is a back-compat alias
+for that default. In **focused mode** (`cco start config-editor --project <name>`,
+**repeatable**, or started from inside a configured repo) the session narrows to that
+project's committed `<repo>/.cco/` (at `/workspace/<name>-config`) **and also mounts
+its code repos** for repo-aware config authoring; `--repo <name>` adds a single
+resolvable repo.
 
 `cco` itself runs **in this session** behind a whitelist shim (read verbs + the
 edit-writes that go through the shared `cco` functions); host-only verbs are

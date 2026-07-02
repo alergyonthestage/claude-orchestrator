@@ -175,8 +175,11 @@ Options:
   --claude-access <m>  .claude authoring access for this session:
                        none | repo (default) | all
   --cco-access <m>     .cco/framework config access for this session:
-                       none (default) | read | edit-project | edit-global | edit-all
-                       (read+ enables the whitelisted in-session 'cco'; ADR-0036)
+                       none | read-project (default) | read-global | read-all |
+                       edit-project | edit-global | edit-all
+                       (any read level enables the whitelisted in-session 'cco' and
+                       scopes its read output to that level; bare 'read' is a
+                       back-compat alias for read-all; ADR-0036/0042/0043)
   --show-host-paths    Include the host<->container path map in the session
                        (default on) so the agent can hand you host commands
   --no-show-host-paths Omit the host path map from the session
@@ -220,17 +223,19 @@ coordinate carries a `url`), or **[s]kip** — it never launches with a silent e
 **Reserved names: `tutorial`, `config-editor`**
 
 `cco start tutorial` launches the built-in interactive tutorial directly from
-`internal/tutorial/`; `cco start config-editor` launches the built-in config editor
-(mounts `~/.cco` rw in global mode; `--project <name>` — **repeatable** — or a cwd hosting
-a configured repo also mounts that project's `<repo>/.cco` rw; `--all` mounts every
-resolvable project's `<repo>/.cco` for editing, skipping unresolved ones — only `<repo>/.cco`,
-never full code repos). They are not user projects — they always reflect the current framework
-version. These names are reserved.
+`internal/tutorial/`; `cco start config-editor` launches the built-in config editor.
+It is **broad by default**: it mounts `~/.cco` **plus every resolvable project's**
+`<repo>/.cco` rw (skipping unresolved ones), with **no code repos**. `--all` is a
+back-compat alias for that broad default. `--project <name>` (**repeatable**), or a cwd
+hosting a configured repo, **narrows** to that project's `<repo>/.cco` **and also mounts its
+repos** (repo-aware config authoring); `--repo <name>` adds a single resolvable repo. They
+are not user projects — they always reflect the current framework version. These names are
+reserved.
 
 Built-ins are **presets** of the session capability model (below): tutorial runs read-only
-(`--claude-access none --cco-access read`), config-editor at the maximal edit level
+(`--claude-access none --cco-access read-project`), config-editor at the maximal edit level
 (`--claude-access all --cco-access edit-all`). You can narrow a built-in for one session with
-an explicit `--cco-access` (e.g. `cco start config-editor --cco-access read`).
+an explicit `--cco-access` (e.g. `cco start config-editor --cco-access read-global`).
 
 **Flow**:
 
@@ -254,8 +259,9 @@ an explicit `--cco-access` (e.g. `cco start config-editor --cco-access read`).
 3. GENERATE pack + framework resources (into CACHE, overlaid :ro)
    - Detect name conflicts across packs (warn if same agent/rule/skill in multiple packs)
    - Add pack resource mounts (knowledge dirs, per-file rules/agents, per-dir skills — all :ro)
-   - Generate workspace.yml (project summary + knowledge/llms instructional file lists)
-     into <cache>/cco/projects/<id>/.claude/ and overlay :ro onto /workspace/.claude
+   - Compute the session context (project summary + knowledge/llms instructional file
+     lists) and pass it to the container as the base64 CCO_SESSION_CONTEXT env var
+     (no workspace.yml file is written — ADR-0042)
 
 4. CREATE state dirs (if needed)
    - <state>/cco/projects/<id>/claude-state/  (session transcripts; enables /resume across rebuilds)
@@ -275,13 +281,14 @@ an explicit `--cco-access` (e.g. `cco start config-editor --cco-access read`).
 #### Session access (capability model)
 
 Every session resolves three orthogonal **capability knobs** that decide how much of
-your config it can read or edit (ADR-0036). Defaults are unchanged from earlier
-versions, so a plain `cco start <project>` behaves exactly as before.
+your config it can read or edit (ADR-0036 + ADR-0042 + ADR-0043). A plain
+`cco start <project>` now defaults to a **read-only, project-scoped** in-session `cco`
+(`cco_access=read-project`) — up from the former `none`.
 
 | Knob | Values (default **bold**) | Governs |
 |------|---------------------------|---------|
 | `claude_access` | none · **repo** · all | `.claude` authoring trees (repo / project / global). `settings.json` stays rw regardless. |
-| `cco_access` | **none** · read · edit-project · edit-global · edit-all | `.cco` framework config + the whitelisted in-session `cco` (`read` and up enable it). |
+| `cco_access` | none · **read-project** · read-global · read-all · edit-project · edit-global · edit-all | `.cco` framework config + the whitelisted in-session `cco`. Any read level enables it and **scopes its read output** to that level (bare `read` = alias for `read-all`). |
 | `show_host_paths` | **true** · false | Whether the session gets the host↔container path map (for copy-pasteable host commands). |
 
 **Where to set them** (precedence, highest first):
@@ -290,13 +297,19 @@ versions, so a plain `cco start <project>` behaves exactly as before.
 2. **Per project** — an optional `access:` block in `<repo>/.cco/project.yml`
    (`access.claude` / `access.cco` / `access.show_host_paths`)
 3. **Machine baseline** — `~/.cco/access.yml` (`claude` / `cco` / `show_host_paths`)
-4. **Preset** — normal = `repo`/`none`; config-editor = `all`/`edit-all`; tutorial = `none`/`read`
+4. **Preset** — normal = `repo`/`read-project`; config-editor = `all`/`edit-all`; tutorial = `none`/`read-project`
 
-**Wrapped `cco` in-session** (when `cco_access` ≥ `read`): read verbs (`cco list`,
+**Wrapped `cco` in-session** (when `cco_access` != `none`): read verbs (`cco list`,
 `cco … show`, `cco … validate`, `cco docs`, `cco path list`, `cco list remotes`,
 `cco project coords`) run inside the container; edit levels also allow the path-free
 write verbs (`cco tag`, `cco remote add|remove`, `cco pack|template|llms create|update|…`,
-`cco config save`). **Host-only** verbs are refused in-session with a hint: session/image
+`cco config save`). **Output is scoped to the access level** (ADR-0043): at `read-project`
+the read verbs show only the current project and the packs/llms it references —
+templates, other projects, and unreferenced packs are hidden, with a count-only
+"hidden by access scope" notice on stderr telling you how to widen (`read-global`/`read-all`,
+or run `cco` on your host); a `show` of an out-of-scope resource degrades to a clear scope
+message instead of a raw "not found". `read-global`/`read-all`/`edit-*` show the full set.
+**Host-only** verbs are refused in-session with a hint: session/image
 lifecycle (`start|stop|build|new`), path-resolving lifecycle (`resolve|sync|init|join|
 forget|update|clean`, `project rename`), and network/credential ops (`config push`/`pull`,
 `remote set-token`/`remove-token`). Real secret files (`secrets.env`, `*.env`, `*.key`,
@@ -1976,9 +1989,9 @@ services:
       - /home/me/.cco/.claude/rules:/home/claude/.claude/rules:ro
       - /home/me/.cco/.claude/agents:/home/claude/.claude/agents:ro
       - /home/me/.cco/.claude/skills:/home/claude/.claude/skills:ro
-      # Project config (the invoking repo's <repo>/.cco/claude/) + generated overlays (CACHE, :ro)
+      # Project config (the invoking repo's <repo>/.cco/claude/) — no generated overlay:
+      # the session context is injected via the CCO_SESSION_CONTEXT env var (above), not a file
       - /home/me/dev/backend/.cco/claude:/workspace/.claude
-      - /home/me/.cache/cco/projects/projectA/.claude/workspace.yml:/workspace/.claude/workspace.yml:ro
       # Session transcripts (STATE; enables /resume across rebuilds)
       - /home/me/.local/state/cco/projects/projectA/claude-state:/home/claude/.claude/projects/-workspace
       # Memory (STATE; machine-local, no sync in v1; separate from transcripts)

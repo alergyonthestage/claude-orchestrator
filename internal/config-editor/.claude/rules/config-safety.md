@@ -25,6 +25,12 @@ mode), operating on the real, bind-mounted config buckets. You can run:
   `cco remote add|remove`, `cco pack|template|llms create|update|remove|install|import`,
   `cco config save`.
 
+At `edit-all` every resource is in view. If this session is narrowed with
+`--cco-access` to a read level, the read verbs **scope their output** to that level
+(ADR-0043) and print a count-only "hidden by access scope" notice on stderr — a
+hidden resource is not a missing one (widen with `read-global`/`read-all` or run on
+the host).
+
 **Host-only** verbs are refused in-session with a hint — show the user the exact
 command to run on their **host** terminal (use the path map for the host path):
 container-spawning (`cco start|stop|build|new`), path-resolving lifecycle
