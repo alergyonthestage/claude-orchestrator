@@ -67,31 +67,31 @@
   collector); `~/.cco/templates` + other/unreferenced packs stay physically hidden.
   `read-global/read-all/edit-*` still mount the whole store; DATA/STATE-index/CACHE unchanged
   (needed for `cco list`). +7 tests. Suite `1106/1` (pre-existing env-only fail).
-- **⏸ OPEN DESIGN DISCUSSION (raised by maintainer 2026-07-02, mid-step-4 — resume here).**
-  The narrowing exposed a **3-layer misalignment** at `read-project`: (i) *mount* = referenced
-  packs only; (ii) *CLI verbs* = `cco list pack` scans the narrowed mount → already scoped, but
-  `cco list template` scans the unmounted `~/.cco/templates` → **empty (false-negative)** and
-  `cco list project` reads the STATE index → **all projects (unscoped)**; (iii) *index* references
-  host paths not mounted in-container. Three asks:
-  1. **Awareness** — the agent must know `read-project` gives a *project-scoped* view of `~/.cco`
-     (not "these resources don't exist"); `read-global/read-all` = complete. → inject in **Level A**
-     + the **managed rule (step 5)**. *Agreed: do regardless.*
-  2. **Scope-aware read verbs?** — should `cco list`/`show` filter by `cco_access`? Options:
-     **(A)** full scope-aware (a normal `read-project` session has exactly ONE current project, so
-     scope list→that project + its packs/llms; needs a current-project env signal + per-verb
-     filter); **(B, recommended)** keep `cco list` as index-based discovery + a "project-scoped"
-     footer, rely on awareness (1) + graceful `show` (3), fold full per-verb scoping into the
-     **scheduled post-B2 CLI-surface audit**; **(C)** do only 1+3 now, defer ALL verb scoping.
-     **← DECISION PENDING (maintainer stepped away; re-ask).**
-  3. **CLI robustness** — read verbs (`list`, `<kind> show`, `validate`, `path list`,
-     `project coords`) must not crash / must degrade clearly when a resource is unmounted under an
-     access scope. *Agreed: do regardless.*
-  Process: record the 3-layer model + the point-2 choice in **ADR-0042 / design §8** before
-  implementing (documentation-first). Likely reshapes **step 5** (the managed rule carries the
-  awareness) and adds a robustness sub-task.
-- **▶ Steps 5–7 — PENDING.** Managed Level-C rule (5; must carry the read-project awareness note
-  from the discussion above), migration 014 + `packs.md`-reappearance investigation (6), docs
-  cutover (CLAUDE.md/cli.md/context-hierarchy enum+default+no-workspace.yml) (7). Steps 1–4 landed
+- **✅ DESIGN DECIDED (2026-07-02) → ADR-0043.** The step-4 narrowing exposed a **3-layer
+  misalignment** at `read-project` (mount = referenced packs; CLI verbs = `cco list pack` scoped
+  but `cco list template` falsely empty + `cco list project` unscoped; index references unmounted
+  paths). The maintainer chose **full scope-aware read verbs via ONE shared layer** (option A),
+  explicitly asking for a common env+permissions system so commands implement only their
+  differentiation logic and future permissions/environments change a single point. **Formalised
+  in [ADR-0043](../../cli/decisions/0043-unified-cli-environment-access-scope.md)** + the CLI
+  environment-awareness doc **v1.1** (new §4b output-scoping layer). Key model: reuse the shim's
+  `project|global` scope taxonomy for output; invariants host-open / hidden≠absent /
+  notice-on-stderr / index-stays-complete / single-source; shared API
+  (`_env_in_scope`/`_env_note_hidden`/`_env_flush_hidden_notice`/`_env_require_visible`) in
+  `lib/access-scope.sh`; signals `PROJECT_NAME` + `CCO_CCO_ACCESS` already exported. Awareness
+  (Level A + managed rule) pairs with INV-B.
+- **▶ Step 4.5 — NEXT (implementation).** Build the shared layer + wire the read surface.
+  (a) `lib/access-scope.sh` with the API above (host-open default). (b) Wire `cmd_list`, the five
+  `cco list <kind>`, the five `cco <kind> show`, `cco … validate`, `cco path list`,
+  `cco project coords` per ADR-0043 §4. (c) Standardized hidden notice (stderr) + graceful
+  `show` unavailability (absorbs the point-3 robustness ask). (d) Tests: new `tests/test_access_scope.sh`
+  (scope logic, host-open) + per-command scoped-output assertions; `test_operator_shim.sh`
+  unaffected. Optionally export `CCO_CLAUDE_ACCESS`/`CCO_SHOW_HOST_PATHS` only when a verb needs
+  them (module stays extensible). **Follow the CLI environment-awareness checklist (v1.1 §5).**
+- **▶ Steps 5–7 — PENDING.** Managed Level-C rule (5; carries the read-project awareness from
+  ADR-0043 §5 — Level A too), migration 014 + `packs.md`-reappearance investigation (6), docs
+  cutover (CLAUDE.md/cli.md/context-hierarchy enum+default+no-workspace.yml; also `config-editor`
+  built-in CLAUDE.md/config-safety + `config-editor.md` guide from step 4) (7). Steps 1–4 landed
   **directly on `feat/config-access/capability-model`** (committing on branch B; push from the Mac).
   > **Step-6 note (already scouted this session):** `<repo>/.cco/claude/` in *this* repo still
   > tracks stale generated files — `workspace.yml` + `scheduled_tasks.lock` are committed;

@@ -278,6 +278,12 @@ on explicit request, for config-that-must-match-repo-content.
 5. **Scope-aware in-container help** (§4.3): host-only verbs are shown but flagged
    `(host only — run on your host)`; verbs above the current access level marked
    unavailable. Discoverability without misleading the agent about what it can execute.
+6. **`read-project` mount narrowing + unified output scoping** — the operator CONFIG bucket
+   at `read-project` exposes only the project's referenced packs (§8, impl `9e4535f`); read
+   verbs (`cco list`/`show`/…) scope their **output** to match, via one shared layer, with a
+   count-only "hidden by scope" notice on stderr. Formalised in
+   **[ADR-0043](../../cli/decisions/0043-unified-cli-environment-access-scope.md)** (extends
+   this design; upgrades the CLI environment-awareness doc to v1.1 §4b).
 
 **Deferred (evaluate separately, future evolution):**
 

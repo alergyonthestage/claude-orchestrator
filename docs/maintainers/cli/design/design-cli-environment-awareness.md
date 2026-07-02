@@ -1,8 +1,9 @@
 # CLI Environment-Awareness
 
-> Version: 1.0.0
-> Status: Current — principle established with ADR-0042 (agent ↔ cco access)
-> Related: [ADR-0036](../../configuration/decentralized-config/decisions/0036-session-config-capability-model.md) (capability model — D4 wrapped-cco, D8 caller-context) · [ADR-0042](../../configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md) (three-level interaction model) · [agent ↔ cco access design](../../configuration/agent-cco-access/design.md) · user CLI reference [`cli.md`](../../../users/reference/cli.md)
+> Version: 1.1.0
+> Status: Current — principle established with ADR-0042 (agent ↔ cco access); **output-scoping
+> layer added with [ADR-0043](../decisions/0043-unified-cli-environment-access-scope.md)**
+> Related: [ADR-0036](../../configuration/decentralized-config/decisions/0036-session-config-capability-model.md) (capability model — D4 wrapped-cco, D8 caller-context) · [ADR-0042](../../configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md) (three-level interaction model) · [ADR-0043](../decisions/0043-unified-cli-environment-access-scope.md) (unified env & access-scope resolution) · [agent ↔ cco access design](../../configuration/agent-cco-access/design.md) · user CLI reference [`cli.md`](../../../users/reference/cli.md)
 
 ---
 
@@ -44,6 +45,7 @@ context — do not re-derive it ad hoc:
 | `_cco_caller_context` | `lib/paths.sh` | `host` \| `container-agent` — the D8 caller-context signal (`/.dockerenv` / `CCO_IN_CONTAINER`). |
 | `_cco_container_operator` | `lib/paths.sh` | True **only** under the deliberate wrapped-cco mode: `CCO_CONTAINER_OPERATOR=1` **and** all three bucket overrides (`CCO_DATA_HOME`/`CCO_STATE_HOME`/`CCO_CACHE_HOME`) are absolute mount paths. Never inferrable from a plain agent env. |
 | `CCO_CCO_ACCESS` | env (set by `cco start`) | The resolved access scope in-container (`read-project` … `edit-all`) — drives read-scope + write gating (ADR-0042). |
+| `PROJECT_NAME` | env (set by `cco start`) | The current session's project — the "current project" signal that makes `project`-scoped output filtering possible in-container (ADR-0043). Empty on the host. |
 
 ## 4. Enforcement layers
 
@@ -80,6 +82,32 @@ flowchart TD
      host-only verbs flagged `(host only — run on your host)`, verbs above the current level
      marked unavailable (ADR-0042 §4.3).
 
+## 4b. Output scoping — what a *permitted* read verb shows (ADR-0043)
+
+Verb gating (§4) decides **whether** a verb runs in-container. It does **not** decide **what a
+permitted read verb shows**. A verb that is allowed at `read-project` must still scope its
+**output** to the current project — otherwise it leaks the full resource set, or (worse) shows
+an empty result for an unmounted resource that the agent then mistakes for "does not exist".
+
+This is a second, orthogonal dimension enforced by a single shared layer
+(`lib/access-scope.sh`) so every command implements only its own differentiation logic:
+
+- **Scope taxonomy (reuses §4's shim classes).** `project`-class kinds (`project`, `pack`,
+  `llms`) scope to the current project at `read-project`; `global`-class kinds (`template`,
+  `remote`) require `read-global+` (mirroring the shim's verb gates). Full detail + the API in
+  [ADR-0043](../decisions/0043-unified-cli-environment-access-scope.md).
+- **Invariants.** Host-open (scoping engages only under `_cco_container_operator`); hidden ≠
+  absent (a filtered command emits one standardized *count-only* notice on **stderr** telling
+  the agent how to widen — a `read-global` session or the host); the STATE index stays the
+  complete internal map (scoping is a presentation filter, not an index mutation).
+- **Layer API.** `_env_in_scope <kind> <name> [owner]` (0/1), `_env_note_hidden <kind>`,
+  `_env_flush_hidden_notice` (stderr), `_env_require_visible <kind> <name>` (graceful "not
+  available at this scope" for `show`/detail verbs). Commands call these; they never re-derive
+  context.
+- **Awareness pairing.** Level A + the managed rule state that `read-project` gives a
+  *project-scoped* view of `~/.cco` — a subset, not the whole store — so a hidden resource is
+  never read as a missing one.
+
 ## 5. Checklist — adding or changing a `cco` verb
 
 Any new or changed verb MUST answer, and wire, the following:
@@ -93,15 +121,20 @@ Any new or changed verb MUST answer, and wire, the following:
    host-only branch + hint.
 4. If it **emits paths or reads config** → mask secrets, respect `show_host_paths` and the
    resolved read scope.
-5. If it **prints help** → keep it scope-aware in operator mode.
-6. **Tests**: extend `tests/test_operator_shim.sh` (classification/scope) and the verb's own
-   suite. Assert both host and container-operator behavior.
+5. If it **lists or shows resources** → scope its **output** via the shared layer (§4b):
+   `_env_in_scope` while iterating, `_env_note_hidden` on skip, `_env_flush_hidden_notice` at
+   the end; `show`/detail verbs call `_env_require_visible` first. Never re-derive context.
+6. If it **prints help** → keep it scope-aware in operator mode.
+7. **Tests**: extend `tests/test_operator_shim.sh` (classification/scope) and the verb's own
+   suite; add scoped-output assertions (§4b). Assert both host and container-operator behavior.
 
 ## 6. Forthcoming — full CLI-surface review
 
-The principle above is applied incrementally as verbs are touched. **After the agent ↔ cco
-access sprint (workstream B2) completes, a dedicated review of the ENTIRE verb surface is
-planned** — auditing every `cco` command against §2–§5, now that container-operator execution
-is a first-class, always-present context rather than an opt-in. Tracked in the roadmap under
-broader planned work. Until then, treat this document as the reference for any CLI change:
-new commands inherit the correct method from day one.
+The principle above is applied incrementally as verbs are touched. The **output-scoping layer
+(§4b) for the READ surface is pulled into workstream B2** (ADR-0043, step 4.5) because B2's
+`read-project` mount narrowing makes it necessary now. **After B2 completes, a dedicated review
+of the ENTIRE verb surface is planned** — auditing every `cco` command against §2–§5 (including
+§4b for any remaining read paths, and the write/host-only verbs not yet touched), now that
+container-operator execution is a first-class, always-present context rather than an opt-in.
+Tracked in the roadmap under broader planned work. Until then, treat this document as the
+reference for any CLI change: new commands inherit the correct method from day one.
