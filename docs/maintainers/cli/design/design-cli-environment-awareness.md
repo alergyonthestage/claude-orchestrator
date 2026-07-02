@@ -92,9 +92,17 @@ an empty result for an unmounted resource that the agent then mistakes for "does
 This is a second, orthogonal dimension enforced by a single shared layer
 (`lib/access-scope.sh`) so every command implements only its own differentiation logic:
 
-- **Scope taxonomy (reuses §4's shim classes).** `project`-class kinds (`project`, `pack`,
-  `llms`) scope to the current project at `read-project`; `global`-class kinds (`template`,
-  `remote`) require `read-global+` (mirroring the shim's verb gates). Full detail + the API in
+- **Scope taxonomy (reuses §4's shim classes).** Two scope classes — the same ones the shim
+  uses for verb gating — now applied to read **output**:
+
+  | Kind | Scope class | Visible at `read-project` | Visible at `read-global` / `read-all` |
+  |---|---|---|---|
+  | project · pack · llms | **project** | current project (`PROJECT_NAME`) + its referenced resources | all |
+  | template · remote | **global** | none (needs `read-global+`) | all |
+
+  `global`-class kinds mirror the shim's existing gates (`template …`, `remote list` need
+  `read-global+`). One taxonomy for both verb gating and output scoping — no parallel model.
+  Rationale + the full module API in
   [ADR-0043](../decisions/0043-unified-cli-environment-access-scope.md).
 - **Invariants.** Host-open (scoping engages only under `_cco_container_operator`); hidden ≠
   absent (a filtered command emits one standardized *count-only* notice on **stderr** telling

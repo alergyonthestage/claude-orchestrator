@@ -22,6 +22,7 @@ directories (see the convention below).
 | **integration** | Infrastructure and external services: authentication, browser MCP, agent teams, git-worktree isolation, and the managed-integrations protocol. | [integration/auth/](integration/auth/) · [integration/browser-mcp/](integration/browser-mcp/) · [integration/agent-teams/](integration/agent-teams/) · [integration/worktree/](integration/worktree/) · [integration/guides/managed-integrations.md](integration/guides/managed-integrations.md) |
 | **security** | Threat model, the security design, and the Docker socket proxy design. | [security/design/](security/design/) · [security/analysis/](security/analysis/) |
 | **internal-projects** | The framework-internal sessions shipped with cco: the tutorial and the config-editor. | [internal-projects/tutorial/](internal-projects/tutorial/) · [internal-projects/config-editor/](internal-projects/config-editor/) |
+| **cli** | The `cco` CLI as a **dual-context surface** (host **and** in-container agent): the environment-awareness principle, verb gating vs output scoping, and the unified env & access-scope layer. Cross-cutting — every verb inherits it. | [cli/design/design-cli-environment-awareness.md](cli/design/design-cli-environment-awareness.md) · [cli/decisions/](cli/decisions/) |
 | **engineering** | How we build cco: coding conventions, testing, and review playbooks. | [engineering/guides/coding-conventions.md](engineering/guides/coding-conventions.md) · [engineering/guides/testing.md](engineering/guides/testing.md) · [engineering/guides/review-playbooks.md](engineering/guides/review-playbooks.md) |
 | **reviews** | Cross-cutting historical architecture and progress reviews. | [reviews/](reviews/) |
 
@@ -45,11 +46,21 @@ There are two ADR streams:
   managed integrations, …).
 - **configuration/decentralized-config/decisions/** — the **deferred config +
   sharing design**, which is the **source of truth** for the in-repo config
-  model. It carries its own ADR stream, **0001–0027** (the substantive
-  config+sharing decisions run 0005–0027), plus its `design.md` and supporting
-  analyses. See [configuration/README.md](configuration/README.md). Its
+  model. It carries its own ADR stream, **0001–0041** (the substantive
+  config+sharing decisions run 0005–0041), plus its `design.md` and supporting
+  analyses. See
+  [configuration/README.md](configuration/README.md). Its
   [`guiding-principles.md`](foundation/design/guiding-principles.md) was promoted
   to **foundation** as project-wide **governing law** (P1–P18).
+- **Later cross-cutting decisions continue the same sequence in their own domain
+  `decisions/`**: the session capability model
+  ([0036](configuration/decentralized-config/decisions/0036-session-config-capability-model.md)),
+  the agent ↔ cco interaction model
+  ([0042](configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md)), and the
+  unified CLI environment & access-scope layer
+  ([0043](cli/decisions/0043-unified-cli-environment-access-scope.md)) — the last two govern how
+  the **whole CLI** behaves in-container, so they live in the **cli** domain's normative design
+  ([cli/design/design-cli-environment-awareness.md](cli/design/design-cli-environment-awareness.md)).
 
 ## Roadmap
 
