@@ -29,8 +29,8 @@
 | 4 | config-editor broad-UX + `read-project` mount narrowing | ✅ done | `9e4535f` |
 | 4.5 | Unified env & access-scope layer → scope read-verb OUTPUT (ADR-0043) | ✅ done | `62a166b` |
 | 5 | Managed Level-C config-interaction rule + Level-A awareness | ✅ done | `027c345` |
-| **6** | **Migration 014 — remove committed generated files + `.gitignore`** | **▶ next** | — |
-| 7 | Docs cutover + suite green → merge `develop` + push | ⏳ pending | — |
+| 6 | Migration 014 — remove committed generated files + `.gitignore` | ✅ done | `61c8503` |
+| **7** | **Docs cutover + suite green → merge `develop` + push** | **▶ next** | — |
 
 Suite after step 4.5: **1120 / 1** — the single failure is pre-existing + env-only
 (`test_paths_symlink_safe_tool_root`, sandbox XDG-DATA perms; `migration_010` also fails only in
@@ -90,6 +90,21 @@ isolation). Both unrelated to this sprint.
   `read-global`/`read-all`/`edit-*`/`none`. Managed files are baked → **requires `cco build`**.
   Tests: `test_workspace_info` (awareness present at read-project, absent at read-global),
   `test_managed_scope` (rule ships). Suite 1120/1.
+- **Step 6 (`61c8503`)** — `migrations/project/014_remove_generated_artifacts.sh` (idempotent,
+  receives `<repo>/.cco` like 013): `git rm`s tracked `claude/{workspace.yml,packs.md,
+  scheduled_tasks.lock}` (staged deletion), `rm`s an untracked leftover (the 0-byte packs.md, A7),
+  and adds the three exclusions to `.cco/.gitignore` (full skeleton via the writer when absent,
+  else append-only — user customizations survive). Latest project schema is now 14
+  (`_latest_schema_version` scans dynamically — no constant to bump). **Grounding correction**: the
+  handoff said "scaffold in `templates/project/base/.cco/.gitignore`", but `cco init` does NOT read
+  a template `.gitignore` — the base `.cco/` ships none and init authors it programmatically via
+  **`_cco_write_project_gitignore` (lib/migrate.sh)**. That single-source writer is what I updated
+  to emit the generated exclusions, so new projects are born clean (schema 14 → 014 never fires).
+  Tests in `test_update.sh` (tracked removal + staging, untracked removal, idempotency/no-dup,
+  gitignore authored-when-missing, clean-project no-op, writer scaffolds generated). Suite 1126/1.
+  **Not done here** (deliberate): this self-dev repo still has committed `.cco/claude/workspace.yml`
+  + `scheduled_tasks.lock` — they get cleaned when `cco update` runs migration 014 on the host
+  (post-build), or in the step-7 cutover; not `git rm`'d in this commit to keep it focused.
 
 ---
 
@@ -155,7 +170,11 @@ commands implement only their own differentiation (maintainer's explicit require
   > design session verifies the integration (verb name, operator-shim classification,
   > wrapped-`cco` reachability). `cco config save` exists today.
 
-### Step 6 — Migration 014 (project scope) + `.gitignore` + packs.md investigation
+### ✅ Step 6 — Migration 014 (project scope) + `.gitignore` + packs.md investigation — DONE (`61c8503`)
+
+> Shipped — see the **What's done** entry above (incl. the template→writer grounding correction).
+> Design intent below kept as reference.
+
 
 - Migration `migrations/project/014_*.sh` (**next id — current max = 013**): idempotently
   `git rm`/remove committed generated files from `<repo>/.cco/claude/`: `workspace.yml`,
@@ -235,7 +254,7 @@ branch and rebase after. Commit on branch B; **push from the Mac**.
 - Managed config-interaction rule active at edit levels; Level A + rule carry the project-scoped-
   view awareness. ✅ (5)
 - Migration 014 removes stale generated files + scaffolds `.gitignore`; empty-`packs.md` cause
-  understood. ⏳ (6)
+  understood. ✅ (6)
 - All `workspace.yml` plumbing retired; user docs cut over; suite green; `changelog #32`. ⏳ (7)
 
 ## Deferred / open
