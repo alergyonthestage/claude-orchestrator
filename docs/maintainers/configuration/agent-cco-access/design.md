@@ -168,6 +168,23 @@ user guides/docs are reachable in **any** session at any read level via the wrap
 Presets (ADR-0036 D6) restated on the new axis: tutorial = `read-project` (read-only
 teacher), config-editor = `edit-all` (see §8 for its mount scope).
 
+### 4.4 CLI environment-awareness is now a surface-wide property
+
+Making the wrapped `cco` a *primary* channel (Level B) and defaulting normal sessions to
+`read-project` means the **entire** CLI surface is dual-context: the same binary is invoked
+by a human on the host **and** by an agent inside a container. Verbs that were historically
+"host-only / user-facing" are now reachable in-session. This is no longer a per-command
+concern — **every** command must determine its execution environment (via the caller-context
+signal D8 / `_cco_container_operator`) and behave correctly, defaulting to the safe
+container behavior (refuse + redirect to host) when in doubt. The shim (`_cco_operator_shim`)
+is the first gate, but resolver guards, secret masking, host-path hygiene, and scope-aware
+help are per-command responsibilities too.
+
+This principle — and the checklist every new/changed verb must follow — is captured as a
+standing reference so future CLI work inherits the correct method:
+**[`docs/maintainers/cli/design/design-cli-environment-awareness.md`](../../cli/design/design-cli-environment-awareness.md)**.
+A full audit of the whole verb surface against it is planned once this sprint (B2) lands.
+
 ## 5. Invariants
 
 - **INV-1 — Level A carries only session-fixed information.** The injected block is a

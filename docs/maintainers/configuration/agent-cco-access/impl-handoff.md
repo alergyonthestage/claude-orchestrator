@@ -44,9 +44,24 @@
   fails in isolation, both unrelated to this change). **Decision:** the deferred **read-project
   mount narrowing** (from Step 1) is **still open** — not folded in here to keep the cut focused;
   re-evaluate alongside Step 4 (config-editor mounts).
-- **▶ Steps 3–7 — PENDING.** Descriptions in `project.yml` template+docs (3), config-editor UX (4),
-  managed Level-C rule (5), migration 014 + `packs.md`-reappearance investigation (6), docs cutover
-  (CLAUDE.md/cli.md/context-hierarchy enum+default+no-workspace.yml) + changelog #32 (7).
+- **▶ Steps 3–7 — PENDING (next session).** Descriptions in `project.yml` template+docs (3),
+  config-editor UX (4), managed Level-C rule (5), migration 014 + `packs.md`-reappearance
+  investigation (6), docs cutover (CLAUDE.md/cli.md/context-hierarchy enum+default+no-workspace.yml)
+  + changelog #32 (7). Steps 1–2 landed **directly on `feat/config-access/capability-model`**
+  (committing on branch B; push from the Mac) — continue on that branch.
+
+## Cross-cutting — CLI environment-awareness (read before touching any verb)
+
+ADR-0042 makes the wrapped `cco` a **primary** channel and defaults normal sessions to
+`read-project`, so the **whole** CLI surface is now dual-context (host **and** in-container
+agent). Any verb touched in the remaining steps (config-editor `--project`/`--repo` in step 4;
+`cco project save` classification when D lands; migration/cleanup verbs in step 6) MUST follow
+the standing principle + checklist:
+**[`docs/maintainers/cli/design/design-cli-environment-awareness.md`](../../cli/design/design-cli-environment-awareness.md)**
+— classify host-only vs read(scope) vs write(scope), wire the shim, honor the resolver guard /
+secret masking / host-path hygiene / scope-aware help, and test both contexts. A **full
+CLI-surface audit against this principle is scheduled once B2 lands** (roadmap → broader
+planned work).
 
 ---
 
@@ -152,7 +167,14 @@ INV-1 Level A carries only session-fixed info (detail → wrapped `cco`). INV-2 
 artifact in committed trees. INV-3 descriptions single-source in `project.yml`. INV-4 host
 paths only in the runtime `path_map`, gated by `show_host_paths`.
 
-## Deferred (recorded, not this sprint)
+## Deferred / open (recorded)
 
-Language rule (`.claude/rules/language.md`) → move from template interpolation into Level
-A/C injection (design §9 deferral).
+- **`read-project` mount narrowing (OPEN — decide in step 4).** Steps 1–2 gate read scope at
+  the shim (verbs) but the mount footprint is unchanged: `read-project` still bind-mounts the
+  whole personal store `~/.cco` read-only, as `read-all` does. To match ADR-0042's stated
+  risk profile ("read-only, project-scoped"), `read-project` should mount only the project's
+  own footprint (its packs/llms + index) and hide templates / other projects' resources.
+  Folded into **step 4** (config-editor mount redesign) since both touch the operator-bucket
+  mount generation and the shipped `edit-*` behavior — decide there.
+- **Language rule** (`.claude/rules/language.md`) → move from template interpolation into Level
+  A/C injection (design §9 deferral).

@@ -447,6 +447,7 @@ Full long-form descriptions (scope, design, effort) are preserved in
 
 | Item | Priority | Effort | Summary |
 |------|----------|--------|---------|
+| **CLI surface environment-awareness review** (post-B2) | 1 | Med | Audit the **entire** `cco` verb surface against the [CLI environment-awareness principle](cli/design/design-cli-environment-awareness.md): every command must detect host vs container-operator context (D8 / `_cco_container_operator`) and behave correctly — shim classification, resolver guard, secret masking, host-path hygiene, scope-aware help. Surfaced by ADR-0042 (wrapped-`cco` is now a *primary* channel present in almost every session). Do **after** agent↔cco access (B2) lands. |
 | Quick wins: FI-4 model config, `cco project edit` | 1 | Low–Med | Per-project `model:` in `project.yml` → `claude --model`; open `project.yml` in `$EDITOR` and regenerate compose |
 | AI-assisted merge (Update System Phase 4) | 2 | Low–Med | `(I)` AI-merge option for `.md` files on `cco update --sync` when `MERGE_AVAILABLE` |
 | Sprint 6C — Network hardening | 2/3 | Med–High | Squid sidecar + `internal: true` network, SNI domain filtering (Phase A/B shipped, Phase C pending). Security: required pre-open-source |
