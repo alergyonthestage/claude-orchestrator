@@ -112,6 +112,15 @@ via the helper, optionally add a commit **trailer** (e.g. `Cco-Save: true`) and 
 vs trailer-based history; whether to offer `--amend`/message templating; interaction with a multi-repo
 project (commit `.cco/` in the invoking repo only, or fan out to config-bearing repos like `--sync`?).
 
+**⚠ Integration with agent↔cco access (B2, [ADR-0042](../configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md)).**
+B2 designs/references `cco project save` **as if it already exists**: the Level-C config-interaction
+rule tells edit-level agents to version config atomically with `cco project save`, and it is expected to
+be reachable via wrapped-`cco`. When D is designed/built, **verify the fit with the agent↔cco model**:
+(a) classify the verb in the operator shim (in-container write verb at `cco_access ≥ edit-project`, vs
+host-only?); (b) ensure the injected context + managed rule reference the real verb name once decided
+(§D naming is open — B2 assumes `cco project save`); (c) confirm secret-scan + path-scoping hold under
+the container-operator mode. Until D lands, B2 references it as "forthcoming".
+
 ## Decentralized-config v1 — phase index
 
 All phases closed; Phase 5 build-complete. Full per-phase commit/baseline log:
@@ -376,6 +385,14 @@ confirm before scheduling. None blocks the v1 merge.
 
 - **Close shipped-surface gaps** — `cco template update` (symmetric twin of `cco pack
   update`); make `cco pack update` a 3-way merge (currently overwrites local edits).
+- **Language rule → context injection (agent↔cco access follow-up)** — surfaced by B2
+  ([ADR-0042](../configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md),
+  design §9 deferral). Today the user's language preference is delivered via the
+  template-interpolation mechanism (`.claude/rules/language.md`). Candidate to move into the
+  Level A/C injection model so it is delivered like other managed awareness, dropping the
+  template path. **Decision (2026-07-02): left unchanged / out of the B2 sprint scope** —
+  recorded here for a future analysis+design session (evaluate template-retirement impact,
+  migration, and whether other template-interpolated rules follow).
 - **Name/id validation hardening** (surfaced by ADR-0031 D5) — a single cross-resource name
   policy (packs/templates/remotes/llms still carry their own regexes) and a **defensive
   re-validation at the id-consumption layer** (`_cco_project_id`) so a hand-edited or shared

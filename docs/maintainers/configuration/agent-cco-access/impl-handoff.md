@@ -75,10 +75,14 @@ not yet built) — write the rule to reference it; it becomes live when D lands.
 5. **Level C — managed config-interaction rule.** New
    `defaults/managed/.claude/rules/cco-config-interaction.md`, **access-gated** (applies
    when `cco_access ≥ edit`): verify `git diff`/status before editing config, atomic config
-   commits, use `cco config save` / `cco project save` (D), never write secrets into
+   commits, use `cco config save` / **`cco project save`**, never write secrets into
    committed files, mutate internal XDG only via wrapped `cco`, show host-only verbs for the
    host. Ensure Level A declares the wrapped-`cco` availability + current scope. (Managed
    files are baked → requires `cco build`.)
+   > **Note — `cco project save` is forthcoming (workstream D).** Write the rule as if it
+   > exists (per the approved design); D's design session must verify the integration (verb
+   > name is open, operator-shim classification, wrapped-`cco` reachability) — see the
+   > roadmap **§D** "Integration with agent↔cco access" note. `cco config save` exists today.
 
 6. **Migration + cleanup (project scope, id 014).** Remove committed generated files from
    `<repo>/.cco/claude/`: `workspace.yml`, `packs.md`, `scheduled_tasks.lock` (idempotent).
