@@ -44,11 +44,29 @@
   fails in isolation, both unrelated to this change). **Decision:** the deferred **read-project
   mount narrowing** (from Step 1) is **still open** — not folded in here to keep the cut focused;
   re-evaluate alongside Step 4 (config-editor mounts).
-- **▶ Steps 3–7 — PENDING (next session).** Descriptions in `project.yml` template+docs (3),
-  config-editor UX (4), managed Level-C rule (5), migration 014 + `packs.md`-reappearance
-  investigation (6), docs cutover (CLAUDE.md/cli.md/context-hierarchy enum+default+no-workspace.yml)
-  + changelog #32 (7). Steps 1–2 landed **directly on `feat/config-access/capability-model`**
-  (committing on branch B; push from the Mac) — continue on that branch.
+- **✅ Step 3 — DONE** (2026-07-02, `a098719`). Optional `repos[].description` +
+  `extra_mounts[].description` in `project.yml`, rendered into the Level-A context (INV-3
+  single source, no round-trip). Repo descriptions were already rendered in step 2
+  (`_session_repo_description`); this adds `_session_mount_description` (keyed by the mount's
+  **effective** container target, since `_effective_extra_mounts` drops the logical name) +
+  the extra_mount render. Template `project.yml` + `docs/.../project-yaml.md` document both
+  fields; **changelog #32**. +1 test (`test_session_context_extra_mount_description`: described
+  → `mount: target (read-only) — desc`; undescribed → target-only). Suite `1101/1` (the 1 fail
+  pre-existing + env-only — sandbox `test_paths_symlink_safe_tool_root`, XDG DATA perms).
+  Purely additive; no migration.
+- **▶ Steps 4–7 — PENDING (next session).** config-editor UX + `read-project` mount-narrowing
+  decision (4), managed Level-C rule (5), migration 014 + `packs.md`-reappearance investigation
+  (6), docs cutover (CLAUDE.md/cli.md/context-hierarchy enum+default+no-workspace.yml) (7).
+  Steps 1–3 landed **directly on `feat/config-access/capability-model`** (committing on branch B;
+  push from the Mac) — continue on that branch.
+  > **Step-6 note (already scouted this session):** `<repo>/.cco/claude/` in *this* repo still
+  > tracks stale generated files — `workspace.yml` + `scheduled_tasks.lock` are committed;
+  > migration 014 removes them. The empty `packs.md` **reappears** because this self-dev session
+  > runs the **pre-ADR-0042 image**: the old generator wrote `workspace.yml`/`packs.md` into
+  > `/workspace/.claude/`, which is the bind-mount of `<repo>/.cco/claude/` (the committed tree) —
+  > that is also how they got committed originally. Post-step-2 no write path remains (grep of
+  > `lib/`/`bin/` is clean). `templates/project/base/.cco/.gitignore` does **not** exist yet —
+  > step 6 creates it with the generated-file exclusions.
 
 ## Cross-cutting — CLI environment-awareness (read before touching any verb)
 
@@ -114,10 +132,10 @@ not yet built) — write the rule to reference it; it becomes live when D lands.
    - Tests: injection parity (knowledge/llms/path_map present in context), no workspace.yml
      emitted anywhere, subagent parity.
 
-3. **Descriptions in `project.yml` (additive).** Add optional `repos[].description`,
-   `extra_mounts[].description`; update `templates/project/base/project.yml` +
-   `docs/users/configuration/reference/project-yaml.md`; the Level-A generator renders them.
-   **changelog #32.** No migration (optional fields). Tests: descriptions flow into context.
+3. **✅ DONE (`a098719`) — Descriptions in `project.yml` (additive).** Optional
+   `repos[].description` (already rendered in step 2) + `extra_mounts[].description` (new
+   `_session_mount_description`, target-keyed); template + `project-yaml.md` document both;
+   **changelog #32**; +1 test. No migration (optional fields).
 
 4. **config-editor UX redesign.** Rework `_start_collect_config_editor_targets` +
    `_setup_internal_config_editor` + mount generation: bare = all resolvable `<repo>/.cco`
