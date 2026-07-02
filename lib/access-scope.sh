@@ -82,11 +82,13 @@ _env_scope_class() {
     esac
 }
 
-# True (0) when <needle> is a member of the comma-joined list <csv>.
+# True (0) when <needle> is a member of the comma-joined list <csv>. Tolerates
+# spaces around values ("a, b" → "a,b") and does NOT word-split/glob the list
+# (a bare `for x in $csv` would glob-expand a value like `*`). Resource names are
+# slugs, so <needle> is safe as a literal in the case pattern.
 _env_csv_has() {
-    local needle="$1" csv="$2" x
-    local IFS=','
-    for x in $csv; do [[ "$x" == "$needle" ]] && return 0; done
+    local needle="$1" csv="${2// /}"
+    case ",${csv}," in *",${needle},"*) return 0 ;; esac
     return 1
 }
 
