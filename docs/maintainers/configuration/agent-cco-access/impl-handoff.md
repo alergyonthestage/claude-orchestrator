@@ -30,9 +30,10 @@
 | 4.5 | Unified env & access-scope layer → scope read-verb OUTPUT (ADR-0043) | ✅ done | `62a166b` |
 | 5 | Managed Level-C config-interaction rule + Level-A awareness | ✅ done | `027c345` |
 | 6 | Migration 014 — remove committed generated files + `.gitignore` | ✅ done | `61c8503` |
-| **7** | **Docs cutover + suite green → merge `develop` + push** | **▶ next** | — |
+| 7 | Docs cutover + suite green | ✅ done | `c022b04` |
+| — | **merge `develop` + push** | **▶ from the Mac** | — |
 
-Suite after step 4.5: **1120 / 1** — the single failure is pre-existing + env-only
+Suite after step 7: **1126 / 1** — the single failure is pre-existing + env-only
 (`test_paths_symlink_safe_tool_root`, sandbox XDG-DATA perms; `migration_010` also fails only in
 isolation). Both unrelated to this sprint.
 
@@ -105,6 +106,23 @@ isolation). Both unrelated to this sprint.
   **Not done here** (deliberate): this self-dev repo still has committed `.cco/claude/workspace.yml`
   + `scheduled_tasks.lock` — they get cleaned when `cco update` runs migration 014 on the host
   (post-build), or in the step-7 cutover; not `git rm`'d in this commit to keep it focused.
+- **Step 7 (`c022b04`)** — docs cutover to the shipped ADR-0042/0043 truth (docs only, no code).
+  **Access model**: `cli.md` (`--cco-access` + capability-model enum → symmetric
+  `none|read-project(default)|read-global|read-all|edit-*`, bare `read`=alias; documented
+  read-verb output-scoping + count-only stderr notice + graceful `show`; config-editor
+  broad-default + repeatable `--project` now mounting repos + new `--repo`; fixed the stale
+  "defaults unchanged"/`cco_access=none`), `docker-and-networking.md` + user `config-editor.md`
+  (normal default `read-project`, broad-default + `--repo`, scope-awareness when narrowed), **root
+  `CLAUDE.md`** (Session-access bullet + Key Files: `lib/access-scope.sh`, mount narrowing,
+  `CCO_PROJECT_PACKS/LLMS`, managed rule, config-editor `--repo`/broad), config-editor built-in
+  `CLAUDE.md`/`config-safety.md` (broad-UX + `--repo` + narrowed-scope awareness). **workspace.yml
+  retirement**: purged every stale ref across `context-hierarchy`, `project-yaml`, `project-setup`,
+  `troubleshooting`, `knowledge-packs`, `structured-agentic-development` — session context is the
+  `CCO_SESSION_CONTEXT` env var, no file. Living docs rewritten to truth; ADRs left as history.
+  **Grounding note**: the survey subagent under-reported (missed workspace.yml refs in 5 files) —
+  every file was re-verified by direct grep before editing. Suite 1126/1.
+  **REMAINING (from the Mac)**: `merge → develop` + push both branches. The self-dev repo's own
+  committed `workspace.yml`/`scheduled_tasks.lock` clean up on the next host `cco update` (migration 014).
 
 ---
 
@@ -190,7 +208,11 @@ commands implement only their own differentiation (maintainer's explicit require
   > Post-step-2 **no write path remains** (grep of `lib/`/`bin/` is clean). So the "reappearance"
   > resolves once this container is rebuilt on the new image; 014 cleans the already-committed copies.
 
-### Step 7 — Docs cutover + suite green → merge
+### ✅ Step 7 — Docs cutover + suite green → merge — DOCS DONE (`c022b04`); merge+push from the Mac
+
+> Docs shipped — see the **What's done** entry above. Only the `merge → develop` + push (both
+> branches, from the Mac) remains. Design intent below kept as reference.
+
 
 - **User docs to the new truth**: `cli.md` (access enum incl. `read-project`, config-editor
   `--project`/`--repo`, the read-verb scoping + hidden-notice behaviour), `project-yaml.md`
@@ -255,7 +277,7 @@ branch and rebase after. Commit on branch B; **push from the Mac**.
   view awareness. ✅ (5)
 - Migration 014 removes stale generated files + scaffolds `.gitignore`; empty-`packs.md` cause
   understood. ✅ (6)
-- All `workspace.yml` plumbing retired; user docs cut over; suite green; `changelog #32`. ⏳ (7)
+- All `workspace.yml` plumbing retired; user docs cut over; suite green; `changelog #33`. ✅ (7 — docs; merge+push from the Mac)
 
 ## Deferred / open
 
