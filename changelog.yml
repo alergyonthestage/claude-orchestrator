@@ -569,3 +569,21 @@ entries:
       `<repo>/.cco/`, and adds them to `.cco/.gitignore` so they never reappear
       (the removal is staged for you to commit). New projects are scaffolded
       clean. Requires a rebuilt image (`cco build`).
+
+  - id: 35
+    date: "2026-07-02"
+    type: additive
+    title: "Environment-aware hardening of the wrapped-cco surface (in-container)"
+    description: >
+      A full audit of every cco verb for container-operator (wrapped-cco)
+      sessions tightened three behaviours that only affect cco run INSIDE a
+      session (host usage is unchanged). `cco config validate` is now host-only
+      in a container — its orphan sweep reads machine-local state (the STATE
+      index of host paths) that is incoherent in a container, where it reported
+      false orphans and printed host paths. `cco remote add --token` now refuses
+      the token inside a container (the token store is host-only; it previously
+      wrote an ephemeral secret and falsely reported it saved) — register the url
+      here, then run `cco remote set-token` on your host. `cco config save` at
+      cco_access=edit-project now explains that the ~/.cco store is read-only and
+      needs an edit-global session, instead of a misleading "nothing to save".
+      Requires a rebuilt image (`cco build`).

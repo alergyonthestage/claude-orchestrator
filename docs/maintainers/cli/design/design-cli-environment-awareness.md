@@ -1,8 +1,9 @@
 # CLI Environment-Awareness
 
-> Version: 1.1.0
+> Version: 1.2.0
 > Status: Current — principle established with ADR-0042 (agent ↔ cco access); **output-scoping
-> layer added with [ADR-0043](../decisions/0043-unified-cli-environment-access-scope.md)**
+> layer added with [ADR-0043](../decisions/0043-unified-cli-environment-access-scope.md)**;
+> **full CLI-surface review complete (2026-07-02, §6)**
 > Related: [ADR-0036](../../configuration/decentralized-config/decisions/0036-session-config-capability-model.md) (capability model — D4 wrapped-cco, D8 caller-context) · [ADR-0042](../../configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md) (three-level interaction model) · [ADR-0043](../decisions/0043-unified-cli-environment-access-scope.md) (unified env & access-scope resolution) · [agent ↔ cco access design](../../configuration/agent-cco-access/design.md) · user CLI reference [`cli.md`](../../../users/reference/cli.md)
 
 ---
@@ -142,13 +143,26 @@ Any new or changed verb MUST answer, and wire, the following:
 7. **Tests**: extend `tests/test_operator_shim.sh` (classification/scope) and the verb's own
    suite; add scoped-output assertions (§4b). Assert both host and container-operator behavior.
 
-## 6. Forthcoming — full CLI-surface review
+## 6. Full CLI-surface review — done (2026-07-02)
 
 The principle above is applied incrementally as verbs are touched. The **output-scoping layer
-(§4b) for the READ surface is pulled into workstream B2** (ADR-0043, step 4.5) because B2's
-`read-project` mount narrowing makes it necessary now. **After B2 completes, a dedicated review
-of the ENTIRE verb surface is planned** — auditing every `cco` command against §2–§5 (including
-§4b for any remaining read paths, and the write/host-only verbs not yet touched), now that
-container-operator execution is a first-class, always-present context rather than an opt-in.
-Tracked in the roadmap under broader planned work. Until then, treat this document as the
-reference for any CLI change: new commands inherit the correct method from day one.
+(§4b) for the READ surface was pulled into workstream B2** (ADR-0043, step 4.5) because B2's
+`read-project` mount narrowing made it necessary then.
+
+**The dedicated review of the ENTIRE verb surface is complete** — every `cco` command was
+audited against §2–§5, including the write and host-only verbs B2 did not touch. See the
+findings report:
+[reviews/2026-07-02-cli-surface-awareness-review.md](../reviews/2026-07-02-cli-surface-awareness-review.md).
+
+Outcome — five findings, all resolved: `config validate` reclassified **host-only** (it read
+the host-path STATE index and leaked host paths + reported wholesale false orphans
+in-container); `remote add --token` now **refuses the token half** in a container (the STATE
+token store is never mounted, so it wrote an ephemeral secret + a false "[token saved]");
+`config save` gives a **clear "needs edit-global" message** on the read-only `~/.cco` mount at
+edit-project; `llms remove` prints a **repo-relative** path; and the `usage()` host-only
+annotation is documented as deliberately top-level (no drift). The network-write cluster,
+host-only refusals, and the B2 read surface were confirmed correct.
+
+The principle now reads as **fully applied across the surface**. Treat this document as the
+reference for any CLI change: new commands inherit the correct method (the §5 checklist) from
+day one.
