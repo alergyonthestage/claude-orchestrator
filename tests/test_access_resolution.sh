@@ -254,6 +254,21 @@ test_access_mount_cco_edit_project_unlocks_a1() {
     fi
 }
 
+# edit-global edits the GLOBAL store, NOT the project → the <repo>/.cco :ro
+# overlay (A1) must STAY. This is the exact boundary a regression would slip
+# through (edit-project/edit-all drop it; edit-global must not).
+test_access_mount_cco_edit_global_keeps_a1_ro() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    mkdir -p "$CCO_DUMMY_REPO/.cco"
+    run_cco start "test-proj" --cco-access edit-global --dry-run --dump
+    local c; c=$(_access_compose)
+    echo "$c" | grep -qE 'dummy-repo/\.cco:/workspace/dummy-repo/\.cco:ro"' \
+        || fail "A1 :ro overlay must REMAIN under cco-access edit-global (project not editable)"
+}
+
 # ── Container-operator buckets + secret masking (step 4, ADR-0036 D4) ─
 
 # cco_access=none (explicit — no longer the default under ADR-0042) → no operator
