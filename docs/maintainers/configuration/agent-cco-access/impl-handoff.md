@@ -54,11 +54,45 @@
   → `mount: target (read-only) — desc`; undescribed → target-only). Suite `1101/1` (the 1 fail
   pre-existing + env-only — sandbox `test_paths_symlink_safe_tool_root`, XDG DATA perms).
   Purely additive; no migration.
-- **▶ Steps 4–7 — PENDING (next session).** config-editor UX + `read-project` mount-narrowing
-  decision (4), managed Level-C rule (5), migration 014 + `packs.md`-reappearance investigation
-  (6), docs cutover (CLAUDE.md/cli.md/context-hierarchy enum+default+no-workspace.yml) (7).
-  Steps 1–3 landed **directly on `feat/config-access/capability-model`** (committing on branch B;
-  push from the Mac) — continue on that branch.
+- **✅ Step 4 — DONE** (2026-07-02, `9e4535f`). Two parts. **(a) config-editor UX** (design §8):
+  bare `config-editor` is now BROAD (`~/.cco` + every resolvable project's `<repo>/.cco`, no
+  repos — the former `--all`); `--all` kept as a back-compat alias; `--project <name>` (repeatable)
+  NARROWS to those projects' `.cco` **and mounts their repos** (repo-aware authoring); new
+  `--repo <name>` adds one resolvable repo. The generated config-editor `project.yml` gained a
+  `repos:` block (names resolve via the STATE index); `_start_collect_config_editor_targets` sets
+  `_ce_targets` + `_ce_repos`. **(b) read-project mount narrowing** (the OPEN decision from steps
+  1–2 — **maintainer chose to narrow now**): at `read-project` the operator CONFIG bucket is no
+  longer bind-mounted whole — only referenced personal-store packs mount at
+  `/home/claude/.cco/packs/<name>` (ro; invalid pack.yml skipped, mirroring the knowledge
+  collector); `~/.cco/templates` + other/unreferenced packs stay physically hidden.
+  `read-global/read-all/edit-*` still mount the whole store; DATA/STATE-index/CACHE unchanged
+  (needed for `cco list`). +7 tests. Suite `1106/1` (pre-existing env-only fail).
+- **⏸ OPEN DESIGN DISCUSSION (raised by maintainer 2026-07-02, mid-step-4 — resume here).**
+  The narrowing exposed a **3-layer misalignment** at `read-project`: (i) *mount* = referenced
+  packs only; (ii) *CLI verbs* = `cco list pack` scans the narrowed mount → already scoped, but
+  `cco list template` scans the unmounted `~/.cco/templates` → **empty (false-negative)** and
+  `cco list project` reads the STATE index → **all projects (unscoped)**; (iii) *index* references
+  host paths not mounted in-container. Three asks:
+  1. **Awareness** — the agent must know `read-project` gives a *project-scoped* view of `~/.cco`
+     (not "these resources don't exist"); `read-global/read-all` = complete. → inject in **Level A**
+     + the **managed rule (step 5)**. *Agreed: do regardless.*
+  2. **Scope-aware read verbs?** — should `cco list`/`show` filter by `cco_access`? Options:
+     **(A)** full scope-aware (a normal `read-project` session has exactly ONE current project, so
+     scope list→that project + its packs/llms; needs a current-project env signal + per-verb
+     filter); **(B, recommended)** keep `cco list` as index-based discovery + a "project-scoped"
+     footer, rely on awareness (1) + graceful `show` (3), fold full per-verb scoping into the
+     **scheduled post-B2 CLI-surface audit**; **(C)** do only 1+3 now, defer ALL verb scoping.
+     **← DECISION PENDING (maintainer stepped away; re-ask).**
+  3. **CLI robustness** — read verbs (`list`, `<kind> show`, `validate`, `path list`,
+     `project coords`) must not crash / must degrade clearly when a resource is unmounted under an
+     access scope. *Agreed: do regardless.*
+  Process: record the 3-layer model + the point-2 choice in **ADR-0042 / design §8** before
+  implementing (documentation-first). Likely reshapes **step 5** (the managed rule carries the
+  awareness) and adds a robustness sub-task.
+- **▶ Steps 5–7 — PENDING.** Managed Level-C rule (5; must carry the read-project awareness note
+  from the discussion above), migration 014 + `packs.md`-reappearance investigation (6), docs
+  cutover (CLAUDE.md/cli.md/context-hierarchy enum+default+no-workspace.yml) (7). Steps 1–4 landed
+  **directly on `feat/config-access/capability-model`** (committing on branch B; push from the Mac).
   > **Step-6 note (already scouted this session):** `<repo>/.cco/claude/` in *this* repo still
   > tracks stale generated files — `workspace.yml` + `scheduled_tasks.lock` are committed;
   > migration 014 removes them. The empty `packs.md` **reappears** because this self-dev session
@@ -137,12 +171,13 @@ not yet built) — write the rule to reference it; it becomes live when D lands.
    `_session_mount_description`, target-keyed); template + `project-yaml.md` document both;
    **changelog #32**; +1 test. No migration (optional fields).
 
-4. **config-editor UX redesign.** Rework `_start_collect_config_editor_targets` +
-   `_setup_internal_config_editor` + mount generation: bare = all resolvable `<repo>/.cco`
-   + `~/.cco` (no repos); `--project` narrows + **mounts that project's repos**; `--repo`
-   adds one. Update the preset + built-in CLAUDE.md/config-safety + user guide
-   `docs/users/internal-projects/guides/config-editor.md` + `cli.md`. Tests: bare mounts all
-   `.cco` no repos; `--project` mounts `.cco` + repos; `--repo` adds one; unresolved skipped.
+4. **✅ DONE (`9e4535f`) — config-editor UX redesign + read-project mount narrowing.** Reworked
+   `_start_collect_config_editor_targets` (broad default / `--project` narrow+repos / `--repo`) +
+   `_setup_internal_config_editor` (emits `repos:`) + the operator-bucket mount (read-project →
+   referenced packs only). +7 tests. **NOTE:** built-in CLAUDE.md/config-safety + user guide
+   `config-editor.md` + `cli.md` doc updates are folded into the **step-7 cutover** (and must also
+   carry the read-project awareness from the OPEN DISCUSSION above). The `read-project`
+   mount-narrowing "deferred/open" item below is now **CLOSED — narrowed** (maintainer decision).
 
 5. **Level C — managed config-interaction rule.** New
    `defaults/managed/.claude/rules/cco-config-interaction.md`, **access-gated** (applies
@@ -187,12 +222,10 @@ paths only in the runtime `path_map`, gated by `show_host_paths`.
 
 ## Deferred / open (recorded)
 
-- **`read-project` mount narrowing (OPEN — decide in step 4).** Steps 1–2 gate read scope at
-  the shim (verbs) but the mount footprint is unchanged: `read-project` still bind-mounts the
-  whole personal store `~/.cco` read-only, as `read-all` does. To match ADR-0042's stated
-  risk profile ("read-only, project-scoped"), `read-project` should mount only the project's
-  own footprint (its packs/llms + index) and hide templates / other projects' resources.
-  Folded into **step 4** (config-editor mount redesign) since both touch the operator-bucket
-  mount generation and the shipped `edit-*` behavior — decide there.
+- **~~`read-project` mount narrowing~~ — CLOSED 2026-07-02 (`9e4535f`): narrowed.** The maintainer
+  chose to narrow now (step 4b): `read-project` mounts only the project's referenced personal-store
+  packs (ro), hiding `~/.cco/templates` + other/unreferenced packs. DATA/STATE-index/CACHE kept
+  (needed for `cco list`; carry no template/other-pack content). Surfaced a follow-on **OPEN
+  DISCUSSION** (awareness + scope-aware read verbs + CLI robustness) — see Progress above.
 - **Language rule** (`.claude/rules/language.md`) → move from template interpolation into Level
   A/C injection (design §9 deferral).
