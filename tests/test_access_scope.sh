@@ -210,6 +210,25 @@ test_as_list_llms_scoped_at_read_project() {
     assert_output_contains "hidden by access scope"
 }
 
+test_as_llms_show_used_by_hides_out_of_scope_referrers() {
+    # INV-B regression: `cco llms show <in-scope-llms>` must NOT leak the NAMES
+    # of out-of-scope projects/packs that reference it (the "Used by:" line).
+    # svelte is referenced by alpha (current → in scope) AND by beta (other
+    # project → hidden) AND by p9 (unreferenced pack → hidden). The referrer
+    # names beta/p9 must never appear; the filtering is announced count-only.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _as_seed_store "$tmpdir"
+    printf 'name: beta\nllms:\n  - svelte\n' > "$(host_cco_dir "$tmpdir" beta)/project.yml"
+    create_pack "$tmpdir" "p9" "$(printf 'name: p9\nllms:\n  - svelte\n')"
+    export CCO_CONTAINER_OPERATOR=1 CCO_CCO_ACCESS=read-project \
+           PROJECT_NAME=alpha CCO_PROJECT_LLMS=svelte CCO_PROJECT_PACKS=""
+    run_cco llms show svelte || true
+    assert_output_contains "svelte"
+    assert_output_not_contains "beta"
+    assert_output_not_contains "p9"
+    assert_output_contains "hidden by access scope"
+}
+
 test_as_pack_show_out_of_scope_refused() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _as_seed_store "$tmpdir"

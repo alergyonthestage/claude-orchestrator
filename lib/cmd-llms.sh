@@ -362,7 +362,7 @@ EOF
     done
 
     local users
-    users=$(_llms_find_users "$name")
+    users=$(_llms_find_users "$name" flush)
     if [[ -n "$users" ]]; then
         echo -e "${BOLD}Used by:${NC}    $users"
     else
@@ -730,8 +730,17 @@ YAML
 
 # Find packs and projects that reference a given llms name.
 # Returns a human-readable string like "my-pack (pack), my-app (project)".
+#
+# Output scoping (ADR-0043 INV-B): the referrers are themselves project-/
+# global-class resources, so an out-of-scope referrer is hidden — its NAME is
+# never printed (INV-B "counts only, never leak hidden names"). Host-open: on
+# the host _env_in_scope always returns visible, so the list is unchanged.
+# When the optional 2nd arg is `flush`, the shared count-only notice is emitted
+# to stderr from inside this call (stderr survives the `$()` capture, so the
+# subshell-local hidden counters are reported correctly); the bulk summary path
+# omits it because it flushes its own llms-level notice.
 _llms_find_users() {
-    local name="$1"
+    local name="$1" notice="${2:-}"
     local users=()
 
     # Check packs
@@ -740,10 +749,15 @@ _llms_find_users() {
             [[ ! -d "$pdir" ]] && continue
             local pyml="$pdir/pack.yml"
             [[ ! -f "$pyml" ]] && continue
-            local names
+            local names pname
             names=$(yml_get_llms_names "$pyml" 2>/dev/null)
             if echo "$names" | grep -qxF "$name"; then
-                users+=("$(basename "$pdir") (pack)")
+                pname=$(basename "$pdir")
+                if _env_in_scope pack "$pname"; then
+                    users+=("$pname (pack)")
+                else
+                    _env_note_hidden pack
+                fi
             fi
         done
     fi
@@ -754,7 +768,11 @@ _llms_find_users() {
         local names
         names=$(yml_get_llms_names "$pyml" 2>/dev/null)
         if echo "$names" | grep -qxF "$name"; then
-            users+=("$proj (project)")
+            if _env_in_scope project "$proj"; then
+                users+=("$proj (project)")
+            else
+                _env_note_hidden project
+            fi
         fi
     done < <(_project_foreach)
 
@@ -762,6 +780,8 @@ _llms_find_users() {
         local IFS=", "
         echo "${users[*]}"
     fi
+    [[ "$notice" == "flush" ]] && _env_flush_hidden_notice
+    return 0
 }
 
 # Add an llms reference to a pack or project YAML file.
