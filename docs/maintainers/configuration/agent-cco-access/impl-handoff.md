@@ -140,6 +140,11 @@ commands implement only their own differentiation (maintainer's explicit require
   `--project`/`--repo`, the read-verb scoping + hidden-notice behaviour), `project-yaml.md`
   (descriptions — done in step 3, verify), the **config-editor guide**
   `docs/users/internal-projects/guides/config-editor.md`, context-hierarchy, docker-and-networking.
+- **Main repo `CLAUDE.md`** (root — the primary agent-context file): update the **Session access**
+  bullet + Conventions to reflect ADR-0043 — the `read-project` mount narrowing (shipped step 4)
+  **and** the output-scoping layer (`lib/access-scope.sh`, once step 4.5 lands). Do this **here at
+  cutover, not earlier** — it describes *shipped* behaviour, so it must not name the layer before
+  step 4.5 makes it real (documentation-lifecycle: no docs ahead of code).
 - **Built-in config-editor** `internal/config-editor/.claude/CLAUDE.md` + `config-safety.md`:
   reflect broad-default UX + `--repo`; and (for any read-scoped built-in) the ADR-0043 awareness.
 - Retire remaining `workspace.yml` references across docs; forward-annotate as needed
