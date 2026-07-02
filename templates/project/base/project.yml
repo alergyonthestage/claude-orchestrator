@@ -8,8 +8,9 @@ description: "{{DESCRIPTION}}"
 #
 # access:
 #   claude: repo            # .claude authoring: none | repo (default) | all
-#   cco: none               # .cco framework config: none (default) | read |
-#                           #   edit-project | edit-global | edit-all
+#   cco: read-project       # .cco config: none | read-project (default) |
+#                           #   read-global | read-all | edit-project |
+#                           #   edit-global | edit-all  (bare `read` = read-all, deprecated)
 #   show_host_paths: true   # show the host<->container path map (default: true)
 
 # ── Repositories ─────────────────────────────────────────────────────

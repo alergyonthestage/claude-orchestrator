@@ -36,13 +36,14 @@ packs:
   - my-client-knowledge   # References ~/.cco/packs/my-client-knowledge/pack.yml
 
 # ── Session access (optional; ADR-0036) ──────────────────────────────
-# Per-project defaults for how much of your config a session can edit.
+# Per-project defaults for how much of your config a session can read/edit.
 # Overridden by the CLI flags, overrides ~/.cco/access.yml. Omit to keep
-# the safe defaults (repo / none / on).
+# the defaults (repo / read-project / on).
 access:
   claude: repo            # .claude authoring: none | repo (default) | all
-  cco: none               # .cco framework config: none (default) | read |
-                          #   edit-project | edit-global | edit-all
+  cco: read-project       # .cco config: none | read-project (default) |
+                          #   read-global | read-all | edit-project |
+                          #   edit-global | edit-all  (bare `read` = read-all, deprecated)
   show_host_paths: true   # host↔container path map in the session (default)
 
 # ── Docker options ───────────────────────────────────────────────────
@@ -128,7 +129,7 @@ browser:
 | `packs` | ❌ | list | `[]` | Knowledge packs to activate (see Knowledge Packs section below) |
 | `llms` | ❌ | list | `[]` | LLMs.txt framework docs to include (see LLMs.txt section below) |
 | `access.claude` | ❌ | enum | `repo` | Session `.claude` authoring access: `none` \| `repo` \| `all` (ADR-0036; see [Session access](../../reference/cli.md#session-access-capability-model)) |
-| `access.cco` | ❌ | enum | `none` | Session `.cco`/framework config access: `none` \| `read` \| `edit-project` \| `edit-global` \| `edit-all` |
+| `access.cco` | ❌ | enum | `read-project` | Session `.cco`/framework config access: `none` \| `read-project` \| `read-global` \| `read-all` \| `edit-project` \| `edit-global` \| `edit-all` (bare `read` = deprecated alias for `read-all`; ADR-0036/0042; see [Session access](../../reference/cli.md#session-access-capability-model)) |
 | `access.show_host_paths` | ❌ | bool | `true` | Include the host↔container path map in the session |
 | `docker.ports` | ❌ | list | see defaults | Port mappings |
 | `docker.env` | ❌ | map | `{}` | Environment variables |
