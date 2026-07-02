@@ -86,6 +86,18 @@ _config_save() {
         esac
     done
 
+    # Graceful ro-mount guard (CLI-surface review): the shim's write axis is flat
+    # (any edit level passes), but the ~/.cco mount is rw only at edit-global/
+    # edit-all — at edit-project it is read-only. Without this, `git add`/`git
+    # init` fail silently on the ro tree and save reports a misleading "already up
+    # to date" (or a raw git error). Emit a clear, actionable message instead.
+    if _cco_container_operator; then
+        case "$(_env_access)" in
+            edit-global|edit-all) : ;;   # ~/.cco mounted rw
+            *) die "'cco config save' versions your personal ~/.cco store, which is read-only at cco_access=$(_env_access). Start the session with --cco-access edit-global (or edit-all), or run 'cco config save' on your host." ;;
+        esac
+    fi
+
     local cfg; cfg=$(_cco_config_dir)
     [[ -d "$cfg/.git" ]] || git -C "$cfg" init -q >/dev/null 2>&1 || die "Could not initialize ~/.cco as a git repo."
     _config_ensure_gitignore "$cfg"

@@ -602,7 +602,10 @@ EOF
     [[ ! -d "$llms_dir" ]] && die "LLMs '$name' not found."
 
     # ── Preview + referenced block (ADR-0029 D2) ───────────────────────────
-    info "cco llms remove '$name' will delete the entry at $llms_dir."
+    # Use the repo-relative form (matching pack/template remove previews) — never
+    # the absolute $llms_dir, which is a host path on the host and a container
+    # path in a wrapped-cco session (CLI-surface host-path hygiene).
+    info "cco llms remove '$name' will delete the entry at llms/$name/."
     local users
     users=$(_llms_find_users "$name")
     if [[ -n "$users" ]]; then

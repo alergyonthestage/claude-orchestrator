@@ -143,6 +143,17 @@ _cmd_remote_add() {
         die "Invalid URL '$url'. Expected a git URL or path."
     fi
 
+    # Host-path/secret hygiene (CLI-surface review): the token store lives in
+    # STATE (0600, never-sync) and is NOT mounted into a wrapped-cco session. In
+    # a container `_remote_token_set` would write the token to an EPHEMERAL
+    # container path (lost on exit) while `ok "[token saved]"` falsely claims it
+    # persisted — a confusing partial write that also drops a plaintext secret on
+    # the container FS. Refuse the token half here (mirrors host-only
+    # `remote set-token`); registering the plain url stays allowed at edit level.
+    if [[ -n "$token" ]] && _cco_container_operator; then
+        die "'cco remote add --token' cannot persist a token in a container session — tokens are host-only (secrets stay off the container). Register the remote without --token here, then run 'cco remote set-token $name <token>' on your host."
+    fi
+
     local rf; rf=$(_remotes_file)
 
     # Check for duplicates

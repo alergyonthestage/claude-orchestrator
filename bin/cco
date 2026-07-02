@@ -167,7 +167,15 @@ EOF
         case "$_level" in edit-project|edit-global|edit-all) _can_write=true ;; esac
         printf 'Container session (cco_access=%s) — wrapped cco. Flagged verbs run on your host;\n' "$_level"
         printf 'write verbs need an edit level; `template`/`remote list` need read-global or higher.\n\n'
-        # Fully host-only top-level verbs (mirror the shim blocklist).
+        # Fully host-only top-level verbs (mirror the shim blocklist). Annotation
+        # is deliberately TOP-LEVEL only: verbs whose EVERY subcommand is host-only.
+        # Namespaces with a host-only SUBSET (`path set`, `config push|pull`,
+        # `remote set|remove-token`, `pack|template|llms publish|export`,
+        # `project rename|export|import|add`) are NOT flagged here — the shim still
+        # refuses those sub-verbs with a hint at call time, and per-subcommand
+        # annotation would bloat the top-level list without improving the common
+        # path (CLI-surface review decision, 2026-07-02). Keep this set == the shim's
+        # fully-host-only top-level arm.
         local _hostonly='init|join|forget|build|start|new|stop|resolve|sync|update|clean|chrome'
         printf '%s\n' "$_body" \
             | sed -E "/^  ($_hostonly)([[:space:]]|\$)/ s/\$/   (host only — run on your host)/" \
@@ -248,7 +256,15 @@ _cco_operator_shim() {
             esac ;;
         config)
             case "$sub" in
-                validate) return 0 ;;
+                # host-only: `config validate` sweeps machine-local internal state
+                # (the STATE index of logical→HOST paths, per-id STATE/CACHE dirs,
+                # the STATE token store) to detect orphans. In a container only the
+                # index FILE is mounted (ro, carrying host paths that never resolve
+                # in-container) while the STATE dirs/token store are absent, so the
+                # sweep would flag every entry as an orphan AND print host paths
+                # (INV-4 leak). It is coherent only host-side (CLI-surface review,
+                # 2026-07-02).
+                validate) die "'cco config validate' is host-only — it sanitizes machine-local index/state that is not coherent inside a container. $host_hint" ;;
                 save) _op_write "config save" ;;
                 push|pull) die "'cco config $sub' is host-only (network + credentials). $host_hint" ;;
                 *) die "'cco config $sub' is not available in a container session." ;;
