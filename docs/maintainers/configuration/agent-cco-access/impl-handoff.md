@@ -27,12 +27,12 @@
 | 2 | Level A hook injection — retire the `workspace.yml` file | ✅ done | `8183b4a` |
 | 3 | Optional `repos[]/extra_mounts[].description` | ✅ done | `a098719` |
 | 4 | config-editor broad-UX + `read-project` mount narrowing | ✅ done | `9e4535f` |
-| **4.5** | **Unified env & access-scope layer → scope read-verb OUTPUT (ADR-0043)** | **▶ next** | — |
-| 5 | Managed Level-C config-interaction rule + Level-A awareness | ⏳ pending | — |
+| 4.5 | Unified env & access-scope layer → scope read-verb OUTPUT (ADR-0043) | ✅ done | `62a166b` |
+| **5** | **Managed Level-C config-interaction rule + Level-A awareness** | **▶ next** | — |
 | 6 | Migration 014 — remove committed generated files + `.gitignore` | ⏳ pending | — |
 | 7 | Docs cutover + suite green → merge `develop` + push | ⏳ pending | — |
 
-Suite after step 4: **1106 / 1** — the single failure is pre-existing + env-only
+Suite after step 4.5: **1120 / 1** — the single failure is pre-existing + env-only
 (`test_paths_symlink_safe_tool_root`, sandbox XDG-DATA perms; `migration_010` also fails only in
 isolation). Both unrelated to this sprint.
 
@@ -60,12 +60,32 @@ isolation). Both unrelated to this sprint.
   personal-store packs mount at `/home/claude/.cco/packs/<name>` (ro; invalid pack.yml skipped).
   `read-global/read-all/edit-*` still mount the whole store; DATA/STATE-index/CACHE unchanged.
   **This narrowing is what necessitated ADR-0043 / step 4.5.**
+- **Step 4.5 (`62a166b`)** — `lib/access-scope.sh` (sourced in `bin/cco` after `paths.sh`): the
+  shared output-scoping layer. `_env_context/_env_access/_env_read_rank/_env_current_project`,
+  `_env_scope_class` (project|global taxonomy reused from the shim), `_env_in_scope`,
+  `_env_note_hidden`/`_env_flush_hidden_notice` (count-only stderr notice, idempotent, bash-3.2
+  indirect-var counters), `_env_require_visible` (graceful `show` degradation). **Wired**: compact
+  `cco list` + `cmd_project/pack/llms list`; `project/pack/template/llms show` (require_visible);
+  `project validate|coords`; `path list` (tailored inline notice — the raw name→path index is not
+  a taxonomy kind). `template/remote list` stay shim-gated to read-global+ → no per-row filter
+  there (documented in-code). **Membership signals**: `cco start` now exports
+  `CCO_PROJECT_PACKS`/`CCO_PROJECT_LLMS` (comma-joined; llms = project.yml ∪ referenced packs),
+  computed once host-side (INV-E) — this is the "export a signal a wired verb needs" the notes
+  anticipated; needed because CACHE llms is mounted whole (can't derive membership from the mount)
+  and to make pack scoping intentional rather than a mount side-effect. Tests
+  `tests/test_access_scope.sh` (unit + operator-mode integration). Tightened the `test_packs`
+  bad-indentation assertion to match a mount path (`[:/]bad-indent`), since `CCO_PROJECT_PACKS`
+  now legitimately names referenced packs. `changelog #33`.
 
 ---
 
 ## Remaining roadmap (dependency-ordered)
 
-### ▶ Step 4.5 — Unified env & access-scope layer; scope read-verb OUTPUT (ADR-0043)
+### ✅ Step 4.5 — Unified env & access-scope layer; scope read-verb OUTPUT (ADR-0043) — DONE (`62a166b`)
+
+> Shipped — see the **What's done** entry above for the delivered API, wired verbs, the
+> `CCO_PROJECT_PACKS`/`CCO_PROJECT_LLMS` export decision, and tests. The design intent below is
+> kept as reference.
 
 **Why now**: step 4 narrowed the *mount* at `read-project`, but the *CLI output* is still
 misaligned — `cco list pack` is scoped (scans the narrowed mount) yet `cco list template` is
@@ -194,7 +214,7 @@ branch and rebase after. Commit on branch B; **push from the Mac**.
 - Descriptions single-sourced in `project.yml`, rendered into context; no round-trip. ✅ (3)
 - config-editor broad default + `--project` repo-aware + `--repo`; `read-project` mount narrowed. ✅ (4)
 - **Read verbs scope their output via `lib/access-scope.sh`; hidden resources announced; no raw
-  errors on unmounted resources.** ⏳ (4.5)
+  errors on unmounted resources.** ✅ (4.5)
 - Managed config-interaction rule active at edit levels; Level A + rule carry the project-scoped-
   view awareness. ⏳ (5)
 - Migration 014 removes stale generated files + scaffolds `.gitignore`; empty-`packs.md` cause
@@ -207,5 +227,7 @@ branch and rebase after. Commit on branch B; **push from the Mac**.
   (`9e4535f`); output scoping decided (option A) and formalised in **ADR-0043** → step 4.5.
 - **Language rule** (`.claude/rules/language.md`) → move from template interpolation into Level
   A/C injection (design §9 deferral). Not this sprint.
-- **`CCO_CLAUDE_ACCESS` / `CCO_SHOW_HOST_PATHS` export** — add only when a wired verb needs them
-  (step 4.5 keeps `lib/access-scope.sh` extensible for these signals).
+- **`CCO_CLAUDE_ACCESS` / `CCO_SHOW_HOST_PATHS` export** — still NOT exported; add only when a
+  wired verb needs them (`lib/access-scope.sh` stays extensible for these). Step 4.5 DID add the
+  project-scope membership signals it needed — `CCO_PROJECT_PACKS` / `CCO_PROJECT_LLMS` (`cco start`
+  → the layer) — the same "export only when a verb needs it" principle applied to output scoping.
