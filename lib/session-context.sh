@@ -190,6 +190,7 @@ _build_session_context() {
             done <<< "$repos_output"
         fi
         if [[ -n "$pack_names" ]]; then
+            local pack_name
             while IFS= read -r pack_name; do
                 [[ -z "$pack_name" ]] && continue
                 echo "- pack: ${pack_name}"

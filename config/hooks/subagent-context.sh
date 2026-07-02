@@ -24,8 +24,12 @@ Teammate mode: ${TMODE}"
 # CCO_SUBAGENT_CONTEXT — no workspace.yml file anymore. Decode and append.
 if [ -n "$CCO_SUBAGENT_CONTEXT" ]; then
     injected=$(printf '%s' "$CCO_SUBAGENT_CONTEXT" | base64 -d 2>/dev/null)
-    [ -n "$injected" ] && ctx="${ctx}
+    if [ -n "$injected" ]; then
+        ctx="${ctx}
 ${injected}"
+    else
+        echo "cco: warning: CCO_SUBAGENT_CONTEXT set but failed to base64-decode — subagent context omitted." >&2
+    fi
 fi
 
 ctx="${ctx}

@@ -664,6 +664,10 @@ _update_single_template() {
 # The pack-`validate` analogue (ADR-0029 D3): structural validation of a
 # template tree. Validates one named template, or every user template.
 
+# Output scoping (ADR-0043): templates are GLOBAL-class, and the operator shim
+# gates every `template` verb (incl. validate) to read-global+ — a scope where
+# nothing is hidden — so no per-row `_env_in_scope` filter is wired here (same
+# rationale as `template`/`remote list`).
 cmd_template_validate() {
     check_global
     local name="" validate_all=false

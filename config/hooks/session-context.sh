@@ -77,9 +77,15 @@ ctx="${ctx}
 # workspace.yml file anymore (INV-2). Decode and append verbatim.
 if [ -n "$CCO_SESSION_CONTEXT" ]; then
     injected=$(printf '%s' "$CCO_SESSION_CONTEXT" | base64 -d 2>/dev/null)
-    [ -n "$injected" ] && ctx="${ctx}
+    if [ -n "$injected" ]; then
+        ctx="${ctx}
 
 ${injected}"
+    else
+        # Set but undecodable → the whole Level-A block is lost. Leave a stderr
+        # breadcrumb so the silent degradation is debuggable (context still ships).
+        echo "cco: warning: CCO_SESSION_CONTEXT set but failed to base64-decode — Level-A context omitted." >&2
+    fi
 fi
 
 # Persist key session variables for all subsequent Bash tool calls
