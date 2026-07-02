@@ -75,6 +75,20 @@ test_operator_blocks_project_rename() {
     return 0
 }
 
+# CLI-surface review F1: `config validate` sweeps machine-local index/state that
+# is incoherent in a container (the mounted STATE index carries HOST paths that
+# never resolve in-container → wholesale false orphans + host-path leak). It must
+# be host-only at EVERY level, including the read-project default.
+test_operator_blocks_config_validate_hostonly() {
+    local lvl
+    for lvl in read-project read-global read-all edit-all; do
+        _op_cco "$lvl" config validate
+        [[ $OP_RC -ne 0 && "$OP_OUT" == *"host-only"* ]] \
+            || fail "'config validate' must be host-only at $lvl, got rc=$OP_RC: $OP_OUT"
+    done
+    return 0
+}
+
 # ── Write gating: write verbs need an edit level ─────────────────────
 
 test_operator_read_level_refuses_writes() {
@@ -97,6 +111,43 @@ test_operator_edit_level_passes_writes_through_shim() {
     [[ "$OP_OUT" != *"host-only"* && "$OP_OUT" != *"edit access level"* \
        && "$OP_OUT" != *"not available in a container session"* ]] \
         || fail "'tag add' under edit-all should pass the shim, got: $OP_OUT"
+    return 0
+}
+
+# CLI-surface review F2: the STATE token store is never mounted in a container,
+# so `remote add --token` would write the secret to an ephemeral container path
+# while falsely reporting "[token saved]". The command must refuse the token half
+# (mirroring host-only `remote set-token`) — before any partial write — while a
+# plain `remote add` (no token) still registers the url at an edit level.
+test_operator_remote_add_token_refused() {
+    _op_cco edit-all remote add acme https://x --token ghp_secret
+    [[ $OP_RC -ne 0 ]] \
+        || fail "'remote add --token' must be refused in a container, got rc=$OP_RC: $OP_OUT"
+    [[ "$OP_OUT" == *"set-token"* && "$OP_OUT" == *"host"* ]] \
+        || fail "'remote add --token' refusal should point to host set-token, got: $OP_OUT"
+    [[ "$OP_OUT" != *"token saved"* ]] \
+        || fail "'remote add --token' must NOT claim the token was saved, got: $OP_OUT"
+    # The plain form (no token) still passes at an edit level.
+    _op_cco edit-all remote add acme https://x
+    [[ "$OP_OUT" != *"host-only"* && "$OP_OUT" != *"cannot persist a token"* ]] \
+        || fail "plain 'remote add' should pass the shim at edit-all, got: $OP_OUT"
+    return 0
+}
+
+# CLI-surface review F3: the ~/.cco store is mounted rw only at edit-global/
+# edit-all; at edit-project it is read-only, so `config save` must fail with a
+# clear "needs edit-global" message instead of a misleading "nothing to save" or
+# a raw git error. At edit-global it passes this guard (may fail later for other
+# reasons, but never with the ro-mount message).
+test_operator_config_save_edit_project_needs_edit_global() {
+    _op_cco edit-project config save -m x
+    [[ $OP_RC -ne 0 && "$OP_OUT" == *"read-only at cco_access=edit-project"* ]] \
+        || fail "'config save' at edit-project should report the ro store, got rc=$OP_RC: $OP_OUT"
+    [[ "$OP_OUT" == *"edit-global"* ]] \
+        || fail "'config save' ro message should suggest edit-global, got: $OP_OUT"
+    _op_cco edit-all config save -m x
+    [[ "$OP_OUT" != *"read-only at cco_access"* ]] \
+        || fail "'config save' at edit-all should pass the ro guard, got: $OP_OUT"
     return 0
 }
 

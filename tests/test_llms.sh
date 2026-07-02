@@ -420,6 +420,20 @@ test_llms_remove_with_yes_skips_confirm() {
     assert_dir_not_exists "$CCO_LLMS_DIR/svelte"
 }
 
+# CLI-surface host-path hygiene (F5): the remove preview reports the repo-relative
+# `llms/<name>/`, never the absolute $CCO_LLMS_DIR (a host path on the host, a
+# container path in a wrapped-cco session).
+test_llms_remove_preview_uses_relative_path() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_llms_entry "$tmpdir" "svelte" "llms-full.txt"
+
+    run_cco llms remove svelte -y
+    assert_output_contains "delete the entry at llms/svelte/"
+    assert_output_not_contains "$CCO_LLMS_DIR/svelte"
+}
+
 test_llms_remove_non_tty_without_yes_dies() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
