@@ -1531,6 +1531,23 @@ EOF
     _start_resolve_project
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] resolve_project done" >&2
 
+    # config-editor-only selectors (ADR-0042 §8). They are consumed solely in the
+    # config-editor branch of _start_resolve_project; passed to any other session
+    # they would be silently ignored (no mount, no error), so reject them here
+    # with guidance rather than fail closed and confuse the user.
+    if [[ "$session_preset" != "config-editor" ]]; then
+        if [[ ${#config_editor_targets[@]} -gt 0 || ${#config_editor_repos[@]} -gt 0 || "$config_editor_all" == "true" ]]; then
+            die "--all / --project / --repo apply only to 'cco start config-editor' (ADR-0042 §8). This is a '${session_preset}' session."
+        fi
+    else
+        # --all is the explicit alias of the broad default (no targets); combining
+        # it with a narrowing selector is contradictory — reject rather than
+        # silently drop --all.
+        if [[ "$config_editor_all" == "true" && ( ${#config_editor_targets[@]} -gt 0 || ${#config_editor_repos[@]} -gt 0 ) ]]; then
+            die "--all (broad: every project's <repo>/.cco) cannot be combined with --project/--repo (which narrow the scope)."
+        fi
+    fi
+
     _start_load_config
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] load_config done" >&2
 
