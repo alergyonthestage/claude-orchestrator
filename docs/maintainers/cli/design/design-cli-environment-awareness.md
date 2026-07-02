@@ -121,8 +121,14 @@ This is a second, orthogonal dimension enforced by a single shared layer
 Any new or changed verb MUST answer, and wire, the following:
 
 1. **Classify the verb for the container context**: host-only (spawns containers, resolves
-   paths, touches network/credentials) · read (which scope: project / global / all) ·
-   write (which scope).
+   host paths, touches **credentials** or the personal-store git remote) · read (which scope:
+   project / global / all) · write (which scope).
+   > **Network carve-out (ADR-0036 D4).** "Touches the network" is *not* on its own a
+   > host-only trigger. Sharing-repo fetches — `pack|template|llms install|update|import` —
+   > are **write** verbs, allowed at an edit level (they clone public sharing repos into the
+   > mounted store); only credential/remote-git ops stay host-only (`config push|pull`,
+   > `remote set-token|remove-token`). Token-authed fetches simply degrade in-container (the
+   > token bucket is never mounted), they are not refused by the shim.
 2. **Wire it into `_cco_operator_shim`** with that classification (default-deny — an
    unclassified verb is refused in-container).
 3. If it **resolves host paths** → it is host-only; rely on the resolver guard and add the

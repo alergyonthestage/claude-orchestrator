@@ -553,3 +553,19 @@ entries:
       change); at `read-global`/`read-all`/`edit-*` the full set is shown. Widen
       a session with `--cco-access read-global`. Requires a rebuilt image
       (`cco build`).
+
+  - id: 34
+    date: "2026-07-02"
+    type: additive
+    title: "Session context is injected, not a file — workspace.yml retired + cleaned up"
+    description: >
+      The agent-facing session context introduced in #31 as the generated file
+      `/workspace/.claude/workspace.yml` is no longer written anywhere (ADR-0042).
+      It is now injected directly into the SessionStart / SubagentStart context
+      via the `CCO_SESSION_CONTEXT` environment variable — a generated file never
+      belongs in a committed tree. `cco update` now runs a migration that removes
+      any committed `claude/workspace.yml`, `claude/packs.md`, and
+      `claude/scheduled_tasks.lock` older versions left in a project's
+      `<repo>/.cco/`, and adds them to `.cco/.gitignore` so they never reappear
+      (the removal is staged for you to commit). New projects are scaffolded
+      clean. Requires a rebuilt image (`cco build`).
