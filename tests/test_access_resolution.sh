@@ -281,7 +281,36 @@ test_operator_default_read_project() {
     local c; c=$(_access_compose)
     echo "$c" | grep -q 'CCO_CONTAINER_OPERATOR=1'      || fail "operator env expected by default (read-project)"
     echo "$c" | grep -q 'CCO_CCO_ACCESS=read-project'   || fail "CCO_CCO_ACCESS=read-project expected by default"
-    echo "$c" | grep -qE ':/home/claude/\.cco:ro"'      || fail "~/.cco should be ro under read-project"
+    # read-project narrowing (ADR-0042 §8): the WHOLE ~/.cco is NOT mounted —
+    # only referenced personal-store packs (none here) would be. index stays ro.
+    if echo "$c" | grep -qE ':/home/claude/\.cco:ro"'; then
+        fail "read-project must NOT mount the whole ~/.cco (narrowed to referenced packs)"
+    fi
+    echo "$c" | grep -qE '/home/claude/\.local/state/cco/index:ro"' || fail "STATE index ro expected under read-project"
+}
+
+# read-project narrowing (ADR-0042 §8): a referenced personal-store pack is the
+# ONLY thing exposed under /home/claude/.cco (ro); the whole store, templates,
+# and other packs stay hidden. read-global/read-all mount the whole store.
+test_operator_read_project_narrows_to_referenced_packs() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local pack_src="$CCO_PACKS_DIR/k-pack/knowledge"; mkdir -p "$pack_src"
+    create_pack "$tmpdir" "k-pack" "$(printf 'name: k-pack\nknowledge:\n  source: %s\n  files:\n    - overview.md\n' "$pack_src")"
+    echo "# Overview" > "$pack_src/overview.md"
+    # An unreferenced personal-store pack that must stay hidden.
+    mkdir -p "$CCO_PACKS_DIR/other-pack"; printf 'name: other-pack\n' > "$CCO_PACKS_DIR/other-pack/pack.yml"
+    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nrepos:\n  - name: dummy-repo\npacks:\n  - k-pack\n')"
+    mkdir -p "$CCO_DUMMY_REPO/.cco"
+    run_cco start "test-proj" --dry-run --dump
+    local c; c=$(_access_compose)
+    # The referenced pack is mounted ro at its narrowed operator-bucket path.
+    echo "$c" | grep -qE "/packs/k-pack:/home/claude/\.cco/packs/k-pack:ro\"" \
+        || fail "referenced personal-store pack should mount ro under narrowed ~/.cco"
+    # The whole ~/.cco and the unreferenced pack are NOT mounted.
+    if echo "$c" | grep -qE ':/home/claude/\.cco:ro"'; then fail "whole ~/.cco must not mount under read-project"; fi
+    if echo "$c" | grep -q 'other-pack'; then fail "unreferenced pack must stay hidden under read-project"; fi
 }
 
 # --cco-access read (legacy alias → read-all) → operator env + buckets, all ro;

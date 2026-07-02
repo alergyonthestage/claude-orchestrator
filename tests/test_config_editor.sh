@@ -189,3 +189,54 @@ test_config_editor_all_mounts_only_cco() {
     # target mounts always end in /.cco (source) → /workspace/<name>-config.
     assert_file_contains "$compose" "/.cco:/workspace/proj-a-config" || return 1
 }
+
+# ── Broad-by-default UX (ADR-0042 §8) ─────────────────────────────────
+
+# Bare `config-editor` is now BROAD: mounts every resolvable project's .cco (the
+# former --all behavior), no repos. --all is a back-compat alias of this default.
+test_config_editor_bare_is_broad() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "proj-a" "$(minimal_project_yml proj-a)"
+    create_project "$tmpdir" "proj-b" "$(minimal_project_yml proj-b)"
+    run_cco start config-editor --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_contains "$compose" ":/workspace/proj-a-config" || return 1
+    assert_file_contains "$compose" ":/workspace/proj-b-config" || return 1
+    # Broad default mounts NO full repos (only <repo>/.cco config).
+    assert_file_not_contains "$compose" ":/workspace/dummy-repo\"" || return 1
+}
+
+# --project narrows AND mounts that project's repos (repo-aware config authoring).
+test_config_editor_project_mounts_repos() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "myproj" "$(minimal_project_yml myproj)"
+    create_project "$tmpdir" "other" "$(minimal_project_yml other)"
+    run_cco start config-editor --project myproj --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    # myproj's config + its repo (dummy-repo) mounted; other narrowed out.
+    assert_file_contains "$compose" ":/workspace/myproj-config" || return 1
+    assert_file_contains "$compose" "$CCO_DUMMY_REPO:/workspace/dummy-repo" || return 1
+    assert_file_not_contains "$compose" ":/workspace/other-config" || return 1
+}
+
+# --repo mounts a single resolvable repo on top of the current scope.
+test_config_editor_repo_flag_mounts_one_repo() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco start config-editor --repo dummy-repo --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_contains "$compose" "$CCO_DUMMY_REPO:/workspace/dummy-repo" || return 1
+}
+
+test_config_editor_repo_flag_unknown_fails() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco start config-editor --repo ghost-repo --dry-run --dump || true
+    assert_output_contains "not resolvable"
+}
