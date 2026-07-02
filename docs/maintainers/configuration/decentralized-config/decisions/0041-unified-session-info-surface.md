@@ -1,6 +1,8 @@
 # ADR 0041 — Unified agent-facing session-info surface (R1)
 
-**Status**: Accepted (2026-07-01) — implementation pending (ADR-0036 step 6). Design-only.
+**Status**: Accepted (2026-07-01) — **implemented** (2026-07-01, ADR-0036 step 6, branch
+`feat/config-access/capability-model`; `workspace.yml` absorbs `packs.md`, changelog #31; pending
+merge into `develop`). Design-only decision in the deciding session.
 
 **Deciders**: maintainer (asked for R1 as its own design), implementer (grounding + design)
 
