@@ -31,11 +31,28 @@
 | 5 | Managed Level-C config-interaction rule + Level-A awareness | ✅ done | `027c345` |
 | 6 | Migration 014 — remove committed generated files + `.gitignore` | ✅ done | `61c8503` |
 | 7 | Docs cutover + suite green | ✅ done | `c022b04` |
+| R | Correctness review + fixes (2 MAJOR + MINORs) | ✅ done | `d8e6848`..`19da3ec` |
 | — | **merge `develop` + push** | **▶ from the Mac** | — |
 
 Suite after step 7: **1126 / 1** — the single failure is pre-existing + env-only
 (`test_paths_symlink_safe_tool_root`, sandbox XDG-DATA perms; `migration_010` also fails only in
 isolation). Both unrelated to this sprint.
+
+**Correctness review (2026-07-02).** Full cross-verified review of the whole B2 surface
+(access-scope layer, resolution/mount gen, operator shim, Level-A injection, migrations/docs).
+Verdict: no blockers; security boundaries (secret masking every column, edit-level mount matrix,
+token/transcript exclusion, shim default-deny) all correct. Fixes landed (suite now **1128 / 1**):
+- **MAJOR** `d8e6848` — ADR-0043 **INV-B leak**: `cco llms show` / the `Used by:` summary printed
+  hidden project/pack *names* via `_llms_find_users`; now scoped through `_env_in_scope` + regression test.
+- **MAJOR** `fdc263a` — `project-yaml.md` + base template still showed the **pre-ADR-0042 access model**
+  (default `none`, enum `none|read|edit-*`); aligned to `read-project` + the full symmetric enum.
+- **MINOR** — config-editor selectors rejected outside config-editor + contradictory `--all`+`--project`
+  (`2802701`); `_env_csv_has` whitespace/glob hardening (`a869fbb`); edit-global A1 `:ro` test (`858f688`);
+  base64-decode breadcrumb + `pack_name` local + template-validate note (`838edc2`); managed-rule
+  `cco project save` softened to today's truth (`2b0934e`); CLI-env network carve-out + changelog #34 (`19da3ec`).
+- **By-design (no change):** the shim's flat write axis (any edit level passes; the mount matrix is the real
+  boundary — documented intent in `test_operator_shim.sh`) and the ADR-sanctioned `cco project save`
+  forward-reference. `2b0934e` only makes the rule graceful until workstream D lands.
 
 ---
 
