@@ -68,7 +68,8 @@ Sequence: **A → merge → E (✅) → {B, C, D}; C ✅ RELEASED (`0.5.1` on np
 2026-06-30) → remaining additive work {B, B2, D, F}** (B2 = agent↔cco access, stacks on
 B; F = opinionated extraction + `cco update` refactor, after C). ADR map: **0036** + **0041** (B — capability model +
 R1), **0042** (B2 — agent↔cco access, ✅ design approved), **0037** (C, ✅ shipped +
-released), **0038** (D), **0039** (E, ✅), **0040** (F). Next free ADR = **0043**.
+released), **0038** (D), **0039** (E, ✅), **0040** (F). ADR **0042** (B2, ✅ accepted) +
+**0043** (unified CLI env & access-scope, ✅ accepted). Next free ADR = **0044**.
 
 #### F — opinionated-config extraction + `cco update` responsibility refactor (post-C, structural)
 
