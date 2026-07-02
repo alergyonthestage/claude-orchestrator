@@ -779,8 +779,13 @@ YAML
 )"
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
-    # Compose must NOT contain any mount referencing bad-indent pack
-    if grep -q "bad-indent" "$compose"; then
+    # Compose must NOT contain any mount referencing the bad-indent pack. Match a
+    # path/volume reference ([:/]bad-indent) rather than the bare substring: the
+    # ADR-0043 access-scope layer legitimately lists the project's referenced
+    # packs by name in the CCO_PROJECT_PACKS env var (`=bad-indent`), which is a
+    # scope-membership signal, not a mount — the invalid pack.yml is still skipped
+    # by the mount generator.
+    if grep -qE '[:/]bad-indent' "$compose"; then
         echo "ASSERTION FAILED: compose should not contain mounts for pack with bad indentation"
         return 1
     fi

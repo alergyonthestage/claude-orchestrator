@@ -107,6 +107,10 @@ EOF
     for dir in "$PACKS_DIR"/*/; do
         [[ -d "$dir" ]] || continue
         name=$(basename "$dir")
+        # Output scoping (ADR-0043): show only packs referenced by the current
+        # project at read-project (the read-project mount already narrows to
+        # these; routing through the layer makes it intentional + uniform).
+        if ! _env_in_scope pack "$name"; then _env_note_hidden pack; continue; fi
 
         local pack_yml="$dir/pack.yml"
         local k_count="-" s_count="-" a_count="-" r_count="-"
@@ -124,6 +128,7 @@ EOF
         printf "%s %-11s %-8s %-8s %-8s %s\n" \
             "$(_fit_col "$name" "$namew")" "$k_count" "$s_count" "$a_count" "$r_count" "${tags:-—}"
     done
+    _env_flush_hidden_notice
 }
 
 cmd_pack_show() {
@@ -151,6 +156,9 @@ EOF
     done
 
     [[ -z "$name" ]] && die "Usage: cco pack show <name>"
+    # Output scoping (ADR-0043): refuse out-of-scope packs with a scope message
+    # instead of a raw "not found at packs/<name>" (the narrowed mount hides them).
+    _env_require_visible pack "$name"
 
     local pack_dir="$PACKS_DIR/$name"
     local pack_yml="$pack_dir/pack.yml"
@@ -356,6 +364,8 @@ EOF
     done
 
     if [[ -n "$name" ]]; then
+        # Output scoping (ADR-0043): refuse out-of-scope packs with a scope message.
+        _env_require_visible pack "$name"
         [[ ! -d "$PACKS_DIR/$name" ]] && die "Pack '$name' not found"
         _validate_single_pack "$name"
     else
@@ -364,10 +374,13 @@ EOF
             [[ ! -d "$dir" ]] && continue
             local pack_name
             pack_name=$(basename "$dir")
+            # Output scoping (ADR-0043): only validate packs in the session's scope.
+            if ! _env_in_scope pack "$pack_name"; then _env_note_hidden pack; continue; fi
             if ! _validate_single_pack "$pack_name"; then
                 has_errors=true
             fi
         done
+        _env_flush_hidden_notice
         if [[ "$has_errors" == true ]]; then
             return 1
         fi

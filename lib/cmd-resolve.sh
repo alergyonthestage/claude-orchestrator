@@ -576,10 +576,21 @@ EOF
         list)
             shift
             [[ $# -gt 0 ]] && die "Usage: cco path list (takes no arguments)"
-            local line name path norm count=0 malformed=0
+            local line name path norm count=0 malformed=0 hidden=0
+            # Output scoping (ADR-0043): the path index is the raw machine-local
+            # name→host-path map (repos/mounts), not a taxonomy resource kind. At
+            # read-project, show only entries owned by the current project; count
+            # the rest for a tailored count-only stderr notice (INV-B/C). Uses the
+            # layer's context helpers — no ad-hoc context re-derivation (INV-E).
+            local _scope_paths=false _cur=""
+            if [[ "$(_env_read_rank)" -eq 1 ]]; then _scope_paths=true; _cur=$(_env_current_project); fi
             while IFS= read -r line; do
                 [[ -z "$line" ]] && continue
                 name="${line%%=*}"; path="${line#*=}"
+                if [[ "$_scope_paths" == true ]] \
+                   && ! _index_repos_get_projects "$name" 2>/dev/null | grep -qxF "$_cur"; then
+                    hidden=$((hidden + 1)); continue
+                fi
                 # The index stores absolute paths only (boundary normalization).
                 # Normalize for display, and flag any value that is still
                 # non-absolute (a stale ~/@local entry written before the fix or
@@ -592,10 +603,14 @@ EOF
                 fi
                 count=$((count + 1))
             done < <(_index_list_paths)
-            if [[ $count -eq 0 ]]; then
+            if [[ $count -eq 0 && $hidden -eq 0 ]]; then
                 info "the path index is empty — run 'cco resolve' or 'cco resolve --scan <dir>'"
             elif [[ $malformed -gt 0 ]]; then
                 warn "$malformed malformed index entr$([[ $malformed -eq 1 ]] && printf y || printf ies) — run 'cco update' to normalize, or 'cco resolve --scan <dir>' to rebind"
+            fi
+            if [[ $hidden -gt 0 ]]; then
+                printf 'note: %s path entr%s hidden by access scope (cco_access=%s) — start a read-global session or run cco on your host to see everything.\n' \
+                    "$hidden" "$([[ $hidden -eq 1 ]] && printf y || printf ies)" "$(_env_access)" >&2
             fi
             ;;
         *)

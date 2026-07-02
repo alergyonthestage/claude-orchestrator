@@ -77,6 +77,10 @@ EOF
     esac
 }
 
+# Output scoping (ADR-0043): templates are personal-global. The operator shim
+# already gates `template list` behind read-global+, so whenever this runs every
+# template is in scope — no per-row filtering is needed here (unlike the compact
+# `cco list`, which surfaces templates at any read level and scopes them there).
 cmd_template_list() {
     local filter=""
 
@@ -192,6 +196,10 @@ EOF
     done
 
     [[ -z "$name" ]] && die "Usage: cco template show <name>"
+    # Output scoping (ADR-0043): templates are a personal-global resource
+    # (read-global+). The operator shim already gates this verb; require_visible
+    # keeps the layer authoritative if the classification ever changes.
+    _env_require_visible template "$name"
 
     # Try to find in both project and pack
     local template_dir="" kind=""

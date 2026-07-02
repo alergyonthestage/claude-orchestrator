@@ -44,11 +44,18 @@ _coords_scan_section() {
 _coords_scan() {
     local unit yml
     while IFS=$'\t' read -r unit _ yml; do
+        # Output scoping (ADR-0043): at read-project, only the current project's
+        # coordinates are in scope (cross-project consistency needs read-global+).
+        if ! _env_in_scope project "$unit"; then _env_note_hidden project; continue; fi
         _coords_scan_section "$unit" "$yml" repos        yml_get_repo_coords  2
         _coords_scan_section "$unit" "$yml" extra_mounts yml_get_mount_coords 2
         _coords_scan_section "$unit" "$yml" llms         yml_get_llms         4
         _coords_scan_section "$unit" "$yml" packs        yml_get_pack_coords  2
     done < <(_project_foreach)
+    # Flush inside the scan: this runs in a $() subshell, so the hidden-counter
+    # state does not survive to the caller — but the stderr notice does escape
+    # the command substitution (INV-B/C).
+    _env_flush_hidden_notice
 }
 
 # Names that carry >1 distinct url across units (one per line).

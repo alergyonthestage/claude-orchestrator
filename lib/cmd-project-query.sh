@@ -25,6 +25,9 @@ EOF
     while IFS='=' read -r name _; do
         [[ -z "$name" ]] && continue
         [[ "$name" == "_template" ]] && continue
+        # Output scoping (ADR-0043): at read-project only the current project is
+        # visible; the STATE index stays the complete internal map (INV-D).
+        if ! _env_in_scope project "$name"; then _env_note_hidden project; continue; fi
 
         project_yml=""
         unit_dir=$(_resolve_unit_dir_for_project "$name" 2>/dev/null) \
@@ -50,6 +53,7 @@ EOF
 
         printf "%-18s %-8s %b\n" "$name" "$repo_count" "$status"
     done < <(_index_list_projects)
+    _env_flush_hidden_notice
 }
 
 # Display role of a member repo w.r.t. <project> for `cco project show` (ADR-0024
@@ -132,6 +136,9 @@ EOF
         return $?
     fi
     [[ -z "$name" ]] && die "Usage: cco project show <name>"
+    # Output scoping (ADR-0043): a detail verb refuses out-of-scope resources
+    # with a clear message rather than a raw "not found" (graceful degradation).
+    _env_require_visible project "$name"
 
     # Resolve the project's host repo via the index, then read its committed
     # <repo>/.cco/project.yml (the central $PROJECTS_DIR layout is gone, P5).

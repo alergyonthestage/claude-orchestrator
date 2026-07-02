@@ -249,6 +249,10 @@ EOF
         local dname
         dname=$(basename "$dir")
         [[ "$dname" == ".cco" ]] && continue
+        # Output scoping (ADR-0043): the CACHE llms bucket is mounted whole at
+        # every read level, so scope its OUTPUT to the current project's
+        # referenced llms at read-project (INV-B count for the notice).
+        if ! _env_in_scope llms "$dname"; then _env_note_hidden llms; continue; fi
 
         local var="?" lines="?" downloaded="?" source_url="?"
         local source_file="$dir/.cco/source"
@@ -283,6 +287,8 @@ EOF
         local dname
         dname=$(basename "$dir")
         [[ "$dname" == ".cco" ]] && continue
+        # Respect scope here too (already counted in the table loop — skip silently).
+        _env_in_scope llms "$dname" || continue
         local users=""
         users=$(_llms_find_users "$dname")
         if [[ -n "$users" ]]; then
@@ -291,6 +297,7 @@ EOF
         fi
     done
     [[ "$any_usage" == "false" ]] && echo "  (none referenced by any pack or project)"
+    _env_flush_hidden_notice
 }
 
 # ── show ─────────────────────────────────────────────────────────────
@@ -320,6 +327,8 @@ EOF
     done
 
     [[ -z "$name" ]] && die "Usage: cco llms show <name>"
+    # Output scoping (ADR-0043): refuse out-of-scope llms with a scope message.
+    _env_require_visible llms "$name"
 
     local llms_dir="$LLMS_DIR/$name"
     [[ ! -d "$llms_dir" ]] && die "LLMs '$name' not found. Run 'cco llms list' to see installed entries."

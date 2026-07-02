@@ -533,3 +533,23 @@ entries:
       no generated round-trip. Purely additive: existing projects are unaffected,
       and the fields can be omitted. Requires a rebuilt image (`cco build`) for the
       session-context injection to render them.
+
+  - id: 33
+    date: "2026-07-02"
+    type: additive
+    title: "Scope-aware read output in container sessions (read-project)"
+    description: >
+      Inside a session the wrapped `cco`'s read verbs now scope their OUTPUT to
+      the session's access level (ADR-0043). At `cco_access=read-project` (the
+      normal default) `cco list`, `cco list <kind>`, the `<kind> show` verbs,
+      `cco project validate|coords`, and `cco path list` show only the current
+      project and the packs/llms it references; personal-global resources
+      (templates, remotes) and other projects are hidden. Anything hidden is
+      announced with a one-line count-only notice on stderr ("N hidden by access
+      scope — start a read-global session or run cco on your host"), so a hidden
+      resource is never mistaken for a missing one, and a `show` of an
+      out-of-scope resource degrades to a clear scope message instead of a raw
+      "not found". On the host every resource is always visible (no behaviour
+      change); at `read-global`/`read-all`/`edit-*` the full set is shown. Widen
+      a session with `--cco-access read-global`. Requires a rebuilt image
+      (`cco build`).

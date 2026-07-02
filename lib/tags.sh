@@ -351,6 +351,9 @@ EOF
     local rows="" rk rn tags tkind sortkey t found ftag namew=4 cap=30
     while IFS=$'\t' read -r rk rn; do
         [[ -z "$rk" ]] && continue
+        # Output scoping (ADR-0043): in operator mode, hide resources outside the
+        # session's access scope and count them for the trailing notice (INV-B).
+        if ! _env_in_scope "$rk" "$rn"; then _env_note_hidden "$rk"; continue; fi
         tkind=$(_list_tag_kind "$rk"); tags=""
         [[ -n "$tkind" ]] && tags=$(_tags_get "$tkind" "$rn")
         if [[ -n "$filter" ]]; then
@@ -370,8 +373,15 @@ EOF
     done < <(_list_collect "$kind")
 
     if [[ -z "$rows" ]]; then
-        [[ -n "$filter" ]] && { info "No resources tagged '$filter'."; return 0; }
-        info "Nothing to list yet."
+        # Nothing visible: if scope hid everything, the notice explains why
+        # (hidden ≠ absent, INV-B); otherwise there is genuinely nothing.
+        if [[ "${_ENV_HIDDEN_ANY:-}" == "1" ]]; then
+            _env_flush_hidden_notice
+        elif [[ -n "$filter" ]]; then
+            info "No resources tagged '$filter'."
+        else
+            info "Nothing to list yet."
+        fi
         return 0
     fi
     (( namew > cap )) && namew=$cap
@@ -381,4 +391,6 @@ EOF
     printf '%s' "$rows" | LC_ALL=C sort "${sortargs[@]}" | while IFS=$'\t' read -r _k1 _k2 rk rn tags; do
         printf '%-10s %s %s\n' "$rk" "$(_fit_col "$rn" "$namew")" "$tags"
     done
+    # Trailing count-only notice on stderr (INV-B/C); no-op when nothing hidden.
+    _env_flush_hidden_notice
 }

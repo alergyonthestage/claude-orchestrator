@@ -252,6 +252,10 @@ _cmd_remote_remove_token() {
     ok "Removed token for remote '$name'"
 }
 
+# Output scoping (ADR-0043): remotes are personal-global. The operator shim
+# gates `remote list` behind read-global+, so whenever this runs every remote is
+# in scope — no per-row filtering here (the compact `cco list` reads the DATA
+# registry directly and scopes remotes there).
 _cmd_remote_list() {
     local rf; rf=$(_remotes_file)
 

@@ -284,6 +284,8 @@ EOF
         local proj unit_dir yml first=true
         while IFS='=' read -r proj _; do
             [[ -z "$proj" ]] && continue
+            # Output scoping (ADR-0043): at read-project only the current project.
+            if ! _env_in_scope project "$proj"; then _env_note_hidden project; continue; fi
             unit_dir=$(_resolve_unit_dir_for_project "$proj" 2>/dev/null) || {
                 warn "skipping '$proj' — its repo is unresolved here (run 'cco resolve $proj')"; continue; }
             yml="$unit_dir/.cco/project.yml"
@@ -295,6 +297,7 @@ EOF
             [[ "${rc:-0}" -gt "$max" ]] && max="${rc:-0}"
             rc=0
         done < <(_index_list_projects)
+        _env_flush_hidden_notice
         return "$max"
     fi
 
@@ -304,6 +307,8 @@ EOF
         unit_dir=$(_resolve_find_unit_dir) \
             || die "No project here — run from a repo that has .cco/project.yml, or pass a project name (or --all)."
     else
+        # Output scoping (ADR-0043): refuse an out-of-scope named project.
+        _env_require_visible project "$target"
         unit_dir=$(_resolve_unit_dir_for_project "$target" 2>/dev/null) \
             || die "Project '$target' not found (unknown, or its repo is unresolved here — run 'cco resolve $target')."
     fi

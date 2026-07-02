@@ -895,6 +895,27 @@ YAML
             echo "      - CCO_DATA_HOME=/home/claude/.local/share/cco"
             echo "      - CCO_STATE_HOME=/home/claude/.local/state/cco"
             echo "      - CCO_CACHE_HOME=/home/claude/.cache/cco"
+            # Project-scope membership signals (ADR-0043): the packs and llms this
+            # project references, comma-joined, so the in-container access-scope
+            # layer (lib/access-scope.sh) can scope read-verb OUTPUT to the current
+            # project at read-project. Computed ONCE here host-side (INV-E single
+            # source): pack list from project.yml; llms = project.yml ∪ each
+            # referenced pack's llms. Harmless at read-global+ (the layer ignores
+            # them there). Names are slugs (no commas), so a CSV value is safe.
+            local _op_packs_csv _op_llms_csv _op_ln _op_pk _op_pkdir
+            _op_packs_csv=$(printf '%s\n' "$pack_names" | awk 'NF{printf "%s%s",(n++?",":""),$0}')
+            _op_llms_csv=$({
+                yml_get_llms_names "$project_yml" 2>/dev/null
+                if [[ -n "$pack_names" ]]; then
+                    while IFS= read -r _op_pk; do
+                        [[ -z "$_op_pk" ]] && continue
+                        _op_pkdir=$(_pack_resolve_dir "$_op_pk" "$project_dir" 2>/dev/null) || continue
+                        [[ -f "$_op_pkdir/pack.yml" ]] && yml_get_llms_names "$_op_pkdir/pack.yml" 2>/dev/null
+                    done <<< "$pack_names"
+                fi
+            } | awk 'NF && !seen[$0]++{printf "%s%s",(n++?",":""),$0}')
+            [[ -n "$_op_packs_csv" ]] && echo "      - CCO_PROJECT_PACKS=${_op_packs_csv}"
+            [[ -n "$_op_llms_csv" ]]  && echo "      - CCO_PROJECT_LLMS=${_op_llms_csv}"
         fi
 
         # Docker socket proxy: advertise proxy socket to all processes in container
