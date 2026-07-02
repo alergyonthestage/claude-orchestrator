@@ -28,8 +28,8 @@
 | 3 | Optional `repos[]/extra_mounts[].description` | ✅ done | `a098719` |
 | 4 | config-editor broad-UX + `read-project` mount narrowing | ✅ done | `9e4535f` |
 | 4.5 | Unified env & access-scope layer → scope read-verb OUTPUT (ADR-0043) | ✅ done | `62a166b` |
-| **5** | **Managed Level-C config-interaction rule + Level-A awareness** | **▶ next** | — |
-| 6 | Migration 014 — remove committed generated files + `.gitignore` | ⏳ pending | — |
+| 5 | Managed Level-C config-interaction rule + Level-A awareness | ✅ done | `027c345` |
+| **6** | **Migration 014 — remove committed generated files + `.gitignore`** | **▶ next** | — |
 | 7 | Docs cutover + suite green → merge `develop` + push | ⏳ pending | — |
 
 Suite after step 4.5: **1120 / 1** — the single failure is pre-existing + env-only
@@ -76,6 +76,20 @@ isolation). Both unrelated to this sprint.
   `tests/test_access_scope.sh` (unit + operator-mode integration). Tightened the `test_packs`
   bad-indentation assertion to match a mount path (`[:/]bad-indent`), since `CCO_PROJECT_PACKS`
   now legitimately names referenced packs. `changelog #33`.
+- **Step 5 (`027c345`)** — `defaults/managed/.claude/rules/cco-config-interaction.md`: a baked,
+  always-loaded, **access-conditional** managed rule. Two parts: (a) *scope-awareness* (any read
+  level) — at `read-project` the wrapped-cco read verbs give a project-scoped view of `~/.cco`,
+  hidden ≠ absent, widen via `read-global`/host (ADR-0043 §5); (b) *config-editing safety* (only at
+  `edit-*`) — verify `git diff`/status before edit+commit, atomic commits via `cco config save` /
+  **`cco project save`** (forthcoming, D — written as if it exists), machine-agnostic committed
+  config, never commit secrets, mutate internal XDG only via `cco`; (c) host-only verbs → hand the
+  user the host command. Generalizes the config-editor's `config-safety.md` to ANY edit-level
+  session (`--cco-access edit-project` did not inherit it). Listed in the managed `CLAUDE.md`
+  context hierarchy. **Level A** (`lib/session-context.sh`): the injected `<CcoSessionInfo>` now
+  carries the project-scoped-view line at `read-project` (INV-B pairing at the source), omitted at
+  `read-global`/`read-all`/`edit-*`/`none`. Managed files are baked → **requires `cco build`**.
+  Tests: `test_workspace_info` (awareness present at read-project, absent at read-global),
+  `test_managed_scope` (rule ships). Suite 1120/1.
 
 ---
 
@@ -123,7 +137,10 @@ commands implement only their own differentiation (maintainer's explicit require
   through the layer too so the behaviour is intentional and uniform with the other kinds.
 - **Follow the CLI environment-awareness checklist (v1.1 §5).**
 
-### Step 5 — Level C managed config-interaction rule + Level-A awareness
+### ✅ Step 5 — Level C managed config-interaction rule + Level-A awareness — DONE (`027c345`)
+
+> Shipped — see the **What's done** entry above. Design intent below kept as reference.
+
 
 - New `defaults/managed/.claude/rules/cco-config-interaction.md`, **access-gated** (applies at
   `cco_access ≥ edit`): verify `git diff`/status before editing config, atomic config commits,
@@ -216,7 +233,7 @@ branch and rebase after. Commit on branch B; **push from the Mac**.
 - **Read verbs scope their output via `lib/access-scope.sh`; hidden resources announced; no raw
   errors on unmounted resources.** ✅ (4.5)
 - Managed config-interaction rule active at edit levels; Level A + rule carry the project-scoped-
-  view awareness. ⏳ (5)
+  view awareness. ✅ (5)
 - Migration 014 removes stale generated files + scaffolds `.gitignore`; empty-`packs.md` cause
   understood. ⏳ (6)
 - All `workspace.yml` plumbing retired; user docs cut over; suite green; `changelog #32`. ⏳ (7)
