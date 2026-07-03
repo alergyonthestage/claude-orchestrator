@@ -214,9 +214,13 @@ fi
 # without reinstalling on every start (a bare channel like `latest` isn't
 # comparable to `claude --version`, hence the marker compare). Fails loud (exit 1).
 CLAUDE_REQ="${CLAUDE_CODE_VERSION:-latest}"
-mkdir -p /home/claude/.local/bin /home/claude/.local/share/claude
+# .local/state is chowned too: when cco_access != none, the operator-bucket
+# STATE index mount (ADR-0036 D4) makes the runtime auto-create .local/state
+# as a root-owned mount point, which would block this installer's mkdir of
+# the sibling .local/state/claude dir otherwise.
+mkdir -p /home/claude/.local/bin /home/claude/.local/share/claude /home/claude/.local/state
 chown claude:claude /home/claude/.local /home/claude/.local/bin \
-    /home/claude/.local/share/claude 2>/dev/null || true
+    /home/claude/.local/share/claude /home/claude/.local/state 2>/dev/null || true
 if [ ! -x /home/claude/.local/bin/claude ] || \
    [ "$(cat /home/claude/.local/bin/.cco-claude-channel 2>/dev/null)" != "$CLAUDE_REQ" ]; then
     gosu claude env CLAUDE_REQ="$CLAUDE_REQ" bash -c \
