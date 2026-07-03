@@ -214,13 +214,18 @@ fi
 # without reinstalling on every start (a bare channel like `latest` isn't
 # comparable to `claude --version`, hence the marker compare). Fails loud (exit 1).
 CLAUDE_REQ="${CLAUDE_CODE_VERSION:-latest}"
-# .local/state is chowned too: when cco_access != none, the operator-bucket
-# STATE index mount (ADR-0036 D4) makes the runtime auto-create .local/state
-# as a root-owned mount point, which would block this installer's mkdir of
-# the sibling .local/state/claude dir otherwise.
-mkdir -p /home/claude/.local/bin /home/claude/.local/share/claude /home/claude/.local/state
+# .local/state and .cache are chowned too: when cco_access != none, the
+# operator-bucket mounts (ADR-0036 D4) nest under them (.local/state/cco/index,
+# .cache/cco/llms), which makes the runtime auto-create the parent as a
+# root-owned mount point — blocking this installer's mkdir of the sibling
+# .local/state/claude / .cache/claude dirs otherwise. The Dockerfile now
+# pre-creates these XDG bases claude-owned too; this stays as a self-heal
+# against images built before that (see "Container ownership invariant" below).
+mkdir -p /home/claude/.local/bin /home/claude/.local/share/claude \
+    /home/claude/.local/state /home/claude/.cache
 chown claude:claude /home/claude/.local /home/claude/.local/bin \
-    /home/claude/.local/share/claude /home/claude/.local/state 2>/dev/null || true
+    /home/claude/.local/share/claude /home/claude/.local/state \
+    /home/claude/.cache 2>/dev/null || true
 if [ ! -x /home/claude/.local/bin/claude ] || \
    [ "$(cat /home/claude/.local/bin/.cco-claude-channel 2>/dev/null)" != "$CLAUDE_REQ" ]; then
     gosu claude env CLAUDE_REQ="$CLAUDE_REQ" bash -c \
@@ -298,6 +303,61 @@ flowchart TD
   a clean install (decision 4).
 - `cco clean` (incl. `--all`) **never** touches the install cache — it only removes
   `.bak`/`.tmp`/generated artifacts and does not scan the CACHE bucket (decision 3).
+
+### 1.2.2 Container ownership invariant (XDG base dirs)
+
+The container's `claude` user is non-root; several subsystems write into `$HOME`
+paths that are also **nesting points** for cco's own operator-bucket mounts
+(ADR-0036 D4 — STATE index, CACHE llms, DATA registry; exposed whenever
+`cco_access != none`, which is the default, `read-project`). When a bind-mount
+target doesn't already exist inside the image, the container runtime
+auto-creates the missing parent directories as **root:root, mode 0755**, before
+the entrypoint runs. If that parent is also where an unrelated in-container
+process needs to create a *sibling* entry, that process — running as `claude`
+via `gosu` — gets `EACCES`. Found in production: the native Claude Code
+installer (ADR-0039) creating `.local/state/claude` and `.cache/claude`,
+blocked by the STATE-index (`.local/state/cco/index`) and CACHE-llms
+(`.cache/cco/llms`) operator mounts auto-creating their root-owned parents
+first.
+
+**Fix — two layers**:
+1. **Root cause (Dockerfile)**: the XDG base dirs cco nests mounts under —
+   `.claude`, `.local/bin`, `.local/share`, `.local/state`, `.cache` — are
+   pre-created and `chown claude:claude`'d at image build time (`useradd` RUN
+   block). Because they already exist, the runtime's auto-create-missing-
+   parents behavior never touches them — only a genuinely new nested child
+   (e.g. `.local/state/cco`) gets created as root, never the sibling-holding
+   base.
+2. **Runtime self-heal (entrypoint.sh)**: `chown claude:claude` is re-applied
+   at every start to `.local`, `.local/bin`, `.local/share/claude`,
+   `.local/state`, `.cache` — a no-op once (1) holds, but keeps startup
+   correct against an image built before this fix, and reclaims the host-uid
+   on the genuinely bind-mounted dirs (`.local/bin`, `.local/share/claude` —
+   content sourced from the host CACHE, whose uid can differ from the
+   container's `claude`; macOS Docker Desktop makes `chown` a no-op there,
+   hence `|| true`).
+
+**Ownership-only exclusion, not an access exclusion**: `cco_access` still fully
+governs what's *visible* inside these bases (e.g. `.cco/packs/<name>` narrowing
+at `read-project`, `.local/state/cco/index` and `.cache/cco/llms` staying `ro`
+outside edit levels). Only the *base directory entry itself* is unconditionally
+`claude`-owned, so the container's own non-cco-managed files (native installer,
+npm, future subsystems) always have a writable home regardless of the chosen
+access level.
+
+```mermaid
+flowchart TD
+  N["New _compose_vol target under\n/home/claude/&lt;base&gt;/..."] --> Q{"Is &lt;base&gt; pre-created\n+ chowned in the Dockerfile?"}
+  Q -- yes --> OK["Safe — base ownership survives\nthe nested mount"]
+  Q -- no --> FIX["Add &lt;base&gt; to the Dockerfile\nuseradd RUN block\n(+ entrypoint.sh chown for\nolder-image self-heal)"]
+```
+
+**Convention for new mounts**: any new `_compose_vol` target nested under
+`/home/claude/<new-base>/...` must add `<new-base>` to the Dockerfile
+pre-create list (and, for older-image self-heal, the entrypoint.sh chown
+block) — otherwise it silently reintroduces this bug for whatever sibling
+already lives there. Affected paths as of this writing: `.claude`,
+`.local/bin`, `.local/share`, `.local/state`, `.cache`.
 
 ### 1.3 tmux Configuration
 

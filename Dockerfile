@@ -105,9 +105,16 @@ RUN if [ -n "$SETUP_BUILD_SCRIPT_CONTENT" ]; then \
 # Create docker group with placeholder GID (adjusted at runtime by entrypoint
 # to match host socket GID). Pre-creating ensures `chown claude:docker` never
 # fails due to missing group.
+# Pre-create the XDG base dirs (.local/bin, .local/share, .local/state, .cache)
+# claude-owned, not just .claude: cco's operator-bucket mounts (ADR-0036 D4)
+# nest bind mounts under these paths (e.g. .local/state/cco/index), and if the
+# base dir doesn't already exist the container runtime auto-creates it as a
+# root-owned mount point — blocking any sibling (e.g. .local/state/claude,
+# written by the native Claude Code installer) from being created by claude.
 RUN groupadd -g 999 docker \
     && useradd -m -s /bin/bash claude \
-    && mkdir -p /home/claude/.claude /workspace \
+    && mkdir -p /home/claude/.claude /home/claude/.local/bin /home/claude/.local/share \
+       /home/claude/.local/state /home/claude/.cache /workspace \
     && chown -R claude:claude /home/claude /workspace
 
 # ── Docker socket proxy (from builder stage) ──────────────────────

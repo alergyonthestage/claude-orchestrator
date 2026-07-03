@@ -222,17 +222,23 @@ CLAUDE_REQ="${CLAUDE_CODE_VERSION:-latest}"
 
 # The bind-mounted dirs may be owned by the host uid — ensure claude owns them
 # before installing/writing (macOS Docker Desktop: chown is a no-op, hence || true).
-# .local/state is included even though nothing is installed there directly:
-# when cco_access != none, cco bind-mounts .local/state/cco/index (ADR-0036 D4),
-# which makes the container runtime auto-create .local/state as a root-owned
-# mount point before this script runs — blocking the installer's own mkdir of
-# the sibling .local/state/claude dir unless we reclaim ownership here too.
-mkdir -p /home/claude/.local/bin /home/claude/.local/share/claude /home/claude/.local/state
+# .local/state and .cache are included even though nothing is installed there
+# directly by this block: when cco_access != none, cco nests bind mounts under
+# them (.local/state/cco/index, .cache/cco/llms — ADR-0036 D4), which makes the
+# container runtime auto-create the parent as a root-owned mount point before
+# this script runs — blocking the installer's own mkdir of the sibling
+# .local/state/claude / .cache/claude dirs unless we reclaim ownership here.
+# The Dockerfile now pre-creates these XDG bases claude-owned too (belt and
+# suspenders — see its "User setup" comment for the same rationale); this stays
+# so runtime start-up self-heals even against an image built before that.
+mkdir -p /home/claude/.local/bin /home/claude/.local/share/claude \
+    /home/claude/.local/state /home/claude/.cache
 chown claude:claude \
     /home/claude/.local \
     /home/claude/.local/bin \
     /home/claude/.local/share/claude \
-    /home/claude/.local/state 2>/dev/null || true
+    /home/claude/.local/state \
+    /home/claude/.cache 2>/dev/null || true
 
 _installed_req=""
 if [ -f "$CLAUDE_MARKER" ]; then
