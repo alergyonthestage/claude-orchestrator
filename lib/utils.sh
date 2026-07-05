@@ -166,6 +166,13 @@ check_image() {
 # pointed at 'cco update' — the eager global migration — not 'cco init', which would
 # seed defaults and force an unexpected overwrite-confirm on the next update (H5).
 check_global() {
+    # In container-operator mode the store is bind-mounted by `cco start` (possibly
+    # narrowed to referenced packs at read-project/edit-project). A missing
+    # ~/.cco/.claude is then a host-setup concern, never actionable in-container —
+    # degrade instead of the host-only "run cco init" hint (R3). Read verbs
+    # (list/show) go on to show what IS in scope + the hidden-by-scope notice;
+    # write verbs are already gated by the operator shim before reaching here.
+    _cco_container_operator && return 0
     if [[ ! -d "$(_cco_global_claude_dir)" ]]; then
         if _cco_have_backup "$(_cco_state_dir)/backups" 2>/dev/null; then
             die "Global config not found, but a legacy vault backup exists. Run 'cco update' to migrate your global config from the vault."

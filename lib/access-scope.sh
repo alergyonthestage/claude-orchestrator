@@ -56,16 +56,65 @@ _env_access() {
     fi
 }
 
+# ── Pure level→scope maps (ADR-0043 symmetric model) ─────────────────
+# The SINGLE source of truth for the read/write scope a `cco_access` level grants,
+# consumed by three sites (INV-E): host mount-generation (cmd-start.sh), the
+# in-container operator shim (bin/cco), and this output layer. They take a level
+# STRING and are env-independent — no _cco_container_operator dependency — so
+# cmd-start can map a resolved level to mount policy host-side. Read and write are
+# symmetric on {project, global, all}: edit-project reads at project scope (not
+# "everything"), edit-global at global, edit-all at all — mirroring the write side.
+# The bare pre-ADR-0042 `read` alias normalizes to read-all.
+_cco_level_read_scope() {   # <level> → none|project|global|all
+    local lvl="$1"; [[ "$lvl" == "read" ]] && lvl="read-all"
+    case "$lvl" in
+        none)                      printf 'none' ;;
+        read-project|edit-project) printf 'project' ;;
+        read-global|edit-global)   printf 'global' ;;
+        read-all|edit-all)         printf 'all' ;;
+        *)                         printf 'project' ;;   # default-deny narrowest
+    esac
+}
+_cco_level_write_scope() {  # <level> → none|project|global|all
+    local lvl="$1"; [[ "$lvl" == "read" ]] && lvl="read-all"
+    case "$lvl" in
+        edit-project) printf 'project' ;;
+        edit-global)  printf 'global' ;;
+        edit-all)     printf 'all' ;;
+        *)            printf 'none' ;;   # every read level + unknown → no write
+    esac
+}
+# _cco_write_scope_satisfies <have> <need> → 0 when a session with write_scope
+# <have> may write a tree that requires <need>. `all` grants everything; otherwise
+# the scopes must match exactly — edit-global does NOT write project config and
+# edit-project does NOT write the global store (least-privilege, asymmetry-free).
+_cco_write_scope_satisfies() {
+    local have="$1" need="$2"
+    [[ "$have" == "all" ]] && return 0
+    [[ "$have" == "$need" ]] && return 0
+    return 1
+}
+
+# Read scope for the current session: project|global|all in operator mode; `all`
+# on the host (INV-A — the host sees everything). Replaces the old opaque rank as
+# the named source; _env_read_rank derives from it for callers wanting an ordinal.
+_env_read_scope() {
+    _cco_container_operator || { printf 'all'; return 0; }
+    _cco_level_read_scope "$(_env_access)"
+}
+
 # Read-scope rank, symmetric with the shim (project<global<all). Host → 99
-# (unrestricted); none → 0. Drives _env_in_scope: rank>=2 sees everything.
+# (unrestricted); none → 0. Thin ordinal shim over _env_read_scope for callers
+# that compare tiers. Drives _env_in_scope's fast path (rank>=2 sees everything
+# except other-project `project` rows, handled in _env_in_scope).
 _env_read_rank() {
     _cco_container_operator || { printf '99'; return 0; }
-    case "$(_env_access)" in
-        none)             printf '0' ;;
-        read-project)     printf '1' ;;
-        read-global)      printf '2' ;;
-        read-all|edit-*)  printf '3' ;;
-        *)                printf '1' ;;   # default-deny to the narrowest read
+    case "$(_env_read_scope)" in
+        none)    printf '0' ;;
+        project) printf '1' ;;
+        global)  printf '2' ;;
+        all)     printf '3' ;;
+        *)       printf '1' ;;
     esac
 }
 
@@ -93,19 +142,32 @@ _env_csv_has() {
 }
 
 # _env_in_scope <kind> <name> [owner_project] → 0 visible / 1 hidden.
-# Host → always visible (INV-A). Operator: rank>=2 (read-global+) → all visible;
-# read-project → project-class resources visible only when they belong to the
-# current project (via PROJECT_NAME / CCO_PROJECT_PACKS / CCO_PROJECT_LLMS, or an
-# explicit owner_project), global-class resources hidden.
+# Host → always visible (INV-A). Operator, by read_scope (ADR-0043 symmetric):
+#   all     → everything visible.
+#   global  → all packs/llms/templates/remotes visible; the `project` kind only
+#             the current project (other projects need read-all — the SOLE
+#             global-vs-all difference).
+#   project → project-class resources (project/pack/llms) visible only when they
+#             belong to the current project (via PROJECT_NAME / CCO_PROJECT_PACKS /
+#             CCO_PROJECT_LLMS, or an explicit owner_project); global-class
+#             resources (template/remote) hidden.
+#   none    → hidden (cco is refused wholesale before here anyway — R6).
 _env_in_scope() {
     local kind="$1" name="$2" owner="${3:-}"
     _cco_container_operator || return 0
-    local rank; rank=$(_env_read_rank)
-    [[ "$rank" -ge 2 ]] && return 0
-    [[ "$rank" -le 0 ]] && return 1
-    # rank == 1 (read-project): scope by class.
-    [[ "$(_env_scope_class "$kind")" == "global" ]] && return 1
+    local scope; scope=$(_env_read_scope)
     local cur; cur=$(_env_current_project)
+    case "$scope" in
+        all)  return 0 ;;
+        none) return 1 ;;
+        global)
+            # Everything global except OTHER projects (project kind is per-project).
+            [[ "$kind" != "project" ]] && return 0
+            [[ -n "$cur" && "$name" == "$cur" ]] && return 0
+            return 1 ;;
+    esac
+    # scope == project: only the current project's own resources.
+    [[ "$(_env_scope_class "$kind")" == "global" ]] && return 1
     case "$kind" in
         project) [[ -n "$cur" && "$name" == "$cur" ]] && return 0 ;;
         pack)    _env_csv_has "$name" "${CCO_PROJECT_PACKS:-}" && return 0 ;;
@@ -159,8 +221,23 @@ _env_flush_hidden_notice() {
 _env_require_visible() {
     local kind="$1" name="$2" owner="${3:-}"
     _env_in_scope "$kind" "$name" "$owner" && return 0
+    # A named-but-hidden resource is a policy refusal, not an error (D8/C3 → exit 2).
     if [[ "$(_env_scope_class "$kind")" == "global" ]]; then
-        die "'$kind $name' is not available at this access scope (cco_access=$(_env_access)) — '$kind' is a personal-global resource; start a read-global session or run cco on your host."
+        refuse "'$kind $name' is not available at this access scope (cco_access=$(_env_access)) — '$kind' is a personal-global resource; start a read-global session or run cco on your host."
     fi
-    die "'$kind $name' is not available at this access scope (cco_access=$(_env_access)) — it is outside this session's project ('$(_env_current_project)'); start a read-global/read-all session or run cco on your host."
+    refuse "'$kind $name' is not available at this access scope (cco_access=$(_env_access)) — it is outside this session's project ('$(_env_current_project)'); start a read-global/read-all session or run cco on your host."
+}
+
+# _env_require_kind_visible <kind> — gate a WHOLE-kind listing (bare `cco list
+# <kind>`, R3). Project-class kinds (project/pack/llms) always pass: their listers
+# filter rows individually via _env_in_scope and flush the count-only notice
+# (graceful degrade, exit 0). A global-class kind (template/remote) is wholly out
+# of reach below read-global → refuse (exit 2, D8), matching the shim's
+# `cco <kind> list` gate. No-op (returns 0) on the host and at global/all.
+_env_require_kind_visible() {
+    local kind="$1"
+    _cco_container_operator || return 0
+    [[ "$(_env_scope_class "$kind")" == "project" ]] && return 0
+    case "$(_env_read_scope)" in global|all) return 0 ;; esac
+    refuse "'cco list $kind' is not available at this access scope (cco_access=$(_env_access)) — '$kind' is a personal-global resource; start a read-global session or run cco on your host."
 }

@@ -884,6 +884,15 @@ YAML
             echo "      - CCO_DEBUG=1"
         fi
 
+        # Access scopes derived ONCE from the resolved cco_access (ADR-0043
+        # symmetric model; access-scope.sh is the single source, INV-E). read_scope
+        # drives read-mount narrowing (project → only referenced packs); write_scope
+        # drives the per-tree RW upgrades. Read/write symmetric: edit-project reads
+        # at project scope (narrowed), NOT the whole store.
+        local _read_scope _write_scope
+        _read_scope=$(_cco_level_read_scope "$cco_access")
+        _write_scope=$(_cco_level_write_scope "$cco_access")
+
         # Container-operator mode (ADR-0036 D4): under cco_access >= read, the
         # in-container cco runs behind the whitelist shim, operating on the real
         # buckets bind-mounted below (never the container's own $HOME). The flag +
@@ -953,16 +962,15 @@ YAML
             all)  _b3_auth_mode="" ;;
             repo) : ;;   # defaults: B2 rw, B3 authoring ro, B1 rw (no overlay)
         esac
-        # Axis A (cco_access): the committed <repo>/.cco structural config
+        # Axis A (write_scope): the committed <repo>/.cco structural config
         # (project.yml, secrets.env, .cco metadata) is overlaid READ-ONLY unless the
-        # level grants project edit (edit-project / edit-all). edit-global keeps A1
-        # ro — only the personal store (A2) is writable there. Driven purely by the
-        # resolved cco_access now (ADR-0036 D6): the config-editor built-in resolves
-        # to edit-all via its preset, so the old is_internal exemption is gone. (The
-        # built-ins mount their edit targets via generated extra_mounts, not via the
-        # repo loop below, so dropping is_internal here is behavior-preserving.)
+        # session's write_scope grants the project tree (edit-project / edit-all).
+        # edit-global keeps A1 ro — only the personal store (A2) is writable there.
+        # Keyed off write_scope now (ADR-0043) so the overlay and the operator-bucket
+        # RW below share one source. config-editor resolves to edit-all via its
+        # preset (its edit targets mount via generated extra_mounts, not this loop).
         local _committed_ro=":ro"
-        if [[ "$cco_access" == "edit-project" || "$cco_access" == "edit-all" ]]; then
+        if [[ "$_write_scope" == "project" || "$_write_scope" == "all" ]]; then
             _committed_ro=""
         fi
 
@@ -1014,19 +1022,22 @@ YAML
         # masked below. Built-in presets (config-editor/tutorial) layer on this in
         # step 5; a normal session opts in via --cco-access read|edit-*.
         #
-        # read-project mount narrowing (ADR-0042 §8): at read-project the CONFIG
-        # bucket is NOT mounted whole — only this project's referenced personal-store
-        # packs are exposed (ro), so `~/.cco/templates` and other projects'/
-        # unreferenced packs stay physically hidden, matching the "read-only,
-        # project-scoped" risk profile (the shim already gates template/remote verbs
-        # behind read-global+). read-global/read-all/edit-* still mount the whole
-        # store. DATA/STATE-index/CACHE are unchanged (needed for `cco list`; they
-        # carry no templates or other-project pack content).
+        # Project-scope mount narrowing (ADR-0042 §8 + ADR-0043): when read_scope ==
+        # project (read-project AND edit-project — symmetric), the CONFIG bucket is
+        # NOT mounted whole — only this project's referenced personal-store packs are
+        # exposed (ro), so `~/.cco/templates` and other projects'/unreferenced packs
+        # stay physically hidden, matching the "project-scoped" risk profile (the
+        # shim gates template/remote verbs behind read-global+). read-global/read-all
+        # and edit-global/edit-all mount the whole store. DATA/STATE-index/CACHE are
+        # unchanged (needed for `cco list`; carry no templates or other-project pack
+        # content). RW follows write_scope (global/all → rw), independent of the read
+        # narrowing: edit-project narrows the READ mount yet its project-config edits
+        # ride the <repo>/.cco overlay (rw) above, not the personal store.
         if [[ "$cco_access" != "none" ]]; then
             local _op_rw="ro"
-            case "$cco_access" in edit-global|edit-all) _op_rw="" ;; esac
+            case "$_write_scope" in global|all) _op_rw="" ;; esac
             echo "      # Container-operator buckets (wrapped-cco — ADR-0036 D4)"
-            if [[ "$cco_access" == "read-project" ]]; then
+            if [[ "$_read_scope" == "project" ]]; then
                 # Narrowed CONFIG: only referenced personal-store packs (ro).
                 local _rp_pack _rp_dir
                 if [[ -n "$pack_names" ]]; then

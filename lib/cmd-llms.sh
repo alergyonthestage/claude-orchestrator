@@ -87,15 +87,23 @@ EOF
     if [[ -z "$name" ]]; then
         name=$(_llms_resolve_name_from_url "$url")
         [[ -z "$name" ]] && die "Cannot determine name from URL. Use --name <name>."
-        # Ask user to confirm the auto-detected name
-        printf "Save as: ${BOLD}%s${NC} [Y/n/custom name] " "$name" >&2
-        local reply
-        read -r reply
-        case "$reply" in
-            ""|[Yy]|[Yy]es) name_confirmed=true ;;
-            [Nn]|[Nn]o) die "Cancelled. Use --name <name> to specify a custom name." ;;
-            *) name="$reply" ;;
-        esac
+        # Confirm the auto-detected name — but only when a real terminal is
+        # reachable. In a non-interactive agent session (S5-04) `read` would block
+        # on a closed stdin; default to the derived name silently instead. An
+        # explicit --name always bypasses this.
+        if _cco_have_tty; then
+            printf "Save as: ${BOLD}%s${NC} [Y/n/custom name] " "$name" >&2
+            local reply
+            read -r reply
+            case "$reply" in
+                ""|[Yy]|[Yy]es) name_confirmed=true ;;
+                [Nn]|[Nn]o) die "Cancelled. Use --name <name> to specify a custom name." ;;
+                *) name="$reply" ;;
+            esac
+        else
+            info "Using derived llms name '$name' (non-interactive; pass --name to override)."
+            name_confirmed=true
+        fi
     fi
 
     # Validate name: safe filesystem component, no path traversal

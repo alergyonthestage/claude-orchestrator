@@ -53,13 +53,16 @@ EOF
     local pack_dir="$PACKS_DIR/$name"
     [[ -d "$pack_dir" ]] && die "Pack '$name' already exists at packs/$name/"
 
-    # Ensure the packs store exists (CONFIG bucket, ~/.cco/packs).
-    mkdir -p "$PACKS_DIR"
+    # Ensure the packs store exists (CONFIG bucket, ~/.cco/packs). Defense-in-depth
+    # (R5): fail loudly if the store is read-only — the operator write-gate refuses
+    # `pack create` below edit-global first, but a silent mkdir/cp failure must not
+    # let the success message print on a tree that was never written.
+    mkdir -p "$PACKS_DIR" || die "Cannot create packs store at $PACKS_DIR (read-only?)."
 
     # Resolve and copy template
     local template_dir
     template_dir=$(_resolve_template "pack" "${template_name:-base}")
-    cp -r "$template_dir" "$pack_dir"
+    cp -r "$template_dir" "$pack_dir" || die "Failed to create pack at $pack_dir (read-only?)."
 
     # Replace name placeholder in pack.yml if present
     if [[ -f "$pack_dir/pack.yml" ]]; then

@@ -220,25 +220,37 @@ _cco_operator_shim() {
     # value — it meant "read everything", so treat it as read-all here too.
     [[ "$level" == "read" ]] && level="read-all"
     local host_hint="Run it on the host instead (this is a container session; ADR-0036 D4)."
-    local can_write=false
-    case "$level" in edit-project|edit-global|edit-all) can_write=true ;; esac
-    # Read scope rank, symmetric with the edit axis (project<global<all); edit
-    # levels read everything (rank 3). Drives _op_scope below.
-    local read_rank=1
-    case "$level" in
-        read-global)              read_rank=2 ;;
-        read-all|edit-*)          read_rank=3 ;;
-    esac
-    # Helper: a write verb — allowed only under an edit level.
+    # Derived scopes — the SINGLE source (access-scope.sh, INV-E), symmetric on
+    # {project, global, all} (ADR-0043). read_scope gates read-verb availability
+    # (personal-global template/remote need global+); write_scope gates each write
+    # verb by its TARGET TREE (R5), not by a flat "any edit level" bit.
+    local read_scope write_scope
+    read_scope=$(_cco_level_read_scope "$level")
+    write_scope=$(_cco_level_write_scope "$level")
+
+    # _op_write <verb-label> <required-write-scope: project|global|all> — a write
+    # verb reaches the dispatcher only if this session's write_scope grants the
+    # TARGET TREE; otherwise refuse (exit 2, D8) at the gate, before the ro FS. Per
+    # C1 the requirement is the target TREE: tag/remote write the global DATA
+    # registry → global, whatever project they name (no cross-project edit-all bump).
     _op_write() {
-        $can_write && return 0
-        die "'cco $1' needs an edit access level to run in this session (current cco_access=$level)."
+        _cco_write_scope_satisfies "$write_scope" "$2" && return 0
+        case "$2" in
+            project) refuse "'cco $1' edits project config — needs an edit-project (or edit-all) session (current cco_access=$level)." ;;
+            global)  refuse "'cco $1' writes the personal store/registry — needs an edit-global (or edit-all) session (current cco_access=$level)." ;;
+            all)     refuse "'cco $1' writes across projects — needs an edit-all session (current cco_access=$level)." ;;
+            *)       refuse "'cco $1' needs a wider edit access level (current cco_access=$level)." ;;
+        esac
     }
-    # Helper: a read verb whose minimum read scope exceeds this session's rank is
-    # refused. Args: <required-rank> <verb-label> <scope-name>.
-    _op_scope() {
-        [[ "$read_rank" -ge "$1" ]] && return 0
-        die "'cco $2' needs read-$3 scope or higher in this session (current cco_access=$level). Widen it on the host with --cco-access read-$3."
+    # _op_read_scope <required-read-scope: global|all> <verb-label> — a read verb
+    # whose minimum read tier exceeds this session's read_scope is refused (exit 2).
+    _op_read_scope() {
+        case "$1" in
+            all)    [[ "$read_scope" == "all" ]] && return 0 ;;
+            global) [[ "$read_scope" == "global" || "$read_scope" == "all" ]] && return 0 ;;
+            *)      return 0 ;;
+        esac
+        refuse "'cco $2' needs read-$1 scope or higher in this session (current cco_access=$level). Widen it on the host with --cco-access read-$1."
     }
 
     case "$cmd" in
@@ -251,7 +263,7 @@ _cco_operator_shim() {
         list|docs|help|--version|-v|--help|-h) return 0 ;;
         tag)
             case "$sub" in
-                add|remove|rm) _op_write "tag $sub" ;;
+                add|remove|rm) _op_write "tag $sub" global ;;   # DATA registry (C1: global regardless of named project)
                 *) die "'cco tag $sub' is not available in a container session." ;;
             esac ;;
         config)
@@ -265,14 +277,14 @@ _cco_operator_shim() {
                 # (INV-4 leak). It is coherent only host-side (CLI-surface review,
                 # 2026-07-02).
                 validate) die "'cco config validate' is host-only — it sanitizes machine-local index/state that is not coherent inside a container. $host_hint" ;;
-                save) _op_write "config save" ;;
+                save) _op_write "config save" global ;;   # ~/.cco personal store
                 push|pull) die "'cco config $sub' is host-only (network + credentials). $host_hint" ;;
                 *) die "'cco config $sub' is not available in a container session." ;;
             esac ;;
         remote)
             case "$sub" in
-                list) _op_scope 2 "remote list" global; return 0 ;;   # personal-global registry
-                add|remove) _op_write "remote $sub" ;;
+                list) _op_read_scope global "remote list"; return 0 ;;   # personal-global registry
+                add|remove) _op_write "remote $sub" global ;;            # DATA registry
                 set-token|remove-token) die "'cco remote $sub' is host-only (secrets stay off the container). $host_hint" ;;
                 *) die "'cco remote $sub' is not available in a container session." ;;
             esac ;;
@@ -281,9 +293,9 @@ _cco_operator_shim() {
                 show|validate|list)
                     # Templates are a personal-global resource (scaffold new
                     # projects), not a project resource → read-global+ (ADR-0042).
-                    [[ "$cmd" == "template" ]] && _op_scope 2 "template $sub" global
+                    [[ "$cmd" == "template" ]] && _op_read_scope global "template $sub"
                     return 0 ;;
-                create|update|remove|install|import|internalize|rename) _op_write "$cmd $sub" ;;
+                create|update|remove|install|import|internalize|rename) _op_write "$cmd $sub" global ;;
                 publish|export) die "'cco $cmd $sub' is host-only. $host_hint" ;;
                 *) die "'cco $cmd $sub' is not available in a container session." ;;
             esac ;;

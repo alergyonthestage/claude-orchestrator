@@ -75,17 +75,72 @@ test_as_read_project_scopes_by_membership() {
     return 0
 }
 
-test_as_read_global_shows_everything() {
+test_as_read_global_vs_read_all_symmetry() {
+    # ADR-0043 symmetric model: read-global shows all packs/llms/templates/remotes
+    # but the `project` kind only the CURRENT project — other projects need
+    # read-all (the SOLE global-vs-all difference).
     _as_source
     _as_operator read-global
     export PROJECT_NAME=alpha
     local k
-    for k in project pack llms template remote; do
-        _env_in_scope "$k" whatever || fail "read-global must show $k"
+    for k in pack llms template remote; do
+        _env_in_scope "$k" whatever || fail "read-global must show global-store $k"
     done
-    # edit levels read everything too.
+    _env_in_scope project alpha || fail "read-global must show the current project"
+    _env_in_scope project beta  && fail "read-global must HIDE other projects (needs read-all)"
+    # read-all lifts the other-project restriction.
+    _as_operator read-all
+    export PROJECT_NAME=alpha
+    _env_in_scope project beta || fail "read-all must show other projects"
+    return 0
+}
+
+test_as_edit_levels_read_at_matching_scope() {
+    # D6: read/write symmetry — edit-project reads at PROJECT scope (mirrors
+    # read-project, NOT "everything"); edit-global at global; edit-all at all.
+    _as_source
+    # edit-project: project-scoped → global-class hidden, other projects hidden.
     _as_operator edit-project
-    _env_in_scope template base || fail "edit-project must show global-class kinds (reads all)"
+    export PROJECT_NAME=alpha CCO_PROJECT_PACKS=p1 CCO_PROJECT_LLMS=svelte
+    _env_in_scope project alpha    || fail "edit-project must show the current project"
+    _env_in_scope project beta     && fail "edit-project must HIDE other projects (project scope)"
+    _env_in_scope template base    && fail "edit-project must HIDE templates (project scope)"
+    _env_in_scope pack p1          || fail "edit-project must show a referenced pack"
+    _env_in_scope pack p9          && fail "edit-project must hide an unreferenced pack"
+    # edit-global: global-scoped → global-store visible, other projects hidden.
+    _as_operator edit-global
+    export PROJECT_NAME=alpha
+    _env_in_scope template base    || fail "edit-global must show templates (global scope)"
+    _env_in_scope project beta     && fail "edit-global must hide other projects (global scope)"
+    # edit-all: everything.
+    _as_operator edit-all
+    export PROJECT_NAME=alpha
+    _env_in_scope project beta     || fail "edit-all must show other projects (all scope)"
+    _env_in_scope template base    || fail "edit-all must show templates (all scope)"
+    return 0
+}
+
+test_as_level_scope_maps() {
+    # The pure level→scope maps (single source, INV-E).
+    _as_source
+    [[ "$(_cco_level_read_scope read-project)"  == "project" ]] || fail "read-project → project read"
+    [[ "$(_cco_level_read_scope edit-project)"  == "project" ]] || fail "edit-project → project read (symmetric)"
+    [[ "$(_cco_level_read_scope read-global)"   == "global"  ]] || fail "read-global → global read"
+    [[ "$(_cco_level_read_scope edit-global)"   == "global"  ]] || fail "edit-global → global read"
+    [[ "$(_cco_level_read_scope read-all)"      == "all"     ]] || fail "read-all → all read"
+    [[ "$(_cco_level_read_scope edit-all)"      == "all"     ]] || fail "edit-all → all read"
+    [[ "$(_cco_level_read_scope read)"          == "all"     ]] || fail "bare read alias → all read"
+    [[ "$(_cco_level_read_scope none)"          == "none"    ]] || fail "none → none read"
+    [[ "$(_cco_level_write_scope read-global)"  == "none"    ]] || fail "read-* → no write"
+    [[ "$(_cco_level_write_scope edit-project)" == "project" ]] || fail "edit-project → project write"
+    [[ "$(_cco_level_write_scope edit-global)"  == "global"  ]] || fail "edit-global → global write"
+    [[ "$(_cco_level_write_scope edit-all)"     == "all"     ]] || fail "edit-all → all write"
+    # satisfies matrix: all grants everything; else exact match only.
+    _cco_write_scope_satisfies all project     || fail "all satisfies project"
+    _cco_write_scope_satisfies global global   || fail "global satisfies global"
+    _cco_write_scope_satisfies global project  && fail "global must NOT satisfy project"
+    _cco_write_scope_satisfies project global  && fail "project must NOT satisfy global"
+    _cco_write_scope_satisfies none  global    && fail "none satisfies nothing"
     return 0
 }
 
@@ -174,10 +229,25 @@ test_as_list_compact_scoped_at_read_project() {
     assert_output_contains "hidden by access scope"
 }
 
-test_as_list_compact_full_at_read_global() {
+test_as_list_compact_global_hides_other_projects() {
+    # read-global: all packs/llms/templates visible, but OTHER projects hidden
+    # (beta) with the count-only notice — the sole global-vs-all difference.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _as_seed_store "$tmpdir"
     export CCO_CONTAINER_OPERATOR=1 CCO_CCO_ACCESS=read-global PROJECT_NAME=alpha
+    run_cco list
+    assert_output_contains "alpha"
+    assert_output_contains "p2"
+    assert_output_contains "react"
+    assert_output_not_contains "beta"
+    assert_output_contains "hidden by access scope"
+}
+
+test_as_list_compact_full_at_read_all() {
+    # read-all: everything, including other projects, no notice.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _as_seed_store "$tmpdir"
+    export CCO_CONTAINER_OPERATOR=1 CCO_CCO_ACCESS=read-all PROJECT_NAME=alpha
     run_cco list
     assert_output_contains "alpha"
     assert_output_contains "beta"
@@ -195,6 +265,33 @@ test_as_list_full_on_host() {
     assert_output_contains "beta"
     assert_output_contains "p2"
     assert_output_not_contains "hidden by access scope"
+}
+
+test_as_list_template_refused_at_read_project() {
+    # R3: the bare per-kind view must route through the scope layer. `template` is
+    # global-class → wholly out of reach below read-global → refuse (exit 2), not a
+    # leaked/empty list.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _as_seed_store "$tmpdir"
+    export CCO_CONTAINER_OPERATOR=1 CCO_CCO_ACCESS=read-project PROJECT_NAME=alpha
+    run_cco list template; local rc=$?
+    [[ "$rc" -eq 2 ]] || fail "'cco list template' at read-project must refuse with exit 2, got $rc"
+    assert_output_contains "personal-global"
+}
+
+test_as_list_pack_degrades_at_read_project() {
+    # R3: `cco list pack` at read-project shows the referenced pack + notice
+    # (graceful degrade, exit 0) — never the host-only "run cco init" error.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _as_seed_store "$tmpdir"
+    export CCO_CONTAINER_OPERATOR=1 CCO_CCO_ACCESS=read-project \
+           PROJECT_NAME=alpha CCO_PROJECT_PACKS=p1
+    run_cco list pack; local rc=$?
+    [[ "$rc" -eq 0 ]] || fail "degraded pack list must exit 0, got $rc"
+    assert_output_contains "p1"
+    assert_output_not_contains "p2"
+    assert_output_not_contains "run 'cco init'"
+    assert_output_contains "hidden by access scope"
 }
 
 test_as_list_llms_scoped_at_read_project() {

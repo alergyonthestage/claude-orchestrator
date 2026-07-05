@@ -68,7 +68,11 @@ _tags_set() {
     csv=$(printf '%s' "$tags" | awk '{ for (i=1;i<=NF;i++){ printf "%s%s", (i>1?", ":""), $i } }')
     grep -qE "^${kind}:" "$f" 2>/dev/null || printf '%s:\n' "$kind" >> "$f"
 
-    local tmpf; tmpf=$(mktemp "${f}.XXXXXX")
+    # Defense-in-depth (R5): fail loudly (exit 1) if the DATA registry is read-only
+    # — the operator write-gate refuses tag writes below edit-global before we get
+    # here, but a mktemp/awk/mv that silently fails must not let the caller echo
+    # success onto a tree it never wrote (closes S5-01 at the source).
+    local tmpf; tmpf=$(mktemp "${f}.XXXXXX") || die "Cannot write tags registry at $f (read-only?)."
     awk -v sec="${kind}:" -v key="  ${name}:" -v newline="  ${name}: [${csv}]" '
         $0 == sec { print; in_sec = 1; seen_key = 0; next }
         in_sec && /^[^ #]/ {
@@ -78,7 +82,7 @@ _tags_set() {
         in_sec && index($0, key) == 1 { print newline; seen_key = 1; next }
         { print }
         END { if (in_sec && !seen_key) print newline }
-    ' "$f" > "$tmpf" && mv "$tmpf" "$f"
+    ' "$f" > "$tmpf" && mv "$tmpf" "$f" || { rm -f "$tmpf"; die "Failed to update tags registry at $f (read-only?)."; }
 }
 
 # Add <tag> to <kind>/<name> (idempotent — no duplicate). Usage: _tags_add <kind> <name> <tag>
@@ -336,6 +340,11 @@ EOF
 
     # A bare kind (no filter, no sort, no reverse) shows the rich per-kind view.
     if [[ -n "$kind" && -z "$filter" && -z "$sort_by" && -z "$reverse" ]]; then
+        # R3: route the bare per-kind view through the scope layer too — the
+        # aggregate `cco list` path already filters per row, but this branch bypassed
+        # it, letting a global-class kind (template/remote) leak at read-project.
+        # Project-class kinds fall through and filter their own rows + notice.
+        _env_require_kind_visible "$kind"
         case "$kind" in
             project)  cmd_project_list ;;
             pack)     cmd_pack_list ;;

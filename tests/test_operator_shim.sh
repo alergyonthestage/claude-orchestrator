@@ -92,15 +92,17 @@ test_operator_blocks_config_validate_hostonly() {
 # ── Write gating: write verbs need an edit level ─────────────────────
 
 test_operator_read_level_refuses_writes() {
+    # Write verbs targeting the global store/registry are refused at a read level
+    # with the tree-aware message (R5) and the policy-refusal exit code 2 (D8).
     _op_cco read tag add proj mytag
-    [[ $OP_RC -ne 0 && "$OP_OUT" == *"edit access level"* ]] \
-        || fail "'tag add' under read must be refused, got rc=$OP_RC: $OP_OUT"
+    [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs an edit-global"* ]] \
+        || fail "'tag add' under read must be refused (exit 2, edit-global), got rc=$OP_RC: $OP_OUT"
     _op_cco read config save
-    [[ $OP_RC -ne 0 && "$OP_OUT" == *"edit access level"* ]] \
-        || fail "'config save' under read must be refused, got rc=$OP_RC: $OP_OUT"
+    [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs an edit-global"* ]] \
+        || fail "'config save' under read must be refused (exit 2, edit-global), got rc=$OP_RC: $OP_OUT"
     _op_cco read remote add acme https://x
-    [[ $OP_RC -ne 0 && "$OP_OUT" == *"edit access level"* ]] \
-        || fail "'remote add' under read must be refused, got rc=$OP_RC: $OP_OUT"
+    [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs an edit-global"* ]] \
+        || fail "'remote add' under read must be refused (exit 2, edit-global), got rc=$OP_RC: $OP_OUT"
     return 0
 }
 
@@ -134,20 +136,18 @@ test_operator_remote_add_token_refused() {
     return 0
 }
 
-# CLI-surface review F3: the ~/.cco store is mounted rw only at edit-global/
-# edit-all; at edit-project it is read-only, so `config save` must fail with a
-# clear "needs edit-global" message instead of a misleading "nothing to save" or
-# a raw git error. At edit-global it passes this guard (may fail later for other
-# reasons, but never with the ro-mount message).
+# R5 (symmetric write gate): the ~/.cco store is writable only at edit-global/
+# edit-all; `config save` writes the global store → at edit-project (write_scope
+# project) it is REFUSED at the shim gate (exit 2), before the ro filesystem,
+# with the tree-aware "needs an edit-global" message. At edit-all it passes the
+# gate (may fail later for other reasons, but never with the gate message).
 test_operator_config_save_edit_project_needs_edit_global() {
     _op_cco edit-project config save -m x
-    [[ $OP_RC -ne 0 && "$OP_OUT" == *"read-only at cco_access=edit-project"* ]] \
-        || fail "'config save' at edit-project should report the ro store, got rc=$OP_RC: $OP_OUT"
-    [[ "$OP_OUT" == *"edit-global"* ]] \
-        || fail "'config save' ro message should suggest edit-global, got: $OP_OUT"
+    [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs an edit-global"* ]] \
+        || fail "'config save' at edit-project must be gate-refused (exit 2, edit-global), got rc=$OP_RC: $OP_OUT"
     _op_cco edit-all config save -m x
-    [[ "$OP_OUT" != *"read-only at cco_access"* ]] \
-        || fail "'config save' at edit-all should pass the ro guard, got: $OP_OUT"
+    [[ "$OP_OUT" != *"needs an edit-global"* ]] \
+        || fail "'config save' at edit-all should pass the write gate, got: $OP_OUT"
     return 0
 }
 
