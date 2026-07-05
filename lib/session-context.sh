@@ -167,6 +167,10 @@ _build_session_context() {
             echo "stderr notice says how many). A hidden resource is not missing —"
             echo "start a read-global session or run cco on your host to see all."
         fi
+    else
+        # R6: at `none` the wrapped cco is deliberately unavailable (least-privilege
+        # floor). State it explicitly so the agent does not attempt cco commands.
+        echo "The wrapped \`cco\` CLI is not available in this session (cco_access=none)."
     fi
 
     # Project resources: repos (+ optional description), packs, extra_mounts.
@@ -208,6 +212,34 @@ _build_session_context() {
                     echo "- mount: ${_ws_tgt}${_ws_ro_label}"
                 fi
             done <<< "$extra_mounts_output"
+        fi
+    fi
+
+    # R7 — declared-but-unresolved resources. Named in project.yml but not
+    # resolvable on this host, so cco start dropped them from the session mounts.
+    # Surface them explicitly (marker-only) so the agent never reasons about a
+    # resource that isn't there — the omission is terminal at `none` (no CLI to
+    # discover the gap) and misleading at any level.
+    local _unres_mounts _unres_llms
+    _unres_mounts=$(_declared_unresolved_extra_mounts "$project_yml" 2>/dev/null || true)
+    _unres_llms=$(_declared_unresolved_llms "$project_yml" "$pack_names" "$project_dir" 2>/dev/null || true)
+    if [[ -n "$_unres_mounts" || -n "$_unres_llms" ]]; then
+        echo ""
+        echo "Declared but not mounted this session (unresolved on this host — fix with"
+        echo "'cco resolve' on the host, or drop the stale reference from project.yml):"
+        if [[ -n "$_unres_mounts" ]]; then
+            local _um_name _um_tgt
+            while IFS=$'\t' read -r _um_name _um_tgt; do
+                [[ -z "$_um_name" ]] && continue
+                echo "- mount: ${_um_name} (would mount at ${_um_tgt}) — unresolved"
+            done <<< "$_unres_mounts"
+        fi
+        if [[ -n "$_unres_llms" ]]; then
+            local _ul
+            while IFS= read -r _ul; do
+                [[ -z "$_ul" ]] && continue
+                echo "- llms: ${_ul} — unresolved"
+            done <<< "$_unres_llms"
         fi
     fi
 

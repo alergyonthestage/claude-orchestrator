@@ -242,6 +242,30 @@ _effective_extra_mounts() {
     done < <(yml_get_mount_coords "$project_yml" 2>/dev/null)
 }
 
+# R7 — the DECLARED extra_mounts that do NOT resolve on this host (the set
+# _effective_extra_mounts silently conscious-skips). One "<name>\t<target>" line
+# each, so Level-A can surface them ("declared but not mounted this session")
+# instead of leaving the agent to reason about a mount that is not there — the
+# omission is terminal at `none` (no CLI to discover it). Marker-only: the
+# auto-skip vs user-skip provenance degrades per the fix design's caveat (the skip
+# choice is not recorded where this can read it).
+_declared_unresolved_extra_mounts() {
+    local project_yml="$1"
+    local _ln name rest target _ms
+    while IFS= read -r _ln; do
+        [[ -z "$_ln" ]] && continue
+        name="${_ln%%$'\t'*}"; rest="${_ln#*$'\t'}"
+        rest="${rest#*$'\t'}"   # drop url
+        rest="${rest#*$'\t'}"   # drop ref
+        target="${rest%%$'\t'*}"
+        [[ -z "$name" ]] && continue
+        _ms=$(_mount_override_get "$name" || _index_get_path "$name")
+        [[ "$_ms" == /* ]] && continue   # resolved → not in the unresolved set
+        [[ -z "$target" ]] && target="/workspace/$name"
+        printf '%s\t%s\n' "$name" "$target"
+    done < <(yml_get_mount_coords "$project_yml" 2>/dev/null)
+}
+
 # Single-entry resolution: look up <name> in the STATE index; if unresolved or
 # its path is gone, prompt (reusing _prompt_for_path) and store the result in
 # the index. No project.yml write (AD3 — project.yml has no path).

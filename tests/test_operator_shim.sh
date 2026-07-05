@@ -164,6 +164,44 @@ test_operator_read_verbs_pass_shim() {
     return 0
 }
 
+# ── R6: the `none` contract — cco refused wholesale in-session ───────────────
+
+test_none_session_refuses_cco() {
+    # At cco_access=none, cco start injects CCO_SESSION_CONTEXT but NOT the operator
+    # env. The early guard must refuse EVERY invocation (exit 2) with the none
+    # message — not fall through to the host dispatcher.
+    local tmp; tmp=$(mktemp -d)
+    local out rc
+    out=$(
+        export CCO_IN_CONTAINER=1 CCO_SESSION_CONTEXT="eA==" HOME="$tmp/home"
+        # Ensure NO operator env leaks in.
+        unset CCO_CONTAINER_OPERATOR CCO_DATA_HOME CCO_STATE_HOME CCO_CACHE_HOME
+        mkdir -p "$HOME"
+        bash "$REPO_ROOT/bin/cco" list 2>&1
+    ); rc=$?
+    rm -rf "$tmp"
+    [[ $rc -eq 2 ]] || fail "cco at none must refuse with exit 2, got rc=$rc: $out"
+    [[ "$out" == *"cco_access=none"* ]] || fail "none refusal should name cco_access=none, got: $out"
+    # A single clean refusal — no spurious ADR-0007 host-resolve warning.
+    [[ "$out" != *"anti-in-container"* ]] || fail "none refusal must be clean (no ADR-0007 warning), got: $out"
+    return 0
+}
+
+test_none_session_refuses_docs() {
+    # `cco docs` is a cco verb → also refused at none (R6, consistent).
+    local tmp; tmp=$(mktemp -d)
+    local rc
+    (
+        export CCO_IN_CONTAINER=1 CCO_SESSION_CONTEXT="eA==" HOME="$tmp/home"
+        unset CCO_CONTAINER_OPERATOR CCO_DATA_HOME CCO_STATE_HOME CCO_CACHE_HOME
+        mkdir -p "$HOME"
+        bash "$REPO_ROOT/bin/cco" docs >/dev/null 2>&1
+    ); rc=$?
+    rm -rf "$tmp"
+    [[ $rc -eq 2 ]] || fail "cco docs at none must refuse with exit 2, got rc=$rc"
+    return 0
+}
+
 # ── whoami: F4 session introspection — always available, never host-only ─────
 
 test_operator_whoami_reports_state() {

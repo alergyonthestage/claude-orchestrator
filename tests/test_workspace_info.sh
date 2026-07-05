@@ -82,11 +82,15 @@ test_session_context_declares_wrapped_cco_scope() {
     # awareness (hidden ≠ absent).
     echo "$ctx" | grep -q "PROJECT-SCOPED view" \
         || fail "read-project context should carry the project-scoped-view awareness, got: $ctx"
-    # With cco_access=none there is no wrapped cco → no declaration.
+    # R6: at cco_access=none the none contract is EXPLICIT — Level-A states the
+    # wrapped cco is unavailable (not merely omitted), so the agent does not try it.
     run_cco start "test-proj" --cco-access none --dry-run --dump
     ctx=$(decode_session_context "$DRY_RUN_DIR/.cco/docker-compose.yml")
-    if echo "$ctx" | grep -q "wrapped \`cco\`"; then
-        fail "no wrapped-cco declaration should appear under cco-access none"
+    echo "$ctx" | grep -q "not available in this session (cco_access=none)" \
+        || fail "none context should explicitly declare cco unavailable (R6), got: $ctx"
+    # The affirmative "available (access scope: …)" declaration must NOT appear.
+    if echo "$ctx" | grep -q "access scope: none"; then
+        fail "none context must not carry an affirmative access-scope declaration"
     fi
     # At read-global the whole store is visible → no project-scoped-view line.
     run_cco start "test-proj" --cco-access read-global --dry-run --dump
@@ -96,6 +100,27 @@ test_session_context_declares_wrapped_cco_scope() {
     if echo "$ctx" | grep -q "PROJECT-SCOPED view"; then
         fail "read-global context must NOT carry the project-scoped-view awareness"
     fi
+}
+
+# ── R7: declared-but-unresolved resources ────────────────────────────────
+
+test_session_context_lists_declared_but_unresolved() {
+    # A mount/llms named in project.yml but unresolvable on this host is dropped
+    # from the session mounts; Level-A must still surface it (marker-only) so the
+    # agent does not reason about a resource that isn't there.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nextra_mounts:\n  - name: ghost-mount\n    url: "git@example.com:o/ghost.git"\n    target: /workspace/ghost\n    readonly: true\nllms:\n  - name: phantom-llms\n')"
+    mkdir -p "$CCO_DUMMY_REPO/.cco"
+    run_cco start "test-proj" --dry-run --dump
+    local ctx; ctx=$(decode_session_context "$DRY_RUN_DIR/.cco/docker-compose.yml")
+    echo "$ctx" | grep -q "Declared but not mounted this session" \
+        || fail "context should carry the declared-but-unresolved section, got: $ctx"
+    echo "$ctx" | grep -q -- "- mount: ghost-mount .* unresolved" \
+        || fail "unresolved mount should be listed, got: $ctx"
+    echo "$ctx" | grep -q -- "- llms: phantom-llms — unresolved" \
+        || fail "unresolved llms should be listed, got: $ctx"
 }
 
 # ── path_map (show_host_paths knob) ──────────────────────────────────────

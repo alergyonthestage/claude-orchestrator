@@ -179,6 +179,23 @@ _llms_render_entries() {
     done <<< "$entries"
 }
 
+# R7 — the DECLARED llms references that do NOT resolve on this host (the set
+# _llms_render_entries silently drops when the llms dir is absent). One "<name>"
+# line each, so Level-A can list them under "declared but not mounted this
+# session" rather than omitting them. Marker-only (provenance degrades per the
+# fix design's caveat).
+_declared_unresolved_llms() {
+    local project_yml="$1" pack_names="$2" project_cco_dir="${3:-}"
+    local entries lname _rest
+    entries=$(_collect_llms_names "$project_yml" "$pack_names" "$project_cco_dir")
+    [[ -z "$entries" ]] && return 0
+    while IFS=$'\t' read -r lname _rest; do
+        [[ -z "$lname" ]] && continue
+        [[ -d "$LLMS_DIR/$lname" ]] && continue   # resolved → not unresolved
+        printf '%s\n' "$lname"
+    done <<< "$entries"
+}
+
 # Validate llms references in a pack or project YAML file.
 # Returns 0 if all valid, 1 if errors found.
 _validate_llms_refs() {

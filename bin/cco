@@ -103,6 +103,20 @@ source "$LIB_DIR/cmd-join.sh"
 source "$LIB_DIR/cmd-docs.sh"
 source "$LIB_DIR/cmd-whoami.sh"
 
+# R6 — explicit `none` contract (must precede the store-dir resolvers below, whose
+# in-container path resolution would otherwise emit a spurious ADR-0007 warning).
+# At cco_access=none, `cco start` injects the session context (CCO_SESSION_CONTEXT)
+# but NOT the operator env, so the baked `cco` binary is on PATH yet not in
+# operator mode. Without this guard it falls through to the HOST dispatcher —
+# emitting a wrong host-resolve refusal, leaking `cco list` output, and printing
+# raw host help. Refuse EVERY invocation (including --version/--help/docs) cleanly,
+# exit 2 (policy). The CCO_SESSION_CONTEXT marker identifies a genuine session
+# (present at every level, unset by the test harness); the operator check excludes
+# read+/edit sessions (handled by the shim). Robust to absolute-path invocation.
+if _cco_in_container && [[ -n "${CCO_SESSION_CONTEXT:-}" ]] && ! _cco_container_operator; then
+    refuse "cco is not available at this access level (cco_access=none). Start a session with --cco-access read-project (the default) or higher to use cco, or run cco on your host."
+fi
+
 # Personal flat stores in their decentralized homes (F1; design §2.2/§2.3,
 # ADR-0016 D7/D8): packs/templates → CONFIG (~/.cco), llms content+cache-state →
 # CACHE. CONFIG has no XDG override, so the plain $HOME form matches
