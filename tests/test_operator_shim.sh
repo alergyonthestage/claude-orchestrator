@@ -202,6 +202,41 @@ test_none_session_refuses_docs() {
     return 0
 }
 
+# ── R9 refusal taxonomy: unknown / removed-alias / host-only --help ──────────
+
+test_operator_unknown_verb_is_error() {
+    # An unrecognized verb is a typo (exit 1 error), NOT a host-only refusal — this
+    # removes the "run 'cco whoami' on the host" misfire.
+    _op_cco read-all bogusverb
+    [[ $OP_RC -eq 1 ]] || fail "unknown verb must exit 1 (error), got rc=$OP_RC: $OP_OUT"
+    [[ "$OP_OUT" == *"Unknown cco command"* ]] || fail "unknown verb should say so, got: $OP_OUT"
+    [[ "$OP_OUT" != *"host-only"* && "$OP_OUT" != *"on your host"* ]] \
+        || fail "unknown verb must NOT be reported as host-only, got: $OP_OUT"
+    return 0
+}
+
+test_operator_removed_alias_redirects() {
+    # cco pack list / cco project list were removed (ADR-0029) → redirect to
+    # 'cco list <kind>' with exit 2 (policy), from the shim (single wiring point).
+    _op_cco read-all pack list
+    [[ $OP_RC -eq 2 && "$OP_OUT" == *"use 'cco list pack'"* ]] \
+        || fail "'pack list' should redirect (exit 2) to 'cco list pack', got rc=$OP_RC: $OP_OUT"
+    _op_cco read-all project list
+    [[ $OP_RC -eq 2 && "$OP_OUT" == *"use 'cco list project'"* ]] \
+        || fail "'project list' should redirect (exit 2) to 'cco list project', got rc=$OP_RC: $OP_OUT"
+    return 0
+}
+
+test_operator_hostonly_help_is_informational() {
+    # D7: `<host-only-verb> --help` shows usage, never refuses (S3-6/F5).
+    _op_cco read-all start --help
+    [[ $OP_RC -eq 0 && "$OP_OUT" == *"Usage: cco start"* ]] \
+        || fail "'cco start --help' should show usage (exit 0), got rc=$OP_RC: $OP_OUT"
+    [[ "$OP_OUT" != *"host-only"* ]] \
+        || fail "'cco start --help' must not refuse, got: $OP_OUT"
+    return 0
+}
+
 # ── whoami: F4 session introspection — always available, never host-only ─────
 
 test_operator_whoami_reports_state() {
@@ -273,17 +308,45 @@ test_operator_read_project_allows_project_verbs() {
 # ── Scope-aware usage in operator mode (ADR-0042) ────────────────────
 # `cco help` inside operator mode flags host-only top-level verbs and prints the
 # container-session banner; the write-only `tag` verb is marked at a read level.
-test_operator_usage_flags_host_only() {
+# D7: in-container help is FILTERED by default (host-only + above-scope verbs
+# omitted, with a hidden count); `--help --host` shows the full list flagged. The
+# header caveats are recomputed from the resolved level (S6-04).
+test_operator_usage_filters_by_default() {
     _op_cco read-project help
     [[ "$OP_OUT" == *"Container session (cco_access=read-project)"* ]] \
         || fail "operator usage should show the container-session banner, got: $OP_OUT"
-    [[ "$OP_OUT" == *"(host only — run on your host)"* ]] \
-        || fail "operator usage should flag host-only verbs, got: $OP_OUT"
-    # A fully host-only verb carries the flag; a mixed namespace (project) does not.
+    # Default view HIDES host-only verbs (build/start) and the write-only `tag`.
+    echo "$OP_OUT" | grep -qE '^  build ' \
+        && fail "default filtered help must hide host-only 'build', got: $OP_OUT"
+    echo "$OP_OUT" | grep -qE '^  tag ' \
+        && fail "default filtered help must hide write-only 'tag' at read-project, got: $OP_OUT"
+    # Runnable read verbs stay visible.
+    echo "$OP_OUT" | grep -qE '^  list ' \
+        || fail "'list' should remain visible in filtered help, got: $OP_OUT"
+    [[ "$OP_OUT" == *"host-only/above-scope verbs hidden"* ]] \
+        || fail "filtered help should note how many verbs are hidden, got: $OP_OUT"
+    # S6-04: the header recomputes real caveats (no gates that don't apply).
+    [[ "$OP_OUT" == *"read project, write none"* ]] \
+        || fail "header should report the resolved read/write scopes, got: $OP_OUT"
+    return 0
+}
+
+test_operator_usage_host_flag_shows_all_flagged() {
+    _op_cco read-project help --host
     echo "$OP_OUT" | grep -qE '^  build .*host only' \
-        || fail "'build' should be flagged host-only in operator usage, got: $OP_OUT"
-    echo "$OP_OUT" | grep -qE '^  tag .*needs an edit level' \
-        || fail "'tag' should be marked needing an edit level under read-project, got: $OP_OUT"
+        || fail "'cco --help --host' should show 'build' flagged host-only, got: $OP_OUT"
+    echo "$OP_OUT" | grep -qE '^  start .*host only' \
+        || fail "'cco --help --host' should show 'start' flagged host-only, got: $OP_OUT"
+    return 0
+}
+
+test_operator_usage_header_recompute_edit_all() {
+    # S6-04: at edit-all nothing is gated → no "needs edit level" caveat recited.
+    _op_cco edit-all help
+    [[ "$OP_OUT" == *"read all, write all"* ]] \
+        || fail "edit-all header should report read all, write all, got: $OP_OUT"
+    [[ "$OP_OUT" != *"need an edit level"* ]] \
+        || fail "edit-all header must NOT recite an edit-level caveat, got: $OP_OUT"
     return 0
 }
 

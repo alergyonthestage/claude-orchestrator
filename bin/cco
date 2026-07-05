@@ -128,6 +128,10 @@ TEMPLATES_DIR="${CCO_TEMPLATES_DIR:-$HOME/.cco/templates}"
 LLMS_DIR="${CCO_LLMS_DIR:-$(_cco_llms_dir)}"
 
 usage() {
+    # D7: `--host` (in-container) shows the FULL list with host-only verbs flagged;
+    # the default is the filtered list. Ignored on the host.
+    local _want_host=false _a
+    for _a in "$@"; do [[ "$_a" == "--host" ]] && _want_host=true; done
     local _body
     _body=$(cat <<'EOF'
 Usage: cco <command> [options]
@@ -171,31 +175,45 @@ Run 'cco help' for this message, or 'cco <command> --help' for command-specific 
 Use 'cco --version' to print the version, 'cco --help' for this message.
 EOF
 )
-    # Host mode: print the usage verbatim. Container-operator mode (ADR-0042):
-    # annotate the surface for the wrapped cco — the full command list stays
-    # visible for discoverability, but host-only top-level verbs are flagged and
-    # the write-only `tag` verb is marked when the session has no edit level.
+    # Host mode: print the usage verbatim. Container-operator mode (ADR-0042/D7):
+    # the header caveats are RECOMPUTED from the resolved level (S6-04 — no more
+    # reciting gates that don't apply at edit-all), and the command list is FILTERED
+    # to what this session can run by default; `cco --help --host` shows the full
+    # list with host-only verbs flagged.
     if _cco_container_operator; then
         local _level="${CCO_CCO_ACCESS:-read-project}"
         [[ "$_level" == "read" ]] && _level="read-all"
-        local _can_write=false
-        case "$_level" in edit-project|edit-global|edit-all) _can_write=true ;; esac
-        printf 'Container session (cco_access=%s) — wrapped cco. Flagged verbs run on your host;\n' "$_level"
-        printf 'write verbs need an edit level; `template`/`remote list` need read-global or higher.\n\n'
-        # Fully host-only top-level verbs (mirror the shim blocklist). Annotation
-        # is deliberately TOP-LEVEL only: verbs whose EVERY subcommand is host-only.
-        # Namespaces with a host-only SUBSET (`path set`, `config push|pull`,
-        # `remote set|remove-token`, `pack|template|llms publish|export`,
-        # `project rename|export|import|add`) are NOT flagged here — the shim still
-        # refuses those sub-verbs with a hint at call time, and per-subcommand
-        # annotation would bloat the top-level list without improving the common
-        # path (CLI-surface review decision, 2026-07-02). Keep this set == the shim's
-        # fully-host-only top-level arm.
+        local _rs _ws
+        _rs=$(_cco_level_read_scope "$_level")
+        _ws=$(_cco_level_write_scope "$_level")
+        # Recompute the caveats from THIS level (S6-04): describe only real gates.
+        local _cav=""
+        case "$_ws" in
+            none)    _cav="write verbs (create/install/tag/config save) need an edit level" ;;
+            project) _cav="global-store writes (pack/template/llms/tag/remote/config save) need edit-global+" ;;
+            global)  _cav="project-config edits need edit-project or edit-all" ;;
+            all)     _cav="" ;;
+        esac
+        [[ "$_rs" == "project" ]] && _cav="${_cav:+$_cav; }template/remote listing needs read-global+"
+        printf 'Container session (cco_access=%s) — wrapped cco (read %s, write %s).\n' "$_level" "$_rs" "$_ws"
+        [[ -n "$_cav" ]] && printf 'At this scope: %s.\n' "$_cav"
+        # Fully host-only top-level verbs (mirror the shim blocklist) + `tag` when
+        # this session cannot write (no edit level) — those are above-scope here.
         local _hostonly='init|join|forget|build|start|new|stop|resolve|sync|update|clean|chrome'
-        printf '%s\n' "$_body" \
-            | sed -E "/^  ($_hostonly)([[:space:]]|\$)/ s/\$/   (host only — run on your host)/" \
-            | if $_can_write; then cat; else \
-                  sed -E "/^  tag([[:space:]]|\$)/ s/\$/   (needs an edit level)/"; fi
+        local _filter="$_hostonly"
+        [[ "$_ws" == "none" ]] && _filter="${_filter}|tag"   # tag is write-only → above a read level
+        if $_want_host; then
+            # Full list, host-only verbs flagged (host help escape hatch).
+            printf '\n'
+            printf '%s\n' "$_body" \
+                | sed -E "/^  ($_hostonly)([[:space:]]|\$)/ s/\$/   (host only — run on your host)/"
+        else
+            # D7 default: omit host-only (and above-scope) verbs; note how many hidden.
+            local _n; _n=$(printf '%s\n' "$_body" | grep -cE "^  ($_filter)([[:space:]]|\$)")
+            printf '\n'
+            printf '%s\n' "$_body" | sed -E "/^  ($_filter)([[:space:]]|\$)/d"
+            printf "\n%d host-only/above-scope verbs hidden — run 'cco --help --host' to list them.\n" "$_n"
+        fi
         return 0
     fi
     printf '%s\n' "$_body"
@@ -267,24 +285,38 @@ _cco_operator_shim() {
         esac
         refuse "'cco $2' needs read-$1 scope or higher in this session (current cco_access=$level). Widen it on the host with --cco-access read-$1."
     }
+    # R9 refusal taxonomy (D8 exit codes): host-only + removed-alias are POLICY
+    # refusals (exit 2), unknown verbs/subcommands are ERRORS (exit 1). Kept as
+    # named helpers so each arm reads as its case, and the message never leaves a
+    # trailing space (the '${x:+ $x}' idiom).
+    _op_hostonly()    { refuse "'cco $1' is host-only. $host_hint"; }                          # exit 2
+    _op_removed_list() { refuse "'cco $1 list' was removed — use 'cco list $1' (ADR-0029)."; }  # exit 2
+    _op_unknown_sub() { die "Unknown '$1' command: '$2'. Run 'cco $1 --help'."; }              # exit 1
+
+    # D7: per-command `--help`/`-h` is INFORMATIONAL and always available — never
+    # refused, even for host-only verbs (the dispatcher prints usage). This is what
+    # makes `cco start --help` show usage rather than refuse (S3-6/S7-04/F5).
+    case "$sub" in -h|--help) return 0 ;; esac
 
     case "$cmd" in
         # Host-only: container-spawning, path-resolving / non-transactional
-        # lifecycle, and host-side tooling.
+        # lifecycle, and host-side tooling → policy refusal (exit 2).
         start|stop|build|new|resolve|sync|init|join|forget|update|clean|chrome|path)
             if [[ "$cmd" == "path" && "$sub" == "list" ]]; then return 0; fi   # read-only listing OK
-            die "'cco $cmd${sub:+ $sub}' is host-only. $host_hint" ;;
+            _op_hostonly "$cmd${sub:+ $sub}" ;;
         # Read-only, always available under operator mode. `whoami` is the F4
         # session-introspection verb — read-safe, no host paths, resolvable rather
         # than default-denied (it must be in the known-verb set for that).
-        list|docs|help|whoami|--version|-v|--help|-h) return 0 ;;
+        list|docs|help|whoami|--version|-v) return 0 ;;
         tag)
             case "$sub" in
+                "") return 0 ;;   # bare namespace → dispatcher prints sub-usage
                 add|remove|rm) _op_write "tag $sub" global ;;   # DATA registry (C1: global regardless of named project)
-                *) die "'cco tag $sub' is not available in a container session." ;;
+                *) _op_unknown_sub tag "$sub" ;;
             esac ;;
         config)
             case "$sub" in
+                "") return 0 ;;
                 # host-only: `config validate` sweeps machine-local internal state
                 # (the STATE index of logical→HOST paths, per-id STATE/CACHE dirs,
                 # the STATE token store) to detect orphans. In a container only the
@@ -293,38 +325,46 @@ _cco_operator_shim() {
                 # sweep would flag every entry as an orphan AND print host paths
                 # (INV-4 leak). It is coherent only host-side (CLI-surface review,
                 # 2026-07-02).
-                validate) die "'cco config validate' is host-only — it sanitizes machine-local index/state that is not coherent inside a container. $host_hint" ;;
+                validate) refuse "'cco config validate' is host-only — it sanitizes machine-local index/state that is not coherent inside a container. $host_hint" ;;
                 save) _op_write "config save" global ;;   # ~/.cco personal store
-                push|pull) die "'cco config $sub' is host-only (network + credentials). $host_hint" ;;
-                *) die "'cco config $sub' is not available in a container session." ;;
+                push|pull) refuse "'cco config $sub' is host-only (network + credentials). $host_hint" ;;
+                *) _op_unknown_sub config "$sub" ;;
             esac ;;
         remote)
             case "$sub" in
+                "") return 0 ;;
                 list) _op_read_scope global "remote list"; return 0 ;;   # personal-global registry
                 add|remove) _op_write "remote $sub" global ;;            # DATA registry
-                set-token|remove-token) die "'cco remote $sub' is host-only (secrets stay off the container). $host_hint" ;;
-                *) die "'cco remote $sub' is not available in a container session." ;;
+                set-token|remove-token) refuse "'cco remote $sub' is host-only (secrets stay off the container). $host_hint" ;;
+                *) _op_unknown_sub remote "$sub" ;;
             esac ;;
         pack|template|llms)
             case "$sub" in
-                show|validate|list)
+                "") return 0 ;;   # bare namespace → dispatcher prints sub-usage
+                list) _op_removed_list "$cmd" ;;   # ADR-0029 redirect (exit 2) — was: pack list executed, project list default-denied
+                show|validate)
                     # Templates are a personal-global resource (scaffold new
                     # projects), not a project resource → read-global+ (ADR-0042).
                     [[ "$cmd" == "template" ]] && _op_read_scope global "template $sub"
                     return 0 ;;
                 create|update|remove|install|import|internalize|rename) _op_write "$cmd $sub" global ;;
-                publish|export) die "'cco $cmd $sub' is host-only. $host_hint" ;;
-                *) die "'cco $cmd $sub' is not available in a container session." ;;
+                publish|export) _op_hostonly "$cmd $sub" ;;
+                *) _op_unknown_sub "$cmd" "$sub" ;;
             esac ;;
         project)
             case "$sub" in
+                "") return 0 ;;
                 show|validate|coords) return 0 ;;
-                rename) die "'cco project rename' is host-only (re-keys machine-local state). $host_hint" ;;
-                export|import|add) die "'cco project $sub' is host-only. $host_hint" ;;
-                *) die "'cco project $sub' is not available in a container session." ;;
+                list) _op_removed_list project ;;   # ADR-0029 redirect (exit 2)
+                rename) refuse "'cco project rename' is host-only (re-keys machine-local state). $host_hint" ;;
+                export|import|add) _op_hostonly "project $sub" ;;
+                *) _op_unknown_sub project "$sub" ;;
             esac ;;
-        share|manifest) die "'cco $cmd' has been removed." ;;
-        *) die "'cco $cmd' is not available in a container session. $host_hint" ;;
+        share|manifest) refuse "'cco $cmd' has been removed." ;;
+        # Unknown TOP-LEVEL verb → an ERROR (exit 1), NOT a host-only refusal. This
+        # removes the "run 'cco whoami' on the host" misfire (NEW-1): an unrecognized
+        # verb is a typo, not something that lives on the host.
+        *) die "Unknown cco command: '$cmd'. Run 'cco help' for the available commands." ;;
     esac
 }
 
@@ -341,7 +381,7 @@ shift
 # effects — `cco --version` is a pure query. Per-subcommand --help is unaffected.
 case "$cmd" in
     --version|-v) _cco_print_version; _cco_completed=true; exit 0 ;;
-    --help|-h)    usage;              _cco_completed=true; exit 0 ;;
+    --help|-h)    usage "$@";         _cco_completed=true; exit 0 ;;
 esac
 
 # Container-operator mode (ADR-0036 D4): cco runs in-container behind the
@@ -471,7 +511,7 @@ EOF
     whoami)   cmd_whoami "$@"   || _cco_rc=$? ;;
     clean)    cmd_clean "$@"    || _cco_rc=$? ;;
     stop)     cmd_stop "$@"     || _cco_rc=$? ;;
-    help)     usage ;;
+    help)     usage "$@" ;;
     *)        die "Unknown command: $cmd. Run 'cco help' for usage." ;;
 esac
 _cco_completed=true
