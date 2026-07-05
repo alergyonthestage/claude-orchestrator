@@ -470,9 +470,10 @@ _start_load_config() {
         die "Project name '${project_name}' is too long (${#project_name} chars, max 63)"
     fi
 
-    # Check for existing running session
-    if ! $dry_run && docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^cc-${project_name}$"; then
-        die "Project '${project_name}' already has a running session (container cc-${project_name}). Run 'cco stop ${project}' first."
+    # Check for existing running session — by the `cco.project` label (R1); the
+    # `run --rm` launch discards `container_name`, so name matching never fired.
+    if ! $dry_run && _cco_session_running "$project_name"; then
+        die "Project '${project_name}' already has a running session. Run 'cco stop ${project}' first."
     fi
 
     auth_method=$(yml_get "$project_yml" "auth.method")

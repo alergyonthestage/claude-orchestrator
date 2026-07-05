@@ -140,6 +140,11 @@ RUN chown claude:claude /home/claude/.tmux.conf \
 COPY bin/ /opt/cco/bin/
 COPY lib/ /opt/cco/lib/
 COPY templates/ /opt/cco/templates/
+# docs/users is the user-facing subset the npm package already ships (ADR-0037 D3)
+# — exactly what an in-session agent should see. `cco docs` (cmd-docs.sh) reads
+# $REPO_ROOT/docs/users, i.e. /opt/cco/docs/users; without this bake it fails in
+# every session (R10). defaults/, migrations/, and docs/maintainers stay unbaked.
+COPY docs/users /opt/cco/docs/users
 COPY changelog.yml package.json /opt/cco/
 RUN chmod +x /opt/cco/bin/cco \
     && ln -sf /opt/cco/bin/cco /usr/local/bin/cco

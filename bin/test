@@ -10,6 +10,19 @@ export REPO_ROOT
 # Skip Docker build in cco init — integration tests don't need the image
 export CCO_SKIP_BUILD=1
 
+# Neutralize the ambient cco-SESSION environment so the suite runs host-side by
+# default. When `bin/test` is invoked from INSIDE a cco session (self-dev), the
+# container exports CCO_CONTAINER_OPERATOR=1 + absolute CCO_{DATA,STATE,CACHE}_HOME
+# + PROJECT_NAME/CCO_CCO_ACCESS/… . Those would leak into every `run_cco`, forcing
+# operator-shim behavior (`stop is host-only`, scoped output) and, worse, pointing
+# test bucket writes at the REAL session state. Tests that WANT operator mode set
+# the full env themselves (test_operator_shim, test_access_scope). On the host none
+# of these are set, so this is a no-op there.
+unset CCO_CONTAINER_OPERATOR CCO_IN_CONTAINER \
+      CCO_CCO_ACCESS CCO_CLAUDE_ACCESS CCO_SHOW_HOST_PATHS CCO_CONFIG_TARGETS \
+      PROJECT_NAME CCO_PROJECT_PACKS CCO_PROJECT_LLMS \
+      CCO_DATA_HOME CCO_STATE_HOME CCO_CACHE_HOME CCO_CONFIG_DIR CCO_SESSION_CONTEXT 2>/dev/null || true
+
 # ── Colors ───────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
     GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'

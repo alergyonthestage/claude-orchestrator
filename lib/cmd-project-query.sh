@@ -46,8 +46,10 @@ EOF
             [[ -n "$_yn" ]] && project_name="$_yn"
         fi
 
+        # Session identity is the compose `cco.project` label, not the container
+        # name (`run --rm` discards `container_name`) — R1.
         status="stopped"
-        if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^cc-${project_name}$"; then
+        if _cco_session_running "$project_name"; then
             status="${GREEN}running${NC}"
         fi
 
@@ -224,10 +226,9 @@ EOF
     echo "  Network: ${network:-cc-${yml_name:-$name}}"
     echo ""
 
-    # Status
+    # Status — detect via the `cco.project` label (R1), not the container name.
     echo -e "${BOLD}Status:${NC}"
-    local container_name="cc-${yml_name:-$name}"
-    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${container_name}$"; then
+    if _cco_session_running "${yml_name:-$name}"; then
         echo -e "  ${GREEN}running${NC}"
     else
         echo "  stopped"

@@ -27,7 +27,9 @@ EOF
         # (not _index_get_path on the project key) so a joined multi-repo project —
         # whose key is in `projects:` but not `paths:` — still finds its project.yml
         # and the `name:` container override.
-        local container_name="cc-${project}"
+        # Session identity is the `cco.project` label (R1). The label value is the
+        # project.yml `name:` (when the repo resolves) else the index/arg name.
+        local label_name="$project"
         local repo proj_yml=""
         repo=$(_resolve_unit_dir_for_project "$project" 2>/dev/null)
         [[ -n "$repo" ]] && proj_yml="$repo/.cco/project.yml"
@@ -35,11 +37,13 @@ EOF
         if [[ -n "$proj_yml" && -f "$proj_yml" ]]; then
             local yml_name
             yml_name=$(yml_get "$proj_yml" "name")
-            [[ -n "$yml_name" ]] && container_name="cc-${yml_name}"
+            [[ -n "$yml_name" ]] && label_name="$yml_name"
         fi
 
-        if docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
-            docker stop "$container_name"
+        local ids; ids=$(_cco_session_container_ids "$label_name")
+        if [[ -n "$ids" ]]; then
+            # `run --rm` removes the container on stop; target the live IDs by label.
+            echo "$ids" | while read -r cid; do docker stop "$cid" >/dev/null; done
             ok "Stopped session '$project'"
         else
             warn "No running session for '$project'"
@@ -49,15 +53,18 @@ EOF
         local managed; managed=$(_cco_project_cache_managed "$project")
         rm -f "$managed/browser.json" "$managed/.browser-port" "$managed/github.json"
     else
+        # All running sessions: match by the `cco.project` label key (R1) — the
+        # former `name=cc-` filter matched nothing under `run --rm`.
         local containers
-        containers=$(docker ps --filter "name=cc-" --format '{{.Names}}' 2>/dev/null)
+        containers=$(_cco_any_session_containers)
         if [[ -z "$containers" ]]; then
             info "No running sessions."
             return 0
         fi
-        echo "$containers" | while read -r name; do
-            docker stop "$name"
-            ok "Stopped $name"
+        echo "$containers" | while IFS=$'\t' read -r cid proj; do
+            [[ -z "$cid" ]] && continue
+            docker stop "$cid" >/dev/null
+            ok "Stopped ${proj:-$cid}"
         done
         # Clean managed runtime state for all projects (all sessions stopped)
         local proj managed

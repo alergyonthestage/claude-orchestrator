@@ -129,6 +129,31 @@ check_docker() {
     fi
 }
 
+# ── Session-identity detection (R1) ──────────────────────────────────
+# `cco start` launches with `docker compose run --rm`, which IGNORES the compose
+# `container_name: cc-<project>` and assigns an opaque `<project>-claude-run-<hash>`
+# name — so grepping `docker ps` names for `^cc-<name>$` NEVER matches a live
+# session. The compose declares `labels: cco.project: "<project>"` (cmd-start.sh)
+# which IS honored under `run`; the label is the session-identity contract, the
+# container name is cosmetic. All session detection goes through these helpers.
+
+# _cco_session_running <project-name> → 0 if a running session for the project.
+_cco_session_running() {
+    [[ -n "$(docker ps --filter "label=cco.project=$1" --format '{{.ID}}' 2>/dev/null)" ]]
+}
+
+# _cco_session_container_ids <project-name> → running container IDs (newline list).
+_cco_session_container_ids() {
+    docker ps --filter "label=cco.project=$1" --format '{{.ID}}' 2>/dev/null
+}
+
+# _cco_any_session_containers → "ID<TAB>project" for every running cco session
+# (any project), via the label-key existence filter. Empty when none run.
+_cco_any_session_containers() {
+    docker ps --filter "label=cco.project" \
+        --format '{{.ID}}	{{.Label "cco.project"}}' 2>/dev/null
+}
+
 # Check image exists
 check_image() {
     if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
