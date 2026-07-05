@@ -10,6 +10,12 @@ config-editor UX direction), implementer (analysis + code-grounding + recommenda
 
 **Design**: [`../design.md`](../design.md) (living doc, full detail + open questions).
 
+> **Refined (2026-07-05) by the e2e access fix** — see `../e2e-review/fix-design/`.
+> "Symmetric/mirror" read scoping means each level reads at its **matching** scope
+> (`edit-project` reads at project scope, not everything), and **`read-global` ≠
+> `read-all`**: they differ only in *other-project* visibility (packs/llms/templates/
+> remotes are fully visible at `global`). See [ADR-0043 §1](../../../cli/decisions/0043-unified-cli-environment-access-scope.md).
+
 ## Context
 
 cco delivered the agent's project awareness as a generated file — `packs.md`, then the

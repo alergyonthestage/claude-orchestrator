@@ -587,3 +587,25 @@ entries:
       cco_access=edit-project now explains that the ~/.cco store is read-only and
       needs an edit-global session, instead of a misleading "nothing to save".
       Requires a rebuilt image (`cco build`).
+
+  - id: 36
+    date: "2026-07-05"
+    type: additive
+    title: "Symmetric cco_access scopes, in-container self-introspection, sharper refusals"
+    description: >
+      The agent↔cco access model gained read/write symmetry and a batch of
+      in-container UX fixes (host usage unchanged). cco_access now reads at its
+      matching scope on {project, global, all}: edit-project reads at PROJECT
+      scope (its own project, like read-project) rather than the whole store, and
+      read-global differs from read-all only in other-project visibility. Write
+      verbs are gated by their target tree — a global-store write (pack/template/
+      llms/tag/remote/config save) needs edit-global+, refused cleanly otherwise.
+      New `cco whoami` reports your session's own access state (levels + which
+      config trees are writable). In-container `cco help` is now filtered to the
+      verbs you can run, with `cco --help --host` for the full list; unknown verbs
+      say so (instead of "run it on your host"), removed aliases redirect to
+      `cco list <kind>`, and refusal exit codes follow 0/2/1 (ok-or-degrade /
+      policy refusal / error). `cco docs` works in every session (docs are baked
+      into the image), session detection is fixed (cco stop / list status), and at
+      cco_access=none cco is cleanly unavailable. Requires a rebuilt image
+      (`cco build`).

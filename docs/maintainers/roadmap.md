@@ -71,6 +71,24 @@ R1), **0042** (B2 — agent↔cco access, ✅ design approved), **0037** (C, ✅
 released), **0038** (D), **0039** (E, ✅), **0040** (F). ADR **0042** (B2, ✅ accepted) +
 **0043** (unified CLI env & access-scope, ✅ accepted). Next free ADR = **0044**.
 
+#### B2 e2e-review fix — agent ↔ cco access (✅ implemented 2026-07-05)
+
+The B2 host-dogfood e2e review's 9 consolidated roots are **implemented** on
+`feat/config-access/e2e-review` (fix design: `configuration/agent-cco-access/e2e-review/fix-design/`).
+Read/write **symmetric** scope model (edit-project reads at project scope; read-global ≠
+read-all; target-tree write gate); label-based session identity (R1); operator-mode project
+resolver + `cco whoami` introspection (R2/R4/F4); explicit `none` contract + declared-but-
+unresolved markers + Level-A-as-sole-authority hook (R6/R7/R8); shim refusal taxonomy +
+filtered in-container help + 0/2/1 exit codes (R9); `docs/users` baked into the image (R10).
+ADR-0036/0042/0043 forward-annotated; changelog #36. Suite green. **Needs `cco build` +
+re-run of the e2e harness (acceptance gate) before merge → develop + push (from the Mac).**
+
+**Two post-fix follow-ups** (deferred from the fix design overview §6, *pending maintainer approval*):
+- **Internal maintainer CLI reference** — matrix `command × {host, in-container} × cco_access`,
+  seeded by the R5 write-scope table, the R9 refusal taxonomy, and the D8 exit-code convention.
+- **Post-fix UX/CLI-completeness review** — verb intuitiveness/naming; finalizes the F4
+  introspection verb name (`whoami` is provisional; vs `session`; reserve `cco status`?).
+
 #### F — opinionated-config extraction + `cco update` responsibility refactor (post-C, structural)
 
 Make the cco **core agnostic** of opinionated config: keep `managed/` baked in, move the opinionated

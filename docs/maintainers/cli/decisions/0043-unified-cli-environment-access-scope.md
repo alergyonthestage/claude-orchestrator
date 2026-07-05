@@ -11,6 +11,15 @@ asked for one common env+permissions system so commands implement only their dif
 logic, and future permissions/environments change a single point), implementer (analysis,
 code-grounding, module API).
 
+> **Refined (2026-07-05) by the agent↔cco access e2e fix** — see
+> `../../configuration/agent-cco-access/e2e-review/fix-design/01-scope-model.md`.
+> The read side is now **symmetric** with the write side on `{project, global, all}`:
+> each level reads at its matching scope (`edit-project` reads at *project* scope,
+> not "everything"; `edit-global` at global; `edit-all` at all), and **`read-global`
+> ≠ `read-all`** — they differ only in *other-project* visibility. The §1 taxonomy
+> table below is updated to that model; the original two-column form (read-global and
+> read-all merged, `edit-*` omitted) under-specified what the write side already did.
+
 ## Context
 
 ADR-0042 made the wrapped `cco` a primary channel and defaulted normal sessions to
@@ -50,17 +59,25 @@ owns environment + permission resolution, so a future permission or environment 
 Resources fall into the same two scope classes the operator shim already uses for verb
 gating, now applied to **read output**:
 
-| Kind | Scope class | Visible at `read-project` | Visible at `read-global` / `read-all` |
-|---|---|---|---|
-| project | **project** | current project only (`PROJECT_NAME`) | all |
-| pack | **project** | packs referenced by the current project | all |
-| llms | **project** | llms referenced by the current project | all |
-| template | **global** | none (needs `read-global+`) | all |
-| remote | **global** | none (needs `read-global+`) | all |
+Visibility is driven by the level's derived **read_scope** (`project | global | all`),
+symmetric with write_scope. `read-project`/`edit-project` → project; `read-global`/
+`edit-global` → global; `read-all`/`edit-all` → all (the bare `read` alias → all).
 
-`global`-class kinds mirror the shim gates already in place (`template …`, `remote list`
-need `read-global+`). This is one taxonomy for both *verb gating* and *output scoping* — no
-parallel model.
+| Kind | Scope class | `read_scope = project` | `read_scope = global` | `read_scope = all` |
+|---|---|---|---|---|
+| project (other) | **project** | current only (`PROJECT_NAME`) | current only | **all** |
+| pack | **project** | referenced by the current project | all | all |
+| llms | **project** | referenced by the current project | all | all |
+| template | **global** | none (needs `read-global+`) | all | all |
+| remote | **global** | none (needs `read-global+`) | all | all |
+
+The **only** `global`-vs-`all` difference is the `project` kind (other projects need
+`read-all`); packs/llms/templates/remotes are global-store resources, fully visible at
+`global`. `global`-class kinds mirror the shim gates already in place (`template …`,
+`remote list` need `read-global+`). This is one taxonomy for both *verb gating* and *output
+scoping* — no parallel model. The level→scope maps (`_cco_level_read_scope` /
+`_cco_level_write_scope` / `_cco_write_scope_satisfies`) are the single source consumed by
+host mount-generation, the operator shim, and this output layer.
 
 ### 2. Invariants
 

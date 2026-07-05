@@ -9,10 +9,17 @@
 # command implements only its own differentiation logic, and a future
 # permission/environment is added in one place (INV-E).
 #
-# Scope taxonomy (reuses the shim's classes — one model for gating AND output):
-#   project · pack · llms → PROJECT class  (visible at read-project: the current
-#                                            project + its referenced resources)
-#   template · remote     → GLOBAL class   (visible only at read-global / higher)
+# Scope model (ADR-0043, symmetric with the write side on {project, global, all}).
+# Each level READS at its matching scope — edit-project reads at PROJECT scope (not
+# "everything"), edit-global at global, edit-all at all — via the pure level→scope
+# maps below (_cco_level_read_scope / _cco_level_write_scope), the single source for
+# host mount-gen, the operator shim, and this output layer.
+# Scope classes (reuses the shim's classes — one model for gating AND output):
+#   project · pack · llms → PROJECT class  (at project scope: the current project +
+#                                            its referenced resources)
+#   template · remote     → GLOBAL class   (visible only at global scope / higher)
+# read-global ≠ read-all: the SOLE difference is other-project visibility (the
+# `project` kind); packs/llms/templates/remotes are fully visible at `global`.
 #
 # Invariants (ADR-0043 §2):
 #   INV-A host-open  — scoping engages ONLY under _cco_container_operator; on the

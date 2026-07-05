@@ -7,6 +7,14 @@
 **Deciders**: maintainer (set the direction + the two-axis reframe + the packs/managed
 refinements), implementer (analysis + code-grounding + recommendations)
 
+> **Refined (2026-07-05) by the e2e access fix** — see
+> `../../agent-cco-access/e2e-review/fix-design/`. The `cco_access` read side is now
+> **symmetric** with the write side on `{project, global, all}` (each level reads at
+> its matching scope; `read-global` ≠ `read-all`) — [ADR-0043 §1](../../../cli/decisions/0043-unified-cli-environment-access-scope.md).
+> D4's secret-masking wording is confirmed **mount-scoped** ("filtered out of every
+> config *mount*", D5). `cco_access=none` has an explicit contract (cco refused
+> wholesale in-session, exit 2).
+
 **Context docs**: `../config-editor-access-design-handoff.md` (Handover B),
 `../../internal-projects/config-editor/design/design-config-editor.md` (living design),
 `../../internal-projects/tutorial/design/design-tutorial.md`
