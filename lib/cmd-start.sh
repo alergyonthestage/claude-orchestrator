@@ -905,6 +905,20 @@ YAML
             echo "      - CCO_DATA_HOME=/home/claude/.local/share/cco"
             echo "      - CCO_STATE_HOME=/home/claude/.local/state/cco"
             echo "      - CCO_CACHE_HOME=/home/claude/.cache/cco"
+            # Session-state introspection (F4): the other two resolved knobs, so the
+            # in-container introspection verb can report the full session state
+            # (ADR-0043 deferred these "until a verb needs them" — it now does).
+            echo "      - CCO_CLAUDE_ACCESS=${claude_access}"
+            echo "      - CCO_SHOW_HOST_PATHS=${show_host_paths}"
+            # config-editor editing targets (D9): PROJECT_NAME stays the started
+            # project (config-editor); CCO_CONFIG_TARGETS carries the names whose
+            # .cco this session may edit, so the resolver (layout 2) and the managed
+            # rule can introspect the TARGET, never overloading PROJECT_NAME.
+            local _cfg_targets_csv=""
+            if [[ -n "${_ce_targets:-}" ]]; then
+                _cfg_targets_csv=$(printf '%s' "$_ce_targets" | awk -F'\t' 'NF{printf "%s%s",(n++?",":""),$1}')
+            fi
+            [[ -n "$_cfg_targets_csv" ]] && echo "      - CCO_CONFIG_TARGETS=${_cfg_targets_csv}"
             # Project-scope membership signals (ADR-0043): the packs and llms this
             # project references, comma-joined, so the in-container access-scope
             # layer (lib/access-scope.sh) can scope read-verb OUTPUT to the current

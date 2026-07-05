@@ -101,6 +101,7 @@ source "$LIB_DIR/remote.sh"
 source "$LIB_DIR/cmd-forget.sh"
 source "$LIB_DIR/cmd-join.sh"
 source "$LIB_DIR/cmd-docs.sh"
+source "$LIB_DIR/cmd-whoami.sh"
 
 # Personal flat stores in their decentralized homes (F1; design §2.2/§2.3,
 # ADR-0016 D7/D8): packs/templates → CONFIG (~/.cco), llms content+cache-state →
@@ -259,8 +260,10 @@ _cco_operator_shim() {
         start|stop|build|new|resolve|sync|init|join|forget|update|clean|chrome|path)
             if [[ "$cmd" == "path" && "$sub" == "list" ]]; then return 0; fi   # read-only listing OK
             die "'cco $cmd${sub:+ $sub}' is host-only. $host_hint" ;;
-        # Read-only, always available under operator mode.
-        list|docs|help|--version|-v|--help|-h) return 0 ;;
+        # Read-only, always available under operator mode. `whoami` is the F4
+        # session-introspection verb — read-safe, no host paths, resolvable rather
+        # than default-denied (it must be in the known-verb set for that).
+        list|docs|help|whoami|--version|-v|--help|-h) return 0 ;;
         tag)
             case "$sub" in
                 add|remove|rm) _op_write "tag $sub" global ;;   # DATA registry (C1: global regardless of named project)
@@ -451,6 +454,7 @@ EOF
     share|manifest) die "'cco $cmd' has been removed. Sharing repos are discovered by structure (no manifest.yml); use 'cco pack|template publish|install' (ADR-0012/0018)." ;;
     update)   cmd_update "$@"   || _cco_rc=$? ;;
     docs)     cmd_docs "$@"     || _cco_rc=$? ;;
+    whoami)   cmd_whoami "$@"   || _cco_rc=$? ;;
     clean)    cmd_clean "$@"    || _cco_rc=$? ;;
     stop)     cmd_stop "$@"     || _cco_rc=$? ;;
     help)     usage ;;

@@ -42,8 +42,10 @@ _coords_scan_section() {
 # projects. A url-less entry (authored pack, local-only repo/mount) carries no
 # coordinate and is skipped — it cannot diverge.
 _coords_scan() {
+    local only="${1:-}"   # optional: restrict to a single project name (F3)
     local unit yml
     while IFS=$'\t' read -r unit _ yml; do
+        [[ -n "$only" && "$unit" != "$only" ]] && continue
         # Output scoping (ADR-0043): at read-project, only the current project's
         # coordinates are in scope (cross-project consistency needs read-global+).
         if ! _env_in_scope project "$unit"; then _env_note_hidden project; continue; fi
@@ -120,7 +122,7 @@ _coords_set_url() {
 }
 
 cmd_project_coords() {
-    local mode=table from="" force=false
+    local mode=table from="" force=false only=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --diff) [[ "$mode" == sync ]] || mode=diff; shift ;;
@@ -129,7 +131,10 @@ cmd_project_coords() {
             -y|--yes) force=true; shift ;;
             --help|-h)
                 cat <<'EOF'
-Usage: cco project coords [--diff] [--sync --from <unit>] [-y]
+Usage: cco project coords [<name>] [--diff] [--sync --from <unit>] [-y]
+
+A positional <name> restricts the check to one project (useful in a session,
+where only the current project's coordinates are in scope).
 
 Check (and optionally reconcile) coordinate consistency across your projects.
 The index is global-flat (one logical name → one path), so a name's url should
@@ -152,11 +157,12 @@ Options:
 EOF
                 return 0 ;;
             -*) die "Unknown option: $1" ;;
-            *)  die "Unexpected argument: $1" ;;
+            *)  [[ -z "$only" ]] || die "Unexpected argument: $1"
+                only="$1"; shift ;;   # optional project-name filter (F3)
         esac
     done
 
-    local recs; recs=$(_coords_scan)
+    local recs; recs=$(_coords_scan "$only")
     if [[ -z "$recs" ]]; then
         info "No url coordinates to check — none of your projects reference a url-bearing repo/mount/llms/pack."
         info "(Distinct from 'cco project validate', which flags resources missing a url; 'coords' only checks url-bearing resources for cross-project consistency.)"

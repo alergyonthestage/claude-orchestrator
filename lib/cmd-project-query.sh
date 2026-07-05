@@ -29,9 +29,9 @@ EOF
         # visible; the STATE index stays the complete internal map (INV-D).
         if ! _env_in_scope project "$name"; then _env_note_hidden project; continue; fi
 
-        project_yml=""
-        unit_dir=$(_resolve_unit_dir_for_project "$name" 2>/dev/null) \
-            && project_yml="$unit_dir/.cco/project.yml"
+        # Host- and operator-aware (R2): in-container this resolves the mounted
+        # /workspace manifest; on the host, the STATE index.
+        project_yml=$(_resolve_project_yml "$name" 2>/dev/null) || project_yml=""
 
         repo_count="-"
         if [[ -n "$project_yml" && -f "$project_yml" ]]; then
@@ -142,13 +142,19 @@ EOF
     # with a clear message rather than a raw "not found" (graceful degradation).
     _env_require_visible project "$name"
 
-    # Resolve the project's host repo via the index, then read its committed
-    # <repo>/.cco/project.yml (the central $PROJECTS_DIR layout is gone, P5).
-    local unit_dir project_yml
-    unit_dir=$(_resolve_unit_dir_for_project "$name" 2>/dev/null) \
-        || die "Project '$name' not found (unknown, or its repo is unresolved here — run 'cco resolve $name')."
-    project_yml="$unit_dir/.cco/project.yml"
-    [[ ! -f "$project_yml" ]] && die "Project '$name' has no .cco/project.yml at $unit_dir."
+    # Resolve the project's committed <repo>/.cco/project.yml. Host- and
+    # operator-aware (R2): in-container this resolves the mounted /workspace
+    # manifest; on the host, the STATE index. An unresolvable name yields a
+    # context-appropriate message — "unavailable at this scope" in a session (its
+    # .cco is not mounted), "run cco resolve" on the host.
+    local project_yml
+    if project_yml=$(_resolve_project_yml "$name" 2>/dev/null) && [[ -f "$project_yml" ]]; then
+        :
+    elif _cco_container_operator; then
+        refuse "Project '$name' is not available at this access scope — its config is not mounted in this session. Widen the session's scope on the host, or run cco there."
+    else
+        die "Project '$name' not found (unknown, or its repo is unresolved here — run 'cco resolve $name')."
+    fi
 
     # Name and description
     local yml_name

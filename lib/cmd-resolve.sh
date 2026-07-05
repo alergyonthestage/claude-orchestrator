@@ -76,6 +76,74 @@ _resolve_unit_dir_for_project() {
     return 1
 }
 
+# ── Operator-mode (in-container) project resolution (R2/R4, ADR-0042/0043) ──
+# The STATE index stores HOST paths that never resolve inside a container, so the
+# host resolver above returns 1 in-session → the old "not found, run cco resolve"
+# host-only hint. The wrapped cco instead resolves a project NAME to its MOUNTED
+# project.yml, so self-introspection and membership scans work in-session. Two
+# mount layouts (C2):
+#   layout 1 (normal session): the current project's manifest is mounted at
+#     /workspace/project.yml (its repo also lives at /workspace/<repo>/.cco/). There
+#     is NO canonical /workspace/.cco/project.yml.
+#   layout 2 (config-editor target): the target's .cco tree is mounted AT the mount
+#     root — /workspace/<name>-config/project.yml (the mount IS the .cco dir).
+# Resolution order: current project → config-editor target → built-in preset →
+# unavailable-at-scope (return 1; the caller reports scope, never "run cco resolve").
+
+# Echo the current project's mounted project.yml (layout 1). Fast path is the
+# always-mounted /workspace/project.yml; falls back to scanning /workspace/*/.cco/.
+_resolve_operator_current_yml() {
+    local want="${PROJECT_NAME:-}" d yml n
+    [[ -z "$want" ]] && return 1
+    if [[ -f /workspace/project.yml ]]; then
+        n=$(yml_get /workspace/project.yml name 2>/dev/null)
+        [[ "$n" == "$want" ]] && { printf '%s\n' /workspace/project.yml; return 0; }
+    fi
+    for d in /workspace/*/; do
+        yml="${d}.cco/project.yml"
+        [[ -f "$yml" ]] || continue
+        n=$(yml_get "$yml" name 2>/dev/null)
+        [[ "$n" == "$want" ]] && { printf '%s\n' "$yml"; return 0; }
+    done
+    return 1
+}
+
+# Echo the project.yml path for <name> in operator mode, or return 1 (unavailable
+# at THIS scope — a distinct status the caller renders as scope-limited, not the
+# host-only "run cco resolve").
+_resolve_operator_project_yml() {
+    local name="$1" yml
+    # 1. Current project (resolves from any cwd, including /workspace root).
+    if [[ -n "${PROJECT_NAME:-}" && "$name" == "$PROJECT_NAME" ]]; then
+        _resolve_operator_current_yml && return 0
+    fi
+    # 2. config-editor target (D9): its .cco is mounted at /workspace/<name>-config.
+    if _env_csv_has "$name" "${CCO_CONFIG_TARGETS:-}"; then
+        yml="/workspace/${name}-config/project.yml"
+        [[ -f "$yml" ]] && { printf '%s\n' "$yml"; return 0; }
+    fi
+    # 3. Built-in preset — its generated config lives in the internal runtime dir.
+    case "$name" in
+        tutorial|config-editor)
+            yml="$(_cco_internal_runtime_dir)/${name}/project.yml"
+            [[ -f "$yml" ]] && { printf '%s\n' "$yml"; return 0; } ;;
+    esac
+    return 1
+}
+
+# Resolve a project NAME to its project.yml PATH, host- AND operator-aware — the
+# single entry the read/introspection verbs use. Host: STATE index (host paths).
+# Operator: the mounted /workspace trees. Returns 1 when unavailable at this scope.
+_resolve_project_yml() {
+    local name="$1" d
+    if _cco_container_operator; then
+        _resolve_operator_project_yml "$name"
+        return $?
+    fi
+    d=$(_resolve_unit_dir_for_project "$name") || return 1
+    printf '%s\n' "$d/.cco/project.yml"
+}
+
 # Iterate the indexed projects, emitting one TAB line "<proj>\t<unit_dir>\t<yml>"
 # for each whose host repo RESOLVES on this machine and has a project.yml. The
 # reserved "_template" pseudo-entry and any unresolved / manifest-less project are
@@ -86,6 +154,33 @@ _resolve_unit_dir_for_project() {
 # Usage: while IFS=$'\t' read -r proj unit_dir yml; do …; done < <(_project_foreach)
 _project_foreach() {
     local proj unit_dir yml
+    # Operator mode (R4): the host index paths don't resolve in-container. Enumerate
+    # only the MOUNTED projects — the current project (normal session) plus every
+    # config-editor target — via the operator resolver, so membership scans ("Used
+    # by") answer correctly for what IS mounted and stay silent (unavailable at this
+    # scope) for the rest, never a false "(none)". The unit_dir is dirname(.cco),
+    # i.e. dirname(dirname(yml)) for a nested .cco, or dirname(yml) for a flat mount.
+    if _cco_container_operator; then
+        local names name
+        names="${PROJECT_NAME:-}"
+        [[ -n "${CCO_CONFIG_TARGETS:-}" ]] && names="${names},${CCO_CONFIG_TARGETS}"
+        # Split the CSV without globbing; dedup by emitting each name once.
+        local seen=","
+        local IFS=','
+        for name in $names; do
+            [[ -z "$name" ]] && continue
+            case "$seen" in *",${name},"*) continue ;; esac
+            seen="${seen}${name},"
+            yml=$(_resolve_operator_project_yml "$name" 2>/dev/null) || continue
+            [[ -f "$yml" ]] || continue
+            case "$yml" in
+                */.cco/project.yml) unit_dir="${yml%/.cco/project.yml}" ;;
+                *)                  unit_dir="${yml%/project.yml}" ;;
+            esac
+            printf '%s\t%s\t%s\n' "$name" "$unit_dir" "$yml"
+        done
+        return 0
+    fi
     while IFS='=' read -r proj _; do
         [[ -z "$proj" ]] && continue
         [[ "$proj" == "_template" ]] && continue

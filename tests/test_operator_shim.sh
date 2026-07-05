@@ -164,6 +164,24 @@ test_operator_read_verbs_pass_shim() {
     return 0
 }
 
+# ── whoami: F4 session introspection — always available, never host-only ─────
+
+test_operator_whoami_reports_state() {
+    # `cco whoami` passes the shim at any read level (it is in the known-verb set)
+    # and reports the resolved scopes + per-tree rw/ro from write_scope.
+    _op_cco read-all whoami
+    [[ $OP_RC -eq 0 ]] || fail "'cco whoami' must succeed at read-all, got rc=$OP_RC: $OP_OUT"
+    [[ "$OP_OUT" != *"host-only"* && "$OP_OUT" != *"not available in a container session"* ]] \
+        || fail "'cco whoami' must never be host-only-refused, got: $OP_OUT"
+    [[ "$OP_OUT" == *"read scope: all"* ]] || fail "whoami should report read scope all, got: $OP_OUT"
+    # At edit-project the project tree is rw, the global store ro (symmetric model).
+    _op_cco edit-project whoami
+    [[ "$OP_OUT" == *"write scope: project"* ]] || fail "whoami edit-project write scope, got: $OP_OUT"
+    [[ "$OP_OUT" == *"project config (<repo>/.cco):        rw"* ]] \
+        || fail "whoami edit-project must show project config rw, got: $OP_OUT"
+    return 0
+}
+
 # ── path: only 'list' is read-only, 'set' is host-only ───────────────
 
 test_operator_path_set_blocked_list_allowed() {
