@@ -60,7 +60,19 @@ EOF
     if [[ -n "$no_cache" ]]; then
         local install_dir; install_dir="$(_cco_claude_install_dir)"
         if [[ -d "$install_dir" ]]; then
-            rm -rf "$install_dir"
+            # Empty the install CONTENTS but PRESERVE the bin/ and share/ directory
+            # NODES: they are Docker Desktop bind-mount sources, and `rm -rf`-ing
+            # them triggers a macOS VirtioFS/gRPC-FUSE stale-share bug — the daemon
+            # caches a negative entry, so the next `cco start` fails with "mount
+            # source path …: no such file or directory" even though cco re-creates
+            # the dir host-side before the mount. The entrypoint reinstalls whenever
+            # the binary (~/.local/bin/claude) is absent (ADR-0039), so clearing the
+            # contents is enough to force a clean install without losing the shared
+            # directory nodes.
+            find "$install_dir" -mindepth 1 -maxdepth 1 ! -name bin ! -name share \
+                -exec rm -rf {} + 2>/dev/null || true
+            find "$install_dir/bin" "$install_dir/share" -mindepth 1 -delete 2>/dev/null || true
+            mkdir -p "$install_dir/bin" "$install_dir/share"
             info "Reset Claude Code install cache (fresh install on next start)"
         fi
     fi

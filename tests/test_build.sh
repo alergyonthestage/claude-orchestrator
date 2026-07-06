@@ -112,7 +112,11 @@ test_build_claude_version_flag_overrides_knob() {
 }
 
 test_build_no_cache_resets_install_cache() {
-    # --no-cache wipes the native-install cache so the next start reinstalls.
+    # --no-cache clears the native-install CONTENTS so the next start reinstalls
+    # (the entrypoint installs when the binary is absent). It must PRESERVE the
+    # bin/ and share/ directory NODES — they are Docker Desktop bind-mount sources,
+    # and removing them triggers a macOS VirtioFS stale-share bug that breaks the
+    # next `cco start` with "mount source path … no such file or directory".
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     local mock_bin="$tmpdir/mockbin"
@@ -121,11 +125,17 @@ test_build_no_cache_resets_install_cache() {
     export DOCKER_CALL_LOG="$tmpdir/docker.log"; : > "$DOCKER_CALL_LOG"
 
     local install_dir="$CCO_CACHE_HOME/claude-install"
-    mkdir -p "$install_dir/bin"
+    mkdir -p "$install_dir/bin" "$install_dir/share/claude"
     printf 'fake-binary\n' > "$install_dir/bin/claude"
+    printf 'state\n' > "$install_dir/share/claude/state.json"
 
     run_cco build --no-cache
-    assert_dir_not_exists "$install_dir"
+    # The install is emptied (binary gone → fresh install next start)…
+    assert_file_not_exists "$install_dir/bin/claude"
+    assert_file_not_exists "$install_dir/share/claude/state.json"
+    # …but the bind-mount source dirs survive (VirtioFS-safe).
+    assert_dir_exists "$install_dir/bin"
+    assert_dir_exists "$install_dir/share"
 }
 
 test_build_without_no_cache_keeps_install_cache() {
