@@ -1,4 +1,10 @@
-docs/
+# Exclude the whole docs/ tree from the build context EXCEPT docs/users — that
+# user-facing subset is baked into the image so `cco docs` works in every session
+# (R10; matches the npm package's `files` allowlist, ADR-0037 D3). `docs/*` prunes
+# the direct children (maintainers/, etc.) while leaving docs/ itself present so
+# the negation can re-include the users subtree.
+docs/*
+!docs/users
 .git/
 # Local/user config never belongs in the image build context (the decentralized
 # layout keeps it in <repo>/.cco/ + ~/.cco/; state/cache are out of the repo).
@@ -6,5 +12,8 @@ user-config/
 **/.cco/
 *.md
 !config/*.md
+# Re-include docs/users markdown AFTER the broad `*.md` exclude (last match wins),
+# so the bundled docs — almost all .md — actually reach the build context.
+!docs/users/**
 .gitignore
 .dockerignore
