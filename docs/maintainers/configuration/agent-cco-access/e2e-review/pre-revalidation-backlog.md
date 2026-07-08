@@ -73,7 +73,7 @@
 | **B2** | help | In-container help prints **empty section titles** when all verbs in a section are host-only and filtered out (D7) | The D7 filter removes the host-only verbs but leaves the section header with no body | Suppress a section header when it has zero runnable verbs at the current scope | help/CLI |
 | **B3** | list | `cco list` (generic) shows no running status for projects, while `cco list project` does | Status column only implemented in the per-kind `cco list project` path (`cmd-project-query.sh:49-56`), not in the unified `cco list` project rows | Render status for the `project` kind in the unified `cco list` too (other kinds have no state → blank) | consistency |
 | **B4** | status | In-container, a second project already running in **another host terminal** is reported `stopped` (false negative) | `_cco_session_running` (`lib/utils.sh:141`) uses `docker ps --filter label=cco.project`. In-container this is scoped by the **cco-docker-proxy to the session's own container** (isolation, by design) and/or the socket may be unmounted (`mount_socket:false`) → the other project is invisible | **Minimal correct fix**: in container-operator context, never assert `stopped` when docker visibility is scoped/absent — degrade to **`unknown` / `n-a (in-container)`** (aligns with the "hidden ≠ absent" philosophy). Do **not** fabricate a false negative | status/CLI |
-| **B5** | tag/gating | `cco tag add/remove` gated as a blanket `write:global` — **both too strict** (can't tag the current project at `edit-project`) **and too loose** (can tag *other* projects at `edit-global`) | Shim hardcodes one level; tags target **pack/project/template** (different scopes; storage in the global DATA registry is irrelevant to the permission — `lib/tags.sh`) | Gate **per-invocation by the tagged resource's scope + ownership** (current project → project scope; global pack/template → global; other project → all). The exemplar of "gate by resource area, not a fixed level" — refined in A1 (D3) | gating/CLI |
+| **B5** | tag/gating | `cco tag add/remove` gated as a blanket `write:global` — **both too strict** (can't tag the current project at `edit-project`) **and too loose** (can tag *other* projects at `edit-global`) | Shim hardcodes one level; tags target **pack/project/template** (different scopes; storage in the global DATA registry is irrelevant to the permission — `lib/tags.sh`) | Gate **per-invocation by the tagged resource's axis** (current project → `Pc=rw`; global pack/template → `G=rw`; other project → `Po=rw`). The exemplar of "gate by resource area, not a fixed level" — **✅ refined in A1 (D3), [`analysis/A1-command-scope-matrix.md`](analysis/A1-command-scope-matrix.md) §4.1** | gating/CLI |
 | **B6** | help/exit | Not every exit-2 refusal carries a reason; the matrix only annotated the hint on start/stop | Convention not stated as an invariant | **Hint invariant**: every exit-2 refusal states its cause (host-only *or* insufficient scope); exit-1 = unknown verb/error. Audit no silent exit-2 path exists | help/CLI |
 
 > **Hunt for same-class siblings** while fixing B1–B4 (other empty-section/host-only
@@ -177,16 +177,28 @@ Confirmed by the maintainer; formalized by **[`../hardening-v2/handoff.md`](../h
   real-FS parent traversal can). Options A (scoped ro projection) + B (socket broker) rejected/
   fallback. Forward-annotates ADR-0043 INV-D; design.md INV-5 + design-docker.md §1.2.3. → **D3
   next.**
-- **A1 — per-command info×scope analysis (D3).** After M1+M2, classify every verb by the
-  resource area it touches; produces the definitive gating (B5 tag, B6 hint, path decision,
-  coverage gaps). → analysis doc.
+- **A1 — per-command info×scope analysis (D3). ✅ DESIGN DONE (2026-07-08, awaiting maintainer
+  approval) — [`analysis/A1-command-scope-matrix.md`](analysis/A1-command-scope-matrix.md).**
+  Every verb classified on two orthogonal axes: **enforcement side** (config-content mount /
+  internal-store helper / environment-host) and **resource area** (`(G,Pc,Po)` axis × read/write,
+  keyed off ADR-0046 §7). The shim's hardcoded per-verb level literals (`bin/cco:301-368`) are
+  replaced by a **gate-by-resource-area** derivation (target tree → axis, per-invocation for
+  `tag`, static for the rest). Decisions resolved: **B5** — `tag` gated by the *tagged
+  resource's* axis (project→`Pc`/`Po`, pack/template→`G` uniformly, not ride-with-`Pc`);
+  **B6** — hint invariant asserted (no silent exit-2; audited clean, must hold post-refactor);
+  **`path`** — keep `path list`, **scope its output** (current+referenced, host paths gated by
+  `show_host_paths`), `path set` host-only; **`cco sync` of divergent members = host-only,
+  config-editor included** (closes ADR-0046 §6; `include_member_configs` covers the read/edit
+  need); **coverage** — no `cco state`, `whoami` extended to render the `(G,Pc,Po)` triple at
+  implementation. Consolidated fix list (B1–B6 + `path` + `whoami+`) + ⏳ CLI-surface matrix row
+  updates in §5/§6. **Gate: maintainer approval → doc-reconciliation sweep → implementation.**
 
 ### Updated sequencing
 
 ```mermaid
 flowchart TD
   D1["D1 ✅ · ADR-0046 unified (G,Pc,Po) model + multi-repo Pc"] --> D2["D2 ✅ · ADR-0047 enforcement (privilege boundary) — fixes S1/S1b"]
-  D2 --> D3["D3 · A1 per-command info×scope (tag B5, hint B6, path)"]
+  D2 --> D3["D3 ✅ · A1 per-command info×scope matrix (tag B5, hint B6, path, cco-sync)"]
   D3 --> R["doc reconciliation sweep"]
   R --> I["Implementation: model + privilege boundary (cco-svc setuid) + per-command fixes\n+ config-editor/tutorial (ADR-0044) + registry (ADR-0045)\n+ B1–B4; migrations + changelog"]
   I --> BUILD["cco build"]

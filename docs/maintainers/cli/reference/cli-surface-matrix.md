@@ -94,7 +94,7 @@ wholesale in-container (exit 2, R6) — every row below is unavailable at `none`
 | `resolve`, `sync`, `init`, `join`, `forget` | ✅ | ❌ host-only (resolves host paths) | exit 2 |
 | `update`, `clean`, `chrome` | ✅ | ❌ host-only | exit 2 |
 | `path set` | ✅ | ❌ host-only (index mutation) | exit 2 |
-| `path list` | ✅ | ✅ **read-only listing OK** | — |
+| `path list` | ✅ | ✅ **read-only listing OK** | — · **⏳ target A1**: output-scoped (current+referenced; host-path columns gated by `show_host_paths`) — moves to §2.2 read verbs ([A1 §4.3](../../configuration/agent-cco-access/e2e-review/analysis/A1-command-scope-matrix.md)) |
 
 ### 2.2 Read / introspection — available from read-project (unless noted)
 
@@ -105,7 +105,7 @@ wholesale in-container (exit 2, R6) — every row below is unavailable at `none`
 | `list templates\|remotes` | read:**global** | ✅ from **read-global** | global-class — empty+notice below read-global |
 | `docs` | always | ✅ from read-project | — (refused at `none`, R6) |
 | `help`, `--help`/`-h`, `--version`/`-v` | always | ✅ | help is scope-aware (§4) |
-| `whoami` | always | ✅ from read-project | session-state introspection (F4). **⏳ target B1**: also listed in in-container `help` |
+| `whoami` | always | ✅ from read-project | session-state introspection (F4). **⏳ target B1**: also listed in in-container `help`. **⏳ target A1**: renders the resolved `(G,Pc,Po)` triple + privilege-boundary note ([A1 §4.5](../../configuration/agent-cco-access/e2e-review/analysis/A1-command-scope-matrix.md)) |
 | `project show\|validate\|coords` | read:project | ✅ from read-project | current project resolvable from `/workspace` root (R2/F3) |
 | `pack show\|validate`, `llms show\|validate` | read:project | ✅ from read-project | `_env_require_visible` — graceful "not in scope" for out-of-scope names |
 | `template show\|validate` | read:**global** | ✅ from **read-global** | global-class |
@@ -116,7 +116,7 @@ wholesale in-container (exit 2, R6) — every row below is unavailable at `none`
 
 | Verb | Class (target tree) | Available from | Notes |
 |---|---|---|---|
-| `tag add\|remove` | write:global (DATA registry) | edit-global | global regardless of the named project (C1) |
+| `tag add\|remove` | write:global (DATA registry) | edit-global | global regardless of the named project (C1). **⏳ target A1/B5**: gate by the **tagged resource's axis** — project(current)→`Pc` (edit-project), pack/template→`G` (edit-global), project(other)→`Po` (edit-all) ([A1 §4.1](../../configuration/agent-cco-access/e2e-review/analysis/A1-command-scope-matrix.md)) |
 | `config save` | write:global (`~/.cco`) | edit-global | clear "needs edit-global" msg on ro mount at edit-project (CLI-surface F3) |
 | `remote add\|remove` | write:global (DATA registry) | edit-global | `remote add --token` refuses the **token half** in-container (secret stays host-side) |
 | `pack create\|update\|remove\|install\|import\|internalize\|rename` | write:global | edit-global | network fetches (`install\|update\|import`) are writes, allowed at edit level (D4 carve-out) |
