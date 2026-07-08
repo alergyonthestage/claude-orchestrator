@@ -146,9 +146,15 @@ Wrapped `cco` (ADR-0036 D4) is the on-demand channel. Two changes:
      in-scope with `Pc` (excluding them would break the project); `G` decides whether the
      **rest** of the store is visible (`ro`) / writable (`rw`) or hidden (`none`).
    - **Pc** — the **current** project's config (`<repo>/.cco`). Floor `ro` while cco is
-     enabled (INV-2). Multi-repo: default = the cwd repo's `.cco`; opt-in
+     enabled (ADR-0046 INV-2). Multi-repo: default = the cwd repo's `.cco`; opt-in
      `access.cco.include_member_configs` extends `Pc` to all member repos' (divergent) `.cco`.
-   - **Po** — **other** projects' config. `Po ≤ Pc` (INV-4); `Po ≠ none ⇒ Pc ≠ none` (INV-3).
+   - **Po** — **other** projects' config. `Po ≤ Pc` (ADR-0046 INV-4); `Po ≠ none ⇒ Pc ≠ none`
+     (ADR-0046 INV-3).
+
+   > **Note on invariant labels.** The `INV-n` above are **[ADR-0046](decisions/0046-unified-cco-access-model.md)'s
+   > model invariants** (lattice / floor / see-self / no-more-than-self), distinct from this
+   > design's own **§5 INV-1…5** (which are numbered independently). Qualified as "ADR-0046 INV-n"
+   > wherever referenced here to avoid the collision.
 
    Unspecified axes **auto-promote** to the invariant floor, so a user declares only the
    maximal intent (`--cco-access current=rw,others=rw` → `(none, rw, rw)`). Secrets and tokens

@@ -17,7 +17,7 @@
 > behaviour the code does not yet expose (documentation-lifecycle rule).
 >
 > Related: [CLI environment-awareness](../design/design-cli-environment-awareness.md) (the
-> principle + the central gate §4) · [ADR-0042](../../configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md) · [ADR-0043](../decisions/0043-unified-cli-environment-access-scope.md) · [ADR-0044](../../configuration/agent-cco-access/decisions/0044-internal-builtin-presets-and-config-editor-scope.md)
+> principle + the central gate §4) · [ADR-0042](../../configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md) · [ADR-0043](../decisions/0043-unified-cli-environment-access-scope.md) · [ADR-0044](../../configuration/agent-cco-access/decisions/0044-internal-builtin-presets-and-config-editor-scope.md) · [ADR-0046](../../configuration/agent-cco-access/decisions/0046-unified-cco-access-model.md) (`(G,Pc,Po)` model) · [ADR-0047](../../configuration/agent-cco-access/decisions/0047-config-access-enforcement.md) (enforcement)
 
 ---
 
@@ -59,6 +59,13 @@ edit-all-projects-not-global `(ro,rw,rw)`; edit-global-consult-all `(rw,ro,ro)`.
 > *current* shipped derivation (`_cco_level_read_scope`/`_cco_level_write_scope`); today
 > `edit-global` = `(rw, ro, none)` (project read-only). Rows converge on the axis model when
 > ADR-0046 lands.
+>
+> **Enforcement ([ADR-0047](../../configuration/agent-cco-access/decisions/0047-config-access-enforcement.md), D2 — also design-intent).**
+> The `(G,Pc,Po)` gate is made *physically* binding for the internal store (STATE index, DATA,
+> CACHE internals) by a **privilege boundary** (a `cco-svc` mode-0700 real-FS parent the
+> `claude` user cannot traverse + a setuid helper). The **output-scoping** column below is
+> therefore **defense-in-depth**, not the confidentiality control (revises ADR-0043 INV-D).
+> Config-content trees stay mounted and keep `:ro`/`:rw` write-gating.
 
 **Availability is monotonic**: a verb available at level *L* is available at every level
 that reads/writes at ≥ its required scope. So each verb is stated as **"available from

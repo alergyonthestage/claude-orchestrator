@@ -31,6 +31,14 @@ assumed to be as safe as the machine itself — the same baseline as `.env` file
 
 ## Findings
 
+> **Related access-control decisions.** The agent ↔ cco access & confidentiality model lives in
+> its own ADR chain: [ADR-0042](../../configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md)
+> (three-level A/B/C) · [ADR-0043](../../cli/decisions/0043-unified-cli-environment-access-scope.md)
+> (output-scoping; INV-D revised) · [ADR-0046](../../configuration/agent-cco-access/decisions/0046-unified-cco-access-model.md)
+> (`(G,Pc,Po)` model) · [ADR-0047](../../configuration/agent-cco-access/decisions/0047-config-access-enforcement.md)
+> (the privilege boundary — see **HIGH-6**). This doc's threat model (single-developer) is
+> **extended** by that chain to the in-container **agent** as a semi-trusted actor.
+
 ### [HIGH-1] Token embedded in git clone URL visible in process list and git config
 
 **File:** `lib/remote.sh:41`
@@ -421,6 +429,44 @@ security". No validation layer exists between parsing and docker-compose generat
 
 ---
 
+### [HIGH-6] In-container agent reads the whole internal store — cross-project info leak (S1/S1b)
+
+**File:** `~/.local/state/cco/index` (STATE), `~/.local/share/cco/` (DATA: tags, de-tokenized
+remotes, per-resource `source` provenance); mounted by `lib/cmd-start.sh:1088-1094`.
+
+**Issue.** In a wrapped-`cco` session the agent and the wrapped `cco` run as the **same UID
+`claude`** with `--dangerously-skip-permissions` and no filesystem confinement. The whole STATE
+index and DATA bucket mount into the container (`:ro` at read levels) **outside** the
+`read-project` narrowing branch (which scopes only CONFIG). `lib/access-scope.sh` filters command
+**output**, not the raw files. So even at the default `read-project`, the agent runs
+`cat ~/.local/state/cco/index` and enumerates **every other project's name, host path,
+membership, tags, and remote URLs** — and host paths leak even at `show_host_paths=off` (S1b).
+*Verified live.*
+
+**Impact.** Confidentiality / project-isolation breach across all projects registered on the
+machine. Integrity is unaffected (write-gating is enforced physically by `:ro`/`:rw` mount flags,
+a VFS property `fakeowner` does not weaken).
+
+**Root cause.** No privilege boundary between the agent's shell and the internal store — any file
+`cco` can read, the agent can `cat`. Claude Code's own controls cannot fix this (permission
+`deny`/sandbox `denyRead` act uniformly on the shell and would block `cco` too; bypass mode is on
+by design). `chown`/`chmod` on the mounted registries do not confine either — macOS Docker Desktop
+`fakeowner` ignores DAC on bind-mount content.
+
+**Mitigation (decided, PLANNED — [ADR-0047](../../configuration/agent-cco-access/decisions/0047-config-access-enforcement.md), D2).**
+Confine **only** the internal store behind a **privilege boundary**: a dedicated **`cco-svc`**-owned
+**mode-0700** parent on the **real** container FS (`/var/lib/cco-internal`) the `claude` user
+cannot traverse (real-FS parent traversal confines even a `fakeowner` child); `$HOME` XDG cco
+paths symlink into it; a **setuid `cco-svc` helper** crosses it and enforces the `(G,Pc,Po)` gate
+(ADR-0046 §7) from a trusted, root-owned session descriptor (never `argv`/env). Config-content
+trees stay mounted (native reads). Mirrors the `cco-docker-proxy` privilege precedent. Output-
+scoping (`access-scope.sh`) remains as **defense-in-depth**, not the confidentiality control.
+
+**Status:** Design accepted 2026-07-08 (D2); implementation deferred to the access-model impl
+phase (after D3). Present in all shipped wrapped-`cco` sessions until then.
+
+---
+
 ## Recommended fix priority
 
 Ordered by a combination of effort required and risk addressed.
@@ -455,12 +501,18 @@ Ordered by a combination of effort required and risk addressed.
 | 9 | **[LOW-1]** Secrets in process args | Use `--env-file` with a tmpfile instead of `-e` flags | Medium |
 | 10 | **[HIGH-1]** Token in clone URL | Replace with `GIT_ASKPASS` credential helper | High |
 
+### Design-stage — access-model enforcement (PLANNED)
+
+| # | Finding | What to do | Status |
+|---|---|---|---|
+| 11 | **[HIGH-6]** Agent reads whole internal store (S1/S1b) | Implement the [ADR-0047](../../configuration/agent-cco-access/decisions/0047-config-access-enforcement.md) privilege boundary: `cco-svc` setuid helper + `/var/lib/cco-internal` mode-0700 parent + trusted session descriptor, enforcing `(G,Pc,Po)` | Design accepted (2026-07-08); impl after D3 |
+
 ### Accepted risks — no fix needed
 
 | Finding | Rationale |
 |---|---|
 | **[LOW-2]** npm packages | User-controlled config; same as any npm install |
-| **[LOW-3]** skip-permissions | By design; Docker is the sandbox |
+| **[LOW-3]** skip-permissions | By design; Docker is the sandbox (host protection). Note: *intra-container* agent access to the internal store is a separate confidentiality gap — see **HIGH-6** / ADR-0047, not covered by "Docker is the sandbox" |
 | **[LOW-4]** Vault push auth gap | Functional gap, not security; user configures git creds separately |
 | **[MEDIUM-5]** eval in secrets.sh | Correctly escaped; `_target` is internal-only |
 

@@ -1,11 +1,14 @@
 # CLI Environment-Awareness
 
-> Version: 1.3.0
+> Version: 1.4.0
 > Status: Current — principle established with ADR-0042 (agent ↔ cco access); **output-scoping
 > layer added with [ADR-0043](../decisions/0043-unified-cli-environment-access-scope.md)**;
 > **full CLI-surface review complete (2026-07-02, §6)**; **central-gate property made explicit
-> + [CLI-surface matrix](../reference/cli-surface-matrix.md) added (2026-07-07, §4)**
-> Related: [ADR-0036](../../configuration/decentralized-config/decisions/0036-session-config-capability-model.md) (capability model — D4 wrapped-cco, D8 caller-context) · [ADR-0042](../../configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md) (three-level interaction model) · [ADR-0043](../decisions/0043-unified-cli-environment-access-scope.md) (unified env & access-scope resolution) · [agent ↔ cco access design](../../configuration/agent-cco-access/design.md) · user CLI reference [`cli.md`](../../../users/reference/cli.md)
+> + [CLI-surface matrix](../reference/cli-surface-matrix.md) added (2026-07-07, §4)**;
+> **base model → `(G,Pc,Po)` triple ([ADR-0046](../../configuration/agent-cco-access/decisions/0046-unified-cco-access-model.md))
+> + enforcement via a privilege boundary, output-scoping demoted to defense-in-depth
+> ([ADR-0047](../../configuration/agent-cco-access/decisions/0047-config-access-enforcement.md)) — design-intent, not yet implemented (2026-07-08)**
+> Related: [ADR-0036](../../configuration/decentralized-config/decisions/0036-session-config-capability-model.md) (capability model — D4 wrapped-cco, D8 caller-context) · [ADR-0042](../../configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md) (three-level interaction model) · [ADR-0043](../decisions/0043-unified-cli-environment-access-scope.md) (unified env & access-scope resolution) · [ADR-0046](../../configuration/agent-cco-access/decisions/0046-unified-cco-access-model.md) (`(G,Pc,Po)` model) · [ADR-0047](../../configuration/agent-cco-access/decisions/0047-config-access-enforcement.md) (enforcement — privilege boundary) · [agent ↔ cco access design](../../configuration/agent-cco-access/design.md) · user CLI reference [`cli.md`](../../../users/reference/cli.md)
 
 ---
 
@@ -134,7 +137,13 @@ This is a second, orthogonal dimension enforced by a single shared layer
 - **Invariants.** Host-open (scoping engages only under `_cco_container_operator`); hidden ≠
   absent (a filtered command emits one standardized *count-only* notice on **stderr** telling
   the agent how to widen — a `read-global` session or the host); the STATE index stays the
-  complete internal map (scoping is a presentation filter, not an index mutation).
+  complete internal map. **Output-scoping is defense-in-depth, not the confidentiality control**
+  ([ADR-0047](../../configuration/agent-cco-access/decisions/0047-config-access-enforcement.md),
+  revising ADR-0043 INV-D): because the agent and the wrapped `cco` share a UID, a presentation
+  filter alone cannot stop a raw `cat` of the internal store — confidentiality is enforced by a
+  **privilege boundary** (a `cco-svc`-owned mode-0700 real-FS parent the `claude` user cannot
+  traverse + a setuid helper enforcing `(G,Pc,Po)`). This layer scopes *output* on top of that
+  boundary. (Design-intent; not yet implemented.)
 - **Layer API.** `_env_in_scope <kind> <name> [owner]` (0/1), `_env_note_hidden <kind>`,
   `_env_flush_hidden_notice` (stderr), `_env_require_visible <kind> <name>` (graceful "not
   available at this scope" for `show`/detail verbs). Commands call these; they never re-derive
