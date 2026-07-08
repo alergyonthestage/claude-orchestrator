@@ -1,9 +1,10 @@
 # CLI Environment-Awareness
 
-> Version: 1.2.0
+> Version: 1.3.0
 > Status: Current — principle established with ADR-0042 (agent ↔ cco access); **output-scoping
 > layer added with [ADR-0043](../decisions/0043-unified-cli-environment-access-scope.md)**;
-> **full CLI-surface review complete (2026-07-02, §6)**
+> **full CLI-surface review complete (2026-07-02, §6)**; **central-gate property made explicit
+> + [CLI-surface matrix](../reference/cli-surface-matrix.md) added (2026-07-07, §4)**
 > Related: [ADR-0036](../../configuration/decentralized-config/decisions/0036-session-config-capability-model.md) (capability model — D4 wrapped-cco, D8 caller-context) · [ADR-0042](../../configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md) (three-level interaction model) · [ADR-0043](../decisions/0043-unified-cli-environment-access-scope.md) (unified env & access-scope resolution) · [agent ↔ cco access design](../../configuration/agent-cco-access/design.md) · user CLI reference [`cli.md`](../../../users/reference/cli.md)
 
 ---
@@ -50,8 +51,33 @@ context — do not re-derive it ad hoc:
 
 ## 4. Enforcement layers
 
-Environment-correct behavior is layered — a command must respect **all** layers that apply
-to it, not rely on one alone:
+**Permissions are enforced by a single central gate, upstream of every command.** In
+container-operator mode `bin/cco` routes **all** verbs through one chokepoint —
+`_cco_operator_shim` — **before** the real dispatcher runs any command body (grounded:
+`bin/cco`, `if _cco_container_operator; then _cco_operator_shim …`). This is a deliberate
+design choice: *unified preventive protection* rather than per-command permission checks.
+
+- **Why central, not per-command.** A permission check re-implemented in each command
+  drifts, is easy to forget on a new verb, and leaves the surface only as safe as its
+  weakest command. One default-deny gate means a verb is **unreachable in-container until
+  explicitly classified** — a *forgotten* verb fails safe (refused), not open. Permissions
+  are therefore verified **before** execution, in one auditable place (the shim's
+  classification table + the `lib/access-scope.sh` level→scope maps it consults, INV-E).
+- **Division of labour — permissions vs command guards.** The gate owns *whether a verb may
+  run here* (host-only vs read-scope vs write-scope). A command's own guards exist **only**
+  for execution differences **intrinsic to that command** that a generic gate cannot
+  express — output scoping (what a permitted read verb *shows*, §4b), secret masking,
+  host-path hygiene, and sub-flag distinctions the coarse verb+subcommand gate cannot see
+  (e.g. `remote add --token` refusing only the token half). These are *not* permission
+  re-checks; the permission decision has already been made upstream.
+- **Residual to watch.** The gate protects against a *forgotten* verb (default-deny) but not
+  a *mis-classified* one (a write verb wrongly tagged read, or a wrong target scope) — such
+  a verb would pass. The classification is centralized (good) but hand-maintained; the
+  [CLI-surface matrix](../reference/cli-surface-matrix.md) makes it auditable, and
+  `tests/test_operator_shim.sh` pins it.
+
+Environment-correct behavior is then layered — a command must respect **all** layers that
+apply to it, not rely on one alone:
 
 ```mermaid
 flowchart TD
