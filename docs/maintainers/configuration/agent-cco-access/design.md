@@ -222,6 +222,14 @@ A full audit of the whole verb surface against it is planned once this sprint (B
   copy is persisted; Level A renders them at start. No round-trip, no divergence.
 - **INV-4 — Host paths never touch committed files.** `path_map` is a runtime view in
   Level A only, gated by `show_host_paths` (AD3, ADR-0041 R1-D3).
+- **INV-5 — The internal store is reachable only through `cco` (privilege boundary).**
+  The internal XDG store (STATE index, DATA registries, CACHE internals) is confined behind a
+  privilege boundary — a dedicated `cco-svc`-owned, mode-0700 real-FS parent the `claude` user
+  cannot traverse, crossed only by a setuid helper that enforces `(G,Pc,Po)` (ADR-0046 §7).
+  The agent has **no direct filesystem access** to it; `cco` is the sole path. Config-content
+  trees are exempt (native reads). Level B output-scoping (§4) is defense-in-depth, not the
+  confidentiality control. Physically closes S1/S1b. See
+  [ADR-0047](decisions/0047-config-access-enforcement.md).
 
 ## 6. Descriptions — provenance
 

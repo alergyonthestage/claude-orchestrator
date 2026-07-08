@@ -359,6 +359,52 @@ block) — otherwise it silently reintroduces this bug for whatever sibling
 already lives there. Affected paths as of this writing: `.claude`,
 `.local/bin`, `.local/share`, `.local/state`, `.cache`.
 
+### 1.2.3 Internal-store privilege boundary (ADR-0047)
+
+> **Design-intent (D2, [ADR-0047](../../configuration/agent-cco-access/decisions/0047-config-access-enforcement.md));
+> not yet implemented.** Closes the confidentiality bypass S1/S1b — a `read-project` agent
+> `cat`-ing the whole mounted STATE index / DATA registry and enumerating every other project's
+> name, host path, membership, tags, and remote URLs.
+
+The agent and the wrapped `cco` run as the **same UID `claude`** with no filesystem confinement
+(`--dangerously-skip-permissions`), so any file `cco` can read, the agent can `cat`. The target
+invariant is **`[human/agent] → cco → internal store`, direct access forbidden**: `cco` is the
+sole path to the **internal XDG store** (STATE index, DATA tags/remotes/`source`, CACHE
+internals). Config-content trees (`~/.cco` packs/templates/`.claude`, `<repo>/.cco`) are
+**unaffected** — Claude Code reads them natively; they stay mounted and keep the `:ro`/`:rw` +
+secret-masking model.
+
+**Why not `chown`/`chmod` the mounted registries.** Empirically, macOS Docker Desktop mounts host
+binds as `fakeowner` (VirtioFS), which **fakes ownership to the caller** — DAC on the mount
+*content* is not enforced (a mode-0700, uid-9999 file is read by a different uid). This is the same
+reason the entrypoint treats `chown` on binds as a no-op (§1.2.2). **But** the kernel checks path
+**traversal** on each component's **real** inode, so a parent on the container's **real overlay
+FS** confines even a `fakeowner` child.
+
+**Mechanism** (mirrors the `cco-docker-proxy` privilege model — lock first, cross via a
+privileged component):
+
+1. **Dedicated privileged root on the real FS**: `/var/lib/cco-internal/`, owned by a new
+   **`cco-svc`** uid, **mode 0700** — the `claude` user cannot traverse it (`EACCES`). Created +
+   owned by the entrypoint (root), **outside** `claude`'s `$HOME` (so the agent cannot rename the
+   parent chain).
+2. **XDG symlinks**: `$HOME/.local/{state,share,cache}/cco` → the privileged root; `claude`
+   follows the symlink but hits the mode-0700 dir → denied.
+3. **Setuid `cco-svc` helper** baked into the image: `cco`'s internal-store primitives re-exec
+   through it; the `(G,Pc,Po)` gate (ADR-0046 §7) lives **inside** the helper. One `cco`
+   implementation, no daemon, no protocol.
+4. **Trusted scope source**: the resolved `(G,Pc,Po)` is written host-side by `cco start` into a
+   `cco-svc`/root-owned session descriptor mounted `:ro`; the helper reads that, never `argv`/env
+   (agent-forgeable). Fail-closed if absent.
+
+**Interaction with §1.2.2.** Relocating the internal registries out of the shared `.local/state`
+/ `.cache` bases into `/var/lib/cco-internal` **removes** the sibling-`EACCES` collision §1.2.2
+works around (those bases no longer hold cco mounts). The §1.2.2 "claude-owned base" convention
+still governs `claude`'s own subsystems (installer, npm); this boundary is its deliberate inverse
+for the internal store only. The registries may then mount **whole + rw** (only `cco-svc`
+traverses; the helper gates every op), which **simplifies** the `cmd-start.sh` internal-bucket
+mount block — the `read-project` registry narrowing and output-scoping demote to defense-in-depth.
+
 ### 1.3 tmux Configuration
 
 ```tmux

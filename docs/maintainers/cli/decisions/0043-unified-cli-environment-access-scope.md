@@ -100,6 +100,15 @@ host mount-generation, the operator shim, and this output layer.
 - **INV-D (index stays complete).** The STATE index remains the full logical→path map for
   internal resolution; scoping is a **presentation filter** on command output, not a mutation
   of the index.
+  > **Revised by [ADR-0047](../../configuration/agent-cco-access/decisions/0047-config-access-enforcement.md)
+  > (2026-07-08, D2).** A presentation-only filter is **not sufficient for confidentiality**:
+  > the raw internal store (index, DATA) mounts whole and same-UID, so an agent `cat`s it
+  > regardless of output scoping (bypass S1/S1b). The internal store is now confined by a
+  > **privilege boundary** (parent-directory gating on the real container FS + a setuid
+  > `cco-svc` helper enforcing `(G,Pc,Po)`); this output-scoping layer is retained as a
+  > **defense-in-depth** presentation layer, no longer the confidentiality control. The index
+  > still stays complete internally — the invariant's *first* clause holds; its *"scoping is
+  > the filter"* clause is superseded.
 - **INV-E (single source).** Context + permission resolution lives in one module; a command
   never re-derives context ad hoc (extends the existing "canonical signals" rule).
 
