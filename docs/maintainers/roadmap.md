@@ -462,6 +462,34 @@ confirm before scheduling. None blocks the v1 merge.
   Tracked in `configuration/decentralized-config/documentation-reorganization-plan.md` §11.
   (The `browser-mcp/design.md` deep layout rewrite was already applied in the docs review.)
 
+## Agent ↔ cco access — hardening v2 (active)
+
+> **Status (2026-07-08)**: design workstream. The shipped access model (ADR-0036/0042/0043 +
+> the e2e fix) was reviewed by the maintainer; the review surfaced **two structural gaps to
+> close before releasing the feature**: (1) the permission model can't express legit
+> asymmetric read/write cases, and (2) a **confidentiality bypass** — an agent can `cat` the
+> unscoped STATE index / DATA bucket and enumerate out-of-scope projects' names/host-paths/
+> membership/tags/remotes, and read host paths even at `show_host_paths=off` (integrity is
+> safe; only confidentiality leaks). Root: agent + wrapped `cco` share UID, no FS confinement.
+>
+> **Master plan**: [`configuration/agent-cco-access/hardening-v2/handoff.md`](configuration/agent-cco-access/hardening-v2/handoff.md)
+> — three **sequential design sessions** (approval gate between each), then implementation,
+> then the e2e re-validation. Item tracker:
+> [`…/e2e-review/pre-revalidation-backlog.md`](configuration/agent-cco-access/e2e-review/pre-revalidation-backlog.md).
+
+| Phase | Session | Output | Context to load |
+|---|---|---|---|
+| **D1** — unified `(G,Pc,Po)` permission model | design (clean) | ADR: 3 axes `none/ro/rw`, presets as sugar, granular `project.yml`/`--cco-access` form covering cases 6 & 7, invariants, multi-repo Pc + divergent-config flag | ADR-0036/0042/0043/0044, `access-scope.sh`, `cmd-start.sh:_start_resolve_access`; handoff §0.1/§0.2 |
+| **D2** — enforcement architecture (security) | design (clean) | ADR: **cco config broker** (option B, mirrors `cco-docker-proxy`) vs scoped mounts (A); fixes S1/S1b; revises ADR-0043 INV-D | handoff §0 security findings + mount inventory, `security/design/design-socket-proxy.md`, `proxy/`, `cmd-start.sh` mount block |
+| **D3** — A1 per-command info × scope | analysis (clean) | per-verb classification (tag gating **B5**, hint invariant **B6**, path decision, coverage gaps) | CLI-surface matrix, `bin/cco:_cco_operator_shim`, `lib/tags.sh`, D1+D2 |
+| **Impl** | build sessions | model + broker + per-command fixes + config-editor/tutorial (ADR-0044) + running registry (ADR-0045) + B1–B4; migrations + changelog | approved D1/D2/D3 ADRs |
+| **e2e v2** | Mac | acceptance re-validation vs the definitive CLI-surface matrix (S1–S8 + S1/S1b as criteria; `cco build` as launch rule 0) | e2e handoff v2 (written post-impl) |
+
+Base produced 2026-07-07/08 (in working tree, pending review/commit): **ADR-0044**
+(built-in presets + config-editor scope; tutorial→read-all), **ADR-0045** (running registry
+DI1), **CLI-surface matrix** (`cli/reference/cli-surface-matrix.md`), **DOC1** central-gate
+(`cli/design/design-cli-environment-awareness.md` v1.3.0), living `design.md` §8, backlog.
+
 ## Broader planned work (beyond decentralized-config v1)
 
 Full long-form descriptions (scope, design, effort) are preserved in
