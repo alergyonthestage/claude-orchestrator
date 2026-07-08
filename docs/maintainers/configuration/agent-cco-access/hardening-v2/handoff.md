@@ -12,6 +12,10 @@
 >
 > **Order** (dependencies): **D1 model → D2 enforcement → D3 per-command (A1)** → doc
 > reconciliation → implementation → e2e v2.
+>
+> **Progress**: **D1 ✅ DONE + approved (2026-07-08)** — [ADR-0046](../decisions/0046-unified-cco-access-model.md)
+> (`7706ed7`; the `(G,Pc,Po)` model). **D2 is next** — focused kickoff in
+> [`D2-handoff.md`](D2-handoff.md) (this file remains the full spec: §0 findings + §3 D2).
 
 ---
 
