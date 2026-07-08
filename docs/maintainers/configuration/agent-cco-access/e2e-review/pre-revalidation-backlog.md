@@ -123,6 +123,28 @@
   [ADR-0044](../decisions/0044-internal-builtin-presets-and-config-editor-scope.md) (two
   regimes + config-editor scope + tutorial read-all); [`../design.md`](../design.md) §8
   rewritten; ADR-0042 §8 forward-annotated.
+- **DOC4 — living-doc reconciliation to ADR-0046/0047. ✅ DONE (2026-07-08).** Post-D2
+  4-way audit + fixes: `design.md` §4 invariant-label disambiguation; `design-cli-environment-awareness.md`
+  + `cli-surface-matrix.md` ADR-0046/0047 refs + INV-D "presentation-filter" → defense-in-depth;
+  `design-security-model.md` new **HIGH-6** (S1/S1b) + ADR-0047 mitigation. Audit found **no
+  today-contradictions** in shipped-behavior docs.
+- **DOC5 — shipped-doc cutover checklist (⏳ DO AT IMPLEMENTATION, NOT before — lifecycle rule).**
+  When ADR-0046/0047 land in code, update these shipped-behavior docs (all currently correct for
+  the enum model):
+  1. **repo `CLAUDE.md`** "Session access" ¶ — enum → `(G,Pc,Po)` triple + presets-as-sugar +
+     granular `global=…,current=…,others=…`; `edit-global` **redefined** `(rw,ro,none)`→`(rw,rw,none)`;
+     output-scoping → defense-in-depth, enforcement = privilege boundary (ADR-0047).
+  2. **`docs/users/reference/cli.md`** "Session access" block — replace the level enum table with
+     the triple + a 7-intent matrix (cases 6&7 granular-only); note the privilege-boundary enforcement.
+  3. **`docs/users/configuration/reference/project-yaml.md`** `access.cco` row — scalar **or**
+     `{global,current,others}` map; new optional `access.cco.include_member_configs` (bool, default false).
+  4. **`docs/users/environment/guides/docker-and-networking.md`** config-mount ¶ — `:ro`/`:rw`
+     remains for config-content; internal store confined by the boundary.
+  5. **`docs/users/internal-projects/guides/{config-editor,tutorial}.md`** — restate preset triples
+     (config-editor `edit-all=(rw,rw,rw)`; tutorial `read-all=(ro,ro,ro)`) + the boundary.
+  - **Optional now (maintainer's call)**: a single non-invasive forward-pointer line in the repo
+    `CLAUDE.md` + `cli.md` "Session access" sections ("planned evolution: ADR-0046 model + ADR-0047
+    enforcement, not yet implemented") — additive, non-rewriting; not yet applied.
 
 ## 7. Design workstream + security (2026-07-08) — driven by hardening-v2
 
