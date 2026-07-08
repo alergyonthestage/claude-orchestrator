@@ -17,8 +17,11 @@
 > (`7706ed7`; the `(G,Pc,Po)` model). **D2 ✅ DONE + approved (2026-07-08)** —
 > [ADR-0047](../decisions/0047-config-access-enforcement.md) (`4dc6922`; internal-store
 > **privilege boundary** — parent-gating + setuid `cco-svc`, **not** the broker originally
-> targeted; grounded in a macOS-DD `fakeowner` empirical test). **D3 is next** (A1 per-command
-> info×scope — §3 D3). §0 findings + §3 remain the full spec.
+> targeted; grounded in a macOS-DD `fakeowner` empirical test). Post-D2 **living-doc
+> reconciliation done** (`f241fab`; design.md/cli/security aligned to 0046/0047 + shipped-doc
+> cutover checklist in the backlog DOC5). **D3 is next** — focused kickoff in
+> [`D3-handoff.md`](D3-handoff.md) (A1 per-command info×scope; this file remains the full spec:
+> §0 findings + §3 D3).
 
 ---
 
