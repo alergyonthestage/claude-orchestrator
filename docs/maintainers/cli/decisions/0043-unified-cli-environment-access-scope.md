@@ -56,6 +56,15 @@ owns environment + permission resolution, so a future permission or environment 
 
 ### 1. Scope taxonomy — reuse the shim's classification
 
+> **Generalised (2026-07-08) by [ADR-0046](../../configuration/agent-cco-access/decisions/0046-unified-cco-access-model.md)**
+> — the `{project, global, all}` read-scope ordinal below is subsumed by the three-axis
+> `(G, Pc, Po)` model (each `none|ro|rw`). The mapping is exact: `read-project` vs
+> `read-global` is the **G** axis (referenced subset vs whole store); `read-global` vs
+> `read-all` is the **Po** axis (other-project visibility); the `project`-class vs
+> `global`-class split here is preserved as the per-kind read-visibility rules
+> (ADR-0046 §7). This §1 table stays valid as the *derived* view of the ladder presets; the
+> axes are the base model.
+
 Resources fall into the same two scope classes the operator shim already uses for verb
 gating, now applied to **read output**:
 

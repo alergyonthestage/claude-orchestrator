@@ -28,20 +28,37 @@
 - **in-container (operator)** — every verb passes the central gate `_cco_operator_shim`
   first (default-deny); permitted read verbs additionally have their **output** scoped.
 
-**`cco_access` levels** (symmetric read/write on `{project, global, all}`):
-`none · read-project · read-global · read-all · edit-project · edit-global · edit-all`
-(bare `read` = deprecated alias for `read-all`). Derived scopes are the single source
-(`_cco_level_read_scope` / `_cco_level_write_scope`):
+**`cco_access` — the `(G, Pc, Po)` model** ([ADR-0046](../../configuration/agent-cco-access/decisions/0046-unified-cco-access-model.md),
+supersedes the opaque level enum as the base model). Three resource axes, each on the lattice
+`none < ro < rw`: **G** = global store `~/.cco` (non-referenced portion — the project's
+referenced packs/llms always ride with `Pc`), **Pc** = current project config, **Po** = other
+projects. Invariants: `rw⇒ro`; `Pc≥ro` while enabled; `Po≠none⇒Pc≠none`; `Po≤Pc`. Unspecified
+axes auto-promote to the invariant floor. The triple is the single source consumed by
+mount-gen, the shim, and output-scoping (ADR-0046 §7).
 
-| Level | read_scope | write_scope |
-|---|---|---|
-| none | — (cco refused wholesale) | — |
-| read-project | project | — |
-| read-global | global | — |
-| read-all | all | — |
-| edit-project | project | project |
-| edit-global | global | global |
-| edit-all | all | all |
+The six named levels survive as **sugar for the *symmetric* ladder** (asymmetry is
+granular-only). `access.cco` accepts a scalar (preset) or a `{global,current,others}` map;
+bare `read` = deprecated alias for `read-all`.
+
+| Level (preset) | `(G, Pc, Po)` | read_scope | write_scope |
+|---|---|---|---|
+| none | — | — (cco refused wholesale) | — |
+| read-project | `(none, ro, none)` | project | — |
+| read-global | `(ro, ro, none)` | global | — |
+| read-all | `(ro, ro, ro)` | all | — |
+| edit-project | `(none, rw, none)` | project | project |
+| edit-global | `(rw, rw, none)` ⏳ | global | global **+ project** |
+| edit-all | `(rw, rw, rw)` | all | all |
+
+**Granular-only** (off the symmetric ladder): curate-global-only `(rw,ro,none)`;
+edit-all-projects-not-global `(ro,rw,rw)`; edit-global-consult-all `(rw,ro,ro)`.
+
+> **⏳ target ADR-0046**: the whole `(G,Pc,Po)` model + the granular syntax + `edit-global`
+> redefined to include project write are **approved, not yet implemented** (D1 design; impl
+> after D2 enforcement + D3 per-command). The `read_scope`/`write_scope` columns above are the
+> *current* shipped derivation (`_cco_level_read_scope`/`_cco_level_write_scope`); today
+> `edit-global` = `(rw, ro, none)` (project read-only). Rows converge on the axis model when
+> ADR-0046 lands.
 
 **Availability is monotonic**: a verb available at level *L* is available at every level
 that reads/writes at ≥ its required scope. So each verb is stated as **"available from
@@ -158,7 +175,9 @@ this same scope layer.
 ## 5. Preset defaults (built-ins) & the orthogonal `claude_access`
 
 **Preset defaults** (`_start_resolve_access`, `lib/cmd-start.sh`) — resolution precedence:
-CLI flag > `project.yml access:` > `~/.cco/access.yml` > preset.
+CLI flag > `project.yml access:` > `~/.cco/access.yml` > preset. Each `cco_access` value below
+is a named ladder preset that resolves to a `(G,Pc,Po)` triple (§1); the same field also
+accepts the granular `{global,current,others}` map (ADR-0046 §5) for asymmetric intents.
 
 | Preset | claude_access | cco_access | show_host_paths | Notes |
 |---|---|---|---|---|

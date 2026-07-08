@@ -128,12 +128,18 @@
 
 Confirmed by the maintainer; formalized by **[`../hardening-v2/handoff.md`](../hardening-v2/handoff.md)** (phases D1→D2→D3).
 
-- **M1 — unified `(G,Pc,Po)` permission model (D1).** Three axes each `none|ro|rw`; the 6
-  levels become presets; granular `project.yml`/`--cco-access` form covers the missing
-  **cases 6 & 7**; invariants (`rw⇒ro`, `Pc≥ro`, `Po≠none⇒Pc≠none`). Includes the
-  **multi-repo Pc** definition: default cwd `<repo>/.cco`; a `project.yml` access flag
-  (e.g. `mount_all_divergent_config`) extends project scope to **all member `.cco`**
-  (divergent incl.); evaluate agent `cco sync` of divergent members. → new ADR.
+- **M1 — unified `(G,Pc,Po)` permission model (D1). ✅ DESIGN DONE (2026-07-08) —
+  [ADR-0046](../decisions/0046-unified-cco-access-model.md).** Three axes each `none<ro<rw`
+  (G = global-store non-referenced portion; referenced packs/llms always ride with Pc);
+  invariants `rw⇒ro`, `Pc≥ro`, `Po≠none⇒Pc≠none`, **`Po≤Pc`** + auto-promotion of unspecified
+  axes. The 6 named levels survive as a **symmetric ladder** of sugar (asymmetry granular-only;
+  **`edit-global` redefined to `(rw,rw,none)`** — includes project write); cases **6 & 7**
+  (`(ro,rw,rw)` / `(rw,ro,ro)`) + curate-global-only `(rw,ro,none)` are granular-only via a
+  `{global,current,others}` map. **Multi-repo Pc**: default cwd `<repo>/.cco`; opt-in
+  `access.cco.include_member_configs` extends Pc to all member `.cco` (divergent incl.);
+  **agent `cco sync` of divergent members = host-only** (in-container config-editor sync
+  deferred to D3/A1). Living design `../design.md` §4 rewritten; ADR-0043 §1 + CLI-surface
+  matrix §1/§5 forward-annotated. → **D2 next.**
 - **S1 — cross-scope confidentiality leak (SECURITY, CONFIRMED).** STATE index + whole DATA
   bucket mounted unscoped → an agent at read-project can `cat` them and enumerate all
   projects' names/host-paths/membership/tags/remote-URLs, bypassing `access-scope.sh`

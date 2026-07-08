@@ -20,6 +20,9 @@
 > (this model) builds on [ADR-0036](../decentralized-config/decisions/0036-session-config-capability-model.md)
 > (capability knobs) and **supersedes the workspace.yml surface of**
 > [ADR-0041](../decentralized-config/decisions/0041-unified-session-info-surface.md) (R1).
+> The §4 access model is unified by [ADR-0046](decisions/0046-unified-cco-access-model.md)
+> (the `(G, Pc, Po)` three-axis model; D1 of hardening-v2) — presets become symmetric-ladder
+> sugar over the axes.
 
 ---
 
@@ -133,15 +136,32 @@ detail is available on-demand via Level B.
 
 Wrapped `cco` (ADR-0036 D4) is the on-demand channel. Two changes:
 
-1. **New read scoping — `read-project`.** Today `cco_access` read is unscoped (`read` =
-   read-all), while edit is scoped (`edit-project|global|all`). We make read symmetric:
+1. **The `(G, Pc, Po)` access model** (unified 2026-07-08 —
+   [ADR-0046](decisions/0046-unified-cco-access-model.md), supersedes the opaque
+   level enum as the base model). Access is a triple of three resource axes, each on the
+   lattice `none < ro < rw`:
+   - **G** — the global store `~/.cco` (packs, templates, llms, remotes, `.claude`, DATA
+     registries), governing its **non-referenced** portion. `~/.cco` is *always* mounted
+     (filtered) while cco is enabled: the project's **referenced** packs/llms are always
+     in-scope with `Pc` (excluding them would break the project); `G` decides whether the
+     **rest** of the store is visible (`ro`) / writable (`rw`) or hidden (`none`).
+   - **Pc** — the **current** project's config (`<repo>/.cco`). Floor `ro` while cco is
+     enabled (INV-2). Multi-repo: default = the cwd repo's `.cco`; opt-in
+     `access.cco.include_member_configs` extends `Pc` to all member repos' (divergent) `.cco`.
+   - **Po** — **other** projects' config. `Po ≤ Pc` (INV-4); `Po ≠ none ⇒ Pc ≠ none` (INV-3).
 
-   `cco_access` = `none` · **`read-project`** · `read-global` · `read-all` ·
-   `edit-project` · `edit-global` · `edit-all`
+   Unspecified axes **auto-promote** to the invariant floor, so a user declares only the
+   maximal intent (`--cco-access current=rw,others=rw` → `(none, rw, rw)`). Secrets and tokens
+   remain masked/absent in every case (unchanged from ADR-0036). The read/write behaviour of
+   every consumer (mount-gen, shim, output-scoping) derives directly from the triple — one
+   source (INV-E; ADR-0046 §7).
 
-   `read-project` grants the wrapped read verbs limited to the **current project's** own
-   resources (its `project.yml`, its packs/llms, `cco path list` for its mounts). Secrets
-   and tokens remain masked/absent in every case (unchanged from ADR-0036).
+   **Named levels survive as a *symmetric ladder* of sugar** over the triples — `read-project`
+   `(none,ro,none)` · `read-global` `(ro,ro,none)` · `read-all` `(ro,ro,ro)` · `edit-project`
+   `(none,rw,none)` · `edit-global` `(rw,rw,none)` · `edit-all` `(rw,rw,rw)`. Every **asymmetric**
+   intent (e.g. curate-global-only `(rw,ro,none)`, edit-all-projects-not-global `(ro,rw,rw)`,
+   edit-global-consult-all `(rw,ro,ro)`) is **granular-only**, so a named preset is never
+   ambiguous. `access.cco` accepts either a scalar (preset) or a `{global,current,others}` map.
 
 2. **Normal-project default becomes `read-project`** (was `none`; **decided 2026-07-02**).
    This is what makes the three-level model work in ordinary sessions: the agent can *query*
@@ -150,10 +170,9 @@ Wrapped `cco` (ADR-0036 D4) is the on-demand channel. Two changes:
    project-scoped, secrets always masked → low risk; the cost is that the wrapped `cco`
    shim is present in every session).
 
-Full symmetric read scoping is adopted (**decided 2026-07-02**): `read-project` /
-`read-global` / `read-all` mirror `edit-project` / `edit-global` / `edit-all`. The cco
-user guides/docs are reachable in **any** session at any read level via the wrapped verb
-`cco docs` — no extra mount is required (config-editor/tutorial still mount them explicitly).
+The cco user guides/docs are reachable in **any** session at any read level via the wrapped
+verb `cco docs` — no extra mount is required (config-editor/tutorial still mount them
+explicitly).
 
 3. **Scope-aware help in-container (decided 2026-07-02).** `cco` is now used both on the
    host and inside a container (the caller-context signal D8 already distinguishes them).
