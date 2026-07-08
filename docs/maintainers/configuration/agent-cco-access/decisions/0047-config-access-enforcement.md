@@ -225,7 +225,8 @@ annotated**, not rewritten (documentation-lifecycle).
   mount.
 - **Feeds**: **D3/A1** — per-command info×scope gating runs **inside the same helper boundary**,
   keyed off ADR-0046 §7; the tag/remote per-target gating (B5) and the hint invariant (B6) land
-  there. **Implementation phase** — Dockerfile (`cco-svc`, setuid helper, `/var/lib/cco-internal`),
+  there. **✅ A1/D3 done (2026-07-08)** — [`../e2e-review/analysis/A1-command-scope-matrix.md`](../e2e-review/analysis/A1-command-scope-matrix.md)
+  (internal-store writes — tag by tagged resource, remote → `G` — ride this helper). **Implementation phase** — Dockerfile (`cco-svc`, setuid helper, `/var/lib/cco-internal`),
   entrypoint (create/own the root, symlink XDG, lock down first — mirroring the proxy's
   chmod-first), `cmd-start.sh` (session descriptor + simplified internal mounts), `lib/paths.sh`
   (resolver → privileged root), migrations + changelog + `cco build`.

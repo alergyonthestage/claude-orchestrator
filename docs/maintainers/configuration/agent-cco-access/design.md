@@ -212,7 +212,13 @@ help are per-command responsibilities too.
 This principle — and the checklist every new/changed verb must follow — is captured as a
 standing reference so future CLI work inherits the correct method:
 **[`docs/maintainers/cli/design/design-cli-environment-awareness.md`](../../cli/design/design-cli-environment-awareness.md)**.
-A full audit of the whole verb surface against it is planned once this sprint (B2) lands.
+The **definitive per-verb classification** — every verb by enforcement side (config-content /
+internal-store / environment-host) and resource area (`(G,Pc,Po)` × read/write, ADR-0046 §7),
+with the shim's hardcoded level literals replaced by a **gate-by-resource-area** derivation —
+is the D3/A1 analysis
+**[`e2e-review/analysis/A1-command-scope-matrix.md`](e2e-review/analysis/A1-command-scope-matrix.md)**,
+the oracle the [CLI-surface matrix](../../cli/reference/cli-surface-matrix.md) and the e2e v2
+pass derive from.
 
 ## 5. Invariants
 

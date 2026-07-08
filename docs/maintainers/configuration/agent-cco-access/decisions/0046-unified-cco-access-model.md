@@ -215,6 +215,12 @@ repos** each carrying a **divergent** (non-synced) `<repo>/.cco`.
 > allowed to run `cco sync` of divergent members (arguably legit for a config-focused session)
 > is recorded as a **future evolution** — re-evaluated in the per-command info×scope analysis
 > (D3), which classifies every verb by the resource area it touches. Until then: host-only.
+>
+> **⤷ Resolved in A1/D3 (2026-07-08)** — [`../e2e-review/analysis/A1-command-scope-matrix.md`](../e2e-review/analysis/A1-command-scope-matrix.md)
+> §4.4: **`cco sync` stays host-only for every session, config-editor included.** It is in the
+> resolve/sync host-only family (depends on host path resolution + clone-from-url); the
+> `include_member_configs` flag above already covers the in-container read/edit need, so no
+> `cco sync` carve-out is required. §6's "until then: host-only" becomes the settled answer.
 
 ### 7. The resolver — `(G, Pc, Po)` as the single source
 
@@ -277,7 +283,8 @@ comparison.
   edit-global write the project?") the maintainer flagged. Pushing all asymmetry to the
   granular form makes every named preset unambiguous.
 - **Allow in-container `cco sync` of divergent members now.** Deferred, not rejected — see §6;
-  re-evaluated in D3/A1 rather than decided cold here.
+  re-evaluated in D3/A1 rather than decided cold here. **⤷ A1/D3 (2026-07-08) resolved it
+  host-only**, config-editor included (§6 annotation).
 
 ## Consequences
 
