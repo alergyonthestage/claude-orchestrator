@@ -15,6 +15,16 @@ config-editor UX direction), implementer (analysis + code-grounding + recommenda
 > (`edit-project` reads at project scope, not everything), and **`read-global` ≠
 > `read-all`**: they differ only in *other-project* visibility (packs/llms/templates/
 > remotes are fully visible at `global`). See [ADR-0043 §1](../../../cli/decisions/0043-unified-cli-environment-access-scope.md).
+>
+> **Refined (2026-07-07) by [ADR-0044](0044-internal-builtin-presets-and-config-editor-scope.md)** —
+> the **config-editor default scope (§8, §Decision)** is superseded: config-editor is
+> write-capable, so it now defaults to **minimum privilege** (cwd-project `edit-project`,
+> or global-only `edit-global` outside a project) and the broad every-project surface is
+> an **explicit `--all`/`edit-all`**, not the default. The **tutorial preset** moves to
+> **`read-all`** (read-only teacher — full context, no write risk). ADR-0044 also states
+> the underlying principle: internal built-ins (tutorial, config-editor) are *special
+> sessions with their own motivated preset rules*, distinct from the standard-project
+> uniform model.
 
 ## Context
 
