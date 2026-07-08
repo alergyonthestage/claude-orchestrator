@@ -1,9 +1,15 @@
 # D2 — Enforcement architecture — session handoff
 
-> **Status**: Ready to run (2026-07-08). **D1 is DONE and approved** —
-> [ADR-0046](../decisions/0046-unified-cco-access-model.md) (`7706ed7`). D2 is the **second**
-> of the three sequential design sub-phases; it runs in its own **clean session** and produces
-> an **ADR the maintainer approves** before D3/implementation.
+> **Status**: ✅ **DONE + approved (2026-07-08)** — [ADR-0047](../decisions/0047-config-access-enforcement.md)
+> (`4dc6922`). Outcome: **not** the broker this kickoff targeted — an empirical test of macOS
+> Docker Desktop bind mounts (`fakeowner`) showed a lighter, coherent path: confine only the
+> **internal store** behind a **privilege boundary** (dedicated `cco-svc` mode-0700 real-FS
+> parent + setuid helper enforcing `(G,Pc,Po)`), no daemon/protocol. See ADR-0047 §Alternatives
+> for why A (ro projection) and B (socket broker) were rejected/kept-as-fallback. **D3 is next.**
+> The original kickoff brief is preserved below for context.
+>
+> **D1 is DONE and approved** — [ADR-0046](../decisions/0046-unified-cco-access-model.md)
+> (`7706ed7`). D2 was the **second** of the three sequential design sub-phases.
 >
 > **Master plan**: [`handoff.md`](handoff.md) — this file is the focused kickoff for D2 and
 > does not replace it. The full D2 spec is [`handoff.md`](handoff.md) **§3 D2** + the security

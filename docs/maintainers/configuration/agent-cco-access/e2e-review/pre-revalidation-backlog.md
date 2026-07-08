@@ -146,10 +146,15 @@ Confirmed by the maintainer; formalized by **[`../hardening-v2/handoff.md`](../h
   (which filters only command output). Root: agent + cco share UID, no FS confinement.
 - **S1b — `show_host_paths` bypass (SECURITY, CONFIRMED).** Host paths readable via the
   mounted index even at `show_host_paths=off`. Same root as S1.
-- **M2 — enforcement architecture (D2).** Fix S1/S1b by a **cco config broker** (target,
-  option B — mirrors `cco-docker-proxy`: buckets outside the container, thin gated client,
-  single enforcement point, granular writes persist host-side) vs physical scoped mounts
-  (option A). Revises ADR-0043 INV-D. → new ADR.
+- **M2 — enforcement architecture (D2). ✅ DESIGN DONE (2026-07-08) —
+  [ADR-0047](../decisions/0047-config-access-enforcement.md).** Not a broker: confine only the
+  **internal store** behind a **privilege boundary** — a dedicated `cco-svc`-owned mode-0700
+  real-FS parent (`/var/lib/cco-internal`) the `claude` user cannot traverse, crossed by a setuid
+  helper enforcing `(G,Pc,Po)`. No daemon/protocol/duplication; config-content trees stay mounted.
+  Grounded in a macOS-Docker-Desktop `fakeowner` test (chown/chmod can't confine bind content;
+  real-FS parent traversal can). Options A (scoped ro projection) + B (socket broker) rejected/
+  fallback. Forward-annotates ADR-0043 INV-D; design.md INV-5 + design-docker.md §1.2.3. → **D3
+  next.**
 - **A1 — per-command info×scope analysis (D3).** After M1+M2, classify every verb by the
   resource area it touches; produces the definitive gating (B5 tag, B6 hint, path decision,
   coverage gaps). → analysis doc.
@@ -158,10 +163,10 @@ Confirmed by the maintainer; formalized by **[`../hardening-v2/handoff.md`](../h
 
 ```mermaid
 flowchart TD
-  D1["D1 · ADR unified (G,Pc,Po) model + multi-repo Pc"] --> D2["D2 · ADR enforcement (broker) — fixes S1/S1b"]
+  D1["D1 ✅ · ADR-0046 unified (G,Pc,Po) model + multi-repo Pc"] --> D2["D2 ✅ · ADR-0047 enforcement (privilege boundary) — fixes S1/S1b"]
   D2 --> D3["D3 · A1 per-command info×scope (tag B5, hint B6, path)"]
   D3 --> R["doc reconciliation sweep"]
-  R --> I["Implementation: model + broker + per-command fixes\n+ config-editor/tutorial (ADR-0044) + registry (ADR-0045)\n+ B1–B4; migrations + changelog"]
+  R --> I["Implementation: model + privilege boundary (cco-svc setuid) + per-command fixes\n+ config-editor/tutorial (ADR-0044) + registry (ADR-0045)\n+ B1–B4; migrations + changelog"]
   I --> BUILD["cco build"]
   BUILD --> E["e2e v2 (acceptance vs the definitive matrix)"]
 ```

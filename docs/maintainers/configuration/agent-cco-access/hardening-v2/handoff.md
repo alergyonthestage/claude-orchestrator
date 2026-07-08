@@ -14,8 +14,11 @@
 > reconciliation → implementation → e2e v2.
 >
 > **Progress**: **D1 ✅ DONE + approved (2026-07-08)** — [ADR-0046](../decisions/0046-unified-cco-access-model.md)
-> (`7706ed7`; the `(G,Pc,Po)` model). **D2 is next** — focused kickoff in
-> [`D2-handoff.md`](D2-handoff.md) (this file remains the full spec: §0 findings + §3 D2).
+> (`7706ed7`; the `(G,Pc,Po)` model). **D2 ✅ DONE + approved (2026-07-08)** —
+> [ADR-0047](../decisions/0047-config-access-enforcement.md) (`4dc6922`; internal-store
+> **privilege boundary** — parent-gating + setuid `cco-svc`, **not** the broker originally
+> targeted; grounded in a macOS-DD `fakeowner` empirical test). **D3 is next** (A1 per-command
+> info×scope — §3 D3). §0 findings + §3 remain the full spec.
 
 ---
 
