@@ -285,6 +285,12 @@ your config it can read or edit (ADR-0036 + ADR-0042 + ADR-0043). A plain
 `cco start <project>` now defaults to a **read-only, project-scoped** in-session `cco`
 (`cco_access=read-project`) — up from the former `none`.
 
+> **Planned evolution (not yet implemented).** A future release refactors `cco_access` from
+> the level enum below into an explicit `(G, Pc, Po)` triple (the named levels stay as
+> shortcuts; a granular `global=…,current=…,others=…` form unlocks two extra intents), and
+> hardens confidentiality with an OS-level privilege boundary around the internal store. Today's
+> behaviour is exactly the enum documented here.
+
 | Knob | Values (default **bold**) | Governs |
 |------|---------------------------|---------|
 | `claude_access` | none · **repo** · all | `.claude` authoring trees (repo / project / global). `settings.json` stays rw regardless. |
