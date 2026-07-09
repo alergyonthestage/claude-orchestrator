@@ -241,15 +241,37 @@ _start_resolve_access() {
     fi
 
     claude_access=$(_access_pick "$cli_claude_access" "$p_claude" "$g_claude" "$d_claude")
-    cco_access=$(_access_pick "$cli_cco_access" "$p_cco" "$g_cco" "$d_cco")
-    # Back-compat (ADR-0042): bare `read` predates symmetric read scoping and meant
-    # "read everything" — normalize it to read-all before validation so old
-    # project.yml / access.yml / --cco-access values keep working.
-    [[ "$cco_access" == "read" ]] && cco_access="read-all"
     _access_is_member "$_ACCESS_CLAUDE_VALUES" "$claude_access" \
         || die "Invalid claude_access '$claude_access' (expected one of: $_ACCESS_CLAUDE_VALUES). Set --claude-access, project.yml access.claude, or ~/.cco/access.yml."
-    _access_is_member "$_ACCESS_CCO_VALUES" "$cco_access" \
-        || die "Invalid cco_access '$cco_access' (expected one of: $_ACCESS_CCO_VALUES). Set --cco-access, project.yml access.cco, or ~/.cco/access.yml."
+
+    # ── cco access → the (G,Pc,Po) triple (ADR-0046) ─────────────────
+    # A source's cco value is EITHER a scalar (a preset name OR the granular
+    # "global=…,current=…,others=…" form) OR — project.yml only — the access.cco
+    # MAP form (global/current/others sub-keys). Precedence unchanged (ADR-0036
+    # D3): CLI > project.yml (scalar|map) > global scalar > preset default. The
+    # winning source resolves to the triple (scalar → _cco_resolve_access; map →
+    # _cco_promote_triple), which auto-promotes unspecified axes to the invariant
+    # floor and REJECTS an explicit invariant-violating triple (§2, die → exit 1;
+    # its message already reaches stderr, so we just propagate the exit). The bare
+    # `read` alias is normalized inside the resolver (→ read-all). cco_access is
+    # then the DISPLAY LABEL of the triple; cco_g/cco_pc/cco_po are the machine
+    # source consumers derive from (INV-E). include_member_configs (§6) is an
+    # additive project.yml bool (default false).
+    local _mg="" _mc="" _mo=""
+    if [[ "$_preset" == "normal" ]]; then
+        _mg=$(yml_get_deep "$project_yml" "access.cco.global"  2>/dev/null)
+        _mc=$(yml_get_deep "$project_yml" "access.cco.current" 2>/dev/null)
+        _mo=$(yml_get_deep "$project_yml" "access.cco.others"  2>/dev/null)
+    fi
+    local _cco_triple
+    if   [[ -n "$cli_cco_access" ]]; then _cco_triple=$(_cco_resolve_access "$cli_cco_access") || exit $?
+    elif [[ -n "$_mg$_mc$_mo" ]];    then _cco_triple=$(_cco_promote_triple "$_mg" "$_mc" "$_mo") || exit $?
+    elif [[ -n "$p_cco" ]];          then _cco_triple=$(_cco_resolve_access "$p_cco") || exit $?
+    elif [[ -n "$g_cco" ]];          then _cco_triple=$(_cco_resolve_access "$g_cco") || exit $?
+    else                                  _cco_triple=$(_cco_resolve_access "$d_cco") || exit $?
+    fi
+    read -r cco_g cco_pc cco_po <<< "$_cco_triple"
+    cco_access=$(_cco_triple_label "$cco_g" "$cco_pc" "$cco_po")
 
     local shp_raw shp_norm
     shp_raw=$(_access_pick "$cli_show_host_paths" "$p_shp" "$g_shp" "$d_shp")
@@ -258,7 +280,7 @@ _start_resolve_access() {
     show_host_paths="$shp_norm"
 
     [[ "${CCO_DEBUG:-}" == "1" ]] && \
-        echo "[debug] access: claude=$claude_access cco=$cco_access show_host_paths=$show_host_paths" >&2
+        echo "[debug] access: claude=$claude_access cco=$cco_access show_host_paths=$show_host_paths (G=$cco_g Pc=$cco_pc Po=$cco_po)" >&2
     return 0
 }
 
@@ -1550,6 +1572,8 @@ EOF
     local output_dir compose_file
     local config_dir session_state_dir session_cache_dir managed_gen_dir claude_gen_dir
     local claude_access cco_access show_host_paths   # resolved by _start_resolve_access (ADR-0036)
+    local cco_g cco_pc cco_po                        # resolved (G,Pc,Po) triple (ADR-0046); cco_access = its label
+    local cco_include_member_configs="false"         # access.cco.include_member_configs (ADR-0046 §6)
     local session_context_b64="" subagent_context_b64=""  # Level-A injected context (ADR-0042)
     local session_preset="normal"    # normal | tutorial | config-editor (built-in presets, D6)
     local _op_config_masks=()        # host<TAB>target pairs of built-in config mounts to secret-mask (5b)

@@ -14,6 +14,7 @@ _access_src() {
     source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/lib/yaml.sh"
     source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/access-scope.sh"   # (G,Pc,Po) resolver used by _start_resolve_access
     source "$REPO_ROOT/lib/cmd-start.sh"
 }
 
@@ -158,6 +159,105 @@ test_access_resolve_invalid_project_value_dies() {
     out=$( _start_resolve_access 2>&1 ) || rc=$?
     [[ $rc -ne 0 ]] || fail "invalid cco_access should abort, got rc=0"
     [[ "$out" == *"Invalid cco_access"* ]] || fail "expected validation message, got: $out"
+}
+
+# ── (G,Pc,Po) triple resolution (ADR-0046) ───────────────────────────
+
+# edit-global is REDEFINED (§3): its triple is (rw,rw,none) — it now writes the
+# current project too. The label round-trips to "edit-global".
+test_access_resolve_edit_global_triple() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    local project_yml="$tmp/project.yml"; printf 'name: p\n' > "$project_yml"
+    local cli_claude_access="" cli_cco_access="edit-global" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
+    _start_resolve_access
+    [[ "$cco_g $cco_pc $cco_po" == "rw rw none" ]] || fail "edit-global → (rw,rw,none), got: $cco_g $cco_pc $cco_po"
+    [[ "$cco_access" == "edit-global" ]] || fail "label round-trips, got: $cco_access"
+}
+
+# Granular CLI form with auto-promotion: others=rw → Pc=rw (INV-4), G=none.
+test_access_resolve_granular_cli() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    local project_yml="$tmp/project.yml"; printf 'name: p\n' > "$project_yml"
+    local cli_claude_access="" cli_cco_access="others=rw" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
+    _start_resolve_access
+    [[ "$cco_g $cco_pc $cco_po" == "none rw rw" ]] || fail "others=rw promotes Pc=rw, got: $cco_g $cco_pc $cco_po"
+    [[ "$cco_access" == "global=none,current=rw,others=rw" ]] || fail "granular label, got: $cco_access"
+}
+
+# Case 7 granular: global=rw,current=ro,others=ro.
+test_access_resolve_granular_case7() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    local project_yml="$tmp/project.yml"; printf 'name: p\n' > "$project_yml"
+    local cli_claude_access="" cli_cco_access="global=rw,current=ro,others=ro" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
+    _start_resolve_access
+    [[ "$cco_g $cco_pc $cco_po" == "rw ro ro" ]] || fail "case7 triple, got: $cco_g $cco_pc $cco_po"
+}
+
+# The project.yml access.cco MAP form resolves to a triple (auto-promotion applies).
+test_access_resolve_map_form() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    local project_yml="$tmp/project.yml"
+    printf 'name: p\naccess:\n  cco:\n    global: ro\n    current: rw\n    others: rw\n' > "$project_yml"
+    local cli_claude_access="" cli_cco_access="" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
+    _start_resolve_access
+    [[ "$cco_g $cco_pc $cco_po" == "ro rw rw" ]] || fail "map form → (ro,rw,rw), got: $cco_g $cco_pc $cco_po"
+}
+
+# A partial map auto-promotes the unspecified axes.
+test_access_resolve_map_partial_promotes() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    local project_yml="$tmp/project.yml"
+    printf 'name: p\naccess:\n  cco:\n    others: rw\n' > "$project_yml"
+    local cli_claude_access="" cli_cco_access="" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
+    _start_resolve_access
+    [[ "$cco_g $cco_pc $cco_po" == "none rw rw" ]] || fail "partial map promotes Pc=rw, got: $cco_g $cco_pc $cco_po"
+}
+
+# CLI granular overrides a project.yml scalar (precedence unchanged).
+test_access_resolve_granular_precedence() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    local project_yml="$tmp/project.yml"
+    printf 'name: p\naccess:\n  cco: read-project\n' > "$project_yml"
+    local cli_claude_access="" cli_cco_access="global=rw,current=rw" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
+    _start_resolve_access
+    [[ "$cco_g $cco_pc $cco_po" == "rw rw none" ]] || fail "CLI granular wins over project scalar, got: $cco_g $cco_pc $cco_po"
+}
+
+# An explicit invariant-violating triple is REJECTED (die, exit≠0) naming it.
+test_access_resolve_invariant_rejection() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    local project_yml="$tmp/project.yml"; printf 'name: p\n' > "$project_yml"
+    local cli_claude_access="" cli_cco_access="current=ro,others=rw" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
+    local out rc=0
+    out=$( _start_resolve_access 2>&1 ) || rc=$?
+    [[ $rc -ne 0 ]]           || fail "current=ro,others=rw must be rejected, got rc=0"
+    [[ "$out" == *"INV-4"* ]] || fail "rejection should name INV-4, got: $out"
+}
+
+# An unknown granular key / bad value dies.
+test_access_resolve_granular_bad_token() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    local project_yml="$tmp/project.yml"; printf 'name: p\n' > "$project_yml"
+    local cli_claude_access="" cli_cco_access="global=maybe" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
+    local rc=0
+    ( _start_resolve_access ) >/dev/null 2>&1 || rc=$?
+    [[ $rc -ne 0 ]] || fail "bad granular value must be rejected"
 }
 
 # ── Full-flow integration (dry-run) ──────────────────────────────────
