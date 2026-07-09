@@ -95,6 +95,10 @@ int main(int argc, char **argv) {
     envp[envc++] = strdup("HOME=/home/claude");
     envp[envc++] = strdup("CCO_IN_CONTAINER=1");
     envp[envc++] = strdup("CCO_CONTAINER_OPERATOR=1");
+    /* Marks the child as the already-elevated cco: it reaches the store directly and
+     * must NOT re-trampoline through this helper (see bin/cco). Inherited by any cco
+     * subprocess the elevated verb spawns, so a nested store read stays direct. */
+    envp[envc++] = strdup("CCO_STORE_ELEVATED=1");
     /* The bucket homes are fixed to the privileged root — never taken from the caller,
      * so the elevated cco always resolves the confined store, not a $HOME shadow. */
     envp[envc++] = strdup("CCO_STATE_HOME=/var/lib/cco-internal/state/cco");

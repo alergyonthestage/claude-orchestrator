@@ -371,6 +371,29 @@ _cco_operator_shim() {
     esac
 }
 
+# Verbs whose execution reads or writes the INTERNAL STORE (STATE index, DATA
+# registries, CACHE internals) — the trees confined behind the cco-svc privilege
+# boundary (ADR-0047). In a container-operator session these are unreachable as the
+# `claude` user (EACCES on the 0700 root); they are re-executed elevated via the
+# setuid helper (see Main), where the (G,Pc,Po) gate + output-scoping run keyed off
+# the trusted :ro session descriptor. Config-content-only verbs (e.g. `config save`,
+# which writes the claude-owned ~/.cco) are deliberately NOT listed — they run as
+# claude so cco-svc never writes a claude-owned tree. Default-deny: unlisted ⇒ not
+# elevated (runs as claude; a store touch would EACCES, surfacing the miss loudly
+# rather than silently leaking). Usage: _cco_verb_touches_store <cmd> <sub>
+_cco_verb_touches_store() {
+    local c="$1" s="${2:-}"
+    case "$c" in
+        list)    return 0 ;;                                          # index + DATA tags + source
+        path)    [[ "$s" == "list" ]] && return 0 ;;                  # index (host paths)
+        tag)     case "$s" in add|remove|rm) return 0 ;; esac ;;      # DATA tags.yml write
+        remote)  [[ "$s" == "list" ]] && return 0 ;;                  # DATA remotes registry
+        project) case "$s" in show|validate|coords) return 0 ;; esac ;;  # index membership
+        pack|template|llms) case "$s" in show|validate) return 0 ;; esac ;;  # DATA source provenance
+    esac
+    return 1
+}
+
 # ── Main ─────────────────────────────────────────────────────────────
 
 cmd="${1:-}"
@@ -392,8 +415,30 @@ esac
 # and SKIP the host first-run bootstrap (the buckets are bind-mounted by
 # `cco start`, never created here). Otherwise fall through to the normal
 # host bootstrap + dispatch.
-if _cco_container_operator; then
+_cco_store_helper=/usr/local/bin/cco-svc-helper
+if [[ "$cmd" == "__store" ]] && _cco_container_operator; then
+    # Elevated re-entry (ADR-0047): the setuid helper re-execs `cco __store <verb> …`
+    # as cco-svc to cross the internal-store privilege boundary. Peel the marker verb
+    # and fall through to the gate + dispatch below — now running as cco-svc with the
+    # store reachable and the TRUSTED (G,Pc,Po) triple the helper injected from the
+    # :ro session descriptor (never the agent-mutable env). This re-run of the shim is
+    # the AUTHORITATIVE gate (the outer, claude-side gate keys off forgeable env, so it
+    # is only an early UX check). The single physical enforcement point.
+    cmd="${1:-}"; shift 2>/dev/null || true
+    [[ -z "$cmd" ]] && die "Malformed elevated re-entry: '__store' needs a verb."
     _cco_operator_shim "$cmd" "$@"
+elif _cco_container_operator; then
+    _cco_operator_shim "$cmd" "$@"
+    # Trampoline store-touching verbs across the boundary so they run elevated. Guard
+    # on the helper being present + not already elevated: an image built before Phase
+    # II (no helper; the store was mounted the old claude-readable way) and the test
+    # env both fall back to running the verb here, unchanged. The helper injects the
+    # trusted scope and execs `cco __store …`; exec replaces this process, so the
+    # elevated cco's stdio IS the terminal (no capture/relay needed).
+    if [[ "${CCO_STORE_ELEVATED:-}" != "1" && -x "$_cco_store_helper" ]] \
+        && _cco_verb_touches_store "$cmd" "${1:-}"; then
+        exec "$_cco_store_helper" "$cmd" "$@"
+    fi
 else
     # J0 first-run bootstrap of the four decentralized-config roots + the legacy-
     # vault safety-net backup, before any command runs (ADR-0017 D3 / ADR-0006 /
