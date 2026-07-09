@@ -127,7 +127,17 @@ for internal-store writes (II). **Presets (IV)** are triples → depend on I. **
 largely independent but touches the same mount/scope layer, so lands after III. **Cutover (VI)**
 is last — docs + migrations + the final rebuild.
 
-### Phase I — Model `(G,Pc,Po)` (ADR-0046) — no rebuild · **[Session 1]**
+### Phase I — Model `(G,Pc,Po)` (ADR-0046) — no rebuild · **[Session 1]** — ✅ DONE (2026-07-09)
+
+> **Landed** on `feat/config-access/e2e-review` in 4 atomic commits (`ec56f9f`
+> resolver + per-axis read-visibility; `f78ae54` resolution → triple + granular/map
+> parse + auto-promotion + invariant rejection; `c8a476f` consumers off the triple —
+> mount-gen/shim/help/whoami, `edit-global`=(rw,rw,none) unlocks A1; `566d660`
+> access.cco map schema + `include_member_configs`). Suite **1147 → 1169/0** (+22
+> tests). **Deferred**: the §6 multi-repo Pc mount-narrowing (flag is plumbed + read +
+> documented, but the hosting-vs-member :ro narrowing is a follow-up — see the DEFERRED
+> note in `_start_generate_compose`; today every mounted repo's `.cco` follows Pc, ==
+> the flag's `true` span, so additive + non-regressive).
 
 Atomic units (one commit each, suggested):
 
