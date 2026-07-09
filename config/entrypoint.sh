@@ -84,6 +84,38 @@ if [ -S /var/run/docker.sock ] && [ -f /etc/cco/policy.json ]; then
     fi
 fi
 
+# ── cco internal-store privilege boundary (ADR-0047) ─────────────────
+# Lock down the privileged root that confines the internal store BEFORE claude ever
+# gets control (mirrors the docker-socket chmod-first pattern above — lock first, so
+# the boundary holds even if a later step fails). The store buckets (STATE index, DATA
+# registries, CACHE internals) are bind-mounted UNDER this root at leaf paths; because
+# the root is mode 0700 and owned by the login-less cco-svc uid on the REAL container
+# FS, the claude user (agent shell + wrapped cco) cannot traverse it → EACCES, closing
+# the S1/S1b cat-the-index leak. The sole crossing is the setuid cco-svc-helper, which
+# elevates to cco-svc and runs the scope-aware `cco __store`. On macOS Docker Desktop
+# chown/chmod on bind-mount CONTENT is not DAC-enforced (fakeowner), but the kernel
+# checks path traversal on the real PARENT inode — this 0700 real-FS parent (ADR-0047
+# §8 Test B). Idempotent + self-healing even against an image built before Phase II.
+CCO_INTERNAL_ROOT=/var/lib/cco-internal
+if getent passwd cco-svc >/dev/null 2>&1; then
+    install -d -o cco-svc -g cco-svc -m 0700 "$CCO_INTERNAL_ROOT"
+    # Re-assert ownership + mode unconditionally (defence in depth): the root must be
+    # 0700 cco-svc regardless of how the image or a prior run left it.
+    chown cco-svc:cco-svc "$CCO_INTERNAL_ROOT"
+    chmod 0700 "$CCO_INTERNAL_ROOT"
+    # XDG façade: $HOME/.local/{state,share,cache}/cco → the confined root. Both native
+    # paths and a direct `cat ~/.local/state/cco/index` resolve INTO the 0700 parent and
+    # hit EACCES (Test B layout). The elevated cco reaches the real leaves via CCO_*_HOME
+    # (injected by the helper); these symlinks are the claude-visible dead end. cco no
+    # longer mounts under the shared ~/.local/state | ~/.cache bases, which also removes
+    # the design-docker.md §1.2.2 native-installer sibling-EACCES collision.
+    gosu claude mkdir -p /home/claude/.local/state /home/claude/.local/share /home/claude/.cache 2>/dev/null || true
+    ln -sfn "$CCO_INTERNAL_ROOT/state/cco" /home/claude/.local/state/cco
+    ln -sfn "$CCO_INTERNAL_ROOT/share/cco" /home/claude/.local/share/cco
+    ln -sfn "$CCO_INTERNAL_ROOT/cache/cco" /home/claude/.cache/cco
+    _log "Internal-store boundary: $CCO_INTERNAL_ROOT locked (0700 cco-svc); XDG symlinks in place"
+fi
+
 # ── Ensure ~/.claude.json exists and is writable ─────────────────────
 # Mounted from global/claude-state/claude.json (shared across all projects).
 # Initialized on host by cmd_start before container starts.
