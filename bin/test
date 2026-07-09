@@ -20,8 +20,10 @@ export CCO_SKIP_BUILD=1
 # of these are set, so this is a no-op there.
 unset CCO_CONTAINER_OPERATOR CCO_IN_CONTAINER \
       CCO_CCO_ACCESS CCO_CLAUDE_ACCESS CCO_SHOW_HOST_PATHS CCO_CONFIG_TARGETS \
+      CCO_ACCESS_TRIPLE \
       PROJECT_NAME CCO_PROJECT_PACKS CCO_PROJECT_LLMS \
-      CCO_DATA_HOME CCO_STATE_HOME CCO_CACHE_HOME CCO_CONFIG_DIR CCO_SESSION_CONTEXT 2>/dev/null || true
+      CCO_DATA_HOME CCO_STATE_HOME CCO_CACHE_HOME CCO_CONFIG_DIR \
+      CCO_SESSION_CONTEXT CCO_SUBAGENT_CONTEXT 2>/dev/null || true
 
 # ── Colors ───────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then

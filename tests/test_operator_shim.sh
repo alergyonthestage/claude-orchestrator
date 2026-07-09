@@ -11,11 +11,22 @@
 # Run bin/cco in container-operator mode. $1 = cco_access level; rest = argv.
 # Buckets point at a throwaway dir so operator mode engages; the shim classifies
 # BEFORE any bucket use for blocked verbs. Captures stdout+stderr into OP_OUT.
+#
+# CCO_STORE_ELEVATED=1 pins the run to the in-process gate path: it skips the
+# Phase II setuid trampoline (bin/cco:438) so a store-touching verb is gated
+# HERE, at the simulated CCO_CCO_ACCESS/CCO_ACCESS_TRIPLE, instead of being
+# re-execed through the real cco-svc-helper — which, in a live boundary-enabled
+# container, would override the simulated level with the session's trusted
+# /etc/cco/session-access descriptor. On the host (no helper) it is a no-op (the
+# trampoline guard is already false), so the suite behaves identically host and
+# in-container. This isolates the GATE logic under test; the trampoline itself is
+# covered by tests/test_privilege_boundary.sh.
 _op_cco() {
     local level="$1"; shift
     local tmp; tmp=$(mktemp -d)
     OP_OUT=$(
         export CCO_IN_CONTAINER=1 CCO_CONTAINER_OPERATOR=1 CCO_CCO_ACCESS="$level" \
+               CCO_STORE_ELEVATED=1 \
                CCO_DATA_HOME="$tmp/data" CCO_STATE_HOME="$tmp/state" CCO_CACHE_HOME="$tmp/cache" \
                HOME="$tmp/home"
         mkdir -p "$HOME"
