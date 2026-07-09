@@ -161,6 +161,51 @@ test_access_resolve_invalid_project_value_dies() {
     [[ "$out" == *"Invalid cco_access"* ]] || fail "expected validation message, got: $out"
 }
 
+# ── Built-in presets (ADR-0044) ──────────────────────────────────────
+
+# tutorial → read-only teacher: claude=none, cco=read-all (was read-project).
+test_access_preset_tutorial_read_all() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    local project_yml="$tmp/project.yml"; printf 'name: tutorial\n' > "$project_yml"
+    local session_preset="tutorial"
+    local cli_claude_access="" cli_cco_access="" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths
+    _start_resolve_access
+    [[ "$claude_access" == "none" ]]  || fail "tutorial claude=none, got: $claude_access"
+    [[ "$cco_access" == "read-all" ]] || fail "tutorial cco=read-all (ADR-0044 §2), got: $cco_access"
+}
+
+# config-editor → minimum privilege by resolved mode: global→edit-global,
+# project→edit-project, all→edit-all (ADR-0044 §3). claude stays 'all'.
+test_access_preset_config_editor_by_mode() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    local project_yml="$tmp/project.yml"; printf 'name: config-editor\n' > "$project_yml"
+    local session_preset="config-editor"
+    local cli_claude_access="" cli_cco_access="" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths config_editor_mode
+    config_editor_mode="global"; _start_resolve_access
+    [[ "$cco_access" == "edit-global" ]]  || fail "config-editor global→edit-global, got: $cco_access"
+    config_editor_mode="project"; _start_resolve_access
+    [[ "$cco_access" == "edit-project" ]] || fail "config-editor project→edit-project, got: $cco_access"
+    config_editor_mode="all"; _start_resolve_access
+    [[ "$cco_access" == "edit-all" ]]     || fail "config-editor all→edit-all, got: $cco_access"
+    [[ "$claude_access" == "all" ]]       || fail "config-editor claude=all, got: $claude_access"
+}
+
+# An explicit --cco-access still overrides the config-editor preset default.
+test_access_preset_config_editor_cli_override() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    local project_yml="$tmp/project.yml"; printf 'name: config-editor\n' > "$project_yml"
+    local session_preset="config-editor" config_editor_mode="global"
+    local cli_claude_access="" cli_cco_access="read-project" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths
+    _start_resolve_access
+    [[ "$cco_access" == "read-project" ]] || fail "CLI --cco-access overrides the config-editor preset, got: $cco_access"
+}
+
 # ── (G,Pc,Po) triple resolution (ADR-0046) ───────────────────────────
 
 # edit-global is REDEFINED (§3): its triple is (rw,rw,none) — it now writes the

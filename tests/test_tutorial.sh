@@ -139,14 +139,16 @@ test_setup_internal_tutorial_refreshes_on_rerun() {
 
 # Tutorial resolves to the read-project/none preset (ADR-0042) → read-only wrapped
 # cco (operator env at cco_access=read-project), .claude authoring locked (none).
-test_start_tutorial_preset_read_none() {
+# ADR-0044 §2: the tutorial is a read-only teacher → read-all (was read-project),
+# so it reveals the user's whole cco world with no write risk.
+test_start_tutorial_preset_read_all() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco start tutorial --dry-run
-    assert_output_contains "claude=none cco=read-project"
+    assert_output_contains "claude=none cco=read-all"
     run_cco start tutorial --dry-run --dump
-    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "CCO_CCO_ACCESS=read-project"
+    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "CCO_CCO_ACCESS=read-all"
 }
 
 # The personal store is mounted read-only in the tutorial and its real secrets

@@ -207,17 +207,33 @@ _access_pick() {
 # the normal-session values (repo / none / on); step 5 layers the built-in
 # tutorial/config-editor presets on top.
 _start_resolve_access() {
-    # Preset defaults (D6, revised by ADR-0042): normal = repo/read-project/on
+    # Preset defaults (D6, revised by ADR-0042/0044): normal = repo/read-project/on
     # (was cco=none — the read-project default is what makes the on-demand
     # three-level model work: the agent can query its own environment via wrapped
-    # cco, so Level A stays minimal). Built-ins are presets — config-editor =
-    # all/edit-all/on, tutorial = none/read-project/on (read-only teacher). These
-    # become the level-4 default of the precedence chain.
+    # cco, so Level A stays minimal). Built-ins define their own MOTIVATED presets
+    # (ADR-0044 §1, read-only-vs-write): the tutorial is a read-only teacher →
+    # read-all; config-editor WRITES config → minimum privilege by cwd/flag. These
+    # become the level-4 default of the precedence chain (CLI still overrides).
     local _preset="${session_preset:-normal}"
     local d_claude="repo" d_cco="read-project" d_shp="true"
     case "$_preset" in
-        config-editor) d_claude="all";  d_cco="edit-all";     d_shp="true" ;;
-        tutorial)      d_claude="none"; d_cco="read-project"; d_shp="true" ;;
+        config-editor)
+            # ADR-0044 §3: minimum privilege by default. The mode resolved from
+            # cwd + flags (_resolve_config_editor_mode, run in _start_resolve_project
+            # before this) sets the scope — cwd-in-project → edit-project, outside
+            # any project → edit-global, --all / --cco-access edit-all → edit-all.
+            # Unset mode → fail-safe edit-global (narrowest still-functional).
+            d_claude="all"; d_shp="true"
+            case "${config_editor_mode:-global}" in
+                all)     d_cco="edit-all" ;;
+                project) d_cco="edit-project" ;;
+                *)       d_cco="edit-global" ;;
+            esac ;;
+        tutorial)
+            # ADR-0044 §2: read-only teacher → read-all reveals the user's whole
+            # cco world (projects/packs/templates/llms) with no write risk (no
+            # write verb is reachable). --cco-access can narrow, but is discouraged.
+            d_claude="none"; d_cco="read-all"; d_shp="true" ;;
     esac
 
     # For a built-in the precedence collapses to CLI > preset: its generated
@@ -329,20 +345,47 @@ _ce_add_repo() {
     _ce_repos+="${rn}"$'\n'
 }
 
-# Collect the config-editor's edit targets + repo mounts (ADR-0042 §8, use-case
-# redesign of ADR-0036 D-α). Sets the shared _ce_targets (newline-joined
-# "name<TAB><repo>/.cco") and _ce_repos (newline-joined repo logical names).
-#
-#   BROAD (default: bare `config-editor`, or `--all` alias) → every resolvable
-#     project's <repo>/.cco, NO repos. Broad config editing across all projects.
-#   NARROW (`--project <name>`, repeatable) → only those projects' <repo>/.cco
-#     PLUS each project's resolvable repos (repo-aware config authoring). Each
-#     --project MUST resolve — dies otherwise.
+# Resolve the config-editor session's minimum-privilege MODE (ADR-0044 §3) from
+# the CLI flags + cwd, ONCE, so both the preset cco_access default
+# (_start_resolve_access) and the mounted target set
+# (_start_collect_config_editor_targets) derive from the same decision. Sets
+# config_editor_mode ∈ all|project|global and, for the cwd-project case,
+# config_editor_cwd_dir (the hosting repo dir). Precedence:
+#   all      → --all OR --cco-access edit-all (the explicit broad wideners)
+#   project  → named --project targets, ELSE a cwd inside a project
+#   global   → outside any project (bare) — ~/.cco only, no project trees
+# Shares cmd_start scope.
+_resolve_config_editor_mode() {
+    config_editor_mode="global"
+    config_editor_cwd_dir=""
+    if [[ "$config_editor_all" == true || "$cli_cco_access" == "edit-all" ]]; then
+        config_editor_mode="all"
+    elif [[ ${#config_editor_targets[@]} -gt 0 ]]; then
+        config_editor_mode="project"
+    elif config_editor_cwd_dir=$(_resolve_find_unit_dir 2>/dev/null); then
+        config_editor_mode="project"
+    else
+        config_editor_cwd_dir=""
+        config_editor_mode="global"
+    fi
+}
+
+# Collect the config-editor's edit targets + repo mounts (ADR-0042 §8 / ADR-0044
+# §3). Sets the shared _ce_targets (newline-joined "name<TAB><repo>/.cco") and
+# _ce_repos (newline-joined repo logical names), keyed off the mode resolved by
+# _resolve_config_editor_mode:
+#   NARROW (`--project <name>`, repeatable) → those projects' <repo>/.cco PLUS
+#     each project's resolvable repos (repo-aware authoring). Each --project MUST
+#     resolve — dies otherwise.
+#   ALL (`--all` / `--cco-access edit-all`) → every resolvable project's
+#     <repo>/.cco, NO repos. Broad config editing — the explicit widener.
+#   PROJECT via cwd (bare inside a project) → the cwd project's <repo>/.cco PLUS
+#     its resolvable repos (like a single --project).
+#   GLOBAL (bare outside any project) → NO project targets (~/.cco only).
 #   `--repo <name>` (repeatable, any mode) adds one resolvable repo to the set.
 #
-# Repos are an EXPLICIT opt-in (P18 refined, not broken — design §8): the broad
-# default mounts no code, only <repo>/.cco config. Shares cmd_start scope; reads
-# config_editor_targets / config_editor_repos.
+# Repos are an EXPLICIT opt-in (P18 refined, not broken — design §8): --all mounts
+# no code, only <repo>/.cco config. Shares cmd_start scope; reads config_editor_*.
 _start_collect_config_editor_targets() {
     _ce_targets=""
     _ce_repos=""
@@ -360,14 +403,23 @@ _start_collect_config_editor_targets() {
                 _ce_add_repo "$rn"
             done < <(_effective_repo_mounts "$path/.cco/project.yml")
         done
-    else
-        # BROAD (bare / --all): every resolvable project's <repo>/.cco, no repos.
+    elif [[ "$config_editor_mode" == "all" ]]; then
+        # ALL (--all / --cco-access edit-all): every resolvable project's .cco, no repos.
         while IFS=$'\t' read -r name path _; do
             [[ -z "$name" ]] && continue
             [[ -d "$path/.cco" ]] || continue
             _ce_targets+="${name}"$'\t'"${path}/.cco"$'\n'
         done < <(_project_foreach)
+    elif [[ "$config_editor_mode" == "project" && -n "$config_editor_cwd_dir" ]]; then
+        # PROJECT (bare inside a project): the cwd project's .cco + its repos.
+        name=$(yml_get "$config_editor_cwd_dir/.cco/project.yml" name 2>/dev/null)
+        [[ -n "$name" && -d "$config_editor_cwd_dir/.cco" ]] \
+            && _ce_targets+="${name}"$'\t'"${config_editor_cwd_dir}/.cco"$'\n'
+        while IFS=$'\t' read -r rn rp; do
+            _ce_add_repo "$rn"
+        done < <(_effective_repo_mounts "$config_editor_cwd_dir/.cco/project.yml")
     fi
+    # else: mode=global (bare outside any project) → no project targets, ~/.cco only.
     # --repo <name>: add a single resolvable repo (fine-grained reference mount).
     for t in ${config_editor_repos[@]+"${config_editor_repos[@]}"}; do
         path=$(_index_get_path "$t")
@@ -424,13 +476,16 @@ _start_resolve_project() {
             die "Resolve the conflict and try again."
         fi
         is_internal=true
-        session_preset="config-editor"     # preset: claude_access=all, cco_access=edit-all (D6)
-        # Target scope (ADR-0042 §8): BROAD by default (bare / --all → every
-        # resolvable project's <repo>/.cco, no repos); NARROW under --project
-        # (repeatable → those projects' .cco + their repos); --repo adds one repo.
+        session_preset="config-editor"     # preset: min-privilege by mode (ADR-0044 §3)
+        # Scope (ADR-0044 §3): minimum privilege by cwd/flag. Resolve the mode ONCE
+        # (all|project|global) so the preset cco_access default (_start_resolve_access)
+        # and the mounted targets below agree. cwd-in-project → edit-project (its
+        # .cco + repos); outside → edit-global (~/.cco only); --all / --cco-access
+        # edit-all → edit-all (every project's .cco); --project → targeted.
         # The collector sets _ce_targets (newline name<TAB>cco_path) + _ce_repos
         # (newline repo names) directly via shared scope so its die() propagates
         # (bash 3.2 has no namerefs, and a $() subshell would swallow the die).
+        _resolve_config_editor_mode
         local _ce_targets="" _ce_repos=""
         _start_collect_config_editor_targets
         _setup_internal_config_editor "$_ce_targets" "$_ce_repos"
@@ -1527,7 +1582,9 @@ cmd_start() {
     local enable_config_edit=false  # --enable-config-edit escape hatch (ADR-0027 D3)
     local config_editor_targets=()  # --project <name> (repeatable): narrow + mount its repos (ADR-0042 §8)
     local config_editor_repos=()    # --repo <name> (repeatable): add one resolvable repo (ADR-0042 §8)
-    local config_editor_all=false   # --all: explicit alias of the broad default (kept for back-compat)
+    local config_editor_all=false   # --all: explicit widener → every project's .cco (ADR-0044 §3)
+    local config_editor_mode=""     # resolved all|project|global (ADR-0044 §3; _resolve_config_editor_mode)
+    local config_editor_cwd_dir=""  # the cwd project's host repo dir, when mode=project via cwd
     local cli_claude_access=""      # --claude-access override (ADR-0036 D2/D3); "" = unset
     local cli_cco_access=""         # --cco-access override; supersedes --enable-config-edit
     local cli_show_host_paths=""    # "" | "true" | "false" (--show-host-paths / --no-…)

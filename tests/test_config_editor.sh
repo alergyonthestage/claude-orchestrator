@@ -3,9 +3,14 @@
 #
 # config-editor is a reserved-name built-in (the tutorial model): `cco start
 # config-editor` materializes internal/config-editor/ at runtime and mounts the
-# personal store ~/.cco rw (global mode); --project <name> also mounts that
-# project's <repo>/.cco rw (project mode). Host paths are launcher-injected into
-# a generated runtime project.yml, never committed (AD3/G8).
+# personal store ~/.cco rw. Its scope is minimum-privilege by cwd/flag (ADR-0044
+# §3): bare inside a project → edit-project (that project's <repo>/.cco); bare
+# outside any project → edit-global (~/.cco only); `--all` / `--cco-access
+# edit-all` → edit-all (every project's .cco); `--project <name>` → edit-project
+# targeting that project + its repos. Tests that assert a scope therefore cd into
+# a neutral dir (global) or a project dir (cwd-project) for determinism — the
+# suite runs from the repo root, which is itself a project. Host paths are
+# launcher-injected into a generated runtime project.yml, never committed (AD3/G8).
 
 # ── Global mode ───────────────────────────────────────────────────────
 
@@ -13,6 +18,7 @@ test_config_editor_mounts_cco_config_rw() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
+    cd "$tmpdir"   # neutral cwd → global mode (~/.cco only)
     run_cco start config-editor --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     # ~/.cco mounted read-write at /workspace/cco-config.
@@ -24,6 +30,7 @@ test_config_editor_mounts_docs_readonly() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
+    cd "$tmpdir"
     run_cco start config-editor --dry-run --dump
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" ":/workspace/cco-docs:ro"
 }
@@ -34,6 +41,7 @@ test_config_editor_does_not_pollute_index() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
+    cd "$tmpdir"
     run_cco start config-editor --dry-run --dump
     local index="$CCO_STATE_HOME/index"
     if [[ -f "$index" ]]; then
@@ -49,17 +57,21 @@ test_config_editor_project_name_in_compose() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
+    cd "$tmpdir"
     run_cco start config-editor --dry-run --dump
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "container_name: cc-config-editor"
 }
 
 test_config_editor_no_project_overlay_in_global_mode() {
-    # Global mode mounts no <name>-config target.
+    # Global mode (bare, outside any project) mounts no <name>-config target.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "proj-a" "$(minimal_project_yml proj-a)"
+    cd "$tmpdir"   # outside any project → global mode
     run_cco start config-editor --dry-run --dump
-    assert_file_not_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "-config:/workspace/"
+    # No project config overlay is mounted (only ~/.cco).
+    assert_file_not_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" ":/workspace/proj-a-config"
 }
 
 # ── Project mode ──────────────────────────────────────────────────────
@@ -102,17 +114,19 @@ test_config_editor_name_reserved_for_init() {
 
 # ── Preset + wrapped-cco (ADR-0036 step 5) ────────────────────────────
 
-# config-editor resolves to the edit-all/all preset and gets the operator env
-# + the ~/.cco operator bucket mount (wrapped-cco).
+# config-editor (bare, outside any project → global mode, ADR-0044 §3) resolves to
+# claude=all / cco=edit-global and gets the operator env + the ~/.cco operator
+# bucket mount (wrapped-cco).
 test_config_editor_preset_emits_operator() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
+    cd "$tmpdir"   # outside any project → global mode (edit-global)
     run_cco start config-editor --dry-run
-    assert_output_contains "claude=all cco=edit-all"
+    assert_output_contains "claude=all cco=edit-global"
     run_cco start config-editor --dry-run --dump
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "CCO_CONTAINER_OPERATOR=1" || return 1
-    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "CCO_CCO_ACCESS=edit-all" || return 1
+    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "CCO_CCO_ACCESS=edit-global" || return 1
     # ~/.cco also mounted at the operator path for in-container cco resolution.
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "$HOME/.cco:/home/claude/.cco" || return 1
 }
@@ -123,15 +137,17 @@ test_config_editor_global_access_does_not_override_preset() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     printf 'cco: none\nclaude: none\n' > "$HOME/.cco/access.yml"
+    cd "$tmpdir"
     run_cco start config-editor --dry-run
-    assert_output_contains "claude=all cco=edit-all"
+    assert_output_contains "claude=all cco=edit-global"
 }
 
-# An explicit CLI flag CAN narrow the preset.
+# An explicit CLI flag CAN narrow (or widen) the preset default.
 test_config_editor_cli_narrows_preset() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
+    cd "$tmpdir"
     run_cco start config-editor --cco-access edit-project --dry-run
     assert_output_contains "cco=edit-project"
 }
@@ -158,6 +174,9 @@ test_config_editor_all_mounts_every_project() {
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "proj-a" "$(minimal_project_yml proj-a)"
     create_project "$tmpdir" "proj-b" "$(minimal_project_yml proj-b)"
+    # --all is the explicit broad widener → edit-all (ADR-0044 §3).
+    run_cco start config-editor --all --dry-run
+    assert_output_contains "cco=edit-all" || return 1
     run_cco start config-editor --all --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" ":/workspace/proj-a-config" || return 1
@@ -190,22 +209,40 @@ test_config_editor_all_mounts_only_cco() {
     assert_file_contains "$compose" "/.cco:/workspace/proj-a-config" || return 1
 }
 
-# ── Broad-by-default UX (ADR-0042 §8) ─────────────────────────────────
+# ── Minimum-privilege-by-default UX (ADR-0044 §3) ─────────────────────
 
-# Bare `config-editor` is now BROAD: mounts every resolvable project's .cco (the
-# former --all behavior), no repos. --all is a back-compat alias of this default.
-test_config_editor_bare_is_broad() {
+# Bare `config-editor` OUTSIDE any project → global mode: edit-global, ~/.cco
+# only, NO project overlays. --all is now the explicit widener (not the default).
+test_config_editor_bare_outside_project_is_global() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "proj-a" "$(minimal_project_yml proj-a)"
     create_project "$tmpdir" "proj-b" "$(minimal_project_yml proj-b)"
+    cd "$tmpdir"   # outside any project
+    run_cco start config-editor --dry-run
+    assert_output_contains "cco=edit-global" || return 1
     run_cco start config-editor --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
-    assert_file_contains "$compose" ":/workspace/proj-a-config" || return 1
-    assert_file_contains "$compose" ":/workspace/proj-b-config" || return 1
-    # Broad default mounts NO full repos (only <repo>/.cco config).
-    assert_file_not_contains "$compose" ":/workspace/dummy-repo\"" || return 1
+    assert_file_not_contains "$compose" ":/workspace/proj-a-config" || return 1
+    assert_file_not_contains "$compose" ":/workspace/proj-b-config" || return 1
+}
+
+# Bare `config-editor` INSIDE a project → cwd-scoped: edit-project, mounts that
+# project's .cco (+ its repos), NOT other projects (ADR-0044 §3 row 1).
+test_config_editor_bare_in_project_is_cwd_scoped() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "myproj" "$(minimal_project_yml myproj)"
+    create_project "$tmpdir" "other" "$(minimal_project_yml other)"
+    cd "$tmpdir/repos/myproj"   # inside myproj's repo
+    run_cco start config-editor --dry-run
+    assert_output_contains "cco=edit-project" || return 1
+    run_cco start config-editor --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_contains "$compose" ":/workspace/myproj-config" || return 1
+    assert_file_not_contains "$compose" ":/workspace/other-config" || return 1
 }
 
 # --project narrows AND mounts that project's repos (repo-aware config authoring).
@@ -228,6 +265,7 @@ test_config_editor_repo_flag_mounts_one_repo() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
+    cd "$tmpdir"
     run_cco start config-editor --repo dummy-repo --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "$CCO_DUMMY_REPO:/workspace/dummy-repo" || return 1
@@ -237,6 +275,7 @@ test_config_editor_repo_flag_unknown_fails() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
+    cd "$tmpdir"
     run_cco start config-editor --repo ghost-repo --dry-run --dump || true
     assert_output_contains "not resolvable"
 }
