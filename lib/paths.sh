@@ -380,6 +380,18 @@ _cco_global_claude_dir() {
     printf '%s\n' "$(_cco_config_dir)/.claude"
 }
 
+# The three INTERNAL-STORE buckets (DATA/STATE/CACHE) nest under the cco-svc-owned
+# privileged root in a container-operator session (ADR-0047): CCO_*_HOME point at
+# /var/lib/cco-internal/{share,state,cache}/cco, which the `claude` user cannot
+# traverse (EACCES). So the resolvers must NOT try to create/stat those paths as
+# claude — `_cco_ensure_dir` would EACCES on its `[[ -d ]]`/mkdir. The buckets are
+# pre-created + bind-mounted host-side by `cco start`, so ensuring is a host-only
+# concern; skip it whenever cco runs as a container operator (both the outer claude
+# cco and the helper-elevated cco-svc cco resolve the same confined paths). CONFIG
+# (~/.cco, _cco_config_dir) is unaffected — it stays a claude-owned mount and keeps
+# ensuring. The bucket string itself is always returned; only the side-effecting
+# ensure is gated.
+
 # DATA — internal-but-synced (required, never-team).
 _cco_data_dir() {
     _cco_resolver_guard
@@ -388,7 +400,7 @@ _cco_data_dir() {
         "${CCO_DATA_HOME:-}" \
         "${XDG_DATA_HOME:+${XDG_DATA_HOME%/}/cco}" \
         "$HOME/.local/share/cco")
-    _cco_ensure_dir "$base"
+    _cco_container_operator || _cco_ensure_dir "$base"
     printf '%s\n' "$base"
 }
 
@@ -400,7 +412,7 @@ _cco_state_dir() {
         "${CCO_STATE_HOME:-}" \
         "${XDG_STATE_HOME:+${XDG_STATE_HOME%/}/cco}" \
         "$HOME/.local/state/cco")
-    _cco_ensure_dir "$base"
+    _cco_container_operator || _cco_ensure_dir "$base"
     printf '%s\n' "$base"
 }
 
@@ -437,6 +449,6 @@ _cco_cache_dir() {
         "${CCO_CACHE_HOME:-}" \
         "${XDG_CACHE_HOME:+${XDG_CACHE_HOME%/}/cco}" \
         "$HOME/.cache/cco")
-    _cco_ensure_dir "$base"
+    _cco_container_operator || _cco_ensure_dir "$base"
     printf '%s\n' "$base"
 }
