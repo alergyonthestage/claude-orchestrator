@@ -1,5 +1,13 @@
 # Phase II kickoff — privilege boundary (ADR-0047)
 
+> **✅ PHASE II DONE (2026-07-09).** Implemented on `feat/config-access/e2e-review` in 6
+> atomic commits `3d77c8d`→`81f191d` + dogfood fix `98de9b1`; suite 1169→1174/0; dogfooded
+> on the Mac (boundary confirmed: `cat ~/.local/state/cco/index` → EACCES). See the
+> [implementation-handoff §5 Phase II](implementation-handoff.md) "Landed" note and the
+> [pre-revalidation backlog](../e2e-review/pre-revalidation-backlog.md) for details + the
+> pending maintainer check-in + dogfood bug B-DF1. **Next session: Phase III — see
+> [`phase-III-kickoff.md`](phase-III-kickoff.md).** This doc is kept as the Phase II record.
+
 > **Session-resume handoff.** Start here to run **S1 Phase II** of hardening-v2 in a
 > fresh, dedicated-context session. Phase I (the `(G,Pc,Po)` model) is **done + merged
 > into the working tree**; this phase builds the enforcement on top of it.

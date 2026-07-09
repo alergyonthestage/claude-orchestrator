@@ -89,7 +89,7 @@ and the risky image-rebuild work isolated.
 
 | Session | Phases | Dedicated context (working set) | Rebuild | In-session verifiable | Boundary |
 |---|---|---|---|---|---|
-| **S1 — Model + boundary** (foundation, security core) | **I + II** | `lib/access-scope.sh` (resolver), `lib/cmd-start.sh` (`_start_resolve_access`, mount block), `Dockerfile`, `config/entrypoint.sh`, `lib/paths.sh` (XDG→privileged root), setuid helper, session descriptor | **II: yes** | I: yes (suite); **II: only after `cco build` on the Mac** | **maintainer check-in after II** (confirm the `fakeowner` layout holds, ADR-0047 §8) |
+| **S1 — Model + boundary** ✅ DONE (2026-07-09) — dogfooded on the Mac; maintainer check-in pending | **I + II** | `lib/access-scope.sh` (resolver), `lib/cmd-start.sh` (`_start_resolve_access`, mount block), `Dockerfile`, `config/entrypoint.sh`, `lib/paths.sh` (XDG→privileged root), setuid helper, session descriptor | **II: yes** | I: yes (suite); **II: only after `cco build` on the Mac** | **maintainer check-in after II** (confirm the `fakeowner` layout holds, ADR-0047 §8) |
 | **S2 — Per-command + presets** | **III + IV** | `bin/cco` `_cco_operator_shim`, `lib/tags.sh`, `lib/cmd-whoami.sh`, `lib/paths.sh` (`path list`), `lib/cmd-start.sh` (`_start_collect_config_editor_targets`, preset resolution) | no (bash; unless a baked preset default changes) | yes (suite) | starts from S1's merged tree |
 | **S3 — Registry + help/status + cutover** | **V + VI** | `lib/utils.sh` (`_cco_session_running`), `cco start`/`stop` writers + reconciler, `_start_generate_compose` (ro mount), `bin/cco` usage render, `changelog.yml`, `migrations/*`, shipped-behaviour user docs | **VI: yes** (final build) | V: yes (suite); **VI: after `cco build`** | → **e2e v2** (separate acceptance handoff) |
 
@@ -165,7 +165,25 @@ Atomic units (one commit each, suggested):
 granular parse, precedence), `test_access_scope.sh` (per-axis read-visibility), `test_operator_shim.sh`
 (write gate by axis, `edit-global` now writes project).
 
-### Phase II — Privilege boundary (ADR-0047) — **REBUILD** · **[Session 1]**
+### Phase II — Privilege boundary (ADR-0047) — **REBUILD** · **[Session 1]** — ✅ DONE (2026-07-09)
+
+> **Landed** on `feat/config-access/e2e-review` in 6 atomic commits (`3d77c8d` Dockerfile:
+> `cco-svc` uid 900 + setuid C helper `config/cco-svc-helper.c` mode 4750 + `/var/lib/cco-internal`
+> 0700; `427d95c` entrypoint lock-first + XDG symlinks into the root; `80aec06` paths.sh
+> `_cco_ensure_dir` skip under the root in operator mode; `6983d41` **trampoline** —
+> `_cco_verb_touches_store` classifies store verbs, the outer claude cco `exec`s the helper →
+> `cco __store <verb>` elevated, which re-runs the shim as the authoritative gate; `3e4ee40`
+> cmd-start `:ro` session descriptor `/etc/cco/session-access` + internal mounts under the root
+> whole+rw per §4; `81f191d` `tests/test_privilege_boundary.sh`) **+ dogfood fix `98de9b1`**.
+> Confirmed model (maintainer): **helper in C** + **"helper sottile, gating stays in cco bash"**
+> (zero duplication). Suite **1169→1174/0**. **Dogfooded on the Mac**: boundary CONFIRMED
+> (`cat ~/.local/state/cco/index` → EACCES; `cco list` scoped works). Dogfood found a
+> `setgroups`/bash-privilege helper bug — a setuid-to-NON-root helper can't setgid/setuid and
+> a bash with euid≠ruid self-resets euid; fixed in `98de9b1` (euid-only elevation via the
+> setuid bit + `bash -p`, staying within ADR-0047 §2 "not root"). **Still pending: maintainer
+> check-in** (ADR-0047 §8 Test B on the Mac) + the helper-variant decision (`bash -p`
+> setuid-cco-svc vs setuid-root full uid+gid+groups drop). **Not verified on Linux** (write-path
+> relies on macOS fakeowner — see the backlog). Dogfood bug **B-DF1** logged (backlog).
 
 1. **Dockerfile**: create the **`cco-svc`** uid; bake the **minimal setuid helper** (owned
    `cco-svc`, setuid bit); create **`/var/lib/cco-internal/`** owned `cco-svc`, **mode 0700**.

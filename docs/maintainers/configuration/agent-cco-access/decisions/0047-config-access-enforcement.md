@@ -159,6 +159,23 @@ flowchart LR
   reads **that**, not `argv`/env — the agent can invoke the helper directly but cannot forge a
   wider scope. Absent a valid descriptor the helper refuses (fail-closed).
 
+> **Implementation note (2026-07-09, Phase II — `feat/config-access/e2e-review`).** The
+> "elevate to cco-svc" step landed as **euid-only elevation**, not a full uid/gid/groups drop.
+> A setuid-to-**non-root** helper (the `cco-svc`, *not root* choice above) has no
+> `CAP_SETGID`/`CAP_SETUID`, so `setgid`/`setuid`/`setgroups` `EPERM`; and file access is
+> checked against the **effective** uid, so the setuid bit's `euid=cco-svc` already suffices to
+> traverse the 0700 root. The helper therefore execs the baked cco via **`bash -p`** (privileged
+> mode) — load-bearing, because a plain bash started with `euid≠ruid` resets `euid` back to
+> `ruid` (claude), which would silently defeat the boundary. The real uid stays `claude`
+> (harmless: the store is 0700 owner-only, and a `euid≠ruid` process is non-dumpable, so claude
+> cannot ptrace it). This keeps the decision above ("setuid `cco-svc`, not root") intact. A
+> setuid-**root** helper doing a complete `setgroups`+`setgid`+`setuid` drop
+> (`euid==ruid==cco-svc`, no residual claude groups incl. `docker`) is the cleaner-running-state
+> alternative if the "not root" constraint is later relaxed. **Cross-platform caveat**: writes
+> to the bind-mounted internal registries by `cco-svc` rely on macOS Docker Desktop `fakeowner`
+> (verified); the Linux DAC write-path (chowning bind-mount content would mutate *host*
+> ownership) is an open follow-up.
+
 ### 4. Consequences for the existing layers
 
 - **Output-scoping retrocedes to a second layer.** `lib/access-scope.sh` (`_env_in_scope` +
