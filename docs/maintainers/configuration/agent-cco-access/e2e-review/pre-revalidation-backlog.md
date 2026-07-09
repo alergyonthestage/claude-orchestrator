@@ -207,10 +207,41 @@ Confirmed by the maintainer; formalized by **[`../hardening-v2/handoff.md`](../h
   `:ro` narrowing is a follow-up (DEFERRED note in `_start_generate_compose`; today
   every mounted repo's `.cco` follows Pc, == the flag's `true` span, additive +
   non-regressive). Re-open with the multi-repo mount rework or in e2e v2.
-- **S1 Phase II — privilege boundary (ADR-0047). ▶ NEXT** (REBUILD; not
-  in-session-verifiable; **maintainer check-in after**). Kickoff:
-  [`../hardening-v2/phase-II-kickoff.md`](../hardening-v2/phase-II-kickoff.md).
+- **S1 Phase II — privilege boundary (ADR-0047). ✅ CODE DONE (2026-07-09)** on
+  `feat/config-access/e2e-review`, 6 atomic commits (`3d77c8d` Dockerfile: `cco-svc`
+  uid + setuid C helper + `/var/lib/cco-internal` 0700; `427d95c` entrypoint lock-first
+  + XDG symlinks; `80aec06` paths.sh ensure-skip under the root in operator mode;
+  `6983d41` trampoline + `_cco_verb_touches_store` classifier + helper marker; `3e4ee40`
+  cmd-start `:ro` session descriptor + internal mounts under the root, whole+rw per §4;
+  `81f191d` `tests/test_privilege_boundary.sh`) **+ dogfood fix `98de9b1`**. Architecture:
+  TRAMPOLINE — the outer claude cco `exec`s the setuid helper for store-touching verbs;
+  the helper reads the trusted `:ro` descriptor, sanitizes env (injects the descriptor
+  triple, marks elevated), and execs `bash -p /opt/cco/bin/cco __store <verb>` as cco-svc;
+  `__store` re-runs the shim (authoritative gate, descriptor triple) + dispatches the real
+  verb with Phase-I output-scoping. Suite **1169 → 1174/0**. **Dogfood #1 on Mac
+  (2026-07-09)**: boundary CONFIRMED — `cat ~/.local/state/cco/index` → EACCES (S1/S1b
+  closed); a helper `setgroups` EPERM bug (setuid-to-non-root has no CAP_SETGID; bash
+  euid≠ruid self-resets) was fixed in `98de9b1` (euid-only elevation + `bash -p`, staying
+  within ADR-0047 §2 "not root"). **▶ maintainer check-in** (ADR-0047 §8 Test B) still
+  pending after the re-build. Branch NOT pushed.
 - **S2 (Phase III+IV), S3 (Phase V+VI)** — pending, per the implementation handoff.
+
+### Dogfood-found bugs (pre-merge / pre-e2e — NOT hardening-v2 scope)
+
+- **B-DF1 — `cco project show` reports mounted repos as `[missing]`/`code-only`
+  in-container** (found 2026-07-09, dogfood #2). `cmd_project_show`
+  (`lib/cmd-project-query.sh`) resolves each member's path via `_effective_repo_mounts`
+  → the STATE **index HOST path** (e.g. `/Users/alessandro/.../cave-flow`), then tests
+  `[[ -d "$repo_path" ]]` (`:184`) and `_project_member_role` → `_project_member_status`
+  (`-d host_path`, `index.sh:302`). **In-container the host path does not exist** — the
+  repo is bind-mounted at `/workspace/<repo_name>` — so every member is mislabelled
+  `[missing]` + `code-only` + "N reference(s) unresolved", though `ls /workspace/<name>`
+  shows it resolved. The project.yml resolution IS already operator-aware (`:146`), but
+  the **member-repo existence/role detection is NOT**. Fix (future): in operator mode,
+  check presence at `/workspace/<repo_name>` (where `cco start` mounts each repo), not the
+  index host path — for the `-d` badge AND `_project_member_status`. Not a security issue;
+  a UX/correctness bug surfaced by the Phase-II dogfood. Same index-host-path pattern may
+  affect other in-container read verbs that existence-check member repos.
 
 ### Updated sequencing
 
