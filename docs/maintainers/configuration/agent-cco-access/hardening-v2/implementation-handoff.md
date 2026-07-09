@@ -1,11 +1,14 @@
 # Hardening-v2 — Implementation handoff
 
-> **Status**: Ready to run (2026-07-09). **All three design sub-phases are DONE + approved** —
-> D1 [ADR-0046](../decisions/0046-unified-cco-access-model.md) (`(G,Pc,Po)` model), D2
+> **Status**: **S1 (Phase I + II) + S2 (Phase III + IV) DONE (2026-07-09)** on
+> `feat/config-access/e2e-review`; **S3 (Phase V + VI) is the remaining implementation**, then
+> **e2e v2** (acceptance). All three design sub-phases are DONE + approved — D1
+> [ADR-0046](../decisions/0046-unified-cco-access-model.md) (`(G,Pc,Po)` model), D2
 > [ADR-0047](../decisions/0047-config-access-enforcement.md) (privilege boundary), D3
-> [A1 matrix](../e2e-review/analysis/A1-command-scope-matrix.md) (per-command gating). This
-> handoff drives the **implementation phase**: turn the approved design into code, migrations,
-> changelog, and a rebuilt image, then hand off to **e2e v2** (acceptance).
+> [A1 matrix](../e2e-review/analysis/A1-command-scope-matrix.md) (per-command gating). A
+> **unified implementation review over the completed Phases I–IV** is queued before S3 —
+> [`review-handoff.md`](review-handoff.md). This handoff drives the **implementation phase**:
+> turn the approved design into code, migrations, changelog, and a rebuilt image.
 >
 > **Runs across three dedicated-context sessions** (§4 session plan), in dependency order, each a
 > clean session that loads only its own subsystem context and lands a set of atomic commits. The
