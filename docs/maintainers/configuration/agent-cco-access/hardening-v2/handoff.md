@@ -1,7 +1,10 @@
 # Agent ↔ cco access — Hardening v2 design-phase handoff
 
-> **Status**: Ready to run (2026-07-08). Drives the **definitive design pass** that must
-> land (and be implemented) **before** the e2e access re-validation. The review of the
+> **Status**: **Design phase COMPLETE (2026-07-08).** Drove the **definitive design pass** that
+> must land (and be implemented) **before** the e2e access re-validation. Retained as the
+> design-phase **plan + evidence record** (§0 ratified context + security findings/mount
+> inventory); the implementation is driven by
+> **[`implementation-handoff.md`](implementation-handoff.md)**. The review of the
 > shipped access model surfaced structural gaps (missing asymmetric permission cases; a
 > confidentiality bypass) worth closing **now, before the feature is released** — to avoid
 > future debt.
@@ -19,9 +22,14 @@
 > **privilege boundary** — parent-gating + setuid `cco-svc`, **not** the broker originally
 > targeted; grounded in a macOS-DD `fakeowner` empirical test). Post-D2 **living-doc
 > reconciliation done** (`f241fab`; design.md/cli/security aligned to 0046/0047 + shipped-doc
-> cutover checklist in the backlog DOC5). **D3 is next** — focused kickoff in
-> [`D3-handoff.md`](D3-handoff.md) (A1 per-command info×scope; this file remains the full spec:
-> §0 findings + §3 D3).
+> cutover checklist in the backlog DOC5). **D3 ✅ DONE + approved (2026-07-08)** —
+> [A1 matrix](../e2e-review/analysis/A1-command-scope-matrix.md) (`c033ee4`; per-command
+> gate-by-resource-area, tag B5, hint B6, `path`, `cco sync` host-only) + post-D3 doc sweep
+> (`d5b10b1`). **All three design sub-phases done → implementation** per
+> [`implementation-handoff.md`](implementation-handoff.md) (3 dedicated-context sessions). This
+> file remains the full design spec (§0 findings + §3 per-phase). The per-phase kickoff files
+> (`D2-handoff.md`/`D3-handoff.md`) were consumed and removed on completion (their content lives
+> in the ADRs + A1).
 
 ---
 

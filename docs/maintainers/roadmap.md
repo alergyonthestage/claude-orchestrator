@@ -464,7 +464,8 @@ confirm before scheduling. None blocks the v1 merge.
 
 ## Agent ↔ cco access — hardening v2 (active)
 
-> **Status (2026-07-08)**: design workstream. The shipped access model (ADR-0036/0042/0043 +
+> **Status (2026-07-09)**: **design phase COMPLETE (D1–D3 approved); implementation next.**
+> The shipped access model (ADR-0036/0042/0043 +
 > the e2e fix) was reviewed by the maintainer; the review surfaced **two structural gaps to
 > close before releasing the feature**: (1) the permission model can't express legit
 > asymmetric read/write cases, and (2) a **confidentiality bypass** — an agent can `cat` the
@@ -472,17 +473,18 @@ confirm before scheduling. None blocks the v1 merge.
 > membership/tags/remotes, and read host paths even at `show_host_paths=off` (integrity is
 > safe; only confidentiality leaks). Root: agent + wrapped `cco` share UID, no FS confinement.
 >
-> **Master plan**: [`configuration/agent-cco-access/hardening-v2/handoff.md`](configuration/agent-cco-access/hardening-v2/handoff.md)
-> — three **sequential design sessions** (approval gate between each), then implementation,
-> then the e2e re-validation. Item tracker:
-> [`…/e2e-review/pre-revalidation-backlog.md`](configuration/agent-cco-access/e2e-review/pre-revalidation-backlog.md).
+> **Design plan** (complete): [`…/hardening-v2/handoff.md`](configuration/agent-cco-access/hardening-v2/handoff.md)
+> — three **sequential design sessions** (approval gate between each). **Implementation plan**:
+> [`…/hardening-v2/implementation-handoff.md`](configuration/agent-cco-access/hardening-v2/implementation-handoff.md)
+> — **3 dedicated-context sessions** in dependency order, then the e2e re-validation. Item
+> tracker: [`…/e2e-review/pre-revalidation-backlog.md`](configuration/agent-cco-access/e2e-review/pre-revalidation-backlog.md).
 
 | Phase | Session | Output | Context to load |
 |---|---|---|---|
 | **D1** — unified `(G,Pc,Po)` permission model | **✅ DESIGN DONE (2026-07-08)** | **[ADR-0046](configuration/agent-cco-access/decisions/0046-unified-cco-access-model.md)**: 3 axes `none<ro<rw` (G governs non-referenced store; referenced ride with Pc), invariants + `Po≤Pc` + auto-promotion, presets = symmetric-ladder sugar (`edit-global`→`(rw,rw,none)`), cases 6 & 7 + curate-global-only granular-only via `{global,current,others}` map, multi-repo Pc (opt-in `include_member_configs`, sync host-only). design.md §4 + ADR-0043 §1 + matrix §1/§5 updated. → **D2 next** | ADR-0036/0042/0043/0044, `access-scope.sh`, `cmd-start.sh:_start_resolve_access`; handoff §0.1/§0.2 |
 | **D2** — enforcement architecture (security) | **✅ DESIGN DONE (2026-07-08)** | **[ADR-0047](configuration/agent-cco-access/decisions/0047-config-access-enforcement.md)**: not a broker — confine only the **internal store** behind a **privilege boundary** (dedicated `cco-svc` mode-0700 real-FS parent `/var/lib/cco-internal` the `claude` user can't traverse, crossed by a setuid helper enforcing `(G,Pc,Po)`); no daemon/protocol/duplication; config-content stays mounted. Grounded in a macOS-DD `fakeowner` test (Test A/B/C). Options A (ro projection) + B (socket broker) rejected/fallback. Forward-annotates ADR-0043 INV-D; design.md INV-5 + design-docker.md §1.2.3. → **D3 next** | handoff §0, `security/design/design-socket-proxy.md`, `config/entrypoint.sh:47-85`, `cmd-start.sh` mount block |
-| **D3** — A1 per-command info × scope | **✅ DESIGN DONE (2026-07-08, awaiting approval)** — [`analysis/A1-command-scope-matrix.md`](configuration/agent-cco-access/e2e-review/analysis/A1-command-scope-matrix.md) | Every verb classified on two orthogonal axes — **enforcement side** (config-content / internal-store / environment-host) + **resource area** (`(G,Pc,Po)` × read/write, [ADR-0046](configuration/agent-cco-access/decisions/0046-unified-cco-access-model.md) §7); shim's hardcoded level literals → **gate-by-resource-area**. Decisions: **B5** tag gated by tagged resource's axis (project→`Pc`/`Po`, pack/template→`G`); **B6** hint invariant (audited clean); **`path`** keep+scope `path list`, `path set` host-only; **`cco sync` divergent = host-only, config-editor incl.** (closes ADR-0046 §6); **no `cco state`**, `whoami`→triple. Fix list B1–B6+`path`+`whoami+`; ⏳ CLI-surface rows | ADR-0046 §7/§6, ADR-0047, CLI-surface matrix, `bin/cco:_cco_operator_shim`, `lib/tags.sh`, `lib/paths.sh` |
-| **Impl** | build sessions | model + broker + per-command fixes + config-editor/tutorial (ADR-0044) + running registry (ADR-0045) + B1–B4; migrations + changelog | approved D1/D2/D3 ADRs |
+| **D3** — A1 per-command info × scope | **✅ DONE + APPROVED (2026-07-08)** — [`analysis/A1-command-scope-matrix.md`](configuration/agent-cco-access/e2e-review/analysis/A1-command-scope-matrix.md) | Every verb classified on two orthogonal axes — **enforcement side** (config-content / internal-store / environment-host) + **resource area** (`(G,Pc,Po)` × read/write, [ADR-0046](configuration/agent-cco-access/decisions/0046-unified-cco-access-model.md) §7); shim's hardcoded level literals → **gate-by-resource-area**. Decisions: **B5** tag gated by tagged resource's axis (project→`Pc`/`Po`, pack/template→`G`); **B6** hint invariant (audited clean); **`path`** keep+scope `path list`, `path set` host-only; **`cco sync` divergent = host-only, config-editor incl.** (closes ADR-0046 §6); **no `cco state`**, `whoami`→triple. Fix list B1–B6+`path`+`whoami+`; ⏳ CLI-surface rows | ADR-0046 §7/§6, ADR-0047, CLI-surface matrix, `bin/cco:_cco_operator_shim`, `lib/tags.sh`, `lib/paths.sh` |
+| **Impl** — [`implementation-handoff.md`](configuration/agent-cco-access/hardening-v2/implementation-handoff.md) | **▶ NEXT — 3 dedicated-context sessions** | **S1** model `(G,Pc,Po)` + privilege boundary (ADR-0046/0047, REBUILD; check-in after) → **S2** per-command A1 fixes (tag B5, path, whoami+, B6) + config-editor/tutorial (ADR-0044) → **S3** running registry (ADR-0045) + B1–B4 + migrations/changelog + **DOC5 shipped-doc cutover** + `cco build`. Atomic commits; push both branches from the Mac | approved D1/D2/D3 ADRs + [A1 matrix](configuration/agent-cco-access/e2e-review/analysis/A1-command-scope-matrix.md) |
 | **e2e v2** | Mac | acceptance re-validation vs the definitive CLI-surface matrix (S1–S8 + S1/S1b as criteria; `cco build` as launch rule 0) | e2e handoff v2 (written post-impl) |
 
 Base produced 2026-07-07/08 (in working tree, pending review/commit): **ADR-0044**

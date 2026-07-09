@@ -1,8 +1,9 @@
 # A1 — Per-command info × scope matrix (D3)
 
 > **Status**: Design analysis, **awaiting maintainer approval** (2026-07-08). Third and
-> last design sub-phase of hardening-v2 ([`../../hardening-v2/D3-handoff.md`](../../hardening-v2/D3-handoff.md),
-> [`../../hardening-v2/handoff.md`](../../hardening-v2/handoff.md) §3 D3). Consumes the two
+> last design sub-phase of hardening-v2 ([`../../hardening-v2/handoff.md`](../../hardening-v2/handoff.md)
+> §3 D3; implementation → [`../../hardening-v2/implementation-handoff.md`](../../hardening-v2/implementation-handoff.md)).
+> Consumes the two
 > ratified design outputs:
 > - **[ADR-0046](../../decisions/0046-unified-cco-access-model.md)** — the `(G, Pc, Po)`
 >   model (read-visibility §7 + write-authority §7 tables; multi-repo Pc §6).
