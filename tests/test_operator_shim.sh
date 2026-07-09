@@ -516,3 +516,26 @@ test_operator_whoami_renders_triple_and_boundary() {
     return 0
 }
 
+# ── B6: no silent exit-2 — every policy refusal states a reason (A1 §4.2) ───────
+
+_b6_assert() {
+    [[ $OP_RC -eq 2 ]] \
+        || fail "expected a policy refusal (exit 2), got rc=$OP_RC: $OP_OUT"
+    [[ -n "$OP_OUT" ]] \
+        || fail "an exit-2 refusal must never be silent (B6)"
+    [[ "$OP_OUT" == *"$1"* ]] \
+        || fail "exit-2 refusal should state the reason '$1', got: $OP_OUT"
+}
+
+test_operator_no_silent_exit2() {
+    # Host-only refusals name the host; above-scope refusals name the axis/scope.
+    _op_cco read-project start foo;             _b6_assert host-only
+    _op_cco read-project config validate;       _b6_assert host-only
+    _op_cco edit-all path set foo /bar;         _b6_assert host-only
+    _op_cco read-project template show foo;     _b6_assert read-global
+    _op_cco read-project remote list;           _b6_assert read-global
+    _op_seed edit-project alpha tag add p1 x;   _b6_assert "needs G=rw"
+    _op_seed edit-project alpha tag add beta x; _b6_assert "needs Po=rw"
+    _op_seed read-project alpha tag add alpha x; _b6_assert "needs Pc=rw"
+    return 0
+}
