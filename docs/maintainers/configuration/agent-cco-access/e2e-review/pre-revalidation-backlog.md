@@ -193,6 +193,25 @@ Confirmed by the maintainer; formalized by **[`../hardening-v2/handoff.md`](../h
   implementation. Consolidated fix list (B1–B6 + `path` + `whoami+`) + ⏳ CLI-surface matrix row
   updates in §5/§6. **Gate: maintainer approval → doc-reconciliation sweep → implementation.**
 
+### Implementation progress
+
+- **S1 Phase I — model `(G,Pc,Po)` (ADR-0046). ✅ DONE (2026-07-09)** on
+  `feat/config-access/e2e-review`, 5 atomic commits (`ec56f9f` resolver + per-axis
+  read-visibility; `f78ae54` resolution → triple + granular/map parse +
+  auto-promotion + invariant rejection; `c8a476f` consumers off the triple —
+  mount-gen/shim/help/whoami, `edit-global`=(rw,rw,none) unlocks A1, exports
+  `CCO_ACCESS_TRIPLE`; `566d660` access.cco map schema + `include_member_configs`;
+  `274723e` doc status). Suite **1147 → 1169/0** (+22 tests), no migration. Branch
+  **NOT pushed** (push both branches from the Mac). **Deferred**: the §6 multi-repo
+  Pc mount-narrowing — the flag is plumbed/read/documented, but the hosting-vs-member
+  `:ro` narrowing is a follow-up (DEFERRED note in `_start_generate_compose`; today
+  every mounted repo's `.cco` follows Pc, == the flag's `true` span, additive +
+  non-regressive). Re-open with the multi-repo mount rework or in e2e v2.
+- **S1 Phase II — privilege boundary (ADR-0047). ▶ NEXT** (REBUILD; not
+  in-session-verifiable; **maintainer check-in after**). Kickoff:
+  [`../hardening-v2/phase-II-kickoff.md`](../hardening-v2/phase-II-kickoff.md).
+- **S2 (Phase III+IV), S3 (Phase V+VI)** — pending, per the implementation handoff.
+
 ### Updated sequencing
 
 ```mermaid
