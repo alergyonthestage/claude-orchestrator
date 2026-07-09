@@ -90,7 +90,7 @@ and the risky image-rebuild work isolated.
 | Session | Phases | Dedicated context (working set) | Rebuild | In-session verifiable | Boundary |
 |---|---|---|---|---|---|
 | **S1 — Model + boundary** ✅ DONE (2026-07-09) — dogfooded on the Mac; maintainer check-in pending | **I + II** | `lib/access-scope.sh` (resolver), `lib/cmd-start.sh` (`_start_resolve_access`, mount block), `Dockerfile`, `config/entrypoint.sh`, `lib/paths.sh` (XDG→privileged root), setuid helper, session descriptor | **II: yes** | I: yes (suite); **II: only after `cco build` on the Mac** | **maintainer check-in after II** (confirm the `fakeowner` layout holds, ADR-0047 §8) |
-| **S2 — Per-command + presets** | **III + IV** | `bin/cco` `_cco_operator_shim`, `lib/tags.sh`, `lib/cmd-whoami.sh`, `lib/paths.sh` (`path list`), `lib/cmd-start.sh` (`_start_collect_config_editor_targets`, preset resolution) | no (bash; unless a baked preset default changes) | yes (suite) | starts from S1's merged tree |
+| **S2 — Per-command + presets** ✅ DONE (2026-07-09) — in-session on `feat/config-access/e2e-review`; no rebuild needed | **III + IV** | `bin/cco` `_cco_operator_shim` (`_op_tag_gate`), `lib/access-scope.sh` (`_env_is_current_project`), `lib/cmd-whoami.sh`, `lib/cmd-resolve.sh` (`path list`), `lib/cmd-start.sh` (`_resolve_config_editor_mode`, `_start_collect_config_editor_targets`, preset resolution) | no (bash) | yes (suite) | starts from S1's merged tree |
 | **S3 — Registry + help/status + cutover** | **V + VI** | `lib/utils.sh` (`_cco_session_running`), `cco start`/`stop` writers + reconciler, `_start_generate_compose` (ro mount), `bin/cco` usage render, `changelog.yml`, `migrations/*`, shipped-behaviour user docs | **VI: yes** (final build) | V: yes (suite); **VI: after `cco build`** | → **e2e v2** (separate acceptance handoff) |
 
 ```mermaid
@@ -207,7 +207,23 @@ resolver redirect. **Verify after `cco build` on the Mac** (image + entrypoint).
 > **Maintainer check-in after Phase II** — the boundary is the security core; confirm the
 > `fakeowner` layout holds on the Mac (ADR-0047 §8 Test B) before building on top of it.
 
-### Phase III — Per-command fixes (A1) — no rebuild (bash) · **[Session 2]**
+### Phase III — Per-command fixes (A1) — no rebuild (bash) · **[Session 2]** — ✅ DONE (2026-07-09)
+
+> Landed on `feat/config-access/e2e-review` as 5 atomic commits: test-infra
+> (`1b4ec02`, harness env-isolation for in-container runs), B5 tag gate
+> (`6458fd1`), `path list` scoping (`0605f15`), whoami+ (`91e8e54`), B6 assertion
+> (`176f344`). Suite (in-container) 1176/7 — the 7 are pre-existing environment
+> artifacts (6 `test_as_list_*` HOME/bucket sandbox + 1 symlink); on the host that
+> is the frozen 1174/0 baseline + the new tests, all green.
+>
+> **Deviations from the plan below (all intentional):** (1) the shim write gate
+> was *already* axis-derived from Phase I (`_op_write <target>` via
+> `_cco_triple_write_satisfies`) — the only remaining literal was `tag`, so unit 1
+> merged into B5. (2) `path list` lives in `lib/cmd-resolve.sh` (`cmd_path`), not
+> the shim; scoped there. (3) B5 ownership predicate = new `_env_is_current_project`
+> (access-scope.sh), leaving `_env_current_project` single-valued for other callers.
+> (4) B5/path/whoami tests went to `test_operator_shim.sh` (the operator-mode
+> harness, with a seeded-store `_op_seed` helper), not `test_tag.sh`/`test_whoami`.
 
 1. **Shim gate-by-resource-area.** Replace the hardcoded level literals (`bin/cco:301-368`) with
    the target→axis derivation (A1 §3). Environment-host class unchanged (still refused, host hint).
@@ -229,7 +245,15 @@ resolver redirect. **Verify after `cco build` on the Mac** (image + entrypoint).
 `test_tag.sh` (B5 per-target: edit-project tags current project ✓; edit-global tags pack ✓ but
 other project ✗; edit-all ✓), a `path list` scoping case, `test_whoami` for the triple render.
 
-### Phase IV — Built-in presets (ADR-0044) — maybe rebuild · **[Session 2]**
+### Phase IV — Built-in presets (ADR-0044) — no rebuild (bash) · **[Session 2]** — ✅ DONE (2026-07-09)
+
+> Landed as one atomic commit (`8617e24`) on `feat/config-access/e2e-review` — no
+> baked-default change, so no rebuild. The config-editor scope is resolved once by
+> a new `_resolve_config_editor_mode` (cwd + flags) so the preset cco_access default
+> and the mounted target set agree. Tests: `test_config_editor.sh` (cwd-vs-flag
+> matrix, cd-controlled since the suite runs from the repo root — itself a project),
+> `test_access_resolution.sh` (unit-level preset resolution), `test_tutorial.sh`
+> (read-all). No changelog / shipped-doc edits (DOC5 = Phase VI).
 
 1. **tutorial → `read-all`** (`claude=none, cco=read-all, show_host_paths=on`). `--cco-access`
    available but discouraged (document).

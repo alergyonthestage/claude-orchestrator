@@ -1,5 +1,14 @@
 # Phase III kickoff — per-command fixes + built-in presets (Session 2)
 
+> **✅ S2 DONE (2026-07-09).** Phase III (B5 tag gate, `path list` scoping, whoami+, B6)
+> + Phase IV (tutorial `read-all`, config-editor min-privilege) landed on
+> `feat/config-access/e2e-review` as 6 atomic commits (`1b4ec02`, `6458fd1`,
+> `0605f15`, `91e8e54`, `176f344`, `8617e24`). No rebuild needed. See
+> [`implementation-handoff.md`](implementation-handoff.md) §5 Phase III/IV for the
+> as-built notes (deviations recorded there). Next: **S3** (Phase V registry +
+> Phase VI migrations/changelog/DOC5 + `cco build`) → e2e v2. Push both branches
+> from the Mac. The kickoff below is retained as the original plan of record.
+>
 > **Session-resume handoff.** Start here to run **S2 = Phase III + Phase IV** of hardening-v2
 > in a fresh, dedicated-context session. S1 (Phase I model `(G,Pc,Po)` + Phase II privilege
 > boundary) is **done + dogfooded on the Mac**; this session builds the per-command gating and
