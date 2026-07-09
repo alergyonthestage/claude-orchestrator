@@ -389,6 +389,25 @@ test_access_mount_granular_curate_global_keeps_a1_ro() {
     echo "$c" | grep -q 'CCO_ACCESS_TRIPLE=rw,ro,none' || fail "triple exported as rw,ro,none"
 }
 
+# ADR-0046 §6: access.cco.include_member_configs is read into the resolver local
+# (default false, additive). The mount-level narrowing it will drive is deferred
+# (see the DEFERRED note in _start_generate_compose); this pins the schema read.
+test_access_resolve_include_member_configs_read() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    local project_yml="$tmp/project.yml"
+    printf 'name: p\naccess:\n  cco:\n    current: rw\n    include_member_configs: true\n' > "$project_yml"
+    local cli_claude_access="" cli_cco_access="" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs="false"
+    _start_resolve_access
+    [[ "$cco_include_member_configs" == "true" ]] || fail "flag should be read as true, got: $cco_include_member_configs"
+    # Absent → default false.
+    printf 'name: p\naccess:\n  cco: edit-project\n' > "$project_yml"
+    cco_include_member_configs="false"
+    _start_resolve_access
+    [[ "$cco_include_member_configs" == "false" ]] || fail "flag should default false when absent, got: $cco_include_member_configs"
+}
+
 # A granular session exports CCO_ACCESS_TRIPLE + the granular CCO_CCO_ACCESS label.
 test_access_mount_exports_triple() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT

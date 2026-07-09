@@ -8,10 +8,22 @@ description: "{{DESCRIPTION}}"
 #
 # access:
 #   claude: repo            # .claude authoring: none | repo (default) | all
-#   cco: read-project       # .cco config: none | read-project (default) |
-#                           #   read-global | read-all | edit-project |
-#                           #   edit-global | edit-all  (bare `read` = read-all, deprecated)
+#   cco: read-project       # .cco config, SCALAR (preset) form: none |
+#                           #   read-project (default) | read-global | read-all |
+#                           #   edit-project | edit-global | edit-all
+#                           #   (bare `read` = read-all, deprecated)
 #   show_host_paths: true   # show the host<->container path map (default: true)
+#
+# The `cco` field also accepts a granular MAP form (ADR-0046) — three independent
+# axes on the lattice none < ro < rw. Unspecified axes auto-promote to the
+# invariant floor; presets above are sugar for the symmetric triples.
+#
+#   cco:
+#     global: ro            # G  — the rest of the personal ~/.cco store
+#     current: rw           # Pc — this project's config (never none while enabled)
+#     others: none          # Po — other projects' config (Po <= Pc)
+#     include_member_configs: false  # widen Pc's rw span from the hosting repo's
+#                           #   <repo>/.cco to ALL member repos' divergent copies
 
 # ── Repositories ─────────────────────────────────────────────────────
 # Each repo is referenced by a logical name + an optional machine-agnostic

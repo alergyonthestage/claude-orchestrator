@@ -273,6 +273,15 @@ _start_resolve_access() {
     read -r cco_g cco_pc cco_po <<< "$_cco_triple"
     cco_access=$(_cco_triple_label "$cco_g" "$cco_pc" "$cco_po")
 
+    # access.cco.include_member_configs (ADR-0046 §6, additive, default false):
+    # when true, Pc's rw span widens from the hosting repo's <repo>/.cco to ALL
+    # member repos' divergent .cco copies. project.yml only (a per-project mount
+    # decision); a code-level default handles its absence (no migration).
+    if [[ "$_preset" == "normal" ]]; then
+        local _imc; _imc=$(_access_norm_bool "$(yml_get_deep "$project_yml" "access.cco.include_member_configs" 2>/dev/null)" 2>/dev/null) || _imc=""
+        [[ -n "$_imc" ]] && cco_include_member_configs="$_imc"
+    fi
+
     local shp_raw shp_norm
     shp_raw=$(_access_pick "$cli_show_host_paths" "$p_shp" "$g_shp" "$d_shp")
     shp_norm=$(_access_norm_bool "$shp_raw") \
@@ -1203,6 +1212,14 @@ YAML
                     _compose_vol "${repo_path}/.cco" "/workspace/${repo_name}/.cco" "ro"
             done < <(_effective_repo_mounts "$project_yml")
         fi
+        # NOTE (ADR-0046 §6 multi-repo Pc — DEFERRED): the resolved
+        # cco_include_member_configs flag is plumbed but not yet enforced here. Today
+        # every mounted repo's <repo>/.cco follows Pc uniformly (== the flag's `true`
+        # span). The §6 DEFAULT (Pc's rw span limited to the HOSTING repo, other
+        # members' divergent .cco re-overlaid :ro) needs the multi-repo mount model
+        # to distinguish host vs member reliably (the current test fixtures mount a
+        # non-host member as the project's editable .cco). Tracked as a follow-up so
+        # this schema lands purely additive and non-regressive.
 
         # Secret-file masking (ADR-0036 D4): hide real secret files in EVERY repo's
         # committed .cco — whether it is exposed via the rw repo mount (edit modes /
