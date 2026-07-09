@@ -144,6 +144,172 @@ test_as_level_scope_maps() {
     return 0
 }
 
+# ── (G,Pc,Po) triple model (ADR-0046) ────────────────────────────────
+
+# Engage operator mode with an explicit triple (mirrors what `cco start` exports).
+_as_triple() {
+    export CCO_CONTAINER_OPERATOR=1 CCO_ACCESS_TRIPLE="$1" \
+           CCO_DATA_HOME=/x CCO_STATE_HOME=/y CCO_CACHE_HOME=/z
+    unset CCO_CCO_ACCESS
+}
+
+test_as_axis_rank() {
+    _as_source
+    [[ "$(_cco_axis_rank none)" == "0" ]] || fail "none → 0"
+    [[ "$(_cco_axis_rank ro)"   == "1" ]] || fail "ro → 1"
+    [[ "$(_cco_axis_rank rw)"   == "2" ]] || fail "rw → 2"
+    [[ "$(_cco_axis_rank junk)" == "0" ]] || fail "unknown → 0 (default-deny)"
+    return 0
+}
+
+test_as_preset_triples() {
+    # ADR-0046 §3 symmetric ladder — each preset publishes its exact triple;
+    # edit-global is REDEFINED to (rw,rw,none) (Pc gains rw).
+    _as_source
+    [[ "$(_cco_preset_triple none)"         == "none none none" ]] || fail "none"
+    [[ "$(_cco_preset_triple read-project)" == "none ro none"   ]] || fail "read-project"
+    [[ "$(_cco_preset_triple read-global)"  == "ro ro none"     ]] || fail "read-global"
+    [[ "$(_cco_preset_triple read-all)"     == "ro ro ro"       ]] || fail "read-all"
+    [[ "$(_cco_preset_triple edit-project)" == "none rw none"   ]] || fail "edit-project"
+    [[ "$(_cco_preset_triple edit-global)"  == "rw rw none"     ]] || fail "edit-global gains Pc=rw"
+    [[ "$(_cco_preset_triple edit-all)"     == "rw rw rw"       ]] || fail "edit-all"
+    [[ "$(_cco_preset_triple read)"         == "ro ro ro"       ]] || fail "bare read → read-all triple"
+    if _cco_preset_triple bogus >/dev/null; then fail "non-preset must return 1"; fi
+    return 0
+}
+
+test_as_parse_granular() {
+    _as_source
+    # Order-free, partial, spaces tolerated. Unspecified → empty (pipe-delimited).
+    [[ "$(_cco_parse_granular 'global=ro,current=rw,others=none')" == "ro|rw|none" ]] || fail "full triple"
+    [[ "$(_cco_parse_granular 'others=rw, current=rw')"            == "|rw|rw"      ]] || fail "partial, order-free, spaces"
+    [[ "$(_cco_parse_granular 'global=rw')"                        == "rw||"        ]] || fail "single axis"
+    # A scalar (no '=') is not granular → rc 1.
+    if _cco_parse_granular 'read-global' >/dev/null; then fail "scalar must return 1"; fi
+    # Bad value / unknown key die.
+    local rc=0; ( _cco_parse_granular 'current=maybe' ) >/dev/null 2>&1 || rc=$?
+    [[ $rc -ne 0 ]] || fail "bad axis value must die"
+    rc=0; ( _cco_parse_granular 'bogus=rw' ) >/dev/null 2>&1 || rc=$?
+    [[ $rc -ne 0 ]] || fail "unknown key must die"
+    return 0
+}
+
+test_as_promote_triple() {
+    # ADR-0046 §2 auto-promotion of unspecified axes to the invariant floor.
+    _as_source
+    # others=rw (Pc,G empty) → Pc=rw (INV-4), G=none.
+    [[ "$(_cco_promote_triple '' '' rw)"   == "none rw rw"   ]] || fail "others=rw promotes Pc=rw"
+    # others=ro → Pc=ro (INV-2+INV-4), G=none.
+    [[ "$(_cco_promote_triple '' '' ro)"   == "none ro ro"   ]] || fail "others=ro promotes Pc=ro"
+    # nothing → read-project floor.
+    [[ "$(_cco_promote_triple '' '' '')"   == "none ro none" ]] || fail "empty → read-project floor"
+    # global=rw only → (rw, ro, none) — the off-ladder curate-global point.
+    [[ "$(_cco_promote_triple rw '' '')"   == "rw ro none"   ]] || fail "global=rw → curate-global"
+    # explicit case 6 & 7 pass unchanged.
+    [[ "$(_cco_promote_triple none rw rw)" == "none rw rw"   ]] || fail "case 6 strict"
+    [[ "$(_cco_promote_triple rw ro ro)"   == "rw ro ro"     ]] || fail "case 7"
+    return 0
+}
+
+test_as_promote_triple_rejects_invariant_violations() {
+    _as_source
+    local out rc
+    # INV-4: others cannot exceed current.
+    rc=0; out=$( _cco_promote_triple none ro rw 2>&1 ) || rc=$?
+    [[ $rc -ne 0 ]]           || fail "current=ro,others=rw must be rejected"
+    [[ "$out" == *"INV-4"* ]] || fail "rejection should name INV-4, got: $out"
+    # INV-2: explicit current=none while enabled.
+    rc=0; out=$( _cco_promote_triple none none none 2>&1 ) || rc=$?
+    [[ $rc -ne 0 ]]           || fail "explicit current=none must be rejected"
+    [[ "$out" == *"INV-2"* ]] || fail "rejection should name INV-2, got: $out"
+    return 0
+}
+
+test_as_resolve_access_scalar_and_granular() {
+    _as_source
+    # Scalar preset.
+    [[ "$(_cco_resolve_access edit-global)" == "rw rw none" ]] || fail "scalar preset resolves"
+    # Granular with auto-promotion.
+    [[ "$(_cco_resolve_access 'others=rw')" == "none rw rw" ]] || fail "granular resolves + promotes"
+    [[ "$(_cco_resolve_access 'global=rw,current=ro,others=ro')" == "rw ro ro" ]] || fail "case 7 granular"
+    # Unknown scalar dies with the enum message.
+    local out rc=0; out=$( _cco_resolve_access bogus 2>&1 ) || rc=$?
+    [[ $rc -ne 0 ]]                    || fail "unknown scalar must die"
+    [[ "$out" == *"Invalid cco_access"* ]] || fail "message should say Invalid cco_access, got: $out"
+    return 0
+}
+
+test_as_triple_label_roundtrip() {
+    _as_source
+    [[ "$(_cco_triple_label none ro none)" == "read-project" ]] || fail "label read-project"
+    [[ "$(_cco_triple_label rw rw none)"   == "edit-global"  ]] || fail "label edit-global"
+    [[ "$(_cco_triple_label rw rw rw)"     == "edit-all"     ]] || fail "label edit-all"
+    # Asymmetric (case 6/7) → granular label.
+    [[ "$(_cco_triple_label none rw rw)"   == "global=none,current=rw,others=rw" ]] || fail "case 6 granular label"
+    [[ "$(_cco_triple_label rw ro ro)"     == "global=rw,current=ro,others=ro"   ]] || fail "case 7 granular label"
+    return 0
+}
+
+test_as_triple_write_satisfies() {
+    # ADR-0046 §7 write-authority by target tree → axis.
+    _as_source
+    # edit-global = (rw,rw,none): writes project (Pc=rw) AND global (G=rw), not others.
+    _cco_triple_write_satisfies rw rw none project || fail "edit-global writes project (Pc=rw)"
+    _cco_triple_write_satisfies rw rw none global  || fail "edit-global writes global (G=rw)"
+    _cco_triple_write_satisfies rw rw none all     && fail "edit-global must NOT write others (Po=none)"
+    # edit-project = (none,rw,none): project only.
+    _cco_triple_write_satisfies none rw none project || fail "edit-project writes project"
+    _cco_triple_write_satisfies none rw none global  && fail "edit-project must NOT write global"
+    # edit-all = (rw,rw,rw): everything.
+    _cco_triple_write_satisfies rw rw rw all || fail "edit-all writes others"
+    return 0
+}
+
+# Per-axis read-visibility the ordinal cannot express: case 6 (none,rw,rw) sees
+# OTHER projects (Po=rw) yet HIDES unreferenced globals + templates (G=none).
+test_as_case6_visibility_axis_independence() {
+    _as_source
+    _as_triple "none rw rw"
+    export PROJECT_NAME=alpha CCO_PROJECT_PACKS=p1 CCO_PROJECT_LLMS=svelte
+    _env_in_scope project alpha   || fail "case6: current project visible (Pc)"
+    _env_in_scope project beta    || fail "case6: OTHER project visible (Po=rw)"
+    _env_in_scope pack p1         || fail "case6: referenced pack visible (Pc)"
+    _env_in_scope pack p9         && fail "case6: UNreferenced pack hidden (G=none)"
+    _env_in_scope template base   && fail "case6: template hidden (G=none)"
+    _env_in_scope remote origin   && fail "case6: remote hidden (G=none)"
+    # _env_require_kind_visible must also honour G, not the 'all' ordinal.
+    local rc=0; ( _env_require_kind_visible template ) >/dev/null 2>&1 || rc=$?
+    [[ $rc -ne 0 ]] || fail "case6: list templates must be refused (G=none)"
+    return 0
+}
+
+# Case 7 (rw,ro,ro): global store readable, other projects readable, but nothing
+# writable — a read-consult-all-while-curating-global intent.
+test_as_case7_visibility() {
+    _as_source
+    _as_triple "rw ro ro"
+    export PROJECT_NAME=alpha
+    _env_in_scope template base || fail "case7: template visible (G=ro)"
+    _env_in_scope project beta  || fail "case7: other project visible (Po=ro)"
+    _env_in_scope pack p9       || fail "case7: unreferenced pack visible (G=ro)"
+    return 0
+}
+
+# The CCO_ACCESS_TRIPLE env is authoritative; a preset-only launch (CCO_CCO_ACCESS,
+# no triple) derives the triple via the preset fallback.
+test_as_triple_env_precedence_and_fallback() {
+    _as_source
+    # Preset fallback: edit-global (no triple) → (rw,rw,none).
+    export CCO_CONTAINER_OPERATOR=1 CCO_DATA_HOME=/x CCO_STATE_HOME=/y CCO_CACHE_HOME=/z
+    unset CCO_ACCESS_TRIPLE; export CCO_CCO_ACCESS=edit-global
+    [[ "$(_env_triple)" == "rw rw none" ]] || fail "preset fallback edit-global → triple"
+    [[ "$(_env_axis Pc)" == "rw" ]]        || fail "axis accessor Pc"
+    # Explicit triple wins over any preset.
+    export CCO_ACCESS_TRIPLE="none rw rw" CCO_CCO_ACCESS=read-project
+    [[ "$(_env_triple)" == "none rw rw" ]] || fail "explicit triple authoritative"
+    return 0
+}
+
 test_as_hidden_notice_counts_and_stderr() {
     # INV-B/C: one count-only notice on stderr; llms is not pluralized.
     _as_source

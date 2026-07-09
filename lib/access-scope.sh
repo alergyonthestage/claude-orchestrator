@@ -63,6 +63,135 @@ _env_access() {
     fi
 }
 
+# ── The (G, Pc, Po) access triple (ADR-0046) ─────────────────────────
+# ADR-0046 refactors the opaque cco_access level into three INDEPENDENT resource
+# axes, each on the lattice none < ro < rw (rw ⇒ ro ⇒ none):
+#   G  — the global store ~/.cco (UNreferenced packs/templates/llms/remotes + the
+#        DATA registries). The current project's REFERENCED globals ride with Pc
+#        (the referenced-subset invariant, §1) — G governs only the rest.
+#   Pc — the current project's config.
+#   Po — OTHER projects' config.
+# A session's access is the triple `(G, Pc, Po)` — the single source every
+# consumer derives from (INV-E): read-visibility per kind and write-authority per
+# tree (§7). Presets are sugar for the SYMMETRIC triples (§3); the asymmetric
+# intents (cases 6 & 7) are granular-only. This subsumes the old {project,global,
+# all} ordinal, which conflated G (referenced-vs-whole) with Po (other-projects).
+
+# Lattice rank of an axis value (none<ro<rw). Unknown → 0 (default-deny).
+_cco_axis_rank() { case "$1" in rw) printf 2 ;; ro) printf 1 ;; *) printf 0 ;; esac; }
+
+# Preset name → its symmetric-ladder triple "G Pc Po" (ADR-0046 §3). The bare
+# pre-ADR-0042 `read` alias normalizes to read-all. Returns 1 for a non-preset
+# token (the caller then tries the granular parse).
+_cco_preset_triple() {
+    local p="$1"; [[ "$p" == "read" ]] && p="read-all"
+    case "$p" in
+        none)         printf 'none none none' ;;
+        read-project) printf 'none ro none' ;;
+        read-global)  printf 'ro ro none' ;;
+        read-all)     printf 'ro ro ro' ;;
+        edit-project) printf 'none rw none' ;;
+        edit-global)  printf 'rw rw none' ;;   # §3: REDEFINED — Pc gains rw
+        edit-all)     printf 'rw rw rw' ;;
+        *)            return 1 ;;
+    esac
+}
+
+# _cco_parse_granular <csv> — parse the granular form "global=ro,current=rw,
+# others=none" (order-free, partial, spaces tolerated) into "G|Pc|Po" with an
+# EMPTY field for each unspecified axis (the caller auto-promotes). Pipe-delimited
+# (not space) so `IFS='|' read` preserves empty/leading fields — a space-joined
+# form would let `read` collapse a leading empty axis. Dies on an unknown key or
+# an out-of-lattice value. Returns 1 when <csv> carries no '=' (not a granular
+# form — the caller treats it as a preset scalar).
+_cco_parse_granular() {
+    local csv="${1// /}" g="" pc="" po="" tok k v
+    case "$csv" in *"="*) : ;; *) return 1 ;; esac
+    local IFS=','
+    for tok in $csv; do
+        [[ -z "$tok" ]] && continue
+        k="${tok%%=*}"; v="${tok#*=}"
+        case "$v" in none|ro|rw) : ;; *) die "Invalid cco_access value '$v' for '$k' (expected none|ro|rw)." ;; esac
+        case "$k" in
+            global)  g="$v" ;;
+            current) pc="$v" ;;
+            others)  po="$v" ;;
+            *)       die "Unknown cco_access key '$k' (expected global|current|others)." ;;
+        esac
+    done
+    printf '%s|%s|%s' "$g" "$pc" "$po"
+}
+
+# _cco_promote_triple <g> <pc> <po> — auto-promote unspecified axes (EMPTY args)
+# to the invariant floor (ADR-0046 §2) and REJECT an explicit triple that violates
+# an invariant (die, exit 1, naming it). Emits the resolved "G Pc Po". Granular
+# access always means cco is enabled (permission > none), so INV-2's project floor
+# (Pc≥ro) applies. Floors: Po→none, Pc→max(ro,Po) (INV-2 + INV-4), G→none. The
+# floors never introduce a violation, so a surviving one is an explicit
+# contradiction (e.g. current=ro,others=rw).
+_cco_promote_triple() {
+    local g="$1" pc="$2" po="$3"
+    [[ -z "$po" ]] && po="none"
+    if [[ -z "$pc" ]]; then
+        if [[ "$(_cco_axis_rank "$po")" -ge 1 ]]; then pc="$po"; else pc="ro"; fi
+    fi
+    [[ -z "$g" ]] && g="none"
+    [[ "$(_cco_axis_rank "$pc")" -ge 1 ]] \
+        || die "Invalid cco_access: 'current' (Pc) must be at least 'ro' while cco is enabled (INV-2 project floor)."
+    [[ "$(_cco_axis_rank "$po")" -le "$(_cco_axis_rank "$pc")" ]] \
+        || die "Invalid cco_access: 'others' (Po='$po') cannot exceed 'current' (Pc='$pc') — no broader access to other projects than your own (INV-4)."
+    printf '%s %s %s' "$g" "$pc" "$po"
+}
+
+# _cco_resolve_access <intent> — resolve a SCALAR access intent to the triple
+# "G Pc Po". <intent> is EITHER a preset name (ladder lookup §3) OR a granular CSV
+# "global=…,current=…,others=…" (§5). Dies on an unknown preset / bad granular
+# token / invariant violation. The single entry point for scalar sources (the CLI
+# --cco-access flag, a scalar project.yml/access.yml value). The project.yml MAP
+# form is fed to _cco_promote_triple directly by the caller (axes already split).
+_cco_resolve_access() {
+    local intent="$1" parsed g pc po
+    if parsed=$(_cco_parse_granular "$intent"); then
+        IFS='|' read -r g pc po <<< "$parsed"
+        _cco_promote_triple "$g" "$pc" "$po"
+        return
+    fi
+    _cco_preset_triple "$intent" && return 0
+    die "Invalid cco_access '$intent' (expected a preset name or granular global=…,current=…,others=…)."
+}
+
+# _cco_triple_label <g> <pc> <po> — the human/display label for a resolved triple:
+# the preset name when it matches a symmetric-ladder point, else the granular
+# "global=…,current=…,others=…" form. Used for messages and env transport; the
+# triple stays the authoritative machine value.
+_cco_triple_label() {
+    local t="$1 $2 $3"
+    case "$t" in
+        "none none none") printf 'none' ;;
+        "none ro none")   printf 'read-project' ;;
+        "ro ro none")     printf 'read-global' ;;
+        "ro ro ro")       printf 'read-all' ;;
+        "none rw none")   printf 'edit-project' ;;
+        "rw rw none")     printf 'edit-global' ;;
+        "rw rw rw")       printf 'edit-all' ;;
+        *)                printf 'global=%s,current=%s,others=%s' "$1" "$2" "$3" ;;
+    esac
+}
+
+# _cco_triple_write_satisfies <g> <pc> <po> <target: project|global|all> → 0 when
+# the triple grants a write to the named target TREE (ADR-0046 §7 write-authority):
+# project → Pc=rw, global → G=rw, all (cross-project) → Po=rw. Replaces the old
+# _cco_write_scope_satisfies ordinal (below) with the per-axis lattice compare.
+_cco_triple_write_satisfies() {
+    local g="$1" pc="$2" po="$3" need="$4"
+    case "$need" in
+        project) [[ "$(_cco_axis_rank "$pc")" -ge 2 ]] && return 0 ;;
+        global)  [[ "$(_cco_axis_rank "$g")"  -ge 2 ]] && return 0 ;;
+        all)     [[ "$(_cco_axis_rank "$po")" -ge 2 ]] && return 0 ;;
+    esac
+    return 1
+}
+
 # ── Pure level→scope maps (ADR-0043 symmetric model) ─────────────────
 # The SINGLE source of truth for the read/write scope a `cco_access` level grants,
 # consumed by three sites (INV-E): host mount-generation (cmd-start.sh), the
@@ -102,12 +231,38 @@ _cco_write_scope_satisfies() {
     return 1
 }
 
-# Read scope for the current session: project|global|all in operator mode; `all`
-# on the host (INV-A — the host sees everything). Replaces the old opaque rank as
-# the named source; _env_read_rank derives from it for callers wanting an ordinal.
+# The resolved (G,Pc,Po) triple for THIS session as "G Pc Po". Host → "rw rw rw"
+# (INV-A — everything open). Operator: from CCO_ACCESS_TRIPLE (authoritative, set
+# host-side by `cco start`) or, for a preset-only launch / back-compat, derived
+# from the CCO_CCO_ACCESS preset. Unknown → the read-project floor. This is the
+# in-container read of the single source (INV-E); every scope decision derives
+# from it per axis (ADR-0046 §7), never from the old {project,global,all} ordinal.
+_env_triple() {
+    _cco_container_operator || { printf 'rw rw rw'; return 0; }
+    local t="${CCO_ACCESS_TRIPLE:-}"
+    if [[ -n "$t" ]]; then printf '%s' "${t//,/ }"; return 0; fi
+    _cco_preset_triple "${CCO_CCO_ACCESS:-read-project}" || printf 'none ro none'
+}
+
+# One axis of the session triple: G|Pc|Po → none|ro|rw.
+_env_axis() {
+    local g pc po; read -r g pc po <<< "$(_env_triple)"
+    case "$1" in G) printf '%s' "$g" ;; Pc) printf '%s' "$pc" ;; Po) printf '%s' "$po" ;; esac
+}
+
+# Read scope for the current session as the back-compat ordinal project|global|all
+# (`all` on the host, INV-A). Derived FROM the triple (Po≥ro→all, else G≥ro→global,
+# else Pc≥ro→project, else none) for the few callers that still compare tiers
+# (e.g. cmd-resolve path scoping at rank 1). Scope decisions that must honour the
+# G/Po independence (template/remote visibility, other-project rows) key off the
+# axes directly, NOT this lossy ordinal.
 _env_read_scope() {
     _cco_container_operator || { printf 'all'; return 0; }
-    _cco_level_read_scope "$(_env_access)"
+    local g pc po; read -r g pc po <<< "$(_env_triple)"
+    if   [[ "$(_cco_axis_rank "$po")" -ge 1 ]]; then printf 'all'
+    elif [[ "$(_cco_axis_rank "$g")"  -ge 1 ]]; then printf 'global'
+    elif [[ "$(_cco_axis_rank "$pc")" -ge 1 ]]; then printf 'project'
+    else printf 'none'; fi
 }
 
 # Read-scope rank, symmetric with the shim (project<global<all). Host → 99
@@ -149,40 +304,48 @@ _env_csv_has() {
 }
 
 # _env_in_scope <kind> <name> [owner_project] → 0 visible / 1 hidden.
-# Host → always visible (INV-A). Operator, by read_scope (ADR-0043 symmetric):
-#   all     → everything visible.
-#   global  → all packs/llms/templates/remotes visible; the `project` kind only
-#             the current project (other projects need read-all — the SOLE
-#             global-vs-all difference).
-#   project → project-class resources (project/pack/llms) visible only when they
-#             belong to the current project (via PROJECT_NAME / CCO_PROJECT_PACKS /
-#             CCO_PROJECT_LLMS, or an explicit owner_project); global-class
-#             resources (template/remote) hidden.
-#   none    → hidden (cco is refused wholesale before here anyway — R6).
+# Host → always visible (INV-A). Operator: derived PER AXIS from the session triple
+# (ADR-0046 §7 read-visibility), so the G/Po independence the presets bury is
+# honoured (a case-6 `(none,rw,rw)` session sees other projects yet HIDES
+# unreferenced globals):
+#   current project           → Pc ≥ ro  (always, INV-2)
+#   referenced pack/llms       → Pc ≥ ro  (rides with the project)
+#   unreferenced pack/llms     → G  ≥ ro
+#   template / remote          → G  ≥ ro
+#   other project              → Po ≥ ro
+# An owner-tagged project-class resource follows its owner (current → Pc, else Po).
 _env_in_scope() {
     local kind="$1" name="$2" owner="${3:-}"
     _cco_container_operator || return 0
-    local scope; scope=$(_env_read_scope)
+    local g pc po; read -r g pc po <<< "$(_env_triple)"
     local cur; cur=$(_env_current_project)
-    case "$scope" in
-        all)  return 0 ;;
-        none) return 1 ;;
-        global)
-            # Everything global except OTHER projects (project kind is per-project).
-            [[ "$kind" != "project" ]] && return 0
-            [[ -n "$cur" && "$name" == "$cur" ]] && return 0
-            return 1 ;;
-    esac
-    # scope == project: only the current project's own resources.
-    [[ "$(_env_scope_class "$kind")" == "global" ]] && return 1
     case "$kind" in
-        project) [[ -n "$cur" && "$name" == "$cur" ]] && return 0 ;;
-        pack)    _env_csv_has "$name" "${CCO_PROJECT_PACKS:-}" && return 0 ;;
-        llms)    _env_csv_has "$name" "${CCO_PROJECT_LLMS:-}"  && return 0 ;;
-        *)       [[ -n "$owner" && "$owner" == "$cur" ]] && return 0 ;;
+        template|remote)
+            [[ "$(_cco_axis_rank "$g")" -ge 1 ]] && return 0 ;;
+        project)
+            if [[ -n "$cur" && "$name" == "$cur" ]]; then
+                [[ "$(_cco_axis_rank "$pc")" -ge 1 ]] && return 0
+            fi
+            [[ "$(_cco_axis_rank "$po")" -ge 1 ]] && return 0 ;;
+        pack)
+            if _env_csv_has "$name" "${CCO_PROJECT_PACKS:-}"; then
+                [[ "$(_cco_axis_rank "$pc")" -ge 1 ]] && return 0
+            fi
+            [[ "$(_cco_axis_rank "$g")" -ge 1 ]] && return 0 ;;   # unreferenced → G
+        llms)
+            if _env_csv_has "$name" "${CCO_PROJECT_LLMS:-}"; then
+                [[ "$(_cco_axis_rank "$pc")" -ge 1 ]] && return 0
+            fi
+            [[ "$(_cco_axis_rank "$g")" -ge 1 ]] && return 0 ;;
+        *)
+            # Owner-tagged project-class resource: current owner → Pc, else Po.
+            if [[ -n "$owner" ]]; then
+                if [[ "$owner" == "$cur" ]]; then
+                    [[ "$(_cco_axis_rank "$pc")" -ge 1 ]] && return 0
+                fi
+                [[ "$(_cco_axis_rank "$po")" -ge 1 ]] && return 0
+            fi ;;
     esac
-    # An owner-tagged project-class resource is visible iff owned by the project.
-    [[ -n "$owner" && "$owner" == "$cur" ]] && return 0
     return 1
 }
 
@@ -245,6 +408,9 @@ _env_require_kind_visible() {
     local kind="$1"
     _cco_container_operator || return 0
     [[ "$(_env_scope_class "$kind")" == "project" ]] && return 0
-    case "$(_env_read_scope)" in global|all) return 0 ;; esac
+    # global-class (template/remote): visible iff G ≥ ro (ADR-0046 §7). Keyed off
+    # the axis, not the {global,all} ordinal, so a case-6 `(none,rw,rw)` session
+    # (Po=rw → ordinal 'all', yet G=none) still hides templates/remotes correctly.
+    [[ "$(_cco_axis_rank "$(_env_axis G)")" -ge 1 ]] && return 0
     refuse "'cco list $kind' is not available at this access scope (cco_access=$(_env_access)) — '$kind' is a personal-global resource; start a read-global session or run cco on your host."
 }
