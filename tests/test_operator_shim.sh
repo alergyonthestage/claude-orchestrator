@@ -465,3 +465,41 @@ test_operator_tag_config_editor_targets_are_current() {
     return 0
 }
 
+# ── path list: output scoped like `cco list project`; host paths gated (A1 §4.3) ─
+
+test_operator_path_list_scoped_at_read_project() {
+    # Po<ro → scope to the current project's repos; others hidden + count notice.
+    _op_seed read-project alpha path list
+    [[ "$OP_OUT" == *"alpha"* ]] \
+        || fail "path list should show the current project's repo, got: $OP_OUT"
+    [[ "$OP_OUT" != *"beta"* ]] \
+        || fail "path list at read-project must hide other projects' repos, got: $OP_OUT"
+    [[ "$OP_OUT" == *"hidden by access scope"* ]] \
+        || fail "path list should emit the count-only hidden notice, got: $OP_OUT"
+    return 0
+}
+
+test_operator_path_list_full_at_read_all() {
+    # Po≥ro → no scoping; all repos shown, no notice.
+    _op_seed read-all alpha path list
+    [[ "$OP_OUT" == *"alpha"* && "$OP_OUT" == *"beta"* ]] \
+        || fail "path list at read-all should show every repo, got: $OP_OUT"
+    [[ "$OP_OUT" != *"hidden by access scope"* ]] \
+        || fail "path list at read-all must not hide anything, got: $OP_OUT"
+    return 0
+}
+
+test_operator_path_list_masks_host_paths_when_off() {
+    # show_host_paths=off → logical names only, no host-path column (S1b).
+    OP_SHP=false _op_seed read-all alpha path list
+    [[ "$OP_OUT" == *"alpha"* ]] \
+        || fail "path list should still list logical names at show_host_paths=off, got: $OP_OUT"
+    [[ "$OP_OUT" != *"/repos/alpha"* ]] \
+        || fail "path list at show_host_paths=off must NOT print host paths, got: $OP_OUT"
+    # With it on, the host path IS shown.
+    OP_SHP=true _op_seed read-all alpha path list
+    [[ "$OP_OUT" == *"/repos/alpha"* ]] \
+        || fail "path list at show_host_paths=on should print host paths, got: $OP_OUT"
+    return 0
+}
+

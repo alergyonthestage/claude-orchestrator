@@ -671,20 +671,41 @@ EOF
         list)
             shift
             [[ $# -gt 0 ]] && die "Usage: cco path list (takes no arguments)"
-            local line name path norm count=0 malformed=0 hidden=0
-            # Output scoping (ADR-0043): the path index is the raw machine-local
-            # name→host-path map (repos/mounts), not a taxonomy resource kind. At
-            # read-project, show only entries owned by the current project; count
-            # the rest for a tailored count-only stderr notice (INV-B/C). Uses the
-            # layer's context helpers — no ad-hoc context re-derivation (INV-E).
-            local _scope_paths=false _cur=""
-            if [[ "$(_env_read_rank)" -eq 1 ]]; then _scope_paths=true; _cur=$(_env_current_project); fi
+            local line name path norm count=0 malformed=0 hidden=0 owner _vis
+            # Output scoping (ADR-0043/0046 §7, A1 §4.3): the path index is the raw
+            # machine-local name→host-path map (repos/mounts), not a taxonomy kind.
+            # Visibility follows the OWNING project's read-visibility, exactly like
+            # `cco list project`: the current project's entries are always shown
+            # (Pc≥ro, INV-2), other projects' entries need Po≥ro (read-all). So we
+            # scope whenever Po<ro (read-project/read-global) and hide any entry
+            # none of whose owners is a current project — config-editor-aware via
+            # _env_is_current_project (PROJECT_NAME ∪ CCO_CONFIG_TARGETS). Host
+            # paths are ADDITIONALLY gated by show_host_paths, now trustworthy
+            # behind the ADR-0047 boundary (S1b): at show_host_paths=off we render
+            # logical names only. Host context is never scoped (INV-A); uses the
+            # layer's helpers, no ad-hoc context re-derivation (INV-E).
+            local _scope_paths=false _hide_hostpaths=false
+            if _cco_container_operator; then
+                [[ "$(_cco_axis_rank "$(_env_axis Po)")" -lt 1 ]] && _scope_paths=true
+                [[ "${CCO_SHOW_HOST_PATHS:-true}" != "true" ]] && _hide_hostpaths=true
+            fi
             while IFS= read -r line; do
                 [[ -z "$line" ]] && continue
                 name="${line%%=*}"; path="${line#*=}"
-                if [[ "$_scope_paths" == true ]] \
-                   && ! _index_repos_get_projects "$name" 2>/dev/null | grep -qxF "$_cur"; then
-                    hidden=$((hidden + 1)); continue
+                if [[ "$_scope_paths" == true ]]; then
+                    _vis=false
+                    while IFS= read -r owner; do
+                        [[ -z "$owner" ]] && continue
+                        if _env_is_current_project "$owner"; then _vis=true; break; fi
+                    done < <(_index_repos_get_projects "$name" 2>/dev/null)
+                    if [[ "$_vis" != true ]]; then hidden=$((hidden + 1)); continue; fi
+                fi
+                # show_host_paths gate (S1b): render logical names only when host
+                # paths are masked for this session. The malformed-path check is
+                # moot then (the host path is not shown), so it is skipped.
+                if [[ "$_hide_hostpaths" == true ]]; then
+                    printf '%s\n' "$name"
+                    count=$((count + 1)); continue
                 fi
                 # The index stores absolute paths only (boundary normalization).
                 # Normalize for display, and flag any value that is still
