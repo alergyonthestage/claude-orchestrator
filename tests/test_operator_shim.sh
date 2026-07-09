@@ -503,3 +503,16 @@ test_operator_path_list_masks_host_paths_when_off() {
     return 0
 }
 
+# ── whoami+: explicit (G,Pc,Po) triple + granular form + boundary note (A1 §4.5) ─
+
+test_operator_whoami_renders_triple_and_boundary() {
+    _op_cco read-global whoami
+    [[ "$OP_OUT" == *"access triple:"* && "$OP_OUT" == *"G=ro Pc=ro Po=none"* ]] \
+        || fail "whoami should render the explicit (G,Pc,Po) triple, got: $OP_OUT"
+    [[ "$OP_OUT" == *"global=ro,current=ro,others=none"* ]] \
+        || fail "whoami should echo the granular {global,current,others} form, got: $OP_OUT"
+    [[ "$OP_OUT" == *"ADR-0047 privilege boundary"* ]] \
+        || fail "whoami should state enforcement is the privilege boundary, got: $OP_OUT"
+    return 0
+}
+

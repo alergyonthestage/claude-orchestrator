@@ -37,8 +37,9 @@ EOF
 
     # The resolved (G,Pc,Po) triple is the single source; read/write scopes are the
     # ordinal display over it, and each config tree's rw/ro/— is its axis value
-    # (ADR-0046 §7). (whoami+ — the explicit triple line, granular form hint, and
-    # privilege-boundary note — lands in the Phase III per-command pass.)
+    # (ADR-0046 §7). whoami+ (A1 §4.5): render the triple explicitly, echo the
+    # granular {global,current,others} form the agent can pass back to
+    # --cco-access, and state that enforcement is the ADR-0047 privilege boundary.
     local level rscope wscope _wg _wpc _wpo
     level=$(_env_access)
     rscope=$(_env_read_scope)
@@ -49,8 +50,10 @@ EOF
     _wm() { case "$1" in rw) printf 'rw' ;; ro) printf 'ro' ;; *) printf '—' ;; esac; }
 
     printf '%bSession access%b\n' "$BOLD" "$NC"
-    printf '  cco_access:       %s  (G=%s Pc=%s Po=%s; read scope: %s, write scope: %s)\n' \
-        "$level" "$_wg" "$_wpc" "$_wpo" "$rscope" "$wscope"
+    printf '  cco_access:       %s\n' "$level"
+    printf '  access triple:    G=%s Pc=%s Po=%s  (read scope: %s, write scope: %s)\n' \
+        "$_wg" "$_wpc" "$_wpo" "$rscope" "$wscope"
+    printf '  granular form:    global=%s,current=%s,others=%s\n' "$_wg" "$_wpc" "$_wpo"
     printf '  claude_access:    %s\n' "${CCO_CLAUDE_ACCESS:-repo}"
     printf '  show_host_paths:  %s\n' "${CCO_SHOW_HOST_PATHS:-true}"
     printf '  project:          %s\n' "${PROJECT_NAME:-(none)}"
@@ -63,5 +66,15 @@ EOF
     if [[ "$(_cco_axis_rank "$_wpo")" -ge 1 ]]; then
         printf "  other projects' config:              %s\n" "$(_wm "$_wpo")"
     fi
+    echo ""
+    # Enforcement note (ADR-0047): the internal store (STATE index, DATA
+    # registries, CACHE internals) is confined behind a mode-0700 cco-svc root the
+    # agent cannot traverse; store-touching verbs are re-executed through a setuid
+    # helper that re-checks this triple against the trusted session descriptor. So
+    # these access values are enforced by a privilege boundary, not merely by
+    # output-filtering — a raw read of the internal store fails with EACCES.
+    printf '%bEnforcement%b  internal store confined behind the ADR-0047 privilege boundary —\n' "$BOLD" "$NC"
+    printf '              store reads/writes are gated by this triple via the setuid cco-svc\n'
+    printf '              helper (a raw read of the store fails), not just output-filtered.\n'
     return 0
 }
