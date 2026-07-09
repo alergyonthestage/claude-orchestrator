@@ -37,6 +37,41 @@ _op_cco() {
     return 0
 }
 
+# Like _op_cco, but with a SEEDED throwaway store so store-touching gates can
+# resolve real resources: projects `alpha` + `beta` (each its own member repo,
+# create_project-style) and a pack `p1`. $1=cco_access level, $2=current
+# PROJECT_NAME (may be `config-editor`), rest=argv. Honors two optional caller
+# vars: OP_TARGETS → CCO_CONFIG_TARGETS (config-editor targets), OP_SHP →
+# CCO_SHOW_HOST_PATHS (default true). Seeds via the real index API so the on-disk
+# format matches production. Captures stdout+stderr → OP_OUT, exit → OP_RC.
+_op_seed() {
+    local level="$1" cur="$2"; shift 2
+    local tmp; tmp=$(mktemp -d)
+    mkdir -p "$tmp/home/.cco/packs/p1" "$tmp/state" "$tmp/data" "$tmp/cache" \
+             "$tmp/repos/alpha" "$tmp/repos/beta"
+    ( source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+      source "$REPO_ROOT/lib/paths.sh";  source "$REPO_ROOT/lib/index.sh"
+      # CCO_ALLOW_HOST_RESOLVE=1: seeding writes the index host-side; inside a
+      # session container the anti-in-container guard (ADR-0007) otherwise refuses
+      # index writes (mirrors setup_cco_env). No-op on the host.
+      export CCO_STATE_HOME="$tmp/state" CCO_ALLOW_HOST_RESOLVE=1
+      _index_set_path alpha "$tmp/repos/alpha"; _index_set_project_repos alpha alpha
+      _index_set_path beta  "$tmp/repos/beta";  _index_set_project_repos beta  beta
+    ) >/dev/null 2>&1
+    OP_OUT=$(
+        export CCO_IN_CONTAINER=1 CCO_CONTAINER_OPERATOR=1 CCO_STORE_ELEVATED=1 \
+               CCO_CCO_ACCESS="$level" PROJECT_NAME="$cur" \
+               CCO_CONFIG_TARGETS="${OP_TARGETS:-}" CCO_SHOW_HOST_PATHS="${OP_SHP:-true}" \
+               CCO_DATA_HOME="$tmp/data" CCO_STATE_HOME="$tmp/state" CCO_CACHE_HOME="$tmp/cache" \
+               HOME="$tmp/home"
+        unset CCO_ACCESS_TRIPLE
+        bash "$REPO_ROOT/bin/cco" "$@" 2>&1
+    )
+    OP_RC=$?
+    rm -rf "$tmp"
+    return 0
+}
+
 # ── Blocklist: host-only verbs die with a hint ───────────────────────
 
 test_operator_blocks_container_spawning() {
@@ -105,9 +140,8 @@ test_operator_blocks_config_validate_hostonly() {
 test_operator_read_level_refuses_writes() {
     # Write verbs targeting the global store/registry are refused at a read level
     # with the tree-aware message (R5) and the policy-refusal exit code 2 (D8).
-    _op_cco read tag add proj mytag
-    [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs G=rw"* ]] \
-        || fail "'tag add' under read must be refused (exit 2, edit-global), got rc=$OP_RC: $OP_OUT"
+    # (`tag` is now gated by the tagged resource's axis — B5 — and covered by the
+    # dedicated per-target tests below, not this blanket-global case.)
     _op_cco read config save
     [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs G=rw"* ]] \
         || fail "'config save' under read must be refused (exit 2, edit-global), got rc=$OP_RC: $OP_OUT"
@@ -372,3 +406,62 @@ test_operator_shim_inert_without_flag() {
     [[ "$out" == *"Usage: cco"* ]] \
         || fail "Without operator flag, 'cco help' should show usage, got: $out"
 }
+
+# ── B5: `tag add/remove` gated by the TAGGED resource's axis (A1 §4.1) ─────────
+# The blanket write:global gate (too strict AND too loose) is replaced by a
+# per-target derivation: project(current)→Pc, project(other)→Po, pack/template→G.
+# Kind + ownership resolve at the gate; ownership is config-editor-aware.
+
+test_operator_tag_current_project_needs_pc() {
+    # Too-strict fix: edit-project CAN tag its own current project (a Pc write),
+    # which the old blanket-global gate wrongly refused.
+    _op_seed edit-project alpha tag add alpha work
+    [[ $OP_RC -eq 0 && "$OP_OUT" == *"tagged project 'alpha'"* ]] \
+        || fail "edit-project should tag its own project (Pc=rw), got rc=$OP_RC: $OP_OUT"
+    # A read level cannot (Pc=ro, not rw) — refused naming the Pc axis.
+    _op_seed read-project alpha tag add alpha work
+    [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs Pc=rw"* ]] \
+        || fail "read-project must refuse tagging its own project (needs Pc=rw), got rc=$OP_RC: $OP_OUT"
+    return 0
+}
+
+test_operator_tag_other_project_needs_po() {
+    # Too-loose fix: edit-global must NOT tag ANOTHER project — G=rw does not grant
+    # Po; only edit-all (Po=rw) may.
+    _op_seed edit-project alpha tag add beta work
+    [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs Po=rw"* ]] \
+        || fail "edit-project must refuse tagging another project (needs Po=rw), got rc=$OP_RC: $OP_OUT"
+    _op_seed edit-global alpha tag add beta work
+    [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs Po=rw"* ]] \
+        || fail "edit-global must refuse tagging another project (G=rw ≠ Po; too-loose fix), got rc=$OP_RC: $OP_OUT"
+    _op_seed edit-all alpha tag add beta work
+    [[ $OP_RC -eq 0 && "$OP_OUT" == *"tagged project 'beta'"* ]] \
+        || fail "edit-all should tag another project (Po=rw), got rc=$OP_RC: $OP_OUT"
+    return 0
+}
+
+test_operator_tag_pack_needs_g() {
+    # A pack is a global-store resource (uniformly G, referenced or not, §4.1) —
+    # edit-project (G=none) cannot tag it, edit-global (G=rw) can.
+    _op_seed edit-project alpha tag add p1 work
+    [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs G=rw"* ]] \
+        || fail "edit-project must refuse tagging a pack (needs G=rw), got rc=$OP_RC: $OP_OUT"
+    _op_seed edit-global alpha tag add p1 work
+    [[ $OP_RC -eq 0 && "$OP_OUT" == *"tagged pack 'p1'"* ]] \
+        || fail "edit-global should tag a pack (G=rw), got rc=$OP_RC: $OP_OUT"
+    return 0
+}
+
+test_operator_tag_config_editor_targets_are_current() {
+    # config-editor: PROJECT_NAME is always 'config-editor'; its editable "current"
+    # projects are the CCO_CONFIG_TARGETS set (D9). A target project is a Pc write
+    # (allowed at edit-project); a non-target project is 'other' → Po.
+    OP_TARGETS=alpha _op_seed edit-project config-editor tag add alpha work
+    [[ $OP_RC -eq 0 && "$OP_OUT" == *"tagged project 'alpha'"* ]] \
+        || fail "config-editor edit-project should tag a CONFIG_TARGET project (Pc=rw), got rc=$OP_RC: $OP_OUT"
+    OP_TARGETS=alpha _op_seed edit-project config-editor tag add beta work
+    [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs Po=rw"* ]] \
+        || fail "config-editor edit-project must treat a NON-target project as other (needs Po=rw), got rc=$OP_RC: $OP_OUT"
+    return 0
+}
+

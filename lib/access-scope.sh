@@ -296,6 +296,21 @@ _env_read_rank() {
 # The current session's project (empty on the host).
 _env_current_project() { printf '%s' "${PROJECT_NAME:-}"; }
 
+# _env_is_current_project <name> → 0 when <name> is a project this session owns
+# as "current", 1 otherwise. Config-editor-aware (ADR-0046 §6 / A1 §4.1 B5): a
+# normal session's current project is PROJECT_NAME; a config-editor session's
+# PROJECT_NAME is always 'config-editor' (D9), so its editable targets are the
+# CCO_CONFIG_TARGETS set instead. The ownership predicate the B5 tag gate keys
+# Pc-vs-Po off of (current project → Pc, any other → Po). Empty <name> is never
+# current.
+_env_is_current_project() {
+    local name="$1"
+    [[ -z "$name" ]] && return 1
+    [[ "$name" == "${PROJECT_NAME:-}" ]] && return 0
+    _env_csv_has "$name" "${CCO_CONFIG_TARGETS:-}" && return 0
+    return 1
+}
+
 # Scope class for a resource kind: project | global. Unknown kinds default to
 # the narrower `project` class (default-deny).
 _env_scope_class() {

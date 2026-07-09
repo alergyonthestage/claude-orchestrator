@@ -288,6 +288,41 @@ _cco_operator_shim() {
         esac
         refuse "'cco $2' needs read-$1 scope or higher in this session (current cco_access=$level). Widen it on the host with --cco-access read-$1."
     }
+    # _op_tag_gate <sub> <argv…> — B5 (A1 §4.1): gate `tag add/remove` by the
+    # TAGGED resource's axis, not a blanket global. Kind + ownership are resolved
+    # HERE (ahead of the write), then mapped to a target tree: project(current)→
+    # project (Pc=rw), project(other)→all (Po=rw), pack/template→global (G=rw).
+    # Ownership is config-editor-aware (_env_is_current_project). Detection may be
+    # unreadable in the OUTER (claude) shim — the STATE index sits behind the
+    # ADR-0047 boundary — so a not-found/ambiguous detection DEFERS (return 0) to
+    # the authoritative elevated re-run (store readable) or to cmd_tag's own error;
+    # it never false-refuses a valid project tag before the trampoline. Positive
+    # denials (a pack tag at G=none) still refuse early for UX. In the fallback /
+    # test path (no helper) the store is readable here, so the gate is exact.
+    _op_tag_gate() {
+        local sub="$1"; shift
+        local name="" forced=""
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --pack)     forced="packs" ;;
+                --project)  forced="projects" ;;
+                --template) forced="templates" ;;
+                -*) : ;;                      # other flags → cmd_tag reports
+                *)  [[ -z "$name" ]] && name="$1" ;;
+            esac
+            shift
+        done
+        [[ -z "$name" ]] && return 0          # cmd_tag prints usage / dies
+        local kind="$forced"
+        [[ -n "$kind" ]] || kind=$(_tags_detect_kind "$name") || return 0  # not-found/ambiguous → defer
+        case "$kind" in
+            projects)
+                if _env_is_current_project "$name"; then _op_write "tag $sub" project
+                else _op_write "tag $sub" all; fi ;;
+            packs|templates) _op_write "tag $sub" global ;;
+            *) return 0 ;;                     # unknown → defer to cmd_tag
+        esac
+    }
     # R9 refusal taxonomy (D8 exit codes): host-only + removed-alias are POLICY
     # refusals (exit 2), unknown verbs/subcommands are ERRORS (exit 1). Kept as
     # named helpers so each arm reads as its case, and the message never leaves a
@@ -314,7 +349,7 @@ _cco_operator_shim() {
         tag)
             case "$sub" in
                 "") return 0 ;;   # bare namespace → dispatcher prints sub-usage
-                add|remove|rm) _op_write "tag $sub" global ;;   # DATA registry (C1: global regardless of named project)
+                add|remove|rm) _op_tag_gate "$sub" "${@:2}" ;;   # B5: gate by the TAGGED resource's axis (A1 §4.1)
                 *) _op_unknown_sub tag "$sub" ;;
             esac ;;
         config)
