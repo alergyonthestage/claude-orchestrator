@@ -35,27 +35,33 @@ EOF
         return 0
     fi
 
-    local level rscope wscope
+    # The resolved (G,Pc,Po) triple is the single source; read/write scopes are the
+    # ordinal display over it, and each config tree's rw/ro/— is its axis value
+    # (ADR-0046 §7). (whoami+ — the explicit triple line, granular form hint, and
+    # privilege-boundary note — lands in the Phase III per-command pass.)
+    local level rscope wscope _wg _wpc _wpo
     level=$(_env_access)
-    rscope=$(_cco_level_read_scope "$level")
-    wscope=$(_cco_level_write_scope "$level")
+    rscope=$(_env_read_scope)
+    wscope=$(_env_write_scope)
+    read -r _wg _wpc _wpo <<< "$(_env_triple)"
 
-    # rw/ro/— for a target tree, derived from write_scope (single source).
-    _wm() { _cco_write_scope_satisfies "$wscope" "$1" && printf 'rw' || printf 'ro'; }
+    # rw/ro/— for an axis value (rw>ro>none).
+    _wm() { case "$1" in rw) printf 'rw' ;; ro) printf 'ro' ;; *) printf '—' ;; esac; }
 
     printf '%bSession access%b\n' "$BOLD" "$NC"
-    printf '  cco_access:       %s  (read scope: %s, write scope: %s)\n' "$level" "$rscope" "$wscope"
+    printf '  cco_access:       %s  (G=%s Pc=%s Po=%s; read scope: %s, write scope: %s)\n' \
+        "$level" "$_wg" "$_wpc" "$_wpo" "$rscope" "$wscope"
     printf '  claude_access:    %s\n' "${CCO_CLAUDE_ACCESS:-repo}"
     printf '  show_host_paths:  %s\n' "${CCO_SHOW_HOST_PATHS:-true}"
     printf '  project:          %s\n' "${PROJECT_NAME:-(none)}"
     [[ -n "${CCO_CONFIG_TARGETS:-}" ]] && printf '  config targets:   %s\n' "${CCO_CONFIG_TARGETS}"
     echo ""
     printf '%bConfig trees%b\n' "$BOLD" "$NC"
-    printf '  project config (<repo>/.cco):        %s\n' "$(_wm project)"
-    printf '  personal store (~/.cco) + registry:  %s\n' "$(_wm global)"
-    printf '  llms cache:                          %s\n' "$(_wm global)"
-    if [[ "$wscope" == "all" ]]; then
-        printf "  other projects' config:              rw (config-editor)\n"
+    printf '  project config (<repo>/.cco):        %s\n' "$(_wm "$_wpc")"
+    printf '  personal store (~/.cco) + registry:  %s\n' "$(_wm "$_wg")"
+    printf '  llms cache:                          %s\n' "$(_wm "$_wg")"
+    if [[ "$(_cco_axis_rank "$_wpo")" -ge 1 ]]; then
+        printf "  other projects' config:              %s\n" "$(_wm "$_wpo")"
     fi
     return 0
 }

@@ -906,14 +906,19 @@ YAML
             echo "      - CCO_DEBUG=1"
         fi
 
-        # Access scopes derived ONCE from the resolved cco_access (ADR-0043
-        # symmetric model; access-scope.sh is the single source, INV-E). read_scope
-        # drives read-mount narrowing (project → only referenced packs); write_scope
-        # drives the per-tree RW upgrades. Read/write symmetric: edit-project reads
-        # at project scope (narrowed), NOT the whole store.
-        local _read_scope _write_scope
-        _read_scope=$(_cco_level_read_scope "$cco_access")
-        _write_scope=$(_cco_level_write_scope "$cco_access")
+        # Mount modes derived ONCE from the resolved (G,Pc,Po) triple (ADR-0046 §7;
+        # access-scope.sh is the single source, INV-E). Each axis drives one mount
+        # decision — no {project,global,all} ordinal in between:
+        #   Pc=rw  → the current project's <repo>/.cco (A1) is editable.
+        #   G=rw   → the personal store ~/.cco + DATA/CACHE (A2) are editable.
+        #   G=none → the CONFIG mount is NARROWED to referenced packs (the rest of
+        #            the store stays physically hidden); G≥ro mounts the whole store.
+        # This is where edit-global's redefined (rw,rw,none) takes effect — Pc=rw
+        # now unlocks A1, which the old (rw,ro,none) kept :ro.
+        local _pc_rw="false" _g_rw="false" _g_none="false"
+        [[ "$cco_pc" == "rw"   ]] && _pc_rw="true"
+        [[ "$cco_g"  == "rw"   ]] && _g_rw="true"
+        [[ "$cco_g"  == "none" ]] && _g_none="true"
 
         # Container-operator mode (ADR-0036 D4): under cco_access >= read, the
         # in-container cco runs behind the whitelist shim, operating on the real
@@ -923,6 +928,12 @@ YAML
         # (~/.cco) needs no override — it is mounted at the natural $HOME/.cco.
         if [[ "$cco_access" != "none" ]]; then
             echo "      - CCO_CONTAINER_OPERATOR=1"
+            # CCO_ACCESS_TRIPLE is the authoritative (G,Pc,Po) the in-container
+            # layer derives every scope decision from (INV-E); CCO_CCO_ACCESS is
+            # its display label (a preset name or the granular form) for messages
+            # and back-compat. (ADR-0047 will move the triple into a cco-svc-owned
+            # session descriptor; the env carries it until then.)
+            echo "      - CCO_ACCESS_TRIPLE=${cco_g},${cco_pc},${cco_po}"
             echo "      - CCO_CCO_ACCESS=${cco_access}"
             echo "      - CCO_DATA_HOME=/home/claude/.local/share/cco"
             echo "      - CCO_STATE_HOME=/home/claude/.local/state/cco"
@@ -1006,7 +1017,7 @@ YAML
         # RW below share one source. config-editor resolves to edit-all via its
         # preset (its edit targets mount via generated extra_mounts, not this loop).
         local _committed_ro=":ro"
-        if [[ "$_write_scope" == "project" || "$_write_scope" == "all" ]]; then
+        if [[ "$_pc_rw" == "true" ]]; then
             _committed_ro=""
         fi
 
@@ -1071,9 +1082,9 @@ YAML
         # ride the <repo>/.cco overlay (rw) above, not the personal store.
         if [[ "$cco_access" != "none" ]]; then
             local _op_rw="ro"
-            case "$_write_scope" in global|all) _op_rw="" ;; esac
+            [[ "$_g_rw" == "true" ]] && _op_rw=""
             echo "      # Container-operator buckets (wrapped-cco — ADR-0036 D4)"
-            if [[ "$_read_scope" == "project" ]]; then
+            if [[ "$_g_none" == "true" ]]; then
                 # Narrowed CONFIG: only referenced personal-store packs (ro).
                 local _rp_pack _rp_dir
                 if [[ -n "$pack_names" ]]; then

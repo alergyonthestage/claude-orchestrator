@@ -265,6 +265,19 @@ _env_read_scope() {
     else printf 'none'; fi
 }
 
+# Write scope as the back-compat ordinal none|project|global|all, derived from the
+# triple (Po=rw→all, G=rw→global, Pc=rw→project, else none). For display/caveats
+# only — precise write gating keys off the axes (_cco_triple_write_satisfies), so
+# the ordinal's loss of the edit-global dual-write (Pc=rw AND G=rw) never gates.
+_env_write_scope() {
+    _cco_container_operator || { printf 'all'; return 0; }
+    local g pc po; read -r g pc po <<< "$(_env_triple)"
+    if   [[ "$(_cco_axis_rank "$po")" -ge 2 ]]; then printf 'all'
+    elif [[ "$(_cco_axis_rank "$g")"  -ge 2 ]]; then printf 'global'
+    elif [[ "$(_cco_axis_rank "$pc")" -ge 2 ]]; then printf 'project'
+    else printf 'none'; fi
+}
+
 # Read-scope rank, symmetric with the shim (project<global<all). Host → 99
 # (unrestricted); none → 0. Thin ordinal shim over _env_read_scope for callers
 # that compare tiers. Drives _env_in_scope's fast path (rank>=2 sees everything

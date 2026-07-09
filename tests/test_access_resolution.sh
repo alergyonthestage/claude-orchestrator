@@ -354,10 +354,10 @@ test_access_mount_cco_edit_project_unlocks_a1() {
     fi
 }
 
-# edit-global edits the GLOBAL store, NOT the project → the <repo>/.cco :ro
-# overlay (A1) must STAY. This is the exact boundary a regression would slip
-# through (edit-project/edit-all drop it; edit-global must not).
-test_access_mount_cco_edit_global_keeps_a1_ro() {
+# edit-global is REDEFINED to (rw,rw,none) (ADR-0046 §3): it now edits the current
+# project (Pc=rw) AS WELL as the global store, so the <repo>/.cco :ro overlay (A1)
+# must be ABSENT. This is the exact boundary that FLIPPED vs the old (rw,ro,none).
+test_access_mount_cco_edit_global_unlocks_a1() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -365,8 +365,45 @@ test_access_mount_cco_edit_global_keeps_a1_ro() {
     mkdir -p "$CCO_DUMMY_REPO/.cco"
     run_cco start "test-proj" --cco-access edit-global --dry-run --dump
     local c; c=$(_access_compose)
+    if echo "$c" | grep -qE 'dummy-repo/\.cco:/workspace/dummy-repo/\.cco:ro"'; then
+        fail "A1 :ro overlay must be ABSENT under edit-global (project now editable, ADR-0046 §3)"
+    fi
+    # G=rw still makes the personal store rw.
+    echo "$c" | grep -qE ':/home/claude/\.cco"' || fail "~/.cco should be rw under edit-global (G=rw)"
+}
+
+# The old edit-global intent — curate the GLOBAL store while the project stays
+# read-only — is now the granular off-ladder point (rw,ro,none): CONFIG rw (G=rw)
+# yet A1 :ro (Pc=ro). This is the boundary a regression would slip through.
+test_access_mount_granular_curate_global_keeps_a1_ro() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    mkdir -p "$CCO_DUMMY_REPO/.cco"
+    run_cco start "test-proj" --cco-access global=rw,current=ro --dry-run --dump
+    local c; c=$(_access_compose)
     echo "$c" | grep -qE 'dummy-repo/\.cco:/workspace/dummy-repo/\.cco:ro"' \
-        || fail "A1 :ro overlay must REMAIN under cco-access edit-global (project not editable)"
+        || fail "A1 :ro overlay must REMAIN under (rw,ro,none) — project not editable (Pc=ro)"
+    echo "$c" | grep -qE ':/home/claude/\.cco"' || fail "~/.cco should be rw under (rw,ro,none) (G=rw)"
+    echo "$c" | grep -q 'CCO_ACCESS_TRIPLE=rw,ro,none' || fail "triple exported as rw,ro,none"
+}
+
+# A granular session exports CCO_ACCESS_TRIPLE + the granular CCO_CCO_ACCESS label.
+test_access_mount_exports_triple() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    mkdir -p "$CCO_DUMMY_REPO/.cco"
+    run_cco start "test-proj" --cco-access others=rw --dry-run --dump
+    local c; c=$(_access_compose)
+    echo "$c" | grep -q 'CCO_ACCESS_TRIPLE=none,rw,rw'                 || fail "triple none,rw,rw exported"
+    echo "$c" | grep -q 'CCO_CCO_ACCESS=global=none,current=rw,others=rw' || fail "granular label exported"
+    # Pc=rw → A1 editable (no :ro overlay).
+    if echo "$c" | grep -qE 'dummy-repo/\.cco:/workspace/dummy-repo/\.cco:ro"'; then
+        fail "A1 :ro overlay must be absent when Pc=rw"
+    fi
 }
 
 # ── Container-operator buckets + secret masking (step 4, ADR-0036 D4) ─

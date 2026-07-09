@@ -183,18 +183,19 @@ EOF
     if _cco_container_operator; then
         local _level="${CCO_CCO_ACCESS:-read-project}"
         [[ "$_level" == "read" ]] && _level="read-all"
+        # Derive from the resolved (G,Pc,Po) triple (INV-E). _rs/_ws stay ordinal for
+        # the one-line summary; the caveats are recomputed PER AXIS so edit-global's
+        # dual-write (Pc=rw AND G=rw) is described correctly (the old ordinal caveat
+        # wrongly told edit-global it could not edit the project).
+        local _hg _hpc _hpo; read -r _hg _hpc _hpo <<< "$(_env_triple)"
         local _rs _ws
-        _rs=$(_cco_level_read_scope "$_level")
-        _ws=$(_cco_level_write_scope "$_level")
-        # Recompute the caveats from THIS level (S6-04): describe only real gates.
+        _rs=$(_env_read_scope)
+        _ws=$(_env_write_scope)
         local _cav=""
-        case "$_ws" in
-            none)    _cav="write verbs (create/install/tag/config save) need an edit level" ;;
-            project) _cav="global-store writes (pack/template/llms/tag/remote/config save) need edit-global+" ;;
-            global)  _cav="project-config edits need edit-project or edit-all" ;;
-            all)     _cav="" ;;
-        esac
-        [[ "$_rs" == "project" ]] && _cav="${_cav:+$_cav; }template/remote listing needs read-global+"
+        [[ "$_hpc" != "rw" ]] && _cav="project-config edits need Pc=rw (edit-project/edit-global/edit-all)"
+        [[ "$_hg"  != "rw" ]] && _cav="${_cav:+$_cav; }global-store writes (pack/template/llms/tag/remote/config save) need G=rw (edit-global/edit-all)"
+        [[ "$_hpo" != "rw" ]] && _cav="${_cav:+$_cav; }cross-project writes need Po=rw (edit-all)"
+        [[ "$(_cco_axis_rank "$_hg")" -lt 1 ]] && _cav="${_cav:+$_cav; }template/remote listing needs G≥ro (read-global+)"
         printf 'Container session (cco_access=%s) — wrapped cco (read %s, write %s).\n' "$_level" "$_rs" "$_ws"
         [[ -n "$_cav" ]] && printf 'At this scope: %s.\n' "$_cav"
         # Fully host-only top-level verbs (mirror the shim blocklist) + `tag` when
@@ -253,34 +254,36 @@ _cco_operator_shim() {
     # value — it meant "read everything", so treat it as read-all here too.
     [[ "$level" == "read" ]] && level="read-all"
     local host_hint="Run it on the host instead (this is a container session; ADR-0036 D4)."
-    # Derived scopes — the SINGLE source (access-scope.sh, INV-E), symmetric on
-    # {project, global, all} (ADR-0043). read_scope gates read-verb availability
-    # (personal-global template/remote need global+); write_scope gates each write
-    # verb by its TARGET TREE (R5), not by a flat "any edit level" bit.
-    local read_scope write_scope
-    read_scope=$(_cco_level_read_scope "$level")
-    write_scope=$(_cco_level_write_scope "$level")
+    # The session's resolved (G,Pc,Po) triple — the SINGLE source every gate keys
+    # off (access-scope.sh, INV-E; ADR-0046 §7). Authoritative from CCO_ACCESS_TRIPLE
+    # (set host-side by `cco start`), with a preset fallback derived from `level`
+    # (CCO_CCO_ACCESS) for a back-compat launch. read_scope stays as the ordinal
+    # display value; write gating is per-axis (edit-global now grants Pc=rw).
+    local _tg _tpc _tpo; read -r _tg _tpc _tpo <<< "$(_env_triple)"
+    local read_scope; read_scope=$(_env_read_scope)
 
-    # _op_write <verb-label> <required-write-scope: project|global|all> — a write
-    # verb reaches the dispatcher only if this session's write_scope grants the
-    # TARGET TREE; otherwise refuse (exit 2, D8) at the gate, before the ro FS. Per
-    # C1 the requirement is the target TREE: tag/remote write the global DATA
-    # registry → global, whatever project they name (no cross-project edit-all bump).
+    # _op_write <verb-label> <target-tree: project|global|all> — a write verb reaches
+    # the dispatcher only if the session triple grants the TARGET TREE's axis (§7:
+    # project→Pc=rw, global→G=rw, all→Po=rw); otherwise refuse (exit 2, D8) before
+    # the ro FS. edit-global's redefined (rw,rw,none) now satisfies BOTH project
+    # (Pc=rw) and global (G=rw), whatever project is named.
     _op_write() {
-        _cco_write_scope_satisfies "$write_scope" "$2" && return 0
+        _cco_triple_write_satisfies "$_tg" "$_tpc" "$_tpo" "$2" && return 0
         case "$2" in
-            project) refuse "'cco $1' edits project config — needs an edit-project (or edit-all) session (current cco_access=$level)." ;;
-            global)  refuse "'cco $1' writes the personal store/registry — needs an edit-global (or edit-all) session (current cco_access=$level)." ;;
-            all)     refuse "'cco $1' writes across projects — needs an edit-all session (current cco_access=$level)." ;;
+            project) refuse "'cco $1' edits project config — needs Pc=rw (an edit-project/edit-global/edit-all session; current cco_access=$level)." ;;
+            global)  refuse "'cco $1' writes the personal store/registry — needs G=rw (an edit-global/edit-all session; current cco_access=$level)." ;;
+            all)     refuse "'cco $1' writes across projects — needs Po=rw (an edit-all session; current cco_access=$level)." ;;
             *)       refuse "'cco $1' needs a wider edit access level (current cco_access=$level)." ;;
         esac
     }
     # _op_read_scope <required-read-scope: global|all> <verb-label> — a read verb
-    # whose minimum read tier exceeds this session's read_scope is refused (exit 2).
+    # whose minimum read tier exceeds the session's is refused (exit 2). The
+    # global-class tier (template/remote) is keyed off the G AXIS (needs G≥ro), so a
+    # case-6 `(none,rw,rw)` session (read ordinal 'all' yet G=none) is still refused.
     _op_read_scope() {
         case "$1" in
             all)    [[ "$read_scope" == "all" ]] && return 0 ;;
-            global) [[ "$read_scope" == "global" || "$read_scope" == "all" ]] && return 0 ;;
+            global) [[ "$(_cco_axis_rank "$_tg")" -ge 1 ]] && return 0 ;;
             *)      return 0 ;;
         esac
         refuse "'cco $2' needs read-$1 scope or higher in this session (current cco_access=$level). Widen it on the host with --cco-access read-$1."

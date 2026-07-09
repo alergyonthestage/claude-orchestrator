@@ -95,13 +95,13 @@ test_operator_read_level_refuses_writes() {
     # Write verbs targeting the global store/registry are refused at a read level
     # with the tree-aware message (R5) and the policy-refusal exit code 2 (D8).
     _op_cco read tag add proj mytag
-    [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs an edit-global"* ]] \
+    [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs G=rw"* ]] \
         || fail "'tag add' under read must be refused (exit 2, edit-global), got rc=$OP_RC: $OP_OUT"
     _op_cco read config save
-    [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs an edit-global"* ]] \
+    [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs G=rw"* ]] \
         || fail "'config save' under read must be refused (exit 2, edit-global), got rc=$OP_RC: $OP_OUT"
     _op_cco read remote add acme https://x
-    [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs an edit-global"* ]] \
+    [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs G=rw"* ]] \
         || fail "'remote add' under read must be refused (exit 2, edit-global), got rc=$OP_RC: $OP_OUT"
     return 0
 }
@@ -139,14 +139,14 @@ test_operator_remote_add_token_refused() {
 # R5 (symmetric write gate): the ~/.cco store is writable only at edit-global/
 # edit-all; `config save` writes the global store → at edit-project (write_scope
 # project) it is REFUSED at the shim gate (exit 2), before the ro filesystem,
-# with the tree-aware "needs an edit-global" message. At edit-all it passes the
+# with the tree-aware "needs G=rw" message. At edit-all it passes the
 # gate (may fail later for other reasons, but never with the gate message).
 test_operator_config_save_edit_project_needs_edit_global() {
     _op_cco edit-project config save -m x
-    [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs an edit-global"* ]] \
+    [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs G=rw"* ]] \
         || fail "'config save' at edit-project must be gate-refused (exit 2, edit-global), got rc=$OP_RC: $OP_OUT"
     _op_cco edit-all config save -m x
-    [[ "$OP_OUT" != *"needs an edit-global"* ]] \
+    [[ "$OP_OUT" != *"needs G=rw"* ]] \
         || fail "'config save' at edit-all should pass the write gate, got: $OP_OUT"
     return 0
 }
