@@ -17,14 +17,19 @@
  *   3. Build a SANITIZED environment from scratch — dropping every agent-set variable,
  *      re-injecting only the descriptor's trusted values plus the fixed bucket homes.
  *      This is what makes an agent-forged CCO_ACCESS_TRIPLE / PROJECT_NAME inert.
- *   4. Drop to the cco-svc uid/gid fully (real == effective) and exec the trusted,
- *      image-baked `cco __store <verb> [args...]`. The (G,Pc,Po) gate + output-scoping
- *      run inside that elevated cco (ADR-0046 §7), which is why a direct agent call of
- *      this helper still cannot leak: it only ever runs the scope-aware store reader.
+ *   4. Exec the trusted, image-baked `cco __store <verb> [args...]` as cco-svc. The
+ *      setuid bit already set the EFFECTIVE uid to cco-svc — enough to traverse the
+ *      0700 root and reach the store (file access is checked against euid). We do NOT
+ *      setgid/setuid to real==effective: a setuid-to-NON-root helper lacks the caps, and
+ *      requiring a setuid-ROOT helper is rejected (least privilege, ADR-0047 §2). cco is
+ *      exec'd via `bash -p` (privileged mode) — load-bearing, since a plain bash with
+ *      euid!=ruid resets euid to ruid. The (G,Pc,Po) gate + output-scoping run inside
+ *      that elevated cco (ADR-0046 §7), which is why a direct agent call of this helper
+ *      still cannot leak: it only ever runs the scope-aware store reader.
  *
  * The exec target and the `__store` entry verb are HARDCODED — the agent controls only
- * the store verb/args, which `cco __store` validates and scopes. No shell, no argv/env
- * trust, no daemon, no RPC. Compiled static and baked at build time.
+ * the store verb/args, which `cco __store` validates and scopes. No argv/env trust, no
+ * daemon, no RPC. Compiled and baked at build time.
  */
 
 #include <stdio.h>
@@ -39,6 +44,7 @@
 
 #define DESCRIPTOR   "/etc/cco/session-access"
 #define CCO_BIN      "/opt/cco/bin/cco"
+#define BASH_BIN     "/bin/bash"
 #define SVC_USER     "cco-svc"
 #define MAX_LINE     4096
 #define MAX_ENV      64
@@ -134,38 +140,44 @@ int main(int argc, char **argv) {
     fclose(fp);
     envp[envc] = NULL;
 
-    /* 4. Drop fully to cco-svc (real == effective, no supplementary groups) so the
-     * exec'd cco runs as the store owner and cannot be traced/ptraced back by claude. */
+    /* 4. Run as cco-svc. The setuid bit already set the EFFECTIVE uid to cco-svc, and
+     * file access is checked against the effective uid — so euid=cco-svc is all that is
+     * needed to traverse the 0700 cco-svc root and reach the store. We deliberately do
+     * NOT setgid/setgroups/setuid to make real==effective: a setuid-to-NON-root helper
+     * has no CAP_SETGID/CAP_SETUID, so those calls EPERM, and forcing real==effective
+     * would require a setuid-ROOT helper (rejected — least privilege, ADR-0047 §2). The
+     * real uid stays claude; that is harmless — the 0700 store is owner-only (cco-svc),
+     * supplementary groups grant nothing on it, and a euid!=ruid process is non-dumpable
+     * so claude cannot ptrace it. Supplementary-group drop is best-effort (no-op when
+     * unprivileged). */
     struct passwd *svc = getpwnam(SVC_USER);
     if (!svc) {
         fprintf(stderr, "cco-svc-helper: user '%s' not found — refusing.\n", SVC_USER);
         return 2;
     }
-    if (setgroups(0, NULL) != 0) {
-        fprintf(stderr, "cco-svc-helper: setgroups failed: %s\n", strerror(errno));
+    if (geteuid() != svc->pw_uid) {
+        fprintf(stderr, "cco-svc-helper: not running as %s (setuid bit missing?) — refusing.\n", SVC_USER);
         return 2;
     }
-    if (setgid(svc->pw_gid) != 0 || setuid(svc->pw_uid) != 0) {
-        fprintf(stderr, "cco-svc-helper: could not drop to %s: %s\n", SVC_USER, strerror(errno));
-        return 2;
-    }
-    /* Defence in depth: if the setuid did not stick, do not run elevated. */
-    if (getuid() != svc->pw_uid || geteuid() != svc->pw_uid) {
-        fprintf(stderr, "cco-svc-helper: uid drop did not take — refusing.\n");
-        return 2;
-    }
+    (void) setgroups(0, NULL);   /* best-effort; ignore EPERM under non-root setuid */
 
-    /* Build argv: cco __store <verb> [args...]. The exec target and the __store entry
-     * are hardcoded; the caller only supplies the store verb and its arguments. */
-    char *cco_argv[argc + 3];
+    /* Exec bash in PRIVILEGED mode (-p) on the hardcoded cco script. -p is load-bearing:
+     * a plain bash started with euid!=ruid resets euid back to ruid (claude), which would
+     * defeat the elevation and put us back outside the boundary. -p keeps euid=cco-svc
+     * (and, as a bonus, makes bash ignore $BASH_ENV/$ENV and inherited functions). The
+     * exec target + the __store entry verb are hardcoded; the caller supplies only the
+     * store verb and its args, which `cco __store` validates and scopes. */
+    char *cco_argv[argc + 5];
     int ci = 0;
-    cco_argv[ci++] = (char *)"cco";
+    cco_argv[ci++] = (char *)"bash";
+    cco_argv[ci++] = (char *)"-p";
+    cco_argv[ci++] = (char *)CCO_BIN;
     cco_argv[ci++] = (char *)"__store";
     for (int i = 1; i < argc; i++)
         cco_argv[ci++] = argv[i];
     cco_argv[ci] = NULL;
 
-    execve(CCO_BIN, cco_argv, envp);
-    fprintf(stderr, "cco-svc-helper: exec %s failed: %s\n", CCO_BIN, strerror(errno));
+    execve(BASH_BIN, cco_argv, envp);
+    fprintf(stderr, "cco-svc-helper: exec %s (%s) failed: %s\n", BASH_BIN, CCO_BIN, strerror(errno));
     return 2;
 }
