@@ -280,9 +280,21 @@ the config-editor cwd-vs-`--all` matrix.
    project`) — `tags.sh:cmd_list` / `cmd-project-query.sh`.
 4. **B1**: list `whoami` in operator-mode help; **B2**: suppress a help section header with zero
    runnable verbs (`bin/cco` usage render). **Hunt same-class siblings** (backlog §3 note).
+5. **Registry lifecycle without `cco stop`** (dogfood **B-DF3**): normal exit is the `run --rm`
+   container disappearing when Claude Code exits — `cco stop` is ~never invoked, and post-Phase-II
+   the container can't write the internal-store `running/` dir. So the **host-side reconciliation
+   is the primary reaper** (marker advisory, `docker ps` = truth; ADR-0045 self-healing): have
+   `cco start` run a reconciliation **sweep**; arrange host-side writes + the `:ro` in-container
+   mount for `running/` under the privileged root; verify a normal `--rm` exit leaves no stale
+   index/state/metadata. Do NOT design cleanup around an exit-time `cco stop`.
+6. **B-DF2 (first-run UX, folded like B-DF1)**: `cco init` name prompt is swallowed —
+   `_cco_init_resolve_name` (`cmd-init.sh:335`) `read -rp … 2>/dev/null` eats the `read -p` prompt
+   (bash writes it to stderr); the command looks hung. Print the prompt to `/dev/tty` (or drop the
+   `2>/dev/null`); hunt sibling `read … 2>/dev/null` prompt-eaters.
 
 **Tests**: new `test_running_registry.sh` (writers/reconcile/scope-gated visibility, unknown
-fallback), `test_operator_shim.sh` help-render cases for B1/B2.
+fallback, **no-stop exit → next-read reconciliation reaps the marker**), `test_operator_shim.sh`
+help-render cases for B1/B2, a `cco init` prompt-visibility case for B-DF2.
 
 ### Phase VI — Migrations · changelog · DOC5 cutover · `cco build` — **REBUILD** · **[Session 3]**
 

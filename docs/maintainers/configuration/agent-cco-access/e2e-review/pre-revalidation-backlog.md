@@ -243,6 +243,37 @@ Confirmed by the maintainer; formalized by **[`../hardening-v2/handoff.md`](../h
   a UX/correctness bug surfaced by the Phase-II dogfood. Same index-host-path pattern may
   affect other in-container read verbs that existence-check member repos.
 
+- **B-DF2 — `cco init` (no `--migrate`) name prompt is invisible; the command looks hung**
+  (found 2026-07-09, maintainer first-run). `_cco_init_resolve_name` (`lib/cmd-init.sh:335`)
+  runs `read -rp "  Project name [$base]: " name < /dev/tty 2>/dev/null`. Bash writes the
+  `read -p` **prompt to stderr**; the `2>/dev/null` (added to swallow a read error) also
+  **swallows the prompt**, so the user sees nothing while `read` blocks on `/dev/tty` — the
+  command appears frozen, then resumes once a name is typed + Enter. The sibling **language**
+  prompts (`:148-152`) omit `2>/dev/null` and render correctly (proving the diagnosis).
+  **Fix (Phase V, folded like B-DF1):** print the prompt explicitly to the tty
+  (`printf '  Project name [%s]: ' "$base" > /dev/tty; read -r name < /dev/tty`) or drop the
+  `2>/dev/null`. Not security; first-run UX. **Hunt siblings** — any other `read … 2>/dev/null`
+  whose prompt is eaten.
+
+- **B-DF3 (registry lifecycle input for Phase V / ADR-0045) — normal exit is NOT `cco stop`;
+  reconciliation must be the primary reaper.** In practice `cco stop` is ~never invoked:
+  exiting Claude Code ends the `docker compose run --rm` container (auto-removed) and drops
+  back to the host shell — no explicit stop. So a `<state>/cco/running/<project>` marker written
+  by `cco start` has **no writer to remove it on normal exit**, and — post-Phase-II — the
+  container **cannot** write/remove it anyway (`running/` lives in STATE, behind the ADR-0047
+  boundary; writers are host-side only). **ADR-0045 already covers this**: the marker is
+  *advisory*, `docker ps` is the source of truth, and the **host-side liveness reconciliation**
+  (run on any host read: `cco list`/`project show`/`start`/`stop`) **reaps stale markers**
+  (ADR-0045 §"self-healing, bounded staleness after an unclean exit"). Phase-V requirements this
+  observation sharpens: (1) treat reconciliation as the **primary** cleanup, not `cco stop`
+  (which is the rare path); (2) ensure `cco start` runs a reconciliation **sweep** so a fresh
+  session's list is accurate despite prior no-stop exits; (3) the `running/` dir sits under the
+  privileged root — arrange its **host-side writes + the `:ro` in-container mount** accordingly;
+  (4) **verify a normal `--rm` exit leaves no other stale index/state/metadata** (today: `--rm`
+  removes the container, entrypoint `trap _cleanup EXIT` reaps bg procs, generated compose is
+  CACHE/STATE — the marker is the only new artifact to get right). Do **not** design marker
+  cleanup around an exit-time `cco stop`.
+
 ### Updated sequencing
 
 ```mermaid
