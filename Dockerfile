@@ -6,6 +6,17 @@ RUN go mod download 2>/dev/null || true
 COPY proxy/ .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o cco-docker-proxy ./cmd/cco-docker-proxy/
 
+# ── Stage 1b: Build the cco-svc internal-store boundary helper (ADR-0047) ──
+# A minimal setuid-cco-svc C binary — the ONLY path across the privilege boundary
+# that confines the internal XDG store. Compiled dynamically (getpwnam needs NSS;
+# the loader ignores LD_* for setuid binaries, so dynamic linking is safe here).
+FROM debian:bookworm-slim AS helper-builder
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /build
+COPY config/cco-svc-helper.c .
+RUN gcc -Wall -Wextra -O2 -o cco-svc-helper cco-svc-helper.c
+
 # ── Stage 2: Main image ───────────────────────────────────────────
 FROM node:22-bookworm
 
@@ -117,9 +128,31 @@ RUN groupadd -g 999 docker \
        /home/claude/.local/state /home/claude/.cache /workspace \
     && chown -R claude:claude /home/claude /workspace
 
+# ── cco-svc privilege boundary (ADR-0047) ────────────────────────────
+# A dedicated, login-less service uid that OWNS the internal-store root. The store
+# (STATE index, DATA registries, CACHE internals) is bind-mounted UNDER this root at
+# runtime; because the root is mode 0700 cco-svc on the REAL container FS, the `claude`
+# user cannot traverse it (EACCES) even though bind-mount CONTENT ignores DAC on macOS
+# Docker Desktop (fakeowner) — the kernel checks traversal on the real parent inode
+# (empirical basis, ADR-0047 §8 Test B). The setuid helper (baked below) is the sole
+# crossing. Fixed uid 900 for determinism. This also removes the design-docker.md
+# §1.2.2 sibling-EACCES collision — cco no longer mounts under ~/.local/state|.cache.
+RUN useradd --system --no-create-home --shell /usr/sbin/nologin --uid 900 cco-svc \
+    && install -d -o cco-svc -g cco-svc -m 0700 /var/lib/cco-internal
+
 # ── Docker socket proxy (from builder stage) ──────────────────────
 COPY --from=proxy-builder /build/cco-docker-proxy /usr/local/bin/cco-docker-proxy
 RUN chmod +x /usr/local/bin/cco-docker-proxy
+
+# ── cco-svc internal-store boundary helper (from builder stage) ────
+# setuid-cco-svc (least privilege — never root). owner cco-svc + group claude + mode
+# 4750: only the claude user may EXEC it (group-exec, no world bit), and it elevates to
+# cco-svc to reach the confined store. The (G,Pc,Po) gate + output-scoping run inside
+# the elevated `cco __store` it execs, keyed off the trusted :ro session descriptor —
+# so even a direct agent invocation cannot forge a wider scope or leak raw store data.
+COPY --from=helper-builder /build/cco-svc-helper /usr/local/bin/cco-svc-helper
+RUN chown cco-svc:claude /usr/local/bin/cco-svc-helper \
+    && chmod 4750 /usr/local/bin/cco-svc-helper
 
 # ── Config files ─────────────────────────────────────────────────────
 COPY config/tmux.conf /home/claude/.tmux.conf
