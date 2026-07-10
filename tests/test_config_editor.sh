@@ -90,6 +90,33 @@ test_config_editor_project_mode_mounts_target_cco() {
     assert_file_contains "$compose" "$HOME/.cco:/workspace/cco-config" || return 1
 }
 
+# D9 / ADR-0044 §3: the config-editor's editable targets must be surfaced to the
+# session (env CCO_CONFIG_TARGETS + the ADR-0047 R2 descriptor) so the in-container
+# ownership predicate (_env_is_current_project) classifies them as "current" (Pc).
+# Regression guard for the _ce_targets variable-scope bug (was local to
+# _start_resolve_project → invisible to compose-gen → CCO_CONFIG_TARGETS silently
+# empty → B5 could not tag/show a config-editor target).
+test_config_editor_project_mode_emits_config_targets() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "myproj" "$(minimal_project_yml myproj)"
+    run_cco start config-editor --project myproj --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_contains "$compose" "CCO_CONFIG_TARGETS=myproj" || return 1
+}
+
+# Global mode (bare, outside any project) has NO editable project targets, so no
+# CCO_CONFIG_TARGETS is emitted (an empty CSV would be misleading).
+test_config_editor_global_mode_emits_no_config_targets() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    cd "$tmpdir"   # outside any project → global mode
+    run_cco start config-editor --dry-run --dump
+    assert_file_not_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "CCO_CONFIG_TARGETS="
+}
+
 test_config_editor_project_mode_unknown_target_fails() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"

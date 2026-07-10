@@ -485,8 +485,11 @@ _start_resolve_project() {
         # The collector sets _ce_targets (newline name<TAB>cco_path) + _ce_repos
         # (newline repo names) directly via shared scope so its die() propagates
         # (bash 3.2 has no namerefs, and a $() subshell would swallow the die).
+        # _ce_targets/_ce_repos are declared at cmd_start scope (NOT here) so their
+        # value survives into _start_generate_compose (CCO_CONFIG_TARGETS + the R2
+        # descriptor read them); reset before collecting.
         _resolve_config_editor_mode
-        local _ce_targets="" _ce_repos=""
+        _ce_targets="" _ce_repos=""
         _start_collect_config_editor_targets
         _setup_internal_config_editor "$_ce_targets" "$_ce_repos"
         project_dir="$(_cco_internal_runtime_dir)/config-editor"
@@ -1585,6 +1588,13 @@ cmd_start() {
     local config_editor_all=false   # --all: explicit widener → every project's .cco (ADR-0044 §3)
     local config_editor_mode=""     # resolved all|project|global (ADR-0044 §3; _resolve_config_editor_mode)
     local config_editor_cwd_dir=""  # the cwd project's host repo dir, when mode=project via cwd
+    # Config-editor collected targets/repos (ADR-0044 §3 / D9). Declared at cmd_start
+    # scope — NOT local to _start_resolve_project — so the collector's output survives
+    # into _start_generate_compose (a sibling call), which derives CCO_CONFIG_TARGETS +
+    # the trusted session descriptor (ADR-0047 R2) from _ce_targets. A function-local
+    # here would be invisible to compose-gen, silently emptying CCO_CONFIG_TARGETS and
+    # neutering the config-editor ownership predicate (_env_is_current_project, B5).
+    local _ce_targets="" _ce_repos=""
     local cli_claude_access=""      # --claude-access override (ADR-0036 D2/D3); "" = unset
     local cli_cco_access=""         # --cco-access override; supersedes --enable-config-edit
     local cli_show_host_paths=""    # "" | "true" | "false" (--show-host-paths / --no-…)
