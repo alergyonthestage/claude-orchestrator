@@ -346,12 +346,16 @@ _env_in_scope() {
     local kind="$1" name="$2" owner="${3:-}"
     _cco_container_operator || return 0
     local g pc po; read -r g pc po <<< "$(_env_triple)"
-    local cur; cur=$(_env_current_project)
     case "$kind" in
         template|remote)
             [[ "$(_cco_axis_rank "$g")" -ge 1 ]] && return 0 ;;
         project)
-            if [[ -n "$cur" && "$name" == "$cur" ]]; then
+            # "Current" ownership is config-editor-aware (_env_is_current_project =
+            # PROJECT_NAME ∪ CCO_CONFIG_TARGETS), the SAME predicate the B5 tag gate
+            # and path-list scoping use — so a config-editor target project is Pc,
+            # not Po. Keying off bare PROJECT_NAME would hide a config-editor's own
+            # edit target from `list project`/`project show` (edit-project, Po=none).
+            if _env_is_current_project "$name"; then
                 [[ "$(_cco_axis_rank "$pc")" -ge 1 ]] && return 0
             fi
             [[ "$(_cco_axis_rank "$po")" -ge 1 ]] && return 0 ;;
@@ -367,8 +371,10 @@ _env_in_scope() {
             [[ "$(_cco_axis_rank "$g")" -ge 1 ]] && return 0 ;;
         *)
             # Owner-tagged project-class resource: current owner → Pc, else Po.
+            # Ownership is config-editor-aware (_env_is_current_project), matching
+            # the `project` kind above.
             if [[ -n "$owner" ]]; then
-                if [[ "$owner" == "$cur" ]]; then
+                if _env_is_current_project "$owner"; then
                     [[ "$(_cco_axis_rank "$pc")" -ge 1 ]] && return 0
                 fi
                 [[ "$(_cco_axis_rank "$po")" -ge 1 ]] && return 0

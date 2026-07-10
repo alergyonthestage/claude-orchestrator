@@ -95,6 +95,23 @@ test_as_read_global_vs_read_all_symmetry() {
     return 0
 }
 
+test_as_config_editor_target_is_current_not_other() {
+    # F2 / ADR-0044 D9: in a config-editor session PROJECT_NAME is always
+    # 'config-editor'; its edit targets are CCO_CONFIG_TARGETS. _env_in_scope must
+    # treat a target as "current" (Pc), the SAME predicate B5 uses — otherwise a
+    # config-editor edit-project (Po=none) session hides its own target from
+    # `list project`/`project show`.
+    _as_source
+    _as_operator edit-project           # triple (none,rw,none): Pc=rw, Po=none
+    export PROJECT_NAME=config-editor CCO_CONFIG_TARGETS=alpha
+    _env_in_scope project alpha || fail "config-editor target must be visible (Pc), not hidden as an 'other' project"
+    _env_in_scope project beta  && fail "a non-target project must stay hidden (Po=none)"
+    # Owner-tagged project-class resource follows the same predicate.
+    _env_in_scope tag t1 alpha || fail "a tag owned by the config-editor target must be visible (Pc)"
+    _env_in_scope tag t2 beta  && fail "a tag owned by a non-target project must be hidden (Po=none)"
+    return 0
+}
+
 test_as_edit_levels_read_at_matching_scope() {
     # D6: read/write symmetry — edit-project reads at PROJECT scope (mirrors
     # read-project, NOT "everything"); edit-global at global; edit-all at all.
