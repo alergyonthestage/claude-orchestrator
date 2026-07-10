@@ -1248,6 +1248,15 @@ YAML
                 _compose_vol "${state_root}/index" "/var/lib/cco-internal/state/cco/index"
             local _op_llms; _op_llms=$(_cco_llms_dir)
             [[ -d "$_op_llms" ]] && _compose_vol "$_op_llms" "/var/lib/cco-internal/cache/cco/llms"
+            # Session running registry (ADR-0045, refined by ADR-0047): host-written
+            # markers, mounted :ro UNDER the boundary. Filenames are project names
+            # (S1-confidential) → NOT a claude-readable mount; read only inside the
+            # elevated `cco __store list/show`, gated by _env_in_scope. Create the host
+            # dir so the :ro source exists on a first-ever start.
+            local _op_running; _op_running=$(_cco_running_dir)
+            mkdir -p "$_op_running" 2>/dev/null || true
+            [[ -d "$_op_running" ]] && \
+                _compose_vol "$_op_running" "/var/lib/cco-internal/state/cco/running" "ro"
             # Trusted session descriptor (ADR-0047 R2): :ro so the agent cannot forge a
             # wider scope (the :ro flag is VFS-level, fakeowner-independent). The setuid
             # helper reads it to gate every elevated store op. Written above.
@@ -1581,9 +1590,22 @@ _start_launch() {
     load_secrets_file run_env "$project_dir/secrets.env"
 
     info "Starting session for project '${project_name}'..."
-    docker compose -f "$compose_file" --project-directory "$session_state_dir" run --rm --service-ports "${run_env[@]+"${run_env[@]}"}" claude
+
+    # Session running registry (ADR-0045). `docker compose run` blocks for the whole
+    # session, so this host process OWNS the marker lifecycle: reconcile stale markers
+    # (backstop for prior unclean exits), write our marker, run, then remove it. The
+    # post-run unmark is the PRIMARY reaper for the common no-`cco stop` exit (Ctrl-C
+    # and a normal Claude Code exit both return control here); `|| _run_rc=$?` keeps
+    # `set -e` from aborting before the unmark on a non-zero session exit. A hard kill
+    # of this process skips the unmark → the next host read reconciles it away.
+    _cco_running_reconcile
+    _cco_running_mark "$project_name"
+    local _run_rc=0
+    docker compose -f "$compose_file" --project-directory "$session_state_dir" run --rm --service-ports "${run_env[@]+"${run_env[@]}"}" claude || _run_rc=$?
+    _cco_running_unmark "$project_name"
 
     ok "Session ended. Changes are in your repos."
+    return "$_run_rc"
 }
 
 cmd_start() {

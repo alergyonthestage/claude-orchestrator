@@ -138,8 +138,11 @@ check_docker() {
 # container name is cosmetic. All session detection goes through these helpers.
 
 # _cco_session_running <project-name> → 0 if a running session for the project.
+# Thin boolean wrapper over the tri-state _cco_session_status (single source): host
+# → docker-authoritative; in-container → registry (a `unknown` is not `running`). Used
+# by the host-side `cco start` guard, where the host branch is always definitive.
 _cco_session_running() {
-    [[ -n "$(docker ps --filter "label=cco.project=$1" --format '{{.ID}}' 2>/dev/null)" ]]
+    [[ "$(_cco_session_status "$1")" == running ]]
 }
 
 # _cco_session_container_ids <project-name> → running container IDs (newline list).
@@ -152,6 +155,86 @@ _cco_session_container_ids() {
 _cco_any_session_containers() {
     docker ps --filter "label=cco.project" \
         --format '{{.ID}}	{{.Label "cco.project"}}' 2>/dev/null
+}
+
+# ── Session running registry (ADR-0045, refined by ADR-0047) ─────────
+# A host-maintained set of markers — one file per running session, keyed by the
+# cco.project label (R1) — under STATE (<state>/cco/running/). Its reason to exist:
+# in-container, `docker ps` is scoped by the cco-docker-proxy to the session's OWN
+# container (or absent when mount_socket:false), so every OTHER project reads as a
+# false `stopped`. The registry supplies that truth where docker cannot.
+#
+# Confidentiality (ADR-0047 reconciliation): marker filenames ARE project names, the
+# S1-class confidential data. So the dir is NOT a claude-readable :ro mount (that
+# would let `ls` enumerate every project, re-opening the leak ADR-0047 closed);
+# instead it mounts :ro UNDER the cco-svc privileged root
+# (/var/lib/cco-internal/state/cco/running). In-container it is read ONLY inside the
+# already-elevated `cco __store list/show` (cco-svc can traverse the boundary), with
+# cross-project visibility gated by the existing _env_in_scope row-scoping. The claude
+# user cannot traverse the 0700 root, so no raw enumeration.
+#
+# Writers are HOST-SIDE ONLY (cco start/stop). docker stays the host source of truth;
+# the registry is a reconciled cache. _cco_session_status is the consumer.
+_cco_running_dir() {
+    printf '%s\n' "$(_cco_state_dir)/running"
+}
+
+# Host-only. Create/refresh the marker for a running session (label = cco.project).
+# Body is informational only — reconciliation keys off the FILENAME vs docker ps, so
+# a container id (unknown before the blocking `run`) is never needed.
+_cco_running_mark() {
+    local label="$1" dir
+    [[ -z "$label" ]] && return 0
+    dir=$(_cco_running_dir)
+    mkdir -p "$dir" 2>/dev/null || return 0
+    printf 'started_at=%s\nversion=%s\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" "${CCO_VERSION:-}" \
+        > "$dir/$label" 2>/dev/null || true
+}
+
+# Host-only. Remove a session marker (idempotent).
+_cco_running_unmark() {
+    local label="$1"
+    [[ -z "$label" ]] && return 0
+    rm -f "$(_cco_running_dir)/$label" 2>/dev/null || true
+}
+
+# Host-only liveness reconciliation (ADR-0045): prune markers with no live container.
+# The PRIMARY reaper for the common no-`cco stop` exit is cco start's own post-run
+# unmark; this sweep is the backstop for unclean exits (Ctrl-C mid-abort, docker kill,
+# host reboot). No-op in-container (no full docker) and when docker is unavailable.
+_cco_running_reconcile() {
+    _cco_in_container && return 0
+    command -v docker >/dev/null 2>&1 || return 0
+    local dir; dir=$(_cco_running_dir)
+    [[ -d "$dir" ]] || return 0
+    local f label
+    for f in "$dir"/*; do
+        [[ -e "$f" ]] || continue           # empty dir → literal glob, skip
+        label=$(basename "$f")
+        [[ -z "$(docker ps --filter "label=cco.project=$label" --format '{{.ID}}' 2>/dev/null)" ]] \
+            && rm -f "$f" 2>/dev/null || true
+    done
+}
+
+# Tri-state session status (B4). host → docker (authoritative, never unknown);
+# in-container → the registry marker (unknown when the registry is absent/unreadable,
+# NEVER a false `stopped` — the proxy-scoped in-container docker channel is not
+# consulted). Prints one of: running | stopped | unknown.
+_cco_session_status() {
+    local label="$1"
+    if _cco_in_container; then
+        local dir; dir=$(_cco_running_dir)
+        # Registry absent/unreadable (e.g. cco_access=none → no internal mount) → unknown.
+        [[ -d "$dir" ]] || { printf 'unknown\n'; return 0; }
+        if [[ -e "$dir/$label" ]]; then printf 'running\n'; else printf 'stopped\n'; fi
+        return 0
+    fi
+    if [[ -n "$(docker ps --filter "label=cco.project=$label" --format '{{.ID}}' 2>/dev/null)" ]]; then
+        printf 'running\n'
+    else
+        printf 'stopped\n'
+    fi
 }
 
 # Check image exists

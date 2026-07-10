@@ -21,6 +21,10 @@ EOF
 
     check_docker
 
+    # Session running registry (ADR-0045): reap any stale markers first (backstop for
+    # prior no-`cco stop` exits), then drop the marker(s) for what we stop below.
+    _cco_running_reconcile
+
     if [[ -n "$project" ]]; then
         # Resolve the project's committed config via the STATE index; runtime
         # state lives in CACHE, keyed by project name. Use the membership resolver
@@ -48,6 +52,7 @@ EOF
         else
             warn "No running session for '$project'"
         fi
+        _cco_running_unmark "$label_name"
 
         # Clean up managed integration runtime state (CACHE, keyed by project name)
         local managed; managed=$(_cco_project_cache_managed "$project")
@@ -64,6 +69,7 @@ EOF
         echo "$containers" | while IFS=$'\t' read -r cid proj; do
             [[ -z "$cid" ]] && continue
             docker stop "$cid" >/dev/null
+            [[ -n "$proj" ]] && _cco_running_unmark "$proj"
             ok "Stopped ${proj:-$cid}"
         done
         # Clean managed runtime state for all projects (all sessions stopped)
