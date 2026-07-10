@@ -385,6 +385,30 @@ test_operator_usage_host_flag_shows_all_flagged() {
     return 0
 }
 
+# B1: whoami is runnable under operator mode (always-available read verb) → it must
+# be listed in the filtered help, not omitted.
+test_operator_usage_lists_whoami() {
+    _op_cco read-project help
+    echo "$OP_OUT" | grep -qE '^  whoami ' \
+        || fail "operator help should list the runnable 'whoami' verb (B1), got: $OP_OUT"
+    return 0
+}
+
+# B2: a section whose verbs are all filtered out must not leave a dangling header.
+test_operator_usage_suppresses_empty_sections() {
+    _op_cco read-project help
+    # 'Sessions:' (start/new/stop) and 'Local paths & sync:' (resolve/sync) are wholly
+    # host-only → their headers must be gone, not left standing over nothing.
+    [[ "$OP_OUT" != *"Sessions:"* ]] \
+        || fail "empty 'Sessions:' header should be suppressed (B2), got: $OP_OUT"
+    [[ "$OP_OUT" != *"Local paths & sync:"* ]] \
+        || fail "empty 'Local paths & sync:' header should be suppressed (B2), got: $OP_OUT"
+    # A section that still has a runnable verb must remain.
+    [[ "$OP_OUT" == *"Discovery:"* ]] \
+        || fail "non-empty 'Discovery:' section should remain, got: $OP_OUT"
+    return 0
+}
+
 test_operator_usage_header_recompute_edit_all() {
     # S6-04: at edit-all nothing is gated → no "needs edit level" caveat recited.
     _op_cco edit-all help

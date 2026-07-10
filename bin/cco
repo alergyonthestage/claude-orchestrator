@@ -127,6 +127,25 @@ PACKS_DIR="${CCO_PACKS_DIR:-$HOME/.cco/packs}"
 TEMPLATES_DIR="${CCO_TEMPLATES_DIR:-$HOME/.cco/templates}"
 LLMS_DIR="${CCO_LLMS_DIR:-$(_cco_llms_dir)}"
 
+# B2: drop section headers left empty after the operator filter removed all their
+# verbs, and collapse the blank line the header would leave. A section header is a
+# non-indented line ending in ':'; verb lines are indented. Buffer a header and emit
+# it only once an indented verb under it is seen; consecutive blanks are collapsed.
+_usage_prune_empty_sections() {
+    awk '
+        /^[A-Za-z].*:$/ { header=$0; pending=1; next }
+        /^[[:space:]]+[^[:space:]]/ {
+            if (pending) { print header; pending=0; prevblank=0 }
+            print; prevblank=0; next
+        }
+        {
+            pending=0
+            if ($0=="" && prevblank) next
+            print; prevblank=($0=="")
+        }
+    '
+}
+
 usage() {
     # D7: `--host` (in-container) shows the FULL list with host-only verbs flagged;
     # the default is the filtered list. Ignored on the host.
@@ -159,6 +178,7 @@ Local paths & sync:
 Discovery:
   list [<kind>] [--tag]  Unified index of your resources (all, or one <kind>)
   tag <add|remove>       Tag a pack/project/template (per-user, never team-shared)
+  whoami                 Show this session's resolved access scope (claude/cco/paths)
 
 Resources:
   project <cmd>          Manage projects (add, validate, coords, rename, show, export, import)
@@ -212,7 +232,10 @@ EOF
             # D7 default: omit host-only (and above-scope) verbs; note how many hidden.
             local _n; _n=$(printf '%s\n' "$_body" | grep -cE "^  ($_filter)([[:space:]]|\$)")
             printf '\n'
-            printf '%s\n' "$_body" | sed -E "/^  ($_filter)([[:space:]]|\$)/d"
+            # B2: after deleting the filtered verbs, drop any section header left with
+            # no verbs under it (else empty "Sessions:"/"Local paths & sync:" headers).
+            printf '%s\n' "$_body" | sed -E "/^  ($_filter)([[:space:]]|\$)/d" \
+                | _usage_prune_empty_sections
             printf "\n%d host-only/above-scope verbs hidden — run 'cco --help --host' to list them.\n" "$_n"
         fi
         return 0
