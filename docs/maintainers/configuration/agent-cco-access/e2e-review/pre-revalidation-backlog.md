@@ -226,6 +226,46 @@ Confirmed by the maintainer; formalized by **[`../hardening-v2/handoff.md`](../h
   pending after the re-build. Branch NOT pushed.
 - **S2 (Phase III+IV), S3 (Phase V+VI)** — pending, per the implementation handoff.
 
+### Unified implementation review I–IV (2026-07-10) — findings
+
+Driven by [`../hardening-v2/review-handoff.md`](../hardening-v2/review-handoff.md) over
+`ec56f9f^..HEAD`. Three confirmed fixes landed on `feat/config-access/e2e-review`; one
+assess item deferred. Fasi I & II clean (resolver invariants + privilege boundary sound
+statically; Linux write-path correctly documented as an open follow-up). Suite baseline held
+(the only in-container failures are the documented §6.2 env artifacts).
+
+- **F1 — `CCO_CONFIG_TARGETS` never emitted (ALTA). ✅ FIXED `7f06be7`.** `_ce_targets`/
+  `_ce_repos` were `local` to `_start_resolve_project`, so the sibling
+  `_start_generate_compose` saw them empty → the D9 signal (env + the ADR-0047 R2 session
+  descriptor) was silently blank, neutering the config-editor ownership predicate
+  (`_env_is_current_project`, B5): a `config-editor --project X` (edit-project, Po=none)
+  session could not tag/show its own target. Root pre-existed B2's D9 wiring, but the new
+  B5/whoami/descriptor code depended on it. Hoisted the vars to `cmd_start` scope; regression
+  tests added. Empirically verified via dry-run (`CCO_CONFIG_TARGETS=myproj` now emitted).
+- **F2 — `_env_in_scope` ignored `CCO_CONFIG_TARGETS` (MEDIA; = the §4 config-editor assess
+  item). ✅ FIXED `9b4f27d`.** The `project`/owner branches keyed off bare `PROJECT_NAME`
+  instead of `_env_is_current_project`, so even after F1 a config-editor target stayed hidden
+  from `list project`/`project show`/`validate`/`coords`. Now uses the same ownership
+  predicate as the B5 write gate (ADR-0046 §7 current→Pc; ADR-0044 D9). No change for normal
+  sessions. Unit test added.
+- **F3 — hidden-notice pointed to the wrong widening (BASSA). ✅ FIXED `eac219c`.** `cco path
+  list`'s count-only notice said "start a read-global session", but hidden entries are OTHER
+  projects, visible only at Po≥ro = read-**all** (A1 §2.2). Corrected to read-all; the shared
+  `_env_flush_hidden_notice` now names both widenings. Test locks in the hint.
+- **F4 — config-editor mode vs collector may disagree (BASSA, ASSESS — OPEN).** An explicit
+  `--cco-access edit-project|edit-global` that contradicts the cwd-derived
+  `config_editor_mode` makes the preset default (via the CLI override) and the target
+  collector resolve different scopes. The outcome is always **narrower** (fail-safe), never a
+  privilege escalation — e.g. `config-editor --cco-access edit-project` outside any project
+  yields edit-project scope with no project targets mounted (an effectively empty session).
+  **Decision: document, do not fix now.** Options if revisited: (a) have
+  `_resolve_config_editor_mode` also read an explicit `edit-project`/`edit-global`
+  `--cco-access` to keep mode and collector aligned; or (b) reject a `--cco-access` for
+  config-editor that is not `edit-all` (the only widener the mode honours). Low priority; no
+  correctness/security impact.
+- **DOC-NIT (folded into F3).** The generic multi-kind notice shared the same imprecise
+  "read-global" wording; updated alongside F3.
+
 ### Dogfood-found bugs (pre-merge / pre-e2e — NOT hardening-v2 scope)
 
 - **B-DF1 — `cco project show` reports mounted repos as `[missing]`/`code-only`
