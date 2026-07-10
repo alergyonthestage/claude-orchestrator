@@ -609,3 +609,40 @@ entries:
       into the image), session detection is fixed (cco stop / list status), and at
       cco_access=none cco is cleanly unavailable. Requires a rebuilt image
       (`cco build`).
+
+  - id: 37
+    date: "2026-07-10"
+    type: additive
+    title: "Granular (global,current,others) cco access, a real privilege boundary, and in-container running status"
+    description: >
+      The agent↔cco access model is now an explicit three-axis capability
+      (ADR-0046): `access.cco` in `project.yml` (or `--cco-access`) accepts, in
+      addition to the preset scalars, a granular MAP over three independent trees —
+      `global` (the rest of ~/.cco), `current` (this project's .cco), and `others`
+      (other projects' .cco) — each on the lattice none < ro < rw, e.g.
+      `--cco-access global=ro,current=rw,others=none`. Presets are sugar for the
+      symmetric triples; unspecified axes auto-promote to the invariant floor
+      (current is never `none` while cco is enabled; others <= current). Two cases
+      the presets could not express are now reachable granular-only (read others
+      but write only current; write current + read global). `edit-global` is
+      REDEFINED from `(rw,ro,none)` to `(rw,rw,none)` — it now also writes the
+      current project's config, not just the global store. A new optional
+      `access.cco.include_member_configs` (bool, default false) widens the
+      `current` write span from the hosting repo's <repo>/.cco to all member repos'
+      copies in a multi-repo project. Existing scalar `access.cco` values and
+      omitted blocks are unaffected (additive). Enforcement no longer relies only
+      on output-scoping: the machine-local internal store (STATE index, DATA, CACHE
+      internals) now sits behind a real privilege boundary (ADR-0047) — a
+      mode-0700 parent owned by a dedicated `cco-svc` uid that the agent cannot
+      traverse, plus a small setuid helper that applies the resolved (G,Pc,Po) from
+      a trusted, read-only session descriptor (never argv/env, fail-closed). A
+      `read-project` agent that tries to `cat` the index gets EACCES; access-scope
+      output filtering is demoted to defense-in-depth. Built-in presets flipped to
+      least-privilege: the tutorial is now `read-all` (read-only teacher, full
+      context, no write risk) and config-editor resolves to the minimum for its
+      target (edit-project in a project, edit-global outside one, edit-all with
+      `--all`). Finally, `cco list` and `cco whoami` now report a session's running
+      status from a host-reconciled registry (ADR-0045): in-container status is
+      shown per scope with a dedicated STATUS column and `--sort status`, and an
+      out-of-scope/absent session reads as `unknown` rather than a false `stopped`.
+      Requires a rebuilt image (`cco build`).
