@@ -266,6 +266,19 @@ statically; Linux write-path correctly documented as an open follow-up). Suite b
 - **DOC-NIT (folded into F3).** The generic multi-kind notice shared the same imprecise
   "read-global" wording; updated alongside F3.
 
+**Post-`cco build` dogfood (2026-07-10) — fixes CONFIRMED live in the rebuilt image.** In a
+`read-project` operator session: the Phase-II boundary holds (`cat ~/.local/state/cco/index` →
+EACCES; `/var/lib/cco-internal` is `0700 cco-svc`; helper `4750 cco-svc:claude`); the trampoline
+elevates store-touching verbs (`cco list` / `cco tag add` reach the store via the setuid helper);
+`cco whoami` renders the `(G,Pc,Po)` triple + the enforcement note; refusal taxonomy correct
+(`tag add <current-project>` → exit 2 "needs Pc=rw" [B5 detected kind+ownership against the real
+store]; `cco start` → host-only; `cco list templates` → above-scope, all with reasons). **F3
+verified live**: `cco path list` → "start a **read-all** session"; the generic `cco list` notice →
+"read-global (read-all to also see other projects)". F1/F2 are config-editor-specific — verified
+via host dry-run (CCO_CONFIG_TARGETS emitted) + unit tests; a full config-editor `--project`
+live-dogfood needs a host `cco start config-editor --project <name>` session (recommended before
+merge).
+
 ### Dogfood-found bugs (pre-merge / pre-e2e — NOT hardening-v2 scope)
 
 - **B-DF1 — `cco project show` reports mounted repos as `[missing]`/`code-only`
