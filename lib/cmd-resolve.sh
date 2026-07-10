@@ -725,7 +725,10 @@ EOF
                 warn "$malformed malformed index entr$([[ $malformed -eq 1 ]] && printf y || printf ies) — run 'cco update' to normalize, or 'cco resolve --scan <dir>' to rebind"
             fi
             if [[ $hidden -gt 0 ]]; then
-                printf 'note: %s path entr%s hidden by access scope (cco_access=%s) — start a read-global session or run cco on your host to see everything.\n' \
+                # Hidden path entries belong to OTHER projects (owner ≠ a current
+                # project), which are visible only at Po≥ro — i.e. read-all, NOT
+                # read-global (read-global still hides other projects; A1 §2.2).
+                printf 'note: %s path entr%s hidden by access scope (cco_access=%s) — start a read-all session or run cco on your host to see everything.\n' \
                     "$hidden" "$([[ $hidden -eq 1 ]] && printf y || printf ies)" "$(_env_access)" >&2
             fi
             ;;

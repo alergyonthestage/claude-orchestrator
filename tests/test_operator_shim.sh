@@ -476,6 +476,10 @@ test_operator_path_list_scoped_at_read_project() {
         || fail "path list at read-project must hide other projects' repos, got: $OP_OUT"
     [[ "$OP_OUT" == *"hidden by access scope"* ]] \
         || fail "path list should emit the count-only hidden notice, got: $OP_OUT"
+    # F3: hidden entries are OTHER projects → the widening is read-all, not
+    # read-global (which still hides other projects; A1 §2.2).
+    [[ "$OP_OUT" == *"read-all"* && "$OP_OUT" != *"read-global session"* ]] \
+        || fail "path list notice must point to read-all (not read-global), got: $OP_OUT"
     return 0
 }
 

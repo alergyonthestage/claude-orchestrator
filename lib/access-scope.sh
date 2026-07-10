@@ -410,7 +410,10 @@ _env_flush_hidden_notice() {
         msg="${msg}${msg:+, }${c} ${label}"
     done
     if [[ -n "$msg" ]]; then
-        printf 'note: %s hidden by access scope (cco_access=%s) — start a read-global session or run cco on your host to see everything.\n' \
+        # read-global reveals global-class resources (templates/remotes/unreferenced
+        # packs/llms); OTHER projects need read-all (Po≥ro). The notice can cover
+        # both kinds, so it names the correct widening for each (A1 §2.2).
+        printf 'note: %s hidden by access scope (cco_access=%s) — start a read-global session (read-all to also see other projects) or run cco on your host.\n' \
             "$msg" "$(_env_access)" >&2
     fi
     # Idempotent: clear so a second flush in the same process is a no-op.
