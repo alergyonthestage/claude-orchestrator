@@ -296,3 +296,16 @@ test_init_accepts_valid_name_with_hyphens() {
     ( cd "$repo" && run_cco init --name "my-valid-project-123" --lang "English" )
     assert_file_contains "$repo/.cco/project.yml" "name: my-valid-project-123"
 }
+
+# B-DF2: bash writes a `read -p` prompt to stderr, so a `2>/dev/null` on the
+# interactive project-name read hides the prompt and the command looks hung. Guard
+# the regression at the source — a real PTY test is too platform-fragile for the
+# suite, and the prompt path only fires on an interactive tty.
+test_init_name_prompt_not_swallowed() {
+    local line
+    line=$(grep -n 'Project name \[\$base\]' "$REPO_ROOT/lib/cmd-init.sh" | head -1)
+    [[ -n "$line" ]] || fail "could not find the init project-name prompt read"
+    [[ "$line" != *"2>/dev/null"* ]] \
+        || fail "B-DF2 regression: the init name prompt read swallows stderr (2>/dev/null hides the prompt)"
+    return 0
+}

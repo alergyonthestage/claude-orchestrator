@@ -330,7 +330,10 @@ _cco_init_resolve_name() {
     if [[ -n "$name_arg" ]]; then
         name="$name_arg"
     elif (exec < /dev/tty) 2>/dev/null; then
-        read -rp "  Project name [$base]: " name < /dev/tty 2>/dev/null || name=""
+        # B-DF2: no `2>/dev/null` on the read — bash writes the `-p` prompt to stderr,
+        # so redirecting it swallows the prompt and the command looks hung. The tty is
+        # already proven available by the guard above; `|| name=""` handles a read fail.
+        read -rp "  Project name [$base]: " name < /dev/tty || name=""
         name="${name:-$base}"
     else
         name="$base"
