@@ -13,6 +13,24 @@ cco_access-gated visibility); implementer (code-grounding + reconciliation desig
 · docker design ([`../design/design-docker.md`](../design/design-docker.md)) · the R1
 `cco.project` label (agent↔cco e2e fix).
 
+> **Forward annotation (implementation, 2026-07-10 — refined by
+> [ADR-0047](../../configuration/agent-cco-access/decisions/0047-config-access-enforcement.md)).**
+> This ADR predates the ADR-0047 privilege boundary. Its §2 "bind-mounted **read-only**
+> into sessions" assumed the pre-0047 model where confidentiality rode on
+> `access-scope.sh` output-gating. But the marker **filenames are project names** — the
+> S1-class confidential data ADR-0047 closed: a claude-readable `:ro` mount would let `ls`
+> enumerate every project, re-opening the leak. **Reconciliation as built:** the `running/`
+> dir mounts `:ro` **under the cco-svc privileged root**
+> (`/var/lib/cco-internal/state/cco/running`), NOT at a claude-readable path. In-container it
+> is read **only inside the already-elevated `cco __store list/show`** (cco-svc can traverse
+> the boundary), with cross-project visibility still gated by `_env_in_scope` row-scoping —
+> so the intent of §2 (access-gated visibility) is preserved while the confidentiality is
+> enforced by the boundary, not by output-scoping alone. The claude user cannot traverse the
+> 0700 root, so no raw enumeration. No rebuild: the mountpoint auto-creates under the root.
+> Also: the marker lifecycle does **not** depend on `cco stop` (B-DF3) — the blocking `cco
+> start` owns it (mark pre-run, unmark post-run), and host-side reconciliation is the primary
+> reaper. See `feat/config-access/e2e-review` commits `95eb8b5`/`f08bbf2`.
+
 ## Context
 
 `cco list project` / `cco project show` report a project's **running status** via
