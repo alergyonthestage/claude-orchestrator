@@ -76,6 +76,16 @@ _mock_docker_no_containers() {
     _mock_docker_with_containers "$1"
 }
 
+# Seed the STATE running-registry (ADR-0045) so session-status assertions are
+# deterministic across BOTH contexts the suite runs in: on the host status comes
+# from `docker ps` (mock), in-container from this registry. Pair a registry seed
+# with the matching docker mock so the asserted status holds either way.
+#   _seed_running_dir   → present-but-empty registry → 'stopped' in-container
+#   _seed_running <p>    → a marker for <p> → 'running' in-container
+# (absent registry dir → 'unknown', B4). Requires CCO_STATE_HOME (setup_cco_env).
+_seed_running_dir() { mkdir -p "$CCO_STATE_HOME/running"; }
+_seed_running()     { mkdir -p "$CCO_STATE_HOME/running"; : > "$CCO_STATE_HOME/running/$1"; }
+
 # Install a smart mock docker that returns a container only for a specific project.
 # Supports both general label check (cco.project) and targeted check (cco.project=<name>).
 # Usage: _mock_docker_with_project_session "$mock_bin" "project-name" ["container-name"]

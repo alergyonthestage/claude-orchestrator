@@ -237,6 +237,17 @@ _cco_session_status() {
     fi
 }
 
+# Colored display token for a session status (B4). One place so `cco list`,
+# `cco list project`, and `cco project show` render the tri-state identically —
+# unknown (YELLOW) is surfaced honestly rather than collapsed to `stopped`.
+_cco_session_status_display() {
+    case "$(_cco_session_status "$1")" in
+        running) printf '%b' "${GREEN}running${NC}" ;;
+        unknown) printf '%b' "${YELLOW}unknown${NC}" ;;
+        *)       printf 'stopped' ;;
+    esac
+}
+
 # Check image exists
 check_image() {
     if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then

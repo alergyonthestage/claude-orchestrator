@@ -82,6 +82,7 @@ test_project_list_stopped_status() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "my-proj" "$(minimal_project_yml my-proj)"
+    _seed_running_dir   # present-but-empty registry → 'stopped' in-container (docker-empty → stopped on host)
     run_cco list project
     assert_output_contains "stopped"
 }
@@ -94,6 +95,7 @@ test_project_list_running_status() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "my-proj" "$(minimal_project_yml my-proj)"
+    _seed_running "my-proj"   # registry marker → 'running' in-container (docker-with-container → running on host)
     run_cco list project
     assert_output_contains "running"
 }

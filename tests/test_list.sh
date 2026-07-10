@@ -82,6 +82,41 @@ test_list_reverse_inverts() {
     assert_output_contains "KIND"
 }
 
+# B3: the compact index carries a dedicated STATUS column for the project kind
+# (tri-state; other kinds show '-'). Seeded in both contexts: registry marker
+# (in-container) + smart docker mock (host).
+test_list_compact_status_column() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local mock_bin="$tmpdir/bin"
+    _mock_docker_with_project_session "$mock_bin" "svc"
+    setup_mocks "$mock_bin"
+    setup_cco_env "$tmpdir"
+    create_project "$tmpdir" "svc" "$(minimal_project_yml svc)"
+    _seed_running "svc"
+    run_cco list
+    assert_output_contains "STATUS"
+    assert_output_contains "running"
+}
+
+# B3: --sort status orders running before stopped (then by name).
+test_list_sort_status_orders() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local mock_bin="$tmpdir/bin"
+    _mock_docker_with_project_session "$mock_bin" "bb-run"
+    setup_mocks "$mock_bin"
+    setup_cco_env "$tmpdir"
+    create_project "$tmpdir" "aa-stop" "$(minimal_project_yml aa-stop)"
+    create_project "$tmpdir" "bb-run"  "$(minimal_project_yml bb-run)"
+    _seed_running_dir          # both present-but-stopped by default in-container
+    _seed_running "bb-run"     # bb-run marked running
+    run_cco list --sort status
+    local pr ps
+    pr=$(printf '%s\n' "${CCO_OUTPUT:-}" | grep -n 'bb-run'  | head -1 | cut -d: -f1)
+    ps=$(printf '%s\n' "${CCO_OUTPUT:-}" | grep -n 'aa-stop' | head -1 | cut -d: -f1)
+    [[ -n "$pr" && -n "$ps" && "$pr" -lt "$ps" ]] \
+        || fail "--sort status should order running (bb-run@$pr) before stopped (aa-stop@$ps)"
+}
+
 test_list_long_name_truncated() {
     # A name wider than the NAME column is ellipsized, never wrapped/shifted.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT

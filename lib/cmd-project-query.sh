@@ -47,11 +47,9 @@ EOF
         fi
 
         # Session identity is the compose `cco.project` label, not the container
-        # name (`run --rm` discards `container_name`) — R1.
-        status="stopped"
-        if _cco_session_running "$project_name"; then
-            status="${GREEN}running${NC}"
-        fi
+        # name (`run --rm` discards `container_name`) — R1. Tri-state (B4): the
+        # registry supplies in-container truth; `unknown` when it is unreachable.
+        status=$(_cco_session_status_display "$project_name")
 
         printf "%-18s %-8s %b\n" "$name" "$repo_count" "$status"
     done < <(_index_list_projects)
@@ -233,10 +231,7 @@ EOF
     echo ""
 
     # Status — detect via the `cco.project` label (R1), not the container name.
+    # Tri-state (B4): `unknown` in-container when the registry is unreachable.
     echo -e "${BOLD}Status:${NC}"
-    if _cco_session_running "${yml_name:-$name}"; then
-        echo -e "  ${GREEN}running${NC}"
-    else
-        echo "  stopped"
-    fi
+    echo -e "  $(_cco_session_status_display "${yml_name:-$name}")"
 }

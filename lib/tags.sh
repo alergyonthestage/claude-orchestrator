@@ -297,6 +297,21 @@ _list_collect() {
     fi
 }
 
+# Sort rank for the compact-list STATUS column: running first, then stopped,
+# unknown, and the non-project '-' placeholder last.
+_list_status_rank() {
+    case "$1" in running) printf 0 ;; stopped) printf 1 ;; unknown) printf 2 ;; *) printf 3 ;; esac
+}
+
+# Render a fixed-width, color-coded STATUS cell padded by VISIBLE length (so the
+# color escapes never skew alignment). running=green, unknown=yellow, else plain.
+_list_status_cell() {
+    local s="$1" w=8 color="" pad
+    case "$s" in running) color="$GREEN" ;; unknown) color="$YELLOW" ;; esac
+    pad=$(( w - ${#s} )); (( pad < 0 )) && pad=0
+    printf '%b%s%b%*s' "$color" "$s" "${color:+$NC}" "$pad" ""
+}
+
 cmd_list() {
     local filter="" sort_by="" kind="" reverse=""
     while [[ $# -gt 0 ]]; do
@@ -309,13 +324,18 @@ Unified index of your resources. <kind> is one of:
   project | pack | template | llms | remote   (plural forms accepted)
 
   cco list                       Compact index of every resource (KIND NAME
-                                 TAGS), ordered by kind then name.
+                                 STATUS TAGS), ordered by kind then name.
   cco list <kind>                Detailed view for one kind (repos/status,
                                  resource counts, variants, …).
   cco list [<kind>] --tag <t>    Filter to resources carrying tag <t>.
   cco list [<kind>] --sort name  Sort by name (default: by kind, then name).
   cco list [<kind>] --sort tag   Sort by first tag (untagged last), then name.
+  cco list [<kind>] --sort status  Sort by session status (running first), then name.
   cco list [<kind>] --reverse    Reverse the chosen order (alias: -r).
+
+STATUS is a project-only session state (running | stopped | unknown); other
+kinds show '—'. In-container, `unknown` means the running registry is out of
+scope/unreachable — never a false `stopped` (ADR-0045).
 
 Full detail for one resource: cco <kind> show <name>.
 Tags are per-user (project/pack/template only); manage them with 'cco tag'.
@@ -323,9 +343,9 @@ EOF
                 return 0
                 ;;
             --tag)  [[ $# -lt 2 ]] && die "--tag requires a value."; filter="$2"; shift 2 ;;
-            --sort) [[ $# -lt 2 ]] && die "--sort requires 'kind', 'name', or 'tag'."; sort_by="$2"
-                    [[ "$sort_by" == kind || "$sort_by" == name || "$sort_by" == tag ]] \
-                        || die "--sort must be 'kind', 'name', or 'tag'."
+            --sort) [[ $# -lt 2 ]] && die "--sort requires 'kind', 'name', 'tag', or 'status'."; sort_by="$2"
+                    [[ "$sort_by" == kind || "$sort_by" == name || "$sort_by" == tag || "$sort_by" == status ]] \
+                        || die "--sort must be 'kind', 'name', 'tag', or 'status'."
                     shift 2 ;;
             --reverse|-r)       reverse=1;         shift ;;
             project|projects)   kind="project";  shift ;;
@@ -357,7 +377,7 @@ EOF
 
     # Compact unified index (default, or whenever --tag/--sort/--reverse/scoped-with-filter).
     [[ -z "$sort_by" ]] && sort_by="kind"
-    local rows="" rk rn tags tkind sortkey t found ftag namew=4 cap=30
+    local rows="" rk rn tags tkind sortkey t found ftag namew=4 cap=30 st_raw
     while IFS=$'\t' read -r rk rn; do
         [[ -z "$rk" ]] && continue
         # Output scoping (ADR-0043): in operator mode, hide resources outside the
@@ -370,15 +390,20 @@ EOF
             for t in $tags; do [[ "$t" == "$filter" ]] && { found=true; break; }; done
             [[ "$found" == true ]] || continue
         fi
+        # Session status is a project-only concept (B3, tri-state B4); other kinds
+        # carry the '-' placeholder. Rows already passed _env_in_scope, so a status
+        # read here never reveals an out-of-scope project.
+        if [[ "$rk" == project ]]; then st_raw=$(_cco_session_status "$rn"); else st_raw="-"; fi
         case "$sort_by" in
-            name) sortkey="${rn}	${rk}" ;;
-            tag)  ftag="${tags%% *}"
-                  # tagged sort before untagged (0/1 prefix), then by first tag, then name.
-                  if [[ -n "$tags" ]]; then sortkey="0${ftag}	${rn}"; else sortkey="1	${rn}"; fi ;;
-            *)    sortkey="$(_list_kind_rank "$rk")	${rn}" ;;
+            name)   sortkey="${rn}	${rk}" ;;
+            tag)    ftag="${tags%% *}"
+                    # tagged sort before untagged (0/1 prefix), then by first tag, then name.
+                    if [[ -n "$tags" ]]; then sortkey="0${ftag}	${rn}"; else sortkey="1	${rn}"; fi ;;
+            status) sortkey="$(_list_status_rank "$st_raw")	${rn}" ;;
+            *)      sortkey="$(_list_kind_rank "$rk")	${rn}" ;;
         esac
         (( ${#rn} > namew )) && namew=${#rn}
-        rows+="${sortkey}	${rk}	${rn}	${tags:-—}"$'\n'
+        rows+="${sortkey}	${rk}	${rn}	${st_raw}	${tags:-—}"$'\n'
     done < <(_list_collect "$kind")
 
     if [[ -z "$rows" ]]; then
@@ -396,9 +421,9 @@ EOF
     (( namew > cap )) && namew=$cap
 
     local -a sortargs=(-t'	' -k1,2); [[ -n "$reverse" ]] && sortargs+=(-r)
-    printf "${BOLD}%-10s %s %s${NC}\n" "KIND" "$(_fit_col "NAME" "$namew")" "TAGS"
-    printf '%s' "$rows" | LC_ALL=C sort "${sortargs[@]}" | while IFS=$'\t' read -r _k1 _k2 rk rn tags; do
-        printf '%-10s %s %s\n' "$rk" "$(_fit_col "$rn" "$namew")" "$tags"
+    printf "${BOLD}%-10s %s %-8s %s${NC}\n" "KIND" "$(_fit_col "NAME" "$namew")" "STATUS" "TAGS"
+    printf '%s' "$rows" | LC_ALL=C sort "${sortargs[@]}" | while IFS=$'\t' read -r _k1 _k2 rk rn st_raw tags; do
+        printf '%-10s %s %s %s\n' "$rk" "$(_fit_col "$rn" "$namew")" "$(_list_status_cell "$st_raw")" "$tags"
     done
     # Trailing count-only notice on stderr (INV-B/C); no-op when nothing hidden.
     _env_flush_hidden_notice
