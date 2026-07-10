@@ -169,13 +169,40 @@ test_config_editor_global_access_does_not_override_preset() {
     assert_output_contains "claude=all cco=edit-global"
 }
 
-# An explicit CLI flag CAN narrow (or widen) the preset default.
+# An explicit CLI flag CAN narrow the preset default. Narrowing to a read level is
+# always coherent (no target needed), so it does not trip the F4 edit-project guard.
 test_config_editor_cli_narrows_preset() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     cd "$tmpdir"
+    run_cco start config-editor --cco-access read-project --dry-run
+    assert_output_contains "cco=read-project"
+}
+
+# F4: an explicit --cco-access edit-project OUTSIDE any project (no --project) leaves
+# the session with nothing to edit (G=none rules out ~/.cco, no <repo>/.cco mounted).
+# The guard must fail loud with actionable guidance, not launch an inert session.
+test_config_editor_edit_project_outside_project_dies() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    cd "$tmpdir"   # outside any project
     run_cco start config-editor --cco-access edit-project --dry-run
+    local rc=$?
+    [[ $rc -ne 0 ]] || fail "expected config-editor --cco-access edit-project to fail outside a project"
+    assert_output_contains "needs a project to edit"
+}
+
+# Positive regression: --cco-access edit-project WITH a resolvable --project target is
+# coherent (the project is mounted) → the guard does not fire.
+test_config_editor_edit_project_with_project_ok() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "myproj" "$(minimal_project_yml myproj)"
+    cd "$tmpdir"
+    run_cco start config-editor --project myproj --cco-access edit-project --dry-run
     assert_output_contains "cco=edit-project"
 }
 

@@ -252,17 +252,24 @@ statically; Linux write-path correctly documented as an open follow-up). Suite b
   list`'s count-only notice said "start a read-global session", but hidden entries are OTHER
   projects, visible only at Po≥ro = read-**all** (A1 §2.2). Corrected to read-all; the shared
   `_env_flush_hidden_notice` now names both widenings. Test locks in the hint.
-- **F4 — config-editor mode vs collector may disagree (BASSA, ASSESS — OPEN).** An explicit
-  `--cco-access edit-project|edit-global` that contradicts the cwd-derived
-  `config_editor_mode` makes the preset default (via the CLI override) and the target
+- **F4 — config-editor mode vs collector may disagree (BASSA, ASSESS — ✅ CLOSED/FIXED 2026-07-10).**
+  An explicit `--cco-access edit-project|edit-global` that contradicts the cwd-derived
+  `config_editor_mode` made the preset default (via the CLI override) and the target
   collector resolve different scopes. The outcome is always **narrower** (fail-safe), never a
   privilege escalation — e.g. `config-editor --cco-access edit-project` outside any project
-  yields edit-project scope with no project targets mounted (an effectively empty session).
-  **Decision: document, do not fix now.** Options if revisited: (a) have
-  `_resolve_config_editor_mode` also read an explicit `edit-project`/`edit-global`
-  `--cco-access` to keep mode and collector aligned; or (b) reject a `--cco-access` for
-  config-editor that is not `edit-all` (the only widener the mode honours). Low priority; no
-  correctness/security impact.
+  yielded edit-project scope with no project targets mounted (an effectively **empty** session,
+  silently). Re-assessment confirmed **no correctness/security impact**; the single real symptom
+  was the silent inert session. **Fix (fail-loud guard, `_start_guard_config_editor_scope`,
+  `lib/cmd-start.sh`)**: a config-editor session whose resolved triple is `edit-project`
+  (`G=none, Pc=rw, Po=none` — the current project is the ONLY writable axis) but for which the
+  collector resolved **zero** targets now `die`s with actionable guidance (cd into a project /
+  `--project <name>` / `--cco-access edit-global`) instead of launching inert. Chosen over the
+  two backlog options (a: align mode to the flag — only relabels; b: reject any `--cco-access ≠
+  edit-all` — too blunt, breaks legit `edit-project` *inside* a project and read-level narrowing):
+  the guard targets exactly the incoherent state, no false positives (the preset never emits
+  edit-project without a target; `edit-global` keeps `G=rw` on `~/.cco`, so it is NOT guarded).
+  Tests in `tests/test_config_editor.sh` (die-outside-project, positive with `--project`,
+  read-level narrowing stays valid).
 - **DOC-NIT (folded into F3).** The generic multi-kind notice shared the same imprecise
   "read-global" wording; updated alongside F3.
 

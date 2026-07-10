@@ -429,6 +429,25 @@ _start_collect_config_editor_targets() {
     done
 }
 
+# Fail loud, don't launch inert (F4). A config-editor session whose resolved triple
+# is edit-project — (G=none, Pc=rw, Po=none), the current project the ONLY writable
+# axis — but for which the mode/collector resolved ZERO project targets has nothing
+# to edit: G=none rules out the personal store, and no <repo>/.cco is mounted. This
+# is reachable only via an explicit `--cco-access edit-project` that contradicts the
+# cwd/flags (the preset never emits edit-project without a target, since mode=project
+# implies one). edit-global keeps G=rw (~/.cco stays editable), so it is NOT guarded.
+# Reads cmd_start locals (session_preset, cco_g/pc/po, _ce_targets); no side effects.
+_start_guard_config_editor_scope() {
+    [[ "${session_preset:-}" == "config-editor" ]] || return 0
+    [[ "$cco_g" == none && "$cco_pc" == rw && "$cco_po" == none ]] || return 0
+    [[ -z "${_ce_targets:-}" ]] || return 0
+    die "config-editor --cco-access edit-project needs a project to edit, but none was resolved.
+  You are outside a project and passed no --project. Fix one of:
+    • cd into a project's repo (its <repo>/.cco becomes the target), or
+    • pass --project <name> (repeatable), or
+    • use --cco-access edit-global to edit the personal store (~/.cco) only."
+}
+
 # Resolves the project to its decentralized config source (design §4.4, ADR-0024
 # D3): cco start reads <repo>/.cco/ — cwd-first when no name is given (the project
 # the repo HOSTS, by its project.yml `name`), or by-name via the STATE index
@@ -1742,6 +1761,8 @@ EOF
     # _start_resolve_project; the resolved values feed mount generation (step 3+).
     _start_resolve_access
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] resolve_access done" >&2
+
+    _start_guard_config_editor_scope
 
     _start_check_health
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] check_health done" >&2
