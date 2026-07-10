@@ -1,24 +1,30 @@
 # Hardening-v2 — Implementation handoff
 
-> **Status**: **S1 (Phase I + II) + S2 (Phase III + IV) DONE (2026-07-09)** on
+> **Status**: **S1 (Phase I + II) + S2 (Phase III + IV) + S3 Phase V DONE** on
 > `feat/config-access/e2e-review`; the **unified implementation review over Phases I–IV is DONE
-> (2026-07-10)** — 3 fixes landed (F1 `7f06be7` CCO_CONFIG_TARGETS emission, F2 `9b4f27d`
-> `_env_in_scope` config-editor-aware, F3 `eac219c` notice widening) + backlog log `aad1a02`;
-> F4 deferred as a fail-safe assess item; **post-`cco build` dogfood confirmed the boundary,
-> trampoline, whoami+ and F3 live** (suite in-container 1183/7 = §6.2 artifacts, no regressions;
-> see the backlog "Unified implementation review I–IV" section). **▶ S3 (Phase V + VI) is the
-> remaining implementation, then e2e v2 (acceptance).** All three design sub-phases are DONE +
-> approved — D1 [ADR-0046](../decisions/0046-unified-cco-access-model.md) (`(G,Pc,Po)` model),
-> D2 [ADR-0047](../decisions/0047-config-access-enforcement.md) (privilege boundary), D3
+> (2026-07-10)** — 3 fixes landed (F1 `7f06be7`, F2 `9b4f27d`, F3 `eac219c`) + **F4 CLOSED/FIXED
+> `82dbdc7`** (fail-loud guard on inert config-editor edit-project); **post-`cco build` dogfood
+> confirmed the boundary, trampoline, whoami+ and F3 live**. **S3 Phase V DONE (2026-07-10)** —
+> running registry (ADR-0045) + B1–B4 + B-DF2 in 5 commits `95eb8b5`..`0b8f295` (see §5 Phase V
+> below + the backlog "Implementation progress"). Suite **1197/7** (7 = pre-existing §6.2
+> in-container artifacts: 6 `test_access_scope` wired-verb + `test_paths_symlink_safe_tool_root`;
+> confirmed pre-existing via stash — no regressions). **▶ S3 Phase VI is the remaining
+> implementation, then e2e v2 (acceptance).** All three design sub-phases are DONE + approved —
+> D1 [ADR-0046](../decisions/0046-unified-cco-access-model.md) (`(G,Pc,Po)` model), D2
+> [ADR-0047](../decisions/0047-config-access-enforcement.md) (privilege boundary), D3
 > [A1 matrix](../e2e-review/analysis/A1-command-scope-matrix.md) (per-command gating). This
 > handoff drives the **implementation phase**: turn the approved design into code, migrations,
 > changelog, and a rebuilt image.
 >
-> **Resume point for the next session = S3 / Phase V** (§5, "Phase V — Running registry"):
-> start with item E (running registry, ADR-0045) + items F (B1–B4) — no rebuild — then Phase VI
-> (migrations · changelog · DOC5 shipped-doc cutover · `cco build`). Also fold in the two
-> dogfood bugs logged in the backlog: **B-DF1** (in-container `cco project show` repo-resolution)
-> and **B-DF2** (`cco init` prompt visibility). Branch NOT pushed — push both branches from the Mac.
+> **Resume point for the next session = S3 / Phase VI (REBUILD)** (§5, "Phase VI — Migrations ·
+> changelog · DOC5 cutover · `cco build`"): migrations (expected additive-only — VERIFY; next ids
+> project 015 / global 017) + changelog #37 + the DOC5 shipped-doc cutover (repo `CLAUDE.md`
+> "Planned evolution" → shipped `(G,Pc,Po)`; `cli.md`; `project-yaml.md`; `docker-and-networking.md`;
+> config-editor/tutorial guides) + **`design-docker.md` mount inventory (add the `running/` :ro
+> mount) + CLI-surface matrix B4/DI1 ⏳→final** (both deferred from Phase V per the lifecycle rule)
+> + `cco build` on the Mac → **e2e v2**. Phase V is complete; **B-DF1** (in-container `cco project
+> show` repo-resolution) remains an open pre-merge dogfood bug (NOT hardening-v2 scope). Branch NOT
+> pushed — push both branches from the Mac.
 >
 > **Runs across three dedicated-context sessions** (§4 session plan), in dependency order, each a
 > clean session that loads only its own subsystem context and lands a set of atomic commits. The
@@ -278,7 +284,18 @@ other project ✗; edit-all ✓), a `path list` scoping case, `test_whoami` for 
 **Tests**: `test_start_decentralized.sh`/`test_access_resolution.sh` for the preset resolution +
 the config-editor cwd-vs-`--all` matrix.
 
-### Phase V — Running registry (ADR-0045) + help/status (B1–B4) — no rebuild · **[Session 3]**
+### Phase V — Running registry (ADR-0045) + help/status (B1–B4) — no rebuild · **[Session 3]** — ✅ DONE (2026-07-10)
+
+> **Done in 5 commits on `feat/config-access/e2e-review`:** `95eb8b5` (E core: helpers +
+> tri-state `_cco_session_status` + `:ro` mount **under the ADR-0047 boundary** — marker
+> filenames are project names=S1-confidential, read only inside elevated `__store list/show`,
+> gated by `_env_in_scope`; `cco start` owns the marker lifecycle, reconcile is the backstop,
+> **not** `cco stop` per B-DF3; `test_running_registry.sh`), `f08bbf2` (B4 tri-state display +
+> B3 **dedicated STATUS column** in `cco list` + `--sort status`), `6fefa85` (B1 whoami in
+> operator help + B2 empty-section pruner), `fed84e6` (B-DF2 init prompt), `0b8f295` (ADR-0045
+> forward-annotation). Suite **1197/7**. **Deferred to Phase VI** (lifecycle rule): the
+> `design-docker.md` mount-inventory entry for `running/` and the CLI-surface matrix B4/DI1
+> ⏳→final. **Not** done here: B-DF1 (open, non-scope). The checklist below is the record.
 
 1. **Registry (E)**: `<state>/cco/running/<project>` markers written by `cco start`/`stop`;
    host-side **liveness reconciliation** vs `docker ps`; **ro dir mount** in

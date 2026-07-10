@@ -67,6 +67,13 @@
 
 ## 3. Pre-review fixes (must land before revalidation)
 
+> **Status (2026-07-10)**: **all landed.** **B5** (tag gate-by-axis) + **B6** (no-silent-exit-2)
+> shipped in S2 Phase III. **B1** (whoami in operator help), **B2** (suppress empty help sections),
+> **B3** (`cco list` STATUS column + `--sort status`), **B4** (in-container `unknown`, never a false
+> `stopped`) shipped in **S3 Phase V** (2026-07-10, commits `f08bbf2`/`6fefa85`; see "Implementation
+> progress" below). Sibling hunts done (B2 pruner is general; B-DF2 was the sole `read … 2>/dev/null`
+> prompt-eater).
+
 | ID | Area | Symptom | Hypothesised root | Proposed fix | Class |
 |----|------|---------|-------------------|--------------|-------|
 | **B1** | help | `cco whoami` is missing from in-container `cco help`/usage | `whoami` added (F4) but `usage()` (`bin/cco` help-render, ~L116-215) not updated to list it in the operator-filtered help | Add `whoami` to the runnable-verb set rendered in operator-mode usage | help/CLI |
@@ -82,8 +89,15 @@
 
 ## 4. Design items
 
-- **DI1 — machine-wide "running sessions" awareness → XDG_STATE registry (decided
-  2026-07-07: build pre-review).** The correct model for cco. The docker proxy filters
+- **DI1 — machine-wide "running sessions" awareness → XDG_STATE registry. ✅ DONE (S3 Phase V,
+  2026-07-10, commits `95eb8b5`/`0b8f295`).** Built as designed, with one reconciliation forced by
+  ADR-0047 (which postdates this item): the registry mounts `:ro` **under the cco-svc privileged
+  root** (`/var/lib/cco-internal/state/cco/running`), NOT a claude-readable mount — marker filenames
+  are project names (S1-confidential), so a readable mount would re-open the leak. In-container it is
+  read only inside the elevated `cco __store list/show`, still visibility-gated by `_env_in_scope`
+  (ADR-0045 §2 intent preserved; ADR-0045 forward-annotated). Lifecycle does **not** depend on `cco
+  stop` (B-DF3): the blocking `cco start` owns the marker (mark pre-run, unmark post-run) and
+  host-side reconciliation is the primary reaper. The original design follows.** The correct model for cco. The docker proxy filters
   `docker ps` in-container to the session's own container (AI-security, must stay); that
   is the **wrong layer** to govern the CLI's project-visibility. Right layer =
   **cco_access output-scoping** (a session's knowledge of *other* projects is already a
@@ -224,7 +238,17 @@ Confirmed by the maintainer; formalized by **[`../hardening-v2/handoff.md`](../h
   euid≠ruid self-resets) was fixed in `98de9b1` (euid-only elevation + `bash -p`, staying
   within ADR-0047 §2 "not root"). **▶ maintainer check-in** (ADR-0047 §8 Test B) still
   pending after the re-build. Branch NOT pushed.
-- **S2 (Phase III+IV), S3 (Phase V+VI)** — pending, per the implementation handoff.
+- **S2 (Phase III+IV) ✅ DONE (2026-07-09)** — 7 commits `1b4ec02`→`c0f5dbe` (B5/B6, path scoping,
+  whoami+, ADR-0044 presets).
+- **S3 Phase V ✅ DONE (2026-07-10)** — running registry (ADR-0045/DI1) + B1–B4 + B-DF2, 5 commits
+  `95eb8b5` (E core: helpers + tri-state `_cco_session_status` + `:ro` mount under the ADR-0047
+  boundary + `cco start`-owned lifecycle/reconcile reaper per B-DF3 + `test_running_registry.sh`),
+  `f08bbf2` (B4 display + B3 STATUS column + `--sort status`), `6fefa85` (B1 whoami + B2 empty-section
+  pruner), `fed84e6` (B-DF2 init prompt), `0b8f295` (ADR-0045 fwd-annot). Suite **1197/7** (7 =
+  pre-existing §6.2 in-container artifacts).
+- **S3 Phase VI (REBUILD)** — pending: migrations (additive; project 015/global 017) + changelog #37
+  + DOC5 shipped-doc cutover + `design-docker.md` mount inventory + this CLI-surface matrix B4/DI1
+  ⏳→final + `cco build` → e2e v2. Per the implementation handoff.
 
 ### Unified implementation review I–IV (2026-07-10) — findings
 
