@@ -511,6 +511,20 @@ Base produced 2026-07-07/08 (in working tree, pending review/commit): **ADR-0044
 DI1), **CLI-surface matrix** (`cli/reference/cli-surface-matrix.md`), **DOC1** central-gate
 (`cli/design/design-cli-environment-awareness.md` v1.3.0), living `design.md` §8, backlog.
 
+### Access-model refinements (post hardening-v2 — PROPOSED, 2026-07-11)
+
+> Emerged from the Phase VI maintainer dialogue. **PROPOSED decisions, not yet implemented** —
+> handoff: [`access-refinements/handoff.md`](configuration/agent-cco-access/access-refinements/handoff.md).
+> Next session's first task = **validate correctness + coherence** vs ADR-0036/0044/0046, then implement.
+
+| Workstream | Status | Decision (to validate) |
+|---|---|---|
+| **WS-A — config-editor default + read floor** | ▶ PROPOSED (validate → implement) | project mode default **`(ro,rw,none)`** (min-priv: edit project, read global); bare/global mode **`(rw,none,none)`** (edit global only); `--cco-access edit-global` → `(rw,rw,none)`; `--all` → edit-all; **invariant `G ≥ ro` always** (never blind). Revises `67ad13f` + contradicts ADR-0044 §3. Blocker to validate: **[A-V1]** `(rw,none,none)` violates INV-2 (`access-scope.sh:139`) → refine INV-2 to a *conditional* project floor (Pc≥ro iff a project is in scope). |
+| **WS-B — `claude_access` × `cco_access` coupling** | ▶ PROPOSED (dedicated analysis session) | cco_access **bounds** claude_access for `.claude` trees inside `.cco` (B2 `<repo>/.cco/claude/`, B3 `~/.cco/.claude`); only **B1** (`<repo>/.claude` repo-native) stays decoupled; error/warn on conflict. Closes the C2 asymmetry (global `.claude` rw while global `.cco` ro). Open: project-level keep-decoupled (P17) vs bound-too; whether to keep `claude_access` a separate knob at all. |
+
+Tutorial `read-all` overridable-downward = **confirmed correct as-is** (no change). To extract into a
+new ADR (refining 0036/0044/0046) + living `design.md` once validated.
+
 ## Broader planned work (beyond decentralized-config v1)
 
 Full long-form descriptions (scope, design, effort) are preserved in
