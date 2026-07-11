@@ -218,15 +218,23 @@ _start_resolve_access() {
     local d_claude="repo" d_cco="read-project" d_shp="true"
     case "$_preset" in
         config-editor)
-            # ADR-0044 §3: minimum privilege by default. The mode resolved from
-            # cwd + flags (_resolve_config_editor_mode, run in _start_resolve_project
-            # before this) sets the scope — cwd-in-project → edit-project, outside
-            # any project → edit-global, --all / --cco-access edit-all → edit-all.
-            # Unset mode → fail-safe edit-global (narrowest still-functional).
+            # ADR-0044 §3, reconciled with the ADR-0046 ladder: minimum privilege by
+            # default, but "edit the personal store + a project" is spelled edit-global
+            # (rw,rw,none) — NOT edit-project (none,rw,none), which under ADR-0046 can no
+            # longer write ~/.cco. The mode resolved from cwd + flags
+            # (_resolve_config_editor_mode, run in _start_resolve_project before this)
+            # sets the TARGET set; the access level is edit-global unless widened:
+            #   cwd-in-project / --project <name> → edit-global (~/.cco + the target
+            #     project(s), which are all "current" for config-editor via
+            #     _env_is_current_project; other projects stay Po=none);
+            #   outside any project (bare) → edit-global (~/.cco only);
+            #   --all / --cco-access edit-all → edit-all (every project, Po=rw).
+            # This matches the unconditional ~/.cco-rw config mount and the guard's
+            # "use edit-global to edit ~/.cco". The preset never emits edit-project;
+            # only an explicit --cco-access edit-project can (guarded below).
             d_claude="all"; d_shp="true"
             case "${config_editor_mode:-global}" in
                 all)     d_cco="edit-all" ;;
-                project) d_cco="edit-project" ;;
                 *)       d_cco="edit-global" ;;
             esac ;;
         tutorial)
@@ -433,9 +441,9 @@ _start_collect_config_editor_targets() {
 # is edit-project — (G=none, Pc=rw, Po=none), the current project the ONLY writable
 # axis — but for which the mode/collector resolved ZERO project targets has nothing
 # to edit: G=none rules out the personal store, and no <repo>/.cco is mounted. This
-# is reachable only via an explicit `--cco-access edit-project` that contradicts the
-# cwd/flags (the preset never emits edit-project without a target, since mode=project
-# implies one). edit-global keeps G=rw (~/.cco stays editable), so it is NOT guarded.
+# is reachable only via an explicit `--cco-access edit-project` (the preset itself
+# never emits edit-project — project mode resolves to edit-global, ADR-0044 reconciled
+# with the ADR-0046 ladder). edit-global keeps G=rw (~/.cco stays editable), NOT guarded.
 # Reads cmd_start locals (session_preset, cco_g/pc/po, _ce_targets); no side effects.
 _start_guard_config_editor_scope() {
     [[ "${session_preset:-}" == "config-editor" ]] || return 0

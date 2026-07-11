@@ -177,7 +177,9 @@ test_access_preset_tutorial_read_all() {
 }
 
 # config-editor → minimum privilege by resolved mode: global→edit-global,
-# project→edit-project, all→edit-all (ADR-0044 §3). claude stays 'all'.
+# project→edit-global, all→edit-all (ADR-0044 §3 reconciled with the ADR-0046
+# ladder — "edit ~/.cco + a project" is edit-global (rw,rw,none), not edit-project
+# (none,rw,none) which can no longer write ~/.cco). claude stays 'all'.
 test_access_preset_config_editor_by_mode() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _access_setup_home "$tmp"; _access_src
@@ -188,7 +190,7 @@ test_access_preset_config_editor_by_mode() {
     config_editor_mode="global"; _start_resolve_access
     [[ "$cco_access" == "edit-global" ]]  || fail "config-editor global→edit-global, got: $cco_access"
     config_editor_mode="project"; _start_resolve_access
-    [[ "$cco_access" == "edit-project" ]] || fail "config-editor project→edit-project, got: $cco_access"
+    [[ "$cco_access" == "edit-global" ]]  || fail "config-editor project→edit-global, got: $cco_access"
     config_editor_mode="all"; _start_resolve_access
     [[ "$cco_access" == "edit-all" ]]     || fail "config-editor all→edit-all, got: $cco_access"
     [[ "$claude_access" == "all" ]]       || fail "config-editor claude=all, got: $claude_access"

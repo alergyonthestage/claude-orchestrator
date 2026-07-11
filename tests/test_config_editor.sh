@@ -4,10 +4,13 @@
 # config-editor is a reserved-name built-in (the tutorial model): `cco start
 # config-editor` materializes internal/config-editor/ at runtime and mounts the
 # personal store ~/.cco rw. Its scope is minimum-privilege by cwd/flag (ADR-0044
-# §3): bare inside a project → edit-project (that project's <repo>/.cco); bare
-# outside any project → edit-global (~/.cco only); `--all` / `--cco-access
-# edit-all` → edit-all (every project's .cco); `--project <name>` → edit-project
-# targeting that project + its repos. Tests that assert a scope therefore cd into
+# §3, reconciled with the ADR-0046 ladder): bare inside a project → edit-global
+# (~/.cco + that project's <repo>/.cco); bare outside any project → edit-global
+# (~/.cco only); `--all` / `--cco-access edit-all` → edit-all (every project's
+# .cco); `--project <name>` → edit-global targeting that project + its repos.
+# (edit-project (none,rw,none) can no longer write ~/.cco, so the preset uses
+# edit-global (rw,rw,none); an explicit --cco-access edit-project still works with
+# a target.) Tests that assert a scope therefore cd into
 # a neutral dir (global) or a project dir (cwd-project) for determinism — the
 # suite runs from the repo root, which is itself a project. Host paths are
 # launcher-injected into a generated runtime project.yml, never committed (AD3/G8).
@@ -282,8 +285,9 @@ test_config_editor_bare_outside_project_is_global() {
     assert_file_not_contains "$compose" ":/workspace/proj-b-config" || return 1
 }
 
-# Bare `config-editor` INSIDE a project → cwd-scoped: edit-project, mounts that
-# project's .cco (+ its repos), NOT other projects (ADR-0044 §3 row 1).
+# Bare `config-editor` INSIDE a project → cwd-scoped: edit-global (~/.cco + that
+# project's .cco + its repos), NOT other projects (ADR-0044 §3 row 1, reconciled
+# with the ADR-0046 ladder — project mode is edit-global, not edit-project).
 test_config_editor_bare_in_project_is_cwd_scoped() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
@@ -292,7 +296,7 @@ test_config_editor_bare_in_project_is_cwd_scoped() {
     create_project "$tmpdir" "other" "$(minimal_project_yml other)"
     cd "$tmpdir/repos/myproj"   # inside myproj's repo
     run_cco start config-editor --dry-run
-    assert_output_contains "cco=edit-project" || return 1
+    assert_output_contains "cco=edit-global" || return 1
     run_cco start config-editor --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" ":/workspace/myproj-config" || return 1
