@@ -97,6 +97,19 @@ tutorial. `cco start config-editor` no longer defaults to `edit-all`:
 > and the outside-a-project `edit-global` rows are unchanged. An explicit `--cco-access edit-project`
 > still works (writes only the project, guarded to require a target). See `lib/cmd-start.sh`
 > `_start_resolve_access` and the CLI-surface matrix preset table.
+>
+> **Why not keep `edit-project` for project mode?** (Reconsidered + rejected 2026-07-11, maintainer
+> confirmed edit-global.) The tempting reading — "`edit-project` mounts the project-referenced
+> globals rw, and `config save` is allowed for those" — is **not expressible in this model**.
+> ADR-0046 §7 makes global **write authority uniform on `G`**: writing *any* `~/.cco` resource
+> (referenced pack included) or `config save` requires `G = rw`. The "referenced globals ride with
+> `Pc`" rule is **read-visibility only** (they mount `ro` under `G = none` — `cmd-start.sh:1212-1230`).
+> A per-referenced-resource *write* flavour is exactly ADR-0046's **rejected Model α** (the 4-value
+> `G`). So `edit-project` config-editor would edit *only* the project's `<repo>/.cco`, with `~/.cco`
+> read-only and `config save`/pack-authoring **refused** — which breaks config-editor's core purpose
+> (authoring packs/templates/global config). `edit-global` is therefore the least privilege that
+> keeps the tool functional; the meaningful min-privilege boundary (`Po = none`, don't touch *other*
+> projects) is already enforced.
 
 - **Outside-a-project default is global-only (option b), not edit-all-with-prompt.** cco
   widens access via **explicit flags**, never an interactive "are you sure" prompt
