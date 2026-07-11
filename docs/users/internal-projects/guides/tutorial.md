@@ -89,8 +89,9 @@ A few things to keep in mind:
   real resources. Anything that **changes** things (creating config, `cco start`,
   `cco config save/push`, resolving paths) runs on your **host**; the tutorial shows
   you the exact command to run there.
-- Your personal config store is mounted **read-only** here (`cco_access=read`) —
-  perfect for inspection, safe from accidental changes. Real secret files are
+- Your personal config store is mounted **read-only** here (`cco_access=read-all`,
+  ADR-0044 — a read-only teacher gets your whole cco world with no write risk),
+  perfect for inspection and safe from accidental changes. Real secret files are
   filtered out entirely; only `*.example` skeletons are visible.
 
 ---

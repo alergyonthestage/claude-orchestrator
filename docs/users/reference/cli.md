@@ -174,12 +174,17 @@ Options:
                        /workspace/<basename>)
   --claude-access <m>  .claude authoring access for this session:
                        none | repo (default) | all
-  --cco-access <m>     .cco/framework config access for this session:
+  --cco-access <m>     .cco/framework config access for this session. Either a
+                       preset scalar:
                        none | read-project (default) | read-global | read-all |
                        edit-project | edit-global | edit-all
-                       (any read level enables the whitelisted in-session 'cco' and
-                       scopes its read output to that level; bare 'read' is a
-                       back-compat alias for read-all; ADR-0036/0042/0043)
+                       or a granular triple over the (global,current,others) config
+                       trees, each none|ro|rw (comma-separated, order-free, partial):
+                       e.g. global=ro,current=rw,others=none. Presets are sugar for
+                       the symmetric triples; any read level enables the whitelisted
+                       in-session 'cco' and scopes its read output to that level;
+                       bare 'read' is a back-compat alias for read-all
+                       (ADR-0036/0042/0043/0046)
   --show-host-paths    Include the host<->container path map in the session
                        (default on) so the agent can hand you host commands
   --no-show-host-paths Omit the host path map from the session
@@ -224,18 +229,20 @@ coordinate carries a `url`), or **[s]kip** — it never launches with a silent e
 
 `cco start tutorial` launches the built-in interactive tutorial directly from
 `internal/tutorial/`; `cco start config-editor` launches the built-in config editor.
-It is **broad by default**: it mounts `~/.cco` **plus every resolvable project's**
-`<repo>/.cco` rw (skipping unresolved ones), with **no code repos**. `--all` is a
-back-compat alias for that broad default. `--project <name>` (**repeatable**), or a cwd
-hosting a configured repo, **narrows** to that project's `<repo>/.cco` **and also mounts its
-repos** (repo-aware config authoring); `--repo <name>` adds a single resolvable repo. They
-are not user projects — they always reflect the current framework version. These names are
-reserved.
+It is **minimum-privilege by default** (ADR-0044): bare **outside a project** it mounts
+`~/.cco` **only** (`edit-global`); **inside a project** (a cwd hosting a configured repo, or
+`--project <name>`, **repeatable**) it adds **that project's** `<repo>/.cco` **and its code
+repos** (repo-aware config authoring, still `edit-global`); `--repo <name>` adds a single
+resolvable repo. The broad, every-project surface is the **explicit widener** `--all` (or
+`--cco-access edit-all`) → mounts every resolvable project's `<repo>/.cco` rw (no code repos,
+`edit-all`). They are not user projects — they always reflect the current framework version.
+These names are reserved.
 
 Built-ins are **presets** of the session capability model (below): tutorial runs read-only
-(`--claude-access none --cco-access read-project`), config-editor at the maximal edit level
-(`--claude-access all --cco-access edit-all`). You can narrow a built-in for one session with
-an explicit `--cco-access` (e.g. `cco start config-editor --cco-access read-global`).
+over your whole config (`--claude-access none --cco-access read-all`), config-editor at the
+**least edit level its scope needs** — `edit-global` (your `~/.cco` plus the cwd/`--project`
+project's config) by default, `edit-all` only with `--all`. You can narrow a built-in for one
+session with an explicit `--cco-access` (e.g. `cco start config-editor --cco-access read-global`).
 
 **Flow**:
 
@@ -281,20 +288,28 @@ an explicit `--cco-access` (e.g. `cco start config-editor --cco-access read-glob
 #### Session access (capability model)
 
 Every session resolves three orthogonal **capability knobs** that decide how much of
-your config it can read or edit (ADR-0036 + ADR-0042 + ADR-0043). A plain
-`cco start <project>` now defaults to a **read-only, project-scoped** in-session `cco`
-(`cco_access=read-project`) — up from the former `none`.
+your config it can read or edit (ADR-0036 + ADR-0042 + ADR-0043 + ADR-0046 + ADR-0047).
+A plain `cco start <project>` defaults to a **read-only, project-scoped** in-session `cco`
+(`cco_access=read-project`).
 
-> **Planned evolution (not yet implemented).** A future release refactors `cco_access` from
-> the level enum below into an explicit `(G, Pc, Po)` triple (the named levels stay as
-> shortcuts; a granular `global=…,current=…,others=…` form unlocks two extra intents), and
-> hardens confidentiality with an OS-level privilege boundary around the internal store. Today's
-> behaviour is exactly the enum documented here.
+Under the hood `cco_access` is an explicit **`(G, Pc, Po)` triple** — three independent
+config trees, each on the lattice `none < ro < rw`:
+
+- **`G` — global**: the rest of your personal `~/.cco` store (packs, templates, llms, remotes).
+- **`Pc` — current**: this project's committed `<repo>/.cco` config.
+- **`Po` — others**: other projects' `<repo>/.cco` config.
+
+The **preset scalars are sugar** for the symmetric triples; a **granular form**
+(`--cco-access global=…,current=…,others=…`, comma-separated, order-free, partial) sets the
+axes directly and unlocks two intents the presets cannot spell. Unspecified axes auto-promote
+to the invariant floor (`Pc` is never `none` while `cco` is enabled; `Po ≤ Pc`); an explicit
+triple that violates an invariant is rejected. **Enforcement is a real OS-level privilege
+boundary** (ADR-0047), not just output filtering — see the note below the matrix.
 
 | Knob | Values (default **bold**) | Governs |
 |------|---------------------------|---------|
 | `claude_access` | none · **repo** · all | `.claude` authoring trees (repo / project / global). `settings.json` stays rw regardless. |
-| `cco_access` | none · **read-project** · read-global · read-all · edit-project · edit-global · edit-all | `.cco` framework config + the whitelisted in-session `cco`. Any read level enables it and **scopes its read output** to that level (bare `read` = alias for `read-all`). |
+| `cco_access` | preset **read-project** (default) · read-global · read-all · edit-project · edit-global · edit-all · none — **or** a granular `(G,Pc,Po)` triple | `.cco` framework config + the whitelisted in-session `cco`. Any read level enables it and **scopes its read output** to that level (bare `read` = alias for `read-all`). |
 | `show_host_paths` | **true** · false | Whether the session gets the host↔container path map (for copy-pasteable host commands). |
 
 **Where to set them** (precedence, highest first):
@@ -303,7 +318,34 @@ your config it can read or edit (ADR-0036 + ADR-0042 + ADR-0043). A plain
 2. **Per project** — an optional `access:` block in `<repo>/.cco/project.yml`
    (`access.claude` / `access.cco` / `access.show_host_paths`)
 3. **Machine baseline** — `~/.cco/access.yml` (`claude` / `cco` / `show_host_paths`)
-4. **Preset** — normal = `repo`/`read-project`; config-editor = `all`/`edit-all`; tutorial = `none`/`read-project`
+4. **Preset** — normal = `repo`/`read-project`; config-editor = `all`/`edit-global`
+   (`edit-all` with `--all`); tutorial = `none`/`read-all`
+
+**The seven intents** (six presets + two granular-only):
+
+| Intent | `cco_access` | `(G, Pc, Po)` | Read / write reach |
+|--------|--------------|---------------|--------------------|
+| read own project | **`read-project`** (default) | `(none, ro, none)` | read this project + its referenced globals |
+| read the whole store | `read-global` | `(ro, ro, none)` | + read all of `~/.cco` (other projects hidden) |
+| read everything | `read-all` | `(ro, ro, ro)` | + read other projects |
+| edit own project | `edit-project` | `(none, rw, none)` | write this project's `.cco` only (not `~/.cco`) |
+| edit store + own project | `edit-global` | `(rw, rw, none)` | write `~/.cco` **and** this project |
+| edit everything | `edit-all` | `(rw, rw, rw)` | write the store + every project |
+| edit all projects, not the store | *granular only* | `(none, rw, rw)` | `--cco-access global=none,current=rw,others=rw` |
+| edit store, read all projects | *granular only* | `(rw, rw, ro)` | `--cco-access global=rw,current=rw,others=ro` |
+
+> **`edit-global` redefined.** It is now `(rw, rw, none)` — it writes the global store
+> **and** the current project's config (it was global-only before). The two granular-only
+> intents exist because `edit-all` is the only *preset* that grants cross-project write, and
+> it forces `G=rw` **and** `Po=rw` together — the triple lets you separate them.
+
+> **Enforcement — a real privilege boundary (ADR-0047).** The confidentiality of the internal
+> store (the machine-local index, DATA registries, and CACHE internals) does not rely on the
+> in-session `cco` filtering its own output. Those live behind an OS-level boundary: a
+> directory owned by a dedicated `cco-svc` user, mode `0700`, that the agent user cannot
+> traverse, plus a small setuid helper that applies the resolved `(G, Pc, Po)` from a trusted,
+> read-only session descriptor (never argv/env, fail-closed). A `read-project` agent that
+> tries to `cat` the index gets `EACCES`. Output-scoping (below) remains as defense-in-depth.
 
 **Wrapped `cco` in-session** (when `cco_access` != `none`): read verbs (`cco list`,
 `cco … show`, `cco … validate`, `cco docs`, `cco path list`, `cco list remotes`,
@@ -314,7 +356,9 @@ the read verbs show only the current project and the packs/llms it references �
 templates, other projects, and unreferenced packs are hidden, with a count-only
 "hidden by access scope" notice on stderr telling you how to widen (`read-global`/`read-all`,
 or run `cco` on your host); a `show` of an out-of-scope resource degrades to a clear scope
-message instead of a raw "not found". `read-global`/`read-all`/`edit-*` show the full set.
+message instead of a raw "not found". Read output is **symmetric** with the level's write
+reach: `read-project`/`edit-project` see project scope, `read-global`/`edit-global` the whole
+store (other projects hidden), `read-all`/`edit-all` everything.
 **Host-only** verbs are refused in-session with a hint: session/image
 lifecycle (`start|stop|build|new`), path-resolving lifecycle (`resolve|sync|init|join|
 forget|update|clean`, `project rename`), and network/credential ops (`config push`/`pull`,

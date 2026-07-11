@@ -35,15 +35,25 @@ extra_mounts:
 packs:
   - my-client-knowledge   # References ~/.cco/packs/my-client-knowledge/pack.yml
 
-# ── Session access (optional; ADR-0036) ──────────────────────────────
+# ── Session access (optional; ADR-0036 / ADR-0046) ───────────────────
 # Per-project defaults for how much of your config a session can read/edit.
 # Overridden by the CLI flags, overrides ~/.cco/access.yml. Omit to keep
 # the defaults (repo / read-project / on).
 access:
   claude: repo            # .claude authoring: none | repo (default) | all
-  cco: read-project       # .cco config: none | read-project (default) |
-                          #   read-global | read-all | edit-project |
-                          #   edit-global | edit-all  (bare `read` = read-all, deprecated)
+  cco: read-project       # .cco config — SCALAR (preset) form: none |
+                          #   read-project (default) | read-global | read-all |
+                          #   edit-project | edit-global | edit-all
+                          #   (bare `read` = read-all, deprecated)
+  # The `cco` field also accepts a granular MAP over three config trees, each
+  # none|ro|rw (ADR-0046). Unspecified axes auto-promote to the invariant floor
+  # (current is never none while cco is enabled; others <= current):
+  #   cco:
+  #     global: ro                     # G  — the rest of ~/.cco
+  #     current: rw                    # Pc — this project's .cco (never none)
+  #     others: none                   # Po — other projects' .cco
+  #     include_member_configs: false  # widen Pc's rw span from the hosting repo's
+  #                                    #   <repo>/.cco to all member repos' copies
   show_host_paths: true   # host↔container path map in the session (default)
 
 # ── Docker options ───────────────────────────────────────────────────
@@ -129,7 +139,8 @@ browser:
 | `packs` | ❌ | list | `[]` | Knowledge packs to activate (see Knowledge Packs section below) |
 | `llms` | ❌ | list | `[]` | LLMs.txt framework docs to include (see LLMs.txt section below) |
 | `access.claude` | ❌ | enum | `repo` | Session `.claude` authoring access: `none` \| `repo` \| `all` (ADR-0036; see [Session access](../../reference/cli.md#session-access-capability-model)) |
-| `access.cco` | ❌ | enum | `read-project` | Session `.cco`/framework config access: `none` \| `read-project` \| `read-global` \| `read-all` \| `edit-project` \| `edit-global` \| `edit-all` (bare `read` = deprecated alias for `read-all`; ADR-0036/0042; see [Session access](../../reference/cli.md#session-access-capability-model)) |
+| `access.cco` | ❌ | enum \| map | `read-project` | Session `.cco`/framework config access. **Scalar (preset)**: `none` \| `read-project` \| `read-global` \| `read-all` \| `edit-project` \| `edit-global` \| `edit-all` (bare `read` = deprecated alias for `read-all`). **Map (granular, ADR-0046)**: `global` / `current` / `others`, each `none` \| `ro` \| `rw`; presets are sugar for the symmetric triples. See [Session access](../../reference/cli.md#session-access-capability-model) (ADR-0036/0042/0046). |
+| `access.cco.include_member_configs` | ❌ | bool | `false` | (map form only) Widen the `current` (`Pc`) write span from the hosting repo's `<repo>/.cco` to **all** member repos' `.cco` copies in a multi-repo project |
 | `access.show_host_paths` | ❌ | bool | `true` | Include the host↔container path map in the session |
 | `docker.ports` | ❌ | list | see defaults | Port mappings |
 | `docker.env` | ❌ | map | `{}` | Environment variables |

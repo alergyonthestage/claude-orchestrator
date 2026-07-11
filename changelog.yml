@@ -623,8 +623,10 @@ entries:
       `--cco-access global=ro,current=rw,others=none`. Presets are sugar for the
       symmetric triples; unspecified axes auto-promote to the invariant floor
       (current is never `none` while cco is enabled; others <= current). Two cases
-      the presets could not express are now reachable granular-only (read others
-      but write only current; write current + read global). `edit-global` is
+      the presets could not express are now reachable granular-only: edit every
+      project's config but not the global store (global=none,current=rw,others=rw),
+      and edit the global store while reading all projects (global=rw,current=rw,
+      others=ro). `edit-global` is
       REDEFINED from `(rw,ro,none)` to `(rw,rw,none)` — it now also writes the
       current project's config, not just the global store. A new optional
       `access.cco.include_member_configs` (bool, default false) widens the

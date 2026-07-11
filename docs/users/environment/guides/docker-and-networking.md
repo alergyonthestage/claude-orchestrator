@@ -61,6 +61,15 @@ host path is resolved per machine from the local index (set it with
 > you actually want to change it.
 > See [Session access](../../reference/cli.md#session-access-capability-model).
 
+> **Config vs internal store.** The `:ro`/`:rw` mount modes above govern your **config
+> content** (`<repo>/.cco`, `~/.cco`). The framework's **internal store** — the machine-local
+> index, the DATA registries (tags, remotes), and CACHE internals — is different: it is never
+> a plain session mount you can widen, but sits behind an OS-level **privilege boundary**
+> (ADR-0047). It lives under a directory owned by a dedicated `cco-svc` user (mode `0700`)
+> that the session's `claude` user cannot traverse; the in-container `cco` reaches it only
+> through a setuid helper that enforces the session's resolved `(G, Pc, Po)` access from a
+> trusted, read-only descriptor. So even a maximal session cannot `cat` the raw index.
+
 ---
 
 ## 3. Extra mounts (`extra_mounts`)
