@@ -127,11 +127,19 @@ YAML
                 echo "  - name: ${_rn}"
             done <<< "$repos"
         fi
+        # cco-config (~/.cco) readonly FOLLOWS the resolved G (WS-A 2026-07-11): rw only
+        # when the session may WRITE the store (G=rw — global mode, edit-global, edit-all),
+        # ro in project mode (G=ro) so the store is referenceable but not writable without
+        # an explicit --cco-access edit-global. Shares the resolver via
+        # _config_editor_store_ro, so this mount and the operator-bucket /home/claude/.cco
+        # (_op_rw) agree. This project.yml is generated BEFORE _start_resolve_access, but G
+        # is fully determined by mode + CLI for a built-in, so the flag is knowable now.
+        local _cc_ro; _cc_ro=$(_config_editor_store_ro)
         cat <<YAML
 extra_mounts:
   - name: cco-config
     target: /workspace/cco-config
-    readonly: false
+    readonly: ${_cc_ro}
   - name: cco-docs
     target: /workspace/cco-docs
     readonly: true
@@ -216,27 +224,34 @@ _start_resolve_access() {
     # become the level-4 default of the precedence chain (CLI still overrides).
     local _preset="${session_preset:-normal}"
     local d_claude="repo" d_cco="read-project" d_shp="true"
+    # Whether THIS session has a current project in scope (INV-2 conditional floor,
+    # ADR-0046 §2 refinement). Fail-closed default `true`: a normal `cco start
+    # <project>` always has one. Only a project-less built-in flips it (config-editor
+    # global mode; future cco new) so its Pc may honestly floor to `none`.
+    local _has_current_project="true"
     case "$_preset" in
         config-editor)
-            # ADR-0044 §3, reconciled with the ADR-0046 ladder: minimum privilege by
-            # default, but "edit the personal store + a project" is spelled edit-global
-            # (rw,rw,none) — NOT edit-project (none,rw,none), which under ADR-0046 can no
-            # longer write ~/.cco. The mode resolved from cwd + flags
+            # ADR-0044 §3, reconciled with the ADR-0046 ladder and the WS-A refinement
+            # (2026-07-11): minimum-privilege by mode. The mode resolved from cwd + flags
             # (_resolve_config_editor_mode, run in _start_resolve_project before this)
-            # sets the TARGET set; the access level is edit-global unless widened:
-            #   cwd-in-project / --project <name> → edit-global (~/.cco + the target
-            #     project(s), which are all "current" for config-editor via
-            #     _env_is_current_project; other projects stay Po=none);
-            #   outside any project (bare) → edit-global (~/.cco only);
-            #   --all / --cco-access edit-all → edit-all (every project, Po=rw).
-            # This matches the unconditional ~/.cco-rw config mount and the guard's
-            # "use edit-global to edit ~/.cco". The preset never emits edit-project;
-            # only an explicit --cco-access edit-project can (guarded below).
-            d_claude="all"; d_shp="true"
-            case "${config_editor_mode:-global}" in
-                all)     d_cco="edit-all" ;;
-                *)       d_cco="edit-global" ;;
-            esac ;;
+            # sets both the TARGET set and the default triple:
+            #   cwd-in-project / --project <name>  → (ro,rw,none): edit the target
+            #     project(s) — all "current" for config-editor via _env_is_current_project
+            #     — while READING the whole global store to reference it (G=ro). Writing
+            #     ~/.cco is a distinct intent → --cco-access edit-global (rw,rw,none).
+            #   outside any project (bare)         → (rw,none,none): edit the personal
+            #     store ONLY; Pc has no referent (project-less → Pc honestly none).
+            #   --all / --cco-access edit-all      → edit-all (every project, Po=rw).
+            # G is clamped >= ro below (config-editor is an authoring tool — it must
+            # always SEE the store, ADR-0044 §2 analogy). d_claude follows the resolved
+            # G (set after the triple resolves): global .cco authoring (B3) is rw only
+            # when G=rw, else ro — closes the C2 asymmetry (WS-A A-V3). d_shp stays on.
+            # The by-mode default + project-less flag come from the SINGLE source
+            # _config_editor_default_cco (shared with the cco-config mount readonly, so
+            # the mount and the resolved triple never diverge).
+            d_shp="true"
+            local _cedef; _cedef=$(_config_editor_default_cco)
+            d_cco="${_cedef%%$'\t'*}"; _has_current_project="${_cedef##*$'\t'}" ;;
         tutorial)
             # ADR-0044 §2: read-only teacher → read-all reveals the user's whole
             # cco world (projects/packs/templates/llms) with no write risk (no
@@ -264,10 +279,6 @@ _start_resolve_access() {
         fi
     fi
 
-    claude_access=$(_access_pick "$cli_claude_access" "$p_claude" "$g_claude" "$d_claude")
-    _access_is_member "$_ACCESS_CLAUDE_VALUES" "$claude_access" \
-        || die "Invalid claude_access '$claude_access' (expected one of: $_ACCESS_CLAUDE_VALUES). Set --claude-access, project.yml access.claude, or ~/.cco/access.yml."
-
     # ── cco access → the (G,Pc,Po) triple (ADR-0046) ─────────────────
     # A source's cco value is EITHER a scalar (a preset name OR the granular
     # "global=…,current=…,others=…" form) OR — project.yml only — the access.cco
@@ -287,15 +298,40 @@ _start_resolve_access() {
         _mc=$(yml_get_deep "$project_yml" "access.cco.current" 2>/dev/null)
         _mo=$(yml_get_deep "$project_yml" "access.cco.others"  2>/dev/null)
     fi
+    # _has_current_project is threaded so the conditional INV-2 floor (§2) lets a
+    # project-less session (config-editor global mode) floor Pc to `none`; every normal
+    # session passes `true` and keeps the strict floor.
     local _cco_triple
-    if   [[ -n "$cli_cco_access" ]]; then _cco_triple=$(_cco_resolve_access "$cli_cco_access") || exit $?
-    elif [[ -n "$_mg$_mc$_mo" ]];    then _cco_triple=$(_cco_promote_triple "$_mg" "$_mc" "$_mo") || exit $?
-    elif [[ -n "$p_cco" ]];          then _cco_triple=$(_cco_resolve_access "$p_cco") || exit $?
-    elif [[ -n "$g_cco" ]];          then _cco_triple=$(_cco_resolve_access "$g_cco") || exit $?
-    else                                  _cco_triple=$(_cco_resolve_access "$d_cco") || exit $?
+    if   [[ -n "$cli_cco_access" ]]; then _cco_triple=$(_cco_resolve_access "$cli_cco_access" "$_has_current_project") || exit $?
+    elif [[ -n "$_mg$_mc$_mo" ]];    then _cco_triple=$(_cco_promote_triple "$_mg" "$_mc" "$_mo" "$_has_current_project") || exit $?
+    elif [[ -n "$p_cco" ]];          then _cco_triple=$(_cco_resolve_access "$p_cco" "$_has_current_project") || exit $?
+    elif [[ -n "$g_cco" ]];          then _cco_triple=$(_cco_resolve_access "$g_cco" "$_has_current_project") || exit $?
+    else                                  _cco_triple=$(_cco_resolve_access "$d_cco" "$_has_current_project") || exit $?
     fi
     read -r cco_g cco_pc cco_po <<< "$_cco_triple"
+
+    # config-editor G-floor (WS-A / ADR-0044 §2 analogy): an authoring session must
+    # always SEE the global store to reference/author against it, so G is never `none`
+    # for config-editor. An explicit narrower override (e.g. --cco-access edit-project
+    # → G=none) is clamped up to `ro`, with a one-line notice. This subsumes the old
+    # F4 inert-edit-project case: (none,rw,none) becomes (ro,rw,none) — the project-mode
+    # default — so ~/.cco stays readable (never writable unless G=rw).
+    if [[ "$_preset" == "config-editor" && "$(_cco_axis_rank "$cco_g")" -lt 1 ]]; then
+        echo "note: config-editor needs to read the global store to author against it — clamping cco_access global=none up to 'ro' (use --cco-access edit-global to also WRITE ~/.cco)." >&2
+        cco_g="ro"
+    fi
     cco_access=$(_cco_triple_label "$cco_g" "$cco_pc" "$cco_po")
+
+    # claude_access: for config-editor it FOLLOWS the resolved G so global .cco
+    # authoring (B3 ~/.cco/.claude) is writable only when the store itself is (G=rw) —
+    # closing the C2 asymmetry (writable global rules while global packs are read-only,
+    # WS-A A-V3). Normal/tutorial sessions keep their own preset default (repo/none).
+    if [[ "$_preset" == "config-editor" ]]; then
+        [[ "$cco_g" == "rw" ]] && d_claude="all" || d_claude="repo"
+    fi
+    claude_access=$(_access_pick "$cli_claude_access" "$p_claude" "$g_claude" "$d_claude")
+    _access_is_member "$_ACCESS_CLAUDE_VALUES" "$claude_access" \
+        || die "Invalid claude_access '$claude_access' (expected one of: $_ACCESS_CLAUDE_VALUES). Set --claude-access, project.yml access.claude, or ~/.cco/access.yml."
 
     # access.cco.include_member_configs (ADR-0046 §6, additive, default false):
     # when true, Pc's rw span widens from the hosting repo's <repo>/.cco to ALL
@@ -378,6 +414,39 @@ _resolve_config_editor_mode() {
     fi
 }
 
+# The config-editor by-mode DEFAULT cco intent (SINGLE source, WS-A 2026-07-11). Emits
+# "<intent>\t<has_current_project>" for the resolved config_editor_mode. Both
+# _start_resolve_access (the session triple) and _config_editor_store_ro (the cco-config
+# mount readonly) read it, so the mount mode and the resolved triple never diverge:
+#   project  → (ro,rw,none): edit the target project(s), READ the whole store to reference.
+#   all      → edit-all (rw,rw,rw): every project + store.
+#   global   → (rw,none,none): edit ONLY the store; project-less (Pc has no referent).
+# Reads cmd_start local config_editor_mode.
+_config_editor_default_cco() {
+    case "${config_editor_mode:-global}" in
+        all)     printf 'edit-all\ttrue' ;;
+        project) printf 'global=ro,current=rw,others=none\ttrue' ;;
+        *)       printf 'global=rw,current=none,others=none\tfalse' ;;
+    esac
+}
+
+# _config_editor_store_ro → "true"/"false": is the personal store ~/.cco (the cco-config
+# extra_mount) READ-ONLY for this config-editor session? The store is writable iff the
+# resolved G is rw. For a built-in the only cco_access sources are the CLI override and
+# the by-mode default (project.yml/access.yml bypassed for built-ins), so G is fully
+# determined here — the SAME inputs _start_resolve_access resolves, hence the mount and
+# the triple agree. Fails safe to read-only. Reads cmd_start locals config_editor_mode,
+# cli_cco_access.
+_config_editor_store_ro() {
+    local intent plflag g pc po _def
+    _def=$(_config_editor_default_cco)
+    intent="${_def%%$'\t'*}"; plflag="${_def##*$'\t'}"
+    [[ -n "$cli_cco_access" ]] && intent="$cli_cco_access"   # CLI > by-mode default
+    local triple; triple=$(_cco_resolve_access "$intent" "$plflag" 2>/dev/null) || { printf 'true'; return; }
+    read -r g pc po <<< "$triple"
+    [[ "$g" == "rw" ]] && printf 'false' || printf 'true'
+}
+
 # Collect the config-editor's edit targets + repo mounts (ADR-0042 §8 / ADR-0044
 # §3). Sets the shared _ce_targets (newline-joined "name<TAB><repo>/.cco") and
 # _ce_repos (newline-joined repo logical names), keyed off the mode resolved by
@@ -437,17 +506,19 @@ _start_collect_config_editor_targets() {
     done
 }
 
-# Fail loud, don't launch inert (F4). A config-editor session whose resolved triple
-# is edit-project — (G=none, Pc=rw, Po=none), the current project the ONLY writable
-# axis — but for which the mode/collector resolved ZERO project targets has nothing
-# to edit: G=none rules out the personal store, and no <repo>/.cco is mounted. This
-# is reachable only via an explicit `--cco-access edit-project` (the preset itself
-# never emits edit-project — project mode resolves to edit-global, ADR-0044 reconciled
-# with the ADR-0046 ladder). edit-global keeps G=rw (~/.cco stays editable), NOT guarded.
+# Fail loud, don't launch inert (F4). A config-editor session that intends a PROJECT
+# write (Pc=rw) but for which the mode/collector resolved ZERO project targets, and
+# whose G is not rw either, can write NOTHING: no <repo>/.cco is mounted (no target)
+# and G!=rw rules out the personal store. Post-clamp (WS-A) the reachable inert triple
+# is (ro,rw,none) — an explicit `--cco-access edit-project` (or current=rw) issued
+# outside any project; the G>=ro clamp turns the old (none,rw,none) into (ro,rw,none),
+# so the guard keys off Pc/Po/targets, NOT G=none. edit-global (G=rw) can always write
+# ~/.cco → never inert, never guarded; the project-mode default (ro,rw,none) always has
+# a resolved target → never guarded.
 # Reads cmd_start locals (session_preset, cco_g/pc/po, _ce_targets); no side effects.
 _start_guard_config_editor_scope() {
     [[ "${session_preset:-}" == "config-editor" ]] || return 0
-    [[ "$cco_g" == none && "$cco_pc" == rw && "$cco_po" == none ]] || return 0
+    [[ "$cco_pc" == rw && "$cco_g" != rw && "$cco_po" == none ]] || return 0
     [[ -z "${_ce_targets:-}" ]] || return 0
     die "config-editor --cco-access edit-project needs a project to edit, but none was resolved.
   You are outside a project and passed no --project. Fix one of:

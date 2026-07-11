@@ -180,6 +180,10 @@ test_access_preset_tutorial_read_all() {
 # project→edit-global, all→edit-all (ADR-0044 §3 reconciled with the ADR-0046
 # ladder — "edit ~/.cco + a project" is edit-global (rw,rw,none), not edit-project
 # (none,rw,none) which can no longer write ~/.cco). claude stays 'all'.
+# WS-A (2026-07-11): config-editor defaults are minimum-privilege BY MODE.
+#   project → (ro,rw,none): edit the project, READ the store (claude follows G → repo).
+#   global  → (rw,none,none): edit ONLY the store, project-less (claude follows G → all).
+#   all     → edit-all (rw,rw,rw), claude=all.
 test_access_preset_config_editor_by_mode() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _access_setup_home "$tmp"; _access_src
@@ -187,25 +191,49 @@ test_access_preset_config_editor_by_mode() {
     local session_preset="config-editor"
     local cli_claude_access="" cli_cco_access="" cli_show_host_paths=""
     local claude_access cco_access show_host_paths config_editor_mode
-    config_editor_mode="global"; _start_resolve_access
-    [[ "$cco_access" == "edit-global" ]]  || fail "config-editor global→edit-global, got: $cco_access"
+    local cco_g cco_pc cco_po cco_include_member_configs
     config_editor_mode="project"; _start_resolve_access
-    [[ "$cco_access" == "edit-global" ]]  || fail "config-editor project→edit-global, got: $cco_access"
+    [[ "$cco_g $cco_pc $cco_po" == "ro rw none" ]] || fail "config-editor project→(ro,rw,none), got: $cco_g $cco_pc $cco_po"
+    [[ "$cco_access" == "global=ro,current=rw,others=none" ]] || fail "project label, got: $cco_access"
+    [[ "$claude_access" == "repo" ]]      || fail "config-editor project→claude=repo (G=ro), got: $claude_access"
+    config_editor_mode="global"; _start_resolve_access
+    [[ "$cco_g $cco_pc $cco_po" == "rw none none" ]] || fail "config-editor global→(rw,none,none), got: $cco_g $cco_pc $cco_po"
+    [[ "$cco_access" == "global=rw,current=none,others=none" ]] || fail "global label, got: $cco_access"
+    [[ "$claude_access" == "all" ]]       || fail "config-editor global→claude=all (G=rw), got: $claude_access"
     config_editor_mode="all"; _start_resolve_access
     [[ "$cco_access" == "edit-all" ]]     || fail "config-editor all→edit-all, got: $cco_access"
-    [[ "$claude_access" == "all" ]]       || fail "config-editor claude=all, got: $claude_access"
+    [[ "$claude_access" == "all" ]]       || fail "config-editor all→claude=all, got: $claude_access"
 }
 
-# An explicit --cco-access still overrides the config-editor preset default.
+# An explicit --cco-access still overrides the config-editor by-mode default. An
+# edit-global override in project mode widens G to rw (store writable) and claude→all.
 test_access_preset_config_editor_cli_override() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _access_setup_home "$tmp"; _access_src
     local project_yml="$tmp/project.yml"; printf 'name: config-editor\n' > "$project_yml"
-    local session_preset="config-editor" config_editor_mode="global"
-    local cli_claude_access="" cli_cco_access="read-project" cli_show_host_paths=""
-    local claude_access cco_access show_host_paths
+    local session_preset="config-editor" config_editor_mode="project"
+    local cli_claude_access="" cli_cco_access="edit-global" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
     _start_resolve_access
-    [[ "$cco_access" == "read-project" ]] || fail "CLI --cco-access overrides the config-editor preset, got: $cco_access"
+    [[ "$cco_access" == "edit-global" ]] || fail "CLI edit-global overrides the config-editor default, got: $cco_access"
+    [[ "$claude_access" == "all" ]]      || fail "edit-global override → claude=all (G=rw), got: $claude_access"
+}
+
+# config-editor G>=ro clamp (WS-A / ADR-0044 §2 analogy): an explicit narrower override
+# whose G is below ro is clamped up to ro (the authoring tool must always SEE the store).
+# read-project (none,ro,none) → (ro,ro,none)=read-global; edit-project (none,rw,none) →
+# (ro,rw,none). The store stays read-only (G!=rw) — only edit-global grants a store write.
+test_access_config_editor_g_clamp() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    local project_yml="$tmp/project.yml"; printf 'name: config-editor\n' > "$project_yml"
+    local session_preset="config-editor" config_editor_mode="project"
+    local cli_claude_access="" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs cli_cco_access
+    cli_cco_access="read-project"; _start_resolve_access 2>/dev/null
+    [[ "$cco_g $cco_pc $cco_po" == "ro ro none" ]] || fail "read-project clamps G→ro, got: $cco_g $cco_pc $cco_po"
+    cli_cco_access="edit-project"; _start_resolve_access 2>/dev/null
+    [[ "$cco_g $cco_pc $cco_po" == "ro rw none" ]] || fail "edit-project clamps G→ro, got: $cco_g $cco_pc $cco_po"
 }
 
 # ── (G,Pc,Po) triple resolution (ADR-0046) ───────────────────────────
@@ -233,6 +261,32 @@ test_access_resolve_granular_cli() {
     _start_resolve_access
     [[ "$cco_g $cco_pc $cco_po" == "none rw rw" ]] || fail "others=rw promotes Pc=rw, got: $cco_g $cco_pc $cco_po"
     [[ "$cco_access" == "global=none,current=rw,others=rw" ]] || fail "granular label, got: $cco_access"
+}
+
+# INV-2 conditional floor (ADR-0046 §2 refinement, 2026-07-11): the Pc>=ro project
+# floor holds ONLY when the session has a current project. _cco_promote_triple's 4th arg
+# has_current_project (default true = fail-closed) toggles it.
+test_access_inv2_conditional_floor() {
+    _access_src
+    # has_project=true (default): an unspecified Pc floors to ro; an explicit none dies.
+    [[ "$(_cco_promote_triple rw "" "")" == "rw ro none" ]] || fail "default floors Pc→ro"
+    ( _cco_promote_triple none none none 2>/dev/null ); [[ $? -ne 0 ]] || fail "explicit Pc=none with a project must die (INV-2)"
+    # has_project=false (project-less): Pc honestly floors to / stays none, no die.
+    [[ "$(_cco_promote_triple rw "" "" false)" == "rw none none" ]] || fail "project-less floors Pc→none, got: $(_cco_promote_triple rw '' '' false)"
+    [[ "$(_cco_promote_triple none none none false)" == "none none none" ]] || fail "project-less accepts explicit Pc=none"
+    # INV-4 still enforced even project-less: others>current is rejected.
+    ( _cco_promote_triple rw none ro false 2>/dev/null ); [[ $? -ne 0 ]] || fail "project-less others=ro > current=none must die (INV-4/INV-3)"
+}
+
+# Resolution-level regression: a NORMAL session (has_current_project=true) that asks for
+# current=none is still rejected — the conditional floor does not leak to standard starts.
+test_access_normal_current_none_rejected() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    local project_yml="$tmp/project.yml"; printf 'name: p\n' > "$project_yml"
+    local cli_claude_access="" cli_cco_access="current=none" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
+    ( _start_resolve_access 2>/dev/null ); [[ $? -ne 0 ]] || fail "normal session current=none must be rejected (strict INV-2)"
 }
 
 # Case 7 granular: global=rw,current=ro,others=ro.
