@@ -405,6 +405,14 @@ for the internal store only. The registries may then mount **whole + rw** (only 
 traverses; the helper gates every op), which **simplifies** the `cmd-start.sh` internal-bucket
 mount block — the `read-project` registry narrowing and output-scoping demote to defense-in-depth.
 
+**Running registry (ADR-0045).** The session running-registry directory
+(`STATE/running/<project>`) rides this same boundary: it is mounted **`:ro`** in-container
+**under the privileged root**, because its marker **filenames are project names** (S1-confidential).
+It is therefore read only inside the elevated `__store list/show` path, gated by `_env_in_scope`
+— never off the docker channel. `cco start` owns the marker lifecycle and runs the host-side
+liveness reconciliation sweep (the primary reaper; `cco stop` is ~never invoked for a `run --rm`
+container — B-DF3).
+
 ### 1.3 tmux Configuration
 
 ```tmux
@@ -895,6 +903,9 @@ claude-orchestrator/
 └── (hidden XDG buckets — per machine, never committed, never hand-edited)
     ├── STATE  ~/.local/state/cco           # index (name→abs-path + project→members), seeded auth,
     │   ├── index                           #   remotes-token (0600), changelog markers
+    │   ├── running/<project>                #   session running-registry markers (ADR-0045); host
+    │   │                                    #   writes + reconciles vs docker ps; :ro in-container,
+    │   │                                    #   read only in elevated __store (filenames=project names)
     │   ├── projects/<id>/                   #   keyed by project identity <id> = project.yml name
     │   │   ├── claude-state/                #   session transcripts
     │   │   ├── session/memory/              #   auto memory (machine-local, no sync v1 — ADR-0009)

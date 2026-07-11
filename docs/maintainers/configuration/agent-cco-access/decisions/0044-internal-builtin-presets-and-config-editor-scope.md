@@ -87,6 +87,17 @@ tutorial. `cco start config-editor` no longer defaults to `edit-all`:
 | `cco start config-editor --repo <name>` | above + one resolvable repo | (as above) |
 | `cco start config-editor --all` **or** `--cco-access edit-all` | `~/.cco` + **every** resolvable project's `<repo>/.cco` (no repos) | edit-all |
 
+> **Forward annotation (ADR-0046 ladder, implemented 2026-07-11).** The **"Resolved `cco_access`"**
+> column above says `edit-project` for the in-project / `--project` rows. When ADR-0046 redefined
+> the preset ladder, `edit-project` became `(none, rw, none)` — `G = none`, so it can **no longer
+> write `~/.cco`**. But the "Editable config surface" those rows intend (`~/.cco` **+** the project's
+> `.cco`) is exactly `edit-global` `(rw, rw, none)` under the new ladder. So the shipped preset
+> resolves project mode to **`edit-global`**, not `edit-project` (the config-editor targets are the
+> `current`/`Pc` axis via `_env_is_current_project`; other projects stay `Po = none`). `edit-all`
+> and the outside-a-project `edit-global` rows are unchanged. An explicit `--cco-access edit-project`
+> still works (writes only the project, guarded to require a target). See `lib/cmd-start.sh`
+> `_start_resolve_access` and the CLI-surface matrix preset table.
+
 - **Outside-a-project default is global-only (option b), not edit-all-with-prompt.** cco
   widens access via **explicit flags**, never an interactive "are you sure" prompt
   (consistent with the rest of the CLI; prompts break automation).

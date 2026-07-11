@@ -12,9 +12,10 @@
 > pins the classification.
 >
 > **Purpose**: the approved oracle for the e2e access re-validation (handoff v2) and a
-> reference for any CLI change. Rows marked **⏳ target** reflect approved-but-not-yet-shipped
-> behaviour (ADR-0044 preset flip; pre-review fixes B1–B4) — flagged so the doc never claims
-> behaviour the code does not yet expose (documentation-lifecycle rule).
+> reference for any CLI change. The hardening-v2 workstream (ADR-0044 preset flip; the
+> ADR-0046 `(G,Pc,Po)` model; the ADR-0047 boundary; pre-review fixes B1–B4) has **landed** —
+> the former **⏳ target** flags are cleared; every row now states shipped behaviour (verify
+> against the code after `cco build`, per the documentation-lifecycle rule).
 >
 > Related: [CLI environment-awareness](../design/design-cli-environment-awareness.md) (the
 > principle + the central gate §4) · [ADR-0042](../../configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md) · [ADR-0043](../decisions/0043-unified-cli-environment-access-scope.md) · [ADR-0044](../../configuration/agent-cco-access/decisions/0044-internal-builtin-presets-and-config-editor-scope.md) · [ADR-0046](../../configuration/agent-cco-access/decisions/0046-unified-cco-access-model.md) (`(G,Pc,Po)` model) · [ADR-0047](../../configuration/agent-cco-access/decisions/0047-config-access-enforcement.md) (enforcement)
@@ -47,25 +48,26 @@ bare `read` = deprecated alias for `read-all`.
 | read-global | `(ro, ro, none)` | global | — |
 | read-all | `(ro, ro, ro)` | all | — |
 | edit-project | `(none, rw, none)` | project | project |
-| edit-global | `(rw, rw, none)` ⏳ | global | global **+ project** |
+| edit-global | `(rw, rw, none)` | global | global **+ project** |
 | edit-all | `(rw, rw, rw)` | all | all |
 
-**Granular-only** (off the symmetric ladder): curate-global-only `(rw,ro,none)`;
-edit-all-projects-not-global `(ro,rw,rw)`; edit-global-consult-all `(rw,ro,ro)`.
+**Granular-only** (off the symmetric ladder — the two intents the presets cannot spell,
+ADR-0046 §Intro): edit-all-projects-not-global `(none, rw, rw)`; edit-global-consult-all
+`(rw, rw, ro)`. (Other valid non-preset triples exist — these are the two motivating cases.)
 
-> **⏳ target ADR-0046**: the whole `(G,Pc,Po)` model + the granular syntax + `edit-global`
-> redefined to include project write are **approved, not yet implemented** (D1 design; impl
-> after D2 enforcement + D3 per-command). The `read_scope`/`write_scope` columns above are the
-> *current* shipped derivation (`_cco_level_read_scope`/`_cco_level_write_scope`); today
-> `edit-global` = `(rw, ro, none)` (project read-only). Rows converge on the axis model when
-> ADR-0046 lands.
+> **Shipped (ADR-0046).** The `(G,Pc,Po)` model + the granular syntax + `edit-global`
+> redefined to `(rw, rw, none)` (global write **and** project write) are implemented
+> (`_cco_preset_triple`/`_cco_resolve_access` in `lib/access-scope.sh`; requires `cco build`).
+> The `read_scope`/`write_scope` columns are the derivation (`_cco_level_read_scope`/
+> `_cco_level_write_scope`), symmetric on `{project, global, all}`.
 >
-> **Enforcement ([ADR-0047](../../configuration/agent-cco-access/decisions/0047-config-access-enforcement.md), D2 — also design-intent).**
-> The `(G,Pc,Po)` gate is made *physically* binding for the internal store (STATE index, DATA,
-> CACHE internals) by a **privilege boundary** (a `cco-svc` mode-0700 real-FS parent the
-> `claude` user cannot traverse + a setuid helper). The **output-scoping** column below is
-> therefore **defense-in-depth**, not the confidentiality control (revises ADR-0043 INV-D).
-> Config-content trees stay mounted and keep `:ro`/`:rw` write-gating.
+> **Enforcement ([ADR-0047](../../configuration/agent-cco-access/decisions/0047-config-access-enforcement.md), shipped).**
+> The `(G,Pc,Po)` gate is *physically* binding for the internal store (STATE index, DATA,
+> CACHE internals) via a **privilege boundary** (a `cco-svc` mode-0700 real-FS parent the
+> `claude` user cannot traverse + a setuid helper reading a trusted `:ro` session descriptor).
+> The **output-scoping** column below is therefore **defense-in-depth**, not the confidentiality
+> control (revises ADR-0043 INV-D). Config-content trees stay mounted and keep `:ro`/`:rw`
+> write-gating.
 
 **Availability is monotonic**: a verb available at level *L* is available at every level
 that reads/writes at ≥ its required scope. So each verb is stated as **"available from
@@ -94,7 +96,7 @@ wholesale in-container (exit 2, R6) — every row below is unavailable at `none`
 | `resolve`, `sync`, `init`, `join`, `forget` | ✅ | ❌ host-only (resolves host paths) | exit 2 |
 | `update`, `clean`, `chrome` | ✅ | ❌ host-only | exit 2 |
 | `path set` | ✅ | ❌ host-only (index mutation) | exit 2 |
-| `path list` | ✅ | ✅ **read-only listing OK** | — · **⏳ target A1**: output-scoped (current+referenced; host-path columns gated by `show_host_paths`) — moves to §2.2 read verbs ([A1 §4.3](../../configuration/agent-cco-access/e2e-review/analysis/A1-command-scope-matrix.md)) |
+| `path list` | ✅ | ✅ **read-only listing OK** | output-scoped (current+referenced; host-path columns gated by `show_host_paths`) — a §2.2 read verb ([A1 §4.3](../../configuration/agent-cco-access/e2e-review/analysis/A1-command-scope-matrix.md)) |
 
 ### 2.2 Read / introspection — available from read-project (unless noted)
 
@@ -105,7 +107,7 @@ wholesale in-container (exit 2, R6) — every row below is unavailable at `none`
 | `list templates\|remotes` | read:**global** | ✅ from **read-global** | global-class — empty+notice below read-global |
 | `docs` | always | ✅ from read-project | — (refused at `none`, R6) |
 | `help`, `--help`/`-h`, `--version`/`-v` | always | ✅ | help is scope-aware (§4) |
-| `whoami` | always | ✅ from read-project | session-state introspection (F4). **⏳ target B1**: also listed in in-container `help`. **⏳ target A1**: renders the resolved `(G,Pc,Po)` triple + privilege-boundary note ([A1 §4.5](../../configuration/agent-cco-access/e2e-review/analysis/A1-command-scope-matrix.md)) |
+| `whoami` | always | ✅ from read-project | session-state introspection (F4); listed in in-container `help` (B1); renders the resolved `(G,Pc,Po)` triple + privilege-boundary note ([A1 §4.5](../../configuration/agent-cco-access/e2e-review/analysis/A1-command-scope-matrix.md)) |
 | `project show\|validate\|coords` | read:project | ✅ from read-project | current project resolvable from `/workspace` root (R2/F3) |
 | `pack show\|validate`, `llms show\|validate` | read:project | ✅ from read-project | `_env_require_visible` — graceful "not in scope" for out-of-scope names |
 | `template show\|validate` | read:**global** | ✅ from **read-global** | global-class |
@@ -116,7 +118,7 @@ wholesale in-container (exit 2, R6) — every row below is unavailable at `none`
 
 | Verb | Class (target tree) | Available from | Notes |
 |---|---|---|---|
-| `tag add\|remove` | write:global (DATA registry) | edit-global | global regardless of the named project (C1). **⏳ target A1/B5**: gate by the **tagged resource's axis** — project(current)→`Pc` (edit-project), pack/template→`G` (edit-global), project(other)→`Po` (edit-all) ([A1 §4.1](../../configuration/agent-cco-access/e2e-review/analysis/A1-command-scope-matrix.md)) |
+| `tag add\|remove` | write:global (DATA registry) | by target axis | gated by the **tagged resource's axis** (B5): project(current)→`Pc` (edit-project), pack/template→`G` (edit-global), project(other)→`Po` (edit-all). Ownership predicate is config-editor-aware (`_env_is_current_project`) ([A1 §4.1](../../configuration/agent-cco-access/e2e-review/analysis/A1-command-scope-matrix.md)) |
 | `config save` | write:global (`~/.cco`) | edit-global | clear "needs edit-global" msg on ro mount at edit-project (CLI-surface F3) |
 | `remote add\|remove` | write:global (DATA registry) | edit-global | `remote add --token` refuses the **token half** in-container (secret stays host-side) |
 | `pack create\|update\|remove\|install\|import\|internalize\|rename` | write:global | edit-global | network fetches (`install\|update\|import`) are writes, allowed at edit level (D4 carve-out) |
@@ -160,10 +162,11 @@ Verb gating (§2) decides *whether* a read verb runs; this decides *what it show
 The **only** global-vs-all difference is the `project` kind (other projects need
 `read-all`). `edit-*` levels read at their matching scope (edit-project → project, etc.).
 
-**⏳ target B3**: the unified `cco list` shows **running status** for the `project` kind
-(today only `cco list project` does). **⏳ target B4**: in-container, running status for a
-project **not visible to the scoped docker daemon** is reported `unknown`, never a false
-`stopped`; full cross-project running awareness comes from the STATE running registry
+**B3 (shipped)**: the unified `cco list` shows **running status** for the `project` kind
+in a dedicated STATUS column (with `--sort status`), not only `cco list project`. **B4
+(shipped)**: in-container, running status for a project **not visible to the scoped docker
+daemon** / absent from the registry is reported `unknown`, never a false `stopped`;
+cross-project running awareness comes from the STATE running registry
 ([ADR-0045](../../environment/decisions/0045-session-running-registry.md), DI1), gated by
 this same scope layer.
 
@@ -173,7 +176,7 @@ this same scope layer.
 
 | Invocation | Host | In-container |
 |---|---|---|
-| `cco help` / `cco --help` | full, unannotated | **filtered** to verbs runnable at the current scope; host-only + above-level omitted; one-line warn "N hidden — `cco --help --host`". **⏳ target B1/B2**: `whoami` listed; a section header with zero runnable verbs is suppressed |
+| `cco help` / `cco --help` | full, unannotated | **filtered** to verbs runnable at the current scope; host-only + above-level omitted; one-line warn "N hidden — `cco --help --host`"; `whoami` listed (B1); a section header with zero runnable verbs is suppressed (B2) |
 | `cco --help --host` (in-container) | — | full list, host-only verbs flagged `(host only — run on your host)` |
 | `cco <cmd> --help` | full usage | **always** available (informational), even for host-only verbs |
 
@@ -189,10 +192,10 @@ accepts the granular `{global,current,others}` map (ADR-0046 §5) for asymmetric
 | Preset | claude_access | cco_access | show_host_paths | Notes |
 |---|---|---|---|---|
 | standard project | repo | **read-project** | on | uniform minimum-privilege; flags widen/narrow |
-| **tutorial** | none | **read-all** ⏳ | on | ADR-0044: read-only teacher → full context, no write risk (was read-project). `--cco-access` discouraged |
-| **config-editor** (cwd in a project) | all | **edit-project** ⏳ | on | ADR-0044: edits cwd project's `.cco` + `~/.cco`. *started ≠ cwd project* |
-| **config-editor** (outside a project) | all | **edit-global** ⏳ | on | ADR-0044: `~/.cco` only; no project in scope |
-| **config-editor** `--all` / `--cco-access edit-all` | all | **edit-all** | on | explicit broad every-project surface (the old default) |
+| **tutorial** | none | **read-all** | on | ADR-0044: read-only teacher → full context, no write risk (was read-project). `--cco-access` discouraged |
+| **config-editor** (cwd in a project) | all | **edit-global** | on | ADR-0044 §3 reconciled with the ADR-0046 ladder: edits `~/.cco` + the cwd project's `.cco` + its repos. `edit-project` (none,rw,none) can no longer write `~/.cco`, so project mode uses `edit-global` (rw,rw,none); the target(s) are the `current` axis. *started ≠ cwd project* |
+| **config-editor** (outside a project) | all | **edit-global** | on | `~/.cco` only; no project in scope |
+| **config-editor** `--all` / `--cco-access edit-all` | all | **edit-all** | on | explicit broad every-project surface |
 
 **`claude_access` (`none|repo|all`)** — orthogonal axis over the `.claude` authoring trees,
 independent of the cco verb surface above:
@@ -215,6 +218,8 @@ cross-product that does not exist.
   the matching row here and extend `tests/test_operator_shim.sh`. The §5 checklist of
   [design-cli-environment-awareness.md](../design/design-cli-environment-awareness.md) is the
   authoring procedure; this table is its rendered result.
-- **⏳ target rows** are cleared (flag removed) as ADR-0044 + B1–B4 land, at the commit that
-  makes each true. Until then they document the *approved target*, used as the e2e v2
-  acceptance oracle — not current shipped behaviour.
+- **⏳ target rows** are cleared (flag removed) as approved behaviour lands, at the commit
+  that makes each true. The hardening-v2 batch (ADR-0044 preset flip; ADR-0046 model;
+  ADR-0047 boundary; B1–B4) has all landed, so **no ⏳ rows remain** — every row is shipped
+  behaviour (the e2e v2 acceptance oracle). Reintroduce the flag only for a *new*
+  approved-but-unshipped target.
