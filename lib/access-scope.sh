@@ -122,38 +122,54 @@ _cco_parse_granular() {
     printf '%s|%s|%s' "$g" "$pc" "$po"
 }
 
-# _cco_promote_triple <g> <pc> <po> — auto-promote unspecified axes (EMPTY args)
-# to the invariant floor (ADR-0046 §2) and REJECT an explicit triple that violates
-# an invariant (die, exit 1, naming it). Emits the resolved "G Pc Po". Granular
-# access always means cco is enabled (permission > none), so INV-2's project floor
-# (Pc≥ro) applies. Floors: Po→none, Pc→max(ro,Po) (INV-2 + INV-4), G→none. The
-# floors never introduce a violation, so a surviving one is an explicit
-# contradiction (e.g. current=ro,others=rw).
+# _cco_promote_triple <g> <pc> <po> [has_current_project] — auto-promote unspecified
+# axes (EMPTY args) to the invariant floor (ADR-0046 §2) and REJECT an explicit triple
+# that violates an invariant (die, exit 1, naming it). Emits the resolved "G Pc Po".
+# Floors: Po→none, Pc→max(ro,Po) (INV-2 + INV-4), G→none. The floors never introduce a
+# violation, so a surviving one is an explicit contradiction (e.g. current=ro,others=rw).
+#
+# INV-2 (project floor Pc≥ro) is CONDITIONAL (refinement 2026-07-11, refines ADR-0046
+# §2): it holds only when the session HAS a current project in scope.
+# <has_current_project> (default `true`) is that session signal — FAIL-CLOSED: a normal
+# `cco start <project>` always has one, so the strict floor stands and an explicit
+# `current=none` there is still rejected. A PROJECT-LESS session (config-editor global
+# mode; future: cco new) passes `false`, so an unspecified Pc floors to `none` (the
+# honest value — Pc has no referent, nothing is mounted for it) instead of `ro`, and no
+# floor die fires. INV-4 (Po≤Pc) still holds (a project-less `others=ro` is rejected,
+# which also enforces INV-3 Po≠none⇒Pc≠none).
 _cco_promote_triple() {
-    local g="$1" pc="$2" po="$3"
+    local g="$1" pc="$2" po="$3" has_project="${4:-true}"
     [[ -z "$po" ]] && po="none"
     if [[ -z "$pc" ]]; then
-        if [[ "$(_cco_axis_rank "$po")" -ge 1 ]]; then pc="$po"; else pc="ro"; fi
+        if   [[ "$(_cco_axis_rank "$po")" -ge 1 ]]; then pc="$po"
+        elif [[ "$has_project" == "true" ]];        then pc="ro"
+        else                                             pc="none"
+        fi
     fi
     [[ -z "$g" ]] && g="none"
-    [[ "$(_cco_axis_rank "$pc")" -ge 1 ]] \
-        || die "Invalid cco_access: 'current' (Pc) must be at least 'ro' while cco is enabled (INV-2 project floor)."
+    if [[ "$has_project" == "true" ]]; then
+        [[ "$(_cco_axis_rank "$pc")" -ge 1 ]] \
+            || die "Invalid cco_access: 'current' (Pc) must be at least 'ro' while cco is enabled with a current project (INV-2 project floor)."
+    fi
     [[ "$(_cco_axis_rank "$po")" -le "$(_cco_axis_rank "$pc")" ]] \
         || die "Invalid cco_access: 'others' (Po='$po') cannot exceed 'current' (Pc='$pc') — no broader access to other projects than your own (INV-4)."
     printf '%s %s %s' "$g" "$pc" "$po"
 }
 
-# _cco_resolve_access <intent> — resolve a SCALAR access intent to the triple
-# "G Pc Po". <intent> is EITHER a preset name (ladder lookup §3) OR a granular CSV
-# "global=…,current=…,others=…" (§5). Dies on an unknown preset / bad granular
-# token / invariant violation. The single entry point for scalar sources (the CLI
-# --cco-access flag, a scalar project.yml/access.yml value). The project.yml MAP
-# form is fed to _cco_promote_triple directly by the caller (axes already split).
+# _cco_resolve_access <intent> [has_current_project] — resolve a SCALAR access intent
+# to the triple "G Pc Po". <intent> is EITHER a preset name (ladder lookup §3) OR a
+# granular CSV "global=…,current=…,others=…" (§5). Dies on an unknown preset / bad
+# granular token / invariant violation. The single entry point for scalar sources (the
+# CLI --cco-access flag, a scalar project.yml/access.yml value). <has_current_project>
+# (default `true`) is threaded to _cco_promote_triple for the conditional INV-2 floor
+# (project-less sessions pass `false`); presets bypass promotion, so their fixed triples
+# are unaffected. The project.yml MAP form is fed to _cco_promote_triple directly by the
+# caller (axes already split).
 _cco_resolve_access() {
-    local intent="$1" parsed g pc po
+    local intent="$1" has_project="${2:-true}" parsed g pc po
     if parsed=$(_cco_parse_granular "$intent"); then
         IFS='|' read -r g pc po <<< "$parsed"
-        _cco_promote_triple "$g" "$pc" "$po"
+        _cco_promote_triple "$g" "$pc" "$po" "$has_project"
         return
     fi
     _cco_preset_triple "$intent" && return 0
