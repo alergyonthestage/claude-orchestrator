@@ -142,7 +142,11 @@
   + `cli-surface-matrix.md` ADR-0046/0047 refs + INV-D "presentation-filter" → defense-in-depth;
   `design-security-model.md` new **HIGH-6** (S1/S1b) + ADR-0047 mitigation. Audit found **no
   today-contradictions** in shipped-behavior docs.
-- **DOC5 — shipped-doc cutover checklist (⏳ DO AT IMPLEMENTATION, NOT before — lifecycle rule).**
+- **DOC5 — shipped-doc cutover checklist. ✅ DONE (2026-07-11, commit `3b947ad`)** — all six docs
+  below rewritten to the shipped `(G,Pc,Po)` + boundary truth (repo `CLAUDE.md`, `cli.md`,
+  `project-yaml.md`, `docker-and-networking.md`, config-editor/tutorial guides); config-editor
+  preset documented as min-privilege (edit-global default / edit-all with `--all`), tutorial as
+  read-all. The original checklist follows for the record.
   When ADR-0046/0047 land in code, update these shipped-behavior docs (all currently correct for
   the enum model):
   1. **repo `CLAUDE.md`** "Session access" ¶ — enum → `(G,Pc,Po)` triple + presets-as-sugar +
@@ -246,9 +250,11 @@ Confirmed by the maintainer; formalized by **[`../hardening-v2/handoff.md`](../h
   `f08bbf2` (B4 display + B3 STATUS column + `--sort status`), `6fefa85` (B1 whoami + B2 empty-section
   pruner), `fed84e6` (B-DF2 init prompt), `0b8f295` (ADR-0045 fwd-annot). Suite **1197/7** (7 =
   pre-existing §6.2 in-container artifacts).
-- **S3 Phase VI (REBUILD)** — pending: migrations (additive; project 015/global 017) + changelog #37
-  + DOC5 shipped-doc cutover + `design-docker.md` mount inventory + this CLI-surface matrix B4/DI1
-  ⏳→final + `cco build` → e2e v2. Per the implementation handoff.
+- **S3 Phase VI (REBUILD)** — ✅ DONE in-session (2026-07-11), 4 commits `6436665` (changelog #37),
+  `67ad13f` (config-editor project mode → `edit-global` fix + tests), `3b947ad` (DOC5 cutover),
+  `9f179b4` (CLI-surface ⏳ cleared + `design-docker.md` `running/` mount + ADR-0044 §3 annotation).
+  Migrations **verified none needed** (additive/code-only — schema stays project 014/global 016).
+  Suite **1197/7**. **Remaining on the Mac: `cco build` → e2e v2 acceptance; push both branches.**
 
 ### Unified implementation review I–IV (2026-07-10) — findings
 

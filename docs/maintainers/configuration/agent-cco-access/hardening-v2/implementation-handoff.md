@@ -8,23 +8,29 @@
 > running registry (ADR-0045) + B1–B4 + B-DF2 in 5 commits `95eb8b5`..`0b8f295` (see §5 Phase V
 > below + the backlog "Implementation progress"). Suite **1197/7** (7 = pre-existing §6.2
 > in-container artifacts: 6 `test_access_scope` wired-verb + `test_paths_symlink_safe_tool_root`;
-> confirmed pre-existing via stash — no regressions). **▶ S3 Phase VI is the remaining
-> implementation, then e2e v2 (acceptance).** All three design sub-phases are DONE + approved —
+> confirmed pre-existing via stash — no regressions). **S3 Phase VI DONE (2026-07-11)** — see the
+> Phase VI record below; suite still **1197/7**. **▶ Only `cco build` on the Mac + e2e v2
+> (acceptance) remain.** All three design sub-phases are DONE + approved —
 > D1 [ADR-0046](../decisions/0046-unified-cco-access-model.md) (`(G,Pc,Po)` model), D2
 > [ADR-0047](../decisions/0047-config-access-enforcement.md) (privilege boundary), D3
 > [A1 matrix](../e2e-review/analysis/A1-command-scope-matrix.md) (per-command gating). This
 > handoff drives the **implementation phase**: turn the approved design into code, migrations,
 > changelog, and a rebuilt image.
 >
-> **Resume point for the next session = S3 / Phase VI (REBUILD)** (§5, "Phase VI — Migrations ·
-> changelog · DOC5 cutover · `cco build`"): migrations (expected additive-only — VERIFY; next ids
-> project 015 / global 017) + changelog #37 + the DOC5 shipped-doc cutover (repo `CLAUDE.md`
-> "Planned evolution" → shipped `(G,Pc,Po)`; `cli.md`; `project-yaml.md`; `docker-and-networking.md`;
-> config-editor/tutorial guides) + **`design-docker.md` mount inventory (add the `running/` :ro
-> mount) + CLI-surface matrix B4/DI1 ⏳→final** (both deferred from Phase V per the lifecycle rule)
-> + `cco build` on the Mac → **e2e v2**. Phase V is complete; **B-DF1** (in-container `cco project
-> show` repo-resolution) remains an open pre-merge dogfood bug (NOT hardening-v2 scope). Branch NOT
-> pushed — push both branches from the Mac.
+> **Resume point for the next session = `cco build` on the Mac → e2e v2 (acceptance).** Phase VI
+> is DONE in-session (2026-07-11): migrations **verified none needed** (access.cco map +
+> include_member_configs are additive, template already updated in `566d660`; edit-global redef +
+> preset flip are code changes; boundary is container plumbing; running registry is STATE — schema
+> stays project 014 / global 016); changelog **#37** added; **DOC5 cutover** done across repo
+> `CLAUDE.md` + `cli.md` + `project-yaml.md` + `docker-and-networking.md` + config-editor/tutorial
+> guides; `design-docker.md` **`running/` :ro mount** added; **CLI-surface matrix ⏳ flags all
+> cleared**. A design tension surfaced during the cutover and was resolved with maintainer sign-off:
+> **config-editor project mode resolves to `edit-global`, not `edit-project`** (edit-project
+> (none,rw,none) can no longer write `~/.cco` under the ADR-0046 ladder) — code fix `67ad13f`,
+> ADR-0044 §3 forward-annotated. Phase V is complete; **B-DF1** (in-container `cco project show`
+> repo-resolution) remains an open pre-merge dogfood bug (NOT hardening-v2 scope). Branch NOT
+> pushed — push both branches from the Mac. Pre-merge dogfood still owed on the Mac (§5 Phase VI):
+> B-DF1, config-editor `--project` host live-dogfood, Linux write-path check-in.
 >
 > **Runs across three dedicated-context sessions** (§4 session plan), in dependency order, each a
 > clean session that loads only its own subsystem context and lands a set of atomic commits. The
@@ -323,7 +329,16 @@ the config-editor cwd-vs-`--all` matrix.
 fallback, **no-stop exit → next-read reconciliation reaps the marker**), `test_operator_shim.sh`
 help-render cases for B1/B2, a `cco init` prompt-visibility case for B-DF2.
 
-### Phase VI — Migrations · changelog · DOC5 cutover · `cco build` — **REBUILD** · **[Session 3]**
+### Phase VI — Migrations · changelog · DOC5 cutover · `cco build` — **REBUILD** · **[Session 3]** — ✅ DONE in-session (2026-07-11); `cco build` + e2e v2 remain on the Mac
+
+> **Landed** on `feat/config-access/e2e-review` in 4 atomic commits: `6436665` (changelog #37),
+> `67ad13f` (config-editor project mode → `edit-global` fix + tests — the design tension resolved
+> with maintainer sign-off, Option A), `3b947ad` (DOC5 shipped-doc cutover, 6 docs + the changelog
+> granular-only example alignment), `9f179b4` (CLI-surface matrix ⏳ cleared + `design-docker.md`
+> `running/` mount inventory + ADR-0044 §3 forward-annotation). **Migrations: VERIFIED none needed**
+> (additive/code-only — schema stays project 014 / global 016). Suite **1197/7** (unchanged; 7 =
+> pre-existing §6.2 in-container artifacts). **Remaining (Mac): `cco build` → full suite green →
+> e2e v2 acceptance; push both branches.** The checklist below is the record.
 
 1. **Migrations**: expected **additive-only** (the model syntax + `include_member_configs` are
    code-defaulted; the boundary is container plumbing, not user-config; `edit-global` semantics are
