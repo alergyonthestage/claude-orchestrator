@@ -10,6 +10,12 @@
 > stays as-is; config-editor currently resolves project mode to `edit-global` (`67ad13f`). These
 > refinements *revise* that — but only after validation, in the dedicated sessions below. Nothing
 > here is a released model, so there is no back-compat burden.
+>
+> **Sequencing (maintainer decision 2026-07-11): these refinements land BEFORE e2e v2.** The
+> hardening-v2 image is already rebuilt (`cco build` done, this session restarted on it — the
+> boundary/preset fixes are live). e2e v2 acceptance is **deferred to run against the FINAL,
+> approved+implemented design** — i.e. after WS-A (and WS-B where it touches the model). So the
+> order is: **WS-A validate → implement → (WS-B) → then e2e v2** (+ push both branches from the Mac).
 
 **Related decisions**: [ADR-0036](../decisions/) (three-knob model `claude_access`/`cco_access`/
 `show_host_paths`), [ADR-0044](../decisions/0044-internal-builtin-presets-and-config-editor-scope.md)
@@ -172,6 +178,7 @@ flowchart LR
   V["Session A.0 — VALIDATE<br/>correctness + coherence of A.1/B.2<br/>vs ADR-0036/0044/0046"] --> A["Session A — config-editor access<br/>impl (ro,rw,none) default + G≥ro invariant<br/>+ INV-2 refinement + DOC5 follow-up"]
   A --> B["Session B — claude×cco coupling<br/>dedicated analysis → decision → impl"]
   B --> ADR["Extract validated decisions →<br/>new ADR + living design docs"]
+  ADR --> E2E["e2e v2 acceptance (final design)<br/>+ push both branches from the Mac"]
 ```
 
 1. **Validate** (first thing): walk A.1 + B.2 against the resolver, invariants, mount-gen, and
