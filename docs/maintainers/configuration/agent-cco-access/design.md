@@ -191,11 +191,14 @@ explicitly).
    caller-context + resolved access.
 
 Presets (ADR-0036 D6) restated on the new axis, **refined by
-[ADR-0044](decisions/0044-internal-builtin-presets-and-config-editor-scope.md)**:
+[ADR-0044](decisions/0044-internal-builtin-presets-and-config-editor-scope.md) +
+[ADR-0048](decisions/0048-config-editor-min-privilege-refinement.md)**:
 tutorial = `read-all` (read-only teacher — full context, no write risk), config-editor
-= **minimum-privilege by default** (cwd-project `edit-project`, or global-only
-`edit-global` outside a project; `--all`/`edit-all` is an explicit widener). See §8 for
-the two-regime principle and config-editor's mount scope.
+= **minimum-privilege by mode** (project mode `(ro,rw,none)` — edit the project, read the
+store; global mode `(rw,none,none)` — edit the store only, project-less; `--all`/`edit-all`
+is an explicit widener). config-editor's G is clamped `≥ ro` (an authoring tool always sees
+the store) and its `claude_access` follows G. See §8 for the two-regime principle and
+config-editor's mount scope.
 
 ### 4.4 CLI environment-awareness is now a surface-wide property
 
@@ -281,10 +284,13 @@ narrative lives in CLAUDE.md.
 ## 8. Two regimes + config-editor UX
 
 > **Refined by [ADR-0044](decisions/0044-internal-builtin-presets-and-config-editor-scope.md)
-> (2026-07-07).** The earlier §8 (decided 2026-07-02) made bare `config-editor` default to a
-> **broad `edit-all`** surface. That is superseded: config-editor is write-capable, so it
-> defaults to **minimum privilege**, and the broad every-project surface is an **explicit
-> `--all`**. This section reflects the current target.
+> (2026-07-07) + [ADR-0048](decisions/0048-config-editor-min-privilege-refinement.md)
+> (2026-07-11, WS-A).** The 2026-07-02 §8 made bare `config-editor` default to a broad
+> `edit-all` surface — superseded by ADR-0044 (min-privilege, `--all` is the explicit
+> widener). ADR-0048 refines it further: project mode edits the project but **reads** the
+> store (`(ro,rw,none)`, not `edit-global`), global mode is the honest project-less
+> `(rw,none,none)`, `G` is clamped `≥ ro`, and `claude_access` follows `G`. This section
+> reflects that current target.
 
 **Two regimes.** Sessions fall into two classes with different scope-default rules:
 
@@ -301,22 +307,29 @@ narrative lives in CLAUDE.md.
   `CCO_CONFIG_TARGETS`), so **started-project ≠ scoped-config-project** (unlike a standard
   session, where they are the same).
 
-**config-editor model (ADR-0044):**
+**config-editor model (ADR-0044 → ADR-0048):**
 
-| Command | Mounts (rw) | Resolved `cco_access` | Intent |
-|---|---|---|---|
-| `cco start config-editor` **in a project cwd** | `~/.cco` + **the cwd project's** `<repo>/.cco` | edit-project | Edit *this* project's config + personal store |
-| `cco start config-editor` **outside any project** | `~/.cco` **only** | edit-global | Edit the personal store only (no project in scope) |
-| `cco start config-editor --project <name>` (repeatable) | `~/.cco` + that project's `<repo>/.cco` **+ its repos** | edit-project (targeted) | Configure project X *aware of its code*; author repo-aware `project.yml` descriptions |
-| `cco start config-editor --repo <name>` | above + a specific repo | (as above) | Fine-grained: add one repo for reference |
-| `cco start config-editor --all` / `--cco-access edit-all` | `~/.cco` + **every** resolvable project's `<repo>/.cco` (no repos) | edit-all | Broad cross-project config editing (**explicit** opt-in) |
+| Command | `~/.cco` (store) | Project `.cco` | Resolved `(G,Pc,Po)` | `claude` | Intent |
+|---|---|---|---|---|---|
+| `cco start config-editor` **in a project cwd** | **ro** | the cwd project's, rw | `(ro,rw,none)` | repo | Edit *this* project's config; **read** the store to reference it |
+| `cco start config-editor` **outside any project** | **rw** | — (project-less) | `(rw,none,none)` | all | Edit the personal store only |
+| `cco start config-editor --project <name>` (repeatable) | **ro** | that project's, rw **+ its repos** | `(ro,rw,none)` | repo | Configure project X *aware of its code*; author repo-aware `project.yml` descriptions |
+| `cco start config-editor --project X --cco-access edit-global` | **rw** | that project's, rw | `(rw,rw,none)` | all | Edit project X **and** the store |
+| `cco start config-editor --repo <name>` | (as its mode) | (as its mode) + a specific repo | (as its mode) | (as its mode) | Fine-grained: add one repo for reference |
+| `cco start config-editor --all` / `--cco-access edit-all` | **rw** | **every** resolvable project's, rw (no repos) | `(rw,rw,rw)` | all | Broad cross-project config editing (**explicit** opt-in) |
 
-The cwd is a **convenience default** for *which project* to scope — always overridable by
-`--project`/`--all`. This reconciles the ADR-0042 "config-editor is not cwd-based" argument:
-cwd only picks the default target, it does not rigidly bind the session. The outside-a-project
-default is **global-only** (option b), and the every-project surface is reached **only** via
-the explicit `--all`/`edit-all` — cco widens access via explicit flags, never an interactive
-prompt.
+Writing `~/.cco` from project mode is a **distinct, explicit** intent
+(`--cco-access edit-global`) — the default reads the store but does not write it
+(least privilege). The cwd is a **convenience default** for *which project* to scope —
+always overridable by `--project`/`--all`; it picks the default target, it does not rigidly
+bind the session (reconciling the ADR-0042 "config-editor is not cwd-based" argument). The
+outside-a-project default is **global-only** and honestly project-less; the every-project
+surface is reached **only** via the explicit `--all`/`edit-all`. Two floors keep the tool
+usable and coherent: **`G ≥ ro`** (an authoring session always *sees* the store — an
+explicit narrower `--cco-access` is clamped up, with a notice) and **`claude_access`
+follows `G`** (global `.cco/.claude` authoring is writable only when the store is — no
+writable-rules/read-only-packs asymmetry). cco widens access via explicit flags, never an
+interactive prompt.
 
 **On "no repo content mounted" (P18 / ADR-0036 D6).** Unchanged: the default config-editor
 mounts no repos; mounting repos is an explicit opt-in via `--project`/`--repo`. ADR-0036 D6 +

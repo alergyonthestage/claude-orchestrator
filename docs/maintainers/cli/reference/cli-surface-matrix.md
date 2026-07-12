@@ -18,7 +18,7 @@
 > against the code after `cco build`, per the documentation-lifecycle rule).
 >
 > Related: [CLI environment-awareness](../design/design-cli-environment-awareness.md) (the
-> principle + the central gate §4) · [ADR-0042](../../configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md) · [ADR-0043](../decisions/0043-unified-cli-environment-access-scope.md) · [ADR-0044](../../configuration/agent-cco-access/decisions/0044-internal-builtin-presets-and-config-editor-scope.md) · [ADR-0046](../../configuration/agent-cco-access/decisions/0046-unified-cco-access-model.md) (`(G,Pc,Po)` model) · [ADR-0047](../../configuration/agent-cco-access/decisions/0047-config-access-enforcement.md) (enforcement)
+> principle + the central gate §4) · [ADR-0042](../../configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md) · [ADR-0043](../decisions/0043-unified-cli-environment-access-scope.md) · [ADR-0044](../../configuration/agent-cco-access/decisions/0044-internal-builtin-presets-and-config-editor-scope.md) · [ADR-0046](../../configuration/agent-cco-access/decisions/0046-unified-cco-access-model.md) (`(G,Pc,Po)` model) · [ADR-0047](../../configuration/agent-cco-access/decisions/0047-config-access-enforcement.md) (enforcement) · [ADR-0048](../../configuration/agent-cco-access/decisions/0048-config-editor-min-privilege-refinement.md) (config-editor min-priv by mode)
 
 ---
 
@@ -193,9 +193,15 @@ accepts the granular `{global,current,others}` map (ADR-0046 §5) for asymmetric
 |---|---|---|---|---|
 | standard project | repo | **read-project** | on | uniform minimum-privilege; flags widen/narrow |
 | **tutorial** | none | **read-all** | on | ADR-0044: read-only teacher → full context, no write risk (was read-project). `--cco-access` discouraged |
-| **config-editor** (cwd in a project) | all | **edit-global** | on | ADR-0044 §3 reconciled with the ADR-0046 ladder: edits `~/.cco` + the cwd project's `.cco` + its repos. `edit-project` (none,rw,none) can no longer write `~/.cco`, so project mode uses `edit-global` (rw,rw,none); the target(s) are the `current` axis. *started ≠ cwd project* |
-| **config-editor** (outside a project) | all | **edit-global** | on | `~/.cco` only; no project in scope |
+| **config-editor** (cwd in a project / `--project`) | **repo** | **`(ro,rw,none)`** | on | ADR-0048 (WS-A): min-priv by mode — edits the target project's `.cco` + its repos, **reads** the store (`~/.cco` ro). Writing the store is the explicit `--cco-access edit-global`. `claude` follows G→repo. Targets are the `current` axis. *started ≠ cwd project* |
+| **config-editor** (outside a project) | **all** | **`(rw,none,none)`** | on | edit `~/.cco` only; project-less (Pc honestly none, INV-2 conditional floor). `claude` follows G→all |
 | **config-editor** `--all` / `--cco-access edit-all` | all | **edit-all** | on | explicit broad every-project surface |
+
+> **config-editor floors (ADR-0048).** `G ≥ ro` (authoring tool always sees the store — an
+> explicit narrower `--cco-access` is clamped up to `read-global`, with a notice) and
+> `claude_access` follows `G` (`all` iff `G=rw`, else `repo` — closes the C2 asymmetry). The
+> `cco-config` (`~/.cco`) workspace mount readonly follows G from the same source as the
+> operator bucket.
 
 **`claude_access` (`none|repo|all`)** — orthogonal axis over the `.claude` authoring trees,
 independent of the cco verb surface above:
@@ -204,7 +210,7 @@ independent of the cco verb surface above:
 |---|---|
 | none | no `.claude` authoring |
 | repo | the invoking repo's `.claude` trees (standard-project default) |
-| all | all mounted `.claude` trees (config-editor default) |
+| all | all mounted `.claude` trees (config-editor when `G=rw`) |
 
 It gates *file-tree write access to `.claude`*, not `cco` verbs — a session can be
 `cco_access=read-project` yet `claude_access=repo`. Kept separate here to avoid implying a

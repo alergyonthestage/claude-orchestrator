@@ -229,20 +229,25 @@ coordinate carries a `url`), or **[s]kip** — it never launches with a silent e
 
 `cco start tutorial` launches the built-in interactive tutorial directly from
 `internal/tutorial/`; `cco start config-editor` launches the built-in config editor.
-It is **minimum-privilege by default** (ADR-0044): bare **outside a project** it mounts
-`~/.cco` **only** (`edit-global`); **inside a project** (a cwd hosting a configured repo, or
-`--project <name>`, **repeatable**) it adds **that project's** `<repo>/.cco` **and its code
-repos** (repo-aware config authoring, still `edit-global`); `--repo <name>` adds a single
-resolvable repo. The broad, every-project surface is the **explicit widener** `--all` (or
-`--cco-access edit-all`) → mounts every resolvable project's `<repo>/.cco` rw (no code repos,
-`edit-all`). They are not user projects — they always reflect the current framework version.
-These names are reserved.
+It is **minimum-privilege by mode** (ADR-0044 → ADR-0048): **inside a project** (a cwd
+hosting a configured repo, or `--project <name>`, **repeatable**) it mounts **that project's**
+`<repo>/.cco` **and its code repos** read-write while the store `~/.cco` is mounted
+**read-only** — you edit the project and *reference* the store (`(ro,rw,none)`); to also
+**write** the store, add `--cco-access edit-global`. Bare **outside a project** it mounts
+`~/.cco` **read-write only** (`(rw,none,none)` — edit the personal store, no project in
+scope). `--repo <name>` adds a single resolvable repo. The broad, every-project surface is
+the **explicit widener** `--all` (or `--cco-access edit-all`) → mounts every resolvable
+project's `<repo>/.cco` rw (no code repos, `edit-all`). They are not user projects — they
+always reflect the current framework version. These names are reserved.
 
 Built-ins are **presets** of the session capability model (below): tutorial runs read-only
-over your whole config (`--claude-access none --cco-access read-all`), config-editor at the
-**least edit level its scope needs** — `edit-global` (your `~/.cco` plus the cwd/`--project`
-project's config) by default, `edit-all` only with `--all`. You can narrow a built-in for one
-session with an explicit `--cco-access` (e.g. `cco start config-editor --cco-access read-global`).
+over your whole config (`--claude-access none --cco-access read-all`); config-editor takes the
+**least privilege its mode needs** — project mode reads the store and writes only the project,
+global mode writes only the store, `edit-all` only with `--all`. Its `~/.cco` is always at
+least *readable* (an authoring tool must see the store, so a narrower `--cco-access` is clamped
+up to `read-global`), and its `.claude` authoring follows the store's write level. You can
+narrow a built-in for one session with an explicit `--cco-access` (e.g.
+`cco start config-editor --cco-access read-global`).
 
 **Flow**:
 
@@ -318,8 +323,9 @@ boundary** (ADR-0047), not just output filtering — see the note below the matr
 2. **Per project** — an optional `access:` block in `<repo>/.cco/project.yml`
    (`access.claude` / `access.cco` / `access.show_host_paths`)
 3. **Machine baseline** — `~/.cco/access.yml` (`claude` / `cco` / `show_host_paths`)
-4. **Preset** — normal = `repo`/`read-project`; config-editor = `all`/`edit-global`
-   (`edit-all` with `--all`); tutorial = `none`/`read-all`
+4. **Preset** — normal = `repo`/`read-project`; config-editor = min-privilege **by mode**
+   (project `(ro,rw,none)`, global `(rw,none,none)`, `edit-all` with `--all`; `claude`
+   follows the store's write level); tutorial = `none`/`read-all`
 
 **The seven intents** (six presets + two granular-only):
 
