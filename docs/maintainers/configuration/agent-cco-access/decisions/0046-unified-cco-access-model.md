@@ -89,6 +89,12 @@ separate "scope" ordinal** — the referenced subset is a design constant, not a
   narrower requirement.
 - **INV-2 (project floor).** `permission > none ⇒ Pc ≥ ro` — the current project is always at
   least readable, its referenced global resources included (§1).
+  > **Forward annotation ([ADR-0048](0048-config-editor-min-privilege-refinement.md), 2026-07-11):**
+  > INV-2 is refined to a **conditional** floor — `Pc ≥ ro` holds only when the session has a
+  > **current project in scope**. A *project-less* session (config-editor global mode; future
+  > `cco new`) may honestly carry `Pc = none`. Implemented fail-closed via an explicit
+  > `has_current_project` signal (default `true`), so a normal `cco start <project>` keeps the
+  > strict floor and still rejects an explicit `current=none`. INV-3/INV-4 unchanged.
 - **INV-3 (see-self-first).** `Po ≠ none ⇒ Pc ≠ none`.
 - **INV-4 (no-more-than-self).** `Po ≤ Pc` — never broader access to *other* projects than to
   your own.

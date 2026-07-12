@@ -110,6 +110,16 @@ tutorial. `cco start config-editor` no longer defaults to `edit-all`:
 > (authoring packs/templates/global config). `edit-global` is therefore the least privilege that
 > keeps the tool functional; the meaningful min-privilege boundary (`Po = none`, don't touch *other*
 > projects) is already enforced.
+>
+> **Superseded by [ADR-0048](0048-config-editor-min-privilege-refinement.md) (WS-A, 2026-07-11).**
+> The "edit-global keeps the tool functional" reasoning above holds only if the *only* min-privilege
+> boundary worth drawing is `Po = none`. WS-A draws a finer one: project mode now defaults to
+> **`(ro,rw,none)`** — edit the target project, **read** (not write) the store — because "edit project
+> X" and "write `~/.cco`" are distinct intents. Writing the store from project mode is the explicit
+> `--cco-access edit-global`. The outside-a-project row is refined to the honest **`(rw,none,none)`**
+> (project-less; INV-2 conditional floor). The table's "in a project cwd / `--project`" rows therefore
+> resolve to **`(ro,rw,none)`**, not `edit-global`; `~/.cco` is mounted **read-only** in project mode.
+> `--all`/`edit-all` unchanged. This is the current truth — see ADR-0048 and `design.md` §8.
 
 - **Outside-a-project default is global-only (option b), not edit-all-with-prompt.** cco
   widens access via **explicit flags**, never an interactive "are you sure" prompt
