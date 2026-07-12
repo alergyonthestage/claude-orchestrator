@@ -2,16 +2,30 @@
 
 ## Overview
 
-This is the built-in **config-editor** session for claude-orchestrator. It gives
-you read-write access to the user's personal cco store **`~/.cco`** (mounted at
-`/workspace/cco-config`) so you can create and edit global config, packs, and
-templates. **By default it is broad**: `~/.cco` plus every resolvable project's
-committed `<repo>/.cco/` are mounted (no code repos); `--all` is a back-compat alias
-for that default. In **focused mode** (`cco start config-editor --project <name>`,
-**repeatable**, or started from inside a configured repo) the session narrows to that
-project's committed `<repo>/.cco/` (at `/workspace/<name>-config`) **and also mounts
-its code repos** for repo-aware config authoring; `--repo <name>` adds a single
-resolvable repo.
+This is the built-in **config-editor** session for claude-orchestrator. It lets you
+create and edit the user's cco configuration — the personal store **`~/.cco`**
+(mounted at `/workspace/cco-config`), packs, templates, and a project's committed
+`<repo>/.cco/`.
+
+**Your write scope is minimum-privilege by how this session was started — run
+`cco whoami` to see the resolved access, and check whether `/workspace/cco-config`
+is read-only.** Three modes:
+
+- **project mode** (started inside a configured repo, or `--project <name>`,
+  **repeatable**) → `(ro,rw,none)`: the target project's `<repo>/.cco/` (at
+  `/workspace/<name>-config`) is **read-write** and its code repos are mounted for
+  repo-aware authoring, while the personal store **`~/.cco` is READ-ONLY** — you
+  *reference* it (e.g. to point the project at a pack) but do **not** edit it here.
+  To also **edit the store**, the user must restart with
+  `cco start config-editor --project <name> --cco-access edit-global`.
+- **global mode** (bare, outside any project) → `(rw,none,none)`: the personal store
+  **`~/.cco` is read-write**; no project is in scope.
+- **all mode** (`--all` / `--cco-access edit-all`) → every resolvable project's
+  `<repo>/.cco/` rw + the store rw (no code repos). The explicit broad widener.
+
+`--repo <name>` adds a single resolvable repo for reference. If a write is refused
+or a path is read-only, it is because this session's mode does not grant it — tell
+the user the exact restart flag rather than trying to force the write.
 
 `cco` itself runs **in this session** behind a whitelist shim (read verbs + the
 edit-writes that go through the shared `cco` functions); host-only verbs are
@@ -52,7 +66,7 @@ Always consult it for accurate, up-to-date information.
 
 ## Layout
 
-### `/workspace/cco-config` — the personal store `~/.cco` (read-write)
+### `/workspace/cco-config` — the personal store `~/.cco` (read-write in global/all mode; **read-only in project mode**)
 
 ```
 ~/.cco/                         (mounted at /workspace/cco-config)
@@ -94,9 +108,12 @@ live in the machine-local index (`cco resolve` / `cco path`).
 ## Operational Guidelines
 
 ### Versioning the personal store
-- After significant edits to `~/.cco`, run `cco config save` (available in this
-  session) or remind the user to run it on the host. `cco config push`/`pull` are
-  host-only.
+- `cco config save` writes the store, so it needs a **store-writable** session
+  (global/all mode, or project mode started with `--cco-access edit-global`). In the
+  default **project mode the store is read-only**, so `cco config save` is refused —
+  edit the store in the right mode, or remind the user to run it on the host.
+- After significant store edits (in a store-writable session), run `cco config save`.
+  `cco config push`/`pull` are host-only.
 - To review pending changes: `git -C ~/.cco status` / `git -C ~/.cco diff`
   (a dedicated `cco config diff` may arrive later).
 - To sync across machines: `cco config push` / `cco config pull` (a private
@@ -109,8 +126,13 @@ the target repo (`cco join` to add a repo to an existing project; `cco init
 created in that repo and registered in the machine-local index.
 
 ### Creating packs
-Use the `/setup-pack` skill, or create under `~/.cco/packs/<name>/` directly
-(`/workspace/cco-config/packs/<name>/`), then `cco config save` (in-session or host).
+Packs live in the **store** (`~/.cco/packs/`), so authoring them needs a
+**store-writable** session (global/all mode, or project mode + `--cco-access
+edit-global`). In default project mode `/workspace/cco-config` is read-only — you can
+*reference* an existing pack from the project, but creating/editing a pack there is
+refused; ask the user to restart in the right mode. When writable: use the
+`/setup-pack` skill, or create under `/workspace/cco-config/packs/<name>/` directly,
+then `cco config save`.
 
 ### Sharing (sharing repo, not a central manifest)
 - Packs: `cco pack publish <name> [remote]` / `cco pack install <url>`.
@@ -134,13 +156,17 @@ Use the `/setup-pack` skill, or create under `~/.cco/packs/<name>/` directly
 The safe subset works here; the rest is host-only. Full detail in
 `config-safety.md`.
 
-**Available in-session** (operate on the mounted config):
+**Available in-session** (operate on the mounted config). Read verbs run in any mode;
+the **store-writing** verbs below (pack/template/llms authoring, `remote add|remove`,
+`config save` — all touch `~/.cco`) need a **store-writable** session (`G=rw`: global/
+all mode, or project mode + `--cco-access edit-global`) and are refused otherwise with
+a "needs edit-global" hint:
 - `cco list [--tag <t>]` / `cco tag add|rm` — discover + tag projects
-- `cco pack create|validate|update|remove|install|import <name>` — author packs
-- `cco template …` / `cco llms …` (create/validate/update/remove/install/import)
-- `cco remote add|remove <name>` / `cco list remotes` — manage remote *urls*
-- `cco config save [-m]` — commit `~/.cco` (git)
-- `cco … show`, `cco project coords`, `cco docs`, `cco path list`
+- `cco pack create|validate|update|remove|install|import <name>` — author packs *(store write)*
+- `cco template …` / `cco llms …` (create/validate/update/remove/install/import) *(store write)*
+- `cco remote add|remove <name>` / `cco list remotes` — manage remote *urls* *(add/remove = store write)*
+- `cco config save [-m]` — commit `~/.cco` (git) *(store write)*
+- `cco … show`, `cco project coords`, `cco docs`, `cco path list` — read, any mode
 
 **Host-only** — show the exact command for the user's host terminal (use the
 path map for the host path):

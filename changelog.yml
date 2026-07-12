@@ -648,3 +648,28 @@ entries:
       shown per scope with a dedicated STATUS column and `--sort status`, and an
       out-of-scope/absent session reads as `unknown` rather than a false `stopped`.
       Requires a rebuilt image (`cco build`).
+
+  - id: 38
+    date: "2026-07-11"
+    type: additive
+    title: "config-editor is now minimum-privilege by mode (reads the store in project mode)"
+    description: >
+      `cco start config-editor` no longer defaults every mode to writing the whole
+      personal store. It is now minimum-privilege BY MODE (ADR-0048): started inside
+      a project (or with `--project <name>`) it resolves to `(ro,rw,none)` — the
+      target project's `<repo>/.cco` is read-write while `~/.cco` is mounted
+      READ-ONLY, so you edit the project and merely *reference* the store. To also
+      write the store, add `--cco-access edit-global`. Started bare (outside any
+      project) it resolves to the honest `(rw,none,none)` — edit the store only, no
+      project in scope (the `current` axis is legitimately `none`; the INV-2 project
+      floor is now conditional on a current project being in scope). `--all` /
+      `--cco-access edit-all` is unchanged as the explicit broad every-project
+      widener. Two coherence floors keep the tool usable: config-editor's `global`
+      axis is clamped to at least `ro` (an authoring session must always SEE the
+      store — a narrower `--cco-access` is raised to `read-global` with a notice),
+      and its `.claude` authoring now follows the store's write level (global
+      `.cco/.claude` is writable only when the store is, removing a
+      writable-rules/read-only-packs asymmetry). Store-writing verbs (`cco config
+      save`, pack/template/llms authoring, `cco remote add|remove`) therefore need a
+      store-writable config-editor session and are refused with a "needs edit-global"
+      hint in the default project mode. Requires a rebuilt image (`cco build`).

@@ -8,9 +8,12 @@
   the wrapped `cco` — see below).
 
 ## Two Edit Mechanisms
-- **Hand-edit** the config files that live by convention as YAML/text: the
-  personal store `~/.cco` (mounted at `/workspace/cco-config`) and any target
-  project's `<repo>/.cco` (at `/workspace/<name>-config`).
+- **Hand-edit** the config files that live by convention as YAML/text: a target
+  project's `<repo>/.cco` (at `/workspace/<name>-config`) and — **only when the store
+  is writable in this session** — the personal store `~/.cco` (at
+  `/workspace/cco-config`). In the default **project mode the store is mounted
+  read-only** (you reference it, don't edit it); editing it needs global/all mode or
+  `--cco-access edit-global`. Run `cco whoami` if unsure.
 - **Mutate framework-internal state only via `cco`** — the tags registry, remotes
   registry, the index, and install `source` records are NEVER hand-edited (they
   live in hidden XDG dirs and are corruption-prone). Use `cco tag …`,
@@ -19,17 +22,21 @@
 ## Wrapped `cco` in this session (ADR-0036 D4)
 `cco` runs **inside this container** behind a whitelist shim (container-operator
 mode), operating on the real, bind-mounted config buckets. You can run:
-- **Read**: `cco list`, `cco … show`, `cco … validate`, `cco docs`,
+- **Read** (any mode): `cco list`, `cco … show`, `cco … validate`, `cco docs`,
   `cco path list`, `cco list remotes`, `cco project coords`.
-- **Write** (this session is `edit-all`): `cco tag add|remove`,
-  `cco remote add|remove`, `cco pack|template|llms create|update|remove|install|import`,
-  `cco config save`.
+- **Write**: gated by this session's mode.
+  - *Project writes* (`cco tag add|remove` on the current project) work in project
+    mode (`Pc=rw`).
+  - *Store writes* (`cco pack|template|llms create|update|remove|install|import`,
+    `cco remote add|remove`, `cco config save`) need **`G=rw`** — global/all mode, or
+    project mode started with `--cco-access edit-global`. Otherwise refused with a
+    "needs edit-global" hint (the store is mounted read-only).
 
-At `edit-all` every resource is in view. If this session is narrowed with
-`--cco-access` to a read level, the read verbs **scope their output** to that level
-(ADR-0043) and print a count-only "hidden by access scope" notice on stderr — a
-hidden resource is not a missing one (widen with `read-global`/`read-all` or run on
-the host).
+config-editor always **reads** the whole store (its `G` is floored to `≥ ro`), so the
+read verbs above are never scope-hidden for global-class resources. If a session is
+explicitly narrowed with `--cco-access` to a read level, read output is scoped
+(ADR-0043) with a count-only "hidden by access scope" notice on stderr — a hidden
+resource is not a missing one (widen or run on the host).
 
 **Host-only** verbs are refused in-session with a hint — show the user the exact
 command to run on their **host** terminal (use the path map for the host path):
@@ -53,8 +60,10 @@ network/credential ops (`cco config push`/`pull`, `cco remote set-token`/`remove
   config stays machine-agnostic (logical names + coordinates only).
 
 ## Versioning & Sharing Awareness
-- After significant edits to `~/.cco`, run `cco config save` (in-session) or
-  remind the user to run it on the host; **`cco config push`/`pull` are host-only**.
+- `cco config save` writes the store → needs a store-writable session (global/all, or
+  project mode + `--cco-access edit-global`); in default project mode it is refused.
+  After significant store edits (in the right mode), run `cco config save` in-session
+  or remind the user to run it on the host; **`cco config push`/`pull` are host-only**.
 - To review pending changes: `git -C /workspace/cco-config status` / `diff`.
 - For sharing/publishing, reference the **sharing repo** flow
   (`cco pack publish` / `cco pack install`) — there is no `manifest.yml`.

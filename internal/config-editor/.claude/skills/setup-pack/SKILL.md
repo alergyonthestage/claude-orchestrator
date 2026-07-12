@@ -47,8 +47,13 @@ Present the proposed structure and get approval.
 
 ## Step 3: Create Pack
 
-After user approves (packs live in the personal store `~/.cco/packs/`, mounted
-here at `/workspace/cco-config/packs/`):
+Packs live in the personal **store** (`~/.cco/packs/`, mounted here at
+`/workspace/cco-config/packs/`), so creating one needs a **store-writable** session
+(`G=rw`: global/all mode, or project mode + `--cco-access edit-global`). In the
+default **project mode the store is read-only** — if `/workspace/cco-config` is not
+writable, stop and ask the user to restart config-editor in a store-writable mode.
+
+After user approves (and the store is writable):
 1. Create directory: `/workspace/cco-config/packs/<name>/`
 2. Create subdirectories: `knowledge/`, `rules/`, `agents/`, `skills/`
 3. Write `pack.yml` with the agreed structure and file descriptions
