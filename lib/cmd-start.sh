@@ -418,6 +418,24 @@ _emit_secret_overlays() {
                 ! -name '*.example' 2>/dev/null | sort)
 }
 
+# ── Functional-write floor: settings.local.json overlay (ADR-0049 §5) ──
+# Claude Code writes "Always allow" / local runtime state (autoMode, model) to a
+# .claude/settings.local.json; when the parent .claude tree is mounted :ro (Cp/Cr
+# read-only), that write would hit a read-only filesystem. Keep JUST that file
+# writable via a rw CHILD overlay bound from a machine-local STATE source (Docker
+# applies the deeper child mount after the :ro parent, so the child's rw wins).
+# The source is seeded `{}` when absent (skipped on dry-run — the dumped compose is
+# never executed). settings.local.json is gitignored/local by nature, so nothing
+# leaks into the repo. Args: <state_source> <container_target> <dry_run:true|false>.
+_emit_local_settings_overlay() {
+    local src="$1" tgt="$2" dry="$3"
+    if [[ "$dry" != "true" ]]; then
+        mkdir -p "$(dirname "$src")" 2>/dev/null || true
+        [[ -f "$src" ]] || printf '{}\n' > "$src" 2>/dev/null || true
+    fi
+    _compose_vol "$src" "$tgt"
+}
+
 # ── cmd_start() helper functions ─────────────────────────────────────
 # These functions are called from within cmd_start() and share its local
 # variable scope. They must NOT redeclare variables — they read/write
@@ -1234,22 +1252,22 @@ YAML
         echo "    volumes:"
 
         # ── Axis-B (.claude authoring) + Axis-A (.cco wiring) mount modes ──
-        # Driven by the resolved capability knobs (ADR-0036 D2, generalizing
-        # ADR-0027 D3's edit-protection). claude_access governs the .claude trees
-        # (B1 <repo>/.claude cross-cutting, B2 project /workspace/.claude, B3 global
-        # ~/.cco/.claude); cco_access governs the <repo>/.cco structural overlay
-        # (A1). The host IDE is unaffected (container-only).
+        # Driven by the resolved capability knobs. claude_access is now the per-tree
+        # triple (Cr,Cp,Cg,Co) (ADR-0049) — each axis drives ONE mount decision, no
+        # coarse enum in between (the label is display-only). cco_access governs the
+        # <repo>/.cco structural overlay (A1). The host IDE is unaffected.
         #
-        # Axis B (claude_access): none = all .claude ro (B1 overlaid ro, B2 ro,
-        # B3 authoring ro); repo (default) = B1+B2 rw, B3 authoring ro; all =
-        # B1+B2 rw + B3 authoring rw. settings.json is ALWAYS rw (Claude Code writes
-        # runtime prefs like /effort — a functional need, not authoring).
-        local _b2_mode="" _b3_auth_mode="ro" _b1_ro=""
-        case "$claude_access" in
-            none) _b2_mode="ro"; _b1_ro=":ro" ;;
-            all)  _b3_auth_mode="" ;;
-            repo) : ;;   # defaults: B2 rw, B3 authoring ro, B1 rw (no overlay)
-        esac
+        #   Cp → B2 project /workspace/.claude      : ro ⇒ mounted :ro
+        #   Cg → B3 global  ~/.cco/.claude authoring : ro ⇒ CLAUDE.md/rules/… :ro
+        #   Cr → B1 repo-native <repo>/.claude       : ro ⇒ :ro overlay on the repo
+        # settings.json is ALWAYS rw (Claude Code writes runtime prefs like /effort —
+        # a functional need, not authoring). The functional-write floor also keeps
+        # settings.local.json writable via a rw child overlay when B2/B1 is :ro
+        # (ADR-0049 §5) — emitted next to each tree below.
+        local _b2_mode="" _b3_auth_mode="" _b1_ro=""
+        [[ "$claude_cp" == "ro" ]] && _b2_mode="ro"
+        [[ "$claude_cg" == "ro" ]] && _b3_auth_mode="ro"
+        [[ "$claude_cr" == "ro" ]] && _b1_ro=":ro"
         # Axis A (write_scope): the committed <repo>/.cco structural config
         # (project.yml, secrets.env, .cco metadata) is overlaid READ-ONLY unless the
         # session's write_scope grants the project tree (edit-project / edit-all).
@@ -1277,20 +1295,26 @@ YAML
         _compose_vol "${claude_install}/share" "/home/claude/.local/share/claude"
 
         # Global config B3 (~/.cco/.claude). settings.json is always rw (runtime
-        # prefs); the authoring tree (CLAUDE.md/rules/agents/skills) is rw only under
-        # claude_access=all, ro otherwise (_b3_auth_mode, ADR-0036 D2).
-        echo "      # Global config B3 (settings.json always rw; authoring tree mode from claude_access)"
+        # prefs); the authoring tree (CLAUDE.md/rules/agents/skills) is rw only when
+        # Cg=rw, ro otherwise (_b3_auth_mode, ADR-0049 §2).
+        echo "      # Global config B3 (settings.json always rw; authoring tree mode from claude Cg)"
         _compose_vol "${global_claude}/settings.json" "/home/claude/.claude/settings.json"
         _compose_vol "${global_claude}/CLAUDE.md" "/home/claude/.claude/CLAUDE.md" "${_b3_auth_mode}"
         _compose_vol "${global_claude}/rules" "/home/claude/.claude/rules" "${_b3_auth_mode}"
         _compose_vol "${global_claude}/agents" "/home/claude/.claude/agents" "${_b3_auth_mode}"
         _compose_vol "${global_claude}/skills" "/home/claude/.claude/skills" "${_b3_auth_mode}"
-        # Project config B2 (/workspace/.claude). Mode from claude_access
-        # (_b2_mode: rw under repo/all for /init authoring per P17, ro under none);
-        # the structural framework config (project.yml/secrets/.cco metadata) is
-        # protected separately by the <repo>/.cco overlay below (Axis A, cco_access).
-        echo "      # Project config B2 (/workspace/.claude — mode from claude_access; .cco metadata overlay below per cco_access)"
+        # Project config B2 (/workspace/.claude). Mode from claude Cp (_b2_mode: rw
+        # when Cp=rw, ro otherwise — ADR-0049 reverses P17, so a normal read-project
+        # session is ro). The structural framework config (project.yml/secrets/.cco
+        # metadata) is protected separately by the <repo>/.cco overlay below (Axis A).
+        echo "      # Project config B2 (/workspace/.claude — mode from claude Cp; .cco metadata overlay below per cco_access)"
         _compose_vol "${claude_src}" "/workspace/.claude" "${_b2_mode}"
+        # Functional-write floor (ADR-0049 §5): when B2 is :ro, keep settings.local.json
+        # writable via a rw child overlay from per-project STATE.
+        if [[ "$_b2_mode" == "ro" ]]; then
+            _emit_local_settings_overlay "${session_state_dir}/local-settings/workspace.json" \
+                "/workspace/.claude/settings.local.json" "$dry_run"
+        fi
         _compose_vol "${project_dir}/project.yml" "/workspace/project.yml" "ro"
         # Claude state: session transcripts (machine-local STATE; enables /resume across rebuilds)
         echo "      # Claude state: session transcripts (machine-local STATE; /resume across rebuilds)"
@@ -1435,15 +1459,21 @@ YAML
             _compose_vol "${repo_path}" "/workspace/${repo_name}"
         done < <(_effective_repo_mounts "$project_yml")
 
-        # Axis-B1 lockdown (claude_access=none): overlay each repo's native
-        # <repo>/.claude :ro on top of the rw repo mount, so cross-cutting authoring
-        # config is read-only too (advanced security — ADR-0036 D2). No overlay under
-        # repo/all, where B1 stays rw as part of the repo mount.
+        # Axis-B1 lockdown (Cr=ro — now the DEFAULT, ADR-0049 §2): overlay each repo's
+        # native <repo>/.claude :ro on top of the rw repo mount, so the repo's own
+        # authoring config is read-only. No overlay when Cr=rw (explicit repo/all),
+        # where B1 stays rw as part of the repo mount. The functional-write floor
+        # (ADR-0049 §5) keeps settings.local.json writable via a rw child overlay from
+        # per-project STATE, so a session that authors inside a repo can still persist
+        # local runtime state under the :ro tree.
         if [[ -n "$_b1_ro" ]]; then
             while IFS=$'\t' read -r repo_name repo_path; do
                 [[ -z "$repo_name" ]] && continue
-                [[ -d "$repo_path/.claude" ]] && \
+                if [[ -d "$repo_path/.claude" ]]; then
                     _compose_vol "${repo_path}/.claude" "/workspace/${repo_name}/.claude" "ro"
+                    _emit_local_settings_overlay "${session_state_dir}/local-settings/repo-${repo_name}.json" \
+                        "/workspace/${repo_name}/.claude/settings.local.json" "$dry_run"
+                fi
             done < <(_effective_repo_mounts "$project_yml")
         fi
 

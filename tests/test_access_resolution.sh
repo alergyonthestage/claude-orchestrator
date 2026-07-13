@@ -635,6 +635,40 @@ test_access_mount_claude_none_locks_b2_and_b1() {
     echo "$c" | grep -qE 'dummy-repo/\.claude:/workspace/dummy-repo/\.claude:ro"' || fail "B1 native .claude should be :ro overlaid under none"
 }
 
+# Functional-write floor (ADR-0049 §5): when B2 is :ro (default now), a rw child
+# overlay keeps /workspace/.claude/settings.local.json writable from per-project STATE.
+test_access_mount_settings_local_overlay_b2() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    run_cco start "test-proj" --dry-run --dump   # default → B2 :ro
+    local c; c=$(_access_compose)
+    # The overlay line ends at settings.local.json with NO :ro (rw child).
+    echo "$c" | grep -qE 'local-settings/workspace\.json:/workspace/\.claude/settings\.local\.json"' \
+        || fail "settings.local.json rw overlay expected under B2 :ro"
+    # Under --claude-access repo (B2 rw) the overlay is absent (parent is writable).
+    run_cco start "test-proj" --claude-access repo --dry-run --dump
+    c=$(_access_compose)
+    if echo "$c" | grep -q 'settings\.local\.json'; then
+        fail "settings.local.json overlay must be absent when B2 is rw"
+    fi
+}
+
+# The B1 :ro overlay (Cr=ro default) also carries a settings.local.json rw child
+# for each repo that has a native .claude tree.
+test_access_mount_settings_local_overlay_b1() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    mkdir -p "$CCO_DUMMY_REPO/.claude"
+    run_cco start "test-proj" --dry-run --dump   # Cr=ro default → B1 :ro overlay
+    local c; c=$(_access_compose)
+    echo "$c" | grep -qE 'local-settings/repo-dummy-repo\.json:/workspace/dummy-repo/\.claude/settings\.local\.json"' \
+        || fail "B1 settings.local.json rw overlay expected for a repo with a native .claude"
+}
+
 test_access_mount_claude_all_unlocks_b3() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
@@ -875,21 +909,25 @@ test_operator_secret_masking_global_store() {
         || fail "~/.cco/secrets.env should be masked on the A2 mount"
 }
 
-# B3 axis stays separate: edit-global with claude_access!=all re-overlays
-# ~/.cco/.claude :ro under the A2 path (global authoring is not unlocked by A2).
+# B3 axis stays separate from A2: the ~/.cco/.claude authoring tree follows claude
+# Cg, not the cco store's rw. Under edit-global (rw,rw,none) claude DERIVES Cg=rw
+# (concordant, ADR-0049 §2), so B3 is rw and no guard overlay appears. Tightening
+# claude to global=ro (discordant-safe) re-overlays ~/.cco/.claude :ro even though
+# the store (A2) is rw — the two axes stay independent.
 test_operator_b3_guard_ro_under_edit_global() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    # edit-global alone → claude Cg=rw → B3 rw, no guard overlay.
     run_cco start "test-proj" --cco-access edit-global --dry-run --dump
     local c; c=$(_access_compose)
-    echo "$c" | grep -qE ':/home/claude/\.cco/\.claude:ro"' \
-        || fail "~/.cco/.claude should be re-overlaid :ro under edit-global (B3 governed by claude_access)"
-    # Under claude_access=all the guard overlay is absent (B3 is rw).
-    run_cco start "test-proj" --cco-access edit-global --claude-access all --dry-run --dump
-    c=$(_access_compose)
     if echo "$c" | grep -qE ':/home/claude/\.cco/\.claude:ro"'; then
-        fail "B3 guard overlay should be absent under claude-access all"
+        fail "B3 should be rw under edit-global (claude Cg derives rw) — no guard overlay"
     fi
+    # Tighten claude global authoring to ro while the store stays rw → guard fires.
+    run_cco start "test-proj" --cco-access edit-global --claude-access global=ro --dry-run --dump
+    c=$(_access_compose)
+    echo "$c" | grep -qE ':/home/claude/\.cco/\.claude:ro"' \
+        || fail "~/.cco/.claude should be re-overlaid :ro when claude Cg=ro but the store is rw"
 }
