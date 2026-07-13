@@ -97,6 +97,24 @@ _cco_preset_triple() {
     esac
 }
 
+# Reverse of _cco_preset_triple: a resolved "G Pc Po" triple → its preset NAME, or
+# empty when the triple is asymmetric (granular-only, e.g. config-editor project
+# mode `ro rw none`). Lets whoami name a session by its preset when one applies and
+# fall back to "custom" otherwise, so the level line never byte-duplicates the
+# granular form (R2). Whitespace-tolerant on the input.
+_cco_triple_preset() {
+    case "$(printf '%s' "$*" | tr -s ' ')" in
+        'none none none') printf 'none' ;;
+        'none ro none')   printf 'read-project' ;;
+        'ro ro none')     printf 'read-global' ;;
+        'ro ro ro')       printf 'read-all' ;;
+        'none rw none')   printf 'edit-project' ;;
+        'rw rw none')     printf 'edit-global' ;;
+        'rw rw rw')       printf 'edit-all' ;;
+        *)                return 1 ;;
+    esac
+}
+
 # _cco_parse_granular <csv> — parse the granular form "global=ro,current=rw,
 # others=none" (order-free, partial, spaces tolerated) into "G|Pc|Po" with an
 # EMPTY field for each unspecified axis (the caller auto-promotes). Pipe-delimited

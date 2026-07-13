@@ -291,12 +291,49 @@ test_operator_whoami_reports_state() {
     [[ $OP_RC -eq 0 ]] || fail "'cco whoami' must succeed at read-all, got rc=$OP_RC: $OP_OUT"
     [[ "$OP_OUT" != *"host-only"* && "$OP_OUT" != *"not available in a container session"* ]] \
         || fail "'cco whoami' must never be host-only-refused, got: $OP_OUT"
-    [[ "$OP_OUT" == *"read scope: all"* ]] || fail "whoami should report read scope all, got: $OP_OUT"
+    # R2: read-all is a preset, so `level` names it (not the granular form) and the
+    # `triple` line carries the read/write scope in the deduplicated `read:`/`write:` form.
+    [[ "$OP_OUT" == *"level:"*"read-all"* ]] || fail "whoami should name preset read-all, got: $OP_OUT"
+    [[ "$OP_OUT" == *"read: all"* ]] || fail "whoami should report read: all, got: $OP_OUT"
+    # R1: identity-first Session block replaces the old single 'project' line.
+    [[ "$OP_OUT" == *"Session"* && "$OP_OUT" == *"identity:"* ]] \
+        || fail "whoami should render the identity-first Session block, got: $OP_OUT"
+    # R2 dedup: the old redundant 'cco_access'/'granular form'/'access triple' labels are gone.
+    [[ "$OP_OUT" != *"granular form:"* && "$OP_OUT" != *"access triple:"* ]] \
+        || fail "whoami must not carry the pre-R2 duplicated access rows, got: $OP_OUT"
     # At edit-project the project tree is rw, the global store ro (symmetric model).
     _op_cco edit-project whoami
-    [[ "$OP_OUT" == *"write scope: project"* ]] || fail "whoami edit-project write scope, got: $OP_OUT"
+    [[ "$OP_OUT" == *"write: project"* ]] || fail "whoami edit-project write scope, got: $OP_OUT"
+    [[ "$OP_OUT" == *"level:"*"edit-project"* ]] || fail "whoami should name preset edit-project, got: $OP_OUT"
     [[ "$OP_OUT" == *"project config (<repo>/.cco):        rw"* ]] \
         || fail "whoami edit-project must show project config rw, got: $OP_OUT"
+    return 0
+}
+
+# R2: a config-editor-style ASYMMETRIC triple has no preset → `level: custom (…)`
+# carries the granular form, and no row byte-duplicates another. cco start resolves
+# the triple and exports CCO_ACCESS_TRIPLE (a granular CCO_CCO_ACCESS scalar is not
+# parsed by _env_triple), so simulate the resolved config-editor project triple here.
+test_operator_whoami_custom_triple_names_custom() {
+    local tmp; tmp=$(mktemp -d); mkdir -p "$tmp/home"
+    OP_OUT=$(
+        export CCO_IN_CONTAINER=1 CCO_CONTAINER_OPERATOR=1 CCO_STORE_ELEVATED=1 \
+               CCO_CCO_ACCESS="global=ro,current=rw,others=none" CCO_ACCESS_TRIPLE="ro,rw,none" \
+               PROJECT_NAME=config-editor CCO_CONFIG_TARGETS="alpha" CCO_CLAUDE_ACCESS=repo \
+               CCO_DATA_HOME="$tmp/data" CCO_STATE_HOME="$tmp/state" CCO_CACHE_HOME="$tmp/cache" \
+               HOME="$tmp/home"
+        bash "$REPO_ROOT/bin/cco" whoami 2>&1
+    ); OP_RC=$?; rm -rf "$tmp"
+    [[ $OP_RC -eq 0 ]] || fail "'cco whoami' custom triple must succeed, got rc=$OP_RC: $OP_OUT"
+    [[ "$OP_OUT" == *"level:"*"custom (global=ro,current=rw,others=none)"* ]] \
+        || fail "whoami asymmetric triple should read 'custom (…)', got: $OP_OUT"
+    [[ "$OP_OUT" == *"triple:"*"G=ro Pc=rw Po=none"* ]] \
+        || fail "whoami should still render the explicit triple, got: $OP_OUT"
+    # config-editor: identity is the envelope, editing target names what it edits.
+    [[ "$OP_OUT" == *"identity:"*"config-editor"* ]] \
+        || fail "whoami config-editor identity should be config-editor, got: $OP_OUT"
+    [[ "$OP_OUT" == *"editing target:"*"alpha"* ]] \
+        || fail "whoami config-editor should name the editing target, got: $OP_OUT"
     return 0
 }
 
@@ -535,10 +572,12 @@ test_operator_path_list_masks_host_paths_when_off() {
 
 test_operator_whoami_renders_triple_and_boundary() {
     _op_cco read-global whoami
-    [[ "$OP_OUT" == *"access triple:"* && "$OP_OUT" == *"G=ro Pc=ro Po=none"* ]] \
+    # R2: the explicit triple lives on the `triple:` line; read-global is a preset so
+    # `level` names it (the granular is shown only for a preset-less custom triple).
+    [[ "$OP_OUT" == *"triple:"* && "$OP_OUT" == *"G=ro Pc=ro Po=none"* ]] \
         || fail "whoami should render the explicit (G,Pc,Po) triple, got: $OP_OUT"
-    [[ "$OP_OUT" == *"global=ro,current=ro,others=none"* ]] \
-        || fail "whoami should echo the granular {global,current,others} form, got: $OP_OUT"
+    [[ "$OP_OUT" == *"level:"*"read-global"* ]] \
+        || fail "whoami should name the read-global preset, got: $OP_OUT"
     [[ "$OP_OUT" == *"ADR-0047 privilege boundary"* ]] \
         || fail "whoami should state enforcement is the privilege boundary, got: $OP_OUT"
     return 0

@@ -13,7 +13,24 @@
 # This ships the CAPABILITY under a working name (fix design 02 §F4, ratified).
 #
 # Provides: cmd_whoami()
-# Dependencies: colors.sh, paths.sh (_cco_container_operator), access-scope.sh
+# Dependencies: colors.sh, paths.sh (_cco_container_operator), access-scope.sh,
+#   yaml.sh (yml_get_repo_coords, for the mounted-repos line)
+
+# Mounted code repos for the R1 identity block: the repo names in the session's
+# /workspace/project.yml that are actually present as directories under /workspace
+# (the mount happened). Reads only the mounted manifest + a dir test — no index or
+# store probe (those sit behind the ADR-0047 boundary). Empty when config-only
+# (e.g. config-editor global mode, or a repo-free built-in). Comma-joined.
+_whoami_mounted_repos() {
+    local pyml="/workspace/project.yml" name out=""
+    [[ -f "$pyml" ]] || return 0
+    while IFS=$'\t' read -r name _; do
+        [[ -z "$name" ]] && continue
+        [[ -d "/workspace/$name" ]] || continue
+        out+="${out:+, }$name"
+    done < <(yml_get_repo_coords "$pyml" 2>/dev/null)
+    printf '%s' "$out"
+}
 
 cmd_whoami() {
     case "${1:-}" in
@@ -37,11 +54,9 @@ EOF
 
     # The resolved (G,Pc,Po) triple is the single source; read/write scopes are the
     # ordinal display over it, and each config tree's rw/ro/— is its axis value
-    # (ADR-0046 §7). whoami+ (A1 §4.5): render the triple explicitly, echo the
-    # granular {global,current,others} form the agent can pass back to
-    # --cco-access, and state that enforcement is the ADR-0047 privilege boundary.
-    local level rscope wscope _wg _wpc _wpo
-    level=$(_env_access)
+    # (ADR-0046 §7). whoami+ (A1 §4.5): render the triple explicitly and state that
+    # enforcement is the ADR-0047 privilege boundary.
+    local rscope wscope _wg _wpc _wpo
     rscope=$(_env_read_scope)
     wscope=$(_env_write_scope)
     read -r _wg _wpc _wpo <<< "$(_env_triple)"
@@ -49,15 +64,37 @@ EOF
     # rw/ro/— for an axis value (rw>ro>none).
     _wm() { case "$1" in rw) printf 'rw' ;; ro) printf 'ro' ;; *) printf '—' ;; esac; }
 
-    printf '%bSession access%b\n' "$BOLD" "$NC"
-    printf '  cco_access:       %s\n' "$level"
-    printf '  access triple:    G=%s Pc=%s Po=%s  (read scope: %s, write scope: %s)\n' \
+    # ── Session identity (R1) ────────────────────────────────────────────
+    # Identity first (the envelope), THEN access. In a config-editor session the
+    # PROJECT_NAME is the synthetic 'config-editor' (the envelope) while the projects
+    # it EDITS are CCO_CONFIG_TARGETS — two distinct concepts the old single 'project'
+    # line conflated. Whether code repos are mounted (repo-aware authoring / a normal
+    # session) vs config-only is surfaced too (answers "solo la .cco o anche il repo?").
+    printf '%bSession%b\n' "$BOLD" "$NC"
+    printf '  identity:         %s\n' "${PROJECT_NAME:-(none)}"
+    [[ -n "${CCO_CONFIG_TARGETS:-}" ]] && \
+        printf '  editing target:   %s\n' "${CCO_CONFIG_TARGETS//,/, }"
+    local _repos; _repos=$(_whoami_mounted_repos)
+    printf '  code repos:       %s\n' "${_repos:-— (config only)}"
+    echo ""
+
+    # ── Access (R2) ──────────────────────────────────────────────────────
+    # One canonical form per line, no byte-duplication: `level` names the PRESET when
+    # the resolved triple is symmetric, else `custom (…)` carrying the granular form
+    # (the copy-pasteable --cco-access identity); `triple` is the explicit, readable
+    # G/Pc/Po + read/write scope. Presets pass back by name, custom by its granular.
+    local level_display preset
+    if preset=$(_cco_triple_preset "$_wg $_wpc $_wpo"); then
+        level_display="$preset"
+    else
+        level_display="custom (global=${_wg},current=${_wpc},others=${_wpo})"
+    fi
+    printf '%bAccess%b\n' "$BOLD" "$NC"
+    printf '  level:            %s\n' "$level_display"
+    printf '  triple:           G=%s Pc=%s Po=%s  (read: %s, write: %s)\n' \
         "$_wg" "$_wpc" "$_wpo" "$rscope" "$wscope"
-    printf '  granular form:    global=%s,current=%s,others=%s\n' "$_wg" "$_wpc" "$_wpo"
     printf '  claude_access:    %s\n' "${CCO_CLAUDE_ACCESS:-repo}"
     printf '  show_host_paths:  %s\n' "${CCO_SHOW_HOST_PATHS:-true}"
-    printf '  project:          %s\n' "${PROJECT_NAME:-(none)}"
-    [[ -n "${CCO_CONFIG_TARGETS:-}" ]] && printf '  config targets:   %s\n' "${CCO_CONFIG_TARGETS}"
     echo ""
     printf '%bConfig trees%b\n' "$BOLD" "$NC"
     printf '  project config (<repo>/.cco):        %s\n' "$(_wm "$_wpc")"
