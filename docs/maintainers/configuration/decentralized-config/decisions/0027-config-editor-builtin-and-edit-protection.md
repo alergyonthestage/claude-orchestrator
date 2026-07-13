@@ -4,6 +4,13 @@
 
 > **Forward note (ADR-0028, 2026-06-27):** the global config home is now **`~/.cco/.claude/`** —
 > read every `~/.cco/global/.claude/` below (incl. the `:ro` edit-protection mount) as `~/.cco/.claude/`.
+> **Forward note ([ADR-0049](../../agent-cco-access/decisions/0049-claude-access-concordant-model.md),
+> 2026-07-13, WS-B):** **P17 is reversed for the project `.claude` tree.** Under the concordant
+> `claude_access` model, `<repo>/.cco/claude` (B2) now **defaults read-only** (it follows `Pc`),
+> so a normal session no longer authors it by default — `/init`/`init-workspace` need an explicit
+> `--claude-access repo` or a cco edit level. The "co-writable by design" default below is
+> superseded; the `settings.local.json` rw child overlay dropped here (line ~131) is **re-introduced**
+> as the functional-write floor (ADR-0049 §5).
 **Deciders**: maintainer (set the direction + the refinements), implementer (analysis + recommendations)
 **Context docs**: `../design.md` §7 (command surface, Authoring row), §9 P3 (P3-4),
 `../resource-coherence-inventory.md` A.1/A.4, `../P3cd-handoff-config-editor-and-docs.md` §3

@@ -114,6 +114,14 @@ narrower override (e.g. `--cco-access edit-project` → `G=none`, or `read-proje
 
 ### 4. `claude_access` follows `G` for config-editor (closes C2)
 
+> **Forward annotation ([ADR-0049](0049-claude-access-concordant-model.md), 2026-07-13, WS-B):**
+> this config-editor-specific *"`claude_access` follows `G`"* is **generalised** into the
+> cco-derived Axis-B default for **every** session (`Cg = G`, `Cp = Pc`, `Co = Po`, `Cr = ro`).
+> config-editor's `claude` is then a **consequence** of the general derivation, not a bespoke
+> branch (project mode `(ro,rw,none)` → `Cp=rw, Cg=ro`; `edit-global` → `Cg=rw`; `edit-all` →
+> `Co=rw`). The dedicated branch is removed at implementation. WS-B (general coupling) is
+> settled by ADR-0049. This §4 remains the record of the config-editor-level closure.
+
 config-editor's `claude_access` is no longer unconditionally `all`. It **follows the
 resolved G**: `all` iff `G = rw`, else `repo`. So the global `.cco/.claude` authoring tree
 (B3) is writable **only** when the store itself is — global rules and global packs move
