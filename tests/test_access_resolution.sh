@@ -426,6 +426,34 @@ test_access_resolve_claude_map_bad_value() {
     [[ "$out" == *"claude_access"* ]] || fail "message should name claude_access, got: $out"
 }
 
+# P2 discordance warning (ADR-0049 §4): an explicit claude MORE permissive than the
+# cco-concordant default emits a note to stderr — allowed, never a refusal.
+test_access_claude_discordance_warns() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    local project_yml="$tmp/project.yml"; printf 'name: p\n' > "$project_yml"
+    # claude=all authoring while cco stays read-project (ro) → discordant on Cp/Cg.
+    local cli_claude_access="all" cli_cco_access="read-project" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
+    local claude_cr claude_cp claude_cg claude_co
+    local out; out=$( _start_resolve_access 2>&1 )
+    [[ "$out" == *"discordance"* || "$out" == *"more broadly"* ]] \
+        || fail "explicit claude wider than cco should warn, got: $out"
+}
+
+# A concordant (derived) claude NEVER warns.
+test_access_claude_concordant_no_warn() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    local project_yml="$tmp/project.yml"; printf 'name: p\n' > "$project_yml"
+    local cli_claude_access="" cli_cco_access="edit-all" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
+    local claude_cr claude_cp claude_cg claude_co
+    local out; out=$( _start_resolve_access 2>&1 )
+    [[ "$out" != *"discordance"* && "$out" != *"more broadly"* ]] \
+        || fail "a derived (concordant) claude must not warn, got: $out"
+}
+
 # A bad claude value (unknown key/out-of-lattice) dies naming claude_access.
 test_access_resolve_claude_bad_token() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT

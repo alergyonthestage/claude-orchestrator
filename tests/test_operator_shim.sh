@@ -424,6 +424,28 @@ test_operator_usage_host_flag_shows_all_flagged() {
 
 # B1: whoami is runnable under operator mode (always-available read verb) → it must
 # be listed in the filtered help, not omitted.
+# whoami renders the Axis-B (Cr,Cp,Cg,Co) claude triple + the Authoring trees
+# section (ADR-0049). Custom (non-preset) label passes through verbatim.
+test_operator_whoami_renders_claude_triple() {
+    local tmp; tmp=$(mktemp -d); mkdir -p "$tmp/home"
+    OP_OUT=$(
+        export CCO_IN_CONTAINER=1 CCO_CONTAINER_OPERATOR=1 CCO_STORE_ELEVATED=1 \
+               CCO_CCO_ACCESS="edit-global" CCO_ACCESS_TRIPLE="rw,rw,none" \
+               CCO_CLAUDE_ACCESS="repo=ro,current=rw,global=rw,others=ro" \
+               CCO_CLAUDE_TRIPLE="ro,rw,rw,ro" PROJECT_NAME=demo \
+               CCO_DATA_HOME="$tmp/data" CCO_STATE_HOME="$tmp/state" CCO_CACHE_HOME="$tmp/cache" \
+               HOME="$tmp/home"
+        bash "$REPO_ROOT/bin/cco" whoami 2>&1
+    ); OP_RC=$?; rm -rf "$tmp"
+    [[ $OP_RC -eq 0 ]] || fail "whoami must succeed, got rc=$OP_RC: $OP_OUT"
+    [[ "$OP_OUT" == *"claude triple:"*"Cr=ro Cp=rw Cg=rw Co=ro"* ]] \
+        || fail "whoami should render the Cr/Cp/Cg/Co claude triple, got: $OP_OUT"
+    [[ "$OP_OUT" == *"Authoring trees (.claude)"* ]] \
+        || fail "whoami should render the .claude authoring trees section, got: $OP_OUT"
+    [[ "$OP_OUT" == *"global ~/.cco/.claude (Cg):"*"rw"* ]] \
+        || fail "whoami should show global .claude (Cg) rw under edit-global, got: $OP_OUT"
+    return 0
+}
 test_operator_usage_lists_whoami() {
     _op_cco read-project help
     echo "$OP_OUT" | grep -qE '^  whoami ' \

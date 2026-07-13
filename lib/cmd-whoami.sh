@@ -89,19 +89,32 @@ EOF
     else
         level_display="custom (global=${_wg},current=${_wpc},others=${_wpo})"
     fi
+    # claude_access is the Axis-B triple (Cr,Cp,Cg,Co) — the .claude AUTHORING trees
+    # (ADR-0049); CCO_CLAUDE_ACCESS is its label, CCO_CLAUDE_TRIPLE the axes.
+    local _cr _cp _cg _co
+    IFS=, read -r _cr _cp _cg _co <<< "${CCO_CLAUDE_TRIPLE:-ro,ro,ro,ro}"
     printf '%bAccess%b\n' "$BOLD" "$NC"
     printf '  level:            %s\n' "$level_display"
     printf '  triple:           G=%s Pc=%s Po=%s  (read: %s, write: %s)\n' \
         "$_wg" "$_wpc" "$_wpo" "$rscope" "$wscope"
-    printf '  claude_access:    %s\n' "${CCO_CLAUDE_ACCESS:-repo}"
+    printf '  claude_access:    %s\n' "${CCO_CLAUDE_ACCESS:-none}"
+    printf '  claude triple:    Cr=%s Cp=%s Cg=%s Co=%s\n' "$_cr" "$_cp" "$_cg" "$_co"
     printf '  show_host_paths:  %s\n' "${CCO_SHOW_HOST_PATHS:-true}"
     echo ""
-    printf '%bConfig trees%b\n' "$BOLD" "$NC"
+    printf '%bConfig trees (.cco)%b\n' "$BOLD" "$NC"
     printf '  project config (<repo>/.cco):        %s\n' "$(_wm "$_wpc")"
     printf '  personal store (~/.cco) + registry:  %s\n' "$(_wm "$_wg")"
     printf '  llms cache:                          %s\n' "$(_wm "$_wg")"
     if [[ "$(_cco_axis_rank "$_wpo")" -ge 1 ]]; then
         printf "  other projects' config:              %s\n" "$(_wm "$_wpo")"
+    fi
+    echo ""
+    printf '%bAuthoring trees (.claude)%b\n' "$BOLD" "$NC"
+    printf '  repo-native <repo>/.claude (Cr):     %s\n' "$(_wm "$_cr")"
+    printf '  project <repo>/.cco/claude (Cp):     %s\n' "$(_wm "$_cp")"
+    printf '  global ~/.cco/.claude (Cg):          %s\n' "$(_wm "$_cg")"
+    if [[ "$(_cco_axis_rank "$_co")" -ge 1 ]] && [[ "$_co" == "rw" ]]; then
+        printf "  other projects' .claude (Co):        %s\n" "$(_wm "$_co")"
     fi
     echo ""
     # Enforcement note (ADR-0047): the internal store (STATE index, DATA

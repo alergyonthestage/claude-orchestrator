@@ -172,8 +172,16 @@ Options:
   --mount <s>[:<t>][:ro|:rw]  Mount reference material (repeatable; read-only by
                        default, :rw to make writable; target defaults to
                        /workspace/<basename>)
-  --claude-access <m>  .claude authoring access for this session:
-                       none | repo (default) | all
+  --claude-access <m>  .claude authoring access for this session. Either a preset
+                       scalar (none | repo | all) or a granular map over the four
+                       authoring trees (repo,current,global,others), each ro|rw
+                       (comma-separated, order-free, partial): e.g.
+                       current=rw,global=ro. UNSET → DERIVES from --cco-access
+                       (Cg=G, Cp=Pc, Co=Po, repo-native always read-only), so the
+                       default never authors .claude more broadly than your config
+                       access. An explicit value wider than cco is honored with a
+                       note. `settings.json`/`settings.local.json` stay writable
+                       regardless (ADR-0049)
   --cco-access <m>     .cco/framework config access for this session. Either a
                        preset scalar:
                        none | read-project (default) | read-global | read-all |
@@ -313,19 +321,28 @@ boundary** (ADR-0047), not just output filtering — see the note below the matr
 
 | Knob | Values (default **bold**) | Governs |
 |------|---------------------------|---------|
-| `claude_access` | none · **repo** · all | `.claude` authoring trees (repo / project / global). `settings.json` stays rw regardless. |
+| `claude_access` | preset none · repo · all — **or** a granular `(Cr,Cp,Cg,Co)` triple. **Default: DERIVED from `cco_access`** (never authored more broadly than config access) | `.claude` authoring trees — repo-native (Cr), project (Cp), global (Cg), other projects (Co). `settings.json`/`settings.local.json` stay rw regardless (functional-write floor). A normal session's `.claude` is **read-only by default**. |
 | `cco_access` | preset **read-project** (default) · read-global · read-all · edit-project · edit-global · edit-all · none — **or** a granular `(G,Pc,Po)` triple | `.cco` framework config + the whitelisted in-session `cco`. Any read level enables it and **scopes its read output** to that level (bare `read` = alias for `read-all`). |
 | `show_host_paths` | **true** · false | Whether the session gets the host↔container path map (for copy-pasteable host commands). |
+
+Both knobs share one grammar in every source: a **scalar preset** or a **granular map**
+(`{repo,current,global,others}` for `claude`, `{global,current,others}` for `cco`). For
+`claude`, omitted map axes derive from `cco`; the `none|repo|all` presets are fixed triples
+(`none`=all read-only, `repo`=`(rw,rw,ro,ro)`, `all`=all-rw). An explicit `claude` **more
+permissive** than the cco-concordant default is honored with a one-line note — never refused
+(ADR-0049).
 
 **Where to set them** (precedence, highest first):
 
 1. **CLI** — `--claude-access`, `--cco-access`, `--show-host-paths` / `--no-show-host-paths`
 2. **Per project** — an optional `access:` block in `<repo>/.cco/project.yml`
-   (`access.claude` / `access.cco` / `access.show_host_paths`)
-3. **Machine baseline** — `~/.cco/access.yml` (`claude` / `cco` / `show_host_paths`)
-4. **Preset** — normal = `repo`/`read-project`; config-editor = min-privilege **by mode**
-   (project `(ro,rw,none)`, global `(rw,none,none)`, `edit-all` with `--all`; `claude`
-   follows the store's write level); tutorial = `none`/`read-all`
+   (`access.claude` / `access.cco` / `access.show_host_paths`, each scalar **or** map)
+3. **Machine baseline** — `~/.cco/access.yml` (`claude` / `cco` / `show_host_paths`, each
+   scalar **or** map; scaffolded commented at `cco init`)
+4. **Default** — `cco` = `read-project`; `claude` = **derived from the resolved `cco`**
+   (concordant). config-editor = min-privilege **by mode** (project `(ro,rw,none)`, global
+   `(rw,none,none)`, `edit-all` with `--all`); its `claude` column is just the general
+   cco-derived default (no bespoke rule). tutorial = `none`/`read-all`
 
 **The seven intents** (six presets + two granular-only):
 

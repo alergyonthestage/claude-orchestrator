@@ -76,8 +76,17 @@ that reads/writes at ≥ its required scope. So each verb is stated as **"availa
 **Exit-code convention** (D8): `0` success or graceful degrade · `2` refused by policy
 (host-only, or needs a wider scope) · `1` error (unknown verb, parse/resolve failure).
 
-**`claude_access` (`none|repo|all`)** is an **orthogonal** axis: it governs the `.claude`
-authoring trees, **not** cco verbs. It does not appear in the verb rows below; see §5.
+**`claude_access` — the `(Cr,Cp,Cg,Co)` model** ([ADR-0049](../../configuration/agent-cco-access/decisions/0049-claude-access-concordant-model.md))
+is an **orthogonal** axis governing the `.claude` **authoring** trees (repo-native Cr,
+project Cp, global Cg, other-projects Co) on the `ro<rw` lattice — **not** cco verbs. It
+mirrors the cco `(G,Pc,Po)` triple; the `none|repo|all` enum is preset sugar. **Unset it
+DERIVES from `cco_access`** (Cg=G, Cp=Pc, Co=Po, Cr always `ro`), so the default authoring
+surface is never wider than config access — a normal session's `.claude` is **read-only by
+default** (reverses ADR-0027 P17). `access.claude` (CLI / project.yml / access.yml) accepts a
+scalar preset or a `{repo,current,global,others}` map, symmetric with `access.cco`. An
+explicit `claude` wider than the cco-concordant default is honored with a note (never
+refused). `settings.json` + a `settings.local.json` rw child overlay stay writable regardless
+(functional-write floor). It does not appear in the verb rows below; see §5.
 
 ---
 
@@ -196,32 +205,37 @@ CLI flag > `project.yml access:` > `~/.cco/access.yml` > preset. Each `cco_acces
 is a named ladder preset that resolves to a `(G,Pc,Po)` triple (§1); the same field also
 accepts the granular `{global,current,others}` map (ADR-0046 §5) for asymmetric intents.
 
-| Preset | claude_access | cco_access | show_host_paths | Notes |
+`claude_access` below is the resolved `(Cr,Cp,Cg,Co)` triple; when unset it **derives** from
+the `cco_access` triple (ADR-0049 §2), so the built-ins' claude columns are a *consequence* of
+their cco intent, not a bespoke rule.
+
+| Preset | claude_access `(Cr,Cp,Cg,Co)` | cco_access | show_host_paths | Notes |
 |---|---|---|---|---|
-| standard project | repo | **read-project** | on | uniform minimum-privilege; flags widen/narrow |
-| **tutorial** | none | **read-all** | on | ADR-0044: read-only teacher → full context, no write risk (was read-project). `--cco-access` discouraged |
-| **config-editor** (cwd in a project / `--project`) | **repo** | **`(ro,rw,none)`** | on | ADR-0048 (WS-A): min-priv by mode — edits the target project's `.cco` + its repos, **reads** the store (`~/.cco` ro). Writing the store is the explicit `--cco-access edit-global`. `claude` follows G→repo. Targets are the `current` axis. *started ≠ cwd project* |
-| **config-editor** (outside a project) | **all** | **`(rw,none,none)`** | on | edit `~/.cco` only; project-less (Pc honestly none, INV-2 conditional floor). `claude` follows G→all |
-| **config-editor** `--all` / `--cco-access edit-all` | all | **edit-all** | on | explicit broad every-project surface |
+| standard project | derived **`(ro,ro,ro,ro)`** = `none` | **read-project** | on | uniform minimum-privilege; `.claude` **read-only by default** (reverses P17). `--claude-access repo` re-opens local authoring |
+| **tutorial** | derived **`(ro,ro,ro,ro)`** = `none` | **read-all** | on | ADR-0044: read-only teacher → full context, no write risk. `--cco-access` discouraged |
+| **config-editor** (cwd in a project / `--project`) | derived **`(ro,rw,ro,ro)`** | **`(ro,rw,none)`** | on | ADR-0048 (WS-A): min-priv by mode — edits the target project's `.cco` + its repos, **reads** the store (`~/.cco` ro). Cp=rw authors the target's `.claude`; global stays ro. Writing the store is the explicit `--cco-access edit-global`. *started ≠ cwd project* |
+| **config-editor** (outside a project) | derived **`(ro,ro,rw,ro)`** | **`(rw,none,none)`** | on | edit `~/.cco` only; project-less (Pc honestly none, INV-2 conditional floor). Cg=rw authors the global `.claude` |
+| **config-editor** `--all` / `--cco-access edit-all` | derived **`(ro,rw,rw,rw)`** | **edit-all** | on | every project's `.claude` (Cr still ro) |
 
 > **config-editor floors (ADR-0048).** `G ≥ ro` (authoring tool always sees the store — an
-> explicit narrower `--cco-access` is clamped up to `read-global`, with a notice) and
-> `claude_access` follows `G` (`all` iff `G=rw`, else `repo` — closes the C2 asymmetry). The
-> `cco-config` (`~/.cco`) workspace mount readonly follows G from the same source as the
-> operator bucket.
+> explicit narrower `--cco-access` is clamped up to `read-global`, with a notice). The former
+> bespoke *"`claude_access` follows G"* is **subsumed by the general cco-derived Axis-B default**
+> (ADR-0049 §8) — config-editor no longer special-cases claude. The `cco-config` (`~/.cco`)
+> workspace mount readonly follows G from the same source as the operator bucket.
 
-**`claude_access` (`none|repo|all`)** — orthogonal axis over the `.claude` authoring trees,
-independent of the cco verb surface above:
+**`claude_access` — the `(Cr,Cp,Cg,Co)` axis** over the `.claude` authoring trees, orthogonal
+to the cco verb surface above. Presets are sugar for fixed triples:
 
-| Level | Meaning |
-|---|---|
-| none | no `.claude` authoring |
-| repo | the invoking repo's `.claude` trees (standard-project default) |
-| all | all mounted `.claude` trees (config-editor when `G=rw`) |
+| Preset | `(Cr,Cp,Cg,Co)` | Meaning |
+|---|---|---|
+| none | `(ro,ro,ro,ro)` | lock all `.claude` authoring |
+| repo | `(rw,rw,ro,ro)` | author the local trees (repo-native + current project) |
+| all | `(rw,rw,rw,rw)` | author every `.claude` tree |
 
-It gates *file-tree write access to `.claude`*, not `cco` verbs — a session can be
-`cco_access=read-project` yet `claude_access=repo`. Kept separate here to avoid implying a
-cross-product that does not exist.
+Unset it derives per-axis from `cco` (Cr always `ro`). It gates *file-tree write access to
+`.claude`*, not `cco` verbs — a session can be `cco_access=read-project` yet an explicit
+`claude_access=repo` (honored with a discordance note). `settings.json` + a `settings.local.json`
+rw child overlay stay writable regardless (functional-write floor, ADR-0049 §5).
 
 ---
 

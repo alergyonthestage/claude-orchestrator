@@ -375,6 +375,15 @@ _start_resolve_access() {
     read -r claude_cr claude_cp claude_cg claude_co <<< "$_claude_triple"
     claude_access=$(_claude_triple_label "$claude_cr" "$claude_cp" "$claude_cg" "$claude_co")
 
+    # P2 discordance warning (ADR-0049 §4): the resolved Axis B grants MORE .claude
+    # write than the cco-concordant default on a tree that lives inside .cco (Cp/Cg/Co
+    # vs Pc/G/Po). Awareness, never a refusal — the knobs stay orthogonal explicit
+    # choices. A derived triple is concordant by construction (never fires); only an
+    # explicit preset/override wider than cco does. Cr never warns (no cco counterpart).
+    if _claude_discordant "$claude_cr" "$claude_cp" "$claude_cg" "$claude_co" "$cco_g" "$cco_pc" "$cco_po"; then
+        echo "note: claude_access ($claude_access) authors .claude more broadly than cco_access ($cco_access) reads/writes .cco config — explicit discordance, allowed (ADR-0049 §4). Align the two to silence this note." >&2
+    fi
+
     # access.cco.include_member_configs (ADR-0046 §6, additive, default false):
     # when true, Pc's rw span widens from the hosting repo's <repo>/.cco to ALL
     # member repos' divergent .cco copies. project.yml only (a per-project mount
@@ -1205,6 +1214,9 @@ YAML
             # in-container introspection verb can report the full session state
             # (ADR-0043 deferred these "until a verb needs them" — it now does).
             echo "      - CCO_CLAUDE_ACCESS=${claude_access}"
+            # CCO_CLAUDE_TRIPLE is the resolved (Cr,Cp,Cg,Co) Axis-B triple (ADR-0049);
+            # CCO_CLAUDE_ACCESS is its display label. whoami renders both.
+            echo "      - CCO_CLAUDE_TRIPLE=${claude_cr},${claude_cp},${claude_cg},${claude_co}"
             echo "      - CCO_SHOW_HOST_PATHS=${show_host_paths}"
             # config-editor editing targets (D9): PROJECT_NAME stays the started
             # project (config-editor); CCO_CONFIG_TARGETS carries the names whose

@@ -694,3 +694,27 @@ entries:
       `/workspace` root now resolves the current session project, matching how it
       already worked from inside a mounted repo directory. Requires a rebuilt image
       (`cco build`).
+
+  - id: 40
+    date: "2026-07-13"
+    type: additive
+    title: "claude_access becomes a concordant per-tree triple; .claude authoring defaults to read-only"
+    description: >
+      claude_access (Axis B) is now modelled as a per-tree triple (Cr,Cp,Cg,Co) on
+      the ro<rw lattice — the repo-native, project, global, and other-projects .claude
+      authoring trees — mirroring the cco (G,Pc,Po) triple (ADR-0049). The none|repo|all
+      enum lives on as preset sugar, and when unspecified each axis DERIVES from your
+      cco_access (Cg=G, Cp=Pc, Co=Po, Cr always read-only), so the default is never
+      more permissive than your config access. Behaviour change: a normal session no
+      longer authors the project/repo .claude tree by default — it is read-only unless
+      you pass --claude-access repo|all (or a cco edit level). Both knobs now share one
+      grammar in every source (CLI flag, project.yml access.claude, ~/.cco/access.yml):
+      a scalar preset OR a granular map ({repo,current,global,others} for claude;
+      {global,current,others} for cco). ~/.cco/access.yml is scaffolded commented at
+      cco init as the global-default escape and gained granular-map support for both
+      knobs. An explicit claude wider than cco is honored with a one-line note (never
+      refused). settings.local.json stays writable via a functional-write floor even
+      when a .claude tree is read-only. extra_mounts gained config_access_policy
+      (ro|project|write) governing their nested .claude/.cco, which is now detected
+      recursively (monorepos, extra_mounts), read-only by default. Requires a rebuilt
+      image (`cco build`).
