@@ -15,9 +15,7 @@ folding the claude×G coupling for config-editor into this refinement); implemen
 (validation against the resolver/mount-gen/output-scoping, the coverage trace, the
 fail-closed implementation).
 
-**Validation**: [`../access-refinements/handoff.md`](../access-refinements/handoff.md)
-§WS-A (A.0 VALIDATE, code-grounded). **Living design**:
-[`../design.md`](../design.md) §4.3/§8 (rewritten to this truth).
+**Living design**: [`../design.md`](../design.md) §4.3/§8 (rewritten to this truth).
 
 ---
 

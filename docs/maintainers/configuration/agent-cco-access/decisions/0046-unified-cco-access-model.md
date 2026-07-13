@@ -16,8 +16,7 @@ the lattice + auto-promotion of defaults, keeping presets as a *symmetric ladder
 multi-repo Pc default); implementer (analysis, code-grounding, coverage matrix, resolver
 generalisation).
 
-**Plan**: [`../hardening-v2/handoff.md`](../hardening-v2/handoff.md) §3 D1. **Living design**:
-[`../design.md`](../design.md) §4 (rewritten to this truth).
+**Living design**: [`../design.md`](../design.md) §4 (rewritten to this truth).
 
 ---
 
@@ -48,7 +47,7 @@ The signals to resolve this already exist in-container (`PROJECT_NAME`, `CCO_CCO
 lifts that per-tree structure into the **model** itself.
 
 > **Not in this ADR**: *how* the model is physically enforced (the confidentiality bypass
-> S1/S1b is D2's — [`../hardening-v2/handoff.md`](../hardening-v2/handoff.md) §3 D2), and the
+> S1/S1b is the enforcement layer's — [ADR-0047](0047-config-access-enforcement.md)), and the
 > per-verb resource-area classification (D3/A1). This ADR fixes the **model**; D2 fixes
 > **enforcement**; D3 fixes **per-command gating**.
 

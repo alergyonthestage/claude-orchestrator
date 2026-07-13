@@ -12,7 +12,6 @@ INV-D** (index-complete / presentation-only).
 internal store" invariant, no-daemon, the dedicated `cco-svc` uid + setuid helper); implementer
 (security trace, empirical verification, code-grounding).
 
-**Plan**: [`../hardening-v2/handoff.md`](../hardening-v2/handoff.md) §3 D2 + [`D2-handoff.md`](../hardening-v2/D2-handoff.md).
 **Living design**: [`../design.md`](../design.md) §5 (INV-5), [`design-docker.md`](../../../environment/design/design-docker.md) §1.2.3.
 
 ---

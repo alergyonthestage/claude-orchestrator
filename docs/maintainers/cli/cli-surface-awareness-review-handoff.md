@@ -47,7 +47,7 @@ audited** for resolver-guard behaviour, secret masking, host-path hygiene, scope
 ## 2. What B2 already verified — the KNOWN-GOOD baseline (don't redo)
 
 The 2026-07-02 correctness review (see
-[`agent-cco-access/impl-handoff.md` → Correctness review](../configuration/agent-cco-access/impl-handoff.md))
+the agent-cco-access B2 correctness review)
 cross-verified and confirmed **correct**. Treat these as settled; this review *extends* coverage,
 it does not re-open them:
 

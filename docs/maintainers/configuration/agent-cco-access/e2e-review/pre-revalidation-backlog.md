@@ -16,7 +16,7 @@
 > pre-review bug list into a **design workstream**: a unified `(G,Pc,Po)` permission model
 > (covers the missing asymmetric cases) + a **confidentiality-bypass security fix** (S1/S1b,
 > §7). The definitive design is driven by
-> **[`../hardening-v2/handoff.md`](../hardening-v2/handoff.md)** (phases D1→D2→D3). That
+> **the hardening-v2 D1→D2→D3 design** (ADR-0046/0047 + the A1 matrix). That
 > handoff is now the **master plan**; this file remains the item tracker. Design lands +
 > is implemented **before** the e2e v2.
 
@@ -166,7 +166,7 @@
 
 ## 7. Design workstream + security (2026-07-08) — driven by hardening-v2
 
-Confirmed by the maintainer; formalized by **[`../hardening-v2/handoff.md`](../hardening-v2/handoff.md)** (phases D1→D2→D3).
+Confirmed by the maintainer; formalized by the hardening-v2 D1→D2→D3 design (ADR-0046/0047 + the A1 matrix).
 
 - **M1 — unified `(G,Pc,Po)` permission model (D1). ✅ DESIGN DONE (2026-07-08) —
   [ADR-0046](../decisions/0046-unified-cco-access-model.md).** Three axes each `none<ro<rw`
@@ -258,7 +258,7 @@ Confirmed by the maintainer; formalized by **[`../hardening-v2/handoff.md`](../h
 
 ### Unified implementation review I–IV (2026-07-10) — findings
 
-Driven by [`../hardening-v2/review-handoff.md`](../hardening-v2/review-handoff.md) over
+Driven by the unified Phases I–IV implementation review over
 `ec56f9f^..HEAD`. Three confirmed fixes landed on `feat/config-access/e2e-review`; one
 assess item deferred. Fasi I & II clean (resolver invariants + privilege boundary sound
 statically; Linux write-path correctly documented as an open follow-up). Suite baseline held

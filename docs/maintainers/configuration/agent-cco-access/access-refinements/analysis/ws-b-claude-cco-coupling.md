@@ -6,8 +6,9 @@ produced [ADR-0049](../../decisions/0049-claude-access-concordant-model.md). The
 lives in the ADR; the **target behaviour** in [`../../design.md`](../../design.md). This
 file preserves *why*, including the paths considered and rejected.
 
-**Session**: WS-B dedicated analysis, 2026-07-13 (post hardening-v2 + WS-A). Started from
-[`../handoff.md`](../handoff.md) §WS-B.
+**Session**: WS-B dedicated analysis, 2026-07-13 (post hardening-v2 + WS-A) — the general
+`claude_access` × `cco_access` coupling left open after WS-A shipped the config-editor
+min-privilege refinement (ADR-0048).
 
 ---
 

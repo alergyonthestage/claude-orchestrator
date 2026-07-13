@@ -1,8 +1,7 @@
 # ADR 0049 — `claude_access` concordant authoring model (axis triple + cco-derived defaults)
 
 **Status**: Accepted (2026-07-13) — model ratified by the maintainer across the WS-B
-design dialogue (post-hardening-v2 access-refinements, §WS-B of
-[`../access-refinements/handoff.md`](../access-refinements/handoff.md)). Implementation
+design dialogue (post-hardening-v2 access-refinements). Implementation
 in a later phase. **Refines / supersedes:**
 
 - **Supersedes the `claude_access` *model* of**
@@ -28,8 +27,7 @@ the strict extra_mount default + `config_access_policy`, recursive nested-config
 detection, and reversing P17 with init-workspace re-analysis); implementer (the
 non-expressibility proof, the coverage matrix, the code-grounded schema-gap audit).
 
-**Validation**: [`../access-refinements/handoff.md`](../access-refinements/handoff.md)
-§WS-B + this session's code-grounded analysis
+**Validation**: this session's code-grounded analysis
 ([`../access-refinements/analysis/ws-b-claude-cco-coupling.md`](../access-refinements/analysis/ws-b-claude-cco-coupling.md)).
 **Living design**: [`../design.md`](../design.md) §4bis (Axis B authoring model), §7
 (init-workspace), §8 (config-editor).
