@@ -513,16 +513,17 @@ Base produced 2026-07-07/08 (in working tree, pending review/commit): **ADR-0044
 DI1), **CLI-surface matrix** (`cli/reference/cli-surface-matrix.md`), **DOC1** central-gate
 (`cli/design/design-cli-environment-awareness.md` v1.3.0), living `design.md` §8, backlog.
 
-### Access-model refinements (post hardening-v2 — PROPOSED, 2026-07-11)
+### Access-model refinements (post hardening-v2)
 
-> Emerged from the Phase VI maintainer dialogue. **PROPOSED decisions, not yet implemented** —
-> handoff: [`access-refinements/handoff.md`](configuration/agent-cco-access/access-refinements/handoff.md).
-> Next session's first task = **validate correctness + coherence** vs ADR-0036/0044/0046, then implement.
+> Emerged from the Phase VI maintainer dialogue (2026-07-11). Canonical handoff:
+> [`access-refinements/handoff.md`](configuration/agent-cco-access/access-refinements/handoff.md).
+> **WS-A DONE + shipped** (incl. 4 UX refinements); **WS-B is the next dedicated session (Session B)** —
+> its first task = the C1/C2/C3 coupling analysis in the handoff §WS-B, then decide → implement.
 
-| Workstream | Status | Decision (to validate) |
+| Workstream | Status | Decision |
 |---|---|---|
-| **WS-A — config-editor default + read floor** | ▶ PROPOSED (validate → implement) | project mode default **`(ro,rw,none)`** (min-priv: edit project, read global); bare/global mode **`(rw,none,none)`** (edit global only); `--cco-access edit-global` → `(rw,rw,none)`; `--all` → edit-all; **invariant `G ≥ ro` always** (never blind). Revises `67ad13f` + contradicts ADR-0044 §3. Blocker to validate: **[A-V1]** `(rw,none,none)` violates INV-2 (`access-scope.sh:139`) → refine INV-2 to a *conditional* project floor (Pc≥ro iff a project is in scope). |
-| **WS-B — `claude_access` × `cco_access` coupling** | ▶ PROPOSED (dedicated analysis session) | cco_access **bounds** claude_access for `.claude` trees inside `.cco` (B2 `<repo>/.cco/claude/`, B3 `~/.cco/.claude`); only **B1** (`<repo>/.claude` repo-native) stays decoupled; error/warn on conflict. Closes the C2 asymmetry (global `.claude` rw while global `.cco` ro). Open: project-level keep-decoupled (P17) vs bound-too; whether to keep `claude_access` a separate knob at all. |
+| **WS-A — config-editor default + read floor** | **✅ DONE + SHIPPED (2026-07-13, `cco build` live)** on `feat/config-access/config-editor-access` | config-editor min-privilege **by mode**: project **`(ro,rw,none)`** (edit project, read store) / bare-global **`(rw,none,none)`** / `edit-global` → `(rw,rw,none)` / `--all` → edit-all; **`G ≥ ro` clamp** + **`claude_access` follows `G`** (A-V3, closes C2 at config-editor level); **INV-2 conditional** project floor (Pc≥ro iff a current project is in scope). [ADR-0048](configuration/agent-cco-access/decisions/0048-config-editor-min-privilege-refinement.md) + annot 0044/0046. Commits `aab422f`→`00b8b2a`; changelog #38. **+ 4 UX refinements (2026-07-13, model unchanged):** R1/R2 `whoami` identity-first + dedup (`eea8395`), R3 `cco list` KIND `builtin` + `--include-internal` (`327add2`), R4 bare `project show` at `/workspace` root (`a87dcd8`), docs+changelog #39 (`394c649`). Suite **1211/7** (7 pre-existing). ⏳ pre-merge: push both branches from the Mac. |
+| **WS-B — `claude_access` × `cco_access` coupling** | **▶ NEXT — dedicated Session B (after clear)** | cco_access **bounds** claude_access for `.claude` trees inside `.cco` (B2 `<repo>/.cco/claude/`, B3 `~/.cco/.claude`); only **B1** (`<repo>/.claude` repo-native) stays decoupled; error/warn on conflict. Closes the C2 asymmetry (global `.claude` rw while global `.cco` ro) at the GENERAL level (A-V3 already closed it for config-editor). Open: project-level keep-decoupled (P17) vs bound-too; whether to keep `claude_access` a separate knob at all. Reference: handoff §B.1–B.3 + Session plan. |
 
 Tutorial `read-all` overridable-downward = **confirmed correct as-is** (no change). To extract into a
 new ADR (refining 0036/0044/0046) + living `design.md` once validated.

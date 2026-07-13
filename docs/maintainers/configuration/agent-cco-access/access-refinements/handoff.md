@@ -1,21 +1,23 @@
 # Access-model refinements — handoff (post hardening-v2)
 
-> **Status (2026-07-11): PROPOSED decisions, NOT yet implemented.** Emerged from the maintainer
-> dialogue during hardening-v2 Phase VI (the config-editor `edit-global` fix `67ad13f` + the DOC5
-> cutover). Two refinement workstreams, sequenced. **The next session's FIRST task is to VALIDATE
-> correctness + coherence of these decisions against the current model (ADR-0036/0044/0046) — only
-> then implement.** If validation surfaces a contradiction, revise the decision, don't force the code.
+> ## ▶ SESSION B STARTS HERE — read §WS-B + §Session plan (2026-07-13)
 >
-> **Scope note:** the shipped hardening-v2 code (branch `feat/config-access/e2e-review`, NOT pushed)
-> stays as-is; config-editor currently resolves project mode to `edit-global` (`67ad13f`). These
-> refinements *revise* that — but only after validation, in the dedicated sessions below. Nothing
-> here is a released model, so there is no back-compat burden.
+> **WS-A is DONE + SHIPPED and LIVE** (branch `feat/config-access/config-editor-access`, `cco build`
+> done + session restarted — the config-editor min-privilege model AND the 4 UX refinements are live).
+> See the **WS-A refinements — session UX** section below + roadmap "Access-model refinements". **This
+> session's job is WS-B only** — the general `claude_access` × `cco_access` coupling (§WS-B: C1/C2/C3
+> taxonomy, cco-bounds-claude for in-`.cco` trees, project-level b-i vs b-ii, keep-the-knob question).
+> A-V3 already closed C2 *at the config-editor level*; WS-B is the GENERAL treatment (normal sessions,
+> B2, possible knob elimination). Start with the analysis (validate the direction against the shipped
+> `(G,Pc,Po)` model + `lib/cmd-start.sh` mount-gen), decide with the maintainer, then implement + ADR.
 >
-> **Sequencing (maintainer decision 2026-07-11): these refinements land BEFORE e2e v2.** The
-> hardening-v2 image is already rebuilt (`cco build` done, this session restarted on it — the
-> boundary/preset fixes are live). e2e v2 acceptance is **deferred to run against the FINAL,
-> approved+implemented design** — i.e. after WS-A (and WS-B where it touches the model). So the
-> order is: **WS-A validate → implement → (WS-B) → then e2e v2** (+ push both branches from the Mac).
+> **Then:** e2e v2 acceptance against the final design + **push both branches from the Mac**
+> (`feat/config-access/e2e-review` and `feat/config-access/config-editor-access`, currently NOT pushed).
+
+> **History (2026-07-11, for context):** these refinements emerged from the hardening-v2 Phase VI
+> maintainer dialogue (the config-editor `edit-global` fix `67ad13f` + the DOC5 cutover). WS-A was
+> then PROPOSED; it has since been validated, implemented, and shipped (see below). WS-B remains.
+> Sequencing decision stands: refinements land **before** e2e v2, so e2e runs against the FINAL design.
 
 **Related decisions**: [ADR-0036](../decisions/) (three-knob model `claude_access`/`cco_access`/
 `show_host_paths`), [ADR-0044](../decisions/0044-internal-builtin-presets-and-config-editor-scope.md)
@@ -57,9 +59,13 @@ amendment) + the living design docs once validated.**
 
 ---
 
-## WS-A — config-editor default access + read floor (validate → implement)
+## WS-A — config-editor default access + read floor — ✅ DONE + SHIPPED (2026-07-13)
 
-### A.1 The decided model (PROPOSED)
+> **Implemented and live** (ADR-0048; commits `aab422f`→`00b8b2a` + the UX refinements below).
+> The A.1 model was validated (A.2 items resolved), implemented per A.3, and shipped. Retained
+> below as the decision record; **Session B does not re-open WS-A** — go to §WS-B.
+
+### A.1 The decided model (SHIPPED — was PROPOSED)
 
 config-editor serves **three real, recurring intents**, all of which must be launchable
 **without typing an explicit granular triple**:
@@ -175,31 +181,32 @@ that live **inside** `.cco` config (B2 `<repo>/.cco/claude/`, B3 `~/.cco/.claude
 
 ```mermaid
 flowchart LR
-  V["Session A.0 — VALIDATE<br/>correctness + coherence of A.1/B.2<br/>vs ADR-0036/0044/0046"] --> A["Session A — config-editor access<br/>impl (ro,rw,none) default + G≥ro invariant<br/>+ INV-2 refinement + DOC5 follow-up"]
-  A --> B["Session B — claude×cco coupling<br/>dedicated analysis → decision → impl"]
-  B --> ADR["Extract validated decisions →<br/>new ADR + living design docs"]
-  ADR --> E2E["e2e v2 acceptance (final design)<br/>+ push both branches from the Mac"]
+  A["Session A — config-editor access ✅ DONE<br/>(ro,rw,none) default + G≥ro + INV-2 conditional<br/>+ claude-follows-G + 4 UX refinements (ADR-0048)"] --> B["▶ Session B — claude×cco coupling<br/>dedicated analysis → decision → impl → ADR"]
+  B --> E2E["e2e v2 acceptance (final design)<br/>+ push both branches from the Mac"]
 ```
 
-1. **Validate** (first thing): walk A.1 + B.2 against the resolver, invariants, mount-gen, and
-   output-scoping. Confirm the decisions resolve the problems AND are compatible with the current
-   design — or specify the **design evolution** each requires (esp. INV-2 [A-V1]).
-2. **Session A** (config-editor): implement WS-A once validated; tests; DOC5 follow-up; ADR-0044
-   re-annotation.
-3. **Session B** (separate): the claude×cco coupling analysis + resolution.
-4. **Extract**: fold the validated, motivated decisions into a **new ADR** (refining 0036/0044/0046)
-   and the **living design docs** (`design.md`, user guides).
+1. ~~**Validate** + **Session A** (config-editor)~~ — **✅ DONE + SHIPPED (2026-07-13)**: A.1 model
+   validated (A.2 items resolved), implemented (A.3), `cco build` + restart done, refinements live.
+   ADR-0048 + annot 0044/0046; changelog #38/#39; suite 1211/7.
+2. **▶ Session B** (this one, separate context): the claude×cco coupling analysis + decision +
+   implementation — see §WS-B. Validate the direction against the shipped `(G,Pc,Po)` model and
+   `lib/cmd-start.sh` mount-gen before implementing.
+3. **Extract**: fold the Session-B decisions into a **new ADR** (refining 0036/0044/0046) and the
+   **living design docs** (`design.md`, user guides).
+4. **e2e v2** acceptance against the final design + **push both branches from the Mac**.
 
 ## Decisions to confirm (carried from the maintainer dialogue, 2026-07-11)
 
 - [x] Tutorial read-all overridable — **keep as-is** (verified).
-- [ ] config-editor default `(ro,rw,none)` (project) / `(rw,none,none)` (global) / `edit-global`
-  override / `edit-all` via `--all` — **confirmed by maintainer, pending [A-V1..A-V4] validation.**
-- [ ] `G ≥ ro` invariant for config-editor (never blind) — **confirmed, pending validation.**
-- [ ] INV-2 refined to a **conditional** project floor (Pc≥ro *iff* a current project is in scope) —
-  **needs validation** (enables the honest `(rw,none,none)`).
+- [x] config-editor default `(ro,rw,none)` (project) / `(rw,none,none)` (global) / `edit-global`
+  override / `edit-all` via `--all` — **DONE + SHIPPED (ADR-0048, `6264bc9`).**
+- [x] `G ≥ ro` invariant for config-editor (never blind) — **DONE + SHIPPED (`6264bc9`).**
+- [x] INV-2 refined to a **conditional** project floor (Pc≥ro *iff* a current project is in scope) —
+  **DONE + SHIPPED (`aab422f`); enables the honest `(rw,none,none)`.**
 - [ ] claude×cco: **cco bounds claude for in-`.cco` trees (B2/B3); B1 decoupled**; error/warn on
-  conflict — **direction confirmed, dedicated Session B analysis needed** (esp. project-level b-i vs b-ii).
+  conflict — **▶ WS-B / Session B (still open)** — direction confirmed, dedicated analysis needed
+  (esp. project-level b-i vs b-ii). A-V3 already closed C2 *for config-editor* (`6264bc9`); WS-B is
+  the general treatment.
 
 ## WS-A refinements — session UX (shipped 2026-07-13, post-`cco build` dogfood)
 
