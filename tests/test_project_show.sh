@@ -129,3 +129,62 @@ YML
     assert_output_contains "hosts project: myproj"
     assert_output_contains "api"
 }
+
+# ── R4: bare `cco project show` at the container WORKDIR root ─────────────────
+# The trigger (_project_show_session_fallback) is env-driven so it is unit-testable
+# without a live /workspace: CCO_WORKDIR points it at a tmp WORKDIR with a flat
+# session manifest, and _cco_container_operator is stubbed for the operator branch.
+
+_ps_fallback() {  # echoes the resolved name (or empty); operator stubbed per $1
+    local operator="$1"
+    (
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/paths.sh";  source "$REPO_ROOT/lib/cmd-project-query.sh"
+        if [[ "$operator" == yes ]]; then _cco_container_operator() { return 0; }
+        else _cco_container_operator() { return 1; }; fi
+        _project_show_session_fallback "$PWD"
+    )
+}
+
+test_project_show_r4_workdir_resolves_session() {
+    local ws; ws=$(mktemp -d); trap "rm -rf '$ws'" EXIT
+    : > "$ws/project.yml"
+    local out
+    out=$(cd "$ws" && CCO_WORKDIR="$ws" PROJECT_NAME=my-session _ps_fallback yes)
+    [[ "$out" == "my-session" ]] \
+        || fail "R4: at the WORKDIR root the fallback should resolve PROJECT_NAME, got: '$out'"
+}
+
+test_project_show_r4_no_project_name_no_fallback() {
+    local ws; ws=$(mktemp -d); trap "rm -rf '$ws'" EXIT
+    : > "$ws/project.yml"
+    local out
+    out=$(cd "$ws" && CCO_WORKDIR="$ws" _ps_fallback yes)   # PROJECT_NAME unset
+    [[ -z "$out" ]] || fail "R4: no PROJECT_NAME → no fallback (usage error), got: '$out'"
+}
+
+test_project_show_r4_only_at_workdir_root() {
+    local ws; ws=$(mktemp -d); trap "rm -rf '$ws'" EXIT
+    : > "$ws/project.yml"; mkdir -p "$ws/sub"
+    local out
+    # A non-WORKDIR cwd (child-wins / no ambiguous deep resolution) → no fallback.
+    out=$(cd "$ws/sub" && CCO_WORKDIR="$ws" PROJECT_NAME=my-session _ps_fallback yes)
+    [[ -z "$out" ]] || fail "R4: fallback must fire ONLY at the WORKDIR root, got: '$out'"
+}
+
+test_project_show_r4_host_never_fires() {
+    local ws; ws=$(mktemp -d); trap "rm -rf '$ws'" EXIT
+    : > "$ws/project.yml"
+    local out
+    # Host (not operator) → the fallback is inert even at a matching cwd.
+    out=$(cd "$ws" && CCO_WORKDIR="$ws" PROJECT_NAME=my-session _ps_fallback no)
+    [[ -z "$out" ]] || fail "R4: host context must never trigger the fallback, got: '$out'"
+}
+
+test_project_show_r4_requires_flat_manifest() {
+    local ws; ws=$(mktemp -d); trap "rm -rf '$ws'" EXIT
+    # No flat project.yml at the WORKDIR → no fallback.
+    local out
+    out=$(cd "$ws" && CCO_WORKDIR="$ws" PROJECT_NAME=my-session _ps_fallback yes)
+    [[ -z "$out" ]] || fail "R4: fallback needs a flat session manifest, got: '$out'"
+}

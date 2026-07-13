@@ -105,6 +105,27 @@ _project_show_repo_centric() {
     $any || echo "  (none)"
 }
 
+# R4: at the container WORKDIR the session is a FLAT mount — /workspace/project.yml,
+# with no repo-local .cco — so a bare `cco project show` there used to error (the
+# repo-centric branch only fires for a repo-local <dir>/.cco/project.yml). This maps
+# the WORKDIR root to the SESSION project (PROJECT_NAME), so cwd-based introspection
+# works from /workspace exactly as it does inside a mounted repo dir. For config-editor
+# that is the synthetic 'config-editor' envelope (its editing targets stay a distinct
+# concept, surfaced by `cco whoami`). Constraints keep it narrow and unambiguous:
+#   - operator mode only (the host has no /workspace and no session envelope);
+#   - only AT the WORKDIR root — child-wins, a repo-local .cco above is handled first;
+#   - only with a flat session manifest present.
+# Prints the session project name to use, or nothing (caller then shows usage). The
+# WORKDIR is overridable via CCO_WORKDIR (defaults to /workspace) so the trigger is
+# unit-testable without a live /workspace mount.
+_project_show_session_fallback() {
+    local pwd_dir="${1:-$PWD}" workdir="${CCO_WORKDIR:-/workspace}"
+    _cco_container_operator || return 0
+    [[ "$pwd_dir" == "$workdir" ]] || return 0
+    [[ -f "$workdir/project.yml" ]] || return 0
+    printf '%s' "${PROJECT_NAME:-}"
+}
+
 cmd_project_show() {
     local name=""
 
@@ -131,10 +152,16 @@ EOF
 
     # Repo-centric view (ADR-0024 D5): invoked from a repo dir that hosts a
     # project, with no explicit name → summarize this repo's relationships.
+    # Child-wins: a repo-local .cco (e.g. /workspace/<repo>) takes precedence over
+    # the session fallback below.
     if [[ -z "$name" && -f "$PWD/.cco/project.yml" ]]; then
         _project_show_repo_centric "$PWD"
         return $?
     fi
+    # R4: at the container WORKDIR root a bare `cco project show` resolves the SESSION
+    # project (see _project_show_session_fallback), so cwd-based introspection works
+    # from /workspace just as inside a mounted repo dir.
+    [[ -z "$name" ]] && name=$(_project_show_session_fallback)
     [[ -z "$name" ]] && die "Usage: cco project show <name>"
     # Output scoping (ADR-0043): a detail verb refuses out-of-scope resources
     # with a clear message rather than a raw "not found" (graceful degradation).
