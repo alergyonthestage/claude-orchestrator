@@ -1,18 +1,18 @@
 # Access-model refinements — handoff (post hardening-v2)
 
-> ## ▶ SESSION B STARTS HERE — read §WS-B + §Session plan (2026-07-13)
+> ## ✅ WS-A + WS-B (analysis + design) DONE — implementation continues elsewhere (2026-07-13)
 >
-> **WS-A is DONE + SHIPPED and LIVE** (branch `feat/config-access/config-editor-access`, `cco build`
-> done + session restarted — the config-editor min-privilege model AND the 4 UX refinements are live).
-> See the **WS-A refinements — session UX** section below + roadmap "Access-model refinements". **This
-> session's job is WS-B only** — the general `claude_access` × `cco_access` coupling (§WS-B: C1/C2/C3
-> taxonomy, cco-bounds-claude for in-`.cco` trees, project-level b-i vs b-ii, keep-the-knob question).
-> A-V3 already closed C2 *at the config-editor level*; WS-B is the GENERAL treatment (normal sessions,
-> B2, possible knob elimination). Start with the analysis (validate the direction against the shipped
-> `(G,Pc,Po)` model + `lib/cmd-start.sh` mount-gen), decide with the maintainer, then implement + ADR.
+> **This handoff is consumed.** WS-A shipped + live (branch `feat/config-access/config-editor-access`);
+> WS-B analysis + design are DONE and captured canonically in
+> **[ADR-0049](../decisions/0049-claude-access-concordant-model.md)**, the
+> **[WS-B analysis](analysis/ws-b-claude-cco-coupling.md)**, and **[design.md §4bis](../design.md)**.
+> The WS-B direction below (cco-*bounds*-claude / b-i vs b-ii / knob-elimination) was **superseded**
+> during the WS-B dialogue: the settled model is **concordant cco-derived defaults + a claude axis
+> triple + discordance warn**, not a runtime clamp — see ADR-0049.
 >
-> **Then:** e2e v2 acceptance against the final design + **push both branches from the Mac**
-> (`feat/config-access/e2e-review` and `feat/config-access/config-editor-access`, currently NOT pushed).
+> **▶ To IMPLEMENT WS-B, start from [implementation-handoff.md](implementation-handoff.md).**
+> The remainder of this file is retained as the WS-A decision record + WS-B's original framing
+> (frozen-ADR back-references point here).
 
 > **History (2026-07-11, for context):** these refinements emerged from the hardening-v2 Phase VI
 > maintainer dialogue (the config-editor `edit-global` fix `67ad13f` + the DOC5 cutover). WS-A was
