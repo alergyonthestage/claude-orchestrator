@@ -436,6 +436,29 @@ _emit_local_settings_overlay() {
     _compose_vol "$src" "$tgt"
 }
 
+# ── Recursive nested-config detection (ADR-0049 §7) ──────────────────
+# Claude Code discovers nested .claude natively, so a monorepo's packages/x/.claude
+# (and a member's .cco with a project.yml) escape a root-only overlay. Emit the
+# path of each directory named <base> under <root>, RELATIVE to <root>, one per
+# line — bounded (maxdepth) and pruned (heavy/irrelevant dirs) so the per-start
+# scan stays cheap. The mount ROOT itself (rel ".") is included when it matches, so
+# this SUBSUMES the former root-only check. When <require_file> is given only dirs
+# containing that file qualify (e.g. .cco carrying a project.yml). Args: <root>
+# <base> [<require_file>].
+_find_nested_config_dirs() {
+    local root="$1" base="$2" require_file="${3:-}" d rel
+    [[ -d "$root" ]] || return 0
+    while IFS= read -r d; do
+        [[ -z "$d" ]] && continue
+        [[ -n "$require_file" && ! -f "$d/$require_file" ]] && continue
+        rel="${d#"$root"}"; rel="${rel#/}"; [[ -z "$rel" ]] && rel="."
+        printf '%s\n' "$rel"
+    done < <(find "$root" -maxdepth 6 \
+                \( -name .git -o -name node_modules -o -name .venv -o -name venv \
+                   -o -name vendor -o -name target -o -name dist -o -name build \) -prune -o \
+                -type d -name "$base" -print 2>/dev/null | sort)
+}
+
 # ── cmd_start() helper functions ─────────────────────────────────────
 # These functions are called from within cmd_start() and share its local
 # variable scope. They must NOT redeclare variables — they read/write
@@ -1467,13 +1490,20 @@ YAML
         # per-project STATE, so a session that authors inside a repo can still persist
         # local runtime state under the :ro tree.
         if [[ -n "$_b1_ro" ]]; then
+            local _cl_rel
             while IFS=$'\t' read -r repo_name repo_path; do
                 [[ -z "$repo_name" ]] && continue
-                if [[ -d "$repo_path/.claude" ]]; then
-                    _compose_vol "${repo_path}/.claude" "/workspace/${repo_name}/.claude" "ro"
-                    _emit_local_settings_overlay "${session_state_dir}/local-settings/repo-${repo_name}.json" \
-                        "/workspace/${repo_name}/.claude/settings.local.json" "$dry_run"
-                fi
+                # Recursive (ADR-0049 §7): root <repo>/.claude AND any nested
+                # packages/*/.claude a monorepo carries. rel ".claude" is the root.
+                while IFS= read -r _cl_rel; do
+                    [[ -z "$_cl_rel" ]] && continue
+                    _compose_vol "${repo_path}/${_cl_rel}" "/workspace/${repo_name}/${_cl_rel}" "ro"
+                    # Functional-write floor only at the repo-root tree (where a
+                    # session started in the repo would write settings.local.json).
+                    [[ "$_cl_rel" == ".claude" ]] && \
+                        _emit_local_settings_overlay "${session_state_dir}/local-settings/repo-${repo_name}.json" \
+                            "/workspace/${repo_name}/.claude/settings.local.json" "$dry_run"
+                done < <(_find_nested_config_dirs "$repo_path" ".claude")
             done < <(_effective_repo_mounts "$project_yml")
         fi
 
@@ -1485,10 +1515,18 @@ YAML
         # the B2 overlay above. Skipped when cco_access grants project edit
         # (edit-project/edit-all) or for built-ins (_committed_ro="").
         if [[ -n "$_committed_ro" ]]; then
+            local _cc_rel
             while IFS=$'\t' read -r repo_name repo_path; do
                 [[ -z "$repo_name" ]] && continue
-                [[ -d "$repo_path/.cco" ]] && \
-                    _compose_vol "${repo_path}/.cco" "/workspace/${repo_name}/.cco" "ro"
+                # Recursive (ADR-0049 §7): the root <repo>/.cco (always — the project's
+                # committed config) plus any NESTED .cco that carries a project.yml (a
+                # monorepo member's config). A nested .cco WITHOUT a project.yml is left
+                # untouched (not a cco project tree).
+                while IFS= read -r _cc_rel; do
+                    [[ -z "$_cc_rel" ]] && continue
+                    [[ "$_cc_rel" != ".cco" && ! -f "${repo_path}/${_cc_rel}/project.yml" ]] && continue
+                    _compose_vol "${repo_path}/${_cc_rel}" "/workspace/${repo_name}/${_cc_rel}" "ro"
+                done < <(_find_nested_config_dirs "$repo_path" ".cco")
             done < <(_effective_repo_mounts "$project_yml")
         fi
         # NOTE (ADR-0046 §6 multi-repo Pc — DEFERRED): the resolved
@@ -1529,12 +1567,41 @@ YAML
         extra_mounts=$(_effective_extra_mounts "$project_yml")
         if [[ -n "$extra_mounts" ]]; then
             echo "      # Extra mounts"
-            local _ms _mt _mro _suffix
-            while IFS=$'\t' read -r _ms _mt _mro; do
+            local _ms _mt _mro _mpolicy _suffix _nc_rel _claude_ro _cco_ro
+            while IFS=$'\t' read -r _ms _mt _mro _mpolicy; do
                 [[ -z "$_ms" ]] && continue
                 _suffix=""
                 [[ "$_mro" == "true" ]] && _suffix="ro"
                 _compose_vol "$_ms" "$_mt" "$_suffix"
+                # Nested-config governance (ADR-0049 §7): extra_mounts are arbitrary
+                # dirs, not config repos, so nested .claude/.cco are STRICT ro by
+                # default. Only meaningful on a writable mount (a :ro mount already
+                # locks everything). config_access_policy: ro (default) → all nested
+                # config :ro · project → follow the session knobs (Cr / Pc) · write →
+                # leave nested config writable (no overlay).
+                if [[ "$_mro" != "true" && "$_mpolicy" != "write" ]]; then
+                    if [[ "$_mpolicy" == "project" ]]; then
+                        _claude_ro=""; [[ -n "$_b1_ro" ]] && _claude_ro="ro"
+                        _cco_ro="";    [[ -n "$_committed_ro" ]] && _cco_ro="ro"
+                    else
+                        _claude_ro="ro"; _cco_ro="ro"
+                    fi
+                    if [[ -n "$_claude_ro" ]]; then
+                        while IFS= read -r _nc_rel; do
+                            [[ -z "$_nc_rel" ]] && continue
+                            _compose_vol "${_ms}/${_nc_rel}" "${_mt}/${_nc_rel}" "ro"
+                        done < <(_find_nested_config_dirs "$_ms" ".claude")
+                    fi
+                    if [[ -n "$_cco_ro" ]]; then
+                        while IFS= read -r _nc_rel; do
+                            [[ -z "$_nc_rel" ]] && continue
+                            # extra_mounts aren't projects → a .cco tree qualifies
+                            # only when it carries a project.yml (root included).
+                            [[ -f "${_ms}/${_nc_rel}/project.yml" ]] || continue
+                            _compose_vol "${_ms}/${_nc_rel}" "${_mt}/${_nc_rel}" "ro"
+                        done < <(_find_nested_config_dirs "$_ms" ".cco")
+                    fi
+                fi
             done <<< "$extra_mounts"
         fi
 
@@ -2172,7 +2239,7 @@ _proxy_collect_pathmap() {
     local _extra_mounts
     _extra_mounts=$(_effective_extra_mounts "$project_yml" 2>/dev/null || true)
     if [[ -n "$_extra_mounts" ]]; then
-        while IFS=$'\t' read -r _src _tgt _ro; do
+        while IFS=$'\t' read -r _src _tgt _ro _pol; do
             [[ -z "$_src" ]] && continue
             _pathmap_lines="${_pathmap_lines}${_tgt}"$'\t'"${_src}"$'\n'
         done <<< "$_extra_mounts"

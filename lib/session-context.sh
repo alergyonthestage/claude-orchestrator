@@ -69,8 +69,8 @@ _session_collect_pathmap() {
     local _extra_mounts
     _extra_mounts=$(_effective_extra_mounts "$project_yml" 2>/dev/null || true)
     if [[ -n "$_extra_mounts" ]]; then
-        local _src _tgt _ro
-        while IFS=$'\t' read -r _src _tgt _ro; do
+        local _src _tgt _ro _pol
+        while IFS=$'\t' read -r _src _tgt _ro _pol; do
             [[ -z "$_src" ]] && continue
             [[ "$_ro" == "true" ]] || _ro="false"
             printf '%s\t%s\t%s\n' "$_src" "$_tgt" "$_ro"
@@ -201,8 +201,8 @@ _build_session_context() {
             done <<< "$pack_names"
         fi
         if [[ -n "$extra_mounts_output" ]]; then
-            local _ws_src _ws_tgt _ws_ro _ws_desc _ws_ro_label
-            while IFS=$'\t' read -r _ws_src _ws_tgt _ws_ro; do
+            local _ws_src _ws_tgt _ws_ro _ws_desc _ws_ro_label _ws_pol
+            while IFS=$'\t' read -r _ws_src _ws_tgt _ws_ro _ws_pol; do
                 [[ -z "$_ws_tgt" ]] && continue
                 _ws_desc=$(_session_mount_description "$project_yml" "$_ws_tgt")
                 [[ "$_ws_ro" == "true" ]] && _ws_ro_label=" (read-only)" || _ws_ro_label=""

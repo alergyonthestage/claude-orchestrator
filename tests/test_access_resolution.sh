@@ -655,6 +655,28 @@ test_access_mount_settings_local_overlay_b2() {
     fi
 }
 
+# Recursive B1 (ADR-0049 §7): a monorepo's NESTED packages/x/.claude is overlaid
+# :ro too (not just the repo-root .claude) under the default Cr=ro.
+test_access_mount_nested_claude_recursive() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    mkdir -p "$CCO_DUMMY_REPO/.claude" "$CCO_DUMMY_REPO/packages/x/.claude"
+    run_cco start "test-proj" --dry-run --dump   # default Cr=ro
+    local c; c=$(_access_compose)
+    echo "$c" | grep -qE 'dummy-repo/\.claude:/workspace/dummy-repo/\.claude:ro"' \
+        || fail "repo-root .claude :ro overlay expected"
+    echo "$c" | grep -qE 'packages/x/\.claude:/workspace/dummy-repo/packages/x/\.claude:ro"' \
+        || fail "NESTED packages/x/.claude :ro overlay expected (recursive detection)"
+    # Under --claude-access repo (Cr=rw) neither is overlaid.
+    run_cco start "test-proj" --claude-access repo --dry-run --dump
+    c=$(_access_compose)
+    if echo "$c" | grep -qE 'packages/x/\.claude:.*:ro"'; then
+        fail "nested .claude must not be :ro when Cr=rw"
+    fi
+}
+
 # The B1 :ro overlay (Cr=ro default) also carries a settings.local.json rw child
 # for each repo that has a native .claude tree.
 test_access_mount_settings_local_overlay_b1() {

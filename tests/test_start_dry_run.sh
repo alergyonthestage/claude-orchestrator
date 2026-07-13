@@ -471,6 +471,82 @@ YAML
     assert_file_not_contains "$compose" "${rw_dir}:/workspace/rw:ro"
 }
 
+# ADR-0049 §7: nested .claude/.cco inside a WRITABLE extra_mount is STRICT :ro by
+# default (extra_mounts aren't config repos), even though the mount itself is rw.
+test_dry_run_extra_mount_nested_config_strict_ro() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local rw_dir="$tmpdir/rw"; mkdir -p "$rw_dir/sub/.claude"
+    mkdir -p "$rw_dir/proj/.cco"; printf 'name: sub\n' > "$rw_dir/proj/.cco/project.yml"
+    seed_index_path "rw" "$rw_dir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+repos:
+  - name: dummy-repo
+extra_mounts:
+  - name: rw
+    target: /workspace/rw
+    readonly: false
+YAML
+)"
+    run_cco start "test-proj" --dry-run --dump
+    local c="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_contains "$c" "${rw_dir}/sub/.claude:/workspace/rw/sub/.claude:ro"
+    assert_file_contains "$c" "${rw_dir}/proj/.cco:/workspace/rw/proj/.cco:ro"
+}
+
+# config_access_policy: write → nested config is left writable (no :ro overlay).
+test_dry_run_extra_mount_config_policy_write() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local rw_dir="$tmpdir/rw"; mkdir -p "$rw_dir/sub/.claude"
+    seed_index_path "rw" "$rw_dir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+repos:
+  - name: dummy-repo
+extra_mounts:
+  - name: rw
+    target: /workspace/rw
+    readonly: false
+    config_access_policy: write
+YAML
+)"
+    run_cco start "test-proj" --dry-run --dump
+    local c="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_not_contains "$c" "${rw_dir}/sub/.claude:/workspace/rw/sub/.claude:ro"
+}
+
+# config_access_policy: project → nested config follows the session knobs. Under a
+# default session (Cr=ro) the nested .claude is :ro; under --claude-access repo it's rw.
+test_dry_run_extra_mount_config_policy_project() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local rw_dir="$tmpdir/rw"; mkdir -p "$rw_dir/sub/.claude"
+    seed_index_path "rw" "$rw_dir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+repos:
+  - name: dummy-repo
+extra_mounts:
+  - name: rw
+    target: /workspace/rw
+    readonly: false
+    config_access_policy: project
+YAML
+)"
+    run_cco start "test-proj" --dry-run --dump
+    local c="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_contains "$c" "${rw_dir}/sub/.claude:/workspace/rw/sub/.claude:ro"
+    # --claude-access repo → Cr=rw → nested .claude follows, no :ro overlay.
+    run_cco start "test-proj" --claude-access repo --dry-run --dump
+    c="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_not_contains "$c" "${rw_dir}/sub/.claude:/workspace/rw/sub/.claude:ro"
+}
+
 # ── Reference mounts (--mount, ADR-0027 D2) ──────────────────────────
 
 test_dry_run_user_mount_readonly_default() {

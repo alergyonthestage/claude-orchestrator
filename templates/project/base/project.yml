@@ -57,6 +57,10 @@ repos: []
 #     target: /workspace/docs/api-specs       # optional container path (default /workspace/<name>)
 #     readonly: true
 #     description: "OpenAPI specs (reference)" # optional; shown to the agent in the session context
+#     config_access_policy: ro                # nested .claude/.cco inside this mount:
+#                           #   ro (default, strict) | project (follow session
+#                           #   access) | write. extra_mounts aren't config repos,
+#                           #   so nested config is read-only by default (ADR-0049).
 
 # ── Knowledge Packs (optional) ───────────────────────────────────────
 # Reference packs by logical name + an OPTIONAL coordinate (url/ref). A pack with

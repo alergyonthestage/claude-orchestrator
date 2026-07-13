@@ -220,14 +220,15 @@ _effective_extra_mounts() {
     local project_yml="$1"
     # Peel fields by tab (IFS=$'\t' read collapses empty middle fields, so
     # a name-only mount "name\t\t\ttarget\tro" would mis-assign target/ro).
-    local _ln name target ro_raw ro rest
+    local _ln name target ro_raw ro rest policy
     while IFS= read -r _ln; do
         [[ -z "$_ln" ]] && continue
-        name="${_ln%%$'\t'*}"; rest="${_ln#*$'\t'}"   # rest = url\tref\ttarget\tro
+        name="${_ln%%$'\t'*}"; rest="${_ln#*$'\t'}"   # rest = url\tref\ttarget\tro\tpolicy
         rest="${rest#*$'\t'}"                          # drop url
         rest="${rest#*$'\t'}"                          # drop ref
-        target="${rest%%$'\t'*}"
-        ro_raw="${rest#*$'\t'}"
+        target="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"  # target, rest = ro\tpolicy
+        ro_raw="${rest%%$'\t'*}"
+        policy="${rest#*$'\t'}"; [[ "$policy" == "$ro_raw" ]] && policy=""  # no policy field
         [[ -z "$name" ]] && continue
         # Conscious-skip: exclude an unresolved mount (no index path) rather
         # than emit a silent empty mount (#B17; design §4.4 / P14). A session-local
@@ -238,7 +239,12 @@ _effective_extra_mounts() {
         [[ "$_ms" != /* ]] && continue
         [[ -z "$target" ]] && target="/workspace/$name"
         ro=$(_parse_bool "$ro_raw" "true")
-        printf '%s\t%s\t%s\n' "$_ms" "$target" "$ro"
+        # config_access_policy (ADR-0049 §7): governs NESTED .claude/.cco inside the
+        # mount — ro (default, strict) | project (follow session knobs) | write.
+        # Invalid/empty → ro (strict default). The 4th output field (extends the
+        # abs_source<TAB>target<TAB>ro contract; readers ignore it unless they act).
+        case "$policy" in project|write) : ;; *) policy="ro" ;; esac
+        printf '%s\t%s\t%s\t%s\n' "$_ms" "$target" "$ro" "$policy"
     done < <(yml_get_mount_coords "$project_yml" 2>/dev/null)
 }
 

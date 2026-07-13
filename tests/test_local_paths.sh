@@ -63,9 +63,10 @@ extra_mounts:
   - name: shared-assets
 YAML
 
-    # No target → default /workspace/<name>; no readonly → default true.
+    # No target → default /workspace/<name>; no readonly → default true; no
+    # config_access_policy → default ro (4th field, ADR-0049 §7).
     local out; out=$(_effective_extra_mounts "$proj/project.yml")
-    assert_equals "$asset"$'\t'"/workspace/shared-assets"$'\t'"true" "$out" "mount defaults wrong"
+    assert_equals "$asset"$'\t'"/workspace/shared-assets"$'\t'"true"$'\t'"ro" "$out" "mount defaults wrong"
 }
 
 test_effective_extra_mounts_new_schema_explicit_target_rw() {
@@ -85,7 +86,45 @@ extra_mounts:
 YAML
 
     local out; out=$(_effective_extra_mounts "$proj/project.yml")
-    assert_equals "$asset"$'\t'"/workspace/custom"$'\t'"false" "$out" "explicit target/ro not honored"
+    assert_equals "$asset"$'\t'"/workspace/custom"$'\t'"false"$'\t'"ro" "$out" "explicit target/ro not honored"
+}
+
+# config_access_policy is parsed as the 4th field; project/write pass through,
+# anything else (or absent) defaults to the strict `ro` (ADR-0049 §7).
+test_effective_extra_mounts_config_access_policy() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_local_paths_index "$tmpdir/state"
+    local asset="$tmpdir/assets"; mkdir -p "$asset"
+    _index_set_path "assets" "$asset"
+    local proj="$tmpdir/proj"; mkdir -p "$proj"
+    local out
+    # project policy honored.
+    cat > "$proj/project.yml" <<'YAML'
+name: demo
+extra_mounts:
+  - name: assets
+    config_access_policy: project
+YAML
+    out=$(_effective_extra_mounts "$proj/project.yml")
+    assert_equals "$asset"$'\t'"/workspace/assets"$'\t'"true"$'\t'"project" "$out" "project policy not parsed"
+    # write policy honored.
+    cat > "$proj/project.yml" <<'YAML'
+name: demo
+extra_mounts:
+  - name: assets
+    config_access_policy: write
+YAML
+    out=$(_effective_extra_mounts "$proj/project.yml")
+    assert_equals "$asset"$'\t'"/workspace/assets"$'\t'"true"$'\t'"write" "$out" "write policy not parsed"
+    # invalid → strict ro.
+    cat > "$proj/project.yml" <<'YAML'
+name: demo
+extra_mounts:
+  - name: assets
+    config_access_policy: bogus
+YAML
+    out=$(_effective_extra_mounts "$proj/project.yml")
+    assert_equals "$asset"$'\t'"/workspace/assets"$'\t'"true"$'\t'"ro" "$out" "invalid policy must default to ro"
 }
 
 test_project_effective_paths_new_schema_status() {
