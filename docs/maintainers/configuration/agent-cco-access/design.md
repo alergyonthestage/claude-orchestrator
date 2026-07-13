@@ -223,6 +223,53 @@ is the D3/A1 analysis
 the oracle the [CLI-surface matrix](../../cli/reference/cli-surface-matrix.md) and the e2e v2
 pass derive from.
 
+## 4bis. Axis B — the `.claude` authoring model (`claude_access`)
+
+> **Target behaviour** ([ADR-0049](decisions/0049-claude-access-concordant-model.md), WS-B).
+> Supersedes the `none|repo|all` enum of ADR-0036 §D2 (→ preset sugar), reverses ADR-0027
+> §P17 (project `.claude` default read-only), and absorbs ADR-0048 §4 (config-editor
+> claude-follows-`G`) into the general rule below.
+
+`claude_access` (Axis B) governs the three `.claude` **authoring** trees. It is modelled —
+symmetrically with `cco_access` (Axis A, §4 / ADR-0046) — as a **per-tree axis triple** on
+the lattice **`ro < rw`** (no `none`: Claude Code must *read* its own config):
+
+| Axis | Tree | Reach | Mirrors cco | Default |
+|---|---|---|---|---|
+| **Cg** | B3 `~/.cco/.claude` | all projects | `G` | `= G` |
+| **Cp** | B2 `<repo>/.cco/claude` (→ `/workspace/.claude`) | this project | `Pc` | `= Pc` |
+| **Co** | other projects' `.cco/claude` | other projects | `Po` | `= Po` |
+| **Cr** | B1 `<repo>/.claude` (repo-native) | the repo | — (no cco axis) | **`ro`** |
+
+`Cr` is the extra axis — the repo's *own* `.claude` has no `(G,Pc,Po)` mapping — and is why
+Axis B stays a **separate knob** (not foldable into `cco_access`).
+
+**Three principles.** **P1** — a default `claude_access` (when the user sets only
+`cco_access`) is never *more permissive* than the cco intent on the trees nested in `.cco`.
+**P2** — explicit discordance is honored, with a **warning** (the knobs stay orthogonal;
+enforcement never silently clamps one by the other). **P3** — defaults are minimum-privilege
+and predictable: **read-only authoring by default**, write is an opt-in.
+
+**Concordant defaults + uniform grammar.** Unspecified → each axis **derives from cco**
+(`Cg=G`, `Cp=Pc`, `Co=Po`, `Cr=ro`). The setting uses the **same grammar as `cco_access`**
+in every source (CLI `--claude-access`, `project.yml` `access.claude`, `~/.cco/access.yml`
+`claude`): a **scalar preset** (`none`=all-ro · `repo`=`(rw,rw,ro,ro)` · `all`=all-rw) **or**
+a **granular map** (`{repo,current,global,others}`, omitted axes derive from cco). A
+**warning** fires only when the resolved `Cp`/`Cg`/`Co` is *more permissive* than the
+cco-concordant default (`Cr` never warns; tighter-than-cco never warns).
+
+**Functional-write floor.** Files Claude Code must write to function stay rw regardless of
+the axes: global `~/.claude/settings.json` (already) and a **rw child overlay** for
+`settings.local.json` at project (B2) and repo (B1). Preference/authoring content
+(`CLAUDE.md`, `rules/`, `agents/`, `skills/`) follows the axes.
+
+**extra_mounts.** Nested `.claude`/`.cco` inside an extra_mount are **read-only by default**
+(P3 — extra_mounts are arbitrary, not config repos), regardless of the session's knobs; the
+mount's own `readonly:` governs the rest. Opt-out per mount via **`config_access_policy`**:
+`ro` (default) · `project` (follow the session's `cco_access`/`claude_access`) · `write`.
+The read-only overlays detect `.claude` (and `.cco` with a `project.yml`) **recursively**
+under repos *and* extra_mounts — not root-only.
+
 ## 5. Invariants
 
 - **INV-1 — Level A carries only session-fixed information.** The injected block is a
@@ -267,12 +314,23 @@ config *and* its repos — the natural, explicit session for authoring repo-awar
 descriptions into `project.yml`. Absent that, descriptions are simply optional and the
 narrative lives in CLAUDE.md.
 
-## 7. init-workspace — responsibility split
+## 7. init-workspace — responsibility split + re-analysis
 
-`init-workspace` is split to match the new model:
+> **Flagged for a dedicated re-analysis** ([ADR-0049](decisions/0049-claude-access-concordant-model.md)
+> §6, WS-B) — **possible deprecation or re-scope.** Its historical value (a framework-aware
+> CLAUDE.md init) is largely covered today by Level-A context injection + the wrapped CLI,
+> and it is little used. The residual value is **generating repo descriptions + the project
+> CLAUDE.md**, to be delegated to another mechanism or kept as a re-scoped skill. Treated
+> here as pending; not decided in ADR-0049.
 
-- **Keeps**: authoring/refreshing the project **CLAUDE.md** (like `/init`, multi-repo /
-  pack aware). Works in a normal session (repo read + rw committed `.claude`).
+`init-workspace` is split to match the model:
+
+- **Keeps**: authoring/refreshing the project **CLAUDE.md**. But under ADR-0049 the project
+  `.claude` tree (B2/`Cp`) **defaults read-only** (concordant with the `read-project`
+  default) — so in a *default* normal session `init-workspace` cannot write it; it needs an
+  explicit Axis-B grant (`--claude-access repo`) or a cco edit level. Writing `.claude`
+  authoring content is now an explicit, minimum-privilege opt-in (reverses the ADR-0027 P17
+  "rw by default"). **No `/init` carve-out** is added.
 - **Drops**: the broken `workspace.yml` description write-back (the file no longer exists).
 - **Optionally gains** (only when the session has `cco_access ≥ edit-project`): writing the
   optional structured descriptions into `project.yml`.
@@ -290,7 +348,11 @@ narrative lives in CLAUDE.md.
 > widener). ADR-0048 refines it further: project mode edits the project but **reads** the
 > store (`(ro,rw,none)`, not `edit-global`), global mode is the honest project-less
 > `(rw,none,none)`, `G` is clamped `≥ ro`, and `claude_access` follows `G`. This section
-> reflects that current target.
+> reflects that current target. **[ADR-0049](decisions/0049-claude-access-concordant-model.md)
+> (WS-B)** then *generalises* the `claude_access`-follows-`G` floor into the cco-derived
+> Axis-B default for **every** session (§4bis): config-editor's `claude` column below is now
+> that **general derivation** (project mode `(ro,rw,none)` → `Cp=rw, Cg=ro`; `edit-global` →
+> `Cg=rw`; `edit-all` → `Co=rw`), not a bespoke config-editor branch.
 
 **Two regimes.** Sessions fall into two classes with different scope-default rules:
 
@@ -327,9 +389,10 @@ outside-a-project default is **global-only** and honestly project-less; the ever
 surface is reached **only** via the explicit `--all`/`edit-all`. Two floors keep the tool
 usable and coherent: **`G ≥ ro`** (an authoring session always *sees* the store — an
 explicit narrower `--cco-access` is clamped up, with a notice) and **`claude_access`
-follows `G`** (global `.cco/.claude` authoring is writable only when the store is — no
-writable-rules/read-only-packs asymmetry). cco widens access via explicit flags, never an
-interactive prompt.
+follows `G`** — now a *consequence* of the general cco-derived Axis-B default (§4bis,
+ADR-0049): global `.cco/.claude` authoring (`Cg`) is writable only when the store is (`G=rw`),
+so there is no writable-rules/read-only-packs asymmetry. cco widens access via explicit
+flags, never an interactive prompt.
 
 **On "no repo content mounted" (P18 / ADR-0036 D6).** Unchanged: the default config-editor
 mounts no repos; mounting repos is an explicit opt-in via `--project`/`--repo`. ADR-0036 D6 +
