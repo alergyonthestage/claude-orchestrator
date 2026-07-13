@@ -272,17 +272,41 @@ _start_resolve_access() {
     # config-editor to none). A user can still narrow with an explicit --cco-access.
     # A normal session uses the full CLI > project.yml access: > global > preset.
     local p_claude="" p_cco="" p_shp="" g_claude="" g_cco="" g_shp=""
+    # Granular MAP axes per source (ADR-0049 §9 / ADR-0046). project.yml: access.cco
+    # and access.claude sub-keys (depth-3). ~/.cco/access.yml: cco.* and claude.*
+    # sub-keys (depth-2 — the top-level key is at depth 1 there). A scalar and a map
+    # are mutually exclusive on a key: when it is a map the scalar read is empty and
+    # the map axes catch it, and vice-versa — so precedence just tries map before
+    # scalar within each source's tier.
+    local _mg="" _mc="" _mo=""                  # project.yml access.cco map
+    local _clr="" _clc="" _clg="" _clo=""       # project.yml access.claude map (Cr,Cp,Cg,Co)
+    local _gmg="" _gmc="" _gmo=""               # access.yml cco map
+    local _gclr="" _gclc="" _gclg="" _gclo=""   # access.yml claude map
     if [[ "$_preset" == "normal" ]]; then
         # access.<key> is a 2-level block (2-space indent) → yml_get auto-depth 2
         # (NOT yml_get_deep, which forces depth 3 and would miss it).
         p_claude=$(yml_get "$project_yml" "access.claude" 2>/dev/null)
         p_cco=$(yml_get "$project_yml" "access.cco" 2>/dev/null)
         p_shp=$(yml_get "$project_yml" "access.show_host_paths" 2>/dev/null)
+        _mg=$(yml_get_deep "$project_yml" "access.cco.global"  2>/dev/null)
+        _mc=$(yml_get_deep "$project_yml" "access.cco.current" 2>/dev/null)
+        _mo=$(yml_get_deep "$project_yml" "access.cco.others"  2>/dev/null)
+        _clr=$(yml_get_deep "$project_yml" "access.claude.repo"    2>/dev/null)
+        _clc=$(yml_get_deep "$project_yml" "access.claude.current" 2>/dev/null)
+        _clg=$(yml_get_deep "$project_yml" "access.claude.global"  2>/dev/null)
+        _clo=$(yml_get_deep "$project_yml" "access.claude.others"  2>/dev/null)
         local gfile; gfile=$(_cco_access_file)
         if [[ -f "$gfile" ]]; then
             g_claude=$(yml_get "$gfile" "claude" 2>/dev/null)
             g_cco=$(yml_get "$gfile" "cco" 2>/dev/null)
             g_shp=$(yml_get "$gfile" "show_host_paths" 2>/dev/null)
+            _gmg=$(yml_get "$gfile" "cco.global"  2>/dev/null)
+            _gmc=$(yml_get "$gfile" "cco.current" 2>/dev/null)
+            _gmo=$(yml_get "$gfile" "cco.others"  2>/dev/null)
+            _gclr=$(yml_get "$gfile" "claude.repo"    2>/dev/null)
+            _gclc=$(yml_get "$gfile" "claude.current" 2>/dev/null)
+            _gclg=$(yml_get "$gfile" "claude.global"  2>/dev/null)
+            _gclo=$(yml_get "$gfile" "claude.others"  2>/dev/null)
         fi
     fi
 
@@ -298,13 +322,10 @@ _start_resolve_access() {
     # `read` alias is normalized inside the resolver (→ read-all). cco_access is
     # then the DISPLAY LABEL of the triple; cco_g/cco_pc/cco_po are the machine
     # source consumers derive from (INV-E). include_member_configs (§6) is an
-    # additive project.yml bool (default false).
-    local _mg="" _mc="" _mo=""
-    if [[ "$_preset" == "normal" ]]; then
-        _mg=$(yml_get_deep "$project_yml" "access.cco.global"  2>/dev/null)
-        _mc=$(yml_get_deep "$project_yml" "access.cco.current" 2>/dev/null)
-        _mo=$(yml_get_deep "$project_yml" "access.cco.others"  2>/dev/null)
-    fi
+    # additive project.yml bool (default false). Precedence within each tier tries the
+    # granular MAP before the scalar; ~/.cco/access.yml gains its own map tier
+    # (ADR-0049 §9), below the project scalar and above the global scalar. The map
+    # axes were read above.
     # _has_current_project is threaded so the conditional INV-2 floor (§2) lets a
     # project-less session (config-editor global mode) floor Pc to `none`; every normal
     # session passes `true` and keeps the strict floor.
@@ -312,6 +333,7 @@ _start_resolve_access() {
     if   [[ -n "$cli_cco_access" ]]; then _cco_triple=$(_cco_resolve_access "$cli_cco_access" "$_has_current_project") || exit $?
     elif [[ -n "$_mg$_mc$_mo" ]];    then _cco_triple=$(_cco_promote_triple "$_mg" "$_mc" "$_mo" "$_has_current_project") || exit $?
     elif [[ -n "$p_cco" ]];          then _cco_triple=$(_cco_resolve_access "$p_cco" "$_has_current_project") || exit $?
+    elif [[ -n "$_gmg$_gmc$_gmo" ]]; then _cco_triple=$(_cco_promote_triple "$_gmg" "$_gmc" "$_gmo" "$_has_current_project") || exit $?
     elif [[ -n "$g_cco" ]];          then _cco_triple=$(_cco_resolve_access "$g_cco" "$_has_current_project") || exit $?
     else                                  _cco_triple=$(_cco_resolve_access "$d_cco" "$_has_current_project") || exit $?
     fi
@@ -331,22 +353,24 @@ _start_resolve_access() {
 
     # ── claude access → the (Cr,Cp,Cg,Co) authoring triple (ADR-0049) ─
     # Axis B mirrors Axis A (§4bis). A source's claude value is a SCALAR (a preset
-    # name OR the granular "repo=…,current=…,global=…,others=…" form); the
-    # project.yml/access.yml MAP form (access.claude sub-keys) is read in a later
-    # step. Unspecified → each of Cp/Cg/Co DERIVES from the resolved cco triple and
-    # Cr defaults `ro` (§2), so the default is never MORE permissive than the cco
-    # intent (P1). Precedence (§9): CLI > project.yml access.claude > global
-    # ~/.cco/access.yml claude > cco-derived default. config-editor's former bespoke
-    # "claude follows G" is GONE — the general derivation subsumes it (§8): project
-    # mode (ro,rw,none) → (ro,rw,ro,ro); edit-global lifts Cg=rw; edit-all lifts
-    # Co=rw. The resolver dies (exit 1) on a bad preset/token; propagate the exit.
-    # claude_access is then the DISPLAY LABEL; claude_cr/cp/cg/co are the machine
-    # source consumers derive mount modes from (INV-E).
+    # name OR the granular "repo=…,current=…,global=…,others=…" form) OR the
+    # access.claude MAP form (sub-keys repo/current/global/others). Unspecified axes
+    # DERIVE from the resolved cco triple (Cr always `ro`, §2), so the default is
+    # never MORE permissive than the cco intent (P1). Precedence (§9): CLI >
+    # project.yml access.claude (scalar|map) > ~/.cco/access.yml claude (scalar|map)
+    # > cco-derived default. config-editor's former bespoke "claude follows G" is
+    # GONE — the general derivation subsumes it (§8): project mode (ro,rw,none) →
+    # (ro,rw,ro,ro); edit-global lifts Cg=rw; edit-all lifts Co=rw. The resolver dies
+    # (exit 1) on a bad preset/token; propagate the exit. claude_access is then the
+    # DISPLAY LABEL; claude_cr/cp/cg/co are the machine source consumers derive mount
+    # modes from (INV-E). A map's omitted axes derive from cco just like a scalar's.
     local _claude_triple
-    if   [[ -n "$cli_claude_access" ]]; then _claude_triple=$(_claude_resolve_access "$cli_claude_access" "$cco_g" "$cco_pc" "$cco_po") || exit $?
-    elif [[ -n "$p_claude" ]];          then _claude_triple=$(_claude_resolve_access "$p_claude" "$cco_g" "$cco_pc" "$cco_po") || exit $?
-    elif [[ -n "$g_claude" ]];          then _claude_triple=$(_claude_resolve_access "$g_claude" "$cco_g" "$cco_pc" "$cco_po") || exit $?
-    else                                     _claude_triple=$(_claude_derive_triple "" "" "" "" "$cco_g" "$cco_pc" "$cco_po")
+    if   [[ -n "$cli_claude_access" ]];      then _claude_triple=$(_claude_resolve_access "$cli_claude_access" "$cco_g" "$cco_pc" "$cco_po") || exit $?
+    elif [[ -n "$_clr$_clc$_clg$_clo" ]];    then _claude_triple=$(_claude_derive_triple "$_clr" "$_clc" "$_clg" "$_clo" "$cco_g" "$cco_pc" "$cco_po") || exit $?
+    elif [[ -n "$p_claude" ]];               then _claude_triple=$(_claude_resolve_access "$p_claude" "$cco_g" "$cco_pc" "$cco_po") || exit $?
+    elif [[ -n "$_gclr$_gclc$_gclg$_gclo" ]]; then _claude_triple=$(_claude_derive_triple "$_gclr" "$_gclc" "$_gclg" "$_gclo" "$cco_g" "$cco_pc" "$cco_po") || exit $?
+    elif [[ -n "$g_claude" ]];               then _claude_triple=$(_claude_resolve_access "$g_claude" "$cco_g" "$cco_pc" "$cco_po") || exit $?
+    else                                          _claude_triple=$(_claude_derive_triple "" "" "" "" "$cco_g" "$cco_pc" "$cco_po")
     fi
     read -r claude_cr claude_cp claude_cg claude_co <<< "$_claude_triple"
     claude_access=$(_claude_triple_label "$claude_cr" "$claude_cp" "$claude_cg" "$claude_co")

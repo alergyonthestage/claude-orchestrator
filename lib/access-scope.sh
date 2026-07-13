@@ -304,8 +304,13 @@ _claude_parse_granular() {
 # pass through untouched. No invariant floors (Axis B has none). Emits the resolved
 # "Cr Cp Cg Co". The all-empty call (`_claude_derive_triple "" "" "" "" …`) yields
 # the pure cco-derived default used when claude_access is entirely unspecified.
+# Each non-empty explicit axis is validated (ro|rw) — this is the single validator
+# for the project.yml/access.yml MAP form, whose axes bypass the granular CSV parse.
 _claude_derive_triple() {
-    local cr="$1" cp="$2" cg="$3" co="$4" g="$5" pc="$6" po="$7"
+    local cr="$1" cp="$2" cg="$3" co="$4" g="$5" pc="$6" po="$7" _a
+    for _a in "$cr" "$cp" "$cg" "$co"; do
+        case "$_a" in ""|ro|rw) : ;; *) die "Invalid claude_access value '$_a' (expected ro|rw)." ;; esac
+    done
     [[ -z "$cr" ]] && cr="ro"
     [[ -z "$cp" ]] && cp="$(_claude_from_cco_axis "$pc")"
     [[ -z "$cg" ]] && cg="$(_claude_from_cco_axis "$g")"

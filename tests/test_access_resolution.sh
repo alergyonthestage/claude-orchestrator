@@ -335,6 +335,97 @@ test_access_resolve_claude_project_scalar() {
         || fail "project claude preset triple, got: $claude_cr $claude_cp $claude_cg $claude_co"
 }
 
+# project.yml access.claude MAP form: explicit axes set, omitted axes derive from
+# cco (default read-project → Pc=ro,Po=none). {current:rw, global:ro} → (ro,rw,ro,ro).
+test_access_resolve_claude_map_form() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    local project_yml="$tmp/project.yml"
+    printf 'name: p\naccess:\n  claude:\n    current: rw\n    global: ro\n' > "$project_yml"
+    local cli_claude_access="" cli_cco_access="" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
+    local claude_cr claude_cp claude_cg claude_co
+    _start_resolve_access
+    [[ "$claude_cr $claude_cp $claude_cg $claude_co" == "ro rw ro ro" ]] \
+        || fail "project claude map → (ro,rw,ro,ro), got: $claude_cr $claude_cp $claude_cg $claude_co"
+    [[ "$claude_access" == "repo=ro,current=rw,global=ro,others=ro" ]] || fail "project claude map label, got: $claude_access"
+}
+
+# A partial project.yml claude map derives omitted axes from cco edit-all
+# (rw,rw,rw): only repo:rw set → (rw, rw, rw, rw) — Cp/Cg/Co derive to rw.
+test_access_resolve_claude_map_partial_derives() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    local project_yml="$tmp/project.yml"
+    printf 'name: p\naccess:\n  cco: edit-all\n  claude:\n    repo: rw\n' > "$project_yml"
+    local cli_claude_access="" cli_cco_access="" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
+    local claude_cr claude_cp claude_cg claude_co
+    _start_resolve_access
+    [[ "$claude_cr $claude_cp $claude_cg $claude_co" == "rw rw rw rw" ]] \
+        || fail "partial claude map derives from cco edit-all, got: $claude_cr $claude_cp $claude_cg $claude_co"
+    [[ "$claude_access" == "all" ]] || fail "partial map label rounds to all, got: $claude_access"
+}
+
+# ~/.cco/access.yml granular MAP for claude (level 3, below project). {global:rw}
+# under default cco read-project → (ro,ro,rw,ro).
+test_access_resolve_global_claude_map() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    printf 'claude:\n  global: rw\n' > "$HOME/.cco/access.yml"
+    local project_yml="$tmp/project.yml"; printf 'name: p\n' > "$project_yml"
+    local cli_claude_access="" cli_cco_access="" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
+    local claude_cr claude_cp claude_cg claude_co
+    _start_resolve_access
+    [[ "$claude_cr $claude_cp $claude_cg $claude_co" == "ro ro rw ro" ]] \
+        || fail "access.yml claude map → (ro,ro,rw,ro), got: $claude_cr $claude_cp $claude_cg $claude_co"
+}
+
+# ~/.cco/access.yml granular MAP for cco (symmetric with project.yml). {global:rw,
+# current:ro,others:ro} → (rw,ro,ro).
+test_access_resolve_global_cco_map() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    printf 'cco:\n  global: rw\n  current: ro\n  others: ro\n' > "$HOME/.cco/access.yml"
+    local project_yml="$tmp/project.yml"; printf 'name: p\n' > "$project_yml"
+    local cli_claude_access="" cli_cco_access="" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
+    _start_resolve_access
+    [[ "$cco_g $cco_pc $cco_po" == "rw ro ro" ]] || fail "access.yml cco map → (rw,ro,ro), got: $cco_g $cco_pc $cco_po"
+}
+
+# A project.yml claude map wins over an ~/.cco/access.yml claude map (precedence).
+test_access_resolve_claude_map_precedence() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    printf 'claude:\n  global: rw\n' > "$HOME/.cco/access.yml"
+    local project_yml="$tmp/project.yml"
+    printf 'name: p\naccess:\n  claude:\n    repo: rw\n' > "$project_yml"
+    local cli_claude_access="" cli_cco_access="" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
+    local claude_cr claude_cp claude_cg claude_co
+    _start_resolve_access
+    # Project map wins → Cr=rw explicit, Cg derives from cco (ro), NOT the global map's rw.
+    [[ "$claude_cr $claude_cp $claude_cg $claude_co" == "rw ro ro ro" ]] \
+        || fail "project claude map wins over global, got: $claude_cr $claude_cp $claude_cg $claude_co"
+}
+
+# A bad axis value in the claude MAP dies naming claude_access.
+test_access_resolve_claude_map_bad_value() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    local project_yml="$tmp/project.yml"
+    printf 'name: p\naccess:\n  claude:\n    current: maybe\n' > "$project_yml"
+    local cli_claude_access="" cli_cco_access="" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
+    local claude_cr claude_cp claude_cg claude_co
+    local out rc=0
+    out=$( _start_resolve_access 2>&1 ) || rc=$?
+    [[ $rc -ne 0 ]] || fail "bad claude map value must be rejected, got rc=0"
+    [[ "$out" == *"claude_access"* ]] || fail "message should name claude_access, got: $out"
+}
+
 # A bad claude value (unknown key/out-of-lattice) dies naming claude_access.
 test_access_resolve_claude_bad_token() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT

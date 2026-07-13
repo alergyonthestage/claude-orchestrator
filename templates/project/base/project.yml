@@ -7,7 +7,8 @@ description: "{{DESCRIPTION}}"
 # Precedence: CLI flags > this block > ~/.cco/access.yml > defaults.
 #
 # access:
-#   claude: repo            # .claude authoring: none | repo (default) | all
+#   claude: none            # .claude authoring, SCALAR (preset): none | repo | all
+#                           #   (default: DERIVED from cco — see below)
 #   cco: read-project       # .cco config, SCALAR (preset) form: none |
 #                           #   read-project (default) | read-global | read-all |
 #                           #   edit-project | edit-global | edit-all
@@ -24,6 +25,19 @@ description: "{{DESCRIPTION}}"
 #     others: none          # Po — other projects' config (Po <= Pc)
 #     include_member_configs: false  # widen Pc's rw span from the hosting repo's
 #                           #   <repo>/.cco to ALL member repos' divergent copies
+#
+# `claude` (Axis B, ADR-0049) governs the .claude AUTHORING trees. By DEFAULT it
+# DERIVES from `cco` (never more permissive): a read-only cco session keeps .claude
+# read-only too, so a normal session no longer authors .claude by default. Set it
+# only to author .claude. It accepts the same grammar — a scalar preset (none =
+# all read-only · repo = author repo-native + this project · all = author every
+# tree) OR a granular MAP on the lattice ro < rw (omitted axes derive from cco):
+#
+#   claude:
+#     repo: ro              # Cr — <repo>/.claude repo-native      (default ro)
+#     current: rw           # Cp — <repo>/.cco/claude (this project) (default = cco current)
+#     global: ro            # Cg — ~/.cco/.claude                  (default = cco global)
+#     others: ro            # Co — other projects' .claude         (default = cco others)
 
 # ── Repositories ─────────────────────────────────────────────────────
 # Each repo is referenced by a logical name + an optional machine-agnostic

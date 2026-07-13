@@ -31,6 +31,35 @@ test_init_seeds_global_when_absent() {
     assert_file_exists "$HOME/.cco/.claude/rules/language.md"
 }
 
+test_init_scaffolds_commented_access_yml() {
+    # ADR-0049 §9: cco init writes ~/.cco/access.yml FULLY commented (nothing set
+    # implicitly) so the user sees the global access escape exists.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local repo; repo=$(_init_repo "$tmpdir" myrepo)
+    ( cd "$repo" && run_cco init --name myrepo --lang "English" )
+    local f="$HOME/.cco/access.yml"
+    assert_file_exists "$f"
+    assert_file_contains "$f" "claude_access, ADR-0049"
+    # Every non-blank line is a comment → no knob is set implicitly.
+    if grep -vE '^\s*(#|$)' "$f"; then
+        echo "ASSERTION FAILED: scaffolded access.yml must be fully commented"
+        return 1
+    fi
+}
+
+# A second init must not clobber an edited access.yml (idempotent, user-owned).
+test_init_access_yml_not_clobbered() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local repo1; repo1=$(_init_repo "$tmpdir" repo-one)
+    ( cd "$repo1" && run_cco init --name repo-one --lang "English" )
+    printf 'cco: read-global\n' > "$HOME/.cco/access.yml"   # user edit
+    local repo2; repo2=$(_init_repo "$tmpdir" repo-two)
+    ( cd "$repo2" && run_cco init --name repo-two --lang "English" )
+    assert_file_contains "$HOME/.cco/access.yml" "cco: read-global"
+}
+
 test_init_global_setup_scripts_to_cco_root() {
     # setup.sh / setup-build.sh / mcp-packages.txt land at the ~/.cco top level.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT

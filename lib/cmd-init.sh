@@ -116,6 +116,52 @@ EOF
 }
 
 # ── Global-config ensure (ADR-0026 step 1) ───────────────────────────
+# Scaffold ~/.cco/access.yml COMMENTED, only when absent (ADR-0049 §9). It is the
+# user's explicit GLOBAL access default — the level-3 tier below CLI flags and a
+# project.yml `access:` block, above the built-in cco-derived defaults. Written
+# fully commented so nothing is set implicitly: the user sees the escape exists but
+# every knob keeps its derived default until they uncomment a line. Idempotent —
+# never clobbers an existing (possibly edited) file. Both knobs accept a scalar
+# preset OR a granular map (symmetric with project.yml `access:`).
+_write_access_scaffold() {
+    local f; f=$(_cco_access_file)   # ~/.cco/access.yml
+    [[ -f "$f" ]] && return 0
+    mkdir -p "$(dirname "$f")" || return 0
+    cat > "$f" <<'YAML'
+# ~/.cco/access.yml — your GLOBAL session-access defaults (all OPTIONAL).
+# Precedence: CLI flags > a project's project.yml `access:` block > THIS file >
+# built-in defaults. Everything here is commented: uncomment only what you want to
+# change globally. Both knobs take a scalar preset OR a granular map.
+
+# ── .cco config access (cco_access, ADR-0046) ────────────────────────
+# Scalar preset:
+# cco: read-project        # none | read-project (default) | read-global |
+#                          #   read-all | edit-project | edit-global | edit-all
+# …or a granular map — three axes on the lattice none < ro < rw:
+# cco:
+#   global: ro             # G  — the rest of the personal ~/.cco store
+#   current: ro            # Pc — this project's config (never none while enabled)
+#   others: none           # Po — other projects' config (Po <= Pc)
+
+# ── .claude authoring access (claude_access, ADR-0049) ───────────────
+# By DEFAULT claude_access DERIVES from cco (never more permissive): a read-only
+# cco session keeps .claude read-only too. Set this only to author .claude.
+# Scalar preset:
+# claude: none             # none (all .claude read-only) | repo (author repo-native
+#                          #   + this project's .claude) | all (author every tree)
+# …or a granular map — four axes on the lattice ro < rw (omitted axes derive from cco):
+# claude:
+#   repo: ro               # Cr — <repo>/.claude repo-native (default ro)
+#   current: ro            # Cp — <repo>/.cco/claude       (default = cco current)
+#   global: ro             # Cg — ~/.cco/.claude           (default = cco global)
+#   others: ro             # Co — other projects' .claude  (default = cco others)
+
+# ── Host path map (show_host_paths) ──────────────────────────────────
+# show_host_paths: true    # show the host<->container path map (default: true)
+YAML
+    return 0
+}
+
 # Seed ~/.cco/.claude from the framework defaults ONLY when absent. Idempotent:
 # returns 0 (and seeds) on a fresh user, 1 (no-op) when the global already exists.
 # Targets $(_cco_global_claude_dir) = ~/.cco/.claude (flat, ADR-0028 — no `global/`
@@ -193,6 +239,7 @@ _cco_init_ensure_global() {
     # Decomposed config/state datums (ADR-0013 D4): languages → ~/.cco,
     # changelog markers → STATE top-level.
     _write_languages "$comm_lang" "$docs_lang" "$code_lang"
+    _write_access_scaffold   # ~/.cco/access.yml commented escape (ADR-0049 §9)
     _write_last_seen_changelog "$latest_changelog"
     _write_last_read_changelog "$latest_changelog"
 
