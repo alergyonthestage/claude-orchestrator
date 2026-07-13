@@ -1,13 +1,12 @@
 # Agent ↔ cco Access & Context — Design
 
-> **Status**: Design **approved** (2026-07-02) — direction + the four open decisions
-> ratified by the maintainer (see §9). **Implementation IN PROGRESS** on
-> `feat/config-access/capability-model`: **Step 1 done** (`0e6bc87` — symmetric read scoping §4,
-> `read-project` default, scope-aware operator help §4.3); **Step 2 done** (`8183b4a` — Level-A
-> hook injection §3, `workspace.yml` file retired, `CCO_SESSION_CONTEXT` env, INV-2/3/4); Steps
-> 3–7 pending (tracked in [`impl-handoff.md`](impl-handoff.md)). Living design doc (see
-> `.claude/rules/documentation-lifecycle.md`): it reflects the target behavior and is
-> rewritten in place.
+> **Status**: Design **approved** and **implemented** across the ADR series
+> ADR-0036/0042/0043/0044/0046/0047/0048 and — for the Axis-B authoring model — **ADR-0049**
+> (`claude_access` concordant triple), code-complete on `feat/config-access/claude-access-model`
+> (from the WS-A tip; the access branches are **not yet pushed**). Remaining is Mac-side
+> acceptance: `cco build` → live dogfood → **e2e v2** on the settled model → push + merge. Living
+> design doc (see `.claude/rules/documentation-lifecycle.md`): it reflects the current/target
+> behavior and is rewritten in place; the per-decision history lives in the ADRs.
 >
 > **Scope**: how a Claude agent running inside a cco session (a) becomes *aware* of its
 > cco environment and the project's resources, and (b) is granted *read/write* access to
@@ -225,10 +224,11 @@ pass derive from.
 
 ## 4bis. Axis B — the `.claude` authoring model (`claude_access`)
 
-> **Target behaviour** ([ADR-0049](decisions/0049-claude-access-concordant-model.md), WS-B).
-> Supersedes the `none|repo|all` enum of ADR-0036 §D2 (→ preset sugar), reverses ADR-0027
-> §P17 (project `.claude` default read-only), and absorbs ADR-0048 §4 (config-editor
-> claude-follows-`G`) into the general rule below.
+> **Model** ([ADR-0049](decisions/0049-claude-access-concordant-model.md), WS-B) — **implemented**
+> (5 commits `96b08ae`→`2f0cd19`, awaiting `cco build` + e2e v2). Supersedes the `none|repo|all`
+> enum of ADR-0036 §D2 (→ preset sugar), reverses ADR-0027 §P17 (project `.claude` default
+> read-only), and absorbs ADR-0048 §4 (config-editor claude-follows-`G`) into the general rule
+> below.
 
 `claude_access` (Axis B) governs the three `.claude` **authoring** trees. It is modelled —
 symmetrically with `cco_access` (Axis A, §4 / ADR-0046) — as a **per-tree axis triple** on
