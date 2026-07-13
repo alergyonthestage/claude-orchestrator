@@ -65,8 +65,14 @@ test_access_resolve_defaults() {
     local project_yml="$tmp/project.yml"; printf 'name: p\n' > "$project_yml"
     local cli_claude_access="" cli_cco_access="" cli_show_host_paths=""
     local claude_access cco_access show_host_paths
+    local claude_cr claude_cp claude_cg claude_co
     _start_resolve_access
-    [[ "$claude_access" == "repo" ]]  || fail "default claude=repo, got: $claude_access"
+    # ADR-0049 §2/§6: claude_access now DERIVES from cco. Default cco read-project
+    # (none,ro,none) → (Cr=ro, Cp=ro, Cg=ro, Co=ro) = preset `none` — a normal
+    # session no longer authors .claude by default (reverses ADR-0027 P17).
+    [[ "$claude_access" == "none" ]]  || fail "default claude derives to none, got: $claude_access"
+    [[ "$claude_cr $claude_cp $claude_cg $claude_co" == "ro ro ro ro" ]] \
+        || fail "default claude axes (ro,ro,ro,ro), got: $claude_cr $claude_cp $claude_cg $claude_co"
     [[ "$cco_access" == "read-project" ]] || fail "default cco=read-project (ADR-0042), got: $cco_access"
     [[ "$show_host_paths" == "true" ]] || fail "default show_host_paths=true, got: $show_host_paths"
 }
@@ -176,14 +182,15 @@ test_access_preset_tutorial_read_all() {
     [[ "$cco_access" == "read-all" ]] || fail "tutorial cco=read-all (ADR-0044 §2), got: $cco_access"
 }
 
-# config-editor → minimum privilege by resolved mode: global→edit-global,
-# project→edit-global, all→edit-all (ADR-0044 §3 reconciled with the ADR-0046
-# ladder — "edit ~/.cco + a project" is edit-global (rw,rw,none), not edit-project
-# (none,rw,none) which can no longer write ~/.cco). claude stays 'all'.
-# WS-A (2026-07-11): config-editor defaults are minimum-privilege BY MODE.
-#   project → (ro,rw,none): edit the project, READ the store (claude follows G → repo).
-#   global  → (rw,none,none): edit ONLY the store, project-less (claude follows G → all).
-#   all     → edit-all (rw,rw,rw), claude=all.
+# config-editor → minimum privilege by resolved mode: global→(rw,none,none),
+# project→(ro,rw,none), all→edit-all (ADR-0044 §3 / ADR-0048 WS-A). claude_access
+# is now the GENERAL cco-derived Axis-B default (ADR-0049 §8) — the bespoke
+# "claude follows G" is gone, so config-editor's claude column is a CONSEQUENCE:
+#   project → cco (ro,rw,none) → claude (ro,rw,ro,ro) = custom (author the target's
+#             B2, read the rest). NOT preset `repo` (which would author B1 too).
+#   global  → cco (rw,none,none) → claude (ro,ro,rw,ro) = author the global B3 only.
+#   all     → cco (rw,rw,rw) → claude (ro,rw,rw,rw) = author every project's B2/B3,
+#             but B1 (Cr) stays ro.
 test_access_preset_config_editor_by_mode() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _access_setup_home "$tmp"; _access_src
@@ -191,22 +198,29 @@ test_access_preset_config_editor_by_mode() {
     local session_preset="config-editor"
     local cli_claude_access="" cli_cco_access="" cli_show_host_paths=""
     local claude_access cco_access show_host_paths config_editor_mode
+    local claude_cr claude_cp claude_cg claude_co
     local cco_g cco_pc cco_po cco_include_member_configs
     config_editor_mode="project"; _start_resolve_access
     [[ "$cco_g $cco_pc $cco_po" == "ro rw none" ]] || fail "config-editor project→(ro,rw,none), got: $cco_g $cco_pc $cco_po"
     [[ "$cco_access" == "global=ro,current=rw,others=none" ]] || fail "project label, got: $cco_access"
-    [[ "$claude_access" == "repo" ]]      || fail "config-editor project→claude=repo (G=ro), got: $claude_access"
+    [[ "$claude_cr $claude_cp $claude_cg $claude_co" == "ro rw ro ro" ]] \
+        || fail "config-editor project→claude (ro,rw,ro,ro), got: $claude_cr $claude_cp $claude_cg $claude_co"
+    [[ "$claude_access" == "repo=ro,current=rw,global=ro,others=ro" ]] \
+        || fail "config-editor project claude label, got: $claude_access"
     config_editor_mode="global"; _start_resolve_access
     [[ "$cco_g $cco_pc $cco_po" == "rw none none" ]] || fail "config-editor global→(rw,none,none), got: $cco_g $cco_pc $cco_po"
     [[ "$cco_access" == "global=rw,current=none,others=none" ]] || fail "global label, got: $cco_access"
-    [[ "$claude_access" == "all" ]]       || fail "config-editor global→claude=all (G=rw), got: $claude_access"
+    [[ "$claude_cr $claude_cp $claude_cg $claude_co" == "ro ro rw ro" ]] \
+        || fail "config-editor global→claude (ro,ro,rw,ro), got: $claude_cr $claude_cp $claude_cg $claude_co"
     config_editor_mode="all"; _start_resolve_access
     [[ "$cco_access" == "edit-all" ]]     || fail "config-editor all→edit-all, got: $cco_access"
-    [[ "$claude_access" == "all" ]]       || fail "config-editor all→claude=all, got: $claude_access"
+    [[ "$claude_cr $claude_cp $claude_cg $claude_co" == "ro rw rw rw" ]] \
+        || fail "config-editor all→claude (ro,rw,rw,rw) — Cr stays ro, got: $claude_cr $claude_cp $claude_cg $claude_co"
 }
 
 # An explicit --cco-access still overrides the config-editor by-mode default. An
-# edit-global override in project mode widens G to rw (store writable) and claude→all.
+# edit-global override in project mode widens cco to (rw,rw,none); claude then
+# DERIVES to (ro,rw,rw,ro) — both the target B2 and the global B3 authorable.
 test_access_preset_config_editor_cli_override() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _access_setup_home "$tmp"; _access_src
@@ -214,9 +228,11 @@ test_access_preset_config_editor_cli_override() {
     local session_preset="config-editor" config_editor_mode="project"
     local cli_claude_access="" cli_cco_access="edit-global" cli_show_host_paths=""
     local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
+    local claude_cr claude_cp claude_cg claude_co
     _start_resolve_access
     [[ "$cco_access" == "edit-global" ]] || fail "CLI edit-global overrides the config-editor default, got: $cco_access"
-    [[ "$claude_access" == "all" ]]      || fail "edit-global override → claude=all (G=rw), got: $claude_access"
+    [[ "$claude_cr $claude_cp $claude_cg $claude_co" == "ro rw rw ro" ]] \
+        || fail "edit-global override → claude (ro,rw,rw,ro), got: $claude_cr $claude_cp $claude_cg $claude_co"
 }
 
 # config-editor G>=ro clamp (WS-A / ADR-0044 §2 analogy): an explicit narrower override
@@ -234,6 +250,103 @@ test_access_config_editor_g_clamp() {
     [[ "$cco_g $cco_pc $cco_po" == "ro ro none" ]] || fail "read-project clamps G→ro, got: $cco_g $cco_pc $cco_po"
     cli_cco_access="edit-project"; _start_resolve_access 2>/dev/null
     [[ "$cco_g $cco_pc $cco_po" == "ro rw none" ]] || fail "edit-project clamps G→ro, got: $cco_g $cco_pc $cco_po"
+}
+
+# ── Axis-B claude_access resolver (ADR-0049) ─────────────────────────
+
+# Pure helpers: preset triples + reverse, cco-axis collapse, granular parse,
+# cco-derived fill, label, and the discordance predicate.
+test_claude_axis_b_pure_helpers() {
+    _access_src
+    # Preset → fixed "Cr Cp Cg Co" and its reverse.
+    [[ "$(_claude_preset_triple none)" == "ro ro ro ro" ]] || fail "preset none"
+    [[ "$(_claude_preset_triple repo)" == "rw rw ro ro" ]] || fail "preset repo"
+    [[ "$(_claude_preset_triple all)"  == "rw rw rw rw" ]] || fail "preset all"
+    ( _claude_preset_triple bogus ); [[ $? -ne 0 ]] || fail "unknown preset returns non-zero"
+    [[ "$(_claude_triple_preset "ro ro ro ro")" == "none" ]] || fail "reverse none"
+    [[ "$(_claude_triple_preset "rw rw ro ro")" == "repo" ]] || fail "reverse repo"
+    ( _claude_triple_preset "ro rw ro ro" ); [[ $? -ne 0 ]] || fail "custom triple has no preset name"
+    # cco-axis collapse onto the {ro,rw} lattice: rw→rw, none/ro→ro.
+    [[ "$(_claude_from_cco_axis rw)"   == "rw" ]] || fail "collapse rw"
+    [[ "$(_claude_from_cco_axis ro)"   == "ro" ]] || fail "collapse ro"
+    [[ "$(_claude_from_cco_axis none)" == "ro" ]] || fail "collapse none→ro"
+    # Granular parse (partial, pipe-delimited, EMPTY for unspecified axes).
+    [[ "$(_claude_parse_granular "current=rw,global=ro")" == "|rw|ro|" ]] \
+        || fail "parse partial, got: $(_claude_parse_granular 'current=rw,global=ro')"
+    ( _claude_parse_granular "current=maybe" 2>/dev/null ); [[ $? -ne 0 ]] || fail "bad value dies"
+    ( _claude_parse_granular "bogus=rw" 2>/dev/null );     [[ $? -ne 0 ]] || fail "unknown key dies"
+    _claude_parse_granular "none" >/dev/null && fail "no '=' returns 1 (a preset scalar)"
+    # Derive: empty axes fill from cco (Cr→ro ALWAYS); explicit axes pass through.
+    [[ "$(_claude_derive_triple "" "" "" "" rw rw none)" == "ro rw rw ro" ]] || fail "derive from cco (edit-global-ish)"
+    [[ "$(_claude_derive_triple rw "" "" "" none ro none)" == "rw ro ro ro" ]] || fail "explicit Cr=rw passes through"
+    # Label round-trips (preset name when it matches, else granular).
+    [[ "$(_claude_triple_label ro ro ro ro)" == "none" ]] || fail "label none"
+    [[ "$(_claude_triple_label ro rw ro ro)" == "repo=ro,current=rw,global=ro,others=ro" ]] || fail "custom label"
+    # Discordance predicate (0 = discordant): rw where the cco-concordant default is ro.
+    _claude_discordant ro rw rw ro rw rw none && fail "claude derived from cco (rw,rw,none) is concordant, not discordant"
+    _claude_discordant ro ro rw ro none ro none || fail "Cg=rw over G=none(→ro) IS discordant"
+    _claude_discordant ro rw ro ro none ro none || fail "Cp=rw over Pc=ro(→ro) IS discordant"
+    _claude_discordant rw ro ro ro none ro none && fail "Cr=rw never warns (no cco counterpart)"
+    return 0
+}
+
+# A claude PRESET fixes the triple regardless of the cco intent (no derivation) —
+# repo=(rw,rw,ro,ro) even under cco edit-all (which would DERIVE to (ro,rw,rw,rw)).
+test_access_resolve_claude_preset_no_derive() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    local project_yml="$tmp/project.yml"; printf 'name: p\n' > "$project_yml"
+    local cli_claude_access="repo" cli_cco_access="edit-all" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
+    local claude_cr claude_cp claude_cg claude_co
+    _start_resolve_access
+    [[ "$claude_cr $claude_cp $claude_cg $claude_co" == "rw rw ro ro" ]] \
+        || fail "preset repo fixes the triple despite cco edit-all, got: $claude_cr $claude_cp $claude_cg $claude_co"
+    [[ "$claude_access" == "repo" ]] || fail "preset label repo, got: $claude_access"
+}
+
+# CLI granular claude: explicit axes are set; omitted axes DERIVE from cco (default
+# read-project → Pc=ro,Po=none). global=rw → (Cr=ro, Cp=ro, Cg=rw, Co=ro).
+test_access_resolve_claude_granular_cli() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    local project_yml="$tmp/project.yml"; printf 'name: p\n' > "$project_yml"
+    local cli_claude_access="global=rw" cli_cco_access="" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
+    local claude_cr claude_cp claude_cg claude_co
+    _start_resolve_access
+    [[ "$claude_cr $claude_cp $claude_cg $claude_co" == "ro ro rw ro" ]] \
+        || fail "granular claude derives omitted axes from cco, got: $claude_cr $claude_cp $claude_cg $claude_co"
+    [[ "$claude_access" == "repo=ro,current=ro,global=rw,others=ro" ]] || fail "granular claude label, got: $claude_access"
+}
+
+# project.yml scalar claude preset resolves (precedence below CLI, above global).
+test_access_resolve_claude_project_scalar() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    local project_yml="$tmp/project.yml"
+    printf 'name: p\naccess:\n  claude: repo\n' > "$project_yml"
+    local cli_claude_access="" cli_cco_access="" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
+    local claude_cr claude_cp claude_cg claude_co
+    _start_resolve_access
+    [[ "$claude_access" == "repo" ]] || fail "project.yml claude: repo, got: $claude_access"
+    [[ "$claude_cr $claude_cp $claude_cg $claude_co" == "rw rw ro ro" ]] \
+        || fail "project claude preset triple, got: $claude_cr $claude_cp $claude_cg $claude_co"
+}
+
+# A bad claude value (unknown key/out-of-lattice) dies naming claude_access.
+test_access_resolve_claude_bad_token() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _access_setup_home "$tmp"; _access_src
+    local project_yml="$tmp/project.yml"; printf 'name: p\n' > "$project_yml"
+    local cli_claude_access="repo=maybe" cli_cco_access="" cli_show_host_paths=""
+    local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
+    local claude_cr claude_cp claude_cg claude_co
+    local out rc=0
+    out=$( _start_resolve_access 2>&1 ) || rc=$?
+    [[ $rc -ne 0 ]] || fail "bad claude value must be rejected, got rc=0"
+    [[ "$out" == *"claude_access"* ]] || fail "message should name claude_access, got: $out"
 }
 
 # ── (G,Pc,Po) triple resolution (ADR-0046) ───────────────────────────
@@ -410,11 +523,12 @@ test_access_mount_defaults() {
     mkdir -p "$CCO_DUMMY_REPO/.cco"
     run_cco start "test-proj" --dry-run --dump
     local c; c=$(_access_compose)
-    # B2 project .claude rw (no :ro right after the target)
-    echo "$c" | grep -qE '/workspace/\.claude"' || fail "B2 should be rw by default"
+    # ADR-0049 §6: a normal session no longer authors .claude by default — claude
+    # derives to (ro,ro,ro,ro)=none, so B2 project .claude is now :ro (was rw/P17).
+    echo "$c" | grep -qE '/workspace/\.claude:ro"' || fail "B2 should be :ro by default (ADR-0049 reverses P17)"
     # B3 global authoring ro
     echo "$c" | grep -qE '/home/claude/\.claude/CLAUDE\.md:ro"' || fail "B3 authoring ro by default"
-    # A1 <repo>/.cco overlaid :ro (cco_access=none default)
+    # A1 <repo>/.cco overlaid :ro (cco_access=read-project default → Pc=ro)
     echo "$c" | grep -qE 'dummy-repo/\.cco:/workspace/dummy-repo/\.cco:ro"' || fail "A1 :ro overlay expected by default"
 }
 

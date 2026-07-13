@@ -171,7 +171,10 @@ YAML
 # mount modes (step 3) and the wrapped-cco shim (step 4). The pure helpers below
 # are side-effect-free so they can be unit-tested in isolation.
 
-# Allowed enum values per editing knob (space-separated sets).
+# claude_access PRESET names (ADR-0049 §3): sugar over fixed (Cr,Cp,Cg,Co)
+# triples. A source value may also be the granular map/CSV form; the Axis-B
+# resolver (_claude_resolve_access, access-scope.sh) validates + resolves both,
+# so this set is documentation of the preset vocabulary, not the validator.
 _ACCESS_CLAUDE_VALUES="none repo all"
 # Symmetric read/edit scoping (ADR-0042): read mirrors edit —
 # none · read-project · read-global · read-all · edit-project · edit-global · edit-all.
@@ -223,7 +226,9 @@ _start_resolve_access() {
     # read-all; config-editor WRITES config → minimum privilege by cwd/flag. These
     # become the level-4 default of the precedence chain (CLI still overrides).
     local _preset="${session_preset:-normal}"
-    local d_claude="repo" d_cco="read-project" d_shp="true"
+    # claude_access (Axis B) no longer has a fixed preset default — it DERIVES from
+    # the resolved cco triple (ADR-0049 §2), so only d_cco/d_shp are seeded here.
+    local d_cco="read-project" d_shp="true"
     # Whether THIS session has a current project in scope (INV-2 conditional floor,
     # ADR-0046 §2 refinement). Fail-closed default `true`: a normal `cco start
     # <project>` always has one. Only a project-less built-in flips it (config-editor
@@ -243,12 +248,14 @@ _start_resolve_access() {
             #     store ONLY; Pc has no referent (project-less → Pc honestly none).
             #   --all / --cco-access edit-all      → edit-all (every project, Po=rw).
             # G is clamped >= ro below (config-editor is an authoring tool — it must
-            # always SEE the store, ADR-0044 §2 analogy). d_claude follows the resolved
-            # G (set after the triple resolves): global .cco authoring (B3) is rw only
-            # when G=rw, else ro — closes the C2 asymmetry (WS-A A-V3). d_shp stays on.
-            # The by-mode default + project-less flag come from the SINGLE source
-            # _config_editor_default_cco (shared with the cco-config mount readonly, so
-            # the mount and the resolved triple never diverge).
+            # always SEE the store, ADR-0044 §2 analogy). claude_access is NOT set
+            # here: the general cco-derived Axis-B default (ADR-0049 §2/§8) subsumes the
+            # former bespoke "claude follows G" (WS-A A-V3) — project mode (ro,rw,none)
+            # derives (Cr=ro,Cp=rw,Cg=ro,Co=ro); edit-global (rw,rw,none) lifts Cg=rw;
+            # edit-all lifts Co=rw. d_shp stays on. The by-mode default + project-less
+            # flag come from the SINGLE source _config_editor_default_cco (shared with
+            # the cco-config mount readonly, so the mount and the resolved triple never
+            # diverge).
             d_shp="true"
             local _cedef; _cedef=$(_config_editor_default_cco)
             d_cco="${_cedef%%$'\t'*}"; _has_current_project="${_cedef##*$'\t'}" ;;
@@ -256,7 +263,7 @@ _start_resolve_access() {
             # ADR-0044 §2: read-only teacher → read-all reveals the user's whole
             # cco world (projects/packs/templates/llms) with no write risk (no
             # write verb is reachable). --cco-access can narrow, but is discouraged.
-            d_claude="none"; d_cco="read-all"; d_shp="true" ;;
+            d_cco="read-all"; d_shp="true" ;;   # claude derives → (ro,ro,ro,ro)=none
     esac
 
     # For a built-in the precedence collapses to CLI > preset: its generated
@@ -322,16 +329,27 @@ _start_resolve_access() {
     fi
     cco_access=$(_cco_triple_label "$cco_g" "$cco_pc" "$cco_po")
 
-    # claude_access: for config-editor it FOLLOWS the resolved G so global .cco
-    # authoring (B3 ~/.cco/.claude) is writable only when the store itself is (G=rw) —
-    # closing the C2 asymmetry (writable global rules while global packs are read-only,
-    # WS-A A-V3). Normal/tutorial sessions keep their own preset default (repo/none).
-    if [[ "$_preset" == "config-editor" ]]; then
-        [[ "$cco_g" == "rw" ]] && d_claude="all" || d_claude="repo"
+    # ── claude access → the (Cr,Cp,Cg,Co) authoring triple (ADR-0049) ─
+    # Axis B mirrors Axis A (§4bis). A source's claude value is a SCALAR (a preset
+    # name OR the granular "repo=…,current=…,global=…,others=…" form); the
+    # project.yml/access.yml MAP form (access.claude sub-keys) is read in a later
+    # step. Unspecified → each of Cp/Cg/Co DERIVES from the resolved cco triple and
+    # Cr defaults `ro` (§2), so the default is never MORE permissive than the cco
+    # intent (P1). Precedence (§9): CLI > project.yml access.claude > global
+    # ~/.cco/access.yml claude > cco-derived default. config-editor's former bespoke
+    # "claude follows G" is GONE — the general derivation subsumes it (§8): project
+    # mode (ro,rw,none) → (ro,rw,ro,ro); edit-global lifts Cg=rw; edit-all lifts
+    # Co=rw. The resolver dies (exit 1) on a bad preset/token; propagate the exit.
+    # claude_access is then the DISPLAY LABEL; claude_cr/cp/cg/co are the machine
+    # source consumers derive mount modes from (INV-E).
+    local _claude_triple
+    if   [[ -n "$cli_claude_access" ]]; then _claude_triple=$(_claude_resolve_access "$cli_claude_access" "$cco_g" "$cco_pc" "$cco_po") || exit $?
+    elif [[ -n "$p_claude" ]];          then _claude_triple=$(_claude_resolve_access "$p_claude" "$cco_g" "$cco_pc" "$cco_po") || exit $?
+    elif [[ -n "$g_claude" ]];          then _claude_triple=$(_claude_resolve_access "$g_claude" "$cco_g" "$cco_pc" "$cco_po") || exit $?
+    else                                     _claude_triple=$(_claude_derive_triple "" "" "" "" "$cco_g" "$cco_pc" "$cco_po")
     fi
-    claude_access=$(_access_pick "$cli_claude_access" "$p_claude" "$g_claude" "$d_claude")
-    _access_is_member "$_ACCESS_CLAUDE_VALUES" "$claude_access" \
-        || die "Invalid claude_access '$claude_access' (expected one of: $_ACCESS_CLAUDE_VALUES). Set --claude-access, project.yml access.claude, or ~/.cco/access.yml."
+    read -r claude_cr claude_cp claude_cg claude_co <<< "$_claude_triple"
+    claude_access=$(_claude_triple_label "$claude_cr" "$claude_cp" "$claude_cg" "$claude_co")
 
     # access.cco.include_member_configs (ADR-0046 §6, additive, default false):
     # when true, Pc's rw span widens from the hosting repo's <repo>/.cco to ALL
@@ -349,7 +367,7 @@ _start_resolve_access() {
     show_host_paths="$shp_norm"
 
     [[ "${CCO_DEBUG:-}" == "1" ]] && \
-        echo "[debug] access: claude=$claude_access cco=$cco_access show_host_paths=$show_host_paths (G=$cco_g Pc=$cco_pc Po=$cco_po)" >&2
+        echo "[debug] access: claude=$claude_access cco=$cco_access show_host_paths=$show_host_paths (G=$cco_g Pc=$cco_pc Po=$cco_po) (Cr=$claude_cr Cp=$claude_cp Cg=$claude_cg Co=$claude_co)" >&2
     return 0
 }
 
@@ -1724,7 +1742,7 @@ cmd_start() {
             --from) [[ $# -lt 2 ]] && die "--from requires a <repo> name."; from_repo="$2"; shift 2 ;;
             --mount) [[ $# -lt 2 ]] && die "--mount requires <src>[:<target>][:ro|:rw]."; user_mounts+=("$2"); shift 2 ;;
             --enable-config-edit) enable_config_edit=true; shift ;;
-            --claude-access) [[ $# -lt 2 ]] && die "--claude-access requires a value (none|repo|all)."; cli_claude_access="$2"; shift 2 ;;
+            --claude-access) [[ $# -lt 2 ]] && die "--claude-access requires a value (none|repo|all, or granular repo=…,current=…,global=…,others=…)."; cli_claude_access="$2"; shift 2 ;;
             --cco-access) [[ $# -lt 2 ]] && die "--cco-access requires a value (none|read-project|read-global|read-all|edit-project|edit-global|edit-all)."; cli_cco_access="$2"; shift 2 ;;
             --show-host-paths) cli_show_host_paths="true"; shift ;;
             --no-show-host-paths) cli_show_host_paths="false"; shift ;;
@@ -1829,6 +1847,7 @@ EOF
     local output_dir compose_file
     local config_dir session_state_dir session_cache_dir managed_gen_dir claude_gen_dir
     local claude_access cco_access show_host_paths   # resolved by _start_resolve_access (ADR-0036)
+    local claude_cr claude_cp claude_cg claude_co    # resolved (Cr,Cp,Cg,Co) claude triple (ADR-0049); claude_access = its label
     local cco_g cco_pc cco_po                        # resolved (G,Pc,Po) triple (ADR-0046); cco_access = its label
     local cco_include_member_configs="false"         # access.cco.include_member_configs (ADR-0046 §6)
     local session_context_b64="" subagent_context_b64=""  # Level-A injected context (ADR-0042)

@@ -278,28 +278,32 @@ test_dry_run_memory_mount_after_claude_state() {
 
 # ── Volume mounts: project config (Design Invariant 2 - read-write) ──
 
-test_dry_run_project_claude_mounted_readwrite() {
-    # ADR-0005 F3 / P17: the parent project .claude stays rw so /init and normal
-    # project-config authoring work (the generated overlays layered on top are
-    # :ro — see the F1 test below). Edit-protection (ADR-0027 D3) is narrow: it
-    # protects only the structural <repo>/.cco via a separate :ro overlay, not
-    # this Claude config tree. Host mount sources are absolute (Commit B).
+test_dry_run_project_claude_mounted_readonly_by_default() {
+    # ADR-0049 §6 reverses P17: the parent project .claude is :ro by default
+    # (claude_access derives from cco read-project → Cp=ro), so a normal session
+    # no longer authors it. An explicit --claude-access repo re-opens it (Cp=rw).
+    # Host mount sources are absolute (Commit B).
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
-    # Parent mount present: a volume line whose container side is exactly
-    # /workspace/.claude (the child overlays carry a deeper path).
-    if ! grep -qE ':/workspace/\.claude"?$' "$compose"; then
-        echo "ASSERTION FAILED: project .claude parent mount not found"
+    # Parent mount present, and :ro by default (the child overlays carry a deeper path).
+    if ! grep -qE ':/workspace/\.claude:ro"?$' "$compose"; then
+        echo "ASSERTION FAILED: project .claude must be mounted :ro by default (ADR-0049 reverses P17)"
         cat "$compose"
         return 1
     fi
-    # The parent must NOT be read-only (it stays rw so in-session edits persist).
+    # --claude-access repo re-opens the parent rw so in-session edits persist.
+    run_cco start "test-proj" --claude-access repo --dry-run --dump
+    compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    if ! grep -qE ':/workspace/\.claude"?$' "$compose"; then
+        echo "ASSERTION FAILED: --claude-access repo must mount project .claude rw"
+        return 1
+    fi
     if grep -qE ':/workspace/\.claude:ro"?$' "$compose"; then
-        echo "ASSERTION FAILED: project .claude must be rw, not :ro"
+        echo "ASSERTION FAILED: --claude-access repo must not leave project .claude :ro"
         return 1
     fi
 }
@@ -768,7 +772,9 @@ test_dry_run_volume_order_global_before_project() {
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     local settings_line project_line
     settings_line=$(grep -n "settings.json:/home/claude" "$compose" | head -1 | cut -d: -f1)
-    project_line=$(grep -nE ":/workspace/\.claude\"?$" "$compose" | head -1 | cut -d: -f1)
+    # B2 is :ro by default now (ADR-0049 §6) — match the container side with or
+    # without the trailing :ro so the ordering check is mode-agnostic.
+    project_line=$(grep -nE ":/workspace/\.claude(:ro)?\"?$" "$compose" | head -1 | cut -d: -f1)
     if [[ -z "$settings_line" || -z "$project_line" ]]; then
         echo "ASSERTION FAILED: could not find settings or project config line"
         return 1

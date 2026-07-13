@@ -55,7 +55,7 @@ test_invariant_2_global_config_at_home_claude_in_container() {
     assert_file_contains "$compose" "/home/claude/.claude/rules"
 }
 
-test_invariant_2_project_config_at_workspace_claude_readwrite() {
+test_invariant_2_project_config_at_workspace_claude_readonly_by_default() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
@@ -65,13 +65,19 @@ test_invariant_2_project_config_at_workspace_claude_readwrite() {
     # Decentralized source is <repo>/.cco/claude (no dot); the container target
     # /workspace/.claude is the fixed contract (P3 read-path flip).
     assert_file_contains "$compose" "/claude:/workspace/.claude"
-    # Design Invariant 2: the project Claude config stays read-write so /init and
-    # normal project-config authoring work (P17). Edit-protection (ADR-0027 D3)
-    # is narrow — it protects only the structural <repo>/.cco (project.yml,
-    # secrets, metadata) via a separate :ro overlay, NOT this Claude config tree.
+    # ADR-0049 §6 REVERSES P17: a normal session no longer authors the project
+    # Claude config by default. claude_access derives from cco (read-project →
+    # Cp=ro), so B2 /workspace/.claude is mounted :ro. Authoring is now an explicit
+    # opt-in (--claude-access repo or a cco edit level).
+    if ! grep -qE "/claude:/workspace/\.claude:ro" "$compose"; then
+        echo "ASSERTION FAILED: project .claude must be :ro by default (ADR-0049 reverses P17)"
+        return 1
+    fi
+    # An explicit --claude-access repo re-opens B2 for authoring (Cp=rw).
+    run_cco start "test-proj" --claude-access repo --dry-run --dump
+    compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     if grep -qE "/claude:/workspace/\.claude:ro" "$compose"; then
-        echo "ASSERTION FAILED: project .claude must be mounted rw, not :ro"
-        echo "  (Design Invariant 2: project Claude config is read-write for authoring)"
+        echo "ASSERTION FAILED: --claude-access repo must make project .claude rw"
         return 1
     fi
 }

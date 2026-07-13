@@ -226,6 +226,135 @@ _cco_triple_write_satisfies() {
     return 1
 }
 
+# ── The (Cr, Cp, Cg, Co) claude_access authoring triple (ADR-0049) ────
+# Axis B (claude_access) governs the three `.claude` AUTHORING trees, modelled —
+# symmetrically with the cco (G,Pc,Po) triple above — as FOUR per-tree axes on the
+# lattice `ro < rw` (there is NO `none`/invisible value: Claude Code must READ its
+# own config to function). The canonical order is "Cr Cp Cg Co":
+#   Cr — B1 <repo>/.claude   (repo-native)           — the EXTRA axis, no cco
+#        counterpart, default `ro` ALWAYS (a session should not rewrite the config
+#        that governs its own behaviour unless explicitly permitted). This is why
+#        Axis B stays a SEPARATE knob, not folded into cco_access.
+#   Cp — B2 <repo>/.cco/claude (→ /workspace/.claude) — mirrors cco Pc.
+#   Cg — B3 ~/.cco/.claude                            — mirrors cco G.
+#   Co — other projects' .cco/claude                  — mirrors cco Po.
+# When unspecified each of Cp/Cg/Co DERIVES from the resolved cco triple (§2), so
+# the default claude_access is never MORE permissive than the cco intent (P1). The
+# enum none|repo|all lives on as PRESET SUGAR (§3) — fixed triples that do NOT
+# derive. Presets/granular map share the SAME grammar as cco. Unlike Axis A there
+# are NO invariant floors (INV-2/3/4) — every {ro,rw}^4 combination is legal.
+
+# A cco axis value (none|ro|rw) collapsed onto the claude lattice: rw→rw, else ro
+# (a not-writable tree is still READABLE, so cco `none` maps to `ro`, §2).
+_claude_from_cco_axis() { case "$1" in rw) printf 'rw' ;; *) printf 'ro' ;; esac; }
+
+# Preset name → its FIXED claude triple "Cr Cp Cg Co" (ADR-0049 §3). Presets do
+# not derive from cco. Returns 1 for a non-preset token (the caller then tries the
+# granular parse).
+_claude_preset_triple() {
+    case "$1" in
+        none) printf 'ro ro ro ro' ;;   # lock all .claude authoring
+        repo) printf 'rw rw ro ro' ;;   # author the local trees (repo-native + current project)
+        all)  printf 'rw rw rw rw' ;;   # author every .claude tree
+        *)    return 1 ;;
+    esac
+}
+
+# Reverse of _claude_preset_triple: a resolved "Cr Cp Cg Co" triple → its preset
+# NAME, or empty (return 1) when it is a custom/derived triple (e.g. config-editor
+# project mode `ro rw ro ro`). Lets whoami/labels name a session by its preset when
+# one applies. Whitespace-tolerant.
+_claude_triple_preset() {
+    case "$(printf '%s' "$*" | tr -s ' ')" in
+        'ro ro ro ro') printf 'none' ;;
+        'rw rw ro ro') printf 'repo' ;;
+        'rw rw rw rw') printf 'all' ;;
+        *)             return 1 ;;
+    esac
+}
+
+# _claude_parse_granular <csv> — parse the granular form "repo=ro,current=rw,
+# global=ro,others=rw" (order-free, partial, spaces tolerated) into "Cr|Cp|Cg|Co"
+# with an EMPTY field for each unspecified axis (the caller derives it from cco).
+# Pipe-delimited (not space) so `IFS='|' read` preserves empty/leading fields.
+# Dies on an unknown key or an out-of-lattice value. Returns 1 when <csv> carries
+# no '=' (not a granular form — the caller treats it as a preset scalar).
+_claude_parse_granular() {
+    local csv="${1// /}" cr="" cp="" cg="" co="" tok k v
+    case "$csv" in *"="*) : ;; *) return 1 ;; esac
+    local IFS=','
+    for tok in $csv; do
+        [[ -z "$tok" ]] && continue
+        k="${tok%%=*}"; v="${tok#*=}"
+        case "$v" in ro|rw) : ;; *) die "Invalid claude_access value '$v' for '$k' (expected ro|rw)." ;; esac
+        case "$k" in
+            repo)    cr="$v" ;;
+            current) cp="$v" ;;
+            global)  cg="$v" ;;
+            others)  co="$v" ;;
+            *)       die "Unknown claude_access key '$k' (expected repo|current|global|others)." ;;
+        esac
+    done
+    printf '%s|%s|%s|%s' "$cr" "$cp" "$cg" "$co"
+}
+
+# _claude_derive_triple <cr> <cp> <cg> <co> <cco_g> <cco_pc> <cco_po> — fill each
+# EMPTY axis from the concordant cco default (ADR-0049 §2): Cr→ro (ALWAYS — never
+# derived up), Cp→collapse(Pc), Cg→collapse(G), Co→collapse(Po). Explicit axes
+# pass through untouched. No invariant floors (Axis B has none). Emits the resolved
+# "Cr Cp Cg Co". The all-empty call (`_claude_derive_triple "" "" "" "" …`) yields
+# the pure cco-derived default used when claude_access is entirely unspecified.
+_claude_derive_triple() {
+    local cr="$1" cp="$2" cg="$3" co="$4" g="$5" pc="$6" po="$7"
+    [[ -z "$cr" ]] && cr="ro"
+    [[ -z "$cp" ]] && cp="$(_claude_from_cco_axis "$pc")"
+    [[ -z "$cg" ]] && cg="$(_claude_from_cco_axis "$g")"
+    [[ -z "$co" ]] && co="$(_claude_from_cco_axis "$po")"
+    printf '%s %s %s %s' "$cr" "$cp" "$cg" "$co"
+}
+
+# _claude_resolve_access <intent> <cco_g> <cco_pc> <cco_po> — resolve a SCALAR
+# claude intent to the triple "Cr Cp Cg Co". <intent> is EITHER a preset name
+# (fixed triple, §3) OR a granular CSV "repo=…,current=…,global=…,others=…" whose
+# omitted axes derive from cco (§2). Dies on an unknown preset / bad granular
+# token. The single entry point for scalar sources (the CLI --claude-access flag, a
+# scalar project.yml/access.yml value). The project.yml/access.yml MAP form is fed
+# to _claude_derive_triple directly by the caller (axes already split).
+_claude_resolve_access() {
+    local intent="$1" g="$2" pc="$3" po="$4" parsed cr cp cg co
+    if parsed=$(_claude_parse_granular "$intent"); then
+        IFS='|' read -r cr cp cg co <<< "$parsed"
+        _claude_derive_triple "$cr" "$cp" "$cg" "$co" "$g" "$pc" "$po"
+        return
+    fi
+    _claude_preset_triple "$intent" && return 0
+    die "Invalid claude_access '$intent' (expected a preset name none|repo|all or granular repo=…,current=…,global=…,others=…)."
+}
+
+# _claude_triple_label <cr> <cp> <cg> <co> — the human/display label for a resolved
+# claude triple: the preset name when it matches, else the granular
+# "repo=…,current=…,global=…,others=…" form. Used for messages/whoami/env
+# transport; the triple stays the authoritative machine value.
+_claude_triple_label() {
+    _claude_triple_preset "$1 $2 $3 $4" && return 0
+    printf 'repo=%s,current=%s,global=%s,others=%s' "$1" "$2" "$3" "$4"
+}
+
+# _claude_discordant <cr> <cp> <cg> <co> <cco_g> <cco_pc> <cco_po> → 0 when the
+# resolved Axis B grants MORE write than the cco-concordant default on a tree that
+# lives INSIDE .cco config (Cp vs Pc, Cg vs G, Co vs Po) — the P2 discordance-warn
+# predicate (ADR-0049 §4). On the {ro,rw} lattice "more permissive" means the claude
+# axis is `rw` while the concordant default (collapse of the cco axis) is `ro`. Cr
+# (B1 repo-native) NEVER warns — no cco counterpart. A tighter-than-cco Axis B never
+# warns. Emits nothing; the caller decides how to warn.
+_claude_discordant() {
+    local cp="$2" cg="$3" co="$4" g="$5" pc="$6" po="$7"
+    [[ "$cp" == "rw" && "$(_claude_from_cco_axis "$pc")" == "ro" ]] && return 0
+    [[ "$cg" == "rw" && "$(_claude_from_cco_axis "$g")"  == "ro" ]] && return 0
+    [[ "$co" == "rw" && "$(_claude_from_cco_axis "$po")" == "ro" ]] && return 0
+    return 1
+}
+
 # ── Pure level→scope maps (ADR-0043 symmetric model) ─────────────────
 # The SINGLE source of truth for the read/write scope a `cco_access` level grants,
 # consumed by three sites (INV-E): host mount-generation (cmd-start.sh), the

@@ -179,7 +179,7 @@ test_config_editor_preset_emits_operator() {
     setup_global_from_defaults "$tmpdir"
     cd "$tmpdir"   # outside any project → global mode (rw,none,none): edit ~/.cco only
     run_cco start config-editor --dry-run
-    assert_output_contains "claude=all cco=global=rw,current=none,others=none"
+    assert_output_contains "claude=repo=ro,current=ro,global=rw,others=ro cco=global=rw,current=none,others=none"
     run_cco start config-editor --dry-run --dump
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "CCO_CONTAINER_OPERATOR=1" || return 1
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "CCO_CCO_ACCESS=global=rw,current=none,others=none" || return 1
@@ -195,7 +195,7 @@ test_config_editor_global_access_does_not_override_preset() {
     printf 'cco: none\nclaude: none\n' > "$HOME/.cco/access.yml"
     cd "$tmpdir"
     run_cco start config-editor --dry-run
-    assert_output_contains "claude=all cco=global=rw,current=none,others=none"
+    assert_output_contains "claude=repo=ro,current=ro,global=rw,others=ro cco=global=rw,current=none,others=none"
 }
 
 # An explicit CLI flag CAN narrow the preset default. Narrowing to a read level is
