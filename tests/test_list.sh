@@ -169,3 +169,58 @@ test_list_unknown_kind_errors() {
     run_cco list bogus
     assert_output_contains "Unknown resource kind"
 }
+
+# ── R3: internal built-ins (config-editor / tutorial) ────────────────────────
+# Reserved framework sessions are not index rows, so plain `cco list` never showed
+# them. They now appear as KIND 'builtin': RUNNING-only by default (clean list),
+# all-with-status under --include-internal or `cco list builtin`.
+
+test_list_builtins_hidden_when_not_running() {
+    # Host-side, no session is running → the default index omits the built-ins.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    _mk_pack "my-api"
+    run_cco list
+    assert_output_contains "my-api"
+    assert_output_not_contains "config-editor"
+    assert_output_not_contains "tutorial"
+}
+
+test_list_include_internal_shows_stopped_builtins() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco list --include-internal
+    assert_output_contains "builtin"
+    assert_output_contains "config-editor"
+    assert_output_contains "tutorial"
+}
+
+test_list_builtin_kind_shows_all_with_status() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco list builtin
+    assert_output_contains "config-editor"
+    assert_output_contains "tutorial"
+    # A bare `cco list builtin` still renders the compact table header (no rich view).
+    assert_output_contains "STATUS"
+}
+
+test_list_running_builtin_shown_in_default() {
+    # In-container: a RUNNING built-in (registry marker present) appears in the plain
+    # default index without any flag. Simulate the operator context + a marker.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    mkdir -p "$tmpdir/state/running" "$tmpdir/home"
+    : > "$tmpdir/state/running/config-editor"
+    CCO_OUTPUT=$(
+        env CCO_IN_CONTAINER=1 CCO_CONTAINER_OPERATOR=1 CCO_STORE_ELEVATED=1 \
+            CCO_CCO_ACCESS=read-all \
+            CCO_STATE_HOME="$tmpdir/state" CCO_DATA_HOME="$tmpdir/data" \
+            CCO_CACHE_HOME="$tmpdir/cache" HOME="$tmpdir/home" \
+            bash "$REPO_ROOT/bin/cco" list 2>&1
+    )
+    assert_output_contains "builtin"
+    assert_output_contains "config-editor"
+    assert_output_contains "running"
+    # tutorial is NOT running → still hidden in the default view.
+    assert_output_not_contains "tutorial"
+}

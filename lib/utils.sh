@@ -179,6 +179,14 @@ _cco_running_dir() {
     printf '%s\n' "$(_cco_state_dir)/running"
 }
 
+# The reserved internal built-in session names (ADR-0027): framework-provided
+# sessions launched by name (`cco start config-editor|tutorial`), NOT indexed
+# projects — so `cco list` (which enumerates the index) never showed them. R3
+# surfaces them as KIND 'builtin' via their fixed, non-secret names (no registry
+# enumeration needed — status is probed per name, honoring the ADR-0047 boundary).
+# Newline-separated, in display order.
+_cco_internal_builtins() { printf 'config-editor\ntutorial\n'; }
+
 # Host-only. Create/refresh the marker for a running session (label = cco.project).
 # Body is informational only — reconciliation keys off the FILENAME vs docker ps, so
 # a container id (unknown before the blocking `run`) is never needed.

@@ -242,8 +242,8 @@ EOF
 # Canonical kind order for the compact index (lower = first).
 _list_kind_rank() {
     case "$1" in
-        project) echo 0 ;; pack) echo 1 ;; template) echo 2 ;;
-        llms)    echo 3 ;; remote) echo 4 ;; *) echo 9 ;;
+        project) echo 0 ;; builtin) echo 1 ;; pack) echo 2 ;; template) echo 3 ;;
+        llms)    echo 4 ;; remote) echo 5 ;; *) echo 9 ;;
     esac
 }
 
@@ -295,6 +295,14 @@ _list_collect() {
             done < "$rf"
         fi
     fi
+    # Internal built-ins (R3): reserved framework sessions, not index rows. Emitted
+    # in the unified view and for the explicit `builtin` kind. cmd_list decides
+    # whether to keep a STOPPED one (running-only default vs --include-internal).
+    if [[ -z "$want" || "$want" == builtin ]]; then
+        while IFS= read -r b; do
+            [[ -n "$b" ]] && printf 'builtin\t%s\n' "$b"
+        done < <(_cco_internal_builtins)
+    fi
 }
 
 # Sort rank for the compact-list STATUS column: running first, then stopped,
@@ -313,15 +321,17 @@ _list_status_cell() {
 }
 
 cmd_list() {
-    local filter="" sort_by="" kind="" reverse=""
+    local filter="" sort_by="" kind="" reverse="" include_internal=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --help|-h|help)
                 cat <<'EOF'
 Usage: cco list [<kind>] [--tag <tag>] [--sort kind|name|tag] [--reverse|-r]
+                [--include-internal]
 
 Unified index of your resources. <kind> is one of:
   project | pack | template | llms | remote   (plural forms accepted)
+  builtin                                      (internal sessions, see below)
 
   cco list                       Compact index of every resource (KIND NAME
                                  STATUS TAGS), ordered by kind then name.
@@ -332,10 +342,16 @@ Unified index of your resources. <kind> is one of:
   cco list [<kind>] --sort tag   Sort by first tag (untagged last), then name.
   cco list [<kind>] --sort status  Sort by session status (running first), then name.
   cco list [<kind>] --reverse    Reverse the chosen order (alias: -r).
+  cco list --include-internal    Also list internal built-ins (config-editor,
+                                 tutorial) even when stopped.
+  cco list builtin               Only the internal built-ins, with status.
 
-STATUS is a project-only session state (running | stopped | unknown); other
-kinds show '—'. In-container, `unknown` means the running registry is out of
-scope/unreachable — never a false `stopped` (ADR-0045).
+STATUS is a session state (running | stopped | unknown) for projects and
+built-ins; other kinds show '—'. In-container, `unknown` means the running
+registry is out of scope/unreachable — never a false `stopped` (ADR-0045).
+Internal built-ins (KIND 'builtin') are the reserved `cco start config-editor`
+/`tutorial` sessions; they are shown only when RUNNING by default (add
+--include-internal, or `cco list builtin`, to see them all).
 
 Full detail for one resource: cco <kind> show <name>.
 Tags are per-user (project/pack/template only); manage them with 'cco tag'.
@@ -348,18 +364,21 @@ EOF
                         || die "--sort must be 'kind', 'name', 'tag', or 'status'."
                     shift 2 ;;
             --reverse|-r)       reverse=1;         shift ;;
+            --include-internal) include_internal=1; shift ;;
             project|projects)   kind="project";  shift ;;
             pack|packs)         kind="pack";      shift ;;
             template|templates) kind="template";  shift ;;
             llms)               kind="llms";      shift ;;
             remote|remotes)     kind="remote";    shift ;;
+            builtin|builtins|internal) kind="builtin"; include_internal=1; shift ;;
             -*) die "Unknown option: $1. Run 'cco list --help'." ;;
             *)  die "Unknown resource kind: $1. Use project|pack|template|llms|remote. Run 'cco list --help'." ;;
         esac
     done
 
     # A bare kind (no filter, no sort, no reverse) shows the rich per-kind view.
-    if [[ -n "$kind" && -z "$filter" && -z "$sort_by" && -z "$reverse" ]]; then
+    # 'builtin' has no dedicated rich view — it always flows to the compact index.
+    if [[ -n "$kind" && "$kind" != builtin && -z "$filter" && -z "$sort_by" && -z "$reverse" ]]; then
         # R3: route the bare per-kind view through the scope layer too — the
         # aggregate `cco list` path already filters per row, but this branch bypassed
         # it, letting a global-class kind (template/remote) leak at read-project.
@@ -380,20 +399,28 @@ EOF
     local rows="" rk rn tags tkind sortkey t found ftag namew=4 cap=30 st_raw
     while IFS=$'\t' read -r rk rn; do
         [[ -z "$rk" ]] && continue
-        # Output scoping (ADR-0043): in operator mode, hide resources outside the
-        # session's access scope and count them for the trailing notice (INV-B).
-        if ! _env_in_scope "$rk" "$rn"; then _env_note_hidden "$rk"; continue; fi
-        tkind=$(_list_tag_kind "$rk"); tags=""
-        [[ -n "$tkind" ]] && tags=$(_tags_get "$tkind" "$rn")
+        if [[ "$rk" == builtin ]]; then
+            # Built-ins (R3) are framework sessions, not the user's private config →
+            # never scope-hidden and never tagged. Default keeps only RUNNING ones
+            # (clean list); --include-internal / `cco list builtin` shows all with status.
+            st_raw=$(_cco_session_status "$rn"); tags=""
+            [[ -z "$include_internal" && "$st_raw" != running ]] && continue
+        else
+            # Output scoping (ADR-0043): in operator mode, hide resources outside the
+            # session's access scope and count them for the trailing notice (INV-B).
+            if ! _env_in_scope "$rk" "$rn"; then _env_note_hidden "$rk"; continue; fi
+            tkind=$(_list_tag_kind "$rk"); tags=""
+            [[ -n "$tkind" ]] && tags=$(_tags_get "$tkind" "$rn")
+            # Session status is a project-only concept (B3, tri-state B4); other kinds
+            # carry the '-' placeholder. Rows already passed _env_in_scope, so a status
+            # read here never reveals an out-of-scope project.
+            if [[ "$rk" == project ]]; then st_raw=$(_cco_session_status "$rn"); else st_raw="-"; fi
+        fi
         if [[ -n "$filter" ]]; then
             found=false
             for t in $tags; do [[ "$t" == "$filter" ]] && { found=true; break; }; done
             [[ "$found" == true ]] || continue
         fi
-        # Session status is a project-only concept (B3, tri-state B4); other kinds
-        # carry the '-' placeholder. Rows already passed _env_in_scope, so a status
-        # read here never reveals an out-of-scope project.
-        if [[ "$rk" == project ]]; then st_raw=$(_cco_session_status "$rn"); else st_raw="-"; fi
         case "$sort_by" in
             name)   sortkey="${rn}	${rk}" ;;
             tag)    ftag="${tags%% *}"
