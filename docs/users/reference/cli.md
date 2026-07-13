@@ -567,25 +567,38 @@ Long names are ellipsized so columns stay aligned in any terminal width.
 
 ```
 Usage: cco list [<kind>] [--tag <t>] [--sort kind|name|tag] [--reverse|-r]
+                [--include-internal]
 
 Arguments:
   <kind>               One of: project | pack | template | llms | remote
                        (plural forms accepted, e.g. `packs`)
+                       builtin — the internal sessions (see below)
 
 Options:
   --tag <t>            Show only resources carrying tag <t>
   --sort kind|name|tag Order by kind (default), name, or first tag
                        (--sort tag: untagged resources sort last, then by name)
   --reverse, -r        Reverse the chosen order
+  --include-internal   Also list internal built-ins even when stopped
 
 Examples:
-  cco list                     # All resources, grouped by kind (KIND · NAME · TAGS)
+  cco list                     # All resources, grouped by kind (KIND · NAME · STATUS · TAGS)
   cco list packs               # Packs only, with resource counts and tags
   cco list --tag work          # Every resource tagged "work"
   cco list project --tag work  # Projects tagged "work"
   cco list --sort tag          # Group resources by their first tag
   cco list packs --sort name -r  # Packs, name descending
+  cco list --include-internal  # Also show config-editor / tutorial (any status)
+  cco list builtin             # Only the internal built-ins, with status
 ```
+
+**Internal built-ins** (KIND `builtin`). The reserved framework sessions
+`config-editor` and `tutorial` are launched by name (`cco start config-editor`),
+not registered projects, so they are not index rows. `cco list` still surfaces
+them by their fixed names as KIND `builtin`, showing their session **STATUS** —
+by default only when **running** (so the list stays uncluttered), and always
+(any status) under `--include-internal` or the explicit `cco list builtin`. They
+carry no tags and are never scope-hidden (framework sessions, not your config).
 
 > `--sort`/`--reverse` always render the compact index (KIND · NAME · TAGS), even
 > when a `<kind>` is given — so `cco list packs --sort tag` sorts packs by tag.

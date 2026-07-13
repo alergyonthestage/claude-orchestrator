@@ -673,3 +673,24 @@ entries:
       save`, pack/template/llms authoring, `cco remote add|remove`) therefore need a
       store-writable config-editor session and are refused with a "needs edit-global"
       hint in the default project mode. Requires a rebuilt image (`cco build`).
+
+  - id: 39
+    date: "2026-07-13"
+    type: additive
+    title: "Clearer in-session introspection: whoami redesign, cco list built-ins, project show at /workspace"
+    description: >
+      Session-legibility refinements (they do not change the access model). `cco
+      whoami` now leads with a Session block — identity (the session envelope), the
+      editing target(s) for a config-editor session, and whether code repos are
+      mounted vs config-only — before the access detail, so you see WHO you are and
+      WHAT you edit up front (in config-editor the envelope `config-editor` and its
+      editing targets are no longer conflated). The access rows are deduplicated: a
+      single `level` (the preset name, or `custom (global=…,current=…,others=…)`) plus
+      an explicit `triple` (G/Pc/Po + read/write scope) — no more three identical
+      views of one triple. `cco list` now surfaces the internal built-ins
+      (config-editor, tutorial) as KIND `builtin`: only when running by default, or
+      all with `--include-internal` / `cco list builtin` — so a running config-editor
+      is visible even from another session. And a bare `cco project show` run from the
+      `/workspace` root now resolves the current session project, matching how it
+      already worked from inside a mounted repo directory. Requires a rebuilt image
+      (`cco build`).

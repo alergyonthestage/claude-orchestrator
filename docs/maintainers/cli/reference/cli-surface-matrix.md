@@ -107,8 +107,8 @@ wholesale in-container (exit 2, R6) — every row below is unavailable at `none`
 | `list templates\|remotes` | read:**global** | ✅ from **read-global** | global-class — empty+notice below read-global |
 | `docs` | always | ✅ from read-project | — (refused at `none`, R6) |
 | `help`, `--help`/`-h`, `--version`/`-v` | always | ✅ | help is scope-aware (§4) |
-| `whoami` | always | ✅ from read-project | session-state introspection (F4); listed in in-container `help` (B1); renders the resolved `(G,Pc,Po)` triple + privilege-boundary note ([A1 §4.5](../../configuration/agent-cco-access/e2e-review/analysis/A1-command-scope-matrix.md)) |
-| `project show\|validate\|coords` | read:project | ✅ from read-project | current project resolvable from `/workspace` root (R2/F3) |
+| `whoami` | always | ✅ from read-project | session-state introspection (F4); listed in in-container `help` (B1). **Identity-first layout (R1)**: a `Session` block (identity / editing target / code repos) precedes `Access`, so config-editor's synthetic envelope vs its editing targets and whether code repos are mounted are explicit. **Deduplicated access (R2)**: `level` names the PRESET (else `custom (global=…)` carrying the granular form once) and `triple` is the explicit `(G,Pc,Po)` + read/write scope — no byte-identical rows; privilege-boundary note retained ([A1 §4.5](../../configuration/agent-cco-access/e2e-review/analysis/A1-command-scope-matrix.md)) |
+| `project show\|validate\|coords` | read:project | ✅ from read-project | bare `project show` at the `/workspace` WORKDIR root resolves the **session project** (`PROJECT_NAME` → flat `/workspace/project.yml`), so cwd-based introspection works from the root as inside a mounted repo dir (**R4**; child-wins: a repo-local `.cco` takes precedence) |
 | `pack show\|validate`, `llms show\|validate` | read:project | ✅ from read-project | `_env_require_visible` — graceful "not in scope" for out-of-scope names |
 | `template show\|validate` | read:**global** | ✅ from **read-global** | global-class |
 | `remote list` | read:**global** | ✅ from **read-global** | global-class |
@@ -169,6 +169,13 @@ daemon** / absent from the registry is reported `unknown`, never a false `stoppe
 cross-project running awareness comes from the STATE running registry
 ([ADR-0045](../../environment/decisions/0045-session-running-registry.md), DI1), gated by
 this same scope layer.
+
+**R3 (shipped)**: the reserved internal built-ins (`config-editor`, `tutorial`) surface as
+KIND `builtin` with the same STATUS column, probed by their fixed non-secret names via the
+running registry (no dir enumeration → the ADR-0047 boundary holds). They are **running-only
+by default** (clean list) and **all-with-status** under `--include-internal` / `cco list
+builtin`; being framework sessions (not the user's config), they are never scope-hidden and
+never tagged.
 
 ---
 

@@ -200,3 +200,47 @@ flowchart LR
   **needs validation** (enables the honest `(rw,none,none)`).
 - [ ] claude×cco: **cco bounds claude for in-`.cco` trees (B2/B3); B1 decoupled**; error/warn on
   conflict — **direction confirmed, dedicated Session B analysis needed** (esp. project-level b-i vs b-ii).
+
+## WS-A refinements — session UX (shipped 2026-07-13, post-`cco build` dogfood)
+
+Four small UX/semantic gaps surfaced while dogfooding the WS-A build in a live session
+(config-editor + a normal session). They do **not** change the access MODEL (triples,
+scoping, enforcement are untouched) — they make the model *legible* in-session. Shipped
+on `feat/config-access/config-editor-access`; changelog #39.
+
+- **R1 — `whoami` identity-first.** The old single `project:` line conflated two concepts
+  in a config-editor session: `PROJECT_NAME` is the synthetic `config-editor` **envelope**,
+  while the projects it EDITS are `CCO_CONFIG_TARGETS`. `whoami` now leads with a `Session`
+  block — `identity` (envelope) / `editing target` (config-editor only) / `code repos`
+  (mounted repo names vs `— (config only)`) — so an agent reads WHO it is, WHICH project(s)
+  it edits, and whether repos are mounted for repo-aware authoring, before the access detail.
+  The `code repos` signal is derived purely from the mounted `/workspace/project.yml` +
+  a dir test (no index/store probe → the ADR-0047 boundary holds).
+- **R2 — `whoami` deduplicated access.** The three rows `cco_access` / `access triple` /
+  `granular form` were byte-identical for a custom (granular) triple. Collapsed to `level`
+  (the PRESET name when the resolved triple is symmetric, else `custom (global=…,current=…,
+  others=…)` carrying the granular form once) + `triple` (explicit `(G,Pc,Po)` + read/write
+  scope). New `_cco_triple_preset` reverse-maps a triple → preset name. No row now duplicates
+  another; the copy-pasteable `--cco-access` identity appears exactly once (preset name, or
+  the `custom (…)` granular).
+- **R3 — `cco list` surfaces internal built-ins.** `cco list` enumerates the index, so the
+  reserved framework sessions (`config-editor`, `tutorial`) were never rows — not even
+  config-editor inside its own session. They now appear as KIND `builtin`, probed by their
+  fixed non-secret names via the ADR-0045 running registry (per-name status test, **no dir
+  enumeration** → boundary-safe). RUNNING-only by default (clean list); all-with-status under
+  `--include-internal` / `cco list builtin`. Framework sessions, so never scope-hidden, never
+  tagged. Decision: inline KIND row (not an ad-hoc section) to keep the flat table aligned.
+- **R4 — bare `cco project show` at the WORKDIR root.** In-container `/workspace` is a FLAT
+  session mount (`/workspace/project.yml`, no repo-local `.cco`), so a bare `cco project show`
+  from the root errored while the same command inside a mounted repo dir worked. It now falls
+  back to the **session project** (`PROJECT_NAME` → flat manifest), unifying cwd-based
+  introspection root-vs-repo-dir. Narrow trigger (`_project_show_session_fallback`): operator
+  mode only, only AT the WORKDIR root (child-wins — a repo-local `.cco` is handled first),
+  only with a flat session manifest; host is inert. For config-editor this resolves the
+  synthetic `config-editor` envelope — the editing targets stay a distinct concept (R1's
+  `whoami`), never conflated into cwd resolution. WORKDIR overridable via `CCO_WORKDIR` so the
+  trigger is unit-testable without a live `/workspace`.
+
+These are living-behavior refinements of the shipped surface; they refine ADR-0043 (CLI
+environment/scope) and ADR-0045 (running registry) at the UX layer without altering their
+decisions, so no new ADR — recorded here + in the CLI-surface matrix + user `cli.md`.
