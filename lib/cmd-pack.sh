@@ -528,6 +528,96 @@ EOF
     trap - EXIT
 }
 
+# ── cco pack rename ───────────────────────────────────────────────────
+# Re-key a pack across every store its name lives in (ADR-0050): the CONFIG store
+# dir (packs/<old> → packs/<new>) + its pack.yml `name:`, the id-keyed DATA
+# install-provenance + STATE merge base/meta, the per-user tag binding, and the
+# `packs[]` reference in every project that uses it (pack names are globally
+# scoped — unaffected by ADR-0051's per-project index scoping). Strict (ADR-0031
+# D3): refuse if a referencing project has an unresolved member, whose replicated
+# project.yml copy would drift under cco sync's clobber-guard.
+cmd_pack_rename() {
+    local old="" new="" yes=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -y|--yes) yes=true; shift ;;
+            --help|-h)
+                cat <<'EOF'
+Usage: cco pack rename <old> <new>
+
+Rename a knowledge pack, re-keying it across the CONFIG store (packs/<name>/ +
+pack.yml name:), the machine-local DATA/STATE sidecars, the per-user tags, and the
+packs[] reference in every project that uses it. Every referencing project must be
+resolved on this machine (run 'cco resolve' first). After renaming, commit + push
+the updated .cco/project.yml in each changed repo and run 'cco sync'.
+
+Options:
+  -y, --yes   Skip the confirmation prompt
+EOF
+                return 0
+                ;;
+            -*)  die "Unknown option: $1. Run 'cco pack rename --help'." ;;
+            *)
+                if [[ -z "$old" ]]; then old="$1"
+                elif [[ -z "$new" ]]; then new="$1"
+                else die "Unexpected argument: $1"; fi
+                shift ;;
+        esac
+    done
+
+    [[ -z "$old" || -z "$new" ]] && die "Usage: cco pack rename <old> <new>"
+    [[ "$old" == "$new" ]] && die "Old and new names are the same ('$old') — nothing to rename."
+
+    local old_dir="$PACKS_DIR/$old" new_dir="$PACKS_DIR/$new"
+    [[ -d "$old_dir" ]] || die "Pack '$old' not found at packs/$old/."
+    _rename_validate pack "$new"
+    [[ -e "$new_dir" ]] && die "Pack '$new' already exists at packs/$new/. Choose a different name."
+
+    # ── Strict pre-scan: referencing projects must be fully resolved ────
+    local proj unit yml mname mpath mstatus
+    local -a affected=() blocked=()
+    while IFS=$'\t' read -r proj unit yml; do
+        _yaml_list_has_ref "$yml" packs "$old" || continue
+        affected+=("$proj")
+        while IFS=$'\t' read -r mname mpath mstatus; do
+            [[ "$mstatus" == unresolved ]] && blocked+=("$proj:$mname")
+        done < <(_project_iter_members "$proj")
+    done < <(_project_foreach)
+    [[ ${#blocked[@]} -gt 0 ]] && \
+        die "Cannot rename pack '$old': unresolved member(s) in referencing project(s): ${blocked[*]}. Run 'cco resolve' first (ADR-0031)."
+
+    # ── Preview + confirm (ADR-0029 D2) ─────────────────────────────────
+    local -a bullets=(
+        "packs/$old/ → packs/$new/ (+ pack.yml name:)"
+        "DATA install-provenance + STATE merge base/meta + per-user tags"
+    )
+    [[ ${#affected[@]} -gt 0 ]] && bullets+=("packs[] reference in project(s): ${affected[*]}")
+    _rename_preview_confirm "$yes" "Rename pack '$old' → '$new'" "${bullets[@]}" \
+        || { info "Aborted — nothing changed."; return 0; }
+
+    # ── Store re-key (machine-local; each step atomic) ──────────────────
+    mv "$old_dir" "$new_dir" || die "Failed to move packs/$old → packs/$new."
+    [[ -f "$new_dir/pack.yml" ]] && _sed_i "$new_dir/pack.yml" "^name:.*" "name: $new"
+    local data_root state_root
+    data_root=$(_cco_data_dir); state_root=$(_cco_state_dir)
+    [[ -d "$data_root/packs/$old"  ]] && mv "$data_root/packs/$old"  "$data_root/packs/$new"
+    [[ -d "$state_root/packs/$old" ]] && mv "$state_root/packs/$old" "$state_root/packs/$new"
+    _tags_rename packs "$old" "$new"
+
+    # ── Cross-project packs[] fan-out (delegate to git, P17) ────────────
+    local tag val
+    local -a changed=()
+    while IFS=$'\t' read -r tag val _; do
+        [[ "$tag" == changed ]] && changed+=("$val")
+    done < <(_rename_fanout_projectyml packs "$old" "$new")
+
+    ok "Renamed pack '$old' → '$new'."
+    if [[ ${#changed[@]} -gt 0 ]]; then
+        warn "Commit + push the updated .cco/project.yml in each changed repo, then run 'cco sync':"
+        printf '%s\n' "${changed[@]}" | sort -u | while IFS= read -r p; do info "  $p"; done
+    fi
+}
+
 cmd_pack_update() {
     local name="" force=false update_all=false
 

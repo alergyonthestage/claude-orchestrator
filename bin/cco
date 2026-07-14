@@ -585,6 +585,7 @@ Commands:
   internalize <name>     Convert source-referencing pack to self-contained
   show <name>            Show pack details (knowledge, agents, rules)
   remove <name>          Remove a pack
+  rename <old> <new>     Rename a pack, re-keying it across stores + project refs
   validate [name]        Validate pack structure (all if no name)
 
 List packs with 'cco list pack' (or 'cco list' for all resources).
@@ -605,6 +606,7 @@ EOF
             list)         die "'cco pack list' was removed — use 'cco list pack' (ADR-0029)." ;;
             show)     cmd_pack_show "$@" ;;
             remove)   cmd_pack_remove "$@" ;;
+            rename)   cmd_pack_rename "$@" ;;
             validate) cmd_pack_validate "$@" ;;
             *)        die "Unknown pack command: $subcmd. Run 'cco pack --help'." ;;
         esac || _cco_rc=$?

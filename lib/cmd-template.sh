@@ -45,6 +45,7 @@ Commands:
   update <name> [--all]      Update a template from its remote source
   validate [name] [--all]    Validate a template's structure
   remove <name>              Remove a user template
+  rename <old> <new>         Rename a user template
   publish <name> [remote]    Publish a template to a sharing repo
   install <url>              Install a template from a sharing repo
   export <name>              Export a template as a .tar.gz archive
@@ -68,6 +69,7 @@ EOF
         update)      cmd_template_update "$@" ;;
         validate)    cmd_template_validate "$@" ;;
         remove)      cmd_template_remove "$@" ;;
+        rename)      cmd_template_rename "$@" ;;
         publish)     cmd_template_publish "$@" ;;
         install)     cmd_template_install "$@" ;;
         export)      cmd_template_export "$@" ;;
@@ -403,6 +405,68 @@ EOF
     _tags_forget templates "$name"
 
     ok "Template '$name' removed."
+}
+
+# ── cco template rename ───────────────────────────────────────────────────
+# Re-key a USER template (ADR-0050): mv its store dir (kind-scoped —
+# templates/<kind>/<old> → <new>), move the id-keyed DATA install-provenance +
+# STATE merge base/meta, and carry the per-user tag binding. Templates have no
+# committed project.yml reference to fan out (discovery-only). Native templates
+# cannot be renamed (no writable store, no recorded source).
+cmd_template_rename() {
+    local old="" new="" yes=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -y|--yes) yes=true; shift ;;
+            --help|-h)
+                cat <<'EOF'
+Usage: cco template rename <old> <new>
+
+Rename a user template, re-keying its store directory, its machine-local
+DATA/STATE sidecars, and the per-user tags. Native templates cannot be renamed.
+
+Options:
+  -y, --yes   Skip the confirmation prompt
+EOF
+                return 0
+                ;;
+            -*)  die "Unknown option: $1. Run 'cco template rename --help'." ;;
+            *)
+                if [[ -z "$old" ]]; then old="$1"
+                elif [[ -z "$new" ]]; then new="$1"
+                else die "Unexpected argument: $1"; fi
+                shift ;;
+        esac
+    done
+
+    [[ -z "$old" || -z "$new" ]] && die "Usage: cco template rename <old> <new>"
+    [[ "$old" == "$new" ]] && die "Old and new names are the same ('$old') — nothing to rename."
+
+    # Find in USER templates only (kind-scoped), mirroring cmd_template_remove.
+    local kind="" found_dir="" k
+    for k in project pack; do
+        if [[ -d "$TEMPLATES_DIR/$k/$old" ]]; then kind="$k"; found_dir="$TEMPLATES_DIR/$k/$old"; break; fi
+    done
+    [[ -z "$found_dir" ]] && die "User template '$old' not found. Only user templates can be renamed."
+
+    _rename_validate template "$new"
+    [[ -e "$TEMPLATES_DIR/$kind/$new" ]] && die "Template '$new' already exists in the $kind kind. Choose a different name."
+
+    local -a bullets=(
+        "$found_dir → $TEMPLATES_DIR/$kind/$new"
+        "DATA install-provenance + STATE merge base/meta + per-user tags"
+    )
+    _rename_preview_confirm "$yes" "Rename template '$old' → '$new' ($kind)" "${bullets[@]}" \
+        || { info "Aborted — nothing changed."; return 0; }
+
+    mv "$found_dir" "$TEMPLATES_DIR/$kind/$new" || die "Failed to move the template directory."
+    local data_root state_root
+    data_root=$(_cco_data_dir); state_root=$(_cco_state_dir)
+    [[ -d "$data_root/templates/$old"  ]] && mv "$data_root/templates/$old"  "$data_root/templates/$new"
+    [[ -d "$state_root/templates/$old" ]] && mv "$state_root/templates/$old" "$state_root/templates/$new"
+    _tags_rename templates "$old" "$new"
+
+    ok "Renamed template '$old' → '$new' ($kind)."
 }
 
 # ── cco template internalize ──────────────────────────────────────────────
