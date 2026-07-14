@@ -236,6 +236,53 @@ _cmd_remote_remove() {
     ok "Removed remote '$name'"
 }
 
+# Rename a remote: re-key its url-registry entry (DATA/remotes) and migrate its
+# saved token (STATE/remotes-token) if present. Non-destructive (the url + token
+# are preserved under the new key). Usage: _cmd_remote_rename <old> <new> [-y]
+_cmd_remote_rename() {
+    local old="" new="" yes=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -y|--yes) yes=true; shift ;;
+            -*) die "Unknown option: $1. Run 'cco remote rename --help'." ;;
+            *)  if [[ -z "$old" ]]; then old="$1"
+                elif [[ -z "$new" ]]; then new="$1"
+                else die "Unexpected argument: $1"; fi
+                shift ;;
+        esac
+    done
+    [[ -z "$old" || -z "$new" ]] && die "Usage: cco remote rename <old> <new>"
+    [[ "$old" == "$new" ]] && die "Old and new names are the same ('$old') — nothing to rename."
+
+    local rf; rf=$(_remotes_file)
+    { [[ -f "$rf" ]] && grep -q "^${old}=" "$rf" 2>/dev/null; } || die "Remote '$old' not found."
+    _rename_validate remote "$new"
+    grep -q "^${new}=" "$rf" 2>/dev/null && die "Remote '$new' already exists. Choose a different name."
+
+    local has_token=false
+    remote_get_token "$old" >/dev/null 2>&1 && has_token=true
+    local -a bullets=("url registry key: $old → $new (url preserved)")
+    [[ "$has_token" == true ]] && bullets+=("saved auth token migrated to '$new'")
+    _rename_preview_confirm "$yes" "Rename remote '$old' → '$new'" "${bullets[@]}" \
+        || { info "Aborted — nothing changed."; return 0; }
+
+    # Re-key the url registry (DATA), preserving the url.
+    local url; url=$(remote_get_url "$old")
+    local tmpf; tmpf=$(mktemp)
+    grep -v "^${old}=" "$rf" > "$tmpf"
+    printf '%s=%s\n' "$new" "$url" >> "$tmpf"
+    mv "$tmpf" "$rf"
+
+    # Migrate the token (STATE) if present.
+    if [[ "$has_token" == true ]]; then
+        local tok; tok=$(remote_get_token "$old")
+        _remote_token_set "$new" "$tok"
+        _remote_token_remove "$old" || true
+    fi
+
+    ok "Renamed remote '$old' → '$new'."
+}
+
 _cmd_remote_set_token() {
     local name="${1:-}" token="${2:-}"
 
@@ -308,6 +355,7 @@ Manage named sharing repo remotes for publishing and installing.
 Commands:
   add <name> <url>     Register a remote sharing repo
   remove <name>        Unregister a remote
+  rename <old> <new>   Rename a remote (re-keys url + token)
   set-token <n> <tok>  Save auth token for a remote
   remove-token <name>  Remove saved token for a remote
 
@@ -357,6 +405,26 @@ EOF
                 esac
             done
             _cmd_remote_remove "$@"
+            ;;
+        rename)
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --help|-h)
+                        cat <<'EOF'
+Usage: cco remote rename <old> <new> [-y]
+
+Rename a registered remote, re-keying its url-registry entry and migrating any
+saved auth token. The url and token are preserved under the new name.
+
+Options:
+  -y, --yes   Skip the confirmation prompt
+EOF
+                        return 0
+                        ;;
+                    *) break ;;
+                esac
+            done
+            _cmd_remote_rename "$@"
             ;;
         list)
             die "'cco remote list' was removed — use 'cco list remotes' (ADR-0029)." ;;
