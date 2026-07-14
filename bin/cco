@@ -92,6 +92,7 @@ source "$LIB_DIR/cmd-project-validate.sh"
 source "$LIB_DIR/cmd-project-coords.sh"
 source "$LIB_DIR/cmd-project-export-import.sh"
 source "$LIB_DIR/cmd-project-rename.sh"
+source "$LIB_DIR/cmd-repo.sh"
 source "$LIB_DIR/cmd-pack.sh"
 source "$LIB_DIR/cmd-llms.sh"
 source "$LIB_DIR/cmd-template.sh"
@@ -608,6 +609,8 @@ EOF
             *)        die "Unknown pack command: $subcmd. Run 'cco pack --help'." ;;
         esac || _cco_rc=$?
         ;;
+    repo)        cmd_repo "$@"        || _cco_rc=$? ;;
+    extra-mount) cmd_extra_mount "$@" || _cco_rc=$? ;;
     llms)     cmd_llms "$@"     || _cco_rc=$? ;;
     template) cmd_template "$@" || _cco_rc=$? ;;
     chrome)   cmd_chrome "$@"   || _cco_rc=$? ;;
