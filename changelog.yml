@@ -733,3 +733,30 @@ entries:
       the repo under its logical name (project membership keyed by repo name), the
       same coordinate model as `cco join`. Existing projects are unaffected; this
       only changes what a fresh `cco init` scaffolds.
+
+  - id: 42
+    date: "2026-07-14"
+    type: breaking
+    title: "Per-project name scoping: index v2 (identity = path, name = per-project label)"
+    description: >
+      BREAKING (machine-local STATE only — no committed config changes) — repo and
+      extra_mount logical names are now PER-PROJECT scoped. A name is a label within
+      one project, not a global key; "the same resource" is decided by PATH
+      coincidence, never by name (ADR-0051, supersedes ADR-0022 D2). The machine-local
+      index moves to version 2 (nested project_paths: <project> -> <name> -> path,
+      plus an unscoped: escape-hatch bucket for project-less `cco path set` pins). The
+      upgrade is transparent and automatic: a still-v1 index is read as-is, and the
+      first host-side write re-homes each flat binding under every project that lists
+      it as a member (orphans -> unscoped) — no `cco update`, no migration script,
+      since the index is scan-rebuildable STATE (`cco resolve --scan`). Two projects
+      may now bind the same name to different paths (independent resources) and one
+      path may carry different names in different projects. `cco resolve`/`cco start`
+      gained an add-time disambiguation prompt: when a name already exists in another
+      project, cco offers to REUSE that path (the same resource) or specify a different
+      one (a homonym), flagging a git-origin/url divergence as "probably a different
+      resource". Cross-project name matches are no longer refused as collisions; only a
+      same-project same-name-different-path clash is refused. The name-based reverse
+      lookup is replaced by a path-based one (`cco project show` "referenced by",
+      `cco forget` shared-repo guard). No user action required; custom tooling that
+      parsed ~/.local/state/cco/index directly must read the v2 nested layout (or
+      regenerate with `cco resolve --scan`).

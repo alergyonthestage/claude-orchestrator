@@ -17,7 +17,7 @@ claude-orchestrator manages isolated Claude Code sessions in Docker containers f
 **Config homes**: project config lives **in each repo**; everything personal lives in the **`~/.cco` store**; machine-local index/state/cache live in hidden XDG buckets (never hand-edited):
 - `<repo>/.cco/` — per-project config committed inside the repo it serves: `project.yml` (logical names + machine-agnostic `url`/`ref` coordinates), its `claude/` tree, and `secrets.env` (gitignored).
 - `~/.cco/` — the personal store: `.claude/` (global Claude config), `packs/` (knowledge packs), `templates/` (project templates). **No `manifest.yml`** — sharing discovery is structure-based.
-- `~/.local/state/cco` (STATE) — machine-local index (logical name → absolute path), session transcripts, memory, update base/meta.
+- `~/.local/state/cco` (STATE) — machine-local index (**per-project** logical name → absolute path, v2 nested `project_paths`; identity is the path, name is a per-project label — ADR-0051), session transcripts, memory, update base/meta.
 - `~/.cache/cco` (CACHE) — re-fetchable content (llms downloads) and the generated `docker-compose.yml` overlay.
 - `~/.local/share/cco` (DATA) — internal-but-synced state: per-user tags registry, de-tokenized remotes registry, install provenance.
 
@@ -148,7 +148,7 @@ Per `docs/maintainers/environment/design/design-docker.md` (sezione directory st
 - `lib/cmd-update.sh` — Update command: migrations + discovery, --diff, --sync
 - `lib/cmd-clean.sh` — Clean .bak files: --project, --all, --tmp, --generated, --dry-run
 - `lib/update*.sh` — Update engine split by responsibility: hash-io, merge, meta, discovery, sync, changelog, remote + orchestrator (update.sh)
-- `lib/paths.sh` / index resolution — Maps logical names to absolute paths via the machine-local STATE index (subsumes the removed `@local` markers and per-repo `local-paths.yml`)
+- `lib/paths.sh` / `lib/index.sh` — Maps **per-project** logical names to absolute paths via the machine-local STATE index (v2 nested `project_paths`; identity = path, name = per-project label — ADR-0051; subsumes the removed `@local` markers and per-repo `local-paths.yml`)
 - `lib/access-scope.sh` — Unified CLI environment & access-scope layer (ADR-0043): scopes read-verb OUTPUT in container-operator mode (`_env_in_scope`/`_env_note_hidden`/`_env_flush_hidden_notice`/`_env_require_visible`). Host-open; hidden ≠ absent (count-only stderr notice)
 - `lib/cmd-config.sh` / `lib/cmd-sync.sh` — Personal-store versioning (`cco config save/push/pull` on `~/.cco`) and `cco sync` (copy resolved config into place)
 - `lib/cmd-remote.sh` — Remote management: add, remove, list sharing-repo remotes

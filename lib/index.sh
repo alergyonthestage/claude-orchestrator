@@ -32,11 +32,15 @@
 # → unscoped:). No `migrations/` script, no `cco update` — the index is
 # machine-local, scan-rebuildable STATE.
 #
-# Provides: _index_file(), _index_get_path(), _index_set_path(),
-#   _index_remove_path(), _index_path_conflicts(), _index_list_paths(),
-#   _index_get_project_repos(), _index_set_project_repos(),
-#   _index_remove_project(), _index_list_projects(), _index_repos_get_projects(),
-#   _project_member_status(), _project_iter_members()
+# Provides: _index_file(), _index_get_path(), _index_get_path_any(),
+#   _index_set_path(), _index_remove_path(), _index_set_unscoped(),
+#   _index_path_conflicts(), _index_name_for_path(), _index_list_paths(),
+#   _index_paths_get_bindings(), _index_bindings_for_name(),
+#   _index_pp_* (per-project block primitives, ADR-0051), _index_get_project_repos(),
+#   _index_set_project_repos(), _index_remove_project(), _index_list_projects(),
+#   _index_rename_project(), _project_member_status(), _project_iter_members()
+# (the name-based reverse lookup _index_repos_get_projects() is retired — ADR-0051
+#  D5 replaces it with the path-based _index_paths_get_bindings())
 # Dependencies: colors.sh, paths.sh (_cco_state_dir/_cco_project_id),
 #   sync-meta.sh (_sync_is_divergent) — both resolved at call time.
 

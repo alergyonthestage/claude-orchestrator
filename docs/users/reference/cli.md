@@ -934,7 +934,8 @@ Examples:
    - Name and description (from project.yml)
    - Repos: list with path existence check ([missing] marker for absent paths),
      and each member's role: host / synced copy / divergent / code-only member
-   - Referenced-by: other projects that reference this repo (reverse index lookup)
+   - Referenced-by: other projects that mount this repo's PATH (path-based reverse
+     lookup — ADR-0051 D5; "same resource" is path coincidence, not name)
    - Packs: list with existence check ([not found] marker for absent packs)
    - Docker config: auth method, ports, network name
    - Status: checks Docker for running container (cc-<name>)
@@ -1042,6 +1043,13 @@ machine-local STATE **index** (`<state>/cco/index`), never in `project.yml` and 
 `project.yml` carries logical names + `url`/`ref` coordinates only — there are no `@local`
 markers and no per-repo `local-paths.yml`.
 
+Names are **per-project scoped** (ADR-0051): a logical name is a label *within one project*,
+not a global key. Identity is the **path** — two projects may bind the same name to different
+paths (independent resources), and one path may carry different names in different projects.
+The index is version 2 (nested `project_paths: <project> → <name> → path`, plus an `unscoped:`
+bucket for project-less `cco path set` pins). A pre-v2 index upgrades transparently on the first
+write; nothing to run.
+
 #### `cco resolve [project]`
 
 Resolve each unresolved repo/mount of a project: specify a local path, clone from the
@@ -1078,6 +1086,14 @@ referenced-resource kinds** — repos, extra mounts, **llms**, and **packs** —
   offers **install from `<url>`** (via `cco pack install --pick`) · **use a different url** ·
   **skip**; a pack already present in a local layer is a clean skip.
 
+**Add-time disambiguation** (ADR-0051 D4): when a repo/mount name you are resolving already
+exists in **another** project on this machine, `cco resolve` lists those existing paths and lets
+you **reuse one** (the same resource — the path is filled for you) or **specify a different path**
+(a homonym — a genuinely different resource). For repos, a candidate whose on-disk `git remote
+get-url origin` diverges from the incoming coordinate `url` is flagged *"probably a different
+resource"*. A cross-project name match is therefore **not** a collision — only a *same-project*
+same-name-different-path clash is refused.
+
 After healing, `cco resolve` prints a **status row per referenced resource** (`✓ resolved` /
 `⚠ unresolved [+url]`) across all four kinds, so it always shows the complete picture — not only the
 references it prompted for. Nothing ever hard-blocks: an unresolved reference is a conscious-skip
@@ -1085,10 +1101,12 @@ references it prompted for. Nothing ever hard-blocks: an unresolved reference is
 point — no duplicated resolution loop).
 
 `--scan` is **non-destructive**:
-it upserts each discovered `name → path` + `repos[]`, never deletes out-of-`<dir>` mappings or
-manual `cco path set` overrides, and on a name-already-bound-to-a-different-path conflict it
-warns and keeps the existing mapping (uniqueness invariant). There is no `--prune` in v1.
-`cco resolve --scan` also bootstraps a fresh machine (populates an empty index).
+it upserts each discovered project's `name → path` bindings (scoped to that project) + `repos[]`,
+never deletes out-of-`<dir>` mappings or manual `cco path set` overrides, and on a same-project
+name-already-bound-to-a-different-path conflict it warns and keeps the existing mapping (AD5′). A
+member SHARED across scanned projects (listed by A, hosted by B) is bound under each referencing
+project too, to the same path. There is no `--prune` in v1. `cco resolve --scan` also bootstraps a
+fresh machine (populates an empty index).
 
 #### `cco path set` / `cco path list` (advanced)
 
@@ -1106,12 +1124,17 @@ Examples:
   cco path list                          # Show all name → path mappings
 ```
 
-Manual index edits are allowed but discouraged — prefer `cco resolve`. A logical name maps to
-exactly one absolute path per machine (`cco init`/`cco join` refuse a name already bound to a
-different path). The index stores **absolute paths only**: every write is normalized (`~`/`$HOME`
-expanded) and a value that cannot be made absolute is refused. `cco path list` normalizes each value
-for display and flags any stale non-absolute entry (e.g. a legacy `@local`) as `⚠ malformed`; run
-`cco update` (which normalizes the index) or `cco resolve --scan <dir>` to clean it.
+Manual index edits are allowed but discouraged — prefer `cco resolve`. `cco path set` binds the
+name **in the project hosting the cwd** if you run it inside one; run outside any project it lands
+in the project-less `unscoped:` bucket. A logical name maps to one absolute path **per project**
+(different projects may bind the same name to different paths — ADR-0051); only a same-project
+same-name-different-path clash is refused. If the name diverges from the directory basename,
+`cco path set` prints a hint (`cco repo rename` aligns them). The index stores **absolute paths
+only**: every write is normalized (`~`/`$HOME` expanded) and a value that cannot be made absolute
+is refused. `cco path list` labels each row with its owning project (`[project] name → path`),
+normalizes each value for display, and flags any stale non-absolute entry (e.g. a legacy `@local`)
+as `⚠ malformed`; run `cco update` (which normalizes the index) or `cco resolve --scan <dir>` to
+clean it.
 
 ---
 
