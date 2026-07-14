@@ -31,7 +31,10 @@ This scaffolds `<repo>/.cco/` and registers the project in the machine-local ind
 ```
 
 The CLI auto-detects basic information from the host repo (package.json,
-pyproject.toml, go.mod, etc.) and populates CLAUDE.md with relevant details.
+pyproject.toml, go.mod, etc.) and populates CLAUDE.md with relevant details. The
+host repo is seeded into `project.yml` `repos[]` (its `url` derived from the
+repo's `origin` remote when present), so `cco start` mounts it immediately — the
+logical name defaults to the directory basename, or set it with `--repo-name`.
 
 For a multi-repo project, add the other repositories as members from the host repo:
 

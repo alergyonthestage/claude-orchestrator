@@ -534,6 +534,20 @@ DI1), **CLI-surface matrix** (`cli/reference/cli-surface-matrix.md`), **DOC1** c
 Tutorial `read-all` overridable-downward = **confirmed correct as-is** (no change). To extract into a
 new ADR (refining 0036/0044/0046) + living `design.md` once validated.
 
+### Resource naming & init consistency (`feat/naming/resource-management`)
+
+> Umbrella branch off **develop fast-forwarded to the access-model tip** (`57a0554`,
+> 2026-07-14) so it starts aligned with the settled access model. Local FF only —
+> host-mounted `.git`, so it applies on the Mac too; **NOT pushed**. e2e v2 (access
+> model) still gates push + develop→main, not this local FF. Hosts the `cco init`
+> repo-seed fix + upcoming **project-rename / resource (pack·template·llms) naming**
+> incongruities the maintainer will specify as design + fix.
+
+| Unit | Status | Notes |
+|---|---|---|
+| **init seeds the current repo into `repos[]`** | **✅ DONE (2026-07-14, `35e41bb`) — live-verified** (repo mounts; `origin` url injected when the git remote is present) | `cco init` now seeds the hosting repo into `project.yml` `repos[]` (was `repos: []`, so `cco start` mounted nothing and warned until a manual edit). Machine-agnostic coordinate: logical name + `url` derived from `git remote get-url origin` (guarded for non-git repos). New **`--repo-name`** flag (+ interactive prompt), an axis **independent of `--name`**, default = dir basename. The STATE index binds path + project membership under the **repo** name (not the project name), so a repo name that diverges from the project name still resolves — same coordinate model as `cco join` (ADR-0017 D1/D2). Reuses `_yml_append_coord` (upgrades the `repos: []` stub); base template unchanged. Additive (**changelog #41**); **migration none** (project.yml schema unchanged, existing projects untouched). Suite **1238/7** (+4 init tests; 7 = pre-existing §6.2 access-scope artifacts). ⏳ pre-merge: `cco build` + push from the Mac. |
+| **project-rename + resource naming fixes** | ⏳ PLANNED (maintainer to specify) | Incongruities in `cco project rename` + pack/template/llms rename/naming management → design + fix on this branch (next unit). |
+
 ## Broader planned work (beyond decentralized-config v1)
 
 Full long-form descriptions (scope, design, effort) are preserved in
