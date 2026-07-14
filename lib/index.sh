@@ -703,6 +703,33 @@ _index_rename_project() {
     _index_pp_remove_project "$old"
 }
 
+# Re-key a repo/extra_mount NAME within ONE project from <old> to <new>: its
+# per-project path binding (project_paths[project]) AND its membership token in
+# projects:<project>. Project-scoped (ADR-0051 D1) — never touches another
+# project's binding, even one sharing the name or the same path (the name axis is
+# per-project; identity is the path). The bound path is preserved (name axis only).
+# No-op-safe: an <old> unbound in <project> skips the path re-key; the membership
+# token rewrite is idempotent. Callers validate <new> is free in <project> first.
+# The repo/extra_mount analogue of _index_rename_project (ADR-0050 D6).
+# Usage: _index_rename_path <project> <old> <new>
+_index_rename_path() {
+    local project="$1" old="$2" new="$3" path members
+    path=$(_index_pp_get "$project" "$old")
+    if [[ -n "$path" ]]; then
+        _index_pp_set "$project" "$new" "$path"
+        _index_pp_remove "$project" "$old"
+    fi
+    members=$(_index_get_project_repos "$project")
+    if [[ -n "$members" ]]; then
+        local out="" tok
+        for tok in $members; do
+            [[ "$tok" == "$old" ]] && tok="$new"
+            out="${out:+$out }$tok"
+        done
+        _index_set_project_repos "$project" $out
+    fi
+}
+
 # NOTE: the name-based reverse lookup _index_repos_get_projects (ADR-0024 D5) is
 # retired under per-project scoping (ADR-0051 D5) — "which projects use name X" is
 # ambiguous when a name is a per-project label. Use _index_paths_get_bindings

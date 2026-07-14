@@ -405,3 +405,55 @@ test_pp_unscoped_fallback() {
     [[ "$(_index_get_path app-a shared-docs)" == "/a/docs" ]]      || fail "own binding must win"
     [[ "$(_index_get_path app-b shared-docs)" == "/global/docs" ]] || fail "app-b still falls back"
 }
+
+# ── _index_rename_path (ADR-0050 B.2 — project-scoped name re-key) ────
+
+test_index_rename_path_rekeys_binding_and_membership() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+
+    _index_set_project_repos p backend web
+    _index_pp_set p backend /a/backend
+    _index_pp_set p web     /a/web
+
+    _index_rename_path p backend api
+
+    [[ "$(_index_get_path p api)" == "/a/backend" ]] || fail "new name must carry the old path, got '$(_index_get_path p api)'"
+    [[ -z "$(_index_get_path p backend)" ]]          || fail "old name must be gone"
+    [[ "$(_index_get_path p web)" == "/a/web" ]]     || fail "sibling binding must be untouched"
+    [[ "$(_index_get_project_repos p)" == "api web" ]] || fail "membership token must re-key, got '$(_index_get_project_repos p)'"
+}
+
+test_index_rename_path_is_project_scoped() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+
+    # Homonym in another project (same name, DIFFERENT path) — a different resource.
+    _index_set_project_repos app-a backend
+    _index_set_project_repos app-b backend
+    _index_pp_set app-a backend /a/backend
+    _index_pp_set app-b backend /b/backend      # must stay put
+
+    _index_rename_path app-a backend api
+
+    [[ "$(_index_get_path app-a api)" == "/a/backend" ]]     || fail "app-a re-keyed"
+    [[ -z "$(_index_get_path app-a backend)" ]]              || fail "app-a old gone"
+    [[ "$(_index_get_path app-b backend)" == "/b/backend" ]] || fail "app-b homonym must be untouched"
+    [[ "$(_index_get_project_repos app-b)" == "backend" ]]   || fail "app-b membership must be untouched"
+}
+
+test_index_rename_path_leaves_same_path_alias_alone() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+
+    # Another project labels the SAME path differently — a per-project alias.
+    _index_set_project_repos app-a backend
+    _index_set_project_repos app-b common
+    _index_pp_set app-a backend /shared/tree
+    _index_pp_set app-b common  /shared/tree
+
+    _index_rename_path app-a backend api
+
+    [[ "$(_index_get_path app-a api)" == "/shared/tree" ]]    || fail "app-a re-keyed"
+    [[ "$(_index_get_path app-b common)" == "/shared/tree" ]] || fail "app-b's own label for the same path must be untouched"
+}
