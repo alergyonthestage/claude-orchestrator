@@ -162,6 +162,238 @@ _index_section_dump() {
     ' "$f"
 }
 
+# ── Nested project_paths accessors (ADR-0051: per-project name scoping) ──
+#
+# The v2 index scopes repo/extra_mount names to their project. The identity of
+# such a resource is its PATH; the name is only a per-project LABEL for it. The
+# `project_paths:` section is nested two levels — an outer project key (2-space
+# indent, no value) and inner name → path entries (4-space indent):
+#
+#   project_paths:
+#     app-a:
+#       backend: "/abs/backend"
+#       web: "/abs/web"
+#     app-b:
+#       backend: "/abs/backend"   # SAME name, DIFFERENT project → homonym OK
+#
+# Invariant AD5′: within one project, one name → one path; the same name may bind
+# different paths across projects; the same path may carry different names across
+# projects. All uniqueness enforcement flows through _index_pp_conflicts().
+#
+# The awk below distinguishes an outer key line (/^  [^ ]/ — exactly two leading
+# spaces then a non-space) from an inner entry line (/^    / — four leading
+# spaces); the two classes are disjoint. The section ends at the next top-level
+# key (/^[^ #]/). Values are stored quoted (the L7 delimiter convention).
+
+# Echo the path bound to (<project>, <name>) in project_paths:, or empty.
+# Usage: _index_pp_get <project> <name>
+_index_pp_get() {
+    local project="$1" name="$2" f
+    f=$(_index_file)
+    [[ -f "$f" ]] || return 0
+    awk -v project="$project" -v name="$name" '
+        $0 == "project_paths:" { in_sec = 1; next }
+        in_sec && /^[^ #]/ { exit }
+        in_sec && /^  [^ ]/ {
+            pline = $0; sub(/^  /, "", pline); sub(/:.*/, "", pline)
+            in_proj = (pline == project)
+            next
+        }
+        in_sec && in_proj && /^    / {
+            line = $0; sub(/^    /, "", line)
+            colon = index(line, ":")
+            if (colon > 0) {
+                k = substr(line, 1, colon - 1)
+                v = substr(line, colon + 1)
+                sub(/^ +/, "", v)
+                sub(/^"/, "", v); sub(/"$/, "", v)   # strip quoting delimiters only (L7)
+                if (k == name) { print v; exit }
+            }
+        }
+    ' "$f"
+}
+
+# Upsert (<project>, <name>) → "<value>" into project_paths: (atomic). The value
+# is normalized at this boundary (_index_normalize_path); a non-absolute value
+# that cannot be recovered is SKIPPED (no write) and the call returns 1. Creates
+# the section and/or the project block on demand. AD5′ conflict policy lives in
+# the caller — see _index_pp_conflicts(). Usage: _index_pp_set <project> <name> <path>
+_index_pp_set() {
+    local project="$1" name="$2" value norm f
+    norm=$(_index_normalize_path "$3") || return 1
+    value="$norm"
+    _index_ensure_file
+    f=$(_index_file)
+
+    local tmpf=""
+    # shellcheck disable=SC2064
+    trap 'rm -f ${tmpf:+"$tmpf"}' RETURN
+    tmpf=$(mktemp "${f}.XXXXXX")
+
+    # CCO_IDX_VAL passes the value via env to avoid AWK -v backslash expansion.
+    CCO_IDX_VAL="$value" awk -v project="$project" -v name="$name" '
+        BEGIN { val = ENVIRON["CCO_IDX_VAL"]; done = 0; in_sec = 0; in_proj = 0; sec_seen = 0 }
+        $0 == "project_paths:" { print; in_sec = 1; sec_seen = 1; next }
+        in_sec && /^[^ #]/ {
+            # Leaving the section — flush any pending insert first.
+            if (!done) {
+                if (in_proj) { print "    " name ": \"" val "\"" }
+                else { print "  " project ":"; print "    " name ": \"" val "\"" }
+                done = 1
+            }
+            in_sec = 0; in_proj = 0
+            print; next
+        }
+        in_sec && /^  [^ ]/ {
+            # A new project block starts: if we were inside the target block and
+            # never found the name, insert it before moving on.
+            if (in_proj && !done) { print "    " name ": \"" val "\""; done = 1 }
+            pline = $0; sub(/^  /, "", pline); sub(/:.*/, "", pline)
+            in_proj = (pline == project)
+            print; next
+        }
+        in_sec && in_proj && /^    / {
+            line = $0; sub(/^    /, "", line)
+            colon = index(line, ":")
+            k = (colon > 0) ? substr(line, 1, colon - 1) : line
+            if (!done && k == name) { print "    " name ": \"" val "\""; done = 1; next }
+            print; next
+        }
+        { print }
+        END {
+            if (!done) {
+                if (in_proj)       { print "    " name ": \"" val "\"" }
+                else if (in_sec)   { print "  " project ":"; print "    " name ": \"" val "\"" }
+                else if (!sec_seen) {
+                    print "project_paths:"
+                    print "  " project ":"
+                    print "    " name ": \"" val "\""
+                }
+            }
+        }
+    ' "$f" > "$tmpf" && mv "$tmpf" "$f"
+}
+
+# Remove (<project>, <name>) from project_paths: (atomic; no-op if absent). If
+# the removal empties the project block, the block header is pruned too so the
+# file never accumulates dangling empty projects.
+# Usage: _index_pp_remove <project> <name>
+_index_pp_remove() {
+    local project="$1" name="$2" f
+    f=$(_index_file)
+    [[ -f "$f" ]] || return 0
+
+    local tmpf=""
+    # shellcheck disable=SC2064
+    trap 'rm -f ${tmpf:+"$tmpf"}' RETURN
+    tmpf=$(mktemp "${f}.XXXXXX")
+
+    awk -v project="$project" -v name="$name" '
+        # A project header is buffered in `pending` and only emitted once a
+        # surviving child is seen — so a block emptied by the removal is dropped.
+        function flush() { if (pending != "") { if (has_child) print pending; pending = ""; has_child = 0 } }
+        $0 == "project_paths:" { print; in_sec = 1; next }
+        in_sec && /^[^ #]/ { flush(); in_sec = 0; in_proj = 0; print; next }
+        in_sec && /^  [^ ]/ {
+            flush()
+            pline = $0; sub(/^  /, "", pline); sub(/:.*/, "", pline)
+            in_proj = (pline == project)
+            pending = $0; has_child = 0
+            next
+        }
+        in_sec && /^    / {
+            line = $0; sub(/^    /, "", line)
+            colon = index(line, ":")
+            k = (colon > 0) ? substr(line, 1, colon - 1) : line
+            if (in_proj && k == name) { next }     # drop the target inner entry
+            if (pending != "") { print pending; pending = "" }
+            has_child = 1
+            print; next
+        }
+        { flush(); print }
+        END { flush() }
+    ' "$f" > "$tmpf" && mv "$tmpf" "$f"
+}
+
+# Remove an entire project block from project_paths: (atomic; no-op if absent).
+# Usage: _index_pp_remove_project <project>
+_index_pp_remove_project() {
+    local project="$1" f
+    f=$(_index_file)
+    [[ -f "$f" ]] || return 0
+
+    local tmpf=""
+    # shellcheck disable=SC2064
+    trap 'rm -f ${tmpf:+"$tmpf"}' RETURN
+    tmpf=$(mktemp "${f}.XXXXXX")
+
+    awk -v project="$project" '
+        $0 == "project_paths:" { print; in_sec = 1; next }
+        in_sec && /^[^ #]/ { in_sec = 0; in_proj = 0; print; next }
+        in_sec && /^  [^ ]/ {
+            pline = $0; sub(/^  /, "", pline); sub(/:.*/, "", pline)
+            in_proj = (pline == project)
+            if (in_proj) next
+            print; next
+        }
+        in_sec && in_proj && /^    / { next }     # drop the target block children
+        { print }
+    ' "$f" > "$tmpf" && mv "$tmpf" "$f"
+}
+
+# Dump one project's bindings as "name=path" lines. Usage: _index_pp_dump_project <project>
+_index_pp_dump_project() {
+    local project="$1" f
+    f=$(_index_file)
+    [[ -f "$f" ]] || return 0
+    awk -v project="$project" '
+        $0 == "project_paths:" { in_sec = 1; next }
+        in_sec && /^[^ #]/ { exit }
+        in_sec && /^  [^ ]/ {
+            pline = $0; sub(/^  /, "", pline); sub(/:.*/, "", pline)
+            in_proj = (pline == project)
+            next
+        }
+        in_sec && in_proj && /^    / {
+            line = $0; sub(/^    /, "", line)
+            colon = index(line, ":")
+            if (colon > 0) {
+                k = substr(line, 1, colon - 1)
+                v = substr(line, colon + 1)
+                sub(/^ +/, "", v)
+                sub(/^"/, "", v); sub(/"$/, "", v)
+                if (k != "" && v != "") print k "=" v
+            }
+        }
+    ' "$f"
+}
+
+# Dump every binding as "project<TAB>name<TAB>path" lines (for list/scan/reverse).
+_index_pp_dump_all() {
+    local f
+    f=$(_index_file)
+    [[ -f "$f" ]] || return 0
+    awk '
+        $0 == "project_paths:" { in_sec = 1; next }
+        in_sec && /^[^ #]/ { exit }
+        in_sec && /^  [^ ]/ {
+            cur = $0; sub(/^  /, "", cur); sub(/:.*/, "", cur)
+            next
+        }
+        in_sec && /^    / {
+            line = $0; sub(/^    /, "", line)
+            colon = index(line, ":")
+            if (colon > 0) {
+                k = substr(line, 1, colon - 1)
+                v = substr(line, colon + 1)
+                sub(/^ +/, "", v)
+                sub(/^"/, "", v); sub(/"$/, "", v)
+                if (cur != "" && k != "" && v != "") printf "%s\t%s\t%s\n", cur, k, v
+            }
+        }
+    ' "$f"
+}
+
 # ── Boundary normalization (the index stores absolute paths only) ─────
 #
 # The single normalizer for every value written to the paths: section. It
@@ -238,6 +470,40 @@ _index_path_conflicts() {
     en=$(_index_normalize_path "$existing") || en="$existing"
     pn=$(_index_normalize_path "$path") || pn="$path"
     [[ "$en" != "$pn" ]]
+}
+
+# Return 0 (true) iff (<project>, <name>) is already bound to a DIFFERENT
+# absolute path — the AD5′ uniqueness violation that init/join/scan must refuse
+# under per-project scoping (ADR-0051 D3). The single project-aware chokepoint:
+# a conflict exists ONLY when the SAME project already binds <name> to a
+# different path; a cross-project same-name binding is NOT a conflict, and an
+# unbound name is not a conflict. Both sides are normalized before comparing so
+# two spellings of the same dir (~/x vs /home/me/x) are not a false conflict.
+# Usage: _index_pp_conflicts <project> <name> <path>
+_index_pp_conflicts() {
+    local project="$1" name="$2" path="$3" existing
+    existing=$(_index_pp_get "$project" "$name")
+    [[ -z "$existing" ]] && return 1
+    local en pn
+    en=$(_index_normalize_path "$existing") || en="$existing"
+    pn=$(_index_normalize_path "$path") || pn="$path"
+    [[ "$en" != "$pn" ]]
+}
+
+# Path-based reverse lookup (ADR-0051 D5): echo the (project, name) bindings that
+# resolve to <path>, one "project<TAB>name" line each. Replaces the name-based
+# _index_repos_get_projects — sharing/GC/rename are PATH properties (§12 identity
+# model), so "same resource" is decided by path coincidence, never by name. The
+# target path is normalized so a tilde/$HOME spelling still matches.
+# Usage: _index_paths_get_bindings <path>
+_index_paths_get_bindings() {
+    local target="$1" tn line proj name path pn
+    tn=$(_index_normalize_path "$target") || tn="$target"
+    while IFS=$'\t' read -r proj name path; do
+        [[ -z "$path" ]] && continue
+        pn=$(_index_normalize_path "$path") || pn="$path"
+        [[ "$pn" == "$tn" ]] && printf '%s\t%s\n' "$proj" "$name"
+    done < <(_index_pp_dump_all)
 }
 
 # Echo the space-separated member repo names of a <project>, or empty.

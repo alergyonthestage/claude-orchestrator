@@ -244,3 +244,182 @@ test_iter_members_emits_name_path_status() {
     printf '%s\n' "$out" | grep -qE "^a	$tmp/a	synced$" || fail "member a must be synced with its path; got: $out"
     printf '%s\n' "$out" | grep -qE "^b		unresolved$" || fail "member b must be unresolved with empty path; got: $out"
 }
+
+# ══════════════════════════════════════════════════════════════════════
+# Per-project name scoping (ADR-0051) — v2 nested project_paths schema
+# ══════════════════════════════════════════════════════════════════════
+# The identity of a repo/extra_mount is its PATH; the name is a per-project
+# label. The index binds (project, name) → path in a nested `project_paths:`
+# section. These A.1 tests exercise the new primitives in isolation — they do
+# NOT touch the legacy flat paths: API (still used by callers until the cutover).
+
+test_pp_set_get_roundtrip() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a backend /abs/backend
+    _index_pp_set app-a web     /abs/web
+    [[ "$(_index_pp_get app-a backend)" == "/abs/backend" ]] || fail "pp backend roundtrip"
+    [[ "$(_index_pp_get app-a web)"     == "/abs/web" ]]     || fail "pp web roundtrip"
+    [[ -z "$(_index_pp_get app-a nope)" ]]                   || fail "missing inner must be empty"
+    [[ -z "$(_index_pp_get nope backend)" ]]                 || fail "missing project must be empty"
+}
+
+# AD5′: same name in different projects may bind DIFFERENT paths (homonyms).
+test_pp_same_name_different_projects() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a backend /a/backend
+    _index_pp_set app-b backend /b/backend      # same name, different project + path
+    [[ "$(_index_pp_get app-a backend)" == "/a/backend" ]] || fail "app-a backend"
+    [[ "$(_index_pp_get app-b backend)" == "/b/backend" ]] || fail "app-b backend (homonym must coexist)"
+}
+
+# AD5′: same path may carry different names across projects (aliases).
+test_pp_same_path_different_names() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a shared /abs/shared
+    _index_pp_set app-b common /abs/shared      # same path, different label
+    [[ "$(_index_pp_get app-a shared)" == "/abs/shared" ]] || fail "app-a shared"
+    [[ "$(_index_pp_get app-b common)" == "/abs/shared" ]] || fail "app-b common alias"
+}
+
+test_pp_upsert_overwrites() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a backend /a/first
+    _index_pp_set app-a backend /a/second
+    [[ "$(_index_pp_get app-a backend)" == "/a/second" ]] || fail "upsert should overwrite"
+    local n; n=$(_index_pp_dump_project app-a | grep -c '^backend=')
+    [[ "$n" -eq 1 ]] || fail "expected exactly one backend entry, got: $n"
+}
+
+test_pp_remove_prunes_empty_block() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a backend /a/backend
+    _index_pp_remove app-a backend
+    [[ -z "$(_index_pp_get app-a backend)" ]] || fail "removed inner must be empty"
+    # The now-empty project block must be pruned (no dangling "  app-a:" header).
+    local f; f=$(_index_file)
+    grep -qE '^  app-a:$' "$f" && fail "empty project block must be pruned" || true
+}
+
+test_pp_remove_keeps_sibling() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a backend /a/backend
+    _index_pp_set app-a web     /a/web
+    _index_pp_set app-b backend /b/backend
+    _index_pp_remove app-a backend
+    [[ -z "$(_index_pp_get app-a backend)" ]]            || fail "app-a backend removed"
+    [[ "$(_index_pp_get app-a web)"     == "/a/web" ]]   || fail "app-a web must survive"
+    [[ "$(_index_pp_get app-b backend)" == "/b/backend" ]] || fail "app-b backend must survive (other project)"
+}
+
+test_pp_remove_project() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a backend /a/backend
+    _index_pp_set app-a web     /a/web
+    _index_pp_set app-b backend /b/backend
+    _index_pp_remove_project app-a
+    [[ -z "$(_index_pp_get app-a backend)" ]] || fail "app-a backend gone"
+    [[ -z "$(_index_pp_get app-a web)" ]]     || fail "app-a web gone"
+    [[ "$(_index_pp_get app-b backend)" == "/b/backend" ]] || fail "app-b must be untouched"
+}
+
+test_pp_rejects_non_absolute() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    if _index_pp_set app-a bad "@local";        then fail "@local must be rejected"; fi
+    if _index_pp_set app-a bad2 "relative/path"; then fail "relative must be rejected"; fi
+    [[ -z "$(_index_pp_get app-a bad)" ]]  || fail "bad must not be indexed"
+    [[ -z "$(_index_pp_get app-a bad2)" ]] || fail "bad2 must not be indexed"
+}
+
+test_pp_expands_tilde_and_home() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a r1 "~/dev/x"
+    _index_pp_set app-a r2 '$HOME/dev/y'
+    [[ "$(_index_pp_get app-a r1)" == "$HOME/dev/x" ]] || fail "tilde not expanded"
+    [[ "$(_index_pp_get app-a r2)" == "$HOME/dev/y" ]] || fail "\$HOME not expanded"
+}
+
+test_pp_preserves_single_quote_in_path() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a repoq "/Users/me/O'Brien/repo"
+    [[ "$(_index_pp_get app-a repoq)" == "/Users/me/O'Brien/repo" ]] || fail "single quote stripped"
+}
+
+# AD5′ chokepoint: conflict iff the SAME project already binds name to a
+# DIFFERENT path. Cross-project same-name is NOT a conflict.
+test_pp_conflicts_ad5prime() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a backend /a/backend
+    _index_pp_conflicts app-a backend /a/DIFFERENT || fail "same project, different path must conflict"
+    if _index_pp_conflicts app-a backend /a/backend; then fail "same path must not conflict"; fi
+    if _index_pp_conflicts app-b backend /b/backend; then fail "cross-project same name is NOT a conflict"; fi
+    if _index_pp_conflicts app-a brand-new /a/x;      then fail "unbound name must not conflict"; fi
+}
+
+test_pp_conflicts_ignores_spelling() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a r "$HOME/dev/z"
+    if _index_pp_conflicts app-a r "~/dev/z"; then fail "same dir, two spellings must not conflict"; fi
+    _index_pp_conflicts app-a r "/other" || fail "different dir must conflict"
+}
+
+test_pp_dump_all() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a backend /a/backend
+    _index_pp_set app-a web     /a/web
+    _index_pp_set app-b backend /b/backend
+    local out; out=$(_index_pp_dump_all)
+    printf '%s\n' "$out" | grep -qxF "app-a	backend	/a/backend" || fail "dump_all missing app-a backend; got: $out"
+    printf '%s\n' "$out" | grep -qxF "app-a	web	/a/web"         || fail "dump_all missing app-a web"
+    printf '%s\n' "$out" | grep -qxF "app-b	backend	/b/backend" || fail "dump_all missing app-b backend"
+    local n; n=$(printf '%s\n' "$out" | grep -c .)
+    [[ "$n" -eq 3 ]] || fail "dump_all expected 3 lines, got: $n"
+}
+
+# Path-based reverse lookup (ADR-0051 D5) — replaces name-based reverse lookup.
+# "which (project, name) bindings resolve to <path>" — sharing is a PATH property.
+test_paths_get_bindings_reverse() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a shared /abs/shared
+    _index_pp_set app-b common /abs/shared      # SAME path, different label
+    _index_pp_set app-c other  /abs/other
+    local out; out=$(_index_paths_get_bindings /abs/shared)
+    printf '%s\n' "$out" | grep -qxF "app-a	shared" || fail "binding app-a/shared missing; got: $out"
+    printf '%s\n' "$out" | grep -qxF "app-b	common" || fail "binding app-b/common missing (same path)"
+    printf '%s\n' "$out" | grep -qF  "app-c" && fail "app-c (different path) must not appear" || true
+}
+
+# Reverse lookup normalizes spellings before comparing (§12 path identity).
+test_paths_get_bindings_ignores_spelling() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a home "$HOME/dev/z"
+    local out; out=$(_index_paths_get_bindings "~/dev/z")
+    printf '%s\n' "$out" | grep -qxF "app-a	home" || fail "spelling-insensitive reverse lookup; got: $out"
+}
+
+# The new nested section must not disturb the legacy flat paths:/projects:
+# sections during the transition (both coexist until the cutover).
+test_pp_coexists_with_flat_sections() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_set_path legacy /a/legacy
+    _index_set_project_repos app-a legacy
+    _index_pp_set app-a backend /a/backend
+    [[ "$(_index_get_path legacy)" == "/a/legacy" ]]              || fail "flat path lost after pp_set"
+    [[ "$(_index_get_project_repos app-a)" == "legacy" ]]        || fail "flat project lost after pp_set"
+    [[ "$(_index_pp_get app-a backend)" == "/a/backend" ]]       || fail "pp entry lost"
+}
