@@ -292,11 +292,15 @@ on a name bound to a different path; `resolve --scan`/`migrate` **keep-existing 
 member `url`s** (the divergence signal is unused today). Under scoping, same-name-different-project
 stops being a collision; only same-scope-different-path is.
 
-**Migration**: **breaking but deterministic** — because names are globally unique *today*, each
-existing global `paths: <name>` is losslessly re-homed under every project that lists it as a
-member (walk `projects:`), producing the per-project map; orphan paths (a `cco path set` name
-not in any project) go to an unscoped bucket or are dropped (decide in ADR-0051). Schema
-`version` bump.
+**Migration**: **breaking but deterministic**, and **transparent** — because names are globally
+unique *today*, each existing global `paths: <name>` is losslessly re-homed under every project
+that lists it as a member (walk `projects:`), producing the per-project map; orphan paths (a
+`cco path set` name not in any project) go to an unscoped bucket (kept). The index is machine-
+local, scan-rebuildable STATE and its `version:` field is currently written-but-never-read, so
+this is **not** a `migrations/` script and needs **no `cco update` / no user action**: it is a
+version-gated in-place self-upgrade in `lib/index.sh` on the next host-side write, with the
+resolver tolerating both schemas during the transition and `cco resolve --scan` as backstop
+(ADR-0051 D6). A `changelog.yml` breaking entry notifies only.
 
 ---
 

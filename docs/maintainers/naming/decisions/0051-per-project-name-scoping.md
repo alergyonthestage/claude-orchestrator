@@ -118,22 +118,40 @@ primitive `_index_paths_get_bindings(path)` → the `(project, name)` bindings t
   path"), optionally showing the per-project alias each uses.
 - `cmd-resolve.sh:700` (cross-project member check) → path-based.
 
-### D6 — Migration (breaking, deterministic, one-pass)
+### D6 — Migration: transparent, lazy, in-index (NOT a `migrations/` script, NOT `cco update`)
 
-Because names are globally unique **today**, the re-home is lossless: for each project in
-`projects:`, for each member name, read the current global `paths: <name>` and write it under
-`project_paths[project][name]`. Orphan global paths (a `cco path set` name in no project's
-membership) → an `unscoped:` bucket (kept resolvable) — **decide keep-vs-drop in impl**; default
-**keep** (non-destructive). Bump index `version` 1 → 2; the migration is idempotent
-(`migrations/` — scope: this is STATE index, migrated by a dedicated index-migration path, not
-the project/pack/template scopes). `cco resolve --scan` remains the self-heal.
+The index is **machine-local internal STATE** — never committed, never synced, and declared
+**scan-rebuildable** (`lib/index.sh` header). It is **not** covered by the `cco update` migration
+scopes (`global`/`project`/`pack`/`template`), and its `version:` field is currently **written
+but never read** (`index.sh:50`). So the upgrade is **not** a `migrations/NNN` script and needs
+**no explicit user action / no `cco update`** run. It is a **version-gated in-place self-upgrade
+inside `lib/index.sh`**:
+
+- **Trigger**: the first **host-side index write** after the new code is live performs the
+  `version 1 → 2` rewrite (a version guard at the index write/ensure entry; idempotent — a no-op
+  once `version: 2`).
+- **Deterministic + lossless**: names are globally unique **today**, so each global
+  `paths: <name>` re-homes under every project that lists `<name>` as a member →
+  `project_paths[project][name]`. Orphan global paths (a `cco path set` name in no project's
+  membership) → an `unscoped:` bucket, kept resolvable (default **keep**, non-destructive;
+  keep-vs-drop confirmable in impl).
+- **No hard cutover**: the resolver understands **both** schemas — it reads a still-`version: 1`
+  index as global-flat (every project sees the global name) as a transitional fallback, so a
+  session that only **reads** the index (e.g. an in-container operator, which cannot write it
+  under the ADR-0047 privilege boundary) keeps working until the next host-side write upgrades
+  it. No user is ever blocked.
+- **Backstop**: `cco resolve --scan` rebuilds the scoped index from the `project.yml`s from
+  scratch.
+- **Notification only**: a `changelog.yml` **breaking** entry announces the model change
+  (surfaced by `cco update --news`); the migration itself does not depend on `cco update`.
 
 ## Consequences
 
-- **Breaking schema** (index `version` 2) with a deterministic migration (D6); a `changelog.yml`
-  breaking entry + migration note. Unlike the rename verbs (additive), this is the one breaking
-  piece of the naming workstream — which is **why it is sequenced first** (the rename design,
-  ADR-0050, is revised to build on this model rather than the reverse).
+- **Breaking schema** (index `version` 2), but migrated **transparently in-index** (D6 — no
+  `migrations/` script, no `cco update`, no user action); only a `changelog.yml` breaking entry
+  for notification. Unlike the rename verbs (additive), this is the one breaking piece of the
+  naming workstream — which is **why it is sequenced first** (the rename design, ADR-0050, is
+  revised to build on this model rather than the reverse).
 - **`lib/index.sh` API reshaped**: `_index_{get,set,remove}_path` and `_index_path_conflicts`
   gain project context; `_index_repos_get_projects` → `_index_paths_get_bindings`;
   `_index_list_paths` gains a scope argument. ~32 call sites rethreaded (analysis §13.1).
