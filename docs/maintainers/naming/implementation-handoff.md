@@ -1,22 +1,31 @@
 # Implementation Handoff — Resource Naming Workstream (Units A + B)
 
 > **For the next session.** Design is complete and committed; this is the build brief.
-> Read the reference docs below **first**, then implement **Unit A, then Unit B**, test-first,
-> atomic commits. Communicate in Italian; docs/code-comments in English (user rules).
+> **Unit A is DONE and committed (2026-07-14) — start at Unit B (§4).** Read the Unit B
+> reference docs (§1) first, then implement test-first with atomic commits. Communicate in
+> Italian; docs/code-comments in English (user rules).
 
-## 0. Where you are
+## 0. Where you are — ▶ RESUME AT UNIT B (§4)
 
 - **Branch**: `feat/naming/resource-management` (do NOT branch off; continue here). **Not
   pushed** — the user pushes from the Mac. Never push.
 - **Repo**: `/workspace/claude-orchestrator` (self-dev of `cco`).
-- **Design already committed** (docs-only, no code yet): `ccc8d02` (analysis + backlog notes),
-  `111c890` (ADR-0050 + design doc), `f996ba9` (ADR-0051 scoping), `1fdb40e` (migration
-  mechanism). The prior code unit on this branch is `35e41bb` (init seeds `repos[]`).
-- **Test suite baseline**: **1238/7** (`bin/test`; the 7 failures are pre-existing §6.2
-  access-scope artifacts, unrelated). Keep every commit delta-green against this.
+- **✅ Unit A COMPLETE (ADR-0051, per-project name scoping)** — all committed on this branch:
+  A.1 `9b3a38d` (v2 nested `project_paths` primitives), A.2+A.3 `fbb36fe` (schema cutover +
+  transparent v1→v2 migration + ~32 call-sites), landing `0c549f9`, A.4 `5b7a7ed` (add-time
+  disambiguation prompt + url-divergence flag), A.5 `8ac2ee3` (changelog #42 BREAKING + cli.md +
+  CLAUDE.md), roadmap DONE `ac0aa4f`. **The index is now v2 project-scoped — Unit B builds on it.**
+- **Test suite**: **1259/7** (`bin/test`). The 7 failures are **pre-existing IN-CONTAINER env
+  artifacts** (6 `test_as_list_*` operator-mode store-resolution + `test_paths_symlink`
+  `~/.cache/cco` perm) — they fail at the A.1 baseline too and pass on the host/Mac. **Keep every
+  Unit B commit delta-green against this 7-failure set** (verify with a baseline-vs-change diff, not
+  an absolute count). The design's original "1238/7" baseline predates the in-container test_as_*
+  artifacts; ignore it — compare to the live in-container 7.
 - **Self-dev caveat** (project CLAUDE.md): edits to `lib/`/`bin/` are **NOT live in this
   session**. You can run the test suite, but live dogfood needs `cco build && cco start` from the
   Mac (user's job). Do not try to `cco build` inside the container.
+- **Pre-merge (Mac, after Unit B):** `cco build` + push both branches; merge→develop is gated on
+  the e2e v2 acceptance run (see the hardening-v2 workstream), not on this branch alone.
 
 ## 1. Read these first (canonical design)
 
@@ -34,8 +43,12 @@ name** (analysis §12).
 
 ## 2. Sequencing (do NOT reorder)
 
-**Unit A (per-project scoping) FIRST — it is breaking and Unit B depends on its index model.**
-Then **Unit B (rename verbs)**. Do not start Unit B until Unit A is green.
+**Unit A (per-project scoping) — ✅ DONE.** Its breaking index-v2 model is committed and green.
+**▶ Now do Unit B (rename verbs, §4)**, which builds on Unit A's project-scoped index. Note the
+index already has `_index_rename_project` (whole-project identity re-key, re-homes the `project_paths`
+block); B.2's `_index_rename_path <project> <old> <new>` (rename a single NAME within one project) is
+still to be written — it re-keys one `project_paths[project]` entry + the `projects:<project>` token.
+Unit A §3 below is retained as reference for what Unit B builds on.
 
 ---
 
@@ -193,8 +206,13 @@ gating, quote input, negatives. Additive `changelog.yml` entries; **no migration
   default layer to the index (rejected, ADR-0051 Alternatives). **Don't** touch llms global scope
   or project identity.
 
-## 6. Suggested first action in the new session
+## 6. Suggested first action in the new session (Unit B)
 
-`git log --oneline -6` + read the five reference docs (§1), confirm suite baseline with `bin/test`
-(expect 1238/7), then start **A.1** (index schema + `_index_path_conflicts` triple + tests).
-Pause for the user's go-ahead if any design ambiguity surfaces (workflow rule: pause & discuss).
+`git log --oneline -8` (expect the Unit A commits `9b3a38d`…`ac0aa4f` on
+`feat/naming/resource-management`) + read the Unit B reference docs (§1: ADR-0050 +
+`design/design-resource-rename.md` §8 + analysis §3/§12/§13). Confirm the suite with `bin/test`:
+expect **1259/7** — the 7 are the pre-existing in-container env artifacts (compare the FAIL set to
+that baseline, not an absolute count). Then start **B.1** (`lib/rename.sh` shared module, test-first:
+`_yaml_rename_list_ref` generalized from `_llms_rename_in_yaml`), then B.2 (`_index_rename_path`),
+then the per-kind verbs (B.3), gating (B.4), UX fixes (B.5), docs (B.6). Pause for the user's
+go-ahead if any design ambiguity surfaces (workflow rule: pause & discuss).
