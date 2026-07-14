@@ -2481,21 +2481,33 @@ test_migration_016_normalizes_index() {
     source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/lib/paths.sh"; source "$REPO_ROOT/lib/index.sh"
 
-    # Seed a dirty index (pre-fix values) via the low-level setter, bypassing the
+    # Seed a dirty LEGACY v1 (global-flat) index directly on disk, bypassing the
     # normalizing boundary: a tilde repo, a $HOME repo, an @local mount, a clean
-    # absolute entry, plus a project membership row that must survive untouched.
-    _index_section_set paths repotilde "~/dev/api"
-    _index_section_set paths repohome  '$HOME/dev/web'
-    _index_section_set paths mountbad  "@local"
-    _index_section_set paths clean     "/abs/clean"
-    _index_set_project_repos myapp repotilde repohome
+    # absolute entry, plus a project membership row. Migration 016 must upgrade it
+    # to v2 (re-home members under their project) AND normalize every value.
+    local idx="$CCO_STATE_HOME/index"
+    mkdir -p "$(dirname "$idx")"
+    cat > "$idx" <<EOF
+# legacy index
+version: 1
+paths:
+  repotilde: "~/dev/api"
+  repohome: "\$HOME/dev/web"
+  mountbad: "@local"
+  clean: "/abs/clean"
+projects:
+  myapp: "repotilde repohome"
+EOF
 
     source "$REPO_ROOT/migrations/global/016_normalize-index.sh"
     migrate "$tmpdir/home/.cco/.claude" || return 1
 
-    local idx="$CCO_STATE_HOME/index"
+    # Upgraded to v2, members re-homed under project_paths[myapp] + normalized.
+    grep -q '^version: 2$' "$idx" || fail "index must be upgraded to v2"
     assert_file_contains "$idx" "repotilde: \"$HOME/dev/api\"" || return 1
     assert_file_contains "$idx" "repohome: \"$HOME/dev/web\"" || return 1
+    # clean/mountbad were in no membership → the unscoped bucket; clean normalized,
+    # mountbad (@local, unrecoverable) dropped.
     assert_file_contains "$idx" "clean: \"/abs/clean\"" || return 1
     assert_file_not_contains "$idx" "@local" || return 1
     assert_file_not_contains "$idx" "mountbad" || return 1

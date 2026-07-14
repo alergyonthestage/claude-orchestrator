@@ -181,11 +181,13 @@ EOF
     local proj_name; proj_name=$(yml_get "$tmpdir/.cco/project.yml" "name")
     [[ -z "$proj_name" ]] && { rm -rf "$tmpdir"; die "Could not determine project name from archive"; }
 
-    # F12 name-uniqueness: the name must not already bind a DIFFERENT repo.
-    local existing_path; existing_path=$(_index_get_path "$proj_name" 2>/dev/null || true)
-    if [[ -n "$existing_path" && "$existing_path" != "$target_repo" ]]; then
+    # F12 name-uniqueness (project identity stays global — ADR-0051): the name
+    # must be free, except a re-import into the same location (this project already
+    # binds the target path). Path is the resource identity (§12).
+    if [[ -n "$(_index_get_project_repos "$proj_name" 2>/dev/null || true)" ]] \
+       && ! _index_paths_get_bindings "$target_repo" 2>/dev/null | cut -f1 | grep -qxF "$proj_name"; then
         rm -rf "$tmpdir"
-        die "A project named '$proj_name' is already registered to $existing_path. 'cco forget' it first, or rename the imported project."
+        die "A project named '$proj_name' is already registered. 'cco forget' it first, or rename the imported project."
     fi
 
     # Place the config into the target repo, then register it in the index
@@ -211,7 +213,7 @@ EOF
     fi
     rm -rf "$tmpdir"
 
-    _index_set_path "$proj_name" "$target_repo"
+    _index_set_path "$proj_name" "$proj_name" "$target_repo"
     _index_set_project_repos "$proj_name" "$proj_name"
 
     ok "Imported project '$proj_name' into $target_cco"

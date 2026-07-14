@@ -9,18 +9,28 @@
 # coordinates, the index materializes them on this machine (ADR-0014 D2).
 #
 # On-disk format (internal; regenerable, not a published contract):
-#   version: 1
-#   paths:
-#     <name>: "<abs-path>"
+#   version: 2
 #   projects:
-#     <project>: "<repo> <repo> ..."
+#     <project>: "<repo> <repo> ..."     # membership (globally-unique project keys)
+#   project_paths:                        # per-project name → abs-path (ADR-0051)
+#     <project>:
+#       <name>: "<abs-path>"
+#   llms: { <name>: "<abs-path>" }        # reserved global section (currently unused)
+#   unscoped: { <name>: "<abs-path>" }    # orphan `cco path set` names (no project)
 #
-# Mechanism only — AD5 uniqueness (refuse a name already bound to a different
-# path) is enforced by the callers (cco init/join, cco resolve --scan), which
-# use _index_path_conflicts(). Writes are atomic (mktemp + mv), single-writer,
-# no file lock (v1): writes are user-serial; a rare race is last-writer-wins and
-# self-heals via `cco resolve --scan` (ADR-0022 D2). Global-flat — one machine
-# global paths: map; per-project namespacing is reserved post-v1 (H7).
+# Per-project name scoping (ADR-0051): the identity of a repo/extra_mount is its
+# PATH; the name is only a per-project LABEL. Uniqueness (AD5′ — refuse a name
+# already bound within the SAME project to a different path) is enforced by the
+# callers via _index_path_conflicts(); cross-project same-name is legal. Writes
+# are atomic (mktemp + mv), single-writer, no file lock: writes are user-serial;
+# a rare race is last-writer-wins and self-heals via `cco resolve --scan`.
+#
+# Transitional migration (ADR-0051 D6): a still-version-1 index (flat global
+# `paths:`) is READ as global-flat (the resolver tolerates both schemas); the
+# first host-side WRITE upgrades it in place (_index_migrate_if_needed), lossless
+# (each global name re-homes under every project listing it as a member; orphans
+# → unscoped:). No `migrations/` script, no `cco update` — the index is
+# machine-local, scan-rebuildable STATE.
 #
 # Provides: _index_file(), _index_get_path(), _index_set_path(),
 #   _index_remove_path(), _index_path_conflicts(), _index_list_paths(),
@@ -35,21 +45,91 @@ _index_file() {
     printf '%s\n' "$(_cco_state_dir)/index"
 }
 
-# Create the index scaffold if missing (both sections always present, so the
-# section upsert/remove logic never has to create a section).
+# Echo the on-disk schema version (integer). Absent/unreadable → 1 (the pre-v2
+# global-flat schema, so a legacy or scaffold-less index reads as transitional).
+_index_version() {
+    local f; f=$(_index_file)
+    [[ -f "$f" ]] || { printf '1\n'; return 0; }
+    local v; v=$(awk -F': *' '/^version:/ { print $2; exit }' "$f")
+    printf '%s\n' "${v:-1}"
+}
+
+# Create the v2 index scaffold if missing (all flat sections always present, so
+# the section upsert/remove logic never has to create a section); otherwise
+# upgrade a still-v1 index in place before any write (transitional migration).
 _index_ensure_file() {
     local f; f=$(_index_file)
-    [[ -f "$f" ]] && return 0
-    # Atomic create (mktemp + mv), the same convention as every other index write
-    # (H7 / ADR-0022 D2) — a direct multi-line redirect is the one non-atomic site,
-    # which two concurrent first-runs could interleave.
+    if [[ ! -f "$f" ]]; then
+        # Atomic create (mktemp + mv), the same convention as every other index
+        # write — a direct multi-line redirect is the one non-atomic site, which
+        # two concurrent first-runs could interleave.
+        local tmpf; tmpf=$(mktemp "${f}.XXXXXX")
+        {
+            echo "# cco machine-local index — per-project logical name → absolute path + membership."
+            echo "# Regenerable via 'cco resolve --scan'; never committed, never synced."
+            echo "version: 2"
+            echo "projects:"
+            echo "project_paths:"
+            echo "llms:"
+            echo "unscoped:"
+        } > "$tmpf" && mv "$tmpf" "$f"
+        return 0
+    fi
+    _index_migrate_if_needed
+}
+
+# Upgrade a still-v1 (global-flat) index to v2 (per-project scoped) in place.
+# Idempotent: a no-op once version >= 2. Runs on the first host-side WRITE after
+# the new code is live (every write path funnels through _index_ensure_file).
+_index_migrate_if_needed() {
+    [[ "$(_index_version)" -ge 2 ]] && return 0
+    _index_migrate_v1_to_v2
+}
+
+# The lossless v1 → v2 rewrite (ADR-0051 D6). Names are globally unique in v1, so
+# each global `paths: <name>` re-homes under EVERY project that lists <name> as a
+# member (a shared repo becomes an independent per-project binding with the same
+# path); a flat name in no project's membership → the unscoped: bucket (kept).
+_index_migrate_v1_to_v2() {
+    local f; f=$(_index_file)
+    [[ -f "$f" ]] || return 0
+    local paths_dump projects_dump
+    paths_dump=$(_index_section_dump paths)        # name=path lines (v1 flat)
+    projects_dump=$(_index_section_dump projects)  # project=members lines
+
     local tmpf; tmpf=$(mktemp "${f}.XXXXXX")
     {
-        echo "# cco machine-local index — logical name → absolute path + project membership."
+        echo "# cco machine-local index — per-project logical name → absolute path + membership."
         echo "# Regenerable via 'cco resolve --scan'; never committed, never synced."
-        echo "version: 1"
-        echo "paths:"
+        echo "version: 2"
         echo "projects:"
+        local proj mem
+        while IFS='=' read -r proj mem; do
+            [[ -z "$proj" ]] && continue
+            printf '  %s: "%s"\n' "$proj" "$mem"
+        done <<< "$projects_dump"
+        echo "project_paths:"
+        local consumed=" " m mp hdr
+        while IFS='=' read -r proj mem; do
+            [[ -z "$proj" ]] && continue
+            hdr=false
+            for m in $mem; do
+                mp=$(printf '%s\n' "$paths_dump" | grep -m1 -E "^${m}=" 2>/dev/null) || mp=""
+                mp="${mp#*=}"
+                [[ -z "$mp" ]] && continue
+                $hdr || { printf '  %s:\n' "$proj"; hdr=true; }
+                printf '    %s: "%s"\n' "$m" "$mp"
+                consumed="${consumed}${m} "
+            done
+        done <<< "$projects_dump"
+        echo "llms:"
+        echo "unscoped:"
+        local name path
+        while IFS='=' read -r name path; do
+            [[ -z "$name" ]] && continue
+            case "$consumed" in *" $name "*) continue ;; esac
+            printf '  %s: "%s"\n' "$name" "$path"
+        done <<< "$paths_dump"
     } > "$tmpf" && mv "$tmpf" "$f"
 }
 
@@ -417,59 +497,129 @@ _index_normalize_path() {
     printf '%s\n' "$p"
 }
 
-# ── Public API ───────────────────────────────────────────────────────
+# ── Public API (per-project scoped, ADR-0051; dual-schema read) ───────
+#
+# Every path accessor is now PROJECT-SCOPED: the name is a per-project label for
+# a path. Reads tolerate a still-v1 (global-flat) index as a transitional
+# fallback (the resolver keeps working until the first host-side write upgrades
+# it); writes go through _index_ensure_file, which upgrades v1→v2 first.
 
-# Echo the absolute path bound to a logical <name>, or empty if unresolved.
-_index_get_path() { _index_section_get paths "$1"; }
+# Echo the absolute path bound to (<project>, <name>), or empty if unresolved.
+# Resolution order (ADR-0051 D2): the project's own binding, else the unscoped
+# escape-hatch bucket (a `cco path set` pin made outside any project). There is
+# NO cross-PROJECT fallback — another project's same-name binding is a different
+# resource and is never consulted; the unscoped bucket is project-LESS, not a
+# global default among project bindings (a generic `assets` mount resolved per
+# project by `cco resolve` lives in each project's block, never unscoped). v1
+# index → read the flat global binding by name. Usage: _index_get_path <project> <name>
+_index_get_path() {
+    if [[ "$(_index_version)" -ge 2 ]]; then
+        local v; v=$(_index_pp_get "$1" "$2")
+        [[ -n "$v" ]] && { printf '%s\n' "$v"; return 0; }
+        _index_section_get unscoped "$2"
+    else
+        _index_section_get paths "$2"
+    fi
+}
 
-# Reverse lookup: echo the FIRST logical name bound to <abs-path> in paths:, or
-# empty. Complement of _index_get_path; recovers the host repo's logical name
-# from its directory (membership must include the host so by-name resolution can
-# relocate the unit even when the host is not listed in the manifest's repos:).
+# Echo the FIRST path bound to <name> in ANY project, else the unscoped bucket
+# (v1 → flat global). For the transitional / genuinely cross-project sites that
+# resolve a bare repo name with no project context in hand: `cco sync --from`,
+# `cco start --from`, config-editor `--repo`. Ambiguity across projects resolves
+# to the first match. Usage: _index_get_path_any <name>
+_index_get_path_any() {
+    local name="$1" proj n path
+    if [[ "$(_index_version)" -ge 2 ]]; then
+        while IFS=$'\t' read -r proj n path; do
+            [[ "$n" == "$name" ]] && { printf '%s\n' "$path"; return 0; }
+        done < <(_index_pp_dump_all)
+        _index_section_get unscoped "$name"
+    else
+        _index_section_get paths "$name"
+    fi
+}
+
+# Reverse lookup within a project: echo the FIRST name that <project> binds to
+# <abs-path>, or empty. Recovers the host repo's logical name from its directory
+# (membership must include the host so by-name resolution can relocate the unit).
+# Path-scoped comparison is normalized. Usage: _index_name_for_path <project> <abs-path>
 _index_name_for_path() {
-    local target="$1" line name path
-    while IFS= read -r line; do
-        [[ -z "$line" ]] && continue
-        name="${line%%=*}"; path="${line#*=}"
-        [[ "$path" == "$target" ]] && { printf '%s\n' "$name"; return 0; }
-    done < <(_index_list_paths)
+    local project="$1" target="$2" tn name path pn
+    tn=$(_index_normalize_path "$target") || tn="$target"
+    if [[ "$(_index_version)" -ge 2 ]]; then
+        # The project's own bindings first, then the unscoped escape-hatch bucket
+        # (mirrors _index_get_path's fallback — a global pin is name-recoverable).
+        while IFS='=' read -r name path; do
+            [[ -z "$name" ]] && continue
+            pn=$(_index_normalize_path "$path") || pn="$path"
+            [[ "$pn" == "$tn" ]] && { printf '%s\n' "$name"; return 0; }
+        done < <(_index_pp_dump_project "$project"; _index_section_dump unscoped)
+    else
+        while IFS='=' read -r name path; do
+            [[ -z "$name" ]] && continue
+            pn=$(_index_normalize_path "$path") || pn="$path"
+            [[ "$pn" == "$tn" ]] && { printf '%s\n' "$name"; return 0; }
+        done < <(_index_section_dump paths)
+    fi
 }
 
-# Bind a logical <name> to an absolute <path> (upsert). The value is normalized
-# at this boundary (_index_normalize_path); a non-absolute value that cannot be
-# recovered is SKIPPED (no write) and the call returns 1 — the user-facing warn
-# lives at the caller (resolve/migrate) where there is context. AD5 conflict
-# policy lives in the caller — see _index_path_conflicts().
-_index_set_path() {
-    local norm
-    norm=$(_index_normalize_path "$2") || return 1
-    _index_section_set paths "$1" "$norm"
+# Bind (<project>, <name>) → <path> (upsert). Normalized at the boundary; a
+# non-absolute value that cannot be recovered is SKIPPED (no write, return 1).
+# AD5′ conflict policy lives in the caller — see _index_path_conflicts().
+# Usage: _index_set_path <project> <name> <path>
+_index_set_path() { _index_pp_set "$1" "$2" "$3"; }
+
+# Remove (<project>, <name>) from the index (v1 → flat by name). An empty
+# <project> targets the unscoped bucket (a `cco path set` orphan).
+# Usage: _index_remove_path <project> <name>
+_index_remove_path() {
+    local project="$1" name="$2"
+    [[ -z "$project" ]] && { _index_section_remove unscoped "$name"; return 0; }
+    if [[ "$(_index_version)" -ge 2 ]]; then
+        _index_pp_remove "$project" "$name"
+    else
+        _index_section_remove paths "$name"
+    fi
 }
 
-# Remove a logical <name> from the index.
-_index_remove_path() { _index_section_remove paths "$1"; }
+# Bind a project-less name in the unscoped bucket (the `cco path set` escape
+# hatch when the cwd is not inside a project). Usage: _index_set_unscoped <name> <path>
+_index_set_unscoped() {
+    local norm; norm=$(_index_normalize_path "$2") || return 1
+    _index_ensure_file
+    _index_section_set unscoped "$1" "$norm"
+}
 
-# List all bound names as "name=path" lines.
-_index_list_paths() { _index_section_dump paths; }
+# List ALL bound names as "name=path" lines, project-flattened (v2: every
+# project_paths binding + the unscoped bucket; v1: the flat global map). Used for
+# the sibling-directory suggestion hint; project context is intentionally dropped.
+_index_list_paths() {
+    if [[ "$(_index_version)" -ge 2 ]]; then
+        _index_pp_dump_all | awk -F'\t' 'NF>=3 { print $2 "=" $3 }'
+        _index_section_dump unscoped
+    else
+        _index_section_dump paths
+    fi
+}
 
 # List all recorded projects as "project=<space-separated repo names>" lines.
 _index_list_projects() { _index_section_dump projects; }
 
-# Return 0 (true) iff <name> is already bound to a DIFFERENT absolute path
-# (the AD5 uniqueness violation that init/join/scan must refuse). Returns 1 if
-# unbound or already bound to the same path.
+# Return 0 (true) iff (<project>, <name>) is already bound to a DIFFERENT
+# absolute path — the AD5′ chokepoint (ADR-0051 D3). Cross-project same-name is
+# NOT a conflict. v1 index → the legacy global-flat check by name.
+# Usage: _index_path_conflicts <project> <name> <path>
 _index_path_conflicts() {
-    local name="$1" path="$2" existing
-    existing=$(_index_get_path "$name")
-    [[ -z "$existing" ]] && return 1
-    # Normalize both sides before comparing so two spellings of the SAME dir
-    # (~/x vs /home/me/x, a $HOME prefix) are not a false AD5 conflict. Fall
-    # back to the raw value if a side is not normalizable (defense-in-depth
-    # against an already-dirty entry written before the boundary fix).
-    local en pn
-    en=$(_index_normalize_path "$existing") || en="$existing"
-    pn=$(_index_normalize_path "$path") || pn="$path"
-    [[ "$en" != "$pn" ]]
+    if [[ "$(_index_version)" -ge 2 ]]; then
+        _index_pp_conflicts "$1" "$2" "$3"
+    else
+        local existing en pn
+        existing=$(_index_section_get paths "$2")
+        [[ -z "$existing" ]] && return 1
+        en=$(_index_normalize_path "$existing") || en="$existing"
+        pn=$(_index_normalize_path "$3") || pn="$3"
+        [[ "$en" != "$pn" ]]
+    fi
 }
 
 # Return 0 (true) iff (<project>, <name>) is already bound to a DIFFERENT
@@ -519,29 +669,28 @@ _index_set_project_repos() {
 # Remove a <project>'s membership entry.
 _index_remove_project() { _index_section_remove projects "$1"; }
 
-# Re-key a project's membership from <old> to <new>, preserving its member repo
-# names (the identity re-key primitive for `cco project rename`, ADR-0031 D2).
-# No-op-safe: an absent <old> just creates <new> with empty members — callers
-# validate <old> exists and <new> is free first. Usage: _index_rename_project <old> <new>
+# Re-key a project's identity from <old> to <new>: its membership (projects:) AND
+# its per-project path block (project_paths:, ADR-0051 — keyed by project name).
+# The identity re-key primitive for `cco project rename` (ADR-0031 D2). No-op-safe:
+# an absent <old> just creates <new> with empty members — callers validate <old>
+# exists and <new> is free first. Usage: _index_rename_project <old> <new>
 _index_rename_project() {
-    local old="$1" new="$2" members
+    local old="$1" new="$2" members name path
     members=$(_index_get_project_repos "$old")
     _index_set_project_repos "$new" $members
     _index_remove_project "$old"
+    # Re-home the project_paths block (v2). No-op under v1 (dump is empty).
+    while IFS='=' read -r name path; do
+        [[ -z "$name" ]] && continue
+        _index_pp_set "$new" "$name" "$path"
+    done < <(_index_pp_dump_project "$old")
+    _index_pp_remove_project "$old"
 }
 
-# Reverse lookup (ADR-0024 D5): echo the projects (one per line) that reference
-# <repo> as a member. Complement of _index_get_project_repos; drives repo↔project
-# observability in `cco project show` and the repo-centric view.
-_index_repos_get_projects() {
-    local repo="$1" line proj members m
-    while IFS= read -r line; do
-        proj="${line%%=*}"; members="${line#*=}"
-        for m in $members; do
-            [[ "$m" == "$repo" ]] && { printf '%s\n' "$proj"; break; }
-        done
-    done < <(_index_section_dump projects)
-}
+# NOTE: the name-based reverse lookup _index_repos_get_projects (ADR-0024 D5) is
+# retired under per-project scoping (ADR-0051 D5) — "which projects use name X" is
+# ambiguous when a name is a per-project label. Use _index_paths_get_bindings
+# (path-based) instead: sharing/GC/rename are PATH properties (§12 identity model).
 
 # ── Member sync-state classification (ADR-0024 D5 / sync-meta F39) ────
 # The single source of truth for "what is this member repo, w.r.t. <project>".
@@ -585,7 +734,7 @@ _project_member_status() {
 _project_iter_members() {
     local project="$1" repo_name path status
     for repo_name in $(_index_get_project_repos "$project"); do
-        path=$(_index_get_path "$repo_name")
+        path=$(_index_get_path "$project" "$repo_name")
         [[ -n "$path" && -d "$path" ]] || path=""
         status=$(_project_member_status "$project" "$path")
         printf '%s\t%s\t%s\n' "$repo_name" "$path" "$status"

@@ -95,15 +95,20 @@ cco_last_read_file() { printf '%s' "$CCO_STATE_HOME/last_read"; }
 # Seed a logical name → absolute path binding in the STATE index (the
 # decentralized-config materialization of a repo/mount coordinate). Uses the
 # real index API so the on-disk format matches production exactly.
-# Usage: seed_index_path <name> <abs_path>
+# Under per-project name scoping (ADR-0051): with a <project> the binding is
+# scoped (project_paths); without one it lands in the unscoped escape-hatch
+# bucket, which _index_get_path <anyproject> <name> still resolves as a fallback —
+# so the many legacy 2-arg fixtures keep resolving their members globally.
+# Usage: seed_index_path <name> <abs_path> [<project>]
 seed_index_path() {
-    local name="$1" path="$2"
+    local name="$1" path="$2" project="${3:-}"
     (
         source "$REPO_ROOT/lib/colors.sh"
         source "$REPO_ROOT/lib/utils.sh"
         source "$REPO_ROOT/lib/paths.sh"
         source "$REPO_ROOT/lib/index.sh"
-        _index_set_path "$name" "$path"
+        if [[ -n "$project" ]]; then _index_set_path "$project" "$name" "$path"
+        else _index_set_unscoped "$name" "$path"; fi
     )
 }
 
@@ -145,7 +150,11 @@ create_project() {
     local host="$tmpdir/repos/$name"
     mkdir -p "$host/.cco/claude"
     printf '%s\n' "$yml_content" > "$host/.cco/project.yml"
-    seed_index_path "$name" "$host"
+    # Bind the project's own repo SCOPED to the project (ADR-0051) — production
+    # `cco init`/`cco resolve` always write per-project bindings, never unscoped;
+    # a scoped seed keeps the helper faithful (e.g. `cco forget` removes the whole
+    # project_paths block, so an unscoped seed would leak past deregistration).
+    seed_index_path "$name" "$host" "$name"
     index_set_project_repos "$name" "$name"
 }
 

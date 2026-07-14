@@ -222,12 +222,18 @@ _cv_detect() {
     local state data cache
     state=$(_cco_state_dir); data=$(_cco_data_dir); cache=$(_cco_cache_dir)
 
-    # STATE index — path entries whose target dir is gone.
-    local name path
+    # STATE index — per-project path entries whose target dir is gone. The record
+    # carries the OWNING project (field b) so the prune re-keys the right scope
+    # (ADR-0051); an empty project = the unscoped bucket.
+    local pproj name path
+    while IFS=$'\t' read -r pproj name path; do
+        [[ -z "$name" ]] && continue
+        [[ -d "$path" ]] || _cv_add local idx_path "$name" "$pproj" "index path '[$pproj] $name' -> $path (missing)"
+    done < <(_index_pp_dump_all)
     while IFS='=' read -r name path; do
         [[ -z "$name" ]] && continue
-        [[ -d "$path" ]] || _cv_add local idx_path "$name" "" "index path '$name' -> $path (missing)"
-    done < <(_index_list_paths)
+        [[ -d "$path" ]] || _cv_add local idx_path "$name" "" "index path '$name' (unscoped) -> $path (missing)"
+    done < <(_index_section_dump unscoped)
 
     # STATE index — project memberships with no resolvable member.
     local proj members m mp any
@@ -235,7 +241,7 @@ _cv_detect() {
         [[ -z "$proj" ]] && continue
         any=false
         for m in $members; do
-            mp=$(_index_get_path "$m")
+            mp=$(_index_get_path "$proj" "$m")
             [[ -n "$mp" && -d "$mp" ]] && { any=true; break; }
         done
         $any || _cv_add local idx_proj "$proj" "" "index project '$proj' (no resolvable member)"
@@ -277,9 +283,13 @@ _cv_detect() {
 # Execute one orphan record's prune.
 _cv_prune_record() {
     local class op a b label
-    IFS=$'\t' read -r class op a b label <<<"$1"
+    # Peel by hand, never `IFS=$'\t' read`: the idx_path record's owning-project
+    # field (b) is EMPTY for an unscoped binding, and TAB is IFS-whitespace, so
+    # `read` would collapse the empty middle field and shift `label` into `b` —
+    # making `_index_remove_path "<label>" "<name>"` a no-op (label ≠ a project).
+    _peel_tab "$1" class op a b label
     case "$op" in
-        idx_path) _index_remove_path "$a" ;;
+        idx_path) _index_remove_path "$b" "$a" ;;   # b = owning project ("" = unscoped)
         idx_proj) _index_remove_project "$a" ;;
         rmdir)    rm -rf "$a" ;;
         token)    _remote_token_remove "$a" || true ;;

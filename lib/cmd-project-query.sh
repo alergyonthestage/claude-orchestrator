@@ -72,7 +72,7 @@ EOF
 _project_member_role() {
     local repo_path="$1" project="$2" repo_name="$3" status
     # Central projects mount via @local/local-paths; fall back to the index path.
-    [[ ! -d "$repo_path" && -n "$repo_name" ]] && repo_path=$(_index_get_path "$repo_name" 2>/dev/null)
+    [[ ! -d "$repo_path" && -n "$repo_name" ]] && repo_path=$(_index_get_path "$project" "$repo_name" 2>/dev/null)
     status=$(_project_member_status "$project" "$repo_path")
     case "$status" in
         synced)     printf 'host' ;;
@@ -95,8 +95,9 @@ _project_show_repo_centric() {
         rn="${_line%%$'\t'*}"
         [[ -z "$rn" ]] && continue
         any=true
-        p=$(_index_get_path "$rn" 2>/dev/null)
-        refby=$(_index_repos_get_projects "$rn" 2>/dev/null | grep -vxF "$hosted" | paste -sd, - 2>/dev/null)
+        p=$(_index_get_path "$hosted" "$rn" 2>/dev/null)
+        # Referenced-by = other projects mounting this PATH (ADR-0051 D5), not name.
+        refby=$([[ -n "$p" ]] && _index_paths_get_bindings "$p" 2>/dev/null | cut -f1 | grep -vxF "$hosted" | sort -u | paste -sd, - 2>/dev/null)
         local l="  $rn"
         [[ -n "$p" ]] && l="$l ($p)" || l="$l (unresolved)"
         [[ -n "$refby" ]] && l="$l — also in: $refby"
@@ -203,7 +204,8 @@ EOF
             # D5 (ADR-0024): each member's role + the other projects referencing it.
             local role refby
             role=$(_project_member_role "$repo_path" "${yml_name:-$name}" "$repo_name")
-            refby=$(_index_repos_get_projects "$repo_name" 2>/dev/null | grep -vxF "${yml_name:-$name}" | paste -sd, - 2>/dev/null)
+            # Referenced-by = other projects mounting this PATH (ADR-0051 D5).
+            refby=$([[ -n "$repo_path" ]] && _index_paths_get_bindings "$repo_path" 2>/dev/null | cut -f1 | grep -vxF "${yml_name:-$name}" | sort -u | paste -sd, - 2>/dev/null)
             local suffix="[$role]"
             [[ -n "$refby" ]] && suffix="$suffix — also referenced by: $refby"
             if [[ -d "$repo_path" ]]; then

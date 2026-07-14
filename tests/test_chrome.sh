@@ -86,6 +86,10 @@ YAML
     source "$REPO_ROOT/lib/yaml.sh"
     source "$REPO_ROOT/lib/paths.sh"
     source "$REPO_ROOT/lib/index.sh"
+    # _chrome_resolve_port --project resolves the host repo dir via
+    # _resolve_unit_dir_for_project (ADR-0051 — a project name is not a repo key);
+    # that helper lives in cmd-resolve.sh (bin/cco sources every module at runtime).
+    source "$REPO_ROOT/lib/cmd-resolve.sh"
     source "$REPO_ROOT/lib/cmd-chrome.sh"
 
     local result

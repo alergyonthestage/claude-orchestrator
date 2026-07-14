@@ -55,8 +55,8 @@ _op_seed() {
       # session container the anti-in-container guard (ADR-0007) otherwise refuses
       # index writes (mirrors setup_cco_env). No-op on the host.
       export CCO_STATE_HOME="$tmp/state" CCO_ALLOW_HOST_RESOLVE=1
-      _index_set_path alpha "$tmp/repos/alpha"; _index_set_project_repos alpha alpha
-      _index_set_path beta  "$tmp/repos/beta";  _index_set_project_repos beta  beta
+      _index_set_path alpha alpha "$tmp/repos/alpha"; _index_set_project_repos alpha alpha
+      _index_set_path beta  beta  "$tmp/repos/beta";  _index_set_project_repos beta  beta
     ) >/dev/null 2>&1
     OP_OUT=$(
         export CCO_IN_CONTAINER=1 CCO_CONTAINER_OPERATOR=1 CCO_STORE_ELEVATED=1 \

@@ -91,11 +91,15 @@ test_project_show_referenced_by() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     mkdir -p "$tmpdir/shared"
-    seed_index_path shared "$tmpdir/shared"
-    index_set_project_repos projB shared
     create_project "$tmpdir" projA "name: projA
 repos:
   - name: shared"
+    # 'shared' is a member of projA AND referenced by projB. Under per-project
+    # scoping (ADR-0051 D5) referenced-by is a PATH property: each project carries
+    # its OWN binding to the same path, so seed 'shared' scoped to both.
+    seed_index_path shared "$tmpdir/shared" projA
+    seed_index_path shared "$tmpdir/shared" projB
+    index_set_project_repos projB shared
     run_cco project show projA
     assert_output_contains "also referenced by: projB"
 }

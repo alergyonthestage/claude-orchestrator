@@ -15,12 +15,15 @@ _index_test_env() {
     source "$REPO_ROOT/lib/index.sh"
 }
 
+# The public path API is now PROJECT-SCOPED (ADR-0051): _index_{get,set,remove}_path
+# and _index_path_conflicts take a <project> first argument.
+
 test_index_set_get_roundtrip() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
 
-    _index_set_path repo1 /Users/me/dev/repo1
-    local got; got=$(_index_get_path repo1)
+    _index_set_path p repo1 /Users/me/dev/repo1
+    local got; got=$(_index_get_path p repo1)
     [[ "$got" == "/Users/me/dev/repo1" ]] || fail "Roundtrip failed, got: $got"
 }
 
@@ -30,8 +33,8 @@ test_index_preserves_single_quote_in_path() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
 
-    _index_set_path repoq "/Users/me/O'Brien/repo"
-    local got; got=$(_index_get_path repoq)
+    _index_set_path p repoq "/Users/me/O'Brien/repo"
+    local got; got=$(_index_get_path p repoq)
     [[ "$got" == "/Users/me/O'Brien/repo" ]] || fail "single quote was stripped, got: $got"
 }
 
@@ -39,9 +42,9 @@ test_index_upsert_overwrites() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
 
-    _index_set_path repo1 /a/first
-    _index_set_path repo1 /a/second
-    local got; got=$(_index_get_path repo1)
+    _index_set_path p repo1 /a/first
+    _index_set_path p repo1 /a/second
+    local got; got=$(_index_get_path p repo1)
     [[ "$got" == "/a/second" ]] || fail "Upsert should overwrite, got: $got"
     # No duplicate line left behind.
     local n; n=$(_index_list_paths | grep -c '^repo1=')
@@ -52,28 +55,28 @@ test_index_get_missing_empty() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
 
-    [[ -z "$(_index_get_path nonexistent)" ]] || fail "Missing key should be empty"
+    [[ -z "$(_index_get_path p nonexistent)" ]] || fail "Missing key should be empty"
 }
 
 test_index_remove_path() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
 
-    _index_set_path repo1 /a/b
-    _index_remove_path repo1
-    [[ -z "$(_index_get_path repo1)" ]] || fail "Removed key should be empty"
+    _index_set_path p repo1 /a/b
+    _index_remove_path p repo1
+    [[ -z "$(_index_get_path p repo1)" ]] || fail "Removed key should be empty"
 }
 
 test_index_multiple_paths_coexist() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
 
-    _index_set_path repo1 /a/one
-    _index_set_path repo2 /a/two
-    _index_set_path shared-assets /a/assets
-    [[ "$(_index_get_path repo1)" == "/a/one" ]]        || fail "repo1 wrong"
-    [[ "$(_index_get_path repo2)" == "/a/two" ]]        || fail "repo2 wrong"
-    [[ "$(_index_get_path shared-assets)" == "/a/assets" ]] || fail "shared-assets wrong"
+    _index_set_path p repo1 /a/one
+    _index_set_path p repo2 /a/two
+    _index_set_path p shared-assets /a/assets
+    [[ "$(_index_get_path p repo1)" == "/a/one" ]]        || fail "repo1 wrong"
+    [[ "$(_index_get_path p repo2)" == "/a/two" ]]        || fail "repo2 wrong"
+    [[ "$(_index_get_path p shared-assets)" == "/a/assets" ]] || fail "shared-assets wrong"
     local n; n=$(_index_list_paths | wc -l | tr -d ' ')
     [[ "$n" -eq 3 ]] || fail "Expected 3 entries, got: $n"
 }
@@ -91,12 +94,12 @@ test_index_paths_and_projects_coexist() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
 
-    _index_set_path repo1 /a/one
+    _index_set_path projectA repo1 /a/one
     _index_set_project_repos projectA repo1 repo2
     # Both sections must remain independently readable.
-    [[ "$(_index_get_path repo1)" == "/a/one" ]]              || fail "path lost after project set"
+    [[ "$(_index_get_path projectA repo1)" == "/a/one" ]]        || fail "path lost after project set"
     [[ "$(_index_get_project_repos projectA)" == "repo1 repo2" ]] || fail "project lost"
-    _index_set_path repo2 /a/two
+    _index_set_path projectA repo2 /a/two
     [[ "$(_index_get_project_repos projectA)" == "repo1 repo2" ]] || fail "project clobbered by path set"
 }
 
@@ -104,50 +107,26 @@ test_index_path_conflicts() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
 
-    _index_set_path repo1 /a/one
-    _index_path_conflicts repo1 /a/DIFFERENT || fail "Different path should conflict (AD5)"
-    if _index_path_conflicts repo1 /a/one; then fail "Same path must not conflict"; fi
-    if _index_path_conflicts brand-new /a/x;  then fail "Unbound name must not conflict"; fi
+    _index_set_path p repo1 /a/one
+    _index_path_conflicts p repo1 /a/DIFFERENT || fail "Different path should conflict (AD5′)"
+    if _index_path_conflicts p repo1 /a/one;  then fail "Same path must not conflict"; fi
+    if _index_path_conflicts p brand-new /a/x; then fail "Unbound name must not conflict"; fi
+    if _index_path_conflicts other repo1 /a/DIFFERENT; then fail "Cross-project same name is not a conflict"; fi
 }
 
 test_index_scaffold_has_version_and_sections() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
 
-    _index_set_path repo1 /a/b
+    _index_set_path p repo1 /a/b
     local f; f=$(_index_file)
-    grep -q '^version: 1$' "$f"  || fail "Missing version header"
-    grep -q '^paths:$' "$f"      || fail "Missing paths: section"
-    grep -q '^projects:$' "$f"   || fail "Missing projects: section"
+    grep -q '^version: 2$'       "$f" || fail "Missing v2 version header"
+    grep -q '^projects:$'        "$f" || fail "Missing projects: section"
+    grep -q '^project_paths:$'   "$f" || fail "Missing project_paths: section"
+    grep -q '^unscoped:$'        "$f" || fail "Missing unscoped: section"
     # Atomic write leaves no mktemp ghosts behind.
     local ghosts; ghosts=$(find "$(dirname "$f")" -name 'index.??????' | wc -l | tr -d ' ')
     [[ "$ghosts" -eq 0 ]] || fail "Atomic write left $ghosts tempfile ghost(s)"
-}
-
-# ── Reverse lookup: repo → referencing projects (ADR-0024 D5) ────────
-
-test_index_repos_get_projects_reverse() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    index_set_project_repos projA shared apionly
-    index_set_project_repos projB shared
-    local out
-    out=$(
-        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
-        source "$REPO_ROOT/lib/paths.sh"; source "$REPO_ROOT/lib/index.sh"
-        _index_repos_get_projects shared
-    )
-    printf '%s\n' "$out" | grep -qx projA || fail "projA should reference 'shared'"
-    printf '%s\n' "$out" | grep -qx projB || fail "projB should reference 'shared'"
-    # A repo referenced by only one project is not over-reported.
-    local out2
-    out2=$(
-        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
-        source "$REPO_ROOT/lib/paths.sh"; source "$REPO_ROOT/lib/index.sh"
-        _index_repos_get_projects apionly
-    )
-    printf '%s\n' "$out2" | grep -qx projA || fail "projA should reference 'apionly'"
-    printf '%s\n' "$out2" | grep -qx projB && fail "projB must not reference 'apionly'" || true
 }
 
 # ── Boundary normalization (S1: the index stores absolute paths only) ──
@@ -155,16 +134,16 @@ test_index_repos_get_projects_reverse() {
 test_index_set_path_expands_tilde() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
-    _index_set_path r1 "~/dev/x"
-    local got; got=$(_index_get_path r1)
+    _index_set_path p r1 "~/dev/x"
+    local got; got=$(_index_get_path p r1)
     [[ "$got" == "$HOME/dev/x" ]] || fail "tilde not expanded, got: $got"
 }
 
 test_index_set_path_expands_home_var() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
-    _index_set_path r2 '$HOME/dev/y'
-    local got; got=$(_index_get_path r2)
+    _index_set_path p r2 '$HOME/dev/y'
+    local got; got=$(_index_get_path p r2)
     [[ "$got" == "$HOME/dev/y" ]] || fail "\$HOME not expanded, got: $got"
 }
 
@@ -172,20 +151,20 @@ test_index_set_path_rejects_non_absolute() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
     # @local and relative values must never reach the index (return 1, no entry).
-    if _index_set_path bad1 "@local";        then fail "@local should be rejected"; fi
-    if _index_set_path bad2 "relative/path"; then fail "relative path should be rejected"; fi
-    [[ -z "$(_index_get_path bad1)" ]] || fail "bad1 must not be in the index"
-    [[ -z "$(_index_get_path bad2)" ]] || fail "bad2 must not be in the index"
+    if _index_set_path p bad1 "@local";        then fail "@local should be rejected"; fi
+    if _index_set_path p bad2 "relative/path"; then fail "relative path should be rejected"; fi
+    [[ -z "$(_index_get_path p bad1)" ]] || fail "bad1 must not be in the index"
+    [[ -z "$(_index_get_path p bad2)" ]] || fail "bad2 must not be in the index"
 }
 
 test_index_path_conflicts_ignores_spelling() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
-    _index_set_path r3 "$HOME/dev/z"
-    # Same dir, tilde spelling → NOT a conflict (false AD5 regression, finding #2).
-    if _index_path_conflicts r3 "~/dev/z"; then fail "same dir, two spellings must not conflict"; fi
+    _index_set_path p r3 "$HOME/dev/z"
+    # Same dir, tilde spelling → NOT a conflict (false AD5′ regression, finding #2).
+    if _index_path_conflicts p r3 "~/dev/z"; then fail "same dir, two spellings must not conflict"; fi
     # A genuinely different dir → conflict.
-    _index_path_conflicts r3 "/other/place" || fail "different dir must conflict"
+    _index_path_conflicts p r3 "/other/place" || fail "different dir must conflict"
 }
 
 # ── _project_member_status: the shared sync-state classifier (ADR-0024 D5) ──
@@ -236,8 +215,8 @@ test_iter_members_emits_name_path_status() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _member_status_env "$tmp/state"
     _mk_repo "$tmp/a" "proj"
-    _index_set_path a "$tmp/a"
-    _index_set_path b "$tmp/missing"        # never created → unresolved
+    _index_set_path proj a "$tmp/a"
+    _index_set_path proj b "$tmp/missing"        # never created → unresolved
     _index_set_project_repos proj a b
 
     local out; out=$(_project_iter_members proj)
@@ -411,15 +390,18 @@ test_paths_get_bindings_ignores_spelling() {
     printf '%s\n' "$out" | grep -qxF "app-a	home" || fail "spelling-insensitive reverse lookup; got: $out"
 }
 
-# The new nested section must not disturb the legacy flat paths:/projects:
-# sections during the transition (both coexist until the cutover).
-test_pp_coexists_with_flat_sections() {
+# The unscoped bucket is an escape-hatch resolved as a fallback by the scoped
+# _index_get_path (a `cco path set` pin outside any project); a project's OWN
+# binding wins over it. Usage of _index_set_unscoped mirrors `cco path set`.
+test_pp_unscoped_fallback() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
-    _index_set_path legacy /a/legacy
-    _index_set_project_repos app-a legacy
-    _index_pp_set app-a backend /a/backend
-    [[ "$(_index_get_path legacy)" == "/a/legacy" ]]              || fail "flat path lost after pp_set"
-    [[ "$(_index_get_project_repos app-a)" == "legacy" ]]        || fail "flat project lost after pp_set"
-    [[ "$(_index_pp_get app-a backend)" == "/a/backend" ]]       || fail "pp entry lost"
+    _index_set_unscoped shared-docs /global/docs
+    # Any project resolving 'shared-docs' with no own binding falls back to it.
+    [[ "$(_index_get_path app-a shared-docs)" == "/global/docs" ]] || fail "unscoped fallback missing"
+    [[ "$(_index_get_path app-b shared-docs)" == "/global/docs" ]] || fail "unscoped fallback per project"
+    # A project's OWN binding wins over the unscoped pin (no global default).
+    _index_pp_set app-a shared-docs /a/docs
+    [[ "$(_index_get_path app-a shared-docs)" == "/a/docs" ]]      || fail "own binding must win"
+    [[ "$(_index_get_path app-b shared-docs)" == "/global/docs" ]] || fail "app-b still falls back"
 }

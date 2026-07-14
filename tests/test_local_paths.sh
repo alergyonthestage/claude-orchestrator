@@ -35,7 +35,7 @@ test_effective_repo_mounts_new_schema_reads_index() {
     _source_local_paths_index "$tmpdir/state"
 
     local repo_dir="$tmpdir/dev/repo1"; mkdir -p "$repo_dir"
-    _index_set_path "repo1" "$repo_dir"
+    _index_set_path demo "repo1" "$repo_dir"
 
     local proj="$tmpdir/proj"; mkdir -p "$proj"
     cat > "$proj/project.yml" <<'YAML'
@@ -54,7 +54,7 @@ test_effective_extra_mounts_new_schema_target_default_and_ro() {
     _source_local_paths_index "$tmpdir/state"
 
     local asset="$tmpdir/assets"; mkdir -p "$asset"
-    _index_set_path "shared-assets" "$asset"
+    _index_set_path demo "shared-assets" "$asset"
 
     local proj="$tmpdir/proj"; mkdir -p "$proj"
     cat > "$proj/project.yml" <<'YAML'
@@ -74,7 +74,7 @@ test_effective_extra_mounts_new_schema_explicit_target_rw() {
     _source_local_paths_index "$tmpdir/state"
 
     local asset="$tmpdir/assets"; mkdir -p "$asset"
-    _index_set_path "assets" "$asset"
+    _index_set_path demo "assets" "$asset"
 
     local proj="$tmpdir/proj"; mkdir -p "$proj"
     cat > "$proj/project.yml" <<'YAML'
@@ -95,7 +95,7 @@ test_effective_extra_mounts_config_access_policy() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _source_local_paths_index "$tmpdir/state"
     local asset="$tmpdir/assets"; mkdir -p "$asset"
-    _index_set_path "assets" "$asset"
+    _index_set_path demo "assets" "$asset"
     local proj="$tmpdir/proj"; mkdir -p "$proj"
     local out
     # project policy honored.
@@ -132,7 +132,7 @@ test_project_effective_paths_new_schema_status() {
     _source_local_paths_index "$tmpdir/state"
 
     local repo_dir="$tmpdir/dev/repo1"; mkdir -p "$repo_dir"
-    _index_set_path "repo1" "$repo_dir"
+    _index_set_path demo "repo1" "$repo_dir"
     # repo2 deliberately unseeded → unresolved.
 
     local proj="$tmpdir/proj"; mkdir -p "$proj"
@@ -155,7 +155,9 @@ test_resolve_entry_index_returns_existing_without_prompt() {
     _source_local_paths_index "$tmpdir/state"
 
     local repo_dir="$tmpdir/dev/repo1"; mkdir -p "$repo_dir"
-    _index_set_path "repo1" "$repo_dir"
+    # No project.yml in $proj below → the resolver derives an empty project name,
+    # so seed the global (unscoped) bucket which _index_get_path falls back to.
+    _index_set_unscoped "repo1" "$repo_dir"
 
     local proj="$tmpdir/proj"; mkdir -p "$proj"
     # Already resolved + existing → returns it, rc 0, no prompt (safe non-TTY).
@@ -172,7 +174,7 @@ test_effective_extra_mounts_skips_non_absolute_index_value() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _source_local_paths_index "$tmpdir/state"
 
-    _index_set_path "badmount" "@local"       # bogus marker, not a path
+    _index_set_path demo "badmount" "@local"       # bogus marker, not a path
 
     local proj="$tmpdir/proj"; mkdir -p "$proj"
     cat > "$proj/project.yml" <<'YAML'

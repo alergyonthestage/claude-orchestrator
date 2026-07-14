@@ -202,10 +202,12 @@ EOF
     esac
     _yml_append_coord "$manifest" "$section" "$name" ${fields[@]+"${fields[@]}"}
 
-    # One-shot --path -> STATE index (repo/mount only).
+    # One-shot --path -> STATE index (repo/mount only), scoped to the project the
+    # manifest hosts (ADR-0051 — the name is a per-project label).
     if [[ -n "$path" ]]; then
         local abs; abs=$(_resolve_to_abs "$path")
-        _index_set_path "$name" "$abs"
+        local _proj; _proj=$(yml_get "$manifest" name 2>/dev/null)
+        _index_set_path "$_proj" "$name" "$abs"
         ok "bound $name -> $abs (index)"
     fi
     ok "added $restype '$name' to $(basename "$unit_dir")/.cco/project.yml"

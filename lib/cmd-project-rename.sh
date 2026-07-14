@@ -91,7 +91,7 @@ EOF
     local r p
     local -a resolved=() unresolved=()
     for r in $members; do
-        p=$(_index_get_path "$r")
+        p=$(_index_get_path "$old" "$r")
         if [[ -n "$p" && -d "$p" ]]; then resolved+=("$p"); else unresolved+=("$r"); fi
     done
     if [[ ${#unresolved[@]} -gt 0 ]]; then

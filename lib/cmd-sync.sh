@@ -175,7 +175,7 @@ EOF
     # ── Resolve the source repo ──────────────────────────────────────
     local src_root src_name=""
     if [[ -n "$from" ]]; then
-        src_root=$(_index_get_path "$from")
+        src_root=$(_index_get_path_any "$from")
         [[ -n "$src_root" ]] || die "source repo '$from' is unresolved on this machine — run 'cco resolve' first."
         src_name="$from"
     else
@@ -197,7 +197,7 @@ EOF
     local -a targets=()
     if [[ -n "$target_name" ]]; then
         # Explicit positional target.
-        local tp; tp=$(_index_get_path "$target_name")
+        local tp; tp=$(_index_get_path_any "$target_name")
         [[ -n "$tp" ]] || die "target repo '$target_name' is unresolved on this machine — run 'cco resolve' first."
         targets+=("$tp")
     elif [[ -n "$from" && "$all" == false ]]; then
@@ -211,7 +211,7 @@ EOF
             [[ -z "$_ln" ]] && continue
             name="${_ln%%$'\t'*}"
             [[ -z "$name" ]] && continue
-            path=$(_index_get_path "$name") || path=""
+            path=$(_index_get_path "$src_proj" "$name") || path=""
             [[ -z "$path" ]] && continue
             canon=$(_sync_canon "$path")
             if [[ "$cwd_canon" == "$canon" || "$cwd_canon" == "$canon/"* ]]; then
@@ -230,7 +230,7 @@ EOF
             name="${_ln%%$'\t'*}"
             [[ -z "$name" ]] && continue
             [[ -n "$src_name" && "$name" == "$src_name" ]] && continue
-            path=$(_index_get_path "$name")
+            path=$(_index_get_path "$src_proj" "$name")
             if [[ -z "$path" ]]; then
                 warn "member '$name' is unresolved — skipping (run 'cco resolve')"
                 continue

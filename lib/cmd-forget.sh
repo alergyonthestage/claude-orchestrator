@@ -10,7 +10,7 @@
 # Cleaned (keyed by the project id = project.yml `name:` = the index key):
 #   - STATE index: the `projects:<id>` membership entry, and each member repo's
 #     `paths:<repo>` entry — but a member kept by ANOTHER project is preserved
-#     (shared-repo guard, _index_repos_get_projects).
+#     (shared-repo guard, path-based via _index_paths_get_bindings).
 #   - STATE  <state>/cco/projects/<id>/  (memory/session, update meta+base)
 #   - DATA   <data>/cco/projects/<id>/   (install-provenance `source`)
 #   - CACHE  <cache>/cco/projects/<id>/  (managed runtime overlays)
@@ -30,18 +30,23 @@
 #
 # Provides: cmd_forget()
 # Dependencies: colors.sh, paths.sh (_cco_{state,data,cache}_dir),
-#   index.sh (_index_get_project_repos/_index_remove_project/_index_remove_path/
-#   _index_repos_get_projects/_project_iter_members), tags.sh (_tags_get/_tags_forget),
+#   index.sh (_index_get_project_repos/_index_remove_project/_index_pp_remove_project/
+#   _index_paths_get_bindings/_project_iter_members), tags.sh (_tags_get/_tags_forget),
 #   reminders.sh (_reminder_git_dirty)
 
-# Return 0 (true) iff <repo> is still referenced by a project OTHER than the one
-# currently being forgotten — i.e. its index paths: entry must be preserved.
+# Return 0 (true) iff the PATH that <forgetting> binds <repo> to is still bound by
+# a project OTHER than the one being forgotten (ADR-0051 D5 — sharing is a PATH
+# property, decided by path coincidence, never by name). Informational under
+# scoping: forgetting a project removes only ITS own labels, so a shared path is
+# never orphaned on the machine. Usage: _forget_repo_still_shared <repo> <forgetting>
 _forget_repo_still_shared() {
-    local repo="$1" forgetting="$2" p
-    while IFS= read -r p; do
-        [[ "$p" == "$forgetting" ]] && continue
-        [[ -n "$p" ]] && return 0
-    done < <(_index_repos_get_projects "$repo")
+    local repo="$1" forgetting="$2" path proj name
+    path=$(_index_get_path "$forgetting" "$repo")
+    [[ -z "$path" ]] && return 1
+    while IFS=$'\t' read -r proj name; do
+        [[ "$proj" == "$forgetting" ]] && continue
+        [[ -n "$proj" ]] && return 0
+    done < <(_index_paths_get_bindings "$path")
     return 1
 }
 
@@ -117,16 +122,17 @@ EOF
     cache_dir="$(_cco_cache_dir)/projects/$name"
     local cur_tags; cur_tags=$(_tags_get projects "$name")
 
-    # Member repos whose paths: entry is safe to drop (not shared with another
-    # project). The shared-repo guard reads the index BEFORE any removal.
+    # Under per-project scoping (ADR-0051) forgetting a project removes ALL of its
+    # own per-project labels (project_paths block); other projects keep their own
+    # independent bindings. The shared check is now informational: which of this
+    # project's paths remain referenced (under any label) by another project — so
+    # the user knows the directory is not orphaned on the machine. Read BEFORE any
+    # removal.
     local -a paths_to_remove=() paths_kept=()
     local repo
     for repo in $member_repos; do
-        if _forget_repo_still_shared "$repo" "$name"; then
-            paths_kept+=("$repo")
-        else
-            paths_to_remove+=("$repo")
-        fi
+        paths_to_remove+=("$repo")
+        _forget_repo_still_shared "$repo" "$name" && paths_kept+=("$repo")
     done
 
     # Owned member repos whose committed .cco/ --purge may delete: resolved AND
@@ -159,7 +165,7 @@ EOF
         info "  • index: path entries — ${paths_to_remove[*]}"
     fi
     if [[ ${#paths_kept[@]} -gt 0 ]]; then
-        info "  • index: KEEPING shared path entries (used by other projects) — ${paths_kept[*]}"
+        info "  • note: these paths stay referenced by other projects (their bindings are untouched) — ${paths_kept[*]}"
     fi
     [[ -d "$state_dir" ]] && info "  • STATE: $state_dir"
     [[ -d "$data_dir"  ]] && info "  • DATA:  $data_dir"
@@ -190,10 +196,13 @@ EOF
     fi
 
     # ── Execute (out-of-repo bookkeeping only) ────────────────────────────
-    [[ -n "$member_repos" ]] && _index_remove_project "$name"
-    for repo in ${paths_to_remove[@]+"${paths_to_remove[@]}"}; do
-        _index_remove_path "$repo"
-    done
+    # Remove this project's membership AND its entire per-project path block
+    # (ADR-0051 D5). Other projects' bindings — even to the same paths — are their
+    # own independent labels and are never touched.
+    if [[ -n "$member_repos" ]]; then
+        _index_remove_project "$name"
+        _index_pp_remove_project "$name"
+    fi
     rm -rf "$state_dir" "$data_dir" "$cache_dir"
     _tags_forget projects "$name"
 

@@ -62,7 +62,9 @@ _chrome_resolve_port() {
         # Resolve the project's committed config via the STATE index (decentralized
         # layout); the browser runtime file lives in CACHE, keyed by project name.
         local yml_name container_name repo proj_yml=""
-        repo=$(_index_get_path "$opt_project")
+        # Resolve the project's host repo dir via its membership (project identity
+        # stays global; a project name is not a repo-index key — ADR-0051).
+        repo=$(_resolve_unit_dir_for_project "$opt_project" 2>/dev/null) || repo=""
         [[ -n "$repo" ]] && proj_yml="$repo/.cco/project.yml"
         # Warn if container is not running (stale runtime file)
         if [[ -n "$proj_yml" && -f "$proj_yml" ]]; then

@@ -282,18 +282,15 @@ _cco_init_scaffold_repo() {
         || die "Invalid project name '$name' — must be lowercase letters, numbers, and hyphens, starting alphanumeric. Pass --name <name>."
     _check_reserved_project_name "$name"
 
-    # F12 name-uniqueness: the name must not already bind a DIFFERENT repo. Binding
-    # the same name to the same repo is a legitimate re-init (e.g. --force).
-    local existing_path; existing_path=$(_index_get_path "$name" 2>/dev/null || true)
-    if [[ -n "$existing_path" && "$existing_path" != "$target" ]]; then
-        die "A project named '$name' is already registered to $existing_path. Choose another name (--name) or 'cco forget' it first."
-    fi
-    # A migrated/joined project records its name in the projects: registry but its
-    # host repo path under the member repo names, not under the project name — so the
-    # paths: check above can miss it. Reject a name already taken there too (H3).
+    # F12 name-uniqueness (project identity stays global — ADR-0051). The project
+    # name must be free, EXCEPT a re-init of the same location (e.g. --force): a
+    # project already registered under this name is allowed only if it already
+    # binds the target path (path is the resource identity, §12).
     local existing_repos; existing_repos=$(_index_get_project_repos "$name" 2>/dev/null || true)
-    if [[ -n "$existing_repos" && "$existing_path" != "$target" ]]; then
-        die "A project named '$name' is already registered. Choose another name (--name) or 'cco forget' it first."
+    if [[ -n "$existing_repos" ]]; then
+        if ! _index_paths_get_bindings "$target" 2>/dev/null | cut -f1 | grep -qxF "$name"; then
+            die "A project named '$name' is already registered. Choose another name (--name) or 'cco forget' it first."
+        fi
     fi
 
     # Resolve the hosting repo's LOGICAL name (its repos[] entry + index member
@@ -304,11 +301,11 @@ _cco_init_scaffold_repo() {
     local repo_name; repo_name=$(_cco_init_resolve_repo_name "$repo_name_arg")
     _cco_valid_project_name "$repo_name" \
         || die "Invalid repo name '$repo_name' — must be lowercase letters, numbers, and hyphens, starting alphanumeric. Pass --repo-name <name>."
-    # The repo logical name must not already bind a DIFFERENT path in the index
-    # (re-binding the same repo on a --force re-init is legitimate).
-    local rn_existing; rn_existing=$(_index_get_path "$repo_name" 2>/dev/null || true)
-    if [[ -n "$rn_existing" && "$rn_existing" != "$target" ]]; then
-        die "A repo named '$repo_name' is already bound to $rn_existing in the index. Choose another --repo-name, or 'cco forget' it first."
+    # The repo logical name must not already bind a DIFFERENT path WITHIN THIS
+    # project (AD5′, ADR-0051 — a same name in another project is a different
+    # resource). Re-binding the same repo on a --force re-init is legitimate.
+    if _index_path_conflicts "$name" "$repo_name" "$target" 2>/dev/null; then
+        die "A repo named '$repo_name' is already bound in project '$name' to $(_index_get_path "$name" "$repo_name"). Choose another --repo-name, or 'cco forget' it first."
     fi
 
     # Resolve the source project-template: --template <name> (user store first,
@@ -390,7 +387,7 @@ _cco_init_scaffold_repo() {
     # Register in the STATE index: this repo hosts the project and is its own
     # (sole) member, keyed by the repo's LOGICAL name (same shape as migrate/join;
     # repo_name defaults to — but may diverge from — the project name).
-    _index_set_path "$repo_name" "$target"
+    _index_set_path "$name" "$repo_name" "$target"
     _index_set_project_repos "$name" "$repo_name"
 
     # Born at the latest schema (decentralized projects are scaffolded in final

@@ -591,7 +591,9 @@ _start_collect_config_editor_targets() {
     # else: mode=global (bare outside any project) → no project targets, ~/.cco only.
     # --repo <name>: add a single resolvable repo (fine-grained reference mount).
     for t in ${config_editor_repos[@]+"${config_editor_repos[@]}"}; do
-        path=$(_index_get_path "$t")
+        # config-editor --repo is a cross-project reference (no single current
+        # project) — resolve the bare name across all projects (ADR-0051).
+        path=$(_index_get_path_any "$t")
         [[ "$path" == /* && -d "$path" ]] \
             || die "config-editor --repo '$t' is not resolvable on this machine. Run 'cco resolve' first."
         _ce_add_repo "$t"
@@ -697,7 +699,8 @@ _start_resolve_project() {
         local unit_dir=""
         if [[ -n "$from_repo" ]]; then
             # --from <repo>: explicit Case-C source (mirrors `cco sync --from`).
-            unit_dir=$(_index_get_path "$from_repo") \
+            # Cross-project by-name lookup (no project context in hand yet).
+            unit_dir=$(_index_get_path_any "$from_repo") \
                 || die "source repo '$from_repo' is unresolved on this machine — run 'cco resolve' first."
             [[ -n "$unit_dir" ]] || die "source repo '$from_repo' is unresolved on this machine — run 'cco resolve' first."
             [[ -f "$unit_dir/.cco/project.yml" ]] \

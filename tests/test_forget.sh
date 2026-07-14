@@ -75,10 +75,14 @@ YAML
 test_forget_shared_repo_guard() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    # proj-a owns "solo" alone and shares "shared" with proj-b.
-    seed_index_path "solo"   "$tmpdir/repos/solo"
-    seed_index_path "shared" "$tmpdir/repos/shared"
-    seed_index_path "proj-b" "$tmpdir/repos/proj-b"
+    # proj-a owns "solo" alone and shares "shared" with proj-b. Under per-project
+    # scoping (ADR-0051) each project carries its OWN binding for a shared repo, so
+    # "shared" is seeded under both projects (same path); forget proj-a drops only
+    # proj-a's block, leaving proj-b's "shared" binding intact.
+    seed_index_path "solo"   "$tmpdir/repos/solo"   "proj-a"
+    seed_index_path "shared" "$tmpdir/repos/shared" "proj-a"
+    seed_index_path "shared" "$tmpdir/repos/shared" "proj-b"
+    seed_index_path "proj-b" "$tmpdir/repos/proj-b" "proj-b"
     index_set_project_repos "proj-a" "solo" "shared"
     index_set_project_repos "proj-b" "proj-b" "shared"
 

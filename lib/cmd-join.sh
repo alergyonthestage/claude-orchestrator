@@ -167,7 +167,7 @@ EOF
 
     # ── Machine-local index: membership + path (applied together) ────────
     _index_set_project_repos "$project" $members "$repo_name"
-    _index_set_path "$repo_name" "$repo"
+    _index_set_path "$project" "$repo_name" "$repo"
 
     ok "Joined '$project' as member '$repo_name'."
 

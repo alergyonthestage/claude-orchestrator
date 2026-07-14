@@ -109,11 +109,12 @@ test_resolve_scan_ad5_keeps_existing_on_conflict() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     setup_cco_env "$tmp"
 
-    # Pre-bind repo1 to a DIFFERENT path than the one the scan will discover.
-    mkdir -p "$tmp/elsewhere"
-    run_cco path set repo1 "$tmp/elsewhere" || return 1
-
+    # Pre-bind repo1 (scoped to demo, from within the demo repo) to a DIFFERENT
+    # path than the one the scan will discover — a genuine AD5′ in-project clash.
     _rsv_unit "$tmp/dev" repo1 "$_RSV_TWO_REPO_YML"
+    mkdir -p "$tmp/elsewhere"
+    _rsv_cco_in "$tmp/dev/repo1" path set repo1 "$tmp/elsewhere" || return 1
+
     run_cco resolve --scan "$tmp/dev" || return 1
     assert_output_contains "keeping existing" || return 1
 
@@ -127,7 +128,8 @@ test_resolve_scan_no_prune_keeps_stale_entries() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     setup_cco_env "$tmp"
 
-    run_cco path set ghost "$tmp/ghost-not-scanned" || return 1
+    # From a neutral cwd (no project) → an unscoped pin.
+    _rsv_cco_in "$tmp" path set ghost "$tmp/ghost-not-scanned" || return 1
     _rsv_unit "$tmp/dev" repo1 "$_RSV_TWO_REPO_YML"
     run_cco resolve --scan "$tmp/dev" || return 1
 
@@ -162,10 +164,11 @@ test_path_set_and_list_roundtrip() {
     setup_cco_env "$tmp"
 
     mkdir -p "$tmp/somedir"
-    run_cco path set myrepo "$tmp/somedir" || return 1
+    # Neutral cwd (no project) → an unscoped pin.
+    _rsv_cco_in "$tmp" path set myrepo "$tmp/somedir" || return 1
     assert_output_contains "path set: myrepo" || return 1
 
-    run_cco path list || return 1
+    _rsv_cco_in "$tmp" path list || return 1
     assert_output_contains "myrepo" || return 1
     assert_output_contains "$tmp/somedir" || return 1
 }
@@ -216,9 +219,10 @@ test_resolve_cwd_first_resolves_and_records_membership() {
 repos:
   - name: repo1
   - name: repo2' > "$tmp/dev/repo1/.cco/project.yml"
-    # Pre-bind both members so non-TTY resolution is a clean no-op success.
-    run_cco path set repo1 "$tmp/dev/repo1" || return 1
-    run_cco path set repo2 "$tmp/dev/repo2" || return 1
+    # Pre-bind both members (scoped to demo, from within the demo repo) so
+    # non-TTY resolution is a clean no-op success.
+    _rsv_cco_in "$tmp/dev/repo1" path set repo1 "$tmp/dev/repo1" || return 1
+    _rsv_cco_in "$tmp/dev/repo1" path set repo2 "$tmp/dev/repo2" || return 1
 
     _rsv_cco_in "$tmp/dev/repo1" resolve || return 1
     assert_output_contains "resolved" || return 1
@@ -293,7 +297,7 @@ extra_mounts:
     local got
     got=$(
         source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/paths.sh"; source "$REPO_ROOT/lib/index.sh"
-        _index_get_path mymount
+        _index_get_path demo mymount
     )
     [[ "$got" == "/resolved/mymount" ]] \
         || { echo "ASSERTION FAILED: resolve must prompt + bind an unresolved mount on a TTY (got: '$got')"; return 1; }
@@ -381,12 +385,14 @@ test_path_list_normalizes_and_flags_malformed() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     setup_cco_env "$tmp"
     mkdir -p "$tmp/real"
-    run_cco path set good "$tmp/real" || return 1
+    _rsv_cco_in "$tmp" path set good "$tmp/real" || return 1
     (
         source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
         source "$REPO_ROOT/lib/paths.sh"; source "$REPO_ROOT/lib/index.sh"
-        _index_section_set paths legacy "@local"
-        _index_section_set paths tildey "~/somewhere"
+        # Seed malformed values directly into the unscoped bucket (bypass the
+        # normalizing boundary) — the v2 index has no flat paths: section.
+        _index_section_set unscoped legacy "@local"
+        _index_section_set unscoped tildey "~/somewhere"
     ) || return 1
 
     run_cco path list || return 1

@@ -67,7 +67,7 @@ _resolve_unit_dir_for_project() {
     repos=$(_index_get_project_repos "$proj")
     [[ -z "$repos" ]] && return 1
     for r in $repos; do
-        p=$(_index_get_path "$r")
+        p=$(_index_get_path "$proj" "$r")
         if [[ -n "$p" && -f "$p/.cco/project.yml" ]]; then
             printf '%s\n' "$p"
             return 0
@@ -214,7 +214,7 @@ _resolve_unit() {
         _peel_tab "$_ln" name url
         [[ -z "$name" ]] && continue
         member_repos+=("$name")
-        path=$(_index_get_path "$name")
+        path=$(_index_get_path "$proj_name" "$name")
         if [[ -n "$path" ]] && _path_exists "$path"; then
             continue
         fi
@@ -237,7 +237,7 @@ _resolve_unit() {
         [[ -z "$_ln" ]] && continue
         _peel_tab "$_ln" name url
         [[ -z "$name" ]] && continue
-        path=$(_index_get_path "$name")
+        path=$(_index_get_path "$proj_name" "$name")
         if [[ -n "$path" ]] && _path_exists "$path"; then
             continue
         fi
@@ -311,7 +311,7 @@ _resolve_unit() {
     # can always relocate the unit — even when the host repo is not itself listed
     # in the manifest's repos: (a config-only host). Without this, recording
     # membership from repos: alone could drop the only locatable member.
-    local _host_name; _host_name=$(_index_name_for_path "$unit_dir")
+    local _host_name; _host_name=$(_index_name_for_path "$proj_name" "$unit_dir")
     if [[ -n "$_host_name" ]]; then
         local _has=false _m
         for _m in ${member_repos[@]+"${member_repos[@]}"}; do
@@ -413,6 +413,7 @@ _resolve_render_status() {
     local project_yml="$unit_dir/.cco/project.yml"
     [[ -f "$project_yml" ]] || return 0
     local _ln name url desc variant pref presource p pdir
+    local proj_name; proj_name=$(yml_get "$project_yml" name 2>/dev/null)
     printf '\n  Referenced resources:\n' >&2
 
     # repos / extra_mounts — resolved iff the index path exists on disk.
@@ -420,7 +421,7 @@ _resolve_render_status() {
         [[ -z "$_ln" ]] && continue
         _peel_tab "$_ln" name url
         [[ -z "$name" ]] && continue
-        p=$(_index_get_path "$name")
+        p=$(_index_get_path "$proj_name" "$name")
         if [[ -n "$p" ]] && _path_exists "$p"; then
             printf '    %-5s %-22s ✓ %s\n' "repo" "$name" "$p" >&2
         else
@@ -431,7 +432,7 @@ _resolve_render_status() {
         [[ -z "$_ln" ]] && continue
         _peel_tab "$_ln" name url
         [[ -z "$name" ]] && continue
-        p=$(_index_get_path "$name")
+        p=$(_index_get_path "$proj_name" "$name")
         if [[ -n "$p" ]] && _path_exists "$p"; then
             printf '    %-5s %-22s ✓ %s\n' "mount" "$name" "$p" >&2
         else
@@ -511,7 +512,7 @@ _resolve_scan() {
     local found=0 bound=0 kept=0
     local project_yml cco_dir repo_dir proj_name this_name existing
     local _ln name
-    local -a names=()
+    local -a names=() scanned_projects=()
 
     while IFS= read -r project_yml; do
         [[ -z "$project_yml" ]] && continue
@@ -529,20 +530,41 @@ _resolve_scan() {
         done < <(yml_get_repo_coords "$project_yml" 2>/dev/null)
         if [[ -n "$proj_name" && ${#names[@]} -gt 0 ]]; then
             _index_set_project_repos "$proj_name" "${names[@]}"
+            scanned_projects+=("$proj_name")
         fi
 
         # Bind THIS repo dir to its logical name (AD5 keep-existing on conflict).
         this_name=$(_resolve_scan_match_name "$repo_dir" "$project_yml") || this_name=""
         [[ -z "$this_name" ]] && continue
-        if _index_path_conflicts "$this_name" "$repo_dir"; then
-            existing=$(_index_get_path "$this_name")
-            warn "scan: '$this_name' already bound to $existing — keeping existing (AD5); ignoring $repo_dir"
+        if _index_path_conflicts "$proj_name" "$this_name" "$repo_dir"; then
+            existing=$(_index_get_path "$proj_name" "$this_name")
+            warn "scan: '$this_name' already bound in '$proj_name' to $existing — keeping existing (AD5′); ignoring $repo_dir"
             kept=$((kept + 1))
         else
-            _index_set_path "$this_name" "$repo_dir"
+            _index_set_path "$proj_name" "$this_name" "$repo_dir"
             bound=$((bound + 1))
         fi
     done < <(find "$dir" -type f -path '*/.cco/project.yml' 2>/dev/null)
+
+    # Pass 2 (ADR-0051 D5): bind each project's SHARED members — members it lists
+    # but that are HOSTED by a different unit in the scan — under this project's
+    # OWN scope too, to the same path (path is identity). Without this a member
+    # listed by project A yet hosted by project B stays unresolved under A, so A's
+    # membership names a repo with no A-scoped binding (e.g. `cco sync` from A then
+    # can't reach it). Only adopt a path discovered INSIDE the scanned tree; never
+    # override an existing A-scoped binding (AD5′ keep-existing).
+    local sp mpath
+    for sp in ${scanned_projects[@]+"${scanned_projects[@]}"}; do
+        while IFS= read -r name; do
+            [[ -z "$name" ]] && continue
+            [[ -n "$(_index_get_path "$sp" "$name")" ]] && continue
+            mpath=$(_index_get_path_any "$name")
+            [[ -z "$mpath" ]] && continue
+            case "$mpath" in "$dir"/*|"$dir") ;; *) continue ;; esac
+            _index_set_path "$sp" "$name" "$mpath"
+            bound=$((bound + 1))
+        done < <(_index_get_project_repos "$sp" | tr ' ' '\n')
+    done
 
     info "scan: $found unit(s) found, $bound binding(s) upserted, $kept conflict(s) kept"
 }
@@ -664,47 +686,70 @@ EOF
             [[ $# -lt 2 ]] && die "Usage: cco path set <name> <path>"
             local name="$1" abs
             abs=$(_resolve_to_abs "$2")
-            _index_set_path "$name" "$abs"
-            ok "path set: $name -> $abs"
+            # Per-project scoping (ADR-0051): a name is a per-project label. Bind
+            # it in the project hosting the cwd if there is one; otherwise it is a
+            # project-less pin → the unscoped bucket. Emit a hint when the index
+            # name no longer matches the directory basename (name↔path divergence).
+            local _pset_dir _pset_proj="" _pbase
+            if _pset_dir=$(_resolve_find_unit_dir 2>/dev/null); then
+                _pset_proj=$(yml_get "$_pset_dir/.cco/project.yml" name 2>/dev/null)
+            fi
+            if [[ -n "$_pset_proj" ]]; then
+                _index_set_path "$_pset_proj" "$name" "$abs"
+                ok "path set: [$_pset_proj] $name -> $abs"
+            else
+                _index_set_unscoped "$name" "$abs"
+                ok "path set: $name -> $abs (unscoped — not inside a project)"
+            fi
             _path_exists "$abs" || warn "note: '$abs' does not exist on this machine yet"
+            _pbase=$(basename "$abs")
+            # Use `if`, not `[[ … ]] && info`: as the case's LAST statement the
+            # latter leaks a false condition (path not yet on disk — a legitimate
+            # pre-clone pin) as a non-zero exit, failing the whole `cco path set`.
+            if [[ -d "$abs" && "$name" != "$_pbase" ]]; then
+                info "hint: index name '$name' ≠ directory basename '$_pbase' — 'cco repo rename $name $_pbase' aligns them."
+            fi
             ;;
         list)
             shift
             [[ $# -gt 0 ]] && die "Usage: cco path list (takes no arguments)"
-            local line name path norm count=0 malformed=0 hidden=0 owner _vis
+            local proj name path norm count=0 malformed=0 hidden=0 _vis label
             # Output scoping (ADR-0043/0046 §7, A1 §4.3): the path index is the raw
             # machine-local name→host-path map (repos/mounts), not a taxonomy kind.
-            # Visibility follows the OWNING project's read-visibility, exactly like
-            # `cco list project`: the current project's entries are always shown
-            # (Pc≥ro, INV-2), other projects' entries need Po≥ro (read-all). So we
-            # scope whenever Po<ro (read-project/read-global) and hide any entry
-            # none of whose owners is a current project — config-editor-aware via
-            # _env_is_current_project (PROJECT_NAME ∪ CCO_CONFIG_TARGETS). Host
-            # paths are ADDITIONALLY gated by show_host_paths, now trustworthy
-            # behind the ADR-0047 boundary (S1b): at show_host_paths=off we render
-            # logical names only. Host context is never scoped (INV-A); uses the
-            # layer's helpers, no ad-hoc context re-derivation (INV-E).
+            # Under per-project scoping (ADR-0051) each binding has a single OWNING
+            # project (project_paths); its visibility follows that project exactly
+            # like `cco list project`: the current project's entries are always
+            # shown (Pc≥ro, INV-2), other projects' entries need Po≥ro (read-all).
+            # So we scope whenever Po<ro (read-project/read-global) and hide any
+            # entry whose owner is not a current project — config-editor-aware via
+            # _env_is_current_project (PROJECT_NAME ∪ CCO_CONFIG_TARGETS). Unscoped
+            # (project-less) pins have no owner → never scoped-hidden. Host paths
+            # are ADDITIONALLY gated by show_host_paths, trustworthy behind the
+            # ADR-0047 boundary (S1b): at show_host_paths=off we render logical
+            # names only. Host context is never scoped (INV-A); uses the layer's
+            # helpers, no ad-hoc context re-derivation (INV-E).
             local _scope_paths=false _hide_hostpaths=false
             if _cco_container_operator; then
                 [[ "$(_cco_axis_rank "$(_env_axis Po)")" -lt 1 ]] && _scope_paths=true
                 [[ "${CCO_SHOW_HOST_PATHS:-true}" != "true" ]] && _hide_hostpaths=true
             fi
-            while IFS= read -r line; do
-                [[ -z "$line" ]] && continue
-                name="${line%%=*}"; path="${line#*=}"
-                if [[ "$_scope_paths" == true ]]; then
-                    _vis=false
-                    while IFS= read -r owner; do
-                        [[ -z "$owner" ]] && continue
-                        if _env_is_current_project "$owner"; then _vis=true; break; fi
-                    done < <(_index_repos_get_projects "$name" 2>/dev/null)
-                    if [[ "$_vis" != true ]]; then hidden=$((hidden + 1)); continue; fi
+            # Emit "<project>\t<name>\t<path>" for every scoped binding, then the
+            # unscoped bucket tagged with the __unscoped__ sentinel (a real empty
+            # first column can't survive `read` — TAB is IFS-whitespace and gets
+            # collapsed; the sentinel is not a valid project name).
+            while IFS=$'\t' read -r proj name path; do
+                [[ -z "$name" ]] && continue
+                [[ "$proj" == "__unscoped__" ]] && proj=""
+                # Per-project label so homonyms across projects stay distinct.
+                if [[ -n "$proj" ]]; then label="[$proj] $name"; else label="$name"; fi
+                if [[ "$_scope_paths" == true && -n "$proj" ]]; then
+                    if ! _env_is_current_project "$proj"; then hidden=$((hidden + 1)); continue; fi
                 fi
                 # show_host_paths gate (S1b): render logical names only when host
                 # paths are masked for this session. The malformed-path check is
                 # moot then (the host path is not shown), so it is skipped.
                 if [[ "$_hide_hostpaths" == true ]]; then
-                    printf '%s\n' "$name"
+                    printf '%s\n' "$label"
                     count=$((count + 1)); continue
                 fi
                 # The index stores absolute paths only (boundary normalization).
@@ -712,13 +757,14 @@ EOF
                 # non-absolute (a stale ~/@local entry written before the fix or
                 # hand-edited) instead of printing it as if it were valid.
                 if norm=$(_index_normalize_path "$path"); then
-                    printf '%s\t%s\n' "$name" "$norm"
+                    printf '%s\t%s\n' "$label" "$norm"
                 else
-                    printf '%s\t%s  ⚠ malformed (non-absolute)\n' "$name" "$path"
+                    printf '%s\t%s  ⚠ malformed (non-absolute)\n' "$label" "$path"
                     malformed=$((malformed + 1))
                 fi
                 count=$((count + 1))
-            done < <(_index_list_paths)
+            done < <(_index_pp_dump_all; _index_section_dump unscoped \
+                | awk '{ i=index($0,"="); if (i>0) printf "__unscoped__\t%s\t%s\n", substr($0,1,i-1), substr($0,i+1) }')
             if [[ $count -eq 0 && $hidden -eq 0 ]]; then
                 info "the path index is empty — run 'cco resolve' or 'cco resolve --scan <dir>'"
             elif [[ $malformed -gt 0 ]]; then

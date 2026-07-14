@@ -179,6 +179,7 @@ _prompt_for_path() {
 # member still unresolved after the F49 prompt has no index path → excluded.
 _effective_repo_mounts() {
     local project_yml="$1"
+    local proj; proj=$(yml_get "$project_yml" name 2>/dev/null)   # per-project name scope (ADR-0051)
     # Peel the name field by tab (IFS=$'\t' read collapses empty middle fields).
     local _ln name _p
     while IFS= read -r _ln; do
@@ -188,7 +189,7 @@ _effective_repo_mounts() {
         # Conscious-skip (design §4.4 / P14): a member still unresolved after
         # the F49 prompt has no index path — exclude it (never emit a silent
         # empty mount, #B17); _start_resolve_paths already warned + ⚠-badged it.
-        _p=$(_index_get_path "$name")
+        _p=$(_index_get_path "$proj" "$name")
         # Skip empty AND any NON-ABSOLUTE index value. A bogus marker like the
         # legacy `@local` must never reach the compose as a mount source — its
         # leading `@` is a reserved YAML char that breaks `docker compose`
@@ -218,6 +219,7 @@ _mount_override_get() {
 
 _effective_extra_mounts() {
     local project_yml="$1"
+    local proj; proj=$(yml_get "$project_yml" name 2>/dev/null)   # per-project name scope (ADR-0051)
     # Peel fields by tab (IFS=$'\t' read collapses empty middle fields, so
     # a name-only mount "name\t\t\ttarget\tro" would mis-assign target/ro).
     local _ln name target ro_raw ro rest policy
@@ -233,7 +235,7 @@ _effective_extra_mounts() {
         # Conscious-skip: exclude an unresolved mount (no index path) rather
         # than emit a silent empty mount (#B17; design §4.4 / P14). A session-local
         # internal override (config-editor, H4) wins over the persistent index.
-        local _ms; _ms=$(_mount_override_get "$name" || _index_get_path "$name")
+        local _ms; _ms=$(_mount_override_get "$name" || _index_get_path "$proj" "$name")
         # Skip empty AND any NON-ABSOLUTE value (e.g. a stale `@local` marker —
         # leading `@` is a reserved YAML char that would break the compose).
         [[ "$_ms" != /* ]] && continue
@@ -257,6 +259,7 @@ _effective_extra_mounts() {
 # choice is not recorded where this can read it).
 _declared_unresolved_extra_mounts() {
     local project_yml="$1"
+    local proj; proj=$(yml_get "$project_yml" name 2>/dev/null)   # per-project name scope (ADR-0051)
     local _ln name rest target _ms
     while IFS= read -r _ln; do
         [[ -z "$_ln" ]] && continue
@@ -265,7 +268,7 @@ _declared_unresolved_extra_mounts() {
         rest="${rest#*$'\t'}"   # drop ref
         target="${rest%%$'\t'*}"
         [[ -z "$name" ]] && continue
-        _ms=$(_mount_override_get "$name" || _index_get_path "$name")
+        _ms=$(_mount_override_get "$name" || _index_get_path "$proj" "$name")
         [[ "$_ms" == /* ]] && continue   # resolved → not in the unresolved set
         [[ -z "$target" ]] && target="/workspace/$name"
         printf '%s\t%s\n' "$name" "$target"
@@ -278,9 +281,10 @@ _declared_unresolved_extra_mounts() {
 # Output: resolved abs path (stdout). Exit: 0=resolved, 1=skipped, 2=abort.
 _resolve_entry_index() {
     local project_dir="$1" section="$2" name="$3" url="${4:-}"
+    local proj; proj=$(yml_get "$project_dir/.cco/project.yml" name 2>/dev/null)   # per-project scope (ADR-0051)
 
     local existing
-    existing=$(_index_get_path "$name")
+    existing=$(_index_get_path "$proj" "$name")
     if [[ -n "$existing" ]] && _path_exists "$existing"; then
         echo "$existing"
         return 0
@@ -302,7 +306,7 @@ _resolve_entry_index() {
     resolved=$(_prompt_for_path "$name" "$url" "$suggested" "$label") || rc=$?
 
     if [[ $rc -eq 0 && -n "$resolved" ]]; then
-        _index_set_path "$name" "$resolved"
+        _index_set_path "$proj" "$name" "$resolved"
         echo "$resolved"
         return 0
     elif [[ $rc -eq 2 ]]; then
@@ -333,6 +337,7 @@ _project_effective_paths() {
     local project_yml="$project_dir/project.yml"
 
     [[ ! -f "$project_yml" ]] && return 0
+    local proj; proj=$(yml_get "$project_yml" name 2>/dev/null)   # per-project name scope (ADR-0051)
 
     # Repos — logical names; abs path from the STATE index (unresolved = no entry).
     local _ln name effective status
@@ -340,7 +345,7 @@ _project_effective_paths() {
         [[ -z "$_ln" ]] && continue
         name="${_ln%%$'\t'*}"
         [[ -z "$name" ]] && continue
-        effective=$(_index_get_path "$name")
+        effective=$(_index_get_path "$proj" "$name")
         if [[ -z "$effective" ]]; then
             printf 'repos\t%s\t\tunresolved\n' "$name"
             continue
@@ -359,7 +364,7 @@ _project_effective_paths() {
         [[ -z "$_ml" ]] && continue
         mname="${_ml%%$'\t'*}"
         [[ -z "$mname" ]] && continue
-        meffective=$(_index_get_path "$mname")
+        meffective=$(_index_get_path "$proj" "$mname")
         if [[ -z "$meffective" ]]; then
             printf 'mounts\t%s\t\tunresolved\n' "$mname"
             continue
