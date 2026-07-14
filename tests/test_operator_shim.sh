@@ -628,3 +628,35 @@ test_operator_no_silent_exit2() {
     _op_seed read-project alpha tag add alpha x; _b6_assert "needs Pc=rw"
     return 0
 }
+
+# ── Resource-rename gating (ADR-0050 D7 / B.4) ───────────────────────
+# repo/extra-mount rename write the current project → Pc=rw (edit-project ok);
+# pack/template/remote rename write the global store → G=rw (edit-global+ only).
+
+test_op_rename_gating_by_target_tree() {
+    # pack rename needs G=rw → policy-refused (exit 2) at edit-project.
+    _op_cco edit-project pack rename old new
+    [[ $OP_RC -eq 2 ]] || fail "pack rename must be refused at edit-project, rc=$OP_RC: $OP_OUT"
+    echo "$OP_OUT" | grep -qiE 'needs G=rw|personal store' \
+        || fail "pack rename refusal message wrong: $OP_OUT"
+
+    # remote rename likewise needs G=rw.
+    _op_cco edit-project remote rename old new
+    [[ $OP_RC -eq 2 ]] || fail "remote rename must be refused at edit-project, rc=$OP_RC: $OP_OUT"
+
+    # repo rename is Pc=rw → NOT policy-refused at edit-project (falls through to
+    # the verb, which then errors on no resolvable project — rc≠2, not a gate).
+    _op_cco edit-project repo rename old new
+    [[ $OP_RC -ne 2 ]] || fail "repo rename must NOT be policy-refused at edit-project: $OP_OUT"
+    if echo "$OP_OUT" | grep -qiE 'needs Pc=rw|edits project config'; then
+        fail "repo rename wrongly gated at edit-project: $OP_OUT"
+    fi
+
+    # extra-mount rename same as repo.
+    _op_cco edit-project extra-mount rename old new
+    [[ $OP_RC -ne 2 ]] || fail "extra-mount rename must NOT be policy-refused at edit-project: $OP_OUT"
+
+    # A read-only session (read-all) has Pc=none → repo rename refused (exit 2).
+    _op_cco read-all repo rename old new
+    [[ $OP_RC -eq 2 ]] || fail "repo rename must be refused at read-all (Pc=none), rc=$OP_RC: $OP_OUT"
+}

@@ -397,9 +397,19 @@ _cco_operator_shim() {
             case "$sub" in
                 "") return 0 ;;
                 list) _op_read_scope global "remote list"; return 0 ;;   # personal-global registry
-                add|remove) _op_write "remote $sub" global ;;            # DATA registry
+                add|remove|rename) _op_write "remote $sub" global ;;     # DATA registry
                 set-token|remove-token) refuse "'cco remote $sub' is host-only (secrets stay off the container). $host_hint" ;;
                 *) _op_unknown_sub remote "$sub" ;;
+            esac ;;
+        # repo / extra_mount rename write the CURRENT project tree (its project.yml
+        # + the STATE index membership/binding) → gated by Pc=rw (ADR-0050 D7). The
+        # index write crosses the ADR-0047 boundary, so these trampoline (see
+        # _cco_verb_touches_store). These are the first in-container index writers.
+        repo|extra-mount)
+            case "$sub" in
+                "") return 0 ;;   # bare namespace → dispatcher prints sub-usage
+                rename) _op_write "$cmd rename" project ;;
+                *) _op_unknown_sub "$cmd" "$sub" ;;
             esac ;;
         pack|template|llms)
             case "$sub" in
@@ -446,6 +456,7 @@ _cco_verb_touches_store() {
     case "$c" in
         list)    return 0 ;;                                          # index + DATA tags + source
         path)    [[ "$s" == "list" ]] && return 0 ;;                  # index (host paths)
+        repo|extra-mount) [[ "$s" == "rename" ]] && return 0 ;;       # STATE index re-key (project-scoped)
         tag)     case "$s" in add|remove|rm) return 0 ;; esac ;;      # DATA tags.yml write
         remote)  [[ "$s" == "list" ]] && return 0 ;;                  # DATA remotes registry
         project) case "$s" in show|validate|coords) return 0 ;; esac ;;  # index membership
