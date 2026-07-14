@@ -624,3 +624,24 @@ test_resolve_homonym_mounts_coexist() {
     [[ "$pa" == "$tmp/a-assets" ]] || fail "proj-a/assets must stay its own path, got: '$pa'"
     [[ "$pb" == "$tmp/b-assets" ]] || fail "proj-b/assets must stay its own path, got: '$pb'"
 }
+
+# ── cco path set — quote hygiene (ADR-0050 D8 / B.5) ─────────────────
+# A path pasted with surrounding shell quotes must absolutize to the literal
+# directory, not a bogus quoted string (analysis §9.2).
+
+test_path_set_strips_surrounding_single_quotes() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local d="$tmp/pasted/repo"; mkdir -p "$d"
+    run_cco path set myrepo "'$d'" || fail "path set failed: $CCO_OUTPUT" || return 1
+    assert_output_contains "-> $d" || return 1
+    assert_output_not_contains "'$d'" || return 1
+}
+
+test_path_set_strips_surrounding_double_quotes() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local d="$tmp/pasted/repo2"; mkdir -p "$d"
+    run_cco path set myrepo "\"$d\"" || fail "path set failed: $CCO_OUTPUT" || return 1
+    assert_output_contains "-> $d" || return 1
+}

@@ -16,6 +16,19 @@ expand_path() {
     echo "$path"
 }
 
+# Strip ONE pair of matched surrounding quotes ('…' or "…") from a value — what
+# the shell would have removed from a pasted quoted token (ADR-0050 D8). Not full
+# shell dequoting: inner or unbalanced quotes are left literal, so path characters
+# survive intact. A no-op on unquoted input. Usage: _strip_surrounding_quotes <s>
+_strip_surrounding_quotes() {
+    local s="$1"
+    [[ ${#s} -ge 2 ]] || { printf '%s' "$s"; return 0; }
+    case "$s" in
+        \"*\"|\'*\') s="${s:1:${#s}-2}" ;;
+    esac
+    printf '%s' "$s"
+}
+
 # Check if a path exists as either a file or a directory.
 # Canonical check for project.yml sources — repos are directories,
 # but extra_mounts can legitimately be single files (e.g. a .docx).

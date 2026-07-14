@@ -35,7 +35,12 @@
 # The index stores absolute paths only (design §3).
 _resolve_to_abs() {
     local p
-    p=$(expand_path "$1")
+    # Strip one pair of surrounding quotes first (ADR-0050 D8) — a path pasted as
+    # '/my/repo' or "/my/repo" absolutizes to the literal dir, not a bogus quoted
+    # name. Covers `cco path set`/`resolve` and the interactive path prompts, which
+    # all flow through here.
+    p=$(_strip_surrounding_quotes "$1")
+    p=$(expand_path "$p")
     case "$p" in
         /*) printf '%s\n' "$p" ;;
         *)  printf '%s\n' "$(pwd -P)/$p" ;;
