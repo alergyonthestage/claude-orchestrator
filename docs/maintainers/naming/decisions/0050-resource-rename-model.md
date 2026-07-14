@@ -1,15 +1,19 @@
 # ADR 0050 — Resource rename: identity re-key generalized across kinds
 
-**Status**: Proposed (2026-07-14) — design phase, `feat/naming/resource-management`
+**Status**: Proposed (2026-07-14) — design phase, `feat/naming/resource-management`.
+**Depends on [ADR-0051](0051-per-project-name-scoping.md)** (per-project name scoping) and is
+**sequenced after it**: repo/extra_mount rename is defined on the *scoped* index model (D2/D3),
+not the global-flat one. Pack/template/remote rename are independent of ADR-0051.
 **Deciders**: maintainer + design session
 **Context docs**: [`../analysis/resource-name-storage-map.md`](../analysis/resource-name-storage-map.md)
-(the authoritative re-key surface), [`../design/design-resource-rename.md`](../design/design-resource-rename.md)
+(re-key surface §3 + identity model §12 + scoping §13), [`../design/design-resource-rename.md`](../design/design-resource-rename.md)
 (CLI signatures, shared module, steps, tests), `../../roadmap.md` §"Resource naming & init
 consistency"
 **Related ADRs**: **0031 (project rename — the identity re-key pattern this generalizes)**,
+**0051 (per-project scoping — the identity model repo/extra_mount rename builds on)**,
 0017 (join/coordinate model — repo-name ≠ project-name), 0024 D1/D2/D5 (identity = `name:`;
-sync clobber-guard; repo→projects reverse lookup), 0029 D2 (uniform destructive-confirm),
-0046 (`(G,Pc,Po)` cco-access model — write-scope gating), 0045 (running registry)
+sync clobber-guard), 0029 D2 (uniform destructive-confirm), 0046 (`(G,Pc,Po)` cco-access model —
+write-scope gating), 0045 (running registry)
 
 ---
 
@@ -35,11 +39,12 @@ Three facts force real decisions rather than five mechanical copies of `project 
    project name (ADR-0017). In the mono-repo case they *coincide* incidentally — the rename
    design must never let a rename of one axis silently rename another.
 2. **Two structural families need different mechanics.** *Index-keyed* kinds (repo,
-   extra_mount) store the name as the STATE index `paths:` **key** and reference it from
-   committed `project.yml` across possibly **many** projects (a repo may be shared). *Directory-
-   keyed* kinds (pack, template, llms) store the name as a store-directory **basename** under
-   `~/.cco`/CACHE, with provenance + tags sidecars. `remote` is a registry key. Each family
-   re-keys a different store set (analysis §3–§4).
+   extra_mount) store the name as a **per-project** index binding (ADR-0051: `project_paths[project][name]
+   → path`) whose **identity is the path**, referenced from that project's committed
+   `project.yml`. *Directory-keyed* kinds (pack, template, llms) store the name as a store-
+   directory **basename** under `~/.cco`/CACHE, with provenance + tags sidecars, and remain
+   **globally scoped** (unaffected by ADR-0051). `remote` is a registry key. Each family re-keys
+   a different store set (analysis §3–§4, §12–§13).
 3. **The CLI is dual-context (host + in-container agent, ADR-0046).** A `rename` is a *write*
    verb; it must be classified by the **config tree it writes** so the operator shim gates it
    correctly — or an agent session will either be wrongly refused or wrongly allowed to mutate
@@ -72,12 +77,14 @@ rename the project named `api`, and `cco project rename` must not touch a repo n
 when the strings coincide. The re-key surface per kind is the analysis §3 table, frozen here as
 the spec:
 
-- **repo**: index `paths:` key re-key (new `_index_rename_path`); rewrite the `projects:`
-  membership token in **every** project referencing it (`_index_repos_get_projects` →
-  `_index_set_project_repos`); rewrite `repos[].name` in each **owned, resolved** member repo's
-  `project.yml` of each of those projects. url/ref coordinate and the directory are untouched by
-  default (D4).
-- **extra_mount**: index `paths:` key re-key; rewrite `extra_mounts[].name`; if `target:` was
+- **repo** (project-scoped, path-anchored — ADR-0051 D1): re-key the **current project's**
+  binding `_index_rename_path(project, old, new)` (re-key `project_paths[project]`, membership
+  token in `projects:`); rewrite `repos[].name` in **this project's** `project.yml`. The member
+  is identified by its **path** within the project (not merely its name). **No cross-project
+  fan-out** — another project's same-named-but-different-path binding is a *different resource*
+  (untouched), and another project labeling the *same path* keeps its own independent label
+  (per-project naming). url/ref coordinate and the on-disk directory untouched by default (D4).
+- **extra_mount**: as repo, project-scoped; rewrite `extra_mounts[].name`; if `target:` was
   implicit (`/workspace/<name>`) the **container mount path changes** — surfaced in the preview.
 - **pack**: `mv ~/.cco/packs/<old>/` → `<new>`; rewrite internal `pack.yml name:`; move DATA
   provenance `packs/<old>/source`; move STATE `packs/<old>/update/`; `_tags_rename packs`;
@@ -86,17 +93,24 @@ the spec:
   `_tags_rename templates`. No committed reference to rewrite.
 - **remote**: re-key the `DATA/remotes` entry + migrate the `STATE/remotes-token` entry if present.
 
-### D3 — Strict resolution + cross-project fan-out for index-keyed kinds
+### D3 — Rename scope per family (project-local for index-keyed; ref fan-out for pack)
 
-Renaming a **repo** rewrites `repos[].name` in the `project.yml` of every project that
-references it — the repo analogue of ADR-0031's cross-*repo* fan-out. Inherit ADR-0031 D3
-verbatim: **refuse unless every affected owned member repo is resolved on this machine**; never
-touch `foreign` copies (a `project.yml` whose `name:` shows it hosts a different project — the
-ADR-0024 D2 clobber-guard). A partial rewrite would permanently diverge the un-rewritten copies
-under `cco sync`. Cross-repo git commits cannot be transactional → applied to all resolved
-copies, then **warn to commit + push + `cco sync`** each changed repo (P17). Enumeration reuses
-`_project_iter_members`; the preview lists the full blast radius (all referencing projects) before
-`_confirm_destructive`.
+**repo / extra_mount — project-local (ADR-0051 D1/D2).** Under per-project scoping the name is a
+label local to one project, so rename touches **only the current project**: its
+`project_paths[project]` binding + its `project.yml` (`repos[]`/`extra_mounts[]`). The member is
+matched by **path**. There is **no cross-project fan-out** — a same-named binding in another
+project is a *different resource*; a same-path binding in another project is that project's own
+label. Strict-resolution reduces to "the current project's member is resolved" (trivially true
+from within the repo). A multi-repo project whose `project.yml` is replicated still edits only
+that one project's copies across its member repos (the ADR-0031 D3 within-project git delegation:
+commit + push + `cco sync`, P17); other projects are never touched. *(A future `--all-projects`
+could offer to rename same-path labels elsewhere too — deferred; default is project-local.)*
+
+**pack — cross-project ref fan-out (unchanged by ADR-0051).** Pack names are globally scoped, so
+`pack rename` still rewrites `packs[].name` in **every** project referencing the pack, with the
+owned+resolved strict guard and commit/push/sync warning (`_rename_fanout_projectyml`). template/
+remote have no committed `project.yml` reference to fan out. The preview lists the blast radius
+before `_confirm_destructive`.
 
 ### D4 — Directory handling by family
 
@@ -142,12 +156,14 @@ Extract the common machinery so the five verbs are thin wrappers:
   form (`  - old`) and the mapping form (`  - name: old`), section-scoped (exit on the next
   top-level key so it never bleeds into an adjacent section). Returns changed/not-changed so
   callers can count.
-- **`_index_rename_path <old> <new>`** (in `index.sh`, the repo/extra_mount analogue of
-  `_index_rename_project`) — re-key the `paths:` entry **and** rewrite every `projects:`
-  membership token that names it.
+- **`_index_rename_path <project> <old> <new>`** (in `index.sh`, the repo/extra_mount analogue
+  of `_index_rename_project`, **project-scoped** per ADR-0051) — re-key `project_paths[project]`
+  (`get`→`set new`→`remove old`) **and** rewrite the `projects: <project>` membership token.
+  Never touches other projects.
 - **`_rename_fanout_projectyml <section> <old> <new>`** — the owned+resolved member loop
-  (strict guard, `changed[]`/`unresolved[]` collection, commit/push/sync warning) reused by
-  repo/extra_mount/pack.
+  (strict guard, `changed[]`/`unresolved[]` collection, commit/push/sync warning). Used by
+  **pack** (cross-project `packs[]` fan-out). repo/extra_mount use a single-project variant
+  scoped to the current project (D3).
 - **Migrate `_llms_rename` onto `_yaml_rename_list_ref`** and add the missing **`_tags_rename
   llms`** call (no-op-safe today since llms is not yet a tag kind — closes a latent gap for
   symmetry).

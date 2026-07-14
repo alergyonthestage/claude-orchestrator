@@ -220,6 +220,84 @@ inside the repos — **not** resolvable by `cco` (they are free-text). This is a
 a natural fit for the `init-workspace` re-analysis task (ADR-0049 §6): a "refresh references
 after rename" responsibility. Tracked there, not in the rename CLI.
 
+## 12. Identity model — path is the resource, name is a per-project label
+
+**Load-bearing principle for repo & extra_mount (the index-keyed kinds).** The *identity* of a
+repo or extra_mount is the **host path** it resolves to (the working tree / mount on disk). The
+**name is only a per-project label** for that path. Two consequences that any feature touching
+these resources must obey:
+
+- **Same path ⇒ same resource** — even under different names (aliases). Two projects that both
+  point a member at `/abs/backend` reference the *same* repo, whatever they call it.
+- **Same name + different path ⇒ different resources** — homonyms that are conceptually
+  distinct. `assets → /a/assets` in project A and `assets → /b/assets` in project B are two
+  different mounts that merely share a label.
+
+**Classification rule (for all current and future code): decide resource-sameness by PATH
+coincidence, never by NAME coincidence.** Anything that needs to know "is this the same
+resource?" — rename (which references to rewrite), `resolve`/`cco path` (dedup, divergence
+hints), a future lock/sharing/GC feature — must compare **paths**, not names. Name-based
+identity is only valid *within a single project's scope*, where the name→path map is 1:1.
+
+This principle **reverses the v1 assumption** that a bare name is a global identity (the
+global-flat index, AD5). It is formalized as the per-project name-scoping model in **ADR-0051**
+(§13) and is why repo/extra_mount `rename` becomes project-scoped and path-anchored
+(ADR-0050, revised).
+
+## 13. Per-project name scoping (ADR-0022 D2 / H7 — the deferral now firing)
+
+**v1 model (today):** the STATE index is **global-flat** — `paths: <name> → abspath` is one
+machine-global map with **AD5** ("one logical name → one absolute path per machine"), so a
+repo/extra_mount name is globally unique. This buys a real UX win **(V)**: a new project reusing
+an already-resolved name needs no path re-specification — the global binding resolves it for
+free. ADR-0022 D2 ratified global-flat for v1 and **deferred** per-project namespacing to
+"when real cross-project name collisions appear" (`lib/index.sh:23`, roadmap `Index per-project
+namespacing`).
+
+**The trigger has fired** — two collision cases that global-flat cannot represent:
+
+1. **Sharing / import**: an imported external project references a repo/extra_mount name that
+   already exists on the target machine bound to a **different** path (often a **different repo
+   `url`** — a divergence signal). Global-flat **refuses** (`cco project import` /
+   `_index_path_conflicts`), or would mis-bind.
+2. **Generic mount names, same machine**: different projects legitimately use generic
+   extra_mount names (`assets`, `resources`) pointing at **different** paths. Global-flat cannot
+   hold both — no meaningful "global default" exists for such a name.
+
+**Decision → per-project scoping (ADR-0051).** repo/extra_mount names become **scoped to their
+project** (identity = path, §12; name = per-project label). No global-default layer (a global
+default is meaningless for case 2). The UX win **(V)** is preserved not by a global binding but
+by an **add-time suggestion + disambiguation prompt**: when a name already exists in other
+projects, cco surfaces the existing binding(s) and asks **reuse that path (same resource) or
+specify a different path (homonym)** — with a warning when the on-disk `git remote` at the
+existing path diverges from the incoming coordinate `url` (case 1's signal).
+
+### 13.1 Blast-radius of the schema change (index consumers)
+
+Verified inventory of `lib/index.sh` consumers (grep across `lib/`+`bin/`):
+
+| Index helper | Sites | Under per-project scoping |
+|---|---|---|
+| `_index_path_conflicts` | 2 (`cmd-resolve.sh:537`, `migrate.sh:1039`) | **The single chokepoint** — becomes `(project, name, path)`-aware; all uniqueness enforcement flows from here |
+| `_index_get_path` | ~25 | ~17 must become project-aware; 2 stay global (**llms**, which remain globally scoped); 3 misuse it on *project* names (semantic clean-up) |
+| `_index_set_path` | ~10 | 8 must thread project context |
+| `_index_repos_get_projects` (name→projects reverse) | 3 (`cmd-forget.sh:44` shared guard, `cmd-project-query.sh:206` referenced-by, `cmd-resolve.sh:700`) | **Semantic break** — "which projects use name X" is ambiguous under scoping. Replace with a **path-based reverse lookup** ("which (project,name) bindings point to path P") — the §12 path-identity primitive |
+| `_index_list_paths` | 3 | must decide nested (all projects) vs current-project-filtered per caller |
+| `_index_remove_path` | 2 (`cmd-config.sh:282`, `cmd-forget.sh:195`) | thread project context |
+| project-level (`_index_*_project`, `_project_iter_members`, `_index_rename_project`) | many | **unchanged** — project names stay globally unique; `_project_iter_members` already takes a project arg (but its internal `_index_get_path` becomes project-scoped) |
+
+**Collision surfaces today** (all to gain the disambiguation prompt): `init`/`join` **refuse**
+on a name bound to a different path; `resolve --scan`/`migrate` **keep-existing + warn**
+(non-destructive); `project import` **refuses** on the *project* name only and **never compares
+member `url`s** (the divergence signal is unused today). Under scoping, same-name-different-project
+stops being a collision; only same-scope-different-path is.
+
+**Migration**: **breaking but deterministic** — because names are globally unique *today*, each
+existing global `paths: <name>` is losslessly re-homed under every project that lists it as a
+member (walk `projects:`), producing the per-project map; orphan paths (a `cco path set` name
+not in any project) go to an unscoped bucket or are dropped (decide in ADR-0051). Schema
+`version` bump.
+
 ---
 
 *Related: ADR-0031 (`cco project rename`), ADR-0017 (join/coordinate model), ADR-0024
