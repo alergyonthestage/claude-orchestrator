@@ -1,6 +1,6 @@
 # ADR 0050 — Resource rename: identity re-key generalized across kinds
 
-**Status**: Proposed (2026-07-14) — design phase, `feat/naming/resource-management`.
+**Status**: Accepted — **implemented 2026-07-14** (Unit B, `feat/naming/resource-management`).
 **Depends on [ADR-0051](0051-per-project-name-scoping.md)** (per-project name scoping) and is
 **sequenced after it**: repo/extra_mount rename is defined on the *scoped* index model (D2/D3),
 not the global-flat one. Pack/template/remote rename are independent of ADR-0051.

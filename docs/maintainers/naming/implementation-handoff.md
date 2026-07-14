@@ -1,9 +1,12 @@
 # Implementation Handoff — Resource Naming Workstream (Units A + B)
 
 > **For the next session.** Design is complete and committed; this is the build brief.
-> **Unit A is DONE and committed (2026-07-14) — start at Unit B (§4).** Read the Unit B
-> reference docs (§1) first, then implement test-first with atomic commits. Communicate in
-> Italian; docs/code-comments in English (user rules).
+> **✅ Units A AND B are DONE and committed (2026-07-14).** Unit B (rename verbs) shipped in
+> B.1–B.6 (`9cc10a5`…`97e3d81` + docs) — see the roadmap "Unit B" row for the commit map.
+> Nothing to implement here; remaining work is Mac-side only: `cco build` + live dogfood (esp.
+> repo/extra-mount rename — the first in-container index writers, across the ADR-0047 boundary),
+> then push + merge→develop (gated on the e2e v2 acceptance run). The sections below are kept as
+> the historical build brief.
 
 ## 0. Where you are — ▶ RESUME AT UNIT B (§4)
 

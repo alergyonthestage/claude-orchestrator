@@ -760,3 +760,30 @@ entries:
       `cco forget` shared-repo guard). No user action required; custom tooling that
       parsed ~/.local/state/cco/index directly must read the v2 nested layout (or
       regenerate with `cco resolve --scan`).
+
+  - id: 43
+    date: "2026-07-14"
+    type: additive
+    title: "Resource rename verbs: cco repo/extra-mount/pack/template/remote rename"
+    description: >
+      Five kinds that previously had no rename verb gained one, so renaming a
+      resource no longer means hand-editing internal stores: `cco repo rename
+      [<old>] <new>`, `cco extra-mount rename <old> <new>`, `cco pack rename <old>
+      <new>`, `cco template rename <old> <new>`, and `cco remote rename <old> <new>`
+      (joining the existing `cco project rename` and `cco llms rename`). Each verb is
+      kind-scoped — it re-keys only its own kind's stores, never a same-named
+      resource of another kind. repo/extra-mount rename are PROJECT-SCOPED and
+      path-anchored (a repo name is a per-project label for a host path, ADR-0051):
+      they re-key only the current project's index binding + that project's
+      project.yml entry, leaving other projects' same-named-different-path bindings
+      and same-path labels untouched; repo rename is cwd-first (omit <old> to rename
+      the repo hosting the working directory), and an optional --move-dir also moves
+      the on-disk directory (basename-gated, default No). pack rename fans out the
+      packs[] reference across every referencing project (pack names stay global) and
+      moves the store dir + DATA/STATE sidecars + tags; template/remote rename re-key
+      their stores similarly. In a wrapped-cco (in-container) session, repo/
+      extra-mount rename run at edit-project and pack/template/remote rename at
+      edit-global. Two path-input papercuts are also fixed: `cco path set`/`cco
+      resolve` now strip one pair of surrounding quotes from a pasted path
+      ('/my/repo' or "/my/repo"), and `cco path set` hints `cco repo rename` when the
+      index name no longer matches the directory basename. Additive; no migration.

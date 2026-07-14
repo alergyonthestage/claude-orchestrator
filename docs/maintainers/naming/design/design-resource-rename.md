@@ -1,6 +1,6 @@
 # Resource Rename — CLI & Implementation Design
 
-> Status: Design (2026-07-14), `feat/naming/resource-management`. Decisions in
+> Status: Implemented (2026-07-14), `feat/naming/resource-management`. Decisions in
 > [ADR-0050](../decisions/0050-resource-rename-model.md); re-key surface + identity model in
 > [analysis/resource-name-storage-map.md](../analysis/resource-name-storage-map.md) (§3, §12–§13).
 > **Sequenced after [ADR-0051](../decisions/0051-per-project-name-scoping.md)** (per-project name

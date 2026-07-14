@@ -184,9 +184,11 @@ Discovery:
 
 Resources:
   project <cmd>          Manage projects (add, validate, coords, rename, show, export, import)
-  pack <cmd>             Manage knowledge packs (create, install, update, ...)
-  llms <cmd>             Manage llms.txt framework docs (install, update, ...)
-  template <cmd>         Manage project/pack templates (create, show, install, ...)
+  repo rename [<o>] <n>  Rename a repo's per-project label (cwd-first; --move-dir)
+  extra-mount rename <o> <n>  Rename an extra_mount's per-project label
+  pack <cmd>             Manage knowledge packs (create, install, update, rename, ...)
+  llms <cmd>             Manage llms.txt framework docs (install, update, rename, ...)
+  template <cmd>         Manage project/pack templates (create, show, install, rename, ...)
 
 Tools & Sharing:
   chrome <cmd>           Manage Chrome debug session on host

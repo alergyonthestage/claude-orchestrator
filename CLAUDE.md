@@ -48,6 +48,9 @@ cco pack publish <n> [remote] # Publish a pack to a sharing repo
 cco pack export <name>       # Export a pack as a .tar.gz archive
 cco pack import <archive>    # Import a pack from a .tar.gz archive
 cco pack update <name>       # Update a pack from its source
+cco pack rename <old> <new>  # Rename a pack, re-keying stores + packs[] refs
+cco repo rename [<old>] <new># Rename a repo's per-project label (cwd-first; --move-dir)
+cco extra-mount rename <o> <n> # Rename an extra_mount's per-project label
 cco template install <url>   # Install a template from a sharing repo
 cco template publish <n> [remote] # Publish a template to a sharing repo
 cco template update <name>   # Update a template from its source (--all for all)
@@ -56,6 +59,7 @@ cco template export <name>   # Export a template as an archive
 cco template import <archive> # Import a template from an archive
 cco template show <name>     # Show template details (list via 'cco list templates')
 cco template remove <name>   # Remove a user template (previews + confirms; -y to skip)
+cco template rename <old> <new> # Rename a user template (store dir + sidecars + tags)
 cco project export <name>    # Export a project (projects share via their own code-repo remote)
 cco project import <archive> # Import an exported project
 cco project rename [<old>] <new> # Rename a project, re-keying its identity across stores
@@ -63,6 +67,7 @@ cco project show <name>      # Show project roles, referenced-by, repo-centric v
 cco remote add <n> <url>     # Register a sharing-repo remote
 cco remote add <n> <url> --token <t>  # Register with auth token
 cco remote remove <name>     # Unregister a remote
+cco remote rename <old> <new># Rename a remote (re-keys url + token)
 cco list remotes             # Show all registered remotes
 cco remote set-token <n> <t> # Save auth token for a remote
 cco remote remove-token <n>  # Remove saved token

@@ -984,6 +984,42 @@ un-rewritten members. For a single-repo project this is always satisfiable from 
 
 ---
 
+### 3.13c `cco repo rename` / `cco extra-mount rename` (ADR-0050)
+
+Rename a **repo** or **extra_mount**. Their name is a **per-project label** for a host path —
+identity is the path, the name is a label local to one project (ADR-0051) — so a rename is
+**project-scoped and path-anchored**: it re-keys **only the current project's** index binding and
+that project's `project.yml` entry. Another project that binds the *same name to a different path*
+is a different resource (untouched), and another project labeling the *same path* keeps its own
+label. This never renames a **project** of the same name (use `cco project rename` for that).
+
+```
+Usage: cco repo rename [<old>] <new>          # cwd-first when <old> omitted
+       cco extra-mount rename <old> <new>
+
+Options:
+  -y, --yes        Skip the confirmation prompt
+      --move-dir   (repo/extra-mount) also move the on-disk directory
+                   (basename must equal <old>; default is name-only)
+```
+
+- **cwd-first** (`cco repo rename <new>`): renames the repo hosting the working directory.
+  `extra-mount rename` always takes an explicit `<old> <new>`.
+- **Directory move** is opt-in: by default only the logical name is re-keyed (the working tree, its
+  git identity, and the url/ref coordinate are unchanged). Interactively you are asked whether to
+  also `mv` the directory (default No), offered only when its basename equals `<old>`; `--move-dir`
+  drives the move non-interactively. External references to the old path are **not** updated.
+- **Strict**: the member must be resolved on this machine; multi-repo projects rewrite the entry in
+  every owned member's `project.yml` copy — commit + push each and run `cco sync` afterwards.
+
+**Renaming pack / template / remote** — `cco pack rename <old> <new>` re-keys the pack store dir
+(+ `pack.yml name:`), its DATA/STATE sidecars and tags, and fans out the `packs[]` reference across
+**every** referencing project (pack names stay globally scoped; strict — all referencing projects
+must be resolved). `cco template rename` / `cco remote rename` re-key their user-template store /
+url-registry+token similarly. All are kind-scoped: a rename touches only its own kind's stores.
+
+---
+
 ### 3.14 `cco project validate [name]`
 
 **Share-readiness validation**: check that a project's config is safe to share via its repo
@@ -1130,8 +1166,9 @@ in the project-less `unscoped:` bucket. A logical name maps to one absolute path
 (different projects may bind the same name to different paths — ADR-0051); only a same-project
 same-name-different-path clash is refused. If the name diverges from the directory basename,
 `cco path set` prints a hint (`cco repo rename` aligns them). The index stores **absolute paths
-only**: every write is normalized (`~`/`$HOME` expanded) and a value that cannot be made absolute
-is refused. `cco path list` labels each row with its owning project (`[project] name → path`),
+only**: every write is normalized (`~`/`$HOME` expanded, and one pair of surrounding quotes
+stripped so a pasted `'/my/repo'` or `"/my/repo"` resolves to the literal directory) and a value
+that cannot be made absolute is refused. `cco path list` labels each row with its owning project (`[project] name → path`),
 normalizes each value for display, and flags any stale non-absolute entry (e.g. a legacy `@local`)
 as `⚠ malformed`; run `cco update` (which normalizes the index) or `cco resolve --scan <dir>` to
 clean it.
