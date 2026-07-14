@@ -656,6 +656,18 @@ _index_paths_get_bindings() {
     done < <(_index_pp_dump_all)
 }
 
+# Name-based cross-project lookup (ADR-0051 D4): echo every project_paths binding
+# for a logical <name> across ALL projects, one "project<TAB>path" line each. The
+# unscoped bucket is excluded (project-less). Powers add-time disambiguation — a
+# name bound in OTHER projects is a homonym-or-reuse decision, not a collision.
+# Usage: _index_bindings_for_name <name>
+_index_bindings_for_name() {
+    local want="$1" proj name path
+    while IFS=$'\t' read -r proj name path; do
+        [[ "$name" == "$want" ]] && printf '%s\t%s\n' "$proj" "$path"
+    done < <(_index_pp_dump_all)
+}
+
 # Echo the space-separated member repo names of a <project>, or empty.
 _index_get_project_repos() { _index_section_get projects "$1"; }
 

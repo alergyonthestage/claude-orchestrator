@@ -275,6 +275,93 @@ _declared_unresolved_extra_mounts() {
     done < <(yml_get_mount_coords "$project_yml" 2>/dev/null)
 }
 
+# Echo the git origin url of the repo at <path> (empty when not a git repo or no
+# `origin` remote). Derived on demand for the A.4 url-divergence signal; no url is
+# ever stored in the index (ADR-0051 D4). Usage: _resolve_git_origin <path>
+_resolve_git_origin() {
+    git -C "$1" remote get-url origin 2>/dev/null || true
+}
+
+# Echo the DISTINCT existing paths that <name> is already bound to in projects
+# OTHER than <self> (dedup by path; only on-disk paths). The reuse candidates for
+# add-time disambiguation (ADR-0051 D4). Usage: _resolve_name_reuse_candidates <name> <self>
+_resolve_name_reuse_candidates() {
+    local want="$1" self="$2" proj path s dup
+    local -a seen=()
+    while IFS=$'\t' read -r proj path; do
+        [[ "$proj" == "$self" ]] && continue
+        [[ -z "$path" ]] && continue
+        _path_exists "$path" || continue
+        dup=false
+        for s in ${seen[@]+"${seen[@]}"}; do [[ "$s" == "$path" ]] && { dup=true; break; }; done
+        $dup && continue
+        seen+=("$path")
+        printf '%s\n' "$path"
+    done < <(_index_bindings_for_name "$want")
+}
+
+# Render the reuse menu for <name> to STDOUT: one "[i] <path>" line per distinct
+# other-project candidate, each repos line flagged with a ⚠ when its on-disk git
+# origin diverges from the incoming <url> ("probably a different resource").
+# Pure (no read/no prompt) so the A.4 signal — the candidate set + the divergence
+# warning — is unit-testable. Exit: 0=at least one candidate (menu emitted),
+# 1=none. Usage: _resolve_reuse_menu <name> <section> <url> <self>
+_resolve_reuse_menu() {
+    local name="$1" section="$2" url="$3" self="$4"
+    local -a cands=()
+    local c
+    while IFS= read -r c; do [[ -n "$c" ]] && cands+=("$c"); done \
+        < <(_resolve_name_reuse_candidates "$name" "$self")
+    [[ ${#cands[@]} -eq 0 ]] && return 1
+    echo "  '${name}' is already bound in other projects on this machine:"
+    local i=1 origin line
+    for c in "${cands[@]}"; do
+        line="    [$i] $c"
+        if [[ "$section" == "repos" && -n "$url" ]]; then
+            origin=$(_resolve_git_origin "$c")
+            [[ -n "$origin" && "$origin" != "$url" ]] \
+                && line="$line  ⚠ git origin '$origin' ≠ this project's '$url' — probably a different resource"
+        fi
+        echo "$line"
+        i=$((i + 1))
+    done
+    return 0
+}
+
+# Add-time disambiguation prompt (ADR-0051 D4). When <name> is already bound in
+# OTHER projects, surface those existing paths (via _resolve_reuse_menu) and let
+# the user REUSE one (the same resource — the explicit (V) convenience) or fall
+# through to a fresh path (a homonym). TTY-only (the caller gates); never auto-
+# reuses (that would resurrect the rejected global-default layer). Output: reused
+# abs path (stdout). Exit: 0=reuse (path emitted), 1=no candidates OR the user
+# wants a different path, 2=quit.
+_resolve_disambiguate() {
+    local name="$1" section="$2" url="$3" self="$4"
+    local menu; menu=$(_resolve_reuse_menu "$name" "$section" "$url" "$self") || return 1
+    local -a cands=()
+    local c
+    while IFS= read -r c; do [[ -n "$c" ]] && cands+=("$c"); done \
+        < <(_resolve_name_reuse_candidates "$name" "$self")
+
+    echo "" >&2
+    printf '%s\n' "$menu" >&2
+    echo "  Reuse one of these paths (the same resource), or specify a different path (a homonym)." >&2
+    echo "    [1-${#cands[@]}] reuse that path    [d] specify a different path    [q] quit" >&2
+    printf "  Choice: " >&2
+    local reply
+    read -r reply < /dev/tty
+    case "$reply" in
+        [Dd]) return 1 ;;
+        [Qq]) return 2 ;;
+        *[!0-9]*|'') warn "Invalid choice '$reply' — specify a different path"; return 1 ;;
+        *)
+            if [[ "$reply" -ge 1 && "$reply" -le ${#cands[@]} ]]; then
+                printf '%s\n' "${cands[$((reply - 1))]}"; return 0
+            fi
+            warn "Choice '$reply' out of range — specify a different path"; return 1 ;;
+    esac
+}
+
 # Single-entry resolution: look up <name> in the STATE index; if unresolved or
 # its path is gone, prompt (reusing _prompt_for_path) and store the result in
 # the index. No project.yml write (AD3 — project.yml has no path).
@@ -288,6 +375,21 @@ _resolve_entry_index() {
     if [[ -n "$existing" ]] && _path_exists "$existing"; then
         echo "$existing"
         return 0
+    fi
+
+    # A.4 add-time disambiguation (ADR-0051 D4): if <name> already lives in OTHER
+    # projects, offer to reuse one of those paths before prompting for a new one.
+    # Under scoping a cross-project name match is NOT a collision — it is a reuse-
+    # or-homonym choice, made explicit here. TTY-gated; a headless run falls
+    # straight through to _prompt_for_path (which returns 2 with no terminal).
+    if _cco_have_tty; then
+        local _reuse _drc=0
+        _reuse=$(_resolve_disambiguate "$name" "$section" "$url" "$proj") || _drc=$?
+        case $_drc in
+            0) _index_set_path "$proj" "$name" "$_reuse"; echo "$_reuse"; return 0 ;;
+            2) return 2 ;;
+            # 1 → no candidates, or the user chose a different path → normal prompt
+        esac
     fi
 
     local label="Repository"

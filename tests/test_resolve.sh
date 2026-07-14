@@ -517,3 +517,110 @@ repos:
     [[ "$out" == "$tmp/hostrepo" ]] \
         || fail "by-name resolution must relocate the unit after repeated resolve, got: $out"
 }
+
+# ── A.4 add-time disambiguation (ADR-0051 D4) ────────────────────────────────
+# When a repo/mount name already exists in OTHER projects, resolution surfaces the
+# existing paths and lets the user REUSE one (same resource) or specify a fresh
+# path (a homonym). A cross-project name match is a reuse-or-homonym choice, not a
+# collision. url divergence (git origin ≠ the incoming coordinate) is flagged.
+
+_da_src() {
+    source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/yaml.sh";   source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/index.sh";  source "$REPO_ROOT/lib/local-paths.sh"
+    source "$REPO_ROOT/lib/cmd-resolve.sh"
+}
+
+test_resolve_disambiguate_lists_other_project_bindings() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/be-a" "$tmp/be-b"
+    seed_index_path backend "$tmp/be-a" proj-a
+    seed_index_path backend "$tmp/be-b" proj-b
+
+    CCO_OUTPUT=$( _da_src; _resolve_reuse_menu backend extra_mounts "" proj-c )
+    assert_output_contains "$tmp/be-a" || return 1
+    assert_output_contains "$tmp/be-b" || return 1
+    assert_output_contains "already bound in other projects" || return 1
+}
+
+test_resolve_disambiguate_excludes_self_project() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/be-a" "$tmp/be-b"
+    seed_index_path backend "$tmp/be-a" proj-a
+    seed_index_path backend "$tmp/be-b" proj-b
+
+    CCO_OUTPUT=$( _da_src; _resolve_name_reuse_candidates backend proj-a )
+    assert_output_contains "$tmp/be-b" || return 1
+    if printf '%s' "$CCO_OUTPUT" | grep -qF "$tmp/be-a"; then
+        fail "reuse candidates must exclude the querying project's own binding"
+    fi
+}
+
+test_resolve_disambiguate_flags_url_divergence() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/be-a"
+    seed_index_path backend "$tmp/be-a" proj-a
+    git -C "$tmp/be-a" init -q
+    git -C "$tmp/be-a" remote add origin https://example.com/OTHER.git
+
+    CCO_OUTPUT=$( _da_src; _resolve_reuse_menu backend repos https://example.com/backend.git proj-c )
+    assert_output_contains "probably a different resource" || return 1
+    assert_output_contains "OTHER.git" || return 1
+}
+
+test_resolve_disambiguate_no_candidates_returns_1() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local rc=0
+    ( _da_src; _resolve_reuse_menu loner repos "" proj-c ) >/dev/null || rc=$?
+    [[ $rc -eq 1 ]] || fail "a name bound in no other project must yield no menu (rc=1, got $rc)"
+}
+
+test_resolve_reuse_binds_the_chosen_path() {
+    # Integration: on a TTY, _resolve_entry_index offers reuse first; when the user
+    # picks an existing other-project path it is bound into THIS project's scope
+    # (the explicit (V) convenience) without touching project.yml.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/shared"
+    seed_index_path backend "$tmp/shared" proj-a
+    _rsv_unit "$tmp" hostrepo 'name: demo
+repos:
+  - name: hostrepo
+extra_mounts:
+  - name: backend
+    target: /workspace/backend'
+    seed_index_path hostrepo "$tmp/hostrepo" demo
+
+    (
+        _da_src
+        _cco_have_tty()        { return 0; }
+        # Stub the interactive picker: user reuses proj-a's existing path.
+        _resolve_disambiguate() { printf '%s\n' "$tmp/shared"; return 0; }
+        _resolve_unit "$tmp/hostrepo" >/dev/null 2>&1
+    )
+
+    local got
+    got=$( _da_src; _index_get_path demo backend )
+    [[ "$got" == "$tmp/shared" ]] \
+        || fail "reuse must bind demo/backend to the chosen path, got: '$got'"
+}
+
+test_resolve_homonym_mounts_coexist() {
+    # ADR-0051 D4 case 2: two projects with a generic 'assets' mount at DIFFERENT
+    # paths coexist — each keeps its own scoped binding, never merged.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/a-assets" "$tmp/b-assets"
+    seed_index_path assets "$tmp/a-assets" proj-a
+    seed_index_path assets "$tmp/b-assets" proj-b
+
+    local pa pb
+    pa=$( _da_src; _index_get_path proj-a assets )
+    pb=$( _da_src; _index_get_path proj-b assets )
+    [[ "$pa" == "$tmp/a-assets" ]] || fail "proj-a/assets must stay its own path, got: '$pa'"
+    [[ "$pb" == "$tmp/b-assets" ]] || fail "proj-b/assets must stay its own path, got: '$pb'"
+}
