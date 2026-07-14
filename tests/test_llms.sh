@@ -467,3 +467,41 @@ test_llms_remove_referenced_needs_force() {
     run_cco llms remove svelte --force
     assert_dir_not_exists "$CCO_LLMS_DIR/svelte"
 }
+
+# ── llms rename (ADR-0050 B.3d — now on the shared _yaml_rename_list_ref) ──
+
+test_llms_rename_rewrites_scalar_and_mapping_refs() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _setup_llms_env "$tmp"
+    create_llms_entry "$tmp" oldkit
+
+    # A project referencing the llms in SCALAR form.
+    create_project "$tmp" app "$(cat <<YAML
+name: app
+description: "t"
+repos:
+  - name: dummy-repo
+llms:
+  - oldkit
+YAML
+)"
+    # A pack referencing the SAME llms in MAPPING form — the case the retired
+    # scalar-only _llms_rename_in_yaml silently skipped.
+    create_pack "$tmp" mypack "$(cat <<YAML
+name: mypack
+llms:
+  - name: oldkit
+    description: "idx"
+YAML
+)"
+
+    run_cco llms rename oldkit newkit || fail "rename failed: $CCO_OUTPUT" || return 1
+
+    assert_dir_exists "$CCO_LLMS_DIR/newkit" || return 1
+    assert_dir_not_exists "$CCO_LLMS_DIR/oldkit" || return 1
+    # scalar ref rewritten
+    assert_file_contains "$(host_cco_dir "$tmp" app)/project.yml" "  - newkit" || return 1
+    # mapping ref rewritten (the fixed latent bug)
+    assert_file_contains "$CCO_PACKS_DIR/mypack/pack.yml" "  - name: newkit" || return 1
+    assert_file_not_contains "$CCO_PACKS_DIR/mypack/pack.yml" "name: oldkit" || return 1
+}

@@ -546,8 +546,13 @@ EOF
     [[ -d "$new_dir" ]] && die "LLMs '$new_name' already exists."
 
     mv "$old_dir" "$new_dir"
+    # Carry the per-user tag binding (no-op today — llms are not taggable — kept
+    # for symmetry with the other directory-keyed kinds; ADR-0050 D6).
+    _tags_rename llms "$old_name" "$new_name"
 
-    # Update references in packs and projects (only in llms: sections).
+    # Update references in packs and projects (only in llms: sections). The shared
+    # rewriter (lib/rename.sh) handles both the scalar (`- name`) and mapping
+    # (`- name: name`) llms forms, section-scoped (ADR-0050 D6).
     local updated_refs=0
     # Packs: flat store under PACKS_DIR.
     if [[ -d "$PACKS_DIR" ]]; then
@@ -555,7 +560,7 @@ EOF
         for pdir in "$PACKS_DIR"/*/; do
             [[ ! -d "$pdir" ]] && continue
             [[ ! -f "${pdir}pack.yml" ]] && continue
-            if _llms_rename_in_yaml "${pdir}pack.yml" "$old_name" "$new_name"; then
+            if _yaml_rename_list_ref "${pdir}pack.yml" llms "$old_name" "$new_name"; then
                 ((updated_refs++))
             fi
         done
@@ -563,7 +568,7 @@ EOF
     # Projects: decentralized, enumerated via the STATE index (P5).
     local pyml
     while IFS=$'\t' read -r _ _ pyml; do
-        if _llms_rename_in_yaml "$pyml" "$old_name" "$new_name"; then
+        if _yaml_rename_list_ref "$pyml" llms "$old_name" "$new_name"; then
             ((updated_refs++))
         fi
     done < <(_project_foreach)
@@ -630,26 +635,10 @@ EOF
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
-# Replace an llms name only within the llms: section of a YAML file.
-# Returns 0 if a replacement was made, 1 otherwise.
-_llms_rename_in_yaml() {
-    local file="$1" old="$2" new="$3"
-    # Only proceed if the file has an llms: section referencing the old name
-    awk -v old="$old" '
-        /^llms:/ { in_llms=1 }
-        in_llms && /^[^ ]/ && !/^llms:/ { in_llms=0 }
-        in_llms && $0 ~ "^  - " old "$" { found=1 }
-        END { exit found ? 0 : 1 }
-    ' "$file" || return 1
-
-    awk -v old="$old" -v new="$new" '
-        /^llms:/ { in_llms=1 }
-        in_llms && /^[^ ]/ && !/^llms:/ { in_llms=0 }
-        in_llms && $0 == "  - " old { print "  - " new; next }
-        { print }
-    ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
-    return 0
-}
+# NOTE: the former _llms_rename_in_yaml (scalar-only, 2-space-fixed llms-section
+# rewriter) is retired — _llms_rename now uses the shared _yaml_rename_list_ref
+# (lib/rename.sh), which also handles the mapping (`- name: <n>`) llms form that
+# the old helper silently skipped (ADR-0050 D6).
 
 # Extract framework name from URL.
 # Uses pure bash parameter expansion for macOS/GNU portability.
