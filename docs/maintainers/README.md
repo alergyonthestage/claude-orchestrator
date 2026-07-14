@@ -23,6 +23,7 @@ directories (see the convention below).
 | **security** | Threat model, the security design, and the Docker socket proxy design. | [security/design/](security/design/) · [security/analysis/](security/analysis/) |
 | **internal-projects** | The framework-internal sessions shipped with cco: the tutorial and the config-editor. | [internal-projects/tutorial/](internal-projects/tutorial/) · [internal-projects/config-editor/](internal-projects/config-editor/) |
 | **cli** | The `cco` CLI as a **dual-context surface** (host **and** in-container agent): the environment-awareness principle, verb gating vs output scoping, and the unified env & access-scope layer. Cross-cutting — every verb inherits it. | [cli/design/design-cli-environment-awareness.md](cli/design/design-cli-environment-awareness.md) · [cli/decisions/](cli/decisions/) |
+| **naming** | Resource naming & rename: where each resource's name/ID is stored, the identity re-key model (generalizing `cco project rename`), and mono- vs multi-repo naming. | [naming/analysis/resource-name-storage-map.md](naming/analysis/resource-name-storage-map.md) |
 | **engineering** | How we build cco: coding conventions, testing, and review playbooks. | [engineering/guides/coding-conventions.md](engineering/guides/coding-conventions.md) · [engineering/guides/testing.md](engineering/guides/testing.md) · [engineering/guides/review-playbooks.md](engineering/guides/review-playbooks.md) |
 | **reviews** | Cross-cutting historical architecture and progress reviews. | [reviews/](reviews/) |
 

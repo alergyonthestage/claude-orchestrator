@@ -287,3 +287,92 @@ line ~282), and `cco <command> --help`/`-h` work per-subcommand, but a top-level
 (`cco --version` matches `package.json`, `cco --help` prints usage). No migration, no template change.
 
 **Effort**: Low.
+
+## FI-12: Retire `cco stop` — stop belongs to session exit
+
+**Status**: 📝 Note — to analyze (surfaced 2026-07-14 during the resource-naming work).
+
+**Context**: `cco stop [project]` is effectively unused. A session already terminates the
+normal way: the user runs `/exit` in Claude and, once the last tmux pane exits, the `cco`
+process (the `docker compose run --rm` foreground) ends and the container is removed. Nobody
+runs `cco stop`. Worse, its detection is unreliable: with a session actually running, an
+external `cco stop <project>` reports `No running session for '<project>'` and the project
+keeps running — the lookup does not find the live session (likely because identity is the
+compose `cco.project` label on a `run --rm`-discarded container, not a container name — see
+the session-identity note in the access-model work).
+
+**Direction to evaluate**: remove `cco stop` and assign stop responsibility entirely to the
+`/exit` + tmux-exit path (which is already what happens). Before removing, verify no
+teardown step (network `cc-<project>`, generated compose/overlay cleanup, running-registry
+marker per ADR-0045) depends on `cco stop` being called — if so, re-home that teardown onto
+the entrypoint/exit path or the `cco start` reconcile backstop. If a detection fix is cheaper
+than removal, at minimum make the running-session lookup label-based so it stops matching by
+container name.
+
+**Type & tracking**: verb removal → breaking CLI surface change (deprecation + changelog);
+possibly a migration only if teardown responsibilities move. **Effort**: Low–Med.
+
+## FI-13: `cco deinit` — explicit, symmetric de-initialization
+
+**Status**: 📝 Note — to analyze (surfaced 2026-07-14).
+
+**Context**: there is no verb that is the clean inverse of `cco init` with an explicit
+"de-initialize this project" intent. `cco forget` already performs the underlying action
+(remove internal references to a project; `--purge` also removes `<repo>/.cco`), but its
+intent/scope differs: `forget` is **not cwd-based** (takes a project name), and without
+`--purge` it leaves `<repo>/.cco` in place. So the operation exists but the UX/verb for
+"undo my init here" is missing — asymmetric with `init`.
+
+**Direction to evaluate**: a `cco deinit` (cwd-based) that resolves the current repo's
+project and wraps `forget --purge` (with the standard preview + confirm), giving init a clear
+symmetric counterpart. Decide whether `deinit` should be a thin alias/wrapper or whether
+`forget` itself grows a cwd-first form; keep one canonical implementation. Relates to the
+resource-naming/lifecycle consistency theme.
+
+**Type & tracking**: additive verb (or `forget` cwd-first form) → changelog; no schema
+change. **Effort**: Low.
+
+## FI-14: Unified credential/secret vault for agent access
+
+**Status**: 📝 Note — major future feature, to analyze (surfaced 2026-07-14).
+
+**Context**: today secrets reach a session only via the per-repo `secrets.env` (host-edited,
+masked from every config mount) and `GITHUB_TOKEN`/`gh` for git+GitHub. There is no unified,
+explicit management of credentials, keys, or passwords that agents (or cco-integrated tools)
+may need — e.g. gh tokens, repo-access keys, or logins for portals/sites an agent drives in a
+browser.
+
+**Direction to evaluate**: a dedicated, access-controlled vault that unifies management of
+secrets of various kinds for agent/tool use, integrated with the existing access model
+(`cco_access`/`claude_access`, the setuid privilege boundary of ADR-0047, and the secret-file
+masking already in place). Most important near-term use: repo + `gh` access. Design guidance
+to capture: recommend **dedicated per-agent accounts** for external platforms so audit trails
+stay faithful and permissions stay granular per access/operation. Cross-reference the archived
+`docs/archive/vault/` design material (the old centralized-vault direction) for prior art —
+this is a different, agent-credential-oriented scope, not that vault.
+
+**Type & tracking**: large, multi-ADR feature; security-sensitive → requires its own analysis
++ design tree before any code. **Effort**: High.
+
+## FI-15: Resource locking for concurrent sessions sharing a repo
+
+**Status**: 📝 Note — to analyze (surfaced 2026-07-14). **Related**: Sprint 10 — Git worktree
+isolation (#6) in `roadmap.md`.
+
+**Context**: two different projects that reference the **same** repo (the supported
+one-repo-multiple-projects model) can both be launched with `cco start` — the operation is
+permitted with no guard. Their agents then potentially write the same files in the same host
+repo/mount, risking concurrent-edit conflicts and corruption, with nothing protecting them.
+The planned worktree isolation (Sprint 10) is the mechanism that would let multiple sessions
+safely share a repo (each on its own `cco/<project>` worktree/branch), but until it lands the
+shared-repo case is unprotected.
+
+**Direction to evaluate**: a resource-locking mechanism over the host directories/repos/mounts
+a started project holds — e.g. an advisory lock (tied to the ADR-0045 running-registry) that,
+on `cco start`, detects another live session already holding an overlapping repo/mount and
+either refuses, warns, or requires worktree isolation. Frame worktrees (Sprint 10) as the
+**enabler** for safe concurrent sharing and the lock as the **guard** for the un-isolated case.
+Needs proper analysis, evaluation, and design — captured here as a note to keep in mind.
+
+**Type & tracking**: safety/correctness feature; couples with Sprint 10 → design together.
+**Effort**: Med–High.
