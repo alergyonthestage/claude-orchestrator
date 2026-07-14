@@ -338,3 +338,57 @@ test_init_name_prompt_not_swallowed() {
         || fail "B-DF2 regression: the init name prompt read swallows stderr (2>/dev/null hides the prompt)"
     return 0
 }
+
+# ── repos[] seeding (the hosting repo is seeded into project.yml) ─────
+# `cco init` runs inside a repo that becomes the project's sole member, so it
+# seeds that repo into repos[] (machine-agnostic coordinate) + binds it in the
+# index keyed by its LOGICAL name. Without this, repos[] shipped empty and
+# `cco start` mounted nothing (init/start inconsistency).
+
+test_init_seeds_current_repo_into_repos() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    # A non-git repo: the repo name defaults to the dir basename, no url derived.
+    local repo; repo=$(_init_repo "$tmpdir" backend)
+    ( cd "$repo" && run_cco init --name app --lang "English" )
+    # repos[] is no longer the empty stub, and the hosting repo is seeded by
+    # its basename as the logical name.
+    assert_file_not_contains "$repo/.cco/project.yml" "repos: []"
+    assert_file_contains "$repo/.cco/project.yml" "- name: backend"
+}
+
+test_init_seeds_repo_url_from_origin() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local repo; repo=$(_init_repo "$tmpdir" backend)
+    # A git repo with an origin remote → the coordinate url is derived from it.
+    git -C "$repo" init -q
+    git -C "$repo" remote add origin "git@github.com:acme/backend.git"
+    ( cd "$repo" && run_cco init --name app --lang "English" )
+    assert_file_contains "$repo/.cco/project.yml" "- name: backend"
+    assert_file_contains "$repo/.cco/project.yml" "url: git@github.com:acme/backend.git"
+}
+
+test_init_repo_name_override_and_index_keying() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    # --repo-name is an axis independent of --name: the member logical name.
+    local repo; repo=$(_init_repo "$tmpdir" somedir)
+    ( cd "$repo" && run_cco init --name app --repo-name api --lang "English" )
+    assert_file_contains "$repo/.cco/project.yml" "- name: api"
+    local index="$CCO_STATE_HOME/index"
+    # Membership is keyed by the REPO name (project 'app' → member 'api'), and the
+    # path is bound under the repo name — NOT the project name.
+    assert_file_contains "$index" 'app: "api"'
+    assert_file_contains "$index" 'api: "'
+}
+
+# B-DF2 (repo-name prompt): same stderr-swallow guard as the project-name read.
+test_init_repo_name_prompt_not_swallowed() {
+    local line
+    line=$(grep -n 'Repo name \[\$base\]' "$REPO_ROOT/lib/cmd-init.sh" | head -1)
+    [[ -n "$line" ]] || fail "could not find the init repo-name prompt read"
+    [[ "$line" != *"2>/dev/null"* ]] \
+        || fail "B-DF2 regression: the init repo-name prompt read swallows stderr (2>/dev/null hides the prompt)"
+    return 0
+}

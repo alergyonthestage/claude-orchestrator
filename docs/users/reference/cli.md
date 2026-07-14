@@ -50,14 +50,18 @@ See [CONTRIBUTING.md](../../../CONTRIBUTING.md) for the full dev/release workflo
 
 `cco init` is the **single project entry verb**. It is idempotent: it ensures the
 personal global config store (`~/.cco/`) exists, then scaffolds a clean `<repo>/.cco/`
-in the current repo and registers it in the machine-local index.
+in the current repo, **seeds that repo into the project's `repos[]`**, and registers
+it in the machine-local index.
 
 ```
-Usage: cco init [--name <project>] [--template <name>] [--force]
+Usage: cco init [--name <project>] [--repo-name <name>] [--template <name>] [--force]
                 [--migrate <project> [--sync]] [--sync] [--lang <language>]
 
 Options:
   --name <project>     Project name (default: prompt with the repo basename)
+  --repo-name <name>   Logical name of the current repo, seeded into repos[]
+                       (default: prompt with the repo basename). An axis
+                       independent of --name.
   --template <name>    Scaffold from project template <name> (user store first,
                        then framework defaults) instead of the base template
   --force              Overwrite an existing <repo>/.cco/ scaffold
@@ -83,8 +87,14 @@ Examples:
    lives in `~/.cco/`. This step is idempotent — an existing `~/.cco/` is left untouched.
 2. **Scaffold `<repo>/.cco/`** — write a clean `project.yml` (logical names + coordinates),
    `secrets.env.example`, `.gitignore`, and the `claude/` config tree in the current repo.
-3. **Register in the index** — record the repo's logical name → absolute path in the
-   machine-local STATE index (`<state>/cco/index`).
+3. **Seed the current repo into `repos[]`** — the repo `cco init` runs in becomes the
+   project's first member: its logical name (default the dir basename, or `--repo-name`)
+   and, when the repo has an `origin` remote, its `url` coordinate (derived from
+   `git remote get-url origin`) are written into `project.yml` `repos[]`. Without this the
+   list would ship empty and `cco start` would mount nothing.
+4. **Register in the index** — record the repo's logical name → absolute path in the
+   machine-local STATE index (`<state>/cco/index`), with project membership keyed by that
+   repo name (the same coordinate model as `cco join`).
 
 `cco init`, `cco init --migrate`, and `cco join` are **mutually exclusive** entry points
 for a repo: `cco init` = clean config; `cco init --migrate <old>` = bring a legacy vault

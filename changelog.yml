@@ -718,3 +718,18 @@ entries:
       (ro|project|write) governing their nested .claude/.cco, which is now detected
       recursively (monorepos, extra_mounts), read-only by default. Requires a rebuilt
       image (`cco build`).
+
+  - id: 41
+    date: "2026-07-14"
+    type: additive
+    title: "cco init seeds the current repo into project.yml repos[] (+ --repo-name)"
+    description: >
+      `cco init` now seeds the repo it runs in into the project's repos[] instead of
+      leaving the list empty, so `cco start` mounts it without a manual project.yml
+      edit. The repo's logical name defaults to the directory basename (prompted, or
+      set with the new --repo-name flag) and is an axis independent of the project
+      name (--name). Its coordinate url is derived from `git remote get-url origin`
+      when present, else left empty to fill in later. The machine-local index binds
+      the repo under its logical name (project membership keyed by repo name), the
+      same coordinate model as `cco join`. Existing projects are unaffected; this
+      only changes what a fresh `cco init` scaffolds.
