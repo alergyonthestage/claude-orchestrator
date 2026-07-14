@@ -549,6 +549,58 @@ new ADR (refining 0036/0044/0046) + living `design.md` once validated.
 | **Unit A — per-project name scoping (H7)** | ✅ DONE (2026-07-14) — A.1–A.5 committed, suite 1259/7 | Make repo/extra_mount names **per-project scoped**; identity = **path**, name = per-project label ([ADR-0051](naming/decisions/0051-per-project-name-scoping.md), supersedes ADR-0022 D2). **A.4 ✅ `5b7a7ed`** (add-time disambiguation: reuse-vs-homonym prompt on the resolve/start surface + git-origin/url divergence flag; `_index_bindings_for_name`, pure `_resolve_reuse_menu`, TTY `_resolve_disambiguate`; 6 tests). **A.5 ✅ `8ac2ee3`** (changelog #42 BREAKING index-v2 + `cli.md` resolve/path per-project model + disambiguation + `CLAUDE.md` + `lib/index.sh` header). **A.1 ✅ COMMITTED `9b3a38d`** (pure-addition v2 nested `project_paths` primitives + `_index_pp_conflicts` AD5′ chokepoint + `_index_paths_get_bindings` path reverse-lookup; 16 tests; 1254/7). **A.3+cutover+A.2 ✅ COMMITTED `fbb36fe`** (maintainer-approved single-cutover sequencing since the index is an atomic unit; delta-green can't hold half-way): v2 schema flip + `_index_get/set/remove_path`+`_index_path_conflicts`+`_index_name_for_path` project-scoped (v2 pp + **unscoped escape-hatch fallback** + v1 transitional read), `_index_get_path_any` for cross-project by-name (`--from`/config-editor `--repo`), ~32 call-sites rethreaded, `_index_repos_get_projects`→path-based (removed), **transparent v1→v2 migration** (`_index_migrate_if_needed`, first host-side write, no `migrations/` script / no `cco update`), migration 016 rewritten v2-aware. **Delta-green: suite 1253/7** (the 7 = pre-existing in-container env artifacts — 6 `test_as_list_*` operator-mode store-resolution + `test_paths_symlink` — unchanged from the A.1 baseline; verified via a full baseline vs cutover run, zero net-new failures). The cutover tail included **3 real production bugs** (not just fixtures): `_cv_prune_record` empty-field TAB collapse (orphan unscoped index paths never pruned), `path set` non-zero exit on a not-yet-on-disk pin, and `resolve --scan` not binding shared members under referencing projects. **Unit A COMPLETE** (A.1 primitives → A.2 migration → A.3 cutover → A.4 disambiguation → A.5 docs). ⏳ pre-merge (from the Mac): `cco build` + push both branches; **Unit B (rename verbs) is next**. Refs: [ADR-0051](naming/decisions/0051-per-project-name-scoping.md) · [analysis §12–§13](naming/analysis/resource-name-storage-map.md) · [handoff](naming/implementation-handoff.md). |
 | **Unit B — resource rename verbs** | ✅ DONE (2026-07-14) — B.1–B.6 committed, suite 1259/7 baseline held. B.1 `lib/rename.sh` (`9cc10a5`), B.2 `_index_rename_path` (`dab12cc`), B.3 verbs — repo/extra-mount `3158358`, pack/template `370a438`, remote `1c0c072`, llms align `34053f7`, B.4 operator gating `dbbc98d`, B.5 quote-strip `97e3d81`, B.6 docs (this commit). Per-kind `rename` for the five kinds that lacked it (**repo · extra-mount · pack · template · remote**; `project`/`llms` already existed): repo/extra-mount project-scoped + path-anchored (cwd-first, opt-in `--move-dir`), pack cross-project `packs[]` fan-out, template/remote store re-key. UX: `_resolve_to_abs` quote-strip + the `path set` divergence hint (already shipped A.4). Latent bug closed: `llms rename` now rewrites the mapping-form ref too. **Pre-merge (Mac): `cco build` + live dogfood (esp. the first in-container index-writing verbs repo/extra-mount rename across the ADR-0047 boundary — verify the elevated project.yml write), then push + merge→develop (gated on e2e v2).** **Decisions** ([ADR-0050](naming/decisions/0050-resource-rename-model.md), generalizes ADR-0031, **builds on ADR-0051**): per-kind verbs (no top-level `cco rename`); kind-scoped re-key; **repo/extra_mount rename is project-scoped + path-anchored** (no cross-project fan-out); pack keeps `packs[]` cross-project fan-out (ADR-0031 D3 strictness); repo/extra_mount dir-move opt-in (basename-gated, default No); shared `lib/rename.sh`; operator-shim gating (repo→edit-project, pack/template/remote→edit-global). Refs: [design](naming/design/design-resource-rename.md) · [storage map](naming/analysis/resource-name-storage-map.md). Changelog additive, migration none. |
 
+### Session persistence & reattach (`cco attach`) — 🔍 NEEDS DESIGN (proposed 2026-07-14)
+
+**Goal.** When a `cco start` session is interrupted abruptly (IDE/terminal closed without a clean
+`/exit`), the Docker container should be able to **keep running** so the user can **resume** it with a
+dedicated `cco attach <project>`, instead of losing in-progress work.
+
+**Why the architecture already supports it.** The container runs `tmux` with `claude` inside it —
+tmux detach/reattach is native, so the session state survives a dropped client. Sessions already
+carry a `cco.project` label, and the **running registry (ADR-0045)** already tracks running sessions
+(marker lifecycle owned by `cco start`, host-side **reconcile reaper** for orphans). So the substrate
+for "find the running container + reattach + clean up orphans" is largely in place.
+
+**The blocker.** `cco start` launches `docker compose run --rm --service-ports claude` — foreground +
+**`--rm`**. When the client disconnects abruptly the ephemeral container is stopped and removed, so
+there is nothing to reattach to. Persistence means: drop `--rm`, run **detached + named** (`up -d`),
+then attach into it.
+
+```mermaid
+flowchart LR
+  subgraph ephemeral["Ephemeral (today, --rm)"]
+    A["cco start"] --> B["run --rm (foreground)"]
+    B --> C["abrupt close → container stopped + removed → session lost"]
+  end
+  subgraph persistent["Persistent (opt-in)"]
+    D["cco start (persist)"] --> E["up -d + named + cco.project label"]
+    E --> F["docker exec -it … tmux attach"]
+    F --> G["abrupt close → container keeps running"]
+    G --> H["cco attach <project> → re-exec tmux attach"]
+    H --> I["cco stop → tear down"]
+  end
+```
+
+**Proposed shape (to ratify in a short ADR).**
+- **Opt-in setting** `session.persist: true|false` with precedence mirroring the access knobs:
+  CLI (`--persist`/`--no-persist`) > `project.yml` > `~/.cco` global default > built-in default.
+  Default likely `false` (preserve today's clean, resource-cheap ephemeral behavior) — **open
+  question**: default-off vs default-on-with-`cco stop`-cleanup.
+- **`cco attach <project>`** (cwd-first): resolve the running container via the `cco.project` label /
+  running registry, then `docker exec -it <c> tmux attach`. Refuse gracefully if none is running
+  (hint `cco start`).
+- **Lifecycle & cleanup**: lean on the ADR-0045 reconcile reaper for orphaned persistent containers;
+  `cco stop` already tears a session down. Decide idle-timeout / max-persistent-count policy.
+- **Trade-offs to weigh**: persistence keeps RAM/CPU (and cost) allocated and risks orphans (mitigated
+  by the reaper) — vs. losing work on an abrupt close. This is precisely why it should be **opt-in**.
+
+**Effort**: Med. Touches `cco start` (compose gen: `--rm`/detached toggle), a new `cco attach`, the
+settings-precedence resolver, and `cco stop`/registry cleanup. Needs `cco build` to test. Supersedes
+the old one-line exploratory note ("Session reattach — likely a one-liner post-worktree"); the
+`--rm`/opt-in/lifecycle design is the substantive part, not the attach one-liner. Refs:
+[ADR-0045](environment/decisions/0045-session-running-registry.md) ·
+[design-docker.md](environment/design/design-docker.md).
+
 ## Broader planned work (beyond decentralized-config v1)
 
 Full long-form descriptions (scope, design, effort) are preserved in
@@ -579,7 +631,7 @@ Uncommitted ideas — evaluate demand before scheduling. Details in
 
 - Native installer migration (auto-update support, persistent volume)
 - Hot-reload for in-container configuration (Docker-proxy `SIGHUP`, `cco reload`)
-- Session reattach (`cco attach`) — likely a one-liner post-worktree
+- Session reattach (`cco attach`) — **promoted → see [Session persistence & reattach](#session-persistence--reattach-cco-attach--needs-design)** (opt-in persistence vs `--rm`; needs a short ADR)
 - Remote sessions (SSHFS-mounted repos) · Multi-project sessions
 - System notifications for human-in-the-loop (OS notification / webhook)
 - Web UI dashboard
