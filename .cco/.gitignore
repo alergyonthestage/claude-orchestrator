@@ -9,3 +9,4 @@ secrets.env
 claude/workspace.yml
 claude/packs.md
 claude/scheduled_tasks.lock
+claude/settings.local.json
