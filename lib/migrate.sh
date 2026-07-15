@@ -883,6 +883,9 @@ secrets.env
 claude/workspace.yml
 claude/packs.md
 claude/scheduled_tasks.lock
+# Inert mountpoint stub for the ADR-0049 §5 functional-write floor: cco seeds it
+# so Docker can bind the rw STATE copy over it; the live content lives in STATE.
+claude/settings.local.json
 GI
 }
 
