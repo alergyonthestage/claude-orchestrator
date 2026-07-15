@@ -376,3 +376,94 @@ Needs proper analysis, evaluation, and design — captured here as a note to kee
 
 **Type & tracking**: safety/correctness feature; couples with Sprint 10 → design together.
 **Effort**: Med–High.
+
+## FI-16: Fail-loud state guards for mixed cco versions
+
+**Status**: 📝 Note — to analyze (surfaced 2026-07-15 while fixing the ADR-0049 §5 start bug).
+
+**Context**: two cco installs on one machine share a single config store, and a newer one can
+leave state an older one silently misreads. Observed: `./bin/cco` (dev, ADR-0051) upgraded the
+machine-local index to `version: 2` on its first write; the npm-released `0.5.2` — which predates
+per-project scoping and looks for the flat `paths:` section — then found no bindings and prompted
+to re-clone a repo that was present all along. The index migration itself is sound (`lib/index.sh`
+reads v1 as global-flat and upgrades on the first host write); the defect is that the **downgrade
+degrades illegibly**, into a misleading prompt rather than a clear refusal.
+
+The maintainer's framing (2026-07-15): the breaking changes were deliberate and correct (pre-1.0,
+~2 users, unified config + access model wanted fast) — the lesson is not "break less" but
+**fail loud at the boundaries where one version reads another's state**. Fixing the `0.5.2` symptom
+is not worth it: that code is published and the edge case dies at release. Fix the root.
+
+**Direction to evaluate**:
+- **Index version stamp/guard** — state records the cco version that wrote it; a cco older than the
+  stamp refuses with an explicit message ("index v2 requires cco ≥ X") instead of misreading.
+  Note `_cco_in_container` has a related gap: the `CCO_IN_CONTAINER` override honours `==1` but
+  never `==0`, so there is no escape hatch to force host semantics.
+- **CLI↔image version handshake** at `cco start` — the host cco and the image's `/opt/cco` can
+  diverge (exactly the 2026-07-15 case: npm cco + dev-built image), today with no signal.
+- **Dev-side mitigation** (no code): keep the npm cco off `PATH` while developing (`npm link`/alias)
+  so the mixed-version state cannot arise in the first place.
+
+**Type & tracking**: additive guards → changelog; no schema change. **Effort**: Low.
+
+## FI-17: config-editor should mount the target project's repos read-only
+
+**Status**: 📝 Note — to analyze (raised by the maintainer 2026-07-15).
+
+**Context**: `cco start config-editor` mounts config only. But editing a project's rules/config
+well needs the project's **context**: its repos and extra_mounts, read-only. The precedent is the
+personal store — `~/.cco` is mounted `ro` precisely so decisions are informed rather than blind;
+the same argument applies to the repos the rules govern. Today the config-editor edits rules for
+code it cannot see.
+
+**Direction to evaluate**: in config-editor **project mode** (cwd-in-project or `--project <name>`),
+mount the target's repos/extra_mounts `:ro` by default. Touches ADR-0044 §3 (min-privilege by mode)
+and the ADR-0048 WS-A refinement — the `--repo <name>` flag already adds one repo, so decide whether
+this becomes the default or stays opt-in, and whether extra_mounts follow. Weigh against the
+min-privilege default the preset is built on.
+
+**Type & tracking**: default-behaviour change in a built-in preset → changelog; ADR-0044 annotation.
+**Effort**: Low–Med.
+
+## FI-18: Decouple CLAUDE.md from rules/agents/skills in claude_access
+
+**Status**: 📝 Note — to analyze (raised by the maintainer 2026-07-15; explicitly post-e2e).
+
+**Context**: Axis B (`claude_access`, ADR-0049) governs each `.claude` **tree** as a unit: CLAUDE.md,
+`rules/`, `agents/`, and `skills/` share one `ro`/`rw` decision per tree. A finer split may be
+wanted: let a session author **CLAUDE.md** (project narrative/context, routinely updated as work
+progresses) while `rules/`, `agents/`, and `skills/` stay read-only (governance the agent should not
+rewrite for itself). Today the two intents can only be had together.
+
+**Direction to evaluate**: whether the axis granularity should grow a per-resource dimension, or
+whether a `settings.local.json`-style **functional-write floor** (ADR-0049 §5) is the better shape —
+i.e. a narrow always-writable carve-out rather than a new axis. Consider the cost: Axis B is already
+a 4-tuple `(Cr,Cp,Cg,Co)`, and multiplying it by resource class risks an unusable surface. Weigh
+against P2 discordance and the concordant-default model before committing.
+
+**Type & tracking**: access-model extension → ADR + changelog. **Effort**: Med.
+
+## FI-19: Host-only suite tests should skip, not fail, under the privilege boundary
+
+**Status**: 📝 Note — to analyze (surfaced 2026-07-15 while fixing the ADR-0049 §5 start bug).
+
+**Context**: the suite reports a permanent **7 failures when run inside a cco session** — 6 in
+`tests/test_access_scope.sh` (`test_as_*`) and `test_paths_symlink_safe_tool_root`. They are **not a
+code defect**: the ADR-0047 privilege boundary is live in-session (`cco-svc-helper` setuid 4750,
+`~/.cache/cco` unreadable to the agent), and the 6 `test_as_*` tests explicitly set
+`CCO_CONTAINER_OPERATOR=1`, so `cco list` re-enters via the setuid helper — which by design ignores
+env (`CCO_STATE_HOME` & co.) and reads the real internal store. The tests' redirected fixture store is
+therefore invisible and the real environment shows up instead. `test_paths` fails on `mkdir ~/.cache/cco`
+→ Permission denied, same boundary. Ironically these tests accidentally prove the boundary cannot be
+bypassed by environment. On the host they are expected to pass (1308/0 — worth confirming once).
+
+**Why it matters**: a standing 7-failure baseline trains everyone to read failures as noise. That is
+the same habit that let the ADR-0049 §5 start bug ship green.
+
+**Direction to evaluate**: detect the boundary (`-u /usr/local/bin/cco-svc-helper`, or `~/.cache/cco`
+unreadable) and **skip with a reason** instead of failing. The harness has no `skip_test()` helper
+today — add one, keeping the suite hermetic (it mocks docker throughout; no daemon dependency).
+Refuted while diagnosing, do not retry: a `CCO_IN_CONTAINER=0` escape hatch, and unsetting the
+inherited session env — neither fixes any of the 7.
+
+**Type & tracking**: test-harness change only; no user-facing surface. **Effort**: Low.
