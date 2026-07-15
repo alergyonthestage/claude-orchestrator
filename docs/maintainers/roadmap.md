@@ -5,7 +5,7 @@
 > [roadmap-history.md](roadmap-history.md). The framework-improvements backlog
 > lives in [roadmap-backlog.md](roadmap-backlog.md).
 >
-> Last updated: 2026-07-02.
+> Last updated: 2026-07-15.
 
 ## Current status
 
@@ -521,9 +521,18 @@ DI1), **CLI-surface matrix** (`cli/reference/cli-surface-matrix.md`), **DOC1** c
 > **WS-A DONE + shipped** (config-editor min-privilege, [ADR-0048](configuration/agent-cco-access/decisions/0048-config-editor-min-privilege-refinement.md); incl. 4 UX refinements).
 > **WS-B — claude×cco coupling — ✅ IMPLEMENTATION DONE (2026-07-13)**: [ADR-0049](configuration/agent-cco-access/decisions/0049-claude-access-concordant-model.md)
 > (concordant Axis-B triple + cco-derived defaults) implemented in **5 atomic commits**
-> `96b08ae`→`2f0cd19` on `feat/config-access/claude-access-model` (from the WS-A tip; **NOT
-> pushed**). Suite **1234/7** (7 pre-existing). **▶ NEXT (Mac-side): `cco build` → live dogfood
-> → e2e v2 acceptance → push all branches → merge to develop.** The `init-workspace` re-analysis
+> `96b08ae`→`2f0cd19` on `feat/config-access/claude-access-model` (from the WS-A tip). Suite
+> **1234/7** (7 pre-existing — **host-only tests defeated by the ADR-0047 boundary, not a defect;
+> see FI-19**). `cco build` + live dogfood ✅ done (2026-07-15) — and they **caught a blocking bug
+> in the ADR-0049 §5 functional-write floor**: the rw child overlay never seeded its **mountpoint**,
+> so runc could not `mknod` it inside the `:ro` parent and **every normal `cco start` failed**
+> (`read-only file system`). Because §2 makes `Cp=ro`/`Cr=ro` the default, only an explicit
+> `--claude-access repo/all` still started. **✅ FIXED + merged (2026-07-15)** on
+> `fix/start/local-settings-mountpoint`: mountpoint seeded host-side at both call sites; STATE seeded
+> *from* it so pre-existing local prefs survive; migration **015** gitignores the stub; ADR-0049 §5
+> forward-annotated; changelog #44. The dry-run compose suite could not see it (it asserts the YAML
+> and never executes it) — **the real-container check belongs to the e2e gate**, not the hermetic
+> suite. **▶ NEXT: e2e v2 acceptance, running ON `develop`.** The `init-workspace` re-analysis
 > (ADR-0049 §6 / design §7) is a separate future task.
 
 | Workstream | Status | Decision |
@@ -535,8 +544,9 @@ Tutorial `read-all` overridable-downward = **confirmed correct as-is** (no chang
 new ADR (refining 0036/0044/0046) + living `design.md` once validated.
 
 > **Post-e2e sequencing (maintainer, 2026-07-15).** The **e2e v2 acceptance run is the current
-> gate** — it blocks pushing + merging the whole access-model + naming stack to `develop`. **Once it
-> passes and the branches merge**, the next priorities (in order) are **`cco attach` / session
+> gate**. Corrected 2026-07-15: it does **not** gate the merge to `develop` — the access-model +
+> naming stack is **already on `develop`**, e2e v2 **runs on `develop`**, and what it gates is
+> **`develop` → `main`** (i.e. the release). **Once it passes**, the next priorities (in order) are **`cco attach` / session
 > persistence** (see [Session persistence & reattach](#session-persistence--reattach-cco-attach--needs-design))
 > **together with `cco project save` (workstream D, ADR-0038)** — both small, ergonomic, non-gating,
 > each needing a short design session first. The rest of the backlog ordering (F, the Broader-planned-
