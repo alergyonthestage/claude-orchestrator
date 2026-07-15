@@ -534,6 +534,14 @@ DI1), **CLI-surface matrix** (`cli/reference/cli-surface-matrix.md`), **DOC1** c
 Tutorial `read-all` overridable-downward = **confirmed correct as-is** (no change). To extract into a
 new ADR (refining 0036/0044/0046) + living `design.md` once validated.
 
+> **Post-e2e sequencing (maintainer, 2026-07-15).** The **e2e v2 acceptance run is the current
+> gate** — it blocks pushing + merging the whole access-model + naming stack to `develop`. **Once it
+> passes and the branches merge**, the next priorities (in order) are **`cco attach` / session
+> persistence** (see [Session persistence & reattach](#session-persistence--reattach-cco-attach--needs-design))
+> **together with `cco project save` (workstream D, ADR-0038)** — both small, ergonomic, non-gating,
+> each needing a short design session first. The rest of the backlog ordering (F, the Broader-planned-
+> work table, exploratory items) is to be **re-evaluated after e2e** to confirm the sequence still holds.
+
 ### Resource naming & init consistency (`feat/naming/resource-management`)
 
 > Umbrella branch off **develop fast-forwarded to the access-model tip** (`57a0554`,
@@ -550,6 +558,11 @@ new ADR (refining 0036/0044/0046) + living `design.md` once validated.
 | **Unit B — resource rename verbs** | ✅ DONE (2026-07-14) — B.1–B.6 committed, suite 1259/7 baseline held. B.1 `lib/rename.sh` (`9cc10a5`), B.2 `_index_rename_path` (`dab12cc`), B.3 verbs — repo/extra-mount `3158358`, pack/template `370a438`, remote `1c0c072`, llms align `34053f7`, B.4 operator gating `dbbc98d`, B.5 quote-strip `97e3d81`, B.6 docs (this commit). Per-kind `rename` for the five kinds that lacked it (**repo · extra-mount · pack · template · remote**; `project`/`llms` already existed): repo/extra-mount project-scoped + path-anchored (cwd-first, opt-in `--move-dir`), pack cross-project `packs[]` fan-out, template/remote store re-key. UX: `_resolve_to_abs` quote-strip + the `path set` divergence hint (already shipped A.4). Latent bug closed: `llms rename` now rewrites the mapping-form ref too. **Pre-merge (Mac): `cco build` + live dogfood (esp. the first in-container index-writing verbs repo/extra-mount rename across the ADR-0047 boundary — verify the elevated project.yml write), then push + merge→develop (gated on e2e v2).** **Decisions** ([ADR-0050](naming/decisions/0050-resource-rename-model.md), generalizes ADR-0031, **builds on ADR-0051**): per-kind verbs (no top-level `cco rename`); kind-scoped re-key; **repo/extra_mount rename is project-scoped + path-anchored** (no cross-project fan-out); pack keeps `packs[]` cross-project fan-out (ADR-0031 D3 strictness); repo/extra_mount dir-move opt-in (basename-gated, default No); shared `lib/rename.sh`; operator-shim gating (repo→edit-project, pack/template/remote→edit-global). Refs: [design](naming/design/design-resource-rename.md) · [storage map](naming/analysis/resource-name-storage-map.md). Changelog additive, migration none. |
 
 ### Session persistence & reattach (`cco attach`) — 🔍 NEEDS DESIGN (proposed 2026-07-14)
+
+> **Queued: post-e2e priority (maintainer, 2026-07-15).** After the e2e v2 gate + merge, this is a
+> next-up priority **paired with `cco project save` (workstream D)** — start with a short design/ADR
+> session (domain `environment/`, beside ADR-0045) before touching code. Re-evaluate ordering vs the
+> rest of the backlog after e2e. See [Post-e2e sequencing](#access-model-refinements-post-hardening-v2).
 
 **Goal.** When a `cco start` session is interrupted abruptly (IDE/terminal closed without a clean
 `/exit`), the Docker container should be able to **keep running** so the user can **resume** it with a
