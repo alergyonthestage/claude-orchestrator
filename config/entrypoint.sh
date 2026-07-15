@@ -279,6 +279,20 @@ fi
 
 if [ ! -x "$CLAUDE_BIN" ] || [ "$_installed_req" != "$CLAUDE_REQ" ]; then
     echo "[entrypoint] Installing Claude Code ('$CLAUDE_REQ') via native installer (one-time per cache)..." >&2
+    # Clear the launcher path first. `claude install` refuses to overwrite a
+    # launcher it does not own ("was not created by the native installer") and
+    # exits non-zero, which used to make this a FATAL with no way out: the stale
+    # file lives in the shared CACHE mount, so ANY session that once left a
+    # foreign launcher there (an npm-era wrapper, a `claude migrate-installer`
+    # result, a dangling symlink into a wiped share/claude/versions) poisoned the
+    # install for every project until `cco build --no-cache`. We only reach this
+    # branch when we have already decided to (re)install, so whatever sits at the
+    # launcher path is destined to be replaced — removing it is not a data loss,
+    # and the real install lives in share/claude/versions either way.
+    if [ -e "$CLAUDE_BIN" ] || [ -L "$CLAUDE_BIN" ]; then
+        _log "Clearing existing launcher at $CLAUDE_BIN before install"
+        rm -rf "$CLAUDE_BIN"
+    fi
     if gosu claude env CLAUDE_REQ="$CLAUDE_REQ" bash -c \
         'curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_REQ"'; then
         echo "$CLAUDE_REQ" | gosu claude tee "$CLAUDE_MARKER" >/dev/null
@@ -286,6 +300,8 @@ if [ ! -x "$CLAUDE_BIN" ] || [ "$_installed_req" != "$CLAUDE_REQ" ]; then
     else
         echo "[entrypoint] FATAL: Claude Code install failed (channel/version='$CLAUDE_REQ')." >&2
         echo "[entrypoint] Network access is required at first start (installer fetch)." >&2
+        echo "[entrypoint] If the install cache is corrupt, reset it from the host:" >&2
+        echo "[entrypoint]   cco build --no-cache" >&2
         exit 1
     fi
 else
