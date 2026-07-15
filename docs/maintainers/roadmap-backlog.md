@@ -467,3 +467,34 @@ Refuted while diagnosing, do not retry: a `CCO_IN_CONTAINER=0` escape hatch, and
 inherited session env — neither fixes any of the 7.
 
 **Type & tracking**: test-harness change only; no user-facing surface. **Effort**: Low.
+
+## FI-20: git operations vs the `:ro` `.cco` overlay — partial checkout footgun
+
+**Status**: 📝 Note — to analyze (hit live 2026-07-15 while merging the start-bug fix in-session).
+
+**Context**: the Axis-A1 edit-protection overlay mounts `<repo>/.cco` `:ro` at `read-project`. Git
+is not exempt: **any branch operation whose diff touches `.cco` fails**, because git must write the
+worktree file and hits `EROFS`. This is **correct by design** — if git could write `.cco`, an agent
+could bypass the structural-config boundary by committing and checking out — but it has consequences
+nobody has written down:
+
+- A branch carrying a committed `.cco` change (e.g. a migration's own output, as migration 015
+  produced here) **cannot be merged or checked out from a normal session**.
+- Worse, git applies checkouts **partially**: `git checkout develop` switched branches and updated
+  every other file, failing only on `.cco/.gitignore`. The result was a worktree silently sitting on
+  the wrong branch **without the fix that had just been made** — a subsequent `cco start` would have
+  reintroduced the very bug being fixed. The `Aborting` message came from the follow-on merge, not
+  the checkout, so the failure read as "nothing happened" when in fact the tree had moved.
+- Recovery is non-obvious: `git checkout <branch>` refuses (local changes), `git stash`/`git checkout
+  -- <path>` also need to write `.cco`. What works: `git add .cco/<file>` to align the index with the
+  (already-correct) worktree content, so the next checkout needs no write.
+
+**Direction to evaluate**: decide the intended contract and make it legible rather than emergent.
+Options, not exclusive — (a) detect the condition at `cco start`/in the shim and **warn** that git
+branch ops touching `.cco` will fail at this access level; (b) document the pattern (commit `.cco`
+changes host-side, or use `--cco-access edit-project`) in the access docs; (c) consider whether the
+overlay should be relaxed for git's own writes — **probably not**, it would reopen the bypass. Note
+the interaction is generic: it applies to `secrets.env` and any other `:ro`-masked path too.
+
+**Type & tracking**: UX/safety of the access model; docs + possibly a start-time warning. No schema
+change. **Effort**: Low.
