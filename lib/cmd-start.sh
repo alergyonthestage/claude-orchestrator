@@ -433,14 +433,31 @@ _emit_secret_overlays() {
 # read-only), that write would hit a read-only filesystem. Keep JUST that file
 # writable via a rw CHILD overlay bound from a machine-local STATE source (Docker
 # applies the deeper child mount after the :ro parent, so the child's rw wins).
-# The source is seeded `{}` when absent (skipped on dry-run — the dumped compose is
-# never executed). settings.local.json is gitignored/local by nature, so nothing
-# leaks into the repo. Args: <state_source> <container_target> <dry_run:true|false>.
+#
+# The child mount needs BOTH ends to exist as files:
+#   - the STATE source, and
+#   - the MOUNTPOINT itself, inside the :ro parent. Docker/runc cannot create it
+#     there (`mknod ... read-only file system` — the container then fails to
+#     start), so cco must seed it host-side, in the mount's backing directory,
+#     BEFORE the bind. Ordering alone is not enough: the target must pre-exist.
+# The stub is inert — the rw STATE bind always shadows it, so its content never
+# reaches the session; it is gitignored, so nothing leaks into the repo.
+#
+# STATE is seeded FROM the mountpoint, so a pre-existing settings.local.json (a
+# repo that already carried real local prefs before this overlay existed) keeps
+# its content on first start instead of being shadowed by an empty `{}`. From
+# then on STATE is the live copy and the stub stays frozen.
+# All seeding is skipped on dry-run — the dumped compose is never executed.
+# Args: <state_source> <host_mountpoint> <container_target> <dry_run:true|false>.
 _emit_local_settings_overlay() {
-    local src="$1" tgt="$2" dry="$3"
+    local src="$1" mp="$2" tgt="$3" dry="$4"
     if [[ "$dry" != "true" ]]; then
+        # Mountpoint stub inside the :ro-to-be parent (its dir is the mount source,
+        # so it exists; a missing one means a caller bug, and the bind fails loudly).
+        [[ -f "$mp" ]] || printf '{}\n' > "$mp" 2>/dev/null || true
+        # STATE source, seeded from the mountpoint (see above).
         mkdir -p "$(dirname "$src")" 2>/dev/null || true
-        [[ -f "$src" ]] || printf '{}\n' > "$src" 2>/dev/null || true
+        [[ -f "$src" ]] || cp "$mp" "$src" 2>/dev/null || printf '{}\n' > "$src" 2>/dev/null || true
     fi
     _compose_vol "$src" "$tgt"
 }
@@ -1351,6 +1368,7 @@ YAML
         # writable via a rw child overlay from per-project STATE.
         if [[ "$_b2_mode" == "ro" ]]; then
             _emit_local_settings_overlay "${session_state_dir}/local-settings/workspace.json" \
+                "${claude_src}/settings.local.json" \
                 "/workspace/.claude/settings.local.json" "$dry_run"
         fi
         _compose_vol "${project_dir}/project.yml" "/workspace/project.yml" "ro"
@@ -1517,6 +1535,7 @@ YAML
                     # session started in the repo would write settings.local.json).
                     [[ "$_cl_rel" == ".claude" ]] && \
                         _emit_local_settings_overlay "${session_state_dir}/local-settings/repo-${repo_name}.json" \
+                            "${repo_path}/.claude/settings.local.json" \
                             "/workspace/${repo_name}/.claude/settings.local.json" "$dry_run"
                 done < <(_find_nested_config_dirs "$repo_path" ".claude")
             done < <(_effective_repo_mounts "$project_yml")
