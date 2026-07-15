@@ -787,3 +787,23 @@ entries:
       resolve` now strip one pair of surrounding quotes from a pasted path
       ('/my/repo' or "/my/repo"), and `cco path set` hints `cco repo rename` when the
       index name no longer matches the directory basename. Additive; no migration.
+
+  - id: 44
+    date: "2026-07-15"
+    type: additive
+    title: "settings.local.json: an inert mountpoint stub now appears in <repo>/.cco/claude/"
+    description: >
+      The functional-write floor (ADR-0049 §5) keeps .claude/settings.local.json
+      writable while the surrounding .claude tree is mounted read-only — the
+      default since the claude_access model landed. It does that by binding a
+      per-project machine-local STATE copy over the file, and Docker can only
+      bind onto a target that already exists: it cannot create one inside a
+      read-only mount. `cco start` therefore seeds an inert stub at
+      <repo>/.cco/claude/settings.local.json (and at <repo>/.claude/settings.local.json
+      for each repo that has a .claude tree, when one is missing). The stub is
+      never read in a session — the rw STATE copy always shadows it — and never
+      committed: migration 015 adds it to .cco/.gitignore, alongside the other
+      generated session artifacts. A tree that ALREADY carried a real
+      settings.local.json keeps it: its content seeds STATE on first start rather
+      than being shadowed by an empty object, so existing "Always allow" grants
+      and local prefs survive. Nothing to do — the seeding is automatic.

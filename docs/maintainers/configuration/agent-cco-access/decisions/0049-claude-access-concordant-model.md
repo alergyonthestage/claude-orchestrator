@@ -195,6 +195,22 @@ functioning**; govern what impacts a user's **settings/preferences** for the pro
 The exact set is verified against Claude Code behaviour at implementation (e.g.
 `.claude/worktrees/` for background sessions — likely inert under cco).
 
+> **Forward annotation (2026-07-15, implementation).** The rw child overlay above needs
+> **both ends of the bind to exist as files**. Docker/runc cannot create the mountpoint
+> inside the `:ro` parent — it fails with `mknod ... read-only file system` and the
+> container never starts. Mount *ordering* was never the issue (the child does win over
+> the `:ro` parent); the target must simply **pre-exist**. `cco start` therefore seeds an
+> inert stub host-side, in the mount's backing directory, before the bind — gitignored
+> (migration 015), always shadowed by the rw STATE copy. Because §2 makes `Cp=ro`/`Cr=ro`
+> the default, the missing seed broke `cco start` for **every** normal session until it
+> was fixed. Two refinements of §5 as written here:
+> - STATE is seeded **from** the mountpoint, so a tree that already carried a real
+>   `settings.local.json` keeps its content on first start instead of being shadowed by
+>   an empty `{}`.
+> - The floor is **only as verifiable as the harness**: the dry-run compose tests assert
+>   the emitted YAML and never execute it, so this shipped green. Mount-time failures are
+>   invisible to a hermetic suite and belong to the e2e gate.
+
 ### 6. B2/B1 default read-only reverses P17 → init-workspace re-analysis
 
 Because `Cp` defaults to `Pc` (read-only under the `read-project` default) and `Cr`
