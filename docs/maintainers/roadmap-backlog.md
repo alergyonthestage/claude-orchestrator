@@ -541,27 +541,34 @@ the interaction is generic: it applies to `secrets.env` and any other `:ro`-mask
 **Type & tracking**: UX/safety of the access model; docs + possibly a start-time warning. No schema
 change. **Effort**: Low.
 
-## FI-21: Host-path commands must disambiguate their project (post-ADR-0051 completeness)
+## FI-21: Explicit project scope on the host-path surface (post-ADR-0051 completeness)
 
-**Status**: 📝 Note — to analyze (surfaced 2026-07-16, maintainer host session, while renaming a repo).
+**Status**: 📝 Note — to analyze (surfaced 2026-07-16, maintainer host session, while renaming a repo;
+scope refined by the maintainer the same day — see the principle below).
 
 **Context**: ADR-0051 made repo/extra_mount names **per-project labels for a path** — the same name
-may legitimately name *different resources* in different projects. The index and the rename verbs
-implement this correctly, but the CLI surface around them was never audited for the new ambiguity.
-The maintainer's question — *"if I rename a `<repo-name>` that differs across projects, which one
-moves? if `cco path set` gets a name that exists in several projects, which path changes?"* — has
-three different answers today:
+may legitimately name *different resources* in different projects. The index primitives and the
+rename verbs implement that model correctly, but **the CLI surface around them was never audited for
+the ambiguity the model introduces**. The maintainer's question — *"if I rename a `<repo-name>` that
+differs across projects, which one moves? if `cco path set` gets a name that exists in several
+projects, which path changes?"* — gets three different answers today, and the surface as a whole was
+never given a deliberate scope UX:
 
-- **`cco repo|extra-mount rename` — correct, no action.** `lib/cmd-repo.sh` is deliberately
-  project-scoped and path-anchored (its header states the rationale: another project's
-  same-named-but-different-path binding *is a different resource*, so cross-project fan-out would be
-  wrong under D1). It also names the project it acted on in its output. Recorded here so the question
-  is not re-opened.
-- **`cco path set <name> <path>` — UX gap (low severity).** Binds in the project hosting the **cwd**;
-  outside any project it writes the `unscoped:` bucket. There is no `--project` and no prompt, but the
-  choice is deterministic **and printed** (`path set: [<proj>] <name> -> <abs>`), and the verb is
-  explicitly the low-level escape hatch ("For normal resolution prefer `cco resolve`").
-- **Silent first-match resolution — the real defect.** `_index_get_path_any <name>` returns the
+- **`cco repo|extra-mount rename` — semantics correct; scope UX incomplete.** `lib/cmd-repo.sh` is
+  deliberately project-scoped and path-anchored, and the *default* (cwd project) is right: another
+  project's same-named-but-different-path binding **is a different resource**, so cross-project
+  fan-out must never be the default (D1). It also names the project it acted on. **But "the default
+  is correct" is not "the verb is complete"**: there is no way to target another project without
+  `cd`-ing into it (`--project <name>`), and no way to re-label a path **everywhere it is
+  referenced** (`--all-projects`). Note the latter is *not* in tension with D1 — re-labelling one
+  PATH across the projects that reference it is path-anchored by definition, which is exactly what
+  D1 makes identity. (An earlier triage pass recorded this as "correct, no action, question closed";
+  that was **wrong** — it answered the semantics question and mistook it for the UX one.)
+- **`cco path set <name> <path>` — same shape.** Binds in the project hosting the **cwd**; outside any
+  project it writes the `unscoped:` bucket. The default is sound and the choice is deterministic
+  **and printed** (`path set: [<proj>] <name> -> <abs>`), and the verb is the documented low-level
+  escape hatch — but again there is no `--project` to aim it elsewhere.
+- **Silent first-match resolution — the outright defect.** `_index_get_path_any <name>` returns the
   **first** binding across all projects with no disambiguation and no notice. `lib/index.sh:533`
   documents 3 such call sites; there are **5**: `cco sync --from` (`cmd-sync.sh:178`), `cco sync
   <target>` (`cmd-sync.sh:200`), `resolve --scan` pass 2 (`cmd-resolve.sh:566`), `cco start --from`
@@ -569,30 +576,59 @@ three different answers today:
   `assets`) these act on **whichever project is indexed first** — a wrong-target write for `sync`.
   The doc under-counts its own ambiguity sites, which is itself a signal the surface was not swept.
 
-**Proposed guiding principle (to ratify at design, NOT yet normative)** — the maintainer's framing:
-> Every `cco` command that references a repo/extra_mount host path MUST resolve **which project** the
-> path belongs to, and when the name exists in more than one project MUST surface the alternatives
-> rather than pick one — offering *reuse this existing path* vs *bind a different path for this
-> project*, the way `cco resolve` already does at add-time.
+**Proposed guiding principle (maintainer, 2026-07-16 — to ratify at design, NOT yet normative)**.
+It governs **read and write alike**, and its point is *deliberate, complete* scope UX rather than
+scope-by-accident:
 
-The precedent exists and is proven: **ADR-0051 D4** add-time disambiguation (`_index_bindings_for_name`,
-`_resolve_reuse_menu`, `_resolve_disambiguate`, plus the git-origin/url divergence signal). The
-suggested direction is to **extend D4's existing machinery to the edit/consume surface** rather than
-invent a second mechanism — with a non-interactive fallback (an explicit `--project`, since `sync`/
-`start` must stay scriptable and cco's own convention is "widen via explicit flags, not prompts",
-D-CE1).
+> Every `cco` command that handles the host path of a **per-project-scoped resource** (repo,
+> extra_mount) MUST make its project scope **explicit and complete**:
+> 1. **Default to the cwd project** — the established cco convention, and the right default.
+> 2. **Never be limited to it.** Where another scope is meaningful, offer it explicitly:
+>    `--project <name>` to aim at another project, `--all-projects` where acting on every binding of
+>    a path is coherent. cwd is a *convenience default*, never a ceiling (the same resolution D-CE1
+>    reached for config-editor).
+> 3. **Declare the scope, or show everything.** A per-project-scoped output must *say* it is scoped
+>    (as `cco path list` does with its `[project]` prefix). A lookup that is generic must return
+>    **all** matching bindings — **never the first occurrence while silently hiding the others**.
+>    "Scoped" and "generic" are both fine; *undeclared* is not.
+> 4. **Filter, don't force.** Give the user a scope filter (e.g. `cco path list --project <name>`)
+>    rather than making them read a mixed view — the current list is legible only because it is short.
+>
+> Rationale: the same UX applies whether the command reads or writes, so the user learns **one** rule
+> for the whole surface. Point 3 is the one that turns a UX preference into a correctness rule — it is
+> what makes `_index_get_path_any`'s silent first-match a bug rather than a shortcut.
 
-**Re-verify the bound before design**: re-derive the call-site list from the code (do not trust the
-5 above or the stale `index.sh:533` header — that under-count is exactly the failure mode); classify
-each site as *genuinely cross-project* (config-editor `--repo` is intentionally so) vs *ambiguous by
-omission*; and decide per-site whether the answer is a prompt, a `--project` flag, or a fail-loud
-refusal. Check `_index_get_path`'s `unscoped:` fallback in the same pass — see [FI-23](#fi-23-extra_mount-legacy-bindings-land-in-the-unscoped-bucket-adr-0051-migration-residue),
-which is the same model leaking from the other end.
+**Suggested direction (verify at design)**: extend the **existing** ADR-0051 D4 machinery
+(`_index_bindings_for_name`, `_resolve_reuse_menu`, `_resolve_disambiguate`, + the git-origin/url
+divergence signal) from the add-time surface to the read/edit/consume surface, rather than inventing a
+second mechanism. Interactive prompts need a non-interactive twin (`sync`/`start` must stay
+scriptable, and cco's own convention is "widen via explicit flags, not prompts" — D-CE1), which is why
+the flags in point 2 and the prompt are the *same* decision seen from two contexts. Naming to settle
+at design: `--all-projects` vs a `--project` that repeats; and whether path listing becomes a `cco
+list` kind (`cco list path --project …`, the maintainer's phrasing) or stays `cco path list
+--project …`.
 
-**Type & tracking**: UX + correctness on the naming surface → changelog; no schema change expected.
-**Effort**: Med. **Not gating the access/CLI e2e review** — the e2e handoff §9 explicitly defers
-"broader naming semantics (per-project scoping ADR-0051, disambiguation prompts)" to a separate
-naming track. This note **is** that track.
+**Re-verify the bound before design**: re-derive the call-site list from the code (do not trust the 5
+above, nor the stale `index.sh:533` header — that under-count *is* the failure mode). Then classify
+every site on **two** axes, not one: (a) *genuinely cross-project* (config-editor `--repo` is
+intentionally so) vs *ambiguous by omission*; and (b) **read vs write** — a wrong-target *read*
+degrades, a wrong-target *write* (`sync`) corrupts, so they may deserve different answers (prompt /
+flag / fail-loud refusal). Sweep the **whole** kind, not just the verbs named here: any verb taking a
+repo/extra_mount name is in scope. Check `_index_get_path`'s `unscoped:` fallback in the same pass —
+see [FI-23](#fi-23-extra_mount-legacy-bindings-land-in-the-unscoped-bucket-adr-0051-migration-residue),
+which is the same model leaking from the other end, and would otherwise re-introduce a cross-project
+default underneath any flag added here.
+
+**Type & tracking**: UX + correctness on the naming surface → changelog; no schema change expected
+(flags + lookups only). If ratified, the principle belongs in a **living design doc**, not only in
+this note — the natural home is the naming design tree, cross-referenced from
+[design-cli-environment-awareness](cli/design/design-cli-environment-awareness.md) (which owns the
+*other* host-path axis: host-vs-container, §4c). Keep the two axes distinct — *which project does this
+path belong to* and *does this path exist in this environment* are different questions that happen to
+share the word "path". **Effort**: Med.
+**Not gating the access/CLI e2e review** — the e2e handoff §9 explicitly defers "broader naming
+semantics (per-project scoping ADR-0051, disambiguation prompts)" to a separate naming track. This
+note **is** that track.
 
 ## FI-22: Internal-state validation, doctor and repair
 

@@ -125,6 +125,14 @@ are easy to conflate and are different obligations:
 | **Hygiene** (INV-4) | may I *print* this host path? | Only where `show_host_paths` permits. |
 | **Consumption** (this §) | may I *test/read* this host path here? | Not in-container — translate to the mount first. |
 
+> **A third, orthogonal host-path axis lives elsewhere — do not fold it in here.** This document
+> owns *does this path exist in **this environment***. Since ADR-0051, a repo/extra_mount path also
+> has a *which **project** does this label belong to* question (the same name may be a different
+> resource per project). That axis — cwd default, explicit `--project`/`--all-projects`, declare
+> the scope or return every match — is tracked as **FI-21** and, if ratified, belongs in the naming
+> design tree. Two different questions that merely share the word "path": a verb can be perfectly
+> environment-aware and still act on the wrong project.
+
 The framework's internal maps are **host-side by construction**: the STATE index stores host
 absolute paths, because it is the machine-local map the host resolver writes. Those paths are
 **meaningless inside a session** — `cco start` bind-mounts each member at the flat WORKDIR path
