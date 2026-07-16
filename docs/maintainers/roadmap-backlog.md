@@ -4,6 +4,15 @@
 >
 > Raised: 2026-03-14. Collected from field usage observations.
 > These items will be revisited individually at design/analysis time before implementation.
+>
+> **Convention (2026-07-16) — re-verify the bound before designing an item.** A note records the
+> symptom as *observed*, plus a suggested direction; neither is a finding. Before designing, re-derive
+> the item's real boundary from the code: which call sites/artifacts are actually in scope, which are
+> correct-by-design and must not be "fixed", and which **related** defects sit in the same
+> neighbourhood — then design and fix them as one boundary-aware change. Rationale: this is how the
+> 2026-07-16 triage found that `cco repo rename` needed no change at all (FI-21), that a second
+> host-path defect sat inside the very function being fixed (§ e2e `project show`), and that
+> FI-21/22/23 are three faces of one index model. A per-symptom fix would have missed all three.
 
 ---
 
@@ -394,17 +403,50 @@ The maintainer's framing (2026-07-15): the breaking changes were deliberate and 
 **fail loud at the boundaries where one version reads another's state**. Fixing the `0.5.2` symptom
 is not worth it: that code is published and the edge case dies at release. Fix the root.
 
-**Direction to evaluate**:
-- **Index version stamp/guard** — state records the cco version that wrote it; a cco older than the
-  stamp refuses with an explicit message ("index v2 requires cco ≥ X") instead of misreading.
-  Note `_cco_in_container` has a related gap: the `CCO_IN_CONTAINER` override honours `==1` but
-  never `==0`, so there is no escape hatch to force host semantics.
+**Second sighting (2026-07-16)** — the same incident recurred on the host and widened the symptom
+set, confirming the note is worth acting on. Running the **npm-released `cco`** against a
+dev-written store: `cco path list` reported *"the path index is empty"* (v1 reader, flat `paths:`,
+against a v2 `project_paths:` index), and `cco resolve` then offered to re-clone a repo that was
+present all along. Worse than the misread: `cco resolve` / `cco path set` are **index writers** — an
+old binary that misreads v2 as "empty" can write **v1-format records back into a v2 file**, mixing
+formats in place (the corruption feared in [FI-22](#fi-22-internal-state-validation-doctor-and-repair)).
+The maintainer's framing stands: fix the root, not the published `0.5.2` symptom.
+
+**Direction to evaluate** (a **global, schema-driven gate** — explicitly NOT a per-command guard;
+the stated requirement is that no command can be "forgotten"):
+- **The choke point already exists.** `_cco_first_run "$cmd"` (`bin/cco:521`) runs **before every
+  dispatch**, host-side only, idempotent — the natural home for one gate covering the whole surface.
+- **The max supported version is already derivable.** `_latest_schema_version <scope>`
+  (`lib/update-meta.sh`) computes the max by scanning the binary's **own `migrations/<scope>/`**.
+  A gate written as `on-disk > latest → die` therefore **self-maintains**: adding a migration bumps
+  the bound automatically, with no constant to remember to update. (Verify at design: `migrations/`
+  covers `global`/`project`; the **index** version is a separate hardcoded `2` in
+  `_index_ensure_file` — it needs its own declared bound, and it is the artifact that actually broke.)
+- **The gap is one-directional.** Only `current < latest` exists today (`lib/cmd-start.sh:858`,
+  "Updates available. Run 'cco update'"). The reverse — disk **newer** than the binary — has no
+  check anywhere, so the old binary proceeds silently. That asymmetry is the whole defect.
+- **Which artifacts need a bound**: today only `.cco/meta` (`schema_version`) and the index
+  (`version:`) carry one at all. Tags/remotes/running-registry/source records are **unversioned**
+  (see FI-22) — decide at design whether the gate needs them stamped, or whether refusing on the
+  two versioned artifacts is sufficient to stop the session before anything else is written.
 - **CLI↔image version handshake** at `cco start` — the host cco and the image's `/opt/cco` can
   diverge (exactly the 2026-07-15 case: npm cco + dev-built image), today with no signal.
-- **Dev-side mitigation** (no code): keep the npm cco off `PATH` while developing (`npm link`/alias)
-  so the mixed-version state cannot arise in the first place.
+- **Dev-side mitigation** (no code, available today): keep the npm cco off `PATH` while developing
+  (`npm link`/alias) so the mixed-version state cannot arise in the first place.
+- Note `_cco_in_container` has a related gap: the `CCO_IN_CONTAINER` override honours `==1` but
+  never `==0`, so there is no escape hatch to force host semantics.
+
+**Re-verify the bound before design** (per the 2026-07-16 triage convention): confirm the write-side
+inventory — *every* index/store writer reachable from an old binary, not just `resolve`/`path set` —
+and check whether the gate belongs **before** `_cco_first_run`'s own bootstrap/self-heal steps
+(`_cco_flatten_global_claude` etc. already mutate state at that point, so a gate placed after them
+would fire too late). Decide read-only verbs' fate too: a hard `die` on `cco list` may be worse than
+a warn, but a `die` on any writer is the point of the exercise.
 
 **Type & tracking**: additive guards → changelog; no schema change. **Effort**: Low.
+**Priority**: high among the FI notes — it is the root cause that makes FI-22's corruption class
+possible, and it is cheap. Not gating the access/CLI e2e review (that runs a single binary — the one
+baked into the image — so the mixed-version scenario cannot arise there).
 
 ## FI-17: config-editor should mount the target project's repos read-only
 
@@ -498,3 +540,149 @@ the interaction is generic: it applies to `secrets.env` and any other `:ro`-mask
 
 **Type & tracking**: UX/safety of the access model; docs + possibly a start-time warning. No schema
 change. **Effort**: Low.
+
+## FI-21: Host-path commands must disambiguate their project (post-ADR-0051 completeness)
+
+**Status**: 📝 Note — to analyze (surfaced 2026-07-16, maintainer host session, while renaming a repo).
+
+**Context**: ADR-0051 made repo/extra_mount names **per-project labels for a path** — the same name
+may legitimately name *different resources* in different projects. The index and the rename verbs
+implement this correctly, but the CLI surface around them was never audited for the new ambiguity.
+The maintainer's question — *"if I rename a `<repo-name>` that differs across projects, which one
+moves? if `cco path set` gets a name that exists in several projects, which path changes?"* — has
+three different answers today:
+
+- **`cco repo|extra-mount rename` — correct, no action.** `lib/cmd-repo.sh` is deliberately
+  project-scoped and path-anchored (its header states the rationale: another project's
+  same-named-but-different-path binding *is a different resource*, so cross-project fan-out would be
+  wrong under D1). It also names the project it acted on in its output. Recorded here so the question
+  is not re-opened.
+- **`cco path set <name> <path>` — UX gap (low severity).** Binds in the project hosting the **cwd**;
+  outside any project it writes the `unscoped:` bucket. There is no `--project` and no prompt, but the
+  choice is deterministic **and printed** (`path set: [<proj>] <name> -> <abs>`), and the verb is
+  explicitly the low-level escape hatch ("For normal resolution prefer `cco resolve`").
+- **Silent first-match resolution — the real defect.** `_index_get_path_any <name>` returns the
+  **first** binding across all projects with no disambiguation and no notice. `lib/index.sh:533`
+  documents 3 such call sites; there are **5**: `cco sync --from` (`cmd-sync.sh:178`), `cco sync
+  <target>` (`cmd-sync.sh:200`), `resolve --scan` pass 2 (`cmd-resolve.sh:566`), `cco start --from`
+  (`cmd-start.sh:720`), config-editor `--repo` (`cmd-start.sh:613`). With homonyms (`backend`, `web`,
+  `assets`) these act on **whichever project is indexed first** — a wrong-target write for `sync`.
+  The doc under-counts its own ambiguity sites, which is itself a signal the surface was not swept.
+
+**Proposed guiding principle (to ratify at design, NOT yet normative)** — the maintainer's framing:
+> Every `cco` command that references a repo/extra_mount host path MUST resolve **which project** the
+> path belongs to, and when the name exists in more than one project MUST surface the alternatives
+> rather than pick one — offering *reuse this existing path* vs *bind a different path for this
+> project*, the way `cco resolve` already does at add-time.
+
+The precedent exists and is proven: **ADR-0051 D4** add-time disambiguation (`_index_bindings_for_name`,
+`_resolve_reuse_menu`, `_resolve_disambiguate`, plus the git-origin/url divergence signal). The
+suggested direction is to **extend D4's existing machinery to the edit/consume surface** rather than
+invent a second mechanism — with a non-interactive fallback (an explicit `--project`, since `sync`/
+`start` must stay scriptable and cco's own convention is "widen via explicit flags, not prompts",
+D-CE1).
+
+**Re-verify the bound before design**: re-derive the call-site list from the code (do not trust the
+5 above or the stale `index.sh:533` header — that under-count is exactly the failure mode); classify
+each site as *genuinely cross-project* (config-editor `--repo` is intentionally so) vs *ambiguous by
+omission*; and decide per-site whether the answer is a prompt, a `--project` flag, or a fail-loud
+refusal. Check `_index_get_path`'s `unscoped:` fallback in the same pass — see [FI-23](#fi-23-extra_mount-legacy-bindings-land-in-the-unscoped-bucket-adr-0051-migration-residue),
+which is the same model leaking from the other end.
+
+**Type & tracking**: UX + correctness on the naming surface → changelog; no schema change expected.
+**Effort**: Med. **Not gating the access/CLI e2e review** — the e2e handoff §9 explicitly defers
+"broader naming semantics (per-project scoping ADR-0051, disambiguation prompts)" to a separate
+naming track. This note **is** that track.
+
+## FI-22: Internal-state validation, doctor and repair
+
+**Status**: 📝 Note — to analyze (surfaced 2026-07-16, maintainer question following the FI-16 incident).
+
+**Context**: if an internal file is written by a wrong/older cco or hand-edited, records can end up
+malformed or **mixed-format** (e.g. an un-scoped v1 repo path inside a v2 per-project index). The
+question was whether cco has validation / warning / doctor / sanitisation for this, or whether it is
+left to "conventions" that each writer must follow. Conventions are the wrong answer for exactly the
+FI-16 reason: they are what gets forgotten.
+
+**What already exists** (so this is an *extension*, not a new subsystem):
+- **`cco config validate [--fix]`** (`lib/cmd-config.sh:300`) already has the right shape:
+  orphan-sanitisation, **detect-only by default**, `--fix` preview-first + confirmed, never
+  automatic. Its prune aggressiveness is already calibrated by bucket sync-class (ADR-0021 Dec.5):
+  STATE/CACHE are machine-local + rebuildable via `cco resolve --scan`; **DATA is synced, so a wrong
+  prune propagates across machines** and needs a second explicit confirmation. That reasoning is the
+  hard part and it is already settled — reuse it, do not re-litigate it.
+- Self-heal precedents: the ADR-0045 running-registry reconcile backstop (silent prune of stale
+  markers at `cco start`) and the transparent index v1→v2 migration (ADR-0051 D6).
+- Per-resource validators exist for **user-facing** config: `cco project|pack|template validate`.
+
+**The actual gap**: the **internal** artifacts have no integrity story. Readers are uniformly
+*lenient* — `lib/index.sh` (awk section extraction, `_peel_tab`), `lib/tags.sh` (`_tags_get` bracket
+regex), `lib/cmd-remote.sh` (`IFS='=' read`) all **skip or silently misparse** a malformed record
+rather than flag it, so corruption reads as "empty" (precisely the FI-16 symptom). And only
+`.cco/meta` + the index carry a version at all: **tags, remotes, tokens, running markers and source
+records are unversioned**, so nothing can even detect that they were written by another generation.
+
+**Direction to evaluate**:
+- **Fix the source first.** Much of this class is closed upstream by the [FI-16](#fi-16-fail-loud-state-guards-for-mixed-cco-versions)
+  gate — refusing the old binary prevents the corruption instead of detecting it afterwards.
+  Sequence FI-16 **before** this note and re-scope what is left.
+- **Extend `cco config validate`** with structural/format checks (does each record parse? is any
+  record in a foreign format? is the file's version within the supported bound?) rather than adding a
+  `cco doctor` verb — a second entry point for the same job would split the surface. Whether a
+  `doctor` **alias** is warranted is a naming question, decidable later.
+- **Decide the read-time contract**: strict-fail vs warn-once vs lenient-skip on a malformed record.
+  Today's silent-skip is the reason a corrupt index looks empty; at minimum a malformed record should
+  be *visible*. Note `cco path list` already flags malformed (non-absolute) entries — a local
+  precedent to generalise from.
+
+**Re-verify the bound before design**: inventory each internal artifact as **regenerable**
+(index → `resolve --scan`; llms → re-download) vs **irreplaceable** (tags, tokens) — repair strategy
+follows from that split, and the ADR-0021 sync-class reasoning already encodes half of it. Confirm
+what FI-16 leaves unfixed before sizing.
+
+**Type & tracking**: extends an existing verb → changelog; possibly version stamps on unversioned
+artifacts (schema-touching → migration). **Effort**: Med (Low if FI-16 lands first).
+**Not gating** the e2e review.
+
+## FI-23: extra_mount legacy bindings land in the `unscoped:` bucket (ADR-0051 migration residue)
+
+**Status**: 📝 Note — to analyze (found 2026-07-16 by code inspection while triaging FI-21; **live on
+the maintainer's machine**).
+
+**Context**: the v1→v2 index migration (`lib/index.sh:97`) re-homes a flat `paths:` name under every
+project that lists it **in the `projects:` membership**. But membership is written by
+`_index_set_project_repos`, fed from `yml_get_repo_coords` (`cmd-resolve.sh:330`/`537`, `cmd-init.sh`,
+`cmd-join.sh`) — i.e. **repos only, never extra_mounts**. So every legacy extra_mount matches no
+membership and is migrated into the `unscoped:` bucket, where `_index_get_path` (`lib/index.sh:523`)
+consults it as a **fallback for any project**.
+
+**Why it matters**: that fallback is a de-facto **global default layer for extra_mounts** — the exact
+construct **ADR-0051 D2 explicitly rejected** ("no global-default layer … a global default is
+meaningless for generic labels"). And it lands precisely on the generic names the ADR was written for:
+the maintainer's live index shows `assets`, `mock`, `reference`, `project-docs`,
+`cave-api-framework` sitting unscoped. Observable symptom: the messy mixed `cco path list` view
+(prefixed `[project] name` rows *and* bare rows) that prompted the maintainer's "path list is a bit
+of a mess" remark — the format is not the cause, the residue is.
+
+**Severity is low, and why**: it is self-healing in practice — `cco resolve` re-binds each mount
+per-project (the maintainer's `cave-flow`/`cave-eda-framework` are correctly scoped under two
+projects), and a project's own binding **wins** over the unscoped fallback. The residue is a stale
+record, not a wrong resolution. But it is a **completeness gap in a just-shipped migration**, and it
+keeps a rejected mechanism reachable.
+
+**Direction to evaluate**: decide whether the fallback is (a) an intentional escape hatch for the
+project-less `cco path set` pin — which is how `index.sh:512-517` describes it, and that use is
+legitimate — or (b) an unintended global default once *migrated* mounts land there. If the split is
+real, the fix is in the **migration**, not the fallback: re-home a legacy extra_mount under the
+projects whose `project.yml` actually references it (the coordinate reader for mounts already exists
+alongside `yml_get_repo_coords`), leaving `unscoped:` for genuine project-less pins only. Pair with a
+prune path for residue already on disk (`cco config validate --fix` is the natural home — FI-22).
+
+**Re-verify the bound before design**: confirm whether membership *should* include extra_mounts at all
+(it is named `_index_set_project_repos` and `cco join` reasons about repos — widening it may have
+callers' semantics attached), and check whether `_index_get_path_any` (FI-21) plus this fallback
+overlap into the same cross-project resolution question. FI-21, FI-22 and this note all touch the
+index model — **scope them together before designing any one of them**.
+
+**Type & tracking**: migration completeness → likely a follow-up migration + changelog.
+**Effort**: Low–Med. **Not gating** the e2e review (self-healing; project bindings win).

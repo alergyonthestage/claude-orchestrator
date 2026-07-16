@@ -318,8 +318,29 @@ merge).
 
 ### Dogfood-found bugs (pre-merge / pre-e2e — NOT hardening-v2 scope)
 
-- **B-DF1 — `cco project show` reports mounted repos as `[missing]`/`code-only`
-  in-container** (found 2026-07-09, dogfood #2). `cmd_project_show`
+- **B-DF1 — ✅ FIXED 2026-07-16 (`8ae2a12`)**, on `fix/cli/project-show-container-paths` (from
+  `develop`; **not pushed** — push from the Mac). Re-surfaced by the maintainer host session that
+  also produced FI-21/22/23 (see "2026-07-16 triage" below), which independently re-derived this
+  entry's own prescription. Shipped as written here — probe at `/workspace/<repo_name>` for the
+  `-d` badge **and** the role/`_project_member_status` path — via `_cco_member_probe_path`
+  (`lib/paths.sh`), applied in the query-layer callers that still hold the member NAME.
+  `lib/index.sh` deliberately **untouched**: its other callers are the host-only verbs
+  (`join`/`forget`/`rename`), which must keep receiving the real host path to act on.
+  This entry's closing suspicion — *"same index-host-path pattern may affect other in-container
+  read verbs"* — was **confirmed and generalised**: a host-path-hygiene sibling (both views
+  printed the index host path ignoring `show_host_paths`, INV-4) sat in the very same functions
+  and is fixed in the same commit, and the class now has a checklist item + rule
+  ([design-cli-environment-awareness §4c/§5.3b](../../../cli/design/design-cli-environment-awareness.md)),
+  since F1 and B-DF1 are one defect with two different remedies. 6 tests; the role test fails on
+  the pre-fix code with the exact mislabel. Suite 1305/9 (+6 passing; the 9 = the FI-19
+  boundary artifacts). **Acceptance still needs `cco build`** — a live session runs the
+  image-baked cco (`project show` is a store verb and trampolines through the setuid helper), so
+  this fix is NOT observable in-session until the image is rebuilt.
+
+  *Original report (2026-07-09, dogfood #2) — kept verbatim; its line numbers predate the
+  intervening refactors (`:184`→`:211`, `index.sh:302`→`:762`, `:146`→`:177`):*
+  **`cco project show` reports mounted repos as `[missing]`/`code-only` in-container.**
+  `cmd_project_show`
   (`lib/cmd-project-query.sh`) resolves each member's path via `_effective_repo_mounts`
   → the STATE **index HOST path** (e.g. `/Users/alessandro/.../cave-flow`), then tests
   `[[ -d "$repo_path" ]]` (`:184`) and `_project_member_role` → `_project_member_status`
@@ -363,6 +384,26 @@ merge).
   removes the container, entrypoint `trap _cleanup EXIT` reaps bg procs, generated compose is
   CACHE/STATE — the marker is the only new artifact to get right). Do **not** design marker
   cleanup around an exit-time `cco stop`.
+
+### 2026-07-16 triage — maintainer host session (pre-e2e)
+
+A maintainer host session (repo rename → `cco path list` → `cco resolve`, partly run against the
+**npm-released** cco by mistake) raised four points, triaged against one question: *does it affect
+the e2e review's results, or the release the review gates?*
+
+| Raised | Verdict | Where it went |
+|---|---|---|
+| `project show` marks a mounted+resolved repo `[missing]`, and the name appears twice | **Fix now** — it is **B-DF1**, a known open pre-merge item, and a sibling of the F1 the CLI-surface review already fixed. Leaving it would spend a review cycle re-finding a known bug. | ✅ fixed `8ae2a12` (see above) |
+| Per-project name scoping leaves rename / `path set` / `path list` / by-name lookups ambiguous | **Defer** — the [e2e handoff §9](handoff.md) already excludes "broader naming semantics (ADR-0051, disambiguation prompts)" from this acceptance. Not a regression; `repo rename` is correct as-is. | [FI-21](../../../roadmap-backlog.md#fi-21-host-path-commands-must-disambiguate-their-project-post-adr-0051-completeness) |
+| An older cco silently misreads/rewrites newer internal state (no version gate) | **Defer** — the e2e runs a **single** binary (the image-baked one), so the mixed-version scenario cannot arise in it. Pre-existing note, now with a design. | [FI-16](../../../roadmap-backlog.md#fi-16-fail-loud-state-guards-for-mixed-cco-versions) (updated) |
+| Validation / doctor / repair for broken or mixed-format internal files | **Defer** — largely closed upstream by FI-16's gate; `cco config validate --fix` is the existing vehicle. | [FI-22](../../../roadmap-backlog.md#fi-22-internal-state-validation-doctor-and-repair) |
+| *(found while triaging)* legacy extra_mounts migrate into the index `unscoped:` bucket → a de-facto global default ADR-0051 D2 rejected | **Defer** — self-healing (`cco resolve` re-binds per project; a project's own binding wins). Live on the maintainer's machine; explains the "messy" `path list` view. | [FI-23](../../../roadmap-backlog.md#fi-23-extra_mount-legacy-bindings-land-in-the-unscoped-bucket-adr-0051-migration-residue) |
+
+**For the reviewer**: FI-21/22/23 are **known and deliberately out of scope** — do not re-report
+them. FI-21/22/23 all touch the index model and must be **scoped together** before any one is
+designed (see the backlog's re-verify-the-bound convention). What B-DF1 leaves for the run:
+`cco build`, then confirm `project show` in a live session (it is unobservable before the
+rebuild — a store verb trampolines into the baked cco).
 
 ### Updated sequencing
 
