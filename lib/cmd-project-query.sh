@@ -73,7 +73,13 @@ _project_member_role() {
     local repo_path="$1" project="$2" repo_name="$3" status
     # Central projects mount via @local/local-paths; fall back to the index path.
     [[ ! -d "$repo_path" && -n "$repo_name" ]] && repo_path=$(_index_get_path "$project" "$repo_name" 2>/dev/null)
-    status=$(_project_member_status "$project" "$repo_path")
+    # B-DF1: classify the member where it is actually inspectable — the container
+    # mount in operator mode, the index host path on the host. _project_member_status
+    # takes a ready path (it reads <path>/.cco/project.yml to tell synced/foreign/
+    # code-only apart), so the translation belongs HERE, in the caller that still
+    # has the member NAME. Passing the host path in-container made every member
+    # `unresolved` → mislabelled `code-only`.
+    status=$(_project_member_status "$project" "$(_cco_member_probe_path "$repo_name" "$repo_path")")
     case "$status" in
         synced)     printf 'host' ;;
         unresolved) printf 'code-only' ;;
@@ -97,8 +103,14 @@ _project_show_repo_centric() {
         any=true
         p=$(_index_get_path "$hosted" "$rn" 2>/dev/null)
         # Referenced-by = other projects mounting this PATH (ADR-0051 D5), not name.
+        # Keyed on the INDEX path: bindings are recorded host-side, so the lookup
+        # must use the host path even in-container (where $p is not inspectable).
         refby=$([[ -n "$p" ]] && _index_paths_get_bindings "$p" 2>/dev/null | cut -f1 | grep -vxF "$hosted" | sort -u | paste -sd, - 2>/dev/null)
         local l="  $rn"
+        # Host-path hygiene (INV-4), as in the full view above.
+        if [[ -n "$p" ]] && _cco_container_operator && [[ "${CCO_SHOW_HOST_PATHS:-true}" != "true" ]]; then
+            p=$(_cco_member_probe_path "$rn" "$p")
+        fi
         [[ -n "$p" ]] && l="$l ($p)" || l="$l (unresolved)"
         [[ -n "$refby" ]] && l="$l — also in: $refby"
         echo "$l"
@@ -208,10 +220,25 @@ EOF
             refby=$([[ -n "$repo_path" ]] && _index_paths_get_bindings "$repo_path" 2>/dev/null | cut -f1 | grep -vxF "${yml_name:-$name}" | sort -u | paste -sd, - 2>/dev/null)
             local suffix="[$role]"
             [[ -n "$refby" ]] && suffix="$suffix — also referenced by: $refby"
-            if [[ -d "$repo_path" ]]; then
-                echo "  $repo_name ($repo_path) $suffix"
+            # B-DF1: probe the member where it lives in THIS context (mount
+            # in-container, index host path on the host) — never the host path
+            # in-container, which cannot exist and made every mounted repo read
+            # `[missing]` + "N reference(s) unresolved".
+            local _probe _disp
+            _probe=$(_cco_member_probe_path "$repo_name" "$repo_path")
+            # Host-path hygiene (INV-4), orthogonal to the probe: a host path may
+            # be shown only where show_host_paths permits it. In-container with the
+            # knob off, render the mount — the path the agent can actually use —
+            # instead of leaking the host one.
+            if _cco_container_operator && [[ "${CCO_SHOW_HOST_PATHS:-true}" != "true" ]]; then
+                _disp="$_probe"
             else
-                echo -e "  $repo_name (${repo_path:-unresolved}) ${YELLOW}[missing]${NC} $suffix"
+                _disp="${repo_path:-unresolved}"
+            fi
+            if [[ -d "$_probe" ]]; then
+                echo "  $repo_name ($_disp) $suffix"
+            else
+                echo -e "  $repo_name ($_disp) ${YELLOW}[missing]${NC} $suffix"
                 _unresolved=$(( _unresolved + 1 ))
             fi
         done <<< "$repos"

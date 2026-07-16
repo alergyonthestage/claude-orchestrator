@@ -3,7 +3,8 @@
 #
 # Provides: XDG 4-bucket resolver — _cco_config_dir(), _cco_data_dir(),
 #           _cco_state_dir(), _cco_cache_dir() (+ _cco_in_container(),
-#           _cco_resolver_guard(), _cco_first_abs(), _cco_ensure_dir());
+#           _cco_resolver_guard(), _cco_member_probe_path(), _cco_first_abs(),
+#           _cco_ensure_dir());
 #           legacy dual-read helpers — _cco_remotes_file(), _cco_global_meta(),
 #           _cco_global_base_dir(), _cco_project_meta(), _cco_project_base_dir(),
 #           _cco_project_managed(), _cco_project_compose(),
@@ -327,6 +328,30 @@ _cco_container_operator() {
     [[ "${CCO_STATE_HOME:-}" == /* ]] || return 1
     [[ "${CCO_CACHE_HOME:-}" == /* ]] || return 1
     return 0
+}
+
+# Echo the path at which a member repo/extra_mount is INSPECTABLE on this machine
+# (B-DF1). The STATE index is the machine-local map and stores HOST paths; inside
+# a session those paths do not exist — `cco start` bind-mounts each member at the
+# flat WORKDIR path <workdir>/<name> instead. So an existence/status check in
+# operator mode must probe the MOUNT, never the index host path: testing the host
+# path in-container always fails and mislabels a perfectly resolved repo as
+# missing/unresolved. On the host (and whenever <name> is empty) the index path is
+# returned unchanged.
+#
+# Not-mounted members resolve correctly by construction: only the session's own
+# project is mounted, so another project's member (visible at read-all) probes a
+# <workdir>/<name> that does not exist and reads as genuinely unavailable here —
+# which it is. This resolves what to PROBE; what to DISPLAY is the caller's
+# host-path-hygiene decision (show_host_paths), deliberately kept separate.
+# Usage: _cco_member_probe_path <name> <index_host_path>
+_cco_member_probe_path() {
+    local name="$1" host_path="$2"
+    if [[ -n "$name" ]] && _cco_container_operator; then
+        printf '%s\n' "${CCO_WORKDIR:-/workspace}/$name"
+    else
+        printf '%s\n' "$host_path"
+    fi
 }
 
 # Anti-in-container guard (H4, ADR-0007 Robustness). cco resolves host paths

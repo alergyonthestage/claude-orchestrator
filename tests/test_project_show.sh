@@ -192,3 +192,91 @@ test_project_show_r4_requires_flat_manifest() {
     out=$(cd "$ws" && CCO_WORKDIR="$ws" PROJECT_NAME=my-session _ps_fallback yes)
     [[ -z "$out" ]] || fail "R4: fallback needs a flat session manifest, got: '$out'"
 }
+
+# ── B-DF1: members are probed at the MOUNT in-container, not the index host path ──
+# The index stores HOST paths; in a session the member is bind-mounted at
+# <workdir>/<name>. Probing the host path in-container always fails and mislabels a
+# mounted repo `[missing]` + `code-only`. Same subshell/stub pattern as R4 above: it
+# exercises the helper directly, so it never reaches the dispatcher (whose
+# store-verb trampoline would re-enter the image-baked cco and defeat the test).
+
+_ps_probe() {  # echoes the probe path; operator stubbed per $1
+    local operator="$1"; shift
+    (
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/paths.sh"
+        if [[ "$operator" == yes ]]; then _cco_container_operator() { return 0; }
+        else _cco_container_operator() { return 1; }; fi
+        _cco_member_probe_path "$@"
+    )
+}
+
+test_member_probe_operator_uses_mount() {
+    local out
+    out=$(CCO_WORKDIR=/ws _ps_probe yes "my-repo" "/Users/alex/code/my-repo")
+    [[ "$out" == "/ws/my-repo" ]] \
+        || fail "B-DF1: in operator mode a member must be probed at the mount, got: '$out'"
+}
+
+test_member_probe_host_uses_index_path() {
+    local out
+    out=$(CCO_WORKDIR=/ws _ps_probe no "my-repo" "/Users/alex/code/my-repo")
+    [[ "$out" == "/Users/alex/code/my-repo" ]] \
+        || fail "B-DF1: on the host the index path must pass through unchanged, got: '$out'"
+}
+
+test_member_probe_empty_name_falls_back() {
+    local out
+    # No name → nothing to build a mount path from; must not invent "/ws/".
+    out=$(CCO_WORKDIR=/ws _ps_probe yes "" "/Users/alex/code/my-repo")
+    [[ "$out" == "/Users/alex/code/my-repo" ]] \
+        || fail "B-DF1: an empty name must fall back to the given path, got: '$out'"
+}
+
+test_member_probe_defaults_to_workspace() {
+    local out
+    out=$(_ps_probe yes "my-repo" "/Users/alex/code/my-repo")   # CCO_WORKDIR unset
+    [[ "$out" == "/workspace/my-repo" ]] \
+        || fail "B-DF1: the probe must default to the /workspace WORKDIR, got: '$out'"
+}
+
+# End-to-end on the classification itself: the same member that reads `code-only`
+# (from `unresolved`) when probed at a non-existent host path must read `host`
+# (synced) once probed at its mount — the exact B-DF1 mislabel.
+_ps_role() {  # echoes the display role; operator stubbed per $1
+    local operator="$1"; shift
+    (
+        source "$REPO_ROOT/lib/colors.sh";  source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/paths.sh";   source "$REPO_ROOT/lib/yaml.sh"
+        source "$REPO_ROOT/lib/index.sh";   source "$REPO_ROOT/lib/sync-meta.sh"
+        source "$REPO_ROOT/lib/cmd-project-query.sh"
+        if [[ "$operator" == yes ]]; then _cco_container_operator() { return 0; }
+        else _cco_container_operator() { return 1; }; fi
+        # Isolate from the real index: the host path is deliberately absent, and the
+        # fallback re-fetch must not consult a real store.
+        _index_get_path() { printf '%s\n' "$2"; }
+        _project_member_role "$@"
+    )
+}
+
+test_member_role_operator_classifies_via_mount() {
+    local ws; ws=$(mktemp -d); trap "rm -rf '$ws'" EXIT
+    mkdir -p "$ws/my-repo/.cco"
+    printf 'name: my-proj\n' > "$ws/my-repo/.cco/project.yml"
+    local out
+    # Host path absent (as it always is in-container); the mount carries the config.
+    out=$(CCO_WORKDIR="$ws" _ps_role yes "/nonexistent/my-repo" "my-proj" "my-repo")
+    [[ "$out" == "host" ]] \
+        || fail "B-DF1: a mounted config-bearing member must classify as 'host', got: '$out'"
+}
+
+test_member_role_host_context_unaffected() {
+    local ws; ws=$(mktemp -d); trap "rm -rf '$ws'" EXIT
+    mkdir -p "$ws/my-repo/.cco"
+    printf 'name: my-proj\n' > "$ws/my-repo/.cco/project.yml"
+    local out
+    # On the host an absent path is genuinely unresolved → code-only. Unchanged.
+    out=$(CCO_WORKDIR="$ws" _ps_role no "/nonexistent/my-repo" "my-proj" "my-repo")
+    [[ "$out" == "code-only" ]] \
+        || fail "B-DF1: host classification must be unchanged (code-only), got: '$out'"
+}
