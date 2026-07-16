@@ -5,7 +5,7 @@
 > [roadmap-history.md](roadmap-history.md). The framework-improvements backlog
 > lives in [roadmap-backlog.md](roadmap-backlog.md).
 >
-> Last updated: 2026-07-15.
+> Last updated: 2026-07-16.
 
 ## Current status
 
@@ -484,9 +484,11 @@ confirm before scheduling. None blocks the v1 merge.
 > stays project 014/global 016); suite **1197/7**. **`cco build` DONE** (session restarted on the
 > rebuilt image — boundary/preset fixes live). **▶ The access-model refinements are now COMPLETE
 > (WS-A + WS-B, ADR-0048/0049 — see the "Access-model refinements" subsection), so e2e v2 is the
-> next acceptance gate** (run on the final, settled model). Pre-merge open: **B-DF1**,
-> config-editor `--project` host live-dogfood, Linux write-path check-in; then push all access
-> branches (from the Mac) + merge → develop.
+> next acceptance gate** (run on the final, settled model). Pre-merge open: ~~B-DF1~~ **✅ FIXED
+> 2026-07-16** (`8ae2a12` on `fix/cli/project-show-container-paths`, from `develop`, **not pushed** —
+> merge it **before** the e2e `cco build`, else the run re-finds a known bug); config-editor
+> `--project` host live-dogfood, Linux write-path check-in; then push all access branches (from the
+> Mac) + merge → develop.
 > The shipped access model (ADR-0036/0042/0043 +
 > the e2e fix) was reviewed by the maintainer; the review surfaced **two structural gaps to
 > close before releasing the feature**: (1) the permission model can't express legit
