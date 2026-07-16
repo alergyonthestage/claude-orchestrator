@@ -807,3 +807,26 @@ entries:
       settings.local.json keeps it: its content seeds STATE on first start rather
       than being shadowed by an empty object, so existing "Always allow" grants
       and local prefs survive. Nothing to do — the seeding is automatic.
+
+  - id: 45
+    date: "2026-07-15"
+    type: additive
+    title: "cco start recovers from a stale Claude Code launcher instead of failing"
+    description: >
+      The native installer (ADR-0039) refuses to overwrite a launcher it did not
+      create: `claude install` exits with "the existing file there was not created
+      by the native installer and is not a working launcher". Because the install
+      lives in the shared CACHE dir (~/.cache/cco/claude-install), a single stale
+      launcher — an npm-era wrapper, a `claude migrate-installer` result, or a
+      symlink dangling at a version that share/claude/versions no longer holds —
+      made the entrypoint FATAL on `cco start` for EVERY project, with no
+      documented way out (the fix was `cco build --no-cache`, which the error did
+      not mention; the reported "Network access is required" was misleading when
+      the network was fine). The entrypoint now clears the launcher path before
+      installing — it only ever gets there when it has already decided to
+      (re)install, and the install itself lives in share/claude/versions — so a
+      poisoned cache self-heals on the next start. A healthy install is still
+      never reinstalled ("one-time per cache"): the marker check is unchanged, and
+      the auto-updater keeps the binary current. If an install genuinely fails,
+      the FATAL now names `cco build --no-cache` as the cache reset. Requires
+      `cco build` (the entrypoint is baked into the image).

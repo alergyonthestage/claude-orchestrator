@@ -537,6 +537,23 @@ DI1), **CLI-surface matrix** (`cli/reference/cli-surface-matrix.md`), **DOC1** c
 > suite. **▶ NEXT: e2e v2 acceptance, running ON `develop`.** The `init-workspace` re-analysis
 > (ADR-0049 §6 / design §7) is a separate future task.
 
+> **Second dogfood catch — stale Claude Code launcher (ADR-0039) — ✅ FIXED (2026-07-15)** on
+> `fix/entrypoint/claude-install-stale-launcher` (branch **NOT pushed**, needs `cco build` on the Mac).
+> A `cco start` FATAL'd at the first-start install: `claude install` **refuses to overwrite a launcher
+> it does not own** and exits non-zero, and the entrypoint had no recovery. Because the install home is
+> the **CACHE dir shared by every project and session**, one stale launcher (npm-era wrapper,
+> `claude migrate-installer` result, symlink dangling into a wiped `share/claude/versions`) poisoned
+> `cco start` everywhere — with the escape hatch (`cco build --no-cache`) unnamed and the message
+> blaming a network that was fine. Fix: clear the launcher path before invoking `install.sh` (that
+> branch is only reached once a (re)install is already decided; the install itself lives in
+> `share/claude/versions`), and name the reset in the FATAL. The marker check is untouched, so a
+> healthy install still never reinstalls. Changelog **#45**. Note for the record: this was **not** a
+> bin-vs-npm defect — v0.5.2 and `develop` carry byte-identical install logic; the npm run only
+> succeeded because it came **second**, after the failed run had already cleared the bad launcher.
+> Same lesson as the §5 bug: the hermetic suite cannot see it (the new tests drive the extracted
+> install block against a fake `install.sh` — the real one is a network fetch), so **the live check
+> belongs to the e2e gate**.
+
 | Workstream | Status | Decision |
 |---|---|---|
 | **WS-A — config-editor default + read floor** | **✅ DONE + SHIPPED (2026-07-13, `cco build` live)** on `feat/config-access/config-editor-access` | config-editor min-privilege **by mode**: project **`(ro,rw,none)`** (edit project, read store) / bare-global **`(rw,none,none)`** / `edit-global` → `(rw,rw,none)` / `--all` → edit-all; **`G ≥ ro` clamp** + **`claude_access` follows `G`** (A-V3, closes C2 at config-editor level); **INV-2 conditional** project floor (Pc≥ro iff a current project is in scope). [ADR-0048](configuration/agent-cco-access/decisions/0048-config-editor-min-privilege-refinement.md) + annot 0044/0046. Commits `aab422f`→`00b8b2a`; changelog #38. **+ 4 UX refinements (2026-07-13, model unchanged):** R1/R2 `whoami` identity-first + dedup (`eea8395`), R3 `cco list` KIND `builtin` + `--include-internal` (`327add2`), R4 bare `project show` at `/workspace` root (`a87dcd8`), docs+changelog #39 (`394c649`). Suite **1211/7** (7 pre-existing). ⏳ pre-merge: push both branches from the Mac. |
