@@ -108,9 +108,57 @@ flowchart TD
    - **Secret masking** — real secret files never reach the container (masked at mount).
    - **Host-path hygiene** — never print host paths beyond the gated `path_map`
      (`show_host_paths`); resolution stays host-side (ADR-0007 / INV-4).
+   - **Host-path *consumption*** — a host path that legitimately reaches a container verb
+     must be **translated onto its mount before it is used**, never tested or read as-is. See
+     §4c: this is the layer B-DF1 fell through.
    - **Scope-aware help** — `usage()` / `--help` reflect the wrapped scope in operator mode:
      host-only verbs flagged `(host only — run on your host)`, verbs above the current level
      marked unavailable (ADR-0042 §4.3).
+
+## 4c. Host paths a verb *consumes* — translate onto the mount (B-DF1)
+
+§4b covers what a verb **shows**. This covers what a verb **acts on**. The two host-path rules
+are easy to conflate and are different obligations:
+
+| | Question | Rule |
+|---|---|---|
+| **Hygiene** (INV-4) | may I *print* this host path? | Only where `show_host_paths` permits. |
+| **Consumption** (this §) | may I *test/read* this host path here? | Not in-container — translate to the mount first. |
+
+The framework's internal maps are **host-side by construction**: the STATE index stores host
+absolute paths, because it is the machine-local map the host resolver writes. Those paths are
+**meaningless inside a session** — `cco start` bind-mounts each member at the flat WORKDIR path
+`<workdir>/<name>`. So in a container:
+
+> **A host path from the index must never be passed to `-d` / `-f` / a read.** It cannot exist,
+> so the test does not report "missing" — it reports **nothing at all**, uniformly and silently.
+> Translate it to the mount (`_cco_member_probe_path`, `lib/paths.sh`) and probe that.
+
+**Why this needs its own rule rather than "it's obvious".** The failure is silent and
+*plausible*: the code looks right, runs without error, and returns a well-formed answer that is
+simply always wrong in one context. It has now produced two distinct defects from one root:
+
+- **F1** (2026-07-02 surface review) — `config validate` flagged **every** index entry an orphan
+  in-container and printed the user's host paths doing it. Resolved by reclassifying the verb
+  **host-only**: its whole job is sanitising machine-local host state, which is only coherent
+  host-side.
+- **B-DF1** (found 2026-07-09, fixed 2026-07-16) — `cco project show` badged every mounted repo
+  `[missing] [code-only]` + "N reference(s) unresolved". Host-only was **not** available as an
+  answer here: R4 deliberately makes `project show` in-container introspection. The answer had
+  to be translation.
+
+That contrast is the substance of the rule: **when a verb consumes host paths, "make it
+host-only" and "translate onto the mount" are both valid — pick by whether the verb's *purpose*
+is in-container.** Sanitising machine-local host state is not; introspecting the session is.
+A verb that is legitimately reachable in-container must translate, and translating is a
+per-command self-check the central gate (§4) cannot make for it: the gate decides *whether* the
+verb runs, never what a path *means* once it does.
+
+**Where the translation belongs.** In the caller that still holds the resource **name** — the
+name is what indexes the mount. Do not push it down into shared classifiers that take a ready
+path (`_project_member_status`), and do not "fix" the index-reading primitives: their other
+callers are host-only verbs (`join`/`forget`/`rename`) that must keep receiving the **real host
+path** to act on. Translate at the edge, per context; leave the map alone.
 
 ## 4b. Output scoping — what a *permitted* read verb shows (ADR-0043)
 
@@ -169,8 +217,21 @@ Any new or changed verb MUST answer, and wire, the following:
    unclassified verb is refused in-container).
 3. If it **resolves host paths** → it is host-only; rely on the resolver guard and add the
    host-only branch + hint.
+3b. If it **consumes a host path** it did not resolve — anything read out of the STATE index
+   (`_index_get_path`, `_effective_repo_mounts`, …) — decide **explicitly** which of the two
+   answers applies (§4c), and write the choice down:
+   - the verb's purpose is host-side machine-local state → **host-only** (precedent: `config
+     validate`, F1);
+   - the verb is legitimately in-container → **translate onto the mount** before any `-d`/`-f`/
+     read (`_cco_member_probe_path`), in the caller that still holds the resource name
+     (precedent: `project show`, B-DF1).
+   > **Smell test.** Ask: *"in a session, does this path exist?"* If a `[[ -d "$p" ]]` on an
+   > index path can reach a container, it is already wrong — it does not fail loudly, it just
+   > answers "no" forever. Grep the verb for existence tests on anything index-derived.
 4. If it **emits paths or reads config** → mask secrets, respect `show_host_paths` and the
-   resolved read scope.
+   resolved read scope. Note this is a **separate** obligation from 3b — what you may *print*
+   (hygiene, INV-4) is not what you may *test* (consumption). B-DF1 shipped with both wrong in
+   the same function, each masking the other.
 5. If it **lists or shows resources** → scope its **output** via the shared layer (§4b):
    `_env_in_scope` while iterating, `_env_note_hidden` on skip, `_env_flush_hidden_notice` at
    the end; `show`/detail verbs call `_env_require_visible` first. Never re-derive context.
@@ -198,6 +259,21 @@ edit-project; `llms remove` prints a **repo-relative** path; and the `usage()` h
 annotation is documented as deliberately top-level (no drift). The network-write cluster,
 host-only refusals, and the B2 read surface were confirmed correct.
 
-The principle now reads as **fully applied across the surface**. Treat this document as the
-reference for any CLI change: new commands inherit the correct method (the §5 checklist) from
-day one.
+**Amendment (2026-07-16) — the sweep missed the host-path *consumption* case.** The review found
+F1 (`config validate`) and resolved it by reclassifying the verb host-only. It did not ask the
+follow-on question — *which other verbs consume index host paths, and which of them cannot be
+made host-only?* — so **B-DF1** (`cco project show` badging every mounted repo `[missing]`)
+survived the audit and was found three days later by dogfood. The two are the same defect wearing
+different clothes; only the remedy differs (§4c).
+
+The gap was in the **checklist, not the sweep**: §5 covered host paths a verb *resolves* (→
+host-only) and host paths a verb *prints* (→ hygiene), but never host paths a verb *consumes*,
+so there was no question whose answer would have caught it. §4c + §5.3b now close it.
+
+Take the audit's conclusion accordingly: the surface was swept against §2–§5 **as they read on
+2026-07-02**. Re-verify verbs that read the STATE index against §4c specifically — the class is
+demonstrated to survive a general review, because each instance looks locally correct.
+
+Treat this document as the reference for any CLI change: new commands inherit the method (the §5
+checklist) from day one — and when a checklist item is found missing, the fix is the item, not
+just the bug.
