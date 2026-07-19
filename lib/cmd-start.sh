@@ -131,10 +131,18 @@ YAML
         # when the session may WRITE the store (G=rw — global mode, edit-global, edit-all),
         # ro in project mode (G=ro) so the store is referenceable but not writable without
         # an explicit --cco-access edit-global. Shares the resolver via
-        # _config_editor_store_ro, so this mount and the operator-bucket /home/claude/.cco
+        # _config_editor_mount_ro, so this mount and the operator-bucket /home/claude/.cco
         # (_op_rw) agree. This project.yml is generated BEFORE _start_resolve_access, but G
         # is fully determined by mode + CLI for a built-in, so the flag is knowable now.
-        local _cc_ro; _cc_ro=$(_config_editor_store_ro)
+        local _cc_ro; _cc_ro=$(_config_editor_mount_ro g)
+        # Each target's <repo>/.cco readonly FOLLOWS Pc, from the same resolver (RC-1 §3.5).
+        # It used to be hardcoded `false`, which was harmless only because
+        # _find_nested_config_dirs matched the mount root and re-overlaid it :ro — the
+        # accident that also clobbered Pc=rw (RC-1 defect a). With the root no longer swept
+        # this flag is the target's only enforcement, so a granular current=ro must be
+        # honoured here or removing the accident would ESCALATE privilege. Shipped modes
+        # (project / --all / edit-global) all carry Pc=rw → unchanged `false`.
+        local _tg_ro; _tg_ro=$(_config_editor_mount_ro pc)
         cat <<YAML
 extra_mounts:
   - name: cco-config
@@ -149,7 +157,7 @@ YAML
             cat <<YAML
   - name: ${_tn}-config
     target: /workspace/${_tn}-config
-    readonly: false
+    readonly: ${_tg_ro}
 YAML
         done <<< "$targets"
         cat <<YAML
@@ -467,19 +475,26 @@ _emit_local_settings_overlay() {
 # (and a member's .cco with a project.yml) escape a root-only overlay. Emit the
 # path of each directory named <base> under <root>, RELATIVE to <root>, one per
 # line — bounded (maxdepth) and pruned (heavy/irrelevant dirs) so the per-start
-# scan stays cheap. The mount ROOT itself (rel ".") is included when it matches, so
-# this SUBSUMES the former root-only check. When <require_file> is given only dirs
-# containing that file qualify (e.g. .cco carrying a project.yml). Args: <root>
-# <base> [<require_file>].
+# scan stays cheap. When <require_file> is given only dirs containing that file
+# qualify (e.g. .cco carrying a project.yml). Args: <root> <base> [<require_file>].
+#
+# INVARIANT: this NEVER returns the search root itself (rel would be empty). Its
+# domain is dirs strictly BELOW <root>. The root's own mode is governed by the
+# mount that produced it — ADR-0049 §7, "the mount's own readonly: flag governs
+# everything else" — never by the nested clamp. Consequence: EVERY producer of a
+# config mount owns its own `readonly:` (see _config_editor_mount_ro), because
+# nothing re-clamps the root behind its back. `-mindepth 1` enforces this at the
+# find level; the bash guard restates it so the contract survives a find edit.
 _find_nested_config_dirs() {
     local root="$1" base="$2" require_file="${3:-}" d rel
     [[ -d "$root" ]] || return 0
     while IFS= read -r d; do
         [[ -z "$d" ]] && continue
         [[ -n "$require_file" && ! -f "$d/$require_file" ]] && continue
-        rel="${d#"$root"}"; rel="${rel#/}"; [[ -z "$rel" ]] && rel="."
+        rel="${d#"$root"}"; rel="${rel#/}"
+        [[ -z "$rel" ]] && continue          # the search root itself — not nested
         printf '%s\n' "$rel"
-    done < <(find "$root" -maxdepth 6 \
+    done < <(find "$root" -mindepth 1 -maxdepth 6 \
                 \( -name .git -o -name node_modules -o -name .venv -o -name venv \
                    -o -name vendor -o -name target -o -name dist -o -name build \) -prune -o \
                 -type d -name "$base" -print 2>/dev/null | sort)
@@ -525,8 +540,8 @@ _resolve_config_editor_mode() {
 
 # The config-editor by-mode DEFAULT cco intent (SINGLE source, WS-A 2026-07-11). Emits
 # "<intent>\t<has_current_project>" for the resolved config_editor_mode. Both
-# _start_resolve_access (the session triple) and _config_editor_store_ro (the cco-config
-# mount readonly) read it, so the mount mode and the resolved triple never diverge:
+# _start_resolve_access (the session triple) and _config_editor_mount_ro (the generated
+# mounts' readonly) read it, so the mount mode and the resolved triple never diverge:
 #   project  → (ro,rw,none): edit the target project(s), READ the whole store to reference.
 #   all      → edit-all (rw,rw,rw): every project + store.
 #   global   → (rw,none,none): edit ONLY the store; project-less (Pc has no referent).
@@ -539,21 +554,31 @@ _config_editor_default_cco() {
     esac
 }
 
-# _config_editor_store_ro → "true"/"false": is the personal store ~/.cco (the cco-config
-# extra_mount) READ-ONLY for this config-editor session? The store is writable iff the
-# resolved G is rw. For a built-in the only cco_access sources are the CLI override and
-# the by-mode default (project.yml/access.yml bypassed for built-ins), so G is fully
-# determined here — the SAME inputs _start_resolve_access resolves, hence the mount and
-# the triple agree. Fails safe to read-only. Reads cmd_start locals config_editor_mode,
-# cli_cco_access.
-_config_editor_store_ro() {
+# _config_editor_mount_ro <axis> → "true"/"false": is a GENERATED config-editor mount
+# READ-ONLY for this session? The mount is writable iff the triple axis that names the
+# tree it exposes is rw:
+#   g   → cco-config    (~/.cco, the personal store)      — the whole point of the session
+#   pc  → <name>-config (a target project's <repo>/.cco)  — classified `current` (ADR-0048)
+# Both mounts are ROOTS, and since _find_nested_config_dirs stopped sweeping roots this
+# flag is their ONLY physical enforcement — a hardcoded value here is a declared-vs-
+# enforced defect (RC-1 §3.5). Keying the root to the same axis as the nested clamp
+# (_nested_config_modes' store / project-config roles) means root and nested trees of one
+# mount cannot contradict each other.
+# For a built-in the only cco_access sources are the CLI override and the by-mode default
+# (project.yml/access.yml bypassed for built-ins), so the triple is fully determined here —
+# the SAME inputs _start_resolve_access resolves, hence the mount and the triple agree,
+# even though this runs BEFORE it. Fails safe to read-only. Reads cmd_start locals
+# config_editor_mode, cli_cco_access.
+_config_editor_mount_ro() {
+    local axis="${1:-g}"
     local intent plflag g pc po _def
     _def=$(_config_editor_default_cco)
     intent="${_def%%$'\t'*}"; plflag="${_def##*$'\t'}"
     [[ -n "$cli_cco_access" ]] && intent="$cli_cco_access"   # CLI > by-mode default
     local triple; triple=$(_cco_resolve_access "$intent" "$plflag" 2>/dev/null) || { printf 'true'; return; }
     read -r g pc po <<< "$triple"
-    [[ "$g" == "rw" ]] && printf 'false' || printf 'true'
+    local val; case "$axis" in pc) val="$pc" ;; *) val="$g" ;; esac
+    [[ "$val" == "rw" ]] && printf 'false' || printf 'true'
 }
 
 # Collect the config-editor's edit targets + repo mounts (ADR-0042 §8 / ADR-0044

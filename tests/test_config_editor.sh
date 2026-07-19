@@ -88,7 +88,13 @@ test_config_editor_project_mode_mounts_target_cco() {
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     # The target project's committed .cco mounted rw at /workspace/myproj-config.
     assert_file_contains "$compose" "$tmpdir/repos/myproj/.cco:/workspace/myproj-config" || return 1
-    assert_file_not_contains "$compose" "$tmpdir/repos/myproj/.cco:/workspace/myproj-config:ro" || return 1
+    # RC-1 T1b: the fixed-string form of this assertion was a FALSE GREEN — the
+    # self-match overlay reads `…/.cco/.:/workspace/myproj-config/.:ro`, which the
+    # literal `…-config:ro` never matched. Match the DESTINATION with an optional
+    # `/.` so any :ro bind over the target root fails the test.
+    if grep -qE ':/workspace/myproj-config(/\.)?:ro"' "$compose"; then
+        fail "target .cco must not be re-overlaid :ro at Pc=rw: $(grep -nE ':/workspace/myproj-config(/\.)?:ro"' "$compose")"
+    fi
     # ~/.cco is still mounted (global store always available in config-editor).
     assert_file_contains "$compose" "$HOME/.cco:/workspace/cco-config" || return 1
 }
@@ -251,6 +257,13 @@ test_config_editor_masks_secrets_on_config_mounts() {
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "secret-mask:/workspace/cco-config/secrets.env:ro" || return 1
     assert_file_contains "$compose" "secret-mask:/workspace/myproj-config/secrets.env:ro" || return 1
+    # RC-1 T7: masking runs from _op_config_masks, a branch independent of the
+    # nested clamp, and emits a DEEPER child mount — so it must survive the target
+    # becoming genuinely writable. Assert the writability in the same test, or this
+    # stays a mask over a read-only tree and proves nothing about the fix.
+    if grep -qE ':/workspace/myproj-config(/\.)?:ro"' "$compose"; then
+        fail "secret masking must not depend on the target being clamped :ro"
+    fi
 }
 
 # ── --all / repeatable --project scope (ADR-0036 D-α) ─────────────────
@@ -368,4 +381,88 @@ test_config_editor_repo_flag_unknown_fails() {
     cd "$tmpdir"
     run_cco start config-editor --repo ghost-repo --dry-run --dump || true
     assert_output_contains "not resolvable"
+}
+
+# ── RC-1: the nested-config clamp must not swallow the mount ROOT ─────
+#
+# The lane's mount-generation rule (01-test-lane.md §3.6): every mount-generation
+# fix asserts BOTH the line that must appear AND the line that must not. RC-1 is a
+# SPURIOUS :ro line — the correct rw bind for the target's .cco is emitted today and
+# then clobbered by a second bind one line below it — so a presence-only assertion
+# passes with the bug in place.
+
+# T1 (defect a). _find_nested_config_dirs used to return its own search root as
+# rel ".", and a config-editor target's mount SOURCE is a .cco directory, so the
+# `.cco carries a project.yml` qualification resolved against `<repo>/.cco/./project.yml`
+# and re-bound the whole editing target :ro. Docker orders binds by destination
+# depth, so the `/.` child won and criterion D failed in 2 of 3 modes.
+test_config_editor_project_mode_target_not_self_clamped() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "cave" "$(minimal_project_yml cave)"
+    cd "$tmpdir"   # neutral cwd: the target comes from --project, not from cwd
+    run_cco start config-editor --project cave --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    # The line that MUST appear — present today, which is exactly why it cannot be
+    # the only assertion.
+    assert_file_contains "$compose" "$tmpdir/repos/cave/.cco:/workspace/cave-config" || return 1
+    # The line that must NOT appear: the self-match overlay.
+    assert_file_not_contains "$compose" "$tmpdir/repos/cave/.cco/.:/workspace/cave-config/.:ro" || return 1
+    # Nothing under the target may be :ro except the secret masks (a deliberate,
+    # deeper child mount that must keep winning — see the masking test).
+    local _bad
+    _bad=$(grep -E ':/workspace/cave-config[^"]*:ro"' "$compose" | grep -v 'secret-mask' || true)
+    [[ -z "$_bad" ]] || fail "unexpected :ro bind under a writable target: $_bad"
+    return 0
+}
+
+# T6 (defect a, --all). E6B measured 7/7 targets read-only in --all mode.
+test_config_editor_all_mode_targets_writable() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "proj-a" "$(minimal_project_yml proj-a)"
+    create_project "$tmpdir" "proj-b" "$(minimal_project_yml proj-b)"
+    cd "$tmpdir"
+    run_cco start config-editor --all --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_contains "$compose" "$tmpdir/repos/proj-a/.cco:/workspace/proj-a-config" || return 1
+    assert_file_contains "$compose" "$tmpdir/repos/proj-b/.cco:/workspace/proj-b-config" || return 1
+    assert_file_not_contains "$compose" "$tmpdir/repos/proj-a/.cco/.:/workspace/proj-a-config/.:ro" || return 1
+    assert_file_not_contains "$compose" "$tmpdir/repos/proj-b/.cco/.:/workspace/proj-b-config/.:ro" || return 1
+    return 0
+}
+
+# T15 (§3.5, the escalation guard). The self-clamp T1 removes was, accidentally,
+# the ONLY physical enforcement of Pc=ro on a config-editor target — the generated
+# mount hardcoded `readonly: false`. Removing it without deriving the root flag from
+# Pc would ship a privilege ESCALATION inside a privilege-correctness fix. Pc=ro is
+# reachable: not as a preset, but the granular --cco-access form is a shipped surface
+# and the ADR-0048 conditional INV-2 floor only guarantees Pc >= ro.
+#
+# BOTH assertions matter: the first is the property, the second proves it is
+# delivered by `readonly:` and not by the accident being removed.
+test_config_editor_target_readonly_follows_pc() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "myproj" "$(minimal_project_yml myproj)"
+    cd "$tmpdir"
+    run_cco start config-editor --project myproj \
+        --cco-access global=rw,current=ro,others=none --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    # Pc=ro → the target mount ROOT is honestly read-only …
+    assert_file_contains "$compose" "$tmpdir/repos/myproj/.cco:/workspace/myproj-config:ro" || return 1
+    # … and it is the mount's own readonly: flag that says so, not the self-clamp.
+    assert_file_not_contains "$compose" "$tmpdir/repos/myproj/.cco/.:/workspace/myproj-config/.:ro" || return 1
+    # The counterweight, in the same test so the property is asserted in BOTH
+    # directions: at Pc=rw (every shipped config-editor mode) the same resolver
+    # leaves the target writable. Without it, "follows Pc" would also be satisfied
+    # by pinning every target :ro.
+    run_cco start config-editor --all --dry-run --dump
+    compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_contains "$compose" "$tmpdir/repos/myproj/.cco:/workspace/myproj-config" || return 1
+    assert_file_not_contains "$compose" "$tmpdir/repos/myproj/.cco:/workspace/myproj-config:ro" || return 1
+    return 0
 }

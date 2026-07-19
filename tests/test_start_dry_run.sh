@@ -496,6 +496,50 @@ YAML
     assert_file_contains "$c" "${rw_dir}/proj/.cco:/workspace/rw/proj/.cco:ro"
 }
 
+# RC-1 T8 (defect a, the USER-mount half of the class no e2e session exercised).
+# The nested clamp governs trees nested INSIDE a mount; the mount's own readonly:
+# flag governs the root (ADR-0049 §7). _find_nested_config_dirs used to return its
+# own search root as rel ".", so a rw extra_mount whose SOURCE directory is itself
+# named .claude — or .cco carrying a project.yml — re-bound itself :ro and silently
+# contradicted its own `readonly: false`.
+test_dry_run_extra_mount_root_dotdir_not_self_clamped() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    # Source dir literally named .claude, plus a genuinely nested one to prove the
+    # clamp still fires where it should.
+    local cl_dir="$tmpdir/mnt/.claude"; mkdir -p "$cl_dir/inner/.claude"
+    local cc_dir="$tmpdir/mnt2/.cco"; mkdir -p "$cc_dir"
+    printf 'name: mounted\n' > "$cc_dir/project.yml"
+    seed_index_path "dotclaude" "$cl_dir"
+    seed_index_path "dotcco" "$cc_dir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+repos:
+  - name: dummy-repo
+extra_mounts:
+  - name: dotclaude
+    target: /workspace/dotclaude
+    readonly: false
+  - name: dotcco
+    target: /workspace/dotcco
+    readonly: false
+YAML
+)"
+    run_cco start "test-proj" --dry-run --dump
+    local c="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    # The lines that MUST appear: the rw mounts themselves …
+    assert_file_contains "$c" "${cl_dir}:/workspace/dotclaude" || return 1
+    assert_file_contains "$c" "${cc_dir}:/workspace/dotcco" || return 1
+    # … and the genuinely nested .claude, still strictly clamped (D-M1: the strict
+    # ro default is UNCHANGED for user extra_mounts).
+    assert_file_contains "$c" "${cl_dir}/inner/.claude:/workspace/dotclaude/inner/.claude:ro" || return 1
+    # The lines that must NOT appear: the self-match overlays.
+    assert_file_not_contains "$c" "${cl_dir}/.:/workspace/dotclaude/.:ro" || return 1
+    assert_file_not_contains "$c" "${cc_dir}/.:/workspace/dotcco/.:ro" || return 1
+    return 0
+}
+
 # config_access_policy: write → nested config is left writable (no :ro overlay).
 test_dry_run_extra_mount_config_policy_write() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
