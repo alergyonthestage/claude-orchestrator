@@ -426,3 +426,79 @@ test_paths_claude_version_pref_reads_knob() {
     [[ "$result" == "stable" ]] \
         || fail "Expected 'stable' from knob, got: $result"
 }
+
+# ── Container-operator LANE self-test (RC-17) ─────────────────────────
+# The lane's own guard against being vacuous. Every other lane test is evidence
+# only if these three properties hold, and each of them has already failed once
+# in practice, so none of them is theoretical.
+
+test_operator_lane_predicate_is_real() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" read-project
+
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/access-scope.sh"
+
+    # 1. The REAL predicate engages — the lane declares an operator session, it
+    #    does not stub `_cco_container_operator` (a stub cannot regress-test the
+    #    predicate and cannot reach the dispatcher).
+    _cco_container_operator || fail "lane must satisfy the real _cco_container_operator predicate" || return 1
+    local ctx; ctx=$(_env_context)
+    assert_equals operator "$ctx" "lane session must report the operator execution context" || return 1
+
+    # 2. The lane CREATES its buckets, and that mkdir is load-bearing rather than
+    #    decorative. Wipe them first so the fixture matches production, where the
+    #    buckets are MOUNTS made host-side by `cco start` and the resolvers
+    #    therefore skip _cco_ensure_dir under operator mode. Without
+    #    setup_operator_session's own mkdir the index seed dies with
+    #    `mktemp: … No such file or directory` and reads back EMPTY — which would
+    #    silently make every lane test vacuous rather than failing it.
+    rm -rf "$CCO_STATE_HOME" "$CCO_DATA_HOME" "$CCO_CACHE_HOME"
+    setup_operator_session "$tmp" read-project
+    assert_dir_exists "$CCO_STATE_HOME" || return 1
+    seed_index_path lane-probe /Users/cco-e2e/code/lane-probe lane-proj
+    assert_index_path lane-proj lane-probe /Users/cco-e2e/code/lane-probe || return 1
+
+    # 3. The sanitiser fired. Run inside a live cco session, an inherited
+    #    PROJECT_NAME steers every _env_is_current_project decision (and with it
+    #    the read-project scoping of `project validate`), and an inherited
+    #    CCO_ACCESS_TRIPLE overrides the level the test asked for. A helper that
+    #    relies on bin/test's global unset is wrong from any other calling context.
+    assert_empty "${PROJECT_NAME:-}" "setup_operator_session with no project must UNSET PROJECT_NAME" || return 1
+    assert_empty "${CCO_ACCESS_TRIPLE:-}" "setup_operator_session must leave CCO_ACCESS_TRIPLE unset" || return 1
+    return 0
+}
+
+# The ADR-0047 boundary seam (D-M8/Q-14). It models the boundary's ERRNO, not its
+# mechanism: `chmod 000` on a bucket makes the store unreadable for a normal uid,
+# which is the EACCES a non-elevated agent gets from the cco-svc-owned 0700 root.
+# It does NOT model the setuid trampoline (pinned off by CCO_STORE_ELEVATED=1).
+# `lane_seal_boundary` fails loudly under uid 0 rather than skipping, because root
+# bypasses mode bits and a silent skip would be a brand-new false green.
+test_operator_lane_boundary_seam_denies_store_read() {
+    local tmp; tmp=$(mktemp -d)
+    # Unseal before rm -rf: a 000 dir cannot be traversed to delete its contents.
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" read-project
+
+    seed_index_path sealed /Users/cco-e2e/code/sealed sealed-proj
+    local idx="$CCO_STATE_HOME/index"
+    assert_file_exists "$idx" "the lane must produce a real on-disk index to seal" || return 1
+
+    lane_seal_boundary "$CCO_STATE_HOME" || return 1
+    local out rc=0
+    out=$(cat "$idx" 2>&1) || rc=$?
+    lane_unseal_boundary "$CCO_STATE_HOME"
+
+    # A positive outcome assertion: the exact rc AND the errno's own words.
+    assert_rc 1 "$rc" "reading the index under the sealed boundary" || return 1
+    [[ "$out" == *"Permission denied"* ]] \
+        || fail "sealed boundary must produce EACCES, got: $out" || return 1
+    # And the seam is reversible — the fixture is not one-way.
+    assert_index_path sealed-proj sealed /Users/cco-e2e/code/sealed || return 1
+    return 0
+}
