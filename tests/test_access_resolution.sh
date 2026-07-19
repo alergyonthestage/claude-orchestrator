@@ -28,6 +28,73 @@ test_access_is_member() {
     return 0
 }
 
+# ── RC-1 §3.2: _nested_config_modes, the single nested-config predicate ──
+#
+# Two rules govern this table, both learned from a falsified first draft:
+#
+#  1. Assertions go through the MANDATED CONSUMER IDIOM (_peel_tab into two
+#     names), never against the raw printf string. A raw-string comparison passes
+#     while the wiring is inverted — exactly how the draft's defect would have
+#     shipped. The draft encoded "writable" as an EMPTY field, and
+#     `IFS=$'\t' read -r a b <<< $'\tro'` yields a=ro, b= — the two axes SWAPPED,
+#     because tab is IFS whitespace to `read` (lib/utils.sh:96-110). The shipped
+#     encoding is TOTAL (every field is literally "ro" or "rw") so the record is
+#     safe under any reader, and _peel_tab is the second, independent guard.
+#  2. The table MUST carry both mixed-axis directions. Same-valued axes are
+#     structurally blind to an inversion.
+_nc_assert() {
+    local want_claude="$1" want_cco="$2"; shift 2
+    local got_claude got_cco
+    _peel_tab "$(_nested_config_modes "$@")" got_claude got_cco
+    [[ "$got_claude" == "$want_claude" && "$got_cco" == "$want_cco" ]] \
+        || fail "_nested_config_modes $* → ($got_claude,$got_cco), expected ($want_claude,$want_cco)"
+}
+
+test_nested_config_modes_table() {
+    _access_src
+    #        claude cco   mro    policy  role             ktriple(Cr,Cp,Cg,Co) ctriple(G,Pc,Po)
+    # 1 — policy project, both axes ro: unchanged repo-native mapping.
+    _nc_assert ro ro      false  project ''               "ro,ro,ro,ro"        "ro,ro,none"
+    # 2 — policy project, MIXED: Cr=rw while Pc=ro. This is the live case behind
+    #     test_dry_run_extra_mount_config_policy_project's --claude-access repo arm,
+    #     and the case that falsified the draft encoding.
+    _nc_assert rw ro      false  project ''               "rw,ro,ro,ro"        "ro,ro,none"
+    # 3 — the inverse mix, so an axis swap cannot hide in either direction.
+    _nc_assert ro rw      false  project ''               "ro,ro,ro,ro"        "ro,rw,none"
+    # 4 — role store at the DEFAULT policy: ~/.cco follows Cg / G.
+    _nc_assert rw rw      false  ro      store            "ro,ro,rw,ro"        "rw,none,none"
+    # 5 — role store, MIXED: Cg=rw while G=ro. Reachable, and the reason the axes
+    #     must be carried separately rather than collapsed to one flag.
+    _nc_assert rw ro      false  ro      store            "ro,ro,rw,ro"        "ro,rw,none"
+    # 6 — role project-config: <repo>/.cco follows Cp / Pc.
+    _nc_assert rw rw      false  ro      project-config   "ro,rw,ro,ro"        "ro,rw,none"
+    # 7 — NO role (a user extra_mount) stays STRICT ro at the default policy,
+    #     whatever the session resolved. D-M1 leaves this default unchanged.
+    _nc_assert ro ro      false  ro      ''               "rw,rw,rw,rw"        "rw,rw,rw"
+    # 8 — a :ro mount already locks everything: short-circuit, no overlay.
+    _nc_assert rw rw      true   ro      store            "ro,ro,ro,ro"        "none,none,none"
+    # 9 — policy write opts out wholesale: short-circuit.
+    _nc_assert rw rw      false  write   ''               "ro,ro,ro,ro"        "none,none,none"
+    # 10 — fail-closed: an axis of `none` grants no access, so it must never yield
+    #      a writable overlay. `none` is NOT `rw`.
+    _nc_assert ro ro      false  ro      store            "none,none,none,none" "none,none,none"
+    return 0
+}
+
+# The predicate is pure: the same arguments must give the same answer with no
+# ambient session state, which is what makes the table above a real oracle for
+# the wiring tests in test_config_editor.sh / test_start_dry_run.sh.
+test_nested_config_modes_is_pure() {
+    _access_src
+    local a b
+    a=$(_nested_config_modes false ro store "ro,ro,rw,ro" "rw,none,none")
+    claude_cg="ro" cco_g="none" _mrole="project-config"   # ambient noise
+    b=$(_nested_config_modes false ro store "ro,ro,rw,ro" "rw,none,none")
+    assert_equals "$a" "$b" "_nested_config_modes must not read ambient state"
+    assert_equals "rw"$'\t'"rw" "$a" "total encoding: both fields literal, never empty"
+    return 0
+}
+
 test_access_norm_bool() {
     _access_src
     [[ "$(_access_norm_bool on)"    == "true"  ]] || fail "on→true"

@@ -466,3 +466,73 @@ test_config_editor_target_readonly_follows_pc() {
     assert_file_not_contains "$compose" "$tmpdir/repos/myproj/.cco:/workspace/myproj-config:ro" || return 1
     return 0
 }
+
+# ── RC-1 defect (b): the extra_mount clamp must read the session triple ──
+#
+# At the DEFAULT config_access_policy the branch hard-coded both modes, so a
+# framework-synthetic config mount was pinned :ro no matter what the session
+# resolved. Its two sibling call sites in the same function do consult the triple
+# — the repo branch via _committed_ro, the operator bucket via _b3_auth_mode —
+# which is how one host tree ended up with two container views in opposite modes
+# (~/.cco/.claude rw at /home/claude/.cco/.claude, :ro at
+# /workspace/cco-config/.claude). That is E6B-02's contradiction table.
+#
+# ~/.cco/.claude is a GENUINE nested dir at depth 1, not a self-match, so the
+# -mindepth 1 fix alone does not reach it.
+
+# T2 — the store's own .claude authoring tree, global mode (G=rw, Cg=rw).
+test_config_editor_global_mode_store_claude_writable() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    mkdir -p "$HOME/.cco/.claude"
+    cd "$tmpdir"   # neutral cwd → global mode (rw,none,none)
+    run_cco start config-editor --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    # The line that MUST appear: the store itself, writable.
+    assert_file_contains "$compose" "$HOME/.cco:/workspace/cco-config" || return 1
+    assert_file_not_contains "$compose" "$HOME/.cco:/workspace/cco-config:ro" || return 1
+    # The line that must NOT appear: the clamp over its .claude, at Cg=rw.
+    assert_file_not_contains "$compose" "$HOME/.cco/.claude:/workspace/cco-config/.claude:ro" || return 1
+    return 0
+}
+
+# T3 — the same defect on the store's TEMPLATE .claude trees. No e2e session
+# reported this one: config-editor could not author project-template Claude
+# content at G=rw either. Same root, same fix.
+test_config_editor_global_mode_store_template_claude_writable() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local tpl="$HOME/.cco/templates/project/base/.claude"; mkdir -p "$tpl"
+    cd "$tmpdir"
+    run_cco start config-editor --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_contains "$compose" "$HOME/.cco:/workspace/cco-config" || return 1
+    assert_file_not_contains "$compose" \
+        "$tpl:/workspace/cco-config/templates/project/base/.claude:ro" || return 1
+    return 0
+}
+
+# T4 — the two defects together, and the strongest regression guard in the set:
+# --cco-access edit-global with a named target is the only SHIPPED configuration
+# where G=rw and Pc=rw coexist, so both the store tree and the target tree must be
+# physically writable at once.
+test_config_editor_edit_global_project_mode_both_trees_writable() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    mkdir -p "$HOME/.cco/.claude"
+    create_project "$tmpdir" "myproj" "$(minimal_project_yml myproj)"
+    mkdir -p "$tmpdir/repos/myproj/.cco/claude"
+    cd "$tmpdir"
+    run_cco start config-editor --project myproj --cco-access edit-global --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    # (b) the store's .claude, at Cg=rw.
+    assert_file_contains "$compose" "$HOME/.cco:/workspace/cco-config" || return 1
+    assert_file_not_contains "$compose" "$HOME/.cco/.claude:/workspace/cco-config/.claude:ro" || return 1
+    # (a) the target's committed .cco, at Pc=rw.
+    assert_file_contains "$compose" "$tmpdir/repos/myproj/.cco:/workspace/myproj-config" || return 1
+    assert_file_not_contains "$compose" "$tmpdir/repos/myproj/.cco/.:/workspace/myproj-config/.:ro" || return 1
+    return 0
+}

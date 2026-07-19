@@ -506,6 +506,56 @@ _find_nested_config_dirs() {
                 -type d -name "$base" -print 2>/dev/null | sort)
 }
 
+# _nc_emit <claude_axis> <cco_axis> — an axis of "rw" yields "rw"; "ro" AND
+# "none" both yield "ro". Fail-closed: an axis that grants no access must never
+# produce a writable overlay.
+_nc_emit() {
+    local c="ro" o="ro"
+    [[ "$1" == "rw" ]] && c="rw"
+    [[ "$2" == "rw" ]] && o="rw"
+    printf '%s\t%s' "$c" "$o"
+}
+
+# The SINGLE source for "what mode do nested config trees inside an extra_mount
+# take?" — the predicate that three call sites had inlined and let drift apart.
+# Pure: every input is an argument, so it is unit-testable in isolation.
+#
+# Echoes "<claude_mode>\t<cco_mode>". Each field is the LITERAL "ro" (emit a :ro
+# overlay) or "rw" (leave writable) — TOTAL, never empty, so the record is safe
+# under any reader and self-describing at the call site. Consumers still peel with
+# _peel_tab (the repo rule for TAB records, and the guard that survives a future
+# contributor reintroducing an empty field), and compare == "ro", not -n.
+#
+# Args: <mount_ro> <policy> [<role>] [<ktriple>] [<ctriple>]
+#   role ∈ ''(user mount) | store | project-config     — see _mount_override_role
+#   ktriple = "Cr,Cp,Cg,Co"    ctriple = "G,Pc,Po"
+#
+# Why the axis is keyed by ROLE (ADR-0049 §7 / D-M5): a framework-synthetic config
+# mount is governed by the session triple for the tree it REPRESENTS. Routing it
+# through the existing `project` policy instead would map .claude to Cr — which
+# ADR-0049 pins at `ro` for every session — so ~/.cco/.claude would stay clamped
+# forever and Cg=rw would remain unenforced (E6A-12, E6B-02). A user extra_mount
+# is not a config tree and keeps the strict `ro` default (D-M1).
+_nested_config_modes() {
+    local mro="$1" policy="$2" role="${3:-}" ktriple="${4:-}" ctriple="${5:-}"
+    local cr cp cg co g pc po
+    # Comma is NOT IFS whitespace, so empty axes are preserved here (unlike tab).
+    IFS=, read -r cr cp cg co <<< "$ktriple"
+    IFS=, read -r g  pc po    <<< "$ctriple"
+    # A :ro mount already locks everything; `write` opts out wholesale.
+    [[ "$mro" == "true" || "$policy" == "write" ]] && { printf 'rw\trw'; return 0; }
+    case "$policy" in
+        project) _nc_emit "$cr" "$pc"; return 0 ;;   # unchanged: repo-native axes
+    esac
+    # policy = ro (the default).
+    case "$role" in
+        store)          _nc_emit "$cg" "$g"  ;;     # ~/.cco      → Cg / G
+        project-config) _nc_emit "$cp" "$pc" ;;     # <repo>/.cco → Cp / Pc
+        *)              printf 'ro\tro'     ;;      # user extra_mount — UNCHANGED
+    esac
+    return 0
+}
+
 # ── cmd_start() helper functions ─────────────────────────────────────
 # These functions are called from within cmd_start() and share its local
 # variable scope. They must NOT redeclare variables — they read/write
@@ -1626,8 +1676,8 @@ YAML
             _emit_secret_overlays "$_cm_host" "$_cm_tgt" "$secret_mask"
         done
 
-        # Extra mounts (same invariant as repos — resolved + existence
-        # asserted upstream). The bridge emits abs_source<TAB>target<TAB>ro.
+        # Extra mounts (same invariant as repos — resolved + existence asserted
+        # upstream). The bridge emits src<TAB>target<TAB>ro<TAB>policy<TAB>role.
         local extra_mounts
         extra_mounts=$(_effective_extra_mounts "$project_yml")
         if [[ -n "$extra_mounts" ]]; then
@@ -1642,34 +1692,33 @@ YAML
                 _suffix=""
                 [[ "$_mro" == "true" ]] && _suffix="ro"
                 _compose_vol "$_ms" "$_mt" "$_suffix"
-                # Nested-config governance (ADR-0049 §7): extra_mounts are arbitrary
-                # dirs, not config repos, so nested .claude/.cco are STRICT ro by
-                # default. Only meaningful on a writable mount (a :ro mount already
-                # locks everything). config_access_policy: ro (default) → all nested
-                # config :ro · project → follow the session knobs (Cr / Pc) · write →
-                # leave nested config writable (no overlay).
-                if [[ "$_mro" != "true" && "$_mpolicy" != "write" ]]; then
-                    if [[ "$_mpolicy" == "project" ]]; then
-                        _claude_ro=""; [[ -n "$_b1_ro" ]] && _claude_ro="ro"
-                        _cco_ro="";    [[ -n "$_committed_ro" ]] && _cco_ro="ro"
-                    else
-                        _claude_ro="ro"; _cco_ro="ro"
-                    fi
-                    if [[ -n "$_claude_ro" ]]; then
-                        while IFS= read -r _nc_rel; do
-                            [[ -z "$_nc_rel" ]] && continue
-                            _compose_vol "${_ms}/${_nc_rel}" "${_mt}/${_nc_rel}" "ro"
-                        done < <(_find_nested_config_dirs "$_ms" ".claude")
-                    fi
-                    if [[ -n "$_cco_ro" ]]; then
-                        while IFS= read -r _nc_rel; do
-                            [[ -z "$_nc_rel" ]] && continue
-                            # extra_mounts aren't projects → a .cco tree qualifies
-                            # only when it carries a project.yml (root included).
-                            [[ -f "${_ms}/${_nc_rel}/project.yml" ]] || continue
-                            _compose_vol "${_ms}/${_nc_rel}" "${_mt}/${_nc_rel}" "ro"
-                        done < <(_find_nested_config_dirs "$_ms" ".cco")
-                    fi
+                # Nested-config governance (ADR-0049 §7), resolved by ONE pure
+                # predicate (RC-1 §3.2) instead of the 3-way if/else that had
+                # drifted apart from its two sibling call sites — the repo branch
+                # below (_committed_ro) and the operator bucket (_b3_auth_mode).
+                # config_access_policy: ro (default) → strict for a USER mount,
+                # session-triple-governed for a framework mount that exposes a
+                # config tree · project → follow Cr / Pc · write → no overlay.
+                # Compare == "ro": the encoding is total, never empty.
+                _peel_tab "$(_nested_config_modes "$_mro" "$_mpolicy" "$_mrole" \
+                                "$claude_cr,$claude_cp,$claude_cg,$claude_co" \
+                                "$cco_g,$cco_pc,$cco_po")" _claude_ro _cco_ro
+                if [[ "$_claude_ro" == "ro" ]]; then
+                    while IFS= read -r _nc_rel; do
+                        [[ -z "$_nc_rel" ]] && continue
+                        _compose_vol "${_ms}/${_nc_rel}" "${_mt}/${_nc_rel}" "ro"
+                    done < <(_find_nested_config_dirs "$_ms" ".claude")
+                fi
+                if [[ "$_cco_ro" == "ro" ]]; then
+                    while IFS= read -r _nc_rel; do
+                        [[ -z "$_nc_rel" ]] && continue
+                        # extra_mounts aren't projects → a nested .cco tree
+                        # qualifies only when it carries a project.yml. The mount
+                        # ROOT is never a candidate (_find_nested_config_dirs);
+                        # its mode comes from the mount's own readonly:.
+                        [[ -f "${_ms}/${_nc_rel}/project.yml" ]] || continue
+                        _compose_vol "${_ms}/${_nc_rel}" "${_mt}/${_nc_rel}" "ro"
+                    done < <(_find_nested_config_dirs "$_ms" ".cco")
                 fi
             done <<< "$extra_mounts"
         fi
