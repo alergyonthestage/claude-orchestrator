@@ -1512,8 +1512,10 @@ YAML
         # session's write_scope grants the project tree (edit-project / edit-all).
         # edit-global keeps A1 ro — only the personal store (A2) is writable there.
         # Keyed off write_scope now (ADR-0043) so the overlay and the operator-bucket
-        # RW below share one source. config-editor resolves to edit-all via its
-        # preset (its edit targets mount via generated extra_mounts, not this loop).
+        # RW below share one source. config-editor's EDIT targets mount via generated
+        # extra_mounts (<name>-config), not this loop — but its target REPOS now DO
+        # use this loop (RC-6), and their committed .cco follows the Change 5 rule
+        # below (always :ro), never Pc, so a foreign member's config stays read-only.
         local _committed_ro=":ro"
         if [[ "$_pc_rw" == "true" ]]; then
             _committed_ro=""
@@ -1702,7 +1704,11 @@ YAML
         # Repository mounts. Unresolved references were already dropped upstream
         # by the P14 conscious-skip in _effective_repo_mounts (warn + exclude,
         # never a silent empty bind-mount, #B17), so every path here is a real,
-        # existing filesystem path.
+        # existing filesystem path. For a NORMAL project _resolve_unit delivers that
+        # guarantee; a built-in skips that heal (:1063), so for config-editor's
+        # target repos the existence assertion is the producer's -d test in
+        # _ce_add_repo (RC-6 INV-M3), which announces a stale binding rather than
+        # letting Docker create a root-owned bind source.
         echo "      # Repositories"
         while IFS=$'\t' read -r repo_name repo_path; do
             [[ -z "$repo_name" ]] && continue
@@ -1757,14 +1763,18 @@ YAML
                 done < <(_find_nested_config_dirs "$repo_path" ".cco")
             done < <(_effective_repo_mounts "$project_yml")
         fi
-        # NOTE (ADR-0046 §6 multi-repo Pc — DEFERRED): the resolved
-        # cco_include_member_configs flag is plumbed but not yet enforced here. Today
-        # every mounted repo's <repo>/.cco follows Pc uniformly (== the flag's `true`
-        # span). The §6 DEFAULT (Pc's rw span limited to the HOSTING repo, other
-        # members' divergent .cco re-overlaid :ro) needs the multi-repo mount model
-        # to distinguish host vs member reliably (the current test fixtures mount a
-        # non-host member as the project's editable .cco). Tracked as a follow-up so
-        # this schema lands purely additive and non-regressive.
+        # NOTE (ADR-0046 §6 multi-repo Pc — DEFERRED for NORMAL sessions): the
+        # resolved cco_include_member_configs flag is plumbed but not yet enforced
+        # here. Today every mounted repo's <repo>/.cco follows Pc uniformly (== the
+        # flag's `true` span). The §6 DEFAULT (Pc's rw span limited to the HOSTING
+        # repo, other members' divergent .cco re-overlaid :ro) needs the multi-repo
+        # mount model to distinguish host vs member reliably (the current test
+        # fixtures mount a non-host member as the project's editable .cco). Tracked as
+        # a follow-up so this schema lands purely additive and non-regressive. The
+        # config-editor BUILT-IN case is NOT deferred: RC-6 Change 5 forces every one
+        # of its target repos' committed .cco :ro above (_committed_ro), because the
+        # generator creates the dedicated <name>-config authoring mount, so the rw
+        # span is exact and a foreign member's Po=none config is never writable.
 
         # Secret-file masking (ADR-0036 D4): hide real secret files in EVERY repo's
         # committed .cco — whether it is exposed via the rw repo mount (edit modes /
