@@ -285,13 +285,23 @@ test_invariant_10_accepts_lowercase_hyphens_numbers() {
 # the banned expressions out: the invariant scans the whole tests/ tree, itself
 # included, which is the correct behaviour — it may not exempt its own file.)
 #
+# THREE syntactic shapes, because a ban that closes one spelling of an idiom has
+# not closed the idiom. The first draft required a `$` sigil and fixed the operand
+# order, so the two forms a bash author reaches for most naturally after the test
+# construct — the arithmetic one, where the sigil is optional, and the reversed
+# comparison — both escaped it. Neither appears in tests/ today; they are closed
+# now because "not a false green today" is not a property that survives the next
+# author. Hence: sigil optional, and the reversed order is its own alternation.
+#
 # Scope, stated honestly: this closes the "not 2" idiom as a class, NOT the
 # negative-space family. The sibling "not 0" idiom is one code over and is
 # already widespread (46 sites); converting it is its own change with its own
 # review, recorded as a follow-up in pre-revalidation-backlog.md.
 test_invariant_11_no_negative_only_rc_assertions() {
+    local ids='OP_RC|CCO_RC|RC|rc|exit_code|status|ret|code'
     local hits
-    hits=$(grep -rnE '(^|[^A-Za-z_])\$\{?(OP_RC|CCO_RC|RC|rc|exit_code|status|ret|code)\}?[[:space:]]*(-ne|!=)[[:space:]]*2([^0-9]|$)' \
+    hits=$(grep -rnE \
+             "(^|[^A-Za-z_0-9\$])\\\$?\\{?($ids)\\}?[[:space:]]*(-ne|!=)[[:space:]]*2([^0-9]|\$)|(^|[^A-Za-z_0-9])2[[:space:]]*(-ne|!=)[[:space:]]*\\\$?\\{?($ids)\\}?([^A-Za-z_0-9]|\$)" \
              "$REPO_ROOT/tests" | grep -v 'allow-negative-rc:' || true)
     [[ -z "$hits" ]] || fail "banned negative-only rc assertion (RC-17): assert an exact rc + a state change, or assert_refused"$'\n'"$hits"
 }

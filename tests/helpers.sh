@@ -727,9 +727,11 @@ assert_refused() {
     return 0
 }
 
-# THE replacement for `rc -ne 2`. Asks ONE question — does the gate ADMIT this
-# verb at this level — with a POSITIVE success signal, independent of cwd, store
-# and mounts.
+# THE replacement for the banned negative-only rc idiom (invariant 11). Asks ONE
+# question — does the gate ADMIT this verb at this level — with a POSITIVE success
+# signal, independent of cwd, store and mounts. (Spelled out in prose rather than
+# written literally: the invariant scans the whole tests/ tree, this file
+# included, and it may not exempt the lane that defines it.)
 #
 # SELF-CONTAINED BY CONSTRUCTION: it establishes the FULL operator env in its own
 # subshell over its own throwaway buckets, and inherits NONE of it from the
