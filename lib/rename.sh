@@ -215,10 +215,17 @@ _rename_projectyml_current() {
 # Usage: _rename_fanout_projectyml <section> <old> <new>
 _rename_fanout_projectyml() {
     local section="$1" old="$2" new="$3"
-    local proj unit yml name path status
+    local proj unit yml name path status _mln
     while IFS=$'\t' read -r proj unit yml; do
         _yaml_list_has_ref "$yml" "$section" "$old" || continue
-        while IFS=$'\t' read -r name path status; do
+        # _project_iter_members' column 2 (path) is EMPTY for an unresolved member, so
+        # peel by hand — `IFS=$'\t' read` folds the empty middle field (tab is IFS
+        # whitespace), collapsing "ghost\t\tunresolved" to name=ghost/path=unresolved/
+        # status='', which NEVER matches the `unresolved)` arm and silently drops an
+        # affected project's unresolved member from the strict guard (E6B-04 drift).
+        while IFS= read -r _mln; do
+            [[ -z "$_mln" ]] && continue
+            _peel_tab "$_mln" name path status
             case "$status" in
                 synced|divergent)
                     [[ -f "$path/.cco/project.yml" ]] || continue

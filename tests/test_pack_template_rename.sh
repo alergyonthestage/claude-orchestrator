@@ -62,6 +62,36 @@ test_pack_rename_rekeys_stores_and_fans_out_refs() {
     assert_file_not_contains "$(host_cco_dir "$tmp" app)/project.yml" "name: oldpack" || return 1
 }
 
+# _rename_fanout_projectyml's inner loop reads _project_iter_members, whose column 2
+# (path) is EMPTY for an unresolved member. RC-2 fixed the sibling
+# _rename_projectyml_current but left this one on `IFS=$'\t' read`, which folds the
+# empty middle field and collapses "ghost\t\tunresolved" to status='' — so the
+# `unresolved)` arm NEVER fires and an affected project's unresolved member is silently
+# dropped from the strict guard (E6B-04 drift). ⚠ FAILS pre-fix: no `unresolved` line.
+test_pack_rename_fanout_surfaces_unresolved_member() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    create_pack "$tmp" oldpack "name: oldpack"
+    create_project "$tmp" app "$(_ptr_project_yml app oldpack)"
+    # A second member of app, declared but UNRESOLVED (its index path is missing).
+    seed_index_path ghost "$tmp/missing/ghost" app
+    index_set_project_repos app app ghost
+
+    local out
+    out=$(
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/paths.sh";  source "$REPO_ROOT/lib/access-scope.sh"
+        source "$REPO_ROOT/lib/index.sh";  source "$REPO_ROOT/lib/sync-meta.sh"
+        source "$REPO_ROOT/lib/yaml.sh";   source "$REPO_ROOT/lib/rename.sh"
+        source "$REPO_ROOT/lib/cmd-resolve.sh"
+        export CCO_ALLOW_HOST_RESOLVE=1
+        _rename_fanout_projectyml packs oldpack newpack
+    )
+    printf '%s\n' "$out" | grep -qE "^unresolved	app	ghost$" \
+        || fail "fanout must surface app's unresolved member 'ghost' to the strict guard; got: $out"
+    return 0
+}
+
 test_pack_rename_is_kind_scoped() {
     # A project named 'shared' must be untouched by 'cco pack rename shared ...'.
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
