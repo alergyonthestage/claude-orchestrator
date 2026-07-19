@@ -298,7 +298,20 @@ the setuid trampoline.
 Ordered by blocking weight, then by root. Q-1 and Q-2 change what ships; the rest change
 scope or sequencing.
 
-### Blocking — decide before implementation
+### Blocking — ✅ RESOLVED (maintainer, 2026-07-19)
+
+All three blocking questions were decided before implementation. The resolutions are
+**ratified decisions**, binding on the clusters below:
+
+| # | Resolution |
+|---|---|
+| **D-M4** (answers Q-1) | **De-elevate only the config-tree write.** The verb stays trampolined for the part that touches the STATE index; the `<repo>/.cco/project.yml` rewrite runs through a plain `bash` that resets euid to ruid=`claude`. This only ever *narrows* privilege — behaviour `cco-svc-helper.c` already relies on — and adds nothing to the architecture. Rejected: per-call boundary crossing in the index accessors (an addition ADR-0047 deliberately avoided; if wanted it must be an ADR-0047 revision, not a cycle-1 smuggle) and host-only (contradicts ADR-0050 D7, leaves criterion F unmet). |
+| **D-M5** (answers Q-2) | **The role-keyed reading of D-M1 is confirmed as the intended one.** `store` (`~/.cco`) → `.claude` follows **Cg**, content follows **G**; `project-config` (`<repo>/.cco`) → `.claude` follows **Cp**, content follows **Pc**. This is not a decision change: D-M1's intent was "honour the session triple", and `_b1_ro`/`Cr` was an imprecision in the option text — `Cr` is pinned `ro` by ADR-0049, so the literal reading would have left E6A-12/E6B-02 alive. |
+| **D-M6** (answers Q-3) | **Cycle 1 does not gate on the Linux write-path check-in**, on the condition that the D-M4 shape is **POSIX-correct by construction** — correct where bind mounts enforce real ownership, never relying on Docker Desktop's `fakeowner`. The Linux check-in remains a separate gate before `develop → main`, forward-annotated. It must not block the five unrelated roots. |
+
+The original questions are kept below as the reasoning trail.
+
+### Blocking — the questions as posed
 
 - **Q-1 [RC-2/RC-3] Elevated identity vs claude-owned config trees (criterion F on Linux).**
   `bin/cco:462` trampolines the **whole** repo/extra-mount rename verb to `euid=cco-svc`,
