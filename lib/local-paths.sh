@@ -9,7 +9,8 @@
 # to recover real paths from a legacy vault backup.
 #
 # Provides: _local_paths_get(), _prompt_for_path(), _effective_repo_mounts(),
-#   _effective_extra_mounts(), _resolve_entry_index(), _project_effective_paths()
+#   _effective_extra_mounts(), _mount_source_for(), _resolve_entry_index(),
+#   _project_effective_paths()
 #
 # Session-start path resolution is NOT here: `cco start` and `cco resolve` share
 # the SINGLE resolution surface _resolve_unit (lib/cmd-resolve.sh) — ADR-0033 / S1
@@ -189,7 +190,10 @@ _effective_repo_mounts() {
         # Conscious-skip (design §4.4 / P14): a member still unresolved after
         # the F49 prompt has no index path — exclude it (never emit a silent
         # empty mount, #B17); _start_resolve_paths already warned + ⚠-badged it.
-        _p=$(_index_get_path "$proj" "$name")
+        # Resolves through the SHARED bridge (INV-M1): the session override wins,
+        # so a built-in's synthetic manifest (whose own name-scope holds no index
+        # bindings by construction — RC-6 §1.2) still resolves its declared repos.
+        _p=$(_mount_source_for "$proj" "$name")
         # Skip empty AND any NON-ABSOLUTE index value. A bogus marker like the
         # legacy `@local` must never reach the compose as a mount source — its
         # leading `@` is a reserved YAML char that breaks `docker compose`
@@ -236,6 +240,21 @@ _mount_override_role() {
     return 1
 }
 
+# THE single logical-name → host-path resolution for every mount bridge (INV-M1,
+# RC-6 §3.3). One function, one order: the in-process session override (ephemeral,
+# published by a built-in's generated manifest — review H4) THEN the per-project
+# STATE index binding under the caller's own `name:` scope. There is NO
+# cross-project fallback: another project's same-name binding is a DIFFERENT
+# resource (ADR-0051 D1/D2), never a default — resurrecting the global default is
+# the rejected alternative B (would silently mount an unrelated working tree).
+# The three bridges had this two-line lookup copy-pasted and let it drift (repos
+# consulted the index only, so config-editor's synthetic manifest never resolved
+# its repos); naming it is the class-level closure.
+# Usage: _mount_source_for <project-scope> <name>
+_mount_source_for() {
+    _mount_override_get "$2" || _index_get_path "$1" "$2"
+}
+
 # Companion bridge for extra mounts. Emits ONE record per mount:
 #
 #     <abs_source>\t<target>\t<ro>\t<config_access_policy>\t<role>
@@ -266,14 +285,13 @@ _effective_extra_mounts() {
         policy="${rest#*$'\t'}"; [[ "$policy" == "$ro_raw" ]] && policy=""  # no policy field
         [[ -z "$name" ]] && continue
         # Conscious-skip: exclude an unresolved mount (no index path) rather
-        # than emit a silent empty mount (#B17; design §4.4 / P14). A session-local
-        # internal override (config-editor, H4) wins over the persistent index.
-        local _ms
-        if _ms=$(_mount_override_get "$name"); then
-            role=$(_mount_override_role "$name" || true)
-        else
-            _ms=$(_index_get_path "$proj" "$name"); role=""   # user mount — never roled
-        fi
+        # than emit a silent empty mount (#B17; design §4.4 / P14). Resolved via
+        # the SHARED bridge (INV-M1) — the session-local internal override wins
+        # over the persistent index. The role is a SEPARATE query: it is empty
+        # (and _mount_override_role returns 1) for every user-declared mount, so
+        # a user mount is never framework-roled.
+        local _ms; _ms=$(_mount_source_for "$proj" "$name")
+        role=$(_mount_override_role "$name" 2>/dev/null || true)
         # Skip empty AND any NON-ABSOLUTE value (e.g. a stale `@local` marker —
         # leading `@` is a reserved YAML char that would break the compose).
         [[ "$_ms" != /* ]] && continue
@@ -306,7 +324,7 @@ _declared_unresolved_extra_mounts() {
         rest="${rest#*$'\t'}"   # drop ref
         target="${rest%%$'\t'*}"
         [[ -z "$name" ]] && continue
-        _ms=$(_mount_override_get "$name" || _index_get_path "$proj" "$name")
+        _ms=$(_mount_source_for "$proj" "$name")   # shared bridge (INV-M1)
         [[ "$_ms" == /* ]] && continue   # resolved → not in the unresolved set
         [[ -z "$target" ]] && target="/workspace/$name"
         printf '%s\t%s\n' "$name" "$target"

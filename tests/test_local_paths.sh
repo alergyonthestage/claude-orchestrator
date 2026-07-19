@@ -260,3 +260,46 @@ test_mount_override_get_ignores_role_column() {
     unset _CCO_MOUNT_OVERRIDE
     return 0
 }
+
+# ── RC-6 §3.3: _mount_source_for — the single mount-bridge resolver ──────
+#
+# The repo bridge used to consult ONLY the index, so a built-in's generated
+# manifest (whose own name-scope holds no bindings) never resolved its declared
+# repos. INV-M1 routes all three bridges through one order: session override,
+# then the per-project index — never a cross-project fallback.
+
+# T1 — _effective_repo_mounts honours the session override. This is the crisp
+# unit-level proof of Change 1: pre-fix the repo bridge is index-only, so with a
+# name published ONLY through the override and NO index binding the output is
+# empty. The second scenario is the ADR-0051 guard rail (folded in, RC-1 T15
+# pattern): a name bound only under ANOTHER project, with no override, must NOT
+# leak in — no cross-project fallback (rejected alternative B).
+test_effective_repo_mounts_honours_session_override() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_local_paths_index "$tmpdir/state"
+
+    local webapp="$tmpdir/webapp"; mkdir -p "$webapp"
+    # The generated manifest is scoped `config-editor`, which has NO index binding
+    # for `webapp` by construction — the path travels only through the override.
+    _CCO_MOUNT_OVERRIDE=$(printf 'webapp\t%s\t' "$webapp")
+
+    local proj="$tmpdir/proj"; mkdir -p "$proj"
+    cat > "$proj/project.yml" <<'YAML'
+name: config-editor
+repos:
+  - name: webapp
+YAML
+
+    local out; out=$(_effective_repo_mounts "$proj/project.yml")
+    assert_equals "webapp"$'\t'"$webapp" "$out" \
+        "the repo bridge must consult the session override (INV-M1)"
+    unset _CCO_MOUNT_OVERRIDE
+
+    # Guard rail (passes both sides by design): a binding under a DIFFERENT project
+    # and no override must resolve to nothing — never the global default D2 rejects.
+    _index_set_path other "webapp" "$webapp"
+    out=$(_effective_repo_mounts "$proj/project.yml")
+    assert_equals "" "$out" \
+        "no cross-project fallback: another project's binding must never leak in"
+    return 0
+}
