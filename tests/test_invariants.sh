@@ -305,3 +305,66 @@ test_invariant_11_no_negative_only_rc_assertions() {
              "$REPO_ROOT/tests" | grep -v 'allow-negative-rc:' || true)
     [[ -z "$hits" ]] || fail "banned negative-only rc assertion (RC-17): assert an exact rc + a state change, or assert_refused"$'\n'"$hits"
 }
+
+# ── INV-F probe locality (RC-2 / 04-host-path-class.md §6.7) ──────────
+# A path read from the STATE index is a HOST path; in a container-operator session
+# it must NEVER be existence-tested (it can never exist there — the member is bound
+# at <workdir>/<name>). This catches the copy-paste regression class: a variable
+# assigned from _index_get_path that is then -d/-f/-e-tested on a LATER line within
+# the SAME function. Deliberately coarse and order-sensitive (a test on a line
+# BEFORE the assignment, e.g. the effective-mounts fallback in cmd-project-query.sh,
+# is fine; _index_get_path_any is a different, host-only accessor and word-bounded
+# out). Availability is decided by _cco_member_probe_path / _env_member_state, never
+# a raw -d.
+#
+# Allowlist — files where the pattern is legitimately present because the verb is
+# HOST-ONLY (the shim refuses it before the body runs), so the host path is real:
+#   cmd-forget.sh / cmd-join.sh — forget / join (host-only membership verbs)
+#   cmd-config.sh               — `config validate` (host-only, ADR / CLI-surface review)
+#   cmd-project-rename.sh       — `project rename` (host-only, re-keys machine state)
+test_invariant_probe_locality() {
+    local allow=" cmd-forget.sh cmd-join.sh cmd-config.sh cmd-project-rename.sh "
+    local prog='
+/^[A-Za-z_][A-Za-z0-9_]*\(\)[ \t]*\{?[ \t]*$/ { for (v in seen) delete seen[v]; next }
+{
+  if (match($0, /[A-Za-z_][A-Za-z0-9_]*=\$\(_index_get_path[^A-Za-z0-9_]/)) {
+    tok = substr($0, RSTART, RLENGTH); sub(/=.*/, "", tok); seen[tok] = 1
+  }
+  for (v in seen) {
+    if (($0 ~ ("-[def] \"[$]" v "\"")) || ($0 ~ ("-[def] \"[$][{]" v "[}]\""))) {
+      if ($0 !~ (v "=[$][(]_index_get_path")) print FILENAME ":" FNR ": " $0
+    }
+  }
+}'
+    local f base hits=""
+    for f in "$REPO_ROOT"/lib/*.sh; do
+        base=$(basename "$f")
+        case "$allow" in *" $base "*) continue ;; esac
+        local h; h=$(awk "$prog" "$f")
+        [[ -n "$h" ]] && hits="${hits}${h}"$'\n'
+    done
+    [[ -z "$hits" ]] || fail "INV-F: an index HOST path is existence-tested in-container (probe via _cco_member_probe_path / _env_member_state instead):"$'\n'"$hits"
+}
+
+# ── INV-F.3 index resolver is host-only by contract (RC-2 §6.7) ───────
+# _resolve_unit_dir_for_project returns a HOST unit directory and never resolves in
+# a session. No module reachable under the operator shim whitelist may call it — a
+# project NAME is resolved with the operator-aware _resolve_project_yml /
+# _resolve_project_cco_dir. Denylist form: a new call site in any reachable module
+# fails this. Comment mentions (Depends: lines) are excluded; only real calls count.
+# cmd-resolve.sh (which DEFINES the resolver) and the host-only verbs (update /
+# export-import / add / clean / chrome / start / stop) are outside the whitelist.
+test_invariant_index_resolver_host_only() {
+    local deny="cmd-project-validate.sh cmd-project-coords.sh cmd-project-query.sh \
+cmd-llms.sh cmd-template.sh cmd-pack.sh cmd-repo.sh rename.sh tags.sh \
+cmd-config.sh index.sh access-scope.sh paths.sh"
+    local m f hits=""
+    for m in $deny; do
+        f="$REPO_ROOT/lib/$m"
+        [[ -f "$f" ]] || continue
+        # Real calls only: drop comment lines (first non-space char is #).
+        local h; h=$(grep -nE '_resolve_unit_dir_for_project' "$f" | grep -vE '^[0-9]+:[[:space:]]*#' || true)
+        [[ -n "$h" ]] && hits="${hits}${m}: ${h}"$'\n'
+    done
+    [[ -z "$hits" ]] || fail "INV-F.3: host-only _resolve_unit_dir_for_project called from a shim-reachable module (use _resolve_project_yml / _resolve_project_cco_dir):"$'\n'"$hits"
+}

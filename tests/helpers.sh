@@ -852,6 +852,43 @@ lane_cco_seeded() {
     return 0
 }
 
+# SELF-CONTAINED operator runner with a MOUNTED member repo (RC-2 / 04 §6.6). Seeds
+# <project> with a single member whose HOST path is deliberately ABSENT and whose
+# bind target exists at $CCO_WORKDIR/<project> (carrying name:<project> in its
+# .cco/project.yml), cd's into that mount, and runs `cco <argv>` elevated-in-process.
+# The retired _op_seed seeded an index-only, on-disk-EXISTING repo — this composes
+# the mounted topology the lane models, so a rename verb reaches its own body across
+# the host-path guard (test_operator_shim.sh has no setup_cco_env to build on, so
+# this is self-contained like lane_cco/lane_cco_seeded). Captures stdout+stderr →
+# OP_OUT and the exit code → OP_RC; always returns 0 so the caller asserts explicitly.
+# Usage: _op_seed_in_repo <level> <project> <argv...>
+_op_seed_in_repo() {
+    local level="$1" project="$2"; shift 2
+    local tmp; tmp=$(mktemp -d)
+    local host_absent="/Users/cco-e2e/code/$project"
+    local mnt="$tmp/workspace/$project"
+    mkdir -p "$tmp/data" "$tmp/state" "$tmp/cache" "$tmp/home" "$mnt/.cco"
+    printf 'name: %s\nrepos:\n  - name: %s\n' "$project" "$project" > "$mnt/.cco/project.yml"
+    # Seed the scoped index host-side (absent host path, mounted member) — the real
+    # index API so the on-disk format matches production.
+    ( source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+      source "$REPO_ROOT/lib/paths.sh";  source "$REPO_ROOT/lib/index.sh"
+      export CCO_STATE_HOME="$tmp/state" CCO_ALLOW_HOST_RESOLVE=1
+      _index_set_path "$project" "$project" "$host_absent"
+      _index_set_project_repos "$project" "$project" ) >/dev/null 2>&1
+    OP_OUT=$(
+        export CCO_DATA_HOME="$tmp/data" CCO_STATE_HOME="$tmp/state" \
+               CCO_CACHE_HOME="$tmp/cache" HOME="$tmp/home"
+        export CCO_WORKDIR="$tmp/workspace"
+        eval "$(_lane_operator_exports "$level" "$project")"
+        cd "$mnt" || exit 1
+        bash "$REPO_ROOT/bin/cco" "$@" 2>&1
+    )
+    OP_RC=$?
+    rm -rf "$tmp"
+    return 0
+}
+
 # ── ADR-0047 boundary seam (D-M8/Q-14) ────────────────────────────────
 # Hermetically model the privilege boundary's ERRNO — not its mechanism. `chmod
 # 000` on a bucket ancestor makes the store unreadable for a normal uid, which is

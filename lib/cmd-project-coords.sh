@@ -16,8 +16,9 @@
 # it previews first and confirms (or -y).
 #
 # Provides: cmd_project_coords()
-# Depends:  index.sh (_index_list_projects), cmd-resolve.sh
-#           (_resolve_unit_dir_for_project), yaml.sh (*_coords parsers),
+# Depends:  index.sh (_index_list_projects), cmd-resolve.sh (the operator-aware
+#           _resolve_project_yml via _env_project_state), access-scope.sh
+#           (_env_project_state/_env_unavailable), yaml.sh (*_coords parsers),
 #           colors.sh.
 
 # Emit "<name>\t<unit>\t<section>\t<url>\t<yml>" for every url-bearing entry of

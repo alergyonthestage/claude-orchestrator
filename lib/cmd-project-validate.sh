@@ -15,7 +15,9 @@
 # one-line tally. Quiet on success unless -v.
 #
 # Provides: cmd_project_validate()
-# Depends:  cmd-resolve.sh (_resolve_find_unit_dir/_resolve_unit_dir_for_project),
+# Depends:  cmd-resolve.sh (_resolve_find_unit_dir + the operator-aware
+#           _resolve_project_yml/_resolve_project_cco_dir),
+#           access-scope.sh (_env_project_state/_env_unavailable*/_env_note_*),
 #           yaml.sh (yml_get*, *_coords parsers), index.sh (_index_list_projects),
 #           packs.sh (_pack_resolve_dir, PACKS_DIR), colors.sh.
 

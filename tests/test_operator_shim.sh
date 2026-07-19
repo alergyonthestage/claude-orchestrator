@@ -602,3 +602,17 @@ test_op_rename_gating_by_target_tree() {
     assert_refused "$OP_RC" "$OP_OUT" "needs Pc=rw" || return 1
     return 0
 }
+
+# The gate probe above proves the shim ADMITS the verb; this proves the verb then
+# REACHES and completes its own body in-container across the host-path guard, via
+# the _op_seed_in_repo mounted-topology runner (RC-2 / 04 §6.6). Pins the helper (a
+# missing _op_seed_in_repo makes this error) AND fails on pre-fix code: today the
+# strict guard existence-tests the index HOST path and dies rc=1 "not resolved on
+# this machine", never reaching the rename.
+test_op_seed_in_repo_completes_rename_in_container() {
+    _op_seed_in_repo edit-project alpha repo rename alpha api -y
+    assert_rc 0 "$OP_RC" "operator repo rename from a seeded mount must complete" || return 1
+    echo "$OP_OUT" | grep -qi "not resolved on this machine" \
+        && { fail "repo rename stopped at a host-path guard: $OP_OUT"; return 1; }
+    return 0
+}
