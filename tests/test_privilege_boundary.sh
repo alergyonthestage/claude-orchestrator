@@ -121,3 +121,51 @@ test_boundary_helper_fail_closed() {
     fi
     return 0
 }
+
+# ── 5. store-op: the RC-3 internal store crossing (05-store-write-path.md §3.7) ──
+# `store-op` is an INTERNAL boundary-crossing target reached only through the cco-svc
+# helper's elevated re-entry (`cco __store store-op <mode> <op> args…`). It is NEVER a
+# public verb. These cover the bash-side contract: INV-S2 (the elevated arm re-gates
+# off the trusted triple), INV-S1 (validation runs BEFORE the gate, fail-closed), and
+# §3.7 (it is absent from the host dispatcher).
+
+# Drive the elevated store-op re-entry with a controlled triple + throwaway buckets.
+# Sets SO_RC + SO_OUT. Self-contained (its own operator env, its own buckets), so it
+# does not depend on setup_cco_env. Usage: _storeop <triple> <mode> <op> [args…]
+_storeop() {
+    local triple="$1" mode="$2"; shift 2
+    local tmp; tmp=$(mktemp -d)
+    mkdir -p "$tmp/data" "$tmp/state" "$tmp/cache" "$tmp/home"
+    SO_OUT=$(
+        export HOME="$tmp/home" CCO_ALLOW_HOST_RESOLVE=1
+        export CCO_IN_CONTAINER=1 CCO_CONTAINER_OPERATOR=1 CCO_STORE_ELEVATED=1
+        export CCO_DATA_HOME="$tmp/data" CCO_STATE_HOME="$tmp/state" CCO_CACHE_HOME="$tmp/cache"
+        export CCO_ACCESS_TRIPLE="$triple" CCO_CCO_ACCESS=edit-global
+        unset CCO_SESSION_CONTEXT PROJECT_NAME CCO_CONFIG_TARGETS || true
+        bash "$REPO_ROOT/bin/cco" __store store-op "$mode" "$@" 2>&1
+    )
+    SO_RC=$?
+    rm -rf "$tmp"
+    return 0
+}
+
+# INV-S2: the elevated arm re-gates. A write that the session's G axis does not grant
+# is refused (exit 2), even in the elevated re-entry. Pre-fix: store-op is an unknown
+# verb → the top-level dispatcher dies exit 1, so the exit-2 assertion fails.
+test_boundary_storeop_is_write_gated() {
+    _storeop "ro,ro,none" apply sidecar-purge packs somepack
+    assert_refused "$SO_RC" "$SO_OUT" "G=rw" || return 1
+    return 0
+}
+
+# INV-S1 placement clause: validation runs FIRST, before the gate — a malformed op
+# (path traversal in the name) is refused even when the gate WOULD pass (rw,rw,rw), and
+# the "Invalid store op" message proves it was rejected at validation, not at dispatch.
+# Pre-fix: store-op unknown → the assertion is unreachable.
+test_boundary_storeop_validates_before_gate() {
+    _storeop "rw,rw,rw" apply sidecar-rekey packs "../../state/cco" x
+    assert_rc 1 "$SO_RC" "store-op with a traversal name must die before dispatch" || return 1
+    [[ "$SO_OUT" == *"Invalid store op"* ]] \
+        || { fail "a traversal op must be rejected at validation (INV-S1), got: $SO_OUT"; return 1; }
+    return 0
+}

@@ -56,6 +56,7 @@ source "$LIB_DIR/colors.sh"
 source "$LIB_DIR/utils.sh"
 source "$LIB_DIR/paths.sh"
 source "$LIB_DIR/access-scope.sh"
+source "$LIB_DIR/store.sh"
 source "$LIB_DIR/migrate.sh"
 source "$LIB_DIR/index.sh"
 source "$LIB_DIR/rename.sh"
@@ -413,6 +414,25 @@ _cco_operator_shim() {
                 rename) _op_write "$cmd rename" project ;;
                 *) _op_unknown_sub "$cmd" "$sub" ;;
             esac ;;
+        # store-op is an INTERNAL boundary-crossing target (RC-3, 05 §3.7), NEVER a
+        # public verb. Reached only through the cco-svc helper's elevated re-entry
+        # (the __store branch dispatches it here). INV-S1 validation runs FIRST — before
+        # the gate, so a malformed op cannot even select a target tree — then INV-S2
+        # re-gates off the trusted :ro descriptor (the authoritative write gate).
+        store-op)
+            [[ "${CCO_STORE_ELEVATED:-}" == "1" ]] \
+                || refuse "'cco store-op' is an internal store-crossing target, not a command — it is reachable only through the cco-svc boundary (ADR-0047)."
+            local _st_mode="$sub"
+            shift || true                 # drop the mode → $1 is the op
+            local _st_op="${1:-}"
+            shift || true                 # → $@ is the op's args
+            _store_validate_args "$_st_op" "$@" || die "Invalid store op '$_st_op'."   # INV-S1, fail-closed, FIRST
+            _op_write "store-op $_st_op" "$(_store_target_tree "$_st_op")"              # INV-S2 gate (refuses exit 2)
+            case "$_st_mode" in
+                plan)  _store_probe   "$_st_op" "$@" ;;
+                apply) _store_dispatch "$_st_op" "$@" ;;
+                *)     die "Unknown store-op mode '$_st_mode' (expected plan|apply)." ;;
+            esac ;;
         pack|template|llms)
             case "$sub" in
                 "") return 0 ;;   # bare namespace → dispatcher prints sub-usage
@@ -499,6 +519,16 @@ if [[ "$cmd" == "__store" ]] && _cco_container_operator; then
     # is only an early UX check). The single physical enforcement point.
     cmd="${1:-}"; shift 2>/dev/null || true
     [[ -z "$cmd" ]] && die "Malformed elevated re-entry: '__store' needs a verb."
+    # store-op (RC-3, 05 §3.7) is dispatched LOCALLY and EXITS — it is deliberately
+    # NOT in the top-level dispatcher, so it never becomes a public host verb. The
+    # shim's store-op arm runs the authoritative gate + validation, then probes/
+    # dispatches; its status is this process's exit status.
+    if [[ "$cmd" == "store-op" ]]; then
+        _cco_store_rc=0
+        _cco_operator_shim store-op "$@" || _cco_store_rc=$?
+        _cco_completed=true
+        exit $_cco_store_rc
+    fi
     _cco_operator_shim "$cmd" "$@"
 elif _cco_container_operator; then
     _cco_operator_shim "$cmd" "$@"
