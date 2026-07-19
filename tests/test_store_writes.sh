@@ -246,3 +246,80 @@ test_store_template_rename_plan_blocks() {
     assert_dir_not_exists "$CCO_TEMPLATES_DIR/project/u" || return 1
     return 0
 }
+
+# ── llms / remote: the RIGHT reason (RC-13), not a spurious `not found` ─
+# These verbs `die not found` today when the confined store reads FALSE behind the
+# boundary. Post-fix existence is a fact of the plan, so an UNREACHABLE store names
+# the store instead of lying `not found`, and an unwritable store fails loud.
+
+# OPAQUE (000) llms dir: `llms remove` must fail naming the STORE, not `LLMs 'x' not
+# found`. Pre-fix: rc=1 with the wrong reason (cmd-llms.sh:615).
+test_store_llms_remove_fails_loud_when_cache_opaque() {
+    [[ "$(id -u)" -eq 0 ]] && return 0
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"; setup_operator_session "$tmp" edit-global
+    _sw_seed_llms entry
+    chmod 000 "$CCO_LLMS_DIR"
+    local rc=0; run_cco llms remove entry -y || rc=$?
+    chmod 755 "$CCO_LLMS_DIR"
+    assert_rc 1 "$rc" "llms remove behind an opaque store must fail" || return 1
+    [[ "$CCO_OUTPUT" == *"store"* ]] \
+        || { fail "the refusal must name the store: $CCO_OUTPUT"; return 1; }
+    [[ "$CCO_OUTPUT" != *"not found"* ]] \
+        || { fail "an unreachable store must not lie 'not found': $CCO_OUTPUT"; return 1; }
+    return 0
+}
+
+# OPAQUE (000) DATA: `remote remove` must name the STORE, not `Remote 'x' not found`.
+# Pre-fix: rc=1, `Remote 'x' not found` (cmd-remote.sh:197).
+test_store_remote_remove_reports_store_not_message_not_found() {
+    [[ "$(id -u)" -eq 0 ]] && return 0
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"; setup_operator_session "$tmp" edit-global
+    _sw_seed_remote r1
+    chmod 000 "$CCO_DATA_HOME"
+    local rc=0; run_cco remote remove r1 -y || rc=$?
+    chmod 755 "$CCO_DATA_HOME"
+    assert_rc 1 "$rc" "remote remove behind an opaque store must fail" || return 1
+    [[ "$CCO_OUTPUT" == *"store"* ]] \
+        || { fail "the refusal must name the store: $CCO_OUTPUT"; return 1; }
+    [[ "$CCO_OUTPUT" != *"not found"* ]] \
+        || { fail "an unreachable store must not lie 'not found': $CCO_OUTPUT"; return 1; }
+    return 0
+}
+
+# READ-ONLY (555) DATA: `remote rename` must fail loud, no `Renamed remote`. Pre-fix:
+# the `:258` read passes under 555, the mv EACCES silently, exit 0 + ✓.
+test_store_remote_rename_fails_loud_when_data_unwritable() {
+    [[ "$(id -u)" -eq 0 ]] && return 0
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"; setup_operator_session "$tmp" edit-global
+    _sw_seed_remote r1
+    chmod 555 "$CCO_DATA_HOME"
+    local rc=0; run_cco remote rename r1 r2 -y || rc=$?
+    chmod 755 "$CCO_DATA_HOME"
+    assert_rc 1 "$rc" "remote rename with unwritable DATA must fail loud" || return 1
+    [[ "$CCO_OUTPUT" != *"Renamed remote"* ]] \
+        || { fail "no success tick on a failed store write: $CCO_OUTPUT"; return 1; }
+    return 0
+}
+
+# READ-ONLY (555) DATA: `remote add` must fail loud, no `Added remote`. Pre-fix: the
+# dup-check reads empty, the append EACCES silently, exit 0 + ✓.
+test_store_remote_add_fails_loud_when_registry_unwritable() {
+    [[ "$(id -u)" -eq 0 ]] && return 0
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"; setup_operator_session "$tmp" edit-global
+    mkdir -p "$CCO_DATA_HOME"
+    chmod 555 "$CCO_DATA_HOME"
+    local rc=0; run_cco remote add r1 https://example.com/r1.git || rc=$?
+    chmod 755 "$CCO_DATA_HOME"
+    assert_rc 1 "$rc" "remote add with unwritable registry must fail loud" || return 1
+    [[ "$CCO_OUTPUT" != *"Added remote"* ]] \
+        || { fail "no success tick on a failed store write: $CCO_OUTPUT"; return 1; }
+    return 0
+}

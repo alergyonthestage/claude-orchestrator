@@ -101,6 +101,20 @@ _store_validate_args() {
     return 0
 }
 
+# D-M8/Q-10 (OUT of cycle 1): the install/update PROVENANCE writers (DATA `source`,
+# STATE merge base/meta, via _meta_record_provenance / _record_tree_as_base) are NOT
+# converted to the crossing in cycle 1 — that reaches into the update engine (~triple
+# the surface, none of it evidenced by a finding). So in a container-operator session
+# they cannot reach the internal store and would install to CONFIG then silently lose
+# provenance behind the ADR-0047 boundary. Refuse UP FRONT instead (exit 2, B6: names
+# the reason + the host remedy) — a clean refusal, not an accidental half-install. On
+# the host this is a no-op (the store is directly writable). Cycle 2 converts them.
+# Usage: _store_provenance_guard <verb-label>   (call AFTER --help arg parsing)
+_store_provenance_guard() {
+    _cco_container_operator || return 0
+    refuse "'cco $1' records install-provenance in the internal store, which is not reachable from a container session yet (cycle-2 conversion pending — RC-3/D-M8). Run 'cco $1' on your host."
+}
+
 # _store_target_tree <op> — the (G,Pc,Po) axis the op writes; ONE source read by both
 # the elevated gate (INV-S2) and the claude-side UX check. Every cycle-1 op writes the
 # personal store (~/.cco) → `global` (G=rw).

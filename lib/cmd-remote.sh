@@ -154,22 +154,19 @@ _cmd_remote_add() {
         die "'cco remote add --token' cannot persist a token in a container session — tokens are host-only (secrets stay off the container). Register the remote without --token here, then run 'cco remote set-token $name <token>' on your host."
     fi
 
-    local rf; rf=$(_remotes_file)
+    # The url registry lives in the confined DATA bucket, so the dup-check + append go
+    # through lib/store.sh (INV-S6): behind the ADR-0047 boundary a raw grep/append
+    # would read the registry empty and EACCES the write while still printing ✓.
+    # _store_check refuses on an unreachable/unwritable store and reports whether the
+    # name already exists (checked on the privileged side where it is true).
+    _store_check remote-put "$name" "$url"
+    [[ "$_STORE_PRESENT" == no ]] \
+        || die "Remote '$name' already exists. Remove it first with 'cco remote remove $name'."
 
-    # Check for duplicates
-    if [[ -f "$rf" ]] && grep -q "^${name}=" "$rf" 2>/dev/null; then
-        die "Remote '$name' already exists. Remove it first with 'cco remote remove $name'."
-    fi
+    _store_apply remote-put "$name" "$url"
 
-    # Create url registry with header if new
-    if [[ ! -f "$rf" ]]; then
-        mkdir -p "$(dirname "$rf")"
-        echo "# CCO sharing-repo remotes — name=url (DATA, de-tokenized; tokens in STATE)" > "$rf"
-    fi
-
-    echo "${name}=${url}" >> "$rf"
-
-    # Store token (STATE token store, 0600) if provided
+    # Store token (STATE token store, 0600) if provided. Reached on the host only —
+    # the token half is refused above in a container session (secrets stay off it).
     [[ -n "$token" ]] && _remote_token_set "$name" "$token"
 
     if [[ -n "$token" ]]; then
@@ -192,11 +189,12 @@ _cmd_remote_remove() {
     done
     [[ -z "$name" ]] && die "Usage: cco remote remove <name>"
 
-    local rf; rf=$(_remotes_file)
-
-    if [[ ! -f "$rf" ]] || ! grep -q "^${name}=" "$rf" 2>/dev/null; then
-        die "Remote '$name' not found."
-    fi
+    # Existence is a fact of the plan, never a claude-side grep of the confined DATA
+    # registry (INV-S6 / RC-13): behind the boundary the read is empty, so a raw grep
+    # would report the WRONG `not found`. _store_check refuses on an unreachable/
+    # unwritable store and reports whether the entry is present.
+    _store_check remote-drop "$name"
+    [[ "$_STORE_PRESENT" == yes ]] || die "Remote '$name' not found."
 
     # ── Preview (ADR-0029 D2): the url registry entry + any saved token ────
     info "cco remote remove '$name' will delete its url registry entry and any saved token."
@@ -226,12 +224,10 @@ _cmd_remote_remove() {
 
     _confirm_destructive "$yes" "Remove remote '$name'?" || { info "Aborted"; return 0; }
 
-    # Remove from the url registry (DATA) and the token store (STATE)
-    local tmpfile
-    tmpfile=$(mktemp)
-    grep -v "^${name}=" "$rf" > "$tmpfile"
-    mv "$tmpfile" "$rf"
-    _remote_token_remove "$name" || true
+    # Remove from the url registry (DATA) + the token store (STATE) as one all-or-
+    # nothing store op — never a false ✓ if the registry rewrite EACCES behind the
+    # boundary.
+    _store_apply remote-drop "$name"
 
     ok "Removed remote '$name'"
 }
@@ -253,11 +249,14 @@ _cmd_remote_rename() {
     done
     [[ -z "$old" || -z "$new" ]] && die "Usage: cco remote rename <old> <new>"
     [[ "$old" == "$new" ]] && die "Old and new names are the same ('$old') — nothing to rename."
-
-    local rf; rf=$(_remotes_file)
-    { [[ -f "$rf" ]] && grep -q "^${old}=" "$rf" 2>/dev/null; } || die "Remote '$old' not found."
     _rename_validate remote "$new"
-    grep -q "^${new}=" "$rf" 2>/dev/null && die "Remote '$new' already exists. Choose a different name."
+
+    # Existence + collision are facts of the plan, never a claude-side grep of the
+    # confined DATA registry (INV-S6 / RC-13). _store_check refuses on an unreachable/
+    # unwritable store and reports whether <old> is present and <new> collides.
+    _store_check remote-rekey "$old" "$new"
+    [[ "$_STORE_PRESENT" == yes ]]  || die "Remote '$old' not found."
+    [[ "$_STORE_COLLISION" == no ]] || die "Remote '$new' already exists. Choose a different name."
 
     local has_token=false
     remote_get_token "$old" >/dev/null 2>&1 && has_token=true
@@ -266,19 +265,9 @@ _cmd_remote_rename() {
     _rename_preview_confirm "$yes" "Rename remote '$old' → '$new'" "${bullets[@]}" \
         || { info "Aborted — nothing changed."; return 0; }
 
-    # Re-key the url registry (DATA), preserving the url.
-    local url; url=$(remote_get_url "$old")
-    local tmpf; tmpf=$(mktemp)
-    grep -v "^${old}=" "$rf" > "$tmpf"
-    printf '%s=%s\n' "$new" "$url" >> "$tmpf"
-    mv "$tmpf" "$rf"
-
-    # Migrate the token (STATE) if present.
-    if [[ "$has_token" == true ]]; then
-        local tok; tok=$(remote_get_token "$old")
-        _remote_token_set "$new" "$tok"
-        _remote_token_remove "$old" || true
-    fi
+    # Re-key the url registry (DATA) + migrate the token (STATE) as one all-or-nothing
+    # store op — the url is preserved under the new key.
+    _store_apply remote-rekey "$old" "$new"
 
     ok "Renamed remote '$old' → '$new'."
 }

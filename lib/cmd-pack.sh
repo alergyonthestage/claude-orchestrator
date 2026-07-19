@@ -439,6 +439,7 @@ EOF
     done
 
     [[ -z "$url" ]] && die "Usage: cco pack install <source> [--pick <name>]\n\n<source> can be a git URL or a registered remote name."
+    _store_provenance_guard "pack install"   # D-M8/Q-10: DATA/STATE provenance, cycle-2 conversion
     check_global
 
     # Resolve remote name → URL + token
@@ -663,6 +664,7 @@ EOF
         esac
     done
 
+    _store_provenance_guard "pack update"   # D-M8/Q-10: DATA/STATE provenance, cycle-2 conversion
     check_global
 
     if $update_all; then
@@ -772,6 +774,7 @@ EOF
 
     [[ -z "$archive" ]] && die "Usage: cco pack import <archive>"
     [[ -f "$archive" ]] || die "Archive not found: $archive"
+    _store_provenance_guard "pack import"   # D-M8/Q-10: DATA/STATE provenance, cycle-2 conversion
 
     local tmpdir; tmpdir=$(mktemp -d)
     tar xzf "$archive" -C "$tmpdir" 2>/dev/null \
@@ -955,6 +958,7 @@ EOF
     done
 
     [[ -z "$name" ]] && die "Usage: cco pack internalize <name> [--as <new-name>]"
+    _store_provenance_guard "pack internalize"   # D-M8/Q-10: DATA/STATE provenance, cycle-2 conversion
     check_global
 
     local pack_dir="$PACKS_DIR/$name"

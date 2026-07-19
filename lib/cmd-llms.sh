@@ -539,16 +539,18 @@ EOF
         die "Invalid name '$new_name': must start with alphanumeric and contain only [a-zA-Z0-9._-]"
     fi
 
-    local old_dir="$LLMS_DIR/$old_name"
-    local new_dir="$LLMS_DIR/$new_name"
+    # The llms content lives in the confined CACHE bucket, so existence is a fact of
+    # the plan, never a claude-side -d predicate (INV-S6): behind the ADR-0047 boundary
+    # `[[ -d ]]` reads FALSE for an entry `cco list llms` just showed, producing the
+    # wrong `not found` (RC-13). _store_check refuses on an unreachable/unwritable store
+    # and reports present/collision, checked on the privileged side where they are true.
+    _store_check llms-rekey "$old_name" "$new_name"
+    [[ "$_STORE_PRESENT" == yes ]]  || die "LLMs '$old_name' not found."
+    [[ "$_STORE_COLLISION" == no ]] || die "LLMs '$new_name' already exists."
 
-    [[ ! -d "$old_dir" ]] && die "LLMs '$old_name' not found."
-    [[ -d "$new_dir" ]] && die "LLMs '$new_name' already exists."
-
-    mv "$old_dir" "$new_dir"
-    # Carry the per-user tag binding (no-op today — llms are not taggable — kept
-    # for symmetry with the other directory-keyed kinds; ADR-0050 D6).
-    _tags_rename llms "$old_name" "$new_name"
+    # Move the CACHE content + carry the per-user tag binding (a no-op today — llms are
+    # not taggable — kept for symmetry, ADR-0050 D6) as one all-or-nothing store op.
+    _store_apply llms-rekey "$old_name" "$new_name"
 
     # Update references in packs and projects (only in llms: sections). The shared
     # rewriter (lib/rename.sh) handles both the scalar (`- name`) and mapping
@@ -611,8 +613,12 @@ EOF
 
     [[ -z "$name" ]] && die "Usage: cco llms remove <name>"
 
-    local llms_dir="$LLMS_DIR/$name"
-    [[ ! -d "$llms_dir" ]] && die "LLMs '$name' not found."
+    # Existence is a fact of the plan, never a claude-side -d on the confined CACHE
+    # entry (INV-S6 / RC-13): behind the boundary `[[ -d ]]` reads FALSE for an entry
+    # that exists, producing the wrong `not found`. _store_check refuses on an
+    # unreachable/unwritable store and reports present, checked where it is true.
+    _store_check llms-purge "$name"
+    [[ "$_STORE_PRESENT" == yes ]] || die "LLMs '$name' not found."
 
     # ── Preview + referenced block (ADR-0029 D2) ───────────────────────────
     # Use the repo-relative form (matching pack/template remove previews) — never
@@ -629,7 +635,7 @@ EOF
 
     _confirm_destructive "$yes" "Remove llms '$name'?" || { info "Cancelled."; return 0; }
 
-    rm -rf "$llms_dir"
+    _store_apply llms-purge "$name"
     ok "Removed llms '$name'"
 }
 
