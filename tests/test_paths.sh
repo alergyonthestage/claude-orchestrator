@@ -502,3 +502,23 @@ test_operator_lane_boundary_seam_denies_store_read() {
     assert_index_path sealed-proj sealed /Users/cco-e2e/code/sealed || return 1
     return 0
 }
+
+# The gate probe's self-containment claim, made checkable.
+#
+# _lane_operator_exports reads OP_TRIPLE / OP_TARGETS / OP_SHP from its CALLER —
+# deliberately, for the lane runners (the _op_seed precedent). assert_gate_allows
+# documents itself as inheriting nothing, and a comment that disagrees with the
+# behaviour is worse than no comment: the comment is what the next author trusts.
+#
+# The leak is observable through OP_TRIPLE, because CCO_ACCESS_TRIPLE overrides the
+# preset the <level> argument selects. With the leak, `assert_gate_allows
+# edit-project repo rename` is silently answered at (ro,ro,ro) and refuses
+# "needs Pc=rw" — the probe reporting on a level nobody asked about. OP_TARGETS and
+# OP_SHP ride the same path and are cleared with it.
+test_operator_lane_gate_probe_ignores_caller_op_vars() {
+    OP_TRIPLE='ro,ro,ro'
+    OP_TARGETS='some-other-project'
+    OP_SHP='false'
+    assert_gate_allows edit-project repo rename || return 1
+    return 0
+}

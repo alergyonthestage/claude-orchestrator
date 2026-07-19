@@ -739,6 +739,13 @@ assert_refused() {
 # test_operator_shim.sh has no setup_cco_env to build on, and a one-shot gate
 # probe has a genuinely different lifetime from a persistent lane fixture.
 #
+# "Inherits NONE of it" includes the three OP_* knobs _lane_operator_exports reads
+# from its caller. They are honoured by the lane RUNNERS on purpose (the _op_seed
+# precedent), but a gate probe that silently picked up an OP_TARGETS left over from
+# an earlier lane_cco_seeded call in the same test function would be answering a
+# different question than the one its arguments state — so they are cleared here,
+# and the claim above is true by construction rather than by call-site discipline.
+#
 # Probe: `<verb> --help`. The shim classifies on <cmd> <sub> BEFORE dispatch, so
 # the gate runs; the verb body then short-circuits on --help and returns 0. The
 # usage-shape check is load-bearing: a verb with no --help handler must FAIL here
@@ -752,6 +759,7 @@ assert_gate_allows() {
     out=$(
         export CCO_DATA_HOME="$tmp/data" CCO_STATE_HOME="$tmp/state" \
                CCO_CACHE_HOME="$tmp/cache" HOME="$tmp/home"
+        unset OP_TRIPLE OP_TARGETS OP_SHP || true
         eval "$(_lane_operator_exports "$level" "")"
         bash "$REPO_ROOT/bin/cco" "$@" --help 2>&1
     ) || rc=$?
