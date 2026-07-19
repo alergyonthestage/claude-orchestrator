@@ -269,3 +269,29 @@ test_invariant_10_accepts_lowercase_hyphens_numbers() {
     ( cd "$repo" && run_cco init --name "valid-proj-123" --lang "English" )
     assert_file_contains "$repo/.cco/project.yml" "name: valid-proj-123"
 }
+
+# ── Invariant 11: no negative-only rc assertions (RC-17) ──────────────
+# A container-operator test must assert an OUTCOME (an exact exit code plus an
+# observable state change) or an EXPLICIT refusal (assert_refused). Asserting
+# "the rc was not 2" states only "not refused by THIS gate" and is satisfied by a
+# verb that dies rc=1 — it shipped `cco repo rename` dead-but-green for a whole
+# release cycle (tests/test_operator_shim.sh:647-653, now retro-fitted).
+#
+# The pattern matches ANY rc-shaped identifier under `-ne` OR `!=`, not one token
+# sequence: an operator-specific, case-sensitive `(OP_RC|CCO_RC|rc)` form lets the
+# RC, exit_code, status and `!=` spellings straight past — forms a future author
+# writes by accident, not by evasion. A deliberate exception carries a same-line
+# `# allow-negative-rc: <why>` marker. (This comment deliberately avoids writing
+# the banned expressions out: the invariant scans the whole tests/ tree, itself
+# included, which is the correct behaviour — it may not exempt its own file.)
+#
+# Scope, stated honestly: this closes the "not 2" idiom as a class, NOT the
+# negative-space family. The sibling "not 0" idiom is one code over and is
+# already widespread (46 sites); converting it is its own change with its own
+# review, recorded as a follow-up in pre-revalidation-backlog.md.
+test_invariant_11_no_negative_only_rc_assertions() {
+    local hits
+    hits=$(grep -rnE '(^|[^A-Za-z_])\$\{?(OP_RC|CCO_RC|RC|rc|exit_code|status|ret|code)\}?[[:space:]]*(-ne|!=)[[:space:]]*2([^0-9]|$)' \
+             "$REPO_ROOT/tests" | grep -v 'allow-negative-rc:' || true)
+    [[ -z "$hits" ]] || fail "banned negative-only rc assertion (RC-17): assert an exact rc + a state change, or assert_refused"$'\n'"$hits"
+}

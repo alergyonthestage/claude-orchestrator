@@ -8,76 +8,19 @@
 # `bin/cco` with the operator env set (absolute CCO_*_HOME + CCO_CONTAINER_OPERATOR)
 # and assert on exit code + message — no Docker daemon required.
 
-# Run bin/cco in container-operator mode. $1 = cco_access level; rest = argv.
-# Buckets point at a throwaway dir so operator mode engages; the shim classifies
-# BEFORE any bucket use for blocked verbs. Captures stdout+stderr into OP_OUT.
-#
-# CCO_STORE_ELEVATED=1 pins the run to the in-process gate path: it skips the
-# Phase II setuid trampoline (bin/cco:438) so a store-touching verb is gated
-# HERE, at the simulated CCO_CCO_ACCESS/CCO_ACCESS_TRIPLE, instead of being
-# re-execed through the real cco-svc-helper — which, in a live boundary-enabled
-# container, would override the simulated level with the session's trusted
-# /etc/cco/session-access descriptor. On the host (no helper) it is a no-op (the
-# trampoline guard is already false), so the suite behaves identically host and
-# in-container. This isolates the GATE logic under test; the trampoline itself is
-# covered by tests/test_privilege_boundary.sh.
-_op_cco() {
-    local level="$1"; shift
-    local tmp; tmp=$(mktemp -d)
-    OP_OUT=$(
-        export CCO_IN_CONTAINER=1 CCO_CONTAINER_OPERATOR=1 CCO_CCO_ACCESS="$level" \
-               CCO_STORE_ELEVATED=1 \
-               CCO_DATA_HOME="$tmp/data" CCO_STATE_HOME="$tmp/state" CCO_CACHE_HOME="$tmp/cache" \
-               HOME="$tmp/home"
-        mkdir -p "$HOME"
-        bash "$REPO_ROOT/bin/cco" "$@" 2>&1
-    )
-    OP_RC=$?
-    rm -rf "$tmp"
-    return 0
-}
-
-# Like _op_cco, but with a SEEDED throwaway store so store-touching gates can
-# resolve real resources: projects `alpha` + `beta` (each its own member repo,
-# create_project-style) and a pack `p1`. $1=cco_access level, $2=current
-# PROJECT_NAME (may be `config-editor`), rest=argv. Honors two optional caller
-# vars: OP_TARGETS → CCO_CONFIG_TARGETS (config-editor targets), OP_SHP →
-# CCO_SHOW_HOST_PATHS (default true). Seeds via the real index API so the on-disk
-# format matches production. Captures stdout+stderr → OP_OUT, exit → OP_RC.
-_op_seed() {
-    local level="$1" cur="$2"; shift 2
-    local tmp; tmp=$(mktemp -d)
-    mkdir -p "$tmp/home/.cco/packs/p1" "$tmp/state" "$tmp/data" "$tmp/cache" \
-             "$tmp/repos/alpha" "$tmp/repos/beta"
-    ( source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
-      source "$REPO_ROOT/lib/paths.sh";  source "$REPO_ROOT/lib/index.sh"
-      # CCO_ALLOW_HOST_RESOLVE=1: seeding writes the index host-side; inside a
-      # session container the anti-in-container guard (ADR-0007) otherwise refuses
-      # index writes (mirrors setup_cco_env). No-op on the host.
-      export CCO_STATE_HOME="$tmp/state" CCO_ALLOW_HOST_RESOLVE=1
-      _index_set_path alpha alpha "$tmp/repos/alpha"; _index_set_project_repos alpha alpha
-      _index_set_path beta  beta  "$tmp/repos/beta";  _index_set_project_repos beta  beta
-    ) >/dev/null 2>&1
-    OP_OUT=$(
-        export CCO_IN_CONTAINER=1 CCO_CONTAINER_OPERATOR=1 CCO_STORE_ELEVATED=1 \
-               CCO_CCO_ACCESS="$level" PROJECT_NAME="$cur" \
-               CCO_CONFIG_TARGETS="${OP_TARGETS:-}" CCO_SHOW_HOST_PATHS="${OP_SHP:-true}" \
-               CCO_DATA_HOME="$tmp/data" CCO_STATE_HOME="$tmp/state" CCO_CACHE_HOME="$tmp/cache" \
-               HOME="$tmp/home"
-        unset CCO_ACCESS_TRIPLE
-        bash "$REPO_ROOT/bin/cco" "$@" 2>&1
-    )
-    OP_RC=$?
-    rm -rf "$tmp"
-    return 0
-}
+# The container-operator env, the seeded store and the assertion vocabulary all
+# come from the shared lane in tests/helpers.sh (RC-17): `lane_cco` (throwaway
+# store) and `lane_cco_seeded` (projects alpha/beta + pack p1) supersede the
+# former file-private `_op_cco`/`_op_seed` helpers, which built the env twice and let
+# CCO_ACCESS_TRIPLE leak in from an ambient session. Both set OP_OUT/OP_RC.
+# Optional caller vars: OP_TARGETS (CCO_CONFIG_TARGETS), OP_SHP (show_host_paths).
 
 # ── Blocklist: host-only verbs die with a hint ───────────────────────
 
 test_operator_blocks_container_spawning() {
     local v
     for v in start stop build new; do
-        _op_cco read "$v" foo
+        lane_cco read "$v" foo
         [[ $OP_RC -ne 0 ]] || fail "'cco $v' should be blocked in operator mode (rc=0)"
         [[ "$OP_OUT" == *"host-only"* ]] || fail "'cco $v' block should mention host-only, got: $OP_OUT"
     done
@@ -87,7 +30,7 @@ test_operator_blocks_container_spawning() {
 test_operator_blocks_lifecycle_and_path_resolving() {
     local v
     for v in resolve sync init join forget update clean; do
-        _op_cco edit-all "$v"
+        lane_cco edit-all "$v"
         [[ $OP_RC -ne 0 ]] || fail "'cco $v' should be blocked (rc=0)"
         [[ "$OP_OUT" == *"host-only"* ]] || fail "'cco $v' should mention host-only, got: $OP_OUT"
     done
@@ -95,27 +38,27 @@ test_operator_blocks_lifecycle_and_path_resolving() {
 }
 
 test_operator_blocks_config_push_pull_hostonly() {
-    _op_cco edit-all config push
+    lane_cco edit-all config push
     [[ $OP_RC -ne 0 && "$OP_OUT" == *"host-only"* ]] \
         || fail "'config push' must be host-only, got rc=$OP_RC: $OP_OUT"
-    _op_cco edit-all config pull
+    lane_cco edit-all config pull
     [[ $OP_RC -ne 0 && "$OP_OUT" == *"host-only"* ]] \
         || fail "'config pull' must be host-only, got rc=$OP_RC: $OP_OUT"
     return 0
 }
 
 test_operator_blocks_remote_token_verbs() {
-    _op_cco edit-all remote set-token acme tok
+    lane_cco edit-all remote set-token acme tok
     [[ $OP_RC -ne 0 && "$OP_OUT" == *"host-only"* ]] \
         || fail "'remote set-token' must be host-only, got rc=$OP_RC: $OP_OUT"
-    _op_cco edit-all remote remove-token acme
+    lane_cco edit-all remote remove-token acme
     [[ $OP_RC -ne 0 && "$OP_OUT" == *"host-only"* ]] \
         || fail "'remote remove-token' must be host-only, got rc=$OP_RC: $OP_OUT"
     return 0
 }
 
 test_operator_blocks_project_rename() {
-    _op_cco edit-all project rename old new
+    lane_cco edit-all project rename old new
     [[ $OP_RC -ne 0 && "$OP_OUT" == *"host-only"* ]] \
         || fail "'project rename' must be host-only, got rc=$OP_RC: $OP_OUT"
     return 0
@@ -128,7 +71,7 @@ test_operator_blocks_project_rename() {
 test_operator_blocks_config_validate_hostonly() {
     local lvl
     for lvl in read-project read-global read-all edit-all; do
-        _op_cco "$lvl" config validate
+        lane_cco "$lvl" config validate
         [[ $OP_RC -ne 0 && "$OP_OUT" == *"host-only"* ]] \
             || fail "'config validate' must be host-only at $lvl, got rc=$OP_RC: $OP_OUT"
     done
@@ -142,10 +85,10 @@ test_operator_read_level_refuses_writes() {
     # with the tree-aware message (R5) and the policy-refusal exit code 2 (D8).
     # (`tag` is now gated by the tagged resource's axis — B5 — and covered by the
     # dedicated per-target tests below, not this blanket-global case.)
-    _op_cco read config save
+    lane_cco read config save
     [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs G=rw"* ]] \
         || fail "'config save' under read must be refused (exit 2, edit-global), got rc=$OP_RC: $OP_OUT"
-    _op_cco read remote add acme https://x
+    lane_cco read remote add acme https://x
     [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs G=rw"* ]] \
         || fail "'remote add' under read must be refused (exit 2, edit-global), got rc=$OP_RC: $OP_OUT"
     return 0
@@ -154,7 +97,7 @@ test_operator_read_level_refuses_writes() {
 # A write verb passes the SHIM under an edit level (it may fail later for other
 # reasons, but never with the shim's block/refuse messages).
 test_operator_edit_level_passes_writes_through_shim() {
-    _op_cco edit-all tag add proj mytag
+    lane_cco edit-all tag add proj mytag
     [[ "$OP_OUT" != *"host-only"* && "$OP_OUT" != *"edit access level"* \
        && "$OP_OUT" != *"not available in a container session"* ]] \
         || fail "'tag add' under edit-all should pass the shim, got: $OP_OUT"
@@ -167,7 +110,7 @@ test_operator_edit_level_passes_writes_through_shim() {
 # (mirroring host-only `remote set-token`) — before any partial write — while a
 # plain `remote add` (no token) still registers the url at an edit level.
 test_operator_remote_add_token_refused() {
-    _op_cco edit-all remote add acme https://x --token ghp_secret
+    lane_cco edit-all remote add acme https://x --token ghp_secret
     [[ $OP_RC -ne 0 ]] \
         || fail "'remote add --token' must be refused in a container, got rc=$OP_RC: $OP_OUT"
     [[ "$OP_OUT" == *"set-token"* && "$OP_OUT" == *"host"* ]] \
@@ -175,7 +118,7 @@ test_operator_remote_add_token_refused() {
     [[ "$OP_OUT" != *"token saved"* ]] \
         || fail "'remote add --token' must NOT claim the token was saved, got: $OP_OUT"
     # The plain form (no token) still passes at an edit level.
-    _op_cco edit-all remote add acme https://x
+    lane_cco edit-all remote add acme https://x
     [[ "$OP_OUT" != *"host-only"* && "$OP_OUT" != *"cannot persist a token"* ]] \
         || fail "plain 'remote add' should pass the shim at edit-all, got: $OP_OUT"
     return 0
@@ -187,10 +130,10 @@ test_operator_remote_add_token_refused() {
 # with the tree-aware "needs G=rw" message. At edit-all it passes the
 # gate (may fail later for other reasons, but never with the gate message).
 test_operator_config_save_edit_project_needs_edit_global() {
-    _op_cco edit-project config save -m x
+    lane_cco edit-project config save -m x
     [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs G=rw"* ]] \
         || fail "'config save' at edit-project must be gate-refused (exit 2, edit-global), got rc=$OP_RC: $OP_OUT"
-    _op_cco edit-all config save -m x
+    lane_cco edit-all config save -m x
     [[ "$OP_OUT" != *"needs G=rw"* ]] \
         || fail "'config save' at edit-all should pass the write gate, got: $OP_OUT"
     return 0
@@ -202,7 +145,7 @@ test_operator_read_verbs_pass_shim() {
     local v
     for v in "list" "list remotes" "docs" "path list"; do
         # shellcheck disable=SC2086
-        _op_cco read $v
+        lane_cco read $v
         [[ "$OP_OUT" != *"host-only"* && "$OP_OUT" != *"not available in a container session"* ]] \
             || fail "'cco $v' should pass the shim under read, got: $OP_OUT"
     done
@@ -252,7 +195,7 @@ test_none_session_refuses_docs() {
 test_operator_unknown_verb_is_error() {
     # An unrecognized verb is a typo (exit 1 error), NOT a host-only refusal — this
     # removes the "run 'cco whoami' on the host" misfire.
-    _op_cco read-all bogusverb
+    lane_cco read-all bogusverb
     [[ $OP_RC -eq 1 ]] || fail "unknown verb must exit 1 (error), got rc=$OP_RC: $OP_OUT"
     [[ "$OP_OUT" == *"Unknown cco command"* ]] || fail "unknown verb should say so, got: $OP_OUT"
     [[ "$OP_OUT" != *"host-only"* && "$OP_OUT" != *"on your host"* ]] \
@@ -263,10 +206,10 @@ test_operator_unknown_verb_is_error() {
 test_operator_removed_alias_redirects() {
     # cco pack list / cco project list were removed (ADR-0029) → redirect to
     # 'cco list <kind>' with exit 2 (policy), from the shim (single wiring point).
-    _op_cco read-all pack list
+    lane_cco read-all pack list
     [[ $OP_RC -eq 2 && "$OP_OUT" == *"use 'cco list pack'"* ]] \
         || fail "'pack list' should redirect (exit 2) to 'cco list pack', got rc=$OP_RC: $OP_OUT"
-    _op_cco read-all project list
+    lane_cco read-all project list
     [[ $OP_RC -eq 2 && "$OP_OUT" == *"use 'cco list project'"* ]] \
         || fail "'project list' should redirect (exit 2) to 'cco list project', got rc=$OP_RC: $OP_OUT"
     return 0
@@ -274,7 +217,7 @@ test_operator_removed_alias_redirects() {
 
 test_operator_hostonly_help_is_informational() {
     # D7: `<host-only-verb> --help` shows usage, never refuses (S3-6/F5).
-    _op_cco read-all start --help
+    lane_cco read-all start --help
     [[ $OP_RC -eq 0 && "$OP_OUT" == *"Usage: cco start"* ]] \
         || fail "'cco start --help' should show usage (exit 0), got rc=$OP_RC: $OP_OUT"
     [[ "$OP_OUT" != *"host-only"* ]] \
@@ -287,7 +230,7 @@ test_operator_hostonly_help_is_informational() {
 test_operator_whoami_reports_state() {
     # `cco whoami` passes the shim at any read level (it is in the known-verb set)
     # and reports the resolved scopes + per-tree rw/ro from write_scope.
-    _op_cco read-all whoami
+    lane_cco read-all whoami
     [[ $OP_RC -eq 0 ]] || fail "'cco whoami' must succeed at read-all, got rc=$OP_RC: $OP_OUT"
     [[ "$OP_OUT" != *"host-only"* && "$OP_OUT" != *"not available in a container session"* ]] \
         || fail "'cco whoami' must never be host-only-refused, got: $OP_OUT"
@@ -302,7 +245,7 @@ test_operator_whoami_reports_state() {
     [[ "$OP_OUT" != *"granular form:"* && "$OP_OUT" != *"access triple:"* ]] \
         || fail "whoami must not carry the pre-R2 duplicated access rows, got: $OP_OUT"
     # At edit-project the project tree is rw, the global store ro (symmetric model).
-    _op_cco edit-project whoami
+    lane_cco edit-project whoami
     [[ "$OP_OUT" == *"write: project"* ]] || fail "whoami edit-project write scope, got: $OP_OUT"
     [[ "$OP_OUT" == *"level:"*"edit-project"* ]] || fail "whoami should name preset edit-project, got: $OP_OUT"
     [[ "$OP_OUT" == *"project config (<repo>/.cco):        rw"* ]] \
@@ -340,10 +283,10 @@ test_operator_whoami_custom_triple_names_custom() {
 # ── path: only 'list' is read-only, 'set' is host-only ───────────────
 
 test_operator_path_set_blocked_list_allowed() {
-    _op_cco edit-all path set foo /bar
+    lane_cco edit-all path set foo /bar
     [[ $OP_RC -ne 0 && "$OP_OUT" == *"host-only"* ]] \
         || fail "'path set' must be host-only, got rc=$OP_RC: $OP_OUT"
-    _op_cco read path list
+    lane_cco read path list
     [[ "$OP_OUT" != *"host-only"* ]] \
         || fail "'path list' should pass the shim, got: $OP_OUT"
     return 0
@@ -355,10 +298,10 @@ test_operator_path_set_blocked_list_allowed() {
 # read level (the on-demand discovery cornerstone).
 
 test_operator_read_project_gates_global_namespaces() {
-    _op_cco read-project template show foo
+    lane_cco read-project template show foo
     [[ $OP_RC -ne 0 && "$OP_OUT" == *"read-global scope"* ]] \
         || fail "'template show' under read-project must need read-global, got rc=$OP_RC: $OP_OUT"
-    _op_cco read-project remote list
+    lane_cco read-project remote list
     [[ $OP_RC -ne 0 && "$OP_OUT" == *"read-global scope"* ]] \
         || fail "'remote list' under read-project must need read-global, got rc=$OP_RC: $OP_OUT"
     return 0
@@ -368,7 +311,7 @@ test_operator_read_global_allows_global_namespaces() {
     local v
     for v in "template show foo" "template list" "remote list"; do
         # shellcheck disable=SC2086
-        _op_cco read-global $v
+        lane_cco read-global $v
         [[ "$OP_OUT" != *"read-global scope"* && "$OP_OUT" != *"host-only"* ]] \
             || fail "'cco $v' should pass the shim under read-global, got: $OP_OUT"
     done
@@ -379,7 +322,7 @@ test_operator_read_project_allows_project_verbs() {
     local v
     for v in "docs" "list" "list packs" "pack show foo" "llms show foo" "path list" "project show foo"; do
         # shellcheck disable=SC2086
-        _op_cco read-project $v
+        lane_cco read-project $v
         [[ "$OP_OUT" != *"read-global scope"* && "$OP_OUT" != *"host-only"* \
            && "$OP_OUT" != *"not available in a container session"* ]] \
             || fail "'cco $v' should pass the shim under read-project, got: $OP_OUT"
@@ -394,7 +337,7 @@ test_operator_read_project_allows_project_verbs() {
 # omitted, with a hidden count); `--help --host` shows the full list flagged. The
 # header caveats are recomputed from the resolved level (S6-04).
 test_operator_usage_filters_by_default() {
-    _op_cco read-project help
+    lane_cco read-project help
     [[ "$OP_OUT" == *"Container session (cco_access=read-project)"* ]] \
         || fail "operator usage should show the container-session banner, got: $OP_OUT"
     # Default view HIDES host-only verbs (build/start) and the write-only `tag`.
@@ -414,7 +357,7 @@ test_operator_usage_filters_by_default() {
 }
 
 test_operator_usage_host_flag_shows_all_flagged() {
-    _op_cco read-project help --host
+    lane_cco read-project help --host
     echo "$OP_OUT" | grep -qE '^  build .*host only' \
         || fail "'cco --help --host' should show 'build' flagged host-only, got: $OP_OUT"
     echo "$OP_OUT" | grep -qE '^  start .*host only' \
@@ -447,7 +390,7 @@ test_operator_whoami_renders_claude_triple() {
     return 0
 }
 test_operator_usage_lists_whoami() {
-    _op_cco read-project help
+    lane_cco read-project help
     echo "$OP_OUT" | grep -qE '^  whoami ' \
         || fail "operator help should list the runnable 'whoami' verb (B1), got: $OP_OUT"
     return 0
@@ -455,7 +398,7 @@ test_operator_usage_lists_whoami() {
 
 # B2: a section whose verbs are all filtered out must not leave a dangling header.
 test_operator_usage_suppresses_empty_sections() {
-    _op_cco read-project help
+    lane_cco read-project help
     # 'Sessions:' (start/new/stop) and 'Local paths & sync:' (resolve/sync) are wholly
     # host-only → their headers must be gone, not left standing over nothing.
     [[ "$OP_OUT" != *"Sessions:"* ]] \
@@ -470,7 +413,7 @@ test_operator_usage_suppresses_empty_sections() {
 
 test_operator_usage_header_recompute_edit_all() {
     # S6-04: at edit-all nothing is gated → no "needs edit level" caveat recited.
-    _op_cco edit-all help
+    lane_cco edit-all help
     [[ "$OP_OUT" == *"read all, write all"* ]] \
         || fail "edit-all header should report read all, write all, got: $OP_OUT"
     [[ "$OP_OUT" != *"need an edit level"* ]] \
@@ -498,11 +441,11 @@ test_operator_shim_inert_without_flag() {
 test_operator_tag_current_project_needs_pc() {
     # Too-strict fix: edit-project CAN tag its own current project (a Pc write),
     # which the old blanket-global gate wrongly refused.
-    _op_seed edit-project alpha tag add alpha work
+    lane_cco_seeded edit-project alpha tag add alpha work
     [[ $OP_RC -eq 0 && "$OP_OUT" == *"tagged project 'alpha'"* ]] \
         || fail "edit-project should tag its own project (Pc=rw), got rc=$OP_RC: $OP_OUT"
     # A read level cannot (Pc=ro, not rw) — refused naming the Pc axis.
-    _op_seed read-project alpha tag add alpha work
+    lane_cco_seeded read-project alpha tag add alpha work
     [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs Pc=rw"* ]] \
         || fail "read-project must refuse tagging its own project (needs Pc=rw), got rc=$OP_RC: $OP_OUT"
     return 0
@@ -511,13 +454,13 @@ test_operator_tag_current_project_needs_pc() {
 test_operator_tag_other_project_needs_po() {
     # Too-loose fix: edit-global must NOT tag ANOTHER project — G=rw does not grant
     # Po; only edit-all (Po=rw) may.
-    _op_seed edit-project alpha tag add beta work
+    lane_cco_seeded edit-project alpha tag add beta work
     [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs Po=rw"* ]] \
         || fail "edit-project must refuse tagging another project (needs Po=rw), got rc=$OP_RC: $OP_OUT"
-    _op_seed edit-global alpha tag add beta work
+    lane_cco_seeded edit-global alpha tag add beta work
     [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs Po=rw"* ]] \
         || fail "edit-global must refuse tagging another project (G=rw ≠ Po; too-loose fix), got rc=$OP_RC: $OP_OUT"
-    _op_seed edit-all alpha tag add beta work
+    lane_cco_seeded edit-all alpha tag add beta work
     [[ $OP_RC -eq 0 && "$OP_OUT" == *"tagged project 'beta'"* ]] \
         || fail "edit-all should tag another project (Po=rw), got rc=$OP_RC: $OP_OUT"
     return 0
@@ -526,10 +469,10 @@ test_operator_tag_other_project_needs_po() {
 test_operator_tag_pack_needs_g() {
     # A pack is a global-store resource (uniformly G, referenced or not, §4.1) —
     # edit-project (G=none) cannot tag it, edit-global (G=rw) can.
-    _op_seed edit-project alpha tag add p1 work
+    lane_cco_seeded edit-project alpha tag add p1 work
     [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs G=rw"* ]] \
         || fail "edit-project must refuse tagging a pack (needs G=rw), got rc=$OP_RC: $OP_OUT"
-    _op_seed edit-global alpha tag add p1 work
+    lane_cco_seeded edit-global alpha tag add p1 work
     [[ $OP_RC -eq 0 && "$OP_OUT" == *"tagged pack 'p1'"* ]] \
         || fail "edit-global should tag a pack (G=rw), got rc=$OP_RC: $OP_OUT"
     return 0
@@ -539,10 +482,10 @@ test_operator_tag_config_editor_targets_are_current() {
     # config-editor: PROJECT_NAME is always 'config-editor'; its editable "current"
     # projects are the CCO_CONFIG_TARGETS set (D9). A target project is a Pc write
     # (allowed at edit-project); a non-target project is 'other' → Po.
-    OP_TARGETS=alpha _op_seed edit-project config-editor tag add alpha work
+    OP_TARGETS=alpha lane_cco_seeded edit-project config-editor tag add alpha work
     [[ $OP_RC -eq 0 && "$OP_OUT" == *"tagged project 'alpha'"* ]] \
         || fail "config-editor edit-project should tag a CONFIG_TARGET project (Pc=rw), got rc=$OP_RC: $OP_OUT"
-    OP_TARGETS=alpha _op_seed edit-project config-editor tag add beta work
+    OP_TARGETS=alpha lane_cco_seeded edit-project config-editor tag add beta work
     [[ $OP_RC -eq 2 && "$OP_OUT" == *"needs Po=rw"* ]] \
         || fail "config-editor edit-project must treat a NON-target project as other (needs Po=rw), got rc=$OP_RC: $OP_OUT"
     return 0
@@ -552,7 +495,7 @@ test_operator_tag_config_editor_targets_are_current() {
 
 test_operator_path_list_scoped_at_read_project() {
     # Po<ro → scope to the current project's repos; others hidden + count notice.
-    _op_seed read-project alpha path list
+    lane_cco_seeded read-project alpha path list
     [[ "$OP_OUT" == *"alpha"* ]] \
         || fail "path list should show the current project's repo, got: $OP_OUT"
     [[ "$OP_OUT" != *"beta"* ]] \
@@ -568,7 +511,7 @@ test_operator_path_list_scoped_at_read_project() {
 
 test_operator_path_list_full_at_read_all() {
     # Po≥ro → no scoping; all repos shown, no notice.
-    _op_seed read-all alpha path list
+    lane_cco_seeded read-all alpha path list
     [[ "$OP_OUT" == *"alpha"* && "$OP_OUT" == *"beta"* ]] \
         || fail "path list at read-all should show every repo, got: $OP_OUT"
     [[ "$OP_OUT" != *"hidden by access scope"* ]] \
@@ -578,13 +521,13 @@ test_operator_path_list_full_at_read_all() {
 
 test_operator_path_list_masks_host_paths_when_off() {
     # show_host_paths=off → logical names only, no host-path column (S1b).
-    OP_SHP=false _op_seed read-all alpha path list
+    OP_SHP=false lane_cco_seeded read-all alpha path list
     [[ "$OP_OUT" == *"alpha"* ]] \
         || fail "path list should still list logical names at show_host_paths=off, got: $OP_OUT"
     [[ "$OP_OUT" != *"/repos/alpha"* ]] \
         || fail "path list at show_host_paths=off must NOT print host paths, got: $OP_OUT"
     # With it on, the host path IS shown.
-    OP_SHP=true _op_seed read-all alpha path list
+    OP_SHP=true lane_cco_seeded read-all alpha path list
     [[ "$OP_OUT" == *"/repos/alpha"* ]] \
         || fail "path list at show_host_paths=on should print host paths, got: $OP_OUT"
     return 0
@@ -593,7 +536,7 @@ test_operator_path_list_masks_host_paths_when_off() {
 # ── whoami+: explicit (G,Pc,Po) triple + granular form + boundary note (A1 §4.5) ─
 
 test_operator_whoami_renders_triple_and_boundary() {
-    _op_cco read-global whoami
+    lane_cco read-global whoami
     # R2: the explicit triple lives on the `triple:` line; read-global is a preset so
     # `level` names it (the granular is shown only for a preset-less custom triple).
     [[ "$OP_OUT" == *"triple:"* && "$OP_OUT" == *"G=ro Pc=ro Po=none"* ]] \
@@ -607,25 +550,21 @@ test_operator_whoami_renders_triple_and_boundary() {
 
 # ── B6: no silent exit-2 — every policy refusal states a reason (A1 §4.2) ───────
 
-_b6_assert() {
-    [[ $OP_RC -eq 2 ]] \
-        || fail "expected a policy refusal (exit 2), got rc=$OP_RC: $OP_OUT"
-    [[ -n "$OP_OUT" ]] \
-        || fail "an exit-2 refusal must never be silent (B6)"
-    [[ "$OP_OUT" == *"$1"* ]] \
-        || fail "exit-2 refusal should state the reason '$1', got: $OP_OUT"
-}
+# Thin wrapper over the lane's shared `assert_refused` (RC-17): the B6 contract is
+# the same everywhere, so it has exactly one implementation. Kept as a name here
+# because the call sites below read as a table.
+_b6_assert() { assert_refused "$OP_RC" "$OP_OUT" "$1"; }
 
 test_operator_no_silent_exit2() {
     # Host-only refusals name the host; above-scope refusals name the axis/scope.
-    _op_cco read-project start foo;             _b6_assert host-only
-    _op_cco read-project config validate;       _b6_assert host-only
-    _op_cco edit-all path set foo /bar;         _b6_assert host-only
-    _op_cco read-project template show foo;     _b6_assert read-global
-    _op_cco read-project remote list;           _b6_assert read-global
-    _op_seed edit-project alpha tag add p1 x;   _b6_assert "needs G=rw"
-    _op_seed edit-project alpha tag add beta x; _b6_assert "needs Po=rw"
-    _op_seed read-project alpha tag add alpha x; _b6_assert "needs Pc=rw"
+    lane_cco read-project start foo;             _b6_assert host-only
+    lane_cco read-project config validate;       _b6_assert host-only
+    lane_cco edit-all path set foo /bar;         _b6_assert host-only
+    lane_cco read-project template show foo;     _b6_assert read-global
+    lane_cco read-project remote list;           _b6_assert read-global
+    lane_cco_seeded edit-project alpha tag add p1 x;   _b6_assert "needs G=rw"
+    lane_cco_seeded edit-project alpha tag add beta x; _b6_assert "needs Po=rw"
+    lane_cco_seeded read-project alpha tag add alpha x; _b6_assert "needs Pc=rw"
     return 0
 }
 
@@ -635,28 +574,31 @@ test_operator_no_silent_exit2() {
 
 test_op_rename_gating_by_target_tree() {
     # pack rename needs G=rw → policy-refused (exit 2) at edit-project.
-    _op_cco edit-project pack rename old new
+    lane_cco edit-project pack rename old new
     [[ $OP_RC -eq 2 ]] || fail "pack rename must be refused at edit-project, rc=$OP_RC: $OP_OUT"
     echo "$OP_OUT" | grep -qiE 'needs G=rw|personal store' \
         || fail "pack rename refusal message wrong: $OP_OUT"
 
     # remote rename likewise needs G=rw.
-    _op_cco edit-project remote rename old new
+    lane_cco edit-project remote rename old new
     [[ $OP_RC -eq 2 ]] || fail "remote rename must be refused at edit-project, rc=$OP_RC: $OP_OUT"
 
-    # repo rename is Pc=rw → NOT policy-refused at edit-project (falls through to
-    # the verb, which then errors on no resolvable project — rc≠2, not a gate).
-    _op_cco edit-project repo rename old new
-    [[ $OP_RC -ne 2 ]] || fail "repo rename must NOT be policy-refused at edit-project: $OP_OUT"
-    if echo "$OP_OUT" | grep -qiE 'needs Pc=rw|edits project config'; then
-        fail "repo rename wrongly gated at edit-project: $OP_OUT"
-    fi
+    # repo / extra-mount rename are Pc=rw → the gate ADMITS them at edit-project.
+    #
+    # RC-17 retro-fit: this used to assert only that the rc was NOT 2, plus a grep
+    # for the ABSENCE of a reason string. Both are negative-space assertions — "not
+    # 2" is satisfied by every other code, including the rc=1 `die` this verb
+    # actually produced in-container, so the test shipped `repo rename` dead-but-green.
+    # `assert_gate_allows` asks the gate question POSITIVELY (exit 0 + a usage
+    # banner) in its own operator env, independent of cwd, store and mounts; the
+    # BEHAVIOUR question moved to tests/test_repo_rename.sh under the lane.
+    assert_gate_allows edit-project repo rename        || return 1
+    assert_gate_allows edit-project extra-mount rename || return 1
 
-    # extra-mount rename same as repo.
-    _op_cco edit-project extra-mount rename old new
-    [[ $OP_RC -ne 2 ]] || fail "extra-mount rename must NOT be policy-refused at edit-project: $OP_OUT"
-
-    # A read-only session (read-all) has Pc=none → repo rename refused (exit 2).
-    _op_cco read-all repo rename old new
-    [[ $OP_RC -eq 2 ]] || fail "repo rename must be refused at read-all (Pc=none), rc=$OP_RC: $OP_OUT"
+    # A read-only session (read-all) has Pc=none → repo rename refused (exit 2),
+    # naming the axis. The paired positive/negative is what makes the level
+    # argument above meaningful rather than decorative.
+    lane_cco read-all repo rename old new
+    assert_refused "$OP_RC" "$OP_OUT" "needs Pc=rw" || return 1
+    return 0
 }
