@@ -68,9 +68,11 @@ _compose_vol() {
     fi
 }
 
-# Parse a CLI --mount spec into an "<abs_source>\t<target>\t<ro>" line
-# (the same TSV shape _effective_extra_mounts emits, so the compose-gen
-# consumes both uniformly). Spec: "src[:target][:ro|:rw]".
+# Parse a CLI --mount spec into an "<abs_source>\t<target>\t<ro>" line — the
+# leading three fields of the record _effective_extra_mounts emits, which
+# additionally carries <config_access_policy> and <role> (a reference mount is
+# never a config tree, so neither applies here). Compose-gen consumes the two in
+# separate loops. Spec: "src[:target][:ro|:rw]".
 #   - Read-only is the DEFAULT (ADR-0027 D2 — the common reference-mount case);
 #     a trailing ":rw" opts into writable.
 #   - target defaults to /workspace/<basename src>.

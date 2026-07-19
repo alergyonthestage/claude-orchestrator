@@ -48,7 +48,7 @@ _setup_internal_tutorial() {
     # start without polluting the persistent user-facing index (review H4), and no
     # host path is committed (AD3/G8). Read-only mounts (the tutorial never edits),
     # so the `store` role is inert here — but correct, and correctness at the
-    # producer is what keeps the role a signal rather than a heuristic (§3.3).
+    # producer is what keeps the role a signal rather than a heuristic (RC-1 §3.3).
     _CCO_MOUNT_OVERRIDE=$(printf 'cco-config\t%s\tstore\ncco-docs\t%s\t' "$(_cco_config_dir)" "$REPO_ROOT/docs")
 
     # Copy setup.sh if present
@@ -106,7 +106,7 @@ _setup_internal_config_editor() {
     # `files` allowlist), so an installed user sees only user docs; a dev clone
     # additionally exposes maintainer docs (read-only, harmless — agents are
     # instructed to read cco-docs/users/...).
-    # The third column is the mount ROLE (§3.3): the authoritative "framework
+    # The third column is the mount ROLE (RC-1 §3.3): the authoritative "framework
     # generated this, and it exposes THIS config tree" signal that lets the nested
     # clamp resolve each synthetic mount against the axis naming the tree it
     # represents. cco-docs is role-less (and readonly: true anyway).
