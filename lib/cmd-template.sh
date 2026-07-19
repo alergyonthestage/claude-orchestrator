@@ -391,24 +391,24 @@ EOF
     [[ -z "$found_dir" ]] && die "User template '$name' not found. Only user templates can be removed."
 
     # ── Preview the cascade (ADR-0029 D2) ──────────────────────────────────
+    # Do not probe the confined DATA/STATE buckets here (INV-S6): behind the ADR-0047
+    # boundary the -d predicate reads FALSE for a path that exists, so the preview
+    # would silently omit sidecars that ARE about to be removed. Announce them plainly.
     info "cco template remove '$name' will delete:"
     info "  • $found_dir (the template)"
-    [[ -d "$(_cco_data_dir)/templates/$name"  ]] && info "  • DATA:  install-provenance"
-    [[ -d "$(_cco_state_dir)/templates/$name" ]] && info "  • STATE: merge base"
-    local _ttags; _ttags=$(_tags_get templates "$name")
-    [[ -n "$_ttags" ]] && info "  • tags:  [$_ttags]"
+    info "  • its machine-local DATA/STATE sidecars + per-user tag binding"
 
     _confirm_destructive "$yes" "Remove template '$name'?" || { info "Aborted"; return 0; }
 
-    rm -rf "$found_dir"
-
-    # Delete-cascade (ADR-0021 Dec.4): clean the id-keyed internal state an
-    # installed template created — DATA install-provenance (`source`), STATE merge
-    # base (`<state>/cco/templates/<name>/update/`), and the tags.yml binding.
-    # No-ops for create-from templates that never recorded provenance.
-    rm -rf "$(_cco_data_dir)/templates/$name"
-    rm -rf "$(_cco_state_dir)/templates/$name"
-    _tags_forget templates "$name"
+    # Delete-cascade (ADR-0021 Dec.4): clean the id-keyed internal state an installed
+    # template created — DATA install-provenance, STATE merge base, and the tags.yml
+    # binding (no-ops for create-from templates that never recorded provenance). These
+    # live behind the ADR-0047 boundary, so they go through lib/store.sh: a fail-closed
+    # pre-flight (crossing #1) refuses before the claude-owned CONFIG dir is touched if
+    # the store is unwritable, then the cascade applies (crossing #2) — never a false ✓.
+    _store_check sidecar-purge templates "$name"
+    rm -rf "$found_dir" || die "Failed to remove the template directory."
+    _store_apply sidecar-purge templates "$name"
 
     ok "Template '$name' removed."
 }
@@ -465,12 +465,12 @@ EOF
     _rename_preview_confirm "$yes" "Rename template '$old' → '$new' ($kind)" "${bullets[@]}" \
         || { info "Aborted — nothing changed."; return 0; }
 
+    # Crossing #1: refuse before the claude-owned CONFIG dir moves if the DATA/STATE
+    # sidecar re-key cannot be written (never a half-applied rename). Then move CONFIG,
+    # then the sidecar+tags cascade through lib/store.sh (crossing #2, all-or-nothing).
+    _store_check sidecar-rekey templates "$old" "$new"
     mv "$found_dir" "$TEMPLATES_DIR/$kind/$new" || die "Failed to move the template directory."
-    local data_root state_root
-    data_root=$(_cco_data_dir); state_root=$(_cco_state_dir)
-    [[ -d "$data_root/templates/$old"  ]] && mv "$data_root/templates/$old"  "$data_root/templates/$new"
-    [[ -d "$state_root/templates/$old" ]] && mv "$state_root/templates/$old" "$state_root/templates/$new"
-    _tags_rename templates "$old" "$new"
+    _store_apply sidecar-rekey templates "$old" "$new"
 
     ok "Renamed template '$old' → '$new' ($kind)."
 }

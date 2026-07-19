@@ -107,3 +107,142 @@ test_store_tags_forget_reports_failure() {
     assert_rc 1 "$rc" "_tags_forget on an opaque registry must fail loud (INV-S3)" || return 1
     return 0
 }
+
+# ── pack / template: a store write that cannot complete is an ERROR ────
+# Operator session (CCO_STORE_ELEVATED pins the in-process crossing); the bucket chmod
+# is the boundary seam. A failed store write must exit 1 with no ✓, and a fail-closed
+# pre-flight must refuse BEFORE the claude-owned CONFIG dir is touched.
+
+# READ-ONLY (555) DATA: the sidecar purge cannot be written, so `pack remove` must
+# exit 1, print NO success tick, and leave the CONFIG pack dir intact (the pre-flight
+# aborted Phase 1). Pre-fix: two `rm: Permission denied` lines then ✓, exit 0.
+test_store_pack_remove_fails_loud_when_data_unwritable() {
+    [[ "$(id -u)" -eq 0 ]] && return 0
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"; setup_operator_session "$tmp" edit-global
+    _sw_seed_pack p
+    chmod 555 "$CCO_DATA_HOME"
+    local rc=0; run_cco pack remove p -y || rc=$?
+    chmod 755 "$CCO_DATA_HOME"
+    assert_rc 1 "$rc" "pack remove with unwritable DATA must fail loud" || return 1
+    [[ "$CCO_OUTPUT" != *"Pack 'p' removed"* ]] \
+        || { fail "no success tick on a failed store write: $CCO_OUTPUT"; return 1; }
+    assert_dir_exists "$CCO_PACKS_DIR/p" || return 1   # fail-closed: CONFIG untouched
+    return 0
+}
+
+# OPAQUE (000) sidecar parent: the pre-flight aborts before Phase 1, so the CONFIG
+# pack dir must still exist. Pre-fix: the pack dir is already `rm`'d before the
+# EACCES, so it is gone with exit 0.
+test_store_pack_remove_plan_leaves_config_intact() {
+    [[ "$(id -u)" -eq 0 ]] && return 0
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"; setup_operator_session "$tmp" edit-global
+    _sw_seed_pack p
+    chmod 000 "$CCO_DATA_HOME"
+    local rc=0; run_cco pack remove p -y || rc=$?
+    chmod 755 "$CCO_DATA_HOME"
+    assert_rc 1 "$rc" "pack remove behind an opaque store must fail" || return 1
+    assert_dir_exists "$CCO_PACKS_DIR/p" || return 1
+    return 0
+}
+
+# READ-ONLY DATA: `pack rename` must refuse BEFORE the CONFIG store dir moves — never
+# the E6B-04 half-apply of a renamed dir with orphaned sidecars. Pre-fix: rc=0, old
+# gone, new present, sidecars orphaned.
+test_store_pack_rename_plan_blocks_before_store_mv() {
+    [[ "$(id -u)" -eq 0 ]] && return 0
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"; setup_operator_session "$tmp" edit-global
+    _sw_seed_pack p
+    chmod 555 "$CCO_DATA_HOME"
+    local rc=0; run_cco pack rename p q -y || rc=$?
+    chmod 755 "$CCO_DATA_HOME"
+    assert_rc 1 "$rc" "pack rename with unwritable DATA must refuse before the store mv" || return 1
+    assert_dir_exists "$CCO_PACKS_DIR/p" || return 1
+    assert_dir_not_exists "$CCO_PACKS_DIR/q" || return 1
+    return 0
+}
+
+# The pack-rename pre-scan (cmd-pack.sh:577) must CLASSIFY members in-container: with a
+# mounted project that has an unresolved member and references the pack, the rename is
+# blocked. The index is SEALED, so pre-fix the enumeration is vacuous → blocked=empty →
+# the rename proceeds (rc=0). Post-fix the members come from the mounted project.yml.
+test_store_pack_rename_prescan_sees_members_in_container() {
+    [[ "$(id -u)" -eq 0 ]] && return 0
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"; setup_operator_session "$tmp" edit-global shop
+    _sw_seed_pack p1
+    mkdir -p "$CCO_WORKDIR/shop/.cco"
+    printf 'name: shop\nrepos:\n  - name: shop\n  - name: ghost\npacks:\n  - name: p1\n' \
+        > "$CCO_WORKDIR/shop/.cco/project.yml"      # ghost is declared but NOT mounted
+    chmod 000 "$CCO_STATE_HOME"                      # seal the index
+    local rc=0; run_cco pack rename p1 q1 -y || rc=$?
+    chmod 755 "$CCO_STATE_HOME"
+    assert_rc 1 "$rc" "pack rename must block on an affected project's unresolved member" || return 1
+    [[ "$CCO_OUTPUT" == *"unresolved member"* ]] \
+        || { fail "the block must name the unresolved member: $CCO_OUTPUT"; return 1; }
+    assert_dir_exists "$CCO_PACKS_DIR/p1" || return 1
+    return 0
+}
+
+# §3.5: a project referencing the pack that is NOT mounted here cannot have its packs[]
+# rewritten in-container, so `pack rename` refuses rather than silently drift. Pre-fix:
+# rc=0, the reference in the unmounted project is left dangling.
+test_store_pack_rename_refuses_on_unmounted_refs() {
+    [[ "$(id -u)" -eq 0 ]] && return 0
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"; setup_operator_session "$tmp" edit-global shop
+    _sw_seed_pack p1
+    mkdir -p "$CCO_WORKDIR/shop/.cco"
+    printf 'name: shop\nrepos:\n  - name: shop\npacks:\n  - name: p1\n' \
+        > "$CCO_WORKDIR/shop/.cco/project.yml"
+    seed_index_path shop  "$CCO_WORKDIR/shop" shop; index_set_project_repos shop shop
+    seed_index_path other "$tmp/repos/other" other; index_set_project_repos other other   # NOT mounted
+    local rc=0; run_cco pack rename p1 q1 -y || rc=$?
+    assert_rc 1 "$rc" "pack rename must refuse when a referencing project is unmounted" || return 1
+    [[ "$CCO_OUTPUT" == *"not mounted here"* ]] \
+        || { fail "the refusal must name the unmounted scope: $CCO_OUTPUT"; return 1; }
+    assert_dir_exists "$CCO_PACKS_DIR/p1" || return 1
+    assert_dir_not_exists "$CCO_PACKS_DIR/q1" || return 1
+    return 0
+}
+
+# READ-ONLY STATE: `template remove` must fail loud (the STATE sidecar cannot be
+# purged), no ✓, CONFIG template dir intact. Pre-fix: exit 0 + ✓.
+test_store_template_remove_fails_loud_when_state_unwritable() {
+    [[ "$(id -u)" -eq 0 ]] && return 0
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"; setup_operator_session "$tmp" edit-global
+    _sw_seed_template t
+    chmod 555 "$CCO_STATE_HOME"
+    local rc=0; run_cco template remove t -y || rc=$?
+    chmod 755 "$CCO_STATE_HOME"
+    assert_rc 1 "$rc" "template remove with unwritable STATE must fail loud" || return 1
+    [[ "$CCO_OUTPUT" != *"Template 't' removed"* ]] \
+        || { fail "no success tick on a failed store write: $CCO_OUTPUT"; return 1; }
+    assert_dir_exists "$CCO_TEMPLATES_DIR/project/t" || return 1
+    return 0
+}
+
+# READ-ONLY DATA: `template rename` must refuse before the CONFIG dir moves. Pre-fix:
+# rc=0, half-applied.
+test_store_template_rename_plan_blocks() {
+    [[ "$(id -u)" -eq 0 ]] && return 0
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"; setup_operator_session "$tmp" edit-global
+    _sw_seed_template t
+    chmod 555 "$CCO_DATA_HOME"
+    local rc=0; run_cco template rename t u -y || rc=$?
+    chmod 755 "$CCO_DATA_HOME"
+    assert_rc 1 "$rc" "template rename with unwritable DATA must refuse before the store mv" || return 1
+    assert_dir_exists "$CCO_TEMPLATES_DIR/project/t" || return 1
+    assert_dir_not_exists "$CCO_TEMPLATES_DIR/project/u" || return 1
+    return 0
+}

@@ -309,12 +309,12 @@ EOF
     done < <(_project_foreach)
 
     # ── Preview the cascade (ADR-0029 D2) ──────────────────────────────────
+    # Never probe the confined DATA/STATE buckets here (INV-S6): behind the ADR-0047
+    # boundary the -d predicate reads FALSE for a path that exists, so the preview
+    # would silently omit sidecars that ARE about to be removed. Announce them plainly.
     info "cco pack remove '$name' will delete:"
     info "  • packs/$name/ (the pack)"
-    [[ -d "$(_cco_data_dir)/packs/$name"  ]] && info "  • DATA:  install-provenance"
-    [[ -d "$(_cco_state_dir)/packs/$name" ]] && info "  • STATE: merge base/meta"
-    local _ptags; _ptags=$(_tags_get packs "$name")
-    [[ -n "$_ptags" ]] && info "  • tags:  [$_ptags]"
+    info "  • its machine-local DATA/STATE sidecars + per-user tag binding"
 
     # In-use is a --force block (not a confirm): a still-referenced pack is only
     # removable with --force, which overrides the block and implies -y.
@@ -326,16 +326,15 @@ EOF
 
     _confirm_destructive "$yes" "Remove pack '$name'?" || { info "Aborted"; return 0; }
 
-    rm -rf "$pack_dir"
-
-    # Delete-cascade (ADR-0021 Dec.4): clean the id-keyed internal state this
-    # pack created, not just the CONFIG copy — DATA install-provenance (`source`),
-    # STATE merge base+meta (`<state>/cco/packs/<name>/update/`), and the tags.yml
-    # binding. Otherwise removal orphans bookkeeping that `cco config validate`
-    # would later have to sweep.
-    rm -rf "$(_cco_data_dir)/packs/$name"
-    rm -rf "$(_cco_state_dir)/packs/$name"
-    _tags_forget packs "$name"
+    # Delete-cascade (ADR-0021 Dec.4): clean the id-keyed internal state this pack
+    # created, not just the CONFIG copy — DATA install-provenance, STATE merge
+    # base/meta, and the tags.yml binding. These live behind the ADR-0047 boundary, so
+    # they go through lib/store.sh: a fail-closed pre-flight (crossing #1) refuses
+    # BEFORE the claude-owned CONFIG dir is touched if the store cannot be written,
+    # then the cascade applies (crossing #2) — all-or-nothing, never a false ✓.
+    _store_check sidecar-purge packs "$name"
+    rm -rf "$pack_dir" || die "Failed to remove packs/$name."
+    _store_apply sidecar-purge packs "$name"
 
     ok "Pack '$name' removed"
 }
@@ -574,17 +573,34 @@ EOF
     [[ -e "$new_dir" ]] && die "Pack '$new' already exists at packs/$new/. Choose a different name."
 
     # ── Strict pre-scan: referencing projects must be fully resolved ────
-    local proj unit yml mname mpath mstatus
+    # Peel the member record by hand: _project_iter_members' column 2 (path) is EMPTY
+    # for an unresolved member, so `IFS=$'\t' read` would fold the middle field and
+    # never see status=unresolved (E6B-04). The enumeration is now non-vacuous
+    # in-container (index §3.6), so this guard actually classifies mounted members.
+    local proj unit yml mname mpath mstatus _mrec
     local -a affected=() blocked=()
     while IFS=$'\t' read -r proj unit yml; do
         _yaml_list_has_ref "$yml" packs "$old" || continue
         affected+=("$proj")
-        while IFS=$'\t' read -r mname mpath mstatus; do
+        while IFS= read -r _mrec; do
+            [[ -z "$_mrec" ]] && continue
+            _peel_tab "$_mrec" mname mpath mstatus
             [[ "$mstatus" == unresolved ]] && blocked+=("$proj:$mname")
         done < <(_project_iter_members "$proj")
     done < <(_project_foreach)
     [[ ${#blocked[@]} -gt 0 ]] && \
         die "Cannot rename pack '$old': unresolved member(s) in referencing project(s): ${blocked[*]}. Run 'cco resolve' first (ADR-0031)."
+
+    # ── Fail-closed pre-flight (RC-3 §3.4 Phase 0) ──────────────────────
+    # Crossing #1: the DATA/STATE sidecar re-key must be writable BEFORE any store is
+    # touched — never the E6B-04 half-apply of a renamed CONFIG dir with orphaned
+    # sidecars. Also carries the unmounted-project census (§3.5): a project referencing
+    # this pack that is not mounted here cannot have its packs[] rewritten in-container,
+    # so it would drift — refuse (never silently narrow). On the host the census is 0.
+    _store_check sidecar-rekey packs "$old" "$new"
+    if [[ "${_STORE_REFS:-0}" -gt 0 ]]; then
+        die "Cannot rename pack '$old' in this session: $_STORE_REFS project(s) on this machine are not mounted here, so a packs[] reference they may carry cannot be updated (it would drift). Run 'cco pack rename $old $new' on your host, or start a session that mounts them."
+    fi
 
     # ── Preview + confirm (ADR-0029 D2) ─────────────────────────────────
     local -a bullets=(
@@ -595,14 +611,12 @@ EOF
     _rename_preview_confirm "$yes" "Rename pack '$old' → '$new'" "${bullets[@]}" \
         || { info "Aborted — nothing changed."; return 0; }
 
-    # ── Store re-key (machine-local; each step atomic) ──────────────────
+    # ── Store re-key ────────────────────────────────────────────────────
+    # CONFIG store dir first (claude-owned), then the DATA/STATE sidecar+tags cascade
+    # through lib/store.sh (crossing #2, all-or-nothing behind the ADR-0047 boundary).
     mv "$old_dir" "$new_dir" || die "Failed to move packs/$old → packs/$new."
     [[ -f "$new_dir/pack.yml" ]] && _sed_i "$new_dir/pack.yml" "^name:.*" "name: $new"
-    local data_root state_root
-    data_root=$(_cco_data_dir); state_root=$(_cco_state_dir)
-    [[ -d "$data_root/packs/$old"  ]] && mv "$data_root/packs/$old"  "$data_root/packs/$new"
-    [[ -d "$state_root/packs/$old" ]] && mv "$state_root/packs/$old" "$state_root/packs/$new"
-    _tags_rename packs "$old" "$new"
+    _store_apply sidecar-rekey packs "$old" "$new"
 
     # ── Cross-project packs[] fan-out (delegate to git, P17) ────────────
     local tag val
