@@ -779,8 +779,35 @@ _project_member_status() {
 # This is the ownership-guarded loop shared by `cco join`/`cco forget --purge`/the
 # rename verbs' project.yml rewrite. Build-once; callers filter on <status>.
 # Usage: while IFS=$'\t' read -r name path status; do …; done < <(_project_iter_members <project>)
+#
+# OPERATOR ENUMERATION ARM (RC-3 §3.6, closes E6B-04). The member NAMES come from
+# _index_get_project_repos, i.e. the STATE index — which sits behind the ADR-0047
+# boundary and reads EMPTY as `claude` in a session (§1.3 row 4). RC-2 fixed column 2
+# (the probe path) but left the enumeration source, so every loop over a project's
+# members was VACUOUS in-container — the pack-rename pre-scan always passed and the
+# rename verbs' project.yml rewrite reached nobody. When the project resolves to a
+# mounted, claude-readable project.yml, enumerate its repos[] from THAT file instead
+# (no crossing required) and probe each at its flat mount <workdir>/<name>. If the
+# project is not mounted here (another project at read-all), fall back to the index
+# loop — which is also the unchanged HOST path (the probe is the identity there, so
+# rows stay byte-identical; test_index.sh:222 pins the shape).
 _project_iter_members() {
     local project="$1" repo_name idx probe status
+    if _cco_container_operator; then
+        local yml line wd="${CCO_WORKDIR:-/workspace}"
+        if yml=$(_resolve_project_yml "$project" 2>/dev/null) && [[ -f "$yml" ]]; then
+            while IFS= read -r line; do
+                [[ -z "$line" ]] && continue
+                repo_name="${line%%$'\t'*}"           # col 1 only; url/ref may be empty
+                [[ -z "$repo_name" ]] && continue
+                probe="$wd/$repo_name"                # repos always mount at <workdir>/<name>
+                [[ -d "$probe" ]] || probe=""
+                status=$(_project_member_status "$project" "$probe")
+                printf '%s\t%s\t%s\n' "$repo_name" "$probe" "$status"
+            done < <(yml_get_repo_coords "$yml")
+            return 0
+        fi
+    fi
     for repo_name in $(_index_get_project_repos "$project"); do
         idx=$(_index_get_path "$project" "$repo_name")
         probe=$(_cco_member_probe_path "$repo_name" "$idx")   # "" when idx is "" (INV-F.1)

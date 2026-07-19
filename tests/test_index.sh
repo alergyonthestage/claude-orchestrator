@@ -282,6 +282,47 @@ test_iter_members_host_unchanged() {
     printf '%s\n' "$out" | grep -qE "^b		unresolved$" || fail "host row b changed: $out"
 }
 
+# ── Operator ENUMERATION arm (RC-3 §3.6, closes E6B-04) ───────────────
+# RC-2 probed column 2 at the mount but kept the member NAMES coming from the STATE
+# index — which reads EMPTY behind the ADR-0047 boundary, making every members loop
+# VACUOUS in-container (the pack-rename pre-scan always passed, the rename fan-out
+# reached nobody). The arm enumerates repos[] from the mounted project.yml when the
+# project resolves there, so it stays non-empty even when the index is unreadable.
+# _resolve_project_yml (operator layout) + yaml.sh are needed on TOP of the index env.
+_iter_enum_env() {
+    _member_status_env "$1"
+    source "$REPO_ROOT/lib/access-scope.sh"
+    source "$REPO_ROOT/lib/yaml.sh"
+    source "$REPO_ROOT/lib/cmd-resolve.sh"
+}
+
+# Index sealed (unreadable), project mounted: enumeration comes from project.yml, so
+# the members loop is NON-EMPTY. Skipped as root (chmod 000 is bypassed).
+# ⚠ FAILS pre-fix: names come from the sealed index → zero rows.
+test_iter_members_operator_enumerates_when_index_sealed() {
+    [[ "$(id -u)" -eq 0 ]] && return 0
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    _iter_enum_env "$tmp/state"
+    _iter_operator_env "$tmp/ws"
+    export PROJECT_NAME=shop
+    # A mounted member that ALSO hosts shop's committed config, plus a declared but
+    # UNMOUNTED member (in project.yml, no <ws>/api tree).
+    mkdir -p "$CCO_WORKDIR/backend/.cco"
+    printf 'name: shop\nrepos:\n  - name: backend\n  - name: api\n' \
+        > "$CCO_WORKDIR/backend/.cco/project.yml"
+    _index_set_path shop backend /host/absent/backend
+    _index_set_project_repos shop backend api
+    chmod 000 "$CCO_STATE_HOME"                    # the index is now unreadable
+
+    local out; out=$(_project_iter_members shop)
+    chmod 700 "$CCO_STATE_HOME"
+    printf '%s\n' "$out" | grep -qE "^backend	$CCO_WORKDIR/backend	synced$" \
+        || fail "sealed index: mounted member must enumerate from project.yml as synced; got: $out"
+    printf '%s\n' "$out" | grep -qE "^api		unresolved$" \
+        || fail "sealed index: an unmounted declared member must surface as unresolved; got: $out"
+}
+
 # ══════════════════════════════════════════════════════════════════════
 # Per-project name scoping (ADR-0051) — v2 nested project_paths schema
 # ══════════════════════════════════════════════════════════════════════
