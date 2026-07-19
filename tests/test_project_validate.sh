@@ -385,3 +385,152 @@ test_project_validate_help() {
     assert_output_contains "Detect-only"
     assert_output_contains "--reachable"
 }
+
+# ══════════════════════════════════════════════════════════════════════
+# Container-operator lane (RC-2 class / 04-host-path-class.md §6.3)
+# ══════════════════════════════════════════════════════════════════════
+# `cco project validate <name>` resolved the unit through the host-only index
+# resolver, so a mounted project died "not found" in a session. It now resolves
+# through the operator-aware pair (_resolve_project_yml + _resolve_project_cco_dir).
+
+# T3 — the keystone. Asserted POSITIVELY (rc 0 + a success marker); "assert it is
+# not reported unresolved" would be the same negative-space error this lane bans.
+# ⚠ FAILS on pre-fix: rc=1 "Project 'alpha' not found (… run 'cco resolve alpha')".
+test_project_validate_operator_sees_mounted_member() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" read-project alpha
+    local mnt; mnt=$(operator_mount_unit alpha alpha)
+    cat > "$mnt/.cco/project.yml" <<'YAML'
+name: alpha
+repos:
+  - name: alpha
+    url: git@github.com:org/alpha.git
+    ref: main
+YAML
+    local rc=0
+    _pv_in "$mnt" project validate alpha -v || rc=$?
+    assert_rc 0 "$rc" "operator project validate <name>" || return 1
+    assert_output_contains "share-ready" || return 1
+    return 0
+}
+
+# --all validates the MOUNTED project instead of skipping it, and never speaks the
+# host-only "cco resolve" remedy in a session. ⚠ FAILS on pre-fix: stdout empty,
+# stderr "skipping 'alpha' — its repo is unresolved here (run 'cco resolve alpha')".
+test_validate_all_validates_mounted_project() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" read-project alpha
+    local mnt; mnt=$(operator_mount_unit alpha alpha)
+    cat > "$mnt/.cco/project.yml" <<'YAML'
+name: alpha
+repos:
+  - name: alpha
+    url: git@github.com:org/alpha.git
+YAML
+    local rc=0
+    _pv_in "$mnt" project validate --all -v || rc=$?
+    assert_rc 0 "$rc" "operator project validate --all" || return 1
+    assert_output_contains "[alpha]" || return 1
+    [[ "$CCO_OUTPUT" != *"cco resolve"* ]] \
+        || fail "--all must not speak 'cco resolve' in a session: $CCO_OUTPUT" || return 1
+    return 0
+}
+
+# read-all: a second project bound in the index but unmounted is COUNTED ("not
+# mounted in this session"), while the mounted project is still validated.
+# ⚠ FAILS on pre-fix: both are skipped as "unresolved here".
+test_validate_all_notes_unmounted_at_read_all() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" read-all alpha
+    local mnt; mnt=$(operator_mount_unit alpha alpha)
+    cat > "$mnt/.cco/project.yml" <<'YAML'
+name: alpha
+repos:
+  - name: alpha
+    url: git@github.com:org/alpha.git
+YAML
+    # A second project in the index, bound but NOT mounted.
+    seed_index_path betarepo "/Users/cco-e2e/code/betarepo" beta
+    index_set_project_repos beta betarepo
+
+    local rc=0
+    _pv_in "$mnt" project validate --all || rc=$?
+    assert_output_contains "[alpha]" || return 1
+    assert_output_contains "not mounted in this session" || return 1
+    [[ "$CCO_OUTPUT" != *"cco resolve"* ]] \
+        || fail "the unmounted notice must not say 'cco resolve': $CCO_OUTPUT" || return 1
+    return 0
+}
+
+# §3.2 step 2: a mounted project's authored-pack collision (both ~/.cco/packs/p1 and
+# <repo>/.cco/packs/p1 present, no url) is flagged. ⚠ FAILS on pre-fix: rc=1 "not
+# found" before any pack check runs.
+test_validate_named_finds_authored_pack_collision() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" read-project alpha
+    local mnt; mnt=$(operator_mount_unit alpha alpha)
+    printf 'name: alpha\nrepos:\n  - name: alpha\n    url: git@github.com:org/alpha.git\npacks:\n  - name: p1\n' \
+        > "$mnt/.cco/project.yml"
+    mkdir -p "$mnt/.cco/packs/p1" "$CCO_PACKS_DIR/p1"
+
+    local rc=0
+    _pv_in "$mnt" project validate alpha || rc=$?
+    assert_rc 2 "$rc" "authored-pack collision is a severity-2 finding" || return 1
+    assert_output_contains "collides with a same-named" || return 1
+    return 0
+}
+
+# An operator layout whose .cco directory is not reachable SKIPS the authored-pack
+# checks (one informational line) rather than silently inverting them. ⚠ FAILS on
+# pre-fix: rc=1 "not found" (the by-name resolver never reaches the pack checks).
+test_validate_packs_skipped_when_cco_dir_absent() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" read-project solo
+    # A FLAT session manifest at the WORKDIR root, no <ws>/<repo>/.cco to resolve.
+    printf 'name: solo\nrepos:\n  - name: solo\n    url: git@github.com:org/solo.git\npacks:\n  - name: p1\n' \
+        > "$CCO_WORKDIR/project.yml"
+
+    local rc=0
+    _pv_in "$CCO_WORKDIR" project validate solo || rc=$?
+    assert_rc 0 "$rc" "cco_dir-absent validate is share-ready (checks skipped)" || return 1
+    assert_output_contains "authored-pack checks skipped" || return 1
+    [[ "$CCO_OUTPUT" != *"authored pack has no source"* ]] \
+        || fail "a skipped check must not fire a false sourceless finding: $CCO_OUTPUT" || return 1
+    return 0
+}
+
+# A config-editor edit target resolves through the CCO_CONFIG_TARGETS branch
+# (E5-05/E5-06). ⚠ FAILS on pre-fix: rc=1 "not found".
+test_validate_config_editor_target() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    OP_TARGETS=cave-auth setup_operator_session "$tmp" edit-global config-editor
+    mkdir -p "$CCO_WORKDIR/cave-auth-config"
+    printf 'name: cave-auth\nrepos:\n  - name: cave-auth\n    url: git@github.com:org/cave-auth.git\n' \
+        > "$CCO_WORKDIR/cave-auth-config/project.yml"
+
+    local rc=0
+    _pv_in "$CCO_WORKDIR" project validate cave-auth -v || rc=$?
+    assert_rc 0 "$rc" "config-editor target validate" || return 1
+    assert_output_contains "share-ready" || return 1
+    return 0
+}
+
+# Regression guard (passes today AND after): an out-of-scope named project is still
+# refused (exit 2), now through the single classifier.
+test_validate_named_out_of_scope_still_refuses() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" read-project alpha
+    local mnt; mnt=$(operator_mount_unit alpha alpha)
+
+    local rc=0
+    _pv_in "$mnt" project validate beta || rc=$?
+    assert_rc 2 "$rc" "an out-of-scope named project must refuse" || return 1
+    return 0
+}
