@@ -10,7 +10,12 @@
 > **Runner**: `./bin/test` (`--file <name>` for one file). Running `bash tests/<file>.sh`
 > directly is a **FALSE GREEN** — test files are function libraries sourced by `bin/test`.
 
-## 0. Where you are — ▶ RESUME AT §6 (prepare + run the implementation workflow)
+## 0. Where you are — ▶ implementation workflow RUNNING (cycle 1)
+
+> **Update 2026-07-19**: §6 steps 1–3 are DONE. State confirmed (4 docs-only commits,
+> `2950993`→`b97e659`), baseline re-measured in-container at **1311/9**, and the remaining
+> open questions were put to the maintainer and ratified as **D-M7…D-M10** (§2). The
+> implementation workflow is built along §3's stages. Everything below is unchanged.
 
 The e2e v2 acceptance review ran 2026-07-16 (7 sessions). It has been consolidated
 (verdict **NOT ACCEPTED**, 17 root causes), the six release-blocking roots have ADR-grounded
@@ -65,6 +70,10 @@ scoping).
 | **D-M4** | **De-elevate only the config-tree write.** `repo`/`extra-mount rename` stays trampolined for its STATE-index work; the `<repo>/.cco/project.yml` rewrite drops back to ruid=`claude` via a plain `bash`. Privilege is only ever narrowed. Rejected: per-call boundary crossing in the index accessors (that is an ADR-0047 revision, not a cycle-1 change) and host-only (contradicts ADR-0050 D7). |
 | **D-M5** | The **role-keyed axis** is the intended reading of D-M1: `store` (`~/.cco`) → `.claude` follows **Cg**, content follows **G**; `project-config` (`<repo>/.cco`) → `.claude` follows **Cp**, content follows **Pc**. D-M1's original "`_committed_ro`/`_b1_ro`" wording was imprecise — `Cr` is pinned `ro` by ADR-0049, so a literal reading would have left E6A-12/E6B-02 alive. |
 | **D-M6** | Cycle 1 does **not** gate on the Linux write-path check-in, **provided** the D-M4 shape is POSIX-correct by construction — correct where bind mounts enforce real ownership, never relying on Docker Desktop's `fakeowner`. The check-in stays a separate gate before `develop → main`. |
+| **D-M7** | **Cycle 1 only** — cycle 2 is not folded in (settles §4 below). The incremental gate is kept; two build/review rounds accepted. |
+| **D-M8** | Scope enlargers: **Q-13 (supersede `_op_cco`/`_op_seed`), Q-11 (rename verbs onto the primitive layer), Q-14 (`chmod 000` seam, `id -u` self-check)** are IN. **Q-10 (provenance writers) is OUT** → `pack install` becomes a clean in-container refusal until cycle 2. |
+| **D-M9** | The user-visible proposals (Q-4…Q-9) are adopted **en bloc**: exit 2 for a named unmounted target; `--move-dir` refused exit 2 with a host hint; bare `repo rename <new>` at WORKDIR root always refused; duplicate repo NAME → mount first + announce second; duplicate authoring path accepted; project-less config-editor gets the honest empty `path list`. |
+| **D-M10** | Minor questions as recommended: Q-12 and Q-15 defer to cycle 2; Q-16 seeds unconditionally; **one grouped changelog entry, id 46**; ADR-0043 forward annotation instead of a new ADR; notice unification deferred; T3 lands with the lane and RC-2 tightens its string. |
 
 ## 3. How much of this can actually run in parallel
 
@@ -85,7 +94,13 @@ reverted code — but do not design it expecting six agents at once.
 **Worktree isolation**: only justified for stage D (two agents, genuinely disjoint files).
 Stages A/B/C are sequential and should run in the working tree with ordinary commits.
 
-## 4. Cycle 2 — undesigned, and a decision the maintainer owns
+## 4. Cycle 2 — ✅ SETTLED (D-M7): not folded in
+
+> **Decided 2026-07-19**, before the implementation workflow was built: **cycle 1 ships alone.**
+> The incremental gate is worth more than the saved build round — a re-review failure must stay
+> attributable to a specific fix. The reasoning that produced the decision is kept below.
+
+### The question as posed
 
 There are **no design docs for cycle 2** (RC-5's full sweep, RC-7…RC-16). A workflow that
 "implements all cycles" would have to design them first.
@@ -102,6 +117,10 @@ way, so cycle 1 + cycle 2 before **one** build costs one build/review round inst
 **Do not decide this alone.** Present both, with the observation that cycle 2 is mostly
 message-, doc- and rendering-level (lower blast radius than cycle 1's mount/boundary work),
 which makes folding it in less risky than the general argument suggests.
+
+*Presented and decided: **cycle 1 only** (D-M7). A third option — folding in only the RC-5
+sweep, since D-M2 is already ratified — was also offered and declined, so exactly one
+vocabulary sweep remains for cycle 2.*
 
 ## 5. Cross-cutting rules for implementation
 
