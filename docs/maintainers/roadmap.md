@@ -89,6 +89,30 @@ re-run of the e2e harness (acceptance gate) before merge → develop + push (fro
 - **Post-fix UX/CLI-completeness review** — verb intuitiveness/naming; finalizes the F4
   introspection verb name (`whoami` is provisional; vs `session`; reserve `cco status`?).
 
+#### B2 e2e-review **v2** acceptance — cycle-1 fix (⏸ IN PROGRESS, 2026-07-19)
+
+The v2 acceptance re-review (7 sessions, 2026-07-16) returned **NOT ACCEPTED** — enforcement
+fidelity, not model: subsystems that declare `rw` mounted `ro`, one write path faked success,
+one read verb applied no scoping. Consolidated to 17 roots (`e2e-review/results/consolidated-review.md`);
+cycle-1 fix designs + maintainer decisions **D-M1…D-M11** ratified
+(`e2e-review/fix-design-v2/`). Method: incremental **review → fix → re-review** (D-M7: cycle 1
+ships alone; cycle 2 = RC-5 sweep + RC-7…RC-16, undesigned). Branch
+**`fix/config-access/e2e-v2-cycle1`** (from develop).
+
+Cycle-1 stages (each impl → adversarial revert-check verify): **RC-17** keystone container-operator
+test lane ✅ · **RC-1** nested-config clamp + D-M11 Q-12 escalation close ✅ · **RC-6** config-editor
+target repos ✅ · **RC-2** host-path class (INV-F, D-M2 vocabulary, D-M4 de-elevation) ✅ ·
+**RC-3** store write-path + Q-11 rename migration + E6B-04 half-apply ⏸ **INTERRUPTED mid-impl**
+(WIP checkpoint `05ab3af` — 5 atomic commits done + 1 unverified WIP; **continue, do not re-run**) ·
+**RC-4** `path list` fail-closed ⬜ · **docs** ADR sweep + changelog #46 ⬜. Suite at RC-2 tip: **1377/9**.
+
+**Out of session reach — gates the release, not the implementation** (do on the Mac):
+`cco build` from develop (fixes are invisible in-session until rebuilt); targeted e2e re-run
+(E5/E6A/E6B for D+E, E4 for F, E1-E3 for RC-4); the **E6B-04 pack-rename half-apply scratch
+reproduction** (🔴 data-loss if confirmed — never yet executed with `-y`); the Linux write-path
+check-in (D-M6, before develop → main); `git push` both branches. Resume pointer: memory
+[[e2e-v2-review]] + `e2e-review/fix-design-v2/IMPLEMENTATION-HANDOFF.md`.
+
 #### F — opinionated-config extraction + `cco update` responsibility refactor (post-C, structural)
 
 Make the cco **core agnostic** of opinionated config: keep `managed/` baked in, move the opinionated
