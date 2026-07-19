@@ -529,3 +529,118 @@ test_as_project_show_out_of_scope_refused() {
     if run_cco project show beta; then fail "out-of-scope 'project show beta' should fail"; fi
     assert_output_contains "not available at this access scope"
 }
+
+# ── The three availability states (RC-2 / D-M2, 04-host-path-class.md §6.2) ──
+
+test_member_state_not_mounted() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _as_source
+    _as_operator read-project
+    export CCO_WORKDIR="$tmp/ws"; mkdir -p "$CCO_WORKDIR"
+    # Index binding present, host path absent AND its mount absent → not-mounted.
+    [[ "$(_env_member_state backend /host/absent/backend)" == "not-mounted" ]] \
+        || fail "operator: a bound-but-unmounted member is 'not-mounted', not 'unresolved'"
+    return 0
+}
+
+test_member_state_here_via_mount() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _as_source
+    _as_operator read-project
+    export CCO_WORKDIR="$tmp/ws"; mkdir -p "$CCO_WORKDIR/backend"
+    [[ "$(_env_member_state backend /host/absent/backend)" == "here" ]] \
+        || fail "operator: a member mounted at <ws>/<name> is 'here'"
+    return 0
+}
+
+test_member_state_here_via_declared_target() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _as_source
+    _as_operator read-project
+    export CCO_WORKDIR="$tmp/ws"; mkdir -p "$CCO_WORKDIR/docs/specs"
+    # INV-F.2: an explicit declared target is where the mount actually lives.
+    [[ "$(_env_member_state assets /host/x "$CCO_WORKDIR/docs/specs")" == "here" ]] \
+        || fail "operator: an explicit-target mount is 'here' at its target"
+    return 0
+}
+
+test_member_state_unresolved_no_binding() {
+    _as_source
+    _as_operator read-project
+    export CCO_WORKDIR=/ws
+    # INV-F.1: an empty index path is 'unresolved' — never 'here', never 'not-mounted'.
+    [[ "$(_env_member_state backend "")" == "unresolved" ]] \
+        || fail "operator: an unbound member is 'unresolved'"
+    return 0
+}
+
+test_member_state_host_two_valued() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _as_source
+    unset CCO_CONTAINER_OPERATOR
+    mkdir -p "$tmp/real"
+    [[ "$(_env_member_state backend "$tmp/real")" == "here" ]] \
+        || fail "host: an existing dir is 'here'"
+    [[ "$(_env_member_state backend "$tmp/gone")" == "unresolved" ]] \
+        || fail "host: a missing dir is 'unresolved'"
+    [[ "$(_env_member_state backend "$tmp/gone")" != "not-mounted" ]] \
+        || fail "host must never report 'not-mounted' (that state is operator-only)"
+    return 0
+}
+
+test_project_state_out_of_scope() {
+    _as_source
+    source "$REPO_ROOT/lib/index.sh"; source "$REPO_ROOT/lib/cmd-resolve.sh"
+    _as_operator read-project
+    export PROJECT_NAME=alpha
+    # At read-project (Po=none) another project is hidden → out-of-scope.
+    [[ "$(_env_project_state beta)" == "out-of-scope" ]] \
+        || fail "read-project: a non-current project is 'out-of-scope'"
+    return 0
+}
+
+test_unmounted_notice_wording() {
+    _as_source
+    _as_operator read-project
+    _env_note_unmounted project; _env_note_unmounted project
+    local out; out=$(_env_flush_hidden_notice 2>&1)
+    [[ "$out" == *"not mounted in this session"* ]] \
+        || fail "the unmounted notice must say 'not mounted in this session', got: $out"
+    [[ "$out" == *"2 projects"* ]] \
+        || fail "the unmounted notice must count the members, got: $out"
+    [[ "$out" != *"cco resolve"* ]] \
+        || fail "the unmounted notice must NOT say 'cco resolve' — that is the lie this replaces, got: $out"
+    return 0
+}
+
+test_unavailable_warn_matches_unavailable_wording() {
+    _as_source
+    _as_operator read-project
+    # INV-E: the fatal and the degrade helpers render the SAME sentence per state.
+    local sentence warn_out refuse_out
+    for st in not-mounted unresolved; do
+        sentence=$(_env_unavailable_sentence "$st" repo foo)
+        warn_out=$(_env_unavailable_warn "$st" repo foo 2>&1) || true
+        [[ "$warn_out" == *"$sentence"* ]] \
+            || fail "_env_unavailable_warn $st must render the shared sentence, got: $warn_out"
+        refuse_out=$( _env_unavailable "$st" repo foo 2>&1; true )
+        [[ "$refuse_out" == *"$sentence"* ]] \
+            || fail "_env_unavailable $st must render the shared sentence, got: $refuse_out"
+    done
+    return 0
+}
+
+test_hidden_notice_unchanged() {
+    # Regression guard: with ONLY _env_note_hidden, the notice is byte-identical to
+    # today (the unmounted block must never bleed into the hidden one).
+    _as_source
+    _as_operator read-project
+    export PROJECT_NAME=alpha
+    _env_note_hidden project
+    local out; out=$(_env_flush_hidden_notice 2>&1)
+    [[ "$out" == *"1 project hidden by access scope"* ]] \
+        || fail "the hidden notice wording must be unchanged, got: $out"
+    [[ "$out" != *"not mounted in this session"* ]] \
+        || fail "a hidden-only flush must not emit the unmounted sentence, got: $out"
+    return 0
+}

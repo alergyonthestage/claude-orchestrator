@@ -562,31 +562,68 @@ _env_note_hidden() {
     _ENV_HIDDEN_ANY=1
 }
 
-# Emit the single standardized "hidden by scope" notice to stderr (INV-B/C).
-# Count-only — never leaks hidden names. Idempotent + no-op when nothing hidden.
+# Emit the standardized scope notices to stderr (INV-B/C). Count-only — never
+# leaks names. Idempotent + no-op when nothing was noted. Two independent notices,
+# each gated on its own flag so a caller that noted ONLY unmounted members still
+# gets the second sentence: the "hidden by scope" notice (unchanged wording) and
+# the RC-2 "not mounted in this session" notice (D-M2). The latter must NOT say
+# "run cco resolve" — that string is what made today's output a lie.
 _env_flush_hidden_notice() {
-    [[ "${_ENV_HIDDEN_ANY:-}" == "1" ]] || return 0
-    local kind var c label msg=""
-    for kind in project pack llms template remote; do
-        var="_ENV_HID_${kind}"; c="${!var:-0}"
-        [[ "$c" -gt 0 ]] || continue
-        # "llms" is already plural; the others take a trailing 's' when >1.
-        case "$kind" in
-            llms) label="llms" ;;
-            *)    label="$kind"; [[ "$c" -gt 1 ]] && label="${kind}s" ;;
-        esac
-        msg="${msg}${msg:+, }${c} ${label}"
-    done
-    if [[ -n "$msg" ]]; then
-        # read-global reveals global-class resources (templates/remotes/unreferenced
-        # packs/llms); OTHER projects need read-all (Po≥ro). The notice can cover
-        # both kinds, so it names the correct widening for each (A1 §2.2).
-        printf 'note: %s hidden by access scope (cco_access=%s) — start a read-global session (read-all to also see other projects) or run cco on your host.\n' \
-            "$msg" "$(_env_access)" >&2
+    local kind var c label
+    # ── hidden by access scope (unchanged) ──────────────────────────────
+    if [[ "${_ENV_HIDDEN_ANY:-}" == "1" ]]; then
+        local msg=""
+        for kind in project pack llms template remote; do
+            var="_ENV_HID_${kind}"; c="${!var:-0}"
+            [[ "$c" -gt 0 ]] || continue
+            # "llms" is already plural; the others take a trailing 's' when >1.
+            case "$kind" in
+                llms) label="llms" ;;
+                *)    label="$kind"; [[ "$c" -gt 1 ]] && label="${kind}s" ;;
+            esac
+            msg="${msg}${msg:+, }${c} ${label}"
+        done
+        if [[ -n "$msg" ]]; then
+            # read-global reveals global-class resources (templates/remotes/unreferenced
+            # packs/llms); OTHER projects need read-all (Po≥ro). The notice can cover
+            # both kinds, so it names the correct widening for each (A1 §2.2).
+            printf 'note: %s hidden by access scope (cco_access=%s) — start a read-global session (read-all to also see other projects) or run cco on your host.\n' \
+                "$msg" "$(_env_access)" >&2
+        fi
+        _ENV_HIDDEN_ANY=0
+        for kind in project pack llms template remote; do printf -v "_ENV_HID_${kind}" '%d' 0; done
     fi
-    # Idempotent: clear so a second flush in the same process is a no-op.
-    _ENV_HIDDEN_ANY=0
-    for kind in project pack llms template remote; do printf -v "_ENV_HID_${kind}" '%d' 0; done
+    # ── not mounted in this session (RC-2 / D-M2) ───────────────────────
+    if [[ "${_ENV_UNMOUNTED_ANY:-}" == "1" ]]; then
+        local umsg=""
+        for kind in project pack llms template remote; do
+            var="_ENV_UNM_${kind}"; c="${!var:-0}"
+            [[ "$c" -gt 0 ]] || continue
+            case "$kind" in
+                llms) label="llms" ;;
+                *)    label="$kind"; [[ "$c" -gt 1 ]] && label="${kind}s" ;;
+            esac
+            umsg="${umsg}${umsg:+, }${c} ${label}"
+        done
+        if [[ -n "$umsg" ]]; then
+            printf 'note: %s not mounted in this session — they exist on this machine but are not bound into this container; run cco on your host to act on them.\n' \
+                "$umsg" >&2
+        fi
+        _ENV_UNMOUNTED_ANY=0
+        for kind in project pack llms template remote; do printf -v "_ENV_UNM_${kind}" '%d' 0; done
+    fi
+}
+
+# Record one "not mounted in this session" resource of <kind> (INV-B: a skipped
+# member is COUNTED, never silently dropped). Mirrors _env_note_hidden's bash-3.2
+# indirect counters (_ENV_UNM_<kind>); folded into the SAME flush so INV-C's single
+# standardized notice still holds. Usage: _env_note_unmounted <kind>
+_env_note_unmounted() {
+    local kind="$1"
+    local var="_ENV_UNM_${kind}" cur
+    cur="${!var:-0}"
+    printf -v "$var" '%d' "$(( cur + 1 ))"
+    _ENV_UNMOUNTED_ANY=1
 }
 
 # _env_require_visible <kind> <name> [owner] — gate for show/detail verbs. When
@@ -618,4 +655,85 @@ _env_require_kind_visible() {
     # (Po=rw → ordinal 'all', yet G=none) still hides templates/remotes correctly.
     [[ "$(_cco_axis_rank "$(_env_axis G)")" -ge 1 ]] && return 0
     refuse "'cco list $kind' is not available at this access scope (cco_access=$(_env_access)) — '$kind' is a personal-global resource; start a read-global session or run cco on your host."
+}
+
+# ── The three availability states (D-M2 / RC-2, 04-host-path-class.md §3.1) ──
+# The model shipped with two outcomes (visible / out of scope) against three
+# realities, and each verb invented its own third answer. There is now ONE
+# vocabulary, one shared resolver and one remedy string per state. A path read
+# from the STATE index is a HOST path (INV-F): in operator mode it must NEVER be
+# existence-tested — availability is decided by (i) does the index hold a binding
+# and (ii) is a tree present at the PROBE path, deliberately not the host path.
+#
+# | state       | truth test                       | remedy                | exit |
+# | here        | tree exists at the probe path    | —                     | 0    |
+# | not-mounted | binding exists, probe absent     | start a session / host| 2/0  |
+# | unresolved  | no binding, or host path absent  | cco resolve <name>    | 1    |
+# | out-of-scope| the scope layer hides it         | widen --cco-access    | 2    |
+
+# _env_member_state <name> <index_host_path> [<declared_target>]
+#   → here | not-mounted | unresolved
+# PURE: takes what the caller already holds, so it adds no dependency on index.sh
+# (loaded AFTER this module). This function IS invariant INV-F.
+_env_member_state() {
+    local name="$1" host_path="$2" target="${3:-}" probe
+    [[ -n "$host_path" ]] || { printf 'unresolved'; return 0; }     # no binding (INV-F.1)
+    probe=$(_cco_member_probe_path "$name" "$host_path" "$target")
+    [[ -n "$probe" && -d "$probe" ]] && { printf 'here'; return 0; }
+    if _cco_container_operator; then printf 'not-mounted'; else printf 'unresolved'; fi
+}
+
+# _env_project_state <name> → out-of-scope | here | not-mounted | unresolved
+# Resolves through the operator-aware _resolve_project_yml (never the host-only
+# _resolve_unit_dir_for_project — INV-F.3), defined later in load order and bound
+# at call time — the same pattern _env_require_visible already uses.
+_env_project_state() {
+    local name="$1"
+    _env_in_scope project "$name" || { printf 'out-of-scope'; return 0; }
+    if _resolve_project_yml "$name" >/dev/null 2>&1; then printf 'here'; return 0; fi
+    if _cco_container_operator; then printf 'not-mounted'; else printf 'unresolved'; fi
+}
+
+# The single remedy SENTENCE per state — no leading glyph, no stream — so the
+# fatal _env_unavailable and the degrade-and-continue _env_unavailable_warn render
+# IDENTICAL text and differ only in stream + exit (INV-E, one vocabulary). The
+# not-mounted sentence deliberately never says "run cco resolve".
+# Usage: _env_unavailable_sentence <not-mounted|unresolved> <kind> <name>
+_env_unavailable_sentence() {
+    local state="$1" kind="$2" name="$3"
+    case "$state" in
+        not-mounted)
+            printf "%s '%s' is not mounted in this session — it exists on this machine, but its files are not bound into this container. Run cco on your host, or start a session that mounts it." \
+                "$kind" "$name" ;;
+        *)
+            printf "%s '%s' is unresolved on this machine — run 'cco resolve %s' first." \
+                "$kind" "$name" "$name" ;;
+    esac
+}
+
+# The single remedy vocabulary for an unavailable resource — exits per D8
+# (policy/session-shape → refuse 2; missing dependency → die 1). <state> must not
+# be `here`. Usage: _env_unavailable <state> <kind> <name>
+_env_unavailable() {
+    local state="$1" kind="$2" name="$3"
+    case "$state" in
+        out-of-scope) _env_require_visible "$kind" "$name" ;;   # existing wording, exit 2
+        not-mounted)  refuse "$(_env_unavailable_sentence not-mounted "$kind" "$name")" ;;
+        *)            die    "$(_env_unavailable_sentence unresolved  "$kind" "$name")" ;;
+    esac
+}
+
+# Non-fatal sibling for degrade-and-continue callers that must keep their exit-0
+# contract (`--all` sweeps, `llms … --project`). SAME sentences, `warn` instead of
+# refuse/die; returns 1 so the caller can `|| continue` / `|| return`. Keeping both
+# on one vocabulary is what INV-E buys. Usage: _env_unavailable_warn <state> <kind> <name>
+_env_unavailable_warn() {
+    local state="$1" kind="$2" name="$3"
+    case "$state" in
+        out-of-scope)
+            warn "$kind '$name' is hidden by access scope (cco_access=$(_env_access)) — start a read-global/read-all session or run cco on your host." ;;
+        not-mounted)  warn "$(_env_unavailable_sentence not-mounted "$kind" "$name")" ;;
+        *)            warn "$(_env_unavailable_sentence unresolved  "$kind" "$name")" ;;
+    esac
+    return 1
 }
