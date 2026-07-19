@@ -303,3 +303,45 @@ YAML
         "no cross-project fallback: another project's binding must never leak in"
     return 0
 }
+
+# T11 (§3.4, Change 2 / INV-M4). In operator mode neither the index (a synthetic
+# manifest has no binding under its own scope) nor the host-process-local override
+# resolves a mounted repo, yet /workspace/<name> exists. _effective_repo_mounts
+# falls back to the MOUNT — the predicate cmd-whoami.sh already uses — so
+# in-container `cco project show`/`list` report the mounted repos instead of an
+# empty set. Pre-fix the bridge is index-only in-container, so the output is empty.
+# The second scenario is the T12 guard (folded in, RC-1 T15 pattern): the fallback
+# is miss-ONLY, so a normal index hit wins and show_host_paths rendering is
+# byte-identical.
+test_effective_repo_mounts_operator_falls_back_to_mount() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_local_paths_index "$tmpdir/state"
+    # Operator mode skips bucket dir-creation (they are mounts in production), so
+    # pre-create STATE for the fixture's own index writes.
+    mkdir -p "$tmpdir/state"
+    # The REAL operator predicate (never a stub): flag + three absolute buckets.
+    export CCO_CONTAINER_OPERATOR=1
+    export CCO_DATA_HOME="$tmpdir/state" CCO_CACHE_HOME="$tmpdir/state"
+    export CCO_WORKDIR="$tmpdir/workspace"; mkdir -p "$CCO_WORKDIR/webapp"
+
+    local proj="$tmpdir/proj"; mkdir -p "$proj"
+    cat > "$proj/project.yml" <<'YAML'
+name: config-editor
+repos:
+  - name: webapp
+YAML
+    # No (config-editor, webapp) index binding and no override — only the mount.
+    local out; out=$(_effective_repo_mounts "$proj/project.yml")
+    assert_equals "webapp"$'\t'"$CCO_WORKDIR/webapp" "$out" \
+        "operator mode must report a repo from its MOUNT, not the missing index"
+
+    # Guard (T12): a real index HIT wins — the fallback is miss-only, so the host
+    # path is preserved (show_host_paths rendering unchanged).
+    mkdir -p "$tmpdir/hostpath/webapp"
+    _index_set_path config-editor "webapp" "$tmpdir/hostpath/webapp"
+    out=$(_effective_repo_mounts "$proj/project.yml")
+    assert_equals "webapp"$'\t'"$tmpdir/hostpath/webapp" "$out" \
+        "an index hit must win — the mount fallback is miss-only"
+    unset CCO_CONTAINER_OPERATOR CCO_WORKDIR
+    return 0
+}

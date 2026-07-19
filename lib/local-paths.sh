@@ -194,6 +194,19 @@ _effective_repo_mounts() {
         # so a built-in's synthetic manifest (whose own name-scope holds no index
         # bindings by construction — RC-6 §1.2) still resolves its declared repos.
         _p=$(_mount_source_for "$proj" "$name")
+        # In-container (operator mode) the STATE index is NOT the truth about what
+        # is MOUNTED: a synthetic manifest has no binding under its own scope
+        # (INV-M2) and _CCO_MOUNT_OVERRIDE is host-process-local, so both miss here
+        # even though /workspace/<name> exists on disk. The container's truth is the
+        # mount itself — the same predicate cmd-whoami.sh:24-33 uses (INV-M4), so the
+        # in-container introspection verbs (project show/list) report mounted repos
+        # rather than an empty set. Fallback ONLY (never an override): a normal
+        # session's index hit is byte-identical, so show_host_paths rendering is
+        # untouched. Emits a CONTAINER path — it can never leak a host one.
+        if [[ "$_p" != /* ]] && _cco_container_operator \
+           && [[ -d "${CCO_WORKDIR:-/workspace}/$name" ]]; then
+            _p="${CCO_WORKDIR:-/workspace}/$name"
+        fi
         # Skip empty AND any NON-ABSOLUTE index value. A bogus marker like the
         # legacy `@local` must never reach the compose as a mount source — its
         # leading `@` is a reserved YAML char that breaks `docker compose`
