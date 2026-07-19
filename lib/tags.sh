@@ -106,28 +106,44 @@ _tags_remove() {
 # `cco pack/template remove` and `cco forget` to drop a resource's tag binding
 # when the resource itself is gone — distinct from _tags_remove, which drops a
 # single tag while keeping the entry. Usage: _tags_forget <kind> <name>
+# RC-3/INV-S3: a store primitive reached from lib/store.sh's elevated cascades (and
+# from host-only verbs), so it must FAIL LOUD rather than silently orphan a binding.
+# The registry lives in the confined DATA bucket; behind an OPAQUE parent `[[ -f ]]`
+# reads FALSE for a file that exists (§1.3), so a plain `[[ -f ]] || return 0` would
+# swallow the miss. Distinguish "no registry yet" (genuine no-op, return 0) from an
+# UNREACHABLE parent (opaque boundary → return 1) by probing the parent's traversal.
 _tags_forget() {
-    local kind="$1" name="$2" f
+    local kind="$1" name="$2" f d
     f=$(_tags_file)
-    [[ -f "$f" ]] || return 0
+    if [[ ! -f "$f" ]]; then
+        d=$(dirname "$f")
+        [[ -d "$d" && ! -x "$d" ]] && return 1   # parent present but opaque ⇒ fail loud
+        return 0                                  # genuinely no registry
+    fi
 
-    local tmpf; tmpf=$(mktemp "${f}.XXXXXX")
+    local tmpf; tmpf=$(mktemp "${f}.XXXXXX") || return 1
     awk -v sec="${kind}:" -v key="  ${name}:" '
         $0 == sec { print; in_sec = 1; next }
         in_sec && /^[^ #]/ { in_sec = 0 }
         in_sec && index($0, key) == 1 { next }
         { print }
-    ' "$f" > "$tmpf" && mv "$tmpf" "$f"
+    ' "$f" > "$tmpf" && mv "$tmpf" "$f" || { rm -f "$tmpf" 2>/dev/null; return 1; }
+    return 0
 }
 
 # Re-key a resource's tag entry from <old> to <new> within <kind>, carrying the
 # tag set over (the identity re-key primitive for `cco project rename`, ADR-0031
 # D2). No-op when <old> has no tags (nothing to carry). Usage: _tags_rename <kind> <old> <new>
 _tags_rename() {
-    local kind="$1" old="$2" new="$3" cur
+    local kind="$1" old="$2" new="$3" cur d
+    # INV-S3: fail loud behind an opaque boundary rather than silently no-op the
+    # re-key (an unreadable registry makes _tags_get echo empty, indistinguishable
+    # from "no tags" — §1.3). Probe the parent's traversal first.
+    d=$(dirname "$(_tags_file)")
+    [[ -d "$d" && ! -x "$d" ]] && return 1
     cur=$(_tags_get "$kind" "$old")
     [[ -z "$cur" ]] && return 0
-    _tags_set "$kind" "$new" "$cur"
+    _tags_set "$kind" "$new" "$cur" || return 1
     _tags_forget "$kind" "$old"
 }
 

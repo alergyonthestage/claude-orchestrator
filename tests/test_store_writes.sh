@@ -83,3 +83,27 @@ test_store_op_rejects_traversal_and_bad_kind() {
         || { fail "an unknown kind must be rejected at validation, got: $out"; return 1; }
     return 0
 }
+
+# ── INV-S3: the tag primitive fails loud behind an opaque boundary ────
+# _tags_forget on an UNREACHABLE registry must return non-zero — never the silent
+# `return 0` that orphans the binding (§1.3 / §6.1 worked example). OPAQUE mode (000):
+# `[[ -f ]]` reads FALSE for the existing registry, so pre-fix returns 0 (measured:
+# rc=0 at 000, rc=1 at 555 — hence the mode pin). Post-fix the opaque parent is
+# detected and the function returns 1.
+test_store_tags_forget_reports_failure() {
+    [[ "$(id -u)" -eq 0 ]] && return 0
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    local rc=0
+    (
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/paths.sh";  source "$REPO_ROOT/lib/tags.sh"
+        export CCO_ALLOW_HOST_RESOLVE=1 CCO_DATA_HOME="$tmp/data"
+        mkdir -p "$CCO_DATA_HOME"
+        printf 'packs:\n  p: [work]\n' > "$CCO_DATA_HOME/tags.yml"
+        chmod 000 "$CCO_DATA_HOME"                 # opaque parent (the ADR-0047 model)
+        _tags_forget packs p
+    ) || rc=$?
+    assert_rc 1 "$rc" "_tags_forget on an opaque registry must fail loud (INV-S3)" || return 1
+    return 0
+}
