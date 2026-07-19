@@ -176,8 +176,12 @@ EOF
 
     # ---- --sync ----
     [[ -n "$from" ]] || die "--sync requires --from <unit> (cco never auto-elects an authoritative coordinate; ADR-0016 F48)."
-    local from_dir; from_dir=$(_resolve_unit_dir_for_project "$from" 2>/dev/null) \
-        || die "--from unit '$from' not found (unknown, or its repo is unresolved here — run 'cco resolve $from')."
+    # INV-F.3: classify --from through the operator-aware pair — the scan below runs
+    # over _project_foreach (operator-aware), so this is a pure existence check (the
+    # unit dir itself is never read). In a session a mounted --from resolves instead
+    # of the host-only "run cco resolve" refusal.
+    local _st; _st=$(_env_project_state "$from")
+    [[ "$_st" == here ]] || _env_unavailable "$_st" "--from unit" "$from"
 
     local -a names=()
     local n

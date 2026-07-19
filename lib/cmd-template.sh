@@ -292,14 +292,20 @@ EOF
         # A configured project (resolved via the STATE index): its committed
         # config lives in <repo>/.cco/ — the claude/ tree + project.yml + root
         # files. The central $PROJECTS_DIR layout is gone (P5).
-        if _ud=$(_resolve_unit_dir_for_project "$from" 2>/dev/null); then
-            source_dir="$_ud/.cco"
+        # INV-F.3: resolve the project's .cco through the operator-aware pair. --from
+        # stays polymorphic — pack-dir and literal-dir branches still run on failure.
+        if _ud=$(_resolve_project_cco_dir "$from" 2>/dev/null); then
+            source_dir="$_ud"
             from_project=true
         elif [[ -d "$PACKS_DIR/$from" ]]; then
             source_dir="$PACKS_DIR/$from"
         elif [[ -d "$from" ]]; then
             source_dir="$from"
         else
+            # A real project that is merely out of scope / not mounted must not be
+            # reported as a nonexistent resource — classify before the generic die.
+            local _st; _st=$(_env_project_state "$from")
+            case "$_st" in out-of-scope|not-mounted) _env_unavailable "$_st" project "$from" ;; esac
             die "Resource '$from' not found."
         fi
 

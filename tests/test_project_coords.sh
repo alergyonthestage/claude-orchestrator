@@ -128,7 +128,9 @@ test_project_coords_sync_unknown_from_fails() {
     local rc=0
     _pc_in "$tmpdir" project coords --sync --from ghost -y || rc=$?
     [[ "$rc" -ne 0 ]] || fail "expected unknown --from to fail"
-    assert_output_contains "not found"
+    # The D-M2 vocabulary unification reworded this (was "not found"); the stable,
+    # still-actionable remedy is naming 'cco resolve <name>'.
+    assert_output_contains "cco resolve"
 }
 
 test_project_coords_sync_applies_from_authoritative() {

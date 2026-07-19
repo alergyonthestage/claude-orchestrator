@@ -801,9 +801,14 @@ _llms_add_to_yaml() {
     fi
 
     if [[ -n "$project" ]]; then
-        local _ud proj_yml=""
-        _ud=$(_resolve_unit_dir_for_project "$project" 2>/dev/null) && proj_yml="$_ud/.cco/project.yml"
-        [[ -n "$proj_yml" && -f "$proj_yml" ]] || { warn "Project '$project' not found — skipping YAML update."; return; }
+        # INV-F.3: resolve through the operator-aware pair and keep the non-fatal
+        # degrade — in a session a mounted project now gets its YAML updated instead
+        # of being silently skipped with a success exit.
+        local proj_yml _st
+        _st=$(_env_project_state "$project")
+        if [[ "$_st" != here ]]; then _env_unavailable_warn "$_st" project "$project"; return 0; fi
+        proj_yml=$(_resolve_project_yml "$project")
+        [[ -f "$proj_yml" ]] || { warn "Project '$project' has no readable project.yml — skipping YAML update."; return 0; }
         if yml_get_llms_names "$proj_yml" | grep -qxF "$name"; then
             info "LLMs '$name' already in project '$project'"
         else
