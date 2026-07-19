@@ -107,10 +107,10 @@ _project_show_repo_centric() {
         # must use the host path even in-container (where $p is not inspectable).
         refby=$([[ -n "$p" ]] && _index_paths_get_bindings "$p" 2>/dev/null | cut -f1 | grep -vxF "$hosted" | sort -u | paste -sd, - 2>/dev/null)
         local l="  $rn"
-        # Host-path hygiene (INV-4), as in the full view above.
-        if [[ -n "$p" ]] && _cco_container_operator && [[ "${CCO_SHOW_HOST_PATHS:-true}" != "true" ]]; then
-            p=$(_cco_member_probe_path "$rn" "$p")
-        fi
+        # Host-path hygiene (INV-4) via the single display helper — empty in ⇒
+        # empty out (INV-F.1), so the (unresolved) rendering below is preserved for
+        # a declared-but-unbound member and the outer -n guard is subsumed.
+        p=$(_cco_display_path "$rn" "$p")
         [[ -n "$p" ]] && l="$l ($p)" || l="$l (unresolved)"
         [[ -n "$refby" ]] && l="$l — also in: $refby"
         echo "$l"
@@ -226,15 +226,12 @@ EOF
             # `[missing]` + "N reference(s) unresolved".
             local _probe _disp
             _probe=$(_cco_member_probe_path "$repo_name" "$repo_path")
-            # Host-path hygiene (INV-4), orthogonal to the probe: a host path may
-            # be shown only where show_host_paths permits it. In-container with the
-            # knob off, render the mount — the path the agent can actually use —
-            # instead of leaking the host one.
-            if _cco_container_operator && [[ "${CCO_SHOW_HOST_PATHS:-true}" != "true" ]]; then
-                _disp="$_probe"
-            else
-                _disp="${repo_path:-unresolved}"
-            fi
+            # Host-path hygiene (INV-4), orthogonal to the probe, through the single
+            # display helper: a host path is shown only where show_host_paths permits
+            # it; otherwise the mount is rendered. Defensive `${:-unresolved}` parity
+            # with the prior fallback for a never-empty _effective_repo_mounts path.
+            _disp=$(_cco_display_path "$repo_name" "$repo_path")
+            _disp="${_disp:-unresolved}"
             if [[ -d "$_probe" ]]; then
                 echo "  $repo_name ($_disp) $suffix"
             else

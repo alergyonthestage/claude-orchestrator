@@ -344,14 +344,55 @@ _cco_container_operator() {
 # <workdir>/<name> that does not exist and reads as genuinely unavailable here —
 # which it is. This resolves what to PROBE; what to DISPLAY is the caller's
 # host-path-hygiene decision (show_host_paths), deliberately kept separate.
-# Usage: _cco_member_probe_path <name> <index_host_path>
+#
+# INV-F.1 — an EMPTY index path means "no binding", so no path may be synthesized
+# from a name alone: empty in ⇒ empty out. Without this an unbound member would be
+# rendered present at <workdir>/<name> (the RC-5/INV-B absent-reported-as-present
+# inversion). INV-F.2 — a member's declared container target is honoured verbatim
+# in operator mode when passed (an extra_mount may set target:); when omitted the
+# <workdir>/<name> default stands (repos always mount there). The optional 3rd arg
+# is ignored on the host (INV-A) and by every existing 2-arg caller.
+# Usage: _cco_member_probe_path <name> <index_host_path> [<declared_target>]
 _cco_member_probe_path() {
-    local name="$1" host_path="$2"
+    local name="$1" host_path="$2" target="${3:-}"
+    [[ -n "$host_path" ]] || { printf '\n'; return 0; }
     if [[ -n "$name" ]] && _cco_container_operator; then
-        printf '%s\n' "${CCO_WORKDIR:-/workspace}/$name"
+        printf '%s\n' "${target:-${CCO_WORKDIR:-/workspace}/$name}"
     else
         printf '%s\n' "$host_path"
     fi
+}
+
+# What to DISPLAY for a member path (INV-4 host-path hygiene) — the deliberate
+# sibling of _cco_member_probe_path (what to PROBE). Single source for the
+# "show the mount instead of leaking the host path" predicate: in operator mode
+# with show_host_paths OFF it renders the probe (the container path the agent can
+# actually use); otherwise it renders the index host path unchanged. Empty in ⇒
+# empty out (INV-F.1), so a caller's `[[ -n "$p" ]] && … || "(unresolved)"` keeps
+# its truth table. Usage: _cco_display_path <name> <index_host_path> [<declared_target>]
+_cco_display_path() {
+    local name="$1" host_path="$2" target="${3:-}"
+    [[ -n "$host_path" ]] || { printf '\n'; return 0; }
+    if _cco_container_operator && [[ "${CCO_SHOW_HOST_PATHS:-true}" != "true" ]]; then
+        _cco_member_probe_path "$name" "$host_path" "$target"
+    else
+        printf '%s\n' "$host_path"
+    fi
+}
+
+# Reverse of _cco_member_probe_path: a session mount ROOT → the member NAME.
+# Operator-only and deliberately narrow — the IMMEDIATE child of the WORKDIR only.
+# Sound because its ONLY caller is the repo cwd-first branch, and repos always
+# mount at <workdir>/<name> (INV-F.2's exception is extra_mounts, which have no
+# cwd-first form). Returns 1 (no output) on the host, off the WORKDIR, or for a
+# nested path. Usage: _cco_member_name_from_mount <dir>
+_cco_member_name_from_mount() {
+    local d="${1%/}" wd="${CCO_WORKDIR:-/workspace}"; wd="${wd%/}"
+    _cco_container_operator || return 1
+    [[ "$d" == "$wd"/* ]] || return 1
+    local rest="${d#"$wd"/}"
+    case "$rest" in ""|*/*) return 1 ;; esac
+    printf '%s\n' "$rest"
 }
 
 # Anti-in-container guard (H4, ADR-0007 Robustness). cco resolves host paths

@@ -522,3 +522,107 @@ test_operator_lane_gate_probe_ignores_caller_op_vars() {
     assert_gate_allows edit-project repo rename || return 1
     return 0
 }
+
+# ── INV-F probe/display pair (RC-2 / 04-host-path-class.md §3.1, §6.1) ─
+# The mechanism helpers are pure path arithmetic: they take what the caller has
+# and reason about it, so operator mode is engaged with its REAL preconditions
+# (flag + three absolute buckets + CCO_WORKDIR), never a stub of the predicate.
+_paths_operator_env() {
+    export CCO_CONTAINER_OPERATOR=1 CCO_IN_CONTAINER=1 \
+           CCO_DATA_HOME=/d CCO_STATE_HOME=/s CCO_CACHE_HOME=/c \
+           CCO_WORKDIR=/ws
+}
+
+test_probe_path_empty_binding_is_empty() {
+    ( source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/paths.sh"
+      _paths_operator_env
+      # INV-F.1: an empty index path must never be synthesized to <ws>/<name>.
+      [[ -z "$(_cco_member_probe_path my-repo "")" ]] \
+          || fail "operator probe of an empty binding must be empty (INV-F.1)"
+    ) || return 1
+}
+
+test_probe_path_honours_declared_target() {
+    ( source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/paths.sh"
+      _paths_operator_env
+      # INV-F.2: an explicit declared target wins over the <ws>/<name> default.
+      [[ "$(_cco_member_probe_path assets /host/a /ws/docs/assets)" == "/ws/docs/assets" ]] \
+          || fail "operator probe must honour the declared target (INV-F.2)"
+    ) || return 1
+}
+
+test_probe_path_host_ignores_target() {
+    ( source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/paths.sh"
+      unset CCO_CONTAINER_OPERATOR CCO_IN_CONTAINER
+      # INV-A: on the host the index path is returned unchanged, target ignored.
+      [[ "$(_cco_member_probe_path assets /host/a /ws/docs/assets)" == "/host/a" ]] \
+          || fail "host probe must ignore the declared target (INV-A)"
+    ) || return 1
+}
+
+test_probe_path_default_target_unchanged() {
+    ( source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/paths.sh"
+      _paths_operator_env
+      # Regression guard for the three shipped 2-arg call sites.
+      [[ "$(_cco_member_probe_path my-repo /host/a)" == "/ws/my-repo" ]] \
+          || fail "operator 2-arg probe must be <ws>/<name>"
+    ) || return 1
+}
+
+test_display_path_operator_hides_host_path() {
+    ( source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/paths.sh"
+      _paths_operator_env; export CCO_SHOW_HOST_PATHS=false
+      [[ "$(_cco_display_path my-repo /Users/a/my-repo)" == "/ws/my-repo" ]] \
+          || fail "operator display with show_host_paths off must render the mount"
+    ) || return 1
+}
+
+test_display_path_empty_stays_empty() {
+    ( source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/paths.sh"
+      _paths_operator_env; export CCO_SHOW_HOST_PATHS=false
+      # The property cmd-project-query.sh:111 relies on for its (unresolved) rendering.
+      [[ -z "$(_cco_display_path my-repo "")" ]] \
+          || fail "display of an empty binding must stay empty (INV-F.1)"
+    ) || return 1
+}
+
+test_display_path_operator_shows_when_permitted() {
+    ( source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/paths.sh"
+      _paths_operator_env; export CCO_SHOW_HOST_PATHS=true
+      [[ "$(_cco_display_path my-repo /Users/a/my-repo)" == "/Users/a/my-repo" ]] \
+          || fail "operator display with show_host_paths on must render the host path"
+    ) || return 1
+}
+
+test_display_path_host_is_identity() {
+    ( source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/paths.sh"
+      unset CCO_CONTAINER_OPERATOR CCO_IN_CONTAINER; export CCO_SHOW_HOST_PATHS=false
+      # INV-A: the host is never scoped, even with show_host_paths off.
+      [[ "$(_cco_display_path my-repo /Users/a/my-repo)" == "/Users/a/my-repo" ]] \
+          || fail "host display must be identity (INV-A)"
+    ) || return 1
+}
+
+test_member_name_from_mount_immediate_child() {
+    ( source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/paths.sh"
+      _paths_operator_env
+      [[ "$(_cco_member_name_from_mount /ws/backend)" == "backend" ]] \
+          || fail "the WORKDIR's immediate child resolves to its member name"
+    ) || return 1
+}
+
+test_member_name_from_mount_rejects_nested() {
+    ( source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/paths.sh"
+      _paths_operator_env
+      _cco_member_name_from_mount /ws/backend/sub \
+          && fail "a nested path is not a mount root" || true
+    ) || return 1
+}
+
+test_member_name_from_mount_host_refuses() {
+    ( source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/paths.sh"
+      unset CCO_CONTAINER_OPERATOR CCO_IN_CONTAINER; export CCO_WORKDIR=/ws
+      _cco_member_name_from_mount /ws/backend \
+          && fail "reverse mount lookup is operator-only" || true
+    ) || return 1
+}
