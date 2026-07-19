@@ -122,21 +122,82 @@ _rename_validate() {
     return 0
 }
 
+# ── De-elevation for claude-owned config-tree writes (D-M4 / ADR-0047 §2) ──
+# A store-touching rename trampolines the WHOLE verb to euid=cco-svc (bin/cco),
+# which is right for the STATE-index re-key but WRONG for the member's
+# <repo>/.cco tree — that is claude-owned, and cco-svc must never write it. A plain
+# `bash` (never `bash -p`) resets euid→ruid=claude on entry when they differ
+# (documented behaviour cco-svc-helper.c already relies on), and is a plain
+# passthrough when they are already equal (the host and the hermetic suite). This
+# only ever NARROWS privilege and is POSIX-correct by construction — no reliance on
+# Docker Desktop fakeowner (D-M6). It is gated on CCO_STORE_ELEVATED=1, set by the
+# setuid helper; the member-enumeration read of the STATE index stays in the
+# elevated caller, only the file WRITE crosses back down.
+
+# Run an EXTERNAL command as ruid=claude when this process is the elevated store
+# re-entry. Only for external commands — a fresh bash sees no shell functions.
+# Usage: _rename_deelevated <cmd> [args...]
+_rename_deelevated() {
+    if [[ "${CCO_STORE_ELEVATED:-}" == "1" ]]; then
+        bash -c '"$@"' _ "$@"
+    else
+        "$@"
+    fi
+}
+
+# Perform ONE member's project.yml list-rewrite as ruid=claude. Re-sources the
+# rename machinery in the de-elevated bash because _yaml_rename_list_ref is a shell
+# function; REPO_ROOT is passed as an argument, not inherited. Returns its status.
+# Usage: _rename_yaml_write_owned <yml> <section> <old> <new>
+_rename_yaml_write_owned() {
+    local yml="$1" section="$2" old="$3" new="$4"
+    if [[ "${CCO_STORE_ELEVATED:-}" == "1" ]]; then
+        bash -c '
+            source "$1/lib/colors.sh"; source "$1/lib/utils.sh"
+            source "$1/lib/paths.sh";  source "$1/lib/rename.sh"
+            _yaml_rename_list_ref "$2" "$3" "$4" "$5"
+        ' _ "$REPO_ROOT" "$yml" "$section" "$old" "$new"
+    else
+        _yaml_rename_list_ref "$yml" "$section" "$old" "$new"
+    fi
+}
+
+# §3.5 fail-closed precondition: assert <dir> is writable BY THIS PROCESS before any
+# mutation. An identity-agnostic probe — an actual mktemp, not `test -w` (whose
+# access(2) checks the REAL uid = claude even when euid = cco-svc, a false yes) —
+# run at the SAME identity as the real write (de-elevated when elevated, D-M4), so
+# it never passes on a tree the write cannot touch. Refuses (exit 2) before Phase-1
+# mutates anything: fail-closed, never half-applied, however §8 Q1 is settled.
+# Usage: _rename_assert_writable <dir> <what>
+_rename_assert_writable() {
+    local dir="$1" what="$2" t
+    t=$(_rename_deelevated mktemp "$dir/.cco-wtest.XXXXXX" 2>/dev/null) \
+        || refuse "Cannot write $what in this session ($dir is not writable by the cco store helper). Run '$what' on your host — nothing was changed."
+    _rename_deelevated rm -f "$t" 2>/dev/null || true
+}
+
 # ── project.yml re-key (current project) ─────────────────────────────
 # Rewrite <section>[].name <old>→<new> in EVERY owned+resolved member repo of
 # <project> (project-scoped, ADR-0051 D1 — no cross-project fan-out). project.yml
 # is replicated across a multi-repo project's members, so each owned copy is
 # rewritten (mirrors cmd_project_rename's member loop). Echoes each changed repo
-# path, one per line, so the caller can print the commit/push/sync reminder.
+# path, one per line, so the caller can print the commit/push/sync reminder. The
+# member enumeration comes from _project_iter_members, whose column 2 is the PROBE
+# path (the container mount in operator mode — INV-F), so the rewrite reaches the
+# mounted member instead of a non-existent host path. The write itself is
+# de-elevated to ruid=claude (D-M4). Column 2 can be empty (unresolved member), so
+# peel by hand (_peel_tab), never `IFS=$'\t' read` which folds the empty middle field.
 # Usage: _rename_projectyml_current <project> <section> <old> <new>
 _rename_projectyml_current() {
     local project="$1" section="$2" old="$3" new="$4"
-    local name path status yml
-    while IFS=$'\t' read -r name path status; do
+    local _ln name path status yml
+    while IFS= read -r _ln; do
+        [[ -z "$_ln" ]] && continue
+        _peel_tab "$_ln" name path status
         case "$status" in synced|divergent) ;; *) continue ;; esac
         yml="$path/.cco/project.yml"
         [[ -f "$yml" ]] || continue
-        if _yaml_rename_list_ref "$yml" "$section" "$old" "$new"; then
+        if _rename_yaml_write_owned "$yml" "$section" "$old" "$new"; then
             printf '%s\n' "$path"
         fi
     done < <(_project_iter_members "$project")

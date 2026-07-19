@@ -15,8 +15,13 @@
 # Provides: cmd_repo(), cmd_extra_mount()
 # Dependencies: colors.sh, utils.sh, index.sh (_index_{get,set}_path /
 #   _index_rename_path / _index_name_for_path / _index_get_project_repos),
-#   rename.sh (_rename_validate / _rename_projectyml_current / _rename_preview_confirm),
-#   cmd-resolve.sh (_resolve_find_unit_dir), paths.sh (_cco_project_id).
+#   rename.sh (_rename_validate / _rename_projectyml_current / _rename_preview_confirm /
+#   _rename_assert_writable),
+#   cmd-resolve.sh (_resolve_find_unit_dir),
+#   paths.sh (_cco_project_id / _cco_member_probe_path / _cco_display_path /
+#   _cco_member_name_from_mount),
+#   access-scope.sh (_env_member_state / _env_unavailable),
+#   local-paths.sh (_mount_declared_target).
 
 # Shared engine for the two index-keyed rename verbs.
 #   <kind>       repo | extra_mount   (label for messages + charset predicate)
@@ -51,10 +56,17 @@ _rename_index_keyed() {
         2) old="${pos[0]}"; new="${pos[1]}" ;;
         1) if [[ "$cwd_first" == true ]]; then
                new="${pos[0]}"
-               old=$(_index_name_for_path "$project" "$unit") \
-                   || die "No $pretty is bound to $unit in project '$project'. Pass <old> <new> explicitly."
+               # cwd-first <old>: in operator mode $unit is a container mount path,
+               # so reverse-resolve it to the member NAME (the index host path can
+               # never match — INV-F); on the host, the index reverse lookup stands.
+               if _cco_container_operator; then
+                   old=$(_cco_member_name_from_mount "$unit") \
+                       || die "Run 'cco $dash rename <new>' from a mounted member directory (e.g. \$CCO_WORKDIR/<name>), or pass <old> <new>."
+               else
+                   old=$(_index_name_for_path "$project" "$unit") || old=""
+               fi
                [[ -n "$old" ]] \
-                   || die "No $pretty is bound to $unit in project '$project'. Pass <old> <new> explicitly."
+                   || die "No $pretty is bound to $(_cco_display_path "" "$unit") in project '$project'. Pass <old> <new> explicitly."
            else
                die "Usage: cco $dash rename <old> <new>"
            fi ;;
@@ -71,14 +83,36 @@ _rename_index_keyed() {
     [[ -z "$(_index_get_path "$project" "$new")" ]] \
         || die "A $pretty named '$new' already exists in project '$project'. Choose a different name."
 
-    # ── Strict guard: the member must be resolved on this machine ───────
-    [[ -d "$oldpath" ]] \
-        || die "Member '$old' is not resolved on this machine ($oldpath is missing). Run 'cco resolve' first — a rename must rewrite project.yml in the member repo (ADR-0031)."
+    # ── Declared container target (INV-F.2; extra_mount only) ───────────
+    # $unit is the cwd repo — mounted, so its project.yml is readable here. An
+    # explicit extra_mount target: is where the mount actually lives, so it is the
+    # correct probe path (repos have no explicit target — the arg stays empty).
+    local oldtarget=""
+    [[ "$kind" == "extra_mount" ]] && oldtarget=$(_mount_declared_target "$unit/.cco/project.yml" "$old")
+
+    # ── Strict guard: the member must be inspectable in THIS context ────
+    # INV-F: probe the mount (operator) / the host path (host), never existence-test
+    # the raw index path in-container. A bound-but-unmounted member is refused with
+    # its own remedy (not-mounted → exit 2), a genuinely missing one dies (unresolved
+    # → exit 1); each speaks the shared D-M2 vocabulary, no host path leaked.
+    local probe _st
+    probe=$(_cco_member_probe_path "$old" "$oldpath" "$oldtarget")
+    _st=$(_env_member_state "$old" "$oldpath" "$oldtarget")
+    [[ "$_st" == here ]] || _env_unavailable "$_st" "$pretty" "$old"
 
     # ── Directory-move decision (D4 / §5) ──────────────────────────────
+    # In a session the member IS a bind-mount root, so a directory move can only
+    # fail (EBUSY) and leave the host tree untouched — refuse explicit --move-dir
+    # (exit 2, D-M9/Q-5) rather than silently downgrade, and NEVER prompt (-t 0 is
+    # true under tmux). The name-only rename proceeds. The move machinery below is
+    # thereby host-exclusive.
     local base newpath="" do_move=false
     base=$(basename "$oldpath")
-    if [[ "$move_dir" == true ]]; then
+    if _cco_container_operator; then
+        [[ "$move_dir" == true ]] && refuse \
+            "'--move-dir' cannot run inside a session: '$old' is a bind-mount root here, so the move fails (EBUSY) and the host directory would be untouched. Run 'cco $dash rename --move-dir …' on your host. The name-only rename works here."
+        do_move=false
+    elif [[ "$move_dir" == true ]]; then
         [[ "$base" == "$old" ]] \
             || die "--move-dir needs the directory basename ('$base') to equal <old> ('$old'); refusing an ambiguous move."
         do_move=true
@@ -101,12 +135,26 @@ _rename_index_keyed() {
     _rename_preview_confirm "$skip" "Rename $pretty '$old' → '$new' (project '$project')" "${bullets[@]}" \
         || { info "Aborted — nothing changed."; return 0; }
 
-    # ── Apply: index re-key (project-scoped), then project.yml, then move ─
-    _index_rename_path "$project" "$old" "$new"
+    # ── Fail-closed precondition (§3.5): the config tree that _rename_projectyml_current
+    # will rewrite must be writable BY THIS PROCESS before any store is touched, so a
+    # rename either wholly applies or wholly refuses — never the silent half-apply of
+    # an index re-key with an unwritten project.yml. Probed at the CWD member repo's
+    # .cco (the mount in a session — the copy that always holds this project.yml, and
+    # which an extra_mount target does not), at the same identity as the real write (D-M4).
+    _rename_assert_writable "$unit/.cco" "cco $dash rename"
+
+    # ── Apply: project.yml FIRST (members still keyed by <old>), then the index
+    # re-key, then the host-only move. The reorder is a host NO-OP (the probe is the
+    # identity there) and is what makes the in-container fix work at all: a mount
+    # probed AFTER the re-key would resolve to a <workdir>/<new> that cannot exist,
+    # so every member would classify unresolved and no project.yml would be rewritten
+    # (§1.6). It is also the safer failure ordering — the hard distributed write
+    # happens first; the cheap authoritative index write commits last.
     local -a changed=()
     local p
     while IFS= read -r p; do [[ -n "$p" ]] && changed+=("$p"); done \
         < <(_rename_projectyml_current "$project" "$section" "$old" "$new")
+    _index_rename_path "$project" "$old" "$new"
     if [[ "$do_move" == true ]]; then
         mv "$oldpath" "$newpath" \
             || die "Failed to move '$oldpath' → '$newpath'. The name re-key is applied; re-run after resolving the cause."

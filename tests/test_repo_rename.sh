@@ -163,3 +163,215 @@ test_extra_mount_rename_requires_old() {
     _rr_cco_in "$dir" extra-mount rename media -y \
         && fail "extra-mount rename must require <old> <new>" || true
 }
+
+# ══════════════════════════════════════════════════════════════════════
+# Container-operator lane (RC-2 / 04-host-path-class.md §6.4)
+# ══════════════════════════════════════════════════════════════════════
+# In a session the STATE index holds a HOST path that does not exist; the member
+# is reachable only at the flat bind target <workdir>/<name>. `repo`/`extra-mount
+# rename` write TWO independent stores (the index and project.yml), so the keystone
+# brackets the WHOLE effect — asserting only the index certifies a half-apply.
+
+# T1 — keystone. Measured: a fix that merely probes the mount at the strict guard
+# returns rc=0 "✓ Renamed", re-keys the index, and leaves project.yml reading
+# `- name: alpha` with the commit/push warning silently suppressed. Assertions (d)
+# and (e) are what make this a keystone rather than a rubber stamp.
+# ⚠ FAILS on pre-fix code: rc=1 at the host-path strict guard.
+test_repo_rename_operator_probes_mount_not_host_path() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" edit-project alpha
+    local mnt; mnt=$(operator_mount_unit alpha alpha)
+
+    local rc=0
+    _rr_cco_in "$mnt" repo rename alpha api -y || rc=$?
+
+    # (a) the verb must complete
+    assert_rc 0 "$rc" "operator repo rename" || return 1
+    # (b)+(c) probe the mount, KEEP the host path: new key, unchanged value
+    assert_index_path alpha api /Users/cco-e2e/code/alpha || return 1
+    assert_index_path alpha alpha "" || return 1
+    # (d) the OTHER store — the half-apply detector (§1.6)
+    assert_projectyml_member "$mnt/.cco/project.yml" repos api        || return 1
+    assert_projectyml_member "$mnt/.cco/project.yml" repos alpha absent || return 1
+    # (e) the operator-facing consequence, suppressed by a half-apply
+    assert_output_contains "Commit + push" || return 1
+    assert_output_contains "$mnt" || return 1
+    return 0
+}
+
+# T2 — host counterweight, deliberately GREEN before AND after: it proves the fix
+# is scoped to operator mode and did not delete a real host-side guard. On the HOST
+# an index binding that really is missing must still refuse, and refuse before any
+# write ("not resolved on this machine" is stable across the vocabulary unification).
+test_repo_rename_host_still_rejects_unresolved_member() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local unit="$tmp/repos/shop"; mkdir -p "$unit/.cco"
+    printf 'name: shop\nrepos:\n  - name: backend\n' > "$unit/.cco/project.yml"
+    seed_index_path backend "$tmp/gone/backend" shop
+    index_set_project_repos shop backend
+
+    local rc=0
+    _rr_cco_in "$unit" repo rename backend api -y || rc=$?
+
+    assert_rc 1 "$rc" "host repo rename with a genuinely unresolved member" || return 1
+    assert_output_contains "not resolved on this machine" || return 1
+    # Fail-closed: neither store was touched.
+    assert_index_path shop backend "$tmp/gone/backend" || return 1
+    assert_index_path shop api "" || return 1
+    return 0
+}
+
+# D-M9/Q-5: --move-dir is explicit user intent and is never silently downgraded.
+# In a session the member IS a bind-mount root, so the move must REFUSE (exit 2)
+# with a host hint. ⚠ FAILS on pre-fix: rc=1 at the strict guard about `cco resolve`.
+test_repo_rename_operator_move_dir_refused() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" edit-project alpha
+    local mnt; mnt=$(operator_mount_unit alpha alpha)
+
+    local rc=0
+    _rr_cco_in "$mnt" repo rename alpha api --move-dir -y || rc=$?
+
+    assert_refused "$rc" "${CCO_OUTPUT:-}" "on your host" || return 1
+    # A refusal is fail-closed: the name-only half must NOT have been applied either.
+    assert_index_path alpha alpha /Users/cco-e2e/code/alpha || return 1
+    assert_index_path alpha api "" || return 1
+    return 0
+}
+
+# cwd-first: `cco repo rename api` (one positional) from the mount resolves <old>
+# through the mount basename (INV-F), not the index host path. ⚠ FAILS on pre-fix:
+# "No repo is bound to /ws/alpha in project 'alpha'" (the index reverse lookup).
+test_repo_rename_operator_cwd_first() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" edit-project alpha
+    local mnt; mnt=$(operator_mount_unit alpha alpha)
+
+    local rc=0
+    _rr_cco_in "$mnt" repo rename api -y || rc=$?
+
+    assert_rc 0 "$rc" "operator cwd-first repo rename" || return 1
+    assert_index_path alpha api /Users/cco-e2e/code/alpha || return 1
+    return 0
+}
+
+# E4-06: no host path leaks with show_host_paths off. ⚠ FAILS on pre-fix: the strict
+# guard's die message interpolates the index host path verbatim.
+test_repo_rename_operator_no_host_path_leak() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    OP_SHP=false setup_operator_session "$tmp" edit-project alpha
+    local mnt; mnt=$(operator_mount_unit alpha alpha)
+
+    local rc=0
+    _rr_cco_in "$mnt" repo rename alpha api -y || rc=$?
+    [[ "$CCO_OUTPUT" != *"/Users/cco-e2e"* ]] \
+        || fail "operator repo rename leaked a host path with show_host_paths off: $CCO_OUTPUT" || return 1
+    return 0
+}
+
+# §3.5 atomicity: an unwritable config tree refuses (exit 2) BEFORE any store is
+# touched — never the silent half-apply of an index re-key with an unwritten
+# project.yml. Skipped as root (mode bits are bypassed). ⚠ FAILS on pre-fix: rc=1
+# at the strict guard, so the precondition property is untested there.
+test_repo_rename_operator_unwritable_tree_is_atomic() {
+    [[ "$(id -u)" -eq 0 ]] && return 0
+    local tmp; tmp=$(mktemp -d); trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" edit-project alpha
+    local mnt; mnt=$(operator_mount_unit alpha alpha)
+
+    chmod 500 "$mnt/.cco"
+    local rc=0
+    _rr_cco_in "$mnt" repo rename alpha api -y || rc=$?
+    chmod 700 "$mnt/.cco"
+
+    assert_refused "$rc" "${CCO_OUTPUT:-}" "nothing was changed" || return 1
+    # Fail-closed: nothing applied.
+    assert_index_path alpha alpha /Users/cco-e2e/code/alpha || return 1
+    assert_index_path alpha api "" || return 1
+    return 0
+}
+
+# A member bound in the index whose mount is absent refuses with its own remedy
+# (not-mounted → exit 2), never the "cco resolve" host-only hint. ⚠ FAILS on pre-fix:
+# rc=1 with the wrong wording.
+test_repo_rename_operator_not_mounted_refuses() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" edit-project shop
+    local mnt; mnt=$(operator_mount_unit shop backend)
+    # A second member bound in the index but NOT mounted (no <ws>/ghost).
+    seed_index_path ghost "/Users/cco-e2e/code/ghost" shop
+    index_set_project_repos shop backend ghost
+
+    local rc=0
+    _rr_cco_in "$mnt" repo rename ghost renamed -y || rc=$?
+
+    assert_refused "$rc" "${CCO_OUTPUT:-}" "not mounted in this session" || return 1
+    [[ "$CCO_OUTPUT" != *"cco resolve"* ]] \
+        || fail "a not-mounted refusal must not say 'cco resolve': $CCO_OUTPUT" || return 1
+    return 0
+}
+
+# extra_mount with an implicit target (mount at <ws>/<name>). ⚠ FAILS on pre-fix at
+# the strict guard.
+test_extra_mount_rename_operator_implicit_target() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" edit-project shop
+    local mnt; mnt=$(operator_mount_unit shop backend)
+    printf 'name: shop\nrepos:\n  - name: backend\nextra_mounts:\n  - name: assets\n' \
+        > "$mnt/.cco/project.yml"
+    seed_index_path assets "/Users/cco-e2e/code/assets" shop
+    mkdir -p "$CCO_WORKDIR/assets"        # the implicit-target mount
+
+    local rc=0
+    _rr_cco_in "$mnt" extra-mount rename assets media -y || rc=$?
+
+    assert_rc 0 "$rc" "operator extra-mount rename (implicit target)" || return 1
+    assert_projectyml_member "$mnt/.cco/project.yml" extra_mounts media        || return 1
+    assert_projectyml_member "$mnt/.cco/project.yml" extra_mounts assets absent || return 1
+    return 0
+}
+
+# extra_mount with an EXPLICIT target: the mount exists ONLY there — the §1.7
+# detector. ⚠ FAILS on pre-fix at the guard, AND on a target-blind fix with "not
+# mounted in this session" (it would probe <ws>/assets, which does not exist).
+test_extra_mount_rename_operator_explicit_target() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" edit-project shop
+    local mnt; mnt=$(operator_mount_unit shop backend)
+    mkdir -p "$CCO_WORKDIR/docs/assets"   # the explicit-target mount, NOT <ws>/assets
+    printf 'name: shop\nrepos:\n  - name: backend\nextra_mounts:\n  - name: assets\n    target: %s\n' \
+        "$CCO_WORKDIR/docs/assets" > "$mnt/.cco/project.yml"
+    seed_index_path assets "/Users/cco-e2e/code/assets" shop
+
+    local rc=0
+    _rr_cco_in "$mnt" extra-mount rename assets media -y || rc=$?
+
+    assert_rc 0 "$rc" "operator extra-mount rename (explicit target)" || return 1
+    assert_projectyml_member "$mnt/.cco/project.yml" extra_mounts media || return 1
+    return 0
+}
+
+# Host regression guard for the §3.3 apply reorder (project.yml FIRST, then index):
+# a resolved host member is re-keyed in BOTH stores, identical to before.
+test_repo_rename_host_apply_order_unchanged() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local dir; dir=$(_rr_project "$tmp" shop backend)
+
+    _rr_cco_in "$dir" repo rename backend api -y || fail "$CCO_OUTPUT" || return 1
+
+    assert_index_path shop api "$dir" || return 1
+    assert_index_path shop backend "" || return 1
+    assert_projectyml_member "$dir/.cco/project.yml" repos api        || return 1
+    assert_projectyml_member "$dir/.cco/project.yml" repos backend absent || return 1
+    return 0
+}

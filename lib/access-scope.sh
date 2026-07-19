@@ -706,7 +706,10 @@ _env_unavailable_sentence() {
             printf "%s '%s' is not mounted in this session — it exists on this machine, but its files are not bound into this container. Run cco on your host, or start a session that mounts it." \
                 "$kind" "$name" ;;
         *)
-            printf "%s '%s' is unresolved on this machine — run 'cco resolve %s' first." \
+            # "not resolved on this machine" (not "unresolved") preserves the
+            # historical host wording the rename guard shipped, so its host-side
+            # counterweight test stays green across the vocabulary unification.
+            printf "%s '%s' is not resolved on this machine — run 'cco resolve %s' first." \
                 "$kind" "$name" "$name" ;;
     esac
 }

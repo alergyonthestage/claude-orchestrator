@@ -319,6 +319,26 @@ _effective_extra_mounts() {
     done < <(yml_get_mount_coords "$project_yml" 2>/dev/null)
 }
 
+# _mount_declared_target <project_yml> <name> — echo the DECLARED container
+# `target:` of extra_mount <name> in <project_yml>, or empty when the mount is
+# absent or has no explicit target (its default is <workdir>/<name>, INV-F.2). A
+# thin reader over yml_get_mount_coords (target is its 4th field), used by the
+# repo/extra_mount rename probe so an explicit-target mount is probed at the path it
+# is actually bound to rather than the <workdir>/<name> default.
+_mount_declared_target() {
+    local project_yml="$1" want="$2" _ln name rest target
+    [[ -f "$project_yml" ]] || return 0
+    while IFS= read -r _ln; do
+        [[ -z "$_ln" ]] && continue
+        name="${_ln%%$'\t'*}"; rest="${_ln#*$'\t'}"
+        rest="${rest#*$'\t'}"   # drop url
+        rest="${rest#*$'\t'}"   # drop ref
+        target="${rest%%$'\t'*}"
+        [[ "$name" == "$want" ]] && { printf '%s' "$target"; return 0; }
+    done < <(yml_get_mount_coords "$project_yml" 2>/dev/null)
+    return 0
+}
+
 # R7 — the DECLARED extra_mounts that do NOT resolve on this host (the set
 # _effective_extra_mounts silently conscious-skips). One "<name>\t<target>" line
 # each, so Level-A can surface them ("declared but not mounted this session")
