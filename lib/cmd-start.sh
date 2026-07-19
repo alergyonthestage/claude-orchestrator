@@ -46,8 +46,10 @@ _setup_internal_tutorial() {
     # The tutorial's cco-docs/cco-config mounts are name-based (like config-editor):
     # publish the host paths via the in-process session override so they resolve at
     # start without polluting the persistent user-facing index (review H4), and no
-    # host path is committed (AD3/G8). Read-only mounts (the tutorial never edits).
-    _CCO_MOUNT_OVERRIDE=$(printf 'cco-config\t%s\ncco-docs\t%s' "$(_cco_config_dir)" "$REPO_ROOT/docs")
+    # host path is committed (AD3/G8). Read-only mounts (the tutorial never edits),
+    # so the `store` role is inert here — but correct, and correctness at the
+    # producer is what keeps the role a signal rather than a heuristic (§3.3).
+    _CCO_MOUNT_OVERRIDE=$(printf 'cco-config\t%s\tstore\ncco-docs\t%s\t' "$(_cco_config_dir)" "$REPO_ROOT/docs")
 
     # Copy setup.sh if present
     if [[ -f "$source_dir/setup.sh" ]]; then
@@ -104,11 +106,15 @@ _setup_internal_config_editor() {
     # `files` allowlist), so an installed user sees only user docs; a dev clone
     # additionally exposes maintainer docs (read-only, harmless — agents are
     # instructed to read cco-docs/users/...).
-    _CCO_MOUNT_OVERRIDE=$(printf 'cco-config\t%s\ncco-docs\t%s' "$cfg" "$REPO_ROOT/docs")
+    # The third column is the mount ROLE (§3.3): the authoritative "framework
+    # generated this, and it exposes THIS config tree" signal that lets the nested
+    # clamp resolve each synthetic mount against the axis naming the tree it
+    # represents. cco-docs is role-less (and readonly: true anyway).
+    _CCO_MOUNT_OVERRIDE=$(printf 'cco-config\t%s\tstore\ncco-docs\t%s\t' "$cfg" "$REPO_ROOT/docs")
     local _tn _tp
     while IFS=$'\t' read -r _tn _tp; do
         [[ -z "$_tn" ]] && continue
-        _CCO_MOUNT_OVERRIDE+=$(printf '\n%s-config\t%s' "$_tn" "$_tp")
+        _CCO_MOUNT_OVERRIDE+=$(printf '\n%s-config\t%s\tproject-config' "$_tn" "$_tp")
     done <<< "$targets"
     {
         cat <<YAML
@@ -1626,8 +1632,12 @@ YAML
         extra_mounts=$(_effective_extra_mounts "$project_yml")
         if [[ -n "$extra_mounts" ]]; then
             echo "      # Extra mounts"
-            local _ms _mt _mro _mpolicy _suffix _nc_rel _claude_ro _cco_ro
-            while IFS=$'\t' read -r _ms _mt _mro _mpolicy; do
+            # 5-field record (src⇥tgt⇥ro⇥policy⇥role). Peeled by hand: the role
+            # field is empty for every user mount, and tab is IFS whitespace to
+            # `read`, which would shift the fields left (lib/utils.sh:96-110).
+            local _mline _ms _mt _mro _mpolicy _mrole _suffix _nc_rel _claude_ro _cco_ro
+            while IFS= read -r _mline; do
+                _peel_tab "$_mline" _ms _mt _mro _mpolicy _mrole
                 [[ -z "$_ms" ]] && continue
                 _suffix=""
                 [[ "$_mro" == "true" ]] && _suffix="ro"
@@ -2298,7 +2308,9 @@ _proxy_collect_pathmap() {
     local _extra_mounts
     _extra_mounts=$(_effective_extra_mounts "$project_yml" 2>/dev/null || true)
     if [[ -n "$_extra_mounts" ]]; then
-        while IFS=$'\t' read -r _src _tgt _ro _pol; do
+        local _emline _pol _role
+        while IFS= read -r _emline; do
+            _peel_tab "$_emline" _src _tgt _ro _pol _role
             [[ -z "$_src" ]] && continue
             _pathmap_lines="${_pathmap_lines}${_tgt}"$'\t'"${_src}"$'\n'
         done <<< "$_extra_mounts"

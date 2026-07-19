@@ -52,6 +52,7 @@ test_setup_internal_tutorial_substitutes_placeholders() {
     source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/lib/paths.sh"
     source "$REPO_ROOT/lib/cmd-start.sh"
+    source "$REPO_ROOT/lib/local-paths.sh"   # _mount_override_get/_role
 
     _setup_internal_tutorial
 
@@ -67,10 +68,20 @@ test_setup_internal_tutorial_substitutes_placeholders() {
     assert_file_contains "$runtime_yml" "/workspace/cco-config"
     # Host paths live in _CCO_MOUNT_OVERRIDE, not the committed yml.
     assert_file_not_contains "$runtime_yml" "$(_cco_config_dir)"
-    [[ "$_CCO_MOUNT_OVERRIDE" == *"cco-config"$'\t'"$(_cco_config_dir)"* ]] \
-        || fail "tutorial override should publish cco-config → $(_cco_config_dir)"
-    [[ "$_CCO_MOUNT_OVERRIDE" == *"cco-docs"$'\t'"$REPO_ROOT/docs"* ]] \
-        || fail "tutorial override should publish cco-docs → $REPO_ROOT/docs"
+    # The override line is "name<TAB>path<TAB>role" (RC-1 §3.3). The tutorial's
+    # mounts are readonly: true, so the role never drives a decision here — but it
+    # must still be emitted correctly, because a role is a producer-side signal and
+    # a producer that lies is exactly what the name-heuristic alternative was
+    # rejected for. Asserted through _mount_override_get/_role, not by substring:
+    # a substring match on "name<TAB>path" cannot see a mangled third column.
+    assert_equals "$(_cco_config_dir)" "$(_mount_override_get cco-config)" \
+        "tutorial override should publish cco-config → $(_cco_config_dir)"
+    assert_equals "$REPO_ROOT/docs" "$(_mount_override_get cco-docs)" \
+        "tutorial override should publish cco-docs → $REPO_ROOT/docs"
+    assert_equals "store" "$(_mount_override_role cco-config)" \
+        "cco-config exposes the personal store"
+    assert_equals "" "$(_mount_override_role cco-docs)" \
+        "cco-docs is not a config tree — no role"
 }
 
 test_setup_internal_tutorial_has_skills() {

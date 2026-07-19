@@ -199,30 +199,63 @@ _effective_repo_mounts() {
     done < <(yml_get_repo_coords "$project_yml" 2>/dev/null)
 }
 
-# Companion bridge for extra mounts. Emit "<abs_source>\t<target>\t<ro>" per
-# mount (ro = "true"|"false"). LEGACY: source/target/ro from project.yml
-# (source already resolved + expanded). NEW: source from the index by name,
-# target defaults to /workspace/<name>, readonly defaults to true.
-# Session-local mount override (set by the internal config-editor only): maps a few
+# Session-local mount override (set by the internal built-ins only): maps a few
 # fixed internal mount names to host paths WITHOUT writing the persistent STATE index
 # (review H4 — the index is user-facing config, not an ephemeral routing table; raw
 # _index_set_path there clobbered user bindings like a repo named `cco-docs`).
-# Newline-delimited "name<TAB>path" lines in the in-process global $_CCO_MOUNT_OVERRIDE.
+# Newline-delimited "name<TAB>path<TAB>role" lines in the in-process global
+# $_CCO_MOUNT_OVERRIDE. `role` is the authoritative marker of "this mount is
+# framework-generated, not user-declared" (RC-1 §3.3) — same producer, same
+# lifetime, same mechanism as the path, so no new registry and no name heuristic:
+#   store           ~/.cco                → the personal store
+#   project-config  <repo>/.cco           → a config-editor edit target
+#   (empty)         anything else         → treated exactly like a user mount
+# The role column is OPTIONAL and may be empty; both readers below peel by hand
+# (_peel_tab) because tab is IFS whitespace to `read`, which would fold an empty
+# role into the path (lib/utils.sh:96-110).
 _mount_override_get() {
-    local name="$1" oname opath
+    local name="$1" _oln oname opath orole
     [[ -n "${_CCO_MOUNT_OVERRIDE:-}" ]] || return 1
-    while IFS=$'\t' read -r oname opath; do
+    while IFS= read -r _oln; do
+        _peel_tab "$_oln" oname opath orole
         [[ "$oname" == "$name" ]] && { printf '%s' "$opath"; return 0; }
     done <<< "$_CCO_MOUNT_OVERRIDE"
     return 1
 }
 
+# Sibling of _mount_override_get: the mount's ROLE, empty when unset or unknown.
+# Returns 1 (with no output) for a name the override does not carry, so a caller
+# can distinguish "user mount" from "framework mount with no role".
+_mount_override_role() {
+    local name="$1" _oln oname opath orole
+    [[ -n "${_CCO_MOUNT_OVERRIDE:-}" ]] || return 1
+    while IFS= read -r _oln; do
+        _peel_tab "$_oln" oname opath orole
+        [[ "$oname" == "$name" ]] && { printf '%s' "$orole"; return 0; }
+    done <<< "$_CCO_MOUNT_OVERRIDE"
+    return 1
+}
+
+# Companion bridge for extra mounts. Emits ONE record per mount:
+#
+#     <abs_source>\t<target>\t<ro>\t<config_access_policy>\t<role>
+#
+# ro = "true"|"false"; policy is TOTAL (ro|project|write); role is the
+# _CCO_MOUNT_OVERRIDE role above and is EMPTY for every user-declared mount.
+# LEGACY: source/target/ro from project.yml (source already resolved + expanded).
+# NEW: source from the index by name, target defaults to /workspace/<name>,
+# readonly defaults to true.
+#
+# CONTRACT NOTE for consumers: peel this record with _peel_tab, never
+# `IFS=$'\t' read`. The trailing role field is routinely empty, and tab is IFS
+# whitespace to `read` — which collapses runs of it, so a `read -r a b c d e`
+# consumer silently shifts every field left on any mount without a role.
 _effective_extra_mounts() {
     local project_yml="$1"
     local proj; proj=$(yml_get "$project_yml" name 2>/dev/null)   # per-project name scope (ADR-0051)
     # Peel fields by tab (IFS=$'\t' read collapses empty middle fields, so
     # a name-only mount "name\t\t\ttarget\tro" would mis-assign target/ro).
-    local _ln name target ro_raw ro rest policy
+    local _ln name target ro_raw ro rest policy role
     while IFS= read -r _ln; do
         [[ -z "$_ln" ]] && continue
         name="${_ln%%$'\t'*}"; rest="${_ln#*$'\t'}"   # rest = url\tref\ttarget\tro\tpolicy
@@ -235,7 +268,12 @@ _effective_extra_mounts() {
         # Conscious-skip: exclude an unresolved mount (no index path) rather
         # than emit a silent empty mount (#B17; design §4.4 / P14). A session-local
         # internal override (config-editor, H4) wins over the persistent index.
-        local _ms; _ms=$(_mount_override_get "$name" || _index_get_path "$proj" "$name")
+        local _ms
+        if _ms=$(_mount_override_get "$name"); then
+            role=$(_mount_override_role "$name" || true)
+        else
+            _ms=$(_index_get_path "$proj" "$name"); role=""   # user mount — never roled
+        fi
         # Skip empty AND any NON-ABSOLUTE value (e.g. a stale `@local` marker —
         # leading `@` is a reserved YAML char that would break the compose).
         [[ "$_ms" != /* ]] && continue
@@ -243,10 +281,10 @@ _effective_extra_mounts() {
         ro=$(_parse_bool "$ro_raw" "true")
         # config_access_policy (ADR-0049 §7): governs NESTED .claude/.cco inside the
         # mount — ro (default, strict) | project (follow session knobs) | write.
-        # Invalid/empty → ro (strict default). The 4th output field (extends the
-        # abs_source<TAB>target<TAB>ro contract; readers ignore it unless they act).
+        # Invalid/empty → ro (strict default). It is the user-facing per-mount
+        # OVERRIDE; `role` is the orthogonal framework-provenance signal.
         case "$policy" in project|write) : ;; *) policy="ro" ;; esac
-        printf '%s\t%s\t%s\t%s\n' "$_ms" "$target" "$ro" "$policy"
+        printf '%s\t%s\t%s\t%s\t%s\n' "$_ms" "$target" "$ro" "$policy" "$role"
     done < <(yml_get_mount_coords "$project_yml" 2>/dev/null)
 }
 

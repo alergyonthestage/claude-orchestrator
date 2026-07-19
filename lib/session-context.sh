@@ -69,8 +69,12 @@ _session_collect_pathmap() {
     local _extra_mounts
     _extra_mounts=$(_effective_extra_mounts "$project_yml" 2>/dev/null || true)
     if [[ -n "$_extra_mounts" ]]; then
-        local _src _tgt _ro _pol
-        while IFS=$'\t' read -r _src _tgt _ro _pol; do
+        # 5-field record (src⇥tgt⇥ro⇥policy⇥role); only the first three are used
+        # here. Peeled by hand — the trailing role is empty for user mounts and
+        # `IFS=$'\t' read` would shift the fields (lib/utils.sh:96-110).
+        local _emline _src _tgt _ro _pol _role
+        while IFS= read -r _emline; do
+            _peel_tab "$_emline" _src _tgt _ro _pol _role
             [[ -z "$_src" ]] && continue
             [[ "$_ro" == "true" ]] || _ro="false"
             printf '%s\t%s\t%s\n' "$_src" "$_tgt" "$_ro"
@@ -201,8 +205,10 @@ _build_session_context() {
             done <<< "$pack_names"
         fi
         if [[ -n "$extra_mounts_output" ]]; then
-            local _ws_src _ws_tgt _ws_ro _ws_desc _ws_ro_label _ws_pol
-            while IFS=$'\t' read -r _ws_src _ws_tgt _ws_ro _ws_pol; do
+            # 5-field record — peel by hand (see _effective_extra_mounts).
+            local _ws_line _ws_src _ws_tgt _ws_ro _ws_desc _ws_ro_label _ws_pol _ws_role
+            while IFS= read -r _ws_line; do
+                _peel_tab "$_ws_line" _ws_src _ws_tgt _ws_ro _ws_pol _ws_role
                 [[ -z "$_ws_tgt" ]] && continue
                 _ws_desc=$(_session_mount_description "$project_yml" "$_ws_tgt")
                 [[ "$_ws_ro" == "true" ]] && _ws_ro_label=" (read-only)" || _ws_ro_label=""
