@@ -349,29 +349,49 @@ test_config_editor_bare_in_project_is_cwd_scoped() {
 }
 
 # --project narrows AND mounts that project's repos (repo-aware config authoring).
+#
+# RC-6 §6.1 REPAIR (T3): the previous body declared `minimal_project_yml`'s
+# `dummy-repo`, which setup_cco_env seeds UNSCOPED — and _index_get_path falls back
+# to the unscoped bucket for ANY scope, so mount-gen's `_index_get_path
+# config-editor dummy-repo` succeeded even pre-fix. The test PASSED on broken code,
+# exercising nothing. It now declares `webapp`, a name the fixture does not seed,
+# bound PER-PROJECT (the production shape) — which defeats the fallback and fails
+# on today's code (E5-02 direct regression test).
 test_config_editor_project_mounts_repos() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    create_project "$tmpdir" "myproj" "$(minimal_project_yml myproj)"
+    create_project "$tmpdir" "myproj" \
+        "$(printf 'name: myproj\ndescription: "t"\nrepos:\n  - name: webapp\n')"
     create_project "$tmpdir" "other" "$(minimal_project_yml other)"
+    local webapp="$tmpdir/webapp"; mkdir -p "$webapp"
+    seed_index_path webapp "$webapp" myproj      # scoped (ADR-0051) — defeats the unscoped fallback
     run_cco start config-editor --project myproj --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
-    # myproj's config + its repo (dummy-repo) mounted; other narrowed out.
+    # myproj's config + its repo (webapp) mounted; other narrowed out.
     assert_file_contains "$compose" ":/workspace/myproj-config" || return 1
-    assert_file_contains "$compose" "$CCO_DUMMY_REPO:/workspace/dummy-repo" || return 1
+    assert_file_contains "$compose" "$webapp:/workspace/webapp" || return 1
     assert_file_not_contains "$compose" ":/workspace/other-config" || return 1
 }
 
 # --repo mounts a single resolvable repo on top of the current scope.
+#
+# RC-6 §6.1 REPAIR (T4): as above, `dummy-repo` masked the defect. `webapp` is
+# scoped under its owning project; --repo resolves it cross-project by name
+# (_index_get_path_any, by design), so collect-time succeeds while mount-time
+# missed pre-fix — the volume is absent on today's code.
 test_config_editor_repo_flag_mounts_one_repo() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "owner" \
+        "$(printf 'name: owner\ndescription: "t"\nrepos:\n  - name: webapp\n')"
+    local webapp="$tmpdir/webapp"; mkdir -p "$webapp"
+    seed_index_path webapp "$webapp" owner
     cd "$tmpdir"
-    run_cco start config-editor --repo dummy-repo --dry-run --dump
+    run_cco start config-editor --repo webapp --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
-    assert_file_contains "$compose" "$CCO_DUMMY_REPO:/workspace/dummy-repo" || return 1
+    assert_file_contains "$compose" "$webapp:/workspace/webapp" || return 1
 }
 
 test_config_editor_repo_flag_unknown_fails() {
@@ -534,5 +554,141 @@ test_config_editor_edit_global_project_mode_both_trees_writable() {
     # (a) the target's committed .cco, at Pc=rw.
     assert_file_contains "$compose" "$tmpdir/repos/myproj/.cco:/workspace/myproj-config" || return 1
     assert_file_not_contains "$compose" "$tmpdir/repos/myproj/.cco/.:/workspace/myproj-config/.:ro" || return 1
+    return 0
+}
+
+# ── RC-6: config-editor target repos are actually mounted ─────────────
+#
+# Every test declares a repo the shared fixture does NOT seed (webapp), bound
+# PER-PROJECT with the 3-arg scoped seed and a real directory on disk (§6.1 rule).
+# The unscoped dummy-repo seed would resolve at mount-gen via the escape-hatch
+# bucket and mask the defect. Each pairs a "must appear" with a "must NOT appear"
+# per the §3.6 mount-intent rule where a spurious line could clobber the intent.
+
+# T5 (INV-M3). A stale index binding — absolute but pointing at a path that no
+# longer exists — must NOT reach the compose as a bind source Docker would create
+# root-owned; built-ins skip the _resolve_unit heal (:1063), so the producer's -d
+# assertion is the only catch. Pre-fix the repo is dropped too, but SILENTLY: the
+# announcement is what fails on today's code.
+test_config_editor_stale_repo_binding_not_mounted() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "myproj" \
+        "$(printf 'name: myproj\ndescription: "t"\nrepos:\n  - name: webapp\n')"
+    seed_index_path webapp "$tmpdir/gone/webapp" myproj   # absolute, but not on disk
+    cd "$tmpdir"
+    run_cco start config-editor --project myproj --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_not_contains "$compose" "/workspace/webapp" || return 1
+    assert_output_contains "not mounted in this session" || return 1
+    return 0
+}
+
+# T6 (§3.7, Change 5). The target's repo mounts rw to read code, but its committed
+# .cco is overlaid :ro: a Po=none session must never gain rw to a member repo's
+# config through the code repo. BOTH assertions matter — the repo must be mounted
+# (fails pre-fix), and its .cco must be :ro (rw without Change 5).
+test_config_editor_target_repo_cco_is_readonly() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "myproj" \
+        "$(printf 'name: myproj\ndescription: "t"\nrepos:\n  - name: webapp\n')"
+    local webapp="$tmpdir/webapp"; mkdir -p "$webapp/.cco"
+    printf 'name: webapp\n' > "$webapp/.cco/project.yml"
+    seed_index_path webapp "$webapp" myproj
+    run_cco start config-editor --project myproj --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_contains "$compose" "$webapp:/workspace/webapp" || return 1
+    assert_file_contains "$compose" "$webapp/.cco:/workspace/webapp/.cco:ro" || return 1
+    return 0
+}
+
+# T7. The newly-mounted repo's real secret files are masked on the repo path too,
+# so the fix does not open a secret hole. Pre-fix nothing is mounted, so nothing
+# is masked — the mask line is absent.
+test_config_editor_target_repo_secrets_masked() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "myproj" \
+        "$(printf 'name: myproj\ndescription: "t"\nrepos:\n  - name: webapp\n')"
+    local webapp="$tmpdir/webapp"; mkdir -p "$webapp/.cco"
+    printf 'S=1\n' > "$webapp/.cco/secrets.env"
+    seed_index_path webapp "$webapp" myproj
+    run_cco start config-editor --project myproj --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_contains "$compose" ":/workspace/webapp/.cco/secrets.env:ro" || return 1
+    return 0
+}
+
+# T8. A target that declares a repo with NO index binding is ANNOUNCED, never
+# silently dropped (INV-B). Pre-fix: silent.
+test_config_editor_announces_unresolved_target_repo() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "myproj" \
+        "$(printf 'name: myproj\ndescription: "t"\nrepos:\n  - name: ghost\n')"
+    # ghost is declared but never bound in the index.
+    cd "$tmpdir"
+    run_cco start config-editor --project myproj --dry-run --dump
+    assert_output_contains "not mounted in this session" || return 1
+    assert_output_contains "ghost" || return 1
+    return 0
+}
+
+# T9 (Change 4, order-dependence). --project a --project b where a declares a repo
+# named `b-config` collides with b's config container target. It must be dropped
+# and announced — never emit TWO compose volumes at /workspace/b-config (which
+# docker compose rejects at start). The reserved set depends on ALL targets, so
+# the guard must run after collection completes.
+test_config_editor_reserved_repo_name_across_targets() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    # Project a declares a repo whose NAME equals b's reserved config target.
+    create_project "$tmpdir" "a" \
+        "$(printf 'name: a\ndescription: "t"\nrepos:\n  - name: b-config\n')"
+    create_project "$tmpdir" "b" "$(minimal_project_yml b)"
+    local bc="$tmpdir/b-config"; mkdir -p "$bc"
+    seed_index_path b-config "$bc" a
+    cd "$tmpdir"
+    run_cco start config-editor --project a --project b --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    # Exactly ONE /workspace/b-config volume (b's config target), never the repo's.
+    local n; n=$(grep -c ":/workspace/b-config" "$compose" || true)
+    assert_equals "1" "$n" "exactly one /workspace/b-config volume (no reserved-name collision)" || return 1
+    assert_file_not_contains "$compose" "$bc:/workspace/b-config" || return 1
+    assert_output_contains "not mounted in this session" || return 1
+    return 0
+}
+
+# T10 (D-M9/Q-7). Two --project targets both bind the repo name `web` to DIFFERENT
+# paths — a legitimate ADR-0051 homonym. They cannot share /workspace/web: the
+# first is mounted, the second announced (no disambiguated container path).
+test_config_editor_two_targets_homonym_repo() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "one" \
+        "$(printf 'name: one\ndescription: "t"\nrepos:\n  - name: web\n')"
+    create_project "$tmpdir" "two" \
+        "$(printf 'name: two\ndescription: "t"\nrepos:\n  - name: web\n')"
+    local web1="$tmpdir/web-one"; mkdir -p "$web1"
+    local web2="$tmpdir/web-two"; mkdir -p "$web2"
+    seed_index_path web "$web1" one
+    seed_index_path web "$web2" two
+    cd "$tmpdir"
+    run_cco start config-editor --project one --project two --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    # Exactly one /workspace/web volume — the first target's path — and the second
+    # is announced, not silently dropped.
+    local n; n=$(grep -c ":/workspace/web\"" "$compose" || true)
+    assert_equals "1" "$n" "exactly one /workspace/web volume (homonym: first wins)" || return 1
+    assert_file_contains "$compose" "$web1:/workspace/web" || return 1
+    assert_file_not_contains "$compose" "$web2:/workspace/web" || return 1
+    assert_output_contains "not mounted in this session" || return 1
     return 0
 }

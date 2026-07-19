@@ -116,21 +116,34 @@ _setup_internal_config_editor() {
         [[ -z "$_tn" ]] && continue
         _CCO_MOUNT_OVERRIDE+=$(printf '\n%s-config\t%s\tproject-config' "$_tn" "$_tp")
     done <<< "$targets"
+    # Repos (ADR-0042 §8 / RC-6 §3.8): a generated manifest's own name-scope
+    # ("config-editor") holds NO index bindings by construction (ADR-0051), so the
+    # repo names cannot resolve via the persistent index the way the old comment
+    # here claimed. Each repo's host path — already resolved by the collector in its
+    # OWNING project's scope, existence-asserted, and reserved-name filtered — is
+    # published through the SAME session override the config mounts use (INV-M2),
+    # role-less (a repo is code, not a config tree). The manifest is emitted FROM
+    # this set below, so declaring-without-publishing is not expressible.
+    local _rn _rp
+    while IFS=$'\t' read -r _rn _rp; do
+        [[ -z "$_rn" ]] && continue
+        _CCO_MOUNT_OVERRIDE+=$(printf '\n%s\t%s\t' "$_rn" "$_rp")
+    done <<< "$repos"
     {
         cat <<YAML
 name: config-editor
 description: "Configuration editor for claude-orchestrator"
 YAML
-        # Repos (ADR-0042 §8): only under --project/--repo. Each name resolves to
-        # its host path via the STATE index in _effective_repo_mounts (no override
-        # needed — these are real user repos). Emitted only when non-empty so the
+        # Repos (ADR-0042 §8): only under --project/--repo. Only the NAME reaches
+        # the manifest — the host path lives solely in the session override above,
+        # so no host path is committed (AD3/G8). Emitted only when non-empty so the
         # broad default stays repo-free (P18).
         if [[ -n "$repos" ]]; then
             echo "repos:"
-            local _rn
-            while IFS= read -r _rn; do
-                [[ -z "$_rn" ]] && continue
-                echo "  - name: ${_rn}"
+            local _rln
+            while IFS= read -r _rln; do
+                [[ -z "$_rln" ]] && continue
+                echo "  - name: ${_rln%%$'\t'*}"
             done <<< "$repos"
         fi
         # cco-config (~/.cco) readonly FOLLOWS the resolved G (WS-A 2026-07-11): rw only
@@ -561,12 +574,102 @@ _nested_config_modes() {
 # variable scope. They must NOT redeclare variables — they read/write
 # cmd_start()'s locals directly.
 
-# Add a repo logical name to the shared _ce_repos set (newline-joined, deduped).
+# Announce a config-editor repo that was collected but will NOT be mounted this
+# session (RC-6 §3.9 / INV-B: nothing is ever silently dropped). One message
+# shape, worded to the D-M2 "not mounted in this session" vocabulary
+# (00-overview.md §5.1) so the cycle-2 RC-5 sweep — and RC-2's sibling
+# _env_note_unmounted — need not rewrite it (kept identical by open-issue note).
+# <reason> ∈ unresolved | stale | homonym | reserved; <target> is the owning
+# --project name (for the host-side remedy), optional for the collision reasons.
+# Shares cmd_start scope; writes stderr only.
+_ce_skip_note() {
+    local rn="$1" reason="$2" target="${3:-}"
+    local detail remedy=""
+    case "$reason" in
+        unresolved) detail="it is not resolved on this machine"
+                    remedy=" Run 'cco resolve${target:+ $target}' on your host, then restart the session." ;;
+        stale)      detail="its recorded path no longer exists"
+                    remedy=" Run 'cco resolve${target:+ $target}' on your host, then restart the session." ;;
+        homonym)    detail="another target already binds the name '$rn' to a different path" ;;
+        reserved)   detail="the name collides with a built-in config mount (cco-config, cco-docs, <name>-config)" ;;
+        *)          detail="$reason" ;;
+    esac
+    warn "config-editor: repo '$rn' is not mounted in this session — ${detail}.${remedy}"
+}
+
+# Add a resolved repo to the shared _ce_repos set as "name<TAB>abs_path"
+# (newline-joined). Dedup by NAME — one /workspace/<name> container target exists.
+# INV-M3 (existence): built-ins skip the _resolve_unit heal (:1063), so a stale
+# index entry pointing at a gone path reaches here as a would-be bind source Docker
+# would CREATE root-owned — this is the only place to catch it, and it is announced,
+# not dropped. A second binding of the same name to a DIFFERENT path is an ADR-0051
+# homonym across two --project targets (D-M9/Q-7): it cannot share the container
+# target, so the first wins and the second is announced. Shares cmd_start scope.
+# Usage: _ce_add_repo <name> <abs_path> [<owning-target>]
 _ce_add_repo() {
-    local rn="$1"
+    local rn="$1" rp="$2" target="${3:-}"
     [[ -z "$rn" ]] && return 0
-    [[ $'\n'"$_ce_repos" == *$'\n'"${rn}"$'\n'* ]] && return 0
-    _ce_repos+="${rn}"$'\n'
+    [[ "$rp" != /* || ! -d "$rp" ]] && { _ce_skip_note "$rn" stale "$target"; return 0; }
+    case $'\n'"$_ce_repos" in
+        *$'\n'"${rn}"$'\t'"${rp}"$'\n'*) return 0 ;;                        # same name+path → dedup
+        *$'\n'"${rn}"$'\t'*) _ce_skip_note "$rn" homonym; return 0 ;;       # same name, other path
+    esac
+    _ce_repos+="${rn}"$'\t'"${rp}"$'\n'
+    return 0
+}
+
+# Collect one target's repos into _ce_repos (repo-aware authoring, ADR-0042 §8),
+# announcing every DECLARED member that does not resolve. _effective_repo_mounts
+# consciously skips unresolved members silently, so the declared-vs-effective diff
+# is computed here (yml_get_repo_coords minus the effective set) and each missing
+# one is announced (INV-B). Shares cmd_start scope.
+# Usage: _ce_collect_target_repos <target-name> <target-yml>
+_ce_collect_target_repos() {
+    local _tname="$1" _tyml="$2" rn rp
+    local _resolved=$'\n'
+    while IFS=$'\t' read -r rn rp; do
+        [[ -z "$rn" ]] && continue
+        _resolved+="${rn}"$'\n'
+        _ce_add_repo "$rn" "$rp" "$_tname"
+    done < <(_effective_repo_mounts "$_tyml")
+    local _dn _du _dr
+    while IFS=$'\t' read -r _dn _du _dr; do
+        [[ -z "$_dn" ]] && continue
+        [[ "$_resolved" == *$'\n'"${_dn}"$'\n'* ]] && continue
+        _ce_skip_note "$_dn" unresolved "$_tname"
+    done < <(yml_get_repo_coords "$_tyml" 2>/dev/null)
+    return 0
+}
+
+# Post-collection pass (RC-6 §3.6 / Change 4): drop and announce every collected
+# repo whose name collides with a container target the built-in itself claims —
+# cco-config, cco-docs, and <t>-config for EVERY collected target. Order-dependent:
+# the reserved set is a function of the FULL --project target list, only final
+# after the whole collector has run (a repo declared by target `a` and named
+# `b-config` must lose to `b`'s config mount even when `b` is appended after `a`),
+# so this runs ONCE at the end, never inside the producer. Rebuilds _ce_repos into
+# a local first (bash 3.2 — no namerefs) and keeps the trailing "\n" the case tests
+# assume. Shares cmd_start scope.
+_ce_filter_reserved() {
+    [[ -z "$_ce_repos" ]] && return 0
+    local reserved=$'\n'"cco-config"$'\n'"cco-docs"$'\n'
+    local _tn _tp
+    while IFS=$'\t' read -r _tn _tp; do
+        [[ -z "$_tn" ]] && continue
+        reserved+="${_tn}-config"$'\n'
+    done <<< "$_ce_targets"
+    local kept="" _line _rn _rp
+    while IFS= read -r _line; do
+        [[ -z "$_line" ]] && continue
+        _rn="${_line%%$'\t'*}"; _rp="${_line#*$'\t'}"
+        if [[ "$reserved" == *$'\n'"${_rn}"$'\n'* ]]; then
+            _ce_skip_note "$_rn" reserved
+            continue
+        fi
+        kept+="${_rn}"$'\t'"${_rp}"$'\n'
+    done <<< "$_ce_repos"
+    _ce_repos="$kept"
+    return 0
 }
 
 # Resolve the config-editor session's minimum-privilege MODE (ADR-0044 §3) from
@@ -665,10 +768,8 @@ _start_collect_config_editor_targets() {
             [[ -d "$path/.cco" ]] || die "config-editor --project '$t' has no <repo>/.cco to edit."
             [[ "$_ce_targets" == *"${t}"$'\t'"${path}/.cco"$'\n'* ]] \
                 || _ce_targets+="${t}"$'\t'"${path}/.cco"$'\n'
-            # That project's repos — conscious-skip drops any unresolved member.
-            while IFS=$'\t' read -r rn rp; do
-                _ce_add_repo "$rn"
-            done < <(_effective_repo_mounts "$path/.cco/project.yml")
+            # That project's repos (repo-aware authoring) — resolved + announced.
+            _ce_collect_target_repos "$t" "$path/.cco/project.yml"
         done
     elif [[ "$config_editor_mode" == "all" ]]; then
         # ALL (--all / --cco-access edit-all): every resolvable project's .cco, no repos.
@@ -682,9 +783,7 @@ _start_collect_config_editor_targets() {
         name=$(yml_get "$config_editor_cwd_dir/.cco/project.yml" name 2>/dev/null)
         [[ -n "$name" && -d "$config_editor_cwd_dir/.cco" ]] \
             && _ce_targets+="${name}"$'\t'"${config_editor_cwd_dir}/.cco"$'\n'
-        while IFS=$'\t' read -r rn rp; do
-            _ce_add_repo "$rn"
-        done < <(_effective_repo_mounts "$config_editor_cwd_dir/.cco/project.yml")
+        _ce_collect_target_repos "$name" "$config_editor_cwd_dir/.cco/project.yml"
     fi
     # else: mode=global (bare outside any project) → no project targets, ~/.cco only.
     # --repo <name>: add a single resolvable repo (fine-grained reference mount).
@@ -694,8 +793,12 @@ _start_collect_config_editor_targets() {
         path=$(_index_get_path_any "$t")
         [[ "$path" == /* && -d "$path" ]] \
             || die "config-editor --repo '$t' is not resolvable on this machine. Run 'cco resolve' first."
-        _ce_add_repo "$t"
+        _ce_add_repo "$t" "$path"
     done
+    # Change 4 (RC-6 §3.6): now that ALL --project targets and --repo names are
+    # collected, drop+announce any repo whose name would collide with a reserved
+    # container target the built-in claims. Order-dependent → runs once, here.
+    _ce_filter_reserved
 }
 
 # Fail loud, don't launch inert (F4). A config-editor session that intends a PROJECT
@@ -1415,6 +1518,16 @@ YAML
         if [[ "$_pc_rw" == "true" ]]; then
             _committed_ro=""
         fi
+        # RC-6 §3.7 (Change 5): the config-editor built-in mounts its target's repos
+        # to READ code, not to author config — every writable config path it needs is
+        # a DEDICATED mount (~/.cco → cco-config, each target's <repo>/.cco →
+        # <name>-config). Force the repo-path .cco overlay :ro regardless of Pc, so a
+        # Po=none session never gains rw to a FOREIGN member repo's committed config
+        # through the code repo (honours Po), and the hosting repo keeps ONE authoring
+        # path (<name>-config) as the managed cco-config-interaction.md rule instructs.
+        # Scoped to the built-in: the generator creates the authoring mount, so unlike
+        # a normal session (ADR-0046 §6, still deferred at :1566) the rw span is exact.
+        [[ "${session_preset:-}" == "config-editor" ]] && _committed_ro=":ro"
 
         # ~/.claude.json — preferences, MCP servers, session metadata (machine-local STATE)
         _compose_vol "${state_root}/claude.json" "/home/claude/.claude.json"
