@@ -547,6 +547,327 @@ _get_repo_head() {
 
 # ── Project Helpers ──────────────────────────────────────────────────
 
+# ── Container-operator lane (RC-17) ───────────────────────────────────
+#
+# The suite is structurally blind to container life. Three ad-hoc mechanisms
+# existed (`_op_cco`/`_op_seed`, `_as_operator`, the `_ps_probe` stubs) and none
+# models the one fact that DEFINES an in-container session: the STATE index holds
+# a HOST path that does not exist, and the member is reachable only at the flat
+# bind target <workdir>/<name>. A verb that existence-tests the index path there
+# mislabels a perfectly mounted repo as missing — the RC-2 class.
+#
+# This lane is a FIXTURE + ASSERTION VOCABULARY layered on setup_cco_env; it is
+# not a new runner and not a new tier, so lane tests stay in their subject-matter
+# files and inside the single `bin/test` baseline. Three layers:
+#   context   — _lane_operator_exports / setup_operator_session
+#   topology  — operator_mount_member / operator_mount_unit
+#   assertion — assert_rc / assert_refused / assert_gate_allows /
+#               assert_index_path / assert_projectyml_member
+# plus the static ban on negative-only rc assertions in test_invariants.sh.
+#
+# Design: docs/maintainers/configuration/agent-cco-access/e2e-review/
+#         fix-design-v2/01-test-lane.md
+
+# Emit the COMPLETE container-operator env as `export`/`unset` statements, to be
+# eval'd either into the current shell (setup_operator_session) or into a
+# subshell (assert_gate_allows, lane_cco, lane_cco_seeded). SINGLE SOURCE OF
+# TRUTH: there is exactly one definition of "what a lane operator session is", so
+# the consumers cannot drift — two vocabularies for one context is how the third
+# one (`_ps_probe`) got invented.
+#
+# Three groups, all load-bearing:
+#  (a) THE PREDICATE. _cco_container_operator (lib/paths.sh) needs the explicit
+#      flag AND three ABSOLUTE bucket paths. Never stubbed: a stub cannot
+#      regress-test the predicate, and a stubbed test cannot reach the dispatcher.
+#  (b) THE GATE PIN. CCO_STORE_ELEVATED=1. repo|extra-mount rename (and every
+#      other _cco_verb_touches_store verb) would otherwise re-exec the real setuid
+#      helper when one is present — which it IS in the self-dev container — and
+#      the TRUSTED :ro session descriptor then overrides the simulated level.
+#      Measured: without the pin, `CCO_CCO_ACCESS=edit-project … repo rename
+#      --help` returns rc=2 quoting the LIVE session's level. Consequence: the
+#      lane never exercises the trampoline itself (that is
+#      tests/test_privilege_boundary.sh's job).
+#  (c) THE SANITISER. Every ambient session variable that steers a decision.
+#      bin/test unsets these globally, but a helper that RELIES on the runner is
+#      wrong the moment it is sourced from any other context — which is exactly
+#      the `_op_cco` leak this lane supersedes (it never unset CCO_ACCESS_TRIPLE,
+#      so inside a live cco session the ambient triple won). Mirror bin/test's list.
+#
+# PROJECT_NAME is UNSET, not left alone, when no project is given: leaving it
+# alone lets a live session's PROJECT_NAME through, and with it every
+# _env_is_current_project decision. Same reasoning for CCO_CONFIG_TARGETS,
+# CCO_PROJECT_PACKS and CCO_PROJECT_LLMS, which are pinned deterministically.
+# Optional caller vars (the `_op_seed` precedent): OP_TRIPLE → CCO_ACCESS_TRIPLE,
+# OP_TARGETS → CCO_CONFIG_TARGETS, OP_SHP → CCO_SHOW_HOST_PATHS.
+# Usage: eval "$(_lane_operator_exports <level> [<project>])"
+_lane_operator_exports() {
+    local level="$1" project="${2:-}"
+    cat <<EOF
+export CCO_IN_CONTAINER=1 CCO_CONTAINER_OPERATOR=1
+export CCO_STORE_ELEVATED=1
+export CCO_CCO_ACCESS='$level'
+export CCO_SHOW_HOST_PATHS='${OP_SHP:-true}'
+export CCO_CONFIG_TARGETS='${OP_TARGETS:-}'
+export CCO_PROJECT_PACKS='' CCO_PROJECT_LLMS=''
+EOF
+    # CCO_SESSION_CONTEXT: inert while operator mode is ON, but if a future change
+    # ever flips the predicate off it makes bin/cco refuse EVERY invocation (exit 2).
+    printf 'unset CCO_SESSION_CONTEXT CCO_SUBAGENT_CONTEXT CCO_CLAUDE_ACCESS CCO_CONFIG_DIR || true\n'
+    if [[ -n "$project" ]]; then printf "export PROJECT_NAME='%s'\n" "$project"
+    else                         printf 'unset PROJECT_NAME || true\n'; fi
+    # Deterministic triple: explicit when asked, otherwise ABSENT so _env_triple
+    # derives it from the preset. Never inherited from an ambient session.
+    if [[ -n "${OP_TRIPLE:-}" ]]; then printf "export CCO_ACCESS_TRIPLE='%s'\n" "$OP_TRIPLE"
+    else                               printf 'unset CCO_ACCESS_TRIPLE || true\n'; fi
+}
+
+# Declare the current shell to be a container-operator session — for real, not by
+# stubbing the predicate. Single responsibility: it never creates fixtures and
+# never runs cco.
+# PRECONDITION: setup_cco_env must have run (it owns HOME + CCO_{DATA,STATE,CACHE}_HOME).
+# Usage: setup_operator_session <tmpdir> [<level>] [<project>]
+setup_operator_session() {
+    local tmpdir="$1" level="${2:-read-project}" project="${3:-}"
+    if [[ "${CCO_STATE_HOME:-}" != /* ]]; then
+        fail "setup_operator_session requires setup_cco_env first (CCO_STATE_HOME is not absolute)"
+        return 1
+    fi
+    # The buckets are MOUNTS in production, so the resolvers deliberately SKIP
+    # _cco_ensure_dir under operator mode (`cco start` creates them host-side).
+    # Omitting this mkdir yields `mktemp: failed to create file via template
+    # …/state/index.XXXXXX` and a SILENTLY EMPTY index — which would make every
+    # lane test vacuous. Pinned by test_operator_lane_predicate_is_real.
+    mkdir -p "$CCO_DATA_HOME" "$CCO_STATE_HOME" "$CCO_CACHE_HOME"
+    # The flat WORKDIR: `cco start` bind-mounts every member at <workdir>/<name>.
+    export CCO_WORKDIR="$tmpdir/workspace"
+    mkdir -p "$CCO_WORKDIR"
+    eval "$(_lane_operator_exports "$level" "$project")"
+    # NOTE: setup_cco_env also exports CCO_ALLOW_HOST_RESOLVE=1, which _cco_resolver_guard
+    # treats as equivalent to operator mode — so it changes no behaviour under test, but a
+    # future fix keying off the GUARD (rather than the predicate) would be invisible here.
+    return 0   # never let the last command's status leak under `set -e`
+}
+
+# Bind <name> in <project> to a HOST-shaped path that is deliberately ABSENT, and
+# create the bind TARGET at $CCO_WORKDIR/<name>. This is the single fixture that
+# makes the RC-2 class reproducible without Docker. Echoes the mount path.
+# Usage: operator_mount_member <project> <name> [<host_path>]
+operator_mount_member() {
+    local project="$1" name="$2"
+    # Absent on every runner: Linux CI, the self-dev container, a macOS dev host
+    # (no such user). Host-SHAPED so failure messages read like the real defect.
+    local host_path="${3:-/Users/cco-e2e/code/$name}"
+    if [[ -e "$host_path" ]]; then
+        # Loud, never silent: if a runner ever HAS this path the topology inverts
+        # and every lane test built on it becomes meaningless.
+        fail "lane fixture broken: $host_path exists on this runner — the operator topology requires an ABSENT host path" >&2
+        return 1
+    fi
+    local mnt="$CCO_WORKDIR/$name"
+    mkdir -p "$mnt"
+    seed_index_path "$name" "$host_path" "$project"   # scoped binding (ADR-0051)
+    printf '%s\n' "$mnt"
+}
+
+# Companion: a member that also HOSTS the project's committed config, so cwd-first
+# verbs (_resolve_find_unit_dir) resolve from the mount. Composes, never duplicates.
+# Usage: operator_mount_unit <project> <name> [<host_path>]
+operator_mount_unit() {
+    local project="$1" name="$2" host_path="${3:-}"
+    local mnt
+    mnt=$(operator_mount_member "$project" "$name" ${host_path:+"$host_path"}) || return 1
+    mkdir -p "$mnt/.cco"
+    printf 'name: %s\nrepos:\n  - name: %s\n' "$project" "$name" > "$mnt/.cco/project.yml"
+    index_set_project_repos "$project" "$name"
+    printf '%s\n' "$mnt"
+}
+
+# Read the scoped index through the REAL index API (subshell-sourced, like the
+# seeders) — an effect assertion must go through the same door production uses.
+# Usage: _lane_index_get <project> <name>
+_lane_index_get() {
+    ( source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+      source "$REPO_ROOT/lib/paths.sh";  source "$REPO_ROOT/lib/index.sh"
+      _index_get_path "$1" "$2" )
+}
+
+# Read a project.yml list section through the REAL YAML API (lib/rename.sh).
+# Usage: _lane_yaml_has_ref <yml> <section> <name>
+_lane_yaml_has_ref() {
+    ( source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+      source "$REPO_ROOT/lib/paths.sh";  source "$REPO_ROOT/lib/rename.sh"
+      _yaml_list_has_ref "$1" "$2" "$3" )
+}
+
+# ── Lane assertion vocabulary ─────────────────────────────────────────
+# Each helper replaces an idiom that can pass vacuously. The rule (RC-17): a
+# container-operator test asserts an OUTCOME — an exact rc plus an observable
+# state change read back through the real API — or an EXPLICIT refusal. Never
+# "anything but 2".
+
+# An EXACT exit code, stated positively. `run_cco` returns cco's rc, so a lane
+# test captures it as:  local rc=0; run_cco repo rename a b -y || rc=$?
+# Usage: assert_rc <expected> <actual> [<label>]
+assert_rc() {
+    local expected="$1" actual="$2" label="${3:-cco}"
+    [[ "$actual" -eq "$expected" ]] && return 0
+    fail "$label: expected rc=$expected, got rc=$actual: ${CCO_OUTPUT:-}"
+    return 1
+}
+
+# A policy refusal: exit 2, never silent, and it must NAME the reason (B6).
+# Generalises test_operator_shim.sh's private _b6_assert into shared vocabulary.
+# Usage: assert_refused <rc> <output> <reason-substring>
+assert_refused() {
+    local rc="$1" out="$2" reason="$3"
+    [[ "$rc" -eq 2 ]]      || { fail "expected a policy refusal (exit 2), got rc=$rc: $out"; return 1; }
+    [[ -n "$out" ]]        || { fail "an exit-2 refusal must never be silent (B6)"; return 1; }
+    [[ "$out" == *"$reason"* ]] \
+        || { fail "exit-2 refusal should state the reason '$reason', got: $out"; return 1; }
+    return 0
+}
+
+# THE replacement for `rc -ne 2`. Asks ONE question — does the gate ADMIT this
+# verb at this level — with a POSITIVE success signal, independent of cwd, store
+# and mounts.
+#
+# SELF-CONTAINED BY CONSTRUCTION: it establishes the FULL operator env in its own
+# subshell over its own throwaway buckets, and inherits NONE of it from the
+# caller. A version that sets one variable and inherits the rest is measurably
+# vacuous — it returns rc=0 + usage at EVERY level, making the <level> argument
+# decorative. This is also why it does not depend on setup_operator_session:
+# test_operator_shim.sh has no setup_cco_env to build on, and a one-shot gate
+# probe has a genuinely different lifetime from a persistent lane fixture.
+#
+# Probe: `<verb> --help`. The shim classifies on <cmd> <sub> BEFORE dispatch, so
+# the gate runs; the verb body then short-circuits on --help and returns 0. The
+# usage-shape check is load-bearing: a verb with no --help handler must FAIL here
+# rather than pass vacuously — that is the very class this lane exists to kill.
+# Usage: assert_gate_allows <level> <verb> [<subverb>...]
+assert_gate_allows() {
+    local level="$1"; shift
+    local out rc=0 tmp
+    tmp=$(mktemp -d)
+    mkdir -p "$tmp/data" "$tmp/state" "$tmp/cache" "$tmp/home"
+    out=$(
+        export CCO_DATA_HOME="$tmp/data" CCO_STATE_HOME="$tmp/state" \
+               CCO_CACHE_HOME="$tmp/cache" HOME="$tmp/home"
+        eval "$(_lane_operator_exports "$level" "")"
+        bash "$REPO_ROOT/bin/cco" "$@" --help 2>&1
+    ) || rc=$?
+    rm -rf "$tmp"
+    [[ $rc -eq 0 ]] \
+        || { fail "gate must admit 'cco $*' at $level, got rc=$rc: $out"; return 1; }
+    [[ "$out" == *Usage:* ]] \
+        || { fail "'cco $* --help' printed no usage — the probe is vacuous: $out"; return 1; }
+    return 0
+}
+
+# Read a rename's index half back through the real API.
+# Usage: assert_index_path <project> <name> <expected-path>
+assert_index_path() {
+    local got; got=$(_lane_index_get "$1" "$2")
+    [[ "$got" == "$3" ]] || { fail "index [$1] $2 → '$got', expected '$3'"; return 1; }
+    return 0
+}
+
+# Read the OTHER half of a rename's effect back through the real YAML API. The
+# index and project.yml are two independent stores that a rename must keep
+# consistent; asserting only the index certifies a HALF-APPLY (measured: a
+# minimal probe-the-mount fix returns rc=0 "✓ Renamed", re-keys the index, and
+# leaves project.yml untouched with the commit/push warning silently suppressed).
+# Usage: assert_projectyml_member <yml> <section> <name> [present|absent]
+assert_projectyml_member() {
+    local yml="$1" section="$2" name="$3" mode="${4:-present}"
+    [[ -f "$yml" ]] || { fail "no project.yml at $yml"; return 1; }
+    if _lane_yaml_has_ref "$yml" "$section" "$name"; then
+        [[ "$mode" == present ]] || { fail "$yml: $section[] must NOT list '$name'"; return 1; }
+    else
+        [[ "$mode" == absent ]]  || { fail "$yml: $section[] must list '$name'"; return 1; }
+    fi
+    return 0
+}
+
+# ── Lane runners (supersede test_operator_shim.sh's _op_cco/_op_seed) ──
+# One vocabulary for one context (D-M8/Q-13). Both build their env from
+# _lane_operator_exports, so the missing-CCO_ACCESS_TRIPLE-unset latent bug in
+# the former _op_cco cannot recur. Both capture stdout+stderr → OP_OUT and the
+# exit code → OP_RC, and always return 0 so the caller asserts explicitly.
+
+# Throwaway (unseeded) store: the shim classifies before any bucket use, so this
+# is the right shape for pure gate questions.
+# Usage: lane_cco <level> <argv...>
+lane_cco() {
+    local level="$1"; shift
+    local tmp; tmp=$(mktemp -d)
+    OP_OUT=$(
+        export CCO_DATA_HOME="$tmp/data" CCO_STATE_HOME="$tmp/state" \
+               CCO_CACHE_HOME="$tmp/cache" HOME="$tmp/home"
+        eval "$(_lane_operator_exports "$level" "")"
+        mkdir -p "$HOME"
+        bash "$REPO_ROOT/bin/cco" "$@" 2>&1
+    )
+    OP_RC=$?
+    rm -rf "$tmp"
+    return 0
+}
+
+# SEEDED throwaway store so store-touching gates can resolve real resources:
+# projects `alpha` + `beta` (each its own member repo) and a pack `p1`. Seeds via
+# the real index API so the on-disk format matches production. $2 is the current
+# PROJECT_NAME (may be `config-editor`). Honors OP_TARGETS / OP_SHP / OP_TRIPLE.
+# Usage: lane_cco_seeded <level> <current-project> <argv...>
+lane_cco_seeded() {
+    local level="$1" cur="$2"; shift 2
+    local tmp; tmp=$(mktemp -d)
+    mkdir -p "$tmp/home/.cco/packs/p1" "$tmp/state" "$tmp/data" "$tmp/cache" \
+             "$tmp/repos/alpha" "$tmp/repos/beta"
+    ( source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+      source "$REPO_ROOT/lib/paths.sh";  source "$REPO_ROOT/lib/index.sh"
+      # CCO_ALLOW_HOST_RESOLVE=1: seeding writes the index host-side; inside a
+      # session container the anti-in-container guard (ADR-0007) otherwise refuses
+      # index writes (mirrors setup_cco_env). No-op on the host.
+      export CCO_STATE_HOME="$tmp/state" CCO_ALLOW_HOST_RESOLVE=1
+      _index_set_path alpha alpha "$tmp/repos/alpha"; _index_set_project_repos alpha alpha
+      _index_set_path beta  beta  "$tmp/repos/beta";  _index_set_project_repos beta  beta
+    ) >/dev/null 2>&1
+    OP_OUT=$(
+        export CCO_DATA_HOME="$tmp/data" CCO_STATE_HOME="$tmp/state" \
+               CCO_CACHE_HOME="$tmp/cache" HOME="$tmp/home"
+        eval "$(_lane_operator_exports "$level" "$cur")"
+        bash "$REPO_ROOT/bin/cco" "$@" 2>&1
+    )
+    OP_RC=$?
+    rm -rf "$tmp"
+    return 0
+}
+
+# ── ADR-0047 boundary seam (D-M8/Q-14) ────────────────────────────────
+# Hermetically model the privilege boundary's ERRNO — not its mechanism. `chmod
+# 000` on a bucket ancestor makes the store unreadable for a normal uid, which is
+# the EACCES a `read-project` agent gets from the cco-svc-owned 0700 root. It is
+# NOT the setuid trampoline (pinned off by CCO_STORE_ELEVATED=1) and it is NOT a
+# substitute for the e2e gate — see 01-test-lane.md §5.3.
+#
+# MANDATORY self-check: root bypasses mode bits entirely, so a run as uid 0 would
+# observe "no boundary" and certify a green that means nothing. That is precisely
+# the false-green class this lane closes, so it FAILS LOUDLY rather than skipping
+# silently. Usage: lane_seal_boundary <dir> / lane_unseal_boundary <dir>
+lane_seal_boundary() {
+    local dir="$1"
+    if [[ "$(id -u)" -eq 0 ]]; then
+        fail "boundary seam requires a non-root uid: root bypasses mode bits, so this test would pass vacuously (RC-17). Run the suite as a normal user."
+        return 1
+    fi
+    [[ -d "$dir" ]] || { fail "boundary seam: no such directory: $dir"; return 1; }
+    chmod 000 "$dir"
+}
+
+lane_unseal_boundary() {
+    chmod 700 "$1" 2>/dev/null || true
+    return 0
+}
+
 # Minimal project.yml for tests that only need dry-run + compose assertions.
 # New (decentralized) schema: repos are logical names only — the absolute path
 # for "dummy-repo" lives in the STATE index, seeded by setup_cco_env.
