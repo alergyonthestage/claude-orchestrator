@@ -385,3 +385,42 @@ test_project_validate_help() {
     assert_output_contains "Detect-only"
     assert_output_contains "--reachable"
 }
+
+# ── Container-operator lane (RC-17 / RC-2 class) ─────────────────────
+# `cco project validate <name>` resolves the unit through the STATE index, which
+# holds HOST paths. In a session those paths do not exist, so the by-name resolver
+# returns 1 and the verb dies "not found" — a wrong reason with a host-only remedy
+# for a project that is mounted and perfectly readable right here.
+#
+# ⚠ EXPECTED TO FAIL until RC-2 lands (04-host-path-class.md). This is the
+# failing reproduction that stage must turn green, not a regression.
+#
+# The assertion is POSITIVE by design. "Assert the member is not reported
+# unresolved" is the same negative-space error this lane bans: a partial fix that
+# gets past the unit resolver but not the member-status probe dies with
+# `Project has no .cco/project.yml at …`, which contains neither "unresolved" nor
+# "not found", so an absence assertion would pass while the verb stays dead.
+# Q-C4/D-M10: this matches the validator's CURRENT success line; RC-2's stage
+# tightens the vocabulary to D-M2's settled string.
+test_project_validate_operator_sees_mounted_member() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_operator_session "$tmpdir" read-project alpha
+    local mnt; mnt=$(operator_mount_unit alpha alpha)
+    # A share-ready manifest, so the only thing under test is reachability of the
+    # mounted unit — not a coordinate finding.
+    cat > "$mnt/.cco/project.yml" <<'YAML'
+name: alpha
+repos:
+  - name: alpha
+    url: git@github.com:org/alpha.git
+    ref: main
+YAML
+
+    local rc=0
+    _pv_in "$mnt" project validate alpha -v || rc=$?
+
+    assert_rc 0 "$rc" "operator project validate <name>" || return 1
+    assert_output_contains "share-ready" || return 1
+    return 0
+}

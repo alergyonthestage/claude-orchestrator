@@ -163,3 +163,88 @@ test_extra_mount_rename_requires_old() {
     _rr_cco_in "$dir" extra-mount rename media -y \
         && fail "extra-mount rename must require <old> <new>" || true
 }
+
+# ── Container-operator lane (RC-17 keystone / RC-2) ──────────────────
+# In a session the STATE index holds a HOST path that does not exist; the member
+# is reachable only at the flat bind target <workdir>/<name>. `repo rename` writes
+# TWO independent stores — the index and project.yml — so the assertions below
+# bracket the WHOLE effect. Asserting only the index certifies a half-apply:
+# measured, a fix that merely probes the mount at the strict guard returns rc=0
+# "✓ Renamed", re-keys the index, and leaves project.yml reading `- name: alpha`
+# with the commit/push warning silently suppressed.
+
+# ⚠ EXPECTED TO FAIL until RC-2 lands (04-host-path-class.md). This is the
+# failing reproduction that stage must turn green, not a regression.
+test_repo_rename_operator_probes_mount_not_host_path() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" edit-project alpha
+    local mnt; mnt=$(operator_mount_unit alpha alpha)
+
+    local rc=0
+    _rr_cco_in "$mnt" repo rename alpha api -y || rc=$?
+
+    # (a) The verb must complete. Today: rc=1 from lib/cmd-repo.sh's strict guard,
+    #     `Member 'alpha' is not resolved on this machine (/Users/… is missing)` —
+    #     it existence-tests the index HOST path instead of the mount.
+    assert_rc 0 "$rc" "operator repo rename" || return 1
+    # (b)+(c) Probe the mount, KEEP the host path: new key, unchanged value.
+    assert_index_path alpha api /Users/cco-e2e/code/alpha || return 1
+    assert_index_path alpha alpha "" || return 1
+    # (d) The OTHER store. The mount is keyed by the member's OLD name for the
+    #     whole session, so any mount probe performed AFTER the index re-key
+    #     resolves to a path that does not exist — a fix that satisfies (a)-(c)
+    #     but not this one is a half-apply, and it must fail loudly here.
+    assert_projectyml_member "$mnt/.cco/project.yml" repos api        || return 1
+    assert_projectyml_member "$mnt/.cco/project.yml" repos alpha absent || return 1
+    # (e) The operator-facing consequence: the reminder is emitted only when the
+    #     project.yml rewrite actually changed something, so a half-apply
+    #     suppresses it SILENTLY, producing no error of its own.
+    assert_output_contains "Commit + push" || return 1
+    assert_output_contains "$mnt" || return 1
+    return 0
+}
+
+# Counterweight to the test above (deliberately passes before AND after): the
+# strict guard is scoped to operator mode, not deleted. On the HOST an index
+# binding that really is missing must still refuse, and refuse before any write.
+test_repo_rename_host_still_rejects_unresolved_member() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local unit="$tmp/repos/shop"
+    mkdir -p "$unit/.cco"
+    printf 'name: shop\nrepos:\n  - name: backend\n' > "$unit/.cco/project.yml"
+    seed_index_path backend "$tmp/gone/backend" shop
+    index_set_project_repos shop backend
+
+    local rc=0
+    _rr_cco_in "$unit" repo rename backend api -y || rc=$?
+
+    assert_rc 1 "$rc" "host repo rename with a genuinely unresolved member" || return 1
+    assert_output_contains "not resolved on this machine" || return 1
+    # Fail-closed: neither store was touched.
+    assert_index_path shop backend "$tmp/gone/backend" || return 1
+    assert_index_path shop api "" || return 1
+    return 0
+}
+
+# D-M9/Q-5: --move-dir is explicit user intent and is never silently downgraded.
+# In a session the member IS a bind-mount root, so the move cannot work; the verb
+# must REFUSE (exit 2) with a host hint rather than degrade to a name-only rename.
+# ⚠ EXPECTED TO FAIL until RC-2 lands: today it dies rc=1 at the strict guard,
+# with a message about `cco resolve` that names neither the real cause nor the remedy.
+test_repo_rename_operator_move_dir_refused() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" edit-project alpha
+    local mnt; mnt=$(operator_mount_unit alpha alpha)
+
+    local rc=0
+    _rr_cco_in "$mnt" repo rename alpha api --move-dir -y || rc=$?
+
+    assert_refused "$rc" "${CCO_OUTPUT:-}" "on your host" || return 1
+    # A refusal is fail-closed: the name-only half must NOT have been applied either.
+    assert_index_path alpha alpha /Users/cco-e2e/code/alpha || return 1
+    assert_index_path alpha api "" || return 1
+    return 0
+}
