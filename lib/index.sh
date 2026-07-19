@@ -768,18 +768,24 @@ _project_member_status() {
 }
 
 # Iterate <project>'s member repos, emitting one TAB line per member:
-#   "<name>\t<abspath>\t<status>"   (abspath empty when status == unresolved)
-# <status> comes from _project_member_status. This is the ownership-guarded loop
-# shared by `cco join` (which members' project.yml `repos[]` to edit — owned,
-# never foreign) and `cco forget --purge` (which repos' .cco/ are owned and may
-# be deleted). Build-once; callers filter on <status>.
+#   "<name>\t<probe_path>\t<status>"   (probe_path empty when not inspectable here)
+# Column 2 is the path at which the member is INSPECTABLE in the current context —
+# the container MOUNT in operator mode (INV-F: the STATE index holds a HOST path
+# that never exists in a session), the index host path on the host (probe is the
+# identity there, so the emitted rows stay byte-identical). Membership is repos-only,
+# which always mount at <workdir>/<name>, so the 2-arg probe is correct (INV-F.2 does
+# not apply). INV-F.1 keeps a membership token with no path binding from being
+# resolved to a mount it does not own. <status> comes from _project_member_status.
+# This is the ownership-guarded loop shared by `cco join`/`cco forget --purge`/the
+# rename verbs' project.yml rewrite. Build-once; callers filter on <status>.
 # Usage: while IFS=$'\t' read -r name path status; do …; done < <(_project_iter_members <project>)
 _project_iter_members() {
-    local project="$1" repo_name path status
+    local project="$1" repo_name idx probe status
     for repo_name in $(_index_get_project_repos "$project"); do
-        path=$(_index_get_path "$project" "$repo_name")
-        [[ -n "$path" && -d "$path" ]] || path=""
-        status=$(_project_member_status "$project" "$path")
-        printf '%s\t%s\t%s\n' "$repo_name" "$path" "$status"
+        idx=$(_index_get_path "$project" "$repo_name")
+        probe=$(_cco_member_probe_path "$repo_name" "$idx")   # "" when idx is "" (INV-F.1)
+        [[ -n "$probe" && -d "$probe" ]] || probe=""
+        status=$(_project_member_status "$project" "$probe")
+        printf '%s\t%s\t%s\n' "$repo_name" "$probe" "$status"
     done
 }

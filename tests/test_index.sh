@@ -224,6 +224,64 @@ test_iter_members_emits_name_path_status() {
     printf '%s\n' "$out" | grep -qE "^b		unresolved$" || fail "member b must be unresolved with empty path; got: $out"
 }
 
+# ── Operator arm (RC-2 / 04-host-path-class.md §3.6, §6.5) ────────────
+# In a session the STATE index holds a HOST path that never exists; the member is
+# reachable only at the flat bind target <workdir>/<name>. _project_iter_members
+# must probe the MOUNT (INV-F), so the rename verbs' project.yml rewrite and the
+# pack-rename pre-scan stop being vacuous in-container.
+_iter_operator_env() {
+    # The operator predicate needs the flag AND three absolute bucket overrides
+    # (_index_test_env unsets DATA/CACHE); STATE is already the seeded index dir.
+    export CCO_CONTAINER_OPERATOR=1 CCO_IN_CONTAINER=1
+    export CCO_DATA_HOME="${CCO_STATE_HOME%/*}/data" CCO_CACHE_HOME="${CCO_STATE_HOME%/*}/cache"
+    # Operator mode skips _cco_ensure_dir (the buckets are mounts in production), so
+    # pre-create them here or the index mktemp fails and every row reads empty.
+    mkdir -p "$CCO_STATE_HOME" "$CCO_DATA_HOME" "$CCO_CACHE_HOME"
+    export CCO_WORKDIR="$1"; mkdir -p "$CCO_WORKDIR"
+}
+
+test_iter_members_operator_uses_mount() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _member_status_env "$tmp/state"
+    _iter_operator_env "$tmp/ws"
+    # Index bound to an ABSENT host path; the member is mounted at <ws>/backend.
+    _index_set_path shop backend /host/absent/backend
+    _index_set_project_repos shop backend
+    _mk_repo "$CCO_WORKDIR/backend" "shop"
+
+    local out; out=$(_project_iter_members shop)
+    printf '%s\n' "$out" | grep -qE "^backend	$CCO_WORKDIR/backend	synced$" \
+        || fail "operator: member must be probed at its mount, synced; got: $out"
+}
+
+test_iter_members_operator_unbound_member_stays_unresolved() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _member_status_env "$tmp/state"
+    _iter_operator_env "$tmp/ws"
+    # Membership token with NO path binding, yet a tree exists at <ws>/ghost:
+    # INV-F.1 must NOT synthesize a mount from the name alone (absent→present).
+    _index_set_project_repos shop ghost
+    _mk_repo "$CCO_WORKDIR/ghost" "shop"
+
+    local out; out=$(_project_iter_members shop)
+    printf '%s\n' "$out" | grep -qE "^ghost		unresolved$" \
+        || fail "operator: an unbound member stays unresolved with empty path (INV-F.1); got: $out"
+}
+
+test_iter_members_host_unchanged() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _member_status_env "$tmp/state"
+    unset CCO_CONTAINER_OPERATOR CCO_IN_CONTAINER
+    _mk_repo "$tmp/a" "proj"
+    _index_set_path proj a "$tmp/a"
+    _index_set_path proj b "$tmp/missing"
+    _index_set_project_repos proj a b
+    # Host regression guard: the probe is the identity, so rows are byte-identical.
+    local out; out=$(_project_iter_members proj)
+    printf '%s\n' "$out" | grep -qE "^a	$tmp/a	synced$" || fail "host row a changed: $out"
+    printf '%s\n' "$out" | grep -qE "^b		unresolved$" || fail "host row b changed: $out"
+}
+
 # ══════════════════════════════════════════════════════════════════════
 # Per-project name scoping (ADR-0051) — v2 nested project_paths schema
 # ══════════════════════════════════════════════════════════════════════

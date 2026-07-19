@@ -98,13 +98,13 @@ _resolve_unit_dir_for_project() {
 # Echo the current project's mounted project.yml (layout 1). Fast path is the
 # always-mounted /workspace/project.yml; falls back to scanning /workspace/*/.cco/.
 _resolve_operator_current_yml() {
-    local want="${PROJECT_NAME:-}" d yml n
+    local want="${PROJECT_NAME:-}" d yml n wd="${CCO_WORKDIR:-/workspace}"
     [[ -z "$want" ]] && return 1
-    if [[ -f /workspace/project.yml ]]; then
-        n=$(yml_get /workspace/project.yml name 2>/dev/null)
-        [[ "$n" == "$want" ]] && { printf '%s\n' /workspace/project.yml; return 0; }
+    if [[ -f "$wd/project.yml" ]]; then
+        n=$(yml_get "$wd/project.yml" name 2>/dev/null)
+        [[ "$n" == "$want" ]] && { printf '%s\n' "$wd/project.yml"; return 0; }
     fi
-    for d in /workspace/*/; do
+    for d in "$wd"/*/; do
         yml="${d}.cco/project.yml"
         [[ -f "$yml" ]] || continue
         n=$(yml_get "$yml" name 2>/dev/null)
@@ -122,9 +122,9 @@ _resolve_operator_project_yml() {
     if [[ -n "${PROJECT_NAME:-}" && "$name" == "$PROJECT_NAME" ]]; then
         _resolve_operator_current_yml && return 0
     fi
-    # 2. config-editor target (D9): its .cco is mounted at /workspace/<name>-config.
+    # 2. config-editor target (D9): its .cco is mounted at <workdir>/<name>-config.
     if _env_csv_has "$name" "${CCO_CONFIG_TARGETS:-}"; then
-        yml="/workspace/${name}-config/project.yml"
+        yml="${CCO_WORKDIR:-/workspace}/${name}-config/project.yml"
         [[ -f "$yml" ]] && { printf '%s\n' "$yml"; return 0; }
     fi
     # 3. Built-in preset — its generated config lives in the internal runtime dir.
@@ -147,6 +147,34 @@ _resolve_project_yml() {
     fi
     d=$(_resolve_unit_dir_for_project "$name") || return 1
     printf '%s\n' "$d/.cco/project.yml"
+}
+
+# Resolve a project NAME to its .cco DIRECTORY path, host- AND operator-aware — the
+# sibling of _resolve_project_yml for verbs that need the .cco tree itself (authored
+# packs in `project validate`, `template create --from`). It CANNOT be dirname-
+# derived: the flat operator layout mounts <workdir>/project.yml with no .cco
+# parent, and the config-editor layout mounts the .cco tree AT <workdir>/<name>-config
+# (the mount IS the .cco dir). Returns 1 when no .cco directory is reachable in this
+# context. Usage: _resolve_project_cco_dir <name>
+_resolve_project_cco_dir() {
+    local name="$1" d yml n wd="${CCO_WORKDIR:-/workspace}"
+    if _cco_container_operator; then
+        # Layout 1: a mounted repo carrying <name>'s committed config at <ws>/<repo>/.cco.
+        for d in "$wd"/*/; do
+            yml="${d}.cco/project.yml"
+            [[ -f "$yml" ]] || continue
+            n=$(yml_get "$yml" name 2>/dev/null)
+            [[ "$n" == "$name" ]] && { printf '%s\n' "${d}.cco"; return 0; }
+        done
+        # Layout 2: a config-editor target — the mount itself IS the .cco dir.
+        if _env_csv_has "$name" "${CCO_CONFIG_TARGETS:-}"; then
+            d="${wd}/${name}-config"
+            [[ -f "$d/project.yml" ]] && { printf '%s\n' "$d"; return 0; }
+        fi
+        return 1
+    fi
+    d=$(_resolve_unit_dir_for_project "$name") || return 1
+    printf '%s\n' "$d/.cco"
 }
 
 # Iterate the indexed projects, emitting one TAB line "<proj>\t<unit_dir>\t<yml>"
