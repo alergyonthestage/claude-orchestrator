@@ -120,6 +120,28 @@
     mount, in-container visibility gated by `lib/access-scope.sh`; unfiltered-docker path
     rejected). Build in the pre-review phase.
 
+- **DI2 — the `-ne 0` negative-space sweep in `tests/` (follow-up to RC-17, cycle 1).** RC-17's
+  static ban (`test_invariants.sh` invariant 11) closes the **"not 2"** idiom as a class — any
+  rc-shaped identifier, `-ne` or `!=`, sigil or not, either operand order. It does **not** close
+  the negative-space *family*. The sibling terminal idiom "assert the command failed somehow"
+  (`-ne 0`) is one exit code over and is **already widespread: 46 rc-shaped negative comparisons
+  live in `tests/` today**, including `test_paths.sh:254`, `test_llms.sh:365`,
+  `test_start_decentralized.sh:71`, `test_update.sh:1230,1256` and
+  `test_access_resolution.sh:166,425,467,580,593`.
+
+  Several are genuinely weak in the RC-17 way — "invalid `cco_access` should abort" passes on a
+  `die` (rc=1) *or* a policy refusal (rc=2), which are **different behaviours** with different
+  contracts (§5.2 of the cycle-1 overview: 1 = error, 2 = refused by policy). Most of the rest
+  are host-side argument-validation guards where the distinction does not currently hide a
+  defect.
+
+  **Deliberately out of cycle-1 scope** (D-M3): converting 46 sites is its own change with its
+  own review, and folding it into the keystone would have made the lane's diff unreviewable.
+  Recorded here rather than assumed, because a scope limit that lives only in a review comment
+  is indistinguishable from an oversight. When it runs: classify each site as *error* vs
+  *refusal*, convert to `assert_rc` / `assert_refused`, then extend invariant 11's pattern to
+  `0` and re-run — the pattern is already parameterised by the compared value.
+
 ## 5. Documentation tasks (reference-first, D-CE2)
 
 - **DOC1 — central-gate documentation. ✅ DONE (2026-07-07).**

@@ -63,6 +63,80 @@ test_start_generates_compose() {
 
 **Important**: `cco init` triggers `docker build` as a side effect, but **no integration test depends on the built image**. The test runner exports `CCO_SKIP_BUILD=1` to skip this, saving ~5s per invocation. See [Performance](#performance) section.
 
+#### The container-operator lane
+
+The CLI is dual-context: every verb also runs **in-container**, as the agent, under
+`_cco_container_operator`. The lane in `tests/helpers.sh` makes that context testable inside
+Tier 2 — it is a **fixture and assertion vocabulary**, not a new runner and not a new tier, so
+lane tests stay in their subject-matter files and inside the single `bin/test` baseline.
+
+```mermaid
+flowchart TD
+  E["setup_cco_env<br/>(HOME + buckets + hermetic git)"]
+  S["_lane_operator_exports<br/>one source of truth for the operator env"]
+  O["setup_operator_session<br/>context: the REAL predicate holds"]
+  M["operator_mount_member / operator_mount_unit<br/>topology: host path ABSENT, mount PRESENT"]
+  R["lane_cco / lane_cco_seeded<br/>runners over a throwaway store"]
+  A["assert_rc · assert_refused · assert_gate_allows<br/>assert_index_path · assert_projectyml_member"]
+
+  E --> O
+  S --> O
+  S --> R
+  S --> A
+  O --> M --> A
+```
+
+**Four rules, each learned from a defect that shipped green:**
+
+1. **Assert an outcome, never a negative rc.** A container-operator test asserts an **exact**
+   exit code plus an observable state change read back through the real API, or an **explicit
+   refusal** (`assert_refused`: exit 2, non-silent, naming its reason). Asserting "the rc was
+   not 2" states only *not refused by this gate* and is satisfied by a verb that dies `rc=1` —
+   it kept `cco repo rename` certified green while it was dead in-container. Invariant 11 in
+   `test_invariants.sh` bans the idiom statically across `tests/`, in three syntactic shapes,
+   with a same-line `# allow-negative-rc: <why>` escape.
+2. **Assert every store a verb writes.** A rename writes **two** independent stores — the STATE
+   index and the committed `project.yml`. Asserting one certifies a half-apply: measured, a fix
+   that merely probed the mount returned `rc=0` "✓ Renamed", re-keyed the index, left
+   `project.yml` untouched, and **silently suppressed** the commit/push reminder (it is emitted
+   only when the rewrite changed something, so the suppression produces no error of its own).
+   Bracket the whole effect, including the half that would indicate a half-apply.
+3. **Model the topology honestly.** `operator_mount_member` binds a member to a **host-shaped
+   path that deliberately does not exist** and creates the bind target at `$CCO_WORKDIR/<name>`.
+   That single fact — *the index holds a host path that is absent; the member is reachable only
+   at the mount* — is what in-container life is, and it is what INV-F (probe locality) exists
+   for. The fixture `fail`s loudly if a runner ever has the host path, because a silently
+   inverted topology makes every test built on it meaningless.
+4. **Never stub the predicate.** `setup_operator_session` establishes
+   `_cco_container_operator`'s real preconditions. A stub cannot regress-test the predicate and
+   cannot reach the dispatcher, so it can never exercise a whole verb.
+
+**Trap — the `dummy-repo` unscoped seed.** `minimal_project_yml` declares
+`repos: - name: dummy-repo` and `setup_cco_env` seeds it **unscoped**. The unscoped
+escape-hatch fallback in `_index_get_path` then rescues lookups that should have failed, which
+*masks* per-project-scoping defects. A test that must expose one has to declare a repo bound
+**only per-project** (`seed_index_path <name> <path> <project>`); getting this wrong yields a
+test that passes before and after the fix.
+
+**What the lane CAN catch, hermetically**: host-path-vs-mount probe decisions; half-applied
+multi-store writes; compose-generation *intent* (which volume lines, with which `:ro` suffix,
+via `--dry-run --dump`); gate classification per level, positive and negative; output scoping
+and fail-closed behaviour; verb effects read back through the real index/YAML/store APIs.
+
+**What it CANNOT — this belongs to the e2e gate**: whether an emitted bind is actually enforced
+`ro`/`rw` (the compose is generated, never executed); mount-time failures such as `mknod … 
+read-only file system` on a missing mountpoint inside a `:ro` parent; the setuid trampoline
+itself (pinned off by `CCO_STORE_ELEVATED=1`, which is what makes the simulated level
+meaningful); real `EACCES` on the 0700 boundary (`lane_seal_boundary` models the *errno* with
+`chmod 000` and a mandatory `id -u` self-check that **fails loudly** rather than skipping,
+since root bypasses mode bits — but it is not the mechanism); and whether Claude Code honours
+the mounted trees at runtime. Over-claiming this boundary is how the false-green class shipped;
+state the limit rather than the hope.
+
+**Rebuild gate**: store-touching verbs re-exec the **image-baked** cco through the setuid
+helper, so `lib/` edits are invisible to a live session until `cco build`. Verify a fix through
+`./bin/test`, not through a live `cco` invocation.
+
 ### Tier 3 — E2E Tests (Sprint 8, not yet implemented)
 
 Will test real container behavior: entrypoint execution, volume mounts, socket permissions, auth flow, tmux session startup.
@@ -131,7 +205,9 @@ During development, run only the tests relevant to the module you changed:
 | `lib/cmd-clean.sh` | `bin/test --file test_clean` |
 | `lib/cmd-stop.sh` | `bin/test --file test_stop` |
 | `lib/cmd-template.sh` | `bin/test --file test_template` |
-| `lib/paths.sh` | `bin/test --file test_paths` |
+| `lib/paths.sh` | `bin/test --file test_paths --file test_access_scope --file test_operator_shim` |
+| `lib/cmd-repo.sh`, `lib/rename.sh` | `bin/test --file test_repo_rename --file test_index --file test_operator_shim` |
+| `tests/helpers.sh` (the operator lane) | `bin/test --file test_paths --file test_operator_shim --file test_invariants` |
 | `lib/secrets.sh` | `bin/test --file test_secrets` |
 | `lib/workspace.sh` | `bin/test --file test_packs` |
 | `lib/colors.sh`, `lib/utils.sh` | Utility libraries — covered indirectly by all test files |
