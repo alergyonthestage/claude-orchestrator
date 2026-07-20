@@ -507,6 +507,7 @@ EOF
     done
 
     [[ -z "$name" ]] && die "Usage: cco template internalize <name> [--as <new-name>]"
+    _store_provenance_guard "template internalize"   # D-M8/Q-10: DATA/STATE provenance, cycle-2 conversion
     check_global
 
     # Locate the user template (project or pack kind). Native templates have no
@@ -643,6 +644,7 @@ EOF
         esac
     done
 
+    _store_provenance_guard "template update"   # D-M8/Q-10: DATA/STATE provenance, cycle-2 conversion
     check_global
 
     if $update_all; then
@@ -867,6 +869,7 @@ EOF
 
     [[ -z "$archive" ]] && die "Usage: cco template import <archive>"
     [[ -f "$archive" ]] || die "Archive not found: $archive"
+    _store_provenance_guard "template import"   # D-M8/Q-10: DATA/STATE provenance, cycle-2 conversion
 
     local tmpdir; tmpdir=$(mktemp -d)
     tar xzf "$archive" -C "$tmpdir" 2>/dev/null \
@@ -929,6 +932,7 @@ EOF
     done
 
     [[ -z "$url" ]] && die "Usage: cco template install <url> [--pick <name>]"
+    _store_provenance_guard "template install"   # D-M8/Q-10: DATA/STATE provenance, cycle-2 conversion
 
     # Split a trailing @ref (only when it is in the last path segment, so
     # scp-style git@host:org/repo is left intact).

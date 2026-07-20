@@ -81,6 +81,7 @@ EOF
     done
 
     [[ -z "$url" ]] && die "Usage: cco llms install <url> [--name <name>] [--variant <v>]"
+    _store_provenance_guard "llms install"   # D-M8/Q-10: CACHE content + DATA/STATE provenance, cycle-2 conversion
 
     # Auto-detect name from URL if not provided
     local name_confirmed=false
@@ -411,6 +412,8 @@ EOF
                 ;;
         esac
     done
+
+    _store_provenance_guard "llms update"   # D-M8/Q-10: CACHE content + DATA/STATE provenance, cycle-2 conversion
 
     if [[ "$update_all" == "true" ]]; then
         if [[ ! -d "$LLMS_DIR" ]]; then
