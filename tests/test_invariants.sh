@@ -550,3 +550,62 @@ test_invariant_state_mount_allowlist() {
     grep -qE '_cco_state_shared_dir' "$REPO_ROOT/lib/index.sh" \
         || fail "INV-STATE: lib/index.sh no longer resolves the index under STATE/shared"
 }
+
+# ── INV-IDX index writes are status-checked where errexit cannot help (v3 R2) ──
+# bin/cco dispatches every command body in a `|| _cco_rc=$?` context (to capture the
+# rc), and that DISABLES errexit for the entire call tree. So a failing index write
+# does not abort the verb: `cco repo rename` printed `✓` over three EACCES writes and
+# left project.yml re-keyed against an unchanged index (v3 V3-01). Explicit status
+# propagation is therefore the only available mechanism, and it has to be enforced.
+#
+# Scope: the modules that write the index AND are reachable from an in-container
+# session — today `cmd-repo.sh` (repo/extra-mount rename, "the first in-container
+# index writers", bin/cco:410) and its `rename.sh` helpers. Host-only writers (init,
+# join, resolve, forget, export/import, migrate) run where the bucket parent is
+# always writable; they carry the same latent fragility and are tracked as follow-up
+# rather than silently included here. WHEN A VERB BECOMES CONTAINER-RUNNABLE, ADD ITS
+# MODULE TO `scoped` — that is the whole point of this guard.
+#
+# Form: a bare call — the writer is the first token of the STATEMENT and the
+# statement carries no `||`/`&&` — is a violation. `if ! _index_… ; then` does not
+# match, because there the writer is not the first token. Backslash continuations
+# are joined before the check, so the idiomatic
+#     _index_set_path … \
+#         || die "…"
+# is correctly read as checked (a line-oriented grep flags it as bare — that false
+# positive is why this joins first).
+# Join backslash-continued lines so a statement is one record. Line numbers stay
+# those of the statement's FIRST line, which is what a reader needs.
+_idx_join_continuations() {
+    awk '{
+        if (buf != "") { sub(/^[[:space:]]+/, " "); buf = buf $0 }
+        else { buf = $0; ln = NR }
+        if (buf ~ /\\$/) { sub(/\\$/, "", buf); next }
+        print ln ":" buf; buf = ""
+    } END { if (buf != "") print ln ":" buf }' "$1"
+}
+
+test_invariant_index_writes_status_checked() {
+    local scoped="cmd-repo.sh rename.sh"
+    local writers='_index_(rename_path|set_path|set_project_repos|pp_set|pp_remove|set_unscoped|remove_path|remove_project|ensure_file)'
+    local m f hits=""
+    for m in $scoped; do
+        f="$REPO_ROOT/lib/$m"
+        [[ -f "$f" ]] || continue
+        local h
+        # Records are "<line>:<joined statement>"; the writer must be the first token.
+        h=$(_idx_join_continuations "$f" | grep -E "^[0-9]+:[[:space:]]*${writers}\b" | grep -vE '\|\||&&' || true)
+        [[ -n "$h" ]] && hits="${hits}${m}: ${h}"$'\n'
+    done
+    [[ -z "$hits" ]] || fail "INV-IDX: unchecked index write in a container-reachable module — errexit is disabled by bin/cco's \`|| _cco_rc=\$?\` dispatch, so the failure would be silent (v3 R2):"$'\n'"$hits"
+
+    # Discrimination: a static guard must prove it catches the shape it forbids.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    cp "$REPO_ROOT/lib/cmd-repo.sh" "$tmp/" || { fail "INV-IDX self-test: could not stage cmd-repo.sh"; return 1; }
+    printf '\n_lint_probe_unchecked() {\n    _index_rename_path "$p" "$o" "$n"\n}\n' >> "$tmp/cmd-repo.sh"
+    local planted
+    planted=$(_idx_join_continuations "$tmp/cmd-repo.sh" | grep -E "^[0-9]+:[[:space:]]*${writers}\b" | grep -vE '\|\||&&' || true)
+    [[ -n "$planted" ]] \
+        || { fail "INV-IDX does NOT discriminate: a planted bare index write went uncaught"; return 1; }
+    return 0
+}

@@ -53,6 +53,28 @@ _index_file() {
     printf '%s\n' "$(_cco_state_shared_dir)/index"
 }
 
+# Create the sibling temp file every atomic index write needs — failing LOUDLY.
+#
+# A bare `tmpf=$(mktemp "$f.XXXXXX")` leaves $tmpf EMPTY when the parent is not
+# writable, so the caller's `awk … > "$tmpf"` dies with a bare
+# `index.sh: line N: : No such file or directory` and — because bin/cco runs every
+# command body in a `|| _cco_rc=$?` context, which disables errexit for the whole
+# call tree — execution simply CONTINUES to the success message. That is exactly
+# how `cco repo rename` came to print `✓` over three failed index writes (v3 R2).
+#
+# Returning non-zero here is necessary but NOT sufficient: because errexit is off,
+# every caller must propagate the status explicitly. INV-IDX in
+# tests/test_invariants.sh keeps them honest.
+# Usage: tmpf=$(_index_mktemp "$f") || return 1
+_index_mktemp() {
+    local f="$1" t
+    if ! t=$(mktemp "${f}.XXXXXX" 2>/dev/null) || [[ -z "$t" ]]; then
+        error "Cannot write the cco index at $f — its directory is not writable by this process. Nothing was changed."
+        return 1
+    fi
+    printf '%s\n' "$t"
+}
+
 # Echo the on-disk schema version (integer). Absent/unreadable → 1 (the pre-v2
 # global-flat schema, so a legacy or scaffold-less index reads as transitional).
 _index_version() {
@@ -71,7 +93,7 @@ _index_ensure_file() {
         # Atomic create (mktemp + mv), the same convention as every other index
         # write — a direct multi-line redirect is the one non-atomic site, which
         # two concurrent first-runs could interleave.
-        local tmpf; tmpf=$(mktemp "${f}.XXXXXX")
+        local tmpf; tmpf=$(_index_mktemp "$f") || return 1
         {
             echo "# cco machine-local index — per-project logical name → absolute path + membership."
             echo "# Regenerable via 'cco resolve --scan'; never committed, never synced."
@@ -105,7 +127,7 @@ _index_migrate_v1_to_v2() {
     paths_dump=$(_index_section_dump paths)        # name=path lines (v1 flat)
     projects_dump=$(_index_section_dump projects)  # project=members lines
 
-    local tmpf; tmpf=$(mktemp "${f}.XXXXXX")
+    local tmpf; tmpf=$(_index_mktemp "$f") || return 1
     {
         echo "# cco machine-local index — per-project logical name → absolute path + membership."
         echo "# Regenerable via 'cco resolve --scan'; never committed, never synced."
@@ -170,13 +192,13 @@ _index_section_get() {
 # Usage: _index_section_set <section> <key> <value>
 _index_section_set() {
     local section="$1" key="$2" value="$3" f
-    _index_ensure_file
+    _index_ensure_file || return 1
     f=$(_index_file)
 
     local tmpf=""
     # shellcheck disable=SC2064
     trap 'rm -f ${tmpf:+"$tmpf"}' RETURN
-    tmpf=$(mktemp "${f}.XXXXXX")
+    tmpf=$(_index_mktemp "$f") || return 1
 
     # CCO_IDX_VAL passes the value via env to avoid AWK -v backslash expansion.
     CCO_IDX_VAL="$value" awk -v section="$section" -v key="$key" '
@@ -210,7 +232,7 @@ _index_section_remove() {
     local tmpf=""
     # shellcheck disable=SC2064
     trap 'rm -f ${tmpf:+"$tmpf"}' RETURN
-    tmpf=$(mktemp "${f}.XXXXXX")
+    tmpf=$(_index_mktemp "$f") || return 1
 
     awk -v section="$section" -v key="$key" '
         $0 == section":" { print; in_sec = 1; next }
@@ -310,13 +332,13 @@ _index_pp_set() {
     local project="$1" name="$2" value norm f
     norm=$(_index_normalize_path "$3") || return 1
     value="$norm"
-    _index_ensure_file
+    _index_ensure_file || return 1
     f=$(_index_file)
 
     local tmpf=""
     # shellcheck disable=SC2064
     trap 'rm -f ${tmpf:+"$tmpf"}' RETURN
-    tmpf=$(mktemp "${f}.XXXXXX")
+    tmpf=$(_index_mktemp "$f") || return 1
 
     # CCO_IDX_VAL passes the value via env to avoid AWK -v backslash expansion.
     CCO_IDX_VAL="$value" awk -v project="$project" -v name="$name" '
@@ -374,7 +396,7 @@ _index_pp_remove() {
     local tmpf=""
     # shellcheck disable=SC2064
     trap 'rm -f ${tmpf:+"$tmpf"}' RETURN
-    tmpf=$(mktemp "${f}.XXXXXX")
+    tmpf=$(_index_mktemp "$f") || return 1
 
     awk -v project="$project" -v name="$name" '
         # A project header is buffered in `pending` and only emitted once a
@@ -413,7 +435,7 @@ _index_pp_remove_project() {
     local tmpf=""
     # shellcheck disable=SC2064
     trap 'rm -f ${tmpf:+"$tmpf"}' RETURN
-    tmpf=$(mktemp "${f}.XXXXXX")
+    tmpf=$(_index_mktemp "$f") || return 1
 
     awk -v project="$project" '
         $0 == "project_paths:" { print; in_sec = 1; next }
@@ -594,7 +616,7 @@ _index_remove_path() {
 # hatch when the cwd is not inside a project). Usage: _index_set_unscoped <name> <path>
 _index_set_unscoped() {
     local norm; norm=$(_index_normalize_path "$2") || return 1
-    _index_ensure_file
+    _index_ensure_file || return 1
     _index_section_set unscoped "$1" "$norm"
 }
 
@@ -715,13 +737,22 @@ _index_rename_project() {
 # No-op-safe: an <old> unbound in <project> skips the path re-key; the membership
 # token rewrite is idempotent. Callers validate <new> is free in <project> first.
 # The repo/extra_mount analogue of _index_rename_project (ADR-0050 D6).
+#
+# Returns non-zero if ANY of its three sub-writes fails. This used to check none
+# of them, and its caller invoked it bare and printed `✓` regardless — so a rename
+# whose index writes all failed EACCES still reported success, leaving project.yml
+# re-keyed against an unchanged index (v3 V3-01, the half-apply). Note that errexit
+# is NOT available to catch this: bin/cco runs command bodies in a `||` context,
+# which disables it for the whole call tree, so the propagation must be explicit.
 # Usage: _index_rename_path <project> <old> <new>
 _index_rename_path() {
     local project="$1" old="$2" new="$3" path members
     path=$(_index_pp_get "$project" "$old")
     if [[ -n "$path" ]]; then
-        _index_pp_set "$project" "$new" "$path"
-        _index_pp_remove "$project" "$old"
+        _index_pp_set "$project" "$new" "$path" || return 1
+        # The new binding is in place; failing to drop the old one would leave the
+        # path bound under BOTH names, so this half must report too.
+        _index_pp_remove "$project" "$old" || return 1
     fi
     members=$(_index_get_project_repos "$project")
     if [[ -n "$members" ]]; then
@@ -730,8 +761,9 @@ _index_rename_path() {
             [[ "$tok" == "$old" ]] && tok="$new"
             out="${out:+$out }$tok"
         done
-        _index_set_project_repos "$project" $out
+        _index_set_project_repos "$project" $out || return 1
     fi
+    return 0
 }
 
 # NOTE: the name-based reverse lookup _index_repos_get_projects (ADR-0024 D5) is

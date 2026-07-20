@@ -375,3 +375,50 @@ test_repo_rename_host_apply_order_unchanged() {
     assert_projectyml_member "$dir/.cco/project.yml" repos backend absent || return 1
     return 0
 }
+
+# T-R2 — the v3 V3-01 regression guard: an index write that cannot complete must
+# FAIL LOUD, not print `✓` over a half-apply.
+#
+# This is the exact shape v3 found in a live container. The verb writes the two
+# stores in order — project.yml FIRST (RC-2's deliberate ordering), the STATE index
+# second — and the index write failed EACCES because its bucket parent was not
+# writable. Nothing surfaced it: _index_rename_path checked none of its three
+# sub-writes, cmd-repo.sh called it bare, and bin/cco's `|| _cco_rc=$?` dispatch had
+# already disabled errexit for the whole call tree. Result: rc=0, "✓ Renamed", and a
+# project.yml re-keyed against an unchanged index — user-visible immediately as
+# `cco project show` flipping to `Repos: (none)`.
+#
+# The assertions that make this a real guard rather than a smoke test are (b) and
+# (c): a fix that merely returned non-zero without suppressing the success tick, or
+# that suppressed the tick without a usable message, still fails here.
+# ⚠ FAILS on pre-fix code: rc=0 with "✓ Renamed".
+test_repo_rename_operator_unwritable_index_fails_loud() {
+    [[ "$(id -u)" -eq 0 ]] && return 0   # root ignores the mode bits
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" edit-project alpha
+    local mnt; mnt=$(operator_mount_unit alpha alpha)
+
+    # Make the INDEX bucket unwritable while the config tree stays writable — the
+    # precise asymmetry of the live failure (v3 root cause C: the fail-closed probe
+    # guards <repo>/.cco, which was never the tree that failed).
+    chmod 555 "$(state_shared)"
+    local rc=0
+    _rr_cco_in "$mnt" repo rename alpha api -y || rc=$?
+    chmod 755 "$(state_shared)"
+
+    # (a) non-zero exit — the store write could not complete
+    [[ "$rc" -ne 0 ]] || { fail "unwritable index must fail loud; got rc=0: $CCO_OUTPUT"; return 1; }
+    # (b) NO success tick over a failed write (the false-success class itself)
+    [[ "$CCO_OUTPUT" != *"✓ Renamed"* ]] \
+        || { fail "no success tick on a failed index write: $CCO_OUTPUT"; return 1; }
+    # (c) the message must name the real cause AND the recovery, since project.yml
+    #     did change: an honest failure the user cannot act on is only half a fix.
+    [[ "$CCO_OUTPUT" == *"index"* ]] \
+        || { fail "the failure must name the index as the store that failed: $CCO_OUTPUT"; return 1; }
+    # (d) the index really is untouched — no partial re-key survived
+    assert_index_path alpha alpha /Users/cco-e2e/code/alpha || return 1
+    assert_index_path alpha api "" || return 1
+    return 0
+}

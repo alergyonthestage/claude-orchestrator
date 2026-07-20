@@ -154,14 +154,31 @@ _rename_index_keyed() {
     local p
     while IFS= read -r p; do [[ -n "$p" ]] && changed+=("$p"); done \
         < <(_rename_projectyml_current "$project" "$section" "$old" "$new")
-    _index_rename_path "$project" "$old" "$new"
+    # The index write is the SECOND of the two stores, and its failure is what v3
+    # V3-01 caught: called bare, it printed `✓` over three EACCES writes and left
+    # project.yml re-keyed against an unchanged index. Errexit cannot cover this —
+    # bin/cco runs the body in a `||` context — so check explicitly, and say which
+    # store did change so the user can recover deterministically.
+    if ! _index_rename_path "$project" "$old" "$new"; then
+        local _recover=""
+        [[ ${#changed[@]} -gt 0 ]] && _recover=" project.yml WAS re-keyed in ${#changed[@]} repo(s) — revert it, or re-run this rename on your host to bring the index into line."
+        die "Renamed $pretty '$old' → '$new' in project.yml, but the machine-local index could not be updated.${_recover}"
+    fi
     if [[ "$do_move" == true ]]; then
         mv "$oldpath" "$newpath" \
             || die "Failed to move '$oldpath' → '$newpath'. The name re-key is applied; re-run after resolving the cause."
-        _index_set_path "$project" "$new" "$newpath"
+        _index_set_path "$project" "$new" "$newpath" \
+            || die "Moved '$oldpath' → '$newpath', but the index could not be re-bound to the new path. Re-run 'cco path set $new $newpath' on your host."
     fi
 
     ok "Renamed $pretty '$old' → '$new' in project '$project'."
+    # A successful rename changes where this member is EXPECTED to be mounted, but a
+    # live bind cannot follow — the session still has <old> at <workdir>/<old>, so
+    # every later probe of <new> classifies not-mounted until restart (v3 V3-P). The
+    # extra_mount note below covers the target-path change; repos need it MORE, since
+    # their container path always tracks the name.
+    _cco_container_operator \
+        && info "This session still has '$old' mounted at ${CCO_WORKDIR:-/workspace}/$old — restart the session for the new name to take effect."
     # Coincident-name note: renaming a repo/mount never renames a same-named project.
     [[ -n "$(_index_get_project_repos "$old")" ]] \
         && info "Note: a project named '$old' exists and was left untouched — use 'cco project rename' for that."
