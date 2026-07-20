@@ -102,9 +102,10 @@ ships alone; cycle 2 = RC-5 sweep + RC-7…RC-16, undesigned). Branch
 Cycle-1 stages (each impl → adversarial revert-check verify): **RC-17** keystone container-operator
 test lane ✅ · **RC-1** nested-config clamp + D-M11 Q-12 escalation close ✅ · **RC-6** config-editor
 target repos ✅ · **RC-2** host-path class (INV-F, D-M2 vocabulary, D-M4 de-elevation) ✅ ·
-**RC-3** store write-path + Q-11 rename migration + E6B-04 half-apply ⏸ **INTERRUPTED mid-impl**
-(WIP checkpoint `05ab3af` — 5 atomic commits done + 1 unverified WIP; **continue, do not re-run**) ·
-**RC-4** `path list` fail-closed ⬜ · **docs** ADR sweep + changelog #46 ⬜. Suite at RC-2 tip: **1377/9**.
+**RC-3** store write-path (lib/store.sh cascade layer, INV-S1..S6, E6A-13/E6B-03/04 closed, Q-10-OUT
+fail-fast provenance guard, §6.5 INV-S6 CLASS lint) ✅ — **Q-11 confirmed a §3.8 no-op, already
+closed by RC-2's D-M4 de-elevation** · **RC-4** `path list` fail-closed ⬜ · **docs** ADR sweep +
+changelog #46 ⬜. Suite at RC-3 tip: **1403/9**.
 
 **Out of session reach — gates the release, not the implementation** (do on the Mac):
 `cco build` from develop (fixes are invisible in-session until rebuilt); targeted e2e re-run

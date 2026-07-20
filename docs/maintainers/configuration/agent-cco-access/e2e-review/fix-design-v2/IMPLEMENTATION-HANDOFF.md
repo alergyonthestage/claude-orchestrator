@@ -10,7 +10,18 @@
 > **Runner**: `./bin/test` (`--file <name>` for one file). Running `bash tests/<file>.sh`
 > directly is a **FALSE GREEN** — test files are function libraries sourced by `bin/test`.
 
-## 0. Where you are — ▶ implementation workflow RUNNING (cycle 1)
+## 0. Where you are — ▶ cycle-1 implementation 5/6 stages done; ⏸ paused before RC-4
+
+> **Update 2026-07-20**: RC-17, RC-1, RC-6, RC-2 and **RC-3** are all IMPLEMENTED and
+> adversarially verified (each stage's tests proven to fail on reverted code). Suite at the
+> RC-3 tip: **1403 / 9** (the 9 = pre-existing FI-19 boundary artifacts). Governance addition
+> **D-M11** (§2) moved Q-12 into cycle 1 as a forced consequence of D-M1. Remaining: **RC-4**
+> (`path list` fail-closed) then the **docs** stage (ADR annotations + one grouped changelog
+> entry id 46 + the two/three folded cleanups). Paused before RC-4 at the maintainer's request.
+>
+> **Resume pointers**: memory `[[e2e-v2-review]]` (RESUME POINT) and `00-overview.md` §9's
+> D-M table. RC-4 is run via `scratchpad/wf/e2e-v2-cont.js` with `args:{stage:"RC-4"}`; the
+> docs stage with `args:{stage:"docs"}`. Everything below §0 is the original plan, unchanged.
 
 > **Update 2026-07-19**: §6 steps 1–3 are DONE. State confirmed (4 docs-only commits,
 > `2950993`→`b97e659`), baseline re-measured in-container at **1311/9**, and the remaining
