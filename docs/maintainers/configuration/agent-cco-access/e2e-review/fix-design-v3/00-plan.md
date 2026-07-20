@@ -23,6 +23,7 @@ next failure of the same class.
 flowchart TD
   S1["S1 · R1 — STATE shared sub-bucket<br/>mount + migration 017"]
   S2["S2 · R2 — index write-path error propagation<br/>+ INV"]
+  S2b["S2b · R2 — same propagation for the<br/>host-only index writers (join/init first)"]
   S3["S3 · R7 — route index writes through store.sh pre-flight"]
   S4["S4 · R3 — read-path honesty: empty ≠ unreadable"]
   S5["S5 · D-V3-1 + R5 — remote verbs host-only<br/>+ truthful store refusal"]
@@ -32,6 +33,7 @@ flowchart TD
   S9["S9 — changelog 47, ADR forward-annotation, living-doc sweep"]
 
   S1 --> S2 --> S3
+  S2 --> S2b --> S9
   S1 --> S4
   S1 --> S5
   S6 --> S9
@@ -48,6 +50,7 @@ flowchart TD
 |---|---|---|---|
 | **S1** | R1 | V3-01, V5-01, V2-F01 | 🔴 yes |
 | **S2** | R2 | V3-01 (honesty half) | 🔴 yes |
+| **S2b** | R2 | the same class in the host-only writers (not a v3 finding — found while landing S2) | 🟠 |
 | **S3** | R7 | V3-02 | 🟠 |
 | **S4** | R3 | V2-F02, V2-F03 | 🟠 |
 | **S5** | D-V3-1, R5 | V5-02, V5-03 | 🟠 |
@@ -152,6 +155,52 @@ Audit the other `_index_*` writers (`lib/index.sh:70,104,175,209,315,373,412`) f
 unchecked-status shape while here — V3 found the rename path, but nothing suggests it is unique.
 
 ---
+
+## 3b. S2b — the same propagation for the host-only index writers
+
+**Not a v3 finding.** It surfaced while landing S2: once `INV-IDX` existed, running it
+unscoped showed ~15 bare index writes across seven host-only modules — `cmd-init.sh:390-391`,
+`cmd-join.sh:169-170`, `cmd-resolve.sh` (5 sites), `cmd-forget.sh:203`,
+`cmd-project-export-import.sh:216-217`, `cmd-project-add.sh:210`, `local-paths.sh:500`,
+`migrate.sh:1045`. Every one is the V3-01 shape: write the index, then announce success
+unconditionally.
+
+**Why it was scoped out of S2, and why that was half right.** The *probability* is genuinely
+lower on the host — the bucket parent is normally writable, so the failure needs an anomaly:
+a STATE tree left root-owned by an earlier `sudo cco …` (the realistic one — it is a common
+instinct after a permission error), `ENOSPC`, a quota, or a home on a mount gone read-only.
+`_cco_ensure_dir` (`paths.sh:429`) does not protect: it creates a missing directory but
+passes straight through an existing unwritable one, and its status is unchecked anyway.
+
+But probability is the wrong sole criterion. The right one is probability × **consequence** ×
+detectability, and on two of these verbs the consequence is *higher* than the container bug
+while detectability is equally nil:
+
+| Verb | What the user is told | What is actually true | What they hit later |
+|---|---|---|---|
+| `cco init` | `✓ Scaffolded …` **+ "registered it in the index (1 repo)"** — a sentence asserting the very write that failed | `project.yml` written, index empty | `cco start <name>` → *"is not resolvable yet — run 'cco resolve --scan'"*, i.e. the tool contradicts itself one command later |
+| `cco join` | `✓ Joined '<p>' as member '<r>'` + the commit/push reminder | `project.yml` re-keyed in **every** synced member repo, index unbound | the user **commits and pushes** a config declaring a member no index binds — the blast radius leaves the machine and reaches teammates on pull |
+
+`join` is the reason this cannot stay a comment: v3's V3-01 damaged one session; this
+damages a versioned, distributed artifact.
+
+**Why it is still its own stage rather than part of S2.** Seven modules, and each site needs
+a real behavioural decision, not a mechanical `|| return 1`: a verb that used to complete now
+dies, and — exactly as in `cmd-repo.sh` — the message has to say *which* store already
+changed, because the first write (`project.yml`, potentially across several repos) has
+already landed. That is a stage with tests, not a footnote.
+
+**Work items**, priority order:
+
+1. **`cmd-join.sh`** and **`cmd-init.sh`** first — the two with off-machine consequence.
+   Same shape as `cmd-repo.sh`: check, `die` naming the store that changed and the recovery.
+2. The remaining five modules.
+3. **Widen `INV-IDX`'s `scoped` list as each module is closed**, so the lint tracks the work
+   instead of documenting a permanent exemption. When the list covers all seven, drop the
+   "host-only writers are out of scope" paragraph from the invariant's header.
+4. A behavioural guard per high-value verb, modelled on `T-R2`
+   (`test_repo_rename_operator_unwritable_index_fails_loud`): unwritable index → non-zero, no
+   success tick, message names the index, index provably untouched.
 
 ## 4. S3 — route index writes through the RC-3 pre-flight
 
