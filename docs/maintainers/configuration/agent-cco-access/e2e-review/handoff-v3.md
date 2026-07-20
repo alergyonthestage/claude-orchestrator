@@ -188,10 +188,12 @@ never-executed E6B-04.
 | **V4** | `ce-project` | `./bin/cco start config-editor --project cave-auth --mount ~/cco-e2e-review-v3:/review-v3:rw --mount docs:/cco-docs:ro` | **RC-1 + RC-6 + D-M11 / criteria D+E** — the v2 verdict's heaviest failure |
 | **V5** | `ce-broad` | `./bin/cco start config-editor --all --mount ~/cco-e2e-review-v3:/review-v3:rw --mount docs:/cco-docs:ro` | **RC-1 broad + RC-3** — store writes honest at G=rw |
 
-`<PROJ-WITH-MOUNTS>` **must be a project that declares `extra_mounts:`** — see §10 step 3 for how
-to pick it. On the maintainer's machine `StaiSicuro-Juri` is the known candidate (its `docs`,
-`mock`, `assets` mounts are exactly the FI-23 residue that leaked in v2). `cave-auth` is the
-fallback if it declares mounts.
+`<PROJ-WITH-MOUNTS>` = **the StaiSicuro-Juri project** — maintainer-confirmed (2026-07-20) as
+declaring `extra_mounts:`. Its `docs` / `mock` / `assets` mounts are exactly the FI-23 residue rows
+that leaked in v2, which makes it the ideal V1 subject: the same bindings must now be **hidden from
+other projects' sessions** (V2's vantage) yet **still visible to its own** (V1's) — the two halves
+of RC-4 in one project. Use the **exact slug** `cco list projects` reports (the paths in the v2
+reports read `StaiSicuro-Juri`; confirm the registered project name before launching).
 
 ---
 
@@ -402,23 +404,17 @@ git rev-parse --short HEAD
 mkdir -p ~/cco-e2e-review-v3
 ```
 
-### Step 3 — Pick `<PROJ-WITH-MOUNTS>` for V1/V2 (**required**)
+### Step 3 — Confirm the V1/V2 subject + capture the host oracle
 
-V1's whole value is the RC-4 positive case, which needs a project that declares `extra_mounts:`.
-Find one:
+`<PROJ-WITH-MOUNTS>` is **StaiSicuro-Juri** (maintainer-confirmed: it declares `extra_mounts:`).
+Only the exact registered slug is still needed — the v2 reports show the *path* as
+`StaiSicuro-Juri`, which may differ from the project name in the index:
 
 ```bash
-cco list projects                      # the candidates
-# then, for each candidate, check whether it declares extra_mounts:
-grep -l 'extra_mounts:' /path/to/<repo>/.cco/project.yml
+cco list projects        # copy the exact slug for the V1/V2 launches
 ```
 
-Expected on your machine: **`StaiSicuro-Juri`** (its `docs` / `mock` / `assets` mounts are exactly
-the rows that leaked in v2). If it declares none, use any project that does; if **no** project
-declares `extra_mounts:`, tell me — V1's positive half then needs a purpose-made scratch project
-and I will write that variant.
-
-Also capture the host-side truth to diff against later:
+Capture the host-side truth to diff against later:
 
 ```bash
 cco path list > ~/cco-e2e-review-v3/HOST-path-list.txt
@@ -477,19 +473,30 @@ Two things are much easier for a human than for a session agent:
 
 ### Step 6 — The §7 scratch reproduction (do **not** skip)
 
+> **These commands are a sketch, not a script.** `cco init` is interactive and the pack-reference
+> edit is a manual `project.yml` change. Adapt as needed — what matters is the **shape**: two
+> projects that both reference **one** pack, so the rename's cross-project ref fan-out is actually
+> exercised. A single-project setup would pass a half-apply undetected.
+
 ```bash
-# Create a throwaway project + pack, and a second project referencing the pack
+# Two throwaway repos, each becoming a cco project
 mkdir -p /tmp/cco-scratch/proj-a /tmp/cco-scratch/proj-b
-cd /tmp/cco-scratch/proj-a && git init -q
-cco init                                  # follow prompts; name it e.g. scratch-a
-cco pack create scratch-pack              # a disposable pack
-# add scratch-pack to BOTH projects' project.yml packs: list, then:
+( cd /tmp/cco-scratch/proj-a && git init -q && cco init )   # name it e.g. scratch-a
+( cd /tmp/cco-scratch/proj-b && git init -q && cco init )   # name it e.g. scratch-b
+
+cco pack create scratch-pack                                # a disposable pack
+
+# Manually add `scratch-pack` to the packs: list of BOTH projects' .cco/project.yml, then:
 cco resolve scratch-a && cco resolve scratch-b
+cco list packs                                              # confirm scratch-pack is registered
 ```
 
 Then run the rename **inside** a container session (`./bin/cco start config-editor --all …`) per
-§7 step 2, and verify the three post-conditions. Clean up `/tmp/cco-scratch` and
-`~/.cco/packs/scratch-pack*` afterwards.
+§7 step 2, and verify the three post-conditions — in particular that **`scratch-b`'s**
+`project.yml` was re-keyed too, not just `scratch-a`'s.
+
+Cleanup afterwards: remove `/tmp/cco-scratch`, `~/.cco/packs/scratch-pack*`, and the two scratch
+projects from the index (`cco forget scratch-a`, `cco forget scratch-b` — host-only verbs).
 
 ### Step 7 — After all sessions: consolidate
 
