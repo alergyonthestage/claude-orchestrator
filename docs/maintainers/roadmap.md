@@ -110,11 +110,14 @@ closed by RC-2's D-M4 de-elevation** · **RC-4** `path list` fail-closed on the 
 FI-19 boundary artifacts, identical set to the RC-3 baseline). RC-4 revert-checked in an isolated
 worktree: all discriminators fail on pre-fix `lib/`.
 
-**Out of session reach — gates the release, not the implementation** (do on the Mac):
-`cco build` from develop (fixes are invisible in-session until rebuilt); targeted e2e re-run
-(E5/E6A/E6B for D+E, E4 for F, E1-E3 for RC-4); the **E6B-04 pack-rename half-apply scratch
-reproduction** (🔴 data-loss if confirmed — never yet executed with `-y`); the Linux write-path
-check-in (D-M6, before develop → main); `git push` both branches. Resume pointer: memory
+**Out of session reach — gates the release, not the implementation** (do on the Mac): **all of it
+is now scripted in [`e2e-review/handoff-v3.md`](configuration/agent-cco-access/e2e-review/handoff-v3.md)
+§10 (host runbook)** — FF-merge cycle-1 → develop then `cco build` **from develop** (closes the
+cycle-0 deviation; develop is an ancestor of the fix branch, so the tree is identical); the
+targeted **e2e v3** re-run (V1/V2 RC-4, V3 criterion F, V4 D+E, V5 RC-1-broad+RC-3); the **E6B-04
+pack-rename half-apply scratch reproduction** (🔴 data-loss if confirmed — never yet executed with
+`-y`, now a named gate in handoff-v3 §7); the Linux write-path check-in (D-M6, before develop →
+main); `git push` + `develop → main` only after v3 ACCEPTED. Resume pointer: memory
 [[e2e-v2-review]] + `e2e-review/fix-design-v2/IMPLEMENTATION-HANDOFF.md`.
 
 #### F — opinionated-config extraction + `cco update` responsibility refactor (post-C, structural)
