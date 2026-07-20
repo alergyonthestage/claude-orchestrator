@@ -830,3 +830,34 @@ entries:
       the auto-updater keeps the binary current. If an install genuinely fails,
       the FATAL now names `cco build --no-cache` as the cache reset. Requires
       `cco build` (the entrypoint is baked into the image).
+
+  - id: 46
+    date: "2026-07-20"
+    type: additive
+    title: "Container-session config access: honest failures, scoped path list, config-editor repos"
+    description: >
+      The e2e acceptance review of the agent↔cco access model (cycle 1) closed
+      five container-session enforcement gaps. All are in-container behaviour; the
+      host, `read-all`/`edit-all`, and path *resolution* are unchanged. (1)
+      Store-mutating verbs (pack/template/llms/remote rename and remove, and the
+      destructive re-key cascades) now FAIL with exit 1 and the real reason when
+      the internal store is unwritable, instead of printing a false success or a
+      spurious "not found"; a rename is applied wholly or refused wholly, never
+      half-applied. (`pack install` and the other provenance writers are a clean
+      in-container refusal until cycle 2.) (2) `cco path list` now scopes EVERY row
+      by its owning project: bindings stored under no project (the `unscoped:`
+      bucket) were previously always shown — including their host paths —
+      regardless of access level; they now require a `read-all` session, like any
+      other project you do not own, and are counted in the hidden notice — unless
+      the current project actually resolves one of them (a name it declares and
+      does not otherwise bind), in which case it stays visible, because it is one
+      of this session's own mounts. (3) `cco start config-editor` now MOUNTS the
+      target project's member repos (not only its `.cco`), so repo-aware authoring
+      works; a target that is not mounted is announced, not silently skipped. (4)
+      The nested-config readonly clamp no longer over-clamps a config-editor
+      target's or the store's own `.cco` when the session's access triple grants
+      write. (5) `cco repo rename` / `cco extra-mount rename` now run to completion
+      in-container (name-only; `--move-dir` is refused with a host hint). A
+      resource that exists on this machine but is not bound into the current
+      session now says "not mounted in this session" with a host remedy, instead
+      of a misleading "run cco resolve". Requires `cco build`.

@@ -89,7 +89,7 @@ re-run of the e2e harness (acceptance gate) before merge → develop + push (fro
 - **Post-fix UX/CLI-completeness review** — verb intuitiveness/naming; finalizes the F4
   introspection verb name (`whoami` is provisional; vs `session`; reserve `cco status`?).
 
-#### B2 e2e-review **v2** acceptance — cycle-1 fix (⏸ IN PROGRESS, 2026-07-19)
+#### B2 e2e-review **v2** acceptance — cycle-1 fix (✅ CODE COMPLETE, 2026-07-20)
 
 The v2 acceptance re-review (7 sessions, 2026-07-16) returned **NOT ACCEPTED** — enforcement
 fidelity, not model: subsystems that declare `rw` mounted `ro`, one write path faked success,
@@ -104,9 +104,11 @@ test lane ✅ · **RC-1** nested-config clamp + D-M11 Q-12 escalation close ✅ 
 target repos ✅ · **RC-2** host-path class (INV-F, D-M2 vocabulary, D-M4 de-elevation) ✅ ·
 **RC-3** store write-path (lib/store.sh cascade layer, INV-S1..S6, E6A-13/E6B-03/04 closed, Q-10-OUT
 fail-fast provenance guard, §6.5 INV-S6 CLASS lint) ✅ — **Q-11 confirmed a §3.8 no-op, already
-closed by RC-2's D-M4 de-elevation** · **RC-4** `path list` fail-closed ⬜ · **docs** ADR sweep +
-changelog #46 ⬜. Suite at RC-3 tip: **1403/9**. Resume plan (review → RC-4 → docs) in
-`e2e-review/fix-design-v2/RESUME-HANDOFF-review-rc4-docs.md`.
+closed by RC-2's D-M4 de-elevation** · **RC-4** `path list` fail-closed on the Po axis
+(maintainer-ratified) ✅ · **docs** ADR sweep + changelog #46 + folded test-harness cleanups ✅.
+**All six roots + docs landed; cycle 1 is code-complete.** Suite **1414/9** (the 9 = pre-existing
+FI-19 boundary artifacts, identical set to the RC-3 baseline). RC-4 revert-checked in an isolated
+worktree: all discriminators fail on pre-fix `lib/`.
 
 **Out of session reach — gates the release, not the implementation** (do on the Mac):
 `cco build` from develop (fixes are invisible in-session until rebuilt); targeted e2e re-run

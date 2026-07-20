@@ -446,3 +446,40 @@ flowchart TD
   sequence (superseded) assumed no model/security redesign; it is folded into the phases
   above.
 - `cco build` + the e2e run happen on the Mac (image-baked fixes need a rebuild).
+
+### Cycle-2 residue — recorded at cycle-1 close (2026-07-20)
+
+Cycle 1 (RC-1/RC-6/RC-2/RC-3/RC-4/RC-17 + docs) shipped code-complete on
+`fix/config-access/e2e-v2-cycle1` (suite 1414/9). Per **D-M3/D-M7** the following are
+**deferred to cycle 2** and must **not** be re-discovered by the re-review — they are known,
+triaged, and out of cycle-1 scope:
+
+- **RC-5 full sweep + RC-7…RC-16** — the D-M2 three-state vocabulary is ratified and cycle 1
+  emits it at the sites it already touches; the sweep across `access-scope.sh`
+  (`_env_require_visible`), `cmd-project-query.sh` and every other verb that invents a third
+  answer is cycle 2, together with RC-7 (`/etc/cco/policy.json` agent-readable, criterion B-S1b),
+  RC-8…RC-16. Full table: `results/consolidated-review.md` §3 / `fix-design-v2/00-overview.md` §10.
+- **Q-10 provenance-writer conversion** — `pack`/`template install|update|import|internalize`,
+  `llms install|update`, `_record_tree_as_base`, `_meta_record_provenance` are **not** on
+  `lib/store.sh`'s cascade layer yet; cycle 1 gave them a fail-fast `_store_provenance_guard`, so
+  `pack install` is a clean in-container refusal until they convert.
+- **Q-15 — the unscoped `dummy-repo` seed** (`tests/helpers.sh`). The shared fixture seeds
+  `dummy-repo` **unscoped**, and `_index_get_path`'s unscoped fallback answers for any scope, so a
+  few tests pass on otherwise-broken code. RC-6 routed around it (unseeded name + 3-arg scoped
+  form); converting the shared seed to scoped touches most of the suite — cycle 2.
+- **The `-ne 0` negative-space sweep (DI2, §4 above)** — RC-17 banned negative-**only** `rc -ne 2`
+  terminal assertions; the sibling `-ne 0` "the command failed somehow" idiom is 46 rc-shaped
+  comparisons still on the tree. Cycle 2 (`fix-design-v2/01-test-lane.md` §3.5).
+- **`LLMS_DIR` taint-set minor (RC-3 §6.5 lint)** — the INV-S6 CLASS lint (`test_invariants.sh`)
+  taints the confined-bucket resolvers but omits the module-global `LLMS_DIR`; direct
+  `$(_cco_llms_dir)` forms **are** caught, so this is a hardening gap, not a live bypass. Cycle 2.
+- **`cmd-resolve.sh` INV-F.3 asserted-shape exemption (04 §6.7)** — `cmd-resolve.sh` is
+  deliberately absent from `test_invariant_index_resolver_host_only`'s `deny` list (it defines the
+  host/operator dispatcher and hosts the host-only `cco resolve`). A robust asserted
+  operator-branch-shape exemption over its six heterogeneous call sites needs control-flow
+  analysis and is too brittle for a lint; documented in-place at the test, tracked here for cycle 2.
+
+**Explicitly NOT residue** (do not file): **Q-12** — closed in cycle 1 by **D-M11** (the
+config-editor target mount root's `readonly:` follows `Pc`); **Q-11** — a §3.8 no-op, the real
+INV-S5 over-elevation was already closed by RC-2's D-M4 de-elevation (the residual whole-verb
+elevation covers only the STATE index re-key, which §3.8 keeps as a primitive).
