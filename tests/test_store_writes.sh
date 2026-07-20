@@ -323,3 +323,116 @@ test_store_remote_add_fails_loud_when_registry_unwritable() {
         || { fail "no success tick on a failed store write: $CCO_OUTPUT"; return 1; }
     return 0
 }
+
+# ── §6.2: the OUTPUT contract on a failed store write ─────────────────
+# The tick is a truth assertion again. Complements the state lock above by asserting
+# on the MESSAGE: on a failed sidecar purge, `pack remove` must exit 1, must NOT emit
+# the ✓ tick, AND must announce the failure (name the store) rather than fail
+# silently. READ-ONLY (555) DATA. Pre-fix: two `rm: Permission denied` lines THEN
+# `✓ Pack 'p' removed`, exit 0 — the tick lies and the errors are un-actionable.
+test_store_pack_remove_prints_no_success_tick_on_failure() {
+    [[ "$(id -u)" -eq 0 ]] && return 0
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"; setup_operator_session "$tmp" edit-global
+    _sw_seed_pack p
+    chmod 555 "$CCO_DATA_HOME"
+    local rc=0; run_cco pack remove p -y || rc=$?
+    chmod 755 "$CCO_DATA_HOME"
+    assert_rc 1 "$rc" "a failed store write must exit 1, never 0" || return 1
+    [[ "$CCO_OUTPUT" != *"Pack 'p' removed"* ]] \
+        || { fail "the success tick must not print on a failed store write: $CCO_OUTPUT"; return 1; }
+    [[ "$CCO_OUTPUT" == *store* ]] \
+        || { fail "the failure must be announced (name the store), not silent: $CCO_OUTPUT"; return 1; }
+    return 0
+}
+
+# ── §6.2: host parity LOCK (passes today by design) ───────────────────
+# NORMAL perms, HOST path (no operator env → store.sh runs in-process): on a
+# successful `pack rename`, the DATA + STATE sidecars move TOGETHER under the new key
+# and the old keys are gone. This is a PARITY LOCK — it passes on pre-fix code too;
+# its job is to prove the lib/store.sh sidecar-rekey cascade preserves the host's
+# all-or-nothing sidecar move, so the boundary crossing never becomes a half-move.
+test_store_pack_rename_all_or_nothing_on_sidecars() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"        # HOST context: no setup_operator_session
+    _sw_seed_pack p
+    local rc=0; run_cco pack rename p q -y || rc=$?
+    assert_rc 0 "$rc" "pack rename on the host must succeed" || return 1
+    assert_dir_exists "$CCO_DATA_HOME/packs/q"  || return 1
+    assert_dir_exists "$CCO_STATE_HOME/packs/q" || return 1
+    assert_dir_not_exists "$CCO_DATA_HOME/packs/p"  || return 1
+    assert_dir_not_exists "$CCO_STATE_HOME/packs/p" || return 1
+    assert_dir_exists "$CCO_PACKS_DIR/q" || return 1   # CONFIG moved too
+    return 0
+}
+
+# ── §6.3: enumeration stays non-empty behind an unreadable index ──────
+# _project_iter_members must emit one row per repos[] entry even when the STATE index
+# is unreadable, by enumerating from the mounted project.yml (§3.6). This is the row
+# that FAILS if §3.6 is descoped to RC-2's probe-path-only change: pre-fix the member
+# NAMES come from the sealed index (reads EMPTY as claude behind the boundary), so the
+# loop is vacuous. OPAQUE STATE (000) models the ADR-0047 boundary; shop is mounted
+# with two declared members. Pre-fix: zero rows.
+test_store_iter_members_nonempty_when_index_unreadable() {
+    [[ "$(id -u)" -eq 0 ]] && return 0
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"; setup_operator_session "$tmp" edit-global shop
+    # A mounted member that also hosts shop's committed config, plus a second declared
+    # member — two repos[] entries the enumeration must surface even with STATE sealed.
+    mkdir -p "$CCO_WORKDIR/backend/.cco"
+    printf 'name: shop\nrepos:\n  - name: backend\n  - name: api\n' \
+        > "$CCO_WORKDIR/backend/.cco/project.yml"
+    seed_index_path backend "$CCO_WORKDIR/backend" shop
+    index_set_project_repos shop backend api
+    chmod 000 "$CCO_STATE_HOME"                        # the index is now unreadable
+    local out; out=$(
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/paths.sh";  source "$REPO_ROOT/lib/index.sh"
+        source "$REPO_ROOT/lib/yaml.sh";   source "$REPO_ROOT/lib/sync-meta.sh"
+        source "$REPO_ROOT/lib/access-scope.sh"; source "$REPO_ROOT/lib/cmd-resolve.sh"
+        _project_iter_members shop )
+    chmod 700 "$CCO_STATE_HOME"
+    local n; n=$(printf '%s\n' "$out" | grep -c .)
+    [[ "$n" -eq 2 ]] \
+        || { fail "sealed index: expected 2 member rows enumerated from project.yml, got $n: $out"; return 1; }
+    return 0
+}
+
+# ── Q-10-OUT: install-family provenance verbs refuse UP FRONT ──────────
+# D-M8/Q-10 leaves the install/update provenance writers UNCONVERTED in cycle 1; the
+# _store_provenance_guard makes them a clean in-container REFUSAL (exit 2, names the
+# reason + the host remedy) instead of installing to CONFIG and silently losing the
+# DATA/STATE (or, for llms, CACHE) provenance behind the boundary. A fake URL never
+# reaches the network — the guard fires first. Pre-fix (no guard): the verb proceeds
+# past arg parsing toward a clone/download and dies with a network error (rc≠2, no
+# provenance message). Drive each in an operator session with G=rw so the write gate
+# would otherwise admit the verb.
+_sw_assert_provenance_refusal() {   # <verb-label> <argv…>
+    local label="$1"; shift
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"; setup_operator_session "$tmp" edit-global
+    local rc=0; run_cco "$@" || rc=$?
+    assert_rc 2 "$rc" "'cco $label' must refuse up front in a container session" || return 1
+    [[ "$CCO_OUTPUT" == *"install-provenance"* ]] \
+        || { fail "the refusal must name the provenance reason: $CCO_OUTPUT"; return 1; }
+    [[ "$CCO_OUTPUT" == *"$label"* ]] \
+        || { fail "the refusal must name the verb + host remedy: $CCO_OUTPUT"; return 1; }
+    return 0
+}
+
+test_store_pack_install_refuses_provenance_in_container() {
+    _sw_assert_provenance_refusal "pack install" pack install https://example.com/pack.git || return 1
+    return 0
+}
+
+test_store_template_install_refuses_provenance_in_container() {
+    _sw_assert_provenance_refusal "template install" template install https://example.com/tmpl.git || return 1
+    return 0
+}
+
+test_store_llms_install_refuses_provenance_in_container() {
+    _sw_assert_provenance_refusal "llms install" llms install https://example.com/llms.txt || return 1
+    return 0
+}
