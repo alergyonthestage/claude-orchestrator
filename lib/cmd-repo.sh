@@ -141,7 +141,13 @@ _rename_index_keyed() {
     # an index re-key with an unwritten project.yml. Probed at the CWD member repo's
     # .cco (the mount in a session — the copy that always holds this project.yml, and
     # which an extra_mount target does not), at the same identity as the real write (D-M4).
+    #
+    # BOTH stores are probed, because the verb writes both and v3 V3-01 failed on the
+    # one that was not probed: the config tree was writable, the index bucket was not,
+    # so the precondition passed and Phase 1 ran into a half-apply. Each probe runs at
+    # its own write identity (de-elevated / elevated respectively) — see rename.sh.
     _rename_assert_writable "$unit/.cco" "cco $dash rename"
+    _rename_assert_index_writable "cco $dash rename"
 
     # ── Apply: project.yml FIRST (members still keyed by <old>), then the index
     # re-key, then the host-only move. The reorder is a host NO-OP (the probe is the

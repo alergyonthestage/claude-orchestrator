@@ -176,6 +176,36 @@ _rename_assert_writable() {
     _rename_deelevated rm -f "$t" 2>/dev/null || true
 }
 
+# §3.5's OTHER half: assert the machine-local index bucket is writable too.
+#
+# `_rename_assert_writable` above guards the config tree — and that tree was never
+# the one that failed. v3 V3-01 found the rename half-applying because the STATE
+# index write died EACCES while `<repo>/.cco` was perfectly writable, so the
+# precondition passed and Phase 1 ran anyway (root cause C). A fail-closed probe
+# that guards only one of the two stores a verb writes is not fail-closed.
+#
+# ⚠ The identity is the OPPOSITE of its sibling, and this asymmetry is the whole
+# point. The project.yml write is DE-ELEVATED to ruid=claude (D-M4), so that probe
+# goes through _rename_deelevated. The index write is NOT — the verb trampolines
+# wholly and lib/index.sh writes at euid=cco-svc. So this probe must run at the
+# CURRENT identity, with a plain mktemp. De-elevating it would test claude against
+# a cco-svc-owned bucket and refuse every legitimate rename; elevating the other
+# would pass on a tree the real write cannot touch. Same rule, mirrored.
+#
+# Exit code follows its sibling (refuse = 2) so one precondition speaks with one
+# voice. If S5 settles the store-refusal taxonomy on 1 for "bucket not writable",
+# both halves move together — do not split them.
+# Usage: _rename_assert_index_writable <what>
+_rename_assert_index_writable() {
+    local what="$1" d t
+    d=$(_cco_state_shared_dir)
+    [[ -d "$d" ]] \
+        || refuse "Cannot write $what in this session — the machine-local index is not mounted in this session. Run '$what' on your host — nothing was changed."
+    t=$(mktemp "$d/.cco-wtest.XXXXXX" 2>/dev/null) \
+        || refuse "Cannot write $what in this session (the machine-local index bucket $d is not writable by the cco store helper). Run '$what' on your host — nothing was changed."
+    rm -f "$t" 2>/dev/null || true
+}
+
 # ── project.yml re-key (current project) ─────────────────────────────
 # Rewrite <section>[].name <old>→<new> in EVERY owned+resolved member repo of
 # <project> (project-scoped, ADR-0051 D1 — no cross-project fan-out). project.yml

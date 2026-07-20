@@ -413,12 +413,20 @@ test_repo_rename_operator_unwritable_index_fails_loud() {
     # (b) NO success tick over a failed write (the false-success class itself)
     [[ "$CCO_OUTPUT" != *"✓ Renamed"* ]] \
         || { fail "no success tick on a failed index write: $CCO_OUTPUT"; return 1; }
-    # (c) the message must name the real cause AND the recovery, since project.yml
-    #     did change: an honest failure the user cannot act on is only half a fix.
+    # (c) the message must name the real cause AND a remedy — an honest failure the
+    #     user cannot act on is only half a fix.
     [[ "$CCO_OUTPUT" == *"index"* ]] \
         || { fail "the failure must name the index as the store that failed: $CCO_OUTPUT"; return 1; }
     # (d) the index really is untouched — no partial re-key survived
     assert_index_path alpha alpha /Users/cco-e2e/code/alpha || return 1
     assert_index_path alpha api "" || return 1
+    # (e) FAIL-CLOSED (S3): the refusal lands BEFORE Phase 1, so the OTHER store is
+    #     untouched too — the rename wholly refuses rather than half-applying. This is
+    #     the property S2 alone cannot give: S2 makes the mid-write failure loud and
+    #     recoverable, S3 makes it not happen. Both paths stay: if the probe ever
+    #     passes and the write still fails (a race, or a condition the probe cannot
+    #     see), S2's die-with-which-store-changed is the backstop.
+    assert_projectyml_member "$mnt/.cco/project.yml" repos alpha        || return 1
+    assert_projectyml_member "$mnt/.cco/project.yml" repos api   absent || return 1
     return 0
 }
