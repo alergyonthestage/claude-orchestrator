@@ -146,6 +146,17 @@ Register in `bin/cco`'s write-verb whitelist with the target tree:
 
 `usage()`/help filtering in container-operator mode must show these correctly per scope.
 
+**In-container refinement (2026-07-20, e2e v2 cycle-1 — RC-2 / D-M9).** `repo`/`extra-mount rename`
+now run to completion in an operator session (name-only), with explicit refusals: `--move-dir` (a
+host filesystem move) is **refused, exit 2**, with a host hint — explicit intent is never silently
+downgraded to a name-only rename (D4); a bare `cco repo rename <new>` at the WORKDIR root
+(`cwd=/workspace`, not a member dir) is **refused as ambiguous**, with no single-repo fallback; two
+config-editor targets binding the same repo NAME mount the first and announce the second. The verb
+re-keys the STATE index elevated but **de-elevates** the `<repo>/.cco/project.yml` rewrite to
+`ruid=claude` (D-M4, POSIX-correct on native Linux), and pre-validation refuses **before** any store
+is mutated (`_rename_assert_writable`, fail-closed — no half-apply). See the ADR-0050 D5/D7 forward
+annotations.
+
 ## 7. Quote hygiene + divergence hint (ADR-0050 D8)
 
 - In `lib/cmd-resolve.sh` `_resolve_to_abs` (and the interactive path reads in

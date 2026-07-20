@@ -292,6 +292,17 @@ under repos *and* extra_mounts — not root-only.
   trees are exempt (native reads). Level B output-scoping (§4) is defense-in-depth, not the
   confidentiality control. Physically closes S1/S1b. See
   [ADR-0047](decisions/0047-config-access-enforcement.md).
+- **INV-S — No code outside the store primitives touches a confined bucket (e2e v2 cycle-1 /
+  RC-3).** INV-5's boundary is only as strong as the discipline that every **mutation** of a
+  confined path *and* every **existence predicate** on one goes through the named `lib/store.sh`
+  cascade ops via the `store-op` crossing — never a direct `rm`/`mv`/`[[ -d ]]` in a command body.
+  Behind the opaque boundary a `[[ -d ]]`/`[[ -f ]]` on a confined path reads FALSE for something
+  that exists, so a body branching on it silently half-applies or reports the wrong reason.
+  INV-S1…S6 formalize this (S1…S5: only the primitive layer mutates; S6: nor predicates), enforced
+  by a static CLASS lint (`tests/test_invariants.sh`). Consequently a store write that cannot
+  complete is now an **error (exit 1)**, never a false success. Provenance writers
+  (`pack install`, …) are not yet on this layer — a fail-fast guard refuses them in-container until
+  cycle 2. See ADR-0047 §2/§3 and `e2e-review/fix-design-v2/05-store-write-path.md`.
 
 ## 6. Descriptions — provenance
 

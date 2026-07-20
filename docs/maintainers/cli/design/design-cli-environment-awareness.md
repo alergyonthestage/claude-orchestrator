@@ -164,9 +164,44 @@ verb runs, never what a path *means* once it does.
 
 **Where the translation belongs.** In the caller that still holds the resource **name** — the
 name is what indexes the mount. Do not push it down into shared classifiers that take a ready
-path (`_project_member_status`), and do not "fix" the index-reading primitives: their other
-callers are host-only verbs (`join`/`forget`/`rename`) that must keep receiving the **real host
-path** to act on. Translate at the edge, per context; leave the map alone.
+path (`_project_member_status`), and do not "fix" the index-reading primitives: several of their
+callers are host-only verbs (`join`/`forget`) that must keep receiving the **real host path** to
+act on. Translate at the edge, per context; leave the map alone. (`repo`/`extra-mount rename` is
+**no longer** among the host-only callers — ADR-0050 D7 makes it in-container-runnable, so RC-2
+gave `_project_iter_members` an explicit **operator arm** instead of leaving it host-shaped; the
+"leave the map alone" rule still holds — the operator arm translates at the edge like every other
+in-container consumer.)
+
+### INV-F and the three availability states (RC-2 / ADR-0043 §2)
+
+Consuming a host path splits into two deliberately different questions, and conflating them is
+the B-DF1 class:
+
+- **Probe** — *is this member reachable **here**?* Answered against the **mount**
+  (`_cco_member_probe_path`), never the host path. **INV-F (probe locality)**: an index path is a
+  HOST path and must never be `-d`/`-f`/read-tested in operator mode.
+- **Display** — *what host path may I show for it?* Answered by `_cco_display_path`, gated by
+  `show_host_paths`. These are separate helpers on purpose; a verb that reuses the display path to
+  probe re-introduces B-DF1.
+
+A probe therefore has **three** honest outcomes, not two, behind one shared resolver
+(`_env_member_state` / `_env_project_state`) with one remedy string per state (the D-M2
+vocabulary — the same wording across `cco project show/validate`, config-editor's skip note, and
+the count-only notice):
+
+| State | Truth test | Remedy | Exit |
+|---|---|---|---|
+| `here` | a tree exists at the **probe** path | — | `0` |
+| **`not mounted in this session`** | index binding exists, probe path absent (operator only) | restart a session that mounts it, or run cco on the host | `2` named · `0`+warn in sweeps |
+| `unresolved on this machine` | no binding, or the host path is absent **host-side** | `cco resolve <name>` on the host | `1` |
+| `out of scope` | the scope layer hides it | widen `--cco-access` | `2` named · hidden+counted in listings |
+
+The middle state is the one the model previously lacked: a resource that exists on this machine
+but is simply not bound into *this* container. Saying "run cco resolve" for it (the old behaviour)
+was a lie — the remedy is a host **session**, not a resolve. Exit codes follow the 0/1/2
+convention (§4/D8): a graceful degrade or scope-filtered result is `0`, a policy refusal (out of
+scope, host-only, or a *named* not-mounted target) is `2`, a genuine error (missing dependency,
+unwritable target) is `1`.
 
 ## 4b. Output scoping — what a *permitted* read verb shows (ADR-0043)
 

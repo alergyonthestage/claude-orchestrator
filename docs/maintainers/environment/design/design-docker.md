@@ -361,10 +361,12 @@ already lives there. Affected paths as of this writing: `.claude`,
 
 ### 1.2.3 Internal-store privilege boundary (ADR-0047)
 
-> **Design-intent (D2, [ADR-0047](../../configuration/agent-cco-access/decisions/0047-config-access-enforcement.md));
-> not yet implemented.** Closes the confidentiality bypass S1/S1b — a `read-project` agent
-> `cat`-ing the whole mounted STATE index / DATA registry and enumerating every other project's
-> name, host path, membership, tags, and remote URLs.
+> **Shipped ([ADR-0047](../../configuration/agent-cco-access/decisions/0047-config-access-enforcement.md));
+> hardened through e2e v2 cycle-1 (requires `cco build`).** Closes the confidentiality bypass
+> S1/S1b — a `read-project` agent `cat`-ing the whole mounted STATE index / DATA registry and
+> enumerating every other project's name, host path, membership, tags, and remote URLs. The write
+> path onto this boundary is `lib/store.sh` + the `store-op` crossing (RC-3); the two crossing
+> modes are documented at the end of this section.
 
 The agent and the wrapped `cco` run as the **same UID `claude`** with no filesystem confinement
 (`--dangerously-skip-permissions`), so any file `cco` can read, the agent can `cat`. The target
@@ -412,6 +414,34 @@ It is therefore read only inside the elevated `__store list/show` path, gated by
 — never off the docker channel. `cco start` owns the marker lifecycle and runs the host-side
 liveness reconciliation sweep (the primary reaper; `cco stop` is ~never invoked for a `run --rm`
 container — B-DF3).
+
+**Two boundary-crossing modes (e2e v2 cycle-1 — RC-3 / D-M4).** A verb crosses the privilege
+boundary in one of two shapes, chosen by what it does behind it:
+
+- **Whole-verb crossing (reads + pure store re-keys).** The verb is listed in
+  `_cco_verb_touches_store`, so the shim re-execs it elevated (`cco __store <verb> …` as
+  `cco-svc`) with the trusted `(G,Pc,Po)` injected from the `:ro` descriptor. The **entire** verb
+  runs behind the boundary — used for read verbs (`list`, `path list`, `project show`) and for
+  pure STATE-index re-keys. The elevated re-run is the authoritative gate; the outer claude-side
+  gate keys off forgeable env and is only an early UX check.
+- **Per-op plan+apply crossing (destructive/re-key cascades).** A command body never touches a
+  confined bucket directly; it calls a named `lib/store.sh` cascade op, which crosses via
+  `store-op` in a **plan → apply** pair (05 §3.7): the elevated arm validates (INV-S1/S2) and
+  probes/applies, and its status is the process exit. This is what makes a store write **fail with
+  exit 1** on a real fault instead of a swallowed `EACCES`.
+
+The **mixed-write** case is D-M4: `repo`/`extra-mount rename` re-keys the STATE index elevated
+(whole-verb) **but** de-elevates its `<repo>/.cco/project.yml` rewrite back to `ruid=claude` (a
+plain `bash`), because that config tree is claude-owned — so `cco-svc` never writes a claude-owned
+tree and the rename is POSIX-correct on native Linux (no `fakeowner` dependency).
+
+**Nested-config governance is role-keyed (RC-1 / D-M5).** A `.claude`/`.cco` tree *nested under* a
+mount takes its readonly flag from the mount's **role**, not a blanket default: a **store** mount
+(`~/.cco`) → `.claude` follows `Cg`, content follows `G`; a **project-config** mount
+(`<repo>/.cco`) → `.claude` follows `Cp`, content follows `Pc`. The **mount root itself** is
+governed by its own `readonly:` (never re-clamped by the nested rule — RC-1's `-mindepth 1`
+guarantees the discovery helper never returns its own root). The config-editor target root's flag
+follows `Pc` from the same single source the store mount uses for `G` (D-M11).
 
 ### 1.3 tmux Configuration
 

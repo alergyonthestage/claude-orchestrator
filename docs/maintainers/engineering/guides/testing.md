@@ -208,6 +208,8 @@ During development, run only the tests relevant to the module you changed:
 | `lib/paths.sh` | `bin/test --file test_paths --file test_access_scope --file test_operator_shim` |
 | `lib/cmd-repo.sh`, `lib/rename.sh` | `bin/test --file test_repo_rename --file test_index --file test_operator_shim` |
 | `tests/helpers.sh` (the operator lane) | `bin/test --file test_paths --file test_operator_shim --file test_invariants` |
+| `lib/store.sh` (store write primitives) | `bin/test --file test_store_writes --file test_operator_shim --file test_invariants` |
+| `lib/access-scope.sh`, `lib/cmd-resolve.sh` (`path list` scoping) | `bin/test --file test_access_scope --file test_operator_shim` |
 | `lib/secrets.sh` | `bin/test --file test_secrets` |
 | `lib/workspace.sh` | `bin/test --file test_packs` |
 | `lib/colors.sh`, `lib/utils.sh` | Utility libraries — covered indirectly by all test files |
