@@ -175,6 +175,24 @@ flowchart LR
 > (verified); the Linux DAC write-path (chowning bind-mount content would mutate *host*
 > ownership) is an open follow-up.
 
+> **Forward annotation (2026-07-20, e2e v2 cycle-1 — RC-3/RC-2).** The destructive/re-key store
+> writes now route through **`lib/store.sh`**'s named whole-cascade ops, reached from the command
+> bodies via the `store-op` plan/apply crossing through this setuid helper — **primitive-granularity
+> elevation**, not whole-verb: a command body never touches a confined bucket directly. Two
+> invariants formalize §2's intent and are enforced by a static CLASS lint
+> (`tests/test_invariants.sh`, design `…/fix-design-v2/05-store-write-path.md` §6.5): **INV-S1…S5**
+> (only the primitive layer mutates a confined path) and **INV-S6** (no code outside it evaluates an
+> existence predicate on one either — behind the opaque boundary a `[[ -d ]]` on a confined path
+> reads FALSE for something that exists, so a body branching on it silently half-applies). **D-M4**:
+> `repo`/`extra-mount rename` **de-elevates** its `<repo>/.cco/project.yml` rewrite back to
+> `ruid=claude` (a plain `bash`), keeping only the STATE-index re-key elevated — this is
+> POSIX-correct **by construction** (`cco-svc` never writes the claude-owned config tree, so it never
+> depends on Docker Desktop `fakeowner`) and therefore works on native Linux. The remaining Linux-DAC
+> follow-up above is only about `cco-svc`'s writes to its **own** registries; **D-M6** kept it a
+> separate gate before `develop → main` (cycle 1 ships macOS-verified). Provenance writers
+> (`pack install`, …) are **not** on this layer yet — they get a fail-fast `_store_provenance_guard`
+> that refuses in-container until cycle 2 (D-M8/Q-10).
+
 ### 4. Consequences for the existing layers
 
 - **Output-scoping retrocedes to a second layer.** `lib/access-scope.sh` (`_env_in_scope` +

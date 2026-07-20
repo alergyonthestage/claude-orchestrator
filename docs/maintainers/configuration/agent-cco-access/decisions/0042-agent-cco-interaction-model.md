@@ -87,6 +87,13 @@ that project's `.cco` **and mounts its repos** (the natural, explicit home for a
 repo-aware `project.yml` descriptions); `--repo <name>` adds a single repo. Repos in a
 config session are an **explicit opt-in** (refines P18 / ADR-0036 D6, does not break it).
 
+> **Forward annotation (2026-07-20, e2e v2 cycle-1 — RC-6).** "and mounts its repos" was
+> **declared here but not delivered** until RC-6: config-editor mounted only the target's `.cco`, so
+> repo-aware `project.yml` authoring could not actually read the repos. RC-6 delivers it — each
+> resolvable member repo is mounted at `/workspace/<name>` via the single `_mount_source_for`
+> lookup, and an unresolvable one is announced rather than skipped. See the ADR-0044 §3 and ADR-0046
+> §6 annotations and `…/fix-design-v2/03-config-editor-repos.md`.
+
 ## Alternatives considered
 
 - **Keep `workspace.yml`, fix pollution + round-trip (Alt 1).** Rejected as the primary

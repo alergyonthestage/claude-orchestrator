@@ -211,6 +211,18 @@ The exact set is verified against Claude Code behaviour at implementation (e.g.
 >   the emitted YAML and never execute it, so this shipped green. Mount-time failures are
 >   invisible to a hermetic suite and belong to the e2e gate.
 
+> **Forward annotation (2026-07-20, e2e v2 cycle-1 — RC-17).** The "only as verifiable as the
+> harness" caveat came true a **second** time: the e2e v2 review found three subsystems declaring
+> `rw` and mounting `ro`, one write path faking success, and one read verb applying no scoping —
+> none observable to the dry-run compose tests. Cycle 1 answers it with a **container-operator test
+> lane** (`tests/helpers.sh`, RC-17) that reproduces operator mode against a real index and asserts
+> an **outcome** — exact rc + a state change read back through the real API, or an explicit refusal —
+> with a static invariant (`tests/test_invariants.sh`) banning negative-**only** `rc -ne 2` terminal
+> assertions (the false-green that let this class ship). Its reach has a stated boundary
+> (`…/fix-design-v2/01-test-lane.md` §5.3): the lane still **cannot** observe mount-time failures —
+> that remains the e2e gate's job, and its `chmod 000` boundary seam models the errno, not the setuid
+> trampoline.
+
 ### 6. B2/B1 default read-only reverses P17 → init-workspace re-analysis
 
 Because `Cp` defaults to `Pc` (read-only under the `read-project` default) and `Cr`
@@ -245,6 +257,19 @@ strict by default:
   `project.yml`) **nested at any depth** under repos *and* extra_mounts (a bounded `find`),
   not only at the mount root — closing the monorepo/extra_mount governance hole. Depth/cost
   is tuned at implementation.
+
+> **Forward annotation (2026-07-20, e2e v2 cycle-1 — RC-1).** The recursive detection governs
+> **nested** trees only; the **mount ROOT itself** is governed by its own `readonly:` flag and the
+> session's access triple, never re-clamped by the nested rule. RC-1's `-mindepth 1` makes the
+> discovery helper (`_find_nested_config_dirs`) never return its own root — it had been matching
+> `rel="."` and re-clamping the root `:ro` behind the mount's back, which (with the strict extra_mount
+> default) forced a config-editor target's or the store's own `.cco` to `ro` even when the triple
+> granted write (E5-01, E6A-01/02/12, E6B-01/02). The fix pairs `-mindepth 1` with a **role-keyed
+> axis** (D-M5: a `store` mount's `.claude` follows Cg / content follows G; a `project-config`
+> mount's `.claude` follows Cp / content follows Pc), restoring each root's clamp **by rule**. It
+> also forced the D-M11 fix (see the ADR-0048 annotation), since removing the self-match removed the
+> only thing enforcing `Pc=ro` on the config-editor target root. See
+> `…/fix-design-v2/02-mount-generation.md`.
 
 ### 8. config-editor is subsumed by the general rule
 

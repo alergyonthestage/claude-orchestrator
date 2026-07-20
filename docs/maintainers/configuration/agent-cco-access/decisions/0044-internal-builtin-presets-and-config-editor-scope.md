@@ -134,6 +134,13 @@ tutorial. `cco start config-editor` no longer defaults to `edit-all`:
   agent via `CCO_CONFIG_TARGETS` (D9) — the agent introspects the *target*, not
   `PROJECT_NAME`.
 
+> **Forward annotation (2026-07-20, e2e v2 cycle-1 — RC-6).** The write-capable config-editor
+> project mode now physically **mounts the target project's member repos** (not only its `.cco`),
+> which §3 assumed but the shipped code did not do — so repo-aware authoring is delivered rather than
+> merely scoped. A target repo that is not resolvable on this machine is announced ("not mounted in
+> this session", D-M2), never silently skipped. See the ADR-0042 §8 / ADR-0046 §6 annotations and
+> `…/fix-design-v2/03-config-editor-repos.md`.
+
 ## Alternatives considered
 
 - **Keep config-editor `edit-all`-broad by default (ADR-0042 §8 as-is).** Rejected: the

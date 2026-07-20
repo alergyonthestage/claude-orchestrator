@@ -138,6 +138,19 @@ source** — `_config_editor_default_cco` (the by-mode default) resolved through
 `_cco_resolve_access`, computed at project.yml-generation time (a built-in's G is fully
 determined by mode + CLI, so it is knowable before the full access resolution).
 
+> **Forward annotation (2026-07-20, e2e v2 cycle-1 — RC-1/D-M11).** The `cco-config` (store) mount
+> readonly follows **G** (§5); the config-editor **target** project mount root's readonly follows
+> **Pc** — the same single source (`_config_editor_mount_ro pc`, `lib/cmd-start.sh`) the store mount
+> uses for G. This closes a real, reachable **declared-vs-enforced escalation** that RC-1 would
+> otherwise have opened: RC-1's `-mindepth 1` (02-mount-generation §3.5) removed the nested-config
+> self-match line that was, accidentally, the **only** thing enforcing `Pc=ro` on that target mount
+> root, so `cco start config-editor --cco-access global=rw,current=ro,others=none` would have mounted
+> the current project's `.cco` writable while `Pc=ro`. Deriving the flag from `Pc` restores the
+> intended clamp by rule rather than by accident (D-M11 moved Q-12 into cycle 1 as a **forced
+> consequence** of D-M1; a bare revert of §3.5 is rejected — it keeps the self-clamp removal and
+> ships the escalation). The store-content write rule (§3/§4) is now physically enforced on the
+> `/workspace/cco-config` view via the ADR-0047 boundary, not only the mount flag.
+
 ## Coverage — the recurring config-editor intents
 
 | Launch | Resolved `(G,Pc,Po)` | Label | `claude` | `cco-config` mount |

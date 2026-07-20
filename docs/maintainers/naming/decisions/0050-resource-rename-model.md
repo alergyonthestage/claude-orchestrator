@@ -181,6 +181,18 @@ tree it writes, so `_op_write` gates it:
 A test asserts an `edit-project` session is **refused** `pack rename` but **allowed** `repo
 rename` for its own project.
 
+> **Forward annotation (2026-07-20, e2e v2 cycle-1 — RC-2).** D5's pre-validation now includes
+> **physical write capability**: `repo`/`extra-mount rename` refuses **before** Phase 1 mutates
+> anything if the config tree cannot be rewritten (`_rename_assert_writable`, fail-closed) — a rename
+> is applied wholly or refused wholly, never half-applied. D7's in-container path is confirmed
+> **runnable and complete**: the verb re-keys the STATE index (elevated through the ADR-0047
+> boundary) and rewrites `<repo>/.cco/project.yml` **de-elevated to `ruid=claude`** (D-M4), which is
+> POSIX-correct on native Linux (see the ADR-0047 annotation). It is **name-only**: `--move-dir` (a
+> host filesystem move) is **refused, exit 2**, with a host hint (D-M9/Q-5 — explicit intent is never
+> silently downgraded, cf. D4); a bare `cco repo rename <new>` at the WORKDIR root is refused as
+> ambiguous (D-M9/Q-6). The apply order was reversed to **`project.yml`-first, then index re-key** so
+> an interruption leaves a recoverable half-state. See `…/fix-design-v2/04-host-path-class.md`.
+
 ### D8 — Bundled secondary fix: quote hygiene in path input
 
 `cco resolve` / `cco path set` reject a path pasted with surrounding shell quotes

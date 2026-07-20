@@ -227,6 +227,18 @@ repos** each carrying a **divergent** (non-synced) `<repo>/.cco`.
 > `include_member_configs` flag above already covers the in-container read/edit need, so no
 > `cco sync` carve-out is required. §6's "until then: host-only" becomes the settled answer.
 
+> **Forward annotation (2026-07-20, e2e v2 cycle-1 — RC-6).** The multi-repo `Pc` span above was
+> declared but not physically **delivered** for config-editor until RC-6: a config-editor session
+> mounted the target project's `.cco` at `/workspace/<name>-config` but **not its member repos**, so
+> repo-aware authoring (ADR-0042 §8) could not work. RC-6 adds `_mount_source_for <scope> <name>`
+> (INV-M1, the single name→path lookup all mount bridges share) and mounts each resolvable member
+> repo at `/workspace/<name>`; a member that is not resolvable on this machine is **announced** ("not
+> mounted in this session", D-M2), not silently skipped (INV-M4), and two `--project` targets binding
+> the same repo NAME mount the first and announce the second (D-M9/Q-7). The duplicate authoring path
+> (a target's `.cco` reachable at both `/workspace/<t>-config` and `/workspace/<repo>/.cco`) is
+> accepted for cycle 1 (D-M9/Q-8; the ADR-0046 §6 `:ro` re-overlay note stays deferred). See
+> `…/fix-design-v2/03-config-editor-repos.md`.
+
 ### 7. The resolver — `(G, Pc, Po)` as the single source
 
 `_cco_resolve_access` (generalising the current `_cco_level_read_scope` /
