@@ -535,9 +535,9 @@ test_migrate_project_preserves_all_config() {
     # AD3/G8: the legacy host `source:` is transformed away — never the committed yml.
     assert_file_not_contains "$yml" "source:"
     # The host source lands in the machine-local index, keyed by the synth name.
-    assert_file_contains "$CCO_STATE_HOME/index" "extra-docs:"
+    assert_file_contains "$(cco_index_file)" "extra-docs:"
     # kind=mount: an extra_mount gets an index path but does NOT join project membership.
-    if grep '^myapp:' "$CCO_STATE_HOME/index" 2>/dev/null | grep -q 'extra-docs'; then
+    if grep '^myapp:' "$(cco_index_file)" 2>/dev/null | grep -q 'extra-docs'; then
         fail "extra_mounts must not join project membership (kind=mount), only the index path"
     fi
 
@@ -546,16 +546,16 @@ test_migrate_project_preserves_all_config() {
     # that breaks the generated docker-compose).
     assert_file_contains "$yml" "name: shared-data"
     assert_file_not_contains "$yml" "@local"
-    assert_file_contains "$CCO_STATE_HOME/index" 'shared-data: "/home/dev/shared-data"'
+    assert_file_contains "$(cco_index_file)" 'shared-data: "/home/dev/shared-data"'
 }
 
 test_migrate_project_registers_index() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_legacy_vault_project "$tmpdir"
     ( cd "$tmpdir/clones/api" && CCO_ASSUME_YES=1 run_cco init --migrate myapp )
-    assert_file_contains "$CCO_STATE_HOME/index" 'api: "/home/dev/api"'
-    assert_file_contains "$CCO_STATE_HOME/index" 'web: "/home/dev/web"'
-    assert_file_contains "$CCO_STATE_HOME/index" "myapp:"
+    assert_file_contains "$(cco_index_file)" 'api: "/home/dev/api"'
+    assert_file_contains "$(cco_index_file)" 'web: "/home/dev/web"'
+    assert_file_contains "$(cco_index_file)" "myapp:"
 }
 
 test_migrate_project_relocates_memory() {
@@ -755,7 +755,7 @@ YML
     assert_file_exists "$tmpdir/clones/workrepo/.cco/extra.key" \
         "inactive-profile *.key secret file must be migrated from the shadow (GAP#1)"
     # local-paths from the shadow → index (repo path still registered)
-    assert_file_contains "$CCO_STATE_HOME/index" 'workrepo: "/home/dev/workrepo"' \
+    assert_file_contains "$(cco_index_file)" 'workrepo: "/home/dev/workrepo"' \
         "inactive-profile repo path (from shadow local-paths.yml) must register in the index"
     # machine-agnostic project.yml — no host path leaks even via the shadow
     assert_file_not_contains "$tmpdir/clones/workrepo/.cco/project.yml" "/home/dev"
@@ -850,7 +850,7 @@ test_relocate_legacy_template_source_to_data() {
     assert_file_contains "$new_src" "ref: main" || return 1
     grep -q '^source:' "$new_src" && { echo "ASSERTION FAILED: legacy 'source:' key not renamed to 'url:'"; return 1; }
     assert_file_not_exists "$CCO_TEMPLATES_DIR/legacy-tmpl/.cco/source" || return 1
-    assert_file_contains "$CCO_STATE_HOME/templates/legacy-tmpl/update/meta" "installed_commit: cafebabe" || return 1
+    assert_file_contains "$(state_shared)/templates/legacy-tmpl/update/meta" "installed_commit: cafebabe" || return 1
 
     # Idempotent: a second pass is a clean no-op.
     _relocate_legacy_template_sources || return 1
@@ -932,7 +932,7 @@ YML
     git -C "$vault" add -A 2>/dev/null
     git -C "$vault" commit -q -m "tilde paths" 2>/dev/null
     ( cd "$tmpdir/clones/api" && CCO_ASSUME_YES=1 run_cco init --migrate myapp )
-    local idx="$CCO_STATE_HOME/index"
+    local idx="$(cco_index_file)"
     assert_file_contains "$idx" "api: \"$HOME/dev/api\""
     assert_file_contains "$idx" "web: \"$HOME/dev/web\""
     assert_file_contains "$idx" "shared-data: \"$HOME/dev/shared-data\""

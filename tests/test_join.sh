@@ -48,8 +48,8 @@ test_join_adds_member_to_all_synced_members_and_index() {
     assert_file_contains "$tmpdir/repos/repo-b/.cco/project.yml" "name: joiner"
 
     # Index: membership + path binding.
-    assert_file_contains "$CCO_STATE_HOME/index" "joiner"
-    assert_file_contains "$CCO_STATE_HOME/index" 'joiner: "'"$joiner"'"'
+    assert_file_contains "$(cco_index_file)" "joiner"
+    assert_file_contains "$(cco_index_file)" 'joiner: "'"$joiner"'"'
 }
 
 test_join_unknown_project_fails() {

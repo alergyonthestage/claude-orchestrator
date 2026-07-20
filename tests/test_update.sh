@@ -205,8 +205,13 @@ languages:
 manifest:"
 
     run_cco update
-    # Schema version should be updated to the latest global migration id.
-    assert_file_contains "$(state_global_meta)" "schema_version: 16"
+    # Schema version should be updated to the latest global migration id. Derived,
+    # not hardcoded: the assertion is "tracks the newest migration", so pinning a
+    # literal only guaranteed this test would break on every migration added.
+    local latest
+    latest=$(awk -F= '/^MIGRATION_ID=/ {if ($2+0 > m) m=$2+0} END {print m}' \
+        "$REPO_ROOT"/migrations/global/*.sh)
+    assert_file_contains "$(state_global_meta)" "schema_version: $latest"
 }
 
 test_update_migration_failure_stops() {
@@ -2485,7 +2490,7 @@ test_migration_016_normalizes_index() {
     # normalizing boundary: a tilde repo, a $HOME repo, an @local mount, a clean
     # absolute entry, plus a project membership row. Migration 016 must upgrade it
     # to v2 (re-home members under their project) AND normalize every value.
-    local idx="$CCO_STATE_HOME/index"
+    local idx="$(cco_index_file)"
     mkdir -p "$(dirname "$idx")"
     cat > "$idx" <<EOF
 # legacy index

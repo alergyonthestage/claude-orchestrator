@@ -317,8 +317,9 @@ test_effective_repo_mounts_operator_falls_back_to_mount() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _source_local_paths_index "$tmpdir/state"
     # Operator mode skips bucket dir-creation (they are mounts in production), so
-    # pre-create STATE for the fixture's own index writes.
-    mkdir -p "$tmpdir/state"
+    # pre-create STATE — and STATE/shared, which is the bucket `cco start` really
+    # binds and where the index lives, for the fixture's own index writes (v3 R1).
+    mkdir -p "$tmpdir/state" "$tmpdir/state/shared"
     # The REAL operator predicate (never a stub): flag + three absolute buckets.
     export CCO_CONTAINER_OPERATOR=1
     export CCO_DATA_HOME="$tmpdir/state" CCO_CACHE_HOME="$tmpdir/state"

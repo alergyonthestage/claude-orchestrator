@@ -22,7 +22,7 @@ _sw_seed_pack() {
     local name="$1"
     mkdir -p "$CCO_PACKS_DIR/$name"
     printf 'name: %s\n' "$name" > "$CCO_PACKS_DIR/$name/pack.yml"
-    mkdir -p "$CCO_DATA_HOME/packs/$name" "$CCO_STATE_HOME/packs/$name"
+    mkdir -p "$CCO_DATA_HOME/packs/$name" "$(state_shared)/packs/$name"
     printf 'url: local\n' > "$CCO_DATA_HOME/packs/$name/source"
 }
 
@@ -31,7 +31,7 @@ _sw_seed_template() {
     local name="$1"
     mkdir -p "$CCO_TEMPLATES_DIR/project/$name"
     printf 'name: %s\n' "$name" > "$CCO_TEMPLATES_DIR/project/$name/template.yml"
-    mkdir -p "$CCO_DATA_HOME/templates/$name" "$CCO_STATE_HOME/templates/$name"
+    mkdir -p "$CCO_DATA_HOME/templates/$name" "$(state_shared)/templates/$name"
 }
 
 # Seed an llms entry (CACHE). Usage: _sw_seed_llms <name>
@@ -220,9 +220,12 @@ test_store_template_remove_fails_loud_when_state_unwritable() {
     trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
     setup_cco_env "$tmp"; setup_operator_session "$tmp" edit-global
     _sw_seed_template t
-    chmod 555 "$CCO_STATE_HOME"
+    # The op's STATE bucket is the shareable sub-bucket (that is where the sidecars
+    # live and what the plan probes), so THAT is the tree to make unwritable —
+    # chmod-ing the STATE root would leave the probe writable and the test vacuous.
+    chmod 555 "$(state_shared)"
     local rc=0; run_cco template remove t -y || rc=$?
-    chmod 755 "$CCO_STATE_HOME"
+    chmod 755 "$(state_shared)"
     assert_rc 1 "$rc" "template remove with unwritable STATE must fail loud" || return 1
     [[ "$CCO_OUTPUT" != *"Template 't' removed"* ]] \
         || { fail "no success tick on a failed store write: $CCO_OUTPUT"; return 1; }
@@ -360,9 +363,9 @@ test_store_pack_rename_all_or_nothing_on_sidecars() {
     local rc=0; run_cco pack rename p q -y || rc=$?
     assert_rc 0 "$rc" "pack rename on the host must succeed" || return 1
     assert_dir_exists "$CCO_DATA_HOME/packs/q"  || return 1
-    assert_dir_exists "$CCO_STATE_HOME/packs/q" || return 1
+    assert_dir_exists "$(state_shared)/packs/q" || return 1
     assert_dir_not_exists "$CCO_DATA_HOME/packs/p"  || return 1
-    assert_dir_not_exists "$CCO_STATE_HOME/packs/p" || return 1
+    assert_dir_not_exists "$(state_shared)/packs/p" || return 1
     assert_dir_exists "$CCO_PACKS_DIR/q" || return 1   # CONFIG moved too
     return 0
 }

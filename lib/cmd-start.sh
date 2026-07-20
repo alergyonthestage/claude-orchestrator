@@ -1586,17 +1586,20 @@ YAML
         #    (referenced packs only), secret-masking, and the :ro/:rw write flag. NOT
         #    the leak surface — unchanged here.
         #
-        #  • INTERNAL STORE — the STATE index, DATA registries, CACHE llms. Read ONLY
+        #  • INTERNAL STORE — the STATE/shared bucket, DATA registries, CACHE llms. Read ONLY
         #    by cco, and the carrier of the cross-project + host-path confidential data
         #    (the S1/S1b leak). These now mount UNDER the cco-svc privileged root
         #    /var/lib/cco-internal (units 1-2), which the claude user cannot traverse.
         #    Because the parent boundary confines reads and the setuid helper's
         #    (G,Pc,Po) gate is the write authority (ADR-0047 §4), they may mount WHOLE
         #    + rw — the former read-project ro-narrowing of the internal registries is
-        #    dropped. Secrets stay OFF the container: the 0600 STATE remotes-token,
-        #    transcripts and memory are never mounted (only the STATE index file
-        #    crosses). Built-in presets (config-editor/tutorial) layer on this; a
-        #    normal session opts in via --cco-access read|edit-*.
+        #    dropped. STATE is the exception and crosses on an explicit ALLOW-LIST: only
+        #    the `shared/` sub-bucket (the index + the pack/template update sidecars) is
+        #    bound, as a DIRECTORY. Everything else under STATE stays off the container
+        #    by construction — the 0600 remotes-token, transcripts and memory — so a
+        #    file added there later is unmounted by default (fail-safe). Built-in presets
+        #    (config-editor/tutorial) layer on this; a normal session opts in via
+        #    --cco-access read|edit-*.
         if [[ "$cco_access" != "none" ]]; then
             local _op_rw="ro"
             [[ "$_g_rw" == "true" ]] && _op_rw=""
@@ -1638,11 +1641,20 @@ YAML
             # boundary confines reads; the helper's (G,Pc,Po) gate is the write
             # authority). Secrets excluded — the 0600 remotes-token (STATE) and
             # transcripts/memory never mount; only the STATE index FILE crosses.
-            echo "      # Internal store (STATE index + DATA + CACHE) — cco-svc boundary (ADR-0047)"
+            echo "      # Internal store (STATE/shared + DATA + CACHE) — cco-svc boundary (ADR-0047)"
             local _op_data; _op_data=$(_cco_data_dir)
             [[ -d "$_op_data" ]] && _compose_vol "$_op_data" "/var/lib/cco-internal/share/cco"
-            [[ -f "${state_root}/index" ]] && \
-                _compose_vol "${state_root}/index" "/var/lib/cco-internal/state/cco/index"
+            # STATE crosses ONLY through the shareable sub-bucket (index + the
+            # pack/template update sidecars) — a DIRECTORY bind, like DATA and CACHE.
+            # It must not be the index FILE: every index writer replaces it atomically
+            # via a sibling temp (mktemp + mv), which needs a writable parent, and a
+            # host-side rename() strands a file bind on a //deleted inode (v3 R1).
+            # Never widen this to ${state_root} — remotes-token (0600), transcripts and
+            # memory live there and must not reach a container. To expose something new,
+            # move it under shared/ (INV: tests/test_invariants.sh).
+            local _op_shared; _op_shared=$(_cco_state_shared_dir)
+            [[ -d "$_op_shared" ]] && \
+                _compose_vol "$_op_shared" "/var/lib/cco-internal/state/cco/shared"
             local _op_llms; _op_llms=$(_cco_llms_dir)
             [[ -d "$_op_llms" ]] && _compose_vol "$_op_llms" "/var/lib/cco-internal/cache/cco/llms"
             # Session running registry (ADR-0045, refined by ADR-0047): host-written

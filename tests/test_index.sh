@@ -236,7 +236,9 @@ _iter_operator_env() {
     export CCO_DATA_HOME="${CCO_STATE_HOME%/*}/data" CCO_CACHE_HOME="${CCO_STATE_HOME%/*}/cache"
     # Operator mode skips _cco_ensure_dir (the buckets are mounts in production), so
     # pre-create them here or the index mktemp fails and every row reads empty.
-    mkdir -p "$CCO_STATE_HOME" "$CCO_DATA_HOME" "$CCO_CACHE_HOME"
+    # STATE/shared is what `cco start` actually binds — the index lives there and
+    # its writers need that directory to exist to place their mktemp sibling (v3 R1).
+    mkdir -p "$CCO_STATE_HOME" "$CCO_STATE_HOME/shared" "$CCO_DATA_HOME" "$CCO_CACHE_HOME"
     export CCO_WORKDIR="$1"; mkdir -p "$CCO_WORKDIR"
 }
 

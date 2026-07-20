@@ -914,10 +914,15 @@ test_operator_default_read_project() {
     if echo "$c" | grep -qE ':/home/claude/\.cco:ro"'; then
         fail "read-project must NOT mount the whole ~/.cco (narrowed to referenced packs)"
     fi
-    # The STATE index now mounts UNDER the cco-svc privileged root (ADR-0047) — the
-    # parent boundary confines it, so the former :ro narrowing flag is gone.
-    echo "$c" | grep -qE '/var/lib/cco-internal/state/cco/index"' \
-        || fail "STATE index expected under the cco-svc privileged root (ADR-0047)"
+    # STATE crosses UNDER the cco-svc privileged root (ADR-0047) — the parent boundary
+    # confines it, so the former :ro narrowing flag is gone — and only through the
+    # shareable sub-bucket, as a DIRECTORY bind (v3 R1: a file bind leaves index
+    # writers with no writable parent for their mktemp sibling).
+    echo "$c" | grep -qE '/var/lib/cco-internal/state/cco/shared"' \
+        || fail "STATE/shared expected under the cco-svc privileged root (ADR-0047)"
+    if echo "$c" | grep -qE '/var/lib/cco-internal/state/cco/index"'; then
+        fail "the index must NOT be bound as a file — bind the shared/ directory (v3 R1)"
+    fi
     # The trusted session descriptor is mounted :ro so the agent cannot forge scope.
     echo "$c" | grep -qE '/etc/cco/session-access:ro"' \
         || fail "trusted :ro session descriptor expected in operator mode (ADR-0047 R2)"
@@ -960,8 +965,9 @@ test_operator_read_mounts_buckets_ro() {
     echo "$c" | grep -q 'CCO_CONTAINER_OPERATOR=1'    || fail "operator env expected under read"
     echo "$c" | grep -q 'CCO_CCO_ACCESS=read-all'     || fail "legacy read should resolve to CCO_CCO_ACCESS=read-all"
     echo "$c" | grep -qE ':/home/claude/\.cco:ro"'    || fail "~/.cco should be ro under read"
-    echo "$c" | grep -qE '/var/lib/cco-internal/state/cco/index"' || fail "STATE index expected under privileged root"
-    # STATE is index-only: never the whole state dir, and never remotes-token.
+    echo "$c" | grep -qE '/var/lib/cco-internal/state/cco/shared"' || fail "STATE/shared expected under privileged root"
+    # STATE crosses on an ALLOW-LIST: only shared/ (+ the :ro running/ registry).
+    # Never the whole state dir, and never remotes-token.
     if echo "$c" | grep -qE ':/var/lib/cco-internal/state/cco"'; then fail "whole STATE dir must not be mounted"; fi
     if echo "$c" | grep -q 'remotes-token'; then fail "remotes-token must never be mounted"; fi
 }
@@ -977,9 +983,10 @@ test_operator_edit_global_rw_buckets() {
     local c; c=$(_access_compose)
     echo "$c" | grep -qE ':/home/claude/\.cco"'                   || fail "~/.cco should be rw under edit-global"
     echo "$c" | grep -qE ':/var/lib/cco-internal/share/cco"'      || fail "DATA mounts under the cco-svc privileged root"
-    # STATE is index-only, under the privileged root (ADR-0047 §4: no :ro flag — the
-    # parent boundary + the helper's (G,Pc,Po) gate are the enforcement, not the mode).
-    echo "$c" | grep -qE '/var/lib/cco-internal/state/cco/index"' || fail "STATE index mounts under the privileged root"
+    # STATE crosses via shared/ only, under the privileged root (ADR-0047 §4: no :ro
+    # flag — the parent boundary + the helper's (G,Pc,Po) gate are the enforcement,
+    # not the mode). A DIRECTORY bind, so index writers have a writable parent (v3 R1).
+    echo "$c" | grep -qE '/var/lib/cco-internal/state/cco/shared"' || fail "STATE/shared mounts under the privileged root"
 }
 
 # Real secret files masked out of the repo .cco (rw edit mount); *.example survives.

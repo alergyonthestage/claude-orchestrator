@@ -221,14 +221,14 @@ test_template_remove_cascades_internal_state() {
     # Simulate an installed, tagged template with merge bookkeeping.
     local src; src=$(data_template_source "cascade-tmpl")
     mkdir -p "$(dirname "$src")"; printf 'url: https://example.com/repo\n' > "$src"
-    mkdir -p "$CCO_STATE_HOME/templates/cascade-tmpl/update/base"
+    mkdir -p "$(state_shared)/templates/cascade-tmpl/update/base"
     run_cco tag add cascade-tmpl scaffold
 
     run_cco template remove cascade-tmpl -y
 
     assert_dir_not_exists "$CCO_TEMPLATES_DIR/project/cascade-tmpl"
     assert_dir_not_exists "$CCO_DATA_HOME/templates/cascade-tmpl"
-    assert_dir_not_exists "$CCO_STATE_HOME/templates/cascade-tmpl"
+    assert_dir_not_exists "$(state_shared)/templates/cascade-tmpl"
     run_cco list --tag scaffold
     if echo "${CCO_OUTPUT:-}" | grep -qF "cascade-tmpl"; then
         fail "tag binding for cascade-tmpl should be gone after remove"
@@ -425,7 +425,7 @@ test_template_install_records_installed_commit() {
     run_cco template remove cmt -y
     run_cco template install "$bare" --pick cmt
 
-    local meta="$CCO_STATE_HOME/templates/cmt/update/meta"
+    local meta="$(state_shared)/templates/cmt/update/meta"
     assert_file_exists "$meta"
     assert_file_contains "$meta" "installed_commit:"
     # the recorded commit matches the remote HEAD

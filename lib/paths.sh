@@ -226,14 +226,16 @@ _cco_pack_source() {
     printf '%s\n' "$(_cco_data_dir)/packs/$(basename "$1")/source"
 }
 
-# Pack-scoped merge artifacts → STATE, keyed by pack name (= the flat-store dir
-# basename). <state>/cco/packs/<name>/update/{meta,base}.
+# Pack-scoped merge artifacts → STATE/shared, keyed by pack name (= the flat-store
+# dir basename). <state>/cco/shared/packs/<name>/update/{meta,base}. In the
+# shareable sub-bucket because `cco pack remove|rename` must re-key them from a
+# container session (the sidecar-purge/sidecar-rekey store ops) — v3 R1.
 _cco_pack_meta() {
-    printf '%s\n' "$(_cco_state_dir)/packs/$(basename "$1")/update/meta"
+    printf '%s\n' "$(_cco_state_shared_dir)/packs/$(basename "$1")/update/meta"
 }
 
 _cco_pack_base_dir() {
-    printf '%s\n' "$(_cco_state_dir)/packs/$(basename "$1")/update/base"
+    printf '%s\n' "$(_cco_state_shared_dir)/packs/$(basename "$1")/update/base"
 }
 
 # Project install-provenance `source` → DATA, keyed by project identity (the
@@ -248,18 +250,19 @@ _cco_template_source() {
     printf '%s\n' "$(_cco_data_dir)/templates/$(basename "$1")/source"
 }
 
-# Template-scoped install meta → STATE, keyed by template dir basename. Mirrors
-# `_cco_pack_meta`: holds the machine-local `installed_commit` (+ install/update
-# dates) the `cco update --check` advancement test reads (ADR-0022 D1/D6, P5-5).
+# Template-scoped install meta → STATE/shared, keyed by template dir basename.
+# Mirrors `_cco_pack_meta`: holds the machine-local `installed_commit` (+
+# install/update dates) the `cco update --check` advancement test reads
+# (ADR-0022 D1/D6, P5-5). Shareable for the same reason as the pack sidecars.
 _cco_template_meta() {
-    printf '%s\n' "$(_cco_state_dir)/templates/$(basename "$1")/update/meta"
+    printf '%s\n' "$(_cco_state_shared_dir)/templates/$(basename "$1")/update/meta"
 }
 
-# Template-scoped merge artifacts → STATE, keyed by template name (the flat-store
-# basename, matching the flat sharing-repo templates/<name>/). Mirrors the pack
-# form; the sync-before-publish merge ancestor (ADR-0022 D5). Never-sync.
+# Template-scoped merge artifacts → STATE/shared, keyed by template name (the
+# flat-store basename, matching the flat sharing-repo templates/<name>/). Mirrors
+# the pack form; the sync-before-publish merge ancestor (ADR-0022 D5). Never-sync.
 _cco_template_base_dir() {
-    printf '%s\n' "$(_cco_state_dir)/templates/$(basename "$1")/update/base"
+    printf '%s\n' "$(_cco_state_shared_dir)/templates/$(basename "$1")/update/base"
 }
 
 _cco_pack_install_tmp() {
@@ -478,6 +481,26 @@ _cco_state_dir() {
         "${CCO_STATE_HOME:-}" \
         "${XDG_STATE_HOME:+${XDG_STATE_HOME%/}/cco}" \
         "$HOME/.local/state/cco")
+    _cco_container_operator || _cco_ensure_dir "$base"
+    printf '%s\n' "$base"
+}
+
+# STATE/shared — the ONLY STATE member that crosses the ADR-0047 boundary into a
+# container session. An explicit ALLOW-LIST: a new file added anywhere else under
+# STATE is unmounted by default (fail-safe). The complement is load-bearing —
+# `remotes-token` (0600 auth), `projects/<id>/session/{memory,claude-state}`
+# (transcripts + memory) and the global update state MUST NOT reach a container,
+# which is why the whole-STATE bind is not an option (v3 R1; see
+# e2e-review/fix-design-v3/00-plan.md §2.2).
+#
+# It exists because the members that DO cross are written with the atomic
+# `mktemp "$f.XXXXXX"` + `mv` pattern, which needs a writable PARENT — and a
+# file-shaped bind gives none (the parent is a container-local root:root dir
+# Docker materialises for the mountpoint), while `mv` onto a bound file is EBUSY.
+# One directory bind restores both. Keep this the single shareable STATE member:
+# to expose something new to sessions, move it UNDER here, never widen the mount.
+_cco_state_shared_dir() {
+    local base; base="$(_cco_state_dir)/shared"
     _cco_container_operator || _cco_ensure_dir "$base"
     printf '%s\n' "$base"
 }

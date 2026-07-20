@@ -82,7 +82,7 @@ test_migrate_completeness_matrix() {
     done
 
     # local-paths → STATE index (repo path registered, machine-local).
-    assert_file_contains "$CCO_STATE_HOME/index" 'apprepo: "/home/dev/apprepo"' \
+    assert_file_contains "$(cco_index_file)" 'apprepo: "/home/dev/apprepo"' \
         "migration completeness: local-paths must register the repo path in the index"
     # AD3/G8: the committed project.yml stays machine-agnostic (no host path leak).
     assert_file_not_contains "$cco/project.yml" "/home/dev" \

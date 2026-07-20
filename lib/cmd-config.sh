@@ -219,8 +219,11 @@ _cv_scan_dirs() {
 # Populate _CV_RECS with every detected orphan across the four buckets.
 _cv_detect() {
     _CV_RECS=()
-    local state data cache
+    local state shared data cache
     state=$(_cco_state_dir); data=$(_cco_data_dir); cache=$(_cco_cache_dir)
+    # The pack/template sidecars live in the shareable sub-bucket, not the STATE
+    # root (v3 R1) — scanning the root here would silently find no sidecar orphan.
+    shared=$(_cco_state_shared_dir)
 
     # STATE index — per-project path entries whose target dir is gone. The record
     # carries the OWNING project (field b) so the prune re-keys the right scope
@@ -248,9 +251,9 @@ _cv_detect() {
     done < <(_index_list_projects)
 
     # STATE per-id dirs (update meta/base, session, memory).
-    _cv_scan_dirs "$state/projects"  project  local "STATE"
-    _cv_scan_dirs "$state/packs"     pack     local "STATE"
-    _cv_scan_dirs "$state/templates" template local "STATE"
+    _cv_scan_dirs "$state/projects"   project  local "STATE"
+    _cv_scan_dirs "$shared/packs"     pack     local "STATE"
+    _cv_scan_dirs "$shared/templates" template local "STATE"
 
     # CACHE per-id dirs (managed runtime overlays — projects only).
     _cv_scan_dirs "$cache/projects"  project  local "CACHE"

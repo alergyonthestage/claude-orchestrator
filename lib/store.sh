@@ -134,9 +134,13 @@ _store_target_tree() {
 # unwritable/opaque root compromises the whole cascade.
 _store_op_buckets() {
     case "$1" in
-        sidecar-purge|sidecar-rekey) _cco_data_dir; _cco_state_dir ;;
+        sidecar-purge|sidecar-rekey) _cco_data_dir; _cco_state_shared_dir ;;
         llms-purge|llms-rekey)       _cco_llms_dir ;;
         remote-put)                  _cco_data_dir ;;
+        # remote-drop/rekey also touch STATE/remotes-token, which deliberately
+        # never crosses the boundary (0600 auth) — so this probes the UNSHARED
+        # STATE root. Both verbs are host-only in-container (D-V3-1, bin/cco);
+        # on the host the root is native and writable.
         remote-drop|remote-rekey)    _cco_data_dir; _cco_state_dir ;;
     esac
 }
@@ -292,7 +296,10 @@ _store_dispatch() {
 _store_do_sidecar_purge() {
     local kind="$1" name="$2" d s
     d="$(_cco_data_dir)/$kind/$name"
-    s="$(_cco_state_dir)/$kind/$name"
+    # STATE/shared — must match _cco_pack_meta / _cco_template_meta, which is what
+    # actually wrote these trees. Reading the unshared STATE root here would purge
+    # nothing in a container session and silently leave the sidecar behind.
+    s="$(_cco_state_shared_dir)/$kind/$name"
     rm -rf "$d" || return 1
     rm -rf "$s" || return 1
     _tags_forget "$kind" "$name" || return 1
@@ -301,7 +308,7 @@ _store_do_sidecar_purge() {
 
 _store_do_sidecar_rekey() {
     local kind="$1" old="$2" new="$3" dr sr
-    dr=$(_cco_data_dir); sr=$(_cco_state_dir)
+    dr=$(_cco_data_dir); sr=$(_cco_state_shared_dir)   # STATE/shared — see sidecar-purge
     if [[ -d "$dr/$kind/$old" ]]; then mv "$dr/$kind/$old" "$dr/$kind/$new" || return 1; fi
     if [[ -d "$sr/$kind/$old" ]]; then mv "$sr/$kind/$old" "$sr/$kind/$new" || return 1; fi
     _tags_rename "$kind" "$old" "$new" || return 1

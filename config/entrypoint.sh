@@ -103,6 +103,19 @@ if getent passwd cco-svc >/dev/null 2>&1; then
     # 0700 cco-svc regardless of how the image or a prior run left it.
     chown cco-svc:cco-svc "$CCO_INTERNAL_ROOT"
     chmod 0700 "$CCO_INTERNAL_ROOT"
+    # Per-bucket PARENTS, owned by cco-svc. Docker materialises any missing mountpoint
+    # ancestor itself, as root:root 0755 — and cco-svc can then traverse and read it but
+    # NOT create in it, so any sibling write under such a parent fails EACCES. That is
+    # the design-docker.md §1.2.2 hazard, and v3 R1 was its first real instance (the
+    # index bind's parent). Re-asserting them here is idempotent and applies whether or
+    # not the corresponding bind exists in this session. Non-recursive on purpose: the
+    # children are bind mounts and their ownership belongs to the host.
+    for _b in state/cco share/cco cache/cco; do
+        install -d -o cco-svc -g cco-svc -m 0700 "$CCO_INTERNAL_ROOT/$_b" 2>/dev/null || true
+        chown cco-svc:cco-svc "$CCO_INTERNAL_ROOT/$_b" 2>/dev/null || true
+        chmod 0700 "$CCO_INTERNAL_ROOT/$_b" 2>/dev/null || true
+    done
+    unset _b
     # XDG façade: $HOME/.local/{state,share,cache}/cco → the confined root. Both native
     # paths and a direct `cat ~/.local/state/cco/index` resolve INTO the 0700 parent and
     # hit EACCES (Test B layout). The elevated cco reaches the real leaves via CCO_*_HOME

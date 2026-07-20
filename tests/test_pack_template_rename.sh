@@ -39,7 +39,7 @@ test_pack_rename_rekeys_stores_and_fans_out_refs() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     setup_cco_env "$tmp"
     create_pack "$tmp" oldpack "name: oldpack"$'\n'"description: p"
-    mkdir -p "$CCO_DATA_HOME/packs/oldpack" "$CCO_STATE_HOME/packs/oldpack/update"
+    mkdir -p "$CCO_DATA_HOME/packs/oldpack" "$(state_shared)/packs/oldpack/update"
     echo "url: local" > "$CCO_DATA_HOME/packs/oldpack/source"
     _ptr_set_tag packs oldpack work
     create_project "$tmp" app "$(_ptr_project_yml app oldpack)"
@@ -53,7 +53,7 @@ test_pack_rename_rekeys_stores_and_fans_out_refs() {
     # DATA/STATE sidecars moved
     assert_dir_exists "$CCO_DATA_HOME/packs/newpack" || return 1
     assert_dir_not_exists "$CCO_DATA_HOME/packs/oldpack" || return 1
-    assert_dir_exists "$CCO_STATE_HOME/packs/newpack" || return 1
+    assert_dir_exists "$(state_shared)/packs/newpack" || return 1
     # tag carried
     [[ "$(_ptr_tags packs newpack)" == "work" ]] || fail "tag not carried, got '$(_ptr_tags packs newpack)'" || return 1
     [[ -z "$(_ptr_tags packs oldpack)" ]] || fail "old tag must be gone" || return 1
@@ -125,7 +125,7 @@ test_template_rename_moves_store_and_sidecars() {
     setup_cco_env "$tmp"
     mkdir -p "$CCO_TEMPLATES_DIR/project/oldtpl"
     printf 'description: t\n' > "$CCO_TEMPLATES_DIR/project/oldtpl/template.yml"
-    mkdir -p "$CCO_DATA_HOME/templates/oldtpl" "$CCO_STATE_HOME/templates/oldtpl/update"
+    mkdir -p "$CCO_DATA_HOME/templates/oldtpl" "$(state_shared)/templates/oldtpl/update"
     _ptr_set_tag templates oldtpl work
 
     run_cco template rename oldtpl newtpl -y || fail "rename failed: $CCO_OUTPUT" || return 1
@@ -134,7 +134,7 @@ test_template_rename_moves_store_and_sidecars() {
     assert_dir_not_exists "$CCO_TEMPLATES_DIR/project/oldtpl" || return 1
     assert_dir_exists "$CCO_DATA_HOME/templates/newtpl" || return 1
     assert_dir_not_exists "$CCO_DATA_HOME/templates/oldtpl" || return 1
-    assert_dir_exists "$CCO_STATE_HOME/templates/newtpl" || return 1
+    assert_dir_exists "$(state_shared)/templates/newtpl" || return 1
     [[ "$(_ptr_tags templates newtpl)" == "work" ]] || fail "tag not carried" || return 1
 }
 

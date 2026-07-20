@@ -486,7 +486,7 @@ test_operator_lane_boundary_seam_denies_store_read() {
     setup_operator_session "$tmp" read-project
 
     seed_index_path sealed /Users/cco-e2e/code/sealed sealed-proj
-    local idx="$CCO_STATE_HOME/index"
+    local idx="$(cco_index_file)"
     assert_file_exists "$idx" "the lane must produce a real on-disk index to seal" || return 1
 
     lane_seal_boundary "$CCO_STATE_HOME" || return 1

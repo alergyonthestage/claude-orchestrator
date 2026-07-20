@@ -507,3 +507,46 @@ test_invariant_no_direct_store_access_outside_primitives() {
         || { fail "INV-S6 lint mis-attributed the planted violation: $planted"; return 1; }
     return 0
 }
+
+# ── INV-STATE the STATE allow-list (v3 R1 / fix-design-v3/00-plan.md §2) ──
+# STATE crosses the ADR-0047 boundary on an explicit ALLOW-LIST: only the shareable
+# `shared/` sub-bucket (rw, a DIRECTORY bind) and the `running/` registry (ro). The
+# complement is load-bearing and must never be bound — `remotes-token` is 0600 auth,
+# and `projects/<id>/session/` holds transcripts and memory. This is a fail-SAFE
+# posture: a file added under STATE later is unmounted unless someone moves it into
+# shared/ deliberately. Widening the bind to the STATE root (the "one-line fix" two
+# v3 sessions proposed) would silently flip it to fail-OPEN, which is exactly what
+# this guard exists to prevent.
+#
+# It also pins the SHAPE: the index must not go back to being bound as a single
+# FILE. That was v3 R1 — a file bind gives index writers no writable parent for
+# their `mktemp "$f.XXXXXX"` sibling, and `mv` onto a bound file is EBUSY, so
+# in-container index writes failed while the verb still reported success.
+test_invariant_state_mount_allowlist() {
+    local f="$REPO_ROOT/lib/cmd-start.sh"
+    [[ -f "$f" ]] || { fail "INV-STATE: lib/cmd-start.sh not found"; return 1; }
+    # Every _compose_vol whose TARGET is under the boundary's state/ tree. Scoped to
+    # real _compose_vol call lines: the CCO_STATE_HOME env line and the block comments
+    # also name that path and are not mounts.
+    local targets
+    targets=$(grep -E '_compose_vol' "$f" | grep -vE '^[[:space:]]*#' \
+        | grep -oE '/var/lib/cco-internal/state/[A-Za-z0-9_./-]*' | sort -u)
+    [[ -n "$targets" ]] || { fail "INV-STATE: no STATE mount targets found — did the mount move?"; return 1; }
+    local t bad=""
+    while IFS= read -r t; do
+        [[ -z "$t" ]] && continue
+        case "$t" in
+            /var/lib/cco-internal/state/cco/shared|/var/lib/cco-internal/state/cco/running) ;;
+            *) bad="${bad}${t}"$'\n' ;;
+        esac
+    done <<< "$targets"
+    [[ -z "$bad" ]] || fail "INV-STATE: STATE mount target outside the allow-list {shared, running} — remotes-token, transcripts and memory must never cross (v3 R1):"$'\n'"$bad"
+
+    # The index must be reached through the shared sub-bucket, never bound directly.
+    if grep -qE '_compose_vol[^#]*state/cco/index' "$f"; then
+        fail "INV-STATE: the index is bound as a FILE again — bind the shared/ DIRECTORY (v3 R1: mktemp sibling needs a writable parent; mv onto a mountpoint is EBUSY)"
+    fi
+    # And the resolver must agree that the index lives in the shared bucket.
+    grep -qE '_cco_state_shared_dir' "$REPO_ROOT/lib/index.sh" \
+        || fail "INV-STATE: lib/index.sh no longer resolves the index under STATE/shared"
+}

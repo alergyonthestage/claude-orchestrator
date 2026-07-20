@@ -41,12 +41,16 @@
 #   _index_rename_project(), _project_member_status(), _project_iter_members()
 # (the name-based reverse lookup _index_repos_get_projects() is retired — ADR-0051
 #  D5 replaces it with the path-based _index_paths_get_bindings())
-# Dependencies: colors.sh, paths.sh (_cco_state_dir/_cco_project_id),
+# Dependencies: colors.sh, paths.sh (_cco_state_shared_dir/_cco_project_id),
 #   sync-meta.sh (_sync_is_divergent) — both resolved at call time.
 
-# Absolute path to the index file (STATE; host-side guard applies via resolver).
+# Absolute path to the index file (STATE/shared; host-side guard applies via
+# resolver). It lives in the shareable sub-bucket because every writer below
+# replaces it atomically via a SIBLING temp file (mktemp "$f.XXXXXX" + mv), which
+# needs a writable parent directory — the file itself being bind-mounted is not
+# enough, and `mv` onto a bound file is EBUSY (v3 R1). Never move it back up.
 _index_file() {
-    printf '%s\n' "$(_cco_state_dir)/index"
+    printf '%s\n' "$(_cco_state_shared_dir)/index"
 }
 
 # Echo the on-disk schema version (integer). Absent/unreadable → 1 (the pre-v2

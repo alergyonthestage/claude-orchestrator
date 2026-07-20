@@ -46,7 +46,7 @@ test_config_editor_does_not_pollute_index() {
     setup_global_from_defaults "$tmpdir"
     cd "$tmpdir"
     run_cco start config-editor --dry-run --dump
-    local index="$CCO_STATE_HOME/index"
+    local index="$(cco_index_file)"
     if [[ -f "$index" ]]; then
         grep -qE '^[[:space:]]*cco-config:' "$index" \
             && fail "config-editor must not write 'cco-config' into the persistent index (H4)" || true

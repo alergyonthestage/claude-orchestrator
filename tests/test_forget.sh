@@ -24,7 +24,7 @@ test_forget_deregisters_internal_state() {
     assert_output_contains "Forgot project 'doomed'"
 
     # Index entries gone (membership + path).
-    assert_file_not_contains "$CCO_STATE_HOME/index" "doomed:"
+    assert_file_not_contains "$(cco_index_file)" "doomed:"
     # STATE/DATA/CACHE dirs gone.
     assert_dir_not_exists "$CCO_STATE_HOME/projects/doomed"
     assert_dir_not_exists "$CCO_DATA_HOME/projects/doomed"
@@ -64,7 +64,7 @@ YAML
 )"
 
     run_cco forget phoenix -y
-    assert_file_not_contains "$CCO_STATE_HOME/index" "phoenix:"
+    assert_file_not_contains "$(cco_index_file)" "phoenix:"
 
     # The still-valid project.yml re-registers on the next scan (ADR-0021 Dec.3).
     run_cco resolve --scan "$tmpdir/repos"
@@ -89,11 +89,11 @@ test_forget_shared_repo_guard() {
     run_cco forget proj-a -y
 
     # solo (only proj-a) is dropped; shared (also proj-b) is kept.
-    assert_file_not_contains "$CCO_STATE_HOME/index" 'solo:'
-    assert_file_contains     "$CCO_STATE_HOME/index" 'shared:'
+    assert_file_not_contains "$(cco_index_file)" 'solo:'
+    assert_file_contains     "$(cco_index_file)" 'shared:'
     # proj-a membership gone; proj-b intact.
-    assert_file_not_contains "$CCO_STATE_HOME/index" 'proj-a:'
-    assert_file_contains     "$CCO_STATE_HOME/index" 'proj-b:'
+    assert_file_not_contains "$(cco_index_file)" 'proj-a:'
+    assert_file_contains     "$(cco_index_file)" 'proj-b:'
 }
 
 test_forget_not_tracked_fails() {
@@ -112,7 +112,7 @@ test_forget_non_tty_requires_confirmation() {
 
     # No -y and non-interactive stdin → must refuse and preserve state.
     run_cco forget proj-x </dev/null || true
-    assert_file_contains "$CCO_STATE_HOME/index" "proj-x:"
+    assert_file_contains "$(cco_index_file)" "proj-x:"
 }
 
 # ── --purge: ownership-guarded .cco/ deletion (ADR-0021 D2 fwd-annot) ────
@@ -131,7 +131,7 @@ test_forget_purge_deletes_owned_cco_with_backup() {
     assert_dir_not_exists "$host"
     local backups; backups=$(find "$CCO_STATE_HOME/backups" -name 'forget-doomed-*.tar.gz' 2>/dev/null | wc -l | tr -d ' ')
     [[ "$backups" -ge 1 ]] || fail "expected a backup tar for the purged .cco/, found none"
-    assert_file_not_contains "$CCO_STATE_HOME/index" "doomed:"
+    assert_file_not_contains "$(cco_index_file)" "doomed:"
 }
 
 test_forget_purge_preserves_foreign_member() {
@@ -163,7 +163,7 @@ test_forget_purge_non_tty_without_flag_skips_deletion() {
     # delete the committed .cco/ (the opt-in purge stage stays unattended-safe).
     run_cco forget keepcfg -y </dev/null
     assert_dir_exists "$host"
-    assert_file_not_contains "$CCO_STATE_HOME/index" "keepcfg:"
+    assert_file_not_contains "$(cco_index_file)" "keepcfg:"
     [[ ! -d "$CCO_STATE_HOME/backups" ]] || {
         local n; n=$(find "$CCO_STATE_HOME/backups" -name 'forget-keepcfg-*' 2>/dev/null | wc -l | tr -d ' ')
         [[ "$n" -eq 0 ]] || fail "no backup should be written when purge is skipped"

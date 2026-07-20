@@ -12,7 +12,7 @@ _cv_seed_orphans() {
     seed_index_path "ghost-repo" "$tmpdir/gone-repo"
     index_set_project_repos "ghost-proj" "ghost-repo"
     # local: STATE per-id dir for a pack that no longer exists in ~/.cco/packs
-    mkdir -p "$CCO_STATE_HOME/packs/ghost-spack/update/base"
+    mkdir -p "$(state_shared)/packs/ghost-spack/update/base"
     # local: CACHE per-id dir for an untracked project
     mkdir -p "$CCO_CACHE_HOME/projects/ghost-cproj/managed"
     # local: STATE remote token with no DATA url registry entry
@@ -49,9 +49,9 @@ test_config_validate_detects_all_buckets_read_only() {
     assert_output_contains "DATA source pack 'ghost-dpack'"
 
     # Read-only: nothing is touched without --fix.
-    assert_dir_exists "$CCO_STATE_HOME/packs/ghost-spack"
+    assert_dir_exists "$(state_shared)/packs/ghost-spack"
     assert_dir_exists "$CCO_DATA_HOME/packs/ghost-dpack"
-    assert_file_contains "$CCO_STATE_HOME/index" "ghost-repo:"
+    assert_file_contains "$(cco_index_file)" "ghost-repo:"
 }
 
 test_config_validate_dry_run_no_change() {
@@ -60,7 +60,7 @@ test_config_validate_dry_run_no_change() {
     _cv_seed_orphans "$tmpdir"
     run_cco config validate --dry-run
     assert_output_contains "Found"
-    assert_dir_exists "$CCO_STATE_HOME/packs/ghost-spack"
+    assert_dir_exists "$(state_shared)/packs/ghost-spack"
 }
 
 test_config_validate_fix_prunes_with_yes() {
@@ -73,10 +73,10 @@ test_config_validate_fix_prunes_with_yes() {
     assert_output_contains "propagates to your other machines"   # DATA second-confirm warning
 
     # Machine-local orphans pruned.
-    assert_dir_not_exists "$CCO_STATE_HOME/packs/ghost-spack"
+    assert_dir_not_exists "$(state_shared)/packs/ghost-spack"
     assert_dir_not_exists "$CCO_CACHE_HOME/projects/ghost-cproj"
-    assert_file_not_contains "$CCO_STATE_HOME/index" "ghost-repo:"
-    assert_file_not_contains "$CCO_STATE_HOME/index" "ghost-proj:"
+    assert_file_not_contains "$(cco_index_file)" "ghost-repo:"
+    assert_file_not_contains "$(cco_index_file)" "ghost-proj:"
     if grep -q "^ghost-remote=" "$CCO_STATE_HOME/remotes-token" 2>/dev/null; then
         fail "orphan token should be pruned"
     fi
@@ -115,6 +115,6 @@ test_config_validate_fix_dies_without_confirmation() {
     run_cco config validate --fix </dev/null || rc=$?
     [[ "$rc" -ne 0 ]] || fail "expected non-interactive --fix without -y to exit non-zero"
     assert_output_contains "re-run with -y"
-    assert_dir_exists "$CCO_STATE_HOME/packs/ghost-spack"
+    assert_dir_exists "$(state_shared)/packs/ghost-spack"
     assert_dir_exists "$CCO_DATA_HOME/packs/ghost-dpack"
 }

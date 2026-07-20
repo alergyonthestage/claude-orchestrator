@@ -260,7 +260,7 @@ test_init_registers_index() {
     setup_cco_env "$tmpdir"
     local repo; repo=$(_init_repo "$tmpdir" myrepo)
     ( cd "$repo" && run_cco init --name acme-app --lang "English" )
-    local index="$CCO_STATE_HOME/index"
+    local index="$(cco_index_file)"
     assert_file_exists "$index"
     assert_file_contains "$index" "acme-app"
     assert_file_contains "$index" "$repo"
@@ -376,7 +376,7 @@ test_init_repo_name_override_and_index_keying() {
     local repo; repo=$(_init_repo "$tmpdir" somedir)
     ( cd "$repo" && run_cco init --name app --repo-name api --lang "English" )
     assert_file_contains "$repo/.cco/project.yml" "- name: api"
-    local index="$CCO_STATE_HOME/index"
+    local index="$(cco_index_file)"
     # Membership is keyed by the REPO name (project 'app' → member 'api'), and the
     # path is bound under the repo name — NOT the project name.
     assert_file_contains "$index" 'app: "api"'

@@ -77,8 +77,15 @@ state_project_compose() { printf '%s' "$CCO_STATE_HOME/projects/$1/docker-compos
 # the env var is absent).
 decode_session_context()  { grep -oE 'CCO_SESSION_CONTEXT=[A-Za-z0-9+/=]+'  "$1" 2>/dev/null | head -1 | cut -d= -f2- | base64 -d 2>/dev/null; }
 decode_subagent_context() { grep -oE 'CCO_SUBAGENT_CONTEXT=[A-Za-z0-9+/=]+' "$1" 2>/dev/null | head -1 | cut -d= -f2- | base64 -d 2>/dev/null; }
-state_pack_meta()    { printf '%s' "$CCO_STATE_HOME/packs/$1/update/meta"; }
-state_pack_base()    { printf '%s' "$CCO_STATE_HOME/packs/$1/update/base"; }
+# STATE/shared — the one STATE member `cco start` binds into a session (v3 R1).
+# The index and the pack/template update sidecars live here BECAUSE they must be
+# writable from a container; everything else under STATE deliberately does not
+# cross. Tests must go through these helpers rather than hardcoding the layout,
+# so a future relocation is one edit here and not thirty across the suite.
+state_shared()       { printf '%s' "$CCO_STATE_HOME/shared"; }
+cco_index_file()     { printf '%s' "$CCO_STATE_HOME/shared/index"; }
+state_pack_meta()    { printf '%s' "$CCO_STATE_HOME/shared/packs/$1/update/meta"; }
+state_pack_base()    { printf '%s' "$CCO_STATE_HOME/shared/packs/$1/update/base"; }
 # Managed runtime overlays → CACHE, keyed by project name (mirrors the production
 # helper _cco_project_cache_managed; ADR-0005 / Commit B/T8). $1 = project name.
 cache_project_managed() { printf '%s' "$CCO_CACHE_HOME/projects/$1/managed"; }
@@ -635,9 +642,16 @@ setup_operator_session() {
     # The buckets are MOUNTS in production, so the resolvers deliberately SKIP
     # _cco_ensure_dir under operator mode (`cco start` creates them host-side).
     # Omitting this mkdir yields `mktemp: failed to create file via template
-    # …/state/index.XXXXXX` and a SILENTLY EMPTY index — which would make every
-    # lane test vacuous. Pinned by test_operator_lane_predicate_is_real.
-    mkdir -p "$CCO_DATA_HOME" "$CCO_STATE_HOME" "$CCO_CACHE_HOME"
+    # …/state/shared/index.XXXXXX` and a SILENTLY EMPTY index — which would make
+    # every lane test vacuous. Pinned by test_operator_lane_predicate_is_real.
+    #
+    # STATE/shared is modelled explicitly because it — not the STATE root — is what
+    # `cco start` binds (v3 R1): the root is a container-local dir the agent's
+    # identity cannot write, and creating the sub-bucket here is what reproduces the
+    # writable-parent the real directory bind provides. Do NOT create anything else
+    # under $CCO_STATE_HOME in the lane: the unshared members (remotes-token,
+    # transcripts, memory) are absent in a real session and must stay absent here.
+    mkdir -p "$CCO_DATA_HOME" "$CCO_STATE_HOME" "$CCO_STATE_HOME/shared" "$CCO_CACHE_HOME"
     # The flat WORKDIR: `cco start` bind-mounts every member at <workdir>/<name>.
     export CCO_WORKDIR="$tmpdir/workspace"
     mkdir -p "$CCO_WORKDIR"
