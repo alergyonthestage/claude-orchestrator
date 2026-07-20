@@ -368,3 +368,132 @@ cmd-config.sh index.sh access-scope.sh paths.sh"
     done
     [[ -z "$hits" ]] || fail "INV-F.3: host-only _resolve_unit_dir_for_project called from a shim-reachable module (use _resolve_project_yml / _resolve_project_cco_dir):"$'\n'"$hits"
 }
+
+# ── INV-S6 the CLASS guard (RC-3 / 05-store-write-path.md §6.5) ───────
+# No code OUTSIDE the primitive layers may mutate an ADR-0047-confined bucket (DATA
+# registries, STATE index sidecars, CACHE llms) or evaluate an existence predicate on
+# one. Behind the opaque boundary every `[[ -f/-d ]]` on a confined path reads FALSE
+# for something that exists (§1.3), so a command body that `rm`/`mv`s a bucket path,
+# or branches on `[[ -d ]]` of one, silently half-applies or reports the wrong reason.
+# The destructive/re-key cascades therefore go through lib/store.sh; this static guard
+# keeps them there.
+#
+# MECHANISM — assignment provenance, not a naive grep. A `grep _cco_data_dir` on the
+# PRE-FIX tree measured 9 hits of which only 4 were real (design §6.5): it flags
+# resolver warm-ups and comments, and — fatally — MISSES every site that resolves the
+# bucket into a local variable first (`data_root=$(_cco_state_dir); mv "$data_root/…"`,
+# the `local rf; rf=$(_remotes_file)` split idiom, `$llms_dir`). A guard blind to the
+# majority of its class certifies. Instead, per file, an awk pass:
+#   1. taints every variable whose RHS names a confined-bucket resolver or an
+#      already-tainted variable — including the `local x; x=$(…)` split form;
+#   2. flags any FS-mutating statement (rm/mv/mkdir/cp/mktemp, or a `>`/`>>` redirect
+#      to a non-/dev/null target) [KIND=MUT] OR existence predicate ([[ -f/-d/-e/-r/-w
+#      … ]]) [KIND=PRED] whose target expands a tainted variable or calls a resolver
+#      directly. The PRED half is what enforces INV-S6 — a mutation-only lint cannot
+#      see §1.3 at all.
+#
+# TRACKED confined resolvers (the destructive/re-key + registry/token buckets):
+#   _cco_data_dir _cco_state_dir _cco_cache_dir _cco_llms_dir _cco_remotes_file
+#   _cco_remotes_token_file  + the thin wrappers _remotes_file / _remotes_token_file.
+# NOT tracked, deliberately: the install/update PROVENANCE resolvers (_cco_pack_meta,
+# _cco_template_base_dir, …) and the CONFIG globals (PACKS_DIR/TEMPLATES_DIR — plain rw
+# binds, not confined). Provenance conversion is cycle 2 (D-M8/Q-10); cycle 1 gives
+# those verbs a fail-fast _store_provenance_guard instead, so they never reach the
+# store behind the boundary at all.
+#
+# EXCLUSIONS + ALLOWLIST (each with its reason). Post-fix, the ONLY surviving hits are:
+#   EXCLUDED (the primitive/boundary layers themselves; skipped entirely):
+#     store.sh     — the crossing primitive (the ONE module that reaches the buckets);
+#     paths.sh     — defines the resolvers;
+#     index.sh     — the STATE index primitive layer (reached only elevated/host-only);
+#     sync-meta.sh — the STATE merge primitive layer;
+#     tags.sh      — delegates to lib/store.sh post-conversion (the tag primitive).
+#   ALLOWLIST — host-only verb files (row 14: the shim REFUSES these in-container, so
+#     the raw store access is host-legitimate — the boundary is never in play):
+#     cmd-forget.sh cmd-clean.sh cmd-config.sh cmd-start.sh cmd-update.sh migrate.sh
+#     cmd-project-rename.sh.
+#   ALLOWLIST — cmd-remote.sh registry/token READ helpers + token PRIMITIVES + the
+#     elevated/host verbs (by function): the destructive verbs (_cmd_remote_add/remove/
+#     rename) are CONVERTED and stay scanned; only the read helpers (remote_get_url/
+#     token/name_for_url, remote_list_names, remote_resolve_token_for_url), the
+#     whole-verb-elevated `remote list` (_cmd_remote_list), the host-only `remote
+#     set-token` (_cmd_remote_set_token), and the token-store single-writer primitives
+#     (_remote_token_set/_remote_token_remove — delegated to by lib/store.sh, like
+#     tags.sh) are exempt. Their claude-side reads read false behind the boundary but
+#     are cosmetic (preview only) or never reached in-container.
+#
+# This is a STATIC invariant: unlike a reproduction it does not "fail on reverted
+# lib/". Its discrimination is proven directly — the test plants a raw store mutation
+# in a copy of a non-allowlisted file and asserts the guard catches it.
+
+_store_lint_prog() {
+    cat <<'AWK'
+BEGIN {
+  RES="_cco_data_dir|_cco_state_dir|_cco_cache_dir|_cco_llms_dir|_cco_remotes_file|_cco_remotes_token_file|_remotes_file|_remotes_token_file"
+  fn="(toplevel)"
+}
+/^[A-Za-z_][A-Za-z0-9_]*\(\)[ \t]*\{?[ \t]*$/ { fn=$0; sub(/\(\).*/,"",fn); for (v in seen) delete seen[v]; next }
+{
+  line=$0; s=line
+  while (match(s, /(^|[ \t;])[A-Za-z_][A-Za-z0-9_]*=/)) {
+    seg=substr(s, RSTART, RLENGTH); vn=seg; gsub(/[ \t;]/,"",vn); sub(/=$/,"",vn)
+    rest=substr(s, RSTART+RLENGTH); r=rest; sub(/;.*/,"",r)
+    t=0
+    if (r ~ ("(" RES ")")) t=1
+    else { for (v in seen) if (index(r,"$"v)||index(r,"${"v)) t=1 }
+    if (t && vn!="") seen[vn]=1
+    s=substr(s, RSTART+RLENGTH)
+  }
+  isfs=(line ~ /(^|[ \t;&|(])(rm|mv|mkdir|cp|mktemp)[ \t]/)
+  isredir=(line ~ />>?[ \t]*"/ && line !~ /\/dev\/null/)
+  ispred=(line ~ /\[\[[^]]*-[defrw][ \t]+/)
+  if (isfs||isredir||ispred) {
+    hit=0
+    if (line ~ ("\\$\\(?(" RES ")")) hit=1
+    for (v in seen) if (index(line,"$"v)||index(line,"${"v)) hit=1
+    if (hit) { k=(isfs||isredir)?"MUT":"PRED"; print FILENAME "|" fn "|" k }
+  }
+}
+AWK
+}
+
+# Echo the VIOLATING hits (one "<basename>|<func>|<kind>" per line) found in <libdir>,
+# i.e. every hit outside the exclusion set + allowlist. Empty output = clean.
+_store_lint_violations() {
+    local libdir="$1" f b prog line hf fn kind
+    prog=$(_store_lint_prog)
+    local excluded=" store.sh paths.sh index.sh sync-meta.sh tags.sh "
+    local host_only=" cmd-forget.sh cmd-clean.sh cmd-config.sh cmd-start.sh cmd-update.sh migrate.sh cmd-project-rename.sh "
+    local remote_allow="|remote_get_url|remote_get_token|remote_get_name_for_url|remote_list_names|remote_resolve_token_for_url|_cmd_remote_list|_cmd_remote_set_token|_remote_token_set|_remote_token_remove|"
+    for f in "$libdir"/*.sh; do
+        b=$(basename "$f")
+        case "$excluded"  in *" $b "*) continue ;; esac
+        case "$host_only" in *" $b "*) continue ;; esac
+        while IFS='|' read -r hf fn kind; do
+            [[ -z "$hf" ]] && continue
+            if [[ "$b" == "cmd-remote.sh" && "$remote_allow" == *"|$fn|"* ]]; then continue; fi
+            printf '%s|%s|%s\n' "$b" "$fn" "$kind"
+        done < <(awk "$prog" "$f")
+    done
+}
+
+test_invariant_no_direct_store_access_outside_primitives() {
+    # 1. The live tree must be clean: every confined-bucket mutation/predicate outside
+    #    the primitive layers is either in store.sh (excluded) or a documented
+    #    host-only/read-helper allowlist entry.
+    local v; v=$(_store_lint_violations "$REPO_ROOT/lib")
+    [[ -z "$v" ]] || fail "INV-S6: raw ADR-0047-confined store access (rm/mv/redirect [MUT] or existence predicate [PRED]) outside the primitive layers — route it through lib/store.sh:"$'\n'"$v"
+
+    # 2. Discrimination (the lint must PROVE it catches a violation, since a static
+    #    invariant cannot "fail on reverted lib/"). Plant a raw store mutation in a
+    #    copy of a NON-allowlisted file and assert the guard flags it.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    cp "$REPO_ROOT"/lib/*.sh "$tmp/" 2>/dev/null || { fail "lint self-test: could not stage lib/"; return 1; }
+    printf '\n_lint_probe_violation() {\n    local d; d=$(_cco_data_dir)\n    rm -rf "$d/packs/evil"\n}\n' >> "$tmp/cmd-pack.sh"
+    local planted; planted=$(_store_lint_violations "$tmp")
+    [[ -n "$planted" ]] \
+        || { fail "INV-S6 lint does NOT discriminate: a planted raw store mutation went uncaught (RC-17 §6.5)"; return 1; }
+    [[ "$planted" == *"cmd-pack.sh|_lint_probe_violation|MUT"* ]] \
+        || { fail "INV-S6 lint mis-attributed the planted violation: $planted"; return 1; }
+    return 0
+}
