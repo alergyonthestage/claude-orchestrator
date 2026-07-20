@@ -135,6 +135,16 @@ inside `lib/index.sh`**:
   `project_paths[project][name]`. Orphan global paths (a `cco path set` name in no project's
   membership) → an `unscoped:` bucket, kept resolvable (default **keep**, non-destructive;
   keep-vs-drop confirmable in impl).
+
+> **Forward annotation (2026-07-20, RC-4).** The `unscoped:` bucket's **resolution** semantics are
+> unchanged (INV-D — it stays a live fallback in `_index_get_path`, and FI-23 means every v1-migrated
+> extra_mount, including a current project's own, can land here). What RC-4 adds is its **display
+> visibility** in `cco path list`: an unscoped row now rides `Po` (classified as other-project data,
+> maintainer-ratified 2026-07-20) — *except* where a current project actually resolves through it (a
+> name it declares and does not shadow), in which case it is displayed as that project's binding
+> (`Pc`) while remaining stored project-less. This makes `path list` the first consumer to depend on
+> the fallback being **observable**, which is relevant if FI-23 is ever fixed by narrowing it. See
+> ADR-0043 §1's RC-4 annotation and `…/fix-design-v2/06-path-list-scoping.md` §7.2.
 - **No hard cutover**: the resolver understands **both** schemas — it reads a still-`version: 1`
   index as global-flat (every project sees the global name) as a transitional fallback, so a
   session that only **reads** the index (e.g. an in-container operator, which cannot write it

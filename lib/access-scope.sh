@@ -15,11 +15,16 @@
 # maps below (_cco_level_read_scope / _cco_level_write_scope), the single source for
 # host mount-gen, the operator shim, and this output layer.
 # Scope classes (reuses the shim's classes — one model for gating AND output):
-#   project · pack · llms → PROJECT class  (at project scope: the current project +
-#                                            its referenced resources)
+#   project · pack · llms · path → PROJECT class  (at project scope: the current
+#                                            project + its referenced resources; a
+#                                            `path`-index row rides its EFFECTIVE
+#                                            owner — current → Pc, else/unattributable
+#                                            → Po, RC-4)
 #   template · remote     → GLOBAL class   (visible only at global scope / higher)
 # read-global ≠ read-all: the SOLE difference is other-project visibility (the
-# `project` kind); packs/llms/templates/remotes are fully visible at `global`.
+# `project` AND `path` kinds); packs/llms/templates/remotes are fully visible at
+# `global`. RC-4 keeps this true by construction: an unattributable path row is
+# classified as other-project (rides Po), so it too needs read-all, never read-global.
 #
 # Invariants (ADR-0043 §2):
 #   INV-A host-open  — scoping engages ONLY under _cco_container_operator; on the

@@ -700,11 +700,18 @@ the maintainer's live index shows `assets`, `mock`, `reference`, `project-docs`,
 (prefixed `[project] name` rows *and* bare rows) that prompted the maintainer's "path list is a bit
 of a mess" remark — the format is not the cause, the residue is.
 
-**Severity is low, and why**: it is self-healing in practice — `cco resolve` re-binds each mount
-per-project (the maintainer's `cave-flow`/`cave-eda-framework` are correctly scoped under two
-projects), and a project's own binding **wins** over the unscoped fallback. The residue is a stale
-record, not a wrong resolution. But it is a **completeness gap in a just-shipped migration**, and it
-keeps a rejected mechanism reachable.
+**Severity is low, and why**: a project's own `project_paths` binding **wins** over the unscoped
+fallback, so the residue is a stale record, not a wrong resolution. But it is a **completeness gap in
+a just-shipped migration**, and it keeps a rejected mechanism reachable.
+
+> **Correction (2026-07-20, RC-4).** The residue does **not** self-heal. `_resolve_entry_index`
+> (`lib/local-paths.sh`) returns early when `_index_get_path` already answers — and that INCLUDES the
+> unscoped fallback — so a legacy extra_mount resolving through `unscoped:` is never re-homed by
+> `cco resolve`; `cco resolve --scan` re-homes host *repos* only (and duplicates rather than moves),
+> extra_mounts by neither pass. The earlier "self-healing — `cco resolve` re-binds per project"
+> wording was inaccurate. RC-4 does not clean the residue; it makes `cco path list` scope it correctly
+> in its presence (a claimed unscoped row a current project resolves through stays visible as that
+> project's binding; anything else rides `Po`). See `docs/maintainers/configuration/agent-cco-access/e2e-review/fix-design-v2/06-path-list-scoping.md` §5.5.
 
 **Direction to evaluate**: decide whether the fallback is (a) an intentional escape hatch for the
 project-less `cco path set` pin — which is how `index.sh:512-517` describes it, and that use is
@@ -721,4 +728,4 @@ overlap into the same cross-project resolution question. FI-21, FI-22 and this n
 index model — **scope them together before designing any one of them**.
 
 **Type & tracking**: migration completeness → likely a follow-up migration + changelog.
-**Effort**: Low–Med. **Not gating** the e2e review (self-healing; project bindings win).
+**Effort**: Low–Med. **Not gating** the e2e review (project bindings win; RC-4 scopes the display — see the 2026-07-20 correction above, the residue does not self-heal).

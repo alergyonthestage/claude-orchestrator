@@ -88,6 +88,33 @@ scoping* — no parallel model. The level→scope maps (`_cco_level_read_scope` 
 `_cco_level_write_scope` / `_cco_write_scope_satisfies`) are the single source consumed by
 host mount-generation, the operator shim, and this output layer.
 
+> **Completed in part (2026-07-20) by the e2e v2 fix workstream (RC-4).** The taxonomy above
+> covers the five *resource kinds*; it said nothing about the **path index**, whose rows are
+> `(owner-project, name, host-path)` bindings rather than kind instances. `cco path list`
+> consequently carried its own inline rule and exempted **owner-less** (`unscoped:`, ADR-0051 D2)
+> rows from scoping entirely — a false negative that disclosed other projects' names and host
+> paths at `Po=none` (findings E1-09, E2-02, E3-07, E4-03, E5-03). The taxonomy now includes a
+> **`path` kind, `project` class**, whose visibility follows the row's **effective** owner through
+> the single layer predicate `_env_owner_in_scope`: a **current** owner rides `Pc`, **any other**
+> owner rides `Po`, and an **absent/unattributable** owner is conservatively *classified as* other
+> — it rides `Po` too, never `Pc`. Effective ownership is resolved as the mount generator resolves
+> it: an unscoped row that a current project's own manifest declares and does not shadow is that
+> project's live binding (`_index_get_path`'s unscoped fallback) and stays `Pc`-visible, so the fix
+> hides no resource the session is already mounting. Fail-closed below `read-all`, unchanged at
+> `read-all`/`edit-all` and on the host (INV-A), and counted in the count-only notice (INV-B). The
+> axis (`Po`, not `G`) was maintainer-ratified 2026-07-20; it keeps the "SOLE difference" invariant
+> above true by construction (an unattributable row is other-project data, so it needs `read-all`,
+> never `read-global`).
+>
+> **Known deviation from §4.** §4 requires a wired read verb to call `_env_in_scope`,
+> `_env_note_hidden` on skip, and `_env_flush_hidden_notice` at the end. RC-4 satisfies the
+> **first** clause only: `cco path list` keeps its own hidden counter and dedicated notice, because
+> the shared notice hardcodes a `read-global`-first widening hint that is wrong for path rows
+> (`read-global` never reveals one under this rule). Folding `path` into the shared counters
+> requires parameterising the widening hint per kind across all five wired listers; that refactor
+> is deferred (cycle 2), and until it lands the §4 notice clauses remain deliberately unmet for
+> this verb.
+
 ### 2. Invariants
 
 - **INV-A (host-open).** Scoping engages **only** under `_cco_container_operator`. On the

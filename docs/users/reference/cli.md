@@ -1173,6 +1173,14 @@ normalizes each value for display, and flags any stale non-absolute entry (e.g. 
 as `⚠ malformed`; run `cco update` (which normalizes the index) or `cco resolve --scan <dir>` to
 clean it.
 
+In a **container session** each row is scoped by its owning project, exactly like `cco list project`:
+the current project's rows are always shown; rows owned by **other** projects — and rows stored
+under **no** project (the project-less `unscoped:` bucket) — require a `read-all` session and are
+otherwise hidden and counted in the notice. A **bare** (unbracketed) row is stored under no project,
+but if the current project actually resolves through it (a name it declares and does not otherwise
+bind) it stays visible, because it is one of *this* session's own mounts — the bracket means "stored
+under a project", not "in use by one". Nothing changes on the host or at `read-all`.
+
 ---
 
 ### 3.16 `cco update [OPTIONS]`
