@@ -105,7 +105,8 @@ target repos ✅ · **RC-2** host-path class (INV-F, D-M2 vocabulary, D-M4 de-el
 **RC-3** store write-path (lib/store.sh cascade layer, INV-S1..S6, E6A-13/E6B-03/04 closed, Q-10-OUT
 fail-fast provenance guard, §6.5 INV-S6 CLASS lint) ✅ — **Q-11 confirmed a §3.8 no-op, already
 closed by RC-2's D-M4 de-elevation** · **RC-4** `path list` fail-closed ⬜ · **docs** ADR sweep +
-changelog #46 ⬜. Suite at RC-3 tip: **1403/9**.
+changelog #46 ⬜. Suite at RC-3 tip: **1403/9**. Resume plan (review → RC-4 → docs) in
+`e2e-review/fix-design-v2/RESUME-HANDOFF-review-rc4-docs.md`.
 
 **Out of session reach — gates the release, not the implementation** (do on the Mac):
 `cco build` from develop (fixes are invisible in-session until rebuilt); targeted e2e re-run
