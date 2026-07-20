@@ -354,6 +354,16 @@ test_invariant_probe_locality() {
 # fails this. Comment mentions (Depends: lines) are excluded; only real calls count.
 # cmd-resolve.sh (which DEFINES the resolver) and the host-only verbs (update /
 # export-import / add / clean / chrome / start / stop) are outside the whitelist.
+# DELIBERATELY NOT in `deny`: cmd-resolve.sh (RC-2 / 04 §6.7). It is the only
+# module that may call _resolve_unit_dir_for_project, for three shapes a static
+# lint cannot cheaply distinguish: (1) it DEFINES the resolver and the host/operator
+# dispatcher _resolve_project_yml/_resolve_project_cco_dir, whose HOST branch (after
+# `_cco_container_operator` returns) is the correct place for it; (2) the operator
+# arm of _project_iter_members guards its host `while`; (3) the bodies of the
+# HOST-ONLY verb `cco resolve` (_resolve_all, cmd_resolve) which is refused in
+# operator mode anyway. A robust asserted operator-branch-shape exemption over these
+# six heterogeneous sites needs control-flow analysis and is too brittle for a lint;
+# it is tracked as cycle-2 in pre-revalidation-backlog.md rather than left silent.
 test_invariant_index_resolver_host_only() {
     local deny="cmd-project-validate.sh cmd-project-coords.sh cmd-project-query.sh \
 cmd-llms.sh cmd-template.sh cmd-pack.sh cmd-repo.sh rename.sh tags.sh \

@@ -37,7 +37,7 @@ fi
 PASS=0; FAIL=0; TOTAL=0
 VERBOSE=false
 LIST_ONLY=false
-FILE_FILTER=""
+FILE_FILTERS=()
 NAME_FILTER=""
 
 # ── Parse arguments ──────────────────────────────────────────────────
@@ -45,14 +45,15 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --verbose|-v)  VERBOSE=true; shift ;;
         --list)        LIST_ONLY=true; shift ;;
-        --file)        FILE_FILTER="$2"; shift 2 ;;
+        --file)        FILE_FILTERS+=("$2"); shift 2 ;;   # repeatable: accumulate
         --filter)      NAME_FILTER="$2"; shift 2 ;;
         --help|-h)
             cat <<'EOF'
 Usage: bin/test [OPTIONS]
 
 Options:
-  --file <name>    Run only tests in tests/<name>.sh (e.g. test_init)
+  --file <name>    Run only tests in tests/<name>.sh (e.g. test_init).
+                   Repeatable: pass --file more than once to run several files.
   --filter <sub>   Run only test functions matching substring
   --verbose, -v    Show output from passing tests
   --list           List all test function names without running
@@ -125,9 +126,16 @@ _discover_and_run() {
     local file_base
     file_base="$(basename "$test_file" .sh)"
 
-    # Apply file filter
-    if [[ -n "$FILE_FILTER" && "$file_base" != "$FILE_FILTER" ]]; then
-        return 0
+    # Apply file filter. --file is repeatable and ACCUMULATES: with one or more
+    # given, run any file whose base matches ANY of them; with none, run all. (Was
+    # last-wins, which silently ran only the last named file — testing.md's
+    # multi-file Selective-Execution rows depend on this fix.)
+    if [[ ${#FILE_FILTERS[@]} -gt 0 ]]; then
+        local _ff _matched=false
+        for _ff in "${FILE_FILTERS[@]}"; do
+            [[ "$file_base" == "$_ff" ]] && { _matched=true; break; }
+        done
+        $_matched || return 0
     fi
 
     # Extract function names from file using grep (before sourcing to avoid side-effects)

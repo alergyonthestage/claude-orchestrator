@@ -491,7 +491,9 @@ test_operator_lane_boundary_seam_denies_store_read() {
 
     lane_seal_boundary "$CCO_STATE_HOME" || return 1
     local out rc=0
-    out=$(cat "$idx" 2>&1) || rc=$?
+    # LC_ALL=C: assert on the errno's C-locale words — under a non-C locale cat
+    # localizes "Permission denied" and the substring match would break.
+    out=$(LC_ALL=C cat "$idx" 2>&1) || rc=$?
     lane_unseal_boundary "$CCO_STATE_HOME"
 
     # A positive outcome assertion: the exact rc AND the errno's own words.
