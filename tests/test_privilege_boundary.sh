@@ -169,3 +169,38 @@ test_boundary_storeop_validates_before_gate() {
         || { fail "a traversal op must be rejected at validation (INV-S1), got: $SO_OUT"; return 1; }
     return 0
 }
+
+# §3.7: store-op is dispatched ONLY inside the __store elevated re-entry, never from
+# the top-level host dispatcher — otherwise `cco store-op …` would be a real, ungated,
+# undocumented public host verb (the rev.1 regression). On a simulated HOST
+# (_cco_container_operator false: no CCO_CONTAINER_OPERATOR/CCO_IN_CONTAINER), it must
+# be an UNKNOWN command. Regression guard — passes today; it fails only if store-op is
+# ever wired into the top-level `case "$cmd"`.
+test_boundary_storeop_absent_from_host_dispatcher() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"           # HOST context (no operator env); pre-created roots
+    local rc=0; run_cco store-op apply sidecar-purge packs x || rc=$?
+    assert_rc 1 "$rc" "host 'cco store-op' must be an unknown command, not a hidden verb" || return 1
+    [[ "$CCO_OUTPUT" == *"Unknown command: store-op"* ]] \
+        || { fail "host store-op must report an unknown command (§3.7), got: $CCO_OUTPUT"; return 1; }
+    return 0
+}
+
+# INV-S5 LOCK (alternative 4.1): the mixed store-mutating verbs must NOT be whole-verb
+# elevated — that would make cco-svc rewrite a claude-owned tree (~/.cco/packs/<name>,
+# a repo's project.yml). Their store cascades cross per-op through lib/store.sh; only
+# the claude-owned half runs in-process. Passes today; it is the lock that keeps
+# alternative 4.1 from being reintroduced (a bug-catcher would be reversed here).
+test_boundary_mixed_verbs_do_not_whole_verb_elevate() {
+    eval "$(sed -n '/^_cco_verb_touches_store()/,/^}/p' "$REPO_ROOT/bin/cco")"
+    local spec
+    for spec in "pack remove" "pack rename" "template remove" "template rename" \
+                "llms remove" "llms rename" "remote add" "remote remove" "remote rename"; do
+        # shellcheck disable=SC2086
+        if _cco_verb_touches_store $spec; then
+            fail "mixed store verb '$spec' must NOT whole-verb elevate (INV-S5) — it crosses per-op via lib/store.sh"
+            return 1
+        fi
+    done
+    return 0
+}
