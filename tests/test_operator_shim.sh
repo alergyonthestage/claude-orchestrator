@@ -533,6 +533,74 @@ test_operator_path_list_masks_host_paths_when_off() {
     return 0
 }
 
+# ── path list: owner-less (unscoped) rows scope on the Po axis (RC-4 / 06 §6.2) ──
+# The owner-less pin `orphan` is UNCLAIMED in the hermetic lane (no /workspace
+# manifest declares it; 06 §6.1), so these exercise the classified-as-other half.
+
+test_operator_path_list_hides_owner_less_below_read_all() {
+    # RC-4 / E2-02: an owner-less (unscoped) pin must NOT leak below read-all.
+    lane_cco_seeded read-project alpha path list
+    [[ "$OP_OUT" != *"orphan"* ]] \
+        || fail "owner-less pin must be hidden at read-project (E2-02), got: $OP_OUT"
+    # INV-B: counted, not silently dropped; the widening is read-all (not read-global).
+    [[ "$OP_OUT" == *"hidden by access scope"* && "$OP_OUT" == *"read-all"* ]] \
+        || fail "owner-less pin must be counted in the read-all notice, got: $OP_OUT"
+    # stdin guard (06 §5.3): the claim-set loops must not consume the row stream, so
+    # the current project's OWN later row still prints.
+    [[ "$OP_OUT" == *"alpha"* ]] \
+        || fail "current project's row must survive the claim loop (stdin guard), got: $OP_OUT"
+    return 0
+}
+
+test_operator_path_list_owner_less_hidden_at_edit_project() {
+    # RC-4 / E4-03: Po=none at an EDIT level hides the owner-less pin too.
+    lane_cco_seeded edit-project alpha path list
+    [[ "$OP_OUT" != *"orphan"* ]] \
+        || fail "owner-less pin must be hidden at edit-project (E4-03), got: $OP_OUT"
+    return 0
+}
+
+test_operator_path_list_owner_less_hidden_at_read_global() {
+    # RC-4 AXIS PIN (Po, not G): at read-global (ro,ro,none) Po=none → hidden. A
+    # G-axis (A7) implementation would SHOW it — this is the assertion that fails on A7.
+    lane_cco_seeded read-global alpha path list
+    [[ "$OP_OUT" != *"orphan"* ]] \
+        || fail "owner-less pin must be hidden at read-global (Po axis, not G), got: $OP_OUT"
+    return 0
+}
+
+test_operator_path_list_owner_less_hidden_for_config_editor_target() {
+    # RC-4 / E5-03: config-editor project mode. The target `alpha` is current
+    # (CCO_CONFIG_TARGETS) → Pc=rw → visible; the owner-less pin still hides (Po=none).
+    OP_TARGETS=alpha lane_cco_seeded edit-project config-editor path list
+    [[ "$OP_OUT" == *"alpha"* ]] \
+        || fail "config-editor target repo must be visible (Pc), got: $OP_OUT"
+    [[ "$OP_OUT" != *"orphan"* ]] \
+        || fail "owner-less pin must be hidden for a config-editor target (E5-03), got: $OP_OUT"
+    return 0
+}
+
+test_operator_path_list_owner_less_masked_at_shp_off() {
+    # RC-4 / E1-09: at show_host_paths=off the owner-less LOGICAL NAME still leaked
+    # (a name is other-project identity data Po=none should not disclose).
+    OP_SHP=false lane_cco_seeded read-project alpha path list
+    [[ "$OP_OUT" != *"orphan"* ]] \
+        || fail "owner-less logical name must be hidden at shp=off/read-project (E1-09), got: $OP_OUT"
+    return 0
+}
+
+test_operator_path_list_owner_less_visible_at_read_all() {
+    # No-regression guard (E3-07 / criterion B false-positive clause): at read-all
+    # every row is legitimately in scope — the owner-less pin MUST still show and
+    # nothing is hidden. Fails if someone implements A2 (hide unconditionally).
+    lane_cco_seeded read-all alpha path list
+    [[ "$OP_OUT" == *"orphan"* ]] \
+        || fail "owner-less pin must be VISIBLE at read-all (no-regression), got: $OP_OUT"
+    [[ "$OP_OUT" != *"hidden by access scope"* ]] \
+        || fail "read-all must hide nothing, got: $OP_OUT"
+    return 0
+}
+
 # ── whoami+: explicit (G,Pc,Po) triple + granular form + boundary note (A1 §4.5) ─
 
 test_operator_whoami_renders_triple_and_boundary() {

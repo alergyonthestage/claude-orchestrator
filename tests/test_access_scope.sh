@@ -28,6 +28,16 @@ _as_operator() {
            CCO_DATA_HOME=/x CCO_STATE_HOME=/y CCO_CACHE_HOME=/z
 }
 
+# Engage container-operator mode with a DIRECT (G,Pc,Po) triple (space-separated),
+# for triples that have no named preset — e.g. case 6 `(none rw rw)` "edit every
+# project but not the store". Mirrors a granular `--cco-access global=…,current=…,
+# others=…` launch (CCO_ACCESS_TRIPLE is what `cco start` exports). $1 = "G Pc Po".
+_as_triple() {
+    export CCO_CONTAINER_OPERATOR=1 CCO_ACCESS_TRIPLE="${1// /,}" \
+           CCO_DATA_HOME=/x CCO_STATE_HOME=/y CCO_CACHE_HOME=/z
+    unset CCO_CCO_ACCESS
+}
+
 # ── 1. Layer unit tests ───────────────────────────────────────────────
 
 test_as_host_open_invariant() {
@@ -49,6 +59,7 @@ test_as_scope_class_taxonomy() {
     [[ "$(_env_scope_class project)"  == "project" ]] || fail "project → project class"
     [[ "$(_env_scope_class pack)"     == "project" ]] || fail "pack → project class"
     [[ "$(_env_scope_class llms)"     == "project" ]] || fail "llms → project class"
+    [[ "$(_env_scope_class path)"     == "project" ]] || fail "path → project class (RC-4)"
     [[ "$(_env_scope_class template)" == "global"  ]] || fail "template → global class"
     [[ "$(_env_scope_class remote)"   == "global"  ]] || fail "remote → global class"
     [[ "$(_env_scope_class bogus)"    == "project" ]] || fail "unknown kind defaults to project (default-deny)"
@@ -642,5 +653,103 @@ test_hidden_notice_unchanged() {
         || fail "the hidden notice wording must be unchanged, got: $out"
     [[ "$out" != *"not mounted in this session"* ]] \
         || fail "a hidden-only flush must not emit the unmounted sentence, got: $out"
+    return 0
+}
+
+# ── RC-4: path-kind owner attribution + the ratified Po axis (06 §6.3/§6.5) ──────
+
+test_as_path_kind_owner_attribution() {
+    # RC-4 (06 §6.3): the `path` kind scopes by the row's EFFECTIVE owner.
+    _as_source
+    # (a) fully-open triple + empty owner → visible (rides Po=ro).
+    _as_triple "ro ro ro"
+    _env_in_scope path orphan "" || fail "path/empty-owner must be visible at (ro,ro,ro) (Po=ro)"
+    # (b) project-scoped: current owner visible (Pc), other + empty owner hidden (Po=none).
+    _as_triple "none ro none"; export PROJECT_NAME=alpha
+    _env_in_scope path r alpha   || fail "path owned by the current project must be visible (Pc)"
+    _env_in_scope path r beta    && fail "path owned by another project must be hidden (Po=none)"
+    _env_in_scope path orphan "" && fail "path with empty owner must be hidden below read-all (E2-02)"
+    return 0
+}
+
+test_as_path_unattributable_rides_po_not_g() {
+    # RC-4 AXIS PIN at the layer (06 §4.1 / §8 Q1, maintainer-ratified = Po): an
+    # unattributable (empty-owner) path row rides Po, NOT G. A G-axis (A7)
+    # implementation inverts all four legs.
+    _as_source
+    _as_triple "ro ro none"   # read-global: G=ro but Po=none → hidden
+    _env_in_scope path x "" && fail "read-global (Po=none) must HIDE an empty-owner path row (not G=ro)"
+    _as_triple "rw rw none"   # edit-global: G=rw but Po=none → hidden
+    _env_in_scope path x "" && fail "edit-global (Po=none) must HIDE an empty-owner path row (not G=rw)"
+    _as_triple "none rw rw"   # case 6: G=none but Po=rw → visible
+    _env_in_scope path x "" || fail "case 6 (Po=rw) must SHOW an empty-owner path row (not G=none)"
+    _as_triple "ro ro ro"     # read-all: Po=ro → visible
+    _env_in_scope path x "" || fail "read-all (Po=ro) must SHOW an empty-owner path row"
+    return 0
+}
+
+test_as_owner_in_scope_is_single_source() {
+    # RC-4 (06 §6.3): _env_owner_in_scope "" is the SINGLE source, and _env_in_scope
+    # path X "" IS exactly it, across triples. Asserted on the EMPTY-owner leg — the
+    # non-empty leg is already identical today (project)/*) run the same Pc-else-Po
+    # logic), so it would pass the moment the helper is defined even if `path)` were
+    # never wired; the empty-owner form fails until `path)` actually delegates.
+    _as_source
+    local t owner_rc scope_rc po
+    for t in "none ro none" "ro ro none" "none rw rw" "ro ro ro"; do
+        _as_triple "$t"
+        _env_owner_in_scope "";           owner_rc=$?
+        _env_in_scope path anyname "";    scope_rc=$?
+        [[ "$owner_rc" == "$scope_rc" ]] \
+            || fail "at ($t): _env_in_scope path must EQUAL _env_owner_in_scope \"\" (single source), got owner=$owner_rc scope=$scope_rc"
+        # …and that single source is exactly (Po >= ro).
+        po="${t##* }"
+        if [[ "$po" == "none" ]]; then
+            [[ "$owner_rc" == "1" ]] || fail "at ($t): empty owner with Po=none must be hidden"
+        else
+            [[ "$owner_rc" == "0" ]] || fail "at ($t): empty owner with Po>=ro must be visible"
+        fi
+    done
+    return 0
+}
+
+test_as_unknown_kind_stays_default_deny() {
+    # RC-4 guard against A3: the `*)` net stays default-deny even fully open — the
+    # new path)/project) permissiveness is opted into by NAMING a kind, never
+    # inherited by an unregistered kind with an empty owner.
+    _as_source
+    _as_triple "ro ro ro"
+    _env_in_scope bogus x "" && fail "an unknown kind with empty owner must stay hidden even at (ro,ro,ro)"
+    return 0
+}
+
+test_as_path_claim_helper_attribution() {
+    # RC-4 (06 §6.5 opt-1): _path_claimed_names is hermetically unit-testable via an
+    # INJECTED manifest path. A declared name with NO project_paths entry is claimed
+    # (its unscoped fallback is live); a SHADOWED name (own pp entry) is not; an
+    # UNDECLARED name is not. Pins the anti-false-positive half of criterion B.
+    _as_source
+    source "$REPO_ROOT/lib/yaml.sh"; source "$REPO_ROOT/lib/index.sh"
+    source "$REPO_ROOT/lib/cmd-resolve.sh"
+    local tmp; tmp=$(mktemp -d)
+    export CCO_STATE_HOME="$tmp/state" CCO_ALLOW_HOST_RESOLVE=1
+    mkdir -p "$tmp/state"
+    # Fixture manifest: project `demo` declares repo `dcode` + extra_mount `dmnt`.
+    local yml="$tmp/project.yml"
+    printf 'name: demo\nrepos:\n  - name: dcode\n    url: x\nextra_mounts:\n  - name: dmnt\n    url: y\n' > "$yml"
+    # Shadow `dcode` with its own project_paths binding; leave `dmnt` unshadowed.
+    ( unset CCO_CONTAINER_OPERATOR; _index_set_path demo dcode "$tmp/code" ) >/dev/null 2>&1
+    local claimed
+    claimed=$(printf 'demo\t%s\n' "$yml" | _path_claimed_names)
+    [[ "$claimed" == *"dmnt"$'\t'"demo"* ]] \
+        || fail "an unshadowed declared name (dmnt) must be claimed, got: $claimed"
+    [[ "$claimed" != *"dcode"* ]] \
+        || fail "a shadowed name (dcode, own project_paths binding) must NOT be claimed, got: $claimed"
+    # Lookup helper: returns the claimer, else empty.
+    [[ "$(_path_claim_lookup dmnt "$claimed")" == "demo" ]] \
+        || fail "claim lookup must return the claiming project for a claimed name"
+    [[ -z "$(_path_claim_lookup nope "$claimed")" ]] \
+        || fail "claim lookup for an unclaimed name must be empty"
+    rm -rf "$tmp"
     return 0
 }

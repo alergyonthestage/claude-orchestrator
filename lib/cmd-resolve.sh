@@ -696,6 +696,51 @@ EOF
     _resolve_render_status "$unit_dir"
 }
 
+# ── RC-4: unscoped-bucket ownership claim (06 §3.2) ─────────────────────────
+# An index row stored project-less (the `unscoped:` bucket) can still be the LIVE
+# mount source for a CURRENT project: _index_get_path falls back to unscoped when a
+# project declares a name it has no project_paths entry for (lib/index.sh) — and
+# FI-23 puts every legacy extra_mount there, including the session's own. Such a row
+# is that project's Pc-visible binding, not "un-owned". These helpers resolve that
+# EFFECTIVE ownership so `cco path list` scopes it correctly (RC-4), classifying a
+# genuinely unattributable row as other-project (Po) per the ratified axis.
+
+# _path_claimed_names — read "<project>\t<ymlpath>" lines on stdin; emit
+# "<name>\t<project>" for every name <project> DECLARES (repos ∪ extra_mounts) and
+# does NOT shadow with its own project_paths binding (so the unscoped fallback is
+# live for it). The manifest path is an INPUT (injectable) so the claim logic is
+# hermetically unit-testable (06 §6.5 opt-1). First claimer wins for a duplicated
+# name — determinism only; every claimer is a current project, so all ride Pc. The
+# inner loops read from process substitutions, so the outer stdin (the project
+# list) is not consumed.
+_path_claimed_names() {
+    local _proj _yml _n _u _r _t _ro _pol
+    while IFS=$'\t' read -r _proj _yml; do
+        [[ -n "$_proj" && -n "$_yml" && -f "$_yml" ]] || continue
+        while IFS=$'\t' read -r _n _u _r; do
+            [[ -n "$_n" ]] || continue
+            [[ -z "$(_index_pp_get "$_proj" "$_n")" ]] && printf '%s\t%s\n' "$_n" "$_proj"
+        done < <(yml_get_repo_coords "$_yml" 2>/dev/null)
+        while IFS=$'\t' read -r _n _u _r _t _ro _pol; do
+            [[ -n "$_n" ]] || continue
+            [[ -z "$(_index_pp_get "$_proj" "$_n")" ]] && printf '%s\t%s\n' "$_n" "$_proj"
+        done < <(yml_get_mount_coords "$_yml" 2>/dev/null)
+    done
+}
+
+# _path_claim_lookup <name> <claimed-map> → the FIRST claiming project for <name>
+# in the newline-delimited "<name>\t<project>" map, else empty. Iterates with
+# `while read` over a here-string (NOT `for x in $map`, which would word-split and
+# glob-expand a name like `*`; 06 §5.3 bash-3.2).
+_path_claim_lookup() {
+    local _want="$1" _map="$2" _cn _cp
+    [[ -n "$_map" ]] || return 0
+    while IFS=$'\t' read -r _cn _cp; do
+        [[ "$_cn" == "$_want" ]] && { printf '%s' "$_cp"; return 0; }
+    done <<< "$_map"
+    return 0
+}
+
 cmd_path() {
     local sub="${1:-}"
     case "$sub" in
@@ -746,25 +791,40 @@ EOF
         list)
             shift
             [[ $# -gt 0 ]] && die "Usage: cco path list (takes no arguments)"
-            local proj name path norm count=0 malformed=0 hidden=0 _vis label
-            # Output scoping (ADR-0043/0046 §7, A1 §4.3): the path index is the raw
-            # machine-local name→host-path map (repos/mounts), not a taxonomy kind.
-            # Under per-project scoping (ADR-0051) each binding has a single OWNING
-            # project (project_paths); its visibility follows that project exactly
-            # like `cco list project`: the current project's entries are always
-            # shown (Pc≥ro, INV-2), other projects' entries need Po≥ro (read-all).
-            # So we scope whenever Po<ro (read-project/read-global) and hide any
-            # entry whose owner is not a current project — config-editor-aware via
-            # _env_is_current_project (PROJECT_NAME ∪ CCO_CONFIG_TARGETS). Unscoped
-            # (project-less) pins have no owner → never scoped-hidden. Host paths
-            # are ADDITIONALLY gated by show_host_paths, trustworthy behind the
-            # ADR-0047 boundary (S1b): at show_host_paths=off we render logical
-            # names only. Host context is never scoped (INV-A); uses the layer's
-            # helpers, no ad-hoc context re-derivation (INV-E).
-            local _scope_paths=false _hide_hostpaths=false
+            local proj name path norm count=0 malformed=0 hidden=0 _vis label _owner
+            # Output scoping (ADR-0043 §4 / ADR-0046 §7, RC-4): the path index is
+            # the raw machine-local name→host-path map (repos/mounts). Each row's
+            # visibility follows its EFFECTIVE owner through the shared layer
+            # predicate _env_in_scope (INV-E — the policy lives in the layer, not a
+            # local re-derivation): a CURRENT owner rides Pc, ANY other rides Po, and
+            # an unattributable (unscoped, project-less) row is classified as
+            # other-project → Po (never exempt — the RC-4 reversal). BUT an unscoped
+            # row a current project actually RESOLVES THROUGH — it declares the name
+            # and does not shadow it, so _index_get_path's unscoped fallback is that
+            # project's live binding — is CLAIMED below and rides Pc, so the fix hides
+            # no resource the session is already mounting (06 §3.2, invariant DISC).
+            # Host paths are ADDITIONALLY gated by show_host_paths, trustworthy behind
+            # the ADR-0047 boundary (S1b): at show_host_paths=off we render logical
+            # names only. Host context is never scoped (INV-A).
+            local _hide_hostpaths=false
+            [[ "${CCO_SHOW_HOST_PATHS:-true}" != "true" ]] && _cco_container_operator \
+                && _hide_hostpaths=true
+            # Claimed-by-current names, computed ONCE before the row loop — the claim
+            # loops must NOT run inside it or they would consume the row stream (the
+            # one new stdin hazard, 06 §5.3). Operator-only; empty on the host (all
+            # rows visible, INV-A). Ranges over PROJECT_NAME ∪ CCO_CONFIG_TARGETS
+            # (the _env_is_current_project set) so a config-editor target claims its
+            # own mounts.
+            local _claimed=""
             if _cco_container_operator; then
-                [[ "$(_cco_axis_rank "$(_env_axis Po)")" -lt 1 ]] && _scope_paths=true
-                [[ "${CCO_SHOW_HOST_PATHS:-true}" != "true" ]] && _hide_hostpaths=true
+                local _c _cyml _clist="" _ctargets="${CCO_CONFIG_TARGETS:-}"
+                _ctargets="${_ctargets//,/ }"
+                for _c in "${PROJECT_NAME:-}" $_ctargets; do
+                    [[ -n "$_c" ]] || continue
+                    _cyml=$(_resolve_operator_project_yml "$_c" 2>/dev/null) || continue
+                    _clist="${_clist}${_c}"$'\t'"${_cyml}"$'\n'
+                done
+                [[ -n "$_clist" ]] && _claimed=$(printf '%s' "$_clist" | _path_claimed_names)
             fi
             # Emit "<project>\t<name>\t<path>" for every scoped binding, then the
             # unscoped bucket tagged with the __unscoped__ sentinel (a real empty
@@ -775,8 +835,15 @@ EOF
                 [[ "$proj" == "__unscoped__" ]] && proj=""
                 # Per-project label so homonyms across projects stay distinct.
                 if [[ -n "$proj" ]]; then label="[$proj] $name"; else label="$name"; fi
-                if [[ "$_scope_paths" == true && -n "$proj" ]]; then
-                    if ! _env_is_current_project "$proj"; then hidden=$((hidden + 1)); continue; fi
+                # Effective owner: the stored one, or — for an unscoped row a
+                # CURRENT project actually resolves through (06 §3.2) — that project.
+                # Visibility then follows the owner via the shared layer (current →
+                # Pc, other → Po, still-unattributable → Po). INV-A is handled inside
+                # _env_in_scope; no local operator/axis re-derivation (INV-E).
+                _owner="$proj"
+                [[ -z "$_owner" ]] && _owner=$(_path_claim_lookup "$name" "$_claimed")
+                if ! _env_in_scope path "$name" "$_owner"; then
+                    hidden=$((hidden + 1)); continue
                 fi
                 # show_host_paths gate (S1b): render logical names only when host
                 # paths are masked for this session. The malformed-path check is

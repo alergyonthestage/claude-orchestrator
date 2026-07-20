@@ -823,15 +823,18 @@ lane_cco() {
 }
 
 # SEEDED throwaway store so store-touching gates can resolve real resources:
-# projects `alpha` + `beta` (each its own member repo) and a pack `p1`. Seeds via
-# the real index API so the on-disk format matches production. $2 is the current
-# PROJECT_NAME (may be `config-editor`). Honors OP_TARGETS / OP_SHP / OP_TRIPLE.
+# projects `alpha` + `beta` (each its own member repo), a pack `p1`, and one
+# owner-less pin `orphan` in the `unscoped:` bucket (RC-4 / 06 §6.1 — seeded
+# UNCONDITIONALLY per D-M10/Q-16 so the path-list tests are representative of the
+# real index shape). Seeds via the real index API so the on-disk format matches
+# production. $2 is the current PROJECT_NAME (may be `config-editor`). Honors
+# OP_TARGETS / OP_SHP / OP_TRIPLE.
 # Usage: lane_cco_seeded <level> <current-project> <argv...>
 lane_cco_seeded() {
     local level="$1" cur="$2"; shift 2
     local tmp; tmp=$(mktemp -d)
     mkdir -p "$tmp/home/.cco/packs/p1" "$tmp/state" "$tmp/data" "$tmp/cache" \
-             "$tmp/repos/alpha" "$tmp/repos/beta"
+             "$tmp/repos/alpha" "$tmp/repos/beta" "$tmp/repos/orphan"
     ( source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
       source "$REPO_ROOT/lib/paths.sh";  source "$REPO_ROOT/lib/index.sh"
       # CCO_ALLOW_HOST_RESOLVE=1: seeding writes the index host-side; inside a
@@ -840,6 +843,11 @@ lane_cco_seeded() {
       export CCO_STATE_HOME="$tmp/state" CCO_ALLOW_HOST_RESOLVE=1
       _index_set_path alpha alpha "$tmp/repos/alpha"; _index_set_project_repos alpha alpha
       _index_set_path beta  beta  "$tmp/repos/beta";  _index_set_project_repos beta  beta
+      # Owner-less pin: no _index_set_project_repos, no project block → it lands in
+      # the unscoped bucket, the row RC-4 scopes on the Po axis (unclaimed here —
+      # neither alpha nor beta declares `orphan`, and no /workspace manifest exists
+      # in this hermetic lane, so the claim set is always empty; 06 §6.1).
+      _index_set_unscoped orphan "$tmp/repos/orphan"
     ) >/dev/null 2>&1
     OP_OUT=$(
         export CCO_DATA_HOME="$tmp/data" CCO_STATE_HOME="$tmp/state" \

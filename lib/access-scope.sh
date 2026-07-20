@@ -483,7 +483,7 @@ _env_is_current_project() {
 # the narrower `project` class (default-deny).
 _env_scope_class() {
     case "$1" in
-        project|pack|llms) printf 'project' ;;
+        project|pack|llms|path) printf 'project' ;;
         template|remote)   printf 'global' ;;
         *)                 printf 'project' ;;
     esac
@@ -496,6 +496,25 @@ _env_scope_class() {
 _env_csv_has() {
     local needle="$1" csv="${2// /}"
     case ",${csv}," in *",${needle},"*) return 0 ;; esac
+    return 1
+}
+
+# _env_owner_in_scope <owner> → 0 visible / 1 hidden. The SINGLE ownership→
+# visibility rule (ADR-0046 §7): a CURRENT owner rides Pc, ANY other owner rides
+# Po, and an EMPTY/unattributable owner is conservatively CLASSIFIED as `other` —
+# it can never be vouched for by Pc, but it is legitimately visible once the
+# session may see other projects at all (Po ≥ ro). Callers resolve EFFECTIVE
+# ownership BEFORE calling (the unscoped-bucket claim check, cmd-resolve.sh); this
+# decides policy, not attribution. Caller must already have passed the INV-A host
+# check. Keeps ADR-0043 §1's "SOLE difference" invariant true by construction: an
+# unattributable row is classified as other-project data (RC-4 / 06 §3.3, §4.1).
+_env_owner_in_scope() {
+    local owner="$1" g pc po
+    read -r g pc po <<< "$(_env_triple)"
+    if [[ -n "$owner" ]] && _env_is_current_project "$owner"; then
+        [[ "$(_cco_axis_rank "$pc")" -ge 1 ]] && return 0
+    fi
+    [[ "$(_cco_axis_rank "$po")" -ge 1 ]] && return 0
     return 1
 }
 
@@ -518,15 +537,13 @@ _env_in_scope() {
         template|remote)
             [[ "$(_cco_axis_rank "$g")" -ge 1 ]] && return 0 ;;
         project)
-            # "Current" ownership is config-editor-aware (_env_is_current_project =
-            # PROJECT_NAME ∪ CCO_CONFIG_TARGETS), the SAME predicate the B5 tag gate
-            # and path-list scoping use — so a config-editor target project is Pc,
-            # not Po. Keying off bare PROJECT_NAME would hide a config-editor's own
-            # edit target from `list project`/`project show` (edit-project, Po=none).
-            if _env_is_current_project "$name"; then
-                [[ "$(_cco_axis_rank "$pc")" -ge 1 ]] && return 0
-            fi
-            [[ "$(_cco_axis_rank "$po")" -ge 1 ]] && return 0 ;;
+            # Ownership→visibility via the single layer predicate (RC-4): current
+            # owner rides Pc, any other rides Po. Config-editor-aware inside
+            # _env_owner_in_scope (_env_is_current_project = PROJECT_NAME ∪
+            # CCO_CONFIG_TARGETS), the SAME predicate the B5 tag gate and path-list
+            # scoping use — so a config-editor target project is Pc, not Po.
+            # Behaviour-preserving: this branch was that predicate inlined.
+            _env_owner_in_scope "$name" && return 0 ;;
         pack)
             if _env_csv_has "$name" "${CCO_PROJECT_PACKS:-}"; then
                 [[ "$(_cco_axis_rank "$pc")" -ge 1 ]] && return 0
@@ -537,15 +554,23 @@ _env_in_scope() {
                 [[ "$(_cco_axis_rank "$pc")" -ge 1 ]] && return 0
             fi
             [[ "$(_cco_axis_rank "$g")" -ge 1 ]] && return 0 ;;
+        path)
+            # Index binding (name→host-path). Visibility follows its EFFECTIVE
+            # owner, resolved by the caller (the unscoped-bucket claim check in
+            # cmd_path list). An EMPTY owner is conservatively classified as
+            # other-project (rides Po) and is therefore NEVER exempt from scoping —
+            # this is the ONE call WITHOUT the `-n owner` guard, and it is the RC-4
+            # reversal ADR-0043 §4 mandated (previously owner-less rows were shown
+            # unconditionally, leaking other projects' names/host paths at Po=none).
+            _env_owner_in_scope "$owner" && return 0 ;;
         *)
-            # Owner-tagged project-class resource: current owner → Pc, else Po.
-            # Ownership is config-editor-aware (_env_is_current_project), matching
-            # the `project` kind above.
+            # Owner-tagged project-class resource: current owner → Pc, else Po
+            # (config-editor-aware, via _env_owner_in_scope). The `-n owner` guard
+            # keeps a genuinely UNKNOWN kind with no owner default-deny (A3): the
+            # new permissiveness is opted into by naming a kind (project/path),
+            # never inherited by a future kind that forgets to register.
             if [[ -n "$owner" ]]; then
-                if _env_is_current_project "$owner"; then
-                    [[ "$(_cco_axis_rank "$pc")" -ge 1 ]] && return 0
-                fi
-                [[ "$(_cco_axis_rank "$po")" -ge 1 ]] && return 0
+                _env_owner_in_scope "$owner" && return 0
             fi ;;
     esac
     return 1
