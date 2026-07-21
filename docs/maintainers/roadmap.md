@@ -154,11 +154,20 @@ silently, orphaning the token and stripping the renamed remote's auth.
 Stages (each impl → adversarial revert-check): **S1** STATE shared sub-bucket + migration `017` +
 `INV-STATE` ✅ `517014b` · **S2** index-write error propagation + `INV-IDX` + `T-R2` ✅ `4aefc2f` ·
 **S3** fail-closed pre-flight probes **both** stores, each at its own identity ✅ `582347d` ·
-**S2b** the same unchecked-write class in the host-only writers ⏳ designed · **S4** read-path
+**S2b** the same unchecked-write class in the host-only writers ⏳ **re-scoped 2026-07-21** · **S4** read-path
 honesty (empty ≠ unreadable) ⏳ next · **S5** D-V3-1 + truthful store refusal · **S6** one predicate
 one spelling (`project show`) · **S7** config-editor announces every drop · **S8** minor + doc debt ·
 **S9** changelog 47 + ADR forward-annotation + living-doc sweep. Suite **1417/9** (the 9 = the
 pre-existing host-only artifacts, unchanged set).
+
+**A codebase-wide audit of the same class ran before implementing S2b** (backlog convention:
+re-derive the boundary first) — [`engineering/analysis/false-success-class-audit.md`](engineering/analysis/false-success-class-audit.md).
+The class is **systemic, not confined to the index writers**, and the remediation shape changed:
+several primitives (`_remote_token_set`, `_remote_token_remove`, `_yaml_rename_list_ref`) **cannot
+report failure at all**, so three correctly-written call-site guards are structurally inert today.
+S2b is now two-layered — fix the primitive, then the call site. The remainder (the update engine,
+`pack`/`template publish`, the local-destructive set) is **out of cycle-1.1** and tracked as
+**FI-24**; its first cluster overlaps workstream **F**, so scope them together.
 
 **Out of session reach — gates the release** (Mac): `cco remote remove v5probe` (V5 left a residue
 it could not remove); `cco build` from the cycle-1.1 tip then re-run V3 + V5; **V4b** the D-M11

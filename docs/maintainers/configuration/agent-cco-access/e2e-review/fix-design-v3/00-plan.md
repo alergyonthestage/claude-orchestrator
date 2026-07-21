@@ -200,17 +200,56 @@ dies, and — exactly as in `cmd-repo.sh` — the message has to say *which* sto
 changed, because the first write (`project.yml`, potentially across several repos) has
 already landed. That is a stage with tests, not a footnote.
 
+### ⚠ Re-scoped 2026-07-21 after a codebase-wide audit — read that first
+
+Per the `roadmap-backlog.md` convention (re-derive an item's real boundary before designing it),
+S2b was audited across the whole `lib/` tree before implementation. The boundary is **larger and a
+different shape** than "add `||` to 15 call sites". Full report:
+[`../../../../engineering/analysis/false-success-class-audit.md`](../../../../engineering/analysis/false-success-class-audit.md).
+
+**The finding that changes the fix shape: several primitives cannot report failure at all**, so a
+check at the call site is inert. Three verified by direct reading:
+
+- `_remote_token_set` (`cmd-remote.sh:16-27`) — last statement is `if ! chmod …; then warn; fi`,
+  which yields 0 on both paths, so the function **always returns 0**. This voids the correctly
+  written `store.sh:370` `… || return 1`.
+- `_remote_token_remove` (`cmd-remote.sh:30-37`) — bare `mv`, then an explicit `return 0`. Voids the
+  correctly written `cmd-remote.sh:295` `if ! _remote_token_remove`.
+- `_yaml_rename_list_ref` (`rename.sh:66-72`) — `mv "$tmp" "$file"` then unconditional `return 0`.
+  Voids `rename.sh:230`'s `if _rename_yaml_write_owned …; then` for the `mv` case.
+
+So S2b is **two-layered, and the order matters**: (1) make the primitive capable of failing, (2)
+then add/verify the call-site check. Doing (2) first yields an audit that reads as closed while the
+defect persists — which is the state those three call sites are in today.
+
+**Honest limit on what S1–S3 shipped.** They closed the **index** half of `repo rename`. The
+**project.yml** half retains a narrower form of the same defect through `_yaml_rename_list_ref`.
+S3's pre-flight mitigates the dominant cause (an unwritable tree) but probes only the **cwd unit's**
+`.cco`, so a multi-repo fan-out where a *different* member is unwritable, or an `ENOSPC` mid-write,
+still reports that repo as rewritten. Closing this is part of S2b, not a separate discovery.
+
 **Work items**, priority order:
 
-1. **`cmd-join.sh`** and **`cmd-init.sh`** first — the two with off-machine consequence.
-   Same shape as `cmd-repo.sh`: check, `die` naming the store that changed and the recovery.
-2. The remaining five modules.
-3. **Widen `INV-IDX`'s `scoped` list as each module is closed**, so the lint tracks the work
-   instead of documenting a permanent exemption. When the list covers all seven, drop the
-   "host-only writers are out of scope" paragraph from the invariant's header.
-4. A behavioural guard per high-value verb, modelled on `T-R2`
-   (`test_repo_rename_operator_unwritable_index_fails_loud`): unwritable index → non-zero, no
-   success tick, message names the index, index provably untouched.
+1. **Primitives first** — `_yaml_rename_list_ref` (inside the rename boundary S1–S3 just touched),
+   then `_remote_token_set` / `_remote_token_remove` (**S5 depends on these**: D-V3-1 makes
+   `remote remove|rename` host-only, but `store.sh:370`'s guard is inert on the **host** too, so
+   the token primitive must be fixed regardless).
+2. **`cmd-join.sh`** and **`cmd-init.sh`** — the two `_index_*` sites whose consequence escapes the
+   machine. Same shape as `cmd-repo.sh`: check, `die` naming the store that changed and the recovery.
+3. The remaining `_index_*` modules (`cmd-resolve.sh` ×5, `cmd-forget.sh`,
+   `cmd-project-export-import.sh`, `cmd-project-add.sh`, `local-paths.sh`, `migrate.sh`).
+4. **Widen `INV-IDX`'s `scoped` list as each module is closed**, so the lint tracks the work instead
+   of documenting a permanent exemption. When it covers all seven, drop the "host-only writers are
+   out of scope" paragraph from the invariant's header. Consider a sibling lint for the primitive
+   shape itself — *a mutation helper whose tail statement cannot return non-zero*.
+5. A behavioural guard per high-value verb, modelled on `T-R2`
+   (`test_repo_rename_operator_unwritable_index_fails_loud`): unwritable target → non-zero, no
+   success tick, message names the store, store provably untouched.
+
+**Out of S2b's scope**, tracked as **FI-24**: the update engine (A1–A6 — no file-mutating call in
+`update*.sh` has its status checked), `pack`/`template publish` (B1–B3, incl. the bare `git commit`
+whose `|| die` on `push` is structurally unreachable), and the local-destructive set. Those are a
+separate workstream; cycle 1.1 must not grow into them.
 
 ## 4. S3 — route index writes through the RC-3 pre-flight
 

@@ -729,3 +729,60 @@ index model — **scope them together before designing any one of them**.
 
 **Type & tracking**: migration completeness → likely a follow-up migration + changelog.
 **Effort**: Low–Med. **Not gating** the e2e review (project bindings win; RC-4 scopes the display — see the 2026-07-20 correction above, the residue does not self-heal).
+
+---
+
+## FI-24: The false-success class outside the cycle-1.1 boundary
+
+**Status**: Audited 2026-07-21, not designed. Full report:
+[`engineering/analysis/false-success-class-audit.md`](engineering/analysis/false-success-class-audit.md).
+
+**Symptom**: a state-mutating call whose failure status is not propagated, followed by an
+unconditional success announcement — the user sees `✓ <done>` and exit 0 while the mutation did not
+happen, or half happened.
+
+**Why the codebase is exposed to it**: `bin/cco` dispatches every verb as `cmd_foo "$@" ||
+_cco_rc=$?`, and a `||` context **disables errexit for the whole call tree**. Explicit `||` / `if !`
+propagation is the only mechanism that works, at every link.
+
+**Boundary already claimed elsewhere — do not duplicate**: the `_index_*` writers, the three
+failure-incapable primitives (`_remote_token_set`, `_remote_token_remove`, `_yaml_rename_list_ref`)
+and the rename `project.yml` half are **cycle-1.1 stage S2b**
+(`configuration/agent-cco-access/e2e-review/fix-design-v3/00-plan.md` §3b). Everything routed
+through `lib/store.sh` is correct by architecture and out of scope.
+
+**What FI-24 holds** — three clusters, each worth its own boundary pass:
+
+1. **The update engine** (`update-merge.sh`, `update-sync.sh`, `update.sh`, `update-meta.sh`,
+   `update-hash-io.sh`). No file-mutating call in the engine has its status checked — not one
+   `|| die`, `|| warn` or `if !` guards any `cp`, `mv`, `mkdir`, `sed -i` or `>`. Two second-order
+   effects make this the highest-consequence cluster: (a) `_resolve_with_merge`'s post-condition
+   greps the *target* for conflict markers, so a failed `cp` leaves the user's unmarked original and
+   the check asserts the opposite of the truth; (b) the run then advances `.cco/base/`, so the next
+   `cco update` classifies the file `USER_MODIFIED` and filters it out — **the update is
+   permanently and silently suppressed**. The corrupted config is committed/pushed while the base
+   state that would reveal it is machine-local and never synced.
+
+2. **`pack` / `template publish`** (`cmd-pack.sh:1315-1345`, `cmd-template.sh:1096`). `git commit`
+   is bare and the `|| die` sits on `push` — so a failed commit leaves HEAD unmoved, `push` exits 0
+   ("Everything up-to-date") and the guard is structurally unreachable. `_record_pack_base` then
+   records the never-pushed tree as the merge ancestor, so every subsequent publish sees
+   `ours == base`, takes theirs, and silently drops the user's change. Also `rm -rf "$theirs_dir"`
+   followed by a bare `cp -R`, which on failure stages **deletion of the whole remote pack tree**.
+
+3. **Local-destructive / backup-believed-to-exist**: bare `tar czf` announced as a completed export
+   (`cmd-pack.sh:738`, `cmd-project-export-import.sh:128`), `rm -rf` + bare `cp -R` in
+   install/import (`cmd-pack.sh:827/837/847`, `cmd-template.sh:585/600`,
+   `cmd-project-export-import.sh:195`), `cco forget --purge`, `secrets.sh:155`, `migrate.sh:179`.
+
+**Re-verify the bound before designing** (backlog convention): the audit lists ~20 sites
+"considered and dismissed" with reasons — several look like the class and are not (deliberate
+`|| true` on optional cleanup, tail-called redirects whose status does propagate, read-only
+verdicts). Two items are explicitly **unresolved statically** and need a runtime check first:
+whether `git merge-file` can exit 0 with a truncated output on a full `/tmp`, and
+`_generate_project_cco_meta`'s status masking (`update-meta.sh:185-202`).
+
+**Type & tracking**: correctness hardening; likely an invariant/lint (a mutation helper whose tail
+statement cannot return non-zero) plus per-cluster fixes. **Effort**: Med–High (three clusters).
+**Not gating** the e2e review or cycle 1.1 — but cluster 1 overlaps workstream **F** (the `cco
+update` responsibility refactor), so scope them together.
