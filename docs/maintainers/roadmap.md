@@ -154,14 +154,23 @@ silently, orphaning the token and stripping the renamed remote's auth.
 Stages (each impl → adversarial revert-check): **S1** STATE shared sub-bucket + migration `017` +
 `INV-STATE` ✅ `517014b` · **S2** index-write error propagation + `INV-IDX` + `T-R2` ✅ `4aefc2f` ·
 **S3** fail-closed pre-flight probes **both** stores, each at its own identity ✅ `582347d` ·
-**S2b** the same unchecked-write class in the host-only writers ⏳ **re-scoped 2026-07-21** · **S4** read-path
+**S2b** the same unchecked-write class in the host-only writers ✅ `be1032c`+`cf9a3e5`+`578e755` · **S4** read-path
 honesty (empty ≠ unreadable) ✅ `501567b` · **S2b-P** the two token primitives ✅ `2177858` (**promoted ahead of
 S5**: S5's item 2 drops the STATE probe over a host write path whose primitive could not report failure;
 plan §6.0) · **S5** D-V3-1 + truthful store refusal ✅ `9e2496d` · **INV-S3b** exit-code unification
 ✅ `2f2b560` (plan §6.3) · **S6** one predicate one spelling (`project show` + V1-F1) + `INV-ENV`
 ✅ `987e38b` · **S7** config-editor announces every drop ⏳ **next** · **S8** minor + doc debt ·
-**S9** changelog 47 + ADR forward-annotation + living-doc sweep. Suite **1439/9** (the 9 = the
+**S9** changelog 47 + ADR forward-annotation + living-doc sweep. Suite **1447/9** (the 9 = the
 pre-existing host-only artifacts, unchanged set — names verified identical to baseline).
+
+**S2b** closed the unchecked-write class in three commits: the `_yaml_rename_list_ref` primitive
+(the project.yml half of `repo rename`, S1–S3's acknowledged residual), then `join`/`init`, then the
+remaining five modules. `INV-IDX` now covers every module that writes the index from a command body
+and its exemption paragraph is gone. `lib/index.sh` stays out by design — it is the writer layer,
+where a tail-position call IS the propagation. What the pre-fix runs proved is worth carrying
+forward: S2's primitive already printed *"Cannot write the cco index … Nothing was changed"*, loudly
+and correctly, and the verb still exited 0 with a tick. **The defect was never the message; it was
+the discarded status.**
 
 **S2b-P** gave `_remote_token_remove` a three-valued contract (`0` removed / `1` absent / **`2`
 failed**) so a failed revocation is never rendered as *"No token found"* — a credential still on disk

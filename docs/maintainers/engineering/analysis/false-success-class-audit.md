@@ -1,8 +1,9 @@
 # The false-success class — codebase-wide audit
 
 > **Raised**: 2026-07-21, while landing cycle-1.1 **S2** (`fix/config-access/e2e-v3-cycle1.1`).
-> **Scope**: the whole `lib/` tree, all mutation families. **Status**: audit complete; remediation
-> partly scoped into cycle-1.1 (**S2b**), remainder tracked as **FI-24**.
+> **Scope**: the whole `lib/` tree, all mutation families. **Status**: audit complete; the
+> cycle-1.1 remediation (**S2b**, incl. **S2b-P**) is **✅ DONE** — `be1032c` + `cf9a3e5` +
+> `578e755`, after `2177858`. The remainder is tracked as **FI-24**.
 >
 > This exists because the backlog convention (`roadmap-backlog.md`, header) requires re-deriving an
 > item's real boundary before designing it — *"which related defects sit in the same neighbourhood —
@@ -33,7 +34,7 @@ inspection-level unless marked):
 |---|---|---|---|
 | `_remote_token_set` (`cmd-remote.sh:16-27`) | every mutation bare; the last statement is `if ! chmod …; then warn; fi`, which yields **0 on both paths** — so the function returns 0 unconditionally | `store.sh:370` `_remote_token_set "$new" "$tok" \|\| return 1` — **correctly written, structurally inert** | ✅ **closed — S2b-P** |
 | `_remote_token_remove` (`cmd-remote.sh:30-37`) | bare `mv`, then an explicit `return 0` | `cmd-remote.sh:295` `if ! _remote_token_remove` — correctly written, inert. A revocation reported complete while the credential is still on disk | ✅ **closed — S2b-P** |
-| `_yaml_rename_list_ref` (`rename.sh:66-72`) | `mv "$tmp" "$file"` then unconditional `return 0` | `rename.sh:230` `if _rename_yaml_write_owned …; then printf path; fi` — correctly written, inert for the `mv` failure (it does correctly catch "awk changed nothing") | ⏳ open — S2b (rest) |
+| `_yaml_rename_list_ref` (`rename.sh:66-72`) | `mv "$tmp" "$file"` then unconditional `return 0` | `rename.sh:230` `if _rename_yaml_write_owned …; then printf path; fi` — correctly written, inert for the `mv` failure (it does correctly catch "awk changed nothing") | ✅ **closed — S2b** `be1032c` |
 
 **S2b-P (2026-07-21)** closed the two token primitives. What it settled, so it is not re-derived:
 

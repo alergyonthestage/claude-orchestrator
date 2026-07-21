@@ -4,8 +4,8 @@
 > verdict (**NOT ACCEPTED**), its seven roots **R1…R7**, and the ratified decision **D-V3-1**.
 > **Gate**: closing R1–R7 unblocks `develop → main`.
 > **Branch**: `fix/config-access/e2e-v3-cycle1.1` (from `develop` @ `f894245`).
-> **Status**: plan written 2026-07-20. **S1 · S2 · S3 · S4 · S2b-P · S5 landed** (2026-07-20/21), suite
-> **1434/9** — the 9 are the pre-existing host-only artifacts, unchanged set. Next: **S6**.
+> **Status**: plan written 2026-07-20. **S1 · S2 · S3 · S4 · S2b-P · S5 · S6 · S2b landed** (2026-07-20/21),
+> suite **1447/9** — the 9 are the pre-existing host-only artifacts, unchanged set. Next: **S7**.
 > Resume pointer: [`RESUME-HANDOFF-s6.md`](RESUME-HANDOFF-s6.md) — current.
 > [`RESUME-HANDOFF-s5.md`](RESUME-HANDOFF-s5.md) and [`-s4`](RESUME-HANDOFF-s4.md) are superseded
 > (kept as history: -s5 §4 carries the reasoning that promoted **S2b-P** ahead of S5).
@@ -55,7 +55,7 @@ flowchart TD
 | **S1** | R1 | V3-01, V5-01, V2-F01 | 🔴 yes | ✅ `517014b` |
 | **S2** | R2 | V3-01 (honesty half) | 🔴 yes | ✅ `4aefc2f` |
 | **S2b-P** | R2 | the two token primitives — **split out and promoted ahead of S5** (2026-07-21, see §6.0) | 🟠 | ✅ `2177858` |
-| **S2b** | R2 | the same class in the host-only writers (not a v3 finding — found while landing S2) | 🟠 | ⏳ designed, §3b (rest, after S6) |
+| **S2b** | R2 | the same class in the host-only writers (not a v3 finding — found while landing S2) | 🟠 | ✅ `be1032c` + `cf9a3e5` + `578e755` |
 | **S3** | R7 | V3-02 | 🟠 | ✅ `582347d` |
 | **S4** | R3 | V2-F02, V2-F03 | 🟠 | ✅ `501567b` |
 | **S5** | D-V3-1, R5 | V5-02, V5-03 | 🟠 | ✅ `9e2496d` + INV-S3b (§6.3 settled); ⚠ 1 host-only edit left (§6.-1) |
@@ -82,8 +82,16 @@ show` asks `_env_project_state` and renders with `_env_unavailable` instead of i
 `not-mounted` stops being reported as a scope problem with a remedy that does not exist at
 read-all; `project validate` gains the shared WORKDIR-root session fallback (V1-F1), so the two
 sibling introspection verbs no longer disagree at `/workspace`; `INV-ENV` pins the class with a
-budgeted five-module exception list. Every guard was adversarially revert-checked against pre-fix
-code.
+budgeted five-module exception list. **S2b** — `_yaml_rename_list_ref` gets the three-valued
+contract (closing the project.yml half of `repo rename`, the S1–S3 residual), then every remaining
+index writer propagates: `join`/`init` first (their damage escapes the machine), then the other
+five. `INV-IDX` now covers every module that writes the index from a command body and its
+exemption paragraph is gone. Every guard was adversarially revert-checked against pre-fix code.
+
+> **What S2b's pre-fix runs proved about the class.** S2's primitive already printed *"Cannot write
+> the cco index … Nothing was changed"* — loudly, correctly, at the right moment — and the verb
+> still exited 0 and printed its tick. **The defect was never the message; it was the discarded
+> status.** Worth remembering before "fixing" a future instance by improving its wording.
 
 ---
 
@@ -183,6 +191,23 @@ unchecked-status shape while here — V3 found the rename path, but nothing sugg
 ---
 
 ## 3b. S2b — the same propagation for the host-only index writers
+
+> **✅ LANDED** in three commits, one per work item: `be1032c` (the primitive —
+> `_yaml_rename_list_ref`, closing the project.yml half of `repo rename`), `cf9a3e5`
+> (`join`/`init`), `578e755` (the remaining five modules + `_index_rename_project`, and
+> `INV-IDX` widened to the full set).
+>
+> **Two things the design did not anticipate.** (1) `lib/index.sh` cannot join `INV-IDX`'s
+> `scoped` list: it is the writer layer itself, where a call in TAIL position **is** the
+> propagation (`_index_set_path() { _index_pp_set …; }` is correct precisely because the status
+> becomes the return), and the lint's form cannot distinguish that from a discarded status. Its
+> two chaining cascades carry explicit propagation instead. (2) `cco resolve --scan` is the one
+> verb that must NOT die on the first failure — it is a best-effort sweep over many units, so it
+> counts failures, reports them, and exits non-zero at the end. Item 4's *"consider a sibling lint
+> for the primitive shape itself — a mutation helper whose tail statement cannot return non-zero"*
+> was **not** taken: after (1), tail position is exactly where a correct helper puts its status,
+> so that lint would have to encode the opposite rule to INV-IDX's. Left for FI-24 if the update
+> engine's audit still wants it.
 
 **Not a v3 finding.** It surfaced while landing S2: once `INV-IDX` existed, running it
 unscoped showed ~15 bare index writes across seven host-only modules — `cmd-init.sh:390-391`,
