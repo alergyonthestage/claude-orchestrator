@@ -158,16 +158,26 @@ Stages (each impl → adversarial revert-check): **S1** STATE shared sub-bucket 
 honesty (empty ≠ unreadable) ✅ `501567b` · **S2b-P** the two token primitives ✅ `2177858` (**promoted ahead of
 S5**: S5's item 2 drops the STATE probe over a host write path whose primitive could not report failure;
 plan §6.0) · **S5** D-V3-1 + truthful store refusal ✅ `9e2496d` · **INV-S3b** exit-code unification
-✅ `2f2b560` (plan §6.3) · **S6** one predicate one spelling (`project show`) ⏳ **next** · **S7**
-config-editor announces every drop · **S8** minor + doc debt · **S9** changelog 47 + ADR
-forward-annotation + living-doc sweep. Suite **1434/9** (the 9 = the pre-existing host-only artifacts,
-unchanged set — names verified identical to baseline).
+✅ `2f2b560` (plan §6.3) · **S6** one predicate one spelling (`project show` + V1-F1) + `INV-ENV`
+✅ `987e38b` · **S7** config-editor announces every drop ⏳ **next** · **S8** minor + doc debt ·
+**S9** changelog 47 + ADR forward-annotation + living-doc sweep. Suite **1439/9** (the 9 = the
+pre-existing host-only artifacts, unchanged set — names verified identical to baseline).
 
 **S2b-P** gave `_remote_token_remove` a three-valued contract (`0` removed / `1` absent / **`2`
 failed**) so a failed revocation is never rendered as *"No token found"* — a credential still on disk
 reported as revoked. Every `|| true` that swallowed the new signal was closed, including
 `cmd-config.sh:303`, which the plan had not listed. **S5** made `remote remove|rename` host-only,
 dropped the STATE-root probe, and replaced the store refusal's false reason with D-M2's vocabulary.
+
+**S6** closed R4: `cco project show` answered "is this project available?" with its own hardcoded
+sentence blaming ACCESS SCOPE and prescribing a widening that at read-all/edit-all does not exist —
+while its sibling `project validate` gave the correct D-M2 answer for the same project in the same
+session (three v3 sessions, three vantages, one call site). It now asks `_env_project_state` and
+renders with `_env_unavailable`. V1-F1 gave `validate` the shared WORKDIR-root session fallback, so
+the two verbs stop disagreeing at `/workspace` — the agent's default cwd. **`INV-ENV`** pins the
+class: the availability vocabulary is owned by `access-scope.sh`, with a budgeted five-module
+exception list, each entry documenting the *different* predicate it owns. This is the class RC-4 was
+created to eliminate, recurred — hence a guard rather than another fix.
 
 ⚠ **INV-S3b — a taxonomy question S5 got wrong twice before it was settled.** The exit code for a
 failed store/rename precondition follows the **failure's nature**, not the module: an *in-session

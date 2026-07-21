@@ -59,7 +59,7 @@ flowchart TD
 | **S3** | R7 | V3-02 | 🟠 | ✅ `582347d` |
 | **S4** | R3 | V2-F02, V2-F03 | 🟠 | ✅ `501567b` |
 | **S5** | D-V3-1, R5 | V5-02, V5-03 | 🟠 | ✅ `9e2496d` + INV-S3b (§6.3 settled); ⚠ 1 host-only edit left (§6.-1) |
-| **S6** | R4 | V2-F04 ≡ V4-F-V4-02 ≡ V5-04, V1-F1 | 🟠 | ⏳ |
+| **S6** | R4 | V2-F04 ≡ V4-F-V4-02 ≡ V5-04, V1-F1 | 🟠 | ✅ `987e38b` + `INV-ENV` |
 | **S7** | R6 | V4-F-V4-01, V5-05 | 🟠 | ⏳ |
 | **S8** | — | V3-03, V4-F-V4-03, V4-F-V4-04, V1-F3, V1-F2, V3-P | 🟡 | ⏳ (V3-P done in S2) |
 | **S9** | — | release hygiene | — | ⏳ |
@@ -77,8 +77,13 @@ three-valued contract (0 removed / 1 absent / **2 failed**) so a failed revocati
 rendered as "No token found", and the three `|| true`s that swallowed the new signal are closed —
 including `cmd-config.sh:303`, which the plan did not list. **S5** — `remote remove|rename` are
 host-only (D-V3-1); the STATE-root probe is gone from `remote-drop/rekey`; the dup-check and the
-store refusal both name conditions that are true and remedies that are reachable. Every guard was
-adversarially revert-checked against pre-fix code.
+store refusal both name conditions that are true and remedies that are reachable. **S6** — `project
+show` asks `_env_project_state` and renders with `_env_unavailable` instead of its own sentence, so
+`not-mounted` stops being reported as a scope problem with a remedy that does not exist at
+read-all; `project validate` gains the shared WORKDIR-root session fallback (V1-F1), so the two
+sibling introspection verbs no longer disagree at `/workspace`; `INV-ENV` pins the class with a
+budgeted five-module exception list. Every guard was adversarially revert-checked against pre-fix
+code.
 
 ---
 
@@ -466,6 +471,19 @@ moved 1 → 2. The reach-arm (opaque 000) and host-arm cases keep 1 and were not
 ---
 
 ## 7. S6 — one predicate, one spelling
+
+> **✅ LANDED `987e38b`.** All three items shipped as designed. One thing the design did not
+> anticipate, recorded here because it shapes the lint: the vocabulary appears in **five other
+> modules**, and none of them is a violation — each owns a *different* predicate (a store bucket's
+> writability in `store.sh`/`rename.sh`, config-editor's mount-drop in `cmd-start.sh`, the path-list
+> hidden **count** in `cmd-resolve.sh`, an **aggregate** over member repos in
+> `cmd-project-rename.sh`), spelled once, in one owning function. So `INV-ENV` is an allow-list with
+> a **per-module budget** rather than a flat ban: the budget is a ceiling, so deleting a spelling
+> never fails the guard and adding one always does, and raising a budget has to be argued in the
+> lint's header. `cmd-resolve.sh`'s entry is the one to watch — it says `read-all` where the shared
+> notice says `read-global`, which is the *correct* wording for path entries (other projects need
+> Po≥ro) and therefore evidence the **shared** notice is the stale one. That reconciliation is
+> V4-F-V4-03 / Q-C3, still open.
 
 `lib/cmd-project-query.sh:192` hardcodes a scope-widening remedy and bypasses the shared resolver.
 `lib/access-scope.sh:736` (`_env_unavailable_sentence`) is already correct at **every** level,
