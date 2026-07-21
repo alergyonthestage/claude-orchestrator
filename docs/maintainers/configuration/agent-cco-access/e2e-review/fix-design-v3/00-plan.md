@@ -585,7 +585,48 @@ including `edit-all` where no widening exists.
 
 ---
 
-## 9. S8 — minor findings and doc debt
+## 9. S8 — minor findings and doc debt ✅ `8843680` `221d8fb` `16a129b` `535a99b` `a1e4c5e`
+
+> **Landed 2026-07-21.** All five open items closed (V3-P had already shipped in S2). The three
+> judgement calls were put to the maintainer as options and all three were taken: move the V3-03
+> guard, take V1-F2 now, and take V4-F-V4-03 here rather than in cycle-2. Suite **1451→1463/9**
+> (12 new guards, baseline fail set unchanged name-for-name).
+>
+> **What this design did not anticipate — V3-03 is the smaller half of its own finding.** The
+> finding reads as "the designed message is unreachable at the WORKDIR root", and the fix for that
+> is the ambiguity arm now in `_rename_index_keyed`. But the reason it is unreachable generalises
+> past the bare form: `$unit` comes from `_resolve_find_unit_dir`, a walk up from cwd for
+> `<dir>/.cco/project.yml`, and a project's committed config lives in exactly ONE repo. So in a
+> session the verb runs **only from the hosting repo's mount** — and the *fully-specified* 2-arg
+> form, which has no ambiguity at all, dies at the WORKDIR root advising the user to "pass
+> `<old> <new>`", which they just did. That is the sharper half, and it is **not** what Q-6
+> governs.
+>
+> It was deliberately not folded in: the fix is to resolve `$unit` from the SESSION's project
+> rather than from cwd, which means routing `_resolve_unit_dir_for_project` through
+> `_cco_member_probe_path` (its index host paths can never be existence-tested in-container —
+> INV-F), inside a fail-closed pre-flight. That wants its own design pass. Recorded as **FI-26**,
+> with the note that `_resolve_find_unit_dir` has nine other callers and that `project show` /
+> `project validate` already route around it via `_project_session_fallback` (S6/R4) — i.e. the gap
+> is being closed piecemeal and should be enumerated before it is designed.
+>
+> **The consequence for V3-03's own message.** Because the 2-arg form also fails at the root, the
+> ambiguity arm must NOT advise it — that would print a remedy which cannot be followed from where
+> it is printed. This is S7's trap inverted: not a fix at an unreachable site, but a **remedy
+> pointing at an unreachable action**. A guard pins it (`must not advise the 2-arg form`), so the
+> constraint survives FI-26 being fixed later.
+>
+> **Two smaller things.** V4-F-V4-03's first implementation *passed* its own assertion while
+> failing the test, because the explanatory clause it added spelled `read-global` while arguing
+> that read-global is the wrong remedy — the message was tightened rather than the assertion
+> loosened. And V1-F2 could not reuse `_effective_extra_mounts`: it does not emit the logical
+> name (it is compose input) and it conscious-skips unresolved mounts. That skip is right for
+> generating a bind and wrong for introspection, so `project show` reads the declarative source and
+> announces `[unresolved]` — S7's "announce every drop", one verb over.
+>
+> **Carried to S9**: V1-F2 and V1-F3 are both user-visible additive changes, so changelog **47**
+> must cover them (`.claude/rules/update-system.md`); V1-F3's VALUE is unverifiable in-session and
+> rides the §10 gate.
 
 | Item | Action |
 |---|---|
@@ -616,6 +657,12 @@ Cycle-1.1 is not acceptable on a green suite alone — three of these were never
 6. **D-M6 Linux write-path check-in** — now a **hard gate**, not a follow-up: `fakeowner` makes the
    fail-closed pre-validation unfalsifiable on macOS (V3-02), so criterion F cannot be signed off
    from a macOS run.
+7. **From S8/V1-F3 — verify the provenance VALUE, not just the row.** After the `cco build` in
+   gate 2, run `cco whoami` in a session and confirm `image built from:` reads the cycle-1.1 branch
+   and tip sha, **and** that it matches what you actually built. The hermetic suite can only pin the
+   row and its `unknown` fallback; the value is exactly the thing that was wrong in v2's cycle-0, so
+   it is worth the ten seconds. ⚠ Do this BEFORE the V3/V5 re-runs — it is what makes their results
+   attributable, and it is the gate the whole field was added for.
 
 Re-run V3 (rename completion) and V5 (store ops) after the build; V1/V2/V4 need no re-run — their
 results are independent of R1 and were verified clean against the host oracle.

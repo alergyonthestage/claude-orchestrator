@@ -1,4 +1,9 @@
-# Resume Handoff — cycle-1.1, from S8 onward
+# Resume Handoff — cycle-1.1, from S8 onward  ⛔ RETIRED
+
+> ⛔ **Superseded by [`RESUME-HANDOFF-s9.md`](RESUME-HANDOFF-s9.md) — S8 landed 2026-07-21**
+> (`8843680` `221d8fb` `16a129b` `535a99b` `a1e4c5e`; all five open items, suite 1463/9). Kept for
+> its §3 record of what S8 was asked to do. **Do not start from this file** — its gate list and
+> prerequisites are one stage stale.
 
 > **Written 2026-07-21** for a fresh session (post-`/clear`). Self-contained: read this, check the
 > prerequisites, review what landed, then continue.
