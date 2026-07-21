@@ -154,3 +154,60 @@ test_build_without_no_cache_keeps_install_cache() {
     run_cco build
     assert_file_exists "$install_dir/bin/claude"
 }
+
+# ── V1-F3 ≡ V5-8: build provenance baked into the image ─────────────────────────
+# The e2e §4 template has an "Image built from: <branch @ sha>" field that NO session
+# could fill, because nothing in the image records what it was built from. That field
+# exists precisely BECAUSE v2's cycle-0 was built from the wrong branch and the whole
+# round's results had to be discarded. Launch rule 0 is only self-verifying if the
+# answer lives in the image. `.git/` is excluded from the build context (.dockerignore),
+# so this MUST arrive as a build arg — the Dockerfile cannot derive it.
+# ⚠ FAILS on pre-fix: no CCO_BUILD_REF anywhere.
+
+test_build_ref_is_branch_at_sha() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local repo="$tmpdir/repo"; mkdir -p "$repo"
+    ( cd "$repo" && git init -q -b trunk && git config user.email t@t && git config user.name t \
+      && git commit -q --allow-empty -m x ) || { fail "fixture git repo failed"; return 1; }
+
+    local out
+    out=$( source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+           source "$REPO_ROOT/lib/cmd-build.sh"; _cco_build_ref "$repo" )
+    [[ "$out" == trunk@* ]] || fail "expected 'trunk@<sha>', got: $out" || return 1
+    [[ "${out#trunk@}" =~ ^[0-9a-f]{7,}$ ]] \
+        || fail "expected a short sha after '@', got: $out" || return 1
+    return 0
+}
+
+# Fail-SAFE, never fail-closed: provenance is diagnostic, so a missing .git (an npm
+# install, a tarball) must degrade to a legible marker and NEVER break `cco build`.
+test_build_ref_unknown_outside_a_git_repo() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    mkdir -p "$tmpdir/plain"
+
+    local out
+    out=$( source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+           source "$REPO_ROOT/lib/cmd-build.sh"; _cco_build_ref "$tmpdir/plain" )
+    [[ "$out" == "unknown" ]] || fail "expected 'unknown' outside a git repo, got: $out" || return 1
+    return 0
+}
+
+test_build_passes_build_ref_as_build_arg() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local mock_bin="$tmpdir/mockbin"
+    setup_mocks "$mock_bin"
+    _mock_docker_with_containers "$mock_bin"
+    export DOCKER_CALL_LOG="$tmpdir/docker.log"; : > "$DOCKER_CALL_LOG"
+
+    run_cco build
+    assert_file_contains "$DOCKER_CALL_LOG" "CCO_BUILD_REF="
+}
+
+# The arg is only useful if the Dockerfile actually persists it. Static, because the
+# real build cannot run hermetically — this is the half of V1-F3 that a suite CAN pin;
+# the other half is the §6 gate (a live `cco build`, then read /opt/cco/BUILD).
+test_dockerfile_persists_build_ref() {
+    assert_file_contains "$REPO_ROOT/Dockerfile" "ARG CCO_BUILD_REF"
+    assert_file_contains "$REPO_ROOT/Dockerfile" "/opt/cco/BUILD"
+}

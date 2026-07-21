@@ -76,6 +76,15 @@ EOF
         printf '  editing target:   %s\n' "${CCO_CONFIG_TARGETS//,/, }"
     local _repos; _repos=$(_whoami_mounted_repos)
     printf '  code repos:       %s\n' "${_repos:-— (config only)}"
+    # Build provenance (V1-F3): which source ref this IMAGE was built from, baked at
+    # /opt/cco/BUILD by the Dockerfile. Reported next to the access lines because the
+    # e2e §4 template asks for both together, and because "the fix is in" is a claim
+    # about the image, not the working tree — the two diverge constantly in self-dev
+    # (a lib/ edit is invisible to a store-touching verb until the next `cco build`).
+    # Absent on an image built before this landed: say so, never fabricate.
+    local _build="unknown"
+    [[ -r /opt/cco/BUILD ]] && read -r _build < /opt/cco/BUILD
+    printf '  image built from: %s\n' "${_build:-unknown}"
     echo ""
 
     # ── Access (R2) ──────────────────────────────────────────────────────

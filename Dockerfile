@@ -182,6 +182,17 @@ COPY changelog.yml package.json /opt/cco/
 RUN chmod +x /opt/cco/bin/cco \
     && ln -sf /opt/cco/bin/cco /usr/local/bin/cco
 
+# Build provenance (V1-F3 ≡ V5-8): which source ref this image was built from, as
+# `<branch>@<shortsha>`. `.git/` is excluded from the build context, so the value is
+# computed host-side by _cco_build_ref (lib/cmd-build.sh) and passed in. World-readable
+# and OUTSIDE the ADR-0047 privilege boundary on purpose: it carries no project or
+# store data, and a `cco_access=none` session — where cco itself is refused wholesale
+# — must still be able to answer "which code is this image running?".
+# This is what makes the e2e launch rule 0 self-verifying instead of a claim about
+# what the launcher believes it built.
+ARG CCO_BUILD_REF=unknown
+RUN printf '%s\n' "$CCO_BUILD_REF" > /opt/cco/BUILD && chmod 644 /opt/cco/BUILD
+
 # ── Managed settings (framework infrastructure — non-overridable) ────
 COPY --chown=root:root defaults/managed/ /etc/claude-code/
 # Directories need 755 (execute bit for traversal); files need 644 (read-only).

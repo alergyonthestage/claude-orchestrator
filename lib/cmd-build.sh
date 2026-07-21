@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # lib/cmd-build.sh — Build Docker image command
 #
-# Provides: cmd_build()
+# Provides: cmd_build(), _cco_build_ref()
 # Dependencies: colors.sh, utils.sh, paths.sh (_cco_config_dir,
 #               _cco_claude_install_dir, _cco_claude_version_pref),
 #               secrets.sh (_secret_match_content)
@@ -9,6 +9,32 @@
 # Note: global setup scripts / MCP list live at the personal-store TOP LEVEL
 # (~/.cco, design §2.3), written there by `cco init` / `cco init --migrate`,
 # alongside the global `.claude/` (flat, ADR-0028 — no `global/` wrapper).
+
+# Build provenance: the source ref this image is built from, as `<branch>@<shortsha>`
+# (V1-F3 ≡ V5-8). It is baked to /opt/cco/BUILD so a session can answer "which code is
+# this image running?" without trusting the launcher's memory — the e2e §4 template
+# has that field precisely BECAUSE v2's cycle-0 was built from the wrong branch and
+# the round's results had to be discarded. `.git/` is excluded from the build context,
+# so the value is computed here on the host and passed as a build arg.
+#
+# FAIL-SAFE, never fail-closed: provenance is diagnostic, so anything unknowable —
+# no git, no repo (an npm install or a tarball), a detached HEAD — degrades to a
+# legible marker rather than breaking the build. A wrong-looking marker is a prompt to
+# look; a failed build over a diagnostic field would be a defect of its own.
+# Usage: _cco_build_ref [<dir>]   (defaults to $REPO_ROOT)
+_cco_build_ref() {
+    local dir="${1:-$REPO_ROOT}" branch sha
+    command -v git >/dev/null 2>&1 || { printf 'unknown'; return 0; }
+    git -C "$dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+        || { printf 'unknown'; return 0; }
+    branch=$(git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null) || branch=""
+    sha=$(git -C "$dir" rev-parse --short HEAD 2>/dev/null) || sha=""
+    [[ -n "$sha" ]] || { printf 'unknown'; return 0; }
+    # Detached HEAD reports the literal "HEAD" as the branch — say so explicitly
+    # rather than baking a name that looks like a branch but is not one.
+    [[ -z "$branch" || "$branch" == "HEAD" ]] && branch="detached"
+    printf '%s@%s' "$branch" "$sha"
+}
 
 cmd_build() {
     local no_cache=""
@@ -85,6 +111,11 @@ EOF
     # knob (default `latest`). `cco start` re-forwards the knob when set; the
     # baked value is the fallback for a knob-less install (ADR-0039 decision 1).
     local build_args=()
+
+    # Build provenance (V1-F3 ≡ V5-8). `.git/` is excluded from the build context
+    # (.dockerignore), so the Dockerfile cannot derive this — it must be passed in.
+    build_args+=(--build-arg "CCO_BUILD_REF=$(_cco_build_ref)")
+
     if [[ -n "$cc_version" ]]; then
         build_args+=(--build-arg "CLAUDE_CODE_VERSION=$cc_version")
         info "Pinning Claude Code channel/version (this build): $cc_version"

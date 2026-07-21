@@ -253,6 +253,22 @@ test_operator_whoami_reports_state() {
     return 0
 }
 
+# V1-F3: whoami reports the image's build provenance. In THIS suite /opt/cco/BUILD is
+# whatever the running image has (an image built before V1-F3 landed has none), so the
+# assertion is on the ROW, not its value — and specifically that a missing file yields
+# the honest "unknown" rather than an empty field or a fabricated ref. The value itself
+# rides the §6 gate: a live `cco build`, then read the row back.
+test_operator_whoami_reports_build_provenance() {
+    lane_cco read-all whoami
+    [[ $OP_RC -eq 0 ]] || fail "'cco whoami' must succeed, got rc=$OP_RC: $OP_OUT"
+    [[ "$OP_OUT" == *"image built from:"* ]] \
+        || fail "whoami must report build provenance, got: $OP_OUT"
+    # Never an empty value: the row must always carry something readable.
+    [[ ! "$OP_OUT" =~ image\ built\ from:[[:space:]]*$ ]] \
+        || fail "the provenance row must never be empty, got: $OP_OUT"
+    return 0
+}
+
 # R2: a config-editor-style ASYMMETRIC triple has no preset → `level: custom (…)`
 # carries the granular form, and no row byte-duplicates another. cco start resolves
 # the triple and exports CCO_ACCESS_TRIPLE (a granular CCO_CCO_ACCESS scalar is not
