@@ -359,6 +359,52 @@ block) — otherwise it silently reintroduces this bug for whatever sibling
 already lives there. Affected paths as of this writing: `.claude`,
 `.local/bin`, `.local/share`, `.local/state`, `.cache`.
 
+#### 1.2.2.1 The same hazard one layer deeper — bucket parents inside the boundary (v3 R1)
+
+> Added 2026-07-21 (e2e v3 cycle-1.1 / S1). The paragraphs above are about the XDG
+> **base** dirs and the `claude` user. This is the identical mechanism at the next
+> path component down, inside the ADR-0047 privileged root (§1.2.3), where the
+> process that gets `EACCES` is **`cco-svc`** — and it is the first time the hazard
+> actually shipped.
+
+Under `/var/lib/cco-internal/` the operator buckets are `state/cco`, `share/cco`,
+`cache/cco`. Two properties of §1.2.2 carry over unchanged: the runtime creates any
+missing mountpoint **ancestor** as `root:root 0755`, and it does so **before the
+entrypoint runs**. What differs is that pre-creating in the Dockerfile is not enough
+here, because *which* leaves get bound varies per session with `cco_access`.
+
+The v3 defect was the combination of that with a second choice: STATE crossed as
+individual **file** binds (`index`, `running`) while DATA and CACHE crossed as
+**directories**. A directory bind is its own mountpoint, so its parent is created by
+the runtime and then *replaced* by the mount; a file bind leaves the parent as a real,
+runtime-created, `root:root` directory in the container. `cco-svc` could traverse and
+read it but not create in it — and every index writer replaces its file atomically via
+a sibling `mktemp "$f.XXXXXX"` + `mv`, so the sibling landed in that parent and failed
+`EACCES`. Three v3 blocking findings were that one gap (rename half-applying at exit 0,
+the store ops dead at `edit-all`, an empty `path list` at exit 0).
+
+**Two rules, and they are separate.** Fixing either alone leaves a live failure mode:
+
+1. **A confined bucket crosses as a DIRECTORY, never as a file.** Beyond the parent
+   problem, a file bind cannot survive the atomic replace pattern at all — `mv` onto a
+   bound file is `EBUSY` — and a host-side `rename()` strands the container's bind on a
+   `//deleted` inode, which reads as an empty-but-valid file (that is V2-F01: `path list`
+   returning zero rows at exit 0). A permissions-only fix would not have reached either.
+   Pinned by **INV-STATE** in `tests/test_invariants.sh`.
+2. **The per-bucket parents are owned by `cco-svc` at every start**, in the same
+   `entrypoint.sh` block that asserts the 0700 root — `install -d -o cco-svc` +
+   `chown` + `chmod 0700` over `state/cco`, `share/cco`, `cache/cco`. Idempotent, and
+   deliberately **non-recursive**: the children are bind mounts whose ownership belongs
+   to the host. This is the §1.2.2 "runtime self-heal" layer, one level down, and it
+   holds regardless of which leaves this session happens to bind.
+
+**Convention for new confined buckets**: add the bucket parent to that entrypoint loop,
+and bind a directory. If a bucket needs to expose only *part* of its content, do not
+bind the members individually — publish them into a sub-bucket and bind that (the
+`state/cco/shared/` shape), which keeps the crossing an **allow-list**: whatever is not
+moved in stays off the container by construction. See ADR-0047's 2026-07-21 forward
+annotation for why the allow-list property is the load-bearing one.
+
 ### 1.2.3 Internal-store privilege boundary (ADR-0047)
 
 > **Shipped ([ADR-0047](../../configuration/agent-cco-access/decisions/0047-config-access-enforcement.md));

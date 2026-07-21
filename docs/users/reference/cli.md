@@ -258,6 +258,15 @@ the **explicit widener** `--all` (or `--cco-access edit-all`) → mounts every r
 project's `<repo>/.cco` rw (no code repos, `edit-all`). They are not user projects — they
 always reflect the current framework version. These names are reserved.
 
+config-editor **never mounts a target's `extra_mounts`** — it authors *config*, and those are
+reference material for a working session, not authoring surface — and it **announces** them
+rather than dropping them silently, because `cco path list` shows those bindings as live host
+paths. It announces every other drop for the same reason: a target the index knows but cannot
+mount, a member repo whose recorded path is gone, and a name collision each get a line naming
+the remedy (`cco init` when the repo is present but unconfigured, `cco resolve` when it is not
+on this machine). Announcements are per-target, so `--all` — which mounts no member surfaces by
+design — reports at the project level only.
+
 Built-ins are **presets** of the session capability model (below): tutorial runs read-only
 over your whole config (`--claude-access none --cco-access read-all`); config-editor takes the
 **least privilege its mode needs** — project mode reads the store and writes only the project,

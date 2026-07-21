@@ -193,6 +193,50 @@ flowchart LR
 > (`pack install`, …) are **not** on this layer yet — they get a fail-fast `_store_provenance_guard`
 > that refuses in-container until cycle 2 (D-M8/Q-10).
 
+> **Forward annotation (2026-07-21, e2e v3 cycle-1.1 — R1 / D-V3-1 / INV-S3b).** The e2e run of
+> cycle 1 showed its fixes could not work as shipped, for a reason this ADR left unstated: §2 says
+> the store is *"bind-mounted (rw) at leaf paths"* nested under the privileged root, and **the
+> shape of that bind is load-bearing**. STATE crossed as individual **file** binds (`index`,
+> `running`) while DATA and CACHE crossed as directories, so the container runtime materialised
+> the `state/cco/` parent itself — container-local `root:root 0755` **inside** the 0700 root.
+> `cco-svc` can traverse and read such a parent but not create in it, and every index writer
+> replaces its file atomically through a sibling `mktemp`+`mv`, so the write failed `EACCES` (and
+> `mv` onto a bound file would have been `EBUSY` regardless). Refined: **a confined bucket crosses
+> as a DIRECTORY, and its container-side parent is owned by `cco-svc` before any bind is
+> established** (`config/entrypoint.sh`; the hazard class is `design-docker.md` §1.2.2, of which
+> this is the first real instance).
+>
+> The refinement keeps §1's *confine only the internal store* intact by keeping the crossing an
+> **allow-list**. Binding `state/cco` whole — proposed independently by two v3 sessions — was
+> rejected: it would carry the 0600 `remotes-token`, session transcripts, and memory into every
+> session, and, worse than the specific leak, it would flip the boundary from allow-list (only what
+> is named crosses; fail-safe) to deny-list (everything crosses except what someone remembered to
+> mask; fail-open). Instead the shareable members (the index + pack/template update sidecars) moved
+> under an explicit `state/cco/shared/` sub-bucket, and that directory is what crosses. **INV-STATE**
+> (`tests/test_invariants.sh`) pins both halves: the allow-list `{shared, running}`, and that the
+> index is never file-bound again. Migration `017`.
+>
+> **D-V3-1 — two verbs leave the container.** `cco remote remove|rename` become **host-only**
+> (exit 2 with the host hint), joining `remote set-token|remove-token`, which §3's R2 rationale
+> already covers in spirit: they cascade into the 0600 token store, and that store deliberately
+> stays **outside** `shared/`. The decisive argument is not confidentiality but honesty — with the
+> token file unmounted, `remote_get_token` cannot distinguish *"no token"* from *"token invisible"*,
+> and both ops are written as conditional no-ops on exactly that test, so they would have **passed
+> silently** while `remote-rekey` orphaned the token and stripped the renamed remote's auth. So the
+> boundary's opacity changes the meaning of a **credential** predicate exactly as INV-S6 says it
+> changes an existence predicate. `cco remote add` stays in-session (DATA-only).
+>
+> **INV-S3b — the exit code of a refused crossing.** §2's gate answers *may this session do this*;
+> it does not answer *can this bucket be written at all*, and cycle 1 conflated the two under
+> `lib/store.sh`'s INV-S3 (*store failure → exit 1*). Settled with the maintainer after two wrong
+> attempts: the discriminator is **pre-flight vs write, crossed with session vs host** — an
+> in-session **pre-flight** refusal (the bucket is not bound into this container) is a session-shape
+> fact whose remedy is "run it on the host" and exits **2**; the same pre-flight on the host, and
+> any write that **started and failed**, exit **1**. Recorded in `lib/store.sh`'s header; it governs
+> `rename.sh`'s two pre-flight probes as well, so `repo rename` answers with one voice whichever
+> half refuses. Neither D8 ("session shape → 2") nor INV-S3 alone reaches it — **do not re-derive it
+> from either**. Design: `…/fix-design-v3/00-plan.md` §2, §6.
+
 ### 4. Consequences for the existing layers
 
 - **Output-scoping retrocedes to a second layer.** `lib/access-scope.sh` (`_env_in_scope` +

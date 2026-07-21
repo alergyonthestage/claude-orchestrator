@@ -551,6 +551,54 @@ and for `tag add|remove` — those touch nothing claude-owned, so running the en
 mixed-verb rule. `lib/index.sh` and `lib/sync-meta.sh` keep their direct bucket access: they are
 primitive layers reached only by elevated or host-only verbs (§1.5 row 12).
 
+### 3.9 Cycle-1.1 — what the e2e run changed about this design (added 2026-07-21)
+
+The v3 acceptance run did not refute this shape; it found that it **could not run** as shipped,
+and then found two things the contract above left underspecified. Three amendments.
+
+**(a) The crossing had no writable parent (R1 / S1).** §3.2 argues the pre-flight must itself be
+a crossing, which is right, and §3.3's probe was correct — but the bucket it probed was not
+reachable. STATE crossed the boundary as individual **file** binds while DATA and CACHE crossed
+as directories, so `state/cco` was a runtime-created `root:root` dir that `cco-svc` can read but
+not create in. `_store_op_buckets`' STATE probe therefore failed for every op that names it, and
+`pack|template remove|rename` were **dead at `edit-all`** — the §2.2 table's "applies wholly"
+column was unreachable in practice. The bucket now crosses as one `state/cco/shared/` directory
+(ADR-0047's 2026-07-21 forward annotation; `design-docker.md` §1.2.2.1). Nothing in §3's shape
+changed — this is the substrate it always assumed.
+
+**(b) Two verbs leave the container entirely (D-V3-1 / S5).** `remote remove|rename` are now
+**host-only**, refused at exit 2 with the host hint. The §2.2 table's bottom row is therefore
+retired in-container rather than fixed there: with the 0600 token store deliberately outside
+`shared/`, `remote_get_token` cannot tell *"no token"* from *"token invisible"*, and both ops are
+conditional no-ops on exactly that test — so a "truth-in-messaging" fix would still have passed
+silently while `remote-rekey` orphaned the token. `remote add` stays (DATA-only), so its §2.2 row
+stands. Consequently `remote-drop`/`remote-rekey` left the STATE entry of `_store_op_buckets`
+— but only **after** the two token primitives were made able to report failure (S2b-P), because
+their *host* path still writes the STATE root through them, and dropping the coarse probe first
+would have widened the silent-failure window exactly where D-V3-1 sends these verbs.
+
+**(c) INV-S3b — the exit code splits by pre-flight-vs-write, not by module.** §3.3's contract
+pins exit **1** for a store failure, and `test_store_writes.sh` guards it eight times. That is
+right for a write that **started and failed**, and wrong for a **pre-flight** refusal in a
+session, which is a session-shape fact whose remedy is "run it on the host" — B6's refusal
+shape, exit **2**. The same pre-flight on the host stays **1** (no session shape in play; a
+genuinely unwritable bucket is a real error). Settled with the maintainer after two attempts
+that each applied one contract alone; recorded in `lib/store.sh`'s header, and extended to
+`rename.sh`'s two pre-flight probes so `repo rename` answers with one voice whichever half
+refuses. **Do not re-derive it from D8 or from INV-S3 alone — each is half the rule.**
+
+**And one thing §1.2 got right that turned out to be systemic.** The swallow it describes
+(`set -e` inert inside every command body) is not confined to the store layer: an audit found
+the same discarded-status pattern across the index writers, the `project.yml` rename fan-out,
+the token primitives, and the host-only entry verbs
+(`…/engineering/analysis/false-success-class-audit.md`). Cycle-1.1 closed it across all ten
+command-body modules under a lint, **INV-IDX**; the residue is backlog **FI-24**. The
+generalisable half is worth stating here because this doc is where the class was first named:
+in the decisive case the primitive **already printed the right error, loudly, at the right
+moment** — and the verb still exited 0 with a `✓`. *The defect was never the message; it was the
+discarded status.* ⚠ `lib/index.sh` stays outside INV-IDX's scope (§3.8 already exempts it):
+it is the writer layer, where a tail-position call **is** the propagation.
+
 ## 4. Why this shape, and not the alternatives
 
 **4.1 Add the mutating verbs to `_cco_verb_touches_store`** (the one-line fix). **Rejected.**

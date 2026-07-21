@@ -861,3 +861,64 @@ entries:
       resource that exists on this machine but is not bound into the current
       session now says "not mounted in this session" with a host remedy, instead
       of a misleading "run cco resolve". Requires `cco build`.
+
+  - id: 47
+    date: "2026-07-21"
+    type: additive
+    title: "Container sessions: the internal index crosses as a directory, and every write says what it did"
+    description: >
+      The e2e acceptance run of cycle 1 found that its fixes could not work as
+      shipped, for one reason: the machine-local STATE bucket crossed into a
+      session as individual FILE mounts while every other bucket crossed as a
+      directory. A file mount gives the container no writable parent, and every
+      index write replaces the file atomically through a sibling temp — so
+      in-container index writes failed while the command still printed a ✓.
+      Cycle 1.1 closes that root and the class of silent failures around it.
+      (1) The container-shareable STATE members — the index and the pack/template
+      update sidecars — now live under `<state>/cco/shared/` and that ONE
+      directory is what a session binds. Migration 017 moves them for you on the
+      next `cco update`; it is idempotent and needs no input. What stays outside
+      `shared/` never reaches a container by construction: the 0600 remote-token
+      store, session transcripts, and memory. Three failures disappear with it —
+      `cco repo rename` / `cco extra-mount rename` half-applying while reporting
+      success, `cco pack|template remove|rename` being dead at `edit-all`, and
+      `cco path list` printing zero rows at exit 0 after a host-side rename.
+      (2) Writes that cannot be performed now FAIL, loudly and by name, instead
+      of returning success: the index writers, the `project.yml` fan-out of a
+      rename, the token-store cascades, and the host-only entry verbs (`cco init`,
+      `cco join`, `cco forget`, `cco project import`, `cco resolve --scan`,
+      `cco path set`, migrations) all propagate the real status. `cco init` no
+      longer announces "registered it in the index" when it did not, and `cco join`
+      no longer tells you to commit a `project.yml` naming a member nothing binds.
+      (3) A rename is now refused UP FRONT when either store it must touch cannot
+      be written, so it is applied wholly or not at all. (4) Reading is honest
+      too: an index that is unreadable or truncated is reported as such by
+      `cco path list`, `cco list`, `cco list projects`, and `cco config validate`,
+      instead of being read as "you have nothing configured".
+      (5) BEHAVIOUR CHANGE — `cco remote remove` and `cco remote rename` are now
+      **host-only**, refused in-session with a host hint, joining
+      `remote set-token` / `remove-token`. They cascade into the 0600 token store,
+      which never crosses into a session: with the token file unmounted cco cannot
+      tell "no token" from "token invisible", so both would have succeeded
+      silently while orphaning the token and stripping the remote's auth.
+      `cco remote add` stays available in-session. (6) `cco project show` and
+      `cco project validate` now answer "is this available?" with one voice —
+      `show` used to blame access scope and prescribe a widening that does not
+      exist at `read-all` — and `validate` works from the `/workspace` root like
+      `show` already did. (7) `cco start config-editor` announces every surface it
+      drops, including a project the index knows but cannot mount (with the right
+      remedy: `cco init` when the repo is there but unconfigured, `cco resolve`
+      when it is not on this machine). It deliberately never mounts a target's
+      `extra_mounts` — it authors config, and they are reference material — and it
+      now SAYS so, because `cco path list` shows those bindings and silence read
+      as "reachable". (8) `cco project show` gained an extra_mounts section listing
+      them by logical name — the key `cco path` and `cco extra-mount rename` take —
+      marking `[unresolved]` when one is declared but not bound. (9) `cco whoami`
+      reports `image built from: <branch>@<sha>`, so a session can prove which
+      build it is running before you trust what it tells you. (10) The "hidden by
+      access scope" notice no longer offers `read-global` when everything it hid
+      was a project — `read-global` reveals no project; it offers `read-all`. A
+      mixed set still offers both. (11) Bare `cco repo rename <new>` at the
+      `/workspace` root is now refused as ambiguous with a message that names the
+      repo directory to run it from, instead of failing earlier with an unrelated
+      error. Requires `cco build`.

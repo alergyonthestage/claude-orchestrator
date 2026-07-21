@@ -27,6 +27,15 @@ cco_access-gated visibility); implementer (code-grounding + reconciliation desig
 > so the intent of §2 (access-gated visibility) is preserved while the confidentiality is
 > enforced by the boundary, not by output-scoping alone. The claude user cannot traverse the
 > 0700 root, so no raw enumeration. No rebuild: the mountpoint auto-creates under the root.
+> ⚠ **Qualified 2026-07-21 (e2e v3 cycle-1.1 / S1).** "The mountpoint auto-creates under the
+> root" holds here **because `running/` is a DIRECTORY bind** — the runtime's auto-created
+> ancestor is then replaced by the mount itself. The sibling STATE members that crossed as
+> **file** binds hit the opposite outcome: their parent stayed a runtime-created `root:root`
+> dir that `cco-svc` cannot create in, which was v3's blocking root R1
+> (`design-docker.md` §1.2.2.1). This registry is behaviourally unaffected, and the shape that
+> saved it is now an invariant rather than an accident: **INV-STATE** pins the allow-list
+> `{shared, running}`, and `entrypoint.sh` owns `state/cco` to `cco-svc` at every start. Do not
+> convert `running/` to per-marker file binds.
 > Also: the marker lifecycle does **not** depend on `cco stop` (B-DF3) — the blocking `cco
 > start` owns it (mark pre-run, unmark post-run), and host-side reconciliation is the primary
 > reaper. See `feat/config-access/e2e-review` commits `95eb8b5`/`f08bbf2`.

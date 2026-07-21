@@ -519,6 +519,21 @@ ever appears, the collapse can be revisited with real evidence.
    different branch; the setuid helper remains the write authority. Making a `<repo>/.cco`
    bind writable does not widen store access.
 
+   > **Cycle-1.1 / S1 note (added 2026-07-21).** Still true *of RC-1* — but that "different
+   > branch" is no longer untouched, and its line anchors have moved. The e2e v3 run found the
+   > boundary's **shape** was itself the blocking root (R1): STATE crossed as individual **file**
+   > binds (`index`, `running`) while DATA and CACHE crossed as directories, leaving the
+   > `state/cco` parent as a runtime-created `root:root` dir that `cco-svc` cannot create in — so
+   > every in-container index write failed `EACCES` while the verb still printed `✓`. That branch
+   > now emits **one directory bind** of `state/cco/shared/`, an explicit allow-list sub-bucket
+   > holding the index and the pack/template update sidecars; everything else under `state/cco`
+   > (the 0600 `remotes-token`, `projects/`, transcripts, memory) stays off the container by
+   > construction. Binding `state/cco` whole was rejected — it flips the boundary from allow-list
+   > to deny-list. **INV-STATE** (`tests/test_invariants.sh`) pins the allow-list and pins that
+   > the index is never file-bound again; the mount-generation hazard this belongs to is
+   > `design-docker.md` §1.2.2.1. RC-1's own conclusion is unaffected: nothing here touches the
+   > nested-config clamp or the `readonly:` derivation.
+
 **bash 3.2 notes:**
 
 - `-mindepth`/`-maxdepth` are supported by both BSD (macOS) and GNU `find`; keeping both
