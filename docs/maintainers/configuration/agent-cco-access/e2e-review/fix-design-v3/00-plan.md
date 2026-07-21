@@ -4,11 +4,13 @@
 > verdict (**NOT ACCEPTED**), its seven roots **R1…R7**, and the ratified decision **D-V3-1**.
 > **Gate**: closing R1–R7 unblocks `develop → main`.
 > **Branch**: `fix/config-access/e2e-v3-cycle1.1` (from `develop` @ `f894245`).
-> **Status**: plan written 2026-07-20. **S1 · S2 · S3 · S4 · S2b-P · S5 · S6 · S2b landed** (2026-07-20/21),
-> suite **1447/9** — the 9 are the pre-existing host-only artifacts, unchanged set. Next: **S7**.
-> Resume pointer: [`RESUME-HANDOFF-s7.md`](RESUME-HANDOFF-s7.md) — current.
-> [`-s6`](RESUME-HANDOFF-s6.md), [`-s5`](RESUME-HANDOFF-s5.md) and [`-s4`](RESUME-HANDOFF-s4.md) are
-> superseded (kept as history: -s5 §4 carries the reasoning that promoted **S2b-P** ahead of S5).
+> **Status**: plan written 2026-07-20. **S1 · S2 · S3 · S4 · S2b-P · S5 · S6 · S2b · S7 landed**
+> (2026-07-20/21), suite **1451/9** — the 9 are the pre-existing host-only artifacts, unchanged
+> set. Next: **S8**.
+> Resume pointer: [`RESUME-HANDOFF-s8.md`](RESUME-HANDOFF-s8.md) — current.
+> [`-s7`](RESUME-HANDOFF-s7.md), [`-s6`](RESUME-HANDOFF-s6.md), [`-s5`](RESUME-HANDOFF-s5.md) and
+> [`-s4`](RESUME-HANDOFF-s4.md) are superseded (kept as history: -s5 §4 carries the reasoning that
+> promoted **S2b-P** ahead of S5).
 
 Cycle 1 fixed the *model*. Cycle 1.1 fixes what only a live container could reveal: **one
 mount-composition defect** (R1) that three sessions hit through three verb families, plus **six
@@ -60,7 +62,7 @@ flowchart TD
 | **S4** | R3 | V2-F02, V2-F03 | 🟠 | ✅ `501567b` |
 | **S5** | D-V3-1, R5 | V5-02, V5-03 | 🟠 | ✅ `9e2496d` + INV-S3b (§6.3 settled); ⚠ 1 host-only edit left (§6.-1) |
 | **S6** | R4 | V2-F04 ≡ V4-F-V4-02 ≡ V5-04, V1-F1 | 🟠 | ✅ `987e38b` + `INV-ENV` |
-| **S7** | R6 | V4-F-V4-01, V5-05 | 🟠 | ⏳ |
+| **S7** | R6 | V4-F-V4-01, V5-05 | 🟠 | ✅ `097ef61` (decision (b) ratified; V5-05's prescribed site was dead code — §8) |
 | **S8** | — | V3-03, V4-F-V4-03, V4-F-V4-04, V1-F3, V1-F2, V3-P | 🟡 | ⏳ (V3-P done in S2) |
 | **S9** | — | release hygiene | — | ⏳ |
 
@@ -526,7 +528,43 @@ including `edit-all` where no widening exists.
 
 ---
 
-## 8. S7 — config-editor announces every drop
+## 8. S7 — config-editor announces every drop ✅ `097ef61`
+
+> **Landed 2026-07-21.** Both items closed; decision (b) ratified with the maintainer and
+> recorded in [`../fix-design-v2/03-config-editor-repos.md`](../fix-design-v2/03-config-editor-repos.md)
+> §3.9.1, whose drop-case table now enumerates both new classes. Suite **1451/9** (4 new guards,
+> baseline fail set unchanged name-for-name).
+>
+> **What this design did not anticipate — item 1's fix site is dead code.** The prescription below
+> ("route the `--all` branch's bare `continue` through `_ce_skip_note`") targets a test that can
+> **never be false**: `_project_foreach` yields a project only when `<unit>/.cco/project.yml` is a
+> file, and `_resolve_unit_dir_for_project` asserts the same before it, so `[[ -d "$path/.cco" ]]`
+> is implied by the time the collector runs. Had it been implemented as written, S7 would have
+> shipped a fix that reads correct, passes a hand-built fixture, and **never fires** — the
+> announcement would have stayed missing while the stage was marked closed. It was caught by
+> writing the guard first and watching it fail *with the fix in place*.
+>
+> The real drop is one function upstream, in `_project_foreach`'s own conscious-skips. Those are
+> correct there and must stay silent: the iterator is shared by many verbs and must not learn
+> config-editor's vocabulary. So the announcement is built the way `_ce_collect_target_repos`
+> already builds it for a target's repos — a **declared-vs-effective diff**
+> (`_index_list_projects` minus what `_project_foreach` yielded) computed in the config-editor
+> collector. The `-d` test is kept as an *announcing* backstop rather than deleted, so a future
+> relaxation of `_project_foreach`'s contract surfaces instead of silently shrinking the set.
+>
+> **The generalisation.** S2's lesson was *the defect was never the message, it was the discarded
+> status*. S7's is its sibling one layer out: **a fix at a site that cannot execute is
+> indistinguishable from a fix, until something makes it run.** The plan's line numbers were stale
+> (it says so), but the deeper trap was that the *reasoning* was stale — the `continue` really was
+> the drop when the finding was written. Locating a site by name is not enough; the next stage
+> should assert the site is **reachable** before treating it as the fix.
+>
+> Two smaller things: `_ce_skip_note` needed a `<kind>` noun (neither new drop is a repo, and the
+> hardcoded "repo '<n>'" would have made both messages lie), and the member probe had to go through
+> `_cco_member_probe_path` — `INV-F` caught the direct `-d` on an index host path, correctly, and
+> the sanctioned helper was the fix rather than an allow-list entry.
+
+### 8.0 The design as written (kept for the record)
 
 1. **V5-05** — `lib/cmd-start.sh:776-780`, the `--all` branch: `[[ -d "$path/.cco" ]] || continue` is
    a bare `continue`. Route it through `_ce_skip_note` (`:585-598`), which the sibling repo path

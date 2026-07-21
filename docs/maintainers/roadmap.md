@@ -159,9 +159,19 @@ honesty (empty ≠ unreadable) ✅ `501567b` · **S2b-P** the two token primitiv
 S5**: S5's item 2 drops the STATE probe over a host write path whose primitive could not report failure;
 plan §6.0) · **S5** D-V3-1 + truthful store refusal ✅ `9e2496d` · **INV-S3b** exit-code unification
 ✅ `2f2b560` (plan §6.3) · **S6** one predicate one spelling (`project show` + V1-F1) + `INV-ENV`
-✅ `987e38b` · **S7** config-editor announces every drop ⏳ **next** · **S8** minor + doc debt ·
-**S9** changelog 47 + ADR forward-annotation + living-doc sweep. Suite **1447/9** (the 9 = the
+✅ `987e38b` · **S7** config-editor announces every drop + the extra_mounts decision (b)
+✅ `097ef61` · **S8** minor + doc debt ⏳ **next** ·
+**S9** changelog 47 + ADR forward-annotation + living-doc sweep. Suite **1451/9** (the 9 = the
 pre-existing host-only artifacts, unchanged set — names verified identical to baseline).
+
+**S7** ratified decision **(b)**: config-editor never mounts a target's `extra_mounts` (it authors
+config; they are reference material, and mounting them widens the built-in's blast radius for no
+authoring gain) — and *announces* them, since `cco path list` prints those bindings as live host
+paths. Its other half carries a lesson worth the sibling of S2's: the plan's prescribed fix site
+for V5-05 was **dead code** — `_project_foreach` had already filtered the case one function
+upstream, so the `continue` the finding named could never execute. A fix at an unreachable site is
+indistinguishable from a fix until something makes it run; the guard, written first and watched
+failing *with the fix in place*, is what caught it.
 
 **S2b** closed the unchecked-write class in three commits: the `_yaml_rename_list_ref` primitive
 (the project.yml half of `repo rename`, S1–S3's acknowledged residual), then `join`/`init`, then the
@@ -226,7 +236,7 @@ Linux container, and a macOS run proves nothing about them. S2b also adds one ga
 host-only verbs it touched (`join`, `init`, `forget`, `project import`, `resolve --scan`,
 `path set`, `migrate`) now die where they used to continue, so each deserves one live happy-path run
 after `cco build` — the hermetic suite covers the failure arms, but the success arms are what a user
-hits daily. Resume pointer: memory [[e2e-v3-cycle11]] + `fix-design-v3/RESUME-HANDOFF-s7.md`.
+hits daily. Resume pointer: memory [[e2e-v3-cycle11]] + `fix-design-v3/RESUME-HANDOFF-s8.md`.
 
 #### F — opinionated-config extraction + `cco update` responsibility refactor (post-C, structural)
 
