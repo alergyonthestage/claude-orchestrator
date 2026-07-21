@@ -4,7 +4,9 @@
 > verdict (**NOT ACCEPTED**), its seven roots **R1…R7**, and the ratified decision **D-V3-1**.
 > **Gate**: closing R1–R7 unblocks `develop → main`.
 > **Branch**: `fix/config-access/e2e-v3-cycle1.1` (from `develop` @ `f894245`).
-> **Status**: plan written 2026-07-20; implementation not started.
+> **Status**: plan written 2026-07-20. **S1 · S2 · S3 landed** (2026-07-20/21), suite **1417/9** —
+> the 9 are the pre-existing host-only artifacts, unchanged set. Next: **S4**.
+> Resume pointer: [`RESUME-HANDOFF-s4.md`](RESUME-HANDOFF-s4.md).
 
 Cycle 1 fixed the *model*. Cycle 1.1 fixes what only a live container could reveal: **one
 mount-composition defect** (R1) that three sessions hit through three verb families, plus **six
@@ -46,18 +48,26 @@ flowchart TD
   S9 --> G["Out-of-session gates:<br/>cco build · V4b · V5b · §7 · D-M6 Linux"]
 ```
 
-| Stage | Root | Closes | Blocking? |
-|---|---|---|---|
-| **S1** | R1 | V3-01, V5-01, V2-F01 | 🔴 yes |
-| **S2** | R2 | V3-01 (honesty half) | 🔴 yes |
-| **S2b** | R2 | the same class in the host-only writers (not a v3 finding — found while landing S2) | 🟠 |
-| **S3** | R7 | V3-02 | 🟠 |
-| **S4** | R3 | V2-F02, V2-F03 | 🟠 |
-| **S5** | D-V3-1, R5 | V5-02, V5-03 | 🟠 |
-| **S6** | R4 | V2-F04 ≡ V4-F-V4-02 ≡ V5-04, V1-F1 | 🟠 |
-| **S7** | R6 | V4-F-V4-01, V5-05 | 🟠 |
-| **S8** | — | V3-03, V4-F-V4-03, V4-F-V4-04, V1-F3, V1-F2, V3-P | 🟡 |
-| **S9** | — | release hygiene | — |
+| Stage | Root | Closes | Blocking? | Status |
+|---|---|---|---|---|
+| **S1** | R1 | V3-01, V5-01, V2-F01 | 🔴 yes | ✅ `517014b` |
+| **S2** | R2 | V3-01 (honesty half) | 🔴 yes | ✅ `4aefc2f` |
+| **S2b** | R2 | the same class in the host-only writers (not a v3 finding — found while landing S2) | 🟠 | ⏳ designed, §3b |
+| **S3** | R7 | V3-02 | 🟠 | ✅ `582347d` |
+| **S4** | R3 | V2-F02, V2-F03 | 🟠 | ⏳ next |
+| **S5** | D-V3-1, R5 | V5-02, V5-03 | 🟠 | ⏳ |
+| **S6** | R4 | V2-F04 ≡ V4-F-V4-02 ≡ V5-04, V1-F1 | 🟠 | ⏳ |
+| **S7** | R6 | V4-F-V4-01, V5-05 | 🟠 | ⏳ |
+| **S8** | — | V3-03, V4-F-V4-03, V4-F-V4-04, V1-F3, V1-F2, V3-P | 🟡 | ⏳ (V3-P done in S2) |
+| **S9** | — | release hygiene | — | ⏳ |
+
+**What landed, in one line each.** **S1** — STATE crosses via a `state/cco/shared/` directory bind
+instead of file binds; migration `017`; `INV-STATE` pins the allow-list and the shape; also fixed a
+real orphan-scan bug the move surfaced (`cco config validate` scanned the old sidecar paths).
+**S2** — `_index_mktemp` fails loudly, `_index_rename_path` and `cmd-repo.sh` propagate, `INV-IDX`
+lints bare writes, `T-R2` guards the behaviour; V3-P's restart note shipped here. **S3** —
+`_rename_assert_index_writable` probes the second store at its own (elevated) identity, so the
+rename refuses *before* Phase 1. Every guard was adversarially revert-checked against pre-fix code.
 
 ---
 
@@ -217,6 +227,23 @@ Two acceptable shapes; **prefer (a)**:
 - **(b)** complete Q-11: route `_index_rename_path` through a `store-op` plan/apply crossing so it
   inherits `_store_plan`'s probe (`store.sh:188`) for free. Cleaner, larger, and it changes the
   index write path — which S1 and S2 are already touching.
+
+> **✅ LANDED as (a)** (`582347d`) — `_rename_assert_index_writable` in `lib/rename.sh`, called
+> alongside its sibling from `cmd-repo.sh`. **(b) / Q-11 remains open** and is deliberately not
+> residue: it buys the same guarantee for a much larger change to a write path S1+S2 had just
+> rewritten, and chaining them would have made the revert-checks impossible to attribute.
+>
+> ⚠ **The identity is INVERTED between the two probes, and this is the part to not "simplify" later.**
+> The project.yml write is de-elevated to ruid=claude (D-M4) → its probe goes through
+> `_rename_deelevated`. The index write is **not** — the verb trampolines wholly and `lib/index.sh`
+> writes at euid=cco-svc → its probe uses a plain `mktemp` at the current identity. De-elevating the
+> index probe would test `claude` against a `cco-svc`-owned bucket and refuse **every** legitimate
+> rename; elevating the config probe would pass on a tree the real write cannot touch.
+>
+> **Layering with S2** (pinned by `T-R2` assertion (e)): S3 makes the failure *not happen* — the
+> refusal lands before Phase 1, so both stores are untouched. S2 makes it *loud and recoverable* if
+> the probe ever passes and the write still fails (a race, or a condition the probe cannot see).
+> Both paths stay; neither is redundant.
 
 Whichever lands, note **V3-02's second half**: on macOS `fakeowner` ignores modes for container uids,
 so the refusal branch is **unfalsifiable there** (`chmod 500 .cco && mktemp .cco/.x.XXXXXX`

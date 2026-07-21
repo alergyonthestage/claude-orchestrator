@@ -5,7 +5,7 @@
 > [roadmap-history.md](roadmap-history.md). The framework-improvements backlog
 > lives in [roadmap-backlog.md](roadmap-backlog.md).
 >
-> Last updated: 2026-07-16.
+> Last updated: 2026-07-21.
 
 ## Current status
 
@@ -119,6 +119,54 @@ pack-rename half-apply scratch reproduction** (🔴 data-loss if confirmed — n
 `-y`, now a named gate in handoff-v3 §7); the Linux write-path check-in (D-M6, before develop →
 main); `git push` + `develop → main` only after v3 ACCEPTED. Resume pointer: memory
 [[e2e-v2-review]] + `e2e-review/fix-design-v2/IMPLEMENTATION-HANDOFF.md`.
+
+> **▶ v3 has since run and returned NOT ACCEPTED** — see the cycle-1.1 section below. Cycle 1 was
+> FF-merged into `develop` and the image rebuilt from it (launch rule 0 satisfied), so this section
+> is closed as *shipped-to-develop*, not as *accepted*. `develop → main` is now gated on cycle 1.1.
+
+#### B2 e2e-review **v3** acceptance → **cycle-1.1 fix** (⏳ IN PROGRESS, 2026-07-21)
+
+The v3 acceptance re-review ran on the rebuilt image (5 sessions V1…V5 + the §7 scratch procedure,
+2026-07-20) and returned **NOT ACCEPTED**. Verdict + findings→root map:
+[`e2e-review/results/consolidated-review-v3.md`](configuration/agent-cco-access/e2e-review/results/consolidated-review-v3.md);
+staged fix plan: [`e2e-review/fix-design-v3/00-plan.md`](configuration/agent-cco-access/e2e-review/fix-design-v3/00-plan.md).
+Branch **`fix/config-access/e2e-v3-cycle1.1`** (from develop @ `f894245`).
+
+**Cycle 1's model held; its enforcement had one hole.** RC-4 is confirmed on **both halves across
+three independent projects** (and the observed row partitions discriminate against both rejected
+implementations, A1 and A7); RC-1 on both D-M5 arms, RC-6, the ADR-0047 boundary, criterion E, and
+`lib/store.sh`'s fail-closed contract are all live-verified. What failed is a **mount-composition
+defect the hermetic lane cannot see by construction** (RC-17's stated blind spot), plus a cluster of
+honesty-of-message defects around it.
+
+**Three 🔴, one root (R1).** V3-01 (`repo rename` half-applies + prints `✓`), V5-01 (6 store verbs
+dead at `edit-all`), V2-F01 (`path list` reports 0 rows at rc=0 on a stranded inode) are all the
+STATE bucket being bind-mounted as individual **files** — so its container-local parent is
+`root:root` and no sibling temp can be created, while a host-side `rename()` strands the bound inode.
+⚠ **The "bind the directory" fix two v3 sessions proposed is not safely applicable**: it would mount
+the 0600 `remotes-token`, transcripts and memory into every session, flipping the ADR-0047 boundary
+from allow-list (fail-safe) to deny-list (fail-open). Ratified instead: an explicit
+`state/cco/shared/` sub-bucket. Also ratified, **D-V3-1**: `cco remote remove|rename` become
+host-only, consistent with the already-host-only `remote set-token|remove-token` — the token never
+mounts, so `remote_get_token` cannot tell "no token" from "token invisible" and both ops would pass
+silently, orphaning the token and stripping the renamed remote's auth.
+
+Stages (each impl → adversarial revert-check): **S1** STATE shared sub-bucket + migration `017` +
+`INV-STATE` ✅ `517014b` · **S2** index-write error propagation + `INV-IDX` + `T-R2` ✅ `4aefc2f` ·
+**S3** fail-closed pre-flight probes **both** stores, each at its own identity ✅ `582347d` ·
+**S2b** the same unchecked-write class in the host-only writers ⏳ designed · **S4** read-path
+honesty (empty ≠ unreadable) ⏳ next · **S5** D-V3-1 + truthful store refusal · **S6** one predicate
+one spelling (`project show`) · **S7** config-editor announces every drop · **S8** minor + doc debt ·
+**S9** changelog 47 + ADR forward-annotation + living-doc sweep. Suite **1417/9** (the 9 = the
+pre-existing host-only artifacts, unchanged set).
+
+**Out of session reach — gates the release** (Mac): `cco remote remove v5probe` (V5 left a residue
+it could not remove); `cco build` from the cycle-1.1 tip then re-run V3 + V5; **V4b** the D-M11
+escalation test (the only v3 probe that fails **open** if the fix is wrong); **V5b** bare global;
+**§7 / E6B-04** the pack-rename fan-out gate, still never executed and now unblocked by S1; and the
+**D-M6 Linux write-path check-in**, promoted from follow-up to **hard gate** — macOS `fakeowner`
+makes the fail-closed pre-validation unfalsifiable (V3-02), so criterion F cannot be signed off from
+a macOS run. Resume pointer: memory [[e2e-v3-cycle11]] + `fix-design-v3/RESUME-HANDOFF-s4.md`.
 
 #### F — opinionated-config extraction + `cco update` responsibility refactor (post-C, structural)
 
