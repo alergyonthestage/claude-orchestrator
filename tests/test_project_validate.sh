@@ -534,3 +534,53 @@ test_validate_named_out_of_scope_still_refuses() {
     assert_rc 2 "$rc" "an out-of-scope named project must refuse" || return 1
     return 0
 }
+
+# ── V1-F1 (S6): bare `project validate` at the container WORKDIR root ────────
+# /workspace is the agent's default cwd and carries no repo-local .cco, so the cwd
+# walk finds nothing. `cco project show` has resolved the SESSION project there
+# since R4; validate died "No project here" — two sibling introspection verbs
+# disagreeing, in the same session, about whether the session has a project at all.
+# The fallback is SHARED (_project_session_fallback), which is what keeps them
+# agreeing rather than agreeing by coincidence.
+
+# ⚠ FAILS on pre-fix: rc=1, "No project here".
+test_validate_v1f1_workdir_root_resolves_session_project() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" read-project alpha
+    local mnt; mnt=$(operator_mount_unit alpha alpha)
+    # A share-ready manifest, so rc=0 proves the unit was RESOLVED and validated —
+    # the fixture default carries no url and would return 1 for an unrelated reason.
+    cat > "$mnt/.cco/project.yml" <<'YAML'
+name: alpha
+repos:
+  - name: alpha
+    url: git@github.com:org/alpha.git
+YAML
+    # The flat session manifest `cco start` lays down at the WORKDIR root.
+    : > "$CCO_WORKDIR/project.yml"
+
+    local rc=0
+    _pv_in "$CCO_WORKDIR" project validate -v || rc=$?
+    assert_rc 0 "$rc" "bare 'project validate' at the WORKDIR root" || return 1
+    assert_output_contains "share-ready" || return 1
+    return 0
+}
+
+# The fallback stays narrow: it is the WORKDIR ROOT that maps to the session, not
+# "anywhere with no .cco above". Without this arm the fix could widen into a
+# silent single-project fallback from any cwd.
+test_validate_v1f1_fallback_only_at_workdir_root() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" read-project alpha
+    operator_mount_unit alpha alpha >/dev/null
+    : > "$CCO_WORKDIR/project.yml"
+    local elsewhere="$tmp/elsewhere"; mkdir -p "$elsewhere"
+
+    local rc=0
+    _pv_in "$elsewhere" project validate || rc=$?
+    assert_rc 1 "$rc" "bare 'project validate' outside the WORKDIR root" || return 1
+    assert_output_contains "No project here" || return 1
+    return 0
+}

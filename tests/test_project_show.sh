@@ -135,7 +135,7 @@ YML
 }
 
 # ── R4: bare `cco project show` at the container WORKDIR root ─────────────────
-# The trigger (_project_show_session_fallback) is env-driven so it is unit-testable
+# The trigger (_project_session_fallback) is env-driven so it is unit-testable
 # without a live /workspace: CCO_WORKDIR points it at a tmp WORKDIR with a flat
 # session manifest, and _cco_container_operator is stubbed for the operator branch.
 
@@ -146,7 +146,7 @@ _ps_fallback() {  # echoes the resolved name (or empty); operator stubbed per $1
         source "$REPO_ROOT/lib/paths.sh";  source "$REPO_ROOT/lib/cmd-project-query.sh"
         if [[ "$operator" == yes ]]; then _cco_container_operator() { return 0; }
         else _cco_container_operator() { return 1; }; fi
-        _project_show_session_fallback "$PWD"
+        _project_session_fallback "$PWD"
     )
 }
 
@@ -279,4 +279,51 @@ test_member_role_host_context_unaffected() {
     out=$(CCO_WORKDIR="$ws" _ps_role no "/nonexistent/my-repo" "my-proj" "my-repo")
     [[ "$out" == "code-only" ]] \
         || fail "B-DF1: host classification must be unchanged (code-only), got: '$out'"
+}
+
+# ── S6 / v3 R4: `project show` asks the shared classifier ────────────────────
+# The verb used to answer availability with ONE hardcoded sentence — it blamed
+# ACCESS SCOPE and prescribed a scope widening — for two different realities. At
+# read-all/edit-all nothing is hidden by scope and there is no widening left, so
+# the sentence was simply false; meanwhile its sibling `project validate` gave the
+# correct D-M2 answer for the same project in the same session. Three v3 sessions
+# reported it from three vantages (V2-F04 ≡ V4-F-V4-02 ≡ V5-04) against one call
+# site. Both arms below are pinned so the two states cannot re-converge on one
+# spelling. Static counterpart: INV-ENV in test_invariants.sh.
+
+# In scope (read-all sees every project) but NOT bound into this container.
+# ⚠ FAILS on pre-fix: refuses "not available at this access scope … Widen the
+# session's scope", naming a remedy that does not exist at read-all.
+test_project_show_unmounted_is_not_a_scope_refusal() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" read-all alpha
+    operator_mount_unit alpha alpha >/dev/null
+    # beta: bound in the index to a host path that cannot exist here, never mounted.
+    seed_index_path betarepo "/Users/cco-e2e/code/betarepo" beta
+    index_set_project_repos beta betarepo
+
+    local rc=0
+    run_cco project show beta || rc=$?
+    assert_refused "$rc" "${CCO_OUTPUT:-}" "not mounted in this session" || return 1
+    [[ "$CCO_OUTPUT" != *"not available at this access scope"* ]] \
+        || { fail "an unmounted project must not be reported as an access-scope problem: $CCO_OUTPUT"; return 1; }
+    return 0
+}
+
+# The scope arm still refuses with the scope wording — replacing the local sentence
+# with _env_unavailable must not cost the out-of-scope message (it routes back into
+# _env_require_visible). Sibling of test_as_project_show_out_of_scope_refused.
+test_project_show_out_of_scope_keeps_scope_wording() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" read-project alpha
+    operator_mount_unit alpha alpha >/dev/null
+    seed_index_path betarepo "/Users/cco-e2e/code/betarepo" beta
+    index_set_project_repos beta betarepo
+
+    local rc=0
+    run_cco project show beta || rc=$?
+    assert_refused "$rc" "${CCO_OUTPUT:-}" "not available at this access scope" || return 1
+    return 0
 }

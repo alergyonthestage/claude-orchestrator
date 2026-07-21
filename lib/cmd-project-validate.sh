@@ -17,6 +17,8 @@
 # Provides: cmd_project_validate()
 # Depends:  cmd-resolve.sh (_resolve_find_unit_dir + the operator-aware
 #           _resolve_project_yml/_resolve_project_cco_dir),
+#           cmd-project-query.sh (_project_session_fallback — the shared WORKDIR-root
+#           session fallback, so this verb and `project show` agree; V1-F1),
 #           access-scope.sh (_env_project_state/_env_unavailable*/_env_note_*),
 #           yaml.sh (yml_get*, *_coords parsers), index.sh (_index_list_projects),
 #           packs.sh (_pack_resolve_dir, PACKS_DIR), colors.sh.
@@ -327,8 +329,16 @@ EOF
     # the cwd form agree and the authored-pack checks have their .cco (or honestly none).
     local unit_dir="" yml cco_dir label
     if [[ -z "$target" ]]; then
-        unit_dir=$(_resolve_find_unit_dir) \
+        # V1-F1 (S6): child-wins — a repo-local .cco resolves first; failing that, at
+        # the container WORKDIR root fall back to the SESSION project, exactly as
+        # `cco project show` does (_project_session_fallback, shared). /workspace is
+        # the agent's default cwd, and these two sibling introspection verbs used to
+        # disagree there about whether the session has a project at all.
+        unit_dir=$(_resolve_find_unit_dir) || target=$(_project_session_fallback)
+        [[ -n "$unit_dir" || -n "$target" ]] \
             || die "No project here — run from a repo that has .cco/project.yml, or pass a project name (or --all)."
+    fi
+    if [[ -n "$unit_dir" ]]; then
         yml="$unit_dir/.cco/project.yml"
         cco_dir="$unit_dir/.cco"
         label=$(basename "$unit_dir")

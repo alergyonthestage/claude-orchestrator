@@ -144,7 +144,11 @@ _project_show_repo_centric() {
 # Prints the session project name to use, or nothing (caller then shows usage). The
 # WORKDIR is overridable via CCO_WORKDIR (defaults to /workspace) so the trigger is
 # unit-testable without a live /workspace mount.
-_project_show_session_fallback() {
+#
+# SHARED by `project show` and `project validate` (V1-F1 / S6): /workspace is the
+# agent's default cwd, and two sibling introspection verbs must not disagree about
+# whether this session has a project. Hence the neutral name — it is not `show`'s.
+_project_session_fallback() {
     local pwd_dir="${1:-$PWD}" workdir="${CCO_WORKDIR:-/workspace}"
     _cco_container_operator || return 0
     [[ "$pwd_dir" == "$workdir" ]] || return 0
@@ -185,27 +189,24 @@ EOF
         return $?
     fi
     # R4: at the container WORKDIR root a bare `cco project show` resolves the SESSION
-    # project (see _project_show_session_fallback), so cwd-based introspection works
+    # project (see _project_session_fallback), so cwd-based introspection works
     # from /workspace just as inside a mounted repo dir.
-    [[ -z "$name" ]] && name=$(_project_show_session_fallback)
+    [[ -z "$name" ]] && name=$(_project_session_fallback)
     [[ -z "$name" ]] && die "Usage: cco project show <name>"
-    # Output scoping (ADR-0043): a detail verb refuses out-of-scope resources
-    # with a clear message rather than a raw "not found" (graceful degradation).
-    _env_require_visible project "$name"
 
-    # Resolve the project's committed <repo>/.cco/project.yml. Host- and
-    # operator-aware (R2): in-container this resolves the mounted /workspace
-    # manifest; on the host, the STATE index. An unresolvable name yields a
-    # context-appropriate message — "unavailable at this scope" in a session (its
-    # .cco is not mounted), "run cco resolve" on the host.
+    # Availability (S6 / v3 R4 — INV-ENV): the state AND its remedy come from the
+    # shared classifier; this verb spells neither. It used to answer with one
+    # hardcoded sentence blaming ACCESS SCOPE and prescribing a scope widening —
+    # false whenever nothing was hidden (at edit-all there is no widening left),
+    # and the same wording for two different realities. `out-of-scope` routes back
+    # into _env_require_visible, so the scope refusal this call replaces is
+    # unchanged; `not-mounted` now says so honestly; `unresolved` keeps the host's
+    # `cco resolve` remedy. Same shape as `project validate` — the two agree.
+    local _st; _st=$(_env_project_state "$name")
+    [[ "$_st" == here ]] || _env_unavailable "$_st" project "$name"
     local project_yml
-    if project_yml=$(_resolve_project_yml "$name" 2>/dev/null) && [[ -f "$project_yml" ]]; then
-        :
-    elif _cco_container_operator; then
-        refuse "Project '$name' is not available at this access scope — its config is not mounted in this session. Widen the session's scope on the host, or run cco there."
-    else
-        die "Project '$name' not found (unknown, or its repo is unresolved here — run 'cco resolve $name')."
-    fi
+    project_yml=$(_resolve_project_yml "$name")
+    [[ -f "$project_yml" ]] || die "Project '$name' has no readable project.yml."
 
     # Name and description
     local yml_name

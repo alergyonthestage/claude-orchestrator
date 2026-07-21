@@ -609,3 +609,90 @@ test_invariant_index_writes_status_checked() {
         || { fail "INV-IDX does NOT discriminate: a planted bare index write went uncaught"; return 1; }
     return 0
 }
+
+# ── INV-ENV one predicate, one spelling: the availability vocabulary (v3 R4) ──
+# "Is this NAMED RESOURCE here / not-mounted / unresolved / out-of-scope?" is ONE
+# predicate, and lib/access-scope.sh owns both its answer (_env_project_state /
+# _env_member_state) and its wording (_env_unavailable / _env_unavailable_warn /
+# _env_unavailable_sentence / _env_require_visible). A verb that spells a state
+# itself drifts from the shared one, and drift is invisible until a live session
+# puts the two sentences side by side.
+#
+# That is exactly what happened: `cco project show` answered with one hardcoded
+# sentence blaming ACCESS SCOPE and prescribing a scope widening — false whenever
+# nothing was hidden (at edit-all there is no widening left) and identical for two
+# different realities, while its sibling `cco project validate` gave the correct
+# D-M2 answer in the same session. Three v3 sessions reported it from three
+# vantages (V2-F04 ≡ V4-F-V4-02 ≡ V5-04) against one call site. This is the class
+# RC-4 was created to eliminate ("one predicate, four spellings, one of which
+# drifted"), recurred — so it gets a guard rather than another fix.
+#
+# Form: the four state fragments below are the vocabulary. Outside access-scope.sh
+# they may appear only in a module on `ratified`, and only up to its budget.
+# Comment lines are exempt (docs quote the vocabulary on purpose).
+#
+# Each ratified module owns a DIFFERENT predicate, spelled in exactly one function
+# — that is why it is not a violation of "one predicate, one spelling":
+#   store.sh   1  _store_unwritable_refuse   — a STORE BUCKET's writability, not a
+#                                              named resource (a bucket is never
+#                                              "unresolved"). Governed by INV-S3b.
+#   rename.sh  1  _rename_assert_index_writable — same bucket predicate, pre-flight.
+#   cmd-start.sh 2 _ce_skip_note             — config-editor's mount-drop predicate,
+#                                              HOST side (cco start never runs in a
+#                                              session); deliberately worded to the
+#                                              same D-M2 vocabulary (its own comment
+#                                              pins that), reasons ∈ unresolved|stale|
+#                                              homonym|reserved.
+#   cmd-resolve.sh 1 cmd_path (list)         — the hidden-COUNT notice for path
+#                                              entries, which must say read-all where
+#                                              the shared notice says read-global
+#                                              (other projects need Po≥ro). Reconciling
+#                                              the shared one is V4-F-V4-03 / Q-C3.
+#   cmd-project-rename.sh 1 cmd_project_rename — an AGGREGATE over member repos
+#                                              (a plural list), not a single
+#                                              resource's state; host-only verb.
+#
+# The budget is a CEILING, so deleting a spelling never fails the guard and adding
+# one always does. Raising a budget is a deliberate act that has to be argued here.
+test_invariant_env_one_spelling_per_state() {
+    local vocab='not available at this access scope|not mounted in this session|not resolved on this machine|hidden by access scope'
+    local ratified="store.sh:1 rename.sh:1 cmd-start.sh:2 cmd-resolve.sh:1 cmd-project-rename.sh:1"
+    local f base budget n hits=""
+    for f in "$REPO_ROOT"/lib/*.sh "$REPO_ROOT"/bin/cco; do
+        [[ -f "$f" ]] || continue
+        base=$(basename "$f")
+        [[ "$base" == access-scope.sh ]] && continue          # the owner
+        n=$(grep -nE "$vocab" "$f" | grep -cvE '^[0-9]+:[[:space:]]*#' || true)
+        [[ "$n" -eq 0 ]] && continue
+        budget=0
+        case " $ratified " in *" $base:"*) budget=${ratified##*"$base":}; budget=${budget%% *} ;; esac
+        if [[ "$n" -gt "$budget" ]]; then
+            hits="${hits}${base}: $n spelling(s), budget $budget"$'\n'
+            hits="${hits}$(grep -nE "$vocab" "$f" | grep -vE '^[0-9]+:[[:space:]]*#' | cut -c1-100)"$'\n'
+        fi
+    done
+    [[ -z "$hits" ]] || fail "INV-ENV: an availability state is spelled outside lib/access-scope.sh — ask _env_project_state/_env_member_state and render with _env_unavailable[_warn] (v3 R4):"$'\n'"$hits"
+
+    # Discrimination arm 1: a NEW spelling in an unlisted module must be caught.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    printf 'f() {\n    refuse "Project %s is not available at this access scope."\n}\n' "'\$n'" > "$tmp/cmd-unlisted.sh"
+    n=$(grep -nE "$vocab" "$tmp/cmd-unlisted.sh" | grep -cvE '^[0-9]+:[[:space:]]*#' || true)
+    [[ "$n" -gt 0 ]] \
+        || { fail "INV-ENV does NOT discriminate: a planted local state spelling went uncaught"; return 1; }
+
+    # Discrimination arm 2: a comment quoting the vocabulary must NOT be caught —
+    # otherwise the guard would push authors to stop documenting it.
+    printf '# a doc line about "not mounted in this session"\n' > "$tmp/cmd-comment.sh"
+    n=$(grep -nE "$vocab" "$tmp/cmd-comment.sh" | grep -cvE '^[0-9]+:[[:space:]]*#' || true)
+    [[ "$n" -eq 0 ]] \
+        || { fail "INV-ENV over-reaches: a comment quoting the vocabulary was flagged"; return 1; }
+
+    # Discrimination arm 3: the budget must bite — a SECOND spelling in a ratified
+    # module (here store.sh, budget 1) is a violation even though the module is listed.
+    cp "$REPO_ROOT/lib/store.sh" "$tmp/" || { fail "INV-ENV self-test: could not stage store.sh"; return 1; }
+    printf '\n_lint_probe_extra() {\n    refuse "the bucket is not mounted in this session"\n}\n' >> "$tmp/store.sh"
+    n=$(grep -nE "$vocab" "$tmp/store.sh" | grep -cvE '^[0-9]+:[[:space:]]*#' || true)
+    [[ "$n" -gt 1 ]] \
+        || { fail "INV-ENV budget does NOT bite: a second spelling in a ratified module went uncaught"; return 1; }
+    return 0
+}
