@@ -318,6 +318,57 @@ test_repo_rename_operator_not_mounted_refuses() {
     return 0
 }
 
+# ── V3-03 / D-M9 Q-6: the WORKDIR-root ambiguity refusal ────────────────────────
+# Q-6 designed a refusal for bare `cco repo rename <new>` at the container WORKDIR
+# root ("always refused as ambiguous, no single-repo fallback"). Its SAFETY always
+# held, but the designed MESSAGE was unreachable: _resolve_find_unit_dir fails there
+# first and answers "run from inside a project repo … or pass <old> <new>" — advice
+# that describes the wrong problem (the session's project IS known at the root, via
+# _project_session_fallback; it is the MEMBER that is ambiguous).
+# ⚠ FAILS on pre-fix: the generic unit-resolution die fires instead.
+test_repo_rename_workdir_root_bare_is_ambiguous() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" edit-project shop
+    operator_mount_unit shop backend >/dev/null
+    # The flat session manifest `cco start` writes at the WORKDIR root — what
+    # _project_session_fallback keys on, and what makes the root distinguishable
+    # from "some directory that happens to have no project".
+    printf 'name: shop\n' > "$CCO_WORKDIR/project.yml"
+
+    local rc=0
+    _rr_cco_in "$CCO_WORKDIR" repo rename api -y || rc=$?
+
+    [[ $rc -ne 0 ]] || fail "bare rename at the WORKDIR root must be refused, got rc=0" || return 1
+    [[ "$CCO_OUTPUT" == *"ambiguous"* ]] \
+        || fail "the refusal must name the ambiguity (Q-6), got: $CCO_OUTPUT" || return 1
+    # The remedy must be followable FROM HERE. "pass <old> <new>" is not: the 2-arg
+    # form dies at the same unit resolution at the WORKDIR root, so advising it
+    # would ship a remedy that cannot be followed — the S7 trap, inverted.
+    [[ "$CCO_OUTPUT" != *"pass <old> <new>"* ]] \
+        || fail "must not advise the 2-arg form, which also fails here: $CCO_OUTPUT" || return 1
+    return 0
+}
+
+# The converse: OUTSIDE a session and away from any project, the generic message is
+# still the right one. This is what keeps the fix a NEW arm rather than a rewrite of
+# the existing die — and pins that the ambiguity arm cannot swallow the host case.
+test_repo_rename_host_outside_project_keeps_generic_message() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/nowhere"
+
+    local rc=0
+    _rr_cco_in "$tmp/nowhere" repo rename api -y || rc=$?
+
+    [[ $rc -ne 0 ]] || fail "rename outside any project must fail, got rc=0" || return 1
+    [[ "$CCO_OUTPUT" == *"from inside a project repo"* ]] \
+        || fail "the host/no-project case must keep the generic message, got: $CCO_OUTPUT" || return 1
+    [[ "$CCO_OUTPUT" != *"ambiguous"* ]] \
+        || fail "the ambiguity arm must not fire outside a session: $CCO_OUTPUT" || return 1
+    return 0
+}
+
 # extra_mount with an implicit target (mount at <ws>/<name>). ⚠ FAILS on pre-fix at
 # the strict guard.
 test_extra_mount_rename_operator_implicit_target() {

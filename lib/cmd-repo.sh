@@ -18,6 +18,8 @@
 #   rename.sh (_rename_validate / _rename_projectyml_current / _rename_preview_confirm /
 #   _rename_assert_writable),
 #   cmd-resolve.sh (_resolve_find_unit_dir),
+#   cmd-project-query.sh (_project_session_fallback — the shared WORKDIR-root
+#     classifier, for the Q-6 ambiguity arm),
 #   paths.sh (_cco_project_id / _cco_member_probe_path / _cco_display_path /
 #   _cco_member_name_from_mount),
 #   access-scope.sh (_env_member_state / _env_unavailable),
@@ -44,9 +46,34 @@ _rename_index_keyed() {
     done
 
     # ── Current project (from cwd) ──────────────────────────────────────
+    # V3-03 / D-M9 Q-6: at the container WORKDIR root the generic message below is
+    # the WRONG diagnosis. The session's project IS known there (the flat manifest —
+    # _project_session_fallback, the shared classifier `project show`/`validate` use);
+    # what is unknown is WHICH MEMBER the bare cwd-first form means. That is exactly
+    # the ambiguity Q-6 refuses, and until now its designed refusal was unreachable
+    # because this die fired first. Safety never depended on it — there is no
+    # single-repo fallback anywhere — so this moves the DIAGNOSIS, not the outcome.
+    #
+    # The remedy deliberately does NOT say "pass <old> <new>": the 2-arg form dies at
+    # this very same resolution here (it needs $unit for the project.yml rewrite and
+    # the §3.5 pre-flight, and the WORKDIR root holds no .cco/), so advising it would
+    # ship a remedy that cannot be followed from where it is printed. That the 2-arg
+    # form is unreachable at the root — and from any NON-hosting member dir — is a
+    # separate, wider finding; recorded in roadmap-backlog.md, not fixed here.
+    #
+    # EXIT 1, not 2, and this does NOT touch INV-S3b: that invariant governs STORE
+    # pre-flights, where the refusal is a session-SHAPE fact whose remedy is "run it
+    # on the host". This is a usage fact — the user did not say which member — and it
+    # is fixable in-session by cd'ing. Same class, and same code, as every other usage
+    # die in this engine.
     local unit project
-    unit=$(_resolve_find_unit_dir) \
-        || die "Run 'cco $dash rename' from inside a project repo (a directory with .cco/project.yml), or pass <old> <new>."
+    if ! unit=$(_resolve_find_unit_dir); then
+        if [[ "$cwd_first" == true && ${#pos[@]} -eq 1 ]] && [[ -n "$(_project_session_fallback)" ]]; then
+            # <new> is still only pos[0] here — the old/new split happens below.
+            die "'cco $dash rename ${pos[0]}' is ambiguous at the workspace root: it cannot tell which $pretty you mean. cd into the $pretty you want to rename and run it there."
+        fi
+        die "Run 'cco $dash rename' from inside a project repo (a directory with .cco/project.yml), or pass <old> <new>."
+    fi
     project=$(_cco_project_id "$unit") \
         || die "Cannot determine the current project from $unit/.cco/project.yml."
 

@@ -837,3 +837,45 @@ and the clamp is fail-safe. Whatever lands must keep an unrecognised `.claude` c
 **Type & tracking**: access-model UX + self-development workflow; no schema change. Interacts with
 FI-20 (the same "a `:ro` overlay is correct but its consequences are unwritten" shape). **Effort**:
 Low–Med. **Not gating** cycle-1.1 — but it makes S9's doc sweep partly host-side, so note it there.
+
+---
+
+## FI-26: `repo`/`extra-mount rename` resolves its unit from cwd, so it only runs from the HOSTING repo
+
+**Status**: 📝 Note — to analyze (found 2026-07-21 by code inspection while landing cycle-1.1 S8's
+V3-03; the ambiguity arm V3-03 added sits directly on top of this and deliberately does not fix it).
+
+**Context**: `_rename_index_keyed` (`lib/cmd-repo.sh`) resolves the project it is about to rewrite
+with `_resolve_find_unit_dir` — a walk up from cwd looking for `<dir>/.cco/project.yml`. `$unit` is
+then load-bearing twice more: `_mount_declared_target "$unit/.cco/project.yml"` and the §3.5
+fail-closed pre-flight `_rename_assert_writable "$unit/.cco"`.
+
+**The consequence**: a project's committed config lives in ONE repo (the hosting one), so in a
+session that walk succeeds **only from the hosting repo's mount**. From any other member repo — and
+from the WORKDIR root — it fails, and it fails for BOTH forms:
+
+- bare `cco repo rename <new>` — now correctly diagnosed as ambiguous at the WORKDIR root (S8/V3-03),
+  but from a non-hosting member dir it still answers the generic "run from inside a project repo",
+  which is false: the user *is* inside one.
+- `cco repo rename <old> <new>` — the fully-specified form, which has no ambiguity at all, dies with
+  advice to "pass `<old> <new>`" — which the user just did. This is the sharper half.
+
+V3-03's guard was scoped to the WORKDIR root because that is what D-M9's Q-6 governs, and its message
+deliberately avoids advising the 2-arg form for exactly this reason.
+
+**Why it is not a one-liner**: the fix is to resolve `$unit` from the SESSION's project rather than
+from cwd — the hosting repo's *mount*. `_resolve_unit_dir_for_project` already exists but returns
+index HOST paths, which by **INV-F** can never be existence-tested in-container; it would need to
+route through `_cco_member_probe_path`, the way B-DF1's class of fixes did. That is a resolution
+change touching a fail-closed pre-flight, so it wants its own design pass, not an opportunistic edit.
+
+⚠ **Check the class, not the instance** — B-DF1 and S7 both taught this cycle that these fixes come
+in families. `_resolve_find_unit_dir` has **nine** other callers (`cmd-sync.sh`, `cmd-project-add.sh`,
+`cmd-project-export-import.sh`, `cmd-project-rename.sh`, `cmd-resolve.sh` ×2, `cmd-start.sh` ×2,
+`cmd-project-validate.sh`); `project validate` and `project show` already route around it via
+`_project_session_fallback` (S6/R4), which is evidence the gap is known and being closed
+piecemeal. Enumerate all of them before designing.
+
+**Type & tracking**: CLI environment-awareness (dual-context correctness); no schema change.
+Sibling of FI-21's "explicit project scope on the host-path surface". **Effort**: Med.
+**Not gating** cycle-1.1.
