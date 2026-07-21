@@ -622,10 +622,21 @@ _env_flush_hidden_notice() {
         done
         if [[ -n "$msg" ]]; then
             # read-global reveals global-class resources (templates/remotes/unreferenced
-            # packs/llms); OTHER projects need read-all (Po≥ro). The notice can cover
-            # both kinds, so it names the correct widening for each (A1 §2.2).
-            printf 'note: %s hidden by access scope (cco_access=%s) — start a read-global session (read-all to also see other projects) or run cco on your host.\n' \
-                "$msg" "$(_env_access)" >&2
+            # packs/llms); OTHER projects need read-all (Po≥ro). The notice names the
+            # correct widening for each (A1 §2.2) — but only for the kinds actually
+            # hidden. V4-F-V4-03: when the hidden set is projects-only (the shape
+            # `cco list projects` produces), leading with read-global offers a widening
+            # that reveals NONE of what was hidden — read-global's sole difference from
+            # read-all is that other projects stay hidden (see this file's header). An
+            # unreachable remedy is worse than none, so that case names read-all alone.
+            local widen='start a read-global session (read-all to also see other projects)'
+            if [[ "${_ENV_HID_project:-0}" -gt 0 ]] \
+               && [[ $(( ${_ENV_HID_pack:-0} + ${_ENV_HID_llms:-0} \
+                       + ${_ENV_HID_template:-0} + ${_ENV_HID_remote:-0} )) -eq 0 ]]; then
+                widen='start a read-all session (other projects need Po≥ro)'
+            fi
+            printf 'note: %s hidden by access scope (cco_access=%s) — %s or run cco on your host.\n' \
+                "$msg" "$(_env_access)" "$widen" >&2
         fi
         _ENV_HIDDEN_ANY=0
         for kind in project pack llms template remote; do printf -v "_ENV_HID_${kind}" '%d' 0; done

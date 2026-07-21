@@ -356,6 +356,44 @@ test_as_hidden_notice_counts_and_stderr() {
     return 0
 }
 
+test_as_hidden_notice_projects_only_leads_with_read_all() {
+    # V4-F-V4-03 / Q-C3: OTHER projects ride Po, so only read-all reveals them
+    # (read-global's SOLE difference from read-all is that projects stay hidden —
+    # access-scope.sh:24). A notice that hid nothing but projects and then offers
+    # read-global names a widening that reveals NONE of what it hid. When the hidden
+    # set is projects-only the remedy must be read-all, and read-global must not
+    # appear at all — an unreachable remedy is worse than no remedy.
+    _as_source
+    _as_operator read-project
+    export PROJECT_NAME=alpha
+    _env_note_hidden project; _env_note_hidden project
+    local out; out=$(_env_flush_hidden_notice 2>&1)
+    [[ "$out" == *"2 projects hidden by access scope"* ]] \
+        || fail "the count/wording must be unchanged, got: $out"
+    [[ "$out" == *"read-all"* ]] \
+        || fail "a projects-only notice must offer read-all, got: $out"
+    [[ "$out" != *"read-global"* ]] \
+        || fail "a projects-only notice must NOT offer read-global (it reveals no project), got: $out"
+    return 0
+}
+
+test_as_hidden_notice_mixed_still_names_both() {
+    # The converse guard: as soon as a global-class kind is also hidden, read-global
+    # IS a real widening for that part, so both must be named. This is what keeps the
+    # fix an ordering/selection fix rather than a blanket substitution.
+    _as_source
+    _as_operator read-project
+    export PROJECT_NAME=alpha
+    _env_note_hidden project
+    _env_note_hidden template
+    local out; out=$(_env_flush_hidden_notice 2>&1)
+    [[ "$out" == *"read-global"* ]] \
+        || fail "a mixed notice must still offer read-global, got: $out"
+    [[ "$out" == *"read-all"* ]] \
+        || fail "a mixed notice must still name read-all for the projects, got: $out"
+    return 0
+}
+
 test_as_hidden_notice_idempotent() {
     _as_source
     _as_operator read-project
