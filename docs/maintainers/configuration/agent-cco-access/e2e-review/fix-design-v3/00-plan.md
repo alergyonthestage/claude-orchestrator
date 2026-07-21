@@ -6,8 +6,9 @@
 > **Branch**: `fix/config-access/e2e-v3-cycle1.1` (from `develop` @ `f894245`).
 > **Status**: plan written 2026-07-20. **S1 · S2 · S3 · S4 landed** (2026-07-20/21), suite
 > **1428/9** — the 9 are the pre-existing host-only artifacts, unchanged set. Next: **S5**.
-> Resume pointer: [`RESUME-HANDOFF-s4.md`](RESUME-HANDOFF-s4.md) (its §3 and §4 are now history;
-> §5 onward is still the live order).
+> Resume pointer: [`RESUME-HANDOFF-s5.md`](RESUME-HANDOFF-s5.md) — **read its §4 before S5**: the
+> stage order below is amended (**S2b-P**, the two token primitives, now precedes S5).
+> [`RESUME-HANDOFF-s4.md`](RESUME-HANDOFF-s4.md) is superseded.
 
 Cycle 1 fixed the *model*. Cycle 1.1 fixes what only a live container could reveal: **one
 mount-composition defect** (R1) that three sessions hit through three verb families, plus **six
@@ -53,10 +54,11 @@ flowchart TD
 |---|---|---|---|---|
 | **S1** | R1 | V3-01, V5-01, V2-F01 | 🔴 yes | ✅ `517014b` |
 | **S2** | R2 | V3-01 (honesty half) | 🔴 yes | ✅ `4aefc2f` |
-| **S2b** | R2 | the same class in the host-only writers (not a v3 finding — found while landing S2) | 🟠 | ⏳ designed, §3b |
+| **S2b-P** | R2 | the two token primitives — **split out and promoted ahead of S5** (2026-07-21, see §6.0) | 🟠 | ⏳ **next** |
+| **S2b** | R2 | the same class in the host-only writers (not a v3 finding — found while landing S2) | 🟠 | ⏳ designed, §3b (rest, after S6) |
 | **S3** | R7 | V3-02 | 🟠 | ✅ `582347d` |
 | **S4** | R3 | V2-F02, V2-F03 | 🟠 | ✅ `501567b` |
-| **S5** | D-V3-1, R5 | V5-02, V5-03 | 🟠 | ⏳ next |
+| **S5** | D-V3-1, R5 | V5-02, V5-03 | 🟠 | ⏳ after S2b-P |
 | **S6** | R4 | V2-F04 ≡ V4-F-V4-02 ≡ V5-04, V1-F1 | 🟠 | ⏳ |
 | **S7** | R6 | V4-F-V4-01, V5-05 | 🟠 | ⏳ |
 | **S8** | — | V3-03, V4-F-V4-03, V4-F-V4-04, V1-F3, V1-F2, V3-P | 🟡 | ⏳ (V3-P done in S2) |
@@ -337,6 +339,37 @@ permission-denied or stranded index all render as success.
 
 ## 6. S5 — D-V3-1: remote verbs host-only, and a truthful store refusal
 
+### 6.0 ⚠ Amended 2026-07-21 — S2b's token primitives must land FIRST
+
+§1 originally ordered S5 ahead of S2b ("S2b blocks nothing"), while the stage table flagged *"S5
+depends on the token primitive"*. Reading the code resolves the tension **against** the original
+order, on three grounds — the third being a correction to §6.2 item 2 itself:
+
+- S5 does **not** need the primitive for its own correctness: all four work items below are
+  independent of whether `_remote_token_set` can report failure.
+- But S5 makes the defect **invisible to the acceptance matrix**: after D-V3-1 the verbs run only on
+  the host, while every v3/v3.1 e2e session runs in-container. The silent token-orphan stops being
+  reachable by the probes that would catch it, and stays fully live for the user.
+- **Item 2 removes a guard that still stands over a live host write path.** Dropping
+  `remote-drop`/`remote-rekey` from the STATE entry of `_store_op_buckets` is justified below as
+  *"they no longer run in-container"* — true, and the conclusion does not follow.
+  `_cco_remotes_token_file` is `$(_cco_state_dir)/remotes-token`, the STATE **root** (S1 deliberately
+  left it outside `shared/` — 0600 auth never crosses), and on the host
+  `_store_do_remote_drop`/`_store_do_remote_rekey` still write it via the token primitives. So the
+  ops keep touching the STATE root; removing it from the probe list while the primitive underneath
+  **cannot report its own failure** strictly widens the silent-failure window on the host.
+
+**Therefore**: land the two token primitives (`_remote_token_set`, `_remote_token_remove` — §3b work
+item 1) as **S2b-P** first. With the cascade able to fail honestly, item 2 becomes safe: it no longer
+leans on a coarse root probe. The reorder is deliberately **surgical** — the rest of S2b
+(`_yaml_rename_list_ref`, `cmd-join.sh`/`cmd-init.sh`, the remaining `_index_*` modules) stays after
+S5/S6.
+
+**Reconcile while here**: `lib/store.sh:136-139` already comments *"Both verbs are host-only
+in-container (D-V3-1, bin/cco)"* while `bin/cco:403` still routes `remove|rename` through
+`_op_write`. The comment is **ahead of the code** — a reader today would believe D-V3-1 shipped.
+Item 1 closes the gap.
+
 ### 6.1 The decision (ratified in the consolidated review §3)
 
 `cco remote remove` and `cco remote rename` are **host-only in-container**, refused **exit 2** with
@@ -354,7 +387,8 @@ the renamed remote's auth without a diagnostic.
 1. **`bin/cco:404`** — extend the existing refusal to `remote remove|rename`. Keep the wording family
    (*"secrets stay off the container"*) and exit **2**, not 1.
 2. **`lib/store.sh:137,140`** — drop `remote-drop` / `remote-rekey` from the STATE bucket list; they
-   no longer run in-container. Their host path is unchanged.
+   no longer run in-container. ⚠ **Only after S2b-P** — see §6.0: their *host* path still writes the
+   STATE root through the token primitives, so this is safe only once those can fail honestly.
 3. **V5-03** — the dup-check in `cmd-remote.sh` currently says *"Remove it first with `cco remote
    remove <name>`"*, a command that is now explicitly host-only. Make it name the **host** remedy.
 4. **R5 / V5-02** — `lib/store.sh:243-245` must distinguish two conditions that today share one false
