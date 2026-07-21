@@ -156,10 +156,26 @@ _rename_index_keyed() {
     # so every member would classify unresolved and no project.yml would be rewritten
     # (§1.6). It is also the safer failure ordering — the hard distributed write
     # happens first; the cheap authoritative index write commits last.
-    local -a changed=()
-    local p
-    while IFS= read -r p; do [[ -n "$p" ]] && changed+=("$p"); done \
-        < <(_rename_projectyml_current "$project" "$section" "$old" "$new")
+    local -a changed=() failed=()
+    local _tag _p
+    while IFS=$'\t' read -r _tag _p; do
+        case "$_tag" in
+            changed) [[ -n "$_p" ]] && changed+=("$_p") ;;
+            failed)  [[ -n "$_p" ]] && failed+=("$_p") ;;
+        esac
+    done < <(_rename_projectyml_current "$project" "$section" "$old" "$new")
+    # S2b: a member's project.yml rewrite that could not be persisted. S3's
+    # pre-flight probes the CWD unit's .cco only, so this is still reachable — a
+    # DIFFERENT member unwritable, or ENOSPC mid-fan-out. Stop BEFORE the index
+    # re-key: that keeps the two stores' disagreement one-directional (project.yml
+    # partly re-keyed, index untouched) and therefore recoverable by re-running.
+    # The die lives here, in the parent shell — inside the fan-out it would exit
+    # only the process substitution.
+    if [[ ${#failed[@]} -gt 0 ]]; then
+        local _also=""
+        [[ ${#changed[@]} -gt 0 ]] && _also=" It WAS re-keyed in ${#changed[@]} other repo(s) — revert those, or re-run once the cause is fixed."
+        die "Renaming $pretty '$old' → '$new' could not rewrite project.yml in ${#failed[@]} member repo(s): ${failed[*]}. The machine-local index was NOT touched.${_also}"
+    fi
     # The index write is the SECOND of the two stores, and its failure is what v3
     # V3-01 caught: called bare, it printed `✓` over three EACCES writes and left
     # project.yml re-keyed against an unchanged index. Errexit cannot cover this —

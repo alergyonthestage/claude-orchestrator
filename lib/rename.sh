@@ -32,15 +32,40 @@
 # The rewrite is section-scoped: it starts at the "<section>:" top-level key and
 # stops at the next top-level key, so it never bleeds into an adjacent section or
 # a same-named key elsewhere. The value is compared as an exact string (never a
-# regex) so a name containing '.' or '-' cannot over-match. Returns 0 iff at least
-# one item changed (so callers can count), 1 otherwise; the file is only rewritten
-# on a change. Usage: _yaml_rename_list_ref <file> <section> <old> <new>
+# regex) so a name containing '.' or '-' cannot over-match. The file is only
+# rewritten on a change.
+#
+# EXIT CODES — three-valued, the S2b-P contract (00-plan.md §3b):
+#   0  rewritten — at least one item changed AND the change is durable on disk
+#   1  no change — the section holds no item named <old> (benign; callers skip)
+#   2  FAILED    — a rewrite was attempted and could not be persisted
+#
+# S2b: this primitive could not report failure, and its two failure modes lied in
+# OPPOSITE directions. `mv "$tmp" "$file"` was bare and followed by `return 0`, so a
+# failed replace reported the file as REWRITTEN — `repo rename` then counted the
+# member as re-keyed and `pack rename` printed it in the commit/push list. A failed
+# mktemp, or an awk that errored rather than finding nothing, returned 1 — which
+# every caller reads as the benign "nothing to rewrite" and skips in silence. Both
+# are invisible: bin/cco dispatches verbs as `cmd_foo "$@" || _cco_rc=$?`, and a `||`
+# context disables errexit for the whole call tree, so explicit propagation is the
+# only mechanism that works. See
+# docs/maintainers/engineering/analysis/false-success-class-audit.md §2.
+#
+# This is the project.yml half of `repo rename` that S1–S3 left open: S3's
+# pre-flight probes only the CWD unit's .cco, so a multi-repo fan-out with a
+# different unwritable member — or ENOSPC mid-write — still reached here.
+#
+# The primitive stays SILENT on failure (no warn): the fan-out callers below run
+# inside a process substitution, where `die` would exit only the subshell, so the
+# failure has to travel out as DATA and be rendered by the verb in the parent shell.
+# Usage: _yaml_rename_list_ref <file> <section> <old> <new>
 _yaml_rename_list_ref() {
     local file="$1" section="$2" old="$3" new="$4"
     [[ -f "$file" ]] || return 1
 
-    local tmp; tmp=$(mktemp "${file}.XXXXXX") || return 1
-    if awk -v section="$section" -v old="$old" -v new="$new" '
+    local tmp rc=0
+    tmp=$(mktemp "${file}.XXXXXX" 2>/dev/null) || return 2
+    awk -v section="$section" -v old="$old" -v new="$new" '
         BEGIN { changed = 0; hdr = "^" section ":" }
         # Top-level "<section>:" opens the target section.
         $0 ~ hdr { in_sec = 1; print; next }
@@ -64,12 +89,17 @@ _yaml_rename_list_ref() {
         }
         { print }
         END { exit changed ? 0 : 1 }
-    ' "$file" > "$tmp"; then
-        mv "$tmp" "$file"
-        return 0
-    fi
-    rm -f "$tmp"
-    return 1
+    ' "$file" > "$tmp" || rc=$?
+    # awk's END exits 0 (changed) or 1 (nothing matched) BY CONTRACT, so anything
+    # else — an awk error, or a failed write to $tmp — is a real failure and must
+    # not be folded into the benign "nothing to rewrite" arm.
+    case "$rc" in
+        0) ;;
+        1) rm -f "$tmp" 2>/dev/null || true; return 1 ;;
+        *) rm -f "$tmp" 2>/dev/null || true; return 2 ;;
+    esac
+    mv "$tmp" "$file" || { rm -f "$tmp" 2>/dev/null || true; return 2; }
+    return 0
 }
 
 # Read-only predicate: does <file> reference <name> as an item of list section
@@ -224,26 +254,36 @@ _rename_assert_index_writable() {
 # Rewrite <section>[].name <old>→<new> in EVERY owned+resolved member repo of
 # <project> (project-scoped, ADR-0051 D1 — no cross-project fan-out). project.yml
 # is replicated across a multi-repo project's members, so each owned copy is
-# rewritten (mirrors cmd_project_rename's member loop). Echoes each changed repo
-# path, one per line, so the caller can print the commit/push/sync reminder. The
+# rewritten (mirrors cmd_project_rename's member loop). The
 # member enumeration comes from _project_iter_members, whose column 2 is the PROBE
 # path (the container mount in operator mode — INV-F), so the rewrite reaches the
 # mounted member instead of a non-existent host path. The write itself is
 # de-elevated to ruid=claude (D-M4). Column 2 can be empty (unresolved member), so
 # peel by hand (_peel_tab), never `IFS=$'\t' read` which folds the empty middle field.
+#
+# Echoes TAB-TAGGED lines the caller consumes — the same shape its sibling
+# _rename_fanout_projectyml already uses:
+#   changed<TAB><repo-path>   this member's project.yml was rewritten
+#   failed<TAB><repo-path>    the rewrite was attempted and could NOT be persisted
+# S2b: the failure has to leave as DATA. This function is consumed through a process
+# substitution, so a `die` here would exit only the subshell and the verb would sail
+# on — the mistake S4 caught in cmd_list. The parent shell decides (cmd-repo.sh).
 # Usage: _rename_projectyml_current <project> <section> <old> <new>
 _rename_projectyml_current() {
     local project="$1" section="$2" old="$3" new="$4"
-    local _ln name path status yml
+    local _ln name path status yml wrc
     while IFS= read -r _ln; do
         [[ -z "$_ln" ]] && continue
         _peel_tab "$_ln" name path status
         case "$status" in synced|divergent) ;; *) continue ;; esac
         yml="$path/.cco/project.yml"
         [[ -f "$yml" ]] || continue
-        if _rename_yaml_write_owned "$yml" "$section" "$old" "$new"; then
-            printf '%s\n' "$path"
-        fi
+        wrc=0; _rename_yaml_write_owned "$yml" "$section" "$old" "$new" || wrc=$?
+        case "$wrc" in
+            0) printf 'changed\t%s\n' "$path" ;;
+            1) ;;                                    # nothing to rewrite here
+            *) printf 'failed\t%s\n' "$path" ;;
+        esac
     done < <(_project_iter_members "$project")
 }
 
@@ -255,11 +295,12 @@ _rename_projectyml_current() {
 # would drift under cco sync's clobber-guard, so it is surfaced for the strict
 # guard. Echoes tab-tagged lines the caller consumes:
 #   changed<TAB><repo-path>              a rewritten project.yml
+#   failed<TAB><repo-path>               a rewrite attempted and NOT persisted (S2b)
 #   unresolved<TAB><project><TAB><member>  an affected project's unresolved member
 # Usage: _rename_fanout_projectyml <section> <old> <new>
 _rename_fanout_projectyml() {
     local section="$1" old="$2" new="$3"
-    local proj unit yml name path status _mln
+    local proj unit yml name path status _mln _frc
     while IFS=$'\t' read -r proj unit yml; do
         _yaml_list_has_ref "$yml" "$section" "$old" || continue
         # _project_iter_members' column 2 (path) is EMPTY for an unresolved member, so
@@ -273,9 +314,13 @@ _rename_fanout_projectyml() {
             case "$status" in
                 synced|divergent)
                     [[ -f "$path/.cco/project.yml" ]] || continue
-                    if _yaml_rename_list_ref "$path/.cco/project.yml" "$section" "$old" "$new"; then
-                        printf 'changed\t%s\n' "$path"
-                    fi ;;
+                    _frc=0
+                    _yaml_rename_list_ref "$path/.cco/project.yml" "$section" "$old" "$new" || _frc=$?
+                    case "$_frc" in
+                        0) printf 'changed\t%s\n' "$path" ;;
+                        1) ;;                        # this member does not reference <old>
+                        *) printf 'failed\t%s\n' "$path" ;;
+                    esac ;;
                 unresolved)
                     printf 'unresolved\t%s\t%s\n' "$proj" "$name" ;;
             esac

@@ -430,3 +430,57 @@ test_repo_rename_operator_unwritable_index_fails_loud() {
     assert_projectyml_member "$mnt/.cco/project.yml" repos api   absent || return 1
     return 0
 }
+
+# ── S2b: the project.yml half of the fan-out (the S1–S3 residual) ────────────
+# S1–S3 closed the INDEX half of `repo rename`. The project.yml half stayed exposed
+# through _yaml_rename_list_ref, which could not report failure: a failed `mv`
+# returned 0, the member was counted as re-keyed, and the verb went on to write the
+# index — leaving the two stores disagreeing with a ✓ on screen.
+#
+# S3's pre-flight probes the CWD unit's .cco ONLY, so the still-reachable case is a
+# DIFFERENT member being unwritable (or ENOSPC mid-fan-out). That is exactly what
+# this fixture builds: cwd = backend (writable, so the pre-flight passes), web
+# unwritable. ⚠ FAILS on pre-fix: rc=0, ✓ printed, index re-keyed to 'api'.
+test_repo_rename_unwritable_member_projectyml_fails_loud() {
+    [[ "$(id -u)" -eq 0 ]] && return 0   # root ignores the mode bits
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local a="$tmp/repos/backend" b="$tmp/repos/web" y
+    mkdir -p "$a/.cco" "$b/.cco"
+    for y in "$a" "$b"; do
+        cat > "$y/.cco/project.yml" <<'YAML'
+name: shop
+description: "t"
+repos:
+  - name: backend
+  - name: web
+YAML
+    done
+    seed_index_path backend "$a" shop
+    seed_index_path web     "$b" shop
+    index_set_project_repos shop backend web
+
+    chmod 555 "$b/.cco"
+    local rc=0
+    _rr_cco_in "$a" repo rename backend api -y || rc=$?
+    chmod 755 "$b/.cco"
+
+    # (a) non-zero — the fan-out could not complete
+    [[ "$rc" -ne 0 ]] \
+        || { fail "an unpersistable member rewrite must fail loud; got rc=0: $CCO_OUTPUT"; return 1; }
+    # (b) no success tick over a write that did not land
+    [[ "$CCO_OUTPUT" != *"✓ Renamed"* ]] \
+        || { fail "no success tick over a failed project.yml write: $CCO_OUTPUT"; return 1; }
+    # (c) the message must name WHICH member could not be rewritten — a fan-out
+    #     failure the user cannot localise is only half a fix.
+    [[ "$CCO_OUTPUT" == *"$b"* ]] \
+        || { fail "the failure must name the member repo that could not be rewritten: $CCO_OUTPUT"; return 1; }
+    # (d) the index is the SECOND store and the die lands before it, so the two
+    #     stores' disagreement stays one-directional and re-running is safe.
+    [[ "$(_rr_get_path shop backend)" == "$a" ]] \
+        || { fail "the index must be untouched: 'backend' lost its binding"; return 1; }
+    [[ -z "$(_rr_get_path shop api)" ]] \
+        || { fail "the index must be untouched: 'api' was bound despite the failure"; return 1; }
+    return 0
+}

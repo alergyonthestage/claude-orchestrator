@@ -558,28 +558,47 @@ EOF
     # Update references in packs and projects (only in llms: sections). The shared
     # rewriter (lib/rename.sh) handles both the scalar (`- name`) and mapping
     # (`- name: name`) llms forms, section-scoped (ADR-0050 D6).
+    # S2b: _yaml_rename_list_ref is three-valued (0 rewritten / 1 nothing to rewrite /
+    # 2 attempted and NOT persisted). It used to be read as a bare boolean, so a
+    # reference that could not be rewritten was counted as "this file doesn't
+    # reference it" — and the verb reported a clean rename over a store now
+    # inconsistent with a pack.yml or project.yml still naming <old>.
     local updated_refs=0
+    local -a failed_refs=()
+    local _rrc
     # Packs: flat store under PACKS_DIR.
     if [[ -d "$PACKS_DIR" ]]; then
         local pdir
         for pdir in "$PACKS_DIR"/*/; do
             [[ ! -d "$pdir" ]] && continue
             [[ ! -f "${pdir}pack.yml" ]] && continue
-            if _yaml_rename_list_ref "${pdir}pack.yml" llms "$old_name" "$new_name"; then
-                ((updated_refs++))
-            fi
+            _rrc=0; _yaml_rename_list_ref "${pdir}pack.yml" llms "$old_name" "$new_name" || _rrc=$?
+            case "$_rrc" in
+                0) ((updated_refs++)) ;;
+                1) ;;
+                *) failed_refs+=("${pdir}pack.yml") ;;
+            esac
         done
     fi
     # Projects: decentralized, enumerated via the STATE index (P5).
     local pyml
     while IFS=$'\t' read -r _ _ pyml; do
-        if _yaml_rename_list_ref "$pyml" llms "$old_name" "$new_name"; then
-            ((updated_refs++))
-        fi
+        _rrc=0; _yaml_rename_list_ref "$pyml" llms "$old_name" "$new_name" || _rrc=$?
+        case "$_rrc" in
+            0) ((updated_refs++)) ;;
+            1) ;;
+            *) failed_refs+=("$pyml") ;;
+        esac
     done < <(_project_foreach)
 
     ok "Renamed llms '$old_name' → '$new_name'"
     [[ $updated_refs -gt 0 ]] && ok "Updated $updated_refs YAML reference(s)"
+    # As in `pack rename`: the store re-key already committed, so report the rename
+    # as real and name what still points at the old entry (INV-S3b → exit 1).
+    if [[ ${#failed_refs[@]} -gt 0 ]]; then
+        die "…but the llms reference could not be rewritten in ${#failed_refs[@]} file(s): ${failed_refs[*]}. They still reference '$old_name' — fix them by hand."
+    fi
+    return 0
 }
 
 # ── remove ───────────────────────────────────────────────────────────

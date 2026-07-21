@@ -132,3 +132,44 @@ test_rename_validate_rejects_reserved() {
     _rn _rename_validate template tutorial  && fail "reserved 'tutorial' accepted" || true
     _rn _rename_validate remote config-editor && fail "reserved 'config-editor' accepted" || true
 }
+
+# ── S2b: _yaml_rename_list_ref's three-valued contract ──────────────
+# The primitive could not report failure, and its two failure modes lied in
+# OPPOSITE directions: a failed `mv` returned 0, so the file was reported as
+# REWRITTEN and the caller counted the member as re-keyed; a failed mktemp (or an
+# awk that errored rather than finding nothing) returned 1, which every caller
+# reads as the benign "nothing to rewrite" and skips in silence. Neither surfaces:
+# bin/cco dispatches verbs as `cmd_foo "$@" || _cco_rc=$?`, and a `||` context
+# disables errexit for the whole call tree. Contract now: 0 rewritten (durably) /
+# 1 no change / 2 attempted and NOT persisted. Same shape as S2b-P's token
+# primitive — absence and failure must never share a code.
+
+# ⚠ FAILS on pre-fix: rc=1, indistinguishable from "this file has no such ref".
+test_yaml_rename_unpersistable_returns_2() {
+    [[ "$(id -u)" -eq 0 ]] && return 0   # root ignores the mode bits
+    local d; d=$(mktemp -d); trap "chmod -R u+rwX '$d' 2>/dev/null; rm -rf '$d'" EXIT
+    local f="$d/project.yml"; _rn_fixture > "$f"
+    local before; before=$(cat "$f")
+    chmod 555 "$d"                       # no sibling temp can be created here
+    local rc=0
+    _rn _yaml_rename_list_ref "$f" repos backend api || rc=$?
+    chmod 755 "$d"
+    [[ "$rc" -eq 2 ]] \
+        || { fail "an unpersistable rewrite must return 2 — not 0 ('rewritten') and not 1 ('no change'); got rc=$rc"; return 1; }
+    [[ "$(cat "$f")" == "$before" ]] \
+        || { fail "a failed rewrite must leave the file byte-identical"; return 1; }
+    return 0
+}
+
+# The discriminator that makes the contract usable: "this file does not reference
+# <old>" must STAY 1. Folding it into 2 would make every unrelated member repo in a
+# fan-out look like a failed write — trading a silent failure for a loud false one.
+test_yaml_rename_absent_ref_stays_1_not_2() {
+    local d; d=$(mktemp -d); trap "rm -rf '$d'" EXIT
+    local f="$d/project.yml"; _rn_fixture > "$f"
+    local rc=0
+    _rn _yaml_rename_list_ref "$f" repos nonexistent whatever || rc=$?
+    [[ "$rc" -eq 1 ]] \
+        || { fail "a reference that is simply absent must return 1 (benign), got rc=$rc"; return 1; }
+    return 0
+}

@@ -621,12 +621,24 @@ EOF
 
     # ── Cross-project packs[] fan-out (delegate to git, P17) ────────────
     local tag val
-    local -a changed=()
+    local -a changed=() failed=()
     while IFS=$'\t' read -r tag val _; do
-        [[ "$tag" == changed ]] && changed+=("$val")
+        case "$tag" in
+            changed) changed+=("$val") ;;
+            failed)  failed+=("$val") ;;
+        esac
     done < <(_rename_fanout_projectyml packs "$old" "$new")
 
     ok "Renamed pack '$old' → '$new'."
+    # S2b: a packs[] rewrite that could not be persisted. Unlike `repo rename` this
+    # cannot stop before the store — the pack dir move and the sidecar/tags cascade
+    # already committed above — so the honest report is: the rename HAPPENED, and
+    # these repos still point at the old name. Exit 1 (a write that started and
+    # failed — INV-S3b), after the ok, so the user is not told to revert a rename
+    # that is real.
+    if [[ ${#failed[@]} -gt 0 ]]; then
+        die "…but packs[] could not be rewritten in ${#failed[@]} repo(s): ${failed[*]}. They still reference '$old' — fix them by hand, or re-run this rename in reverse once the cause is resolved."
+    fi
     if [[ ${#changed[@]} -gt 0 ]]; then
         warn "Commit + push the updated .cco/project.yml in each changed repo, then run 'cco sync':"
         printf '%s\n' "${changed[@]}" | sort -u | while IFS= read -r p; do info "  $p"; done
