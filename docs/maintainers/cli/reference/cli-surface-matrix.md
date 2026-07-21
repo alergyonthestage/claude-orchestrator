@@ -129,7 +129,7 @@ wholesale in-container (exit 2, R6) — every row below is unavailable at `none`
 |---|---|---|---|
 | `tag add\|remove` | write:global (DATA registry) | by target axis | gated by the **tagged resource's axis** (B5): project(current)→`Pc` (edit-project), pack/template→`G` (edit-global), project(other)→`Po` (edit-all). Ownership predicate is config-editor-aware (`_env_is_current_project`) ([A1 §4.1](../../configuration/agent-cco-access/e2e-review/analysis/A1-command-scope-matrix.md)) |
 | `config save` | write:global (`~/.cco`) | edit-global | clear "needs edit-global" msg on ro mount at edit-project (CLI-surface F3) |
-| `remote add\|remove` | write:global (DATA registry) | edit-global | `remote add --token` refuses the **token half** in-container (secret stays host-side) |
+| `remote add` | write:global (DATA registry) | edit-global | DATA-only, so it stays in-container. `remote add --token` refuses the **token half** (secret stays host-side) |
 | `pack create\|update\|remove\|install\|import\|internalize\|rename` | write:global | edit-global | network fetches (`install\|update\|import`) are writes, allowed at edit level (D4 carve-out) |
 | `template create\|update\|remove\|install\|import\|internalize\|rename` | write:global | edit-global | same carve-out |
 | `llms create\|update\|remove\|install\|import\|internalize\|rename` | write:global | edit-global | same carve-out |
@@ -146,12 +146,23 @@ wholesale in-container (exit 2, R6) — every row below is unavailable at `none`
 | `config validate` | ✅ | ❌ host-only (sweeps machine-local STATE; leaks host paths in-container) | exit 2 |
 | `config push`, `config pull` | ✅ | ❌ host-only (network + credentials) | exit 2 |
 | `remote set-token`, `remote remove-token` | ✅ | ❌ host-only (secrets off the container) | exit 2 |
+| `remote remove`, `remote rename` | ✅ | ❌ host-only (**D-V3-1**) | exit 2 |
 | `pack\|template publish\|export`, `project export\|import\|add` | ✅ | ❌ host-only | exit 2 |
 | `project rename` | ✅ | ❌ host-only (re-keys machine-local state) | exit 2 |
 | `pack\|template\|project list` (old subcommand) | (redirect) | ❌ → "use `cco list <kind>`" (ADR-0029) | exit 2 |
 | `share`, `manifest` | ❌ removed | ❌ removed | exit 2 |
 | unknown top-level verb | error | error ("Run `cco help`") — **not** a host-only misfire | exit 1 |
 | `<cmd> --help` / `-h` | ✅ | ✅ **always** (informational, even for host-only verbs) | — |
+
+> **D-V3-1 (e2e v3 cycle-1.1, 2026-07-21)** — why `remote remove|rename` moved here from §2.3.
+> They cascade into the **0600 token store**, which deliberately never crosses into a session (it
+> is outside the `state/cco/shared/` allow-list). The decisive argument is not confidentiality but
+> honesty: with the token file unmounted, `remote_get_token` cannot distinguish *"no token"* from
+> *"token invisible"*, and both ops are written as conditional no-ops on exactly that test — so
+> in-container they would have **succeeded silently** while `remote-rekey` orphaned the token and
+> stripped the renamed remote's auth, with no diagnostic. `remote add` stays available: it writes
+> only the url registry (DATA), never the token. Design:
+> [`fix-design-v3/00-plan.md`](../../configuration/agent-cco-access/e2e-review/fix-design-v3/00-plan.md) §6.
 
 ---
 

@@ -288,6 +288,62 @@ a managed rule that still prescribes a verb D-V3-1 refuses.
 Resume pointer: memory [[e2e-v3-cycle11]] + `fix-design-v3/RESUME-HANDOFF-s9.md` (`-s8` and earlier
 are retired).
 
+#### B2-next — the three sessions between cycle-1.1 and release (planned 2026-07-21)
+
+Everything above is *implemented*; nothing is *accepted*. The route to `develop → main` is three
+scheduled pieces of work, in order. The runbook and session briefs for the first two live in one
+document: **[`e2e-review/handoff-v3.1.md`](configuration/agent-cco-access/e2e-review/handoff-v3.1.md)**
+— §10 is the host runbook (ordered, each step with its motivation, exact command, and how to verify),
+§5/§6 the session matrix.
+
+**1 — Host runbook + e2e review v3.1 (reduced).** Four sessions instead of v3's five: RC-4's A/B pair
+is retired (settled, and on the do-not-re-litigate list) and V5b folds into W2 as a sub-run.
+
+| # | Session | Validates |
+|---|---|---|
+| **W1** | `claude-orchestrator` @ `edit-project` | S1 + S2 + S2b + S3 + V3-03 + V3-P — the R1 root, from the verb that exposed it |
+| **W2** | `config-editor --all` (+ bare-global sub-run) | S1 store ops + S7 announcements + S5 refusals + V5b |
+| **W3** | `config-editor --project X` @ granular `current=ro` | **D-M11** — ⚠ the only probe that fails **open** |
+| **W4** | a project with `extra_mounts` @ `read-project` | S4 + S6 + V1-F2 + V4-F-V4-03 — the read vantage |
+| **§7** | E6B-04 scratch repro | pack-rename fan-out atomicity — **never executed in any round** |
+
+W4 earns its place in a reduced matrix because it is the only vantage from which four cycle-1.1
+fixes are observable at all — **V4-F-V4-03 specifically needs a session where projects ARE hidden**,
+which `edit-all` can never produce. ⚠ Two ordering constraints are load-bearing: the three
+`.claude` patches go in **before** `cco build` (else the image bakes a rule that prescribes a verb
+D-V3-1 refuses), and the **provenance value check runs before any session's results count** (v2's
+cycle-0 built from the wrong branch and the whole round was discarded).
+
+**2 — CLI-surface documentation audit** (own session, after v3.1 is ACCEPTED, before merge). Verify
+every verb declares correctly **which access levels it runs at** and **host vs container**. This
+cycle moved that surface twice — `remote remove|rename` became host-only, and config-editor's
+`extra_mounts` contract was ratified — and the last full audit
+([2026-07-02](cli/reviews/2026-07-02-cli-surface-awareness-review.md)) predates both. Subjects:
+[`cli/reference/cli-surface-matrix.md`](cli/reference/cli-surface-matrix.md) (the canonical matrix —
+check it first: if a verb's row is wrong there, every downstream doc inherits it),
+[`docs/users/reference/cli.md`](../users/reference/cli.md), the user guides,
+[`e2e-review/analysis/A1-command-scope-matrix.md`](configuration/agent-cco-access/e2e-review/analysis/A1-command-scope-matrix.md),
+and [`cli/design/design-cli-environment-awareness.md`](cli/design/design-cli-environment-awareness.md).
+⚠ Ordered **before** the merge deliberately: a
+release whose CLI reference misstates where a verb runs ships the same defect class this cycle was
+about — a message that reads correct and strands the reader.
+
+**3 — Merge `develop → main` + release**, stating the verified platform (below).
+
+**⚠ D-M6 re-scoped — the Linux write-path gate (decided 2026-07-21).** It was classified a hard
+blocking gate. Grounding it in the code changes the classification: `cco-svc` is **uid 900**
+(`Dockerfile:140`) and the internal-store binds have **host** sources
+(`cmd-start.sh:1716,1727,1729`), with the entrypoint deliberately **not** chowning the bind children
+(*"their ownership belongs to the host"*). So on native Linux the children keep the host user's uid
+and `cco-svc` would get `EACCES` on its own store — while on macOS `fakeowner` makes ownership moot,
+which is **why it works there and is verified there**. The question is therefore not *"is the code
+correct"* but *"which platform can we claim"*. Two consequences: (a) the gate becomes
+**non-blocking for a macOS-scoped release**, recorded explicitly rather than allowed to lapse; and
+(b) it **is** testable on a Mac after all — Docker **named volumes live inside the Linux VM on a
+real filesystem with real DAC**, so a two-command probe (`handoff-v3.1.md` §11) answers it directly.
+⚠ That probe must run from the **host** terminal: attempted from a session it is refused twice by
+`cco-docker-proxy` (container name, then mount path) — the proxy working as designed.
+
 #### F — opinionated-config extraction + `cco update` responsibility refactor (post-C, structural)
 
 Make the cco **core agnostic** of opinionated config: keep `managed/` baked in, move the opinionated
