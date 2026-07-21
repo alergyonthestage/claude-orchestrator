@@ -1,5 +1,29 @@
 # Resume Handoff — cycle-1.1, S9 (the last stage)
 
+> ## ✅ CONSUMED 2026-07-21 — S9 landed (`fcfe058` + `55dee32`). Cycle-1.1 implementation is CLOSED.
+>
+> **There is no S10 and no successor handoff**, because nothing that remains can be done from a
+> session. Read the sections below for the cycle's history and its do-not-re-litigate list — but for
+> *what to do next*, go to:
+>
+> - **[`00-plan.md` §6.-1](00-plan.md)** — the **three** host-only `.claude`-payload patches, with
+>   verbatim replacement text. §4 below predicted one; the S9 sweep found two more.
+>   ⚠ **Apply them BEFORE `cco build`**, or the rebuilt image bakes a managed rule that *prescribes*
+>   a verb D-V3-1 refuses.
+> - **[`00-plan.md` §10](00-plan.md)** and §5 below — the out-of-session gates. ⚠ Gate 7 (the
+>   provenance **value**) runs **first**: it is what makes every other result attributable.
+> - **`docs/maintainers/roadmap.md` → B2** — the same list in release terms, plus the merge sequence.
+>
+> S9's own outcome is recorded in `00-plan.md` §11. The one lesson worth carrying: **a doc sweep's
+> file list is a lower bound.** §11 named five living docs; three needed nothing (already written by
+> S5/S7/S8 — verified before editing, not assumed) and three surfaces it did *not* name did. The
+> sharpest was the second managed-rule spot: §6.-1 knew the rule under-reported the host-only set,
+> but the same file's "editing config" bullet *prescribes* `cco remote remove` — so the rule injected
+> into every session recommends the refused verb. That is S8's false-remedy lesson one document out,
+> and it is why patches 1 and 2 must land as a single edit.
+>
+> Suite at close: **1463 passed / 9 failed**, baseline names identical. Nothing pushed.
+
 > **Written 2026-07-21** for a fresh session (post-`/clear`). Self-contained: read this, check the
 > prerequisites, review what landed, then continue.
 > Supersedes [`RESUME-HANDOFF-s8.md`](RESUME-HANDOFF-s8.md) (whose §3 = S8 is now history), and with
