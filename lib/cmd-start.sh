@@ -579,11 +579,16 @@ _nested_config_modes() {
 # shape, worded to the D-M2 "not mounted in this session" vocabulary
 # (00-overview.md §5.1) so the cycle-2 RC-5 sweep — and RC-2's sibling
 # _env_note_unmounted — need not rewrite it (kept identical by open-issue note).
-# <reason> ∈ unresolved | stale | homonym | reserved; <target> is the owning
-# --project name (for the host-side remedy), optional for the collision reasons.
+# <reason> ∈ unresolved | stale | homonym | reserved | noconfig | reference;
+# <target> is the owning --project name (for the host-side remedy), empty for the
+# reasons that HAVE no remedy (the collisions, and `reference` — a decision, not a
+# failure). <kind> is the dropped thing's noun, default "repo": S7 announces two
+# drops that are not repos — a whole PROJECT (the --all branch) and a target's
+# EXTRA MOUNTS. Only the `warn` here may spell the D-M2 vocabulary (INV-ENV budget
+# 2, with `unresolved`'s detail); a new arm must not add a third spelling.
 # Shares cmd_start scope; writes stderr only.
 _ce_skip_note() {
-    local rn="$1" reason="$2" target="${3:-}"
+    local rn="$1" reason="$2" target="${3:-}" kind="${4:-repo}"
     local detail remedy=""
     case "$reason" in
         unresolved) detail="it is not resolved on this machine"
@@ -592,9 +597,12 @@ _ce_skip_note() {
                     remedy=" Run 'cco resolve${target:+ $target}' on your host, then restart the session." ;;
         homonym)    detail="another target already binds the name '$rn' to a different path" ;;
         reserved)   detail="the name collides with a built-in config mount (cco-config, cco-docs, <name>-config)" ;;
+        noconfig)   detail="it has no <repo>/.cco to edit"
+                    remedy=" Run 'cco init' in that repo on your host, then restart the session." ;;
+        reference)  detail="it is reference material, not an authoring surface" ;;
         *)          detail="$reason" ;;
     esac
-    warn "config-editor: repo '$rn' is not mounted in this session — ${detail}.${remedy}"
+    warn "config-editor: ${kind} '$rn' is not mounted in this session — ${detail}.${remedy}"
 }
 
 # Add a resolved repo to the shared _ce_repos set as "name<TAB>abs_path"
@@ -638,6 +646,42 @@ _ce_collect_target_repos() {
         [[ "$_resolved" == *$'\n'"${_dn}"$'\n'* ]] && continue
         _ce_skip_note "$_dn" unresolved "$_tname"
     done < <(yml_get_repo_coords "$_tyml" 2>/dev/null)
+    return 0
+}
+
+# Return 0 iff any repo the index records for <project> is an existing directory.
+# The discriminator behind V5-05's two remedies: `cco init` only makes sense when
+# there IS a repo dir to init, otherwise the honest answer is `cco resolve`.
+# INV-F: an index entry is a HOST path, which is the wrong thing to existence-test
+# anywhere but the host — so the probe goes through _cco_member_probe_path, the
+# single source for "what is testable HERE" (identity on the host, the container
+# mount under the operator shim). Usage: <project>
+_ce_project_has_member_dir() {
+    local proj="$1" r p
+    for r in $(_index_get_project_repos "$proj" 2>/dev/null); do
+        p=$(_cco_member_probe_path "$r" "$(_index_get_path "$proj" "$r" 2>/dev/null)")
+        [[ -n "$p" && -d "$p" ]] && return 0
+    done
+    return 1
+}
+
+# S7 / V4-F-V4-01 — config-editor NEVER mounts a target's extra_mounts, and says so.
+# Decision (b), ratified 2026-07-21 (03-config-editor-repos.md §3.9): the built-in
+# exists to author CONFIG; a target's extra_mounts are reference material for a
+# working session, not authoring surface, so mounting them would widen the built-in's
+# blast radius for no authoring gain. The decision is only honest if it is ANNOUNCED —
+# `cco path list` prints those bindings as live host paths, so silence reads as
+# "reachable" (that is exactly what V4-F-V4-01 reported). Announce every DECLARED
+# mount, resolved or not: resolution is irrelevant here, none of them is mounted.
+# Deliberately NOT called in --all mode, which mounts no member surfaces at all by
+# design (same reason its repos are not announced one by one). Shares cmd_start scope.
+# Usage: _ce_announce_target_extra_mounts <target-name> <target-yml>
+_ce_announce_target_extra_mounts() {
+    local _tyml="$2" _mn
+    while IFS=$'\t' read -r _mn _; do
+        [[ -z "$_mn" ]] && continue
+        _ce_skip_note "$_mn" reference "" "extra mount"
+    done < <(yml_get_mount_coords "$_tyml" 2>/dev/null)
     return 0
 }
 
@@ -770,20 +814,46 @@ _start_collect_config_editor_targets() {
                 || _ce_targets+="${t}"$'\t'"${path}/.cco"$'\n'
             # That project's repos (repo-aware authoring) — resolved + announced.
             _ce_collect_target_repos "$t" "$path/.cco/project.yml"
+            _ce_announce_target_extra_mounts "$t" "$path/.cco/project.yml"
         done
     elif [[ "$config_editor_mode" == "all" ]]; then
         # ALL (--all / --cco-access edit-all): every resolvable project's .cco, no repos.
+        local _ce_seen=$'\n'
         while IFS=$'\t' read -r name path _; do
             [[ -z "$name" ]] && continue
-            [[ -d "$path/.cco" ]] || continue
+            _ce_seen+="${name}"$'\n'
+            # Upstream-implied backstop: _project_foreach only yields a project whose
+            # <unit>/.cco/project.yml is a FILE, so this -d can no longer be false.
+            # Kept (announcing, never a bare `continue`) so a future relaxation of that
+            # contract surfaces here instead of silently shrinking the target set.
+            [[ -d "$path/.cco" ]] || { _ce_skip_note "$name" noconfig "$name" project; continue; }
             _ce_targets+="${name}"$'\t'"${path}/.cco"$'\n'
         done < <(_project_foreach)
+        # V5-05 — the REAL drop site. `--all` promises "every project"; _project_foreach
+        # delivers only the RESOLVABLE ones, conscious-skipping the rest silently (an
+        # unresolvable unit dir, or one carrying no project.yml). V5 watched a set of 8
+        # become 7 with no announcement on any surface. _project_foreach is shared by
+        # many verbs and must NOT learn config-editor's vocabulary, so — exactly as
+        # _ce_collect_target_repos does for a target's repos — the declared-vs-effective
+        # diff is computed HERE and every missing project is announced (INV-B).
+        while IFS='=' read -r name _; do
+            [[ -z "$name" || "$name" == "_template" ]] && continue
+            [[ "$_ce_seen" == *$'\n'"${name}"$'\n'* ]] && continue
+            # Same reality, two remedies: some member dir is on disk but none carries a
+            # .cco (→ cco init there), or nothing is on disk at all (→ cco resolve).
+            if _ce_project_has_member_dir "$name"; then
+                _ce_skip_note "$name" noconfig "$name" project
+            else
+                _ce_skip_note "$name" unresolved "$name" project
+            fi
+        done < <(_index_list_projects)
     elif [[ "$config_editor_mode" == "project" && -n "$config_editor_cwd_dir" ]]; then
         # PROJECT (bare inside a project): the cwd project's .cco + its repos.
         name=$(yml_get "$config_editor_cwd_dir/.cco/project.yml" name 2>/dev/null)
         [[ -n "$name" && -d "$config_editor_cwd_dir/.cco" ]] \
             && _ce_targets+="${name}"$'\t'"${config_editor_cwd_dir}/.cco"$'\n'
         _ce_collect_target_repos "$name" "$config_editor_cwd_dir/.cco/project.yml"
+        _ce_announce_target_extra_mounts "$name" "$config_editor_cwd_dir/.cco/project.yml"
     fi
     # else: mode=global (bare outside any project) → no project targets, ~/.cco only.
     # --repo <name>: add a single resolvable repo (fine-grained reference mount).

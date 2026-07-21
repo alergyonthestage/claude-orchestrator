@@ -498,6 +498,54 @@ it. The *no-binding* variant needs the declared-vs-effective diff for the target
 `_declared_unresolved_extra_mounts` already performs for mounts. The *stale* and *collision*
 variants need no diff: the collector already holds both the name and the reason.
 
+#### 3.9.1 Cycle-1.1 / S7 — two more drop classes (added 2026-07-21)
+
+The table above enumerated the drops that reach `_ce_add_repo`. The v3 run found two more that
+never do, so §3.9's own rule — *announce, never drop silently* — did not yet cover them.
+
+| Drop | Where | Announcement |
+|---|---|---|
+| An index-known **project** that `--all` cannot mount | `_start_collect_config_editor_targets`, `--all` branch | `_ce_skip_note <name> noconfig\|unresolved <name> project` |
+| A target's **extra_mounts**, which config-editor never mounts | `_ce_announce_target_extra_mounts`, project modes | `_ce_skip_note <name> reference "" "extra mount"` |
+
+`_ce_skip_note` gained a 4th positional, `<kind>` (default `repo`) — neither of these drops is a
+repo — plus the `noconfig` and `reference` reason arms. The arms carry the *detail*; the single
+`warn` still carries the *state*, so INV-ENV's budget of 2 for `cmd-start.sh` is unchanged.
+
+**V5-05's prescribed fix site was dead code.** `00-plan.md` §8 item 1 pointed at the `--all`
+branch's bare `[[ -d "$path/.cco" ]] || continue`. That test can never be false: `_project_foreach`
+yields a project only when `<unit>/.cco/project.yml` is a **file**, and `_resolve_unit_dir_for_project`
+asserts the same before it. The set of 8 became 7 one function upstream, in `_project_foreach`'s
+own conscious-skips — which are correct there and must stay silent, because that iterator is shared
+by many verbs and must not learn config-editor's vocabulary. So the announcement is built the way
+`_ce_collect_target_repos` already builds it for repos: the **declared-vs-effective diff**
+(`_index_list_projects` minus what `_project_foreach` yielded) computed in the config-editor
+collector. The original `-d` test is kept as an announcing backstop, not a bare `continue`, so a
+future relaxation of that contract surfaces instead of silently shrinking the target set.
+
+```mermaid
+flowchart TD
+  D["project in _index_list_projects<br/>but NOT yielded by _project_foreach"]
+  D --> Q{"any member dir<br/>on disk?"}
+  Q -- yes --> N["noconfig → 'cco init' in that repo"]
+  Q -- no --> U["unresolved → 'cco resolve &lt;name&gt;'"]
+```
+
+Two realities, two remedies: prescribing `cco resolve` for a repo that is present but has no
+`.cco` would be the same class of false-remedy INV-ENV exists to prevent. The probe runs through
+`_cco_member_probe_path` (INV-F): an index entry is a **host** path, and only that helper knows
+what is existence-testable in the current context.
+
+**Decision (b) — config-editor never mounts a target's `extra_mounts`** (ratified with the
+maintainer 2026-07-21, closing V4-F-V4-01). config-editor exists to author *config*; a target's
+extra_mounts are reference material for a working session, not authoring surface, so mounting them
+would widen the built-in's blast radius for no authoring gain. The alternative (a) — mount them
+with the repos, RC-6's shape — was rejected on exactly that ground. What was **not** acceptable is
+the state v3 found: neither delivered nor decided, while `cco path list` prints those bindings as
+live host paths and so implies they are reachable. The decision is therefore announced, not merely
+implemented — silence is what made it a finding. Not announced in `--all` mode, which mounts no
+member surfaces at all by design (the same reason its repos are not announced one by one).
+
 ---
 
 ## 4. Why this shape, and not the alternatives

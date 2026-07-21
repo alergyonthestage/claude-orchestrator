@@ -692,3 +692,87 @@ test_config_editor_two_targets_homonym_repo() {
     assert_output_contains "not mounted in this session" || return 1
     return 0
 }
+
+# T11 (V5-05). --all enumerates the index; a project the index KNOWS but whose
+# .cco is gone must be ANNOUNCED, never silently missing from the target set.
+# V5 watched one project vanish from a set of 8 with no announcement anywhere.
+test_config_editor_all_announces_project_without_cco() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "proj-a" "$(minimal_project_yml proj-a)"
+    create_project "$tmpdir" "proj-b" "$(minimal_project_yml proj-b)"
+    # proj-b stays in the index, but loses the .cco that made it editable.
+    rm -rf "$tmpdir/repos/proj-b/.cco"
+    run_cco start config-editor --all --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_contains "$compose" ":/workspace/proj-a-config" || return 1
+    assert_file_not_contains "$compose" ":/workspace/proj-b-config" || return 1
+    assert_output_contains "not mounted in this session" || return 1
+    assert_output_contains "proj-b" || return 1
+    # The repo dir IS on disk — only its .cco is gone — so the honest remedy is
+    # 'cco init' there, NOT 'cco resolve'. Asserting the remedy is what keeps the
+    # two arms discriminated (a single collapsed arm would pass the line above).
+    assert_output_contains "cco init" || return 1
+    return 0
+}
+
+# T12 (V5-05, the other arm). Nothing of the project is on disk: the announcement
+# must send the user to 'cco resolve', not 'cco init' — there is no repo to init.
+test_config_editor_all_announces_unresolved_project() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "proj-a" "$(minimal_project_yml proj-a)"
+    create_project "$tmpdir" "proj-b" "$(minimal_project_yml proj-b)"
+    rm -rf "$tmpdir/repos/proj-b"           # index still knows it; disk does not
+    run_cco start config-editor --all --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_not_contains "$compose" ":/workspace/proj-b-config" || return 1
+    assert_output_contains "not mounted in this session" || return 1
+    assert_output_contains "proj-b" || return 1
+    assert_output_contains "cco resolve" || return 1
+    return 0
+}
+
+# ── S7 / V4-F-V4-01: a target's extra_mounts — decision (b) ───────────
+#
+# Ratified 2026-07-21 (03-config-editor-repos.md §3.9): config-editor authors
+# CONFIG and never mounts a target's extra_mounts. Both halves are load-bearing —
+# the mount must be absent (the decision) AND announced (the honesty). A test that
+# only asserted absence would pass on today's undecided silence.
+
+# T13. The declared extra_mount is announced as not mounted, with its own noun.
+test_config_editor_announces_target_extra_mounts() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "myproj" \
+        "$(printf 'name: myproj\ndescription: "t"\nextra_mounts:\n  - name: shared-assets\n')"
+    local assets="$tmpdir/assets"; mkdir -p "$assets"
+    seed_index_path shared-assets "$assets" myproj   # resolved — still not mounted
+    run_cco start config-editor --project myproj --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_output_contains "not mounted in this session" || return 1
+    assert_output_contains "shared-assets" || return 1
+    assert_output_contains "extra mount" || return 1
+    # The decision half: no binding for it reaches the compose.
+    assert_file_not_contains "$compose" "$assets:" || return 1
+    assert_file_not_contains "$compose" "/workspace/shared-assets" || return 1
+    return 0
+}
+
+# T14. Announced in cwd-project mode too — the same collector path a bare
+# `cco start config-editor` inside a project takes.
+test_config_editor_cwd_mode_announces_extra_mounts() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "myproj" \
+        "$(printf 'name: myproj\ndescription: "t"\nextra_mounts:\n  - name: shared-assets\n')"
+    cd "$tmpdir/repos/myproj"
+    run_cco start config-editor --dry-run --dump
+    assert_output_contains "not mounted in this session" || return 1
+    assert_output_contains "shared-assets" || return 1
+    return 0
+}

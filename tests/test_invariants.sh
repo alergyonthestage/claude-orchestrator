@@ -654,7 +654,10 @@ test_invariant_index_writes_status_checked() {
 #                                              session); deliberately worded to the
 #                                              same D-M2 vocabulary (its own comment
 #                                              pins that), reasons ∈ unresolved|stale|
-#                                              homonym|reserved.
+#                                              homonym|reserved|noconfig|reference.
+#                                              S7 added the last two and a <kind> noun
+#                                              WITHOUT a third spelling: arms carry the
+#                                              detail, the single warn carries the state.
 #   cmd-resolve.sh 1 cmd_path (list)         — the hidden-COUNT notice for path
 #                                              entries, which must say read-all where
 #                                              the shared notice says read-global
