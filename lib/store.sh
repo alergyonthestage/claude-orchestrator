@@ -351,7 +351,12 @@ _store_do_remote_drop() {
         [[ $grc -le 1 ]] || { rm -f "$tmp" 2>/dev/null; return 1; }   # 0/1 = printed/empty; 2 = error
         mv "$tmp" "$rf" || { rm -f "$tmp" 2>/dev/null; return 1; }
     fi
-    _remote_token_remove "$name" 2>/dev/null || true   # an absent token is a valid no-op
+    # An absent token (rc 1) is a valid no-op; a FAILED removal (rc ≥2) is not.
+    # `|| true` swallowed both until S2b-P gave the primitive a way to tell them
+    # apart — test the code, never blanket-ignore it.
+    local trc=0
+    _remote_token_remove "$name" 2>/dev/null || trc=$?
+    [[ $trc -le 1 ]] || return 1
     return 0
 }
 
@@ -368,7 +373,12 @@ _store_do_remote_rekey() {
     if remote_get_token "$old" >/dev/null 2>&1; then
         tok=$(remote_get_token "$old")
         _remote_token_set "$new" "$tok" || return 1
-        _remote_token_remove "$old" 2>/dev/null || true
+        # Same split as remote-drop: absent is a no-op, a failed removal is not.
+        # Left unchecked, the rekey would report success having duplicated the
+        # credential under BOTH keys — the old one orphaned and still valid.
+        local trc=0
+        _remote_token_remove "$old" 2>/dev/null || trc=$?
+        [[ $trc -le 1 ]] || return 1
     fi
     return 0
 }

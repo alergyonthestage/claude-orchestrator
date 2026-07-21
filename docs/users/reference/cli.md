@@ -1503,7 +1503,9 @@ per-id dirs, remote tokens) whose backing resource no longer resolves; with `--f
 rebuildable (`cco resolve --scan`) and pruned under the main confirmation; synced DATA
 (tags/source) is pruned under a **second** confirmation, since a wrong prune propagates across
 your machines — a non-resolving DATA resource may simply live on another machine. The read-only
-report exits 0 (reminder-style).
+report exits 0 (reminder-style). With `--fix`, the summary counts what was **actually** pruned:
+if a store write could not complete, the affected orphans are reported as surviving and the
+command exits non-zero, rather than asserting the requested total.
 
 ```
 Usage: cco config validate [--dry-run | --fix [-y]]

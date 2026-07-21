@@ -54,7 +54,7 @@ flowchart TD
 |---|---|---|---|---|
 | **S1** | R1 | V3-01, V5-01, V2-F01 | 🔴 yes | ✅ `517014b` |
 | **S2** | R2 | V3-01 (honesty half) | 🔴 yes | ✅ `4aefc2f` |
-| **S2b-P** | R2 | the two token primitives — **split out and promoted ahead of S5** (2026-07-21, see §6.0) | 🟠 | ⏳ **next** |
+| **S2b-P** | R2 | the two token primitives — **split out and promoted ahead of S5** (2026-07-21, see §6.0) | 🟠 | ✅ `PENDING` |
 | **S2b** | R2 | the same class in the host-only writers (not a v3 finding — found while landing S2) | 🟠 | ⏳ designed, §3b (rest, after S6) |
 | **S3** | R7 | V3-02 | 🟠 | ✅ `582347d` |
 | **S4** | R3 | V2-F02, V2-F03 | 🟠 | ✅ `501567b` |

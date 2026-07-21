@@ -29,11 +29,34 @@ Several **primitives cannot report failure at all** — so adding a check at the
 Three were verified by direct reading during this audit (the rest of the table in §3 is
 inspection-level unless marked):
 
-| Primitive | Defect | The guard it silently voids |
-|---|---|---|
-| `_remote_token_set` (`cmd-remote.sh:16-27`) | every mutation bare; the last statement is `if ! chmod …; then warn; fi`, which yields **0 on both paths** — so the function returns 0 unconditionally | `store.sh:370` `_remote_token_set "$new" "$tok" \|\| return 1` — **correctly written, structurally inert** |
-| `_remote_token_remove` (`cmd-remote.sh:30-37`) | bare `mv`, then an explicit `return 0` | `cmd-remote.sh:295` `if ! _remote_token_remove` — correctly written, inert. A revocation reported complete while the credential is still on disk |
-| `_yaml_rename_list_ref` (`rename.sh:66-72`) | `mv "$tmp" "$file"` then unconditional `return 0` | `rename.sh:230` `if _rename_yaml_write_owned …; then printf path; fi` — correctly written, inert for the `mv` failure (it does correctly catch "awk changed nothing") |
+| Primitive | Defect | The guard it silently voids | Status |
+|---|---|---|---|
+| `_remote_token_set` (`cmd-remote.sh:16-27`) | every mutation bare; the last statement is `if ! chmod …; then warn; fi`, which yields **0 on both paths** — so the function returns 0 unconditionally | `store.sh:370` `_remote_token_set "$new" "$tok" \|\| return 1` — **correctly written, structurally inert** | ✅ **closed — S2b-P** |
+| `_remote_token_remove` (`cmd-remote.sh:30-37`) | bare `mv`, then an explicit `return 0` | `cmd-remote.sh:295` `if ! _remote_token_remove` — correctly written, inert. A revocation reported complete while the credential is still on disk | ✅ **closed — S2b-P** |
+| `_yaml_rename_list_ref` (`rename.sh:66-72`) | `mv "$tmp" "$file"` then unconditional `return 0` | `rename.sh:230` `if _rename_yaml_write_owned …; then printf path; fi` — correctly written, inert for the `mv` failure (it does correctly catch "awk changed nothing") | ⏳ open — S2b (rest) |
+
+**S2b-P (2026-07-21)** closed the two token primitives. What it settled, so it is not re-derived:
+
+- **`_remote_token_remove` keeps a three-valued contract**: `0` removed · `1` no token existed ·
+  `2` the removal **failed**. Folding a failed write into `1` would have rendered it as *"No token
+  found"* — a revocation reported as done on a credential still on disk, i.e. a *new* lie in place
+  of the old one. A `die` from inside the primitive was rejected: `store.sh`'s two cascades
+  legitimately treat absence as a no-op, and `exit` cannot be caught by their `||`.
+- **Consequently every `|| true` on that primitive had to go.** Three sites swallowed the new
+  signal: `store.sh:354` (`remote-drop`), `store.sh:371` (`remote-rekey`'s old-token drop — unchecked
+  it would duplicate the credential under both keys, the old one orphaned and still valid), and
+  **`cmd-config.sh:303`** (`_cv_prune_record`'s `token` arm), which the plan did not list. They now
+  test `-le 1`. `cco config validate --fix` counts what was actually pruned instead of asserting the
+  requested total.
+- **`chmod` failure stays a `warn`**, deliberately: the token *is* persisted, so the op succeeded and
+  only its confidentiality degraded. Returning non-zero there would push callers to report — or roll
+  back — a write that landed.
+- Both primitives now `mktemp` **next to the target** (the `lib/store.sh` idiom) rather than bare into
+  `/tmp`: `mv` must be a same-filesystem rename, or it degrades to copy+unlink across devices and can
+  fail halfway through a secret file.
+- Guards: `T-S2bP` ×3 in `tests/test_remote.sh` (set · remove · add `--token`). Each was
+  revert-checked against the pre-fix primitives, where all three report **rc=0** — with the shell
+  printing `Permission denied` on stderr while the verb still exits 0, which is the class in one line.
 
 Also reported by the audit, inspection-level: `_sync_copy` (`cmd-sync.sh:100-107`) returns only the
 **last** file's status, so a mid-loop failure reports success; `_meta_record_provenance`

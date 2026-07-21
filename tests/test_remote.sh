@@ -485,3 +485,106 @@ test_remote_remove_non_tty_without_yes_dies() {
     assert_output_contains "re-run with -y"
     assert_file_contains "$CCO_DATA_HOME/remotes" "acme="
 }
+
+# ── T-S2bP · the token-store write path fails LOUD (S2b-P / R2) ───────
+#
+# The false-success class, on the token store. Both primitives were structurally
+# incapable of reporting failure: `_remote_token_set`'s tail statement was
+# `if ! chmod …; then warn; fi` (0 on both branches), and `_remote_token_remove`
+# ended in a bare `mv` + explicit `return 0`. Every mutation in between was
+# unchecked. bin/cco dispatches as `cmd_foo "$@" || _cco_rc=$?`, which disables
+# errexit for the whole call tree, so nothing else caught it either — and the
+# correctly-written guards at store.sh:370 and cmd-remote.sh:295 were inert.
+#
+# The consequence these guards pin is specific to a SECRET store: a revocation
+# reported as complete while the credential is still on disk.
+#
+# ⚠ ALL THREE FAIL on pre-fix code: rc=0 with a success tick.
+
+# set: an unwritable token store must sink the verb, not warn past it.
+test_remote_set_token_unwritable_store_fails_loud() {
+    [[ "$(id -u)" -eq 0 ]] && return 0   # root ignores the mode bits
+    local tmpdir; tmpdir=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmpdir' 2>/dev/null; rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco remote add acme https://github.com/acme/config.git
+
+    chmod 555 "$CCO_STATE_HOME"
+    local rc=0
+    run_cco remote set-token acme ghp_secret || rc=$?
+    chmod 755 "$CCO_STATE_HOME"
+
+    # (a) non-zero exit — the write could not complete
+    [[ "$rc" -ne 0 ]] || { fail "unwritable token store must fail loud; got rc=0: $CCO_OUTPUT"; return 1; }
+    # (b) NO success tick over a failed write (the class itself)
+    [[ "$CCO_OUTPUT" != *"Token saved"* ]] \
+        || { fail "no success tick on a failed token write: $CCO_OUTPUT"; return 1; }
+    # (c) name the store that failed — an honest failure the user cannot locate
+    #     is only half a fix
+    [[ "$CCO_OUTPUT" == *"token store"* ]] \
+        || { fail "the failure must name the token store: $CCO_OUTPUT"; return 1; }
+    # (d) the store really is untouched
+    [[ ! -f "$CCO_STATE_HOME/remotes-token" ]] \
+        || ! grep -q "^acme=" "$CCO_STATE_HOME/remotes-token" \
+        || { fail "no token may have landed"; return 1; }
+    return 0
+}
+
+# remove: the arm that matters most — a failed revocation must NOT be rendered as
+# "No token found", which is what folding rc≥2 into the absent code would do.
+test_remote_remove_token_unwritable_store_fails_loud() {
+    [[ "$(id -u)" -eq 0 ]] && return 0
+    local tmpdir; tmpdir=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmpdir' 2>/dev/null; rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco remote add acme https://github.com/acme/config.git --token ghp_secret
+
+    chmod 555 "$CCO_STATE_HOME"
+    local rc=0
+    run_cco remote remove-token acme || rc=$?
+    chmod 755 "$CCO_STATE_HOME"
+
+    [[ "$rc" -ne 0 ]] || { fail "unwritable token store must fail loud; got rc=0: $CCO_OUTPUT"; return 1; }
+    [[ "$CCO_OUTPUT" != *"Removed token"* ]] \
+        || { fail "no success tick on a failed revocation: $CCO_OUTPUT"; return 1; }
+    # (c) the DISCRIMINATING assertion: absent and failed must stay distinct. A fix
+    #     that collapsed them would print "No token found" for a credential that is
+    #     still on disk — a new lie in place of the old one.
+    [[ "$CCO_OUTPUT" != *"No token found"* ]] \
+        || { fail "a FAILED removal must not be reported as an absent token: $CCO_OUTPUT"; return 1; }
+    [[ "$CCO_OUTPUT" == *"token store"* ]] \
+        || { fail "the failure must name the token store: $CCO_OUTPUT"; return 1; }
+    # (d) the credential is provably still there — which is exactly what the
+    #     message now admits
+    assert_file_contains "$CCO_STATE_HOME/remotes-token" "acme=ghp_secret" || return 1
+    return 0
+}
+
+# add --token: the url registry write lands FIRST, so the failure must name which
+# store changed and which did not (the cmd-repo.sh idiom, S2).
+test_remote_add_token_unwritable_store_names_both_stores() {
+    [[ "$(id -u)" -eq 0 ]] && return 0
+    local tmpdir; tmpdir=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmpdir' 2>/dev/null; rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+
+    chmod 555 "$CCO_STATE_HOME"
+    local rc=0
+    run_cco remote add acme https://github.com/acme/config.git --token ghp_secret || rc=$?
+    chmod 755 "$CCO_STATE_HOME"
+
+    [[ "$rc" -ne 0 ]] || { fail "unwritable token store must fail loud; got rc=0: $CCO_OUTPUT"; return 1; }
+    [[ "$CCO_OUTPUT" != *"[token saved]"* ]] \
+        || { fail "no '[token saved]' over a failed token write: $CCO_OUTPUT"; return 1; }
+    # the half that DID land must be stated — otherwise the user cannot tell
+    # whether to re-run `remote add` or only `set-token`
+    [[ "$CCO_OUTPUT" == *"Registered remote"* ]] \
+        || { fail "the message must state that the remote itself was registered: $CCO_OUTPUT"; return 1; }
+    [[ "$CCO_OUTPUT" == *"set-token"* ]] \
+        || { fail "the message must give the recovery command: $CCO_OUTPUT"; return 1; }
+    assert_file_contains "$CCO_DATA_HOME/remotes" "acme=" || return 1
+    return 0
+}

@@ -12,27 +12,61 @@
 _remotes_file()       { _cco_remotes_file; }
 _remotes_token_file() { _cco_remotes_token_file; }
 
-# Upsert a token in the STATE token store (0600).
+# Upsert a token in the STATE token store (0600). Returns 0 on success, 1 if any
+# write failed.
+#
+# S2b-P: every mutation here used to be bare AND the tail statement was
+# `if ! chmod …; then warn; fi`, which yields 0 on both branches — so the function
+# returned 0 unconditionally, silently voiding store.sh's correctly-written
+# `_remote_token_set … || return 1`. bin/cco dispatches every verb as
+# `cmd_foo "$@" || _cco_rc=$?`, and a `||` context disables errexit for the entire
+# call tree, so explicit propagation is the only mechanism that works. See
+# docs/maintainers/engineering/analysis/false-success-class-audit.md §2.
+#
+# The chmod failure stays a WARN, deliberately: the token IS persisted, so the
+# operation succeeded and only its confidentiality degraded. Returning non-zero
+# there would make callers report — or roll back — a write that actually landed.
 _remote_token_set() {
     local name="$1" token="$2"
     local tf; tf=$(_remotes_token_file)
-    mkdir -p "$(dirname "$tf")"
+    mkdir -p "$(dirname "$tf")" || return 1
     if [[ -f "$tf" ]] && grep -q "^${name}=" "$tf" 2>/dev/null; then
-        local tmpf; tmpf=$(mktemp); grep -v "^${name}=" "$tf" > "$tmpf"; mv "$tmpf" "$tf"
+        # mktemp NEXT TO the target, as lib/store.sh's ops do — never a bare
+        # mktemp: `mv` must be a same-filesystem rename, or it degrades to
+        # copy+unlink across /tmp and can fail halfway through a secret file.
+        local tmpf grc
+        tmpf=$(mktemp "$tf.XXXXXX") || return 1
+        grep -v "^${name}=" "$tf" > "$tmpf"; grc=$?
+        [[ $grc -le 1 ]] || { rm -f "$tmpf" 2>/dev/null; return 1; }   # 0/1 = printed/empty; 2 = error
+        mv "$tmpf" "$tf" || { rm -f "$tmpf" 2>/dev/null; return 1; }
     fi
-    echo "${name}=${token}" >> "$tf"
+    echo "${name}=${token}" >> "$tf" || return 1
     if ! chmod 600 "$tf" 2>/dev/null; then
         warn "Could not set permissions on $(basename "$tf") — file may be world-readable"
     fi
+    return 0
 }
 
-# Remove a token from the STATE token store. Returns 1 if none existed.
+# Remove a token from the STATE token store.
+#
+# Exit contract (S2b-P): 0 = removed · 1 = no token existed · 2 = the removal
+# FAILED. The third code is the point of the fix: the write path used to be bare
+# with an explicit `return 0`, so a failed removal reported success while the
+# credential stayed on disk. Folding that failure into 1 instead would render it
+# as "No token found" — trading the old lie for a new one — so absent and failed
+# must stay distinguishable. A `die` from in here was rejected: store.sh's two
+# cascades legitimately treat absence as a no-op, and `exit` cannot be caught by
+# their `||`. ⇒ Callers that tolerate absence must test `-le 1`, never `|| true`.
 _remote_token_remove() {
     local name="$1"
     local tf; tf=$(_remotes_token_file)
     [[ -f "$tf" ]] || return 1
     grep -q "^${name}=" "$tf" 2>/dev/null || return 1
-    local tmpf; tmpf=$(mktemp); grep -v "^${name}=" "$tf" > "$tmpf"; mv "$tmpf" "$tf"
+    local tmpf grc
+    tmpf=$(mktemp "$tf.XXXXXX") || return 2
+    grep -v "^${name}=" "$tf" > "$tmpf"; grc=$?
+    [[ $grc -le 1 ]] || { rm -f "$tmpf" 2>/dev/null; return 2; }
+    mv "$tmpf" "$tf" || { rm -f "$tmpf" 2>/dev/null; return 2; }
     return 0
 }
 
@@ -167,7 +201,11 @@ _cmd_remote_add() {
 
     # Store token (STATE token store, 0600) if provided. Reached on the host only —
     # the token half is refused above in a container session (secrets stay off it).
-    [[ -n "$token" ]] && _remote_token_set "$name" "$token"
+    # The url registry write has ALREADY landed, so a token failure must say which
+    # store changed and which did not (the cmd-repo.sh idiom) — not just "failed".
+    if [[ -n "$token" ]] && ! _remote_token_set "$name" "$token"; then
+        die "Registered remote '$name' -> $url, but its token could NOT be saved — the STATE token store is not writable. The remote works unauthenticated; run 'cco remote set-token $name <token>' once that path is writable."
+    fi
 
     if [[ -n "$token" ]]; then
         ok "Added remote '$name' -> $url [token saved]"
@@ -284,7 +322,8 @@ _cmd_remote_set_token() {
         die "Remote '$name' not found."
     fi
 
-    _remote_token_set "$name" "$token"
+    _remote_token_set "$name" "$token" \
+        || die "Could not save the token for remote '$name' — the STATE token store is not writable. Nothing was changed."
     ok "Token saved for remote '$name'"
 }
 
@@ -292,9 +331,16 @@ _cmd_remote_remove_token() {
     local name="${1:-}"
     [[ -z "$name" ]] && die "Usage: cco remote remove-token <name>"
 
-    if ! _remote_token_remove "$name"; then
-        die "No token found for remote '$name'."
-    fi
+    # Split absent (rc 1) from a FAILED removal (rc ≥2). Collapsing them would
+    # report a revocation as "No token found" while the credential is still on
+    # disk — the failure mode this whole stage exists to close.
+    local trc=0
+    _remote_token_remove "$name" || trc=$?
+    case "$trc" in
+        0) ;;
+        1) die "No token found for remote '$name'." ;;
+        *) die "Could not remove the token for remote '$name' — the STATE token store is not writable. The token is STILL on disk; re-run once that path is writable." ;;
+    esac
 
     ok "Removed token for remote '$name'"
 }

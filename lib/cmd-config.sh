@@ -296,11 +296,18 @@ _cv_prune_record() {
     # `read` would collapse the empty middle field and shift `label` into `b` —
     # making `_index_remove_path "<label>" "<name>"` a no-op (label ≠ a project).
     _peel_tab "$1" class op a b label
+    # Returns non-zero if the prune did NOT happen, so the caller can withhold its
+    # success tick (S2b-P). Only the `token` arm can currently report a failed
+    # write — its primitive is the one this stage fixed; the other arms are still
+    # bare and are closed with their own primitives in the rest of S2b.
     case "$op" in
         idx_path) _index_remove_path "$b" "$a" ;;   # b = owning project ("" = unscoped)
         idx_proj) _index_remove_project "$a" ;;
         rmdir)    rm -rf "$a" ;;
-        token)    _remote_token_remove "$a" || true ;;
+        # rc 1 = already gone, which for a PRUNE is the desired end state; rc ≥2 =
+        # the token store could not be written and the orphan survives. `|| true`
+        # reported both as pruned.
+        token)    local trc=0; _remote_token_remove "$a" || trc=$?; [[ $trc -le 1 ]] ;;
         tag)      _tags_forget "$a" "$b" ;;
     esac
 }
@@ -369,10 +376,19 @@ EOF
         return 0
     fi
 
+    # Count what actually got pruned rather than asserting the requested total
+    # (S2b-P): a record whose store write failed must not be reported as removed.
+    local _failed=0 _rc=0
     if [[ ${#local_recs[@]} -gt 0 ]]; then
         if _confirm_destructive "$force" "Prune ${#local_recs[@]} machine-local orphan(s)?"; then
-            for rec in "${local_recs[@]}"; do _cv_prune_record "$rec"; done
-            ok "Pruned ${#local_recs[@]} machine-local orphan(s)."
+            _failed=0
+            for rec in "${local_recs[@]}"; do _cv_prune_record "$rec" || _failed=$((_failed + 1)); done
+            if [[ $_failed -gt 0 ]]; then
+                warn "Pruned $(( ${#local_recs[@]} - _failed )) of ${#local_recs[@]} machine-local orphan(s) — $_failed could not be removed (the store is not writable). Re-run once that path is writable."
+                _rc=1
+            else
+                ok "Pruned ${#local_recs[@]} machine-local orphan(s)."
+            fi
         else
             info "Skipped machine-local orphans."
         fi
@@ -380,13 +396,19 @@ EOF
     if [[ ${#data_recs[@]} -gt 0 ]]; then
         warn "The next prune touches SYNCED DATA — it propagates to your other machines."
         if _confirm_destructive "$force" "Prune ${#data_recs[@]} synced (DATA) orphan(s)?"; then
-            for rec in "${data_recs[@]}"; do _cv_prune_record "$rec"; done
-            ok "Pruned ${#data_recs[@]} synced (DATA) orphan(s)."
+            _failed=0
+            for rec in "${data_recs[@]}"; do _cv_prune_record "$rec" || _failed=$((_failed + 1)); done
+            if [[ $_failed -gt 0 ]]; then
+                warn "Pruned $(( ${#data_recs[@]} - _failed )) of ${#data_recs[@]} synced (DATA) orphan(s) — $_failed could not be removed (the store is not writable). Re-run once that path is writable."
+                _rc=1
+            else
+                ok "Pruned ${#data_recs[@]} synced (DATA) orphan(s)."
+            fi
         else
             info "Skipped synced (DATA) orphans."
         fi
     fi
-    return 0
+    return $_rc
 }
 
 cmd_config() {
