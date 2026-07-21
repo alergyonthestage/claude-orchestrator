@@ -155,12 +155,36 @@ Stages (each impl → adversarial revert-check): **S1** STATE shared sub-bucket 
 `INV-STATE` ✅ `517014b` · **S2** index-write error propagation + `INV-IDX` + `T-R2` ✅ `4aefc2f` ·
 **S3** fail-closed pre-flight probes **both** stores, each at its own identity ✅ `582347d` ·
 **S2b** the same unchecked-write class in the host-only writers ⏳ **re-scoped 2026-07-21** · **S4** read-path
-honesty (empty ≠ unreadable) ✅ `501567b` · **S2b-P** the two token primitives ⏳ **next — promoted ahead of S5
-2026-07-21** (S5's item 2 drops the STATE probe over a host write path whose primitive still cannot report
-failure; plan §6.0) · **S5** D-V3-1 + truthful store refusal ⏳ after S2b-P · **S6** one predicate
-one spelling (`project show`) · **S7** config-editor announces every drop · **S8** minor + doc debt ·
-**S9** changelog 47 + ADR forward-annotation + living-doc sweep. Suite **1428/9** (the 9 = the
-pre-existing host-only artifacts, unchanged set — verified identical on a pristine HEAD checkout).
+honesty (empty ≠ unreadable) ✅ `501567b` · **S2b-P** the two token primitives ✅ `2177858` (**promoted ahead of
+S5**: S5's item 2 drops the STATE probe over a host write path whose primitive could not report failure;
+plan §6.0) · **S5** D-V3-1 + truthful store refusal ✅ `9e2496d` · **INV-S3b** exit-code unification
+✅ `2f2b560` (plan §6.3) · **S6** one predicate one spelling (`project show`) ⏳ **next** · **S7**
+config-editor announces every drop · **S8** minor + doc debt · **S9** changelog 47 + ADR
+forward-annotation + living-doc sweep. Suite **1434/9** (the 9 = the pre-existing host-only artifacts,
+unchanged set — names verified identical to baseline).
+
+**S2b-P** gave `_remote_token_remove` a three-valued contract (`0` removed / `1` absent / **`2`
+failed**) so a failed revocation is never rendered as *"No token found"* — a credential still on disk
+reported as revoked. Every `|| true` that swallowed the new signal was closed, including
+`cmd-config.sh:303`, which the plan had not listed. **S5** made `remote remove|rename` host-only,
+dropped the STATE-root probe, and replaced the store refusal's false reason with D-M2's vocabulary.
+
+⚠ **INV-S3b — a taxonomy question S5 got wrong twice before it was settled.** The exit code for a
+failed store/rename precondition follows the **failure's nature**, not the module: an *in-session
+pre-flight* refusal is a session-shape fact → **2**; the same probe failing *on the host* is a real
+error → **1**; a write that *started and failed* stays **1** everywhere (INV-S3's core). S5 first
+applied D8 alone (2), the suite refuted it via INV-S3's eight guards, and the revert to 1 was also
+only half right. Recorded in `lib/store.sh`'s header with a warning not to re-derive it from either
+contract alone. It also governs `rename.sh`'s two probes, resolving S3's *"both halves move
+together"* note — which could not be resolved as written, because the answer depends on
+session-vs-host rather than on which store is probed.
+
+⚠ **One S5 item is NOT applicable from a session** (plan §6.-1): the managed rule
+`defaults/managed/.claude/rules/cco-config-interaction.md` must add `remove|rename` to its host-only
+list, but every `.claude` tree is clamped `:ro` in-session. Why is itself a finding — **FI-25**: the
+nested-`.claude` sweep is right for a normal project's authoring trees but also catches cco's OWN
+shipped `.claude` payload (`defaults/`, `templates/`, `internal/` are tool source). Workaround for a
+self-dev session: `--claude-access all`.
 
 **A codebase-wide audit of the same class ran before implementing S2b** (backlog convention:
 re-derive the boundary first) — [`engineering/analysis/false-success-class-audit.md`](engineering/analysis/false-success-class-audit.md).
@@ -177,7 +201,7 @@ escalation test (the only v3 probe that fails **open** if the fix is wrong); **V
 **§7 / E6B-04** the pack-rename fan-out gate, still never executed and now unblocked by S1; and the
 **D-M6 Linux write-path check-in**, promoted from follow-up to **hard gate** — macOS `fakeowner`
 makes the fail-closed pre-validation unfalsifiable (V3-02), so criterion F cannot be signed off from
-a macOS run. Resume pointer: memory [[e2e-v3-cycle11]] + `fix-design-v3/RESUME-HANDOFF-s4.md`.
+a macOS run. Resume pointer: memory [[e2e-v3-cycle11]] + `fix-design-v3/RESUME-HANDOFF-s6.md`.
 
 #### F — opinionated-config extraction + `cco update` responsibility refactor (post-C, structural)
 
