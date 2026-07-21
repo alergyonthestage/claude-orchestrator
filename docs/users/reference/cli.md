@@ -941,6 +941,9 @@ Examples:
      and each member's role: host / synced copy / divergent / code-only member
    - Referenced-by: other projects that mount this repo's PATH (path-based reverse
      lookup — ADR-0051 D5; "same resource" is path coincidence, not name)
+   - Extra mounts: list by LOGICAL NAME → container target, with the resolved
+     source ([unresolved] marker when no path is bound). The logical name is the
+     key `cco path` and `cco extra-mount rename` take
    - Packs: list with existence check ([not found] marker for absent packs)
    - Docker config: auth method, ports, network name
    - Status: checks Docker for running container (cc-<name>)

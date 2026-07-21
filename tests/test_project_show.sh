@@ -36,6 +36,70 @@ YAML
     assert_output_contains "my-repo"
 }
 
+# ── V1-F2: extra_mounts by LOGICAL NAME ─────────────────────────────────────────
+# The logical name is the key for `cco path` and `extra-mount rename`, and until now
+# `path list` was the only in-container surface that enumerated it — so an agent
+# holding only `project show` could not learn the name it needs to type. Worth more
+# after S7's decision (b): config-editor announces a target's extra_mounts as NOT
+# mounted, which makes a surface that names them the way to act on the announcement.
+# ⚠ FAILS on pre-fix: project show has no extra_mounts section at all.
+test_project_show_lists_extra_mounts_by_name() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local mnt_dir="$tmpdir/assets"
+    mkdir -p "$mnt_dir"
+    seed_index_path "assets" "$mnt_dir" "my-proj"
+    create_project "$tmpdir" "my-proj" "$(cat <<YAML
+name: my-proj
+repos: []
+extra_mounts:
+  - name: assets
+    target: /workspace/aux
+YAML
+)"
+    run_cco project show "my-proj"
+    assert_output_contains "Extra mounts:"
+    assert_output_contains "assets"
+    # The declared container target is the other half of what makes the name
+    # actionable — it is where the agent will actually find the mount.
+    assert_output_contains "/workspace/aux"
+}
+
+# An extra_mount DECLARED but with no resolved path must be announced, not dropped.
+# _effective_extra_mounts conscious-skips it (correct for compose generation — an
+# empty bind would be invalid), but an INTROSPECTION surface that silently omits a
+# declared mount teaches the agent the project has fewer than it does. Same lesson as
+# S7: announce every drop.
+test_project_show_extra_mount_unresolved_is_announced() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "my-proj" "$(cat <<YAML
+name: my-proj
+repos: []
+extra_mounts:
+  - name: ghost
+YAML
+)"
+    run_cco project show "my-proj"
+    assert_output_contains "ghost"
+}
+
+test_project_show_no_extra_mounts_says_none() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "my-proj" "$(cat <<YAML
+name: my-proj
+repos: []
+YAML
+)"
+    run_cco project show "my-proj"
+    assert_output_contains "Extra mounts:"
+    assert_output_contains "(none)"
+}
+
 test_project_show_lists_packs() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"

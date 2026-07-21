@@ -262,6 +262,48 @@ EOF
     fi
     echo ""
 
+    # Extra mounts (V1-F2) — by LOGICAL NAME, which is the key `cco path` and
+    # `cco extra-mount rename` take. Until now `path list` was the only in-container
+    # surface that enumerated it, so an agent holding this view could not learn the
+    # name it needs to type. Worth more after S7's decision (b): config-editor
+    # announces a target's extra_mounts as not-mounted, and this is the surface that
+    # tells you what they are.
+    #
+    # Read from the DECLARATIVE source, not _effective_extra_mounts, for two reasons:
+    # the effective form does not emit the name (it is compose input —
+    # src/target/ro/policy/role), and it conscious-skips unresolved mounts. That skip
+    # is right for generating a bind (an empty source is an invalid mount) and wrong
+    # here: an introspection surface that silently omits a DECLARED mount teaches the
+    # agent the project has fewer than it does. Announce every drop (S7).
+    #
+    # Peeled by tab explicitly, per the contract note on _effective_extra_mounts: a
+    # `IFS=$'\t' read a b c d` consumer shifts every field left on any record with an
+    # empty middle field, and `target:` is routinely empty (it has a default).
+    echo -e "${BOLD}Extra mounts:${NC}"
+    local _em_any=false _em_ln em_name em_target em_rest em_src
+    while IFS= read -r _em_ln; do
+        [[ -z "$_em_ln" ]] && continue
+        em_name="${_em_ln%%$'\t'*}"; em_rest="${_em_ln#*$'\t'}"
+        em_rest="${em_rest#*$'\t'}"   # drop url
+        em_rest="${em_rest#*$'\t'}"   # drop ref
+        em_target="${em_rest%%$'\t'*}"
+        [[ -z "$em_name" ]] && continue
+        _em_any=true
+        # INV-F.2: no explicit target means the mount lands at <workdir>/<name> —
+        # the same default _effective_extra_mounts applies, so the two agree.
+        [[ -z "$em_target" ]] && em_target="/workspace/$em_name"
+        em_src=$(_mount_source_for "${yml_name:-$name}" "$em_name")
+        if [[ "$em_src" == /* ]]; then
+            # Host-path hygiene (INV-4) through the single display helper, exactly as
+            # the repos block above: a host path shows only where show_host_paths permits.
+            echo "  $em_name → $em_target ($(_cco_display_path "$em_name" "$em_src"))"
+        else
+            echo -e "  $em_name → $em_target ${YELLOW}[unresolved]${NC}"
+        fi
+    done < <(yml_get_mount_coords "$project_yml" 2>/dev/null)
+    [[ "$_em_any" == true ]] || echo "  (none)"
+    echo ""
+
     # Packs
     echo -e "${BOLD}Packs:${NC}"
     local packs
