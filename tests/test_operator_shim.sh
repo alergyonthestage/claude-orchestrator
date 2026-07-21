@@ -684,3 +684,38 @@ test_op_seed_in_repo_completes_rename_in_container() {
         && { fail "repo rename stopped at a host-path guard: $OP_OUT"; return 1; }
     return 0
 }
+
+# ── D-V3-1 · `remote remove|rename` are host-only (S5) ────────────────
+#
+# They CASCADE into the 0600 STATE token store (store.sh remote-drop/remote-rekey),
+# which deliberately never crosses into a session. Because the token file is not
+# mounted, `remote_get_token` in-container cannot tell "no token" from "token
+# invisible" — and both ops are written as conditional no-ops on exactly that test,
+# so they would pass SILENTLY: rename orphans the token and strips the renamed
+# remote's auth with no diagnostic. Refusing is the only honest outcome.
+#
+# `remote add` must STAY functional (DATA-only): the point of D-V3-1 is that the
+# secret-touching half leaves, not that the namespace does.
+# ⚠ FAILS on pre-S5 code: remove/rename dispatch through _op_write and succeed.
+test_operator_blocks_remote_remove_and_rename() {
+    local lvl
+    # Refused at EVERY level, edit-all included — this is a session-shape refusal,
+    # not a scope one, so widening access must not unlock it.
+    for lvl in read-project edit-project edit-global edit-all; do
+        lane_cco "$lvl" remote remove acme -y
+        [[ $OP_RC -ne 0 && "$OP_OUT" == *"host-only"* ]] \
+            || fail "'remote remove' must be host-only at $lvl, got rc=$OP_RC: $OP_OUT"
+        # exit 2 = policy refusal, not 1 = error (D8 / the 0-2-1 taxonomy)
+        [[ $OP_RC -eq 2 ]] \
+            || fail "'remote remove' must refuse at exit 2 at $lvl, got rc=$OP_RC: $OP_OUT"
+        lane_cco "$lvl" remote rename old new
+        [[ $OP_RC -ne 0 && "$OP_OUT" == *"host-only"* ]] \
+            || fail "'remote rename' must be host-only at $lvl, got rc=$OP_RC: $OP_OUT"
+        [[ $OP_RC -eq 2 ]] \
+            || fail "'remote rename' must refuse at exit 2 at $lvl, got rc=$OP_RC: $OP_OUT"
+    done
+    # the wording family is the one the token verbs already speak
+    [[ "$OP_OUT" == *"secrets stay off the container"* ]] \
+        || fail "the refusal must keep the 'secrets stay off the container' family: $OP_OUT"
+    return 0
+}

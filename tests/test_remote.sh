@@ -588,3 +588,68 @@ test_remote_add_token_unwritable_store_names_both_stores() {
     assert_file_contains "$CCO_DATA_HOME/remotes" "acme=" || return 1
     return 0
 }
+
+# ── R5 / V5-02 · the store refusal names the REAL condition ───────────
+#
+# `store.sh` refused with *"the store is not writable in this session"*, which at
+# `edit-all` is false on both clauses: `cco whoami` reports the store rw and
+# `pack create` / `remote add` write successfully in the same session. It read as a
+# statement about ACCESS SCOPE while the real condition is mount composition —
+# D-M2's "not mounted in this session" state, which `project validate` already
+# speaks correctly. There is no scope arm to test here on purpose: a triple that
+# does not grant the target tree is refused earlier, by `_op_write` in bin/cco.
+# ⚠ FAILS on pre-S5 code: exit 1 with the "not writable in this session" wording.
+test_store_refusal_names_mount_gap_not_scope() {
+    [[ "$(id -u)" -eq 0 ]] && return 0   # root ignores the mode bits
+    local tmpdir; tmpdir=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmpdir' 2>/dev/null; rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_operator_session "$tmpdir" edit-all
+
+    # The DATA bucket is `remote-put`'s only probe target after S5. Unwritable =
+    # exactly the mount-composition gap V5 hit, reproduced without Docker.
+    chmod 555 "$CCO_DATA_HOME"
+    local rc=0
+    run_cco remote add acme https://github.com/acme/config.git || rc=$?
+    chmod 755 "$CCO_DATA_HOME"
+
+    # (a) exit 1, NOT 2: INV-S3 (store.sh header) pins a store write that cannot
+    #     complete as an ERROR, and `_store_apply` dies at 1 for the same condition
+    #     caught one step later. R5 is a MESSAGE defect; the code stays 1.
+    [[ "$rc" -eq 1 ]] \
+        || { fail "an unwritable store bucket must exit 1 (INV-S3), got rc=$rc: $CCO_OUTPUT"; return 1; }
+    # (b) the DISCRIMINATING assertion: the old wording blamed access scope, which
+    #     is what made it false at edit-all. It must not come back.
+    [[ "$CCO_OUTPUT" != *"not writable in this session"* ]] \
+        || { fail "the refusal must not blame writability/scope — that reads false at edit-all: $CCO_OUTPUT"; return 1; }
+    # (c) the shared D-M2 vocabulary + a host remedy
+    [[ "$CCO_OUTPUT" == *"not mounted in this session"* ]] \
+        || { fail "the refusal must speak the D-M2 'not mounted in this session' vocabulary: $CCO_OUTPUT"; return 1; }
+    [[ "$CCO_OUTPUT" == *"on your host"* ]] \
+        || { fail "the refusal must give the host remedy: $CCO_OUTPUT"; return 1; }
+    return 0
+}
+
+# ── V5-03 · the dup-check must name a command the reader can RUN ──────
+#
+# It said "Remove it first with 'cco remote remove <name>'" — which after D-V3-1 is
+# host-only, so in a session it prescribes an impossible action. That is the same
+# unactionable-remedy class this cycle closes elsewhere; the remedy must be
+# context-aware, exactly as S4 made the index one.
+# ⚠ FAILS on pre-S5 code: the in-container message names the bare in-session verb.
+test_remote_add_duplicate_names_host_remedy_in_session() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_operator_session "$tmpdir" edit-all
+    run_cco remote add acme https://github.com/acme/config.git
+
+    local rc=0
+    run_cco remote add acme https://github.com/acme/other.git || rc=$?
+    [[ "$rc" -ne 0 ]] || { fail "a duplicate remote must still be refused: $CCO_OUTPUT"; return 1; }
+    [[ "$CCO_OUTPUT" == *"already exists"* ]] \
+        || { fail "the duplicate must still be named as such: $CCO_OUTPUT"; return 1; }
+    # the remedy must be reachable FROM HERE — i.e. it must say where to run it
+    [[ "$CCO_OUTPUT" == *"on your host"* ]] \
+        || { fail "in a session the remedy must name the HOST, since 'remote remove' is host-only (D-V3-1): $CCO_OUTPUT"; return 1; }
+    return 0
+}

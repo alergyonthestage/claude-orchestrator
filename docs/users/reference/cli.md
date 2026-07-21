@@ -395,7 +395,12 @@ store (other projects hidden), `read-all`/`edit-all` everything.
 **Host-only** verbs are refused in-session with a hint: session/image
 lifecycle (`start|stop|build|new`), path-resolving lifecycle (`resolve|sync|init|join|
 forget|update|clean`, `project rename`), and network/credential ops (`config push`/`pull`,
-`remote set-token`/`remove-token`). Real secret files (`secrets.env`, `*.env`, `*.key`,
+`remote set-token`/`remove-token`, `remote remove`/`rename`). The last two join the
+credential set because they **cascade into the 0600 token store**, which never crosses into
+a session: with the token file unmounted, cco cannot tell "no token" from "token invisible",
+so both would silently succeed while orphaning the token and stripping the remote's auth.
+`cco remote add` stays available in-session (it writes only the url registry; its `--token`
+half is refused separately). Real secret files (`secrets.env`, `*.env`, `*.key`,
 `*.pem`) are filtered from every config mount (only `*.example` is visible); tokens,
 transcripts, and memory are never mounted. Requires a rebuilt image (`cco build`).
 
@@ -1017,6 +1022,8 @@ Options:
 **every** referencing project (pack names stay globally scoped; strict — all referencing projects
 must be resolved). `cco template rename` / `cco remote rename` re-key their user-template store /
 url-registry+token similarly. All are kind-scoped: a rename touches only its own kind's stores.
+`cco remote rename` is **host-only** — re-keying the token is a credential operation, and the
+token store never crosses into a session (see §3.2).
 
 ---
 
@@ -1784,7 +1791,8 @@ Examples:
 #### `cco remote remove <name> [-y]`
 
 Unregister a remote and its saved token (if any). Previews and confirms first
-(ADR-0029 D2).
+(ADR-0029 D2). **Host-only** — it cascades into the 0600 token store, which never
+crosses into a container session (see §3.2).
 
 ```
 Usage: cco remote remove <name> [-y]

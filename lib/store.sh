@@ -137,11 +137,18 @@ _store_op_buckets() {
         sidecar-purge|sidecar-rekey) _cco_data_dir; _cco_state_shared_dir ;;
         llms-purge|llms-rekey)       _cco_llms_dir ;;
         remote-put)                  _cco_data_dir ;;
-        # remote-drop/rekey also touch STATE/remotes-token, which deliberately
-        # never crosses the boundary (0600 auth) — so this probes the UNSHARED
-        # STATE root. Both verbs are host-only in-container (D-V3-1, bin/cco);
-        # on the host the root is native and writable.
-        remote-drop|remote-rekey)    _cco_data_dir; _cco_state_dir ;;
+        # remote-drop/rekey also touch STATE/remotes-token, but they NO LONGER probe
+        # the STATE root (S5). D-V3-1 makes both verbs host-only in-container
+        # (bin/cco), so the probe would only ever run where the root is native and
+        # writable — while in-container it was the whole of V5-01: the unshared root
+        # is unwritable by design (0600 auth never crosses), so the probe failed and
+        # six verbs refused at EVERY access level, `edit-all` included.
+        #
+        # Dropping it is safe only because S2b-P made the token primitives capable of
+        # reporting failure: the cascade now fails honestly on its own writes instead
+        # of leaning on this coarse root probe. Reversing that order would have WIDENED
+        # the silent-failure window on the host — see 00-plan.md §6.0.
+        remote-drop|remote-rekey)    _cco_data_dir ;;
     esac
 }
 
@@ -227,6 +234,34 @@ _store_plan() {
     _store_probe "$op" "$@"
 }
 
+# The single sentence for "the plan says this op's bucket cannot be written" (R5 /
+# V5-02). The old message — *"the store is not writable in this session"* — was
+# demonstrably FALSE at `edit-all`, where `cco whoami` reports the store rw and
+# `pack create` / `remote add` write successfully in the same session. It read as a
+# statement about ACCESS SCOPE when the real condition is mount composition.
+#
+# There is no scope arm here on purpose: a write verb whose target tree the session's
+# triple does not grant never reaches this function — `_op_write` (bin/cco) already
+# refused it at exit 2, naming the axis ("needs G=rw … current cco_access=…"). So in
+# a container the only surviving condition is that the bucket is not bound here.
+#
+# ⚠ EXIT CODE IS 1, NOT 2 — this is R5's message fix, NOT an exit-code change.
+# D8's general convention ("session shape → refuse 2") would suggest 2, and the
+# neighbouring `_env_unavailable` / `rename.sh` index guard do use it. But this
+# module carries a NARROWER, explicit contract that wins here: **INV-S3** (header,
+# and `_store_apply`'s own `die`) — *a store write that cannot complete is an ERROR
+# (exit 1), never a false ✓*. Eight guards in `tests/test_store_writes.sh` pin it.
+# Moving the pre-flight to 2 while `_store_apply` stayed at 1 would also split one
+# failure mode across two codes depending on whether the probe or the write caught
+# it. Callers distinguish these by MESSAGE, which is exactly what R5 asked for.
+_store_unwritable_refuse() {
+    local op="$1"
+    if _cco_container_operator; then
+        die "Cannot update the internal store for '$op' — the store bucket it writes is not mounted in this session. It exists on this machine, but is not bound into this container. Run the command on your host; nothing was changed."
+    fi
+    die "Cannot update the internal store for '$op' — the store bucket it writes is not writable. Check its permissions and free space; nothing was changed."
+}
+
 # _store_check <op> args… — the fail-closed pre-flight (05 §3.4 Phase 0; the design's
 # _store_require_plan). Runs the plan on the privileged side, then dies (exit 1) on an
 # unreachable/unwritable store BEFORE any mutation, and exposes the verdict to the
@@ -245,8 +280,7 @@ _store_check() {
         case "$tag" in
             reach)     [[ "$a" == unreachable ]] \
                 && die "Cannot update the internal store for '$op' — the store is not reachable in this session (the ADR-0047 boundary is opaque here). Run the command on your host; nothing was changed." ;;
-            write)     [[ "$a" == unwritable ]] \
-                && die "Cannot update the internal store for '$op' — the store is not writable in this session. Run the command on your host; nothing was changed." ;;
+            write)     [[ "$a" == unwritable ]] && _store_unwritable_refuse "$op" ;;
             present)   [[ "$a" == yes ]] && _STORE_PRESENT=yes ;;
             collision) [[ "$a" == yes ]] && _STORE_COLLISION=yes ;;
             refs)      _STORE_REFS="$a" ;;

@@ -343,6 +343,27 @@ permission-denied or stranded index all render as success.
 
 ## 6. S5 — D-V3-1: remote verbs host-only, and a truthful store refusal
 
+### 6.-1 ⚠ ONE WORK ITEM IS BLOCKED IN-SESSION — must be applied on the host
+
+S5's four code items landed, but the **managed rule** `defaults/managed/.claude/rules/`
+`cco-config-interaction.md` §"Host-only verbs (any level)" still lists only
+`cco remote set-token|remove-token` and must gain `remove|rename`. **Every `.claude` tree is
+mounted `:ro` in a session** (ADR-0049 — `claude_access` read-only by default; verified:
+`defaults/managed/` is rw but `defaults/managed/.claude/` is not), so this edit is **host-only**.
+Until it is applied, the rule injected into every future session under-reports the host-only set.
+
+The same constraint applies to anything else this cycle needs in `defaults/managed/.claude/` or
+`defaults/global/.claude/` — fold the check into **S9**'s doc sweep, and run that part on the Mac.
+
+Patch to apply on the host, in that file's host-only paragraph:
+
+```
+`cco remote set-token|remove-token|remove|rename` (D-V3-1: the last two cascade
+into the 0600 token store, which never crosses into a session — unmounted, cco
+cannot tell "no token" from "token invisible", so both would silently orphan the
+token; `cco remote add` stays available, it writes only the url registry).
+```
+
 ### 6.0 ⚠ Amended 2026-07-21 — S2b's token primitives must land FIRST
 
 §1 originally ordered S5 ahead of S2b ("S2b blocks nothing"), while the stage table flagged *"S5

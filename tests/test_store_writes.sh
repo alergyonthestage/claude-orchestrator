@@ -276,11 +276,19 @@ test_store_llms_remove_fails_loud_when_cache_opaque() {
 
 # OPAQUE (000) DATA: `remote remove` must name the STORE, not `Remote 'x' not found`.
 # Pre-fix: rc=1, `Remote 'x' not found` (cmd-remote.sh:197).
+#
+# ⚠ HOST path (S5): D-V3-1 made `remote remove|rename` host-only, so in an operator
+# session the shim now refuses them at exit 2 before the store is ever consulted —
+# this property became unreachable there. It is NOT obsolete: the verbs still run on
+# the host, where the same store failure is still possible, and where S2b-P's token
+# primitives carry the other half of the cascade. So the guard moves to the host arm
+# rather than being deleted. `test_operator_blocks_remote_remove_and_rename`
+# (test_operator_shim.sh) covers the in-session half.
 test_store_remote_remove_reports_store_not_message_not_found() {
     [[ "$(id -u)" -eq 0 ]] && return 0
     local tmp; tmp=$(mktemp -d)
     trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
-    setup_cco_env "$tmp"; setup_operator_session "$tmp" edit-global
+    setup_cco_env "$tmp"
     _sw_seed_remote r1
     chmod 000 "$CCO_DATA_HOME"
     local rc=0; run_cco remote remove r1 -y || rc=$?
@@ -295,11 +303,12 @@ test_store_remote_remove_reports_store_not_message_not_found() {
 
 # READ-ONLY (555) DATA: `remote rename` must fail loud, no `Renamed remote`. Pre-fix:
 # the `:258` read passes under 555, the mv EACCES silently, exit 0 + ✓.
+# ⚠ HOST path (S5) — same reason as the sibling above (D-V3-1).
 test_store_remote_rename_fails_loud_when_data_unwritable() {
     [[ "$(id -u)" -eq 0 ]] && return 0
     local tmp; tmp=$(mktemp -d)
     trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
-    setup_cco_env "$tmp"; setup_operator_session "$tmp" edit-global
+    setup_cco_env "$tmp"
     _sw_seed_remote r1
     chmod 555 "$CCO_DATA_HOME"
     local rc=0; run_cco remote rename r1 r2 -y || rc=$?

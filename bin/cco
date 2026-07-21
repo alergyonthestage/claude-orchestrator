@@ -400,8 +400,15 @@ _cco_operator_shim() {
             case "$sub" in
                 "") return 0 ;;
                 list) _op_read_scope global "remote list"; return 0 ;;   # personal-global registry
-                add|remove|rename) _op_write "remote $sub" global ;;     # DATA registry
-                set-token|remove-token) refuse "'cco remote $sub' is host-only (secrets stay off the container). $host_hint" ;;
+                add) _op_write "remote add" global ;;   # DATA registry only (the --token half is refused in cmd-remote.sh)
+                # D-V3-1: remove/rename join the token verbs as host-only. They
+                # CASCADE into the 0600 STATE token store (store.sh remote-drop/
+                # remote-rekey), which deliberately never crosses into a session —
+                # so `remote_get_token` here cannot tell "no token" from "token
+                # invisible", and both ops, written as conditional no-ops on
+                # exactly that test, would pass SILENTLY: rename would orphan the
+                # token and strip the renamed remote's auth with no diagnostic.
+                remove|rename|set-token|remove-token) refuse "'cco remote $sub' is host-only (secrets stay off the container). $host_hint" ;;
                 *) _op_unknown_sub remote "$sub" ;;
             esac ;;
         # repo / extra_mount rename write the CURRENT project tree (its project.yml

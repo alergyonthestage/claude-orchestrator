@@ -193,9 +193,16 @@ _cmd_remote_add() {
     # would read the registry empty and EACCES the write while still printing ✓.
     # _store_check refuses on an unreachable/unwritable store and reports whether the
     # name already exists (checked on the privileged side where it is true).
+    # V5-03: the remedy must name a command the reader can actually run. After
+    # D-V3-1 `cco remote remove` is host-only, so in a session it names an
+    # impossible action — the very trap this cycle is closing elsewhere.
     _store_check remote-put "$name" "$url"
-    [[ "$_STORE_PRESENT" == no ]] \
-        || die "Remote '$name' already exists. Remove it first with 'cco remote remove $name'."
+    if [[ "$_STORE_PRESENT" != no ]]; then
+        if _cco_container_operator; then
+            die "Remote '$name' already exists. Removing it is host-only (secrets stay off the container) — run 'cco remote remove $name' on your host, then re-add it here."
+        fi
+        die "Remote '$name' already exists. Remove it first with 'cco remote remove $name'."
+    fi
 
     _store_apply remote-put "$name" "$url"
 
