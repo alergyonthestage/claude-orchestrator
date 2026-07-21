@@ -4,9 +4,10 @@
 > verdict (**NOT ACCEPTED**), its seven roots **R1…R7**, and the ratified decision **D-V3-1**.
 > **Gate**: closing R1–R7 unblocks `develop → main`.
 > **Branch**: `fix/config-access/e2e-v3-cycle1.1` (from `develop` @ `f894245`).
-> **Status**: plan written 2026-07-20. **S1 · S2 · S3 landed** (2026-07-20/21), suite **1417/9** —
-> the 9 are the pre-existing host-only artifacts, unchanged set. Next: **S4**.
-> Resume pointer: [`RESUME-HANDOFF-s4.md`](RESUME-HANDOFF-s4.md).
+> **Status**: plan written 2026-07-20. **S1 · S2 · S3 · S4 landed** (2026-07-20/21), suite
+> **1428/9** — the 9 are the pre-existing host-only artifacts, unchanged set. Next: **S5**.
+> Resume pointer: [`RESUME-HANDOFF-s4.md`](RESUME-HANDOFF-s4.md) (its §3 and §4 are now history;
+> §5 onward is still the live order).
 
 Cycle 1 fixed the *model*. Cycle 1.1 fixes what only a live container could reveal: **one
 mount-composition defect** (R1) that three sessions hit through three verb families, plus **six
@@ -54,8 +55,8 @@ flowchart TD
 | **S2** | R2 | V3-01 (honesty half) | 🔴 yes | ✅ `4aefc2f` |
 | **S2b** | R2 | the same class in the host-only writers (not a v3 finding — found while landing S2) | 🟠 | ⏳ designed, §3b |
 | **S3** | R7 | V3-02 | 🟠 | ✅ `582347d` |
-| **S4** | R3 | V2-F02, V2-F03 | 🟠 | ⏳ next |
-| **S5** | D-V3-1, R5 | V5-02, V5-03 | 🟠 | ⏳ |
+| **S4** | R3 | V2-F02, V2-F03 | 🟠 | ✅ `501567b` |
+| **S5** | D-V3-1, R5 | V5-02, V5-03 | 🟠 | ⏳ next |
 | **S6** | R4 | V2-F04 ≡ V4-F-V4-02 ≡ V5-04, V1-F1 | 🟠 | ⏳ |
 | **S7** | R6 | V4-F-V4-01, V5-05 | 🟠 | ⏳ |
 | **S8** | — | V3-03, V4-F-V4-03, V4-F-V4-04, V1-F3, V1-F2, V3-P | 🟡 | ⏳ (V3-P done in S2) |
@@ -67,7 +68,9 @@ real orphan-scan bug the move surfaced (`cco config validate` scanned the old si
 **S2** — `_index_mktemp` fails loudly, `_index_rename_path` and `cmd-repo.sh` propagate, `INV-IDX`
 lints bare writes, `T-R2` guards the behaviour; V3-P's restart note shipped here. **S3** —
 `_rename_assert_index_writable` probes the second store at its own (elevated) identity, so the
-rename refuses *before* Phase 1. Every guard was adversarially revert-checked against pre-fix code.
+rename refuses *before* Phase 1. **S4** — `_index_read_state`/`_index_assert_readable`: the read
+side can now tell a failed read from an empty index, and says so at exit 1 in one shared
+vocabulary. Every guard was adversarially revert-checked against pre-fix code.
 
 ---
 
@@ -306,6 +309,29 @@ permission-denied or stranded index all render as success.
    liveness check at verb entry, or a line in `cco whoami`, converts a silent wrong answer into a
    loud one. S1 removes the *cause*, but a file-shaped bind may return elsewhere; this is the
    detector.
+
+> **✅ LANDED** (`501567b`). `_index_read_state` (ok | absent | unreadable | truncated | stale) with
+> `_index_assert_readable` as the fail-closed entry guard and one shared sentence per non-benign
+> state. Three points worth not re-deriving:
+>
+> - **`absent` is benign, `truncated` is not.** A legitimately empty index is never 0 bytes —
+>   `_index_ensure_file` always writes a header, a version line and the four section keys — so 0
+>   bytes is an interrupted write, not "nothing registered". The probe **opens** the file rather than
+>   using `test -r`, whose `access(2)` answers for the *real* uid (the `rename.sh:174` trap).
+> - **The vocabulary rule is contextual, not a ban.** On the host `cco resolve --scan` IS the correct
+>   remedy and stays; only in a session — where the operator gate refuses `resolve` — must it not
+>   appear. Both arms are asserted, so deleting the phrase everywhere would fail the guard.
+> - **Item 4 went to verb entry, not `whoami`.** `cmd-whoami.sh` states it does no filesystem probing
+>   and runs de-elevated, so it cannot reach the index behind the ADR-0047 boundary at all; a liveness
+>   line there would need a `store-op` crossing. The `stale` arm (nlink 0) fails **safe** — no answer
+>   from `stat` is no evidence, never a failure — and its positive case needs a real mount, so the
+>   hermetic test mocks `stat` on PATH and the kernel side rides the **V2 re-run** in §10.
+>
+> Scope note: beyond the two surfaces §5 names, the guard also lands on the compact `cco list` (an
+> unreadable index drops every project row while packs/templates still list — plausible, not empty)
+> and on `cco config validate`, whose silent answer was *"bookkeeping is clean"* to the very question
+> being asked. In `cmd_list` the guard sits in `cmd_list`, **not** in `_list_collect`: that runs in a
+> process substitution where `die` exits only the subshell — the shape this stage exists to close.
 
 ---
 

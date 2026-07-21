@@ -155,10 +155,10 @@ Stages (each impl → adversarial revert-check): **S1** STATE shared sub-bucket 
 `INV-STATE` ✅ `517014b` · **S2** index-write error propagation + `INV-IDX` + `T-R2` ✅ `4aefc2f` ·
 **S3** fail-closed pre-flight probes **both** stores, each at its own identity ✅ `582347d` ·
 **S2b** the same unchecked-write class in the host-only writers ⏳ **re-scoped 2026-07-21** · **S4** read-path
-honesty (empty ≠ unreadable) ⏳ next · **S5** D-V3-1 + truthful store refusal · **S6** one predicate
+honesty (empty ≠ unreadable) ✅ `501567b` · **S5** D-V3-1 + truthful store refusal ⏳ next · **S6** one predicate
 one spelling (`project show`) · **S7** config-editor announces every drop · **S8** minor + doc debt ·
-**S9** changelog 47 + ADR forward-annotation + living-doc sweep. Suite **1417/9** (the 9 = the
-pre-existing host-only artifacts, unchanged set).
+**S9** changelog 47 + ADR forward-annotation + living-doc sweep. Suite **1428/9** (the 9 = the
+pre-existing host-only artifacts, unchanged set — verified identical on a pristine HEAD checkout).
 
 **A codebase-wide audit of the same class ran before implementing S2b** (backlog convention:
 re-derive the boundary first) — [`engineering/analysis/false-success-class-audit.md`](engineering/analysis/false-success-class-audit.md).
